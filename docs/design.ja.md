@@ -140,7 +140,7 @@ public static T Batch<T>(Func<T> f)
 public static void Batch(Action f) { ... }  // 戻り値なし版
 ```
 
-イベントディスパッチ（§7）は各ハンドラ呼び出しを自動的に`Batch`で包む。開発者が明示的に`Batch`を呼ぶのは、タイマーコールバックや非同期I/O完了時など、イベントハンドラの外で複数のSignalをまとめて更新したい場合に限る。UI スレッドの `SynchronizationContext`（§2.12）経由で再開した `await` の継続も、継続1回分を暗黙の `Batch` で包む。
+イベントディスパッチ（§7）は各ハンドラ呼び出しを自動的に`Batch`で包む。開発者が明示的に`Batch`を呼ぶのは、タイマーコールバックや非同期I/O完了時など、イベントハンドラの外で複数のSignalをまとめて更新したい場合に限る。UI スレッドのキュー（§2.12）から取り出した1件、つまり `SynchronizationContext` 経由で再開した `await` の継続1回分と `UiMessage` 1件も、暗黙の `Batch` で包む（S6a）。
 
 ### 2.2.2 Reactive Scheduler
 
@@ -254,6 +254,17 @@ static void Reevaluate(ComputationState computation)
 
 `ComputationState` は v1 では class とする。`ReactiveArena`（§2.5）への移行は実測で必要になってから行う。
 
+**C# 版の実装（S6a で確定）:** 上の擬似コードの形から、次の点を変えた。
+
+- **型:** Signal と Computation は class なので、`ReactiveNodeId` の表は引かず、辺は相手のオブジェクトの参照を持つ。基底は `ReactiveNode`（`Observers` と `Version`）と `Computation`（`Sources` と状態）、具体型は `Signal<T>`・`Computed<T>`・`Effect`。公開型の基底は public にする必要があるので、`ReactiveNode` と `Computation` は public な抽象クラスで、public なメンバーは持たない
+- **鮮度の判定:** `SourceEdge` は読んだときの相手の `Version`（`SeenVersion`）を持つ。dirty な Computation は、依存を読んだ順に最新にし（Computed なら pull）、`Version` を比べ、変わったものがあったときだけ再評価する。比べるのは最初の変化までなので、次の実行で読まなくなるかもしれない依存は評価しない
+- **Computed の `Version`:** 再評価の結果が前回と等しい（比較器で判定）ときは進めない。読み手は再実行されない。例外になったときと、例外から戻ったときは進める
+- **`DirtyEpoch` は持たない:** dirty の伝播は、すでに `Dirty` / `Queued` のノードで止まる。同じ cycle の重複した enqueue はこれで起きない
+- **queue:** 深さ別のバケット（`EffectQueue`）。同じ深さの中は積んだ順。1 回の cycle の間はその cycle の queue に足さない（実行中に dirty になった Effect は次の cycle の queue へ）ので、バケットを先頭から順に実行するだけでよい。`PriorityQueue<Effect, uint>` と比べ、1 つの Signal を 1,000 個の Effect が読む場合の `Set` が 28.3 → 18.3 µs（NativeAOT、3 回ずつ交互に測った最良値）
+- **安定しなかったとき:** 打ち切った時点で次の cycle の queue にある Effect は、`Queued` のまま残り、次の flush で実行される（dirty の伝播は `Queued` で止まるので、捨てると二度と実行されなくなる）
+- **自分を読む Computed:** 評価中に自分を読むと `InvalidOperationException`。例外として保持し、`Get` で投げ直す
+- **公開 API:** `Signal.Create(value, comparer)`・`Computed.Create(func, comparer)`・`Effect.Create(action)`（作った時点で1回実行する。`Dispose` で止める）・`ReactiveRuntime.Batch`・`ReactiveRuntime.UnhandledExceptionHandler`。読み取り専用の型は `IReadOnlySignal<T>`
+
 **依存辺の差分維持:** 大半の再評価は前回と同じ依存を同じ順に読むので、`ReadCursor` が前回の `Sources` と一致している間は辺を張り替えない。条件分岐で読む依存が変わったときだけ、食い違った位置から先を付け替える（Preact Signals のノード再利用と同じ考え方）。1回の実行で同じ依存を2度読んだ場合は辺を2本持つ。dirty 化は冪等なので結果は変わらない。辺を外すときは、相手側の配列で末尾の辺を空いた位置へ移し、移した辺の相手が持つ `Slot*` を書き換える。
 
 **同じ値の `Set`:** `Signal<T>.Set(value)` は、比較器（既定は `EqualityComparer<T>.Default`、`Signal.Create(value, comparer)` で差し替え可）で現在値と等しければ何もしない。dirty にもせず、`Version` も進めない。強制的に通知する API は持たない。同じ値でも通知が必要な場合は、値の型の側で区別できるようにする（R3 の `ReactiveProperty` と同じ扱い）。
@@ -315,7 +326,9 @@ batch outermost（最も外側のbatch）の終了時
       ReactiveRuntime.UnhandledExceptionHandler に渡し、現在の flush を中断する（下記）
 ```
 
-**S6（MoonBit 版で検証済み。C# 版で再検証）:** `Batch` 内の複数 `Set` は Effect を1回だけ flush し、ダイヤモンド（A→B,C→D）の Computed は pull で1回評価された。Computed は queue に入らない。Effect 内 `Set` は次 cycle。`MarkDirty` は origin に `SelfDirty`、経路に `SubtreeDirty`、Layout 境界で `LayoutRoots` 停止。Color は載せない。worklist は Block/Flex（1次元幅）を回し、pass 中の再 dirty は次 cycle。layout 中は tracking off で Signal 読みが不変条件違反になる。
+**S6a（C# 版で検証済み、Issue #25）:** `Batch` 内の複数 `Set` は Effect を1回だけ flush し、ダイヤモンド（A→B,C→D）の D は pull で1回だけ評価され、新しい B と古い C を同時に読まなかった。Computed は queue に入らない。条件分岐で読む依存が変わると、変わった位置から先の辺だけが付け替わった。定常状態の `Set` → flush はアロケーション 0（Debug・Release、1 万回）。Effect 内の `Set` は次 cycle で処理され、安定しない Effect は 100 cycle で打ち切られて診断がハンドラに届いた。UI スレッドのキューから取り出した1件（`await` の継続・メッセージ）は暗黙の `Batch` になった。NativeAOT で、Signal → Computed → Effect の `Set` は 1 回約 53 ns、1 万個の Signal と Effect の `Batch` は約 0.34 ms（§11.3 の Reactive 更新 0.5 ms の内側）。
+
+**S6（MoonBit 版で検証済み。Invalidation と Layout は C# 版の S6b で再検証）:** `MarkDirty` は origin に `SelfDirty`、経路に `SubtreeDirty`、Layout 境界で `LayoutRoots` 停止。Color は載せない。worklist は Block/Flex（1次元幅）を回し、pass 中の再 dirty は次 cycle。layout 中は tracking off で Signal 読みが不変条件違反になる。
 
 **安定しない flush の扱い（C# 版で変更）:** 上限を超えるのはアプリ側の循環（Effect が自分の依存を書き続ける等）であり、内部の不変条件違反（§0.1）ではない。debug と release で振る舞いを変えず、テストで確かめられるよう、診断用の例外をハンドラに渡して打ち切る。.NET の `Debug.Fail` はデバッガが付いていないとプロセスを終えるので使わない。debug で止めたい場合はハンドラ側でブレークする。
 
@@ -1303,7 +1316,7 @@ internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 
 **`Send` の扱い:** `SynchronizationContext.Send` は、UI スレッドからならその場で実行し、他のスレッドからならキューに積んで実行が終わるまで待つ。UI スレッドがループを回していない間（同期描画の最中や、ループの開始前）に他のスレッドから `Send` すると待ち続けるので、フレームワーク自身は `Send` を使わない。UI スレッドからの `Send` は同期描画の中でもその場で実行するので、「同期描画中はアプリのコールバックを実行しない」（§2.11.1）の例外になる。
 
-**async/await との統合（C# 版で追加）:** UI スレッドに独自の `SynchronizationContext` を設定する。`Post` / `Send` は上記のキューと同じ経路で UI スレッドへ継続を積み、起床させる。これにより、イベントハンドラ内の `await` の後の継続は自動的に UI スレッドで再開し、そのまま `Signal.Set` できる。継続はキューから取り出したとき1回ごとに暗黙の `Batch`（§2.2.1）で包む（`Batch` を作る S6 で入れる）。同期リサイズ描画パス（§2.11.1）の実行中は継続を取り出さない。
+**async/await との統合（C# 版で追加）:** UI スレッドに独自の `SynchronizationContext` を設定する。`Post` / `Send` は上記のキューと同じ経路で UI スレッドへ継続を積み、起床させる。これにより、イベントハンドラ内の `await` の後の継続は自動的に UI スレッドで再開し、そのまま `Signal.Set` できる。継続とメッセージは、キューから取り出したとき1件ごとに暗黙の `Batch`（§2.2.1）で包む（S6a）。同期リサイズ描画パス（§2.11.1）の実行中は継続を取り出さない。
 
 ワーカースレッドは`UiMessage`を生成してキューに投入するだけで、`UiTree`への参照自体を一切持たない設計とする。これにより「将来ワーカー対応する際に境界を作る」のではなく、最初から境界を守った実装しかできない構造にする。
 

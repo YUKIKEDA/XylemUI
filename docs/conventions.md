@@ -24,10 +24,10 @@ docs/                        設計・判断・ロードマップ・規約（本
 
 | プロジェクト | 責務 |
 | --- | --- |
-| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`）、同期描画のガード（`SynchronousRenderGuard`）、UI スレッドのキュー（`UiMessage`・`IUiDispatcher`・`UiDispatcher`）と `SynchronizationContext` |
+| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`）、同期描画のガード（`SynchronousRenderGuard`）、UI スレッドのキュー（`UiMessage`・`IUiDispatcher`・`UiDispatcher`）と `SynchronizationContext`、Reactive（`Signal<T>`・`Computed<T>`・`Effect`・`ReactiveRuntime`、`Reactive/`） |
 | `src/XylemUI.Platform.Windows` | Win32 バックエンド。ウィンドウ、`[UnmanagedCallersOnly]` のウィンドウプロシージャと例外バリア、`NativeHandleTable`、`MsgWaitForMultipleObjectsEx` で待つメッセージループとフレームスケジューラ、他スレッドからの起床、`WM_SIZE` からの同期描画、ループでのキューの取り出しと `SynchronizationContext` の設定（`net10.0-windows`、unsafe 可） |
 | `samples/HelloWindow` | 空ウィンドウのサンプル。`--auto` で S1 の検査をして終了する（`PublishAot`） |
-| `tests/XylemUI.Core.Tests` | Core の単体テスト |
+| `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture`（このアセンブリで `UiThread` を初期化するのはこれだけ）の上で走る |
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
 
 予定しているプロジェクトの全体は設計書 §2.9.1 にある。
