@@ -77,7 +77,8 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     /// Expected:
     /// - No iteration happened between the first wait and the Wake call (no polling, no stray wake).
     /// - The loop iterated exactly twice: one wait, one wake.
-    /// - The UI thread used less than 10 ms of CPU while it waited.
+    /// - The UI thread used less than 50 ms of CPU while it waited. GetThreadTimes counts in scheduler ticks (about 15.6 ms), so
+    ///   the bound is three ticks: one tick can land on the microseconds before the wait, and 300 ms of polling would still fail.
     /// - The loop woke less than 50 ms after Wake.
     /// </remarks>
     [Fact]
@@ -147,7 +148,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             Assert.False(watchdog.Expired);
             Assert.Equal(0, unexpectedWakes);
             Assert.Equal(2, iterations);
-            Assert.InRange(cpuWhileWaiting, TimeSpan.Zero, TimeSpan.FromMilliseconds(10));
+            Assert.InRange(cpuWhileWaiting, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
             Assert.InRange(wakeDelay, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
         });
     }
@@ -157,14 +158,14 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Two callbacks that count their runs and record whether they ran on the UI thread.
+    /// - A callback that counts its runs and records whether it ran on the UI thread, and a second callback that counts its runs.
     ///
     /// Steps:
-    /// - Request the first callback. Request the second and cancel it at once, then request the first again and let it run.
-    /// - Wait about 200 ms (more than ten frame periods) and quit.
+    /// - Request the second callback and cancel it at once.
+    /// - Request the first callback, then keep the loop iterating for about 200 ms (more than ten frame periods) and quit.
     ///
     /// Expected:
-    /// - The first callback ran exactly once (the second request replaced nothing that was still pending), on the UI thread.
+    /// - The first callback ran exactly once, on the UI thread: it did not request again, so no later frame ran it.
     /// - The cancelled callback never ran.
     /// </remarks>
     [Fact]
@@ -188,7 +189,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             using var watchdog = new LoopWatchdog();
             long started = Stopwatch.GetTimestamp();
 
-            // Keep the loop iterating for 200 ms with wakes every 10 ms, so that a frame clock that kept running would show up.
+            // Keep the loop iterating for 200 ms with wakes every 10 ms, so that a callback that ran again would show up.
             // The ticker is stopped and joined before the test ends, so no wake leaks into the next test.
             using (new WakeTicker(TimeSpan.FromMilliseconds(10)))
             {
@@ -199,6 +200,162 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             Assert.Equal(1, runs);
             Assert.True(onUiThread);
             Assert.Equal(0, cancelledRuns);
+        });
+
+    /// <summary>
+    /// The frame clock runs only while a frame is pending: it stops after a frame that requests nothing, and on CancelFrame.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The scheduler of the UI thread, with no pending frame.
+    ///
+    /// Steps:
+    /// - Request a frame whose callback requests nothing, and run the loop until it ran.
+    /// - Request another frame and cancel it.
+    ///
+    /// Expected:
+    /// - The clock runs while each request is pending.
+    /// - The clock is stopped after the frame ran, and after the cancel.
+    /// </remarks>
+    [Fact]
+    public void FrameClock_WithNothingPending_IsStopped() =>
+        ui.Invoke(() =>
+        {
+            var frames = (Win32FrameScheduler)Win32MessageLoop.FrameScheduler;
+            int runs = 0;
+            bool runningInsideCallback = false;
+            Action callback = () =>
+            {
+                runs++;
+                runningInsideCallback = frames.IsClockRunning;
+            };
+
+            using var watchdog = new LoopWatchdog();
+            bool runningWhilePending = false;
+            bool? runningAfterFrame = null;
+            RunLoop(
+                watchdog,
+                () =>
+                {
+                    if (runs < 1)
+                    {
+                        return false;
+                    }
+
+                    // Read the clock here, in the iteration after the frame: RunLoop's cleanup cancels the frame and would stop it.
+                    runningAfterFrame = frames.IsClockRunning;
+                    return true;
+                },
+                () =>
+                {
+                    frames.RequestFrame(callback);
+                    runningWhilePending = frames.IsClockRunning;
+                }
+            );
+
+            Assert.False(watchdog.Expired);
+            Assert.True(runningWhilePending);
+            Assert.True(runningInsideCallback);
+            Assert.False(runningAfterFrame);
+
+            frames.RequestFrame(callback);
+            Assert.True(frames.IsClockRunning);
+            frames.CancelFrame();
+            Assert.False(frames.IsClockRunning);
+        });
+
+    /// <summary>
+    /// A second request before the frame replaces the first: only the last callback runs.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two callbacks that count their runs.
+    ///
+    /// Steps:
+    /// - Request the first, then the second, and run the loop until a frame ran; keep it iterating for another 100 ms.
+    ///
+    /// Expected:
+    /// - The second callback ran once; the first never ran.
+    /// </remarks>
+    [Fact]
+    public void RequestFrame_TwiceBeforeTheFrame_RunsOnlyTheLastCallback() =>
+        ui.Invoke(() =>
+        {
+            int firstRuns = 0;
+            int secondRuns = 0;
+            Action first = () => firstRuns++;
+            Action second = () => secondRuns++;
+            IFrameScheduler frames = Win32MessageLoop.FrameScheduler;
+
+            using var watchdog = new LoopWatchdog();
+            long started = Stopwatch.GetTimestamp();
+            using (new WakeTicker(TimeSpan.FromMilliseconds(10)))
+            {
+                RunLoop(
+                    watchdog,
+                    () => secondRuns >= 1 && Stopwatch.GetElapsedTime(started) >= TimeSpan.FromMilliseconds(100),
+                    () =>
+                    {
+                        frames.RequestFrame(first);
+                        frames.RequestFrame(second);
+                    }
+                );
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.Equal(0, firstRuns);
+            Assert.Equal(1, secondRuns);
+        });
+
+    /// <summary>
+    /// An exception from a frame callback goes to the callback exception handler, and the loop keeps running frames.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A callback exception handler that records what it receives.
+    /// - A callback that requests the next frame and then throws, three times.
+    ///
+    /// Steps:
+    /// - Request the first frame and run the loop until three frames ran.
+    ///
+    /// Expected:
+    /// - Three frames ran, so a throwing callback did not stop the loop or drop its own next request.
+    /// - The handler received the three exceptions.
+    /// </remarks>
+    [Fact]
+    public void RequestFrame_CallbackThrows_ReportsAndKeepsRunningFrames() =>
+        ui.Invoke(() =>
+        {
+            Action<Exception> previous = Win32MessageLoop.CallbackExceptionHandler;
+            var reported = new List<Exception>();
+            Win32MessageLoop.CallbackExceptionHandler = reported.Add;
+            try
+            {
+                int runs = 0;
+                Action? onFrame = null;
+                onFrame = () =>
+                {
+                    runs++;
+                    if (runs < 3)
+                    {
+                        Win32MessageLoop.FrameScheduler.RequestFrame(onFrame!);
+                    }
+
+                    throw new InvalidOperationException($"Thrown from frame {runs} on purpose.");
+                };
+
+                using var watchdog = new LoopWatchdog();
+                RunLoop(watchdog, () => runs >= 3, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
+
+                Assert.False(watchdog.Expired);
+                Assert.Equal(3, runs);
+                Assert.Equal(3, reported.Count);
+                Assert.All(reported, exception => Assert.IsType<InvalidOperationException>(exception));
+            }
+            finally
+            {
+                Win32MessageLoop.CallbackExceptionHandler = previous;
+            }
         });
 
     /// <summary>

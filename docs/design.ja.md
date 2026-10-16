@@ -1294,7 +1294,7 @@ public interface IUiDispatcher
 internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 ```
 
-キューは `Channel<UiMessage>`（単一リーダー・複数ライター）または `ConcurrentQueue<UiMessage>` とし、投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。
+キューは `Channel<UiMessage>`（単一リーダー・複数ライター）または `ConcurrentQueue<UiMessage>` とし、投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。起床機構はループの開始前（Windows では起床用のメッセージ専用ウィンドウを作る前）には何もしないので、ループは開始時に必ず1回キューを空にしてから最初の待機に入る。開始前に投入されたメッセージを取りこぼさないためである（S3 のレビュー）。
 
 **async/await との統合（C# 版で追加）:** UI スレッドに独自の `SynchronizationContext` を設定する。`Post` / `Send` は上記のキューと同じ経路で UI スレッドへ継続を積み、起床させる。これにより、イベントハンドラ内の `await` の後の継続は自動的に UI スレッドで再開し、そのまま `Signal.Set` できる。継続はキューから取り出したとき1回ごとに暗黙の `Batch`（§2.2.1）で包む。同期リサイズ描画パス（§2.11.1）の実行中は継続を取り出さない。
 

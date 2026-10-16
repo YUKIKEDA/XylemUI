@@ -9,13 +9,14 @@ namespace XylemUI.Platform.Windows;
 /// The Win32 frame clock that <see cref="Win32MessageLoop"/> waits on together with the message queue (design §2.11).
 /// </summary>
 /// <remarks>
-/// Until a swap chain exists (roadmap S7), the clock is a high-resolution waitable timer with the period of a 60 Hz display. The
+/// Until a swap chain exists (roadmap S7), the clock is a high-resolution waitable timer of about 60 Hz (see the period below). The
 /// production handle, DXGI's frame latency waitable object, is waited on the same way. The timer runs only while a frame is
 /// requested, so an idle UI thread has nothing to wake it.
 /// </remarks>
 internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
 {
-    // 60 Hz. SetWaitableTimer takes the first due time in 100 ns units (negative is relative) and the period in milliseconds.
+    // About 60 Hz, as a stand-in until S7. SetWaitableTimer takes the first due time in 100 ns units (negative is relative) and the
+    // period in whole milliseconds, so the first frame comes after 16.667 ms and later ones every 16 ms (62.5 Hz).
     private const long FirstDueTime100ns = -166_667;
     private const int PeriodMilliseconds = 16;
 
@@ -34,6 +35,9 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
 
     /// <summary>Gets a value indicating whether a callback is waiting for the next frame.</summary>
     public bool HasPendingFrame => _pending is not null;
+
+    /// <summary>Gets a value indicating whether the frame clock is running. It runs only while a frame is pending.</summary>
+    internal bool IsClockRunning => _timerRunning;
 
     /// <summary>Gets the handle the message loop waits on while a frame is pending.</summary>
     public HANDLE WaitHandle => _timer;
