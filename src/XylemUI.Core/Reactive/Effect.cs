@@ -15,7 +15,8 @@ public sealed class Effect : Computation, IDisposable
     private Effect(Action run) => _run = run;
 
     /// <summary>
-    /// Creates an effect and runs it once, now.
+    /// Creates an effect and runs it once, now, as a batch: the effects of the signals it sets run after it returns. Inside a
+    /// flush, they run in the flush's next cycle.
     /// </summary>
     /// <param name="run">The code to run. The signals and computed values it reads are recorded.</param>
     /// <returns>The new effect. Dispose it to stop it.</returns>
@@ -25,7 +26,18 @@ public sealed class Effect : Computation, IDisposable
         ArgumentNullException.ThrowIfNull(run);
         UiThread.VerifyAccess();
         var effect = new Effect(run);
-        effect.RunAndRequeue();
+
+        // The first run is a batch, so the signals it sets are flushed after it, not in the middle of it.
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            effect.RunAndRequeue();
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+
         return effect;
     }
 
@@ -82,8 +94,9 @@ public sealed class Effect : Computation, IDisposable
 
     private void RunAndRequeue()
     {
+        // An effect that disposed itself while it ran is Clean here (DisposeSources), so it is not queued again.
         Run();
-        if (Status == ComputationStatus.Dirty && !IsDisposed)
+        if (Status == ComputationStatus.Dirty)
         {
             ReactiveRuntime.Enqueue(this);
         }

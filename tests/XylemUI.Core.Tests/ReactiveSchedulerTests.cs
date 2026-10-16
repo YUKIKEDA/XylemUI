@@ -336,6 +336,257 @@ public sealed class ReactiveSchedulerTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// An effect created outside a batch that sets what it reads settles before Create returns.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - No batch is open. A signal at 0.
+    ///
+    /// Steps:
+    /// - Create an effect that reads the signal and sets it to the next value while it is below 3.
+    ///
+    /// Expected:
+    /// - When Create returns, the signal is 3 and the effect ran four times; nothing is left queued.
+    /// </remarks>
+    [Fact]
+    public void Create_EffectSettingWhatItReads_SettlesBeforeCreateReturns() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> counter = Signal.Create(0);
+            int runs = 0;
+
+            using Effect effect = Effect.Create(() =>
+            {
+                runs++;
+                int value = counter.Get();
+                if (value < 3)
+                {
+                    counter.Set(value + 1);
+                }
+            });
+
+            Assert.Equal(3, counter.Get());
+            Assert.Equal(4, runs);
+            Assert.Equal(0, ReactiveRuntime.QueuedCount);
+        });
+
+    /// <summary>
+    /// The signals an effect sets during its first run are flushed after that run, not in the middle of it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - No batch is open. Effect Watcher reads a signal and logs what it saw.
+    ///
+    /// Steps:
+    /// - Create an effect that logs "start", sets the signal, and logs "end".
+    ///
+    /// Expected:
+    /// - The log is: Watcher's first run, start, end, then Watcher with the new value.
+    /// </remarks>
+    [Fact]
+    public void Create_EffectSettingAnotherEffectsSignal_FlushesAfterItsRun() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> shared = Signal.Create(0);
+            var log = new List<string>();
+            using Effect watcher = Effect.Create(() => log.Add("watcher " + shared.Get()));
+
+            using Effect writer = Effect.Create(() =>
+            {
+                log.Add("start");
+                shared.Set(1);
+                log.Add("end");
+            });
+
+            Assert.Equal(["watcher 0", "start", "end", "watcher 1"], log);
+        });
+
+    /// <summary>
+    /// An effect created inside a flush runs at once, and what becomes dirty in that run waits for the next cycle.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A trigger signal and a signal Value at 0. Effect Parent reads the trigger and, the first time it sees 1, creates effect
+    ///   Child. Child reads Value, sets it to 1 while it is 0, and records the cycle of each run.
+    ///
+    /// Steps:
+    /// - Set the trigger to 1.
+    ///
+    /// Expected:
+    /// - Child ran twice: first in Parent's cycle, then in the next cycle; Value is 1.
+    /// </remarks>
+    [Fact]
+    public void Create_InsideAFlush_RunsAtOnceAndRequeuesForTheNextCycle() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> trigger = Signal.Create(0);
+            Signal<int> value = Signal.Create(0);
+            var childCycles = new List<ulong>();
+            ulong parentCycle = 0;
+            Effect? child = null;
+            using Effect parent = Effect.Create(() =>
+            {
+                if (trigger.Get() == 1 && child is null)
+                {
+                    parentCycle = ReactiveRuntime.CycleCount;
+                    child = Effect.Create(() =>
+                    {
+                        childCycles.Add(ReactiveRuntime.CycleCount);
+                        if (value.Get() == 0)
+                        {
+                            value.Set(1);
+                        }
+                    });
+                }
+            });
+
+            try
+            {
+                trigger.Set(1);
+
+                Assert.Equal([parentCycle, parentCycle + 1], childCycles);
+                Assert.Equal(1, value.Get());
+            }
+            finally
+            {
+                child?.Dispose();
+            }
+        });
+
+    /// <summary>
+    /// An effect that disposes itself while it runs is not queued again, even if it made itself dirty.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A signal at 0. An effect that reads it; once told to, it also sets the signal to the next value (making itself dirty)
+    ///   and disposes itself.
+    ///
+    /// Steps:
+    /// - Tell it to, and set the signal to 10. Then set the signal to 20.
+    ///
+    /// Expected:
+    /// - The effect ran twice (creation and the set to 10), not again; nothing is queued; the signal has no observers.
+    /// </remarks>
+    [Fact]
+    public void Effect_DisposingItselfWhileDirty_IsNotQueuedAgain() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> source = Signal.Create(0);
+            int runs = 0;
+            bool disposeNow = false;
+            Effect? self = null;
+            self = Effect.Create(() =>
+            {
+                runs++;
+                int value = source.Get();
+                if (disposeNow)
+                {
+                    source.Set(value + 1);
+                    self!.Dispose();
+                }
+            });
+
+            disposeNow = true;
+            source.Set(10);
+            source.Set(20);
+
+            Assert.Equal(2, runs);
+            Assert.Equal(0, ReactiveRuntime.QueuedCount);
+            Assert.Equal(0, source.ObserverCount);
+            Assert.Equal(20, source.Get());
+        });
+
+    /// <summary>
+    /// An effect disposed while it waits in the queue does not run.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A signal. Effect Deep reads it through a computed value and counts its runs; effect Shallow reads it directly and,
+    ///   when it sees 1, disposes Deep. Shallow runs first (lower depth).
+    ///
+    /// Steps:
+    /// - Set the signal to 1 (both are queued; Shallow disposes Deep before Deep's turn).
+    ///
+    /// Expected:
+    /// - Deep did not run for the set.
+    /// </remarks>
+    [Fact]
+    public void Effect_DisposedWhileQueued_DoesNotRun() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> source = Signal.Create(0);
+            Computed<int> through = Computed.Create(() => source.Get() + 1);
+            int deepRuns = 0;
+            var deep = Effect.Create(() =>
+            {
+                _ = through.Get();
+                deepRuns++;
+            });
+            using Effect shallow = Effect.Create(() =>
+            {
+                if (source.Get() == 1)
+                {
+                    deep.Dispose();
+                }
+            });
+
+            source.Set(1);
+
+            Assert.True(shallow.Depth < deep.Depth);
+            Assert.Equal(1, deepRuns);
+        });
+
+    /// <summary>
+    /// Disposing a computed value does not notify its readers: a reader runs again only when another source changes, and its
+    /// read then throws.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A handler that records what it receives. A computed value of signal A; an effect reads the computed value and signal B.
+    ///
+    /// Steps:
+    /// - Dispose the computed value; set A; then set B.
+    ///
+    /// Expected:
+    /// - Setting A did not run the effect (the computed value no longer reads A).
+    /// - Setting B ran it, and its read of the computed value threw <see cref="ObjectDisposedException"/>, which was reported.
+    /// </remarks>
+    [Fact]
+    public void Computed_DisposedWhileRead_ReaderThrowsOnItsNextRun() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> a = Signal.Create(0);
+            Signal<int> b = Signal.Create(0);
+            Computed<int> computed = Computed.Create(() => a.Get() + 1);
+            var reported = new List<Exception>();
+            Action<Exception> previous = ReactiveRuntime.UnhandledExceptionHandler;
+            ReactiveRuntime.UnhandledExceptionHandler = reported.Add;
+            int runs = 0;
+            try
+            {
+                using Effect effect = Effect.Create(() =>
+                {
+                    runs++;
+                    _ = b.Get();
+                    _ = computed.Get();
+                });
+
+                computed.Dispose();
+                a.Set(1);
+                int runsAfterA = runs;
+                b.Set(1);
+
+                Assert.Equal(1, runsAfterA);
+                Assert.Equal(2, runs);
+                Assert.IsType<ObjectDisposedException>(Assert.Single(reported));
+            }
+            finally
+            {
+                ReactiveRuntime.UnhandledExceptionHandler = previous;
+            }
+        });
+
+    /// <summary>
     /// A disposed computed value throws when read and no longer reads its sources.
     /// </summary>
     /// <remarks>

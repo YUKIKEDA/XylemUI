@@ -47,7 +47,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | not-started | —     |                                            |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | not-started | —     |                                            |
 | S8  | テキスト LTR/CJK（HarfBuzz + FreeType の静的リンク + アトラス）                                       | not-started | —     |                                            |
-| S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測                                        | not-started | —     |                                            |
+| S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測。Computed の所有（Scope か、読み手ゼロで自動解除か） | not-started | —     |                                            |
 | M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測） | not-started | —     | §11.3                                      |
 | L1  | Block/Flex の残り（wrap、justify / align、gap、`Percent` / `MinContent` / `MaxContent`）              | not-started | —     | §3.2                                       |
 | V1  | Button / Text / Column がクリックできる                                                               | not-started | —     |                                            |
