@@ -138,7 +138,6 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
             }
 
             int runsBefore = runs;
-            long jitAtStart = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true);
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 101; i <= 100 + Sets; i++)
             {
@@ -146,34 +145,6 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
             }
 
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-            // TEMPORARY (S6a review): diagnose the 7,112 bytes seen on the macOS runner. Removed before merge.
-            if (OperatingSystem.IsMacOS())
-            {
-                var report = new System.Text.StringBuilder();
-                report
-                    .Append("first=")
-                    .Append(allocated)
-                    .Append("B/jit")
-                    .Append(System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true) - jitAtStart)
-                    .Append(';');
-                int next = 100 + Sets + 1;
-                for (int w = 0; w < 5; w++)
-                {
-                    long jitBefore = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true);
-                    long b = GC.GetAllocatedBytesForCurrentThread();
-                    for (int i = 0; i < 2_000; i++)
-                    {
-                        source.Set(next++);
-                    }
-
-                    long a = GC.GetAllocatedBytesForCurrentThread() - b;
-                    long jit = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true) - jitBefore;
-                    report.Append(" w").Append(w).Append('=').Append(a).Append("B/jit").Append(jit);
-                }
-
-                Assert.Fail("DIAG " + report);
-            }
 
             Assert.Equal(0, allocated);
             Assert.Equal(runsBefore + Sets, runs);
