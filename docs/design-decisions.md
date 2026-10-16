@@ -53,7 +53,7 @@ Rejected:
 
 Decision:
   スケジューラはトポロジカル Depth の昇順。再評価のたびに Depth を 0 から再構築する。Computed は lazy（Effect 実行前に pull）。
-  `Dependencies` は `ReactiveNodeId`（Signal と Computation）。
+  依存元（`Sources`）は `ReactiveNodeId`（Signal と Computation）。
   Depth は実行順序のヒント。正しさは Version と pull。
   `MaxFlushIterations` は stabilization 回数の上限であり、循環検出ではない。
   依存追跡はランタイム追跡。Signal の API は `Get()` / `Set()` のメソッド。

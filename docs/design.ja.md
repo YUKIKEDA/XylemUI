@@ -151,7 +151,7 @@ public enum ComputationKind { Computed, Effect }
 
 public enum ComputationStatus
 {
-    Clean,    // 現在のDependenciesに対して値が新しい
+    Clean,    // 現在の Sources に対して値が新しい
     Dirty,    // 少なくとも1つのdependencyが変化した
     Queued,   // Effect のみ。scheduler queue に投入済み
     Running,  // 再評価中
