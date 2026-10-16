@@ -62,7 +62,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
   - trait → interface（`I` 接頭辞）
   - `Array[T]` → `List<T>` または `T[]`、`Map[K, V]` → `Dictionary<TKey, TValue>`
   - `Float` → `float`、`UInt64` → `ulong`
-  - `abort()` → `Invariant.Fail(...)`。debug ビルドでは `Debug.Fail` で止める。release ビルドでは `Environment.FailFast` でプロセスを終了する（状態の復旧は試みない。MoonBit 版の `abort` と同じクラッシュ・ファスト方針）
+  - `abort()` → `Invariant.Fail(...)`。debug ビルドでは `InvariantViolationException` を投げる（デバッガはそこで止まり、テストは捕捉して確かめられる。`Debug.Fail` はデバッガがないとプロセスを終了させ、テストで確かめられないため使わない。S2）。release ビルドでは `Environment.FailFast` でプロセスを終了する（状態の復旧は試みない。MoonBit 版の `abort` と同じクラッシュ・ファスト方針）
   - 命名は C# の規約に従う（型・メソッド・プロパティは PascalCase、private フィールドは `_camelCase`）
 
 ### 0.2 MoonBit 版からの主な変更点
@@ -540,7 +540,7 @@ internal struct LayoutRequest
 
 internal sealed class UiTree
 {
-    private readonly Arena<UiNode> _nodes;                        // §2.5参照
+    internal readonly Arena<UiNode> Nodes = new();                // §2.5参照
     internal List<LayoutRequest> LayoutRoots = new();             // dirtyな境界、またはboundaryのない最上位。制約源付き
     private List<LayoutRequest> _layoutRootsSpare = new();        // TakeLayoutRoots で入れ替える予備（毎フレームのアロケーションを避ける）
 }
@@ -598,12 +598,12 @@ static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
         ref var n = ref tree.GetRef(curr);
         n.Dirty.SubtreeDirty |= flags;  // 起点を含む経路上は全てSubtreeDirty
         n.Dirty.Epoch++;
-        if (IsLayoutBoundaryForInvalidation(in n) || n.Parent is not { } parent)
+        if (IsLayoutBoundaryForInvalidation(in n) || n.Parent.IsNone)
         {
             EnqueueLayoutRoot(tree, curr, null, LayoutReason.IntrinsicSizeChanged);
             return;
         }
-        curr = parent;
+        curr = n.Parent;
     }
 }
 ```
@@ -679,6 +679,7 @@ static void RunLayoutPass(UiTree tree)
             return;
         }
 
+        using var noAllocation = tree.Nodes.ForbidAllocation();  // Layout pass はノードを生成しない（§2.5、不変条件 12）
         var current = tree.TakeLayoutRoots();   // 作業集合を取り出し、本体は空の予備リストと入れ替える
         current.Sort(tree.DepthComparer);       // キャッシュ済みの IComparer。ラムダを毎回作らない
         foreach (var req in current)
@@ -759,7 +760,7 @@ static void LayoutPass(UiTree tree, NodeHandle handle, AvailableSpace available)
 `LayoutFlex`（§3.2で詳細化）は内部で以下のような処理になる（擬似コード）。
 
 ```csharp
-static Rect LayoutFlex(UiTree tree, NodeHandle parent, NodeHandle? firstChild, FlexProps props, AvailableSpace available)
+static Rect LayoutFlex(UiTree tree, NodeHandle parent, NodeHandle firstChild, FlexProps props, AvailableSpace available)
 {
     // 1. 各子の固有サイズ(intrinsic size)を計測するため、必要な子を先行してLayoutPassする
     //    (例: flex-basis: auto の子は内容依存サイズを知る必要がある)
@@ -785,57 +786,33 @@ static Rect LayoutFlex(UiTree tree, NodeHandle parent, NodeHandle? firstChild, F
 
 ```csharp
 // ハンドルは型引数で種類を区別する（NodeHandle と ScopeHandle を取り違えない）
-public readonly record struct Handle<T>(int Index, ulong Generation);
+public readonly record struct Handle<T>(int Index, ulong Generation)
+{
+    public bool IsNone => Generation == 0;   // default(Handle<T>)。何も指さない
+}
 
 // global using で別名を付ける
 global using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 global using ScopeHandle = XylemUI.Handle<XylemUI.ScopeData>;
 
-internal struct ArenaSlot<T> where T : struct
-{
-    public T Value;
-    public ulong Generation;
-    public bool IsAlive;
-}
-
 internal sealed class Arena<T> where T : struct
 {
-    private ArenaSlot<T>[] _slots = new ArenaSlot<T>[256];
-    private int _count;
-    private readonly Stack<int> _freeList = new();
-
-    public bool IsAlive(Handle<T> h)
-        => (uint)h.Index < (uint)_count
-           && _slots[h.Index].IsAlive
-           && _slots[h.Index].Generation == h.Generation;
-
-    // ソフト文脈用（§下記ポリシー）。破棄済み・再利用済みスロットは false
-    public bool TryGet(Handle<T> h, out T value)
-    {
-        if (!IsAlive(h)) { value = default; return false; }
-        value = _slots[h.Index].Value;  // コピーを返す
-        return true;
-    }
-
-    // 内部リンク用。stale なら不変条件違反
-    public ref T GetRef(Handle<T> h)
-    {
-        if (!IsAlive(h)) Invariant.Fail("stale handle");
-        return ref _slots[h.Index].Value;
-    }
-
-    public void Free(Handle<T> h)
-    {
-        ref var slot = ref _slots[h.Index];
-        slot.IsAlive = false;
-        slot.Generation++;        // 以降このindexへの古いhandleを全て無効化する
-        slot.Value = default;     // 保持していたマネージド参照を落とし、GCに回収させる
-        _freeList.Push(h.Index);
-    }
+    public Handle<T> Allocate(in T value);           // 空きスロットを先に使う。ForbidAllocation の中では不変条件違反
+    public bool IsAlive(Handle<T> handle);
+    public bool TryGet(Handle<T> handle, out T value); // ソフト文脈用（下記ポリシー）。破棄済み・再利用済みは false。コピーを返す
+    public ref T GetRef(Handle<T> handle);            // 内部リンク用。stale なら不変条件違反
+    public void Free(Handle<T> handle);               // 世代を進め、値を default にしてマネージド参照を落とす。stale なら不変条件違反
+    public int GrowthCount { get; }                  // 配列が再確保された回数
+    public AllocationForbidden ForbidAllocation();    // 確保を禁止する区間。using で終える。入れ子にできる
 }
+
+// スロットは { T Value; ulong Generation; bool IsAlive; }。解放したスロットはスタックに積んで再利用する。
+// 拡張は [NoInlining] の別メソッドで、2倍に伸ばす（.cursor/rules/perf.mdc の速い経路と遅い経路）。
 ```
 
-**`ref` の寿命（C# 版の注意点）:** `UiNode` は値型なので、`TryGet` はコピーを返し、`GetRef` はスロット上の実体への `ref` を返す。`ref` 経由の書き込みはスロットに反映されるが、**アリーナ配列が容量不足で再確保されると、それ以前に取った `ref` は古い配列を指し続け、以降の書き込みは黙って失われる（例外は出ない）**。したがって `ref` は、スロットの確保を伴う処理（ノード生成・Materialization・`For` の Create）をまたいで保持しない。layout 相当の走査は **`FirstChild` / `NextSibling` を値コピーしてから再帰し、再帰の後に `GetRef` を取り直して `Rect` 等を書き戻す**。Layout pass はノードを生成しないが、この規則は全ての走査で統一する。debug ビルドでは `Arena` に再確保回数のカウンタを持たせ、`ref` を取った時点と書き戻し時点で値が変わっていれば assert する。`ref` をフィールド・ラムダ・`async` メソッドに持ち出せないことはコンパイラが保証する。
+**「リンクなし」は `default`:** スロットの世代は 1 から始まるので、`default(Handle<T>)`（Index 0・世代 0）は決して生きた値を指さない（`IsNone`）。構造体に保存するリンク（`Parent` / `FirstChild` / `NextSibling`、Scope の親、フォーカス）は `Handle<T>` のまま持ち、リンクがないことを `default` で表す。`Nullable<Handle<T>>` は bool と詰め物の分だけ大きく（16 → 24 バイト）、リンクはノードごとに3本あるため使わない。メソッドの戻り値（`HitTest` の「当たりなし」など）は nullable でよい。S2 のレビューで、世代を 0 から始めていたために `default` が最初のスロットを指していたことが分かり、こう決めた。
+
+**`ref` の寿命（C# 版の注意点）:** `UiNode` は値型なので、`TryGet` はコピーを返し、`GetRef` はスロット上の実体への `ref` を返す。`ref` 経由の書き込みはスロットに反映されるが、**アリーナ配列が容量不足で再確保されると、それ以前に取った `ref` は古い配列を指し続け、以降の書き込みは黙って失われる（例外は出ない）**。したがって `ref` は、スロットの確保を伴う処理（ノード生成・Materialization・`For` の Create）をまたいで保持しない。layout 相当の走査は **`FirstChild` / `NextSibling` を値コピーしてから再帰し、再帰の後に `GetRef` を取り直して `Rect` 等を書き戻す**。Layout pass はノードを生成しないが、この規則は全ての走査で統一する。これを2段で守る。(1) ノードを生成しないと決まっている pass（Layout pass、§2.4.1）は `ForbidAllocation()` の区間で走り、その中の確保は debug・release とも不変条件違反になる。(2) 確保を伴う処理（Materialization 等）で `ref` を持つ必要がある箇所は、`GrowthCount` を取っておき、書き戻しの前に比べる（debug の assert）。S2 で、再確保をまたいだ `ref` への書き込みが黙って失われることを再現し、(1) が働くことを確かめた。`ref` をフィールド・ラムダ・`async` メソッドに持ち出せないことはコンパイラが保証する。
 
 MoonBit 版の S2（struct が参照型で、`get` が生きた参照を返すため再帰先の書き込みが見えてしまう）とは前提が逆だが、採るべきパターン（リンクを値コピーしてから再帰し、最後に書き戻す）は同じである。
 
@@ -850,7 +827,7 @@ internal struct ScopeData
 {
     public List<Action>? Cleanups;       // 遅延確保。cleanup を持たない Scope ではアロケーションしない
     public List<ScopeHandle>? Children;
-    public ScopeHandle? Parent;
+    public ScopeHandle Parent;           // default はルート（親なし）
 }
 
 internal sealed class ScopeArena
@@ -863,9 +840,9 @@ internal struct UiNode
 {
     public NodeId Id;
     public ScopeHandle Scope;            // Scope本体はScopeArena側に置く
-    public NodeHandle? Parent;
-    public NodeHandle? FirstChild;
-    public NodeHandle? NextSibling;
+    public NodeHandle Parent;            // default（IsNone）はリンクなし。Nullable にしない（下記）
+    public NodeHandle FirstChild;
+    public NodeHandle NextSibling;
     public DirtyState Dirty;
     public LayoutState Layout;
     public TextState Text;
@@ -1272,7 +1249,7 @@ static void SynchronousResizePaint(RenderGuard guard, UiTree tree, IRenderer ren
 
 **マネージドオブジェクトをネイティブ層（Win32の`WndProc`コールバック、OS のタイマーや D&D のコールバック等）から参照させる際のライフサイクルを定義する。** .NET の GC はコンパクションでオブジェクトを移動させるため、マネージドオブジェクトのアドレスを `SetWindowLongPtr(hwnd, GWLP_USERDATA, pointer)` のように OS 側に直接渡すことはできない（ピン留めすれば可能だが、長期間のピン留めはヒープの断片化を招く）。OS 側だけが参照しているオブジェクトは GC から見ると到達不能であり、回収される。
 
-**採用: OS側には世代付きの整数IDのみを渡す。** `NativeHandleTable` は §2.5 の `Arena` と同じ世代管理を使い、`(index, generation)` を 64bit の `nint` に詰めて OS 側に渡す。テーブル自体が対象オブジェクトへの強参照を持つので、登録中は GC に回収されない。`GCHandle.Alloc` + `GCHandle.ToIntPtr` でも同じことはできるが、解放済みの `GCHandle` を使うと未定義動作になり、stale 検出ができないため採らない。
+**採用: OS側には世代付きの整数IDのみを渡す。** `NativeHandleTable` は §2.5 の `Arena` と同じ考え方の世代管理を持ち、`(index, generation)` を 64bit の `nint` に詰めて OS 側に渡す。`Arena<T>` とは統合しない（S2）。`Arena<T>` は Core の internal な値型の格納で、`NativeHandleTable` は Platform 側がオブジェクト参照を OS に結びつける表であり、格納するものも置き場所（アセンブリ）も違うため。テーブル自体が対象オブジェクトへの強参照を持つので、登録中は GC に回収されない。`GCHandle.Alloc` + `GCHandle.ToIntPtr` でも同じことはできるが、解放済みの `GCHandle` を使うと未定義動作になり、stale 検出ができないため採らない。
 
 ```csharp
 internal static class NativeHandleTable
@@ -2318,8 +2295,8 @@ Widget event（capture/bubbleでコンポーネントに配送）
 internal struct FocusScope
 {
     public NodeHandle Owner;               // このスコープを持つノード(Window/Dialog/Menu等)
-    public FocusScopeHandle? Parent;       // 親スコープ（ルートウィンドウのスコープはnull）
-    public NodeHandle? FocusedChild;       // このスコープ内で現在フォーカスされているノード
+    public FocusScopeHandle Parent;        // 親スコープ（ルートウィンドウのスコープは default）
+    public NodeHandle FocusedChild;        // このスコープ内で現在フォーカスされているノード（なければ default）
     public bool IsModal;                   // trueの場合、このスコープの外へフォーカス・イベントが漏れない(§7のcaptureで遮断)
 }
 
@@ -2743,7 +2720,7 @@ Invariant 9  GPUバックエンド（§5.2）はUiNodeを直接参照しない�
 Invariant 10 PlatformバックエンドはCore engine型（UiNode, UiTree, Signal等）を直接変更しない。
              OS入力・通知はUiMessage等の公開メッセージ/APIを経由してのみCoreへ伝達される
 Invariant 11 Windows同期リサイズでは、RTV/DSV解放 → ResizeBuffers → ビュー再生成の後にのみ描画する（§2.11.1）
-Invariant 12 アリーナ要素への ref は、スロット確保を伴う処理をまたいで保持しない（§2.5）
+Invariant 12 アリーナ要素への ref は、スロット確保を伴う処理をまたいで保持しない（§2.5）。ノードを生成しない pass は ForbidAllocation の中で走る
 Invariant 13 マネージド例外は [UnmanagedCallersOnly] の境界を越えてネイティブ側へ伝播させない（§2.11.1）
 Invariant 14 疑似状態の変化はレイアウトを無効化しない（PaintStyle は Paint 系のプロパティしか持たない、§2.13）
 Invariant 15 フレームワーク内の時刻とタイマーは TimeProvider 経由でのみ得る（§12.2）

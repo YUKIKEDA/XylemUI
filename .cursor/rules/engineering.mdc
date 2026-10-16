@@ -29,7 +29,7 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 ## Gate
 
-`./build.ps1` before a PR. It runs tool restore, the CSharpier check, restore, a Release build, and every test project. Hosted CI runs the same script.
+`./build.ps1` before a PR. It runs tool restore, the CSharpier check, restore, then for Release and for Debug a build and every test project. Release is what ships; Debug runs the checks that only exist there (`Invariant.Fail` throws instead of ending the process). Hosted CI runs the same script.
 
 If `dotnet --list-sdks` does not show a 10.0 SDK, install it; do not stop to ask.
 
