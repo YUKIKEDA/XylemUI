@@ -374,6 +374,312 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Messages and await continuations share one queue and run in the order they were queued.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A message handler and continuations that append to one list.
+    ///
+    /// Steps:
+    /// - Before Run, queue message 0, continuation A, message 1, continuation B, alternating Post and SynchronizationContext.Post.
+    /// - Run the loop until all four ran.
+    ///
+    /// Expected:
+    /// - The order is message 0, A, message 1, B.
+    /// </remarks>
+    [Fact]
+    public void MessagesAndContinuations_QueuedInTurn_RunInQueueOrder() =>
+        ui.Invoke(() =>
+        {
+            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
+            SynchronizationContext context = dispatcher.SynchronizationContext;
+            var order = new List<string>();
+            dispatcher.MessageHandler = message => order.Add("m" + ((Numbered)message).Sequence);
+            try
+            {
+                using var watchdog = new LoopWatchdog();
+                LoopTestHelpers.RunLoop(
+                    watchdog,
+                    () => order.Count == 4,
+                    () =>
+                    {
+                        dispatcher.Post(new Numbered(0, 0));
+                        context.Post(_ => order.Add("A"), null);
+                        dispatcher.Post(new Numbered(0, 1));
+                        context.Post(_ => order.Add("B"), null);
+                    }
+                );
+
+                Assert.False(watchdog.Expired);
+            }
+            finally
+            {
+                dispatcher.MessageHandler = null;
+            }
+
+            Assert.Equal(["m0", "A", "m1", "B"], order);
+        });
+
+    /// <summary>
+    /// Work queued while the queue drains waits for the next iteration, so a handler that keeps queuing cannot hold the loop.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A message handler that posts the next message each time, 20 messages in all.
+    ///
+    /// Steps:
+    /// - Post the first message before Run; run the loop and record how many were handled at each iteration.
+    ///
+    /// Expected:
+    /// - One message was handled by the end of the first iteration.
+    /// - No iteration handled more than one; the loop took at least 20 iterations.
+    /// </remarks>
+    [Fact]
+    public void Drain_WorkQueuedWhileDraining_WaitsForTheNextIteration() =>
+        ui.Invoke(() =>
+        {
+            const int Total = 20;
+            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
+            int handled = 0;
+            dispatcher.MessageHandler = _ =>
+            {
+                handled++;
+                if (handled < Total)
+                {
+                    dispatcher.Post(new Numbered(0, handled));
+                }
+            };
+            var handledAtIteration = new List<int>();
+            try
+            {
+                using var watchdog = new LoopWatchdog();
+                LoopTestHelpers.RunLoop(
+                    watchdog,
+                    () =>
+                    {
+                        handledAtIteration.Add(handled);
+                        return handled == Total;
+                    },
+                    () => dispatcher.Post(new Numbered(0, 0))
+                );
+
+                Assert.False(watchdog.Expired);
+            }
+            finally
+            {
+                dispatcher.MessageHandler = null;
+            }
+
+            Assert.Equal(1, handledAtIteration[0]);
+            for (int i = 1; i < handledAtIteration.Count; i++)
+            {
+                Assert.InRange(handledAtIteration[i] - handledAtIteration[i - 1], 0, 1);
+            }
+
+            Assert.True(handledAtIteration.Count >= Total);
+        });
+
+    /// <summary>
+    /// A continuation that throws is reported, and the work after it still runs.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A callback exception handler that records what it receives.
+    ///
+    /// Steps:
+    /// - Before Run, post a continuation that throws and one that records that it ran, through the synchronization context.
+    /// - Run the loop until the second ran.
+    ///
+    /// Expected:
+    /// - One exception was reported; the second continuation ran.
+    /// </remarks>
+    [Fact]
+    public void Continuation_Throws_IsReportedAndLaterWorkRuns() =>
+        ui.Invoke(() =>
+        {
+            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
+            SynchronizationContext context = dispatcher.SynchronizationContext;
+            Action<Exception> previous = Win32MessageLoop.CallbackExceptionHandler;
+            var reported = new List<Exception>();
+            Win32MessageLoop.CallbackExceptionHandler = reported.Add;
+            bool laterRan = false;
+            try
+            {
+                using var watchdog = new LoopWatchdog();
+                LoopTestHelpers.RunLoop(
+                    watchdog,
+                    () => laterRan,
+                    () =>
+                    {
+                        context.Post(_ => throw new InvalidOperationException("Thrown from a continuation on purpose."), null);
+                        context.Post(_ => laterRan = true, null);
+                    }
+                );
+
+                Assert.False(watchdog.Expired);
+            }
+            finally
+            {
+                Win32MessageLoop.CallbackExceptionHandler = previous;
+            }
+
+            Assert.True(laterRan);
+            Assert.IsType<InvalidOperationException>(Assert.Single(reported));
+        });
+
+    /// <summary>
+    /// Send on the UI thread runs the callback at once, without queuing it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The loop is not running.
+    ///
+    /// Steps:
+    /// - Call Send on the UI thread, then Drain.
+    ///
+    /// Expected:
+    /// - The callback had run when Send returned; Drain then found nothing to run.
+    /// </remarks>
+    [Fact]
+    public void Send_OnTheUiThread_RunsAtOnce() =>
+        ui.Invoke(() =>
+        {
+            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
+            bool ran = false;
+
+            dispatcher.SynchronizationContext.Send(_ => ran = true, null);
+
+            Assert.True(ran);
+            Assert.Equal(0, dispatcher.Drain(Win32MessageLoop.CallbackExceptionHandler));
+        });
+
+    /// <summary>
+    /// Send from another thread runs the callback on the UI thread and returns only after it ran.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The loop runs; a worker thread starts at the first iteration.
+    ///
+    /// Steps:
+    /// - The worker calls Send with a callback that records its thread and that it ran, then records what it saw on return.
+    ///
+    /// Expected:
+    /// - The callback ran on the UI thread, and it had run when Send returned on the worker.
+    /// </remarks>
+    [Fact]
+    public void Send_FromAnotherThread_RunsOnTheUiThreadAndWaits() =>
+        ui.Invoke(() =>
+        {
+            SynchronizationContext context = Win32MessageLoop.Dispatcher.SynchronizationContext;
+            bool ranOnUiThread = false;
+            bool ran = false;
+            bool ranWhenSendReturned = false;
+            bool returned = false;
+
+            RunWorkerDuringLoop(
+                () =>
+                {
+                    context.Send(
+                        _ =>
+                        {
+                            ranOnUiThread = UiThread.CheckAccess();
+                            Volatile.Write(ref ran, true);
+                        },
+                        null
+                    );
+                    ranWhenSendReturned = Volatile.Read(ref ran);
+                    Volatile.Write(ref returned, true);
+                },
+                () => Volatile.Read(ref returned)
+            );
+
+            Assert.True(ranOnUiThread);
+            Assert.True(ranWhenSendReturned);
+        });
+
+    /// <summary>
+    /// Send from another thread throws the callback's exception to the caller, not to the callback exception handler.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A callback exception handler that records what it receives.
+    /// - The loop runs; a worker thread starts at the first iteration.
+    ///
+    /// Steps:
+    /// - The worker calls Send with a callback that throws, and catches what Send throws.
+    ///
+    /// Expected:
+    /// - The worker caught the same exception; nothing was reported.
+    /// </remarks>
+    [Fact]
+    public void Send_FromAnotherThreadAndTheCallbackThrows_ThrowsToTheCaller() =>
+        ui.Invoke(() =>
+        {
+            SynchronizationContext context = Win32MessageLoop.Dispatcher.SynchronizationContext;
+            Action<Exception> previous = Win32MessageLoop.CallbackExceptionHandler;
+            var reported = new List<Exception>();
+            Win32MessageLoop.CallbackExceptionHandler = reported.Add;
+            var thrown = new InvalidOperationException("Thrown from a Send callback on purpose.");
+            Exception? caught = null;
+            bool returned = false;
+            try
+            {
+                RunWorkerDuringLoop(
+                    () =>
+                    {
+                        try
+                        {
+                            context.Send(_ => throw thrown, null);
+                        }
+                        catch (Exception exception)
+                        {
+                            caught = exception;
+                        }
+
+                        Volatile.Write(ref returned, true);
+                    },
+                    () => Volatile.Read(ref returned)
+                );
+            }
+            finally
+            {
+                Win32MessageLoop.CallbackExceptionHandler = previous;
+            }
+
+            Assert.Same(thrown, caught);
+            Assert.Empty(reported);
+        });
+
+    /// <summary>
+    /// A message drained with no message handler fails the invariant instead of being dropped.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Debug build (release ends the process). No message handler.
+    ///
+    /// Steps:
+    /// - Post a message on the UI thread and drain.
+    ///
+    /// Expected:
+    /// - <see cref="InvariantViolationException"/>.
+    /// </remarks>
+    [Fact]
+    public void Drain_MessageWithNoHandler_FailsTheInvariant()
+    {
+#if !DEBUG
+        Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
+#endif
+        ui.Invoke(() =>
+        {
+            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
+            dispatcher.MessageHandler = null;
+            dispatcher.Post(new Numbered(0, 0));
+
+            Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Win32MessageLoop.CallbackExceptionHandler));
+        });
+    }
+
+    /// <summary>
     /// Draining off the UI thread throws.
     /// </summary>
     /// <remarks>
@@ -393,6 +699,42 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         ui.Invoke(() => dispatcher = Win32MessageLoop.Dispatcher);
 
         Assert.Throws<InvalidOperationException>(() => dispatcher.Drain(_ => { }));
+    }
+
+    // Runs the loop, starts work on a worker thread at the first iteration, and stops when isDone returns true.
+    private static void RunWorkerDuringLoop(Action work, Func<bool> isDone)
+    {
+        Thread? worker = null;
+        using var watchdog = new LoopWatchdog();
+        try
+        {
+            LoopTestHelpers.RunLoop(
+                watchdog,
+                () =>
+                {
+                    if (worker is null)
+                    {
+                        // The wake lets the loop see isDone after the worker finished; nothing else wakes it then.
+                        worker = new Thread(() =>
+                        {
+                            work();
+                            Win32MessageLoop.Wake();
+                        });
+                        worker.Start();
+                    }
+
+                    return isDone();
+                },
+                () => { }
+            );
+        }
+        finally
+        {
+            // A worker blocked in Send after the loop stopped would never return; the bound keeps the run from hanging.
+            _ = worker?.Join(TimeSpan.FromSeconds(5));
+        }
+
+        Assert.False(watchdog.Expired);
     }
 
     private sealed record Numbered(int Worker, int Sequence) : UiMessage;

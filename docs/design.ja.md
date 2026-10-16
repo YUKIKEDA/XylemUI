@@ -1292,7 +1292,13 @@ internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 
 **取り出し（`UiDispatcher.Drain`、Core）:** UI スレッドだけが呼べる。呼んだ時点でキューにあった件数だけを実行し、実行中に積まれたもの（すぐ完了する `await` の継続など）は次の反復に回す。取り出しが終わらなくなるのを防ぐためである。ハンドラや継続が投げた例外は Platform の例外ハンドラに渡し、残りを続ける。同期描画（§2.11.1）の中では何もしない（`SynchronousRenderGuard.IsActive` なら 0 件）。Platform のループは、OS メッセージを処理した後、待機に入る前に毎回取り出す。
 
-**`Send` の扱い:** `SynchronizationContext.Send` は、UI スレッドからならその場で実行し、他のスレッドからならキューに積んで実行が終わるまで待つ。UI スレッドがループを回していない間（同期描画の最中や、ループの開始前）に他のスレッドから `Send` すると待ち続けるので、フレームワーク自身は `Send` を使わない。
+取り出すのはメインループだけなので、OS のモーダルループ（タイトルバーのドラッグ、リサイズ、システムメニュー、`MessageBox`）の間は、キューのメッセージも `await` の継続も止まり、モーダルループが終わってから実行される。起床のメッセージはメッセージ専用ウィンドウに送るので、モーダルループの間に捨てられることはない。
+
+`MessageHandler` が設定されていないときにメッセージを取り出したら、不変条件違反（§0.1）にする。黙って捨てると取りこぼしに気づけないためである。
+
+`ConcurrentQueue` は使い終わったセグメントを捨てるので、継続が続くと定常状態でもアロケーションが出る。この経路はフレーム経路ではないので Zero-Alloc の対象外とする。
+
+**`Send` の扱い:** `SynchronizationContext.Send` は、UI スレッドからならその場で実行し、他のスレッドからならキューに積んで実行が終わるまで待つ。UI スレッドがループを回していない間（同期描画の最中や、ループの開始前）に他のスレッドから `Send` すると待ち続けるので、フレームワーク自身は `Send` を使わない。UI スレッドからの `Send` は同期描画の中でもその場で実行するので、「同期描画中はアプリのコールバックを実行しない」（§2.11.1）の例外になる。
 
 **async/await との統合（C# 版で追加）:** UI スレッドに独自の `SynchronizationContext` を設定する。`Post` / `Send` は上記のキューと同じ経路で UI スレッドへ継続を積み、起床させる。これにより、イベントハンドラ内の `await` の後の継続は自動的に UI スレッドで再開し、そのまま `Signal.Set` できる。継続はキューから取り出したとき1回ごとに暗黙の `Batch`（§2.2.1）で包む（`Batch` を作る S6 で入れる）。同期リサイズ描画パス（§2.11.1）の実行中は継続を取り出さない。
 
@@ -2455,7 +2461,7 @@ MoonBit 版のスパイク（S1〜S9）で得た知見のうち、OS・GPU の�
 1. **P0: .NET GC特性 + NativeAOT + イベントループ統合**: Signal更新の頻発、UiNodeアリーナへの大量アロケーション、Scope内クロージャの生成（§2.5で注記したリスク）を伴う負荷下で、GCポーズがフレーム予算を圧迫しないか。Workstation GC の concurrent / non-concurrent、`GCSettings.LatencyMode = SustainedLowLatency`、Gen0 予算（`GCgen0size`）の効果を比較する。フレームあたりのアロケーション量は `GC.GetAllocatedBytesForCurrentThread()`、ポーズは `GC.GetTotalPauseDuration()` と EventPipe の GC イベントで測る。§2.11で設計したEvent Loop Waiterのブロッキング待機⇄Vsync待機の切り替えが自然に実装できるか。これが崩れると本ドキュメントのアーキテクチャ全体（Fine-grained reactive、Arena、Scope）の前提が崩れるため、他のどのスパイクより先に検証する。追加の検証項目:
    - (a) NativeAOT ビルドで `[UnmanagedCallersOnly]` の `WndProc` を登録し、`NativeHandleTable`（§2.12）経由でウィンドウオブジェクトを解決できること。`GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true)` を挟んでも結果が正しいこと。
    - (b) §2.11.1の同期リサイズ描画パス（メインループを介さず `WndProc` 内から直接 layout/paint/present を呼ぶ経路）が動作し、`WndProc` 入口の例外バリアが機能すること。
-   - (c) UIスレッド/ワーカースレッドの規約（§11.5のThreading model）: `Channel<UiMessage>` + `PostMessage(WM_NULL)` による起床と、独自 `SynchronizationContext` 経由の `await` 継続が UI スレッドで再開すること。
+   - (c) UIスレッド/ワーカースレッドの規約（§11.5のThreading model）: `UiMessage` のキュー（S5 で `ConcurrentQueue` に確定）+ `PostMessage(WM_NULL)` による起床と、独自 `SynchronizationContext` 経由の `await` 継続が UI スレッドで再開すること。
    - (d) §2.12 の UI スレッドアフィニティ検査（公開 API 入口のスレッド ID 比較）が、他スレッドからの `Signal.Set` を確実に拒否すること。
    - (e) フレームワーク一式（Core + Platform.Windows + Rendering.D3D11）を trim / AOT 警告ゼロでビルドできること。起動時間と、空ウィンドウでのアイドル時メモリ（§5.3）を測る。
 2. **P1: Interop**: TerraFX.Interop.Windows の宣言による Win32 呼び出しと COM vtable 直接呼び出し（D3D11 / DXGI）が NativeAOT で動き、トリミング後のバイナリに未使用の宣言が残らないこと（MoonBit 版の P1「MoonBit ↔ C FFI」に相当）。HarfBuzz / FreeType の静的ライブラリを `DirectPInvoke` で実行ファイルに取り込めること（§9）。

@@ -34,8 +34,8 @@ public sealed class UiDispatcher : IUiDispatcher
     }
 
     /// <summary>
-    /// Gets or sets the handler that applies a message on the UI thread. Messages drained while it is <see langword="null"/> are
-    /// dropped.
+    /// Gets or sets the handler that applies a message on the UI thread. A message drained while it is <see langword="null"/>
+    /// fails the invariant (design §0.1): a message with no handler would be lost without notice.
     /// </summary>
     public Action<UiMessage>? MessageHandler { get; set; }
 
@@ -72,11 +72,17 @@ public sealed class UiDispatcher : IUiDispatcher
         while (ran < count && _queue.TryDequeue(out WorkItem item))
         {
             ran++;
+            Action<UiMessage>? handler = MessageHandler;
+            if (item.Message is not null && handler is null)
+            {
+                Invariant.Fail("A UiMessage was drained with no MessageHandler set.");
+            }
+
             try
             {
                 if (item.Message is { } message)
                 {
-                    MessageHandler?.Invoke(message);
+                    handler!(message);
                 }
                 else
                 {

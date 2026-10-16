@@ -14,8 +14,12 @@ internal sealed class UiSynchronizationContext(UiDispatcher dispatcher) : Synchr
 
     /// <summary>
     /// Runs the callback on the UI thread and waits for it. On the UI thread it runs at once; from another thread it is queued and
-    /// the caller blocks until the UI thread has run it.
+    /// the caller blocks until the UI thread has run it, and an exception from the callback is thrown again to the caller.
     /// </summary>
+    /// <remarks>
+    /// On the UI thread the callback runs even inside a synchronous render, where application callbacks are otherwise deferred
+    /// (design §2.11.1). The framework itself never calls <c>Send</c>.
+    /// </remarks>
     public override void Send(SendOrPostCallback d, object? state)
     {
         ArgumentNullException.ThrowIfNull(d);
