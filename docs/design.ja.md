@@ -1190,7 +1190,7 @@ public interface IFrameScheduler
 - **Windows**: ウィンドウ端のドラッグリサイズ中や、タイトルバードラッグ移動中、OSは`WM_ENTERSIZEMOVE`〜`WM_EXITSIZEMOVE`の間、Win32内部のブロッキングループに入り、通常のメインループは一切回らない。
 - **macOS**: ライブリサイズ中、AppKitは`[NSWindow displayIfNeeded]`相当を同期的にコールバックとして呼び出し、通常の`nextEventMatchingMask`ループは停止する。
 
-**採用: `WndProc`内で`WM_SIZING`/`WM_SIZE`を受け取った際、メインループの再開を待たずその場でスワップチェーン再作成→（必要なら Materialization）→`RunLayoutPass`→`BuildDisplayList`→GPU Present までを直接呼び出す「同期リサイズ描画パス」をプラットフォーム層に設ける。** macOSは`NSView`の`drawRect:`/`viewWillDraw`コールバック内で同様に即座にフレームを完結させるパイプラインを保証する。この経路は§2.11の通常のEvent Loop Waiterとは別の、同期呼び出し専用の経路として扱う。順序は §2.10 と同じく invalidation → materialization → layout → paint とする。仮想化画面では Materialization を省略しない。
+**採用: `WndProc`内で`WM_SIZE`を受け取った際（`WM_SIZING` では描画しない。下記）、メインループの再開を待たずその場でスワップチェーン再作成→（必要なら Materialization）→`RunLayoutPass`→`BuildDisplayList`→GPU Present までを直接呼び出す「同期リサイズ描画パス」をプラットフォーム層に設ける。** macOSは`NSView`の`drawRect:`/`viewWillDraw`コールバック内で同様に即座にフレームを完結させるパイプラインを保証する。この経路は§2.11の通常のEvent Loop Waiterとは別の、同期呼び出し専用の経路として扱う。順序は §2.10 と同じく invalidation → materialization → layout → paint とする。仮想化画面では Materialization を省略しない。
 
 **D3D11スワップチェーン再作成の順序**: D3D11ではサイズ変更時に`IDXGISwapChain::ResizeBuffers`が必須だが、バックバッファを参照するRTV/DSV/SRVが1つでも残っていると`DXGI_ERROR_INVALID_CALL`で失敗する。同期リサイズ描画の前に次の順序を契約する。C# では COM 参照の `Release` を GC やファイナライザに任せず、この順序の中で明示的に呼ぶ（§2.9 の COM 呼び出し方式）。
 
@@ -1204,7 +1204,7 @@ public interface IFrameScheduler
 
 2〜4を飛ばして5へ進むことは、Windowsバックエンドでは禁止する。
 
-**同期パスで許可する処理:** Binding 済みプロパティの読み取り、Computed の pull（layout に入る前）、Materialization、Layout、Paint、Render、Present。**禁止:** アプリケーションイベントコールバック、新規 OS モーダルループ、`MessageBox` 等の再入、Effect 本体のユーザーコード、`SynchronizationContext` に積まれた `await` 継続の実行。OS callback 中に application callback を任意実行しない。
+**同期パスで許可する処理:** Binding 済みプロパティの読み取り、Computed の pull（layout に入る前）、Materialization、Layout、Paint、Render、Present。**禁止:** アプリケーションイベントコールバック、新規 OS モーダルループ、`MessageBox` 等の再入、Effect 本体のユーザーコード、`SynchronizationContext` に積まれた `await` 継続の実行。OS callback 中に application callback を任意実行しない。「禁止」はその場で実行しないという意味であり、アプリのコールバックは捨てずに同期描画の後まで遅らせる（下記のガード）。
 
 **再入性ガード**: OSコールバック内でフルレンダリングを直接実行する設計は再入を起こしうる。同期描画パスの呼び出し前後に再入検出ガードを設ける。
 
@@ -1212,32 +1212,26 @@ C# では `try` / `finally` で正常終了・例外経路の両方でガード�
 
 **例外とネイティブ境界:** `WndProc` は `[UnmanagedCallersOnly]` の静的メソッドとして公開する。マネージド例外がこの境界を越えてネイティブ側へ伝播するとプロセスが終了するため、`WndProc` の入口で全ての例外を捕捉する。通常の例外は診断ログに記録して `DefWindowProc` へ処理を戻し、次の通常フレームで回復を試みる。不変条件違反（`Invariant.Fail`）は捕捉せずにクラッシュ・ファストとする。
 
-**S4（MoonBit 版で検証済み。C# 版で再検証）:** `WndProc` の `WM_SIZE` / `WM_SIZING` から、メインループを介さず layout→present スタブを呼べた。入れ子の `WM_SIZE` は `RenderInProgress` で捨て、同期パス中のアプリコールバックは走らない。ユーザーコールバックを抑止するフラグは **depth** にする。`ResizeBuffers` は S7 で RTV 解放 → ResizeBuffers → RTV 再生成 → Present まで確認した。C# 版では `[UnmanagedCallersOnly]` の `WndProc` を NativeAOT で動かし、同じ結果になることを確かめる。
+**S4（C# 版で検証済み、Issue #15）:** キーボードでのリサイズ（`WM_SYSCOMMAND` の `SC_SIZE`）で OS のモーダルループ（`WM_ENTERSIZEMOVE`〜`WM_EXITSIZEMOVE`）に入り、メインループが止まっている間に、`WM_SIZE` から同期描画が新しいクライアントサイズで走った（Debug・Release で各 3 回、ループ中に 1〜2 回）。入れ子の `WM_SIZE` は捨て、同期描画中に上がったアプリのコールバックは描画の後に順に走り、描画が投げた例外は入口で捕捉されてガードが戻った。`ResizeBuffers` の順序は S7 で確かめる。
+
+**同期描画を呼ぶメッセージ:** `WM_SIZE` だけで描画する。`WM_SIZING` はドラッグ中の「これからなる」矩形を運ぶだけで、その時点ではウィンドウもスワップチェーンもまだ古いサイズのままなので、描画には使わない。最小化（`SIZE_MINIMIZED`）では描画しない。
+
+**ガード（`SynchronousRenderGuard`、Core）:** 同期描画の区間は Core のガードで表す。Platform は `WM_SIZE` で `IsActive` を見て、すでに同期描画の中なら新しい描画を始めずに捨てる（描画が自分でサイズを変えた場合など。次のリサイズか次のフレームが最終サイズを描く）。アプリのコールバックは `RunOrDefer` を通して上げる。同期描画の中では捨てずにキューに積み、一番外側の区間を抜けたときに積んだ順に実行する（クリックや `Closed` を失わない）。1つが投げても残りは最後まで実行し、例外はまとめて投げる（§2.3 の cleanup と同じ）。区間は深さで数え、入れ子と食い違う順で閉じたら不変条件違反とする。
 
 ```csharp
-internal sealed class RenderGuard
+public static class SynchronousRenderGuard
 {
-    private int _depth;
-    public bool InProgress => _depth > 0;
-
-    public Entered Enter()
-    {
-        _depth++;
-        return new Entered(this);
-    }
-
-    // using で受けて Dispose で深さを戻す。ref struct なのでアロケーションしない
-    public readonly ref struct Entered(RenderGuard guard)
-    {
-        public void Dispose() => guard._depth--;
-    }
+    public static bool IsActive { get; }              // 同期描画の区間の中か
+    public static Scope Enter();                      // using で受ける。一番外側の終わりで遅らせたコールバックを実行する
+    public static void RunOrDefer(Action callback);   // 区間の外ならその場で、中なら区間の後で実行する
+    public readonly ref struct Scope { public void Dispose(); }   // 開始時の深さを持ち、順序の食い違いを検出する
 }
 
-static void SynchronousResizePaint(RenderGuard guard, UiTree tree, IRenderer renderer)
+static void SynchronousResizePaint(UiTree tree, IRenderer renderer)   // Platform が WM_SIZE から呼ぶ
 {
-    if (guard.InProgress) return;  // 再入。二重パイプラインは回さず次の通常フレームへ
+    if (SynchronousRenderGuard.IsActive) return;  // 再入。二重パイプラインは回さず次の通常フレームへ
 
-    using (guard.Enter())
+    using (SynchronousRenderGuard.Enter())
     {
         RunMaterializationIfNeeded(tree);  // §2.10 と同順。仮想化 dirty が無ければ no-op
         RunLayoutPass(tree);

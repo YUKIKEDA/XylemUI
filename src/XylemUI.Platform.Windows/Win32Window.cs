@@ -19,6 +19,8 @@ public sealed unsafe class Win32Window : IDisposable
     private const uint WmDestroy = WM.WM_DESTROY;
     private const uint WmNcCreate = WM.WM_NCCREATE;
     private const uint WmNcDestroy = WM.WM_NCDESTROY;
+    private const uint WmSize = WM.WM_SIZE;
+    private const nuint SizeMinimized = SIZE_MINIMIZED;
 
     private static bool _classRegistered;
 
@@ -83,6 +85,19 @@ public sealed unsafe class Win32Window : IDisposable
     public bool IsAlive => _hwnd != HWND.NULL;
 
     /// <summary>
+    /// Gets or sets the synchronous render path: called inside the window procedure with the new client size in physical pixels
+    /// whenever the size changes, also while the OS runs its own modal loop during a resize drag and the message loop is stopped
+    /// (design §2.11.1). It runs inside <see cref="SynchronousRenderGuard"/>; a resize it causes itself is dropped, and
+    /// application callbacks raised meanwhile run after it returns.
+    /// </summary>
+    public Action<Win32Window, int, int>? SynchronousRender { get; set; }
+
+    /// <summary>
+    /// Gets the number of size changes that arrived while a synchronous render was already running and were dropped.
+    /// </summary>
+    internal int DroppedNestedResizes { get; private set; }
+
+    /// <summary>
     /// Gets the native window handle, or zero after the window has been destroyed.
     /// </summary>
     internal HWND Hwnd => _hwnd;
@@ -130,6 +145,32 @@ public sealed unsafe class Win32Window : IDisposable
         }
     }
 
+    private void RenderSynchronously(WPARAM wParam, LPARAM lParam)
+    {
+        if (SynchronousRender is not { } render || (nuint)wParam == SizeMinimized)
+        {
+            return;
+        }
+
+        if (SynchronousRenderGuard.IsActive)
+        {
+            // The render changed the size again (or another window's render did). Running the pipeline inside itself would
+            // render twice and re-enter layout; the next resize or the next frame renders the final size.
+            DroppedNestedResizes++;
+            return;
+        }
+
+        // WM_SIZE packs the new client width and height into the low and high words of lParam.
+        int width = (int)((nuint)lParam & 0xFFFF);
+        int height = (int)(((nuint)lParam >> 16) & 0xFFFF);
+        using (SynchronousRenderGuard.Enter())
+        {
+            render(this, width, height);
+        }
+    }
+
+    private void RaiseClosed() => Closed?.Invoke(this, EventArgs.Empty);
+
     private static void EnsureClassRegistered()
     {
         if (_classRegistered)
@@ -172,7 +213,7 @@ public sealed unsafe class Win32Window : IDisposable
             }
 
             nint id = GetWindowLongPtrW(hwnd, GWLP.GWLP_USERDATA);
-            if (id != 0 && NativeHandleTable.TryResolve(id, out Win32Window? window) && window.HandleMessage(hwnd, message))
+            if (id != 0 && NativeHandleTable.TryResolve(id, out Win32Window? window) && window.HandleMessage(hwnd, message, wParam, lParam))
             {
                 return 0;
             }
@@ -185,7 +226,7 @@ public sealed unsafe class Win32Window : IDisposable
         return DefWindowProcW(hwnd, message, wParam, lParam);
     }
 
-    private bool HandleMessage(HWND hwnd, uint message)
+    private bool HandleMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
     {
         if (MessageHook is { } hook && hook(this, message))
         {
@@ -197,8 +238,12 @@ public sealed unsafe class Win32Window : IDisposable
             case WmClose:
                 _ = DestroyWindow(hwnd);
                 return true;
+            case WmSize:
+                RenderSynchronously(wParam, lParam);
+                return false;
             case WmDestroy:
-                Closed?.Invoke(this, EventArgs.Empty);
+                // An application callback: during a synchronous render it runs after the render returns.
+                SynchronousRenderGuard.RunOrDefer(RaiseClosed);
                 return true;
             case WmNcDestroy:
                 // The last message for this window: no message after it can resolve the id.
