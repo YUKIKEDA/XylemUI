@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
@@ -19,11 +20,17 @@ public sealed unsafe class Win32Window : IDisposable
     private const uint WmDestroy = WM.WM_DESTROY;
     private const uint WmNcCreate = WM.WM_NCCREATE;
     private const uint WmNcDestroy = WM.WM_NCDESTROY;
+    private const uint WmSize = WM.WM_SIZE;
+    private const nuint SizeMinimized = SIZE_MINIMIZED;
 
     private static bool _classRegistered;
 
     private readonly nint _id;
     private HWND _hwnd;
+    private Action? _renderPendingResize;
+    private bool _resizePending;
+    private int _pendingWidth;
+    private int _pendingHeight;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Win32Window"/> class. The window is hidden until <see cref="Show"/> is called.
@@ -83,6 +90,21 @@ public sealed unsafe class Win32Window : IDisposable
     public bool IsAlive => _hwnd != HWND.NULL;
 
     /// <summary>
+    /// Gets or sets the synchronous render path: called inside the window procedure with the new client size in physical pixels
+    /// whenever the size changes, also while the OS runs its own modal loop during a resize drag and the message loop is stopped
+    /// (design §2.11.1). It runs inside <see cref="SynchronousRenderGuard"/>. A size change that arrives while a synchronous
+    /// render is running is not rendered on the spot; the latest one is rendered once after the outermost render ends.
+    /// Application callbacks raised meanwhile also run after it.
+    /// </summary>
+    public Action<Win32Window, int, int>? SynchronousRender { get; set; }
+
+    /// <summary>
+    /// Gets the number of size changes that arrived while a synchronous render was already running and were not rendered on the
+    /// spot. The latest of them is rendered after the outermost render.
+    /// </summary>
+    internal int DroppedNestedResizes { get; private set; }
+
+    /// <summary>
     /// Gets the native window handle, or zero after the window has been destroyed.
     /// </summary>
     internal HWND Hwnd => _hwnd;
@@ -130,6 +152,78 @@ public sealed unsafe class Win32Window : IDisposable
         }
     }
 
+    private void RenderSynchronously(WPARAM wParam, LPARAM lParam)
+    {
+        if (SynchronousRender is null || (nuint)wParam == SizeMinimized)
+        {
+            return;
+        }
+
+        // WM_SIZE packs the new client width and height into the low and high words of lParam.
+        int width = (int)((nuint)lParam & 0xFFFF);
+        int height = (int)(((nuint)lParam >> 16) & 0xFFFF);
+
+        if (SynchronousRenderGuard.IsActive)
+        {
+            // The render changed the size again, or another window's render did. Running the pipeline inside itself would render
+            // twice and re-enter layout. Keep the latest size and render it once when the outermost render ends: inside the OS
+            // modal loop no frame comes to do it (design §2.11.1).
+            DroppedNestedResizes++;
+            _pendingWidth = width;
+            _pendingHeight = height;
+            if (!_resizePending)
+            {
+                _resizePending = true;
+                SynchronousRenderGuard.RunOrDefer(_renderPendingResize ??= RenderPendingResize);
+            }
+
+            return;
+        }
+
+        RenderInsideGuard(width, height);
+    }
+
+    private void RenderPendingResize()
+    {
+        _resizePending = false;
+        if (IsAlive && SynchronousRender is not null)
+        {
+            RenderInsideGuard(_pendingWidth, _pendingHeight);
+        }
+    }
+
+    private void RenderInsideGuard(int width, int height)
+    {
+        // Not a using block: when the render throws and a deferred callback throws at the end of the scope as well, the window
+        // procedure's barrier must see both (a using block would let the second replace the first).
+        Exception? renderError = null;
+        SynchronousRenderGuard.Scope scope = SynchronousRenderGuard.Enter();
+        try
+        {
+            SynchronousRender?.Invoke(this, width, height);
+        }
+        catch (Exception exception)
+        {
+            renderError = exception;
+        }
+
+        try
+        {
+            scope.Dispose();
+        }
+        catch (Exception deferredError) when (renderError is not null)
+        {
+            throw new AggregateException("The synchronous render and a deferred callback both threw.", renderError, deferredError);
+        }
+
+        if (renderError is not null)
+        {
+            ExceptionDispatchInfo.Throw(renderError);
+        }
+    }
+
+    private void RaiseClosed() => Closed?.Invoke(this, EventArgs.Empty);
+
     private static void EnsureClassRegistered()
     {
         if (_classRegistered)
@@ -172,7 +266,7 @@ public sealed unsafe class Win32Window : IDisposable
             }
 
             nint id = GetWindowLongPtrW(hwnd, GWLP.GWLP_USERDATA);
-            if (id != 0 && NativeHandleTable.TryResolve(id, out Win32Window? window) && window.HandleMessage(hwnd, message))
+            if (id != 0 && NativeHandleTable.TryResolve(id, out Win32Window? window) && window.HandleMessage(hwnd, message, wParam, lParam))
             {
                 return 0;
             }
@@ -185,7 +279,7 @@ public sealed unsafe class Win32Window : IDisposable
         return DefWindowProcW(hwnd, message, wParam, lParam);
     }
 
-    private bool HandleMessage(HWND hwnd, uint message)
+    private bool HandleMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
     {
         if (MessageHook is { } hook && hook(this, message))
         {
@@ -197,8 +291,12 @@ public sealed unsafe class Win32Window : IDisposable
             case WmClose:
                 _ = DestroyWindow(hwnd);
                 return true;
+            case WmSize:
+                RenderSynchronously(wParam, lParam);
+                return false;
             case WmDestroy:
-                Closed?.Invoke(this, EventArgs.Empty);
+                // An application callback: during a synchronous render it runs after the render returns.
+                SynchronousRenderGuard.RunOrDefer(RaiseClosed);
                 return true;
             case WmNcDestroy:
                 // The last message for this window: no message after it can resolve the id.
