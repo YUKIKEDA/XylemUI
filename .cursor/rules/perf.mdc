@@ -16,7 +16,7 @@ These rules come from the shape of Cysharp's R3, ZLinq, ZString, MemoryPack, and
 - `foreach` over a `List<T>` field goes through `CollectionsMarshal.AsSpan`; over a `Dictionary` it uses the struct enumerator directly, never `IEnumerable<T>`.
 - Buffers that live across frames are owned and reused: reset the used length, grow only when full (`DisplayListBuffer`, design §5.0.1). Short-lived scratch comes from `ArrayPool<T>.Shared` or `stackalloc` (fixed small size only), and is returned in a `finally`. Clear a returned array only when `RuntimeHelpers.IsReferenceOrContainsReferences<T>()`.
 - A `[ThreadStatic]` scratch buffer may back a builder that is disposed before the method returns (ZString, MagicOnion). In debug builds the rent takes the buffer out of the slot, so nested use throws instead of corrupting it.
-- Text that changes every frame does not build a new `string` each frame. The API for writing into a node's own buffer (span writer or interpolated string handler) is decided by roadmap row D2; until it exists, a text update is outside the Zero-Alloc scenarios.
+- Text that changes every frame uses `Text(TextBuilder)` and writes into the node's own buffer (design §2.13), not `Text(Func<string>)`. Whether a text update joins the Zero-Alloc scenarios is decided after S8 measures shaping.
 - An `async` API on a repeated path returns `ValueTask` backed by a pooled `IValueTaskSource` (`ManualResetValueTaskSourceCore<T>`), not a new `Task` each time.
 
 ## Collections of subscribers and handles

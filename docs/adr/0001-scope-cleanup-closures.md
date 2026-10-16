@@ -44,7 +44,7 @@ C# では、変数をキャプチャするラムダはクロージャオブジ�
 - 時間: register / dispose それぞれ（`Stopwatch.GetTimestamp`）
 - アロケーション量: `GC.GetAllocatedBytesForCurrentThread()` の差分
 - GC: 計測区間中の Gen0 / Gen1 / Gen2 の回収回数（`GC.CollectionCount`）とポーズ時間（`GC.GetTotalPauseDuration()`）
-- 比較対象: キャプチャするラムダ、`static` ラムダ、ID 版（`CleanupKind` の struct 配列）
+- 比較対象（D2、Issue #6）: キャプチャするラムダ、`static` ラムダ、`IDisposable` の struct 配列（R3 の `DisposableBag` と同じ形）、ID 版（`CleanupKind` の struct 配列）
 
 マイクロベンチマークは BenchmarkDotNet の `[MemoryDiagnoser]` でも取ってよいが、判定は NativeAOT の実測で行う。
 
