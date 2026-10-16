@@ -1156,7 +1156,7 @@ Win32の`GetMessage`やAppKitの`nextEventMatchingMask`はブロッキングす�
 
 | プラットフォーム | 起床機構                                                |
 | ---------------- | ------------------------------------------------------- |
-| Windows          | `PostMessage(WM_NULL)`                                  |
+| Windows          | メッセージ専用ウィンドウ（`HWND_MESSAGE`）への `PostMessage(WM_NULL)`。スレッドメッセージ（`PostThreadMessage`）はモーダルループ中に捨てられるので使わない |
 | macOS            | `CFRunLoopWakeUp`                                       |
 | Linux            | `eventfd`（SDL3のイベントキューへの投入と組み合わせる） |
 
@@ -1170,6 +1170,8 @@ public interface IFrameScheduler
 }
 ```
 
+保留できるコールバックは1つだけで、フレームの前に `RequestFrame` を再度呼ぶと置き換わる。コールバックは1回だけ走り、次のフレームが要るならその中で `RequestFrame` を呼ぶ。要求ごとに確保しないよう、デリゲートは一度だけ作って渡す。コールバックの例外は Platform の例外ハンドラに渡し、ループは続ける（§2.11.1）。フレームクロックは、要求がある間だけ動かす（アイドルの UI スレッドを起こす原因を作らない）。
+
 | プラットフォーム       | マッピング先                                                                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Windows                | DXGI待機可能スワップチェーンのフレームレイテンシオブジェクトを `MsgWaitForMultipleObjectsEx` でメッセージと多重待機。`DwmFlush` は UI スレッドで使わない |
@@ -1177,7 +1179,7 @@ public interface IFrameScheduler
 | Wayland                | `wl_surface`のframe callback                                                                                                                             |
 | X11/wgpu-native(Linux) | wgpuのSurface present待機に準ずる                                                                                                                        |
 
-**S3（MoonBit 版で検証済み。C# 版で再検証）:** `MsgWaitForMultipleObjectsEx` でメッセージと waitable `HANDLE` の多重待機、アイドル（ハンドル無し）との切替、待ち中の `PostMessage` 割り込みを確認した。本番の HANDLE は DXGI `GetFrameLatencyWaitableObject`（同じ Wait セマンティクス）。UI スレッドで `DwmFlush` は使わない。これらは OS 側の挙動なので C# でも変わらない見込みだが、`LibraryImport` 経由で同じ結果になることを確かめる。
+**S3（C# 版で検証済み、Issue #10）:** `MsgWaitForMultipleObjectsEx` でメッセージと waitable `HANDLE` を多重待機し、フレームのコールバックと投函されたメッセージの両方が進んだ。フレームの要求がないときはハンドルなしで待ち、300 ms のアイドル中にループの反復は1回（ポーリングなし）、UI スレッドの CPU 時間は計測の分解能（スケジューラのティック、約 15.6 ms）未満だった。他スレッドからの起床は 0.36〜0.39 ms で UI スレッドを起こした。定常状態のフレームでループとスケジューラは確保しない。S3 では DXGI の `GetFrameLatencyWaitableObject` の代わりに高分解能の waitable timer（60 Hz）を待機ハンドルにした。待ち方は同じで、S7 で差し替える。UI スレッドで `DwmFlush` は使わない。
 
 **macOS の frame clock:** macOS 14以降は`CADisplayLink`（`NSView.displayLink(target:selector:)`、メインスレッドのRunLoop上で発火）を優先する。target は Obj-C ランタイムで動的に作るクラスに `[UnmanagedCallersOnly]` のメソッドを `class_addMethod` で登録して実現する。**`CVDisplayLink`はバックグラウンドスレッドからコールバックするため直接は使わない。** macOS 13以前への後方互換が必要な場合は`CVDisplayLink`を使う。.NET ではバックグラウンドスレッドからマネージドコードを呼ぶこと自体は安全だが、Core は UI スレッドアフィン（§2.12）なので、コールバック内では Core に触れず、`dispatch_async(dispatch_get_main_queue(), ...)`または`CFRunLoopWakeUp`によってメインスレッドへ明示的にバウンスする。この経路は§10.5のP0スパイクの検証項目に含める。
 
@@ -1292,7 +1294,7 @@ public interface IUiDispatcher
 internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 ```
 
-キューは `Channel<UiMessage>`（単一リーダー・複数ライター）または `ConcurrentQueue<UiMessage>` とし、投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。
+キューは `Channel<UiMessage>`（単一リーダー・複数ライター）または `ConcurrentQueue<UiMessage>` とし、投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。起床機構はループの開始前（Windows では起床用のメッセージ専用ウィンドウを作る前）には何もしないので、ループは開始時に必ず1回キューを空にしてから最初の待機に入る。開始前に投入されたメッセージを取りこぼさないためである（S3 のレビュー）。
 
 **async/await との統合（C# 版で追加）:** UI スレッドに独自の `SynchronizationContext` を設定する。`Post` / `Send` は上記のキューと同じ経路で UI スレッドへ継続を積み、起床させる。これにより、イベントハンドラ内の `await` の後の継続は自動的に UI スレッドで再開し、そのまま `Signal.Set` できる。継続はキューから取り出したとき1回ごとに暗黙の `Batch`（§2.2.1）で包む。同期リサイズ描画パス（§2.11.1）の実行中は継続を取り出さない。
 
