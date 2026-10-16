@@ -57,6 +57,10 @@ Decision:
   Depth は実行順序のヒント。正しさは Version と pull。
   `MaxFlushIterations` は stabilization 回数の上限であり、循環検出ではない。
   依存追跡はランタイム追跡。Signal の API は `Get()` / `Set()` のメソッド。
+  依存辺は SolidJS 方式のスロット配列（両端に相手側の位置を持ち、末尾との入れ替えで O(1) 削除、配列は再利用）。
+  再評価では前回と同じ順に同じ依存を読む間は辺を残し、食い違った位置から先だけ付け替える。
+  `Set` は比較器で等しければ何もしない。強制通知の API は持たない。
+  Effect の例外はハンドラに渡して flush を続け、購読は止めない。Computed の例外は保持して `Get` で投げ直す。
 
 Reason:
   グラフ全体のソートは 10 万 Signal 更新で破綻する。動的依存では Depth が増減する。
@@ -76,6 +80,12 @@ Rejected:
   - `signal.Value` プロパティ、`Signal<T>` → `T` の暗黙変換演算子
   - `INotifyPropertyChanged` / `DependencyProperty` 方式の変更通知
   - 「現在の computation」を `[ThreadStatic]` にする（Core は UI スレッド専用なので不要）
+  - 依存辺を R3 の侵入型リスト（購読ノード自体が購読）で持つ（辺は再評価のたびに変わりうるので、ノードの確保かプールが要る。長く生きる購読向き）
+  - 依存辺を `List` で持つ（削除が O(n)）
+  - 再評価のたびに全購読を外して張り直す（定常状態でも辺の付け替えが毎回起きる）
+  - 同じ値の `Set` でも通知する／強制通知の API を持つ
+  - Effect の例外で購読を止める（Rx の OnError と同じ。一度の失敗で UI が更新されなくなる）
+  - Computed の例外を握りつぶして前回の値を返す（壊れた値が静かに伝わる）
 
 ---
 
@@ -290,6 +300,7 @@ Decision:
   Context はノード作成時に1度だけ解決する静的な仕組み。変化させたい値は Signal を Provide する。
   ホットリロードで保持するのは、コンポーネント関数の外にある Signal だけ。
   MVVM 互換レイヤーは v1 では提供しない。
+  `Text` は `Func<string>`（簡便版）と `TextBuilder`（ノードの char バッファへ直接書く、補間文字列ハンドラ付き）の2つ。
   Block は margin collapsing・float・inline formatting context を持たず、常に border-box。
 
 Reason:
@@ -306,6 +317,9 @@ Rejected:
   - Context の値そのものを reactive にして子孫へ通知する
   - Compose 式の位置メモ化でローカル状態をホットリロード後も保持する（v1）
   - `INotifyPropertyChanged` / CommunityToolkit.Mvvm との互換レイヤー（v1）
+  - テキストを `Func<string>` だけで更新する（頻繁に変わるテキストが毎回 string を確保する）
+  - ZString をテキストの書き込みに使う（ビルダーが自分のバッファを持つのでノードのバッファへのコピーが残る。.NET 6 以降は補間文字列ハンドラで同じことができる）
+  - Core に公開の木の検索 API を持つ（アプリは `Element` を保持しており不要。検索は `XylemUI.Testing` に置く）
   - CSS の margin collapsing / float / inline formatting context の再現
 
 ---
@@ -336,6 +350,7 @@ Decision:
   画素のヘッドレス描画は Core〜v0.3 は Windows + WARP のみ。v0.4 で Linux（lavapipe）を足す。
   テストモードでは同梱フォントだけで描く。PNG は `ZLibStream` で自前実装。
   IME はイベント列のシミュレーションのみ。
+  `ScopeTracker`（既定で無効）で生きている Scope を記録し、`AssertNoLeakedScopes()` でテストの終わりに確かめる。
   テストは5層（Unicode / Core 単体 / DisplayList スナップショット / WARP ゴールデン / Gallery E2E）。
   PR を落とすのは正しさと Zero-Alloc（ウォームアップ後、5シナリオ）だけ。時間系ベンチマークは記録のみ。
   タイピングレイテンシは CI では「入力注入→Present 発行」の代理指標。Input-to-photon は手動計測。

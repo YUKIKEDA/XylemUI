@@ -161,6 +161,20 @@ public enum ComputationStatus
 public readonly record struct ReactiveNodeId(ReactiveNodeKind Kind, int Index);
 public enum ReactiveNodeKind : byte { Signal, Computation }
 
+// 依存辺は両端に「相手側の何番目に載っているか」を持つ（SolidJS の observers / observerSlots と同じ形）。
+// 削除は末尾との入れ替えで O(1)。配列は解放せず使い回すので、定常状態ではアロケーションしない。
+internal struct SourceEdge     // 依存元（Computation）が持つ。自分が読んだ依存先
+{
+    public ReactiveNodeId Source;
+    public int SlotInSource;    // Source の Observers 配列での自分の位置
+}
+
+internal struct ObserverEdge   // 依存先（Signal / Computation）が持つ。自分を読んでいる Computation
+{
+    public ComputationId Observer;
+    public int SlotInObserver;  // Observer の Sources 配列での自分の位置
+}
+
 internal sealed class ComputationState
 {
     public ComputationId Id;
@@ -169,10 +183,18 @@ internal sealed class ComputationState
     public ulong Version;     // 再評価完了時にインクリメント。依存側の鮮度判定に使う
     public ulong DirtyEpoch;  // 最後にDirtyになったflush世代。同一cycleの重複enqueueを抑制
     public uint Depth;        // 実行順序のヒント。Signalは0。正しさは Version / pull が保証する
-    public readonly List<ReactiveNodeId> Dependencies = new(); // Signal と Computation の両方。実行の都度再登録（§2.2）
-    public readonly List<ComputationId> Dependents = new();    // このComputationに依存する他のComputation
+
+    public SourceEdge[] Sources = [];      // 直近の再評価で読んだ依存。読んだ順に並ぶ（§2.2）
+    public int SourceCount;
+    public int ReadCursor;                 // 再評価中: 次に読む依存が Sources の何番目か
+    public ObserverEdge[] Observers = [];  // この Computation を読んでいる Computation
+    public int ObserverCount;
+
+    public Exception? Error;               // Computed のみ。直近の再評価が投げた例外（下記）
     public required Action Run;
 }
+
+// Signal 側も同じ Observers / ObserverCount を持つ（SignalState）。
 
 static uint DepthOf(ReactiveNodeId id) => id.Kind switch
 {
@@ -184,7 +206,15 @@ static uint DepthOf(ReactiveNodeId id) => id.Kind switch
 static void RegisterDependency(ComputationState computation, ReactiveNodeId dependency)
 {
     // 再評価中(Running)にのみ呼ばれる。Depthは最適化用ヒントであり、正しさの根拠ではない。
-    computation.Dependencies.Add(dependency);
+    int position = computation.ReadCursor++;
+    bool sameAsLastRun = position < computation.SourceCount && computation.Sources[position].Source == dependency;
+    if (!sameAsLastRun)
+    {
+        // 前回と食い違った位置から先の辺だけを外し、今回の依存を末尾に足す
+        RemoveSourcesFrom(computation, position);
+        AddSource(computation, dependency);   // Sources の末尾と、dependency の Observers の末尾に辺を足す
+    }
+
     uint newDepth = DepthOf(dependency) + 1;
     if (newDepth > computation.Depth) computation.Depth = newDepth;
 }
@@ -192,7 +222,7 @@ static void RegisterDependency(ComputationState computation, ReactiveNodeId depe
 static void Reevaluate(ComputationState computation)
 {
     computation.Status = ComputationStatus.Running;
-    UnsubscribeAll(computation);   // 動的依存のため、毎回購読を張り直す
+    computation.ReadCursor = 0;    // 前回と同じ順に同じ依存を読む間は辺を触らない（全購読解除はしない）
     computation.Depth = 0;         // 減少も含めて再計算する。下流への減少伝播はしない
 
     var previous = _current;
@@ -200,10 +230,17 @@ static void Reevaluate(ComputationState computation)
     try
     {
         computation.Run();
+        computation.Error = null;
+    }
+    catch (Exception exception)
+    {
+        HandleComputationException(computation, exception);   // 下記「例外」
     }
     finally
     {
         _current = previous;
+        // 今回読まなかった末尾の依存を外す。投げた場合も、投げるまでに読んだ依存は残る
+        RemoveSourcesFrom(computation, computation.ReadCursor);
     }
 
     computation.Version++;
@@ -216,6 +253,17 @@ static void Reevaluate(ComputationState computation)
 ```
 
 `ComputationState` は v1 では class とする。`ReactiveArena`（§2.5）への移行は実測で必要になってから行う。
+
+**依存辺の差分維持:** 大半の再評価は前回と同じ依存を同じ順に読むので、`ReadCursor` が前回の `Sources` と一致している間は辺を張り替えない。条件分岐で読む依存が変わったときだけ、食い違った位置から先を付け替える（Preact Signals のノード再利用と同じ考え方）。1回の実行で同じ依存を2度読んだ場合は辺を2本持つ。dirty 化は冪等なので結果は変わらない。辺を外すときは、相手側の配列で末尾の辺を空いた位置へ移し、移した辺の相手が持つ `Slot*` を書き換える。
+
+**同じ値の `Set`:** `Signal<T>.Set(value)` は、比較器（既定は `EqualityComparer<T>.Default`、`Signal.Create(value, comparer)` で差し替え可）で現在値と等しければ何もしない。dirty にもせず、`Version` も進めない。強制的に通知する API は持たない。同じ値でも通知が必要な場合は、値の型の側で区別できるようにする（R3 の `ReactiveProperty` と同じ扱い）。
+
+**例外:**
+
+- **Effect** が投げた例外は `ReactiveRuntime.UnhandledExceptionHandler`（既定は `Trace` への出力）に渡し、flush は残りの Effect を続ける。購読は止めない。投げるまでに読んだ依存は残るので、それが変われば Effect は再実行される（R3 の OnErrorResume と同じ考え方）
+- **Computed** が投げた例外は値の代わりに `Error` として保持し、`Get` のたびに投げ直す（`ExceptionDispatchInfo` で元のスタックを保つ）。依存が変われば通常どおり再評価する
+- ハンドラ自体が投げた例外は捕捉して捨てる。flush を途中で止めない
+- 内部の不変条件違反（`Invariant.Fail`）は捕捉しない
 
 **状態遷移（正式契約）:** Effect と Computed で分ける。`Queued` は Effect 専用。
 
@@ -268,7 +316,7 @@ batch outermost（最も外側のbatch）の終了時
 
 **S6（MoonBit 版で検証済み。C# 版で再検証）:** `Batch` 内の複数 `Set` は Effect を1回だけ flush し、ダイヤモンド（A→B,C→D）の Computed は pull で1回評価された。Computed は queue に入らない。Effect 内 `Set` は次 cycle。`MarkDirty` は origin に `SelfDirty`、経路に `SubtreeDirty`、Layout 境界で `LayoutRoots` 停止。Color は載せない。worklist は Block/Flex（1次元幅）を回し、pass 中の再 dirty は次 cycle。layout 中は tracking off で Signal 読みが不変条件違反になる。
 
-nested batchのネスト管理・安定化打ち切りの具体的アルゴリズム・Effect が例外を投げた場合の巻き戻し手順の詳細仕様化は、引き続き§10.5のP0スパイクでの実装検証を経てから正式化する。
+nested batchのネスト管理・安定化打ち切りの具体的アルゴリズムの詳細仕様化は、引き続き S6 の実装検証を経てから正式化する。例外の扱いは上の「例外」で確定した。
 
 ### 2.3 所有権（ownership）とdisposal
 
@@ -301,6 +349,23 @@ public sealed class Scope : IDisposable
 **cleanup の例外（C# 版で追加）:** C# では cleanup が例外を投げると後続の cleanup が実行されずにリークする。cleanup の例外は捕捉して残りの cleanup を最後まで実行し、全て終わってから `AggregateException` として報告する（debug では `Debug.Fail`）。
 
 上記は概念上の表現である。実装では Scope 本体を `ScopeArena`（§2.5）に置き、`UiNode` からは `ScopeHandle` で参照する。
+
+**リーク検出（`ScopeTracker`）:** GUI のように寿命の長いアプリでは、破棄し忘れた Scope が購読・タイマー・OS リソースを抱えたまま残るのが典型的なリークになる。R3 の `ObservableTracker` と同じく、有効にしたときだけ生きている Scope を記録する仕組みを持つ。
+
+```csharp
+public static class ScopeTracker
+{
+    public static bool IsEnabled { get; set; }            // 既定は false
+    public static bool CaptureStackTrace { get; set; }    // 有効時のみ意味を持つ。生成時のスタックを記録する
+    public static void ForEachActiveScope(Action<TrackedScope> action) { ... }
+}
+
+public readonly record struct TrackedScope(int Id, string Owner, string? StackTrace);  // Owner は生成したコンポーネント等の名前
+```
+
+- 無効時のコストは、Scope の生成と破棄のたびに static な bool を1回読むだけとする（Zero-Alloc ゲートの対象経路で確保を増やさない）
+- 有効時は Scope の生成で記録し、破棄で外す。スタックの取得は `CaptureStackTrace` のときだけ行う
+- `XylemUI.Testing` は、テストの終わりに破棄されていない Scope がないことを確かめる `AssertNoLeakedScopes()` を持つ（§12）
 
 **S9（MoonBit 版で検証済み。C# 版で再検証）:** 子を LIFO、その後自身の cleanup を LIFO とする契約はテストで閉じた。v1 は closure 配列のまま（実測は §2.5）。
 
@@ -363,7 +428,7 @@ public static class TextProperties
     {
         Name = "Text",
         ChangeKind = ChangeKind.TextContent,
-        Setter = static (ref UiNode n, string v) => n.Text.Content = v,
+        Setter = static (ref UiNode n, string v) => n.Text.SetContent(v),   // TextState.Buffer へコピーする
     };
 }
 ```
@@ -819,7 +884,8 @@ internal struct DirtyState
 
 internal struct TextState
 {
-    public string? Content;              // テキストノードのみ
+    public char[]? Buffer;               // テキストノードのみ。TextBuilder / Func<string> の結果を書く。使い回し、足りないときだけ拡張する
+    public int Length;                   // Buffer の使用中の長さ（UTF-16 コード単位）
     public TextStyle Style;
     public ShapedTextCache? Shaped;      // §3.2
     public LineBreakCache? LineBreaks;
@@ -848,7 +914,29 @@ internal struct SemanticsState
 
 **Scope内のclosure allocationリスク**: `ScopeData.Cleanups`はデリゲートのリストであり、Signal購読・イベントハンドラ・タイマー・アニメーション・OSリソースの解放処理がすべてデリゲートとしてぶら下がる。C# では変数をキャプチャするラムダはクロージャオブジェクトとデリゲートの2つをヒープに確保する（キャプチャしない `static` ラムダはデリゲートがキャッシュされ確保されない）。Fine-grained reactiveを選んだ理由（§2.1、フレーム毎のアロケーション最小化）と、Scope内部で大量のクロージャを生成する設計は方向性として矛盾しうる。`ScopeArena`分離によりアロケーション自体は多少緩和されるが、根本解決ではないため、§10.5の技術スパイクで実測してから、必要であれば`CleanupNode`/`ResourceHandle`のようなIDベース管理への置き換えを検討する。
 
-**S9（MoonBit 版の実測。C# 版で再測定）:** MoonBit native release では、1万件の closure register が約 0.38ms、dispose が約 0.024ms（16.6ms の 2% 台）だった。同数の `CleanupKind` ID は register が約 6 倍速いが、フレーム予算は食っていない。**v1 は `List<Action>` のままにする方針を引き継ぐ。** C# 版では同じ条件で `GC.GetAllocatedBytesForCurrentThread()` によるアロケーション量と Gen0 回収回数も測り、毎フレーム数千件を作り直す経路が予算を圧迫した場合に限り ID 置換を行う。相対比較と絶対比較を混ぜないこと、再検討条件は [adr/0001-scope-cleanup-closures.md](./adr/0001-scope-cleanup-closures.md)。
+**S9（MoonBit 版の実測。C# 版で再測定）:** MoonBit native release では、1万件の closure register が約 0.38ms、dispose が約 0.024ms（16.6ms の 2% 台）だった。同数の `CleanupKind` ID は register が約 6 倍速いが、フレーム予算は食っていない。**v1 は `List<Action>` のままにする方針を引き継ぐ。** C# 版では同じ条件で `GC.GetAllocatedBytesForCurrentThread()` によるアロケーション量と Gen0 回収回数も測り、毎フレーム数千件を作り直す経路が予算を圧迫した場合に限り ID 置換を行う。相対比較と絶対比較を混ぜないこと、再検討条件は [adr/0001-scope-cleanup-closures.md](./adr/0001-scope-cleanup-closures.md)。C# 版 S9 の比較対象は次の3つとする（D2）。
+
+1. `List<Action>`（現行。キャプチャするラムダと `static` ラムダの両方）
+2. `IDisposable` を struct の配列に持つ形（R3 の `DisposableBag` と同じ。追加のみで、破棄時に逆順に `Dispose`）
+3. ID ベース（`CleanupKind` と対象の ID を struct の配列に持つ）
+
+### 2.6 ツリー走査
+
+Core の内部処理（Invalidation、Focus の Tab 移動、a11y の同期、`Show` / `For` の部分木の破棄など）は、アリーナ上の木を何度も走査する。ZLinq の `ITraverser` と同じく、アリーナの `FirstChild` / `NextSibling` / `Parent` をたどる構造体の走査器を internal に持つ。
+
+```csharp
+internal struct ArenaTraverser(UiTree tree, NodeHandle origin)
+{
+    public ChildrenEnumerator Children() { ... }        // 子。追加の確保なし
+    public DescendantsEnumerator Descendants() { ... }  // 子孫（深さ優先・前順）。スタックはプールから借り、Dispose で返す
+    public AncestorsEnumerator Ancestors() { ... }      // 祖先。追加の確保なし
+}
+```
+
+- 列挙子はすべて struct で、`foreach` で使う。列挙は `TryGetNext(out NodeHandle)` の1回の呼び出しで1要素を返す形にする（ZLinq と同じ）
+- 子孫の走査のスタックは、ZLinq の `RefStack` と同じくプールから借りる。定常状態では確保しない
+- 走査中に木の構造（親子・兄弟のリンク）を変えない。変える処理は、走査を終えてから行う。debug ビルドでは、走査器が開始時の `NodeVersions.Children` と一致しない変更を検出して `Invariant.Fail` にする
+- 公開の検索 API は Core に持たない。アプリは `Element` を自分で保持しており、木を検索する必要がない。テストとエージェント向けの検索（`app.Find` など）は `XylemUI.Testing` が持つ（§12）
 
 ### 2.7 制御構文プリミティブ
 
@@ -1247,7 +1335,7 @@ static Element Counter()
     var count = Signal.Create(0);
 
     return Column(
-        Text(() => $"clicks: {count.Get()}"),
+        Text((ref TextWriter text) => text.Write($"clicks: {count.Get()}")),
         Button("+1", onClick: () => count.Set(count.Get() + 1))
             .Padding(8)
             .Background(Colors.Accent)
@@ -1256,6 +1344,28 @@ static Element Counter()
             .Pressed(new PaintStyle { Background = Colors.AccentPressed }));
 }
 ```
+
+**テキストの更新:** `Text` は2つのオーバーロードを持つ。
+
+```csharp
+public static Element Text(Func<string> content);   // 簡便版。更新のたびに string を確保する
+public static Element Text(TextBuilder content);    // 頻繁に変わるテキスト用。更新時に確保しない
+
+public delegate void TextBuilder(ref TextWriter text);
+
+public ref struct TextWriter
+{
+    public void Write(ReadOnlySpan<char> value);
+    public void Write<T>(T value) where T : ISpanFormattable;      // 数値などをボクシングせずに書く
+    public void Write([InterpolatedStringHandlerArgument("")] ref TextWriterHandler handler);  // $"..." を直接書く
+}
+```
+
+- `TextBuilder` はノードが持つ char バッファ（`TextState`、§2.5）へ直接書く。書き終えた内容が前回と同じなら、`ChangeKind.TextContent` の無効化をしない
+- バッファは使い回し、足りないときだけ拡張する（`.cursor/rules/perf.mdc`）。ラムダの確保はノード作成時の1回だけで、更新時は確保しない
+- `TextWriterHandler` は補間文字列ハンドラ（`[InterpolatedStringHandler]`）で、各部分を `ISpanFormattable.TryFormat` でバッファに書く。ZString と同じ目的を、.NET 6 以降の標準の仕組みで実現する
+- 書き込み中に Signal を読むと依存が登録される（`Func<string>` 版と同じ）
+- テキスト更新を Zero-Alloc ゲート（§11.3）のシナリオに入れるかは、シェーピング側の確保を S8 で測ってから決める
 
 **スタイルのメソッドチェーン:** `.Padding()` / `.Background()` / `.CornerRadius()` 等は `Element`（`NodeHandle` を包む struct）の拡張メソッドとする。各メソッドはアリーナ上のノードのスタイルへ直接書き込み、同じ `Element` を返す。中間のスタイルオブジェクトは作らないので、チェーンはアロケーションを発生させない。Signal を受け取るオーバーロード（`.Background(IReadOnlySignal<Color>)`）は Binding 層（§2.4）に繋ぎ、該当する `ChangeKind` で無効化する。
 
@@ -1356,7 +1466,7 @@ internal sealed class LineBreakCache
 }
 ```
 
-テキスト内容が変わった場合は`ShapedTextCache`ごと無効化、幅制約だけが変わった場合は`LineBreakCache`のみ再計算する。`MeasureText`（§4.3）は Signal を読まない。入力は UiNode に既に書き込まれた `string` と `TextStyle`。
+テキスト内容が変わった場合は`ShapedTextCache`ごと無効化、幅制約だけが変わった場合は`LineBreakCache`のみ再計算する。`MeasureText`（§4.3）は Signal を読まない。入力は UiNode に既に書き込まれたテキスト（`TextState.Buffer` の `ReadOnlySpan<char>`）と `TextStyle`。
 
 ### 3.3 Grid実装のカバー範囲（決着）
 
@@ -1469,7 +1579,7 @@ public interface IVirtualizedFocusHost
 **採用: HarfBuzz + FreeType。**
 理由: テキストシェーピングは「仕様自体が継続的に更新され続ける」領域（Unicode年次改定、絵文字・新スクリプト・グラフェムクラスタ規則の追加）であり、自作は継続開発コストを永続的に負うことを意味する。Flutter自身もこの層は自作せず`minikin`層を介してHarfBuzzに委譲しており、「Flutter級」を目指す上でも整合的な選択。stb_truetypeは合字・カーニング・複雑スクリプトに非対応で§3要件を満たせないため却下。OS のテキストスタックへの全面委譲は、プラットフォームごとに改行・BiDi・キャレットの挙動が変わり、§4.3 の caret geometry を共通化できないため却下（フォント調達とフォールバック解決だけは OS に委譲する、§4.5）。
 
-HarfBuzz・FreeType は C API なので、`XylemUI.Text` から `LibraryImport` で直接呼ぶ（§2.9）。HarfBuzz は UTF-16 の入力（`hb_buffer_add_utf16`）を受け付けるため、C# の `string` を変換せずに渡せる。
+HarfBuzz・FreeType は C API なので、`XylemUI.Text` から `LibraryImport` で直接呼ぶ（§2.9）。HarfBuzz は UTF-16 の入力（`hb_buffer_add_utf16`）を受け付けるため、テキストバッファ（`ReadOnlySpan<char>`）を変換せずに渡せる。
 
 **テキストパイプライン全体像とフォントフォールバック×シェーピングの相互作用**
 
@@ -1563,7 +1673,7 @@ FriBidi(LGPL)を不採用とする理由は、本プロジェクトの配布方�
 **オフセットの単位（C# 版で確定）:** テキスト上の位置（`TextOffset`、改行位置、選択範囲、IME の範囲）は全て **UTF-16 コード単位のインデックス**で表す。C# の `string` のインデックスと一致し、Windows（IMM32 / TSF / UIA）と macOS（`NSTextInputClient` / NSAccessibility）の API も UTF-16 単位で範囲を受け渡すため、境界で変換が要らない。キャレットや選択の移動は必ずグラフェムクラスタ境界に揃えるので、サロゲートペアの途中を指す位置は外部に出さない。Linux の IBus / AT-SPI は UTF-8 のバイト位置や codepoint 数で受け渡すため、Platform 層で変換する。
 
 ```csharp
-internal static TextMeasurement MeasureText(string text, in TextStyle style, float availableWidth)
+internal static TextMeasurement MeasureText(ReadOnlySpan<char> text, in TextStyle style, float availableWidth)
 {
     // §4.1のパイプライン全体を実行。Signal は読まない。
     // ShapedTextCache/LineBreakCache(§3.2)により
@@ -2711,6 +2821,19 @@ app.Ime.Compose("にほんご", cursor: 4)
        .Commit("日本語");
 app.PumpAndSettle();
 ```
+
+### 12.5 木の検索とリーク検査
+
+`XylemUI.Testing` は、テストと AI エージェントが UI を操作・検査するための検索 API を持つ。Core の内部走査器（§2.6）の上に作り、Core には公開の検索 API を置かない。
+
+```csharp
+Element button = app.Find("+1");                       // アクセシブル名またはテストID で1つ探す。0件・複数件は失敗
+IReadOnlyList<Element> items = app.FindAll(role: SemanticsRole.ListItem);
+app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3）で破棄されていない Scope がないことを確かめる
+```
+
+- `HeadlessApp` は起動時に `ScopeTracker.IsEnabled` を有効にし、`AssertNoLeakedScopes()` はウィンドウを閉じて `PumpAndSettle()` した後に、残っている Scope を生成スタックつきで報告する
+- 検索は前順（`FirstChild` / `NextSibling` の順）で、a11y の順序（§4.4）と同じ順に結果を返す
 
 ---
 
