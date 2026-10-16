@@ -138,7 +138,7 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
             }
 
             int runsBefore = runs;
-            int jitAtStart = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true);
+            long jitAtStart = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true);
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 101; i <= 100 + Sets; i++)
             {
@@ -160,7 +160,7 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
                 int next = 100 + Sets + 1;
                 for (int w = 0; w < 5; w++)
                 {
-                    int jitBefore = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true);
+                    long jitBefore = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true);
                     long b = GC.GetAllocatedBytesForCurrentThread();
                     for (int i = 0; i < 2_000; i++)
                     {
@@ -168,7 +168,7 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
                     }
 
                     long a = GC.GetAllocatedBytesForCurrentThread() - b;
-                    int jit = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true) - jitBefore;
+                    long jit = System.Runtime.JitInfo.GetCompiledMethodCount(currentThread: true) - jitBefore;
                     report.Append(" w").Append(w).Append('=').Append(a).Append("B/jit").Append(jit);
                 }
 
