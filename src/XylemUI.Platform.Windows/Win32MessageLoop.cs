@@ -22,6 +22,7 @@ public static unsafe class Win32MessageLoop
 
     private static Action<Exception> _callbackExceptionHandler = DefaultCallbackExceptionHandler;
     private static Win32FrameScheduler? _frameScheduler;
+    private static UiDispatcher? _dispatcher;
     private static nint _wakeWindow;
 
     /// <summary>
@@ -41,6 +42,13 @@ public static unsafe class Win32MessageLoop
     public static IFrameScheduler FrameScheduler => GetFrameScheduler();
 
     /// <summary>
+    /// Gets the UI thread's queue. Other threads post to it; <see cref="Run"/> drains it when it starts and once per iteration, and
+    /// installs its synchronization context so that <c>await</c> continuations resume on the UI thread (design §2.12).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static UiDispatcher Dispatcher => GetDispatcher();
+
+    /// <summary>
     /// Gets or sets a hook that runs on the UI thread once per loop iteration, after the queued messages are handled and before the
     /// loop waits. Used by tests to observe how often the loop wakes.
     /// </summary>
@@ -57,6 +65,21 @@ public static unsafe class Win32MessageLoop
         UiThread.VerifyAccess();
         EnsureWakeWindow();
         Win32FrameScheduler frames = GetFrameScheduler();
+        UiDispatcher dispatcher = GetDispatcher();
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(dispatcher.SynchronizationContext);
+        try
+        {
+            return RunLoop(frames, dispatcher);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
+    }
+
+    private static int RunLoop(Win32FrameScheduler frames, UiDispatcher dispatcher)
+    {
         MSG message;
         while (true)
         {
@@ -70,6 +93,10 @@ public static unsafe class Win32MessageLoop
                 _ = TranslateMessage(&message);
                 _ = DispatchMessageW(&message);
             }
+
+            // Runs on the first iteration too, before the first wait: work posted before the loop started (when Wake still did
+            // nothing) is not lost.
+            _ = dispatcher.Drain(ReportCallbackException);
 
             IterationHook?.Invoke();
 
@@ -130,6 +157,12 @@ public static unsafe class Win32MessageLoop
         {
             // A handler that throws must not take the process down from inside a callback.
         }
+    }
+
+    private static UiDispatcher GetDispatcher()
+    {
+        UiThread.VerifyAccess();
+        return _dispatcher ??= new UiDispatcher(Wake);
     }
 
     private static Win32FrameScheduler GetFrameScheduler()

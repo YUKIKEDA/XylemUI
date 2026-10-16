@@ -267,6 +267,7 @@ Decision:
   OS 側には世代付きの整数IDだけを渡す（`NativeHandleTable`）。
   Core の型は UI スレッドでのみ操作する。公開 API の入口でスレッド ID を検査する。
   ワーカーからは `IUiDispatcher` / 独自 `SynchronizationContext` で UI スレッドへ戻る。
+  キューは `ConcurrentQueue`（メッセージと継続を同じキューに積む）。ループは開始時と毎反復の待機の前に取り出し、取り出しは呼んだ時点の件数だけ実行する。同期描画の中では取り出さない。
   `[UnmanagedCallersOnly]` の境界で全例外を捕捉する。
   Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。
   Vsync 待機中も OS メッセージを多重待機する（Windows: `MsgWaitForMultipleObjectsEx`）。
@@ -293,6 +294,9 @@ Rejected:
   - Windows / Linux に C/C++ の中間 shim を置く
   - Core をスレッドセーフにする（全操作にロック）
   - `PostMessage` の `LPARAM` にマネージド参照を詰める
+  - キューを `Channel<T>` にする（非同期の読み手がいない。UI スレッドのループが同期で取り出す）
+  - メッセージと `await` の継続を別のキューにする（両者の順序が保てない）
+  - 取り出しで、実行中に積まれたものまで実行する（すぐ完了する継続が続くと取り出しが終わらない）
   - v1 で TSF 最小 COM ラッパーを必須にする
   - 同期リサイズ中に application callback / 新規モーダルループ / `await` 継続の実行を許可する
   - 同期リサイズ中のアプリのコールバックを捨てる（クリックや `Closed` を失う）
