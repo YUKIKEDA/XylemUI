@@ -2434,7 +2434,8 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 4. **v0.3**: RTL、BiDi、複雑スクリプト、縦書き、カラー絵文字
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
 6. **v0.5（Linux extended）**: xdg-desktop-portal、通知、トレイ、AT-SPI、Fractional Scaling
-7. **v1.0**: 3プラットフォーム揃った状態＋Windows の別ウィンドウのポップアップ（§7.3）＋パッケージング/署名/自動アップデート
+7. **v0.6（macOS）**: AppKit の window/input/clipboard/IME、Metal、Core Text のフォールバック、NSAccessibility。HarfBuzz / FreeType を静的リンクして、外部 dylib の無い単一のアプリバンドルになるかを確かめる
+8. **v1.0**: 3プラットフォーム揃った状態＋Windows の別ウィンドウのポップアップ（§7.3）＋パッケージング/署名/自動アップデート
 
 **v1.x（v1.0 後の追加フェーズ）**: sbix / SVG / CBDT カラー絵文字（§4.6）、アプリ内 Acrylic（§13.2）、macOS / Linux の別ウィンドウのポップアップ（§7.3）、独立 SemanticsTree（§4.4.1）。
 
@@ -2542,7 +2543,7 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 120Hz環境: CPU frame time p95 < 8.33ms,  missed-frame ratio < 0.1%（p99は補助指標として記録）
 ```
 
-最終 Acceptance は CPU budget・GPU budget・Input-to-photon budget の3段で判定する。CPU だけ 8.33ms 以内でも GPU 5ms + Present 3ms なら 120Hz に間に合わない。GPU / Present / Input-to-photon の数値目標は §10.5 の P0 スパイク実測後に確定し、確定するまで計測対象として必須とする。
+最終 Acceptance は CPU budget・GPU budget・Input-to-photon budget の3段で判定する。CPU だけ 8.33ms 以内でも GPU 5ms + Present 3ms なら 120Hz に間に合わない。GPU / Present / Input-to-photon の数値目標は §10.5 の P0 スパイクの後、ロードマップの M1 で実測して確定し、確定するまで計測対象として必須とする。
 
 **フレーム予算（120Hz環境の内訳、暫定値）:** コア処理・フレームワークオーバーヘッド・安全マージンを明示的に分離する。
 
@@ -2561,7 +2562,7 @@ Safety margin:         1.33ms（OSスケジューラ、ドライバ、compositor
 合計:                  8.33ms（120Hz環境のCPU frame time予算）
 
 別軸（CPU frame timeの外、非同期に進行）:
-GPU execution time     計測対象（目標値は§10.5のP0スパイク後に設定）
+GPU execution time     計測対象（目標値は§10.5のP0スパイク後、ロードマップの M1 で設定）
 Present latency        計測対象（同上）
 Input-to-photon latency  CPU frame time + GPU execution time + Present latencyの合算値として計測
 ```
@@ -2591,7 +2592,7 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 
 計測項目: CPU frame time/GPU execution time/Present latency/Input-to-photon latencyそれぞれのp95/p99/missed-frame ratio、フレームあたりのアロケーション量、GC発生頻度（世代別）とポーズ時間、起動時間、アイドル時CPU/メモリ。これらは§10.5のP0スパイク（GC+イベントループ）で最初に計測基盤を作る。Core 単体のマイクロベンチマーク（Scheduler・Layout・DisplayList 構築）は BenchmarkDotNet の `[MemoryDiagnoser]` でアロケーション量も含めて測る。
 
-**サイズ・起動時間の数値は仮説:** 「単一の実行ファイルで約 15MB」「起動 10ms」「コールドスタート 30ms 未満」といった数値は、現時点では実測していない仮説である。D3D11 デバイスの作成だけで数十 ms かかる環境もあるため、目標値は S1 / P0 スパイク（§10.5）で NativeAOT のバイナリサイズと、D3D11 初期化・フォント読み込みを含む起動時間を実測してから確定する。それまで対外的な説明にも数値は使わない。
+**サイズ・起動時間の数値は仮説:** 「単一の実行ファイルで約 15MB」「起動 10ms」「コールドスタート 30ms 未満」といった数値は、現時点では実測していない仮説である。D3D11 デバイスの作成だけで数十 ms かかる環境もあるため、目標値は、D3D11 とテキスト（S7・S8）が揃った後のロードマップの M1 で、NativeAOT のバイナリサイズと、D3D11 初期化・フォント読み込みを含む起動時間を実測してから確定する（S1 で測ったのは空ウィンドウの exe サイズ約 1.4 MB だけ）。それまで対外的な説明にも数値は使わない。
 
 **タイピングレイテンシの測り方:** CI では「入力イベントを注入してから、そのフレームの Present を発行するまで」をソフトウェアで測り、代理指標として記録する。本当の Input-to-photon（ハイスピードカメラ等で画面の変化を捉える Dan Luu 式の計測）は CI では測れないため、リリース前に実機で手動計測する。
 
