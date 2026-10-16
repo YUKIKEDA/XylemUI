@@ -24,6 +24,15 @@ Make an invalid state unrepresentable; do not document it away or catch it at ru
 - One choice, one slot: an enum, a sealed record hierarchy, or a generic parameter, not a `bool` plus a nullable that the `bool` makes meaningless.
 - A parameter that belongs to one variant lives in that variant (`LayoutAlgorithm.Flex(FlexProps)`).
 - Handles are distinct types (`Handle<T>`), so a `NodeHandle` cannot be passed where a `ScopeHandle` is expected.
+- The `default` of a handle or id type never refers to a live value, so a zeroed field means "none" and cannot alias the first item. Start generations or ids at 1, and test `default` against the first allocated value. In S2 the arena started generations at 0, and `default(Handle<T>)` was alive while slot 0 was in use; a review found it, not a test. Stored links use that `default`, not `Nullable<Handle<T>>`, which adds a flag and padding (design §2.5).
+
+```csharp
+// BAD — the first slot is Index 0, Generation 0, which is also default(Handle<T>)
+return new Handle<T>(index, slot.Generation);   // Generation starts at 0
+
+// GOOD — a new slot starts at generation 1, so default is never alive (Handle<T>.IsNone)
+_slots[index].Generation = 1;
+```
 - A method that cannot fail returns its value, not a `bool`/`out` pair or a nullable.
 - A public method does not throw because the caller used the wrong phase of the same type; split the type instead.
 - Core types are `internal` (design §2.9.1). The public surface is `Signal`, `Element`, the component functions, the interfaces Platform and Rendering implement, and the snapshot and message types they receive.

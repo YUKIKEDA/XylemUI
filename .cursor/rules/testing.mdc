@@ -60,3 +60,16 @@ public void Dispose_NestedScopes_RunsChildrenThenOwnCleanupsInLifoOrder()
 - Compare with an independent reference: a hand-computed layout, the Unicode test files, a golden image produced by an earlier reviewed run. Do not compare a function with a re-implementation of itself.
 - A tolerance (pixel difference, float comparison) is a fixed number written in the test, with the reason in a comment when it is not the default.
 - Mutation check for a guard: change the guarded term and see the test fail, then restore it by copying the file aside and back (not `git checkout`). List the mutations in the PR.
+- Every test of a contract the design states gets that mutation check before the PR, not only the guards a review names. A test that passes against the mutant passes for another reason, and the reason is usually the test's own setup or cleanup.
+- Read the state you assert before a shared helper's cleanup runs. A helper that resets state on the way out (`RunLoop` cancels the pending frame in its `finally`) makes an assertion after it check the helper, not the code. Record the state inside the run, where the code under test left it.
+
+```csharp
+// BAD — RunLoop's finally calls CancelFrame, which stops the clock: this passes even when RunFrame never stops it (S3)
+RunLoop(watchdog, () => runs >= 1, () => frames.RequestFrame(callback));
+Assert.False(frames.IsClockRunning);
+
+// GOOD — read the clock in the iteration after the frame, before the cleanup
+bool? runningAfterFrame = null;
+RunLoop(watchdog, () => { if (runs < 1) return false; runningAfterFrame = frames.IsClockRunning; return true; }, start);
+Assert.False(runningAfterFrame);
+```
