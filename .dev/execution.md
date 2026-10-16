@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** C# 版の設計 v1 完了。次は S1
+- **フェーズ:** C# 版の設計 v1 と追加要点（D1）完了。次は S1
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -35,6 +35,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | ID  | 内容                                                                                                  | 状態        | Issue | 完了の一行                                 |
 | --- | ----------------------------------------------------------------------------------------------------- | ----------- | ----- | ------------------------------------------ |
 | D0  | 設計 v1 の C# 化（本文・decisions・ADR）                                                              | done        | —     | 現行仕様が C# 前提で設計書に固定されている |
+| D1  | 追加要点の設計（Agentic UI・テスト基盤・開発者API・ポップアップ・デザインシステム・Gallery）          | done        | —     | §2.13・§7.3・§12・§13 に固定されている     |
 | S1  | NativeAOT + Win32 UI スレッド + `[UnmanagedCallersOnly]` WndProc + `NativeHandleTable` + スレッド検査 | not-started | —     |                                            |
 | S2  | Arena + generation `Handle<T>`。`ref` 返しと再確保検出                                                | not-started | —     |                                            |
 | S3  | Event Loop Waiter（Windows: `MsgWaitForMultipleObjectsEx`）                                           | not-started | —     |                                            |
@@ -47,12 +48,13 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | V1  | Button / Text / Column がクリックできる                                                               | not-started | —     |                                            |
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |
-| C0  | Core 抽出（`XylemUI` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）      | not-started | —     |                                            |
-| P02 | v0.2 Grid / 仮想化 / IME / a11y 基本                                                                  | not-started | —     | §10.4                                      |
+| C0  | Core 抽出（`XylemUI.Core` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）      | not-started | —     |                                            |
+| P02 | v0.2 Grid / 仮想化 / IME / a11y 基本 / ポップアップ（オーバーレイ）/ `XylemUI.Testing`               | not-started | —     | §10.4                                      |
+| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ       | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト                                                                            | not-started | —     | §10.4                                      |
 | P04 | v0.4 Linux 基盤                                                                                       | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
-| P10 | v1.0 3プラットフォーム + 配布                                                                         | not-started | —     | §11.4                                      |
+| P10 | v1.0 3プラットフォーム + 別ウィンドウのポップアップ（Windows）+ 配布                                  | not-started | —     | §11.4                                      |
 
 設計書 §10.5 の番号（P0〜P3）は検証したい仮説の優先度であり、着手単位としては使わない。切り方はこの表が正。
 

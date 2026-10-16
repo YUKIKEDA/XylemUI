@@ -216,7 +216,7 @@ Rejected:
   - 固定容量で DisplayList を打ち切る
   - Windows で D3D12 / Vulkan を第一選択
   - Linux で blade（薄い Vulkan）へ回帰
-  - Silk.NET / Vortice.Windows / TerraFX などの網羅的バインディングへの依存
+  - Silk.NET / Vortice.Windows などの GPU 抽象・ラッパーへの依存（宣言だけの TerraFX は採用、Interop の節）
   - 本番でランタイムの `D3DCompile` を使う
 
 ---
@@ -225,7 +225,8 @@ Rejected:
 
 Decision:
   macOS/Windows は OS API 直叩き。Linux は SDL3 + wgpu + 機能別バックエンド。
-  C API は `LibraryImport`。消費側の COM（D3D11 / DXGI / DirectWrite）は vtable を unmanaged 関数ポインタで直接呼び、参照カウントを自分で管理する。
+  C API は `LibraryImport`。Windows の宣言は TerraFX.Interop.Windows を使う。
+  消費側の COM（D3D11 / DXGI / DirectWrite）は vtable を unmanaged 関数ポインタで直接呼び、参照カウントを自分で管理する。
   OS から呼ばれる COM（UIA プロバイダ、`IDropTarget`）は source-generated COM。
   macOS は Obj-C ランタイムを P/Invoke。block 等の扱いにくい箇所だけ薄い Obj-C shim を許す。
   OS 側には世代付きの整数IDだけを渡す（`NativeHandleTable`）。
@@ -240,6 +241,7 @@ Reason:
   RCW の解放はファイナライザ任せで、`ResizeBuffers` の前にビューを全て Release する契約を守れない。
   .NET GC はオブジェクトを移動する。長期のピン留めはヒープを断片化させる。
   解放済み `GCHandle` の使用は未定義動作で、stale を検出できない。
+  Win32 / COM の宣言を手で書く工数は大きい。TerraFX は生成された宣言だけでランタイムの抽象層を持たず、未使用分はトリミングで消える。
   Win32 ウィンドウはスレッドアフィン、AppKit はメインスレッド専用、Core の型はロックを持たない。
   マネージド例外がネイティブ境界を越えるとプロセスが終了する。
   `CVDisplayLink` はメインスレッドで呼ばれない。
@@ -259,6 +261,114 @@ Rejected:
   - 同期リサイズ中に application callback / 新規モーダルループ / `await` 継続の実行を許可する
   - 今すぐ `UiMessage` をドメイン別に分割する
   - Tmds.DBus 等のマネージド D-Bus 実装への依存（AT-SPI と通知だけには過大）
+  - Win32 / COM の宣言をすべて手書きする（工数に見合わない）
+  - 「外部 DLL ゼロ」を Linux にも約束する（fontconfig / libdbus-1 / glibc は動的依存）
+
+---
+
+## 開発者向け API
+
+Decision:
+  スタイルは `Element` の拡張メソッドで、ノードに直接書き込む。Signal 版は Binding 層に繋ぐ。
+  疑似状態はノードのビットフラグ。疑似状態で変えられるのは Paint 系のプロパティだけ（`PaintStyle` 型で強制）。
+  Context はノード作成時に1度だけ解決する静的な仕組み。変化させたい値は Signal を Provide する。
+  ホットリロードで保持するのは、コンポーネント関数の外にある Signal だけ。
+  MVVM 互換レイヤーは v1 では提供しない。
+  Block は margin collapsing・float・inline formatting context を持たず、常に border-box。
+
+Reason:
+  チェーンごとに中間オブジェクトを作るとアロケーションが増える。
+  疑似状態でレイアウトが変わると、ホバーのたびに Layout が走る。
+  Context の値に変更通知を持たせると、Reactive graph とは別の伝播経路ができる。
+  関数は1度しか実行されないので、ローカル変数の引き継ぎには位置メモ化が要る。
+  CSS の歴史的挙動は人間にも AI にも結果を予測しにくくする。
+
+Rejected:
+  - XAML / CSS / スタイル文字列
+  - 疑似状態ごとに Signal を作る
+  - 疑似状態でサイズ・パディングを変えられるようにする
+  - Context の値そのものを reactive にして子孫へ通知する
+  - Compose 式の位置メモ化でローカル状態をホットリロード後も保持する（v1）
+  - `INotifyPropertyChanged` / CommunityToolkit.Mvvm との互換レイヤー（v1）
+  - CSS の margin collapsing / float / inline formatting context の再現
+
+---
+
+## ポップアップ
+
+Decision:
+  `IPopupHost` で出す先を抽象化し、ウィンドウ内オーバーレイと別 OS ウィンドウの2実装を持つ（Avalonia と同じ構造）。
+  v0.2 / G1 はオーバーレイのみ。v1.0 までに Windows の別ウィンドウ実装を足し、デスクトップの既定にする。
+  ポップアップは独立した描画ルート（LayoutRoots の根・HitTestList・DisplayList・FocusScope）。Reactive graph と ScopeArena は共有。
+
+Reason:
+  Flutter / GPUI はウィンドウ内に留まるが、WPF / Avalonia / WinUI 3 / Qt は最終的に別ウィンドウに行き着いている。
+  最初から独立ルートにしておけば、別ウィンドウ化は出力先の違いだけになる。
+
+Rejected:
+  - オーバーレイだけで v1.0 を出す（メニューがウィンドウ端で切れる）
+  - v0.2 から別ウィンドウ実装を必須にする（マルチウィンドウのフォーカス・IME・DPI で v0.2 が膨らむ）
+  - オーバーレイをメインツリーの最上位の子として実装する（別ウィンドウ化で作り直しになる）
+
+---
+
+## テスト基盤
+
+Decision:
+  テスト用 API は別パッケージ `XylemUI.Testing`。AI エージェントも同じ API を使う。
+  時刻とタイマーはすべて `TimeProvider` 経由。`PumpAndSettle` はフレーム・アニメーション・UI キュー・タイマーが空で静止とみなす。
+  画素のヘッドレス描画は Core〜v0.3 は Windows + WARP のみ。v0.4 で Linux（lavapipe）を足す。
+  テストモードでは同梱フォントだけで描く。PNG は `ZLibStream` で自前実装。
+  IME はイベント列のシミュレーションのみ。
+  テストは5層（Unicode / Core 単体 / DisplayList スナップショット / WARP ゴールデン / Gallery E2E）。
+  PR を落とすのは正しさと Zero-Alloc（ウォームアップ後、5シナリオ）だけ。時間系ベンチマークは記録のみ。
+  タイピングレイテンシは CI では「入力注入→Present 発行」の代理指標。Input-to-photon は手動計測。
+
+Reason:
+  `Thread.Sleep` / 実時間に依存するテストはタイミングでぶれる。
+  WARP は Windows にしかない。Linux の描画バックエンドは v0.4 まで存在しない。
+  OS フォントは CI イメージの更新で変わり、ゴールデン画像がずれる。
+  共有 CI ランナーの時間の揺れでは、時間で PR を落とすと誤検出だらけになる。確保バイト数は決定論的に測れる。
+
+Rejected:
+  - Linux Docker で WARP を使ったヘッドレス描画（WARP は Windows 専用）
+  - スレッドプールの全タスクの完了まで PumpAndSettle で待つ（フレームワークの管理外）
+  - 本物の IME 変換エンジンをテストで動かす
+  - 時間系ベンチマークで PR を失敗させる
+  - PNG のために画像ライブラリへ依存する
+
+---
+
+## デザインシステム / Gallery
+
+Decision:
+  依存方向は Core ← Primitives（見た目のない部品）← Theme.Fluent。Core に部品は置かない。
+  Fluent 2 のデザイントークンに準拠し、全 OS で同じ見た目。WinUI 3 とのピクセル一致は約束しない。
+  v1 は Mica のみ（Windows 11 22H2+、他は単色）。アプリ内 Acrylic は v1.x。
+  テキストは各 OS のシステム UI フォント、アイコンは Fluent UI System Icons を同梱。
+  G1: XylemUI Gallery（Windows のみ）を v0.2 と v0.3 の間のマイルストーンにする。
+
+Reason:
+  部品を Core に入れると、特定のデザインと Core が結びつき、Core を軽く保てない。
+  Acrylic には背景ぼかしのオフスクリーンパスが要り、v1 の1パスのレンダラの前提が崩れる。
+  Segoe UI Variable / Segoe Fluent Icons は再配布できない。
+
+Rejected:
+  - Headless Primitives を Core に入れる
+  - OS ごとにネイティブ風の見た目へ切り替える
+  - v1 でアプリ内 Acrylic を実装する
+  - Segoe UI Variable / Segoe Fluent Icons の同梱
+  - 実測前に「15MB」「10ms 起動」を訴求する
+
+---
+
+## スコープ外
+
+Decision:
+  Web（Wasm）とモバイル（iOS / Android）は v1 の non-goal。守るのは「Core が OS の型を参照しない」だけ。
+
+Rejected:
+  - 「アーキテクチャを一切壊さずにモバイル / Web へ展開できる」という保証を書く
 
 ---
 

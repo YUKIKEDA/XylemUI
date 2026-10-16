@@ -7,28 +7,38 @@
 Flutter / AvaloniaUI / GPUI と並ぶ完成度・性能を持つ、C#製のクロスプラットフォームネイティブデスクトップGUIフレームワークを自作する。
 Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ消費大、レンダリング遅延）を反面教師とし、ネイティブ・軽量・高速な配布形態を目指す。
 
-**配布形態**: リリースビルドは NativeAOT でネイティブコードにコンパイルし、.NET ランタイムのインストールを要求しない。Windows/macOS は自己完結した実行ファイル/アプリバンドル。Linux は自己完結したアプリケーションバイナリ＋システムABI/ランタイム依存（glibc・fontconfig・D-Bus・GPUドライバ・Wayland/X11等）。Electron/Tauriとの対比で重要なのは「バイナリが1個かどうか」ではなく「WebViewエンジンやCEFのような数百MB級の同梱ランタイムを持たないこと」。NativeAOT が同梱する .NET ランタイム（GC・型システム）は数MB規模であり、この方針と矛盾しない。
+**AIエージェントとの相性（副次的な価値）:** 主目標はあくまで人間が使う Flutter 級の GUI である。そのうえで、AI エージェントが UI を生成・検証・修正するループに向いた性質を、次の3つの要件として持つ。「AI が推論しやすいこと」を理由に API や機能を削ることはしない。
+
+1. **型安全な C# API**: XAML / CSS / スタイル文字列を持たない。UI の誤りはコンパイルエラーとして現れ、エージェントは Roslyn の診断から修正できる（§2.13）
+2. **ヘッドレス描画**: OS のウィンドウなしで描画し、PNG として取り出せる（§12.3）
+3. **決定論的なテスト基盤**: 仮想クロックと `PumpAndSettle` により、タイミングに依存しないテストを書ける（§12.2）
+
+**配布形態**: リリースビルドは NativeAOT でネイティブコードにコンパイルし、.NET ランタイムのインストールを要求しない。**Windows/macOS は外部 DLL を持たない単一の実行ファイル/アプリバンドル**（HarfBuzz・FreeType は静的リンク、§9）。**Linux は自己完結したアプリケーションバイナリ＋システムライブラリ**（glibc・fontconfig・libdbus-1・GPUドライバ・Wayland/X11等）であり、「外部 DLL ゼロ」とは言わない。サイズ・起動時間の数値目標は §11.3 で扱う（実測前の仮説）。Electron/Tauriとの対比で重要なのは「バイナリが1個かどうか」ではなく「WebViewエンジンやCEFのような数百MB級の同梱ランタイムを持たないこと」。NativeAOT が同梱する .NET ランタイム（GC・型システム）は数MB規模であり、この方針と矛盾しない。
 
 自作原則: 既存の重量級抽象化ライブラリ（Skia、CEF等）には乗らない。.NET 上の既存UIスタック（WPF・WinForms・WinUI・MAUI・Avalonia）にも乗らない。ただし継続的な仕様更新（Unicode年次改定、GPUドライバの互換性維持等）が個人〜小規模チームの手に負えないと判断した領域に限り、コミュニティでメンテナンスされているライブラリへの依存を意図的な例外として許容する。
 
 **Dependency Decision Matrix**: 「これは自作か、依存か」の判断は本ドキュメント全体で繰り返し発生してきた。判断基準を一覧表として明示し、今後の設計判断（新しい要素を追加する際）の参照点とする。
 
-| 要素                          | 自作 |          外部          | 理由                                                                                         |
-| ----------------------------- | :--: | :--------------------: | -------------------------------------------------------------------------------------------- |
-| Reactive（§2.2）              |  ○   |                        | フレームワークの独自価値そのもの                                                             |
-| Layout（§3）                  |  ○   |                        | GUIのコア機能、Taffyのアルゴリズムを参考にしつつ自前実装                                     |
-| BiDi（§4.2）                  |  ○   |                        | アルゴリズムが相対的に安定、学習コストの割に依存回避の価値が高い                             |
-| Grapheme（§4.1）              |  ○   |                        | Unicodeコアアルゴリズム、BiDiと同じ判断基準。.NET の `StringInfo` は使わない（§4.1）         |
-| Shaping                       |      |      ○ HarfBuzz       | OpenType仕様の継続更新コストが個人の手に負えない                                             |
-| Rasterization                 |      |      ○ FreeType       | フォントレンダリングの複雑性、継続更新コスト                                                 |
-| Linux GPU（§5.1）             |      |     ○ wgpu-native     | ドライバ互換性対応の継続保守コスト                                                           |
-| Linux Window（§6.1）          |      |        ○ SDL3         | Wayland/X11の差異吸収コスト                                                                  |
-| GPUレンダラ（§5.0/5.2）       |  ○   |                        | 独自設計（DisplayList、SDFシェーダー等）                                                     |
-| 言語ランタイム                |      | ○ .NET（NativeAOT）   | GC・型システム・BCL。NativeAOTで実行ファイルに同梱する                                       |
-| OS APIバインディング（§2.9.1） |  ○   |                        | 必要なAPIは限定的。網羅的なバインディング（TerraFX・Vortice・Silk.NET等）は巨大で、必要部分だけを `LibraryImport` と unmanaged 関数ポインタで書く。ビルド時ジェネレータ（CsWin32等）は使ってよいが、ランタイム依存にはしない |
-| ベクトル/行列型               |      | ○ System.Numerics（BCL） | `Vector2` / `Matrix3x2` / `Matrix4x4` はSIMD対応済みでランタイムに含まれる。追加依存にならない |
+| 要素                              | 自作 |           外部            | 理由                                                                                                                                                                                                 |
+| --------------------------------- | :--: | :-----------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reactive（§2.2）                  |  ○   |                           | フレームワークの独自価値そのもの                                                                                                                                                                     |
+| Layout（§3）                      |  ○   |                           | GUIのコア機能、Taffyのアルゴリズムを参考にしつつ自前実装                                                                                                                                             |
+| BiDi（§4.2）                      |  ○   |                           | アルゴリズムが相対的に安定、学習コストの割に依存回避の価値が高い                                                                                                                                     |
+| Grapheme（§4.1）                  |  ○   |                           | Unicodeコアアルゴリズム、BiDiと同じ判断基準。.NET の `StringInfo` は使わない（§4.1）                                                                                                                 |
+| Shaping                           |      |        ○ HarfBuzz         | OpenType仕様の継続更新コストが個人の手に負えない                                                                                                                                                     |
+| Rasterization                     |      |        ○ FreeType         | フォントレンダリングの複雑性、継続更新コスト                                                                                                                                                         |
+| Linux GPU（§5.1）                 |      |       ○ wgpu-native       | ドライバ互換性対応の継続保守コスト                                                                                                                                                                   |
+| Linux Window（§6.1）              |      |          ○ SDL3           | Wayland/X11の差異吸収コスト                                                                                                                                                                          |
+| GPUレンダラ（§5.0/5.2）           |  ○   |                           | 独自設計（DisplayList、SDFシェーダー等）                                                                                                                                                             |
+| 言語ランタイム                    |      |    ○ .NET（NativeAOT）    | GC・型システム・BCL。NativeAOTで実行ファイルに同梱する                                                                                                                                               |
+| Windows APIバインディング（§2.9） |      | ○ TerraFX.Interop.Windows | Win32 / COM（D3D11・DXGI・DirectWrite・UIA）の宣言を手で書く工数が大きい。生成されたバインディングだけで構成され、ランタイムの抽象層を持たない（MIT）。使わない宣言は NativeAOT のトリミングで消える |
+| macOS / Linux APIバインディング   |  ○   |                           | macOS には相当品がないため、Obj-C ランタイムの呼び出しを自前で書く。Linux の C API（SDL3・wgpu-native・fontconfig・D-Bus）も `LibraryImport` で自前に宣言する                                        |
+| GPU 抽象化ライブラリ              |  ○   |                           | Silk.NET・Vortice 等の GPU 抽象は使わない。バックエンドは §5.2 のとおり自前                                                                                                                          |
+| ベクトル/行列型                   |      | ○ System.Numerics（BCL）  | `Vector2` / `Matrix3x2` / `Matrix4x4` はSIMD対応済みでランタイムに含まれる。追加依存にならない                                                                                                       |
 
 新しい技術要素を追加する際は、この表に一行追加する形で判断根拠を残す運用とする。
+
+**v1 の対象外（non-goal）:** Web（Wasm）とモバイル（iOS / Android）は v1 の対象外とし、将来の対応を保証しない。iOS は NativeAOT が使えるが、Android の NativeAOT は実験的で、Wasm はスレッド・P/Invoke・ネイティブライブラリの前提が大きく異なる。これらへの対応を理由に今の設計判断を縛らない。守るのは「Core が OS の型を参照しない」（§2.9.1）という既存の規則だけである。
 
 ### 0.1 C# / .NET 採用に伴う前提
 
@@ -48,17 +58,17 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 
 ### 0.2 MoonBit 版からの主な変更点
 
-| 項目                                 | MoonBit 版                                         | C# 版                                                                                                        | 参照   |
-| ------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------ |
-| ネイティブ連携                       | C / C++ / Obj-C のシム層が必須                     | P/Invoke（`LibraryImport`）と unmanaged 関数ポインタで OS API を直接呼ぶ。macOS のみ必要に応じて薄い Obj-C shim | §2.9   |
-| GC とネイティブ境界                  | GC 特性が未検証。GC ルート登録方法から要検証       | .NET GC は移動する（コンパクションあり）前提で設計できる。OS へは世代付き整数IDのみ渡す                      | §2.12  |
-| スレッド                             | GC 安全性のため全コードを単一スレッドにピン留め    | ランタイム自体はどのスレッドでも安全。Core の型は UI スレッドアフィンとし、実行時チェックで守る                | §2.12  |
-| アリーナ                             | struct が参照型のため `get` が生きた参照を返す     | `UiNode` は値型。`ref` 返しで扱い、配列の再確保をまたいで `ref` を保持しない                                 | §2.5   |
-| 再入ガード                           | defer / finally が無く手動で戻す                   | `try` / `finally`（`using` ＋ `ref struct`）で必ず戻す                                                       | §2.11.1 |
-| DisplayList のアップロード           | `Bytes` へ手動パック                               | unmanaged struct 配列を `MemoryMarshal.AsBytes` でゼロコピー転送                                             | §5.0.1 |
-| テキストのオフセット単位             | UTF-8                                              | UTF-16 コード単位（`string` と OS の IME / a11y API に合わせる）                                             | §4.3   |
-| パッケージ名                         | `moonbit-gui` / `moonbit-text`                     | `XylemUI` / `XylemUI.Text`                                                                                   | §2.9.1 |
-| スパイク結果（S1〜S9、V1〜V3、C0）   | MoonBit 版で検証済み                               | 得られた知見は設計に残す。C# 版で再検証する（§10.5）                                                         | §10.5  |
+| 項目                               | MoonBit 版                                      | C# 版                                                                                                                                   | 参照    |
+| ---------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| ネイティブ連携                     | C / C++ / Obj-C のシム層が必須                  | P/Invoke と unmanaged 関数ポインタで OS API を直接呼ぶ。Windows の宣言は TerraFX.Interop.Windows。macOS のみ必要に応じて薄い Obj-C shim | §2.9    |
+| GC とネイティブ境界                | GC 特性が未検証。GC ルート登録方法から要検証    | .NET GC は移動する（コンパクションあり）前提で設計できる。OS へは世代付き整数IDのみ渡す                                                 | §2.12   |
+| スレッド                           | GC 安全性のため全コードを単一スレッドにピン留め | ランタイム自体はどのスレッドでも安全。Core の型は UI スレッドアフィンとし、実行時チェックで守る                                         | §2.12   |
+| アリーナ                           | struct が参照型のため `get` が生きた参照を返す  | `UiNode` は値型。`ref` 返しで扱い、配列の再確保をまたいで `ref` を保持しない                                                            | §2.5    |
+| 再入ガード                         | defer / finally が無く手動で戻す                | `try` / `finally`（`using` ＋ `ref struct`）で必ず戻す                                                                                  | §2.11.1 |
+| DisplayList のアップロード         | `Bytes` へ手動パック                            | unmanaged struct 配列を `MemoryMarshal.AsBytes` でゼロコピー転送                                                                        | §5.0.1  |
+| テキストのオフセット単位           | UTF-8                                           | UTF-16 コード単位（`string` と OS の IME / a11y API に合わせる）                                                                        | §4.3    |
+| パッケージ名                       | `moonbit-gui` / `moonbit-text`                  | `XylemUI.Core` / `XylemUI.Text`（名前空間も `XylemUI.*`）                                                                               | §2.9.1  |
+| スパイク結果（S1〜S9、V1〜V3、C0） | MoonBit 版で検証済み                            | 得られた知見は設計に残す。C# 版で再検証する（§10.5）                                                                                    | §10.5   |
 
 ---
 
@@ -813,6 +823,7 @@ internal struct PaintState
 
 internal struct InteractionState
 {
+    public PseudoState PseudoState;      // Hover / Pressed / Focused / Disabled（§2.13）
     public bool Focusable;
     public CursorKind Cursor;
     public ImeCompositionState? ImeState;
@@ -950,7 +961,7 @@ flowchart TD
     end
     subgraph Interop["Interop層（unsafe C#）"]
         MInterop["Obj-C runtime P/Invoke（objc_msgSend）<br/>+ 必要時のみ薄いObj-C shim"]
-        WInterop["Win32 LibraryImport<br/>COM vtable 直接呼び出し（D3D11/DXGI/DirectWrite）"]
+        WInterop["TerraFX.Interop.Windows<br/>Win32 / COM vtable 直接呼び出し（D3D11/DXGI/DirectWrite）"]
         LInterop["SDL3 / wgpu-native の C API を LibraryImport"]
     end
     subgraph Platform["プラットフォーム層"]
@@ -983,7 +994,7 @@ flowchart TD
 
 矢印は主なデータフローの向きを示す。`Invalidation`と`Materialization`は`Reactive`と`Layout`の間の層である（それぞれ§2.4・§3.4）。GPUバックエンドとOS APIの間には必ずInterop層が存在する。MoonBit 版では C / C++ / Obj-C のシム層が必須だったが、C# 版は P/Invoke と unmanaged 関数ポインタで C API・COM を直接呼べるため、**Windows と Linux では中間のネイティブ shim を置かない**。macOS は Obj-C ランタイム（`objc_msgSend`・`class_addMethod`）を P/Invoke で呼ぶ。block を要求する API など C# から扱いにくい箇所に限り、薄い Obj-C shim（`.m`）を静的ライブラリとして同梱してよい。
 
-**COM の呼び出し方式（採用候補、P1 スパイクで確定）:** D3D11 / DXGI / DirectWrite は COM の vtable を `delegate* unmanaged[Stdcall]` で直接呼ぶ（TerraFX と同じ方式）。ランタイムのマーシャリングを経由しないため NativeAOT と相性がよく、参照カウントを自分で管理できる。RCW（`ComImport`）は使わない。RCW の解放はファイナライザ任せになり、§2.11.1 の `ResizeBuffers` の前提（ビューを全て Release 済み）を守れないためである。
+**COM の呼び出し方式:** D3D11 / DXGI / DirectWrite は TerraFX.Interop.Windows の宣言を使い、COM の vtable を unmanaged 関数ポインタで直接呼ぶ（P1 スパイクで NativeAOT での動作を確認する）。ランタイムのマーシャリングを経由しないため NativeAOT と相性がよく、参照カウントを自分で管理できる。RCW（`ComImport`）は使わない。RCW の解放はファイナライザ任せになり、§2.11.1 の `ResizeBuffers` の前提（ビューを全て Release 済み）を守れないためである。
 
 **Window/Surface/Swapchain/Renderer/EventLoopの責務分離**: 上図では`GPU`→`Interop`→`Win`という単純な流れに見えるが、実装上は`Window`（OSウィンドウそのもの）・`Surface`（GPU描画対象、§5.2のバックエンド実装が保持）・`Swapchain`（バッファ管理）・`Renderer`（DisplayListからGPUコマンドへの変換、§5.0で明記した原則）・`EventLoop`（§2.11のFrameScheduler）は互いに独立した概念であり、実装時にこれらを1つの巨大なクラスに混在させない。`Application`が`WindowManager`・`Renderer`（`Surface`を内包）・`EventLoop`をそれぞれ独立に保持し、各々が§11.6のInvariant 9/10（GPUバックエンドはUiNodeを直接参照しない、PlatformバックエンドはCore engine型を直接変更しない）に従って疎結合を保つ構成とする。
 
@@ -991,9 +1002,12 @@ flowchart TD
 
 ```text
 src/
-  XylemUI/                     # Core: Reactive / Scope / Arena / Invalidation / Layout / Materialization
-                               #       DisplayList / HitTest / Input / Focus。OS API を参照しない
-  XylemUI.Text/                # テキストパイプライン（§4.1）。XylemUI から独立
+  XylemUI.Core/                # Core: Reactive / Scope / Arena / Invalidation / Layout / Materialization
+                               #       DisplayList / HitTest / Input / Focus / Popup。OS API を参照しない。部品は持たない
+  XylemUI.Text/                # テキストパイプライン（§4.1）。XylemUI.Core から独立
+  XylemUI.Primitives/          # 見た目のない部品（§13.1）。ロジック・a11y・キーボード・フォーカス・開閉状態だけ
+  XylemUI.Theme.Fluent/        # Fluent 2 デザインシステム（§13.2）。Primitives に見た目を被せる
+  XylemUI.Testing/             # ヘッドレスホスト・仮想クロック・入力注入・PNG（§12）。製品バイナリには含めない
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
@@ -1003,16 +1017,24 @@ src/
   XylemUI.Generators/          # Source Generator（Binding 記述子等、§2.4）
 samples/
   Todo/
+  XylemUI.Gallery/             # 全機能のショーケース（§13.3、マイルストーン G1）
 tests/
-  XylemUI.Tests/
-  XylemUI.Text.Tests/          # Unicode 適合性テスト（§8.13）
+  XylemUI.Core.Tests/          # 第2層・第3層（§12.1）
+  XylemUI.Text.Tests/          # 第1層：Unicode 適合性テスト（§8.13）
+  XylemUI.Rendering.Tests/     # 第4層：WARP ゴールデン画像
+  XylemUI.Gallery.Tests/       # 第5層：Gallery の E2E
+benchmarks/
+  XylemUI.Benchmarks/          # BenchmarkDotNet のマイクロベンチマーク
+  E2E/                         # §11.3 のシナリオ（10k Rows、タイピング、Jank、起動時間）
 tools/
   UnicodeTableGen/             # Unicode データテーブル生成器（§4.1）
 vendor/
   versions.lock                # HarfBuzz / FreeType / SDL3 / wgpu-native / Unicode のバージョン固定
 ```
 
-- `XylemUI`（Core）は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
+- `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
+- 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
+- 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
 - Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。
 - アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とし、具体的なパッケージ構成は C0 相当の抽出時に決める。
 
@@ -1206,6 +1228,55 @@ internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 
 **検証要件**: MoonBit 版では「C 側から MoonBit オブジェクトを GC ルートとして保持できるか」自体が未検証だった。.NET では GC の挙動（移動する・強参照があれば回収されない）が文書化されているため、この検証は不要になる。代わりに §10.5 の P0 スパイクで、NativeAOT ビルドの `[UnmanagedCallersOnly]` な `WndProc` から `NativeHandleTable` 経由でウィンドウオブジェクトを解決できること、GC を強制的に走らせても（`GC.Collect` + コンパクション）解決結果が正しいことを確認する。
 
+### 2.13 開発者向けAPI
+
+アプリとテーマの作者が書くのは、`Element` を返す C# のメソッドである。XAML・CSS・スタイル文字列は持たない。状態はメソッド内のローカル変数として `Signal.Create` で作る。ViewModel クラスも手動の `Dispose` も要らない。コンポーネント関数は初回に1度だけ実行され、以降は Signal を読んでいる箇所だけが更新される（§2.1）。
+
+```csharp
+static Element Counter()
+{
+    var count = Signal.Create(0);
+
+    return Column(
+        Text(() => $"clicks: {count.Get()}"),
+        Button("+1", onClick: () => count.Set(count.Get() + 1))
+            .Padding(8)
+            .Background(Colors.Accent)
+            .CornerRadius(4)
+            .Hovered(new PaintStyle { Background = Colors.AccentHover })
+            .Pressed(new PaintStyle { Background = Colors.AccentPressed }));
+}
+```
+
+**スタイルのメソッドチェーン:** `.Padding()` / `.Background()` / `.CornerRadius()` 等は `Element`（`NodeHandle` を包む struct）の拡張メソッドとする。各メソッドはアリーナ上のノードのスタイルへ直接書き込み、同じ `Element` を返す。中間のスタイルオブジェクトは作らないので、チェーンはアロケーションを発生させない。Signal を受け取るオーバーロード（`.Background(IReadOnlySignal<Color>)`）は Binding 層（§2.4）に繋ぎ、該当する `ChangeKind` で無効化する。
+
+**疑似状態（Hover / Pressed / Focused / Disabled）:** 疑似状態はノードの `InteractionState` に持つビットフラグで表し、状態ごとに Signal を作らない。疑似状態ごとに変えられるのは **Paint 系のプロパティ（背景色・前景色・ボーダー色・不透明度・transform）だけ**で、サイズ・パディング・マージンなどレイアウトに影響する値は変えられない。これは型で強制する。`.Hovered()` 等が受け取る `PaintStyle` は Paint 系のプロパティしか持たない struct である。したがって疑似状態の変化は常に Paint dirty（`ChangeKind.Color` 相当）で済み、ホバーで Layout が走ることは構造的に起こらない。
+
+```csharp
+[Flags]
+internal enum PseudoState : byte
+{
+    None = 0, Hovered = 1 << 0, Pressed = 1 << 1, Focused = 1 << 2, Disabled = 1 << 3,
+}
+
+public struct PaintStyle  // レイアウトに影響するプロパティは持たない
+{
+    public Color? Background;
+    public Color? Foreground;
+    public Color? BorderColor;
+    public float? Opacity;
+    public Matrix3x2? Transform;
+}
+```
+
+フラグの更新はポインタ移動・フォーカス移動の処理（§7）が直近の `HitTestList` を元に行い、変化したノードだけを Paint dirty にする。DisplayList 構築時に、現在のフラグに対応する `PaintStyle` を基本のスタイルに重ねて解決する。
+
+**Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。
+
+**ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。
+
+**MVVM との互換:** `INotifyPropertyChanged` や CommunityToolkit.Mvvm / ReactiveProperty との橋渡しは v1 では提供しない。要望が出た場合は別パッケージとして検討する。
+
 ---
 
 ## 3. レイアウトエンジン：統一ボックスモデル（Taffy方式）
@@ -1250,6 +1321,14 @@ public struct LayoutStyle
 ```
 
 `LayoutAlgorithm` はスタイル設定時にだけ生成し、毎フレームは生成しないため record class でよい。
+
+**ボックスモデルの意味論（CSS から持ち込まないもの）:** レイアウトはアプリ UI のための厳格なサブセットとし、CSS の歴史的な挙動は持ち込まない。人間にも AI エージェントにも結果を予測しやすくするためである。
+
+- **マージンの相殺（margin collapsing）はしない。** 隣接する兄弟・親子のマージンは常に足し合わせる
+- **float は持たない**
+- **inline formatting context は持たない。** 文字の並びはテキストノードの内部（§4）だけで扱い、要素をテキストの行に流し込むことはしない（インラインオブジェクトは §4.1 の将来拡張）
+- **`box-sizing` は常に border-box。** 指定したサイズはパディングとボーダーを含む
+- Block は子を主軸方向に順に積むだけのアルゴリズムとし、Taffy の Block 相当からマージン相殺を除いたものにする
 
 テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
 
@@ -1454,7 +1533,7 @@ src/XylemUI.Text/
     Selection/
 ```
 
-GUIフレームワーク本体（`XylemUI`）はこの`XylemUI.Text`に対する依存として扱う。
+GUIフレームワーク本体（`XylemUI.Core`）はこの`XylemUI.Text`に対する依存として扱う。
 
 FreeTypeはカラーグリフテーブル対応（COLR/CPAL等）をビルド時オプションとして有効化する（絵文字表示、§4.6参照）。
 
@@ -1889,13 +1968,13 @@ GPUドライバの不具合対応は「一度作れば終わり」ではなく�
 
 ### 5.2 採用方針
 
-| プラットフォーム | 採用                              | 根拠                                                                                                                                                                                               |
-| ---------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS            | Metal直叩き                       | 単一ベンダー・単一API。GPUI自身が今も直叩きを維持。Obj-C ランタイム経由で呼ぶ（§2.9）                                                                                                              |
-| Windows          | DirectX 11直叩き                  | Vulkanより広範な互換性（VM含む）。GPUIが実際にVulkanから乗り換えた実例に倣う。D3D12ではなくD3D11を選ぶのも同じ理由。同期はD3D11.0のEvent Queryを必須とし、ID3D11Fenceは11.3+の任意最適化（§5.0.2） |
+| プラットフォーム | 採用                              | 根拠                                                                                                                                                                                                                   |
+| ---------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS            | Metal直叩き                       | 単一ベンダー・単一API。GPUI自身が今も直叩きを維持。Obj-C ランタイム経由で呼ぶ（§2.9）                                                                                                                                  |
+| Windows          | DirectX 11直叩き                  | Vulkanより広範な互換性（VM含む）。GPUIが実際にVulkanから乗り換えた実例に倣う。D3D12ではなくD3D11を選ぶのも同じ理由。同期はD3D11.0のEvent Queryを必須とし、ID3D11Fenceは11.3+の任意最適化（§5.0.2）                     |
 | Linux            | wgpu-native経由（自作原則の例外） | ディストロ・コンポジタ・ベンダーの組み合わせ数に対し、個人〜小規模チームが単独でドライバ回避策を書き続けるのは非現実的。GPUI自身がこの壁にぶつかり方針転換した実例がある。C API（`webgpu.h`）を `LibraryImport` で呼ぶ |
 
-.NET には Silk.NET・Vortice.Windows 等の網羅的な GPU バインディングがあるが、§0 の Dependency Decision Matrix のとおり採用しない。必要な API は D3D11 / DXGI / Metal の一部に限られるため、COM vtable と Obj-C メッセージの呼び出しを自前で書く。
+.NET には Silk.NET・Vortice.Windows 等の GPU 抽象・ラッパーがあるが、§0 の Dependency Decision Matrix のとおり採用しない。Windows は TerraFX.Interop.Windows の宣言（抽象層を持たない生成バインディング）だけを使って D3D11 / DXGI の COM vtable を直接呼ぶ。macOS は Metal の Obj-C メッセージ呼び出しを自前で書く。
 
 **新たに生じるコスト**: 3プラットフォームで異なるシェーダー言語（MSL/HLSL/WGSL）が必要になる。GPUI自身もこれをコストとして認識していた。SDFベースの矩形・グリフ描画シェーダーはロジックを単純に保ち、3言語間で機械的に対応づけられる範囲に抑える。
 
@@ -1984,12 +2063,14 @@ public interface IPlatform
 
 **機能ごとのサポート状況マトリクス（例、実装時に全項目を埋める）**
 
-| 機能                 | Windows                       | macOS       | Linux(Wayland)                              | Linux(X11)                      |
-| -------------------- | ----------------------------- | ----------- | ------------------------------------------- | ------------------------------- |
-| カスタムタイトルバー | Supported（§8.8のDWM API）    | Supported   | Best effort（コンポジタ依存）               | Supported                       |
-| システムトレイ       | Supported                     | Supported   | Requires compositor support（§8.6）         | Supported                       |
-| ファイルダイアログ   | Supported                     | Supported   | Requires portal（xdg-desktop-portal）       | Best effort                     |
-| Fractional Scaling   | Supported(Per-Monitor DPI v2) | N/A(2x固定) | Supported(`wp_fractional_scale_v1`、§6.1.1) | Unsupported（整数スケールのみ） |
+| 機能                               | Windows                                              | macOS               | Linux(Wayland)                              | Linux(X11)                      |
+| ---------------------------------- | ---------------------------------------------------- | ------------------- | ------------------------------------------- | ------------------------------- |
+| カスタムタイトルバー               | Supported（§8.8のDWM API）                           | Supported           | Best effort（コンポジタ依存）               | Supported                       |
+| システムトレイ                     | Supported                                            | Supported           | Requires compositor support（§8.6）         | Supported                       |
+| ファイルダイアログ                 | Supported                                            | Supported           | Requires portal（xdg-desktop-portal）       | Best effort                     |
+| Fractional Scaling                 | Supported(Per-Monitor DPI v2)                        | N/A(2x固定)         | Supported(`wp_fractional_scale_v1`、§6.1.1) | Unsupported（整数スケールのみ） |
+| ウィンドウ背景 Mica                | Supported（Windows 11 22H2+、§13.2）。それ以前は単色 | Unsupported（単色） | Unsupported（単色）                         | Unsupported（単色）             |
+| 別ウィンドウのポップアップ（§7.3） | v1.0 で Supported                                    | v1.x                | v1.x                                        | v1.x                            |
 
 ### 6.1 Linuxプラットフォーム層の構造化
 
@@ -2132,6 +2213,34 @@ internal sealed class FocusManager
 
 Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子として積み、閉じると`CurrentScope`を親へ戻す。`IsModal`なスコープが積まれている間は、§7の captureフェーズでそのスコープ外へのフォーカス移動・イベント到達を遮断する（フォーカストラップの実装）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7の`ITextInputBackend`）は`CurrentScope.FocusedChild`がテキスト入力可能な場合にのみ有効化される。
 
+### 7.3 ポップアップ（メニュー・フライアウト・ツールチップ・ドロップダウン）
+
+主なフレームワークの方式は2つに分かれる。描画エンジンを自前で持つ Flutter（`Overlay`）と GPUI は、ウィンドウ内に重ねて描く方式で、ウィンドウの外へははみ出せない。デスクトップで成熟した WPF・Avalonia・WinUI 3・Qt は、最終的に別の OS ウィンドウとして出す方式に行き着いている。Avalonia は出す先を抽象化し、デスクトップでは別ウィンドウを既定、`OverlayPopups` 指定やモバイル/ブラウザではウィンドウ内オーバーレイを使う。
+
+**採用: Avalonia と同じ構造にする。** ポップアップを出す先を `IPopupHost` で抽象化し、2つの実装を持つ。
+
+| 実装                | 内容                                                                                     | 時期                                          |
+| ------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `OverlayPopupHost`  | メインウィンドウと同じスワップチェーンに重ねて描く。ウィンドウ外へははみ出せない         | v0.2 / G1                                     |
+| `WindowedPopupHost` | 枠なしの別 OS ウィンドウ（Windows ではアクティブにならないポップアップウィンドウ）に描く | v1.0 までに Windows。デスクトップの既定にする |
+
+ポップアップごとに出す先を指定できる（Avalonia の `OverlayPopups` 相当）。別ウィンドウを作れない環境では自動的にオーバーレイへフォールバックする（§11.2）。
+
+**ポップアップは独立した描画ルートである。** どちらに出す場合でも、ポップアップは自身の `LayoutRoots` の根・`HitTestList`・`DisplayList`・`FocusScope`（§7.2）を持つ。Reactive graph と `ScopeArena` はメインウィンドウと共有し、ポップアップの内容は開いた側の Scope の子として所有される。こうしておくことで、オーバーレイから別ウィンドウへの切り替えは「出力先が同じスワップチェーンへの重ね描きか、別のスワップチェーンか」の違いだけになる。オーバーレイを「メインツリーの最上位の子」として実装すると、別ウィンドウ化のときに Layout・ヒットテスト・フォーカスの境界を作り直すことになるため採らない。
+
+```csharp
+public interface IPopupHost
+{
+    PopupHandle Open(Element content, in PopupPlacement placement, PopupOptions options);
+    void Close(PopupHandle popup);
+}
+```
+
+- **入力:** 描画ルートごとに `HitTestList` を持つ。オーバーレイでは、開いているポップアップのリストを前面から順に試してからメインのリストを試す。別ウィンドウでは OS がウィンドウ単位で振り分ける。
+- **フォーカスと IME:** ポップアップの `FocusScope` は開いた側のスコープの子として積む（§7.2）。ComboBox の検索欄のようにポップアップ内でテキスト入力する場合、別ウィンドウ実装では IME の対象ウィンドウを切り替える。
+- **外側クリックで閉じる（light dismiss）:** オーバーレイ・別ウィンドウのどちらでも同じ規則で、ポップアップの外を押したら閉じる。ポインタキャプチャ中は §7 の優先規約に従う。
+- **DPI:** 別ウィンドウ実装では、ポップアップが表示されるモニタの `ScaleFactor`（§6.1.1）で描く。
+
 ---
 
 ## 8. 未決定事項の決着（第2ラウンド）
@@ -2202,16 +2311,16 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 
 ## 9. 依存ライブラリとライセンス一覧
 
-| ライブラリ                 | 用途                       | ライセンス              | リンク方式                                                          |
-| -------------------------- | -------------------------- | ----------------------- | ------------------------------------------------------------------- |
-| .NET ランタイム / BCL      | 言語ランタイム・GC・標準ライブラリ | MIT              | NativeAOT で実行ファイルに同梱                                      |
-| HarfBuzz                   | テキストシェーピング       | MIT相当                 | 静的（NativeAOT。下記）                                              |
-| FreeType                   | グリフラスタライズ         | FTL選択時               | 静的（同上）                                                        |
-| SDL3（Linuxのみ）          | ウィンドウ/入力/トレイ     | zlib                    | 静的（同上）                                                        |
-| wgpu-native（Linuxのみ）   | GPU抽象化                  | MIT/Apache-2.0          | 静的（同上）                                                        |
-| fontconfig（Linuxのみ）    | フォント解決               | MIT相当                 | **動的**（§8.11、実機の設定と同期させるため意図的に動的）           |
-| libdbus-1（Linuxのみ）     | AT-SPI/通知連携のD-Bus IPC | AFL-2.1/GPL-2.0デュアル | **動的**（§6.2、実機のD-Busセッションと同期させるため意図的に動的） |
-| 同梱フォールバックフォント | フォント                   | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
+| ライブラリ                 | 用途                               | ライセンス              | リンク方式                                                          |
+| -------------------------- | ---------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| .NET ランタイム / BCL      | 言語ランタイム・GC・標準ライブラリ | MIT                     | NativeAOT で実行ファイルに同梱                                      |
+| HarfBuzz                   | テキストシェーピング               | MIT相当                 | 静的（NativeAOT。下記）                                             |
+| FreeType                   | グリフラスタライズ                 | FTL選択時               | 静的（同上）                                                        |
+| SDL3（Linuxのみ）          | ウィンドウ/入力/トレイ             | zlib                    | 静的（同上）                                                        |
+| wgpu-native（Linuxのみ）   | GPU抽象化                          | MIT/Apache-2.0          | 静的（同上）                                                        |
+| fontconfig（Linuxのみ）    | フォント解決                       | MIT相当                 | **動的**（§8.11、実機の設定と同期させるため意図的に動的）           |
+| libdbus-1（Linuxのみ）     | AT-SPI/通知連携のD-Bus IPC         | AFL-2.1/GPL-2.0デュアル | **動的**（§6.2、実機のD-Busセッションと同期させるため意図的に動的） |
+| 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
 
 **静的リンクの方法:** NativeAOT では、ネイティブの静的ライブラリ（`.lib` / `.a`）を `NativeLibrary` 項目でリンカに渡し、`DirectPInvoke` で該当ライブラリへの P/Invoke を直接呼び出しに解決させる。これにより HarfBuzz 等は実行ファイルに取り込まれ、別の `.dll` / `.so` / `.dylib` を配布しない。開発時の JIT 実行では同じライブラリを共有ライブラリとして読み込む（`vendor/` のビルド成果物）。両構成で同じ `LibraryImport` 宣言を使う。
 
@@ -2228,13 +2337,16 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 全要件を維持する方針（既存）は変更しない。以下はあくまで実装に着手する順序であり、後段のフェーズにある項目も設計（型・フック）には最初から含める。
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
-2. **v0.2**: Grid、Materialization(仮想化)、アニメーション、IME、クリップボード、D&D、a11y
-3. **v0.3**: RTL、BiDi、複雑スクリプト、縦書き、カラー絵文字
-4. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
-5. **v0.5（Linux extended）**: xdg-desktop-portal、通知、トレイ、AT-SPI、Fractional Scaling
-6. **v1.0**: 3プラットフォーム揃った状態＋パッケージング/署名/自動アップデート
+2. **v0.2**: Grid、Materialization(仮想化)、アニメーション、IME、クリップボード、D&D、a11y、ポップアップ（オーバーレイ実装、§7.3）、`XylemUI.Testing`（§12）
+3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
+4. **v0.3**: RTL、BiDi、複雑スクリプト、縦書き、カラー絵文字
+5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
+6. **v0.5（Linux extended）**: xdg-desktop-portal、通知、トレイ、AT-SPI、Fractional Scaling
+7. **v1.0**: 3プラットフォーム揃った状態＋Windows の別ウィンドウのポップアップ（§7.3）＋パッケージング/署名/自動アップデート
 
-**XylemUI と XylemUI.Text のバージョン分離**: §4.1で`XylemUI.Text`を独立アセンブリとして切り出す方針を確定させたが、さらに一歩進めて**`XylemUI`側の`TextNode`は最初はLTR+CJKのみで成立させ、XylemUI.TextのBiDi/複雑スクリプト/縦書き/高度な絵文字対応は`XylemUI`側のバージョンとは独立に段階的に追加する**。両者のパッケージバージョンを明確に分離することで、`XylemUI.Text`側の開発が遅延しても`XylemUI`本体のCore〜v0.2の実装を止めずに進められる。
+**v1.x（v1.0 後の追加フェーズ）**: sbix / SVG / CBDT カラー絵文字（§4.6）、アプリ内 Acrylic（§13.2）、macOS / Linux の別ウィンドウのポップアップ（§7.3）、独立 SemanticsTree（§4.4.1）。
+
+**XylemUI.Core と XylemUI.Text のバージョン分離**: §4.1で`XylemUI.Text`を独立アセンブリとして切り出す方針を確定させたが、さらに一歩進めて**`XylemUI.Core`側の`TextNode`は最初はLTR+CJKのみで成立させ、XylemUI.TextのBiDi/複雑スクリプト/縦書き/高度な絵文字対応は`XylemUI.Core`側のバージョンとは独立に段階的に追加する**。両者のパッケージバージョンを明確に分離することで、`XylemUI.Text`側の開発が遅延しても`XylemUI.Core`本体のCore〜v0.2の実装を止めずに進められる。
 
 ### 10.5 次に着手すべき技術スパイク
 
@@ -2250,7 +2362,7 @@ MoonBit 版のスパイク（S1〜S9）で得た知見のうち、OS・GPU の�
    - (c) UIスレッド/ワーカースレッドの規約（§11.5のThreading model）: `Channel<UiMessage>` + `PostMessage(WM_NULL)` による起床と、独自 `SynchronizationContext` 経由の `await` 継続が UI スレッドで再開すること。
    - (d) §2.12 の UI スレッドアフィニティ検査（公開 API 入口のスレッド ID 比較）が、他スレッドからの `Signal.Set` を確実に拒否すること。
    - (e) フレームワーク一式（Core + Platform.Windows + Rendering.D3D11）を trim / AOT 警告ゼロでビルドできること。起動時間と、空ウィンドウでのアイドル時メモリ（§5.3）を測る。
-2. **P1: Interop**: `LibraryImport` による Win32 呼び出しと、`delegate* unmanaged[Stdcall]` による COM vtable 直接呼び出し（D3D11 / DXGI）が NativeAOT で動くこと（MoonBit 版の P1「MoonBit ↔ C FFI」に相当）。HarfBuzz / FreeType の静的ライブラリを `DirectPInvoke` で実行ファイルに取り込めること（§9）。
+2. **P1: Interop**: TerraFX.Interop.Windows の宣言による Win32 呼び出しと COM vtable 直接呼び出し（D3D11 / DXGI）が NativeAOT で動き、トリミング後のバイナリに未使用の宣言が残らないこと（MoonBit 版の P1「MoonBit ↔ C FFI」に相当）。HarfBuzz / FreeType の静的ライブラリを `DirectPInvoke` で実行ファイルに取り込めること（§9）。
 3. **P1: Arena + generation handle**: §2.5の`NodeHandle`実装の妥当性検証。Arenaはほぼ全レイヤー（Layout/Paint/Invalidation/Materialization/Focus等）から参照される基盤であり、他の全機能実装に先立って早期に妥当性を確定させる。`ref` 返しのアクセスと「値コピー→再帰→`ref`を取り直して書き戻し」パターンが書きやすいか、配列の再確保で古い `ref` に書き込んだ場合を debug の検査で確実に検出できるかを確かめる。
 4. **P1: OS Window**: C#→Win32→ウィンドウ生成→イベントループの最小疎通
 5. **P1: Signal→Reactive→Invalidation→Layout**: §2.4.1の`LayoutRoots` worklist（LayoutRequest、`SelfDirty || SubtreeDirty`でのalgorithm実行、制約源の解決、pass中再invalidation）と§2.2.2のスケジューラ状態機械（Depth再構築、lazy Computedのpull、Effect内Signal.Setの次cycle）が正しく動作するかを含める
@@ -2262,14 +2374,14 @@ MoonBit 版のスパイク（S1〜S9）で得た知見のうち、OS・GPU の�
 
 **MoonBit 版（lunaria）での到達記録**: MoonBit 版では垂直スライスを V1〜V3 で閉じ、C0 で Core とシムを分離した。C# 版でも同じ到達点と判定基準（各段階4問 Yes）を使う。
 
-| 段階 | MoonBit 版での到達内容（日付）                                                                                                                                                         | 詳細                                                         |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 段階 | MoonBit 版での到達内容（日付）                                                                                                                                                                         | 詳細                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | V1   | Column に Text と Button を載せ、FillRect + HarfBuzz グリフを同一 Present で出した。ボタン中心の画素は `0x3366CC`。Button のヒットで `clicks=1`。clean フレームの Present 回数は増えない（2026-09-11） | [#19](https://github.com/YUKIKEDA/lunaria/issues/19) |
-| V2   | ScrollView を `ChangeKind.TransformProp` だけで動かした。子の `y` は 64 のまま、layout 回数は 1 のまま。clip 外だった Button は offset=40 のあと画素 `0x3366CC`（2026-09-11）                | [#21](https://github.com/YUKIKEDA/lunaria/issues/21) |
-| V3   | ヘッダ件数 + Add + ScrollView 内の項目 Button。Add×3 で `todos: 3`。item2 は `y=232` のまま、offset=64 のあとギャップ位置の画素が `0x3366CC`（2026-09-12）                               | [#23](https://github.com/YUKIKEDA/lunaria/issues/23) |
-| C0   | V3 の骨格を Core とシムに抽出。サンプルは `cmd/todo`。Core はシムを import しない（2026-09-12）                                                                                          | [#25](https://github.com/YUKIKEDA/lunaria/issues/25) |
+| V2   | ScrollView を `ChangeKind.TransformProp` だけで動かした。子の `y` は 64 のまま、layout 回数は 1 のまま。clip 外だった Button は offset=40 のあと画素 `0x3366CC`（2026-09-11）                          | [#21](https://github.com/YUKIKEDA/lunaria/issues/21) |
+| V3   | ヘッダ件数 + Add + ScrollView 内の項目 Button。Add×3 で `todos: 3`。item2 は `y=232` のまま、offset=64 のあとギャップ位置の画素が `0x3366CC`（2026-09-12）                                             | [#23](https://github.com/YUKIKEDA/lunaria/issues/23) |
+| C0   | V3 の骨格を Core とシムに抽出。サンプルは `cmd/todo`。Core はシムを import しない（2026-09-12）                                                                                                        | [#25](https://github.com/YUKIKEDA/lunaria/issues/25) |
 
-C# 版の C0 相当は、§2.9.1 の `XylemUI`（Core）と `XylemUI.Platform.Windows` / `XylemUI.Rendering.D3D11` への分離、サンプル `samples/Todo` とする。上流のファイル単位の索引は [references.md](./references.md)。
+C# 版の C0 相当は、§2.9.1 の `XylemUI.Core` と `XylemUI.Platform.Windows` / `XylemUI.Rendering.D3D11` への分離、サンプル `samples/Todo` とする。上流のファイル単位の索引は [references.md](./references.md)。
 
 **垂直スライスで意図的に実装しないものの明示**: 迷いなく最速でこの到達点に着くため、以下を垂直スライス時点では意図的に除外する。これらを削ってもアーキテクチャの骨格（Signal→Arena→Invalidation→DisplayList→GPU）の検証には影響しない。
 
@@ -2314,6 +2426,9 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 | Pass2後の行幅再オーバーフロー             | Pass1へ戻らず、最大1回の緊急グラフェムブレーク。それでも溢れる場合は視覚的オーバーフロー（clipまたははみ出し描画） | §4.1    |
 | OS コールバック内のマネージド例外         | `WndProc` 等の入口で捕捉し、診断ログを出して既定処理へ戻す。不変条件違反はクラッシュ・ファスト                     | §2.11.1 |
 | Scope の cleanup が例外を投げた           | 残りの cleanup を最後まで実行し、まとめて `AggregateException` で報告する                                          | §2.3    |
+| Mica 非対応（Windows 11 22H2 未満・他OS） | ウィンドウ背景をテーマの単色で塗る                                                                                 | §13.2   |
+| 別ウィンドウのポップアップを作れない      | ウィンドウ内オーバーレイ（`OverlayPopupHost`）にフォールバック                                                     | §7.3    |
+| システムUIフォントが見つからない          | §4.5 の同梱フォールバックフォントで描く                                                                            | §13.2   |
 
 ### 11.3 性能受け入れ基準
 
@@ -2364,8 +2479,9 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 **追加すべき指標**: フレーム時間だけでなく、以下もFlutter/GPUI級を目指す上でのAcceptance Criteriaに含める。
 
 - 起動時間（cold start latency）
+- 実行ファイルのサイズ
 - アイドル時CPU使用率・アイドル時メモリ（§2.11のEvent Loop Waiterの実効性を測る指標でもある）
-- タイピングレイテンシ（キー入力→画面反映）
+- タイピングレイテンシ（キー入力→画面反映。測り方は下記）
 - ポインタレイテンシ（マウス移動→カーソル/ホバー状態反映）
 - スクロールレイテンシ（§3.4のMaterializationの実効性を測る指標でもある）
 - 定常状態（入力なし・アニメーションのみ）でのフレームあたりのアロケーション量（目標 0 バイト、§5.0.1）
@@ -2382,6 +2498,20 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 - ウィンドウリサイズ・スクロール・テーマ切り替え・a11yツリー更新それぞれの応答性
 
 計測項目: CPU frame time/GPU execution time/Present latency/Input-to-photon latencyそれぞれのp95/p99/missed-frame ratio、フレームあたりのアロケーション量、GC発生頻度（世代別）とポーズ時間、起動時間、アイドル時CPU/メモリ。これらは§10.5のP0スパイク（GC+イベントループ）で最初に計測基盤を作る。Core 単体のマイクロベンチマーク（Scheduler・Layout・DisplayList 構築）は BenchmarkDotNet の `[MemoryDiagnoser]` でアロケーション量も含めて測る。
+
+**サイズ・起動時間の数値は仮説:** 「単一の実行ファイルで約 15MB」「起動 10ms」「コールドスタート 30ms 未満」といった数値は、現時点では実測していない仮説である。D3D11 デバイスの作成だけで数十 ms かかる環境もあるため、目標値は S1 / P0 スパイク（§10.5）で NativeAOT のバイナリサイズと、D3D11 初期化・フォント読み込みを含む起動時間を実測してから確定する。それまで対外的な説明にも数値は使わない。
+
+**タイピングレイテンシの測り方:** CI では「入力イベントを注入してから、そのフレームの Present を発行するまで」をソフトウェアで測り、代理指標として記録する。本当の Input-to-photon（ハイスピードカメラ等で画面の変化を捉える Dan Luu 式の計測）は CI では測れないため、リリース前に実機で手動計測する。
+
+**CI のゲート方針:** PR を失敗させるのは**正しさのテスト（§12.1 の全層）と Zero-Alloc ゲート**だけとする。時間を測るベンチマーク（10k Rows・タイピングレイテンシ・Jank 率・起動時間）は共有 CI ランナーの揺れが大きいため、結果を記録して推移を追うだけにし、PR は失敗させない。
+
+**Zero-Alloc ゲート:** `XylemUI.Testing` の `PerformanceAssert.DoesNotAllocate` が、ウォームアップ（N フレーム）の後の区間で `GC.GetAllocatedBytesForCurrentThread()` の差分が 0 であることを検査する。1バイトでも確保されたら失敗する。対象は次の5シナリオ。ノードの生成・テキストの変更・リストの更新は確保が避けられないため対象外とする。
+
+1. アイドル（再描画なし）
+2. ホバーの出入り（疑似状態の切り替え、§2.13）
+3. カーソルの点滅
+4. スクロール（`TransformProp` のみ、§3.4.1）
+5. アニメーション1本の再生
 
 **version propagation cost**: `NodeVersions.DescendantLayout`の親方向伝播は1回のrect変化につきO(depth)で、Layout Boundaryで止まる。10万ノードでもGUIツリーの深さは通常数十以下なので、このコストは上表のLayout予算に含める。伝播を省略してキャッシュキーから外すことはしない（誤キャッシュヒットの方が高い）。
 
@@ -2415,6 +2545,8 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 - IME（日本語IME、§4.7のITextInputBackend経由で composition が機能する。surrounding text は macOS/Linux で機能し、Windows v1 IMM32 では OS 非伝達、§11.2）
 - Performance（§11.3の全ベンチマークシナリオがAcceptance内に収まる）
 - NativeAOT（3プラットフォームとも trim / AOT 警告ゼロでリリースビルドが成立する）
+- ポップアップ（Windows で別ウィンドウ実装が既定として動く、§7.3）
+- Gallery（§13.3 の全ページが3プラットフォームで動き、Gallery の E2E と Zero-Alloc ゲートが CI で通る）
 ```
 
 **Vision と Engineering Requirement:** 「Flutter/Avalonia/GPUI級」は Vision として残す。工学的な受け入れ基準は§11.3・§11.4の表で切る。
@@ -2434,14 +2566,14 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 
 **§11.5のNode lifecycleとFrame lifecycleについて、実コードに落とし込むための厳密な状態遷移表を示す。**
 
-| 現状態      | トリガー                                                      | 遷移先     | 実行される副作用                                                                      |
-| ----------- | ------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------- |
-| `Unmounted` | `Show`/`For`で条件合致                                        | `Mounted`  | Scope生成、Signal購読開始、`MarkDirty(Layout)`                                        |
-| `Mounted`   | Signal更新                                                    | `Dirty`    | `Invalidate`→`MarkDirty`伝播（§2.4）、`LayoutRoots`登録                               |
-| `Dirty`     | Materialization / Text パイプライン完了後に `RunLayoutPass`   | `Clean`    | サイズ・位置確定、`Versions.Layout`更新（下記11.5.2）、DisplayList再構築キューへ      |
-| `Mounted`   | `Show`条件false（`exit`あり）                                 | `Exiting`  | Reactive購読切断、PaintStateフリーズ、アニメーション登録（§2.7）                      |
-| `Exiting`   | `exit`タイマー満了                                            | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
-| `Exiting`   | 条件がtrueに復帰                                              | `Mounted`  | Reactive再購読、アニメーション破棄、`MarkDirty(Paint)`                                |
+| 現状態      | トリガー                                                    | 遷移先     | 実行される副作用                                                                      |
+| ----------- | ----------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------- |
+| `Unmounted` | `Show`/`For`で条件合致                                      | `Mounted`  | Scope生成、Signal購読開始、`MarkDirty(Layout)`                                        |
+| `Mounted`   | Signal更新                                                  | `Dirty`    | `Invalidate`→`MarkDirty`伝播（§2.4）、`LayoutRoots`登録                               |
+| `Dirty`     | Materialization / Text パイプライン完了後に `RunLayoutPass` | `Clean`    | サイズ・位置確定、`Versions.Layout`更新（下記11.5.2）、DisplayList再構築キューへ      |
+| `Mounted`   | `Show`条件false（`exit`あり）                               | `Exiting`  | Reactive購読切断、PaintStateフリーズ、アニメーション登録（§2.7）                      |
+| `Exiting`   | `exit`タイマー満了                                          | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
+| `Exiting`   | 条件がtrueに復帰                                            | `Mounted`  | Reactive再購読、アニメーション破棄、`MarkDirty(Paint)`                                |
 
 Frame lifecycleは§2.10のフレーム実行サイクル図（シーケンス図）が状態遷移表に相当する。両者は`UiNode`の状態と`UiTree`全体の処理サイクルという異なる粒度の遷移であり、Node lifecycleの`Dirty→Clean`遷移がFrame lifecycleの`invalidation→layout`区間の中で発生する、という関係にある。
 
@@ -2494,8 +2626,112 @@ Invariant 10 PlatformバックエンドはCore engine型（UiNode, UiTree, Signa
 Invariant 11 Windows同期リサイズでは、RTV/DSV解放 → ResizeBuffers → ビュー再生成の後にのみ描画する（§2.11.1）
 Invariant 12 アリーナ要素への ref は、スロット確保を伴う処理をまたいで保持しない（§2.5）
 Invariant 13 マネージド例外は [UnmanagedCallersOnly] の境界を越えてネイティブ側へ伝播させない（§2.11.1）
+Invariant 14 疑似状態の変化はレイアウトを無効化しない（PaintStyle は Paint 系のプロパティしか持たない、§2.13）
+Invariant 15 フレームワーク内の時刻とタイマーは TimeProvider 経由でのみ得る（§12.2）
 ```
 
 Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core の型は `internal` であり、Platform / Rendering のアセンブリからは参照できない。
 
 これらの不変条件は、実装フェーズで新しいコードを書く際に「どの層に置くべきか」の判断基準として機能する。違反が疑われる設計変更は、変更前にこの一覧との整合性を確認する。
+
+---
+
+## 12. テスト基盤（XylemUI.Testing）
+
+ヘッドレスのアプリホスト・仮想クロック・入力の注入・スクリーンショットを、別パッケージ `XylemUI.Testing` として公開する。フレームワーク自身のテスト、アプリ開発者のテスト、AI エージェントによる生成と自己評価（§0）は、すべて同じ API を使う。製品のバイナリ（`XylemUI.Core`）には含めない。
+
+### 12.1 テストピラミッド（5層）
+
+| 層                              | 内容                                                            | 実行するOS                  | プロジェクト              |
+| ------------------------------- | --------------------------------------------------------------- | --------------------------- | ------------------------- |
+| 1. Unicode 適合性               | UAX#9 / #14 / #29 の公式テストデータ（§8.13）                   | 全OS                        | `XylemUI.Text.Tests`      |
+| 2. Core の単体テスト            | Reactive・Invalidation・Layout・Focus をレンダラなしで検証      | 全OS                        | `XylemUI.Core.Tests`      |
+| 3. DisplayList スナップショット | `BuildDisplayList` の結果をテキストに直して比較。GPU を使わない | 全OS                        | `XylemUI.Core.Tests`      |
+| 4. 画素のゴールデン画像         | WARP で描画して読み戻し、許容差つきで比較                       | Windows（v0.4 で Linux も） | `XylemUI.Rendering.Tests` |
+| 5. E2E                          | Gallery アプリ（§13.3）を丸ごと動かす                           | Windows から                | `XylemUI.Gallery.Tests`   |
+
+画素を使わずに検証できることは第3層で検証し、第4層は最小限にする。第3層は GPU にもフォントのラスタライズ結果にも依存しないため、全OSの CI で同じ結果になる。
+
+### 12.2 仮想クロックと PumpAndSettle
+
+フレームワーク内の時刻・タイマー・アニメーションの経過時間は、すべて .NET 標準の `TimeProvider` 経由で得る（§11.6 Invariant 15）。`DateTime.Now`・`Stopwatch`・`Task.Delay` の直接使用は Core では禁止する（アナライザで検出する）。テストでは `TimeProvider` を仮想クロック（`FakeTimeProvider` 相当）に差し替え、`IFrameScheduler`（§2.11）もテスト用の実装に差し替える。実時間は一切進まない。
+
+`PumpAndSettle()` は、次の4つがすべて空になるまで、仮想時間を進めながらフレームを離散的に回し続ける。
+
+1. 予約済みのフレーム（`IFrameScheduler.RequestFrame`）
+2. 実行中のアニメーション
+3. UI キュー（`UiMessage` と `SynchronizationContext` に積まれた `await` の継続、§2.12）
+4. 予約済みのタイマー
+
+`Task.Run` 等でスレッドプールに投げた処理は待たない。フレームワークの管理下にないためである。テストで待つ必要がある場合は、その `Task` をテストコードから明示的に `await` してから `PumpAndSettle()` を呼ぶ。無限アニメーション等で静止しない場合に備えて、反復の上限（既定 1,000 フレーム）を超えたら失敗させる。
+
+```csharp
+await using var app = await HeadlessApp.StartAsync(() => Counter());
+
+app.Pointer.Click(app.Find("+1"));
+app.PumpAndSettle();
+
+Assert.Equal("clicks: 1", app.Find<TextNode>("clicks").Text);
+```
+
+### 12.3 ヘッドレス描画と PNG 出力
+
+**方式:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
+
+**フォント:** テストモードでは OS のフォント解決を使わず、**同梱フォントだけ**で描く（テスト用の `IFontProvider`）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
+
+**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。WARP のバージョンが変わった場合はゴールデン画像を更新する。
+
+**PNG:** PNG の書き出しと読み込みは、BCL の `ZLibStream`（deflate）を使って自前で書く。RGBA 8bit・非インターレースの最小限の実装とし、追加の依存は持たない。
+
+```csharp
+app.PumpAndSettle();
+await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこの画像を見て UI を評価・修正できる
+```
+
+### 12.4 入力と IME のシミュレーション
+
+入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。
+
+**IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
+
+```csharp
+app.Focus(app.Find("name"));
+app.Ime.Compose("にほんご", cursor: 4)
+       .Compose("日本語", cursor: 3, attributes: [new(0..3, ImeAttributeKind.ThickUnderline)])
+       .Commit("日本語");
+app.PumpAndSettle();
+```
+
+---
+
+## 13. デザインシステムと Gallery
+
+### 13.1 XylemUI.Primitives（見た目のない部品）
+
+Web の Radix UI / shadcn/ui と同じ考え方で、**振る舞いだけを持ち見た目を持たない部品**を `XylemUI.Primitives` に置く。各部品が提供するのは、状態（開閉・選択・押下・値）、キーボード操作、フォーカスの扱い（§7.2）、a11y の役割と状態（§4.4.1）、ポップアップの開閉（§7.3）である。見た目はテーマ（§13.2）またはアプリが被せる。Core には部品を一切置かない（§2.9.1）。
+
+v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）が必要とする範囲とする: Button / ToggleButton / Checkbox / RadioGroup / Slider / TextField / Select（ComboBox）/ Menu / Tooltip / Dialog / Tabs / ListBox（仮想化対応）/ NavigationView。
+
+### 13.2 XylemUI.Theme.Fluent
+
+**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は `IReadOnlySignal<Theme>` を Context で Provide して切り替える（§2.13）。
+
+**Mica と Acrylic:**
+- **v1 で入れるもの**: ウィンドウ背景の **Mica**。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
+- **v1.x に送るもの**: アプリ内の **Acrylic**（背後の UI をぼかす効果）。これを入れるにはレンダラに背景のぼかし（オフスクリーンパス＋新しい `PaintCommand`）が必要になり、v1 の「1パスで全体を描く」レンダラ（§5.0.1）の前提が崩れるため
+
+**フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を使い、見つからなければ同梱フォールバックフォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。
+
+### 13.3 XylemUI Gallery（マイルストーン G1）
+
+WinUI 3 Gallery に相当するショーケースアプリ `samples/XylemUI.Gallery` を、v0.2 と v0.3 の間のマイルストーン **G1**（§10.4）とする。G1 は Windows のみで、`XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点を兼ねる。
+
+**G1 の範囲:** 左サイドバー（NavigationView）、基本入力（§13.1 の部品）、大量リストの仮想化スクロール（§3.4）、ポップアップ（オーバーレイ実装、§7.3）、ダーク/ライトの切り替え。
+
+**役割:**
+1. **ドッグフーディング**: フレームワークの全機能を1本の実アプリで使い、API の使いにくさを早く見つける
+2. **E2E テスト**: Gallery 自体を第5層のテスト（§12.1）として CI で回す。Zero-Alloc ゲート（§11.3）のシナリオも Gallery のページで測る
+3. **正解データ**: AI エージェントが XylemUI のコードを生成するときの、正しい書き方の見本として使う
+
+配布サイズ・起動時間の訴求は、§11.3 の実測で数値が確定してから行う。
