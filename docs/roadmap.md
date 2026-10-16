@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** S5 完了。次は S6
+- **フェーズ:** S5 完了。次は S6a
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -43,11 +43,13 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S3  | Event Loop Waiter（Windows: `MsgWaitForMultipleObjectsEx`）                                           | done        | [#10](https://github.com/YUKIKEDA/XylemUI/issues/10) | 4問 Yes。詳細は Issue |
 | S4  | 同期リサイズ（`WndProc` 内 layout→present）。ユーザーコールバック禁止・例外バリア                     | done        | [#15](https://github.com/YUKIKEDA/XylemUI/issues/15) | 4問 Yes。詳細は Issue |
 | S5  | ワーカー → `UiMessage` のキュー（`ConcurrentQueue`）→ UI スレッド。独自 `SynchronizationContext`      | done        | [#17](https://github.com/YUKIKEDA/XylemUI/issues/17) | 4問 Yes。詳細は Issue |
-| S6  | Signal → Reactive scheduler → Invalidation → Block/Flex layout                                        | not-started | —     |                                            |
+| S6a | Signal / Computed / Effect / `Batch` → Reactive scheduler。`await` の継続ごとの暗黙の `Batch`         | not-started | —     |                                            |
+| S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | not-started | —     |                                            |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | not-started | —     |                                            |
 | S8  | テキスト LTR/CJK（HarfBuzz + FreeType の静的リンク + アトラス）                                       | not-started | —     |                                            |
 | S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測                                        | not-started | —     |                                            |
 | M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測） | not-started | —     | §11.3                                      |
+| L1  | Block/Flex の残り（wrap、justify / align、gap、`Percent` / `MinContent` / `MaxContent`）              | not-started | —     | §3.2                                       |
 | V1  | Button / Text / Column がクリックできる                                                               | not-started | —     |                                            |
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |
@@ -84,7 +86,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 - `MsgWaitForMultipleObjectsEx` の本式 Vsync（S3）
 - 同期リサイズの layout → Present（S4）
 - ワーカーと `UiMessage`（S5）
-- 10 万 Signal の GC ポーズ計測（S6・S9）
+- 10 万 Signal の GC ポーズ計測（S6a・S9）
 - Arena / DisplayList / テキスト
 
 完了条件（全部 Yes でなくてよい。判定と再現手順が残ること）:
