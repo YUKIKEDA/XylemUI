@@ -19,18 +19,23 @@ $solution = "XylemUI.slnx"
 Invoke-Step "Restore local tools" { dotnet tool restore }
 Invoke-Step "Check format (CSharpier)" { dotnet csharpier check . }
 Invoke-Step "Restore" { dotnet restore $solution }
-Invoke-Step "Build (warnings are errors)" { dotnet build $solution --no-restore -c Release }
 
 # Test projects follow the tests/*.Tests naming (docs/conventions.md).
 # Projects for one platform (XylemUI.Platform.Windows.Tests) run on that platform only; the merge gate is Windows.
 $testProjects = Get-ChildItem -Path tests -Recurse -Filter *.Tests.csproj -ErrorAction SilentlyContinue
-foreach ($project in $testProjects) {
-    if ($project.BaseName -like "*.Windows.Tests" -and -not $IsWindows) {
-        Write-Host "==> Skip $($project.BaseName) (Windows only)"
-        continue
-    }
 
-    Invoke-Step "Test $($project.BaseName)" { dotnet test --project $project.FullName --no-build -c Release }
+# Release is what ships. Debug runs the checks that only exist there (Invariant.Fail throws instead of ending the process).
+foreach ($configuration in "Release", "Debug") {
+    Invoke-Step "Build $configuration (warnings are errors)" { dotnet build $solution --no-restore -c $configuration }
+
+    foreach ($project in $testProjects) {
+        if ($project.BaseName -like "*.Windows.Tests" -and -not $IsWindows) {
+            Write-Host "==> Skip $($project.BaseName) (Windows only)"
+            continue
+        }
+
+        Invoke-Step "Test $($project.BaseName) ($configuration)" { dotnet test --project $project.FullName --no-build -c $configuration }
+    }
 }
 
 Write-Host "build.ps1 completed successfully."

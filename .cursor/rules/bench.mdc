@@ -9,6 +9,7 @@ Correctness comes first. A performance claim comes with a measurement in the sam
 
 ## Tools
 
+- Allocation: measuring code must not allocate itself. `GC.KeepAlive(object)` on an `int` boxes it (24 bytes per call in debug builds, optimized away in release); keep a result observable with a static sink field instead (S2).
 - Allocation: the Zero-Alloc tests (`PerformanceAssert.DoesNotAllocate` in `XylemUI.Testing`, design §11.3) measure `GC.GetAllocatedBytesForCurrentThread()` after a warm-up, in the five scenarios the design names. They run in `./build.ps1` and are a gate. An allowed count stays or goes down; raising it needs an Issue.
 - Micro-benchmarks: BenchmarkDotNet with `[MemoryDiagnoser]` in `benchmarks/XylemUI.Benchmarks`. Not a gate; CI does not run them on shared runners.
 - End-to-end: `benchmarks/E2E` (10k rows, typing latency proxy, jank rate, startup) on a NativeAOT Release build. Recorded, not a gate (design §11.3).

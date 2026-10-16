@@ -124,6 +124,9 @@ Decision:
   `UiNode` は struct としてアリーナ配列に置き、`GetRef` で `ref` を返す。
   ソフト文脈の stale は `TryGet` の false、内部リンクの stale は `Invariant.Fail`。
   `ref` はスロット確保を伴う処理をまたいで保持しない。リンクを値コピーしてから再帰し、`ref` を取り直して書き戻す。
+  ノードを生成しない pass は `ForbidAllocation()` の中で走り、確保は debug・release とも不変条件違反。確保を伴う処理は `GrowthCount` を比べる。
+  `Invariant.Fail` は debug では `InvariantViolationException` を投げ、release では `Environment.FailFast`。
+  `NativeHandleTable`（Platform、オブジェクト参照の表）と `Arena<T>`（Core、値型の格納）は統合しない。
 
 Reason:
   クラスのポインタ木はどこか1本の参照漏れで部分木全体が生き残る。GC の走査対象も増える。
@@ -137,6 +140,9 @@ Rejected:
   - `TryGet` で毎回 UiNode 全体をコピーして書き戻す（大きな struct のコピーが重い）
   - `ref` をローカルに保持したまま子へ再帰する
   - 最初から UiNode のサブ構造体を SoA 化する（ベンチマークで必要になってから）
+  - 再確保の検出を debug の `GrowthCount` 比較だけにする（比べ忘れた箇所を守れない。S2 で書き込みが黙って失われることを再現した）
+  - `Invariant.Fail` の debug 側を `Debug.Fail` にする（デバッガがないとプロセスが終わり、テストで確かめられない）
+  - `NativeHandleTable` を `Arena<T>` の上に作る（格納するものとアセンブリが違い、Platform は Core の internal を見られない）
 
 ---
 

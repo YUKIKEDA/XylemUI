@@ -35,7 +35,7 @@ Labels have the form `<axis>:<value>`. The only axis today is `type`.
 
 ## Gates
 
-- `./build.ps1`: tool restore, CSharpier check, restore, Release build with warnings as errors, every `tests/**/*.Tests.csproj`.
+- `./build.ps1`: tool restore, CSharpier check, restore, then Release and Debug builds with warnings as errors, each followed by every `tests/**/*.Tests.csproj`.
 - The NativeAOT publish check runs where the Issue names it (`.cursor/rules/aot.mdc`).
 - Benchmarks are not a gate. The Zero-Alloc tests are (`.cursor/rules/bench.mdc`).
 - After each merge, read `main`'s CI. A red `main` gets its own Issue and PR before the next merge.
