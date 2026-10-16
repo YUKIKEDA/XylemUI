@@ -53,6 +53,8 @@ internal sealed class Arena<T>
                 Grow();
             }
 
+            // A new slot starts at generation 1, so that default(Handle<T>) (generation 0) is never alive.
+            _slots[index].Generation = 1;
             _count++;
         }
 

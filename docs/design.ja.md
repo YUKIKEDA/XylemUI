@@ -598,12 +598,12 @@ static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
         ref var n = ref tree.GetRef(curr);
         n.Dirty.SubtreeDirty |= flags;  // 起点を含む経路上は全てSubtreeDirty
         n.Dirty.Epoch++;
-        if (IsLayoutBoundaryForInvalidation(in n) || n.Parent is not { } parent)
+        if (IsLayoutBoundaryForInvalidation(in n) || n.Parent.IsNone)
         {
             EnqueueLayoutRoot(tree, curr, null, LayoutReason.IntrinsicSizeChanged);
             return;
         }
-        curr = parent;
+        curr = n.Parent;
     }
 }
 ```
@@ -760,7 +760,7 @@ static void LayoutPass(UiTree tree, NodeHandle handle, AvailableSpace available)
 `LayoutFlex`（§3.2で詳細化）は内部で以下のような処理になる（擬似コード）。
 
 ```csharp
-static Rect LayoutFlex(UiTree tree, NodeHandle parent, NodeHandle? firstChild, FlexProps props, AvailableSpace available)
+static Rect LayoutFlex(UiTree tree, NodeHandle parent, NodeHandle firstChild, FlexProps props, AvailableSpace available)
 {
     // 1. 各子の固有サイズ(intrinsic size)を計測するため、必要な子を先行してLayoutPassする
     //    (例: flex-basis: auto の子は内容依存サイズを知る必要がある)
@@ -786,7 +786,10 @@ static Rect LayoutFlex(UiTree tree, NodeHandle parent, NodeHandle? firstChild, F
 
 ```csharp
 // ハンドルは型引数で種類を区別する（NodeHandle と ScopeHandle を取り違えない）
-public readonly record struct Handle<T>(int Index, ulong Generation);
+public readonly record struct Handle<T>(int Index, ulong Generation)
+{
+    public bool IsNone => Generation == 0;   // default(Handle<T>)。何も指さない
+}
 
 // global using で別名を付ける
 global using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
@@ -807,6 +810,8 @@ internal sealed class Arena<T> where T : struct
 // 拡張は [NoInlining] の別メソッドで、2倍に伸ばす（.cursor/rules/perf.mdc の速い経路と遅い経路）。
 ```
 
+**「リンクなし」は `default`:** スロットの世代は 1 から始まるので、`default(Handle<T>)`（Index 0・世代 0）は決して生きた値を指さない（`IsNone`）。構造体に保存するリンク（`Parent` / `FirstChild` / `NextSibling`、Scope の親、フォーカス）は `Handle<T>` のまま持ち、リンクがないことを `default` で表す。`Nullable<Handle<T>>` は bool と詰め物の分だけ大きく（16 → 24 バイト）、リンクはノードごとに3本あるため使わない。メソッドの戻り値（`HitTest` の「当たりなし」など）は nullable でよい。S2 のレビューで、世代を 0 から始めていたために `default` が最初のスロットを指していたことが分かり、こう決めた。
+
 **`ref` の寿命（C# 版の注意点）:** `UiNode` は値型なので、`TryGet` はコピーを返し、`GetRef` はスロット上の実体への `ref` を返す。`ref` 経由の書き込みはスロットに反映されるが、**アリーナ配列が容量不足で再確保されると、それ以前に取った `ref` は古い配列を指し続け、以降の書き込みは黙って失われる（例外は出ない）**。したがって `ref` は、スロットの確保を伴う処理（ノード生成・Materialization・`For` の Create）をまたいで保持しない。layout 相当の走査は **`FirstChild` / `NextSibling` を値コピーしてから再帰し、再帰の後に `GetRef` を取り直して `Rect` 等を書き戻す**。Layout pass はノードを生成しないが、この規則は全ての走査で統一する。これを2段で守る。(1) ノードを生成しないと決まっている pass（Layout pass、§2.4.1）は `ForbidAllocation()` の区間で走り、その中の確保は debug・release とも不変条件違反になる。(2) 確保を伴う処理（Materialization 等）で `ref` を持つ必要がある箇所は、`GrowthCount` を取っておき、書き戻しの前に比べる（debug の assert）。S2 で、再確保をまたいだ `ref` への書き込みが黙って失われることを再現し、(1) が働くことを確かめた。`ref` をフィールド・ラムダ・`async` メソッドに持ち出せないことはコンパイラが保証する。
 
 MoonBit 版の S2（struct が参照型で、`get` が生きた参照を返すため再帰先の書き込みが見えてしまう）とは前提が逆だが、採るべきパターン（リンクを値コピーしてから再帰し、最後に書き戻す）は同じである。
@@ -822,7 +827,7 @@ internal struct ScopeData
 {
     public List<Action>? Cleanups;       // 遅延確保。cleanup を持たない Scope ではアロケーションしない
     public List<ScopeHandle>? Children;
-    public ScopeHandle? Parent;
+    public ScopeHandle Parent;           // default はルート（親なし）
 }
 
 internal sealed class ScopeArena
@@ -835,9 +840,9 @@ internal struct UiNode
 {
     public NodeId Id;
     public ScopeHandle Scope;            // Scope本体はScopeArena側に置く
-    public NodeHandle? Parent;
-    public NodeHandle? FirstChild;
-    public NodeHandle? NextSibling;
+    public NodeHandle Parent;            // default（IsNone）はリンクなし。Nullable にしない（下記）
+    public NodeHandle FirstChild;
+    public NodeHandle NextSibling;
     public DirtyState Dirty;
     public LayoutState Layout;
     public TextState Text;
@@ -2292,8 +2297,8 @@ Widget event（capture/bubbleでコンポーネントに配送）
 internal struct FocusScope
 {
     public NodeHandle Owner;               // このスコープを持つノード(Window/Dialog/Menu等)
-    public FocusScopeHandle? Parent;       // 親スコープ（ルートウィンドウのスコープはnull）
-    public NodeHandle? FocusedChild;       // このスコープ内で現在フォーカスされているノード
+    public FocusScopeHandle Parent;        // 親スコープ（ルートウィンドウのスコープは default）
+    public NodeHandle FocusedChild;        // このスコープ内で現在フォーカスされているノード（なければ default）
     public bool IsModal;                   // trueの場合、このスコープの外へフォーカス・イベントが漏れない(§7のcaptureで遮断)
 }
 

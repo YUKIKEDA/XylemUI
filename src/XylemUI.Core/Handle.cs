@@ -5,5 +5,12 @@ namespace XylemUI;
 /// </summary>
 /// <typeparam name="T">The kind of value the handle points to, so that handles of different arenas cannot be mixed up.</typeparam>
 /// <param name="Index">The slot index in the arena.</param>
-/// <param name="Generation">The generation of the slot when the value was allocated. A freed slot moves to the next generation.</param>
-public readonly record struct Handle<T>(int Index, ulong Generation);
+/// <param name="Generation">
+/// The generation of the slot when the value was allocated. A freed slot moves to the next generation. Generations start at 1, so
+/// <see langword="default"/> never points to a value and a zeroed link means "no link".
+/// </param>
+public readonly record struct Handle<T>(int Index, ulong Generation)
+{
+    /// <summary>Gets a value indicating whether this is the <see langword="default"/> handle, which points to nothing.</summary>
+    public bool IsNone => Generation == 0;
+}
