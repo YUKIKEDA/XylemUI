@@ -17,6 +17,7 @@ public static class SynchronousRenderGuard
 {
     private static readonly Queue<Action> _deferred = new();
     private static int _depth;
+    private static bool _draining;
 
     /// <summary>Gets a value indicating whether a synchronous render path is running on the UI thread.</summary>
     public static bool IsActive => _depth > 0;
@@ -59,7 +60,10 @@ public static class SynchronousRenderGuard
         }
 
         _depth--;
-        if (_depth > 0)
+
+        // A deferred callback may start a synchronous render of its own (a pending resize does). Its end must not drain the queue:
+        // the drain that is already running takes everything in order, also what that render queues.
+        if (_depth > 0 || _draining)
         {
             return;
         }
@@ -67,16 +71,24 @@ public static class SynchronousRenderGuard
         // Every deferred callback runs, also after one throws; the exceptions are thrown together at the end (as Scope cleanups do,
         // design §2.3). The caller is a window procedure, whose barrier reports them.
         List<Exception>? errors = null;
-        while (_deferred.TryDequeue(out Action? callback))
+        _draining = true;
+        try
         {
-            try
+            while (_deferred.TryDequeue(out Action? callback))
             {
-                callback();
+                try
+                {
+                    callback();
+                }
+                catch (Exception exception)
+                {
+                    (errors ??= []).Add(exception);
+                }
             }
-            catch (Exception exception)
-            {
-                (errors ??= []).Add(exception);
-            }
+        }
+        finally
+        {
+            _draining = false;
         }
 
         if (errors is not null)

@@ -270,7 +270,7 @@ Decision:
   `[UnmanagedCallersOnly]` の境界で全例外を捕捉する。
   Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。
   Vsync 待機中も OS メッセージを多重待機する（Windows: `MsgWaitForMultipleObjectsEx`）。
-  同期リサイズ描画は `WM_SIZE` だけで行い、ガード（Core の `SynchronousRenderGuard`、深さで数える）の中で走らせる。入れ子の描画は捨て、アプリのコールバックは描画の後まで遅らせて順に実行する。
+  同期リサイズ描画は `WM_SIZE` だけで行い、ガード（Core の `SynchronousRenderGuard`、深さで数える）の中で走らせる。入れ子のリサイズはその場では描かず、最新サイズを区間の後に1回描く。アプリのコールバックは描画の後まで遅らせて順に実行する。
 
 Reason:
   Linux の Wayland/X11/D-Bus/AT-SPI を個人が全部直叩きするのは非現実的。
@@ -296,6 +296,8 @@ Rejected:
   - v1 で TSF 最小 COM ラッパーを必須にする
   - 同期リサイズ中に application callback / 新規モーダルループ / `await` 継続の実行を許可する
   - 同期リサイズ中のアプリのコールバックを捨てる（クリックや `Closed` を失う）
+  - 入れ子のリサイズを捨てて、次のリサイズか次のフレームに任せる（モーダルループの中ではフレームが来ず、最終サイズが描かれない）
+  - `WM_EXITSIZEMOVE` で必ず1回描く（モーダルループの外のリサイズ、たとえば別ウィンドウの描画中のリサイズを拾えない）
   - `WM_SIZING` で描画する（ウィンドウとスワップチェーンはまだ古いサイズ）
   - ガードを Platform に置く（Core の Effect や `await` 継続も同じ判定を使う）
   - 今すぐ `UiMessage` をドメイン別に分割する

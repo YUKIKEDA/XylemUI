@@ -1212,11 +1212,11 @@ C# では `try` / `finally` で正常終了・例外経路の両方でガード�
 
 **例外とネイティブ境界:** `WndProc` は `[UnmanagedCallersOnly]` の静的メソッドとして公開する。マネージド例外がこの境界を越えてネイティブ側へ伝播するとプロセスが終了するため、`WndProc` の入口で全ての例外を捕捉する。通常の例外は診断ログに記録して `DefWindowProc` へ処理を戻し、次の通常フレームで回復を試みる。不変条件違反（`Invariant.Fail`）は捕捉せずにクラッシュ・ファストとする。
 
-**S4（C# 版で検証済み、Issue #15）:** キーボードでのリサイズ（`WM_SYSCOMMAND` の `SC_SIZE`）で OS のモーダルループ（`WM_ENTERSIZEMOVE`〜`WM_EXITSIZEMOVE`）に入り、メインループが止まっている間に、`WM_SIZE` から同期描画が新しいクライアントサイズで走った（Debug・Release で各 3 回、ループ中に 1〜2 回）。入れ子の `WM_SIZE` は捨て、同期描画中に上がったアプリのコールバックは描画の後に順に走り、描画が投げた例外は入口で捕捉されてガードが戻った。`ResizeBuffers` の順序は S7 で確かめる。
+**S4（C# 版で検証済み、Issue #15）:** キーボードでのリサイズ（`WM_SYSCOMMAND` の `SC_SIZE`）で OS のモーダルループ（`WM_ENTERSIZEMOVE`〜`WM_EXITSIZEMOVE`）に入り、メインループが止まっている間に、`WM_SIZE` から同期描画が新しいクライアントサイズで走った（Debug・Release で各 3 回、ループ中に 1〜2 回）。入れ子の `WM_SIZE` はその場では描かず、最新のサイズを区間の後に1回描き（別のウィンドウのリサイズも同じ）、同期描画中に上がったアプリのコールバックは描画の後に順に走り、描画が投げた例外は入口で捕捉されてガードが戻った。`ResizeBuffers` の順序は S7 で確かめる。
 
 **同期描画を呼ぶメッセージ:** `WM_SIZE` だけで描画する。`WM_SIZING` はドラッグ中の「これからなる」矩形を運ぶだけで、その時点ではウィンドウもスワップチェーンもまだ古いサイズのままなので、描画には使わない。最小化（`SIZE_MINIMIZED`）では描画しない。
 
-**ガード（`SynchronousRenderGuard`、Core）:** 同期描画の区間は Core のガードで表す。Platform は `WM_SIZE` で `IsActive` を見て、すでに同期描画の中なら新しい描画を始めずに捨てる（描画が自分でサイズを変えた場合など。次のリサイズか次のフレームが最終サイズを描く）。アプリのコールバックは `RunOrDefer` を通して上げる。同期描画の中では捨てずにキューに積み、一番外側の区間を抜けたときに積んだ順に実行する（クリックや `Closed` を失わない）。1つが投げても残りは最後まで実行し、例外はまとめて投げる（§2.3 の cleanup と同じ）。区間は深さで数え、入れ子と食い違う順で閉じたら不変条件違反とする。
+**ガード（`SynchronousRenderGuard`、Core）:** 同期描画の区間は Core のガードで表す。Platform は `WM_SIZE` で `IsActive` を見て、すでに同期描画の中なら、その場では描画しない（描画が自分でサイズを変えた場合や、別のウィンドウの描画中にサイズが変わった場合）。最新のサイズを覚えて「リサイズ保留」を立て、描き直しを遅延コールバックとして1回だけ積む。一番外側の区間の終わりに、保留していたウィンドウが最新のサイズで1回描かれる。OS のモーダルループの中ではメインループが回らず「次のフレーム」が来ないので、捨てるだけにすると最終サイズが描かれないまま残る（S4 のレビュー）。アプリのコールバックは `RunOrDefer` を通して上げる。同期描画の中では捨てずにキューに積み、一番外側の区間を抜けたときに積んだ順に実行する（クリックや `Closed` を失わない）。1つが投げても残りは最後まで実行し、例外はまとめて投げる（§2.3 の cleanup と同じ）。描画自体と遅延コールバックの両方が投げた場合は、両方を `AggregateException` にまとめて入口へ渡す（後の例外で前の例外を置き換えない）。区間は深さで数え、入れ子と食い違う順で閉じたら不変条件違反とする。遅延コールバックを取り出している最中に始まった区間（保留していたリサイズの描き直し）の終わりでは取り出さず、すでに走っている取り出しが、その間に積まれたものも含めて順に実行する（取り出しが入れ子で再帰しない）。
 
 ```csharp
 public static class SynchronousRenderGuard
@@ -1229,7 +1229,7 @@ public static class SynchronousRenderGuard
 
 static void SynchronousResizePaint(UiTree tree, IRenderer renderer)   // Platform が WM_SIZE から呼ぶ
 {
-    if (SynchronousRenderGuard.IsActive) return;  // 再入。二重パイプラインは回さず次の通常フレームへ
+    if (SynchronousRenderGuard.IsActive) { MarkResizePending(); return; }  // 再入。その場では描かず、区間の後に最新サイズで1回描く
 
     using (SynchronousRenderGuard.Enter())
     {
