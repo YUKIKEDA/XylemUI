@@ -1,6 +1,6 @@
 # XylemUI：C#製デスクトップGUIフレームワーク 設計ドキュメント v1
 
-現行仕様のみを記す。本ドキュメントは MoonBit 版の設計（外部レビュー第1〜7回を反映済み）を C# / .NET 前提に書き換えたものである。却下した代替案は [design-decisions.md](./design-decisions.md)、進捗は [execution.md](./execution.md)、判断の詳細は [adr/](./adr/)。
+現行仕様のみを記す。本ドキュメントは MoonBit 版の設計（外部レビュー第1〜7回を反映済み）を C# / .NET 前提に書き換えたものである。却下した代替案は [design-decisions.md](./design-decisions.md)、進捗は [roadmap.md](./roadmap.md)、判断の詳細は [adr/](./adr/)。
 
 ## 0. 目標
 
@@ -15,7 +15,16 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 
 **配布形態**: リリースビルドは NativeAOT でネイティブコードにコンパイルし、.NET ランタイムのインストールを要求しない。**Windows/macOS は外部 DLL を持たない単一の実行ファイル/アプリバンドル**（HarfBuzz・FreeType は静的リンク、§9）。**Linux は自己完結したアプリケーションバイナリ＋システムライブラリ**（glibc・fontconfig・libdbus-1・GPUドライバ・Wayland/X11等）であり、「外部 DLL ゼロ」とは言わない。サイズ・起動時間の数値目標は §11.3 で扱う（実測前の仮説）。Electron/Tauriとの対比で重要なのは「バイナリが1個かどうか」ではなく「WebViewエンジンやCEFのような数百MB級の同梱ランタイムを持たないこと」。NativeAOT が同梱する .NET ランタイム（GC・型システム）は数MB規模であり、この方針と矛盾しない。
 
-自作原則: 既存の重量級抽象化ライブラリ（Skia、CEF等）には乗らない。.NET 上の既存UIスタック（WPF・WinForms・WinUI・MAUI・Avalonia）にも乗らない。ただし継続的な仕様更新（Unicode年次改定、GPUドライバの互換性維持等）が個人〜小規模チームの手に負えないと判断した領域に限り、コミュニティでメンテナンスされているライブラリへの依存を意図的な例外として許容する。
+**自作するもの:** フレームワークの独自価値（Reactive・Layout・Invalidation・DisplayList・GPU レンダラ）は自作する。既存の重量級抽象化ライブラリ（Skia、CEF等）や、.NET 上の既存UIスタック（WPF・WinForms・WinUI・MAUI・Avalonia）にも乗らない。
+
+**外部依存の基準:** 外部依存を避けること自体は目的ではない。避けたいのは、(1) 性能の最適化を自分たちの手元に置けなくなること、(2) 単一バイナリ化の障壁、(3) NativeAOT の障壁、の3つである。次の条件をすべて満たすライブラリは使ってよく、性能上の理由が実測で出たときに自作へ置き換える。
+
+1. trim / AOT 警告ゼロで NativeAOT にリンクできる（リフレクションや動的コード生成に依存しない）
+2. 単一バイナリを壊さない（Windows / macOS で追加の DLL を配布しない。ネイティブライブラリは静的リンクできる）
+3. ホットパス（フレームの経路）に入る場合、アロケーションと呼び出しのコストを自分たちで測り、必要なら置き換えられる位置にある（公開 API の型として外へ漏らさない）
+4. ライセンスが MIT 相当で、保守されている
+
+継続的な仕様更新（Unicode年次改定、GPUドライバの互換性維持等）が個人〜小規模チームの手に負えない領域（HarfBuzz・FreeType・wgpu-native・SDL3）は、この基準を満たしたうえで意図的に依存する。新しい依存は下の表に一行足し、[`dependencies` ルール](../.cursor/rules/dependencies.mdc)の確認項目を通してから入れる。
 
 **Dependency Decision Matrix**: 「これは自作か、依存か」の判断は本ドキュメント全体で繰り返し発生してきた。判断基準を一覧表として明示し、今後の設計判断（新しい要素を追加する際）の参照点とする。
 
@@ -186,15 +195,15 @@ static void Reevaluate(ComputationState computation)
     UnsubscribeAll(computation);   // 動的依存のため、毎回購読を張り直す
     computation.Depth = 0;         // 減少も含めて再計算する。下流への減少伝播はしない
 
-    var previous = s_current;
-    s_current = computation;       // getterがRegisterDependencyを呼び、Depthが再構築される
+    var previous = _current;
+    _current = computation;       // getterがRegisterDependencyを呼び、Depthが再構築される
     try
     {
         computation.Run();
     }
     finally
     {
-        s_current = previous;
+        _current = previous;
     }
 
     computation.Version++;
@@ -2350,7 +2359,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 
 ### 10.5 次に着手すべき技術スパイク
 
-進捗・着手単位・Issue 番号の正本は [execution.md](./execution.md)。本節は検証したい仮説の一覧である。Spike #1 は「Win32 UI スレッド上で NativeAOT の C# が生きられるか」に切り、Vsync 待機・同期リサイズ・ワーカーは後続スパイクへ送る。
+進捗・着手単位・Issue 番号の正本は [roadmap.md](./roadmap.md)。本節は検証したい仮説の一覧である。Spike #1 は「Win32 UI スレッド上で NativeAOT の C# が生きられるか」に切り、Vsync 待機・同期リサイズ・ワーカーは後続スパイクへ送る。
 
 MoonBit 版のスパイク（S1〜S9）で得た知見のうち、OS・GPU の挙動に関するもの（`MsgWaitForMultipleObjectsEx` の多重待機、`ResizeBuffers` の順序、再入ガードは depth で持つ、HarfBuzz/FreeType→アトラス→D3D11 の経路等）は本ドキュメントの設計に反映済みである。言語ランタイムに依存する部分（GC、FFI、スレッド、アロケーション量）は C# で前提が変わるため、以下で検証し直す。
 

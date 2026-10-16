@@ -1,0 +1,63 @@
+---
+description: Hot-path rules for the frame path - allocation, dispatch, inlining, buffers, layout in memory
+alwaysApply: true
+---
+
+# Performance rules
+
+The hot path is the frame path (`docs/design.ja.md` §2.10, §11.5): input dispatch, `Batch` flush, invalidation, materialization, layout, DisplayList and HitTestList build, upload, present. It also covers pointer move and hover handling. Construction of nodes, styles, and resources may allocate; the steady-state frame does not.
+
+These rules come from the shape of Cysharp's R3, ZLinq, ZString, MemoryPack, and MagicOnion (read in `.repos/`), applied to this framework. A claim that a rule was followed is a measurement, not a reading of the code (`.cursor/rules/bench.mdc`).
+
+## Allocation
+
+- The frame path does not allocate in steady state. The Zero-Alloc tests (design §11.3) assert it; an allowed exception needs an Issue and a design entry.
+- No LINQ, `params` arrays, `string` concatenation or interpolation into `string`, boxing (`object` parameters, non-generic interfaces on structs, `Enum.HasFlag` on old paths, `foreach` over an interface), or lambdas that capture on the frame path. A `static` lambda is fine: its delegate is cached.
+- `foreach` over a `List<T>` field goes through `CollectionsMarshal.AsSpan`; over a `Dictionary` it uses the struct enumerator directly, never `IEnumerable<T>`.
+- Buffers that live across frames are owned and reused: reset the used length, grow only when full (`DisplayListBuffer`, design §5.0.1). Short-lived scratch comes from `ArrayPool<T>.Shared` or `stackalloc` (fixed small size only), and is returned in a `finally`. Clear a returned array only when `RuntimeHelpers.IsReferenceOrContainsReferences<T>()`.
+- A `[ThreadStatic]` scratch buffer may back a builder that is disposed before the method returns (ZString, MagicOnion). In debug builds the rent takes the buffer out of the slot, so nested use throws instead of corrupting it.
+- Text that changes every frame does not build a new `string` each frame. The API for writing into a node's own buffer (span writer or interpolated string handler) is decided by roadmap row D2; until it exists, a text update is outside the Zero-Alloc scenarios.
+- An `async` API on a repeated path returns `ValueTask` backed by a pooled `IValueTaskSource` (`ManualResetValueTaskSourceCore<T>`), not a new `Task` each time.
+
+## Collections of subscribers and handles
+
+- A subscriber list that changes during notification is an intrusive linked list whose node is the subscription itself (R3 `Subject`): no separate `IDisposable` per subscription, O(1) removal, and a version stamp so nodes added during a notification are skipped without copying the list.
+- An add/remove set keyed by slot uses a free list: removal nulls the slot, the index is the removal key, and the next add reuses the first empty slot (R3 `FreeListCore`). Do not use `ImmutableArray` or copy-on-write arrays for lists that change at run time.
+- A fixed small number of items is held in fields, not an array (R3 `Disposable.Combine` up to eight).
+
+## Dispatch and generics
+
+- No interface or virtual dispatch per element on the frame path. Dispatch once per call (a `switch` on a type tag, a sealed class hierarchy matched once), or use a generic method constrained to a struct (`where T : struct, IFoo`) so the JIT and NativeAOT specialize it.
+- Per-type data is a `static class Cache<T>` field, filled by generated code or a static constructor without reflection, never a `Dictionary<Type, ...>` lookup on the frame path. JIT-constant checks (`typeof(T) == typeof(int)`, `RuntimeHelpers.IsReferenceOrContainsReferences<T>()`) choose fast paths at no cost.
+- A struct walker over a tree (`ITraverser`-style, ZLinq) iterates the arena without allocating; its explicit stack comes from a pool and is returned on `Dispose`.
+- Iteration over a sequence the framework owns uses a single `TryGetNext(out T)` call per element rather than `MoveNext` + `Current` (ZLinq).
+
+## Fast path and slow path
+
+- Throwing lives in a separate method marked `[DoesNotReturn]` (and `[StackTraceHidden]` when the frame is noise), so the caller stays small enough to inline. Throw helpers in this repository are `ThrowHelper.*`.
+- Rare work (growing a buffer, requesting a new segment) lives in a `[MethodImpl(MethodImplOptions.NoInlining)]` method; the common check stays inline (MemoryPack `GetSpanReference` / `RequestNewBuffer`).
+- `[MethodImpl(MethodImplOptions.AggressiveInlining)]` only where a measurement shows an effect, and the PR says which.
+- A writer over a buffer may be a `ref struct` holding a `ref` field and a remaining length instead of a `Span` field (MemoryPack `MemoryPackWriter`). Bounds are checked once per reservation, not per byte.
+
+## Memory layout
+
+- Data read together is stored together. The arena stores `UiNode` structs and is walked by index; GPU-bound data is SoA and copied with `MemoryMarshal.AsBytes` (design §5.0.1).
+- Unmanaged structs that cross to native code or the GPU have `[StructLayout(LayoutKind.Sequential)]`; others may use `LayoutKind.Auto`.
+- A `ref` into an arena is never held across an operation that can grow the arena (design §2.5, Invariant 12).
+- Explicit SIMD (`Vector128<T>`, `Vector<T>`) only where a measurement shows the path is the bottleneck, with a scalar path that gives the same result, and a test that compares them.
+
+## Claims
+
+A speed or memory improvement is claimed with numbers against a named baseline (`.cursor/rules/bench.mdc`). Not with a hunch, an IL reading, or a micro-benchmark of a different path.
+
+```csharp
+// BAD — allocates a closure, a delegate, an enumerator, and a list every frame
+var dirty = nodes.Where(n => n.Dirty.SelfDirty != DirtyFlags.None && n.Id != skip).ToList();
+
+// GOOD — no allocation in steady state
+foreach (ref readonly var node in CollectionsMarshal.AsSpan(nodes))
+{
+    if (node.Dirty.SelfDirty == DirtyFlags.None || node.Id == skip) continue;
+    // ...
+}
+```

@@ -1,10 +1,60 @@
-# Python
+## Solution
+# The solution is XylemUI.slnx. Ignore a classic .sln if tooling regenerates it.
+*.sln
+
+## Build
+[Bb]in/
+[Oo]bj/
+artifacts/
+out/
+*.user
+*.suo
+*.rsuser
+*.DotSettings.user
+project.lock.json
+
+## IDE
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+## Test / benchmark output
+TestResults/
+*.trx
+coverage*
+BenchmarkDotNet.Artifacts/
+
+## NuGet
+*.nupkg
+*.snupkg
+
+## Native dependencies built locally (versions are pinned in vendor/versions.lock)
+vendor/*/build/
+vendor/*/install/
+
+## Profiler output
+*.diagsession
+*.etl
+*.nettrace
+
+## Python (skill scripts)
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzw
-*.pyz
+*.py[cod]
+
+## OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+## Local scratch (not tracked). Lasting decisions go in docs/.
+.dev/
+.repos/
+
+## Secrets
+*.pfx
+*.p12
+*.key
+.env
+.env.*

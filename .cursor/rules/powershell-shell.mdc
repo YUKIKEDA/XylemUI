@@ -1,0 +1,34 @@
+---
+description: PowerShell-safe shell usage for git, gh, and dotnet on Windows
+alwaysApply: true
+---
+
+# PowerShell shell (Windows)
+
+The agent shell on this setup is PowerShell. Do not use bash-only constructs in it.
+
+## Forbidden in PowerShell
+
+- Heredoc: `$(cat <<'EOF' ... EOF)`
+- Unquoted git upstream: `@{u}` (PowerShell parses `@{...}` as a hashtable). Write `'@{u}'`.
+- `export FOO=bar`, bash arrays, `&&` chains that assume bash semantics for `$?`.
+
+## Use instead
+
+- Multi-line text for a commit: a here-string.
+
+```powershell
+git commit -m @"
+type(scope): subject
+
+body
+"@
+```
+
+- Long text for `gh`: write a temporary UTF-8 file and pass `--body-file`, then delete it (`.cursor/rules/scratch.mdc`).
+- Native commands set `$LASTEXITCODE`. Check it before the next step: `dotnet test ...; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`.
+- Quote paths with spaces. Prefer repository-relative paths.
+
+## Writing files
+
+Write files with the editor tools, not with shell redirection. A script that another script writes is written with the editor tool too: nested quoting fails in ways that only show after a long run.

@@ -1,0 +1,33 @@
+---
+description: When an external package or native library may be added
+alwaysApply: true
+---
+
+# Dependencies
+
+Avoiding dependencies is not a goal in itself. What must not be lost is: control over performance, the single binary, and NativeAOT (`docs/design.ja.md` §0). A library that keeps all three may be used, and replaced with our own code when a measurement says so.
+
+## Before adding a package or a native library
+
+Check each point and write the result in the PR's `## Verification`:
+
+1. **AOT**: the package declares `IsAotCompatible` or `IsTrimmable`, and a NativeAOT publish of a sample that calls it has zero trim / AOT warnings. No reflection or dynamic code generation on the path we call.
+2. **Single binary**: on Windows and macOS it adds no file to distribute. A native library links statically (`DirectPInvoke` + `NativeLibrary`, design §9).
+3. **Hot path**: if it runs on the frame path, its time and allocations are measured in our benchmarks, and its types do not appear in our public API, so it can be replaced without a breaking change.
+4. **License and upkeep**: MIT-compatible, maintained, a version pinned in `Directory.Packages.props` (or `vendor/versions.lock` for native code).
+
+Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in the same PR. A dependency that changes what the framework means (a new runtime layer, a UI toolkit) is a `design` Issue first.
+
+## Already decided
+
+- Native, by design: HarfBuzz, FreeType, wgpu-native, SDL3 (static); fontconfig, libdbus-1 (dynamic, Linux only).
+- Managed: TerraFX.Interop.Windows (declarations only).
+- Not as dependencies of the engine: other UI stacks, Skia, CEF, GPU abstraction libraries (Silk.NET, Vortice).
+
+Test, benchmark, and tool projects may use packages that only those projects reference (xUnit, BenchmarkDotNet, `Microsoft.Extensions.TimeProvider.Testing`); point 2 and point 3 do not apply to them.
+
+```text
+# BAD — adds a package because it was convenient; the AOT publish now warns IL2026, found two PRs later
+# GOOD — NativeAOT publish of samples/ with the package: 0 warnings; binary +38 KB; not on the frame path;
+#        matrix row added in docs/design.ja.md §0
+```

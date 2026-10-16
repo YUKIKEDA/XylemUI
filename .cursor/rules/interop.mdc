@@ -1,0 +1,31 @@
+---
+description: P/Invoke, COM, Obj-C, unsafe code, and the native boundary
+globs: "src/XylemUI.Platform.*/**/*.cs,src/XylemUI.Rendering.*/**/*.cs,src/XylemUI.Text/**/*.cs"
+alwaysApply: false
+---
+
+# Interop and unsafe code
+
+The design for this is `docs/design.ja.md` §2.9, §2.11.1, §2.12. This rule is the set of promises reviews hold.
+
+## Where unsafe code may live
+
+- `unsafe`, function pointers, and `Unsafe`/`MemoryMarshal` reinterpretation are allowed only in `XylemUI.Platform.*`, `XylemUI.Rendering.*`, and the native wrappers of `XylemUI.Text`. `AllowUnsafeBlocks` is set in those projects only. Core stays safe.
+- Every `unsafe` block has a comment that states the invariant that makes it safe (lifetime, length, alignment).
+
+## Calling native code
+
+- C APIs: `[LibraryImport]` with blittable signatures. No `DllImport` with runtime marshalling, no `string` marshalling on a frame path; pass UTF-16 or UTF-8 spans.
+- Windows declarations come from TerraFX.Interop.Windows. COM is called through the vtable; no `ComImport` RCWs. Every `AddRef` has a matching `Release` in the same owner, and back-buffer views are released before `ResizeBuffers` (Invariant 11).
+- COM objects that the OS calls (UIA providers, `IDropTarget`) use source-generated COM (`[GeneratedComInterface]`, `[GeneratedComClass]`).
+- macOS calls go through `objc_msgSend` P/Invoke. An Obj-C shim is added only where a block or a callback cannot be expressed in C#, and the PR says why.
+
+## Callbacks from native code
+
+- A callback is a `static` method with `[UnmanagedCallersOnly]`. It catches every exception at its entry; a managed exception never crosses into native code (Invariant 13). An invariant failure still fails fast.
+- Native code never holds a managed object's address. It holds a generational id from `NativeHandleTable` (Invariant 8). No long-lived `GCHandle.Alloc(..., Pinned)`.
+- A callback that arrives on a thread other than the UI thread does not touch Core; it posts to the UI queue (design §2.12).
+
+## Native libraries
+
+- HarfBuzz, FreeType, SDL3, and wgpu-native are linked statically in NativeAOT builds and loaded as shared libraries under the JIT, from the same `LibraryImport` declarations (design §9). Their versions are pinned in `vendor/versions.lock`.

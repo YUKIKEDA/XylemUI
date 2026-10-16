@@ -1,0 +1,71 @@
+<Project>
+  <!-- Shared settings for every project. Conventions: docs/conventions.md. Dependency rules: .cursor/rules/dependencies.mdc. -->
+  <PropertyGroup>
+    <TargetFramework Condition="'$(TargetFramework)' == '' And '$(TargetFrameworks)' == ''">net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NeutralLanguage>en</NeutralLanguage>
+
+    <!-- Warnings are errors from the first commit (AOT / trim warnings must be zero, design §0.1). -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Features>strict</Features>
+
+    <!-- Deterministic builds; CI paths are normalized for Source Link. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- The framework does not use culture-dependent APIs (design §0.1). Tests run the way apps do. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <IsPackable>false</IsPackable>
+
+    <_XylemRelativeDir>$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').Replace('\', '/'))</_XylemRelativeDir>
+    <XylemIsSrcProject>false</XylemIsSrcProject>
+    <XylemIsSrcProject Condition="$(_XylemRelativeDir.StartsWith('src/'))">true</XylemIsSrcProject>
+    <XylemIsTestProject>false</XylemIsTestProject>
+    <XylemIsTestProject Condition="$(_XylemRelativeDir.StartsWith('tests/'))">true</XylemIsTestProject>
+  </PropertyGroup>
+
+  <!-- Libraries under src/ ship as NuGet packages and must be AOT compatible. -->
+  <PropertyGroup Condition="'$(XylemIsSrcProject)' == 'true'">
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Authors>YUKIKEDA</Authors>
+    <Copyright>Copyright (c) 2026 YUKIKEDA</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/YUKIKEDA/XylemUI</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/YUKIKEDA/XylemUI</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <PackageReference
+      Include="StyleCop.Analyzers"
+      PrivateAssets="all"
+      IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive"
+    />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)stylecop.json" Link="stylecop.json" />
+  </ItemGroup>
+
+  <!--
+    Banned APIs for the engine (design §11.6 Invariant 15, .cursor/rules/perf.mdc).
+    Platform backends and XylemUI.Testing own real clocks and threads, so they are exempt.
+  -->
+  <ItemGroup Condition="'$(XylemIsSrcProject)' == 'true' And !$(MSBuildProjectName.StartsWith('XylemUI.Platform.')) And '$(MSBuildProjectName)' != 'XylemUI.Testing'">
+    <PackageReference
+      Include="Microsoft.CodeAnalysis.BannedApiAnalyzers"
+      PrivateAssets="all"
+      IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive"
+    />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" Link="BannedSymbols.txt" />
+  </ItemGroup>
+</Project>

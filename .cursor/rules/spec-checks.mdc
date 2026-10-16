@@ -1,0 +1,22 @@
+---
+description: Checks and tests implement the design's full statement, not a necessary condition of it
+alwaysApply: true
+---
+
+# Checking the design's statements
+
+A check or a test that stands for a statement in `docs/design.ja.md` implements the whole statement, not a necessary condition of it.
+
+- Every documented contract has a code path and a test. A sentence with no code behind it is a defect.
+- When the design fixes an order (the frame lifecycle, the `ResizeBuffers` steps, the Scope disposal order, the error priority), test it with one input that fails two adjacent steps and assert the first.
+- When the design fixes a state machine (ComputationStatus, ShowState, ResourceState), test every transition it lists and one transition it does not allow.
+- A test of an invariant (§11.6) includes the input that would break it: a stale `NodeHandle`, a `ref` taken before an arena grows, a `Signal.Set` from a worker thread.
+- A fixed-size buffer on a path every frame takes has a test above its capacity.
+- When a design statement changes, search `docs/`, the READMEs, `.cursor/rules/`, and XML docs for every restatement and update them in the same PR.
+- Before a PR says "every X does Y" (every backend implements `IGpuSync`, every Primitive exposes a role), search the whole solution for X. The PR's test plan names the search and the exceptions.
+
+```text
+BAD:  "children are disposed in LIFO order, then the scope's own cleanups in LIFO order"
+      → test checks that every cleanup ran
+GOOD: register cleanups that append to a log in two children and the parent; assert the exact log order
+```

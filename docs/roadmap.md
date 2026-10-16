@@ -1,6 +1,6 @@
-# 実行管理
+# ロードマップ
 
-進捗の正本。設計（何を作るか）は [csharp-gui-design-doc.md](./csharp-gui-design-doc.md)。
+進捗の正本。設計（何を作るか）は [design.ja.md](./design.ja.md)。
 却下した案は [design-decisions.md](./design-decisions.md)。
 
 GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は Issue 本文。この表は状態と Issue 番号だけを持つ。
@@ -18,15 +18,15 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** C# 版の設計 v1 と追加要点（D1）完了。次は S1
+- **フェーズ:** 設計 v1（D0・D1）と開発基盤（F0）完了。次は S1。D2 は S6 より前に終える
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
 
-## ツールチェーン（S1 で固定する）
+## ツールチェーン
 
-- .NET SDK 10.0.x（LTS）。`global.json` で SDK バージョンを固定する
-- C# 14。全プロジェクトで `<Nullable>enable</Nullable>`、`<IsAotCompatible>true</IsAotCompatible>`
+- .NET SDK 10.0.x（LTS）。`global.json` で固定済み（F0）
+- C# 14。共通設定は `Directory.Build.props`（警告はエラー、`src/` は `IsAotCompatible`）
 - Windows の NativeAOT には MSVC のリンカが要る（Visual Studio の「C++ によるデスクトップ開発」ワークロード）
 - ネイティブ依存（HarfBuzz / FreeType）は `vendor/` でビルドし、バージョンを `vendor/versions.lock` に記録する（§9）
 
@@ -36,6 +36,8 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | --- | ----------------------------------------------------------------------------------------------------- | ----------- | ----- | ------------------------------------------ |
 | D0  | 設計 v1 の C# 化（本文・decisions・ADR）                                                              | done        | —     | 現行仕様が C# 前提で設計書に固定されている |
 | D1  | 追加要点の設計（Agentic UI・テスト基盤・開発者API・ポップアップ・デザインシステム・Gallery）          | done        | —     | §2.13・§7.3・§12・§13 に固定されている     |
+| F0  | 開発基盤（規約・スキル・ビルド設定・CI・テンプレート、設計文書の docs/ 移動）                        | done        | —     | `./build.ps1` が空のソリューションで通る   |
+| D2  | Cysharp 由来の設計変更の Grill（購読リスト・テキスト更新・リーク検出・cleanup・ツリー走査）          | not-started | —     | §2.2・§2.3・§2.5・§2.13・§12 に固定        |
 | S1  | NativeAOT + Win32 UI スレッド + `[UnmanagedCallersOnly]` WndProc + `NativeHandleTable` + スレッド検査 | not-started | —     |                                            |
 | S2  | Arena + generation `Handle<T>`。`ref` 返しと再確保検出                                                | not-started | —     |                                            |
 | S3  | Event Loop Waiter（Windows: `MsgWaitForMultipleObjectsEx`）                                           | not-started | —     |                                            |
@@ -57,6 +59,13 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | P10 | v1.0 3プラットフォーム + 別ウィンドウのポップアップ（Windows）+ 配布                                  | not-started | —     | §11.4                                      |
 
 設計書 §10.5 の番号（P0〜P3）は検証したい仮説の優先度であり、着手単位としては使わない。切り方はこの表が正。
+
+## 意図的に対象外
+
+行の追加・削除は Grill を経る（`.cursor/rules/workflow.mdc`）。
+
+- Web（Wasm）とモバイル（iOS / Android）: v1 の non-goal（設計書 §0）
+- MVVM 互換レイヤー（`INotifyPropertyChanged` / CommunityToolkit.Mvvm）: v1 では提供しない（設計書 §2.13）
 
 ## S1 の範囲
 

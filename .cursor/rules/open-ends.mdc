@@ -1,0 +1,25 @@
+---
+description: A PR does not go out with work it names as not done, or a figure it cannot explain
+alwaysApply: true
+---
+
+# No open ends in a PR
+
+A PR is opened when its work is finished, not when it runs. Two sentences do not belong in a PR body or in a report to the owner:
+
+- "The speed was not tuned." A PR that adds a frame-path stage (reactive flush, invalidation, layout, DisplayList build, upload) times its stages and counts its allocations before it is opened, tunes what stands out, and reports the numbers before and after (`.cursor/rules/bench.mdc`). What is left is stated with a number and the reason it stays.
+- "The cause is not confirmed." A figure the agent cannot explain (an allocation that the Zero-Alloc test reports, a pixel difference in a golden image, a benchmark that disagrees with its neighbors) is traced to its cause from the data before the PR is opened. A guess is not written as an explanation, with or without "probably".
+
+What is out of the row's scope is a roadmap row that names when (`.cursor/rules/defer.mdc`), not a caveat. A finding about code the row did not change becomes its own Issue at once (`.cursor/rules/pace.mdc`).
+
+A comment in the code is held to the same line: it says what was measured, and marks a cause that was not confirmed as not confirmed, with the Issue number.
+
+```text
+# BAD
+DisplayList の構築速度は詰めていません。1 フレームに 48 バイト確保されますが、おそらく JIT の初回コストです。
+
+# GOOD
+DisplayList の構築は 1,000 ボタンで 0.62 → 0.21 ms。内訳を測ると GlyphRun の SoA 書き込みが 7 割だったので、
+グリフ配列の拡張を事前確保に変えた。48 バイトの確保は Dictionary の列挙子のボクシングで、IEnumerable 経由の
+foreach を CollectionsMarshal.AsSpan に変えて 0 になった（ウォームアップ後 1,000 フレームで確認）。
+```

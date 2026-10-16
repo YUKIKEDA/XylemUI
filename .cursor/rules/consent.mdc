@@ -1,0 +1,33 @@
+---
+description: A question is not a decision; options need a recommendation and an order from the owner
+alwaysApply: true
+---
+
+# Consent
+
+A question is not a decision. Do not close a design choice, an Issue, or a PR in the same turn as a question.
+
+These are questions, not orders. Do not create, edit, close, or retitle Issues or PRs, and do not rewrite `docs/roadmap.md` or `docs/design.ja.md` to settle them:
+
+- "Is it required?" "Should it be X?"
+- Any yes/no about scope, a milestone, or whether a roadmap row exists.
+
+For such a question, list the options, give a recommendation, and state each option's advantage and disadvantage. Then stop and wait.
+
+The reason for a recommendation is the framework's goal and its functional and non-functional requirements (`docs/design.ja.md` §0, §11). Implementation effort, volume, or ease is not a reason (`.cursor/rules/scope.mdc`).
+
+"Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
+
+An outward-facing action (creating a GitHub repository, publishing a package, posting outside this repository) needs an order that names it.
+
+A decision rests on the figures it was given. When a later change moves those figures (a cost, a frame budget, a binary size), report the new ones beside the old before the PR that carries the change is merged, and let the owner decide again.
+
+```text
+# BAD
+Owner: Should the popup be a separate window?
+Agent: switches the design to separate windows and opens the PR
+
+# GOOD
+Owner: Should the popup be a separate window?
+Agent: overlay / separate window / both behind IPopupHost, each with its cost; recommends one; waits
+```

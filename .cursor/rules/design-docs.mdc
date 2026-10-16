@@ -1,0 +1,34 @@
+---
+description: Where the design lives and how it changes, so code and design do not drift
+alwaysApply: true
+---
+
+# Design docs
+
+## Locations
+
+| Document | Role |
+| --- | --- |
+| `docs/design.ja.md` | Canonical design (Japanese). Contracts, invariants, phases |
+| `docs/design-decisions.md` | Rejected alternatives and why (Decision / Reason / Rejected) |
+| `docs/adr/NNNN-*.md` | One decision per file whose reason is a measurement (Status, Date, Issue, Context, Decision) |
+| `docs/roadmap.md` | Rows: ID, title, Issue, status. No acceptance text |
+| `docs/references.md` | Which upstream file to read before a layer is built |
+| `docs/conventions.md` | Directory tree, project responsibilities, coding conventions |
+
+`.dev/` is local scratch and is gitignored. Do not put lasting decisions there.
+
+## Changing the design
+
+- Contract, public API, invariant, or phase: open a `design` Issue, update `docs/design.ja.md` (and `docs/design-decisions.md` for what was rejected) in its PR, and merge it before implementation Issues.
+- Wording, typos, and examples: may ship in the same PR as code.
+- Do not implement first and update the design later. If code and design conflict, stop and fix the design through the process above.
+
+## Judge the current optimum
+
+The design records a decision made at that time. It is not proof that the decision is still the best one.
+
+- Recommend the best solution for the problem as it stands now.
+- Do not cite an existing sentence as the reason to keep that shape.
+- Do not add public API only so an older shape can stay.
+- If the written decision is no longer the best one, say so and change the design through the process above.

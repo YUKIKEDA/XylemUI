@@ -1,0 +1,56 @@
+---
+description: Test framework, layers, structure, and documentation of tests
+globs: "tests/**/*.cs"
+alwaysApply: false
+---
+
+# Tests
+
+The test layers are in `docs/design.ja.md` §12.1. This rule is how a test is written.
+
+## Framework
+
+- xUnit v3 with its built-in `Assert`. No assertion library.
+- Time and frames come from a fake `TimeProvider` and the test frame scheduler (design §12.2). A test never sleeps, never waits on the wall clock, and never asserts what the clock decides.
+- Tests that need a GPU (layer 4) use WARP and run on Windows only; they are marked so the other layers run on every OS.
+- Golden images and DisplayList snapshots render with the bundled fonts only (design §12.3).
+
+## Structure
+
+- `tests/<Project>.Tests` mirrors `src/<Project>`. `Foo.cs` → `FooTests.cs`, in the same folder.
+- Method names: `{Target}_{Scenario}_{Expected}` in PascalCase, English.
+- Each test owns its state. Tests run in parallel; a test that cannot (a real window, the UI thread) says why in its collection definition.
+
+## Documentation
+
+Every `[Fact]` and `[Theory]` has XML docs in this shape, in English:
+
+```csharp
+/// <summary>
+/// One line: the behavior this test guards.
+/// </summary>
+/// <remarks>
+/// Preconditions:
+/// - ...
+///
+/// Steps:
+/// - ...
+///
+/// Expected:
+/// - ...
+/// </remarks>
+[Fact]
+public void Dispose_NestedScopes_RunsChildrenThenOwnCleanupsInLifoOrder()
+{
+}
+```
+
+- A `[Theory]` is documented once; list what the cases cover under Preconditions or Steps.
+- No custom XML tags. Link a design section when the why is not obvious.
+
+## What a test checks
+
+- A test stands for the whole design statement (`.cursor/rules/spec-checks.mdc`).
+- Compare with an independent reference: a hand-computed layout, the Unicode test files, a golden image produced by an earlier reviewed run. Do not compare a function with a re-implementation of itself.
+- A tolerance (pixel difference, float comparison) is a fixed number written in the test, with the reason in a comment when it is not the default.
+- Mutation check for a guard: change the guarded term and see the test fail, then restore it by copying the file aside and back (not `git checkout`). List the mutations in the PR.

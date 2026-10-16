@@ -2,7 +2,7 @@
 
 - Status: Accepted（C# 版の S9 で再測定し、結果で確定または Superseded にする）
 - Date: 2026-09-11（MoonBit 版で決定）／2026-10-16（C# 版へ移行）
-- Spike: MoonBit 版 [S9](https://github.com/YUKIKEDA/lunaria/issues/17)、C# 版 S9（[execution.md](../execution.md)）
+- Spike: MoonBit 版 [S9](https://github.com/YUKIKEDA/lunaria/issues/17)、C# 版 S9（[roadmap.md](../roadmap.md)）
 - 関連: 設計書 §2.3 / §2.5、[design-decisions.md](../design-decisions.md)
 
 ## 文脈

@@ -1,0 +1,42 @@
+---
+description: C# style, naming, types, and API shape
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# C#
+
+Formatting is CSharpier's (`.cursor/rules/engineering.mdc`). This rule covers what a formatter cannot.
+
+## Style
+
+- Modern C# is allowed: `var` when the type is apparent on the right, collection expressions, target-typed `new`, primary constructors, file-scoped namespaces, `required` members, `ref struct`, `scoped`, `allows ref struct`.
+- Private fields are `_camelCase`, static ones included. Constants are PascalCase. No `this.` unless needed to disambiguate. Interfaces start with `I`.
+- Namespaces follow assembly names (`XylemUI` for `XylemUI.Core`'s public types, `XylemUI.Text`, `XylemUI.Platform.Windows`), not folders.
+- One type per file by default. A file name matches its main type.
+- No `using` alias to shorten a BCL type name. Qualify the name where it collides.
+- Library `await` uses `ConfigureAwait(false)` except where the code must resume on the UI thread, which says so in a comment. `CancellationToken` is the last parameter.
+
+## Types
+
+Make an invalid state unrepresentable; do not document it away or catch it at run time.
+
+- One choice, one slot: an enum, a sealed record hierarchy, or a generic parameter, not a `bool` plus a nullable that the `bool` makes meaningless.
+- A parameter that belongs to one variant lives in that variant (`LayoutAlgorithm.Flex(FlexProps)`).
+- Handles are distinct types (`Handle<T>`), so a `NodeHandle` cannot be passed where a `ScopeHandle` is expected.
+- A method that cannot fail returns its value, not a `bool`/`out` pair or a nullable.
+- A public method does not throw because the caller used the wrong phase of the same type; split the type instead.
+- Core types are `internal` (design §2.9.1). The public surface is `Signal`, `Element`, the component functions, the interfaces Platform and Rendering implement, and the snapshot and message types they receive.
+
+## Errors
+
+- Argument and state checks throw through `ThrowHelper` (`.cursor/rules/perf.mdc`), with one-sentence English messages that name the condition.
+- An internal invariant violation calls `Invariant.Fail` (debug: `Debug.Fail`; release: `Environment.FailFast`, design §0.1). It is not caught.
+- Public exception types are few and documented in the XML docs of the members that throw them.
+
+## XML docs
+
+- Public members under `src/` have `summary`, and `param` / `returns` / `exception` when a caller might be unsure. Sentences end with a period. Properties start with "Gets" / "Gets or sets"; constructors with "Initializes a new instance of the <see cref="T"/> class".
+- XML docs state the caller's contract only. How it works lives in `docs/design.ja.md`; refer to the section instead of restating it.
+- Use `<inheritdoc />` when an implementation has the interface's contract.
+- Wording and terminology: `.agents/skills/english-writing/SKILL.md`.

@@ -1,0 +1,29 @@
+---
+description: How time and allocations are measured, and what a measurement claim needs
+alwaysApply: true
+---
+
+# Benchmarks and measurements
+
+Correctness comes first. A performance claim comes with a measurement in the same PR.
+
+## Tools
+
+- Allocation: the Zero-Alloc tests (`PerformanceAssert.DoesNotAllocate` in `XylemUI.Testing`, design §11.3) measure `GC.GetAllocatedBytesForCurrentThread()` after a warm-up, in the five scenarios the design names. They run in `./build.ps1` and are a gate. An allowed count stays or goes down; raising it needs an Issue.
+- Micro-benchmarks: BenchmarkDotNet with `[MemoryDiagnoser]` in `benchmarks/XylemUI.Benchmarks`. Not a gate; CI does not run them on shared runners.
+- End-to-end: `benchmarks/E2E` (10k rows, typing latency proxy, jank rate, startup) on a NativeAOT Release build. Recorded, not a gate (design §11.3).
+- Profiles: `.agents/skills/cpu-profile/SKILL.md`.
+
+## Rules
+
+- Performance acceptance is judged on a NativeAOT Release build. JIT numbers include tiering and are only for finding where time goes.
+- Profile before a speed row, and write on the Issue where the time goes. Order the work by the profile, not by the roadmap number.
+- To find where the time of a path goes, cut it short: skip a stage, time what is left, take the difference. The stage that stands out is the one to work on.
+- Compare both sides with the same configuration, data, and machine state, interleaved, three rounds or more, best of each side. Stop leftover processes from earlier runs. A difference inside the spread is not a result; "spread" is the statistics of repeated runs, not a guess.
+- A call shorter than the clock's resolution is repeated inside one sample until the sample is long enough.
+- A speed PR reports time for the inputs the Issue names, next to a named baseline, and measures the paths it did not change. A change to code several subsystems share is measured on each of them.
+- A figure that moved is explained from the rows, not from a guess (`.cursor/rules/open-ends.mdc`).
+- A gain inside the spread is reverted, not shipped with other changes. A change tried for speed and not kept is reported with its measurement, so that it is not tried again.
+- A design that names a technique for its speed is measured before the design PR says so. A prototype in a scratch project is enough.
+- Named baselines: one per milestone, recorded with the commit and the command. A measurement quoted in an ADR, a comment, or a PR is recorded once and quoted from there.
+- Do not add SIMD, caching, pooling, or unsafe code for speed unless a measurement shows the path is the bottleneck.
