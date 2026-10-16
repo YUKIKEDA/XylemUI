@@ -75,6 +75,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     /// - When the loop wakes, record the CPU time again and the delay since Wake.
     ///
     /// Expected:
+    /// - No iteration happened between the first wait and the Wake call (no polling, no stray wake).
     /// - The loop iterated exactly twice: one wait, one wake.
     /// - The UI thread used less than 10 ms of CPU while it waited.
     /// - The loop woke less than 50 ms after Wake.
@@ -87,6 +88,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             int iterations = 0;
+            int unexpectedWakes = 0;
             long cpuAtWait = 0;
             long cpuAtWake = 0;
             long wakeCalledAt = 0;
@@ -107,6 +109,11 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
                         Win32MessageLoop.Wake();
                     });
                     waker.Start();
+                }
+                else if (Volatile.Read(ref wakeCalledAt) == 0)
+                {
+                    // Woken before our Wake: polling, or a wake leaked from another test.
+                    unexpectedWakes++;
                 }
                 else
                 {
@@ -134,10 +141,11 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             TimeSpan cpuWhileWaiting = TimeSpan.FromTicks(cpuAtWake - cpuAtWait);
             TimeSpan wakeDelay = Stopwatch.GetElapsedTime(Volatile.Read(ref wakeCalledAt), wokeAt);
             output?.WriteLine(
-                $"iterations={iterations} cpuWhileWaiting={cpuWhileWaiting.TotalMilliseconds:F3}ms wakeDelay={wakeDelay.TotalMilliseconds:F3}ms"
+                $"iterations={iterations} unexpectedWakes={unexpectedWakes} cpuWhileWaiting={cpuWhileWaiting.TotalMilliseconds:F3}ms wakeDelay={wakeDelay.TotalMilliseconds:F3}ms"
             );
 
             Assert.False(watchdog.Expired);
+            Assert.Equal(0, unexpectedWakes);
             Assert.Equal(2, iterations);
             Assert.InRange(cpuWhileWaiting, TimeSpan.Zero, TimeSpan.FromMilliseconds(10));
             Assert.InRange(wakeDelay, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
@@ -179,21 +187,13 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
 
             using var watchdog = new LoopWatchdog();
             long started = Stopwatch.GetTimestamp();
-            RunLoop(
-                watchdog,
-                () =>
-                {
-                    // Keep the loop alive for 200 ms with wakes, so that a frame clock that kept running would show up.
-                    if (Stopwatch.GetElapsedTime(started) < TimeSpan.FromMilliseconds(200))
-                    {
-                        WakeLater(10);
-                        return false;
-                    }
 
-                    return true;
-                },
-                () => frames.RequestFrame(callback)
-            );
+            // Keep the loop iterating for 200 ms with wakes every 10 ms, so that a frame clock that kept running would show up.
+            // The ticker is stopped and joined before the test ends, so no wake leaks into the next test.
+            using (new WakeTicker(TimeSpan.FromMilliseconds(10)))
+            {
+                RunLoop(watchdog, () => Stopwatch.GetElapsedTime(started) >= TimeSpan.FromMilliseconds(200), () => frames.RequestFrame(callback));
+            }
 
             Assert.False(watchdog.Expired);
             Assert.Equal(1, runs);
@@ -291,13 +291,6 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
         }
     }
 
-    private static void WakeLater(int milliseconds) =>
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            Thread.Sleep(milliseconds);
-            Win32MessageLoop.Wake();
-        });
-
     private static long CurrentThreadCpuTime100ns()
     {
         FILETIME creation;
@@ -312,6 +305,36 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
         return ToTicks(kernel) + ToTicks(user);
 
         static long ToTicks(FILETIME time) => ((long)time.dwHighDateTime << 32) | time.dwLowDateTime;
+    }
+
+    // Wakes the loop at a fixed interval on its own thread until disposed. Dispose joins the thread, so a test that uses it
+    // leaves no wake behind for the next test.
+    private sealed class WakeTicker : IDisposable
+    {
+        private readonly ManualResetEventSlim _stop = new();
+        private readonly Thread _thread;
+
+        public WakeTicker(TimeSpan interval)
+        {
+            _thread = new Thread(() =>
+            {
+                while (!_stop.Wait(interval))
+                {
+                    Win32MessageLoop.Wake();
+                }
+            })
+            {
+                IsBackground = true,
+            };
+            _thread.Start();
+        }
+
+        public void Dispose()
+        {
+            _stop.Set();
+            _thread.Join();
+            _stop.Dispose();
+        }
     }
 
     // Wakes the loop and marks the test failed if it is still running after the timeout.
