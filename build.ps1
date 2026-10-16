@@ -21,10 +21,16 @@ Invoke-Step "Check format (CSharpier)" { dotnet csharpier check . }
 Invoke-Step "Restore" { dotnet restore $solution }
 Invoke-Step "Build (warnings are errors)" { dotnet build $solution --no-restore -c Release }
 
-# Test projects follow the tests/*.Tests naming (docs/conventions.md). None exist before S1.
+# Test projects follow the tests/*.Tests naming (docs/conventions.md).
+# Projects for one platform (XylemUI.Platform.Windows.Tests) run on that platform only; the merge gate is Windows.
 $testProjects = Get-ChildItem -Path tests -Recurse -Filter *.Tests.csproj -ErrorAction SilentlyContinue
 foreach ($project in $testProjects) {
-    Invoke-Step "Test $($project.BaseName)" { dotnet test $project.FullName --no-build -c Release }
+    if ($project.BaseName -like "*.Windows.Tests" -and -not $IsWindows) {
+        Write-Host "==> Skip $($project.BaseName) (Windows only)"
+        continue
+    }
+
+    Invoke-Step "Test $($project.BaseName)" { dotnet test --project $project.FullName --no-build -c Release }
 }
 
 Write-Host "build.ps1 completed successfully."

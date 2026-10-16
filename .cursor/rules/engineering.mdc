@@ -31,4 +31,6 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 `./build.ps1` before a PR. It runs tool restore, the CSharpier check, restore, a Release build, and every test project. Hosted CI runs the same script.
 
-If `dotnet --list-sdks` does not show a 10.0 SDK, install it; do not stop to ask. If `dotnet csharpier` says to run `dotnet tool restore` right after a successful restore, delete `%USERPROFILE%\.dotnet\toolResolverCache\1\csharpier` (a stale cache entry from another sandbox) and restore again.
+If `dotnet --list-sdks` does not show a 10.0 SDK, install it; do not stop to ask.
+
+A NativeAOT publish on Windows needs `C:\Program Files (x86)\Microsoft Visual Studio\Installer` on `PATH`: Visual Studio's environment scripts call `vswhere.exe` by name, and when it is missing its error text ends up in the linker command (`MSB3073 ... 'vswhere.exe' is not recognized`). Add it for the session (`$env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'`) before `dotnet publish`. If `dotnet csharpier` says to run `dotnet tool restore` right after a successful restore, delete `%USERPROFILE%\.dotnet\toolResolverCache\1\csharpier` (a stale cache entry from another sandbox) and restore again.

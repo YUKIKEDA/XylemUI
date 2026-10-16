@@ -13,7 +13,6 @@ updates:
       test:
         patterns:
           - "xunit*"
-          - "Microsoft.NET.Test.Sdk"
           - "Microsoft.Extensions.TimeProvider.Testing"
 
   - package-ecosystem: github-actions

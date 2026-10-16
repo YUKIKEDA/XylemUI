@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XylemUI</RootNamespace>
+    <Description>The XylemUI engine: reactive runtime, invalidation, layout, and display lists.</Description>
+  </PropertyGroup>
+</Project>

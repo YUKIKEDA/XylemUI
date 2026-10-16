@@ -18,7 +18,7 @@ The reason for a recommendation is the framework's goal and its functional and n
 
 "Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
 
-An outward-facing action (creating a GitHub repository, publishing a package, posting outside this repository) needs an order that names it.
+An outward-facing action (creating a GitHub repository, publishing a package, posting outside this repository) needs an order that names it. The steps of the workflow in this repository are not such actions: creating the Issue for a row, pushing its branch, opening its PR, and recording results on the Issue are done without asking (`.cursor/rules/git.mdc`).
 
 A decision rests on the figures it was given. When a later change moves those figures (a cost, a frame budget, a binary size), report the new ones beside the old before the PR that carries the change is merged, and let the owner decide again.
 
