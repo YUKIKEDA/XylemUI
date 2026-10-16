@@ -7,15 +7,26 @@ using static TerraFX.Interop.Windows.Windows;
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// Runs the Win32 message loop of the UI thread.
+/// Runs the Win32 message loop of the UI thread (design §2.11).
 /// </summary>
+/// <remarks>
+/// While a frame is requested, the loop waits on the message queue and the frame clock together with
+/// <c>MsgWaitForMultipleObjectsEx</c>, and wakes for whichever comes first. With no frame requested it waits on the message queue
+/// alone and uses no CPU. <see cref="Wake"/> wakes it from any thread.
+/// </remarks>
 public static unsafe class Win32MessageLoop
 {
+    private const string WakeClassName = "XylemUI.Wake";
+    private const uint WmQuit = WM.WM_QUIT;
+    private const uint WmNull = WM.WM_NULL;
+
     private static Action<Exception> _callbackExceptionHandler = DefaultCallbackExceptionHandler;
+    private static Win32FrameScheduler? _frameScheduler;
+    private static nint _wakeWindow;
 
     /// <summary>
-    /// Gets or sets the handler that receives an exception thrown inside a window procedure. The exception is caught at the native
-    /// boundary and the message falls back to the default window procedure (design §2.11.1). The default writes to <see cref="Trace"/>.
+    /// Gets or sets the handler that receives an exception thrown inside a window procedure or a frame callback. The exception is
+    /// caught at the native boundary (design §2.11.1). The default writes to <see cref="Trace"/>.
     /// </summary>
     public static Action<Exception> CallbackExceptionHandler
     {
@@ -24,30 +35,65 @@ public static unsafe class Win32MessageLoop
     }
 
     /// <summary>
-    /// Dispatches messages until <see cref="Quit"/> is called.
+    /// Gets the frame scheduler of the UI thread. Its callbacks run inside <see cref="Run"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static IFrameScheduler FrameScheduler => GetFrameScheduler();
+
+    /// <summary>
+    /// Gets or sets a hook that runs on the UI thread once per loop iteration, after the queued messages are handled and before the
+    /// loop waits. Used by tests to observe how often the loop wakes.
+    /// </summary>
+    internal static Action? IterationHook { get; set; }
+
+    /// <summary>
+    /// Dispatches messages and frame callbacks until <see cref="Quit"/> is called.
     /// </summary>
     /// <returns>The exit code passed to <see cref="Quit"/>.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
-    /// <exception cref="Win32Exception">The system could not retrieve a message.</exception>
+    /// <exception cref="Win32Exception">The system could not wait for messages.</exception>
     public static int Run()
     {
         UiThread.VerifyAccess();
+        EnsureWakeWindow();
+        Win32FrameScheduler frames = GetFrameScheduler();
         MSG message;
         while (true)
         {
-            int result = GetMessageW(&message, HWND.NULL, 0, 0);
-            if (result == 0)
+            while (PeekMessageW(&message, HWND.NULL, 0, 0, (uint)PM.PM_REMOVE))
             {
-                return (int)message.wParam;
+                if (message.message == WmQuit)
+                {
+                    return (int)message.wParam;
+                }
+
+                _ = TranslateMessage(&message);
+                _ = DispatchMessageW(&message);
             }
 
-            if (result == -1)
+            IterationHook?.Invoke();
+
+            HANDLE frameClock = frames.WaitHandle;
+            uint handleCount = frames.HasPendingFrame ? 1u : 0u;
+            uint result = MsgWaitForMultipleObjectsEx(
+                handleCount,
+                handleCount == 0 ? null : &frameClock,
+                INFINITE,
+                (uint)QS.QS_ALLINPUT,
+                (uint)MWMO.MWMO_INPUTAVAILABLE
+            );
+
+            if (result == WAIT.WAIT_FAILED)
             {
                 throw new Win32Exception(Marshal.GetLastSystemError());
             }
 
-            _ = TranslateMessage(&message);
-            _ = DispatchMessageW(&message);
+            if (handleCount == 1 && result == WAIT.WAIT_OBJECT_0)
+            {
+                frames.RunFrame();
+            }
+
+            // WAIT_OBJECT_0 + handleCount means input is available; the next iteration handles it.
         }
     }
 
@@ -62,6 +108,18 @@ public static unsafe class Win32MessageLoop
         PostQuitMessage(exitCode);
     }
 
+    /// <summary>
+    /// Wakes the UI thread if it is waiting. Safe to call from any thread. Does nothing before the loop has started.
+    /// </summary>
+    public static void Wake()
+    {
+        nint window = Volatile.Read(ref _wakeWindow);
+        if (window != 0)
+        {
+            _ = PostMessageW((HWND)window, WmNull, default, default);
+        }
+    }
+
     internal static void ReportCallbackException(Exception exception)
     {
         try
@@ -70,10 +128,55 @@ public static unsafe class Win32MessageLoop
         }
         catch
         {
-            // A handler that throws must not take the process down from inside a window procedure.
+            // A handler that throws must not take the process down from inside a callback.
         }
     }
 
+    private static Win32FrameScheduler GetFrameScheduler()
+    {
+        UiThread.VerifyAccess();
+        return _frameScheduler ??= new Win32FrameScheduler();
+    }
+
+    // A message-only window receives the wake messages. Unlike PostThreadMessage, a message posted to a window is not discarded
+    // while a modal loop (a resize drag, a message box) runs.
+    private static void EnsureWakeWindow()
+    {
+        if (_wakeWindow != 0)
+        {
+            return;
+        }
+
+        HINSTANCE instance = GetModuleHandleW(null);
+        fixed (char* className = WakeClassName)
+        {
+            var windowClass = new WNDCLASSEXW
+            {
+                cbSize = (uint)sizeof(WNDCLASSEXW),
+                lpfnWndProc = &WakeWindowProcedure,
+                hInstance = instance,
+                lpszClassName = className,
+            };
+
+            if (RegisterClassExW(&windowClass) == 0)
+            {
+                throw new Win32Exception(Marshal.GetLastSystemError());
+            }
+
+            HWND window = CreateWindowExW(0, className, null, 0, 0, 0, 0, 0, HWND.HWND_MESSAGE, HMENU.NULL, instance, null);
+            if (window == HWND.NULL)
+            {
+                throw new Win32Exception(Marshal.GetLastSystemError());
+            }
+
+            Volatile.Write(ref _wakeWindow, (nint)window);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static LRESULT WakeWindowProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam) =>
+        DefWindowProcW(hwnd, message, wParam, lParam);
+
     private static void DefaultCallbackExceptionHandler(Exception exception) =>
-        Trace.TraceError("Unhandled exception in a window procedure: {0}", exception);
+        Trace.TraceError("Unhandled exception in a window procedure or frame callback: {0}", exception);
 }

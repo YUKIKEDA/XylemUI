@@ -24,8 +24,8 @@ docs/                        設計・判断・ロードマップ・規約（本
 
 | プロジェクト | 責務 |
 | --- | --- |
-| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`） |
-| `src/XylemUI.Platform.Windows` | Win32 バックエンド。ウィンドウ、`[UnmanagedCallersOnly]` のウィンドウプロシージャと例外バリア、`NativeHandleTable`、メッセージループ（`net10.0-windows`、unsafe 可） |
+| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`） |
+| `src/XylemUI.Platform.Windows` | Win32 バックエンド。ウィンドウ、`[UnmanagedCallersOnly]` のウィンドウプロシージャと例外バリア、`NativeHandleTable`、`MsgWaitForMultipleObjectsEx` で待つメッセージループとフレームスケジューラ、他スレッドからの起床（`net10.0-windows`、unsafe 可） |
 | `samples/HelloWindow` | 空ウィンドウのサンプル。`--auto` で S1 の検査をして終了する（`PublishAot`） |
 | `tests/XylemUI.Core.Tests` | Core の単体テスト |
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
