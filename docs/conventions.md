@@ -24,7 +24,11 @@ docs/                        設計・判断・ロードマップ・規約（本
 
 | プロジェクト | 責務 |
 | --- | --- |
-| （まだない。S1 で最初のプロジェクトを追加する） | |
+| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）だけ |
+| `src/XylemUI.Platform.Windows` | Win32 バックエンド。ウィンドウ、`[UnmanagedCallersOnly]` のウィンドウプロシージャと例外バリア、`NativeHandleTable`、メッセージループ（`net10.0-windows`、unsafe 可） |
+| `samples/HelloWindow` | 空ウィンドウのサンプル。`--auto` で S1 の検査をして終了する（`PublishAot`） |
+| `tests/XylemUI.Core.Tests` | Core の単体テスト |
+| `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
 
 予定しているプロジェクトの全体は設計書 §2.9.1 にある。
 

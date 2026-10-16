@@ -22,6 +22,9 @@
 
     <IsPackable>false</IsPackable>
 
+    <!-- net10.0-windows projects (the Win32 backend) build on every OS; their tests run on Windows only (build.ps1). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
     <_XylemRelativeDir>$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').Replace('\', '/'))</_XylemRelativeDir>
     <XylemIsSrcProject>false</XylemIsSrcProject>
     <XylemIsSrcProject Condition="$(_XylemRelativeDir.StartsWith('src/'))">true</XylemIsSrcProject>
@@ -46,6 +49,10 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(XylemIsTestProject)' == 'true'">
+    <Using Include="Xunit" />
+  </ItemGroup>
 
   <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <PackageReference

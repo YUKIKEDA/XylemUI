@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>XylemUI.Platform.Windows</RootNamespace>
+    <Description>The Win32 platform backend of XylemUI.</Description>
+    <!-- Interop project (.cursor/rules/interop.mdc). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="TerraFX.Interop.Windows" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
+  </ItemGroup>
+</Project>

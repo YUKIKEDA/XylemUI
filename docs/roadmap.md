@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** 設計 v1（D0・D1）と開発基盤（F0）完了。次は S1。D2 は S6 より前に終える
+- **フェーズ:** S1 完了。次は S2。D2 は S6 より前に終える
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -38,7 +38,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | D1  | 追加要点の設計（Agentic UI・テスト基盤・開発者API・ポップアップ・デザインシステム・Gallery）          | done        | —     | §2.13・§7.3・§12・§13 に固定されている     |
 | F0  | 開発基盤（規約・スキル・ビルド設定・CI・テンプレート、設計文書の docs/ 移動）                        | done        | —     | `./build.ps1` が空のソリューションで通る   |
 | D2  | Cysharp 由来の設計変更の Grill（購読リスト・テキスト更新・リーク検出・cleanup・ツリー走査）          | not-started | —     | §2.2・§2.3・§2.5・§2.13・§12 に固定        |
-| S1  | NativeAOT + Win32 UI スレッド + `[UnmanagedCallersOnly]` WndProc + `NativeHandleTable` + スレッド検査 | not-started | —     |                                            |
+| S1  | NativeAOT + Win32 UI スレッド + `[UnmanagedCallersOnly]` WndProc + `NativeHandleTable` + スレッド検査 | done        | [#4](https://github.com/YUKIKEDA/XylemUI/issues/4) | 4問 Yes（JIT・NativeAOT とも）。詳細は Issue |
 | S2  | Arena + generation `Handle<T>`。`ref` 返しと再確保検出                                                | not-started | —     |                                            |
 | S3  | Event Loop Waiter（Windows: `MsgWaitForMultipleObjectsEx`）                                           | not-started | —     |                                            |
 | S4  | 同期リサイズ（`WndProc` 内 layout→present）。ユーザーコールバック禁止・例外バリア                     | not-started | —     |                                            |

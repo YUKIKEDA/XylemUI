@@ -20,7 +20,11 @@ Release builds are NativeAOT; development runs on the JIT (design §0.1). Both m
 A PR that adds or changes a `src/` project's public surface, a dependency, or interop runs a NativeAOT publish of the sample its Issue names:
 
 ```powershell
-dotnet publish samples/<Sample> -c Release -r win-x64
+$env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'
+dotnet publish samples/<Sample> -c Release -r win-x64 -o <scratch>
+<scratch>/<Sample>.exe --auto
 ```
+
+Under `dotnet run`, a project with `PublishAot` reports `RuntimeFeature.IsDynamicCodeSupported` and `IsDynamicCodeCompiled` as false too. To tell the builds apart at run time, use `System.Runtime.JitInfo.GetCompiledMethodCount() > 0` (JIT).
 
 The PR's `## Verification` states the warning count (zero) and the size of the executable.

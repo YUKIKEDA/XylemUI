@@ -24,7 +24,7 @@ Read the rules that match the work before changing anything. `alwaysApply` rules
 | --- | --- |
 | `workflow` | Grill, Issue, branch, PR, human squash merge, retrospective; labels; gates |
 | `consent` | A question is not a decision; options need a recommendation; outward actions need an order |
-| `git` | Destructive git needs a named order; commit and push only when asked |
+| `git` | Finished work goes to a PR on its branch without asking; destructive git needs a named order; never `main` |
 | `scope` | Requirements decide scope; no half-shipped capability |
 | `defer` | Deferral only as a named roadmap row |
 | `pace` | Split off what is outside the row; limit an investigation; long runs on the side |

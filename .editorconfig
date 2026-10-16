@@ -115,6 +115,10 @@ dotnet_diagnostic.SA1623.severity = warning
 dotnet_diagnostic.SA1629.severity = warning
 dotnet_diagnostic.SA1642.severity = warning
 
+# Tests: names are {Target}_{Scenario}_{Expected} (.cursor/rules/testing.mdc), which CA1707 rejects.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+
 # Generated code.
 [*.g.cs]
 generated_code = true

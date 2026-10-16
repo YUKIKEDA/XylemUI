@@ -1,1 +1,13 @@
-<Solution></Solution>
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/HelloWindow/HelloWindow.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/XylemUI.Core/XylemUI.Core.csproj" />
+    <Project Path="src/XylemUI.Platform.Windows/XylemUI.Platform.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/XylemUI.Core.Tests/XylemUI.Core.Tests.csproj" />
+    <Project Path="tests/XylemUI.Platform.Windows.Tests/XylemUI.Platform.Windows.Tests.csproj" />
+  </Folder>
+</Solution>
