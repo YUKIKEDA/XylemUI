@@ -35,6 +35,39 @@ public sealed class ArenaTests
     }
 
     /// <summary>
+    /// The default handle, <see langword="default"/>, never points to a value, also while the first slot is in use.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An arena whose first slot (index 0) holds a value, freed and reallocated once so that its generation moved on.
+    ///
+    /// Steps:
+    /// - Check IsAlive and TryGet for <see langword="default"/>, before and after the reuse.
+    ///
+    /// Expected:
+    /// - <see langword="default"/> is <see cref="Handle{T}.IsNone"/> and is never alive.
+    /// - A handle the arena returned is never IsNone.
+    /// </remarks>
+    [Fact]
+    public void DefaultHandle_WhileTheFirstSlotIsInUse_IsNeverAlive()
+    {
+        var arena = new Arena<int>();
+        Handle<int> first = arena.Allocate(1);
+
+        Assert.Equal(0, first.Index);
+        Assert.False(first.IsNone);
+        Assert.True(default(Handle<int>).IsNone);
+        Assert.False(arena.IsAlive(default(Handle<int>)));
+        Assert.False(arena.TryGet(default, out _));
+
+        arena.Free(first);
+        Handle<int> reused = arena.Allocate(2);
+        Assert.Equal(0, reused.Index);
+        Assert.False(reused.IsNone);
+        Assert.False(arena.IsAlive(default(Handle<int>)));
+    }
+
+    /// <summary>
     /// GetRef and Free treat a stale handle as a broken invariant.
     /// </summary>
     /// <remarks>
@@ -91,7 +124,8 @@ public sealed class ArenaTests
         for (int i = NodeCount - 1; i >= 0; i--)
         {
             expected[i] += 1;
-            if (arena.GetRef(nodes[i]).Parent is { } parent)
+            Handle<TreeNode> parent = arena.GetRef(nodes[i]).Parent;
+            if (!parent.IsNone)
             {
                 expected[parent.Index] += expected[i];
             }
@@ -236,11 +270,11 @@ public sealed class ArenaTests
     private static int ComputeTotals(Arena<TreeNode> arena, Handle<TreeNode> handle)
     {
         int total = 1;
-        Handle<TreeNode>? child = arena.GetRef(handle).FirstChild;
-        while (child is { } current)
+        Handle<TreeNode> child = arena.GetRef(handle).FirstChild;
+        while (!child.IsNone)
         {
-            total += ComputeTotals(arena, current);
-            child = arena.GetRef(current).NextSibling;
+            total += ComputeTotals(arena, child);
+            child = arena.GetRef(child).NextSibling;
         }
 
         arena.GetRef(handle).Total = total;
@@ -256,9 +290,9 @@ public sealed class ArenaTests
 
     private struct TreeNode
     {
-        public Handle<TreeNode>? Parent;
-        public Handle<TreeNode>? FirstChild;
-        public Handle<TreeNode>? NextSibling;
+        public Handle<TreeNode> Parent;
+        public Handle<TreeNode> FirstChild;
+        public Handle<TreeNode> NextSibling;
         public int Total;
     }
 }
