@@ -47,6 +47,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | not-started | —     |                                            |
 | S8  | テキスト LTR/CJK（HarfBuzz + FreeType の静的リンク + アトラス）                                       | not-started | —     |                                            |
 | S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測                                        | not-started | —     |                                            |
+| M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測） | not-started | —     | §11.3                                      |
 | V1  | Button / Text / Column がクリックできる                                                               | not-started | —     |                                            |
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |
@@ -56,6 +57,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | P03 | v0.3 BiDi / 複雑スクリプト                                                                            | not-started | —     | §10.4                                      |
 | P04 | v0.4 Linux 基盤                                                                                       | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
+| P06 | v0.6 macOS 基盤（AppKit / Metal / Core Text。静的リンクで単一バイナリになるかの確認を含む）           | not-started | —     | §10.4                                      |
 | P10 | v1.0 3プラットフォーム + 別ウィンドウのポップアップ（Windows）+ 配布                                  | not-started | —     | §11.4                                      |
 
 設計書 §10.5 の番号（P0〜P3）は検証したい仮説の優先度であり、着手単位としては使わない。切り方はこの表が正。
