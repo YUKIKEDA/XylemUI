@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** S4 完了。次は S5
+- **フェーズ:** S5 完了。次は S6
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -42,7 +42,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S2  | Arena + generation `Handle<T>`。`ref` 返しと再確保検出                                                | done        | [#8](https://github.com/YUKIKEDA/XylemUI/issues/8) | 4問 Yes。詳細は Issue |
 | S3  | Event Loop Waiter（Windows: `MsgWaitForMultipleObjectsEx`）                                           | done        | [#10](https://github.com/YUKIKEDA/XylemUI/issues/10) | 4問 Yes。詳細は Issue |
 | S4  | 同期リサイズ（`WndProc` 内 layout→present）。ユーザーコールバック禁止・例外バリア                     | done        | [#15](https://github.com/YUKIKEDA/XylemUI/issues/15) | 4問 Yes。詳細は Issue |
-| S5  | ワーカー → `Channel<UiMessage>` → UI スレッド。独自 `SynchronizationContext`                          | not-started | —     |                                            |
+| S5  | ワーカー → `Channel<UiMessage>` → UI スレッド。独自 `SynchronizationContext`                          | done        | [#17](https://github.com/YUKIKEDA/XylemUI/issues/17) | 4問 Yes。詳細は Issue |
 | S6  | Signal → Reactive scheduler → Invalidation → Block/Flex layout                                        | not-started | —     |                                            |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | not-started | —     |                                            |
 | S8  | テキスト LTR/CJK（HarfBuzz + FreeType の静的リンク + アトラス）                                       | not-started | —     |                                            |

@@ -56,7 +56,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             };
 
             using var watchdog = new LoopWatchdog();
-            RunLoop(watchdog, () => frames >= 10 && messages >= 10, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
+            LoopTestHelpers.RunLoop(watchdog, () => frames >= 10 && messages >= 10, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
 
             Assert.False(watchdog.Expired);
             Assert.Equal(10, frames);
@@ -193,7 +193,11 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             // The ticker is stopped and joined before the test ends, so no wake leaks into the next test.
             using (new WakeTicker(TimeSpan.FromMilliseconds(10)))
             {
-                RunLoop(watchdog, () => Stopwatch.GetElapsedTime(started) >= TimeSpan.FromMilliseconds(200), () => frames.RequestFrame(callback));
+                LoopTestHelpers.RunLoop(
+                    watchdog,
+                    () => Stopwatch.GetElapsedTime(started) >= TimeSpan.FromMilliseconds(200),
+                    () => frames.RequestFrame(callback)
+                );
             }
 
             Assert.False(watchdog.Expired);
@@ -233,7 +237,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             using var watchdog = new LoopWatchdog();
             bool runningWhilePending = false;
             bool? runningAfterFrame = null;
-            RunLoop(
+            LoopTestHelpers.RunLoop(
                 watchdog,
                 () =>
                 {
@@ -291,7 +295,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             long started = Stopwatch.GetTimestamp();
             using (new WakeTicker(TimeSpan.FromMilliseconds(10)))
             {
-                RunLoop(
+                LoopTestHelpers.RunLoop(
                     watchdog,
                     () => secondRuns >= 1 && Stopwatch.GetElapsedTime(started) >= TimeSpan.FromMilliseconds(100),
                     () =>
@@ -345,7 +349,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
                 };
 
                 using var watchdog = new LoopWatchdog();
-                RunLoop(watchdog, () => runs >= 3, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
+                LoopTestHelpers.RunLoop(watchdog, () => runs >= 3, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
 
                 Assert.False(watchdog.Expired);
                 Assert.Equal(3, runs);
@@ -419,34 +423,11 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             };
 
             using var watchdog = new LoopWatchdog();
-            RunLoop(watchdog, () => frames >= 70, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
+            LoopTestHelpers.RunLoop(watchdog, () => frames >= 70, () => Win32MessageLoop.FrameScheduler.RequestFrame(onFrame));
 
             Assert.False(watchdog.Expired);
             Assert.Equal(atFrame10, atFrame70);
         });
-
-    // Runs the loop until isDone returns true at an iteration, or the watchdog expires. start runs on the UI thread first.
-    private static void RunLoop(LoopWatchdog watchdog, Func<bool> isDone, Action start)
-    {
-        Win32MessageLoop.IterationHook = () =>
-        {
-            if (watchdog.Expired || isDone())
-            {
-                Win32MessageLoop.Quit();
-            }
-        };
-
-        try
-        {
-            start();
-            _ = Win32MessageLoop.Run();
-        }
-        finally
-        {
-            Win32MessageLoop.IterationHook = null;
-            Win32MessageLoop.FrameScheduler.CancelFrame();
-        }
-    }
 
     private static long CurrentThreadCpuTime100ns()
     {
@@ -462,68 +443,5 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
         return ToTicks(kernel) + ToTicks(user);
 
         static long ToTicks(FILETIME time) => ((long)time.dwHighDateTime << 32) | time.dwLowDateTime;
-    }
-
-    // Wakes the loop at a fixed interval on its own thread until disposed. Dispose joins the thread, so a test that uses it
-    // leaves no wake behind for the next test.
-    private sealed class WakeTicker : IDisposable
-    {
-        private readonly ManualResetEventSlim _stop = new();
-        private readonly Thread _thread;
-
-        public WakeTicker(TimeSpan interval)
-        {
-            _thread = new Thread(() =>
-            {
-                while (!_stop.Wait(interval))
-                {
-                    Win32MessageLoop.Wake();
-                }
-            })
-            {
-                IsBackground = true,
-            };
-            _thread.Start();
-        }
-
-        public void Dispose()
-        {
-            _stop.Set();
-            _thread.Join();
-            _stop.Dispose();
-        }
-    }
-
-    // Wakes the loop and marks the test failed if it is still running after the timeout.
-    private sealed class LoopWatchdog : IDisposable
-    {
-        private readonly ManualResetEventSlim _finished = new();
-        private readonly Thread _thread;
-        private volatile bool _expired;
-
-        public LoopWatchdog()
-        {
-            _thread = new Thread(() =>
-            {
-                if (!_finished.Wait(TimeSpan.FromSeconds(5)))
-                {
-                    _expired = true;
-                    Win32MessageLoop.Wake();
-                }
-            })
-            {
-                IsBackground = true,
-            };
-            _thread.Start();
-        }
-
-        public bool Expired => _expired;
-
-        public void Dispose()
-        {
-            _finished.Set();
-            _thread.Join();
-            _finished.Dispose();
-        }
     }
 }
