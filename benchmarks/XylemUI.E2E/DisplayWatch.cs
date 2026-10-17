@@ -59,69 +59,79 @@ internal static unsafe class DisplayWatch
             process = Process.Start(new ProcessStartInfo(app, arguments) { UseShellExecute = false, RedirectStandardOutput = true })!;
             process.OutputDataReceived += (_, _) => { };
             process.BeginOutputReadLine();
-            HWND window = HWND.NULL;
-            while (Stopwatch.GetElapsedTime(launched).TotalSeconds < 10)
+            try
             {
-                DXGI_OUTDUPL_FRAME_INFO info;
-                IDXGIResource* resource;
-                HRESULT result = duplication->AcquireNextFrame(2, &info, &resource);
-                if (result == DXGI.DXGI_ERROR_WAIT_TIMEOUT)
+                HWND window = HWND.NULL;
+                while (Stopwatch.GetElapsedTime(launched).TotalSeconds < 10)
                 {
-                    continue;
-                }
-
-                ThrowIfFailed(result);
-                try
-                {
-                    if (window == HWND.NULL)
-                    {
-                        process.Refresh();
-                        window = (HWND)process.MainWindowHandle;
-                    }
-
-                    if (window == HWND.NULL || info.LastPresentTime.QuadPart == 0)
+                    DXGI_OUTDUPL_FRAME_INFO info;
+                    IDXGIResource* resource;
+                    HRESULT result = duplication->AcquireNextFrame(2, &info, &resource);
+                    if (result == DXGI.DXGI_ERROR_WAIT_TIMEOUT)
                     {
                         continue;
                     }
 
-                    var point = new POINT { x = 20, y = 20 };
-                    _ = ClientToScreen(window, &point);
-
-                    // The desktop image is the duplicated output's; a window outside it would never show the marker.
-                    if (point.x < output.left || point.y < output.top || point.x >= output.right || point.y >= output.bottom)
+                    ThrowIfFailed(result);
+                    try
                     {
-                        throw new InvalidOperationException(
-                            $"The app's window ({point.x}, {point.y}) is not on the duplicated output ({output.left}, {output.top}, {output.right}, {output.bottom})."
-                        );
+                        if (window == HWND.NULL)
+                        {
+                            process.Refresh();
+                            window = (HWND)process.MainWindowHandle;
+                        }
+
+                        if (window == HWND.NULL || info.LastPresentTime.QuadPart == 0)
+                        {
+                            continue;
+                        }
+
+                        var point = new POINT { x = 20, y = 20 };
+                        _ = ClientToScreen(window, &point);
+
+                        // The desktop image is the duplicated output's; a window outside it would never show the marker.
+                        if (point.x < output.left || point.y < output.top || point.x >= output.right || point.y >= output.bottom)
+                        {
+                            throw new InvalidOperationException(
+                                $"The app's window ({point.x}, {point.y}) is not on the duplicated output ({output.left}, {output.top}, {output.right}, {output.bottom})."
+                            );
+                        }
+
+                        point.x -= output.left;
+                        point.y -= output.top;
+                        ID3D11Texture2D* image;
+                        ThrowIfFailed(resource->QueryInterface(__uuidof<ID3D11Texture2D>(), (void**)&image));
+                        var box = new D3D11_BOX(point.x, point.y, 0, point.x + 1, point.y + 1, 1);
+                        context->CopySubresourceRegion((ID3D11Resource*)pixel, 0, 0, 0, 0, (ID3D11Resource*)image, 0, &box);
+                        _ = image->Release();
+                        D3D11_MAPPED_SUBRESOURCE mapped;
+                        ThrowIfFailed(context->Map((ID3D11Resource*)pixel, 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped));
+                        uint bgra = *(uint*)mapped.pData;
+                        context->Unmap((ID3D11Resource*)pixel, 0);
+
+                        // B8G8R8A8 in memory is 0xAARRGGBB as a little-endian uint; the marker is RGB 0x33, 0x66, 0xCC.
+                        if ((bgra & 0x00FFFFFF) == 0x003366CC)
+                        {
+                            presentQpc = info.LastPresentTime.QuadPart;
+                            return Stopwatch.GetElapsedTime(launched, presentQpc).TotalMilliseconds;
+                        }
                     }
-
-                    point.x -= output.left;
-                    point.y -= output.top;
-                    ID3D11Texture2D* image;
-                    ThrowIfFailed(resource->QueryInterface(__uuidof<ID3D11Texture2D>(), (void**)&image));
-                    var box = new D3D11_BOX(point.x, point.y, 0, point.x + 1, point.y + 1, 1);
-                    context->CopySubresourceRegion((ID3D11Resource*)pixel, 0, 0, 0, 0, (ID3D11Resource*)image, 0, &box);
-                    _ = image->Release();
-                    D3D11_MAPPED_SUBRESOURCE mapped;
-                    ThrowIfFailed(context->Map((ID3D11Resource*)pixel, 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped));
-                    uint bgra = *(uint*)mapped.pData;
-                    context->Unmap((ID3D11Resource*)pixel, 0);
-
-                    // B8G8R8A8 in memory is 0xAARRGGBB as a little-endian uint; the marker is RGB 0x33, 0x66, 0xCC.
-                    if ((bgra & 0x00FFFFFF) == 0x003366CC)
+                    finally
                     {
-                        presentQpc = info.LastPresentTime.QuadPart;
-                        return Stopwatch.GetElapsedTime(launched, presentQpc).TotalMilliseconds;
+                        _ = resource->Release();
+                        _ = duplication->ReleaseFrame();
                     }
                 }
-                finally
-                {
-                    _ = resource->Release();
-                    _ = duplication->ReleaseFrame();
-                }
+
+                return null;
             }
-
-            return null;
+            catch
+            {
+                // A throw leaves the caller without the process, so the launched app is ended here (M1a review). Kill does
+                // nothing for a process that has already exited, so it does not hide the exception.
+                process.Kill(entireProcessTree: true);
+                throw;
+            }
         }
         finally
         {
