@@ -47,7 +47,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | done        | [#30](https://github.com/YUKIKEDA/XylemUI/issues/30) | 4問 Yes。詳細は Issue |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | done        | [#34](https://github.com/YUKIKEDA/XylemUI/issues/34) | 4問 Yes。詳細は Issue |
 | S8a | テキストの CPU 側: HarfBuzz / FreeType のソースからのビルドと静的リンク（NativeAOT の単一 exe）、`XylemUI.Text`、1 フォント・LTR・1 行のシェーピング、ラスタライズ、CPU のグリフアトラス | done        | [#44](https://github.com/YUKIKEDA/XylemUI/issues/44) | 4問 Yes。詳細は Issue |
-| S8b | テキストの GPU 側: アトラスのテクスチャと更新、アトラスの追い出し、GlyphRun コマンドとシェーダ（UI の言語を `hb_buffer_set_language` で明示して渡す）、FrameResourcePool と Event Query の同期（§5.0.1・§5.0.2）。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | not-started | —     |                                            |
+| S8b | テキストの GPU 側: アトラスのページ（テクスチャ）と更新、ページ + プロット単位の LRU の追い出し（§5.0.2）、GlyphRun コマンドとシェーダ（グレースケールの AA、透過の合成。UI の言語を `hb_buffer_set_language` で明示して渡す）。使用中のアトラスを更新しても画素が正しいことの確認。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | not-started | —     |                                            |
 | S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測。Computed の所有（Scope か、読み手ゼロで自動解除か） | not-started | —     |                                            |
 | M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測）。リサイズ時の layout をテキスト込みで再計測（S6b は 10,101 ノードで約 1.6 ms、テキスト無し） | not-started | —     | §11.3                                      |
 | L1  | Block/Flex の残り（wrap、justify / align、gap、`Percent` / `MinContent` / `MaxContent`）              | not-started | —     | §3.2                                       |
@@ -56,12 +56,13 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | T1  | 改行（UAX#14 の 2 パス、§4.1）、グラフェム（UAX#29）、`tools/UnicodeTableGen`                         | not-started | —     | §4.1                                       |
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |
+| T2  | サブピクセル（ClearType 風）のアンチエイリアス。需要と DPI の扱いを見て決める（v1 はグレースケール、§5.0.3） | not-started | —     | §5.0.3                                     |
 | C0  | Core 抽出（`XylemUI.Core` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）。シェーダをビルド時に `fxc` でコンパイルして同梱（§5.2） | not-started | —     |                                            |
 | R1  | D3D11 のデバイス消失（`DXGI_ERROR_DEVICE_REMOVED` など）からの復帰。デバイスと GPU 資源を作り直す。WARP への切り替えをレンダラ全体の作成の失敗まで広げるか | not-started | —     | §5.0.2                                     |
 | P02 | v0.2 Grid / 仮想化 / IME / a11y 基本 / ポップアップ（オーバーレイ）/ `XylemUI.Testing`               | not-started | —     | §10.4                                      |
 | G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ       | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト                                                                            | not-started | —     | §10.4                                      |
-| P04 | v0.4 Linux 基盤                                                                                       | not-started | —     | §10.4                                      |
+| P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した） | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
 | P06 | v0.6 macOS 基盤（AppKit / Metal / Core Text。静的リンクで単一バイナリになるかの確認を含む）           | not-started | —     | §10.4                                      |
 | P10 | v1.0 3プラットフォーム + 別ウィンドウのポップアップ（Windows）+ 配布。配布物の第三者ライセンスの一覧（FreeType の FTL の謝辞を含む） | not-started | —     | §11.4                                      |

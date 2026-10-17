@@ -14,7 +14,9 @@ These are questions, not orders. Do not create, edit, close, or retitle Issues o
 
 For such a question, list the options, give a recommendation, and state each option's advantage and disadvantage. Then stop and wait.
 
-The reason for a recommendation is the framework's goal and its functional and non-functional requirements (`docs/design.ja.md` §0, §11). Implementation effort, volume, or ease is not a reason (`.cursor/rules/scope.mdc`).
+The reason for a recommendation is the framework's goal and its functional and non-functional requirements (`docs/design.ja.md` §0, §11). Implementation effort, volume, or ease is not a reason (`.cursor/rules/scope.mdc`), and neither is how soon it can be built.
+
+The goal is to match or beat Flutter, Avalonia, and GPUI in performance and quality. Before recommending how to build a mechanism (a cache, an atlas, a scheduler, a text or GPU path), find how those frameworks and the engines under them (Skia, Impeller, WebRender) do it, cite the sources, and judge each way against the requirements (the frame budget of §11.3, the memory targets of §5.3). In S8b the agent recommended clearing a full glyph atlas because it was simple; the owner rejected the reason, and the comparison (Skia's plot LRU, Impeller's grow-then-rebuild, GPUI's growing pages, WebRender's entry LRU) settled it.
 
 "Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
 
