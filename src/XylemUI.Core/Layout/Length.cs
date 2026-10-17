@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 /// <summary>
@@ -70,17 +72,20 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     /// <summary>
     /// Returns a fixed length.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Length Px(float pixels) => new(LengthKind.Px, pixels);
 
     /// <summary>
     /// Returns a percentage; <paramref name="fraction"/> 0.5 is 50 %.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Length Percent(float fraction) => new(LengthKind.Percent, fraction);
 
     /// <summary>
     /// Returns the pixels the length stands for against <paramref name="basis"/>, or NaN when it has none: an auto or content
     /// length, or a percentage of an unknown (NaN) basis.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Resolve(float basis) =>
         Kind switch
         {
@@ -105,16 +110,19 @@ internal readonly record struct LengthPercentage(bool IsPercent, float Value)
     /// <summary>
     /// Returns a fixed length.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentage Px(float pixels) => new(false, pixels);
 
     /// <summary>
     /// Returns a percentage; <paramref name="fraction"/> 0.5 is 50 %.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentage Percent(float fraction) => new(true, fraction);
 
     /// <summary>
     /// Returns the pixels against <paramref name="basis"/>; a percentage of an unknown (NaN) basis is 0 (CSS).
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float ResolveOrZero(float basis) =>
         !IsPercent ? Value
         : float.IsNaN(basis) ? 0
@@ -142,17 +150,20 @@ internal readonly record struct LengthPercentageAuto(LengthKind Kind, float Valu
     /// <summary>
     /// Returns a fixed length.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentageAuto Px(float pixels) => new(LengthKind.Px, pixels);
 
     /// <summary>
     /// Returns a percentage; <paramref name="fraction"/> 0.5 is 50 %.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentageAuto Percent(float fraction) => new(LengthKind.Percent, fraction);
 
     /// <summary>
     /// Returns the pixels against <paramref name="basis"/>, or NaN for <see cref="LengthKind.Auto"/> and for a percentage of an
     /// unknown (NaN) basis.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Resolve(float basis) =>
         Kind switch
         {

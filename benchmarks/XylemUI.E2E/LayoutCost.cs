@@ -167,7 +167,11 @@ internal static class LayoutCost
         LayoutStyle leafStyle = scene switch
         {
             "s6b" => new LayoutStyle { MinWidth = noMinimum },
-            "percent" => new LayoutStyle { Width = Length.Percent(0.01f), Padding = EdgeInsets<LengthPercentage>.All(LengthPercentage.Percent(0.001f)) },
+            "percent" => new LayoutStyle
+            {
+                Width = Length.Percent(0.01f),
+                Padding = EdgeInsets<LengthPercentage>.All(LengthPercentage.Percent(0.001f)),
+            },
             _ => new LayoutStyle(),
         };
         for (int r = 0; r < Rows; r++)

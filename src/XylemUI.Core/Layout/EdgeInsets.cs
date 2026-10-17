@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 /// <summary>
@@ -14,6 +16,7 @@ internal readonly record struct EdgeInsets<T>(T Left, T Top, T Right, T Bottom)
     /// <summary>
     /// Returns the same value on every side.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static EdgeInsets<T> All(T value) => new(value, value, value, value);
 }
 
@@ -25,11 +28,13 @@ internal static class EdgeInsets
     /// <summary>
     /// Returns <paramref name="pixels"/> on every side.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static EdgeInsets<LengthPercentage> All(float pixels) => EdgeInsets<LengthPercentage>.All(LengthPercentage.Px(pixels));
 
     /// <summary>
     /// Returns the given pixels on each side.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static EdgeInsets<LengthPercentage> Px(float left, float top, float right, float bottom) =>
         new(LengthPercentage.Px(left), LengthPercentage.Px(top), LengthPercentage.Px(right), LengthPercentage.Px(bottom));
 
@@ -37,12 +42,14 @@ internal static class EdgeInsets
     /// Returns the pixels of every side against <paramref name="basis"/> (CSS resolves a percentage of each side against the
     /// containing block's width).
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Edges ResolveOrZero(in EdgeInsets<LengthPercentage> insets, float basis) =>
         new(insets.Left.ResolveOrZero(basis), insets.Top.ResolveOrZero(basis), insets.Right.ResolveOrZero(basis), insets.Bottom.ResolveOrZero(basis));
 
     /// <summary>
     /// Returns a value indicating whether a side is a percentage.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool UsesPercent(in EdgeInsets<LengthPercentage> insets) =>
         insets.Left.IsPercent || insets.Top.IsPercent || insets.Right.IsPercent || insets.Bottom.IsPercent;
 }
@@ -69,6 +76,7 @@ internal readonly record struct Edges(float Left, float Top, float Right, float 
     /// <summary>
     /// Returns the horizontal and the vertical sums.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Size Sum() => new(Horizontal, Vertical);
 
     /// <summary>
@@ -79,20 +87,24 @@ internal readonly record struct Edges(float Left, float Top, float Right, float 
     /// <summary>
     /// Returns the sides of the main axis of a flex container together.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float MainSum(bool row) => row ? Horizontal : Vertical;
 
     /// <summary>
     /// Returns the sides of the cross axis of a flex container together.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float CrossSum(bool row) => row ? Vertical : Horizontal;
 
     /// <summary>
     /// Returns the start side of the main axis.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float MainStart(bool row) => row ? Left : Top;
 
     /// <summary>
     /// Returns the start side of the cross axis.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float CrossStart(bool row) => row ? Top : Left;
 }
