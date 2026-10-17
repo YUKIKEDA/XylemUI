@@ -43,6 +43,8 @@ _slots[index].Generation = 1;
 - Argument and state checks throw through `ThrowHelper` (`.cursor/rules/perf.mdc`), with one-sentence English messages that name the condition.
 - An internal invariant violation calls `Invariant.Fail` (debug: throws `InvariantViolationException`, so a test can observe it; release: `Environment.FailFast`, design §0.1). Never `Debug.Fail`: without a debugger attached it ends the process. It is not caught.
 - Public exception types are few and documented in the XML docs of the members that throw them.
+- A `catch` that runs cleanup which can throw keeps the exception it caught: when the cleanup throws too, throw an `AggregateException` with the caught exception first, then the cleanup's. In S9 `Scope.Create` disposed the scope of a body that threw, and a cleanup's exception replaced the body's (a review found it).
+- A `global using` alias exists only inside its assembly. A public signature that uses it shows the real type to apps (`ScopeHandle` is `Handle<ScopeData>` outside Core, S9); decide the public name when the API is public.
 
 ## XML docs
 

@@ -24,6 +24,8 @@ alwaysApply: true
 - Wording, typos, and examples: may ship in the same PR as code.
 - Do not implement first and update the design later. If code and design conflict, stop and fix the design through the process above.
 
+After a script edits a Markdown table, read `git diff --stat`. A diff of the whole table means its columns were padded again (it happened in S9 to `docs/roadmap.md`, by no step of the script): restore the file and replace only the rows that change.
+
 ## Judge the current optimum
 
 The design records a decision made at that time. It is not proof that the decision is still the best one.
