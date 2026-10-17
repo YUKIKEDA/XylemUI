@@ -12,11 +12,14 @@ The design for this is `docs/design.ja.md` §2.9, §2.11.1, §2.12. This rule is
 
 - `unsafe`, function pointers, and `Unsafe`/`MemoryMarshal` reinterpretation are allowed only in `XylemUI.Platform.*`, `XylemUI.Rendering.*`, and the native wrappers of `XylemUI.Text`. `AllowUnsafeBlocks` is set in those projects only. Core stays safe.
 - Every `unsafe` block has a comment that states the invariant that makes it safe (lifetime, length, alignment).
+- A read or write through a pointer into mapped or native memory checks its index against that memory's size first. Out of range, a Release build ends with an access violation and a Debug build may pass by luck: in S7 `ReadPixel` read outside the back buffer, and only the Release test run crashed.
 
 ## Calling native code
 
 - C APIs: `[LibraryImport]` with blittable signatures. No `DllImport` with runtime marshalling, no `string` marshalling on a frame path; pass UTF-16 or UTF-8 spans.
 - Windows declarations come from TerraFX.Interop.Windows. COM is called through the vtable; no `ComImport` RCWs. Every `AddRef` has a matching `Release` in the same owner, and back-buffer views are released before `ResizeBuffers` (Invariant 11).
+- A failed `HRESULT` becomes `InvalidOperationException` with the result in `HResult` (`COMException` is reserved by CA2201), and a lost device its own exception. Do not give a namespace a segment named like a TerraFX class: `XylemUI.Rendering.D3D11` hides TerraFX's `D3D11` class, so write `TerraFX.Interop.DirectX.D3D11` in full.
+- A waitable object that counts (a DXGI frame latency object, a semaphore) is tested with a user that takes one and does not give it back. In S7 a frame that returned without `Present` left the swap chain's object unsignaled and no frame came again; the review found it, and the wait now has a timeout (design §2.11).
 - COM objects that the OS calls (UIA providers, `IDropTarget`) use source-generated COM (`[GeneratedComInterface]`, `[GeneratedComClass]`).
 - macOS calls go through `objc_msgSend` P/Invoke. An Obj-C shim is added only where a block or a callback cannot be expressed in C#, and the PR says why.
 
