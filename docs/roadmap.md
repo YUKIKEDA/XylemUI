@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** S7 完了。次は S8
+- **フェーズ:** S7 完了。次は S8a
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -46,11 +46,14 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S6a | Signal / Computed / Effect / `Batch` → Reactive scheduler。`await` の継続ごとの暗黙の `Batch`         | done        | [#25](https://github.com/YUKIKEDA/XylemUI/issues/25) | 4問 Yes。詳細は Issue |
 | S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | done        | [#30](https://github.com/YUKIKEDA/XylemUI/issues/30) | 4問 Yes。詳細は Issue |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | done        | [#34](https://github.com/YUKIKEDA/XylemUI/issues/34) | 4問 Yes。詳細は Issue |
-| S8  | テキスト LTR/CJK（HarfBuzz + FreeType の静的リンク + アトラス）。FrameResourcePool と Event Query の同期（§5.0.1・§5.0.2）。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | not-started | —     |                                            |
+| S8a | テキストの CPU 側: HarfBuzz / FreeType のソースからのビルドと静的リンク（NativeAOT の単一 exe）、`XylemUI.Text`、1 フォント・LTR・1 行のシェーピング、ラスタライズ、CPU のグリフアトラス | not-started | —     |                                            |
+| S8b | テキストの GPU 側: アトラスのテクスチャと更新、GlyphRun コマンドとシェーダ、FrameResourcePool と Event Query の同期（§5.0.1・§5.0.2）。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | not-started | —     |                                            |
 | S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測。Computed の所有（Scope か、読み手ゼロで自動解除か） | not-started | —     |                                            |
 | M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測）。リサイズ時の layout をテキスト込みで再計測（S6b は 10,101 ノードで約 1.6 ms、テキスト無し） | not-started | —     | §11.3                                      |
 | L1  | Block/Flex の残り（wrap、justify / align、gap、`Percent` / `MinContent` / `MaxContent`）              | not-started | —     | §3.2                                       |
+| F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`） | not-started | —     | §4.5                                       |
 | V1  | Button / Text / Column がクリックできる                                                               | not-started | —     |                                            |
+| T1  | 改行（UAX#14 の 2 パス、§4.1）、グラフェム（UAX#29）、`tools/UnicodeTableGen`                         | not-started | —     | §4.1                                       |
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |
 | C0  | Core 抽出（`XylemUI.Core` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）。シェーダをビルド時に `fxc` でコンパイルして同梱（§5.2） | not-started | —     |                                            |
