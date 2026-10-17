@@ -40,7 +40,7 @@ _slots[index].Generation = 1;
 ## Errors
 
 - Argument and state checks throw through `ThrowHelper` (`.cursor/rules/perf.mdc`), with one-sentence English messages that name the condition.
-- An internal invariant violation calls `Invariant.Fail` (debug: `Debug.Fail`; release: `Environment.FailFast`, design §0.1). It is not caught.
+- An internal invariant violation calls `Invariant.Fail` (debug: throws `InvariantViolationException`, so a test can observe it; release: `Environment.FailFast`, design §0.1). Never `Debug.Fail`: without a debugger attached it ends the process. It is not caught.
 - Public exception types are few and documented in the XML docs of the members that throw them.
 
 ## XML docs

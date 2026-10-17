@@ -55,7 +55,7 @@ Decision:
   スケジューラはトポロジカル Depth の昇順。再評価のたびに Depth を 0 から再構築する。Computed は lazy（Effect 実行前に pull）。
   依存元（`Sources`）は `ReactiveNodeId`（Signal と Computation）。
   Depth は実行順序のヒント。正しさは Version と pull。
-  `MaxFlushIterations` は stabilization 回数の上限であり、循環検出ではない。
+  `MaxFlushIterations` は stabilization 回数の上限であり、循環検出ではない。超えたら debug・release とも診断用の例外をハンドラに渡して flush を打ち切る。
   依存追跡はランタイム追跡。Signal の API は `Get()` / `Set()` のメソッド。
   依存辺は SolidJS 方式のスロット配列（両端に相手側の位置を持ち、末尾との入れ替えで O(1) 削除、配列は再利用）。
   再評価では前回と同じ順に同じ依存を読む間は辺を残し、食い違った位置から先だけ付け替える。
@@ -75,6 +75,7 @@ Rejected:
   - Depth 減少を dependents 全体へトポロジカル伝播（再評価時の再構築で足りる）
   - Depth を正しさの根拠にする
   - 上限超過を「循環検出」と呼ぶ
+  - 上限超過を debug で `Debug.Fail` にする（.NET ではデバッガが無いとプロセスが終わり、テストで確かめられない。アプリ側の循環であり不変条件違反ではない）
   - Computed を batch 終了時に一括 push 評価する
   - Source Generator / Interceptors によるコンパイル時の依存解析
   - `signal.Value` プロパティ、`Signal<T>` → `T` の暗黙変換演算子
@@ -95,6 +96,7 @@ Decision:
   dirty な境界を `LayoutRequest` の worklist に載せ、局所 layout する。
   `SelfDirty.Layout || SubtreeDirty.Layout` ならそのノードの algorithm を実行する。
   LayoutPass は Signal を読まない。ネストした境界は Boundary barrier で内部へ潜らない。
+  `MaxLayoutIterations` を超えたら、Reactive と同じく診断用の例外をハンドラに渡して打ち切る。
   Binding は `NodeProperty<T>` 記述子（ChangeKind を持つ）経由で UiNode に書く。
 
 Reason:
@@ -167,6 +169,7 @@ Rejected:
   - 測る前に `CleanupKind` / `ResourceHandle` に切り替える
   - 相対性能（ID が N 倍）だけで採用を決める
   - cleanup の最初の例外で破棄を打ち切る
+  - cleanup の例外を debug で `Debug.Fail` にする（デバッガが無いとプロセスが終わる）
   - ファイナライザ / `SafeHandle` の解放タイミングに後始末を任せる（実行時期・スレッドが不定）
 
 ---

@@ -311,10 +311,13 @@ batch outermost（最も外側のbatch）の終了時
     → 無限ループを防ぐため MaxFlushIterations（暫定値: 100）を設ける。
       超過は「循環を検出した」ではなく「configured cycle limit 内で安定しなかった」。
       診断は Reactive graph failed to stabilize within the configured cycle limit。
-      デバッグビルドではDebug.Failで停止、リリースビルドでは診断ログを出力し現在のflushを中断する
+      debug・release とも、診断用の例外（ReactiveStabilizationException）を
+      ReactiveRuntime.UnhandledExceptionHandler に渡し、現在の flush を中断する（下記）
 ```
 
 **S6（MoonBit 版で検証済み。C# 版で再検証）:** `Batch` 内の複数 `Set` は Effect を1回だけ flush し、ダイヤモンド（A→B,C→D）の Computed は pull で1回評価された。Computed は queue に入らない。Effect 内 `Set` は次 cycle。`MarkDirty` は origin に `SelfDirty`、経路に `SubtreeDirty`、Layout 境界で `LayoutRoots` 停止。Color は載せない。worklist は Block/Flex（1次元幅）を回し、pass 中の再 dirty は次 cycle。layout 中は tracking off で Signal 読みが不変条件違反になる。
+
+**安定しない flush の扱い（C# 版で変更）:** 上限を超えるのはアプリ側の循環（Effect が自分の依存を書き続ける等）であり、内部の不変条件違反（§0.1）ではない。debug と release で振る舞いを変えず、テストで確かめられるよう、診断用の例外をハンドラに渡して打ち切る。.NET の `Debug.Fail` はデバッガが付いていないとプロセスを終えるので使わない。debug で止めたい場合はハンドラ側でブレークする。
 
 nested batchのネスト管理・安定化打ち切りの具体的アルゴリズムの詳細仕様化は、引き続き S6 の実装検証を経てから正式化する。例外の扱いは上の「例外」で確定した。
 
@@ -346,7 +349,7 @@ public sealed class Scope : IDisposable
 }
 ```
 
-**cleanup の例外（C# 版で追加）:** C# では cleanup が例外を投げると後続の cleanup が実行されずにリークする。cleanup の例外は捕捉して残りの cleanup を最後まで実行し、全て終わってから `AggregateException` として報告する（debug では `Debug.Fail`）。
+**cleanup の例外（C# 版で追加）:** C# では cleanup が例外を投げると後続の cleanup が実行されずにリークする。cleanup の例外は捕捉して残りの cleanup を最後まで実行し、全て終わってから `AggregateException` として報告する。debug と release で扱いを変えない（`Debug.Fail` はデバッガが無いとプロセスを終え、テストで確かめられないため使わない。§2.2.2 の安定しない flush と同じ）。
 
 上記は概念上の表現である。実装では Scope 本体を `ScopeArena`（§2.5）に置き、`UiNode` からは `ScopeHandle` で参照する。
 
@@ -675,7 +678,7 @@ static void RunLayoutPass(UiTree tree)
     {
         if (++iterations > MaxLayoutIterations)  // 暫定値: 100。§2.2.2のMaxFlushIterationsと同型
         {
-            Diagnostics.LayoutFailedToStabilize();  // デバッグ: Debug.Fail / リリース: 診断ログを出して打ち切る
+            Diagnostics.LayoutFailedToStabilize();  // debug・release とも LayoutStabilizationException をハンドラに渡して打ち切る（§2.2.2 と同じ）
             return;
         }
 
