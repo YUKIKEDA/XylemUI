@@ -42,6 +42,16 @@ public static unsafe class Win32MessageLoop
     public static IFrameScheduler FrameScheduler => GetFrameScheduler();
 
     /// <summary>
+    /// Uses a swap chain's frame latency waitable object as the frame clock (design §2.11), or goes back to the built-in timer.
+    /// </summary>
+    /// <param name="waitableObject">
+    /// The handle a renderer gives (for D3D11, <c>IDXGISwapChain2::GetFrameLatencyWaitableObject</c>); zero for the timer. The
+    /// caller keeps owning it and sets zero before closing it.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static void SetFrameClock(nint waitableObject) => GetFrameScheduler().SetFrameClock((HANDLE)waitableObject);
+
+    /// <summary>
     /// Gets the UI thread's queue. Other threads post to it; <see cref="Run"/> drains it when it starts and once per iteration, and
     /// installs its synchronization context so that <c>await</c> continuations resume on the UI thread (design §2.12).
     /// </summary>

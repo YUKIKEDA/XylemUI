@@ -1219,6 +1219,8 @@ public interface IFrameScheduler
 
 **S3（C# 版で検証済み、Issue #10）:** `MsgWaitForMultipleObjectsEx` でメッセージと waitable `HANDLE` を多重待機し、フレームのコールバックと投函されたメッセージの両方が進んだ。フレームの要求がないときはハンドルなしで待ち、300 ms のアイドル中にループの反復は1回（ポーリングなし）、UI スレッドの CPU 時間は計測の分解能（スケジューラのティック、約 15.6 ms）未満だった。他スレッドからの起床は 0.36〜0.39 ms で UI スレッドを起こした。定常状態のフレームでループとスケジューラは確保しない。S3 では DXGI の `GetFrameLatencyWaitableObject` の代わりに高分解能の waitable timer（60 Hz）を待機ハンドルにした。待ち方は同じで、S7 で差し替える。UI スレッドで `DwmFlush` は使わない。
 
+**S7（C# 版で検証済み、Issue #34）:** スワップチェーン（flip モデル、`FRAME_LATENCY_WAITABLE_OBJECT`、最大レイテンシ 1）の待機オブジェクトを `Win32MessageLoop.SetFrameClock` でフレームクロックにすると、ループはフレームを要求している間だけそれをメッセージと多重待機し、フレームの間隔はディスプレイの更新（60 Hz で中央値 16.66 ms）に揃った。要求していない間は待たないので、Present もしない。スワップチェーンができる前（と、スワップチェーンを持たないウィンドウ）は、S3 の waitable timer が残る
+
 **macOS の frame clock:** macOS 14以降は`CADisplayLink`（`NSView.displayLink(target:selector:)`、メインスレッドのRunLoop上で発火）を優先する。target は Obj-C ランタイムで動的に作るクラスに `[UnmanagedCallersOnly]` のメソッドを `class_addMethod` で登録して実現する。**`CVDisplayLink`はバックグラウンドスレッドからコールバックするため直接は使わない。** macOS 13以前への後方互換が必要な場合は`CVDisplayLink`を使う。.NET ではバックグラウンドスレッドからマネージドコードを呼ぶこと自体は安全だが、Core は UI スレッドアフィン（§2.12）なので、コールバック内では Core に触れず、`dispatch_async(dispatch_get_main_queue(), ...)`または`CFRunLoopWakeUp`によってメインスレッドへ明示的にバウンスする。この経路は§10.5のP0スパイクの検証項目に含める。
 
 ### 2.11.1 OSモーダルループへの対策
@@ -1241,6 +1243,8 @@ public interface IFrameScheduler
 ```
 
 2〜4を飛ばして5へ進むことは、Windowsバックエンドでは禁止する。
+
+**S7（C# 版で検証済み）:** 2 の「解放」には、デバイスコンテキストに結び付いたままのビューを外すこと（`OMSetRenderTargets(0, null, null)`）も含める。`ResizeBuffers` のドキュメントが、ビューがコンテキストに結び付いていないことを求めているためである。WARP と手元のハードウェアでは、描画の後・Present の前に外さずに呼んでも通った（ランタイムが外していると見られる）が、ドライバの実装に頼らずドキュメントの契約に合わせる。ビューそのものを残したまま `ResizeBuffers` を呼ぶと `DXGI_ERROR_INVALID_CALL` になることをテストで確かめた。`WM_SIZE` の同期描画（S4）の中で `Resize` → 描画 → Present が通った
 
 **同期パスで許可する処理:** Binding 済みプロパティの読み取り、Computed の pull（layout に入る前）、Materialization、Layout、Paint、Render、Present。**禁止:** アプリケーションイベントコールバック、新規 OS モーダルループ、`MessageBox` 等の再入、Effect 本体のユーザーコード、`SynchronizationContext` に積まれた `await` 継続の実行。OS callback 中に application callback を任意実行しない。「禁止」はその場で実行しないという意味であり、アプリのコールバックは捨てずに同期描画の後まで遅らせる（下記のガード）。
 
@@ -1912,7 +1916,9 @@ DXGIスワップチェーン・`CAMetalLayer`・wgpuの`Surface`はいずれも�
 
 DisplayList は再利用バッファに書く。配列は解放せず使用済み長さだけリセットする。定常状態は allocation-free（Gen0 回収を起こさない）。容量不足のときだけその場で grow（`Array.Resize`）し、以降のフレームは拡張後の容量を再利用する。固定容量で打ち切らない。
 
-**S7（MoonBit 版で検証済み。C# 版で再検証）:** `DisplayListBuffer` の `Reset` は `UsedCommands` だけ戻し、2フレーム目は既存スロットを上書きした。FillRect を単色 quad（三角形2枚）として D3D11 で Present できた。画素はバックバッファ readback で確認した（目視に依存しない）。clean フレームは Present しない。`ResizeBuffers` は RTV 解放 → ResizeBuffers → RTV 再生成の順で、その後も Present できた。Glyph は S8。SDF 角丸は V1 以降。Frame-in-flight プールは 1 スロットで足りた。MoonBit 版では矩形を little-endian の `Bytes` へ手動でパックしていたが、C# 版では下記のとおり unmanaged struct 配列をそのまま転送する。
+**S7（C# 版で検証済み、Issue #34）:** 設計の `DisplayListBuffer` は公開の `DisplayList`（Core）になった。レンダラは別のアセンブリなので、読み出し（`DisplayListReader`）と書き込み（`FillRect`）は public で、ストリームの配列は internal。S7 のコマンドは FillRect だけで、ストリームは `Commands`・`Rects`・`Colors` の 3 つ（他の種類とストリームはそれぞれの行で足す）。どのストリームもコマンドの配列と一緒に 2 倍に伸ばすので、書き込みの検査は 1 回で済む。読み出しは、読まずに次へ進む・種類の違う読み出し・終わりに残ったデータを不変条件違反にする。頂点データは中間の配列を作らず、`Map(WRITE_DISCARD)` した頂点バッファを `Span<QuadInstance>` として直接書く（`QuadInstance` は矩形と色だけ。角丸とボーダーは V1）。定常状態のフレーム（DisplayList の書き込み → アップロード → 描画 → Present）はアロケーション 0（1,000 矩形、100 フレーム）。NativeAOT・ハードウェアで 1,000 矩形のフレームの CPU 時間は、DisplayList の書き込み 6 µs、`Draw`（読み出し・アップロード・発行）15〜17 µs、`Present` 52〜61 µs（中央値、3 回）
+
+**S7（MoonBit 版の到達点、参考）:** `DisplayListBuffer` の `Reset` は `UsedCommands` だけ戻し、2フレーム目は既存スロットを上書きした。FillRect を単色 quad（三角形2枚）として D3D11 で Present できた。画素はバックバッファ readback で確認した（目視に依存しない）。clean フレームは Present しない。`ResizeBuffers` は RTV 解放 → ResizeBuffers → RTV 再生成の順で、その後も Present できた。Glyph は S8。SDF 角丸は V1 以降。Frame-in-flight プールは 1 スロットで足りた。MoonBit 版では矩形を little-endian の `Bytes` へ手動でパックしていたが、C# 版では下記のとおり unmanaged struct 配列をそのまま転送する。
 
 GPU が前フレームを読んでいる間に次フレームを書くため、概念上の「ダブルバッファ」ではなく **Frame-in-flight resource pool** を使う。バッファ A/B の交互だけでは、GPU が 2 フレーム以上遅延すると未完了バッファを再利用してしまう。
 
@@ -2126,7 +2132,7 @@ GPUドライバの不具合対応は「一度作れば終わり」ではなく�
 
 **シェーダーのコンパイル（C# 版で追加）:** スパイクではランタイムの `D3DCompile`（`d3dcompiler_47.dll`）を使ってよいが、本番は HLSL をビルド時に `fxc` / `dxc` でバイトコードへコンパイルし、埋め込みリソースとして同梱する。起動時間を短くし、ランタイムのコンパイラ DLL への依存をなくすためである。MSL も同様にビルド時に `.metallib` にする。WGSL は wgpu がランタイムで扱う。
 
-**S7（MoonBit 版で検証済み。C# 版で再検証）:** Windows の D3D11 直叩き（ハードウェア、失敗時 WARP）で FillRect→三角形→Present と `ResizeBuffers` が通った。シェーダはランタイム `D3DCompile`。本番の同期は Event Query（このスパイクでは 1 スロット）。
+**S7（C# 版で検証済み、Issue #34）:** `XylemUI.Rendering.D3D11` の `D3D11Renderer` が、TerraFX の宣言で D3D11 / DXGI の COM vtable を直接呼び、ハードウェア（無ければ WARP）のデバイスと flip モデル（`FLIP_DISCARD`、2 バッファ）のスワップチェーンで FillRect を描いた。1 矩形は 1 インスタンスで、頂点シェーダが `SV_VertexID` から 4 隅を作る（頂点バッファは無い）。シェーダは実行時の `D3DCompile`（ビルド時のコンパイルは C0）。画素はバックバッファの readback で確かめた（JIT・NativeAOT）。COM の参照は `Dispose` と `Resize` の中で順に `Release` する。GPU との同期（Frame-in-flight と Event Query）は S8、デバイス消失は検出して `GpuDeviceLostException` を投げるだけで、作り直しは R1。`D3D11` という名前空間を自分で持つと TerraFX の `D3D11` クラスが隠れるので、`TerraFX.Interop.DirectX.D3D11` と書く
 
 ### 5.3 Linuxのメモリフットプリント問題（決着）
 

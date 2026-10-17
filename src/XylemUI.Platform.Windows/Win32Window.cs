@@ -110,6 +110,26 @@ public sealed unsafe class Win32Window : IDisposable
     internal HWND Hwnd => _hwnd;
 
     /// <summary>
+    /// Gets the native window handle (<c>HWND</c>), for a renderer that draws into the window; zero after it is destroyed.
+    /// </summary>
+    public nint Handle => _hwnd;
+
+    /// <summary>
+    /// Gets the size of the client area, in physical pixels.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public (int Width, int Height) ClientSize
+    {
+        get
+        {
+            UiThread.VerifyAccess();
+            RECT client;
+            _ = GetClientRect(_hwnd, &client);
+            return (client.right - client.left, client.bottom - client.top);
+        }
+    }
+
+    /// <summary>
     /// Gets or sets a hook that sees every message before the window handles it. Returning <see langword="true"/> marks the
     /// message as handled. Used by tests to run code inside the window procedure.
     /// </summary>

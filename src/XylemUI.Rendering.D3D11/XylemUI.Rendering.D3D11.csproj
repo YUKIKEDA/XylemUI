@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>XylemUI.Rendering.D3D11</RootNamespace>
+    <Description>The Direct3D 11 renderer of XylemUI.</Description>
+    <!-- Interop project (.cursor/rules/interop.mdc). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="TerraFX.Interop.Windows" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
+  </ItemGroup>
+</Project>
