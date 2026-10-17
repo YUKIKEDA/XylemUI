@@ -21,7 +21,7 @@ Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in t
 ## Native libraries in `vendor/`
 
 - A new version is taken once it has been out for two weeks. A security fix is the exception: it is taken at once. HarfBuzz and FreeType read fonts, which are untrusted input.
-- `vendor/` is outside Dependabot. Before each milestone row (M1, C0, P02, and so on) and when an advisory is published, compare `vendor/versions.lock` with the upstream releases and security advisories of each library (GitHub's advisories for `harfbuzz/harfbuzz`, FreeType's `NEWS` and CVE list), and write what was found on the row's Issue.
+- `vendor/` is outside Dependabot. Before each milestone row (M1a, C0, P02, and so on) and when an advisory is published, compare `vendor/versions.lock` with the upstream releases and security advisories of each library (GitHub's advisories for `harfbuzz/harfbuzz`, FreeType's `NEWS` and CVE list), and write what was found on the row's Issue.
 - A line of `versions.lock` lists a mirror after the main URL when the main host is a single server; the SHA-256 checks whichever answers.
 
 ## Already decided
