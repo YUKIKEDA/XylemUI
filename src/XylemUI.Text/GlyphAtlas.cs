@@ -110,6 +110,13 @@ public sealed unsafe class GlyphAtlas
     public int EvictionCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of requests refused so far because the atlas had <see cref="PageLimit"/> pages and no plot to evict. A
+    /// refused glyph is not cached, so each request for it rasterizes it again; a rising count means a frame needs more than the
+    /// limit, or <see cref="BeginFrame"/> is not called.
+    /// </summary>
+    public int RefusedCount { get; private set; }
+
+    /// <summary>
     /// Returns the coverage of a page, one byte per pixel, row after row (the stride is <see cref="PageSize"/>).
     /// </summary>
     /// <param name="page">The page.</param>
@@ -205,6 +212,7 @@ public sealed unsafe class GlyphAtlas
         int plotIndex = FindRoom(width, height, out int x, out int y);
         if (plotIndex < 0)
         {
+            RefusedCount++;
             glyph = default;
             return false;
         }
