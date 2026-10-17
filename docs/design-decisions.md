@@ -296,7 +296,7 @@ Decision:
   ワーカーからは `IUiDispatcher` / 独自 `SynchronizationContext` で UI スレッドへ戻る。
   キューは `ConcurrentQueue`（メッセージと継続を同じキューに積む）。ループは開始時と毎反復の待機の前に取り出し、取り出しは呼んだ時点の件数だけ実行する。同期描画の中では取り出さない。
   `[UnmanagedCallersOnly]` の境界で全例外を捕捉する。
-  Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。
+  Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。（見直し: 理由が工数なので、P02 の前に要件で比べ直す。Issue #54）
   Vsync 待機中も OS メッセージを多重待機する（Windows: `MsgWaitForMultipleObjectsEx`）。
   同期リサイズ描画は `WM_SIZE` だけで行い、ガード（Core の `SynchronousRenderGuard`、深さで数える）の中で走らせる。入れ子のリサイズはその場では描かず、最新サイズを区間の後に1回描く。アプリのコールバックは描画の後まで遅らせて順に実行する。
 
@@ -305,7 +305,7 @@ Reason:
   RCW の解放はファイナライザ任せで、`ResizeBuffers` の前にビューを全て Release する契約を守れない。
   .NET GC はオブジェクトを移動する。長期のピン留めはヒープを断片化させる。
   解放済み `GCHandle` の使用は未定義動作で、stale を検出できない。
-  Win32 / COM の宣言を手で書く工数は大きい。TerraFX は生成された宣言だけでランタイムの抽象層を持たず、未使用分はトリミングで消える。
+  TerraFX は Windows SDK のヘッダから宣言を生成するので、手で書いた宣言の誤り（構造体の配置、vtable の順）が入らない。ランタイムの抽象層を持たず、未使用分はトリミングで消える。
   Win32 ウィンドウはスレッドアフィン、AppKit はメインスレッド専用、Core の型はロックを持たない。
   マネージド例外がネイティブ境界を越えるとプロセスが終了する。
   `CVDisplayLink` はメインスレッドで呼ばれない。
@@ -333,7 +333,7 @@ Rejected:
   - ガードを Platform に置く（Core の Effect や `await` 継続も同じ判定を使う）
   - 今すぐ `UiMessage` をドメイン別に分割する
   - Tmds.DBus 等のマネージド D-Bus 実装への依存（AT-SPI と通知だけには過大）
-  - Win32 / COM の宣言をすべて手書きする（工数に見合わない）
+  - Win32 / COM の宣言をすべて手書きする（構造体の配置や vtable の順の誤りを、生成された宣言のように防げない）
   - 「外部 DLL ゼロ」を Linux にも約束する（fontconfig / libdbus-1 / glibc は動的依存）
 
 ---
@@ -344,8 +344,8 @@ Decision:
   スタイルは `Element` の拡張メソッドで、ノードに直接書き込む。Signal 版は Binding 層に繋ぐ。
   疑似状態はノードのビットフラグ。疑似状態で変えられるのは Paint 系のプロパティだけ（`PaintStyle` 型で強制）。
   Context はノード作成時に1度だけ解決する静的な仕組み。変化させたい値は Signal を Provide する。
-  ホットリロードで保持するのは、コンポーネント関数の外にある Signal だけ。
-  MVVM 互換レイヤーは v1 では提供しない。
+  ホットリロードで保持するのは、コンポーネント関数の外にある Signal だけ。（見直し: 理由が規模なので、行 H1 で Flutter を基準に決め直す。Issue #54）
+  MVVM 互換レイヤーは v1 では提供しない。（見直し: 要件と比べた理由が無いので、行 D3 で決め直す。Issue #54）
   `Text` は `Func<string>`（簡便版）と `TextBuilder`（ノードの char バッファへ直接書く、補間文字列ハンドラ付き）の2つ。
   Block は margin collapsing・float・inline formatting context を持たず、常に border-box。
 
@@ -427,7 +427,7 @@ Decision:
 
 Reason:
   部品を Core に入れると、特定のデザインと Core が結びつき、Core を軽く保てない。
-  Acrylic には背景ぼかしのオフスクリーンパスが要り、v1 の1パスのレンダラの前提が崩れる。
+  Acrylic には背景ぼかしのオフスクリーンパスが要り、v1 の1パスのレンダラの前提が崩れる。（見直し: レンダラを単純に保つことは理由にならない。V1 の前に決め直す。Issue #54）
   Segoe UI Variable / Segoe Fluent Icons は再配布できない。
 
 Rejected:
