@@ -29,3 +29,4 @@ Correctness comes first. A performance claim comes with a measurement in the sam
 - A design that names a technique for its speed is measured before the design PR says so. A prototype in a scratch project is enough.
 - Named baselines: one per milestone, recorded with the commit and the command. A measurement quoted in an ADR, a comment, or a PR is recorded once and quoted from there.
 - Do not add SIMD, caching, pooling, or unsafe code for speed unless a measurement shows the path is the bottleneck.
+- A cache measures with every caller that reads it, on a change of one item in a large set, not only on a full rebuild. In S6b a one-entry layout cache per node was read by a flex container's measuring run and then by its layout run with another key; the two evicted each other, every clean child was computed again, and a one-node change cost as much as laying out 10,000 nodes (1,594 µs; 21.1 µs with one entry per kind of run).
