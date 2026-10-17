@@ -252,6 +252,63 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The continuation after an await is one batch: however many signals it sets, an effect that reads them runs once, after it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An effect that reads two signals and counts its runs. The loop runs; an async method starts from its first iteration.
+    ///
+    /// Steps:
+    /// - The method awaits work on the thread pool, then sets both signals and records the runs.
+    ///
+    /// Expected:
+    /// - The continuation ran on the UI thread, and the effect had not run again inside it.
+    /// - The effect ran once after it.
+    /// </remarks>
+    [Fact]
+    public void Await_ContinuationSettingSeveralSignals_RunsTheEffectOnce() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> first = Signal.Create(0);
+            Signal<int> second = Signal.Create(0);
+            int runs = 0;
+            using Effect effect = Effect.Create(() =>
+            {
+                _ = first.Get() + second.Get();
+                runs++;
+            });
+            int runsInsideContinuation = -1;
+            bool continuationOnUiThread = false;
+            Task? flow = null;
+
+            async Task FlowAsync()
+            {
+                await Task.Run(() => { });
+                continuationOnUiThread = UiThread.CheckAccess();
+                first.Set(1);
+                second.Set(2);
+                runsInsideContinuation = runs;
+            }
+
+            using var watchdog = new LoopWatchdog();
+            LoopTestHelpers.RunLoop(
+                watchdog,
+                () =>
+                {
+                    flow ??= FlowAsync();
+                    return flow.IsCompleted;
+                },
+                () => { }
+            );
+
+            Assert.False(watchdog.Expired);
+            Assert.True(flow!.IsCompletedSuccessfully);
+            Assert.True(continuationOnUiThread);
+            Assert.Equal(1, runsInsideContinuation);
+            Assert.Equal(2, runs);
+        });
+
+    /// <summary>
     /// A synchronous render never drains the queue: work posted during it runs after it, from the loop.
     /// </summary>
     /// <remarks>

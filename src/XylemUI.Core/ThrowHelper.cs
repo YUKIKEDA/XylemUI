@@ -20,4 +20,13 @@ internal static class ThrowHelper
     [DoesNotReturn]
     [StackTraceHidden]
     internal static void ThrowUiThreadAlreadyInitialized() => throw new InvalidOperationException("Another thread is already the UI thread.");
+
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowComputedReadsItself() =>
+        throw new InvalidOperationException("A computed value was read while it computes its own value.");
+
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowComputedDisposed() => throw new ObjectDisposedException(null, "The computed value was disposed.");
 }

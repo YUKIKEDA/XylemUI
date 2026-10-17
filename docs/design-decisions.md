@@ -61,6 +61,8 @@ Decision:
   再評価では前回と同じ順に同じ依存を読む間は辺を残し、食い違った位置から先だけ付け替える。
   `Set` は比較器で等しければ何もしない。強制通知の API は持たない。
   Effect の例外はハンドラに渡して flush を続け、購読は止めない。Computed の例外は保持して `Get` で投げ直す。
+  辺は相手のオブジェクトの参照と、読んだときの `Version` を持つ。dirty な Computation は依存を順に最新にし、`Version` が変わったときだけ再実行する。Computed は結果が等しければ `Version` を進めない（S6a）。
+  Effect の queue は深さ別のバケット。安定しなかったときに残った Effect は次の flush に回す。
 
 Reason:
   グラフ全体のソートは 10 万 Signal 更新で破綻する。動的依存では Depth が増減する。
@@ -85,6 +87,10 @@ Rejected:
   - 依存辺を `List` で持つ（削除が O(n)）
   - 再評価のたびに全購読を外して張り直す（定常状態でも辺の付け替えが毎回起きる）
   - 同じ値の `Set` でも通知する／強制通知の API を持つ
+  - 辺を `ReactiveNodeId` で持ち、表を引いて相手を得る（Signal と Computation が class なので、参照を持てば表が要らない）
+  - dirty になった Computation を、依存の `Version` を比べずに必ず再実行する（等しい結果の Computed の読み手まで再実行される）
+  - Effect の queue を `PriorityQueue<Effect, uint>` にする（1,000 Effect の fan-out で 28.3 µs。バケットは 18.3 µs）
+  - 安定しなかったときに残った Effect を queue から捨てる（`Queued` のまま捨てると、dirty の伝播が止まって二度と実行されない）
   - Effect の例外で購読を止める（Rx の OnError と同じ。一度の失敗で UI が更新されなくなる）
   - Computed の例外を握りつぶして前回の値を返す（壊れた値が静かに伝わる）
 

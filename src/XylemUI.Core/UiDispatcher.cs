@@ -16,6 +16,10 @@ namespace XylemUI;
 /// A synchronous render (design §2.11.1) never drains: <see cref="Drain"/> does nothing while
 /// <see cref="SynchronousRenderGuard.IsActive"/>, and the work waits for the loop.
 /// </para>
+/// <para>
+/// Each message and each continuation runs as one <see cref="ReactiveRuntime.Batch(Action)"/>: the effects of the signals it sets
+/// run once, when it returns.
+/// </para>
 /// </remarks>
 public sealed class UiDispatcher : IUiDispatcher
 {
@@ -78,6 +82,8 @@ public sealed class UiDispatcher : IUiDispatcher
                 Invariant.Fail("A UiMessage was drained with no MessageHandler set.");
             }
 
+            // Each item is one batch: however many signals it sets, the effects run once, after it (design §2.2.1).
+            ReactiveRuntime.EnterBatch();
             try
             {
                 if (item.Message is { } message)
@@ -92,6 +98,10 @@ public sealed class UiDispatcher : IUiDispatcher
             catch (Exception exception)
             {
                 reportException(exception);
+            }
+            finally
+            {
+                ReactiveRuntime.ExitBatch();
             }
         }
 

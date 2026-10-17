@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Core.Tests" />
-    <!-- The guard and arena tests that need the UI thread fixture live there (UiThread is process-wide). -->
+    <!-- Tests that need a real Win32 window or message loop (the render guard, the dispatcher in the loop) live there. -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
   </ItemGroup>
 </Project>
