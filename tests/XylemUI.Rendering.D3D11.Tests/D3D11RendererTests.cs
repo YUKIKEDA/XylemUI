@@ -220,6 +220,138 @@ public sealed unsafe class D3D11RendererTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A resize to the size the renderer already has does nothing: the render target view is not made again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer.
+    ///
+    /// Steps:
+    /// - Resize to its own width and height.
+    ///
+    /// Expected:
+    /// - The same render target view as before.
+    /// </remarks>
+    [Fact]
+    public void Resize_ToTheSameSize_KeepsTheView() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("same", 200, 100);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            nint before = (nint)renderer.RenderTargetView;
+
+            renderer.Resize(renderer.Width, renderer.Height);
+
+            Assert.Equal(before, (nint)renderer.RenderTargetView);
+        });
+
+    /// <summary>
+    /// A resize whose ResizeBuffers fails leaves a renderer that refuses to draw and can still be disposed, releasing the swap
+    /// chain so the window can get another.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer; the test holds a reference to its back buffer, which makes ResizeBuffers fail.
+    ///
+    /// Steps:
+    /// - Resize; draw; release the held buffer; dispose; create a new renderer for the same window and draw.
+    ///
+    /// Expected:
+    /// - Resize throws <see cref="InvalidOperationException"/> with DXGI_ERROR_INVALID_CALL and keeps the old size.
+    /// - Draw throws <see cref="InvalidOperationException"/>. Dispose does not throw. The new renderer draws.
+    /// </remarks>
+    [Fact]
+    public void Resize_ThatFails_LeavesARendererThatCanBeDisposed() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("failed", 200, 100);
+            (int width, int height) = window.ClientSize;
+            var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            ID3D11Texture2D* held;
+            Assert.True(renderer.SwapChain->GetBuffer(0, __uuidof<ID3D11Texture2D>(), (void**)&held) >= 0);
+
+            InvalidOperationException failed = Assert.Throws<InvalidOperationException>(() => renderer.Resize(400, 300));
+            Assert.Equal(DXGI.DXGI_ERROR_INVALID_CALL, failed.HResult);
+            Assert.Equal((width, height), (renderer.Width, renderer.Height));
+            Assert.Throws<InvalidOperationException>(() => renderer.Draw(new DisplayList(), Clear));
+            _ = held->Release();
+            renderer.Dispose();
+
+            using var again = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            var list = new DisplayList();
+            list.FillRect(0, 0, 10, 10, Red);
+            again.Draw(list, Clear);
+            Assert.Equal(Red, again.ReadPixel(5, 5));
+            again.Present();
+        });
+
+    /// <summary>
+    /// A renderer that cannot be made for a window (the window already has a swap chain) throws without leaving anything
+    /// behind that keeps the window from getting a swap chain later.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window with a WARP renderer.
+    ///
+    /// Steps:
+    /// - Create a second renderer for the same window; dispose the first; create a third.
+    ///
+    /// Expected:
+    /// - The second throws <see cref="InvalidOperationException"/>; the third is created and draws.
+    /// </remarks>
+    [Fact]
+    public void Create_ForAWindowThatHasASwapChain_ThrowsAndLeavesTheWindowUsable() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("twice", 200, 100);
+            (int width, int height) = window.ClientSize;
+            var first = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+
+            Assert.Throws<InvalidOperationException>(() => D3D11Renderer.Create(window.Handle, width, height, useWarp: true));
+            first.Dispose();
+
+            using var third = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            third.Draw(new DisplayList(), Clear);
+            Assert.Equal(Clear, third.ReadPixel(1, 1));
+            third.Present();
+        });
+
+    /// <summary>
+    /// More rectangles than the instance buffer first holds are drawn: the buffer grows.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer (its instance buffer starts at 256 rectangles).
+    ///
+    /// Steps:
+    /// - Draw 300 rectangles of 1 x 1 at x = 0..299 on row 0 (the window is wide enough), the last one blue and the others red.
+    ///
+    /// Expected:
+    /// - (299, 0) is blue and (0, 0) is red.
+    /// </remarks>
+    [Fact]
+    public void Draw_MoreRectsThanTheInitialCapacity_DrawsThemAll() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("many", 500, 200);
+            (int width, int height) = window.ClientSize;
+            Assert.True(width >= 300);
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            var list = new DisplayList();
+            for (int i = 0; i < 300; i++)
+            {
+                list.FillRect(i, 0, 1, 1, i == 299 ? Blue : Red);
+            }
+
+            renderer.Draw(list, Clear);
+
+            Assert.Equal(Blue, renderer.ReadPixel(299, 0));
+            Assert.Equal(Red, renderer.ReadPixel(0, 0));
+            renderer.Present();
+        });
+
+    /// <summary>
     /// ResizeBuffers fails while a view of a back buffer is alive, which is why the order is a contract.
     /// </summary>
     /// <remarks>

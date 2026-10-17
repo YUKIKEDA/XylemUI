@@ -3,7 +3,8 @@
 //   S1: a compacting collection while the window is alive, then the close goes through the window procedure and the handle
 //       table; a Closed handler that throws is reported instead of crashing; a thread-pool thread touching the window is rejected.
 //   S7: 120 frames of 1,000 rectangles paced by the swap chain's waitable object; one pixel read back; the CPU time of building the
-//       display list, of Draw (read, upload, issue), and of Present, and the interval between frames, as medians.
+//       display list, of Draw (read, upload, issue), and of Present, and the interval between frames, as medians; the time to
+//       create the renderer (device, swap chain, and the shaders compiled at run time).
 // Without --auto, the rectangles move until the user closes the window; a resize redraws from WM_SIZE.
 using System.Diagnostics;
 using System.Runtime;
@@ -30,7 +31,9 @@ window.Closed += (_, _) =>
 window.Show();
 
 (int width, int height) = window.ClientSize;
+long createStart = Stopwatch.GetTimestamp();
 using var renderer = D3D11Renderer.Create(window.Handle, width, height);
+double createMilliseconds = Stopwatch.GetElapsedTime(createStart).TotalMilliseconds;
 var clear = Color.FromRgb(0x2A2A2A);
 var accent = Color.FromRgb(0x3366CC);
 var list = new DisplayList();
@@ -118,7 +121,8 @@ Win32MessageLoop.SetFrameClock(0);
 // PublishAot turns RuntimeFeature.IsDynamicCode* off under `dotnet run` too, so ask the JIT whether it has compiled anything.
 string runtime = JitInfo.GetCompiledMethodCount() > 0 ? "jit" : "nativeaot";
 Console.WriteLine(
-    $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} frames={frames} pixel={pixel} closed={closed} "
+    $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} create={createMilliseconds:F1}ms frames={frames} pixel={pixel} "
+        + $"closed={closed} "
         + $"reported={reported} offThread={offThread} exit={exitCode}"
 );
 if (frames > 0)

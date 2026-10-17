@@ -115,7 +115,7 @@ public static unsafe class Win32MessageLoop
             uint result = MsgWaitForMultipleObjectsEx(
                 handleCount,
                 handleCount == 0 ? null : &frameClock,
-                INFINITE,
+                handleCount == 0 ? INFINITE : frames.WaitTimeoutMilliseconds,
                 (uint)QS.QS_ALLINPUT,
                 (uint)MWMO.MWMO_INPUTAVAILABLE
             );
@@ -125,7 +125,8 @@ public static unsafe class Win32MessageLoop
                 throw new Win32Exception(Marshal.GetLastSystemError());
             }
 
-            if (handleCount == 1 && result == WAIT.WAIT_OBJECT_0)
+            // A timeout runs the frame too: a swap chain's object stays unsignaled after a frame that did not present.
+            if (handleCount == 1 && (result == WAIT.WAIT_OBJECT_0 || result == WAIT.WAIT_TIMEOUT))
             {
                 frames.RunFrame();
             }

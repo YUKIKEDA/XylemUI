@@ -4,9 +4,15 @@ namespace XylemUI;
 /// Calls back on the UI thread at the platform's next frame (design §2.11).
 /// </summary>
 /// <remarks>
+/// <para>
 /// One callback is pending at a time: a second <see cref="RequestFrame"/> before the frame replaces the first. The callback runs
 /// once; call <see cref="RequestFrame"/> again from inside it to get the next frame. Pass a delegate that is created once, so that a
 /// request does not allocate.
+/// </para>
+/// <para>
+/// When the clock is a swap chain, a callback that returns without presenting delays the next frame by up to the platform's
+/// wait timeout (50 ms on Win32) instead of stopping frames (design §2.11).
+/// </para>
 /// </remarks>
 public interface IFrameScheduler
 {

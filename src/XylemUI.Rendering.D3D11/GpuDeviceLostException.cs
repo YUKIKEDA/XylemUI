@@ -1,8 +1,8 @@
 namespace XylemUI.Rendering.D3D11;
 
 /// <summary>
-/// Thrown when the GPU device was removed or reset (a driver update, a GPU switch, a hang). The renderer cannot draw again;
-/// recovering by creating a new device is roadmap row R1.
+/// Thrown when the GPU device was removed or reset (a driver update, a GPU switch, a hang, an internal driver error). The
+/// renderer cannot draw again; recovering by creating a new device is roadmap row R1.
 /// </summary>
 public sealed class GpuDeviceLostException : Exception
 {

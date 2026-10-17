@@ -250,7 +250,7 @@ Decision:
   dirty フレームは DisplayList / 頂点バッファを全体線形再構築。SoA の再利用バッファ。
   定常状態は allocation-free。不足時のみ grow。
   頂点データは、`Map(WRITE_DISCARD)` した頂点バッファを unmanaged struct の `Span` として直接書く（S7。中間の配列もコピーも無い）。
-  フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。
+  フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。待機には 50 ms のタイムアウトを付け、切れたらフレームを回す（Present しないフレームの後も止まらない）。
   Frame-in-flight pool。GPU 完了前のスロット再利用は禁止。
   GPU 描画と Present は画面全体。D3D11.0 は Event Query 必須。
   Fine-grained は UI/Layout に限定。Paint は v1 では coarse。
@@ -274,6 +274,8 @@ Rejected:
   - Silk.NET / Vortice.Windows などの GPU 抽象・ラッパーへの依存（宣言だけの TerraFX は採用、Interop の節）
   - 本番でランタイムの `D3DCompile` を使う
   - 頂点データを managed の struct 配列に書いてからマップしたバッファへ `CopyTo` する（マップしたメモリに直接書けば、配列もコピーも要らない）
+  - 「スワップチェーンのクロックで割り当てたフレームは必ず Present する」を契約にするだけ（守らないと黙って描画が止まる）
+  - Present したかをレンダラから Platform に知らせ、していなければタイマーで回す（レンダラと Platform の間に新しい連絡が要る）
   - 頂点バッファに 4 頂点ずつ書く（インスタンスごとに矩形 1 つ、頂点シェーダが `SV_VertexID` から隅を作る）
 
 ---

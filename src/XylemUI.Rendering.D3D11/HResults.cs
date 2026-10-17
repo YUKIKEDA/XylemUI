@@ -13,7 +13,11 @@ internal static class HResults
     /// Returns a value indicating whether <paramref name="result"/> means the device is gone, so the renderer cannot go on.
     /// </summary>
     public static bool IsDeviceLost(int result) =>
-        result is DXGI.DXGI_ERROR_DEVICE_REMOVED or DXGI.DXGI_ERROR_DEVICE_RESET or DXGI.DXGI_ERROR_DEVICE_HUNG;
+        result
+            is DXGI.DXGI_ERROR_DEVICE_REMOVED
+                or DXGI.DXGI_ERROR_DEVICE_RESET
+                or DXGI.DXGI_ERROR_DEVICE_HUNG
+                or DXGI.DXGI_ERROR_DRIVER_INTERNAL_ERROR;
 
     /// <summary>
     /// Throws for a failed result: <see cref="GpuDeviceLostException"/> when the device is gone, otherwise

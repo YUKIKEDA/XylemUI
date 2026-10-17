@@ -1219,7 +1219,9 @@ public interface IFrameScheduler
 
 **S3（C# 版で検証済み、Issue #10）:** `MsgWaitForMultipleObjectsEx` でメッセージと waitable `HANDLE` を多重待機し、フレームのコールバックと投函されたメッセージの両方が進んだ。フレームの要求がないときはハンドルなしで待ち、300 ms のアイドル中にループの反復は1回（ポーリングなし）、UI スレッドの CPU 時間は計測の分解能（スケジューラのティック、約 15.6 ms）未満だった。他スレッドからの起床は 0.36〜0.39 ms で UI スレッドを起こした。定常状態のフレームでループとスケジューラは確保しない。S3 では DXGI の `GetFrameLatencyWaitableObject` の代わりに高分解能の waitable timer（60 Hz）を待機ハンドルにした。待ち方は同じで、S7 で差し替える。UI スレッドで `DwmFlush` は使わない。
 
-**S7（C# 版で検証済み、Issue #34）:** スワップチェーン（flip モデル、`FRAME_LATENCY_WAITABLE_OBJECT`、最大レイテンシ 1）の待機オブジェクトを `Win32MessageLoop.SetFrameClock` でフレームクロックにすると、ループはフレームを要求している間だけそれをメッセージと多重待機し、フレームの間隔はディスプレイの更新（60 Hz で中央値 16.66 ms）に揃った。要求していない間は待たないので、Present もしない。スワップチェーンができる前（と、スワップチェーンを持たないウィンドウ）は、S3 の waitable timer が残る
+**S7（C# 版で検証済み、Issue #34）:** スワップチェーン（flip モデル、`FRAME_LATENCY_WAITABLE_OBJECT`、最大レイテンシ 1）の待機オブジェクトを `Win32MessageLoop.SetFrameClock` でフレームクロックにすると、ループはフレームを要求している間だけそれをメッセージと多重待機し、フレームの間隔はディスプレイの更新（60 Hz で中央値 16.66 ms）に揃った。要求していない間は待たないので、Present もしない。スワップチェーンができる前（と、スワップチェーンを持たないウィンドウ）は、S3 の waitable timer が残る。
+
+**Present しないフレーム（S7 のレビューで決定）:** 待機オブジェクトはセマフォのように数える。待つと 1 つ減り、Present で 1 つ戻る。フレームのコールバックが Present せずに戻ると（何も変わっていない、最小化している、エラー）、待機オブジェクトは鳴らないままになり、次のフレームが二度と来ない。そこで、スワップチェーンのクロックを待つときは 50 ms（60 Hz の 3 フレーム）のタイムアウトを付け、切れたらそのままフレームを回す。Present を飛ばした次のフレームは遅れても 50 ms で来る。最小化などで待機オブジェクトが鳴らない場合もループは止まらない。普段の間隔（16.7 ms）は変わらない。却下した案は、「割り当てたフレームは必ず Present する」と契約に書くだけにする（守らないと黙って描画が止まる）と、Present したかをレンダラから Platform に知らせて、していなければタイマーで回す（レンダラと Platform の間に新しい連絡が要る）
 
 **macOS の frame clock:** macOS 14以降は`CADisplayLink`（`NSView.displayLink(target:selector:)`、メインスレッドのRunLoop上で発火）を優先する。target は Obj-C ランタイムで動的に作るクラスに `[UnmanagedCallersOnly]` のメソッドを `class_addMethod` で登録して実現する。**`CVDisplayLink`はバックグラウンドスレッドからコールバックするため直接は使わない。** macOS 13以前への後方互換が必要な場合は`CVDisplayLink`を使う。.NET ではバックグラウンドスレッドからマネージドコードを呼ぶこと自体は安全だが、Core は UI スレッドアフィン（§2.12）なので、コールバック内では Core に触れず、`dispatch_async(dispatch_get_main_queue(), ...)`または`CFRunLoopWakeUp`によってメインスレッドへ明示的にバウンスする。この経路は§10.5のP0スパイクの検証項目に含める。
 
@@ -2132,7 +2134,11 @@ GPUドライバの不具合対応は「一度作れば終わり」ではなく�
 
 **シェーダーのコンパイル（C# 版で追加）:** スパイクではランタイムの `D3DCompile`（`d3dcompiler_47.dll`）を使ってよいが、本番は HLSL をビルド時に `fxc` / `dxc` でバイトコードへコンパイルし、埋め込みリソースとして同梱する。起動時間を短くし、ランタイムのコンパイラ DLL への依存をなくすためである。MSL も同様にビルド時に `.metallib` にする。WGSL は wgpu がランタイムで扱う。
 
-**S7（C# 版で検証済み、Issue #34）:** `XylemUI.Rendering.D3D11` の `D3D11Renderer` が、TerraFX の宣言で D3D11 / DXGI の COM vtable を直接呼び、ハードウェア（無ければ WARP）のデバイスと flip モデル（`FLIP_DISCARD`、2 バッファ）のスワップチェーンで FillRect を描いた。1 矩形は 1 インスタンスで、頂点シェーダが `SV_VertexID` から 4 隅を作る（頂点バッファは無い）。シェーダは実行時の `D3DCompile`（ビルド時のコンパイルは C0）。画素はバックバッファの readback で確かめた（JIT・NativeAOT）。COM の参照は `Dispose` と `Resize` の中で順に `Release` する。GPU との同期（Frame-in-flight と Event Query）は S8、デバイス消失は検出して `GpuDeviceLostException` を投げるだけで、作り直しは R1。`D3D11` という名前空間を自分で持つと TerraFX の `D3D11` クラスが隠れるので、`TerraFX.Interop.DirectX.D3D11` と書く
+**S7（C# 版で検証済み、Issue #34）:** `XylemUI.Rendering.D3D11` の `D3D11Renderer` が、TerraFX の宣言で D3D11 / DXGI の COM vtable を直接呼び、ハードウェア（無ければ WARP）のデバイスと flip モデル（`FLIP_DISCARD`、2 バッファ）のスワップチェーンで FillRect を描いた。1 矩形は 1 インスタンスで、頂点シェーダが `SV_VertexID` から 4 隅を作る（頂点バッファは無い）。シェーダは実行時の `D3DCompile`（ビルド時のコンパイルは C0）。画素はバックバッファの readback で確かめた（JIT・NativeAOT）。COM の参照は `Dispose` と `Resize` の中で順に `Release` する。GPU との同期（Frame-in-flight と Event Query）は S8、デバイス消失は検出して `GpuDeviceLostException` を投げるだけで、作り直しは R1。`D3D11` という名前空間を自分で持つと TerraFX の `D3D11` クラスが隠れるので、`TerraFX.Interop.DirectX.D3D11` と書く。
+
+**失敗の後の後始末（S7 のレビューで追加）:** コンストラクタが途中で失敗したら（ウィンドウがすでにスワップチェーンを持っている、シェーダがコンパイルできない）、作ったものを解放してから投げる。`Resize` の `ResizeBuffers` が失敗すると（デバイス消失が典型）、レンダラはビューを持たないまま残る。`Draw` は `InvalidOperationException` を投げ、`Dispose` はすべての COM 参照を解放できる（R1 の作り直しの前提）。`DXGI_ERROR_DRIVER_INTERNAL_ERROR` もデバイス消失として扱う
+
+**作成にかかる時間（S7、M1 の起動時間の材料）:** NativeAOT・ハードウェアで `D3D11Renderer.Create` は 161〜167 ms。そのうち `D3D11CreateDevice` が 160〜175 ms（プロセスで最初の作成。別に測った値）で、実行時の `D3DCompile` は頂点 3.2 ms・ピクセル 1.3 ms（最初の呼び出し、DLL の読み込みを含む）。C0 でビルド時のコンパイルに替えて削れるのは数 ms で、起動時間の大部分はデバイスの作成
 
 ### 5.3 Linuxのメモリフットプリント問題（決着）
 

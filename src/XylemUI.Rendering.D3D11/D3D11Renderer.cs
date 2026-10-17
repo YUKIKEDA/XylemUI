@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -50,15 +52,26 @@ public sealed unsafe class D3D11Renderer : IDisposable
         IsWarp = isWarp;
         Width = width;
         Height = height;
-        _swapChain = CreateSwapChain(device, window, width, height);
-        _ = _swapChain->SetMaximumFrameLatency(1);
-        _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
-        CreateRenderTarget();
-        _vertexShader = CreateVertexShader(device, out _inputLayout);
-        _pixelShader = CreatePixelShader(device);
-        _targetConstants = CreateBuffer(device, 16, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
-        WriteTargetConstants();
-        GrowInstances(256);
+
+        // A failure part way (a swap chain the window already has, a shader that does not compile) releases what was made, so
+        // that the device is not leaked and the window can get a swap chain again.
+        try
+        {
+            _swapChain = CreateSwapChain(device, window, width, height);
+            _ = _swapChain->SetMaximumFrameLatency(1);
+            _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
+            CreateRenderTarget();
+            _vertexShader = CreateVertexShader(device, out _inputLayout);
+            _pixelShader = CreatePixelShader(device);
+            _targetConstants = CreateBuffer(device, 16, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
+            WriteTargetConstants();
+            GrowInstances(256);
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -86,6 +99,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
     /// Gets the swap chain, for the tests of the resize order.
     /// </summary>
     internal IDXGISwapChain2* SwapChain => _swapChain;
+
+    /// <summary>
+    /// Gets the render target view, for the tests of the resize; null after a resize that failed.
+    /// </summary>
+    internal ID3D11RenderTargetView* RenderTargetView => _renderTarget;
 
     /// <summary>
     /// Creates a renderer for the client area of <paramref name="window"/>.
@@ -164,7 +182,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
     }
 
     /// <summary>
-    /// Releases every COM reference and closes the waitable object.
+    /// Releases every COM reference and closes the waitable object. It also works after a failed <see cref="Resize"/> (the
+    /// render target view is gone) or a constructor that failed part way.
     /// </summary>
     public void Dispose()
     {
@@ -174,17 +193,26 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
 
         _disposed = true;
-        _context->ClearState();
-        _ = _instances->Release();
-        _ = _targetConstants->Release();
-        _ = _inputLayout->Release();
-        _ = _pixelShader->Release();
-        _ = _vertexShader->Release();
-        _ = _renderTarget->Release();
-        _ = CloseHandle(_frameLatencyWaitable);
-        _ = _swapChain->Release();
-        _ = _context->Release();
-        _ = _device->Release();
+        if (_context is not null)
+        {
+            _context->ClearState();
+        }
+
+        Release((IUnknown*)_instances);
+        Release((IUnknown*)_targetConstants);
+        Release((IUnknown*)_inputLayout);
+        Release((IUnknown*)_pixelShader);
+        Release((IUnknown*)_vertexShader);
+        Release((IUnknown*)_renderTarget);
+        _renderTarget = null;
+        if (_frameLatencyWaitable != HANDLE.NULL)
+        {
+            _ = CloseHandle(_frameLatencyWaitable);
+        }
+
+        Release((IUnknown*)_swapChain);
+        Release((IUnknown*)_context);
+        Release((IUnknown*)_device);
     }
 
     /// <summary>
@@ -197,6 +225,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
     {
         ArgumentNullException.ThrowIfNull(list);
         UiThread.VerifyAccess();
+        if (_renderTarget is null)
+        {
+            ThrowNoRenderTarget();
+        }
+
         int count = list.CommandCount;
         if (count > _instanceCapacity)
         {
@@ -535,17 +568,35 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _context->Map((ID3D11Resource*)_instances, 0, D3D11_MAP.D3D11_MAP_WRITE_DISCARD, 0, &mapped),
             "ID3D11DeviceContext::Map"
         );
-        var destination = new Span<QuadInstance>(mapped.pData, count);
-        DisplayListReader reader = list.GetReader();
-        int i = 0;
-        while (reader.TryNext(out CommandTag _))
+        try
         {
-            FillRectCommand rect = reader.ReadFillRect();
-            destination[i++] = new QuadInstance { Rect = new Vector4(rect.X, rect.Y, rect.Width, rect.Height), Color = rect.Color.Packed };
+            var destination = new Span<QuadInstance>(mapped.pData, count);
+            DisplayListReader reader = list.GetReader();
+            int i = 0;
+            while (reader.TryNext(out CommandTag _))
+            {
+                FillRectCommand rect = reader.ReadFillRect();
+                destination[i++] = new QuadInstance { Rect = new Vector4(rect.X, rect.Y, rect.Width, rect.Height), Color = rect.Color.Packed };
+            }
         }
-
-        _context->Unmap((ID3D11Resource*)_instances, 0);
+        finally
+        {
+            _context->Unmap((ID3D11Resource*)_instances, 0);
+        }
     }
+
+    private static void Release(IUnknown* reference)
+    {
+        if (reference is not null)
+        {
+            _ = reference->Release();
+        }
+    }
+
+    [DoesNotReturn]
+    [StackTraceHidden]
+    private static void ThrowNoRenderTarget() =>
+        throw new InvalidOperationException("The renderer has no render target since a resize failed; dispose it and create another.");
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void GrowInstances(int needed)

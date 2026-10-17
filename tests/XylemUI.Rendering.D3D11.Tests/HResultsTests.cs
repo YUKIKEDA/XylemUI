@@ -7,14 +7,15 @@ namespace XylemUI.Rendering.D3D11.Tests;
 public sealed class HResultsTests
 {
     /// <summary>
-    /// The three codes of a lost device become <see cref="GpuDeviceLostException"/> with the code and the reason.
+    /// The four codes of a lost device become <see cref="GpuDeviceLostException"/> with the code and the reason.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - None.
     ///
     /// Steps:
-    /// - ThrowIfFailed with DEVICE_REMOVED, DEVICE_RESET, and DEVICE_HUNG, and a removed reason of 0x887A0006.
+    /// - ThrowIfFailed with DEVICE_REMOVED, DEVICE_RESET, DEVICE_HUNG, and DRIVER_INTERNAL_ERROR, and a removed reason of
+    ///   DEVICE_HUNG.
     ///
     /// Expected:
     /// - <see cref="GpuDeviceLostException"/> each time, with the code in HResult and the reason in RemovedReason.
@@ -23,6 +24,7 @@ public sealed class HResultsTests
     [InlineData(DXGI.DXGI_ERROR_DEVICE_REMOVED)]
     [InlineData(DXGI.DXGI_ERROR_DEVICE_RESET)]
     [InlineData(DXGI.DXGI_ERROR_DEVICE_HUNG)]
+    [InlineData(DXGI.DXGI_ERROR_DRIVER_INTERNAL_ERROR)]
     public void DeviceLostCodes_ThrowGpuDeviceLostException(int code)
     {
         GpuDeviceLostException lost = Assert.Throws<GpuDeviceLostException>(() =>
