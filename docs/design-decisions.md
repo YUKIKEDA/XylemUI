@@ -63,12 +63,14 @@ Decision:
   Effect の例外はハンドラに渡して flush を続け、購読は止めない。Computed の例外は保持して `Get` で投げ直す。
   辺は相手のオブジェクトの参照と、読んだときの `Version` を持つ。dirty な Computation は依存を順に最新にし、`Version` が変わったときだけ再実行する。Computed は結果が等しければ `Version` を進めない（S6a）。
   Effect の queue は深さ別のバケット。安定しなかったときに残った Effect は次の flush に回す。
+  Computed は Scope に持たせない。最後の読み手が外れたら上流の `Observers` から自分を外し、`Sources` と版は残す。読み手のいない `Get` は全体の版で先に確かめる（S9）。
 
 Reason:
   グラフ全体のソートは 10 万 Signal 更新で破綻する。動的依存では Depth が増減する。
   Computed → Computed の辺を `SignalId` だけでは表せない。
   Source Generator は既存メソッド本体を書き換えられず、Svelte 方式のコンパイル時解析には使えない。
   プロパティにするとデバッガのウォッチ・データヒントが getter を評価し、意図しない依存を登録する。
+  読まれない Computed が Signal から参照され続けると、GC に回収されず、`Set` のたびに dirty にされる（Preact・Vue 3.5・MobX・Angular も外す）。
 
 Rejected:
   - dependents 数の少ない順（被依存数と深さは無関係）
@@ -93,6 +95,9 @@ Rejected:
   - 安定しなかったときに残った Effect を queue から捨てる（`Queued` のまま捨てると、dirty の伝播が止まって二度と実行されない）
   - Effect の例外で購読を止める（Rx の OnError と同じ。一度の失敗で UI が更新されなくなる）
   - Computed の例外を握りつぶして前回の値を返す（壊れた値が静かに伝わる）
+  - Computed を Scope に持たせる（Solid。Scope が生きている間、読まれない Computed も dirty にされる）
+  - 依存の辺を弱参照で持つ（Angular の一部の解説。辺ごとに確保が要り、GC の負担が増える）
+  - 読み手のいない Computed を `Get` のたびに計算し直す（MobX の既定。依存が変わっていなくても計算する）
 
 ---
 
@@ -172,6 +177,9 @@ Rejected:
 Decision:
   v1 の `Cleanups` は `List<Action>` のまま（C# 版の S9 で再測定してから確定）。
   破棄順は子 LIFO → 自身の cleanup LIFO。本体は ScopeArena。
+  今の Scope は UI スレッド専用の static で暗黙に持つ。`Scope.Create` / `Scope.OnCleanup` / `Scope.Dispose`（S9）。
+  Effect は所有者。再実行の前と破棄で、子と後始末を片付ける（S9）。
+  Scope の外の Effect は許し、`Dispose` で止める。`ScopeTracker` が所有者のない Effect も一覧にする（S9）。
   cleanup が例外を投げても残りを実行し、最後に `AggregateException` で報告する。
   ファイナライザは後始末に使わない。
 
@@ -185,6 +193,9 @@ Rejected:
   - 測る前に `CleanupKind` / `ResourceHandle` に切り替える
   - 相対性能（ID が N 倍）だけで採用を決める
   - cleanup の最初の例外で破棄を打ち切る
+  - Scope を全部のコンポーネント関数に引数で渡す（Solid・Vue・Svelte 5 は作ったときの文脈を所有者にする）
+  - Effect の子と後始末を破棄のときだけ片付ける（再実行のたびに前の部分木が残る）
+  - Scope の外で Effect を作ると例外にする（アプリの状態を Scope の外に置けない）
   - cleanup の例外を debug で `Debug.Fail` にする（デバッガが無いとプロセスが終わる）
   - ファイナライザ / `SafeHandle` の解放タイミングに後始末を任せる（実行時期・スレッドが不定）
 
