@@ -7,4 +7,7 @@ public enum CommandTag : byte
 {
     /// <summary>A solid rectangle (<see cref="FillRectCommand"/>).</summary>
     FillRect,
+
+    /// <summary>A run of glyphs in one color (<see cref="GlyphRunCommand"/>).</summary>
+    GlyphRun,
 }

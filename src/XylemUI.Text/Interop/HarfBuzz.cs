@@ -55,6 +55,15 @@ internal static unsafe partial class HarfBuzz
     [LibraryImport(Library, EntryPoint = "hb_buffer_guess_segment_properties")]
     public static partial void BufferGuessSegmentProperties(nint buffer);
 
+    [LibraryImport(Library, EntryPoint = "hb_buffer_set_language")]
+    public static partial void BufferSetLanguage(nint buffer, nint language);
+
+    [LibraryImport(Library, EntryPoint = "hb_language_from_string")]
+    public static partial nint LanguageFromString(byte* text, int length);
+
+    [LibraryImport(Library, EntryPoint = "hb_language_to_string")]
+    public static partial byte* LanguageToString(nint language);
+
     [LibraryImport(Library, EntryPoint = "hb_buffer_set_direction")]
     public static partial void BufferSetDirection(nint buffer, int direction);
 

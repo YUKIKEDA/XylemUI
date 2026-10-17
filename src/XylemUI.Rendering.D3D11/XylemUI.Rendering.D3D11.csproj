@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
+    <!-- The glyph atlas pages the renderer uploads (design §5.0.3). -->
+    <ProjectReference Include="..\XylemUI.Text\XylemUI.Text.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

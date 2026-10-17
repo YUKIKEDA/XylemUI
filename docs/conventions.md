@@ -24,16 +24,16 @@ docs/                        設計・判断・ロードマップ・規約（本
 
 | プロジェクト | 責務 |
 | --- | --- |
-| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`）、同期描画のガード（`SynchronousRenderGuard`）、UI スレッドのキュー（`UiMessage`・`IUiDispatcher`・`UiDispatcher`）と `SynchronizationContext`、Reactive（`Signal<T>`・`Computed<T>`・`Effect`・`ReactiveRuntime`、`Reactive/`）、UI ツリーと Invalidation と Block / Flex の layout（`UiTree`・`Invalidation`・`LayoutEngine`、`Layout/`）、描画命令（`Color`・`DisplayList`・`DisplayListReader`、`Rendering/`） |
+| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`）、同期描画のガード（`SynchronousRenderGuard`）、UI スレッドのキュー（`UiMessage`・`IUiDispatcher`・`UiDispatcher`）と `SynchronizationContext`、Reactive（`Signal<T>`・`Computed<T>`・`Effect`・`ReactiveRuntime`、`Reactive/`）、UI ツリーと Invalidation と Block / Flex の layout（`UiTree`・`Invalidation`・`LayoutEngine`、`Layout/`）、描画命令（`Color`・`DisplayList`・`DisplayListReader`・`GlyphInstance`、`Rendering/`。`DrawText` のため `XylemUI.Text` を参照する） |
 | `src/XylemUI.Platform.Windows` | Win32 バックエンド。ウィンドウ、`[UnmanagedCallersOnly]` のウィンドウプロシージャと例外バリア、`NativeHandleTable`、`MsgWaitForMultipleObjectsEx` で待つメッセージループとフレームスケジューラ、他スレッドからの起床、`WM_SIZE` からの同期描画、ループでのキューの取り出しと `SynchronizationContext` の設定、スワップチェーンの待機オブジェクトをフレームクロックにする（`net10.0-windows`、unsafe 可） |
-| `src/XylemUI.Rendering.D3D11` | D3D11 のレンダラ（`D3D11Renderer`）。`DisplayList` を描く。デバイス・スワップチェーン・シェーダ・`ResizeBuffers`・readback（`net10.0-windows`、unsafe 可） |
-| `src/XylemUI.Text` | テキストのパイプライン。HarfBuzz / FreeType の `LibraryImport`、`Font`・`TextShaper`・`GlyphAtlas`（`net10.0`、unsafe 可）。NativeAOT のアプリは `XylemUI.Text.targets` を取り込む |
-| `samples/HelloText` | テキストをシェーピングしてラスタライズするコンソールのサンプル。`--auto` で S8a の検査と計測をして終了する（`PublishAot`。フォントは埋め込みリソース） |
-| `samples/HelloWindow` | D3D11 で矩形を描くウィンドウのサンプル。`--auto` で S1 と S7 の検査（画素、120 フレーム、フレームの CPU 時間）をして終了する（`PublishAot`） |
+| `src/XylemUI.Rendering.D3D11` | D3D11 のレンダラ（`D3D11Renderer`）。`DisplayList` を描く。デバイス・スワップチェーン・シェーダ・`ResizeBuffers`・グリフアトラスのテクスチャ配列とアップロード・readback（`net10.0-windows`、unsafe 可） |
+| `src/XylemUI.Text` | テキストのパイプライン。HarfBuzz / FreeType の `LibraryImport`、`Font`・`TextShaper`・`TextLanguage`・`GlyphAtlas`（`net10.0`、unsafe 可）。NativeAOT のアプリは `XylemUI.Text.targets` を取り込む |
+| `samples/HelloText` | テキストをシェーピングしてラスタライズするコンソールのサンプル。`--auto` で S8a の検査と計測をして終了する。`--atlas-sizing` はアトラスの大きさを決める測定（S8b）（`PublishAot`。フォントは埋め込みリソース） |
+| `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（画素、テキストのインク、120 フレーム、フレームの CPU 時間）をして終了する。`--heavy N` は GPU に負荷をかける（`PublishAot`。フォントは埋め込みリソース） |
 | `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture`（このアセンブリで `UiThread` を初期化するのはこれだけ）の上で走る |
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
 | `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
-| `tests/XylemUI.Rendering.D3D11.Tests` | D3D11 レンダラのテスト。WARP で描き、バックバッファの readback で画素を確かめる（Windows のみ） |
+| `tests/XylemUI.Rendering.D3D11.Tests` | D3D11 レンダラのテスト。WARP で描き、バックバッファの readback で画素を確かめる。グリフはテキストのテストのフォントで描く（Windows のみ） |
 
 予定しているプロジェクトの全体は設計書 §2.9.1 にある。
 

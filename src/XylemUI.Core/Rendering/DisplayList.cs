@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using XylemUI.Text;
 
 namespace XylemUI;
 
@@ -17,25 +18,37 @@ public sealed class DisplayList
     private CommandTag[] _commands;
     private float[] _rects;
     private uint[] _colors;
+    private int[] _runLengths;
+    private GlyphInstance[] _glyphs;
     private int _usedRects;
     private int _usedColors;
+    private int _usedRuns;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisplayList"/> class.
     /// </summary>
     /// <param name="commandCapacity">The number of commands the streams hold before they first grow.</param>
-    public DisplayList(int commandCapacity = 1024)
+    /// <param name="glyphCapacity">The number of glyphs the glyph stream holds before it first grows.</param>
+    public DisplayList(int commandCapacity = 1024, int glyphCapacity = 4096)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(commandCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(glyphCapacity);
         _commands = new CommandTag[commandCapacity];
         _rects = new float[commandCapacity * FloatsPerRect];
         _colors = new uint[commandCapacity];
+        _runLengths = new int[commandCapacity];
+        _glyphs = new GlyphInstance[glyphCapacity];
     }
 
     /// <summary>
     /// Gets the number of commands written since the last <see cref="Reset"/>.
     /// </summary>
     public int CommandCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of glyphs in the glyph runs written since the last <see cref="Reset"/>.
+    /// </summary>
+    public int GlyphCount { get; private set; }
 
     /// <summary>
     /// Gets the number of times a stream had to grow. A steady state does not raise it.
@@ -48,8 +61,10 @@ public sealed class DisplayList
     public void Reset()
     {
         CommandCount = 0;
+        GlyphCount = 0;
         _usedRects = 0;
         _usedColors = 0;
+        _usedRuns = 0;
     }
 
     /// <summary>
@@ -78,6 +93,70 @@ public sealed class DisplayList
     }
 
     /// <summary>
+    /// Appends a run of glyphs in one color, whose coverage is already in the glyph atlas. An empty run appends nothing.
+    /// </summary>
+    /// <param name="glyphs">The glyphs.</param>
+    /// <param name="color">The color of the text.</param>
+    public void GlyphRun(ReadOnlySpan<GlyphInstance> glyphs, Color color)
+    {
+        if (glyphs.IsEmpty)
+        {
+            return;
+        }
+
+        glyphs.CopyTo(ReserveGlyphs(glyphs.Length));
+        EndGlyphRun(glyphs.Length, color);
+    }
+
+    /// <summary>
+    /// Appends shaped text as one glyph run: puts each glyph in the atlas (rasterizing it the first time) and places it on the
+    /// pen, in whole pixels (design §5.0.3: the atlas changes while the display list is built and is uploaded after).
+    /// </summary>
+    /// <param name="glyphs">The glyphs, from <see cref="TextShaper.Shape"/> with <paramref name="font"/>.</param>
+    /// <param name="font">The font the glyphs were shaped with.</param>
+    /// <param name="pixelSize">The size in pixels per em.</param>
+    /// <param name="atlas">The glyph atlas the renderer draws from.</param>
+    /// <param name="x">The pen's start, in physical pixels.</param>
+    /// <param name="baseline">The baseline, in physical pixels from the top.</param>
+    /// <param name="color">The color of the text.</param>
+    /// <returns>The advance of the text, in pixels (the sum of the glyph advances, unrounded).</returns>
+    /// <remarks>
+    /// A glyph with no ink (a space) only moves the pen. A glyph larger than an atlas plot (<see cref="GlyphAtlas.PlotSize"/>) is
+    /// not drawn (roadmap row T3).
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The font was disposed and a glyph is not in the atlas.</exception>
+    public float DrawText(ReadOnlySpan<ShapedGlyph> glyphs, Font font, int pixelSize, GlyphAtlas atlas, float x, float baseline, Color color)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        ArgumentNullException.ThrowIfNull(atlas);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelSize);
+
+        // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run.
+        float scale = (float)pixelSize / font.UnitsPerEm;
+        Span<GlyphInstance> destination = ReserveGlyphs(glyphs.Length);
+        int written = 0;
+        long pen = 0;
+        foreach (ShapedGlyph shaped in glyphs)
+        {
+            if (atlas.TryGet(font, shaped.GlyphId, pixelSize, out AtlasGlyph glyph) && glyph.Width > 0)
+            {
+                int left = (int)MathF.Round(x + ((pen + shaped.XOffset) * scale)) + glyph.BearingX;
+                int top = (int)MathF.Round(baseline - (shaped.YOffset * scale)) - glyph.BearingY;
+                destination[written++] = new GlyphInstance(left, top, glyph.Width, glyph.Height, glyph.Page, glyph.X, glyph.Y);
+            }
+
+            pen += shaped.XAdvance;
+        }
+
+        if (written > 0)
+        {
+            EndGlyphRun(written, color);
+        }
+
+        return pen * scale;
+    }
+
+    /// <summary>
     /// Returns a reader over the commands written since the last <see cref="Reset"/>.
     /// </summary>
     /// <returns>The reader. It must not outlive the next write.</returns>
@@ -89,7 +168,36 @@ public sealed class DisplayList
 
     internal ReadOnlySpan<uint> Colors => _colors.AsSpan(0, _usedColors);
 
-    // Every stream grows with the command array, so one check per command is enough (the fast path stays one comparison).
+    internal ReadOnlySpan<int> RunLengths => _runLengths.AsSpan(0, _usedRuns);
+
+    internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
+
+    // Room for `count` glyphs after the used ones; they count as used only when EndGlyphRun closes the run.
+    private Span<GlyphInstance> ReserveGlyphs(int count)
+    {
+        if (GlyphCount + count > _glyphs.Length)
+        {
+            GrowGlyphs(GlyphCount + count);
+        }
+
+        return _glyphs.AsSpan(GlyphCount, count);
+    }
+
+    private void EndGlyphRun(int count, Color color)
+    {
+        if (CommandCount == _commands.Length)
+        {
+            Grow();
+        }
+
+        _commands[CommandCount++] = CommandTag.GlyphRun;
+        _colors[_usedColors++] = color.Packed;
+        _runLengths[_usedRuns++] = count;
+        GlyphCount += count;
+    }
+
+    // Every per-command stream grows with the command array, so one check per command is enough (the fast path stays one
+    // comparison). The glyph stream has its own length, so it grows on its own.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void Grow()
     {
@@ -97,6 +205,14 @@ public sealed class DisplayList
         Array.Resize(ref _commands, capacity);
         Array.Resize(ref _rects, capacity * FloatsPerRect);
         Array.Resize(ref _colors, capacity);
+        Array.Resize(ref _runLengths, capacity);
+        GrowthCount++;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void GrowGlyphs(int needed)
+    {
+        Array.Resize(ref _glyphs, Math.Max(needed, _glyphs.Length * 2));
         GrowthCount++;
     }
 }

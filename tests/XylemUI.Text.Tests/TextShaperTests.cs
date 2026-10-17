@@ -24,7 +24,7 @@ public sealed class TextShaperTests
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
 
-        ShapedGlyph[] glyphs = shaper.Shape(font, "Hello, World!").ToArray();
+        ShapedGlyph[] glyphs = shaper.Shape(font, "Hello, World!", TestFont.Japanese).ToArray();
 
         Assert.Equal<uint>([41, 70, 77, 77, 80, 13, 1, 56, 80, 83, 77, 69, 2], glyphs.Select(g => g.GlyphId));
         Assert.Equal([728, 554, 284, 284, 592, 278, 224, 878, 606, 388, 284, 620, 323], glyphs.Select(g => g.XAdvance));
@@ -52,7 +52,7 @@ public sealed class TextShaperTests
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
 
-        ShapedGlyph[] glyphs = shaper.Shape(font, "日本語のテキスト").ToArray();
+        ShapedGlyph[] glyphs = shaper.Shape(font, "日本語のテキスト", TestFont.Japanese).ToArray();
 
         Assert.Equal<uint>([240, 241, 242, 104, 107, 105, 106, 108], glyphs.Select(g => g.GlyphId));
         Assert.Equal([1000, 1000, 1000, 1000, 1000, 970, 1000, 1000], glyphs.Select(g => g.XAdvance));
@@ -77,7 +77,7 @@ public sealed class TextShaperTests
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
 
-        ShapedGlyph[] glyphs = shaper.Shape(font, "A€B").ToArray();
+        ShapedGlyph[] glyphs = shaper.Shape(font, "A€B", TestFont.Japanese).ToArray();
 
         Assert.Equal<uint>([34, 0, 35], glyphs.Select(g => g.GlyphId));
         Assert.Equal([608, 1000, 657], glyphs.Select(g => g.XAdvance));
@@ -103,7 +103,7 @@ public sealed class TextShaperTests
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
 
-        ShapedGlyph[] glyphs = shaper.Shape(font, "A\U0001F600B").ToArray();
+        ShapedGlyph[] glyphs = shaper.Shape(font, "A\U0001F600B", TestFont.Japanese).ToArray();
 
         Assert.Equal<uint>([34, 0, 35], glyphs.Select(g => g.GlyphId));
         Assert.Equal([0, 1, 3], glyphs.Select(g => g.Cluster));
@@ -128,11 +128,73 @@ public sealed class TextShaperTests
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
 
-        uint[] long10 = shaper.Shape(font, string.Concat(Enumerable.Repeat("Hello, World!", 10))).ToArray().Select(g => g.GlyphId).ToArray();
-        ShapedGlyph[] single = shaper.Shape(font, "A").ToArray();
+        uint[] long10 = shaper
+            .Shape(font, string.Concat(Enumerable.Repeat("Hello, World!", 10)), TestFont.Japanese)
+            .ToArray()
+            .Select(g => g.GlyphId)
+            .ToArray();
+        ShapedGlyph[] single = shaper.Shape(font, "A", TestFont.Japanese).ToArray();
 
         Assert.Equal(130, long10.Length);
         Assert.Equal(long10.Take(13), long10.Skip(117));
         Assert.Equal(34u, Assert.Single(single).GlyphId);
+    }
+
+    /// <summary>
+    /// The given language picks the font's language forms (locl), whatever the process locale is.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font. Its Latin script has a default language system whose locl maps the digits to other glyphs ("one" 18 →
+    ///   356), and a Japanese one (JAN) whose locl maps the quotes instead ("quotedbl" 3 → 349) (read with fontTools).
+    ///
+    /// Steps:
+    /// - Shape "A1\"" in "ja", then in "en".
+    ///
+    /// Expected:
+    /// - "ja": glyph ids 34 18 349. "en": 34 356 3.
+    /// </remarks>
+    [Fact]
+    public void Shape_Language_PicksTheFontsLanguageForms()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+
+        uint[] japanese = shaper.Shape(font, "A1\"", TextLanguage.FromTag("ja")).ToArray().Select(g => g.GlyphId).ToArray();
+        uint[] english = shaper.Shape(font, "A1\"", TextLanguage.FromTag("en")).ToArray().Select(g => g.GlyphId).ToArray();
+
+        Assert.Equal<uint>([34, 18, 349], japanese);
+        Assert.Equal<uint>([34, 356, 3], english);
+    }
+
+    /// <summary>
+    /// A language is the same value for the same tag, in any case, and keeps its tag; the default value is refused by shaping.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font.
+    ///
+    /// Steps:
+    /// - Make "ja-JP" and "JA-jp"; make "en"; shape "A" with the default language; make a blank tag and a non-ASCII tag.
+    ///
+    /// Expected:
+    /// - The first two are equal, with tag "ja-jp"; "en" differs from them; the default language and both tags throw
+    ///   ArgumentException.
+    /// </remarks>
+    [Fact]
+    public void FromTag_SameTag_IsTheSameLanguage()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+
+        TextLanguage a = TextLanguage.FromTag("ja-JP");
+        TextLanguage b = TextLanguage.FromTag("JA-jp");
+
+        Assert.Equal(a, b);
+        Assert.Equal("ja-jp", a.Tag);
+        Assert.NotEqual(a, TextLanguage.FromTag("en"));
+        Assert.Throws<ArgumentException>(() => shaper.Shape(font, "A", default).ToArray());
+        Assert.Throws<ArgumentException>(() => TextLanguage.FromTag(" "));
+        Assert.Throws<ArgumentException>(() => TextLanguage.FromTag("日本"));
     }
 }

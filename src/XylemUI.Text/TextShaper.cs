@@ -21,11 +21,21 @@ public sealed unsafe class TextShaper : IDisposable
     /// </summary>
     /// <param name="font">The font.</param>
     /// <param name="text">The text, UTF-16.</param>
+    /// <param name="language">
+    /// The language of the text, usually the UI's; it picks the font's language forms (<c>locl</c>), such as the Japanese or the
+    /// Chinese shape of a Han character.
+    /// </param>
     /// <returns>The glyphs in visual order (left to right). The span is valid until the next call.</returns>
+    /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
     /// <exception cref="ObjectDisposedException">The shaper or the font was disposed.</exception>
-    public ReadOnlySpan<ShapedGlyph> Shape(Font font, ReadOnlySpan<char> text)
+    public ReadOnlySpan<ShapedGlyph> Shape(Font font, ReadOnlySpan<char> text, TextLanguage language)
     {
         ArgumentNullException.ThrowIfNull(font);
+        if (language.Handle == 0)
+        {
+            throw new ArgumentException("The language is the default value; use TextLanguage.FromTag.", nameof(language));
+        }
+
         ObjectDisposedException.ThrowIf(_buffer == 0, this);
         nint harfBuzzFont = font.HarfBuzzFont;
         if (text.IsEmpty)
@@ -39,7 +49,9 @@ public sealed unsafe class TextShaper : IDisposable
             HarfBuzz.BufferAddUtf16(_buffer, chars, text.Length, 0, text.Length);
         }
 
-        // The script and language are guessed from the text; the direction is fixed to left to right for now.
+        // The language is given, never the process locale's: the script is guessed from the text (a guess keeps a language set
+        // before it), and the direction is fixed to left to right for now.
+        HarfBuzz.BufferSetLanguage(_buffer, language.Handle);
         HarfBuzz.BufferGuessSegmentProperties(_buffer);
         HarfBuzz.BufferSetDirection(_buffer, HarfBuzz.DirectionLtr);
         HarfBuzz.Shape(harfBuzzFont, _buffer, null, 0);
