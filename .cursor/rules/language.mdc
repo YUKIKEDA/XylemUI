@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Language
 
-Chat with the owner may be in any language.
+Reports and replies to the owner in chat are in Japanese: the end-of-turn report, answers to questions, and the questions put to the owner. Identifiers, file names, and quoted English text stay as they are. The owner asked for this after several reports came in English and had to be asked for again.
 
 ## English
 
