@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
   </ItemGroup>
 </Project>

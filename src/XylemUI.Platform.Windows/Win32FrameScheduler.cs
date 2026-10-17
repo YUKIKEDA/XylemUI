@@ -9,9 +9,17 @@ namespace XylemUI.Platform.Windows;
 /// The Win32 frame clock that <see cref="Win32MessageLoop"/> waits on together with the message queue (design §2.11).
 /// </summary>
 /// <remarks>
-/// Until a swap chain exists (roadmap S7), the clock is a high-resolution waitable timer of about 60 Hz (see the period below). The
-/// production handle, DXGI's frame latency waitable object, is waited on the same way. The timer runs only while a frame is
-/// requested, so an idle UI thread has nothing to wake it.
+/// <para>
+/// With a swap chain, the clock is its frame latency waitable object (<see cref="SetFrameClock"/>, S7): it is signaled when the
+/// swap chain can take the next frame, so frames follow the display. Before a swap chain exists, it is a high-resolution
+/// waitable timer of about 60 Hz (see the period below), which runs only while a frame is requested. Either way the loop waits
+/// on the clock only while a frame is pending, so an idle UI thread has nothing to wake it.
+/// </para>
+/// <para>
+/// The swap chain's object counts like a semaphore: a wait takes one, a present gives it back. A frame callback that returns
+/// without presenting (nothing changed, the window is minimized, an error) leaves it at zero, so the wait has a timeout of
+/// <see cref="SwapChainWaitTimeoutMilliseconds"/>, after which the frame runs anyway. The next frame is late, never lost.
+/// </para>
 /// </remarks>
 internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
 {
@@ -20,7 +28,13 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     private const long FirstDueTime100ns = -166_667;
     private const int PeriodMilliseconds = 16;
 
+    /// <summary>
+    /// The longest the loop waits on a swap chain's object for a pending frame: three frames at 60 Hz.
+    /// </summary>
+    internal const uint SwapChainWaitTimeoutMilliseconds = 50;
+
     private readonly HANDLE _timer;
+    private HANDLE _swapChainClock;
     private Action? _pending;
     private bool _timerRunning;
 
@@ -40,7 +54,25 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     internal bool IsClockRunning => _timerRunning;
 
     /// <summary>Gets the handle the message loop waits on while a frame is pending.</summary>
-    public HANDLE WaitHandle => _timer;
+    public HANDLE WaitHandle => _swapChainClock != HANDLE.NULL ? _swapChainClock : _timer;
+
+    /// <summary>Gets how long the loop waits on <see cref="WaitHandle"/> before it runs the pending frame anyway.</summary>
+    public uint WaitTimeoutMilliseconds => _swapChainClock != HANDLE.NULL ? SwapChainWaitTimeoutMilliseconds : INFINITE;
+
+    /// <summary>
+    /// Uses a swap chain's frame latency waitable object as the clock, or the timer again when it is zero. A pending frame
+    /// carries over to the new clock.
+    /// </summary>
+    public void SetFrameClock(HANDLE waitableObject)
+    {
+        UiThread.VerifyAccess();
+        StopTimer();
+        _swapChainClock = waitableObject;
+        if (_pending is not null)
+        {
+            StartTimer();
+        }
+    }
 
     /// <inheritdoc />
     public void RequestFrame(Action callback)
@@ -94,8 +126,14 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
         }
     }
 
+    // The swap chain's object signals by itself; only the timer has to be armed.
     private void StartTimer()
     {
+        if (_swapChainClock != HANDLE.NULL)
+        {
+            return;
+        }
+
         LARGE_INTEGER dueTime = default;
         dueTime.QuadPart = FirstDueTime100ns;
         if (!SetWaitableTimer(_timer, &dueTime, PeriodMilliseconds, null, null, BOOL.FALSE))
