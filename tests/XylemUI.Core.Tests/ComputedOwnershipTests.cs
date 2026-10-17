@@ -114,6 +114,44 @@ public sealed class ComputedOwnershipTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A computed value that holds an exception keeps it after its last reader goes: a read throws it again without computing,
+    /// until its source changes.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - s = 0, c = 10 / s (throws <see cref="DivideByZeroException"/>) counting its computations, read by an effect.
+    ///
+    /// Steps:
+    /// - Dispose the effect; read c twice; set s to 2; read c.
+    ///
+    /// Expected:
+    /// - Both reads throw <see cref="DivideByZeroException"/> and compute nothing (1 computation); after the set, c reads 5
+    ///   with one more computation.
+    /// </remarks>
+    [Fact]
+    public void HeldException_AfterTheLastReader_ThrowsAgainUntilTheSourceChanges() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> s = Signal.Create(0);
+            int computations = 0;
+            Computed<int> c = Computed.Create(() =>
+            {
+                computations++;
+                return 10 / s.Get();
+            });
+            Effect reader = Effect.Create(() => _ = Record.Exception(() => c.Get()));
+
+            reader.Dispose();
+
+            Assert.Throws<DivideByZeroException>(() => c.Get());
+            Assert.Throws<DivideByZeroException>(() => c.Get());
+            Assert.Equal(1, computations);
+            s.Set(2);
+            Assert.Equal(5, c.Get());
+            Assert.Equal(2, computations);
+        });
+
+    /// <summary>
     /// A computed value that nothing reads and nothing refers to is collected, though the signal it read is still alive.
     /// </summary>
     /// <remarks>

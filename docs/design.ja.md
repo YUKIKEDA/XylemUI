@@ -376,13 +376,30 @@ public sealed class Scope : IDisposable
 ```csharp
 public static class Scope
 {
-    public static ScopeHandle Create(Action body);   // 今の Scope の子を作り、body をその中で実行する
+    public static ScopeHandle Current { get; }       // 今の Scope。Scope の外では default
+    public static ScopeHandle Create(Action body, [CallerMemberName] string owner = "");  // 今の Scope の子を作り、body をその中で実行する
+    public static bool Run(ScopeHandle scope, Action body);  // scope を今の Scope にして body を実行する。破棄済みなら実行せず false
     public static void OnCleanup(Action cleanup);    // 今の Scope（Effect の実行中はその Effect）に後始末を登録する
     public static void Dispose(ScopeHandle scope);   // 子を LIFO、その後に自分の後始末を LIFO
 }
 ```
 
+**`await` の後（S9 のレビューで追加）:** 今の Scope は UI スレッドの static なので、`await` をまたいで引き継がれない。`await` の継続（§2.12 の `SynchronizationContext` から呼ばれる）は Scope の外で動き、そこで作った Effect は所有者がなく、`OnCleanup` は例外になる。`await` の前に `Scope.Current` を取っておき、後で `Scope.Run(scope, ...)` に渡す（SolidJS の `getOwner` / `runWithOwner` と同じ）。`await` の間に部品が破棄されるのは普通のことなので、破棄済みの Scope を渡した `Run` は例外にせず、本体を実行しないで `false` を返す（§2.5 の、非同期の文脈では破棄済みのハンドルを静かに無視する方針）。
+
+```csharp
+async Task LoadAsync()
+{
+    ScopeHandle scope = Scope.Current;
+    var items = await FetchAsync();
+    _ = Scope.Run(scope, () => Effect.Create(() => Render(items)));
+}
+```
+
 **Effect は所有者（S9 の Grill でオーナーが決定）:** Effect の実行中に作った子の Effect・Scope と、登録した後始末は、その Effect に属する。次に再実行する前と、Effect を破棄したときに、子を LIFO、その後に後始末を LIFO で片付ける（Solid と同じ）。こうしないと、`Show` / `For` のように Effect の中で部分木を作る部品で、再実行のたびに前の部分木が残る。
+
+**破棄の途中（S9 のレビューで追加）:** 破棄の途中の Scope は新しい子を取らない。破棄の途中の Scope が今の Scope のまま（たとえば `Create` の本体が自分の Scope を破棄した）その後始末が Scope や Effect を作ると、それは所有者のない物になり、破棄された Scope より長く生きる。実行中の Effect が自分を破棄した場合、その実行の残りには今の Scope がなく、`OnCleanup` は例外になり、作った Effect は所有者のない物になる。
+
+**後始末の例外の行き先（S9 のレビューで追加）:** `Scope.Dispose` と `Effect.Dispose` は、後始末の例外を `AggregateException` として呼び出し元に投げる。Effect の再実行の前の片付けは呼び出し元がいない（flush の中で起きる）ので、`ReactiveRuntime.UnhandledExceptionHandler` に渡す。`using` の中で `Dispose` が例外を投げると、`using` の本体の例外を隠すので、後始末は例外を投げないように書く。`Create` の本体と後始末の両方が例外を投げたときは、本体の例外を先頭にした `AggregateException` にする（本体の例外を失わない）。
 
 **Scope の外の Effect（S9 の Grill でオーナーが決定）:** どの Scope の中でもないところで作った Effect（アプリの起動時の処理など）は許し、`Dispose` で止める。アプリの状態を Scope の外に置けるようにするためである。`ScopeTracker` を有効にしているときは、所有者のない Effect も一覧に出す（Solid は root の外の computation を開発時に警告するだけで、作ることは許している）。
 

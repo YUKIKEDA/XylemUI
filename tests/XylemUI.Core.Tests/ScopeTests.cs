@@ -201,6 +201,184 @@ public sealed class ScopeTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// When the body of Create throws and a cleanup throws too, neither exception is lost: the body's comes first.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A body that registers a cleanup that throws "cleanup", then throws "body".
+    ///
+    /// Steps:
+    /// - Call Create with it.
+    ///
+    /// Expected:
+    /// - <see cref="AggregateException"/> with "body", then "cleanup"; no scope is left alive.
+    /// </remarks>
+    [Fact]
+    public void Create_BodyAndCleanupThrow_KeepsTheBodyExceptionFirst() =>
+        ui.Invoke(() =>
+        {
+            int live = Scope.LiveCount;
+
+            AggregateException error = Assert.Throws<AggregateException>(() =>
+                Scope.Create(() =>
+                {
+                    Scope.OnCleanup(() => throw new InvalidOperationException("cleanup"));
+                    throw new InvalidOperationException("body");
+                })
+            );
+
+            Assert.Equal(["body", "cleanup"], error.InnerExceptions.Select(e => e.Message));
+            Assert.Equal(live, Scope.LiveCount);
+        });
+
+    /// <summary>
+    /// Run makes a kept scope current again (what is made after an await belongs to it); after the scope is disposed, Run
+    /// does not run the body. Current is the scope of the running Create body, and default outside any scope.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A signal; a scope whose body keeps Scope.Current.
+    ///
+    /// Steps:
+    /// - Outside it (as code after an await would be), Run the kept scope with a body that makes an effect reading the signal
+    ///   and registers a cleanup. Dispose the scope; set the signal; Run the kept scope again.
+    ///
+    /// Expected:
+    /// - Current was the scope inside its body and is default outside; the first Run returns true.
+    /// - The dispose ran the cleanup and stopped the effect (the set does not run it); the second Run returns false and does
+    ///   not run its body.
+    /// </remarks>
+    [Fact]
+    public void Run_MakesAKeptScopeCurrent_AndSkipsADisposedOne() =>
+        ui.Invoke(() =>
+        {
+            Signal<int> value = Signal.Create(0);
+            ScopeHandle kept = default;
+            ScopeHandle scope = Scope.Create(() => kept = Scope.Current);
+            int runs = 0;
+            bool cleaned = false;
+            bool late = false;
+
+            Assert.Equal(scope, kept);
+            Assert.True(Scope.Current.IsNone);
+            Assert.True(
+                Scope.Run(
+                    kept,
+                    () =>
+                    {
+                        _ = Effect.Create(() =>
+                        {
+                            runs++;
+                            _ = value.Get();
+                        });
+                        Scope.OnCleanup(() => cleaned = true);
+                    }
+                )
+            );
+            Scope.Dispose(scope);
+            value.Set(1);
+
+            Assert.True(cleaned);
+            Assert.Equal(1, runs);
+            Assert.False(Scope.Run(kept, () => late = true));
+            Assert.False(late);
+        });
+
+    /// <summary>
+    /// A scope being disposed takes no new children: what its cleanup makes while it is still the current scope belongs to
+    /// nothing, and outlives it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The tracker enabled. A scope whose body registers a cleanup that makes a scope (owner "late"), then disposes its own
+    ///   scope, so the cleanup runs while that scope is current and being disposed.
+    ///
+    /// Steps:
+    /// - Create it; list the tracked scopes.
+    ///
+    /// Expected:
+    /// - The scope is disposed; the late scope is alive and listed as not owned; disposing it leaves nothing.
+    /// </remarks>
+    [Fact]
+    public void Dispose_CleanupMakesAScope_ItBelongsToNothing() =>
+        ui.Invoke(() =>
+        {
+            ScopeTracker.IsEnabled = true;
+            try
+            {
+                ScopeHandle late = default;
+                ScopeHandle scope = Scope.Create(() =>
+                {
+                    Scope.OnCleanup(() => late = Scope.Create(() => { }, owner: "late"));
+                    Scope.Dispose(Scope.Current);
+                });
+                TrackedScope[] live = List();
+
+                Assert.False(Scope.IsAlive(scope));
+                Assert.True(Scope.IsAlive(late));
+                Assert.Equal([("late", false)], live.Select(s => (s.Owner, s.IsOwned)));
+                Scope.Dispose(late);
+                Assert.Empty(List());
+            }
+            finally
+            {
+                ScopeTracker.IsEnabled = false;
+            }
+        });
+
+    /// <summary>
+    /// An effect that disposes itself while it runs has no current scope for the rest of that run: a cleanup is refused and
+    /// an effect made then belongs to nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The tracker enabled. A signal trigger = 0 and an effect that reads it; when it runs with trigger 1, it disposes itself,
+    ///   then calls OnCleanup (caught) and makes an inner effect (owner "inner").
+    ///
+    /// Steps:
+    /// - Set trigger to 1 (the second run); list the tracked scopes.
+    ///
+    /// Expected:
+    /// - OnCleanup threw <see cref="InvalidOperationException"/>; the inner effect is live and not owned, and no live scope is
+    ///   owned.
+    /// </remarks>
+    [Fact]
+    public void Effect_DisposedWhileItRuns_HasNoCurrentScopeAfter() =>
+        ui.Invoke(() =>
+        {
+            ScopeTracker.IsEnabled = true;
+            try
+            {
+                Exception? refused = null;
+                Effect? inner = null;
+                Effect? outer = null;
+                Signal<int> trigger = Signal.Create(0);
+                outer = Effect.Create(() =>
+                {
+                    if (trigger.Get() == 0)
+                    {
+                        return;
+                    }
+
+                    outer!.Dispose();
+                    refused = Record.Exception(() => Scope.OnCleanup(() => { }));
+                    inner = Effect.Create(() => { }, owner: "inner");
+                });
+                trigger.Set(1);
+                TrackedScope[] live = List();
+
+                Assert.IsType<InvalidOperationException>(refused);
+                Assert.Contains(live, s => s.Owner == "inner" && !s.IsOwned);
+                Assert.DoesNotContain(live, s => s.IsOwned);
+                inner!.Dispose();
+            }
+            finally
+            {
+                ScopeTracker.IsEnabled = false;
+            }
+        });
+
+    /// <summary>
     /// A cleanup needs a current scope, and a computed value makes no scopes, effects, or cleanups (it has no side effects).
     /// Disposing a scope twice, or a stale handle, does nothing.
     /// </summary>

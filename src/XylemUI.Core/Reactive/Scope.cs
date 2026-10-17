@@ -30,13 +30,16 @@ public static class Scope
     internal static int LiveCount => Scopes.Count;
 
     /// <summary>
-    /// Gets or sets the scope that owns what is made now; <see langword="default"/> outside any scope.
+    /// Gets the scope that owns what is made now: the scope whose <see cref="Create"/> body runs, or the running effect's;
+    /// <see langword="default"/> outside any scope. It does not flow across an <c>await</c>: keep it before the
+    /// <c>await</c> and pass it to <see cref="Run"/> after.
     /// </summary>
-    internal static ScopeHandle Current { get; set; }
+    public static ScopeHandle Current { get; internal set; }
 
     /// <summary>
     /// Creates a scope owned by the current one and runs <paramref name="body"/> with it as the current scope. If
-    /// <paramref name="body"/> throws, the scope is disposed and the exception goes on.
+    /// <paramref name="body"/> throws, the scope is disposed and the exception goes on; if cleanups also throw, an
+    /// <see cref="AggregateException"/> carries the body's exception first, then theirs.
     /// </summary>
     /// <param name="body">The code whose effects, scopes, and cleanups belong to the new scope.</param>
     /// <param name="owner">The name <see cref="ScopeTracker"/> shows for the scope; the caller's name by default.</param>
@@ -56,11 +59,18 @@ public static class Scope
         {
             body();
         }
-        catch
+        catch (Exception bodyError) when (bodyError is not InvariantViolationException)
         {
             Current = previous;
-            DisposeAndThrow(scope);
-            throw;
+            List<Exception>? errors = null;
+            DisposeScope(scope, ref errors);
+            if (errors is null)
+            {
+                throw;
+            }
+
+            errors.Insert(0, bodyError);
+            throw new AggregateException(errors);
         }
         finally
         {
@@ -71,12 +81,48 @@ public static class Scope
     }
 
     /// <summary>
+    /// Runs <paramref name="body"/> with <paramref name="scope"/> as the current scope, so that what it makes belongs to that
+    /// scope (SolidJS <c>runWithOwner</c>). A scope disposed meanwhile is normal after an <c>await</c> (the part of the screen
+    /// went away): then <paramref name="body"/> does not run.
+    /// </summary>
+    /// <param name="scope">The scope, from <see cref="Current"/> or <see cref="Create"/>.</param>
+    /// <param name="body">The code whose effects, scopes, and cleanups belong to <paramref name="scope"/>.</param>
+    /// <returns><see langword="false"/> when <paramref name="scope"/> was disposed and <paramref name="body"/> did not run.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread, or a computed value is computing (a computed value has no side effects).
+    /// </exception>
+    public static bool Run(ScopeHandle scope, Action body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        UiThread.VerifyAccess();
+        VerifyNotInComputed();
+        if (!Scopes.IsAlive(scope) || Scopes.GetRef(scope).Disposing)
+        {
+            return false;
+        }
+
+        ScopeHandle previous = Current;
+        Current = scope;
+        try
+        {
+            body();
+        }
+        finally
+        {
+            Current = previous;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Registers a cleanup with the current scope, or with the running effect. It runs when that scope is disposed, or before
     /// the effect runs again.
     /// </summary>
     /// <param name="cleanup">The cleanup. A <see langword="static"/> lambda allocates nothing.</param>
     /// <exception cref="InvalidOperationException">
-    /// The calling thread is not the UI thread, there is no current scope, or a computed value is computing.
+    /// The calling thread is not the UI thread, there is no current scope (also after the running effect disposed itself), or a
+    /// computed value is computing.
     /// </exception>
     public static void OnCleanup(Action cleanup)
     {
@@ -160,8 +206,9 @@ public static class Scope
 
     private static ScopeHandle Allocate(ScopeHandle parent, Effect? effect, string owner)
     {
-        // A parent that is being disposed takes no new children: what its cleanups make belongs to nothing.
-        if (Scopes.IsAlive(parent) && Scopes.GetRef(parent).Disposing)
+        // A parent that is gone (an effect that disposed itself while it runs) or being disposed takes no new children: what is
+        // made then belongs to nothing.
+        if (!Scopes.IsAlive(parent) || Scopes.GetRef(parent).Disposing)
         {
             parent = default;
         }
