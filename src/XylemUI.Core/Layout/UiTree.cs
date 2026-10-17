@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace XylemUI;
@@ -85,6 +86,12 @@ internal sealed class UiTree
     /// Returns the measurement cache of a live node.
     /// </summary>
     internal ref MeasureCache MeasuresOf(NodeHandle node) => ref _measures[node.Index];
+
+    /// <summary>
+    /// Gets the bytes the measurement caches take: one per slot of the arena, grown by doubling (row L1a's layout scenario
+    /// reports it).
+    /// </summary>
+    internal long MeasureCacheBytes => (long)_measures.Length * Unsafe.SizeOf<MeasureCache>();
 
     /// <summary>
     /// Appends <paramref name="child"/>, a node with no parent, as the last child of <paramref name="parent"/>, and marks the

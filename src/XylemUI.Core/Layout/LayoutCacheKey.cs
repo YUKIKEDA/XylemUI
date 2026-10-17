@@ -80,6 +80,10 @@ internal readonly record struct LayoutCacheKey(
         && SizingMode == other.SizingMode;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Written by hand with <see cref="Equals(LayoutCacheKey)"/>, which replaces the compiler's comparison for its cost; the
+    /// caches compare keys and never hash them.
+    /// </remarks>
     public override int GetHashCode() => HashCode.Combine(Known, Available, Parent, DescendantLayoutVersion, LayoutStyleVersion);
 
     private static bool Same(float a, float b) => a == b || (float.IsNaN(a) && float.IsNaN(b));

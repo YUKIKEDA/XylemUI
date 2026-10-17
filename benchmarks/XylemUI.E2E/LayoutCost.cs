@@ -21,6 +21,9 @@ internal static class LayoutCost
         report.Number("ui_node_bytes", Unsafe.SizeOf<UiNode>());
         report.Number("measure_cache_entries", MeasureCache.Capacity);
         report.Number("try_get_ns", TryGetNanoseconds());
+        report.Number("measure_cache_bytes_per_node", Unsafe.SizeOf<MeasureCache>());
+        (UiTree sized, _, _) = Build("s6b", fixedRows: false);
+        report.Number("measure_cache_bytes", sized.MeasureCacheBytes);
         foreach (string scene in new[] { "s6b", "auto_min", "percent" })
         {
             Measure(report, scene, samples);

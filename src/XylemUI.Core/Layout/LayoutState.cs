@@ -54,7 +54,9 @@ internal struct LayoutState
     public LayoutCacheKey CachedKey;
 
     /// <summary>
-    /// Advanced each time the node's caches are dropped. A child read by this node keeps the generation of the read.
+    /// Advanced each time the node's caches are dropped. A child read by this node keeps the generation of the read. It starts
+    /// at 1, so that 0 means "never read"; after 2³² drops it would wrap to 0 and a read in that generation would look like
+    /// none.
     /// </summary>
     public uint CacheGeneration;
 
