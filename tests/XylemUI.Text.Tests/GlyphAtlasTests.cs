@@ -333,6 +333,46 @@ public sealed class GlyphAtlasTests
         Assert.NotEqual(page1, atlas.GetPageId(1));
     }
 
+    /// <summary>
+    /// The atlas never holds more than PageLimit pages: when every plot was used in the current frame and the limit is reached,
+    /// a new glyph is refused, also for a caller that never starts a frame.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and an atlas of one 64 px page with 32 px plots, at most 1 page (PageLimit 2: 8 plots). The 8 Japanese
+    ///   glyphs of the test font at 24 px take a plot each ("ト", the last, leaves 15 px of a plot's width free).
+    ///
+    /// Steps:
+    /// - Without calling BeginFrame, get the 8 Japanese glyphs, then "W" (glyph 56, about 22 px wide) at 24 px, twice.
+    ///
+    /// Expected:
+    /// - PageLimit is 2; the 8 glyphs fit on 2 pages; "W" is refused both times, the atlas stays at 2 pages, and nothing was
+    ///   evicted.
+    /// - After BeginFrame, "W" fits by evicting a plot of the frame before.
+    /// </remarks>
+    [Fact]
+    public void TryGet_AtThePageLimit_RefusesTheGlyph()
+    {
+        using Font font = TestFont.Open();
+        var atlas = new GlyphAtlas(pageSize: 64, plotSize: 32, maxPages: 1);
+        uint[] g = JapaneseGlyphs(font);
+        Assert.Equal(8, g.Length);
+        foreach (uint glyph in g)
+        {
+            Assert.True(atlas.TryGet(font, glyph, 24, out _));
+        }
+
+        Assert.Equal(2, atlas.PageLimit);
+        Assert.Equal(2, atlas.PageCount);
+        Assert.False(atlas.TryGet(font, 56, 24, out _));
+        Assert.False(atlas.TryGet(font, 56, 24, out _));
+        Assert.Equal((2, 0), (atlas.PageCount, atlas.EvictionCount));
+
+        atlas.BeginFrame();
+        Assert.True(atlas.TryGet(font, 56, 24, out _));
+        Assert.Equal(1, atlas.EvictionCount);
+    }
+
     private static uint[] JapaneseGlyphs(Font font)
     {
         using var shaper = new TextShaper();

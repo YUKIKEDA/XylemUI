@@ -60,6 +60,62 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The display list's order is the painting order: an opaque rectangle written after a glyph run hides the glyphs under it,
+    /// and the glyphs outside it are still drawn.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer, the test font, a shaper, an atlas, and a display list.
+    ///
+    /// Steps:
+    /// - Draw paper (0, 0, 200, 100), "H日" in ink at 32 px (pen 10, baseline 40), then an opaque blue rectangle over the box of
+    ///   the first glyph ("H") only.
+    ///
+    /// Expected:
+    /// - Every pixel of the box of "H" is blue.
+    /// - The second glyph ("日") is the CPU composite of its coverage, so it is drawn.
+    /// </remarks>
+    [Fact]
+    public void Draw_RectAfterAGlyphRun_PaintsOverTheGlyphs() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("order", 400, 300);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            using var font = new Font(FontBytes);
+            using var shaper = new TextShaper();
+            var atlas = new GlyphAtlas();
+            var list = new DisplayList();
+            list.FillRect(0, 0, 200, 100, Paper);
+            _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 10, 40, Ink);
+            Painted[] glyphs = Snapshot(list, atlas);
+            GlyphInstance h = glyphs[0].At;
+            var blue = Color.FromRgb(0x3366CC);
+            list.FillRect(h.X, h.Y, h.Width, h.Height, blue);
+
+            renderer.Draw(list, Clear, atlas);
+
+            ID3D11Texture2D* capture = renderer.CaptureBackBuffer();
+            try
+            {
+                for (int y = h.Y; y < h.Y + h.Height; y++)
+                {
+                    for (int x = h.X; x < h.X + h.Width; x++)
+                    {
+                        Assert.Equal(blue, renderer.ReadCapturedPixel(capture, x, y));
+                    }
+                }
+            }
+            finally
+            {
+                _ = capture->Release();
+            }
+
+            AssertDrawn(renderer, [glyphs[1]]);
+            renderer.Present();
+        });
+
+    /// <summary>
     /// A translucent rectangle blends over what is under it (the blend state is the same for rectangles and glyphs).
     /// </summary>
     /// <remarks>

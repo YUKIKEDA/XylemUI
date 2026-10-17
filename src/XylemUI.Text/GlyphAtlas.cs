@@ -17,12 +17,15 @@ namespace XylemUI.Text;
 /// ago, and not in the current frame, is emptied: its glyphs are forgotten and will be rasterized again when they are next asked
 /// for. When every plot was used in the current frame, a page is added beyond <see cref="MaxPages"/>; <see cref="BeginFrame"/>
 /// drops such extra pages once a frame no longer uses them. So the memory is bounded by <see cref="MaxPages"/> in steady state, and
-/// a frame only re-rasterizes the glyphs of the plots it evicts.
+/// a frame only re-rasterizes the glyphs of the plots it evicts. The pages never exceed <see cref="PageLimit"/>: a frame that needs
+/// more (more new glyphs than the limit holds, or a caller that never calls <see cref="BeginFrame"/>) gets <see langword="false"/>
+/// for the glyphs that do not fit, and they are not drawn.
 /// </para>
 /// <para>
 /// The regions changed since the last <see cref="ClearDirtyRegions"/> are listed in <see cref="DirtyRegions"/>, for the GPU upload
 /// after the display list is built (design §5.0.3). Each page is a pinned array, so FreeType's output is copied straight in and
-/// the upload reads it in place. One atlas belongs to one thread.
+/// the upload reads it in place. One atlas belongs to one thread, and its changes go to one renderer: the renderer clears the dirty
+/// regions after uploading them, so a second renderer of the same atlas would miss them (sharing is decided in roadmap row P10).
 /// </para>
 /// </remarks>
 public sealed unsafe class GlyphAtlas
@@ -80,6 +83,11 @@ public sealed unsafe class GlyphAtlas
     /// Gets the number of pages now; it exceeds <see cref="MaxPages"/> only while frames need the extra pages.
     /// </summary>
     public int PageCount => _pages.Count;
+
+    /// <summary>
+    /// Gets the most pages the atlas ever holds: twice <see cref="MaxPages"/>.
+    /// </summary>
+    public int PageLimit => 2 * MaxPages;
 
     /// <summary>
     /// Gets the current frame, advanced by <see cref="BeginFrame"/>.
@@ -143,8 +151,8 @@ public sealed unsafe class GlyphAtlas
     /// <param name="pixelSize">The size in pixels per em.</param>
     /// <param name="glyph">The glyph's region and bearings.</param>
     /// <returns>
-    /// <see langword="false"/> when the glyph is larger than a plot. A glyph with no ink always fits, and room is always made
-    /// for any other glyph, by a new page or an eviction.
+    /// <see langword="false"/> when the glyph is larger than a plot, or when there is no room: every plot was used in the current
+    /// frame and the atlas has <see cref="PageLimit"/> pages. A glyph with no ink always fits.
     /// </returns>
     /// <exception cref="InvalidOperationException">FreeType could not render the glyph.</exception>
     /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
@@ -195,6 +203,12 @@ public sealed unsafe class GlyphAtlas
         }
 
         int plotIndex = FindRoom(width, height, out int x, out int y);
+        if (plotIndex < 0)
+        {
+            glyph = default;
+            return false;
+        }
+
         ref Plot plot = ref CollectionsMarshal.AsSpan(_plots)[plotIndex];
         byte[] page = _pages[plot.Page];
 
@@ -215,7 +229,7 @@ public sealed unsafe class GlyphAtlas
     }
 
     // A plot with room; else a new page while there are fewer than MaxPages; else the least recently used plot not used this
-    // frame, emptied; else (every plot used this frame) a new page beyond MaxPages.
+    // frame, emptied; else (every plot used this frame) a new page beyond MaxPages, up to PageLimit; else -1.
     private int FindRoom(int width, int height, out int x, out int y)
     {
         Span<Plot> plots = CollectionsMarshal.AsSpan(_plots);
@@ -242,6 +256,12 @@ public sealed unsafe class GlyphAtlas
         if (target >= 0)
         {
             Evict(target);
+        }
+        else if (_pages.Count >= PageLimit)
+        {
+            x = 0;
+            y = 0;
+            return -1;
         }
         else
         {
@@ -316,7 +336,15 @@ public sealed unsafe class GlyphAtlas
 
         _pages.RemoveAt(page);
         _pageIds.RemoveAt(page);
-        _ = _dirty.RemoveAll(region => region.Page == page);
+
+        // A loop rather than RemoveAll with a lambda, which would allocate a closure over `page`.
+        for (int i = _dirty.Count - 1; i >= 0; i--)
+        {
+            if (_dirty[i].Page == page)
+            {
+                _dirty.RemoveAt(i);
+            }
+        }
     }
 
     // A plot: shelves of glyphs inside a square of a page, and the last frame that used one of them.

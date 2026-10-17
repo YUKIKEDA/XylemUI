@@ -255,7 +255,10 @@ public sealed unsafe class D3D11Renderer : IDisposable
     /// </summary>
     /// <param name="list">The commands of the frame.</param>
     /// <param name="clearColor">The color of the area no command covers.</param>
-    /// <param name="atlas">The glyph atlas the glyph runs of <paramref name="list"/> were written from; null when it has none.</param>
+    /// <param name="atlas">
+    /// The glyph atlas the glyph runs of <paramref name="list"/> were written from; null when it has none. Its dirty regions are
+    /// cleared after the upload, so an atlas is drawn by one renderer only.
+    /// </param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ArgumentException">The list has glyph runs and <paramref name="atlas"/> is null.</exception>
     public void Draw(DisplayList list, Color clearColor, GlyphAtlas? atlas = null)
