@@ -18,10 +18,10 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** M1a 完了。L1 の設計を決める
-- **作業中:** L1 の design（Issue #74）
-- **ブランチ:** `docs/74-l1-decisions`
-- **Issue:** [#74](https://github.com/YUKIKEDA/XylemUI/issues/74)
+- **フェーズ:** L1 の設計を決めた（Issue #74）。次は L1a
+- **作業中:** なし
+- **ブランチ:** —
+- **Issue:** —
 
 ## ツールチェーン
 
