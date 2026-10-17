@@ -125,11 +125,20 @@ internal static unsafe class DisplayWatch
 
                 return null;
             }
-            catch
+            catch (Exception watchError)
             {
-                // A throw leaves the caller without the process, so the launched app is ended here (M1a review). Kill does
-                // nothing for a process that has already exited, so it does not hide the exception.
-                process.Kill(entireProcessTree: true);
+                // A throw leaves the caller without the process, so the launched app is ended here (M1a review). Kill did not
+                // throw for a process that had exited (.NET 10.0.13), but its documentation names a Win32Exception for one that
+                // is exiting; the watch's exception then comes first (.cursor/rules/csharp.mdc).
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (Exception killError)
+                {
+                    throw new AggregateException(watchError, killError);
+                }
+
                 throw;
             }
         }
