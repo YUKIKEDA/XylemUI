@@ -1,49 +1,69 @@
 namespace XylemUI;
 
 /// <summary>
-/// The layout part of a node (design §2.4.1).
+/// The layout part of a node: its style, its last result, and the caches that let a clean node skip the work (design §2.4,
+/// §3.2).
 /// </summary>
 internal struct LayoutState
 {
     /// <summary>
-    /// The layout properties.
+    /// The layout style.
     /// </summary>
     public LayoutStyle Style;
 
     /// <summary>
-    /// Measures the content of a leaf; <see langword="null"/> for a node whose size comes from its children.
+    /// The style uses a percentage of the parent's width (<see cref="LayoutStyle.UsesPercentOfParentWidth"/>), kept when the
+    /// style is set: every cache key reads it.
+    /// </summary>
+    public bool UsesPercentOfParentWidth;
+
+    /// <summary>
+    /// The style uses a percentage of the parent's height (<see cref="LayoutStyle.UsesPercentOfParentHeight"/>).
+    /// </summary>
+    public bool UsesPercentOfParentHeight;
+
+    /// <summary>
+    /// Measures the content of a leaf; <see langword="null"/> for a leaf without content and for a container.
     /// </summary>
     public MeasureFunc? Measure;
 
     /// <summary>
-    /// The result of the last layout.
+    /// The border box of the last layout run, relative to the parent's border box.
     /// </summary>
     public Rect Rect;
 
     /// <summary>
-    /// The last layout's constraint was tight, so the content cannot change the size (the computed boundary). Read by
-    /// invalidation, which runs before this frame's constraint exists.
+    /// The parent decided both sides in the last layout run (design §2.4.1, a computed boundary unless the parent read the
+    /// content).
     /// </summary>
     public bool CachedComputedBoundary;
 
     /// <summary>
-    /// The constraint of the last layout: the constraint of a boundary laid out again for a change inside it.
+    /// The input of the last layout run: the source of the constraint when the node is laid out again from the worklist.
     /// </summary>
-    public AvailableSpace LastAvailableSpace;
+    public LayoutInput LastInput;
 
     /// <summary>
-    /// The key of the last layout; <see langword="null"/> before the first.
+    /// The node was laid out at least once, so <see cref="LastInput"/> holds.
     /// </summary>
-    public LayoutCacheKey? CachedKey;
+    public bool WasLaidOut;
 
     /// <summary>
-    /// The key of the last measurement: a run that returned a size and wrote nothing else (a flex container measuring its
-    /// children); <see langword="null"/> before the first.
+    /// The key of the last layout run, when <see cref="WasLaidOut"/>. A dirty node does not read it.
     /// </summary>
-    public LayoutCacheKey? MeasureKey;
+    public LayoutCacheKey CachedKey;
 
     /// <summary>
-    /// The size of the last measurement.
+    /// Advanced each time the node's caches are dropped. A child read by this node keeps the generation of the read. It starts
+    /// at 1, so that 0 means "never read"; after 2³² drops it would wrap to 0 and a read in that generation would look like
+    /// none.
     /// </summary>
-    public Size MeasuredSize;
+    public uint CacheGeneration;
+
+    /// <summary>
+    /// The parent's <see cref="CacheGeneration"/> when it last read this node's content (a measuring run or a baseline);
+    /// 0 when it never did. While it matches, a cached result of the parent depends on this node's content, so a change inside
+    /// goes on to the parent (design §2.4.1).
+    /// </summary>
+    public uint ContentReadGeneration;
 }

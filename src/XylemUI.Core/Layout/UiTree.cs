@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace XylemUI;
@@ -14,6 +15,9 @@ internal sealed class UiTree
     private readonly List<LayoutRequest> _deferred = [];
     private List<LayoutRequest> _layoutRoots = [];
     private List<LayoutRequest> _layoutRootsSpare = [];
+
+    // The measurement caches, by the node's slot index: apart from the nodes, so that reading a node does not load them.
+    private MeasureCache[] _measures = new MeasureCache[256];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UiTree"/> class.
@@ -58,11 +62,36 @@ internal sealed class UiTree
     {
         var node = new UiNode
         {
-            Layout = new LayoutState { Style = style, Measure = measure },
+            Layout = new LayoutState
+            {
+                Style = style,
+                UsesPercentOfParentWidth = style.UsesPercentOfParentWidth,
+                UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
+                Measure = measure,
+                CacheGeneration = 1,
+            },
             Dirty = new DirtyState { SelfDirty = DirtyFlags.Layout, SubtreeDirty = DirtyFlags.Layout },
         };
-        return Nodes.Allocate(in node);
+        NodeHandle handle = Nodes.Allocate(in node);
+        if (handle.Index >= _measures.Length)
+        {
+            Array.Resize(ref _measures, Math.Max(_measures.Length * 2, handle.Index + 1));
+        }
+
+        _measures[handle.Index] = default;
+        return handle;
     }
+
+    /// <summary>
+    /// Returns the measurement cache of a live node.
+    /// </summary>
+    internal ref MeasureCache MeasuresOf(NodeHandle node) => ref _measures[node.Index];
+
+    /// <summary>
+    /// Gets the bytes the measurement caches take: one per slot of the arena, grown by doubling (row L1a's layout scenario
+    /// reports it).
+    /// </summary>
+    internal long MeasureCacheBytes => (long)_measures.Length * Unsafe.SizeOf<MeasureCache>();
 
     /// <summary>
     /// Appends <paramref name="child"/>, a node with no parent, as the last child of <paramref name="parent"/>, and marks the
@@ -94,14 +123,22 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Replaces the layout style of a node and marks it for layout.
+    /// Replaces the layout style of a node and marks it and its parent for layout: the parent's algorithm reads the style (the
+    /// size, the margins, the flex factors), so a boundary does not stop the change at the node itself.
     /// </summary>
     public void SetStyle(NodeHandle node, LayoutStyle style)
     {
         ref UiNode n = ref Nodes.GetRef(node);
         n.Layout.Style = style;
+        n.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
+        n.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
         n.Versions.LayoutStyle++;
+        NodeHandle parent = n.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);
+        if (!parent.IsNone)
+        {
+            Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        }
     }
 
     /// <summary>

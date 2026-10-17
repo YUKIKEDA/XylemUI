@@ -9,6 +9,8 @@
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, shaping and cached
+//   layout [samples]           the four layout times of 10,101 nodes in three scenes (design §3.2, row L1a)
+//   layout-loop scene kind N   one of them (kind change or width) repeated N times on one tree, for a profile
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
@@ -32,6 +34,8 @@ return scenario switch
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
     "resize-text" => CoreCosts.ResizeText(Number(1, 51)),
+    "layout" => LayoutCost.Run(Number(1, 15)),
+    "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
     "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
     "scope-cost" => ScopeCost.Run(),

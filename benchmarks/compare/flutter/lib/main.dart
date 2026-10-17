@@ -1,10 +1,21 @@
 // The comparison scene in Flutter (XylemUI roadmap row M1a; the same as benchmarks/XylemUI.E2E/Scene.cs): an 800 x 600 window
 // cleared to #2A2A2A, the marker #3366CC at (0, 0, 40, 40), 1,000 rectangles that move with the frame, and one line of Japanese
-// text at 24 px at (60, 30) in the test font. Animated by a ticker; with --static it draws once and stays idle.
+// text at 24 px at (60, 30) in the test font. Animated by a ticker; with --static it draws once and stays idle. With --layout <file>
+// it shows nothing: it times the layout of XylemUI's layout scene (row L1a, layout_scene.dart), writes one JSON line, and exits.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'layout_scene.dart';
+
 void main(List<String> args) {
+  final layout = args.indexOf('--layout');
+  if (layout >= 0) {
+    runLayoutScene(args[layout + 1]);
+    exit(0);
+  }
+
   runApp(SceneApp(isStatic: args.contains('--static')));
 }
 

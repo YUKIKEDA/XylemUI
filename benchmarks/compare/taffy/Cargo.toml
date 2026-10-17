@@ -1,0 +1,14 @@
+[package]
+name = "compare_taffy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "XylemUI's layout scene in Taffy, the layout of GPUI (XylemUI roadmap row L1a)."
+
+[dependencies]
+# The version GPUI 0.2.2 uses (benchmarks/compare/gpui/Cargo.lock).
+taffy = "=0.9.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,10 +1,10 @@
-using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace XylemUI;
 
 /// <summary>
-/// Lays out the dirty parts of a <see cref="UiTree"/>: the worklist of layout roots, the cache, and the Block and Flex
+/// Lays out the dirty parts of a <see cref="UiTree"/>: the worklist of layout roots, the cache, and the leaf, Block, and Flex
 /// algorithms (design §2.4.1, §3.2).
 /// </summary>
 /// <remarks>
@@ -13,18 +13,14 @@ namespace XylemUI;
 /// no signal (the reactive runtime fails the invariant).
 /// </para>
 /// <para>
-/// A size given as <see cref="Length.Auto"/> is: for the width, all of the available width when it is finite, otherwise the
-/// content's; for the height, the content's. A leaf with a measure function takes its content's size on both axes. Every size
-/// is clamped into the constraint.
-/// </para>
-/// <para>
-/// A node is laid out in one of two modes. Measuring returns the size the node would take for a constraint and writes nothing
-/// on the node (a flex container asks this of its children before it divides the space). Laying out writes the size, the
-/// children's positions, and the cache, and clears the dirty flags. Each mode has its own cache entry, so a clean child that is
-/// measured and then laid out every frame hits both (the same split as Taffy's compute-size and perform-layout runs).
+/// The algorithms follow CSS (Chrome's results, as Taffy implements them, design §3.2) without margin collapsing, floats, or
+/// inline flow. A node is laid out in one of two modes. Measuring returns the size the node would take for an input and writes
+/// nothing on the node but its measurement cache (a flex container asks this of its children before it divides the space).
+/// Laying out writes the size, the children's positions, and the cache, and clears the dirty flags (Taffy's compute-size and
+/// perform-layout runs).
 /// </para>
 /// </remarks>
-internal static class LayoutEngine
+internal static partial class LayoutEngine
 {
     /// <summary>
     /// The number of worklist cycles one pass may take before it stops and reports a <see cref="LayoutStabilizationException"/>
@@ -71,7 +67,12 @@ internal static class LayoutEngine
                     // effect's, the other roots go on, and the request waits for the next pass.
                     try
                     {
-                        _ = Compute(tree, request.Node, ResolveAvailableSpace(tree, request), commit: true);
+                        LayoutInput input = ResolveInput(tree, request);
+                        _ = Compute(tree, request.Node, in input, commit: true);
+                        if (request.Node == tree.Root)
+                        {
+                            PlaceRoot(tree, request.Node, in input);
+                        }
                     }
                     catch (Exception exception) when (exception is not InvariantViolationException)
                     {
@@ -90,46 +91,106 @@ internal static class LayoutEngine
         }
     }
 
-    private static AvailableSpace ResolveAvailableSpace(UiTree tree, in LayoutRequest request)
+    /// <summary>
+    /// Returns the input of a root laid out in a viewport, as CSS lays out the root element in the initial containing block
+    /// (Taffy's in-flow root): the viewport less the root's margins, and for a block root the viewport's width.
+    /// </summary>
+    internal static LayoutInput RootInput(in LayoutStyle style, AvailableSize viewport)
     {
-        if (request.AvailableSpace is { } space)
+        var parent = new OptionalSize(viewport.Width.ToOption(), viewport.Height.ToOption());
+        Edges margin = EdgeInsets.ResolveOrZero(style.Margin, parent.Width);
+        var available = new AvailableSize(viewport.Width.Minus(margin.Horizontal).AtLeast(0), viewport.Height.Minus(margin.Vertical).AtLeast(0));
+        OptionalSize known = OptionalSize.None;
+        if (style.Algorithm is LayoutAlgorithm.Block)
         {
-            return space;
+            Size paddingBorder = PaddingBorder(in style, parent.Width).Sum();
+            OptionalSize min = MinSize(in style, parent);
+            OptionalSize max = MaxSize(in style, parent);
+            known = MinMaxDefinite(min, max)
+                .Or(StyleSize(in style, parent).Clamp(min, max))
+                .Or(new OptionalSize(available.Width.ToOption(), float.NaN))
+                .AtLeast(paddingBorder);
         }
 
-        // IntrinsicSizeChanged: the parent is clean, so the constraint it gave last time still holds.
-        ref UiNode node = ref tree.Nodes.GetRef(request.Node);
-        if (node.Layout.CachedKey is null)
-        {
-            Invariant.Fail("A layout root that was never laid out has a request without a constraint.");
-        }
-
-        return node.Layout.LastAvailableSpace;
+        return new LayoutInput(known, true, true, parent, available, SizingMode.InherentSize, RequestedAxis.Both);
     }
 
-    // A clean node keeps the result of its last run with the same key: a layout for either mode, a measurement for measuring.
-    // Any other node is computed.
-    private static Size LayoutChild(UiTree tree, NodeHandle handle, AvailableSpace available, bool commit)
+    private static LayoutInput ResolveInput(UiTree tree, in LayoutRequest request)
+    {
+        if (request.Input is { } input)
+        {
+            return input;
+        }
+
+        // IntrinsicSizeChanged: the parent is clean, so the input it gave last time still holds.
+        ref UiNode node = ref tree.Nodes.GetRef(request.Node);
+        if (!node.Layout.WasLaidOut)
+        {
+            Invariant.Fail("A layout root that was never laid out has a request without an input.");
+        }
+
+        return node.Layout.LastInput;
+    }
+
+    // The root's margin box sits at the origin of its viewport.
+    private static void PlaceRoot(UiTree tree, NodeHandle root, in LayoutInput input)
+    {
+        Edges margin = EdgeInsets.ResolveOrZero(tree.Nodes.GetRef(root).Layout.Style.Margin, input.ParentSize.Width);
+        Place(tree, root, margin.Left, margin.Top);
+    }
+
+    // Lays out or measures a child. A clean child keeps the result of its last run with the same key: a layout for either mode,
+    // a measurement for measuring. A measuring run reads the child's content, which the child records (design §2.4.1).
+    private static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
+        if (!commit)
+        {
+            node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
+        }
+
         if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
         {
-            LayoutCacheKey key = KeyOf(in node, available);
-            if (node.Layout.CachedKey == key)
+            LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
+            if (node.Layout.WasLaidOut && node.Layout.CachedKey.Matches(in key))
             {
                 return new Size(node.Layout.Rect.Width, node.Layout.Rect.Height);
             }
 
-            if (!commit && node.Layout.MeasureKey == key)
+            if (!commit && tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
             {
-                return node.Layout.MeasuredSize;
+                return measured;
             }
         }
 
-        return Compute(tree, handle, available, commit);
+        return Compute(tree, handle, in input, commit);
     }
 
-    private static Size Compute(UiTree tree, NodeHandle handle, AvailableSpace available, bool commit)
+    // Measures one axis of a child.
+    private static float MeasureChild(
+        UiTree tree,
+        NodeHandle child,
+        OptionalSize known,
+        OptionalSize parentSize,
+        AvailableSize available,
+        SizingMode sizingMode,
+        bool horizontal
+    )
+    {
+        var input = new LayoutInput(
+            known,
+            true,
+            true,
+            parentSize,
+            available,
+            sizingMode,
+            horizontal ? RequestedAxis.Horizontal : RequestedAxis.Vertical
+        );
+        Size size = LayoutChild(tree, child, in input, commit: false);
+        return horizontal ? size.Width : size.Height;
+    }
+
+    private static Size Compute(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
         // Copy what the algorithm needs; the ref is taken again after the recursion (design §2.5).
         ref UiNode before = ref tree.Nodes.GetRef(handle);
@@ -140,22 +201,22 @@ internal static class LayoutEngine
 
         tree.LayoutRunHook?.Invoke(handle);
         Size size =
-            measure is not null && firstChild.IsNone ? MeasureLeaf(in style, measure, available)
-            : style.Algorithm is LayoutAlgorithm.Flex flex ? LayoutFlex(tree, in style, flex.Direction, firstChild, available, commit)
-            : LayoutBlock(tree, in style, firstChild, available, commit);
+            firstChild.IsNone ? ComputeLeaf(in style, measure, in input, commit)
+            : style.Algorithm is LayoutAlgorithm.Flex flex ? ComputeFlex(tree, in style, flex.Props, firstChild, in input, commit)
+            : ComputeBlock(tree, in style, firstChild, in input, commit);
 
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         if (!commit)
         {
-            n.Layout.MeasureKey = KeyOf(in n, available);
-            n.Layout.MeasuredSize = size;
+            tree.MeasuresOf(handle).Store(LayoutCacheKey.Of(in n, in input), input.Axis, size);
             return size;
         }
 
         bool sizeChanged = n.Layout.Rect.Width != size.Width || n.Layout.Rect.Height != size.Height;
         n.Layout.Rect = n.Layout.Rect with { Width = size.Width, Height = size.Height };
-        n.Layout.LastAvailableSpace = available;
-        n.Layout.CachedComputedBoundary = available.IsTight;
+        n.Layout.LastInput = input;
+        n.Layout.WasLaidOut = true;
+        n.Layout.CachedComputedBoundary = input.IsExact;
 
         // Marked again while it was laid out: the flags stay, and its new request runs in the next cycle.
         if (n.Dirty.Epoch == epochBefore)
@@ -171,20 +232,13 @@ internal static class LayoutEngine
 
         // Written last: OnRectChanged of the children advanced DescendantLayout during the algorithm.
         ref UiNode after = ref tree.Nodes.GetRef(handle);
-        after.Layout.CachedKey = KeyOf(in after, available);
+        after.Layout.CachedKey = LayoutCacheKey.Of(in after, in input);
 
         // This run moved the children, which advanced DescendantLayout, but a measurement does not depend on where the
-        // children were placed: a change of content inside always marks the path dirty. Re-stamp it so it stays valid.
-        if (after.Layout.MeasureKey is { } measureKey)
-        {
-            after.Layout.MeasureKey = measureKey with { DescendantLayoutVersion = after.Versions.DescendantLayout };
-        }
-
+        // children were placed: a change of content inside drops the cache. Re-stamp the measurements so they stay valid.
+        tree.MeasuresOf(handle).Restamp(after.Versions.DescendantLayout);
         return size;
     }
-
-    private static LayoutCacheKey KeyOf(in UiNode node, AvailableSpace available) =>
-        new(available, node.Versions.LayoutStyle, node.Versions.Children, node.Versions.DescendantLayout);
 
     private static void Place(UiTree tree, NodeHandle handle, float x, float y)
     {
@@ -207,7 +261,7 @@ internal static class LayoutEngine
         {
             ref UiNode a = ref tree.Nodes.GetRef(ancestor);
             a.Versions.DescendantLayout++;
-            if (Invalidation.IsLayoutBoundaryForInvalidation(in a))
+            if (Invalidation.IsLayoutBoundaryForInvalidation(tree, in a))
             {
                 return;
             }
@@ -216,215 +270,41 @@ internal static class LayoutEngine
         }
     }
 
-    private static Size MeasureLeaf(in LayoutStyle style, MeasureFunc measure, AvailableSpace available)
-    {
-        EdgeInsets padding = style.Padding;
-        var content = new AvailableSpace(
-            Math.Max(0, available.MinWidth - padding.Horizontal),
-            Math.Max(0, available.MaxWidth - padding.Horizontal),
-            Math.Max(0, available.MinHeight - padding.Vertical),
-            Math.Max(0, available.MaxHeight - padding.Vertical)
+    // The width and the height of the style against the parent's content box.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OptionalSize StyleSize(in LayoutStyle style, OptionalSize parent) =>
+        new(style.Width.Resolve(parent.Width), style.Height.Resolve(parent.Height));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OptionalSize MinSize(in LayoutStyle style, OptionalSize parent) =>
+        new(style.MinWidth.Resolve(parent.Width), style.MinHeight.Resolve(parent.Height));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OptionalSize MaxSize(in LayoutStyle style, OptionalSize parent) =>
+        new(style.MaxWidth.Resolve(parent.Width), style.MaxHeight.Resolve(parent.Height));
+
+    // The padding and the border, which CSS resolves against the parent's width on every side.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Edges PaddingBorder(in LayoutStyle style, float parentWidth) =>
+        EdgeInsets.ResolveOrZero(style.Padding, parentWidth) + EdgeInsets.ResolveOrZero(style.Border, parentWidth);
+
+    // The size an axis has when its minimum is at least its maximum: the minimum wins (CSS).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OptionalSize MinMaxDefinite(OptionalSize min, OptionalSize max) =>
+        new(
+            !float.IsNaN(min.Width) && !float.IsNaN(max.Width) && max.Width <= min.Width ? min.Width : float.NaN,
+            !float.IsNaN(min.Height) && !float.IsNaN(max.Height) && max.Height <= min.Height ? min.Height : float.NaN
         );
-        Size measured = measure(content);
-        float width = style.Width.IsFixed ? style.Width.Pixels : measured.Width + padding.Horizontal;
-        float height = style.Height.IsFixed ? style.Height.Pixels : measured.Height + padding.Vertical;
-        return new Size(available.ClampWidth(width), available.ClampHeight(height));
-    }
 
-    // The width or the height the node has before its children are laid out, or NaN when its content decides it.
-    private static float DeterminedWidth(in LayoutStyle style, AvailableSpace available) =>
-        style.Width.IsFixed ? available.ClampWidth(style.Width.Pixels)
-        : float.IsFinite(available.MaxWidth) ? available.MaxWidth
-        : float.NaN;
-
-    private static float DeterminedHeight(in LayoutStyle style, AvailableSpace available) =>
-        style.Height.IsFixed ? available.ClampHeight(style.Height.Pixels)
-        : available.MinHeight == available.MaxHeight ? available.MinHeight
-        : float.NaN;
-
-    private static Size LayoutBlock(UiTree tree, in LayoutStyle style, NodeHandle firstChild, AvailableSpace available, bool commit)
-    {
-        EdgeInsets padding = style.Padding;
-        float width = DeterminedWidth(in style, available);
-        float contentWidth = float.IsNaN(width) ? float.PositiveInfinity : Math.Max(0, width - padding.Horizontal);
-
-        float y = padding.Top;
-        float widestChild = 0;
-        NodeHandle child = firstChild;
-        while (!child.IsNone)
+    // A size keyword of a style resolved against the space it may stretch into (Taffy's resolve_sizing_keyword): the
+    // available space to measure the node under, or none for a length that is not a content keyword.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static AvailableSpace? MeasureSpaceOf(Length length, float stretch) =>
+        length.Kind switch
         {
-            ref UiNode c = ref tree.Nodes.GetRef(child);
-            NodeHandle next = c.NextSibling;
-            EdgeInsets margin = c.Layout.Style.Margin;
-
-            var childSpace = new AvailableSpace(0, Math.Max(0, contentWidth - margin.Horizontal), 0, float.PositiveInfinity);
-            Size size = LayoutChild(tree, child, childSpace, commit);
-            if (commit)
-            {
-                Place(tree, child, padding.Left + margin.Left, y + margin.Top);
-            }
-
-            y += margin.Top + size.Height + margin.Bottom;
-            widestChild = Math.Max(widestChild, size.Width + margin.Horizontal);
-            child = next;
-        }
-
-        if (float.IsNaN(width))
-        {
-            width = available.ClampWidth(widestChild + padding.Horizontal);
-        }
-
-        float height = DeterminedHeight(in style, available);
-        if (float.IsNaN(height))
-        {
-            height = available.ClampHeight(y + padding.Bottom);
-        }
-
-        return new Size(width, height);
-    }
-
-    private static Size LayoutFlex(
-        UiTree tree,
-        in LayoutStyle style,
-        FlexDirection direction,
-        NodeHandle firstChild,
-        AvailableSpace available,
-        bool commit
-    )
-    {
-        bool row = direction == FlexDirection.Row;
-        EdgeInsets padding = style.Padding;
-        float paddingMain = row ? padding.Horizontal : padding.Vertical;
-        float paddingCross = row ? padding.Vertical : padding.Horizontal;
-        float width = DeterminedWidth(in style, available);
-        float height = DeterminedHeight(in style, available);
-        float main = row ? width : height;
-        float cross = row ? height : width;
-        float innerMain = float.IsNaN(main) ? float.PositiveInfinity : Math.Max(0, main - paddingMain);
-        float crossLimit = float.IsNaN(cross) ? (row ? available.MaxHeight : available.MaxWidth) : cross;
-        float innerCross = Math.Max(0, crossLimit - paddingCross);
-
-        int count = 0;
-        for (NodeHandle c = firstChild; !c.IsNone; c = tree.Nodes.GetRef(c).NextSibling)
-        {
-            count++;
-        }
-
-        float[] bases = ArrayPool<float>.Shared.Rent(Math.Max(1, count));
-        try
-        {
-            // 1. The hypothetical main size of each child: its basis, its fixed main size, or its content.
-            float usedMain = 0;
-            float totalGrow = 0;
-            float totalScaledShrink = 0;
-            int i = 0;
-            for (NodeHandle child = firstChild; !child.IsNone; i++)
-            {
-                ref UiNode c = ref tree.Nodes.GetRef(child);
-                NodeHandle next = c.NextSibling;
-                LayoutStyle childStyle = c.Layout.Style;
-                EdgeInsets margin = childStyle.Margin;
-                float marginCross = row ? margin.Vertical : margin.Horizontal;
-                Length mainLength = row ? childStyle.Width : childStyle.Height;
-
-                float basis;
-                if (childStyle.FlexBasis.IsFixed)
-                {
-                    basis = childStyle.FlexBasis.Pixels;
-                }
-                else if (mainLength.IsFixed)
-                {
-                    basis = mainLength.Pixels;
-                }
-                else
-                {
-                    float crossMax = Math.Max(0, innerCross - marginCross);
-                    AvailableSpace measureSpace = row
-                        ? new AvailableSpace(0, float.PositiveInfinity, 0, crossMax)
-                        : new AvailableSpace(0, crossMax, 0, float.PositiveInfinity);
-                    Size measured = LayoutChild(tree, child, measureSpace, commit: false);
-                    basis = row ? measured.Width : measured.Height;
-                }
-
-                bases[i] = basis;
-                usedMain += basis + (row ? margin.Horizontal : margin.Vertical);
-                totalGrow += childStyle.FlexGrow;
-                totalScaledShrink += childStyle.FlexShrink * basis;
-                child = next;
-            }
-
-            // 2. Divide the free space by grow, or the overflow by shrink weighted by the basis.
-            float free = float.IsFinite(innerMain) ? innerMain - usedMain : 0;
-
-            // 3. Lay out each child at its final main size and place it.
-            float cursor = row ? padding.Left : padding.Top;
-            float widestCross = 0;
-            i = 0;
-            for (NodeHandle child = firstChild; !child.IsNone; i++)
-            {
-                ref UiNode c = ref tree.Nodes.GetRef(child);
-                NodeHandle next = c.NextSibling;
-                LayoutStyle childStyle = c.Layout.Style;
-                EdgeInsets margin = childStyle.Margin;
-
-                float target = bases[i];
-                if (free > 0 && totalGrow > 0)
-                {
-                    target += free * childStyle.FlexGrow / totalGrow;
-                }
-                else if (free < 0 && totalScaledShrink > 0)
-                {
-                    target += free * childStyle.FlexShrink * bases[i] / totalScaledShrink;
-                }
-
-                target = Math.Max(0, target);
-                float crossMax = Math.Max(0, innerCross - (row ? margin.Vertical : margin.Horizontal));
-                AvailableSpace finalSpace = row ? new AvailableSpace(target, target, 0, crossMax) : new AvailableSpace(0, crossMax, target, target);
-                Size size = LayoutChild(tree, child, finalSpace, commit);
-
-                float mainStart = row ? margin.Left : margin.Top;
-                float mainEnd = row ? margin.Right : margin.Bottom;
-                if (row)
-                {
-                    if (commit)
-                    {
-                        Place(tree, child, cursor + mainStart, padding.Top + margin.Top);
-                    }
-
-                    widestCross = Math.Max(widestCross, size.Height + margin.Vertical);
-                    cursor += mainStart + size.Width + mainEnd;
-                }
-                else
-                {
-                    if (commit)
-                    {
-                        Place(tree, child, padding.Left + margin.Left, cursor + mainStart);
-                    }
-
-                    widestCross = Math.Max(widestCross, size.Width + margin.Horizontal);
-                    cursor += mainStart + size.Height + mainEnd;
-                }
-
-                child = next;
-            }
-
-            float contentMain = cursor + (row ? padding.Right : padding.Bottom);
-            if (row)
-            {
-                width = float.IsNaN(width) ? available.ClampWidth(contentMain) : width;
-                height = float.IsNaN(height) ? available.ClampHeight(widestCross + paddingCross) : height;
-            }
-            else
-            {
-                height = float.IsNaN(height) ? available.ClampHeight(contentMain) : height;
-                width = float.IsNaN(width) ? available.ClampWidth(widestCross + paddingCross) : width;
-            }
-
-            return new Size(width, height);
-        }
-        finally
-        {
-            ArrayPool<float>.Shared.Return(bases);
-        }
-    }
+            LengthKind.MinContent => AvailableSpace.MinContent,
+            LengthKind.MaxContent => AvailableSpace.MaxContent,
+            LengthKind.FitContent when !float.IsNaN(stretch) => AvailableSpace.Definite(stretch),
+            _ => null,
+        };
 }
