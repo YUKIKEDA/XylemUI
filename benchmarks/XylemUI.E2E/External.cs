@@ -69,6 +69,10 @@ internal static class External
                 report.Number("frames_app_pid", animated.Id);
                 report.Series("launch_to_screen_ms", toScreen);
                 report.Series("launch_to_content_ms", toContent);
+
+                // Runs that gave no result: without them a median would leave out exactly the slow or failed launches.
+                report.Number("startup_screen_missed", framesOnly ? 0 : runs - toScreen.Count);
+                report.Number("startup_content_missed", framesOnly ? 0 : runs - toContent.Count);
                 report.Number("startup_runs", runs);
                 if (!framesOnly)
                 {

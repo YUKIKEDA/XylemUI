@@ -38,7 +38,7 @@ internal static unsafe class DisplayWatch
             ThrowIfFailed(
                 D3D11CreateDevice(null, D3D_DRIVER_TYPE_HARDWARE, HMODULE.NULL, 0, &level, 1, D3D11.D3D11_SDK_VERSION, &device, null, &context)
             );
-            duplication = Duplicate(device);
+            duplication = Duplicate(device, out RECT output);
             var description = new D3D11_TEXTURE2D_DESC
             {
                 Width = 1,
@@ -53,7 +53,12 @@ internal static unsafe class DisplayWatch
             ThrowIfFailed(device->CreateTexture2D(&description, null, &pixel));
 
             long launched = Stopwatch.GetTimestamp();
-            process = Process.Start(new ProcessStartInfo(app, arguments) { UseShellExecute = false })!;
+
+            // The app's standard output is read and dropped, so that a child that prints (startup-child) does not mix its lines
+            // into this process's report.
+            process = Process.Start(new ProcessStartInfo(app, arguments) { UseShellExecute = false, RedirectStandardOutput = true })!;
+            process.OutputDataReceived += (_, _) => { };
+            process.BeginOutputReadLine();
             HWND window = HWND.NULL;
             while (Stopwatch.GetElapsedTime(launched).TotalSeconds < 10)
             {
@@ -81,6 +86,17 @@ internal static unsafe class DisplayWatch
 
                     var point = new POINT { x = 20, y = 20 };
                     _ = ClientToScreen(window, &point);
+
+                    // The desktop image is the duplicated output's; a window outside it would never show the marker.
+                    if (point.x < output.left || point.y < output.top || point.x >= output.right || point.y >= output.bottom)
+                    {
+                        throw new InvalidOperationException(
+                            $"The app's window ({point.x}, {point.y}) is not on the duplicated output ({output.left}, {output.top}, {output.right}, {output.bottom})."
+                        );
+                    }
+
+                    point.x -= output.left;
+                    point.y -= output.top;
                     ID3D11Texture2D* image;
                     ThrowIfFailed(resource->QueryInterface(__uuidof<ID3D11Texture2D>(), (void**)&image));
                     var box = new D3D11_BOX(point.x, point.y, 0, point.x + 1, point.y + 1, 1);
@@ -131,8 +147,8 @@ internal static unsafe class DisplayWatch
         }
     }
 
-    // The duplication of the adapter's first output (the primary display).
-    private static IDXGIOutputDuplication* Duplicate(ID3D11Device* device)
+    // The duplication of the adapter's first output (the primary display), and where that output is on the desktop.
+    private static IDXGIOutputDuplication* Duplicate(ID3D11Device* device, out RECT desktop)
     {
         IDXGIDevice* dxgiDevice;
         ThrowIfFailed(device->QueryInterface(__uuidof<IDXGIDevice>(), (void**)&dxgiDevice));
@@ -140,6 +156,9 @@ internal static unsafe class DisplayWatch
         ThrowIfFailed(dxgiDevice->GetAdapter(&adapter));
         IDXGIOutput* output;
         ThrowIfFailed(adapter->EnumOutputs(0, &output));
+        DXGI_OUTPUT_DESC description;
+        ThrowIfFailed(output->GetDesc(&description));
+        desktop = description.DesktopCoordinates;
         IDXGIOutput1* output1;
         ThrowIfFailed(output->QueryInterface(__uuidof<IDXGIOutput1>(), (void**)&output1));
         IDXGIOutputDuplication* duplication;

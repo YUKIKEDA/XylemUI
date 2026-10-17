@@ -12,6 +12,8 @@ import sys
 FIGURES = [
     ("launch_to_screen_ms_p50", "Startup: launch to the marker on the screen (ms)"),
     ("launch_to_content_ms_p50", "Startup: launch to the marker in the window's content (ms)"),
+    ("startup_screen_missed", "Startup: runs without a result on the screen"),
+    ("startup_content_missed", "Startup: runs without a result in the content"),
     ("shipped_bytes", "Size: files the app needs (MB)"),
     ("idle_cpu_ms", "Idle: CPU time in 10 s (ms)"),
     ("idle_working_set_mb", "Idle: working set (MB)"),

@@ -23,7 +23,9 @@ python -I benchmarks/compare/summarize.py <dir>/results.jsonl
 <dir>/xylemui/XylemUI.E2E.exe <scenario>    # XylemUI の中の計測（Program.cs の先頭の一覧）
 ```
 
-`measure.ps1` は、計測の間ほかのウィンドウを最小化する（終わりに戻す）。
+`measure.ps1` は、計測の間ほかのウィンドウを最小化する（終わりに戻す）。起動の回のうち、目印が 10 秒で見つからなかった回は `startup_screen_missed` / `startup_content_missed` に数え、集計の表に出す（この表の計測では 0）。
+
+比べたアプリ（`benchmarks/compare/`）は、基準値を再現するために版を固定している。Dependabot の更新の対象から外し（`.github/dependabot.yml`）、`Cargo.lock` の推移的な依存に GitHub の依存関係グラフが脆弱性の警告を出しても、製品には入らないので直さない（版を上げるのは基準値を取り直すとき）。
 
 ## フレームワークの比較
 
