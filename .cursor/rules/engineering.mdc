@@ -31,6 +31,8 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 `./build.ps1` before a PR. It runs tool restore, the CSharpier check, restore, then for Release and for Debug a build and every test project. Release is what ships; Debug runs the checks that only exist there (`Invariant.Fail` throws instead of ending the process). Hosted CI runs the same script.
 
+A commit and a push follow the build only through its exit code. Piping the build's output into `grep` and chaining `git commit ... && git push` after it runs the commit even when the build failed: in S6a a commit that did not compile reached the PR that way. Write `if dotnet build ...; then git commit ...; fi`, or check `$LASTEXITCODE` in PowerShell.
+
 If `dotnet --list-sdks` does not show a 10.0 SDK, install it; do not stop to ask.
 
 A NativeAOT publish on Windows needs `C:\Program Files (x86)\Microsoft Visual Studio\Installer` on `PATH`: Visual Studio's environment scripts call `vswhere.exe` by name, and when it is missing its error text ends up in the linker command (`MSB3073 ... 'vswhere.exe' is not recognized`). Add it for the session (`$env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'`) before `dotnet publish`. If `dotnet csharpier` says to run `dotnet tool restore` right after a successful restore, delete `%USERPROFILE%\.dotnet\toolResolverCache\1\csharpier` (a stale cache entry from another sandbox) and restore again.

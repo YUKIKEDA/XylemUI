@@ -9,6 +9,7 @@ A check or a test that stands for a statement in `docs/design.ja.md` implements 
 
 - Every documented contract has a code path and a test. A sentence with no code behind it is a defect.
 - Before the PR, list each contract sentence the PR adds to `docs/design.ja.md` next to the test that checks it. In S5 the review found four sentences the PR had written itself (one queue in order, a drain of the count at the call, the three cases of `Send`, a continuation that throws) with no test.
+- An API that runs the caller's code (`Effect.Create`, an event handler, a message handler) is tested with that code doing what it may do to the same subsystem: set a signal it or another reader reads, dispose itself, create another of its kind. In S6a the review, not a test, found that the first run of `Effect.Create` was not a batch.
 - A rejection in `docs/design-decisions.md` whose reason is behavior ("separate queues lose the order between messages and continuations") has a test that fails when the rejected option is put in its place.
 - When the design fixes an order (the frame lifecycle, the `ResizeBuffers` steps, the Scope disposal order, the error priority), test it with one input that fails two adjacent steps and assert the first.
 - When the design fixes a state machine (ComputationStatus, ShowState, ResourceState), test every transition it lists and one transition it does not allow.
