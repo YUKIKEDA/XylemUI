@@ -18,6 +18,8 @@ The reason for a recommendation is the framework's goal and its functional and n
 
 The goal is to match or beat Flutter, Avalonia, and GPUI in performance and quality. Before recommending how to build a mechanism (a cache, an atlas, a scheduler, a text or GPU path), find how those frameworks and the engines under them (Skia, Impeller, WebRender) do it, cite the sources, and judge each way against the requirements (the frame budget of §11.3, the memory targets of §5.3). In S8b the agent recommended clearing a full glyph atlas because it was simple; the owner rejected the reason, and the comparison (Skia's plot LRU, Impeller's grow-then-rebuild, GPUI's growing pages, WebRender's entry LRU) settled it.
 
+A statement about how another framework behaves is checked in its source or its official documentation before it goes to the owner, and what was not checked is said to be unchecked. In the L1 Grill the agent called `flex-wrap: balance` a Taffy-only value; the CHANGELOG of the Taffy clone it had just read says it is from the CSS Flexbox Level 2 draft, and the owner's question made it read again.
+
 When the owner corrects a criterion, go back over the decisions made before the correction and judge them by the new criterion: the design, the decision records, and the conversation logs, where reasons given only in passing are kept. Each one that fails gets a roadmap row or a Grill before the row that depends on it. After the S8b correction, a review of the logs found eleven more (Issue #54), among them a reason stated only in a review ("leave it for now") and a public API added only for a sample's check.
 
 "Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
