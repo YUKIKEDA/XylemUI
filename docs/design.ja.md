@@ -768,7 +768,8 @@ static void RunLayoutPass(UiTree tree)
 **C# 版の実装（S6b で確定）:** 上の擬似コードから、次の点を変えた・決めた。
 
 - **型と入口:** `UiTree` が `CreateNode(style, measure)`・`AppendChild`・`SetStyle`・`GetRect` を持ち、構造とスタイルの変更はここを通す（版と dirty を正しく保つため）。`UiNode` は `LastChild`（末尾への追加を O(1) にする）と `Depth`（layout root の並べ替え）を持つ。`LayoutEngine.RunLayoutPass` は UI スレッドだけが呼べる
-- **`AvailableSpace`:** 親が子の border box に許す幅と高さの範囲（最小と最大。最大は無限でもよい）。両軸で最小と最大が等しいとき tight（`IsTight`）。L1a で §3.2 の `LayoutInput` に置き換え、計算された境界は「親が両軸の寸法を決めた」（`KnownDimensions` が両方ある）になる
+- **`AvailableSpace`:** 親が子の border box に許す幅と高さの範囲（最小と最大。最大は無限でもよい）。両軸で最小と最大が等しいとき tight（`IsTight`）。L1a で §3.2 の `LayoutInput` に置き換え、この型は廃止する
+- **計算された境界（L1a から、PR #75 のレビューの後の Grill で決定）:** 親が両軸の寸法を決めた（`KnownDimensions` が両方ある）ノードのうち、前回の layout で親が内容に依存する値を読まなかったものだけ。内容に依存する値は、測るだけの実行の結果（MinContent / MaxContent・仮の大きさ）とベースラインで、親が読むと子に印が付き、その layout の実行で付け直す。印のある子の `MarkDirty` は境界で止まらず、親へ伝わる。CSS どおりの Flex では、寸法が決まった子でも、内容が変わると兄弟や親が動く（自動の最小サイズ・wrap の行の切れ目・baseline 揃え・内容の大きさの容器）。Flutter の `RenderBox.markNeedsLayout` も、親が子の内容の大きさ・ベースライン・試しの layout を問い合わせていれば、境界を越えて親を dirty にする（`markParentNeedsLayout`）。境界を根だけにする案は、固定サイズの行の中の変更（S6b で 5.5 µs）を毎回根からの再計算にするので退けた
 - **キャッシュ:** 親が子を layout するとき（`LayoutChild`）、子が clean で `LayoutCacheKey` が等しければ、前回の大きさを使い、子の中へ入らない。等しくなければ、clean でも計算し直す（制約が変わった子）。worklist の根は dirty なので、キャッシュで省略しない。これが Boundary barrier を兼ねる
 - **測るだけの実行（measure）と layout の実行:** Flex が子の仮の大きさを測る実行は、大きさを返すだけでノードに何も書かない（位置・dirty フラグ・layout のキャッシュ）。キャッシュは実行の種類ごとに1つずつ持つ（`CachedKey` と `MeasureKey`。Taffy の compute-size と perform-layout と同じ分け方）。1つだけだと、Flex の子は毎フレーム「測る制約」と「最終の制約」で交互に外れ、clean な子もすべて計算し直していた（1 万ノードで1か所を変えた再 layout が 1,605 µs。分けて 21.1 µs、NativeAOT）。layout の実行は子を動かして自分の `DescendantLayout` を進めるが、測った結果は子の位置に依らない（中の内容が変われば経路が dirty になる）ので、layout の実行の後に `MeasureKey` の `DescendantLayout` を付け直す
 - **`DescendantLayout`:** ノードの矩形（大きさまたは位置）が変わると、そのノードの `Versions.Layout` と、境界までの祖先の `DescendantLayout` を進める。キーはアルゴリズムの後で書くので、子が進めた分を含む
@@ -1536,7 +1537,7 @@ public struct LayoutStyle
 
 // algorithm と計測関数に渡す入力（Taffy の LayoutInput と同じ分け方）。§2.4.1 の AvailableSpace を置き換える
 internal readonly record struct LayoutInput(
-    OptionalSize KnownDimensions,   // 親が決めた border box の寸法（幅・高さ、それぞれ任意）。両方あれば計算された境界
+    OptionalSize KnownDimensions,   // 親が決めた border box の寸法（幅・高さ、それぞれ任意）。計算された境界の条件は §2.4.1
     OptionalSize ParentSize,        // % の基準（親のコンテンツの箱）。不定の軸は値なし
     AvailableSpace Available,       // 軸ごとに Definite(px) | MinContent | MaxContent
     SizingMode SizingMode,          // InherentSize（自分のスタイルのサイズを使う）| ContentSize（使わない）
@@ -1546,7 +1547,7 @@ internal readonly record struct LayoutInput(
 internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 ```
 
-長さの型は、使える場所で分ける。`Length` はサイズ・min / max・basis、`LengthPercentageAuto` は margin、`LengthPercentage` は padding と gap に使い、`padding: auto` のような書けない値をコンパイルの時点で止める。layout の実行と測るだけの実行の区別（Taffy の `RunMode`）は今の `commit` のままにする。型は `internal` のままで、公開の API は C0 で決める。
+`LayoutAlgorithm.Flex` は S6b の `Flex(FlexDirection Direction)` を `Flex(FlexProps Props)` に置き換える。軸ごとの `Definite` / `MinContent` / `MaxContent` の型は Taffy と同じ `AvailableSpace` と呼び、S6b の同じ名前の型（4 つの float の最小・最大）は廃止する。Taffy のコードと見比べて読めるようにするため。長さの型は、使える場所で分ける。`Length` はサイズ・min / max・basis、`LengthPercentageAuto` は margin、`LengthPercentage` は padding と gap に使い、`padding: auto` のような書けない値をコンパイルの時点で止める。layout の実行と測るだけの実行の区別（Taffy の `RunMode`）は今の `commit` のままにする。型は `internal` のままで、公開の API は C0 で決める。
 
 `LayoutAlgorithm` はスタイル設定時にだけ生成し、毎フレームは生成しないため record class でよい。
 
@@ -1569,11 +1570,11 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 - **Flex:** CSS Flexbox §9 の手順どおり。主軸の仮の大きさは `FlexBasis` → 主軸のサイズ → 内容。空きは `FlexGrow` の比で分け、はみ出しは `FlexShrink` × 仮の大きさの比で削り、min / max で止まった子を固定して解き直す。wrap・逆向き・`justify-content`・`align-items` / `align-self`・`align-content`・gap・`auto` のマージン・baseline 揃えも CSS どおり。ベースラインは計測関数の `FirstBaseline`、持たない子は CSS と同じく border box から合成する
 - **S6b からの変更:** S6b は交差軸を start 揃えだけにし、min / max を持たなかった。そのため `Auto` の高さの列に高さの上限がある制約を渡すと、shrink が働かず子が上限を越えてはみ出していた。L1a で直す
 
-**テストの基準（L1 の Grill で決定）:** Taffy の XML テスト（`tests/xml`、Chrome が出した期待値、MIT）のうち、border-box・LTR で L1 の範囲に入るものを全件取り込み、xUnit で通す。テキストの葉は、Taffy と同じ Ahem 方式の計測関数（1 文字 10 px の正方形）をテストの側に持つ。外すもの（マージンの相殺を含む Block、L2 と V2 の機能）は理由をつけて1つのファイルに並べる。手で書くテストは、XylemUI 独自の部分（キャッシュ、増分の再計算）だけにする。
+**テストの基準（L1 の Grill で決定）:** Taffy の XML テスト（`tests/xml`、Chrome が出した期待値、MIT）のうち、border-box・LTR で L1 の範囲に入るものを全件取り込み、xUnit で通す。テキストの葉は、Taffy と同じ Ahem 方式の計測関数（1 文字 10 px の正方形）をテストの側に持つ。外すもの（マージンの相殺を含む Block、L2 と V2 の機能）は理由をつけて1つのファイルに並べる。手で書くテストは、XylemUI 独自の部分（キャッシュ、増分の再計算）だけにする。増分の再計算には、寸法の決まった子の中の変更で兄弟や親が動く場面（自動の最小サイズ・wrap・baseline・内容の大きさの容器）を入れる。取り込むときは、Taffy のライセンスと取り込んだコミット（e82f526）を、テストデータのフォルダに置く。
 
-**計測のキャッシュ（L1 の Grill で決定）:** layout の結果を1つと、測るだけの実行の結果を N 個持つ。問い合わせの種類（MinContent・MaxContent・確定した幅）が増えるので、1つでは、S6b で起きたように、種類の違う問い合わせが互いの結果を上書きし合う見込み。N は 1・2・4・9（Taffy は 9。最近使っていないものから上書きする）で、命中率・1か所の変更の時間・メモリを測った表から、時間がそれ以上下がらない最小の数にする。
+**計測のキャッシュ（L1 の Grill で決定）:** layout の結果を1つと、測るだけの実行の結果を N 個持つ。問い合わせの種類（MinContent・MaxContent・確定した幅）が増えるので、1つでは、S6b で起きたように、種類の違う問い合わせが互いの結果を上書きし合う見込み。N は 1・2・4・9（Taffy は 9。最近使っていないものから上書きする）で、命中率・1か所の変更の時間・メモリ・`UiNode` の大きさと `TryGet`（コピー）の費用を測った表から、時間がそれ以上下がらない最小の数にする。項目を `UiNode` の中に持つ案と、別のアリーナに置く案を比べる。キーは `LayoutInput` とスタイル・子の構造・子孫の layout の版で、`ParentSize` は、そのノード自身のスタイルが `%` を使う軸だけ入れる（スタイルを設定したときにフラグを計算する。padding と margin の `%` は親の幅が基準なので幅の軸）。子の `%` はこのノードの大きさが基準で、このノードの入力が同じなら大きさも同じになるので要らない。Taffy は `ParentSize` をキーに入れず、親の大きさが変われば子の使える空間もたいてい変わる、という前提に頼っている（PR #75 のレビューの後の Grill で決定）。
 
-**性能の受け入れ（L1 の Grill で決定）:** (1) S6b の 10,101 ノードの場面の4つの時間（最初の layout・1か所の変更・固定サイズの行の中の変更・幅の変更）が、ばらつきを超えて悪くならない。(2) wrap・stretch・`%`・自動の最小サイズを使う 1 万ノードの場面で、最初の layout と幅の変更が §11.3 の Layout の予算（2.0 ms）の内側。(3) 定常状態のアロケーションが 0（Zero-Alloc テストに wrap の場面を足す）。
+**性能の受け入れ（L1 の Grill で決定）:** (1) S6b の 10,101 ノードの場面の4つの時間（最初の layout・1か所の変更・固定サイズの行の中の変更・幅の変更）が、ばらつきを超えて悪くならない。S6b と同じ意味で比べるため、フレックスの子に `MinWidth = Px(0)` を書いて自動の最小サイズを切る。既定（`Auto`）のままの同じ場面は、最初の layout と幅の変更を (2) の予算で見る。内側に入らなければ、費用の内訳を Issue に書いて減らし方を決め直す（悪化を許す幅は先に決めない。PR #75 のレビューの後の Grill で決定）。(2) wrap・stretch・`%`・自動の最小サイズを使う 1 万ノードの場面で、最初の layout と幅の変更が §11.3 の Layout の予算（2.0 ms）の内側。(3) 定常状態のアロケーションが 0（Zero-Alloc テストに wrap の場面を足す）。
 
 **進め方（L1 の Grill で決定）:** L1a（`LayoutInput`・長さのすべての種類・min / max・`%`・自動の最小サイズ・キャッシュ・S6b の shrink の不具合）、L1b（wrap・`justify-content`・`align-*`・gap・baseline・逆向き・`auto` のマージン）の順。Taffy の XML テストは使えるようになった分から通し、L1b で範囲の全件が通る。絶対配置・aspect-ratio・表示しないノード・`flex-wrap: balance`（CSS Flexbox Level 2 の草案）は L2、`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）は V2。
 
