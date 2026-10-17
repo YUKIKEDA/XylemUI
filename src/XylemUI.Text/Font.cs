@@ -26,10 +26,15 @@ public sealed unsafe class Font : IDisposable
     /// Initializes a new instance of the <see cref="Font"/> class from the bytes of a TrueType or OpenType font.
     /// </summary>
     /// <param name="data">The font file.</param>
+    /// <param name="faceIndex">
+    /// The face to open in a font collection (a <c>.ttc</c> file, such as several Windows Japanese fonts); 0 for a single font.
+    /// </param>
     /// <exception cref="ArgumentException">The bytes are empty.</exception>
-    /// <exception cref="InvalidOperationException">FreeType could not open the font.</exception>
-    public Font(ReadOnlySpan<byte> data)
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="faceIndex"/> is negative.</exception>
+    /// <exception cref="InvalidOperationException">FreeType could not open the font, or the file has no such face.</exception>
+    public Font(ReadOnlySpan<byte> data, int faceIndex = 0)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(faceIndex);
         if (data.IsEmpty)
         {
             throw new ArgumentException("The font data is empty.", nameof(data));
@@ -42,7 +47,7 @@ public sealed unsafe class Font : IDisposable
 
         // The array is pinned for its lifetime, so the pointer the libraries keep stays valid until Dispose.
         _blob = HarfBuzz.BlobCreate(pointer, (uint)_data.Length, HarfBuzz.MemoryModeReadOnly, null, null);
-        _face = HarfBuzz.FaceCreate(_blob, 0);
+        _face = HarfBuzz.FaceCreate(_blob, (uint)faceIndex);
         UnitsPerEm = (int)HarfBuzz.FaceGetUpem(_face);
         _font = HarfBuzz.FontCreate(_face);
 
@@ -50,7 +55,7 @@ public sealed unsafe class Font : IDisposable
         HarfBuzz.FontSetScale(_font, UnitsPerEm, UnitsPerEm);
 
         FreeType.FaceRec* face;
-        int error = FreeType.NewMemoryFace(FreeTypeLibrary.Handle, pointer, new CLong(_data.Length), new CLong(0), &face);
+        int error = FreeType.NewMemoryFace(FreeTypeLibrary.Handle, pointer, new CLong(_data.Length), new CLong(faceIndex), &face);
         if (error != 0)
         {
             Dispose();
@@ -73,7 +78,15 @@ public sealed unsafe class Font : IDisposable
     /// <summary>
     /// Gets the HarfBuzz font, scaled to font units.
     /// </summary>
-    internal nint HarfBuzzFont => _font;
+    /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
+    internal nint HarfBuzzFont
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_font == 0, this);
+            return _font;
+        }
+    }
 
     /// <summary>
     /// Releases the HarfBuzz and FreeType objects.

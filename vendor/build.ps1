@@ -31,8 +31,8 @@ function Get-Locks {
     Get-Content (Join-Path $vendor 'versions.lock') |
         Where-Object { $_ -notmatch '^\s*(#|$)' } |
         ForEach-Object {
-            $name, $version, $url, $sha = -split $_
-            [pscustomobject]@{ Name = $name; Version = $version; Url = $url; Sha256 = $sha.ToLowerInvariant() }
+            $name, $version, $sha, $urls = -split $_
+            [pscustomobject]@{ Name = $name; Version = $version; Sha256 = $sha.ToLowerInvariant(); Urls = @($urls) }
         }
 }
 
@@ -54,11 +54,22 @@ function Invoke-InMsvc([string]$vcvars, [string]$command) {
 
 function Get-Source($lock) {
     New-Item -ItemType Directory -Force $cache | Out-Null
-    $archive = Join-Path $cache ([IO.Path]::GetFileName($lock.Url))
+    $archive = Join-Path $cache ([IO.Path]::GetFileName($lock.Urls[0]))
     if (-not (Test-Path $archive)) {
-        Write-Host "==> Download $($lock.Name) $($lock.Version)"
-        Invoke-WebRequest -Uri $lock.Url -OutFile "$archive.part"
-        Move-Item "$archive.part" $archive
+        # The first URL that answers; the SHA-256 below checks whichever served it.
+        foreach ($url in $lock.Urls) {
+            Write-Host "==> Download $($lock.Name) $($lock.Version) from $url"
+            try {
+                Invoke-WebRequest -Uri $url -OutFile "$archive.part"
+                Move-Item "$archive.part" $archive
+                break
+            }
+            catch {
+                Write-Host "    failed: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not (Test-Path $archive)) { throw "No URL of $($lock.Name) in vendor/versions.lock answered." }
     }
 
     $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()

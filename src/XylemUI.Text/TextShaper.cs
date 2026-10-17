@@ -22,11 +22,12 @@ public sealed unsafe class TextShaper : IDisposable
     /// <param name="font">The font.</param>
     /// <param name="text">The text, UTF-16.</param>
     /// <returns>The glyphs in visual order (left to right). The span is valid until the next call.</returns>
-    /// <exception cref="ObjectDisposedException">The shaper was disposed.</exception>
+    /// <exception cref="ObjectDisposedException">The shaper or the font was disposed.</exception>
     public ReadOnlySpan<ShapedGlyph> Shape(Font font, ReadOnlySpan<char> text)
     {
         ArgumentNullException.ThrowIfNull(font);
         ObjectDisposedException.ThrowIf(_buffer == 0, this);
+        nint harfBuzzFont = font.HarfBuzzFont;
         if (text.IsEmpty)
         {
             return [];
@@ -41,7 +42,7 @@ public sealed unsafe class TextShaper : IDisposable
         // The script and language are guessed from the text; the direction is fixed to left to right for now.
         HarfBuzz.BufferGuessSegmentProperties(_buffer);
         HarfBuzz.BufferSetDirection(_buffer, HarfBuzz.DirectionLtr);
-        HarfBuzz.Shape(font.HarfBuzzFont, _buffer, null, 0);
+        HarfBuzz.Shape(harfBuzzFont, _buffer, null, 0);
 
         uint length;
         HarfBuzz.GlyphInfo* infos = HarfBuzz.BufferGetGlyphInfos(_buffer, &length);

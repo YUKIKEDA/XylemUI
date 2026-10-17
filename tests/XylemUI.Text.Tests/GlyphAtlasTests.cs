@@ -125,6 +125,97 @@ public sealed class GlyphAtlasTests
     }
 
     /// <summary>
+    /// The cache is keyed by font, glyph, and size: the same glyph in another font or at another size is rasterized on its own,
+    /// into its own region.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two fonts opened from the same bytes (two ids) and an empty atlas.
+    ///
+    /// Steps:
+    /// - Get "H" in font A at 32 px, in font B at 32 px, and in font A at 16 px; then all three again.
+    ///
+    /// Expected:
+    /// - Three rasterizations and three different regions; the repeated requests rasterize nothing and return the same regions.
+    /// </remarks>
+    [Fact]
+    public void TryGet_SameGlyphInAnotherFontOrSize_IsCachedSeparately()
+    {
+        using Font a = TestFont.Open();
+        using Font b = TestFont.Open();
+        var atlas = new GlyphAtlas(256, 256);
+
+        Assert.True(atlas.TryGet(a, GlyphH, 32, out AtlasGlyph a32));
+        Assert.True(atlas.TryGet(b, GlyphH, 32, out AtlasGlyph b32));
+        Assert.True(atlas.TryGet(a, GlyphH, 16, out AtlasGlyph a16));
+        Assert.Equal(3, atlas.RasterizeCount);
+        Assert.Equal(3, new[] { (a32.X, a32.Y), (b32.X, b32.Y), (a16.X, a16.Y) }.Distinct().Count());
+
+        Assert.True(atlas.TryGet(a, GlyphH, 32, out AtlasGlyph a32Again));
+        Assert.True(atlas.TryGet(b, GlyphH, 32, out AtlasGlyph b32Again));
+        Assert.True(atlas.TryGet(a, GlyphH, 16, out AtlasGlyph a16Again));
+        Assert.Equal(3, atlas.RasterizeCount);
+        Assert.Equal((a32, b32, a16), (a32Again, b32Again, a16Again));
+    }
+
+    /// <summary>
+    /// A glyph with no ink takes no room in the atlas: the next glyph lands where it would have without it. It is rasterized
+    /// once, like any glyph.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and an empty atlas.
+    ///
+    /// Steps:
+    /// - Get the space (glyph 1) at 32 px twice, then "H" at 32 px.
+    ///
+    /// Expected:
+    /// - The space has a 0 x 0 region and was rasterized once; "H" is at (1, 1), the first spot after the padding, as in an
+    ///   empty atlas.
+    /// </remarks>
+    [Fact]
+    public void TryGet_BlankGlyph_TakesNoRoom()
+    {
+        using Font font = TestFont.Open();
+        var atlas = new GlyphAtlas(256, 256);
+
+        Assert.True(atlas.TryGet(font, 1, 32, out AtlasGlyph space));
+        Assert.True(atlas.TryGet(font, 1, 32, out _));
+        Assert.True(atlas.TryGet(font, GlyphH, 32, out AtlasGlyph h));
+
+        Assert.Equal((0, 0), (space.Width, space.Height));
+        Assert.Equal(2, atlas.RasterizeCount);
+        Assert.Equal((1, 1), (h.X, h.Y));
+    }
+
+    /// <summary>
+    /// A glyph wider than the atlas is refused without moving to a new row, so the row it was tried on stays usable.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and a 16 x 64 atlas.
+    ///
+    /// Steps:
+    /// - Get "日" at 32 px (22 px wide, wider than the atlas), twice; then "." at 12 px.
+    ///
+    /// Expected:
+    /// - Both requests for "日" return false; "." lands on the first row (y = 1, the padding).
+    /// </remarks>
+    [Fact]
+    public void TryGet_GlyphWiderThanTheAtlas_IsRefusedWithoutWastingTheRow()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var atlas = new GlyphAtlas(16, 64);
+        uint period = shaper.Shape(font, ".")[0].GlyphId;
+
+        Assert.False(atlas.TryGet(font, GlyphNichi, 32, out _));
+        Assert.False(atlas.TryGet(font, GlyphNichi, 32, out _));
+        Assert.True(atlas.TryGet(font, period, 12, out AtlasGlyph dot));
+        Assert.Equal(1, dot.Y);
+    }
+
+    /// <summary>
     /// A full atlas refuses a new glyph, and the glyphs already in it still come back.
     /// </summary>
     /// <remarks>

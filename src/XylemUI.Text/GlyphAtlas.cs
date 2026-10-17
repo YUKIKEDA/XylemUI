@@ -81,8 +81,11 @@ public sealed unsafe class GlyphAtlas
     /// <param name="glyphId">The glyph, from shaping.</param>
     /// <param name="pixelSize">The size in pixels per em.</param>
     /// <param name="glyph">The glyph's region and bearings.</param>
-    /// <returns><see langword="false"/> when the glyph is new and the atlas has no room for it.</returns>
+    /// <returns>
+    /// <see langword="false"/> when the glyph is new and the atlas has no room for it. A glyph with no ink always fits.
+    /// </returns>
     /// <exception cref="InvalidOperationException">FreeType could not render the glyph.</exception>
+    /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
     public bool TryGet(Font font, uint glyphId, int pixelSize, out AtlasGlyph glyph)
     {
         ArgumentNullException.ThrowIfNull(font);
@@ -134,6 +137,21 @@ public sealed unsafe class GlyphAtlas
     // Shelf packing: the next spot on the current row, or the start of a new row below it.
     private bool TryPlace(int width, int height, out int x, out int y)
     {
+        x = 0;
+        y = 0;
+
+        // A glyph with no ink (a space) needs no room, so it fits even in a full atlas.
+        if (width == 0 || height == 0)
+        {
+            return true;
+        }
+
+        // Too wide for any row: refuse before moving to a new row, which would waste the rest of the current one.
+        if (width + (2 * Padding) > Width)
+        {
+            return false;
+        }
+
         if (_shelfX + width + Padding > Width)
         {
             _shelfX = Padding;
@@ -141,10 +159,8 @@ public sealed unsafe class GlyphAtlas
             _shelfHeight = 0;
         }
 
-        if (width + (2 * Padding) > Width || _shelfY + height + Padding > Height)
+        if (_shelfY + height + Padding > Height)
         {
-            x = 0;
-            y = 0;
             return false;
         }
 
