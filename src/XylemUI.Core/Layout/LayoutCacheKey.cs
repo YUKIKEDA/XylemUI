@@ -37,14 +37,13 @@ internal readonly record struct LayoutCacheKey(
         OptionalSize known = input.KnownDimensions;
         bool knownWidth = !float.IsNaN(known.Width);
         bool knownHeight = !float.IsNaN(known.Height);
-        LayoutStyle style = node.Layout.Style;
         return new(
             known,
             !knownWidth || input.KnownWidthIsDefinite,
             !knownHeight || input.KnownHeightIsDefinite,
             new OptionalSize(
-                style.UsesPercentOfParentWidth ? input.ParentSize.Width : float.NaN,
-                style.UsesPercentOfParentHeight ? input.ParentSize.Height : float.NaN
+                node.Layout.UsesPercentOfParentWidth ? input.ParentSize.Width : float.NaN,
+                node.Layout.UsesPercentOfParentHeight ? input.ParentSize.Height : float.NaN
             ),
             new AvailableSize(knownWidth ? default : input.Available.Width, knownHeight ? default : input.Available.Height),
             input.SizingMode,
@@ -53,6 +52,32 @@ internal readonly record struct LayoutCacheKey(
             node.Versions.DescendantLayout
         );
     }
+
+    /// <summary>
+    /// Returns a value indicating whether both keys stand for the same input and versions. Field by field, NaN equal to NaN:
+    /// the compiler's comparison went through a comparer per field and cost about 200 ns a hit in a scan of the measurement
+    /// cache (row L1a's layout scenario).
+    /// </summary>
+    public bool Equals(LayoutCacheKey other) =>
+        DescendantLayoutVersion == other.DescendantLayoutVersion
+        && LayoutStyleVersion == other.LayoutStyleVersion
+        && ChildStructureVersion == other.ChildStructureVersion
+        && Same(Known.Width, other.Known.Width)
+        && Same(Known.Height, other.Known.Height)
+        && Available.Width.Kind == other.Available.Width.Kind
+        && Available.Height.Kind == other.Available.Height.Kind
+        && Available.Width.Value == other.Available.Width.Value
+        && Available.Height.Value == other.Available.Height.Value
+        && Same(Parent.Width, other.Parent.Width)
+        && Same(Parent.Height, other.Parent.Height)
+        && KnownWidthIsDefinite == other.KnownWidthIsDefinite
+        && KnownHeightIsDefinite == other.KnownHeightIsDefinite
+        && SizingMode == other.SizingMode;
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(Known, Available, Parent, DescendantLayoutVersion, LayoutStyleVersion);
+
+    private static bool Same(float a, float b) => a == b || (float.IsNaN(a) && float.IsNaN(b));
 }
 
 /// <summary>

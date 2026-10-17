@@ -132,7 +132,8 @@ public sealed class InvalidationTests(UiThreadFixture ui)
     /// Expected:
     /// - The first pass finds no layout root and does not fail; both nodes stay dirty.
     /// - After appending, both are laid out: the leaf is 30 high, the box 40 x 20, and nothing is left dirty.
-    /// - A later style change on the box makes the box itself the layout root (it is attached now, and a boundary).
+    /// - A later style change on the box reaches the root: the box is a boundary for changes inside it, but its own style is
+    ///   read by its parent (S6b stopped such a change at the box, and the parent never saw the new size).
     /// </remarks>
     [Fact]
     public void DetachedNode_StyledBeforeAppend_IsLaidOutOnlyWhenAttached() =>
@@ -161,9 +162,11 @@ public sealed class InvalidationTests(UiThreadFixture ui)
             Assert.True(IsLayoutClean(tree, box));
             Assert.Empty(tree.LayoutRoots);
 
-            // Appended after the root was set, the box is attached: a change to it now stops at it, a boundary.
+            // Appended after the root was set, the box is attached: a change of its style reaches its parent.
             tree.SetStyle(box, Fixed(50, 20));
-            Assert.Equal(box, Assert.Single(tree.LayoutRoots).Node);
+            Assert.Equal([box, root], tree.LayoutRoots.Select(request => request.Node));
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.Equal(50, tree.GetRect(box).Width);
         });
 
     /// <summary>

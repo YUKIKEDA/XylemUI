@@ -179,21 +179,22 @@ internal static partial class LayoutEngine
         for (NodeHandle child = firstChild; !child.IsNone; i++)
         {
             ref UiNode c = ref tree.Nodes.GetRef(child);
-            LayoutStyle s = c.Layout.Style;
-            items[i] = new FlexItem
-            {
-                Node = child,
-                Size = StyleSize(in s, percentBasis),
-                Min = MinSize(in s, percentBasis),
-                Max = MaxSize(in s, percentBasis),
-                MainStyle = row ? s.Width : s.Height,
-                CrossStyle = row ? s.Height : s.Width,
-                FlexBasisStyle = s.FlexBasis,
-                Margin = EdgeInsets.ResolveOrZero(s.Margin, innerWidth),
-                PaddingBorder = PaddingBorder(in s, innerWidth),
-                FlexGrow = s.FlexGrow,
-                FlexShrink = s.FlexShrink,
-            };
+            ref readonly LayoutStyle s = ref c.Layout.Style;
+
+            // Field by field into the pooled item: the later steps write every other field before they read it.
+            ref FlexItem item = ref items[i];
+            item.Node = child;
+            item.Size = StyleSize(in s, percentBasis);
+            item.Min = MinSize(in s, percentBasis);
+            item.Max = MaxSize(in s, percentBasis);
+            item.MainStyle = row ? s.Width : s.Height;
+            item.CrossStyle = row ? s.Height : s.Width;
+            item.FlexBasisStyle = s.FlexBasis;
+            item.Margin = EdgeInsets.ResolveOrZero(s.Margin, innerWidth);
+            item.PaddingBorder = PaddingBorder(in s, innerWidth);
+            item.FlexGrow = s.FlexGrow;
+            item.FlexShrink = s.FlexShrink;
+            item.FlexBasisIsDefinite = false;
             child = c.NextSibling;
         }
     }
@@ -672,7 +673,7 @@ internal static partial class LayoutEngine
             {
                 // The maximum resolves against the container's content box here even where it is indefinite (Chrome and
                 // Firefox, as Taffy).
-                LayoutStyle s = tree.Nodes.GetRef(item.Node).Layout.Style;
+                ref readonly LayoutStyle s = ref tree.Nodes.GetRef(item.Node).Layout.Style;
                 float maxCross = MaxSize(in s, constants.NodeInnerSize).Cross(row);
                 item.TargetCross = Maybe.Clamp(Math.Max(lineCross - item.Margin.CrossSum(row), 0), item.Min.Cross(row), maxCross);
             }

@@ -75,15 +75,18 @@ internal static partial class LayoutEngine
         float widest = 0;
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
-            LayoutStyle childStyle = tree.Nodes.GetRef(child).Layout.Style;
+            ref readonly LayoutStyle childStyle = ref tree.Nodes.GetRef(child).Layout.Style;
             OptionalSize childKnown = StyleSize(in childStyle, contentBox)
                 .Clamp(MinSize(in childStyle, contentBox), MaxSize(in childStyle, contentBox));
             float marginSum = EdgeInsets.ResolveOrZero(childStyle.Margin, availableWidth.ToOption()).Horizontal;
+            float paddingBorderWidth = PaddingBorder(in childStyle, contentBox.Width).Horizontal;
+            AvailableSpace? keywordSpace = MeasureSpaceOf(childStyle.Width, float.NaN);
 
+            // The style is read above: no ref into the arena is held across the measuring run (design §2.5).
             float width = childKnown.Width;
             if (float.IsNaN(width))
             {
-                AvailableSpace childWidth = MeasureSpaceOf(childStyle.Width, float.NaN) ?? availableWidth.Minus(marginSum);
+                AvailableSpace childWidth = keywordSpace ?? availableWidth.Minus(marginSum);
                 width = MeasureChild(
                     tree,
                     child,
@@ -95,7 +98,6 @@ internal static partial class LayoutEngine
                 );
             }
 
-            float paddingBorderWidth = PaddingBorder(in childStyle, contentBox.Width).Horizontal;
             widest = Math.Max(widest, Math.Max(width, paddingBorderWidth) + marginSum);
         }
 

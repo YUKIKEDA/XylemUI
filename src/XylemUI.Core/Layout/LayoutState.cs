@@ -12,6 +12,17 @@ internal struct LayoutState
     public LayoutStyle Style;
 
     /// <summary>
+    /// The style uses a percentage of the parent's width (<see cref="LayoutStyle.UsesPercentOfParentWidth"/>), kept when the
+    /// style is set: every cache key reads it.
+    /// </summary>
+    public bool UsesPercentOfParentWidth;
+
+    /// <summary>
+    /// The style uses a percentage of the parent's height (<see cref="LayoutStyle.UsesPercentOfParentHeight"/>).
+    /// </summary>
+    public bool UsesPercentOfParentHeight;
+
+    /// <summary>
     /// Measures the content of a leaf; <see langword="null"/> for a leaf without content and for a container.
     /// </summary>
     public MeasureFunc? Measure;

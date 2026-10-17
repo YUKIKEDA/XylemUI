@@ -61,6 +61,8 @@ internal sealed class UiTree
             Layout = new LayoutState
             {
                 Style = style,
+                UsesPercentOfParentWidth = style.UsesPercentOfParentWidth,
+                UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
                 Measure = measure,
                 CacheGeneration = 1,
             },
@@ -99,14 +101,22 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Replaces the layout style of a node and marks it for layout.
+    /// Replaces the layout style of a node and marks it and its parent for layout: the parent's algorithm reads the style (the
+    /// size, the margins, the flex factors), so a boundary does not stop the change at the node itself.
     /// </summary>
     public void SetStyle(NodeHandle node, LayoutStyle style)
     {
         ref UiNode n = ref Nodes.GetRef(node);
         n.Layout.Style = style;
+        n.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
+        n.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
         n.Versions.LayoutStyle++;
+        NodeHandle parent = n.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);
+        if (!parent.IsNone)
+        {
+            Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        }
     }
 
     /// <summary>
