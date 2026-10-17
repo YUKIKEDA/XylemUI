@@ -52,36 +52,47 @@ function Invoke-InMsvc([string]$vcvars, [string]$command) {
     if ($LASTEXITCODE -ne 0) { throw "Failed: $command" }
 }
 
+function Get-Sha256([string]$path) { (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant() }
+
 function Get-Source($lock) {
     New-Item -ItemType Directory -Force $cache | Out-Null
-    $archive = Join-Path $cache ([IO.Path]::GetFileName($lock.Urls[0]))
+    # Named by library and version, not by URL, so that every URL saves to the same file (tar finds the compression itself).
+    $archive = Join-Path $cache "$($lock.Name)-$($lock.Version).source"
+    if ((Test-Path $archive) -and (Get-Sha256 $archive) -ne $lock.Sha256) {
+        Remove-Item $archive
+    }
+
     if (-not (Test-Path $archive)) {
-        # The first URL that answers; the SHA-256 below checks whichever served it.
+        # Each URL in turn, checked as soon as it is downloaded: a host that answers with an error page (or a wrong file) does
+        # not stop the next URL from being tried.
         foreach ($url in $lock.Urls) {
             Write-Host "==> Download $($lock.Name) $($lock.Version) from $url"
             try {
                 Invoke-WebRequest -Uri $url -OutFile "$archive.part"
-                Move-Item "$archive.part" $archive
-                break
             }
             catch {
                 Write-Host "    failed: $($_.Exception.Message)"
+                continue
             }
+
+            $actual = Get-Sha256 "$archive.part"
+            if ($actual -eq $lock.Sha256) {
+                Move-Item "$archive.part" $archive
+                break
+            }
+
+            Write-Host "    SHA-256 is $actual, not $($lock.Sha256) (vendor/versions.lock)"
+            Remove-Item "$archive.part"
         }
 
-        if (-not (Test-Path $archive)) { throw "No URL of $($lock.Name) in vendor/versions.lock answered." }
-    }
-
-    $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
-    if ($actual -ne $lock.Sha256) {
-        Remove-Item $archive
-        throw "SHA-256 of $archive is $actual, not $($lock.Sha256) (vendor/versions.lock)."
+        if (-not (Test-Path $archive)) { throw "No URL of $($lock.Name) in vendor/versions.lock gave the file with its SHA-256." }
     }
 
     $source = Join-Path $work "src/$($lock.Name)-$($lock.Version)"
     if (-not (Test-Path $source)) {
         New-Item -ItemType Directory -Force (Join-Path $work 'src') | Out-Null
-        tar -xf $archive -C (Join-Path $work 'src')
+        # Windows's own tar (bsdtar): a GNU tar first on PATH (Git's) reads `C:` in a path as a remote host.
+        & (Join-Path $env:SystemRoot 'System32/tar.exe') -xf $archive -C (Join-Path $work 'src')
         if ($LASTEXITCODE -ne 0) { throw "Could not extract $archive." }
     }
 
