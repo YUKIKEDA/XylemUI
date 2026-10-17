@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.CompilerServices;
 
 namespace XylemUI;
 
@@ -206,6 +207,7 @@ internal static partial class LayoutEngine
         return new AvailableSize(InnerSpace(known.Width, outer.Width, inset.Width), InnerSpace(known.Height, outer.Height, inset.Height));
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static AvailableSpace InnerSpace(float known, AvailableSpace outer, float inset) =>
         float.IsNaN(known) ? outer.Minus(inset).AtLeast(0) : AvailableSpace.Definite(Math.Max(0, known - inset));
 
@@ -685,11 +687,13 @@ internal static partial class LayoutEngine
     }
 
     // CSS Flexbox §9.8: an item's main size is definite when the container's is or its basis is.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsKnownMainDefinite(in FlexConstants constants, in FlexItem item) =>
         constants.HasDefiniteMainSize || item.FlexBasisIsDefinite;
 
     // A stretched item's cross size is definite, and so is a fixed one; a column item's fit-content width is definite when the
     // container's cross space is.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsKnownCrossDefinite(in FlexConstants constants, in FlexItem item) =>
         item.IsStretched || !float.IsNaN(item.Size.Cross(constants.Row)) || (!constants.Row && constants.CrossAvailableSpaceIsDefinite);
 

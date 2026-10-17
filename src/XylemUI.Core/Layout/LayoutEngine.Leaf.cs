@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 internal static partial class LayoutEngine
@@ -43,8 +45,10 @@ internal static partial class LayoutEngine
 
     // The space for the content box: a definite border-box space clamped by the node's minimum and maximum, less its padding
     // and border. A content constraint stays.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static AvailableSpace ContentSpace(AvailableSpace space, float min, float max, float inset) =>
         space.IsDefinite ? AvailableSpace.Definite(Maybe.Clamp(space.Value, min, max) - inset) : space;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Size ToSize(OptionalSize size) => new(size.Width, size.Height);
 }

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace XylemUI;
@@ -270,20 +271,25 @@ internal static partial class LayoutEngine
     }
 
     // The width and the height of the style against the parent's content box.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize StyleSize(in LayoutStyle style, OptionalSize parent) =>
         new(style.Width.Resolve(parent.Width), style.Height.Resolve(parent.Height));
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize MinSize(in LayoutStyle style, OptionalSize parent) =>
         new(style.MinWidth.Resolve(parent.Width), style.MinHeight.Resolve(parent.Height));
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize MaxSize(in LayoutStyle style, OptionalSize parent) =>
         new(style.MaxWidth.Resolve(parent.Width), style.MaxHeight.Resolve(parent.Height));
 
     // The padding and the border, which CSS resolves against the parent's width on every side.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Edges PaddingBorder(in LayoutStyle style, float parentWidth) =>
         EdgeInsets.ResolveOrZero(style.Padding, parentWidth) + EdgeInsets.ResolveOrZero(style.Border, parentWidth);
 
     // The size an axis has when its minimum is at least its maximum: the minimum wins (CSS).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize MinMaxDefinite(OptionalSize min, OptionalSize max) =>
         new(
             !float.IsNaN(min.Width) && !float.IsNaN(max.Width) && max.Width <= min.Width ? min.Width : float.NaN,
@@ -292,6 +298,7 @@ internal static partial class LayoutEngine
 
     // A size keyword of a style resolved against the space it may stretch into (Taffy's resolve_sizing_keyword): the
     // available space to measure the node under, or none for a length that is not a content keyword.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static AvailableSpace? MeasureSpaceOf(Length length, float stretch) =>
         length.Kind switch
         {
