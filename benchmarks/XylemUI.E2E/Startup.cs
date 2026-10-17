@@ -74,6 +74,14 @@ internal static class Startup
         _ = Win32MessageLoop.Run();
         Win32MessageLoop.SetFrameClock(0);
 
+        if (idle)
+        {
+            File.WriteAllText(
+                OutputOf(Environment.ProcessId),
+                $"{{\"displayed_qpc\":{displayed.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}"
+            );
+        }
+
         using var report = new Report("startup-child");
         report.Number("main_qpc", main);
         report.Number("first_present_call_qpc", firstCall);
@@ -88,6 +96,33 @@ internal static class Startup
 
         return 0;
     }
+
+    // The check of the startup measurement from outside (M1a review): in the same run, the compositor's present of the first
+    // desktop image with the marker (DisplayWatch) against the refresh the app's frame statistics report for its first frame.
+    public static int Check(int runs)
+    {
+        var differences = new List<double>();
+        for (int i = 0; i < runs; i++)
+        {
+            _ = DisplayWatch.LaunchToMarkerOnScreen(Environment.ProcessPath!, "startup-child --idle", out Process process, out long seen);
+            int id = process.Id;
+            using (process)
+            {
+                process.WaitForExit();
+            }
+
+            using JsonDocument child = JsonDocument.Parse(File.ReadAllText(OutputOf(id)));
+            long displayed = child.RootElement.GetProperty("displayed_qpc").GetInt64();
+            File.Delete(OutputOf(id));
+            differences.Add(Stopwatch.GetElapsedTime(displayed, seen).TotalMilliseconds);
+        }
+
+        using var report = new Report("startup-check");
+        report.Series("desktop_present_minus_frame_statistics_ms", differences);
+        return 0;
+    }
+
+    private static string OutputOf(int processId) => Path.Combine(Path.GetTempPath(), $"xylemui-e2e-child-{processId}.json");
 
     private static TimeSpan _idleCpu;
     private static long _workingSet;

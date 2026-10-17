@@ -1,5 +1,7 @@
-# Only the source of the comparison app is committed; build.ps1 generates the rest (flutter create, the copied font).
+# Only the source of the comparison app and its lock file are committed; build.ps1 generates the rest (flutter create, the
+# copied font).
 /*
 !/.gitignore
 !/lib/
 !/pubspec.yaml
+!/pubspec.lock

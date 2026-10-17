@@ -4,6 +4,7 @@
 // Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
 //   idle [runs]                CPU time and memory of 10 idle seconds after the first frame
+//   startup-check [runs]       in one run, the desktop image with the marker against the frame statistics (the outside check)
 //   frames [frames] [--warp]   CPU stages, GPU time, present latency, intervals, missed frames of the scene
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
@@ -12,7 +13,7 @@
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
 //   startup-child [--idle]     the child of startup and idle
-//   app [--static]             the scene as an app, animated or drawn once, for `external`
+//   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
 using System.Globalization;
 using XylemUI.E2E;
@@ -26,6 +27,7 @@ return scenario switch
     "startup" => Startup.Launch(Number(1, 10)),
     "startup-child" => Startup.Child(idle: args.Contains("--idle")),
     "idle" => Startup.Idle(Number(1, 3)),
+    "startup-check" => Startup.Check(Number(1, 5)),
     "frames" => Frames.Run(Number(1, 600), heavy: 0, warp: args.Contains("--warp")),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
@@ -33,7 +35,7 @@ return scenario switch
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
     "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
     "scope-cost" => ScopeCost.Run(),
-    "app" => External.App(isStatic: args.Contains("--static")),
+    "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
     "external" => External.Run(args),
     _ => Unknown(scenario),
 };

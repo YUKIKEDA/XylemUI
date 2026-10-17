@@ -10,7 +10,8 @@ import statistics
 import sys
 
 FIGURES = [
-    ("launch_to_display_ms_p50", "Startup: launch to the marker on screen (ms)"),
+    ("launch_to_screen_ms_p50", "Startup: launch to the marker on the screen (ms)"),
+    ("launch_to_content_ms_p50", "Startup: launch to the marker in the window's content (ms)"),
     ("shipped_bytes", "Size: files the app needs (MB)"),
     ("idle_cpu_ms", "Idle: CPU time in 10 s (ms)"),
     ("idle_working_set_mb", "Idle: working set (MB)"),

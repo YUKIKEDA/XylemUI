@@ -4,7 +4,7 @@ using static TerraFX.Interop.DirectX.D3D11_QUERY;
 namespace XylemUI.Rendering.D3D11;
 
 /// <summary>
-/// Measures how long the GPU takes for the draws of a frame, with timestamp queries read some frames later without waiting
+/// Measures how long the GPU takes for the work of a frame (the uploads and the draws), with timestamp queries read some frames later without waiting
 /// (design §11.3, GPU execution time; roadmap row M1a). For the benchmarks; off unless the renderer is asked to measure.
 /// </summary>
 /// <remarks>

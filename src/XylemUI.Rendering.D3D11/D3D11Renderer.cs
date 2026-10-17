@@ -284,13 +284,17 @@ public sealed unsafe class D3D11Renderer : IDisposable
             ThrowNoRenderTarget();
         }
 
+        if (atlas is null && list.GlyphCount > 0)
+        {
+            throw new ArgumentException("The display list has glyph runs; pass the glyph atlas they were written from.", nameof(atlas));
+        }
+
+        // The GPU time covers all of this frame's GPU work that the renderer records: the atlas upload, the instance upload, the
+        // clear, and the draw (design §11.3, GPU execution time).
+        _gpuTimer?.Begin();
         if (atlas is not null)
         {
             UploadAtlas(atlas);
-        }
-        else if (list.GlyphCount > 0)
-        {
-            throw new ArgumentException("The display list has glyph runs; pass the glyph atlas they were written from.", nameof(atlas));
         }
 
         // A glyph run is one command and one instance per glyph, so this bounds the instances.
@@ -311,7 +315,6 @@ public sealed unsafe class D3D11Renderer : IDisposable
             MaxDepth = 1,
         };
         _context->RSSetViewports(1, &viewport);
-        _gpuTimer?.Begin();
         float* clear = stackalloc float[4] { clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f };
         _context->ClearRenderTargetView(target, clear);
         if (count == 0)
@@ -345,8 +348,14 @@ public sealed unsafe class D3D11Renderer : IDisposable
     public void Present()
     {
         UiThread.VerifyAccess();
-        LARGE_INTEGER called;
-        _ = QueryPerformanceCounter(&called);
+
+        // The time of the call, only while frames are measured (the frame path makes no call for the measurement otherwise).
+        LARGE_INTEGER called = default;
+        if (_gpuTimer is not null)
+        {
+            _ = QueryPerformanceCounter(&called);
+        }
+
         HRESULT result = _swapChain->Present(1, 0);
         HResults.ThrowIfFailed(result, "IDXGISwapChain::Present", RemovedReason(result));
         if (_gpuTimer is not null)

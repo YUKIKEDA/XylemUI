@@ -11,8 +11,9 @@ namespace XylemUI.E2E;
 //   external --presentmon <exe> --app <exe> [--app-args <args>] [--name <label>] [--runs N]
 //     (--app-args go before the app's own argument: "app" for XylemUI.E2E itself; --frames-args only for the frames, such as
 //     Avalonia's --redirection)
-//     startup: launch to the scene's marker rectangle on the screen (ScreenWatch), runs times, with the app's `--static`
-//              argument (it draws once and stays idle).
+//     startup: launch to the scene's marker rectangle on the screen (DisplayWatch: the compositor's present of the desktop
+//              image that shows it), and to the window's composed content (ScreenWatch), runs times each, with the app's
+//              `--static` argument (it draws once and stays idle). --frames-only skips startup and idle.
 //     idle:    10 s of the static app, 3 s after launch: CPU time, working set, private bytes.
 //     frames:  10 s of the animated app (no argument), traced from 2 s after its launch: MsUntilDisplayed, MsGPUBusy, the
 //              interval between presents and between display changes, and refreshes missed (a display change more than 1.5
@@ -34,26 +35,18 @@ internal static class External
         _ = Directory.CreateDirectory(work);
         try
         {
-            var startup = new List<double>();
-            for (int i = 0; i < runs; i++)
+            bool framesOnly = args.Contains("--frames-only");
+            var toScreen = new List<double>();
+            var toContent = new List<double>();
+            for (int i = 0; i < (framesOnly ? 0 : runs); i++)
             {
-                double? shown = ScreenWatch.LaunchToMarker(app, staticArgs, out Process process);
-                using (process)
-                {
-                    Thread.Sleep(500);
-                    Kill(process);
-                }
-
-                if (shown is double milliseconds)
-                {
-                    startup.Add(milliseconds);
-                }
-
-                // A pause between launches, so that one app's teardown does not overlap the next launch.
-                Thread.Sleep(1_000);
+                // To the screen (the definition of the startup target), then to the window's composed content (robust when the
+                // window is covered), each from its own launch.
+                Measure(toScreen, DisplayWatch.LaunchToMarkerOnScreen(app, staticArgs, out Process screen), screen);
+                Measure(toContent, ScreenWatch.LaunchToMarker(app, staticArgs, out Process content), content);
             }
 
-            (double cpu, double workingSet, double privateBytes) = Idle(app, staticArgs);
+            (double cpu, double workingSet, double privateBytes) = framesOnly ? (0, 0, 0) : Idle(app, staticArgs);
             string framesCsv = Path.Combine(work, "frames.csv");
 
             // The app runs for 2 s before the trace starts and names it by animated id: a PresentMon started by this animated
@@ -74,11 +67,16 @@ internal static class External
                 report.Number("frames_app_exited_early", exitedEarly ? 1 : 0);
                 report.Number("frames_app_exit_code", earlyExitCode);
                 report.Number("frames_app_pid", animated.Id);
-                report.Series("launch_to_display_ms", startup);
+                report.Series("launch_to_screen_ms", toScreen);
+                report.Series("launch_to_content_ms", toContent);
                 report.Number("startup_runs", runs);
-                report.Number("idle_cpu_ms", cpu);
-                report.Number("idle_working_set_mb", workingSet);
-                report.Number("idle_private_mb", privateBytes);
+                if (!framesOnly)
+                {
+                    report.Number("idle_cpu_ms", cpu);
+                    report.Number("idle_working_set_mb", workingSet);
+                    report.Number("idle_private_mb", privateBytes);
+                }
+
                 report.Series("until_displayed_ms", untilDisplayed);
                 report.Series("gpu_busy_ms", gpuBusy);
                 report.Series("between_presents_ms", betweenPresents);
@@ -112,16 +110,29 @@ internal static class External
         }
     }
 
-    // The scene as an app, for the external measurements of XylemUI itself: animated, or drawn once with --static.
-    public static int App(bool isStatic)
+    // The scene as an app, for the external measurements of XylemUI itself: animated, or drawn once with --static. With
+    // `period` > 0 it draws one frame every `period` ms at most (waiting on the UI thread before it draws), to compare at another
+    // framework's frame rate (M1a: Flutter drew the scene every 46 ms on the measuring machine, whatever the scene).
+    public static int App(bool isStatic, int period)
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E app");
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         int frame = 0;
         Action? step = null;
+        long last = 0;
         step = () =>
         {
+            if (period > 0 && last != 0)
+            {
+                double left = period - Stopwatch.GetElapsedTime(last).TotalMilliseconds;
+                if (left > 0)
+                {
+                    Thread.Sleep(TimeSpan.FromMilliseconds(left));
+                }
+            }
+
+            last = Stopwatch.GetTimestamp();
             scene.Build(frame++);
             scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
             if (!isStatic)
@@ -132,6 +143,23 @@ internal static class External
         scene.Window.Closed += (_, _) => Win32MessageLoop.Quit();
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         return Win32MessageLoop.Run();
+    }
+
+    private static void Measure(List<double> into, double? milliseconds, Process process)
+    {
+        using (process)
+        {
+            Thread.Sleep(500);
+            Kill(process);
+        }
+
+        if (milliseconds is double value)
+        {
+            into.Add(value);
+        }
+
+        // A pause between launches, so that one app's teardown does not overlap the next launch.
+        Thread.Sleep(1_000);
     }
 
     private static (double CpuMs, double WorkingSetMb, double PrivateMb) Idle(string app, string staticArgs)
