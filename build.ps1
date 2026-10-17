@@ -18,6 +18,10 @@ $solution = "XylemUI.slnx"
 
 Invoke-Step "Restore local tools" { dotnet tool restore }
 Invoke-Step "Check format (CSharpier)" { dotnet csharpier check . }
+# HarfBuzz and FreeType from source (vendor/versions.lock); a no-op when they are up to date, and on Linux and macOS until
+# P04 / P06. The script throws on a failure, which stops this one.
+Write-Host "==> Native libraries (vendor/build.ps1)"
+& ./vendor/build.ps1
 Invoke-Step "Restore" { dotnet restore $solution }
 
 # Test projects follow the tests/*.Tests naming (docs/conventions.md).

@@ -30,9 +30,10 @@ BenchmarkDotNet.Artifacts/
 *.nupkg
 *.snupkg
 
-## Native dependencies built locally (versions are pinned in vendor/versions.lock)
-vendor/*/build/
-vendor/*/install/
+## Native dependencies built by vendor/build.ps1 (versions are pinned in vendor/versions.lock)
+vendor/.cache/
+vendor/.build/
+vendor/out/
 
 ## Profiler output
 *.diagsession

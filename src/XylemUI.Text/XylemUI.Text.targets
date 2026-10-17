@@ -1,0 +1,24 @@
+<Project>
+  <!--
+    Imported by an app that references XylemUI.Text. Under NativeAOT, HarfBuzz and FreeType are linked into the executable: the
+    P/Invokes resolve directly to the static libraries (DirectPInvoke + NativeLibrary, design §9), and the DLLs the JIT uses are
+    left out of the published files, so the app ships as one executable. vendor/build.ps1 makes the libraries.
+  -->
+  <PropertyGroup>
+    <XylemUITextNativeDirectory>$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\</XylemUITextNativeDirectory>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <DirectPInvoke Include="harfbuzz" />
+    <DirectPInvoke Include="freetype" />
+    <NativeLibrary Include="$(XylemUITextNativeDirectory)static\harfbuzz.lib" />
+    <NativeLibrary Include="$(XylemUITextNativeDirectory)static\freetype.lib" />
+  </ItemGroup>
+  <Target Name="XylemUILeaveOutTextDlls" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishAot)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish
+        Remove="@(ResolvedFileToPublish)"
+        Condition="'%(Filename)%(Extension)' == 'harfbuzz.dll' or '%(Filename)%(Extension)' == 'freetype.dll'"
+      />
+    </ItemGroup>
+  </Target>
+</Project>

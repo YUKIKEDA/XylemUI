@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Text\XylemUI.Text.csproj" />
+  </ItemGroup>
+  <!-- The test font, inside the executable: the sample needs no file next to it. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\tests\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" LogicalName="XylemUITestSans.ttf" />
+  </ItemGroup>
+  <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
+</Project>

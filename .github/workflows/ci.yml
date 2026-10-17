@@ -44,5 +44,15 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj', '.config/dotnet-tools.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      # The native libraries built by vendor/build.ps1 (Windows only until P04 / P06). The key covers the pinned versions and
+      # the script, so a change to either builds them again.
+      - uses: actions/cache@v6
+        if: runner.os == 'Windows'
+        with:
+          path: |
+            vendor/.cache
+            vendor/out
+          key: vendor-${{ runner.os }}-${{ hashFiles('vendor/versions.lock', 'vendor/build.ps1') }}
+
       - name: Gate
         run: ./build.ps1
