@@ -70,7 +70,7 @@ public sealed class FontTests
 
         font.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(() => shaper.Shape(font, "A").ToArray());
+        Assert.Throws<ObjectDisposedException>(() => shaper.Shape(font, "A", TestFont.Japanese).ToArray());
         Assert.Throws<ObjectDisposedException>(() => atlas.TryGet(font, 41, 32, out _));
     }
 }

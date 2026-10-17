@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Text\XylemUI.Text.csproj" />
+    <!-- DisplayList.DrawText (Core) puts shaped text in the atlas; its tests need the native libraries, so they are here. -->
+    <ProjectReference Include="..\..\src\XylemUI.Core\XylemUI.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />

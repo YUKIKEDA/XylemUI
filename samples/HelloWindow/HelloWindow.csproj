@@ -8,4 +8,9 @@
     <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
   </ItemGroup>
+  <!-- The test font, inside the executable: the sample needs no file next to it. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\tests\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" LogicalName="XylemUITestSans.ttf" />
+  </ItemGroup>
+  <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
 </Project>

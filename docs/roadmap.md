@@ -18,10 +18,10 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** S8a 完了。次は S8b
-- **作業中:** なし
-- **ブランチ:** —
-- **Issue:** —
+- **フェーズ:** S8b レビュー中
+- **作業中:** S8b
+- **ブランチ:** `chore/51-s8b-glyph-runs`
+- **Issue:** [#51](https://github.com/YUKIKEDA/XylemUI/issues/51)
 
 ## ツールチェーン
 
@@ -47,9 +47,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | done        | [#30](https://github.com/YUKIKEDA/XylemUI/issues/30) | 4問 Yes。詳細は Issue |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | done        | [#34](https://github.com/YUKIKEDA/XylemUI/issues/34) | 4問 Yes。詳細は Issue |
 | S8a | テキストの CPU 側: HarfBuzz / FreeType のソースからのビルドと静的リンク（NativeAOT の単一 exe）、`XylemUI.Text`、1 フォント・LTR・1 行のシェーピング、ラスタライズ、CPU のグリフアトラス | done        | [#44](https://github.com/YUKIKEDA/XylemUI/issues/44) | 4問 Yes。詳細は Issue |
-| S8b | テキストの GPU 側: アトラスのページ（テクスチャ）と更新、ページ + プロット単位の LRU の追い出し（§5.0.2）、GlyphRun コマンドとシェーダ（グレースケールの AA、透過の合成。UI の言語を `hb_buffer_set_language` で明示して渡す）。使用中のアトラスを更新しても画素が正しいことの確認。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | not-started | —     |                                            |
+| S8b | テキストの GPU 側: アトラスのページ（テクスチャ）と更新、ページ + プロット単位の LRU の追い出し（§5.0.2）、GlyphRun コマンドとシェーダ（グレースケールの AA、透過の合成。UI の言語を `hb_buffer_set_language` で明示して渡す）。使用中のアトラスを更新しても画素が正しいことの確認。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | in-progress | [#51](https://github.com/YUKIKEDA/XylemUI/issues/51) |                                            |
 | S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測。Computed の所有（Scope か、読み手ゼロで自動解除か） | not-started | —     |                                            |
-| M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測）。リサイズ時の layout をテキスト込みで再計測（S6b は 10,101 ノードで約 1.6 ms、テキスト無し） | not-started | —     | §11.3                                      |
+| M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測）。リサイズ時の layout をテキスト込みで再計測（S6b は 10,101 ノードで約 1.6 ms、テキスト無し）。初めて出る文字が多いフレームのラスタライズ（S8b で最大 184 グリフ、約 3.7 ms、§5.0.3） | not-started | —     | §11.3                                      |
 | L1  | Block/Flex の残り（wrap、justify / align、gap、`Percent` / `MinContent` / `MaxContent`）              | not-started | —     | §3.2                                       |
 | F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | not-started | —     | §4.5                                       |
 | V1  | Button / Text / Column がクリックできる                                                               | not-started | —     |                                            |
@@ -57,8 +57,10 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |
 | T2  | サブピクセル（ClearType 風）のアンチエイリアス。需要と DPI の扱いを見て決める（v1 はグレースケール、§5.0.3） | not-started | —     | §5.0.3                                     |
+| T3  | アトラスのプロットより大きいグリフ（既定 256 px 超）の描画。Skia のようにパスで描くか専用の領域を取るかを比べて決める（S8b では描かない、§5.0.3） | not-started | —     | §5.0.3                                     |
 | C0  | Core 抽出（`XylemUI.Core` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）。シェーダをビルド時に `fxc` でコンパイルして同梱（§5.2） | not-started | —     |                                            |
 | R1  | D3D11 のデバイス消失（`DXGI_ERROR_DEVICE_REMOVED` など）からの復帰。デバイスと GPU 資源を作り直す。WARP への切り替えをレンダラ全体の作成の失敗まで広げるか | not-started | —     | §5.0.2                                     |
+| R2  | GPU が重いときに UI スレッドを `Present` で止めない。`ID3D11Fence` のイベントをメッセージと多重待機し、前のフレームの GPU 完了を待ってから Present する。フレームの契約、フェンスのないデバイス、GPU 律速の間隔（S8b で 67 ms が素朴な実装で 77〜83 ms）を設計 PR から決める（§2.11） | not-started | —     | §2.11                                      |
 | P02 | v0.2 Grid / 仮想化 / IME / a11y 基本 / ポップアップ（オーバーレイ）/ `XylemUI.Testing`               | not-started | —     | §10.4                                      |
 | G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ       | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト                                                                            | not-started | —     | §10.4                                      |

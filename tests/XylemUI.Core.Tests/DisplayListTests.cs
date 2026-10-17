@@ -110,6 +110,131 @@ public sealed class DisplayListTests
     }
 
     /// <summary>
+    /// Glyph runs and rectangles read back in the order they were written, each run with its own glyphs and color; an empty run
+    /// appends nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An empty display list.
+    ///
+    /// Steps:
+    /// - Write a rectangle, a run of 2 glyphs in red, an empty run, a run of 1 glyph in blue, and a rectangle; read every command.
+    ///
+    /// Expected:
+    /// - 4 commands and 3 glyphs: FillRect, GlyphRun (the 2 glyphs, red), GlyphRun (the 1 glyph, blue), FillRect, then the end.
+    /// </remarks>
+    [Fact]
+    public void Reader_GlyphRunsBetweenRectangles_ReadBackInOrder()
+    {
+        var list = new DisplayList();
+        GlyphInstance[] first = [new(10, 20, 5, 6, 0, 1, 1), new(16, 20, 4, 6, 1, 7, 1)];
+        GlyphInstance[] second = [new(30, 40, 8, 9, 2, 3, 4)];
+        list.FillRect(0, 0, 1, 1, Red);
+        list.GlyphRun(first, Red);
+        list.GlyphRun([], Blue);
+        list.GlyphRun(second, Blue);
+        list.FillRect(2, 2, 1, 1, Blue);
+
+        Assert.Equal((4, 3), (list.CommandCount, list.GlyphCount));
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out CommandTag tag));
+        Assert.Equal(CommandTag.FillRect, tag);
+        Assert.Equal(new FillRectCommand(0, 0, 1, 1, Red), reader.ReadFillRect());
+        Assert.True(reader.TryNext(out tag));
+        Assert.Equal(CommandTag.GlyphRun, tag);
+        GlyphRunCommand run = reader.ReadGlyphRun();
+        Assert.Equal(Red, run.Color);
+        Assert.Equal(first, run.Glyphs.ToArray());
+        Assert.True(reader.TryNext(out tag));
+        Assert.Equal(CommandTag.GlyphRun, tag);
+        run = reader.ReadGlyphRun();
+        Assert.Equal(Blue, run.Color);
+        Assert.Equal(second, run.Glyphs.ToArray());
+        Assert.True(reader.TryNext(out tag));
+        Assert.Equal(new FillRectCommand(2, 2, 1, 1, Blue), reader.ReadFillRect());
+        Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
+    /// The glyph stream grows on its own, when a frame has more glyphs than it holds, and not again for the same frame.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list with room for 4 glyphs.
+    ///
+    /// Steps:
+    /// - Write a run of 3 glyphs, reset, write it again; then a run of 3 and a run of 6; reset and write those two again.
+    ///
+    /// Expected:
+    /// - No growth for the frames of 3. The frame of 3 + 6 grows the glyph stream once (to 9: twice 4 is less than needed), the
+    ///   repeated one not at all; its runs read back with their own glyphs.
+    /// </remarks>
+    [Fact]
+    public void GlyphRun_MoreGlyphsThanTheCapacity_GrowsOnce()
+    {
+        var list = new DisplayList(glyphCapacity: 4);
+        GlyphInstance[] three = [.. Enumerable.Range(0, 3).Select(i => new GlyphInstance(i, 0, 1, 1, 0, 0, 0))];
+        GlyphInstance[] six = [.. Enumerable.Range(10, 6).Select(i => new GlyphInstance(i, 0, 1, 1, 0, 0, 0))];
+        list.GlyphRun(three, Red);
+        list.Reset();
+        list.GlyphRun(three, Red);
+        Assert.Equal(0, list.GrowthCount);
+
+        list.Reset();
+        list.GlyphRun(three, Red);
+        list.GlyphRun(six, Blue);
+        list.Reset();
+        list.GlyphRun(three, Red);
+        list.GlyphRun(six, Blue);
+
+        Assert.Equal(1, list.GrowthCount);
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(three, reader.ReadGlyphRun().Glyphs.ToArray());
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(six, reader.ReadGlyphRun().Glyphs.ToArray());
+        Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
+    /// Reading a glyph run as a rectangle, or a rectangle as a glyph run, is an encoding bug and fails the invariant.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Debug build (release ends the process). A display list with a glyph run, and one with a rectangle.
+    ///
+    /// Steps:
+    /// - Read the glyph run with ReadFillRect; read the rectangle with ReadGlyphRun.
+    ///
+    /// Expected:
+    /// - <see cref="InvariantViolationException"/> both times.
+    /// </remarks>
+    [Fact]
+    public void Reader_WrongKind_FailsTheInvariant()
+    {
+#if !DEBUG
+        Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
+#endif
+        var glyphs = new DisplayList();
+        glyphs.GlyphRun([new GlyphInstance(0, 0, 1, 1, 0, 0, 0)], Red);
+        var rects = new DisplayList();
+        Write(rects, 1);
+
+        Assert.Throws<InvariantViolationException>(() =>
+        {
+            DisplayListReader reader = glyphs.GetReader();
+            _ = reader.TryNext(out _);
+            _ = reader.ReadFillRect();
+        });
+        Assert.Throws<InvariantViolationException>(() =>
+        {
+            DisplayListReader reader = rects.GetReader();
+            _ = reader.TryNext(out _);
+            _ = reader.ReadGlyphRun();
+        });
+    }
+
+    /// <summary>
     /// A color packs red into the lowest byte, and FromRgb reads a 0xRRGGBB value as opaque.
     /// </summary>
     /// <remarks>

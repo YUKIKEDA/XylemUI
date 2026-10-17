@@ -11,6 +11,10 @@
     <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The glyph tests draw with the text tests' font (tests/XylemUI.Text.Tests/Fonts/README.md). -->
+    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />
     <PackageReference Include="xunit.v3" />
   </ItemGroup>

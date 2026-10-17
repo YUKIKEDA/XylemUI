@@ -4,6 +4,10 @@
     <Description>The XylemUI engine: reactive runtime, invalidation, layout, and display lists.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Text runs are shaped and their glyphs put in the atlas while the display list is built (design §4.3, §5.0.3). -->
+    <ProjectReference Include="..\XylemUI.Text\XylemUI.Text.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Core.Tests" />
     <!-- Tests that need a real Win32 window or message loop (the render guard, the dispatcher in the loop) live there. -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />

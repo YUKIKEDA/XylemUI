@@ -1,20 +1,28 @@
-// Shows a Win32 window drawn with D3D11 (roadmap rows S1, Issue #4, and S7, Issue #34).
+// Shows a Win32 window drawn with D3D11 (roadmap rows S1, Issue #4, S7, Issue #34, and S8b, Issue #51).
 // With --auto, it checks with the public API and exits:
 //   S1: a compacting collection while the window is alive, then the close goes through the window procedure and the handle
 //       table; a Closed handler that throws is reported instead of crashing; a thread-pool thread touching the window is rejected.
 //   S7: 120 frames of 1,000 rectangles paced by the swap chain's waitable object; one pixel read back; the CPU time of building the
 //       display list, of Draw (read, upload, issue), and of Present, and the interval between frames, as medians; the time to
 //       create the renderer (device, swap chain, and the shaders compiled at run time).
+//   S8b: a line of text in every frame (shaped, put in the atlas, drawn as a glyph run); its first glyph has ink on the screen.
+// --heavy N adds N translucent rectangles over the whole window to every frame, to load the GPU (S8b: does Present block the UI
+// thread when a frame takes the GPU longer than the clock's 50 ms timeout?).
 // Without --auto, the rectangles move until the user closes the window; a resize redraws from WM_SIZE.
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime;
 using XylemUI;
 using XylemUI.Platform.Windows;
 using XylemUI.Rendering.D3D11;
+using XylemUI.Text;
 
 const int AutoFrames = 120;
 const int Rectangles = 1_000;
+const string Text = "Hello, World! 日本語のテキスト";
 bool auto = args.Contains("--auto");
+int heavyIndex = Array.IndexOf(args, "--heavy");
+int heavy = heavyIndex >= 0 && heavyIndex + 1 < args.Length ? int.Parse(args[heavyIndex + 1], System.Globalization.CultureInfo.InvariantCulture) : 0;
 
 UiThread.Initialize();
 
@@ -37,6 +45,14 @@ double createMilliseconds = Stopwatch.GetElapsedTime(createStart).TotalMilliseco
 var clear = Color.FromRgb(0x2A2A2A);
 var accent = Color.FromRgb(0x3366CC);
 var list = new DisplayList();
+using Stream fontStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
+byte[] fontBytes = new byte[fontStream.Length];
+fontStream.ReadExactly(fontBytes);
+using var font = new Font(fontBytes);
+using var shaper = new TextShaper();
+TextLanguage japanese = TextLanguage.FromTag("ja");
+var atlas = new GlyphAtlas();
+string ink = "not checked";
 var build = new List<double>();
 var draw = new List<double>();
 var present = new List<double>();
@@ -48,8 +64,8 @@ string pixel = "not checked";
 window.SynchronousRender = (_, newWidth, newHeight) =>
 {
     renderer.Resize(newWidth, newHeight);
-    BuildFrame(list, frames, newWidth, newHeight);
-    renderer.Render(list, clear);
+    BuildFrame(frames, newWidth, newHeight);
+    renderer.Render(list, clear, atlas);
 };
 
 Action? frame = null;
@@ -62,14 +78,15 @@ frame = () =>
     }
 
     lastFrame = t0;
-    BuildFrame(list, frames, renderer.Width, renderer.Height);
+    BuildFrame(frames, renderer.Width, renderer.Height);
     long t1 = Stopwatch.GetTimestamp();
-    renderer.Draw(list, clear);
+    renderer.Draw(list, clear, atlas);
     long t2 = Stopwatch.GetTimestamp();
-    if (frames == 5)
+    if (frames == 5 && heavy == 0)
     {
-        // The first rectangle of a frame always covers (0, 0) to (40, 40).
+        // The first rectangle of a frame always covers (0, 0) to (40, 40); the text is in the band above the moving rectangles.
         pixel = renderer.ReadPixel(20, 20) == accent ? "ok" : "wrong";
+        ink = HasInk(renderer, list, clear) ? "ok" : "wrong";
     }
 
     long t3 = Stopwatch.GetTimestamp();
@@ -122,7 +139,7 @@ Win32MessageLoop.SetFrameClock(0);
 string runtime = JitInfo.GetCompiledMethodCount() > 0 ? "jit" : "nativeaot";
 Console.WriteLine(
     $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} create={createMilliseconds:F1}ms frames={frames} pixel={pixel} "
-        + $"closed={closed} "
+        + $"text={ink} heavy={heavy} closed={closed} "
         + $"reported={reported} offThread={offThread} exit={exitCode}"
 );
 if (frames > 0)
@@ -132,12 +149,15 @@ if (frames > 0)
     );
 }
 
-bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && frames == AutoFrames && pixel == "ok"));
+bool checks = heavy > 0 || (pixel == "ok" && ink == "ok");
+bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && frames == AutoFrames && checks));
 return passed ? exitCode : 1;
 
-// 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0) so the pixel check knows its color.
-static void BuildFrame(DisplayList list, int frame, int width, int height)
+// 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0) so the pixel check knows its color. A
+// line of text in the band above them; `heavy` translucent rectangles over everything.
+void BuildFrame(int frame, int width, int height)
 {
+    atlas.BeginFrame();
     list.Reset();
     list.FillRect(0, 0, 40, 40, Color.FromRgb(0x3366CC));
     for (int i = 1; i < Rectangles; i++)
@@ -146,6 +166,45 @@ static void BuildFrame(DisplayList list, int frame, int width, int height)
         float y = 50 + ((i * 11) % Math.Max(1, height - 70));
         list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
     }
+
+    _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8));
+    for (int i = 0; i < heavy; i++)
+    {
+        list.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));
+    }
+}
+
+// Some pixel of the box of the frame's first glyph is far from the clear color.
+static bool HasInk(D3D11Renderer renderer, DisplayList list, Color clear)
+{
+    GlyphInstance glyph = default;
+    DisplayListReader reader = list.GetReader();
+    while (reader.TryNext(out CommandTag tag))
+    {
+        if (tag == CommandTag.FillRect)
+        {
+            _ = reader.ReadFillRect();
+        }
+        else
+        {
+            GlyphRunCommand run = reader.ReadGlyphRun();
+            glyph = glyph.Width == 0 ? run.Glyphs[0] : glyph;
+        }
+    }
+
+    for (int y = glyph.Y; y < glyph.Y + glyph.Height; y++)
+    {
+        for (int x = glyph.X; x < glyph.X + glyph.Width; x++)
+        {
+            Color color = renderer.ReadPixel(x, y);
+            if (Math.Abs(color.R - clear.R) > 100)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 static double Median(List<double> values)
