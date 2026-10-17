@@ -17,6 +17,8 @@ Formatting is CSharpier's (`.cursor/rules/engineering.mdc`). This rule covers wh
 - No `using` alias to shorten a BCL type name. Qualify the name where it collides.
 - Library `await` uses `ConfigureAwait(false)` except where the code must resume on the UI thread, which says so in a comment. `CancellationToken` is the last parameter.
 
+- No alignment component in an interpolated string (`{value, 4}`). CSharpier writes `{value, 4}` and StyleCop then reports SA1001, so the format check and the build cannot both pass; pad with `PadLeft` instead (S8b).
+
 ## Types
 
 Make an invalid state unrepresentable; do not document it away or catch it at run time.

@@ -25,11 +25,13 @@ body
 "@
 ```
 
+  `git commit -F -` with a here-string does not work: PowerShell passes the text as an argument and git reads it as a pathspec (S8b). Use `-m` as above, or commit from Bash with a heredoc.
 - Long text for `gh`: write a temporary UTF-8 file and pass `--body-file`, then delete it (`.cursor/rules/scratch.mdc`).
 - Do not put `Remove-Item` in the same command as `$env:PATH += ';C:\Program Files ...'`: the agent's PowerShell tool reads `C:\Program` as the item to remove and refuses the whole command (twice in S8a). Remove files in a separate call, or from Bash.
 - A helper script (Python, a mutant patch): write it to a file in the scratchpad first, then run it. Do not build it from a here-string piped to `Set-Content` in the same command that removes files: in S5 the agent's PowerShell tool read a line break of the here-string as a path for `Remove-Item` and refused the whole command.
 - Native commands set `$LASTEXITCODE`. Check it before the next step: `dotnet test ...; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`.
 - Quote paths with spaces. Prefer repository-relative paths.
+- In Bash, `rm -rf "$DIR"/*` is refused by the agent's safety check, because an empty `$DIR` would make it `/*`. Write `"${DIR:?}"/*` or a literal path (S8b).
 
 ## Writing files
 
