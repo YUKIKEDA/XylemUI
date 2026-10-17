@@ -67,8 +67,17 @@ internal static class LayoutEngine
                         continue;
                     }
 
-                    // A dirty root is never skipped by the cache.
-                    _ = Compute(tree, request.Node, ResolveAvailableSpace(tree, request), commit: true);
+                    // A dirty root is never skipped by the cache. A measure function may throw: the exception is reported like an
+                    // effect's, the other roots go on, and the request waits for the next pass.
+                    try
+                    {
+                        _ = Compute(tree, request.Node, ResolveAvailableSpace(tree, request), commit: true);
+                    }
+                    catch (Exception exception) when (exception is not InvariantViolationException)
+                    {
+                        ReactiveRuntime.ReportException(exception);
+                        tree.DeferRequest(request);
+                    }
                 }
 
                 current.Clear();
@@ -77,6 +86,7 @@ internal static class LayoutEngine
         finally
         {
             ReactiveRuntime.ExitLayout();
+            tree.RestoreDeferredRequests();
         }
     }
 

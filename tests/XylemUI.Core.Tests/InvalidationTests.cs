@@ -119,6 +119,83 @@ public sealed class InvalidationTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A node that is not attached yet makes no layout root when it is styled; it is laid out once it is appended.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A laid-out root. A new leaf and a new fixed-size box (a structural boundary), neither appended.
+    ///
+    /// Steps:
+    /// - Set a style on both and run a pass. Then append both to the root and run a pass.
+    ///
+    /// Expected:
+    /// - The first pass finds no layout root and does not fail; both nodes stay dirty.
+    /// - After appending, both are laid out: the leaf is 30 high, the box 40 x 20, and nothing is left dirty.
+    /// - A later style change on the box makes the box itself the layout root (it is attached now, and a boundary).
+    /// </remarks>
+    [Fact]
+    public void DetachedNode_StyledBeforeAppend_IsLaidOutOnlyWhenAttached() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            LayOut(tree, root, 300, 200);
+            NodeHandle leaf = tree.CreateNode(new LayoutStyle(), _ => new Size(10, 10));
+            NodeHandle box = tree.CreateNode(Fixed(40, 20));
+
+            tree.SetStyle(leaf, new LayoutStyle { Height = Length.Px(30) });
+            tree.SetStyle(box, Fixed(40, 20));
+            Assert.Empty(tree.LayoutRoots);
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.False(IsLayoutClean(tree, leaf));
+            Assert.False(IsLayoutClean(tree, box));
+
+            tree.AppendChild(root, leaf);
+            tree.AppendChild(root, box);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(30, tree.GetRect(leaf).Height);
+            Assert.Equal((40f, 20f), (tree.GetRect(box).Width, tree.GetRect(box).Height));
+            Assert.True(IsLayoutClean(tree, leaf));
+            Assert.True(IsLayoutClean(tree, box));
+            Assert.Empty(tree.LayoutRoots);
+
+            // Appended after the root was set, the box is attached: a change to it now stops at it, a boundary.
+            tree.SetStyle(box, Fixed(50, 20));
+            Assert.Equal(box, Assert.Single(tree.LayoutRoots).Node);
+        });
+
+    /// <summary>
+    /// A tree has one root: giving a window size to another node fails the invariant.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Debug build (release ends the process). A tree whose root was given a window size.
+    ///
+    /// Steps:
+    /// - Give a window size to a second node without a parent.
+    ///
+    /// Expected:
+    /// - <see cref="InvariantViolationException"/>.
+    /// </remarks>
+    [Fact]
+    public void SecondRoot_FailsTheInvariant()
+    {
+#if !DEBUG
+        Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
+#endif
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            LayOut(tree, root, 300, 200);
+            NodeHandle other = tree.CreateNode(new LayoutStyle());
+
+            Assert.Throws<InvariantViolationException>(() => Invalidation.NotifyWindowResized(tree, other, new Size(10, 10)));
+        });
+    }
+
+    /// <summary>
     /// A paint-only change marks the node for paint and queues no layout root.
     /// </summary>
     /// <remarks>

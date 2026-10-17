@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace XylemUI;
 
 /// <summary>
@@ -9,6 +11,7 @@ namespace XylemUI;
 internal sealed class UiTree
 {
     private readonly Comparison<LayoutRequest> _shallowestFirst;
+    private readonly List<LayoutRequest> _deferred = [];
     private List<LayoutRequest> _layoutRoots = [];
     private List<LayoutRequest> _layoutRootsSpare = [];
 
@@ -16,6 +19,11 @@ internal sealed class UiTree
     /// Initializes a new instance of the <see cref="UiTree"/> class.
     /// </summary>
     public UiTree() => _shallowestFirst = CompareDepth;
+
+    /// <summary>
+    /// Gets the root: the node the window's size is given to (<see cref="Invalidation.NotifyWindowResized"/>); none before.
+    /// </summary>
+    public NodeHandle Root { get; private set; }
 
     /// <summary>
     /// Gets the nodes.
@@ -81,7 +89,7 @@ internal sealed class UiTree
 
         p.LastChild = child;
         p.Versions.Children++;
-        SetDepth(child, p.Depth + 1);
+        SetDepth(child, p.Depth + 1, p.IsAttached);
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
     }
 
@@ -102,6 +110,48 @@ internal sealed class UiTree
     public Rect GetRect(NodeHandle node) => Nodes.GetRef(node).Layout.Rect;
 
     /// <summary>
+    /// Makes <paramref name="node"/> the root, the first time a window size is given. The root has no parent, and a tree has one.
+    /// </summary>
+    internal void SetRoot(NodeHandle node)
+    {
+        if (Root == node)
+        {
+            return;
+        }
+
+        if (!Root.IsNone)
+        {
+            Invariant.Fail("A UI tree has one root; a window size was given to another node.");
+        }
+
+        if (!Nodes.GetRef(node).Parent.IsNone)
+        {
+            Invariant.Fail("The root of a UI tree cannot have a parent.");
+        }
+
+        Root = node;
+        SetDepth(node, 0, attached: true);
+    }
+
+    /// <summary>
+    /// Keeps a request whose layout threw, to put back after the pass (<see cref="RestoreDeferredRequests"/>).
+    /// </summary>
+    internal void DeferRequest(LayoutRequest request) => _deferred.Add(request);
+
+    /// <summary>
+    /// Puts the requests whose layout threw back into the layout roots, for the next pass.
+    /// </summary>
+    internal void RestoreDeferredRequests()
+    {
+        foreach (LayoutRequest request in CollectionsMarshal.AsSpan(_deferred))
+        {
+            Invalidation.RestoreRequest(this, request);
+        }
+
+        _deferred.Clear();
+    }
+
+    /// <summary>
     /// Takes the current layout roots for one cycle of the worklist and leaves an empty list in their place, so that requests
     /// made during the cycle wait for the next one. The returned list is cleared and handed back by the next call.
     /// </summary>
@@ -114,15 +164,16 @@ internal sealed class UiTree
     private int CompareDepth(LayoutRequest a, LayoutRequest b) => Nodes.GetRef(a.Node).Depth.CompareTo(Nodes.GetRef(b.Node).Depth);
 
     // Values are copied before each step down, so no ref is held across the recursion (design §2.5).
-    private void SetDepth(NodeHandle node, int depth)
+    private void SetDepth(NodeHandle node, int depth, bool attached)
     {
         ref UiNode n = ref Nodes.GetRef(node);
         n.Depth = depth;
+        n.IsAttached = attached;
         NodeHandle child = n.FirstChild;
         while (!child.IsNone)
         {
             NodeHandle next = Nodes.GetRef(child).NextSibling;
-            SetDepth(child, depth + 1);
+            SetDepth(child, depth + 1, attached);
             child = next;
         }
     }

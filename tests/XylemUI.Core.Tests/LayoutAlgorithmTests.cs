@@ -40,6 +40,38 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Nested blocks subtract each level's padding and margins from the width they pass down.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: block, padding 10, window 300 x 200. A: block, margin 5, padding 3. B (in A): block, margin left 4. leaf (in B):
+    ///   10 x 10.
+    ///
+    /// Steps:
+    /// - Lay out.
+    ///
+    /// Expected:
+    /// - A: (10 + 5, 10 + 5) = (15, 15); width 300 − 20 − 10 = 270; height 3 + 10 + 3 = 16.
+    /// - B: (3 + 4, 3) = (7, 3); width 270 − 6 − 4 = 260; height 10. leaf: (0, 0), 10 x 10.
+    /// </remarks>
+    [Fact]
+    public void Block_Nested_SubtractsPaddingAndMarginsFromTheWidth() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle { Padding = EdgeInsets.All(10) });
+            NodeHandle a = Box(tree, root, new LayoutStyle { Margin = EdgeInsets.All(5), Padding = EdgeInsets.All(3) });
+            NodeHandle b = Box(tree, a, new LayoutStyle { Margin = new EdgeInsets(4, 0, 0, 0) });
+            NodeHandle leaf = Leaf(tree, b, 10, 10);
+
+            LayOut(tree, root, 300, 200);
+
+            Assert.Equal(new Rect(15, 15, 270, 16), tree.GetRect(a));
+            Assert.Equal(new Rect(7, 3, 260, 10), tree.GetRect(b));
+            Assert.Equal(new Rect(0, 0, 10, 10), tree.GetRect(leaf));
+        });
+
+    /// <summary>
     /// A row divides its free space by the grow factors.
     /// </summary>
     /// <remarks>

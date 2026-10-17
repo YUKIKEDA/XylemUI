@@ -51,7 +51,12 @@ internal static class Invalidation
             n.Dirty.Epoch++;
             if (IsLayoutBoundaryForInvalidation(in n) || n.Parent.IsNone)
             {
-                EnqueueLayoutRoot(tree, current);
+                // A node not attached yet keeps its flags; appending it marks the parent, whose layout reaches it.
+                if (n.IsAttached)
+                {
+                    EnqueueLayoutRoot(tree, current);
+                }
+
                 return;
             }
 
@@ -64,6 +69,7 @@ internal static class Invalidation
     /// </summary>
     public static void NotifyWindowResized(UiTree tree, NodeHandle root, Size size)
     {
+        tree.SetRoot(root);
         MarkDirty(tree, root, DirtyFlags.Layout);
         OverwriteLayoutRequest(tree, root, AvailableSpace.Definite(size), LayoutReason.WindowResize);
     }
@@ -88,6 +94,22 @@ internal static class Invalidation
         }
 
         tree.LayoutRoots.Add(new LayoutRequest { Node = node, Reason = LayoutReason.IntrinsicSizeChanged });
+    }
+
+    /// <summary>
+    /// Puts a request back after its layout threw: merged into a request for the same node, otherwise added.
+    /// </summary>
+    internal static void RestoreRequest(UiTree tree, LayoutRequest request)
+    {
+        foreach (LayoutRequest existing in CollectionsMarshal.AsSpan(tree.LayoutRoots))
+        {
+            if (existing.Node == request.Node)
+            {
+                return;
+            }
+        }
+
+        tree.LayoutRoots.Add(request);
     }
 
     private static void OverwriteLayoutRequest(UiTree tree, NodeHandle node, AvailableSpace space, LayoutReason reason)

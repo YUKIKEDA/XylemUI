@@ -32,6 +32,12 @@ internal struct UiNode
     public int Depth;
 
     /// <summary>
+    /// The node hangs from the tree's root. A node that is not attached yet (created, styled, and not appended) keeps its dirty
+    /// flags but makes no layout root; appending it marks its new parent.
+    /// </summary>
+    public bool IsAttached;
+
+    /// <summary>
     /// What the node and its subtree need again.
     /// </summary>
     public DirtyState Dirty;

@@ -107,6 +107,65 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A measure function that throws is reported; the other roots of the pass are laid out, and the failed request waits for
+    /// the next pass instead of being lost.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A handler that records what it receives. root → boundary A (fixed) → leaf X whose measure function throws while a flag
+    ///   is set; root → boundary B (fixed) → leaf Y. Laid out once with the flag clear.
+    ///
+    /// Steps:
+    /// - Set the flag; invalidate X and Y; run a pass. Clear the flag; run a pass.
+    ///
+    /// Expected:
+    /// - The first pass reported one exception, laid out Y, and kept one request (A); X is still dirty.
+    /// - The second pass laid out X; nothing is left.
+    /// </remarks>
+    [Fact]
+    public void MeasureThatThrows_IsReportedAndItsRequestWaitsForTheNextPass() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle a = Box(tree, root, Fixed(100, 50));
+            NodeHandle b = Box(tree, root, Fixed(100, 50));
+            bool fail = false;
+            NodeHandle x = tree.CreateNode(
+                new LayoutStyle(),
+                _ => fail ? throw new InvalidOperationException("Thrown from a measure function on purpose.") : new Size(10, 10)
+            );
+            tree.AppendChild(a, x);
+            NodeHandle y = Leaf(tree, b, 10, 10);
+            LayOut(tree, root, 400, 300);
+            var reported = new List<Exception>();
+            Action<Exception> previous = ReactiveRuntime.UnhandledExceptionHandler;
+            ReactiveRuntime.UnhandledExceptionHandler = reported.Add;
+            try
+            {
+                fail = true;
+                Invalidation.Invalidate(tree, x, ChangeKind.Size);
+                tree.SetStyle(y, new LayoutStyle { Height = Length.Px(25) });
+                LayoutEngine.RunLayoutPass(tree);
+
+                Assert.IsType<InvalidOperationException>(Assert.Single(reported));
+                Assert.Equal(25, tree.GetRect(y).Height);
+                Assert.Equal(a, Assert.Single(tree.LayoutRoots).Node);
+                Assert.False(IsLayoutClean(tree, x));
+
+                fail = false;
+                LayoutEngine.RunLayoutPass(tree);
+            }
+            finally
+            {
+                ReactiveRuntime.UnhandledExceptionHandler = previous;
+            }
+
+            Assert.True(IsLayoutClean(tree, x));
+            Assert.Empty(tree.LayoutRoots);
+        });
+
+    /// <summary>
     /// A pass that keeps marking itself stops at the cycle limit and reports it; the request is left for the next pass.
     /// </summary>
     /// <remarks>

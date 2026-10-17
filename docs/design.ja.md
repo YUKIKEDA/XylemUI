@@ -730,6 +730,9 @@ static void RunLayoutPass(UiTree tree)
 - **`LayoutReason`:** S6b にあるのは `IntrinsicSizeChanged` と `WindowResize` だけ。`ParentLayoutChanged` は、親が子を直接 layout するので要らない。`MaterializationChanged` は P02。`MarkDirty` の要求は、同じノードの要求がすでにあれば足さない。ウィンドウのリサイズは、同じノードの要求を制約付きで置き換える
 - **計算された境界の修復は持たない:** 上の「前フレームから境界資格が変化した場合は親へ `MarkDirty(Layout)`」は入れなかった。`CachedComputedBoundary` は親が子を layout するたびに書き直され、親は子を layout し直さずに制約を変えられないので、古い値で伝播が止まることがない。S6b のアルゴリズムが両軸 tight の制約を渡すのは根だけで、根以外が計算された境界になるのは L1 の stretch から
 - **`InvalidationBoundary` の構造体は持たない:** `AffectsParentSize` は `IsLayoutBoundaryForInvalidation`、`IsolatesSubtree` はキャッシュの命中で表せた。Paint / Semantics / HitTest の境界はそれぞれの行で足す
+- **根と取り付け:** `UiTree.Root` は、ウィンドウの大きさを渡したノード（`NotifyWindowResized`）。木の根は 1 つで、2 つ目は不変条件違反。根から辿れるノードだけが `IsAttached` を持ち、`MarkDirty` は取り付けられていないノードで止まっても layout root を足さない（dirty フラグは残る。取り付けると `AppendChild` が親を dirty にし、親の layout が子に届く）。子を作ってスタイルを当ててから親に付ける流れ（§2.13 のメソッドチェーン）の間に pass が挟まっても落ちない。S6b のレビューで、親の無いノードをすべて根と見なしていたために、取り付ける前の `SetStyle` の後の pass が不変条件違反になることが見つかり、こうした
+- **layout 中の例外:** 計測関数が投げた例外は、Effect と同じく `ReactiveRuntime.UnhandledExceptionHandler` に渡し、同じ pass の他の要求を続ける。投げた要求は捨てずに、pass の後で `LayoutRoots` に戻す（次の pass で試す）。不変条件違反は捕まえない
+- **要求の重複の確認は線形探索:** `MarkDirty` は、同じノードの要求があるかを `LayoutRoots` を先頭から探して確かめる。根の数に比例するので、1 フレームに多数の境界がそれぞれ変わる場合（固定サイズの境界 1 万個なら 5×10⁷ 回程度の比較）は、ノードの `Dirty` に「根の一覧にいる」印を持たせて O(1) にする。S6b の計測（1 か所の変更）には出ない
 - **安定しなかったとき:** `MaxLayoutIterations`（100）を超えると、`LayoutStabilizationException` を `ReactiveRuntime.UnhandledExceptionHandler` に渡して打ち切る。残った要求は次の pass で処理する（Reactive と同じ）
 - **ガード:** layout の pass の間は、Signal の `Get` / `Set` と Computed の `Get` が不変条件違反（debug は `InvariantViolationException`、release は `FailFast`）。layout を書くのはフレームワーク自身なので（オーナー決定）。pass は `ForbidAllocation` の区間でもあり、ノードを作ると不変条件違反
 - **ノードの破棄はまだ無い:** 要求のノードが生きているかの確認は、ノードを外す処理（Materialization、P02）と一緒に入れる
@@ -1471,7 +1474,7 @@ public struct LayoutStyle
 
 - **`Auto` の大きさ:** 幅は、使える幅が有限ならそのすべて、無限なら内容の幅。高さは内容の高さ。計測関数を持つ葉は、両軸とも内容の大きさ。どの大きさも制約の範囲に収める。指定したサイズは border box（パディングを含む）
 - **Block:** 子を上から順に積む。マージンは常に足し合わせる（相殺しない）。子に渡す幅は、コンテンツの幅から子の左右のマージンを引いたものを最大とする範囲
-- **Flex:** 主軸の仮の大きさは `FlexBasis`（固定）→ 主軸の固定サイズ → 内容（主軸を無制限にして測る）の順。空きは `FlexGrow` の比で分け、はみ出しは `FlexShrink` × 仮の大きさの比で削る（0 より小さくしない）。交差軸は start 揃えで、`Auto` なら内容の大きさ。wrap・justify / align の start 以外・gap・min / max は L1
+- **Flex:** 主軸の仮の大きさは `FlexBasis`（固定）→ 主軸の固定サイズ → 内容（主軸を無制限にして測る）の順。空きは `FlexGrow` の比で分け、はみ出しは `FlexShrink` × 仮の大きさの比で削る（0 より小さくしない）。交差軸は start 揃えで、`Auto` なら内容の大きさ。wrap・justify / align の start 以外・gap・min / max は L1。min / max が無いので、`Auto` の高さの列に高さの上限がある制約を渡すと、列は上限で止まるが shrink は働かず、子は上限を越えてはみ出す（L1 で直す）
 
 テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
 
