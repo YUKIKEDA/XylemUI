@@ -36,6 +36,12 @@ public static class ReactiveRuntime
     }
 
     /// <summary>
+    /// Gets the version of the whole graph: advanced each time a signal changes, from 1. A computed value that nothing reads
+    /// compares it with the one it saw, so that a read with nothing changed returns at once (design §2.2.2).
+    /// </summary>
+    internal static ulong GlobalVersion { get; private set; } = 1;
+
+    /// <summary>
     /// Gets or sets the computation that is running, whose reads are recorded.
     /// </summary>
     internal static Computation? Current { get; set; }
@@ -140,6 +146,11 @@ public static class ReactiveRuntime
         effect.Status = ComputationStatus.Queued;
         (_flushing ? _nextQueue : _queue).Enqueue(effect, effect.Depth);
     }
+
+    /// <summary>
+    /// Advances <see cref="GlobalVersion"/>, when a signal changes.
+    /// </summary>
+    internal static void AdvanceGlobalVersion() => GlobalVersion++;
 
     /// <summary>
     /// Passes an exception to the handler. An exception from the handler itself is dropped, so the flush goes on.

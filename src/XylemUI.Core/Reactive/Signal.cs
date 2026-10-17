@@ -73,6 +73,7 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
 
         _value = value;
         Version++;
+        ReactiveRuntime.AdvanceGlobalVersion();
         ReactiveRuntime.EnterBatch();
         try
         {

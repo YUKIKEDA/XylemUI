@@ -267,7 +267,7 @@ static void Reevaluate(ComputationState computation)
 - **破棄:** `Effect.Dispose` と `Computed.Dispose` は依存への辺を外す。queue で待っている Effect を破棄すると、その Effect は実行されない。`Computed` を破棄しても読み手には通知しない。読み手は別の依存が変わって再実行されたとき、`Get` で `ObjectDisposedException` を受ける（Effect ならハンドラへ）
 - **pull の再帰:** Computed の pull は鎖の長さに比例してスタックを使う。1,000 段は確かめたが、数万段の鎖は想定しない
 - **Computed の中の `Set`（S6b でオーナーが決定）:** Computed の計算中に `Signal.Set` すると、debug・release とも `InvalidOperationException`（Computed は副作用を持たない。自分を読む Computed と同じく、例外として保持して `Get` で投げ直す）。layout 中の `Get` / `Set` は §2.4.1 の不変条件違反
-- **Computed の所有（S9 の Grill でオーナーが決定）:** Scope は Computed を持たない。Computed は、最後の読み手（`Observers` の最後の辺）が外れたら、上流の `Observers` から自分を外す。読んだ依存とその版（`Sources` と `SeenVersion`）は残す。読み手のいない Computed は `Set` で dirty にされず、Signal から参照されないので GC に回収される。読み手のいない状態の `Get` は、ランタイム全体の版（どれかの Signal が変わるたびに進む）が前回と同じなら値をそのまま返し、違えば依存の版を順に確かめて、変わっていれば計算し直す。Effect や Computed の中で再び読まれたら、上流の `Observers` に登録し直す。`Dispose` はこれまでどおり使える。Preact Signals・Vue 3.5（最初の読み手で依存に登録し、最後の読み手で外れる。メモリ 56 % 減）・MobX（観測されない computed を止める）・Angular（live な読み手だけが逆向きの辺を張る）と同じ考え方。Solid の「所有者が Computed も持つ」は、Scope が生きている間、読まれない Computed も `Set` のたびに dirty にされるので採らない。弱参照で辺を持つ方式は、辺ごとの確保と GC の負担で採らない
+- **Computed の所有（S9 の Grill でオーナーが決定）:** Scope は Computed を持たない。Computed は、最後の読み手（`Observers` の最後の辺）が外れたら、上流の `Observers` から自分を外す。読んだ依存とその版（`Sources` と `SeenVersion`）は残す。読み手のいない Computed は `Set` で dirty にされず、Signal から参照されないので GC に回収される。読み手のいない状態の `Get` は、ランタイム全体の版（どれかの Signal が変わるたびに進む）が前回と同じなら値をそのまま返し、違えば依存の版を順に確かめて、変わっていれば計算し直す。Effect や Computed の中で再び読まれたら、上流の `Observers` に登録し直す。`Dispose` はこれまでどおり使える。Preact Signals・Vue 3.5（最初の読み手で依存に登録し、最後の読み手で外れる。メモリ 56 % 減）・MobX（観測されない computed を止める）・Angular（live な読み手だけが逆向きの辺を張る）と同じ考え方。Solid の「所有者が Computed も持つ」は、Scope が生きている間、読まれない Computed も `Set` のたびに dirty にされるので採らない。弱参照で辺を持つ方式は、辺ごとの確保と GC の負担で採らない。**S9（C# 版で検証済み、Issue #60）:** 読み手のいない Computed の辺は `SlotInSource` が -1 で、上流には載らない。最初の読み手で上流に登録し、最後の読み手が外れると外れる（連鎖の上まで）。全体の版は `Signal.Set` が値を変えるたびに進む。テストで、最後の読み手を破棄すると `Set` で計算されず、`Get` は 1 回だけ計算して新しい値を返し、関係のない Signal が変わっても依存の版を比べて計算しないことを確かめた。また、Effect に再び読まれると登録し直すこと、参照の無くなった Computed が GC に回収される（`WeakReference`）こと、読み始めと読み終わりを 1,000 回繰り返してアロケーション 0 であることも確かめた
 - **公開 API:** `Signal.Create(value, comparer)`・`Computed.Create(func, comparer)`・`Effect.Create(action)`（上記。`Dispose` で止める）・`ReactiveRuntime.Batch`・`ReactiveRuntime.UnhandledExceptionHandler`。読み取り専用の型は `IReadOnlySignal<T>`
 
 **依存辺の差分維持:** 大半の再評価は前回と同じ依存を同じ順に読むので、`ReadCursor` が前回の `Sources` と一致している間は辺を張り替えない。条件分岐で読む依存が変わったときだけ、食い違った位置から先を付け替える（Preact Signals のノード再利用と同じ考え方）。1回の実行で同じ依存を2度読んだ場合は辺を2本持つ。dirty 化は冪等なので結果は変わらない。辺を外すときは、相手側の配列で末尾の辺を空いた位置へ移し、移した辺の相手が持つ `Slot*` を書き換える。
@@ -396,7 +396,7 @@ public static class ScopeTracker
     public static void ForEachActiveScope(Action<TrackedScope> action) { ... }
 }
 
-public readonly record struct TrackedScope(int Id, string Owner, string? StackTrace);  // Owner は生成したコンポーネント等の名前
+public readonly record struct TrackedScope(int Id, string Owner, bool IsEffect, bool IsOwned, string? StackTrace);  // Owner は生成したコンポーネント等の名前（既定は呼び出し元の名前）
 ```
 
 - 無効時のコストは、Scope の生成と破棄のたびに static な bool を1回読むだけとする（Zero-Alloc ゲートの対象経路で確保を増やさない）
@@ -404,6 +404,18 @@ public readonly record struct TrackedScope(int Id, string Owner, string? StackTr
 - `XylemUI.Testing` は、テストの終わりに破棄されていない Scope がないことを確かめる `AssertNoLeakedScopes()` を持つ（§12）
 
 **S9（MoonBit 版で検証済み。C# 版で再検証）:** 子を LIFO、その後自身の cleanup を LIFO とする契約はテストで閉じた。v1 は closure 配列のまま（実測は §2.5）。
+
+**S9（C# 版で検証済み、Issue #60）:** `Scope`（`Create` / `OnCleanup` / `Dispose`）、今の Scope、Effect が所有者、`ScopeTracker` を Core に作った。テストで次を確かめた。
+
+- 破棄の順は、子を新しい順に（孫まで）、その後に自分の cleanup を新しい順に（b11, b1, a2, a1, r2, r1）。
+- cleanup が例外を投げても残りを全部実行し、実行した順の `AggregateException` になる。
+- Effect が作った子の Scope と cleanup は、再実行の前と Scope の破棄で片付く。Scope の外の Effect は自分の `Dispose` で cleanup が走る。
+- `Create` の本体が例外を投げると、その Scope は作った物と一緒に破棄され、例外はそのまま出る。
+- 今の Scope のない `OnCleanup` と、Computed の計算中の `OnCleanup` / `Scope.Create` / `Effect.Create` は `InvalidOperationException`。
+- `ScopeTracker` は有効な間、所有者の名前（既定は `[CallerMemberName]` の呼び出し元）・Effect か・所有されているかを一覧にし、破棄で外れる。無効な間は記録しない。
+- `static` のラムダだけで Scope を作って破棄する定常状態はアロケーション 0（1,000 回）。
+
+公開 API の `Scope.Create` は `Handle<ScopeData>` を返す（`ScopeHandle` は Core の中の別名で、アプリからは見えない）。コンポーネントの API でこの型名をどう見せるかは V1 で決める。変異 9 個を試し、8 個がテストで落ちた。残りの 1 個（読み手を登録し直すときに dirty にする分岐）は到達しない分岐だった。登録し直すのは、同じ全体の版で値を確かめた直後だけだからで、分岐は消した。
 
 ### 2.4 Invalidation Architecture
 
@@ -944,7 +956,11 @@ internal struct SemanticsState
 
 **Scope内のclosure allocationリスク**: `ScopeData.Cleanups`はデリゲートのリストであり、Signal購読・イベントハンドラ・タイマー・アニメーション・OSリソースの解放処理がすべてデリゲートとしてぶら下がる。C# では変数をキャプチャするラムダはクロージャオブジェクトとデリゲートの2つをヒープに確保する（キャプチャしない `static` ラムダはデリゲートがキャッシュされ確保されない）。Fine-grained reactiveを選んだ理由（§2.1、フレーム毎のアロケーション最小化）と、Scope内部で大量のクロージャを生成する設計は方向性として矛盾しうる。`ScopeArena`分離によりアロケーション自体は多少緩和されるが、根本解決ではないため、§10.5の技術スパイクで実測してから、必要であれば`CleanupNode`/`ResourceHandle`のようなIDベース管理への置き換えを検討する。
 
+**`ScopeData` の形（S9 で変更）:** 下の `ScopeData` は cleanup と子を `List` で持つが、それでは Scope を作るたびに `List` を確保する。C# 版では、子を兄弟の双方向リスト（`LastChild` / `OlderSibling` / `NewerSibling`）で持ち、cleanup を `Arena<CleanupEntry>` 上の片方向リスト（`LastCleanup` / `Older`）で持つ。どちらも新しい物を先頭に足すので、先頭からたどると LIFO になる。スロットは使い回すので、定常状態では確保しない（`static` のラムダなら 0 バイト）。子を外すのは O(1)。Effect は自分の Scope を持ち（`ScopeData.Effect`）、所有者の Scope が破棄されると子として一緒に破棄される。
+
 **S9（MoonBit 版の実測。C# 版で再測定）:** MoonBit native release では、1万件の closure register が約 0.38ms、dispose が約 0.024ms（16.6ms の 2% 台）だった。同数の `CleanupKind` ID は register が約 6 倍速いが、フレーム予算は食っていない。**v1 は `List<Action>` のままにする方針を引き継ぐ。** C# 版では同じ条件で `GC.GetAllocatedBytesForCurrentThread()` によるアロケーション量と Gen0 回収回数も測り、毎フレーム数千件を作り直す経路が予算を圧迫した場合に限り ID 置換を行う。相対比較と絶対比較を混ぜないこと、再検討条件は [adr/0001-scope-cleanup-closures.md](./adr/0001-scope-cleanup-closures.md)。C# 版 S9 の比較対象は次の3つとする（D2）。
+
+**S9（C# 版の実測、Issue #60）:** NativeAOT・ハードウェアで `samples/ScopeCost --auto` を 3 回測った（中央値、31 回）。1 つの Scope に 1 万件の cleanup を積んで破棄すると、キャプチャするラムダは登録 224〜234 µs と破棄 78〜84 µs で、合わせて 16.6 ms の 1.8〜1.9 %。1 件 72 バイト（クロージャとデリゲート）、1 回 720 KB を確保し、31 回で Gen0 が 2 回、Gen1 が 1 回、停止は合計 3.2〜3.6 ms だった。`static` のラムダは登録 135〜140 µs と破棄 75〜77 µs で確保しない。比べた試作（Scope に入れず、使い回す配列に積んだもの）は、`IDisposable` の配列（R3 の `DisposableBag` の形）が 66〜71 µs と 16〜17 µs（1 件 24 バイト）、ID の配列（`CleanupKind`）が 15〜17 µs と 16〜18 µs（確保なし）。1 千件はどれも 16.6 ms の 0.3 % 以下。毎フレーム 1,000 の Scope を作って破棄する（それぞれキャプチャする cleanup 1 件と子 1 つ）と、600 フレームで Gen0 が 7 回、Gen1・Gen2 は 0 回、1 フレームの中の停止は最大 0.20〜0.24 ms、フレームの時間は中央値 145〜146 µs・最大 360〜416 µs だった。100 なら Gen0 が 1 回、停止 0.12 ms。ADR 0001 の切り替えの条件（16.6 ms の 10 % を安定して超える、Gen0 の回収がフレームごとに起きる）には当たらないので、cleanup は `List<Action>` 相当のクロージャのまま（実装は上の連結リスト）で確定する。
 
 1. `List<Action>`（現行。キャプチャするラムダと `static` ラムダの両方）
 2. `IDisposable` を struct の配列に持つ形（R3 の `DisposableBag` と同じ。追加のみで、破棄時に逆順に `Dispose`）

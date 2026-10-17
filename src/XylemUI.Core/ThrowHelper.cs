@@ -33,5 +33,17 @@ internal static class ThrowHelper
 
     [DoesNotReturn]
     [StackTraceHidden]
+    internal static void ThrowNoCurrentScope() =>
+        throw new InvalidOperationException("A cleanup was registered with no current scope; register it inside Scope.Create or an effect.");
+
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowScopeInsideComputed() =>
+        throw new InvalidOperationException(
+            "A scope, an effect, or a cleanup was made while a computed value computes; a computed value has no side effects."
+        );
+
+    [DoesNotReturn]
+    [StackTraceHidden]
     internal static void ThrowComputedDisposed() => throw new ObjectDisposedException(null, "The computed value was disposed.");
 }

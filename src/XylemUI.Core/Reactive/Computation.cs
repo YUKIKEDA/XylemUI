@@ -12,6 +12,11 @@ namespace XylemUI;
 /// place; a run that reads something else at position <c>n</c> relinks only from <c>n</c> on.
 /// </para>
 /// <para>
+/// A computation registers with its sources (an observer edge on their side) only while it is live: an effect always, a computed
+/// value while something reads it. A source edge of a computation that is not live has <see cref="SourceEdge.SlotInSource"/>
+/// -1 (design §2.2.2, the ownership of computed values).
+/// </para>
+/// <para>
 /// A dirty computation is brought up to date by pulling: each source, in order, is brought up to date and its version compared
 /// with the one this computation saw. The computation runs again only when one of them changed.
 /// </para>
@@ -51,6 +56,11 @@ public abstract class Computation : ReactiveNode
     /// Gets a value indicating whether this computation has run at least once.
     /// </summary>
     private protected bool HasRun { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether this computation is registered with its sources, so that their changes mark it dirty.
+    /// </summary>
+    private protected abstract bool IsLive { get; }
 
     private protected Computation() { }
 
@@ -182,7 +192,7 @@ public abstract class Computation : ReactiveNode
         }
 
         int position = SourceCount++;
-        int slot = source.AddObserver(this, position);
+        int slot = IsLive ? source.AddObserver(this, position) : -1;
         _sources[position] = new SourceEdge(source, slot, source.Version);
     }
 
@@ -192,13 +202,46 @@ public abstract class Computation : ReactiveNode
         for (int i = SourceCount - 1; i >= position; i--)
         {
             SourceEdge edge = _sources[i];
-            edge.Source.RemoveObserver(edge.SlotInSource);
             _sources[i] = default;
+            if (edge.SlotInSource >= 0)
+            {
+                edge.Source.RemoveObserver(edge.SlotInSource);
+            }
         }
 
         if (position < SourceCount)
         {
             SourceCount = position;
+        }
+    }
+
+    /// <summary>
+    /// Registers with every source this computation is not registered with (it became live).
+    /// </summary>
+    private protected void LinkSources()
+    {
+        for (int i = 0; i < SourceCount; i++)
+        {
+            if (_sources[i].SlotInSource < 0)
+            {
+                _sources[i].SlotInSource = _sources[i].Source.AddObserver(this, i);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Leaves every source this computation is registered with, keeping the edges and the versions seen (it is no longer live).
+    /// </summary>
+    private protected void UnlinkSources()
+    {
+        for (int i = 0; i < SourceCount; i++)
+        {
+            int slot = _sources[i].SlotInSource;
+            if (slot >= 0)
+            {
+                _sources[i].SlotInSource = -1;
+                _sources[i].Source.RemoveObserver(slot);
+            }
         }
     }
 

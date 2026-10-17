@@ -32,8 +32,16 @@ public static class Computed
 /// </summary>
 /// <typeparam name="T">The type of the value.</typeparam>
 /// <remarks>
+/// <para>
 /// An exception thrown by the computation is kept in place of the value and thrown again by each <see cref="Get"/>, with the
 /// original stack, until a value it read changes.
+/// </para>
+/// <para>
+/// No scope owns a computed value. While an effect or another computed value reads it, it is registered with what it read, and
+/// their changes mark it dirty. When its last reader goes, it leaves them: it is no longer marked dirty, and nothing in the graph
+/// refers to it, so it can be collected. A <see cref="Get"/> without readers checks whether any signal changed since it last
+/// computed, and if one did, whether one of its own sources changed (design §2.2.2).
+/// </para>
 /// </remarks>
 public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
 {
@@ -41,6 +49,9 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
     private readonly IEqualityComparer<T>? _comparer;
     private T _value = default!;
     private ExceptionDispatchInfo? _error;
+
+    // The global version at which the value was last known current while nothing read it; 0 when unknown.
+    private ulong _currentAt;
 
     internal Computed(Func<T> compute, IEqualityComparer<T>? comparer)
     {
@@ -77,8 +88,17 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
     }
 
     /// <inheritdoc />
+    private protected override bool IsLive => ObserverCount > 0 && !IsDisposed;
+
+    /// <inheritdoc />
     internal override void Refresh()
     {
+        if (ObserverCount == 0 && Status != ComputationStatus.Running)
+        {
+            RefreshUnobserved();
+            return;
+        }
+
         switch (Status)
         {
             case ComputationStatus.Clean:
@@ -98,6 +118,27 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
 
                 break;
         }
+    }
+
+    /// <inheritdoc />
+    private protected override void OnFirstObserver()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        // The status is current here: a reader registers only after Get refreshed this value at the current global version, and a
+        // computed reader that registers with its sources refreshed them the same way (S9, a mutant that marked it dirty here
+        // changed nothing).
+        LinkSources();
+    }
+
+    /// <inheritdoc />
+    private protected override void OnLastObserverRemoved()
+    {
+        _currentAt = Status == ComputationStatus.Clean ? ReactiveRuntime.GlobalVersion : 0;
+        UnlinkSources();
     }
 
     /// <inheritdoc />
@@ -125,6 +166,24 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
             _error = null;
             Version++;
         }
+    }
+
+    // Without readers no change marks this dirty, so the status says nothing; the global version and the sources' versions do.
+    private void RefreshUnobserved()
+    {
+        ulong now = ReactiveRuntime.GlobalVersion;
+        if (HasRun && _currentAt == now)
+        {
+            return;
+        }
+
+        if (!HasRun || AnySourceChanged())
+        {
+            Run();
+        }
+
+        Status = ComputationStatus.Clean;
+        _currentAt = now;
     }
 
     /// <inheritdoc />
