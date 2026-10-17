@@ -31,6 +31,8 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 `./build.ps1` before a PR. It runs tool restore, the CSharpier check, the native libraries (`vendor/build.ps1`: HarfBuzz and FreeType from the sources pinned in `vendor/versions.lock`, with CMake and MSVC; it does nothing when they are up to date), restore, then for Release and for Debug a build and every test project. Release is what ships; Debug runs the checks that only exist there (`Invariant.Fail` throws instead of ending the process). Hosted CI runs the same script.
 
+A script calls an operating-system tool by its full path, not the first one on `PATH`: run from Git Bash, `tar` is GNU tar, which reads the `C:` of a path as a remote host (S8a; `vendor/build.ps1` calls `System32/tar.exe`).
+
 A commit and a push follow the build only through its exit code. Piping the build's output into `grep` and chaining `git commit ... && git push` after it runs the commit even when the build failed: in S6a a commit that did not compile reached the PR that way. Write `if dotnet build ...; then git commit ...; fi`, or check `$LASTEXITCODE` in PowerShell.
 
 If `dotnet --list-sdks` does not show a 10.0 SDK, install it; do not stop to ask.
