@@ -1526,6 +1526,7 @@ public struct LayoutStyle
     public Length MinWidth, MinHeight;              // Auto: フレックスの子は自動の最小サイズ、それ以外は 0
     public Length MaxWidth, MaxHeight;              // Auto: 上限なし
     public EdgeInsets<LengthPercentage> Padding;    // Px | Percent
+    public EdgeInsets<LengthPercentage> Border;     // Px | Percent。レイアウトに効く幅だけ。色と角丸は描画（V1）
     public EdgeInsets<LengthPercentageAuto> Margin; // Px | Percent | Auto
     public float FlexGrow;                          // 既定 0
     public float FlexShrink;                        // 既定 1
@@ -1562,7 +1563,8 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 **Block / Flex の意味（L1 の Grill で決定、Issue #74）:** CSS（Chrome の結果）に合わせる。GPUI が使う Taffy も同じ意味で実装している。CSS から外すのは上の4つ（マージンの相殺・float・inline・content-box）と RTL（P03）だけで、既定値も CSS の初期値にする。Flutter の `Row` / `Column`（既定は center 揃え、自動の最小サイズなし）には合わせない。Chrome の期待値をそのままテストの基準に使え、CSS を知っている人にも AI エージェントにも結果を予測しやすいため。
 
 - **`Auto` の大きさ:** Block の子と、交差軸が `Stretch` のフレックスの子は、使える幅（交差軸の大きさ）すべて。それ以外は内容の大きさ。指定したサイズは border box（パディングを含む）
-- **`%`:** サイズ・min / max・basis は、親のコンテンツの箱の同じ軸に対して。親のその軸が不定なら、サイズは `Auto`、min は 0、max は上限なしとして扱う。padding と margin は、上下も親の幅に対して（CSS）。gap は容器のコンテンツの箱の同じ軸に対して
+- **ボーダー:** padding と同じく内容の箱を内側へ狭め、指定したサイズ（border box）に含む。GPUI（Taffy）・Avalonia（`Border` の `BorderThickness`）・Flutter（`Container` が `BoxDecoration` のボーダーを padding として足す）も、ボーダーの幅がレイアウトに効く（Issue #80）
+- **`%`:** サイズ・min / max・basis は、親のコンテンツの箱の同じ軸に対して。親のその軸が不定なら、サイズは `Auto`、min は 0、max は上限なしとして扱う。padding・border・margin は、上下も親の幅に対して（CSS）。gap は容器のコンテンツの箱の同じ軸に対して
 - **`MinContent` / `MaxContent` / `FitContent`:** 内容の最小の大きさ（テキストなら最も長い折り返せない並び）、最大の大きさ（折り返さない幅）、`min(MaxContent, max(MinContent, 使える大きさ))`。テキストの改行は T1 なので、それまでのテキストは MinContent も 1 行の幅
 - **min / max:** すべてのノードに持つ。min と max がぶつかれば min が勝つ（CSS）
 - **自動の最小サイズ:** フレックスの子の主軸の min が `Auto` なら、内容に基づく最小サイズ（CSS Flexbox §4.5）より縮まない。テキストが重ならない代わりに、省略記号で切るテキストには `MinWidth = Px(0)` を書く（GPUI の `min_w_0` と同じ）。スクロールする箱では 0（V2）
@@ -1576,7 +1578,7 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 
 **性能の受け入れ（L1 の Grill で決定）:** (1) S6b の 10,101 ノードの場面の4つの時間（最初の layout・1か所の変更・固定サイズの行の中の変更・幅の変更）が、ばらつきを超えて悪くならない。S6b と同じ意味で比べるため、フレックスの子に `MinWidth = Px(0)` を書いて自動の最小サイズを切る。既定（`Auto`）のままの同じ場面は、最初の layout と幅の変更を (2) の予算で見る。内側に入らなければ、費用の内訳を Issue に書いて減らし方を決め直す（悪化を許す幅は先に決めない。PR #75 のレビューの後の Grill で決定）。(2) wrap・stretch・`%`・自動の最小サイズを使う 1 万ノードの場面で、最初の layout と幅の変更が §11.3 の Layout の予算（2.0 ms）の内側。(3) 定常状態のアロケーションが 0（Zero-Alloc テストに wrap の場面を足す）。
 
-**進め方（L1 の Grill で決定）:** L1a（`LayoutInput`・長さのすべての種類・min / max・`%`・自動の最小サイズ・キャッシュ・S6b の shrink の不具合）、L1b（wrap・`justify-content`・`align-*`・gap・baseline・逆向き・`auto` のマージン）の順。Taffy の XML テストは使えるようになった分から通し、L1b で範囲の全件が通る。絶対配置・aspect-ratio・表示しないノード・`flex-wrap: balance`（CSS Flexbox Level 2 の草案）は L2、`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）は V2。
+**進め方（L1 の Grill で決定）:** L1a（`LayoutInput`・長さのすべての種類・min / max・`%`・ボーダー・自動の最小サイズ・キャッシュ・S6b の shrink の不具合、それに CSS の既定値の動き: `align-items: stretch`・`justify-content: flex-start`・`row` / `column`・`nowrap`）、L1b（既定値以外の値: wrap・`justify-content`・`align-*`・`align-self`・gap・baseline・逆向き・`auto` のマージン）の順。既定値の動きを L1a に入れるのは、既定の動きが CSS と合わないと Taffy の XML テストがほとんど通らないため（Issue #80）。Taffy の XML テストは使えるようになった分から通し、L1b で範囲の全件が通る。絶対配置・aspect-ratio・表示しないノード・`flex-wrap: balance`（CSS Flexbox Level 2 の草案）は L2、`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）は V2。
 
 テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
 
