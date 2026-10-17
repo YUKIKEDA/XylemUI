@@ -1,0 +1,5 @@
+# Only the source of the comparison app is committed; build.ps1 generates the rest (flutter create, the copied font).
+/*
+!/.gitignore
+!/lib/
+!/pubspec.yaml

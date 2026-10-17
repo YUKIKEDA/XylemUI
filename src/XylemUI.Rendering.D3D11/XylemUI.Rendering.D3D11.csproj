@@ -16,5 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
+    <!-- The frame measurements (GPU time, present latency) are for the benchmarks only (roadmap row M1a). -->
+    <InternalsVisibleTo Include="XylemUI.E2E" />
   </ItemGroup>
 </Project>

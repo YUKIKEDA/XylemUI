@@ -1,8 +1,10 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/XylemUI.E2E/XylemUI.E2E.csproj" />
+  </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/HelloText/HelloText.csproj" />
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
-    <Project Path="samples/ScopeCost/ScopeCost.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/XylemUI.Core/XylemUI.Core.csproj" />

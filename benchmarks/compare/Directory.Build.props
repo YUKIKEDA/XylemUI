@@ -1,0 +1,6 @@
+<Project>
+  <!--
+    The apps of the framework comparison (roadmap row M1a, docs/benchmarks/m1-baseline.md) are not XylemUI code: they stop the
+    repository's build settings (analyzers, warnings as errors, central package versions) here and pin their own packages.
+  -->
+</Project>

@@ -56,6 +56,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private int _atlasPageSize;
     private int _atlasSlices;
     private long[] _atlasPageIds = [];
+    private GpuFrameTimer? _gpuTimer;
+    private (uint Count, long Qpc)[] _presents = [];
+    private uint _lastReportedPresent;
     private bool _disposed;
 
     private D3D11Renderer(ID3D11Device* device, ID3D11DeviceContext* context, bool isWarp, HWND window, int width, int height)
@@ -118,6 +121,16 @@ public sealed unsafe class D3D11Renderer : IDisposable
     /// Gets the render target view, for the tests of the resize; null after a resize that failed.
     /// </summary>
     internal ID3D11RenderTargetView* RenderTargetView => _renderTarget;
+
+    /// <summary>
+    /// Gets a value indicating whether frames are measured (see <see cref="StartMeasuringFrames"/>).
+    /// </summary>
+    internal bool MeasuresFrames => _gpuTimer is not null;
+
+    /// <summary>
+    /// Gets the number of frames the GPU timer did not measure because it was still waiting for older ones.
+    /// </summary>
+    internal int GpuFramesSkipped => _gpuTimer?.Skipped ?? 0;
 
     /// <summary>
     /// Gets the number of slices of the atlas texture array, for the tests of the atlas upload; 0 before the first glyph.
@@ -229,6 +242,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _context->ClearState();
         }
 
+        _gpuTimer?.Dispose();
         Release((IUnknown*)_atlasView);
         Release((IUnknown*)_atlas);
         Release((IUnknown*)_instances);
@@ -297,10 +311,12 @@ public sealed unsafe class D3D11Renderer : IDisposable
             MaxDepth = 1,
         };
         _context->RSSetViewports(1, &viewport);
+        _gpuTimer?.Begin();
         float* clear = stackalloc float[4] { clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f };
         _context->ClearRenderTargetView(target, clear);
         if (count == 0)
         {
+            _gpuTimer?.End();
             return;
         }
 
@@ -318,6 +334,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->PSSetShaderResources(0, 1, &atlasView);
         _context->OMSetBlendState(_blend, null, uint.MaxValue);
         _context->DrawInstanced(4, (uint)count, 0, 0);
+        _gpuTimer?.End();
     }
 
     /// <summary>
@@ -328,8 +345,78 @@ public sealed unsafe class D3D11Renderer : IDisposable
     public void Present()
     {
         UiThread.VerifyAccess();
+        LARGE_INTEGER called;
+        _ = QueryPerformanceCounter(&called);
         HRESULT result = _swapChain->Present(1, 0);
         HResults.ThrowIfFailed(result, "IDXGISwapChain::Present", RemovedReason(result));
+        if (_gpuTimer is not null)
+        {
+            uint count;
+            if (_swapChain->GetLastPresentCount(&count) >= 0)
+            {
+                _presents[count % (uint)_presents.Length] = (count, called.QuadPart);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Starts measuring frames: the GPU time of each draw (timestamp queries) and the time from each present call to the display
+    /// (frame statistics). For the benchmarks (roadmap row M1a); frames are not measured otherwise.
+    /// </summary>
+    internal void StartMeasuringFrames()
+    {
+        if (_gpuTimer is null)
+        {
+            _gpuTimer = new GpuFrameTimer(_device, _context);
+            _presents = new (uint, long)[8];
+        }
+    }
+
+    /// <summary>
+    /// Returns the GPU time of the oldest measured frame that the GPU finished (see <see cref="StartMeasuringFrames"/>).
+    /// </summary>
+    /// <param name="milliseconds">The time from the frame's first command to its last, on the GPU.</param>
+    /// <returns><see langword="false"/> when none is ready, or frames are not measured.</returns>
+    internal bool TryReadGpuMilliseconds(out double milliseconds)
+    {
+        milliseconds = 0;
+        return _gpuTimer is not null && _gpuTimer.TryRead(out milliseconds);
+    }
+
+    /// <summary>
+    /// Returns, for the last present that reached the display and was not returned before, the time from the present call to
+    /// the display's refresh that showed it (frame statistics, <c>SyncQPCTime</c>; see <see cref="StartMeasuringFrames"/>).
+    /// </summary>
+    /// <param name="milliseconds">The time from the present call to the refresh.</param>
+    /// <param name="displayedQpc">The performance counter of that refresh.</param>
+    /// <returns><see langword="false"/> when no new present reached the display, or frames are not measured.</returns>
+    internal bool TryReadPresentLatency(out double milliseconds, out long displayedQpc)
+    {
+        milliseconds = 0;
+        displayedQpc = 0;
+        if (_gpuTimer is null)
+        {
+            return false;
+        }
+
+        DXGI_FRAME_STATISTICS statistics;
+        if (_swapChain->GetFrameStatistics(&statistics) < 0 || statistics.PresentCount == _lastReportedPresent)
+        {
+            return false;
+        }
+
+        (uint count, long qpc) = _presents[statistics.PresentCount % (uint)_presents.Length];
+        if (count != statistics.PresentCount)
+        {
+            return false;
+        }
+
+        LARGE_INTEGER frequency;
+        _ = QueryPerformanceFrequency(&frequency);
+        _lastReportedPresent = count;
+        displayedQpc = statistics.SyncQPCTime.QuadPart;
+        milliseconds = (displayedQpc - qpc) * 1000.0 / frequency.QuadPart;
+        return true;
     }
 
     /// <summary>
