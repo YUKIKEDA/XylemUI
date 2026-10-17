@@ -97,16 +97,26 @@ internal static class Invalidation
     }
 
     /// <summary>
-    /// Puts a request back after its layout threw: merged into a request for the same node, otherwise added.
+    /// Puts a request back after its layout threw. When the node has a request already (made during the pass), the stronger
+    /// reason wins with its constraint, the rule of a window resize over a content change; otherwise the request is added.
     /// </summary>
     internal static void RestoreRequest(UiTree tree, LayoutRequest request)
     {
-        foreach (LayoutRequest existing in CollectionsMarshal.AsSpan(tree.LayoutRoots))
+        Span<LayoutRequest> roots = CollectionsMarshal.AsSpan(tree.LayoutRoots);
+        for (int i = 0; i < roots.Length; i++)
         {
-            if (existing.Node == request.Node)
+            ref LayoutRequest existing = ref roots[i];
+            if (existing.Node != request.Node)
             {
-                return;
+                continue;
             }
+
+            if (request.Reason > existing.Reason)
+            {
+                existing = request;
+            }
+
+            return;
         }
 
         tree.LayoutRoots.Add(request);

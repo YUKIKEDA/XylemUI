@@ -166,6 +166,43 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A request put back after its layout threw merges with a request for the same node: a window resize, with its constraint,
+    /// wins over a content change either way round.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A laid-out root.
+    ///
+    /// Steps:
+    /// - With a content-change request for the root queued, put back a window-resize request (300 x 200) for it.
+    /// - With that resize queued, put back a content-change request for it.
+    ///
+    /// Expected:
+    /// - Each time one request is left: the window resize with the 300 x 200 constraint.
+    /// </remarks>
+    [Fact]
+    public void RestoredRequest_MergesAndKeepsTheResize() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            LayOut(tree, root, 400, 300);
+            var resize = new LayoutRequest
+            {
+                Node = root,
+                AvailableSpace = AvailableSpace.Definite(new Size(300, 200)),
+                Reason = LayoutReason.WindowResize,
+            };
+
+            Invalidation.MarkDirty(tree, root, DirtyFlags.Layout);
+            Invalidation.RestoreRequest(tree, resize);
+            Assert.Equal(resize, Assert.Single(tree.LayoutRoots));
+
+            Invalidation.RestoreRequest(tree, new LayoutRequest { Node = root, Reason = LayoutReason.IntrinsicSizeChanged });
+            Assert.Equal(resize, Assert.Single(tree.LayoutRoots));
+        });
+
+    /// <summary>
     /// A pass that keeps marking itself stops at the cycle limit and reports it; the request is left for the next pass.
     /// </summary>
     /// <remarks>
