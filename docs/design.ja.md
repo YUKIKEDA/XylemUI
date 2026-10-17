@@ -1392,7 +1392,7 @@ public ref struct TextWriter
 - バッファは使い回し、足りないときだけ拡張する（`.cursor/rules/perf.mdc`）。ラムダの確保はノード作成時の1回だけで、更新時は確保しない
 - `TextWriterHandler` は補間文字列ハンドラ（`[InterpolatedStringHandler]`）で、各部分を `ISpanFormattable.TryFormat` でバッファに書く。ZString と同じ目的を、.NET 6 以降の標準の仕組みで実現する
 - 書き込み中に Signal を読むと依存が登録される（`Func<string>` 版と同じ）
-- テキスト更新を Zero-Alloc ゲート（§11.3）のシナリオに入れるかは、シェーピング側の確保を S8 で測ってから決める
+- テキスト更新を Zero-Alloc ゲート（§11.3）のシナリオに入れるかは、シェーピング側の確保を S8 で測ってから決める。S8a の計測では、同じ文字列のシェーピングとキャッシュ済みのグリフのアトラスの引き当ては、定常状態で 0 バイト（Debug・Release、1,000 回）だった。シナリオに入れられる条件は満たしている。入れるかは Zero-Alloc ゲートを作る P02（`XylemUI.Testing`）で決める
 
 **スタイルのメソッドチェーン:** `.Padding()` / `.Background()` / `.CornerRadius()` 等は `Element`（`NodeHandle` を包む struct）の拡張メソッドとする。各メソッドはアリーナ上のノードのスタイルへ直接書き込み、同じ `Element` を返す。中間のスタイルオブジェクトは作らないので、チェーンはアロケーションを発生させない。Signal を受け取るオーバーロード（`.Background(IReadOnlySignal<Color>)`）は Binding 層（§2.4）に繋ぎ、該当する `ChangeKind` で無効化する。
 
@@ -1688,6 +1688,8 @@ src/XylemUI.Text/
 GUIフレームワーク本体（`XylemUI.Core`）はこの`XylemUI.Text`に対する依存として扱う。
 
 FreeTypeはカラーグリフテーブル対応（COLR/CPAL等）をビルド時オプションとして有効化する（絵文字表示、§4.6参照）。
+
+**S8a（C# 版で検証済み、Issue #44）:** `XylemUI.Text` が HarfBuzz と FreeType を `LibraryImport` で呼ぶ。`Font` はフォントのバイト列をピン留めした配列に 1 回だけ写し、HarfBuzz（`hb_blob_create` の読み取り専用、コピーなし）と FreeType（`FT_New_Memory_Face`）が同じバイト列をその場で読む。HarfBuzz のスケールはフォント単位（units per em）で、描く大きさへの換算は呼び出し側。`TextShaper` は UTF-16 をそのまま `hb_buffer_add_utf16` に渡し、HarfBuzz のバッファと結果の配列を使い回す。テストのフォントで、英字と日本語のグリフ id とアドバンス（GPOS の kern を含む）が fontTools で読んだ値と一致し、欠落文字は glyph 0（`.notdef`、アドバンス 1000）で後続の id は保たれた。クラスタは UTF-16 のオフセット（サロゲートペアは 2 つ進む）。FreeType の構造体の `FT_Long` / `FT_Pos` / `FT_Fixed` は C の `long`（Windows では 32 ビット、Linux / macOS では 64 ビット）なので、`CLong` で書く。ラスタライズはヒンティングなし（`FT_LOAD_NO_HINTING`）で、インクの箱はアウトラインの箱を画素に丸めたものと一致した。UI のテキストをヒンティングするかは、描画の品質と一緒に S8b の後で決める。NativeAOT・ハードウェアで、フォントを開くのに 0.16 ms、18 グリフの最初のラスタライズを含む 1 回目が 0.37 ms、22 文字の定常状態の更新（シェーピングとアトラスの引き当て）が 1.21 µs
 
 **S8 の範囲（C# 版、S8 の Grill でオーナーが決定）:** S8a / S8b は 1 つのフォント・LTR・1 行のシェーピングと描画（英字・日本語、欠落文字は `.notdef`）に限る。改行（UAX#14 の 2 パス）・グラフェム（UAX#29）・`tools/UnicodeTableGen` は行 T1、BiDi は P03、フォールバックは F1
 
@@ -2112,6 +2114,8 @@ flowchart TD
 
 グリフアトラスのテクスチャアップロードは、DisplayList構築が完了した後・頂点バッファ転送の前という一箇所に固定する。これにより、同一フレーム内でアトラスへの書き込みと読み出し（頂点バッファのUV座標参照）が競合しない。§2.10のフレーム実行サイクルにこの工程を含める。
 
+**S8a（C# 版で検証済み、Issue #44）:** CPU 側の `GlyphAtlas` は 8 ビットのカバレッジを 1 つのピン留めした配列（`GC.AllocateArray(pinned: true)`、既定 1024 × 1024）に持ち、FreeType の出力を直接写す。グリフは棚詰め（行に左から並べ、行の高さは最も高いグリフ。周りに 1 画素の余白）。キーは（フォント、グリフ、画素の大きさ）。2 回目の要求はラスタライズせずに同じ領域を返し、新しく詰めたインクのある領域だけが `DirtyRegions` に積まれる。満杯のアトラスは新しいグリフを断る（`false`）。追い出しは S8b（GPU のテクスチャと一緒に）
+
 アトラスの CPU 側メモリは、GC ヒープの断片化を避けるため `NativeMemory.Alloc` で確保するか、`GC.AllocateUninitializedArray<byte>(size, pinned: true)` でピン留めヒープ（POH）に置く。FreeType のラスタライズ結果を直接書き込み、そのまま GPU へ転送する。
 
 **S8（MoonBit 版で検証済み。C# 版で再検証）:** HarfBuzz（LTR Latin / Han）→ FreeType ラスタライズ → CPU アトラス一括アップロード → 頂点 quad → D3D11 Present が通った。英字・日本語は readback のインク画素で確認。欠落文字は glyph 0（`.notdef`）で終端し、後続グリフの id は残った。BiDi・改行2パス・フォントフォールバック連鎖は入れていない。
@@ -2485,6 +2489,8 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
 
 **ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す
+
+**S8a（C# 版で検証済み、Issue #44）:** `vendor/build.ps1` は CMake（NMake）と MSVC で、HarfBuzz（subset・raster・vector・gpu・utils は切る）と FreeType（zlib・bzip2・png・harfbuzz・brotli は切る）を作る。**静的ライブラリは静的 CRT（`/MT`）、DLL は動的 CRT（`/MD`）で作る**。NativeAOT のランタイムは静的 CRT なので、`/MD` の静的ライブラリはリンクで `LNK2038`（RuntimeLibrary の不一致）になる。版と SHA-256 と `build.ps1` 自身のハッシュをスタンプに書き、どれかが変われば作り直す。`build.ps1`（ゲート）が毎回呼び（最新なら何もしない）、CI はキャッシュする。NativeAOT のアプリは `src/XylemUI.Text/XylemUI.Text.targets` を取り込み、`DirectPInvoke` と `NativeLibrary` で両ライブラリを実行ファイルに入れ、JIT 用の DLL を発行物から外す。`samples/HelloText` の発行物は 2.64 MB の `HelloText.exe` 1 つで、`dumpbin /dependents` に出るのは OS の DLL（`KERNEL32` など、UCRT の `api-ms-win-crt-*`）だけだった
 
 **静的リンクの方法:** NativeAOT では、ネイティブの静的ライブラリ（`.lib` / `.a`）を `NativeLibrary` 項目でリンカに渡し、`DirectPInvoke` で該当ライブラリへの P/Invoke を直接呼び出しに解決させる。これにより HarfBuzz 等は実行ファイルに取り込まれ、別の `.dll` / `.so` / `.dylib` を配布しない。開発時の JIT 実行では同じライブラリを共有ライブラリとして読み込む（`vendor/` のビルド成果物）。両構成で同じ `LibraryImport` 宣言を使う。
 

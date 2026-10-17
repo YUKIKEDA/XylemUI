@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The native libraries are built for Windows only until roadmap rows P04 and P06, so these tests run on Windows only. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>XylemUI.Text.Tests</RootNamespace>
+    <!-- The allocation tests measure under JIT; tiered compilation adds one-off allocations (.cursor/rules/bench.mdc). -->
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Text\XylemUI.Text.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

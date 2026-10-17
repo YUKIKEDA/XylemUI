@@ -1,0 +1,5 @@
+# Native libraries built from source by vendor/build.ps1 (design §9). One library per line:
+# name  version  url  sha256
+# A version is taken only once it has been out for two weeks. Changing a line rebuilds the library.
+harfbuzz  14.5.1  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6
+freetype  2.14.3  https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz  36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f

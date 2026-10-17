@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XylemUI.Text</RootNamespace>
+    <Description>The XylemUI text pipeline: shaping with HarfBuzz, rasterizing with FreeType, and the glyph atlas.</Description>
+    <!-- The native wrappers of the text pipeline (.cursor/rules/interop.mdc). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XylemUI.Text.Tests" />
+  </ItemGroup>
+  <!-- Under the JIT the libraries load as DLLs next to the app; a NativeAOT app links them statically (XylemUI.Text.targets). -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\harfbuzz.dll')">
+    <None
+      Include="$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\*.dll"
+      Link="%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+</Project>
