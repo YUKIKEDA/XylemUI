@@ -1499,9 +1499,9 @@ public abstract record LayoutAlgorithm
 {
     public sealed record Flex(FlexProps Props) : LayoutAlgorithm;
     public sealed record Grid(GridProps Props) : LayoutAlgorithm;
-    public sealed record Block : LayoutAlgorithm
+    public sealed record Block(BlockProps Props) : LayoutAlgorithm
     {
-        public static readonly Block Instance = new();
+        public static readonly Block Instance = new(default(BlockProps));
     }
 
     internal virtual bool IsSizedByParent => false;
@@ -1519,6 +1519,16 @@ public readonly record struct FlexProps
     public LengthPercentage RowGap { get; init; }        // 行と行の間。既定 0
 }
 
+// ブロックの容器の性質（L1b の Grill で決定、Issue #88）。既定値は CSS の初期値
+public readonly record struct BlockProps
+{
+    public AlignItems JustifyItems { get; init; }        // 子の横の揃え。Stretch（既定。normal と同じ）| Start | End | Center
+    public AlignContent AlignContent { get; init; }      // 子のまとまり全体の縦の揃え。Normal（既定。上から積む）| Start | End | Center
+}
+
+// 揃えの値には、あふれたときの揃え方を付けられる（CSS Box Alignment の safe / unsafe）。Safe は、はみ出すときに start に寄せる
+// （L1b の Grill で決定）。付けないときは unsafe と同じ。self-start / self-end は子自身の書字の向きによるので P03
+
 public struct LayoutStyle
 {
     public LayoutAlgorithm Algorithm;
@@ -1533,6 +1543,7 @@ public struct LayoutStyle
     public float FlexShrink;                        // 既定 1
     public Length FlexBasis;                        // Auto: 主軸のサイズ、それも Auto なら内容
     public AlignSelf AlignSelf;                     // Auto（既定。親の AlignItems）| AlignItems の値
+    public AlignSelf JustifySelf;                   // ブロックの子の横の揃え。Auto（既定。親の JustifyItems）| Start | End | Center | Stretch
     public Direction Direction;                     // Ltr | Rtl（P03）
     public WritingMode WritingMode;                 // §8.3
 }
@@ -1571,7 +1582,7 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 - **`MinContent` / `MaxContent` / `FitContent`:** 内容の最小の大きさ（テキストなら最も長い折り返せない並び）、最大の大きさ（折り返さない幅）、`min(MaxContent, max(MinContent, 使える大きさ))`。テキストの改行は T1 なので、それまでのテキストは MinContent も 1 行の幅
 - **min / max:** すべてのノードに持つ。min と max がぶつかれば min が勝つ（CSS）
 - **自動の最小サイズ:** フレックスの子の主軸の min が `Auto` なら、内容に基づく最小サイズ（CSS Flexbox §4.5）より縮まない。テキストが重ならない代わりに、省略記号で切るテキストには `MinWidth = Px(0)` を書く（GPUI の `min_w_0` と同じ）。スクロールする箱では 0（V2）
-- **Block:** 子を上から順に積む。マージンは常に足し合わせる（相殺しない）。左右の `auto` のマージンは、残りの幅を分けて子を寄せる
+- **Block:** 子を上から順に積む。マージンは常に足し合わせる（相殺しない）。左右の `auto` のマージンは、残りの幅を分けて子を寄せる。`justify-self`（既定は親の `justify-items`）が `stretch` 以外なら、`auto` の幅は `fit-content` になり、子をその揃えで置く（`auto` のマージンが勝つ）。`align-content` が `normal` 以外なら、子のまとまり全体を 1 つとして縦に揃える（CSS Box Alignment §5.1）。`text-align` で子を寄せる古い挙動（`-webkit-left` など）は持ち込まない。Avalonia の `HorizontalAlignment`、Flutter の `Align` と `crossAxisAlignment` に当たる（L1b の Grill で決定、Issue #88）
 - **Flex:** CSS Flexbox §9 の手順どおり。主軸の仮の大きさは `FlexBasis` → 主軸のサイズ → 内容。空きは `FlexGrow` の比で分け、はみ出しは `FlexShrink` × 仮の大きさの比で削り、min / max で止まった子を固定して解き直す。wrap・逆向き・`justify-content`・`align-items` / `align-self`・`align-content`・gap・`auto` のマージン・baseline 揃えも CSS どおり。ベースラインは計測関数の `FirstBaseline`、持たない子は CSS と同じく border box から合成する
 - **S6b からの変更:** S6b は交差軸を start 揃えだけにし、min / max を持たなかった。そのため `Auto` の高さの列に高さの上限がある制約を渡すと、shrink が働かず子が上限を越えてはみ出していた。L1a で直す
 
@@ -1582,6 +1593,8 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 **性能の受け入れ（L1 の Grill で決定、L1a の測定の後で決め直した）:** 比べる相手は、同じ機械・同じ場面で交互に測った Flutter・Avalonia・GPUI。場面は 10,101 ノード（列 1 → 行 100 → 葉 100）で、S6b の意味（フレックスの子の min を 0）・CSS の既定・`%` ありの 3 つ。測り方と表は `docs/benchmarks/l1a-layout.md`。(1) 意味が同じ GPUI のレイアウト（GPUI が使う版の Taffy）より、最初の layout・1か所の変更・幅の変更が、ばらつきを超えて遅くない。(2) 幅の変更が §11.3 の Layout の予算（2.0 ms）の内側。1 万ノードの最初の layout は、起動か大きな画面の切り替えにしか起きないのでフレームの予算に入れず、(1) で見る（起動の全体は M1b の 1 万の日本語テキストノードで測る）。(3) 定常状態のアロケーションが 0。L1a で 3 つとも満たした。最初の S6b の簡略な flex との比較は、CSS の手順の計算の回数（葉 1 つにつき 4〜9 回。Taffy も同じ）で満たせないので、比べる相手から外した。Flutter（XylemUI より、最初の layout が S6b の意味で約 3 倍・CSS の既定で約 6 倍速く、1か所の変更が約 5〜9 倍速い）と Avalonia（幅の変更が約 3〜6 倍速い）との差は、行 L4 で、CSS の結果を変えずに詰める（オーナー決定）。
 
 **進め方（L1 の Grill で決定）:** L1a（`LayoutInput`・長さのすべての種類・min / max・`%`・ボーダー・自動の最小サイズ・キャッシュ・S6b の shrink の不具合、それに CSS の既定値の動き: `align-items: stretch`・`justify-content: flex-start`・`row` / `column`・`nowrap`）、L1b（既定値以外の値: wrap・`justify-content`・`align-*`・`align-self`・gap・baseline・逆向き・`auto` のマージン）の順。既定値の動きを L1a に入れるのは、既定の動きが CSS と合わないと Taffy の XML テストがほとんど通らないため（Issue #80）。Taffy の XML テストは使えるようになった分から通し、L1b で範囲の全件が通る。絶対配置・aspect-ratio・表示しないノード・`flex-wrap: balance`（CSS Flexbox Level 2 の草案）は L2、`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）は V2。
+
+**L1b の受け入れ（L1b の Grill で決定、Issue #88）:** L1a の比較に wrap の場面（1 万個の 10 × 10 の箱を、幅の決まった容器で折り返す。Flutter `Wrap`、Avalonia `WrapPanel`、GPUI の Taffy 0.9.0 の `flex-wrap`）を足す。受け入れは L1a と同じで、GPUI のレイアウトよりばらつきを超えて遅くない、幅の変更が 2.0 ms の内側、定常状態のアロケーション 0。Flutter と Avalonia との差は行 L4。`safe` / `unsafe` は Flutter・Avalonia・Taffy 0.9.0 に無い（0.9.0 の `AlignItems` は Start・End・FlexStart・FlexEnd・Center・Baseline・Stretch）が、CSS どおりの意味にそろえる L1 の決定に従って入れる。
 
 テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
 
