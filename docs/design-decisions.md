@@ -110,6 +110,7 @@ Decision:
   `MaxLayoutIterations` を超えたら、Reactive と同じく診断用の例外をハンドラに渡して打ち切る。
   親は clean で `LayoutCacheKey` が等しい子の中へ入らない（Boundary barrier を兼ねる）。layout 中の Signal の `Get` / `Set` は不変条件違反。Computed の中の `Set` は例外（S6b）。
   `Auto` の幅は使える幅いっぱい、高さは内容。Block はマージンを相殺しない。Flex の shrink は係数 × 仮の大きさの比。
+  Block / Flex の意味と既定値は CSS（Chrome の結果、Taffy と同じ）。入力は Taffy の `LayoutInput`。Taffy の XML テストを基準にし、計測のキャッシュの数は測って決める（L1 の Grill）。
   測るだけの実行は何も書かず、キャッシュを layout の実行と別に持つ。
   根から辿れないノードは layout root を作らない。計測関数の例外は報告して続け、その要求は次の pass に回す。
   Binding は `NodeProperty<T>` 記述子（ChangeKind を持つ）経由で UiNode に書く。
@@ -136,6 +137,16 @@ Rejected:
   - 親の無いノードをすべて根と見なす（取り付ける前の `SetStyle` が根になり、pass が不変条件違反になる）
   - layout 中の例外で pass を止め、残りの要求を捨てる
   - キャッシュを1つにし、測る実行でもノードに書く（Flex の子が毎フレーム外れる。1 万ノードの1か所の変更で 1,605 µs、分けると 21.1 µs）
+  - Flex の既定を Flutter の `Row` / `Column` に合わせる（center 揃え、自動の最小サイズなし。Chrome の期待値をテストに使えず、CSS の知識で予測できない。L1 の Grill）
+  - 内容の大きさを、最小・最大の制約とは別の問い合わせで求める（Flutter の `getMinIntrinsicWidth` など。深い木で計算量が 2 乗になりうる。L1 の Grill）
+  - 今の最小・最大の制約に min-content の印を足す（`%` の基準と、親が決めた寸法を表せない。L1 の Grill）
+  - 長さを1つの型にして、書けない値（`padding: auto`）を実行時に検査する（L1 の Grill）
+  - 計測のキャッシュの数を測らずに決める（Taffy の 9 をそのまま、または今の 1 のまま。L1 の Grill）
+  - L1 を1つの PR にする（レビューできる大きさを超える。L1a と L1b に分けた）
+  - 計算された境界を「親が両軸の寸法を決めた」だけで決める（自動の最小サイズ・wrap・baseline で、子の中の変更が兄弟に届かない。PR #75 のレビュー）
+  - 計算された境界を根だけにする（固定サイズの行の中の変更が毎回根からの再計算になる。親が内容を読んだら印を付ける Flutter の方式にした）
+  - 境界になれる条件をアルゴリズムごとに宣言する（宣言を間違えると結果が誤る）
+  - キャッシュのキーに `ParentSize` を常に入れる／入れない（常にだと `%` を使わないノードまで外れ、入れないと前提が外れたときに古い結果を返す）
   - Computed の中の `Set` を debug だけで検出する／不変条件違反にする（アプリの誤りなので、どの構成でも例外にする。オーナー決定）
 
 ---

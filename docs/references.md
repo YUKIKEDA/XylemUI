@@ -52,6 +52,8 @@
 | 層                      | ファイル                                                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Flex                    | [Taffy `flexbox`](https://github.com/DioxusLabs/taffy/blob/main/src/compute/flexbox.rs)                                                     |
+| 計測のキャッシュ        | [Taffy `cache.rs`](https://github.com/DioxusLabs/taffy/blob/main/src/tree/cache.rs)（9 個、最近使っていないものから上書き）                  |
+| レイアウトのテスト      | [Taffy `tests/xml`](https://github.com/DioxusLabs/taffy/tree/main/tests/xml)（Chrome の期待値、MIT。L1 で取り込む）                          |
 | For/Show identity       | [solid-js `flow.ts`](https://github.com/solidjs/solid/blob/main/packages/solid/src/render/flow.ts)                                          |
 | ウィンドウ / フレーム   | [GPUI `window.rs`](https://github.com/zed-industries/zed/blob/main/crates/gpui/src/window.rs)                                               |
 | Leptos の graph         | [leptos `reactive`](https://github.com/leptos-rs/leptos/tree/main/reactive)                                                                 |
