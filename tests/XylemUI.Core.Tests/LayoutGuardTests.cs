@@ -6,6 +6,12 @@ namespace XylemUI.Tests;
 [Collection(UiThreadGroup.Name)]
 public sealed class LayoutGuardTests(UiThreadFixture ui)
 {
+    private static readonly LayoutStyle Percent = new()
+    {
+        Width = Length.Percent(0.01f),
+        Padding = EdgeInsets<LengthPercentage>.All(LengthPercentage.Percent(0.001f)),
+    };
+
     private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
     /// <summary>
@@ -86,11 +92,13 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state.
+    /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state, with CSS's
+    /// defaults (stretch, the automatic minimum size) and with percentages.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - root (column) → 100 rows → 100 leaves each (10,101 nodes), laid out at 2,000 x 2,000. Warmed up with 20 changes.
+    /// - root (column) → 100 rows → 100 leaves each (10,101 nodes), laid out at 2,000 x 2,000. With percent, every leaf other
+    ///   than the changed one is 1 % wide with a 0.1 % padding. Warmed up with 20 changes.
     ///
     /// Steps:
     /// - 1,000 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread.
@@ -98,8 +106,10 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     /// Expected:
     /// - 0 bytes; the leaf has the last width.
     /// </remarks>
-    [Fact]
-    public void SteadyState_RelayoutAfterOneChange_AllocatesNothing() =>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(bool percent) =>
         ui.Invoke(() =>
         {
             var tree = new UiTree();
@@ -110,7 +120,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 NodeHandle row = Box(tree, root, Row());
                 for (int c = 0; c < 100; c++)
                 {
-                    NodeHandle leaf = tree.CreateNode(new LayoutStyle(), TenByTen);
+                    NodeHandle leaf = tree.CreateNode(percent ? Percent : new LayoutStyle(), TenByTen);
                     tree.AppendChild(row, leaf);
                     if (r == 50 && c == 50)
                     {

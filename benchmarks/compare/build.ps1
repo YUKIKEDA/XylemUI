@@ -1,4 +1,5 @@
-# Builds the apps of the framework comparison (roadmap row M1a, docs/benchmarks/m1-baseline.md) into <out>/<framework>.
+# Builds the apps of the framework comparison (roadmap rows M1a and L1a, docs/benchmarks/m1-baseline.md and
+# docs/benchmarks/l1a-layout.md) into <out>/<framework>.
 #   ./benchmarks/compare/build.ps1 -Out <directory>
 # Needs: the .NET 10 SDK with the MSVC linker (NativeAOT), Flutter (stable), and Rust (stable). The generated Flutter runner,
 # the copied font, and the build output are not committed.
@@ -49,3 +50,10 @@ Invoke-Step 'GPUI (release)' {
 }
 $gpui = New-Item -ItemType Directory -Force (Join-Path $Out 'gpui')
 Copy-Item (Join-Path $Out 'gpui-target\release\compare_gpui.exe') $gpui.FullName -Force
+
+# Taffy, the layout of GPUI, at the version GPUI uses: the layout scene of row L1a.
+Invoke-Step 'Taffy (release)' {
+    cargo build --release --manifest-path (Join-Path $root 'taffy\Cargo.toml') --target-dir (Join-Path $Out 'taffy-target')
+}
+$taffy = New-Item -ItemType Directory -Force (Join-Path $Out 'taffy')
+Copy-Item (Join-Path $Out 'taffy-target\release\compare_taffy.exe') $taffy.FullName -Force
