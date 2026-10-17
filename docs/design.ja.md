@@ -40,7 +40,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 | Linux Window（§6.1）              |      |          ○ SDL3           | Wayland/X11の差異吸収コスト                                                                                                                                                                          |
 | GPUレンダラ（§5.0/5.2）           |  ○   |                           | 独自設計（DisplayList、SDFシェーダー等）                                                                                                                                                             |
 | 言語ランタイム                    |      |    ○ .NET（NativeAOT）    | GC・型システム・BCL。NativeAOTで実行ファイルに同梱する                                                                                                                                               |
-| Windows APIバインディング（§2.9） |      | ○ TerraFX.Interop.Windows | Win32 / COM（D3D11・DXGI・DirectWrite・UIA）の宣言を手で書く工数が大きい。生成されたバインディングだけで構成され、ランタイムの抽象層を持たない（MIT）。使わない宣言は NativeAOT のトリミングで消える |
+| Windows APIバインディング（§2.9） |      | ○ TerraFX.Interop.Windows | Win32 / COM（D3D11・DXGI・DirectWrite・UIA）の宣言を Windows SDK のヘッダから生成しているので、手で書いた宣言の誤り（構造体の配置、vtable の順）が入らない。生成されたバインディングだけで構成され、ランタイムの抽象層を持たないので、呼び出しは COM の vtable と P/Invoke を直接たどり、性能の制御を失わない（MIT）。使わない宣言は NativeAOT のトリミングで消え、単一バイナリを保つ |
 | macOS / Linux APIバインディング   |  ○   |                           | macOS には相当品がないため、Obj-C ランタイムの呼び出しを自前で書く。Linux の C API（SDL3・wgpu-native・fontconfig・D-Bus）も `LibraryImport` で自前に宣言する                                        |
 | GPU 抽象化ライブラリ              |  ○   |                           | Silk.NET・Vortice 等の GPU 抽象は使わない。バックエンドは §5.2 のとおり自前                                                                                                                          |
 | ベクトル/行列型                   |      | ○ System.Numerics（BCL）  | `Vector2` / `Matrix3x2` / `Matrix4x4` はSIMD対応済みでランタイムに含まれる。追加依存にならない                                                                                                       |
@@ -1421,9 +1421,9 @@ public struct PaintStyle  // レイアウトに影響するプロパティは持
 
 **Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。
 
-**ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。
+**ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
-**MVVM との互換:** `INotifyPropertyChanged` や CommunityToolkit.Mvvm / ReactiveProperty との橋渡しは v1 では提供しない。要望が出た場合は別パッケージとして検討する。
+**MVVM との互換:** `INotifyPropertyChanged` や CommunityToolkit.Mvvm / ReactiveProperty との橋渡しは v1 では提供しない。要望が出た場合は別パッケージとして検討する。**見直し（Issue #54）:** この判断には要件と比べた理由が無い。Avalonia の利用者の多くは MVVM で書いているので、移行のしやすさを含め、行 D3 で対象とする利用者の要件から決め直す。
 
 ---
 
@@ -1691,7 +1691,7 @@ GUIフレームワーク本体（`XylemUI.Core`）はこの`XylemUI.Text`に対�
 
 FreeTypeはカラーグリフテーブル対応（COLR/CPAL等）をビルド時オプションとして有効化する（絵文字表示、§4.6参照）。
 
-**S8a（C# 版で検証済み、Issue #44）:** `XylemUI.Text` が HarfBuzz と FreeType を `LibraryImport` で呼ぶ。`Font` はフォントのバイト列をピン留めした配列に 1 回だけ写し、HarfBuzz（`hb_blob_create` の読み取り専用、コピーなし）と FreeType（`FT_New_Memory_Face`）が同じバイト列をその場で読む。HarfBuzz のスケールはフォント単位（units per em）で、描く大きさへの換算は呼び出し側。`TextShaper` は UTF-16 をそのまま `hb_buffer_add_utf16` に渡し、HarfBuzz のバッファと結果の配列を使い回す。テストのフォントで、英字と日本語のグリフ id とアドバンス（GPOS の kern を含む）が fontTools で読んだ値と一致し、欠落文字は glyph 0（`.notdef`、アドバンス 1000）で後続の id は保たれた。クラスタは UTF-16 のオフセット（サロゲートペアは 2 つ進む）。FreeType の構造体の `FT_Long` / `FT_Pos` / `FT_Fixed` は C の `long`（Windows では 32 ビット、Linux / macOS では 64 ビット）なので、`CLong` で書く。ラスタライズはヒンティングなし（`FT_LOAD_NO_HINTING`）で、インクの箱はアウトラインの箱を画素に丸めたものと一致した。UI のテキストをヒンティングするかは、描画の品質と一緒に S8b の後で決める。`Font` は face の番号を取る（既定 0）。Windows の日本語の既定フォントには `.ttc`（フォントコレクション）のものがあり、§4.5 のフォールバックは OS のフォントを使うため（S8a のレビュー）。破棄した `Font` は、シェーピングでもラスタライズでも `ObjectDisposedException`（HarfBuzz に null の font を渡すとアクセス違反になる）。言語は今は推測（`hb_buffer_guess_segment_properties`、既定はプロセスのロケール）で、漢字の字形を切り替える `locl` などの結果が環境で変わりうるので、S8b で UI の言語を `hb_buffer_set_language` で明示して渡す。NativeAOT・ハードウェアで、フォントを開くのに 0.16 ms、18 グリフの最初のラスタライズを含む 1 回目が 0.37 ms、22 文字の定常状態の更新（シェーピングとアトラスの引き当て）が 1.21 µs
+**S8a（C# 版で検証済み、Issue #44）:** `XylemUI.Text` が HarfBuzz と FreeType を `LibraryImport` で呼ぶ。`Font` はフォントのバイト列をピン留めした配列に 1 回だけ写し、HarfBuzz（`hb_blob_create` の読み取り専用、コピーなし）と FreeType（`FT_New_Memory_Face`）が同じバイト列をその場で読む。HarfBuzz のスケールはフォント単位（units per em）で、描く大きさへの換算は呼び出し側。`TextShaper` は UTF-16 をそのまま `hb_buffer_add_utf16` に渡し、HarfBuzz のバッファと結果の配列を使い回す。テストのフォントで、英字と日本語のグリフ id とアドバンス（GPOS の kern を含む）が fontTools で読んだ値と一致し、欠落文字は glyph 0（`.notdef`、アドバンス 1000）で後続の id は保たれた。クラスタは UTF-16 のオフセット（サロゲートペアは 2 つ進む）。FreeType の構造体の `FT_Long` / `FT_Pos` / `FT_Fixed` は C の `long`（Windows では 32 ビット、Linux / macOS では 64 ビット）なので、`CLong` で書く。ラスタライズはヒンティングなし（`FT_LOAD_NO_HINTING`）で、インクの箱はアウトラインの箱を画素に丸めたものと一致した。UI のテキストをヒンティングするかは、描画の品質と一緒に行 T4 で決める（Issue #54。以前は行なしで「S8b の後」としていた）。`Font` は face の番号を取る（既定 0）。Windows の日本語の既定フォントには `.ttc`（フォントコレクション）のものがあり、§4.5 のフォールバックは OS のフォントを使うため（S8a のレビュー）。破棄した `Font` は、シェーピングでもラスタライズでも `ObjectDisposedException`（HarfBuzz に null の font を渡すとアクセス違反になる）。言語は今は推測（`hb_buffer_guess_segment_properties`、既定はプロセスのロケール）で、漢字の字形を切り替える `locl` などの結果が環境で変わりうるので、S8b で UI の言語を `hb_buffer_set_language` で明示して渡す。NativeAOT・ハードウェアで、フォントを開くのに 0.16 ms、18 グリフの最初のラスタライズを含む 1 回目が 0.37 ms、22 文字の定常状態の更新（シェーピングとアトラスの引き当て）が 1.21 µs
 
 **S8b（C# 版で検証済み、Issue #51）:** `TextShaper.Shape` は言語（`TextLanguage`）を必ず取り、`hb_buffer_set_language` で渡してから、文字体系だけを推測させる（推測は設定済みの言語を上書きしない）。`TextLanguage.FromTag` は BCP 47 のタグを `hb_language_from_string` で 1 回だけ解釈する。HarfBuzz は解釈した言語をプロセスの終わりまで保持し、同じタグには同じ値を返すので、毎回のシェーピングに費用はかからない。テストのフォントの `locl` は、ラテン文字の既定の言語では数字を、日本語（`JAN`）では引用符を別のグリフに替える。"A1\"" は "ja" で 34 18 349、"en" で 34 356 3 になった。言語を渡さないと "ja" の結果が "en" と同じになる（HarfBuzz の既定は、この環境で日本語にならなかった）。NativeAOT・ハードウェアで、22 文字の定常状態の更新は 1.32〜1.35 µs（3 回）。S8a の 1.21 µs と違い、1 回の更新に `BeginFrame` と言語の設定が入る。
 
@@ -1872,7 +1872,7 @@ public interface ITextInputBackend
 }
 ```
 
-**WindowsのIME実装方式：v1はIMM32、TSFはv0.2以降。** 正式なTSFは多数の COM インターフェース（`ITextStoreACP` 等）を OS から呼ばれる側として実装する必要があり、規模が大きい。v1は`IMM32`（C API なので `LibraryImport` で足りる）で実装し、TSF直叩きは§10.4のv0.2以降に送る。IMM32 には確定済み周辺テキストを OS IME へ渡す標準プロトコルが無い。したがって **Windows v1 では `SurroundingText` を OS へ渡さない（Core の `ImeCompositionState` には保持するが `SetSurroundingText` は no-op）**。候補窓位置（`ImmSetCompositionWindow`）は Per-Monitor DPI v2 で二重スケールしないよう、物理ピクセルへ変換してから渡す。macOS / Linux は各 API の surrounding text を通常どおり渡す。縮退は §11.2。
+**WindowsのIME実装方式：v1はIMM32、TSFはv0.2以降。** 正式なTSFは多数の COM インターフェース（`ITextStoreACP` 等）を OS から呼ばれる側として実装する必要があり、規模が大きい。v1は`IMM32`（C API なので `LibraryImport` で足りる）で実装し、TSF直叩きは§10.4のv0.2以降に送る。**見直し（Issue #54）:** この理由は規模（工数）で、要件と比べていない。P02 の IME に入る前に、再変換・周辺テキスト・タッチキーボードの要件と、Flutter・Avalonia（IMM32）、WPF・Chromium（TSF）の方式で比べ直す。IMM32 には確定済み周辺テキストを OS IME へ渡す標準プロトコルが無い。したがって **Windows v1 では `SurroundingText` を OS へ渡さない（Core の `ImeCompositionState` には保持するが `SetSurroundingText` は no-op）**。候補窓位置（`ImmSetCompositionWindow`）は Per-Monitor DPI v2 で二重スケールしないよう、物理ピクセルへ変換してから渡す。macOS / Linux は各 API の surrounding text を通常どおり渡す。縮退は §11.2。
 
 ---
 
@@ -2147,7 +2147,7 @@ GPUドライバの不具合対応は「一度作れば終わり」ではなく�
 | プラットフォーム | 採用                              | 根拠                                                                                                                                                                                                                   |
 | ---------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | macOS            | Metal直叩き                       | 単一ベンダー・単一API。GPUI自身が今も直叩きを維持。Obj-C ランタイム経由で呼ぶ（§2.9）                                                                                                                                  |
-| Windows          | DirectX 11直叩き                  | Vulkanより広範な互換性（VM含む）。GPUIが実際にVulkanから乗り換えた実例に倣う。D3D12ではなくD3D11を選ぶのも同じ理由。同期はD3D11.0のEvent Queryを必須とし、ID3D11Fenceは11.3+の任意最適化（§5.0.2）                     |
+| Windows          | DirectX 11直叩き                  | Vulkanより広範な互換性（VM含む）。GPUIが実際にVulkanから乗り換えた実例に倣う。D3D12ではなくD3D11を選ぶのも同じ理由。GPU 資源の寿命と書き込みの順序はランタイムが保証するので、明示的な同期は持たない（§5.0.2、S8b）。UI スレッドを `Present` で止めないための `ID3D11Fence` は行 R2（§2.11）                     |
 | Linux            | wgpu-native経由（自作原則の例外） | ディストロ・コンポジタ・ベンダーの組み合わせ数に対し、個人〜小規模チームが単独でドライバ回避策を書き続けるのは非現実的。GPUI自身がこの壁にぶつかり方針転換した実例がある。C API（`webgpu.h`）を `LibraryImport` で呼ぶ |
 
 .NET には Silk.NET・Vortice.Windows 等の GPU 抽象・ラッパーがあるが、§0 の Dependency Decision Matrix のとおり採用しない。Windows は TerraFX.Interop.Windows の宣言（抽象層を持たない生成バインディング）だけを使って D3D11 / DXGI の COM vtable を直接呼ぶ。macOS は Metal の Obj-C メッセージ呼び出しを自前で書く。
@@ -2917,7 +2917,7 @@ v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）
 
 **Mica と Acrylic:**
 - **v1 で入れるもの**: ウィンドウ背景の **Mica**。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
-- **v1.x に送るもの**: アプリ内の **Acrylic**（背後の UI をぼかす効果）。これを入れるにはレンダラに背景のぼかし（オフスクリーンパス＋新しい `PaintCommand`）が必要になり、v1 の「1パスで全体を描く」レンダラ（§5.0.1）の前提が崩れるため
+- **v1.x に送るもの**: アプリ内の **Acrylic**（背後の UI をぼかす効果）。これを入れるにはレンダラに背景のぼかし（オフスクリーンパス＋新しい `PaintCommand`）が必要になり、v1 の「1パスで全体を描く」レンダラ（§5.0.1）の前提が崩れるため。**見直し（Issue #54）:** この理由はレンダラを単純に保つことで、要件と比べていない。Flutter（`BackdropFilter`）・Avalonia・WinUI は背景のぼかしを持ち、オフスクリーンパスはグループの不透明度・影・角丸のクリップでも要る。V1 の前に、オフスクリーンパスをレンダラの設計に入れるかを決め直す
 
 **フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を使い、見つからなければ同梱フォールバックフォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。
 
