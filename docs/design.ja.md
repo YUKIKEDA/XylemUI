@@ -1689,6 +1689,8 @@ GUIフレームワーク本体（`XylemUI.Core`）はこの`XylemUI.Text`に対�
 
 FreeTypeはカラーグリフテーブル対応（COLR/CPAL等）をビルド時オプションとして有効化する（絵文字表示、§4.6参照）。
 
+**S8 の範囲（C# 版、S8 の Grill でオーナーが決定）:** S8a / S8b は 1 つのフォント・LTR・1 行のシェーピングと描画（英字・日本語、欠落文字は `.notdef`）に限る。改行（UAX#14 の 2 パス）・グラフェム（UAX#29）・`tools/UnicodeTableGen` は行 T1、BiDi は P03、フォールバックは F1
+
 **S8（MoonBit 版で検証済み。C# 版で再検証）:** LTR の英字と日本語は HarfBuzz + FreeType + グリフアトラスで GPU に出た。BiDi・UAX#14・DirectWrite フォールバックは未検証。`.notdef` 終端は欠落 codepoint で確認した。
 
 ### 4.2 BiDi：UAX#9を自前実装（FriBidiは不採用）
@@ -1810,6 +1812,8 @@ static FontHandle ResolveWithFallback(IFontProvider provider, in GraphemeCluster
 フォント解決の単位は codepoint 範囲ではなく grapheme cluster（ZWJ sequence、結合文字、variation selector、emoji modifier を分割しない）。連続する同一フォントの cluster を shaping run にまとめてから HarfBuzz へ渡す。OS API が文字列単位のフォールバックしか返さない場合、各 OS の `IFontProvider` 実装（Platform 層）が cluster 単位に切り出してこのインターフェースへ載せる。
 
 同梱フォントはSIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のものを使用し、CJK統合漢字の基本範囲＋絵文字基本セット＋ラテン/キリル/ギリシャ文字に絞ったサブセット化版とする（バイナリサイズ要件との両立のため）。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま FreeType に渡す（`FT_New_Memory_Face`）。
+
+**テストのフォント（S8 の Grill でオーナーが決定）:** テキストのテストは、OS のフォントに依らないよう、Noto Sans JP（OFL）から ASCII とテストで使う日本語だけを抜いた小さなサブセットをテストに置き、ライセンスと作り方（`pyftsubset` のコマンド）を添える。製品の同梱フォントと DirectWrite のフォールバックは行 F1
 
 **フォールバック解決の終端保証**: OSフォントにも同梱フォールバックフォントにもグリフが存在しない文字（未知の言語、最新のUnicode絵文字、未インストールの特殊記号等）が入力された場合の挙動を定義する。対策なしでは、フォールバック解決が終端せず無限ループに陥るか、HarfBuzzがグリフID`0`（`.notdef`、いわゆる「豆腐」）を返した後のアドバンス幅計算が想定外の値になり、以降の文字の配置座標がすべてずれるリスクがある。
 
@@ -2479,6 +2483,8 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | fontconfig（Linuxのみ）    | フォント解決                       | MIT相当                 | **動的**（§8.11、実機の設定と同期させるため意図的に動的）           |
 | libdbus-1（Linuxのみ）     | AT-SPI/通知連携のD-Bus IPC         | AFL-2.1/GPL-2.0デュアル | **動的**（§6.2、実機のD-Busセッションと同期させるため意図的に動的） |
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
+
+**ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す
 
 **静的リンクの方法:** NativeAOT では、ネイティブの静的ライブラリ（`.lib` / `.a`）を `NativeLibrary` 項目でリンカに渡し、`DirectPInvoke` で該当ライブラリへの P/Invoke を直接呼び出しに解決させる。これにより HarfBuzz 等は実行ファイルに取り込まれ、別の `.dll` / `.so` / `.dylib` を配布しない。開発時の JIT 実行では同じライブラリを共有ライブラリとして読み込む（`vendor/` のビルド成果物）。両構成で同じ `LibraryImport` 宣言を使う。
 
