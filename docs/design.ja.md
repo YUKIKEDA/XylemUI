@@ -1523,8 +1523,8 @@ public struct LayoutStyle
     public LayoutAlgorithm Algorithm;
     public Position Position;                       // Relative | Absolute(EdgeInsets)。L2
     public Length Width, Height;                    // Auto | Px | Percent | MinContent | MaxContent | FitContent
-    public Length MinWidth, MinHeight;              // Auto: フレックスの子は自動の最小サイズ、それ以外は 0
-    public Length MaxWidth, MaxHeight;              // Auto: 上限なし
+    public LengthPercentageAuto MinWidth, MinHeight; // Auto | Px | Percent。Auto: フレックスの子は自動の最小サイズ、それ以外は 0
+    public LengthPercentageAuto MaxWidth, MaxHeight; // Auto | Px | Percent。Auto: 上限なし
     public EdgeInsets<LengthPercentage> Padding;    // Px | Percent
     public EdgeInsets<LengthPercentage> Border;     // Px | Percent。レイアウトに効く幅だけ。色と角丸は描画（V1）
     public EdgeInsets<LengthPercentageAuto> Margin; // Px | Percent | Auto
@@ -1548,7 +1548,7 @@ internal readonly record struct LayoutInput(
 internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 ```
 
-`LayoutAlgorithm.Flex` は S6b の `Flex(FlexDirection Direction)` を `Flex(FlexProps Props)` に置き換える。軸ごとの `Definite` / `MinContent` / `MaxContent` の型は Taffy と同じ `AvailableSpace` と呼び、S6b の同じ名前の型（4 つの float の最小・最大）は廃止する。Taffy のコードと見比べて読めるようにするため。長さの型は、使える場所で分ける。`Length` はサイズ・min / max・basis、`LengthPercentageAuto` は margin、`LengthPercentage` は padding と gap に使い、`padding: auto` のような書けない値をコンパイルの時点で止める。layout の実行と測るだけの実行の区別（Taffy の `RunMode`）は今の `commit` のままにする。型は `internal` のままで、公開の API は C0 で決める。
+`LayoutAlgorithm.Flex` は S6b の `Flex(FlexDirection Direction)` を `Flex(FlexProps Props)` に置き換える。軸ごとの `Definite` / `MinContent` / `MaxContent` の型は Taffy と同じ `AvailableSpace` と呼び、S6b の同じ名前の型（4 つの float の最小・最大）は廃止する。Taffy のコードと見比べて読めるようにするため。長さの型は、使える場所で分ける。`Length` はサイズと basis、`LengthPercentageAuto` は min / max と margin、`LengthPercentage` は padding と gap に使い、`padding: auto` のような書けない値をコンパイルの時点で止める。min / max に内容の大きさ（`min-width: min-content` など）は書けない。GPUI が使う Taffy の `min_size` / `max_size` も `LengthPercentageAuto` で、Flutter と Avalonia の min / max も固定の値だけ。Chrome は持つが、Taffy の XML テストに使うものが無く期待値で確かめられないので、行 L3 に残す（Issue #83）。layout の実行と測るだけの実行の区別（Taffy の `RunMode`）は今の `commit` のままにする。型は `internal` のままで、公開の API は C0 で決める。
 
 `LayoutAlgorithm` はスタイル設定時にだけ生成し、毎フレームは生成しないため record class でよい。
 
@@ -1574,7 +1574,7 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 
 **テストの基準（L1 の Grill で決定）:** Taffy の XML テスト（`tests/xml`、Chrome が出した期待値、MIT）のうち、border-box・LTR で L1 の範囲に入るものを全件取り込み、xUnit で通す。テキストの葉は、Taffy と同じ Ahem 方式の計測関数（1 文字 10 px の正方形）をテストの側に持つ。外すもの（マージンの相殺を含む Block、L2 と V2 の機能）は理由をつけて1つのファイルに並べる。手で書くテストは、XylemUI 独自の部分（キャッシュ、増分の再計算）だけにする。増分の再計算には、寸法の決まった子の中の変更で兄弟や親が動く場面（自動の最小サイズ・wrap・baseline・内容の大きさの容器）と、親の測るだけの結果がキャッシュに当たった後に子の中身を変える場面を入れる。取り込むときは、Taffy のライセンスと取り込んだコミット（e82f526）を、テストデータのフォルダに置く。
 
-**計測のキャッシュ（L1 の Grill で決定）:** layout の結果を1つと、測るだけの実行の結果を N 個持つ。問い合わせの種類（MinContent・MaxContent・確定した幅）が増えるので、1つでは、S6b で起きたように、種類の違う問い合わせが互いの結果を上書きし合う見込み。N は 1・2・4・9（Taffy は 9。最近使っていないものから上書きする）で、命中率・1か所の変更の時間・メモリ・`UiNode` の大きさと `TryGet`（コピー）の費用を測った表から、時間がそれ以上下がらない最小の数にする。項目を `UiNode` の中に持つ案と、別のアリーナに置く案を比べる。キーは `LayoutInput` とスタイル・子の構造・子孫の layout の版で、`ParentSize` は、そのノード自身のスタイルが `%` を使う軸だけ入れる（スタイルを設定したときにフラグを計算する。padding と margin の `%` は親の幅が基準なので幅の軸）。子の `%` はこのノードの大きさが基準で、このノードの入力が同じなら大きさも同じになるので要らない。Taffy は `ParentSize` をキーに入れず、親の大きさが変われば子の使える空間もたいてい変わる、という前提に頼っている（PR #75 のレビューの後の Grill で決定）。
+**計測のキャッシュ（L1 の Grill で決定）:** layout の結果を1つと、測るだけの実行の結果を N 個持つ。問い合わせの種類（MinContent・MaxContent・確定した幅）が増えるので、1つでは、S6b で起きたように、種類の違う問い合わせが互いの結果を上書きし合う見込み。N は 1・2・4・9（Taffy は 9。最近使っていないものから上書きする）で、命中率・1か所の変更の時間・メモリ・`UiNode` の大きさと `TryGet`（コピー）の費用を測った表から、時間がそれ以上下がらない最小の数にする。項目を `UiNode` の中に持つ案と、別のアリーナに置く案を比べる。キーは `LayoutInput` とスタイル・子の構造・子孫の layout の版で、`ParentSize` は、そのノード自身のスタイルが `%` を使う軸だけ入れる（スタイルを設定したときにフラグを計算する。padding と margin の `%` は親の幅が基準なので幅の軸）。子の `%` はこのノードの大きさが基準で、このノードの入力が同じなら大きさも同じになるので要らない。Taffy（`cache.rs`、e82f526）は、計測の結果では `ParentSize` の幅を、layout の結果では両軸を、ノードのスタイルに依らずキーに入れる（PR #75 のレビューの後の Grill で決定。Taffy の部分は Issue #83 で事実に直した）。
 
 **性能の受け入れ（L1 の Grill で決定）:** (1) S6b の 10,101 ノードの場面の4つの時間（最初の layout・1か所の変更・固定サイズの行の中の変更・幅の変更）が、ばらつきを超えて悪くならない。S6b と同じ意味で比べるため、フレックスの子に `MinWidth = Px(0)` を書いて自動の最小サイズを切る。既定（`Auto`）のままの同じ場面は、最初の layout と幅の変更を (2) の予算で見る。内側に入らなければ、費用の内訳を Issue に書いて減らし方を決め直す（悪化を許す幅は先に決めない。PR #75 のレビューの後の Grill で決定）。(2) wrap・stretch・`%`・自動の最小サイズを使う 1 万ノードの場面で、最初の layout と幅の変更が §11.3 の Layout の予算（2.0 ms）の内側。(3) 定常状態のアロケーションが 0（Zero-Alloc テストに wrap の場面を足す）。
 
