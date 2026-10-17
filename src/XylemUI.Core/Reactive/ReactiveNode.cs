@@ -67,6 +67,11 @@ public abstract class ReactiveNode
 
         int slot = ObserverCount++;
         _observers[slot] = new ObserverEdge(observer, slotInObserver);
+        if (slot == 0)
+        {
+            OnFirstObserver();
+        }
+
         return slot;
     }
 
@@ -81,7 +86,21 @@ public abstract class ReactiveNode
         }
 
         _observers[last] = default;
+        if (last == 0)
+        {
+            OnLastObserverRemoved();
+        }
     }
+
+    /// <summary>
+    /// Called when the first reader is added. A computed value registers with its sources here.
+    /// </summary>
+    private protected virtual void OnFirstObserver() { }
+
+    /// <summary>
+    /// Called when the last reader is removed. A computed value leaves its sources here.
+    /// </summary>
+    private protected virtual void OnLastObserverRemoved() { }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void GrowObservers() => Array.Resize(ref _observers, Math.Max(4, _observers.Length * 2));

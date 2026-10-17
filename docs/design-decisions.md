@@ -175,8 +175,8 @@ Rejected:
 ## Scope cleanup
 
 Decision:
-  v1 の `Cleanups` は `List<Action>` のまま（C# 版の S9 で再測定してから確定）。
-  破棄順は子 LIFO → 自身の cleanup LIFO。本体は ScopeArena。
+  v1 の cleanup はクロージャ（`Action`）のまま。C# 版の S9 で確定した（1 万件で 16.6 ms の 1.8〜1.9 %、毎フレーム 1,000 の Scope で Gen0 は 600 フレームに 7 回）。
+  破棄順は子 LIFO → 自身の cleanup LIFO。本体は ScopeArena。子は兄弟の双方向リスト、cleanup は `Arena<CleanupEntry>` 上の片方向リストで、どちらも新しい物が先頭（S9）。
   今の Scope は UI スレッド専用の static で暗黙に持つ。`Scope.Create` / `Scope.OnCleanup` / `Scope.Dispose`（S9）。
   Effect は所有者。再実行の前と破棄で、子と後始末を片付ける（S9）。
   Scope の外の Effect は許し、`Dispose` で止める。`ScopeTracker` が所有者のない Effect も一覧にする（S9）。
@@ -193,6 +193,7 @@ Rejected:
   - 測る前に `CleanupKind` / `ResourceHandle` に切り替える
   - 相対性能（ID が N 倍）だけで採用を決める
   - cleanup の最初の例外で破棄を打ち切る
+  - `ScopeData` が cleanup と子を `List` で持つ（Scope を作るたびに `List` を確保する。S9）
   - Scope を全部のコンポーネント関数に引数で渡す（Solid・Vue・Svelte 5 は作ったときの文脈を所有者にする）
   - Effect の子と後始末を破棄のときだけ片付ける（再実行のたびに前の部分木が残る）
   - Scope の外で Effect を作ると例外にする（アプリの状態を Scope の外に置けない）

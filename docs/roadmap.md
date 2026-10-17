@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** S8b 完了。次は S9
+- **フェーズ:** S9 完了。次は M1
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -49,13 +49,13 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | done        | [#34](https://github.com/YUKIKEDA/XylemUI/issues/34) | 4問 Yes。詳細は Issue |
 | S8a | テキストの CPU 側: HarfBuzz / FreeType のソースからのビルドと静的リンク（NativeAOT の単一 exe）、`XylemUI.Text`、1 フォント・LTR・1 行のシェーピング、ラスタライズ、CPU のグリフアトラス | done        | [#44](https://github.com/YUKIKEDA/XylemUI/issues/44) | 4問 Yes。詳細は Issue |
 | S8b | テキストの GPU 側: アトラスのページ（テクスチャ）と更新、ページ + プロット単位の LRU の追い出し（§5.0.2）、GlyphRun コマンドとシェーダ（グレースケールの AA、透過の合成。UI の言語を `hb_buffer_set_language` で明示して渡す）。使用中のアトラスを更新しても画素が正しいことの確認。重い GPU で 50 ms のクロックのタイムアウトが `Present` を UI スレッドで待たせないかの見直し | done        | [#51](https://github.com/YUKIKEDA/XylemUI/issues/51) | 4問 Yes。詳細は Issue |
-| S9  | Scope（§2.3: 所有ツリー・`ScopeArena`・今の Scope・Effect が所有者・`ScopeTracker`）を Core に作り、その経路で cleanup の表現（ADR 0001）と GC の停止を測る。Computed は読み手がいなくなったら依存から外れる（§2.2.2） | not-started | —     |                                            |
-| M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測）。リサイズ時の layout をテキスト込みで再計測（S6b は 10,101 ノードで約 1.6 ms、テキスト無し）。初めて出る文字が多いフレームのラスタライズ（S8b で最大 184 グリフ、約 3.7 ms、§5.0.3。方式は T5）。アトラスの上限で断られたグリフ（`GlyphAtlas.RefusedCount`）は毎回ラスタライズし直されるので、その費用を避けるか（ラスタライズの前に箱の大きさを知る）と、上限に達したときの診断をどこに出すかを決める（S8b のレビュー） | not-started | —     | §11.3                                      |
+| S9  | Scope（§2.3: 所有ツリー・`ScopeArena`・今の Scope・Effect が所有者・`ScopeTracker`）を Core に作り、その経路で cleanup の表現（ADR 0001）と GC の停止を測る。Computed は読み手がいなくなったら依存から外れる（§2.2.2） | done        | [#60](https://github.com/YUKIKEDA/XylemUI/issues/60) | 4問 Yes。詳細は Issue |
+| M1  | 性能目標の確定（起動時間・バイナリサイズ・GPU execution time・Present latency・Input-to-photon を NativeAOT で実測）。リサイズ時の layout をテキスト込みで再計測（S6b は 10,101 ノードで約 1.6 ms、テキスト無し）。初めて出る文字が多いフレームのラスタライズ（S8b で最大 184 グリフ、約 3.7 ms、§5.0.3。方式は T5）。アトラスの上限で断られたグリフ（`GlyphAtlas.RefusedCount`）は毎回ラスタライズし直されるので、その費用を避けるか（ラスタライズの前に箱の大きさを知る）と、上限に達したときの診断をどこに出すかを決める（S8b のレビュー）。Effect が依存を読む順を変えると（`[C, D]` が `[D, C]`）、食い違った位置から先の辺を外して付け直し、読み手のいなくなった Computed は上流の連鎖ごと外れて付き直すので、順の変わりやすい Effect の費用を連鎖の長さで測る（S9 のレビュー） | not-started | —     | §11.3                                      |
 | L1  | Block/Flex の残り（wrap、justify / align、gap、`Percent` / `MinContent` / `MaxContent`）              | not-started | —     | §3.2                                       |
 | F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | not-started | —     | §4.5                                       |
 | T4  | テキストの描画品質。サブピクセル位置のグリフ（GPUI）、カバレッジのガンマとコントラストの補正（Skia）、ヒンティング、T2（サブピクセル AA）をこの行に寄せるか。`GlyphInstance` を 1 本の配列にした理由（S8b）を測る。Flutter / Avalonia / GPUI の出力と比べて Grill で決める（Issue #54） | not-started | —     | §4.1・§5.0.3                               |
 | T5  | 初めて出る文字のラスタライズを UI スレッドのフレームから外すか（S8b で最大 184 グリフ、約 3.7 ms。Chromium・Flutter は別スレッド、GPUI は同期）。方式を Grill で決める（Issue #54） | not-started | —     | §5.0.3・§11.3                              |
-| V1  | Button / Text / Column がクリックできる。入る前に、オフスクリーンパス（背景のぼかし・グループの不透明度・影・角丸のクリップ）をレンダラの設計に入れるかを Grill する（Acrylic を v1.x に送った理由の見直し、Issue #54）。`TextBuilder` の未決の 2 点: 書いた内容が前回と同じかの比べ方（作業用のバッファに書いてから入れ替えるなど）と、補間文字列ハンドラの受け手が struct のコピーになって長さが失われないか（D2 のレビュー） | not-started | —     |                                            |
+| V1  | Button / Text / Column がクリックできる。入る前に、オフスクリーンパス（背景のぼかし・グループの不透明度・影・角丸のクリップ）をレンダラの設計に入れるかを Grill する（Acrylic を v1.x に送った理由の見直し、Issue #54）。`TextBuilder` の未決の 2 点: 書いた内容が前回と同じかの比べ方（作業用のバッファに書いてから入れ替えるなど）と、補間文字列ハンドラの受け手が struct のコピーになって長さが失われないか（D2 のレビュー）。`Scope.Run` をコンポーネントの API で包むとき、`false`（`await` の間に部品が破棄された）のときは何もしなくてよい、という扱いを説明に書く（S9 のレビュー） | not-started | —     |                                            |
 | T1  | 改行（UAX#14 の 2 パス、§4.1）、グラフェム（UAX#29）、`tools/UnicodeTableGen`                         | not-started | —     | §4.1                                       |
 | V2  | ScrollView                                                                                            | not-started | —     |                                            |
 | V3  | TODO アプリ相当                                                                                       | not-started | —     |                                            |

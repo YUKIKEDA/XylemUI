@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 /// <summary>
@@ -5,12 +7,19 @@ namespace XylemUI;
 /// the order of their depth in the graph (design §2.2.2).
 /// </summary>
 /// <remarks>
+/// <para>
 /// An exception thrown by the code goes to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/>. The effect keeps the values
 /// it read before the exception and runs again when one of them changes.
+/// </para>
+/// <para>
+/// An effect is a scope (design §2.3): the effects, scopes, and cleanups made while it runs belong to it, and are disposed
+/// before it runs again and when it is disposed. An effect made inside a scope belongs to that scope and is disposed with it.
+/// </para>
 /// </remarks>
 public sealed class Effect : Computation, IDisposable
 {
     private readonly Action _run;
+    private ScopeHandle _scope;
 
     private Effect(Action run) => _run = run;
 
@@ -19,13 +28,22 @@ public sealed class Effect : Computation, IDisposable
     /// flush, they run in the flush's next cycle.
     /// </summary>
     /// <param name="run">The code to run. The signals and computed values it reads are recorded.</param>
-    /// <returns>The new effect. Dispose it to stop it.</returns>
-    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
-    public static Effect Create(Action run)
+    /// <param name="owner">The name <see cref="ScopeTracker"/> shows for the effect; the caller's name by default.</param>
+    /// <returns>The new effect. It belongs to the current scope, if any; dispose it to stop it sooner.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread, or a computed value is computing (a computed value has no side effects).
+    /// </exception>
+    public static Effect Create(Action run, [CallerMemberName] string owner = "")
     {
         ArgumentNullException.ThrowIfNull(run);
         UiThread.VerifyAccess();
+        if (ReactiveRuntime.Current is { } running && running is not Effect)
+        {
+            ThrowHelper.ThrowScopeInsideComputed();
+        }
+
         var effect = new Effect(run);
+        effect._scope = Scope.AllocateForEffect(effect, owner);
 
         // The first run is a batch, so the signals it sets are flushed after it, not in the middle of it.
         ReactiveRuntime.EnterBatch();
@@ -41,15 +59,26 @@ public sealed class Effect : Computation, IDisposable
         return effect;
     }
 
+    /// <inheritdoc />
+    private protected override bool IsLive => !IsDisposed;
+
     /// <summary>
-    /// Stops the effect. It no longer reads its sources and never runs again.
+    /// Stops the effect: what it owns is disposed (children first, then its cleanups, each in LIFO order), it no longer reads
+    /// its sources, and it never runs again.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    /// <exception cref="AggregateException">One or more of its cleanups threw; every cleanup still ran.</exception>
     public void Dispose()
     {
         UiThread.VerifyAccess();
+        Scope.DisposeForEffect(_scope);
         DisposeSources();
     }
+
+    /// <summary>
+    /// Stops the effect when its scope is disposed, after what the scope owns.
+    /// </summary>
+    internal void StopForDispose() => DisposeSources();
 
     /// <inheritdoc />
     internal override void MarkDirty()
@@ -87,13 +116,31 @@ public sealed class Effect : Computation, IDisposable
     }
 
     /// <inheritdoc />
-    private protected override void Execute() => _run();
+    private protected override void Execute()
+    {
+        ScopeHandle previous = Scope.Current;
+        Scope.Current = _scope;
+        try
+        {
+            _run();
+        }
+        finally
+        {
+            Scope.Current = previous;
+        }
+    }
 
     /// <inheritdoc />
     private protected override void OnException(Exception exception) => ReactiveRuntime.ReportException(exception);
 
     private void RunAndRequeue()
     {
+        // What the last run made goes first, in the scope's order; its cleanups' exceptions go to the handler.
+        if (HasRun && Scope.IsAlive(_scope) && Scope.ClearForRerun(_scope) is { } errors)
+        {
+            ReactiveRuntime.ReportException(errors);
+        }
+
         // An effect that disposed itself while it ran is Clean here (DisposeSources), so it is not queued again.
         Run();
         if (Status == ComputationStatus.Dirty)
