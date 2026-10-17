@@ -54,6 +54,7 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
     public T Get()
     {
         UiThread.VerifyAccess();
+        ReactiveRuntime.VerifyNotInLayout();
         if (IsDisposed)
         {
             ThrowHelper.ThrowComputedDisposed();

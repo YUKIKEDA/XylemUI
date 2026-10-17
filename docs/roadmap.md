@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** S6a 完了。次は S6b
+- **フェーズ:** S6b 完了。次は S7
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -44,7 +44,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | S4  | 同期リサイズ（`WndProc` 内 layout→present）。ユーザーコールバック禁止・例外バリア                     | done        | [#15](https://github.com/YUKIKEDA/XylemUI/issues/15) | 4問 Yes。詳細は Issue |
 | S5  | ワーカー → `UiMessage` のキュー（`ConcurrentQueue`）→ UI スレッド。独自 `SynchronizationContext`      | done        | [#17](https://github.com/YUKIKEDA/XylemUI/issues/17) | 4問 Yes。詳細は Issue |
 | S6a | Signal / Computed / Effect / `Batch` → Reactive scheduler。`await` の継続ごとの暗黙の `Batch`         | done        | [#25](https://github.com/YUKIKEDA/XylemUI/issues/25) | 4問 Yes。詳細は Issue |
-| S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | not-started | —     |                                            |
+| S6b | `UiTree` → `MarkDirty` → `LayoutRoots` の worklist → Block/Flex（row / column、grow / shrink / basis） | done        | [#30](https://github.com/YUKIKEDA/XylemUI/issues/30) | 4問 Yes。詳細は Issue |
 | S7  | DisplayList SoA → D3D11（COM vtable 直接呼び出し）三角形 → 単色矩形。`ResizeBuffers`                  | not-started | —     |                                            |
 | S8  | テキスト LTR/CJK（HarfBuzz + FreeType の静的リンク + アトラス）                                       | not-started | —     |                                            |
 | S9  | Scope cleanup のクロージャ・アロケーション実測と GC ポーズ計測。Computed の所有（Scope か、読み手ゼロで自動解除か） | not-started | —     |                                            |

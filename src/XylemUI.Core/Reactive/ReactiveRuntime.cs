@@ -22,6 +22,7 @@ public static class ReactiveRuntime
     private static EffectQueue _queue = new();
     private static EffectQueue _nextQueue = new();
     private static int _batchDepth;
+    private static int _layoutDepth;
     private static bool _flushing;
 
     /// <summary>
@@ -89,6 +90,28 @@ public static class ReactiveRuntime
         finally
         {
             ExitBatch();
+        }
+    }
+
+    /// <summary>
+    /// Opens a layout pass: until <see cref="ExitLayout"/>, reading or setting a signal fails the invariant (design §2.4.1:
+    /// layout is a pure computation over what is written on the nodes).
+    /// </summary>
+    internal static void EnterLayout() => _layoutDepth++;
+
+    /// <summary>
+    /// Closes a layout pass opened by <see cref="EnterLayout"/>.
+    /// </summary>
+    internal static void ExitLayout() => _layoutDepth--;
+
+    /// <summary>
+    /// Fails the invariant when a layout pass is running. Called by every read and write of a signal or a computed value.
+    /// </summary>
+    internal static void VerifyNotInLayout()
+    {
+        if (_layoutDepth != 0)
+        {
+            Invariant.Fail("A signal or a computed value was read or set during layout.");
         }
     }
 

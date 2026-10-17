@@ -43,6 +43,7 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
     public T Get()
     {
         UiThread.VerifyAccess();
+        ReactiveRuntime.VerifyNotInLayout();
         TrackRead();
         return _value;
     }
@@ -52,10 +53,18 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
     /// run when the outermost batch ends (design §2.2.1); outside a batch, before this method returns.
     /// </summary>
     /// <param name="value">The new value.</param>
-    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread, or a computed value is computing: a computed value has no side effects.
+    /// </exception>
     public void Set(T value)
     {
         UiThread.VerifyAccess();
+        ReactiveRuntime.VerifyNotInLayout();
+        if (ReactiveRuntime.Current is { } running && running is not Effect)
+        {
+            ThrowHelper.ThrowSetInsideComputed();
+        }
+
         bool equal = _comparer is null ? EqualityComparer<T>.Default.Equals(_value, value) : _comparer.Equals(_value, value);
         if (equal)
         {

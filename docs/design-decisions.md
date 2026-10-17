@@ -103,6 +103,10 @@ Decision:
   `SelfDirty.Layout || SubtreeDirty.Layout` ならそのノードの algorithm を実行する。
   LayoutPass は Signal を読まない。ネストした境界は Boundary barrier で内部へ潜らない。
   `MaxLayoutIterations` を超えたら、Reactive と同じく診断用の例外をハンドラに渡して打ち切る。
+  親は clean で `LayoutCacheKey` が等しい子の中へ入らない（Boundary barrier を兼ねる）。layout 中の Signal の `Get` / `Set` は不変条件違反。Computed の中の `Set` は例外（S6b）。
+  `Auto` の幅は使える幅いっぱい、高さは内容。Block はマージンを相殺しない。Flex の shrink は係数 × 仮の大きさの比。
+  測るだけの実行は何も書かず、キャッシュを layout の実行と別に持つ。
+  根から辿れないノードは layout root を作らない。計測関数の例外は報告して続け、その要求は次の pass に回す。
   Binding は `NodeProperty<T>` 記述子（ChangeKind を持つ）経由で UiNode に書く。
 
 Reason:
@@ -121,7 +125,13 @@ Rejected:
   - 親境界の再帰が子境界の隔離を突き抜ける
   - `LayoutCacheKey.DescendantLayout` を v1 でさらに細分化する
   - WPF / Avalonia の Panel ごとの Measure/Arrange（アルゴリズムが Panel に分散する）
-  - `LayoutRoots` のソートに毎回ラムダを渡す（キャッシュ済み IComparer を使う）
+  - `LayoutRoots` のソートに毎回ラムダを渡す（キャッシュ済みの `Comparison<T>` を使う。`IComparer<T>` を `List<T>.Sort` に渡すと、ソートのたびにデリゲートを作る）
+  - 計算された境界の資格が変わったときに親を dirty にして修復する（親が子を layout するたびに書き直されるので、古い値で止まらない）
+  - `ParentLayoutChanged` の要求（親が子を直接 layout する）
+  - 親の無いノードをすべて根と見なす（取り付ける前の `SetStyle` が根になり、pass が不変条件違反になる）
+  - layout 中の例外で pass を止め、残りの要求を捨てる
+  - キャッシュを1つにし、測る実行でもノードに書く（Flex の子が毎フレーム外れる。1 万ノードの1か所の変更で 1,605 µs、分けると 21.1 µs）
+  - Computed の中の `Set` を debug だけで検出する／不変条件違反にする（アプリの誤りなので、どの構成でも例外にする。オーナー決定）
 
 ---
 
