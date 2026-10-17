@@ -391,6 +391,7 @@ async Task LoadAsync()
 {
     ScopeHandle scope = Scope.Current;
     var items = await FetchAsync();
+    // false: the part of the screen went away during the await, so there is nothing to render.
     _ = Scope.Run(scope, () => Effect.Create(() => Render(items)));
 }
 ```
