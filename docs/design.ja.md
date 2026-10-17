@@ -266,7 +266,8 @@ static void Reevaluate(ComputationState computation)
 - **`Effect.Create`:** 作った時点で1回実行する。その実行は `Batch` として扱い、中で `Set` した Signal の Effect は実行の後に flush する（途中で他の Effect が走らない）。flush の中で作った場合は、その flush の次の cycle に回る。S6a のレビューで、`Batch` の外で作ると自分が読む Signal の `Set` が次の無関係な `Set` まで処理されないことが分かり、こうした
 - **破棄:** `Effect.Dispose` と `Computed.Dispose` は依存への辺を外す。queue で待っている Effect を破棄すると、その Effect は実行されない。`Computed` を破棄しても読み手には通知しない。読み手は別の依存が変わって再実行されたとき、`Get` で `ObjectDisposedException` を受ける（Effect ならハンドラへ）
 - **pull の再帰:** Computed の pull は鎖の長さに比例してスタックを使う。1,000 段は確かめたが、数万段の鎖は想定しない
-- **未決（行あり）:** Computed の中の `Signal.Set`（副作用）は今はガードしない。「Computed は純粋」は規約のままで、debug で検出するかは S6b の layout 中の Signal 読みのガードと一緒に決める。Computed の所有（Scope が Computed も所有するか、読み手が無くなったら依存から自動で外れるか。Preact Signals は後者）は S9 で決める。それまでは、読み手が全て破棄された Computed も依存への辺を持ち続け、`Set` のたびに dirty の対象になる
+- **Computed の中の `Set`（S6b でオーナーが決定）:** Computed の計算中に `Signal.Set` すると、debug・release とも `InvalidOperationException`（Computed は副作用を持たない。自分を読む Computed と同じく、例外として保持して `Get` で投げ直す）。layout 中の `Get` / `Set` は §2.4.1 の不変条件違反
+- **未決（行あり）:** Computed の所有（Scope が Computed も所有するか、読み手が無くなったら依存から自動で外れるか。Preact Signals は後者）は S9 で決める。それまでは、読み手が全て破棄された Computed も依存への辺を持ち続け、`Set` のたびに dirty の対象になる
 - **公開 API:** `Signal.Create(value, comparer)`・`Computed.Create(func, comparer)`・`Effect.Create(action)`（上記。`Dispose` で止める）・`ReactiveRuntime.Batch`・`ReactiveRuntime.UnhandledExceptionHandler`。読み取り専用の型は `IReadOnlySignal<T>`
 
 **依存辺の差分維持:** 大半の再評価は前回と同じ依存を同じ順に読むので、`ReadCursor` が前回の `Sources` と一致している間は辺を張り替えない。条件分岐で読む依存が変わったときだけ、食い違った位置から先を付け替える（Preact Signals のノード再利用と同じ考え方）。1回の実行で同じ依存を2度読んだ場合は辺を2本持つ。dirty 化は冪等なので結果は変わらない。辺を外すときは、相手側の配列で末尾の辺を空いた位置へ移し、移した辺の相手が持つ `Slot*` を書き換える。
@@ -332,7 +333,7 @@ batch outermost（最も外側のbatch）の終了時
 
 **S6a（C# 版で検証済み、Issue #25）:** `Batch` 内の複数 `Set` は Effect を1回だけ flush し、ダイヤモンド（A→B,C→D）の D は pull で1回だけ評価され、新しい B と古い C を同時に読まなかった。Computed は queue に入らない。条件分岐で読む依存が変わると、変わった位置から先の辺だけが付け替わった。定常状態の `Set` → flush はアロケーション 0（Debug・Release、1 万回）。Effect 内の `Set` は次 cycle で処理され、安定しない Effect は 100 cycle で打ち切られて診断がハンドラに届いた。UI スレッドのキューから取り出した1件（`await` の継続・メッセージ）は暗黙の `Batch` になった。NativeAOT で、Signal → Computed → Effect の `Set` は 1 回約 53 ns、1 万個の Signal と Effect の `Batch` は約 0.34 ms（§11.3 の Reactive 更新 0.5 ms の内側）。
 
-**S6（MoonBit 版で検証済み。Invalidation と Layout は C# 版の S6b で再検証）:** `MarkDirty` は origin に `SelfDirty`、経路に `SubtreeDirty`、Layout 境界で `LayoutRoots` 停止。Color は載せない。worklist は Block/Flex（1次元幅）を回し、pass 中の再 dirty は次 cycle。layout 中は tracking off で Signal 読みが不変条件違反になる。
+**S6b（C# 版で検証済み、Issue #30）:** `MarkDirty` は起点に `SelfDirty`、境界までの経路に `SubtreeDirty` を立て、境界（構造の境界・計算された境界・根）で `LayoutRoots` に積んで止まった。Color は積まない。worklist は浅い順に処理し、入れ子の根を二重に layout しなかった。pass の中で dirty になったものは次の cycle で処理され、上限（100）で打ち切って診断が届いた。Block / Flex は手計算した矩形と一致し、clean な子はキャッシュで省略された（測る実行と layout の実行の両方）。layout 中の Signal の `Get` / `Set` は不変条件違反になった。1 万ノードで1か所を変えた再 layout はアロケーション 0（テスト、Debug・Release）。NativeAOT で、10,101 ノードの最初の layout が約 1.6 ms、1か所を変えた再 layout が 21.1 µs、固定サイズの行の中の変更が 5.5 µs、ウィンドウ幅の変更（全ノードの制約が変わる）が約 1.6 ms（§11.3 の Layout 2.0 ms の内側）。
 
 **安定しない flush の扱い（C# 版で変更）:** 上限を超えるのはアプリ側の循環（Effect が自分の依存を書き続ける等）であり、内部の不変条件違反（§0.1）ではない。debug と release で振る舞いを変えず、テストで確かめられるよう、診断用の例外をハンドラに渡して打ち切る。.NET の `Debug.Fail` はデバッガが付いていないとプロセスを終えるので使わない。debug で止めたい場合はハンドラ側でブレークする。
 
@@ -718,6 +719,20 @@ static void RunLayoutPass(UiTree tree)
 ```
 
 `LayoutPass`の起点はルート固定ではなく、深度ソート済みworklistの各要素になる。
+
+**C# 版の実装（S6b で確定）:** 上の擬似コードから、次の点を変えた・決めた。
+
+- **型と入口:** `UiTree` が `CreateNode(style, measure)`・`AppendChild`・`SetStyle`・`GetRect` を持ち、構造とスタイルの変更はここを通す（版と dirty を正しく保つため）。`UiNode` は `LastChild`（末尾への追加を O(1) にする）と `Depth`（layout root の並べ替え）を持つ。`LayoutEngine.RunLayoutPass` は UI スレッドだけが呼べる
+- **`AvailableSpace`:** 親が子の border box に許す幅と高さの範囲（最小と最大。最大は無限でもよい）。両軸で最小と最大が等しいとき tight（`IsTight`）
+- **キャッシュ:** 親が子を layout するとき（`LayoutChild`）、子が clean で `LayoutCacheKey` が等しければ、前回の大きさを使い、子の中へ入らない。等しくなければ、clean でも計算し直す（制約が変わった子）。worklist の根は dirty なので、キャッシュで省略しない。これが Boundary barrier を兼ねる
+- **測るだけの実行（measure）と layout の実行:** Flex が子の仮の大きさを測る実行は、大きさを返すだけでノードに何も書かない（位置・dirty フラグ・layout のキャッシュ）。キャッシュは実行の種類ごとに1つずつ持つ（`CachedKey` と `MeasureKey`。Taffy の compute-size と perform-layout と同じ分け方）。1つだけだと、Flex の子は毎フレーム「測る制約」と「最終の制約」で交互に外れ、clean な子もすべて計算し直していた（1 万ノードで1か所を変えた再 layout が 1,605 µs。分けて 21.1 µs、NativeAOT）。layout の実行は子を動かして自分の `DescendantLayout` を進めるが、測った結果は子の位置に依らない（中の内容が変われば経路が dirty になる）ので、layout の実行の後に `MeasureKey` の `DescendantLayout` を付け直す
+- **`DescendantLayout`:** ノードの矩形（大きさまたは位置）が変わると、そのノードの `Versions.Layout` と、境界までの祖先の `DescendantLayout` を進める。キーはアルゴリズムの後で書くので、子が進めた分を含む
+- **`LayoutReason`:** S6b にあるのは `IntrinsicSizeChanged` と `WindowResize` だけ。`ParentLayoutChanged` は、親が子を直接 layout するので要らない。`MaterializationChanged` は P02。`MarkDirty` の要求は、同じノードの要求がすでにあれば足さない。ウィンドウのリサイズは、同じノードの要求を制約付きで置き換える
+- **計算された境界の修復は持たない:** 上の「前フレームから境界資格が変化した場合は親へ `MarkDirty(Layout)`」は入れなかった。`CachedComputedBoundary` は親が子を layout するたびに書き直され、親は子を layout し直さずに制約を変えられないので、古い値で伝播が止まることがない。S6b のアルゴリズムが両軸 tight の制約を渡すのは根だけで、根以外が計算された境界になるのは L1 の stretch から
+- **`InvalidationBoundary` の構造体は持たない:** `AffectsParentSize` は `IsLayoutBoundaryForInvalidation`、`IsolatesSubtree` はキャッシュの命中で表せた。Paint / Semantics / HitTest の境界はそれぞれの行で足す
+- **安定しなかったとき:** `MaxLayoutIterations`（100）を超えると、`LayoutStabilizationException` を `ReactiveRuntime.UnhandledExceptionHandler` に渡して打ち切る。残った要求は次の pass で処理する（Reactive と同じ）
+- **ガード:** layout の pass の間は、Signal の `Get` / `Set` と Computed の `Get` が不変条件違反（debug は `InvariantViolationException`、release は `FailFast`）。layout を書くのはフレームワーク自身なので（オーナー決定）。pass は `ForbidAllocation` の区間でもあり、ノードを作ると不変条件違反
+- **ノードの破棄はまだ無い:** 要求のノードが生きているかの確認は、ノードを外す処理（Materialization、P02）と一緒に入れる
 
 **LayoutPass は純粋な計算フェーズである。** Binding 層（§2.4）が Effect として Signal 値を UiNode プロパティへ書き終えたあとでのみ走る。`LayoutPass` / `LayoutFlex` / `MeasureText` は確定済みプロパティだけを読む。Signal の getter 呼び出し・依存登録・`Signal.Set` は禁止する（トラッキング無効、debug では assert）。pass 中に新たな Reactive dirty は発生しない。Layout 自身が子の intrinsic 変化で `MarkDirty(Layout)` することは許可し、その分は worklist の次サイクルへ回す。ノードフラグは「この pass で処理した分だけ差し引く」。`LayoutRoots` は固定配列の `Clear()` をせず、worklist で処理中追加分を次サイクルへ回す。
 
@@ -1451,6 +1466,12 @@ public struct LayoutStyle
 - **inline formatting context は持たない。** 文字の並びはテキストノードの内部（§4）だけで扱い、要素をテキストの行に流し込むことはしない（インラインオブジェクトは §4.1 の将来拡張）
 - **`box-sizing` は常に border-box。** 指定したサイズはパディングとボーダーを含む
 - Block は子を主軸方向に順に積むだけのアルゴリズムとし、Taffy の Block 相当からマージン相殺を除いたものにする
+
+**Block / Flex の意味（C# 版、S6b で確定。L1 で広げる）:**
+
+- **`Auto` の大きさ:** 幅は、使える幅が有限ならそのすべて、無限なら内容の幅。高さは内容の高さ。計測関数を持つ葉は、両軸とも内容の大きさ。どの大きさも制約の範囲に収める。指定したサイズは border box（パディングを含む）
+- **Block:** 子を上から順に積む。マージンは常に足し合わせる（相殺しない）。子に渡す幅は、コンテンツの幅から子の左右のマージンを引いたものを最大とする範囲
+- **Flex:** 主軸の仮の大きさは `FlexBasis`（固定）→ 主軸の固定サイズ → 内容（主軸を無制限にして測る）の順。空きは `FlexGrow` の比で分け、はみ出しは `FlexShrink` × 仮の大きさの比で削る（0 より小さくしない）。交差軸は start 揃えで、`Auto` なら内容の大きさ。wrap・justify / align の start 以外・gap・min / max は L1
 
 テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
 

@@ -28,5 +28,10 @@ internal static class ThrowHelper
 
     [DoesNotReturn]
     [StackTraceHidden]
+    internal static void ThrowSetInsideComputed() =>
+        throw new InvalidOperationException("A signal was set while a computed value computes; a computed value has no side effects.");
+
+    [DoesNotReturn]
+    [StackTraceHidden]
     internal static void ThrowComputedDisposed() => throw new ObjectDisposedException(null, "The computed value was disposed.");
 }
