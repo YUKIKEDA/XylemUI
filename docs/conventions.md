@@ -29,8 +29,9 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `src/XylemUI.Rendering.D3D11` | D3D11 のレンダラ（`D3D11Renderer`）。`DisplayList` を描く。デバイス・スワップチェーン・シェーダ・`ResizeBuffers`・グリフアトラスのテクスチャ配列とアップロード・readback（`net10.0-windows`、unsafe 可） |
 | `src/XylemUI.Text` | テキストのパイプライン。HarfBuzz / FreeType の `LibraryImport`、`Font`・`TextShaper`・`TextLanguage`・`GlyphAtlas`（`net10.0`、unsafe 可）。NativeAOT のアプリは `XylemUI.Text.targets` を取り込む |
 | `samples/HelloText` | テキストをシェーピングしてラスタライズするコンソールのサンプル。`--auto` で S8a の検査と計測をして終了する。`--atlas-sizing` はアトラスの大きさを決める測定（S8b）（`PublishAot`。フォントは埋め込みリソース） |
-| `samples/ScopeCost` | Scope の cleanup の表現と、Scope の作り直しの GC を測るコンソールのサンプル（S9、ADR 0001。`PublishAot`） |
-| `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（画素、テキストのインク、120 フレーム、フレームの CPU 時間）をして終了する。`--heavy N` は GPU に負荷をかける（`PublishAot`。フォントは埋め込みリソース） |
+| `benchmarks/XylemUI.E2E` | End-to-end の計測（M1a、`docs/benchmarks/m1-baseline.md`）。起動・アイドル・フレーム・入力の代理指標・テキスト込みのリサイズ・Scope の cleanup（ADR 0001）など。`external` は他のフレームワークのアプリをプロセスの外から測る（`PublishAot`、記録するがゲートにしない） |
+| `benchmarks/compare` | 比較のための同じ場面のアプリ（Avalonia・Flutter・GPUI）と、`build.ps1`・`measure.ps1`・`summarize.py`。リポジトリのビルドの設定は引き継がない |
+| `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（画素、テキストのインク、120 フレーム、フレームの CPU 時間）をして終了する（`PublishAot`。フォントは埋め込みリソース） |
 | `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture`（このアセンブリで `UiThread` を初期化するのはこれだけ）の上で走る |
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
 | `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |

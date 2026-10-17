@@ -2,6 +2,9 @@ version: 2
 updates:
   - package-ecosystem: nuget
     directory: /
+    # The comparison apps pin their frameworks for the M1a baseline (docs/benchmarks/m1-baseline.md).
+    exclude-paths:
+      - "benchmarks/compare/**"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

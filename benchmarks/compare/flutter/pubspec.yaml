@@ -1,0 +1,17 @@
+name: compare_flutter
+description: The comparison scene in Flutter (XylemUI roadmap row M1a).
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  fonts:
+    - family: XylemUITest
+      fonts:
+        - asset: fonts/XylemUITestSans.ttf

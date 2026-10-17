@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <PublishAot>true</PublishAot>
+    <RootNamespace>XylemUI.E2E</RootNamespace>
+    <!-- Reads the renderer's frame measurements through TerraFX pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
+  </ItemGroup>
+  <!-- The test font, inside the executable, so the measured app needs no file next to it. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\tests\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" LogicalName="XylemUITestSans.ttf" />
+  </ItemGroup>
+  <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
+</Project>
