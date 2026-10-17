@@ -1,15 +1,173 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 /// <summary>
-/// What a cached layout of a node was computed from (design §2.4). Equal keys mean the cached size is still right.
+/// What a cached layout result of a node depends on (design §2.4, §3.2): the input as far as it matters, and the versions of
+/// the node's style, children, and descendants' layout.
 /// </summary>
-/// <param name="AvailableSpace">The constraint the parent gave.</param>
+/// <param name="Known">The known sizes.</param>
+/// <param name="KnownWidthIsDefinite">Whether the known width is definite; <see langword="true"/> when the width is not known.</param>
+/// <param name="KnownHeightIsDefinite">The same, for the height.</param>
+/// <param name="Parent">The parent size, on the axes where the node's own style uses a percentage of it; NaN elsewhere.</param>
+/// <param name="Available">The available space, on the axes whose size is not known; a fixed value elsewhere.</param>
+/// <param name="SizingMode">Whether the node's size styles applied.</param>
 /// <param name="LayoutStyleVersion">The node's <see cref="NodeVersions.LayoutStyle"/>.</param>
 /// <param name="ChildStructureVersion">The node's <see cref="NodeVersions.Children"/>.</param>
 /// <param name="DescendantLayoutVersion">The node's <see cref="NodeVersions.DescendantLayout"/>.</param>
 internal readonly record struct LayoutCacheKey(
-    AvailableSpace AvailableSpace,
+    OptionalSize Known,
+    bool KnownWidthIsDefinite,
+    bool KnownHeightIsDefinite,
+    OptionalSize Parent,
+    AvailableSize Available,
+    SizingMode SizingMode,
     ulong LayoutStyleVersion,
     ulong ChildStructureVersion,
     ulong DescendantLayoutVersion
-);
+)
+{
+    /// <summary>
+    /// Returns the key of <paramref name="input"/> for <paramref name="node"/>. The available space of an axis whose size is
+    /// known does not change the result (Taffy keys the same way), and neither does the parent size on an axis where the node
+    /// uses no percentage of it (design §3.2).
+    /// </summary>
+    public static LayoutCacheKey Of(in UiNode node, in LayoutInput input)
+    {
+        OptionalSize known = input.KnownDimensions;
+        bool knownWidth = !float.IsNaN(known.Width);
+        bool knownHeight = !float.IsNaN(known.Height);
+        LayoutStyle style = node.Layout.Style;
+        return new(
+            known,
+            !knownWidth || input.KnownWidthIsDefinite,
+            !knownHeight || input.KnownHeightIsDefinite,
+            new OptionalSize(
+                style.UsesPercentOfParentWidth ? input.ParentSize.Width : float.NaN,
+                style.UsesPercentOfParentHeight ? input.ParentSize.Height : float.NaN
+            ),
+            new AvailableSize(knownWidth ? default : input.Available.Width, knownHeight ? default : input.Available.Height),
+            input.SizingMode,
+            node.Versions.LayoutStyle,
+            node.Versions.Children,
+            node.Versions.DescendantLayout
+        );
+    }
+}
+
+/// <summary>
+/// The results of the measuring runs of a node (design §3.2): <see cref="Capacity"/> entries, the one not used for longest
+/// overwritten first (Taffy's cache of measurements).
+/// </summary>
+internal struct MeasureCache
+{
+    /// <summary>
+    /// The number of entries.
+    /// </summary>
+    public const int Capacity = 9;
+
+    private Entries _entries;
+    private ushort _recentlyUsed;
+    private byte _next;
+    private byte _count;
+
+    /// <summary>
+    /// Returns the size cached for <paramref name="key"/>. An entry measured for both axes serves either; one measured for one
+    /// axis serves only that axis, since its other axis means nothing.
+    /// </summary>
+    public bool TryGet(in LayoutCacheKey key, RequestedAxis axis, out Size size)
+    {
+        for (int i = 0; i < _count; i++)
+        {
+            ref Entry entry = ref _entries[i];
+            if ((entry.Axis == RequestedAxis.Both || entry.Axis == axis) && entry.Key == key)
+            {
+                _recentlyUsed |= (ushort)(1 << i);
+                size = entry.Size;
+                return true;
+            }
+        }
+
+        size = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Keeps the size of a measuring run.
+    /// </summary>
+    public void Store(in LayoutCacheKey key, RequestedAxis axis, Size size)
+    {
+        for (int i = 0; i < _count; i++)
+        {
+            ref Entry existing = ref _entries[i];
+            if (existing.Axis == axis && existing.Key == key)
+            {
+                existing.Size = size;
+                _recentlyUsed |= (ushort)(1 << i);
+                return;
+            }
+        }
+
+        int index;
+        if (_count < Capacity)
+        {
+            index = _count++;
+        }
+        else
+        {
+            // The clock of Taffy's cache: skip, and clear, the entries used since the hand last passed them.
+            while ((_recentlyUsed & (1 << _next)) != 0)
+            {
+                _recentlyUsed &= (ushort)~(1 << _next);
+                _next = (byte)((_next + 1) % Capacity);
+            }
+
+            index = _next;
+            _next = (byte)((_next + 1) % Capacity);
+        }
+
+        _entries[index] = new Entry
+        {
+            Key = key,
+            Axis = axis,
+            Size = size,
+        };
+        _recentlyUsed |= (ushort)(1 << index);
+    }
+
+    /// <summary>
+    /// Drops every entry.
+    /// </summary>
+    public void Clear()
+    {
+        _count = 0;
+        _next = 0;
+        _recentlyUsed = 0;
+    }
+
+    /// <summary>
+    /// Gives every entry the node's current descendant version: a layout run moved the children, and a measurement does not
+    /// depend on where they were placed (a change of content inside drops the cache instead).
+    /// </summary>
+    public void Restamp(ulong descendantLayoutVersion)
+    {
+        for (int i = 0; i < _count; i++)
+        {
+            ref Entry entry = ref _entries[i];
+            entry.Key = entry.Key with { DescendantLayoutVersion = descendantLayoutVersion };
+        }
+    }
+
+    private struct Entry
+    {
+        public LayoutCacheKey Key;
+        public RequestedAxis Axis;
+        public Size Size;
+    }
+
+    [InlineArray(Capacity)]
+    private struct Entries
+    {
+        private Entry _first;
+    }
+}

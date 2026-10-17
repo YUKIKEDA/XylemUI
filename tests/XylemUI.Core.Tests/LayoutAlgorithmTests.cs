@@ -2,13 +2,14 @@ using static XylemUI.Tests.LayoutTestTree;
 
 namespace XylemUI.Tests;
 
-// Block and Flex against rectangles computed by hand (S6b, design §3.2). Every remark gives the arithmetic.
+// Block and Flex against rectangles computed by hand (S6b; CSS's meaning since L1a, design §3.2). Every remark gives the
+// arithmetic. Taffy's XML tests check the algorithms against Chrome; these keep the cases the caches and versions depend on.
 [Collection(UiThreadGroup.Name)]
 public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
 {
     /// <summary>
     /// Block stacks its children vertically, with padding and margins added, never collapsed; an auto width fills the content
-    /// box; a leaf takes its content's size.
+    /// box less the margins, a leaf's included (CSS; S6b gave a leaf its content's width).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -19,9 +20,9 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     /// - Lay out.
     ///
     /// Expected:
-    /// - A: (10 + 5, 10 + 5) = (15, 15), 50 x 20.
+    /// - A: (10 + 5, 10 + 5) = (15, 15); width 300 − 20 − 10 = 270; height 20 (its content's).
     /// - B: x 10; y = 15 + 20 + 5 + 10 = 50; width 300 − 20 = 280; height 30.
-    /// - root: 300 x 200 (the window's tight constraint).
+    /// - root: 300 x 200 (the window's exact size).
     /// </remarks>
     [Fact]
     public void Block_StacksChildrenWithPaddingAndMargins() =>
@@ -30,11 +31,11 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle { Padding = EdgeInsets.All(10) });
             NodeHandle a = Leaf(tree, root, 50, 20, new LayoutStyle { Margin = EdgeInsets.All(5) });
-            NodeHandle b = Box(tree, root, new LayoutStyle { Height = Length.Px(30), Margin = new EdgeInsets(0, 10, 0, 0) });
+            NodeHandle b = Box(tree, root, new LayoutStyle { Height = Length.Px(30), Margin = EdgeInsets.Px(0, 10, 0, 0) });
 
             LayOut(tree, root, 300, 200);
 
-            Assert.Equal(new Rect(15, 15, 50, 20), tree.GetRect(a));
+            Assert.Equal(new Rect(15, 15, 270, 20), tree.GetRect(a));
             Assert.Equal(new Rect(10, 50, 280, 30), tree.GetRect(b));
             Assert.Equal(new Rect(0, 0, 300, 200), tree.GetRect(root));
         });
@@ -52,7 +53,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - A: (10 + 5, 10 + 5) = (15, 15); width 300 − 20 − 10 = 270; height 3 + 10 + 3 = 16.
-    /// - B: (3 + 4, 3) = (7, 3); width 270 − 6 − 4 = 260; height 10. leaf: (0, 0), 10 x 10.
+    /// - B: (3 + 4, 3) = (7, 3); width 270 − 6 − 4 = 260; height 10. leaf: (0, 0), 260 x 10 (the width B gives it).
     /// </remarks>
     [Fact]
     public void Block_Nested_SubtractsPaddingAndMarginsFromTheWidth() =>
@@ -61,18 +62,19 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle { Padding = EdgeInsets.All(10) });
             NodeHandle a = Box(tree, root, new LayoutStyle { Margin = EdgeInsets.All(5), Padding = EdgeInsets.All(3) });
-            NodeHandle b = Box(tree, a, new LayoutStyle { Margin = new EdgeInsets(4, 0, 0, 0) });
+            NodeHandle b = Box(tree, a, new LayoutStyle { Margin = EdgeInsets.Px(4, 0, 0, 0) });
             NodeHandle leaf = Leaf(tree, b, 10, 10);
 
             LayOut(tree, root, 300, 200);
 
             Assert.Equal(new Rect(15, 15, 270, 16), tree.GetRect(a));
             Assert.Equal(new Rect(7, 3, 260, 10), tree.GetRect(b));
-            Assert.Equal(new Rect(0, 0, 10, 10), tree.GetRect(leaf));
+            Assert.Equal(new Rect(0, 0, 260, 10), tree.GetRect(leaf));
         });
 
     /// <summary>
-    /// A row divides its free space by the grow factors.
+    /// A row divides its free space by the grow factors, and stretches every item with an auto height to its own height
+    /// (`align-items: stretch`, CSS's initial value; S6b aligned at the start).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -83,7 +85,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - Free space 400 − 100 = 300: C2 gets 75, C3 gets 225.
-    /// - x: C1 0, C2 100, C3 175. Heights: C1 0 (an empty block), C2 and C3 10.
+    /// - x: C1 0, C2 100, C3 175. Heights: all 100, the row's (the window's exact height).
     /// </remarks>
     [Fact]
     public void Row_DividesFreeSpaceByGrow() =>
@@ -97,9 +99,9 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
 
             LayOut(tree, root, 400, 100);
 
-            Assert.Equal(new Rect(0, 0, 100, 0), tree.GetRect(c1));
-            Assert.Equal(new Rect(100, 0, 75, 10), tree.GetRect(c2));
-            Assert.Equal(new Rect(175, 0, 225, 10), tree.GetRect(c3));
+            Assert.Equal(new Rect(0, 0, 100, 100), tree.GetRect(c1));
+            Assert.Equal(new Rect(100, 0, 75, 100), tree.GetRect(c2));
+            Assert.Equal(new Rect(175, 0, 225, 100), tree.GetRect(c3));
         });
 
     /// <summary>
@@ -113,7 +115,8 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     /// - Lay out.
     ///
     /// Expected:
-    /// - Overflow 300 − 200 = 100, weights 150 and 450: the first loses 25 (125), the second 75 (75); x 0 and 125.
+    /// - Overflow 300 − 200 = 100, weights 150 and 450: the first loses 25 (125), the second 75 (75); x 0 and 125. Their
+    ///   automatic minimum is 0 (empty boxes), so it does not stop the shrink. Heights 50, stretched.
     /// </remarks>
     [Fact]
     public void Row_ShrinksByFactorTimesBasis() =>
@@ -126,12 +129,13 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
 
             LayOut(tree, root, 200, 50);
 
-            Assert.Equal(new Rect(0, 0, 125, 0), tree.GetRect(first));
-            Assert.Equal(new Rect(125, 0, 75, 0), tree.GetRect(second));
+            Assert.Equal(new Rect(0, 0, 125, 50), tree.GetRect(first));
+            Assert.Equal(new Rect(125, 0, 75, 50), tree.GetRect(second));
         });
 
     /// <summary>
-    /// A column with an auto height takes its content's height and fills the width its parent gives.
+    /// A column with an auto height takes its content's height and fills the width its parent gives; its items stretch to its
+    /// inner width.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -142,7 +146,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - column: (0, 0), width 300, height 4 + 10 + 20 + 6 + 4 = 44.
-    /// - leaves: (4, 4) 30 x 10 and (4, 14) 40 x 20 (an auto cross size is the content's: align start).
+    /// - leaves: (4, 4) and (4, 14), both 300 − 8 = 292 wide (stretched), 10 and 20 high.
     /// </remarks>
     [Fact]
     public void Column_TakesItsContentHeightAndFillsTheWidth() =>
@@ -152,13 +156,13 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             NodeHandle column = Box(tree, root, Column() with { Padding = EdgeInsets.All(4) });
             NodeHandle first = Leaf(tree, column, 30, 10);
-            NodeHandle second = Leaf(tree, column, 40, 20, new LayoutStyle { Margin = new EdgeInsets(0, 0, 0, 6) });
+            NodeHandle second = Leaf(tree, column, 40, 20, new LayoutStyle { Margin = EdgeInsets.Px(0, 0, 0, 6) });
 
             LayOut(tree, root, 300, 500);
 
             Assert.Equal(new Rect(0, 0, 300, 44), tree.GetRect(column));
-            Assert.Equal(new Rect(4, 4, 30, 10), tree.GetRect(first));
-            Assert.Equal(new Rect(4, 14, 40, 20), tree.GetRect(second));
+            Assert.Equal(new Rect(4, 4, 292, 10), tree.GetRect(first));
+            Assert.Equal(new Rect(4, 14, 292, 20), tree.GetRect(second));
         });
 
     /// <summary>
@@ -172,7 +176,8 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     /// - Lay out.
     ///
     /// Expected:
-    /// - inner: (0, 0), 50 x 10 (its leaves at x 0 and 20). rest: (50, 0), width 500 − 50 = 450.
+    /// - inner: (0, 0), 50 x 100 (stretched to the row; its leaves at x 0 and 20, stretched to 100). rest: (50, 0), width
+    ///   500 − 50 = 450, height 100.
     /// </remarks>
     [Fact]
     public void Row_AutoBasis_IsMeasuredFromTheContent() =>
@@ -187,14 +192,14 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
 
             LayOut(tree, root, 500, 100);
 
-            Assert.Equal(new Rect(0, 0, 50, 10), tree.GetRect(inner));
-            Assert.Equal(new Rect(0, 0, 20, 10), tree.GetRect(left));
-            Assert.Equal(new Rect(20, 0, 30, 10), tree.GetRect(right));
-            Assert.Equal(new Rect(50, 0, 450, 0), tree.GetRect(rest));
+            Assert.Equal(new Rect(0, 0, 50, 100), tree.GetRect(inner));
+            Assert.Equal(new Rect(0, 0, 20, 100), tree.GetRect(left));
+            Assert.Equal(new Rect(20, 0, 30, 100), tree.GetRect(right));
+            Assert.Equal(new Rect(50, 0, 450, 100), tree.GetRect(rest));
         });
 
     /// <summary>
-    /// When one subtree changes, a clean sibling subtree with the same constraint keeps its cached layout and is not visited.
+    /// When one subtree changes, a clean sibling subtree with the same input keeps its cached layout and is not visited.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -283,7 +288,8 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
     /// - Change A's style to height 30; run the pass.
     ///
     /// Expected:
-    /// - B moved from y 10 to y 30; B's layout version and root's descendant version advanced; B kept its size.
+    /// - B moved from y 10 to y 30; B's layout version and root's descendant version advanced; B kept its size (300 x 10,
+    ///   the root's width).
     /// </remarks>
     [Fact]
     public void MovedNode_AdvancesItsVersionAndItsParents() =>
@@ -300,7 +306,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             tree.SetStyle(a, new LayoutStyle { Height = Length.Px(30) });
             LayoutEngine.RunLayoutPass(tree);
 
-            Assert.Equal(new Rect(0, 30, 10, 10), tree.GetRect(b));
+            Assert.Equal(new Rect(0, 30, 300, 10), tree.GetRect(b));
             Assert.True(tree.Nodes.GetRef(b).Versions.Layout > bVersion);
             Assert.True(tree.Nodes.GetRef(root).Versions.DescendantLayout > rootDescendants);
         });

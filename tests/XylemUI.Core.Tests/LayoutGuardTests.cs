@@ -6,7 +6,7 @@ namespace XylemUI.Tests;
 [Collection(UiThreadGroup.Name)]
 public sealed class LayoutGuardTests(UiThreadFixture ui)
 {
-    private static readonly MeasureFunc TenByTen = static _ => new Size(10, 10);
+    private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
     /// <summary>
     /// Reading or setting a signal, or reading a computed value, during layout fails the invariant, and the pass is closed
@@ -41,10 +41,10 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 NodeHandle root = tree.CreateNode(new LayoutStyle());
                 NodeHandle leaf = tree.CreateNode(
                     new LayoutStyle(),
-                    space =>
+                    (_, _) =>
                     {
                         use();
-                        return new Size(10, 10);
+                        return MeasureResult.Of(10, 10);
                     }
                 );
                 tree.AppendChild(root, leaf);

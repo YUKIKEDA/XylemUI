@@ -7,8 +7,8 @@ namespace XylemUI.Tests;
 public sealed class LayoutWorklistTests(UiThreadFixture ui)
 {
     /// <summary>
-    /// When a boundary and an ancestor are both layout roots, the ancestor goes first and the boundary is laid out once, at the
-    /// ancestor's new constraint.
+    /// When a boundary and an ancestor are both layout roots, the ancestor goes first and the boundary is laid out once, with
+    /// the input from the ancestor's new size.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -21,7 +21,8 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
     /// - Run the pass.
     ///
     /// Expected:
-    /// - The boundary and the leaf ran once each. The boundary's width is 80 (clamped by its new constraint).
+    /// - The boundary and the leaf ran once each. The boundary's last input has the parent width 80; it keeps its fixed width
+    ///   100 and overflows (CSS; S6b clamped it to the constraint).
     /// </remarks>
     [Fact]
     public void NestedRoots_AreLaidOutShallowestFirstAndOnce() =>
@@ -43,7 +44,8 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
 
             Assert.Equal(1, runs[boundary]);
             Assert.Equal(1, runs[leaf]);
-            Assert.Equal(80, tree.GetRect(boundary).Width);
+            Assert.Equal(80, tree.Nodes.GetRef(boundary).Layout.LastInput.ParentSize.Width);
+            Assert.Equal(100, tree.GetRect(boundary).Width);
             Assert.Empty(tree.LayoutRoots);
         });
 
@@ -76,7 +78,7 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
             NodeHandle x = default;
             x = tree.CreateNode(
                 new LayoutStyle(),
-                _ =>
+                (_, _) =>
                 {
                     xMeasures++;
                     if (armed)
@@ -86,7 +88,7 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
                         Invalidation.Invalidate(tree, y, ChangeKind.Size);
                     }
 
-                    return new Size(10, 10);
+                    return MeasureResult.Of(10, 10);
                 }
             );
             tree.AppendChild(a, x);
@@ -133,7 +135,7 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
             bool fail = false;
             NodeHandle x = tree.CreateNode(
                 new LayoutStyle(),
-                _ => fail ? throw new InvalidOperationException("Thrown from a measure function on purpose.") : new Size(10, 10)
+                (_, _) => fail ? throw new InvalidOperationException("Thrown from a measure function on purpose.") : MeasureResult.Of(10, 10)
             );
             tree.AppendChild(a, x);
             NodeHandle y = Leaf(tree, b, 10, 10);
@@ -166,7 +168,7 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A request put back after its layout threw merges with a request for the same node: a window resize, with its constraint,
+    /// A request put back after its layout threw merges with a request for the same node: a window resize, with its input,
     /// wins over a content change either way round.
     /// </summary>
     /// <remarks>
@@ -178,7 +180,7 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
     /// - With that resize queued, put back a content-change request for it.
     ///
     /// Expected:
-    /// - Each time one request is left: the window resize with the 300 x 200 constraint.
+    /// - Each time one request is left: the window resize with the exact 300 x 200 input.
     /// </remarks>
     [Fact]
     public void RestoredRequest_MergesAndKeepsTheResize() =>
@@ -190,7 +192,7 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
             var resize = new LayoutRequest
             {
                 Node = root,
-                AvailableSpace = AvailableSpace.Definite(new Size(300, 200)),
+                Input = LayoutInput.Exact(new Size(300, 200)),
                 Reason = LayoutReason.WindowResize,
             };
 
@@ -225,11 +227,11 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
             NodeHandle leaf = default;
             leaf = tree.CreateNode(
                 new LayoutStyle(),
-                _ =>
+                (_, _) =>
                 {
                     measures++;
                     Invalidation.Invalidate(tree, leaf, ChangeKind.Size);
-                    return new Size(10, 10);
+                    return MeasureResult.Of(10, 10);
                 }
             );
             tree.AppendChild(root, leaf);
@@ -275,10 +277,10 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             NodeHandle leaf = tree.CreateNode(
                 new LayoutStyle(),
-                space =>
+                (_, _) =>
                 {
                     _ = tree.CreateNode(new LayoutStyle());
-                    return new Size(10, 10);
+                    return MeasureResult.Of(10, 10);
                 }
             );
             tree.AppendChild(root, leaf);

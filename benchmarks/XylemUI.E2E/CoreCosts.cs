@@ -25,7 +25,7 @@ internal static class CoreCosts
         using var shaper = new TextShaper();
         TextLanguage japanese = TextLanguage.FromTag("ja");
         float scale = 14f / font.UnitsPerEm;
-        MeasureFunc shaping = _ =>
+        MeasureFunc shaping = (_, _) =>
         {
             long advance = 0;
             foreach (ShapedGlyph glyph in shaper.Shape(font, Word, japanese))
@@ -33,17 +33,17 @@ internal static class CoreCosts
                 advance += glyph.XAdvance;
             }
 
-            return new Size(advance * scale, 20);
+            return MeasureResult.Of(advance * scale, 20);
         };
-        float cached = shaping(default).Width;
-        MeasureFunc cacheHit = _ => new Size(cached, 20);
+        float cached = shaping(OptionalSize.None, AvailableSize.MaxContent).Size.Width;
+        MeasureFunc cacheHit = (_, _) => MeasureResult.Of(cached, 20);
         foreach ((string name, MeasureFunc measure) in new[] { ("shaping", shaping), ("cached", cacheHit) })
         {
             var tree = new UiTree();
-            NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(FlexDirection.Column) });
+            NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
             for (int r = 0; r < 100; r++)
             {
-                NodeHandle row = tree.CreateNode(new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(FlexDirection.Row) });
+                NodeHandle row = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Row });
                 tree.AppendChild(root, row);
                 for (int c = 0; c < 100; c++)
                 {

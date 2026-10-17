@@ -58,7 +58,12 @@ internal sealed class UiTree
     {
         var node = new UiNode
         {
-            Layout = new LayoutState { Style = style, Measure = measure },
+            Layout = new LayoutState
+            {
+                Style = style,
+                Measure = measure,
+                CacheGeneration = 1,
+            },
             Dirty = new DirtyState { SelfDirty = DirtyFlags.Layout, SubtreeDirty = DirtyFlags.Layout },
         };
         return Nodes.Allocate(in node);

@@ -1,12 +1,12 @@
 namespace XylemUI.Tests;
 
-// Builds small UI trees for the layout tests (S6b). Every size is chosen so the expected rectangles can be computed by hand.
+// Builds small UI trees for the layout tests (S6b, L1a). Every size is chosen so the expected rectangles can be computed by hand.
 internal static class LayoutTestTree
 {
     // A leaf whose content always measures width x height.
     public static NodeHandle Leaf(UiTree tree, NodeHandle parent, float width, float height, LayoutStyle style = default)
     {
-        NodeHandle leaf = tree.CreateNode(StyleOrDefault(style), _ => new Size(width, height));
+        NodeHandle leaf = tree.CreateNode(StyleOrDefault(style), (_, _) => MeasureResult.Of(width, height));
         tree.AppendChild(parent, leaf);
         return leaf;
     }
@@ -21,9 +21,9 @@ internal static class LayoutTestTree
 
     public static LayoutStyle Fixed(float width, float height) => new() { Width = Length.Px(width), Height = Length.Px(height) };
 
-    public static LayoutStyle Row() => new() { Algorithm = new LayoutAlgorithm.Flex(FlexDirection.Row) };
+    public static LayoutStyle Row() => new() { Algorithm = LayoutAlgorithm.Flex.Row };
 
-    public static LayoutStyle Column() => new() { Algorithm = new LayoutAlgorithm.Flex(FlexDirection.Column) };
+    public static LayoutStyle Column() => new() { Algorithm = LayoutAlgorithm.Flex.Column };
 
     // Lays the tree out at the window size and returns nothing; the tree is clean afterwards.
     public static void LayOut(UiTree tree, NodeHandle root, float width, float height)

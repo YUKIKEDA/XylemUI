@@ -1,7 +1,7 @@
 namespace XylemUI;
 
 /// <summary>
-/// A node to lay out from, and where its constraint comes from (design §2.4.1).
+/// A node to lay out from, and where its input comes from (design §2.4.1).
 /// </summary>
 internal struct LayoutRequest
 {
@@ -11,9 +11,9 @@ internal struct LayoutRequest
     public NodeHandle Node;
 
     /// <summary>
-    /// The constraint, when the source of the request carries one (a window resize); otherwise the node's last constraint.
+    /// The input, when the source of the request carries one (a window resize); otherwise the node's last input.
     /// </summary>
-    public AvailableSpace? AvailableSpace;
+    public LayoutInput? Input;
 
     /// <summary>
     /// Why the node is laid out. A window resize replaces a content change for the same node.

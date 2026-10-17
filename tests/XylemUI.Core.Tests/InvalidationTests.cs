@@ -20,7 +20,7 @@ public sealed class InvalidationTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - leaf: SelfDirty and SubtreeDirty have Layout. middle and boundary: only SubtreeDirty. root: nothing.
-    /// - The only layout root is the boundary, for IntrinsicSizeChanged, with no constraint of its own.
+    /// - The only layout root is the boundary, for IntrinsicSizeChanged, with no input of its own.
     /// </remarks>
     [Fact]
     public void LayoutChange_MarksThePathAndStopsAtTheBoundary() =>
@@ -45,7 +45,7 @@ public sealed class InvalidationTests(UiThreadFixture ui)
             LayoutRequest request = Assert.Single(tree.LayoutRoots);
             Assert.Equal(boundary, request.Node);
             Assert.Equal(LayoutReason.IntrinsicSizeChanged, request.Reason);
-            Assert.Null(request.AvailableSpace);
+            Assert.Null(request.Input);
         });
 
     /// <summary>
@@ -78,12 +78,13 @@ public sealed class InvalidationTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A node last laid out under a tight constraint is a boundary for the next change inside it (the computed boundary).
+    /// A node last laid out with both sides decided by its parent is a boundary for the next change inside it (the computed
+    /// boundary), when the parent did not read its content.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - root → host (auto) → leaf, laid out. Then host alone is laid out at a tight 120 x 80 from a request put on the
-    ///   worklist directly: no S6b algorithm gives a child a constraint tight on both axes (the stretch of row L1 will).
+    /// - root (block) → host (auto) → leaf, laid out. Then host alone is laid out at an exact 120 x 80 from a request put on
+    ///   the worklist directly; a block gives its children an exact width but not an exact height, and does not measure them.
     ///
     /// Steps:
     /// - Invalidate the leaf with ChangeKind.Size.
@@ -105,7 +106,7 @@ public sealed class InvalidationTests(UiThreadFixture ui)
                 new LayoutRequest
                 {
                     Node = host,
-                    AvailableSpace = AvailableSpace.Definite(new Size(120, 80)),
+                    Input = LayoutInput.Exact(new Size(120, 80)),
                     Reason = LayoutReason.WindowResize,
                 }
             );
@@ -140,7 +141,7 @@ public sealed class InvalidationTests(UiThreadFixture ui)
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             LayOut(tree, root, 300, 200);
-            NodeHandle leaf = tree.CreateNode(new LayoutStyle(), _ => new Size(10, 10));
+            NodeHandle leaf = tree.CreateNode(new LayoutStyle(), (_, _) => MeasureResult.Of(10, 10));
             NodeHandle box = tree.CreateNode(Fixed(40, 20));
 
             tree.SetStyle(leaf, new LayoutStyle { Height = Length.Px(30) });
@@ -248,8 +249,7 @@ public sealed class InvalidationTests(UiThreadFixture ui)
     internal void FlagsFor_EachKind_FollowsTheMatrix(ChangeKind kind, DirtyFlags expected) => Assert.Equal(expected, Invalidation.FlagsFor(kind));
 
     /// <summary>
-    /// Two requests for one node merge into one: a window resize keeps its constraint and its reason over a later content
-    /// change.
+    /// Two requests for one node merge into one: a window resize keeps its input and its reason over a later content change.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -259,7 +259,7 @@ public sealed class InvalidationTests(UiThreadFixture ui)
     /// - Notify a window resize to 500 x 400, then invalidate the leaf with ChangeKind.Size.
     ///
     /// Expected:
-    /// - One request: root, WindowResize, the tight constraint 500 x 400.
+    /// - One request: root, WindowResize, the exact input 500 x 400.
     /// </remarks>
     [Fact]
     public void Requests_ForOneNode_MergeAndKeepTheResize() =>
@@ -276,6 +276,6 @@ public sealed class InvalidationTests(UiThreadFixture ui)
             LayoutRequest request = Assert.Single(tree.LayoutRoots);
             Assert.Equal(root, request.Node);
             Assert.Equal(LayoutReason.WindowResize, request.Reason);
-            Assert.Equal(AvailableSpace.Definite(new Size(500, 400)), request.AvailableSpace);
+            Assert.Equal(LayoutInput.Exact(new Size(500, 400)), request.Input);
         });
 }
