@@ -1,7 +1,7 @@
-// The layout scene of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, roadmap row L1a) in Taffy, the layout of
-// GPUI: a column of 100 rows of 100 leaves that measure 10 x 10, laid out at 2,000 x 2,000 without rounding (XylemUI does not
-// round). Three scenes as in XylemUI: S6b's meaning (every flex item has a minimum of 0), CSS's defaults, and percentages with
-// padding. Prints one JSON line: the medians of the first layout, a layout after one leaf's width changes, and a layout at a
+// The layout scenes of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, roadmap rows L1a and L1b) in Taffy,
+// the layout of GPUI: a column of 100 rows of 100 leaves that measure 10 x 10, laid out at 2,000 x 2,000 without rounding
+// (XylemUI does not round). Four scenes as in XylemUI: S6b's meaning (every flex item has a minimum of 0), CSS's defaults,
+// percentages with padding, and one row that wraps 10,000 leaves with its lines packed at the top. Prints one JSON line: the medians of the first layout, a layout after one leaf's width changes, and a layout at a
 // new width, and how many times a leaf was measured in a first layout and in a layout after a change.
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -16,6 +16,25 @@ fn build(scene: &str) -> (TaffyTree<()>, NodeId, NodeId) {
     let mut tree: TaffyTree<()> = TaffyTree::new();
     // XylemUI's layout does not round; neither does this.
     tree.disable_rounding();
+    if scene == "wrap" {
+        let mut leaves = Vec::new();
+        for _ in 0..ROWS * COLUMNS {
+            leaves.push(tree.new_leaf_with_context(Style::default(), ()).unwrap());
+        }
+        let target = leaves[ROWS * COLUMNS / 2 + COLUMNS / 2];
+        let root_style = Style {
+            flex_wrap: FlexWrap::Wrap,
+            align_content: Some(AlignContent::FlexStart),
+            size: Size {
+                width: length(2000.0_f32),
+                height: length(2000.0_f32),
+            },
+            ..Default::default()
+        };
+        let root = tree.new_with_children(root_style, &leaves).unwrap();
+        return (tree, root, target);
+    }
+
     let zero = Dimension::length(0.0);
     let mut target = None;
     let mut rows = Vec::new();
@@ -84,7 +103,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 
 fn main() {
     let mut line = String::from("{\"name\":\"Taffy\",");
-    for scene in ["s6b", "auto_min", "percent"] {
+    for scene in ["s6b", "auto_min", "percent", "wrap"] {
         let (mut first, mut change, mut width) = (Vec::new(), Vec::new(), Vec::new());
         for s in 0..18 {
             let (mut tree, root, target) = build(scene);

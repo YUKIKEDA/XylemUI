@@ -94,21 +94,35 @@ internal sealed class SceneControl : Control
     }
 }
 
-// The layout scene of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, row L1a) in Avalonia's layout: a
-// vertical StackPanel of 100 horizontal StackPanels of 100 controls that measure 10 x 10, in a 2,000 x 2,000 window, timed as
-// one pass of the window's layout manager (UpdateLayout). The window is in place before the scene is set, so its own layout is
-// not timed. A control outside a window has no layout manager, so a change inside it would not reach its parent. The three
-// times of the comparison: the first layout, a layout after one control's width changes, and a layout at a new width.
+// The layout scenes of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, roadmap rows L1a and L1b) in Avalonia's
+// layout, in a 2,000 x 2,000 window, timed as one pass of the window's layout manager (UpdateLayout): a vertical StackPanel of
+// 100 horizontal StackPanels of 100 controls that measure 10 x 10, and a WrapPanel of 10,000 of them (the `wrap_` figures). The
+// window is in place before the scene is set, so its own layout is not timed. A control outside a window has no layout manager,
+// so a change inside it would not reach its parent. The three times of the comparison: the first layout, a layout after one
+// control's width changes, and a layout at a new width.
 internal static class LayoutScene
 {
     public static void Run(string output)
+    {
+        (double First, double Change, double Width) stack = Measure(BuildStacks);
+        (double First, double Change, double Width) wrap = Measure(BuildWrap);
+        File.WriteAllText(
+            output,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_width_us_p50\":{wrap.Width:F1}}}{Environment.NewLine}"
+            )
+        );
+    }
+
+    private static (double First, double Change, double Width) Measure(Func<(Panel Root, Leaf Target)> build)
     {
         var first = new List<double>();
         var change = new List<double>();
         var width = new List<double>();
         for (int s = 0; s < 18; s++)
         {
-            (StackPanel root, Leaf target) = Build();
+            (Panel root, Leaf target) = build();
             var window = new Window { Width = 2_000, Height = 2_000 };
             window.Show();
             window.UpdateLayout();
@@ -134,7 +148,7 @@ internal static class LayoutScene
                 widthUs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMicroseconds;
             }
 
-            // The width change reached the scene: its rows are as wide as the window.
+            // The width change reached the scene: it is as wide as the window.
             if (root.Bounds.Width != 2_000 || target.Bounds.Width != 10)
             {
                 throw new InvalidOperationException($"The layout did not follow: root {root.Bounds}, target {target.Bounds}.");
@@ -150,16 +164,10 @@ internal static class LayoutScene
             }
         }
 
-        File.WriteAllText(
-            output,
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{Median(first):F1},\"change_us_p50\":{Median(change):F1},\"width_us_p50\":{Median(width):F1}}}{Environment.NewLine}"
-            )
-        );
+        return (Median(first), Median(change), Median(width));
     }
 
-    private static (StackPanel Root, Leaf Target) Build()
+    private static (Panel Root, Leaf Target) BuildStacks()
     {
         var root = new StackPanel { Orientation = Avalonia.Layout.Orientation.Vertical };
         Leaf? target = null;
@@ -177,6 +185,23 @@ internal static class LayoutScene
             }
 
             root.Children.Add(row);
+        }
+
+        return (root, target!);
+    }
+
+    private static (Panel Root, Leaf Target) BuildWrap()
+    {
+        var root = new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
+        Leaf? target = null;
+        for (int i = 0; i < 10_000; i++)
+        {
+            var leaf = new Leaf();
+            root.Children.Add(leaf);
+            if (i == 5_050)
+            {
+                target = leaf;
+            }
         }
 
         return (root, target!);

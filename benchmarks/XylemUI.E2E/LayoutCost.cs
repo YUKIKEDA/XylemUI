@@ -4,10 +4,11 @@ using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
 namespace XylemUI.E2E;
 
-// The layout costs of design §3.2's acceptance (roadmap row L1a): a column of 100 rows of 100 leaves (10,101 nodes), with the
-// four times S6b measured: the first layout, a relayout after one leaf changes, a change inside a row of fixed size, and a
-// window width change. Three scenes: S6b's meaning (no automatic minimum: every flex item has a minimum of 0), CSS's
-// defaults (the automatic minimum measures every item's min-content size), and one that also uses percentages and padding.
+// The layout costs of design §3.2's acceptance (roadmap rows L1a and L1b): a column of 100 rows of 100 leaves (10,101 nodes),
+// with the four times S6b measured: the first layout, a relayout after one leaf changes, a change inside a row of fixed size,
+// and a window width change. Three scenes of that tree: S6b's meaning (no automatic minimum: every flex item has a minimum of
+// 0), CSS's defaults (the automatic minimum measures every item's min-content size), and one that also uses percentages and
+// padding. A fourth scene, wrap, is one row that wraps 10,000 leaves (row L1b).
 internal static class LayoutCost
 {
     private const int Rows = 100;
@@ -24,7 +25,7 @@ internal static class LayoutCost
         report.Number("measure_cache_bytes_per_node", Unsafe.SizeOf<MeasureCache>());
         (UiTree sized, _, _) = Build("s6b", fixedRows: false);
         report.Number("measure_cache_bytes", sized.MeasureCacheBytes);
-        foreach (string scene in new[] { "s6b", "auto_min", "percent" })
+        foreach (string scene in new[] { "s6b", "auto_min", "percent", "wrap" })
         {
             Measure(report, scene, samples);
         }
@@ -92,6 +93,12 @@ internal static class LayoutCost
                 Add(width, start, record && i == 1);
             }
 
+            // The wrap scene has one container: no row of fixed size to change inside.
+            if (scene == "wrap")
+            {
+                continue;
+            }
+
             (UiTree fixedTree, NodeHandle fixedRoot, NodeHandle fixedTarget) = Build(scene, fixedRows: true);
             Invalidation.NotifyWindowResized(fixedTree, fixedRoot, new Size(2_000, 2_000));
             LayoutEngine.RunLayoutPass(fixedTree);
@@ -120,8 +127,39 @@ internal static class LayoutCost
 
         report.Series($"{scene}_first_us", first);
         report.Series($"{scene}_change_us", change);
-        report.Series($"{scene}_fixed_row_change_us", fixedRow);
+        if (fixedRow.Count > 0)
+        {
+            report.Series($"{scene}_fixed_row_change_us", fixedRow);
+        }
+
         report.Series($"{scene}_width_us", width);
+    }
+
+    // The wrap scene (row L1b): one row that wraps 10,000 leaves of 10 x 10 into the window's width, its lines packed at the top
+    // (`align-content: flex-start`, as Flutter's Wrap and Avalonia's WrapPanel pack them).
+    private static (UiTree Tree, NodeHandle Root, NodeHandle Target) BuildWrap()
+    {
+        var tree = new UiTree();
+        NodeHandle root = tree.CreateNode(
+            new LayoutStyle
+            {
+                Algorithm = new LayoutAlgorithm.Flex(
+                    new FlexProps { Wrap = FlexWrap.Wrap, AlignContent = new AlignContent(AlignContentKeyword.FlexStart) }
+                ),
+            }
+        );
+        NodeHandle target = default;
+        for (int i = 0; i < Rows * Columns; i++)
+        {
+            NodeHandle leaf = tree.CreateNode(new LayoutStyle(), static (_, _) => MeasureResult.Of(10, 10));
+            tree.AppendChild(root, leaf);
+            if (i == (Rows * Columns / 2) + (Columns / 2))
+            {
+                target = leaf;
+            }
+        }
+
+        return (tree, root, target);
     }
 
     // The cost of copying a node out of the arena (Arena.TryGet returns the value): it grows with the measurement cache.
@@ -154,6 +192,11 @@ internal static class LayoutCost
     // The leaves measure 10 x 10 (a fixed content, so the time is the layout's, not a measure function's).
     private static (UiTree Tree, NodeHandle Root, NodeHandle Target) Build(string scene, bool fixedRows)
     {
+        if (scene == "wrap")
+        {
+            return BuildWrap();
+        }
+
         var tree = new UiTree();
         NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
         NodeHandle target = default;
