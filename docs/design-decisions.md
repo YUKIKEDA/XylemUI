@@ -273,6 +273,9 @@ Rejected:
   - Linux で blade（薄い Vulkan）へ回帰
   - Silk.NET / Vortice.Windows などの GPU 抽象・ラッパーへの依存（宣言だけの TerraFX は採用、Interop の節）
   - 本番でランタイムの `D3DCompile` を使う
+  - グリフアトラスを満杯で全消去する／Impeller のように拡大して最大なら作り直す（作り直すフレームでまとめてラスタライズし直し、フレーム予算を超える）
+  - GPUI のようにアトラスのページを足し続け、自動では追い出さない（メモリが増え続ける）
+  - D3D11 で Event Query の `IGpuSync` と FrameResourcePool を持つ（ランタイムが順序と寿命を保証する。Metal / wgpu で要る）
   - 頂点データを managed の struct 配列に書いてからマップしたバッファへ `CopyTo` する（マップしたメモリに直接書けば、配列もコピーも要らない）
   - 「スワップチェーンのクロックで割り当てたフレームは必ず Present する」を契約にするだけ（守らないと黙って描画が止まる）
   - Present したかをレンダラから Platform に知らせ、していなければタイマーで回す（レンダラと Platform の間に新しい連絡が要る）
