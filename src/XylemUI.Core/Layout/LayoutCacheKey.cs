@@ -58,7 +58,12 @@ internal readonly record struct LayoutCacheKey(
     /// the compiler's comparison went through a comparer per field and cost about 200 ns a hit in a scan of the measurement
     /// cache (row L1a's layout scenario).
     /// </summary>
-    public bool Equals(LayoutCacheKey other) =>
+    public bool Equals(LayoutCacheKey other) => Matches(in other);
+
+    /// <summary>
+    /// Returns the same as <see cref="Equals(LayoutCacheKey)"/> without copying the other key.
+    /// </summary>
+    public bool Matches(in LayoutCacheKey other) =>
         DescendantLayoutVersion == other.DescendantLayoutVersion
         && LayoutStyleVersion == other.LayoutStyleVersion
         && ChildStructureVersion == other.ChildStructureVersion
@@ -105,7 +110,7 @@ internal struct MeasureCache
         for (int i = 0; i < _count; i++)
         {
             ref Entry entry = ref _entries[i];
-            if ((entry.Axis == RequestedAxis.Both || entry.Axis == axis) && entry.Key == key)
+            if ((entry.Axis == RequestedAxis.Both || entry.Axis == axis) && entry.Key.Matches(in key))
             {
                 _recentlyUsed |= (ushort)(1 << i);
                 size = entry.Size;
@@ -125,7 +130,7 @@ internal struct MeasureCache
         for (int i = 0; i < _count; i++)
         {
             ref Entry existing = ref _entries[i];
-            if (existing.Axis == axis && existing.Key == key)
+            if (existing.Axis == axis && existing.Key.Matches(in key))
             {
                 existing.Size = size;
                 _recentlyUsed |= (ushort)(1 << i);

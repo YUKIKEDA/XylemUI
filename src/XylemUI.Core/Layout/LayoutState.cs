@@ -49,14 +49,9 @@ internal struct LayoutState
     public bool WasLaidOut;
 
     /// <summary>
-    /// The key of the last layout run, or <see langword="null"/> before the first. A dirty node does not read it.
+    /// The key of the last layout run, when <see cref="WasLaidOut"/>. A dirty node does not read it.
     /// </summary>
-    public LayoutCacheKey? CachedKey;
-
-    /// <summary>
-    /// The results of the measuring runs.
-    /// </summary>
-    public MeasureCache Measures;
+    public LayoutCacheKey CachedKey;
 
     /// <summary>
     /// Advanced each time the node's caches are dropped. A child read by this node keeps the generation of the read.

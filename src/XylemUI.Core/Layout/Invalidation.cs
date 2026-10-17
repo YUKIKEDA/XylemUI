@@ -50,7 +50,7 @@ internal static class Invalidation
             ref UiNode n = ref tree.Nodes.GetRef(current);
             n.Dirty.SubtreeDirty |= flags;
             n.Dirty.Epoch++;
-            DropCaches(ref n);
+            DropCaches(tree, current, ref n);
             if (n.Parent.IsNone || IsLayoutBoundaryForInvalidation(tree, in n))
             {
                 // A node not attached yet keeps its flags; appending it marks the parent, whose layout reaches it.
@@ -107,9 +107,9 @@ internal static class Invalidation
 
     // A dirty node's measurements depended on what changed, and its children's marks of a read by it lapse with the
     // generation. Its layout entry needs no clearing: a dirty node never reads it, and its next layout run replaces it.
-    private static void DropCaches(ref UiNode node)
+    private static void DropCaches(UiTree tree, NodeHandle handle, ref UiNode node)
     {
-        node.Layout.Measures.Clear();
+        tree.MeasuresOf(handle).Clear();
         node.Layout.CacheGeneration++;
     }
 

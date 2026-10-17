@@ -151,12 +151,12 @@ internal static partial class LayoutEngine
         if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
         {
             LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
-            if (node.Layout.CachedKey == key)
+            if (node.Layout.WasLaidOut && node.Layout.CachedKey.Matches(in key))
             {
                 return new Size(node.Layout.Rect.Width, node.Layout.Rect.Height);
             }
 
-            if (!commit && node.Layout.Measures.TryGet(in key, input.Axis, out Size measured))
+            if (!commit && tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
             {
                 return measured;
             }
@@ -207,7 +207,7 @@ internal static partial class LayoutEngine
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         if (!commit)
         {
-            n.Layout.Measures.Store(LayoutCacheKey.Of(in n, in input), input.Axis, size);
+            tree.MeasuresOf(handle).Store(LayoutCacheKey.Of(in n, in input), input.Axis, size);
             return size;
         }
 
@@ -235,7 +235,7 @@ internal static partial class LayoutEngine
 
         // This run moved the children, which advanced DescendantLayout, but a measurement does not depend on where the
         // children were placed: a change of content inside drops the cache. Re-stamp the measurements so they stay valid.
-        after.Layout.Measures.Restamp(after.Versions.DescendantLayout);
+        tree.MeasuresOf(handle).Restamp(after.Versions.DescendantLayout);
         return size;
     }
 

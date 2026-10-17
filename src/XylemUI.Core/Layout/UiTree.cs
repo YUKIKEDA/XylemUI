@@ -15,6 +15,9 @@ internal sealed class UiTree
     private List<LayoutRequest> _layoutRoots = [];
     private List<LayoutRequest> _layoutRootsSpare = [];
 
+    // The measurement caches, by the node's slot index: apart from the nodes, so that reading a node does not load them.
+    private MeasureCache[] _measures = new MeasureCache[256];
+
     /// <summary>
     /// Initializes a new instance of the <see cref="UiTree"/> class.
     /// </summary>
@@ -68,8 +71,20 @@ internal sealed class UiTree
             },
             Dirty = new DirtyState { SelfDirty = DirtyFlags.Layout, SubtreeDirty = DirtyFlags.Layout },
         };
-        return Nodes.Allocate(in node);
+        NodeHandle handle = Nodes.Allocate(in node);
+        if (handle.Index >= _measures.Length)
+        {
+            Array.Resize(ref _measures, Math.Max(_measures.Length * 2, handle.Index + 1));
+        }
+
+        _measures[handle.Index] = default;
+        return handle;
     }
+
+    /// <summary>
+    /// Returns the measurement cache of a live node.
+    /// </summary>
+    internal ref MeasureCache MeasuresOf(NodeHandle node) => ref _measures[node.Index];
 
     /// <summary>
     /// Appends <paramref name="child"/>, a node with no parent, as the last child of <paramref name="parent"/>, and marks the
