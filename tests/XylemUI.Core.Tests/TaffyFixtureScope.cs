@@ -105,18 +105,11 @@ internal static class TaffyFixtureScope
                 "top" or "left" or "bottom" or "right" when !isRoot => "an inset of relative or absolute positioning (row L2)",
                 "aspect-ratio" => "aspect-ratio (row L2)",
                 "flex-wrap" when value.Contains("balance", StringComparison.Ordinal) => "flex-wrap: balance (row L2)",
-                "flex-wrap" when value is not "nowrap" => "wrapping (row L1b)",
                 "flex-line-count" => "flex-line-count with flex-wrap: balance (row L2)",
-                "flex-direction" when value is "row-reverse" or "column-reverse" => "a reverse direction (row L1b)",
-                "justify-content" when value is not ("flex-start" or "normal") => "justify-content other than its initial value (row L1b)",
-                "align-items" when value is not ("stretch" or "normal") => "align-items other than its initial value (row L1b)",
-                "align-self" when value is not ("stretch" or "normal" or "auto") => "align-self (row L1b)",
-                "column-gap" or "row-gap" when value is not ("0" or "0px") => "gap (row L1b)",
-                "align-content" when e.Attribute("display")?.Value is "block" or "flow-root" && value is not "normal" =>
-                    "align-content of a block (row L1b decides)",
-                "justify-self" or "justify-items" or "text-align" => $"{attribute.Name.LocalName} of a block (row L1b decides)",
+                "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
+                    $"{attribute.Name.LocalName}: {value}, the item's own writing direction (row P03)",
+                "text-align" => "text-align moving a block's children (CSS's history; the design does not take it, §3.2)",
                 "flex-basis" when value is "content" => "flex-basis: content (row L3)",
-                "margin-left" or "margin-top" or "margin-right" or "margin-bottom" when value is "auto" => "an automatic margin (row L1b)",
                 "overflow-x" or "overflow-y" when value is not "visible" => "overflow (row V2)",
                 "scrollbar-width" => "a scrollbar's width (row V2)",
                 "direction" when value is "rtl" => "right-to-left (row P03)",
@@ -140,6 +133,8 @@ internal static class TaffyFixtureScope
                 or "align-items"
                 or "align-self"
                 or "align-content"
+                or "justify-items"
+                or "justify-self"
                 or "column-gap"
                 or "row-gap"
                 or "direction"

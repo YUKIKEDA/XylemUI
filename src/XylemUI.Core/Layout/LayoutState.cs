@@ -33,6 +33,12 @@ internal struct LayoutState
     public Rect Rect;
 
     /// <summary>
+    /// The first baseline of the last layout run, from the top of the border box, or NaN when the node has none (a parent
+    /// synthesizes one from the border box, CSS Flexbox §9.4).
+    /// </summary>
+    public float FirstBaseline;
+
+    /// <summary>
     /// The parent decided both sides in the last layout run (design §2.4.1, a computed boundary unless the parent read the
     /// content).
     /// </summary>

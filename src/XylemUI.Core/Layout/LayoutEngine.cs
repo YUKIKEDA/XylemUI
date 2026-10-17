@@ -200,10 +200,11 @@ internal static partial class LayoutEngine
         NodeHandle firstChild = before.FirstChild;
 
         tree.LayoutRunHook?.Invoke(handle);
+        float baseline;
         Size size =
-            firstChild.IsNone ? ComputeLeaf(in style, measure, in input, commit)
-            : style.Algorithm is LayoutAlgorithm.Flex flex ? ComputeFlex(tree, in style, flex.Props, firstChild, in input, commit)
-            : ComputeBlock(tree, in style, firstChild, in input, commit);
+            firstChild.IsNone ? ComputeLeaf(in style, measure, in input, commit, out baseline)
+            : style.Algorithm is LayoutAlgorithm.Flex flex ? ComputeFlex(tree, in style, flex.Props, firstChild, in input, commit, out baseline)
+            : ComputeBlock(tree, in style, ((LayoutAlgorithm.Block)style.Algorithm).Props, firstChild, in input, commit, out baseline);
 
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         if (!commit)
@@ -216,6 +217,7 @@ internal static partial class LayoutEngine
         n.Layout.Rect = n.Layout.Rect with { Width = size.Width, Height = size.Height };
         n.Layout.LastInput = input;
         n.Layout.WasLaidOut = true;
+        n.Layout.FirstBaseline = baseline;
         n.Layout.CachedComputedBoundary = input.IsExact;
 
         // Marked again while it was laid out: the flags stay, and its new request runs in the next cycle.

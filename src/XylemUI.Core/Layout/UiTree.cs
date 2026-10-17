@@ -68,6 +68,7 @@ internal sealed class UiTree
                 UsesPercentOfParentWidth = style.UsesPercentOfParentWidth,
                 UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
                 Measure = measure,
+                FirstBaseline = float.NaN,
                 CacheGeneration = 1,
             },
             Dirty = new DirtyState { SelfDirty = DirtyFlags.Layout, SubtreeDirty = DirtyFlags.Layout },

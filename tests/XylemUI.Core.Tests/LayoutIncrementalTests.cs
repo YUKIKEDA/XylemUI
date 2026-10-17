@@ -332,6 +332,88 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
             Assert.Equal(30, tree.GetRect(root).Height);
         });
 
+    /// <summary>
+    /// A change of an item's content that moves where a wrapping row breaks reaches the row: the siblings move to other lines.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, wrap, window 100 x 100. Three leaves, each w wide (w = 40 for all at first) and 10 high, minimum width 0,
+    ///   no shrink. Laid out: lines [A, B] and [C]; B at (40, 0), C at (0, 10).
+    ///
+    /// Steps:
+    /// - Make A 70 wide and invalidate its content; run the pass.
+    ///
+    /// Expected:
+    /// - 70 + 40 > 100, so A is alone on the first line: B at (0, 10), C at (40, 10).
+    /// </remarks>
+    [Fact]
+    public void ReadContent_ThatMovesALineBreak_ReachesTheSiblings() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(
+                new LayoutStyle
+                {
+                    Algorithm = new LayoutAlgorithm.Flex(
+                        new FlexProps { Wrap = FlexWrap.Wrap, AlignContent = new AlignContent(AlignContentKeyword.FlexStart) }
+                    ),
+                }
+            );
+            var item = new LayoutStyle { MinWidth = LengthPercentageAuto.Px(0), FlexShrink = 0 };
+            float width = 40;
+            NodeHandle a = tree.CreateNode(item, (_, _) => MeasureResult.Of(width, 10));
+            tree.AppendChild(root, a);
+            NodeHandle b = Leaf(tree, root, 40, 10, item);
+            NodeHandle c = Leaf(tree, root, 40, 10, item);
+            LayOut(tree, root, 100, 100);
+            Assert.Equal((40f, 0f), (tree.GetRect(b).X, tree.GetRect(b).Y));
+            Assert.Equal((0f, 10f), (tree.GetRect(c).X, tree.GetRect(c).Y));
+
+            width = 70;
+            Invalidation.Invalidate(tree, a, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal((0f, 10f), (tree.GetRect(b).X, tree.GetRect(b).Y));
+            Assert.Equal((40f, 10f), (tree.GetRect(c).X, tree.GetRect(c).Y));
+        });
+
+    /// <summary>
+    /// A change of an item's first baseline reaches the row that aligns its items by baseline: the sibling moves.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, `align-items: baseline`, window 200 x 100. A: a leaf 20 wide and 30 high whose first baseline is b (b = 10
+    ///   at first). B: a leaf 20 x 20, no baseline (its border box's bottom, 20, stands for it). Laid out: the largest baseline
+    ///   is 20, so A is at y 10 and B at y 0.
+    ///
+    /// Steps:
+    /// - Set b to 25 and invalidate A's content; run the pass.
+    ///
+    /// Expected:
+    /// - The largest baseline is 25: A at y 0, B at y 25 − 20 = 5.
+    /// </remarks>
+    [Fact]
+    public void ReadBaseline_OfAnItem_ReachesTheSiblings() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) }
+            );
+            float baseline = 10;
+            NodeHandle a = tree.CreateNode(new LayoutStyle(), (_, _) => new MeasureResult(new Size(20, 30), baseline));
+            tree.AppendChild(root, a);
+            NodeHandle b = Leaf(tree, root, 20, 20);
+            LayOut(tree, root, 200, 100);
+            Assert.Equal((10f, 0f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
+
+            baseline = 25;
+            Invalidation.Invalidate(tree, a, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal((0f, 5f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
+        });
+
     private static LayoutStyle Flexible() => new() { FlexBasis = Length.Px(0), FlexGrow = 1 };
 
     private static float MinContentOr(AvailableSize available, float minContent) =>

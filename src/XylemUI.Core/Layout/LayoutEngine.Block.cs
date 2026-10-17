@@ -4,9 +4,18 @@ internal static partial class LayoutEngine
 {
     // CSS block layout (Taffy's compute_block_layout) without margin collapsing, floats, or out-of-flow children (design §3.2):
     // the children stack from the top, each as wide as the content box less its margins unless its style says otherwise, and
-    // their margins always add up.
-    private static Size ComputeBlock(UiTree tree, in LayoutStyle style, NodeHandle firstChild, in LayoutInput input, bool commit)
+    // their margins always add up. A layout run also returns the block's first baseline: its first child's that has one.
+    private static Size ComputeBlock(
+        UiTree tree,
+        in LayoutStyle style,
+        BlockProps props,
+        NodeHandle firstChild,
+        in LayoutInput input,
+        bool commit,
+        out float baseline
+    )
     {
+        baseline = float.NaN;
         OptionalSize parent = input.ParentSize;
         Edges paddingBorder = PaddingBorder(in style, parent.Width);
         Size inset = paddingBorder.Sum();
@@ -62,10 +71,37 @@ internal static partial class LayoutEngine
 
         // Percentage paddings and borders resolve against the containing block's width, or the node's own at the root.
         Edges resolvedInset = PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth));
-        float contentHeight = LayOutBlockChildren(tree, firstChild, contentBox, outerWidth, percentHeight, resolvedInset, commit);
+        float contentHeight = LayOutBlockChildren(
+            tree,
+            props,
+            firstChild,
+            contentBox,
+            outerWidth,
+            percentHeight,
+            resolvedInset,
+            commit,
+            out baseline
+        );
 
-        float outerHeight = Maybe.Or(known.Height, Maybe.Clamp(contentHeight, min.Height, max.Height));
-        return new Size(outerWidth, Math.Max(outerHeight, inset.Height));
+        float outerHeight = Math.Max(Maybe.Or(known.Height, Maybe.Clamp(contentHeight, min.Height, max.Height)), inset.Height);
+
+        // `align-content` moves the children, taken as one subject, in the free height (CSS Box Alignment §5.1).
+        if (commit && props.AlignContent.Keyword != AlignContentKeyword.Normal)
+        {
+            float freeSpace = outerHeight - contentHeight;
+            float offset = AlignmentOffset(freeSpace, 1, 0, AlignmentFallback(freeSpace, 1, props.AlignContent), reversed: false, isFirst: true);
+            if (offset != 0)
+            {
+                baseline += offset;
+                for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
+                {
+                    Rect rect = tree.Nodes.GetRef(child).Layout.Rect;
+                    Place(tree, child, rect.X, rect.Y + offset);
+                }
+            }
+        }
+
+        return new Size(outerWidth, outerHeight);
     }
 
     // The width of a block whose width is not known: its widest child, margins included (Taffy's
@@ -106,17 +142,21 @@ internal static partial class LayoutEngine
 
     // Lays out or measures each child at the top of the space left by the ones before it, and returns the outer height of the
     // content (Taffy's perform_final_layout_on_in_flow_children, without margin collapsing). The children's sizes resolve
-    // against the content box the node knew before its children; the input they get carries the width found since.
+    // against the content box the node knew before its children; the input they get carries the width found since. A child's
+    // automatic side margins share the width it leaves; otherwise a `justify-self` other than `stretch` places it.
     private static float LayOutBlockChildren(
         UiTree tree,
+        BlockProps props,
         NodeHandle firstChild,
         OptionalSize contentBox,
         float outerWidth,
         float percentHeight,
         Edges inset,
-        bool commit
+        bool commit,
+        out float baseline
     )
     {
+        baseline = float.NaN;
         float innerWidth = Math.Max(0, outerWidth - inset.Horizontal);
         var parentSize = new OptionalSize(innerWidth, percentHeight - inset.Vertical);
         float y = inset.Top;
@@ -130,10 +170,17 @@ internal static partial class LayoutEngine
             OptionalSize min = MinSize(in childStyle, contentBox);
             OptionalSize max = MaxSize(in childStyle, contentBox);
             Edges margin = EdgeInsets.ResolveOrZero(childStyle.Margin, innerWidth);
+            bool autoLeft = childStyle.Margin.Left.IsAuto;
+            bool autoRight = childStyle.Margin.Right.IsAuto;
             float stretchWidth = Math.Max(0, innerWidth - margin.Horizontal);
 
+            // `normal` and `stretch` keep the block's default; any other alignment makes an automatic width fit the content.
+            AlignItems justify = childStyle.JustifySelf ?? props.JustifyItems;
+            bool aligned = justify.Keyword is not (AlignItemsKeyword.Normal or AlignItemsKeyword.Stretch);
+            Length widthStyle = aligned && childStyle.Width.IsAuto ? Length.FitContent : childStyle.Width;
+
             float keywordWidth = float.NaN;
-            if (MeasureSpaceOf(childStyle.Width, stretchWidth) is { } keywordSpace)
+            if (MeasureSpaceOf(widthStyle, stretchWidth) is { } keywordSpace)
             {
                 keywordWidth = MeasureChild(
                     tree,
@@ -160,7 +207,28 @@ internal static partial class LayoutEngine
             Size laidOut = LayoutChild(tree, child, in input, commit);
             if (commit)
             {
-                Place(tree, child, inset.Left + margin.Left, y + margin.Top);
+                int autoMargins = (autoLeft ? 1 : 0) + (autoRight ? 1 : 0);
+                float autoMargin = autoMargins == 0 ? 0 : Math.Max(0, stretchWidth - laidOut.Width) / autoMargins;
+                float left = autoLeft ? autoMargin : margin.Left;
+                float right = autoRight ? autoMargin : margin.Right;
+                float x = inset.Left + left;
+                if (aligned && autoMargins == 0)
+                {
+                    float freeSpace = innerWidth - (laidOut.Width + left + right);
+                    AlignItemsKeyword keyword = justify.Safe && freeSpace < 0 ? AlignItemsKeyword.Start : justify.Keyword;
+                    x += keyword switch
+                    {
+                        AlignItemsKeyword.Center => freeSpace / 2,
+                        AlignItemsKeyword.End or AlignItemsKeyword.FlexEnd => freeSpace,
+                        _ => 0,
+                    };
+                }
+
+                Place(tree, child, x, y + margin.Top);
+                if (float.IsNaN(baseline))
+                {
+                    baseline = y + margin.Top + tree.Nodes.GetRef(child).Layout.FirstBaseline;
+                }
             }
 
             y += margin.Top + laidOut.Height + margin.Bottom;
