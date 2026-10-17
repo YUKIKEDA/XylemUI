@@ -16,7 +16,6 @@ Formatting is CSharpier's (`.cursor/rules/engineering.mdc`). This rule covers wh
 - One type per file by default. A file name matches its main type.
 - No `using` alias to shorten a BCL type name. Qualify the name where it collides.
 - Library `await` uses `ConfigureAwait(false)` except where the code must resume on the UI thread, which says so in a comment. `CancellationToken` is the last parameter.
-
 - No alignment component in an interpolated string (`{value, 4}`). CSharpier writes `{value, 4}` and StyleCop then reports SA1001, so the format check and the build cannot both pass; pad with `PadLeft` instead (S8b).
 
 ## Types
