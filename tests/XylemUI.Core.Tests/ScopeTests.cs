@@ -482,11 +482,11 @@ public sealed class ScopeTests(UiThreadFixture ui)
     /// - Static lambdas only. A warm-up of 100 rounds, so that the arenas have grown.
     ///
     /// Steps:
-    /// - 1,000 rounds: create a scope that registers two cleanups and makes a child scope with one cleanup, then dispose it.
-    ///   Measure the bytes allocated on this thread.
+    /// - 1,100 rounds: create a scope that registers two cleanups and makes a child scope with one cleanup, then dispose it.
+    ///   Measure the bytes allocated on this thread in the last 1,000.
     ///
     /// Expected:
-    /// - 0 bytes; the cleanups ran 3,000 times.
+    /// - 0 bytes; the cleanups ran 3,300 times.
     /// </remarks>
     [Fact]
     public void SteadyState_CreateAndDispose_AllocatesNothing() =>
@@ -500,7 +500,7 @@ public sealed class ScopeTests(UiThreadFixture ui)
             long ran = _sink;
             SteadyStateAllocation.AssertNone(1_000, _ => Round());
 
-            Assert.Equal(ran + 3_000, _sink);
+            Assert.Equal(ran + 3_300, _sink);
         });
 
     private static void Round()

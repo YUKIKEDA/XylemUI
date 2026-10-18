@@ -190,7 +190,8 @@ public sealed class ComputedOwnershipTests(UiThreadFixture ui)
     /// - s, c = s + 1, a flag, and an effect that reads c only while the flag is set. A warm-up of 100 toggles.
     ///
     /// Steps:
-    /// - 1,000 times: set the flag on, then off (c registers with s, then leaves it). Measure the bytes allocated on this thread.
+    /// - 1,100 times: set the flag on, then off (c registers with s, then leaves it). Measure the bytes allocated on this thread
+    ///   in the last 1,000.
     ///
     /// Expected:
     /// - 0 bytes; s has no observers at the end.

@@ -18,7 +18,9 @@ internal static class SteadyStateAllocation
 
     /// <summary>
     /// Runs <paramref name="iteration"/> <paramref name="iterations"/> times, with the index of each run, and asserts that the
-    /// calling thread allocated nothing.
+    /// calling thread allocated nothing. One window of runs goes first, unmeasured, with the indices
+    /// −<paramref name="iterations"/> / 10 to −1: the first call of the delegate compiles it, and on the runners that call
+    /// counted about 7 KB in the first window (Issue #92).
     /// </summary>
     /// <param name="iterations">The number of runs, a multiple of 10.</param>
     /// <param name="iteration">One run of the steady state; created before the call, so that creating it is not measured.</param>
@@ -36,6 +38,11 @@ internal static class SteadyStateAllocation
         _ = GC.GetAllocatedBytesForCurrentThread();
 
         int perWindow = iterations / Windows;
+        for (int warm = -perWindow; warm < 0; warm++)
+        {
+            iteration(warm);
+        }
+
         int index = 0;
         for (int window = 0; window < Windows; window++)
         {
