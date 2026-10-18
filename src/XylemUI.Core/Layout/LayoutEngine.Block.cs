@@ -72,7 +72,17 @@ internal static partial class LayoutEngine
 
         // Percentage paddings and borders resolve against the containing block's width, or the node's own at the root.
         Edges resolvedInset = PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth));
-        float contentHeight = LayOutBlockChildren(tree, props, firstChild, contentBox, outerWidth, percentHeight, resolvedInset, commit);
+        float contentHeight = LayOutBlockChildren(
+            tree,
+            props,
+            firstChild,
+            contentBox,
+            outerWidth,
+            percentHeight,
+            resolvedInset,
+            commit,
+            out bool anyOutOfFlow
+        );
 
         float outerHeight = Math.Max(Maybe.Or(known.Height, Maybe.Clamp(contentHeight, min.Height, max.Height)), inset.Height);
 
@@ -96,7 +106,7 @@ internal static partial class LayoutEngine
             }
         }
 
-        if (commit)
+        if (commit && anyOutOfFlow)
         {
             LayOutBlockOutOfFlowChildren(tree, firstChild, in style, props, new Size(outerWidth, outerHeight), resolvedInset, parent.Width, offset);
         }
@@ -157,9 +167,11 @@ internal static partial class LayoutEngine
         float outerWidth,
         float percentHeight,
         Edges inset,
-        bool commit
+        bool commit,
+        out bool anyOutOfFlow
     )
     {
+        anyOutOfFlow = false;
         float innerWidth = Math.Max(0, outerWidth - inset.Horizontal);
         var parentSize = new OptionalSize(innerWidth, percentHeight - inset.Vertical);
         float y = inset.Top;
@@ -170,6 +182,7 @@ internal static partial class LayoutEngine
             LayoutStyle childStyle = c.Layout.Style;
             if (!childStyle.IsInFlow)
             {
+                anyOutOfFlow = true;
                 child = next;
                 continue;
             }
@@ -232,7 +245,9 @@ internal static partial class LayoutEngine
                     };
                 }
 
-                (float dx, float dy) = RelativeOffset(in childStyle, innerWidth, parentSize.Height);
+                (float dx, float dy) = tree.Nodes.GetRef(child).Layout.HasInset
+                    ? RelativeOffset(in childStyle, innerWidth, parentSize.Height)
+                    : (0, 0);
                 Place(tree, child, x + dx, y + margin.Top + dy);
             }
 

@@ -61,7 +61,7 @@ internal static partial class LayoutEngine
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         ref readonly LayoutStyle style = ref node.Layout.Style;
         bool hasBox = node.Layout.HasBox;
-        ref readonly ResolvedBox box = ref node.Layout.Box;
+        ref readonly ResolvedBox box = ref tree.MeasuresOf(handle).Box;
         Edges paddingBorder = hasBox ? box.PaddingBorder : PaddingBorder(in style, input.ParentSize.Width);
         float inset = paddingBorder.Horizontal;
         float width = float.NaN;
