@@ -57,7 +57,10 @@ internal static partial class LayoutEngine
         int count = 0;
         for (NodeHandle c = firstChild; !c.IsNone; c = tree.Nodes.GetRef(c).NextSibling)
         {
-            count++;
+            if (tree.Nodes.GetRef(c).Layout.Style.IsInFlow)
+            {
+                count++;
+            }
         }
 
         ScratchStack<FlexItem> itemScratch = _itemScratch ??= new ScratchStack<FlexItem>();
@@ -173,6 +176,7 @@ internal static partial class LayoutEngine
             // 9.6.16 Align the lines, then the final layout of each item.
             AlignLines(lines, innerCross, totalLineCross, in constants);
             FinalLayoutPass(tree, items, lines, containerSize, in constants);
+            LayOutFlexOutOfFlowChildren(tree, firstChild, in style, containerSize, in constants, parent.Width);
             baselineItem = BaselineItem(items, lines, in constants);
             return containerSize;
         }
@@ -255,10 +259,17 @@ internal static partial class LayoutEngine
         OptionalSize percentBasis = constants.KnownMainSizeIsDefinite ? constants.NodeInnerSize : constants.NodeInnerSize.WithMain(row, float.NaN);
         float innerWidth = constants.NodeInnerSize.Width;
         int i = 0;
-        for (NodeHandle child = firstChild; !child.IsNone; i++)
+        for (NodeHandle child = firstChild; !child.IsNone; )
         {
             ref UiNode c = ref tree.Nodes.GetRef(child);
             ref readonly LayoutStyle s = ref c.Layout.Style;
+
+            // An absolutely positioned or hidden child is no item (LayOutFlexOutOfFlowChildren).
+            if (!s.IsInFlow)
+            {
+                child = c.NextSibling;
+                continue;
+            }
 
             // Field by field into the pooled item: the later steps write every other field before they read it.
             ref FlexItem item = ref items[i];
@@ -298,14 +309,17 @@ internal static partial class LayoutEngine
             constants.AllStretched &= item.Stretched;
 
             // A stretched item's maximum resolves against the content box even where it is indefinite (Chrome and Firefox,
-            // as Taffy); only a percentage differs from the maximum above.
+            // as Taffy), and does not follow the aspect ratio; only a percentage differs from the maximum above.
             LengthPercentageAuto maxCross = row ? s.MaxHeight : s.MaxWidth;
-            item.StretchMaxCross = maxCross.IsPercent ? maxCross.Resolve(constants.NodeInnerSize.Cross(row)) : item.Max.Cross(row);
+            item.StretchMaxCross = maxCross.IsPercent
+                ? maxCross.Resolve(constants.NodeInnerSize.Cross(row))
+                : MaxSizeIgnoringAspectRatio(in s, percentBasis).Cross(row);
             item.FlexBasisIsDefinite = false;
             item.Baseline = 0;
             item.OffsetMain = 0;
             item.OffsetCross = 0;
             child = c.NextSibling;
+            i++;
         }
     }
 
@@ -380,6 +394,18 @@ internal static partial class LayoutEngine
                 {
                     keywordSpace = MeasureSpaceOf(item.MainStyle, mainStretch);
                 }
+            }
+
+            // 9.2.3 B: an item with an aspect ratio and a definite cross size takes its basis from them. A stretched item's
+            // cross size is definite when the container's is and the container does not wrap (§9.8).
+            float ratio = tree.Nodes.GetRef(item.Node).Layout.Style.AspectRatio;
+            bool crossIsDefinite =
+                !float.IsNaN(item.Size.Cross(row))
+                || (!constants.Wrap && constants.HasDefiniteCrossSize && !float.IsNaN(crossParent) && !float.IsNaN(childKnown.Cross(row)));
+            if (float.IsNaN(item.FlexBasis) && ratio > 0 && crossIsDefinite && !float.IsNaN(childKnown.Cross(row)))
+            {
+                item.FlexBasis = row ? childKnown.Cross(row) * ratio : childKnown.Cross(row) / ratio;
+                item.FlexBasisIsDefinite = true;
             }
 
             if (float.IsNaN(item.FlexBasis))
@@ -712,6 +738,15 @@ internal static partial class LayoutEngine
                 SizingMode.ContentSize,
                 horizontal: row
             );
+
+            // A known cross size gives a main size through the aspect ratio, which floors the content's (Taffy).
+            float ratio = tree.Nodes.GetRef(item.Node).Layout.Style.AspectRatio;
+            float knownCross = childKnown.Cross(row);
+            if (ratio > 0 && !float.IsNaN(knownCross))
+            {
+                measured = Math.Max(measured, row ? knownCross * ratio : knownCross / ratio);
+            }
+
             contribution = row
                 ? Maybe.Clamp(measured + marginSum, styleMin, styleMax)
                 : Maybe.Clamp(Math.Max(measured, item.FlexBasis) + marginSum, styleMin, styleMax);
@@ -1257,13 +1292,18 @@ internal static partial class LayoutEngine
                 float main = totalMain + item.OffsetMain + item.Margin.MainStart(row);
                 float crossOffset = totalCross + item.OffsetCross + line.OffsetCross;
                 float cross = crossOffset + item.Margin.CrossStart(row);
+                (float dx, float dy) = RelativeOffset(
+                    in tree.Nodes.GetRef(item.Node).Layout.Style,
+                    constants.NodeInnerSize.Width,
+                    constants.NodeInnerSize.Height
+                );
                 if (row)
                 {
-                    Place(tree, item.Node, main, cross);
+                    Place(tree, item.Node, main + dx, cross + dy);
                 }
                 else
                 {
-                    Place(tree, item.Node, cross, main);
+                    Place(tree, item.Node, cross + dx, main + dy);
                 }
 
                 totalMain += item.OffsetMain + item.Margin.MainSum(row) + (row ? size.Width : size.Height);

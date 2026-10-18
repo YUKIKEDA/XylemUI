@@ -15,7 +15,16 @@ internal static partial class LayoutEngine
         OptionalSize max = MaxSize(in style, parent);
         OptionalSize styleSize = StyleSize(in style, parent);
         OptionalSize clampedStyleSize = input.SizingMode == SizingMode.InherentSize ? styleSize.Clamp(min, max) : OptionalSize.None;
-        OptionalSize known = input.KnownDimensions.Or(MinMaxDefinite(min, max)).Or(clampedStyleSize).AtLeast(inset);
+
+        // A size the parent decided on one axis gives the other through the aspect ratio (CSS Sizing 4, as Taffy's
+        // compute_block_layout): only a newly filled axis is clamped, and a measuring run that decides neither gets none.
+        OptionalSize given = input.KnownDimensions;
+        if (style.HasAspectRatio)
+        {
+            given = given.Or(WithAspectRatio(given, style.AspectRatio).Clamp(min, max));
+        }
+
+        OptionalSize known = given.Or(MinMaxDefinite(min, max)).Or(clampedStyleSize).AtLeast(inset);
 
         if (!commit)
         {
@@ -68,18 +77,28 @@ internal static partial class LayoutEngine
         float outerHeight = Math.Max(Maybe.Or(known.Height, Maybe.Clamp(contentHeight, min.Height, max.Height)), inset.Height);
 
         // `align-content` moves the children, taken as one subject, in the free height (CSS Box Alignment §5.1).
+        float offset = 0;
         if (commit && props.AlignContent.Keyword != AlignContentKeyword.Normal)
         {
             float freeSpace = outerHeight - contentHeight;
-            float offset = AlignmentOffset(freeSpace, 1, 0, AlignmentFallback(freeSpace, 1, props.AlignContent), reversed: false, isFirst: true);
+            offset = AlignmentOffset(freeSpace, 1, 0, AlignmentFallback(freeSpace, 1, props.AlignContent), reversed: false, isFirst: true);
             if (offset != 0)
             {
                 for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
                 {
-                    Rect rect = tree.Nodes.GetRef(child).Layout.Rect;
-                    Place(tree, child, rect.X, rect.Y + offset);
+                    ref UiNode c = ref tree.Nodes.GetRef(child);
+                    if (c.Layout.Style.IsInFlow)
+                    {
+                        Rect rect = c.Layout.Rect;
+                        Place(tree, child, rect.X, rect.Y + offset);
+                    }
                 }
             }
+        }
+
+        if (commit)
+        {
+            LayOutBlockOutOfFlowChildren(tree, firstChild, in style, props, new Size(outerWidth, outerHeight), resolvedInset, parent.Width, offset);
         }
 
         return new Size(outerWidth, outerHeight);
@@ -93,6 +112,11 @@ internal static partial class LayoutEngine
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
             ref readonly LayoutStyle childStyle = ref tree.Nodes.GetRef(child).Layout.Style;
+            if (!childStyle.IsInFlow)
+            {
+                continue;
+            }
+
             OptionalSize childKnown = StyleSize(in childStyle, contentBox)
                 .Clamp(MinSize(in childStyle, contentBox), MaxSize(in childStyle, contentBox));
             float marginSum = EdgeInsets.ResolveOrZero(childStyle.Margin, availableWidth.ToOption()).Horizontal;
@@ -144,6 +168,11 @@ internal static partial class LayoutEngine
             ref UiNode c = ref tree.Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
             LayoutStyle childStyle = c.Layout.Style;
+            if (!childStyle.IsInFlow)
+            {
+                child = next;
+                continue;
+            }
 
             OptionalSize size = StyleSize(in childStyle, contentBox);
             OptionalSize min = MinSize(in childStyle, contentBox);
@@ -203,7 +232,8 @@ internal static partial class LayoutEngine
                     };
                 }
 
-                Place(tree, child, x, y + margin.Top);
+                (float dx, float dy) = RelativeOffset(in childStyle, innerWidth, parentSize.Height);
+                Place(tree, child, x + dx, y + margin.Top + dy);
             }
 
             y += margin.Top + laidOut.Height + margin.Bottom;

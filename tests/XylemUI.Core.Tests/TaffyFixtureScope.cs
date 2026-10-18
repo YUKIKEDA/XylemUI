@@ -14,10 +14,12 @@ internal static class TaffyFixtureScope
     {
         ["block/block_flow_root_margin_non_collapse__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_complex__border_box_ltr"] = MarginCollapsing,
+        ["block/block_margin_y_collapse_through_blocked_by_aspect_ratio__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_border_bottom__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_border_top__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_height__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_line_box__border_box_ltr"] = MarginCollapsing,
+        ["block/block_margin_y_collapse_through_with_absolute_child__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_line_box_with_height_zero__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_line_box_with_max_height_zero__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_min_height__border_box_ltr"] = MarginCollapsing,
@@ -71,18 +73,25 @@ internal static class TaffyFixtureScope
         }
 
         XElement root = test.Element("input")!.Elements().First();
-        XElement viewport = test.Element("viewport")!;
-        bool definiteViewport =
-            viewport.Attribute("width")?.Value.EndsWith("px", StringComparison.Ordinal) == true
-            && viewport.Attribute("height")?.Value.EndsWith("px", StringComparison.Ordinal) == true;
-        if (root.Attribute("position")?.Value == "absolute" && definiteViewport)
+
+        // An absolutely positioned box below a box without `position` (static) has an ancestor beyond its parent as CSS's
+        // containing block; the design always takes the parent (§3.2, row L2).
+        foreach (XElement element in root.Descendants())
         {
-            return "an absolutely positioned root in a definite viewport (row L2)";
+            if (
+                element.Attribute("position")?.Value == "absolute"
+                && element.Parent is { } parent
+                && parent != root
+                && parent.Attribute("position") is null
+            )
+            {
+                return "an absolutely positioned box whose containing block is beyond its parent (the design takes the parent, §3.2)";
+            }
         }
 
         foreach (XElement element in root.DescendantsAndSelf())
         {
-            if (FeatureExclusion(element, isRoot: element == root) is { } feature)
+            if (FeatureExclusion(element) is { } feature)
             {
                 return feature;
             }
@@ -91,7 +100,7 @@ internal static class TaffyFixtureScope
         return null;
     }
 
-    private static string? FeatureExclusion(XElement e, bool isRoot)
+    private static string? FeatureExclusion(XElement e)
     {
         foreach (XAttribute attribute in e.Attributes())
         {
@@ -99,11 +108,7 @@ internal static class TaffyFixtureScope
             string? reason = attribute.Name.LocalName switch
             {
                 "display" when value is "grid" => "Grid (row P02)",
-                "display" when value is "none" => "a node that is not shown (row L2)",
-                "display" when value is not ("block" or "flow-root" or "flex") => $"display {value}",
-                "position" when value is "absolute" && !isRoot => "absolute positioning (row L2)",
-                "top" or "left" or "bottom" or "right" when !isRoot => "an inset of relative or absolute positioning (row L2)",
-                "aspect-ratio" => "aspect-ratio (row L2)",
+                "display" when value is not ("block" or "flow-root" or "flex" or "none") => $"display {value}",
                 "flex-wrap" when value.Contains("balance", StringComparison.Ordinal) => "flex-wrap: balance (row L6)",
                 "flex-line-count" => "flex-line-count with flex-wrap: balance (row L6)",
                 "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
@@ -153,7 +158,8 @@ internal static class TaffyFixtureScope
                 or "top"
                 or "left"
                 or "bottom"
-                or "right" => null,
+                or "right"
+                or "aspect-ratio" => null,
                 string property
                     when property.StartsWith("margin-", StringComparison.Ordinal)
                         || property.StartsWith("padding-", StringComparison.Ordinal)
