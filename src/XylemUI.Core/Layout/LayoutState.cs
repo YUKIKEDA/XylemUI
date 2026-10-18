@@ -23,9 +23,26 @@ internal struct LayoutState
     public bool UsesPercentOfParentHeight;
 
     /// <summary>
+    /// The style uses no percentage, so <see cref="Box"/> holds its lengths in pixels for every parent (row L4).
+    /// </summary>
+    public bool HasBox;
+
+    /// <summary>
+    /// The style's lengths in pixels, resolved when the style is set, where <see cref="HasBox"/>: the flex items and the
+    /// leaves' content widths read them instead of resolving the style each time.
+    /// </summary>
+    public ResolvedBox Box;
+
+    /// <summary>
     /// Measures the content of a leaf; <see langword="null"/> for a leaf without content and for a container.
     /// </summary>
     public MeasureFunc? Measure;
+
+    /// <summary>
+    /// Returns the widths of a leaf's content, which answer its min-content and max-content width queries without a measuring
+    /// run (row L4); <see langword="null"/> where <see cref="Measure"/> answers them.
+    /// </summary>
+    public IntrinsicWidthsFunc? IntrinsicWidths;
 
     /// <summary>
     /// The border box of the last layout run, relative to the parent's border box.

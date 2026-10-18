@@ -76,6 +76,12 @@ internal readonly record struct OptionalSize(float Width, float Height)
 internal static class Maybe
 {
     /// <summary>
+    /// Returns a value indicating whether two values are equal, NaN equal to NaN.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Same(float a, float b) => a == b || (float.IsNaN(a) && float.IsNaN(b));
+
+    /// <summary>
     /// Returns <paramref name="value"/>, or <paramref name="fallback"/> when it is NaN.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

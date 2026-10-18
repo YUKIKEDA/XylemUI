@@ -141,7 +141,7 @@ internal static partial class LayoutEngine
 
     // Lays out or measures a child. A clean child keeps the result of its last run with the same key: a layout for either mode,
     // a measurement for measuring. A measuring run reads the child's content, which the child records (design §2.4.1).
-    private static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
+    internal static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         if (!commit)
@@ -149,17 +149,34 @@ internal static partial class LayoutEngine
             node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
         }
 
+        // A min-content or max-content width of a leaf comes from its content widths, kept apart from the measurements (row L4).
+        // A dirty leaf dropped them when it was marked, so they are computed again from its new content.
+        if (
+            !commit
+            && input.Axis == RequestedAxis.Horizontal
+            && node.Layout.IntrinsicWidths is not null
+            && node.FirstChild.IsNone
+            && float.IsNaN(input.KnownDimensions.Width)
+            && input.Available.Width.Kind is AvailableSpaceKind.MinContent or AvailableSpaceKind.MaxContent
+        )
+        {
+            return new Size(LeafIntrinsicWidth(tree, handle, in input), 0);
+        }
+
         if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
         {
-            LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
-            if (node.Layout.WasLaidOut && node.Layout.CachedKey.Matches(in key))
+            if (node.Layout.WasLaidOut && node.Layout.CachedKey.MatchesInput(in node, in input))
             {
                 return new Size(node.Layout.Rect.Width, node.Layout.Rect.Height);
             }
 
-            if (!commit && tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
+            if (!commit)
             {
-                return measured;
+                LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
+                if (tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
+                {
+                    return measured;
+                }
             }
         }
 
@@ -319,6 +336,25 @@ internal static partial class LayoutEngine
 
             ancestor = a.Parent;
         }
+    }
+
+    // A style's lengths in pixels where it uses no percentage (LayoutState.Box); none otherwise.
+    internal static bool TryResolveBox(in LayoutStyle style, out ResolvedBox box)
+    {
+        if (style.UsesPercentOfParentWidth || style.UsesPercentOfParentHeight)
+        {
+            box = default;
+            return false;
+        }
+
+        box = new ResolvedBox(
+            StyleSize(in style, OptionalSize.None),
+            MinSize(in style, OptionalSize.None),
+            MaxSize(in style, OptionalSize.None),
+            EdgeInsets.ResolveOrZero(style.Margin, float.NaN),
+            PaddingBorder(in style, float.NaN)
+        );
+        return true;
     }
 
     // The width and the height of the style against the parent's content box.

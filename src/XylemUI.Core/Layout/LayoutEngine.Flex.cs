@@ -53,6 +53,7 @@ internal static partial class LayoutEngine
         bool heightIsDefinite = input.KnownHeightIsDefinite || float.IsNaN(input.KnownDimensions.Height);
 
         FlexConstants constants = FlexConstantsOf(in style, props, known, widthIsDefinite, heightIsDefinite, input, min, max);
+        constants.ContainerStyleVersion = tree.Nodes.GetRef(tree.Nodes.GetRef(firstChild).Parent).Versions.LayoutStyle;
         int count = 0;
         for (NodeHandle c = firstChild; !c.IsNone; c = tree.Nodes.GetRef(c).NextSibling)
         {
@@ -76,7 +77,7 @@ internal static partial class LayoutEngine
             AvailableSize available = FlexAvailableSpace(known, input.Available, in constants);
 
             // 9.2.3 The flex base size and hypothetical main size of each item.
-            DetermineFlexBaseSizes(tree, in constants, available, items);
+            DetermineFlexBaseSizes(tree, in constants, available, items, commit);
 
             // 9.3.5 Collect the items into lines.
             Span<FlexLine> lines = lineSpace[..CollectFlexLines(in constants, available, items, lineSpace)];
@@ -262,18 +263,31 @@ internal static partial class LayoutEngine
             // Field by field into the pooled item: the later steps write every other field before they read it.
             ref FlexItem item = ref items[i];
             item.Node = child;
-            item.Size = StyleSize(in s, percentBasis);
-            item.Min = MinSize(in s, percentBasis);
-            item.Max = MaxSize(in s, percentBasis);
+            if (c.Layout.HasBox)
+            {
+                ref readonly ResolvedBox box = ref c.Layout.Box;
+                item.Size = box.Size;
+                item.Min = box.Min;
+                item.Max = box.Max;
+                item.Margin = box.Margin;
+                item.PaddingBorder = box.PaddingBorder;
+            }
+            else
+            {
+                item.Size = StyleSize(in s, percentBasis);
+                item.Min = MinSize(in s, percentBasis);
+                item.Max = MaxSize(in s, percentBasis);
+                item.Margin = EdgeInsets.ResolveOrZero(s.Margin, innerWidth);
+                item.PaddingBorder = PaddingBorder(in s, innerWidth);
+            }
+
             item.MainStyle = row ? s.Width : s.Height;
             item.CrossStyle = row ? s.Height : s.Width;
             item.FlexBasisStyle = s.FlexBasis;
-            item.Margin = EdgeInsets.ResolveOrZero(s.Margin, innerWidth);
             item.AutoLeft = s.Margin.Left.IsAuto;
             item.AutoTop = s.Margin.Top.IsAuto;
             item.AutoRight = s.Margin.Right.IsAuto;
             item.AutoBottom = s.Margin.Bottom.IsAuto;
-            item.PaddingBorder = PaddingBorder(in s, innerWidth);
             item.FlexGrow = s.FlexGrow;
             item.FlexShrink = s.FlexShrink;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
@@ -306,18 +320,27 @@ internal static partial class LayoutEngine
     private static AvailableSpace InnerSpace(float known, AvailableSpace outer, float inset) =>
         float.IsNaN(known) ? outer.Minus(inset).AtLeast(0) : AvailableSpace.Definite(Math.Max(0, known - inset));
 
-    private static void DetermineFlexBaseSizes(UiTree tree, in FlexConstants constants, AvailableSize available, Span<FlexItem> items)
+    // A clean item whose step read the same container values as last time takes its results from FlexBaseMemo (row L4).
+    private static void DetermineFlexBaseSizes(UiTree tree, in FlexConstants constants, AvailableSize available, Span<FlexItem> items, bool commit)
     {
         bool row = constants.Row;
         float crossParent = constants.NodeInnerSize.Cross(row);
         OptionalSize childParentSize = OptionalSize.None.WithCross(row, crossParent);
         float percentMain = constants.KnownMainSizeIsDefinite ? constants.NodeInnerSize.Main(row) : float.NaN;
+        float innerWidth = constants.NodeInnerSize.Width;
+        AvailableSpace crossSpace = available.Cross(row);
+        bool minContentMain = available.Main(row).Kind == AvailableSpaceKind.MinContent;
 
         foreach (ref FlexItem item in items)
         {
+            if (TryReuseBaseSize(tree, ref item, in constants, commit, innerWidth, crossParent, percentMain, crossSpace, minContentMain))
+            {
+                continue;
+            }
+
+            bool readContent = false;
             float minCross = item.Min.Cross(row);
             float maxCross = item.Max.Cross(row);
-            AvailableSpace crossSpace = available.Cross(row);
             AvailableSpace childCross = crossSpace.Kind switch
             {
                 AvailableSpaceKind.Definite => AvailableSpace.Definite(
@@ -361,6 +384,8 @@ internal static partial class LayoutEngine
 
             if (float.IsNaN(item.FlexBasis))
             {
+                readContent = true;
+
                 // 9.2.3 E: the content's size, treating `content` as max-content (min-content under a min-content constraint).
                 AvailableSpace mainSpace =
                     keywordSpace
@@ -385,6 +410,7 @@ internal static partial class LayoutEngine
             float styleMinMain = item.Min.Main(row);
             if (float.IsNaN(styleMinMain))
             {
+                readContent = true;
                 float minContent = MeasureChild(
                     tree,
                     item.Node,
@@ -401,7 +427,85 @@ internal static partial class LayoutEngine
             float hypotheticalInner = Maybe.Clamp(item.FlexBasis, Math.Max(styleMinMain, paddingBorderMain), item.Max.Main(row));
             item.HypotheticalInnerMain = hypotheticalInner;
             item.HypotheticalOuterMain = hypotheticalInner + item.Margin.MainSum(row);
+
+            ref UiNode child = ref tree.Nodes.GetRef(item.Node);
+            ref MeasureCache cache = ref tree.MeasuresOf(item.Node);
+            (commit ? ref cache.LayoutBase : ref cache.MeasureBase) = new FlexBaseMemo
+            {
+                Valid = true,
+                Row = row,
+                ReadContent = readContent,
+                MinContentMain = minContentMain,
+                CrossKind = crossSpace.Kind,
+                CrossValue = crossSpace.Value,
+                InnerWidth = child.Layout.HasBox ? float.NaN : innerWidth,
+                CrossParent = crossParent,
+                PercentMain = ReadsContainerMain(in item, child.Layout.HasBox) ? percentMain : float.NaN,
+                ContainerStyle = constants.ContainerStyleVersion,
+                FlexBasis = item.FlexBasis,
+                FlexBasisIsDefinite = item.FlexBasisIsDefinite,
+                ResolvedMinMain = item.ResolvedMinMain,
+            };
         }
+    }
+
+    // Whether an item's base-size step reads the container's main size: through a percentage in its style, or through a basis
+    // or a main size that is a content keyword, measured against the space the item may stretch into. Otherwise a new main
+    // size of the container (a width change of a row) leaves the step's results as they were. The width an item's percentage
+    // margins and padding resolve against is compared apart: a row's width can be known but not definite.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool ReadsContainerMain(in FlexItem item, bool hasBox) =>
+        !hasBox
+        || item.FlexBasisStyle.Kind is LengthKind.Percent or LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent
+        || item.MainStyle.Kind is LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent;
+
+    // The base-size step's results of an item from its container's last run (dropped when the item is marked dirty), where the
+    // step would read the same values of the container: its style, the content-box sizes the item reads, and the spaces.
+    // Content the step measured last time is marked as read again, as measuring marks it.
+    private static bool TryReuseBaseSize(
+        UiTree tree,
+        ref FlexItem item,
+        in FlexConstants constants,
+        bool commit,
+        float innerWidth,
+        float crossParent,
+        float percentMain,
+        AvailableSpace crossSpace,
+        bool minContentMain
+    )
+    {
+        ref UiNode child = ref tree.Nodes.GetRef(item.Node);
+        ref MeasureCache cache = ref tree.MeasuresOf(item.Node);
+        ref readonly FlexBaseMemo memo = ref commit ? ref cache.LayoutBase : ref cache.MeasureBase;
+        if (
+            !memo.Valid
+            || memo.ContainerStyle != constants.ContainerStyleVersion
+            || memo.Row != constants.Row
+            || memo.MinContentMain != minContentMain
+            || memo.CrossKind != crossSpace.Kind
+            || !Maybe.Same(memo.CrossValue, crossSpace.Value)
+            || !Maybe.Same(memo.InnerWidth, child.Layout.HasBox ? float.NaN : innerWidth)
+            || !Maybe.Same(memo.CrossParent, crossParent)
+            || !Maybe.Same(memo.PercentMain, ReadsContainerMain(in item, child.Layout.HasBox) ? percentMain : float.NaN)
+        )
+        {
+            return false;
+        }
+
+        if (memo.ReadContent)
+        {
+            child.Layout.ContentReadGeneration = tree.Nodes.GetRef(child.Parent).Layout.CacheGeneration;
+        }
+
+        bool row = constants.Row;
+        item.FlexBasis = memo.FlexBasis;
+        item.FlexBasisIsDefinite = memo.FlexBasisIsDefinite;
+        item.InnerFlexBasis = memo.FlexBasis - item.PaddingBorder.MainSum(row);
+        item.ResolvedMinMain = memo.ResolvedMinMain;
+        float hypotheticalInner = Maybe.Clamp(memo.FlexBasis, Math.Max(memo.ResolvedMinMain, item.PaddingBorder.MainSum(row)), item.Max.Main(row));
+        item.HypotheticalInnerMain = hypotheticalInner;
+        item.HypotheticalOuterMain = hypotheticalInner + item.Margin.MainSum(row);
+        return true;
     }
 
     // 9.3.5: one line unless the container wraps against a definite main size; then as many items on each line as fit, at
@@ -1290,6 +1394,7 @@ internal static partial class LayoutEngine
         public bool AllStretched;
         public float ContainerMain;
         public float InnerContainerMain;
+        public ulong ContainerStyleVersion;
     }
 
     private struct FlexLine

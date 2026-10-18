@@ -79,6 +79,29 @@ internal readonly record struct LayoutCacheKey(
         && KnownHeightIsDefinite == other.KnownHeightIsDefinite
         && SizingMode == other.SizingMode;
 
+    /// <summary>
+    /// Returns the same as <see cref="Matches"/> with the key of <paramref name="input"/> for <paramref name="node"/>, without
+    /// making that key: a parent asks it of every clean child it lays out again (row L4).
+    /// </summary>
+    public bool MatchesInput(in UiNode node, in LayoutInput input)
+    {
+        OptionalSize known = input.KnownDimensions;
+        bool knownWidth = !float.IsNaN(known.Width);
+        bool knownHeight = !float.IsNaN(known.Height);
+        return DescendantLayoutVersion == node.Versions.DescendantLayout
+            && LayoutStyleVersion == node.Versions.LayoutStyle
+            && ChildStructureVersion == node.Versions.Children
+            && Same(Known.Width, known.Width)
+            && Same(Known.Height, known.Height)
+            && (knownWidth || (Available.Width.Kind == input.Available.Width.Kind && Available.Width.Value == input.Available.Width.Value))
+            && (knownHeight || (Available.Height.Kind == input.Available.Height.Kind && Available.Height.Value == input.Available.Height.Value))
+            && (!node.Layout.UsesPercentOfParentWidth || Same(Parent.Width, input.ParentSize.Width))
+            && (!node.Layout.UsesPercentOfParentHeight || Same(Parent.Height, input.ParentSize.Height))
+            && KnownWidthIsDefinite == (!knownWidth || input.KnownWidthIsDefinite)
+            && KnownHeightIsDefinite == (!knownHeight || input.KnownHeightIsDefinite)
+            && SizingMode == input.SizingMode;
+    }
+
     /// <inheritdoc />
     /// <remarks>
     /// Written by hand with <see cref="Equals(LayoutCacheKey)"/>, which replaces the compiler's comparison for its cost; the
@@ -96,14 +119,74 @@ internal readonly record struct LayoutCacheKey(
 internal struct MeasureCache
 {
     /// <summary>
-    /// The number of entries.
+    /// The number of entries: 9 in L1a; 4 since a leaf's min-content and max-content widths come from its content widths
+    /// (row L4: the same runs, 360 bytes a node instead of 760; with 2, a width change took three times as long).
     /// </summary>
-    public const int Capacity = 9;
+    public const int Capacity = 4;
+
+    /// <summary>
+    /// The results of the node's base-size step as a flex item, in its container's last measuring run (row L4). A container is
+    /// measured and laid out with different inputs in one pass, so each kind of run keeps its own. They sit here, apart from
+    /// the node: on the node they made it 656 bytes instead of 528, and a width change 11 to 14 % slower.
+    /// </summary>
+    public FlexBaseMemo MeasureBase;
+
+    /// <summary>
+    /// The same, in its container's last layout run.
+    /// </summary>
+    public FlexBaseMemo LayoutBase;
 
     private Entries _entries;
     private ushort _recentlyUsed;
     private byte _next;
     private byte _count;
+
+    // The content widths of a leaf (row L4), as Chromium keeps them: one answer for every height unless they depend on it, and
+    // then the answer for the last height asked.
+    private IntrinsicWidths _anyHeight;
+    private IntrinsicWidths _atHeight;
+    private float _height;
+    private bool _hasAnyHeight;
+    private bool _hasAtHeight;
+
+    /// <summary>
+    /// Returns the content widths kept for a content height of <paramref name="knownHeight"/> (NaN when it is not decided).
+    /// </summary>
+    public readonly bool TryGetIntrinsicWidths(float knownHeight, out IntrinsicWidths widths)
+    {
+        if (_hasAnyHeight && (!_anyHeight.DependsOnHeight || float.IsNaN(knownHeight)))
+        {
+            widths = _anyHeight;
+            return true;
+        }
+
+        if (_hasAtHeight && !float.IsNaN(knownHeight) && _height == knownHeight)
+        {
+            widths = _atHeight;
+            return true;
+        }
+
+        widths = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Keeps the content widths returned for <paramref name="knownHeight"/>.
+    /// </summary>
+    public void StoreIntrinsicWidths(float knownHeight, IntrinsicWidths widths)
+    {
+        if (float.IsNaN(knownHeight) || !widths.DependsOnHeight)
+        {
+            _anyHeight = widths;
+            _hasAnyHeight = true;
+        }
+        else
+        {
+            _atHeight = widths;
+            _height = knownHeight;
+            _hasAtHeight = true;
+        }
+    }
 
     /// <summary>
     /// Returns the size cached for <paramref name="key"/>. An entry measured for both axes serves either; one measured for one
@@ -170,13 +253,17 @@ internal struct MeasureCache
     }
 
     /// <summary>
-    /// Drops every entry.
+    /// Drops every entry and the content widths.
     /// </summary>
     public void Clear()
     {
         _count = 0;
         _next = 0;
         _recentlyUsed = 0;
+        _hasAnyHeight = false;
+        _hasAtHeight = false;
+        MeasureBase = default;
+        LayoutBase = default;
     }
 
     /// <summary>

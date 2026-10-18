@@ -27,6 +27,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
 
     private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
+    private static readonly IntrinsicWidthsFunc TenWide = static _ => new IntrinsicWidths(10, 10, DependsOnHeight: false);
+
     /// <summary>
     /// Reading or setting a signal, or reading a computed value, during layout fails the invariant, and the pass is closed
     /// afterwards.
@@ -142,7 +144,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                         "wrap" => new LayoutStyle { Width = Length.Px(30) },
                         _ => new LayoutStyle(),
                     };
-                    NodeHandle leaf = tree.CreateNode(style, TenByTen);
+                    NodeHandle leaf = tree.CreateNode(style, TenByTen, TenWide);
                     tree.AppendChild(row, leaf);
                     if (r == 50 && c == 50)
                     {

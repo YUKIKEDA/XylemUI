@@ -56,10 +56,16 @@ internal sealed class UiTree
     internal Action<NodeHandle>? LayoutRunHook { get; set; }
 
     /// <summary>
-    /// Creates a node that is not in the tree yet. It needs a layout.
+    /// Creates a node that is not in the tree yet. It needs a layout. A leaf with content has <paramref name="measure"/>, and
+    /// may have <paramref name="intrinsicWidths"/>, which must agree with it.
     /// </summary>
-    public NodeHandle CreateNode(LayoutStyle style, MeasureFunc? measure = null)
+    public NodeHandle CreateNode(LayoutStyle style, MeasureFunc? measure = null, IntrinsicWidthsFunc? intrinsicWidths = null)
     {
+        if (intrinsicWidths is not null && measure is null)
+        {
+            throw new ArgumentException("A node with intrinsic widths needs a measure function.", nameof(intrinsicWidths));
+        }
+
         var node = new UiNode
         {
             Layout = new LayoutState
@@ -67,7 +73,10 @@ internal sealed class UiTree
                 Style = style,
                 UsesPercentOfParentWidth = style.UsesPercentOfParentWidth,
                 UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
+                HasBox = LayoutEngine.TryResolveBox(in style, out ResolvedBox box),
+                Box = box,
                 Measure = measure,
+                IntrinsicWidths = intrinsicWidths,
                 FirstBaseline = float.NaN,
                 CacheGeneration = 1,
             },
@@ -133,6 +142,7 @@ internal sealed class UiTree
         n.Layout.Style = style;
         n.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
         n.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
+        n.Layout.HasBox = LayoutEngine.TryResolveBox(in style, out n.Layout.Box);
         n.Versions.LayoutStyle++;
         NodeHandle parent = n.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);
