@@ -44,6 +44,7 @@ These rules come from the shape of Cysharp's R3, ZLinq, ZString, MemoryPack, and
 
 - Data read together is stored together. The arena stores `UiNode` structs and is walked by index; GPU-bound data is SoA and copied with `MemoryMarshal.AsBytes` (design §5.0.1).
 - Unmanaged structs that cross to native code or the GPU have `[StructLayout(LayoutKind.Sequential)]`; others may use `LayoutKind.Auto`.
+- A field added to a struct on the frame path goes where the struct has padding, with `Unsafe.SizeOf` read before and after. In L5 a 4-byte field before the measurement cache's entries made it 464 bytes a node instead of 456 and the first layout of 10,101 nodes 7 % slower; after the flags it fit the padding (PR #112).
 - A `ref` into an arena is never held across an operation that can grow the arena (design §2.5, Invariant 12).
 - Explicit SIMD (`Vector128<T>`, `Vector<T>`) only where a measurement shows the path is the bottleneck, with a scalar path that gives the same result, and a test that compares them.
 
