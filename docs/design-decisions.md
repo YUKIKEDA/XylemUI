@@ -132,7 +132,10 @@ Rejected:
   - 同一ノードの enqueue を無視して MaterializationChanged を落とす
   - 親境界の再帰が子境界の隔離を突き抜ける
   - `LayoutCacheKey.DescendantLayout` を v1 でさらに細分化する
-  - WPF / Avalonia の Panel ごとの Measure/Arrange（アルゴリズムが Panel に分散する）
+  - WPF / Avalonia の Panel ごとの Measure/Arrange（並べ方がパネルごとに分かれ、内容に合わせる大きさの意味がパネルで違い、外の正解が無い。D4、Issue #104）
+  - Flutter の箱の制約に切り替える（最初の layout と 1 か所の変更で最も速いが、Chrome の結果による検証を失い、内容に合わせる大きさを高くつく問い合わせに追い出す。D4、Issue #104）
+  - CSS のサブセットに加えて、Flutter の `Row` / `Column` に当たる簡単な並べ方を選べるようにする（同じ見た目に 2 つの意味を持ち込む。`min-width: 0` で計算は減る。D4、Issue #104）
+  - 制約ベース（Cassowary / Auto Layout）（1 万ノードの実測が無く、曖昧な制約の結果を予測しにくい。D4、Issue #104）
   - `LayoutRoots` のソートに毎回ラムダを渡す（キャッシュ済みの `Comparison<T>` を使う。`IComparer<T>` を `List<T>.Sort` に渡すと、ソートのたびにデリゲートを作る）
   - 計算された境界の資格が変わったときに親を dirty にして修復する（親が子を layout するたびに書き直されるので、古い値で止まらない）
   - `ParentLayoutChanged` の要求（親が子を直接 layout する）
