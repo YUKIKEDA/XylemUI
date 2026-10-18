@@ -39,6 +39,11 @@ internal static class LayoutCost
     public static int Loop(string scene, string kind, int count)
     {
         UiThread.Initialize();
+        if (scene == "absolute")
+        {
+            return LoopAbsolute(count);
+        }
+
         (UiTree tree, NodeHandle root, NodeHandle target) = Build(scene, fixedRows: false);
         Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
         LayoutEngine.RunLayoutPass(tree);
@@ -63,6 +68,25 @@ internal static class LayoutCost
         }
 
         Console.WriteLine($"{scene} {kind}: {Stopwatch.GetElapsedTime(start).TotalMicroseconds / count:F2} us a pass");
+        return 0;
+    }
+
+    // The change of the absolute scene repeated: one leaf's content, 10 or 20 wide in turn.
+    private static int LoopAbsolute(int count)
+    {
+        float width = 10;
+        (UiTree tree, NodeHandle root, NodeHandle target) = BuildAbsolute(() => width);
+        Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
+        LayoutEngine.RunLayoutPass(tree);
+        long start = Stopwatch.GetTimestamp();
+        for (int i = 0; i < count; i++)
+        {
+            width = i % 2 == 0 ? 20 : 10;
+            Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+        }
+
+        Console.WriteLine($"absolute change: {Stopwatch.GetElapsedTime(start).TotalMicroseconds / count:F2} us a pass");
         return 0;
     }
 
@@ -157,7 +181,9 @@ internal static class LayoutCost
 
     // The absolute scene (row L2): a column of 100 boxes of 2,000 x 20, each holding 100 absolutely positioned leaves of 10 x 10
     // at a left inset of 20 each (Flutter's Stack of Positioned boxes, Avalonia's Canvas). The change is one leaf's content,
-    // 10 or 20 wide in turn: its box places it again, and the boxes, of fixed size, stop the change.
+    // 10 or 20 wide in turn: its box places it again, and the boxes, of fixed size, stop the change. The boxes have a minimum
+    // height of 0, as in S6b's meaning: Flutter's Column and Avalonia's StackPanel read no automatic minimum, and with CSS's
+    // the column would measure each box's content and be laid out again too.
     private static void MeasureAbsolute(Report report, int samples)
     {
         var first = new List<double>(samples);
@@ -207,7 +233,14 @@ internal static class LayoutCost
         NodeHandle target = default;
         for (int r = 0; r < Rows; r++)
         {
-            NodeHandle box = tree.CreateNode(new LayoutStyle { Width = Length.Px(2_000), Height = Length.Px(20) });
+            NodeHandle box = tree.CreateNode(
+                new LayoutStyle
+                {
+                    Width = Length.Px(2_000),
+                    Height = Length.Px(20),
+                    MinHeight = LengthPercentageAuto.Px(0),
+                }
+            );
             tree.AppendChild(root, box);
             for (int c = 0; c < Columns; c++)
             {

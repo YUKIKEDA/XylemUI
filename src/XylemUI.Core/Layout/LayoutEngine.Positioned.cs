@@ -46,7 +46,7 @@ internal static partial class LayoutEngine
         {
             ref UiNode c = ref tree.Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
-            LayoutStyle s = c.Layout.Style;
+            ref readonly LayoutStyle s = ref c.Layout.Style;
             if (s.Hidden)
             {
                 HideSubtree(tree, child);
@@ -109,7 +109,7 @@ internal static partial class LayoutEngine
         {
             ref UiNode c = ref tree.Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
-            LayoutStyle s = c.Layout.Style;
+            ref readonly LayoutStyle s = ref c.Layout.Style;
             if (s.Hidden)
             {
                 HideSubtree(tree, child);
@@ -374,7 +374,7 @@ internal static partial class LayoutEngine
         // The stretch-fit size of the border box: the inset-modified containing block less the margins that are not auto.
         public float StretchFitSize()
         {
-            StaticArea imcb = InsetModifiedContainingBlock();
+            StaticArea imcb = _imcb;
             return Math.Max(imcb.End - imcb.Start - (Maybe.Or(marginStart, 0) + Maybe.Or(marginEnd, 0)), 0);
         }
 
@@ -394,7 +394,7 @@ internal static partial class LayoutEngine
                 return (Maybe.Or(marginStart, 0), Maybe.Or(marginEnd, 0));
             }
 
-            StaticArea imcb = InsetModifiedContainingBlock();
+            StaticArea imcb = _imcb;
             float free = imcb.End - imcb.Start - size;
             return !autoStart ? (marginStart, free - marginStart)
                 : !autoEnd ? (free - marginEnd, marginEnd)
@@ -405,7 +405,7 @@ internal static partial class LayoutEngine
         // The start of the border box (CSS Position 3 §5.4).
         public float Position(float size, float resolvedStart, float resolvedEnd)
         {
-            StaticArea imcb = InsetModifiedContainingBlock();
+            StaticArea imcb = _imcb;
             float marginBox = size + resolvedStart + resolvedEnd;
             bool start = !float.IsNaN(insetStart);
             bool end = !float.IsNaN(insetEnd);
@@ -463,9 +463,12 @@ internal static partial class LayoutEngine
             return boxStart + resolvedStart;
         }
 
+        // The inset-modified containing block, found once: every step reads it.
+        private readonly StaticArea _imcb = InsetModifiedContainingBlock(containingSize, insetStart, insetEnd, staticPosition);
+
         // The inset-modified containing block (CSS Position 3 §4.1). Where both insets are auto, the static position's area and
         // alignment decide it. An overconstrained one gives up its weaker inset.
-        private StaticArea InsetModifiedContainingBlock()
+        private static StaticArea InsetModifiedContainingBlock(float containingSize, float insetStart, float insetEnd, StaticPosition staticPosition)
         {
             bool start = !float.IsNaN(insetStart);
             bool end = !float.IsNaN(insetEnd);

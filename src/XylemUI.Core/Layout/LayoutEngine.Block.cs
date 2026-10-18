@@ -179,13 +179,17 @@ internal static partial class LayoutEngine
         {
             ref UiNode c = ref tree.Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
-            LayoutStyle childStyle = c.Layout.Style;
-            if (!childStyle.IsInFlow)
+
+            // Checked before the style is copied: a block of absolutely positioned children copied each one's style for
+            // nothing.
+            if (!c.Layout.Style.IsInFlow)
             {
                 anyOutOfFlow = true;
                 child = next;
                 continue;
             }
+
+            LayoutStyle childStyle = c.Layout.Style;
 
             OptionalSize size = StyleSize(in childStyle, contentBox);
             OptionalSize min = MinSize(in childStyle, contentBox);
