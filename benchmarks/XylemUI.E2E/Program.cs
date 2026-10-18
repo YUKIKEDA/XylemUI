@@ -10,7 +10,7 @@
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, shaping and cached
 //   layout [samples]           the four layout times of 10,101 nodes in three scenes (design §3.2, row L1a)
-//   layout-loop scene kind N   one of them (kind change or width) repeated N times on one tree, for a profile
+//   layout-loop scene kind N   one of them (kind change, content, or width) repeated N times on one tree, for a profile
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame

@@ -98,27 +98,29 @@ internal sealed class SceneControl : Control
 // layout, in a 2,000 x 2,000 window, timed as one pass of the window's layout manager (UpdateLayout): a vertical StackPanel of
 // 100 horizontal StackPanels of 100 controls that measure 10 x 10, and a WrapPanel of 10,000 of them (the `wrap_` figures). The
 // window is in place before the scene is set, so its own layout is not timed. A control outside a window has no layout manager,
-// so a change inside it would not reach its parent. The three times of the comparison: the first layout, a layout after one
-// control's width changes, and a layout at a new width.
+// so a change inside it would not reach its parent. The four times of the comparison: the first layout, a layout after one
+// control's width changes, a layout after one control is measured again at the same size (InvalidateMeasure, as a change of
+// its content that keeps its size; row L5), and a layout at a new width.
 internal static class LayoutScene
 {
     public static void Run(string output)
     {
-        (double First, double Change, double Width) stack = Measure(BuildStacks);
-        (double First, double Change, double Width) wrap = Measure(BuildWrap);
+        (double First, double Change, double Content, double Width) stack = Measure(BuildStacks);
+        (double First, double Change, double Content, double Width) wrap = Measure(BuildWrap);
         File.WriteAllText(
             output,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_width_us_p50\":{wrap.Width:F1}}}{Environment.NewLine}"
+                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"content_us_p50\":{stack.Content:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_content_us_p50\":{wrap.Content:F1},\"wrap_width_us_p50\":{wrap.Width:F1}}}{Environment.NewLine}"
             )
         );
     }
 
-    private static (double First, double Change, double Width) Measure(Func<(Panel Root, Leaf Target)> build)
+    private static (double First, double Change, double Content, double Width) Measure(Func<(Panel Root, Leaf Target)> build)
     {
         var first = new List<double>();
         var change = new List<double>();
+        var content = new List<double>();
         var width = new List<double>();
         for (int s = 0; s < 18; s++)
         {
@@ -137,6 +139,15 @@ internal static class LayoutScene
                 start = System.Diagnostics.Stopwatch.GetTimestamp();
                 window.UpdateLayout();
                 changeUs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMicroseconds;
+            }
+
+            double contentUs = 0;
+            for (int i = 0; i < 2; i++)
+            {
+                target.InvalidateMeasure();
+                start = System.Diagnostics.Stopwatch.GetTimestamp();
+                window.UpdateLayout();
+                contentUs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMicroseconds;
             }
 
             double widthUs = 0;
@@ -160,11 +171,12 @@ internal static class LayoutScene
             {
                 first.Add(firstUs);
                 change.Add(changeUs);
+                content.Add(contentUs);
                 width.Add(widthUs);
             }
         }
 
-        return (Median(first), Median(change), Median(width));
+        return (Median(first), Median(change), Median(content), Median(width));
     }
 
     private static (Panel Root, Leaf Target) BuildStacks()
