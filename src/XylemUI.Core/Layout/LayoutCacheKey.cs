@@ -96,9 +96,10 @@ internal readonly record struct LayoutCacheKey(
 internal struct MeasureCache
 {
     /// <summary>
-    /// The number of entries.
+    /// The number of entries: 9 in L1a; 4 since a leaf's min-content and max-content widths come from its content widths
+    /// (row L4: the same runs, 360 bytes a node instead of 760; with 2, a width change took three times as long).
     /// </summary>
-    public const int Capacity = 9;
+    public const int Capacity = 4;
 
     private Entries _entries;
     private ushort _recentlyUsed;
