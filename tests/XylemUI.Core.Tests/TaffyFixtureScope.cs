@@ -104,8 +104,8 @@ internal static class TaffyFixtureScope
                 "position" when value is "absolute" && !isRoot => "absolute positioning (row L2)",
                 "top" or "left" or "bottom" or "right" when !isRoot => "an inset of relative or absolute positioning (row L2)",
                 "aspect-ratio" => "aspect-ratio (row L2)",
-                "flex-wrap" when value.Contains("balance", StringComparison.Ordinal) => "flex-wrap: balance (row L2)",
-                "flex-line-count" => "flex-line-count with flex-wrap: balance (row L2)",
+                "flex-wrap" when value.Contains("balance", StringComparison.Ordinal) => "flex-wrap: balance (row L6)",
+                "flex-line-count" => "flex-line-count with flex-wrap: balance (row L6)",
                 "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
                     $"{attribute.Name.LocalName}: {value}, the item's own writing direction (row P03)",
                 "text-align" => "text-align moving a block's children (CSS's history; the design does not take it, §3.2)",
