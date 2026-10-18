@@ -187,20 +187,19 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Returns the index of the snapshot of <paramref name="node"/> in <see cref="ContentSnapshots"/>, or -1.
+    /// Returns the index of the snapshot of <paramref name="node"/> in <see cref="ContentSnapshots"/>, or -1. The node holds
+    /// it (<see cref="LayoutState.ContentSnapshotSlot"/>): a search of the list would make N changes before one pass cost N²
+    /// (PR #112's review).
     /// </summary>
-    internal int FindContentSnapshot(NodeHandle node)
-    {
-        Span<ContentSnapshot> snapshots = CollectionsMarshal.AsSpan(ContentSnapshots);
-        for (int i = 0; i < snapshots.Length; i++)
-        {
-            if (snapshots[i].Node == node)
-            {
-                return i;
-            }
-        }
+    internal int FindContentSnapshot(NodeHandle node) => Nodes.GetRef(node).Layout.ContentSnapshotSlot - 1;
 
-        return -1;
+    /// <summary>
+    /// Adds the snapshot of a node that has none.
+    /// </summary>
+    internal void AddContentSnapshot(in ContentSnapshot snapshot)
+    {
+        ContentSnapshots.Add(snapshot);
+        Nodes.GetRef(snapshot.Node).Layout.ContentSnapshotSlot = ContentSnapshots.Count;
     }
 
     /// <summary>
@@ -209,7 +208,13 @@ internal sealed class UiTree
     internal void RemoveContentSnapshotAt(int index)
     {
         int last = ContentSnapshots.Count - 1;
-        ContentSnapshots[index] = ContentSnapshots[last];
+        Nodes.GetRef(ContentSnapshots[index].Node).Layout.ContentSnapshotSlot = 0;
+        if (index != last)
+        {
+            ContentSnapshots[index] = ContentSnapshots[last];
+            Nodes.GetRef(ContentSnapshots[index].Node).Layout.ContentSnapshotSlot = index + 1;
+        }
+
         ContentSnapshots.RemoveAt(last);
     }
 

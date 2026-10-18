@@ -16,13 +16,17 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
     ///   widths, some with a first baseline, some with a percentage width.
     ///
     /// Steps:
-    /// - Lay the tree out at a random window size. Then 30 times: take the repaints, as the paint stage of a frame will (empty
-    ///   the paint updates and drop every flag other than layout); change a random leaf's content (half the time to the same
-    ///   size, half to a new one) and invalidate it, or resize the window; run the pass; build the same tree from the start
-    ///   with the same contents and lay it out once.
+    /// - Lay the tree out at a random window size. Then 30 times, after taking the repaints as the paint stage of a frame will
+    ///   (empty the paint updates and drop every flag other than layout): either resize the window, or change the content of
+    ///   1 to 3 random leaves (the same leaf may come twice) and invalidate each. Half the time a changed leaf keeps its
+    ///   number of characters, so its max-content size stays, and its longest word, its baseline (8 or 6), or nothing
+    ///   changes: the min-content width, the line breaks, or the baseline may change at the same size. Otherwise it gets a
+    ///   new number of characters. Run the pass; build the same tree from the start with the same contents and lay it out
+    ///   once.
     ///
     /// Expected:
     /// - After every step, every node has the same rectangle in both trees, and every leaf the same first baseline.
+    /// - After every pass, no kept values are left, and no changed leaf points at any.
     /// - After every change, the leaf's repaint was passed on: the leaf is in the paint updates (row L5's stop), or its parent
     ///   carries Paint in its subtree flags (the path of MarkDirty).
     /// </remarks>
@@ -37,6 +41,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 (UiTree tree, List<NodeHandle> nodes) = spec.Build();
                 Size window = new(100 + random.Next(300), 100 + random.Next(300));
                 LayOut(tree, nodes[0], window.Width, window.Height);
+                var changed = new List<int>();
                 for (int step = 0; step < 30; step++)
                 {
                     TakeRepaints(tree, nodes);
@@ -47,15 +52,27 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                     }
                     else
                     {
-                        int leaf = spec.RandomLeaf(random);
-                        spec.Change(leaf, random, sameSize: random.Next(2) == 0);
-                        Invalidation.Invalidate(tree, nodes[leaf], ChangeKind.TextContent);
+                        changed.Clear();
+                        int count = 1 + random.Next(3);
+                        for (int c = 0; c < count; c++)
+                        {
+                            int leaf = spec.RandomLeaf(random);
+                            spec.Change(leaf, random, sameCount: random.Next(2) == 0);
+                            Invalidation.Invalidate(tree, nodes[leaf], ChangeKind.TextContent);
+                            changed.Add(leaf);
+                        }
+
                         LayoutEngine.RunLayoutPass(tree);
-                        NodeHandle parent = tree.Nodes.GetRef(nodes[leaf]).Parent;
-                        Assert.True(
-                            tree.PaintUpdates.Contains(nodes[leaf]) || (tree.Nodes.GetRef(parent).Dirty.SubtreeDirty & DirtyFlags.Paint) != 0,
-                            $"seed {seed}, step {step}: the repaint of leaf {leaf} was not passed on"
-                        );
+                        Assert.Empty(tree.ContentSnapshots);
+                        foreach (int leaf in changed)
+                        {
+                            NodeHandle parent = tree.Nodes.GetRef(nodes[leaf]).Parent;
+                            Assert.True(
+                                tree.PaintUpdates.Contains(nodes[leaf]) || (tree.Nodes.GetRef(parent).Dirty.SubtreeDirty & DirtyFlags.Paint) != 0,
+                                $"seed {seed}, step {step}: the repaint of leaf {leaf} was not passed on"
+                            );
+                            Assert.Equal(0, tree.Nodes.GetRef(nodes[leaf]).Layout.ContentSnapshotSlot);
+                        }
                     }
 
                     (UiTree fresh, List<NodeHandle> freshNodes) = spec.Build();
@@ -147,7 +164,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
             }
         }
 
-        public void Change(int index, Random random, bool sameSize) => _leaves[index]!.Change(random, sameSize);
+        public void Change(int index, Random random, bool sameCount) => _leaves[index]!.Change(random, sameCount);
 
         private void Add(int parent, LayoutStyle style, Leaf? leaf)
         {
@@ -217,6 +234,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
     private sealed class Leaf
     {
         private readonly bool _withBaseline;
+        private float _baseline = 8;
         private int _characters;
         private int _longest;
 
@@ -237,7 +255,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 float width = Maybe.Or(known.Width, content);
                 int perLine = Math.Max(_longest, (int)Math.Floor(Math.Max(width, 10) / 10));
                 float height = Maybe.Or(known.Height, (float)Math.Ceiling((double)_characters / perLine) * 10);
-                return new MeasureResult(new Size(width, height), _withBaseline ? 8 : float.NaN);
+                return new MeasureResult(new Size(width, height), _withBaseline ? _baseline : float.NaN);
             };
             Widths = _ => new IntrinsicWidths(_longest * 10, _characters * 10, DependsOnHeight: false);
         }
@@ -257,13 +275,25 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 _ => new LayoutStyle(),
             };
 
-        // The same characters in another order keeps the size; another count changes it.
-        public void Change(Random random, bool sameSize)
+        // Another count of characters changes the size. The same count keeps the max-content size, and changes the longest
+        // word, the baseline, or nothing (PR #112's review: a change that keeps the size but not what the parent read).
+        public void Change(Random random, bool sameCount)
         {
-            if (!sameSize)
+            if (!sameCount)
             {
                 _characters = 1 + random.Next(8);
                 _longest = 1 + random.Next(_characters);
+                return;
+            }
+
+            switch (random.Next(3))
+            {
+                case 0:
+                    _longest = 1 + random.Next(_characters);
+                    break;
+                case 1:
+                    _baseline = _baseline == 8 ? 6 : 8;
+                    break;
             }
         }
     }

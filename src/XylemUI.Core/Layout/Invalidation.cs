@@ -43,9 +43,10 @@ internal static class Invalidation
     /// Marks a change of content on a leaf that its parent may not need to see (design §2.4.1, row L5): the leaf alone is made
     /// dirty and a layout root, and what the parent read from it is kept in a <see cref="ContentSnapshot"/>, for the layout
     /// pass to compare with the leaf's new values. Its repaint goes to the paint updates, as a change of color does: the
-    /// ancestors get no mark, so their flags do not tell that the leaf needs painting. Returns <see langword="false"/>, marking nothing, when the change must take
-    /// <see cref="MarkDirty"/>: the leaf was never laid out, is not attached, is the root or a boundary (the change stops at
-    /// it anyway), is dirty from another change, or overwrote a value its parent read (<see cref="MeasureCache.EvictedGeneration"/>).
+    /// ancestors get no mark, so their flags do not tell that the leaf needs painting. Returns <see langword="false"/>,
+    /// marking nothing, when the change must take <see cref="MarkDirty"/>: the leaf was never laid out, is not attached, is
+    /// the root or a boundary (the change stops at it anyway), is dirty from another change, or overwrote a value its parent
+    /// read (<see cref="MeasureCache.EvictedGeneration"/>).
     /// </summary>
     public static bool TryMarkContentChange(UiTree tree, NodeHandle handle, DirtyFlags flags)
     {
@@ -60,7 +61,7 @@ internal static class Invalidation
             }
 
             CollectionsMarshal.AsSpan(tree.ContentSnapshots)[index].Flags |= flags;
-            node.Dirty.SelfDirty |= flags;
+            MarkSelfForPaint(tree, handle, ref node, flags);
             node.Dirty.SubtreeDirty |= flags;
             return true;
         }
@@ -82,7 +83,7 @@ internal static class Invalidation
             return false;
         }
 
-        tree.ContentSnapshots.Add(
+        tree.AddContentSnapshot(
             new ContentSnapshot
             {
                 Node = handle,
@@ -92,12 +93,11 @@ internal static class Invalidation
                 Measures = measures,
             }
         );
-        node.Dirty.SelfDirty |= flags;
+        MarkSelfForPaint(tree, handle, ref node, flags);
         node.Dirty.SubtreeDirty |= flags;
         node.Dirty.Epoch++;
         DropCaches(tree, handle, ref node);
         EnqueueLayoutRoot(tree, handle);
-        tree.PaintUpdates.Add(handle);
         return true;
     }
 
@@ -109,14 +109,28 @@ internal static class Invalidation
     /// </summary>
     public static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
     {
-        tree.Nodes.GetRef(origin).Dirty.SelfDirty |= flags;
+        ref UiNode node = ref tree.Nodes.GetRef(origin);
         if ((flags & DirtyFlags.Layout) == 0)
         {
-            tree.PaintUpdates.Add(origin);
+            MarkSelfForPaint(tree, origin, ref node, flags);
             return;
         }
 
+        node.Dirty.SelfDirty |= flags;
         MarkPath(tree, origin, flags);
+    }
+
+    // Sets the node's own flags, and records it in the paint updates unless a stage other than layout was pending already: it
+    // waits there once until the paint stage takes the list and the flags, so the list holds at most one entry a node, however
+    // often the node changes (PR #112's review).
+    private static void MarkSelfForPaint(UiTree tree, NodeHandle handle, ref UiNode node, DirtyFlags flags)
+    {
+        if ((node.Dirty.SelfDirty & ~DirtyFlags.Layout) == 0)
+        {
+            tree.PaintUpdates.Add(handle);
+        }
+
+        node.Dirty.SelfDirty |= flags;
     }
 
     /// <summary>

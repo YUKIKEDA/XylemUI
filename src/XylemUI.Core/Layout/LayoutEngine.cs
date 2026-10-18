@@ -60,11 +60,15 @@ internal static partial class LayoutEngine
                     DirtyState dirty = tree.Nodes.GetRef(request.Node).Dirty;
                     if (((dirty.SelfDirty | dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
                     {
-                        // An ancestor laid the node out with its new content, so its parent has read the new values.
+                        // An ancestor laid the leaf out with its new content first. The parent's layout read the new values,
+                        // but its measurements may still hold ones of the old content, which an ancestor read in this pass
+                        // (the random test found it): the path from the parent is marked, as MarkDirty marks it.
                         int snapshot = tree.FindContentSnapshot(request.Node);
                         if (snapshot >= 0)
                         {
+                            DirtyFlags flags = tree.ContentSnapshots[snapshot].Flags;
                             tree.RemoveContentSnapshotAt(snapshot);
+                            Invalidation.MarkPath(tree, tree.Nodes.GetRef(request.Node).Parent, flags);
                         }
 
                         continue;

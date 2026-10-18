@@ -146,6 +146,55 @@ public sealed class LayoutContentChangeTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A leaf laid out by an ancestor's request before its own still goes on to its parent: the parent's layout read the new
+    /// content, but a value the parent keeps was taken from the old one, and the grandparent reads it in the same pass (the
+    /// random test found it with several changes before one pass, PR #112's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: column, window 300 x 100. Row R, 100 wide, holds leaf X, 80 wide by its style, and block B, whose basis is its
+    ///   max-content width; both may shrink to 0. B holds leaf L, whose content is 40 x 10 with content widths. Laid out: the
+    ///   bases (80 + 40) overflow R by 20, which each item gives in proportion to its basis: X 66.67, B 33.33.
+    ///
+    /// Steps:
+    /// - Make L's content 60 wide and invalidate it (row L5's path); make X 60 wide (SetStyle, MarkDirty's path to the root).
+    ///   Run the pass. The root's request goes first: R takes B's basis from what it kept of L's old content (40), so B gets a
+    ///   new width and lays L out with its new content before L's own request.
+    ///
+    /// Expected:
+    /// - As a layout from the start: the bases (60 + 60) overflow by 20, 10 each: X 50 wide, B 50 wide at x 50.
+    /// </remarks>
+    [Fact]
+    public void ContentChange_OfALeafAnAncestorLaidOutFirst_GoesOnToTheParent() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle row = Box(tree, root, Row() with { Width = Length.Px(100) });
+            var noMinimum = LengthPercentageAuto.Px(0);
+            NodeHandle x = Leaf(tree, row, 0, 10, new LayoutStyle { Width = Length.Px(80), MinWidth = noMinimum });
+            NodeHandle block = Box(tree, row, new LayoutStyle { MinWidth = noMinimum });
+            float width = 40;
+            NodeHandle l = tree.CreateNode(
+                new LayoutStyle(),
+                (_, _) => MeasureResult.Of(width, 10),
+                _ => new IntrinsicWidths(width, width, DependsOnHeight: false)
+            );
+            tree.AppendChild(block, l);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal(33.33f, tree.GetRect(block).Width, 0.01f);
+
+            width = 60;
+            Invalidation.Invalidate(tree, l, ChangeKind.TextContent);
+            tree.SetStyle(x, new LayoutStyle { Width = Length.Px(60), MinWidth = noMinimum });
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(new Rect(0, 0, 50, 10), tree.GetRect(x));
+            Assert.Equal(new Rect(50, 0, 50, 10), tree.GetRect(block));
+            Assert.Empty(tree.ContentSnapshots);
+        });
+
+    /// <summary>
     /// A leaf whose measurements overflowed its cache while its parent kept its results cannot be compared: a change of its
     /// content goes on to the parent, even at the same size (PR #109's review).
     /// </summary>

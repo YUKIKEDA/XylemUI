@@ -28,6 +28,12 @@ internal struct LayoutState
     public bool HasBox;
 
     /// <summary>
+    /// The index of the node's <see cref="ContentSnapshot"/> in <see cref="UiTree.ContentSnapshots"/> plus 1; 0 when it has
+    /// none (row L5). Next to the flags, in the struct's padding, so that finding the snapshot takes no search.
+    /// </summary>
+    public int ContentSnapshotSlot;
+
+    /// <summary>
     /// The style's lengths in pixels, resolved when the style is set, where <see cref="HasBox"/>: the flex items and the
     /// leaves' content widths read them instead of resolving the style each time.
     /// </summary>
