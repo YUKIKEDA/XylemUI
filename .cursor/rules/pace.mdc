@@ -13,7 +13,7 @@ The owner's time is the scarce thing. A row is finished when its own work is don
 
 1. Write what was measured on a new Issue: the numbers, what was tried, what is known and what is not.
 2. Add a roadmap row that names it (`.cursor/rules/defer.mdc`). Say whether it blocks the rows after it.
-3. Go on with the row. The PR body points to the Issue; it does not carry the investigation.
+3. Go on with the row. The PR body points to the Issue; it does not carry the investigation. In L1b the investigation of a Zero-Alloc failure that `main` also had went into PR #91's comments and commits, with the code it needed; the review moved it to #92 and PR #93.
 
 The test is one question: would this be there if the row had never been written?
 
