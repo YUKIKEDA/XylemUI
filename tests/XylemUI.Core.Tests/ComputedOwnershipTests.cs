@@ -215,15 +215,16 @@ public sealed class ComputedOwnershipTests(UiThreadFixture ui)
                 flag.Set(false);
             }
 
-            SteadyStateAllocation.AssertNone(
-                1_000,
-                _ =>
-                {
-                    flag.Set(true);
-                    flag.Set(false);
-                }
-            );
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1_000; i++)
+            {
+                flag.Set(true);
+                flag.Set(false);
+            }
 
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
             Assert.Equal(0, s.ObserverCount);
         });
 

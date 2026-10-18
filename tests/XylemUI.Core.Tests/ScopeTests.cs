@@ -498,8 +498,15 @@ public sealed class ScopeTests(UiThreadFixture ui)
             }
 
             long ran = _sink;
-            SteadyStateAllocation.AssertNone(1_000, _ => Round());
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1_000; i++)
+            {
+                Round();
+            }
 
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
             Assert.Equal(ran + 3_000, _sink);
         });
 

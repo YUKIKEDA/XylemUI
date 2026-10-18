@@ -219,7 +219,14 @@ public sealed class ArenaTests
         Handle<TreeNode>[] nodes = BuildTree(arena, 10_000, branching: 8);
         RunLookupsAndTraversal(arena, nodes);
 
-        SteadyStateAllocation.AssertNone(100, _ => RunLookupsAndTraversal(arena, nodes));
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int round = 0; round < 100; round++)
+        {
+            RunLookupsAndTraversal(arena, nodes);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0, allocated);
     }
 
     private static void RunLookupsAndTraversal(Arena<TreeNode> arena, Handle<TreeNode>[] nodes)

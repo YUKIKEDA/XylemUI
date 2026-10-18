@@ -159,15 +159,16 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 LayoutEngine.RunLayoutPass(tree);
             }
 
-            SteadyStateAllocation.AssertNone(
-                1_000,
-                i =>
-                {
-                    tree.SetStyle(target, i % 2 == 0 ? wide : narrow);
-                    LayoutEngine.RunLayoutPass(tree);
-                }
-            );
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1_000; i++)
+            {
+                tree.SetStyle(target, i % 2 == 0 ? wide : narrow);
+                LayoutEngine.RunLayoutPass(tree);
+            }
 
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
             Assert.Equal(10, tree.GetRect(target).Width);
         });
 }

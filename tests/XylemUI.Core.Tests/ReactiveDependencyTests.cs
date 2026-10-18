@@ -138,8 +138,15 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
             }
 
             int runsBefore = runs;
-            SteadyStateAllocation.AssertNone(Sets, i => source.Set(101 + i));
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 101; i <= 100 + Sets; i++)
+            {
+                source.Set(i);
+            }
 
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
             Assert.Equal(runsBefore + Sets, runs);
         });
 
