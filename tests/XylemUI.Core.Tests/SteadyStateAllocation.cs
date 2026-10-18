@@ -38,6 +38,13 @@ internal static class SteadyStateAllocation
         _ = GC.GetTotalAllocatedBytes(precise: true);
 
         int perWindow = iterations / Windows;
+
+        // EXPERIMENT (#92): one window through the same delegate, not measured.
+        for (int warm = -perWindow; warm < 0; warm++)
+        {
+            iteration(warm);
+        }
+
         int index = 0;
         for (int window = 0; window < Windows; window++)
         {

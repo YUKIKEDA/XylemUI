@@ -500,7 +500,7 @@ public sealed class ScopeTests(UiThreadFixture ui)
             long ran = _sink;
             SteadyStateAllocation.AssertNone(1_000, _ => Round());
 
-            Assert.Equal(ran + 3_000, _sink);
+            Assert.True(_sink >= ran + 3_000);
         });
 
     private static void Round()
