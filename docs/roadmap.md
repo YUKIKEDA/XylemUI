@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** Q1 完了。L4（#101）を進める
+- **フェーズ:** D4 完了。L4（PR #103）のマージの後、L5
 - **作業中:** なし
 - **ブランチ:** —
 - **Issue:** —
@@ -39,6 +39,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | F0  | 開発基盤（規約・スキル・ビルド設定・CI・テンプレート、設計文書の docs/ 移動）                        | done        | —     | `./build.ps1` が空のソリューションで通る   |
 | D2  | Cysharp 由来の設計変更の Grill（購読リスト・テキスト更新・リーク検出・cleanup・ツリー走査）          | done        | [#6](https://github.com/YUKIKEDA/XylemUI/issues/6) | §2.2.2・§2.3・§2.5・§2.6・§2.13・§12.5 に固定 |
 | D3  | 理由が無いか工数だった判断を決め直す Grill: MVVM との橋渡し（Avalonia の利用者の移行を含む、§2.13）、internal の XML ドキュメントを必須にするか（読み手はエージェントと保守する人、`csharp.mdc`）（Issue #54） | not-started | —     | §2.13                                      |
+| D4  | レイアウトの方式（§3.1）を要件だけで比べ直す: Flutter の箱の制約、Avalonia の Measure / Arrange、CSS のサブセット（今の方式）、制約ベース。基準はフレームの予算と L4 の実測、増分の再計算、表現力、検証のしやすさ、予測しやすさ。実装の難しさは理由にしない（オーナーの指摘）。L2 の前に行う | done        | [#104](https://github.com/YUKIKEDA/XylemUI/issues/104) | 採用は CSS のサブセットのまま。§3.1 を書き直した |
 | S1  | NativeAOT + Win32 UI スレッド + `[UnmanagedCallersOnly]` WndProc + `NativeHandleTable` + スレッド検査 | done        | [#4](https://github.com/YUKIKEDA/XylemUI/issues/4) | 4問 Yes（JIT・NativeAOT とも）。詳細は Issue |
 | S2  | Arena + generation `Handle<T>`。`ref` 返しと再確保検出                                                | done        | [#8](https://github.com/YUKIKEDA/XylemUI/issues/8) | 4問 Yes。詳細は Issue |
 | S3  | Event Loop Waiter（Windows: `MsgWaitForMultipleObjectsEx`）                                           | done        | [#10](https://github.com/YUKIKEDA/XylemUI/issues/10) | 4問 Yes。詳細は Issue |
@@ -55,6 +56,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | L1b | Flex の残り（既定値以外の値）: wrap と `align-content`、`justify-content`、`align-items` / `align-self`（baseline を含む）、gap、逆向きの軸、`auto` のマージン、あふれたときの揃え方（`safe` / `unsafe`）。Block の `justify-self` / `justify-items` と `align-content`。比較に wrap の場面を足す（Issue #88）。L1 の範囲の Taffy の XML テストが全件通る | done        | [#90](https://github.com/YUKIKEDA/XylemUI/issues/90) | L1a の場面の 1 か所の変更の 4〜8 % の遅れは、オーナーの判断で L4 が扱う。詳細は Issue |
 | Q1  | CI のアロケーション 0 のテストが、ランナーの上でだけ、ときどき数 KB を数える（40〜7,640 バイト。L1a の後の main の 9c664c1 でも 6 回に 1 回。PR #91 では、1,000 回のうち 1 回の `RunLayoutPass` で 2,872 バイト、その窓では測っているスレッドの JIT も GC も 0）。原因を突き止めて直し、`bench.mdc` の記述を合わせる。Core のテストを並行で流さない CI と、プロセスの外からランタイムのアロケーションのイベントを記録する実験から始める | done        | [#92](https://github.com/YUKIKEDA/XylemUI/issues/92) | 10 回続けて通った。原因の 1 つは `ArrayPool` の `Return`。詳細は Issue |
 | L4  | レイアウトの費用を、3 つ（Flutter・Avalonia・GPUI）の最も速いものに近づける。CSS の結果を変えずに、計算の回数（L1a で葉 1 つにつき 4〜9 回、Flutter は 1 回）と、1 つの子の変更で親の flex を解き直す費用を減らす。Chromium の LayoutNG の flex と Flutter の再 layout の確認を読んで、方式を Grill で決める。あわせて、読んだ結果が内容に依存しなかったとき（自動の最小サイズが指定のサイズで決まったときなど）に読んだ印を付けない、計測のキャッシュ（1 ノード 728 バイト、10,101 ノードで 11.9 MB）を測られないノードに確保しない、の 2 つを検討する。L1b の wrap の場面の差（Flutter の約 1.7〜4 倍、`docs/benchmarks/l1b-layout.md`）と、L1b で L1a の場面の 1 か所の変更が 4〜8 % 遅くなった分（項目の初期化と最終配置）も扱う（L1a で、最初の layout が Flutter の約 3〜6 倍、1か所の変更が約 5〜9 倍、幅の変更が Avalonia の約 3〜6 倍。`docs/benchmarks/l1a-layout.md`） | in-progress | [#97](https://github.com/YUKIKEDA/XylemUI/issues/97) | §3.2                                       |
+| L5  | 子の大きさが測り直しても変わらなければ、親で止める（Avalonia の `Layoutable.Measure` → `ChildDesiredSizeChanged`、D4 で取り入れた）。文字を書き換えても大きさが変わらない変更を、測る場面に足す | not-started | —     | §3.1 |
 | L2  | 絶対配置（`Position`）、aspect-ratio、表示しないノード、`flex-wrap: balance`（CSS Flexbox Level 2 の草案。期待値の作り方を確かめる） | not-started | —     | §3.2                                       |
 | L3  | 長さの残り: min / max の内容の大きさ（CSS の `min-width: min-content` など。Taffy の XML テストに無いので、期待値の作り方を先に決める、Issue #83）、`fit-content(長さ)`、`stretch`、`flex-basis: content`（L1a で Taffy の XML テストから外した） | not-started | —     | §3.2                                       |
 | F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | not-started | —     | §4.5                                       |
