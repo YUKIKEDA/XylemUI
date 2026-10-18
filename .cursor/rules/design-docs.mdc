@@ -30,6 +30,8 @@ A design that changes what a layout or render algorithm reads checks every cache
 
 A design that stops a propagation with a comparison decides two things in the design itself: everything the propagation carried, and what happens when a value to compare is gone. In L5 both came from reviews: the measurement cache (4 entries) can overwrite a value the parent read, and the path's `SubtreeDirty` carried Paint, HitTest, and Text with Layout, so stopping at the parent left the repaint with no carrier (PR #109).
 
+A sentence added to the design to answer a review is a claim like any other and is checked before it goes in. The L5 re-review explained that a leaf an ancestor lays out first has "nothing to compare", and the design took that over; the parent's measurement cache still held a value of the old content, and the random test with several changes per pass showed the wrong rectangle (PR #109, #115).
+
 After a script edits a Markdown table, read `git diff --stat`. A diff of the whole table means its columns were padded again (it happened in S9 to `docs/roadmap.md`, by no step of the script): restore the file and replace only the rows that change.
 
 ## Judge the current optimum
