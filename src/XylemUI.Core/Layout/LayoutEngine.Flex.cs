@@ -1,10 +1,15 @@
-using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace XylemUI;
 
 internal static partial class LayoutEngine
 {
+    [ThreadStatic]
+    private static ScratchStack<FlexItem>? _itemScratch;
+
+    [ThreadStatic]
+    private static ScratchStack<FlexLine>? _lineScratch;
+
     // CSS Flexbox §9 (Taffy's compute_flexbox_layout, design §3.2). The steps keep the numbers of §9. A layout run also returns
     // the item whose first baseline gives the container's (§8.5), none when it has no item; the baseline itself is read only
     // when a parent asks for it (ReadBaseline).
@@ -51,26 +56,32 @@ internal static partial class LayoutEngine
         }
 
         Q(40);
-        FlexItem[] itemArray = ArrayPool<FlexItem>.Shared.Rent(count);
+        ScratchStack<FlexItem> itemScratch = _itemScratch ??= new ScratchStack<FlexItem>();
+        ScratchStack<FlexLine> lineScratch = _lineScratch ??= new ScratchStack<FlexLine>();
+        int itemTop = itemScratch.Top;
+        int lineTop = lineScratch.Top;
         Q(41);
-        FlexLine[] lineArray = ArrayPool<FlexLine>.Shared.Rent(Math.Max(count, 1));
-        Q(42);
         try
         {
-            Span<FlexItem> items = itemArray.AsSpan(0, count);
+            Span<FlexItem> items = itemScratch.Push(count);
+            Span<FlexLine> lineSpace = lineScratch.Push(Math.Max(count, 1));
+            Q(42);
             bool row = constants.Row;
 
             // 9.1.1 Generate the flex items.
+            Q(46);
             GenerateFlexItems(tree, firstChild, ref constants, items);
+            Q(47);
 
             // 9.2.2 The available main and cross space for the items.
             AvailableSize available = FlexAvailableSpace(known, input.Available, in constants);
 
             // 9.2.3 The flex base size and hypothetical main size of each item.
             DetermineFlexBaseSizes(tree, in constants, available, items);
+            Q(48);
 
             // 9.3.5 Collect the items into lines.
-            Span<FlexLine> lines = lineArray.AsSpan(0, CollectFlexLines(in constants, available, items, lineArray));
+            Span<FlexLine> lines = lineSpace[..CollectFlexLines(in constants, available, items, lineSpace)];
 
             // 9.2.4 The container's main size, unless it is known; then the main gap against it.
             float knownInnerMain = constants.NodeInnerSize.Main(row);
@@ -162,16 +173,18 @@ internal static partial class LayoutEngine
 
             // 9.6.16 Align the lines, then the final layout of each item.
             AlignLines(lines, innerCross, totalLineCross, in constants);
+            Q(49);
             FinalLayoutPass(tree, items, lines, containerSize, in constants);
+            Q(50);
             baselineItem = BaselineItem(items, lines, in constants);
             return containerSize;
         }
         finally
         {
             Q(43);
-            ArrayPool<FlexItem>.Shared.Return(itemArray);
+            itemScratch.PopTo(itemTop);
             Q(44);
-            ArrayPool<FlexLine>.Shared.Return(lineArray);
+            lineScratch.PopTo(lineTop);
             Q(45);
         }
     }
@@ -1144,6 +1157,7 @@ internal static partial class LayoutEngine
                     RequestedAxis.Both
                 );
                 Size size = LayoutChild(tree, item.Node, in input, commit: true);
+                Q(61);
                 float main = totalMain + item.OffsetMain + item.Margin.MainStart(row);
                 float crossOffset = totalCross + item.OffsetCross + line.OffsetCross;
                 float cross = crossOffset + item.Margin.CrossStart(row);
@@ -1156,6 +1170,7 @@ internal static partial class LayoutEngine
                     Place(tree, item.Node, cross, main);
                 }
 
+                Q(62);
                 totalMain += item.OffsetMain + item.Margin.MainSum(row) + (row ? size.Width : size.Height);
             }
 

@@ -163,16 +163,21 @@ internal static partial class LayoutEngine
             node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
         }
 
+        Q(22);
         if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
         {
             LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
+            Q(23);
             if (node.Layout.WasLaidOut && node.Layout.CachedKey.Matches(in key))
             {
+                Q(24);
                 return new Size(node.Layout.Rect.Width, node.Layout.Rect.Height);
             }
 
+            Q(25);
             if (!commit && tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
             {
+                Q(26);
                 return measured;
             }
         }
@@ -314,6 +319,7 @@ internal static partial class LayoutEngine
 
     private static void Place(UiTree tree, NodeHandle handle, float x, float y)
     {
+        Q(70);
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         if (node.Layout.Rect.X != x || node.Layout.Rect.Y != y)
         {
