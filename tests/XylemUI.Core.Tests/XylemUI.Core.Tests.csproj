@@ -4,8 +4,9 @@
     <RootNamespace>XylemUI.Tests</RootNamespace>
     <!--
       The allocation tests measure GC.GetAllocatedBytesForCurrentThread under JIT. With tiered compilation on, the macOS runner
-      reported a one-off 248 to 7,112 bytes in the measured window in 2 of 3 runs (S6a, PR #26); with it off, 0 bytes in every
-      window. Which part of the tier-up allocates was not identified. NativeAOT, which has no tiering, measured 0 bytes.
+      reported a one-off 248 to 7,112 bytes in the measured window in 2 of 3 runs (S6a, PR #26). Tiering off did not end it:
+      the runners still report a one-off 40 to 7,640 bytes now and then (Issue #92, row Q1). NativeAOT, which has no tiering,
+      measured 0 bytes.
     -->
     <TieredCompilation>false</TieredCompilation>
   </PropertyGroup>
