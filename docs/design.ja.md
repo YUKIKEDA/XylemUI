@@ -1560,6 +1560,12 @@ internal readonly record struct LayoutInput(
 
 // 計測関数（テキストなどの葉）が返すもの。ベースラインは baseline 揃えに使う。無ければ NaN
 internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
+
+// 葉の内容の幅（L4 の Grill で決定、Issue #97）。Min は最も長い折り返せない並び（min-content）、Max は折り返さない幅
+// （max-content）で、1 回の計算で両方を返す（Chromium の ComputeMinMaxSizes）。DependsOnHeight は、決まった高さで答えが
+// 変わるか（aspect-ratio、縦書き）。knownHeight は決まった高さ、不定なら NaN
+internal readonly record struct IntrinsicWidths(float Min, float Max, bool DependsOnHeight);
+internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 ```
 
 `LayoutAlgorithm.Flex` は S6b の `Flex(FlexDirection Direction)` を `Flex(FlexProps Props)` に置き換える。軸ごとの `Definite` / `MinContent` / `MaxContent` の型は Taffy と同じ `AvailableSpace` と呼び、S6b の同じ名前の型（4 つの float の最小・最大）は廃止する。Taffy のコードと見比べて読めるようにするため。長さの型は、使える場所で分ける。`Length` はサイズと basis、`LengthPercentageAuto` は min / max と margin、`LengthPercentage` は padding と gap に使い、`padding: auto` のような書けない値をコンパイルの時点で止める。min / max に内容の大きさ（`min-width: min-content` など）は書けない。GPUI が使う Taffy の `min_size` / `max_size` も `LengthPercentageAuto` で、Flutter と Avalonia の min / max も固定の値だけ。Chrome は持つが、Taffy の XML テストに使うものが無く期待値で確かめられないので、行 L3 に残す（Issue #83）。layout の実行と測るだけの実行の区別（Taffy の `RunMode`）は今の `commit` のままにする。型は `internal` のままで、公開の API は C0 で決める。
@@ -1595,6 +1601,14 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline);
 **進め方（L1 の Grill で決定）:** L1a（`LayoutInput`・長さのすべての種類・min / max・`%`・ボーダー・自動の最小サイズ・キャッシュ・S6b の shrink の不具合、それに CSS の既定値の動き: `align-items: stretch`・`justify-content: flex-start`・`row` / `column`・`nowrap`）、L1b（既定値以外の値: wrap・`justify-content`・`align-*`・`align-self`・gap・baseline・逆向き・`auto` のマージン）の順。既定値の動きを L1a に入れるのは、既定の動きが CSS と合わないと Taffy の XML テストがほとんど通らないため（Issue #80）。Taffy の XML テストは使えるようになった分から通し、L1b で範囲の全件が通る。絶対配置・aspect-ratio・表示しないノード・`flex-wrap: balance`（CSS Flexbox Level 2 の草案）は L2、`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）は V2。
 
 **L1b の受け入れ（L1b の Grill で決定、Issue #88）:** L1a の比較に wrap の場面（1 万個の 10 × 10 の箱を、幅の決まった容器で折り返す。Flutter `Wrap`、Avalonia `WrapPanel`、GPUI の Taffy 0.9.0 の `flex-wrap`）を足す。wrap の場面の受け入れは L1a と同じ 3 つで、GPUI のレイアウト（Taffy 0.9.0、同じ CSS の意味で比べられる相手）よりばらつきを超えて遅くない、幅の変更が 2.0 ms の内側、定常状態のアロケーション 0。wrap の場面は L1a に無いので、L1a からの変化は比べない。L1a の 3 つの場面は、L1a のコミットと交互に測って悪くならないこと。L1b では 1 か所の変更の 4 つの項目が 4〜8 % 遅くなり、オーナーの判断で受け入れて行 L4 に回した（PR #91、`docs/benchmarks/l1b-layout.md`）。Flutter と Avalonia との差は行 L4。`safe` / `unsafe` は Flutter・Avalonia・Taffy 0.9.0 に無い（0.9.0 の `AlignItems` は Start・End・FlexStart・FlexEnd・Center・Baseline・Stretch）が、CSS どおりの意味にそろえる L1 の決定に従って入れる。
+
+**L4 の方式（L4 の Grill で決定、Issue #97）:** CSS の結果を変えずに、計算の回数と、1 つの子の変更で親の flex を解き直す費用を減らす。L1a の場面の葉 1 つの計算は、S6b の意味で 4 回（幅の max-content を、交差軸の空間だけ違えて 2 回、高さ、本番）、CSS の既定で 9 回（幅を交差軸の 3 つの状況 × min / max の 6 回、高さを 2 回、本番）だった。
+
+- **内容の幅（Chromium の方式）:** ノードの内容の幅の最小と最大を、1 回の計算で求める（Chromium の `ComputeMinMaxSizes`）。葉は `IntrinsicWidthsFunc` が返す。テキストは整形の結果から、最長の語の幅と 1 行の幅を一度に出せる。Block と Flex は、子の内容の幅から自分の内容の幅を 1 回の走査で求める。結果は、交差軸の大きさに依存しない限りノードに 1 つだけ持ち（Chromium の `intrinsic_logical_widths_`）、ノードが dirty になったら捨てる。依存すると計測関数か子が申告したときだけ、決まった高さごとに持つ（Chromium の `min_max_sizes_cache_`）。行の flex の基準の大きさ（max-content）と自動の最小サイズ（min-content）、Block の内容に基づく幅、`MinContent` / `MaxContent` / `FitContent` の幅は、ここから読む。高さ（列の主軸など）は今までどおり計測と layout で求める（Chromium もブロック方向は `Layout`）。計測関数は、今の `MeasureFunc`（大きさとベースライン）と、内容の幅の `IntrinsicWidthsFunc` の 2 つに分ける。1 つの関数が 2 つの意味の結果を返さないため
+- **2 乗にならない理由:** Flutter の内容の大きさの問い合わせは、(種類, 交差軸の大きさ) をキーにしたキャッシュ（`box.dart` の `_cachedIntrinsicDimensions`）で、入れ子の各段が違う大きさで問い合わせると計算し直す。`IntrinsicWidth` の試しの layout と合わせて、深い木で 2 乗になりうる（`proxy_box.dart`）。L1 の Grill はこれを理由に、制約の方式として却下した。依存しない限り 1 つだけ持つ方式は、1 回の変更で各ノードを 1 回だけ計算する
+- **1 か所の変更:** Flutter と Chromium と同じく、親の flex を解き直す。変わっていない子の確認を安くする。Flutter は、clean で制約が同じ子から早期に戻る（`object.dart` の `layout`、double 4 つの比較）。XylemUI は前回の入力と直接比べ、項目の初期化を減らす。子の大きさが変わらなかったときに親を解き直さない仕組みは、測っている場面（幅が変わる）に効かないので、測ってから決める
+- **計測のキャッシュ:** 初めて計測を保存するときに確保する（Chromium の `measure_cache_` と同じ）。測られないノード（固定の basis で min もある子など）の分を確保しない
+- **受け入れ:** 指標（最初の layout・1か所の変更・幅の変更、L1a の 3 つの場面と wrap の場面）ごとに、Flutter・Avalonia・GPUI のうち最も速いものと、ばらつきの中で同等を目標にする。届かない指標は、CSS の手順で避けられない計算の回数と 1 回の費用で説明できるときだけ受け入れる（オーナー決定）。Flutter の `Row` は自動の最小サイズも shrink も持たないので、同じ計算をしていない。L1a と L1b の受け入れ（GPUI より遅くない、幅の変更が 2.0 ms の内側、定常状態のアロケーション 0）は保つ
 
 テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
 
