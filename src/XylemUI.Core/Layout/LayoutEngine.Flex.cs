@@ -386,6 +386,7 @@ internal static partial class LayoutEngine
             }
 
             Q(53);
+
             // The basis is never smaller than the padding and border (Chrome and Firefox; Taffy's note on the spec).
             float paddingBorderMain = item.PaddingBorder.MainSum(row);
             item.FlexBasis = Math.Max(item.FlexBasis, paddingBorderMain);
