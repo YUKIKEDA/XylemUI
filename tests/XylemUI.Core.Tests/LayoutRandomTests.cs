@@ -16,12 +16,15 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
     ///   widths, some with a first baseline, some with a percentage width.
     ///
     /// Steps:
-    /// - Lay the tree out at a random window size. Then 30 times: change a random leaf's content (half the time to the same
+    /// - Lay the tree out at a random window size. Then 30 times: take the repaints, as the paint stage of a frame will (empty
+    ///   the paint updates and drop every flag other than layout); change a random leaf's content (half the time to the same
     ///   size, half to a new one) and invalidate it, or resize the window; run the pass; build the same tree from the start
     ///   with the same contents and lay it out once.
     ///
     /// Expected:
     /// - After every step, every node has the same rectangle in both trees, and every leaf the same first baseline.
+    /// - After every change, the leaf's repaint was passed on: the leaf is in the paint updates (row L5's stop), or its parent
+    ///   carries Paint in its subtree flags (the path of MarkDirty).
     /// </remarks>
     [Fact]
     public void IncrementalLayout_EqualsALayoutFromTheStart() =>
@@ -36,6 +39,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 LayOut(tree, nodes[0], window.Width, window.Height);
                 for (int step = 0; step < 30; step++)
                 {
+                    TakeRepaints(tree, nodes);
                     if (random.Next(6) == 0)
                     {
                         window = new Size(100 + random.Next(300), 100 + random.Next(300));
@@ -47,6 +51,11 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                         spec.Change(leaf, random, sameSize: random.Next(2) == 0);
                         Invalidation.Invalidate(tree, nodes[leaf], ChangeKind.TextContent);
                         LayoutEngine.RunLayoutPass(tree);
+                        NodeHandle parent = tree.Nodes.GetRef(nodes[leaf]).Parent;
+                        Assert.True(
+                            tree.PaintUpdates.Contains(nodes[leaf]) || (tree.Nodes.GetRef(parent).Dirty.SubtreeDirty & DirtyFlags.Paint) != 0,
+                            $"seed {seed}, step {step}: the repaint of leaf {leaf} was not passed on"
+                        );
                     }
 
                     (UiTree fresh, List<NodeHandle> freshNodes) = spec.Build();
@@ -65,6 +74,19 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 }
             }
         });
+
+    // What the paint stage of a frame will do with the repaints (a later row): take the paint updates, and leave only the
+    // layout flags, which the layout pass clears itself.
+    private static void TakeRepaints(UiTree tree, List<NodeHandle> nodes)
+    {
+        tree.PaintUpdates.Clear();
+        foreach (NodeHandle node in nodes)
+        {
+            ref DirtyState dirty = ref tree.Nodes.GetRef(node).Dirty;
+            dirty.SelfDirty &= DirtyFlags.Layout;
+            dirty.SubtreeDirty &= DirtyFlags.Layout;
+        }
+    }
 
     // A random tree, described so that it can be built again from the start with the leaves' current contents.
     private sealed class TreeSpec
