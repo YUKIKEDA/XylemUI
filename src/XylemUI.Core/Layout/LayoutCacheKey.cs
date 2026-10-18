@@ -136,13 +136,6 @@ internal struct MeasureCache
     /// </summary>
     public FlexBaseMemo LayoutBase;
 
-    /// <summary>
-    /// The parent's <see cref="LayoutState.CacheGeneration"/> when an entry or the content widths for one height were
-    /// overwritten; 0 when none was. While it matches, a value the parent read may be gone, so a change of content cannot be
-    /// compared with it and goes on to the parent (design §2.4.1, row L5).
-    /// </summary>
-    public uint EvictedGeneration;
-
     private Entries _entries;
     private ushort _recentlyUsed;
     private byte _next;
@@ -155,6 +148,21 @@ internal struct MeasureCache
     private float _height;
     private bool _hasAnyHeight;
     private bool _hasAtHeight;
+
+    // After the flags, in the struct's padding: as a field before the entries it made the cache 464 bytes a node instead of 456,
+    // and the first layout of row L1a's scene (S6b's meaning) 7 % slower in two sets of 6 rounds; here it is level with L4.
+    private uint _evictedGeneration;
+
+    /// <summary>
+    /// Gets or sets the parent's <see cref="LayoutState.CacheGeneration"/> when an entry or the content widths for one height were
+    /// overwritten; 0 when none was. While it matches, a value the parent read may be gone, so a change of content cannot be
+    /// compared with it and goes on to the parent (design §2.4.1, row L5).
+    /// </summary>
+    public uint EvictedGeneration
+    {
+        readonly get => _evictedGeneration;
+        set => _evictedGeneration = value;
+    }
 
     /// <summary>
     /// Returns the content widths kept for a content height of <paramref name="knownHeight"/> (NaN when it is not decided).
@@ -308,7 +316,7 @@ internal struct MeasureCache
         _recentlyUsed = 0;
         _hasAnyHeight = false;
         _hasAtHeight = false;
-        EvictedGeneration = 0;
+        _evictedGeneration = 0;
         MeasureBase = default;
         LayoutBase = default;
     }
