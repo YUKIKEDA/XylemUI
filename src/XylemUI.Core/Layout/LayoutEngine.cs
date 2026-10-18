@@ -60,6 +60,17 @@ internal static partial class LayoutEngine
                     DirtyState dirty = tree.Nodes.GetRef(request.Node).Dirty;
                     if (((dirty.SelfDirty | dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
                     {
+                        // An ancestor laid the leaf out with its new content first. The parent's layout read the new values,
+                        // but its measurements may still hold ones of the old content, which an ancestor read in this pass
+                        // (the random test found it): the path from the parent is marked, as MarkDirty marks it.
+                        int snapshot = tree.FindContentSnapshot(request.Node);
+                        if (snapshot >= 0)
+                        {
+                            DirtyFlags flags = tree.ContentSnapshots[snapshot].Flags;
+                            tree.RemoveContentSnapshotAt(snapshot);
+                            Invalidation.MarkPath(tree, tree.Nodes.GetRef(request.Node).Parent, flags);
+                        }
+
                         continue;
                     }
 
@@ -73,6 +84,8 @@ internal static partial class LayoutEngine
                         {
                             PlaceRoot(tree, request.Node, in input);
                         }
+
+                        CompareContentChange(tree, request.Node);
                     }
                     catch (Exception exception) when (exception is not InvariantViolationException)
                     {
@@ -273,7 +286,11 @@ internal static partial class LayoutEngine
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         if (!commit)
         {
-            tree.MeasuresOf(handle).Store(LayoutCacheKey.Of(in n, in input), input.Axis, size);
+            if (tree.MeasuresOf(handle).Store(LayoutCacheKey.Of(in n, in input), input.Axis, size))
+            {
+                NoteOverwrite(tree, handle);
+            }
+
             return size;
         }
 
@@ -306,6 +323,17 @@ internal static partial class LayoutEngine
         // children were placed: a change of content inside drops the cache. Re-stamp the measurements so they stay valid.
         tree.MeasuresOf(handle).Restamp(after.Versions.DescendantLayout);
         return size;
+    }
+
+    // A value the parent read may be among the ones overwritten: a change of the node's content then goes on to the parent
+    // without a comparison while the parent keeps its results (design §2.4.1, row L5).
+    private static void NoteOverwrite(UiTree tree, NodeHandle handle)
+    {
+        NodeHandle parent = tree.Nodes.GetRef(handle).Parent;
+        if (!parent.IsNone)
+        {
+            tree.MeasuresOf(handle).EvictedGeneration = tree.Nodes.GetRef(parent).Layout.CacheGeneration;
+        }
     }
 
     private static void Place(UiTree tree, NodeHandle handle, float x, float y)

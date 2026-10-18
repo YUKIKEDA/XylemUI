@@ -1,8 +1,9 @@
 // The layout scenes of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, roadmap rows L1a and L1b) in Flutter's
 // render tree, laid out at 2,000 x 2,000 under a PipelineOwner (the layout pass alone, no widgets and no frame): a vertical
 // RenderFlex of 100 horizontal RenderFlexes of 100 boxes of 10 x 10, and a RenderWrap of 10,000 boxes (the `wrap_` figures).
-// The three times of the comparison: the first layout, a layout after one box's width changes (PipelineOwner.flushLayout), and
-// a layout at a new width.
+// The four times of the comparison: the first layout, a layout after one box's width changes (PipelineOwner.flushLayout), a
+// layout after one box is marked for layout at the same size (markNeedsLayout, as a change of its content that keeps its size;
+// row L5), and a layout at a new width.
 import 'dart:io';
 
 import 'package:flutter/rendering.dart';
@@ -11,14 +12,15 @@ void runLayoutScene(String output) {
   final flex = _measure(_build);
   final wrap = _measure(_buildWrap);
   File(output).writeAsStringSync(
-    '{"name":"Flutter","first_us_p50":${flex.$1},"change_us_p50":${flex.$2},"width_us_p50":${flex.$3},'
-    '"wrap_first_us_p50":${wrap.$1},"wrap_change_us_p50":${wrap.$2},"wrap_width_us_p50":${wrap.$3}}\n',
+    '{"name":"Flutter","first_us_p50":${flex.$1},"change_us_p50":${flex.$2},"content_us_p50":${flex.$3},"width_us_p50":${flex.$4},'
+    '"wrap_first_us_p50":${wrap.$1},"wrap_change_us_p50":${wrap.$2},"wrap_content_us_p50":${wrap.$3},"wrap_width_us_p50":${wrap.$4}}\n',
   );
 }
 
-(double, double, double) _measure((RenderBox, RenderConstrainedBox) Function() build) {
+(double, double, double, double) _measure((RenderBox, RenderConstrainedBox) Function() build) {
   final first = <double>[];
   final change = <double>[];
+  final content = <double>[];
   final width = <double>[];
   for (var s = 0; s < 18; s++) {
     final owner = PipelineOwner();
@@ -38,6 +40,16 @@ void runLayoutScene(String output) {
       changeUs = watch.elapsedMicroseconds.toDouble();
     }
 
+    var contentUs = 0.0;
+    for (var i = 0; i < 2; i++) {
+      target.markNeedsLayout();
+      watch
+        ..reset()
+        ..start();
+      owner.flushLayout();
+      contentUs = watch.elapsedMicroseconds.toDouble();
+    }
+
     var widthUs = 0.0;
     for (var i = 0; i < 2; i++) {
       watch
@@ -54,11 +66,12 @@ void runLayoutScene(String output) {
     if (s >= 3) {
       first.add(firstUs);
       change.add(changeUs);
+      content.add(contentUs);
       width.add(widthUs);
     }
   }
 
-  return (_median(first), _median(change), _median(width));
+  return (_median(first), _median(change), _median(content), _median(width));
 }
 
 (RenderBox, RenderConstrainedBox) _build() {

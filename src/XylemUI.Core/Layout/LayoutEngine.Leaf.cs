@@ -71,22 +71,33 @@ internal static partial class LayoutEngine
             float knownHeight = input.KnownDimensions.Height - paddingBorder.Vertical;
             if (!tree.MeasuresOf(handle).TryGetIntrinsicWidths(knownHeight, out IntrinsicWidths widths))
             {
-                IntrinsicWidthsFunc intrinsic = node.Layout.IntrinsicWidths!;
-#if DEBUG
-                MeasureFunc measure = node.Layout.Measure!;
-#endif
-                tree.LayoutRunHook?.Invoke(handle);
-                widths = intrinsic(knownHeight);
-#if DEBUG
-                VerifyIntrinsicWidths(measure, knownHeight, widths);
-#endif
-                tree.MeasuresOf(handle).StoreIntrinsicWidths(knownHeight, widths);
+                widths = ComputeIntrinsicWidths(tree, handle, knownHeight);
             }
 
             width = (input.Available.Width.Kind == AvailableSpaceKind.MinContent ? widths.Min : widths.Max) + inset;
         }
 
         return Math.Max(Maybe.Clamp(width, min, max), inset);
+    }
+
+    // Asks a leaf for its content widths for a content height of knownHeight (NaN when it is not decided) and keeps them.
+    private static IntrinsicWidths ComputeIntrinsicWidths(UiTree tree, NodeHandle handle, float knownHeight)
+    {
+        IntrinsicWidthsFunc intrinsic = tree.Nodes.GetRef(handle).Layout.IntrinsicWidths!;
+#if DEBUG
+        MeasureFunc measure = tree.Nodes.GetRef(handle).Layout.Measure!;
+#endif
+        tree.LayoutRunHook?.Invoke(handle);
+        IntrinsicWidths widths = intrinsic(knownHeight);
+#if DEBUG
+        VerifyIntrinsicWidths(measure, knownHeight, widths);
+#endif
+        if (tree.MeasuresOf(handle).StoreIntrinsicWidths(knownHeight, widths))
+        {
+            NoteOverwrite(tree, handle);
+        }
+
+        return widths;
     }
 
 #if DEBUG

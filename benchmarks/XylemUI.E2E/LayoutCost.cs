@@ -6,7 +6,7 @@ namespace XylemUI.E2E;
 
 // The layout costs of design §3.2's acceptance (roadmap rows L1a and L1b): a column of 100 rows of 100 leaves (10,101 nodes),
 // with the four times S6b measured: the first layout, a relayout after one leaf changes, a change inside a row of fixed size,
-// and a window width change. Three scenes of that tree: S6b's meaning (no automatic minimum: every flex item has a minimum of
+// and a window width change; and since row L5 a relayout after one leaf's content changes at the same size. Three scenes of that tree: S6b's meaning (no automatic minimum: every flex item has a minimum of
 // 0), CSS's defaults (the automatic minimum measures every item's min-content size), and one that also uses percentages and
 // padding. A fourth scene, wrap, is one row that wraps 10,000 leaves (row L1b).
 internal static class LayoutCost
@@ -34,7 +34,7 @@ internal static class LayoutCost
     }
 
     // One case repeated on one tree, so that a profile of the process shows that case (the cpu-profile skill): `change` a
-    // relayout after one leaf changes, `width` a window width change.
+    // relayout after one leaf changes, `content` one after its content changes at the same size, `width` a window width change.
     public static int Loop(string scene, string kind, int count)
     {
         UiThread.Initialize();
@@ -48,6 +48,10 @@ internal static class LayoutCost
             if (kind == "width")
             {
                 Invalidation.NotifyWindowResized(tree, root, new Size(i % 2 == 0 ? 1_600 : 2_000, 2_000));
+            }
+            else if (kind == "content")
+            {
+                Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
             }
             else
             {
@@ -65,6 +69,7 @@ internal static class LayoutCost
     {
         var first = new List<double>(samples);
         var change = new List<double>(samples);
+        var content = new List<double>(samples);
         var fixedRow = new List<double>(samples);
         var width = new List<double>(samples);
         for (int s = 0; s < samples + 3; s++)
@@ -83,6 +88,15 @@ internal static class LayoutCost
                 start = Stopwatch.GetTimestamp();
                 LayoutEngine.RunLayoutPass(tree);
                 Add(change, start, record && i == 1);
+            }
+
+            // The leaves' content is fixed, so a change of it keeps every size (row L5).
+            for (int i = 0; i < 2; i++)
+            {
+                Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+                start = Stopwatch.GetTimestamp();
+                LayoutEngine.RunLayoutPass(tree);
+                Add(content, start, record && i == 1);
             }
 
             for (int i = 0; i < 2; i++)
@@ -124,9 +138,14 @@ internal static class LayoutCost
         countTree.SetStyle(countTarget, countTree.Nodes.GetRef(countTarget).Layout.Style with { Width = Length.Px(20) });
         LayoutEngine.RunLayoutPass(countTree);
         report.Number($"{scene}_change_runs", runs);
+        runs = 0;
+        Invalidation.Invalidate(countTree, countTarget, ChangeKind.TextContent);
+        LayoutEngine.RunLayoutPass(countTree);
+        report.Number($"{scene}_content_runs", runs);
 
         report.Series($"{scene}_first_us", first);
         report.Series($"{scene}_change_us", change);
+        report.Series($"{scene}_content_us", content);
         if (fixedRow.Count > 0)
         {
             report.Series($"{scene}_fixed_row_change_us", fixedRow);

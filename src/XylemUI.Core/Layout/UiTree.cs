@@ -46,6 +46,11 @@ internal sealed class UiTree
     internal List<NodeHandle> PaintUpdates { get; } = [];
 
     /// <summary>
+    /// Gets what the parents read from the leaves whose content changed since their last layout (row L5), one per leaf.
+    /// </summary>
+    internal List<ContentSnapshot> ContentSnapshots { get; } = [];
+
+    /// <summary>
     /// Gets the cached order of the layout roots: shallowest first. Created once, so sorting allocates nothing.
     /// </summary>
     internal Comparison<LayoutRequest> ShallowestFirst => _shallowestFirst;
@@ -179,6 +184,38 @@ internal sealed class UiTree
 
         Root = node;
         SetDepth(node, 0, attached: true);
+    }
+
+    /// <summary>
+    /// Returns the index of the snapshot of <paramref name="node"/> in <see cref="ContentSnapshots"/>, or -1. The node holds
+    /// it (<see cref="LayoutState.ContentSnapshotSlot"/>): a search of the list would make N changes before one pass cost N²
+    /// (PR #112's review).
+    /// </summary>
+    internal int FindContentSnapshot(NodeHandle node) => Nodes.GetRef(node).Layout.ContentSnapshotSlot - 1;
+
+    /// <summary>
+    /// Adds the snapshot of a node that has none.
+    /// </summary>
+    internal void AddContentSnapshot(in ContentSnapshot snapshot)
+    {
+        ContentSnapshots.Add(snapshot);
+        Nodes.GetRef(snapshot.Node).Layout.ContentSnapshotSlot = ContentSnapshots.Count;
+    }
+
+    /// <summary>
+    /// Removes the snapshot at <paramref name="index"/>; the last one takes its place.
+    /// </summary>
+    internal void RemoveContentSnapshotAt(int index)
+    {
+        int last = ContentSnapshots.Count - 1;
+        Nodes.GetRef(ContentSnapshots[index].Node).Layout.ContentSnapshotSlot = 0;
+        if (index != last)
+        {
+            ContentSnapshots[index] = ContentSnapshots[last];
+            Nodes.GetRef(ContentSnapshots[index].Node).Layout.ContentSnapshotSlot = index + 1;
+        }
+
+        ContentSnapshots.RemoveAt(last);
     }
 
     /// <summary>
