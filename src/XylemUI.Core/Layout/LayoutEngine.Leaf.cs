@@ -52,7 +52,8 @@ internal static partial class LayoutEngine
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         ref readonly LayoutStyle style = ref node.Layout.Style;
-        float inset = PaddingBorder(in style, input.ParentSize.Width).Horizontal;
+        Edges paddingBorder = PaddingBorder(in style, input.ParentSize.Width);
+        float inset = paddingBorder.Horizontal;
         float width = float.NaN;
         float min = float.NaN;
         float max = float.NaN;
@@ -65,7 +66,7 @@ internal static partial class LayoutEngine
 
         if (float.IsNaN(width))
         {
-            float knownHeight = input.KnownDimensions.Height - PaddingBorder(in style, input.ParentSize.Width).Vertical;
+            float knownHeight = input.KnownDimensions.Height - paddingBorder.Vertical;
             if (!tree.MeasuresOf(handle).TryGetIntrinsicWidths(knownHeight, out IntrinsicWidths widths))
             {
                 IntrinsicWidthsFunc intrinsic = node.Layout.IntrinsicWidths!;
