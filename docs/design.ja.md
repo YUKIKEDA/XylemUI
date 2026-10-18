@@ -643,7 +643,7 @@ static void OverwriteLayoutRequest(UiTree tree, NodeHandle node, AvailableSpace?
 }
 ```
 
-**`SelfDirty` / `SubtreeDirty`:** `SelfDirty`は変更の起点ノードのみに立て、そこから境界（または根）までの経路上のノードには`SubtreeDirty`のみを伝播する。境界は「子の変化が自分の**サイズ**に影響しない」ノードであり、境界自身の`SelfDirty`は立てない。ただし境界自身も**子の再配置のためにlayout algorithmを再実行する**。
+**`SelfDirty` / `SubtreeDirty`:** `SelfDirty`は変更の起点ノードのみに立て、そこから境界（または根）までの経路上のノードには`SubtreeDirty`のみを伝播する。境界は「子の変化が自分の**サイズ**に影響しない」ノードであり、境界自身の`SelfDirty`は立てない。ただし境界自身も**子の再配置のためにlayout algorithmを再実行する**。内容の変更（`Invalidate`）は、L5 から、変わったノードを layout し直して親が読んだものが変わったと分かったときに、経路へ伝える（下の「大きさが変わらなければ親で止める」）。
 
 ```csharp
 static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
@@ -775,6 +775,7 @@ static void RunLayoutPass(UiTree tree)
 - **測るだけの実行（measure）と layout の実行:** Flex が子の仮の大きさを測る実行は、大きさを返すだけでノードに何も書かない（位置・dirty フラグ・layout のキャッシュ）。キャッシュは実行の種類ごとに1つずつ持つ（`CachedKey` と `MeasureKey`。Taffy の compute-size と perform-layout と同じ分け方）。1つだけだと、Flex の子は毎フレーム「測る制約」と「最終の制約」で交互に外れ、clean な子もすべて計算し直していた（1 万ノードで1か所を変えた再 layout が 1,605 µs。分けて 21.1 µs、NativeAOT）。layout の実行は子を動かして自分の `DescendantLayout` を進めるが、測った結果は子の位置に依らない（中の内容が変われば経路が dirty になる）ので、layout の実行の後に `MeasureKey` の `DescendantLayout` を付け直す
 - **`DescendantLayout`:** ノードの矩形（大きさまたは位置）が変わると、そのノードの `Versions.Layout` と、境界までの祖先の `DescendantLayout` を進める。キーはアルゴリズムの後で書くので、子が進めた分を含む
 - **`LayoutReason`:** S6b にあるのは `IntrinsicSizeChanged` と `WindowResize` だけ。`ParentLayoutChanged` は、親が子を直接 layout するので要らない。`MaterializationChanged` は P02。`MarkDirty` の要求は、同じノードの要求がすでにあれば足さない。ウィンドウのリサイズは、同じノードの要求を制約付きで置き換える
+- **大きさが変わらなければ親で止める（L5 の Grill で決定、Issue #108）:** 内容の変更（`Invalidate`）は、変わったノード自身だけを dirty にして、そのノードを layout root に積む（前回の入力で layout し直す要求）。境界までの経路の祖先には、まだ印を付けず、キャッシュも捨てない。layout の pass で、そのノードを前回の入力で layout し直し、親が前回読んだものを全部求め直して、前と比べる。比べるのは、本番の layout の大きさ、計測のキャッシュの各項目（同じキーで測り直した大きさ）、内容の幅、最初のベースラインで、比べるために、ノードのキャッシュを捨てる前の値を残す。どれも同じなら、親へは伝えない（親は動かない）。どれかが違えば、今の `MarkDirty` と同じく、親から境界（または根）までの経路に印を付けてキャッシュを捨て、同じ pass の worklist で続ける。親が内容を読んだ印があっても、読んだ値が変わらなければ止める。Avalonia の `Layoutable.Measure` は、測り直した `DesiredSize` が変わったときだけ `ChildDesiredSizeChanged` で親を無効にし、`LayoutManager` は印の付いた要素を前回の制約で測り直してから親へ進む。XylemUI の親は、子を本番の layout のほかに違う入力で測り、内容の幅とベースラインも読むので、`DesiredSize` 1 つでは足りない。スタイルの変更（`SetStyle`）は、親がスタイルを読むので、今のまま親にも印を付ける。前回 layout されていないノード（`WasLaidOut` でない）と、取り付けられていないノードも、今のままにする。受け入れは、葉の内容が変わるが大きさは変わらない場面で、動くのが変わった葉と読んだ値の求め直しだけ（親は動かない）で、時間が Avalonia と同等、かつ大きさが変わる「1 か所の変更」が遅くならないこと（オーナー決定）
 - **計算された境界の修復は持たない:** 上の「前フレームから境界資格が変化した場合は親へ `MarkDirty(Layout)`」は入れなかった。`CachedComputedBoundary` は親が子を layout するたびに書き直され、親は子を layout し直さずに制約を変えられないので、古い値で伝播が止まることがない。S6b のアルゴリズムが両軸 tight の制約を渡すのは根だけで、根以外が計算された境界になるのは L1b の stretch から
 - **`InvalidationBoundary` の構造体は持たない:** `AffectsParentSize` は `IsLayoutBoundaryForInvalidation`、`IsolatesSubtree` はキャッシュの命中で表せた。Paint / Semantics / HitTest の境界はそれぞれの行で足す
 - **根と取り付け:** `UiTree.Root` は、ウィンドウの大きさを渡したノード（`NotifyWindowResized`）。木の根は 1 つで、2 つ目は不変条件違反。根から辿れるノードだけが `IsAttached` を持ち、`MarkDirty` は取り付けられていないノードで止まっても layout root を足さない（dirty フラグは残る。取り付けると `AppendChild` が親を dirty にし、親の layout が子に届く）。子を作ってスタイルを当ててから親に付ける流れ（§2.13 のメソッドチェーン）の間に pass が挟まっても落ちない。S6b のレビューで、親の無いノードをすべて根と見なしていたために、取り付ける前の `SetStyle` の後の pass が不変条件違反になることが見つかり、こうした
