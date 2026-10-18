@@ -1,10 +1,19 @@
-using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace XylemUI;
 
 internal static partial class LayoutEngine
 {
+    // The items and lines of the flex runs on this thread, each kind as one stack: a container's run takes its spans at the
+    // top, and the runs of its items, nested inside, take theirs above. ArrayPool keeps one array of a size on a thread, so
+    // the nested runs fell through to the pool's stacks that all threads share, and a contended lock there allocated on the
+    // frame path (40 and 5,240 bytes on a runner, PR #91).
+    [ThreadStatic]
+    private static ScratchStack<FlexItem>? _itemScratch;
+
+    [ThreadStatic]
+    private static ScratchStack<FlexLine>? _lineScratch;
+
     // CSS Flexbox §9 (Taffy's compute_flexbox_layout, design §3.2). The steps keep the numbers of §9. A layout run also returns
     // the item whose first baseline gives the container's (§8.5), none when it has no item; the baseline itself is read only
     // when a parent asks for it (ReadBaseline).
@@ -50,11 +59,14 @@ internal static partial class LayoutEngine
             count++;
         }
 
-        FlexItem[] itemArray = ArrayPool<FlexItem>.Shared.Rent(count);
-        FlexLine[] lineArray = ArrayPool<FlexLine>.Shared.Rent(Math.Max(count, 1));
+        ScratchStack<FlexItem> itemScratch = _itemScratch ??= new ScratchStack<FlexItem>();
+        ScratchStack<FlexLine> lineScratch = _lineScratch ??= new ScratchStack<FlexLine>();
+        int itemTop = itemScratch.Top;
+        int lineTop = lineScratch.Top;
         try
         {
-            Span<FlexItem> items = itemArray.AsSpan(0, count);
+            Span<FlexItem> items = itemScratch.Push(count);
+            Span<FlexLine> lineSpace = lineScratch.Push(Math.Max(count, 1));
             bool row = constants.Row;
 
             // 9.1.1 Generate the flex items.
@@ -67,7 +79,7 @@ internal static partial class LayoutEngine
             DetermineFlexBaseSizes(tree, in constants, available, items);
 
             // 9.3.5 Collect the items into lines.
-            Span<FlexLine> lines = lineArray.AsSpan(0, CollectFlexLines(in constants, available, items, lineArray));
+            Span<FlexLine> lines = lineSpace[..CollectFlexLines(in constants, available, items, lineSpace)];
 
             // 9.2.4 The container's main size, unless it is known; then the main gap against it.
             float knownInnerMain = constants.NodeInnerSize.Main(row);
@@ -165,8 +177,8 @@ internal static partial class LayoutEngine
         }
         finally
         {
-            ArrayPool<FlexItem>.Shared.Return(itemArray);
-            ArrayPool<FlexLine>.Shared.Return(lineArray);
+            itemScratch.PopTo(itemTop);
+            lineScratch.PopTo(lineTop);
         }
     }
 
