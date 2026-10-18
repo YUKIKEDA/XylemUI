@@ -695,6 +695,169 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
             Assert.Equal((100f, 50f), (tree.GetRect(item).Height, tree.GetRect(leaf).Height));
         });
 
+    /// <summary>
+    /// A container whose style changes solves the base size of a clean item again: its <c>align-items</c> decides whether the
+    /// item is stretched, and so the height its width is measured at (design §3.2, row L4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, window 300 x 100 → leaf A, twice as wide as the height it is given (20 wide with none) → leaf B, 20 x 10.
+    ///   Laid out: A is stretched to 100 high, so 200 wide, and B is at x 200.
+    ///
+    /// Steps:
+    /// - Set the root's <c>align-items</c> to <c>start</c> and run the pass. A is clean.
+    ///
+    /// Expected:
+    /// - A is not stretched: 20 wide, and B at x 20.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_OfACleanItem_FollowsTheContainersStyle() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Row());
+            tree.AppendChild(root, tree.CreateNode(new LayoutStyle(), TwiceAsWide));
+            NodeHandle b = Leaf(tree, root, 20, 10);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal(200, tree.GetRect(b).X);
+
+            tree.SetStyle(
+                root,
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Start) }) }
+            );
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(20, tree.GetRect(b).X);
+        });
+
+    /// <summary>
+    /// A container whose cross size alone changes (a sibling grew) solves the base size of a clean stretched item again: the
+    /// item is measured at the container's cross size (design §3.2, row L4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: column, window 300 x 300, <c>align-items: start</c> → row R → leaf A, twice as wide as the height it is given
+    ///   (10 high with none) → leaf C, 20 wide and h high (h = 30 at first). Laid out: R is 30 high, A is stretched to 30 high,
+    ///   so 60 wide.
+    ///
+    /// Steps:
+    /// - Set h to 50, invalidate C's content, and run the pass. A is clean, and R is laid out at a new height in the same
+    ///   space.
+    ///
+    /// Expected:
+    /// - A is 50 high and 100 wide.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_OfACleanItem_FollowsTheContainersCrossSize() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(
+                new LayoutStyle
+                {
+                    Algorithm = new LayoutAlgorithm.Flex(
+                        new FlexProps { Direction = FlexDirection.Column, AlignItems = new AlignItems(AlignItemsKeyword.Start) }
+                    ),
+                }
+            );
+            NodeHandle row = Box(tree, root, Row());
+            NodeHandle a = tree.CreateNode(new LayoutStyle(), TwiceAsWide);
+            tree.AppendChild(row, a);
+            float height = 30;
+            NodeHandle c = tree.CreateNode(new LayoutStyle(), (known, _) => MeasureResult.Of(20, Maybe.Or(known.Height, height)));
+            tree.AppendChild(row, c);
+            LayOut(tree, root, 300, 300);
+            Assert.Equal((60f, 30f), (tree.GetRect(a).Width, tree.GetRect(a).Height));
+
+            height = 50;
+            Invalidation.Invalidate(tree, c, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal((100f, 50f), (tree.GetRect(a).Width, tree.GetRect(a).Height));
+        });
+
+    /// <summary>
+    /// A container whose main size changes solves the base size of a clean item with a percentage basis again (design §3.2,
+    /// row L4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, window 300 x 100 → leaf A, basis 50 %, content 10 x 10 → leaf B, 20 x 10. Laid out: A is 150 wide, B at x
+    ///   150.
+    ///
+    /// Steps:
+    /// - Resize the window to 200 x 100 and run the pass.
+    ///
+    /// Expected:
+    /// - A is 100 wide, B at x 100.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_OfACleanItemWithAPercentage_FollowsTheContainersMainSize() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Row());
+            Leaf(tree, root, 10, 10, new LayoutStyle { FlexBasis = Length.Percent(0.5f) });
+            NodeHandle b = Leaf(tree, root, 20, 10);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal(150, tree.GetRect(b).X);
+
+            LayOut(tree, root, 200, 100);
+
+            Assert.Equal(100, tree.GetRect(b).X);
+        });
+
+    /// <summary>
+    /// A container that takes a clean item's base size from its last run marks the item as read again, as measuring it would:
+    /// a later change of the item's content still reaches the container (design §2.4.1, row L4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, window 300 x 100 → leaf A, content w x 10 with content widths (w, w) (w = 30 at first), stretched to the
+    ///   row, so both its sides are decided → leaf C, 20 x h (h = 10 at first) → leaf B, 20 x 10. Laid out: B at x 50.
+    ///
+    /// Steps:
+    /// - Set h to 20, invalidate C's content, and run the pass: the row is solved again, and A's base size comes from the
+    ///   last run.
+    /// - Set w to 50, invalidate A's content, and run the pass.
+    ///
+    /// Expected:
+    /// - B at x 70.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_TakenFromTheLastRun_KeepsTheReadMark() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Row());
+            float width = 30;
+            NodeHandle a = tree.CreateNode(
+                new LayoutStyle(),
+                (known, _) => MeasureResult.Of(Maybe.Or(known.Width, width), Maybe.Or(known.Height, 10)),
+                _ => new IntrinsicWidths(width, width, DependsOnHeight: false)
+            );
+            tree.AppendChild(root, a);
+            float height = 10;
+            NodeHandle c = tree.CreateNode(new LayoutStyle(), (known, _) => MeasureResult.Of(20, Maybe.Or(known.Height, height)));
+            tree.AppendChild(root, c);
+            NodeHandle b = Leaf(tree, root, 20, 10);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal(50, tree.GetRect(b).X);
+
+            height = 20;
+            Invalidation.Invalidate(tree, c, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+            width = 50;
+            Invalidation.Invalidate(tree, a, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(70, tree.GetRect(b).X);
+        });
+
+    // A leaf twice as wide as the height it is given, 20 wide and 10 high when none is given.
+    private static readonly MeasureFunc TwiceAsWide = static (known, _) =>
+        MeasureResult.Of(Maybe.Or(known.Width, float.IsNaN(known.Height) ? 20 : 2 * known.Height), Maybe.Or(known.Height, 10));
+
     private static LayoutStyle BaselineRow() =>
         new() { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) };
 

@@ -124,6 +124,18 @@ internal struct MeasureCache
     /// </summary>
     public const int Capacity = 4;
 
+    /// <summary>
+    /// The results of the node's base-size step as a flex item, in its container's last measuring run (row L4). A container is
+    /// measured and laid out with different inputs in one pass, so each kind of run keeps its own. They sit here, apart from
+    /// the node: on the node they made it 656 bytes instead of 528, and a width change 11 to 14 % slower.
+    /// </summary>
+    public FlexBaseMemo MeasureBase;
+
+    /// <summary>
+    /// The same, in its container's last layout run.
+    /// </summary>
+    public FlexBaseMemo LayoutBase;
+
     private Entries _entries;
     private ushort _recentlyUsed;
     private byte _next;
@@ -250,6 +262,8 @@ internal struct MeasureCache
         _recentlyUsed = 0;
         _hasAnyHeight = false;
         _hasAtHeight = false;
+        MeasureBase.Valid = false;
+        LayoutBase.Valid = false;
     }
 
     /// <summary>
