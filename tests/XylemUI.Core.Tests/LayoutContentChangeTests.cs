@@ -21,6 +21,7 @@ public sealed class LayoutContentChangeTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - Only A runs: R, B, and the root do not. The rectangles are the same, and the tree is clean.
+    /// - A is in the paint updates, though no ancestor was marked (PR #109's re-review).
     /// </remarks>
     [Fact]
     public void ContentChange_ThatKeepsEveryValueTheParentRead_StopsAtTheLeaf() =>
@@ -53,6 +54,7 @@ public sealed class LayoutContentChangeTests(UiThreadFixture ui)
             Assert.True(IsLayoutClean(tree, row));
             Assert.Empty(tree.LayoutRoots);
             Assert.Empty(tree.ContentSnapshots);
+            Assert.Contains(a, tree.PaintUpdates);
         });
 
     /// <summary>

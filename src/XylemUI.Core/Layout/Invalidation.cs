@@ -42,7 +42,8 @@ internal static class Invalidation
     /// <summary>
     /// Marks a change of content on a leaf that its parent may not need to see (design §2.4.1, row L5): the leaf alone is made
     /// dirty and a layout root, and what the parent read from it is kept in a <see cref="ContentSnapshot"/>, for the layout
-    /// pass to compare with the leaf's new values. Returns <see langword="false"/>, marking nothing, when the change must take
+    /// pass to compare with the leaf's new values. Its repaint goes to the paint updates, as a change of color does: the
+    /// ancestors get no mark, so their flags do not tell that the leaf needs painting. Returns <see langword="false"/>, marking nothing, when the change must take
     /// <see cref="MarkDirty"/>: the leaf was never laid out, is not attached, is the root or a boundary (the change stops at
     /// it anyway), is dirty from another change, or overwrote a value its parent read (<see cref="MeasureCache.EvictedGeneration"/>).
     /// </summary>
@@ -96,6 +97,7 @@ internal static class Invalidation
         node.Dirty.Epoch++;
         DropCaches(tree, handle, ref node);
         EnqueueLayoutRoot(tree, handle);
+        tree.PaintUpdates.Add(handle);
         return true;
     }
 

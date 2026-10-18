@@ -59,6 +59,10 @@ internal static class LayoutCost
             }
 
             LayoutEngine.RunLayoutPass(tree);
+
+            // A content change records the leaf for the paint stage, which comes in a later row and will take the list each
+            // frame.
+            tree.PaintUpdates.Clear();
         }
 
         Console.WriteLine($"{scene} {kind}: {Stopwatch.GetElapsedTime(start).TotalMicroseconds / count:F2} us a pass");

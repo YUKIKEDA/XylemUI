@@ -185,8 +185,9 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     ///   leaf's content is 10 x 10, or with "new size" 10 or 20 wide in turn. Warmed up with 20 changes.
     ///
     /// Steps:
-    /// - 1,100 times: change the leaf's content, invalidate it (a text change), and run the pass. Measure the bytes allocated
-    ///   on this thread in the last 1,000.
+    /// - 1,100 times: change the leaf's content, invalidate it (a text change), run the pass, and empty the paint updates, as
+    ///   the paint stage of a frame will take them (a later row; nothing takes them yet). Measure the bytes allocated on this
+    ///   thread in the last 1,000.
     ///
     /// Expected:
     /// - 0 bytes; the leaf has the last width.
@@ -229,6 +230,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 width = newSize && i % 2 == 0 ? 20 : 10;
                 Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
                 LayoutEngine.RunLayoutPass(tree);
+                tree.PaintUpdates.Clear();
             }
 
             for (int i = 0; i < 20; i++)
