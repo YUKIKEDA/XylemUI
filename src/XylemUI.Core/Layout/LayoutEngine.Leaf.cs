@@ -52,16 +52,18 @@ internal static partial class LayoutEngine
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         ref readonly LayoutStyle style = ref node.Layout.Style;
-        Edges paddingBorder = PaddingBorder(in style, input.ParentSize.Width);
+        bool hasBox = node.Layout.HasBox;
+        ref readonly ResolvedBox box = ref node.Layout.Box;
+        Edges paddingBorder = hasBox ? box.PaddingBorder : PaddingBorder(in style, input.ParentSize.Width);
         float inset = paddingBorder.Horizontal;
         float width = float.NaN;
         float min = float.NaN;
         float max = float.NaN;
         if (input.SizingMode == SizingMode.InherentSize)
         {
-            width = StyleSize(in style, input.ParentSize).Width;
-            min = MinSize(in style, input.ParentSize).Width;
-            max = MaxSize(in style, input.ParentSize).Width;
+            width = hasBox ? box.Size.Width : StyleSize(in style, input.ParentSize).Width;
+            min = hasBox ? box.Min.Width : MinSize(in style, input.ParentSize).Width;
+            max = hasBox ? box.Max.Width : MaxSize(in style, input.ParentSize).Width;
         }
 
         if (float.IsNaN(width))

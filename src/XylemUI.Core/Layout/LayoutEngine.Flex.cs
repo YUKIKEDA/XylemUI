@@ -250,18 +250,31 @@ internal static partial class LayoutEngine
             // Field by field into the pooled item: the later steps write every other field before they read it.
             ref FlexItem item = ref items[i];
             item.Node = child;
-            item.Size = StyleSize(in s, percentBasis);
-            item.Min = MinSize(in s, percentBasis);
-            item.Max = MaxSize(in s, percentBasis);
+            if (c.Layout.HasBox)
+            {
+                ref readonly ResolvedBox box = ref c.Layout.Box;
+                item.Size = box.Size;
+                item.Min = box.Min;
+                item.Max = box.Max;
+                item.Margin = box.Margin;
+                item.PaddingBorder = box.PaddingBorder;
+            }
+            else
+            {
+                item.Size = StyleSize(in s, percentBasis);
+                item.Min = MinSize(in s, percentBasis);
+                item.Max = MaxSize(in s, percentBasis);
+                item.Margin = EdgeInsets.ResolveOrZero(s.Margin, innerWidth);
+                item.PaddingBorder = PaddingBorder(in s, innerWidth);
+            }
+
             item.MainStyle = row ? s.Width : s.Height;
             item.CrossStyle = row ? s.Height : s.Width;
             item.FlexBasisStyle = s.FlexBasis;
-            item.Margin = EdgeInsets.ResolveOrZero(s.Margin, innerWidth);
             item.AutoLeft = s.Margin.Left.IsAuto;
             item.AutoTop = s.Margin.Top.IsAuto;
             item.AutoRight = s.Margin.Right.IsAuto;
             item.AutoBottom = s.Margin.Bottom.IsAuto;
-            item.PaddingBorder = PaddingBorder(in s, innerWidth);
             item.FlexGrow = s.FlexGrow;
             item.FlexShrink = s.FlexShrink;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;

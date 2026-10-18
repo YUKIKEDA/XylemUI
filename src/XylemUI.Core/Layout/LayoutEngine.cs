@@ -335,6 +335,25 @@ internal static partial class LayoutEngine
         }
     }
 
+    // A style's lengths in pixels where it uses no percentage (LayoutState.Box); none otherwise.
+    internal static bool TryResolveBox(in LayoutStyle style, out ResolvedBox box)
+    {
+        if (style.UsesPercentOfParentWidth || style.UsesPercentOfParentHeight)
+        {
+            box = default;
+            return false;
+        }
+
+        box = new ResolvedBox(
+            StyleSize(in style, OptionalSize.None),
+            MinSize(in style, OptionalSize.None),
+            MaxSize(in style, OptionalSize.None),
+            EdgeInsets.ResolveOrZero(style.Margin, float.NaN),
+            PaddingBorder(in style, float.NaN)
+        );
+        return true;
+    }
+
     // The width and the height of the style against the parent's content box.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize StyleSize(in LayoutStyle style, OptionalSize parent) =>
