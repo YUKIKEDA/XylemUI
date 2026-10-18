@@ -24,6 +24,8 @@ alwaysApply: true
 - Wording, typos, and examples: may ship in the same PR as code.
 - Do not implement first and update the design later. If code and design conflict, stop and fix the design through the process above.
 
+A comparison of approaches in the design includes the approach of each framework that a measurement found fastest, judged by the requirements. In L4 Flutter and Avalonia were the fastest, while §3.1 compared neither Flutter's box constraints nor Avalonia's measure and arrange beyond a reason of structure; the owner's question reopened it (D4, PR #105).
+
 A design that changes what a layout or render algorithm reads checks every cache and boundary rule against the change, the path that hits a cache included. In L1 a review found that "a child whose size the parent decided is a boundary" does not hold with the automatic minimum size, wrapping, and baseline alignment, and the re-review found that a mark set again in each run was lost in a run that hit the cache (PR #75, Issue #76).
 
 After a script edits a Markdown table, read `git diff --stat`. A diff of the whole table means its columns were padded again (it happened in S9 to `docs/roadmap.md`, by no step of the script): restore the file and replace only the rows that change.
