@@ -153,7 +153,7 @@ Rejected:
   - 基準の大きさの前回の結果を、実行の種類で分けずに 1 つだけ持つ（容器が 1 回の pass で測られて layout され、互いに上書きして一度も使われなかった。Issue #101）
   - 内容が変わった子の、本番の layout の大きさだけを比べて親で止める（Avalonia の `DesiredSize` と同じ。親が別の入力で測った大きさ・内容の幅・ベースラインが変わっても止まり、結果を誤る。L5 の Grill、Issue #108）
   - 内容が変わっても、今のまま印を付けた時点で境界まで上へ伝える（大きさが変わらない変更でも親を解き直す。L5 の Grill、Issue #108）
-  - 絶対配置の基準を CSS どおり最も近い positioned の祖先にする（Taffy・Flutter・Avalonia はそろって親を基準にする。祖先をたどる処理と無効化が増える。L2 の Grill、Issue #120）
+  - 絶対配置の基準を CSS どおり最も近い positioned の祖先にする（GPUI の Taffy 0.9.0・Flutter・Avalonia はそろって親を基準にする。Taffy 0.15 は CSS どおりにした。祖先をたどる処理と無効化が増える。L2 の Grill、Issue #120）
   - 絶対配置の子を構造の境界にして、親は絶対配置の子の配置だけをやり直す（費用を測る前に仕組みを足さない。Flutter・Avalonia は親を解き直す。L2 の Grill、Issue #120）
   - 表示しないノードを Taffy の `Display::None` のように `LayoutAlgorithm` の 1 つにする（切り替えのたびに元のアルゴリズムを覚えておくことになる。L2 の Grill、Issue #120）
   - `flex-wrap: balance` を L2 に入れる（CSS の草案で、Flutter・Avalonia・GPUI のどれも持たない。行 L6 に置いた。L2 の Grill、Issue #120）
