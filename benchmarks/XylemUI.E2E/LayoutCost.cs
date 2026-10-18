@@ -30,6 +30,7 @@ internal static class LayoutCost
             Measure(report, scene, samples);
         }
 
+        MeasureAbsolute(report, samples);
         return 0;
     }
 
@@ -152,6 +153,91 @@ internal static class LayoutCost
         }
 
         report.Series($"{scene}_width_us", width);
+    }
+
+    // The absolute scene (row L2): a column of 100 boxes of 2,000 x 20, each holding 100 absolutely positioned leaves of 10 x 10
+    // at a left inset of 20 each (Flutter's Stack of Positioned boxes, Avalonia's Canvas). The change is one leaf's content,
+    // 10 or 20 wide in turn: its box places it again, and the boxes, of fixed size, stop the change.
+    private static void MeasureAbsolute(Report report, int samples)
+    {
+        var first = new List<double>(samples);
+        var change = new List<double>(samples);
+        for (int s = 0; s < samples + 3; s++)
+        {
+            bool record = s >= 3;
+            float width = 10;
+            (UiTree tree, NodeHandle root, NodeHandle target) = BuildAbsolute(() => width);
+            long start = Stopwatch.GetTimestamp();
+            Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
+            LayoutEngine.RunLayoutPass(tree);
+            Add(first, start, record);
+            for (int i = 0; i < 2; i++)
+            {
+                width = i % 2 == 0 ? 20 : 10;
+                Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+                start = Stopwatch.GetTimestamp();
+                LayoutEngine.RunLayoutPass(tree);
+                Add(change, start, record && i == 1);
+            }
+
+            if (tree.GetRect(target).Width != 10)
+            {
+                throw new InvalidOperationException("The absolute scene did not follow the change.");
+            }
+        }
+
+        float countWidth = 10;
+        (UiTree countTree, NodeHandle countRoot, NodeHandle countTarget) = BuildAbsolute(() => countWidth);
+        Invalidation.NotifyWindowResized(countTree, countRoot, new Size(2_000, 2_000));
+        LayoutEngine.RunLayoutPass(countTree);
+        int runs = 0;
+        countTree.LayoutRunHook = _ => runs++;
+        countWidth = 20;
+        Invalidation.Invalidate(countTree, countTarget, ChangeKind.TextContent);
+        LayoutEngine.RunLayoutPass(countTree);
+        report.Number("absolute_change_runs", runs);
+        report.Series("absolute_first_us", first);
+        report.Series("absolute_change_us", change);
+    }
+
+    private static (UiTree Tree, NodeHandle Root, NodeHandle Target) BuildAbsolute(Func<float> targetWidth)
+    {
+        var tree = new UiTree();
+        NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
+        NodeHandle target = default;
+        for (int r = 0; r < Rows; r++)
+        {
+            NodeHandle box = tree.CreateNode(new LayoutStyle { Width = Length.Px(2_000), Height = Length.Px(20) });
+            tree.AppendChild(root, box);
+            for (int c = 0; c < Columns; c++)
+            {
+                var style = new LayoutStyle
+                {
+                    Position = Position.Absolute,
+                    Inset = new EdgeInsets<LengthPercentageAuto>(
+                        LengthPercentageAuto.Px(c * 20),
+                        LengthPercentageAuto.Px(0),
+                        LengthPercentageAuto.Auto,
+                        LengthPercentageAuto.Auto
+                    ),
+                };
+                bool isTarget = r == Rows / 2 && c == Columns / 2;
+                NodeHandle leaf = isTarget
+                    ? tree.CreateNode(
+                        style,
+                        (_, _) => MeasureResult.Of(targetWidth(), 10),
+                        _ => new IntrinsicWidths(targetWidth(), targetWidth(), DependsOnHeight: false)
+                    )
+                    : tree.CreateNode(style, static (_, _) => MeasureResult.Of(10, 10), TenWide);
+                tree.AppendChild(box, leaf);
+                if (isTarget)
+                {
+                    target = leaf;
+                }
+            }
+        }
+
+        return (tree, root, target);
     }
 
     // The wrap scene (row L1b): one row that wraps 10,000 leaves of 10 x 10 into the window's width, its lines packed at the top

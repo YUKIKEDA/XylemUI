@@ -11,9 +11,11 @@ import 'package:flutter/rendering.dart';
 void runLayoutScene(String output) {
   final flex = _measure(_build);
   final wrap = _measure(_buildWrap);
+  final absolute = _measureAbsolute();
   File(output).writeAsStringSync(
     '{"name":"Flutter","first_us_p50":${flex.$1},"change_us_p50":${flex.$2},"content_us_p50":${flex.$3},"width_us_p50":${flex.$4},'
-    '"wrap_first_us_p50":${wrap.$1},"wrap_change_us_p50":${wrap.$2},"wrap_content_us_p50":${wrap.$3},"wrap_width_us_p50":${wrap.$4}}\n',
+    '"wrap_first_us_p50":${wrap.$1},"wrap_change_us_p50":${wrap.$2},"wrap_content_us_p50":${wrap.$3},"wrap_width_us_p50":${wrap.$4},'
+    '"absolute_first_us_p50":${absolute.$1},"absolute_change_us_p50":${absolute.$2}}\n',
   );
 }
 
@@ -103,6 +105,61 @@ void runLayoutScene(String output) {
     boxes.add(box);
   }
   return (RenderWrap(textDirection: TextDirection.ltr, children: boxes), target!);
+}
+
+// The absolute scene (row L2): a Column of 100 Stacks of 2000 x 20, each with 100 Positioned boxes of 10 x 10 at left 20 each.
+// The change is one box's width, 10 or 20 in turn.
+(double, double) _measureAbsolute() {
+  final first = <double>[];
+  final change = <double>[];
+  for (var s = 0; s < 18; s++) {
+    final owner = PipelineOwner();
+    RenderConstrainedBox? target;
+    final stacks = <RenderBox>[];
+    for (var r = 0; r < 100; r++) {
+      final children = <RenderBox>[];
+      for (var c = 0; c < 100; c++) {
+        final box = RenderConstrainedBox(additionalConstraints: const BoxConstraints.tightFor(width: 10, height: 10));
+        if (r == 50 && c == 50) {
+          target = box;
+        }
+        children.add(box);
+      }
+      final stack = RenderStack(textDirection: TextDirection.ltr, children: children);
+      var child = stack.firstChild;
+      var c = 0;
+      while (child != null) {
+        final data = child.parentData! as StackParentData;
+        data.left = c * 20.0;
+        data.top = 0;
+        child = data.nextSibling;
+        c++;
+      }
+      stacks.add(RenderConstrainedBox(additionalConstraints: const BoxConstraints.tightFor(width: 2000, height: 20), child: stack));
+    }
+    final root = RenderFlex(direction: Axis.vertical, textDirection: TextDirection.ltr, children: stacks);
+    owner.rootNode = root;
+    final watch = Stopwatch()..start();
+    root.layout(BoxConstraints.tight(const Size(2000, 2000)));
+    final firstUs = watch.elapsedMicroseconds.toDouble();
+    var changeUs = 0.0;
+    for (var i = 0; i < 2; i++) {
+      target!.additionalConstraints = BoxConstraints.tightFor(width: i.isEven ? 20 : 10, height: 10);
+      watch
+        ..reset()
+        ..start();
+      owner.flushLayout();
+      changeUs = watch.elapsedMicroseconds.toDouble();
+    }
+    if (target!.size.width != 10) {
+      throw StateError('The absolute scene did not follow the change.');
+    }
+    if (s >= 3) {
+      first.add(firstUs);
+      change.add(changeUs);
+    }
+  }
+  return (_median(first), _median(change));
 }
 
 double _median(List<double> values) {
