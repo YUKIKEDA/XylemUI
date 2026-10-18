@@ -150,7 +150,8 @@ internal struct MeasureCache
     private bool _hasAtHeight;
 
     // After the flags, in the struct's padding: as a field before the entries it made the cache 464 bytes a node instead of 456,
-    // and the first layout of row L1a's scene (S6b's meaning) 7 % slower in two sets of 6 rounds; here it is level with L4.
+    // and the first layout of row L1a's scene (S6b's meaning) 7 % slower whichever build ran first in a round; here it is level
+    // with L4 in rounds ordered L4, L5, L5, L4 (docs/benchmarks/l5-layout.md).
     private uint _evictedGeneration;
 
     /// <summary>
