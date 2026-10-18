@@ -322,6 +322,7 @@ internal static partial class LayoutEngine
 
         foreach (ref FlexItem item in items)
         {
+            Q(51);
             float minCross = item.Min.Cross(row);
             float maxCross = item.Max.Cross(row);
             AvailableSpace crossSpace = available.Cross(row);
@@ -366,6 +367,7 @@ internal static partial class LayoutEngine
                 }
             }
 
+            Q(52);
             if (float.IsNaN(item.FlexBasis))
             {
                 // 9.2.3 E: the content's size, treating `content` as max-content (min-content under a min-content constraint).
@@ -383,6 +385,7 @@ internal static partial class LayoutEngine
                 );
             }
 
+            Q(53);
             // The basis is never smaller than the padding and border (Chrome and Firefox; Taffy's note on the spec).
             float paddingBorderMain = item.PaddingBorder.MainSum(row);
             item.FlexBasis = Math.Max(item.FlexBasis, paddingBorderMain);
@@ -390,6 +393,7 @@ internal static partial class LayoutEngine
 
             // CSS Flexbox §4.5: an automatic minimum is the content's min-content size, no larger than the specified size.
             float styleMinMain = item.Min.Main(row);
+            Q(54);
             if (float.IsNaN(styleMinMain))
             {
                 float minContent = MeasureChild(
@@ -404,6 +408,7 @@ internal static partial class LayoutEngine
                 styleMinMain = Math.Max(Maybe.Min(Maybe.Min(minContent, mainSize), item.Max.Main(row)), paddingBorderMain);
             }
 
+            Q(55);
             item.ResolvedMinMain = styleMinMain;
             float hypotheticalInner = Maybe.Clamp(item.FlexBasis, Math.Max(styleMinMain, paddingBorderMain), item.Max.Main(row));
             item.HypotheticalInnerMain = hypotheticalInner;

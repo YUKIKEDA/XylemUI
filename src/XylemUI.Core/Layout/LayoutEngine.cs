@@ -243,6 +243,7 @@ internal static partial class LayoutEngine
             horizontal ? RequestedAxis.Horizontal : RequestedAxis.Vertical
         );
         Size size = LayoutChild(tree, child, in input, commit: false);
+        Q(27);
         return horizontal ? size.Width : size.Height;
     }
 
