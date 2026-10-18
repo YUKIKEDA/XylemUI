@@ -28,7 +28,8 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
     /// - After every step, every node has the same rectangle in both trees, and every leaf the same first baseline.
     /// - After every pass, no kept values are left, and no changed leaf points at any.
     /// - After every change, the leaf's repaint was passed on: the leaf is in the paint updates (row L5's stop), or its parent
-    ///   carries Paint in its subtree flags (the path of MarkDirty).
+    ///   carries Paint in its subtree flags (the path of MarkDirty), or the leaf itself when it was a boundary; unless the leaf
+    ///   is in a hidden subtree.
     /// </remarks>
     [Fact]
     public void IncrementalLayout_EqualsALayoutFromTheStart() =>
@@ -41,7 +42,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 (UiTree tree, List<NodeHandle> nodes) = spec.Build();
                 Size window = new(100 + random.Next(300), 100 + random.Next(300));
                 LayOut(tree, nodes[0], window.Width, window.Height);
-                var changed = new List<int>();
+                var changed = new List<(int Leaf, bool Boundary)>();
                 for (int step = 0; step < 30; step++)
                 {
                     TakeRepaints(tree, nodes);
@@ -49,6 +50,12 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                     {
                         window = new Size(100 + random.Next(300), 100 + random.Next(300));
                         LayOut(tree, nodes[0], window.Width, window.Height);
+                    }
+                    else if (random.Next(6) == 0)
+                    {
+                        int node = 1 + random.Next(nodes.Count - 1);
+                        tree.SetStyle(nodes[node], spec.ToggleHidden(node));
+                        LayoutEngine.RunLayoutPass(tree);
                     }
                     else
                     {
@@ -58,17 +65,22 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                         {
                             int leaf = spec.RandomLeaf(random);
                             spec.Change(leaf, random, sameCount: random.Next(2) == 0);
+                            bool boundary = Invalidation.IsLayoutBoundaryForInvalidation(tree, in tree.Nodes.GetRef(nodes[leaf]));
                             Invalidation.Invalidate(tree, nodes[leaf], ChangeKind.TextContent);
-                            changed.Add(leaf);
+                            changed.Add((leaf, boundary));
                         }
 
                         LayoutEngine.RunLayoutPass(tree);
                         Assert.Empty(tree.ContentSnapshots);
-                        foreach (int leaf in changed)
+                        foreach ((int leaf, bool boundary) in changed)
                         {
-                            NodeHandle parent = tree.Nodes.GetRef(nodes[leaf]).Parent;
+                            // A leaf that was a boundary is its own layout root, and its own flags carry the repaint.
+                            ref UiNode changedLeaf = ref tree.Nodes.GetRef(nodes[leaf]);
+                            NodeHandle carrier = boundary ? nodes[leaf] : changedLeaf.Parent;
                             Assert.True(
-                                tree.PaintUpdates.Contains(nodes[leaf]) || (tree.Nodes.GetRef(parent).Dirty.SubtreeDirty & DirtyFlags.Paint) != 0,
+                                IsHidden(tree, nodes[leaf])
+                                    || tree.PaintUpdates.Contains(nodes[leaf])
+                                    || (tree.Nodes.GetRef(carrier).Dirty.SubtreeDirty & DirtyFlags.Paint) != 0,
                                 $"seed {seed}, step {step}: the repaint of leaf {leaf} was not passed on"
                             );
                             Assert.Equal(0, tree.Nodes.GetRef(nodes[leaf]).Layout.ContentSnapshotSlot);
@@ -91,6 +103,20 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 }
             }
         });
+
+    // A node in a hidden subtree is not painted, so its repaint goes nowhere.
+    private static bool IsHidden(UiTree tree, NodeHandle node)
+    {
+        for (NodeHandle current = node; !current.IsNone; current = tree.Nodes.GetRef(current).Parent)
+        {
+            if (tree.Nodes.GetRef(current).Layout.Style.Hidden)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     // What the paint stage of a frame will do with the repaints (a later row): take the paint updates, and leave only the
     // layout flags, which the layout pass clears itself.
@@ -166,6 +192,9 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
 
         public void Change(int index, Random random, bool sameCount) => _leaves[index]!.Change(random, sameCount);
 
+        // Hides a shown node, or shows a hidden one, and returns its new style.
+        public LayoutStyle ToggleHidden(int index) => _styles[index] = _styles[index] with { Hidden = !_styles[index].Hidden };
+
         private void Add(int parent, LayoutStyle style, Leaf? leaf)
         {
             _parents.Add(parent);
@@ -224,7 +253,19 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                 style = style with { Width = Length.Px(40 + random.Next(120)), Height = Length.Px(30 + random.Next(80)) };
             }
 
+            if (!root && random.Next(8) == 0)
+            {
+                style = style with { Position = Position.Absolute, Inset = RandomInsets(random) };
+            }
+
             return style;
+        }
+
+        // Insets for an absolutely positioned node: each side auto or a few pixels, so that some axes have both, one, or none.
+        public static EdgeInsets<LengthPercentageAuto> RandomInsets(Random random)
+        {
+            LengthPercentageAuto Side() => random.Next(2) == 0 ? LengthPercentageAuto.Auto : LengthPercentageAuto.Px(random.Next(4) * 5);
+            return new EdgeInsets<LengthPercentageAuto>(Side(), Side(), Side(), Side());
         }
 
         private static T Pick<T>(Random random, params T[] values) => values[random.Next(values.Length)];
@@ -267,11 +308,12 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
         public IntrinsicWidthsFunc Widths { get; }
 
         public static LayoutStyle Style(Random random) =>
-            random.Next(5) switch
+            random.Next(7) switch
             {
                 0 => new LayoutStyle { Width = Length.Percent(0.2f + (0.1f * random.Next(4))) },
                 1 => new LayoutStyle { MinWidth = LengthPercentageAuto.Px(0) },
                 2 => new LayoutStyle { FlexGrow = 1 },
+                3 => new LayoutStyle { Position = Position.Absolute, Inset = TreeSpec.RandomInsets(random) },
                 _ => new LayoutStyle(),
             };
 

@@ -25,6 +25,17 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
         ),
     };
 
+    private static readonly LayoutStyle AtRightBottom = new()
+    {
+        Position = Position.Absolute,
+        Inset = new EdgeInsets<LengthPercentageAuto>(
+            LengthPercentageAuto.Auto,
+            LengthPercentageAuto.Auto,
+            LengthPercentageAuto.Px(0),
+            LengthPercentageAuto.Px(0)
+        ),
+    };
+
     private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
     private static readonly IntrinsicWidthsFunc TenWide = static _ => new IntrinsicWidths(10, 10, DependsOnHeight: false);
@@ -108,13 +119,15 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
 
     /// <summary>
     /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state, with CSS's
-    /// defaults (stretch, the automatic minimum size), with percentages, and with wrapping rows.
+    /// defaults (stretch, the automatic minimum size), with percentages, with wrapping rows, and with children out of the flow.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - root (column) → 100 rows → 100 leaves each (10,101 nodes), laid out at 2,000 x 2,000. With percent, every leaf other
     ///   than the changed one is 1 % wide with a 0.1 % padding. With wrap, the rows wrap, every other leaf is 30 wide (3,000
-    ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. Warmed up with 20 changes.
+    ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. With positioned, every tenth leaf is
+    ///   absolutely positioned at its row's right and bottom, and every tenth from the fifth is hidden (row L2). Warmed up with
+    ///   20 changes.
     ///
     /// Steps:
     /// - 1,100 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread in
@@ -127,6 +140,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     [InlineData("defaults")]
     [InlineData("percent")]
     [InlineData("wrap")]
+    [InlineData("positioned")]
     public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(string scene) =>
         ui.Invoke(() =>
         {
@@ -142,6 +156,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                     {
                         "percent" => Percent,
                         "wrap" => new LayoutStyle { Width = Length.Px(30) },
+                        "positioned" when c % 10 == 0 => AtRightBottom,
+                        "positioned" when c % 10 == 5 => new LayoutStyle { Hidden = true },
                         _ => new LayoutStyle(),
                     };
                     NodeHandle leaf = tree.CreateNode(style, TenByTen, TenWide);

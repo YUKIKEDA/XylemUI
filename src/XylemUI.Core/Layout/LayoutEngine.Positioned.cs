@@ -272,7 +272,8 @@ internal static partial class LayoutEngine
         return (Maybe.Or(left, Maybe.Or(-right, 0)), Maybe.Or(top, Maybe.Or(-bottom, 0)));
     }
 
-    // A node out of the layout and its subtree: empty rectangles at the origin, no baseline, and nothing left to lay out.
+    // A node out of the layout and its subtree: empty rectangles at the origin, no baseline, and nothing left to lay out. Their
+    // last layouts no longer hold (WasLaidOut), so that a node shown again is laid out, not taken from its cache.
     private static void HideSubtree(UiTree tree, NodeHandle handle)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
@@ -284,6 +285,8 @@ internal static partial class LayoutEngine
 
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         n.Layout.FirstBaseline = float.NaN;
+        n.Layout.WasLaidOut = false;
+        n.Layout.CachedComputedBoundary = false;
         n.BaselineChild = default;
         n.Dirty.SelfDirty &= ~DirtyFlags.Layout;
         n.Dirty.SubtreeDirty &= ~DirtyFlags.Layout;
