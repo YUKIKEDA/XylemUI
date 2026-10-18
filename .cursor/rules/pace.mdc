@@ -46,4 +46,6 @@ A benchmark, a NativeAOT publish, or a profile keeps the tree busy for minutes.
 - While it runs, do what does not depend on its result. Name that work before starting the run.
 - Runs that need a quiet machine (compared benchmarks) do not overlap each other.
 
+A CI run started for an experiment (`gh workflow run`, `gh run rerun`) is a long run too: while it runs, go on with work that does not need its result, on another branch. In Q1 the agent waited on rounds of reruns with the next row's research undone, and the owner pointed it out.
+
 Before a long run, a short one: run the script on one case, and look at the output of a background run within its first minute.
