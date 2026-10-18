@@ -1482,13 +1482,41 @@ public struct PaintStyle  // レイアウトに影響するプロパティは持
 
 ### 3.1 比較検討の結論
 
-単機能Flexbox専用(Yoga方式)、制約ベース(Auto Layout/Cassowary方式)、統一ボックスモデル(Taffy方式)、CSS準拠フルスタック(ブラウザ方式)を比較。WPF/Avalonia の Measure/Arrange 2パス方式は Panel ごとにアルゴリズムが分散し、Flex/Grid を単一エンジンで扱う本設計の方針と合わないため参考にとどめる。
+**D4 で要件だけで比べ直した（オーナー決定、Issue #104）。** 比べたのは、Flutter の箱の制約、Avalonia（WPF）の Measure / Arrange、CSS のサブセット（Block / Flex と §3.3 の Grid を 1 つのエンジンで扱う Taffy の方式。Chromium も同じ意味）、制約ベース（Auto Layout の元になった Cassowary）の 4 つ。Yoga も CSS の flexbox のサブセットなので、3 つ目に含めた。速さは L4 の実測（`docs/benchmarks/l4-layout.md`、10,101 ノード、同じ機械で交互）。
 
-**採用: 統一ボックスモデル（Taffy方式）。**
-理由:
-- Flex/Grid/絶対配置を単一エンジンで扱え、`LayoutStyle.Algorithm`を単一の型階層で表現でき2.4のノード構造と自然に接続する
-- ノード単位のサイズキャッシュ機構により、`dirty`フラグが立ったノードとその祖先のみ再計算する増分再計算が設計として確立されている（GPUI、Dioxus、Bevy UI等の採用実績あり）
-- 制約ベース方式はソルバー実装が専門領域かつ局所変更の再解法コスト制御が難しく、増分再計算要件と相性が悪いため却下。ブラウザ方式はブラウザエンジンの再実装に等しく自作原則のスコープを超えるため却下
+| 基準 | Flutter の箱の制約 | Avalonia の Measure / Arrange | CSS のサブセット（採用） | 制約ベース（Cassowary） |
+| --- | --- | --- | --- | --- |
+| 仕組み | 親が最小・最大を渡し、子は 1 回で大きさを返す | 親が使える大きさを渡し、子は望む大きさを返す。並べ方はパネルごと | 決まった寸法と軸ごとの使える空間を渡す。内容の大きさは別に問い合わせ、ノードに持つ | 一次の等式・不等式を、強さ（required / non-required）付きで解く |
+| 最初の layout | 1,047 µs（葉 1 つに 1 回） | 5,398 µs | 3,082〜4,973 µs（葉 1 つに 3〜4 回） | 1 万ノードの実測は無い |
+| 1 か所の変更 | 5.0 µs | 28.8 µs | 20.0〜38.0 µs | 解き直し 1 回 0.14〜0.66 ms（2001 年の論文の小さな例） |
+| 幅の変更 | 466 µs | 379 µs（`StackPanel` は子を無限の幅で測る） | 597〜1,762 µs | — |
+| 増分の再計算 | 境界は静的（`parentUsesSize` が偽、制約が tight、`sizedByParent`）。clean で制約が同じ子は早期に戻る | 大きさが測り直しても変わらなければ、親を無効にしない（`Layoutable.Measure` → `ChildDesiredSizeChanged`） | 計算された境界と読んだ印（§2.4.1）。計測のキャッシュ | 表を増分で更新する |
+| 内容に合わせる大きさ | 1 回で答える方式の外。内容の大きさの問い合わせは高くつき（`table.dart` の `IntrinsicColumnWidth`）、深い木で 2 乗になりうる（`proxy_box.dart` の `IntrinsicWidth`） | パネルによる。`Grid` は内容に合わせる行と `*` の行が循環すると最大 5 回測り、2 回目の幅が広いとセルが切れる（`Grid.cs`） | 自動の最小サイズ、min-content / max-content / fit-content を CSS どおり | 制約で書く |
+| 表現力 | `Row` は自動の最小サイズも shrink も持たない（はみ出す）。`Wrap` は伸縮しない。グリッドは同じ大きさのタイルだけ（`SliverGridDelegate`） | `StackPanel`・`Grid`（`*`、span）・`DockPanel`・`WrapPanel`。`StackPanel` は伸縮しない | flex の全部（wrap、伸縮、baseline、揃え、gap、`%`）と Grid（§3.3） | 任意の一次の関係 |
+| 検証の基準 | Flutter の実装そのもの | WPF / Avalonia の実装そのもの | Chrome の結果（Taffy の XML テスト。L1 の範囲を全件突き合わせた） | 解ける系なら一意。強さと循環の扱いはアプリが決める |
+| 予測しやすさ | Flutter の知識 | WPF / Avalonia の知識 | CSS の仕様と MDN。AI エージェントも広く学習している | 制約が曖昧なときに結果を予測しにくい |
+
+速さの差は、意味の差から来る。Flutter が最初の layout と 1 か所の変更で速いのは、内容に合わせる処理（自動の最小サイズ、shrink）を 1 回で答える方式の外に出し、アプリが `Expanded` を書くか高くつく問い合わせを使うからである。1 回の計算の費用は、Flutter と XylemUI でどちらも約 100 ns だった。Avalonia も、内容に合わせる `Grid` では繰り返し測る。幅の変更で速いのは、`StackPanel` が伸縮しないからである。
+
+**採用: CSS のサブセット（統一ボックスモデル、Taffy の方式）。** 理由:
+
+- フレームの予算（§11.3 の Layout 2.0 ms）を満たし、同じ意味の GPUI（Taffy 0.9.0）より 2〜8 倍速く、Avalonia にも幅の変更を除いて速い（L4）
+- 正しさを外の正解（Chrome の結果）で確かめられるのは、この方式だけである
+- 内容に合わせる大きさ（テキストが重ならない自動の最小サイズなど）を、既定の意味の中で扱える
+- CSS の知識で、人も AI エージェントも結果を予測できる
+- Flex / Grid / 絶対配置を 1 つのエンジンと 1 つの型階層（`LayoutStyle.Algorithm`）で扱え、§2.4 のノード構造とつながる
+
+**採らないもの:**
+
+- Flutter の箱の制約に切り替える: 最初の layout と 1 か所の変更では最も速いが、外の正解による検証を失い、内容に合わせる大きさを高くつく問い合わせに追い出す
+- CSS のサブセットに加えて、Flutter の `Row` / `Column` に当たる簡単な並べ方を選べるようにする: 同じ見た目に 2 つの意味を持ち込み、予測しやすさを損なう。CSS でも `min-width: 0` を書けば計算は減る（L4 の S6b の意味の場面で、葉 1 つにつき 4 回から 3 回）
+- Avalonia の Measure / Arrange: 並べ方がパネルごとに分かれ、内容に合わせる大きさの意味がパネルで違う。外の正解が無い
+- ブラウザの CSS 全部: マージンの相殺・float・inline の流し込みなど、アプリの UI に要らない歴史的な挙動は、結果の予測しやすさを損なう（§3.2「ボックスモデルの意味論」）
+- 制約ベース: 1 万ノード規模の実測が無く、制約が曖昧なとき（強さで解を決めるとき）に結果を予測しにくい
+
+**取り入れるもの:** Avalonia の「子の大きさが測り直しても変わらなければ、親で止める」を、増分の再計算に足す（行 L5、オーナー決定）。L4 では、測っている場面（幅が変わる）に効かないとして外したが、文字を書き換えても大きさが変わらない、といったよくある変更に効く。
+
+根拠のソース: Flutter 3.38.5 の `rendering/object.dart`・`flex.dart`・`box.dart`・`proxy_box.dart`・`table.dart`・`wrap.dart`・`sliver_grid.dart`。Avalonia の `Avalonia.Base/Layout/Layoutable.cs`・`LayoutManager.cs`、`Avalonia.Controls/StackPanel.cs`・`Grid.cs`。Chromium の `third_party/blink/renderer/core/layout`。Badros, Borning, Stuckey「The Cassowary Linear Arithmetic Constraint Solving Algorithm」（ACM TOCHI、2001）。
 
 ### 3.2 設計
 
