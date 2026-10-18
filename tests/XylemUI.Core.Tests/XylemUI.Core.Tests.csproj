@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures\Taffy\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

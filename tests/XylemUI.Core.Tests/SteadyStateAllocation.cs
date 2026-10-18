@@ -29,11 +29,13 @@ internal static class SteadyStateAllocation
         var compiled = new long[Windows];
         var collections = new int[Windows];
         var fullCollections = new int[Windows];
+        var processBytes = new long[Windows];
 
         // The calls below are compiled before the first window.
         _ = JitInfo.GetCompiledMethodCount(currentThread: true);
         _ = GC.CollectionCount(0);
         _ = GC.GetAllocatedBytesForCurrentThread();
+        _ = GC.GetTotalAllocatedBytes(precise: true);
 
         int perWindow = iterations / Windows;
         int index = 0;
@@ -42,6 +44,7 @@ internal static class SteadyStateAllocation
             int collectionsBefore = GC.CollectionCount(0);
             int fullBefore = GC.CollectionCount(2);
             long compiledBefore = JitInfo.GetCompiledMethodCount(currentThread: true);
+            long processBefore = GC.GetTotalAllocatedBytes(precise: true);
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int end = index + perWindow; index < end; index++)
             {
@@ -49,6 +52,7 @@ internal static class SteadyStateAllocation
             }
 
             bytes[window] = GC.GetAllocatedBytesForCurrentThread() - before;
+            processBytes[window] = GC.GetTotalAllocatedBytes(precise: true) - processBefore;
             compiled[window] = JitInfo.GetCompiledMethodCount(currentThread: true) - compiledBefore;
             collections[window] = GC.CollectionCount(0) - collectionsBefore;
             fullCollections[window] = GC.CollectionCount(2) - fullBefore;
@@ -68,7 +72,7 @@ internal static class SteadyStateAllocation
         {
             message.Append(
                 CultureInfo.InvariantCulture,
-                $"\n  window {window}: {bytes[window]} bytes, {compiled[window]} methods compiled on this thread, {collections[window]} collections ({fullCollections[window]} of generation 2)"
+                $"\n  window {window}: {bytes[window]} bytes, {compiled[window]} methods compiled on this thread, {collections[window]} collections ({fullCollections[window]} of generation 2), process {processBytes[window]} bytes"
             );
         }
 
