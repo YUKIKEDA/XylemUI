@@ -660,6 +660,41 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
             Assert.Equal(3, calls);
         });
 
+    /// <summary>
+    /// A clean child laid out again at the same size, but with that size now a basis for percentages, is laid out again: the
+    /// cached result checks whether the known size is definite, not only its value (design §3.2, CSS Flexbox §9.8).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: block, window 300 x 300 → column C with an automatic height → item I, a block whose height is its content's →
+    ///   F, 100 high, and L, 50 % high. Laid out: I is 100 high, but its height comes from its content, so it is not definite
+    ///   and L's 50 % is automatic (L is 0 high).
+    ///
+    /// Steps:
+    /// - Set C's height to 100 and run the pass. I is clean, and gets the same height, 100, now definite.
+    ///
+    /// Expected:
+    /// - L is 50 high.
+    /// </remarks>
+    [Fact]
+    public void CleanChild_WhoseKnownSizeBecomesDefinite_IsLaidOutAgain() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle column = Box(tree, root, Column());
+            NodeHandle item = Box(tree, column, new LayoutStyle());
+            Box(tree, item, new LayoutStyle { Height = Length.Px(100) });
+            NodeHandle leaf = Box(tree, item, new LayoutStyle { Height = Length.Percent(0.5f) });
+            LayOut(tree, root, 300, 300);
+            Assert.Equal((100f, 0f), (tree.GetRect(item).Height, tree.GetRect(leaf).Height));
+
+            tree.SetStyle(column, Column() with { Height = Length.Px(100) });
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal((100f, 50f), (tree.GetRect(item).Height, tree.GetRect(leaf).Height));
+        });
+
     private static LayoutStyle BaselineRow() =>
         new() { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) };
 

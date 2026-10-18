@@ -79,6 +79,29 @@ internal readonly record struct LayoutCacheKey(
         && KnownHeightIsDefinite == other.KnownHeightIsDefinite
         && SizingMode == other.SizingMode;
 
+    /// <summary>
+    /// Returns the same as <see cref="Matches"/> with the key of <paramref name="input"/> for <paramref name="node"/>, without
+    /// making that key: a parent asks it of every clean child it lays out again (row L4).
+    /// </summary>
+    public bool MatchesInput(in UiNode node, in LayoutInput input)
+    {
+        OptionalSize known = input.KnownDimensions;
+        bool knownWidth = !float.IsNaN(known.Width);
+        bool knownHeight = !float.IsNaN(known.Height);
+        return DescendantLayoutVersion == node.Versions.DescendantLayout
+            && LayoutStyleVersion == node.Versions.LayoutStyle
+            && ChildStructureVersion == node.Versions.Children
+            && Same(Known.Width, known.Width)
+            && Same(Known.Height, known.Height)
+            && (knownWidth || (Available.Width.Kind == input.Available.Width.Kind && Available.Width.Value == input.Available.Width.Value))
+            && (knownHeight || (Available.Height.Kind == input.Available.Height.Kind && Available.Height.Value == input.Available.Height.Value))
+            && (!node.Layout.UsesPercentOfParentWidth || Same(Parent.Width, input.ParentSize.Width))
+            && (!node.Layout.UsesPercentOfParentHeight || Same(Parent.Height, input.ParentSize.Height))
+            && KnownWidthIsDefinite == (!knownWidth || input.KnownWidthIsDefinite)
+            && KnownHeightIsDefinite == (!knownHeight || input.KnownHeightIsDefinite)
+            && SizingMode == input.SizingMode;
+    }
+
     /// <inheritdoc />
     /// <remarks>
     /// Written by hand with <see cref="Equals(LayoutCacheKey)"/>, which replaces the compiler's comparison for its cost; the

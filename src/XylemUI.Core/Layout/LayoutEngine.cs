@@ -165,15 +165,18 @@ internal static partial class LayoutEngine
 
         if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
         {
-            LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
-            if (node.Layout.WasLaidOut && node.Layout.CachedKey.Matches(in key))
+            if (node.Layout.WasLaidOut && node.Layout.CachedKey.MatchesInput(in node, in input))
             {
                 return new Size(node.Layout.Rect.Width, node.Layout.Rect.Height);
             }
 
-            if (!commit && tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
+            if (!commit)
             {
-                return measured;
+                LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);
+                if (tree.MeasuresOf(handle).TryGet(in key, input.Axis, out Size measured))
+                {
+                    return measured;
+                }
             }
         }
 
