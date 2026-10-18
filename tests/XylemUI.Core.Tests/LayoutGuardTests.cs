@@ -159,14 +159,58 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 LayoutEngine.RunLayoutPass(tree);
             }
 
-            SteadyStateAllocation.AssertNone(
-                1_000,
-                i =>
+            // EXPERIMENT (#92): the bytes between the checkpoints of the layout pass.
+            var hits = new long[96];
+            int hitCount = 0;
+            long last = 0;
+            int previous = 0;
+            int run = 0;
+            LayoutEngine.Q1Probe = id =>
+            {
+                long now = GC.GetAllocatedBytesForCurrentThread();
+                if (now != last && hitCount < 32)
                 {
-                    tree.SetStyle(target, i % 2 == 0 ? wide : narrow);
-                    LayoutEngine.RunLayoutPass(tree);
+                    hits[hitCount * 3] = run;
+                    hits[(hitCount * 3) + 1] = (previous * 100) + id;
+                    hits[(hitCount * 3) + 2] = now - last;
+                    hitCount++;
                 }
-            );
+
+                last = now;
+                previous = id;
+            };
+            try
+            {
+                last = GC.GetAllocatedBytesForCurrentThread();
+                SteadyStateAllocation.AssertNone(
+                    1_000,
+                    i =>
+                    {
+                        run = i;
+                        previous = 0;
+                        last = GC.GetAllocatedBytesForCurrentThread();
+                        tree.SetStyle(target, i % 2 == 0 ? wide : narrow);
+                        LayoutEngine.RunLayoutPass(tree);
+                    }
+                );
+            }
+            catch (Exception exception)
+            {
+                var detail = new System.Text.StringBuilder(exception.Message);
+                for (int h = 0; h < hitCount; h++)
+                {
+                    detail.Append(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        $"\n  run {hits[h * 3]}: checkpoints {hits[(h * 3) + 1] / 100} -> {hits[(h * 3) + 1] % 100}: {hits[(h * 3) + 2]} bytes"
+                    );
+                }
+
+                Assert.Fail(detail.ToString());
+            }
+            finally
+            {
+                LayoutEngine.Q1Probe = null;
+            }
 
             Assert.Equal(10, tree.GetRect(target).Width);
         });

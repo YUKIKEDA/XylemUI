@@ -32,8 +32,14 @@ internal static partial class LayoutEngine
     /// Lays out every layout root, shallowest first, until no request is left. A root that an earlier root's layout already
     /// cleaned is skipped; a node marked during the pass is laid out in the next cycle.
     /// </summary>
+    // EXPERIMENT (#92): checkpoints for the allocation probe of the tests.
+    internal static Action<int>? Q1Probe;
+
+    private static void Q(int id) => Q1Probe?.Invoke(id);
+
     public static void RunLayoutPass(UiTree tree)
     {
+        Q(1);
         UiThread.VerifyAccess();
         ReactiveRuntime.EnterLayout();
         try
@@ -49,10 +55,13 @@ internal static partial class LayoutEngine
                 }
 
                 using Arena<UiNode>.AllocationForbidden noAllocation = tree.Nodes.ForbidAllocation();
+                Q(2);
                 List<LayoutRequest> current = tree.TakeLayoutRoots();
+                Q(3);
                 if (current.Count > 1)
                 {
                     current.Sort(tree.ShallowestFirst);
+                    Q(4);
                 }
 
                 foreach (LayoutRequest request in CollectionsMarshal.AsSpan(current))
@@ -67,11 +76,15 @@ internal static partial class LayoutEngine
                     // effect's, the other roots go on, and the request waits for the next pass.
                     try
                     {
+                        Q(5);
                         LayoutInput input = ResolveInput(tree, request);
+                        Q(6);
                         _ = Compute(tree, request.Node, in input, commit: true);
+                        Q(7);
                         if (request.Node == tree.Root)
                         {
                             PlaceRoot(tree, request.Node, in input);
+                            Q(8);
                         }
                     }
                     catch (Exception exception) when (exception is not InvariantViolationException)
@@ -143,6 +156,7 @@ internal static partial class LayoutEngine
     // a measurement for measuring. A measuring run reads the child's content, which the child records (design §2.4.1).
     private static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
+        Q(20);
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         if (!commit)
         {
@@ -163,6 +177,7 @@ internal static partial class LayoutEngine
             }
         }
 
+        Q(21);
         return Compute(tree, handle, in input, commit);
     }
 
@@ -235,6 +250,7 @@ internal static partial class LayoutEngine
         MeasureFunc? measure = before.Layout.Measure;
         NodeHandle firstChild = before.FirstChild;
 
+        Q(10);
         tree.LayoutRunHook?.Invoke(handle);
         float baseline = float.NaN;
         NodeHandle baselineChild = default;
@@ -253,10 +269,13 @@ internal static partial class LayoutEngine
             baselineChild = firstChild;
         }
 
+        Q(11);
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         if (!commit)
         {
+            Q(30);
             tree.MeasuresOf(handle).Store(LayoutCacheKey.Of(in n, in input), input.Axis, size);
+            Q(31);
             return size;
         }
 
@@ -287,7 +306,9 @@ internal static partial class LayoutEngine
 
         // This run moved the children, which advanced DescendantLayout, but a measurement does not depend on where the
         // children were placed: a change of content inside drops the cache. Re-stamp the measurements so they stay valid.
+        Q(32);
         tree.MeasuresOf(handle).Restamp(after.Versions.DescendantLayout);
+        Q(33);
         return size;
     }
 

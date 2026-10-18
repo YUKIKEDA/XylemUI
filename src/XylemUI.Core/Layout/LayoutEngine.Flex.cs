@@ -50,8 +50,11 @@ internal static partial class LayoutEngine
             count++;
         }
 
+        Q(40);
         FlexItem[] itemArray = ArrayPool<FlexItem>.Shared.Rent(count);
+        Q(41);
         FlexLine[] lineArray = ArrayPool<FlexLine>.Shared.Rent(Math.Max(count, 1));
+        Q(42);
         try
         {
             Span<FlexItem> items = itemArray.AsSpan(0, count);
@@ -165,8 +168,11 @@ internal static partial class LayoutEngine
         }
         finally
         {
+            Q(43);
             ArrayPool<FlexItem>.Shared.Return(itemArray);
+            Q(44);
             ArrayPool<FlexLine>.Shared.Return(lineArray);
+            Q(45);
         }
     }
 
