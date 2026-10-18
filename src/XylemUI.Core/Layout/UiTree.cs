@@ -56,10 +56,16 @@ internal sealed class UiTree
     internal Action<NodeHandle>? LayoutRunHook { get; set; }
 
     /// <summary>
-    /// Creates a node that is not in the tree yet. It needs a layout.
+    /// Creates a node that is not in the tree yet. It needs a layout. A leaf with content has <paramref name="measure"/>, and
+    /// may have <paramref name="intrinsicWidths"/>, which must agree with it.
     /// </summary>
-    public NodeHandle CreateNode(LayoutStyle style, MeasureFunc? measure = null)
+    public NodeHandle CreateNode(LayoutStyle style, MeasureFunc? measure = null, IntrinsicWidthsFunc? intrinsicWidths = null)
     {
+        if (intrinsicWidths is not null && measure is null)
+        {
+            throw new ArgumentException("A node with intrinsic widths needs a measure function.", nameof(intrinsicWidths));
+        }
+
         var node = new UiNode
         {
             Layout = new LayoutState
@@ -68,6 +74,7 @@ internal sealed class UiTree
                 UsesPercentOfParentWidth = style.UsesPercentOfParentWidth,
                 UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
                 Measure = measure,
+                IntrinsicWidths = intrinsicWidths,
                 FirstBaseline = float.NaN,
                 CacheGeneration = 1,
             },

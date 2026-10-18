@@ -71,7 +71,17 @@ internal static class TaffyFixture
         }
 
         string text = element.Value.Trim();
-        return text.Length == 0 ? tree.CreateNode(style) : tree.CreateNode(style, AhemMeasure(text));
+        return text.Length == 0 ? tree.CreateNode(style) : tree.CreateNode(style, AhemMeasure(text), AhemWidths(text));
+    }
+
+    // The content widths of Ahem text, as AhemMeasure gives them under a min-content and a max-content width; they do not
+    // depend on the height.
+    private static IntrinsicWidthsFunc AhemWidths(string text)
+    {
+        string[] runs = text.Split(ZeroWidthSpace);
+        float longest = runs.Max(run => run.Length) * AhemSize;
+        float total = runs.Sum(run => run.Length) * AhemSize;
+        return _ => new IntrinsicWidths(longest, total, DependsOnHeight: false);
     }
 
     // Taffy's test measure for Ahem text: the min-content width is the longest run between break opportunities, the max-content

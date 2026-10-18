@@ -545,6 +545,121 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
             Assert.Equal(10, tree.GetRect(b).Y);
         });
 
+    /// <summary>
+    /// A leaf's content widths are dropped when its content changes, so the new widths reach the row (design §3.2, row L4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, window 300 x 100 → leaf A, content w x 10 with content widths (w, w) that do not depend on the height
+    ///   (w = 30 at first) → leaf B, 20 x 10. Laid out: B at x 30.
+    ///
+    /// Steps:
+    /// - Set w to 50, invalidate A's content, and run the pass.
+    ///
+    /// Expected:
+    /// - B at x 50.
+    /// </remarks>
+    [Fact]
+    public void ContentWidths_OfALeafWhoseContentChanges_AreDropped() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Row());
+            float width = 30;
+            NodeHandle a = tree.CreateNode(
+                new LayoutStyle(),
+                (known, _) => MeasureResult.Of(Maybe.Or(known.Width, width), 10),
+                _ => new IntrinsicWidths(width, width, DependsOnHeight: false)
+            );
+            tree.AppendChild(root, a);
+            NodeHandle b = Leaf(tree, root, 20, 10);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal(30, tree.GetRect(b).X);
+
+            width = 50;
+            Invalidation.Invalidate(tree, a, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(50, tree.GetRect(b).X);
+        });
+
+    /// <summary>
+    /// Content widths that depend on the height are kept for the height they were asked for: a new height asks again (design
+    /// §3.2, row L4, Chromium's min/max sizes cache).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row (items stretched to its height) → leaf A, whose content is twice as wide as it is high, with content widths
+    ///   (2h, 2h) that depend on the height h → leaf B, 20 x 10. Laid out in a window 300 x 100: A is 200 wide, B at x 200.
+    ///
+    /// Steps:
+    /// - Resize the window to 300 x 50 and run the pass.
+    ///
+    /// Expected:
+    /// - A is 100 wide and B at x 100.
+    /// </remarks>
+    [Fact]
+    public void ContentWidths_ThatDependOnTheHeight_AreAskedAgainForANewHeight() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Row());
+            NodeHandle a = tree.CreateNode(
+                new LayoutStyle(),
+                static (known, _) => MeasureResult.Of(Maybe.Or(known.Width, 2 * known.Height), known.Height),
+                static height => new IntrinsicWidths(2 * height, 2 * height, DependsOnHeight: true)
+            );
+            tree.AppendChild(root, a);
+            NodeHandle b = Leaf(tree, root, 20, 10);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal((200f, 200f), (tree.GetRect(a).Width, tree.GetRect(b).X));
+
+            LayOut(tree, root, 300, 50);
+
+            Assert.Equal((100f, 100f), (tree.GetRect(a).Width, tree.GetRect(b).X));
+        });
+
+    /// <summary>
+    /// Content widths that do not depend on the height are computed once, though the flex steps ask for the min-content and the
+    /// max-content width under several cross sizes (design §3.2, row L4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: column, window 300 x 300 → row → three leaves 10 x 10 whose content widths (10, 10) count their calls.
+    ///
+    /// Steps:
+    /// - Lay out.
+    ///
+    /// Expected:
+    /// - Each leaf's content widths were computed once (three calls).
+    /// </remarks>
+    [Fact]
+    public void ContentWidths_ThatDoNotDependOnTheHeight_AreComputedOnce() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle row = Box(tree, root, Row());
+            int calls = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                NodeHandle leaf = tree.CreateNode(
+                    new LayoutStyle(),
+                    static (known, _) => MeasureResult.Of(Maybe.Or(known.Width, 10), Maybe.Or(known.Height, 10)),
+                    _ =>
+                    {
+                        calls++;
+                        return new IntrinsicWidths(10, 10, DependsOnHeight: false);
+                    }
+                );
+                tree.AppendChild(row, leaf);
+            }
+
+            LayOut(tree, root, 300, 300);
+
+            Assert.Equal(3, calls);
+        });
+
     private static LayoutStyle BaselineRow() =>
         new() { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) };
 

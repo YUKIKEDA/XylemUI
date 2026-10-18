@@ -105,6 +105,53 @@ internal struct MeasureCache
     private byte _next;
     private byte _count;
 
+    // The content widths of a leaf (row L4), as Chromium keeps them: one answer for every height unless they depend on it, and
+    // then the answer for the last height asked.
+    private IntrinsicWidths _anyHeight;
+    private IntrinsicWidths _atHeight;
+    private float _height;
+    private bool _hasAnyHeight;
+    private bool _hasAtHeight;
+
+    /// <summary>
+    /// Returns the content widths kept for a content height of <paramref name="knownHeight"/> (NaN when it is not decided).
+    /// </summary>
+    public readonly bool TryGetIntrinsicWidths(float knownHeight, out IntrinsicWidths widths)
+    {
+        if (_hasAnyHeight && (!_anyHeight.DependsOnHeight || float.IsNaN(knownHeight)))
+        {
+            widths = _anyHeight;
+            return true;
+        }
+
+        if (_hasAtHeight && !float.IsNaN(knownHeight) && _height == knownHeight)
+        {
+            widths = _atHeight;
+            return true;
+        }
+
+        widths = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Keeps the content widths returned for <paramref name="knownHeight"/>.
+    /// </summary>
+    public void StoreIntrinsicWidths(float knownHeight, IntrinsicWidths widths)
+    {
+        if (float.IsNaN(knownHeight) || !widths.DependsOnHeight)
+        {
+            _anyHeight = widths;
+            _hasAnyHeight = true;
+        }
+        else
+        {
+            _atHeight = widths;
+            _height = knownHeight;
+            _hasAtHeight = true;
+        }
+    }
+
     /// <summary>
     /// Returns the size cached for <paramref name="key"/>. An entry measured for both axes serves either; one measured for one
     /// axis serves only that axis, since its other axis means nothing.
@@ -170,13 +217,15 @@ internal struct MeasureCache
     }
 
     /// <summary>
-    /// Drops every entry.
+    /// Drops every entry and the content widths.
     /// </summary>
     public void Clear()
     {
         _count = 0;
         _next = 0;
         _recentlyUsed = 0;
+        _hasAnyHeight = false;
+        _hasAtHeight = false;
     }
 
     /// <summary>

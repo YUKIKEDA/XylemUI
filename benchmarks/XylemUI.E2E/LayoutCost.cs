@@ -137,6 +137,9 @@ internal static class LayoutCost
 
     // The wrap scene (row L1b): one row that wraps 10,000 leaves of 10 x 10 into the window's width, its lines packed at the top
     // (`align-content: flex-start`, as Flutter's Wrap and Avalonia's WrapPanel pack them).
+    // The content widths of a leaf 10 wide, which answer its min-content and max-content width queries (row L4).
+    private static readonly IntrinsicWidthsFunc TenWide = static _ => new IntrinsicWidths(10, 10, DependsOnHeight: false);
+
     private static (UiTree Tree, NodeHandle Root, NodeHandle Target) BuildWrap()
     {
         var tree = new UiTree();
@@ -151,7 +154,7 @@ internal static class LayoutCost
         NodeHandle target = default;
         for (int i = 0; i < Rows * Columns; i++)
         {
-            NodeHandle leaf = tree.CreateNode(new LayoutStyle(), static (_, _) => MeasureResult.Of(10, 10));
+            NodeHandle leaf = tree.CreateNode(new LayoutStyle(), static (_, _) => MeasureResult.Of(10, 10), TenWide);
             tree.AppendChild(root, leaf);
             if (i == (Rows * Columns / 2) + (Columns / 2))
             {
@@ -226,7 +229,7 @@ internal static class LayoutCost
             tree.AppendChild(root, row);
             for (int c = 0; c < Columns; c++)
             {
-                NodeHandle leaf = tree.CreateNode(leafStyle, static (_, _) => MeasureResult.Of(10, 10));
+                NodeHandle leaf = tree.CreateNode(leafStyle, static (_, _) => MeasureResult.Of(10, 10), TenWide);
                 tree.AppendChild(row, leaf);
                 if (r == Rows / 2 && c == Columns / 2)
                 {

@@ -149,6 +149,20 @@ internal static partial class LayoutEngine
             node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
         }
 
+        // A min-content or max-content width of a leaf comes from its content widths, kept apart from the measurements (row L4).
+        // A dirty leaf dropped them when it was marked, so they are computed again from its new content.
+        if (
+            !commit
+            && input.Axis == RequestedAxis.Horizontal
+            && node.Layout.IntrinsicWidths is not null
+            && node.FirstChild.IsNone
+            && float.IsNaN(input.KnownDimensions.Width)
+            && input.Available.Width.Kind is AvailableSpaceKind.MinContent or AvailableSpaceKind.MaxContent
+        )
+        {
+            return new Size(LeafIntrinsicWidth(tree, handle, in input), 0);
+        }
+
         if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
         {
             LayoutCacheKey key = LayoutCacheKey.Of(in node, in input);

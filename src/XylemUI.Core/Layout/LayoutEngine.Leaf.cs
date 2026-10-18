@@ -46,6 +46,40 @@ internal static partial class LayoutEngine
         return ToSize(size);
     }
 
+    // The border-box width of a leaf under a min-content or max-content width, as ComputeLeaf gives it, from the content
+    // widths: kept on the node, or returned by its IntrinsicWidthsFunc, which counts as a run of the leaf.
+    private static float LeafIntrinsicWidth(UiTree tree, NodeHandle handle, in LayoutInput input)
+    {
+        ref UiNode node = ref tree.Nodes.GetRef(handle);
+        ref readonly LayoutStyle style = ref node.Layout.Style;
+        float inset = PaddingBorder(in style, input.ParentSize.Width).Horizontal;
+        float width = float.NaN;
+        float min = float.NaN;
+        float max = float.NaN;
+        if (input.SizingMode == SizingMode.InherentSize)
+        {
+            width = StyleSize(in style, input.ParentSize).Width;
+            min = MinSize(in style, input.ParentSize).Width;
+            max = MaxSize(in style, input.ParentSize).Width;
+        }
+
+        if (float.IsNaN(width))
+        {
+            float knownHeight = input.KnownDimensions.Height - PaddingBorder(in style, input.ParentSize.Width).Vertical;
+            if (!tree.MeasuresOf(handle).TryGetIntrinsicWidths(knownHeight, out IntrinsicWidths widths))
+            {
+                IntrinsicWidthsFunc intrinsic = node.Layout.IntrinsicWidths!;
+                tree.LayoutRunHook?.Invoke(handle);
+                widths = intrinsic(knownHeight);
+                tree.MeasuresOf(handle).StoreIntrinsicWidths(knownHeight, widths);
+            }
+
+            width = (input.Available.Width.Kind == AvailableSpaceKind.MinContent ? widths.Min : widths.Max) + inset;
+        }
+
+        return Math.Max(Maybe.Clamp(width, min, max), inset);
+    }
+
     // The space for the content box: a definite border-box space clamped by the node's minimum and maximum, less its padding
     // and border. A content constraint stays.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

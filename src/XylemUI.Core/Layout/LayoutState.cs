@@ -28,6 +28,12 @@ internal struct LayoutState
     public MeasureFunc? Measure;
 
     /// <summary>
+    /// Returns the widths of a leaf's content, which answer its min-content and max-content width queries without a measuring
+    /// run (row L4); <see langword="null"/> where <see cref="Measure"/> answers them.
+    /// </summary>
+    public IntrinsicWidthsFunc? IntrinsicWidths;
+
+    /// <summary>
     /// The border box of the last layout run, relative to the parent's border box.
     /// </summary>
     public Rect Rect;
