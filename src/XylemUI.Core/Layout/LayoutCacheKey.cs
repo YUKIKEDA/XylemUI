@@ -136,6 +136,13 @@ internal struct MeasureCache
     /// </summary>
     public FlexBaseMemo LayoutBase;
 
+    /// <summary>
+    /// The parent's <see cref="LayoutState.CacheGeneration"/> when an entry or the content widths for one height were
+    /// overwritten; 0 when none was. While it matches, a value the parent read may be gone, so a change of content cannot be
+    /// compared with it and goes on to the parent (design §2.4.1, row L5).
+    /// </summary>
+    public uint EvictedGeneration;
+
     private Entries _entries;
     private ushort _recentlyUsed;
     private byte _next;
@@ -171,21 +178,58 @@ internal struct MeasureCache
     }
 
     /// <summary>
-    /// Keeps the content widths returned for <paramref name="knownHeight"/>.
+    /// Keeps the content widths returned for <paramref name="knownHeight"/>. Returns <see langword="true"/> when they replace
+    /// the widths kept for another height.
     /// </summary>
-    public void StoreIntrinsicWidths(float knownHeight, IntrinsicWidths widths)
+    public bool StoreIntrinsicWidths(float knownHeight, IntrinsicWidths widths)
     {
         if (float.IsNaN(knownHeight) || !widths.DependsOnHeight)
         {
             _anyHeight = widths;
             _hasAnyHeight = true;
+            return false;
         }
-        else
-        {
-            _atHeight = widths;
-            _height = knownHeight;
-            _hasAtHeight = true;
-        }
+
+        bool overwrites = _hasAtHeight && _height != knownHeight;
+        _atHeight = widths;
+        _height = knownHeight;
+        _hasAtHeight = true;
+        return overwrites;
+    }
+
+    /// <summary>
+    /// Returns the content widths kept for every height, if any.
+    /// </summary>
+    public readonly bool TryGetAnyHeightWidths(out IntrinsicWidths widths)
+    {
+        widths = _anyHeight;
+        return _hasAnyHeight;
+    }
+
+    /// <summary>
+    /// Returns the content widths kept for one height, and that height, if any.
+    /// </summary>
+    public readonly bool TryGetAtHeightWidths(out float knownHeight, out IntrinsicWidths widths)
+    {
+        knownHeight = _height;
+        widths = _atHeight;
+        return _hasAtHeight;
+    }
+
+    /// <summary>
+    /// Gets the number of entries.
+    /// </summary>
+    public readonly int Count => _count;
+
+    /// <summary>
+    /// Returns the entry at <paramref name="index"/>, below <see cref="Count"/>.
+    /// </summary>
+    public readonly void GetEntry(int index, out LayoutCacheKey key, out RequestedAxis axis, out Size size)
+    {
+        ref readonly Entry entry = ref _entries[index];
+        key = entry.Key;
+        axis = entry.Axis;
+        size = entry.Size;
     }
 
     /// <summary>
@@ -210,9 +254,9 @@ internal struct MeasureCache
     }
 
     /// <summary>
-    /// Keeps the size of a measuring run.
+    /// Keeps the size of a measuring run. Returns <see langword="true"/> when it replaces the entry of another input.
     /// </summary>
-    public void Store(in LayoutCacheKey key, RequestedAxis axis, Size size)
+    public bool Store(in LayoutCacheKey key, RequestedAxis axis, Size size)
     {
         for (int i = 0; i < _count; i++)
         {
@@ -221,12 +265,13 @@ internal struct MeasureCache
             {
                 existing.Size = size;
                 _recentlyUsed |= (ushort)(1 << i);
-                return;
+                return false;
             }
         }
 
         int index;
-        if (_count < Capacity)
+        bool overwrites = _count == Capacity;
+        if (!overwrites)
         {
             index = _count++;
         }
@@ -250,6 +295,7 @@ internal struct MeasureCache
             Size = size,
         };
         _recentlyUsed |= (ushort)(1 << index);
+        return overwrites;
     }
 
     /// <summary>
@@ -262,6 +308,7 @@ internal struct MeasureCache
         _recentlyUsed = 0;
         _hasAnyHeight = false;
         _hasAtHeight = false;
+        EvictedGeneration = 0;
         MeasureBase = default;
         LayoutBase = default;
     }

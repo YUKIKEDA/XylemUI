@@ -25,9 +25,79 @@ internal static class Invalidation
         };
 
     /// <summary>
-    /// Marks the work a change on <paramref name="node"/> needs.
+    /// Marks the work a change on <paramref name="node"/> needs. A change of a laid-out leaf's content marks only the leaf
+    /// (<see cref="TryMarkContentChange"/>); other changes mark the path to the boundary (<see cref="MarkDirty"/>).
     /// </summary>
-    public static void Invalidate(UiTree tree, NodeHandle node, ChangeKind kind) => MarkDirty(tree, node, FlagsFor(kind));
+    public static void Invalidate(UiTree tree, NodeHandle node, ChangeKind kind)
+    {
+        DirtyFlags flags = FlagsFor(kind);
+        if (kind is ChangeKind.TextContent or ChangeKind.Font && TryMarkContentChange(tree, node, flags))
+        {
+            return;
+        }
+
+        MarkDirty(tree, node, flags);
+    }
+
+    /// <summary>
+    /// Marks a change of content on a leaf that its parent may not need to see (design §2.4.1, row L5): the leaf alone is made
+    /// dirty and a layout root, and what the parent read from it is kept in a <see cref="ContentSnapshot"/>, for the layout
+    /// pass to compare with the leaf's new values. Returns <see langword="false"/>, marking nothing, when the change must take
+    /// <see cref="MarkDirty"/>: the leaf was never laid out, is not attached, is the root or a boundary (the change stops at
+    /// it anyway), is dirty from another change, or overwrote a value its parent read (<see cref="MeasureCache.EvictedGeneration"/>).
+    /// </summary>
+    public static bool TryMarkContentChange(UiTree tree, NodeHandle handle, DirtyFlags flags)
+    {
+        ref UiNode node = ref tree.Nodes.GetRef(handle);
+        if (((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) != 0)
+        {
+            // A second change before the pass compares with the values of the last layout, kept at the first.
+            int index = tree.FindContentSnapshot(handle);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            CollectionsMarshal.AsSpan(tree.ContentSnapshots)[index].Flags |= flags;
+            node.Dirty.SelfDirty |= flags;
+            node.Dirty.SubtreeDirty |= flags;
+            return true;
+        }
+
+        if (
+            !node.IsAttached
+            || !node.Layout.WasLaidOut
+            || node.Parent.IsNone
+            || !node.FirstChild.IsNone
+            || IsLayoutBoundaryForInvalidation(tree, in node)
+        )
+        {
+            return false;
+        }
+
+        ref MeasureCache measures = ref tree.MeasuresOf(handle);
+        if (measures.EvictedGeneration != 0 && measures.EvictedGeneration == tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration)
+        {
+            return false;
+        }
+
+        tree.ContentSnapshots.Add(
+            new ContentSnapshot
+            {
+                Node = handle,
+                Flags = flags,
+                Size = new Size(node.Layout.Rect.Width, node.Layout.Rect.Height),
+                FirstBaseline = node.Layout.FirstBaseline,
+                Measures = measures,
+            }
+        );
+        node.Dirty.SelfDirty |= flags;
+        node.Dirty.SubtreeDirty |= flags;
+        node.Dirty.Epoch++;
+        DropCaches(tree, handle, ref node);
+        EnqueueLayoutRoot(tree, handle);
+        return true;
+    }
 
     /// <summary>
     /// Sets <see cref="DirtyState.SelfDirty"/> on <paramref name="origin"/>. A layout change also sets
@@ -44,7 +114,18 @@ internal static class Invalidation
             return;
         }
 
-        NodeHandle current = origin;
+        MarkPath(tree, origin, flags);
+    }
+
+    /// <summary>
+    /// Sets <see cref="DirtyState.SubtreeDirty"/> from <paramref name="from"/> up to the nearest layout boundary or the root,
+    /// drops the measurements of every node on the way, and makes that node a layout root: the part of
+    /// <see cref="MarkDirty"/> for a layout change, which a leaf whose content changed also takes from its parent when a value
+    /// the parent read differs (row L5).
+    /// </summary>
+    public static void MarkPath(UiTree tree, NodeHandle from, DirtyFlags flags)
+    {
+        NodeHandle current = from;
         while (true)
         {
             ref UiNode n = ref tree.Nodes.GetRef(current);

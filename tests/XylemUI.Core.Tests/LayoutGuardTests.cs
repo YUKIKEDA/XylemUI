@@ -173,4 +173,71 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
 
             Assert.Equal(10, tree.GetRect(target).Width);
         });
+
+    /// <summary>
+    /// In the same tree, laying out again after one leaf's content changes allocates nothing in steady state, whether the
+    /// change stops at the leaf (the same size) or goes on to its row (a new size): the kept values of row L5 reuse their
+    /// storage.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root (column) → 100 rows → 100 leaves each (10,101 nodes) with CSS's defaults, laid out at 2,000 x 2,000. The changed
+    ///   leaf's content is 10 x 10, or with "new size" 10 or 20 wide in turn. Warmed up with 20 changes.
+    ///
+    /// Steps:
+    /// - 1,100 times: change the leaf's content, invalidate it (a text change), and run the pass. Measure the bytes allocated
+    ///   on this thread in the last 1,000.
+    ///
+    /// Expected:
+    /// - 0 bytes; the leaf has the last width.
+    /// </remarks>
+    [Theory]
+    [InlineData("same size")]
+    [InlineData("new size")]
+    public void SteadyState_RelayoutAfterAContentChange_AllocatesNothing(string change) =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle target = default;
+            float width = 10;
+            for (int r = 0; r < 100; r++)
+            {
+                NodeHandle row = Box(tree, root, Row());
+                for (int c = 0; c < 100; c++)
+                {
+                    NodeHandle leaf =
+                        r == 50 && c == 50
+                            ? tree.CreateNode(
+                                new LayoutStyle(),
+                                (_, _) => MeasureResult.Of(width, 10),
+                                _ => new IntrinsicWidths(width, width, DependsOnHeight: false)
+                            )
+                            : tree.CreateNode(new LayoutStyle(), TenByTen, TenWide);
+                    tree.AppendChild(row, leaf);
+                    if (r == 50 && c == 50)
+                    {
+                        target = leaf;
+                    }
+                }
+            }
+
+            LayOut(tree, root, 2_000, 2_000);
+            bool newSize = change == "new size";
+            void Change(int i)
+            {
+                width = newSize && i % 2 == 0 ? 20 : 10;
+                Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+                LayoutEngine.RunLayoutPass(tree);
+            }
+
+            for (int i = 0; i < 20; i++)
+            {
+                Change(i);
+            }
+
+            SteadyStateAllocation.AssertNone(1_000, Change);
+
+            Assert.Equal(10, tree.GetRect(target).Width);
+        });
 }
