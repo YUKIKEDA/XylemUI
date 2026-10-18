@@ -166,6 +166,42 @@ internal static partial class LayoutEngine
         return Compute(tree, handle, in input, commit);
     }
 
+    // Reads a laid-out child's first baseline, from the top of its border box, or NaN when it has none. The parent's result
+    // depends on it as on a measurement, so the child records the read in the same way (design §2.4.1): a change inside a
+    // child of fixed size, which no measuring run reads, still reaches the parent. A container's baseline comes from a child of
+    // its own and is read here when a parent asks for it (as Flutter's getDistanceToBaseline), so the marks follow the
+    // baselines that are read: a container whose baseline no parent reads does not mark its first child.
+    private static float ReadBaseline(UiTree tree, NodeHandle handle)
+    {
+        ref UiNode node = ref tree.Nodes.GetRef(handle);
+        node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
+        NodeHandle child = node.BaselineChild;
+        if (child.IsNone)
+        {
+            return node.Layout.FirstBaseline;
+        }
+
+        // A flex item without a baseline gives one synthesized from its border box; a block goes on to its next child. The refs
+        // are taken again after each read (design §2.5).
+        if (!node.Layout.BaselineFromFirstChildWithOne)
+        {
+            float inner = ReadBaseline(tree, child);
+            Rect rect = tree.Nodes.GetRef(child).Layout.Rect;
+            return rect.Y + Maybe.Or(inner, rect.Height);
+        }
+
+        for (; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
+        {
+            float inner = ReadBaseline(tree, child);
+            if (!float.IsNaN(inner))
+            {
+                return tree.Nodes.GetRef(child).Layout.Rect.Y + inner;
+            }
+        }
+
+        return float.NaN;
+    }
+
     // Measures one axis of a child.
     private static float MeasureChild(
         UiTree tree,
@@ -200,10 +236,22 @@ internal static partial class LayoutEngine
         NodeHandle firstChild = before.FirstChild;
 
         tree.LayoutRunHook?.Invoke(handle);
-        Size size =
-            firstChild.IsNone ? ComputeLeaf(in style, measure, in input, commit)
-            : style.Algorithm is LayoutAlgorithm.Flex flex ? ComputeFlex(tree, in style, flex.Props, firstChild, in input, commit)
-            : ComputeBlock(tree, in style, firstChild, in input, commit);
+        float baseline = float.NaN;
+        NodeHandle baselineChild = default;
+        Size size;
+        if (firstChild.IsNone)
+        {
+            size = ComputeLeaf(in style, measure, in input, commit, out baseline);
+        }
+        else if (style.Algorithm is LayoutAlgorithm.Flex flex)
+        {
+            size = ComputeFlex(tree, in style, flex.Props, firstChild, in input, commit, out baselineChild);
+        }
+        else
+        {
+            size = ComputeBlock(tree, in style, ((LayoutAlgorithm.Block)style.Algorithm).Props, firstChild, in input, commit);
+            baselineChild = firstChild;
+        }
 
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         if (!commit)
@@ -216,6 +264,9 @@ internal static partial class LayoutEngine
         n.Layout.Rect = n.Layout.Rect with { Width = size.Width, Height = size.Height };
         n.Layout.LastInput = input;
         n.Layout.WasLaidOut = true;
+        n.Layout.FirstBaseline = baseline;
+        n.BaselineChild = baselineChild;
+        n.Layout.BaselineFromFirstChildWithOne = !firstChild.IsNone && style.Algorithm is LayoutAlgorithm.Block;
         n.Layout.CachedComputedBoundary = input.IsExact;
 
         // Marked again while it was laid out: the flags stay, and its new request runs in the next cycle.

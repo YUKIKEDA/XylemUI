@@ -6,9 +6,10 @@ internal static partial class LayoutEngine
 {
     // A node without children (Taffy's compute_leaf_layout): its known or styled size on each axis, otherwise its content's (the
     // measure function's, 0 without one) plus its padding and border; clamped by its minimum and maximum, and never smaller than
-    // its padding and border.
-    private static Size ComputeLeaf(in LayoutStyle style, MeasureFunc? measure, in LayoutInput input, bool commit)
+    // its padding and border. Its first baseline is its content's, below the padding and border.
+    private static Size ComputeLeaf(in LayoutStyle style, MeasureFunc? measure, in LayoutInput input, bool commit, out float baseline)
     {
+        baseline = float.NaN;
         Edges paddingBorder = PaddingBorder(in style, input.ParentSize.Width);
         Size inset = paddingBorder.Sum();
 
@@ -36,7 +37,9 @@ internal static partial class LayoutEngine
         if (measure is not null)
         {
             OptionalSize knownContent = commit ? OptionalSize.None : input.KnownDimensions.Minus(inset);
-            content = measure(knownContent, available).Size;
+            MeasureResult measured = measure(knownContent, available);
+            content = measured.Size;
+            baseline = paddingBorder.Top + measured.FirstBaseline;
         }
 
         OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + inset.Width, content.Height + inset.Height)).Clamp(min, max).AtLeast(inset);

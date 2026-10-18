@@ -160,6 +160,24 @@ internal readonly record struct LengthPercentageAuto(LengthKind Kind, float Valu
     public static LengthPercentageAuto Percent(float fraction) => new(LengthKind.Percent, fraction);
 
     /// <summary>
+    /// Gets a value indicating whether the length is <see cref="LengthKind.Auto"/>.
+    /// </summary>
+    public bool IsAuto => Kind == LengthKind.Auto;
+
+    /// <summary>
+    /// Returns the pixels against <paramref name="basis"/>; <see cref="LengthKind.Auto"/> and a percentage of an unknown (NaN)
+    /// basis are 0 (an automatic margin before the free space is shared).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public float ResolveOrZero(float basis) =>
+        Kind switch
+        {
+            LengthKind.Px => Value,
+            LengthKind.Percent when !float.IsNaN(basis) => basis * Value,
+            _ => 0,
+        };
+
+    /// <summary>
     /// Returns the pixels against <paramref name="basis"/>, or NaN for <see cref="LengthKind.Auto"/> and for a percentage of an
     /// unknown (NaN) basis.
     /// </summary>

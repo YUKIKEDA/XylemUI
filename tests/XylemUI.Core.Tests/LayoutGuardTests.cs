@@ -12,6 +12,19 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
         Padding = EdgeInsets<LengthPercentage>.All(LengthPercentage.Percent(0.001f)),
     };
 
+    private static readonly LayoutStyle Wrapping = new()
+    {
+        Algorithm = new LayoutAlgorithm.Flex(
+            new FlexProps
+            {
+                Wrap = FlexWrap.Wrap,
+                JustifyContent = new AlignContent(AlignContentKeyword.Center),
+                ColumnGap = LengthPercentage.Px(2),
+                RowGap = LengthPercentage.Px(2),
+            }
+        ),
+    };
+
     private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
     /// <summary>
@@ -93,12 +106,13 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
 
     /// <summary>
     /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state, with CSS's
-    /// defaults (stretch, the automatic minimum size) and with percentages.
+    /// defaults (stretch, the automatic minimum size), with percentages, and with wrapping rows.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - root (column) → 100 rows → 100 leaves each (10,101 nodes), laid out at 2,000 x 2,000. With percent, every leaf other
-    ///   than the changed one is 1 % wide with a 0.1 % padding. Warmed up with 20 changes.
+    ///   than the changed one is 1 % wide with a 0.1 % padding. With wrap, the rows wrap, every other leaf is 30 wide (3,000
+    ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. Warmed up with 20 changes.
     ///
     /// Steps:
     /// - 1,000 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread.
@@ -107,9 +121,10 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     /// - 0 bytes; the leaf has the last width.
     /// </remarks>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(bool percent) =>
+    [InlineData("defaults")]
+    [InlineData("percent")]
+    [InlineData("wrap")]
+    public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(string scene) =>
         ui.Invoke(() =>
         {
             var tree = new UiTree();
@@ -117,10 +132,16 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
             NodeHandle target = default;
             for (int r = 0; r < 100; r++)
             {
-                NodeHandle row = Box(tree, root, Row());
+                NodeHandle row = Box(tree, root, scene == "wrap" ? Wrapping : Row());
                 for (int c = 0; c < 100; c++)
                 {
-                    NodeHandle leaf = tree.CreateNode(percent ? Percent : new LayoutStyle(), TenByTen);
+                    LayoutStyle style = scene switch
+                    {
+                        "percent" => Percent,
+                        "wrap" => new LayoutStyle { Width = Length.Px(30) },
+                        _ => new LayoutStyle(),
+                    };
+                    NodeHandle leaf = tree.CreateNode(style, TenByTen);
                     tree.AppendChild(row, leaf);
                     if (r == 50 && c == 50)
                     {

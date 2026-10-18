@@ -32,6 +32,17 @@ internal static class EdgeInsets
     public static EdgeInsets<LengthPercentage> All(float pixels) => EdgeInsets<LengthPercentage>.All(LengthPercentage.Px(pixels));
 
     /// <summary>
+    /// Returns a margin of <paramref name="pixels"/> on every side.
+    /// </summary>
+    public static EdgeInsets<LengthPercentageAuto> Margin(float pixels) => EdgeInsets<LengthPercentageAuto>.All(LengthPercentageAuto.Px(pixels));
+
+    /// <summary>
+    /// Returns a margin of the given pixels on each side.
+    /// </summary>
+    public static EdgeInsets<LengthPercentageAuto> Margin(float left, float top, float right, float bottom) =>
+        new(LengthPercentageAuto.Px(left), LengthPercentageAuto.Px(top), LengthPercentageAuto.Px(right), LengthPercentageAuto.Px(bottom));
+
+    /// <summary>
     /// Returns the given pixels on each side.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -45,6 +56,21 @@ internal static class EdgeInsets
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Edges ResolveOrZero(in EdgeInsets<LengthPercentage> insets, float basis) =>
         new(insets.Left.ResolveOrZero(basis), insets.Top.ResolveOrZero(basis), insets.Right.ResolveOrZero(basis), insets.Bottom.ResolveOrZero(basis));
+
+    /// <summary>
+    /// Returns the pixels of every side of a margin against <paramref name="basis"/>; an automatic side is 0 until the free
+    /// space is shared.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Edges ResolveOrZero(in EdgeInsets<LengthPercentageAuto> insets, float basis) =>
+        new(insets.Left.ResolveOrZero(basis), insets.Top.ResolveOrZero(basis), insets.Right.ResolveOrZero(basis), insets.Bottom.ResolveOrZero(basis));
+
+    /// <summary>
+    /// Returns a value indicating whether a side is a percentage.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool UsesPercent(in EdgeInsets<LengthPercentageAuto> insets) =>
+        insets.Left.IsPercent || insets.Top.IsPercent || insets.Right.IsPercent || insets.Bottom.IsPercent;
 
     /// <summary>
     /// Returns a value indicating whether a side is a percentage.

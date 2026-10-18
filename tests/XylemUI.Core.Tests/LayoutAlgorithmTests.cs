@@ -30,8 +30,8 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle { Padding = EdgeInsets.All(10) });
-            NodeHandle a = Leaf(tree, root, 50, 20, new LayoutStyle { Margin = EdgeInsets.All(5) });
-            NodeHandle b = Box(tree, root, new LayoutStyle { Height = Length.Px(30), Margin = EdgeInsets.Px(0, 10, 0, 0) });
+            NodeHandle a = Leaf(tree, root, 50, 20, new LayoutStyle { Margin = EdgeInsets.Margin(5) });
+            NodeHandle b = Box(tree, root, new LayoutStyle { Height = Length.Px(30), Margin = EdgeInsets.Margin(0, 10, 0, 0) });
 
             LayOut(tree, root, 300, 200);
 
@@ -61,8 +61,8 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle { Padding = EdgeInsets.All(10) });
-            NodeHandle a = Box(tree, root, new LayoutStyle { Margin = EdgeInsets.All(5), Padding = EdgeInsets.All(3) });
-            NodeHandle b = Box(tree, a, new LayoutStyle { Margin = EdgeInsets.Px(4, 0, 0, 0) });
+            NodeHandle a = Box(tree, root, new LayoutStyle { Margin = EdgeInsets.Margin(5), Padding = EdgeInsets.All(3) });
+            NodeHandle b = Box(tree, a, new LayoutStyle { Margin = EdgeInsets.Margin(4, 0, 0, 0) });
             NodeHandle leaf = Leaf(tree, b, 10, 10);
 
             LayOut(tree, root, 300, 200);
@@ -156,7 +156,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             NodeHandle column = Box(tree, root, Column() with { Padding = EdgeInsets.All(4) });
             NodeHandle first = Leaf(tree, column, 30, 10);
-            NodeHandle second = Leaf(tree, column, 40, 20, new LayoutStyle { Margin = EdgeInsets.Px(0, 0, 0, 6) });
+            NodeHandle second = Leaf(tree, column, 40, 20, new LayoutStyle { Margin = EdgeInsets.Margin(0, 0, 0, 6) });
 
             LayOut(tree, root, 300, 500);
 
@@ -309,5 +309,71 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             Assert.Equal(new Rect(0, 30, 300, 10), tree.GetRect(b));
             Assert.True(tree.Nodes.GetRef(b).Versions.Layout > bVersion);
             Assert.True(tree.Nodes.GetRef(root).Versions.DescendantLayout > rootDescendants);
+        });
+
+    /// <summary>
+    /// In a `wrap-reverse` row, a stretched item that its maximum height stops short of the line goes to the line's cross end,
+    /// the flex-start of a flipped cross axis (CSS Flexbox §8.3). Taffy's XML tests have no such case; the layout skips the
+    /// cross offsets when every item is stretched, but not under `wrap-reverse`.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, `flex-wrap: wrap-reverse`, window 100 x 100. One leaf 50 x 10, maximum height 40.
+    ///
+    /// Steps:
+    /// - Lay out.
+    ///
+    /// Expected:
+    /// - One line, stretched by `align-content: stretch` to 100. The leaf stretches to its maximum, 40, and the free 60 goes
+    ///   before it: (0, 60), 50 x 40.
+    /// </remarks>
+    [Fact]
+    public void WrapReverse_StretchedItemStoppedByItsMaximum_GoesToTheCrossEnd() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { Wrap = FlexWrap.WrapReverse }) }
+            );
+            NodeHandle leaf = Leaf(tree, root, 50, 10, new LayoutStyle { MaxHeight = LengthPercentageAuto.Px(40) });
+
+            LayOut(tree, root, 100, 100);
+
+            Assert.Equal(new Rect(0, 60, 50, 40), tree.GetRect(leaf));
+        });
+
+    /// <summary>
+    /// A block's first baseline is that of its first child that has one: a child without a baseline before it is passed over,
+    /// not synthesized from its border box (CSS Box Alignment §9.1).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, `align-items: baseline`, window 300 x 100. A: a block → leaf E, 50 x 10, no baseline; leaf T, 50 x 10,
+    ///   first baseline 8. B: a leaf 50 x 20, first baseline 8.
+    ///
+    /// Steps:
+    /// - Lay out.
+    ///
+    /// Expected:
+    /// - A's baseline is T's: 10 + 8 = 18. A at y 0, B at y 18 − 8 = 10.
+    /// </remarks>
+    [Fact]
+    public void BlockBaseline_PassesOverAChildWithoutOne() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) }
+            );
+            NodeHandle a = Box(tree, root, new LayoutStyle());
+            Leaf(tree, a, 50, 10);
+            NodeHandle t = tree.CreateNode(new LayoutStyle(), static (_, _) => new MeasureResult(new Size(50, 10), 8));
+            tree.AppendChild(a, t);
+            NodeHandle b = tree.CreateNode(new LayoutStyle(), static (_, _) => new MeasureResult(new Size(50, 20), 8));
+            tree.AppendChild(root, b);
+
+            LayOut(tree, root, 300, 100);
+
+            Assert.Equal((0f, 10f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
         });
 }

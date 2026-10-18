@@ -1,18 +1,28 @@
-// The layout scene of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, roadmap row L1a) in Flutter's render
-// tree: a vertical RenderFlex of 100 horizontal RenderFlexes of 100 boxes of 10 x 10, laid out at 2,000 x 2,000 under a
-// PipelineOwner (the layout pass alone, no widgets and no frame). The three times of the comparison: the first layout, a layout
-// after one box's width changes (PipelineOwner.flushLayout), and a layout at a new width.
+// The layout scenes of XylemUI's `layout` scenario (benchmarks/XylemUI.E2E/LayoutCost.cs, roadmap rows L1a and L1b) in Flutter's
+// render tree, laid out at 2,000 x 2,000 under a PipelineOwner (the layout pass alone, no widgets and no frame): a vertical
+// RenderFlex of 100 horizontal RenderFlexes of 100 boxes of 10 x 10, and a RenderWrap of 10,000 boxes (the `wrap_` figures).
+// The three times of the comparison: the first layout, a layout after one box's width changes (PipelineOwner.flushLayout), and
+// a layout at a new width.
 import 'dart:io';
 
 import 'package:flutter/rendering.dart';
 
 void runLayoutScene(String output) {
+  final flex = _measure(_build);
+  final wrap = _measure(_buildWrap);
+  File(output).writeAsStringSync(
+    '{"name":"Flutter","first_us_p50":${flex.$1},"change_us_p50":${flex.$2},"width_us_p50":${flex.$3},'
+    '"wrap_first_us_p50":${wrap.$1},"wrap_change_us_p50":${wrap.$2},"wrap_width_us_p50":${wrap.$3}}\n',
+  );
+}
+
+(double, double, double) _measure((RenderBox, RenderConstrainedBox) Function() build) {
   final first = <double>[];
   final change = <double>[];
   final width = <double>[];
   for (var s = 0; s < 18; s++) {
     final owner = PipelineOwner();
-    final (root, target) = _build();
+    final (root, target) = build();
     owner.rootNode = root;
     final watch = Stopwatch()..start();
     root.layout(BoxConstraints.tight(const Size(2000, 2000)));
@@ -48,12 +58,10 @@ void runLayoutScene(String output) {
     }
   }
 
-  File(output).writeAsStringSync(
-    '{"name":"Flutter","first_us_p50":${_median(first)},"change_us_p50":${_median(change)},"width_us_p50":${_median(width)}}\n',
-  );
+  return (_median(first), _median(change), _median(width));
 }
 
-(RenderFlex, RenderConstrainedBox) _build() {
+(RenderBox, RenderConstrainedBox) _build() {
   RenderConstrainedBox? target;
   final rows = <RenderBox>[];
   for (var r = 0; r < 100; r++) {
@@ -69,6 +77,19 @@ void runLayoutScene(String output) {
   }
   final root = RenderFlex(direction: Axis.vertical, textDirection: TextDirection.ltr, children: rows);
   return (root, target!);
+}
+
+(RenderBox, RenderConstrainedBox) _buildWrap() {
+  RenderConstrainedBox? target;
+  final boxes = <RenderBox>[];
+  for (var i = 0; i < 10000; i++) {
+    final box = RenderConstrainedBox(additionalConstraints: const BoxConstraints.tightFor(width: 10, height: 10));
+    if (i == 5050) {
+      target = box;
+    }
+    boxes.add(box);
+  }
+  return (RenderWrap(textDirection: TextDirection.ltr, children: boxes), target!);
 }
 
 double _median(List<double> values) {

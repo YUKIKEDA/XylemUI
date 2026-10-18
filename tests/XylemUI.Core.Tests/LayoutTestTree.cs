@@ -38,6 +38,6 @@ internal static class LayoutTestTree
         return ((dirty.SelfDirty | dirty.SubtreeDirty) & DirtyFlags.Layout) == 0;
     }
 
-    // `default(LayoutStyle)` skips the constructor, so its FlexShrink would be 0 instead of 1.
+    // `default(LayoutStyle)` skips the constructor, so its FlexShrink would be 0 instead of 1 and its margins automatic.
     private static LayoutStyle StyleOrDefault(LayoutStyle style) => style == default ? new LayoutStyle() : style;
 }

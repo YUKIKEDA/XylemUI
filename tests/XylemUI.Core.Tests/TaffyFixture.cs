@@ -128,10 +128,39 @@ internal static class TaffyFixture
     private static LayoutStyle StyleOf(XElement e) =>
         new()
         {
-            Algorithm =
-                e.Attribute("display")?.Value is "block" or "flow-root" ? LayoutAlgorithm.Block.Instance
-                : e.Attribute("flex-direction")?.Value == "column" ? LayoutAlgorithm.Flex.Column
-                : LayoutAlgorithm.Flex.Row,
+            Algorithm = e.Attribute("display")?.Value is "block" or "flow-root"
+                ? new LayoutAlgorithm.Block(
+                    new BlockProps
+                    {
+                        JustifyItems = ParseAlignItems(e, "justify-items") ?? default,
+                        AlignContent = ParseAlignContent(e, "align-content"),
+                    }
+                )
+                : new LayoutAlgorithm.Flex(
+                    new FlexProps
+                    {
+                        Direction = e.Attribute("flex-direction")?.Value switch
+                        {
+                            "column" => FlexDirection.Column,
+                            "row-reverse" => FlexDirection.RowReverse,
+                            "column-reverse" => FlexDirection.ColumnReverse,
+                            _ => FlexDirection.Row,
+                        },
+                        Wrap = e.Attribute("flex-wrap")?.Value switch
+                        {
+                            "wrap" => FlexWrap.Wrap,
+                            "wrap-reverse" => FlexWrap.WrapReverse,
+                            _ => FlexWrap.NoWrap,
+                        },
+                        JustifyContent = ParseAlignContent(e, "justify-content"),
+                        AlignItems = ParseAlignItems(e, "align-items") ?? default,
+                        AlignContent = ParseAlignContent(e, "align-content"),
+                        ColumnGap = ParseLengthPercentage(e.Attribute("column-gap")?.Value),
+                        RowGap = ParseLengthPercentage(e.Attribute("row-gap")?.Value),
+                    }
+                ),
+            AlignSelf = ParseAlignItems(e, "align-self"),
+            JustifySelf = ParseAlignItems(e, "justify-self"),
             Width = ParseLength(e, "width"),
             Height = ParseLength(e, "height"),
             MinWidth = ParseLengthPercentageAuto(e, "min-width"),
@@ -140,7 +169,12 @@ internal static class TaffyFixture
             MaxHeight = ParseLengthPercentageAuto(e, "max-height"),
             Padding = ParseInsets(e, "padding"),
             Border = ParseInsets(e, "border"),
-            Margin = ParseInsets(e, "margin"),
+            Margin = new(
+                ParseLengthPercentageAuto(e, "margin-left", zero: true),
+                ParseLengthPercentageAuto(e, "margin-top", zero: true),
+                ParseLengthPercentageAuto(e, "margin-right", zero: true),
+                ParseLengthPercentageAuto(e, "margin-bottom", zero: true)
+            ),
             FlexGrow = ParseFloat(e.Attribute("flex-grow")?.Value, 0),
             FlexShrink = ParseFloat(e.Attribute("flex-shrink")?.Value, 1),
             FlexBasis = ParseLength(e, "flex-basis"),
@@ -157,9 +191,11 @@ internal static class TaffyFixture
             string value => Length.Px(ParsePx(value)),
         };
 
-    private static LengthPercentageAuto ParseLengthPercentageAuto(XElement e, string name) =>
+    // An absent minimum or maximum is auto; an absent margin is 0.
+    private static LengthPercentageAuto ParseLengthPercentageAuto(XElement e, string name, bool zero = false) =>
         e.Attribute(name)?.Value switch
         {
+            null when zero => LengthPercentageAuto.Px(0),
             null or "auto" => LengthPercentageAuto.Auto,
             string value when value.EndsWith('%') => LengthPercentageAuto.Percent(ParseFloat(value[..^1], 0) / 100),
             string value => LengthPercentageAuto.Px(ParsePx(value)),
@@ -180,6 +216,66 @@ internal static class TaffyFixture
             _ when value.EndsWith('%') => LengthPercentage.Percent(ParseFloat(value[..^1], 0) / 100),
             _ => LengthPercentage.Px(ParsePx(value)),
         };
+
+    // "auto" (an item's alignment that follows its container) and an absent alignment are null.
+    private static AlignItems? ParseAlignItems(XElement e, string name)
+    {
+        string? value = e.Attribute(name)?.Value;
+        if (value is null or "auto")
+        {
+            return null;
+        }
+
+        (bool safe, string keyword) = SplitSafety(value);
+        return new AlignItems(
+            keyword switch
+            {
+                "normal" => AlignItemsKeyword.Normal,
+                "start" => AlignItemsKeyword.Start,
+                "end" => AlignItemsKeyword.End,
+                "flex-start" => AlignItemsKeyword.FlexStart,
+                "flex-end" => AlignItemsKeyword.FlexEnd,
+                "center" => AlignItemsKeyword.Center,
+                "baseline" => AlignItemsKeyword.Baseline,
+                "stretch" => AlignItemsKeyword.Stretch,
+                _ => throw new InvalidOperationException($"The alignment {value} is not read by these tests."),
+            },
+            safe
+        );
+    }
+
+    private static AlignContent ParseAlignContent(XElement e, string name)
+    {
+        string? value = e.Attribute(name)?.Value;
+        if (value is null)
+        {
+            return default;
+        }
+
+        (bool safe, string keyword) = SplitSafety(value);
+        return new AlignContent(
+            keyword switch
+            {
+                "normal" => AlignContentKeyword.Normal,
+                "start" => AlignContentKeyword.Start,
+                "end" => AlignContentKeyword.End,
+                "flex-start" => AlignContentKeyword.FlexStart,
+                "flex-end" => AlignContentKeyword.FlexEnd,
+                "center" => AlignContentKeyword.Center,
+                "stretch" => AlignContentKeyword.Stretch,
+                "space-between" => AlignContentKeyword.SpaceBetween,
+                "space-around" => AlignContentKeyword.SpaceAround,
+                "space-evenly" => AlignContentKeyword.SpaceEvenly,
+                _ => throw new InvalidOperationException($"The distribution {value} is not read by these tests."),
+            },
+            safe
+        );
+    }
+
+    private static (bool Safe, string Keyword) SplitSafety(string value) =>
+        value.StartsWith("safe ", StringComparison.Ordinal) ? (true, value[5..])
+        : value.StartsWith("unsafe ", StringComparison.Ordinal) ? (false, value[7..])
+        : (false, value);
 
     private static AvailableSpace ParseViewport(string? value) =>
         value switch

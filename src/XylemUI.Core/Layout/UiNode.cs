@@ -48,6 +48,15 @@ internal struct UiNode
     public LayoutState Layout;
 
     /// <summary>
+    /// The child whose first baseline gives this container's in the last layout run, read when a parent reads this node's
+    /// (design §2.4.1); none for a leaf, whose <see cref="LayoutState.FirstBaseline"/> is its own. Read it with
+    /// <see cref="LayoutState.BaselineFromFirstChildWithOne"/>, which says how the child gives the baseline. It belongs to the
+    /// layout part, but sits here: the runtime does not load a struct field of <see cref="Layout"/>'s type that holds a handle
+    /// of <see cref="UiNode"/> (a <see cref="TypeLoadException"/>).
+    /// </summary>
+    public NodeHandle BaselineChild;
+
+    /// <summary>
     /// The versions that validate cached results.
     /// </summary>
     public NodeVersions Versions;

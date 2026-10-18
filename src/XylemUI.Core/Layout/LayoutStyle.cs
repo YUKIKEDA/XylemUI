@@ -7,8 +7,8 @@ namespace XylemUI;
 internal readonly record struct LayoutStyle
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="LayoutStyle"/> struct with the block algorithm, every length auto, and a flex
-    /// shrink of 1.
+    /// Initializes a new instance of the <see cref="LayoutStyle"/> struct with the block algorithm, every length auto, no margin,
+    /// and a flex shrink of 1.
     /// </summary>
     public LayoutStyle() { }
 
@@ -59,9 +59,10 @@ internal readonly record struct LayoutStyle
     public EdgeInsets<LengthPercentage> Border { get; init; }
 
     /// <summary>
-    /// Gets the space around the border box, inside the parent.
+    /// Gets the space around the border box, inside the parent: 0 on every side by default (CSS's initial value), not
+    /// <see cref="LengthPercentageAuto.Auto"/>, the default of the side's type.
     /// </summary>
-    public EdgeInsets<LengthPercentage> Margin { get; init; }
+    public EdgeInsets<LengthPercentageAuto> Margin { get; init; } = EdgeInsets.Margin(0);
 
     /// <summary>
     /// Gets the share of a flex container's free space this node takes when there is room.
@@ -78,6 +79,18 @@ internal readonly record struct LayoutStyle
     /// the content.
     /// </summary>
     public Length FlexBasis { get; init; }
+
+    /// <summary>
+    /// Gets where the node goes across its flex line, or <see langword="null"/> (CSS's <c>auto</c>) to follow the container's
+    /// <see cref="FlexProps.AlignItems"/>.
+    /// </summary>
+    public AlignItems? AlignSelf { get; init; }
+
+    /// <summary>
+    /// Gets where the node goes along its block's width, or <see langword="null"/> (CSS's <c>auto</c>) to follow the block's
+    /// <see cref="BlockProps.JustifyItems"/>.
+    /// </summary>
+    public AlignItems? JustifySelf { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether the node's size cannot depend on its content: both sides fixed (design §2.4, the
