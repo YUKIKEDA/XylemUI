@@ -414,6 +414,150 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
             Assert.Equal((0f, 5f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
         });
 
+    /// <summary>
+    /// A row that reads the baseline of an item of fixed size marks the item, though no measuring run reads it: a change of the
+    /// baseline inside the item reaches the row, and the sibling moves (design §2.4.1, PR #91's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, `align-items: baseline`, window 300 x 100. A: a block 50 x 40 (fixed, so a structural boundary; minimum
+    ///   width 0 and shrink 0, so that no automatic minimum measures it) → leaf L, 10 x 10 fixed, first baseline b (b = 8 at
+    ///   first). B: a leaf 50 x 20 with the same minimum and shrink, first baseline 8. Laid out: both baselines are 8, so A and
+    ///   B are at y 0.
+    ///
+    /// Steps:
+    /// - Set b to 18 and invalidate L's content; run the pass.
+    ///
+    /// Expected:
+    /// - A's baseline is 18: B at y 18 − 8 = 10, the same as a layout of the tree from the start.
+    /// </remarks>
+    [Fact]
+    public void ReadBaseline_OfAnItemOfFixedSize_ReachesTheSiblings() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(BaselineRow());
+            float baseline = 8;
+            NodeHandle a = Box(tree, root, FixedItem(50, 40));
+            NodeHandle leaf = tree.CreateNode(FixedItem(10, 10), (_, _) => new MeasureResult(new Size(10, 10), baseline));
+            tree.AppendChild(a, leaf);
+            NodeHandle b = tree.CreateNode(FixedItem(50, 20), static (_, _) => new MeasureResult(new Size(50, 20), 8));
+            tree.AppendChild(root, b);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal((0f, 0f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
+
+            baseline = 18;
+            Invalidation.Invalidate(tree, leaf, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal((0f, 10f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
+        });
+
+    /// <summary>
+    /// A column takes its first item's baseline and marks the item; the row that reads the column's baseline marks the column:
+    /// a change of the baseline of the column's first item reaches the row (design §2.4.1, PR #91's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, `align-items: baseline`, window 300 x 100. C: a column 50 x 40 (fixed, minimum width 0, shrink 0) → leaf L,
+    ///   50 x 10 fixed, first baseline b (b = 8 at first). B: a leaf 50 x 20 with the same minimum and shrink, first baseline 8.
+    ///   Laid out: C's baseline is L's, 8, so C and B are at y 0.
+    ///
+    /// Steps:
+    /// - Set b to 18 and invalidate L's content; run the pass.
+    ///
+    /// Expected:
+    /// - C's baseline is 18: B at y 10.
+    /// </remarks>
+    [Fact]
+    public void ReadBaseline_OfAColumnsFirstItem_ReachesTheRow() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(BaselineRow());
+            float baseline = 8;
+            NodeHandle column = Box(
+                tree,
+                root,
+                FixedItem(50, 40) with
+                {
+                    Algorithm = new LayoutAlgorithm.Flex(new FlexProps { Direction = FlexDirection.Column }),
+                }
+            );
+            NodeHandle leaf = tree.CreateNode(FixedItem(50, 10), (_, _) => new MeasureResult(new Size(50, 10), baseline));
+            tree.AppendChild(column, leaf);
+            NodeHandle b = tree.CreateNode(FixedItem(50, 20), static (_, _) => new MeasureResult(new Size(50, 20), 8));
+            tree.AppendChild(root, b);
+            LayOut(tree, root, 300, 100);
+            Assert.Equal((0f, 0f), (tree.GetRect(column).Y, tree.GetRect(b).Y));
+
+            baseline = 18;
+            Invalidation.Invalidate(tree, leaf, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal((0f, 10f), (tree.GetRect(column).Y, tree.GetRect(b).Y));
+        });
+
+    /// <summary>
+    /// When the row that read a baseline is laid out from its cache, it reads nothing again, and the mark of the earlier read
+    /// still holds: a later change of the baseline reaches the row (design §2.4.1, as for a measurement).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: column, window 300 x 300 → P: row, `align-items: baseline` → A: a block 50 x 40 (fixed, minimum width 0, shrink
+    ///   0) → leaf L, 10 x 10 fixed, first baseline b (b = 8 at first); P → B: a leaf 50 x 20 with the same minimum and shrink,
+    ///   first baseline 8; root → sibling S, a leaf 10 x 10. Laid out. A hook records each run.
+    ///
+    /// Steps:
+    /// - Change S's style to height 20 and run the pass: root lays out again, and P hits its cache.
+    /// - Set b to 18, invalidate L's content, and run the pass.
+    ///
+    /// Expected:
+    /// - In the first pass P did not run.
+    /// - After the second, B is at y 10 in P.
+    /// </remarks>
+    [Fact]
+    public void ReadBaseline_AfterTheParentsCacheHit_StillReachesTheParent() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle parent = Box(tree, root, BaselineRow());
+            float baseline = 8;
+            NodeHandle a = Box(tree, parent, FixedItem(50, 40));
+            NodeHandle leaf = tree.CreateNode(FixedItem(10, 10), (_, _) => new MeasureResult(new Size(10, 10), baseline));
+            tree.AppendChild(a, leaf);
+            NodeHandle b = tree.CreateNode(FixedItem(50, 20), static (_, _) => new MeasureResult(new Size(50, 20), 8));
+            tree.AppendChild(parent, b);
+            NodeHandle sibling = Leaf(tree, root, 10, 10);
+            LayOut(tree, root, 300, 300);
+            var ran = new List<NodeHandle>();
+            tree.LayoutRunHook = ran.Add;
+
+            tree.SetStyle(sibling, new LayoutStyle { Height = Length.Px(20) });
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.DoesNotContain(parent, ran);
+
+            baseline = 18;
+            Invalidation.Invalidate(tree, leaf, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(10, tree.GetRect(b).Y);
+        });
+
+    private static LayoutStyle BaselineRow() =>
+        new() { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) };
+
+    // A fixed size, with no automatic minimum and no shrink, so that no measuring run reads the node.
+    private static LayoutStyle FixedItem(float width, float height) =>
+        new()
+        {
+            Width = Length.Px(width),
+            Height = Length.Px(height),
+            MinWidth = LengthPercentageAuto.Px(0),
+            FlexShrink = 0,
+        };
+
     private static LayoutStyle Flexible() => new() { FlexBasis = Length.Px(0), FlexGrow = 1 };
 
     private static float MinContentOr(AvailableSize available, float minContent) =>

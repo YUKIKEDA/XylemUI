@@ -33,10 +33,16 @@ internal struct LayoutState
     public Rect Rect;
 
     /// <summary>
-    /// The first baseline of the last layout run, from the top of the border box, or NaN when the node has none (a parent
-    /// synthesizes one from the border box, CSS Flexbox §9.4).
+    /// A leaf's first baseline of the last layout run, from the top of the border box, or NaN when it has none (a parent
+    /// synthesizes one from the border box, CSS Flexbox §9.4). A container's comes from <see cref="UiNode.BaselineChild"/>.
     /// </summary>
     public float FirstBaseline;
+
+    /// <summary>
+    /// The node is a block: it takes the baseline of its first child that has one, from <see cref="UiNode.BaselineChild"/>
+    /// on. A flex container takes <see cref="UiNode.BaselineChild"/>'s, synthesized from its border box when it has none.
+    /// </summary>
+    public bool BaselineFromFirstChildWithOne;
 
     /// <summary>
     /// The parent decided both sides in the last layout run (design §2.4.1, a computed boundary unless the parent read the

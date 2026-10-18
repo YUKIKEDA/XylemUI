@@ -6,7 +6,8 @@ namespace XylemUI;
 internal static partial class LayoutEngine
 {
     // CSS Flexbox §9 (Taffy's compute_flexbox_layout, design §3.2). The steps keep the numbers of §9. A layout run also returns
-    // the container's first baseline (§8.5), NaN when it has no item.
+    // the item whose first baseline gives the container's (§8.5), none when it has no item; the baseline itself is read only
+    // when a parent asks for it (ReadBaseline).
     private static Size ComputeFlex(
         UiTree tree,
         in LayoutStyle style,
@@ -14,10 +15,10 @@ internal static partial class LayoutEngine
         NodeHandle firstChild,
         in LayoutInput input,
         bool commit,
-        out float baseline
+        out NodeHandle baselineItem
     )
     {
-        baseline = float.NaN;
+        baselineItem = default;
         OptionalSize parent = input.ParentSize;
         Size inset = PaddingBorder(in style, parent.Width).Sum();
         OptionalSize min = MinSize(in style, parent);
@@ -159,7 +160,7 @@ internal static partial class LayoutEngine
             // 9.6.16 Align the lines, then the final layout of each item.
             AlignLines(lines, innerCross, totalLineCross, in constants);
             FinalLayoutPass(tree, items, lines, containerSize, in constants);
-            baseline = ContainerBaseline(items, lines, in constants);
+            baselineItem = BaselineItem(items, lines, in constants);
             return containerSize;
         }
         finally
@@ -833,8 +834,8 @@ internal static partial class LayoutEngine
     }
 
     // The first baselines of the items that align by them, in a row's line that has two or more of them: each such item is
-    // laid out at its hypothetical size and its baseline read. Its hypothetical cross size was measured just before, which
-    // marked it as read (design §2.4.1), so the baseline needs no mark of its own.
+    // laid out at its hypothetical size and its baseline read. The read marks the item (ReadBaseline): an item of fixed cross
+    // size is not measured before, so no measuring run marks it.
     private static void CalculateChildrenBaselines(
         UiTree tree,
         Span<FlexItem> items,
@@ -883,7 +884,7 @@ internal static partial class LayoutEngine
                     RequestedAxis.Both
                 );
                 Size size = LayoutChild(tree, item.Node, in input, commit: true);
-                item.Baseline = Maybe.Or(tree.Nodes.GetRef(item.Node).Layout.FirstBaseline, size.Height) + item.Margin.Top;
+                item.Baseline = Maybe.Or(ReadBaseline(tree, item.Node), size.Height) + item.Margin.Top;
             }
         }
     }
@@ -1114,9 +1115,6 @@ internal static partial class LayoutEngine
     {
         bool row = constants.Row;
         float totalCross = constants.Inset.CrossStart(row);
-
-        // Only the startmost line gives the container its baseline (CSS Flexbox §8.5), so only its items' baselines are read.
-        int baselineLine = constants.WrapReverse ? lines.Length - 1 : 0;
         for (int l = 0; l < lines.Length; l++)
         {
             int lineIndex = constants.WrapReverse ? lines.Length - 1 - l : l;
@@ -1152,17 +1150,6 @@ internal static partial class LayoutEngine
                     Place(tree, item.Node, cross, main);
                 }
 
-                // The item's first baseline from the container's top, synthesized from its border box when it has none: only for
-                // the items that can give the container its baseline (ContainerBaseline).
-                bool candidate = row
-                    ? index == 0 || (constants.AnyBaseline && item.ParticipatesInBaseline(row))
-                    : index == (constants.Reverse ? lineItems.Length - 1 : 0);
-                if (lineIndex == baselineLine && candidate)
-                {
-                    float inner = Maybe.Or(tree.Nodes.GetRef(item.Node).Layout.FirstBaseline, size.Height);
-                    item.Baseline = (row ? cross : main) + inner;
-                }
-
                 totalMain += item.OffsetMain + item.Margin.MainSum(row) + (row ? size.Width : size.Height);
             }
 
@@ -1170,31 +1157,31 @@ internal static partial class LayoutEngine
         }
     }
 
-    // CSS Flexbox §8.5: the first baseline of the startmost line (the last for `wrap-reverse`): in a row, of its first item
-    // that aligns by baseline, else its first item; in a column, of its startmost item.
-    private static float ContainerBaseline(Span<FlexItem> items, Span<FlexLine> lines, in FlexConstants constants)
+    // CSS Flexbox §8.5: the item whose first baseline gives the container's, on the startmost line (the last for
+    // `wrap-reverse`): in a row, its first item that aligns by baseline, else its first item; in a column, its startmost item.
+    private static NodeHandle BaselineItem(Span<FlexItem> items, Span<FlexLine> lines, in FlexConstants constants)
     {
         FlexLine line = lines[constants.WrapReverse ? lines.Length - 1 : 0];
         if (line.Count == 0)
         {
-            return float.NaN;
+            return default;
         }
 
         Span<FlexItem> lineItems = items.Slice(line.Start, line.Count);
         if (!constants.Row)
         {
-            return lineItems[constants.Reverse ? lineItems.Length - 1 : 0].Baseline;
+            return lineItems[constants.Reverse ? lineItems.Length - 1 : 0].Node;
         }
 
         foreach (ref FlexItem item in lineItems)
         {
             if (item.ParticipatesInBaseline(row: true))
             {
-                return item.Baseline;
+                return item.Node;
             }
         }
 
-        return lineItems[0].Baseline;
+        return lineItems[0].Node;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -341,4 +341,39 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
 
             Assert.Equal(new Rect(0, 60, 50, 40), tree.GetRect(leaf));
         });
+
+    /// <summary>
+    /// A block's first baseline is that of its first child that has one: a child without a baseline before it is passed over,
+    /// not synthesized from its border box (CSS Box Alignment §9.1).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, `align-items: baseline`, window 300 x 100. A: a block → leaf E, 50 x 10, no baseline; leaf T, 50 x 10,
+    ///   first baseline 8. B: a leaf 50 x 20, first baseline 8.
+    ///
+    /// Steps:
+    /// - Lay out.
+    ///
+    /// Expected:
+    /// - A's baseline is T's: 10 + 8 = 18. A at y 0, B at y 18 − 8 = 10.
+    /// </remarks>
+    [Fact]
+    public void BlockBaseline_PassesOverAChildWithoutOne() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) }
+            );
+            NodeHandle a = Box(tree, root, new LayoutStyle());
+            Leaf(tree, a, 50, 10);
+            NodeHandle t = tree.CreateNode(new LayoutStyle(), static (_, _) => new MeasureResult(new Size(50, 10), 8));
+            tree.AppendChild(a, t);
+            NodeHandle b = tree.CreateNode(new LayoutStyle(), static (_, _) => new MeasureResult(new Size(50, 20), 8));
+            tree.AppendChild(root, b);
+
+            LayOut(tree, root, 300, 100);
+
+            Assert.Equal((0f, 10f), (tree.GetRect(a).Y, tree.GetRect(b).Y));
+        });
 }

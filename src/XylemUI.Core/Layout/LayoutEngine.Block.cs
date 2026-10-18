@@ -4,18 +4,10 @@ internal static partial class LayoutEngine
 {
     // CSS block layout (Taffy's compute_block_layout) without margin collapsing, floats, or out-of-flow children (design §3.2):
     // the children stack from the top, each as wide as the content box less its margins unless its style says otherwise, and
-    // their margins always add up. A layout run also returns the block's first baseline: its first child's that has one.
-    private static Size ComputeBlock(
-        UiTree tree,
-        in LayoutStyle style,
-        BlockProps props,
-        NodeHandle firstChild,
-        in LayoutInput input,
-        bool commit,
-        out float baseline
-    )
+    // their margins always add up. The block's first baseline is its first child's that has one, read when a parent asks for
+    // it (ReadBaseline).
+    private static Size ComputeBlock(UiTree tree, in LayoutStyle style, BlockProps props, NodeHandle firstChild, in LayoutInput input, bool commit)
     {
-        baseline = float.NaN;
         OptionalSize parent = input.ParentSize;
         Edges paddingBorder = PaddingBorder(in style, parent.Width);
         Size inset = paddingBorder.Sum();
@@ -71,17 +63,7 @@ internal static partial class LayoutEngine
 
         // Percentage paddings and borders resolve against the containing block's width, or the node's own at the root.
         Edges resolvedInset = PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth));
-        float contentHeight = LayOutBlockChildren(
-            tree,
-            props,
-            firstChild,
-            contentBox,
-            outerWidth,
-            percentHeight,
-            resolvedInset,
-            commit,
-            out baseline
-        );
+        float contentHeight = LayOutBlockChildren(tree, props, firstChild, contentBox, outerWidth, percentHeight, resolvedInset, commit);
 
         float outerHeight = Math.Max(Maybe.Or(known.Height, Maybe.Clamp(contentHeight, min.Height, max.Height)), inset.Height);
 
@@ -92,7 +74,6 @@ internal static partial class LayoutEngine
             float offset = AlignmentOffset(freeSpace, 1, 0, AlignmentFallback(freeSpace, 1, props.AlignContent), reversed: false, isFirst: true);
             if (offset != 0)
             {
-                baseline += offset;
                 for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
                 {
                     Rect rect = tree.Nodes.GetRef(child).Layout.Rect;
@@ -152,11 +133,9 @@ internal static partial class LayoutEngine
         float outerWidth,
         float percentHeight,
         Edges inset,
-        bool commit,
-        out float baseline
+        bool commit
     )
     {
-        baseline = float.NaN;
         float innerWidth = Math.Max(0, outerWidth - inset.Horizontal);
         var parentSize = new OptionalSize(innerWidth, percentHeight - inset.Vertical);
         float y = inset.Top;
@@ -225,10 +204,6 @@ internal static partial class LayoutEngine
                 }
 
                 Place(tree, child, x, y + margin.Top);
-                if (float.IsNaN(baseline))
-                {
-                    baseline = y + margin.Top + tree.Nodes.GetRef(child).Layout.FirstBaseline;
-                }
             }
 
             y += margin.Top + laidOut.Height + margin.Bottom;
