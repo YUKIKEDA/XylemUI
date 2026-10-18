@@ -141,7 +141,7 @@ internal static partial class LayoutEngine
 
     // Lays out or measures a child. A clean child keeps the result of its last run with the same key: a layout for either mode,
     // a measurement for measuring. A measuring run reads the child's content, which the child records (design §2.4.1).
-    private static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
+    internal static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         if (!commit)

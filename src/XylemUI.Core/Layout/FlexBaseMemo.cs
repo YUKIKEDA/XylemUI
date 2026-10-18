@@ -40,6 +40,13 @@ internal struct FlexBaseMemo
     public float CrossValue;
 
     /// <summary>
+    /// The width of the container's content box, which an item's percentage margins and padding resolve against, where the
+    /// item uses a percentage; NaN elsewhere. A row's width can be known but not definite, and then it is not in
+    /// <see cref="PercentMain"/> (PR #103's review).
+    /// </summary>
+    public float InnerWidth;
+
+    /// <summary>
     /// The cross size of the container's content box.
     /// </summary>
     public float CrossParent;

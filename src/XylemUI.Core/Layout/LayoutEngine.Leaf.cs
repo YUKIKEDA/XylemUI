@@ -72,8 +72,14 @@ internal static partial class LayoutEngine
             if (!tree.MeasuresOf(handle).TryGetIntrinsicWidths(knownHeight, out IntrinsicWidths widths))
             {
                 IntrinsicWidthsFunc intrinsic = node.Layout.IntrinsicWidths!;
+#if DEBUG
+                MeasureFunc measure = node.Layout.Measure!;
+#endif
                 tree.LayoutRunHook?.Invoke(handle);
                 widths = intrinsic(knownHeight);
+#if DEBUG
+                VerifyIntrinsicWidths(measure, knownHeight, widths);
+#endif
                 tree.MeasuresOf(handle).StoreIntrinsicWidths(knownHeight, widths);
             }
 
@@ -82,6 +88,27 @@ internal static partial class LayoutEngine
 
         return Math.Max(Maybe.Clamp(width, min, max), inset);
     }
+
+#if DEBUG
+    // Debug builds check a leaf's two functions against each other each time its content widths are computed: an
+    // IntrinsicWidthsFunc that disagrees with the leaf's MeasureFunc under a min-content and a max-content width lays the
+    // leaf out wrong without a sign (PR #103's review). Release builds do not call the measure function here.
+    private static void VerifyIntrinsicWidths(MeasureFunc measure, float knownHeight, IntrinsicWidths widths)
+    {
+        var known = new OptionalSize(float.NaN, knownHeight);
+        AvailableSpace height = float.IsNaN(knownHeight) ? AvailableSpace.MaxContent : AvailableSpace.Definite(knownHeight);
+        float min = measure(known, new AvailableSize(AvailableSpace.MinContent, height)).Size.Width;
+        float max = measure(known, new AvailableSize(AvailableSpace.MaxContent, height)).Size.Width;
+        if (Math.Abs(min - widths.Min) > 0.01f || Math.Abs(max - widths.Max) > 0.01f)
+        {
+            Invariant.Fail(
+                FormattableString.Invariant(
+                    $"A leaf's content widths ({widths.Min}, {widths.Max}) disagree with its measure function ({min}, {max})."
+                )
+            );
+        }
+    }
+#endif
 
     // The space for the content box: a definite border-box space clamped by the node's minimum and maximum, less its padding
     // and border. A content constraint stays.

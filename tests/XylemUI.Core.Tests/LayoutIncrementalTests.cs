@@ -855,6 +855,257 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
         });
 
     // A leaf twice as wide as the height it is given, 20 wide and 10 high when none is given.
+    /// <summary>
+    /// An item with a percentage margin, in a container whose width comes from its content, takes its base size again when a
+    /// sibling's content widens the container: the margin resolves against the container's width (design §3.2, row L4, PR
+    /// #103's review). The incremental layout equals a layout of the same tree from the start.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: row, window 300 x 100 → row R (its width from its content) → item P, a leaf 10 x 10 with a left margin of 10 %
+    ///   and a top margin of 10 % → leaf S, w x 10 (w = 50 at first). Laid out.
+    ///
+    /// Steps:
+    /// - Set w to 150, invalidate S's content, and run the pass. Build the same tree with w = 150 and lay it out once.
+    ///
+    /// Expected:
+    /// - The rectangles of R, P, and S are the same in both trees.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_WithAPercentageMargin_FollowsAContainerWidenedByASibling() =>
+        ui.Invoke(() =>
+        {
+            float width = 50;
+            (UiTree tree, NodeHandle root, NodeHandle row, NodeHandle item, NodeHandle sibling) = Build(() => width);
+            LayOut(tree, root, 300, 100);
+
+            width = 150;
+            Invalidation.Invalidate(tree, sibling, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            (UiTree fresh, NodeHandle freshRoot, NodeHandle freshRow, NodeHandle freshItem, NodeHandle freshSibling) = Build(() => 150);
+            LayOut(fresh, freshRoot, 300, 100);
+            Assert.Equal(fresh.GetRect(freshRow), tree.GetRect(row));
+            Assert.Equal(fresh.GetRect(freshItem), tree.GetRect(item));
+            Assert.Equal(fresh.GetRect(freshSibling), tree.GetRect(sibling));
+
+            static (UiTree, NodeHandle, NodeHandle, NodeHandle, NodeHandle) Build(Func<float> siblingWidth)
+            {
+                var tree = new UiTree();
+                NodeHandle root = tree.CreateNode(Row());
+                NodeHandle row = Box(tree, root, Row());
+                NodeHandle item = Leaf(
+                    tree,
+                    row,
+                    10,
+                    10,
+                    new LayoutStyle
+                    {
+                        Margin = new EdgeInsets<LengthPercentageAuto>(
+                            LengthPercentageAuto.Percent(0.1f),
+                            LengthPercentageAuto.Percent(0.1f),
+                            LengthPercentageAuto.Px(0),
+                            LengthPercentageAuto.Px(0)
+                        ),
+                    }
+                );
+                NodeHandle sibling = tree.CreateNode(new LayoutStyle(), (known, _) => MeasureResult.Of(Maybe.Or(known.Width, siblingWidth()), 10));
+                tree.AppendChild(row, sibling);
+                return (tree, root, row, item, sibling);
+            }
+        });
+
+    /// <summary>
+    /// In a debug build, a leaf whose content widths disagree with its measure function fails the invariant the first time the
+    /// widths are computed (row L4, PR #103's review): it would lay the leaf out wrong without a sign.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Debug build. root: row, window 300 x 100 → leaf whose measure function gives 30 wide under any width, and whose
+    ///   content widths say (10, 30).
+    ///
+    /// Steps:
+    /// - Lay out.
+    ///
+    /// Expected:
+    /// - <see cref="InvariantViolationException"/>.
+    /// </remarks>
+    [Fact]
+    public void ContentWidths_ThatDisagreeWithTheMeasureFunction_FailTheInvariant()
+    {
+#if !DEBUG
+        Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
+#endif
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Row());
+            tree.AppendChild(
+                root,
+                tree.CreateNode(
+                    new LayoutStyle(),
+                    static (known, _) => MeasureResult.Of(Maybe.Or(known.Width, 30), 10),
+                    static _ => new IntrinsicWidths(10, 30, DependsOnHeight: false)
+                )
+            );
+
+            Assert.Throws<InvariantViolationException>(() => LayOut(tree, root, 300, 100));
+        });
+    }
+
+    /// <summary>
+    /// A container measured under a max-content and then a min-content width takes its items' base sizes again for the second:
+    /// the kept results of a max-content run do not stand for a min-content run (design §3.2, row L4, PR #103's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: block → row R → leaf L, 10 wide under a min-content width and 50 under any other, 10 high, not shrinking (so its
+    ///   base size is its contribution to R's width).
+    ///
+    /// Steps:
+    /// - Measure R's width under a max-content width, then under a min-content width.
+    ///
+    /// Expected:
+    /// - 50, then 10.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_UnderAMinContentWidth_IsNotTakenFromAMaxContentRun() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle row = Box(tree, root, Row());
+            tree.AppendChild(
+                row,
+                tree.CreateNode(
+                    new LayoutStyle { FlexShrink = 0 },
+                    static (known, available) =>
+                        MeasureResult.Of(Maybe.Or(known.Width, available.Width.Kind == AvailableSpaceKind.MinContent ? 10 : 50), 10)
+                )
+            );
+
+            float max = MeasureWidth(tree, row, AvailableSpace.MaxContent, AvailableSpace.MaxContent);
+            float min = MeasureWidth(tree, row, AvailableSpace.MinContent, AvailableSpace.MaxContent);
+
+            Assert.Equal((50f, 10f), (max, min));
+        });
+
+    /// <summary>
+    /// A container measured under a max-content and then a min-content height takes its items' base sizes again for the
+    /// second: the kind of the cross space is part of what the kept results stand for (design §3.2, row L4, PR #103's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: block → row R → leaf L, 30 wide under a min-content height and 60 under any other, 10 high.
+    ///
+    /// Steps:
+    /// - Measure R's width under a max-content width and a max-content height, then a min-content height.
+    ///
+    /// Expected:
+    /// - 60, then 30.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_UnderAnotherKindOfCrossSpace_IsNotTakenFromTheLastRun() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle row = Box(tree, root, Row());
+            tree.AppendChild(
+                row,
+                tree.CreateNode(
+                    new LayoutStyle(),
+                    static (known, available) =>
+                        MeasureResult.Of(Maybe.Or(known.Width, available.Height.Kind == AvailableSpaceKind.MinContent ? 30 : 60), 10)
+                )
+            );
+
+            float wide = MeasureWidth(tree, row, AvailableSpace.MaxContent, AvailableSpace.MaxContent);
+            float narrow = MeasureWidth(tree, row, AvailableSpace.MaxContent, AvailableSpace.MinContent);
+
+            Assert.Equal((60f, 30f), (wide, narrow));
+        });
+
+    /// <summary>
+    /// A row laid out at a width that is known but not definite, then at another such width, takes the base size of an item with
+    /// a percentage margin again: the margin resolves against the row's width, which is not in the main size the kept results
+    /// compare (design §3.2, row L4, PR #103's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: block → row R → leaf P, stretched, twice as wide as the height it is given, with a top margin of 10 %.
+    ///
+    /// Steps:
+    /// - Lay R out at 200 x 100, the width not definite; then at 300 x 100, the width not definite.
+    ///
+    /// Expected:
+    /// - P is 2 x (100 − 20) = 160 wide, then 2 x (100 − 30) = 140.
+    /// </remarks>
+    [Fact]
+    public void BaseSize_WithAPercentageMargin_FollowsAWidthThatIsNotDefinite() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle row = Box(tree, root, Row());
+            NodeHandle item = tree.CreateNode(
+                new LayoutStyle
+                {
+                    Margin = new EdgeInsets<LengthPercentageAuto>(
+                        LengthPercentageAuto.Px(0),
+                        LengthPercentageAuto.Percent(0.1f),
+                        LengthPercentageAuto.Px(0),
+                        LengthPercentageAuto.Px(0)
+                    ),
+                },
+                TwiceAsWide
+            );
+            tree.AppendChild(row, item);
+
+            LayOutAt(tree, row, 200, 100);
+            float first = tree.GetRect(item).Width;
+            LayOutAt(tree, row, 300, 100);
+            float second = tree.GetRect(item).Width;
+
+            Assert.Equal((160f, 140f), (first, second));
+        });
+
+    // A layout run of a node at the given size, its width known but not definite.
+    private static void LayOutAt(UiTree tree, NodeHandle node, float width, float height) =>
+        _ = LayoutEngine.LayoutChild(
+            tree,
+            node,
+            new LayoutInput(
+                new OptionalSize(width, height),
+                false,
+                true,
+                new OptionalSize(width, height),
+                new AvailableSize(AvailableSpace.Definite(width), AvailableSpace.Definite(height)),
+                SizingMode.ContentSize,
+                RequestedAxis.Both
+            ),
+            commit: true
+        );
+
+    // A measuring run of a node's width under the given spaces, as its parent asks for it.
+    private static float MeasureWidth(UiTree tree, NodeHandle node, AvailableSpace width, AvailableSpace height) =>
+        LayoutEngine
+            .LayoutChild(
+                tree,
+                node,
+                new LayoutInput(
+                    OptionalSize.None,
+                    true,
+                    true,
+                    OptionalSize.None,
+                    new AvailableSize(width, height),
+                    SizingMode.InherentSize,
+                    RequestedAxis.Horizontal
+                ),
+                commit: false
+            )
+            .Width;
+
     private static readonly MeasureFunc TwiceAsWide = static (known, _) =>
         MeasureResult.Of(Maybe.Or(known.Width, float.IsNaN(known.Height) ? 20 : 2 * known.Height), Maybe.Or(known.Height, 10));
 

@@ -262,8 +262,8 @@ internal struct MeasureCache
         _recentlyUsed = 0;
         _hasAnyHeight = false;
         _hasAtHeight = false;
-        MeasureBase.Valid = false;
-        LayoutBase.Valid = false;
+        MeasureBase = default;
+        LayoutBase = default;
     }
 
     /// <summary>

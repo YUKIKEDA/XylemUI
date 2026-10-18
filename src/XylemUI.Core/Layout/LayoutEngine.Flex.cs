@@ -315,12 +315,13 @@ internal static partial class LayoutEngine
         float crossParent = constants.NodeInnerSize.Cross(row);
         OptionalSize childParentSize = OptionalSize.None.WithCross(row, crossParent);
         float percentMain = constants.KnownMainSizeIsDefinite ? constants.NodeInnerSize.Main(row) : float.NaN;
+        float innerWidth = constants.NodeInnerSize.Width;
         AvailableSpace crossSpace = available.Cross(row);
         bool minContentMain = available.Main(row).Kind == AvailableSpaceKind.MinContent;
 
         foreach (ref FlexItem item in items)
         {
-            if (TryReuseBaseSize(tree, ref item, in constants, commit, crossParent, percentMain, crossSpace, minContentMain))
+            if (TryReuseBaseSize(tree, ref item, in constants, commit, innerWidth, crossParent, percentMain, crossSpace, minContentMain))
             {
                 continue;
             }
@@ -425,6 +426,7 @@ internal static partial class LayoutEngine
                 MinContentMain = minContentMain,
                 CrossKind = crossSpace.Kind,
                 CrossValue = crossSpace.Value,
+                InnerWidth = child.Layout.HasBox ? float.NaN : innerWidth,
                 CrossParent = crossParent,
                 PercentMain = ReadsContainerMain(in item, child.Layout.HasBox) ? percentMain : float.NaN,
                 ContainerStyle = constants.ContainerStyleVersion,
@@ -437,8 +439,8 @@ internal static partial class LayoutEngine
 
     // Whether an item's base-size step reads the container's main size: through a percentage in its style, or through a basis
     // or a main size that is a content keyword, measured against the space the item may stretch into. Otherwise a new main
-    // size of the container (a width change of a row) leaves the step's results as they were. The width the margins and the
-    // padding resolve against is the container's main size in a row and its cross size in a column, both compared already.
+    // size of the container (a width change of a row) leaves the step's results as they were. The width an item's percentage
+    // margins and padding resolve against is compared apart: a row's width can be known but not definite.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool ReadsContainerMain(in FlexItem item, bool hasBox) =>
         !hasBox
@@ -453,6 +455,7 @@ internal static partial class LayoutEngine
         ref FlexItem item,
         in FlexConstants constants,
         bool commit,
+        float innerWidth,
         float crossParent,
         float percentMain,
         AvailableSpace crossSpace,
@@ -469,6 +472,7 @@ internal static partial class LayoutEngine
             || memo.MinContentMain != minContentMain
             || memo.CrossKind != crossSpace.Kind
             || !Maybe.Same(memo.CrossValue, crossSpace.Value)
+            || !Maybe.Same(memo.InnerWidth, child.Layout.HasBox ? float.NaN : innerWidth)
             || !Maybe.Same(memo.CrossParent, crossParent)
             || !Maybe.Same(memo.PercentMain, ReadsContainerMain(in item, child.Layout.HasBox) ? percentMain : float.NaN)
         )
