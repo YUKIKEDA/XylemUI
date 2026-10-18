@@ -16,6 +16,7 @@ A check or a test that stands for a statement in `docs/design.ja.md` implements 
 - When the design fixes a state machine (ComputationStatus, ShowState, ResourceState), test every transition it lists and one transition it does not allow.
 - A test of an invariant (§11.6) includes the input that would break it: a stale `NodeHandle`, a `ref` taken before an arena grows, a `Signal.Set` from a worker thread.
 - A fixed-size buffer on a path every frame takes has a test above its capacity.
+- When a statement lists the values a mechanism covers, each value has a test on a node where the other values' paths do not run. Design §2.4.1 says a parent marks a child when it reads a measurement or a baseline. In L1b the tests used only measured children, and a comment said the measurement had already marked the child; a child of fixed size is never measured, so reading its baseline left no mark, and the review found it (PR #91).
 - When a design statement changes, search `docs/`, the READMEs, `.cursor/rules/`, and XML docs for every restatement and update them in the same PR.
 - Before a PR says "every X does Y" (every backend implements `IGpuSync`, every Primitive exposes a role), search the whole solution for X. The PR's test plan names the search and the exceptions.
 

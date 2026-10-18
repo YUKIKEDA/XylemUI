@@ -16,6 +16,7 @@ Formatting is CSharpier's (`.cursor/rules/engineering.mdc`). This rule covers wh
 - One type per file by default. A file name matches its main type.
 - No `using` alias to shorten a BCL type name. Qualify the name where it collides.
 - Library `await` uses `ConfigureAwait(false)` except where the code must resume on the UI thread, which says so in a comment. `CancellationToken` is the last parameter.
+- A new overload goes above the XML docs and attributes of the member it joins, not between them and that member. In L1b an overload put between `[MethodImpl(MethodImplOptions.AggressiveInlining)]` and `UsesPercent` took the attribute from it.
 - No alignment component in an interpolated string (`{value, 4}`). CSharpier writes `{value, 4}` and StyleCop then reports SA1001, so the format check and the build cannot both pass; pad with `PadLeft` instead (S8b).
 
 ## Types
@@ -34,6 +35,7 @@ return new Handle<T>(index, slot.Generation);   // Generation starts at 0
 // GOOD — a new slot starts at generation 1, so default is never alive (Handle<T>.IsNone)
 _slots[index].Generation = 1;
 ```
+- A struct that `UiNode` holds (`LayoutState`) cannot have a field of `Handle<UiNode>`: the runtime does not load `UiNode` (`TypeLoadException`). Such a link is a field of `UiNode` itself, beside `Parent` and `FirstChild` (`UiNode.BaselineChild`, L1b).
 - A method that cannot fail returns its value, not a `bool`/`out` pair or a nullable.
 - A public method does not throw because the caller used the wrong phase of the same type; split the type instead.
 - Core types are `internal` (design §2.9.1). The public surface is `Signal`, `Element`, the component functions, the interfaces Platform and Rendering implement, and the snapshot and message types they receive.

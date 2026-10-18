@@ -22,6 +22,8 @@ A statement about how another framework behaves is checked in its source or its 
 
 When the owner corrects a criterion, go back over the decisions made before the correction and judge them by the new criterion: the design, the decision records, and the conversation logs, where reasons given only in passing are kept. Each one that fails gets a roadmap row or a Grill before the row that depends on it. After the S8b correction, a review of the logs found eleven more (Issue #54), among them a reason stated only in a review ("leave it for now") and a public API added only for a sample's check.
 
+A consequence written in a report is not a decision either. In L1b a report said that failures "will be run again"; the agent wrote that into `bench.mdc` as the owner's decision, and the review asked for the owner's word.
+
 "Go ahead" and "next" mean the current roadmap row only. They are not consent to add rows, file extra Issues, or widen an open design.
 
 An outward-facing action (creating a GitHub repository, publishing a package, posting outside this repository) needs an order that names it. The steps of the workflow in this repository are not such actions: creating the Issue for a row, pushing its branch, opening its PR, and recording results on the Issue are done without asking (`.cursor/rules/git.mdc`).
