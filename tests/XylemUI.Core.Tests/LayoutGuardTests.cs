@@ -159,44 +159,14 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 LayoutEngine.RunLayoutPass(tree);
             }
 
-            // DIAGNOSTIC (temporary, PR #91): which part of which run allocates on the runners.
-            var events = new long[48];
-            int eventCount = 0;
-            Action<int> run = i =>
-            {
-                long a = GC.GetAllocatedBytesForCurrentThread();
-                tree.SetStyle(target, i % 2 == 0 ? wide : narrow);
-                long b = GC.GetAllocatedBytesForCurrentThread();
-                LayoutEngine.RunLayoutPass(tree);
-                long c = GC.GetAllocatedBytesForCurrentThread();
-                if ((b != a || c != b) && eventCount < 16)
+            SteadyStateAllocation.AssertNone(
+                1_000,
+                i =>
                 {
-                    events[eventCount * 3] = i;
-                    events[(eventCount * 3) + 1] = b - a;
-                    events[(eventCount * 3) + 2] = c - b;
-                    eventCount++;
+                    tree.SetStyle(target, i % 2 == 0 ? wide : narrow);
+                    LayoutEngine.RunLayoutPass(tree);
                 }
-            };
-            run(-2);
-            run(-1);
-            eventCount = 0;
-            try
-            {
-                SteadyStateAllocation.AssertNone(1_000, run);
-            }
-            catch (Exception exception)
-            {
-                var detail = new System.Text.StringBuilder(exception.Message);
-                for (int e = 0; e < eventCount; e++)
-                {
-                    detail.Append(
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        $"\n  run {events[e * 3]}: SetStyle {events[(e * 3) + 1]} bytes, RunLayoutPass {events[(e * 3) + 2]} bytes"
-                    );
-                }
-
-                Assert.Fail(detail.ToString());
-            }
+            );
 
             Assert.Equal(10, tree.GetRect(target).Width);
         });
