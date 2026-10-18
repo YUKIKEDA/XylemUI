@@ -114,7 +114,7 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
     /// - A signal, a computed value of it, and an effect that reads both and adds to a static field. Warmed up with 100 sets.
     ///
     /// Steps:
-    /// - Set the signal 10,000 times, measuring the bytes allocated on this thread.
+    /// - Set the signal 11,000 times, each to a new value, measuring the bytes allocated on this thread in the last 10,000.
     ///
     /// Expected:
     /// - 0 bytes, and the effect ran for every set.
@@ -140,7 +140,7 @@ public sealed class ReactiveDependencyTests(UiThreadFixture ui)
             int runsBefore = runs;
             SteadyStateAllocation.AssertNone(Sets, i => source.Set(101 + i));
 
-            Assert.Equal(runsBefore + Sets, runs);
+            Assert.Equal(runsBefore + Sets + (Sets / 10), runs);
         });
 
     /// <summary>

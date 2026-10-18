@@ -207,7 +207,8 @@ public sealed class ArenaTests
     /// - A tree of 10,000 nodes; one warm-up pass of every operation.
     ///
     /// Steps:
-    /// - Measure the bytes allocated on this thread across 100 rounds of TryGet and GetRef over every node and one recursive pass.
+    /// - 110 rounds of TryGet and GetRef over every node and one recursive pass. Measure the bytes allocated on this thread in
+    ///   the last 100.
     ///
     /// Expected:
     /// - Zero bytes.

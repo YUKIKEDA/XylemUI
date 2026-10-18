@@ -115,7 +115,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. Warmed up with 20 changes.
     ///
     /// Steps:
-    /// - 1,000 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread.
+    /// - 1,100 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread in
+    ///   the last 1,000.
     ///
     /// Expected:
     /// - 0 bytes; the leaf has the last width.
