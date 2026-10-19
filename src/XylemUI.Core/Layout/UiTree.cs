@@ -79,7 +79,7 @@ internal sealed class UiTree
                 UsesPercentOfParentWidth = style.UsesPercentOfParentWidth,
                 UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
                 HasBox = LayoutEngine.TryResolveBox(in style, out ResolvedBox box),
-                Box = box,
+                HasInset = style.Inset != default,
                 Measure = measure,
                 IntrinsicWidths = intrinsicWidths,
                 FirstBaseline = float.NaN,
@@ -94,6 +94,7 @@ internal sealed class UiTree
         }
 
         _measures[handle.Index] = default;
+        _measures[handle.Index].Box = box;
         return handle;
     }
 
@@ -133,6 +134,11 @@ internal sealed class UiTree
 
         p.LastChild = child;
         p.Versions.Children++;
+        if (!c.Layout.Style.IsInFlow)
+        {
+            p.Layout.OutOfFlowChildren++;
+        }
+
         SetDepth(child, p.Depth + 1, p.IsAttached);
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
     }
@@ -144,12 +150,19 @@ internal sealed class UiTree
     public void SetStyle(NodeHandle node, LayoutStyle style)
     {
         ref UiNode n = ref Nodes.GetRef(node);
-        n.Layout.Style = style;
-        n.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
-        n.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
-        n.Layout.HasBox = LayoutEngine.TryResolveBox(in style, out n.Layout.Box);
-        n.Versions.LayoutStyle++;
-        NodeHandle parent = n.Parent;
+        if (!n.Parent.IsNone && n.Layout.Style.IsInFlow != style.IsInFlow)
+        {
+            Nodes.GetRef(n.Parent).Layout.OutOfFlowChildren += style.IsInFlow ? -1 : 1;
+        }
+
+        ref UiNode changed = ref Nodes.GetRef(node);
+        changed.Layout.Style = style;
+        changed.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
+        changed.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
+        changed.Layout.HasBox = LayoutEngine.TryResolveBox(in style, out MeasuresOf(node).Box);
+        changed.Layout.HasInset = style.Inset != default;
+        changed.Versions.LayoutStyle++;
+        NodeHandle parent = changed.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);
         if (!parent.IsNone)
         {

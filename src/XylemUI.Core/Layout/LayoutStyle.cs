@@ -18,6 +18,32 @@ internal readonly record struct LayoutStyle
     public LayoutAlgorithm Algorithm { get; init; } = LayoutAlgorithm.Block.Instance;
 
     /// <summary>
+    /// Gets whether the node takes part in its parent's layout or is placed by its <see cref="Inset"/> against the parent's
+    /// padding box (row L2: the parent, not CSS's nearest positioned ancestor).
+    /// </summary>
+    public Position Position { get; init; }
+
+    /// <summary>
+    /// Gets the distances of the left, top, right, and bottom sides: from the parent's padding box for an absolutely
+    /// positioned node, and the shift after the layout for a relatively positioned one. <see cref="LengthPercentageAuto.Auto"/>
+    /// on every side by default.
+    /// </summary>
+    public EdgeInsets<LengthPercentageAuto> Inset { get; init; }
+
+    /// <summary>
+    /// Gets the width divided by the height that an automatic size follows from the other axis (CSS's <c>aspect-ratio</c>);
+    /// NaN, the default, or a value that is not positive sets none.
+    /// </summary>
+    public float AspectRatio { get; init; } = float.NaN;
+
+    /// <summary>
+    /// Gets a value indicating whether the node and its subtree take no part in the layout (CSS's <c>display: none</c>, row
+    /// L2): they are not laid out, take no room, and get an empty rectangle. Leaving it out of the algorithm keeps the
+    /// algorithm for when the node is shown again.
+    /// </summary>
+    public bool Hidden { get; init; }
+
+    /// <summary>
     /// Gets the width.
     /// </summary>
     public Length Width { get; init; }
@@ -91,6 +117,16 @@ internal readonly record struct LayoutStyle
     /// <see cref="BlockProps.JustifyItems"/>.
     /// </summary>
     public AlignItems? JustifySelf { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="AspectRatio"/> is set.
+    /// </summary>
+    public bool HasAspectRatio => AspectRatio > 0;
+
+    /// <summary>
+    /// Gets a value indicating whether the node takes part in its parent's flow: shown and not absolutely positioned.
+    /// </summary>
+    public bool IsInFlow => !Hidden && Position != Position.Absolute;
 
     /// <summary>
     /// Gets a value indicating whether the node's size cannot depend on its content: both sides fixed (design §2.4, the

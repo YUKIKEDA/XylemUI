@@ -58,6 +58,20 @@ internal static partial class LayoutEngine
                 foreach (LayoutRequest request in CollectionsMarshal.AsSpan(current))
                 {
                     DirtyState dirty = tree.Nodes.GetRef(request.Node).Dirty;
+
+                    // A node inside a hidden subtree takes no part in the layout (row L2).
+                    if (((dirty.SelfDirty | dirty.SubtreeDirty) & DirtyFlags.Layout) != 0 && IsInHiddenSubtree(tree, request.Node))
+                    {
+                        HideSubtree(tree, request.Node);
+                        int hidden = tree.FindContentSnapshot(request.Node);
+                        if (hidden >= 0)
+                        {
+                            tree.RemoveContentSnapshotAt(hidden);
+                        }
+
+                        continue;
+                    }
+
                     if (((dirty.SelfDirty | dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
                     {
                         // An ancestor laid the leaf out with its new content first. The parent's layout read the new values,
@@ -79,10 +93,17 @@ internal static partial class LayoutEngine
                     try
                     {
                         LayoutInput input = ResolveInput(tree, request);
-                        _ = Compute(tree, request.Node, in input, commit: true);
-                        if (request.Node == tree.Root)
+                        if (request.Node == tree.Root && IsAbsoluteRootIn(tree, request.Node, in input))
                         {
-                            PlaceRoot(tree, request.Node, in input);
+                            LayOutAbsoluteRoot(tree, request.Node, ToSize(input.ParentSize));
+                        }
+                        else
+                        {
+                            _ = Compute(tree, request.Node, in input, commit: true);
+                            if (request.Node == tree.Root)
+                            {
+                                PlaceRoot(tree, request.Node, in input);
+                            }
                         }
 
                         CompareContentChange(tree, request.Node);
@@ -148,8 +169,12 @@ internal static partial class LayoutEngine
     // The root's margin box sits at the origin of its viewport.
     private static void PlaceRoot(UiTree tree, NodeHandle root, in LayoutInput input)
     {
-        Edges margin = EdgeInsets.ResolveOrZero(tree.Nodes.GetRef(root).Layout.Style.Margin, input.ParentSize.Width);
-        Place(tree, root, margin.Left, margin.Top);
+        ref readonly LayoutStyle style = ref tree.Nodes.GetRef(root).Layout.Style;
+        Edges margin = EdgeInsets.ResolveOrZero(style.Margin, input.ParentSize.Width);
+
+        // A relatively positioned root is shifted by its insets, against the viewport (Taffy's compute_root_layout).
+        (float dx, float dy) = RelativeOffset(in style, input.ParentSize.Width, input.ParentSize.Height);
+        Place(tree, root, margin.Left + dx, margin.Top + dy);
     }
 
     // Lays out or measures a child. A clean child keeps the result of its last run with the same key: a layout for either mode,
@@ -157,7 +182,7 @@ internal static partial class LayoutEngine
     internal static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
-        if (!commit)
+        if (!commit && !node.Parent.IsNone)
         {
             node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
         }
@@ -222,6 +247,12 @@ internal static partial class LayoutEngine
 
         for (; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
+            // A child out of the flow gives the block no baseline (CSS 2.1 section 10.8.1).
+            if (!tree.Nodes.GetRef(child).Layout.Style.IsInFlow)
+            {
+                continue;
+            }
+
             float inner = ReadBaseline(tree, child);
             if (!float.IsNaN(inner))
             {
@@ -264,6 +295,17 @@ internal static partial class LayoutEngine
         LayoutStyle style = before.Layout.Style;
         MeasureFunc? measure = before.Layout.Measure;
         NodeHandle firstChild = before.FirstChild;
+
+        // A hidden node takes no room and lays out nothing (row L2).
+        if (style.Hidden)
+        {
+            if (commit)
+            {
+                HideSubtree(tree, handle);
+            }
+
+            return default;
+        }
 
         tree.LayoutRunHook?.Invoke(handle);
         float baseline = float.NaN;
@@ -369,7 +411,8 @@ internal static partial class LayoutEngine
     // A style's lengths in pixels where it uses no percentage (LayoutState.Box); none otherwise.
     internal static bool TryResolveBox(in LayoutStyle style, out ResolvedBox box)
     {
-        if (style.UsesPercentOfParentWidth || style.UsesPercentOfParentHeight)
+        // With an aspect ratio, the maximum depends on who resolves it: a leaf does not apply the ratio to it (Taffy).
+        if (style.UsesPercentOfParentWidth || style.UsesPercentOfParentHeight || style.HasAspectRatio)
         {
             box = default;
             return false;
@@ -388,15 +431,37 @@ internal static partial class LayoutEngine
     // The width and the height of the style against the parent's content box.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize StyleSize(in LayoutStyle style, OptionalSize parent) =>
-        new(style.Width.Resolve(parent.Width), style.Height.Resolve(parent.Height));
+        WithAspectRatio(new(style.Width.Resolve(parent.Width), style.Height.Resolve(parent.Height)), style.AspectRatio);
 
+    // The minimum and the maximum follow the aspect ratio too (Taffy's maybe_apply_aspect_ratio on every resolved size), except
+    // the maximum that clamps a stretched item (MaxSizeIgnoringAspectRatio).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize MinSize(in LayoutStyle style, OptionalSize parent) =>
-        new(style.MinWidth.Resolve(parent.Width), style.MinHeight.Resolve(parent.Height));
+        WithAspectRatio(new(style.MinWidth.Resolve(parent.Width), style.MinHeight.Resolve(parent.Height)), style.AspectRatio);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static OptionalSize MaxSize(in LayoutStyle style, OptionalSize parent) =>
+        WithAspectRatio(MaxSizeIgnoringAspectRatio(in style, parent), style.AspectRatio);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OptionalSize MaxSizeIgnoringAspectRatio(in LayoutStyle style, OptionalSize parent) =>
         new(style.MaxWidth.Resolve(parent.Width), style.MaxHeight.Resolve(parent.Height));
+
+    // An axis that is not decided follows the other through the aspect ratio, when there is one (CSS's aspect-ratio).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OptionalSize WithAspectRatio(OptionalSize size, float ratio)
+    {
+        if (!(ratio > 0))
+        {
+            return size;
+        }
+
+        bool width = !float.IsNaN(size.Width);
+        bool height = !float.IsNaN(size.Height);
+        return width && !height ? new OptionalSize(size.Width, size.Width / ratio)
+            : height && !width ? new OptionalSize(size.Height * ratio, size.Height)
+            : size;
+    }
 
     // The padding and the border, which CSS resolves against the parent's width on every side.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

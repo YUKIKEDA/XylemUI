@@ -21,7 +21,7 @@ internal static partial class LayoutEngine
         {
             nodeSize = nodeSize.Or(StyleSize(in style, input.ParentSize));
             min = MinSize(in style, input.ParentSize);
-            max = MaxSize(in style, input.ParentSize);
+            max = MaxSizeIgnoringAspectRatio(in style, input.ParentSize);
         }
 
         if (!commit && nodeSize.IsComplete)
@@ -42,8 +42,16 @@ internal static partial class LayoutEngine
             baseline = paddingBorder.Top + measured.FirstBaseline;
         }
 
-        OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + inset.Width, content.Height + inset.Height)).Clamp(min, max).AtLeast(inset);
-        return ToSize(size);
+        OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + inset.Width, content.Height + inset.Height)).Clamp(min, max);
+
+        // A leaf with an aspect ratio is at least as high as its width gives (Taffy's compute_leaf_layout); its maximum does not
+        // follow the ratio there.
+        if (input.SizingMode == SizingMode.InherentSize && style.HasAspectRatio)
+        {
+            size = size with { Height = Math.Max(size.Height, size.Width / style.AspectRatio) };
+        }
+
+        return ToSize(size.AtLeast(inset));
     }
 
     // The border-box width of a leaf under a min-content or max-content width, as ComputeLeaf gives it, from the content
@@ -53,7 +61,7 @@ internal static partial class LayoutEngine
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         ref readonly LayoutStyle style = ref node.Layout.Style;
         bool hasBox = node.Layout.HasBox;
-        ref readonly ResolvedBox box = ref node.Layout.Box;
+        ref readonly ResolvedBox box = ref tree.MeasuresOf(handle).Box;
         Edges paddingBorder = hasBox ? box.PaddingBorder : PaddingBorder(in style, input.ParentSize.Width);
         float inset = paddingBorder.Horizontal;
         float width = float.NaN;
@@ -63,7 +71,7 @@ internal static partial class LayoutEngine
         {
             width = hasBox ? box.Size.Width : StyleSize(in style, input.ParentSize).Width;
             min = hasBox ? box.Min.Width : MinSize(in style, input.ParentSize).Width;
-            max = hasBox ? box.Max.Width : MaxSize(in style, input.ParentSize).Width;
+            max = hasBox ? box.Max.Width : MaxSizeIgnoringAspectRatio(in style, input.ParentSize).Width;
         }
 
         if (float.IsNaN(width))

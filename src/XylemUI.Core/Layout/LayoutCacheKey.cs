@@ -136,6 +136,15 @@ internal struct MeasureCache
     /// </summary>
     public FlexBaseMemo LayoutBase;
 
+    /// <summary>
+    /// The node's style lengths in pixels, resolved when the style is set, where <see cref="LayoutState.HasBox"/>: the flex
+    /// items and the leaves' content widths read them instead of resolving the style each time (row L4). They come from the
+    /// style, not from a run, so <see cref="Clear"/> keeps them. They sit here, next to the base sizes a container reads in the
+    /// same step, apart from the node: on the node, with the fields of row L2, the node was 576 bytes instead of 528 and the
+    /// relayout after one change of row L1a's scene about 4 % slower.
+    /// </summary>
+    public ResolvedBox Box;
+
     private Entries _entries;
     private ushort _recentlyUsed;
     private byte _next;

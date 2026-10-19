@@ -191,7 +191,8 @@ internal static class Invalidation
     /// the parent still keeps (design §2.4.1). This frame's input does not exist yet.
     /// </summary>
     public static bool IsLayoutBoundaryForInvalidation(UiTree tree, in UiNode node) =>
-        (node.Layout.Style.IsStructuralBoundary || node.Layout.CachedComputedBoundary) && !ContentReadByParent(tree, in node);
+        node.Layout.Style.Hidden
+        || ((node.Layout.Style.IsStructuralBoundary || node.Layout.CachedComputedBoundary) && !ContentReadByParent(tree, in node));
 
     /// <summary>
     /// Returns a value indicating whether the parent of <paramref name="node"/> read its content (a measuring run or a

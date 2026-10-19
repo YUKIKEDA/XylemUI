@@ -107,11 +107,12 @@ internal static class LayoutScene
     {
         (double First, double Change, double Content, double Width) stack = Measure(BuildStacks);
         (double First, double Change, double Content, double Width) wrap = Measure(BuildWrap);
+        (double First, double Change) absolute = MeasureAbsolute();
         File.WriteAllText(
             output,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"content_us_p50\":{stack.Content:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_content_us_p50\":{wrap.Content:F1},\"wrap_width_us_p50\":{wrap.Width:F1}}}{Environment.NewLine}"
+                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"content_us_p50\":{stack.Content:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_content_us_p50\":{wrap.Content:F1},\"wrap_width_us_p50\":{wrap.Width:F1},\"absolute_first_us_p50\":{absolute.First:F1},\"absolute_change_us_p50\":{absolute.Change:F1}}}{Environment.NewLine}"
             )
         );
     }
@@ -177,6 +178,66 @@ internal static class LayoutScene
         }
 
         return (Median(first), Median(change), Median(content), Median(width));
+    }
+
+    // The absolute scene (row L2): a vertical StackPanel of 100 Canvases of 2,000 x 20, each with 100 leaves of 10 x 10 at
+    // Canvas.Left 20 each. The change is one leaf's width, 10 or 20 in turn.
+    private static (double First, double Change) MeasureAbsolute()
+    {
+        var first = new List<double>();
+        var change = new List<double>();
+        for (int s = 0; s < 18; s++)
+        {
+            var root = new StackPanel { Orientation = Avalonia.Layout.Orientation.Vertical };
+            Leaf? target = null;
+            for (int r = 0; r < 100; r++)
+            {
+                var canvas = new Canvas { Width = 2_000, Height = 20 };
+                for (int c = 0; c < 100; c++)
+                {
+                    var leaf = new Leaf();
+                    Canvas.SetLeft(leaf, c * 20);
+                    Canvas.SetTop(leaf, 0);
+                    canvas.Children.Add(leaf);
+                    if (r == 50 && c == 50)
+                    {
+                        target = leaf;
+                    }
+                }
+
+                root.Children.Add(canvas);
+            }
+
+            var window = new Window { Width = 2_000, Height = 2_000 };
+            window.Show();
+            window.UpdateLayout();
+            window.Content = root;
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            window.UpdateLayout();
+            double firstUs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMicroseconds;
+            double changeUs = 0;
+            for (int i = 0; i < 2; i++)
+            {
+                target!.Width = i % 2 == 0 ? 20 : 10;
+                start = System.Diagnostics.Stopwatch.GetTimestamp();
+                window.UpdateLayout();
+                changeUs = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMicroseconds;
+            }
+
+            if (target!.Bounds.Width != 10)
+            {
+                throw new InvalidOperationException($"The absolute scene did not follow the change: target {target.Bounds}.");
+            }
+
+            window.Close();
+            if (s >= 3)
+            {
+                first.Add(firstUs);
+                change.Add(changeUs);
+            }
+        }
+
+        return (Median(first), Median(change));
     }
 
     private static (Panel Root, Leaf Target) BuildStacks()

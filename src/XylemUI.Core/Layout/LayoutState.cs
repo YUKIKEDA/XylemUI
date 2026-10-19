@@ -23,21 +23,28 @@ internal struct LayoutState
     public bool UsesPercentOfParentHeight;
 
     /// <summary>
-    /// The style uses no percentage, so <see cref="Box"/> holds its lengths in pixels for every parent (row L4).
+    /// The style uses no percentage, so <see cref="MeasureCache.Box"/> holds its lengths in pixels for every parent (row L4).
     /// </summary>
     public bool HasBox;
+
+    /// <summary>
+    /// The style sets an inset (<see cref="LayoutStyle.Inset"/>), kept when the style is set: the final layout of every item
+    /// reads it to skip the relative shift of the many that have none (row L2).
+    /// </summary>
+    public bool HasInset;
+
+    /// <summary>
+    /// The number of children that are hidden or absolutely positioned (row L2), kept by <see cref="UiTree.AppendChild"/> and
+    /// <see cref="UiTree.SetStyle"/>. Where it is 0, the usual case, a container's algorithm reads no child's style to find its
+    /// items: reading it cost the relayout after one change of row L1a's scene about 5 % (another part of each child's node).
+    /// </summary>
+    public int OutOfFlowChildren;
 
     /// <summary>
     /// The index of the node's <see cref="ContentSnapshot"/> in <see cref="UiTree.ContentSnapshots"/> plus 1; 0 when it has
     /// none (row L5). Next to the flags, in the struct's padding, so that finding the snapshot takes no search.
     /// </summary>
     public int ContentSnapshotSlot;
-
-    /// <summary>
-    /// The style's lengths in pixels, resolved when the style is set, where <see cref="HasBox"/>: the flex items and the
-    /// leaves' content widths read them instead of resolving the style each time.
-    /// </summary>
-    public ResolvedBox Box;
 
     /// <summary>
     /// Measures the content of a leaf; <see langword="null"/> for a leaf without content and for a container.

@@ -169,6 +169,15 @@ internal static class TaffyFixture
                         RowGap = ParseLengthPercentage(e.Attribute("row-gap")?.Value),
                     }
                 ),
+            Position = e.Attribute("position")?.Value == "absolute" ? Position.Absolute : Position.Relative,
+            Inset = new(
+                ParseLengthPercentageAuto(e, "left"),
+                ParseLengthPercentageAuto(e, "top"),
+                ParseLengthPercentageAuto(e, "right"),
+                ParseLengthPercentageAuto(e, "bottom")
+            ),
+            AspectRatio = ParseFloat(e.Attribute("aspect-ratio")?.Value, float.NaN),
+            Hidden = e.Attribute("display")?.Value == "none",
             AlignSelf = ParseAlignItems(e, "align-self"),
             JustifySelf = ParseAlignItems(e, "justify-self"),
             Width = ParseLength(e, "width"),

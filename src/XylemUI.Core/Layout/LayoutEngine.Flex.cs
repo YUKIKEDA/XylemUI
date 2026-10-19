@@ -60,6 +60,16 @@ internal static partial class LayoutEngine
             count++;
         }
 
+        bool anyOutOfFlow = tree.Nodes.GetRef(tree.Nodes.GetRef(firstChild).Parent).Layout.OutOfFlowChildren > 0;
+        if (anyOutOfFlow)
+        {
+            count = 0;
+            for (NodeHandle c = firstChild; !c.IsNone; c = tree.Nodes.GetRef(c).NextSibling)
+            {
+                count += tree.Nodes.GetRef(c).Layout.Style.IsInFlow ? 1 : 0;
+            }
+        }
+
         ScratchStack<FlexItem> itemScratch = _itemScratch ??= new ScratchStack<FlexItem>();
         ScratchStack<FlexLine> lineScratch = _lineScratch ??= new ScratchStack<FlexLine>();
         int itemTop = itemScratch.Top;
@@ -71,7 +81,7 @@ internal static partial class LayoutEngine
             bool row = constants.Row;
 
             // 9.1.1 Generate the flex items.
-            GenerateFlexItems(tree, firstChild, ref constants, items);
+            GenerateFlexItems(tree, firstChild, ref constants, items, anyOutOfFlow);
 
             // 9.2.2 The available main and cross space for the items.
             AvailableSize available = FlexAvailableSpace(known, input.Available, in constants);
@@ -173,6 +183,11 @@ internal static partial class LayoutEngine
             // 9.6.16 Align the lines, then the final layout of each item.
             AlignLines(lines, innerCross, totalLineCross, in constants);
             FinalLayoutPass(tree, items, lines, containerSize, in constants);
+            if (anyOutOfFlow)
+            {
+                LayOutFlexOutOfFlowChildren(tree, firstChild, in style, containerSize, in constants, parent.Width);
+            }
+
             baselineItem = BaselineItem(items, lines, in constants);
             return containerSize;
         }
@@ -247,7 +262,7 @@ internal static partial class LayoutEngine
     }
 
     // Also notes whether any item aligns by baseline or has an automatic margin, so that the steps for them run only then.
-    private static void GenerateFlexItems(UiTree tree, NodeHandle firstChild, ref FlexConstants constants, Span<FlexItem> items)
+    private static void GenerateFlexItems(UiTree tree, NodeHandle firstChild, ref FlexConstants constants, Span<FlexItem> items, bool anyOutOfFlow)
     {
         bool row = constants.Row;
 
@@ -255,17 +270,24 @@ internal static partial class LayoutEngine
         OptionalSize percentBasis = constants.KnownMainSizeIsDefinite ? constants.NodeInnerSize : constants.NodeInnerSize.WithMain(row, float.NaN);
         float innerWidth = constants.NodeInnerSize.Width;
         int i = 0;
-        for (NodeHandle child = firstChild; !child.IsNone; i++)
+        for (NodeHandle child = firstChild; !child.IsNone; )
         {
             ref UiNode c = ref tree.Nodes.GetRef(child);
             ref readonly LayoutStyle s = ref c.Layout.Style;
+
+            // An absolutely positioned or hidden child is no item (LayOutFlexOutOfFlowChildren).
+            if (anyOutOfFlow && !s.IsInFlow)
+            {
+                child = c.NextSibling;
+                continue;
+            }
 
             // Field by field into the pooled item: the later steps write every other field before they read it.
             ref FlexItem item = ref items[i];
             item.Node = child;
             if (c.Layout.HasBox)
             {
-                ref readonly ResolvedBox box = ref c.Layout.Box;
+                ref readonly ResolvedBox box = ref tree.MeasuresOf(child).Box;
                 item.Size = box.Size;
                 item.Min = box.Min;
                 item.Max = box.Max;
@@ -290,6 +312,7 @@ internal static partial class LayoutEngine
             item.AutoBottom = s.Margin.Bottom.IsAuto;
             item.FlexGrow = s.FlexGrow;
             item.FlexShrink = s.FlexShrink;
+            item.HasInset = c.Layout.HasInset;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
@@ -298,14 +321,18 @@ internal static partial class LayoutEngine
             constants.AllStretched &= item.Stretched;
 
             // A stretched item's maximum resolves against the content box even where it is indefinite (Chrome and Firefox,
-            // as Taffy); only a percentage differs from the maximum above.
+            // as Taffy), and does not follow the aspect ratio; only a percentage differs from the maximum above.
             LengthPercentageAuto maxCross = row ? s.MaxHeight : s.MaxWidth;
-            item.StretchMaxCross = maxCross.IsPercent ? maxCross.Resolve(constants.NodeInnerSize.Cross(row)) : item.Max.Cross(row);
+            item.StretchMaxCross =
+                maxCross.IsPercent ? maxCross.Resolve(constants.NodeInnerSize.Cross(row))
+                : s.HasAspectRatio ? MaxSizeIgnoringAspectRatio(in s, percentBasis).Cross(row)
+                : item.Max.Cross(row);
             item.FlexBasisIsDefinite = false;
             item.Baseline = 0;
             item.OffsetMain = 0;
             item.OffsetCross = 0;
             child = c.NextSibling;
+            i++;
         }
     }
 
@@ -380,6 +407,18 @@ internal static partial class LayoutEngine
                 {
                     keywordSpace = MeasureSpaceOf(item.MainStyle, mainStretch);
                 }
+            }
+
+            // 9.2.3 B: an item with an aspect ratio and a definite cross size takes its basis from them. A stretched item's
+            // cross size is definite when the container's is and the container does not wrap (§9.8).
+            float ratio = tree.Nodes.GetRef(item.Node).Layout.Style.AspectRatio;
+            bool crossIsDefinite =
+                !float.IsNaN(item.Size.Cross(row))
+                || (!constants.Wrap && constants.HasDefiniteCrossSize && !float.IsNaN(crossParent) && !float.IsNaN(childKnown.Cross(row)));
+            if (float.IsNaN(item.FlexBasis) && ratio > 0 && crossIsDefinite && !float.IsNaN(childKnown.Cross(row)))
+            {
+                item.FlexBasis = row ? childKnown.Cross(row) * ratio : childKnown.Cross(row) / ratio;
+                item.FlexBasisIsDefinite = true;
             }
 
             if (float.IsNaN(item.FlexBasis))
@@ -712,6 +751,15 @@ internal static partial class LayoutEngine
                 SizingMode.ContentSize,
                 horizontal: row
             );
+
+            // A known cross size gives a main size through the aspect ratio, which floors the content's (Taffy).
+            float ratio = tree.Nodes.GetRef(item.Node).Layout.Style.AspectRatio;
+            float knownCross = childKnown.Cross(row);
+            if (ratio > 0 && !float.IsNaN(knownCross))
+            {
+                measured = Math.Max(measured, row ? knownCross * ratio : knownCross / ratio);
+            }
+
             contribution = row
                 ? Maybe.Clamp(measured + marginSum, styleMin, styleMax)
                 : Maybe.Clamp(Math.Max(measured, item.FlexBasis) + marginSum, styleMin, styleMax);
@@ -1257,13 +1305,16 @@ internal static partial class LayoutEngine
                 float main = totalMain + item.OffsetMain + item.Margin.MainStart(row);
                 float crossOffset = totalCross + item.OffsetCross + line.OffsetCross;
                 float cross = crossOffset + item.Margin.CrossStart(row);
+                (float dx, float dy) = item.HasInset
+                    ? RelativeOffset(in tree.Nodes.GetRef(item.Node).Layout.Style, constants.NodeInnerSize.Width, constants.NodeInnerSize.Height)
+                    : (0, 0);
                 if (row)
                 {
-                    Place(tree, item.Node, main, cross);
+                    Place(tree, item.Node, main + dx, cross + dy);
                 }
                 else
                 {
-                    Place(tree, item.Node, cross, main);
+                    Place(tree, item.Node, cross + dx, main + dy);
                 }
 
                 totalMain += item.OffsetMain + item.Margin.MainSum(row) + (row ? size.Width : size.Height);
@@ -1438,6 +1489,7 @@ internal static partial class LayoutEngine
         public float Violation;
         public bool Frozen;
         public bool Stretched;
+        public bool HasInset;
         public float StretchMaxCross;
         public float Baseline;
         public float OffsetMain;
