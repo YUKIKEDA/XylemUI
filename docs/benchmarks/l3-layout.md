@@ -57,6 +57,6 @@ dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>      # main
 | 項目 | 結果 |
 | --- | --- |
 | スキップの理由が行 L3 の Taffy の XML テストが 0 件 | 満たす。`stretch` の 24 件のうち 14 件が通る。子のマージンが親の辺と接して Chrome が相殺する 4 件は、マージンを相殺しない設計（§3.2）の理由で外した。残る 6 件は、float（設計に無い）が 4 件、`overflow`（行 V2）が 2 件で外れる。`flex-basis: content` の 2 件は理由を行 V2 にした |
-| Chrome から作ったテストが全件通る | 満たす。30 件（`tests/XylemUI.Core.Tests/Fixtures/XylemUI/`、Chrome for Testing 155.0.8059.84） |
+| Chrome から作ったテストが全件通る | 満たす。36 件（`tests/XylemUI.Core.Tests/Fixtures/XylemUI/`、Chrome for Testing 155.0.8059.84） |
 | L1a・L1b・L2 の場面の指標が、main と順番をそろえて測ってばらつきを超えて遅くならない | 満たす。どの指標も範囲が重なる（上の表） |
 | 定常状態のアロケーション 0 | 満たす。キーワードの制限を持つ葉を含む木の 1 か所の変更で 0 バイト（`LayoutGuardTests` の `keywords`） |

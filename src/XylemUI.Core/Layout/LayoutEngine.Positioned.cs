@@ -203,8 +203,10 @@ internal static partial class LayoutEngine
         // holds.
         if (tree.Nodes.GetRef(child).Layout.HasKeywordLimits)
         {
-            ResolveKeywordLimits(tree, child, KeywordLimits.Of(in s), styleSize, area, stretchFit, contentHeights: false, ref min, ref max);
-            min = min.Or(new OptionalSize(paddingBorder.Width, paddingBorder.Height)).AtLeast(paddingBorder);
+            // From the minimum before its floor of the padding and border, so that the aspect ratio fills an axis left auto.
+            OptionalSize styleMin = MinSize(in s, area);
+            ResolveKeywordLimits(tree, child, KeywordLimits.Of(in s), styleSize, area, stretchFit, contentHeights: false, ref styleMin, ref max);
+            min = styleMin.Or(new OptionalSize(paddingBorder.Width, paddingBorder.Height)).AtLeast(paddingBorder);
             known = styleSize.Clamp(min, max);
         }
 

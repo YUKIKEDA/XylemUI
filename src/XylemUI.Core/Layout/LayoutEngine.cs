@@ -525,8 +525,9 @@ internal static partial class LayoutEngine
     // The minimum and the maximum that the sizing keywords of a node give it (row L3), in place of the ones its other lengths
     // gave: stretch takes the space the node may stretch into (NaN where unknown), and a content keyword measures the node's
     // content on that axis. Chrome counts a content keyword in a height only on a column's main axis (contentHeights); elsewhere
-    // it is the initial value, as is a keyword whose space is unknown. The limits are copied out of the style first: no ref
-    // into the arena is held across the measuring runs (design §2.5).
+    // it is the initial value, as is a keyword whose space is unknown. A resolved limit goes on through the aspect ratio, as
+    // MinSize and MaxSize take a fixed one (Chrome: a minimum width of max-content gives the height its ratio). The limits are
+    // copied out of the style first: no ref into the arena is held across the measuring runs (design §2.5).
     private static void ResolveKeywordLimits(
         UiTree tree,
         NodeHandle node,
@@ -547,6 +548,8 @@ internal static partial class LayoutEngine
             KeywordLimit(tree, node, limits.MaxWidth, true, known, parentSize, stretch, contentHeights, max.Width),
             KeywordLimit(tree, node, limits.MaxHeight, false, known, parentSize, stretch, contentHeights, max.Height)
         );
+        min = WithAspectRatio(min, limits.AspectRatio);
+        max = WithAspectRatio(max, limits.AspectRatio);
     }
 
     private static float KeywordLimit(
@@ -588,9 +591,11 @@ internal static partial class LayoutEngine
         return MeasureChild(tree, node, known with { Height = float.NaN }, parentSize, heightSpace, SizingMode.ContentSize, horizontal: false);
     }
 
-    // The minimum and the maximum of a style, copied out of it to be resolved as sizing keywords (ResolveKeywordLimits).
-    private readonly record struct KeywordLimits(Length MinWidth, Length MinHeight, Length MaxWidth, Length MaxHeight)
+    // The minimum and the maximum of a style, with its aspect ratio, copied out of it to be resolved as sizing keywords
+    // (ResolveKeywordLimits).
+    private readonly record struct KeywordLimits(Length MinWidth, Length MinHeight, Length MaxWidth, Length MaxHeight, float AspectRatio)
     {
-        public static KeywordLimits Of(in LayoutStyle style) => new(style.MinWidth, style.MinHeight, style.MaxWidth, style.MaxHeight);
+        public static KeywordLimits Of(in LayoutStyle style) =>
+            new(style.MinWidth, style.MinHeight, style.MaxWidth, style.MaxHeight, style.AspectRatio);
     }
 }

@@ -343,7 +343,7 @@ internal static partial class LayoutEngine
 
     // The minimum and the maximum an item's sizing keywords give it (row L3): stretch takes the container's content box less
     // the item's margins, and a content keyword counts in a height only on a column's main axis (Chrome). A stretched item's
-    // maximum is the resolved one.
+    // maximum is the resolved one, before the aspect ratio (as StretchMaxCross is for a fixed maximum).
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ResolveFlexKeywordLimits(UiTree tree, ref FlexItem item, in FlexConstants constants, float percentMain)
     {
@@ -354,13 +354,15 @@ internal static partial class LayoutEngine
         var limits = KeywordLimits.Of(in tree.Nodes.GetRef(item.Node).Layout.Style);
         OptionalSize min = item.Min;
         OptionalSize max = item.Max;
-        ResolveKeywordLimits(tree, item.Node, limits, item.Size, constants.NodeInnerSize, stretch, contentHeights: !row, ref min, ref max);
-        item.Min = min;
-        item.Max = max;
+        var unratioed = limits with { AspectRatio = float.NaN };
+        ResolveKeywordLimits(tree, item.Node, unratioed, item.Size, constants.NodeInnerSize, stretch, contentHeights: !row, ref min, ref max);
         if ((row ? limits.MaxHeight : limits.MaxWidth).IsSizingKeyword)
         {
             item.StretchMaxCross = max.Cross(row);
         }
+
+        item.Min = WithAspectRatio(min, limits.AspectRatio);
+        item.Max = WithAspectRatio(max, limits.AspectRatio);
     }
 
     // 9.2.2: the container's content box where it is known, otherwise the space the parent gave less the padding and border.
