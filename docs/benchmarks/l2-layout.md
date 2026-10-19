@@ -19,22 +19,30 @@ $env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'
 
 ## 結果: 4 つのフレームワーク
 
-`layout.ps1` で 4 つを 5 ラウンド交互に測った。表はラウンドの中央値、括弧は最小〜最大（µs）。
+`layout.ps1` で 4 つを 5 ラウンド交互に測った（a616834 に Taffy の絶対配置の子の場面を足した版）。表はラウンドの中央値、括弧は最小〜最大（µs）。
 
 | 指標 | XylemUI（S6b の意味） | XylemUI（CSS の既定） | XylemUI（`%` あり） | Taffy 0.9.0（S6b / CSS の既定 / `%`） | Flutter | Avalonia |
 | --- | --- | --- | --- | --- | --- | --- |
-| 最初の layout | 3,443（3,228〜3,731） | 5,254（4,986〜5,709） | 5,256（4,840〜5,468） | 7,358 / 7,796 / 8,112 | 1,227（942〜1,738） | 5,434（5,312〜5,668） |
-| 1 か所の変更 | 20.8（20.6〜21.0） | 36.5（36.4〜37.1） | 39.0（38.8〜39.5） | 59.9 / 59.6 / 67.7 | 5.0（5〜6） | 29.5（29.1〜29.8） |
+| 最初の layout | 3,601（3,278〜3,798） | 4,965（4,660〜5,270） | 4,617（4,347〜5,052） | 6,497 / 6,753 / 7,178 | 816（736〜1,661） | 4,929（4,818〜5,086） |
+| 1 か所の変更 | 20.0（19.9〜20.7） | 34.5（34.1〜36.4） | 35.7（35.5〜36.4） | 51.5 / 51.8 / 57.4 | 5.0（5〜6） | 26.6（26.6〜26.7） |
 | 内容の変更（大きさは同じ） | 0.2 | 0.3 | 0.3 | — | 5.0 | 0.8 |
-| 固定サイズの行の中の変更 | 6.4 | 22.1 | 24.6 | — | — | — |
-| 幅の変更 | 647（601〜673） | 632（613〜642） | 1,883（1,803〜1,980） | 5,203 / 5,540 / 6,932 | 656（473〜704） | 342（313〜492） |
+| 固定サイズの行の中の変更 | 6.0 | 21.0 | 22.7 | — | — | — |
+| 幅の変更 | 651（600〜662） | 632（573〜700） | 1,838（1,757〜2,167） | 4,259 / 4,283 / 5,903 | 369（336〜464） | 281（275〜317） |
 
-| 指標（絶対配置の子の場面） | XylemUI | Flutter | Avalonia |
-| --- | --- | --- | --- |
-| 最初の layout | 2,209（2,124〜2,231） | 888（559〜1,109） | 5,910（5,693〜6,163） |
-| 子の中の変更 | 10.7（10.6〜10.9） | 2.0（2〜2） | 4.6（4.6〜4.7） |
+| 指標（wrap の場面） | XylemUI | Taffy 0.9.0 | Flutter | Avalonia |
+| --- | --- | --- | --- | --- |
+| 最初の layout | 2,870（2,617〜3,044） | 4,435（4,030〜4,527） | 775（754〜971） | 5,535（5,384〜5,681） |
+| 1 か所の変更 | 1,181（1,040〜1,313） | 2,468（2,430〜2,551） | 607（555〜681） | 2,275（2,228〜2,315） |
+| 幅の変更 | 1,239（1,089〜1,257） | 2,611（2,471〜2,858） | 732（650〜1,207） | 1,255（1,228〜1,274） |
 
-- **絶対配置の子の中の変更（Flutter の約 5 倍、Avalonia の約 2 倍）**: 3 つとも、変わった子の箱が 100 個の子をすべて置き直す（Flutter の `RenderStack.performLayout`、Avalonia の `Canvas.ArrangeOverride`）。差は子 1 つあたりの費用で、XylemUI は約 100 ns、Flutter は約 20 ns。NativeAOT のプロファイル（`layout-loop absolute change 300000`、Visual Studio の collector）では、子ごとのスタイルの解決（大きさ・マージン・insets。`LayOutAbsoluteChild` の自身の分）が 26 %、insets で狭めた containing block が 12 %、マージンの解決が 9 %、子ごとに 2 回あるキャッシュの問い合わせ（測るだけの実行と layout の実行。`LayoutChild`・`LayoutCacheKey.Matches`・`MeasureCache.TryGet`）が合わせて約 22 %。Flutter は clean な子の制約を比べるだけで戻る。container の入力が同じ clean な子で前回の置き場所を使う仕組みは、行 L7 に置いた
+| 指標（絶対配置の子の場面） | XylemUI | Taffy 0.9.0 | Flutter | Avalonia |
+| --- | --- | --- | --- | --- |
+| 最初の layout | 2,044（1,940〜2,276） | 1,797（1,776〜1,894） | 885（775〜979） | 5,212（5,167〜5,393） |
+| 子の中の変更 | 10.3（9.6〜10.8） | 19.5（18.3〜20.4） | 2.0（2〜2） | 4.2（4.1〜4.3） |
+
+- **Taffy（GPUI のレイアウト）**: Taffy の比較のアプリ（`benchmarks/compare/taffy`）に同じ場面を足した。葉の内容の幅をノードの context に持ち、変えたら `mark_dirty` する。Taffy の `mark_dirty` は根まで伝わり（境界を持たない）、根から計算し直してキャッシュに当たった子を飛ばす。子の中の変更は XylemUI の約 2 倍、最初の layout は XylemUI より 12 % 速い
+- **絶対配置の子の中の変更（Flutter の約 5 倍、Avalonia の約 2.5 倍、Taffy の約半分）**: Flutter・Avalonia・XylemUI は、変わった子の箱が 100 個の子をすべて置き直す（Flutter の `RenderStack.performLayout`、Avalonia の `Canvas.ArrangeOverride`）。差は子 1 つあたりの費用で、XylemUI は約 100 ns、Flutter は約 20 ns。NativeAOT のプロファイル（`layout-loop absolute change 300000`、Visual Studio の collector）では、子ごとのスタイルの解決（大きさ・マージン・insets。`LayOutAbsoluteChild` の自身の分）が 26 %、insets で狭めた containing block が 12 %、マージンの解決が 9 %、子ごとに 2 回あるキャッシュの問い合わせ（測るだけの実行と layout の実行。`LayoutChild`・`LayoutCacheKey.Matches`・`MeasureCache.TryGet`）が合わせて約 22 %。Flutter は clean な子の制約を比べるだけで戻る。container の入力が同じ clean な子で前回の置き場所を使う仕組みは、行 L7 に置いた
+- **絶対配置の子の場面の最初の layout（Flutter の約 2.3 倍、Taffy の 1.14 倍）**: 1 万個の絶対配置の子を、子ごとに測るだけの実行と layout の実行で 2 回求める。Flutter は 1 回
 - **ノードの大きさ**: `UiNode` 520 バイト（main 528）、計測のキャッシュ 1 ノード 512 バイト（main 456）。L2 の 4 つの項目（`Position`・`Inset`・`AspectRatio`・`Hidden`）で `LayoutStyle` が 40 バイト増えた分を、`LayoutState.Box`（64 バイト）を計測のキャッシュへ移して打ち消した
 
 ## 結果: L5 の後の main との比較
@@ -76,4 +84,4 @@ main（7e1a2fd）と L2 のブランチ（e7f0f94 の時点）を、main・L2・
 - 絶対配置の子と相対配置の insets の増分のテスト: `LayoutPositionedTests`、`LayoutRandomTests`（絶対配置のノードと `Hidden` の切り替えを入れた、40 の種）
 - L1a・L1b の場面の指標が、main と順番をそろえて測ってばらつきを超えて遅くならない: 範囲はすべて重なる。最小値で 2〜4 % 大きい指標があり、原因は未確定（上）
 - 定常状態のアロケーション 0: `SteadyState_RelayoutAfterOneChange_AllocatesNothing(scene: "positioned")`
-- 絶対配置の子の中の変更を Flutter と Avalonia と比べる: 上の表。Flutter の約 5 倍で、子ごとの費用を下げる仕組みは行 L7
+- 絶対配置の子の中の変更を Flutter・Avalonia・GPUI（Taffy 0.9.0）と比べる: 上の表。Taffy の約半分、Avalonia の約 2.5 倍、Flutter の約 5 倍で、子ごとの費用を下げる仕組みは行 L7

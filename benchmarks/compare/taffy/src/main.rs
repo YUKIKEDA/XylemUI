@@ -2,7 +2,9 @@
 // the layout of GPUI: a column of 100 rows of 100 leaves that measure 10 x 10, laid out at 2,000 x 2,000 without rounding
 // (XylemUI does not round). Four scenes as in XylemUI: S6b's meaning (every flex item has a minimum of 0), CSS's defaults,
 // percentages with padding, and one row that wraps 10,000 leaves with its lines packed at the top. Prints one JSON line: the medians of the first layout, a layout after one leaf's width changes, and a layout at a
-// new width, and how many times a leaf was measured in a first layout and in a layout after a change.
+// new width, and how many times a leaf was measured in a first layout and in a layout after a change. A fifth scene (row L2):
+// a column of 100 blocks of 2,000 x 20, each holding 100 absolutely positioned leaves at a left inset of 20 each, and a change
+// of one leaf's content (its width 10 or 20 in turn, kept in the node's context, then mark_dirty).
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -96,6 +98,94 @@ fn layout(tree: &mut TaffyTree<()>, root: NodeId) {
     .unwrap();
 }
 
+// The absolute scene of row L2, as XylemUI's BuildAbsolute: the blocks have a minimum height of 0 (as S6b's meaning), and each
+// leaf's context is the width of its content.
+fn build_absolute() -> (TaffyTree<f32>, NodeId, NodeId) {
+    let mut tree: TaffyTree<f32> = TaffyTree::new();
+    tree.disable_rounding();
+    let mut target = None;
+    let mut boxes = Vec::new();
+    for r in 0..ROWS {
+        let mut leaves = Vec::new();
+        for c in 0..COLUMNS {
+            let style = Style {
+                position: Position::Absolute,
+                inset: Rect {
+                    left: length(c as f32 * 20.0),
+                    top: length(0.0_f32),
+                    right: auto(),
+                    bottom: auto(),
+                },
+                ..Default::default()
+            };
+            let leaf = tree.new_leaf_with_context(style, 10.0).unwrap();
+            if r == ROWS / 2 && c == COLUMNS / 2 {
+                target = Some(leaf);
+            }
+            leaves.push(leaf);
+        }
+        let box_style = Style {
+            display: Display::Block,
+            size: Size {
+                width: length(2000.0_f32),
+                height: length(20.0_f32),
+            },
+            min_size: Size {
+                width: auto(),
+                height: length(0.0_f32),
+            },
+            ..Default::default()
+        };
+        boxes.push(tree.new_with_children(box_style, &leaves).unwrap());
+    }
+    let root_style = Style {
+        flex_direction: FlexDirection::Column,
+        size: Size {
+            width: length(2000.0_f32),
+            height: length(2000.0_f32),
+        },
+        ..Default::default()
+    };
+    let root = tree.new_with_children(root_style, &boxes).unwrap();
+    (tree, root, target.unwrap())
+}
+
+fn layout_absolute(tree: &mut TaffyTree<f32>, root: NodeId) {
+    tree.compute_layout_with_measure(root, Size::MAX_CONTENT, |known, _available, _node, ctx, _style| Size {
+        width: known.width.unwrap_or(*ctx.unwrap()),
+        height: known.height.unwrap_or(10.0),
+    })
+    .unwrap();
+}
+
+fn measure_absolute(line: &mut String) {
+    let (mut first, mut change) = (Vec::new(), Vec::new());
+    for s in 0..18 {
+        let (mut tree, root, target) = build_absolute();
+        let t = Instant::now();
+        layout_absolute(&mut tree, root);
+        let first_us = t.elapsed().as_secs_f64() * 1e6;
+        let mut change_us = 0.0;
+        for i in 0..2 {
+            *tree.get_node_context_mut(target).unwrap() = if i % 2 == 0 { 20.0 } else { 10.0 };
+            tree.mark_dirty(target).unwrap();
+            let t = Instant::now();
+            layout_absolute(&mut tree, root);
+            change_us = t.elapsed().as_secs_f64() * 1e6;
+        }
+        assert_eq!(tree.layout(target).unwrap().size.width, 10.0, "the absolute scene did not follow the change");
+        if s >= 3 {
+            first.push(first_us);
+            change.push(change_us);
+        }
+    }
+    line.push_str(&format!(
+        "\"absolute_first_us_p50\":{:.1},\"absolute_change_us_p50\":{:.1},",
+        median(first),
+        median(change)
+    ));
+}
+
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
@@ -151,6 +241,7 @@ fn main() {
             median(width)
         ));
     }
+    measure_absolute(&mut line);
     line.pop();
     line.push('}');
     println!("{line}");
