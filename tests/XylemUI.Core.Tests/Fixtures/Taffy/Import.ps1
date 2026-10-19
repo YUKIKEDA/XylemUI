@@ -12,5 +12,8 @@ foreach ($group in 'block', 'blockflex', 'flex', 'leaf') {
     }
     $content = "<tests source=`"https://github.com/DioxusLabs/taffy/tree/$commit/tests/xml/$group`">`n" + ($tests -join "`n") + "`n</tests>`n"
     Set-Content -Path (Join-Path $PSScriptRoot "$group.xml") -Value $content -Encoding utf8NoBOM -NoNewline
+    # The gate checks the XML's format too: unformatted, every test shows as changed (PR #134).
+    dotnet csharpier format (Join-Path $PSScriptRoot "$group.xml")
+    if ($LASTEXITCODE -ne 0) { throw 'CSharpier failed.' }
     Write-Host "$group`: $($tests.Count) tests from $commit"
 }
