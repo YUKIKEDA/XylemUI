@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    An absolutely positioned box is no wider than its inset-modified containing block less its margins
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: block; width: 200px; height: 100px;">
+  <div style="position: absolute; left: 10px; width: 300px; margin-right: 20px; max-width: stretch;">HH&#8203;HHHH</div>
+</div>
+
+</body>
+</html>

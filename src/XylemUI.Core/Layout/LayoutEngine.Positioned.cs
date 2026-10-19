@@ -173,6 +173,8 @@ internal static partial class LayoutEngine
         Length widthStyle = s.Width;
         Length heightStyle = s.Height;
         float aspectRatio = s.AspectRatio;
+        bool keywordLimits = s.HasSizingKeywordLimit;
+        KeywordLimits limits = keywordLimits ? KeywordLimits.Of(in s) : default;
 
         // `auto` is `normal` for an absolutely positioned box: it does not follow the container's `*-items` here.
         var horizontal = new AbsoluteAxis(
@@ -198,6 +200,15 @@ internal static partial class LayoutEngine
             isInline: false
         );
         var stretchFit = new Size(horizontal.StretchFitSize(), vertical.StretchFitSize());
+
+        // Keyword limits stretch to the stretch-fit size (row L3).
+        if (keywordLimits)
+        {
+            ResolveKeywordLimits(tree, child, limits, styleSize, area, stretchFit, contentHeights: false, ref min, ref max);
+            min = min.Or(new OptionalSize(paddingBorder.Width, paddingBorder.Height)).AtLeast(paddingBorder);
+            known = styleSize.Clamp(min, max);
+        }
+
         var available = new AvailableSize(
             AvailableSpace.Definite(Maybe.Clamp(stretchFit.Width, min.Width, max.Width)),
             AvailableSpace.Definite(Maybe.Clamp(stretchFit.Height, min.Height, max.Height))
@@ -277,8 +288,8 @@ internal static partial class LayoutEngine
         );
         bool widthUnknown = float.IsNaN(known.Width);
         bool heightUnknown = float.IsNaN(known.Height);
-        AvailableSpace? widthSpace = widthUnknown ? MeasureSpaceOf(width, stretchWidth, area.Width) : null;
-        AvailableSpace? heightSpace = heightUnknown ? MeasureSpaceOf(height, stretchHeight, area.Height) : null;
+        AvailableSpace? widthSpace = widthUnknown ? MeasureSpaceOf(width, stretchWidth) : null;
+        AvailableSpace? heightSpace = heightUnknown ? MeasureSpaceOf(height, stretchHeight) : null;
         if (widthSpace is { } bothWidth && heightSpace is { } bothHeight)
         {
             var input = new LayoutInput(

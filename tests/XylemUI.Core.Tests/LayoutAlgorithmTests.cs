@@ -335,7 +335,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
             NodeHandle root = tree.CreateNode(
                 new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { Wrap = FlexWrap.WrapReverse }) }
             );
-            NodeHandle leaf = Leaf(tree, root, 50, 10, new LayoutStyle { MaxHeight = LengthPercentageAuto.Px(40) });
+            NodeHandle leaf = Leaf(tree, root, 50, 10, new LayoutStyle { MaxHeight = Length.Px(40) });
 
             LayOut(tree, root, 100, 100);
 

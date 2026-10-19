@@ -238,7 +238,7 @@ internal static class LayoutCost
                 {
                     Width = Length.Px(2_000),
                     Height = Length.Px(20),
-                    MinHeight = LengthPercentageAuto.Px(0),
+                    MinHeight = Length.Px(0),
                 }
             );
             tree.AppendChild(root, box);
@@ -341,11 +341,8 @@ internal static class LayoutCost
         var tree = new UiTree();
         NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
         NodeHandle target = default;
-        var noMinimum = LengthPercentageAuto.Px(0);
-        LayoutStyle rowStyle = new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Row } with
-        {
-            MinHeight = scene == "s6b" ? noMinimum : LengthPercentageAuto.Auto,
-        };
+        var noMinimum = Length.Px(0);
+        LayoutStyle rowStyle = new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Row } with { MinHeight = scene == "s6b" ? noMinimum : Length.Auto };
         if (fixedRows)
         {
             rowStyle = rowStyle with { Width = Length.Px(2_000), Height = Length.Px(10) };

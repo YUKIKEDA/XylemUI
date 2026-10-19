@@ -118,7 +118,7 @@ internal static class TaffyFixtureScope
                 "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
                     $"{attribute.Name.LocalName}: {value}, the item's own writing direction (row P03)",
                 "text-align" => "text-align moving a block's children (CSS's history; the design does not take it, §3.2)",
-                "flex-basis" when value is "content" => "flex-basis: content (row L3)",
+                "flex-basis" when value is "content" => "flex-basis: content (row V2)",
                 "overflow-x" or "overflow-y" when value is not "visible" => "overflow (row V2)",
                 "scrollbar-width" => "a scrollbar's width (row V2)",
                 "direction" when value is "rtl" => "right-to-left (row P03)",

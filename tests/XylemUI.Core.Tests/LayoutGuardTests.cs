@@ -119,7 +119,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
 
     /// <summary>
     /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state, with CSS's
-    /// defaults (stretch, the automatic minimum size), with percentages, with wrapping rows, and with children out of the flow.
+    /// defaults (stretch, the automatic minimum size), with percentages, with wrapping rows, with children out of the flow, and
+    /// with minimums and maximums that are sizing keywords.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -127,7 +128,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     ///   than the changed one is 1 % wide with a 0.1 % padding. With wrap, the rows wrap, every other leaf is 30 wide (3,000
     ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. With positioned, every tenth leaf is
     ///   absolutely positioned at its row's right and bottom, and every tenth from the fifth is a hidden row holding 10 leaves
-    ///   (row L2). Warmed up with 20 changes.
+    ///   (row L2). With keywords, every tenth leaf has a minimum width of max-content and every tenth from the fifth a maximum
+    ///   width of min-content (row L3). Warmed up with 20 changes.
     ///
     /// Steps:
     /// - 1,100 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread in
@@ -141,6 +143,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     [InlineData("percent")]
     [InlineData("wrap")]
     [InlineData("positioned")]
+    [InlineData("keywords")]
     public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(string scene) =>
         ui.Invoke(() =>
         {
@@ -158,6 +161,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                         "wrap" => new LayoutStyle { Width = Length.Px(30) },
                         "positioned" when c % 10 == 0 => AtRightBottom,
                         "positioned" when c % 10 == 5 => new LayoutStyle { Hidden = true },
+                        "keywords" when c % 10 == 0 => new LayoutStyle { MinWidth = Length.MaxContent },
+                        "keywords" when c % 10 == 5 => new LayoutStyle { MaxWidth = Length.MinContent },
                         _ => new LayoutStyle(),
                     };
                     NodeHandle leaf = scene == "positioned" && c % 10 == 5 ? tree.CreateNode(style) : tree.CreateNode(style, TenByTen, TenWide);

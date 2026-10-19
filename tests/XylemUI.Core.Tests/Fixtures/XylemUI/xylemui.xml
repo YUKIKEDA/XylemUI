@@ -1,0 +1,456 @@
+<tests source="Chrome for Testing 155.0.8059.84, through the gentest of Taffy">
+  <test name="absolute_max_width_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="absolute" max-width="min-content" left="0px" right="0px">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="40" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="absolute_max_width_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="absolute" width="300px" max-width="stretch" margin-right="20px" left="10px">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="10" y="0" width="170" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="absolute_min_height_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="absolute" width="20px" height="5px" min-height="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="20" height="5" />
+      </node>
+    </expectations>
+  </test>
+  <test name="absolute_min_height_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="absolute" width="20px" min-height="stretch" top="10px">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="10" width="20" height="90" />
+      </node>
+    </expectations>
+  </test>
+  <test name="absolute_min_width_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="absolute" width="10px" min-width="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="60" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_max_height_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" width="20px" height="100px" max-height="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="20" height="100" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_max_height_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="relative" width="20px" height="300px" max-height="stretch">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="20" height="100" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_max_width_fit_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="50px">
+        <text direction="ltr" position="relative" max-width="fit-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="20">
+        <node x="0" y="0" width="50" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_max_width_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" max-width="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="10">
+        <node x="0" y="0" width="60" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_max_width_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" max-width="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="20">
+        <node x="0" y="0" width="40" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_max_width_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" width="300px" max-width="stretch" margin-left="20px">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="10">
+        <node x="20" y="0" width="180" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_min_height_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" width="20px" height="10px" min-height="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="10">
+        <node x="0" y="0" width="20" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_min_height_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px" height="100px">
+        <text direction="ltr" position="relative" width="20px" min-height="stretch">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="20" height="100" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_min_width_fit_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="50px">
+        <text direction="ltr" position="relative" width="10px" min-width="fit-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="20">
+        <node x="0" y="0" width="50" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_min_width_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" width="10px" min-width="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="10">
+        <node x="0" y="0" width="60" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_min_width_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" width="10px" min-width="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="20">
+        <node x="0" y="0" width="40" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_min_width_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="block" direction="ltr" position="absolute" width="200px">
+        <text direction="ltr" position="relative" width="10px" min-width="stretch" margin-left="20px">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="10">
+        <node x="20" y="0" width="180" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="block_nested_min_width_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="flex-start" width="200px" height="50px">
+        <div display="block" direction="ltr" position="relative">
+          <text direction="ltr" position="relative" width="10px" min-width="max-content">
+          HH​HHHH
+        </text>
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="50">
+        <node x="0" y="0" width="60" height="10">
+          <node x="0" y="0" width="60" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_column_max_height_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" width="200px" height="200px">
+        <text direction="ltr" position="relative" flex-grow="1" width="20px" max-height="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="200">
+        <node x="0" y="0" width="20" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_column_max_width_fit_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" width="50px" height="200px">
+        <text direction="ltr" position="relative" max-width="fit-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="200">
+        <node x="0" y="0" width="50" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_column_max_width_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" width="200px" height="200px">
+        <text direction="ltr" position="relative" max-width="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="200">
+        <node x="0" y="0" width="40" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_column_min_height_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" width="200px" height="200px">
+        <text direction="ltr" position="relative" width="20px" height="5px" min-height="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="200">
+        <node x="0" y="0" width="20" height="20" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_column_min_height_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" width="200px" height="200px">
+        <text direction="ltr" position="relative" width="20px" min-height="stretch">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="200">
+        <node x="0" y="0" width="20" height="200" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_column_min_width_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" align-items="flex-start" width="200px" height="200px">
+        <text direction="ltr" position="relative" min-width="stretch">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="200">
+        <node x="0" y="0" width="200" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_row_max_height_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" width="200px" height="50px">
+        <text direction="ltr" position="relative" width="20px" max-height="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="50">
+        <node x="0" y="0" width="20" height="50" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_row_max_height_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="flex-start" width="200px" height="50px">
+        <text direction="ltr" position="relative" width="20px" height="100px" max-height="stretch">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="50">
+        <node x="0" y="0" width="20" height="50" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_row_max_width_min_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" width="200px" height="50px">
+        <text direction="ltr" position="relative" flex-grow="1" max-width="min-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="50">
+        <node x="0" y="0" width="40" height="50" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_row_min_height_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="flex-start" width="200px" height="50px">
+        <text direction="ltr" position="relative" width="20px" height="5px" min-height="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="50">
+        <node x="0" y="0" width="20" height="5" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_row_min_width_max_content__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" width="50px" height="50px">
+        <text direction="ltr" position="relative" width="100px" min-width="max-content">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="50">
+        <node x="0" y="0" width="60" height="50" />
+      </node>
+    </expectations>
+  </test>
+  <test name="flex_row_min_width_stretch__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" width="200px" height="50px">
+        <text direction="ltr" position="relative" width="10px" min-width="stretch">
+        HH​HHHH
+      </text>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="50">
+        <node x="0" y="0" width="200" height="50" />
+      </node>
+    </expectations>
+  </test>
+</tests>

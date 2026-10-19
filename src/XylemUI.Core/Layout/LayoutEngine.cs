@@ -93,6 +93,11 @@ internal static partial class LayoutEngine
                     try
                     {
                         LayoutInput input = ResolveInput(tree, request);
+                        if (request.Node == tree.Root)
+                        {
+                            input = WithRootKeywordLimits(tree, request.Node, in input);
+                        }
+
                         if (request.Node == tree.Root && IsAbsoluteRootIn(tree, request.Node, in input))
                         {
                             LayOutAbsoluteRoot(tree, request.Node, ToSize(input.ParentSize));
@@ -164,6 +169,28 @@ internal static partial class LayoutEngine
         }
 
         return node.Layout.LastInput;
+    }
+
+    // A root's keyword limits clamp the size its input gives it (row L3). RootInput runs outside the layout pass and cannot
+    // measure, so the pass resolves them against the viewport.
+    private static LayoutInput WithRootKeywordLimits(UiTree tree, NodeHandle root, in LayoutInput input)
+    {
+        ref readonly LayoutStyle style = ref tree.Nodes.GetRef(root).Layout.Style;
+        if (!style.HasSizingKeywordLimit || style.Position == Position.Absolute)
+        {
+            return input;
+        }
+
+        OptionalSize parent = input.ParentSize;
+        OptionalSize min = MinSize(in style, parent);
+        OptionalSize max = MaxSize(in style, parent);
+        OptionalSize styleSize = StyleSize(in style, parent);
+        var limits = KeywordLimits.Of(in style);
+        var stretch = new Size(input.Available.Width.ToOption(), input.Available.Height.ToOption());
+        ResolveKeywordLimits(tree, root, limits, styleSize, parent, stretch, contentHeights: false, ref min, ref max);
+        Size size = LayoutChild(tree, root, in input, commit: false);
+        var known = new OptionalSize(Maybe.Clamp(size.Width, min.Width, max.Width), Maybe.Clamp(size.Height, min.Height, max.Height));
+        return input with { KnownDimensions = known };
     }
 
     // The root's margin box sits at the origin of its viewport.
@@ -411,8 +438,9 @@ internal static partial class LayoutEngine
     // A style's lengths in pixels where it uses no percentage (LayoutState.Box); none otherwise.
     internal static bool TryResolveBox(in LayoutStyle style, out ResolvedBox box)
     {
-        // With an aspect ratio, the maximum depends on who resolves it: a leaf does not apply the ratio to it (Taffy).
-        if (style.UsesPercentOfParentWidth || style.UsesPercentOfParentHeight || style.HasAspectRatio)
+        // With an aspect ratio, the maximum depends on who resolves it: a leaf does not apply the ratio to it (Taffy). A keyword
+        // limit is resolved by measuring the node.
+        if (style.UsesPercentOfParentWidth || style.UsesPercentOfParentHeight || style.HasAspectRatio || style.HasSizingKeywordLimit)
         {
             box = default;
             return false;
@@ -476,18 +504,16 @@ internal static partial class LayoutEngine
             !float.IsNaN(min.Height) && !float.IsNaN(max.Height) && max.Height <= min.Height ? min.Height : float.NaN
         );
 
-    // A size keyword of a style resolved against the space it may stretch into and the basis of its percentage (Taffy's
-    // resolve_sizing_keyword): the available space to measure the node under, or none for a length that is not a content or
-    // fit-content keyword, or whose space or basis is unknown (NaN). Stretch takes its size from StretchOf without measuring.
+    // A size keyword of a style resolved against the space it may stretch into (Taffy's resolve_sizing_keyword): the available
+    // space to measure the node under, or none for a length that is not a content keyword, or whose space is unknown (NaN).
+    // Stretch takes its size from StretchOf without measuring.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static AvailableSpace? MeasureSpaceOf(Length length, float stretch, float percentBasis) =>
+    private static AvailableSpace? MeasureSpaceOf(Length length, float stretch) =>
         length.Kind switch
         {
             LengthKind.MinContent => AvailableSpace.MinContent,
             LengthKind.MaxContent => AvailableSpace.MaxContent,
             LengthKind.FitContent when !float.IsNaN(stretch) => AvailableSpace.Definite(stretch),
-            LengthKind.FitContentPx => AvailableSpace.Definite(length.Value),
-            LengthKind.FitContentPercent when !float.IsNaN(percentBasis) => AvailableSpace.Definite(percentBasis * length.Value),
             _ => null,
         };
 
@@ -495,4 +521,76 @@ internal static partial class LayoutEngine
     // resolve_sizing_keyword, the exact resolution).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float StretchOf(Length length, float stretch) => length.Kind == LengthKind.Stretch ? stretch : float.NaN;
+
+    // The minimum and the maximum that the sizing keywords of a node give it (row L3), in place of the ones its other lengths
+    // gave: stretch takes the space the node may stretch into (NaN where unknown), and a content keyword measures the node's
+    // content on that axis. Chrome counts a content keyword in a height only on a column's main axis (contentHeights); elsewhere
+    // it is the initial value, as is a keyword whose space is unknown. The limits are copied out of the style first: no ref
+    // into the arena is held across the measuring runs (design §2.5).
+    private static void ResolveKeywordLimits(
+        UiTree tree,
+        NodeHandle node,
+        KeywordLimits limits,
+        OptionalSize known,
+        OptionalSize parentSize,
+        Size stretch,
+        bool contentHeights,
+        ref OptionalSize min,
+        ref OptionalSize max
+    )
+    {
+        min = new OptionalSize(
+            KeywordLimit(tree, node, limits.MinWidth, true, known, parentSize, stretch, contentHeights, min.Width),
+            KeywordLimit(tree, node, limits.MinHeight, false, known, parentSize, stretch, contentHeights, min.Height)
+        );
+        max = new OptionalSize(
+            KeywordLimit(tree, node, limits.MaxWidth, true, known, parentSize, stretch, contentHeights, max.Width),
+            KeywordLimit(tree, node, limits.MaxHeight, false, known, parentSize, stretch, contentHeights, max.Height)
+        );
+    }
+
+    private static float KeywordLimit(
+        UiTree tree,
+        NodeHandle node,
+        Length limit,
+        bool horizontal,
+        OptionalSize known,
+        OptionalSize parentSize,
+        Size stretch,
+        bool contentHeights,
+        float other
+    )
+    {
+        if (!limit.IsSizingKeyword)
+        {
+            return other;
+        }
+
+        float axisStretch = horizontal ? stretch.Width : stretch.Height;
+        if (limit.Kind == LengthKind.Stretch)
+        {
+            return axisStretch;
+        }
+
+        if ((!horizontal && !contentHeights) || MeasureSpaceOf(limit, axisStretch) is not { } space)
+        {
+            return float.NaN;
+        }
+
+        if (horizontal)
+        {
+            var widthSpace = new AvailableSize(space, AvailableSpace.MaxContent);
+            return MeasureChild(tree, node, known with { Width = float.NaN }, parentSize, widthSpace, SizingMode.ContentSize, horizontal: true);
+        }
+
+        float width = Maybe.Or(known.Width, stretch.Width);
+        var heightSpace = new AvailableSize(float.IsNaN(width) ? AvailableSpace.MaxContent : AvailableSpace.Definite(width), space);
+        return MeasureChild(tree, node, known with { Height = float.NaN }, parentSize, heightSpace, SizingMode.ContentSize, horizontal: false);
+    }
+
+    // The minimum and the maximum of a style, copied out of it to be resolved as sizing keywords (ResolveKeywordLimits).
+    private readonly record struct KeywordLimits(Length MinWidth, Length MinHeight, Length MaxWidth, Length MaxHeight)
+    {
+        public static KeywordLimits Of(in LayoutStyle style) => new(style.MinWidth, style.MinHeight, style.MaxWidth, style.MaxHeight);
+    }
 }

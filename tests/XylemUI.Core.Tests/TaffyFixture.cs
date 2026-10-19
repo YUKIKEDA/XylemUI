@@ -4,15 +4,16 @@ using System.Xml.Linq;
 
 namespace XylemUI.Tests;
 
-// Taffy's XML layout tests (Fixtures/Taffy, Chrome's results, MIT): reads a test, builds the UI tree it describes, lays it out
-// in the test's viewport, and compares the rounded rectangles with Chrome's (design §3.2, the reference of the layout tests).
+// Taffy's XML layout tests (Fixtures/Taffy, Chrome's results, MIT) and XylemUI's in the same form (Fixtures/XylemUI, made from
+// Chrome with Taffy's gentest): reads a test, builds the UI tree it describes, lays it out in the test's viewport, and compares
+// the rounded rectangles with Chrome's (design §3.2, the reference of the layout tests).
 internal static class TaffyFixture
 {
     // Ahem: every character is a 10 x 10 square; a zero-width space is the only break opportunity (Taffy's test measure).
     private const float AhemSize = 10;
     private const char ZeroWidthSpace = '​';
 
-    private static readonly string Directory = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Taffy");
+    private static readonly string Directory = Path.Combine(AppContext.BaseDirectory, "Fixtures");
     private static readonly Dictionary<string, XElement> Tests = Load();
 
     public static IEnumerable<string> Names => Tests.Keys.Order(StringComparer.Ordinal);
@@ -44,7 +45,7 @@ internal static class TaffyFixture
     private static Dictionary<string, XElement> Load()
     {
         var tests = new Dictionary<string, XElement>(StringComparer.Ordinal);
-        foreach (string file in System.IO.Directory.EnumerateFiles(Directory, "*.xml"))
+        foreach (string file in System.IO.Directory.EnumerateFiles(Directory, "*.xml", SearchOption.AllDirectories))
         {
             string group = Path.GetFileNameWithoutExtension(file);
             foreach (XElement test in XDocument.Load(file).Root!.Elements("test"))
@@ -182,10 +183,10 @@ internal static class TaffyFixture
             JustifySelf = ParseAlignItems(e, "justify-self"),
             Width = ParseLength(e, "width"),
             Height = ParseLength(e, "height"),
-            MinWidth = ParseLengthPercentageAuto(e, "min-width"),
-            MinHeight = ParseLengthPercentageAuto(e, "min-height"),
-            MaxWidth = ParseLengthPercentageAuto(e, "max-width"),
-            MaxHeight = ParseLengthPercentageAuto(e, "max-height"),
+            MinWidth = ParseLength(e, "min-width"),
+            MinHeight = ParseLength(e, "min-height"),
+            MaxWidth = ParseLength(e, "max-width"),
+            MaxHeight = ParseLength(e, "max-height"),
             Padding = ParseInsets(e, "padding"),
             Border = ParseInsets(e, "border"),
             Margin = new(
@@ -207,16 +208,11 @@ internal static class TaffyFixture
             "max-content" => Length.MaxContent,
             "fit-content" => Length.FitContent,
             "stretch" => Length.Stretch,
-            string value when value.StartsWith("fit-content(", StringComparison.Ordinal) && value.EndsWith("%)", StringComparison.Ordinal) =>
-                Length.FitContentPercent(ParseFloat(value["fit-content(".Length..^2], 0) / 100),
-            string value when value.StartsWith("fit-content(", StringComparison.Ordinal) => Length.FitContentPx(
-                ParsePx(value["fit-content(".Length..^1])
-            ),
             string value when value.EndsWith('%') => Length.Percent(ParseFloat(value[..^1], 0) / 100),
             string value => Length.Px(ParsePx(value)),
         };
 
-    // An absent minimum or maximum is auto; an absent margin is 0.
+    // An absent inset is auto; an absent margin is 0.
     private static LengthPercentageAuto ParseLengthPercentageAuto(XElement e, string name, bool zero = false) =>
         e.Attribute(name)?.Value switch
         {
