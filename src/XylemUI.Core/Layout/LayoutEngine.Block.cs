@@ -131,7 +131,7 @@ internal static partial class LayoutEngine
                 .Clamp(MinSize(in childStyle, contentBox), MaxSize(in childStyle, contentBox));
             float marginSum = EdgeInsets.ResolveOrZero(childStyle.Margin, availableWidth.ToOption()).Horizontal;
             float paddingBorderWidth = PaddingBorder(in childStyle, contentBox.Width).Horizontal;
-            AvailableSpace? keywordSpace = MeasureSpaceOf(childStyle.Width, float.NaN);
+            AvailableSpace? keywordSpace = MeasureSpaceOf(childStyle.Width, float.NaN, float.NaN);
 
             // The style is read above: no ref into the arena is held across the measuring run (design §2.5).
             float width = childKnown.Width;
@@ -205,7 +205,7 @@ internal static partial class LayoutEngine
             Length widthStyle = aligned && childStyle.Width.IsAuto ? Length.FitContent : childStyle.Width;
 
             float keywordWidth = float.NaN;
-            if (MeasureSpaceOf(widthStyle, stretchWidth) is { } keywordSpace)
+            if (MeasureSpaceOf(widthStyle, stretchWidth, innerWidth) is { } keywordSpace)
             {
                 keywordWidth = MeasureChild(
                     tree,
@@ -219,7 +219,11 @@ internal static partial class LayoutEngine
             }
 
             float width = Maybe.Clamp(Maybe.Or(Maybe.Or(size.Width, keywordWidth), stretchWidth), min.Width, max.Width);
-            OptionalSize known = new OptionalSize(width, size.Height).Clamp(min, max);
+
+            // A stretch height fills the content box's percentage basis less the margins, which the design does not collapse
+            // (Taffy's resolve_stretch_height).
+            float stretchHeight = StretchOf(childStyle.Height, parentSize.Height - margin.Vertical);
+            OptionalSize known = new OptionalSize(width, Maybe.Or(size.Height, stretchHeight)).Clamp(min, max);
             var input = new LayoutInput(
                 known,
                 true,

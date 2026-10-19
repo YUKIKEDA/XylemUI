@@ -24,6 +24,15 @@ internal enum LengthKind : byte
 
     /// <summary>The available size, clamped between the content's smallest and largest sizes.</summary>
     FitContent,
+
+    /// <summary>A number of pixels in place of the available size, clamped as <see cref="FitContent"/> (row L3).</summary>
+    FitContentPx,
+
+    /// <summary>A fraction of the percentage basis in place of the available size, clamped as <see cref="FitContent"/> (row L3).</summary>
+    FitContentPercent,
+
+    /// <summary>The available size less the margins (CSS Sizing 4's stretch-fit, row L3).</summary>
+    Stretch,
 }
 
 /// <summary>
@@ -31,7 +40,8 @@ internal enum LengthKind : byte
 /// <c>max-width</c>, and <c>flex-basis</c>).
 /// </summary>
 /// <param name="Kind">What the length holds.</param>
-/// <param name="Value">The pixels of <see cref="LengthKind.Px"/> or the fraction of <see cref="LengthKind.Percent"/>; 0 otherwise.</param>
+/// <param name="Value">The pixels of <see cref="LengthKind.Px"/> and <see cref="LengthKind.FitContentPx"/>, or the fraction of
+/// <see cref="LengthKind.Percent"/> and <see cref="LengthKind.FitContentPercent"/>; 0 otherwise.</param>
 internal readonly record struct Length(LengthKind Kind, float Value)
 {
     /// <summary>
@@ -53,6 +63,11 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     /// Gets the available size clamped between the content's smallest and largest sizes.
     /// </summary>
     public static Length FitContent => new(LengthKind.FitContent, 0);
+
+    /// <summary>
+    /// Gets the available size less the margins (row L3).
+    /// </summary>
+    public static Length Stretch => new(LengthKind.Stretch, 0);
 
     /// <summary>
     /// Gets a value indicating whether the length is a fixed number of pixels.
@@ -80,6 +95,25 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Length Percent(float fraction) => new(LengthKind.Percent, fraction);
+
+    /// <summary>
+    /// Returns the size between the content's smallest and largest that a fixed space of <paramref name="pixels"/> gives
+    /// (CSS's <c>fit-content(&lt;length&gt;)</c>, row L3).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Length FitContentPx(float pixels) => new(LengthKind.FitContentPx, pixels);
+
+    /// <summary>
+    /// Returns the same with a fraction of the percentage basis (CSS's <c>fit-content(&lt;percentage&gt;)</c>, row L3).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Length FitContentPercent(float fraction) => new(LengthKind.FitContentPercent, fraction);
+
+    /// <summary>
+    /// Gets a value indicating whether the length is a sizing keyword: a content size, a fit-content size, or
+    /// <see cref="LengthKind.Stretch"/>.
+    /// </summary>
+    public bool IsSizingKeyword => Kind >= LengthKind.MinContent;
 
     /// <summary>
     /// Returns the pixels the length stands for against <paramref name="basis"/>, or NaN when it has none: an auto or content

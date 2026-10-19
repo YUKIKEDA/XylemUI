@@ -317,7 +317,11 @@ internal static partial class LayoutEngine
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
             constants.AnyAutoMargin |= item.AutoLeft | item.AutoTop | item.AutoRight | item.AutoBottom;
-            item.Stretched = !item.HasAutoCrossMargin(row) && item.CrossStyle.IsAuto && item.AlignSelf.Keyword == AlignItemsKeyword.Stretch;
+
+            // A cross size of stretch stretches the item to its line whatever its alignment (Taffy's is_stretched).
+            item.Stretched =
+                !item.HasAutoCrossMargin(row)
+                && (item.CrossStyle.Kind == LengthKind.Stretch || (item.CrossStyle.IsAuto && item.AlignSelf.Keyword == AlignItemsKeyword.Stretch));
             constants.AllStretched &= item.Stretched;
 
             // A stretched item's maximum resolves against the content box even where it is indefinite (Chrome and Firefox,
@@ -391,9 +395,12 @@ internal static partial class LayoutEngine
             float mainStretch = Maybe.Max(percentMain - item.Margin.MainSum(row), 0);
             item.FlexBasis = float.NaN;
             AvailableSpace? keywordSpace = null;
-            if (item.FlexBasisStyle.Kind is LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent)
+            if (item.FlexBasisStyle.IsSizingKeyword)
             {
-                keywordSpace = MeasureSpaceOf(item.FlexBasisStyle, mainStretch);
+                // A stretch basis is definite; a keyword that cannot be resolved here behaves as content.
+                item.FlexBasis = StretchOf(item.FlexBasisStyle, mainStretch);
+                item.FlexBasisIsDefinite = !float.IsNaN(item.FlexBasis);
+                keywordSpace = MeasureSpaceOf(item.FlexBasisStyle, mainStretch, percentMain);
             }
             else
             {
@@ -405,7 +412,9 @@ internal static partial class LayoutEngine
                 }
                 else if (item.FlexBasisStyle.IsAuto)
                 {
-                    keywordSpace = MeasureSpaceOf(item.MainStyle, mainStretch);
+                    item.FlexBasis = StretchOf(item.MainStyle, mainStretch);
+                    item.FlexBasisIsDefinite = !float.IsNaN(item.FlexBasis);
+                    keywordSpace = MeasureSpaceOf(item.MainStyle, mainStretch, percentMain);
                 }
             }
 
@@ -494,9 +503,7 @@ internal static partial class LayoutEngine
     // margins and padding resolve against is compared apart: a row's width can be known but not definite.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool ReadsContainerMain(in FlexItem item, bool hasBox) =>
-        !hasBox
-        || item.FlexBasisStyle.Kind is LengthKind.Percent or LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent
-        || item.MainStyle.Kind is LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent;
+        !hasBox || item.FlexBasisStyle.IsPercent || item.FlexBasisStyle.IsSizingKeyword || item.MainStyle.IsSizingKeyword;
 
     // The base-size step's results of an item from its container's last run (dropped when the item is marked dirty), where the
     // step would read the same values of the container: its style, the content-box sizes the item reads, and the spaces.
@@ -970,7 +977,7 @@ internal static partial class LayoutEngine
                 .Clamp(minCross, maxCross)
                 .AtLeast(paddingBorderCross);
             float crossStretch = Maybe.Max(constants.NodeInnerSize.Cross(row) - item.Margin.CrossSum(row), 0);
-            if (MeasureSpaceOf(item.CrossStyle, crossStretch) is { } keywordSpace)
+            if (MeasureSpaceOf(item.CrossStyle, crossStretch, constants.NodeInnerSize.Cross(row)) is { } keywordSpace)
             {
                 availableCross = keywordSpace;
             }

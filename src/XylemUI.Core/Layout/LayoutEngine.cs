@@ -476,15 +476,23 @@ internal static partial class LayoutEngine
             !float.IsNaN(min.Height) && !float.IsNaN(max.Height) && max.Height <= min.Height ? min.Height : float.NaN
         );
 
-    // A size keyword of a style resolved against the space it may stretch into (Taffy's resolve_sizing_keyword): the
-    // available space to measure the node under, or none for a length that is not a content keyword.
+    // A size keyword of a style resolved against the space it may stretch into and the basis of its percentage (Taffy's
+    // resolve_sizing_keyword): the available space to measure the node under, or none for a length that is not a content or
+    // fit-content keyword, or whose space or basis is unknown (NaN). Stretch takes its size from StretchOf without measuring.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static AvailableSpace? MeasureSpaceOf(Length length, float stretch) =>
+    private static AvailableSpace? MeasureSpaceOf(Length length, float stretch, float percentBasis) =>
         length.Kind switch
         {
             LengthKind.MinContent => AvailableSpace.MinContent,
             LengthKind.MaxContent => AvailableSpace.MaxContent,
             LengthKind.FitContent when !float.IsNaN(stretch) => AvailableSpace.Definite(stretch),
+            LengthKind.FitContentPx => AvailableSpace.Definite(length.Value),
+            LengthKind.FitContentPercent when !float.IsNaN(percentBasis) => AvailableSpace.Definite(percentBasis * length.Value),
             _ => null,
         };
+
+    // The size a stretch length takes: the space it may stretch into, or NaN for another length or an unknown space (Taffy's
+    // resolve_sizing_keyword, the exact resolution).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float StretchOf(Length length, float stretch) => length.Kind == LengthKind.Stretch ? stretch : float.NaN;
 }

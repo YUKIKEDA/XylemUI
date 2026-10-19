@@ -206,6 +206,12 @@ internal static class TaffyFixture
             "min-content" => Length.MinContent,
             "max-content" => Length.MaxContent,
             "fit-content" => Length.FitContent,
+            "stretch" => Length.Stretch,
+            string value when value.StartsWith("fit-content(", StringComparison.Ordinal) && value.EndsWith("%)", StringComparison.Ordinal) =>
+                Length.FitContentPercent(ParseFloat(value["fit-content(".Length..^2], 0) / 100),
+            string value when value.StartsWith("fit-content(", StringComparison.Ordinal) => Length.FitContentPx(
+                ParsePx(value["fit-content(".Length..^1])
+            ),
             string value when value.EndsWith('%') => Length.Percent(ParseFloat(value[..^1], 0) / 100),
             string value => Length.Px(ParsePx(value)),
         };
