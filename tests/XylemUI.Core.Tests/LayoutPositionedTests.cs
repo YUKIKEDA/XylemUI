@@ -265,6 +265,114 @@ public sealed class LayoutPositionedTests(UiThreadFixture ui)
             Assert.Equal(30, tree.GetRect(c).Y);
         });
 
+    /// <summary>
+    /// A clean absolutely positioned child keeps its place only while its container gives it the same inputs (row L7): a new
+    /// container size, a new border, or a new static position places it again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: column, window 300 x 300. Block B, 200 x 100 with a padding of 5, holds leaf F 50 x 10 in the flow, leaf X
+    ///   40 x 20 absolute at right 10 and bottom 10, and leaf S 30 x 10 absolute with auto insets (its static position: below
+    ///   F). Laid out: X at (200 - 10 - 40, 100 - 10 - 20) = (150, 70) against the padding box, S at (5, 5 + 10) = (5, 15).
+    ///
+    /// Steps:
+    /// - Make B 150 high and run the pass (the container size alone: in a block, a new height moves no static position). Then
+    ///   give B a border of 5 and no padding and run the pass:
+    ///   the content box and S's static position stay, and only the border moves the padding box. Then make F 30 high and
+    ///   run the pass (S's static position down). Then make B's `justify-items` center and run the pass (S's static position
+    ///   across). X and S are clean in every step.
+    ///
+    /// Expected:
+    /// - 150 high: X at (150, 150 - 10 - 20) = (150, 120). Border 5: X at (5 + 190 - 10 - 40, 5 + 140 - 10 - 20) = (145, 115),
+    ///   S still at (5, 15).
+    ///   F 30 high: S at (5, 5 + 30) = (5, 35), X where it was. Centered: S at (5 + (190 - 30) / 2, 35) = (85, 35).
+    /// </remarks>
+    [Fact]
+    public void CleanAbsoluteChild_WithNewInputs_IsPlacedAgain() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle block = Box(tree, root, Fixed(200, 100) with { Padding = EdgeInsets.All(5) });
+            NodeHandle f = Leaf(tree, block, 50, 10, new LayoutStyle { Height = Length.Px(10) });
+            NodeHandle x = Leaf(tree, block, 40, 20, Absolute(right: 10, bottom: 10));
+            NodeHandle s = Leaf(tree, block, 30, 10, new LayoutStyle { Position = Position.Absolute });
+            LayOut(tree, root, 300, 300);
+            Assert.Equal(new Rect(150, 70, 40, 20), tree.GetRect(x));
+            Assert.Equal(new Rect(5, 15, 30, 10), tree.GetRect(s));
+
+            tree.SetStyle(block, Fixed(200, 150) with { Padding = EdgeInsets.All(5) });
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.Equal(new Rect(150, 120, 40, 20), tree.GetRect(x));
+
+            tree.SetStyle(block, Fixed(200, 150) with { Border = EdgeInsets.All(5) });
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.Equal(new Rect(145, 115, 40, 20), tree.GetRect(x));
+            Assert.Equal(new Rect(5, 15, 30, 10), tree.GetRect(s));
+
+            tree.SetStyle(f, new LayoutStyle { Height = Length.Px(30) });
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.Equal(new Rect(5, 35, 30, 10), tree.GetRect(s));
+            Assert.Equal(new Rect(145, 115, 40, 20), tree.GetRect(x));
+
+            var centered = new LayoutAlgorithm.Block(new BlockProps { JustifyItems = new AlignItems(AlignItemsKeyword.Center) });
+            tree.SetStyle(block, Fixed(200, 150) with { Border = EdgeInsets.All(5), Algorithm = centered });
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.Equal(new Rect(85, 35, 30, 10), tree.GetRect(s));
+        });
+
+    /// <summary>
+    /// A clean absolutely positioned child whose content its container measured keeps the mark of that read when it keeps its
+    /// place (row L7): a later change of its content still goes on to the container.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - root: column, window 300 x 300. Row R, 200 x 100, holds leaves A and B, absolute at right 10 and bottom 10, whose
+    ///   content (with content widths) R measures: A 40 x 20, B 30 x 10. Laid out: A at (150, 70).
+    ///
+    /// Steps:
+    /// - Make B's content 50 x 10, invalidate it, and run the pass: R is laid out again, and A, clean with the same inputs,
+    ///   keeps its place. Then make A's content 60 x 20, invalidate it, and run the pass.
+    ///
+    /// Expected:
+    /// - A at (200 - 10 - 60, 70) = (130, 70), 60 x 20: the change went on to R, which placed A again.
+    /// </remarks>
+    [Fact]
+    public void KeptAbsoluteChild_StillPassesAContentChangeToItsContainer() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle row = Box(tree, root, Row() with { Width = Length.Px(200), Height = Length.Px(100) });
+            float widthA = 40;
+            float widthB = 30;
+            NodeHandle a = tree.CreateNode(
+                Absolute(right: 10, bottom: 10),
+                (_, _) => MeasureResult.Of(widthA, 20),
+                _ => new IntrinsicWidths(widthA, widthA, DependsOnHeight: false)
+            );
+            NodeHandle b = tree.CreateNode(
+                Absolute(right: 10, bottom: 10),
+                (_, _) => MeasureResult.Of(widthB, 10),
+                _ => new IntrinsicWidths(widthB, widthB, DependsOnHeight: false)
+            );
+            tree.AppendChild(row, a);
+            tree.AppendChild(row, b);
+            LayOut(tree, root, 300, 300);
+            Assert.Equal(new Rect(150, 70, 40, 20), tree.GetRect(a));
+
+            widthB = 50;
+            Invalidation.Invalidate(tree, b, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+            Assert.Equal(new Rect(140, 80, 50, 10), tree.GetRect(b));
+
+            widthA = 60;
+            Invalidation.Invalidate(tree, a, ChangeKind.TextContent);
+            LayoutEngine.RunLayoutPass(tree);
+
+            Assert.Equal(new Rect(130, 70, 60, 20), tree.GetRect(a));
+        });
+
     private static LayoutStyle Absolute(float left = float.NaN, float top = float.NaN, float right = float.NaN, float bottom = float.NaN) =>
         new() { Position = Position.Absolute, Inset = Insets(left, top, right, bottom) };
 

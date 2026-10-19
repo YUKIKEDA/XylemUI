@@ -137,6 +137,15 @@ internal struct MeasureCache
     public FlexBaseMemo LayoutBase;
 
     /// <summary>
+    /// What the node's container placed it with in its last layout run, when the node is absolutely positioned (row L7). Such a
+    /// node is no flex item, but this does not share the space of <see cref="MeasureBase"/> and <see cref="LayoutBase"/>: the
+    /// content-change step restores each of those apart when its <c>Valid</c> is false, which over this memo's bytes could bring
+    /// back half of an old one. Apart, the cache is 568 bytes a node instead of 512, and the scenes of rows L1a, L1b, and L2
+    /// overlapped main in rounds ordered main, L7, L7, main (<c>docs/benchmarks/l7-layout.md</c>).
+    /// </summary>
+    public LayoutEngine.AbsoluteMemo Absolute;
+
+    /// <summary>
     /// The node's style lengths in pixels, resolved when the style is set, where <see cref="LayoutState.HasBox"/>: the flex
     /// items and the leaves' content widths read them instead of resolving the style each time (row L4). They come from the
     /// style, not from a run, so <see cref="Clear"/> keeps them. They sit here, next to the base sizes a container reads in the
@@ -329,6 +338,7 @@ internal struct MeasureCache
         _evictedGeneration = 0;
         MeasureBase = default;
         LayoutBase = default;
+        Absolute = default;
     }
 
     /// <summary>
