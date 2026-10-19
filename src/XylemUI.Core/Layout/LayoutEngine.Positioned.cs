@@ -274,9 +274,19 @@ internal static partial class LayoutEngine
 
     // A node out of the layout and its subtree: empty rectangles at the origin, no baseline, and nothing left to lay out. Their
     // last layouts no longer hold (WasLaidOut), so that a node shown again is laid out, not taken from its cache.
+    //
+    // A node already out of the layout and clean is left as it is, with its subtree: a change inside a hidden subtree marks
+    // the path up to the hidden node, so a node without a mark has nothing new below it. Walking it all each time made a
+    // sibling's change cost about 145 µs instead of 0.66 µs with 10,100 hidden nodes (PR #125's review); now the cost is the
+    // same as with an empty hidden node (1.16 µs and 1.19 µs in a Release test).
     private static void HideSubtree(UiTree tree, NodeHandle handle)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
+        if (!node.Layout.WasLaidOut && node.Layout.Rect == default && ((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0)
+        {
+            return;
+        }
+
         if (node.Layout.Rect != default)
         {
             node.Layout.Rect = default;

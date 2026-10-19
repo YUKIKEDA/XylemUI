@@ -126,8 +126,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     /// - root (column) → 100 rows → 100 leaves each (10,101 nodes), laid out at 2,000 x 2,000. With percent, every leaf other
     ///   than the changed one is 1 % wide with a 0.1 % padding. With wrap, the rows wrap, every other leaf is 30 wide (3,000
     ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. With positioned, every tenth leaf is
-    ///   absolutely positioned at its row's right and bottom, and every tenth from the fifth is hidden (row L2). Warmed up with
-    ///   20 changes.
+    ///   absolutely positioned at its row's right and bottom, and every tenth from the fifth is a hidden row holding 10 leaves
+    ///   (row L2). Warmed up with 20 changes.
     ///
     /// Steps:
     /// - 1,100 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread in
@@ -160,8 +160,16 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                         "positioned" when c % 10 == 5 => new LayoutStyle { Hidden = true },
                         _ => new LayoutStyle(),
                     };
-                    NodeHandle leaf = tree.CreateNode(style, TenByTen, TenWide);
+                    NodeHandle leaf = scene == "positioned" && c % 10 == 5 ? tree.CreateNode(style) : tree.CreateNode(style, TenByTen, TenWide);
                     tree.AppendChild(row, leaf);
+                    if (scene == "positioned" && c % 10 == 5)
+                    {
+                        for (int h = 0; h < 10; h++)
+                        {
+                            tree.AppendChild(leaf, tree.CreateNode(new LayoutStyle(), TenByTen, TenWide));
+                        }
+                    }
+
                     if (r == 50 && c == 50)
                     {
                         target = leaf;
