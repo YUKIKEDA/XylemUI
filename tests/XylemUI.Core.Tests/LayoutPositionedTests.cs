@@ -146,8 +146,10 @@ public sealed class LayoutPositionedTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A change inside a hidden subtree waits there, and shows when the subtree is shown again: a hidden node already out of
-    /// the layout is not walked again (PR #125's review), so the change must be found from its mark.
+    /// A change inside a hidden subtree leaves no mark there, and shows when the subtree is shown again (PR #125's review). The
+    /// change marks the path up to the hidden node; the next layout of its parent finds that mark, walks into the subtree
+    /// though it is hidden already, and takes the marks off. The subtree's last layouts no longer hold, so showing it lays it
+    /// out with the new content.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -159,7 +161,7 @@ public sealed class LayoutPositionedTests(UiThreadFixture ui)
     ///   the pass.
     ///
     /// Expected:
-    /// - While H is hidden: L and M have empty rectangles, and C is at x 0.
+    /// - While H is hidden: L and M have empty rectangles and no layout mark, and C is at x 0.
     /// - Shown: H, M, and L are 60 wide, and C is at x 60.
     /// </remarks>
     [Fact]
@@ -188,6 +190,8 @@ public sealed class LayoutPositionedTests(UiThreadFixture ui)
             LayoutEngine.RunLayoutPass(tree);
             Assert.Equal(default, tree.GetRect(l));
             Assert.Equal(default, tree.GetRect(m));
+            Assert.True(IsLayoutClean(tree, l));
+            Assert.True(IsLayoutClean(tree, m));
             Assert.Equal(0, tree.GetRect(c).X);
 
             tree.SetStyle(h, Row());
