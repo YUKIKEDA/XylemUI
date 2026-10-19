@@ -133,7 +133,7 @@ internal static partial class LayoutEngine
             float marginSum = EdgeInsets.ResolveOrZero(childStyle.Margin, availableWidth.ToOption()).Horizontal;
             float paddingBorderWidth = PaddingBorder(in childStyle, contentBox.Width).Horizontal;
             AvailableSpace? keywordSpace = MeasureSpaceOf(childStyle.Width, float.NaN);
-            bool keywordLimits = childStyle.HasSizingKeywordLimit;
+            bool keywordLimits = tree.Nodes.GetRef(child).Layout.HasKeywordLimits;
 
             // The style is read above: no ref into the arena is held across the measuring runs (design §2.5).
             if (keywordLimits)
@@ -223,7 +223,7 @@ internal static partial class LayoutEngine
             bool autoRight = childStyle.Margin.Right.IsAuto;
             float stretchWidth = Math.Max(0, innerWidth - margin.Horizontal);
             float stretchHeight = parentSize.Height - margin.Vertical;
-            bool keywordLimits = childStyle.HasSizingKeywordLimit;
+            bool keywordLimits = c.Layout.HasKeywordLimits;
             if (keywordLimits)
             {
                 var stretch = new Size(stretchWidth, stretchHeight);

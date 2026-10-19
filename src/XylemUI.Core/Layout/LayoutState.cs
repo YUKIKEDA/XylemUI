@@ -34,6 +34,14 @@ internal struct LayoutState
     public bool HasInset;
 
     /// <summary>
+    /// A minimum or a maximum of the style is a sizing keyword (<see cref="LayoutStyle.HasSizingKeywordLimit"/>, row L3), kept
+    /// when the style is set: a container reads it for each child without reading the child's style. Reading the style there,
+    /// with a copy of the four limits, made a change in row L2's scene of absolutely positioned children 5.2 % slower than main;
+    /// with this flag, 0.7 % (<c>layout-loop absolute change</c>, main and the branch alternated 12 times each).
+    /// </summary>
+    public bool HasKeywordLimits;
+
+    /// <summary>
     /// The number of children that are hidden or absolutely positioned (row L2), kept by <see cref="UiTree.AppendChild"/> and
     /// <see cref="UiTree.SetStyle"/>. Where it is 0, the usual case, a container's algorithm reads no child's style to find its
     /// items: reading it cost the relayout after one change of row L1a's scene about 5 % (another part of each child's node).

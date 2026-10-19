@@ -173,8 +173,6 @@ internal static partial class LayoutEngine
         Length widthStyle = s.Width;
         Length heightStyle = s.Height;
         float aspectRatio = s.AspectRatio;
-        bool keywordLimits = s.HasSizingKeywordLimit;
-        KeywordLimits limits = keywordLimits ? KeywordLimits.Of(in s) : default;
 
         // `auto` is `normal` for an absolutely positioned box: it does not follow the container's `*-items` here.
         var horizontal = new AbsoluteAxis(
@@ -201,10 +199,11 @@ internal static partial class LayoutEngine
         );
         var stretchFit = new Size(horizontal.StretchFitSize(), vertical.StretchFitSize());
 
-        // Keyword limits stretch to the stretch-fit size (row L3).
-        if (keywordLimits)
+        // Keyword limits stretch to the stretch-fit size (row L3). Nothing is measured before them here, so the style still
+        // holds.
+        if (tree.Nodes.GetRef(child).Layout.HasKeywordLimits)
         {
-            ResolveKeywordLimits(tree, child, limits, styleSize, area, stretchFit, contentHeights: false, ref min, ref max);
+            ResolveKeywordLimits(tree, child, KeywordLimits.Of(in s), styleSize, area, stretchFit, contentHeights: false, ref min, ref max);
             min = min.Or(new OptionalSize(paddingBorder.Width, paddingBorder.Height)).AtLeast(paddingBorder);
             known = styleSize.Clamp(min, max);
         }

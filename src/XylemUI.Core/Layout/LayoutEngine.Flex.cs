@@ -313,7 +313,7 @@ internal static partial class LayoutEngine
             item.FlexGrow = s.FlexGrow;
             item.FlexShrink = s.FlexShrink;
             item.HasInset = c.Layout.HasInset;
-            item.HasKeywordLimits = s.HasSizingKeywordLimit;
+            item.HasKeywordLimits = c.Layout.HasKeywordLimits;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
@@ -344,6 +344,7 @@ internal static partial class LayoutEngine
     // The minimum and the maximum an item's sizing keywords give it (row L3): stretch takes the container's content box less
     // the item's margins, and a content keyword counts in a height only on a column's main axis (Chrome). A stretched item's
     // maximum is the resolved one.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ResolveFlexKeywordLimits(UiTree tree, ref FlexItem item, in FlexConstants constants, float percentMain)
     {
         bool row = constants.Row;
@@ -386,15 +387,18 @@ internal static partial class LayoutEngine
 
         foreach (ref FlexItem item in items)
         {
-            // Keyword limits measure the item, so they are resolved here rather than with its other lengths, and the step is not
-            // taken from the memo: the spaces they read are not in it.
+            if (TryReuseBaseSize(tree, ref item, in constants, commit, innerWidth, crossParent, percentMain, crossSpace, minContentMain))
+            {
+                continue;
+            }
+
+            // Keyword limits measure the item, so they are resolved here rather than with its other lengths. An item with them
+            // keeps no memo (the spaces they read are not in it), so the check stays off the path of a reused step: placed
+            // before the memo, it made one change of row L1a's scene with CSS's defaults 3.1 % slower than main, against 1.1 %
+            // without it (layout-loop auto_min change, main and the branch alternated 12 times each).
             if (item.HasKeywordLimits)
             {
                 ResolveFlexKeywordLimits(tree, ref item, in constants, percentMain);
-            }
-            else if (TryReuseBaseSize(tree, ref item, in constants, commit, innerWidth, crossParent, percentMain, crossSpace, minContentMain))
-            {
-                continue;
             }
 
             bool readContent = false;
@@ -508,7 +512,7 @@ internal static partial class LayoutEngine
             ref MeasureCache cache = ref tree.MeasuresOf(item.Node);
             (commit ? ref cache.LayoutBase : ref cache.MeasureBase) = new FlexBaseMemo
             {
-                Valid = true,
+                Valid = !item.HasKeywordLimits,
                 Row = row,
                 ReadContent = readContent,
                 MinContentMain = minContentMain,
