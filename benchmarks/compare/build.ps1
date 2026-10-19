@@ -57,3 +57,22 @@ Invoke-Step 'Taffy (release)' {
 }
 $taffy = New-Item -ItemType Directory -Force (Join-Path $Out 'taffy')
 Copy-Item (Join-Path $Out 'taffy-target\release\compare_taffy.exe') $taffy.FullName -Force
+
+# The version of each framework the apps were built with, for the tables that cite them: the comparison is made against each
+# framework's latest stable release, and a Flutter SDK left on an old release went on measuring 3.38.5 from L1a to L7.
+function Get-LockedVersion([string]$Lock, [string]$Name) {
+    $text = Get-Content $Lock -Raw
+    if ($text -match "(?m)^name = `"$Name`"\r?\nversion = `"([^`"]+)`"") { return $Matches[1] }
+    throw "No $Name in $Lock."
+}
+
+$avalonia = ([xml](Get-Content (Join-Path $root 'Avalonia\CompareAvalonia.csproj'))).Project.ItemGroup.PackageReference |
+    Where-Object { $_.Include -eq 'Avalonia' } | Select-Object -First 1
+$versions = [ordered]@{
+    flutter = (flutter --version --machine | ConvertFrom-Json).frameworkVersion
+    avalonia = $avalonia.Version
+    gpui = Get-LockedVersion (Join-Path $root 'gpui\Cargo.lock') 'gpui'
+    taffy = Get-LockedVersion (Join-Path $root 'taffy\Cargo.lock') 'taffy'
+}
+$versions | ConvertTo-Json | Set-Content -Path (Join-Path $Out 'versions.json') -Encoding utf8NoBOM
+Write-Host "Versions: $(($versions.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ', ')"

@@ -7,7 +7,7 @@ clean で前回と同じ入力を受ける絶対配置の子の、大きさと�
 - コミット: このファイルを加えたコミット（`git log -1 -- docs/benchmarks/l7-layout.md`）
 - 機械と版と作り方: L1a と同じ（`docs/benchmarks/l1a-layout.md`）。NativeAOT。場面は L2 と同じ 5 つ（`docs/benchmarks/l2-layout.md`）
 - main との比較: main（426dd07）と、main・L7・L7・main を 1 組として 10 組。各回は `XylemUI.E2E.exe layout` を 1 回走らせる。表の値は、その 20 回の中央値と最小〜最大（µs）
-- 4 つのフレームワークの比較: `benchmarks/compare/layout.ps1` で 5 ラウンド交互に
+- 4 つのフレームワークの比較: `benchmarks/compare/layout.ps1` で 5 ラウンド交互に。版は Flutter 3.47.7（2026-10-08、最新の安定版）、Avalonia 12.1.4（最新の安定版）、Taffy 0.9.0（crates.io の最新の gpui 0.2.2 が使う版。Zed の最新の安定版 v1.24.3 は Taffy 0.13.0 を使う。下の「Taffy の版」）。`build.ps1` が使った版を `versions.json` に書く
 
 ## 再現
 
@@ -22,12 +22,17 @@ $env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'
 
 | 指標 | XylemUI | Taffy 0.9.0（GPUI） | Flutter | Avalonia |
 | --- | --- | --- | --- | --- |
-| 最初の layout | 2,269（2,050〜3,027） | 1,946（1,796〜2,057） | 1,234（941〜1,602） | 5,447（5,323〜5,570） |
-| 子の中の変更 | 2.2（2.0〜2.3） | 20.3（18.6〜20.7） | 2.0（2.0〜2.0） | 4.5（4.3〜4.6） |
+| 最初の layout | 2,261（1,962〜2,620） | 2,093（1,775〜2,241） | 3,979（3,931〜4,753） | 10,882（5,123〜11,988） |
+| 子の中の変更 | 2.2（2.0〜2.3） | 20.5（18.8〜21.5） | 2.7（2.5〜2.9） | 8.6（4.3〜8.8） |
 
-- **子の中の変更**: L2 の 10.3 µs から 2.2 µs になり、Flutter（2.0 µs）とは範囲が重なる。Avalonia の約半分、Taffy の約 9 分の 1。`layout-loop absolute change` を main と交互に 6 組測ると、main 9.71 µs、L7 1.98 µs
+- **子の中の変更**: L2 の 10.3 µs から 2.2 µs になり、Flutter（2.7 µs）より速い。Taffy 0.9.0 の約 9 分の 1。Avalonia はこのラウンドでばらつきが大きく（4.3〜8.8 µs）、Flutter 3.38.5 で測った回（下）は 4.5 µs（4.3〜4.6）だった。`layout-loop absolute change` を main と交互に 6 組測ると、main 9.71 µs、L7 1.98 µs
+- **Flutter の版と測り方**: L1a から L7 の最初の測定まで、Flutter の比較のアプリは 3.38.5（2025-12-11）で作っていた（この機械の SDK を上げていなかった。オーナーの指摘）。また `elapsedMicroseconds`（整数に切り捨てる）で測っていたので、2 µs 前後の変更は毎回 2.0 と出た。3.38.5 と整数の測り方での値は、子の中の変更 2.0（2.0〜2.0）、最初の layout 1,234（941〜1,602）。3.47.7 と `elapsedTicks` からの測り方で 2.7 µs と 3,979 µs になった。L1a から L3 の文書の Flutter の値は、3.38.5 と整数の測り方のもの
 - **残りの費用**（NativeAOT のプロファイル、`layout-loop absolute change`、比べ方を直す前）: 子を 1 つずつたどる処理（`LayOutAbsoluteChild` と、ブロックが流れの外の子をたどる `LayOutBlockOutOfFlowChildren`）が合わせて 40 %（25 % と 15 %）、流れの中の子を置く `LayOutBlockChildren` が 12 %、ブロックが子ごとに作る静的な位置（`StaticPosition.Of`）が 5 %。前回の入力との比べ方は、record struct の等しさ（`EqualityComparer<float>` を通り、インライン展開されない）が 19 % を占めていたので、float を `==` で比べるようにした。インライン展開すると 1.98 µs、属性を外すと 2.22 µs（`layout-loop absolute change`、main と交互に 6 組）
-- **最初の layout**: Flutter の約 1.8 倍で、L2 と同じく、1 万個の絶対配置の子を子ごとに測るだけの実行と layout の実行で 2 回求める。L7 は 2 回目以降の layout だけを変えた
+- **最初の layout**: L7 は 2 回目以降の layout だけを変えた。XylemUI は L2 と同じく、1 万個の絶対配置の子を、子ごとに測るだけの実行と layout の実行で 2 回求める。Flutter 3.47.7 では 3,979 µs で、3.38.5 の 1,234 µs から大きく変わった。原因は調べていない（Flutter の側の変化で、L7 の受け入れの指標ではない）
+
+## Taffy の版
+
+比較の「GPUI」は Taffy 0.9.0 で測っている。crates.io の最新の gpui 0.2.2（2025-10-22）が `taffy = "=0.9.0"` に固定しているため。一方、Zed の最新の安定版 v1.24.3（2026-10-19）の `Cargo.toml` は `taffy = { version = "=0.13.0" }` で、GPUI を使って出荷されている製品は 0.13.0 で動く。どちらを比べる相手にするかは、この PR では決めていない（オーナーに確かめる）
 
 ## 結果: main との比較
 
@@ -60,7 +65,7 @@ $env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'
 
 | 項目 | 結果 |
 | --- | --- |
-| 絶対配置の子の中の変更が、Flutter とばらつきの中で同等 | 満たす。XylemUI 2.2 µs（2.0〜2.3）、Flutter 2.0 µs（2.0〜2.0） |
+| 絶対配置の子の中の変更が、Flutter とばらつきの中で同等 | 満たす。XylemUI 2.2 µs（2.0〜2.3）、Flutter 3.47.7 で 2.7 µs（2.5〜2.9） |
 | 最初の layout と、L1a・L1b・L2 のほかの場面の指標が、main よりばらつきを超えて遅くならない | 満たす。どれも範囲が重なる（上の表） |
 | 定常状態のアロケーション 0 | 満たす。絶対配置の子を含む木の 1 か所の変更で 0 バイト（`LayoutGuardTests` の `positioned`） |
 | 増分と最初からの layout が一致する。clean な子が入力の変化で置き直される | 満たす。`LayoutRandomTests`（絶対配置のノードを含む 40 の種）、`LayoutPositionedTests` の 2 件（容器の大きさ・border・2 つの静的な位置のそれぞれ、内容を読んだ印） |

@@ -30,7 +30,7 @@ void runLayoutScene(String output) {
     owner.rootNode = root;
     final watch = Stopwatch()..start();
     root.layout(BoxConstraints.tight(const Size(2000, 2000)));
-    final firstUs = watch.elapsedMicroseconds.toDouble();
+    final firstUs = _microseconds(watch);
 
     var changeUs = 0.0;
     for (var i = 0; i < 2; i++) {
@@ -39,7 +39,7 @@ void runLayoutScene(String output) {
         ..reset()
         ..start();
       owner.flushLayout();
-      changeUs = watch.elapsedMicroseconds.toDouble();
+      changeUs = _microseconds(watch);
     }
 
     var contentUs = 0.0;
@@ -49,7 +49,7 @@ void runLayoutScene(String output) {
         ..reset()
         ..start();
       owner.flushLayout();
-      contentUs = watch.elapsedMicroseconds.toDouble();
+      contentUs = _microseconds(watch);
     }
 
     var widthUs = 0.0;
@@ -58,7 +58,7 @@ void runLayoutScene(String output) {
         ..reset()
         ..start();
       root.layout(BoxConstraints.tight(Size(i.isEven ? 1600 : 2000, 2000)));
-      widthUs = watch.elapsedMicroseconds.toDouble();
+      widthUs = _microseconds(watch);
     }
 
     if (root.size.width != 2000 || target.size.width != 10) {
@@ -141,7 +141,7 @@ void runLayoutScene(String output) {
     owner.rootNode = root;
     final watch = Stopwatch()..start();
     root.layout(BoxConstraints.tight(const Size(2000, 2000)));
-    final firstUs = watch.elapsedMicroseconds.toDouble();
+    final firstUs = _microseconds(watch);
     var changeUs = 0.0;
     for (var i = 0; i < 2; i++) {
       target!.additionalConstraints = BoxConstraints.tightFor(width: i.isEven ? 20 : 10, height: 10);
@@ -149,7 +149,7 @@ void runLayoutScene(String output) {
         ..reset()
         ..start();
       owner.flushLayout();
-      changeUs = watch.elapsedMicroseconds.toDouble();
+      changeUs = _microseconds(watch);
     }
     if (target!.size.width != 10) {
       throw StateError('The absolute scene did not follow the change.');
@@ -161,6 +161,10 @@ void runLayoutScene(String output) {
   }
   return (_median(first), _median(change));
 }
+
+// Microseconds from the stopwatch's ticks: elapsedMicroseconds is a whole number, and a change of the absolute scene, near 2 µs,
+// read as 2.0 in every round whatever it took between 2 and 3 µs (row L7). The other apps report fractions too.
+double _microseconds(Stopwatch watch) => watch.elapsedTicks * 1000000 / watch.frequency;
 
 double _median(List<double> values) {
   values.sort();
