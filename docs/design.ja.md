@@ -1572,9 +1572,9 @@ public struct LayoutStyle
     public EdgeInsets<LengthPercentageAuto> Inset;  // top / right / bottom / left。Auto（既定）| Px | Percent（L2）
     public float AspectRatio;                       // 幅 ÷ 高さ。NaN（既定）なら持たない（L2）
     public bool Hidden;                             // display: none。部分木ごと場所を取らない（L2）
-    public Length Width, Height;                    // Auto | Px | Percent | MinContent | MaxContent | FitContent
-    public LengthPercentageAuto MinWidth, MinHeight; // Auto | Px | Percent。Auto: フレックスの子は自動の最小サイズ、それ以外は 0
-    public LengthPercentageAuto MaxWidth, MaxHeight; // Auto | Px | Percent。Auto: 上限なし
+    public Length Width, Height;                    // Auto | Px | Percent | MinContent | MaxContent | FitContent | FitContent(長さ) | Stretch
+    public Length MinWidth, MinHeight;              // Width と同じ種類（L3）。Auto: フレックスの子は自動の最小サイズ、それ以外は 0
+    public Length MaxWidth, MaxHeight;              // Width と同じ種類（L3）。Auto: 上限なし
     public EdgeInsets<LengthPercentage> Padding;    // Px | Percent
     public EdgeInsets<LengthPercentage> Border;     // Px | Percent。レイアウトに効く幅だけ。色と角丸は描画（V1）
     public EdgeInsets<LengthPercentageAuto> Margin; // Px | Percent | Auto
@@ -1624,7 +1624,7 @@ internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 - **`Auto` の大きさ:** Block の子と、交差軸が `Stretch` のフレックスの子は、使える幅（交差軸の大きさ）すべて。それ以外は内容の大きさ。指定したサイズは border box（パディングを含む）
 - **ボーダー:** padding と同じく内容の箱を内側へ狭め、指定したサイズ（border box）に含む。GPUI（Taffy）・Avalonia（`Border` の `BorderThickness`）・Flutter（`Container` が `BoxDecoration` のボーダーを padding として足す）も、ボーダーの幅がレイアウトに効く（Issue #80）
 - **`%`:** サイズ・min / max・basis は、親のコンテンツの箱の同じ軸に対して。親のその軸が不定なら、サイズは `Auto`、min は 0、max は上限なしとして扱う。padding・border・margin は、上下も親の幅に対して（CSS）。gap は容器のコンテンツの箱の同じ軸に対して
-- **`MinContent` / `MaxContent` / `FitContent`:** 内容の最小の大きさ（テキストなら最も長い折り返せない並び）、最大の大きさ（折り返さない幅）、`min(MaxContent, max(MinContent, 使える大きさ))`。テキストの改行は T1 なので、それまでのテキストは MinContent も 1 行の幅
+- **`MinContent` / `MaxContent` / `FitContent`:** 内容の最小の大きさ（テキストなら最も長い折り返せない並び）、最大の大きさ（折り返さない幅）、`min(MaxContent, max(MinContent, 使える大きさ))`。`FitContent(長さ)` は、使える大きさの代わりに長さ（px か `%`）を使う。`Stretch` は、使える大きさからマージンを引いた大きさ（CSS Sizing 4 の stretch-fit）。L3 から、min / max にも同じ種類を書ける。テキストの改行は T1 なので、それまでのテキストは MinContent も 1 行の幅
 - **min / max:** すべてのノードに持つ。min と max がぶつかれば min が勝つ（CSS）
 - **自動の最小サイズ:** フレックスの子の主軸の min が `Auto` なら、内容に基づく最小サイズ（CSS Flexbox §4.5）より縮まない。テキストが重ならない代わりに、省略記号で切るテキストには `MinWidth = Px(0)` を書く（GPUI の `min_w_0` と同じ）。スクロールする箱では 0（V2）
 - **Block:** 子を上から順に積む。マージンは常に足し合わせる（相殺しない）。左右の `auto` のマージンは、残りの幅を分けて子を寄せる。`justify-self`（既定は親の `justify-items`）が `stretch` 以外なら、`auto` の幅は `fit-content` になり、子をその揃えで置く（`auto` のマージンが勝つ）。`align-content` が `normal` 以外なら、子のまとまり全体を 1 つとして縦に揃える（CSS Box Alignment §5.1）。`text-align` で子を寄せる古い挙動（`-webkit-left` など）は持ち込まない。Avalonia の `HorizontalAlignment`、Flutter の `Align` と `crossAxisAlignment` に当たる（L1b の Grill で決定、Issue #88）
@@ -1638,6 +1638,13 @@ internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 **性能の受け入れ（L1 の Grill で決定、L1a の測定の後で決め直した）:** 比べる相手は、同じ機械・同じ場面で交互に測った Flutter・Avalonia・GPUI。場面は 10,101 ノード（列 1 → 行 100 → 葉 100）で、S6b の意味（フレックスの子の min を 0）・CSS の既定・`%` ありの 3 つ。測り方と表は `docs/benchmarks/l1a-layout.md`。(1) 意味が同じ GPUI のレイアウト（GPUI が使う版の Taffy）より、最初の layout・1か所の変更・幅の変更が、ばらつきを超えて遅くない。(2) 幅の変更が §11.3 の Layout の予算（2.0 ms）の内側。1 万ノードの最初の layout は、起動か大きな画面の切り替えにしか起きないのでフレームの予算に入れず、(1) で見る（起動の全体は M1b の 1 万の日本語テキストノードで測る）。(3) 定常状態のアロケーションが 0。L1a で 3 つとも満たした。最初の S6b の簡略な flex との比較は、CSS の手順の計算の回数（葉 1 つにつき 4〜9 回。Taffy も同じ）で満たせないので、比べる相手から外した。Flutter（XylemUI より、最初の layout が S6b の意味で約 3 倍・CSS の既定で約 6 倍速く、1か所の変更が約 5〜9 倍速い）と Avalonia（幅の変更が約 3〜6 倍速い）との差は、行 L4 で、CSS の結果を変えずに詰める（オーナー決定）。
 
 **進め方（L1 の Grill で決定）:** L1a（`LayoutInput`・長さのすべての種類・min / max・`%`・ボーダー・自動の最小サイズ・キャッシュ・S6b の shrink の不具合、それに CSS の既定値の動き: `align-items: stretch`・`justify-content: flex-start`・`row` / `column`・`nowrap`）、L1b（既定値以外の値: wrap・`justify-content`・`align-*`・`align-self`・gap・baseline・逆向き・`auto` のマージン）の順。既定値の動きを L1a に入れるのは、既定の動きが CSS と合わないと Taffy の XML テストがほとんど通らないため（Issue #80）。Taffy の XML テストは使えるようになった分から通し、L1b で範囲の全件が通る。絶対配置・aspect-ratio・表示しないノードは L2、`flex-wrap: balance`（CSS Flexbox Level 2 の草案）は L6、`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）は V2。
+
+**L3 の方式（L3 の Grill で決定、Issue #129）:** 長さの残りを CSS どおりに入れる。GPUI が使う Taffy 0.9.0 の `Dimension` は長さ・`%`・`auto` だけで、どれも持たない。Taffy 0.15（clone）は持つので、期待値を作った版として、その実装（大きさのキーワードを解く処理）を読んで移植する。
+
+- **min / max の内容の大きさと `FitContent(長さ)`:** 入れる。Taffy の XML テストに使うものが 0 件なので、期待値は Chrome から作る。Taffy の gentest（ChromeDriver で Chrome for Testing を動かし、HTML を開いて結果を XML に書く道具。clone の `scripts/gentest`）を作業用のフォルダに写し、XylemUI のテストの HTML だけを置いて動かす。HTML と作った XML は `tests/XylemUI.Core.Tests/Fixtures/XylemUI/` に置き、作り方の手順と Chrome の版（試しに作ったときは 155.0.8059.84）を同じフォルダに書く。Flutter は内容の幅に合わせる `IntrinsicWidth` を持つが、推測の layout を 1 回足すので高くつき、最悪で木の深さについて O(N²) になる（API ドキュメント）。XylemUI は内容の幅を 1 回の計算で求める（L4）ので、min / max に内容の大きさを書いても、問い合わせは増えない
+- **`Stretch`:** CSS どおり。Taffy の XML テスト 24 件を基準にする。Avalonia の既定の `HorizontalAlignment.Stretch` と、Flutter の `double.infinity` の幅に当たる、場所いっぱいに広げる意味を、大きさとして書ける
+- **`flex-basis: content` は行 V2:** Taffy の XML テストの 2 件は、どちらも `overflow` も使うので、V2 まで通せない。外の正解で確かめられないまま入れない
+- **受け入れ:** スキップの理由が行 L3 の Taffy の XML テストが 0 件。Chrome から作ったテストが全件通る。L1a・L1b・L2 の場面の指標が、main と順番をそろえて測ってばらつきを超えて遅くならない。定常状態のアロケーション 0
 
 **L2 の方式（L2 の Grill で決定、Issue #120）:** Taffy の XML テスト（Chrome の結果）のうち、L2 の機能だけを使う 204 件を基準にする（実装では 199 件が通る。親が `position: static` で、CSS の基準が親より外の祖先になる 3 件は下の決定により、マージンの相殺を見る 2 件はマージンを相殺しない設計（§3.2）により外した。PR #125、Issue #124）。L2 の機能とほかの行の機能（`overflow` の V2、右から左の P03、Grid の P02、`stretch` などの L3、balance の L6）を両方使う 28 件は、L2 の後もその行を待つ（PR #121 のレビューで、テストの属性を全部数えた）。
 

@@ -117,6 +117,7 @@ Decision:
   内容の幅（min と max）は Chromium の `ComputeMinMaxSizes` と同じく 1 回で求め、交差軸の大きさに依存しない限りノードに 1 つだけ持つ。計測関数は大きさとベースラインの関数と、内容の幅の関数に分ける（L4、Issue #97）。
   内容が変わったノードは、前回の入力で layout し直し、親が読んだもの（大きさ・計測・内容の幅・ベースライン）が変わったときだけ親へ伝える（L5、Issue #108）。
   絶対配置の基準はいつも親。表示しないノードは、アルゴリズムとは別のフラグ（L2、Issue #120）。
+  min / max にも、幅と同じ長さの種類（内容の大きさ・`FitContent(長さ)`・`Stretch`）を書ける。期待値の無いものは、Taffy の gentest で Chrome から作る（L3、Issue #129）。
   flex の項目の基準の大きさは、前回の容器の実行の結果を、手順が読む容器の値と一緒に項目の計測のキャッシュに持ち、値が同じなら使う（L4、Issue #101）。
 
 Reason:
@@ -170,7 +171,8 @@ Rejected:
   - 印を消さない（親が子を読まなくなっても、伝播が上がり続ける。Issue #76）
   - レイアウトに効くボーダーの幅を持たず、枠を padding で表す（描画の幅とレイアウトの幅をアプリが合わせることになる。GPUI・Avalonia・Flutter はボーダーの幅がレイアウトに効く。Issue #80）
   - CSS の既定値の動き（`align-items: stretch` など）も L1b に回す（L1a で Taffy の XML テストがほとんど通らない。Issue #80）
-  - min / max に内容の大きさを書けるようにする（GPUI・Flutter・Avalonia に無く、Chrome の期待値で確かめられない。行 L3 に残した。Issue #83）
+  - min / max に内容の大きさを書けるようにする（GPUI・Flutter・Avalonia に無く、Chrome の期待値で確かめられない。行 L3 に残した。Issue #83。L3 で、期待値を Chrome から作って入れることにした。Issue #129）
+  - `flex-basis: content` を L3 で入れる（Taffy の XML テストの 2 件は `overflow` も使い、V2 まで外の正解で確かめられない。行 V2 に移した。L3 の Grill、Issue #129）
   - L1a の性能を S6b の簡略な flex と比べる（CSS の手順は葉 1 つにつき 4〜9 回計算し、Taffy も同じ回数。比べる相手は Flutter・Avalonia・GPUI にした。Issue #82）
   - 計測のキャッシュを `UiNode` の中に持つ（ノードが 1,160 バイトになり、最初の layout と幅の変更が外の配列より遅かった。Issue #82）
   - キャッシュのキーに 64 ビットのハッシュを持たせて先に比べる（差がばらつきの中。Issue #82）
