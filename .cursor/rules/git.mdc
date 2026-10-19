@@ -10,6 +10,7 @@ A question is not permission. `reset`, `rebase`, `push --force`, `push --force-w
 When asked about such an operation, answer with the current `HEAD` SHA, the target SHA, what would disappear, and the exact command. Then wait.
 
 - Finished work goes to a PR in the same turn, without waiting for an ask: commit on the Issue's branch, push it, and open the PR (`.cursor/rules/workflow.mdc`). The owner reviews on the PR, from wherever they are; uncommitted changes on this machine cannot be reviewed. Do not stop at "may I commit?".
+- Long work runs in an agent worktree (`git worktree add .dev/<branch> <branch>`), not in the main working tree: the owner may switch that tree to another branch to review. In L2 the tree moved to `main` during the work; two edits landed there uncommitted, and the comparison apps were built from `main` (PR #125).
 - This covers the Issue's own branch only. Never commit to `main` or push to it, and never merge.
 - `git branch --show-current` is part of the command that commits. A chain that creates a branch can fail before it does, and the commit then lands on `main`.
 - A push that follows a test is chained to it so that a failed test stops the push (`./build.ps1; if ($LASTEXITCODE -eq 0) { git push }`).
