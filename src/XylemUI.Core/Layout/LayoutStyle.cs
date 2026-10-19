@@ -55,24 +55,26 @@ internal readonly record struct LayoutStyle
 
     /// <summary>
     /// Gets the smallest width. <see cref="Length.Auto"/> is the automatic minimum size of a flex item (CSS Flexbox §4.5) and 0
-    /// elsewhere.
+    /// elsewhere. A content size or <see cref="Length.Stretch"/> resolves as for <see cref="Width"/>.
     /// </summary>
-    public LengthPercentageAuto MinWidth { get; init; }
+    public Length MinWidth { get; init; }
 
     /// <summary>
-    /// Gets the smallest height, with the same meaning of <see cref="Length.Auto"/> as <see cref="MinWidth"/>.
+    /// Gets the smallest height, with the same meaning of <see cref="Length.Auto"/> as <see cref="MinWidth"/>. A content size
+    /// counts only on a column's main axis and is auto elsewhere (Chrome).
     /// </summary>
-    public LengthPercentageAuto MinHeight { get; init; }
+    public Length MinHeight { get; init; }
 
     /// <summary>
-    /// Gets the largest width; <see cref="Length.Auto"/> sets no limit.
+    /// Gets the largest width; <see cref="Length.Auto"/> sets no limit. A content size or <see cref="Length.Stretch"/> resolves
+    /// as for <see cref="Width"/>.
     /// </summary>
-    public LengthPercentageAuto MaxWidth { get; init; }
+    public Length MaxWidth { get; init; }
 
     /// <summary>
-    /// Gets the largest height; <see cref="Length.Auto"/> sets no limit.
+    /// Gets the largest height; <see cref="Length.Auto"/> sets no limit. A content size counts as for <see cref="MinHeight"/>.
     /// </summary>
-    public LengthPercentageAuto MaxHeight { get; init; }
+    public Length MaxHeight { get; init; }
 
     /// <summary>
     /// Gets the space between the border and the children.
@@ -132,7 +134,14 @@ internal readonly record struct LayoutStyle
     /// Gets a value indicating whether the node's size cannot depend on its content: both sides fixed (design §2.4, the
     /// structural boundary). A parent that reads the node's content still takes the change (design §2.4.1).
     /// </summary>
-    public bool IsStructuralBoundary => Width.IsPx && Height.IsPx;
+    public bool IsStructuralBoundary => Width.IsPx && Height.IsPx && !HasSizingKeywordLimit;
+
+    /// <summary>
+    /// Gets a value indicating whether a minimum or a maximum is a sizing keyword (row L3): resolving it measures the node or
+    /// reads the space it may stretch into.
+    /// </summary>
+    public bool HasSizingKeywordLimit =>
+        MinWidth.IsSizingKeyword || MinHeight.IsSizingKeyword || MaxWidth.IsSizingKeyword || MaxHeight.IsSizingKeyword;
 
     /// <summary>
     /// Gets a value indicating whether a length of the node resolves against the width of its parent's content box: a width or

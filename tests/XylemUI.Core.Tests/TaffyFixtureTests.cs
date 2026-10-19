@@ -7,13 +7,14 @@ public sealed class TaffyFixtureTests(UiThreadFixture ui)
     public static TheoryData<string> Names => [.. TaffyFixture.Names];
 
     /// <summary>
-    /// A test of Taffy's XML suite lays out to Chrome's rectangles, rounded as Taffy rounds them.
+    /// A test of Taffy's XML suite, or of XylemUI's made from Chrome in the same form, lays out to Chrome's rectangles, rounded
+    /// as Taffy rounds them.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The test's tree (Fixtures/Taffy, the border-box and left-to-right variant), its styles read with CSS's initial values,
-    ///   and Ahem text measured as Taffy's test measure does. A test that uses a feature of a later row is skipped with that
-    ///   row (TaffyFixtureScope).
+    /// - The test's tree (Fixtures/Taffy and Fixtures/XylemUI, the border-box and left-to-right variant), its styles read with
+    ///   CSS's initial values, and Ahem text measured as Taffy's test measure does. A test that uses a feature of a later row is
+    ///   skipped with that row (TaffyFixtureScope).
     ///
     /// Steps:
     /// - Lay the root out in the test's viewport.

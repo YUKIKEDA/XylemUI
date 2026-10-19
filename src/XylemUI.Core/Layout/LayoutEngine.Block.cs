@@ -127,13 +127,31 @@ internal static partial class LayoutEngine
                 continue;
             }
 
-            OptionalSize childKnown = StyleSize(in childStyle, contentBox)
-                .Clamp(MinSize(in childStyle, contentBox), MaxSize(in childStyle, contentBox));
+            OptionalSize childSize = StyleSize(in childStyle, contentBox);
+            OptionalSize min = MinSize(in childStyle, contentBox);
+            OptionalSize max = MaxSize(in childStyle, contentBox);
             float marginSum = EdgeInsets.ResolveOrZero(childStyle.Margin, availableWidth.ToOption()).Horizontal;
             float paddingBorderWidth = PaddingBorder(in childStyle, contentBox.Width).Horizontal;
             AvailableSpace? keywordSpace = MeasureSpaceOf(childStyle.Width, float.NaN);
+            bool keywordLimits = tree.Nodes.GetRef(child).Layout.HasKeywordLimits;
 
-            // The style is read above: no ref into the arena is held across the measuring run (design §2.5).
+            // The style is read above: no ref into the arena is held across the measuring runs (design §2.5).
+            if (keywordLimits)
+            {
+                ResolveKeywordLimits(
+                    tree,
+                    child,
+                    KeywordLimits.Of(in childStyle),
+                    childSize,
+                    contentBox,
+                    new Size(float.NaN, float.NaN),
+                    contentHeights: false,
+                    ref min,
+                    ref max
+                );
+            }
+
+            OptionalSize childKnown = childSize.Clamp(min, max);
             float width = childKnown.Width;
             if (float.IsNaN(width))
             {
@@ -147,6 +165,12 @@ internal static partial class LayoutEngine
                     SizingMode.InherentSize,
                     horizontal: true
                 );
+
+                // The child's own run does not resolve its keyword limits; only its parent knows the spaces they read.
+                if (keywordLimits)
+                {
+                    width = Maybe.Clamp(width, min.Width, max.Width);
+                }
             }
 
             widest = Math.Max(widest, Math.Max(width, paddingBorderWidth) + marginSum);
@@ -198,6 +222,23 @@ internal static partial class LayoutEngine
             bool autoLeft = childStyle.Margin.Left.IsAuto;
             bool autoRight = childStyle.Margin.Right.IsAuto;
             float stretchWidth = Math.Max(0, innerWidth - margin.Horizontal);
+            float stretchHeight = parentSize.Height - margin.Vertical;
+            bool keywordLimits = c.Layout.HasKeywordLimits;
+            if (keywordLimits)
+            {
+                var stretch = new Size(stretchWidth, stretchHeight);
+                ResolveKeywordLimits(
+                    tree,
+                    child,
+                    KeywordLimits.Of(in childStyle),
+                    size,
+                    parentSize,
+                    stretch,
+                    contentHeights: false,
+                    ref min,
+                    ref max
+                );
+            }
 
             // `normal` and `stretch` keep the block's default; any other alignment makes an automatic width fit the content.
             AlignItems justify = childStyle.JustifySelf ?? props.JustifyItems;
@@ -219,7 +260,23 @@ internal static partial class LayoutEngine
             }
 
             float width = Maybe.Clamp(Maybe.Or(Maybe.Or(size.Width, keywordWidth), stretchWidth), min.Width, max.Width);
-            OptionalSize known = new OptionalSize(width, size.Height).Clamp(min, max);
+
+            // A stretch height fills the content box's percentage basis less the margins, which the design does not collapse
+            // (Taffy's resolve_stretch_height).
+            OptionalSize known = new OptionalSize(width, Maybe.Or(size.Height, StretchOf(childStyle.Height, stretchHeight))).Clamp(min, max);
+
+            // A keyword limit on an automatic height clamps the height the child's content gives, which its own run would not.
+            if (
+                float.IsNaN(known.Height)
+                && (childStyle.MinHeight.IsSizingKeyword || childStyle.MaxHeight.IsSizingKeyword)
+                && !(float.IsNaN(min.Height) && float.IsNaN(max.Height))
+            )
+            {
+                var heightSpace = new AvailableSize(AvailableSpace.Definite(stretchWidth), AvailableSpace.MaxContent);
+                float height = MeasureChild(tree, child, known, parentSize, heightSpace, SizingMode.InherentSize, horizontal: false);
+                known = known with { Height = Maybe.Clamp(height, min.Height, max.Height) };
+            }
+
             var input = new LayoutInput(
                 known,
                 true,

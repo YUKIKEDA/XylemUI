@@ -18,5 +18,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures\Taffy\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\XylemUI\*.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

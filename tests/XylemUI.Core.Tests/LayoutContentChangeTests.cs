@@ -171,7 +171,7 @@ public sealed class LayoutContentChangeTests(UiThreadFixture ui)
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(Column());
             NodeHandle row = Box(tree, root, Row() with { Width = Length.Px(100) });
-            var noMinimum = LengthPercentageAuto.Px(0);
+            var noMinimum = Length.Px(0);
             NodeHandle x = Leaf(tree, row, 0, 10, new LayoutStyle { Width = Length.Px(80), MinWidth = noMinimum });
             NodeHandle block = Box(tree, row, new LayoutStyle { MinWidth = noMinimum });
             float width = 40;

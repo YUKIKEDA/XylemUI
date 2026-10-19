@@ -149,8 +149,8 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle());
-            NodeHandle column = Box(tree, root, Column() with { MaxHeight = LengthPercentageAuto.Px(100) });
-            var noMinimum = new LayoutStyle { MinHeight = LengthPercentageAuto.Px(0) };
+            NodeHandle column = Box(tree, root, Column() with { MaxHeight = Length.Px(100) });
+            var noMinimum = new LayoutStyle { MinHeight = Length.Px(0) };
             NodeHandle first = Leaf(tree, column, 10, 80, noMinimum);
             NodeHandle second = Leaf(tree, column, 10, 80, noMinimum);
 
@@ -254,7 +254,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
             _ = Leaf(tree, root, 0, 10, Flexible());
             LayOut(tree, root, 300, 50);
 
-            tree.SetStyle(first, Flexible() with { MinWidth = LengthPercentageAuto.Px(0) });
+            tree.SetStyle(first, Flexible() with { MinWidth = Length.Px(0) });
             LayoutEngine.RunLayoutPass(tree);
             Invalidation.Invalidate(tree, first, ChangeKind.TextContent);
 
@@ -320,7 +320,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(Row());
-            NodeHandle block = Box(tree, root, new LayoutStyle { MinHeight = LengthPercentageAuto.Px(0) });
+            NodeHandle block = Box(tree, root, new LayoutStyle { MinHeight = Length.Px(0) });
             _ = Leaf(tree, block, 10, 30);
             Invalidation.NotifyViewport(tree, root, AvailableSize.MaxContent);
             LayoutEngine.RunLayoutPass(tree);
@@ -359,7 +359,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
                     ),
                 }
             );
-            var item = new LayoutStyle { MinWidth = LengthPercentageAuto.Px(0), FlexShrink = 0 };
+            var item = new LayoutStyle { MinWidth = Length.Px(0), FlexShrink = 0 };
             float width = 40;
             NodeHandle a = tree.CreateNode(item, (_, _) => MeasureResult.Of(width, 10));
             tree.AppendChild(root, a);
@@ -1118,7 +1118,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
         {
             Width = Length.Px(width),
             Height = Length.Px(height),
-            MinWidth = LengthPercentageAuto.Px(0),
+            MinWidth = Length.Px(0),
             FlexShrink = 0,
         };
 

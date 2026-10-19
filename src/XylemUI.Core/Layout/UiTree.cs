@@ -80,6 +80,7 @@ internal sealed class UiTree
                 UsesPercentOfParentHeight = style.UsesPercentOfParentHeight,
                 HasBox = LayoutEngine.TryResolveBox(in style, out ResolvedBox box),
                 HasInset = style.Inset != default,
+                HasKeywordLimits = style.HasSizingKeywordLimit,
                 Measure = measure,
                 IntrinsicWidths = intrinsicWidths,
                 FirstBaseline = float.NaN,
@@ -161,6 +162,7 @@ internal sealed class UiTree
         changed.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
         changed.Layout.HasBox = LayoutEngine.TryResolveBox(in style, out MeasuresOf(node).Box);
         changed.Layout.HasInset = style.Inset != default;
+        changed.Layout.HasKeywordLimits = style.HasSizingKeywordLimit;
         changed.Versions.LayoutStyle++;
         NodeHandle parent = changed.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);

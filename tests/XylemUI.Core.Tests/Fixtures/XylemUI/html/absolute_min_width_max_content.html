@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    An absolutely positioned box with a width below its max-content width keeps that width
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: block; width: 200px; height: 100px;">
+  <div style="position: absolute; width: 10px; min-width: max-content;">HH&#8203;HHHH</div>
+</div>
+
+</body>
+</html>

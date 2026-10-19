@@ -164,12 +164,21 @@ internal static partial class LayoutEngine
         OptionalSize min = MinSize(in s, area).Or(new OptionalSize(paddingBorder.Width, paddingBorder.Height)).AtLeast(paddingBorder);
         OptionalSize max = MaxSize(in s, area);
         OptionalSize known = styleSize.Clamp(min, max);
+        var inset = new Edges(
+            s.Inset.Left.Resolve(area.Width),
+            s.Inset.Top.Resolve(area.Height),
+            s.Inset.Right.Resolve(area.Width),
+            s.Inset.Bottom.Resolve(area.Height)
+        );
+        Length widthStyle = s.Width;
+        Length heightStyle = s.Height;
+        float aspectRatio = s.AspectRatio;
 
         // `auto` is `normal` for an absolutely positioned box: it does not follow the container's `*-items` here.
         var horizontal = new AbsoluteAxis(
             area.Width,
-            s.Inset.Left.Resolve(area.Width),
-            s.Inset.Right.Resolve(area.Width),
+            inset.Left,
+            inset.Right,
             margin.Left,
             margin.Right,
             staticX.Minus(border.Left),
@@ -179,8 +188,8 @@ internal static partial class LayoutEngine
         );
         var vertical = new AbsoluteAxis(
             area.Height,
-            s.Inset.Top.Resolve(area.Height),
-            s.Inset.Bottom.Resolve(area.Height),
+            inset.Top,
+            inset.Bottom,
             margin.Top,
             margin.Bottom,
             staticY.Minus(border.Top),
@@ -189,17 +198,37 @@ internal static partial class LayoutEngine
             isInline: false
         );
         var stretchFit = new Size(horizontal.StretchFitSize(), vertical.StretchFitSize());
+
+        // Keyword limits stretch to the stretch-fit size (row L3). Nothing is measured before them here, so the style still
+        // holds.
+        if (tree.Nodes.GetRef(child).Layout.HasKeywordLimits)
+        {
+            // From the minimum before its floor of the padding and border, so that the aspect ratio fills an axis left auto.
+            OptionalSize styleMin = MinSize(in s, area);
+            ResolveKeywordLimits(tree, child, KeywordLimits.Of(in s), styleSize, area, stretchFit, contentHeights: false, ref styleMin, ref max);
+            min = styleMin.Or(new OptionalSize(paddingBorder.Width, paddingBorder.Height)).AtLeast(paddingBorder);
+            known = styleSize.Clamp(min, max);
+        }
+
         var available = new AvailableSize(
             AvailableSpace.Definite(Maybe.Clamp(stretchFit.Width, min.Width, max.Width)),
             AvailableSpace.Definite(Maybe.Clamp(stretchFit.Height, min.Height, max.Height))
         );
+
+        // A sizing keyword in a size takes the place of the automatic size below (Taffy's layout_oof_box). The style is read
+        // above: no ref into the arena is held across the measuring run (design §2.5).
+        if (widthStyle.IsSizingKeyword || heightStyle.IsSizingKeyword)
+        {
+            known = ResolveAbsoluteKeywords(tree, child, known, widthStyle, heightStyle, area, inset, margin);
+            known = WithAspectRatio(known, aspectRatio).Clamp(min, max);
+        }
 
         // An automatic size is the stretch-fit size where both insets are set and the alignment stretches; the width first, so
         // that the aspect ratio gives the height (CSS Position 3 §5.1). An explicit `stretch` on both axes ignores the ratio.
         bool stretchWidth = float.IsNaN(known.Width) && horizontal.IsStretchSized;
         bool stretchHeight = float.IsNaN(known.Height) && vertical.IsStretchSized;
         bool bothExplicit = horizontal.Alignment == AbsoluteAlignment.Stretch && vertical.Alignment == AbsoluteAlignment.Stretch;
-        float ratio = stretchWidth && stretchHeight && bothExplicit ? float.NaN : s.AspectRatio;
+        float ratio = stretchWidth && stretchHeight && bothExplicit ? float.NaN : aspectRatio;
         if (stretchWidth)
         {
             known = WithAspectRatio(known with { Width = stretchFit.Width }, ratio).Clamp(min, max);
@@ -234,6 +263,70 @@ internal static partial class LayoutEngine
         float x = horizontal.Position(final.Width, marginLeft, marginRight) + border.Left;
         float y = vertical.Position(final.Height, marginTop, marginBottom) + border.Top;
         Place(tree, child, x, y);
+    }
+
+    // The sizes that sizing keywords give an absolutely positioned box where its size is not known: a content keyword is
+    // measured, and stretch takes the containing block less the insets and margins (Taffy's
+    // resolve_absolute_sizing_keywords). Two content keywords are measured in one run.
+    private static OptionalSize ResolveAbsoluteKeywords(
+        UiTree tree,
+        NodeHandle child,
+        OptionalSize known,
+        Length width,
+        Length height,
+        OptionalSize area,
+        Edges inset,
+        Edges margin
+    )
+    {
+        float stretchWidth = Math.Max(
+            0,
+            area.Width - Maybe.Or(inset.Left, 0) - Maybe.Or(inset.Right, 0) - Maybe.Or(margin.Left, 0) - Maybe.Or(margin.Right, 0)
+        );
+        float stretchHeight = Math.Max(
+            0,
+            area.Height - Maybe.Or(inset.Top, 0) - Maybe.Or(inset.Bottom, 0) - Maybe.Or(margin.Top, 0) - Maybe.Or(margin.Bottom, 0)
+        );
+        bool widthUnknown = float.IsNaN(known.Width);
+        bool heightUnknown = float.IsNaN(known.Height);
+        AvailableSpace? widthSpace = widthUnknown ? MeasureSpaceOf(width, stretchWidth) : null;
+        AvailableSpace? heightSpace = heightUnknown ? MeasureSpaceOf(height, stretchHeight) : null;
+        if (widthSpace is { } bothWidth && heightSpace is { } bothHeight)
+        {
+            var input = new LayoutInput(
+                OptionalSize.None,
+                true,
+                true,
+                area,
+                new AvailableSize(bothWidth, bothHeight),
+                SizingMode.ContentSize,
+                RequestedAxis.Both
+            );
+            Size measured = LayoutChild(tree, child, in input, commit: false);
+            return new OptionalSize(measured.Width, measured.Height);
+        }
+
+        if (widthUnknown && width.Kind == LengthKind.Stretch)
+        {
+            known = known with { Width = stretchWidth };
+        }
+        else if (widthSpace is { } widthOnly)
+        {
+            var available = new AvailableSize(widthOnly, AvailableSpace.Definite(stretchHeight));
+            known = known with { Width = MeasureChild(tree, child, known, area, available, SizingMode.ContentSize, horizontal: true) };
+        }
+
+        if (heightUnknown && height.Kind == LengthKind.Stretch)
+        {
+            known = known with { Height = stretchHeight };
+        }
+        else if (heightSpace is { } heightOnly)
+        {
+            var available = new AvailableSize(AvailableSpace.Definite(Maybe.Or(known.Width, stretchWidth)), heightOnly);
+            known = known with { Height = MeasureChild(tree, child, known, area, available, SizingMode.ContentSize, horizontal: false) };
+        }
+
+        return known;
     }
 
     private static AbsoluteAlignment AlignmentOf(AlignItems? alignment) =>

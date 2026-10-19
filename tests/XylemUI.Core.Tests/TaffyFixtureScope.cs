@@ -13,6 +13,10 @@ internal static class TaffyFixtureScope
     private static readonly Dictionary<string, string> Explicit = new(StringComparer.Ordinal)
     {
         ["block/block_flow_root_margin_non_collapse__border_box_ltr"] = MarginCollapsing,
+        ["block/block_height_stretch_margins_border_bottom_only__border_box_ltr"] = MarginCollapsing,
+        ["block/block_height_stretch_margins_flow_root_child__border_box_ltr"] = MarginCollapsing,
+        ["block/block_height_stretch_margins_no_border__border_box_ltr"] = MarginCollapsing,
+        ["block/block_height_stretch_margins_padding_top_only__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_complex__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_aspect_ratio__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_collapse_through_blocked_by_border_bottom__border_box_ltr"] = MarginCollapsing,
@@ -114,15 +118,13 @@ internal static class TaffyFixtureScope
                 "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
                     $"{attribute.Name.LocalName}: {value}, the item's own writing direction (row P03)",
                 "text-align" => "text-align moving a block's children (CSS's history; the design does not take it, §3.2)",
-                "flex-basis" when value is "content" => "flex-basis: content (row L3)",
+                "flex-basis" when value is "content" => "flex-basis: content (row V2)",
                 "overflow-x" or "overflow-y" when value is not "visible" => "overflow (row V2)",
                 "scrollbar-width" => "a scrollbar's width (row V2)",
                 "direction" when value is "rtl" => "right-to-left (row P03)",
                 "writing-mode" => "a vertical writing mode (row P03)",
                 "box-sizing" when value is "content-box" => "content-box sizing (the design keeps border-box, §3.2)",
                 "float" or "clear" => "floats (the design has none, §3.2)",
-                "width" or "height" or "flex-basis" when value.StartsWith("fit-content(", StringComparison.Ordinal) || value is "stretch" =>
-                    $"the size {value} (row L3)",
                 "width"
                 or "height"
                 or "flex-basis"

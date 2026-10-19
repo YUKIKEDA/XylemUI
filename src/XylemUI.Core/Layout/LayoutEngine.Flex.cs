@@ -313,16 +313,21 @@ internal static partial class LayoutEngine
             item.FlexGrow = s.FlexGrow;
             item.FlexShrink = s.FlexShrink;
             item.HasInset = c.Layout.HasInset;
+            item.HasKeywordLimits = c.Layout.HasKeywordLimits;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
             constants.AnyAutoMargin |= item.AutoLeft | item.AutoTop | item.AutoRight | item.AutoBottom;
-            item.Stretched = !item.HasAutoCrossMargin(row) && item.CrossStyle.IsAuto && item.AlignSelf.Keyword == AlignItemsKeyword.Stretch;
+
+            // A cross size of stretch stretches the item to its line whatever its alignment (Taffy's is_stretched).
+            item.Stretched =
+                !item.HasAutoCrossMargin(row)
+                && (item.CrossStyle.Kind == LengthKind.Stretch || (item.CrossStyle.IsAuto && item.AlignSelf.Keyword == AlignItemsKeyword.Stretch));
             constants.AllStretched &= item.Stretched;
 
             // A stretched item's maximum resolves against the content box even where it is indefinite (Chrome and Firefox,
             // as Taffy), and does not follow the aspect ratio; only a percentage differs from the maximum above.
-            LengthPercentageAuto maxCross = row ? s.MaxHeight : s.MaxWidth;
+            Length maxCross = row ? s.MaxHeight : s.MaxWidth;
             item.StretchMaxCross =
                 maxCross.IsPercent ? maxCross.Resolve(constants.NodeInnerSize.Cross(row))
                 : s.HasAspectRatio ? MaxSizeIgnoringAspectRatio(in s, percentBasis).Cross(row)
@@ -334,6 +339,30 @@ internal static partial class LayoutEngine
             child = c.NextSibling;
             i++;
         }
+    }
+
+    // The minimum and the maximum an item's sizing keywords give it (row L3): stretch takes the container's content box less
+    // the item's margins, and a content keyword counts in a height only on a column's main axis (Chrome). A stretched item's
+    // maximum is the resolved one, before the aspect ratio (as StretchMaxCross is for a fixed maximum).
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ResolveFlexKeywordLimits(UiTree tree, ref FlexItem item, in FlexConstants constants, float percentMain)
+    {
+        bool row = constants.Row;
+        float mainStretch = Maybe.Max(percentMain - item.Margin.MainSum(row), 0);
+        float crossStretch = Maybe.Max(constants.NodeInnerSize.Cross(row) - item.Margin.CrossSum(row), 0);
+        Size stretch = row ? new Size(mainStretch, crossStretch) : new Size(crossStretch, mainStretch);
+        var limits = KeywordLimits.Of(in tree.Nodes.GetRef(item.Node).Layout.Style);
+        OptionalSize min = item.Min;
+        OptionalSize max = item.Max;
+        var unratioed = limits with { AspectRatio = float.NaN };
+        ResolveKeywordLimits(tree, item.Node, unratioed, item.Size, constants.NodeInnerSize, stretch, contentHeights: !row, ref min, ref max);
+        if ((row ? limits.MaxHeight : limits.MaxWidth).IsSizingKeyword)
+        {
+            item.StretchMaxCross = max.Cross(row);
+        }
+
+        item.Min = WithAspectRatio(min, limits.AspectRatio);
+        item.Max = WithAspectRatio(max, limits.AspectRatio);
     }
 
     // 9.2.2: the container's content box where it is known, otherwise the space the parent gave less the padding and border.
@@ -365,6 +394,15 @@ internal static partial class LayoutEngine
                 continue;
             }
 
+            // Keyword limits measure the item, so they are resolved here rather than with its other lengths. An item with them
+            // keeps no memo (the spaces they read are not in it), so the check stays off the path of a reused step: placed
+            // before the memo, it made one change of row L1a's scene with CSS's defaults 3.1 % slower than main, against 1.1 %
+            // without it (layout-loop auto_min change, main and the branch alternated 12 times each).
+            if (item.HasKeywordLimits)
+            {
+                ResolveFlexKeywordLimits(tree, ref item, in constants, percentMain);
+            }
+
             bool readContent = false;
             float minCross = item.Min.Cross(row);
             float maxCross = item.Max.Cross(row);
@@ -391,8 +429,11 @@ internal static partial class LayoutEngine
             float mainStretch = Maybe.Max(percentMain - item.Margin.MainSum(row), 0);
             item.FlexBasis = float.NaN;
             AvailableSpace? keywordSpace = null;
-            if (item.FlexBasisStyle.Kind is LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent)
+            if (item.FlexBasisStyle.IsSizingKeyword)
             {
+                // A stretch basis is definite; a keyword that cannot be resolved here behaves as content.
+                item.FlexBasis = StretchOf(item.FlexBasisStyle, mainStretch);
+                item.FlexBasisIsDefinite = !float.IsNaN(item.FlexBasis);
                 keywordSpace = MeasureSpaceOf(item.FlexBasisStyle, mainStretch);
             }
             else
@@ -405,6 +446,8 @@ internal static partial class LayoutEngine
                 }
                 else if (item.FlexBasisStyle.IsAuto)
                 {
+                    item.FlexBasis = StretchOf(item.MainStyle, mainStretch);
+                    item.FlexBasisIsDefinite = !float.IsNaN(item.FlexBasis);
                     keywordSpace = MeasureSpaceOf(item.MainStyle, mainStretch);
                 }
             }
@@ -471,7 +514,7 @@ internal static partial class LayoutEngine
             ref MeasureCache cache = ref tree.MeasuresOf(item.Node);
             (commit ? ref cache.LayoutBase : ref cache.MeasureBase) = new FlexBaseMemo
             {
-                Valid = true,
+                Valid = !item.HasKeywordLimits,
                 Row = row,
                 ReadContent = readContent,
                 MinContentMain = minContentMain,
@@ -494,9 +537,7 @@ internal static partial class LayoutEngine
     // margins and padding resolve against is compared apart: a row's width can be known but not definite.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool ReadsContainerMain(in FlexItem item, bool hasBox) =>
-        !hasBox
-        || item.FlexBasisStyle.Kind is LengthKind.Percent or LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent
-        || item.MainStyle.Kind is LengthKind.MinContent or LengthKind.MaxContent or LengthKind.FitContent;
+        !hasBox || item.FlexBasisStyle.IsPercent || item.FlexBasisStyle.IsSizingKeyword || item.MainStyle.IsSizingKeyword;
 
     // The base-size step's results of an item from its container's last run (dropped when the item is marked dirty), where the
     // step would read the same values of the container: its style, the content-box sizes the item reads, and the spaces.
@@ -1490,6 +1531,7 @@ internal static partial class LayoutEngine
         public bool Frozen;
         public bool Stretched;
         public bool HasInset;
+        public bool HasKeywordLimits;
         public float StretchMaxCross;
         public float Baseline;
         public float OffsetMain;

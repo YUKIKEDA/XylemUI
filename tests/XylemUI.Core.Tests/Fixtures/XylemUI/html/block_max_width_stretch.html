@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A maximum width of stretch cuts a wider block to the container width less the margins
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: block; width: 200px;">
+  <div style="width: 300px; margin-left: 20px; max-width: stretch;">HH&#8203;HHHH</div>
+</div>
+
+</body>
+</html>

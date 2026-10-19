@@ -12,8 +12,9 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
     /// <remarks>
     /// Preconditions:
     /// - For each of 40 seeds: a random tree of 30 to 60 nodes. Containers are rows, columns, wrapping rows, and blocks, with
-    ///   random alignment, gaps, padding, and fixed or automatic sizes. Leaves have content of a random size, some with content
-    ///   widths, some with a first baseline, some with a percentage width.
+    ///   random alignment, gaps, padding, and fixed or automatic sizes, some fixed ones with a minimum or maximum that is a
+    ///   sizing keyword (row L3). Leaves have content of a random size, some with content widths, some with a first baseline,
+    ///   some with a percentage width, some with a sizing keyword as a minimum or maximum.
     ///
     /// Steps:
     /// - Lay the tree out at a random window size. Then 30 times, after taking the repaints as the paint stage of a frame will
@@ -251,6 +252,10 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
             if (!root && random.Next(4) == 0)
             {
                 style = style with { Width = Length.Px(40 + random.Next(120)), Height = Length.Px(30 + random.Next(80)) };
+                if (random.Next(2) == 0)
+                {
+                    style = WithKeywordLimit(random, style);
+                }
             }
 
             if (!root && random.Next(8) == 0)
@@ -260,6 +265,17 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
 
             return style;
         }
+
+        // A minimum or maximum that is a sizing keyword (row L3): one that reads the content, or the space to stretch into.
+        public static LayoutStyle WithKeywordLimit(Random random, LayoutStyle style) =>
+            random.Next(5) switch
+            {
+                0 => style with { MinWidth = Length.MaxContent },
+                1 => style with { MaxWidth = Length.MinContent },
+                2 => style with { MaxWidth = Length.FitContent },
+                3 => style with { MinHeight = Length.Stretch },
+                _ => style with { MinHeight = Length.MinContent },
+            };
 
         // Insets for an absolutely positioned node: each side auto or a few pixels, so that some axes have both, one, or none.
         public static EdgeInsets<LengthPercentageAuto> RandomInsets(Random random)
@@ -311,9 +327,10 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
             random.Next(7) switch
             {
                 0 => new LayoutStyle { Width = Length.Percent(0.2f + (0.1f * random.Next(4))) },
-                1 => new LayoutStyle { MinWidth = LengthPercentageAuto.Px(0) },
+                1 => new LayoutStyle { MinWidth = Length.Px(0) },
                 2 => new LayoutStyle { FlexGrow = 1 },
                 3 => new LayoutStyle { Position = Position.Absolute, Inset = TreeSpec.RandomInsets(random) },
+                4 => TreeSpec.WithKeywordLimit(random, new LayoutStyle()),
                 _ => new LayoutStyle(),
             };
 
