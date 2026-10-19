@@ -154,7 +154,7 @@ Rejected:
   - 基準の大きさの前回の結果を、実行の種類で分けずに 1 つだけ持つ（容器が 1 回の pass で測られて layout され、互いに上書きして一度も使われなかった。Issue #101）
   - 内容が変わった子の、本番の layout の大きさだけを比べて親で止める（Avalonia の `DesiredSize` と同じ。親が別の入力で測った大きさ・内容の幅・ベースラインが変わっても止まり、結果を誤る。L5 の Grill、Issue #108）
   - 内容が変わっても、今のまま印を付けた時点で境界まで上へ伝える（大きさが変わらない変更でも親を解き直す。L5 の Grill、Issue #108）
-  - 絶対配置の基準を CSS どおり最も近い positioned の祖先にする（GPUI の Taffy 0.9.0・Flutter・Avalonia はそろって親を基準にする。Taffy 0.15 は CSS どおりにした。祖先をたどる処理と無効化が増える。L2 の Grill、Issue #120）
+  - 絶対配置の基準を CSS どおり最も近い positioned の祖先にする（GPUI の Taffy 0.9.0 と、Zed が出荷する 0.13.0・Flutter・Avalonia はそろって親を基準にする。Taffy 0.15 は CSS どおりにした。祖先をたどる処理と無効化が増える。L2 の Grill、Issue #120）
   - 絶対配置の子を構造の境界にして、親は絶対配置の子の配置だけをやり直す（費用を測る前に仕組みを足さない。Flutter・Avalonia は親を解き直す。L2 の Grill、Issue #120）
   - 表示しないノードを Taffy の `Display::None` のように `LayoutAlgorithm` の 1 つにする（切り替えのたびに元のアルゴリズムを覚えておくことになる。L2 の Grill、Issue #120）
   - `flex-wrap: balance` を L2 に入れる（CSS の草案で、Flutter・Avalonia・GPUI のどれも持たない。行 L6 に置いた。L2 の Grill、Issue #120）
@@ -173,7 +173,7 @@ Rejected:
   - CSS の既定値の動き（`align-items: stretch` など）も L1b に回す（L1a で Taffy の XML テストがほとんど通らない。Issue #80）
   - min / max に内容の大きさを書けるようにする（GPUI・Flutter・Avalonia に無く、Chrome の期待値で確かめられない。行 L3 に残した。Issue #83。L3 で、期待値を Chrome から作って入れることにした。Issue #129）
   - 絶対配置の子を layout の境界にして、中の変更では親が絶対配置の子の配置だけをやり直す（無効化の規則（§2.4.1）を変え、Flutter・Avalonia に同じ仕組みが無い。子の大きさが変わると `right`・`bottom` や揃えで位置も変わるので、親の側の処理は要る。clean で前回と同じ入力の子を飛ばす方式にした。L7 の Grill、Issue #137）
-  - `fit-content(長さ)` を L3 で入れる（Chrome 155 は `width`・`max-width`・`flex-basis` の値として受け付けず、宣言ごと捨てる。MDN の互換データでも Chrome と Safari は未対応で、Firefox は 91 から設定フラグの後ろにあるだけ。外の正解で確かめられず、Flutter・Avalonia・GPUI も持たない。出荷するブラウザが対応したら決め直す。L3 の実装でオーナー決定、Issue #133）
+  - `fit-content(長さ)` を L3 で入れる（Chrome 155 は `width`・`max-width`・`flex-basis` の値として受け付けず、宣言ごと捨てる。MDN の互換データでも Chrome と Safari は未対応で、Firefox は 91 から設定フラグの後ろにあるだけ。外の正解で確かめられず、Flutter・Avalonia も持たない（GPUI は、Zed が出荷する Taffy 0.13.0 が持つ。行 L9 で分かった）。出荷するブラウザが対応したら決め直す。L3 の実装でオーナー決定、Issue #133）
   - `flex-basis: content` を L3 で入れる（Taffy の XML テストの 2 件は `overflow` も使い、V2 まで外の正解で確かめられない。行 V2 に移した。L3 の Grill、Issue #129）
   - L1a の性能を S6b の簡略な flex と比べる（CSS の手順は葉 1 つにつき 4〜9 回計算し、Taffy も同じ回数。比べる相手は Flutter・Avalonia・GPUI にした。Issue #82）
   - 計測のキャッシュを `UiNode` の中に持つ（ノードが 1,160 バイトになり、最初の layout と幅の変更が外の配列より遅かった。Issue #82）

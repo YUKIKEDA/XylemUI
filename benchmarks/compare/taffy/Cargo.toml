@@ -6,8 +6,9 @@ publish = false
 description = "XylemUI's layout scene in Taffy, the layout of GPUI (XylemUI roadmap row L1a)."
 
 [dependencies]
-# The version GPUI 0.2.2 uses (benchmarks/compare/gpui/Cargo.lock).
-taffy = "=0.9.0"
+# The version Zed ships GPUI with: its latest stable release, v1.24.3 (2026-10-19), pins taffy = "=0.13.0" in its Cargo.toml
+# (row L9). The gpui crate on crates.io (0.2.2, benchmarks/compare/gpui) still pins 0.9.0.
+taffy = "=0.13.0"
 
 [profile.release]
 lto = "thin"
