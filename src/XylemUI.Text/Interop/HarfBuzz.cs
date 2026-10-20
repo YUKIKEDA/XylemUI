@@ -22,6 +22,9 @@ internal static unsafe partial class HarfBuzz
     [LibraryImport(Library, EntryPoint = "hb_blob_destroy")]
     public static partial void BlobDestroy(nint blob);
 
+    [LibraryImport(Library, EntryPoint = "hb_face_count")]
+    public static partial uint FaceCount(nint blob);
+
     [LibraryImport(Library, EntryPoint = "hb_face_create")]
     public static partial nint FaceCreate(nint blob, uint index);
 
@@ -30,6 +33,21 @@ internal static unsafe partial class HarfBuzz
 
     [LibraryImport(Library, EntryPoint = "hb_face_get_upem")]
     public static partial uint FaceGetUpem(nint face);
+
+    [LibraryImport(Library, EntryPoint = "hb_face_get_glyph_count")]
+    public static partial uint FaceGetGlyphCount(nint face);
+
+    [LibraryImport(Library, EntryPoint = "hb_face_reference_table")]
+    public static partial nint FaceReferenceTable(nint face, uint tag);
+
+    [LibraryImport(Library, EntryPoint = "hb_blob_get_data")]
+    public static partial byte* BlobGetData(nint blob, uint* length);
+
+    [LibraryImport(Library, EntryPoint = "hb_ot_name_list_names")]
+    public static partial NameEntry* OtNameListNames(nint face, uint* count);
+
+    [LibraryImport(Library, EntryPoint = "hb_ot_name_get_utf16")]
+    public static partial uint OtNameGetUtf16(nint face, uint nameId, nint language, uint* textSize, char* text);
 
     [LibraryImport(Library, EntryPoint = "hb_font_create")]
     public static partial nint FontCreate(nint face);
@@ -75,6 +93,15 @@ internal static unsafe partial class HarfBuzz
 
     [LibraryImport(Library, EntryPoint = "hb_buffer_get_glyph_positions")]
     public static partial GlyphPosition* BufferGetGlyphPositions(nint buffer, uint* length);
+
+    /// <summary><c>hb_ot_name_entry_t</c>: a name id and the language of one of its entries.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NameEntry
+    {
+        public uint NameId;
+        public uint Var;
+        public nint Language;
+    }
 
     /// <summary><c>hb_glyph_info_t</c>. After shaping, <see cref="Codepoint"/> holds the glyph id.</summary>
     [StructLayout(LayoutKind.Sequential)]

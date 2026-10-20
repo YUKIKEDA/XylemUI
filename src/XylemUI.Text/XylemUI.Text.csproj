@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>XylemUI.Text</RootNamespace>
-    <Description>The XylemUI text pipeline: shaping with HarfBuzz, rasterizing with FreeType, and the glyph atlas.</Description>
+    <Description>The XylemUI text pipeline: shaping with HarfBuzz, the font fallback, and the glyph atlas, whose glyphs an IGlyphRasterizer draws.</Description>
     <!-- The native wrappers of the text pipeline (.cursor/rules/interop.mdc). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
@@ -12,10 +12,10 @@
   <ItemGroup>
     <EmbeddedResource Include="Fonts\XylemUIFallback.ttf" LogicalName="XylemUIFallback.ttf" />
   </ItemGroup>
-  <!-- Under the JIT the libraries load as DLLs next to the app; a NativeAOT app links them statically (XylemUI.Text.targets). -->
+  <!-- Under the JIT HarfBuzz loads as a DLL next to the app; a NativeAOT app links it statically (XylemUI.Text.targets). -->
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\harfbuzz.dll')">
     <None
-      Include="$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\*.dll"
+      Include="$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\harfbuzz.dll"
       Link="%(Filename)%(Extension)"
       CopyToOutputDirectory="PreserveNewest"
     />

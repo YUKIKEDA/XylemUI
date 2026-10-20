@@ -1,16 +1,16 @@
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using XylemUI.Text.Interop;
 
 namespace XylemUI.Text;
 
 /// <summary>
-/// A font file in memory, opened for shaping (HarfBuzz) and rasterizing (FreeType) from the same bytes (design §4.1, §4.5).
+/// A font file in memory, opened for shaping (HarfBuzz); a rasterizer (<see cref="IGlyphRasterizer"/>) draws its glyphs from the
+/// same bytes (<see cref="Data"/>, design §4.1, §4.5, §5.0.3).
 /// </summary>
 /// <remarks>
-/// Bytes given in memory are copied once into a pinned array; a font file is mapped read-only (<see cref="FromFile"/>). Both
-/// libraries read the bytes in place for the font's lifetime. A font belongs to one thread (the UI thread); HarfBuzz and FreeType
+/// Bytes given in memory are copied once into a pinned array; a font file is mapped read-only (<see cref="FromFile"/>). HarfBuzz
+/// and the rasterizer read the bytes in place for the font's lifetime. A font belongs to one thread (the UI thread); its HarfBuzz
 /// objects are not shared across threads here.
 /// </remarks>
 public sealed unsafe class Font : IDisposable
@@ -21,12 +21,12 @@ public sealed unsafe class Font : IDisposable
     private readonly byte[]? _data;
     private readonly MemoryMappedFile? _mapping;
     private readonly MemoryMappedViewAccessor? _view;
+    private byte* _bytes;
+    private int _length;
     private bool _acquired;
     private nint _blob;
     private nint _face;
     private nint _font;
-    private FreeType.FaceRec* _ftFace;
-    private uint _ftPixelSize;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Font"/> class from the bytes of a TrueType or OpenType font.
@@ -37,7 +37,7 @@ public sealed unsafe class Font : IDisposable
     /// </param>
     /// <exception cref="ArgumentException">The bytes are empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="faceIndex"/> is negative.</exception>
-    /// <exception cref="InvalidOperationException">FreeType could not open the font, or the file has no such face.</exception>
+    /// <exception cref="InvalidOperationException">HarfBuzz could not open the font, or the file has no such face.</exception>
     public Font(ReadOnlySpan<byte> data, int faceIndex = 0)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(faceIndex);
@@ -82,7 +82,7 @@ public sealed unsafe class Font : IDisposable
     /// <returns>The font, which unmaps the file when disposed.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="faceIndex"/> is negative.</exception>
     /// <exception cref="IOException">The file could not be opened or mapped.</exception>
-    /// <exception cref="InvalidOperationException">FreeType could not open the font, or the file has no such face.</exception>
+    /// <exception cref="InvalidOperationException">HarfBuzz could not open the font, or the file has no such face.</exception>
     public static Font FromFile(string path, int faceIndex = 0)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -114,9 +114,34 @@ public sealed unsafe class Font : IDisposable
     public int Id { get; }
 
     /// <summary>
-    /// Gets the family name the font gives itself (FreeType's <c>family_name</c>); empty when it gives none.
+    /// Gets the family name the font gives itself, read from its <c>name</c> table in FreeType's order (the WWS family, the
+    /// typographic family, then the family, design §5.0.3); empty when it gives none.
     /// </summary>
     public string FamilyName { get; }
+
+    /// <summary>
+    /// Gets the face of the font file this font opened; 0 for a single font.
+    /// </summary>
+    public int FaceIndex { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the font was disposed.
+    /// </summary>
+    public bool IsDisposed => _font == 0;
+
+    /// <summary>
+    /// Gets the bytes of the font file. They are pinned or mapped, so they stay at the same address until the font is disposed:
+    /// a rasterizer may hand that address to the OS without a copy, and must not read it after <see cref="Dispose"/>.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
+    public ReadOnlySpan<byte> Data
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_font == 0, this);
+            return new ReadOnlySpan<byte>(_bytes, _length);
+        }
+    }
 
     /// <summary>
     /// Gets the font's units per em; shaped advances and offsets are in these units.
@@ -137,16 +162,12 @@ public sealed unsafe class Font : IDisposable
     }
 
     /// <summary>
-    /// Releases the HarfBuzz and FreeType objects.
+    /// Releases the HarfBuzz objects and the bytes.
     /// </summary>
     public void Dispose()
     {
-        if (_ftFace is not null)
-        {
-            _ = FreeType.DoneFace(_ftFace);
-            _ftFace = null;
-        }
-
+        _bytes = null;
+        _length = 0;
         if (_font != 0)
         {
             HarfBuzz.FontDestroy(_font);
@@ -176,56 +197,34 @@ public sealed unsafe class Font : IDisposable
         _mapping?.Dispose();
     }
 
-    /// <summary>
-    /// Renders a glyph at a pixel size with FreeType and returns its slot, valid until the next render of this font.
-    /// </summary>
-    /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
-    /// <exception cref="InvalidOperationException">FreeType could not render the glyph.</exception>
-    internal FreeType.GlyphSlotRec* Render(uint glyphId, int pixelSize)
-    {
-        ObjectDisposedException.ThrowIf(_ftFace is null, this);
-        if (_ftPixelSize != (uint)pixelSize)
-        {
-            int sizeError = FreeType.SetPixelSizes(_ftFace, 0, (uint)pixelSize);
-            if (sizeError != 0)
-            {
-                throw new InvalidOperationException($"FreeType could not set the pixel size {pixelSize} (error {sizeError}).");
-            }
-
-            _ftPixelSize = (uint)pixelSize;
-        }
-
-        // No hinting: the coverage follows the designed outline, so its box is the outline's box rounded out to whole pixels. Whether
-        // UI text is hinted is decided with the text's rendering quality, after S8b.
-        int error = FreeType.LoadGlyph(_ftFace, glyphId, FreeType.LoadRender | FreeType.LoadNoHinting);
-        if (error != 0)
-        {
-            throw new InvalidOperationException($"FreeType could not render glyph {glyphId} (error {error}).");
-        }
-
-        return _ftFace->Glyph;
-    }
-
-    // Opens HarfBuzz and FreeType over bytes that stay valid until Dispose, and returns the family name.
+    // Opens HarfBuzz over bytes that stay valid until Dispose, and returns the family name.
     private string Open(byte* pointer, int length, int faceIndex)
     {
+        _bytes = pointer;
+        _length = length;
+        FaceIndex = faceIndex;
         _blob = HarfBuzz.BlobCreate(pointer, (uint)length, HarfBuzz.MemoryModeReadOnly, null, null);
+
+        // HarfBuzz opens any bytes and any index: an empty face for what it cannot read, and the only face of a single font for
+        // every index. So the index is checked against the file's faces, and a face without glyphs is no font.
+        if ((uint)faceIndex >= HarfBuzz.FaceCount(_blob))
+        {
+            Dispose();
+            throw new InvalidOperationException($"The font file has no face {faceIndex}.");
+        }
+
         _face = HarfBuzz.FaceCreate(_blob, (uint)faceIndex);
+        if (HarfBuzz.FaceGetGlyphCount(_face) == 0)
+        {
+            Dispose();
+            throw new InvalidOperationException($"HarfBuzz could not open face {faceIndex} of the font.");
+        }
+
         UnitsPerEm = (int)HarfBuzz.FaceGetUpem(_face);
         _font = HarfBuzz.FontCreate(_face);
 
         // Positions in font units: the caller scales them to the size it draws at.
         HarfBuzz.FontSetScale(_font, UnitsPerEm, UnitsPerEm);
-
-        FreeType.FaceRec* face;
-        int error = FreeType.NewMemoryFace(FreeTypeLibrary.Handle, pointer, new CLong(length), new CLong(faceIndex), &face);
-        if (error != 0)
-        {
-            Dispose();
-            throw new InvalidOperationException($"FreeType could not open the font (error {error}).");
-        }
-
-        _ftFace = face;
-        return face->FamilyName is null ? string.Empty : Marshal.PtrToStringUTF8((nint)face->FamilyName) ?? string.Empty;
+        return FontNames.Family(_face);
     }
 }

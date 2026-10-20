@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <!-- The native libraries are built for Windows only until roadmap rows P04 and P06, so these tests run on Windows only. -->
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>XylemUI.Text.Tests</RootNamespace>
     <!-- The allocation tests measure under JIT; tiered compilation adds one-off allocations (.cursor/rules/bench.mdc). -->
     <TieredCompilation>false</TieredCompilation>

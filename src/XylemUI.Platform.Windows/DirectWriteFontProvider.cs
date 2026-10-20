@@ -1,10 +1,10 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
 using XylemUI.Text;
 using static TerraFX.Interop.DirectX.DirectX;
 using static TerraFX.Interop.Windows.Windows;
+using static XylemUI.Platform.Windows.Com;
 
 namespace XylemUI.Platform.Windows;
 
@@ -150,16 +150,6 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         Release(ref _factory);
     }
 
-    private static void Release<T>(ref T* pointer)
-        where T : unmanaged, IUnknown.Interface
-    {
-        if (pointer is not null)
-        {
-            _ = pointer->Release();
-            pointer = null;
-        }
-    }
-
     private static string SystemUiFontFamily()
     {
         LOGFONTW font;
@@ -175,18 +165,6 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         // https://learn.microsoft.com/windows/win32/uxguide/vis-fonts: Segoe UI is the font for user interface text.
         return "Segoe UI";
     }
-
-    private static void ThrowIfFailed(int result, string operation)
-    {
-        if (result < 0)
-        {
-            Throw(result, operation);
-        }
-    }
-
-    [DoesNotReturn]
-    private static void Throw(int result, string operation) =>
-        throw new InvalidOperationException($"{operation} failed with 0x{result:X8}.") { HResult = result };
 
     // The locale DirectWrite reads to pick a Han character's font: the language's BCP 47 tag, kept null-terminated and pinned.
     private char[] LocaleOf(TextLanguage language)

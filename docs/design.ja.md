@@ -99,6 +99,8 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 12. テスト/品質保証（自動UIテスト、ビジュアルリグレッション、実機検証体制）
 13. 拡張性/エコシステム（プラグイン、他言語連携、デザインシステム模倣）
 
+**対応する Windows の最も古い版（T4 でオーナーが決定）: Windows 10 1809（ビルド 17763）。** Microsoft のサポートが続く Windows 10 のクライアントで最も古い版（LTSC 2019）で、1607 LTSB は 2026-10-13 にサポートが終わった。グリフのラスタライズに使う `IDWriteFactory5`（§5.0.3）と、行 R2 の `ID3D11Fence` は 1703 から使える。.NET 10 は Windows 10 の 1607（E）・1809（E）・21H2 に対応し（`dotnet/core` の `release-notes/10.0/supported-os.md`）、Flutter 3.47 は Windows 10 と 11（docs.flutter.dev の Supported deployment platforms）、Zed は Windows 10 1903 以降、Avalonia 12 は Windows 10 22H2 を確かめ、それより前はベストエフォート（docs.avaloniaui.net の Supported platforms）。Windows の TFM のプロジェクトは `SupportedOSPlatformVersion` を `10.0.17763.0` にする。1903（Zed）にすると LTSC 2019 の利用者が外れ、1607 まで下げるとメモリから読むフォントの読み込み器を手書きの COM で作ることになるが、1607 のクライアントはもうサポートされていない
+
 ---
 
 ## 2. 全体アーキテクチャ：Fine-grained Reactive方式

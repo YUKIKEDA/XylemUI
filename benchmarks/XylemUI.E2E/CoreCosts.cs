@@ -80,16 +80,18 @@ internal static class CoreCosts
         uint[] glyphs = [.. shaper.Shape(font, Word, TextLanguage.FromTag("ja")).ToArray().Select(g => g.GlyphId).Distinct()];
 
         // 64 px pages of 32 px plots, at most 1 page (a limit of 2): the 8 Japanese glyphs at 24 px fill both pages; "W" is refused.
-        var atlas = new GlyphAtlas(pageSize: 64, plotSize: 32, maxPages: 1);
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        var atlas = new GlyphAtlas(rasterizer, pageSize: 64, plotSize: 32, maxPages: 1);
         foreach (uint glyph in glyphs)
         {
-            _ = atlas.TryGet(font, glyph, 24, out _);
+            _ = atlas.TryGet(new GlyphKey(font, glyph, 24, 0), out _);
         }
 
-        var cachedAtlas = new GlyphAtlas();
-        _ = cachedAtlas.TryGet(font, 56, 24, out _);
-        report.Number("refused_us", Time(requests, () => atlas.TryGet(font, 56, 24, out _)));
-        report.Number("cached_us", Time(requests, () => cachedAtlas.TryGet(font, 56, 24, out _)));
+        var cachedAtlas = new GlyphAtlas(rasterizer);
+        var w = new GlyphKey(font, 56, 24, 0);
+        _ = cachedAtlas.TryGet(w, out _);
+        report.Number("refused_us", Time(requests, () => atlas.TryGet(w, out _)));
+        report.Number("cached_us", Time(requests, () => cachedAtlas.TryGet(w, out _)));
         report.Number("refused_count", atlas.RefusedCount);
         return 0;
     }
