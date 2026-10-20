@@ -4,7 +4,8 @@
 // With --redirection it composes through a DXGI swap chain on the window (Win32CompositionMode.RedirectionSurface) instead of the
 // default Windows.UI.Composition, whose updates PresentMon does not record for the app (M1a): only the frame measurements use it.
 // With --layout <file> it shows no window: it times the layout of XylemUI's layout scene (row L1a, LayoutScene below) in a window
-// of Avalonia's headless platform, and writes one JSON line to the file.
+// of Avalonia's headless platform, and writes one JSON line to the file. With --text [--dark] it shows the text scene of the
+// rendering comparison instead (row T4, TextSceneControl below).
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -18,6 +19,10 @@ internal static class Program
 {
     public static bool Static { get; private set; }
 
+    public static bool Text { get; private set; }
+
+    public static bool Dark { get; private set; }
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -30,6 +35,8 @@ internal static class Program
         }
 
         Static = args.Contains("--static");
+        Text = args.Contains("--text");
+        Dark = args.Contains("--dark");
         AppBuilder builder = AppBuilder.Configure<App>().UsePlatformDetect();
         if (args.Contains("--redirection"))
         {
@@ -53,7 +60,7 @@ internal sealed class App : Application
                 Title = "Avalonia compare",
                 Width = 800,
                 Height = 600,
-                Content = new SceneControl(),
+                Content = Program.Text ? new TextSceneControl() : new SceneControl(),
             };
         }
 
@@ -290,5 +297,42 @@ internal static class LayoutScene
     private sealed class Leaf : Control
     {
         protected override Size MeasureOverride(Size availableSize) => new(10, 10);
+    }
+}
+
+// The text scene of the rendering comparison (XylemUI roadmap row T4; the same as benchmarks/XylemUI.E2E/TextQuality.cs). In
+// logical pixels: the control filled with the background; for Segoe UI, then Yu Gothic UI, at 12, 14, 16, and 20 px, a sample
+// line with its top at y and a probe line of 16 "l" with its top at y + 1.8 size, then y grows by 3.6 size, from y 12; every line
+// starts at x 16. Black on white, or white on black with --dark. Characters a family lacks take Avalonia's fallback. Avalonia's
+// own defaults for text (no TextOptions set).
+internal sealed class TextSceneControl : Control
+{
+    private const string Sample = "Hamburgefonstiv 0123 日本語のテキスト、ひらがな";
+    private const string Probe = "llllllllllllllll";
+    private static readonly string[] Families = ["Segoe UI", "Yu Gothic UI"];
+    private static readonly double[] Sizes = [12, 14, 16, 20];
+
+    public override void Render(DrawingContext context)
+    {
+        IBrush background = Program.Dark ? Brushes.Black : Brushes.White;
+        IBrush ink = Program.Dark ? Brushes.White : Brushes.Black;
+        context.FillRectangle(background, new Rect(0, 0, Bounds.Width, Bounds.Height));
+        double y = 12;
+        foreach (string family in Families)
+        {
+            var typeface = new Typeface(new FontFamily(family));
+            foreach (double size in Sizes)
+            {
+                context.DrawText(
+                    new FormattedText(Sample, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, size, ink),
+                    new Point(16, y)
+                );
+                context.DrawText(
+                    new FormattedText(Probe, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, size, ink),
+                    new Point(16, y + (1.8 * size))
+                );
+                y += 3.6 * size;
+            }
+        }
     }
 }

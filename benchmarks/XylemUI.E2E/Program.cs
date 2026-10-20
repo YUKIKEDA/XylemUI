@@ -17,6 +17,8 @@
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
 //   startup-child [--idle]     the child of startup and idle
 //   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`
+//   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
+//   text-capture out.png app [args]  launch an app, and save its client area from the screen as a PNG (row T4)
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
 using System.Globalization;
 using XylemUI.E2E;
@@ -41,6 +43,8 @@ return scenario switch
     "font-fallback" => CoreCosts.FontFallbackCost(Number(1, 2_000)),
     "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
     "scope-cost" => ScopeCost.Run(),
+    "text" => TextQuality.Run(dark: args.Contains("--dark")),
+    "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
     "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
     "external" => External.Run(args),
     _ => Unknown(scenario),

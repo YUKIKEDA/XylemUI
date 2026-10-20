@@ -19,9 +19,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 ## 今
 
 - **フェーズ:** T4（Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** T4 の設計 PR（Grill は済み）
-- **ブランチ:** `docs/157-t4-design`
-- **Issue:** [#157](https://github.com/YUKIKEDA/XylemUI/issues/157)
+- **作業中:** T4 の実装（100 % と 150 % の見た目の比べ方が残る）
+- **ブランチ:** `feat/161-t4`
+- **Issue:** [#161](https://github.com/YUKIKEDA/XylemUI/issues/161)
 
 ## ツールチェーン
 
@@ -68,7 +68,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | T4  | テキストの描画品質: Windows のグリフを DirectWrite で描き、横に 4 段階のサブピクセル位置、DirectWrite の推奨のヒンティング、シェーダでのガンマとコントラストの補正（単色のグリフ）。ラスタライズは `IGlyphRasterizer` の後ろに置き、Windows のビルドから FreeType を外す（T4 の Grill、§5.0.3「グリフの描き方」、Issue #54） | in-progress | [#157](https://github.com/YUKIKEDA/XylemUI/issues/157) | §5.0.3 |
 | T2  | サブピクセル（ClearType 風）のアンチエイリアス。GPUI（不透明なウィンドウで推奨されたとき）と Avalonia（既定）が Windows で使う。T4 のすぐ後、V1 の前に行う（T4 の Grill）。方式（デュアルソースのブレンド、RGB のアトラス、透過・変換のときのグレースケールへの切り替え）を Grill で決める | not-started | —     | §5.0.3                                     |
 | T6  | カラー絵文字（§4.6）: RGBA のアトラス、色の層（Windows は `IDWriteFactory4::TranslateColorGlyphRun`）、それを描くシェーダの経路、`IGlyphRasterizer` の色の層。T2 の後、V1 の前に行う（T4 の Grill） | not-started | —     | §4.6・§5.0.3 |
-| T5  | 初めて出る文字のラスタライズを UI スレッドのフレームから外すか（S8b で最大 184 グリフ、約 3.7 ms。Chromium・Flutter は別スレッド、GPUI は同期）。方式を Grill で決める（Issue #54）。アトラスの上限で断られたグリフ（要求のたびに 6.4 µs のラスタライズ）は、箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（M1a の Grill） | not-started | —     | §5.0.3・§11.3                              |
+| T5  | 初めて出る文字のラスタライズを UI スレッドのフレームから外すか（S8b で最大 184 グリフ、約 3.7 ms。Chromium・Flutter は別スレッド、GPUI は同期）。T4 で DirectWrite にすると、4 段階の位置で 1 フレームに初めて出るグリフは最大 431（1 画面ずつ送るとき）、どのプロセスもその大きさで描いていないグリフは 1 つ 78〜103 µs、どこかのプロセスが描いた後は 1.5〜3.0 µs（`docs/benchmarks/t4-glyphs.md`）。方式を Grill で決める（Issue #54）。アトラスの上限で断られたグリフ（要求のたびに 6.4 µs のラスタライズ。T4 の DirectWrite では、2 つが交互に断られて 0.35 µs）は、箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（M1a の Grill） | not-started | —     | §5.0.3・§11.3                              |
 | V1  | Button / Text / Column がクリックできる。入る前に、オフスクリーンパス（背景のぼかし・グループの不透明度・影・角丸のクリップ）をレンダラの設計に入れるかを Grill する（Acrylic を v1.x に送った理由の見直し、Issue #54）。`TextBuilder` の未決の 2 点: 書いた内容が前回と同じかの比べ方（作業用のバッファに書いてから入れ替えるなど）と、補間文字列ハンドラの受け手が struct のコピーになって長さが失われないか（D2 のレビュー）。`Scope.Run` をコンポーネントの API で包むとき、`false`（`await` の間に部品が破棄された）のときは何もしなくてよい、という扱いを説明に書く（S9 のレビュー）。描画とヒットテストは `LayoutStyle.Hidden` の部分木を飛ばす（L2 は layout の意味だけを決めた、PR #121 のレビュー）。テキストの計測のキャッシュ（§3.2 の `ShapedTextCache`）を入れ、10,101 個のテキストの葉のリサイズをキャッシュが当たったときに 2.0 ms 以下にする（M1a で 2.0〜2.3 ms、§11.3）。描画の段が `UiTree.PaintUpdates` を毎フレーム受け取って空にし、ノードの Layout 以外の印を消す（L5 から内容の変更も積む。印が残っている間は積み直さないので、今は 1 ノード 1 つで止まっている） | not-started | —     |                                            |
 | T1  | 改行（UAX#14 の 2 パス、§4.1）、グラフェム（UAX#29）、`tools/UnicodeTableGen`。テキストの葉が、整形の結果から内容の幅の関数（`IntrinsicWidthsFunc`）を持つ（L5 の「親で止める」は、この関数を持つ葉でだけ効く。持たない葉は計測のキャッシュから溢れて親へ伝わる、PR #112 のレビュー） | not-started | —     | §4.1                                       |
 | V2  | ScrollView。`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）と、Taffy の `overflow` の XML テスト。`flex-basis: content`（L3 の Grill で移した。Taffy の XML テストの 2 件が `overflow` も使う） | not-started | —     |                                            |
@@ -83,7 +83,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | P02 | v0.2 Grid / 仮想化 / IME / a11y 基本 / ポップアップ（オーバーレイ）/ `XylemUI.Testing`。IME に入る前に IMM32 か TSF かを要件（再変換・周辺テキスト・タッチキーボード）で比べ直す（§4.7、Issue #54）。`D3D11Renderer.ReadPixel` などの readback を公開 API から `XylemUI.Testing` へ移す（S7 でサンプルの検査のために公開した） | not-started | —     | §10.4                                      |
 | G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3） | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト。揃えの `self-start` / `self-end`（子自身の書字の向きで揃える。Issue #88） | not-started | —     | §10.4                                      |
-| P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した）。フォントのフォールバックを fontconfig（`FcFontMatch`）で、`IFontProvider` の実装として入れる（F1 の Grill）。グリフは FreeType の light（`FT_LOAD_TARGET_LIGHT`）と横 4 段階のサブピクセル位置で描き、ガンマとコントラストは既定の 1.8 と 1.0（T4 の Grill） | not-started | —     | §10.4                                      |
+| P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した）。フォントのフォールバックを fontconfig（`FcFontMatch`）で、`IFontProvider` の実装として入れる（F1 の Grill）。FreeType を `vendor/` のビルドに戻し（T4 で Windows から外した）、`IGlyphRasterizer` の FreeType の実装を入れる。グリフは FreeType の light（`FT_LOAD_TARGET_LIGHT`）と横 4 段階のサブピクセル位置で描き、ガンマとコントラストは既定の 1.8 と 1.0（T4 の Grill）。S8a のインクの箱のテスト（アウトラインの箱との一致）を FreeType の実装に書く | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
 | P06 | v0.6 macOS 基盤（AppKit / Metal / Core Text。静的リンクで単一バイナリになるかの確認を含む）。フォントのフォールバックを Core Text（`CTFontCreateForString`）で、`IFontProvider` の実装として入れる（F1 の Grill）。グリフのラスタライズとカラー絵文字（sbix を含む）を Core Text にし、macOS のビルドから FreeType を外す（T4 の Grill） | not-started | —     | §10.4                                      |
 | P10 | v1.0 3プラットフォーム + 別ウィンドウのポップアップ（Windows）+ 配布。配布物の第三者ライセンスの一覧（FreeType の FTL の謝辞を含む）。1 つのグリフアトラスを複数のレンダラ（別ウィンドウのポップアップ）で共有するか。共有するなら、レンダラごとに送った版を持つ（今は送った後に変わった領域を消すので、1 アトラス 1 レンダラ、S8b のレビュー） | not-started | —     | §11.4                                      |
