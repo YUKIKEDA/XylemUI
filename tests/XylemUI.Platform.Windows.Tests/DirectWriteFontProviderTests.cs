@@ -65,6 +65,7 @@ public sealed class DirectWriteFontProviderTests(UiThreadFixture ui)
     public void MixedText_SplitsAtTheEdgesOfEachFont() =>
         ui.Invoke(() =>
         {
+            SkipWithout("Segoe UI Emoji");
             using var provider = new DirectWriteFontProvider();
             const string text = "Ab😀\u0378c";
             List<(int Start, int Length, string? Family, float Scale)> matches = Matches(provider, text);
@@ -96,6 +97,7 @@ public sealed class DirectWriteFontProviderTests(UiThreadFixture ui)
     public void GraphemeClusters_StayInOneMatch() =>
         ui.Invoke(() =>
         {
+            SkipWithout("Segoe UI Emoji");
             using var provider = new DirectWriteFontProvider();
 
             Assert.Equal([(0, 1), (1, 8), (9, 1)], Ranges(provider, "a👨\u200D👩\u200D👧b"));
@@ -239,6 +241,7 @@ public sealed class DirectWriteFontProviderTests(UiThreadFixture ui)
             "Microsoft YaHei UI" => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc")),
             "Microsoft JhengHei UI" => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msjh.ttc")),
             "Malgun Gothic" => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "malgun.ttf")),
+            "Segoe UI Emoji" => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "seguiemj.ttf")),
             _ => true,
         };
 

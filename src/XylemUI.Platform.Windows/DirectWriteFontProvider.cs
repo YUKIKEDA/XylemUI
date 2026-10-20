@@ -13,8 +13,8 @@ namespace XylemUI.Platform.Windows;
 /// </summary>
 /// <remarks>
 /// A font DirectWrite returns is opened once from its file and face index, mapped without a copy (<see cref="Font.FromFile"/>),
-/// and kept until the provider is disposed. Used on one
-/// thread, as <see cref="Font"/> is.
+/// and kept until the provider is disposed. A font whose file is not on the disk (a cloud font Windows has not downloaded)
+/// counts as no font, so its characters get the bundled font. Used on one thread, as <see cref="Font"/> is.
 /// </remarks>
 public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
 {
@@ -124,7 +124,8 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         }
 
         // MapCharacters returns a null font with the number of characters no font renders (Microsoft Learn), at least 1.
-        return new FontMatch(mapped is null ? null : FontOf(mapped), (int)mappedLength, mapped is null ? 1 : scale);
+        Font? font = mapped is null ? null : FontOf(mapped);
+        return new FontMatch(font, (int)mappedLength, font is null ? 1 : scale);
     }
 
     /// <summary>
@@ -201,8 +202,10 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         return locale;
     }
 
-    // Takes the reference MapCharacters returned, and releases it.
-    private Font FontOf(IDWriteFont* mapped)
+    // Takes the reference MapCharacters returned, and releases it. A font whose file is not on the disk (a cloud font Windows has not downloaded: its loader is not the local one) cannot be
+    // mapped, so it counts as no font, and the range goes to the bundled font: the fallback still ends (design §4.5), where
+    // throwing would stop every split of such a text (PR #152's review).
+    private Font? FontOf(IDWriteFont* mapped)
     {
         IDWriteFontFace* face = null;
         IDWriteFontFile* file = null;
@@ -224,7 +227,12 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
                 }
             }
 
-            var opened = Font.FromFile(PathOf(file, key, keySize), (int)index);
+            if (PathOf(file, key, keySize) is not { } path)
+            {
+                return null;
+            }
+
+            var opened = Font.FromFile(path, (int)index);
             _fonts.Add((keyBytes.ToArray(), index, opened));
             return opened;
         }
@@ -236,7 +244,8 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         }
     }
 
-    private static string PathOf(IDWriteFontFile* file, void* key, uint keySize)
+    // The file's path, or null when its loader is not the local one.
+    private static string? PathOf(IDWriteFontFile* file, void* key, uint keySize)
     {
         IDWriteFontFileLoader* loader = null;
         IDWriteLocalFontFileLoader* local = null;
@@ -244,7 +253,11 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         {
             ThrowIfFailed(file->GetLoader(&loader), "IDWriteFontFile::GetLoader");
             Guid iid = IID.IID_IDWriteLocalFontFileLoader;
-            ThrowIfFailed(loader->QueryInterface(&iid, (void**)&local), "QueryInterface(IDWriteLocalFontFileLoader)");
+            if (loader->QueryInterface(&iid, (void**)&local) < 0)
+            {
+                return null;
+            }
+
             uint length;
             ThrowIfFailed(local->GetFilePathLengthFromKey(key, keySize, &length), "IDWriteLocalFontFileLoader::GetFilePathLengthFromKey");
             string path = new('\0', (int)length);

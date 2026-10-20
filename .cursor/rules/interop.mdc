@@ -25,7 +25,7 @@ The design for this is `docs/design.ja.md` §2.9, §2.11.1, §2.12. This rule is
 
 ## Callbacks from native code
 
-- A callback is a `static` method with `[UnmanagedCallersOnly]`. It catches every exception at its entry; a managed exception never crosses into native code (Invariant 13). An invariant failure still fails fast.
+- A callback is a `static` method with `[UnmanagedCallersOnly]`. It catches every exception at its entry; a managed exception never crosses into native code (Invariant 13). An invariant failure still fails fast. A callback whose body only reads and writes through its pointer arguments, calls nothing that can throw (a constant such as a TerraFX IID, `Guid`'s `==`), and allocates nothing cannot throw a managed exception and has no `catch`, which would be a branch nothing reaches; its type says so in a comment (F1's `TextAnalysisSource`, PR #152's review).
 - Native code never holds a managed object's address. It holds a generational id from `NativeHandleTable` (Invariant 8). No long-lived `GCHandle.Alloc(..., Pinned)`.
 - A callback that arrives on a thread other than the UI thread does not touch Core; it posts to the UI queue (design §2.12).
 

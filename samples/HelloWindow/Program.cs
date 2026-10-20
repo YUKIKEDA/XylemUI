@@ -7,7 +7,8 @@
 //       create the renderer (device, swap chain, and the shaders compiled at run time).
 //   S8b: a line of text in every frame (shaped, put in the atlas, drawn as a glyph run); its first glyph has ink on the screen.
 //   F1: a second line through the font fallback: what the test font lacks takes the fonts of Windows, and an unassigned
-//       character the bundled font's .notdef; the families of its runs, and the time to split it the first time and again.
+//       character the bundled font's .notdef; the families of its runs, and the time to split it the first time and again
+//       (XylemUI.E2E's font-fallback scenario measures the memory: Process would add about 0.29 MB to this executable).
 // Without --auto, the rectangles move until the user closes the window; a resize redraws from WM_SIZE.
 using System.Diagnostics;
 using System.Reflection;
@@ -53,15 +54,19 @@ TextLanguage japanese = TextLanguage.FromTag("ja");
 var atlas = new GlyphAtlas();
 using var fonts = new DirectWriteFontProvider();
 var fallbackRuns = new List<FontRun>();
-long privateBefore = Process.GetCurrentProcess().PrivateMemorySize64;
 long splitStart = Stopwatch.GetTimestamp();
 FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
 double firstSplitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
-long privateAfter = Process.GetCurrentProcess().PrivateMemorySize64;
 splitStart = Stopwatch.GetTimestamp();
 FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
 double splitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
-string fallbackFamilies = string.Join(", ", fallbackRuns.Select(run => $"{run.Font.FamilyName} {run.Length}"));
+var families = new System.Text.StringBuilder();
+foreach (FontRun run in fallbackRuns)
+{
+    families.Append(families.Length == 0 ? string.Empty : ", ").Append(run.Font.FamilyName).Append(' ').Append(run.Length);
+}
+
+string fallbackFamilies = families.ToString();
 string ink = "not checked";
 var build = new List<double>();
 var draw = new List<double>();
@@ -152,10 +157,7 @@ Console.WriteLine(
         + $"text={ink} closed={closed} "
         + $"reported={reported} offThread={offThread} exit={exitCode}"
 );
-Console.WriteLine(
-    $"fallback runs: {fallbackFamilies}; split {firstSplitMicroseconds:F1} us the first time, {splitMicroseconds:F1} us again; "
-        + $"private bytes +{(privateAfter - privateBefore) / 1048576.0:F1} MB"
-);
+Console.WriteLine($"fallback runs: {fallbackFamilies}; split {firstSplitMicroseconds:F1} us the first time, {splitMicroseconds:F1} us again");
 if (frames > 0)
 {
     Console.WriteLine(

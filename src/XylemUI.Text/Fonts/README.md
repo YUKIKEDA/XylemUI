@@ -4,7 +4,7 @@
 no font of the OS has the characters. It holds printable ASCII (U+0020–U+007E) and a `.notdef` drawn as a hollow rectangle
 1 em wide, so that any character takes a known room and the fallback always ends. It is a subset of Noto Sans (SIL Open Font
 License 1.1, `OFL.txt`, no Reserved Font Name), renamed "XylemUI Fallback" so that it is not taken for Noto Sans. Units per
-em: 1000. Size: 14.4 KB, embedded in `XylemUI.Text` (`BundledFallbackFont`).
+em: 1000. Size: 14.4 KB, embedded in `XylemUI.Text` (`FontFallback.Bundled`).
 
 Made with fontTools 4.61.1 and `make_fallback.py` from `NotoSans[wdth,wght].ttf` of
 <https://github.com/google/fonts/tree/main/ofl/notosans> (commit `47d54ca`, SHA-256

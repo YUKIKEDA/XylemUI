@@ -10,7 +10,10 @@ namespace XylemUI.Platform.Windows;
 /// </summary>
 /// <remarks>
 /// The caller points it at a pinned text and locale, makes the call, and clears it; DirectWrite uses the source only during the
-/// call. Its owner frees it (<see cref="Free"/>), so the reference count only answers COM.
+/// call. Its owner frees it (<see cref="Free"/>), so the reference count only answers COM. The callbacks only read and write
+/// through their pointers, call nothing that can throw (TerraFX's IIDs, <see cref="Guid"/>'s equality), and allocate nothing,
+/// so no managed exception can leave them and they have no
+/// <c>catch</c> (.cursor/rules/interop.mdc).
 /// </remarks>
 internal unsafe struct TextAnalysisSource
 {

@@ -12,7 +12,7 @@ public static class FontFallback
 
     /// <summary>
     /// Gets the bundled fallback font, opened from the assembly the first time: printable ASCII and a <c>.notdef</c> glyph one em
-    /// wide (<c>Fonts/README.md</c>). It lives as long as the process.
+    /// wide (<c>Fonts/README.md</c>). It lives as long as the process and is shared by every caller, so do not dispose it.
     /// </summary>
     public static Font Bundled => _bundled ??= OpenBundled();
 
