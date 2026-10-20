@@ -313,6 +313,7 @@ internal static partial class LayoutEngine
             item.FlexGrow = s.FlexGrow;
             item.FlexShrink = s.FlexShrink;
             item.HasInset = c.Layout.HasInset;
+            item.AspectRatio = s.AspectRatio;
             item.HasKeywordLimits = c.Layout.HasKeywordLimits;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
@@ -454,7 +455,7 @@ internal static partial class LayoutEngine
 
             // 9.2.3 B: an item with an aspect ratio and a definite cross size takes its basis from them. A stretched item's
             // cross size is definite when the container's is and the container does not wrap (§9.8).
-            float ratio = tree.Nodes.GetRef(item.Node).Layout.Style.AspectRatio;
+            float ratio = item.AspectRatio;
             bool crossIsDefinite =
                 !float.IsNaN(item.Size.Cross(row))
                 || (!constants.Wrap && constants.HasDefiniteCrossSize && !float.IsNaN(crossParent) && !float.IsNaN(childKnown.Cross(row)));
@@ -794,7 +795,7 @@ internal static partial class LayoutEngine
             );
 
             // A known cross size gives a main size through the aspect ratio, which floors the content's (Taffy).
-            float ratio = tree.Nodes.GetRef(item.Node).Layout.Style.AspectRatio;
+            float ratio = item.AspectRatio;
             float knownCross = childKnown.Cross(row);
             if (ratio > 0 && !float.IsNaN(knownCross))
             {
@@ -1532,6 +1533,11 @@ internal static partial class LayoutEngine
         public bool Stretched;
         public bool HasInset;
         public bool HasKeywordLimits;
+
+        // The style's aspect ratio, copied with the item's other lengths: two later steps read it for every item, and taking
+        // the node from the arena again for it was part of the 10,000 instructions a relayout of row L1a's scene gained in L2
+        // (row L8, docs/benchmarks/l8-counters.md).
+        public float AspectRatio;
         public float StretchMaxCross;
         public float Baseline;
         public float OffsetMain;
