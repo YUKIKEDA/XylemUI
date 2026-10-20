@@ -54,4 +54,5 @@ _slots[index].Generation = 1;
 - Public members under `src/` have `summary`, and `param` / `returns` / `exception` when a caller might be unsure. Sentences end with a period. Properties start with "Gets" / "Gets or sets"; constructors with "Initializes a new instance of the <see cref="T"/> class".
 - XML docs state the caller's contract only. How it works lives in `docs/design.ja.md`; refer to the section instead of restating it.
 - Use `<inheritdoc />` when an implementation has the interface's contract.
+- A member that returns one shared instance of a public `IDisposable` says in its XML docs that callers do not dispose it (`FontFallback.Bundled`, PR #152 review).
 - Wording and terminology: `.agents/skills/english-writing/SKILL.md`.
