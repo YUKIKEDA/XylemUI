@@ -16,7 +16,6 @@ import statistics
 import sys
 from collections import defaultdict
 
-EVENTS = ("INST_RETIRED.ANY", "CPU_CLK_UNHALTED.THREAD")
 
 
 def report(values):
@@ -44,13 +43,16 @@ def cycles(path):
     report(values)
 
 
+# Every hardware event a report counts: its columns named "Hardware Event Count:<event>".
 def event_counts(path):
     with open(path, encoding="utf-8-sig", newline="") as file:
         rows = list(csv.reader(file))
     header = rows[0]
     counts = {}
-    for event in EVENTS:
-        column = next(i for i, name in enumerate(header) if event in name and "Count" in name)
+    for column, name in enumerate(header):
+        if not name.startswith("Hardware Event Count:"):
+            continue
+        event = name.split(":", 1)[1]
         total = 0.0
         for row in rows[1:]:
             if any("XylemUI.E2E" in cell for cell in row):
@@ -61,7 +63,7 @@ def event_counts(path):
 
 def instructions(directory):
     pattern = re.compile(r"^(?P<index>\d+)-(?P<build>[^-]+)-(?P<scene>[^-]+)-(?P<count>\d+)-r(?P<round>\d+)\.csv$")
-    values = {event: defaultdict(list) for event in EVENTS}
+    values = defaultdict(lambda: defaultdict(list))
     grouped = defaultdict(list)
     for name in sorted(os.listdir(directory)):
         match = pattern.match(name)
@@ -73,9 +75,9 @@ def instructions(directory):
         for (_, fewer, fewer_name), (_, more, more_name) in zip(files[0::2], files[1::2]):
             low = event_counts(os.path.join(directory, fewer_name))
             high = event_counts(os.path.join(directory, more_name))
-            for event in EVENTS:
+            for event in high:
                 values[event][(scene, build)].append((high[event] - low[event]) / (more - fewer))
-    for event in EVENTS:
+    for event in values:
         print(f"== {event} per pass")
         report(values[event])
 

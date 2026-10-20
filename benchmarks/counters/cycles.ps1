@@ -1,4 +1,4 @@
-# Counts the CPU cycles that builds of XylemUI.E2E spend on one relayout (roadmap row L8): `layout-loop <scene> change <n>` runs
+# Counts the CPU cycles that builds of XylemUI.E2E spend on one relayout (roadmap row L8): `layout-loop <scene> <kind> <n>` runs
 # at two counts, and the difference of the process's cycles (QueryProcessCycleTime, every thread, without the time other
 # processes held the CPU) divided by the difference of the counts is the cost of one pass, without the start and the build of
 # the tree. Needs no privilege, but cycles still move with the CPU's frequency and caches; instructions.ps1 counts
@@ -11,9 +11,13 @@ param(
     [Parameter(Mandatory = $true)][string[]]$Pairs,
     [Parameter(Mandatory = $true)][string]$Out,
     [string[]]$Scenes = @('s6b', 'auto_min', 'percent'),
+    # change: one leaf's width; fixed_row: the same in a tree whose rows have a fixed size.
+    [string]$Kind = 'change',
     [int]$Low = 20000,
     [int]$High = 120000,
-    [int]$Rounds = 6
+    [int]$Rounds = 6,
+    # The logical processor the runs are pinned to (not 0, which takes most interrupts), at high priority.
+    [int]$Processor = 2
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,12 +31,14 @@ public static class ProcessCycles
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool QueryProcessCycleTime(IntPtr process, out ulong cycles);
 
-    // Runs the program to its end and returns the cycles of all its threads.
-    public static ulong Run(string exe, string arguments)
+    // Runs the program to its end on one logical processor at high priority, and returns the cycles of all its threads.
+    public static ulong Run(string exe, string arguments, int processor)
     {
         var info = new ProcessStartInfo(exe, arguments) { UseShellExecute = false, RedirectStandardOutput = true };
         using (Process process = Process.Start(info))
         {
+            process.ProcessorAffinity = (IntPtr)(1L << processor);
+            process.PriorityClass = ProcessPriorityClass.High;
             process.StandardOutput.ReadToEnd();
             process.WaitForExit();
             if (process.ExitCode != 0)
@@ -53,7 +59,7 @@ public static class ProcessCycles
 
 function Measure-Cycles([string]$Name, [string]$Scene, [int]$Count) {
     $exe = Join-Path $Builds "$Name\XylemUI.E2E.exe"
-    return [ProcessCycles]::Run($exe, "layout-loop $Scene change $Count")
+    return [ProcessCycles]::Run($exe, "layout-loop $Scene $Kind $Count", $Processor)
 }
 
 foreach ($pair in $Pairs) {
@@ -65,7 +71,7 @@ foreach ($pair in $Pairs) {
                 $fewer = Measure-Cycles $name $scene $Low
                 $more = Measure-Cycles $name $scene $High
                 $perPass = ($more - $fewer) / ($High - $Low)
-                [ordered]@{ build = $name; scene = $scene; round = $round; cycles_per_pass = $perPass } |
+                [ordered]@{ build = $name; scene = "$scene.$Kind"; round = $round; cycles_per_pass = $perPass } |
                     ConvertTo-Json -Compress | Add-Content -Path $Out -Encoding utf8
             }
         }
