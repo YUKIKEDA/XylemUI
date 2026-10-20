@@ -13,8 +13,14 @@ namespace XylemUI.Platform.Windows;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Each <see cref="Font"/> gets one DirectWrite font face, made the first time from the font's bytes in place
-/// (<c>IDWriteInMemoryFontFileLoader</c>, without a copy) and kept until the font is disposed or the rasterizer is.
+/// Each <see cref="Font"/> gets one DirectWrite font face, made the first time and kept until the font is disposed or the
+/// rasterizer is: from the font's file (<see cref="Font.FilePath"/>) for a font of the OS, from its bytes in place
+/// (<c>IDWriteInMemoryFontFileLoader</c>, without a copy) for a font opened from bytes.
+/// </para>
+/// <para>
+/// DirectWrite shares what it makes of a glyph at a size with the other processes for a font file, and not for bytes in memory.
+/// Drawing a glyph that no process has drawn at that size takes 78 to 98 µs, nearly all in <c>CreateGlyphRunAnalysis</c>; once
+/// any process has, 2 to 3 µs (Yu Gothic, 2,000 glyphs, NativeAOT, Windows 11 26300, <c>docs/benchmarks/t4-glyphs.md</c>).
 /// </para>
 /// <para>
 /// <see cref="Measure"/> makes the glyph's analysis and keeps it, so that <see cref="Rasterize"/> of the same key, which the
@@ -212,13 +218,23 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         IDWriteFontFaceReference* reference = null;
         try
         {
-            fixed (byte* bytes = data)
+            if (font.FilePath is { } path)
             {
-                // The bytes are pinned or mapped by the font until it is disposed, so DirectWrite may keep their address.
-                ThrowIfFailed(
-                    _loader->CreateInMemoryFontFileReference((IDWriteFactory*)_factory, bytes, (uint)data.Length, FontDataOwner.Instance, &file),
-                    "IDWriteInMemoryFontFileLoader::CreateInMemoryFontFileReference"
-                );
+                fixed (char* name = path)
+                {
+                    ThrowIfFailed(_factory->CreateFontFileReference(name, null, &file), "IDWriteFactory::CreateFontFileReference");
+                }
+            }
+            else
+            {
+                fixed (byte* bytes = data)
+                {
+                    // The bytes are pinned by the font until it is disposed, so DirectWrite may keep their address.
+                    ThrowIfFailed(
+                        _loader->CreateInMemoryFontFileReference((IDWriteFactory*)_factory, bytes, (uint)data.Length, FontDataOwner.Instance, &file),
+                        "IDWriteInMemoryFontFileLoader::CreateInMemoryFontFileReference"
+                    );
+                }
             }
 
             ThrowIfFailed(

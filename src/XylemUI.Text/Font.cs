@@ -54,8 +54,9 @@ public sealed unsafe class Font : IDisposable
         FamilyName = Open((byte*)Unsafe.AsPointer(ref _data[0]), _data.Length, faceIndex);
     }
 
-    private Font(MemoryMappedFile mapping, MemoryMappedViewAccessor view, long length, int faceIndex)
+    private Font(string path, MemoryMappedFile mapping, MemoryMappedViewAccessor view, long length, int faceIndex)
     {
+        FilePath = path;
         _mapping = mapping;
         _view = view;
         Id = Interlocked.Increment(ref _nextId);
@@ -98,7 +99,7 @@ public sealed unsafe class Font : IDisposable
         try
         {
             view = mapping.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
-            return new Font(mapping, view, length, faceIndex);
+            return new Font(Path.GetFullPath(path), mapping, view, length, faceIndex);
         }
         catch
         {
@@ -118,6 +119,13 @@ public sealed unsafe class Font : IDisposable
     /// typographic family, then the family, design §5.0.3); empty when it gives none.
     /// </summary>
     public string FamilyName { get; }
+
+    /// <summary>
+    /// Gets the full path of the font file, for a font opened with <see cref="FromFile"/>; <see langword="null"/> for a font
+    /// opened from bytes. A rasterizer can open the file itself, so that the OS shares what it makes of the font with other
+    /// processes (DirectWrite does for a file, not for bytes in memory, design §5.0.3).
+    /// </summary>
+    public string? FilePath { get; }
 
     /// <summary>
     /// Gets the face of the font file this font opened; 0 for a single font.
