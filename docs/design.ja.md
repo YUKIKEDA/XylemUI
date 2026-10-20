@@ -13,7 +13,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 2. **ヘッドレス描画**: OS のウィンドウなしで描画し、PNG として取り出せる（§12.3）
 3. **決定論的なテスト基盤**: 仮想クロックと `PumpAndSettle` により、タイミングに依存しないテストを書ける（§12.2）
 
-**配布形態**: リリースビルドは NativeAOT でネイティブコードにコンパイルし、.NET ランタイムのインストールを要求しない。**Windows/macOS は外部 DLL を持たない単一の実行ファイル/アプリバンドル**（HarfBuzz・FreeType は静的リンク、§9）。**Linux は自己完結したアプリケーションバイナリ＋システムライブラリ**（glibc・fontconfig・libdbus-1・GPUドライバ・Wayland/X11等）であり、「外部 DLL ゼロ」とは言わない。サイズ・起動時間の数値目標は §11.3 で扱う（実測前の仮説）。Electron/Tauriとの対比で重要なのは「バイナリが1個かどうか」ではなく「WebViewエンジンやCEFのような数百MB級の同梱ランタイムを持たないこと」。NativeAOT が同梱する .NET ランタイム（GC・型システム）は数MB規模であり、この方針と矛盾しない。
+**配布形態**: リリースビルドは NativeAOT でネイティブコードにコンパイルし、.NET ランタイムのインストールを要求しない。**Windows/macOS は外部 DLL を持たない単一の実行ファイル/アプリバンドル**（HarfBuzz は静的リンク。グリフのラスタライズは OS の DirectWrite / Core Text、§5.0.3・§9）。**Linux は自己完結したアプリケーションバイナリ＋システムライブラリ**（glibc・fontconfig・libdbus-1・GPUドライバ・Wayland/X11等）であり、「外部 DLL ゼロ」とは言わない。サイズ・起動時間の数値目標は §11.3 で扱う（実測前の仮説）。Electron/Tauriとの対比で重要なのは「バイナリが1個かどうか」ではなく「WebViewエンジンやCEFのような数百MB級の同梱ランタイムを持たないこと」。NativeAOT が同梱する .NET ランタイム（GC・型システム）は数MB規模であり、この方針と矛盾しない。
 
 **自作するもの:** フレームワークの独自価値（Reactive・Layout・Invalidation・DisplayList・GPU レンダラ）は自作する。既存の重量級抽象化ライブラリ（Skia、CEF等）や、.NET 上の既存UIスタック（WPF・WinForms・WinUI・MAUI・Avalonia）にも乗らない。
 
@@ -35,7 +35,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 | BiDi（§4.2）                      |  ○   |                           | アルゴリズムが相対的に安定、学習コストの割に依存回避の価値が高い                                                                                                                                     |
 | Grapheme（§4.1）                  |  ○   |                           | Unicodeコアアルゴリズム、BiDiと同じ判断基準。.NET の `StringInfo` は使わない（§4.1）                                                                                                                 |
 | Shaping                           |      |        ○ HarfBuzz         | OpenType仕様の継続更新コストが個人の手に負えない                                                                                                                                                     |
-| Rasterization                     |      |        ○ FreeType         | フォントレンダリングの複雑性、継続更新コスト                                                                                                                                                         |
+| Rasterization                     |      | ○ DirectWrite / Core Text / FreeType（Linux） | フォントレンダリングの複雑性、継続更新コスト。Windows と macOS は OS のラスタライザ（§5.0.3、T4 の Grill）                                                                                                                                                         |
 | Linux GPU（§5.1）                 |      |       ○ wgpu-native       | ドライバ互換性対応の継続保守コスト                                                                                                                                                                   |
 | Linux Window（§6.1）              |      |          ○ SDL3           | Wayland/X11の差異吸収コスト                                                                                                                                                                          |
 | GPUレンダラ（§5.0/5.2）           |  ○   |                           | 独自設計（DisplayList、SDFシェーダー等）                                                                                                                                                             |
@@ -1789,14 +1789,14 @@ public interface IVirtualizedFocusHost
 
 ## 4. テキスト / 国際化
 
-### 4.1 シェーピング・ラスタライズ：HarfBuzz + FreeType（自作原則の意図的な例外）
+### 4.1 シェーピング・ラスタライズ：HarfBuzz + OS のラスタライザ（Linux は FreeType）（自作原則の意図的な例外）
 
 比較対象: HarfBuzz+FreeType(+BiDi)のP/Invoke、stb_truetypeのみ、OpenTypeシェーピングのフルスクラッチ自作、簡易自作(ラテン+基本CJKのみ)、OS のテキストスタック（DirectWrite / Core Text）への全面委譲。
 
-**採用: HarfBuzz + FreeType。**
+**採用: シェーピングは HarfBuzz。ラスタライズは Windows で DirectWrite、macOS で Core Text、Linux で FreeType（§5.0.3、T4 の Grill、Issue #157）。**
 理由: テキストシェーピングは「仕様自体が継続的に更新され続ける」領域（Unicode年次改定、絵文字・新スクリプト・グラフェムクラスタ規則の追加）であり、自作は継続開発コストを永続的に負うことを意味する。Flutter自身もこの層は自作せず`minikin`層を介してHarfBuzzに委譲しており、「Flutter級」を目指す上でも整合的な選択。stb_truetypeは合字・カーニング・複雑スクリプトに非対応で§3要件を満たせないため却下。OS のテキストスタックへの全面委譲は、プラットフォームごとに改行・BiDi・キャレットの挙動が変わり、§4.3 の caret geometry を共通化できないため却下（フォント調達とフォールバック解決だけは OS に委譲する、§4.5）。
 
-HarfBuzz・FreeType は C API なので、`XylemUI.Text` から `LibraryImport` で直接呼ぶ（§2.9）。HarfBuzz は UTF-16 の入力（`hb_buffer_add_utf16`）を受け付けるため、テキストバッファ（`ReadOnlySpan<char>`）を変換せずに渡せる。
+HarfBuzz と FreeType は C API なので、`XylemUI.Text` から `LibraryImport` で直接呼ぶ（§2.9）。DirectWrite は COM の vtable で、Core Text は C の関数で呼ぶ（§2.9）。HarfBuzz は UTF-16 の入力（`hb_buffer_add_utf16`）を受け付けるため、テキストバッファ（`ReadOnlySpan<char>`）を変換せずに渡せる。
 
 **テキストパイプライン全体像とフォントフォールバック×シェーピングの相互作用**
 
@@ -1820,7 +1820,7 @@ flowchart TD
     P1 --> BREAK["available_widthを超える最初の折り返し候補位置を特定 → LineBreakResult"]
     BREAK --> P2["Pass2: 行境界のコンテキスト再シェーピング<br/>unsafe-to-break範囲を含むrunのみ再シェーピング"]
     P2 --> J["行ごとにUAX#9 L2(埋め込みレベルに基づく反転)を適用し視覚順へ並べ替え → LineLayoutResult"]
-    J --> K["FreeTypeラスタライズ→グリフアトラス"]
+    J --> K["ラスタライズ（Windows: DirectWrite、macOS: Core Text、Linux: FreeType、§5.0.3）→グリフアトラス"]
 ```
 
 **Pass1（幅計測）**: UAX#14で改行可能候補点をマークしつつ、各クラスタの概算アドバンス幅（行境界のコンテキストを考慮しない、通常のシェーピングによる暫定値）を累積し、`availableWidth`を超える最初の折り返し候補位置を特定する。この段階の結果はあくまで「どこで折り返すか」の決定に使うものであり、最終的な描画には使わない。
@@ -1871,9 +1871,9 @@ src/XylemUI.Text/
 
 GUIフレームワーク本体（`XylemUI.Core`）はこの`XylemUI.Text`に対する依存として扱う。
 
-FreeTypeはカラーグリフテーブル対応（COLR/CPAL等）をビルド時オプションとして有効化する（絵文字表示、§4.6参照）。
+Linux の FreeType は、カラーグリフテーブル（COLR/CPAL）をビルド時オプションとして有効化する。Windows と macOS では、色のグリフも OS のラスタライザが描く（絵文字表示、§4.6）。
 
-**S8a（C# 版で検証済み、Issue #44）:** `XylemUI.Text` が HarfBuzz と FreeType を `LibraryImport` で呼ぶ。`Font` はフォントのバイト列をピン留めした配列に 1 回だけ写し、HarfBuzz（`hb_blob_create` の読み取り専用、コピーなし）と FreeType（`FT_New_Memory_Face`）が同じバイト列をその場で読む。OS のフォントのファイルは、写さずに読み取り専用で写像する（`Font.FromFile`、行 F1、§4.5）。HarfBuzz のスケールはフォント単位（units per em）で、描く大きさへの換算は呼び出し側。`TextShaper` は UTF-16 をそのまま `hb_buffer_add_utf16` に渡し、HarfBuzz のバッファと結果の配列を使い回す。テストのフォントで、英字と日本語のグリフ id とアドバンス（GPOS の kern を含む）が fontTools で読んだ値と一致し、欠落文字は glyph 0（`.notdef`、アドバンス 1000）で後続の id は保たれた。クラスタは UTF-16 のオフセット（サロゲートペアは 2 つ進む）。FreeType の構造体の `FT_Long` / `FT_Pos` / `FT_Fixed` は C の `long`（Windows では 32 ビット、Linux / macOS では 64 ビット）なので、`CLong` で書く。ラスタライズはヒンティングなし（`FT_LOAD_NO_HINTING`）で、インクの箱はアウトラインの箱を画素に丸めたものと一致した。UI のテキストをヒンティングするかは、描画の品質と一緒に行 T4 で決める（Issue #54。以前は行なしで「S8b の後」としていた）。`Font` は face の番号を取る（既定 0）。Windows の日本語の既定フォントには `.ttc`（フォントコレクション）のものがあり、§4.5 のフォールバックは OS のフォントを使うため（S8a のレビュー）。破棄した `Font` は、シェーピングでもラスタライズでも `ObjectDisposedException`（HarfBuzz に null の font を渡すとアクセス違反になる）。言語は今は推測（`hb_buffer_guess_segment_properties`、既定はプロセスのロケール）で、漢字の字形を切り替える `locl` などの結果が環境で変わりうるので、S8b で UI の言語を `hb_buffer_set_language` で明示して渡す。NativeAOT・ハードウェアで、フォントを開くのに 0.16 ms、18 グリフの最初のラスタライズを含む 1 回目が 0.37 ms、22 文字の定常状態の更新（シェーピングとアトラスの引き当て）が 1.21 µs
+**S8a（C# 版で検証済み、Issue #44）:** `XylemUI.Text` が HarfBuzz と FreeType を `LibraryImport` で呼ぶ。`Font` はフォントのバイト列をピン留めした配列に 1 回だけ写し、HarfBuzz（`hb_blob_create` の読み取り専用、コピーなし）と FreeType（`FT_New_Memory_Face`）が同じバイト列をその場で読む。OS のフォントのファイルは、写さずに読み取り専用で写像する（`Font.FromFile`、行 F1、§4.5）。HarfBuzz のスケールはフォント単位（units per em）で、描く大きさへの換算は呼び出し側。`TextShaper` は UTF-16 をそのまま `hb_buffer_add_utf16` に渡し、HarfBuzz のバッファと結果の配列を使い回す。テストのフォントで、英字と日本語のグリフ id とアドバンス（GPOS の kern を含む）が fontTools で読んだ値と一致し、欠落文字は glyph 0（`.notdef`、アドバンス 1000）で後続の id は保たれた。クラスタは UTF-16 のオフセット（サロゲートペアは 2 つ進む）。FreeType の構造体の `FT_Long` / `FT_Pos` / `FT_Fixed` は C の `long`（Windows では 32 ビット、Linux / macOS では 64 ビット）なので、`CLong` で書く。ラスタライズはヒンティングなし（`FT_LOAD_NO_HINTING`）で、インクの箱はアウトラインの箱を画素に丸めたものと一致した。UI のテキストのヒンティングは、描画の品質と一緒に行 T4 で決めた（§5.0.3。Issue #54、#157）。`Font` は face の番号を取る（既定 0）。Windows の日本語の既定フォントには `.ttc`（フォントコレクション）のものがあり、§4.5 のフォールバックは OS のフォントを使うため（S8a のレビュー）。破棄した `Font` は、シェーピングでもラスタライズでも `ObjectDisposedException`（HarfBuzz に null の font を渡すとアクセス違反になる）。言語は今は推測（`hb_buffer_guess_segment_properties`、既定はプロセスのロケール）で、漢字の字形を切り替える `locl` などの結果が環境で変わりうるので、S8b で UI の言語を `hb_buffer_set_language` で明示して渡す。NativeAOT・ハードウェアで、フォントを開くのに 0.16 ms、18 グリフの最初のラスタライズを含む 1 回目が 0.37 ms、22 文字の定常状態の更新（シェーピングとアトラスの引き当て）が 1.21 µs
 
 **S8b（C# 版で検証済み、Issue #51）:** `TextShaper.Shape` は言語（`TextLanguage`）を必ず取り、`hb_buffer_set_language` で渡してから、文字体系だけを推測させる（推測は設定済みの言語を上書きしない）。`TextLanguage.FromTag` は BCP 47 のタグを `hb_language_from_string` で 1 回だけ解釈する。HarfBuzz は解釈した言語をプロセスの終わりまで保持し、同じタグには同じ値を返すので、毎回のシェーピングに費用はかからない。テストのフォントの `locl` は、ラテン文字の既定の言語では数字を、日本語（`JAN`）では引用符を別のグリフに替える。"A1\"" は "ja" で 34 18 349、"en" で 34 356 3 になった。言語を渡さないと "ja" の結果が "en" と同じになる（HarfBuzz の既定は、この環境で日本語にならなかった）。NativeAOT・ハードウェアで、22 文字の定常状態の更新は 1.32〜1.35 µs（3 回）。S8a の 1.21 µs と違い、1 回の更新に `BeginFrame` と言語の設定が入る。
 
@@ -2017,7 +2017,7 @@ static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> 
 - **既定のフォント:** アプリもテーマもフォントを指定しないときは、OS の UI のフォント。Windows は GPUI と同じく `SystemParametersInfoW(SPI_GETICONTITLELOGFONT)` の `lfFaceName` で、取れなければ Segoe UI（Zed v1.24.3 の `direct_write.rs` の `get_system_ui_font_name`）。英語の Windows では Segoe UI、日本語の Windows（ja-JP）では Yu Gothic UI になる（F1 で確かめた）。Flutter・Avalonia・GPUI も OS の既定のフォントを使う。§13 の Fluent テーマは自分のフォント（Windows 11 の Segoe UI Variable）を指定し、それが無い OS（Windows 10）ではこの既定に戻る。同梱するフォントは既定の見た目には使わない
 - **扱う OS:** F1 は Windows だけ。macOS の Core Text（`CTFontCreateForString`）は行 P06、Linux の fontconfig（`FcFontMatch`）は行 P04 で、同じインターフェースの実装として入れる
 
-同梱フォントは SIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のもので、OS のフォールバックがどのフォントも返さなかったときの終点にだけ使う（F1 の Grill で決定）。中身は `.notdef`（幅 1 em の矩形）と基本ラテン文字（U+0020–007E）だけで、Regular の 1 つ。Noto Sans（`notofonts/latin-greek-cyrillic`、OFL 1.1、Reserved Font Name なし）の Regular から fontTools で抜き、`.notdef` を幅 1 em の矩形に描き直し、ファミリー名を「XylemUI Fallback」に変える。作り方のコマンドと元のファイルの SHA-256 は、テスト用のフォントと同じ形で README に書く。CJK・絵文字・キリル文字などは同梱しない。比べる相手のどれも CJK のフォールバック用のフォントを同梱せず、デスクトップ版の Windows は日本語（Yu Gothic など）と絵文字（Segoe UI Emoji）のフォントを持つ（Server Core やコンテナの Windows は持たないことがあり、そこでは日本語が豆腐になる）。CJK の基本範囲（約 2 万字）のサブセットだけで数 MB になり、配布物の目安（§11.3 の受け入れ、5 MB 以下、今は 4.1 MB）を超える。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま FreeType に渡す（`FT_New_Memory_Face`）。OS のフォントは、ファイルを読み取り専用で写像して開き（`Font.FromFile`）、バイト列を写さない。日本語・韓国語・絵文字のフォントは 1 つ 13〜14 MB あり、読んで写すと、最初のフォールバックで private bytes が 65.0 MB 増え、39.7 ms かかった。写像すると、ページはファイルのもので DirectWrite の写像とも共有され、+0.6 MB（プロバイダを作る分を含む）、1.2 ms 前後になった（NativeAOT、`XylemUI.E2E` の `font-fallback`、`docs/benchmarks/f1-fallback.md`）。
+同梱フォントは SIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のもので、OS のフォールバックがどのフォントも返さなかったときの終点にだけ使う（F1 の Grill で決定）。中身は `.notdef`（幅 1 em の矩形）と基本ラテン文字（U+0020–007E）だけで、Regular の 1 つ。Noto Sans（`notofonts/latin-greek-cyrillic`、OFL 1.1、Reserved Font Name なし）の Regular から fontTools で抜き、`.notdef` を幅 1 em の矩形に描き直し、ファミリー名を「XylemUI Fallback」に変える。作り方のコマンドと元のファイルの SHA-256 は、テスト用のフォントと同じ形で README に書く。CJK・絵文字・キリル文字などは同梱しない。比べる相手のどれも CJK のフォールバック用のフォントを同梱せず、デスクトップ版の Windows は日本語（Yu Gothic など）と絵文字（Segoe UI Emoji）のフォントを持つ（Server Core やコンテナの Windows は持たないことがあり、そこでは日本語が豆腐になる）。CJK の基本範囲（約 2 万字）のサブセットだけで数 MB になり、配布物の目安（§11.3 の受け入れ、5 MB 以下、今は 4.1 MB）を超える。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま HarfBuzz とラスタライザに渡す（Windows は DirectWrite の `IDWriteInMemoryFontFileLoader`、Linux は FreeType の `FT_New_Memory_Face`、§5.0.3）。OS のフォントは、ファイルを読み取り専用で写像して開き（`Font.FromFile`）、バイト列を写さない。日本語・韓国語・絵文字のフォントは 1 つ 13〜14 MB あり、読んで写すと、最初のフォールバックで private bytes が 65.0 MB 増え、39.7 ms かかった。写像すると、ページはファイルのもので DirectWrite の写像とも共有され、+0.6 MB（プロバイダを作る分を含む）、1.2 ms 前後になった（NativeAOT、`XylemUI.E2E` の `font-fallback`、`docs/benchmarks/f1-fallback.md`）。
 
 **テストのフォント（S8 の Grill でオーナーが決定）:** テキストのテストは、OS のフォントに依らないよう、Noto Sans JP（OFL）から ASCII とテストで使う日本語だけを抜いた小さなサブセットをテストに置き、ライセンスと作り方（`pyftsubset` のコマンド）を添える。製品の同梱フォントと DirectWrite のフォールバックは行 F1（上の「F1 の方式」）
 
@@ -2029,11 +2029,11 @@ static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> 
 
 カラー絵文字にはCOLR/CPAL、CBDT/CBLC、sbix、SVGの複数形式があり、フォントによって採用形式が異なる。
 
-**採用（v1）: COLR/CPAL。** Windows(Segoe UI Emoji)・最近のNoto Color Emoji双方がCOLRv1へ移行済みで、ベクターベースのためHiDPI対応や拡大縮小時の画質劣化がない。FreeTypeのCOLR/CPALサポートを有効化する。
+**採用（v1）: 色のグリフは、グリフと同じラスタライザ（§5.0.3）で描く。** Windows は DirectWrite の `IDWriteFactory4::TranslateColorGlyphRun` で色の層に分けて描く（GPUI と同じ。Zed v1.24.3 の `crates/gpui_windows/src/direct_write.rs` 938 行目）。macOS は Core Text が描くので、Apple Color Emoji（sbix）も描ける。Linux は FreeType の COLR/CPAL（Noto Color Emoji は COLRv1 に移行済みで、ベクターベースのため HiDPI や拡大縮小で画質が落ちない）（T4 の Grill）。色のグリフは、単色のグリフの R8 のアトラスとは別の RGBA のアトラスと、色の層を描くシェーダの経路が要る（GPUI も色のグリフを別のアトラスで描く）ので、行 T6 で入れる（T4 の Grill）。
 
-**対象外（v1では実装しない）**: sbix（macOSのApple Color Emojiが使用するビットマップ形式）、CBDT/CBLC（旧Android/旧Noto Color Emojiのビットマップ形式）、SVG-in-OpenType。同梱フォントは絵文字を持たない（§4.5、F1 の Grill）ので、絵文字は OS のフォールバックが返すフォントで描く。Windows の Segoe UI Emoji は COLR/CPAL なので、Windows ではこの範囲で描ける。OS側フォールバック解決で得られたフォントがsbix等の非対応形式だった場合、色情報のないモノクロ輪郭で表示するフォールバック処理を用意する（クラッシュを避けるための最低限の縮退動作）。
+**対象外（v1では実装しない）**: Linux の FreeType の経路での sbix、CBDT/CBLC（旧Android/旧Noto Color Emojiのビットマップ形式）、SVG-in-OpenType。同梱フォントは絵文字を持たない（§4.5、F1 の Grill）ので、絵文字は OS のフォールバックが返すフォントで描く。Linux で OS側フォールバック解決で得られたフォントがsbix等の非対応形式だった場合、色情報のないモノクロ輪郭で表示するフォールバック処理を用意する（クラッシュを避けるための最低限の縮退動作）。
 
-**ロードマップへの明記**: 「Flutter/Avalonia/GPUI級」を目標とする以上、macOSのApple Color Emojiが正しく表示できない状態を無期限に放置するのは大きな機能欠落になる。sbix・SVG・CBDT/CBLCは§10.4の段階的実装順序における**v1.x（v1.0達成後の追加フェーズ）**として明示的にロードマップへ位置づける。「対象外」は「いつか対応する」の曖昧な先送りではなく、v1.0の後続フェーズとして具体的に追跡する。
+**ロードマップへの明記**: macOS の Apple Color Emoji は Core Text が描く（T4 の Grill）。Linux の FreeType の経路での sbix・SVG・CBDT/CBLC は§10.4の段階的実装順序における**v1.x（v1.0達成後の追加フェーズ）**として明示的にロードマップへ位置づける。「対象外」は「いつか対応する」の曖昧な先送りではなく、v1.0の後続フェーズとして具体的に追跡する。
 
 ### 4.7 IMEの責務範囲
 
@@ -2313,7 +2313,7 @@ DisplayList構築中に未キャッシュのグリフ（アトラスに存在し
 ```mermaid
 flowchart TD
     Layout["レイアウト確定(§2.4.1)"] --> BuildDL["DisplayList線形構築(§5.0.1)"]
-    BuildDL -->|未キャッシュのグリフに遭遇| CacheAtlas["FreeTypeでラスタライズ→アトラスCPUメモリ更新<br/>+ DirtyRegions(§5.0.2)へ蓄積"]
+    BuildDL -->|未キャッシュのグリフに遭遇| CacheAtlas["ラスタライズ（§5.0.3 のグリフの描き方）→アトラスCPUメモリ更新<br/>+ DirtyRegions(§5.0.2)へ蓄積"]
     BuildDL --> DLComplete["DisplayList完成"]
     DLComplete --> UploadAtlas["GPUテクスチャ同期<br/>(DirtyRegionsの一括転送、その後クリア)"]
     UploadAtlas --> UploadVB["頂点バッファ一括転送(§5.0.1のリニア書き込み)"]
@@ -2322,11 +2322,42 @@ flowchart TD
 
 グリフアトラスのテクスチャアップロードは、DisplayList構築が完了した後・頂点バッファ転送の前という一箇所に固定する。これにより、同一フレーム内でアトラスへの書き込みと読み出し（頂点バッファのUV座標参照）が競合しない。§2.10のフレーム実行サイクルにこの工程を含める。
 
-**S8a（C# 版で検証済み、Issue #44）:** CPU 側の `GlyphAtlas` は 8 ビットのカバレッジを 1 つのピン留めした配列（`GC.AllocateArray(pinned: true)`、既定 1024 × 1024）に持ち、FreeType の出力を直接写す。グリフは棚詰め（行に左から並べ、行の高さは最も高いグリフ。周りに 1 画素の余白）。キーは（フォント、グリフ、画素の大きさ）。2 回目の要求はラスタライズせずに同じ領域を返し、新しく詰めたインクのある領域だけが `DirtyRegions` に積まれる。満杯のアトラスは新しいグリフを断る（`false`）。インクのないグリフ（空白）は場所を取らないので、満杯でも常に通る。アトラスより幅の広いグリフは、行を進める前に断る（行を無駄にしない）。追い出しは S8b（GPU のテクスチャと一緒に）
+**S8a（C# 版で検証済み、Issue #44）:** CPU 側の `GlyphAtlas` は 8 ビットのカバレッジを 1 つのピン留めした配列（`GC.AllocateArray(pinned: true)`、既定 1024 × 1024）に持ち、FreeType の出力を直接写す。グリフは棚詰め（行に左から並べ、行の高さは最も高いグリフ。周りに 1 画素の余白）。キーは（フォント、グリフ、画素の大きさ）。T4 で横のサブピクセルの段階が加わる（下の「グリフの描き方」）。2 回目の要求はラスタライズせずに同じ領域を返し、新しく詰めたインクのある領域だけが `DirtyRegions` に積まれる。満杯のアトラスは新しいグリフを断る（`false`）。インクのないグリフ（空白）は場所を取らないので、満杯でも常に通る。アトラスより幅の広いグリフは、行を進める前に断る（行を無駄にしない）。追い出しは S8b（GPU のテクスチャと一緒に）
 
 **追い出し（S8b の Grill でオーナーが決定）: ページ + プロット単位の LRU（Skia の `GrDrawOpAtlas` と同じ）。** アトラスは決まった大きさのページ（テクスチャ）の集まりで、各ページを決まった大きさのプロットに分け、プロットの中にグリフを詰める。プロットは最後に使ったフレームを持つ。空きが無いとき、そのフレームで使っていない最も古いプロットを空けて使う。全プロットがそのフレームで使用中ならページを足す（上限を超えた分は一時的に許し、使われなくなったページを後で捨てる）。比べた方式と却下の理由: 満杯で全消去、または Impeller の「拡大して最大なら作り直す」は、作り直すフレームでそのフレームのグリフをまとめてラスタライズし直す（日本語の画面で数百グリフ × 約 20 µs）ので §11.3 のフレーム予算を超える。GPUI の「ページを足し続け、自動では追い出さない」はメモリが増え続け §5.3 の目標を守れない。WebRender の項目ごとの LRU は、任意の大きさの空きを再利用するアロケータの断片化の管理が要り、プロット単位で足りる。ページとプロットの大きさ・ページの上限は、S8b で日本語の画面を使って測って決める
 
-**アンチエイリアス（S8b の Grill でオーナーが決定）: グレースケール。** 1 画素 1 値のカバレッジで透過を合成する。透過の背景・変換・アニメーションでも崩れず、3 つの GPU バックエンドで同じになる。サブピクセル（ClearType 風）は行 T2
+**アンチエイリアス（S8b の Grill でオーナーが決定）: グレースケール。** 1 画素 1 値のカバレッジで透過を合成する。透過の背景・変換・アニメーションでも崩れず、3 つの GPU バックエンドで同じになる。サブピクセル（ClearType 風）は行 T2（T4 のすぐ後、V1 の前。T4 の Grill）
+
+**グリフの描き方（T4 の Grill でオーナーが決定、Issue #157）:** 比べた版は Flutter 3.47.7（とその DEPS が固定する Skia）、Avalonia 12.1.4（SkiaSharp 3.119.4）、Zed v1.24.3 の GPUI。
+
+- **ラスタライザ:** Windows は DirectWrite（`IDWriteFactory3::CreateGlyphRunAnalysis` でグレースケールのカバレッジを作る）、macOS は Core Text（行 P06）、Linux は FreeType。3 つとも Windows と macOS では OS のラスタライザで描くためである。Flutter は Windows で `SkFontMgr_New_DirectWrite`、macOS で `SkFontMgr_New_CoreText` を使う（`engine/src/flutter/txt/src/txt/platform_windows.cc` 15 行目、`platform_mac.mm` 42 行目）。Avalonia の SkiaSharp は GDI のフォントマネージャを外してビルドし、Windows では DirectWrite で描く（SkiaSharp の `native/windows/build.cake` 64 行目）。GPUI は Windows で DirectWrite、macOS で Core Text、Linux で swash。OS のラスタライザは、フォントの `gasp` 表とフォントに書かれたヒントを使い、Windows の他のアプリと同じ見た目になる。シェーピングは HarfBuzz のまま（§4.1）。Windows の `IGlyphRasterizer`（下の「置き場所」）が、`Font` ごとに DirectWrite の font face を作る。OS のフォントは §4.5 の `IDWriteFont` から作り、同梱フォントとテストのフォントはメモリから読む（`IDWriteInMemoryFontFileLoader`、`IDWriteFactory5`）。Windows と macOS のビルドは FreeType をリンクしない（macOS は P06 で Core Text にするときに外す）
+- **位置:** 横に ¼ 画素の 4 段階のサブピクセル位置を作り分け、縦は作り分けない。GPUI（`SUBPIXEL_VARIANTS_X` が 4、`SUBPIXEL_VARIANTS_Y` が 1、`crates/gpui/src/text_system.rs` 49・52 行目）と Impeller（横に ¼ 画素、`impeller/typographer/font_glyph_pair.h` 86〜112 行目と `backends/skia/text_frame_skia.cc` 59〜62 行目）と同じ。グリフの位置を ¼ 画素に丸め、整数の部分にグリフの四角を置き、端数の段階だけずらしてラスタライズしたものをアトラスに入れる（GPUI の `crates/gpui/src/window.rs` 4748〜4757 行目と同じ）。DirectWrite は `CreateGlyphRunAnalysis` の `baselineOriginX` に端数を渡し、FreeType はアウトラインを端数だけ動かしてから描く。ベースラインは整数の画素で、`GlyphInstance` も整数の画素のまま
+- **ヒンティング:** Windows は DirectWrite の推奨に従う（`IDWriteFontFace3::GetRecommendedRenderingMode` が返す描き方と grid fit。`OUTLINE` は `NATURAL_SYMMETRIC` に替える。GPUI の `crates/gpui_windows/src/direct_write.rs` 709〜728 行目と同じ）。Skia の DirectWrite の経路も、ヒンティングが「なし」でなければ grid fit を有効にし、描き方をフォントの `gasp` 表と大きさで決める（Flutter の Skia の `src/ports/SkScalerContext_win_dw.cpp` 357〜411 行目）ので、Windows の Flutter と Avalonia も同じ考え方になる。Linux は FreeType の light（`FT_LOAD_TARGET_LIGHT`、縦だけ画素に合わせる。Skia の `kSlight` と同じ、`SkFontHost_FreeType.cpp` 969 行目。Flutter の既定は `kSlight`、`modules/skparagraph/include/TextStyle.h` 319 行目）。大きさや倍率で切り替えない
+- **ガンマとコントラスト:** グリフの画素のシェーダで、カバレッジを文字の色で補正する（GPUI の `crates/gpui_windows/src/alpha_correction.hlsl`。Windows Terminal の `dwrite.hlsl` から）。値は、Windows では起動のときに 1 回、`IDWriteRenderingParams1` の `GetGamma` と `GetGrayscaleEnhancedContrast` を読む（GPUI の `directx_renderer.rs` 853〜865 行目）。ほかの OS では GPUI の既定のガンマ 1.8、コントラスト 1.0（`crates/gpui_wgpu/src/wgpu_renderer.rs` 2585〜2595 行目）。アトラスは色によって増えない
+- **置き場所（T4 の Grill）:** `XylemUI.Text` に `IGlyphRasterizer` を置き、`GlyphAtlas` は FreeType を直接呼ばずにこれを呼ぶ。Windows の実装（DirectWrite）は `XylemUI.Platform.Windows` に置き、`Font` に対応する `IDWriteFontFace3` を手元の表に持つ（`Font` 自身は font face を持たない）。Linux の実装（FreeType）は `XylemUI.Text` に置く（行 P04）。フォントを探すのは F1 の `IFontProvider`（§4.5）、描くのは `IGlyphRasterizer` と分ける。GPUI は 2 つを OS ごとの 1 つの `PlatformTextSystem` にまとめる（`crates/gpui/src/platform.rs` 1441 行目）が、XylemUI は F1 で `IFontProvider` を分けたので、それに並べる。`XylemUI.Text` から DirectWrite を直接呼ぶと、`Text` を Windows の TFM に分けることになり、OS を問わないパッケージ（§4.1）でなくなる。T4 は単色のグリフだけで、色の層は行 T6（§4.6）で足す
+
+```csharp
+// XylemUI.Text
+public interface IGlyphRasterizer
+{
+    // ペンを整数の画素に置いたときの、グリフのインクの箱（整数の画素）。インクが無ければ幅 0
+    GlyphBox Measure(in GlyphKey glyph);
+    // カバレッジ（1 画素 1 バイト）を destination に書く。destination は Measure の箱の大きさで、行は stride バイトずつ離れる
+    void Rasterize(in GlyphKey glyph, Span<byte> destination, int stride);
+}
+
+// PixelSize は 1 em の画素数（論理ピクセルの大きさ × スケールファクタ、丸めない）。SubpixelX は横の段階（0〜3、¼ 画素ずつ右へ）
+public readonly record struct GlyphKey(Font Font, uint GlyphId, float PixelSize, int SubpixelX);
+
+// Left はペンから右へ、Top はベースラインから上へ
+public readonly record struct GlyphBox(int Left, int Top, int Width, int Height);
+```
+
+  `GlyphAtlas` は `Measure` で箱の大きさを知ってから場所を取り、その場所に `Rasterize` で直接書く（確保もコピーも増やさない）。アトラスのキーは `GlyphKey`。`Rasterize` のカバレッジが 1 画素 1 バイトなのは T4 の単色のグリフの形で、サブピクセル AA（行 T2）の RGB のカバレッジと、色の層（行 T6）は、それぞれの Grill でこの形を変える
+- **大きさ（PR #158 のレビュー）:** `GlyphKey.PixelSize` は、論理ピクセルの文字の大きさにスケールファクタを掛けた `float` で、整数に丸めない（§6.1 の Fractional Scaling）。125 % の 14 px は 17.5 px で描く。整数に丸めると、HarfBuzz のアドバンス（フォント単位から正確な大きさで換算する）と最大で半画素ずれる。`DisplayList.DrawText` も同じ `float` を取り、アドバンスをこの値で換算する。GPUI の `RenderGlyphParams` も `font_size`（f32）と `scale_factor`（f32）をキーに持つ（`crates/gpui/src/text_system.rs` 1264〜1273 行目）。DirectWrite は大きさを `float` で、FreeType は 1/64 画素（`FT_Set_Char_Size`）で受け取る
+- **FreeType を外す道筋（PR #158 のレビュー）:** `Font` は FreeType を呼ばない。今の `Font` は開くときに FreeType の face を作り、`FamilyName` をそこから読むが、T4 で `FamilyName` を HarfBuzz の `hb_ot_name_get_utf16` から、FreeType と同じ順で読む（OS/2 の `fsSelection` の bit 8 が立っていれば name ID 16、1。立っていなければ 21、16、1。FreeType 2.14.3 の `src/sfnt/sfobjs.c` 1048〜1068 行目）ようにし、FreeType の face は Linux の `IGlyphRasterizer` が `Font` ごとに作って持つ（Windows の実装が font face を持つのと同じ形）。`UnitsPerEm` はすでに HarfBuzz から読んでいる。Windows のアプリは FreeType の実装を作らないので、NativeAOT はそのコードと P/Invoke を落とす。`XylemUI.Text.targets` は Windows の RID で FreeType の静的ライブラリと `DirectPInvoke` を渡さない。S8a のインクの箱のテスト（アウトラインの箱との一致）は、DirectWrite の実装のテスト（Platform.Windows）と、Linux の CI で走らせる FreeType の実装のテストに分ける
+- **アトラスの見込み（PR #158 のレビュー）:** 1 つのグリフが取る段階は、そのグリフが出るペンの位置の端数で決まる。最悪は 4 倍。ラテン文字はアドバンスが端数を持つので、よく出るグリフは 4 段階に近づく。日本語の全角の文字はアドバンスが 1 em なので、1 em が整数の画素の大きさ（100 % の 14 px、150 % の 21 px）では行の中で端数が変わらず 1 倍に近い。1 em が半画素を持つ大きさ（125 % の 14 px は 17.5 px）では 2 段階を使う。S8b の日本語の画面（150 % で 525 グリフ）は、大半が全角なので 1〜2 倍になると見込む。測った値がこの見込みを外れたら、理由を調べる
+- **比べ方と測るもの:** T4 の受け入れは Issue に書く。4 つのアプリ（XylemUI・Flutter・Avalonia・GPUI）で同じ文字列を描いた画素を並べてオーナーが目で判断し、アトラスの大きさを 4 段階の位置で測り直し、`GlyphInstance` を 1 本の配列にした理由を測る
 
 **S8b（C# 版で検証済み、Issue #51）:** アトラスのページは GPU では 1 枚のテクスチャ配列（`R8_UNORM`）のスライスで、ページの番号がそのままスライスになる。ページごとに別のテクスチャにすると、ページが変わるたびに描画を分けることになるためである。各ページはプロセスの中で一意な id を持つ。レンダラは、id が変わったページ（新しいページ、捨ててから足し直したページ）だけを丸ごと送り、他のページは変わった領域（`DirtyRegions`）だけを `UpdateSubresource` で送る。送るのは DisplayList ができた後・インスタンスを書く前（上の図の順）。テクスチャ配列は、ページがスライスより多くなったときと、上限を超えた分のページが捨てられたときに作り直す。まだ有効なスライスは GPU の上で写すので、送り直さない。こうして GPU のメモリも上限のページ数に戻る（§5.3）。レンダラは送った後に変わった領域を消すので、1 つのアトラスを描くレンダラは 1 つだけ（共有は行 P10）。ページは `MaxPages` の 2 倍（`PageLimit`）を超えない。1 フレームで上限を超えて新しいグリフを求めたとき、または `BeginFrame` を呼ばないとき、入らないグリフは `TryGet` が `false` を返し、描かない（S8b のレビュー）。プロットの LRU は、そのフレームで使っていないプロットのうち最後に使ったフレームが最も古いものを選ぶ。キャッシュから返したグリフも、そのプロットを使ったことにする。追い出したプロットは画素を 0 にして、プロット全体を変わった領域に加える。大きさは `samples/HelloText --atlas-sizing` で決めた。`docs/design.ja.md` を 1 行 80 字に切り、40 行の画面（10 行に 1 行が 20 px の見出し、他は 14 px の本文、それぞれ表示の倍率倍）を、1 フレームに 1 画面ずつ送る（毎フレーム新しい画面になる、最も重い場合）。フォントは游ゴシック（`YuGothR.ttc`）。150 % の画面は 525 グリフで、1024 px のページ 1 枚に収まる。300 % では 1024 px のページが 4 枚要る。ページ 1024 px・プロット 256 px・上限 4 ページでは、150 % でも 300 % でも追い出しは 0 で、1 フレームのラスタライズは初めて出る文字の分だけ（中央値 14、p95 57、最大 184）、GPU のメモリは 4 MB 以下だった。300 % で 128 px のプロットか上限 1〜2 ページにすると、1 フレームに 9〜11 プロットを追い出し、53〜68 グリフをラスタライズし直した。2048 px のページは 100 % の画面でも 4 MB を取る。したがって既定はページ 1024 px・プロット 256 px・上限 4 ページ（Skia の既定と同じ大きさ）。初めて出る文字が多いフレーム（最大 184 グリフ、S8a の約 20 µs で約 3.7 ms）は §11.3 の DisplayList 構築の 1.0 ms を超えるので、M1a で測る。
 
@@ -2477,13 +2508,13 @@ internal sealed class LinuxPlatform : IPlatform
 
 クリップボード・IME・D&D・ウィンドウアクティベーション・カーソル・ポップアップ・モーダル・分数スケーリング・装飾・トレイの挙動はWaylandとX11で実質的に別物である。`LinuxPlatform`のウィンドウ層配下をさらに`WindowSystem`として`Wayland`/`X11`で分岐させる。SDL3がこの差異の多くを吸収するとはいえ、吸収しきれない部分（特にHiDPI）は明示的に設計する。
 
-**Fractional Scaling:** macOSは論理ポイント(2x固定)でOSが仮想化し、Windowsは`WM_DPICHANGED`によるPer-Monitor DPI v2、Waylandでは125%・150%等の分数スケール（`wp_fractional_scale_v1`）がある。`ScaleFactor: float` を第一級市民とし、SDF・FreeType アトラスは「論理ピクセル×スケールファクタ」でラスタライズサイズを決める。この値は DisplayList 構築（§5.0）とグリフラスタライズ（§4.1）が共有する。Windows では DPI 認識をアプリケーションマニフェスト（`PerMonitorV2`）で宣言する。
+**Fractional Scaling:** macOSは論理ポイント(2x固定)でOSが仮想化し、Windowsは`WM_DPICHANGED`によるPer-Monitor DPI v2、Waylandでは125%・150%等の分数スケール（`wp_fractional_scale_v1`）がある。`ScaleFactor: float` を第一級市民とし、SDF・グリフアトラスは「論理ピクセル×スケールファクタ」でラスタライズサイズを決める。この値は DisplayList 構築（§5.0）とグリフラスタライズ（§4.1）が共有する。Windows では DPI 認識をアプリケーションマニフェスト（`PerMonitorV2`）で宣言する。
 
 **ピクセルスナップ:** 分数スケールでは論理 float 矩形をそのまま GPU へ出すと 1px ボーダーの滲みや隣接コンテナ間の隙間（seam）が出る。責務は次で固定する。
 
 1. Layout 層: 論理ピクセル（float）のまま計算し、丸めない。
 2. DisplayList / Renderer 層: 頂点を GPU バッファへ詰める直前（または SDF 内）で `MathF.Round(logicalPos * scaleFactor) / scaleFactor` を適用する。
-3. テキスト: 行頭 X だけスナップし、文字の Advance はスナップしない。
+3. テキスト: 行頭 X だけスナップし、文字の Advance はスナップしない。グリフの横の位置は ¼ 画素に丸め（サブピクセル位置、§5.0.3）、ベースラインは整数の画素に置く。
 
 ### 6.2 AT-SPIのD-Bus依存
 
@@ -2695,7 +2726,7 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | -------------------------- | ---------------------------------- | ----------------------- | ------------------------------------------------------------------- |
 | .NET ランタイム / BCL      | 言語ランタイム・GC・標準ライブラリ | MIT                     | NativeAOT で実行ファイルに同梱                                      |
 | HarfBuzz                   | テキストシェーピング               | MIT相当                 | 静的（NativeAOT。下記）                                             |
-| FreeType                   | グリフラスタライズ                 | FTL選択時               | 静的（同上）                                                        |
+| FreeType（Linuxのみ）      | グリフラスタライズ                 | FTL選択時               | 静的（同上）。Windows と macOS は OS のラスタライザ（§5.0.3）       |
 | SDL3（Linuxのみ）          | ウィンドウ/入力/トレイ             | zlib                    | 静的（同上）                                                        |
 | wgpu-native（Linuxのみ）   | GPU抽象化                          | MIT/Apache-2.0          | 静的（同上）                                                        |
 | fontconfig（Linuxのみ）    | フォント解決                       | MIT相当                 | **動的**（§8.11、実機の設定と同期させるため意図的に動的）           |
@@ -2726,7 +2757,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 4. **v0.3**: RTL、BiDi、複雑スクリプト、縦書き、カラー絵文字
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
 6. **v0.5（Linux extended）**: xdg-desktop-portal、通知、トレイ、AT-SPI、Fractional Scaling
-7. **v0.6（macOS）**: AppKit の window/input/clipboard/IME、Metal、Core Text のフォールバック、NSAccessibility。HarfBuzz / FreeType を静的リンクして、外部 dylib の無い単一のアプリバンドルになるかを確かめる
+7. **v0.6（macOS）**: AppKit の window/input/clipboard/IME、Metal、Core Text のフォールバック、NSAccessibility。グリフを Core Text で描き（§5.0.3）、HarfBuzz を静的リンクして、外部 dylib の無い単一のアプリバンドルになるかを確かめる
 8. **v1.0**: 3プラットフォーム揃った状態＋Windows の別ウィンドウのポップアップ（§7.3）＋パッケージング/署名/自動アップデート
 
 **v1.x（v1.0 後の追加フェーズ）**: sbix / SVG / CBDT カラー絵文字（§4.6）、アプリ内 Acrylic（§13.2）、macOS / Linux の別ウィンドウのポップアップ（§7.3）、独立 SemanticsTree（§4.4.1）。
@@ -3086,7 +3117,7 @@ Assert.Equal("clicks: 1", app.Find<TextNode>("clicks").Text);
 
 **フォント:** テストモードでは OS のフォント解決を使わず、**テスト用のフォント**（§4.5 の「テストのフォント」、Noto Sans JP の ASCII とテストで使う日本語のサブセット）だけで描く（テスト用の `IFontProvider`）。製品の同梱フォントは基本ラテン文字だけなので、Latin / CJK のゴールデンテストを描けない（PR #146 のレビュー）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
 
-**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。WARP のバージョンが変わった場合はゴールデン画像を更新する。
+**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。WARP のバージョンや、グリフを描く DirectWrite のバージョンが変わった場合はゴールデン画像を更新する（§5.0.3）。
 
 **PNG:** PNG の書き出しと読み込みは、BCL の `ZLibStream`（deflate）を使って自前で書く。RGBA 8bit・非インターレースの最小限の実装とし、追加の依存は持たない。
 

@@ -317,9 +317,13 @@ Decision:
   Fine-grained は UI/Layout に限定。Paint は v1 では coarse。
   GPU リソースの破棄は状態機械経由のみ。`Dispose` は CPU 側の論理参照を手放すだけ。
   本番のシェーダーはビルド時にコンパイルして埋め込む。
+  グリフは Windows で DirectWrite、macOS で Core Text、Linux で FreeType でラスタライズする。シェーピングは HarfBuzz。
+  グリフの横の位置は ¼ 画素の 4 段階（縦は 1）。ヒンティングは DirectWrite の推奨、Linux は FreeType の light。
+  ガンマとコントラストは、グリフの画素のシェーダで文字の色を使って補正する（Windows は OS の設定、ほかは 1.8 と 1.0）。
 
 Reason:
   ダブル/トリプルバッファでシザー部分描画するとフリッカーする。
+  Flutter・Avalonia・GPUI は、Windows と macOS では OS のラスタライザで描き、横に ¼ 画素の 4 段階のサブピクセル位置を持つ（T4 の Grill、Issue #157。設計書 §5.0.3）。
   単純な A/B ダブルバッファは GPU が 2 フレーム遅延すると未完了バッファを踏む。
   `ID3D11Fence` は 11.3 以降。
   `Dispose` で即座に GPU リソースを破棄すると、GPU が実行中のフレームで use-after-free になる。
@@ -341,6 +345,13 @@ Rejected:
   - 「スワップチェーンのクロックで割り当てたフレームは必ず Present する」を契約にするだけ（守らないと黙って描画が止まる）
   - Present したかをレンダラから Platform に知らせ、していなければタイマーで回す（レンダラと Platform の間に新しい連絡が要る）
   - 頂点バッファに 4 頂点ずつ書く（インスタンスごとに矩形 1 つ、頂点シェーダが `SV_VertexID` から隅を作る）
+  - どの OS でも FreeType でグリフをラスタライズする（3 つとも Windows と macOS では OS のラスタライザで描き、フォントの `gasp` 表とヒントが効く。T4 の Grill）
+  - グリフの位置を整数の画素に丸める（3 つとも横に 4 段階のサブピクセル位置を持つ。T4 の Grill）
+  - FreeType の full のヒンティング（横も画素に合わせるので、サブピクセル位置と打ち消し合う）と、ヒンティングなし（100 % の画面で横線がぼやける。T4 の Grill）
+  - Skia のように、ラスタライズのときに文字色の明るさ別の表を掛ける（アトラスが暗い色用と明るい色用に増え、色を 2 段階に丸める。T4 の Grill）
+  - `XylemUI.Text` から DirectWrite を直接呼ぶ（`Text` を Windows の TFM に分けることになる。`IGlyphRasterizer` を `Text` に置き、Windows の実装を Platform.Windows に置いた。T4 の Grill）
+  - カラー絵文字を T4 に入れる（RGBA のアトラスと色の層の経路が要る。行 T6 にした。T4 の Grill）
+  - サブピクセル AA（行 T2）を T4 に入れる（デュアルソースのブレンドと RGB のアトラスが要る、別の大きさの仕事。T4 のすぐ後の行にした。T4 の Grill）
 
 ---
 
