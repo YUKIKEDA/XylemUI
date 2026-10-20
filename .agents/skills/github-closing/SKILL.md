@@ -35,3 +35,5 @@ Part of #12. The NativeAOT check on #12 is still unmet.
 2. If it does not, and a closing verb is the word before the number, rewrite the sentence.
 3. Run `gh pr create` (or `gh pr edit`).
 4. Run `gh pr view <n> --json closingIssuesReferences` and compare the list with step 1.
+
+A PR stacked on another branch shows no closing references: GitHub links them only for a PR into the default branch. Check the list again when the PR targets `main` (PR #140 showed none while it targeted the branch of #138).
