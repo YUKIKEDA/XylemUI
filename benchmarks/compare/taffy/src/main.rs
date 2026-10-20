@@ -26,7 +26,7 @@ fn build(scene: &str) -> (TaffyTree<()>, NodeId, NodeId) {
         let target = leaves[ROWS * COLUMNS / 2 + COLUMNS / 2];
         let root_style = Style {
             flex_wrap: FlexWrap::Wrap,
-            align_content: Some(AlignContent::FlexStart),
+            align_content: Some(AlignContent::FLEX_START),
             size: Size {
                 width: length(2000.0_f32),
                 height: length(2000.0_f32),
