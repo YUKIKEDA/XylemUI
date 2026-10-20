@@ -1990,18 +1990,23 @@ Windows の UIA プロバイダは COM サーバー（`IRawElementProviderSimple
 ```csharp
 public interface IFontProvider
 {
-    FontHandle? ResolveFont(in GraphemeCluster cluster, in FontStyle style);
+    // text の start から、1 つのフォントで描ける長さ（mapped）と、そのフォント。どの OS のフォントでも描けないなら null
+    FontHandle? ResolveFont(ReadOnlySpan<char> text, int start, in FontStyle style, out int mapped);
 }
 
-static FontHandle ResolveWithFallback(IFontProvider provider, in GraphemeCluster cluster, in FontStyle style)
-    => provider.ResolveFont(cluster, style) ?? BundledFallbackFont.Handle;
+static FontHandle ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> text, int start, in FontStyle style, out int mapped)
+    => provider.ResolveFont(text, start, style, out mapped) ?? BundledFallbackFont.Handle;
 ```
 
-フォント解決の単位は codepoint 範囲ではなく grapheme cluster（ZWJ sequence、結合文字、variation selector、emoji modifier を分割しない）。連続する同一フォントの cluster を shaping run にまとめてから HarfBuzz へ渡す。OS API が文字列単位のフォールバックしか返さない場合、各 OS の `IFontProvider` 実装（Platform 層）が cluster 単位に切り出してこのインターフェースへ載せる。
+**F1 の方式（F1 の Grill で決定、Issue #145）:** フォールバックは、文字列の範囲ごとに OS に任せる。Windows は DirectWrite の `IDWriteFontFallback::MapCharacters` に範囲を渡し、返ってきた「同じフォントで描ける長さ」をそのまま 1 つの run にする。GPUI も同じく、アプリのフォールバックに `GetSystemFontFallback` を足して DirectWrite に任せる（Zed v1.24.3 の `crates/gpui_windows/src/direct_write.rs`）。Avalonia は Skia の `SKFontManager.MatchCharacter`（`FontManagerImpl.cs`）、Flutter はプラットフォームの既定のフォントに任せる（`TextStyle.fontFamilyFallback` の API ドキュメント）。
 
-同梱フォントはSIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のものを使用し、CJK統合漢字の基本範囲＋絵文字基本セット＋ラテン/キリル/ギリシャ文字に絞ったサブセット化版とする（バイナリサイズ要件との両立のため）。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま FreeType に渡す（`FT_New_Memory_Face`）。
+- **grapheme cluster:** run は grapheme cluster（ZWJ の並び、結合文字、異体字セレクタ、絵文字の修飾子）の途中で切らない。grapheme の区切り（UAX#29）は行 T1 なので、F1 では DirectWrite が切らないことをテストで確かめる。切ることがあれば、T1 で cluster の境界に合わせて切り直す
+- **既定のフォント:** アプリがフォントを指定しないときは、OS の UI のフォント（Windows は `SystemParametersInfo` の `NONCLIENTMETRICS` の `lfMessageFont`、Segoe UI）。Flutter・Avalonia・GPUI も OS の既定のフォントを使う。同梱するフォントは既定の見た目には使わない
+- **扱う OS:** F1 は Windows だけ。macOS の Core Text（`CTFontCreateForString`）は行 P06、Linux の fontconfig（`FcFontMatch`）は行 P04 で、同じインターフェースの実装として入れる
 
-**テストのフォント（S8 の Grill でオーナーが決定）:** テキストのテストは、OS のフォントに依らないよう、Noto Sans JP（OFL）から ASCII とテストで使う日本語だけを抜いた小さなサブセットをテストに置き、ライセンスと作り方（`pyftsubset` のコマンド）を添える。製品の同梱フォントと DirectWrite のフォールバックは行 F1
+同梱フォントは SIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のもので、OS のフォールバックがどのフォントも返さなかったときの終点にだけ使う（F1 の Grill で決定）。中身は `.notdef`（幅 1 em の矩形）と基本ラテン文字（U+0020–007E）だけで、Regular の 1 つ。Noto Sans（`notofonts/latin-greek-cyrillic`、OFL 1.1、Reserved Font Name なし）の Regular から fontTools で抜き、`.notdef` を幅 1 em の矩形に描き直し、ファミリー名を「XylemUI Fallback」に変える。作り方のコマンドと元のファイルの SHA-256 は、テスト用のフォントと同じ形で README に書く。CJK・絵文字・キリル文字などは同梱しない。比べる相手のどれも CJK のフォールバック用のフォントを同梱せず、Windows は日本語（Yu Gothic など）と絵文字（Segoe UI Emoji）のフォントを必ず持つ。CJK の基本範囲（約 2 万字）のサブセットだけで数 MB になり、配布物の目安（§11.3 の受け入れ、5 MB 以下、今は 4.1 MB）を超える。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま FreeType に渡す（`FT_New_Memory_Face`）。
+
+**テストのフォント（S8 の Grill でオーナーが決定）:** テキストのテストは、OS のフォントに依らないよう、Noto Sans JP（OFL）から ASCII とテストで使う日本語だけを抜いた小さなサブセットをテストに置き、ライセンスと作り方（`pyftsubset` のコマンド）を添える。製品の同梱フォントと DirectWrite のフォールバックは行 F1（上の「F1 の方式」）
 
 **フォールバック解決の終端保証**: OSフォントにも同梱フォールバックフォントにもグリフが存在しない文字（未知の言語、最新のUnicode絵文字、未インストールの特殊記号等）が入力された場合の挙動を定義する。対策なしでは、フォールバック解決が終端せず無限ループに陥るか、HarfBuzzがグリフID`0`（`.notdef`、いわゆる「豆腐」）を返した後のアドバンス幅計算が想定外の値になり、以降の文字の配置座標がすべてずれるリスクがある。
 
