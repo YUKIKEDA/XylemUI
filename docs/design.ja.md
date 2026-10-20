@@ -1814,7 +1814,7 @@ flowchart TD
     A["テキスト（string、UTF-16）"] --> B["UAX#29: グラフェムクラスタ境界検出(自前実装)"]
     B --> C["UAX#9: BiDi解析→段落レベルでの埋め込みレベル決定(自前実装)"]
     C --> D["Unicodeスクリプトプロパティによるscript run分割"]
-    D --> E["フォントフォールバック解決(§4.5)によるfont run分割<br/>※グラフェムクラスタ境界をまたいで分割しない"]
+    D --> E["フォントフォールバック解決(§4.5)によるfont run分割<br/>範囲と言語を OS に渡し、返った長さを run にする（F1）<br/>※グラフェムクラスタ境界をまたいで分割しない。T1 までは OS が切らないことをテストで確かめ、T1 で境界に合わせて切り直す"]
     E --> F["BiDi埋め込みレベル区間 × script run × font run の積集合でHarfBuzz入力runを確定"]
     F --> P1["Pass1: 概算幅計測<br/>UAX#14で改行候補点(Break Opportunities)をマーク<br/>各クラスタの概算アドバンス幅を累積"]
     P1 --> BREAK["available_widthを超える最初の折り返し候補位置を特定 → LineBreakResult"]
@@ -1990,27 +1990,40 @@ Windows の UIA プロバイダは COM サーバー（`IRawElementProviderSimple
 ```csharp
 public interface IFontProvider
 {
-    // text の start から、1 つのフォントで描ける長さ（mapped）と、そのフォント。どの OS のフォントでも描けないなら null
-    FontHandle? ResolveFont(ReadOnlySpan<char> text, int start, in FontStyle style, out int mapped);
+    // text の start から、1 つのフォントで描ける長さ、そのフォントと拡大率。どの OS のフォントでも描けない範囲は
+    // Font が null で、Length はその範囲の長さ（1 以上）
+    FontMatch ResolveFont(ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request);
 }
 
-static FontHandle ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> text, int start, in FontStyle style, out int mapped)
-    => provider.ResolveFont(text, start, style, out mapped) ?? BundledFallbackFont.Handle;
+// Family が null なら既定のフォント（下の「既定のフォント」）
+public readonly record struct FontRequest(string? Family, FontWeight Weight, FontSlant Slant, FontStretch Stretch);
+
+// Scale は、返したフォントの em の大きさに掛ける倍率（DirectWrite の MapCharacters の scale）
+public readonly record struct FontMatch(FontHandle? Font, int Length, float Scale);
+
+static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request)
+{
+    FontMatch match = provider.ResolveFont(text, start, language, request);
+    return match.Font is null ? match with { Font = BundledFallbackFont.Handle, Scale = 1 } : match;
+}
 ```
 
 **F1 の方式（F1 の Grill で決定、Issue #145）:** フォールバックは、文字列の範囲ごとに OS に任せる。Windows は DirectWrite の `IDWriteFontFallback::MapCharacters` に範囲を渡し、返ってきた「同じフォントで描ける長さ」をそのまま 1 つの run にする。GPUI も同じく、アプリのフォールバックに `GetSystemFontFallback` を足して DirectWrite に任せる（Zed v1.24.3 の `crates/gpui_windows/src/direct_write.rs`）。Avalonia は Skia の `SKFontManager.MatchCharacter`（`FontManagerImpl.cs`）、Flutter はプラットフォームの既定のフォントに任せる（`TextStyle.fontFamilyFallback` の API ドキュメント）。
 
+- **言語:** 漢字は日本語と中国語で同じ文字コードを使うので、OS は言語でフォントを選ぶ（DirectWrite は `IDWriteTextAnalysisSource::GetLocaleName` で読み、日本語なら Yu Gothic、中国語なら Microsoft YaHei）。言語を渡さないと、日本語の漢字に中国語のフォントが選ばれうる。S8b でシェーピングが言語（`TextLanguage`）を必ず取ると決めたのと同じく、`ResolveFont` も取る（PR #146 のレビュー）
+- **描けない範囲:** どの OS のフォントでも描けない範囲は、`Font` が null で、`Length` がその範囲の長さ。`MapCharacters` も、フォントが null のとき `mappedLength` を「飛ばす文字の数（欠けたグリフで描く）」として返す（Microsoft Learn の `IDWriteFontFallback::MapCharacters`）。`ResolveWithFallback` はその範囲を同梱フォントの run にする
+- **拡大率:** `MapCharacters` は、フォールバックのフォントの em の大きさに掛ける倍率（`scale`）も返す。DirectWrite が自分の layout で掛けるのと同じく、シェーピングとラスタライズの大きさに掛ける。捨てると、倍率を持つフォールバックの対応付け（`IDWriteFontFallbackBuilder::AddMapping` の `scale`）を指定したアプリで、字の大きさが DirectWrite と変わる
 - **grapheme cluster:** run は grapheme cluster（ZWJ の並び、結合文字、異体字セレクタ、絵文字の修飾子）の途中で切らない。grapheme の区切り（UAX#29）は行 T1 なので、F1 では DirectWrite が切らないことをテストで確かめる。切ることがあれば、T1 で cluster の境界に合わせて切り直す
-- **既定のフォント:** アプリがフォントを指定しないときは、OS の UI のフォント（Windows は `SystemParametersInfo` の `NONCLIENTMETRICS` の `lfMessageFont`、Segoe UI）。Flutter・Avalonia・GPUI も OS の既定のフォントを使う。同梱するフォントは既定の見た目には使わない
+- **既定のフォント:** アプリもテーマもフォントを指定しないときは、OS の UI のフォント。Windows は GPUI と同じく `SystemParametersInfoW(SPI_GETICONTITLELOGFONT)` の `lfFaceName` で、取れなければ Segoe UI（Zed v1.24.3 の `direct_write.rs` の `get_system_ui_font_name`）。Flutter・Avalonia・GPUI も OS の既定のフォントを使う。§13 の Fluent テーマは自分のフォント（Windows 11 の Segoe UI Variable）を指定し、それが無い OS（Windows 10）ではこの既定に戻る。同梱するフォントは既定の見た目には使わない
 - **扱う OS:** F1 は Windows だけ。macOS の Core Text（`CTFontCreateForString`）は行 P06、Linux の fontconfig（`FcFontMatch`）は行 P04 で、同じインターフェースの実装として入れる
 
-同梱フォントは SIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のもので、OS のフォールバックがどのフォントも返さなかったときの終点にだけ使う（F1 の Grill で決定）。中身は `.notdef`（幅 1 em の矩形）と基本ラテン文字（U+0020–007E）だけで、Regular の 1 つ。Noto Sans（`notofonts/latin-greek-cyrillic`、OFL 1.1、Reserved Font Name なし）の Regular から fontTools で抜き、`.notdef` を幅 1 em の矩形に描き直し、ファミリー名を「XylemUI Fallback」に変える。作り方のコマンドと元のファイルの SHA-256 は、テスト用のフォントと同じ形で README に書く。CJK・絵文字・キリル文字などは同梱しない。比べる相手のどれも CJK のフォールバック用のフォントを同梱せず、Windows は日本語（Yu Gothic など）と絵文字（Segoe UI Emoji）のフォントを必ず持つ。CJK の基本範囲（約 2 万字）のサブセットだけで数 MB になり、配布物の目安（§11.3 の受け入れ、5 MB 以下、今は 4.1 MB）を超える。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま FreeType に渡す（`FT_New_Memory_Face`）。
+同梱フォントは SIL Open Font License（OFL、静的リンク・改変・同梱に制約なし）のもので、OS のフォールバックがどのフォントも返さなかったときの終点にだけ使う（F1 の Grill で決定）。中身は `.notdef`（幅 1 em の矩形）と基本ラテン文字（U+0020–007E）だけで、Regular の 1 つ。Noto Sans（`notofonts/latin-greek-cyrillic`、OFL 1.1、Reserved Font Name なし）の Regular から fontTools で抜き、`.notdef` を幅 1 em の矩形に描き直し、ファミリー名を「XylemUI Fallback」に変える。作り方のコマンドと元のファイルの SHA-256 は、テスト用のフォントと同じ形で README に書く。CJK・絵文字・キリル文字などは同梱しない。比べる相手のどれも CJK のフォールバック用のフォントを同梱せず、デスクトップ版の Windows は日本語（Yu Gothic など）と絵文字（Segoe UI Emoji）のフォントを持つ（Server Core やコンテナの Windows は持たないことがあり、そこでは日本語が豆腐になる）。CJK の基本範囲（約 2 万字）のサブセットだけで数 MB になり、配布物の目安（§11.3 の受け入れ、5 MB 以下、今は 4.1 MB）を超える。同梱フォントは埋め込みリソースとして実行ファイルに含め、`ReadOnlySpan<byte>` のまま FreeType に渡す（`FT_New_Memory_Face`）。
 
 **テストのフォント（S8 の Grill でオーナーが決定）:** テキストのテストは、OS のフォントに依らないよう、Noto Sans JP（OFL）から ASCII とテストで使う日本語だけを抜いた小さなサブセットをテストに置き、ライセンスと作り方（`pyftsubset` のコマンド）を添える。製品の同梱フォントと DirectWrite のフォールバックは行 F1（上の「F1 の方式」）
 
 **フォールバック解決の終端保証**: OSフォントにも同梱フォールバックフォントにもグリフが存在しない文字（未知の言語、最新のUnicode絵文字、未インストールの特殊記号等）が入力された場合の挙動を定義する。対策なしでは、フォールバック解決が終端せず無限ループに陥るか、HarfBuzzがグリフID`0`（`.notdef`、いわゆる「豆腐」）を返した後のアドバンス幅計算が想定外の値になり、以降の文字の配置座標がすべてずれるリスクがある。
 
-**採用: 同梱フォールバックフォントには、明確に規格化されたサイズ（幅1emの矩形）を持つ`.notdef`グリフを必ず含める。フォールバック解決チェーン（§4.1のステップE）の最後は、OS解決・同梱フォント双方で見つからない場合、必ず同梱フォントの`.notdef`を返して探索を打ち切るという終端規則で確定させる。** これにより、どのような入力に対しても`ResolveWithFallback`（§4.5）は有限時間で必ず何らかの`FontHandle`を返すことが保証され、後続のシェーピング・レイアウト計算が未定義状態に陥ることを防ぐ。
+**採用: 同梱フォールバックフォントには、明確に規格化されたサイズ（幅1emの矩形）を持つ`.notdef`グリフを必ず含める。フォールバック解決チェーン（§4.1のステップE）の最後は、OS解決・同梱フォント双方で見つからない場合、必ず同梱フォントの`.notdef`を返して探索を打ち切るという終端規則で確定させる。** これにより、どのような入力に対しても`ResolveWithFallback`（§4.5）は有限時間で必ず `Font` が null でない `FontMatch` を返し、`Length` は 1 以上なので文字列の終わりまで必ず進むことが保証され、後続のシェーピング・レイアウト計算が未定義状態に陥ることを防ぐ。
 
 ### 4.6 カラー絵文字フォーマットのv1範囲
 
@@ -2018,7 +2031,7 @@ static FontHandle ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char>
 
 **採用（v1）: COLR/CPAL。** Windows(Segoe UI Emoji)・最近のNoto Color Emoji双方がCOLRv1へ移行済みで、ベクターベースのためHiDPI対応や拡大縮小時の画質劣化がない。FreeTypeのCOLR/CPALサポートを有効化する。
 
-**対象外（v1では実装しない）**: sbix（macOSのApple Color Emojiが使用するビットマップ形式）、CBDT/CBLC（旧Android/旧Noto Color Emojiのビットマップ形式）、SVG-in-OpenType。これらのフォントに§4.5の同梱フォールバックフォントを差し替えることで、当面は同梱フォント側をCOLR/CPAL形式に統一して回避する。OS側フォールバック解決で得られたフォントがsbix等の非対応形式だった場合、色情報のないモノクロ輪郭で表示するフォールバック処理を用意する（クラッシュを避けるための最低限の縮退動作）。
+**対象外（v1では実装しない）**: sbix（macOSのApple Color Emojiが使用するビットマップ形式）、CBDT/CBLC（旧Android/旧Noto Color Emojiのビットマップ形式）、SVG-in-OpenType。同梱フォントは絵文字を持たない（§4.5、F1 の Grill）ので、絵文字は OS のフォールバックが返すフォントで描く。Windows の Segoe UI Emoji は COLR/CPAL なので、Windows ではこの範囲で描ける。OS側フォールバック解決で得られたフォントがsbix等の非対応形式だった場合、色情報のないモノクロ輪郭で表示するフォールバック処理を用意する（クラッシュを避けるための最低限の縮退動作）。
 
 **ロードマップへの明記**: 「Flutter/Avalonia/GPUI級」を目標とする以上、macOSのApple Color Emojiが正しく表示できない状態を無期限に放置するのは大きな機能欠落になる。sbix・SVG・CBDT/CBLCは§10.4の段階的実装順序における**v1.x（v1.0達成後の追加フェーズ）**として明示的にロードマップへ位置づける。「対象外」は「いつか対応する」の曖昧な先送りではなく、v1.0の後続フェーズとして具体的に追跡する。
 
@@ -2662,7 +2675,7 @@ W3C Pointer Events同様、マウス・タッチ・ペンを単一の`PointerEve
 Linuxのみ動的リンクとする。fontconfigの正当性はユーザー実機の実際のフォント・設定ファイル(`/etc/fonts`等)と一致する必要があり、静的同梱は実機の状態と乖離するリスクがある。§4.5で「フォールバック解決自体はOSに委譲する」と決めた判断の自然な帰結。`libfontconfig`は`libc`/`libX11`同様、ほぼ全Linuxデスクトップに標準で存在する共有ライブラリであり、許容範囲内の動的依存として扱う（Linuxに限り完全な単一静的バイナリは成立しない。配布形態は§0）。P/Invoke 先は `NativeLibrary.SetDllImportResolver` で `libfontconfig.so.1` を解決する。
 
 ### 8.12 同梱フォントのサブセット範囲 — §4.5
-v1では日本語（開発の主要言語圏）を優先し、ラテン/キリル/ギリシャ文字＋基本絵文字＋日本語で使用するCJK統合漢字範囲をカバーする。中国語・韓国語向けの字形バリエーション最適化（Han unification問題）は専用サブセットフォントが別途必要になるためフェーズ2に回す。同梱フォントはOS側解決に失敗した場合のみの最終フォールバックであるため、要件の削減ではなく優先順位付けとして扱う。
+同梱フォントは `.notdef`（幅 1 em の矩形）と基本ラテン文字（U+0020–007E）だけで、OS のフォールバックがどのフォントも返さなかったときの終点にだけ使う（§4.5、F1 の Grill、Issue #145）。日本語・中国語・韓国語・キリル文字・絵文字は OS のフォントで描き、漢字の字形（Han unification）は、`IFontProvider` に渡す言語で OS が選ぶ（§4.5）。以前の決定（ラテン / キリル / ギリシャ文字＋基本絵文字＋日本語の CJK 統合漢字を同梱）は、配布物の目安（§11.3、5 MB 以下）を超え、比べる相手のどれも同梱しないので改めた（`docs/design-decisions.md`）。
 
 ### 8.13 UAX#9自前実装の適合性テスト — §4.2
 Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイート（`tests/XylemUI.Text.Tests`）に組み込み、適合をBiDi実装完了の受け入れ基準とする。§8.4で改行アルゴリズム(UAX#14)、§4.1でグラフェムクラスタ検出(UAX#29)も自前実装を決めたため、同様に`LineBreakTest.txt`・`GraphemeBreakTest.txt`も適合性テストとして組み込む。テストデータ1行を1ケースとして xUnit の `[Theory]` で回す。
@@ -2800,7 +2813,7 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 | Scope の cleanup が例外を投げた           | 残りの cleanup を最後まで実行し、まとめて `AggregateException` で報告する                                          | §2.3    |
 | Mica 非対応（Windows 11 22H2 未満・他OS） | ウィンドウ背景をテーマの単色で塗る                                                                                 | §13.2   |
 | 別ウィンドウのポップアップを作れない      | ウィンドウ内オーバーレイ（`OverlayPopupHost`）にフォールバック                                                     | §7.3    |
-| システムUIフォントが見つからない          | §4.5 の同梱フォールバックフォントで描く                                                                            | §13.2   |
+| システムUIフォントが見つからない          | OS のフォールバック（§4.5）で描き、どの OS のフォントにも無い文字は同梱フォントで描く                              | §13.2   |
 
 ### 11.3 性能受け入れ基準
 
@@ -3071,7 +3084,7 @@ Assert.Equal("clicks: 1", app.Find<TextNode>("clicks").Text);
 
 **方式:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
 
-**フォント:** テストモードでは OS のフォント解決を使わず、**同梱フォントだけ**で描く（テスト用の `IFontProvider`）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
+**フォント:** テストモードでは OS のフォント解決を使わず、**テスト用のフォント**（§4.5 の「テストのフォント」、Noto Sans JP の ASCII とテストで使う日本語のサブセット）だけで描く（テスト用の `IFontProvider`）。製品の同梱フォントは基本ラテン文字だけなので、Latin / CJK のゴールデンテストを描けない（PR #146 のレビュー）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
 
 **比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。WARP のバージョンが変わった場合はゴールデン画像を更新する。
 
@@ -3127,7 +3140,7 @@ v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）
 - **v1 で入れるもの**: ウィンドウ背景の **Mica**。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
 - **v1.x に送るもの**: アプリ内の **Acrylic**（背後の UI をぼかす効果）。これを入れるにはレンダラに背景のぼかし（オフスクリーンパス＋新しい `PaintCommand`）が必要になり、v1 の「1パスで全体を描く」レンダラ（§5.0.1）の前提が崩れるため。**見直し（Issue #54）:** この理由はレンダラを単純に保つことで、要件と比べていない。Flutter（`BackdropFilter`）・Avalonia・WinUI は背景のぼかしを持ち、オフスクリーンパスはグループの不透明度・影・角丸のクリップでも要る。V1 の前に、オフスクリーンパスをレンダラの設計に入れるかを決め直す
 
-**フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を使い、見つからなければ同梱フォールバックフォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。
+**フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を指定し、Windows 10 のように Segoe UI Variable が無ければ、エンジンの既定のフォント（§4.5、Windows は `SPI_GETICONTITLELOGFONT` のフォント）に戻る。どのフォントにも無い文字は、OS のフォールバックと同梱フォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。
 
 ### 13.3 XylemUI Gallery（マイルストーン G1）
 
