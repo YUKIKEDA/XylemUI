@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using XylemUI.Platform.Windows;
 using XylemUI.Text;
 using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
@@ -90,6 +91,38 @@ internal static class CoreCosts
         report.Number("refused_us", Time(requests, () => atlas.TryGet(font, 56, 24, out _)));
         report.Number("cached_us", Time(requests, () => cachedAtlas.TryGet(font, 56, 24, out _)));
         report.Number("refused_count", atlas.RefusedCount);
+        return 0;
+    }
+
+    // The font fallback (design §4.5, row F1): the first split of a line of Greek, Chinese, Korean, an unassigned character, and
+    // an emoji (opening the fonts of Windows), a split again, one match alone, and the bytes a split allocates once the fonts are
+    // open.
+    public static int FontFallbackCost(int splits)
+    {
+        using var report = new Report("font-fallback");
+        const string Line = "Ελληνικά 中文 한국어 ͸ 😀";
+        TextLanguage japanese = TextLanguage.FromTag("ja");
+        var runs = new List<FontRun>(8);
+        long privateBefore = Process.GetCurrentProcess().PrivateMemorySize64;
+        long start = Stopwatch.GetTimestamp();
+        using var provider = new DirectWriteFontProvider();
+        report.Number("create_us", Stopwatch.GetElapsedTime(start).TotalMicroseconds);
+        start = Stopwatch.GetTimestamp();
+        FontFallback.Split(provider, Line, japanese, FontRequest.Default, runs);
+        report.Number("first_split_us", Stopwatch.GetElapsedTime(start).TotalMicroseconds);
+        report.Number("first_split_private_mb", (Process.GetCurrentProcess().PrivateMemorySize64 - privateBefore) / 1048576.0);
+        report.Number("runs", runs.Count);
+        report.Number("split_us", Time(splits, () => FontFallback.Split(provider, Line, japanese, FontRequest.Default, runs)));
+        FontRequest segoe = FontRequest.Default with { Family = "Segoe UI" };
+        report.Number("han_match_us", Time(splits, () => provider.ResolveFont("中文", 0, japanese, segoe)));
+        report.Number("latin_match_us", Time(splits, () => provider.ResolveFont("Abc", 0, japanese, segoe)));
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < splits; i++)
+        {
+            FontFallback.Split(provider, Line, japanese, FontRequest.Default, runs);
+        }
+
+        report.Number("split_bytes", (GC.GetAllocatedBytesForCurrentThread() - before) / splits);
         return 0;
     }
 

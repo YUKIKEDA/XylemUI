@@ -8,6 +8,10 @@
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Text.Tests" />
   </ItemGroup>
+  <!-- The end of the font fallback (design §4.5, Fonts/README.md). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\XylemUIFallback.ttf" LogicalName="XylemUIFallback.ttf" />
+  </ItemGroup>
   <!-- Under the JIT the libraries load as DLLs next to the app; a NativeAOT app links them statically (XylemUI.Text.targets). -->
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\harfbuzz.dll')">
     <None

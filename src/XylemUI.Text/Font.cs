@@ -1,3 +1,4 @@
+using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using XylemUI.Text.Interop;
@@ -8,14 +9,19 @@ namespace XylemUI.Text;
 /// A font file in memory, opened for shaping (HarfBuzz) and rasterizing (FreeType) from the same bytes (design §4.1, §4.5).
 /// </summary>
 /// <remarks>
-/// The bytes are copied once into a pinned array, which both libraries read in place for the font's lifetime. A font belongs to
-/// one thread (the UI thread); HarfBuzz and FreeType objects are not shared across threads here.
+/// Bytes given in memory are copied once into a pinned array; a font file is mapped read-only (<see cref="FromFile"/>). Both
+/// libraries read the bytes in place for the font's lifetime. A font belongs to one thread (the UI thread); HarfBuzz and FreeType
+/// objects are not shared across threads here.
 /// </remarks>
 public sealed unsafe class Font : IDisposable
 {
     private static int _nextId;
 
-    private readonly byte[] _data;
+    // The bytes the libraries read: a pinned copy, or a read-only view of a mapped file.
+    private readonly byte[]? _data;
+    private readonly MemoryMappedFile? _mapping;
+    private readonly MemoryMappedViewAccessor? _view;
+    private bool _acquired;
     private nint _blob;
     private nint _face;
     private nint _font;
@@ -42,27 +48,64 @@ public sealed unsafe class Font : IDisposable
 
         _data = GC.AllocateUninitializedArray<byte>(data.Length, pinned: true);
         data.CopyTo(_data);
-        Id = Interlocked.Increment(ref _nextId);
-        byte* pointer = (byte*)Unsafe.AsPointer(ref _data[0]);
 
         // The array is pinned for its lifetime, so the pointer the libraries keep stays valid until Dispose.
-        _blob = HarfBuzz.BlobCreate(pointer, (uint)_data.Length, HarfBuzz.MemoryModeReadOnly, null, null);
-        _face = HarfBuzz.FaceCreate(_blob, (uint)faceIndex);
-        UnitsPerEm = (int)HarfBuzz.FaceGetUpem(_face);
-        _font = HarfBuzz.FontCreate(_face);
+        Id = Interlocked.Increment(ref _nextId);
+        FamilyName = Open((byte*)Unsafe.AsPointer(ref _data[0]), _data.Length, faceIndex);
+    }
 
-        // Positions in font units: the caller scales them to the size it draws at.
-        HarfBuzz.FontSetScale(_font, UnitsPerEm, UnitsPerEm);
-
-        FreeType.FaceRec* face;
-        int error = FreeType.NewMemoryFace(FreeTypeLibrary.Handle, pointer, new CLong(_data.Length), new CLong(faceIndex), &face);
-        if (error != 0)
+    private Font(MemoryMappedFile mapping, MemoryMappedViewAccessor view, long length, int faceIndex)
+    {
+        _mapping = mapping;
+        _view = view;
+        Id = Interlocked.Increment(ref _nextId);
+        byte* pointer = null;
+        view.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
+        _acquired = true;
+        try
+        {
+            FamilyName = Open(pointer + view.PointerOffset, checked((int)length), faceIndex);
+        }
+        catch
         {
             Dispose();
-            throw new InvalidOperationException($"FreeType could not open the font (error {error}).");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Opens a font file by mapping it read-only, without copying it: the pages are the file's, shared with other mappings of it
+    /// (DirectWrite maps the OS's fonts too), and only the parts the libraries read are loaded.
+    /// </summary>
+    /// <param name="path">The font file.</param>
+    /// <param name="faceIndex">The face to open in a font collection (a <c>.ttc</c> file); 0 for a single font.</param>
+    /// <returns>The font, which unmaps the file when disposed.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="faceIndex"/> is negative.</exception>
+    /// <exception cref="IOException">The file could not be opened or mapped.</exception>
+    /// <exception cref="InvalidOperationException">FreeType could not open the font, or the file has no such face.</exception>
+    public static Font FromFile(string path, int faceIndex = 0)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentOutOfRangeException.ThrowIfNegative(faceIndex);
+        long length = new FileInfo(path).Length;
+        if (length == 0)
+        {
+            throw new ArgumentException("The font file is empty.", nameof(path));
         }
 
-        _ftFace = face;
+        MemoryMappedFile mapping = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        MemoryMappedViewAccessor? view = null;
+        try
+        {
+            view = mapping.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            return new Font(mapping, view, length, faceIndex);
+        }
+        catch
+        {
+            view?.Dispose();
+            mapping.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -71,9 +114,14 @@ public sealed unsafe class Font : IDisposable
     public int Id { get; }
 
     /// <summary>
+    /// Gets the family name the font gives itself (FreeType's <c>family_name</c>); empty when it gives none.
+    /// </summary>
+    public string FamilyName { get; }
+
+    /// <summary>
     /// Gets the font's units per em; shaped advances and offsets are in these units.
     /// </summary>
-    public int UnitsPerEm { get; }
+    public int UnitsPerEm { get; private set; }
 
     /// <summary>
     /// Gets the HarfBuzz font, scaled to font units.
@@ -116,6 +164,16 @@ public sealed unsafe class Font : IDisposable
             HarfBuzz.BlobDestroy(_blob);
             _blob = 0;
         }
+
+        // The libraries are done with the bytes: the view can go.
+        if (_acquired)
+        {
+            _view!.SafeMemoryMappedViewHandle.ReleasePointer();
+            _acquired = false;
+        }
+
+        _view?.Dispose();
+        _mapping?.Dispose();
     }
 
     /// <summary>
@@ -146,5 +204,28 @@ public sealed unsafe class Font : IDisposable
         }
 
         return _ftFace->Glyph;
+    }
+
+    // Opens HarfBuzz and FreeType over bytes that stay valid until Dispose, and returns the family name.
+    private string Open(byte* pointer, int length, int faceIndex)
+    {
+        _blob = HarfBuzz.BlobCreate(pointer, (uint)length, HarfBuzz.MemoryModeReadOnly, null, null);
+        _face = HarfBuzz.FaceCreate(_blob, (uint)faceIndex);
+        UnitsPerEm = (int)HarfBuzz.FaceGetUpem(_face);
+        _font = HarfBuzz.FontCreate(_face);
+
+        // Positions in font units: the caller scales them to the size it draws at.
+        HarfBuzz.FontSetScale(_font, UnitsPerEm, UnitsPerEm);
+
+        FreeType.FaceRec* face;
+        int error = FreeType.NewMemoryFace(FreeTypeLibrary.Handle, pointer, new CLong(length), new CLong(faceIndex), &face);
+        if (error != 0)
+        {
+            Dispose();
+            throw new InvalidOperationException($"FreeType could not open the font (error {error}).");
+        }
+
+        _ftFace = face;
+        return face->FamilyName is null ? string.Empty : Marshal.PtrToStringUTF8((nint)face->FamilyName) ?? string.Empty;
     }
 }
