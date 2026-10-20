@@ -44,7 +44,7 @@ internal static class LayoutCost
             return LoopAbsolute(count);
         }
 
-        (UiTree tree, NodeHandle root, NodeHandle target) = Build(scene, fixedRows: false);
+        (UiTree tree, NodeHandle root, NodeHandle target) = Build(scene, fixedRows: kind == "fixed_row");
         Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
         LayoutEngine.RunLayoutPass(tree);
         LayoutStyle style = tree.Nodes.GetRef(target).Layout.Style;

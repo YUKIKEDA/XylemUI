@@ -10,7 +10,7 @@
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, shaping and cached
 //   layout [samples]           the four layout times of 10,101 nodes in three scenes (design §3.2, row L1a)
-//   layout-loop scene kind N   one of them (kind change, content, or width; scene absolute: its change) repeated N times on one tree, for a profile
+//   layout-loop scene kind N   one of them (kind change, fixed_row, content, or width; scene absolute: its change) repeated N times on one tree, for a profile
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
 //   font-fallback [splits]     the font fallback of a line: the first split, a split again, one match, the bytes (row F1)
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100

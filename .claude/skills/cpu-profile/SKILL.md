@@ -21,6 +21,7 @@ The agent shell is medium integrity. A kernel logger does not start: do not run 
 | Where the time goes, quickly, while iterating | JIT Release | `dotnet-trace` CPU sampling |
 | Who allocates on a path the Zero-Alloc test flagged | JIT Debug or Release | `dotnet-trace` with GC allocation events |
 | How often the GC runs and how long it pauses | either | `dotnet-counters` / `dotnet-trace` GC events |
+| Whether two builds differ in instructions, cycles, or stalls | NativeAOT Release | Intel VTune hardware events (below) |
 
 Acceptance numbers come from the NativeAOT binary only. JIT profiles include tiering and are for finding where to look.
 
@@ -61,6 +62,16 @@ xperf -i $etl -symbols -o "$scratch\stacks.txt" -a stack -butterfly 50 -process 
 `-o` comes before `-a`. `profile -detail` is the leaf hit; `stack -butterfly` is the inclusive tree. Read a function's own block, the one that contains `***itself***`.
 
 In a NativeAOT binary, GC and allocation helpers appear as runtime functions (`RhpNewFast`, `RhpGcAlloc`, `WKS::gc_heap::*`). Their inclusive share is the cost of allocation and collection; report it separately from the frame stages. Frames shown as `ntdll.dll!***unknown***` still have an RVA; resolve it with `dumpbin /exports C:\Windows\System32\ntdll.dll`.
+
+## NativeAOT: count hardware events with VTune
+
+`benchmarks/counters/instructions.ps1` counts the instructions and cycles of one relayout for pairs of builds; `-Events` adds cache, branch, and memory events, and `summarize.py` reads the reports (`docs/benchmarks/l8-counters.md`).
+
+- The hardware events need the VTune sampling driver, which the medium-integrity agent shell cannot use ("Run the product as administrator"). The owner approves the UAC prompt, and only while present: send the elevated run only when the owner says it can be approved now.
+- VTune's raw result is about 100 MB per run; the runs of L8 reached 20 GB. Keep the CSV of `vtune -report hw-events` and delete the result directories in the same turn.
+- Do not run another measurement on the same core while VTune runs. In L8 a cycle run on the pinned core distorted both.
+- An event that the counters cannot schedule with the others is left out of the report without an error (`TOPDOWN.SLOTS` in L8). Check the columns of the CSV against `-Events`.
+- Do not point xperf or VTune at the Microsoft symbol server: in L8 it downloaded 4.3 GB and did not end. The native PDB next to the executable is enough.
 
 ## JIT: dotnet-trace
 

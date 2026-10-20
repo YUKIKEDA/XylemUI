@@ -30,7 +30,7 @@ Read the rules that match the work before changing anything. `alwaysApply` rules
 | `pace` | Split off what is outside the row; limit an investigation; long runs on the side |
 | `open-ends` | No untimed frame-path stage and no unexplained figure in a PR |
 | `record-corrections` | A correction lands in the rule, design, ADR, or skill it belongs to |
-| `review-comments` | A finding is about the head it was written on |
+| `review-comments` | A finding is about the head it was written on; a review the owner asks for is posted on the PR |
 | `similar-findings` | Fix the same kind of problem where it also occurs |
 | `no-dead-code` | Remove everything that only served a removed path |
 | `spec-checks` | A test implements the whole design statement |
@@ -53,7 +53,7 @@ Read the rules that match the work before changing anything. `alwaysApply` rules
 
 ## Skills
 
-Skills live in `.agents/skills/` (linked from `.claude/skills/`). `skills-lock.json` pins the ones that come from outside.
+Skills live in `.agents/skills/` (linked from `.claude/skills/`). `skills-lock.json` pins the ones that come from outside. Git tracks `.claude/skills/` as a copy, not as a link: a change to a skill changes both copies in the same commit. PR #144 changed only `.agents`, and the main checkout showed the `.claude` copy as changed.
 
 - `grilling`: when the design branches, before an Issue.
 - `github-closing`: before `gh pr create`, to check that the PR closes only what it finishes.
