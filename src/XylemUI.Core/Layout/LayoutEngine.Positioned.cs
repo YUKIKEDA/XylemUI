@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 internal static partial class LayoutEngine
@@ -142,6 +144,11 @@ internal static partial class LayoutEngine
 
     // Sizes and places one absolutely positioned child against its parent's padding box (Taffy's layout_oof_box), and lays it
     // out. The static positions are relative to the parent's border box.
+    //
+    // A clean child placed last time with the same container size, border, and static positions keeps its size and place
+    // (row L7): nothing else this reads can change without marking the child, as its style and its subtree do. Flutter's
+    // RenderObject.layout returns early the same way for a clean child under the same constraints, and Avalonia's
+    // Layoutable.Arrange for a valid one in the same rectangle.
     private static void LayOutAbsoluteChild(
         UiTree tree,
         NodeHandle child,
@@ -152,6 +159,48 @@ internal static partial class LayoutEngine
         StaticPosition staticY
     )
     {
+        ref UiNode node = ref tree.Nodes.GetRef(child);
+        ref AbsoluteMemo memo = ref tree.MeasuresOf(child).Absolute;
+        if (
+            ((node.Dirty.SelfDirty | node.Dirty.SubtreeDirty) & DirtyFlags.Layout) == 0
+            && node.Layout.WasLaidOut
+            && memo.Matches(containerSize, border, staticX, staticY)
+        )
+        {
+            // The last run measured the content, which marked it as read; the mark is set again, as measuring would.
+            if (memo.ReadContent && !node.Parent.IsNone)
+            {
+                node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
+            }
+
+            return;
+        }
+
+        PlaceAbsoluteChild(tree, child, in s, containerSize, border, staticX, staticY, out bool readContent);
+        tree.MeasuresOf(child).Absolute = new AbsoluteMemo
+        {
+            Valid = true,
+            ReadContent = readContent,
+            ContainerSize = containerSize,
+            Border = border,
+            StaticX = staticX,
+            StaticY = staticY,
+        };
+    }
+
+    // LayOutAbsoluteChild's work for a child it cannot keep; readContent tells whether a run measured the child's content.
+    private static void PlaceAbsoluteChild(
+        UiTree tree,
+        NodeHandle child,
+        in LayoutStyle s,
+        Size containerSize,
+        Edges border,
+        StaticPosition staticX,
+        StaticPosition staticY,
+        out bool readContent
+    )
+    {
+        readContent = false;
         var area = new OptionalSize(containerSize.Width - border.Horizontal, containerSize.Height - border.Vertical);
         var margin = new Edges(
             s.Margin.Left.Resolve(area.Width),
@@ -203,6 +252,8 @@ internal static partial class LayoutEngine
         // holds.
         if (tree.Nodes.GetRef(child).Layout.HasKeywordLimits)
         {
+            readContent = true;
+
             // From the minimum before its floor of the padding and border, so that the aspect ratio fills an axis left auto.
             OptionalSize styleMin = MinSize(in s, area);
             ResolveKeywordLimits(tree, child, KeywordLimits.Of(in s), styleSize, area, stretchFit, contentHeights: false, ref styleMin, ref max);
@@ -219,6 +270,7 @@ internal static partial class LayoutEngine
         // above: no ref into the arena is held across the measuring run (design §2.5).
         if (widthStyle.IsSizingKeyword || heightStyle.IsSizingKeyword)
         {
+            readContent = true;
             known = ResolveAbsoluteKeywords(tree, child, known, widthStyle, heightStyle, area, inset, margin);
             known = WithAspectRatio(known, aspectRatio).Clamp(min, max);
         }
@@ -242,6 +294,7 @@ internal static partial class LayoutEngine
         OptionalSize sized = known;
         if (!known.IsComplete)
         {
+            readContent = true;
             var measuring = new LayoutInput(known, true, true, area, available, SizingMode.ContentSize, RequestedAxis.Both);
             Size measured = LayoutChild(tree, child, in measuring, commit: false);
             sized = known.Or(new OptionalSize(measured.Width, measured.Height));
@@ -413,7 +466,7 @@ internal static partial class LayoutEngine
         return false;
     }
 
-    private enum StaticEdge : byte
+    internal enum StaticEdge : byte
     {
         Start,
         Center,
@@ -429,15 +482,47 @@ internal static partial class LayoutEngine
         End,
     }
 
+    // The inputs an absolutely positioned child was placed with in its container's last layout run, and whether that run
+    // measured its content (row L7). They sit in the child's MeasureCache, so marking the child dirty drops them.
+    internal struct AbsoluteMemo
+    {
+        public bool Valid;
+        public bool ReadContent;
+        public Size ContainerSize;
+        public Edges Border;
+        public StaticPosition StaticX;
+        public StaticPosition StaticY;
+
+        // The floats compared with ==: the generated equality of the record structs goes through EqualityComparer<float> and was
+        // not inlined, 19 % of the samples of a change in the absolute scene (NativeAOT profile). Inlined, the change takes
+        // 1.98 µs, and 2.22 µs without the attribute (layout-loop absolute change, alternated with main 12 times each). A NaN
+        // never matches, which only places the child again.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool Matches(Size containerSize, Edges border, StaticPosition staticX, StaticPosition staticY) =>
+            Valid
+            && ContainerSize.Width == containerSize.Width
+            && ContainerSize.Height == containerSize.Height
+            && Border.Left == border.Left
+            && Border.Top == border.Top
+            && Border.Right == border.Right
+            && Border.Bottom == border.Bottom
+            && Same(StaticX, staticX)
+            && Same(StaticY, staticY);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool Same(StaticPosition a, StaticPosition b) =>
+            a.Area.Start == b.Area.Start && a.Area.End == b.Area.End && a.Edge == b.Edge && a.Safe == b.Safe;
+    }
+
     // A line of one axis: its start and end.
-    private readonly record struct StaticArea(float Start, float End)
+    internal readonly record struct StaticArea(float Start, float End)
     {
         public StaticArea Minus(float offset) => new(Start - offset, End - offset);
     }
 
     // Where a box whose insets are both auto goes in one axis: aligned by an edge in an area, or at the start of the
     // inset-modified containing block when the alignment is `safe` and the box overflows it.
-    private readonly record struct StaticPosition(StaticArea Area, StaticEdge Edge, bool Safe)
+    internal readonly record struct StaticPosition(StaticArea Area, StaticEdge Edge, bool Safe)
     {
         // `normal`, `stretch`, and the start alignments take the start.
         public static StaticPosition Of(AlignItems alignment, StaticArea area)

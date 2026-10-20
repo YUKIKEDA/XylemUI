@@ -18,8 +18,8 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** L7（Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** L7 の Grill
+- **フェーズ:** L8（Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
+- **作業中:** L8 の準備（命令の数を読む手段を確かめる）
 - **ブランチ:** —
 - **Issue:** —
 
@@ -60,7 +60,8 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | L2  | 絶対配置（`Position`・`Inset`。基準は親）、相対配置の insets、aspect-ratio、表示しないノード（`Hidden`） | done        | [#120](https://github.com/YUKIKEDA/XylemUI/issues/120)・[#124](https://github.com/YUKIKEDA/XylemUI/issues/124) | L2 の範囲の Taffy の XML テストが通った（199 件）。1 か所の変更が main より最小値で 2〜4 % 遅いのは原因未確定（オーナー判断で PR に記載、L7 で追う）。詳細は `docs/benchmarks/l2-layout.md` |
 | L3  | 長さの残り: min / max の内容の大きさ（CSS の `min-width: min-content` など。期待値は Taffy の gentest で Chrome から作る）、`stretch`。`fit-content(長さ)` は Chrome が持たず入れない（Issue #133） | done        | [#129](https://github.com/YUKIKEDA/XylemUI/issues/129)・[#133](https://github.com/YUKIKEDA/XylemUI/issues/133) | `stretch` の Taffy の XML テスト 24 件のうち 14 件（外れる 10 件はマージンの相殺・float・`overflow`）と、Chrome から作った 36 件が通った。main とどの指標も範囲が重なる。詳細は `docs/benchmarks/l3-layout.md` |
 | L6  | `flex-wrap: balance`（CSS Flexbox Level 2 の草案、Taffy の XML テスト 34 件）。Taffy は 0.14.0 から持つので、着手するときはその実装（CHANGELOG の #1105）を読む。仕様が草案を出るか、Flutter・Avalonia・GPUI のどれかが持ったときに、意味と期待値の作り方を Grill で決める（L2 の Grill、Issue #120） | not-started | —     | §3.2                                       |
-| L7  | 絶対配置の子の置き直しを安くする。L2 で、絶対配置の子の中の変更が Flutter の約 5 倍、Avalonia の約 2.5 倍（10.3 µs、2.0 µs、4.2 µs。Taffy 0.9.0 は 19.5 µs。子 1 つあたり約 100 ns と 20 ns、`docs/benchmarks/l2-layout.md`）。container の入力が前回と同じ clean な子は、スタイルの解決と 2 回のキャッシュの問い合わせをせずに前回の置き場所を使う（Flutter の `RenderStack` は clean な子の制約を比べるだけで戻る）。設計 §3.2 の「絶対配置の子を境界にして配置だけやり直す案」と合わせて Grill で決める。あわせて、L2 で 1 か所の変更と固定サイズの行の中の変更が main より最小値で 2〜4 % 大きくなった原因を、静かな機械で測り直して突き止める（`docs/benchmarks/l2-layout.md`、PR #125 のレビュー）。L3 の CSS の既定の 1 か所の変更の +1.4〜1.8 %（`docs/benchmarks/l3-layout.md`）も同じく測り直す。L2 と合わせると L5 から 4〜6 % 遅れている恐れがある（PR #134 のレビュー） | not-started | —     | §3.2                                       |
+| L7  | 絶対配置の子の置き直しを安くする。L2 で、絶対配置の子の中の変更が Flutter の約 5 倍、Avalonia の約 2.5 倍（10.3 µs、2.0 µs、4.2 µs。Taffy 0.9.0 は 19.5 µs。子 1 つあたり約 100 ns と 20 ns、`docs/benchmarks/l2-layout.md`）。clean で前回と同じ入力（容器の大きさ、border、静的な位置）を受ける子は、スタイルの解決とキャッシュの問い合わせをせずに前回の大きさと位置を使う（Flutter の `RenderObject.layout`、Avalonia の `Layoutable.Arrange` と同じ考え方。絶対配置の子を境界にする案は採らない。L7 の Grill） | done        | [#137](https://github.com/YUKIKEDA/XylemUI/issues/137) | 絶対配置の子の中の変更が 10.3 → 2.2 µs（Flutter 3.47.7 は 2.7 µs）。ほかの指標は main と範囲が重なる。詳細は `docs/benchmarks/l7-layout.md` |
+| L8  | L2 と L3 で、1 か所の変更と固定サイズの行の中の変更が main より大きくなった差（L2 は最小値で 2〜4 %、原因未確定。L3 は CSS の既定で +1.4〜1.8 %。合わせて L5 から 4〜6 % 遅れている恐れ。`docs/benchmarks/l2-layout.md`、`docs/benchmarks/l3-layout.md`、PR #125・#134 のレビュー）を調べる。L5 のコミットと main を、時間に加えて実行した命令の数（CPU のハードウェアカウンタ）でも比べ、測るプロセスは高い優先度で 1 つのコアに固定する。カウンタを読めなければ、静かな機械で測る時間をオーナーに頼む。命令の数が同じなら機械の条件による差として記録し、違えば原因を突き止めて直すか、避けられない計算として説明する（L7 の Grill） | not-started | —     | §3.2                                       |
 | F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | not-started | —     | §4.5                                       |
 | T4  | テキストの描画品質。サブピクセル位置のグリフ（GPUI）、カバレッジのガンマとコントラストの補正（Skia）、ヒンティング、T2（サブピクセル AA）をこの行に寄せるか。`GlyphInstance` を 1 本の配列にした理由（S8b）を測る。Flutter / Avalonia / GPUI の出力と比べて Grill で決める（Issue #54） | not-started | —     | §4.1・§5.0.3                               |
 | T5  | 初めて出る文字のラスタライズを UI スレッドのフレームから外すか（S8b で最大 184 グリフ、約 3.7 ms。Chromium・Flutter は別スレッド、GPUI は同期）。方式を Grill で決める（Issue #54）。アトラスの上限で断られたグリフ（要求のたびに 6.4 µs のラスタライズ）は、箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（M1a の Grill） | not-started | —     | §5.0.3・§11.3                              |
