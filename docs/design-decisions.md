@@ -299,6 +299,9 @@ Rejected:
   - テキスト位置を UTF-8 バイトや codepoint 数で持つ
   - 本番経路で `StringInfo` / `Rune` / `char.GetUnicodeCategory` を使う
   - DirectWrite / Core Text にレイアウトまで全面委譲する（caret geometry を共通化できない）
+  - 同梱フォントに CJK 統合漢字の基本範囲・絵文字・キリル / ギリシャ文字を入れる（約 2 万字で数 MB になり、配布物の目安 5 MB を超える。Flutter・Avalonia・GPUI のどれも CJK のフォールバック用のフォントを同梱せず、Windows は日本語と絵文字のフォントを必ず持つ。`.notdef` と基本ラテン文字だけの終点用のフォントにした。F1 の Grill、Issue #145）
+  - フォントを同梱せず、`.notdef` の矩形をエンジンが描く（FreeType とシェーピングを通らない特別な経路が増える。F1 の Grill）
+  - フォールバックを grapheme cluster ごとに解くため、UAX#29（行 T1）を F1 より先に入れる（GPUI と同じく DirectWrite に範囲ごとに任せ、cluster を切らないことはテストで確かめる。F1 の Grill）
 
 ---
 

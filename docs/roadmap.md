@@ -19,9 +19,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 ## 今
 
 - **フェーズ:** L8（Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** L8 の準備（命令の数を読む手段を確かめる）
-- **ブランチ:** —
-- **Issue:** —
+- **作業中:** F1 の設計（L8 は、直しの命令の数の計測がオーナーの UAC の承認を待つ。ブランチ `chore/142-l8-counters`、Issue #142）
+- **ブランチ:** `docs/145-f1-design`
+- **Issue:** [#145](https://github.com/YUKIKEDA/XylemUI/issues/145)
 
 ## ツールチェーン
 
@@ -63,7 +63,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | L7  | 絶対配置の子の置き直しを安くする。L2 で、絶対配置の子の中の変更が Flutter の約 5 倍、Avalonia の約 2.5 倍（10.3 µs、2.0 µs、4.2 µs。Taffy 0.9.0 は 19.5 µs。子 1 つあたり約 100 ns と 20 ns、`docs/benchmarks/l2-layout.md`）。clean で前回と同じ入力（容器の大きさ、border、静的な位置）を受ける子は、スタイルの解決とキャッシュの問い合わせをせずに前回の大きさと位置を使う（Flutter の `RenderObject.layout`、Avalonia の `Layoutable.Arrange` と同じ考え方。絶対配置の子を境界にする案は採らない。L7 の Grill） | done        | [#137](https://github.com/YUKIKEDA/XylemUI/issues/137) | 絶対配置の子の中の変更が 10.3 → 2.2 µs（Flutter 3.47.7 は 2.7 µs）。ほかの指標は main と範囲が重なる。詳細は `docs/benchmarks/l7-layout.md` |
 | L8  | L2 と L3 で、1 か所の変更と固定サイズの行の中の変更が main より大きくなった差（L2 は最小値で 2〜4 %、原因未確定。L3 は CSS の既定で +1.4〜1.8 %。合わせて L5 から 4〜6 % 遅れている恐れ。`docs/benchmarks/l2-layout.md`、`docs/benchmarks/l3-layout.md`、PR #125・#134 のレビュー）を調べる。L5 のコミットと main を、時間に加えて実行した命令の数（CPU のハードウェアカウンタ）でも比べ、測るプロセスは高い優先度で 1 つのコアに固定する。カウンタを読めなければ、静かな機械で測る時間をオーナーに頼む。命令の数が同じなら機械の条件による差として記録し、違えば原因を突き止めて直すか、避けられない計算として説明する（L7 の Grill） | not-started | —     | §3.2                                       |
 | L9  | 比較の「GPUI」を、Zed が出荷する Taffy 0.13.0 にする（それまでの 0.9.0 は crates.io の gpui 0.2.2 が固定する版。PR #138 でのオーナーとのやりとり）。5 つの場面を測り直し、0.9.0 を根拠にした設計の記述を 0.13.0 のソースで確かめ直す | done        | [#139](https://github.com/YUKIKEDA/XylemUI/issues/139) | XylemUI は 1.4〜10.4 倍速く、絶対配置の子の場面の最初の layout だけ Taffy が 7 % 速い。0.13.0 は min / max のキーワードと `safe` / `unsafe` を持つ。詳細は `docs/benchmarks/l9-taffy-0.13.md` |
-| F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | not-started | —     | §4.5                                       |
+| F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | in-progress | [#145](https://github.com/YUKIKEDA/XylemUI/issues/145) | §4.5                                       |
 | T4  | テキストの描画品質。サブピクセル位置のグリフ（GPUI）、カバレッジのガンマとコントラストの補正（Skia）、ヒンティング、T2（サブピクセル AA）をこの行に寄せるか。`GlyphInstance` を 1 本の配列にした理由（S8b）を測る。Flutter / Avalonia / GPUI の出力と比べて Grill で決める（Issue #54） | not-started | —     | §4.1・§5.0.3                               |
 | T5  | 初めて出る文字のラスタライズを UI スレッドのフレームから外すか（S8b で最大 184 グリフ、約 3.7 ms。Chromium・Flutter は別スレッド、GPUI は同期）。方式を Grill で決める（Issue #54）。アトラスの上限で断られたグリフ（要求のたびに 6.4 µs のラスタライズ）は、箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（M1a の Grill） | not-started | —     | §5.0.3・§11.3                              |
 | V1  | Button / Text / Column がクリックできる。入る前に、オフスクリーンパス（背景のぼかし・グループの不透明度・影・角丸のクリップ）をレンダラの設計に入れるかを Grill する（Acrylic を v1.x に送った理由の見直し、Issue #54）。`TextBuilder` の未決の 2 点: 書いた内容が前回と同じかの比べ方（作業用のバッファに書いてから入れ替えるなど）と、補間文字列ハンドラの受け手が struct のコピーになって長さが失われないか（D2 のレビュー）。`Scope.Run` をコンポーネントの API で包むとき、`false`（`await` の間に部品が破棄された）のときは何もしなくてよい、という扱いを説明に書く（S9 のレビュー）。描画とヒットテストは `LayoutStyle.Hidden` の部分木を飛ばす（L2 は layout の意味だけを決めた、PR #121 のレビュー）。テキストの計測のキャッシュ（§3.2 の `ShapedTextCache`）を入れ、10,101 個のテキストの葉のリサイズをキャッシュが当たったときに 2.0 ms 以下にする（M1a で 2.0〜2.3 ms、§11.3）。描画の段が `UiTree.PaintUpdates` を毎フレーム受け取って空にし、ノードの Layout 以外の印を消す（L5 から内容の変更も積む。印が残っている間は積み直さないので、今は 1 ノード 1 つで止まっている） | not-started | —     |                                            |
@@ -81,9 +81,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | P02 | v0.2 Grid / 仮想化 / IME / a11y 基本 / ポップアップ（オーバーレイ）/ `XylemUI.Testing`。IME に入る前に IMM32 か TSF かを要件（再変換・周辺テキスト・タッチキーボード）で比べ直す（§4.7、Issue #54）。`D3D11Renderer.ReadPixel` などの readback を公開 API から `XylemUI.Testing` へ移す（S7 でサンプルの検査のために公開した） | not-started | —     | §10.4                                      |
 | G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3） | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト。揃えの `self-start` / `self-end`（子自身の書字の向きで揃える。Issue #88） | not-started | —     | §10.4                                      |
-| P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した） | not-started | —     | §10.4                                      |
+| P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した）。フォントのフォールバックを fontconfig（`FcFontMatch`）で、`IFontProvider` の実装として入れる（F1 の Grill） | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
-| P06 | v0.6 macOS 基盤（AppKit / Metal / Core Text。静的リンクで単一バイナリになるかの確認を含む）           | not-started | —     | §10.4                                      |
+| P06 | v0.6 macOS 基盤（AppKit / Metal / Core Text。静的リンクで単一バイナリになるかの確認を含む）。フォントのフォールバックを Core Text（`CTFontCreateForString`）で、`IFontProvider` の実装として入れる（F1 の Grill） | not-started | —     | §10.4                                      |
 | P10 | v1.0 3プラットフォーム + 別ウィンドウのポップアップ（Windows）+ 配布。配布物の第三者ライセンスの一覧（FreeType の FTL の謝辞を含む）。1 つのグリフアトラスを複数のレンダラ（別ウィンドウのポップアップ）で共有するか。共有するなら、レンダラごとに送った版を持つ（今は送った後に変わった領域を消すので、1 アトラス 1 レンダラ、S8b のレビュー） | not-started | —     | §11.4                                      |
 
 設計書 §10.5 の番号（P0〜P3）は検証したい仮説の優先度であり、着手単位としては使わない。切り方はこの表が正。
