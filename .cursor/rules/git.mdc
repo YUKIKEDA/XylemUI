@@ -7,6 +7,8 @@ alwaysApply: true
 
 A question is not permission. `reset`, `rebase`, `push --force`, `push --force-with-lease`, `branch -D`, `clean`, and `checkout -- <path>` run only on an order that names the operation and the target SHA or ref.
 
+This holds for a conflict that another PR's merge caused: ask how to solve it (rebase and force-push, or merge `main` into the branch) before running either. In L7 the agent rebased the branch on `main` and reset another branch without an order after PR #136 merged; the owner then ordered the force pushes (PR #138).
+
 When asked about such an operation, answer with the current `HEAD` SHA, the target SHA, what would disappear, and the exact command. Then wait.
 
 - Finished work goes to a PR in the same turn, without waiting for an ask: commit on the Issue's branch, push it, and open the PR (`.cursor/rules/workflow.mdc`). The owner reviews on the PR, from wherever they are; uncommitted changes on this machine cannot be reviewed. Do not stop at "may I commit?".
