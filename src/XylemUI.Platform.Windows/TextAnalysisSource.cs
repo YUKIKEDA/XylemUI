@@ -1,121 +1,134 @@
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
+using TerraFX.Interop.DirectX;
 
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// DirectWrite's <c>IDWriteTextAnalysisSource</c>, which <c>IDWriteFontFallback::MapCharacters</c> calls back for the text and
-/// its locale. The methods keep the order of the vtable in <c>dwrite.h</c>; the OS calls them, so the interface is source-
-/// generated COM (.cursor/rules/interop.mdc).
+/// DirectWrite's <c>IDWriteTextAnalysisSource</c> for one text at a time, which <c>IDWriteFontFallback::MapCharacters</c> calls
+/// back for the text and its locale: a native object of a vtable of unmanaged functions and the text's pointer, length, and
+/// locale. Left to right, without number substitution.
 /// </summary>
-[GeneratedComInterface]
-[Guid("688e1a58-5094-47c8-adc8-fbcea60ae92b")]
-internal unsafe partial interface IDWriteTextAnalysisSourceCallback
+/// <remarks>
+/// The caller points it at a pinned text and locale, makes the call, and clears it; DirectWrite uses the source only during the
+/// call. Its owner frees it (<see cref="Free"/>), so the reference count only answers COM.
+/// </remarks>
+internal unsafe struct TextAnalysisSource
 {
-    /// <summary>Points at the text from a position to its end.</summary>
-    /// <param name="textPosition">The position in the text.</param>
-    /// <param name="textString">Receives the text.</param>
-    /// <param name="textLength">Receives the number of characters.</param>
-    /// <returns>S_OK.</returns>
-    [PreserveSig]
-    int GetTextAtPosition(uint textPosition, char** textString, uint* textLength);
+    private static readonly void** Vtable = CreateVtable();
 
-    /// <summary>Points at the text from its start to a position.</summary>
-    /// <param name="textPosition">The position in the text.</param>
-    /// <param name="textString">Receives the text.</param>
-    /// <param name="textLength">Receives the number of characters.</param>
-    /// <returns>S_OK.</returns>
-    [PreserveSig]
-    int GetTextBeforePosition(uint textPosition, char** textString, uint* textLength);
-
-    /// <summary>Returns the reading direction of the paragraph (a <c>DWRITE_READING_DIRECTION</c>, not an <c>HRESULT</c>).</summary>
-    /// <returns>DWRITE_READING_DIRECTION_LEFT_TO_RIGHT (0) or another direction.</returns>
-    [PreserveSig]
-    int GetParagraphReadingDirection();
-
-    /// <summary>Points at the locale of the text from a position.</summary>
-    /// <param name="textPosition">The position in the text.</param>
-    /// <param name="textLength">Receives the number of characters.</param>
-    /// <param name="localeName">Receives the null-terminated locale name.</param>
-    /// <returns>S_OK.</returns>
-    [PreserveSig]
-    int GetLocaleName(uint textPosition, uint* textLength, char** localeName);
-
-    /// <summary>Returns the number substitution of the text from a position: none.</summary>
-    /// <param name="textPosition">The position in the text.</param>
-    /// <param name="textLength">Receives the number of characters.</param>
-    /// <param name="numberSubstitution">Receives the number substitution.</param>
-    /// <returns>S_OK.</returns>
-    [PreserveSig]
-    int GetNumberSubstitution(uint textPosition, uint* textLength, void** numberSubstitution);
-}
-
-/// <summary>
-/// One text at a time for <c>MapCharacters</c>: the caller points it at a pinned text and a locale, makes the call, and clears
-/// it. Left to right, without number substitution.
-/// </summary>
-[GeneratedComClass]
-internal sealed unsafe partial class TextAnalysisSource : IDWriteTextAnalysisSourceCallback
-{
+    private void** _vtable;
     private char* _text;
     private uint _length;
     private char* _locale;
 
-    public void Set(char* text, uint length, char* locale)
+    /// <summary>
+    /// Allocates a source with no text.
+    /// </summary>
+    /// <returns>The source, as DirectWrite takes it.</returns>
+    public static IDWriteTextAnalysisSource* Create()
     {
-        _text = text;
-        _length = length;
-        _locale = locale;
+        var source = (TextAnalysisSource*)NativeMemory.AllocZeroed((nuint)sizeof(TextAnalysisSource));
+        source->_vtable = Vtable;
+        return (IDWriteTextAnalysisSource*)source;
     }
 
-    public void Clear() => Set(null, 0, null);
-
-    public int GetTextAtPosition(uint textPosition, char** textString, uint* textLength)
+    /// <summary>
+    /// Points the source at a text and its locale, both pinned and the locale null-terminated, until <see cref="Clear"/>.
+    /// </summary>
+    /// <param name="source">A source from <see cref="Create"/>.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="length">The number of UTF-16 characters of the text.</param>
+    /// <param name="locale">The locale name.</param>
+    public static void Set(IDWriteTextAnalysisSource* source, char* text, uint length, char* locale)
     {
-        if (textPosition >= _length)
+        var self = (TextAnalysisSource*)source;
+        self->_text = text;
+        self->_length = length;
+        self->_locale = locale;
+    }
+
+    /// <summary>
+    /// Points the source at no text.
+    /// </summary>
+    /// <param name="source">A source from <see cref="Create"/>.</param>
+    public static void Clear(IDWriteTextAnalysisSource* source) => Set(source, null, 0, null);
+
+    /// <summary>
+    /// Frees a source from <see cref="Create"/>.
+    /// </summary>
+    /// <param name="source">The source.</param>
+    public static void Free(IDWriteTextAnalysisSource* source) => NativeMemory.Free(source);
+
+    private static void** CreateVtable()
+    {
+        // The order of IUnknown, then of IDWriteTextAnalysisSource in dwrite.h. One table for the process, never freed.
+        void** table = (void**)NativeMemory.Alloc((nuint)(8 * sizeof(void*)));
+        table[0] = (delegate* unmanaged<TextAnalysisSource*, Guid*, void**, int>)&QueryInterface;
+        table[1] = (delegate* unmanaged<TextAnalysisSource*, uint>)&AddRef;
+        table[2] = (delegate* unmanaged<TextAnalysisSource*, uint>)&Release;
+        table[3] = (delegate* unmanaged<TextAnalysisSource*, uint, char**, uint*, int>)&GetTextAtPosition;
+        table[4] = (delegate* unmanaged<TextAnalysisSource*, uint, char**, uint*, int>)&GetTextBeforePosition;
+        table[5] = (delegate* unmanaged<TextAnalysisSource*, DWRITE_READING_DIRECTION>)&GetParagraphReadingDirection;
+        table[6] = (delegate* unmanaged<TextAnalysisSource*, uint, uint*, char**, int>)&GetLocaleName;
+        table[7] = (delegate* unmanaged<TextAnalysisSource*, uint, uint*, void**, int>)&GetNumberSubstitution;
+        return table;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int QueryInterface(TextAnalysisSource* self, Guid* iid, void** result)
+    {
+        if (*iid == TerraFX.Interop.Windows.IID.IID_IDWriteTextAnalysisSource || *iid == TerraFX.Interop.Windows.IID.IID_IUnknown)
         {
-            *textString = null;
-            *textLength = 0;
-        }
-        else
-        {
-            *textString = _text + textPosition;
-            *textLength = _length - textPosition;
+            *result = self;
+            return 0;
         }
 
+        *result = null;
+        return unchecked((int)0x80004002); // E_NOINTERFACE
+    }
+
+    [UnmanagedCallersOnly]
+    private static uint AddRef(TextAnalysisSource* self) => 1;
+
+    [UnmanagedCallersOnly]
+    private static uint Release(TextAnalysisSource* self) => 1;
+
+    [UnmanagedCallersOnly]
+    private static int GetTextAtPosition(TextAnalysisSource* self, uint textPosition, char** textString, uint* textLength)
+    {
+        bool inside = textPosition < self->_length;
+        *textString = inside ? self->_text + textPosition : null;
+        *textLength = inside ? self->_length - textPosition : 0;
         return 0;
     }
 
-    public int GetTextBeforePosition(uint textPosition, char** textString, uint* textLength)
+    [UnmanagedCallersOnly]
+    private static int GetTextBeforePosition(TextAnalysisSource* self, uint textPosition, char** textString, uint* textLength)
     {
-        if (textPosition == 0 || textPosition > _length)
-        {
-            *textString = null;
-            *textLength = 0;
-        }
-        else
-        {
-            *textString = _text;
-            *textLength = textPosition;
-        }
-
+        bool inside = textPosition > 0 && textPosition <= self->_length;
+        *textString = inside ? self->_text : null;
+        *textLength = inside ? textPosition : 0;
         return 0;
     }
 
-    // DWRITE_READING_DIRECTION_LEFT_TO_RIGHT: right to left comes with row P03.
-    public int GetParagraphReadingDirection() => 0;
+    // Right to left comes with row P03.
+    [UnmanagedCallersOnly]
+    private static DWRITE_READING_DIRECTION GetParagraphReadingDirection(TextAnalysisSource* self) =>
+        DWRITE_READING_DIRECTION.DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
 
-    public int GetLocaleName(uint textPosition, uint* textLength, char** localeName)
+    [UnmanagedCallersOnly]
+    private static int GetLocaleName(TextAnalysisSource* self, uint textPosition, uint* textLength, char** localeName)
     {
-        *localeName = _locale;
-        *textLength = textPosition >= _length ? 0 : _length - textPosition;
+        *localeName = self->_locale;
+        *textLength = textPosition < self->_length ? self->_length - textPosition : 0;
         return 0;
     }
 
-    public int GetNumberSubstitution(uint textPosition, uint* textLength, void** numberSubstitution)
+    [UnmanagedCallersOnly]
+    private static int GetNumberSubstitution(TextAnalysisSource* self, uint textPosition, uint* textLength, void** numberSubstitution)
     {
         *numberSubstitution = null;
-        *textLength = textPosition >= _length ? 0 : _length - textPosition;
+        *textLength = textPosition < self->_length ? self->_length - textPosition : 0;
         return 0;
     }
 }

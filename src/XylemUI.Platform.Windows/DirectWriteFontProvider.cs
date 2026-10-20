@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
 using XylemUI.Text;
@@ -26,7 +25,6 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
     private readonly List<(byte[] Key, uint Face, Font Font)> _fonts = [];
     private readonly Dictionary<TextLanguage, char[]> _locales = [];
     private readonly char[] _defaultFamily;
-    private readonly TextAnalysisSource _source = new();
     private IDWriteFactory2* _factory;
     private IDWriteFontFallback* _fallback;
     private IDWriteFontCollection* _collection;
@@ -53,7 +51,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
             IDWriteFontCollection* collection;
             ThrowIfFailed(_factory->GetSystemFontCollection(&collection, BOOL.FALSE), "IDWriteFactory::GetSystemFontCollection");
             _collection = collection;
-            _sourcePointer = CreateSourcePointer(_source);
+            _sourcePointer = TextAnalysisSource.Create();
         }
         catch
         {
@@ -96,7 +94,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
                     fixed (char* fallbackFamily = _defaultFamily)
                     {
                         char* family = request.Family is null ? fallbackFamily : requested;
-                        _source.Set(textPointer, (uint)text.Length, localePointer);
+                        TextAnalysisSource.Set(_sourcePointer, textPointer, (uint)text.Length, localePointer);
                         try
                         {
                             ThrowIfFailed(
@@ -118,7 +116,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
                         }
                         finally
                         {
-                            _source.Clear();
+                            TextAnalysisSource.Clear(_sourcePointer);
                         }
                     }
                 }
@@ -140,7 +138,12 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         }
 
         _fonts.Clear();
-        Release(ref _sourcePointer);
+        if (_sourcePointer is not null)
+        {
+            TextAnalysisSource.Free(_sourcePointer);
+            _sourcePointer = null;
+        }
+
         Release(ref _collection);
         Release(ref _fallback);
         Release(ref _factory);
@@ -170,25 +173,6 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
 
         // https://learn.microsoft.com/windows/win32/uxguide/vis-fonts: Segoe UI is the font for user interface text.
         return "Segoe UI";
-    }
-
-    private static IDWriteTextAnalysisSource* CreateSourcePointer(TextAnalysisSource source)
-    {
-        // TerraFX's IID of dwrite.h, which the [Guid] of the generated interface repeats (a test compares the two). Reading the
-        // attribute here (Type.GUID) linked NativeAOT's reflection into the app: the executable grew by 0.48 MB, not 0.04 MB.
-        Guid iid = IID.IID_IDWriteTextAnalysisSource;
-
-        var wrappers = new StrategyBasedComWrappers();
-        nint unknown = wrappers.GetOrCreateComInterfaceForObject(source, CreateComInterfaceFlags.None);
-        try
-        {
-            ThrowIfFailed(Marshal.QueryInterface(unknown, iid, out nint pointer), "QueryInterface(IDWriteTextAnalysisSource)");
-            return (IDWriteTextAnalysisSource*)pointer;
-        }
-        finally
-        {
-            _ = Marshal.Release(unknown);
-        }
     }
 
     private static void ThrowIfFailed(int result, string operation)
@@ -263,7 +247,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
             ThrowIfFailed(loader->QueryInterface(&iid, (void**)&local), "QueryInterface(IDWriteLocalFontFileLoader)");
             uint length;
             ThrowIfFailed(local->GetFilePathLengthFromKey(key, keySize, &length), "IDWriteLocalFontFileLoader::GetFilePathLengthFromKey");
-            string path = new(' ', (int)length);
+            string path = new('\0', (int)length);
             fixed (char* buffer = path)
             {
                 ThrowIfFailed(local->GetFilePathFromKey(key, keySize, buffer, length + 1), "IDWriteLocalFontFileLoader::GetFilePathFromKey");

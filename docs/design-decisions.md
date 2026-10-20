@@ -350,7 +350,7 @@ Decision:
   macOS/Windows は OS API 直叩き。Linux は SDL3 + wgpu + 機能別バックエンド。
   C API は `LibraryImport`。Windows の宣言は TerraFX.Interop.Windows を使う。
   消費側の COM（D3D11 / DXGI / DirectWrite）は vtable を unmanaged 関数ポインタで直接呼び、参照カウントを自分で管理する。
-  OS から呼ばれる COM（UIA プロバイダ、`IDropTarget`）は source-generated COM。
+  OS から呼ばれる COM は、`[UnmanagedCallersOnly]` の関数の vtable を持つネイティブの構造体（F1 の `IDWriteTextAnalysisSource`）。UIA プロバイダと `IDropTarget` は、その行で作り方を測って決める（§4.4.1）。
   macOS は Obj-C ランタイムを P/Invoke。block 等の扱いにくい箇所だけ薄い Obj-C shim を許す。
   OS 側には世代付きの整数IDだけを渡す（`NativeHandleTable`）。
   Core の型は UI スレッドでのみ操作する。公開 API の入口でスレッド ID を検査する。
@@ -396,6 +396,7 @@ Rejected:
   - Tmds.DBus 等のマネージド D-Bus 実装への依存（AT-SPI と通知だけには過大）
   - Win32 / COM の宣言をすべて手書きする（構造体の配置や vtable の順の誤りを、生成された宣言のように防げない）
   - 「外部 DLL ゼロ」を Linux にも約束する（fontconfig / libdbus-1 / glibc は動的依存）
+  - OS から呼ばれる COM を source-generated COM（`[GeneratedComClass]`、`StrategyBasedComWrappers`）で書く（インターフェースの属性をリフレクションで読み、NativeAOT のリフレクションの実行時がリンクされて、実行ファイルが 0.43 MB 増えた。F1、Issue #150）
 
 ---
 

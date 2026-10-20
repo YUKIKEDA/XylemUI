@@ -30,13 +30,15 @@ public sealed class DirectWriteFontProviderTests(UiThreadFixture ui)
         {
             using var provider = new DirectWriteFontProvider();
             var request = FontRequest.Default with { Family = "Segoe UI" };
-            foreach ((string tag, string family) in new[]
-            {
-                ("ja", "Yu Gothic UI"),
-                ("zh-Hans", "Microsoft YaHei UI"),
-                ("zh-Hant", "Microsoft JhengHei UI"),
-                ("ko", "Malgun Gothic"),
-            })
+            foreach (
+                (string tag, string family) in new[]
+                {
+                    ("ja", "Yu Gothic UI"),
+                    ("zh-Hans", "Microsoft YaHei UI"),
+                    ("zh-Hant", "Microsoft JhengHei UI"),
+                    ("ko", "Malgun Gothic"),
+                }
+            )
             {
                 SkipWithout(family);
                 FontMatch match = provider.ResolveFont("漢字", 0, TextLanguage.FromTag(tag), request);
@@ -221,24 +223,6 @@ public sealed class DirectWriteFontProviderTests(UiThreadFixture ui)
 
             Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
         });
-
-    /// <summary>
-    /// The [Guid] of the source-generated text-analysis interface is dwrite.h's IID, which the provider queries for: a wrong one
-    /// would make the query fail at the first resolve.
-    /// </summary>
-    /// <remarks>
-    /// Preconditions:
-    /// - None.
-    ///
-    /// Steps:
-    /// - Read the interface's GUID through reflection, and TerraFX's IID_IDWriteTextAnalysisSource.
-    ///
-    /// Expected:
-    /// - They are equal.
-    /// </remarks>
-    [Fact]
-    public void TextAnalysisSourceInterface_HasDirectWritesIid() =>
-        Assert.Equal(TerraFX.Interop.DirectX.IID.IID_IDWriteTextAnalysisSource, typeof(IDWriteTextAnalysisSourceCallback).GUID);
 
     private static void SkipWithout(string family)
     {

@@ -26,7 +26,7 @@
 | P/Invoke                | [LibraryImport（P/Invoke source generation）](https://learn.microsoft.com/dotnet/standard/native-interop/pinvoke-source-generation) | 宣言の書き方、`DisableRuntimeMarshalling`                               | 古い `DllImport` のマーシャリング規則        |
 | Win32 宣言              | [CsWin32](https://github.com/microsoft/CsWin32) の生成結果                                                                          | 構造体レイアウト・定数の確認（ビルド時のみ）                            | 生成コードへのランタイム依存                 |
 | COM vtable 直接呼び出し | [TerraFX.Interop.Windows](https://github.com/terrafx/terrafx.interop.windows) の `ID3D11Device` 等                                  | `delegate* unmanaged[Stdcall]` で vtable を呼ぶ形                       | パッケージそのもの（必要な分だけ自前で書く） |
-| OS から呼ばれる COM     | [COM source generation](https://learn.microsoft.com/dotnet/standard/native-interop/comwrappers-source-generation)                   | `[GeneratedComInterface]` / `[GeneratedComClass]`（UIA・`IDropTarget`） | RCW（`ComImport`）                           |
+| OS から呼ばれる COM     | [UnmanagedCallersOnly](https://learn.microsoft.com/dotnet/api/system.runtime.interopservices.unmanagedcallersonlyattribute)        | `[UnmanagedCallersOnly]` の関数の vtable（F1 の `TextAnalysisSource`）。source-generated COM はリフレクションを引き込む（`interop.mdc`） | RCW（`ComImport`）                           |
 | NativeAOT の静的リンク  | [Native code interop with Native AOT](https://learn.microsoft.com/dotnet/core/deploying/native-aot/interop)                         | `DirectPInvoke` と `NativeLibrary` 項目                                 | —                                            |
 
 ## 性能の書き方で開くもの（`.cursor/rules/perf.mdc` の出どころ）

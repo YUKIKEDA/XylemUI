@@ -57,9 +57,14 @@ public sealed class FontFallbackTests
     {
         using Font a = TestFont.Open();
         using Font b = TestFont.Open();
-        var provider = new ScriptedProvider(
-            [new FontMatch(a, 2, 1), new FontMatch(a, 1, 1), new FontMatch(a, 2, 1.5f), new FontMatch(null, 1, 1), new FontMatch(null, 1, 1), new FontMatch(b, 3, 1)]
-        );
+        var provider = new ScriptedProvider([
+            new FontMatch(a, 2, 1),
+            new FontMatch(a, 1, 1),
+            new FontMatch(a, 2, 1.5f),
+            new FontMatch(null, 1, 1),
+            new FontMatch(null, 1, 1),
+            new FontMatch(b, 3, 1),
+        ]);
         var runs = new List<FontRun> { new(b, 9, 9, 9) };
 
         FontFallback.Split(provider, "0123456789", TestFont.Japanese, FontRequest.Default, runs);
@@ -91,11 +96,11 @@ public sealed class FontFallbackTests
         using Font font = TestFont.Open();
         var runs = new List<FontRun>();
 
-        Assert.Throws<InvalidOperationException>(
-            () => FontFallback.Split(new ScriptedProvider([new FontMatch(font, 0, 1)]), "abc", TestFont.Japanese, FontRequest.Default, runs)
+        Assert.Throws<InvalidOperationException>(() =>
+            FontFallback.Split(new ScriptedProvider([new FontMatch(font, 0, 1)]), "abc", TestFont.Japanese, FontRequest.Default, runs)
         );
-        Assert.Throws<InvalidOperationException>(
-            () => FontFallback.Split(new ScriptedProvider([new FontMatch(font, 5, 1)]), "abc", TestFont.Japanese, FontRequest.Default, runs)
+        Assert.Throws<InvalidOperationException>(() =>
+            FontFallback.Split(new ScriptedProvider([new FontMatch(font, 5, 1)]), "abc", TestFont.Japanese, FontRequest.Default, runs)
         );
     }
 
