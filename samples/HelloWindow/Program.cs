@@ -6,6 +6,8 @@
 //       display list, of Draw (read, upload, issue), and of Present, and the interval between frames, as medians; the time to
 //       create the renderer (device, swap chain, and the shaders compiled at run time).
 //   S8b: a line of text in every frame (shaped, put in the atlas, drawn as a glyph run); its first glyph has ink on the screen.
+//   F1: a second line through the font fallback: what the test font lacks takes the fonts of Windows, and an unassigned
+//       character the bundled font's .notdef; the families of its runs, and the time to split it the first time and again.
 // Without --auto, the rectangles move until the user closes the window; a resize redraws from WM_SIZE.
 using System.Diagnostics;
 using System.Reflection;
@@ -18,6 +20,7 @@ using XylemUI.Text;
 const int AutoFrames = 120;
 const int Rectangles = 1_000;
 const string Text = "Hello, World! 日本語のテキスト";
+const string FallbackText = "Ελληνικά 中文 한국어 ͸ 😀";
 bool auto = args.Contains("--auto");
 
 UiThread.Initialize();
@@ -48,6 +51,17 @@ using var font = new Font(fontBytes);
 using var shaper = new TextShaper();
 TextLanguage japanese = TextLanguage.FromTag("ja");
 var atlas = new GlyphAtlas();
+using var fonts = new DirectWriteFontProvider();
+var fallbackRuns = new List<FontRun>();
+long privateBefore = Process.GetCurrentProcess().PrivateMemorySize64;
+long splitStart = Stopwatch.GetTimestamp();
+FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
+double firstSplitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
+long privateAfter = Process.GetCurrentProcess().PrivateMemorySize64;
+splitStart = Stopwatch.GetTimestamp();
+FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
+double splitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
+string fallbackFamilies = string.Join(", ", fallbackRuns.Select(run => $"{run.Font.FamilyName} {run.Length}"));
 string ink = "not checked";
 var build = new List<double>();
 var draw = new List<double>();
@@ -138,6 +152,10 @@ Console.WriteLine(
         + $"text={ink} closed={closed} "
         + $"reported={reported} offThread={offThread} exit={exitCode}"
 );
+Console.WriteLine(
+    $"fallback runs: {fallbackFamilies}; split {firstSplitMicroseconds:F1} us the first time, {splitMicroseconds:F1} us again; "
+        + $"private bytes +{(privateAfter - privateBefore) / 1048576.0:F1} MB"
+);
 if (frames > 0)
 {
     Console.WriteLine(
@@ -164,6 +182,15 @@ void BuildFrame(int frame, int width, int height)
     }
 
     _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8));
+
+    // The fallback's runs one after another on one pen, each shaped with its own font at the size its scale gives.
+    float pen = 420;
+    foreach (FontRun run in fallbackRuns)
+    {
+        int size = (int)MathF.Round(24 * run.Scale);
+        ReadOnlySpan<char> runText = FallbackText.AsSpan(run.Start, run.Length);
+        pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8));
+    }
 }
 
 // Some pixel of the box of the frame's first glyph is far from the clear color.

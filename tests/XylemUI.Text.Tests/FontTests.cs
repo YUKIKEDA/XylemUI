@@ -73,4 +73,44 @@ public sealed class FontTests
         Assert.Throws<ObjectDisposedException>(() => shaper.Shape(font, "A", TestFont.Japanese).ToArray());
         Assert.Throws<ObjectDisposedException>(() => atlas.TryGet(font, 41, 32, out _));
     }
+
+    /// <summary>
+    /// A font file opened by mapping it shapes as the same bytes opened from memory, and disposing the font lets the file go.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A copy of the test font in a temporary file.
+    ///
+    /// Steps:
+    /// - Open the file with Font.FromFile and the bytes with the constructor; shape "Hello, World! 日本語" with both. Dispose the
+    ///   mapped font, then delete the file.
+    ///
+    /// Expected:
+    /// - The same glyphs; the same family and units per em; the file can be deleted after the dispose (no mapping holds it).
+    /// </remarks>
+    [Fact]
+    public void FromFile_ShapesAsTheBytesAndReleasesTheFile()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"xylemui-font-{Guid.NewGuid():N}.ttf");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fonts", "XylemUITestSans.ttf"), path);
+        try
+        {
+            using var shaper = new TextShaper();
+            using Font fromBytes = TestFont.Open();
+            ShapedGlyph[] expected = shaper.Shape(fromBytes, "Hello, World! 日本語", TestFont.Japanese).ToArray();
+            Font mapped = Font.FromFile(path);
+            ShapedGlyph[] glyphs = shaper.Shape(mapped, "Hello, World! 日本語", TestFont.Japanese).ToArray();
+            (string, int) names = (mapped.FamilyName, mapped.UnitsPerEm);
+            mapped.Dispose();
+
+            Assert.Equal(expected, glyphs);
+            Assert.Equal((fromBytes.FamilyName, fromBytes.UnitsPerEm), names);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        Assert.False(File.Exists(path));
+    }
 }

@@ -12,6 +12,7 @@
 //   layout [samples]           the four layout times of 10,101 nodes in three scenes (design §3.2, row L1a)
 //   layout-loop scene kind N   one of them (kind change, content, or width; scene absolute: its change) repeated N times on one tree, for a profile
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
+//   font-fallback [splits]     the font fallback of a line: the first split, a split again, one match, the bytes (row F1)
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
 //   startup-child [--idle]     the child of startup and idle
@@ -37,6 +38,7 @@ return scenario switch
     "layout" => LayoutCost.Run(Number(1, 15)),
     "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
+    "font-fallback" => CoreCosts.FontFallbackCost(Number(1, 2_000)),
     "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
     "scope-cost" => ScopeCost.Run(),
     "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
