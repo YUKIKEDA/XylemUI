@@ -2029,7 +2029,7 @@ static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> 
 
 カラー絵文字にはCOLR/CPAL、CBDT/CBLC、sbix、SVGの複数形式があり、フォントによって採用形式が異なる。
 
-**採用（v1）: 色のグリフは、グリフと同じラスタライザ（§5.0.3）で描く。** Windows は DirectWrite の `IDWriteFactory4::TranslateColorGlyphRun` で色の層に分けて描く（GPUI と同じ。Zed v1.24.3 の `crates/gpui_windows/src/direct_write.rs` 938 行目）。macOS は Core Text が描くので、Apple Color Emoji（sbix）も描ける。Linux は FreeType の COLR/CPAL（Noto Color Emoji は COLRv1 に移行済みで、ベクターベースのため HiDPI や拡大縮小で画質が落ちない）（T4 の Grill）。
+**採用（v1）: 色のグリフは、グリフと同じラスタライザ（§5.0.3）で描く。** Windows は DirectWrite の `IDWriteFactory4::TranslateColorGlyphRun` で色の層に分けて描く（GPUI と同じ。Zed v1.24.3 の `crates/gpui_windows/src/direct_write.rs` 938 行目）。macOS は Core Text が描くので、Apple Color Emoji（sbix）も描ける。Linux は FreeType の COLR/CPAL（Noto Color Emoji は COLRv1 に移行済みで、ベクターベースのため HiDPI や拡大縮小で画質が落ちない）（T4 の Grill）。色のグリフは、単色のグリフの R8 のアトラスとは別の RGBA のアトラスと、色の層を描くシェーダの経路が要る（GPUI も色のグリフを別のアトラスで描く）ので、行 T6 で入れる（T4 の Grill）。
 
 **対象外（v1では実装しない）**: Linux の FreeType の経路での sbix、CBDT/CBLC（旧Android/旧Noto Color Emojiのビットマップ形式）、SVG-in-OpenType。同梱フォントは絵文字を持たない（§4.5、F1 の Grill）ので、絵文字は OS のフォールバックが返すフォントで描く。Linux で OS側フォールバック解決で得られたフォントがsbix等の非対応形式だった場合、色情報のないモノクロ輪郭で表示するフォールバック処理を用意する（クラッシュを避けるための最低限の縮退動作）。
 
@@ -2330,10 +2330,30 @@ flowchart TD
 
 **グリフの描き方（T4 の Grill でオーナーが決定、Issue #157）:** 比べた版は Flutter 3.47.7（とその DEPS が固定する Skia）、Avalonia 12.1.4（SkiaSharp 3.119.4）、Zed v1.24.3 の GPUI。
 
-- **ラスタライザ:** Windows は DirectWrite（`IDWriteFactory3::CreateGlyphRunAnalysis` でグレースケールのカバレッジを作る）、macOS は Core Text（行 P06）、Linux は FreeType。3 つとも Windows と macOS では OS のラスタライザで描くためである。Flutter は Windows で `SkFontMgr_New_DirectWrite`、macOS で `SkFontMgr_New_CoreText` を使う（`engine/src/flutter/txt/src/txt/platform_windows.cc` 15 行目、`platform_mac.mm` 42 行目）。Avalonia の SkiaSharp は GDI のフォントマネージャを外してビルドし、Windows では DirectWrite で描く（SkiaSharp の `native/windows/build.cake` 64 行目）。GPUI は Windows で DirectWrite、macOS で Core Text、Linux で swash。OS のラスタライザは、フォントの `gasp` 表とフォントに書かれたヒントを使い、Windows の他のアプリと同じ見た目になる。シェーピングは HarfBuzz のまま（§4.1）。`Font` は DirectWrite の font face を持つ。OS のフォントは §4.5 の `IDWriteFont` から作り、同梱フォントとテストのフォントはメモリから読む（`IDWriteInMemoryFontFileLoader`、`IDWriteFactory5`）。Windows と macOS のビルドは FreeType をリンクしない（macOS は P06 で Core Text にするときに外す）
+- **ラスタライザ:** Windows は DirectWrite（`IDWriteFactory3::CreateGlyphRunAnalysis` でグレースケールのカバレッジを作る）、macOS は Core Text（行 P06）、Linux は FreeType。3 つとも Windows と macOS では OS のラスタライザで描くためである。Flutter は Windows で `SkFontMgr_New_DirectWrite`、macOS で `SkFontMgr_New_CoreText` を使う（`engine/src/flutter/txt/src/txt/platform_windows.cc` 15 行目、`platform_mac.mm` 42 行目）。Avalonia の SkiaSharp は GDI のフォントマネージャを外してビルドし、Windows では DirectWrite で描く（SkiaSharp の `native/windows/build.cake` 64 行目）。GPUI は Windows で DirectWrite、macOS で Core Text、Linux で swash。OS のラスタライザは、フォントの `gasp` 表とフォントに書かれたヒントを使い、Windows の他のアプリと同じ見た目になる。シェーピングは HarfBuzz のまま（§4.1）。Windows の `IGlyphRasterizer`（下の「置き場所」）が、`Font` ごとに DirectWrite の font face を作る。OS のフォントは §4.5 の `IDWriteFont` から作り、同梱フォントとテストのフォントはメモリから読む（`IDWriteInMemoryFontFileLoader`、`IDWriteFactory5`）。Windows と macOS のビルドは FreeType をリンクしない（macOS は P06 で Core Text にするときに外す）
 - **位置:** 横に ¼ 画素の 4 段階のサブピクセル位置を作り分け、縦は作り分けない。GPUI（`SUBPIXEL_VARIANTS_X` が 4、`SUBPIXEL_VARIANTS_Y` が 1、`crates/gpui/src/text_system.rs` 49・52 行目）と Impeller（横に ¼ 画素、`impeller/typographer/font_glyph_pair.h` 86〜112 行目と `backends/skia/text_frame_skia.cc` 59〜62 行目）と同じ。グリフの位置を ¼ 画素に丸め、整数の部分にグリフの四角を置き、端数の段階だけずらしてラスタライズしたものをアトラスに入れる（GPUI の `crates/gpui/src/window.rs` 4748〜4757 行目と同じ）。DirectWrite は `CreateGlyphRunAnalysis` の `baselineOriginX` に端数を渡し、FreeType はアウトラインを端数だけ動かしてから描く。ベースラインは整数の画素で、`GlyphInstance` も整数の画素のまま
 - **ヒンティング:** Windows は DirectWrite の推奨に従う（`IDWriteFontFace3::GetRecommendedRenderingMode` が返す描き方と grid fit。`OUTLINE` は `NATURAL_SYMMETRIC` に替える。GPUI の `crates/gpui_windows/src/direct_write.rs` 709〜728 行目と同じ）。Skia の DirectWrite の経路も、ヒンティングが「なし」でなければ grid fit を有効にし、描き方をフォントの `gasp` 表と大きさで決める（Flutter の Skia の `src/ports/SkScalerContext_win_dw.cpp` 357〜411 行目）ので、Windows の Flutter と Avalonia も同じ考え方になる。Linux は FreeType の light（`FT_LOAD_TARGET_LIGHT`、縦だけ画素に合わせる。Skia の `kSlight` と同じ、`SkFontHost_FreeType.cpp` 969 行目。Flutter の既定は `kSlight`、`modules/skparagraph/include/TextStyle.h` 319 行目）。大きさや倍率で切り替えない
 - **ガンマとコントラスト:** グリフの画素のシェーダで、カバレッジを文字の色で補正する（GPUI の `crates/gpui_windows/src/alpha_correction.hlsl`。Windows Terminal の `dwrite.hlsl` から）。値は、Windows では起動のときに 1 回、`IDWriteRenderingParams1` の `GetGamma` と `GetGrayscaleEnhancedContrast` を読む（GPUI の `directx_renderer.rs` 853〜865 行目）。ほかの OS では GPUI の既定のガンマ 1.8、コントラスト 1.0（`crates/gpui_wgpu/src/wgpu_renderer.rs` 2585〜2595 行目）。アトラスは色によって増えない
+- **置き場所（T4 の Grill）:** `XylemUI.Text` に `IGlyphRasterizer` を置き、`GlyphAtlas` は FreeType を直接呼ばずにこれを呼ぶ。Windows の実装（DirectWrite）は `XylemUI.Platform.Windows` に置き、`Font` に対応する `IDWriteFontFace3` を手元の表に持つ（`Font` 自身は font face を持たない）。Linux の実装（FreeType）は `XylemUI.Text` に置く（行 P04）。フォントを探すのは F1 の `IFontProvider`（§4.5）、描くのは `IGlyphRasterizer` と分ける。GPUI は 2 つを OS ごとの 1 つの `PlatformTextSystem` にまとめる（`crates/gpui/src/platform.rs` 1441 行目）が、XylemUI は F1 で `IFontProvider` を分けたので、それに並べる。`XylemUI.Text` から DirectWrite を直接呼ぶと、`Text` を Windows の TFM に分けることになり、OS を問わないパッケージ（§4.1）でなくなる。T4 は単色のグリフだけで、色の層は行 T6（§4.6）で足す
+
+```csharp
+// XylemUI.Text
+public interface IGlyphRasterizer
+{
+    // ペンを整数の画素に置いたときの、グリフのインクの箱（整数の画素）。インクが無ければ幅 0
+    GlyphBox Measure(in GlyphKey glyph);
+    // カバレッジ（1 画素 1 バイト）を destination に書く。destination は Measure の箱の大きさで、行は stride バイトずつ離れる
+    void Rasterize(in GlyphKey glyph, Span<byte> destination, int stride);
+}
+
+// SubpixelX は横の段階（0〜3、¼ 画素ずつ右へ）
+public readonly record struct GlyphKey(Font Font, uint GlyphId, int PixelSize, int SubpixelX);
+
+// Left はペンから右へ、Top はベースラインから上へ
+public readonly record struct GlyphBox(int Left, int Top, int Width, int Height);
+```
+
+  `GlyphAtlas` は `Measure` で箱の大きさを知ってから場所を取り、その場所に `Rasterize` で直接書く（確保もコピーも増やさない）。アトラスのキーは `GlyphKey`
 - **比べ方と測るもの:** T4 の受け入れは Issue に書く。4 つのアプリ（XylemUI・Flutter・Avalonia・GPUI）で同じ文字列を描いた画素を並べてオーナーが目で判断し、アトラスの大きさを 4 段階の位置で測り直し、`GlyphInstance` を 1 本の配列にした理由を測る
 
 **S8b（C# 版で検証済み、Issue #51）:** アトラスのページは GPU では 1 枚のテクスチャ配列（`R8_UNORM`）のスライスで、ページの番号がそのままスライスになる。ページごとに別のテクスチャにすると、ページが変わるたびに描画を分けることになるためである。各ページはプロセスの中で一意な id を持つ。レンダラは、id が変わったページ（新しいページ、捨ててから足し直したページ）だけを丸ごと送り、他のページは変わった領域（`DirtyRegions`）だけを `UpdateSubresource` で送る。送るのは DisplayList ができた後・インスタンスを書く前（上の図の順）。テクスチャ配列は、ページがスライスより多くなったときと、上限を超えた分のページが捨てられたときに作り直す。まだ有効なスライスは GPU の上で写すので、送り直さない。こうして GPU のメモリも上限のページ数に戻る（§5.3）。レンダラは送った後に変わった領域を消すので、1 つのアトラスを描くレンダラは 1 つだけ（共有は行 P10）。ページは `MaxPages` の 2 倍（`PageLimit`）を超えない。1 フレームで上限を超えて新しいグリフを求めたとき、または `BeginFrame` を呼ばないとき、入らないグリフは `TryGet` が `false` を返し、描かない（S8b のレビュー）。プロットの LRU は、そのフレームで使っていないプロットのうち最後に使ったフレームが最も古いものを選ぶ。キャッシュから返したグリフも、そのプロットを使ったことにする。追い出したプロットは画素を 0 にして、プロット全体を変わった領域に加える。大きさは `samples/HelloText --atlas-sizing` で決めた。`docs/design.ja.md` を 1 行 80 字に切り、40 行の画面（10 行に 1 行が 20 px の見出し、他は 14 px の本文、それぞれ表示の倍率倍）を、1 フレームに 1 画面ずつ送る（毎フレーム新しい画面になる、最も重い場合）。フォントは游ゴシック（`YuGothR.ttc`）。150 % の画面は 525 グリフで、1024 px のページ 1 枚に収まる。300 % では 1024 px のページが 4 枚要る。ページ 1024 px・プロット 256 px・上限 4 ページでは、150 % でも 300 % でも追い出しは 0 で、1 フレームのラスタライズは初めて出る文字の分だけ（中央値 14、p95 57、最大 184）、GPU のメモリは 4 MB 以下だった。300 % で 128 px のプロットか上限 1〜2 ページにすると、1 フレームに 9〜11 プロットを追い出し、53〜68 グリフをラスタライズし直した。2048 px のページは 100 % の画面でも 4 MB を取る。したがって既定はページ 1024 px・プロット 256 px・上限 4 ページ（Skia の既定と同じ大きさ）。初めて出る文字が多いフレーム（最大 184 グリフ、S8a の約 20 µs で約 3.7 ms）は §11.3 の DisplayList 構築の 1.0 ms を超えるので、M1a で測る。

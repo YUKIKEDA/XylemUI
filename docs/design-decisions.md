@@ -349,6 +349,8 @@ Rejected:
   - グリフの位置を整数の画素に丸める（3 つとも横に 4 段階のサブピクセル位置を持つ。T4 の Grill）
   - FreeType の full のヒンティング（横も画素に合わせるので、サブピクセル位置と打ち消し合う）と、ヒンティングなし（100 % の画面で横線がぼやける。T4 の Grill）
   - Skia のように、ラスタライズのときに文字色の明るさ別の表を掛ける（アトラスが暗い色用と明るい色用に増え、色を 2 段階に丸める。T4 の Grill）
+  - `XylemUI.Text` から DirectWrite を直接呼ぶ（`Text` を Windows の TFM に分けることになる。`IGlyphRasterizer` を `Text` に置き、Windows の実装を Platform.Windows に置いた。T4 の Grill）
+  - カラー絵文字を T4 に入れる（RGBA のアトラスと色の層の経路が要る。行 T6 にした。T4 の Grill）
   - サブピクセル AA（行 T2）を T4 に入れる（デュアルソースのブレンドと RGB のアトラスが要る、別の大きさの仕事。T4 のすぐ後の行にした。T4 の Grill）
 
 ---
