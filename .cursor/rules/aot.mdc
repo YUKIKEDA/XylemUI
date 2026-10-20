@@ -28,3 +28,5 @@ dotnet publish samples/<Sample> -c Release -r win-x64 -o <scratch>
 Under `dotnet run`, a project with `PublishAot` reports `RuntimeFeature.IsDynamicCodeSupported` and `IsDynamicCodeCompiled` as false too. To tell the builds apart at run time, use `System.Runtime.JitInfo.GetCompiledMethodCount() > 0` (JIT).
 
 The PR's `## Verification` states the warning count (zero) and the size of the executable.
+
+A size that grew is split by what added it before the PR says so: publish with `-p:IlcGenerateMapFile=true` and compare the map files. In F1 the map showed that source-generated COM linked the reflection runtime (+0.43 MB, replaced by a hand-written vtable), and that most of `HelloWindow`'s growth was `Process` (about 286 KB) and LINQ (about 20 KB), added only to print figures (PR #152 review). A sample whose size is reported gets the feature it shows and nothing else; figures that need more code are measured in `benchmarks/XylemUI.E2E`.
