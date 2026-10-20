@@ -28,13 +28,19 @@ A comparison of approaches in the design includes the approach of each framework
 
 A claim in the design about what another implementation has or does (a library version, a framework's widget, a browser) names the file and line, or the documentation page, where it was read, and is read there before it goes in. In L3 the Grill wrote that Taffy 0.15 has sizing keywords in min and max; its `min_size` and `max_size` are `LengthPercentageAuto` (`style/mod.rs` lines 757 and 760), which the implementation found (PR #134). It was the third such error after Flutter's `Offstage` and Taffy's containing block in L2.
 
+How a cross-platform library draws on one OS is read on that OS's path: the font manager, scaler, or backend it uses there. In the T4 Grill the agent wrote that Skia rasterizes with FreeType on Windows; Flutter and SkiaSharp use Skia's DirectWrite font manager there (`txt/src/txt/platform_windows.cc`), and its scaler does not reach FreeType (`SkScalerContext_win_dw.cpp`). The rasterizer had to be asked again (PR #158).
+
 When the version of a compared framework changes, the claims that cite the old version are checked again in the new one. In L9 the design cited "the Taffy 0.9.0 that GPUI uses" seven times; Zed ships 0.13.0, where two of the claims (no sizing keywords, no `safe` alignment) no longer hold (PR #140).
 
 A design PR that changes a decision searches the whole design for the sections that restate it, and changes them in the same PR. In F1 the PR changed §4.5's bundled font, and §8.12, §4.6, §11's test mode, §4.1's diagram, and the table of failures still assumed the old one; the review found the five (PR #146).
 
 Every type in a signature the design writes is defined in the design or the code. F1's first `IFontProvider` took `in FontStyle style`, which nothing defined, so whether it carried the language could not be read (PR #146).
 
+A type in a design signature that holds a size is checked against the scale factors of §6.1 (125 %, 150 %). T4's first `GlyphKey` took `int PixelSize`, which cannot hold the 17.5 px of a 14 px font at 125 % (PR #158 review).
+
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
+
+A design that removes a dependency lists every place that calls it now and what replaces each. T4 removed FreeType from Windows without saying that `Font` creates a FreeType face when it opens and reads `FamilyName` from it (PR #158 review).
 
 A design that changes what a layout or render algorithm reads checks every cache and boundary rule against the change, the path that hits a cache included. In L1 a review found that "a child whose size the parent decided is a boundary" does not hold with the automatic minimum size, wrapping, and baseline alignment, and the re-review found that a mark set again in each run was lost in a run that hit the cache (PR #75, Issue #76).
 
