@@ -15,6 +15,7 @@ internal sealed class Scene : IDisposable
     public const int Rectangles = 1_000;
 
     private readonly Font _font;
+    private readonly DirectWriteGlyphRasterizer _rasterizer = new();
     private readonly TextShaper _shaper = new();
     private readonly TextLanguage _japanese = TextLanguage.FromTag("ja");
 
@@ -28,13 +29,14 @@ internal sealed class Scene : IDisposable
         byte[] bytes = new byte[stream.Length];
         stream.ReadExactly(bytes);
         _font = new Font(bytes);
+        Atlas = new GlyphAtlas(_rasterizer);
     }
 
     public Win32Window Window { get; }
 
     public D3D11Renderer Renderer { get; }
 
-    public GlyphAtlas Atlas { get; } = new();
+    public GlyphAtlas Atlas { get; }
 
     public DisplayList List { get; } = new();
 
@@ -68,6 +70,7 @@ internal sealed class Scene : IDisposable
     {
         Renderer.Dispose();
         _shaper.Dispose();
+        _rasterizer.Dispose();
         _font.Dispose();
         Window.Dispose();
     }

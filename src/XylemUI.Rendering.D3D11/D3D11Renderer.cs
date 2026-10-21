@@ -48,6 +48,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
     private readonly HANDLE _frameLatencyWaitable;
+    private readonly TextGamma _textGamma;
     private ID3D11RenderTargetView* _renderTarget;
     private ID3D11Buffer* _instances;
     private int _instanceCapacity;
@@ -79,7 +80,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
             CreateRenderTarget();
             _vertexShader = CreateVertexShader(device, out _inputLayout);
             _pixelShader = CreatePixelShader(device);
-            _targetConstants = CreateBuffer(device, 16, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
+            _textGamma = TextGamma.System;
+            _targetConstants = CreateBuffer(device, 32, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
             _blend = CreateBlendState(device);
             WriteTargetConstants();
             GrowInstances(256);
@@ -333,6 +335,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->VSSetShader(_vertexShader, null, 0);
         _context->VSSetConstantBuffers(0, 1, &constants);
         _context->PSSetShader(_pixelShader, null, 0);
+        _context->PSSetConstantBuffers(0, 1, &constants);
         ID3D11ShaderResourceView* atlasView = _atlasView;
         _context->PSSetShaderResources(0, 1, &atlasView);
         _context->OMSetBlendState(_blend, null, uint.MaxValue);
@@ -768,7 +771,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _context->Map((ID3D11Resource*)_targetConstants, 0, D3D11_MAP.D3D11_MAP_WRITE_DISCARD, 0, &mapped),
             "ID3D11DeviceContext::Map"
         );
-        *(Vector4*)mapped.pData = new Vector4(1f / Width, 1f / Height, 0, 0);
+        var constants = (Vector4*)mapped.pData;
+        constants[0] = new Vector4(1f / Width, 1f / Height, _textGamma.GrayscaleContrast, 0);
+        constants[1] = _textGamma.Ratios;
         _context->Unmap((ID3D11Resource*)_targetConstants, 0);
     }
 

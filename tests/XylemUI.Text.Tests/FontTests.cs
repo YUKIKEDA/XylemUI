@@ -14,7 +14,7 @@ public sealed class FontTests
     /// - Open them as a font.
     ///
     /// Expected:
-    /// - <see cref="InvalidOperationException"/> from FreeType.
+    /// - <see cref="InvalidOperationException"/> (HarfBuzz finds no glyphs in them).
     /// </remarks>
     [Fact]
     public void Open_BytesThatAreNotAFont_Throws()
@@ -25,7 +25,7 @@ public sealed class FontTests
     }
 
     /// <summary>
-    /// The face index reaches FreeType: a face the file does not have is refused, and a negative index is an argument error.
+    /// The face index reaches HarfBuzz: a face the file does not have is refused, and a negative index is an argument error.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -66,12 +66,12 @@ public sealed class FontTests
     {
         Font font = TestFont.Open();
         using var shaper = new TextShaper();
-        var atlas = new GlyphAtlas(64, 64);
+        var atlas = new GlyphAtlas(new TestRasterizer(), 64, 64);
 
         font.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => shaper.Shape(font, "A", TestFont.Japanese).ToArray());
-        Assert.Throws<ObjectDisposedException>(() => atlas.TryGet(font, 41, 32, out _));
+        Assert.Throws<ObjectDisposedException>(() => atlas.TryGet(new GlyphKey(font, 41, 32, 0), out _));
     }
 
     /// <summary>

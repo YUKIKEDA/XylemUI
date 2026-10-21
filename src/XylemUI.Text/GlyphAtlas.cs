@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using XylemUI.Text.Interop;
 
 namespace XylemUI.Text;
 
@@ -9,7 +8,8 @@ namespace XylemUI.Text;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A glyph is rasterized by FreeType the first time it is asked for, at one pixel size, and kept: the next request returns the
+/// A glyph is rasterized by the atlas's <see cref="IGlyphRasterizer"/> the first time it is asked for, at one size and subpixel
+/// step (<see cref="GlyphKey"/>), and kept: the next request returns the
 /// same region without rasterizing, and marks its plot used in the current frame. Glyphs are packed on shelves inside a plot.
 /// </para>
 /// <para>
@@ -23,12 +23,12 @@ namespace XylemUI.Text;
 /// </para>
 /// <para>
 /// The regions changed since the last <see cref="ClearDirtyRegions"/> are listed in <see cref="DirtyRegions"/>, for the GPU upload
-/// after the display list is built (design §5.0.3). Each page is a pinned array, so FreeType's output is copied straight in and
-/// the upload reads it in place. One atlas belongs to one thread, and its changes go to one renderer: the renderer clears the dirty
+/// after the display list is built (design §5.0.3). Each page is a pinned array: the rasterizer writes the coverage straight in,
+/// and the upload reads it in place. One atlas belongs to one thread, and its changes go to one renderer: the renderer clears the dirty
 /// regions after uploading them, so a second renderer of the same atlas would miss them (sharing is decided in roadmap row P10).
 /// </para>
 /// </remarks>
-public sealed unsafe class GlyphAtlas
+public sealed class GlyphAtlas
 {
     private const int Padding = 1;
 
@@ -37,19 +37,22 @@ public sealed unsafe class GlyphAtlas
     private readonly List<byte[]> _pages = [];
     private readonly List<long> _pageIds = [];
     private readonly List<Plot> _plots = [];
-    private readonly Dictionary<(int Font, uint Glyph, int Size), (AtlasGlyph Glyph, int Plot)> _glyphs = [];
+    private readonly IGlyphRasterizer _rasterizer;
+    private readonly Dictionary<GlyphKey, (AtlasGlyph Glyph, int Plot)> _glyphs = [];
     private readonly List<AtlasRegion> _dirty = [];
     private readonly int _plotsPerPage;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphAtlas"/> class.
     /// </summary>
+    /// <param name="rasterizer">Draws the glyphs the atlas does not hold yet.</param>
     /// <param name="pageSize">The width and height of a page, in pixels.</param>
     /// <param name="plotSize">The width and height of a plot, in pixels; it divides <paramref name="pageSize"/>.</param>
     /// <param name="maxPages">The number of pages kept in steady state.</param>
     /// <exception cref="ArgumentOutOfRangeException">A size is not positive, or the plot does not divide the page.</exception>
-    public GlyphAtlas(int pageSize = 1024, int plotSize = 256, int maxPages = 4)
+    public GlyphAtlas(IGlyphRasterizer rasterizer, int pageSize = 1024, int plotSize = 256, int maxPages = 4)
     {
+        ArgumentNullException.ThrowIfNull(rasterizer);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(plotSize);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxPages);
@@ -58,6 +61,7 @@ public sealed unsafe class GlyphAtlas
             throw new ArgumentOutOfRangeException(nameof(plotSize), "The plot size must divide the page size.");
         }
 
+        _rasterizer = rasterizer;
         PageSize = pageSize;
         PlotSize = plotSize;
         MaxPages = maxPages;
@@ -153,21 +157,33 @@ public sealed unsafe class GlyphAtlas
     /// <summary>
     /// Returns the region of a glyph, rasterizing it into the atlas the first time, and marks it used in the current frame.
     /// </summary>
-    /// <param name="font">The font.</param>
-    /// <param name="glyphId">The glyph, from shaping.</param>
-    /// <param name="pixelSize">The size in pixels per em.</param>
+    /// <param name="key">The glyph, its size, and its subpixel step.</param>
     /// <param name="glyph">The glyph's region and bearings.</param>
     /// <returns>
     /// <see langword="false"/> when the glyph is larger than a plot, or when there is no room: every plot was used in the current
     /// frame and the atlas has <see cref="PageLimit"/> pages. A glyph with no ink always fits.
     /// </returns>
-    /// <exception cref="InvalidOperationException">FreeType could not render the glyph.</exception>
+    /// <exception cref="ArgumentException">The key has no font, a size that is not positive, or a subpixel step out of range.</exception>
+    /// <exception cref="InvalidOperationException">The rasterizer could not draw the glyph.</exception>
     /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
-    public bool TryGet(Font font, uint glyphId, int pixelSize, out AtlasGlyph glyph)
+    public bool TryGet(in GlyphKey key, out AtlasGlyph glyph)
     {
-        ArgumentNullException.ThrowIfNull(font);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelSize);
-        if (_glyphs.TryGetValue((font.Id, glyphId, pixelSize), out (AtlasGlyph Glyph, int Plot) cached))
+        if (key.Font is null)
+        {
+            throw new ArgumentException("The glyph key has no font.", nameof(key));
+        }
+
+        if (!(key.PixelSize > 0) || !float.IsFinite(key.PixelSize))
+        {
+            throw new ArgumentException($"The glyph size {key.PixelSize} is not a positive number.", nameof(key));
+        }
+
+        if ((uint)key.SubpixelX >= GlyphPosition.SubpixelSteps)
+        {
+            throw new ArgumentException($"The subpixel step {key.SubpixelX} is not from 0 to {GlyphPosition.SubpixelSteps - 1}.", nameof(key));
+        }
+
+        if (_glyphs.TryGetValue(key, out (AtlasGlyph Glyph, int Plot) cached))
         {
             if (cached.Plot >= 0)
             {
@@ -178,29 +194,22 @@ public sealed unsafe class GlyphAtlas
             return true;
         }
 
-        return TryRasterize(font, glyphId, pixelSize, out glyph);
+        return TryRasterize(key, out glyph);
     }
 
-    private bool TryRasterize(Font font, uint glyphId, int pixelSize, out AtlasGlyph glyph)
+    private bool TryRasterize(in GlyphKey key, out AtlasGlyph glyph)
     {
-        FreeType.GlyphSlotRec* slot = font.Render(glyphId, pixelSize);
+        GlyphBox box = _rasterizer.Measure(key);
         RasterizeCount++;
-        FreeType.Bitmap bitmap = slot->Bitmap;
-        int width = (int)bitmap.Width;
-        int height = (int)bitmap.Rows;
-        var key = (font.Id, glyphId, pixelSize);
+        int width = box.Width;
+        int height = box.Height;
 
         // A glyph with no ink (a space) needs no room, so it fits even when every plot is full.
         if (width == 0 || height == 0)
         {
-            glyph = new AtlasGlyph(0, 0, 0, 0, 0, slot->BitmapLeft, slot->BitmapTop);
+            glyph = new AtlasGlyph(0, 0, 0, 0, 0, box.Left, box.Top);
             _glyphs.Add(key, (glyph, -1));
             return true;
-        }
-
-        if (bitmap.PixelMode != FreeType.PixelModeGray)
-        {
-            throw new InvalidOperationException($"FreeType rendered glyph {glyphId} in pixel mode {bitmap.PixelMode}, not gray.");
         }
 
         if (width + (2 * Padding) > PlotSize || height + (2 * Padding) > PlotSize)
@@ -220,17 +229,13 @@ public sealed unsafe class GlyphAtlas
         ref Plot plot = ref CollectionsMarshal.AsSpan(_plots)[plotIndex];
         byte[] page = _pages[plot.Page];
 
-        // The bitmap has `rows` rows of `width` bytes, `pitch` bytes apart (negative pitch: bottom-up). FindRoom placed the
-        // region inside the plot, so it lies inside the page.
-        for (int row = 0; row < height; row++)
-        {
-            var source = new ReadOnlySpan<byte>(bitmap.Buffer + ((long)row * bitmap.Pitch), width);
-            source.CopyTo(page.AsSpan(((y + row) * PageSize) + x, width));
-        }
+        // FindRoom placed the region inside the plot, so its rows lie inside the page, PageSize bytes apart.
+        int start = (y * PageSize) + x;
+        _rasterizer.Rasterize(key, page.AsSpan(start, ((height - 1) * PageSize) + width), PageSize);
 
         plot.LastUsedFrame = Frame;
         plot.Keys.Add(key);
-        glyph = new AtlasGlyph(plot.Page, x, y, width, height, slot->BitmapLeft, slot->BitmapTop);
+        glyph = new AtlasGlyph(plot.Page, x, y, width, height, box.Left, box.Top);
         _glyphs.Add(key, (glyph, plotIndex));
         _dirty.Add(new AtlasRegion(plot.Page, x, y, width, height));
         return true;
@@ -299,7 +304,7 @@ public sealed unsafe class GlyphAtlas
     private void Evict(int plotIndex)
     {
         ref Plot plot = ref CollectionsMarshal.AsSpan(_plots)[plotIndex];
-        foreach ((int Font, uint Glyph, int Size) key in CollectionsMarshal.AsSpan(plot.Keys))
+        foreach (GlyphKey key in CollectionsMarshal.AsSpan(plot.Keys))
         {
             _ = _glyphs.Remove(key);
         }
@@ -334,7 +339,7 @@ public sealed unsafe class GlyphAtlas
         int page = _pages.Count - 1;
         for (int i = _plots.Count - 1; i >= page * _plotsPerPage; i--)
         {
-            foreach ((int Font, uint Glyph, int Size) key in CollectionsMarshal.AsSpan(_plots[i].Keys))
+            foreach (GlyphKey key in CollectionsMarshal.AsSpan(_plots[i].Keys))
             {
                 _ = _glyphs.Remove(key);
             }
@@ -361,7 +366,7 @@ public sealed unsafe class GlyphAtlas
         public readonly int Page = page;
         public readonly int X = x;
         public readonly int Y = y;
-        public readonly List<(int Font, uint Glyph, int Size)> Keys = [];
+        public readonly List<GlyphKey> Keys = [];
         public long LastUsedFrame;
         private readonly int _size = size;
         private int _shelfX = Padding;

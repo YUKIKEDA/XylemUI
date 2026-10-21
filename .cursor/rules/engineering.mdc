@@ -29,7 +29,7 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 ## Gate
 
-`./build.ps1` before a PR. It runs tool restore, the CSharpier check, the native libraries (`vendor/build.ps1`: HarfBuzz and FreeType from the sources pinned in `vendor/versions.lock`, with CMake and MSVC; it does nothing when they are up to date), restore, then for Release and for Debug a build and every test project. Release is what ships; Debug runs the checks that only exist there (`Invariant.Fail` throws instead of ending the process). Hosted CI runs the same script.
+`./build.ps1` before a PR. It runs tool restore, the CSharpier check, the native libraries (`vendor/build.ps1`: HarfBuzz from the source pinned in `vendor/versions.lock`, with CMake and MSVC; it does nothing when the library is up to date), restore, then for Release and for Debug a build and every test project. Release is what ships; Debug runs the checks that only exist there (`Invariant.Fail` throws instead of ending the process). Hosted CI runs the same script.
 
 A new git worktree has no `vendor/out` (it is build output, gitignored), so a NativeAOT link there cannot open `harfbuzz.lib` (`LNK1181`, L1a). Run `vendor/build.ps1` in it, or copy `vendor/out` from the main checkout for a scratch comparison.
 

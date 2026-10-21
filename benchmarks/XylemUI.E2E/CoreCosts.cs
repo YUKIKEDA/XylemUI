@@ -76,21 +76,40 @@ internal static class CoreCosts
     {
         using var report = new Report("glyph-refused");
         using Font font = OpenFont();
-        using var shaper = new TextShaper();
-        uint[] glyphs = [.. shaper.Shape(font, Word, TextLanguage.FromTag("ja")).ToArray().Select(g => g.GlyphId).Distinct()];
 
-        // 64 px pages of 32 px plots, at most 1 page (a limit of 2): the 8 Japanese glyphs at 24 px fill both pages; "W" is refused.
-        var atlas = new GlyphAtlas(pageSize: 64, plotSize: 32, maxPages: 1);
-        foreach (uint glyph in glyphs)
+        // 64 px pages of 32 px plots, at most 1 page (a limit of 2): the glyphs of the test font at 24 px, from glyph 1 on, fill
+        // both pages, and the glyphs that do not fit are refused at every request. The glyphs are tried until one is refused, so
+        // that the scene does not depend on the rasterizer's boxes (FreeType filled the pages with the 8 Japanese glyphs; with
+        // DirectWrite, two of them share a plot, row T4).
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        var atlas = new GlyphAtlas(rasterizer, pageSize: 64, plotSize: 32, maxPages: 1);
+        GlyphKey refused = default;
+        GlyphKey second = default;
+        for (uint glyph = 1; second.Font is null; glyph++)
         {
-            _ = atlas.TryGet(font, glyph, 24, out _);
+            if (glyph > 10_000)
+            {
+                throw new InvalidOperationException("The atlas took every glyph of the test font; nothing was refused.");
+            }
+
+            var key = new GlyphKey(font, glyph, 24, 0);
+            if (!atlas.TryGet(key, out _))
+            {
+                (refused, second) = refused.Font is null ? (key, second) : (refused, key);
+            }
         }
 
-        var cachedAtlas = new GlyphAtlas();
-        _ = cachedAtlas.TryGet(font, 56, 24, out _);
-        report.Number("refused_us", Time(requests, () => atlas.TryGet(font, 56, 24, out _)));
-        report.Number("cached_us", Time(requests, () => cachedAtlas.TryGet(font, 56, 24, out _)));
-        report.Number("refused_count", atlas.RefusedCount);
+        var cachedAtlas = new GlyphAtlas(rasterizer);
+        _ = cachedAtlas.TryGet(refused, out _);
+        int before = atlas.RefusedCount;
+        report.Number("refused_us", Time(requests, () => atlas.TryGet(refused, out _)));
+
+        // Two refused glyphs in turn: the rasterizer keeps the analysis of the last glyph it measured, so one glyph refused again
+        // and again does not make it again; two in turn do.
+        bool flip = false;
+        report.Number("refused_alternating_us", Time(requests, () => atlas.TryGet((flip = !flip) ? refused : second, out _)));
+        report.Number("cached_us", Time(requests, () => cachedAtlas.TryGet(refused, out _)));
+        report.Number("refused_count", atlas.RefusedCount - before);
         return 0;
     }
 

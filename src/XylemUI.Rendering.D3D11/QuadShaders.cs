@@ -12,8 +12,16 @@ namespace XylemUI.Rendering.D3D11;
 /// <para>
 /// A glyph's quad lies on whole pixels and is as large as its coverage, so each pixel loads one texel of its atlas page
 /// (<c>Load</c>, no filtering): the texel is the pixel's position less the quad's origin plus the glyph's origin in the page. The
-/// coverage scales the color's alpha (grayscale anti-aliasing, design §5.0.3). The output is premultiplied, for the blend state
+/// coverage is corrected for the text's color with the gamma and contrast of Windows (<see cref="TextGamma"/>, design §5.0.3)
+/// and scales the color's alpha (grayscale anti-aliasing). The output is premultiplied, for the blend state
 /// <c>ONE, INV_SRC_ALPHA</c>.
+/// </para>
+/// <para>
+/// The correction is GPUI's (Zed v1.24.3, <c>crates/gpui_windows/src/alpha_correction.hlsl</c>, function
+/// <c>apply_contrast_and_gamma_correction</c>), adapted from Windows Terminal's <c>DWrite_GrayscaleBlend</c>
+/// (<c>src/renderer/atlas/dwrite.hlsl</c> at commit 1283c0f; Copyright (c) Microsoft Corporation, MIT License). Windows Terminal
+/// weighs the color 0.25, 0.5, 0.25 for the gamma correction; GPUI, and this shader, weigh it 0.30, 0.59, 0.11 for both steps.
+/// The corrected coverage is clamped to 0..1, so that the premultiplied output stays in range.
 /// </para>
 /// </remarks>
 internal static class QuadShaders
@@ -23,7 +31,7 @@ internal static class QuadShaders
     /// </summary>
     public static ReadOnlySpan<byte> Source =>
         """
-            cbuffer Target : register(b0) { float2 InverseSize; float2 Unused; };
+            cbuffer Target : register(b0) { float2 InverseSize; float GrayscaleContrast; float Unused; float4 GammaRatios; };
             Texture2DArray<float> Atlas : register(t0);
             struct VertexIn
             {
@@ -47,7 +55,12 @@ internal static class QuadShaders
                 float alpha = input.color.a;
                 if (input.atlas.z >= 0)
                 {
-                    alpha *= Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0));
+                    float coverage = Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0));
+                    float brightness = dot(input.color.rgb, float3(0.30, 0.59, 0.11));
+                    float k = GrayscaleContrast * saturate(4.0 * (0.75 - brightness));
+                    float contrasted = coverage * (k + 1.0) / (coverage * k + 1.0);
+                    float4 g = GammaRatios;
+                    alpha *= saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * brightness + g.y) * contrasted + (g.z * brightness + g.w)));
                 }
                 return float4(input.color.rgb * alpha, alpha);
             }

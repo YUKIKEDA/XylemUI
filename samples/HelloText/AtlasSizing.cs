@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
+using XylemUI.Platform.Windows;
 using XylemUI.Text;
 
 // The measurement that picks the atlas's page size, plot size, and page limit (roadmap row S8b, design §5.0.3): a Japanese
 // screen scrolled one line per frame through a long text, for each configuration. A screen is 40 lines of 80 characters; every
-// tenth line is a heading of 20 px, the others body text of 14 px, both times the display scale (150 % makes them 30 and 21 px).
-// The text is shaped line by line and every glyph is put in the atlas, as DisplayList.DrawText does.
+// tenth line is a heading of 20 px, the others body text of 14 px, both times the display scale and not rounded (150 % makes them
+// 30 and 21 px, 125 % 25 and 17.5 px). The text is shaped line by line and every glyph is put in the atlas at the subpixel step
+// of its pen, each line starting on a whole pixel, as DisplayList.DrawText does (roadmap row T4). DirectWrite draws the glyphs.
 //
 //   HelloText --atlas-sizing <font file> [face index] [scale] [lines per frame] [text file]
 //
@@ -13,7 +15,7 @@ using XylemUI.Text;
 //
 // It prints, per configuration: the GPU memory of the pages at the end (pageSize² bytes per page) and the most pages at once;
 // the glyphs rasterized in the first frame; and, over the scrolling frames, the rasterizations and evictions per frame (median,
-// p95, max) and the frames that rasterized more than 50 glyphs (about 1 ms at the measured 20 µs per glyph).
+// p95, max), the frames that rasterized more than 50 glyphs, and the time of the whole run.
 internal static class AtlasSizing
 {
     private const int LinesPerScreen = 40;
@@ -24,17 +26,18 @@ internal static class AtlasSizing
         string[] lines = Lines(File.ReadAllText(textPath));
         using var font = new Font(File.ReadAllBytes(fontPath), faceIndex);
         using var shaper = new TextShaper();
+        using var rasterizer = new DirectWriteGlyphRasterizer();
         TextLanguage japanese = TextLanguage.FromTag("ja");
         Console.WriteLine(
             $"atlas sizing: {Path.GetFileName(fontPath)} face {faceIndex}, scale {scale}, {step} lines per frame, {lines.Length} lines of {CharactersPerLine} from "
                 + $"{Path.GetFileName(textPath)}, {LinesPerScreen} lines per screen"
         );
         Console.WriteLine("page plot max | MB end, pages max | first | raster/frame med p95 max | evict/frame med p95 max | frames > 50 | ms");
-        int body = (int)Math.Round(14 * scale);
-        int heading = (int)Math.Round(20 * scale);
+        float body = (float)(14 * scale);
+        float heading = (float)(20 * scale);
         foreach ((int page, int plot, int maxPages) in Configurations())
         {
-            var atlas = new GlyphAtlas(page, plot, maxPages);
+            var atlas = new GlyphAtlas(rasterizer, page, plot, maxPages);
             var rasterized = new List<int>();
             var evicted = new List<int>();
             int first = 0;
@@ -48,10 +51,14 @@ internal static class AtlasSizing
                 int evictBefore = atlas.EvictionCount;
                 for (int line = top; line < top + LinesPerScreen; line++)
                 {
-                    int size = line % 10 == 0 ? heading : body;
+                    float size = line % 10 == 0 ? heading : body;
+                    float unit = size / font.UnitsPerEm;
+                    long pen = 0;
                     foreach (ShapedGlyph glyph in shaper.Shape(font, lines[line], japanese))
                     {
-                        _ = atlas.TryGet(font, glyph.GlyphId, size, out _);
+                        _ = GlyphPosition.Snap((pen + glyph.XOffset) * unit, out int subpixel);
+                        _ = atlas.TryGet(new GlyphKey(font, glyph.GlyphId, size, subpixel), out _);
+                        pen += glyph.XAdvance;
                     }
                 }
 
