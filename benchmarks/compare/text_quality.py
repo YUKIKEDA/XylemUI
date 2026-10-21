@@ -6,9 +6,11 @@
 #   python -I benchmarks/compare/text_quality.py <out directory> <name>=<light.png>,<dark.png> ...
 #
 # The lines are the bands of rows with ink, from the top: 16 of them, a sample line and a probe line for Segoe UI, then Yu Gothic
-# UI, at 12, 14, 16, and 20 px. A probe line, from its first to its last inked column, is cut into 16 equal windows, one per
-# stem (at small sizes an anti-aliased stem touches the next, so a threshold does not part them); a stem's center is the
-# ink-weighted mean column of its window. A stem lies well inside its window: it is off by far less than the window's half. The position error is the distance of each center from the
+# UI, at 12, 14, 16, and 20 px. In a probe line each stem gets a window of one advance, in one rigid grid whose advance and
+# offset put its edges on the least ink, between the stems. At small sizes an
+# anti-aliased stem touches the next, so a threshold does not part them; windows that start at a stem's edge take the next
+# stem's edge (it moved the end stems of 24 px lines by 0.3 px), and windows moved one by one onto their stems drift onto the
+# next one where stems touch. A stem's center is the ink-weighted mean column of its window. The position error is the distance of each center from the
 # least-squares line through the 16 centers (the max and the root mean square, in pixels): a glyph placed on whole pixels is
 # off by up to half a pixel, one placed on quarters by up to an eighth. The darkness is, for each stem, the coverage of its most
 # inked column averaged over the middle half of the line's rows (0 to 1), and the mean of the 16. Coverage is the distance of a
@@ -48,12 +50,34 @@ def stems(ink: np.ndarray, top: int, bottom: int) -> tuple[list[float], list[flo
     band = ink[top:bottom]
     profile = band.sum(axis=0)
     inked = np.nonzero(profile > profile.max() * 0.02)[0]
-    first, last = int(inked[0]), int(inked[-1])
-    period = (last - first + 1) / 16
+    first, last = float(inked[0]), float(inked[-1])
     middle = band[(bottom - top) // 4 : (bottom - top) * 3 // 4]
+    columns_at = np.arange(len(profile))
+
+    # One rigid grid of 16 windows, one advance wide. The advance lies between the span from the first to the last inked column
+    # over 16 (stems as wide as the advance) and over 15 (stems one column wide); of the advances in steps of 0.01 px and the
+    # offsets in steps of 0.05 px, the grid whose 17 edges fall on the least ink, with ink in every window.
+    def windows(offset: float, period: float) -> list[np.ndarray]:
+        found = []
+        for stem in range(16):
+            low = int(np.ceil(offset + ((stem - 0.5) * period)))
+            high = int(np.ceil(offset + ((stem + 0.5) * period)))
+            found.append(np.arange(max(low, 0), min(high, len(profile))))
+        return found
+
+    best, best_cost = None, None
+    for period in np.arange((last - first) / 16, (last - first) / 15 + 0.005, 0.01):
+        for offset in first + (np.arange(int(period / 0.05) + 1) * 0.05):
+            grid = windows(offset, period)
+            if any(len(window) == 0 or profile[window].sum() == 0 for window in grid):
+                continue
+            edges = offset + ((np.arange(17) - 0.5) * period)
+            cost = float(np.interp(edges, columns_at, profile).sum())
+            if best_cost is None or cost < best_cost:
+                best, best_cost = grid, cost
+
     centers, darkness = [], []
-    for stem in range(16):
-        columns = np.arange(int(round(first + stem * period)), int(round(first + (stem + 1) * period)))
+    for columns in best:
         weights = profile[columns]
         centers.append(float((columns * weights).sum() / weights.sum()))
         darkness.append(float(middle[:, columns].mean(axis=0).max()))
