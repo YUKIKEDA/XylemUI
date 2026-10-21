@@ -304,13 +304,17 @@ internal static class LayoutScene
 // logical pixels: the control filled with the background; for Segoe UI, then Yu Gothic UI, at 12, 14, 16, and 20 px, a sample
 // line with its top at y and a probe line of 16 "l" with its top at y + 1.8 size, then y grows by 3.6 size, from y 12; every line
 // starts at x 16. Black on white, or white on black with --dark. Characters a family lacks take Avalonia's fallback. Avalonia's
-// own defaults for text (no TextOptions set).
+// own defaults for text (no TextOptions set). Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24,
+// 32, and 48 px, each with its top at y and its left at x 16, 120, 270, and 470.
 internal sealed class TextSceneControl : Control
 {
     private const string Sample = "Hamburgefonstiv 0123 日本語のテキスト、ひらがな";
     private const string Probe = "llllllllllllllll";
     private static readonly string[] Families = ["Segoe UI", "Yu Gothic UI"];
     private static readonly double[] Sizes = [12, 14, 16, 20];
+    private const string Emoji = "😀🎉👍❤️🇯🇵";
+    private static readonly double[] EmojiSizes = [16, 24, 32, 48];
+    private static readonly double[] EmojiLefts = [16, 120, 270, 470];
 
     public override void Render(DrawingContext context)
     {
@@ -333,6 +337,15 @@ internal sealed class TextSceneControl : Control
                 );
                 y += 3.6 * size;
             }
+        }
+
+        var emoji = new Typeface(new FontFamily("Segoe UI Emoji"));
+        for (int i = 0; i < EmojiSizes.Length; i++)
+        {
+            context.DrawText(
+                new FormattedText(Emoji, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, emoji, EmojiSizes[i], ink),
+                new Point(EmojiLefts[i], y)
+            );
         }
     }
 }

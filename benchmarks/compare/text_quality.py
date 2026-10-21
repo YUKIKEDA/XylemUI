@@ -89,8 +89,10 @@ def stems(ink: np.ndarray, top: int, bottom: int) -> tuple[list[float], list[flo
 def measure(path: str, dark: bool) -> list[dict]:
     ink = coverage(path, dark)
     found = bands(ink)
-    if len(found) != 16:
-        raise SystemExit(f"{path}: {len(found)} lines of ink, not 16")
+    # The 16 lines of text, then the emoji line (row T6), which is only compared by eye.
+    if len(found) < 16:
+        raise SystemExit(f"{path}: {len(found)} lines of ink, fewer than 16")
+    found = found[:16]
     lines = []
     for index, (top, bottom) in enumerate(found[1::2]):
         centers, darkness = stems(ink, top, bottom)
@@ -114,12 +116,19 @@ def sheet(out: Path, pictures: dict[str, str], scheme: str) -> None:
     # One block per app, from the top: its sample and probe lines of Segoe UI at 12 and 14 px, the left 300 pixels, enlarged 3
     # times, under the app's name.
     zoom, width, blocks = 3, 300, []
+    emoji_blocks = []
     dark = scheme == "dark"
     paper = (0, 0, 0) if dark else (255, 255, 255)
     for name, path in pictures.items():
         image = Image.open(path).convert("RGB")
         found = bands(coverage(path, dark))
         parts = [image.crop((0, found[line][0] - 2, width, found[line][1] + 2)) for line in (0, 1, 2, 3)]
+        if len(found) > 16:
+            emoji = image.crop((0, found[16][0] - 2, min(image.width, 760), found[-1][1] + 2))
+            labeled = Image.new("RGB", (emoji.width, emoji.height + 12), paper)
+            ImageDraw.Draw(labeled).text((2, 0), name, fill=(255, 0, 0))
+            labeled.paste(emoji, (0, 12))
+            emoji_blocks.append(labeled)
         block = Image.new("RGB", (width, sum(part.height for part in parts) + 12), paper)
         ImageDraw.Draw(block).text((2, 0), name, fill=(255, 0, 0))
         y = 12
@@ -133,6 +142,14 @@ def sheet(out: Path, pictures: dict[str, str], scheme: str) -> None:
         combined.paste(block, (0, y))
         y += block.height + 6
     combined.save(out / f"text-{scheme}.png")
+    if emoji_blocks:
+        sheet_width = max(block.width for block in emoji_blocks)
+        emoji_sheet = Image.new("RGB", (sheet_width, sum(block.height for block in emoji_blocks) + 6 * (len(emoji_blocks) - 1)), (128, 128, 128))
+        y = 0
+        for block in emoji_blocks:
+            emoji_sheet.paste(block, (0, y))
+            y += block.height + 6
+        emoji_sheet.save(out / f"emoji-{scheme}.png")
 
 
 def same_lines(first: str, other: str, dark: bool) -> int:
@@ -140,7 +157,7 @@ def same_lines(first: str, other: str, dark: bool) -> int:
     b = np.asarray(Image.open(other).convert("RGB"), dtype=np.int32)
     width = min(a.shape[1], b.shape[1]) - 20
     same = 0
-    for top, bottom in bands(coverage(first, dark)):
+    for top, bottom in bands(coverage(first, dark))[:16]:
         line = a[top:bottom, :width]
         for shift in range(-8, 9):
             if top + shift >= 0 and bottom + shift <= b.shape[0] and np.array_equal(line, b[top + shift : bottom + shift, :width]):

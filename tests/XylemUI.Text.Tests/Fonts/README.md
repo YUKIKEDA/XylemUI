@@ -15,3 +15,18 @@ python -m fontTools.subset NotoSansJP-Regular-full.ttf --unicodes="U+0020-007E" 
 
 The expected glyph ids and advances in the tests were read from this file with fontTools (`TTFont.getGlyphID`, `hmtx`), not with
 HarfBuzz, so they are an independent reference.
+
+## Color test font
+
+`XylemUITestColor.ttf` is `XylemUITestSans.ttf` with a COLRv0 table and a palette, for the tests of color glyphs (roadmap row
+T6): "H" (glyph 41) is two layers, "H" in the text's color (palette index 0xFFFF) and "I" in red (palette entry 0); "O" (glyph 48)
+is one layer, "O" in blue (palette entry 1). Made with fontTools 4.61.1:
+
+```python
+from fontTools.ttLib import TTFont
+from fontTools.colorLib.builder import buildCOLR, buildCPAL
+font = TTFont("XylemUITestSans.ttf")
+font["COLR"] = buildCOLR({"H": [("H", 0xFFFF), ("I", 0)], "O": [("O", 1)]}, version=0)
+font["CPAL"] = buildCPAL([[(1.0, 0.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0)]])
+font.save("XylemUITestColor.ttf")
+```

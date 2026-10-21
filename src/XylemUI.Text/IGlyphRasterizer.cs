@@ -13,7 +13,9 @@ public interface IGlyphRasterizer
 {
     /// <summary>
     /// Returns the box of the glyph's ink, in whole pixels, with the pen on a whole pixel and the glyph shifted right by its
-    /// subpixel step, for the key's kind of coverage.
+    /// subpixel step, for the key's kind of coverage. For a color glyph asked for as grayscale or ClearType, it only says that the
+    /// glyph is a color glyph (<see cref="GlyphBox.IsColor"/>), and whether it has a layer in the text's color; the atlas then asks for
+    /// the <see cref="GlyphCoverage.Color"/> key.
     /// </summary>
     /// <param name="glyph">The glyph.</param>
     /// <returns>The box; its width or height is 0 for a glyph with no ink (a space).</returns>
@@ -23,7 +25,8 @@ public interface IGlyphRasterizer
     /// <summary>
     /// Writes the glyph's coverage into <paramref name="destination"/>: the rows of the box <see cref="Measure"/> returns, each
     /// <paramref name="stride"/> bytes after the last. <see cref="GlyphCoverage.Gray"/> is one byte per pixel;
-    /// <see cref="GlyphCoverage.Rgb"/> is four, red, green, and blue coverage and a fourth byte left as it is.
+    /// <see cref="GlyphCoverage.Rgb"/> is four, red, green, and blue coverage and a fourth byte left as it is;
+    /// <see cref="GlyphCoverage.Color"/> is four, premultiplied blue, green, red, and alpha.
     /// </summary>
     /// <param name="glyph">The glyph.</param>
     /// <param name="destination">The room for the box, from its top-left pixel.</param>

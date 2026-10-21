@@ -12,5 +12,17 @@ namespace XylemUI.Text;
 /// <param name="SubpixelX">
 /// How far right of a whole pixel the glyph is drawn, in quarters of a pixel: 0 to <see cref="GlyphPosition.SubpixelSteps"/> − 1.
 /// </param>
-/// <param name="Coverage">Grayscale or ClearType coverage; the two are different glyphs in the atlas.</param>
-public readonly record struct GlyphKey(Font Font, uint GlyphId, float PixelSize, int SubpixelX, GlyphCoverage Coverage = GlyphCoverage.Gray);
+/// <param name="Coverage">Grayscale, ClearType, or color; each is a different glyph in the atlas.</param>
+/// <param name="TextColor">
+/// For a color glyph with a layer painted in the text's color, that color, opaque, packed as red in the low byte, then green and
+/// blue, and 255 in the high byte; 0 for every other glyph. The text's alpha is applied when the glyph is drawn, not here (design
+/// §5.0.3, "Color glyphs").
+/// </param>
+public readonly record struct GlyphKey(
+    Font Font,
+    uint GlyphId,
+    float PixelSize,
+    int SubpixelX,
+    GlyphCoverage Coverage = GlyphCoverage.Gray,
+    uint TextColor = 0
+);

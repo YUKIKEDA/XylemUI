@@ -7,4 +7,8 @@ namespace XylemUI.Text;
 /// <param name="Top">The top edge, above the baseline.</param>
 /// <param name="Width">The width; 0 for a glyph with no ink.</param>
 /// <param name="Height">The height; 0 for a glyph with no ink.</param>
-public readonly record struct GlyphBox(int Left, int Top, int Width, int Height);
+/// <param name="IsColor">
+/// Whether the glyph is a color glyph: the atlas keeps it as <see cref="GlyphCoverage.Color"/>, whatever kind it was asked for in.
+/// </param>
+/// <param name="UsesTextColor">Whether the color glyph has a layer painted in the text's color.</param>
+public readonly record struct GlyphBox(int Left, int Top, int Width, int Height, bool IsColor = false, bool UsesTextColor = false);

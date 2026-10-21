@@ -10,4 +10,16 @@ namespace XylemUI.Text;
 /// <param name="Height">The coverage height.</param>
 /// <param name="BearingX">The left edge of the coverage, right of the pen.</param>
 /// <param name="BearingY">The top edge of the coverage, above the baseline.</param>
-public readonly record struct AtlasGlyph(int Page, int X, int Y, int Width, int Height, int BearingX, int BearingY);
+/// <param name="Coverage">
+/// The kind of the page the glyph is on: the kind it was asked for, or <see cref="GlyphCoverage.Color"/> for a color glyph.
+/// </param>
+public readonly record struct AtlasGlyph(
+    int Page,
+    int X,
+    int Y,
+    int Width,
+    int Height,
+    int BearingX,
+    int BearingY,
+    GlyphCoverage Coverage = GlyphCoverage.Gray
+);
