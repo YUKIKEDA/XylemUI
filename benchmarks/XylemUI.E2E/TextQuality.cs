@@ -13,7 +13,8 @@ namespace XylemUI.E2E;
 // size, then y grows by 3.6 size, from y 12; every line starts at x 16. Black on white, or white on black with --dark. The text
 // is drawn as the window's TextRendering says (ClearType where Windows and the monitor allow it, roadmap row T2), or in grayscale
 // with --gray, as T4 drew it. With --frames N it draws N frames instead of waiting for the window to close, and reports the CPU
-// time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out).
+// time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out), with the
+// atlas's pages of each kind and their bytes at the end.
 //
 // XylemUI does not handle the display's scale yet, so this scene makes the process per-monitor DPI aware and draws in physical
 // pixels at the window's scale, as a DPI-aware app does: sizes and positions are the logical ones times the scale, and the
@@ -137,6 +138,16 @@ internal static class TextQuality
             report.Text("coverage", rendering.Coverage.ToString());
             report.Number("glyphs", list.GlyphCount);
             report.Number("draws", renderer.LastDrawCount);
+            foreach (GlyphCoverage kind in (GlyphCoverage[])[GlyphCoverage.Gray, GlyphCoverage.Rgb])
+            {
+                int pages = atlas.GetPageCount(kind);
+                report.Number($"atlas_pages_{kind}".ToLowerInvariant(), pages);
+                report.Number(
+                    $"atlas_bytes_{kind}".ToLowerInvariant(),
+                    (long)pages * atlas.PageSize * atlas.PageSize * GlyphAtlas.BytesPerPixel(kind)
+                );
+            }
+
             report.Series("build_ms", [.. build.Skip(Warm)]);
             report.Series("draw_ms", [.. draw.Skip(Warm)]);
             report.Series("gpu_ms", [.. gpu.Skip(Warm)]);

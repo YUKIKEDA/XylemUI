@@ -3,7 +3,7 @@
 //   dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>, then <dir>/XylemUI.E2E.exe <scenario>.
 // Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
-//   idle [runs]                CPU time and memory of 10 idle seconds after the first frame
+//   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
 //   startup-check [runs]       in one run, the desktop image with the marker against the frame statistics (the outside check)
 //   frames [frames] [--warp]   CPU stages, GPU time, present latency, intervals, missed frames of the scene
 //                              (--gray draws its text in grayscale instead of the window's ClearType, row T2)
@@ -32,8 +32,8 @@ int Number(int index, int fallback) =>
 return scenario switch
 {
     "startup" => Startup.Launch(Number(1, 10)),
-    "startup-child" => Startup.Child(idle: args.Contains("--idle")),
-    "idle" => Startup.Idle(Number(1, 3)),
+    "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray")),
+    "idle" => Startup.Idle(Number(1, 3), gray: args.Contains("--gray")),
     "startup-check" => Startup.Check(Number(1, 5)),
     "frames" => Frames.Run(Number(1, 600), heavy: 0, warp: args.Contains("--warp"), gray: args.Contains("--gray")),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
