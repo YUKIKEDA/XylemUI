@@ -12,7 +12,7 @@ namespace XylemUI.E2E;
 // size, then y grows by 3.6 size, from y 12; every line starts at x 16. Black on white, or white on black with --dark.
 //
 // XylemUI does not handle the display's scale yet, so this scene makes the process per-monitor DPI aware and draws in physical
-// pixels at the system's scale, as a DPI-aware app does: sizes and positions are the logical ones times the scale, and the
+// pixels at the window's scale, as a DPI-aware app does: sizes and positions are the logical ones times the scale, and the
 // baseline (top + size) is rounded to a whole pixel. Characters a family lacks take the OS's fallback (FontFallback.Split).
 internal static class TextQuality
 {
@@ -25,9 +25,13 @@ internal static class TextQuality
     public static int Run(bool dark)
     {
         _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        float scale = GetDpiForSystem() / 96f;
         UiThread.Initialize();
-        using var window = new Win32Window("XylemUI text", (int)MathF.Round(800 * scale), (int)MathF.Round(600 * scale));
+        using var window = new Win32Window("XylemUI text", 800, 600);
+
+        // The window's own DPI: the system DPI stays the one of the sign-in when the display's scale changes after it.
+        var handle = (HWND)window.Handle;
+        float scale = GetDpiForWindow(handle) / 96f;
+        _ = SetWindowPos(handle, HWND.NULL, 0, 0, (int)MathF.Round(800 * scale), (int)MathF.Round(600 * scale), SWP.SWP_NOMOVE | SWP.SWP_NOZORDER);
         window.Show();
         (int width, int height) = window.ClientSize;
         using var renderer = D3D11Renderer.Create(window.Handle, width, height);

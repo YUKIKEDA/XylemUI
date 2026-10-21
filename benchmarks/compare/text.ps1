@@ -23,7 +23,8 @@ $pairs = @()
 foreach ($name in $apps.Keys) {
     ($app, $scene) = $apps[$name]
     foreach ($scheme in 'light', 'dark') {
-        $arguments = @($scene) + $(if ($scheme -eq 'dark') { @('--dark') } else { @() }) | Where-Object { $_ }
+        # An array even for one argument: splatting a lone string passes its characters one by one.
+        [string[]]$arguments = @(@($scene) + $(if ($scheme -eq 'dark') { @('--dark') } else { @() }) | Where-Object { $_ })
         & $capture text-capture (Join-Path $Out "$name-$scheme.png") $app @arguments
         if ($LASTEXITCODE -ne 0) { throw "The capture of $name ($scheme) failed." }
     }
