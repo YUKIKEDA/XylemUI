@@ -7,6 +7,8 @@ alwaysApply: true
 
 A question is not permission. `reset`, `rebase`, `push --force`, `push --force-with-lease`, `branch -D`, `clean`, and `checkout -- <path>` run only on an order that names the operation and the target SHA or ref.
 
+One standing order (the owner, after PR #173): branches that are no longer needed may be deleted, `branch -D` included. A branch is no longer needed when its PR is merged (`gh pr view <n> --json state` is `MERGED`) and what it changed is on `main`, or when it was scratch that nothing references. A squash merge leaves the branch unmerged in git's eyes, so `branch -d` can refuse it. The reply names each deleted branch with its SHA.
+
 This holds for a conflict that another PR's merge caused: ask how to solve it (rebase and force-push, or merge `main` into the branch) before running either. In L7 the agent rebased the branch on `main` and reset another branch without an order after PR #136 merged; the owner then ordered the force pushes (PR #138).
 
 When asked about such an operation, answer with the current `HEAD` SHA, the target SHA, what would disappear, and the exact command. Then wait.
