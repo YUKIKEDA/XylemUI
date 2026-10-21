@@ -353,6 +353,7 @@ Rejected:
   - `XylemUI.Text` から DirectWrite を直接呼ぶ（`Text` を Windows の TFM に分けることになる。`IGlyphRasterizer` を `Text` に置き、Windows の実装を Platform.Windows に置いた。T4 の Grill）
   - 色のグリフは GPUI のように COLRv0 だけを描く（Windows 11 の Segoe UI Emoji は COLRv1 が本来の見た目で、v0 は古い OS のための代わり。Skia は v1 も描く。T6 の Grill）
   - 色の層を GPU で重ねて CPU に読み戻す（GPUI。v0 しか描けず、描くたびに GPU の往復がある。Direct2D で CPU のビットマップに描けば、OS のすべての形式がそのまま描ける。T6 の Grill）
+  - 色のグリフを、WIC ではなく Direct2D のデバイスのビットマップ（`D2D1_BITMAP_OPTIONS_CPU_READ`）に描いて `Map` で読む（COM の初期化は要らないが、Direct2D のために D3D11 のデバイスが 1 つ増え、T2 で目安を超えかけたアイドルのメモリを増やす。UI スレッドの STA は OLE と UIA で必ず要る。PR #188 のレビュー、Q8）
   - COLRv1 のペイントの木を自分で描く（Skia。グラデーション・変換・合成のモードを持つ大きな仕事で、Direct2D が同じものを描く。T6 の Grill）
   - 色のグリフにも ¼ 画素の 4 段階を作る（Skia。1 画素 4 バイトの大きいグリフでアトラスが最大 4 倍になる。GPUI は整数の画素に置く。T6 の Grill）
   - カラー絵文字を T4 に入れる（RGBA のアトラスと色の層の経路が要る。行 T6 にした。T4 の Grill）
