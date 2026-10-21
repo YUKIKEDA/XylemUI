@@ -42,6 +42,8 @@ Every type in a signature the design writes is defined in the design or the code
 
 A type in a design signature that holds a size is checked against the scale factors of §6.1 (125 %, 150 %). T4's first `GlyphKey` took `int PixelSize`, which cannot hold the 17.5 px of a 14 px font at 125 % (PR #158 review).
 
+A design that says an OS API does something names the version that has that capability (the interface number and the overload), after reading its declaration in the SDK the build uses. The T6 design took `IDWriteFactory4::TranslateColorGlyphRun` from GPUI's code for COLRv1 too; the paint-tree runs come only from the overload of `IDWriteFactory8` that takes a `DWRITE_PAINT_FEATURE_LEVEL` (Windows SDK 10.0.26100), and the review found it (PR #188).
+
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
 
 A design that removes a dependency lists every place that calls it now and what replaces each. T4 removed FreeType from Windows without saying that `Font` creates a FreeType face when it opens and reads `FamilyName` from it (PR #158 review).
