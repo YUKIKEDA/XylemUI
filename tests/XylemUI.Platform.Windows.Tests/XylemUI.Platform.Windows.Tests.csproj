@@ -1,13 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>XylemUI.Platform.Windows.Tests</RootNamespace>
     <!-- Tests call the window procedure through TerraFX's SendMessageW. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The glyph rasterizer tests draw with the text tests' font (tests/XylemUI.Text.Tests/Fonts/README.md). -->
+    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

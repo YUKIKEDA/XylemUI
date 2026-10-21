@@ -7,7 +7,8 @@ namespace XylemUI.Rendering.D3D11.Tests;
 // Glyph runs on the D3D11 renderer (S8b, design §5.0.2, §5.0.3): the atlas pages as a texture array, the upload of the atlas's
 // changes, and the blend of the coverage. The pixels are read back on WARP and compared with an image composed on the CPU from
 // the atlas's own coverage: over paper, each glyph in the display list's order, out = color × α + under × (1 − α) with
-// α = color alpha × coverage, rounded to 8 bits after each glyph as the 8-bit target does; each channel within 1.
+// α = color alpha × the coverage corrected for the color (Corrected, the shader's gamma and contrast of Windows, T4), rounded to
+// 8 bits after each glyph as the 8-bit target does; each channel within 1. DirectWrite draws the glyphs.
 [Collection(UiThreadGroup.Name)]
 [Trait("Category", "Gpu")]
 public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
@@ -45,7 +46,8 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
             using var font = new Font(FontBytes);
             using var shaper = new TextShaper();
-            var atlas = new GlyphAtlas();
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            var atlas = new GlyphAtlas(rasterizer);
             var list = new DisplayList();
             list.FillRect(0, 0, 200, 100, Paper);
             _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 10, 40, Ink);
@@ -84,7 +86,8 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
             using var font = new Font(FontBytes);
             using var shaper = new TextShaper();
-            var atlas = new GlyphAtlas();
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            var atlas = new GlyphAtlas(rasterizer);
             var list = new DisplayList();
             list.FillRect(0, 0, 200, 100, Paper);
             _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 10, 40, Ink);
@@ -176,7 +179,8 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
             using var font = new Font(FontBytes);
             using var shaper = new TextShaper();
-            var atlas = new GlyphAtlas(pageSize: 64, plotSize: 32, maxPages: 1);
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            var atlas = new GlyphAtlas(rasterizer, pageSize: 64, plotSize: 32, maxPages: 1);
             var list = new DisplayList();
             list.FillRect(0, 0, 200, 100, Paper);
             _ = list.DrawText(shaper.Shape(font, "日本語の", Japanese), font, 24, atlas, 10, 40, Ink);
@@ -237,7 +241,8 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
             using var font = new Font(FontBytes);
             using var shaper = new TextShaper();
-            var atlas = new GlyphAtlas(pageSize: 64, plotSize: 32, maxPages: 1);
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            var atlas = new GlyphAtlas(rasterizer, pageSize: 64, plotSize: 32, maxPages: 1);
             var list = new DisplayList();
 
             Painted[] frame1 = DrawFrame(renderer, atlas, list, font, shaper, "日本語のテ");
@@ -303,7 +308,8 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
             using var font = new Font(FontBytes);
             using var shaper = new TextShaper();
-            var atlas = new GlyphAtlas();
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            var atlas = new GlyphAtlas(rasterizer);
             var list = new DisplayList();
             for (int i = 0; i < 20; i++)
             {
@@ -439,9 +445,23 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
 
     private static Color Blend(Color under, Color over, byte coverage)
     {
-        double alpha = over.A / 255.0 * (coverage / 255.0);
+        double alpha = over.A / 255.0 * Corrected(coverage / 255.0, over, TextGamma.System);
         byte Channel(byte o, byte u) => (byte)Math.Round((o * alpha) + (u * (1 - alpha)));
         return new Color(Channel(over.R, under.R), Channel(over.G, under.G), Channel(over.B, under.B));
+    }
+
+    // The shader's correction of a glyph's coverage for its color (QuadShaders, GPUI's apply_contrast_and_gamma_correction).
+    private static double Corrected(double coverage, Color color, TextGamma gamma)
+    {
+        double brightness = ((0.30 * color.R) + (0.59 * color.G) + (0.11 * color.B)) / 255.0;
+        double k = gamma.GrayscaleContrast * Math.Clamp(4 * (0.75 - brightness), 0, 1);
+        double contrasted = coverage * (k + 1) / ((coverage * k) + 1);
+        System.Numerics.Vector4 g = gamma.Ratios;
+        return Math.Clamp(
+            contrasted + (contrasted * (1 - contrasted) * ((((g.X * brightness) + g.Y) * contrasted) + ((g.Z * brightness) + g.W))),
+            0,
+            1
+        );
     }
 
     private static void AssertNear(Color expected, Color actual, string where)

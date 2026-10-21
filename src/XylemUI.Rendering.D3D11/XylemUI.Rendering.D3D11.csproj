@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>XylemUI.Rendering.D3D11</RootNamespace>
     <Description>The Direct3D 11 renderer of XylemUI.</Description>
     <!-- Interop project (.cursor/rules/interop.mdc). -->

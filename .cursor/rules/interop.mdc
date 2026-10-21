@@ -32,5 +32,5 @@ The design for this is `docs/design.ja.md` §2.9, §2.11.1, §2.12. This rule is
 
 ## Native libraries
 
-- HarfBuzz, FreeType, SDL3, and wgpu-native are linked statically in NativeAOT builds and loaded as shared libraries under the JIT, from the same `LibraryImport` declarations (design §9). Their versions are pinned in `vendor/versions.lock`.
+- HarfBuzz (every OS) and FreeType, SDL3, and wgpu-native (Linux) are linked statically in NativeAOT builds and loaded as shared libraries under the JIT, from the same `LibraryImport` declarations (design §9). Their versions are pinned in `vendor/versions.lock`.
 - A static library linked into a NativeAOT executable is built with the static CRT (`/MT`): the NativeAOT runtime uses it, and a `/MD` static library fails the link with `LNK2038` (RuntimeLibrary mismatch). The DLL for the JIT uses `/MD` (S8a).

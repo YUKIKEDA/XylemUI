@@ -6,6 +6,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime;
+using XylemUI.Platform.Windows;
 using XylemUI.Text;
 
 if (args.Length >= 2 && args[0] == "--atlas-sizing")
@@ -34,14 +35,15 @@ using var font = new Font(bytes);
 double openMilliseconds = Stopwatch.GetElapsedTime(openStart).TotalMilliseconds;
 using var shaper = new TextShaper();
 TextLanguage japanese = TextLanguage.FromTag("ja");
-var atlas = new GlyphAtlas();
+using var rasterizer = new DirectWriteGlyphRasterizer();
+var atlas = new GlyphAtlas(rasterizer);
 
 // The first pass rasterizes every glyph; later passes find them in the atlas.
 long rasterizeStart = Stopwatch.GetTimestamp();
 int inked = 0;
 foreach (ShapedGlyph glyph in shaper.Shape(font, Text, japanese))
 {
-    if (atlas.TryGet(font, glyph.GlyphId, 24, out AtlasGlyph region) && region.Width > 0)
+    if (atlas.TryGet(new GlyphKey(font, glyph.GlyphId, 24, 0), out AtlasGlyph region) && region.Width > 0)
     {
         inked++;
     }
@@ -66,7 +68,7 @@ for (int round = 0; round < 50; round++)
         atlas.BeginFrame();
         foreach (ShapedGlyph glyph in shaper.Shape(font, Text, japanese))
         {
-            _ = atlas.TryGet(font, glyph.GlyphId, 24, out AtlasGlyph region);
+            _ = atlas.TryGet(new GlyphKey(font, glyph.GlyphId, 24, 0), out AtlasGlyph region);
             sink += glyph.XAdvance + region.Width;
         }
     }

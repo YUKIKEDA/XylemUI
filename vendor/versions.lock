@@ -4,4 +4,3 @@
 # A version is taken once it has been out for two weeks, except a security fix, which is taken at once
 # (.cursor/rules/dependencies.mdc).
 harfbuzz  14.5.1  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz
-freetype  2.14.3  36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f  https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz  https://downloads.sourceforge.net/project/freetype/freetype2/2.14.3/freetype-2.14.3.tar.xz

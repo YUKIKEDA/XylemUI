@@ -110,11 +110,13 @@ public sealed class DisplayList
 
     /// <summary>
     /// Appends shaped text as one glyph run: puts each glyph in the atlas (rasterizing it the first time) and places it on the
-    /// pen, in whole pixels (design §5.0.3: the atlas changes while the display list is built and is uploaded after).
+    /// pen (design §5.0.3: the atlas changes while the display list is built and is uploaded after). Across the line a glyph is
+    /// placed on a quarter of a pixel: its quad sits on the whole pixel, and the atlas holds the glyph drawn at the quarter
+    /// (<see cref="GlyphPosition"/>). The baseline is a whole pixel.
     /// </summary>
     /// <param name="glyphs">The glyphs, from <see cref="TextShaper.Shape"/> with <paramref name="font"/>.</param>
     /// <param name="font">The font the glyphs were shaped with.</param>
-    /// <param name="pixelSize">The size in pixels per em.</param>
+    /// <param name="pixelSize">The pixels per em: the size in logical pixels times the display's scale, not rounded.</param>
     /// <param name="atlas">The glyph atlas the renderer draws from.</param>
     /// <param name="x">The pen's start, in physical pixels.</param>
     /// <param name="baseline">The baseline, in physical pixels from the top.</param>
@@ -125,22 +127,27 @@ public sealed class DisplayList
     /// not drawn (roadmap row T3).
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The font was disposed and a glyph is not in the atlas.</exception>
-    public float DrawText(ReadOnlySpan<ShapedGlyph> glyphs, Font font, int pixelSize, GlyphAtlas atlas, float x, float baseline, Color color)
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pixelSize"/> is not a positive number.</exception>
+    public float DrawText(ReadOnlySpan<ShapedGlyph> glyphs, Font font, float pixelSize, GlyphAtlas atlas, float x, float baseline, Color color)
     {
         ArgumentNullException.ThrowIfNull(font);
         ArgumentNullException.ThrowIfNull(atlas);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pixelSize);
+        if (!(pixelSize > 0) || !float.IsFinite(pixelSize))
+        {
+            throw new ArgumentOutOfRangeException(nameof(pixelSize), pixelSize, "The size is not a positive number.");
+        }
 
         // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run.
-        float scale = (float)pixelSize / font.UnitsPerEm;
+        float scale = pixelSize / font.UnitsPerEm;
         Span<GlyphInstance> destination = ReserveGlyphs(glyphs.Length);
         int written = 0;
         long pen = 0;
         foreach (ShapedGlyph shaped in glyphs)
         {
-            if (atlas.TryGet(font, shaped.GlyphId, pixelSize, out AtlasGlyph glyph) && glyph.Width > 0)
+            int pixel = GlyphPosition.Snap(x + ((pen + shaped.XOffset) * scale), out int subpixel);
+            if (atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel), out AtlasGlyph glyph) && glyph.Width > 0)
             {
-                int left = (int)MathF.Round(x + ((pen + shaped.XOffset) * scale)) + glyph.BearingX;
+                int left = pixel + glyph.BearingX;
                 int top = (int)MathF.Round(baseline - (shaped.YOffset * scale)) - glyph.BearingY;
                 destination[written++] = new GlyphInstance(left, top, glyph.Width, glyph.Height, glyph.Page, glyph.X, glyph.Y);
             }

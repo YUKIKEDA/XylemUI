@@ -1,11 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- The glyphs are drawn by DirectWrite (XylemUI.Platform.Windows, design §5.0.3). -->
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <PublishAot>true</PublishAot>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Text\XylemUI.Text.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
   </ItemGroup>
   <!-- The test font, inside the executable: the sample needs no file next to it. -->
   <ItemGroup>

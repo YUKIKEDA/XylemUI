@@ -51,6 +51,13 @@ Invoke-Step 'GPUI (release)' {
 $gpui = New-Item -ItemType Directory -Force (Join-Path $Out 'gpui')
 Copy-Item (Join-Path $Out 'gpui-target\release\compare_gpui.exe') $gpui.FullName -Force
 
+# GPUI at the version Zed ships (v1.24.3, from Zed's git tag): the text scene of row T4 (gpui-text, text.ps1).
+Invoke-Step 'GPUI text (release)' {
+    cargo build --release --manifest-path (Join-Path $root 'gpui-text\Cargo.toml') --target-dir (Join-Path $Out 'gpui-text-target')
+}
+$gpuiText = New-Item -ItemType Directory -Force (Join-Path $Out 'gpui-text')
+Copy-Item (Join-Path $Out 'gpui-text-target\release\compare_gpui_text.exe') $gpuiText.FullName -Force
+
 # Taffy, the layout of GPUI, at the version GPUI uses: the layout scene of row L1a.
 Invoke-Step 'Taffy (release)' {
     cargo build --release --manifest-path (Join-Path $root 'taffy\Cargo.toml') --target-dir (Join-Path $Out 'taffy-target')
@@ -72,6 +79,7 @@ $versions = [ordered]@{
     flutter = (flutter --version --machine | ConvertFrom-Json).frameworkVersion
     avalonia = $avalonia.Version
     gpui = Get-LockedVersion (Join-Path $root 'gpui\Cargo.lock') 'gpui'
+    gpui_text = (Select-String -Path (Join-Path $root 'gpui-text\Cargo.toml') -Pattern 'tag = "([^"]+)"').Matches[0].Groups[1].Value
     taffy = Get-LockedVersion (Join-Path $root 'taffy\Cargo.lock') 'taffy'
 }
 $versions | ConvertTo-Json | Set-Content -Path (Join-Path $Out 'versions.json') -Encoding utf8NoBOM

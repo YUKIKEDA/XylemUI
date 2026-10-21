@@ -26,7 +26,7 @@ public sealed class TextSteadyStateTests
     {
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
-        var atlas = new GlyphAtlas();
+        var atlas = new GlyphAtlas(new TestRasterizer());
         var list = new DisplayList(commandCapacity: 1, glyphCapacity: 1);
         const string Text = "Hello, World! 日本語のテキスト";
         for (int i = 0; i < 10; i++)
