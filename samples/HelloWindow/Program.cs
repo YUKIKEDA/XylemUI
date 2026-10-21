@@ -41,6 +41,11 @@ window.Show();
 (int width, int height) = window.ClientSize;
 long createStart = Stopwatch.GetTimestamp();
 using var renderer = D3D11Renderer.Create(window.Handle, width, height);
+
+// The window reads how its text is drawn (ClearType where Windows and the monitor allow it, roadmap row T2) and reads it again
+// when a setting of Windows changes; the renderer and the text take it.
+renderer.TextRendering = window.TextRendering;
+window.TextRenderingChanged += (_, _) => renderer.TextRendering = window.TextRendering;
 double createMilliseconds = Stopwatch.GetElapsedTime(createStart).TotalMilliseconds;
 var clear = Color.FromRgb(0x2A2A2A);
 var accent = Color.FromRgb(0x3366CC);
@@ -184,7 +189,8 @@ void BuildFrame(int frame, int width, int height)
         list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
     }
 
-    _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8));
+    GlyphCoverage coverage = renderer.TextRendering.Coverage;
+    _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8), coverage);
 
     // The fallback's runs one after another on one pen, each shaped with its own font at the size its scale gives.
     float pen = 420;
@@ -192,7 +198,7 @@ void BuildFrame(int frame, int width, int height)
     {
         int size = (int)MathF.Round(24 * run.Scale);
         ReadOnlySpan<char> runText = FallbackText.AsSpan(run.Start, run.Length);
-        pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8));
+        pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8), coverage);
     }
 }
 

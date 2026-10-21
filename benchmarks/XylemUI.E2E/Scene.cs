@@ -8,7 +8,8 @@ namespace XylemUI.E2E;
 // The app every framework builds for the comparison (roadmap row M1a, docs/benchmarks/m1-baseline.md): an 800 x 600 window
 // cleared to #2A2A2A, a marker rectangle #3366CC at (0, 0, 40, 40) of the client area (the startup measurement watches the
 // screen for it), 1,000 rectangles in a grid that move with the frame, and one line of Japanese text at 24 px at (60, 30).
-// `heavy` adds full-window translucent rectangles to load the GPU.
+// `heavy` adds full-window translucent rectangles to load the GPU. The text is drawn as the window's TextRendering says (roadmap
+// row T2), so it is ClearType where Windows and the monitor allow it.
 internal sealed class Scene : IDisposable
 {
     public const string Line = "Hello, World! 日本語のテキスト";
@@ -25,6 +26,8 @@ internal sealed class Scene : IDisposable
         Window.Show();
         (int width, int height) = Window.ClientSize;
         Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
+        Renderer.TextRendering = Window.TextRendering;
+        Window.TextRenderingChanged += (_, _) => Renderer.TextRendering = Window.TextRendering;
         using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
         byte[] bytes = new byte[stream.Length];
         stream.ReadExactly(bytes);
@@ -59,7 +62,7 @@ internal sealed class Scene : IDisposable
             List.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
         }
 
-        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8));
+        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Renderer.TextRendering.Coverage);
         for (int i = 0; i < heavy; i++)
         {
             List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));

@@ -8,8 +8,10 @@ namespace XylemUI.Platform.Windows;
 
 /// <summary>
 /// Draws glyphs with DirectWrite, as the other apps of Windows draw them (design §5.0.3, roadmap row T4): the rendering mode and
-/// grid fitting DirectWrite recommends for the font and size, grayscale coverage, and the glyph shifted right by its subpixel
-/// step (<c>baselineOriginX</c>). GPUI draws its glyphs the same way (Zed v1.24.3, <c>crates/gpui_windows/src/direct_write.rs</c>).
+/// grid fitting DirectWrite recommends for the font and size, grayscale or ClearType coverage (the key's
+/// <see cref="GlyphKey.Coverage"/>), and the glyph shifted right by its subpixel step (<c>baselineOriginX</c>). GPUI draws its
+/// glyphs the same way (Zed v1.24.3, <c>crates/gpui_windows/src/direct_write.rs</c>; ClearType at lines 731 to 735 and 759 to
+/// 763).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -29,8 +31,6 @@ namespace XylemUI.Platform.Windows;
 /// </remarks>
 public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDisposable
 {
-    private const DWRITE_TEXTURE_TYPE Texture = DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1;
-
     private readonly Dictionary<Font, nint> _faces = [];
     private IDWriteFactory5* _factory;
     private IDWriteInMemoryFontFileLoader* _loader;
@@ -82,7 +82,9 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             return;
         }
 
-        if (stride < width || destination.Length < ((height - 1) * stride) + width)
+        bool rgb = glyph.Coverage == GlyphCoverage.Rgb;
+        int rowBytes = rgb ? width * 4 : width;
+        if (stride < rowBytes || destination.Length < ((height - 1) * stride) + rowBytes)
         {
             throw new ArgumentException(
                 $"The destination holds less than {height} rows of {width} pixels, {stride} bytes apart.",
@@ -90,8 +92,9 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             );
         }
 
-        // DirectWrite writes the rows packed, so the coverage goes through a buffer kept for the next glyph.
-        int size = width * height;
+        // DirectWrite writes the rows packed (3 bytes a pixel for ClearType), so the coverage goes through a buffer kept for the
+        // next glyph.
+        int size = width * height * (rgb ? 3 : 1);
         if (_coverage.Length < size)
         {
             _coverage = GC.AllocateUninitializedArray<byte>(Math.Max(size, _coverage.Length * 2));
@@ -100,12 +103,34 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         RECT bounds = _bounds;
         fixed (byte* coverage = _coverage)
         {
-            ThrowIfFailed(_analysis->CreateAlphaTexture(Texture, &bounds, coverage, (uint)size), "IDWriteGlyphRunAnalysis::CreateAlphaTexture");
+            ThrowIfFailed(
+                _analysis->CreateAlphaTexture(TextureOf(glyph.Coverage), &bounds, coverage, (uint)size),
+                "IDWriteGlyphRunAnalysis::CreateAlphaTexture"
+            );
         }
 
+        if (!rgb)
+        {
+            for (int row = 0; row < height; row++)
+            {
+                _coverage.AsSpan(row * width, width).CopyTo(destination.Slice(row * stride, width));
+            }
+
+            return;
+        }
+
+        // Red, green, and blue into the first three bytes of each 4-byte pixel, as GPUI pads them (direct_write.rs, lines 864 to
+        // 880); the fourth is left as it is.
         for (int row = 0; row < height; row++)
         {
-            _coverage.AsSpan(row * width, width).CopyTo(destination.Slice(row * stride, width));
+            ReadOnlySpan<byte> source = _coverage.AsSpan(row * width * 3, width * 3);
+            Span<byte> target = destination.Slice(row * stride, rowBytes);
+            for (int x = 0; x < width; x++)
+            {
+                target[x * 4] = source[x * 3];
+                target[(x * 4) + 1] = source[(x * 3) + 1];
+                target[(x * 4) + 2] = source[(x * 3) + 2];
+            }
         }
     }
 
@@ -182,6 +207,11 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             bidiLevel = 0,
         };
 
+        DWRITE_TEXT_ANTIALIAS_MODE antialias =
+            key.Coverage == GlyphCoverage.Rgb
+                ? DWRITE_TEXT_ANTIALIAS_MODE.DWRITE_TEXT_ANTIALIAS_MODE_CLEARTYPE
+                : DWRITE_TEXT_ANTIALIAS_MODE.DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE;
+
         // At 96 DPI a DIP is a pixel, so the size and the origin are in pixels.
         IDWriteGlyphRunAnalysis* analysis;
         ThrowIfFailed(
@@ -191,7 +221,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
                 mode,
                 DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
                 gridFit,
-                DWRITE_TEXT_ANTIALIAS_MODE.DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE,
+                antialias,
                 key.SubpixelX / (float)GlyphPosition.SubpixelSteps,
                 0,
                 &analysis
@@ -201,9 +231,12 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         _analysis = analysis;
         _analysisKey = key;
         RECT bounds;
-        ThrowIfFailed(_analysis->GetAlphaTextureBounds(Texture, &bounds), "IDWriteGlyphRunAnalysis::GetAlphaTextureBounds");
+        ThrowIfFailed(_analysis->GetAlphaTextureBounds(TextureOf(key.Coverage), &bounds), "IDWriteGlyphRunAnalysis::GetAlphaTextureBounds");
         _bounds = bounds;
     }
+
+    private static DWRITE_TEXTURE_TYPE TextureOf(GlyphCoverage coverage) =>
+        coverage == GlyphCoverage.Rgb ? DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1 : DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1;
 
     private IDWriteFontFace3* FaceOf(Font font)
     {

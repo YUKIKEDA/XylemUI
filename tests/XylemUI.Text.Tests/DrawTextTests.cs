@@ -57,6 +57,45 @@ public sealed class DrawTextTests
     }
 
     /// <summary>
+    /// The kind of coverage reaches the atlas in each glyph's key and the display list in the run.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
+    ///
+    /// Steps:
+    /// - Draw "H" at 32 px with <see cref="GlyphCoverage.Rgb"/>, then "H" again with the default coverage.
+    ///
+    /// Expected:
+    /// - The atlas was asked for "H" in Rgb, then in Gray; the first run is Rgb and the second Gray; both glyphs are on page 0 of
+    ///   their kind.
+    /// </remarks>
+    [Fact]
+    public void DrawText_Coverage_GoesToTheKeysAndTheRun()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+
+        _ = list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 32, atlas, 0, 50, Ink, GlyphCoverage.Rgb);
+        _ = list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 32, atlas, 0, 50, Ink);
+
+        Assert.Equal([new GlyphKey(font, 41, 32, 0, GlyphCoverage.Rgb), new GlyphKey(font, 41, 32, 0)], rasterizer.Measured);
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        GlyphRunCommand clearType = reader.ReadGlyphRun();
+        Assert.Equal(GlyphCoverage.Rgb, clearType.Coverage);
+        Assert.Equal(0, clearType.Glyphs[0].Page);
+        Assert.True(reader.TryNext(out _));
+        GlyphRunCommand gray = reader.ReadGlyphRun();
+        Assert.Equal(GlyphCoverage.Gray, gray.Coverage);
+        Assert.Equal(0, gray.Glyphs[0].Page);
+        Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
     /// A size with a fraction reaches the atlas unrounded, and the advance is scaled by the same size.
     /// </summary>
     /// <remarks>

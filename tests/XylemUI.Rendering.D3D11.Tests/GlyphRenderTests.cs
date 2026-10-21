@@ -252,7 +252,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
 
             _ = DrawFrame(renderer, atlas, list, font, shaper, "日本語の");
             Painted[] frame3 = DrawFrame(renderer, atlas, list, font, shaper, "日本語の");
-            Assert.Equal(1, atlas.PageCount);
+            Assert.Equal(1, atlas.GetPageCount(GlyphCoverage.Gray));
             Assert.Equal((1, 2), (renderer.AtlasSlices, renderer.AtlasPageUploads));
             AssertDrawn(renderer, frame3);
             renderer.Present();
@@ -286,12 +286,12 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
 
     /// <summary>
     /// A steady-state frame with text — start the atlas frame, write rectangles and text, upload, draw, present — allocates
-    /// nothing.
+    /// nothing, in grayscale and in ClearType (where the frame is split into draws).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A WARP renderer, the test font, a shaper, an atlas, and a display list rewritten each frame with 100 rectangles and 10
-    ///   lines of "Hello, World! 日本語のテキスト" at 16 px. Warmed up with 20 frames.
+    ///   lines of "Hello, World! 日本語のテキスト" at 16 px in the case's kind of coverage. Warmed up with 20 frames.
     ///
     /// Steps:
     /// - Run 100 frames, measuring the bytes allocated on this thread.
@@ -299,8 +299,11 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
     /// Expected:
     /// - 0 bytes; no glyph was rasterized and the display list never grew.
     /// </remarks>
-    [Fact]
-    public void SteadyState_FrameWithText_AllocatesNothing() =>
+    /// <param name="coverage">The kind of coverage of the text.</param>
+    [Theory]
+    [InlineData(GlyphCoverage.Gray)]
+    [InlineData(GlyphCoverage.Rgb)]
+    public void SteadyState_FrameWithText_AllocatesNothing(GlyphCoverage coverage) =>
         ui.Invoke(() =>
         {
             using var window = new Win32Window("steady text", 400, 300);
@@ -313,7 +316,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             var list = new DisplayList();
             for (int i = 0; i < 20; i++)
             {
-                TextFrame(renderer, atlas, list, font, shaper, i);
+                TextFrame(renderer, atlas, list, font, shaper, i, coverage);
             }
 
             int rasterized = atlas.RasterizeCount;
@@ -321,7 +324,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 100; i++)
             {
-                TextFrame(renderer, atlas, list, font, shaper, i);
+                TextFrame(renderer, atlas, list, font, shaper, i, coverage);
             }
 
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
@@ -331,7 +334,15 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             Assert.Equal(growth, list.GrowthCount);
         });
 
-    private static void TextFrame(D3D11Renderer renderer, GlyphAtlas atlas, DisplayList list, Font font, TextShaper shaper, int frame)
+    private static void TextFrame(
+        D3D11Renderer renderer,
+        GlyphAtlas atlas,
+        DisplayList list,
+        Font font,
+        TextShaper shaper,
+        int frame,
+        GlyphCoverage coverage
+    )
     {
         atlas.BeginFrame();
         list.Reset();
@@ -342,7 +353,16 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
 
         for (int line = 0; line < 10; line++)
         {
-            _ = list.DrawText(shaper.Shape(font, "Hello, World! 日本語のテキスト", Japanese), font, 16, atlas, frame % 10, 20 + (line * 20), Ink);
+            _ = list.DrawText(
+                shaper.Shape(font, "Hello, World! 日本語のテキスト", Japanese),
+                font,
+                16,
+                atlas,
+                frame % 10,
+                20 + (line * 20),
+                Ink,
+                coverage
+            );
         }
 
         renderer.Render(list, Clear, atlas);
@@ -375,7 +395,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             GlyphRunCommand run = reader.ReadGlyphRun();
             foreach (GlyphInstance glyph in run.Glyphs)
             {
-                ReadOnlySpan<byte> page = atlas.GetPagePixels(glyph.Page);
+                ReadOnlySpan<byte> page = atlas.GetPagePixels(GlyphCoverage.Gray, glyph.Page);
                 byte[] coverage = new byte[glyph.Width * glyph.Height];
                 for (int y = 0; y < glyph.Height; y++)
                 {
@@ -445,18 +465,18 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
 
     private static Color Blend(Color under, Color over, byte coverage)
     {
-        double alpha = over.A / 255.0 * Corrected(coverage / 255.0, over, TextGamma.System);
+        double alpha = over.A / 255.0 * Corrected(coverage / 255.0, over, TextRenderingParameters.Default);
         byte Channel(byte o, byte u) => (byte)Math.Round((o * alpha) + (u * (1 - alpha)));
         return new Color(Channel(over.R, under.R), Channel(over.G, under.G), Channel(over.B, under.B));
     }
 
     // The shader's correction of a glyph's coverage for its color (QuadShaders, GPUI's apply_contrast_and_gamma_correction).
-    private static double Corrected(double coverage, Color color, TextGamma gamma)
+    private static double Corrected(double coverage, Color color, TextRenderingParameters text)
     {
         double brightness = ((0.30 * color.R) + (0.59 * color.G) + (0.11 * color.B)) / 255.0;
-        double k = gamma.GrayscaleContrast * Math.Clamp(4 * (0.75 - brightness), 0, 1);
+        double k = text.GrayscaleContrast * Math.Clamp(4 * (0.75 - brightness), 0, 1);
         double contrasted = coverage * (k + 1) / ((coverage * k) + 1);
-        System.Numerics.Vector4 g = gamma.Ratios;
+        System.Numerics.Vector4 g = TextGamma.RatiosOf(text.Gamma);
         return Math.Clamp(
             contrasted + (contrasted * (1 - contrasted) * ((((g.X * brightness) + g.Y) * contrasted) + ((g.Z * brightness) + g.W))),
             0,

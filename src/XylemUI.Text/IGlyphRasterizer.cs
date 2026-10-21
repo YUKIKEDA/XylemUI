@@ -13,7 +13,7 @@ public interface IGlyphRasterizer
 {
     /// <summary>
     /// Returns the box of the glyph's ink, in whole pixels, with the pen on a whole pixel and the glyph shifted right by its
-    /// subpixel step.
+    /// subpixel step, for the key's kind of coverage.
     /// </summary>
     /// <param name="glyph">The glyph.</param>
     /// <returns>The box; its width or height is 0 for a glyph with no ink (a space).</returns>
@@ -21,8 +21,9 @@ public interface IGlyphRasterizer
     GlyphBox Measure(in GlyphKey glyph);
 
     /// <summary>
-    /// Writes the glyph's coverage, one byte per pixel, into <paramref name="destination"/>: the rows of the box
-    /// <see cref="Measure"/> returns, each <paramref name="stride"/> bytes after the last.
+    /// Writes the glyph's coverage into <paramref name="destination"/>: the rows of the box <see cref="Measure"/> returns, each
+    /// <paramref name="stride"/> bytes after the last. <see cref="GlyphCoverage.Gray"/> is one byte per pixel;
+    /// <see cref="GlyphCoverage.Rgb"/> is four, red, green, and blue coverage and a fourth byte left as it is.
     /// </summary>
     /// <param name="glyph">The glyph.</param>
     /// <param name="destination">The room for the box, from its top-left pixel.</param>

@@ -1,3 +1,5 @@
+using XylemUI.Text;
+
 namespace XylemUI;
 
 /// <summary>
@@ -13,6 +15,7 @@ public ref struct DisplayListReader
     private readonly ReadOnlySpan<float> _rects;
     private readonly ReadOnlySpan<uint> _colors;
     private readonly ReadOnlySpan<int> _runLengths;
+    private readonly ReadOnlySpan<GlyphCoverage> _runCoverages;
     private readonly ReadOnlySpan<GlyphInstance> _glyphs;
     private int _command;
     private int _rect;
@@ -27,6 +30,7 @@ public ref struct DisplayListReader
         _rects = list.Rects;
         _colors = list.Colors;
         _runLengths = list.RunLengths;
+        _runCoverages = list.RunCoverages;
         _glyphs = list.Glyphs;
     }
 
@@ -88,10 +92,11 @@ public ref struct DisplayListReader
         }
 
         _current = null;
+        GlyphCoverage coverage = _runCoverages[_run];
         int length = _runLengths[_run++];
         ReadOnlySpan<GlyphInstance> glyphs = _glyphs.Slice(_glyph, length);
         _glyph += length;
-        return new GlyphRunCommand(Unpack(_colors[_color++]), glyphs);
+        return new GlyphRunCommand(Unpack(_colors[_color++]), glyphs, coverage);
     }
 
     private static Color Unpack(uint packed) => new((byte)packed, (byte)(packed >> 8), (byte)(packed >> 16), (byte)(packed >> 24));

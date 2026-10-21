@@ -43,7 +43,7 @@ return scenario switch
     "font-fallback" => CoreCosts.FontFallbackCost(Number(1, 2_000)),
     "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
     "scope-cost" => ScopeCost.Run(),
-    "text" => TextQuality.Run(dark: args.Contains("--dark")),
+    "text" => TextQuality.Run(dark: args.Contains("--dark"), gray: args.Contains("--gray")),
     "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
     "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
     "external" => External.Run(args),

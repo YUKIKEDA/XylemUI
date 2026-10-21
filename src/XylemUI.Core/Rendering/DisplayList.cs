@@ -19,6 +19,7 @@ public sealed class DisplayList
     private float[] _rects;
     private uint[] _colors;
     private int[] _runLengths;
+    private GlyphCoverage[] _runCoverages;
     private GlyphInstance[] _glyphs;
     private int _usedRects;
     private int _usedColors;
@@ -37,6 +38,7 @@ public sealed class DisplayList
         _rects = new float[commandCapacity * FloatsPerRect];
         _colors = new uint[commandCapacity];
         _runLengths = new int[commandCapacity];
+        _runCoverages = new GlyphCoverage[commandCapacity];
         _glyphs = new GlyphInstance[glyphCapacity];
     }
 
@@ -97,7 +99,8 @@ public sealed class DisplayList
     /// </summary>
     /// <param name="glyphs">The glyphs.</param>
     /// <param name="color">The color of the text.</param>
-    public void GlyphRun(ReadOnlySpan<GlyphInstance> glyphs, Color color)
+    /// <param name="coverage">The kind of the glyphs' coverage: their pages are among the atlas's pages of this kind.</param>
+    public void GlyphRun(ReadOnlySpan<GlyphInstance> glyphs, Color color, GlyphCoverage coverage = GlyphCoverage.Gray)
     {
         if (glyphs.IsEmpty)
         {
@@ -105,7 +108,7 @@ public sealed class DisplayList
         }
 
         glyphs.CopyTo(ReserveGlyphs(glyphs.Length));
-        EndGlyphRun(glyphs.Length, color);
+        EndGlyphRun(glyphs.Length, color, coverage);
     }
 
     /// <summary>
@@ -121,6 +124,9 @@ public sealed class DisplayList
     /// <param name="x">The pen's start, in physical pixels.</param>
     /// <param name="baseline">The baseline, in physical pixels from the top.</param>
     /// <param name="color">The color of the text.</param>
+    /// <param name="coverage">
+    /// Grayscale, or ClearType where the window allows it (design §5.0.3, "ClearType"): the window decides it, not the text.
+    /// </param>
     /// <returns>The advance of the text, in pixels (the sum of the glyph advances, unrounded).</returns>
     /// <remarks>
     /// A glyph with no ink (a space) only moves the pen. A glyph larger than an atlas plot (<see cref="GlyphAtlas.PlotSize"/>) is
@@ -128,7 +134,16 @@ public sealed class DisplayList
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The font was disposed and a glyph is not in the atlas.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="pixelSize"/> is not a positive number.</exception>
-    public float DrawText(ReadOnlySpan<ShapedGlyph> glyphs, Font font, float pixelSize, GlyphAtlas atlas, float x, float baseline, Color color)
+    public float DrawText(
+        ReadOnlySpan<ShapedGlyph> glyphs,
+        Font font,
+        float pixelSize,
+        GlyphAtlas atlas,
+        float x,
+        float baseline,
+        Color color,
+        GlyphCoverage coverage = GlyphCoverage.Gray
+    )
     {
         ArgumentNullException.ThrowIfNull(font);
         ArgumentNullException.ThrowIfNull(atlas);
@@ -145,7 +160,7 @@ public sealed class DisplayList
         foreach (ShapedGlyph shaped in glyphs)
         {
             int pixel = GlyphPosition.Snap(x + ((pen + shaped.XOffset) * scale), out int subpixel);
-            if (atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel), out AtlasGlyph glyph) && glyph.Width > 0)
+            if (atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage), out AtlasGlyph glyph) && glyph.Width > 0)
             {
                 int left = pixel + glyph.BearingX;
                 int top = (int)MathF.Round(baseline - (shaped.YOffset * scale)) - glyph.BearingY;
@@ -157,7 +172,7 @@ public sealed class DisplayList
 
         if (written > 0)
         {
-            EndGlyphRun(written, color);
+            EndGlyphRun(written, color, coverage);
         }
 
         return pen * scale;
@@ -177,6 +192,8 @@ public sealed class DisplayList
 
     internal ReadOnlySpan<int> RunLengths => _runLengths.AsSpan(0, _usedRuns);
 
+    internal ReadOnlySpan<GlyphCoverage> RunCoverages => _runCoverages.AsSpan(0, _usedRuns);
+
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
 
     // Room for `count` glyphs after the used ones; they count as used only when EndGlyphRun closes the run.
@@ -190,7 +207,7 @@ public sealed class DisplayList
         return _glyphs.AsSpan(GlyphCount, count);
     }
 
-    private void EndGlyphRun(int count, Color color)
+    private void EndGlyphRun(int count, Color color, GlyphCoverage coverage)
     {
         if (CommandCount == _commands.Length)
         {
@@ -199,6 +216,7 @@ public sealed class DisplayList
 
         _commands[CommandCount++] = CommandTag.GlyphRun;
         _colors[_usedColors++] = color.Packed;
+        _runCoverages[_usedRuns] = coverage;
         _runLengths[_usedRuns++] = count;
         GlyphCount += count;
     }
@@ -213,6 +231,7 @@ public sealed class DisplayList
         Array.Resize(ref _rects, capacity * FloatsPerRect);
         Array.Resize(ref _colors, capacity);
         Array.Resize(ref _runLengths, capacity);
+        Array.Resize(ref _runCoverages, capacity);
         GrowthCount++;
     }
 

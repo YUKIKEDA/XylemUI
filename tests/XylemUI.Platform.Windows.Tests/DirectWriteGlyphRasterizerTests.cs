@@ -1,3 +1,5 @@
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
 using XylemUI.Text;
 
 namespace XylemUI.Platform.Windows.Tests;
@@ -5,7 +7,7 @@ namespace XylemUI.Platform.Windows.Tests;
 // Glyphs drawn by DirectWrite (design §5.0.3, roadmap row T4). The test font has no hinting instructions, so the ink follows the
 // outline; the outlines were read with fontTools (tests/XylemUI.Text.Tests/Fonts/README.md): "H" (glyph 41) is 101..628 x 0..733
 // units of 1000, which at 32 px is 3.23..20.10 x 0..23.46 pixels.
-public sealed class DirectWriteGlyphRasterizerTests
+public sealed unsafe class DirectWriteGlyphRasterizerTests
 {
     private const uint GlyphH = 41;
     private const uint Space = 1;
@@ -219,11 +221,12 @@ public sealed class DirectWriteGlyphRasterizerTests
     }
 
     /// <summary>
-    /// Rasterizing new glyphs allocates nothing once the coverage buffer has grown and the font has its face.
+    /// Rasterizing new glyphs allocates nothing once the coverage buffer has grown and the font has its face, for both kinds of
+    /// coverage.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The test font and a rasterizer that has drawn "H" at 48 px (larger than the glyphs measured).
+    /// - The test font and a rasterizer that has drawn "H" at 48 px (larger than the glyphs measured) in the kind of coverage.
     ///
     /// Steps:
     /// - Measure and rasterize "H" at every size from 10 to 40 px and every step, into one buffer. Measure the bytes allocated on
@@ -232,28 +235,166 @@ public sealed class DirectWriteGlyphRasterizerTests
     /// Expected:
     /// - 0 bytes.
     /// </remarks>
-    [Fact]
-    public void Rasterize_NewGlyphs_AllocatesNothing()
+    /// <param name="coverage">The kind of coverage.</param>
+    [Theory]
+    [InlineData(GlyphCoverage.Gray)]
+    [InlineData(GlyphCoverage.Rgb)]
+    public void Rasterize_NewGlyphs_AllocatesNothing(GlyphCoverage coverage)
     {
         using var font = new Font(FontBytes);
         using var rasterizer = new DirectWriteGlyphRasterizer();
-        byte[] buffer = new byte[64 * 64];
-        var warm = new GlyphKey(font, GlyphH, 48, 0);
+        int bytes = GlyphAtlas.BytesPerPixel(coverage);
+        byte[] buffer = new byte[64 * 64 * bytes];
+        var warm = new GlyphKey(font, GlyphH, 48, 0, coverage);
         GlyphBox warmBox = rasterizer.Measure(warm);
-        rasterizer.Rasterize(warm, buffer, warmBox.Width);
+        rasterizer.Rasterize(warm, buffer, warmBox.Width * bytes);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int size = 10; size <= 40; size++)
         {
             for (int step = 0; step < GlyphPosition.SubpixelSteps; step++)
             {
-                var key = new GlyphKey(font, GlyphH, size, step);
+                var key = new GlyphKey(font, GlyphH, size, step, coverage);
                 GlyphBox box = rasterizer.Measure(key);
-                rasterizer.Rasterize(key, buffer, box.Width);
+                rasterizer.Rasterize(key, buffer, box.Width * bytes);
             }
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
+    /// <summary>
+    /// A ClearType glyph's box and its red, green, and blue coverage are what DirectWrite's ClearType 3x1 texture holds for the
+    /// same glyph run; the fourth byte of each pixel is left as it was.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Segoe UI (<c>segoeui.ttf</c>) opened from its file, and a rasterizer. Skipped where Windows lacks the font.
+    ///
+    /// Steps:
+    /// - For "H" and "a" at 13, 16, and 17.5 px, steps 0 and 1: rasterize with <see cref="GlyphCoverage.Rgb"/> into a buffer of
+    ///   0xEE at 4 bytes a pixel; make DirectWrite's analysis of the glyph straight (the recommended rendering mode and grid fit,
+    ///   ClearType anti-aliasing, the step over 4 as the origin) and read its 3x1 texture.
+    ///
+    /// Expected:
+    /// - The box is the texture's bounds; bytes 0, 1, 2 of each pixel are the texture's red, green, and blue; byte 3 is 0xEE.
+    /// - Some pixel of "H" at 16 px has red and blue more than 30 apart (the coverage is per subpixel, not gray).
+    /// </remarks>
+    [Fact]
+    public void Rasterize_ClearType_IsDirectWritesThreeByOneTexture()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "segoeui.ttf");
+        Assert.SkipUnless(File.Exists(path), "Windows has no Segoe UI (segoeui.ttf).");
+        using Font font = Font.FromFile(path, 0);
+        using var shaper = new TextShaper();
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        bool colored = false;
+        foreach (string text in (string[])["H", "a"])
+        {
+            uint glyph = shaper.Shape(font, text, TextLanguage.FromTag("en"))[0].GlyphId;
+            foreach (float size in (float[])[13, 16, 17.5f])
+            {
+                for (int step = 0; step < 2; step++)
+                {
+                    var key = new GlyphKey(font, glyph, size, step, GlyphCoverage.Rgb);
+                    GlyphBox box = rasterizer.Measure(key);
+                    byte[] ours = new byte[box.Width * box.Height * 4];
+                    Array.Fill(ours, (byte)0xEE);
+                    rasterizer.Rasterize(key, ours, box.Width * 4);
+
+                    (RECT bounds, byte[] theirs) = DirectWriteClearType(path, (ushort)glyph, size, step);
+
+                    Assert.Equal(new GlyphBox(bounds.left, -bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top), box);
+                    for (int i = 0; i < box.Width * box.Height; i++)
+                    {
+                        Assert.Equal(theirs.AsSpan(i * 3, 3), ours.AsSpan(i * 4, 3));
+                        Assert.Equal(0xEE, ours[(i * 4) + 3]);
+                        colored |= text == "H" && size == 16 && Math.Abs(ours[i * 4] - ours[(i * 4) + 2]) > 30;
+                    }
+                }
+            }
+        }
+
+        Assert.True(colored, "No pixel of H at 16 px has red and blue apart.");
+    }
+
+    // DirectWrite's ClearType 3x1 texture of one glyph, from the font file, with the rasterizer's rendering mode, grid fit, and
+    // origin (DirectWriteGlyphRasterizer.Analyze), made here without the rasterizer.
+    private static (RECT Bounds, byte[] Texture) DirectWriteClearType(string path, ushort glyph, float size, int step)
+    {
+        IDWriteFactory5* factory;
+        Guid factoryId = IID.IID_IDWriteFactory5;
+        Assert.True(DirectX.DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &factoryId, (IUnknown**)&factory) >= 0);
+        IDWriteFontFile* file;
+        fixed (char* name = path)
+        {
+            Assert.True(factory->CreateFontFileReference(name, null, &file) >= 0);
+        }
+
+        IDWriteFontFaceReference* reference;
+        Assert.True(factory->CreateFontFaceReference(file, 0, DWRITE_FONT_SIMULATIONS.DWRITE_FONT_SIMULATIONS_NONE, &reference) >= 0);
+        IDWriteFontFace3* face;
+        Assert.True(reference->CreateFontFace(&face) >= 0);
+        DWRITE_RENDERING_MODE1 mode;
+        DWRITE_GRID_FIT_MODE gridFit;
+        Assert.True(
+            face->GetRecommendedRenderingMode(
+                size,
+                96,
+                96,
+                null,
+                BOOL.FALSE,
+                DWRITE_OUTLINE_THRESHOLD.DWRITE_OUTLINE_THRESHOLD_ANTIALIASED,
+                DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
+                null,
+                &mode,
+                &gridFit
+            ) >= 0
+        );
+        if (mode == DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_OUTLINE)
+        {
+            mode = DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC;
+        }
+
+        float advance = 0;
+        DWRITE_GLYPH_OFFSET offset = default;
+        var run = new DWRITE_GLYPH_RUN
+        {
+            fontFace = (IDWriteFontFace*)face,
+            fontEmSize = size,
+            glyphCount = 1,
+            glyphIndices = &glyph,
+            glyphAdvances = &advance,
+            glyphOffsets = &offset,
+        };
+        IDWriteGlyphRunAnalysis* analysis;
+        Assert.True(
+            factory->CreateGlyphRunAnalysis(
+                &run,
+                null,
+                mode,
+                DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
+                gridFit,
+                DWRITE_TEXT_ANTIALIAS_MODE.DWRITE_TEXT_ANTIALIAS_MODE_CLEARTYPE,
+                step / (float)GlyphPosition.SubpixelSteps,
+                0,
+                &analysis
+            ) >= 0
+        );
+        RECT bounds;
+        Assert.True(analysis->GetAlphaTextureBounds(DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds) >= 0);
+        byte[] texture = new byte[Math.Max(0, (bounds.right - bounds.left) * (bounds.bottom - bounds.top) * 3)];
+        fixed (byte* pixels = texture)
+        {
+            Assert.True(analysis->CreateAlphaTexture(DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds, pixels, (uint)texture.Length) >= 0);
+        }
+
+        _ = analysis->Release();
+        _ = face->Release();
+        _ = reference->Release();
+        _ = file->Release();
+        _ = factory->Release();
+        return (bounds, texture);
     }
 
     // The horizontal center of the glyph's coverage, in pixels right of the pen.
