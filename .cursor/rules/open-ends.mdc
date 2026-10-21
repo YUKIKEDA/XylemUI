@@ -12,6 +12,8 @@ A PR is opened when its work is finished, not when it runs. Two sentences do not
 
 What is out of the row's scope is a roadmap row that names when (`.cursor/rules/defer.mdc`), not a caveat. A finding about code the row did not change becomes its own Issue at once (`.cursor/rules/pace.mdc`).
 
+A reason written as likely ("probably", 「と考えられる」) is checked first when a cheap check exists: reading the font with fontTools, reading values from a picture the PR kept, one more run. The T4 review found three such reasons in the record; one of them ("the same glyph") was half right: the outlines were the same and the hints were not (PR #173).
+
 A comment in the code is held to the same line: it says what was measured, and marks a cause that was not confirmed as not confirmed, with the Issue number.
 
 ```text
