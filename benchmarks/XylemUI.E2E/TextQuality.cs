@@ -12,7 +12,8 @@ namespace XylemUI.E2E;
 // Yu Gothic UI, at 12, 14, 16, and 20 px, a sample line with its top at y and a probe line of 16 "l" with its top at y + 1.8
 // size, then y grows by 3.6 size, from y 12; every line starts at x 16. Black on white, or white on black with --dark. The text
 // is drawn as the window's TextRendering says (ClearType where Windows and the monitor allow it, roadmap row T2), or in grayscale
-// with --gray, as T4 drew it. With --frames N it draws N frames instead of waiting for the window to close, and reports the CPU
+// with --gray, as T4 drew it. Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px,
+// each with its top at y and its left at x 16, 120, 270, and 470. With --frames N it draws N frames instead of waiting for the window to close, and reports the CPU
 // time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out), with the
 // atlas's pages of each kind and their bytes at the end.
 //
@@ -23,9 +24,12 @@ internal static class TextQuality
 {
     public const string Sample = "Hamburgefonstiv 0123 日本語のテキスト、ひらがな";
     public const string Probe = "llllllllllllllll";
+    public const string Emoji = "😀🎉👍❤️🇯🇵";
 
     public static readonly string[] Families = ["Segoe UI", "Yu Gothic UI"];
     public static readonly float[] Sizes = [12, 14, 16, 20];
+    public static readonly float[] EmojiSizes = [16, 24, 32, 48];
+    public static readonly float[] EmojiLefts = [16, 120, 270, 470];
 
     public static int Run(bool dark, bool gray, int frames = 0)
     {
@@ -56,10 +60,10 @@ internal static class TextQuality
         var gpu = new List<double>(frames);
         long start = 0;
 
-        void Line(string text, string family, float size, float top)
+        void Line(string text, string family, float size, float top, float left = 16)
         {
             FontFallback.Split(fonts, text, japanese, FontRequest.Default with { Family = family }, runs);
-            float pen = 16 * scale;
+            float pen = left * scale;
             float baseline = MathF.Round((top + size) * scale);
             foreach (FontRun run in runs)
             {
@@ -92,6 +96,11 @@ internal static class TextQuality
                     Line(Probe, family, size, y + (1.8f * size));
                     y += 3.6f * size;
                 }
+            }
+
+            for (int i = 0; i < EmojiSizes.Length; i++)
+            {
+                Line(Emoji, "Segoe UI Emoji", EmojiSizes[i], y, EmojiLefts[i]);
             }
 
             long built = Stopwatch.GetTimestamp();

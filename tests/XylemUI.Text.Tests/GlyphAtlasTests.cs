@@ -646,6 +646,96 @@ public sealed class GlyphAtlasTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new GlyphAtlas(new TestRasterizer(), pageSize: 1024, plotSize: 384));
     }
 
+    /// <summary>
+    /// A color glyph asked for as grayscale or ClearType, at any subpixel step, is kept once as a color glyph on a whole pixel:
+    /// each key that stands for it is measured once, and the color glyph is rasterized once, on a color page.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, the test rasterizer with "H" (glyph 41) as a color glyph without a layer in the text's color, and an empty
+    ///   atlas.
+    ///
+    /// Steps:
+    /// - Get "H" at 32 px as Gray at step 1, as Gray at step 3, as Rgb at step 2, then as Gray at step 1 again, in red text.
+    ///
+    /// Expected:
+    /// - The rasterizer measured the three keys and the color key (step 0, Color, no text color) once each, in that order (the color
+    ///   key after the first); one glyph was rasterized; one color page and no other page.
+    /// - Every request returned the same region, of the color kind.
+    /// </remarks>
+    [Fact]
+    public void TryGet_ColorGlyph_IsKeptOnceAsColor()
+    {
+        using Font font = TestFont.Open();
+        var rasterizer = new TestRasterizer();
+        rasterizer.ColorGlyphs.Add(GlyphH, false);
+        var atlas = new GlyphAtlas(rasterizer);
+        uint red = Color(0xFF, 0x20, 0x20, 0xFF);
+        var gray1 = new GlyphKey(font, GlyphH, 32, 1);
+        var gray3 = new GlyphKey(font, GlyphH, 32, 3);
+        var rgb2 = new GlyphKey(font, GlyphH, 32, 2, GlyphCoverage.Rgb);
+
+        AtlasGlyph[] glyphs = [Get(atlas, gray1, red), Get(atlas, gray3, red), Get(atlas, rgb2, red), Get(atlas, gray1, red)];
+
+        var color = new GlyphKey(font, GlyphH, 32, 0, GlyphCoverage.Color);
+        Assert.Equal([gray1, color, gray3, rgb2], rasterizer.Measured);
+        Assert.Equal(1, atlas.RasterizeCount);
+        Assert.Equal(
+            (1, 0, 0),
+            (atlas.GetPageCount(GlyphCoverage.Color), atlas.GetPageCount(GlyphCoverage.Gray), atlas.GetPageCount(GlyphCoverage.Rgb))
+        );
+        Assert.All(glyphs, glyph => Assert.Equal(glyphs[0], glyph));
+        Assert.Equal(GlyphCoverage.Color, glyphs[0].Coverage);
+    }
+
+    /// <summary>
+    /// A color glyph with a layer in the text's color is one glyph per opaque text color: the text's alpha is not in its key.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, the test rasterizer with "H" as a color glyph with a layer in the text's color, and an empty atlas.
+    ///
+    /// Steps:
+    /// - Get "H" at 32 px as Gray in red, in red with alpha 128, and in blue.
+    ///
+    /// Expected:
+    /// - Red and translucent red give the same glyph, whose key holds opaque red; blue gives another glyph, whose key holds opaque
+    ///   blue; two glyphs were rasterized.
+    /// </remarks>
+    [Fact]
+    public void TryGet_ColorGlyphInTextColor_IsOneGlyphPerOpaqueColor()
+    {
+        using Font font = TestFont.Open();
+        var rasterizer = new TestRasterizer();
+        rasterizer.ColorGlyphs.Add(GlyphH, true);
+        var atlas = new GlyphAtlas(rasterizer);
+        var key = new GlyphKey(font, GlyphH, 32, 0);
+        uint red = Color(0xFF, 0x20, 0x20, 0xFF);
+        uint translucentRed = Color(0xFF, 0x20, 0x20, 128);
+        uint blue = Color(0x20, 0x20, 0xFF, 0xFF);
+
+        AtlasGlyph inRed = Get(atlas, key, red);
+        AtlasGlyph inTranslucentRed = Get(atlas, key, translucentRed);
+        AtlasGlyph inBlue = Get(atlas, key, blue);
+
+        Assert.Equal(inRed, inTranslucentRed);
+        Assert.NotEqual(inRed, inBlue);
+        Assert.Equal(2, atlas.RasterizeCount);
+        Assert.Equal(
+            [red, blue],
+            rasterizer.Measured.Where(measured => measured.Coverage == GlyphCoverage.Color).Select(measured => measured.TextColor)
+        );
+    }
+
+    private static AtlasGlyph Get(GlyphAtlas atlas, GlyphKey key, uint textColor)
+    {
+        Assert.True(atlas.TryGet(key, textColor, out AtlasGlyph glyph));
+        return glyph;
+    }
+
+    // A color packed as the display list packs it: red in the low byte, then green, blue, and alpha.
+    private static uint Color(byte red, byte green, byte blue, byte alpha) => red | ((uint)green << 8) | ((uint)blue << 16) | ((uint)alpha << 24);
+
     private static uint[] JapaneseGlyphs(Font font)
     {
         using var shaper = new TextShaper();

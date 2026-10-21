@@ -96,6 +96,51 @@ public sealed class DrawTextTests
     }
 
     /// <summary>
+    /// A color glyph in a line has a run of its own, between the runs of the other glyphs, and sits on the nearest whole pixel; it
+    /// is asked for with the text's color.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer with "日" (glyph 240) as a color glyph, an empty atlas, and an empty display
+    ///   list.
+    ///
+    /// Steps:
+    /// - Draw "H日H" at 32 px with the pen at 10.25 and the baseline at 50, in ink.
+    ///
+    /// Expected:
+    /// - Three runs: Gray ("H"), Color ("日"), Gray ("H"), all in ink. "日" is at 10.25 + 728 × 0.032 = 33.546, which rounds to 34:
+    ///   x 34 + 1 = 35; its region is the color glyph at step 0.
+    /// </remarks>
+    [Fact]
+    public void DrawText_ColorGlyph_HasItsOwnRunOnAWholePixel()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        rasterizer.ColorGlyphs.Add(240, false);
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+
+        _ = list.DrawText(shaper.Shape(font, "H日H", TestFont.Japanese), font, 32, atlas, 10.25f, 50, Ink);
+
+        Assert.True(atlas.TryGet(new GlyphKey(font, 240, 32, 0, GlyphCoverage.Color), out AtlasGlyph nichi));
+        DisplayListReader reader = list.GetReader();
+        var kinds = new List<GlyphCoverage>();
+        GlyphInstance color = default;
+        while (reader.TryNext(out _))
+        {
+            GlyphRunCommand run = reader.ReadGlyphRun();
+            Assert.Equal(Ink, run.Color);
+            Assert.Single(run.Glyphs.ToArray());
+            kinds.Add(run.Coverage);
+            color = run.Coverage == GlyphCoverage.Color ? run.Glyphs[0] : color;
+        }
+
+        Assert.Equal([GlyphCoverage.Gray, GlyphCoverage.Color, GlyphCoverage.Gray], kinds);
+        Assert.Equal(new GlyphInstance(35, 50 - nichi.BearingY, nichi.Width, nichi.Height, nichi.Page, nichi.X, nichi.Y), color);
+    }
+
+    /// <summary>
     /// A size with a fraction reaches the atlas unrounded, and the advance is scaled by the same size.
     /// </summary>
     /// <remarks>

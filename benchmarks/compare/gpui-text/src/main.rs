@@ -2,7 +2,8 @@
 // GPUI of Zed v1.24.3. In logical pixels: an 800 x 600 window filled with the background; for Segoe UI, then Yu Gothic UI, at 12,
 // 14, 16, and 20 px, a sample line with its top at y and a probe line of 16 "l" with its top at y + 1.8 size, then y grows by
 // 3.6 size, from y 12; every line starts at x 16. Black on white, or white on black with --dark. Characters a family lacks take
-// GPUI's fallback. GPUI's own defaults for text (the platform's rendering mode).
+// GPUI's fallback. GPUI's own defaults for text (the platform's rendering mode). Under them, at y, the emoji line (row T6): the
+// emoji in Segoe UI Emoji at 16, 24, 32, and 48 px, each with its top at y and its left at x 16, 120, 270, and 470.
 #![windows_subsystem = "windows"]
 
 use gpui::{App, Bounds, Context, Window, WindowBounds, WindowOptions, div, point, prelude::*, px, rgb, size};
@@ -12,6 +13,9 @@ const SAMPLE: &str = "Hamburgefonstiv 0123 日本語のテキスト、ひらが�
 const PROBE: &str = "llllllllllllllll";
 const FAMILIES: [&str; 2] = ["Segoe UI", "Yu Gothic UI"];
 const SIZES: [f32; 4] = [12.0, 14.0, 16.0, 20.0];
+const EMOJI: &str = "😀🎉👍❤️🇯🇵";
+const EMOJI_SIZES: [f32; 4] = [16.0, 24.0, 32.0, 48.0];
+const EMOJI_LEFTS: [f32; 4] = [16.0, 120.0, 270.0, 470.0];
 
 struct TextScene {
     dark: bool,
@@ -39,6 +43,19 @@ impl Render for TextScene {
                 }
                 y += 3.6 * size;
             }
+        }
+        for (size, left) in EMOJI_SIZES.into_iter().zip(EMOJI_LEFTS) {
+            root = root.child(
+                div()
+                    .absolute()
+                    .left(px(left))
+                    .top(px(y))
+                    .font_family("Segoe UI Emoji")
+                    .text_size(px(size))
+                    .text_color(rgb(ink))
+                    .whitespace_nowrap()
+                    .child(EMOJI),
+            );
         }
         root
     }

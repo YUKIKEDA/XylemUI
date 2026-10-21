@@ -1,13 +1,18 @@
 // The text scene of the rendering comparison (XylemUI roadmap row T4; the same as benchmarks/XylemUI.E2E/TextQuality.cs). In
 // logical pixels: the window filled with the background; for Segoe UI, then Yu Gothic UI, at 12, 14, 16, and 20 px, a sample
 // line with its top at y and a probe line of 16 "l" with its top at y + 1.8 size, then y grows by 3.6 size, from y 12; every line
-// starts at x 16. Black on white, or white on black with --dark. Characters a family lacks take Flutter's fallback.
+// starts at x 16. Black on white, or white on black with --dark. Characters a family lacks take Flutter's fallback. Under them,
+// at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px, each with its top at y and its left at x
+// 16, 120, 270, and 470.
 import 'package:flutter/widgets.dart';
 
 const sample = 'Hamburgefonstiv 0123 日本語のテキスト、ひらがな';
 const probe = 'llllllllllllllll';
 const families = ['Segoe UI', 'Yu Gothic UI'];
 const sizes = [12.0, 14.0, 16.0, 20.0];
+const emoji = '😀🎉👍❤️🇯🇵';
+const emojiSizes = [16.0, 24.0, 32.0, 48.0];
+const emojiLefts = [16.0, 120.0, 270.0, 470.0];
 
 class TextScene extends StatelessWidget {
   const TextScene({super.key, required this.dark});
@@ -27,6 +32,11 @@ class TextScene extends StatelessWidget {
         lines.add(Positioned(left: 16, top: y + 1.8 * size, child: Text(probe, style: style)));
         y += 3.6 * size;
       }
+    }
+
+    for (var i = 0; i < emojiSizes.length; i++) {
+      final style = TextStyle(fontFamily: 'Segoe UI Emoji', fontSize: emojiSizes[i], color: ink);
+      lines.add(Positioned(left: emojiLefts[i], top: y, child: Text(emoji, style: style)));
     }
 
     return Directionality(
