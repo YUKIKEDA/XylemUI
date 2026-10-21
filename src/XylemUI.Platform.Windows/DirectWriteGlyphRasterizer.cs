@@ -11,7 +11,7 @@ namespace XylemUI.Platform.Windows;
 /// grid fitting DirectWrite recommends for the font and size, grayscale or ClearType coverage (the key's
 /// <see cref="GlyphKey.Coverage"/>), and the glyph shifted right by its subpixel step (<c>baselineOriginX</c>). GPUI draws its
 /// glyphs the same way (Zed v1.24.3, <c>crates/gpui_windows/src/direct_write.rs</c>; ClearType at lines 731 to 735 and 759 to
-/// 763).
+/// 763). A color glyph (an emoji) is drawn from its COLRv0 layers (design §5.0.3, "Color glyphs", roadmap row T6).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,11 +28,27 @@ namespace XylemUI.Platform.Windows;
 /// <see cref="Measure"/> makes the glyph's analysis and keeps it, so that <see cref="Rasterize"/> of the same key, which the
 /// atlas calls next, does not make it again. Used on one thread, as the atlas is.
 /// </para>
+/// <para>
+/// A color glyph is told apart in a color font (<c>IDWriteFontFace2::IsColorFont</c>) by <c>TranslateColorGlyphRun</c>, as GPUI
+/// does (<c>direct_write.rs</c>, lines 1562 and 1925 to 1952). Its layers come from <c>IDWriteFactory4::TranslateColorGlyphRun</c>
+/// with the COLRv0 format; each is drawn as grayscale coverage with the analysis GPUI uses for a layer (natural symmetric, default
+/// grid fit, lines 956 to 967) and laid over the ones before in its color, premultiplied, on the CPU. A layer in the text's color
+/// (palette index 0xFFFF, or an outline with no color) takes <see cref="GlyphKey.TextColor"/>. COLRv1 paint trees, SVG, and
+/// bitmap glyphs are not drawn: Direct2D drew a COLRv1 emoji in 4 ms and added 8.5 MB to the process (roadmap row T9).
+/// </para>
 /// </remarks>
 public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDisposable
 {
+    // The formats asked of TranslateColorGlyphRun: COLRv0 layers, and the outlines of the parts without color. DirectWrite gives a
+    // layer as TRUETYPE | COLR (Windows 11 26300, Segoe UI Emoji), so the formats are read as flags, as GPUI reads them (line 954).
+    private const DWRITE_GLYPH_IMAGE_FORMATS LayerFormats =
+        DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE
+        | DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_CFF
+        | DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR;
+
     private readonly Dictionary<Font, nint> _faces = [];
     private readonly Dictionary<Font, bool> _colorFonts = [];
+    private readonly List<Layer> _layers = [];
     private IDWriteFactory5* _factory;
     private IDWriteInMemoryFontFileLoader* _loader;
     private IDWriteGlyphRunAnalysis* _analysis;
@@ -41,11 +57,10 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     private DWRITE_TEXTURE_TYPE _texture;
     private byte[] _coverage = [];
     private IDWriteFactory4* _factory4;
-    private IDWriteFactory8* _factory8;
-    private ColorGlyphRenderer? _colors;
     private GlyphKey _colorKey;
     private GlyphBox _colorBox;
-    private bool _usePaintTrees = true;
+    private byte[] _layerCoverage = [];
+    private byte[] _colorPixels = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectWriteGlyphRasterizer"/> class.
@@ -68,9 +83,6 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             Guid iid4 = IID.IID_IDWriteFactory4;
             ThrowIfFailed(_factory->QueryInterface(&iid4, (void**)&factory4), "IDWriteFactory5::QueryInterface(IDWriteFactory4)");
             _factory4 = factory4;
-            IDWriteFactory8* factory8;
-            Guid iid8 = IID.IID_IDWriteFactory8;
-            _factory8 = _factory->QueryInterface(&iid8, (void**)&factory8) >= 0 ? factory8 : null;
         }
         catch
         {
@@ -85,23 +97,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     /// </summary>
     internal DWRITE_RENDERING_MODE1? RenderingMode { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether color glyphs are drawn from COLRv1 paint trees where Direct2D can draw them;
-    /// <see langword="false"/> draws the COLRv0 layers, as a Windows without COLRv1 does, for the tests of that path.
-    /// </summary>
-    internal bool UsePaintTrees
-    {
-        get => _usePaintTrees;
-        set => SetUsePaintTrees(value);
-    }
-
-    /// <summary>
-    /// Gets a value indicating whether the last color glyph drawn came from a COLRv1 paint tree.
-    /// </summary>
-    internal bool DrewPaintTree => _colors?.DrewPaintTree ?? false;
-
     /// <inheritdoc />
-    /// <exception cref="InvalidOperationException">Direct2D or WIC could not draw a color glyph.</exception>
     public GlyphBox Measure(in GlyphKey glyph)
     {
         if (glyph.Coverage == GlyphCoverage.Color)
@@ -120,7 +116,6 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     }
 
     /// <inheritdoc />
-    /// <exception cref="InvalidOperationException">Direct2D or WIC could not draw a color glyph.</exception>
     public void Rasterize(in GlyphKey glyph, Span<byte> destination, int stride)
     {
         if (glyph.Coverage == GlyphCoverage.Color)
@@ -140,7 +135,11 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
                 );
             }
 
-            _colors!.Copy(box, destination, stride);
+            for (int row = 0; row < box.Height; row++)
+            {
+                _colorPixels.AsSpan(row * box.Width * 4, box.Width * 4).CopyTo(destination.Slice(row * stride, box.Width * 4));
+            }
+
             return;
         }
 
@@ -208,9 +207,6 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     /// </summary>
     public void Dispose()
     {
-        _colors?.Dispose();
-        _colors = null;
-        Release(ref _factory8);
         Release(ref _factory4);
         Release(ref _analysis);
         foreach (nint face in _faces.Values)
@@ -228,34 +224,213 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         Release(ref _factory);
     }
 
-    private void SetUsePaintTrees(bool value)
-    {
-        _usePaintTrees = value;
-        _colorKey = default;
-        _colors?.UsePaintTrees = value;
-    }
-
-    // Draws the color glyph of the key in its colors, unless the last call drew it. The renderer (Direct2D and WIC) is made the
-    // first time.
+    // Draws the color glyph of the key from its COLRv0 layers, unless the last call drew it: each layer's grayscale coverage in its
+    // color, premultiplied BGRA, laid over the layers before it.
     private void DrawColor(in GlyphKey key)
     {
         ObjectDisposedException.ThrowIf(_factory is null, this);
         ObjectDisposedException.ThrowIf(key.Font.IsDisposed, key.Font);
-        if (_colors is not null && _colorKey == key && _colorKey.Font is not null)
+        if (_colorKey == key && _colorKey.Font is not null)
         {
             return;
         }
 
-        _colors ??= new ColorGlyphRenderer(_factory) { UsePaintTrees = _usePaintTrees };
-        _colors.Draw(FaceOf(key.Font), key, out GlyphBox box);
+        IDWriteFontFace3* face = FaceOf(key.Font);
+        uint text = key.TextColor == 0 ? 0xFF000000 : key.TextColor;
+        var textColor = new DXGI_RGBA
+        {
+            r = (text & 0xFF) / 255f,
+            g = ((text >> 8) & 0xFF) / 255f,
+            b = ((text >> 16) & 0xFF) / 255f,
+            a = 1,
+        };
+        ushort index = checked((ushort)key.GlyphId);
+        float advance = 0;
+        DWRITE_GLYPH_OFFSET offset = default;
+        DWRITE_GLYPH_RUN run = RunOf(face, &index, &advance, &offset, key.PixelSize);
+        _layers.Clear();
+        int used = 0;
+        IDWriteColorGlyphRunEnumerator1* runs = TranslateLayers(&run);
+        if (runs is null)
+        {
+            used = AddLayer(&run, 0, 0, textColor, used);
+        }
+        else
+        {
+            try
+            {
+                BOOL more;
+                while (runs->MoveNext(&more) >= 0 && more)
+                {
+                    DWRITE_COLOR_GLYPH_RUN1* layer;
+                    ThrowIfFailed(runs->GetCurrentRun(&layer), "IDWriteColorGlyphRunEnumerator1::GetCurrentRun");
+                    bool inTextColor =
+                        (layer->glyphImageFormat & DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR) == 0
+                        || layer->Base.paletteIndex == 0xFFFF;
+                    used = AddLayer(
+                        &layer->Base.glyphRun,
+                        layer->Base.baselineOriginX,
+                        layer->Base.baselineOriginY,
+                        inTextColor ? textColor : layer->Base.runColor,
+                        used
+                    );
+                }
+            }
+            finally
+            {
+                _ = runs->Release();
+            }
+        }
+
         _colorKey = key;
-        _colorBox = box;
+        _colorBox = Composite();
     }
 
-    // Whether DirectWrite gives the glyph color runs (not DWRITE_E_NOCOLOR), as GPUI's is_color_glyph decides
-    // (direct_write.rs, lines 1925 to 1952), asked only for a color font (IDWriteFontFace2::IsColorFont, line 1562). A layer in the
-    // text's color is a COLRv0 layer with palette index 0xFFFF, an outline layer, an SVG glyph, or a COLRv1 paint tree whose
-    // attributes say so (DWRITE_PAINT_ATTRIBUTES_USES_TEXT_COLOR).
+    // The color runs of a glyph run as COLRv0 layers and outlines, or null for a glyph with no color (DWRITE_E_NOCOLOR).
+    private IDWriteColorGlyphRunEnumerator1* TranslateLayers(DWRITE_GLYPH_RUN* run)
+    {
+        IDWriteColorGlyphRunEnumerator1* runs;
+        HRESULT result = _factory4->TranslateColorGlyphRun(
+            default,
+            run,
+            null,
+            LayerFormats,
+            DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
+            null,
+            0,
+            &runs
+        );
+        if (result == DWRITE.DWRITE_E_NOCOLOR)
+        {
+            return null;
+        }
+
+        ThrowIfFailed(result, "IDWriteFactory4::TranslateColorGlyphRun");
+        return runs;
+    }
+
+    // One layer's grayscale coverage, after the layers before it in _layerCoverage. Returns the bytes used so far.
+    private int AddLayer(DWRITE_GLYPH_RUN* run, float originX, float originY, DXGI_RGBA color, int used)
+    {
+        IDWriteGlyphRunAnalysis* analysis;
+        ThrowIfFailed(
+            _factory->CreateGlyphRunAnalysis(
+                run,
+                null,
+                DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC,
+                DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
+                DWRITE_GRID_FIT_MODE.DWRITE_GRID_FIT_MODE_DEFAULT,
+                DWRITE_TEXT_ANTIALIAS_MODE.DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE,
+                originX,
+                originY,
+                &analysis
+            ),
+            "IDWriteFactory3::CreateGlyphRunAnalysis"
+        );
+        try
+        {
+            RECT bounds;
+            ThrowIfFailed(
+                analysis->GetAlphaTextureBounds(DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1, &bounds),
+                "IDWriteGlyphRunAnalysis::GetAlphaTextureBounds"
+            );
+            int size = (bounds.right - bounds.left) * (bounds.bottom - bounds.top);
+            if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
+            {
+                return used;
+            }
+
+            if (_layerCoverage.Length < used + size)
+            {
+                Array.Resize(ref _layerCoverage, Math.Max(used + size, _layerCoverage.Length * 2));
+            }
+
+            fixed (byte* coverage = &_layerCoverage[used])
+            {
+                ThrowIfFailed(
+                    analysis->CreateAlphaTexture(DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1, &bounds, coverage, (uint)size),
+                    "IDWriteGlyphRunAnalysis::CreateAlphaTexture"
+                );
+            }
+
+            _layers.Add(new Layer(bounds, color, used));
+            return used + size;
+        }
+        finally
+        {
+            _ = analysis->Release();
+        }
+    }
+
+    // Lays the layers, in order, over each other in _colorPixels (premultiplied BGRA, "over"), and returns the box of their union.
+    private GlyphBox Composite()
+    {
+        if (_layers.Count == 0)
+        {
+            return new GlyphBox(0, 0, 0, 0, IsColor: true);
+        }
+
+        RECT union = _layers[0].Bounds;
+        foreach (Layer layer in _layers)
+        {
+            union.left = Math.Min(union.left, layer.Bounds.left);
+            union.top = Math.Min(union.top, layer.Bounds.top);
+            union.right = Math.Max(union.right, layer.Bounds.right);
+            union.bottom = Math.Max(union.bottom, layer.Bounds.bottom);
+        }
+
+        int width = union.right - union.left;
+        int height = union.bottom - union.top;
+        if (_colorPixels.Length < width * height * 4)
+        {
+            _colorPixels = GC.AllocateUninitializedArray<byte>(Math.Max(width * height * 4, _colorPixels.Length * 2));
+        }
+
+        Span<byte> pixels = _colorPixels.AsSpan(0, width * height * 4);
+        pixels.Clear();
+        foreach (Layer layer in _layers)
+        {
+            int layerWidth = layer.Bounds.right - layer.Bounds.left;
+            for (int y = layer.Bounds.top; y < layer.Bounds.bottom; y++)
+            {
+                ReadOnlySpan<byte> coverage = _layerCoverage.AsSpan(layer.Offset + ((y - layer.Bounds.top) * layerWidth), layerWidth);
+                Span<byte> row = pixels.Slice((((y - union.top) * width) + (layer.Bounds.left - union.left)) * 4, layerWidth * 4);
+                for (int x = 0; x < layerWidth; x++)
+                {
+                    if (coverage[x] == 0)
+                    {
+                        continue;
+                    }
+
+                    float alpha = coverage[x] / 255f * layer.Color.a;
+                    float keep = 1 - alpha;
+                    Span<byte> pixel = row.Slice(x * 4, 4);
+                    pixel[0] = (byte)((layer.Color.b * alpha * 255) + (pixel[0] * keep) + 0.5f);
+                    pixel[1] = (byte)((layer.Color.g * alpha * 255) + (pixel[1] * keep) + 0.5f);
+                    pixel[2] = (byte)((layer.Color.r * alpha * 255) + (pixel[2] * keep) + 0.5f);
+                    pixel[3] = (byte)((alpha * 255) + (pixel[3] * keep) + 0.5f);
+                }
+            }
+        }
+
+        return new GlyphBox(union.left, -union.top, width, height, IsColor: true);
+    }
+
+    private static DWRITE_GLYPH_RUN RunOf(IDWriteFontFace3* face, ushort* index, float* advance, DWRITE_GLYPH_OFFSET* offset, float pixelSize) =>
+        new()
+        {
+            fontFace = (IDWriteFontFace*)face,
+            fontEmSize = pixelSize,
+            glyphCount = 1,
+            glyphIndices = index,
+            glyphAdvances = advance,
+            glyphOffsets = offset,
+            isSideways = BOOL.FALSE,
+            bidiLevel = 0,
+        };
+
+    // Whether DirectWrite gives the glyph COLRv0 layers (not DWRITE_E_NOCOLOR), asked only for a color font. A layer in the text's
+    // color is one with palette index 0xFFFF, or an outline with no color.
     private bool IsColorGlyph(in GlyphKey key, out bool usesTextColor)
     {
         ObjectDisposedException.ThrowIf(_factory is null, this);
@@ -276,65 +451,22 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         ushort index = checked((ushort)key.GlyphId);
         float advance = 0;
         DWRITE_GLYPH_OFFSET offset = default;
-        var run = new DWRITE_GLYPH_RUN
-        {
-            fontFace = (IDWriteFontFace*)face,
-            fontEmSize = key.PixelSize,
-            glyphCount = 1,
-            glyphIndices = &index,
-            glyphAdvances = &advance,
-            glyphOffsets = &offset,
-        };
-        IDWriteColorGlyphRunEnumerator1* runs;
-        HRESULT result =
-            _factory8 is not null && _usePaintTrees
-                ? _factory8->TranslateColorGlyphRun(
-                    default,
-                    &run,
-                    null,
-                    ColorGlyphRenderer.Formats | DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR_PAINT_TREE,
-                    DWRITE_PAINT_FEATURE_LEVEL.DWRITE_PAINT_FEATURE_LEVEL_COLR_V1,
-                    DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
-                    null,
-                    0,
-                    &runs
-                )
-                : _factory4->TranslateColorGlyphRun(
-                    default,
-                    &run,
-                    null,
-                    ColorGlyphRenderer.Formats,
-                    DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
-                    null,
-                    0,
-                    &runs
-                );
-        if (result == DWRITE.DWRITE_E_NOCOLOR)
+        DWRITE_GLYPH_RUN run = RunOf(face, &index, &advance, &offset, key.PixelSize);
+        IDWriteColorGlyphRunEnumerator1* runs = TranslateLayers(&run);
+        if (runs is null)
         {
             return false;
         }
 
-        ThrowIfFailed(result, "IDWriteFactory::TranslateColorGlyphRun");
         try
         {
             BOOL more;
             while (runs->MoveNext(&more) >= 0 && more)
             {
-                DWRITE_COLOR_GLYPH_RUN1* color;
-                ThrowIfFailed(runs->GetCurrentRun(&color), "IDWriteColorGlyphRunEnumerator1::GetCurrentRun");
-                usesTextColor |= ColorGlyphRenderer.KindOf(color->glyphImageFormat) switch
-                {
-                    DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR => color->Base.paletteIndex == 0xFFFF,
-                    DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR_PAINT_TREE => PaintTreeUsesTextColor(
-                        face,
-                        color->Base.glyphRun.glyphIndices[0]
-                    ),
-                    DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_PNG
-                    or DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_JPEG
-                    or DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_TIFF
-                    or DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8 => false,
-                    _ => true,
-                };
+                DWRITE_COLOR_GLYPH_RUN1* layer;
+                ThrowIfFailed(runs->GetCurrentRun(&layer), "IDWriteColorGlyphRunEnumerator1::GetCurrentRun");
+                usesTextColor |=
+                    (layer->glyphImageFormat & DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR) == 0 || layer->Base.paletteIndex == 0xFFFF;
             }
         }
         finally
@@ -343,43 +475,6 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         }
 
         return true;
-    }
-
-    // Whether a COLRv1 paint tree paints anywhere in the text's color, from its attributes.
-    private static bool PaintTreeUsesTextColor(IDWriteFontFace3* face, ushort glyph)
-    {
-        IDWriteFontFace7* face7;
-        Guid iid = IID.IID_IDWriteFontFace7;
-        if (face->QueryInterface(&iid, (void**)&face7) < 0)
-        {
-            return true;
-        }
-
-        IDWritePaintReader* reader = null;
-        try
-        {
-            ThrowIfFailed(
-                face7->CreatePaintReader(
-                    DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_COLR_PAINT_TREE,
-                    DWRITE_PAINT_FEATURE_LEVEL.DWRITE_PAINT_FEATURE_LEVEL_COLR_V1,
-                    &reader
-                ),
-                "IDWriteFontFace7::CreatePaintReader"
-            );
-            DWRITE_PAINT_ELEMENT element;
-            D2D_RECT_F clip;
-            DWRITE_PAINT_ATTRIBUTES attributes;
-            ThrowIfFailed(
-                reader->SetCurrentGlyph(glyph, &element, (uint)sizeof(DWRITE_PAINT_ELEMENT), &clip, &attributes),
-                "IDWritePaintReader::SetCurrentGlyph"
-            );
-            return (attributes & DWRITE_PAINT_ATTRIBUTES.DWRITE_PAINT_ATTRIBUTES_USES_TEXT_COLOR) != 0;
-        }
-        finally
-        {
-            Release(ref reader);
-            _ = face7->Release();
-        }
     }
 
     // Makes the analysis of the key and its texture bounds, unless the last call made them.
@@ -541,4 +636,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             }
         }
     }
+
+    // A COLRv0 layer: the box of its coverage, from the pen, its color, and where its coverage starts in _layerCoverage.
+    private readonly record struct Layer(RECT Bounds, DXGI_RGBA Color, int Offset);
 }

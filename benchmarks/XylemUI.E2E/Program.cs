@@ -25,50 +25,39 @@
 using System.Globalization;
 using XylemUI.E2E;
 
-internal static class Program
+string scenario = args.Length > 0 ? args[0] : "frames";
+int Number(int index, int fallback) =>
+    args.Length > index && int.TryParse(args[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
+
+return scenario switch
 {
-    // The UI thread is in COM's single-threaded apartment: the first window initializes OLE on it (design §5.0.3, "Color glyphs").
-    [STAThread]
-    private static int Main(string[] args)
-    {
-        string scenario = args.Length > 0 ? args[0] : "frames";
-        int Number(int index, int fallback) =>
-            args.Length > index && int.TryParse(args[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
+    "startup" => Startup.Launch(Number(1, 10)),
+    "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray")),
+    "idle" => Startup.Idle(Number(1, 3), gray: args.Contains("--gray")),
+    "startup-check" => Startup.Check(Number(1, 5)),
+    "frames" => Frames.Run(Number(1, 600), heavy: 0, warp: args.Contains("--warp"), gray: args.Contains("--gray")),
+    "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
+    "event-latency" => EventLatency.Run(Number(1, 100)),
+    "resize-text" => CoreCosts.ResizeText(Number(1, 51)),
+    "layout" => LayoutCost.Run(Number(1, 15)),
+    "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
+    "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
+    "font-fallback" => CoreCosts.FontFallbackCost(Number(1, 2_000)),
+    "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
+    "scope-cost" => ScopeCost.Run(),
+    "text" => TextQuality.Run(
+        dark: args.Contains("--dark"),
+        gray: args.Contains("--gray"),
+        frames: Array.IndexOf(args, "--frames") is int at and >= 0 ? Number(at + 1, 0) : 0
+    ),
+    "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
+    "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
+    "external" => External.Run(args),
+    _ => Unknown(scenario),
+};
 
-        return scenario switch
-        {
-            "startup" => Startup.Launch(Number(1, 10)),
-            "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray")),
-            "idle" => Startup.Idle(Number(1, 3), gray: args.Contains("--gray")),
-            "startup-check" => Startup.Check(Number(1, 5)),
-            "frames" => Frames.Run(Number(1, 600), heavy: 0, warp: args.Contains("--warp"), gray: args.Contains("--gray")),
-            "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
-            "event-latency" => EventLatency.Run(Number(1, 100)),
-            "resize-text" => CoreCosts.ResizeText(Number(1, 51)),
-            "layout" => LayoutCost.Run(Number(1, 15)),
-            "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
-            "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
-            "font-fallback" => CoreCosts.FontFallbackCost(Number(1, 2_000)),
-            "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
-            "scope-cost" => ScopeCost.Run(),
-            "text" => TextQuality.Run(
-                dark: args.Contains("--dark"),
-                gray: args.Contains("--gray"),
-                frames: Array.IndexOf(args, "--frames") is int at and >= 0 ? Number(at + 1, 0) : 0
-            ),
-            "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
-            "app" => External.App(
-                isStatic: args.Contains("--static"),
-                period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0
-            ),
-            "external" => External.Run(args),
-            _ => Unknown(scenario),
-        };
-
-        static int Unknown(string scenario)
-        {
-            Console.Error.WriteLine($"Unknown scenario '{scenario}'. See the comment at the top of Program.cs.");
-            return 2;
-        }
-    }
+static int Unknown(string scenario)
+{
+    Console.Error.WriteLine($"Unknown scenario '{scenario}'. See the comment at the top of Program.cs.");
+    return 2;
 }

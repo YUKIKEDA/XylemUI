@@ -18,10 +18,6 @@ public sealed class UiThreadFixture : IDisposable
     public UiThreadFixture()
     {
         _thread = new Thread(Loop) { IsBackground = true, Name = "XylemUI test UI thread" };
-
-        // A UI thread is in COM's single-threaded apartment, as an application's [STAThread] Main is: the first window initializes
-        // OLE on it (design §5.0.3, "Color glyphs").
-        _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
         Invoke(UiThread.Initialize);
     }

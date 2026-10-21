@@ -351,9 +351,10 @@ Rejected:
   - FreeType の full のヒンティング（横も画素に合わせるので、サブピクセル位置と打ち消し合う）と、ヒンティングなし（100 % の画面で横線がぼやける。T4 の Grill）
   - Skia のように、ラスタライズのときに文字色の明るさ別の表を掛ける（アトラスが暗い色用と明るい色用に増え、色を 2 段階に丸める。T4 の Grill）
   - `XylemUI.Text` から DirectWrite を直接呼ぶ（`Text` を Windows の TFM に分けることになる。`IGlyphRasterizer` を `Text` に置き、Windows の実装を Platform.Windows に置いた。T4 の Grill）
-  - 色のグリフは GPUI のように COLRv0 だけを描く（Windows 11 の Segoe UI Emoji は COLRv1 が本来の見た目で、v0 は古い OS のための代わり。Skia は v1 も描く。T6 の Grill）
-  - 色の層を GPU で重ねて CPU に読み戻す（GPUI。v0 しか描けず、描くたびに GPU の往復がある。Direct2D で CPU のビットマップに描けば、OS のすべての形式がそのまま描ける。T6 の Grill）
-  - 色のグリフを、WIC ではなく Direct2D のデバイスのビットマップ（`D2D1_BITMAP_OPTIONS_CPU_READ`）に描いて `Map` で読む（COM の初期化は要らないが、Direct2D のために D3D11 のデバイスが 1 つ増え、T2 で目安を超えかけたアイドルのメモリを増やす。UI スレッドの STA は OLE と UIA で必ず要る。PR #188 のレビュー、Q8）
+  - 色のグリフを Direct2D で、COLRv1 のペイントの木を含む OS のすべての形式で描く（T6 の Grill で一度採った。実装して測ると、COLRv1 は初めて出る絵文字 1 つに 4〜4.6 ms（COLRv0 の 10〜30 倍）、Direct2D と WIC でプライベートメモリが 8.5 MB 増え、§11.3 の目安の 64 MB を超えた。比べた 3 つはどれも画面では COLRv0 だった。行 T9 で、速さとメモリの目途が立ってから入れる。PR #192 で Q11）
+  - 色のグリフを Direct2D で、COLRv1 を除く形式で描く（COLRv0 で 0.14〜0.46 ms だが、Direct2D と WIC で 8.5 MB 増える。COLRv0 の層は DirectWrite のカバレッジを CPU で重ねれば描け、増えるのは 0.2〜0.4 MB。PR #192 で Q11）
+  - 色の層を GPU で重ねて CPU に読み戻す（GPUI。描くたびに GPU の往復があり、レンダラとラスタライザの間に GPU の連絡が要る。CPU で重ねれば、ラスタライザがアトラスに直接書く今の形のままになる。T6 の Grill）
+  - 色のグリフのために、UI スレッドで COM（OLE）を T6 で初期化する（PR #188 のレビューの後に Q8 で決めたが、Q11 で WIC を使わなくなった。UI スレッドの STA は、それを使う最初の行（クリップボード・ドラッグアンドドロップ・UIA の P02）で入れる）
   - COLRv1 のペイントの木を自分で描く（Skia。グラデーション・変換・合成のモードを持つ大きな仕事で、Direct2D が同じものを描く。T6 の Grill）
   - 色のグリフにも ¼ 画素の 4 段階を作る（Skia。1 画素 4 バイトの大きいグリフでアトラスが最大 4 倍になる。GPUI は整数の画素に置く。T6 の Grill）
   - カラー絵文字を T4 に入れる（RGBA のアトラスと色の層の経路が要る。行 T6 にした。T4 の Grill）
