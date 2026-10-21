@@ -11,11 +11,12 @@ using XylemUI.Text;
 //
 //   HelloText --atlas-sizing <font file> [face index] [scale] [lines per frame] [text file] [--cleartype]
 //
-// With --cleartype the glyphs are ClearType (roadmap row T2): 4 bytes a pixel, so a page is 4 × pageSize² bytes.
+// With --cleartype the glyphs are ClearType (roadmap row T2): 4 bytes a pixel on pages half as wide, so a page takes the same
+// bytes and the kind keeps four times as many.
 //
 // One line per frame is a slow scroll; 40 lines per frame (a screen) is the worst case, every frame a new screen.
 //
-// It prints, per configuration: the GPU memory of the pages at the end (pageSize² bytes per page, 4 times that for ClearType) and
+// It prints, per configuration: the GPU memory of the pages at the end (pageSize² bytes per page for both kinds: a ClearType page is half as wide, at 4 bytes a pixel) and
 // the most pages at once;
 // the glyphs rasterized in the first frame; and, over the scrolling frames, the rasterizations and evictions per frame (median,
 // p95, max), the frames that rasterized more than 50 glyphs, and the time of the whole run.
@@ -78,7 +79,8 @@ internal static class AtlasSizing
 
             double milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
             int heavy = rasterized.Count(count => count > 50);
-            double megabytes = (double)atlas.GetPageCount(coverage) * page * page * GlyphAtlas.BytesPerPixel(coverage) / (1024 * 1024);
+            int side = atlas.GetPageSize(coverage);
+            double megabytes = (double)atlas.GetPageCount(coverage) * side * side * GlyphAtlas.BytesPerPixel(coverage) / (1024 * 1024);
             Console.WriteLine(
                 string.Create(
                     CultureInfo.InvariantCulture,

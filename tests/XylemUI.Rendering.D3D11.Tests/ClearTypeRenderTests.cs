@@ -186,7 +186,7 @@ public sealed unsafe class ClearTypeRenderTests(UiThreadFixture ui)
             foreach (GlyphInstance glyph in run.Glyphs)
             {
                 ReadOnlySpan<byte> page = atlas.GetPagePixels(GlyphCoverage.Rgb, glyph.Page);
-                int stride = atlas.PageSize * 4;
+                int stride = atlas.GetPageSize(GlyphCoverage.Rgb) * 4;
                 byte[] coverage = new byte[glyph.Width * glyph.Height * 4];
                 for (int y = 0; y < glyph.Height; y++)
                 {

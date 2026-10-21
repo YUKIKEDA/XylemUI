@@ -144,7 +144,7 @@ internal static class TextQuality
                 report.Number($"atlas_pages_{kind}".ToLowerInvariant(), pages);
                 report.Number(
                     $"atlas_bytes_{kind}".ToLowerInvariant(),
-                    (long)pages * atlas.PageSize * atlas.PageSize * GlyphAtlas.BytesPerPixel(kind)
+                    (long)pages * atlas.GetPageSize(kind) * atlas.GetPageSize(kind) * GlyphAtlas.BytesPerPixel(kind)
                 );
             }
 

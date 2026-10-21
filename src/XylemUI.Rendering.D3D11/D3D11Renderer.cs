@@ -1020,10 +1020,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 return;
             }
 
-            int slices = Math.Max(pages, atlas.MaxPages);
-            if (_texture is null || atlas.PageSize != _pageSize || pages > Slices || Slices > slices)
+            int pageSize = atlas.GetPageSize(coverage);
+            int slices = Math.Max(pages, atlas.GetMaxPages(coverage));
+            if (_texture is null || pageSize != _pageSize || pages > Slices || Slices > slices)
             {
-                Resize(device, context, atlas.PageSize, _texture is null || pages > Slices ? pages : slices);
+                Resize(device, context, pageSize, _texture is null || pages > Slices ? pages : slices);
             }
 
             UploadPages(context, atlas, pages);

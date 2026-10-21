@@ -5,7 +5,9 @@ namespace XylemUI.Text;
 /// <summary>
 /// The CPU side of the glyph atlas: the coverage of rasterized glyphs on pages of a fixed size, each split into plots, with the
 /// least recently used plot evicted when there is no room (design §5.0.2, §5.0.3; the same scheme as Skia's GrDrawOpAtlas). Each
-/// kind of coverage (<see cref="GlyphCoverage"/>) has its own pages: one byte per pixel for grayscale, four for ClearType.
+/// kind of coverage (<see cref="GlyphCoverage"/>) has its own pages: one byte per pixel for grayscale, four for ClearType. A
+/// ClearType page has half the side of a grayscale page, so the two take the same bytes, and a kind may hold four times as many
+/// (T2 review: a 1024 px RGBA page for one line of text added 9.5 MB to the idle private memory).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,11 +18,12 @@ namespace XylemUI.Text;
 /// <para>
 /// Each kind's pages are counted, evicted, and bounded on their own, as GPUI keeps a list of textures per kind in one atlas (Zed
 /// v1.24.3, <c>crates/gpui_windows/src/directx_atlas.rs</c>, lines 21 to 23). When no plot of the kind has room, a page is added
-/// while the kind has fewer than <see cref="MaxPages"/>; after that, the plot used longest ago, and not in the current frame, is
-/// emptied: its glyphs are forgotten and will be rasterized again when they are next asked for. When every plot was used in the
-/// current frame, a page is added beyond <see cref="MaxPages"/>; <see cref="BeginFrame"/> drops such extra pages once a frame no
-/// longer uses them. So the memory is bounded by <see cref="MaxPages"/> pages of each kind in steady state, and a frame only
-/// re-rasterizes the glyphs of the plots it evicts. The pages of a kind never exceed <see cref="PageLimit"/>: a frame that needs
+/// while the kind has fewer than its maximum (<see cref="GetMaxPages"/>); after that, the plot used longest ago, and not in the
+/// current frame, is emptied: its glyphs are forgotten and will be rasterized again when they are next asked for. When every plot
+/// was used in the current frame, a page is added beyond the maximum; <see cref="BeginFrame"/> drops such extra pages once a frame
+/// no longer uses them. So the memory is bounded by the maximum pages of each kind in steady state (the same bytes and plots for
+/// both kinds), and a frame only re-rasterizes the glyphs of the plots it evicts. The pages of a kind never exceed twice its
+/// maximum (<see cref="GetPageLimit"/>): a frame that needs
 /// more (more new glyphs than the limit holds, or a caller that never calls <see cref="BeginFrame"/>) gets <see langword="false"/>
 /// for the glyphs that do not fit, and they are not drawn. A kind no glyph asked for has no page.
 /// </para>
@@ -47,32 +50,31 @@ public sealed class GlyphAtlas
     /// Initializes a new instance of the <see cref="GlyphAtlas"/> class.
     /// </summary>
     /// <param name="rasterizer">Draws the glyphs the atlas does not hold yet.</param>
-    /// <param name="pageSize">The width and height of a page, in pixels.</param>
-    /// <param name="plotSize">The width and height of a plot, in pixels; it divides <paramref name="pageSize"/>.</param>
-    /// <param name="maxPages">The number of pages of each kind kept in steady state.</param>
-    /// <exception cref="ArgumentOutOfRangeException">A size is not positive, or the plot does not divide the page.</exception>
+    /// <param name="pageSize">The width and height of a grayscale page, in pixels; a ClearType page is half as wide and high.</param>
+    /// <param name="plotSize">The width and height of a plot, in pixels; it divides half of <paramref name="pageSize"/>.</param>
+    /// <param name="maxPages">The number of grayscale pages kept in steady state; four times as many ClearType pages.</param>
+    /// <exception cref="ArgumentOutOfRangeException">A size is not positive, or the plot does not divide half the page.</exception>
     public GlyphAtlas(IGlyphRasterizer rasterizer, int pageSize = 1024, int plotSize = 256, int maxPages = 4)
     {
         ArgumentNullException.ThrowIfNull(rasterizer);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(plotSize);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxPages);
-        if (plotSize > pageSize || pageSize % plotSize != 0)
+        if (pageSize % 2 != 0 || plotSize > pageSize / 2 || (pageSize / 2) % plotSize != 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(plotSize), "The plot size must divide the page size.");
+            throw new ArgumentOutOfRangeException(nameof(plotSize), "The plot size must divide half the page size.");
         }
 
         _rasterizer = rasterizer;
         PageSize = pageSize;
         PlotSize = plotSize;
         MaxPages = maxPages;
-        int plotsPerPage = pageSize / plotSize * (pageSize / plotSize);
-        _gray = new Pages(this, GlyphCoverage.Gray, plotsPerPage);
-        _rgb = new Pages(this, GlyphCoverage.Rgb, plotsPerPage);
+        _gray = new Pages(this, GlyphCoverage.Gray, pageSize, maxPages);
+        _rgb = new Pages(this, GlyphCoverage.Rgb, pageSize / 2, 4 * maxPages);
     }
 
     /// <summary>
-    /// Gets the width and height of a page, in pixels.
+    /// Gets the width and height of a grayscale page, in pixels (<see cref="GetPageSize"/> gives each kind's).
     /// </summary>
     public int PageSize { get; }
 
@@ -82,12 +84,13 @@ public sealed class GlyphAtlas
     public int PlotSize { get; }
 
     /// <summary>
-    /// Gets the number of pages of each kind kept in steady state.
+    /// Gets the number of grayscale pages kept in steady state (<see cref="GetMaxPages"/> gives each kind's).
     /// </summary>
     public int MaxPages { get; }
 
     /// <summary>
-    /// Gets the most pages of each kind the atlas ever holds: twice <see cref="MaxPages"/>.
+    /// Gets the most grayscale pages the atlas ever holds: twice <see cref="MaxPages"/> (<see cref="GetPageLimit"/> gives each
+    /// kind's).
     /// </summary>
     public int PageLimit => 2 * MaxPages;
 
@@ -112,7 +115,7 @@ public sealed class GlyphAtlas
     public int EvictionCount { get; private set; }
 
     /// <summary>
-    /// Gets the number of requests refused so far because the kind had <see cref="PageLimit"/> pages and no plot to evict. A
+    /// Gets the number of requests refused so far because the kind had its page limit and no plot to evict. A
     /// refused glyph is not cached, so each request for it rasterizes it again; a rising count means a frame needs more than the
     /// limit, or <see cref="BeginFrame"/> is not called.
     /// </summary>
@@ -127,14 +130,36 @@ public sealed class GlyphAtlas
     public static int BytesPerPixel(GlyphCoverage coverage) => coverage == GlyphCoverage.Rgb ? 4 : 1;
 
     /// <summary>
-    /// Returns the number of pages of a kind now; it exceeds <see cref="MaxPages"/> only while frames need the extra pages.
+    /// Returns the width and height of a kind's pages, in pixels: <see cref="PageSize"/> for grayscale, half of it for ClearType.
+    /// </summary>
+    /// <param name="coverage">The kind.</param>
+    /// <returns>The size.</returns>
+    public int GetPageSize(GlyphCoverage coverage) => PagesOf(coverage).Side;
+
+    /// <summary>
+    /// Returns the number of a kind's pages kept in steady state: <see cref="MaxPages"/> for grayscale, four times as many for
+    /// ClearType.
+    /// </summary>
+    /// <param name="coverage">The kind.</param>
+    /// <returns>The number of pages.</returns>
+    public int GetMaxPages(GlyphCoverage coverage) => PagesOf(coverage).MaxPages;
+
+    /// <summary>
+    /// Returns the most pages of a kind the atlas ever holds: twice <see cref="GetMaxPages"/>.
+    /// </summary>
+    /// <param name="coverage">The kind.</param>
+    /// <returns>The number of pages.</returns>
+    public int GetPageLimit(GlyphCoverage coverage) => 2 * PagesOf(coverage).MaxPages;
+
+    /// <summary>
+    /// Returns the number of pages of a kind now; it exceeds the kind's maximum only while frames need the extra pages.
     /// </summary>
     /// <param name="coverage">The kind.</param>
     /// <returns>The number of pages.</returns>
     public int GetPageCount(GlyphCoverage coverage) => PagesOf(coverage).Pixels.Count;
 
     /// <summary>
-    /// Returns the coverage of a page, row after row, each row <see cref="PageSize"/> times <see cref="BytesPerPixel"/> bytes.
+    /// Returns the coverage of a page, row after row, each row <see cref="GetPageSize"/> times <see cref="BytesPerPixel"/> bytes.
     /// </summary>
     /// <param name="coverage">The kind of the page.</param>
     /// <param name="page">The page, among the pages of <paramref name="coverage"/>.</param>
@@ -152,7 +177,7 @@ public sealed class GlyphAtlas
 
     /// <summary>
     /// Starts a new frame: glyphs asked for from now on protect their plots from eviction until the next call. Pages beyond
-    /// <see cref="MaxPages"/> that the frame just ended did not use are dropped, last first.
+    /// the kind's maximum that the frame just ended did not use are dropped, last first.
     /// </summary>
     public void BeginFrame()
     {
@@ -173,7 +198,7 @@ public sealed class GlyphAtlas
     /// <param name="glyph">The glyph's region and bearings, on a page of the key's kind.</param>
     /// <returns>
     /// <see langword="false"/> when the glyph is larger than a plot, or when there is no room: every plot of the kind was used in
-    /// the current frame and the kind has <see cref="PageLimit"/> pages. A glyph with no ink always fits.
+    /// the current frame and the kind has its page limit (<see cref="GetPageLimit"/>). A glyph with no ink always fits.
     /// </returns>
     /// <exception cref="ArgumentException">
     /// The key has no font, a size that is not positive, a subpixel step out of range, or a coverage that is not defined.
@@ -253,7 +278,7 @@ public sealed class GlyphAtlas
 
         // FindRoom placed the region inside the plot, so its rows lie inside the page, one page row apart.
         int bytes = pages.BytesPerPixel;
-        int stride = PageSize * bytes;
+        int stride = pages.Side * bytes;
         int start = (y * stride) + (x * bytes);
         _rasterizer.Rasterize(key, page.AsSpan(start, ((height - 1) * stride) + (width * bytes)), stride);
 
@@ -266,18 +291,21 @@ public sealed class GlyphAtlas
     }
 
     // The pages of one kind of coverage, their ids, and their plots.
-    private sealed class Pages(GlyphAtlas atlas, GlyphCoverage coverage, int plotsPerPage)
+    private sealed class Pages(GlyphAtlas atlas, GlyphCoverage coverage, int side, int maxPages)
     {
         public readonly List<byte[]> Pixels = [];
         public readonly List<long> Ids = [];
         public readonly int BytesPerPixel = GlyphAtlas.BytesPerPixel(coverage);
+        public readonly int Side = side;
+        public readonly int MaxPages = maxPages;
+        private readonly int _plotsPerPage = side / atlas.PlotSize * (side / atlas.PlotSize);
         private readonly List<Plot> _plots = [];
 
         public ref Plot PlotAt(int index) => ref CollectionsMarshal.AsSpan(_plots)[index];
 
         public void DropUnusedExtraPages(long frame)
         {
-            while (Pixels.Count > atlas.MaxPages && !PageUsedIn(Pixels.Count - 1, frame))
+            while (Pixels.Count > MaxPages && !PageUsedIn(Pixels.Count - 1, frame))
             {
                 DropLastPage();
             }
@@ -298,7 +326,7 @@ public sealed class GlyphAtlas
 
             long frame = atlas.Frame;
             int target = -1;
-            if (Pixels.Count >= atlas.MaxPages)
+            if (Pixels.Count >= MaxPages)
             {
                 for (int i = 0; i < plots.Length; i++)
                 {
@@ -313,7 +341,7 @@ public sealed class GlyphAtlas
             {
                 Evict(target);
             }
-            else if (Pixels.Count >= atlas.PageLimit)
+            else if (Pixels.Count >= 2 * MaxPages)
             {
                 x = 0;
                 y = 0;
@@ -322,7 +350,7 @@ public sealed class GlyphAtlas
             else
             {
                 AddPage();
-                target = _plots.Count - plotsPerPage;
+                target = _plots.Count - _plotsPerPage;
             }
 
             _ = PlotAt(target).TryPlace(width, height, out x, out y);
@@ -332,7 +360,7 @@ public sealed class GlyphAtlas
         private void AddPage()
         {
             int page = Pixels.Count;
-            int size = atlas.PageSize;
+            int size = Side;
             Pixels.Add(GC.AllocateArray<byte>(size * size * BytesPerPixel, pinned: true));
             Ids.Add(Interlocked.Increment(ref _lastPageId));
             for (int y = 0; y < size; y += atlas.PlotSize)
@@ -354,7 +382,7 @@ public sealed class GlyphAtlas
             }
 
             byte[] page = Pixels[plot.Page];
-            int stride = atlas.PageSize * BytesPerPixel;
+            int stride = Side * BytesPerPixel;
             int plotSize = atlas.PlotSize;
             for (int row = 0; row < plotSize; row++)
             {
@@ -368,8 +396,8 @@ public sealed class GlyphAtlas
 
         private bool PageUsedIn(int page, long frame)
         {
-            int first = page * plotsPerPage;
-            for (int i = first; i < first + plotsPerPage; i++)
+            int first = page * _plotsPerPage;
+            for (int i = first; i < first + _plotsPerPage; i++)
             {
                 if (_plots[i].LastUsedFrame >= frame)
                 {
@@ -383,7 +411,7 @@ public sealed class GlyphAtlas
         private void DropLastPage()
         {
             int page = Pixels.Count - 1;
-            for (int i = _plots.Count - 1; i >= page * plotsPerPage; i--)
+            for (int i = _plots.Count - 1; i >= page * _plotsPerPage; i--)
             {
                 foreach (GlyphKey key in CollectionsMarshal.AsSpan(_plots[i].Keys))
                 {

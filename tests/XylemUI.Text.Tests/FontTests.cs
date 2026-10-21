@@ -66,7 +66,7 @@ public sealed class FontTests
     {
         Font font = TestFont.Open();
         using var shaper = new TextShaper();
-        var atlas = new GlyphAtlas(new TestRasterizer(), 64, 64);
+        var atlas = new GlyphAtlas(new TestRasterizer(), 64, 32);
 
         font.Dispose();
 
