@@ -320,6 +320,7 @@ Decision:
   グリフは Windows で DirectWrite、macOS で Core Text、Linux で FreeType でラスタライズする。シェーピングは HarfBuzz。
   グリフの横の位置は ¼ 画素の 4 段階（縦は 1）。ヒンティングは DirectWrite の推奨、Linux は FreeType の light。
   ガンマとコントラストは、グリフの画素のシェーダで文字の色を使って補正する（Windows は OS の設定、ほかは 1.8 と 1.0）。
+  Windows では、設定が ClearType で、ウィンドウが不透明で、画素の並びが RGB か BGR のときだけ、ClearType で描く（RGBA の別のアトラスとデュアルソースのブレンド）。
 
 Reason:
   ダブル/トリプルバッファでシザー部分描画するとフリッカーする。
@@ -351,6 +352,9 @@ Rejected:
   - Skia のように、ラスタライズのときに文字色の明るさ別の表を掛ける（アトラスが暗い色用と明るい色用に増え、色を 2 段階に丸める。T4 の Grill）
   - `XylemUI.Text` から DirectWrite を直接呼ぶ（`Text` を Windows の TFM に分けることになる。`IGlyphRasterizer` を `Text` に置き、Windows の実装を Platform.Windows に置いた。T4 の Grill）
   - カラー絵文字を T4 に入れる（RGBA のアトラスと色の層の経路が要る。行 T6 にした。T4 の Grill）
+  - Windows で ClearType を使わない（Flutter と同じ。GPUI と Avalonia が使い、Windows の他のアプリに合わない。T2 の Grill）
+  - Windows の設定を読まずにいつも ClearType で描く（Avalonia と同じ。利用者が切った設定に従わない。T2 の Grill）
+  - ClearType のグリフを R8 のアトラスに横 3 倍で入れる（色ごとのカバレッジを読むたびに 3 つのテクセルを読み、ページの形がグレースケールと混ざる。GPUI と同じく RGBA の別のアトラスにした。T2 の Grill）
   - サブピクセル AA（行 T2）を T4 に入れる（デュアルソースのブレンドと RGB のアトラスが要る、別の大きさの仕事。T4 のすぐ後の行にした。T4 の Grill）
 
 ---
