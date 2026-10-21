@@ -2328,7 +2328,17 @@ flowchart TD
 
 **追い出し（S8b の Grill でオーナーが決定）: ページ + プロット単位の LRU（Skia の `GrDrawOpAtlas` と同じ）。** アトラスは決まった大きさのページ（テクスチャ）の集まりで、各ページを決まった大きさのプロットに分け、プロットの中にグリフを詰める。プロットは最後に使ったフレームを持つ。空きが無いとき、そのフレームで使っていない最も古いプロットを空けて使う。全プロットがそのフレームで使用中ならページを足す（上限を超えた分は一時的に許し、使われなくなったページを後で捨てる）。比べた方式と却下の理由: 満杯で全消去、または Impeller の「拡大して最大なら作り直す」は、作り直すフレームでそのフレームのグリフをまとめてラスタライズし直す（日本語の画面で数百グリフ × 約 20 µs）ので §11.3 のフレーム予算を超える。GPUI の「ページを足し続け、自動では追い出さない」はメモリが増え続け §5.3 の目標を守れない。WebRender の項目ごとの LRU は、任意の大きさの空きを再利用するアロケータの断片化の管理が要り、プロット単位で足りる。ページとプロットの大きさ・ページの上限は、S8b で日本語の画面を使って測って決める
 
-**アンチエイリアス（S8b の Grill でオーナーが決定）: グレースケール。** 1 画素 1 値のカバレッジで透過を合成する。透過の背景・変換・アニメーションでも崩れず、3 つの GPU バックエンドで同じになる。サブピクセル（ClearType 風）は行 T2（T4 のすぐ後、V1 の前。T4 の Grill）
+**アンチエイリアス（S8b の Grill でオーナーが決定）: グレースケール。** 1 画素 1 値のカバレッジで透過を合成する。透過の背景・変換・アニメーションでも崩れず、3 つの GPU バックエンドで同じになる。Windows では、条件がそろうときだけ ClearType で描く（下の「ClearType」、行 T2）
+
+**ClearType（T2 の Grill でオーナーが決定、Issue #178）:** 比べた版は T4 と同じ（Zed v1.24.3 の GPUI、Avalonia 12.1.4、Flutter 3.47.7）。
+
+- **使うか:** Windows では使う。GPUI（不透明なウィンドウで、`crates/gpui/src/window.rs` 4813〜4830 行目）と Avalonia（既定の `SubpixelAntialias`、`src/Skia/Avalonia.Skia/GlyphRunImpl.cs` 108〜113 行目と 134〜142 行目）が使い、Windows の他のアプリの見た目に合う。Flutter は使わない（Impeller はいつも `kAntiAlias`、`impeller/typographer/backends/skia/typographer_context_skia.cc` 265 行目）。macOS は使わない（GPUI も使わない、`crates/gpui_macos/src/window.rs` 1905 行目）。Linux は行 P04 で、wgpu がデュアルソースのブレンドを持つときだけ使う（GPUI と同じ）
+- **使う条件:** 3 つがそろうときだけ ClearType、どれかが欠ければグレースケール。(1) Windows のフォントのスムージングの設定が ClearType（`SystemParametersInfoW(SPI_GETFONTSMOOTHINGTYPE)` が `FE_FONTSMOOTHINGCLEARTYPE`。GPUI の `crates/gpui_windows/src/direct_write.rs` 1882〜1897 行目と同じく起動のときに読む）。(2) ウィンドウが不透明。§13.2 の Mica のように背景を DWM が描くウィンドウでは、文字はグレースケールになる。(3) 画素の並びが RGB か BGR（`IDWriteRenderingParams::GetPixelGeometry` が `FLAT` でない）。Avalonia は Windows の設定を読まず、いつも横の RGB で描く（`SKPixelGeometry.RgbHorizontal`）が、利用者が切った設定に従う GPUI の形にする。ウィンドウの層が、この条件からウィンドウの `GlyphCoverage` を決め、`DisplayList.DrawText` に渡す
+- **グリフとアトラス:** ClearType のグリフは、DirectWrite の `DWRITE_TEXT_ANTIALIAS_MODE_CLEARTYPE` と `DWRITE_TEXTURE_CLEARTYPE_3x1`（1 画素 3 バイト）で描き、R8 のアトラスとは別の、`R8G8B8A8_UNORM` のページのテクスチャ配列に 1 画素 4 バイトで入れる（GPUI の `directx_atlas.rs` 189〜193 行目と同じ）。`GlyphKey` にカバレッジの種類（`GlyphCoverage`）が加わる。そのグリフのメモリは 4 倍になる
+- **ブレンドと描く順:** ClearType のグリフの並びは、デュアルソースのブレンド（`SRC1_COLOR` と `INV_SRC1_COLOR`、アルファは書かない。GPUI の `directx_renderer.rs` 1513〜1530 行目）で描く。DisplayList の順は保ち、ブレンドの状態が変わる所でだけ描画を分ける（グレースケールのグリフと矩形は 1 回の描画のまま）。デュアルソースのブレンドは Direct3D 10 の API にある（`D3D10_BLEND_SRC1_COLOR`）。XylemUI のシェーダは機能レベル 10 で、T2 で WARP とハードウェアで確かめる
+- **補正と位置:** 色ごとに補正する（GPUI の `apply_contrast_and_gamma_correction3`。コントラストは `IDWriteRenderingParams1::GetEnhancedContrast`、ガンマの比は T4 と同じ）。BGR の画面ではシェーダで並びを入れ替える。¼ 画素の 4 段階のサブピクセル位置は ClearType でも同じに使う（GPUI と同じ）
+- **透過・変換・レイヤー:** 不透明度・変換・画面外のレイヤーの中のグリフはグレースケールで描く。LCD のカバレッジは下の画素の色が分からないと正しく混ぜられないためである（Avalonia もレイヤーでない画面外の描き先で切る、`DrawingContextImpl.cs` 1509 行目）。DisplayList はまだこの 3 つを持たないので、契約だけを今決め、実装はそれを入れる行（D10・V1）で行う
+- **比べ方と測るもの:** T2 の受け入れは Issue に書く。T4 の場面（`benchmarks/compare/text.ps1`）で GPUI と Avalonia（どちらも LCD）と並べ、WARP の読み戻しで色ごとの合成を CPU の合成と比べ、アトラスのメモリ・描画の回数・初めてのラスタライズを測る
 
 **グリフの描き方（T4 の Grill でオーナーが決定、Issue #157）:** 比べた版は Flutter 3.47.7（とその DEPS が固定する Skia）、Avalonia 12.1.4（SkiaSharp 3.119.4）、Zed v1.24.3 の GPUI。
 
@@ -2344,18 +2354,22 @@ public interface IGlyphRasterizer
 {
     // ペンを整数の画素に置いたときの、グリフのインクの箱（整数の画素）。インクが無ければ幅 0
     GlyphBox Measure(in GlyphKey glyph);
-    // カバレッジ（1 画素 1 バイト）を destination に書く。destination は Measure の箱の大きさで、行は stride バイトずつ離れる
+    // カバレッジを destination に書く。Gray は 1 画素 1 バイト、Rgb は 1 画素 4 バイト（R・G・B と使わない 1 バイト）。
+    // destination は Measure の箱の大きさで、行は stride バイトずつ離れる
     void Rasterize(in GlyphKey glyph, Span<byte> destination, int stride);
 }
 
+// カバレッジの種類: グレースケール、または ClearType の色ごとのカバレッジ（行 T2）
+public enum GlyphCoverage : byte { Gray, Rgb }
+
 // PixelSize は 1 em の画素数（論理ピクセルの大きさ × スケールファクタ、丸めない）。SubpixelX は横の段階（0〜3、¼ 画素ずつ右へ）
-public readonly record struct GlyphKey(Font Font, uint GlyphId, float PixelSize, int SubpixelX);
+public readonly record struct GlyphKey(Font Font, uint GlyphId, float PixelSize, int SubpixelX, GlyphCoverage Coverage);
 
 // Left はペンから右へ、Top はベースラインから上へ
 public readonly record struct GlyphBox(int Left, int Top, int Width, int Height);
 ```
 
-  `GlyphAtlas` は `Measure` で箱の大きさを知ってから場所を取り、その場所に `Rasterize` で直接書く（確保もコピーも増やさない）。アトラスのキーは `GlyphKey`。`Rasterize` のカバレッジが 1 画素 1 バイトなのは T4 の単色のグリフの形で、サブピクセル AA（行 T2）の RGB のカバレッジと、色の層（行 T6）は、それぞれの Grill でこの形を変える
+  `GlyphAtlas` は `Measure` で箱の大きさを知ってから場所を取り、その場所に `Rasterize` で直接書く（確保もコピーも増やさない）。アトラスのキーは `GlyphKey`。`Rasterize` のカバレッジは、グレースケールが 1 画素 1 バイト、ClearType が 1 画素 4 バイトで、2 つは別のアトラスのページに入る（上の「ClearType」、行 T2）。色の層（行 T6）は T6 の Grill でこの形を変える
 - **大きさ（PR #158 のレビュー）:** `GlyphKey.PixelSize` は、論理ピクセルの文字の大きさにスケールファクタを掛けた `float` で、整数に丸めない（§6.1 の Fractional Scaling）。125 % の 14 px は 17.5 px で描く。整数に丸めると、HarfBuzz のアドバンス（フォント単位から正確な大きさで換算する）と最大で半画素ずれる。`DisplayList.DrawText` も同じ `float` を取り、アドバンスをこの値で換算する。GPUI の `RenderGlyphParams` も `font_size`（f32）と `scale_factor`（f32）をキーに持つ（`crates/gpui/src/text_system.rs` 1264〜1273 行目）。DirectWrite は大きさを `float` で、FreeType は 1/64 画素（`FT_Set_Char_Size`）で受け取る
 - **FreeType を外す道筋（PR #158 のレビュー）:** `Font` は FreeType を呼ばない。`FamilyName` は HarfBuzz の `hb_ot_name_get_utf16` から、FreeType と同じ順で読む（OS/2 の `fsSelection` の bit 8 が立っていれば name ID 16、1。立っていなければ 21、16、1。FreeType 2.14.3 の `src/sfnt/sfobjs.c` 1048〜1068 行目）。T4 で、Windows のフォントの 393 個の face のすべてで FreeType と同じ名前になった。`UnitsPerEm` はもともと HarfBuzz から読んでいる。ネイティブのライブラリは P04 / P06 まで Windows でしか作らないので、T4 で FreeType の P/Invoke と `vendor/` のビルドも外した（残すと、どこでもビルドもテストもされないコードになる）。FreeType の face は Linux の `IGlyphRasterizer` が `Font` ごとに作って持ち（Windows の実装が font face を持つのと同じ形）、P04 で FreeType のビルドと一緒に入れる。S8a のインクの箱のテスト（アウトラインの箱との一致）は DirectWrite の実装のテスト（Platform.Windows）に移し、FreeType の実装のテストは P04 で書く。`XylemUI.E2E.exe` は 0.58 MB 小さくなった（4,485,632 → 3,896,832 バイト）
 - **アトラスの見込み（PR #158 のレビュー）:** 1 つのグリフが取る段階は、そのグリフが出るペンの位置の端数で決まる。最悪は 4 倍。ラテン文字はアドバンスが端数を持つので、よく出るグリフは 4 段階に近づく。日本語の全角の文字はアドバンスが 1 em なので、1 em が整数の画素の大きさ（100 % の 14 px、150 % の 21 px）では行の中で端数が変わらず 1 倍に近い。1 em が半画素を持つ大きさ（125 % の 14 px は 17.5 px）では 2 段階を使う。S8b の日本語の画面（150 % で 525 グリフ）は、大半が全角なので 1〜2 倍になると見込む。測った値がこの見込みを外れたら、理由を調べる。T4 で測ると、最初の画面は 1,076 グリフ（2.05 倍。125 % で 1,068、100 % で 1,093）で、見込みを少し超えた。全角の文字のうち整数の画素に乗ったのは 1,543 個中 153 個だけで、全角の文字は 1.87 倍、それ以外は 2.70 倍だった。設計書の文書は行の中に半角の文字（コードの名前や数字）が多く、その後ろの全角の文字もペンの位置が端数を持つためである。既定の大きさ（ページ 1024 px・プロット 256 px・上限 4 ページ）のままで、どの倍率でも追い出しは 0（ページは 3 枚まで）なので、既定は変えない
@@ -3170,7 +3184,7 @@ v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）
 **目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は `IReadOnlySignal<Theme>` を Context で Provide して切り替える（§2.13）。
 
 **Mica と Acrylic:**
-- **v1 で入れるもの**: ウィンドウ背景の **Mica**。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
+- **v1 で入れるもの**: ウィンドウ背景の **Mica**（Mica のウィンドウは背景が不透明でないので、文字は ClearType でなくグレースケールで描く。§5.0.3「ClearType」）。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
 - **v1.x に送るもの**: アプリ内の **Acrylic**（背後の UI をぼかす効果）。これを入れるにはレンダラに背景のぼかし（オフスクリーンパス＋新しい `PaintCommand`）が必要になり、v1 の「1パスで全体を描く」レンダラ（§5.0.1）の前提が崩れるため。**見直し（Issue #54）:** この理由はレンダラを単純に保つことで、要件と比べていない。Flutter（`BackdropFilter`）・Avalonia・WinUI は背景のぼかしを持ち、オフスクリーンパスはグループの不透明度・影・角丸のクリップでも要る。V1 の前に、オフスクリーンパスをレンダラの設計に入れるかを決め直す
 
 **フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を指定し、Windows 10 のように Segoe UI Variable が無ければ、エンジンの既定のフォント（§4.5、Windows は `SPI_GETICONTITLELOGFONT` のフォント）に戻る。どのフォントにも無い文字は、OS のフォールバックと同梱フォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。
