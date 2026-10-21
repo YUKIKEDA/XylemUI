@@ -157,7 +157,7 @@ def same_lines(first: str, other: str, dark: bool) -> int:
     b = np.asarray(Image.open(other).convert("RGB"), dtype=np.int32)
     width = min(a.shape[1], b.shape[1]) - 20
     same = 0
-    for top, bottom in bands(coverage(first, dark)):
+    for top, bottom in bands(coverage(first, dark))[:16]:
         line = a[top:bottom, :width]
         for shift in range(-8, 9):
             if top + shift >= 0 and bottom + shift <= b.shape[0] and np.array_equal(line, b[top + shift : bottom + shift, :width]):

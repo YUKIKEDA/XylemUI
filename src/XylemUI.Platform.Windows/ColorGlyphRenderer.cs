@@ -271,10 +271,10 @@ internal sealed unsafe class ColorGlyphRenderer : IDisposable
         return runs;
     }
 
-    // Direct2D draws COLRv1 when its device context has the interface and the feature level. The bitmap target is made first.
+    // Direct2D draws COLRv1 when its device context has the interface and the feature level. Draw makes the bitmap target before
+    // it begins to draw, and the target is not made again while it draws (Direct2D refuses EndDraw then: D2DERR_WRONG_STATE).
     private bool CanDrawPaintTrees()
     {
-        EnsureBitmap(64);
         return _context7 is not null && _context7->GetPaintFeatureLevel() >= DWRITE_PAINT_FEATURE_LEVEL.DWRITE_PAINT_FEATURE_LEVEL_COLR_V1;
     }
 

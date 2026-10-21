@@ -15,7 +15,7 @@ namespace XylemUI.E2E;
 // with --gray, as T4 drew it. Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px,
 // each with its top at y and its left at x 16, 120, 270, and 470. With --frames N it draws N frames instead of waiting for the window to close, and reports the CPU
 // time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out), with the
-// atlas's pages of each kind and their bytes at the end.
+// atlas's pages of each kind and their bytes, and the process's private memory, at the end.
 //
 // XylemUI does not handle the display's scale yet, so this scene makes the process per-monitor DPI aware and draws in physical
 // pixels at the window's scale, as a DPI-aware app does: sizes and positions are the logical ones times the scale, and the
@@ -147,7 +147,8 @@ internal static class TextQuality
             report.Text("coverage", rendering.Coverage.ToString());
             report.Number("glyphs", list.GlyphCount);
             report.Number("draws", renderer.LastDrawCount);
-            foreach (GlyphCoverage kind in (GlyphCoverage[])[GlyphCoverage.Gray, GlyphCoverage.Rgb])
+            report.Number("private_mb", Process.GetCurrentProcess().PrivateMemorySize64 / 1048576.0);
+            foreach (GlyphCoverage kind in (GlyphCoverage[])[GlyphCoverage.Gray, GlyphCoverage.Rgb, GlyphCoverage.Color])
             {
                 int pages = atlas.GetPageCount(kind);
                 report.Number($"atlas_pages_{kind}".ToLowerInvariant(), pages);

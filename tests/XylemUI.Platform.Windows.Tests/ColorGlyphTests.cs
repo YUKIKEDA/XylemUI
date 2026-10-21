@@ -145,6 +145,36 @@ public sealed unsafe class ColorGlyphTests(UiThreadFixture ui)
         Assert.True(box.Width > 0 && box.Height > 0, $"{box}");
     }
 
+    /// <summary>
+    /// A small emoji drawn first by a rasterizer, whose bitmap is then made for that size, is drawn with ink.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Segoe UI Emoji (skipped where Windows lacks it).
+    ///
+    /// Steps:
+    /// - For 12, 16, and 17.3 px, a new rasterizer measures and rasterizes "😀" as <see cref="GlyphCoverage.Color"/>.
+    ///
+    /// Expected:
+    /// - Each is drawn without an exception and has opaque pixels. (Before the fix, a first glyph under about 20 px made the bitmap
+    ///   again while Direct2D drew, and EndDraw threw D2DERR_WRONG_STATE.)
+    /// </remarks>
+    [Fact]
+    public void Rasterize_SmallEmojiFirst_IsDrawn() =>
+        ui.Invoke(() =>
+        {
+            Assert.SkipUnless(File.Exists(EmojiPath), "Windows has no Segoe UI Emoji (seguiemj.ttf).");
+            using Font emoji = Font.FromFile(EmojiPath, 0);
+            uint grin = GlyphOf(emoji, "😀");
+            foreach (float size in (float[])[12, 16, 17.3f])
+            {
+                using var rasterizer = new DirectWriteGlyphRasterizer();
+                (GlyphBox box, byte[] pixels) = Draw(rasterizer, new GlyphKey(emoji, grin, size, 0, GlyphCoverage.Color));
+                Assert.True(box.Width > 0 && box.Height > 0, $"{size} px: {box}");
+                Assert.Contains(pixels.Where((_, i) => i % 4 == 3), alpha => alpha == 255);
+            }
+        });
+
     private static uint GlyphOf(Font font, string text)
     {
         using var shaper = new TextShaper();
