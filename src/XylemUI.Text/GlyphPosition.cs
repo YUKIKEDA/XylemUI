@@ -27,4 +27,13 @@ public static class GlyphPosition
         subpixelX = quarters & (SubpixelSteps - 1);
         return quarters >> 2;
     }
+
+    /// <summary>
+    /// Rounds a horizontal position to the nearest whole pixel, halfway to the one nearer 0: where a color glyph goes, which has no
+    /// subpixel steps (design §5.0.3, "Color glyphs"; GPUI's <c>paint_emoji</c>, Zed v1.24.3, <c>crates/gpui/src/window.rs</c>,
+    /// lines 4850 to 4856).
+    /// </summary>
+    /// <param name="x">The position, in physical pixels.</param>
+    /// <returns>The whole pixel.</returns>
+    public static int Round(float x) => (int)MathF.CopySign(MathF.Ceiling(MathF.Abs(x) - 0.5f), x);
 }

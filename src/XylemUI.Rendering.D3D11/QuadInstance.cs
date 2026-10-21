@@ -17,6 +17,11 @@ internal struct QuadInstance
     public const uint SolidPage = uint.MaxValue;
 
     /// <summary>
+    /// The bit of <see cref="Page"/> that marks a color glyph: its page is in the color atlas (design §5.0.3, "Color glyphs").
+    /// </summary>
+    public const uint ColorPage = 0x40000000;
+
+    /// <summary>
     /// The left, top, width, and height, in physical pixels (whole pixels for a glyph).
     /// </summary>
     public Vector4 Rect;
@@ -32,7 +37,8 @@ internal struct QuadInstance
     public uint AtlasOrigin;
 
     /// <summary>
-    /// The atlas page (the slice of the atlas texture array) of a glyph; <see cref="SolidPage"/> for a solid rectangle.
+    /// The atlas page (the slice of the atlas texture array) of a glyph, with <see cref="ColorPage"/> set for a color glyph;
+    /// <see cref="SolidPage"/> for a solid rectangle.
     /// </summary>
     public uint Page;
 }

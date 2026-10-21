@@ -5,8 +5,9 @@ namespace XylemUI.Text;
 /// <summary>
 /// The CPU side of the glyph atlas: the coverage of rasterized glyphs on pages of a fixed size, each split into plots, with the
 /// least recently used plot evicted when there is no room (design §5.0.2, §5.0.3; the same scheme as Skia's GrDrawOpAtlas). Each
-/// kind of coverage (<see cref="GlyphCoverage"/>) has its own pages: one byte per pixel for grayscale, four for ClearType. A
-/// ClearType page has half the side of a grayscale page, so the two take the same bytes, and a kind may hold four times as many
+/// kind of coverage (<see cref="GlyphCoverage"/>) has its own pages: one byte per pixel for grayscale, four for ClearType and for
+/// color glyphs. A ClearType or color page has half the side of a grayscale page, so the kinds take the same bytes, and a kind may
+/// hold four times as many
 /// (T2 review: a 1024 px RGBA page for one line of text added 9.5 MB to the idle private memory).
 /// </summary>
 /// <remarks>
@@ -38,6 +39,12 @@ public sealed class GlyphAtlas
 {
     private const int Padding = 1;
 
+    // The plot of a cached key that stands for a color glyph, without and with a layer in the text's color; -1 is a glyph with no
+    // ink.
+    private const int ColorGlyph = -2;
+    private const int ColorGlyphInTextColor = -3;
+    private const uint OpaqueBlack = 0xFF000000;
+
     private static long _lastPageId;
 
     private readonly IGlyphRasterizer _rasterizer;
@@ -45,6 +52,7 @@ public sealed class GlyphAtlas
     private readonly List<AtlasRegion> _dirty = [];
     private readonly Pages _gray;
     private readonly Pages _rgb;
+    private readonly Pages _color;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphAtlas"/> class.
@@ -71,6 +79,7 @@ public sealed class GlyphAtlas
         MaxPages = maxPages;
         _gray = new Pages(this, GlyphCoverage.Gray, pageSize, maxPages);
         _rgb = new Pages(this, GlyphCoverage.Rgb, pageSize / 2, 4 * maxPages);
+        _color = new Pages(this, GlyphCoverage.Color, pageSize / 2, 4 * maxPages);
     }
 
     /// <summary>
@@ -123,14 +132,15 @@ public sealed class GlyphAtlas
 
     /// <summary>
     /// Returns the bytes of one pixel of a kind's pages: 1 for <see cref="GlyphCoverage.Gray"/>, 4 for
-    /// <see cref="GlyphCoverage.Rgb"/>.
+    /// <see cref="GlyphCoverage.Rgb"/> and <see cref="GlyphCoverage.Color"/>.
     /// </summary>
     /// <param name="coverage">The kind.</param>
     /// <returns>The bytes per pixel.</returns>
-    public static int BytesPerPixel(GlyphCoverage coverage) => coverage == GlyphCoverage.Rgb ? 4 : 1;
+    public static int BytesPerPixel(GlyphCoverage coverage) => coverage == GlyphCoverage.Gray ? 1 : 4;
 
     /// <summary>
-    /// Returns the width and height of a kind's pages, in pixels: <see cref="PageSize"/> for grayscale, half of it for ClearType.
+    /// Returns the width and height of a kind's pages, in pixels: <see cref="PageSize"/> for grayscale, half of it for ClearType
+    /// and color.
     /// </summary>
     /// <param name="coverage">The kind.</param>
     /// <returns>The size.</returns>
@@ -138,7 +148,7 @@ public sealed class GlyphAtlas
 
     /// <summary>
     /// Returns the number of a kind's pages kept in steady state: <see cref="MaxPages"/> for grayscale, four times as many for
-    /// ClearType.
+    /// ClearType and color.
     /// </summary>
     /// <param name="coverage">The kind.</param>
     /// <returns>The number of pages.</returns>
@@ -183,6 +193,7 @@ public sealed class GlyphAtlas
     {
         _gray.DropUnusedExtraPages(Frame);
         _rgb.DropUnusedExtraPages(Frame);
+        _color.DropUnusedExtraPages(Frame);
         Frame++;
     }
 
@@ -192,10 +203,11 @@ public sealed class GlyphAtlas
     public void ClearDirtyRegions() => _dirty.Clear();
 
     /// <summary>
-    /// Returns the region of a glyph, rasterizing it into the atlas the first time, and marks it used in the current frame.
+    /// Returns the region of a glyph, rasterizing it into the atlas the first time, and marks it used in the current frame, for
+    /// text in opaque black (see the overload that takes the text's color).
     /// </summary>
     /// <param name="key">The glyph, its size, its subpixel step, and its kind of coverage.</param>
-    /// <param name="glyph">The glyph's region and bearings, on a page of the key's kind.</param>
+    /// <param name="glyph">The glyph's region and bearings, on a page of the key's kind, or of the color kind for a color glyph.</param>
     /// <returns>
     /// <see langword="false"/> when the glyph is larger than a plot, or when there is no room: every plot of the kind was used in
     /// the current frame and the kind has its page limit (<see cref="GetPageLimit"/>). A glyph with no ink always fits.
@@ -205,7 +217,28 @@ public sealed class GlyphAtlas
     /// </exception>
     /// <exception cref="InvalidOperationException">The rasterizer could not draw the glyph.</exception>
     /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
-    public bool TryGet(in GlyphKey key, out AtlasGlyph glyph)
+    public bool TryGet(in GlyphKey key, out AtlasGlyph glyph) => TryGet(key, OpaqueBlack, out glyph);
+
+    /// <summary>
+    /// Returns the region of a glyph, rasterizing it into the atlas the first time, and marks it used in the current frame. A color
+    /// glyph asked for as grayscale or ClearType is kept once as <see cref="GlyphCoverage.Color"/>, on a whole pixel (subpixel step
+    /// 0), and with the text's color in its key only when it has a layer in the text's color (design §5.0.3, "Color glyphs").
+    /// </summary>
+    /// <param name="key">The glyph, its size, its subpixel step, and its kind of coverage.</param>
+    /// <param name="textColor">
+    /// The text's color, packed as red in the low byte, then green, blue, and alpha; its alpha is not used here.
+    /// </param>
+    /// <param name="glyph">The glyph's region and bearings, on a page of the key's kind, or of the color kind for a color glyph.</param>
+    /// <returns>
+    /// <see langword="false"/> when the glyph is larger than a plot, or when there is no room: every plot of the kind was used in
+    /// the current frame and the kind has its page limit (<see cref="GetPageLimit"/>). A glyph with no ink always fits.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// The key has no font, a size that is not positive, a subpixel step out of range, or a coverage that is not defined.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The rasterizer could not draw the glyph.</exception>
+    /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
+    public bool TryGet(in GlyphKey key, uint textColor, out AtlasGlyph glyph)
     {
         if (key.Font is null)
         {
@@ -222,7 +255,7 @@ public sealed class GlyphAtlas
             throw new ArgumentException($"The subpixel step {key.SubpixelX} is not from 0 to {GlyphPosition.SubpixelSteps - 1}.", nameof(key));
         }
 
-        if (key.Coverage is not (GlyphCoverage.Gray or GlyphCoverage.Rgb))
+        if (key.Coverage is not (GlyphCoverage.Gray or GlyphCoverage.Rgb or GlyphCoverage.Color))
         {
             throw new ArgumentException($"The glyph coverage {key.Coverage} is not defined.", nameof(key));
         }
@@ -233,19 +266,42 @@ public sealed class GlyphAtlas
             {
                 PagesOf(key.Coverage).PlotAt(cached.Plot).LastUsedFrame = Frame;
             }
+            else if (cached.Plot <= ColorGlyph)
+            {
+                return TryGet(ColorKeyOf(key, cached.Plot == ColorGlyphInTextColor, textColor), textColor, out glyph);
+            }
 
             glyph = cached.Glyph;
             return true;
         }
 
-        return TryRasterize(key, out glyph);
+        return TryRasterize(key, textColor, out glyph);
     }
 
-    private Pages PagesOf(GlyphCoverage coverage) => coverage == GlyphCoverage.Rgb ? _rgb : _gray;
+    // The key of the color glyph that a grayscale or ClearType key stands for: subpixel step 0, and the text's color, opaque, only
+    // when the glyph paints a layer in it.
+    private static GlyphKey ColorKeyOf(in GlyphKey key, bool usesTextColor, uint textColor) =>
+        new(key.Font, key.GlyphId, key.PixelSize, 0, GlyphCoverage.Color, usesTextColor ? textColor | OpaqueBlack : 0);
 
-    private bool TryRasterize(in GlyphKey key, out AtlasGlyph glyph)
+    private Pages PagesOf(GlyphCoverage coverage) =>
+        coverage switch
+        {
+            GlyphCoverage.Rgb => _rgb,
+            GlyphCoverage.Color => _color,
+            _ => _gray,
+        };
+
+    private bool TryRasterize(in GlyphKey key, uint textColor, out AtlasGlyph glyph)
     {
         GlyphBox box = _rasterizer.Measure(key);
+
+        // A color glyph asked for as grayscale or ClearType: this key only stands for the color glyph from now on.
+        if (box.IsColor && key.Coverage != GlyphCoverage.Color)
+        {
+            _glyphs.Add(key, (default, box.UsesTextColor ? ColorGlyphInTextColor : ColorGlyph));
+            return TryGet(ColorKeyOf(key, box.UsesTextColor, textColor), textColor, out glyph);
+        }
+
         RasterizeCount++;
         int width = box.Width;
         int height = box.Height;
@@ -253,7 +309,7 @@ public sealed class GlyphAtlas
         // A glyph with no ink (a space) needs no room, so it fits even when every plot is full.
         if (width == 0 || height == 0)
         {
-            glyph = new AtlasGlyph(0, 0, 0, 0, 0, box.Left, box.Top);
+            glyph = new AtlasGlyph(0, 0, 0, 0, 0, box.Left, box.Top, key.Coverage);
             _glyphs.Add(key, (glyph, -1));
             return true;
         }
@@ -284,7 +340,7 @@ public sealed class GlyphAtlas
 
         plot.LastUsedFrame = Frame;
         plot.Keys.Add(key);
-        glyph = new AtlasGlyph(plot.Page, x, y, width, height, box.Left, box.Top);
+        glyph = new AtlasGlyph(plot.Page, x, y, width, height, box.Left, box.Top, key.Coverage);
         _glyphs.Add(key, (glyph, plotIndex));
         _dirty.Add(new AtlasRegion(plot.Page, x, y, width, height, key.Coverage));
         return true;

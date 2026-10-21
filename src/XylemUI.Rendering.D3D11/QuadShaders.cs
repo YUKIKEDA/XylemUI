@@ -24,6 +24,10 @@ namespace XylemUI.Rendering.D3D11;
 /// The corrected coverage is clamped to 0..1, so that the premultiplied output stays in range.
 /// </para>
 /// <para>
+/// A color glyph (roadmap row T6, the page's bit 30 set) loads its premultiplied color from the BGRA atlas and scales it by the
+/// text's alpha only, with the same blend as the rest: the glyph's own colors are not corrected (design §5.0.3, "Color glyphs").
+/// </para>
+/// <para>
 /// A ClearType glyph (roadmap row T2) loads red, green, and blue coverage from the RGBA atlas, swapped on a BGR monitor, and
 /// corrects each channel with the channel of the color: GPUI's <c>apply_contrast_and_gamma_correction3</c> with its ClearType
 /// contrast, and its fragment shader (<c>shaders.hlsl</c>, <c>subpixel_sprite_fragment</c>, lines 1194 to 1206). It writes the
@@ -44,11 +48,12 @@ internal static class QuadShaders
             };
             Texture2DArray<float> Atlas : register(t0);
             Texture2DArray<float4> AtlasRgb : register(t1);
+            Texture2DArray<float4> AtlasColor : register(t2);
             struct VertexIn
             {
                 float4 rect : RECT; uint color : COLOR; uint atlasOrigin : ATLAS; uint page : PAGE; uint vertexId : SV_VertexID;
             };
-            struct VertexOut { float4 position : SV_Position; float4 color : COLOR; nointerpolation int3 atlas : ATLAS; };
+            struct VertexOut { float4 position : SV_Position; float4 color : COLOR; nointerpolation int4 atlas : ATLAS; };
             struct ClearTypeOut { float4 foreground : SV_Target0; float4 alpha : SV_Target1; };
             VertexOut VS(VertexIn input)
             {
@@ -59,12 +64,19 @@ internal static class QuadShaders
                 uint c = input.color;
                 output.color = float4(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF, c >> 24) / 255.0;
                 int2 origin = int2(input.atlasOrigin & 0xFFFF, input.atlasOrigin >> 16) - int2(input.rect.xy);
-                output.atlas = int3(origin, input.page == 0xFFFFFFFF ? -1 : int(input.page));
+                bool solid = input.page == 0xFFFFFFFF;
+                bool color = !solid && (input.page & 0x40000000) != 0;
+                output.atlas = int4(origin, solid ? -1 : int(input.page & 0x3FFFFFFF), color ? 1 : 0);
                 return output;
             }
             float4 PS(VertexOut input) : SV_Target
             {
                 float alpha = input.color.a;
+                if (input.atlas.w != 0)
+                {
+                    return AtlasColor.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)) * alpha;
+                }
+
                 if (input.atlas.z >= 0)
                 {
                     float coverage = Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0));

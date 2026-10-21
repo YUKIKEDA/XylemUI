@@ -1,7 +1,7 @@
 namespace XylemUI.Text;
 
 /// <summary>
-/// How a glyph's coverage is drawn and kept (design §5.0.3, roadmap row T2).
+/// How a glyph's coverage is drawn and kept (design §5.0.3, roadmap rows T2 and T6).
 /// </summary>
 public enum GlyphCoverage : byte
 {
@@ -13,4 +13,10 @@ public enum GlyphCoverage : byte
     /// drawn only over an opaque target: each channel blends on its own.
     /// </summary>
     Rgb,
+
+    /// <summary>
+    /// The glyph's own colors (a color glyph, an emoji), premultiplied blue, green, red, and alpha, four bytes per pixel. The
+    /// text's color only scales it by its alpha, and gives the color of the layers the font paints in the text's color.
+    /// </summary>
+    Color,
 }

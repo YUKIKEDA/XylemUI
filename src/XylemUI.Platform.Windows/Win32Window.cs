@@ -44,6 +44,10 @@ public sealed unsafe class Win32Window : IDisposable
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="Win32Exception">The window could not be created.</exception>
     /// <exception cref="InvalidOperationException">
+    /// For the first window: the UI thread is in COM's multithreaded apartment (mark <c>Main</c> with <see cref="STAThreadAttribute"/>),
+    /// or OLE could not be initialized.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
     /// DirectWrite could not read how the window's text is drawn (<see cref="TextRendering"/>); the window was destroyed.
     /// </exception>
     public Win32Window(string title, int width, int height)
@@ -300,6 +304,8 @@ public sealed unsafe class Win32Window : IDisposable
             return;
         }
 
+        InitializeOle();
+
         fixed (char* className = ClassName)
         {
             var windowClass = new WNDCLASSEXW
@@ -319,6 +325,25 @@ public sealed unsafe class Win32Window : IDisposable
         }
 
         _classRegistered = true;
+    }
+
+    // OLE on the UI thread, single-threaded apartment, for the life of the process (design §5.0.3, "Color glyphs": WIC needs COM;
+    // the clipboard, drag and drop, and UI Automation need the STA). GPUI, Avalonia, and Flutter's runner do the same. .NET starts
+    // a thread in the multithreaded apartment, so the application's Main is marked [STAThread], as for WPF and Avalonia.
+    private static void InitializeOle()
+    {
+        HRESULT result = OleInitialize(null);
+        if (result == RPC.RPC_E_CHANGED_MODE)
+        {
+            throw new InvalidOperationException(
+                "The UI thread is in COM's multithreaded apartment; mark the application's Main with [STAThread] (design §5.0.3)."
+            )
+            {
+                HResult = result,
+            };
+        }
+
+        Com.ThrowIfFailed(result, "OleInitialize");
     }
 
     // Every message for every XylemUI window enters here. No managed exception may leave this method (Invariant 13).

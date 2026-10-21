@@ -132,7 +132,7 @@ public sealed class GlyphAtlasTests
             new(font, GlyphH, float.NaN, 0),
             new(font, GlyphH, 32, -1),
             new(font, GlyphH, 32, 4),
-            new(font, GlyphH, 32, 0, (GlyphCoverage)2),
+            new(font, GlyphH, 32, 0, (GlyphCoverage)3),
         ];
         foreach (GlyphKey key in keys)
         {

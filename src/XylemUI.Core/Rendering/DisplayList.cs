@@ -112,10 +112,11 @@ public sealed class DisplayList
     }
 
     /// <summary>
-    /// Appends shaped text as one glyph run: puts each glyph in the atlas (rasterizing it the first time) and places it on the
-    /// pen (design §5.0.3: the atlas changes while the display list is built and is uploaded after). Across the line a glyph is
-    /// placed on a quarter of a pixel: its quad sits on the whole pixel, and the atlas holds the glyph drawn at the quarter
-    /// (<see cref="GlyphPosition"/>). The baseline is a whole pixel.
+    /// Appends shaped text as glyph runs: puts each glyph in the atlas (rasterizing it the first time) and places it on the pen
+    /// (design §5.0.3: the atlas changes while the display list is built and is uploaded after). Across the line a glyph is placed
+    /// on a quarter of a pixel: its quad sits on the whole pixel, and the atlas holds the glyph drawn at the quarter
+    /// (<see cref="GlyphPosition"/>). The baseline is a whole pixel. A color glyph (an emoji) is placed on the nearest whole pixel,
+    /// and starts a run of its own kind where the kind changes (design §5.0.3, "Color glyphs"); otherwise the text is one run.
     /// </summary>
     /// <param name="glyphs">The glyphs, from <see cref="TextShaper.Shape"/> with <paramref name="font"/>.</param>
     /// <param name="font">The font the glyphs were shaped with.</param>
@@ -123,7 +124,7 @@ public sealed class DisplayList
     /// <param name="atlas">The glyph atlas the renderer draws from.</param>
     /// <param name="x">The pen's start, in physical pixels.</param>
     /// <param name="baseline">The baseline, in physical pixels from the top.</param>
-    /// <param name="color">The color of the text.</param>
+    /// <param name="color">The color of the text; a color glyph takes only its alpha, and its color for the layers in the text's color.</param>
     /// <param name="coverage">
     /// Grayscale, or ClearType where the window allows it (design §5.0.3, "ClearType"): the window decides it, not the text.
     /// </param>
@@ -156,13 +157,31 @@ public sealed class DisplayList
         float scale = pixelSize / font.UnitsPerEm;
         Span<GlyphInstance> destination = ReserveGlyphs(glyphs.Length);
         int written = 0;
+        int runStart = 0;
+        GlyphCoverage runCoverage = coverage;
         long pen = 0;
         foreach (ShapedGlyph shaped in glyphs)
         {
-            int pixel = GlyphPosition.Snap(x + ((pen + shaped.XOffset) * scale), out int subpixel);
-            if (atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage), out AtlasGlyph glyph) && glyph.Width > 0)
+            float position = x + ((pen + shaped.XOffset) * scale);
+            int pixel = GlyphPosition.Snap(position, out int subpixel);
+            if (
+                atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage), color.Packed, out AtlasGlyph glyph)
+                && glyph.Width > 0
+            )
             {
-                int left = pixel + glyph.BearingX;
+                // A color glyph has its own kind of page and no subpixel steps: a new run where the kind changes, on a whole pixel.
+                if (glyph.Coverage != runCoverage)
+                {
+                    if (written > runStart)
+                    {
+                        EndGlyphRun(written - runStart, color, runCoverage);
+                        runStart = written;
+                    }
+
+                    runCoverage = glyph.Coverage;
+                }
+
+                int left = (glyph.Coverage == GlyphCoverage.Color ? GlyphPosition.Round(position) : pixel) + glyph.BearingX;
                 int top = (int)MathF.Round(baseline - (shaped.YOffset * scale)) - glyph.BearingY;
                 destination[written++] = new GlyphInstance(left, top, glyph.Width, glyph.Height, glyph.Page, glyph.X, glyph.Y);
             }
@@ -170,9 +189,9 @@ public sealed class DisplayList
             pen += shaped.XAdvance;
         }
 
-        if (written > 0)
+        if (written > runStart)
         {
-            EndGlyphRun(written, color, coverage);
+            EndGlyphRun(written - runStart, color, runCoverage);
         }
 
         return pen * scale;

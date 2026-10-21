@@ -28,9 +28,9 @@ namespace XylemUI.Rendering.D3D11;
 /// view before <c>ResizeBuffers</c> and creates it again after (design §2.11.1). All members belong to the UI thread.
 /// </para>
 /// <para>
-/// The pages of the glyph atlas are the slices of two texture arrays: 8-bit grayscale coverage and RGBA ClearType coverage
-/// (design §5.0.3, "ClearType"). Rectangles and grayscale glyphs share one blend state, ClearType glyphs have the dual-source
-/// one, and the frame is drawn in the display list's order, split into draws only where the blend state changes. Before the
+/// The pages of the glyph atlas are the slices of three texture arrays: 8-bit grayscale coverage, RGBA ClearType coverage
+/// (design §5.0.3, "ClearType"), and premultiplied BGRA color glyphs ("Color glyphs"). Rectangles, grayscale glyphs, and color
+/// glyphs share one blend state, ClearType glyphs have the dual-source one, and the frame is drawn in the display list's order, split into draws only where the blend state changes. Before the
 /// instances are written, the atlas's changes are uploaded (design §5.0.3): a page whose id changed is uploaded whole, the other
 /// pages only in their dirty regions. Direct3D 11 orders these writes after the draws already issued that read the texture, so no
 /// fence is needed (design §5.0.2).
@@ -58,6 +58,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly HANDLE _frameLatencyWaitable;
     private readonly AtlasTextures _grayAtlas = new(GlyphCoverage.Gray, DXGI_FORMAT.DXGI_FORMAT_R8_UNORM);
     private readonly AtlasTextures _rgbAtlas = new(GlyphCoverage.Rgb, DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM);
+    private readonly AtlasTextures _colorAtlas = new(GlyphCoverage.Color, DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM);
     private TextRenderingParameters _textRendering = TextRenderingParameters.Default;
     private DrawRange[] _draws = new DrawRange[16];
     private ID3D11RenderTargetView* _renderTarget;
@@ -176,14 +177,19 @@ public sealed unsafe class D3D11Renderer : IDisposable
     internal int ClearTypeAtlasSlices => _rgbAtlas.Slices;
 
     /// <summary>
+    /// Gets the number of slices of the color atlas texture array; 0 before the first color glyph.
+    /// </summary>
+    internal int ColorAtlasSlices => _colorAtlas.Slices;
+
+    /// <summary>
     /// Gets the number of whole pages uploaded so far, of both kinds, for the tests of the atlas upload.
     /// </summary>
-    internal int AtlasPageUploads => _grayAtlas.PageUploads + _rgbAtlas.PageUploads;
+    internal int AtlasPageUploads => _grayAtlas.PageUploads + _rgbAtlas.PageUploads + _colorAtlas.PageUploads;
 
     /// <summary>
     /// Gets the number of dirty regions uploaded so far, of both kinds, for the tests of the atlas upload.
     /// </summary>
-    internal int AtlasRegionUploads => _grayAtlas.RegionUploads + _rgbAtlas.RegionUploads;
+    internal int AtlasRegionUploads => _grayAtlas.RegionUploads + _rgbAtlas.RegionUploads + _colorAtlas.RegionUploads;
 
     /// <summary>
     /// Creates a renderer for the client area of <paramref name="window"/>.
@@ -296,6 +302,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _gpuTimer?.Dispose();
         _grayAtlas.Dispose();
         _rgbAtlas.Dispose();
+        _colorAtlas.Dispose();
         Release((IUnknown*)_instances);
         Release((IUnknown*)_clearTypeBlend);
         Release((IUnknown*)_blend);
@@ -349,6 +356,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         {
             _grayAtlas.Upload(_device, _context, atlas);
             _rgbAtlas.Upload(_device, _context, atlas);
+            _colorAtlas.Upload(_device, _context, atlas);
             atlas.ClearDirtyRegions();
         }
 
@@ -389,8 +397,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->VSSetShader(_vertexShader, null, 0);
         _context->VSSetConstantBuffers(0, 1, &constants);
         _context->PSSetConstantBuffers(0, 1, &constants);
-        ID3D11ShaderResourceView** atlasViews = stackalloc ID3D11ShaderResourceView*[2] { _grayAtlas.View, _rgbAtlas.View };
-        _context->PSSetShaderResources(0, 2, atlasViews);
+        ID3D11ShaderResourceView** atlasViews = stackalloc ID3D11ShaderResourceView*[3] { _grayAtlas.View, _rgbAtlas.View, _colorAtlas.View };
+        _context->PSSetShaderResources(0, 3, atlasViews);
         foreach (DrawRange draw in _draws.AsSpan(0, draws))
         {
             _context->PSSetShader(draw.ClearType ? _clearTypePixelShader : _pixelShader, null, 0);
@@ -907,6 +915,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
                     GlyphRunCommand run = reader.ReadGlyphRun();
                     draws = AddToDraw(draws, i, run.Coverage == GlyphCoverage.Rgb);
                     uint color = run.Color.Packed;
+                    uint kind = run.Coverage == GlyphCoverage.Color ? QuadInstance.ColorPage : 0;
                     foreach (GlyphInstance glyph in run.Glyphs)
                     {
                         destination[i++] = new QuadInstance
@@ -914,7 +923,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
                             Rect = new Vector4(glyph.X, glyph.Y, glyph.Width, glyph.Height),
                             Color = color,
                             AtlasOrigin = (uint)glyph.AtlasX | ((uint)glyph.AtlasY << 16),
-                            Page = (uint)glyph.Page,
+                            Page = (uint)glyph.Page | kind,
                         };
                     }
                 }

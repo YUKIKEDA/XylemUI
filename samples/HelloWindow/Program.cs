@@ -18,225 +18,233 @@ using XylemUI.Platform.Windows;
 using XylemUI.Rendering.D3D11;
 using XylemUI.Text;
 
-const int AutoFrames = 120;
-const int Rectangles = 1_000;
-const string Text = "Hello, World! 日本語のテキスト";
-const string FallbackText = "Ελληνικά 中文 한국어 ͸ 😀";
-bool auto = args.Contains("--auto");
-
-UiThread.Initialize();
-
-int reported = 0;
-Win32MessageLoop.CallbackExceptionHandler = _ => reported++;
-
-using var window = new Win32Window("XylemUI HelloWindow", 800, 600);
-bool closed = false;
-window.Closed += (_, _) =>
+internal static class Program
 {
-    closed = true;
-    Win32MessageLoop.Quit();
-};
-window.Show();
-
-(int width, int height) = window.ClientSize;
-long createStart = Stopwatch.GetTimestamp();
-using var renderer = D3D11Renderer.Create(window.Handle, width, height);
-
-// The window reads how its text is drawn (ClearType where Windows and the monitor allow it, roadmap row T2) and reads it again
-// when a setting of Windows changes; the renderer and the text take it.
-renderer.TextRendering = window.TextRendering;
-window.TextRenderingChanged += (_, _) => renderer.TextRendering = window.TextRendering;
-double createMilliseconds = Stopwatch.GetElapsedTime(createStart).TotalMilliseconds;
-var clear = Color.FromRgb(0x2A2A2A);
-var accent = Color.FromRgb(0x3366CC);
-var list = new DisplayList();
-using Stream fontStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
-byte[] fontBytes = new byte[fontStream.Length];
-fontStream.ReadExactly(fontBytes);
-using var font = new Font(fontBytes);
-using var shaper = new TextShaper();
-TextLanguage japanese = TextLanguage.FromTag("ja");
-using var rasterizer = new DirectWriteGlyphRasterizer();
-var atlas = new GlyphAtlas(rasterizer);
-using var fonts = new DirectWriteFontProvider();
-var fallbackRuns = new List<FontRun>();
-long splitStart = Stopwatch.GetTimestamp();
-FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
-double firstSplitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
-splitStart = Stopwatch.GetTimestamp();
-FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
-double splitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
-var families = new System.Text.StringBuilder();
-foreach (FontRun run in fallbackRuns)
-{
-    families.Append(families.Length == 0 ? string.Empty : ", ").Append(run.Font.FamilyName).Append(' ').Append(run.Length);
-}
-
-string fallbackFamilies = families.ToString();
-string ink = "not checked";
-var build = new List<double>();
-var draw = new List<double>();
-var present = new List<double>();
-var interval = new List<double>();
-long lastFrame = 0;
-int frames = 0;
-string pixel = "not checked";
-
-window.SynchronousRender = (_, newWidth, newHeight) =>
-{
-    renderer.Resize(newWidth, newHeight);
-    BuildFrame(frames, newWidth, newHeight);
-    renderer.Render(list, clear, atlas);
-};
-
-Action? frame = null;
-frame = () =>
-{
-    long t0 = Stopwatch.GetTimestamp();
-    if (lastFrame != 0)
+    // The UI thread is in COM's single-threaded apartment: the first window initializes OLE on it (design §5.0.3, "Color glyphs").
+    [STAThread]
+    private static int Main(string[] args)
     {
-        interval.Add(Stopwatch.GetElapsedTime(lastFrame, t0).TotalMilliseconds);
-    }
+        const int AutoFrames = 120;
+        const int Rectangles = 1_000;
+        const string Text = "Hello, World! 日本語のテキスト";
+        const string FallbackText = "Ελληνικά 中文 한국어 ͸ 😀";
+        bool auto = args.Contains("--auto");
 
-    lastFrame = t0;
-    BuildFrame(frames, renderer.Width, renderer.Height);
-    long t1 = Stopwatch.GetTimestamp();
-    renderer.Draw(list, clear, atlas);
-    long t2 = Stopwatch.GetTimestamp();
-    if (frames == 5)
-    {
-        // The first rectangle of a frame always covers (0, 0) to (40, 40); the text is in the band above the moving rectangles.
-        pixel = renderer.ReadPixel(20, 20) == accent ? "ok" : "wrong";
-        ink = HasInk(renderer, list, clear) ? "ok" : "wrong";
-    }
+        UiThread.Initialize();
 
-    long t3 = Stopwatch.GetTimestamp();
-    renderer.Present();
-    long t4 = Stopwatch.GetTimestamp();
-    build.Add(Stopwatch.GetElapsedTime(t0, t1).TotalMilliseconds);
-    draw.Add(Stopwatch.GetElapsedTime(t1, t2).TotalMilliseconds);
-    present.Add(Stopwatch.GetElapsedTime(t3, t4).TotalMilliseconds);
-    frames++;
-    if (!auto || frames < AutoFrames)
-    {
-        Win32MessageLoop.FrameScheduler.RequestFrame(frame!);
-    }
-    else
-    {
-        window.RequestClose();
-    }
-};
+        int reported = 0;
+        Win32MessageLoop.CallbackExceptionHandler = _ => reported++;
 
-Win32MessageLoop.SetFrameClock(renderer.FrameLatencyWaitableObject);
-Win32MessageLoop.FrameScheduler.RequestFrame(frame);
-
-string offThread = "not checked";
-if (auto)
-{
-    window.Closed += (_, _) => throw new InvalidOperationException("Thrown from a Closed handler on purpose (S1 question 3).");
-
-    offThread = Task.Run(() =>
+        using var window = new Win32Window("XylemUI HelloWindow", 800, 600);
+        bool closed = false;
+        window.Closed += (_, _) =>
         {
-            try
-            {
-                window.Show();
-                return "accepted";
-            }
-            catch (InvalidOperationException)
-            {
-                return "rejected";
-            }
-        })
-        .GetAwaiter()
-        .GetResult();
+            closed = true;
+            Win32MessageLoop.Quit();
+        };
+        window.Show();
 
-    GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
-}
+        (int width, int height) = window.ClientSize;
+        long createStart = Stopwatch.GetTimestamp();
+        using var renderer = D3D11Renderer.Create(window.Handle, width, height);
 
-int exitCode = Win32MessageLoop.Run();
-Win32MessageLoop.SetFrameClock(0);
-
-// PublishAot turns RuntimeFeature.IsDynamicCode* off under `dotnet run` too, so ask the JIT whether it has compiled anything.
-string runtime = JitInfo.GetCompiledMethodCount() > 0 ? "jit" : "nativeaot";
-Console.WriteLine(
-    $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} create={createMilliseconds:F1}ms frames={frames} pixel={pixel} "
-        + $"text={ink} closed={closed} "
-        + $"reported={reported} offThread={offThread} exit={exitCode}"
-);
-Console.WriteLine($"fallback runs: {fallbackFamilies}; split {firstSplitMicroseconds:F1} us the first time, {splitMicroseconds:F1} us again");
-if (frames > 0)
-{
-    Console.WriteLine(
-        $"frame ms (median of {frames}): build {Median(build):F3}, draw {Median(draw):F3}, present {Median(present):F3}, interval {Median(interval):F3}"
-    );
-}
-
-bool checks = pixel == "ok" && ink == "ok";
-bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && frames == AutoFrames && checks));
-return passed ? exitCode : 1;
-
-// 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0) so the pixel check knows its color. A
-// line of text in the band above them.
-void BuildFrame(int frame, int width, int height)
-{
-    atlas.BeginFrame();
-    list.Reset();
-    list.FillRect(0, 0, 40, 40, Color.FromRgb(0x3366CC));
-    for (int i = 1; i < Rectangles; i++)
-    {
-        float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
-        float y = 50 + ((i * 11) % Math.Max(1, height - 70));
-        list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
-    }
-
-    GlyphCoverage coverage = renderer.TextRendering.Coverage;
-    _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8), coverage);
-
-    // The fallback's runs one after another on one pen, each shaped with its own font at the size its scale gives.
-    float pen = 420;
-    foreach (FontRun run in fallbackRuns)
-    {
-        int size = (int)MathF.Round(24 * run.Scale);
-        ReadOnlySpan<char> runText = FallbackText.AsSpan(run.Start, run.Length);
-        pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8), coverage);
-    }
-}
-
-// Some pixel of the box of the frame's first glyph is far from the clear color.
-static bool HasInk(D3D11Renderer renderer, DisplayList list, Color clear)
-{
-    GlyphInstance glyph = default;
-    DisplayListReader reader = list.GetReader();
-    while (reader.TryNext(out CommandTag tag))
-    {
-        if (tag == CommandTag.FillRect)
+        // The window reads how its text is drawn (ClearType where Windows and the monitor allow it, roadmap row T2) and reads it again
+        // when a setting of Windows changes; the renderer and the text take it.
+        renderer.TextRendering = window.TextRendering;
+        window.TextRenderingChanged += (_, _) => renderer.TextRendering = window.TextRendering;
+        double createMilliseconds = Stopwatch.GetElapsedTime(createStart).TotalMilliseconds;
+        var clear = Color.FromRgb(0x2A2A2A);
+        var accent = Color.FromRgb(0x3366CC);
+        var list = new DisplayList();
+        using Stream fontStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
+        byte[] fontBytes = new byte[fontStream.Length];
+        fontStream.ReadExactly(fontBytes);
+        using var font = new Font(fontBytes);
+        using var shaper = new TextShaper();
+        TextLanguage japanese = TextLanguage.FromTag("ja");
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        using var fonts = new DirectWriteFontProvider();
+        var fallbackRuns = new List<FontRun>();
+        long splitStart = Stopwatch.GetTimestamp();
+        FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
+        double firstSplitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
+        splitStart = Stopwatch.GetTimestamp();
+        FontFallback.Split(fonts, FallbackText, japanese, FontRequest.Default, fallbackRuns);
+        double splitMicroseconds = Stopwatch.GetElapsedTime(splitStart).TotalMicroseconds;
+        var families = new System.Text.StringBuilder();
+        foreach (FontRun run in fallbackRuns)
         {
-            _ = reader.ReadFillRect();
+            families.Append(families.Length == 0 ? string.Empty : ", ").Append(run.Font.FamilyName).Append(' ').Append(run.Length);
         }
-        else
-        {
-            GlyphRunCommand run = reader.ReadGlyphRun();
-            glyph = glyph.Width == 0 ? run.Glyphs[0] : glyph;
-        }
-    }
 
-    for (int y = glyph.Y; y < glyph.Y + glyph.Height; y++)
-    {
-        for (int x = glyph.X; x < glyph.X + glyph.Width; x++)
+        string fallbackFamilies = families.ToString();
+        string ink = "not checked";
+        var build = new List<double>();
+        var draw = new List<double>();
+        var present = new List<double>();
+        var interval = new List<double>();
+        long lastFrame = 0;
+        int frames = 0;
+        string pixel = "not checked";
+
+        window.SynchronousRender = (_, newWidth, newHeight) =>
         {
-            Color color = renderer.ReadPixel(x, y);
-            if (Math.Abs(color.R - clear.R) > 100)
+            renderer.Resize(newWidth, newHeight);
+            BuildFrame(frames, newWidth, newHeight);
+            renderer.Render(list, clear, atlas);
+        };
+
+        Action? frame = null;
+        frame = () =>
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            if (lastFrame != 0)
             {
-                return true;
+                interval.Add(Stopwatch.GetElapsedTime(lastFrame, t0).TotalMilliseconds);
+            }
+
+            lastFrame = t0;
+            BuildFrame(frames, renderer.Width, renderer.Height);
+            long t1 = Stopwatch.GetTimestamp();
+            renderer.Draw(list, clear, atlas);
+            long t2 = Stopwatch.GetTimestamp();
+            if (frames == 5)
+            {
+                // The first rectangle of a frame always covers (0, 0) to (40, 40); the text is in the band above the moving rectangles.
+                pixel = renderer.ReadPixel(20, 20) == accent ? "ok" : "wrong";
+                ink = HasInk(renderer, list, clear) ? "ok" : "wrong";
+            }
+
+            long t3 = Stopwatch.GetTimestamp();
+            renderer.Present();
+            long t4 = Stopwatch.GetTimestamp();
+            build.Add(Stopwatch.GetElapsedTime(t0, t1).TotalMilliseconds);
+            draw.Add(Stopwatch.GetElapsedTime(t1, t2).TotalMilliseconds);
+            present.Add(Stopwatch.GetElapsedTime(t3, t4).TotalMilliseconds);
+            frames++;
+            if (!auto || frames < AutoFrames)
+            {
+                Win32MessageLoop.FrameScheduler.RequestFrame(frame!);
+            }
+            else
+            {
+                window.RequestClose();
+            }
+        };
+
+        Win32MessageLoop.SetFrameClock(renderer.FrameLatencyWaitableObject);
+        Win32MessageLoop.FrameScheduler.RequestFrame(frame);
+
+        string offThread = "not checked";
+        if (auto)
+        {
+            window.Closed += (_, _) => throw new InvalidOperationException("Thrown from a Closed handler on purpose (S1 question 3).");
+
+            offThread = Task.Run(() =>
+                {
+                    try
+                    {
+                        window.Show();
+                        return "accepted";
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        return "rejected";
+                    }
+                })
+                .GetAwaiter()
+                .GetResult();
+
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        }
+
+        int exitCode = Win32MessageLoop.Run();
+        Win32MessageLoop.SetFrameClock(0);
+
+        // PublishAot turns RuntimeFeature.IsDynamicCode* off under `dotnet run` too, so ask the JIT whether it has compiled anything.
+        string runtime = JitInfo.GetCompiledMethodCount() > 0 ? "jit" : "nativeaot";
+        Console.WriteLine(
+            $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} create={createMilliseconds:F1}ms frames={frames} pixel={pixel} "
+                + $"text={ink} closed={closed} "
+                + $"reported={reported} offThread={offThread} exit={exitCode}"
+        );
+        Console.WriteLine($"fallback runs: {fallbackFamilies}; split {firstSplitMicroseconds:F1} us the first time, {splitMicroseconds:F1} us again");
+        if (frames > 0)
+        {
+            Console.WriteLine(
+                $"frame ms (median of {frames}): build {Median(build):F3}, draw {Median(draw):F3}, present {Median(present):F3}, interval {Median(interval):F3}"
+            );
+        }
+
+        bool checks = pixel == "ok" && ink == "ok";
+        bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && frames == AutoFrames && checks));
+        return passed ? exitCode : 1;
+
+        // 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0) so the pixel check knows its color. A
+        // line of text in the band above them.
+        void BuildFrame(int frame, int width, int height)
+        {
+            atlas.BeginFrame();
+            list.Reset();
+            list.FillRect(0, 0, 40, 40, Color.FromRgb(0x3366CC));
+            for (int i = 1; i < Rectangles; i++)
+            {
+                float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
+                float y = 50 + ((i * 11) % Math.Max(1, height - 70));
+                list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
+            }
+
+            GlyphCoverage coverage = renderer.TextRendering.Coverage;
+            _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8), coverage);
+
+            // The fallback's runs one after another on one pen, each shaped with its own font at the size its scale gives.
+            float pen = 420;
+            foreach (FontRun run in fallbackRuns)
+            {
+                int size = (int)MathF.Round(24 * run.Scale);
+                ReadOnlySpan<char> runText = FallbackText.AsSpan(run.Start, run.Length);
+                pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8), coverage);
             }
         }
+
+        // Some pixel of the box of the frame's first glyph is far from the clear color.
+        static bool HasInk(D3D11Renderer renderer, DisplayList list, Color clear)
+        {
+            GlyphInstance glyph = default;
+            DisplayListReader reader = list.GetReader();
+            while (reader.TryNext(out CommandTag tag))
+            {
+                if (tag == CommandTag.FillRect)
+                {
+                    _ = reader.ReadFillRect();
+                }
+                else
+                {
+                    GlyphRunCommand run = reader.ReadGlyphRun();
+                    glyph = glyph.Width == 0 ? run.Glyphs[0] : glyph;
+                }
+            }
+
+            for (int y = glyph.Y; y < glyph.Y + glyph.Height; y++)
+            {
+                for (int x = glyph.X; x < glyph.X + glyph.Width; x++)
+                {
+                    Color color = renderer.ReadPixel(x, y);
+                    if (Math.Abs(color.R - clear.R) > 100)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        static double Median(List<double> values)
+        {
+            values.Sort();
+            return values[values.Count / 2];
+        }
     }
-
-    return false;
-}
-
-static double Median(List<double> values)
-{
-    values.Sort();
-    return values[values.Count / 2];
 }
