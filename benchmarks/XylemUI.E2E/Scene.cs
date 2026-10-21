@@ -20,14 +20,14 @@ internal sealed class Scene : IDisposable
     private readonly TextShaper _shaper = new();
     private readonly TextLanguage _japanese = TextLanguage.FromTag("ja");
 
-    public Scene(string title, bool useWarp = false)
+    public Scene(string title, bool useWarp = false, bool gray = false)
     {
         Window = new Win32Window(title, 800, 600);
         Window.Show();
         (int width, int height) = Window.ClientSize;
         Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
-        Renderer.TextRendering = Window.TextRendering;
-        Window.TextRenderingChanged += (_, _) => Renderer.TextRendering = Window.TextRendering;
+        Renderer.TextRendering = TextRenderingOf(Window, gray);
+        Window.TextRenderingChanged += (_, _) => Renderer.TextRendering = TextRenderingOf(Window, gray);
         using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
         byte[] bytes = new byte[stream.Length];
         stream.ReadExactly(bytes);
@@ -36,6 +36,8 @@ internal sealed class Scene : IDisposable
     }
 
     public Win32Window Window { get; }
+
+    public GlyphCoverage Coverage => Renderer.TextRendering.Coverage;
 
     public D3D11Renderer Renderer { get; }
 
@@ -62,12 +64,15 @@ internal sealed class Scene : IDisposable
             List.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
         }
 
-        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Renderer.TextRendering.Coverage);
+        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage);
         for (int i = 0; i < heavy; i++)
         {
             List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));
         }
     }
+
+    private static TextRenderingParameters TextRenderingOf(Win32Window window, bool gray) =>
+        gray ? window.TextRendering with { Coverage = GlyphCoverage.Gray } : window.TextRendering;
 
     public void Dispose()
     {

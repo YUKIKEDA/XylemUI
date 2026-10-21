@@ -18,10 +18,10 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** T2（Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** T2 の設計 PR（Grill は済み）
-- **ブランチ:** `docs/178-t2-design`
-- **Issue:** [#178](https://github.com/YUKIKEDA/XylemUI/issues/178)
+- **フェーズ:** T6（Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
+- **作業中:** なし（次は T6 の Grill）
+- **ブランチ:** —
+- **Issue:** —
 
 ## ツールチェーン
 
@@ -66,7 +66,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | L10 | L3 で、命令の数がほぼ同じ（CSS の既定 +0.12 %、`%` あり −0.10 %）なのに、コアを固定したサイクル数が +1.3〜1.8 % 増えた原因を調べる。命令キャッシュの待ち、分岐の予測外れ、メモリを待ったスロットは増えていない（`docs/benchmarks/l8-counters.md`、PR #151 のレビュー）。残る候補の、命令の取り出しと解読（uop キャッシュから来た命令とそうでない命令の数、コードの配置）と、命令どうしの依存による待ちを、L8 と同じ 2 つのビルド（350b555、426dd07）で数える。数えるには管理者の権限が要るので、オーナーが UAC を承認できるときに走らせる。原因が分かれば直すか、避けられない費用として説明する。T4 の後、次に layout のコードを変える行より前に行う（L8 のオーナー決定） | not-started | —     |                                            |
 | F1  | 製品の同梱フォント（OFL のサブセット、`.notdef` 終端、§4.5）と DirectWrite のフォールバック（`IFontProvider`）。OS の `.ttc` の別の face を `Font` の face 番号で開くテスト（S8a のレビュー） | done        | [#145](https://github.com/YUKIKEDA/XylemUI/issues/145)・[#150](https://github.com/YUKIKEDA/XylemUI/issues/150) | 終点用の同梱フォント（14.4 KB）と DirectWrite の範囲ごとのフォールバック。言語で漢字のフォントが分かれ、cluster は切られない。OS のフォントは写像して開き、最初の解決で +0.6 MB、1.2 ms 前後。実行ファイルは +64 KB（OS が呼び戻す COM を手書きの vtable にした。source-generated COM では +513 KB）。詳細は `docs/benchmarks/f1-fallback.md` |
 | T4  | テキストの描画品質: Windows のグリフを DirectWrite で描き、横に 4 段階のサブピクセル位置、DirectWrite の推奨のヒンティング、シェーダでのガンマとコントラストの補正（単色のグリフ）。ラスタライズは `IGlyphRasterizer` の後ろに置き、Windows のビルドから FreeType を外す（T4 の Grill、§5.0.3「グリフの描き方」、Issue #54） | done        | [#157](https://github.com/YUKIKEDA/XylemUI/issues/157)・[#161](https://github.com/YUKIKEDA/XylemUI/issues/161) | 縦線の位置の誤差（画素から測った最大）が main の 0.42〜0.51 画素から 0.12〜0.31 画素になり、Flutter・Avalonia・GPUI（0.09〜0.33）と同じ範囲。実行ファイルは 0.58 MB 小さい。初めての大きさのグリフは 1 つ 78〜103 µs（T5 の材料）。詳細は `docs/benchmarks/t4-glyphs.md` |
-| T2  | Windows の ClearType（T2 の Grill、§5.0.3「ClearType」）: Windows の設定が ClearType で、ウィンドウが不透明で、画素の並びが RGB か BGR のときだけ、ClearType の 3x1 で描いたグリフを RGBA の別のアトラスに入れ、デュアルソースのブレンドで描く。補正は色ごと。不透明度・変換・レイヤーの中はグレースケール（契約、実装は D10・V1）。GPUI（不透明なウィンドウ）と Avalonia（既定）が Windows で使う | in-progress | [#178](https://github.com/YUKIKEDA/XylemUI/issues/178) | §5.0.3 |
+| T2  | Windows の ClearType（T2 の Grill、§5.0.3「ClearType」）: Windows の設定が ClearType で、ウィンドウが不透明で、画素の並びが RGB か BGR のときだけ、ClearType の 3x1 で描いたグリフを RGBA の別のアトラスに入れ、デュアルソースのブレンドで描く。補正は色ごと。不透明度・変換・レイヤーの中はグレースケール（契約、実装は D10・V1）。GPUI（不透明なウィンドウ）と Avalonia（既定）が Windows で使う | done        | [#178](https://github.com/YUKIKEDA/XylemUI/issues/178)・[#182](https://github.com/YUKIKEDA/XylemUI/issues/182) | 125 % の T4 の場面の 16 行が、白地でも黒地でも GPUI と同じ画素。アトラスは同じ 3 ページで 4 倍のメモリ（3.0 → 12.0 MB）、描画は 1 回から 2 回。詳細は `docs/benchmarks/t2-cleartype.md` |
 | T6  | カラー絵文字（§4.6）: RGBA のアトラス、色の層（Windows は `IDWriteFactory4::TranslateColorGlyphRun`）、それを描くシェーダの経路、`IGlyphRasterizer` の色の層。T2 の後、V1 の前に行う（T4 の Grill） | not-started | —     | §4.6・§5.0.3 |
 | T7  | 白地で、T4 の縦線の位置の誤差（画素から測った最大）が Flutter より 0.02〜0.11 画素大きい理由を調べる（100・125・150 %、`docs/benchmarks/t4-glyphs.md`）。どちらも DirectWrite で描き、¼ 画素の 4 段階を使う。カバレッジの補正を切っても変わらないので、補正の差ではない（PR #173）。比べる候補: Impeller が段階を選ぶ丸め方とグリフを置く位置、Skia の DirectWrite の経路の `CreateGlyphRunAnalysis` の引数。Skia は描き方を `GetRecommendedRenderingMode` ではなく、フォントの `gasp` 表と大きさで自分で選ぶ（`src/ports/SkScalerContext_win_dw.cpp` 357〜373 行目）。Impeller はヒンティングを `kSlight` に固定する（`typographer_context_skia.cc` 266 行目）が、DirectWrite の経路で効くのは「なし」かどうかだけ（同じファイルの 407〜411 行目。PR #179 のレビュー）。理由が分かれば直すか、差として説明する。T6 の後、T5 の前に行う（T4 でオーナー決定） | not-started | —     | §5.0.3 |
 | T5  | 初めて出る文字のラスタライズを UI スレッドのフレームから外すか（S8b で最大 184 グリフ、約 3.7 ms。Chromium・Flutter は別スレッド、GPUI は同期）。T4 で DirectWrite にすると、4 段階の位置で 1 フレームに初めて出るグリフは最大 431（1 画面ずつ送るとき）、どのプロセスもその大きさで描いていないグリフは 1 つ 78〜103 µs、どこかのプロセスが描いた後は 1.5〜3.0 µs。掛け合わせると、最悪のフレームは約 34〜44 ms の見積もり（`docs/benchmarks/t4-glyphs.md`）。方式を Grill で決める（Issue #54）。アトラスの上限で断られたグリフ（要求のたびに 6.4 µs のラスタライズ。T4 の DirectWrite では、2 つが交互に断られて 0.35 µs）は、箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（M1a の Grill） | not-started | —     | §5.0.3・§11.3                              |
