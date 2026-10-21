@@ -1,0 +1,80 @@
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
+using XylemUI.Text;
+using static TerraFX.Interop.DirectX.DirectX;
+using static TerraFX.Interop.Windows.Windows;
+using static XylemUI.Platform.Windows.Com;
+
+namespace XylemUI.Platform.Windows;
+
+/// <summary>
+/// Reads how a window's text is drawn (design §5.0.3, "ClearType"): the font smoothing setting of Windows, and the pixel geometry,
+/// gamma, and contrast of the window's monitor.
+/// </summary>
+/// <remarks>
+/// GPUI reads the same values once at startup, without naming a monitor (Zed v1.24.3, <c>crates/gpui_windows/src/direct_write.rs</c>,
+/// line 184, and <c>directx_renderer.rs</c>, lines 853 to 865). XylemUI reads them for the window's monitor, when the window is
+/// created and when a setting changes; when the window moves to another monitor, from roadmap row W1.
+/// </remarks>
+internal static unsafe class Win32TextRendering
+{
+    /// <summary>
+    /// Returns the parameters of the window's monitor.
+    /// </summary>
+    /// <param name="window">The window.</param>
+    /// <param name="isOpaque">Whether the window's background is opaque, which ClearType needs.</param>
+    /// <returns>The parameters.</returns>
+    /// <exception cref="InvalidOperationException">DirectWrite could not create its factory or the monitor's parameters.</exception>
+    public static TextRenderingParameters Read(HWND window, bool isOpaque)
+    {
+        IDWriteFactory* factory = null;
+        IDWriteRenderingParams* parameters = null;
+        IDWriteRenderingParams1* parameters1 = null;
+        try
+        {
+            Guid factoryId = IID.IID_IDWriteFactory;
+            ThrowIfFailed(
+                DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &factoryId, (IUnknown**)&factory),
+                "DWriteCreateFactory"
+            );
+            HMONITOR monitor = MonitorFromWindow(window, MONITOR.MONITOR_DEFAULTTONEAREST);
+            ThrowIfFailed(factory->CreateMonitorRenderingParams(monitor, &parameters), "IDWriteFactory::CreateMonitorRenderingParams");
+            Guid parametersId = IID.IID_IDWriteRenderingParams1;
+            ThrowIfFailed(parameters->QueryInterface(&parametersId, (void**)&parameters1), "IDWriteRenderingParams::QueryInterface");
+            DWRITE_PIXEL_GEOMETRY geometry = parameters->GetPixelGeometry();
+            return new TextRenderingParameters(
+                CoverageOf(SmoothsWithClearType(), isOpaque, geometry),
+                geometry == DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_BGR,
+                parameters->GetGamma(),
+                parameters1->GetGrayscaleEnhancedContrast(),
+                parameters->GetEnhancedContrast()
+            );
+        }
+        finally
+        {
+            Release(ref parameters1);
+            Release(ref parameters);
+            Release(ref factory);
+        }
+    }
+
+    /// <summary>
+    /// Returns the kind of coverage for the three conditions of design §5.0.3: ClearType only when all three hold. The first two
+    /// are GPUI's; the third is XylemUI's own, so that a monitor without a row of subpixels gets no colored fringes.
+    /// </summary>
+    /// <param name="clearType">Whether the font smoothing setting of Windows is ClearType.</param>
+    /// <param name="isOpaque">Whether the window's background is opaque.</param>
+    /// <param name="geometry">The pixel geometry of the window's monitor.</param>
+    /// <returns><see cref="GlyphCoverage.Rgb"/> or <see cref="GlyphCoverage.Gray"/>.</returns>
+    public static GlyphCoverage CoverageOf(bool clearType, bool isOpaque, DWRITE_PIXEL_GEOMETRY geometry) =>
+        clearType && isOpaque && (geometry is DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_RGB or DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_BGR)
+            ? GlyphCoverage.Rgb
+            : GlyphCoverage.Gray;
+
+    // GPUI takes ClearType when the setting cannot be read (direct_write.rs, lines 1882 to 1897); so does this.
+    private static bool SmoothsWithClearType()
+    {
+        uint type = 0;
+        return SystemParametersInfoW(SPI.SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) == BOOL.FALSE || type == FE_FONTSMOOTHINGCLEARTYPE;
+    }
+}

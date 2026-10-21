@@ -15,7 +15,9 @@
 # off by up to half a pixel, one placed on quarters by up to an eighth. The darkness is, for each stem, the coverage of its most
 # inked column averaged over the middle half of the line's rows (0 to 1), and the mean of the 16. Coverage is the distance of a
 # pixel from the background over the distance of the text color from it, from the channel that moved most (an LCD-antialiased
-# glyph moves the channels apart).
+# glyph moves the channels apart). Last, for each app, how many of the 16 lines have the same pixels as the first app's: each line
+# of the first app against the other app's rows shifted up or down by up to 8 pixels (the apps put a line's top a few pixels
+# apart), over the line's width less the right 20 pixels.
 import json
 import sys
 from pathlib import Path
@@ -133,6 +135,20 @@ def sheet(out: Path, pictures: dict[str, str], scheme: str) -> None:
     combined.save(out / f"text-{scheme}.png")
 
 
+def same_lines(first: str, other: str, dark: bool) -> int:
+    a = np.asarray(Image.open(first).convert("RGB"), dtype=np.int32)
+    b = np.asarray(Image.open(other).convert("RGB"), dtype=np.int32)
+    width = min(a.shape[1], b.shape[1]) - 20
+    same = 0
+    for top, bottom in bands(coverage(first, dark)):
+        line = a[top:bottom, :width]
+        for shift in range(-8, 9):
+            if top + shift >= 0 and bottom + shift <= b.shape[0] and np.array_equal(line, b[top + shift : bottom + shift, :width]):
+                same += 1
+                break
+    return same
+
+
 def main() -> None:
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
@@ -154,6 +170,10 @@ def main() -> None:
                 line = results[name][scheme][index]
                 cells.append(f"{line['position_error_max_px']:.2f}/{line['position_error_rms_px']:.2f} {line['stem_darkness']:.2f}".rjust(22))
             print(label.ljust(18) + "".join(cells))
+        first = next(iter(apps))
+        index = 0 if scheme == "light" else 1
+        counts = [same_lines(apps[first].split(",")[index], apps[name].split(",")[index], scheme == "dark") for name in apps]
+        print(f"same as {first}"[:17].ljust(18) + "".join(f"{count} / 16".rjust(22) for count in counts))
 
 
 if __name__ == "__main__":

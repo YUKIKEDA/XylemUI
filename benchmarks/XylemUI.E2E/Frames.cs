@@ -6,13 +6,14 @@ namespace XylemUI.E2E;
 // Frames of the scene, paced by the swap chain (design §11.3; roadmap row M1a): the CPU time of building the display list, of
 // Draw (atlas upload, instances, the draw call), and of Present; the GPU time of the draws (timestamp queries); the time from
 // each present call to the refresh that showed it (frame statistics); and the interval between frames. A frame whose interval
-// is more than 1.5 times the median missed a refresh. `heavy` loads the GPU with full-window translucent rectangles.
+// is more than 1.5 times the median missed a refresh. `heavy` loads the GPU with full-window translucent rectangles. The text is
+// ClearType where the window allows it, or grayscale with --gray (roadmap row T2); the report names it and the draws of a frame.
 internal static class Frames
 {
-    public static int Run(int frames, int heavy, bool warp)
+    public static int Run(int frames, int heavy, bool warp, bool gray = false)
     {
         UiThread.Initialize();
-        using var scene = new Scene("XylemUI E2E frames", warp);
+        using var scene = new Scene("XylemUI E2E frames", warp, gray);
         scene.Renderer.StartMeasuringFrames();
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         var build = new List<double>(frames);
@@ -74,6 +75,8 @@ internal static class Frames
         using var report = new Report(heavy == 0 ? "frames" : "frames-heavy");
         report.Text("gpu", scene.Renderer.IsWarp ? "warp" : "hardware");
         report.Number("heavy", heavy);
+        report.Text("coverage", scene.Coverage.ToString());
+        report.Number("draws", scene.Renderer.LastDrawCount);
         report.Series("build_ms", [.. build.Skip(Warm)]);
         report.Series("draw_ms", [.. draw.Skip(Warm)]);
         report.Series("present_ms", [.. present.Skip(Warm)]);

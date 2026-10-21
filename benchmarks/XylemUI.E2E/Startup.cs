@@ -33,11 +33,11 @@ internal static class Startup
         return 0;
     }
 
-    public static int Child(bool idle)
+    public static int Child(bool idle, bool gray = false)
     {
         long main = Stopwatch.GetTimestamp();
         UiThread.Initialize();
-        using var scene = new Scene("XylemUI E2E startup");
+        using var scene = new Scene("XylemUI E2E startup", gray: gray);
         scene.Renderer.StartMeasuringFrames();
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         long firstCall = 0;
@@ -166,15 +166,16 @@ internal static class Startup
         return JsonDocument.Parse(output);
     }
 
-    // The idle child three times, one after another: the CPU time and the memory of 10 idle seconds after the first frame.
-    public static int Idle(int runs)
+    // The idle child three times, one after another: the CPU time and the memory of 10 idle seconds after the first frame; with
+    // gray, its text is grayscale instead of the window's ClearType (roadmap row T2).
+    public static int Idle(int runs, bool gray = false)
     {
         var cpu = new List<double>();
         var workingSet = new List<double>();
         var privateBytes = new List<double>();
         for (int i = 0; i < runs; i++)
         {
-            using JsonDocument child = RunChild(Environment.ProcessPath!, "startup-child --idle");
+            using JsonDocument child = RunChild(Environment.ProcessPath!, gray ? "startup-child --idle --gray" : "startup-child --idle");
             JsonElement root = child.RootElement;
             cpu.Add(root.GetProperty("idle_cpu_ms").GetDouble());
             workingSet.Add(root.GetProperty("working_set_bytes").GetInt64() / 1048576.0);

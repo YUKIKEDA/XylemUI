@@ -1,8 +1,8 @@
 namespace XylemUI.Text;
 
 /// <summary>
-/// One glyph at one size and one horizontal subpixel step: what an <see cref="IGlyphRasterizer"/> draws and what the
-/// <see cref="GlyphAtlas"/> keeps (design §5.0.3).
+/// One glyph at one size, one horizontal subpixel step, and one kind of coverage: what an <see cref="IGlyphRasterizer"/> draws
+/// and what the <see cref="GlyphAtlas"/> keeps (design §5.0.3).
 /// </summary>
 /// <param name="Font">The font.</param>
 /// <param name="GlyphId">The glyph, from shaping.</param>
@@ -12,4 +12,5 @@ namespace XylemUI.Text;
 /// <param name="SubpixelX">
 /// How far right of a whole pixel the glyph is drawn, in quarters of a pixel: 0 to <see cref="GlyphPosition.SubpixelSteps"/> − 1.
 /// </param>
-public readonly record struct GlyphKey(Font Font, uint GlyphId, float PixelSize, int SubpixelX);
+/// <param name="Coverage">Grayscale or ClearType coverage; the two are different glyphs in the atlas.</param>
+public readonly record struct GlyphKey(Font Font, uint GlyphId, float PixelSize, int SubpixelX, GlyphCoverage Coverage = GlyphCoverage.Gray);

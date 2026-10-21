@@ -1,6 +1,7 @@
 namespace XylemUI.Text.Tests;
 
-// The CPU glyph atlas: pages, plots, and LRU eviction (S8a, S8b, T4; design §5.0.2, §5.0.3). The glyphs come from
+// The CPU glyph atlas: pages, plots, and LRU eviction, with pages of each kind of coverage (S8a, S8b, T4, T2; design
+// §5.0.2, §5.0.3). The glyphs come from
 // TestRasterizer, whose boxes and coverage follow from the key: at 24 px a glyph is 19 x 19, at 32 px 26 x 26.
 public sealed class GlyphAtlasTests
 {
@@ -27,7 +28,7 @@ public sealed class GlyphAtlasTests
     public void TryGet_Coverage_IsWrittenIntoTheRegionAtThePageStride()
     {
         using Font font = TestFont.Open();
-        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 256, maxPages: 1);
+        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 128, maxPages: 1);
         var keyH = new GlyphKey(font, GlyphH, 32, 0);
         var keyNichi = new GlyphKey(font, GlyphNichi, 24, 0);
 
@@ -38,7 +39,7 @@ public sealed class GlyphAtlasTests
         Assert.Equal((19, 19, 1, 19), (nichi.Width, nichi.Height, nichi.BearingX, nichi.BearingY));
         foreach ((GlyphKey key, AtlasGlyph glyph) in new[] { (keyH, h), (keyNichi, nichi) })
         {
-            ReadOnlySpan<byte> pixels = atlas.GetPagePixels(glyph.Page);
+            ReadOnlySpan<byte> pixels = atlas.GetPagePixels(GlyphCoverage.Gray, glyph.Page);
             for (int row = 0; row < glyph.Height; row++)
             {
                 for (int column = 0; column < glyph.Width; column++)
@@ -71,7 +72,7 @@ public sealed class GlyphAtlasTests
     {
         using Font font = TestFont.Open();
         var rasterizer = new TestRasterizer();
-        var atlas = new GlyphAtlas(rasterizer, pageSize: 256, plotSize: 256, maxPages: 1);
+        var atlas = new GlyphAtlas(rasterizer, pageSize: 256, plotSize: 128, maxPages: 1);
         GlyphKey[] keys =
         [
             new(font, GlyphH, 17.5f, 0),
@@ -91,7 +92,10 @@ public sealed class GlyphAtlasTests
 
         Assert.Equal(keys, rasterizer.Measured);
         Assert.Equal(6, first.Select(glyph => (glyph.X, glyph.Y)).Distinct().Count());
-        Assert.Equal(6, first.Select(glyph => atlas.GetPagePixels(glyph.Page)[(glyph.Y * atlas.PageSize) + glyph.X]).Distinct().Count());
+        Assert.Equal(
+            6,
+            first.Select(glyph => atlas.GetPagePixels(GlyphCoverage.Gray, glyph.Page)[(glyph.Y * atlas.PageSize) + glyph.X]).Distinct().Count()
+        );
         foreach (GlyphKey key in keys)
         {
             Assert.True(atlas.TryGet(key, out _));
@@ -128,6 +132,7 @@ public sealed class GlyphAtlasTests
             new(font, GlyphH, float.NaN, 0),
             new(font, GlyphH, 32, -1),
             new(font, GlyphH, 32, 4),
+            new(font, GlyphH, 32, 0, (GlyphCoverage)2),
         ];
         foreach (GlyphKey key in keys)
         {
@@ -202,7 +207,7 @@ public sealed class GlyphAtlasTests
     public void TryGet_Again_ComesFromTheCache()
     {
         using Font font = TestFont.Open();
-        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 256, maxPages: 1);
+        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 128, maxPages: 1);
 
         Assert.True(atlas.TryGet(new GlyphKey(font, GlyphH, 32, 0), out AtlasGlyph h));
         Assert.True(atlas.TryGet(new GlyphKey(font, 1, 32, 0), out AtlasGlyph space));
@@ -242,7 +247,7 @@ public sealed class GlyphAtlasTests
     {
         using Font a = TestFont.Open();
         using Font b = TestFont.Open();
-        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 256, maxPages: 1);
+        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 128, maxPages: 1);
 
         Assert.True(atlas.TryGet(new GlyphKey(a, GlyphH, 32, 0), out AtlasGlyph a32));
         Assert.True(atlas.TryGet(new GlyphKey(b, GlyphH, 32, 0), out AtlasGlyph b32));
@@ -276,11 +281,11 @@ public sealed class GlyphAtlasTests
     public void TryGet_BlankGlyph_TakesNoRoom()
     {
         using Font font = TestFont.Open();
-        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 256, maxPages: 1);
+        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 128, maxPages: 1);
 
         Assert.True(atlas.TryGet(new GlyphKey(font, 1, 32, 0), out AtlasGlyph space));
         Assert.True(atlas.TryGet(new GlyphKey(font, 1, 32, 0), out _));
-        Assert.Equal(0, atlas.PageCount);
+        Assert.Equal(0, atlas.GetPageCount(GlyphCoverage.Gray));
         Assert.True(atlas.TryGet(new GlyphKey(font, GlyphH, 32, 0), out AtlasGlyph h));
 
         Assert.Equal((0, 0), (space.Width, space.Height));
@@ -356,7 +361,7 @@ public sealed class GlyphAtlasTests
 
         Assert.Equal((regions[1].Page, regions[1].X, regions[1].Y), (g4.Page, g4.X, g4.Y));
         Assert.Equal(1, atlas.EvictionCount);
-        Assert.Equal(1, atlas.PageCount);
+        Assert.Equal(1, atlas.GetPageCount(GlyphCoverage.Gray));
         Assert.Contains(new AtlasRegion(0, regions[1].X - 1, regions[1].Y - 1, 32, 32), atlas.DirtyRegions.ToArray());
         Assert.Equal(0, MaxInPlotOutside(atlas, g4));
 
@@ -402,18 +407,18 @@ public sealed class GlyphAtlasTests
 
         Assert.True(atlas.TryGet(new GlyphKey(font, g[4], 24, 0), out AtlasGlyph g4));
         Assert.Equal(1, g4.Page);
-        Assert.Equal((2, 0), (atlas.PageCount, atlas.EvictionCount));
-        (long page0, long page1) = (atlas.GetPageId(0), atlas.GetPageId(1));
+        Assert.Equal((2, 0), (atlas.GetPageCount(GlyphCoverage.Gray), atlas.EvictionCount));
+        (long page0, long page1) = (atlas.GetPageId(GlyphCoverage.Gray, 0), atlas.GetPageId(GlyphCoverage.Gray, 1));
 
         atlas.BeginFrame();
-        Assert.Equal(2, atlas.PageCount);
+        Assert.Equal(2, atlas.GetPageCount(GlyphCoverage.Gray));
         for (int i = 0; i < 4; i++)
         {
             _ = atlas.TryGet(new GlyphKey(font, g[i], 24, 0), out _);
         }
 
         atlas.BeginFrame();
-        Assert.Equal(1, atlas.PageCount);
+        Assert.Equal(1, atlas.GetPageCount(GlyphCoverage.Gray));
         int rasterized = atlas.RasterizeCount;
         Assert.True(atlas.TryGet(new GlyphKey(font, g[4], 24, 0), out AtlasGlyph again));
         Assert.Equal(rasterized + 1, atlas.RasterizeCount);
@@ -424,9 +429,9 @@ public sealed class GlyphAtlasTests
             _ = atlas.TryGet(new GlyphKey(font, g[i], 24, 0), out _);
         }
 
-        Assert.Equal(2, atlas.PageCount);
-        Assert.Equal(page0, atlas.GetPageId(0));
-        Assert.NotEqual(page1, atlas.GetPageId(1));
+        Assert.Equal(2, atlas.GetPageCount(GlyphCoverage.Gray));
+        Assert.Equal(page0, atlas.GetPageId(GlyphCoverage.Gray, 0));
+        Assert.NotEqual(page1, atlas.GetPageId(GlyphCoverage.Gray, 1));
     }
 
     /// <summary>
@@ -459,17 +464,186 @@ public sealed class GlyphAtlasTests
         }
 
         Assert.Equal(2, atlas.PageLimit);
-        Assert.Equal(2, atlas.PageCount);
+        Assert.Equal(2, atlas.GetPageCount(GlyphCoverage.Gray));
         int rasterized = atlas.RasterizeCount;
         Assert.False(atlas.TryGet(new GlyphKey(font, 56, 24, 0), out _));
         Assert.False(atlas.TryGet(new GlyphKey(font, 56, 24, 0), out _));
-        Assert.Equal((2, 0), (atlas.PageCount, atlas.EvictionCount));
+        Assert.Equal((2, 0), (atlas.GetPageCount(GlyphCoverage.Gray), atlas.EvictionCount));
         Assert.Equal(2, atlas.RefusedCount);
         Assert.Equal(rasterized + 2, atlas.RasterizeCount);
 
         atlas.BeginFrame();
         Assert.True(atlas.TryGet(new GlyphKey(font, 56, 24, 0), out _));
         Assert.Equal(1, atlas.EvictionCount);
+    }
+
+    /// <summary>
+    /// A ClearType glyph goes to a page of its own kind, four bytes a pixel: red, green, and blue from the rasterizer at the
+    /// page's stride, the fourth byte 0; its dirty region names the kind.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, the test rasterizer, and an empty atlas of 256 px grayscale pages with 128 px plots.
+    ///
+    /// Steps:
+    /// - Get "H" at 32 px with <see cref="GlyphCoverage.Rgb"/>.
+    ///
+    /// Expected:
+    /// - One Rgb page and no Gray page; the page is 128 px, half the grayscale page, and 128 × 128 × 4 bytes.
+    /// - Every pixel of the region holds the rasterizer's red, green, and blue, and 0 in the fourth byte; the ring around the region
+    ///   is 0.
+    /// - One dirty region, on page 0 of the Rgb kind, the glyph's region.
+    /// </remarks>
+    [Fact]
+    public void TryGet_ClearType_IsWrittenOnItsOwnPagesAtFourBytesAPixel()
+    {
+        using Font font = TestFont.Open();
+        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 256, plotSize: 128, maxPages: 1);
+        var key = new GlyphKey(font, GlyphH, 32, 0, GlyphCoverage.Rgb);
+
+        Assert.True(atlas.TryGet(key, out AtlasGlyph h));
+
+        Assert.Equal((1, 0), (atlas.GetPageCount(GlyphCoverage.Rgb), atlas.GetPageCount(GlyphCoverage.Gray)));
+        ReadOnlySpan<byte> pixels = atlas.GetPagePixels(GlyphCoverage.Rgb, h.Page);
+        Assert.Equal((128, 128 * 128 * 4), (atlas.GetPageSize(GlyphCoverage.Rgb), pixels.Length));
+        int stride = atlas.GetPageSize(GlyphCoverage.Rgb) * 4;
+        for (int y = h.Y - 1; y <= h.Y + h.Height; y++)
+        {
+            for (int x = h.X - 1; x <= h.X + h.Width; x++)
+            {
+                (int row, int column) = (y - h.Y, x - h.X);
+                bool inside = row >= 0 && column >= 0 && row < h.Height && column < h.Width;
+                byte[] expected = inside
+                    ?
+                    [
+                        TestRasterizer.Value(key, row, column),
+                        TestRasterizer.Channel(key, row, column, 1),
+                        TestRasterizer.Channel(key, row, column, 2),
+                        0,
+                    ]
+                    : [0, 0, 0, 0];
+                Assert.Equal(expected, pixels.Slice((y * stride) + (x * 4), 4).ToArray());
+            }
+        }
+
+        Assert.Equal(new AtlasRegion(0, h.X, h.Y, h.Width, h.Height, GlyphCoverage.Rgb), Assert.Single(atlas.DirtyRegions.ToArray()));
+    }
+
+    /// <summary>
+    /// The same glyph in grayscale and in ClearType is two glyphs of the atlas, each rasterized once, each on page 0 of its kind.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, the test rasterizer, and an empty atlas.
+    ///
+    /// Steps:
+    /// - Get "H" at 32 px in Gray, then in Rgb, then both again.
+    ///
+    /// Expected:
+    /// - The rasterizer measured the Gray key and the Rgb key, once each; both regions are on page 0 (of their own kind); the
+    ///   second requests return the same regions.
+    /// </remarks>
+    [Fact]
+    public void TryGet_GrayAndClearType_AreCachedSeparately()
+    {
+        using Font font = TestFont.Open();
+        var rasterizer = new TestRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        var gray = new GlyphKey(font, GlyphH, 32, 0);
+        var rgb = gray with { Coverage = GlyphCoverage.Rgb };
+
+        Assert.True(atlas.TryGet(gray, out AtlasGlyph first));
+        Assert.True(atlas.TryGet(rgb, out AtlasGlyph second));
+        Assert.True(atlas.TryGet(gray, out AtlasGlyph firstAgain));
+        Assert.True(atlas.TryGet(rgb, out AtlasGlyph secondAgain));
+
+        Assert.Equal([gray, rgb], rasterizer.Measured);
+        Assert.Equal((0, 0), (first.Page, second.Page));
+        Assert.Equal((first, second), (firstAgain, secondAgain));
+    }
+
+    /// <summary>
+    /// Each kind's pages are bounded and evicted on their own: ClearType glyphs that fill their kind evict ClearType plots and
+    /// never a grayscale one; after the window changes its kind, the glyphs of the old kind stay until their own kind needs room.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and an atlas of 64 px grayscale pages with 32 px plots (4 plots), at most 1 grayscale page, so at most 4
+    ///   ClearType pages of 32 px (1 plot each). At 24 px a glyph fills a plot.
+    ///
+    /// Steps:
+    /// - Frame 1: get G0..G3 in Gray. Frame 2: get G0..G4 in Rgb (as if the window turned to ClearType). Frame 3: get G0..G3 in
+    ///   Gray, then G4 in Gray.
+    ///
+    /// Expected:
+    /// - Frame 2: 5 Rgb pages, one beyond the Rgb maximum of 4 (an Rgb page is 32 px, one plot; 5 glyphs, every plot used in the
+    ///   frame), no eviction, and the Gray page kept.
+    /// - Frame 3: G0..G3 in Gray come from the cache (no rasterizing); G4 in Gray evicts a Gray plot (the eviction count is 1).
+    /// </remarks>
+    [Fact]
+    public void TryGet_KindsAreBoundedOnTheirOwn()
+    {
+        using Font font = TestFont.Open();
+        var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 64, plotSize: 32, maxPages: 1);
+        uint[] g = JapaneseGlyphs(font);
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.True(atlas.TryGet(new GlyphKey(font, g[i], 24, 0), out _));
+        }
+
+        atlas.BeginFrame();
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.True(atlas.TryGet(new GlyphKey(font, g[i], 24, 0, GlyphCoverage.Rgb), out _));
+        }
+
+        Assert.Equal((5, 1, 0), (atlas.GetPageCount(GlyphCoverage.Rgb), atlas.GetPageCount(GlyphCoverage.Gray), atlas.EvictionCount));
+
+        atlas.BeginFrame();
+        int rasterized = atlas.RasterizeCount;
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.True(atlas.TryGet(new GlyphKey(font, g[i], 24, 0), out _));
+        }
+
+        Assert.Equal(rasterized, atlas.RasterizeCount);
+        atlas.BeginFrame();
+        Assert.True(atlas.TryGet(new GlyphKey(font, g[4], 24, 0), out _));
+        Assert.Equal(1, atlas.EvictionCount);
+    }
+
+    /// <summary>
+    /// A ClearType page is half as wide and high as a grayscale page, so a page of either kind takes the same bytes and has a
+    /// quarter of the plots, and the atlas keeps four times as many ClearType pages: the same bytes and plots for each kind. A plot
+    /// that does not divide half the page is refused.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test rasterizer.
+    ///
+    /// Steps:
+    /// - Make the default atlas (1024 px pages, 256 px plots, 4 pages), and atlases of 1024 px pages with 1024 px and 384 px plots.
+    ///
+    /// Expected:
+    /// - Default: Gray 1024 px, at most 4 pages, limit 8; Rgb 512 px, at most 16 pages, limit 32; a page of each is 1,048,576 bytes.
+    /// - The other two throw <see cref="ArgumentOutOfRangeException"/>.
+    /// </remarks>
+    [Fact]
+    public void Constructor_ClearTypePages_AreHalfAsWideAndFourTimesAsMany()
+    {
+        var atlas = new GlyphAtlas(new TestRasterizer());
+
+        Assert.Equal(
+            (1024, 4, 8),
+            (atlas.GetPageSize(GlyphCoverage.Gray), atlas.GetMaxPages(GlyphCoverage.Gray), atlas.GetPageLimit(GlyphCoverage.Gray))
+        );
+        Assert.Equal(
+            (512, 16, 32),
+            (atlas.GetPageSize(GlyphCoverage.Rgb), atlas.GetMaxPages(GlyphCoverage.Rgb), atlas.GetPageLimit(GlyphCoverage.Rgb))
+        );
+        Assert.Equal(1024 * 1024, 512 * 512 * GlyphAtlas.BytesPerPixel(GlyphCoverage.Rgb));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GlyphAtlas(new TestRasterizer(), pageSize: 1024, plotSize: 1024));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GlyphAtlas(new TestRasterizer(), pageSize: 1024, plotSize: 384));
     }
 
     private static uint[] JapaneseGlyphs(Font font)
@@ -481,7 +655,7 @@ public sealed class GlyphAtlasTests
     // The ring of pixels just outside the region (the packing leaves one pixel of padding there).
     private static int MaxOnBorder(GlyphAtlas atlas, AtlasGlyph glyph)
     {
-        ReadOnlySpan<byte> pixels = atlas.GetPagePixels(glyph.Page);
+        ReadOnlySpan<byte> pixels = atlas.GetPagePixels(GlyphCoverage.Gray, glyph.Page);
         int max = 0;
         for (int y = glyph.Y - 1; y <= glyph.Y + glyph.Height; y++)
         {
@@ -501,7 +675,7 @@ public sealed class GlyphAtlasTests
     // The pixels of the glyph's plot outside the glyph: 0 after an eviction cleared the plot.
     private static int MaxInPlotOutside(GlyphAtlas atlas, AtlasGlyph glyph)
     {
-        ReadOnlySpan<byte> pixels = atlas.GetPagePixels(glyph.Page);
+        ReadOnlySpan<byte> pixels = atlas.GetPagePixels(GlyphCoverage.Gray, glyph.Page);
         int plotX = glyph.X / atlas.PlotSize * atlas.PlotSize;
         int plotY = glyph.Y / atlas.PlotSize * atlas.PlotSize;
         int max = 0;

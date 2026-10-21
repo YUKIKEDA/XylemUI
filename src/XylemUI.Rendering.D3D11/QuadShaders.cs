@@ -23,6 +23,13 @@ namespace XylemUI.Rendering.D3D11;
 /// weighs the color 0.25, 0.5, 0.25 for the gamma correction; GPUI, and this shader, weigh it 0.30, 0.59, 0.11 for both steps.
 /// The corrected coverage is clamped to 0..1, so that the premultiplied output stays in range.
 /// </para>
+/// <para>
+/// A ClearType glyph (roadmap row T2) loads red, green, and blue coverage from the RGBA atlas, swapped on a BGR monitor, and
+/// corrects each channel with the channel of the color: GPUI's <c>apply_contrast_and_gamma_correction3</c> with its ClearType
+/// contrast, and its fragment shader (<c>shaders.hlsl</c>, <c>subpixel_sprite_fragment</c>, lines 1194 to 1206). It writes the
+/// color and the per-channel alpha as two outputs for the dual-source blend <c>SRC1_COLOR, INV_SRC1_COLOR</c>, which blends each
+/// channel with its own alpha and does not write the target's alpha.
+/// </para>
 /// </remarks>
 internal static class QuadShaders
 {
@@ -31,13 +38,18 @@ internal static class QuadShaders
     /// </summary>
     public static ReadOnlySpan<byte> Source =>
         """
-            cbuffer Target : register(b0) { float2 InverseSize; float GrayscaleContrast; float Unused; float4 GammaRatios; };
+            cbuffer Target : register(b0)
+            {
+                float2 InverseSize; float GrayscaleContrast; float ClearTypeContrast; float4 GammaRatios; float IsBgr; float3 Unused;
+            };
             Texture2DArray<float> Atlas : register(t0);
+            Texture2DArray<float4> AtlasRgb : register(t1);
             struct VertexIn
             {
                 float4 rect : RECT; uint color : COLOR; uint atlasOrigin : ATLAS; uint page : PAGE; uint vertexId : SV_VertexID;
             };
             struct VertexOut { float4 position : SV_Position; float4 color : COLOR; nointerpolation int3 atlas : ATLAS; };
+            struct ClearTypeOut { float4 foreground : SV_Target0; float4 alpha : SV_Target1; };
             VertexOut VS(VertexIn input)
             {
                 float2 corner = float2(input.vertexId & 1, input.vertexId >> 1);
@@ -64,6 +76,20 @@ internal static class QuadShaders
                 }
                 return float4(input.color.rgb * alpha, alpha);
             }
+            ClearTypeOut PSClearType(VertexOut input)
+            {
+                float3 coverage = AtlasRgb.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)).rgb;
+                coverage = IsBgr > 0.5 ? coverage.bgr : coverage;
+                float3 color = input.color.rgb;
+                float k = ClearTypeContrast * saturate(4.0 * (0.75 - dot(color, float3(0.30, 0.59, 0.11))));
+                float3 contrasted = coverage * (k + 1.0) / (coverage * k + 1.0);
+                float4 g = GammaRatios;
+                float3 corrected = saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * color + g.y) * contrasted + (g.z * color + g.w)));
+                ClearTypeOut output;
+                output.foreground = float4(color, 1.0);
+                output.alpha = float4(input.color.a * corrected, 1.0);
+                return output;
+            }
             """u8;
 
     /// <summary>
@@ -75,6 +101,11 @@ internal static class QuadShaders
     /// Gets the pixel shader's entry point, NUL-terminated.
     /// </summary>
     public static ReadOnlySpan<byte> PixelEntry => "PS\0"u8;
+
+    /// <summary>
+    /// Gets the ClearType pixel shader's entry point, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> ClearTypePixelEntry => "PSClearType\0"u8;
 
     /// <summary>
     /// Gets the vertex shader model, NUL-terminated (feature level 10.0 and up).

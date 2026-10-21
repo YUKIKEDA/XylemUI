@@ -6,7 +6,8 @@ namespace XylemUI.Text.Tests;
 //
 // Glyph 1 (the test font's space) has no ink. Any other glyph is a square of round(0.8 × size) pixels, or of the side set in
 // Sides, with its left edge 1 pixel right of the pen and its bottom on the baseline. Each pixel holds Value(key, row, column),
-// which is never 0.
+// which is never 0; for ClearType coverage, red is Value and green and blue are Channel(key, row, column, 1 or 2), and the fourth
+// byte is left as it is.
 internal sealed class TestRasterizer : IGlyphRasterizer
 {
     public const uint Space = 1;
@@ -17,6 +18,8 @@ internal sealed class TestRasterizer : IGlyphRasterizer
 
     public static byte Value(in GlyphKey key, int row, int column) =>
         (byte)(1 + ((int)((key.GlyphId * 7) + (key.SubpixelX * 31) + (key.PixelSize * 4) + (row * 3) + column) % 254));
+
+    public static byte Channel(in GlyphKey key, int row, int column, int channel) => (byte)(1 + ((Value(key, row, column) + (channel * 85)) % 254));
 
     public GlyphBox Measure(in GlyphKey glyph)
     {
@@ -36,11 +39,21 @@ internal sealed class TestRasterizer : IGlyphRasterizer
         ObjectDisposedException.ThrowIf(glyph.Font.IsDisposed, glyph.Font);
         GlyphBox box = Measure(glyph);
         Measured.RemoveAt(Measured.Count - 1);
+        bool rgb = glyph.Coverage == GlyphCoverage.Rgb;
         for (int row = 0; row < box.Height; row++)
         {
             for (int column = 0; column < box.Width; column++)
             {
-                destination[(row * stride) + column] = Value(glyph, row, column);
+                if (!rgb)
+                {
+                    destination[(row * stride) + column] = Value(glyph, row, column);
+                    continue;
+                }
+
+                int at = (row * stride) + (column * 4);
+                destination[at] = Value(glyph, row, column);
+                destination[at + 1] = Channel(glyph, row, column, 1);
+                destination[at + 2] = Channel(glyph, row, column, 2);
             }
         }
     }

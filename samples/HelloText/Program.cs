@@ -14,7 +14,9 @@ if (args.Length >= 2 && args[0] == "--atlas-sizing")
     int face = args.Length >= 3 ? int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) : 0;
     double scale = args.Length >= 4 ? double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 1.5;
     int step = args.Length >= 5 ? int.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture) : 1;
-    return AtlasSizing.Run(args[1], face, scale, step, args.Length >= 6 ? args[5] : Path.Combine("docs", "design.ja.md"));
+    string text = args.Length >= 6 && args[5] != "--cleartype" ? args[5] : Path.Combine("docs", "design.ja.md");
+    GlyphCoverage coverage = args.Contains("--cleartype") ? GlyphCoverage.Rgb : GlyphCoverage.Gray;
+    return AtlasSizing.Run(args[1], face, scale, step, text, coverage);
 }
 
 bool auto = args.Contains("--auto");

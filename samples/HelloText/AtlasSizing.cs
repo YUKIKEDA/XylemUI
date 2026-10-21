@@ -9,11 +9,15 @@ using XylemUI.Text;
 // 30 and 21 px, 125 % 25 and 17.5 px). The text is shaped line by line and every glyph is put in the atlas at the subpixel step
 // of its pen, each line starting on a whole pixel, as DisplayList.DrawText does (roadmap row T4). DirectWrite draws the glyphs.
 //
-//   HelloText --atlas-sizing <font file> [face index] [scale] [lines per frame] [text file]
+//   HelloText --atlas-sizing <font file> [face index] [scale] [lines per frame] [text file] [--cleartype]
+//
+// With --cleartype the glyphs are ClearType (roadmap row T2): 4 bytes a pixel on pages half as wide, so a page takes the same
+// bytes and the kind keeps four times as many.
 //
 // One line per frame is a slow scroll; 40 lines per frame (a screen) is the worst case, every frame a new screen.
 //
-// It prints, per configuration: the GPU memory of the pages at the end (pageSize² bytes per page) and the most pages at once;
+// It prints, per configuration: the GPU memory of the pages at the end (pageSize² bytes per page for both kinds: a ClearType page is half as wide, at 4 bytes a pixel) and
+// the most pages at once;
 // the glyphs rasterized in the first frame; and, over the scrolling frames, the rasterizations and evictions per frame (median,
 // p95, max), the frames that rasterized more than 50 glyphs, and the time of the whole run.
 internal static class AtlasSizing
@@ -21,7 +25,7 @@ internal static class AtlasSizing
     private const int LinesPerScreen = 40;
     private const int CharactersPerLine = 80;
 
-    public static int Run(string fontPath, int faceIndex, double scale, int step, string textPath)
+    public static int Run(string fontPath, int faceIndex, double scale, int step, string textPath, GlyphCoverage coverage)
     {
         string[] lines = Lines(File.ReadAllText(textPath));
         using var font = new Font(File.ReadAllBytes(fontPath), faceIndex);
@@ -29,7 +33,7 @@ internal static class AtlasSizing
         using var rasterizer = new DirectWriteGlyphRasterizer();
         TextLanguage japanese = TextLanguage.FromTag("ja");
         Console.WriteLine(
-            $"atlas sizing: {Path.GetFileName(fontPath)} face {faceIndex}, scale {scale}, {step} lines per frame, {lines.Length} lines of {CharactersPerLine} from "
+            $"atlas sizing: {Path.GetFileName(fontPath)} face {faceIndex}, scale {scale}, {coverage}, {step} lines per frame, {lines.Length} lines of {CharactersPerLine} from "
                 + $"{Path.GetFileName(textPath)}, {LinesPerScreen} lines per screen"
         );
         Console.WriteLine("page plot max | MB end, pages max | first | raster/frame med p95 max | evict/frame med p95 max | frames > 50 | ms");
@@ -57,12 +61,12 @@ internal static class AtlasSizing
                     foreach (ShapedGlyph glyph in shaper.Shape(font, lines[line], japanese))
                     {
                         _ = GlyphPosition.Snap((pen + glyph.XOffset) * unit, out int subpixel);
-                        _ = atlas.TryGet(new GlyphKey(font, glyph.GlyphId, size, subpixel), out _);
+                        _ = atlas.TryGet(new GlyphKey(font, glyph.GlyphId, size, subpixel, coverage), out _);
                         pen += glyph.XAdvance;
                     }
                 }
 
-                mostPages = Math.Max(mostPages, atlas.PageCount);
+                mostPages = Math.Max(mostPages, atlas.GetPageCount(coverage));
                 if (top == 0)
                 {
                     first = atlas.RasterizeCount - rasterBefore;
@@ -75,7 +79,8 @@ internal static class AtlasSizing
 
             double milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
             int heavy = rasterized.Count(count => count > 50);
-            double megabytes = (double)atlas.PageCount * page * page / (1024 * 1024);
+            int side = atlas.GetPageSize(coverage);
+            double megabytes = (double)atlas.GetPageCount(coverage) * side * side * GlyphAtlas.BytesPerPixel(coverage) / (1024 * 1024);
             Console.WriteLine(
                 string.Create(
                     CultureInfo.InvariantCulture,

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using TerraFX.Interop.Windows;
+using XylemUI.Text;
 using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Platform.Windows;
@@ -21,6 +22,7 @@ public sealed unsafe class Win32Window : IDisposable
     private const uint WmNcCreate = WM.WM_NCCREATE;
     private const uint WmNcDestroy = WM.WM_NCDESTROY;
     private const uint WmSize = WM.WM_SIZE;
+    private const uint WmSettingChange = WM.WM_SETTINGCHANGE;
     private const nuint SizeMinimized = SIZE_MINIMIZED;
 
     private static bool _classRegistered;
@@ -31,6 +33,7 @@ public sealed unsafe class Win32Window : IDisposable
     private bool _resizePending;
     private int _pendingWidth;
     private int _pendingHeight;
+    private Action? _raiseTextRenderingChanged;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Win32Window"/> class. The window is hidden until <see cref="Show"/> is called.
@@ -40,6 +43,9 @@ public sealed unsafe class Win32Window : IDisposable
     /// <param name="height">The outer height in physical pixels.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="Win32Exception">The window could not be created.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// DirectWrite could not read how the window's text is drawn (<see cref="TextRendering"/>); the window was destroyed.
+    /// </exception>
     public Win32Window(string title, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(title);
@@ -77,12 +83,43 @@ public sealed unsafe class Win32Window : IDisposable
         }
 
         _hwnd = hwnd;
+
+        // A window whose text rendering cannot be read is destroyed, so that no native window or handle-table entry outlives the
+        // constructor that threw.
+        try
+        {
+            TextRendering = TextRenderingReader(hwnd);
+        }
+        catch
+        {
+            _ = DestroyWindow(hwnd);
+            throw;
+        }
     }
 
     /// <summary>
     /// Occurs on the UI thread after the window has been destroyed.
     /// </summary>
     public event EventHandler? Closed;
+
+    /// <summary>
+    /// Occurs on the UI thread when <see cref="TextRendering"/> changed: a setting of Windows changed (<c>WM_SETTINGCHANGE</c>).
+    /// The renderer and the text of the window take the new value.
+    /// </summary>
+    public event EventHandler? TextRenderingChanged;
+
+    /// <summary>
+    /// Gets how the window's text is drawn (design §5.0.3, "ClearType"): read for the window's monitor when the window is created
+    /// and again when a setting of Windows changes. Every window is opaque until Mica (§13.2), so the coverage is ClearType when
+    /// Windows asks for it and the monitor has a row of subpixels.
+    /// </summary>
+    public TextRenderingParameters TextRendering { get; private set; }
+
+    /// <summary>
+    /// Gets or sets what reads <see cref="TextRendering"/>, for the tests of the conditions without changing a setting of Windows.
+    /// </summary>
+    internal static Func<HWND, TextRenderingParameters> TextRenderingReader { get; set; } =
+        static hwnd => Win32TextRendering.Read(hwnd, isOpaque: true);
 
     /// <summary>
     /// Gets a value indicating whether the native window still exists.
@@ -244,6 +281,18 @@ public sealed unsafe class Win32Window : IDisposable
 
     private void RaiseClosed() => Closed?.Invoke(this, EventArgs.Empty);
 
+    // Every WM_SETTINGCHANGE reads again rather than matching the setting it names: the values come from several settings (font
+    // smoothing, and the gamma and contrast the ClearType tuner writes), and the message is rare.
+    private void ReadTextRendering(HWND hwnd)
+    {
+        TextRenderingParameters read = TextRenderingReader(hwnd);
+        if (read != TextRendering)
+        {
+            TextRendering = read;
+            SynchronousRenderGuard.RunOrDefer(_raiseTextRenderingChanged ??= () => TextRenderingChanged?.Invoke(this, EventArgs.Empty));
+        }
+    }
+
     private static void EnsureClassRegistered()
     {
         if (_classRegistered)
@@ -313,6 +362,9 @@ public sealed unsafe class Win32Window : IDisposable
                 return true;
             case WmSize:
                 RenderSynchronously(wParam, lParam);
+                return false;
+            case WmSettingChange:
+                ReadTextRendering(hwnd);
                 return false;
             case WmDestroy:
                 // An application callback: during a synchronous render it runs after the render returns.

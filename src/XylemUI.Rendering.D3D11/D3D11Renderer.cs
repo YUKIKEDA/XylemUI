@@ -28,10 +28,16 @@ namespace XylemUI.Rendering.D3D11;
 /// view before <c>ResizeBuffers</c> and creates it again after (design §2.11.1). All members belong to the UI thread.
 /// </para>
 /// <para>
-/// The pages of the glyph atlas are the slices of one texture array (8-bit coverage), so that the rectangles and the glyphs of a
-/// frame are one draw in the display list's order. Before the instances are written, the atlas's changes are uploaded (design
-/// §5.0.3): a page whose id changed is uploaded whole, the other pages only in their dirty regions. Direct3D 11 orders these
-/// writes after the draws already issued that read the texture, so no fence is needed (design §5.0.2).
+/// The pages of the glyph atlas are the slices of two texture arrays: 8-bit grayscale coverage and RGBA ClearType coverage
+/// (design §5.0.3, "ClearType"). Rectangles and grayscale glyphs share one blend state, ClearType glyphs have the dual-source
+/// one, and the frame is drawn in the display list's order, split into draws only where the blend state changes. Before the
+/// instances are written, the atlas's changes are uploaded (design §5.0.3): a page whose id changed is uploaded whole, the other
+/// pages only in their dirty regions. Direct3D 11 orders these writes after the draws already issued that read the texture, so no
+/// fence is needed (design §5.0.2).
+/// </para>
+/// <para>
+/// The gamma, the contrast, and the order of the subpixels come from <see cref="TextRendering"/>, which the platform reads for
+/// the window's monitor; the kind of coverage of each glyph run comes from the display list.
 /// </para>
 /// </remarks>
 public sealed unsafe class D3D11Renderer : IDisposable
@@ -44,19 +50,19 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly IDXGISwapChain2* _swapChain;
     private readonly ID3D11VertexShader* _vertexShader;
     private readonly ID3D11PixelShader* _pixelShader;
+    private readonly ID3D11PixelShader* _clearTypePixelShader;
     private readonly ID3D11InputLayout* _inputLayout;
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
+    private readonly ID3D11BlendState* _clearTypeBlend;
     private readonly HANDLE _frameLatencyWaitable;
-    private readonly TextGamma _textGamma;
+    private readonly AtlasTextures _grayAtlas = new(GlyphCoverage.Gray, DXGI_FORMAT.DXGI_FORMAT_R8_UNORM);
+    private readonly AtlasTextures _rgbAtlas = new(GlyphCoverage.Rgb, DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM);
+    private TextRenderingParameters _textRendering = TextRenderingParameters.Default;
+    private DrawRange[] _draws = new DrawRange[16];
     private ID3D11RenderTargetView* _renderTarget;
     private ID3D11Buffer* _instances;
     private int _instanceCapacity;
-    private ID3D11Texture2D* _atlas;
-    private ID3D11ShaderResourceView* _atlasView;
-    private int _atlasPageSize;
-    private int _atlasSlices;
-    private long[] _atlasPageIds = [];
     private GpuFrameTimer? _gpuTimer;
     private (uint Count, long Qpc)[] _presents = [];
     private uint _lastReportedPresent;
@@ -67,6 +73,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _device = device;
         _context = context;
         IsWarp = isWarp;
+        FeatureLevel = device->GetFeatureLevel();
         Width = width;
         Height = height;
 
@@ -79,10 +86,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
             CreateRenderTarget();
             _vertexShader = CreateVertexShader(device, out _inputLayout);
-            _pixelShader = CreatePixelShader(device);
-            _textGamma = TextGamma.System;
-            _targetConstants = CreateBuffer(device, 32, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
+            _pixelShader = CreatePixelShader(device, QuadShaders.PixelEntry);
+            _clearTypePixelShader = CreatePixelShader(device, QuadShaders.ClearTypePixelEntry);
+            _targetConstants = CreateBuffer(device, 48, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
             _blend = CreateBlendState(device);
+            _clearTypeBlend = CreateClearTypeBlendState(device);
             WriteTargetConstants();
             GrowInstances(256);
         }
@@ -97,6 +105,29 @@ public sealed unsafe class D3D11Renderer : IDisposable
     /// Gets a value indicating whether the device is the WARP software rasterizer (no hardware device, or asked for).
     /// </summary>
     public bool IsWarp { get; }
+
+    /// <summary>
+    /// Gets or sets how text is drawn: the gamma and contrast of the correction and the order of the subpixels (design §5.0.3).
+    /// Set it from the window (<c>Win32Window.TextRendering</c>) when the renderer is made and whenever the window's value changes;
+    /// until then it is <see cref="TextRenderingParameters.Default"/>. Its <see cref="TextRenderingParameters.Coverage"/> is not
+    /// read here: each glyph run carries its own.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public TextRenderingParameters TextRendering
+    {
+        get => _textRendering;
+        set => SetTextRendering(value);
+    }
+
+    /// <summary>
+    /// Gets the feature level of the device.
+    /// </summary>
+    internal D3D_FEATURE_LEVEL FeatureLevel { get; }
+
+    /// <summary>
+    /// Gets the number of draws of the last <see cref="Draw"/>, for the tests of where the frame is split.
+    /// </summary>
+    internal int LastDrawCount { get; private set; }
 
     /// <summary>
     /// Gets the width of the back buffer, in physical pixels.
@@ -135,19 +166,24 @@ public sealed unsafe class D3D11Renderer : IDisposable
     internal int GpuFramesSkipped => _gpuTimer?.Skipped ?? 0;
 
     /// <summary>
-    /// Gets the number of slices of the atlas texture array, for the tests of the atlas upload; 0 before the first glyph.
+    /// Gets the number of slices of the grayscale atlas texture array, for the tests of the atlas upload; 0 before the first glyph.
     /// </summary>
-    internal int AtlasSlices => _atlasSlices;
+    internal int AtlasSlices => _grayAtlas.Slices;
 
     /// <summary>
-    /// Gets the number of whole pages uploaded so far, for the tests of the atlas upload.
+    /// Gets the number of slices of the ClearType atlas texture array; 0 before the first ClearType glyph.
     /// </summary>
-    internal int AtlasPageUploads { get; private set; }
+    internal int ClearTypeAtlasSlices => _rgbAtlas.Slices;
 
     /// <summary>
-    /// Gets the number of dirty regions uploaded so far, for the tests of the atlas upload.
+    /// Gets the number of whole pages uploaded so far, of both kinds, for the tests of the atlas upload.
     /// </summary>
-    internal int AtlasRegionUploads { get; private set; }
+    internal int AtlasPageUploads => _grayAtlas.PageUploads + _rgbAtlas.PageUploads;
+
+    /// <summary>
+    /// Gets the number of dirty regions uploaded so far, of both kinds, for the tests of the atlas upload.
+    /// </summary>
+    internal int AtlasRegionUploads => _grayAtlas.RegionUploads + _rgbAtlas.RegionUploads;
 
     /// <summary>
     /// Creates a renderer for the client area of <paramref name="window"/>.
@@ -159,7 +195,20 @@ public sealed unsafe class D3D11Renderer : IDisposable
     /// <returns>The renderer.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="InvalidOperationException">Direct3D could not create the device, the swap chain, or the shaders.</exception>
-    public static D3D11Renderer Create(nint window, int width, int height, bool useWarp = false)
+    public static D3D11Renderer Create(nint window, int width, int height, bool useWarp = false) =>
+        Create(window, width, height, useWarp, featureLevel10: false);
+
+    /// <summary>
+    /// Creates a renderer, on a device of feature level 10.0 when <paramref name="featureLevel10"/> is set: the lowest level the
+    /// renderer supports, for the tests that its shaders and blend states work there.
+    /// </summary>
+    /// <param name="window">The window handle (<c>HWND</c>).</param>
+    /// <param name="width">The client width, in physical pixels.</param>
+    /// <param name="height">The client height, in physical pixels.</param>
+    /// <param name="useWarp"><see langword="true"/> to use the WARP software rasterizer even when a GPU is present.</param>
+    /// <param name="featureLevel10"><see langword="true"/> to ask for feature level 10.0 only.</param>
+    /// <returns>The renderer.</returns>
+    internal static D3D11Renderer Create(nint window, int width, int height, bool useWarp, bool featureLevel10)
     {
         UiThread.VerifyAccess();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
@@ -167,13 +216,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
         // A hardware device first; WARP when there is none (a VM, a remote session) or when asked.
         bool isWarp = useWarp;
-        if (!useWarp && TryCreateDevice(D3D_DRIVER_TYPE_HARDWARE, out ID3D11Device* device, out ID3D11DeviceContext* context) >= 0)
+        if (!useWarp && TryCreateDevice(D3D_DRIVER_TYPE_HARDWARE, featureLevel10, out ID3D11Device* device, out ID3D11DeviceContext* context) >= 0)
         {
             return new D3D11Renderer(device, context, isWarp: false, (HWND)window, width, height);
         }
 
         isWarp = true;
-        HResults.ThrowIfFailed(TryCreateDevice(D3D_DRIVER_TYPE_WARP, out device, out context), "D3D11CreateDevice (WARP)");
+        HResults.ThrowIfFailed(TryCreateDevice(D3D_DRIVER_TYPE_WARP, featureLevel10, out device, out context), "D3D11CreateDevice (WARP)");
         return new D3D11Renderer(device, context, isWarp, (HWND)window, width, height);
     }
 
@@ -245,12 +294,14 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
 
         _gpuTimer?.Dispose();
-        Release((IUnknown*)_atlasView);
-        Release((IUnknown*)_atlas);
+        _grayAtlas.Dispose();
+        _rgbAtlas.Dispose();
         Release((IUnknown*)_instances);
+        Release((IUnknown*)_clearTypeBlend);
         Release((IUnknown*)_blend);
         Release((IUnknown*)_targetConstants);
         Release((IUnknown*)_inputLayout);
+        Release((IUnknown*)_clearTypePixelShader);
         Release((IUnknown*)_pixelShader);
         Release((IUnknown*)_vertexShader);
         Release((IUnknown*)_renderTarget);
@@ -296,7 +347,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _gpuTimer?.Begin();
         if (atlas is not null)
         {
-            UploadAtlas(atlas);
+            _grayAtlas.Upload(_device, _context, atlas);
+            _rgbAtlas.Upload(_device, _context, atlas);
+            atlas.ClearDirtyRegions();
         }
 
         // A glyph run is one command and one instance per glyph, so this bounds the instances.
@@ -306,7 +359,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
             GrowInstances(bound);
         }
 
-        int count = bound > 0 ? WriteInstances(list, bound) : 0;
+        int draws = bound > 0 ? WriteInstances(list, bound) : 0;
+        LastDrawCount = draws;
 
         ID3D11RenderTargetView* target = _renderTarget;
         _context->OMSetRenderTargets(1, &target, null);
@@ -319,7 +373,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->RSSetViewports(1, &viewport);
         float* clear = stackalloc float[4] { clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f };
         _context->ClearRenderTargetView(target, clear);
-        if (count == 0)
+        if (draws == 0)
         {
             _gpuTimer?.End();
             return;
@@ -334,12 +388,16 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->IASetVertexBuffers(0, 1, &instances, &stride, &offset);
         _context->VSSetShader(_vertexShader, null, 0);
         _context->VSSetConstantBuffers(0, 1, &constants);
-        _context->PSSetShader(_pixelShader, null, 0);
         _context->PSSetConstantBuffers(0, 1, &constants);
-        ID3D11ShaderResourceView* atlasView = _atlasView;
-        _context->PSSetShaderResources(0, 1, &atlasView);
-        _context->OMSetBlendState(_blend, null, uint.MaxValue);
-        _context->DrawInstanced(4, (uint)count, 0, 0);
+        ID3D11ShaderResourceView** atlasViews = stackalloc ID3D11ShaderResourceView*[2] { _grayAtlas.View, _rgbAtlas.View };
+        _context->PSSetShaderResources(0, 2, atlasViews);
+        foreach (DrawRange draw in _draws.AsSpan(0, draws))
+        {
+            _context->PSSetShader(draw.ClearType ? _clearTypePixelShader : _pixelShader, null, 0);
+            _context->OMSetBlendState(draw.ClearType ? _clearTypeBlend : _blend, null, uint.MaxValue);
+            _context->DrawInstanced(4, (uint)draw.Count, 0, (uint)draw.Start);
+        }
+
         _gpuTimer?.End();
     }
 
@@ -505,9 +563,16 @@ public sealed unsafe class D3D11Renderer : IDisposable
         return color;
     }
 
-    private static HRESULT TryCreateDevice(D3D_DRIVER_TYPE driver, out ID3D11Device* device, out ID3D11DeviceContext* context)
+    private static HRESULT TryCreateDevice(D3D_DRIVER_TYPE driver, bool featureLevel10, out ID3D11Device* device, out ID3D11DeviceContext* context)
     {
         D3D_FEATURE_LEVEL* levels = stackalloc D3D_FEATURE_LEVEL[] { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
+        uint levelCount = 3;
+        if (featureLevel10)
+        {
+            levels[0] = D3D_FEATURE_LEVEL_10_0;
+            levelCount = 1;
+        }
+
         uint flags = (uint)D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT;
         ID3D11Device* createdDevice;
         ID3D11DeviceContext* createdContext;
@@ -517,7 +582,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             HMODULE.NULL,
             flags,
             levels,
-            3,
+            levelCount,
             TerraFX.Interop.DirectX.D3D11.D3D11_SDK_VERSION,
             &createdDevice,
             null,
@@ -694,9 +759,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
-    private static ID3D11PixelShader* CreatePixelShader(ID3D11Device* device)
+    private static ID3D11PixelShader* CreatePixelShader(ID3D11Device* device, ReadOnlySpan<byte> entry)
     {
-        ID3DBlob* code = Compile(QuadShaders.PixelEntry, QuadShaders.PixelTarget);
+        ID3DBlob* code = Compile(entry, QuadShaders.PixelTarget);
         try
         {
             ID3D11PixelShader* shader;
@@ -726,6 +791,29 @@ public sealed unsafe class D3D11Renderer : IDisposable
             DestBlendAlpha = D3D11_BLEND.D3D11_BLEND_INV_SRC_ALPHA,
             BlendOpAlpha = D3D11_BLEND_OP.D3D11_BLEND_OP_ADD,
             RenderTargetWriteMask = (byte)D3D11_COLOR_WRITE_ENABLE.D3D11_COLOR_WRITE_ENABLE_ALL,
+        };
+        ID3D11BlendState* blend;
+        HResults.ThrowIfFailed(device->CreateBlendState(&description, &blend), "ID3D11Device::CreateBlendState");
+        return blend;
+    }
+
+    // Dual-source: each channel of the target takes the color by its own alpha, the shader's second output (GPUI's
+    // create_blend_state_for_subpixel_rendering, directx_renderer.rs, lines 1513 to 1530). The target's alpha is not written.
+    private static ID3D11BlendState* CreateClearTypeBlendState(ID3D11Device* device)
+    {
+        var description = default(D3D11_BLEND_DESC);
+        description.RenderTarget[0] = new D3D11_RENDER_TARGET_BLEND_DESC
+        {
+            BlendEnable = true,
+            SrcBlend = D3D11_BLEND.D3D11_BLEND_SRC1_COLOR,
+            DestBlend = D3D11_BLEND.D3D11_BLEND_INV_SRC1_COLOR,
+            BlendOp = D3D11_BLEND_OP.D3D11_BLEND_OP_ADD,
+            SrcBlendAlpha = D3D11_BLEND.D3D11_BLEND_ONE,
+            DestBlendAlpha = D3D11_BLEND.D3D11_BLEND_ZERO,
+            BlendOpAlpha = D3D11_BLEND_OP.D3D11_BLEND_OP_ADD,
+            RenderTargetWriteMask = (byte)(
+                D3D11_COLOR_WRITE_ENABLE.D3D11_COLOR_WRITE_ENABLE_ALL & ~D3D11_COLOR_WRITE_ENABLE.D3D11_COLOR_WRITE_ENABLE_ALPHA
+            ),
         };
         ID3D11BlendState* blend;
         HResults.ThrowIfFailed(device->CreateBlendState(&description, &blend), "ID3D11Device::CreateBlendState");
@@ -764,6 +852,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
+    private void SetTextRendering(TextRenderingParameters value)
+    {
+        UiThread.VerifyAccess();
+        _textRendering = value;
+        WriteTargetConstants();
+    }
+
     private void WriteTargetConstants()
     {
         D3D11_MAPPED_SUBRESOURCE mapped;
@@ -772,13 +867,15 @@ public sealed unsafe class D3D11Renderer : IDisposable
             "ID3D11DeviceContext::Map"
         );
         var constants = (Vector4*)mapped.pData;
-        constants[0] = new Vector4(1f / Width, 1f / Height, _textGamma.GrayscaleContrast, 0);
-        constants[1] = _textGamma.Ratios;
+        TextRenderingParameters text = _textRendering;
+        constants[0] = new Vector4(1f / Width, 1f / Height, text.GrayscaleContrast, text.ClearTypeContrast);
+        constants[1] = TextGamma.RatiosOf(text.Gamma);
+        constants[2] = new Vector4(text.IsBgr ? 1 : 0, 0, 0, 0);
         _context->Unmap((ID3D11Resource*)_targetConstants, 0);
     }
 
-    // The instances go straight into the mapped buffer; WRITE_DISCARD gives a fresh buffer while the GPU still reads the last one.
-    // Returns how many were written: one per rectangle and one per glyph.
+    // The instances go straight into the mapped buffer; WRITE_DISCARD gives a fresh buffer while the GPU still reads the last one:
+    // one per rectangle and one per glyph. Returns the number of draws, in _draws: a new one starts where the blend state changes.
     private int WriteInstances(DisplayList list, int bound)
     {
         D3D11_MAPPED_SUBRESOURCE mapped;
@@ -791,10 +888,12 @@ public sealed unsafe class D3D11Renderer : IDisposable
             var destination = new Span<QuadInstance>(mapped.pData, bound);
             DisplayListReader reader = list.GetReader();
             int i = 0;
+            int draws = 0;
             while (reader.TryNext(out CommandTag tag))
             {
                 if (tag == CommandTag.FillRect)
                 {
+                    draws = AddToDraw(draws, i, clearType: false);
                     FillRectCommand rect = reader.ReadFillRect();
                     destination[i++] = new QuadInstance
                     {
@@ -806,6 +905,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 else
                 {
                     GlyphRunCommand run = reader.ReadGlyphRun();
+                    draws = AddToDraw(draws, i, run.Coverage == GlyphCoverage.Rgb);
                     uint color = run.Color.Packed;
                     foreach (GlyphInstance glyph in run.Glyphs)
                     {
@@ -820,7 +920,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 }
             }
 
-            return i;
+            if (draws > 0)
+            {
+                ref DrawRange last = ref _draws[draws - 1];
+                last.Count = i - last.Start;
+            }
+
+            return draws;
         }
         finally
         {
@@ -828,113 +934,31 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
-    // The atlas's changes since the last upload (design §5.0.3). The texture array has a slice per page; it is made again, keeping
-    // the slices that are still valid, when the atlas has more pages than slices, or when its extra pages were dropped (so that
-    // the GPU memory goes back to MaxPages pages, design §5.3).
-    private void UploadAtlas(GlyphAtlas atlas)
+    // The draw of the instance at `start`: the last one when its blend state is the same, else a new one that ends the last.
+    private int AddToDraw(int draws, int start, bool clearType)
     {
-        int pages = atlas.PageCount;
-        if (pages > 0)
+        if (draws > 0 && _draws[draws - 1].ClearType == clearType)
         {
-            int slices = Math.Max(pages, atlas.MaxPages);
-            if (_atlas is null || atlas.PageSize != _atlasPageSize || pages > _atlasSlices || _atlasSlices > slices)
-            {
-                ResizeAtlas(atlas.PageSize, _atlas is null || pages > _atlasSlices ? pages : slices);
-            }
-
-            UploadPages(atlas, pages);
+            return draws;
         }
 
-        atlas.ClearDirtyRegions();
-    }
-
-    private void UploadPages(GlyphAtlas atlas, int pages)
-    {
-        int size = _atlasPageSize;
-
-        // Whole pages first: a page whose id changed is another page (new, or dropped and added again); its regions are in it.
-        ulong wholePages = 0;
-        for (int page = 0; page < pages; page++)
+        if (draws > 0)
         {
-            long id = atlas.GetPageId(page);
-            if (_atlasPageIds[page] == id)
-            {
-                continue;
-            }
-
-            fixed (byte* pixels = atlas.GetPagePixels(page))
-            {
-                _context->UpdateSubresource((ID3D11Resource*)_atlas, (uint)page, null, pixels, (uint)size, 0);
-            }
-
-            _atlasPageIds[page] = id;
-            wholePages |= page < 64 ? 1UL << page : 0;
-            AtlasPageUploads++;
+            ref DrawRange last = ref _draws[draws - 1];
+            last.Count = start - last.Start;
         }
 
-        foreach (AtlasRegion region in atlas.DirtyRegions)
+        if (draws == _draws.Length)
         {
-            if (region.Page < 64 && (wholePages & (1UL << region.Page)) != 0)
-            {
-                continue;
-            }
-
-            var box = new D3D11_BOX(region.X, region.Y, 0, region.X + region.Width, region.Y + region.Height, 1);
-            fixed (byte* pixels = atlas.GetPagePixels(region.Page))
-            {
-                byte* first = pixels + ((long)region.Y * size) + region.X;
-                _context->UpdateSubresource((ID3D11Resource*)_atlas, (uint)region.Page, &box, first, (uint)size, 0);
-            }
-
-            AtlasRegionUploads++;
+            GrowDraws();
         }
+
+        _draws[draws] = new DrawRange { Start = start, ClearType = clearType };
+        return draws + 1;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void ResizeAtlas(int pageSize, int slices)
-    {
-        var description = new D3D11_TEXTURE2D_DESC
-        {
-            Width = (uint)pageSize,
-            Height = (uint)pageSize,
-            MipLevels = 1,
-            ArraySize = (uint)slices,
-            Format = DXGI_FORMAT.DXGI_FORMAT_R8_UNORM,
-            SampleDesc = new DXGI_SAMPLE_DESC(1, 0),
-            Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
-            BindFlags = (uint)D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE,
-        };
-        ID3D11Texture2D* texture;
-        HResults.ThrowIfFailed(_device->CreateTexture2D(&description, null, &texture), "ID3D11Device::CreateTexture2D");
-        ID3D11ShaderResourceView* view;
-        HRESULT result = _device->CreateShaderResourceView((ID3D11Resource*)texture, null, &view);
-        if (result < 0)
-        {
-            _ = texture->Release();
-            HResults.ThrowIfFailed(result, "ID3D11Device::CreateShaderResourceView");
-        }
-
-        // The slices that stay valid are copied on the GPU; the others are uploaded whole by UploadPages (their id is 0).
-        long[] ids = new long[slices];
-        if (_atlas is not null && pageSize == _atlasPageSize)
-        {
-            int kept = Math.Min(slices, _atlasSlices);
-            for (int slice = 0; slice < kept; slice++)
-            {
-                _context->CopySubresourceRegion((ID3D11Resource*)texture, (uint)slice, 0, 0, 0, (ID3D11Resource*)_atlas, (uint)slice, null);
-            }
-
-            Array.Copy(_atlasPageIds, ids, kept);
-        }
-
-        Release((IUnknown*)_atlasView);
-        Release((IUnknown*)_atlas);
-        _atlas = texture;
-        _atlasView = view;
-        _atlasPageSize = pageSize;
-        _atlasSlices = slices;
-        _atlasPageIds = ids;
-    }
+    private void GrowDraws() => Array.Resize(ref _draws, _draws.Length * 2);
 
     private static void Release(IUnknown* reference)
     {
@@ -960,5 +984,146 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
         _instances = CreateBuffer(_device, capacity * sizeof(QuadInstance), D3D11_BIND_FLAG.D3D11_BIND_VERTEX_BUFFER);
         _instanceCapacity = capacity;
+    }
+
+    // A range of the instance buffer drawn with one blend state.
+    private struct DrawRange
+    {
+        public int Start;
+        public int Count;
+        public bool ClearType;
+    }
+
+    // The texture array of one kind of the atlas's pages, a slice per page, and the id of the page each slice holds.
+    private sealed class AtlasTextures(GlyphCoverage coverage, DXGI_FORMAT format)
+    {
+        private ID3D11Texture2D* _texture;
+        private int _pageSize;
+        private long[] _pageIds = [];
+
+        public ID3D11ShaderResourceView* View { get; private set; }
+
+        public int Slices { get; private set; }
+
+        public int PageUploads { get; private set; }
+
+        public int RegionUploads { get; private set; }
+
+        // The kind's changes since the last upload (design §5.0.3). The array is made again, keeping the slices that are still
+        // valid, when the kind has more pages than slices, or when its extra pages were dropped (so that the GPU memory goes back to
+        // MaxPages pages, design §5.3).
+        public void Upload(ID3D11Device* device, ID3D11DeviceContext* context, GlyphAtlas atlas)
+        {
+            int pages = atlas.GetPageCount(coverage);
+            if (pages == 0)
+            {
+                return;
+            }
+
+            int pageSize = atlas.GetPageSize(coverage);
+            int slices = Math.Max(pages, atlas.GetMaxPages(coverage));
+            if (_texture is null || pageSize != _pageSize || pages > Slices || Slices > slices)
+            {
+                Resize(device, context, pageSize, _texture is null || pages > Slices ? pages : slices);
+            }
+
+            UploadPages(context, atlas, pages);
+        }
+
+        public void Dispose()
+        {
+            Release((IUnknown*)View);
+            Release((IUnknown*)_texture);
+            View = null;
+            _texture = null;
+        }
+
+        private void UploadPages(ID3D11DeviceContext* context, GlyphAtlas atlas, int pages)
+        {
+            int rowBytes = _pageSize * GlyphAtlas.BytesPerPixel(coverage);
+            int bytesPerPixel = GlyphAtlas.BytesPerPixel(coverage);
+
+            // Whole pages first: a page whose id changed is another page (new, or dropped and added again); its regions are in it.
+            ulong wholePages = 0;
+            for (int page = 0; page < pages; page++)
+            {
+                long id = atlas.GetPageId(coverage, page);
+                if (_pageIds[page] == id)
+                {
+                    continue;
+                }
+
+                fixed (byte* pixels = atlas.GetPagePixels(coverage, page))
+                {
+                    context->UpdateSubresource((ID3D11Resource*)_texture, (uint)page, null, pixels, (uint)rowBytes, 0);
+                }
+
+                _pageIds[page] = id;
+                wholePages |= page < 64 ? 1UL << page : 0;
+                PageUploads++;
+            }
+
+            foreach (AtlasRegion region in atlas.DirtyRegions)
+            {
+                if (region.Coverage != coverage || (region.Page < 64 && (wholePages & (1UL << region.Page)) != 0))
+                {
+                    continue;
+                }
+
+                var box = new D3D11_BOX(region.X, region.Y, 0, region.X + region.Width, region.Y + region.Height, 1);
+                fixed (byte* pixels = atlas.GetPagePixels(coverage, region.Page))
+                {
+                    byte* first = pixels + ((long)region.Y * rowBytes) + ((long)region.X * bytesPerPixel);
+                    context->UpdateSubresource((ID3D11Resource*)_texture, (uint)region.Page, &box, first, (uint)rowBytes, 0);
+                }
+
+                RegionUploads++;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void Resize(ID3D11Device* device, ID3D11DeviceContext* context, int pageSize, int slices)
+        {
+            var description = new D3D11_TEXTURE2D_DESC
+            {
+                Width = (uint)pageSize,
+                Height = (uint)pageSize,
+                MipLevels = 1,
+                ArraySize = (uint)slices,
+                Format = format,
+                SampleDesc = new DXGI_SAMPLE_DESC(1, 0),
+                Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
+                BindFlags = (uint)D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE,
+            };
+            ID3D11Texture2D* texture;
+            HResults.ThrowIfFailed(device->CreateTexture2D(&description, null, &texture), "ID3D11Device::CreateTexture2D");
+            ID3D11ShaderResourceView* view;
+            HRESULT result = device->CreateShaderResourceView((ID3D11Resource*)texture, null, &view);
+            if (result < 0)
+            {
+                _ = texture->Release();
+                HResults.ThrowIfFailed(result, "ID3D11Device::CreateShaderResourceView");
+            }
+
+            // The slices that stay valid are copied on the GPU; the others are uploaded whole by UploadPages (their id is 0).
+            long[] ids = new long[slices];
+            if (_texture is not null && pageSize == _pageSize)
+            {
+                int kept = Math.Min(slices, Slices);
+                for (int slice = 0; slice < kept; slice++)
+                {
+                    context->CopySubresourceRegion((ID3D11Resource*)texture, (uint)slice, 0, 0, 0, (ID3D11Resource*)_texture, (uint)slice, null);
+                }
+
+                Array.Copy(_pageIds, ids, kept);
+            }
+
+            Dispose();
+            _texture = texture;
+            View = view;
+            _pageSize = pageSize;
+            Slices = slices;
+            _pageIds = ids;
+        }
     }
 }
