@@ -351,6 +351,10 @@ Rejected:
   - FreeType の full のヒンティング（横も画素に合わせるので、サブピクセル位置と打ち消し合う）と、ヒンティングなし（100 % の画面で横線がぼやける。T4 の Grill）
   - Skia のように、ラスタライズのときに文字色の明るさ別の表を掛ける（アトラスが暗い色用と明るい色用に増え、色を 2 段階に丸める。T4 の Grill）
   - `XylemUI.Text` から DirectWrite を直接呼ぶ（`Text` を Windows の TFM に分けることになる。`IGlyphRasterizer` を `Text` に置き、Windows の実装を Platform.Windows に置いた。T4 の Grill）
+  - 色のグリフは GPUI のように COLRv0 だけを描く（Windows 11 の Segoe UI Emoji は COLRv1 が本来の見た目で、v0 は古い OS のための代わり。Skia は v1 も描く。T6 の Grill）
+  - 色の層を GPU で重ねて CPU に読み戻す（GPUI。v0 しか描けず、描くたびに GPU の往復がある。Direct2D で CPU のビットマップに描けば、OS のすべての形式がそのまま描ける。T6 の Grill）
+  - COLRv1 のペイントの木を自分で描く（Skia。グラデーション・変換・合成のモードを持つ大きな仕事で、Direct2D が同じものを描く。T6 の Grill）
+  - 色のグリフにも ¼ 画素の 4 段階を作る（Skia。1 画素 4 バイトの大きいグリフでアトラスが最大 4 倍になる。GPUI は整数の画素に置く。T6 の Grill）
   - カラー絵文字を T4 に入れる（RGBA のアトラスと色の層の経路が要る。行 T6 にした。T4 の Grill）
   - Windows で ClearType を使わない（Flutter と同じ。GPUI と Avalonia が使い、Windows の他のアプリに合わない。T2 の Grill）
   - Windows の設定を読まずにいつも ClearType で描く（Avalonia と同じ。利用者が切った設定に従わない。T2 の Grill）
