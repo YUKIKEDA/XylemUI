@@ -37,6 +37,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     private IDWriteGlyphRunAnalysis* _analysis;
     private GlyphKey _analysisKey;
     private RECT _bounds;
+    private DWRITE_TEXTURE_TYPE _texture;
     private byte[] _coverage = [];
 
     /// <summary>
@@ -63,6 +64,12 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             throw;
         }
     }
+
+    /// <summary>
+    /// Gets or sets a rendering mode that replaces DirectWrite's recommendation, for the tests of the aliased mode, which no font
+    /// of Windows gets (see <see cref="TextureOf"/>); <see langword="null"/> takes the recommendation.
+    /// </summary>
+    internal DWRITE_RENDERING_MODE1? RenderingMode { get; set; }
 
     /// <inheritdoc />
     public GlyphBox Measure(in GlyphKey glyph)
@@ -92,9 +99,10 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             );
         }
 
-        // DirectWrite writes the rows packed (3 bytes a pixel for ClearType), so the coverage goes through a buffer kept for the
-        // next glyph.
-        int size = width * height * (rgb ? 3 : 1);
+        // DirectWrite writes the rows packed (3 bytes a pixel for its ClearType texture), so the coverage goes through a buffer
+        // kept for the next glyph.
+        int channels = _texture == DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1 ? 3 : 1;
+        int size = width * height * channels;
         if (_coverage.Length < size)
         {
             _coverage = GC.AllocateUninitializedArray<byte>(Math.Max(size, _coverage.Length * 2));
@@ -103,10 +111,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         RECT bounds = _bounds;
         fixed (byte* coverage = _coverage)
         {
-            ThrowIfFailed(
-                _analysis->CreateAlphaTexture(TextureOf(glyph.Coverage), &bounds, coverage, (uint)size),
-                "IDWriteGlyphRunAnalysis::CreateAlphaTexture"
-            );
+            ThrowIfFailed(_analysis->CreateAlphaTexture(_texture, &bounds, coverage, (uint)size), "IDWriteGlyphRunAnalysis::CreateAlphaTexture");
         }
 
         if (!rgb)
@@ -120,16 +125,17 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         }
 
         // Red, green, and blue into the first three bytes of each 4-byte pixel, as GPUI pads them (direct_write.rs, lines 864 to
-        // 880); the fourth is left as it is.
+        // 880); the fourth is left as it is. An aliased glyph has one value a pixel, the same for the three.
         for (int row = 0; row < height; row++)
         {
-            ReadOnlySpan<byte> source = _coverage.AsSpan(row * width * 3, width * 3);
+            ReadOnlySpan<byte> source = _coverage.AsSpan(row * width * channels, width * channels);
             Span<byte> target = destination.Slice(row * stride, rowBytes);
             for (int x = 0; x < width; x++)
             {
-                target[x * 4] = source[x * 3];
-                target[(x * 4) + 1] = source[(x * 3) + 1];
-                target[(x * 4) + 2] = source[(x * 3) + 2];
+                int at = x * channels;
+                target[x * 4] = source[at];
+                target[(x * 4) + 1] = source[at + ((channels - 1) / 2)];
+                target[(x * 4) + 2] = source[at + channels - 1];
             }
         }
     }
@@ -192,6 +198,8 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             mode = DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC;
         }
 
+        mode = RenderingMode ?? mode;
+
         ushort index = checked((ushort)key.GlyphId);
         float advance = 0;
         DWRITE_GLYPH_OFFSET offset = default;
@@ -231,12 +239,25 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         _analysis = analysis;
         _analysisKey = key;
         RECT bounds;
-        ThrowIfFailed(_analysis->GetAlphaTextureBounds(TextureOf(key.Coverage), &bounds), "IDWriteGlyphRunAnalysis::GetAlphaTextureBounds");
+        _texture = TextureOf(key.Coverage, mode);
+        ThrowIfFailed(_analysis->GetAlphaTextureBounds(_texture, &bounds), "IDWriteGlyphRunAnalysis::GetAlphaTextureBounds");
         _bounds = bounds;
     }
 
-    private static DWRITE_TEXTURE_TYPE TextureOf(GlyphCoverage coverage) =>
-        coverage == GlyphCoverage.Rgb ? DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1 : DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1;
+    /// <summary>
+    /// Returns the texture to read the analysis as. An aliased rendering mode has only the 1x1 texture: its ClearType 3x1 texture is
+    /// empty, and the glyph would have no ink. Skia pairs them the same way (<c>src/ports/SkScalerContext_win_dw.cpp</c>, lines 333 to
+    /// 393); GPUI does not (<c>direct_write.rs</c>, lines 726 to 763). No face of the fonts of Windows 11 (391 faces, 6 to 32 px), nor
+    /// the test font with a gasp table that asks for no smoothing, got the aliased mode from <c>GetRecommendedRenderingMode</c> as
+    /// <see cref="Analyze"/> calls it; the API may still return it.
+    /// </summary>
+    /// <param name="coverage">The kind of coverage of the key.</param>
+    /// <param name="mode">The rendering mode of the analysis.</param>
+    /// <returns>The texture type.</returns>
+    internal static DWRITE_TEXTURE_TYPE TextureOf(GlyphCoverage coverage, DWRITE_RENDERING_MODE1 mode) =>
+        coverage == GlyphCoverage.Rgb && mode != DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED
+            ? DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1
+            : DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1;
 
     private IDWriteFontFace3* FaceOf(Font font)
     {

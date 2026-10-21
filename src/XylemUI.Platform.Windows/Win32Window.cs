@@ -43,6 +43,9 @@ public sealed unsafe class Win32Window : IDisposable
     /// <param name="height">The outer height in physical pixels.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="Win32Exception">The window could not be created.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// DirectWrite could not read how the window's text is drawn (<see cref="TextRendering"/>); the window was destroyed.
+    /// </exception>
     public Win32Window(string title, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(title);
@@ -80,7 +83,18 @@ public sealed unsafe class Win32Window : IDisposable
         }
 
         _hwnd = hwnd;
-        TextRendering = TextRenderingReader(hwnd);
+
+        // A window whose text rendering cannot be read is destroyed, so that no native window or handle-table entry outlives the
+        // constructor that threw.
+        try
+        {
+            TextRendering = TextRenderingReader(hwnd);
+        }
+        catch
+        {
+            _ = DestroyWindow(hwnd);
+            throw;
+        }
     }
 
     /// <summary>

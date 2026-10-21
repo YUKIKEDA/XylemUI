@@ -318,6 +318,75 @@ public sealed unsafe class DirectWriteGlyphRasterizerTests
         Assert.True(colored, "No pixel of H at 16 px has red and blue apart.");
     }
 
+    /// <summary>
+    /// An aliased rendering mode is read as the 1x1 texture for both kinds of coverage; the other modes as the ClearType 3x1
+    /// texture for ClearType.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Take the texture for each kind of coverage with the aliased mode and with the natural symmetric mode.
+    ///
+    /// Expected:
+    /// - Aliased: the 1x1 texture for Gray and for Rgb. Natural symmetric: 1x1 for Gray, ClearType 3x1 for Rgb.
+    /// </remarks>
+    /// <param name="coverage">The kind of coverage.</param>
+    /// <param name="mode">The rendering mode.</param>
+    /// <param name="expected">The texture.</param>
+    [Theory]
+    [InlineData(GlyphCoverage.Gray, DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED, DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1)]
+    [InlineData(GlyphCoverage.Rgb, DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED, DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1)]
+    [InlineData(GlyphCoverage.Gray, DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC, DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_ALIASED_1x1)]
+    [InlineData(GlyphCoverage.Rgb, DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC, DWRITE_TEXTURE_TYPE.DWRITE_TEXTURE_CLEARTYPE_3x1)]
+    public void TextureOf_Mode_PairsAliasedWithTheOneByOneTexture(
+        GlyphCoverage coverage,
+        DWRITE_RENDERING_MODE1 mode,
+        DWRITE_TEXTURE_TYPE expected
+    ) => Assert.Equal(expected, DirectWriteGlyphRasterizer.TextureOf(coverage, mode));
+
+    /// <summary>
+    /// A ClearType glyph in the aliased rendering mode has ink: each pixel's red, green, and blue are the glyph's grayscale value
+    /// in the same mode, 0 or 255.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and a rasterizer whose rendering mode is set to aliased (no font of Windows gets it from DirectWrite).
+    ///
+    /// Steps:
+    /// - Measure and rasterize "H" at 16 px in Gray, and in Rgb at 4 bytes a pixel into a buffer of 0xEE.
+    ///
+    /// Expected:
+    /// - The two boxes are the same and not empty; each Rgb pixel's three bytes are the Gray value, the fourth 0xEE; every value is
+    ///   0 or 255, and some are 255.
+    /// </remarks>
+    [Fact]
+    public void Rasterize_AliasedClearType_SpreadsTheCoverageToTheThreeChannels()
+    {
+        using var font = new Font(FontBytes);
+        using var rasterizer = new DirectWriteGlyphRasterizer { RenderingMode = DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED };
+        var gray = new GlyphKey(font, GlyphH, 16, 0);
+        var rgb = gray with { Coverage = GlyphCoverage.Rgb };
+
+        GlyphBox grayBox = rasterizer.Measure(gray);
+        byte[] grayPixels = new byte[grayBox.Width * grayBox.Height];
+        rasterizer.Rasterize(gray, grayPixels, grayBox.Width);
+        GlyphBox rgbBox = rasterizer.Measure(rgb);
+        byte[] rgbPixels = new byte[rgbBox.Width * rgbBox.Height * 4];
+        Array.Fill(rgbPixels, (byte)0xEE);
+        rasterizer.Rasterize(rgb, rgbPixels, rgbBox.Width * 4);
+
+        Assert.Equal(grayBox, rgbBox);
+        Assert.True(grayBox.Width > 0 && grayBox.Height > 0, $"{grayBox}");
+        Assert.All(grayPixels, value => Assert.True(value is 0 or 255, $"{value}"));
+        Assert.Contains((byte)255, grayPixels);
+        for (int i = 0; i < grayPixels.Length; i++)
+        {
+            Assert.Equal([grayPixels[i], grayPixels[i], grayPixels[i], 0xEE], rgbPixels.AsSpan(i * 4, 4).ToArray());
+        }
+    }
+
     // DirectWrite's ClearType 3x1 texture of one glyph, from the font file, with the rasterizer's rendering mode, grid fit, and
     // origin (DirectWriteGlyphRasterizer.Analyze), made here without the rasterizer.
     private static (RECT Bounds, byte[] Texture) DirectWriteClearType(string path, ushort glyph, float size, int step)

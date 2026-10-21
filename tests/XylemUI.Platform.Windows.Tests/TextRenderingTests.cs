@@ -134,6 +134,50 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
             }
         });
 
+    /// <summary>
+    /// A window whose text rendering cannot be read is destroyed before the constructor throws: no native window is left.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A reader set by the test that throws <see cref="InvalidOperationException"/>. It is put back after the test.
+    ///
+    /// Steps:
+    /// - Create a window with a title no other window has; then look for a window of XylemUI's class with that title.
+    ///
+    /// Expected:
+    /// - The constructor throws the reader's exception; no such window exists.
+    /// </remarks>
+    [Fact]
+    public void Constructor_ReaderThrows_DestroysTheWindow() =>
+        ui.Invoke(() =>
+        {
+            Func<HWND, TextRenderingParameters> previous = Win32Window.TextRenderingReader;
+            var thrown = new InvalidOperationException("The test's reader cannot read.");
+            Win32Window.TextRenderingReader = _ => throw thrown;
+            string title = $"unreadable {Guid.NewGuid():N}";
+            try
+            {
+                Assert.Same(thrown, Assert.Throws<InvalidOperationException>(() => new Win32Window(title, 200, 100)));
+            }
+            finally
+            {
+                Win32Window.TextRenderingReader = previous;
+            }
+
+            Assert.Equal(HWND.NULL, FindWindow(title));
+        });
+
+    private static unsafe HWND FindWindow(string title)
+    {
+        fixed (char* className = "XylemUI.Window")
+        {
+            fixed (char* windowName = title)
+            {
+                return FindWindowW(className, windowName);
+            }
+        }
+    }
+
     private static unsafe (DWRITE_PIXEL_GEOMETRY Geometry, float Gamma, float Contrast, float GrayscaleContrast) MonitorParameters(HWND hwnd)
     {
         IDWriteFactory* factory;
