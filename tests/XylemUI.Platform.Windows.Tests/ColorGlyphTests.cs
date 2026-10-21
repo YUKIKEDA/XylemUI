@@ -8,6 +8,7 @@ public sealed class ColorGlyphTests
 {
     private static readonly string EmojiPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "seguiemj.ttf");
     private static readonly byte[] TestFontBytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "XylemUITestSans.ttf"));
+    private static readonly byte[] ColorFontBytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "XylemUITestColor.ttf"));
 
     /// <summary>
     /// An emoji asked for as grayscale or ClearType is a color glyph without a layer in the text's color; a glyph of a font without
@@ -57,7 +58,10 @@ public sealed class ColorGlyphTests
     ///
     /// Expected:
     /// - Each box is between 0.7 and 1.3 em wide and high; some pixels are opaque; at 48 px some pixel's red and blue are more than 60
-    ///   apart; no channel exceeds the alpha (premultiplied).
+    ///   apart, and the opaque pixels hold at least 3 colors (the face, the eyes, the mouth); no channel exceeds the alpha
+    ///   (premultiplied).
+    /// - This also watches the font: the drawing relies on Segoe UI Emoji keeping COLRv0 layers. If an update of Windows drops them,
+    ///   DirectWrite gives no color runs, the glyph is drawn as one outline in the text's color, and the colors fail here.
     /// </remarks>
     [Fact]
     public void Rasterize_Emoji_IsDrawnInItsColors()
@@ -78,16 +82,22 @@ public sealed class ColorGlyphTests
             Assert.InRange(box.Height, size * 0.7f, size * 1.3f);
             bool opaque = false;
             bool colored = false;
+            var colors = new HashSet<int>();
             for (int i = 0; i < pixels.Length; i += 4)
             {
                 (byte b, byte g, byte r, byte a) = (pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]);
                 Assert.True(b <= a && g <= a && r <= a, $"{size} px, pixel {i / 4} is not premultiplied: {r}, {g}, {b}, {a}");
                 opaque |= a == 255;
                 colored |= Math.Abs(r - b) > 60;
+                if (a == 255)
+                {
+                    _ = colors.Add((r << 16) | (g << 8) | b);
+                }
             }
 
             Assert.True(opaque, $"{size} px: no pixel is opaque.");
             Assert.True(colored || size < 48, $"{size} px: no pixel has red and blue apart.");
+            Assert.True(colors.Count >= 3 || size < 48, $"{size} px: the opaque pixels hold {colors.Count} colors.");
         }
     }
 
@@ -122,6 +132,70 @@ public sealed class ColorGlyphTests
         }
 
         Assert.Contains(pixels.Where((_, i) => i % 4 == 3), alpha => alpha == 255);
+    }
+
+    /// <summary>
+    /// A COLRv0 layer in the text's color (palette index 0xFFFF) is read from the font: the glyph uses the text's color, its layer is
+    /// drawn in the key's text color, and its other layer keeps the palette's color; a glyph without such a layer does not use it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The color test font (<c>XylemUITestColor.ttf</c>: "H" is "H" in the text's color under "I" in red; "O" is "O" in blue) and a
+    ///   rasterizer.
+    ///
+    /// Steps:
+    /// - Measure "H" and "O" at 48 px in Gray. Rasterize "H" as Color in opaque green and in opaque blue, and "O" as Color in green.
+    ///
+    /// Expected:
+    /// - "H" is a color glyph that uses the text's color; "O" is a color glyph that does not.
+    /// - "H" in green has opaque green pixels (the "H" layer) and opaque red pixels (the "I" layer over it); "H" in blue has opaque
+    ///   blue pixels instead of the green ones, and the same red pixels; neither has a pixel of the other text color.
+    /// - "O" in green has opaque blue pixels and no green one.
+    /// </remarks>
+    [Fact]
+    public void Rasterize_LayerInTheTextColor_TakesTheTextColor()
+    {
+        using var font = new Font(ColorFontBytes);
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        const uint H = 41;
+        const uint O = 48;
+        const uint Green = 0xFF00FF00;
+        const uint Blue = 0xFFFF0000;
+
+        GlyphBox h = rasterizer.Measure(new GlyphKey(font, H, 48, 0));
+        GlyphBox o = rasterizer.Measure(new GlyphKey(font, O, 48, 0));
+        HashSet<(int R, int G, int B)> hGreen = OpaqueColors(rasterizer, new GlyphKey(font, H, 48, 0, GlyphCoverage.Color, Green));
+        HashSet<(int R, int G, int B)> hBlue = OpaqueColors(rasterizer, new GlyphKey(font, H, 48, 0, GlyphCoverage.Color, Blue));
+        HashSet<(int R, int G, int B)> oGreen = OpaqueColors(rasterizer, new GlyphKey(font, O, 48, 0, GlyphCoverage.Color, Green));
+
+        Assert.True(h.IsColor && h.UsesTextColor, $"{h}");
+        Assert.True(o.IsColor && !o.UsesTextColor, $"{o}");
+        Assert.Contains((0, 255, 0), hGreen);
+        Assert.Contains((255, 0, 0), hGreen);
+        Assert.DoesNotContain((0, 0, 255), hGreen);
+        Assert.Contains((0, 0, 255), hBlue);
+        Assert.Contains((255, 0, 0), hBlue);
+        Assert.DoesNotContain((0, 255, 0), hBlue);
+        Assert.Contains((0, 0, 255), oGreen);
+        Assert.DoesNotContain((0, 255, 0), oGreen);
+    }
+
+    // The colors of the opaque pixels of a color glyph, as red, green, and blue.
+    private static HashSet<(int R, int G, int B)> OpaqueColors(DirectWriteGlyphRasterizer rasterizer, GlyphKey key)
+    {
+        GlyphBox box = rasterizer.Measure(key);
+        byte[] pixels = new byte[box.Width * box.Height * 4];
+        rasterizer.Rasterize(key, pixels, box.Width * 4);
+        var colors = new HashSet<(int R, int G, int B)>();
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            if (pixels[i + 3] == 255)
+            {
+                _ = colors.Add((pixels[i + 2], pixels[i + 1], pixels[i]));
+            }
+        }
+
+        return colors;
     }
 
     private static uint GlyphOf(Font font, string text)

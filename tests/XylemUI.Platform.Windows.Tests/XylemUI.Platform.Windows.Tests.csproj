@@ -12,6 +12,7 @@
   <ItemGroup>
     <!-- The glyph rasterizer tests draw with the text tests' font (tests/XylemUI.Text.Tests/Fonts/README.md). -->
     <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestColor.ttf" Link="Fonts\XylemUITestColor.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

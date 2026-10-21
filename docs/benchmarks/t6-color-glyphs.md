@@ -8,6 +8,7 @@ T6 の Grill では、OS が描く形式すべて（COLRv1 のペイントの木
 
 - コミット: このファイルを加えたコミット（`git log -1 -- docs/benchmarks/t6-color-glyphs.md`）。main は 3f4a7d8
 - 機械: T2 と同じ（`docs/benchmarks/t2-cleartype.md`）。Windows 11（ja-JP、26300）、NVIDIA GeForce RTX 3060 Ti。表示倍率 125 %（120 DPI）。NativeAOT
+- 文字の色の層: Segoe UI Emoji には無いので、テストのフォントに COLRv0 の表を足した `XylemUITestColor.ttf`（`tests/XylemUI.Text.Tests/Fonts/README.md`）で、DirectWrite が返す層の色が文字の色に替わることを確かめた（`ColorGlyphTests.Rasterize_LayerInTheTextColor_TakesTheTextColor`）
 - フォント: Segoe UI Emoji（`seguiemj.ttf`）。COLR の version 1 で、3,487 グリフのそれぞれが v0 の層と v1 のペイントの木を持つ（fontTools で読んだ）。文字の色の層を持つグリフは無かった（COLRv0 で 3,487 個を調べた）
 - 比べた版: T4 と同じ（Flutter 3.47.7、Avalonia 12.1.4、Zed v1.24.3 の gpui）
 
@@ -69,6 +70,7 @@ T4 の場面の 16 行の下に、`😀🎉👍❤️🇯🇵` を 16・24・32�
 | `text` 場面のアトラス | — | 色のページ 1 枚（512 px、1 MB） |
 
 - `idle` の場面には絵文字が無いので、アイドルのメモリは変わらない
+- 色のページの上限は、ClearType と同じ形で、定常状態で 16 枚（512 px、1 枚 1 MB）、合わせて 16 MB（CPU のピン留めした配列と GPU のテクスチャ配列のそれぞれに）。1 フレームが求めるときだけ、その 2 倍まで。絵文字を多く使う画面での上限で、行 T9 で Direct2D などと比べるときの基準にする
 - `text` 場面の描画は、グレースケールで 1 回、ClearType で 10 回だった。絵文字（グレースケールと同じブレンド）と、国旗の代わりに出る「JP」の文字（ClearType のブレンド）が、絵文字の行の中で交互に並ぶためである。文字だけの行は、T2 と同じく 2 回
 
 ## 実行ファイルの大きさ
