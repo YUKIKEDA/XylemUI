@@ -44,6 +44,12 @@ A type in a design signature that holds a size is checked against the scale fact
 
 A design that says an OS API does something names the version that has that capability (the interface number and the overload), after reading its declaration in the SDK the build uses. The T6 design took `IDWriteFactory4::TranslateColorGlyphRun` from GPUI's code for COLRv1 too; the paint-tree runs come only from the overload of `IDWriteFactory8` that takes a `DWRITE_PAINT_FEATURE_LEVEL` (Windows SDK 10.0.26100), and the review found it (PR #188).
 
+A design that draws with an OS component or a format it has not used measures the first-use cost and the memory in a scratch prototype before the Grill decides. The T6 Grill chose Direct2D for every color format, COLRv1 included; the implementation measured 4 ms for a first emoji and +8.5 MB, and Q11 went back to COLRv0 (PR #192).
+
+What a compared implementation does is checked in its shipped build when its source puts the code behind a build condition. Skia has a COLRv1 path under `#if` for the Windows 11 SDK; Flutter and Avalonia drew COLRv0 on screen (PR #192).
+
+A figure the design derives (a memory bound, a count) writes its arithmetic beside it. From T2 the design said both atlas kinds held 4 MB; a ClearType kind holds 16 pages of 1 MB, 16 MB, and an answer to a review found it (PR #192).
+
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
 
 A design that removes a dependency lists every place that calls it now and what replaces each. T4 removed FreeType from Windows without saying that `Font` creates a FreeType face when it opens and reads `FamilyName` from it (PR #158 review).
