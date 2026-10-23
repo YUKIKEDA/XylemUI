@@ -56,6 +56,8 @@ A model that reproduces a compared implementation's pixels reads every stage a p
 
 A design that reads data from a font or a file treats it as untrusted input and writes its limits (size, how much it inflates or allocates, the structure it accepts) and what happens past them. T9's first design said its PNG decoder read every form of the format, with no limits; the review found it (PR #208).
 
+Those limits bound what is allocated, not only what is read: a size the input claims is checked against what the input can hold (the compressed data's length times the format's largest inflation) before a buffer of that size is made, and a test measures the allocation of the worst input. T9's decoder stopped inflating at the size the header asked for, but allocated that size first, so a 68-byte PNG made it allocate 128 MB; the review found it (PR #212).
+
 A design that puts outside data into the repository (test images, fonts) names its source, its version, and its license, quoted from the file in the distribution. T9's first design named PngSuite without them; the review found it (PR #208).
 
 A figure the design derives (a memory bound, a count) writes its arithmetic beside it. From T2 the design said both atlas kinds held 4 MB; a ClearType kind holds 16 pages of 1 MB, 16 MB, and an answer to a review found it (PR #192).
