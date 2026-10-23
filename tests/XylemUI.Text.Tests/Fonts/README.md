@@ -30,3 +30,51 @@ font["COLR"] = buildCOLR({"H": [("H", 0xFFFF), ("I", 0)], "O": [("O", 1)]}, vers
 font["CPAL"] = buildCPAL([[(1.0, 0.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0)]])
 font.save("XylemUITestColor.ttf")
 ```
+
+## Bitmap test font
+
+`XylemUITestBitmap.ttf` is `XylemUITestSans.ttf` with an `sbix` table of PNG bitmaps, for the tests of bitmap color glyphs (roadmap
+row T9): strikes of 20 and 64 ppem; "H" (glyph 41) red at 20 and green at 64; "O" (glyph 48) blue at 20 and yellow at 64, with its
+outline removed; "I" (glyph 42) a PNG cut after 40 bytes, so broken. Each picture is a square of 0.8 em with a transparent border
+of one pixel, its left edge 1 pixel right of the pen and its bottom on the baseline. DirectWrite returns the smallest strike at
+least the size asked for, else the largest. Made with fontTools 4.61.1 and Python 3.10's `zlib`:
+
+```python
+import struct
+import zlib
+
+from fontTools.ttLib import TTFont, newTable
+from fontTools.ttLib.tables._g_l_y_f import Glyph
+from fontTools.ttLib.tables.sbixGlyph import Glyph as SbixGlyph
+from fontTools.ttLib.tables.sbixStrike import Strike
+
+
+def png(side, rgba):
+    # A square of one color with a transparent border of one pixel, as an 8-bit RGBA PNG.
+    rows = b""
+    for y in range(side):
+        row = b"\x00"
+        for x in range(side):
+            edge = x in (0, side - 1) or y in (0, side - 1)
+            row += bytes((0, 0, 0, 0)) if edge else bytes(rgba)
+        rows += row
+
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    header = struct.pack(">IIBBBBB", side, side, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b"")
+
+
+font = TTFont("XylemUITestSans.ttf")
+font["glyf"]["O"] = Glyph()  # "O" keeps no outline: only its bitmaps draw it
+sbix = newTable("sbix")
+for ppem, h, o in ((20, (255, 0, 0, 255), (0, 0, 255, 255)), (64, (0, 255, 0, 255), (255, 255, 0, 255))):
+    strike = Strike(ppem=ppem, resolution=72)
+    side = round(ppem * 0.8)
+    for name, data in (("H", png(side, h)), ("O", png(side, o)), ("I", png(side, (0, 0, 0, 255))[:40])):
+        strike.glyphs[name] = SbixGlyph(glyphName=name, graphicType="png ", imageData=data, originOffsetX=1, originOffsetY=0)
+    sbix.strikes[ppem] = strike
+font["sbix"] = sbix
+font.save("XylemUITestBitmap.ttf")
+```
