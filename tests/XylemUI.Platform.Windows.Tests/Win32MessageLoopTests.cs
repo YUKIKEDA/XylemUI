@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
 
@@ -11,6 +12,12 @@ namespace XylemUI.Platform.Windows.Tests;
 public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
 {
     private const uint ProbeMessage = WM.WM_USER + 2;
+
+    // The messages the UI thread took from its queue (kind 1, WH_GETMESSAGE) or was sent from another thread (kind 2,
+    // WH_CALLWNDPROC) while the idle test waited, for its failure message (Issue #126). Hooks of the test's thread only; the loop
+    // itself records nothing.
+    private static readonly (int Kind, uint Message, nint Window)[] Handled = new (int, uint, nint)[64];
+    private static int _handled;
 
     /// <summary>
     /// While frames are requested, frame callbacks and posted messages both make progress.
@@ -80,6 +87,8 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     /// - The UI thread used less than 50 ms of CPU while it waited. GetThreadTimes counts in scheduler ticks (about 15.6 ms), so
     ///   the bound is three ticks: one tick can land on the microseconds before the wait, and 300 ms of polling would still fail.
     /// - The loop woke less than 50 ms after Wake.
+    /// - When it woke before Wake, the failure names the messages the UI thread handled while it waited (Issue #126): thread hooks
+    ///   of this test record the messages taken from the queue and those sent from another thread.
     /// </remarks>
     [Fact]
     public void Run_Idle_BlocksWithoutCpuAndWakesFromAnotherThread()
@@ -97,11 +106,15 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             Thread? waker = null;
 
             using var watchdog = new LoopWatchdog();
+            uint thread = GetCurrentThreadId();
+            HHOOK taken = SetWindowsHookExW(WH.WH_GETMESSAGE, &OnMessageTaken, HINSTANCE.NULL, thread);
+            HHOOK sent = SetWindowsHookExW(WH.WH_CALLWNDPROC, &OnMessageSent, HINSTANCE.NULL, thread);
             Win32MessageLoop.IterationHook = () =>
             {
                 iterations++;
                 if (iterations == 1)
                 {
+                    _handled = 0;
                     cpuAtWait = CurrentThreadCpuTime100ns();
                     waker = new Thread(() =>
                     {
@@ -136,6 +149,8 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             finally
             {
                 Win32MessageLoop.IterationHook = null;
+                _ = UnhookWindowsHookEx(taken);
+                _ = UnhookWindowsHookEx(sent);
                 waker?.Join();
             }
 
@@ -146,7 +161,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             );
 
             Assert.False(watchdog.Expired);
-            Assert.Equal(0, unexpectedWakes);
+            Assert.True(unexpectedWakes == 0, $"The loop woke {unexpectedWakes} time(s) before Wake; handled meanwhile: {HandledMessages()}");
             Assert.Equal(2, iterations);
             Assert.InRange(cpuWhileWaiting, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
             Assert.InRange(wakeDelay, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
@@ -428,6 +443,43 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             Assert.False(watchdog.Expired);
             Assert.Equal(atFrame10, atFrame70);
         });
+
+    private static string HandledMessages()
+    {
+        var text = new System.Text.StringBuilder();
+        for (int i = 0; i < Math.Min(_handled, Handled.Length); i++)
+        {
+            (int kind, uint message, nint window) = Handled[i];
+            _ = text.Append($"{(kind == 1 ? "taken" : "sent")} 0x{message:X4} to 0x{window:X}; ");
+        }
+
+        return _handled == 0 ? "nothing the hooks saw" : text.ToString();
+    }
+
+    // The hook callbacks only write to the array (the index stays in range), so they cannot throw a managed exception.
+    [UnmanagedCallersOnly]
+    private static LRESULT OnMessageTaken(int code, WPARAM wParam, LPARAM lParam)
+    {
+        if (code >= 0 && _handled < Handled.Length)
+        {
+            MSG* message = (MSG*)lParam;
+            Handled[_handled++] = (1, message->message, message->hwnd);
+        }
+
+        return CallNextHookEx(HHOOK.NULL, code, wParam, lParam);
+    }
+
+    [UnmanagedCallersOnly]
+    private static LRESULT OnMessageSent(int code, WPARAM wParam, LPARAM lParam)
+    {
+        if (code >= 0 && _handled < Handled.Length)
+        {
+            CWPSTRUCT* message = (CWPSTRUCT*)lParam;
+            Handled[_handled++] = (2, message->message, message->hwnd);
+        }
+
+        return CallNextHookEx(HHOOK.NULL, code, wParam, lParam);
+    }
 
     private static long CurrentThreadCpuTime100ns()
     {
