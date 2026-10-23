@@ -46,7 +46,9 @@ A design that says an OS API does something names the version that has that capa
 
 A design that draws with an OS component or a format it has not used measures the first-use cost and the memory in a scratch prototype before the Grill decides. The T6 Grill chose Direct2D for every color format, COLRv1 included; the implementation measured 4 ms for a first emoji and +8.5 MB, and Q11 went back to COLRv0 (PR #192).
 
-What a compared implementation does is checked in its shipped build when its source puts the code behind a build condition. Skia has a COLRv1 path under `#if` for the Windows 11 SDK; Flutter and Avalonia drew COLRv0 on screen (PR #192).
+What a compared implementation does is checked in its shipped build when its source puts the code behind a build condition. Skia has a COLRv1 path under `#if` for the Windows 11 SDK; Flutter and Avalonia drew COLRv0 on screen (PR #192). An OS condition is checked the same way: Impeller draws light text white only on macOS (`ComputeTone` in `font_glyph_pair.h`), so on Windows every glyph takes Skia's black-text table, and a model with the white-text table moved away from Flutter on black (PR #196).
+
+A model that reproduces a compared implementation's pixels reads every stage a pixel passes through, from the rasterizer to the fragment shader. In T7 Skia's preblend alone matched Flutter on white but not on black; Impeller's `glyph_atlas.frag` also raises the coverage to an exponent from the text luminance (`text_contents.cc` lines 282 to 295), found later (PR #196).
 
 A figure the design derives (a memory bound, a count) writes its arithmetic beside it. From T2 the design said both atlas kinds held 4 MB; a ClearType kind holds 16 pages of 1 MB, 16 MB, and an answer to a review found it (PR #192).
 
