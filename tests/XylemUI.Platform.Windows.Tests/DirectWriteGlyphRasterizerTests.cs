@@ -466,6 +466,38 @@ public sealed unsafe class DirectWriteGlyphRasterizerTests
         return (bounds, texture);
     }
 
+    /// <summary>
+    /// A bilevel key is drawn with DirectWrite's aliased mode: its coverage is 0 or 255 only, where the antialiased glyph has the
+    /// values between (design §5.0.3, "When fonts are not smoothed").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and a rasterizer.
+    ///
+    /// Steps:
+    /// - For "H" at 12, 17.5, and 32 px, step 0: rasterize the bilevel key and the antialiased key.
+    ///
+    /// Expected:
+    /// - Every byte of the bilevel coverage is 0 or 255, and some are 255.
+    /// - At 17.5 px, some byte of the antialiased coverage is between 0 and 255.
+    /// </remarks>
+    [Fact]
+    public void Rasterize_Aliased_IsZeroOrFullCoverage()
+    {
+        using var font = new Font(FontBytes);
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+
+        foreach (float size in (float[])[12, 17.5f, 32])
+        {
+            byte[] aliased = Coverage(rasterizer, new GlyphKey(font, GlyphH, size, 0, Aliased: true));
+            byte[] antialiased = Coverage(rasterizer, new GlyphKey(font, GlyphH, size, 0));
+
+            Assert.All(aliased, value => Assert.True(value is 0 or 255, $"{size} px: coverage {value}."));
+            Assert.Contains((byte)255, aliased);
+            Assert.True(size != 17.5f || antialiased.Any(value => value is > 0 and < 255), "17.5 px: the antialiased glyph has no partial coverage.");
+        }
+    }
+
     // The horizontal center of the glyph's coverage, in pixels right of the pen.
     private static double Center(DirectWriteGlyphRasterizer rasterizer, in GlyphKey key)
     {
@@ -481,6 +513,14 @@ public sealed unsafe class DirectWriteGlyphRasterizerTests
         }
 
         return box.Left + (weighted / sum);
+    }
+
+    private static byte[] Coverage(DirectWriteGlyphRasterizer rasterizer, in GlyphKey key)
+    {
+        GlyphBox box = rasterizer.Measure(key);
+        byte[] coverage = new byte[box.Width * box.Height];
+        rasterizer.Rasterize(key, coverage, box.Width);
+        return coverage;
     }
 
     private static long Ink(DirectWriteGlyphRasterizer rasterizer, in GlyphKey key)

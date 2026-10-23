@@ -234,4 +234,83 @@ public sealed class DrawTextTests
             Assert.Throws<ArgumentOutOfRangeException>(() => list.DrawText(glyphs, font, size, atlas, 0, 40, Ink));
         }
     }
+
+    /// <summary>
+    /// Bilevel text puts each glyph on the nearest whole pixel with subpixel step 0, so a glyph at two fractional pens is one
+    /// glyph of the atlas, and keeps the advances: it is as wide as antialiased text (design §5.0.3, "When fonts are not
+    /// smoothed").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
+    ///
+    /// Steps:
+    /// - Shape "H H" and draw it bilevel at 32 px with the pen at x 10.25 and the baseline at 50; draw it again antialiased.
+    ///
+    /// Expected:
+    /// - The atlas was asked for "H" bilevel at step 0 and the space bilevel at step 0, once each (the second "H", at 40.714, is
+    ///   the same glyph as the first, at 10.25), then for the antialiased glyphs.
+    /// - The bilevel run is Gray, with "H" at x round(10.25) + 1 = 11 and round(40.714) + 1 = 42, y 50 − 26 = 24, both with the
+    ///   region of the one bilevel glyph.
+    /// - Both draws return the advance (728 + 224 + 728) × 0.032 = 53.76.
+    /// </remarks>
+    [Fact]
+    public void DrawText_Aliased_PlacesGlyphsOnWholePixelsWithTheSameAdvance()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+        ShapedGlyph[] glyphs = shaper.Shape(font, "H H", TestFont.Japanese).ToArray();
+
+        float aliased = list.DrawText(glyphs, font, 32, atlas, 10.25f, 50, Ink, aliased: true);
+        float antialiased = list.DrawText(glyphs, font, 32, atlas, 10.25f, 50, Ink);
+
+        var h = new GlyphKey(font, 41, 32, 0, Aliased: true);
+        Assert.Equal([h, new GlyphKey(font, TestRasterizer.Space, 32, 0, Aliased: true)], rasterizer.Measured.Take(2));
+        Assert.DoesNotContain(rasterizer.Measured.Skip(2), key => key.Aliased);
+        Assert.True(atlas.TryGet(h, out AtlasGlyph glyph));
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        GlyphRunCommand run = reader.ReadGlyphRun();
+        Assert.Equal(GlyphCoverage.Gray, run.Coverage);
+        Assert.Equal(
+            [new GlyphInstance(11, 24, 26, 26, glyph.Page, glyph.X, glyph.Y), new GlyphInstance(42, 24, 26, 26, glyph.Page, glyph.X, glyph.Y)],
+            run.Glyphs.ToArray()
+        );
+        Assert.Equal(53.76f, aliased, 0.001f);
+        Assert.Equal(antialiased, aliased);
+    }
+
+    /// <summary>
+    /// Bilevel text with ClearType coverage is refused: the window gives bilevel text grayscale coverage.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an atlas, and a display list.
+    ///
+    /// Steps:
+    /// - Draw "H" bilevel with <see cref="GlyphCoverage.Rgb"/>.
+    ///
+    /// Expected:
+    /// - It throws <see cref="ArgumentException"/> for the parameter <c>aliased</c>; the rasterizer measured nothing.
+    /// </remarks>
+    [Fact]
+    public void DrawText_AliasedClearType_Throws()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+        ShapedGlyph[] glyphs = shaper.Shape(font, "H", TestFont.Japanese).ToArray();
+
+        ArgumentException thrown = Assert.Throws<ArgumentException>(() =>
+            list.DrawText(glyphs, font, 32, atlas, 0, 40, Ink, GlyphCoverage.Rgb, aliased: true)
+        );
+
+        Assert.Equal("aliased", thrown.ParamName);
+        Assert.Empty(rasterizer.Measured);
+    }
 }

@@ -180,6 +180,41 @@ public sealed class ColorGlyphTests
         Assert.DoesNotContain((0, 255, 0), oGreen);
     }
 
+    /// <summary>
+    /// A bilevel color glyph draws its layers bilevel: every pixel is transparent or opaque, and the glyph keeps its colors (design
+    /// §5.0.3, "When fonts are not smoothed"; Skia does the same, <c>SkScalerContext_win_dw.cpp</c>, line 2204).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Segoe UI Emoji (skipped where Windows lacks it), and a rasterizer.
+    ///
+    /// Steps:
+    /// - Rasterize "😀" at 48 px as a bilevel <see cref="GlyphCoverage.Color"/> key and as an antialiased one, at 4 bytes a pixel.
+    ///
+    /// Expected:
+    /// - Every alpha of the bilevel glyph is 0 or 255, and its opaque pixels hold at least 3 colors.
+    /// - Some alpha of the antialiased glyph is between 0 and 255.
+    /// </remarks>
+    [Fact]
+    public void Rasterize_AliasedEmoji_HasLayersOfZeroOrFullAlpha()
+    {
+        Assert.SkipUnless(File.Exists(EmojiPath), "Windows has no Segoe UI Emoji (seguiemj.ttf).");
+        using Font emoji = Font.FromFile(EmojiPath, 0);
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        uint grin = GlyphOf(emoji, "😀");
+
+        byte[] aliased = Pixels(rasterizer, new GlyphKey(emoji, grin, 48, 0, GlyphCoverage.Color, Aliased: true));
+        byte[] antialiased = Pixels(rasterizer, new GlyphKey(emoji, grin, 48, 0, GlyphCoverage.Color));
+
+        for (int i = 3; i < aliased.Length; i += 4)
+        {
+            Assert.True(aliased[i] is 0 or 255, $"Pixel {i / 4} has alpha {aliased[i]}.");
+        }
+
+        Assert.True(OpaqueColors(rasterizer, new GlyphKey(emoji, grin, 48, 0, GlyphCoverage.Color, Aliased: true)).Count >= 3);
+        Assert.Contains(Enumerable.Range(0, antialiased.Length / 4), i => antialiased[(i * 4) + 3] is > 0 and < 255);
+    }
+
     // The colors of the opaque pixels of a color glyph, as red, green, and blue.
     private static HashSet<(int R, int G, int B)> OpaqueColors(DirectWriteGlyphRasterizer rasterizer, GlyphKey key)
     {
@@ -196,6 +231,14 @@ public sealed class ColorGlyphTests
         }
 
         return colors;
+    }
+
+    private static byte[] Pixels(DirectWriteGlyphRasterizer rasterizer, GlyphKey key)
+    {
+        GlyphBox box = rasterizer.Measure(key);
+        byte[] pixels = new byte[box.Width * box.Height * 4];
+        rasterizer.Rasterize(key, pixels, box.Width * 4);
+        return pixels;
     }
 
     private static uint GlyphOf(Font font, string text)

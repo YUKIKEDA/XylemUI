@@ -5,7 +5,8 @@ using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Platform.Windows.Tests;
 
-// How a window's text is drawn (design §5.0.3, "ClearType", roadmap row T2): the three conditions of ClearType, the values read for
+// How a window's text is drawn (design §5.0.3, "ClearType" and "When fonts are not smoothed", roadmap rows T2 and T8): the three
+// conditions of ClearType, when glyphs are bilevel, the values read for
 // the window's monitor, and reading them again when a setting of Windows changes. No test changes a setting of Windows: the
 // conditions are tested on their inputs, and the reading again with a reader the test sets.
 [Collection(UiThreadGroup.Name)]
@@ -51,6 +52,31 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
     ) => Assert.Equal(expected, Win32TextRendering.CoverageOf(clearType, isOpaque, geometry));
 
     /// <summary>
+    /// Glyphs are bilevel only when Windows returned the setting "Smooth edges of screen fonts" and it is off; a setting that cannot
+    /// be read counts as on.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Take whether glyphs are bilevel for each combination of the read (returned or not) and the setting (on or off).
+    ///
+    /// Expected:
+    /// - Bilevel for a returned setting that is off (1 of the 4); not bilevel for the other 3.
+    /// </remarks>
+    /// <param name="read">Whether Windows returned the setting.</param>
+    /// <param name="smooths">Whether the setting is on.</param>
+    /// <param name="expected">Whether glyphs are bilevel.</param>
+    [Theory]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void IsAliasedOf_Setting_IsBilevelOnlyWhenReadAndOff(bool read, bool smooths, bool expected) =>
+        Assert.Equal(expected, Win32TextRendering.IsAliasedOf(read, smooths));
+
+    /// <summary>
     /// A new window reads its parameters for the monitor it is on, and they are the values of that monitor.
     /// </summary>
     /// <remarks>
@@ -59,11 +85,12 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Read the window's <see cref="Win32Window.TextRendering"/>, and the monitor's rendering parameters straight from
-    ///   DirectWrite (<c>CreateMonitorRenderingParams</c> for <c>MonitorFromWindow</c>) with the font smoothing setting.
+    ///   DirectWrite (<c>CreateMonitorRenderingParams</c> for <c>MonitorFromWindow</c>) with the font smoothing settings.
     ///
     /// Expected:
-    /// - The gamma, both contrasts, and whether the subpixels are BGR are DirectWrite's; the coverage is Rgb exactly when the
-    ///   setting is ClearType and the geometry is RGB or BGR (the window is opaque).
+    /// - The gamma, both contrasts, and whether the subpixels are BGR are DirectWrite's; the glyphs are bilevel exactly when
+    ///   smoothing is off; the coverage is Rgb exactly when smoothing is on, the setting is ClearType, and the geometry is RGB or
+    ///   BGR (the window is opaque).
     /// </remarks>
     [Fact]
     public void TextRendering_NewWindow_IsTheMonitorsParameters() =>
@@ -74,13 +101,15 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
             TextRenderingParameters read = window.TextRendering;
             (DWRITE_PIXEL_GEOMETRY geometry, float gamma, float contrast, float grayscaleContrast) = MonitorParameters(window.Hwnd);
             bool clearType = ClearTypeSetting();
+            bool aliased = SmoothingOff();
 
             Assert.Equal(gamma, read.Gamma);
             Assert.Equal(contrast, read.ClearTypeContrast);
             Assert.Equal(grayscaleContrast, read.GrayscaleContrast);
             Assert.Equal(geometry == DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_BGR, read.IsBgr);
             bool row = geometry is DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_RGB or DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_BGR;
-            Assert.Equal(clearType && row ? GlyphCoverage.Rgb : GlyphCoverage.Gray, read.Coverage);
+            Assert.Equal(aliased, read.IsAliased);
+            Assert.Equal(!aliased && clearType && row ? GlyphCoverage.Rgb : GlyphCoverage.Gray, read.Coverage);
         });
 
     /// <summary>
@@ -198,6 +227,12 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
         _ = parameters->Release();
         _ = factory->Release();
         return values;
+    }
+
+    private static unsafe bool SmoothingOff()
+    {
+        BOOL smooths = BOOL.FALSE;
+        return SystemParametersInfoW(SPI.SPI_GETFONTSMOOTHING, 0, &smooths, 0) != BOOL.FALSE && smooths == BOOL.FALSE;
     }
 
     private static unsafe bool ClearTypeSetting()
