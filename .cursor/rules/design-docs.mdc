@@ -44,7 +44,11 @@ A type in a design signature that holds a size is checked against the scale fact
 
 A design that says an OS API does something names the version that has that capability (the interface number and the overload), after reading its declaration in the SDK the build uses. The T6 design took `IDWriteFactory4::TranslateColorGlyphRun` from GPUI's code for COLRv1 too; the paint-tree runs come only from the overload of `IDWriteFactory8` that takes a `DWRITE_PAINT_FEATURE_LEVEL` (Windows SDK 10.0.26100), and the review found it (PR #188).
 
-A design that draws with an OS component or a format it has not used measures the first-use cost and the memory in a scratch prototype before the Grill decides. The T6 Grill chose Direct2D for every color format, COLRv1 included; the implementation measured 4 ms for a first emoji and +8.5 MB, and Q11 went back to COLRv0 (PR #192).
+A design that draws with an OS component or a format it has not used measures the first-use cost and the memory in a scratch prototype before the Grill decides. The T6 Grill chose Direct2D for every color format, COLRv1 included; the implementation measured 4 ms for a first emoji and +8.5 MB, and Q11 went back to COLRv0 (PR #192). The prototype draws at the scales of §6.1 (100, 125, and 150 %); T8's first one drew at 125 % only. A scene can take the scale from an argument in the scratch build, which leaves the display's scale alone (PR #200).
+
+A design that picks the side a compared implementation avoids for a stated reason writes what that reason costs, and its acceptance measures it. Chromium rounds advances for bilevel glyphs to keep their spacing even; T8 kept fractional advances and did not say that the spacing then varies by 1 px, and the review found it (PR #200).
+
+A design that says it does what another implementation does names the parameters that are the same. T8 wrote "as Chromium and Firefox" for bilevel glyphs; only `ALIASED` and `ALIASED_1x1` were the same, and both pair them with the `GDI_CLASSIC` measuring mode (PR #200's review).
 
 What a compared implementation does is checked in its shipped build when its source puts the code behind a build condition. Skia has a COLRv1 path under `#if` for the Windows 11 SDK; Flutter and Avalonia drew COLRv0 on screen (PR #192). An OS condition is checked the same way: Impeller draws light text white only on macOS (`ComputeTone` in `font_glyph_pair.h`), so on Windows every glyph takes Skia's black-text table, and a model with the white-text table moved away from Flutter on black (PR #196).
 
