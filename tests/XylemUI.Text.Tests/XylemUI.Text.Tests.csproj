@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Png\PngSuite\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
