@@ -122,7 +122,7 @@ dotnet publish samples/HelloText -c Release -r win-x64 -o <dir>
 | DirectWrite、ほかのプロセスが描いた後（ファイルのフォント） | 1.5〜3.0 µs | 1.0〜2.0 µs |
 
 - 時間はほぼすべて `CreateGlyphRunAnalysis` の中（37 px で、1 グリフ 102.9 µs のうち 98.0 µs。`CreateAlphaTexture` は 3〜4 µs）。grid fit を切っても変わらない（31 px で 103 µs）ので、フォントのヒントの実行ではない
-- DirectWrite は、ファイルのフォント（`CreateFontFileReference`）について、ある大きさで描いたグリフをプロセスをまたいで共有する。メモリのフォント（`IDWriteInMemoryFontFileLoader`）は共有しない（どのプロセスでも初めは 67〜81 µs）。共有が再起動の後も残るかは確かめていない。そのため OS のフォントはファイルから開く
+- DirectWrite は、ファイルのフォント（`CreateFontFileReference`）について、ある大きさで描いたグリフをプロセスをまたいで共有する。メモリのフォント（`IDWriteInMemoryFontFileLoader`）は共有しない（どのプロセスでも初めは 67〜81 µs）。共有が再起動の後も残るかは確かめていない。そのため OS のフォントはファイルから開く。T5 の試作（Issue #218）では、多くの大きさを描いた後、ほかのプロセスが描いた大きさでも 1 グリフ約 50 µs で、数時間前の大きさは初めての費用に戻っていた（0〜300 秒の待ちでは変わらない）。共有の効き方は、時間ではなく、どれだけ描いたかで変わるので、設計はこれに頼らない
 - GPUI（`crates/gpui_windows/src/direct_write.rs` 738 行目）も Skia（Flutter・Avalonia、`src/ports/SkScalerContext_win_dw.cpp` 2097 行目）も、同じ `CreateGlyphRunAnalysis` で描く
 - このままにする（オーナー決定）。フレームの外に出すかは行 T5
 - 2 つを掛け合わせた見積もり（測ったものではない）: 1 画面ずつ送るときの 1 フレームの最大 431 グリフ（下のアトラスの表）が、どれもまだどのプロセスも描いていない大きさなら、431 × 78〜103 µs で約 34〜44 ms（60 Hz の 2〜3 フレーム）になる。p95 の 185 グリフなら約 14〜19 ms
