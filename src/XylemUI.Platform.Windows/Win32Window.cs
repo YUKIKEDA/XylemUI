@@ -111,7 +111,8 @@ public sealed unsafe class Win32Window : IDisposable
     /// <summary>
     /// Gets how the window's text is drawn (design §5.0.3, "ClearType"): read for the window's monitor when the window is created
     /// and again when a setting of Windows changes. Every window is opaque until Mica (§13.2), so the coverage is ClearType when
-    /// Windows asks for it and the monitor has a row of subpixels.
+    /// Windows asks for it and the monitor has a row of subpixels. When Windows does not smooth the edges of fonts, the glyphs are
+    /// bilevel (<see cref="TextRenderingParameters.IsAliased"/>, design §5.0.3, "When fonts are not smoothed").
     /// </summary>
     public TextRenderingParameters TextRendering { get; private set; }
 

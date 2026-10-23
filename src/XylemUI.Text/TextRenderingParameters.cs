@@ -2,7 +2,8 @@ namespace XylemUI.Text;
 
 /// <summary>
 /// How the text of one window is drawn, as the OS sets it for the window's monitor (design §5.0.3, "ClearType"): the kind of
-/// coverage, the order of the subpixels, and the gamma and contrast the glyph shader corrects coverage with.
+/// coverage, whether glyphs are bilevel, the order of the subpixels, and the gamma and contrast the glyph shader corrects coverage
+/// with.
 /// </summary>
 /// <param name="Coverage">
 /// <see cref="GlyphCoverage.Rgb"/> only when the OS asks for ClearType, the window is opaque, and the monitor's subpixels are in a
@@ -12,12 +13,17 @@ namespace XylemUI.Text;
 /// <param name="Gamma">The gamma of the correction, 1.0 to 2.2.</param>
 /// <param name="GrayscaleContrast">The contrast added to grayscale coverage.</param>
 /// <param name="ClearTypeContrast">The contrast added to ClearType coverage.</param>
+/// <param name="IsAliased">
+/// Whether glyphs are drawn bilevel, because the OS does not smooth the edges of fonts (design §5.0.3, "When fonts are not
+/// smoothed", roadmap row T8); <see cref="Coverage"/> is then <see cref="GlyphCoverage.Gray"/>.
+/// </param>
 public readonly record struct TextRenderingParameters(
     GlyphCoverage Coverage,
     bool IsBgr,
     float Gamma,
     float GrayscaleContrast,
-    float ClearTypeContrast
+    float ClearTypeContrast,
+    bool IsAliased = false
 )
 {
     /// <summary>

@@ -19,13 +19,16 @@
 //   startup-child [--idle]     the child of startup and idle
 //   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`
 //   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
-//                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2)
+//                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2;
+//                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
 //   text-capture out.png app [args]  launch an app, and save its client area from the screen as a PNG (row T4)
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
 using System.Globalization;
 using XylemUI.E2E;
 
 string scenario = args.Length > 0 ? args[0] : "frames";
+float Scale() => Array.IndexOf(args, "--scale") is int at and >= 0 ? float.Parse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 0;
+
 int Number(int index, int fallback) =>
     args.Length > index && int.TryParse(args[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
 
@@ -48,7 +51,9 @@ return scenario switch
     "text" => TextQuality.Run(
         dark: args.Contains("--dark"),
         gray: args.Contains("--gray"),
-        frames: Array.IndexOf(args, "--frames") is int at and >= 0 ? Number(at + 1, 0) : 0
+        frames: Array.IndexOf(args, "--frames") is int at and >= 0 ? Number(at + 1, 0) : 0,
+        aliased: args.Contains("--aliased"),
+        scale: Scale()
     ),
     "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
     "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),

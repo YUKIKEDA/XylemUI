@@ -12,14 +12,16 @@ namespace XylemUI.E2E;
 // Yu Gothic UI, at 12, 14, 16, and 20 px, a sample line with its top at y and a probe line of 16 "l" with its top at y + 1.8
 // size, then y grows by 3.6 size, from y 12; every line starts at x 16. Black on white, or white on black with --dark. The text
 // is drawn as the window's TextRendering says (ClearType where Windows and the monitor allow it, roadmap row T2), or in grayscale
-// with --gray, as T4 drew it. Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px,
+// with --gray, as T4 drew it, or bilevel with --aliased, as when Windows does not smooth the edges of fonts (row T8). Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px,
 // each with its top at y and its left at x 16, 120, 270, and 470. With --frames N it draws N frames instead of waiting for the window to close, and reports the CPU
 // time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out), with the
-// atlas's pages of each kind and their bytes, and the process's private memory, at the end.
+// glyphs the atlas rasterized, the atlas's pages of each kind and their bytes, and the process's private memory, at the end.
 //
 // XylemUI does not handle the display's scale yet, so this scene makes the process per-monitor DPI aware and draws in physical
 // pixels at the window's scale, as a DPI-aware app does: sizes and positions are the logical ones times the scale, and the
-// baseline (top + size) is rounded to a whole pixel. Characters a family lacks take the OS's fallback (FontFallback.Split).
+// baseline (top + size) is rounded to a whole pixel. --scale S draws at scale S instead (1.0, 1.25, 1.5), so that every scale of
+// design §6.1 can be drawn without changing the display's (row T8). Characters a family lacks take the OS's fallback
+// (FontFallback.Split).
 internal static class TextQuality
 {
     public const string Sample = "Hamburgefonstiv 0123 日本語のテキスト、ひらがな";
@@ -31,7 +33,7 @@ internal static class TextQuality
     public static readonly float[] EmojiSizes = [16, 24, 32, 48];
     public static readonly float[] EmojiLefts = [16, 120, 270, 470];
 
-    public static int Run(bool dark, bool gray, int frames = 0)
+    public static int Run(bool dark, bool gray, int frames = 0, bool aliased = false, float scale = 0)
     {
         _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         UiThread.Initialize();
@@ -39,12 +41,17 @@ internal static class TextQuality
 
         // The window's own DPI: the system DPI stays the one of the sign-in when the display's scale changes after it.
         var handle = (HWND)window.Handle;
-        float scale = GetDpiForWindow(handle) / 96f;
+        scale = scale > 0 ? scale : GetDpiForWindow(handle) / 96f;
         _ = SetWindowPos(handle, HWND.NULL, 0, 0, (int)MathF.Round(800 * scale), (int)MathF.Round(600 * scale), SWP.SWP_NOMOVE | SWP.SWP_NOZORDER);
         window.Show();
         (int width, int height) = window.ClientSize;
         using var renderer = D3D11Renderer.Create(window.Handle, width, height);
-        TextRenderingParameters rendering = gray ? window.TextRendering with { Coverage = GlyphCoverage.Gray } : window.TextRendering;
+        TextRenderingParameters rendering = (gray, aliased) switch
+        {
+            (_, true) => window.TextRendering with { Coverage = GlyphCoverage.Gray, IsAliased = true },
+            (true, _) => window.TextRendering with { Coverage = GlyphCoverage.Gray, IsAliased = false },
+            _ => window.TextRendering,
+        };
         renderer.TextRendering = rendering;
         using var fonts = new DirectWriteFontProvider();
         using var rasterizer = new DirectWriteGlyphRasterizer();
@@ -76,7 +83,8 @@ internal static class TextQuality
                     pen,
                     baseline,
                     ink,
-                    rendering.Coverage
+                    rendering.Coverage,
+                    rendering.IsAliased
                 );
             }
         }
@@ -145,7 +153,9 @@ internal static class TextQuality
             using var report = new Report("text");
             report.Text("gpu", renderer.IsWarp ? "warp" : "hardware");
             report.Text("coverage", rendering.Coverage.ToString());
+            report.Text("aliased", rendering.IsAliased ? "true" : "false");
             report.Number("glyphs", list.GlyphCount);
+            report.Number("rasterized", atlas.RasterizeCount);
             report.Number("draws", renderer.LastDrawCount);
             report.Number("private_mb", Process.GetCurrentProcess().PrivateMemorySize64 / 1048576.0);
             foreach (GlyphCoverage kind in (GlyphCoverage[])[GlyphCoverage.Gray, GlyphCoverage.Rgb, GlyphCoverage.Color])

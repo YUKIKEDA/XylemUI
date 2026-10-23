@@ -117,6 +117,8 @@ public sealed class DisplayList
     /// on a quarter of a pixel: its quad sits on the whole pixel, and the atlas holds the glyph drawn at the quarter
     /// (<see cref="GlyphPosition"/>). The baseline is a whole pixel. A color glyph (an emoji) is placed on the nearest whole pixel,
     /// and starts a run of its own kind where the kind changes (design §5.0.3, "Color glyphs"); otherwise the text is one run.
+    /// Bilevel text (<paramref name="aliased"/>) puts every glyph on the nearest whole pixel and keeps the advances, so it is as
+    /// wide as antialiased text (design §5.0.3, "When fonts are not smoothed").
     /// </summary>
     /// <param name="glyphs">The glyphs, from <see cref="TextShaper.Shape"/> with <paramref name="font"/>.</param>
     /// <param name="font">The font the glyphs were shaped with.</param>
@@ -128,6 +130,10 @@ public sealed class DisplayList
     /// <param name="coverage">
     /// Grayscale, or ClearType where the window allows it (design §5.0.3, "ClearType"): the window decides it, not the text.
     /// </param>
+    /// <param name="aliased">
+    /// Whether the glyphs are bilevel, because the OS does not smooth the edges of fonts; the window decides it, as it does
+    /// <paramref name="coverage"/>, which is then <see cref="GlyphCoverage.Gray"/>.
+    /// </param>
     /// <returns>The advance of the text, in pixels (the sum of the glyph advances, unrounded).</returns>
     /// <remarks>
     /// A glyph with no ink (a space) only moves the pen. A glyph larger than an atlas plot (<see cref="GlyphAtlas.PlotSize"/>) is
@@ -135,6 +141,7 @@ public sealed class DisplayList
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The font was disposed and a glyph is not in the atlas.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="pixelSize"/> is not a positive number.</exception>
+    /// <exception cref="ArgumentException"><paramref name="aliased"/> is set with ClearType coverage.</exception>
     public float DrawText(
         ReadOnlySpan<ShapedGlyph> glyphs,
         Font font,
@@ -143,7 +150,8 @@ public sealed class DisplayList
         float x,
         float baseline,
         Color color,
-        GlyphCoverage coverage = GlyphCoverage.Gray
+        GlyphCoverage coverage = GlyphCoverage.Gray,
+        bool aliased = false
     )
     {
         ArgumentNullException.ThrowIfNull(font);
@@ -151,6 +159,11 @@ public sealed class DisplayList
         if (!(pixelSize > 0) || !float.IsFinite(pixelSize))
         {
             throw new ArgumentOutOfRangeException(nameof(pixelSize), pixelSize, "The size is not a positive number.");
+        }
+
+        if (aliased && coverage == GlyphCoverage.Rgb)
+        {
+            throw new ArgumentException("Bilevel text has no ClearType coverage.", nameof(aliased));
         }
 
         // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run.
@@ -163,9 +176,10 @@ public sealed class DisplayList
         foreach (ShapedGlyph shaped in glyphs)
         {
             float position = x + ((pen + shaped.XOffset) * scale);
-            int pixel = GlyphPosition.Snap(position, out int subpixel);
+            int subpixel = 0;
+            int pixel = aliased ? GlyphPosition.Round(position) : GlyphPosition.Snap(position, out subpixel);
             if (
-                atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage), color.Packed, out AtlasGlyph glyph)
+                atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage, Aliased: aliased), color.Packed, out AtlasGlyph glyph)
                 && glyph.Width > 0
             )
             {

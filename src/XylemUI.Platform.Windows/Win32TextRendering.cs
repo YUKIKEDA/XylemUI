@@ -8,8 +8,8 @@ using static XylemUI.Platform.Windows.Com;
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// Reads how a window's text is drawn (design §5.0.3, "ClearType"): the font smoothing setting of Windows, and the pixel geometry,
-/// gamma, and contrast of the window's monitor.
+/// Reads how a window's text is drawn (design §5.0.3, "ClearType" and "When fonts are not smoothed"): the font smoothing settings
+/// of Windows, and the pixel geometry, gamma, and contrast of the window's monitor.
 /// </summary>
 /// <remarks>
 /// GPUI reads the same values once at startup, without naming a monitor (Zed v1.24.3, <c>crates/gpui_windows/src/direct_write.rs</c>,
@@ -42,12 +42,15 @@ internal static unsafe class Win32TextRendering
             Guid parametersId = IID.IID_IDWriteRenderingParams1;
             ThrowIfFailed(parameters->QueryInterface(&parametersId, (void**)&parameters1), "IDWriteRenderingParams::QueryInterface");
             DWRITE_PIXEL_GEOMETRY geometry = parameters->GetPixelGeometry();
+            BOOL smooths = BOOL.FALSE;
+            bool aliased = IsAliasedOf(SystemParametersInfoW(SPI.SPI_GETFONTSMOOTHING, 0, &smooths, 0) != BOOL.FALSE, smooths != BOOL.FALSE);
             return new TextRenderingParameters(
-                CoverageOf(SmoothsWithClearType(), isOpaque, geometry),
+                aliased ? GlyphCoverage.Gray : CoverageOf(SmoothsWithClearType(), isOpaque, geometry),
                 geometry == DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_BGR,
                 parameters->GetGamma(),
                 parameters1->GetGrayscaleEnhancedContrast(),
-                parameters->GetEnhancedContrast()
+                parameters->GetEnhancedContrast(),
+                aliased
             );
         }
         finally
@@ -70,6 +73,17 @@ internal static unsafe class Win32TextRendering
         clearType && isOpaque && (geometry is DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_RGB or DWRITE_PIXEL_GEOMETRY.DWRITE_PIXEL_GEOMETRY_BGR)
             ? GlyphCoverage.Rgb
             : GlyphCoverage.Gray;
+
+    /// <summary>
+    /// Returns whether glyphs are drawn bilevel: only when the setting "Smooth edges of screen fonts" was read and is off
+    /// (<c>SPI_GETFONTSMOOTHING</c>), whatever the kind of smoothing. A setting that cannot be read counts as on, the default of
+    /// Windows; Chromium, Firefox, and WPF, which follow the setting, draw bilevel then (design §5.0.3, "When fonts are not
+    /// smoothed", PR #200).
+    /// </summary>
+    /// <param name="read">Whether Windows returned the setting.</param>
+    /// <param name="smooths">Whether the setting is on.</param>
+    /// <returns>Whether glyphs are bilevel.</returns>
+    public static bool IsAliasedOf(bool read, bool smooths) => read && !smooths;
 
     // GPUI takes ClearType when the setting cannot be read (direct_write.rs, lines 1882 to 1897); so does this.
     private static bool SmoothsWithClearType()

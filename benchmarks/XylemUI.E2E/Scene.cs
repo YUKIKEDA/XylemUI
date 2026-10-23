@@ -39,6 +39,8 @@ internal sealed class Scene : IDisposable
 
     public GlyphCoverage Coverage => Renderer.TextRendering.Coverage;
 
+    public bool IsAliased => Renderer.TextRendering.IsAliased;
+
     public D3D11Renderer Renderer { get; }
 
     public GlyphAtlas Atlas { get; }
@@ -64,7 +66,7 @@ internal sealed class Scene : IDisposable
             List.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
         }
 
-        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage);
+        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage, IsAliased);
         for (int i = 0; i < heavy; i++)
         {
             List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));
@@ -72,7 +74,7 @@ internal sealed class Scene : IDisposable
     }
 
     private static TextRenderingParameters TextRenderingOf(Win32Window window, bool gray) =>
-        gray ? window.TextRendering with { Coverage = GlyphCoverage.Gray } : window.TextRendering;
+        gray ? window.TextRendering with { Coverage = GlyphCoverage.Gray, IsAliased = false } : window.TextRendering;
 
     public void Dispose()
     {
