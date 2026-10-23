@@ -20,6 +20,11 @@ These rules come from the shape of Cysharp's R3, ZLinq, ZString, MemoryPack, and
 - Text that changes every frame uses `Text(TextBuilder)` and writes into the node's own buffer (design §2.13), not `Text(Func<string>)`. Whether a text update joins the Zero-Alloc scenarios is decided after S8 measures shaping.
 - An `async` API on a repeated path returns `ValueTask` backed by a pooled `IValueTaskSource` (`ManualResetValueTaskSourceCore<T>`), not a new `Task` each time.
 
+## Order of work and conversions
+
+- Work that can be refused is done after it is accepted. T9's rasterizer scaled a PNG glyph in `Measure`, so it scaled glyphs the atlas then refused as larger than a plot; it now scales in `Rasterize`, into the atlas (PR #212 review).
+- An unsigned integer becomes a `float` through `int` (`(float)(int)value`) where the value fits: x64 has no instruction from an unsigned integer to a float. In T9's scaler, scaling 136 x 128 to 15 x 15 went from 53 µs to 38 µs (PR #212, found in a profile).
+
 ## Collections of subscribers and handles
 
 - A subscriber list that changes during notification is an intrusive linked list whose node is the subscription itself (R3 `Subject`): no separate `IDisposable` per subscription, O(1) removal, and a version stamp so nodes added during a notification are skipped without copying the list.
