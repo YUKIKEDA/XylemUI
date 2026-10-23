@@ -2,7 +2,9 @@ namespace XylemUI.Text.Tests;
 
 // The PNG decoder of bitmap color glyphs (design §5.0.3, "PNG bitmaps", roadmap row T9): what it reads, its rounding, and the
 // limits it keeps on untrusted input. Every form of the format is checked against WIC on PngSuite
-// (tests/XylemUI.Platform.Windows.Tests/PngDecoderWicTests.cs); these tests run on every OS, on small files TestPng writes.
+// (tests/XylemUI.Platform.Windows.Tests/PngDecoderWicTests.cs); these tests run on every OS, on small files TestPng writes. They
+// run apart from the other tests (HeavyAllocationGroup, Issue #221).
+[Collection(HeavyAllocationGroup.Name)]
 public sealed class PngDecoderTests
 {
     /// <summary>
@@ -141,9 +143,8 @@ public sealed class PngDecoderTests
     [Fact]
     public void TryDecode_DataThatInflatesFurther_ReadsOnlyTheImage()
     {
-        byte[] rows = new byte[(64 * 1024 * 1024) + 9];
-        TestPng.Rows().CopyTo(rows, 0);
-        byte[] png = TestPng.File(TestPng.Header(2, 1, 8, 6), TestPng.Data(rows), TestPng.End());
+        byte[] compressed = TestPng.CompressedWithZeros(TestPng.Rows(), 64 * 1024 * 1024);
+        byte[] png = TestPng.File(TestPng.Header(2, 1, 8, 6), TestPng.Chunk("IDAT", compressed), TestPng.End());
         var decoder = new PngDecoder();
         _ = decoder.TryDecode(TestPng.Valid(), 64, out _, out _);
 
