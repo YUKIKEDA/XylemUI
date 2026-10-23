@@ -25,6 +25,8 @@ The test layers are in `docs/design.ja.md` §12.1. This rule is how a test is wr
 - Tests that need a GPU (layer 4) use WARP and run on Windows only; they are marked so the other layers run on every OS.
 - Code whose shape depends on a size (a bitmap made for the glyph's size, a buffer grown for the largest so far) is tested at the small end too, and with the small case first. T6's color glyph tests started at 24 px; a first emoji under about 20 px made the bitmap again while Direct2D drew, and a measurement found it (PR #192).
 - Golden images and DisplayList snapshots render with the bundled fonts only (design §12.3).
+- A test that allocates or inflates tens of megabytes runs in a collection apart from the others (`DisableParallelization`), and a large input it needs is built in pieces rather than in one array. T9's 64 MB inflate test, run beside `TextSteadyStateTests`, made that Zero-Alloc test count 1.5 to 6 KB in every local Debug run, with no collection (Issue #221, PR #222; why is row Q1's question).
+- A clue added to a test that fails now and then lives in the test, not in shipped code, and is checked once with a failure caused on purpose. For Issue #126 the idle test's thread hooks record the messages the UI thread handles, and posting `WM_USER + 7` during the wait made the failure name `0x0407` (PR #217).
 - Every run of `./build.ps1` writes its output to a file in the scratchpad, so that a failure seen once can be named. In T8 one run in four failed one Release test, and the output was not kept, so the test could not be named (PR #204).
 
 ## Structure

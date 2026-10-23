@@ -58,6 +58,12 @@ A design that reads data from a font or a file treats it as untrusted input and 
 
 Those limits bound what is allocated, not only what is read: a size the input claims is checked against what the input can hold (the compressed data's length times the format's largest inflation) before a buffer of that size is made, and a test measures the allocation of the worst input. T9's decoder stopped inflating at the size the header asked for, but allocated that size first, so a 68-byte PNG made it allocate 128 MB; the review found it (PR #212).
 
+A design that calls an OS API from several threads where its documentation says nothing about threads checks correctness apart from speed: the parallel result is the serial one, byte for byte, over hundreds of repetitions. T5's first design measured only time and allocation; the review found it (PR #219).
+
+A design that adds threads or OS resources writes their lifetime: who creates them, when they stop, who releases them, and what happens when they cannot be created. T5's first design said resident threads and a rasterizer for each, and no more; the review found it (PR #219).
+
+A design split into two steps (room left now, filled later) says which arrays the later step rewrites (compacts, splits) and which version their readers see. The review of T5 found that the first design did not (PR #219).
+
 A design that puts outside data into the repository (test images, fonts) names its source, its version, and its license, quoted from the file in the distribution. T9's first design named PngSuite without them; the review found it (PR #208).
 
 A figure the design derives (a memory bound, a count) writes its arithmetic beside it. From T2 the design said both atlas kinds held 4 MB; a ClearType kind holds 16 pages of 1 MB, 16 MB, and an answer to a review found it (PR #192).
