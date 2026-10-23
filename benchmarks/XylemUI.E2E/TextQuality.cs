@@ -12,7 +12,9 @@ namespace XylemUI.E2E;
 // Yu Gothic UI, at 12, 14, 16, and 20 px, a sample line with its top at y and a probe line of 16 "l" with its top at y + 1.8
 // size, then y grows by 3.6 size, from y 12; every line starts at x 16. Black on white, or white on black with --dark. The text
 // is drawn as the window's TextRendering says (ClearType where Windows and the monitor allow it, roadmap row T2), or in grayscale
-// with --gray, as T4 drew it, or bilevel with --aliased, as when Windows does not smooth the edges of fonts (row T8). Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px,
+// with --gray, as T4 drew it, or bilevel with --aliased, as when Windows does not smooth the edges of fonts (row T8). Without
+// either, and without --frames, it draws again when the window's TextRendering changes (a setting of Windows changed while
+// the scene is open). Under them, at y, the emoji line (row T6): the emoji in Segoe UI Emoji at 16, 24, 32, and 48 px,
 // each with its top at y and its left at x 16, 120, 270, and 470. With --frames N it draws N frames instead of waiting for the window to close, and reports the CPU
 // time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out), with the
 // glyphs the atlas rasterized, the atlas's pages of each kind and their bytes, and the process's private memory, at the end.
@@ -140,6 +142,17 @@ internal static class TextQuality
         if (frames > 0)
         {
             renderer.StartMeasuringFrames();
+        }
+
+        // Without --gray or --aliased, the scene follows a change of the setting while it is open, and draws again (row T8).
+        if (!gray && !aliased && frames == 0)
+        {
+            window.TextRenderingChanged += (_, _) =>
+            {
+                rendering = window.TextRendering;
+                renderer.TextRendering = rendering;
+                Win32MessageLoop.FrameScheduler.RequestFrame(Draw);
+            };
         }
 
         Win32MessageLoop.SetFrameClock(renderer.FrameLatencyWaitableObject);
