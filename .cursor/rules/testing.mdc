@@ -25,6 +25,7 @@ The test layers are in `docs/design.ja.md` §12.1. This rule is how a test is wr
 - Tests that need a GPU (layer 4) use WARP and run on Windows only; they are marked so the other layers run on every OS.
 - Code whose shape depends on a size (a bitmap made for the glyph's size, a buffer grown for the largest so far) is tested at the small end too, and with the small case first. T6's color glyph tests started at 24 px; a first emoji under about 20 px made the bitmap again while Direct2D drew, and a measurement found it (PR #192).
 - Golden images and DisplayList snapshots render with the bundled fonts only (design §12.3).
+- Every run of `./build.ps1` writes its output to a file in the scratchpad, so that a failure seen once can be named. In T8 one run in four failed one Release test, and the output was not kept, so the test could not be named (PR #204).
 
 ## Structure
 
