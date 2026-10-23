@@ -112,7 +112,8 @@ public sealed class GlyphAtlasTests
     /// - The test font, the test rasterizer, and an atlas.
     ///
     /// Steps:
-    /// - Get "H" with no font, at sizes 0, −1, and NaN, and with subpixel steps −1 and 4.
+    /// - Get "H" with no font, at sizes 0, −1, and NaN, with subpixel steps −1 and 4, with coverage 3, and bilevel with Rgb
+    ///   coverage and bilevel at step 1 (a bilevel glyph has grayscale or color coverage and step 0).
     ///
     /// Expected:
     /// - Each throws <see cref="ArgumentException"/>; the rasterizer measured nothing.
@@ -133,6 +134,8 @@ public sealed class GlyphAtlasTests
             new(font, GlyphH, 32, -1),
             new(font, GlyphH, 32, 4),
             new(font, GlyphH, 32, 0, (GlyphCoverage)3),
+            new(font, GlyphH, 32, 0, GlyphCoverage.Rgb, Aliased: true),
+            new(font, GlyphH, 32, 1, Aliased: true),
         ];
         foreach (GlyphKey key in keys)
         {
@@ -560,6 +563,92 @@ public sealed class GlyphAtlasTests
         Assert.Equal([gray, rgb], rasterizer.Measured);
         Assert.Equal((0, 0), (first.Page, second.Page));
         Assert.Equal((first, second), (firstAgain, secondAgain));
+    }
+
+    /// <summary>
+    /// The same glyph bilevel and antialiased is two glyphs of the atlas, each rasterized once, both on the grayscale pages: the
+    /// bilevel glyphs add no kind of page (design §5.0.3, "When fonts are not smoothed").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, the test rasterizer, and an empty atlas.
+    ///
+    /// Steps:
+    /// - Get "H" at 32 px in Gray, then bilevel in Gray, then both again.
+    ///
+    /// Expected:
+    /// - The rasterizer measured the antialiased key and the bilevel key, once each; the two regions differ and are on the one Gray
+    ///   page, of the Gray kind; no Rgb or Color page; the second requests return the same regions.
+    /// </remarks>
+    [Fact]
+    public void TryGet_AliasedAndAntialiased_AreTwoGlyphsOnTheGrayPages()
+    {
+        using Font font = TestFont.Open();
+        var rasterizer = new TestRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        var antialiased = new GlyphKey(font, GlyphH, 32, 0);
+        var aliased = antialiased with { Aliased = true };
+
+        Assert.True(atlas.TryGet(antialiased, out AtlasGlyph first));
+        Assert.True(atlas.TryGet(aliased, out AtlasGlyph second));
+        Assert.True(atlas.TryGet(antialiased, out AtlasGlyph firstAgain));
+        Assert.True(atlas.TryGet(aliased, out AtlasGlyph secondAgain));
+
+        Assert.Equal([antialiased, aliased], rasterizer.Measured);
+        Assert.NotEqual((first.X, first.Y), (second.X, second.Y));
+        Assert.Equal((GlyphCoverage.Gray, GlyphCoverage.Gray), (first.Coverage, second.Coverage));
+        Assert.Equal(
+            (1, 0, 0),
+            (atlas.GetPageCount(GlyphCoverage.Gray), atlas.GetPageCount(GlyphCoverage.Rgb), atlas.GetPageCount(GlyphCoverage.Color))
+        );
+        Assert.Equal((first, second), (firstAgain, secondAgain));
+    }
+
+    /// <summary>
+    /// A color glyph asked for bilevel is kept as a bilevel color glyph, apart from the antialiased one: its color key is bilevel
+    /// too, so that its layers are drawn bilevel (design §5.0.3, "When fonts are not smoothed").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, the test rasterizer with "H" (glyph 41) as a color glyph without a layer in the text's color, and an empty
+    ///   atlas.
+    ///
+    /// Steps:
+    /// - Get "H" at 32 px bilevel in Gray, then antialiased in Gray at step 2, then bilevel again.
+    ///
+    /// Expected:
+    /// - The rasterizer measured the bilevel key, the bilevel color key (step 0, Color), the antialiased key, and the antialiased
+    ///   color key, in that order; two glyphs were rasterized, both on the one color page; the bilevel requests return the same
+    ///   region, which differs from the antialiased one.
+    /// </remarks>
+    [Fact]
+    public void TryGet_AliasedColorGlyph_IsABilevelColorGlyph()
+    {
+        using Font font = TestFont.Open();
+        var rasterizer = new TestRasterizer();
+        rasterizer.ColorGlyphs.Add(GlyphH, false);
+        var atlas = new GlyphAtlas(rasterizer);
+        var aliased = new GlyphKey(font, GlyphH, 32, 0, Aliased: true);
+        var antialiased = new GlyphKey(font, GlyphH, 32, 2);
+
+        Assert.True(atlas.TryGet(aliased, out AtlasGlyph first));
+        Assert.True(atlas.TryGet(antialiased, out AtlasGlyph other));
+        Assert.True(atlas.TryGet(aliased, out AtlasGlyph again));
+
+        Assert.Equal(
+            [
+                aliased,
+                new GlyphKey(font, GlyphH, 32, 0, GlyphCoverage.Color, Aliased: true),
+                antialiased,
+                new GlyphKey(font, GlyphH, 32, 0, GlyphCoverage.Color),
+            ],
+            rasterizer.Measured
+        );
+        Assert.Equal(2, atlas.RasterizeCount);
+        Assert.Equal((1, 0), (atlas.GetPageCount(GlyphCoverage.Color), atlas.GetPageCount(GlyphCoverage.Gray)));
+        Assert.Equal(first, again);
+        Assert.Equal(GlyphCoverage.Color, first.Coverage);
+        Assert.NotEqual((first.X, first.Y), (other.X, other.Y));
     }
 
     /// <summary>

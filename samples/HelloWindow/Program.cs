@@ -190,7 +190,8 @@ void BuildFrame(int frame, int width, int height)
     }
 
     GlyphCoverage coverage = renderer.TextRendering.Coverage;
-    _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8), coverage);
+    bool aliased = renderer.TextRendering.IsAliased;
+    _ = list.DrawText(shaper.Shape(font, Text, japanese), font, 24, atlas, 60, 30, Color.FromRgb(0xE8E8E8), coverage, aliased);
 
     // The fallback's runs one after another on one pen, each shaped with its own font at the size its scale gives.
     float pen = 420;
@@ -198,7 +199,7 @@ void BuildFrame(int frame, int width, int height)
     {
         int size = (int)MathF.Round(24 * run.Scale);
         ReadOnlySpan<char> runText = FallbackText.AsSpan(run.Start, run.Length);
-        pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8), coverage);
+        pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8), coverage, aliased);
     }
 }
 

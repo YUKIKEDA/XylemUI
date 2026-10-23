@@ -213,7 +213,8 @@ public sealed class GlyphAtlas
     /// the current frame and the kind has its page limit (<see cref="GetPageLimit"/>). A glyph with no ink always fits.
     /// </returns>
     /// <exception cref="ArgumentException">
-    /// The key has no font, a size that is not positive, a subpixel step out of range, or a coverage that is not defined.
+    /// The key has no font, a size that is not positive, a subpixel step out of range, or a coverage that is not defined; or it is
+    /// bilevel (<see cref="GlyphKey.Aliased"/>) with ClearType coverage or a subpixel step other than 0.
     /// </exception>
     /// <exception cref="InvalidOperationException">The rasterizer could not draw the glyph.</exception>
     /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
@@ -222,7 +223,9 @@ public sealed class GlyphAtlas
     /// <summary>
     /// Returns the region of a glyph, rasterizing it into the atlas the first time, and marks it used in the current frame. A color
     /// glyph asked for as grayscale or ClearType is kept once as <see cref="GlyphCoverage.Color"/>, on a whole pixel (subpixel step
-    /// 0), and with the text's color in its key only when it has a layer in the text's color (design §5.0.3, "Color glyphs").
+    /// 0), and with the text's color in its key only when it has a layer in the text's color (design §5.0.3, "Color glyphs"). A
+    /// bilevel glyph is kept on the pages of its kind, grayscale or color, as a glyph of its own (design §5.0.3, "When fonts are
+    /// not smoothed").
     /// </summary>
     /// <param name="key">The glyph, its size, its subpixel step, and its kind of coverage.</param>
     /// <param name="textColor">
@@ -234,7 +237,8 @@ public sealed class GlyphAtlas
     /// the current frame and the kind has its page limit (<see cref="GetPageLimit"/>). A glyph with no ink always fits.
     /// </returns>
     /// <exception cref="ArgumentException">
-    /// The key has no font, a size that is not positive, a subpixel step out of range, or a coverage that is not defined.
+    /// The key has no font, a size that is not positive, a subpixel step out of range, or a coverage that is not defined; or it is
+    /// bilevel (<see cref="GlyphKey.Aliased"/>) with ClearType coverage or a subpixel step other than 0.
     /// </exception>
     /// <exception cref="InvalidOperationException">The rasterizer could not draw the glyph.</exception>
     /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
@@ -260,6 +264,16 @@ public sealed class GlyphAtlas
             throw new ArgumentException($"The glyph coverage {key.Coverage} is not defined.", nameof(key));
         }
 
+        if (key.Aliased && key.Coverage == GlyphCoverage.Rgb)
+        {
+            throw new ArgumentException("A bilevel glyph has no ClearType coverage.", nameof(key));
+        }
+
+        if (key.Aliased && key.SubpixelX != 0)
+        {
+            throw new ArgumentException($"The subpixel step {key.SubpixelX} of a bilevel glyph is not 0.", nameof(key));
+        }
+
         if (_glyphs.TryGetValue(key, out (AtlasGlyph Glyph, int Plot) cached))
         {
             if (cached.Plot >= 0)
@@ -278,10 +292,10 @@ public sealed class GlyphAtlas
         return TryRasterize(key, textColor, out glyph);
     }
 
-    // The key of the color glyph that a grayscale or ClearType key stands for: subpixel step 0, and the text's color, opaque, only
-    // when the glyph paints a layer in it.
+    // The key of the color glyph that a grayscale or ClearType key stands for: subpixel step 0, the text's color, opaque, only
+    // when the glyph paints a layer in it, and bilevel when the key is.
     private static GlyphKey ColorKeyOf(in GlyphKey key, bool usesTextColor, uint textColor) =>
-        new(key.Font, key.GlyphId, key.PixelSize, 0, GlyphCoverage.Color, usesTextColor ? textColor | OpaqueBlack : 0);
+        new(key.Font, key.GlyphId, key.PixelSize, 0, GlyphCoverage.Color, usesTextColor ? textColor | OpaqueBlack : 0, key.Aliased);
 
     private Pages PagesOf(GlyphCoverage coverage) =>
         coverage switch

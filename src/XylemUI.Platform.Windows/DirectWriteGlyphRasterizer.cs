@@ -11,7 +11,9 @@ namespace XylemUI.Platform.Windows;
 /// grid fitting DirectWrite recommends for the font and size, grayscale or ClearType coverage (the key's
 /// <see cref="GlyphKey.Coverage"/>), and the glyph shifted right by its subpixel step (<c>baselineOriginX</c>). GPUI draws its
 /// glyphs the same way (Zed v1.24.3, <c>crates/gpui_windows/src/direct_write.rs</c>; ClearType at lines 731 to 735 and 759 to
-/// 763). A color glyph (an emoji) is drawn from its COLRv0 layers (design §5.0.3, "Color glyphs", roadmap row T6).
+/// 763). A color glyph (an emoji) is drawn from its COLRv0 layers (design §5.0.3, "Color glyphs", roadmap row T6). A bilevel key
+/// (<see cref="GlyphKey.Aliased"/>) is drawn in the aliased rendering mode, its color layers too, so its coverage is 0 or 255
+/// (design §5.0.3, "When fonts are not smoothed", roadmap row T8).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -250,10 +252,15 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         DWRITE_GLYPH_RUN run = RunOf(face, &index, &advance, &offset, key.PixelSize);
         _layers.Clear();
         int used = 0;
+
+        // A bilevel color glyph draws its layers bilevel too, as Skia does (SkScalerContext_win_dw.cpp, line 2204).
+        DWRITE_RENDERING_MODE1 mode = key.Aliased
+            ? DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED
+            : DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC;
         IDWriteColorGlyphRunEnumerator1* runs = TranslateLayers(&run);
         if (runs is null)
         {
-            used = AddLayer(&run, 0, 0, textColor, used);
+            used = AddLayer(&run, 0, 0, textColor, mode, used);
         }
         else
         {
@@ -272,6 +279,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
                         layer->Base.baselineOriginX,
                         layer->Base.baselineOriginY,
                         inTextColor ? textColor : layer->Base.runColor,
+                        mode,
                         used
                     );
                 }
@@ -309,15 +317,15 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         return runs;
     }
 
-    // One layer's grayscale coverage, after the layers before it in _layerCoverage. Returns the bytes used so far.
-    private int AddLayer(DWRITE_GLYPH_RUN* run, float originX, float originY, DXGI_RGBA color, int used)
+    // One layer's grayscale (or bilevel) coverage, after the layers before it in _layerCoverage. Returns the bytes used so far.
+    private int AddLayer(DWRITE_GLYPH_RUN* run, float originX, float originY, DXGI_RGBA color, DWRITE_RENDERING_MODE1 mode, int used)
     {
         IDWriteGlyphRunAnalysis* analysis;
         ThrowIfFailed(
             _factory->CreateGlyphRunAnalysis(
                 run,
                 null,
-                DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC,
+                mode,
                 DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_NATURAL,
                 DWRITE_GRID_FIT_MODE.DWRITE_GRID_FIT_MODE_DEFAULT,
                 DWRITE_TEXT_ANTIALIAS_MODE.DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE,
@@ -512,6 +520,13 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         if (mode == DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_OUTLINE)
         {
             mode = DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC;
+        }
+
+        // A bilevel key is drawn aliased, with the same measuring mode (design §5.0.3, "When fonts are not smoothed": GDI_CLASSIC
+        // drew the same pixels at 100, 125, and 150 %, PR #200).
+        if (key.Aliased)
+        {
+            mode = DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED;
         }
 
         mode = RenderingMode ?? mode;
