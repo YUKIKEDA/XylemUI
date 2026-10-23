@@ -158,6 +158,47 @@ public sealed class PngDecoderTests
     }
 
     /// <summary>
+    /// A header that asks for more bytes than its compressed data can inflate to is broken before anything is allocated for the
+    /// image, and a large image does not keep large buffers: a PNG is untrusted input (PR #212's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A 4,096 x 4,096 16-bit RGBA header (128 MB of rows) with an image data chunk of 10 compressed bytes; a decoder that has
+    ///   read the 2 x 1 image.
+    ///
+    /// Steps:
+    /// - Read the large header with a limit of 4,096 a side, measuring the bytes allocated on this thread; then read a 1,100 x 1,100
+    ///   gray image of zeros (1.2 MB of rows, 4.8 MB of pixels) and the 2 x 1 image, measuring the bytes allocated by the last.
+    ///
+    /// Expected:
+    /// - The large header returns <see langword="false"/> and allocates less than 1 MB.
+    /// - The 1,100 x 1,100 image reads; reading the 2 x 1 image after it allocates only the small buffers again (less than 64 KB),
+    ///   which shows the 4.8 MB buffer was let go.
+    /// </remarks>
+    [Fact]
+    public void TryDecode_LargeHeaderOrLargeImage_AllocatesLittle()
+    {
+        var decoder = new PngDecoder();
+        _ = decoder.TryDecode(TestPng.Valid(), 64, out _, out _);
+        byte[] large = TestPng.File(TestPng.Header(4096, 4096, 16, 6), TestPng.Data(new byte[10]), TestPng.End());
+        byte[] rows = new byte[1100 * 1101];
+        byte[] gray = TestPng.File(TestPng.Header(1100, 1100, 8, 0), TestPng.Data(rows), TestPng.End());
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool read = decoder.TryDecode(large, 4096, out _, out _);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(decoder.TryDecode(gray, 4096, out int width, out _));
+        long afterLarge = GC.GetAllocatedBytesForCurrentThread();
+        Assert.True(decoder.TryDecode(TestPng.Valid(), 64, out _, out _));
+        long small = GC.GetAllocatedBytesForCurrentThread() - afterLarge;
+
+        Assert.False(read);
+        Assert.InRange(allocated, 0, 1024 * 1024);
+        Assert.Equal(1100, width);
+        Assert.InRange(small, 1, 64 * 1024);
+    }
+
+    /// <summary>
     /// An ancillary chunk that is unknown, or whose check value is wrong, is skipped; a palette index past the palette is
     /// transparent.
     /// </summary>

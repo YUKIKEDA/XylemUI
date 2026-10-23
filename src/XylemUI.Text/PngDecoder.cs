@@ -13,7 +13,8 @@ namespace XylemUI.Text;
 /// A PNG comes from a font, so it is untrusted input. A PNG is broken, and <see cref="TryDecode"/> returns
 /// <see langword="false"/> without throwing, when a chunk runs past the data, when the header is not the first chunk or comes
 /// twice, when the check value (CRC-32) of a critical chunk does not match, when a side is 0 or larger than the caller's limit, when the image data chunks do not follow each other, when a
-/// critical chunk is unknown, when the compressed data fails to inflate or gives fewer bytes than the header asks for, or when a
+/// critical chunk is unknown, when the header asks for more bytes than the compressed data can inflate to (deflate expands at most
+/// 1,032 times), when the compressed data fails to inflate or gives fewer bytes than the header asks for, or when a
 /// row has an unknown filter. Inflating stops at the bytes the header asks for. The buffers are kept for the next image, so one
 /// decoder is used on one thread.
 /// </remarks>
@@ -24,6 +25,15 @@ internal sealed class PngDecoder
     private const uint TransparencyChunk = 0x74524E53; // tRNS
     private const uint Data = 0x49444154; // IDAT
     private const uint End = 0x49454E44; // IEND
+
+    // Deflate expands at most 1,032 times (RFC 1951 blocks of 258-byte matches in about 2 bits), so data that would inflate past
+    // that is broken before anything is allocated for it.
+    private const long MaxInflation = 1032;
+
+    // A buffer grown past this size for one large image goes back to the small size afterwards, so that one image does not keep
+    // its memory for the rasterizer's lifetime.
+    private const int KeptBufferBytes = 4 * 1024 * 1024;
+    private const int SmallBufferBytes = 16 * 1024;
 
     private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -42,9 +52,10 @@ internal sealed class PngDecoder
 
     // The palette premultiplied, as blue, green, red, and alpha; an index past the palette is transparent.
     private readonly uint[] _premultiplied = new uint[256];
-    private byte[] _compressed = new byte[16 * 1024];
-    private byte[] _raw = new byte[16 * 1024];
-    private byte[] _pixels = new byte[16 * 1024];
+
+    private byte[] _compressed = new byte[SmallBufferBytes];
+    private byte[] _raw = new byte[SmallBufferBytes];
+    private byte[] _pixels = new byte[SmallBufferBytes];
     private int _pixelLength;
 
     /// <summary>
@@ -66,6 +77,7 @@ internal sealed class PngDecoder
         width = 0;
         height = 0;
         _pixelLength = 0;
+        Shrink(ref _pixels);
         if (png.Length < Signature.Length || !png[..Signature.Length].SequenceEqual(Signature))
         {
             return false;
@@ -199,14 +211,18 @@ internal sealed class PngDecoder
 
         long expected = RawLength(image);
         long pixelBytes = (long)image.Width * image.Height * 4;
-        if (expected > int.MaxValue || pixelBytes > int.MaxValue)
+        if (expected > int.MaxValue || pixelBytes > int.MaxValue || expected > (MaxInflation * compressedLength) + 1024)
         {
+            Shrink(ref _compressed);
             return false;
         }
 
         Grow(ref _raw, (int)expected);
-        if (!TryInflate(compressedLength, (int)expected))
+        bool inflated = TryInflate(compressedLength, (int)expected);
+        Shrink(ref _compressed);
+        if (!inflated)
         {
+            Shrink(ref _raw);
             return false;
         }
 
@@ -222,7 +238,9 @@ internal sealed class PngDecoder
         }
 
         var transparency = new Transparency(transparencyKey, transparencyColor);
-        if (!TryUnfilterAndWrite(image, transparency))
+        bool written = TryUnfilterAndWrite(image, transparency);
+        Shrink(ref _raw);
+        if (!written)
         {
             _pixelLength = 0;
             return false;
@@ -327,6 +345,14 @@ internal sealed class PngDecoder
 
     private static (int Columns, int Rows) PassSize(in Image image, int pass) =>
         ((image.Width - PassX[pass] + PassStepX[pass] - 1) / PassStepX[pass], (image.Height - PassY[pass] + PassStepY[pass] - 1) / PassStepY[pass]);
+
+    private static void Shrink(ref byte[] buffer)
+    {
+        if (buffer.Length > KeptBufferBytes)
+        {
+            buffer = new byte[SmallBufferBytes];
+        }
+    }
 
     private static void Grow(ref byte[] buffer, int length)
     {

@@ -72,6 +72,9 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     private (Font? Font, uint Glyph, uint Strike) _decoded;
     private Bitmap _bitmap;
 
+    // Whether _colorBox is a PNG bitmap's box, scaled only when Rasterize asks, rather than _colorPixels' COLRv0 layers.
+    private bool _colorIsBitmap;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectWriteGlyphRasterizer"/> class.
     /// </summary>
@@ -137,12 +140,19 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
                 return;
             }
 
-            if (stride < box.Width * 4 || destination.Length < ((box.Height - 1) * stride) + (box.Width * 4))
+            if (stride < box.Width * 4 || destination.Length < ((box.Height - 1L) * stride) + (box.Width * 4L))
             {
                 throw new ArgumentException(
                     $"The destination holds less than {box.Height} rows of {box.Width} pixels, {stride} bytes apart.",
                     nameof(destination)
                 );
+            }
+
+            // A PNG bitmap is scaled here, into the atlas, so that one the atlas refuses (larger than a plot) is never scaled.
+            if (_colorIsBitmap)
+            {
+                ScaleBitmap(glyph, destination, stride);
+                return;
             }
 
             for (int row = 0; row < box.Height; row++)
@@ -266,9 +276,11 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             ? DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED
             : DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC;
         IDWriteColorGlyphRunEnumerator1* runs = TranslateLayers(&run);
+        _colorIsBitmap = false;
         if (runs is null && TryReadBitmap(face, key))
         {
-            DrawBitmap(key);
+            _colorBox = BitmapBox(key);
+            _colorIsBitmap = true;
             _colorKey = key;
             return;
         }
@@ -449,23 +461,31 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         }
     }
 
-    // Scales the bitmap _png holds to the key's size, the ratio of the size to its strike, into _colorPixels: down by the average
-    // over each pixel's area, up bilinearly; its origin scaled by the same ratio (design §5.0.3, "PNG bitmaps"). A bilevel key
-    // draws the same picture.
-    private void DrawBitmap(in GlyphKey key)
+    // The box of the bitmap _png holds at the key's size: the bitmap and its origin scaled by the ratio of the size to its strike
+    // (design §5.0.3, "PNG bitmaps"). A side is kept to 65,536 pixels, past any atlas plot, so that a huge size gives a box the
+    // atlas refuses rather than a size that overflows.
+    private GlyphBox BitmapBox(in GlyphKey key)
     {
-        float ratio = key.PixelSize / _bitmap.Strike;
-        int width = Math.Max(1, (int)MathF.Round(_bitmap.Width * ratio, MidpointRounding.AwayFromZero));
-        int height = Math.Max(1, (int)MathF.Round(_bitmap.Height * ratio, MidpointRounding.AwayFromZero));
-        if (_colorPixels.Length < width * height * 4)
+        double ratio = (double)key.PixelSize / _bitmap.Strike;
+        int width = Side(_bitmap.Width * ratio);
+        int height = Side(_bitmap.Height * ratio);
+        int left = (int)Math.Clamp(Math.Round(-_bitmap.OriginX * ratio, MidpointRounding.AwayFromZero), -65536, 65536);
+        int top = (int)Math.Clamp(Math.Round(_bitmap.OriginY * ratio, MidpointRounding.AwayFromZero), -65536, 65536);
+        return new GlyphBox(left, top, width, height, IsColor: true);
+
+        static int Side(double side) => (int)Math.Clamp(Math.Round(side, MidpointRounding.AwayFromZero), 1, 65536);
+    }
+
+    // Scales the bitmap of the key into the destination at its box's size: down by the average over each pixel's area, up
+    // bilinearly. A bilevel key draws the same picture. The bitmap is read again when another one was read since Measure.
+    private void ScaleBitmap(in GlyphKey key, Span<byte> destination, int stride)
+    {
+        if (_decoded != (key.Font, key.GlyphId, _bitmap.Strike) && !TryReadBitmap(FaceOf(key.Font), key))
         {
-            _colorPixels = GC.AllocateUninitializedArray<byte>(Math.Max(width * height * 4, _colorPixels.Length * 2));
+            return;
         }
 
-        _scaler.Scale(_png.Pixels, _bitmap.Width, _bitmap.Height, _colorPixels, width, height, width * 4);
-        int left = (int)MathF.Round(-_bitmap.OriginX * ratio, MidpointRounding.AwayFromZero);
-        int top = (int)MathF.Round(_bitmap.OriginY * ratio, MidpointRounding.AwayFromZero);
-        _colorBox = new GlyphBox(left, top, width, height, IsColor: true);
+        _scaler.Scale(_png.Pixels, _bitmap.Width, _bitmap.Height, destination, _colorBox.Width, _colorBox.Height, stride);
     }
 
     // Lays the layers, in order, over each other in _colorPixels (premultiplied BGRA, "over"), and returns the box of their union.

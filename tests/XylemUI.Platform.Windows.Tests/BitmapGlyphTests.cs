@@ -142,6 +142,41 @@ public sealed class BitmapGlyphTests
         Assert.Equal(1, atlas.RasterizeCount);
     }
 
+    /// <summary>
+    /// A PNG glyph too large for an atlas plot is refused without being scaled: <see cref="DirectWriteGlyphRasterizer.Measure"/>
+    /// only sizes it, and a huge size gives a box of at most 65,536 pixels a side, not one that overflows (PR #212's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The bitmap test font, a rasterizer that has drawn "H" at 20 px, and an empty atlas.
+    ///
+    /// Steps:
+    /// - Get "H" at 5,000 px from the atlas, measuring the bytes allocated on this thread; measure "H" at 10,000,000 px as a color
+    ///   key.
+    ///
+    /// Expected:
+    /// - The atlas refuses it (larger than a plot) and less than 1 MB is allocated (at 5,000 px the 64 ppem strike, 51 pixels, is
+    ///   3,984 x 3,984, 63 MB scaled).
+    /// - The 10,000,000 px box is 65,536 pixels a side.
+    /// </remarks>
+    [Fact]
+    public void TryGet_HugePngGlyph_IsRefusedWithoutScaling()
+    {
+        using var font = new Font(FontBytes);
+        using var rasterizer = new DirectWriteGlyphRasterizer();
+        _ = Draw(rasterizer, new GlyphKey(font, GlyphH, 20, 0, GlyphCoverage.Color));
+        var atlas = new GlyphAtlas(rasterizer);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool fits = atlas.TryGet(new GlyphKey(font, GlyphH, 5000, 0), out _);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        GlyphBox huge = rasterizer.Measure(new GlyphKey(font, GlyphH, 10_000_000, 0, GlyphCoverage.Color));
+
+        Assert.False(fits);
+        Assert.InRange(allocated, 0, 1024 * 1024);
+        Assert.Equal((65536, 65536), (huge.Width, huge.Height));
+    }
+
     private static (GlyphBox Box, byte[] Pixels) Draw(DirectWriteGlyphRasterizer rasterizer, GlyphKey key)
     {
         GlyphBox box = rasterizer.Measure(key);
