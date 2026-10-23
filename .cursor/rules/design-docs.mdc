@@ -54,6 +54,10 @@ What a compared implementation does is checked in its shipped build when its sou
 
 A model that reproduces a compared implementation's pixels reads every stage a pixel passes through, from the rasterizer to the fragment shader. In T7 Skia's preblend alone matched Flutter on white but not on black; Impeller's `glyph_atlas.frag` also raises the coverage to an exponent from the text luminance (`text_contents.cc` lines 282 to 295), found later (PR #196).
 
+A design that reads data from a font or a file treats it as untrusted input and writes its limits (size, how much it inflates or allocates, the structure it accepts) and what happens past them. T9's first design said its PNG decoder read every form of the format, with no limits; the review found it (PR #208).
+
+A design that puts outside data into the repository (test images, fonts) names its source, its version, and its license, quoted from the file in the distribution. T9's first design named PngSuite without them; the review found it (PR #208).
+
 A figure the design derives (a memory bound, a count) writes its arithmetic beside it. From T2 the design said both atlas kinds held 4 MB; a ClearType kind holds 16 pages of 1 MB, 16 MB, and an answer to a review found it (PR #192).
 
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
