@@ -35,8 +35,10 @@ namespace XylemUI.Platform.Windows;
 /// does (<c>direct_write.rs</c>, lines 1562 and 1925 to 1952). Its layers come from <c>IDWriteFactory4::TranslateColorGlyphRun</c>
 /// with the COLRv0 format; each is drawn as grayscale coverage with the analysis GPUI uses for a layer (natural symmetric, default
 /// grid fit, lines 956 to 967) and laid over the ones before in its color, premultiplied, on the CPU. A layer in the text's color
-/// (palette index 0xFFFF, or an outline with no color) takes <see cref="GlyphKey.TextColor"/>. COLRv1 paint trees, SVG, and
-/// bitmap glyphs are not drawn: Direct2D drew a COLRv1 emoji in 4 ms and added 8.5 MB to the process (roadmap row T9).
+/// (palette index 0xFFFF, or an outline with no color) takes <see cref="GlyphKey.TextColor"/>. A glyph without COLRv0 layers that
+/// has a PNG bitmap (sbix, CBDT) is that bitmap, read by <c>PngDecoder</c> and scaled to the size by <c>BitmapScaler</c> (design
+/// §5.0.3, "PNG bitmaps", roadmap row T9); a broken PNG leaves the glyph to its outline. COLRv1 paint trees and SVG are not drawn:
+/// Direct2D drew a COLRv1 emoji in 4 ms and added 8.5 MB to the process (roadmap row T11).
 /// </para>
 /// </remarks>
 public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDisposable
@@ -51,6 +53,8 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     private readonly Dictionary<Font, nint> _faces = [];
     private readonly Dictionary<Font, bool> _colorFonts = [];
     private readonly List<Layer> _layers = [];
+    private readonly PngDecoder _png = new();
+    private readonly BitmapScaler _scaler = new();
     private IDWriteFactory5* _factory;
     private IDWriteInMemoryFontFileLoader* _loader;
     private IDWriteGlyphRunAnalysis* _analysis;
@@ -63,6 +67,10 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     private GlyphBox _colorBox;
     private byte[] _layerCoverage = [];
     private byte[] _colorPixels = [];
+
+    // The bitmap glyph whose PNG _png holds: its font, glyph, and the strike DirectWrite returned (0 for none).
+    private (Font? Font, uint Glyph, uint Strike) _decoded;
+    private Bitmap _bitmap;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectWriteGlyphRasterizer"/> class.
@@ -226,8 +234,8 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         Release(ref _factory);
     }
 
-    // Draws the color glyph of the key from its COLRv0 layers, unless the last call drew it: each layer's grayscale coverage in its
-    // color, premultiplied BGRA, laid over the layers before it.
+    // Draws the color glyph of the key, unless the last call drew it: from its COLRv0 layers, each layer's grayscale coverage in its
+    // color, premultiplied BGRA, laid over the layers before it; or, without layers, from its PNG bitmap.
     private void DrawColor(in GlyphKey key)
     {
         ObjectDisposedException.ThrowIf(_factory is null, this);
@@ -258,6 +266,13 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
             ? DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_ALIASED
             : DWRITE_RENDERING_MODE1.DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC;
         IDWriteColorGlyphRunEnumerator1* runs = TranslateLayers(&run);
+        if (runs is null && TryReadBitmap(face, key))
+        {
+            DrawBitmap(key);
+            _colorKey = key;
+            return;
+        }
+
         if (runs is null)
         {
             used = AddLayer(&run, 0, 0, textColor, mode, used);
@@ -370,6 +385,89 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         }
     }
 
+    // Reads the PNG bitmap of a glyph without COLRv0 layers (design §5.0.3, "PNG bitmaps"), unless _png holds it already: the
+    // strike DirectWrite returns for the size rounded up (the smallest strike at least that size, else the largest: with strikes
+    // of 20 and 64 ppem, 1 to 20 gave 20 and 21 to 300 gave 64, Windows 11 26300). Returns false for no PNG or a broken one, which
+    // is then drawn as its outline.
+    private bool TryReadBitmap(IDWriteFontFace3* face, in GlyphKey key)
+    {
+        IDWriteFontFace4* face4;
+        Guid iid = IID.IID_IDWriteFontFace4;
+        if (face->QueryInterface(&iid, (void**)&face4) < 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            ushort glyph = checked((ushort)key.GlyphId);
+            uint ppem = (uint)Math.Clamp(MathF.Ceiling(key.PixelSize), 1, ushort.MaxValue);
+
+            // The formats of every strike: asked for one size, DirectWrite gives only the strikes inside the range (10 to 10 ppem gave
+            // no PNG for strikes of 20 and 64 ppem), while GetGlyphImageData returns the nearest strike.
+            DWRITE_GLYPH_IMAGE_FORMATS formats;
+            ThrowIfFailed(face4->GetGlyphImageFormats(glyph, 1, ushort.MaxValue, &formats), "IDWriteFontFace4::GetGlyphImageFormats");
+            if ((formats & DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_PNG) == 0)
+            {
+                return false;
+            }
+
+            DWRITE_GLYPH_IMAGE_DATA data;
+            void* context;
+            ThrowIfFailed(
+                face4->GetGlyphImageData(glyph, ppem, DWRITE_GLYPH_IMAGE_FORMATS.DWRITE_GLYPH_IMAGE_FORMATS_PNG, &data, &context),
+                "IDWriteFontFace4::GetGlyphImageData"
+            );
+            if (data.imageDataSize == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (_decoded == (key.Font, key.GlyphId, data.pixelsPerEm))
+                {
+                    return _bitmap.Width > 0;
+                }
+
+                // A side past four times the strike, or past 4,096, is not a glyph's bitmap (the design's limit on untrusted input).
+                int maxSide = (int)Math.Min(4096u, 4u * Math.Max(1u, data.pixelsPerEm));
+                var png = new ReadOnlySpan<byte>(data.imageData, (int)data.imageDataSize);
+                bool read = _png.TryDecode(png, maxSide, out int width, out int height);
+                _decoded = (key.Font, key.GlyphId, data.pixelsPerEm);
+                _bitmap = read ? new Bitmap(width, height, data.pixelsPerEm, data.horizontalLeftOrigin.x, data.horizontalLeftOrigin.y) : default;
+                return read;
+            }
+            finally
+            {
+                face4->ReleaseGlyphImageData(context);
+            }
+        }
+        finally
+        {
+            _ = face4->Release();
+        }
+    }
+
+    // Scales the bitmap _png holds to the key's size, the ratio of the size to its strike, into _colorPixels: down by the average
+    // over each pixel's area, up bilinearly; its origin scaled by the same ratio (design §5.0.3, "PNG bitmaps"). A bilevel key
+    // draws the same picture.
+    private void DrawBitmap(in GlyphKey key)
+    {
+        float ratio = key.PixelSize / _bitmap.Strike;
+        int width = Math.Max(1, (int)MathF.Round(_bitmap.Width * ratio, MidpointRounding.AwayFromZero));
+        int height = Math.Max(1, (int)MathF.Round(_bitmap.Height * ratio, MidpointRounding.AwayFromZero));
+        if (_colorPixels.Length < width * height * 4)
+        {
+            _colorPixels = GC.AllocateUninitializedArray<byte>(Math.Max(width * height * 4, _colorPixels.Length * 2));
+        }
+
+        _scaler.Scale(_png.Pixels, _bitmap.Width, _bitmap.Height, _colorPixels, width, height, width * 4);
+        int left = (int)MathF.Round(-_bitmap.OriginX * ratio, MidpointRounding.AwayFromZero);
+        int top = (int)MathF.Round(_bitmap.OriginY * ratio, MidpointRounding.AwayFromZero);
+        _colorBox = new GlyphBox(left, top, width, height, IsColor: true);
+    }
+
     // Lays the layers, in order, over each other in _colorPixels (premultiplied BGRA, "over"), and returns the box of their union.
     private GlyphBox Composite()
     {
@@ -424,6 +522,9 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         return new GlyphBox(union.left, -union.top, width, height, IsColor: true);
     }
 
+    // A decoded bitmap: its size and its strike, and the pen's origin from the image's top left, in the strike's pixels.
+    private readonly record struct Bitmap(int Width, int Height, uint Strike, int OriginX, int OriginY);
+
     private static DWRITE_GLYPH_RUN RunOf(IDWriteFontFace3* face, ushort* index, float* advance, DWRITE_GLYPH_OFFSET* offset, float pixelSize) =>
         new()
         {
@@ -463,7 +564,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
         IDWriteColorGlyphRunEnumerator1* runs = TranslateLayers(&run);
         if (runs is null)
         {
-            return false;
+            return TryReadBitmap(face, key);
         }
 
         try
