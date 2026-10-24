@@ -22,6 +22,11 @@ internal struct QuadInstance
     public const uint ColorPage = 0x40000000;
 
     /// <summary>
+    /// The value of <see cref="Shape"/> for a quad that is not a shape: a solid rectangle or a glyph.
+    /// </summary>
+    public const uint NoShape = uint.MaxValue;
+
+    /// <summary>
     /// The left, top, width, and height, in physical pixels (whole pixels for a glyph).
     /// </summary>
     public Vector4 Rect;
@@ -41,4 +46,9 @@ internal struct QuadInstance
     /// <see cref="SolidPage"/> for a solid rectangle.
     /// </summary>
     public uint Page;
+
+    /// <summary>
+    /// The first of the rows of a rounded rectangle or a shadow in the shape buffer (row R4), or <see cref="NoShape"/>.
+    /// </summary>
+    public uint Shape;
 }

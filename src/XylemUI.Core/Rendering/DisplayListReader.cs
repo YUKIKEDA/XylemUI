@@ -17,11 +17,13 @@ public ref struct DisplayListReader
     private readonly ReadOnlySpan<int> _runLengths;
     private readonly ReadOnlySpan<GlyphCoverage> _runCoverages;
     private readonly ReadOnlySpan<GlyphInstance> _glyphs;
+    private readonly ReadOnlySpan<ShapeRecord> _shapes;
     private int _command;
     private int _rect;
     private int _color;
     private int _run;
     private int _glyph;
+    private int _shape;
     private CommandTag? _current;
 
     internal DisplayListReader(DisplayList list)
@@ -32,7 +34,15 @@ public ref struct DisplayListReader
         _runLengths = list.RunLengths;
         _runCoverages = list.RunCoverages;
         _glyphs = list.Glyphs;
+        _shapes = list.Shapes;
+        Brushes = list.Brushes;
     }
+
+    /// <summary>
+    /// Gets the gradients of the list, in the order of their first use: <see cref="ShapeCommand.FillBrush"/> and
+    /// <see cref="ShapeCommand.BorderBrush"/> index into it.
+    /// </summary>
+    public ReadOnlySpan<GradientBrush> Brushes { get; }
 
     /// <summary>
     /// Moves to the next command.
@@ -48,7 +58,13 @@ public ref struct DisplayListReader
 
         if (_command == _commands.Length)
         {
-            if (_rect != _rects.Length || _color != _colors.Length || _run != _runLengths.Length || _glyph != _glyphs.Length)
+            if (
+                _rect != _rects.Length
+                || _color != _colors.Length
+                || _run != _runLengths.Length
+                || _glyph != _glyphs.Length
+                || _shape != _shapes.Length
+            )
             {
                 Invariant.Fail("A display list stream has data left after its last command.");
             }
@@ -97,6 +113,55 @@ public ref struct DisplayListReader
         ReadOnlySpan<GlyphInstance> glyphs = _glyphs.Slice(_glyph, length);
         _glyph += length;
         return new GlyphRunCommand(Unpack(_colors[_color++]), glyphs, coverage);
+    }
+
+    /// <summary>
+    /// Reads the current command as a rounded rectangle with a border.
+    /// </summary>
+    /// <returns>The shape.</returns>
+    public ShapeCommand ReadShape()
+    {
+        if (_current != CommandTag.Shape)
+        {
+            Invariant.Fail("ReadShape was called for a command that is not a Shape.");
+        }
+
+        _current = null;
+        ReadOnlySpan<float> rect = _rects.Slice(_rect, 4);
+        _rect += 4;
+        Color fill = Unpack(_colors[_color++]);
+        ref readonly ShapeRecord record = ref _shapes[_shape++];
+        return new ShapeCommand(
+            rect[0],
+            rect[1],
+            rect[2],
+            rect[3],
+            fill,
+            record.FillBrush,
+            record.Radii,
+            record.BorderWidths,
+            Unpack(record.BorderColor),
+            record.BorderBrush
+        );
+    }
+
+    /// <summary>
+    /// Reads the current command as the shadow of a rounded rectangle.
+    /// </summary>
+    /// <returns>The shadow.</returns>
+    public ShadowCommand ReadShadow()
+    {
+        if (_current != CommandTag.Shadow)
+        {
+            Invariant.Fail("ReadShadow was called for a command that is not a Shadow.");
+        }
+
+        _current = null;
+        ReadOnlySpan<float> rect = _rects.Slice(_rect, 4);
+        _rect += 4;
+        Color color = Unpack(_colors[_color++]);
+        ref readonly ShapeRecord record = ref _shapes[_shape++];
+        return new ShadowCommand(rect[0], rect[1], rect[2], rect[3], record.Radii, color, record.Offset, record.Sigma, record.Spread, record.Inset);
     }
 
     private static Color Unpack(uint packed) => new((byte)packed, (byte)(packed >> 8), (byte)(packed >> 16), (byte)(packed >> 24));

@@ -10,4 +10,10 @@ public enum CommandTag : byte
 
     /// <summary>A run of glyphs in one color (<see cref="GlyphRunCommand"/>).</summary>
     GlyphRun,
+
+    /// <summary>A rounded rectangle with a border and a paint (<see cref="ShapeCommand"/>, row R4).</summary>
+    Shape,
+
+    /// <summary>The shadow of a rounded rectangle (<see cref="ShadowCommand"/>, row R4).</summary>
+    Shadow,
 }

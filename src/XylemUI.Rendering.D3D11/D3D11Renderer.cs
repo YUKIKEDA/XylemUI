@@ -42,6 +42,12 @@ namespace XylemUI.Rendering.D3D11;
 /// </remarks>
 public sealed unsafe class D3D11Renderer : IDisposable
 {
+    // The rows of one Shape or Shadow command in the shape buffer, and the kinds QuadShaders' ShapeColor tells apart.
+    private const int ShapeRows = 6;
+    private const float ShapeKind = 1;
+    private const float OuterShadowKind = 2;
+    private const float InsetShadowKind = 3;
+
     private const uint SwapChainFlags = (uint)DXGI_SWAP_CHAIN_FLAG.DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
     private const DXGI_FORMAT BackBufferFormat = DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM;
 
@@ -61,9 +67,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly AtlasTextures _colorAtlas = new(GlyphCoverage.Color, DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM);
     private TextRenderingParameters _textRendering = TextRenderingParameters.Default;
     private DrawRange[] _draws = new DrawRange[16];
+
     private ID3D11RenderTargetView* _renderTarget;
     private ID3D11Buffer* _instances;
     private int _instanceCapacity;
+    private RowBuffer _shapeRows;
+    private RowBuffer _brushRows;
+    private int[] _brushStarts = new int[16];
     private GpuFrameTimer? _gpuTimer;
     private (uint Count, long Qpc)[] _presents = [];
     private uint _lastReportedPresent;
@@ -94,6 +104,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _clearTypeBlend = CreateClearTypeBlendState(device);
             WriteTargetConstants();
             GrowInstances(256);
+            _shapeRows = RowBuffer.Create(device, 64);
+            _brushRows = RowBuffer.Create(device, 64);
         }
         catch
         {
@@ -304,6 +316,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _rgbAtlas.Dispose();
         _colorAtlas.Dispose();
         Release((IUnknown*)_instances);
+        _shapeRows.Dispose();
+        _brushRows.Dispose();
         Release((IUnknown*)_clearTypeBlend);
         Release((IUnknown*)_blend);
         Release((IUnknown*)_targetConstants);
@@ -397,8 +411,15 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->VSSetShader(_vertexShader, null, 0);
         _context->VSSetConstantBuffers(0, 1, &constants);
         _context->PSSetConstantBuffers(0, 1, &constants);
-        ID3D11ShaderResourceView** atlasViews = stackalloc ID3D11ShaderResourceView*[3] { _grayAtlas.View, _rgbAtlas.View, _colorAtlas.View };
-        _context->PSSetShaderResources(0, 3, atlasViews);
+        ID3D11ShaderResourceView** atlasViews = stackalloc ID3D11ShaderResourceView*[5]
+        {
+            _grayAtlas.View,
+            _rgbAtlas.View,
+            _colorAtlas.View,
+            _shapeRows.View,
+            _brushRows.View,
+        };
+        _context->PSSetShaderResources(0, 5, atlasViews);
         foreach (DrawRange draw in _draws.AsSpan(0, draws))
         {
             _context->PSSetShader(draw.ClearType ? _clearTypePixelShader : _pixelShader, null, 0);
@@ -714,12 +735,12 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 "ID3D11Device::CreateVertexShader"
             );
 
-            // The semantic names in one pinned literal: "RECT" at 0, "COLOR" at 5, "ATLAS" at 11, "PAGE" at 17.
-            fixed (byte* names = "RECT\0COLOR\0ATLAS\0PAGE\0"u8)
+            // The semantic names in one pinned literal: "RECT" at 0, "COLOR" at 5, "ATLAS" at 11, "PAGE" at 17, "SHAPE" at 22.
+            fixed (byte* names = "RECT\0COLOR\0ATLAS\0PAGE\0SHAPE\0"u8)
             {
                 byte* rect = names;
                 byte* color = names + 5;
-                D3D11_INPUT_ELEMENT_DESC* elements = stackalloc D3D11_INPUT_ELEMENT_DESC[4];
+                D3D11_INPUT_ELEMENT_DESC* elements = stackalloc D3D11_INPUT_ELEMENT_DESC[5];
                 elements[0] = new D3D11_INPUT_ELEMENT_DESC
                 {
                     SemanticName = (sbyte*)rect,
@@ -752,9 +773,17 @@ public sealed unsafe class D3D11Renderer : IDisposable
                     InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
                     InstanceDataStepRate = 1,
                 };
+                elements[4] = new D3D11_INPUT_ELEMENT_DESC
+                {
+                    SemanticName = (sbyte*)(names + 22),
+                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
+                    AlignedByteOffset = (uint)sizeof(Vector4) + 12,
+                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
+                    InstanceDataStepRate = 1,
+                };
                 ID3D11InputLayout* layout;
                 HResults.ThrowIfFailed(
-                    device->CreateInputLayout(elements, 4, code->GetBufferPointer(), code->GetBufferSize(), &layout),
+                    device->CreateInputLayout(elements, 5, code->GetBufferPointer(), code->GetBufferSize(), &layout),
                     "ID3D11Device::CreateInputLayout"
                 );
                 inputLayout = layout;
@@ -895,8 +924,15 @@ public sealed unsafe class D3D11Renderer : IDisposable
         {
             var destination = new Span<QuadInstance>(mapped.pData, bound);
             DisplayListReader reader = list.GetReader();
+            Span<Vector4> shapes = list.ShapeCount > 0 ? _shapeRows.Map(_device, _context, list.ShapeCount * ShapeRows) : default;
+            if (reader.Brushes.Length > 0)
+            {
+                WriteBrushes(reader.Brushes);
+            }
+
             int i = 0;
             int draws = 0;
+            int shape = 0;
             while (reader.TryNext(out CommandTag tag))
             {
                 if (tag == CommandTag.FillRect)
@@ -908,7 +944,20 @@ public sealed unsafe class D3D11Renderer : IDisposable
                         Rect = new Vector4(rect.X, rect.Y, rect.Width, rect.Height),
                         Color = rect.Color.Packed,
                         Page = QuadInstance.SolidPage,
+                        Shape = QuadInstance.NoShape,
                     };
+                }
+                else if (tag == CommandTag.Shape)
+                {
+                    draws = AddToDraw(draws, i, clearType: false);
+                    destination[i++] = WriteShape(reader.ReadShape(), shapes, shape);
+                    shape += ShapeRows;
+                }
+                else if (tag == CommandTag.Shadow)
+                {
+                    draws = AddToDraw(draws, i, clearType: false);
+                    destination[i++] = WriteShadow(reader.ReadShadow(), shapes, shape);
+                    shape += ShapeRows;
                 }
                 else
                 {
@@ -924,6 +973,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
                             Color = color,
                             AtlasOrigin = (uint)glyph.AtlasX | ((uint)glyph.AtlasY << 16),
                             Page = (uint)glyph.Page | kind,
+                            Shape = QuadInstance.NoShape,
                         };
                     }
                 }
@@ -940,7 +990,115 @@ public sealed unsafe class D3D11Renderer : IDisposable
         finally
         {
             _context->Unmap((ID3D11Resource*)_instances, 0);
+            if (list.ShapeCount > 0)
+            {
+                _shapeRows.Unmap(_context);
+            }
         }
+    }
+
+    // The six rows of a rounded rectangle, as QuadShaders' ShapeColor reads them: the radii, the border's widths, the border's
+    // color, the kind with the rows of the fill's and the border's gradients, the rectangle, and nothing.
+    private QuadInstance WriteShape(in ShapeCommand command, Span<Vector4> rows, int row)
+    {
+        var rect = new Vector4(command.X, command.Y, command.Width, command.Height);
+        BorderWidths widths = command.BorderWidths;
+        rows[row] = Radii(command.Radii);
+        rows[row + 1] = new Vector4(widths.Left, widths.Top, widths.Right, widths.Bottom);
+        rows[row + 2] = Straight(command.BorderColor);
+        rows[row + 3] = new Vector4(ShapeKind, BrushRow(command.FillBrush), BrushRow(command.BorderBrush), 0);
+        rows[row + 4] = rect;
+        rows[row + 5] = default;
+        return new QuadInstance
+        {
+            Rect = rect,
+            Color = command.Fill.Packed,
+            Page = QuadInstance.SolidPage,
+            Shape = (uint)row,
+        };
+    }
+
+    // The six rows of a shadow: the radii of the blurred rectangle, the shape's rectangle, nothing, the kind with the sigma, the
+    // blurred rectangle, and the shape's radii. An outer shadow's rectangle is the shape's moved and grown by the spread, and its
+    // quad is that grown by three sigmas; an inset shadow's is the hole, moved and shrunk, and its quad the shape's (GPUI's
+    // paint_drop_shadows and paint_inset_shadows, window.rs lines 4472 to 4535).
+    private static QuadInstance WriteShadow(in ShadowCommand command, Span<Vector4> rows, int row)
+    {
+        var element = new Vector4(command.X, command.Y, command.Width, command.Height);
+        float spread = command.Inset ? -command.Spread : command.Spread;
+        var blurred = new Vector4(
+            command.X + command.Offset.X - spread,
+            command.Y + command.Offset.Y - spread,
+            MathF.Max(0, command.Width + (2 * spread)),
+            MathF.Max(0, command.Height + (2 * spread))
+        );
+        CornerRadii radii = command.Radii;
+        rows[row] = new Vector4(
+            Grown(radii.TopLeft, spread),
+            Grown(radii.TopRight, spread),
+            Grown(radii.BottomRight, spread),
+            Grown(radii.BottomLeft, spread)
+        );
+        rows[row + 1] = element;
+        rows[row + 2] = default;
+        rows[row + 3] = new Vector4(command.Inset ? InsetShadowKind : OuterShadowKind, -1, -1, command.Sigma);
+        rows[row + 4] = blurred;
+        rows[row + 5] = Radii(radii);
+        float margin = 3 * command.Sigma;
+        Vector4 quad = command.Inset
+            ? element
+            : new Vector4(blurred.X - margin, blurred.Y - margin, blurred.Z + (2 * margin), blurred.W + (2 * margin));
+        return new QuadInstance
+        {
+            Rect = quad,
+            Color = command.Color.Packed,
+            Page = QuadInstance.SolidPage,
+            Shape = (uint)row,
+        };
+    }
+
+    // CSS's spread radius: a rounded corner grows with the spread (and shrinks with a negative one); a square corner stays square.
+    private static float Grown(float radius, float spread) => radius > 0 ? MathF.Max(0, radius + spread) : 0;
+
+    private static Vector4 Radii(in CornerRadii radii) => new(radii.TopLeft, radii.TopRight, radii.BottomRight, radii.BottomLeft);
+
+    private static Vector4 Straight(Color color) => new Vector4(color.R, color.G, color.B, color.A) / 255f;
+
+    private float BrushRow(int brush) => brush < 0 ? -1 : _brushStarts[brush];
+
+    // Each brush's rows, as QuadShaders' GradientColor reads them: the kind, the color space, the number of stops, and the angle
+    // in radians; the center and the radius; then each stop's color, premultiplied in the brush's color space, and its offset.
+    private void WriteBrushes(ReadOnlySpan<GradientBrush> brushes)
+    {
+        int rows = 0;
+        foreach (GradientBrush brush in brushes)
+        {
+            rows += 2 + (2 * brush.Stops.Length);
+        }
+
+        if (_brushStarts.Length < brushes.Length)
+        {
+            Array.Resize(ref _brushStarts, Math.Max(brushes.Length, _brushStarts.Length * 2));
+        }
+
+        Span<Vector4> destination = _brushRows.Map(_device, _context, rows);
+        int row = 0;
+        for (int b = 0; b < brushes.Length; b++)
+        {
+            GradientBrush brush = brushes[b];
+            _brushStarts[b] = row;
+            ReadOnlySpan<GradientStop> stops = brush.Stops;
+            bool oklab = brush.ColorSpace == GradientColorSpace.Oklab;
+            destination[row++] = new Vector4((float)brush.Kind, oklab ? 1 : 0, stops.Length, brush.Angle * (MathF.PI / 180));
+            destination[row++] = new Vector4(brush.Center.X, brush.Center.Y, brush.Radius, 0);
+            foreach (GradientStop stop in stops)
+            {
+                destination[row++] = GradientColors.Premultiplied(stop.Color, oklab);
+                destination[row++] = new Vector4(stop.Offset, 0, 0, 0);
+            }
+        }
+
+        _brushRows.Unmap(_context);
     }
 
     // The draw of the instance at `start`: the last one when its blend state is the same, else a new one that ends the last.
