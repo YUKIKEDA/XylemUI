@@ -8,9 +8,10 @@ namespace XylemUI.E2E;
 // each present call to the refresh that showed it (frame statistics); and the interval between frames. A frame whose interval
 // is more than 1.5 times the median missed a refresh. `heavy` loads the GPU with full-window translucent rectangles. The text is
 // ClearType where the window allows it, or grayscale with --gray (roadmap row T2); the report names it and the draws of a frame.
+// --shapes and --curves change the scene's rectangles (rows R4a and R4b, Scene.Build).
 internal static class Frames
 {
-    public static int Run(int frames, int heavy, bool warp, bool gray = false, bool shapes = false)
+    public static int Run(int frames, int heavy, bool warp, bool gray = false, bool shapes = false, bool curves = false)
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
@@ -35,7 +36,7 @@ internal static class Frames
             }
 
             last = t0;
-            scene.Build(frame, heavy, shapes);
+            scene.Build(frame, heavy, shapes, curves);
             long t1 = Stopwatch.GetTimestamp();
             scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
             long t2 = Stopwatch.GetTimestamp();
@@ -77,6 +78,7 @@ internal static class Frames
         report.Number("heavy", heavy);
         report.Text("coverage", scene.Coverage.ToString());
         report.Text("shapes", shapes ? "yes" : "no");
+        report.Text("curves", curves ? "yes" : "no");
         report.Number("draws", scene.Renderer.LastDrawCount);
         report.Series("build_ms", [.. build.Skip(Warm)]);
         report.Series("draw_ms", [.. draw.Skip(Warm)]);

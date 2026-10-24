@@ -153,6 +153,95 @@ public sealed class ResolveGlyphsTests
     }
 
     /// <summary>
+    /// Brushed text keeps its gradient and box on every run ResolveGlyphs splits it into, and its color glyphs' layers in the text's
+    /// color are asked for in the brush's first color made opaque (design §5.0, "The API of lines, ellipses, arcs, and the paint of
+    /// text").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer with "日" as a color glyph with a layer in the text's color, an empty atlas, a
+    ///   display list at scale 2, and a gradient from red with alpha 100 to blue.
+    ///
+    /// Steps:
+    /// - Draw "H日H" with the gradient over the box (5, 6, 70, 20), every glyph left for ResolveGlyphs; resolve; read the list.
+    ///
+    /// Expected:
+    /// - Three runs (Gray, Color, Gray), each with brush 0 and the box (10, 12, 140, 40) in physical pixels, in the brush's first
+    ///   color made opaque; three shape rows.
+    /// - The atlas has "日" for that opaque color and not for the brush's last color (blue).
+    /// </remarks>
+    [Fact]
+    public void ResolveGlyphs_BrushedText_KeepsItsGradientOnEveryRun()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        rasterizer.ColorGlyphs.Add(Nichi, true);
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+        list.Reset(2);
+        var faded = new Color(0xCC, 0x33, 0x33, 100);
+        GradientBrush brush = GradientBrush.Linear(90, [new(0, faded), new(1, Blue)]);
+
+        _ = list.DrawText(shaper.Shape(font, "H日H", TestFont.Japanese), font, 16, atlas, 5, 25, brush, 5, 6, 70, 20);
+        list.ResolveGlyphs(atlas);
+
+        Assert.Equal(3, list.ShapeCount);
+        var runs = new List<(GlyphCoverage, int, System.Numerics.Vector4, Color)>();
+        DisplayListReader reader = list.GetReader();
+        while (reader.TryNext(out _))
+        {
+            GlyphRunCommand run = reader.ReadGlyphRun();
+            runs.Add((run.Coverage, run.Brush, run.Box, run.Color));
+        }
+
+        var box = new System.Numerics.Vector4(10, 12, 140, 40);
+        Color opaque = Color.FromRgb(0xCC3333);
+        Assert.Equal([(GlyphCoverage.Gray, 0, box, opaque), (GlyphCoverage.Color, 0, box, opaque), (GlyphCoverage.Gray, 0, box, opaque)], runs);
+        bool Has(Color textColor) =>
+            Enumerable
+                .Range(0, 4)
+                .Any(step => atlas.Lookup(new GlyphKey(font, Nichi, 32, step, GlyphCoverage.Gray), textColor.Packed, out _) == GlyphLookup.Found);
+        Assert.True(Has(opaque));
+        Assert.False(Has(Blue));
+    }
+
+    /// <summary>
+    /// Brushed text refuses a box whose edges are not numbers or whose width or height is not positive.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, an atlas, a display list, and a gradient.
+    ///
+    /// Steps:
+    /// - Draw "H" with the gradient over the case's box.
+    ///
+    /// Expected:
+    /// - ArgumentOutOfRangeException, and nothing is written.
+    /// </remarks>
+    /// <param name="x">The box's left edge.</param>
+    /// <param name="width">The box's width.</param>
+    /// <param name="height">The box's height.</param>
+    [Theory]
+    [InlineData(0f, 0f, 10f)]
+    [InlineData(0f, 10f, -1f)]
+    [InlineData(float.NaN, 10f, 10f)]
+    [InlineData(0f, float.PositiveInfinity, 10f)]
+    public void DrawText_BrushedWithABadBox_Throws(float x, float width, float height)
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var atlas = new GlyphAtlas(new TestRasterizer());
+        var list = new DisplayList();
+        GradientBrush brush = GradientBrush.Linear(90, [new(0, Ink), new(1, Blue)]);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 16, atlas, 0, 20, brush, x, 0, width, height)
+        );
+        Assert.Equal(0, list.CommandCount);
+    }
+
+    /// <summary>
     /// ResolveGlyphs with nothing pending leaves the list as it is.
     /// </summary>
     /// <remarks>

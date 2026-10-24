@@ -212,6 +212,157 @@ internal static class QuadShaders
                 return float4(clamp(color.rgb + dither * color.a, 0, color.a), color.a);
             }
             float4 Premultiply(float4 c) { return float4(c.rgb * c.a, c.a); }
+            // The distance past the ends of a dash, `along` (> 0 beyond them) and `across` (from the middle of the line): a flat cap
+            // ends at the end, a square one half the width past it, a round one is the disc of half the width around it.
+            float CapDistance(float along, float across, float half, float cap)
+            {
+                float straight = max(abs(across) - half, along - (cap > 1.5 ? half : 0));
+                float round = length(float2(max(along, 0), across)) - half;
+                return cap > 0.5 && cap < 1.5 ? round : straight;
+            }
+            // The dash k of a pattern (length `on`, period, offset) along a line of length `total`: where it starts and ends, cut to
+            // the line. It is empty when it lies past the line, or has no length and a flat cap, which draws nothing.
+            float2 DashSpan(float k, float on, float period, float offset, float total)
+            {
+                float start = k * period - offset;
+                return float2(max(start, 0), min(start + on, total));
+            }
+            bool DashDrawn(float2 span, float cap) { return span.y > span.x || (span.y == span.x && cap > 0.5); }
+            // A straight line with its caps and dashes. Only the dash at or before p (p taken within the line, so that past an end
+            // it is the last or first dash) and the next one can be nearest: the dashes are alike, and their distance grows with
+            // the distance along the line.
+            float LineDistance(float2 p, float4 ends, float4 stroke, float4 more)
+            {
+                float2 a = ends.xy;
+                float total = more.w;
+                float2 u = total > 0 ? (ends.zw - a) / total : float2(1, 0);
+                float s = dot(p - a, u);
+                float n = dot(p - a, float2(-u.y, u.x));
+                float k = floor((clamp(s, 0, total) + more.x) / stroke.w);
+                float2 first = DashSpan(k, stroke.z, stroke.w, more.x, total);
+                float2 next = DashSpan(k + 1, stroke.z, stroke.w, more.x, total);
+                float d1 = DashDrawn(first, stroke.y) ? CapDistance(max(first.x - s, s - first.y), n, stroke.x, stroke.y) : 1e9;
+                float d2 = DashDrawn(next, stroke.y) ? CapDistance(max(next.x - s, s - next.y), n, stroke.x, stroke.y) : 1e9;
+                return min(d1, d2);
+            }
+            // A dash of an arc between the lengths span.x and span.y from the arc's start: inside its angles, the distance across the
+            // circle; past an end, the cap's distance in that end's frame (along the tangent beyond it, across along the radius).
+            float ArcDashDistance(float2 p, float s, float n, float2 span, float start, float r, float4 stroke)
+            {
+                bool before = s < span.x;
+                float at = start + (before ? span.x : span.y) / r;
+                float2 radial = float2(sin(at), -cos(at));
+                float2 tangent = (before ? -1 : 1) * float2(cos(at), sin(at));
+                float2 fromEnd = p - r * radial;
+                bool inside = s >= span.x && s <= span.y;
+                float along = inside ? max(span.x - s, s - span.y) : dot(fromEnd, tangent);
+                float across = inside ? n : dot(fromEnd, radial);
+                return DashDrawn(span, stroke.y) ? CapDistance(along, across, stroke.x, stroke.y) : 1e9;
+            }
+            float ArcDash(float2 q, float s, float n, float k, float r, float4 stroke, float4 more)
+            {
+                return ArcDashDistance(q, s, n, DashSpan(k, stroke.z, stroke.w, more.x, more.w), more.y, r, stroke);
+            }
+            // An arc of a circle with its caps and dashes: p's angle from the arc's start, taken in the turn centered on the arc's
+            // middle, so that a point just before the start is before it and not near the end. A flat or square cap juts out
+            // straight, past the circle, so outside the circle the dash before the nearest one can be nearer: three dashes count.
+            // On a whole circle the first and the last dashes meet at the seam (the start), so they are also measured with p's angle
+            // taken in the turn centered on the seam: the first from its start, the last from its end, a turn on. When both reach
+            // the seam they are one dash across it, with no ends there; a circle without dashes is that one dash, a ring.
+            float ArcDistance(float2 p, float4 circle, float4 stroke, float4 more)
+            {
+                float2 q = p - circle.xy;
+                float r = circle.z;
+                float total = more.w;
+                float relative = atan2(q.x, -q.y) - more.y;
+                float fromSeam = relative - 6.28318531 * floor((relative + 3.14159265) / 6.28318531);
+                float middle = more.z * 0.5;
+                relative -= 6.28318531 * floor((relative - middle + 3.14159265) / 6.28318531);
+                float s = relative * r;
+                float n = length(q) - r;
+                float k = floor((clamp(s, 0, total) + more.x) / stroke.w);
+                float d = min(ArcDash(q, s, n, k - 1, r, stroke, more), min(ArcDash(q, s, n, k, r, stroke, more), ArcDash(q, s, n, k + 1, r, stroke, more)));
+                float seam = fromSeam * r;
+                float first = floor(more.x / stroke.w);
+                float last = floor((total + more.x) / stroke.w);
+                float across = min(
+                    min(ArcDash(q, seam, n, first, r, stroke, more), ArcDash(q, seam, n, first + 1, r, stroke, more)),
+                    min(ArcDash(q, seam + total, n, last - 1, r, stroke, more), ArcDash(q, seam + total, n, last, r, stroke, more)));
+                float2 firstSpan = DashSpan(first, stroke.z, stroke.w, more.x, total);
+                float2 lastSpan = DashSpan(last, stroke.z, stroke.w, more.x, total);
+                bool joined = firstSpan.x <= 0 && lastSpan.y >= total && firstSpan.y > firstSpan.x && lastSpan.y > lastSpan.x;
+                float2 joinedSpan = float2(lastSpan.x - total, firstSpan.y);
+                across = min(across, joined ? ArcDashDistance(q, seam, n, joinedSpan, more.y, r, stroke) : 1e9);
+                return more.z > 6.2831 ? min(d, across) : d;
+            }
+            // The signed distance to an ellipse of radii ab around the origin: Inigo Quilez's iterative solver
+            // (https://iquilezles.org/articles/ellipsedist, MIT License), whose Newton steps on the angle of the nearest point need
+            // no branch. Five steps, as Flutter's uber_sdf.frag takes; they converge for an ellipse 100 times as wide as it is tall
+            // (CurveRenderTests.Ellipse_HundredToOne_IsAtItsTrueDistance).
+            float EllipseDistance(float2 p, float2 ab)
+            {
+                p = abs(p);
+                float2 q = ab * (p - ab);
+                float2 cs = normalize(q.x < q.y ? float2(0.01, 1) : float2(1, 0.01));
+                for (int i = 0; i < 5; i++)
+                {
+                    float2 u = ab * float2(cs.x, cs.y);
+                    float2 v = ab * float2(-cs.y, cs.x);
+                    float a = dot(p - u, v);
+                    float c = dot(p - u, u) + dot(v, v);
+                    float b = sqrt(max(c * c - a * a, 0));
+                    cs = float2(cs.x * b - cs.y * a, cs.y * b + cs.x * a) / c;
+                }
+                float d = length(p - ab * cs);
+                return dot(p / ab, p / ab) > 1 ? d : -d;
+            }
+            // A sector of a circle: Inigo Quilez's pie (MIT License) in the frame whose y runs through the sector's middle.
+            float SectorDistance(float2 p, float4 circle, float4 more)
+            {
+                float middle = more.y + more.z * 0.5;
+                float2 q = p - circle.xy;
+                float2 local = float2(abs(dot(q, float2(cos(middle), sin(middle)))), dot(q, float2(sin(middle), -cos(middle))));
+                float2 c = float2(sin(more.z * 0.5), cos(more.z * 0.5));
+                float l = length(local) - circle.z;
+                float m = length(local - c * clamp(dot(local, c), 0, circle.z));
+                return max(l, m * sign(c.y * local.x - c.x * local.y));
+            }
+            // A line, an ellipse, an arc, or a sector (row R4b): six rows from the instance's shape row, as D3D11Renderer.WriteCurve
+            // writes them. A pixel shader of its own, so that the shapes' and the glyphs' shader does not grow with it: inside PS,
+            // it made the GPU time of the frames scene 3 to 4 µs longer and that of the shapes scene 3 %. A line thinner than a pixel
+            // covers the share of the pixel it lies on (the second term takes off what is past its far side).
+            float4 PSCurve(VertexOut input) : SV_Target
+            {
+                float2 p = input.position.xy;
+                uint row = input.shape;
+                float4 straight = input.color;
+                float4 kind = Shapes.Load(row + 3);
+                float4 geometry = Shapes.Load(row);
+                float4 stroke = Shapes.Load(row + 1);
+                float4 more = Shapes.Load(row + 2);
+                float4 box = Shapes.Load(row + 4);
+                float d;
+                if (kind.x < 4.5)
+                {
+                    d = LineDistance(p, geometry, stroke, more);
+                }
+                else if (kind.x < 6.5)
+                {
+                    float e = EllipseDistance(p - geometry.xy, geometry.zw);
+                    d = kind.x < 5.5 ? e : abs(e) - stroke.x;
+                }
+                else if (kind.x < 7.5)
+                {
+                    d = ArcDistance(p, geometry, stroke, more);
+                }
+                else
+                {
+                    d = SectorDistance(p, geometry, more);
+                }
+                float alpha = saturate(0.5 - d) - saturate(0.5 - d - (kind.z > 0 ? kind.z : 1e9));
+                float4 color = kind.y >= 0 ? GradientColor(int(kind.y), p, box) : Premultiply(straight);
+                return color * alpha;
+            }
             // A rounded rectangle, its border, or a shadow (row R4): six rows from `row`, as D3D11Renderer.WriteShape writes them.
             float4 ShapeColor(float2 p, uint row, float4 straight)
             {
@@ -281,6 +432,45 @@ internal static class QuadShaders
                 output.alpha = float4(input.color.a * corrected, 1.0);
                 return output;
             }
+            // The premultiplied color of brushed text at the pixel (row R4): the gradient of the run's rows over the run's box.
+            float4 TextPaint(VertexOut input)
+            {
+                float4 kind = Shapes.Load(input.shape + 3);
+                return GradientColor(int(kind.y), input.position.xy, Shapes.Load(input.shape + 4));
+            }
+            float3 Straight(float4 paint) { return paint.a > 0 ? paint.rgb / paint.a : float3(0, 0, 0); }
+            // Grayscale and color glyphs with a gradient: PS's text, with the gradient's color at the pixel for the text's color.
+            float4 PSText(VertexOut input) : SV_Target
+            {
+                float4 paint = TextPaint(input);
+                if (input.atlas.w != 0)
+                {
+                    return AtlasColor.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)) * paint.a;
+                }
+
+                float coverage = Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0));
+                float brightness = dot(Straight(paint), float3(0.30, 0.59, 0.11));
+                float k = GrayscaleContrast * saturate(4.0 * (0.75 - brightness));
+                float contrasted = coverage * (k + 1.0) / (coverage * k + 1.0);
+                float4 g = GammaRatios;
+                return paint * saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * brightness + g.y) * contrasted + (g.z * brightness + g.w)));
+            }
+            // ClearType glyphs with a gradient: PSClearType, each channel corrected with the gradient's color at the pixel.
+            ClearTypeOut PSClearTypeText(VertexOut input)
+            {
+                float4 paint = TextPaint(input);
+                float3 coverage = AtlasRgb.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)).rgb;
+                coverage = IsBgr > 0.5 ? coverage.bgr : coverage;
+                float3 color = Straight(paint);
+                float k = ClearTypeContrast * saturate(4.0 * (0.75 - dot(color, float3(0.30, 0.59, 0.11))));
+                float3 contrasted = coverage * (k + 1.0) / (coverage * k + 1.0);
+                float4 g = GammaRatios;
+                float3 corrected = saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * color + g.y) * contrasted + (g.z * color + g.w)));
+                ClearTypeOut output;
+                output.foreground = float4(color, 1.0);
+                output.alpha = float4(paint.a * corrected, 1.0);
+                return output;
+            }
             """u8;
 
     /// <summary>
@@ -297,6 +487,21 @@ internal static class QuadShaders
     /// Gets the ClearType pixel shader's entry point, NUL-terminated.
     /// </summary>
     public static ReadOnlySpan<byte> ClearTypePixelEntry => "PSClearType\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of the pixel shader of lines, ellipses, arcs, and sectors, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> CurvePixelEntry => "PSCurve\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of the pixel shader of grayscale and color glyphs with a gradient, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> TextPixelEntry => "PSText\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of the pixel shader of ClearType glyphs with a gradient, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> ClearTypeTextPixelEntry => "PSClearTypeText\0"u8;
 
     /// <summary>
     /// Gets the vertex shader model, NUL-terminated (feature level 10.0 and up).

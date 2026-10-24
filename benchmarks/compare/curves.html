@@ -1,0 +1,62 @@
+<!doctype html>
+<!--
+  The SVG side of XylemUI.E2E's `curves` scene (roadmap row R4b, benchmarks/XylemUI.E2E/CurveGallery.cs): the same lines,
+  ellipses, and arcs, in logical pixels (CSS px), at the same positions in a 600 x 420 box of #F3F3F3. Open it in a browser at
+  100 % zoom on a display of the same scale as the window, and compare the two side by side. Start Edge with
+  --force-color-profile=srgb (every other Edge window closed): otherwise it converts the colors to the monitor's color profile,
+  and the blue looks more purple than XylemUI's, which writes the sRGB values as they are (the owner's check of PR #256).
+  XylemUI's angles start at the top and turn clockwise, as its conic gradient and CSS's do; SVG's arcs take end points, so each
+  arc's points below are XylemUI's angles worked out (x = cx + r sin a, y = cy - r cos a). A gradient on a stroke is in user space
+  over the box XylemUI gives it: the shape's box grown by half the width. A dashed circle starts at the top, as XylemUI's does
+  (an SVG circle starts at the right), so it is drawn as two arcs from the top.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Curves (SVG)</title>
+  <style>
+    body { margin: 0; background: #F3F3F3; }
+    svg { display: block; }
+  </style>
+</head>
+<body>
+  <svg width="600" height="420" viewBox="0 0 600 420" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <!-- Linear, 90 degrees, over the diagonal line's box (215, 25) to (335, 115): left to right. -->
+      <linearGradient id="linear" gradientUnits="userSpaceOnUse" x1="215" y1="70" x2="335" y2="70">
+        <stop offset="0" stop-color="#E02020"/><stop offset="1" stop-color="#2040E0"/>
+      </linearGradient>
+      <!-- Radial, center 0.5, radius 0.5 of the circle's box: the circle itself. -->
+      <radialGradient id="radial" gradientUnits="userSpaceOnUse" cx="520" cy="200" r="40">
+        <stop offset="0" stop-color="#F0E020"/><stop offset="1" stop-color="#E02020"/>
+      </radialGradient>
+      <!-- Linear, 0 degrees, over the arc's circle's box (55, 285) to (145, 375): bottom to top. -->
+      <linearGradient id="upward" gradientUnits="userSpaceOnUse" x1="100" y1="375" x2="100" y2="285">
+        <stop offset="0" stop-color="#E02020"/><stop offset="1" stop-color="#2040E0"/>
+      </linearGradient>
+    </defs>
+    <g fill="none">
+      <line x1="40" y1="40" x2="180" y2="40" stroke="#2040C0" stroke-width="12" stroke-linecap="butt"/>
+      <line x1="40" y1="70" x2="180" y2="70" stroke="#2040C0" stroke-width="12" stroke-linecap="round"/>
+      <line x1="40" y1="100" x2="180" y2="100" stroke="#2040C0" stroke-width="12" stroke-linecap="square"/>
+      <line x1="220" y1="30" x2="330" y2="110" stroke="url(#linear)" stroke-width="10" stroke-linecap="round"/>
+      <line x1="370" y1="35" x2="560" y2="35" stroke="#2040C0" stroke-width="1"/>
+      <line x1="370" y1="50" x2="560" y2="50" stroke="#2040C0" stroke-width="0.5"/>
+      <line x1="370" y1="75" x2="560" y2="75" stroke="#2040C0" stroke-width="6" stroke-dasharray="12 8"/>
+      <line x1="370" y1="100" x2="560" y2="100" stroke="#2040C0" stroke-width="6" stroke-linecap="round" stroke-dasharray="0 12"/>
+      <ellipse cx="100" cy="200" rx="60" ry="40" fill="#E02020"/>
+      <ellipse cx="250" cy="200" rx="70" ry="30" stroke="#2040E0" stroke-width="10"/>
+      <path d="M 400 160 A 40 40 0 1 1 400 240 A 40 40 0 1 1 400 160" stroke="#2040C0" stroke-width="6" stroke-dasharray="10 6"/>
+      <circle cx="520" cy="200" r="40" fill="url(#radial)"/>
+      <!-- From 0 degrees (100, 290) clockwise 270 degrees to (60, 330). -->
+      <path d="M 100 290 A 40 40 0 1 1 60 330" stroke="url(#upward)" stroke-width="10" stroke-linecap="round"/>
+      <!-- From 90 degrees (270, 330) counterclockwise 120 degrees to -30 degrees (210, 295.359). -->
+      <path d="M 270 330 A 40 40 0 0 0 210 295.359" stroke="#2040C0" stroke-width="10" stroke-linecap="square"/>
+      <!-- From 30 degrees (382.5, 291.029) clockwise 100 degrees to 130 degrees (394.472, 358.925). -->
+      <path d="M 360 330 L 382.5 291.029 A 45 45 0 0 1 394.472 358.925 Z" fill="#2040E0"/>
+      <path d="M 490 290 A 40 40 0 1 1 490 370 A 40 40 0 1 1 490 290" stroke="#E02020" stroke-opacity="0.502" stroke-width="10"
+        stroke-linecap="round" stroke-dasharray="4 3"/>
+    </g>
+  </svg>
+</body>
+</html>

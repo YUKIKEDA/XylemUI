@@ -16,4 +16,19 @@ public enum CommandTag : byte
 
     /// <summary>The shadow of a rounded rectangle (<see cref="ShadowCommand"/>, row R4).</summary>
     Shadow,
+
+    /// <summary>A straight line (<see cref="CurveCommand"/>, row R4).</summary>
+    Line,
+
+    /// <summary>A filled ellipse (<see cref="CurveCommand"/>, row R4).</summary>
+    FillEllipse,
+
+    /// <summary>The outline of an ellipse (<see cref="CurveCommand"/>, row R4).</summary>
+    StrokeEllipse,
+
+    /// <summary>An arc of a circle, or a dashed circle (<see cref="CurveCommand"/>, row R4).</summary>
+    Arc,
+
+    /// <summary>A filled sector of a circle (<see cref="CurveCommand"/>, row R4).</summary>
+    Sector,
 }
