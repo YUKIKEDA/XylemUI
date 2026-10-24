@@ -57,10 +57,19 @@ internal sealed class Scene : IDisposable
         [new(0, Color.FromRgb(0xCC3333)), new(1, Color.FromRgb(0x3366CC))]
     );
 
+    // A gradient for the curves scene, and the glyphs it draws with it, shaped once (row R4b).
+    private static readonly GradientBrush CurveGradient = GradientBrush.Linear(
+        90,
+        [new(0, Color.FromRgb(0xE8E8E8)), new(1, Color.FromRgb(0x3366CC))]
+    );
+
+    private ShapedGlyph[]? _brushedGlyphs;
+
     // The rectangles move with the frame number, so that every frame draws something new. The scene is in logical pixels, drawn at
     // the window's scale (row W1). With `shapes`, each rectangle is a rounded one with a gradient and a border over a shadow (row
-    // R4): two instances where the plain scene has one.
-    public void Build(int frame, int heavy = 0, bool shapes = false)
+    // R4): two instances where the plain scene has one. With `curves`, each is a dashed line with round caps, the outline of an
+    // ellipse, and an arc with a gradient (row R4b), and 125 runs of 8 glyphs (1,000 glyphs) are drawn with a gradient.
+    public void Build(int frame, int heavy = 0, bool shapes = false, bool curves = false)
     {
         Atlas.BeginFrame();
         float scale = Window.ScaleFactor;
@@ -72,6 +81,14 @@ internal sealed class Scene : IDisposable
         {
             float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
             float y = 50 + ((i * 11) % Math.Max(1, height - 70));
+            if (curves)
+            {
+                List.DrawLine(x, y, x + 16, y + 12, new Stroke(Color.FromRgb(0xCC3333), 2, LineCap.Round, new Dash(4, 3)));
+                List.DrawEllipse(x + 8, y + 8, 8, 5, new Stroke(Color.FromRgb(0x33AA66), 1.5f));
+                List.DrawArc(x + 8, y + 8, 6, frame % 360, 270, new Stroke(CurveGradient, 2, LineCap.Round));
+                continue;
+            }
+
             if (shapes)
             {
                 var radii = new CornerRadii(4);
@@ -84,6 +101,17 @@ internal sealed class Scene : IDisposable
         }
 
         _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage, IsAliased);
+        if (curves)
+        {
+            _brushedGlyphs ??= _shaper.Shape(_font, "日本語のテキスト", _japanese).ToArray();
+            for (int i = 0; i < 125; i++)
+            {
+                float x = (i % 5) * 150;
+                float baseline = 80 + ((i / 5) * 20);
+                _ = List.DrawText(_brushedGlyphs, _font, 16, Atlas, x, baseline, CurveGradient, x, baseline - 16, 140, 20, Coverage, IsAliased);
+            }
+        }
+
         for (int i = 0; i < heavy; i++)
         {
             List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));

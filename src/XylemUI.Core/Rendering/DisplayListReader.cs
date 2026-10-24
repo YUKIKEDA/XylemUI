@@ -16,14 +16,18 @@ public ref struct DisplayListReader
     private readonly ReadOnlySpan<uint> _colors;
     private readonly ReadOnlySpan<int> _runLengths;
     private readonly ReadOnlySpan<GlyphCoverage> _runCoverages;
+    private readonly ReadOnlySpan<int> _runPaints;
     private readonly ReadOnlySpan<GlyphInstance> _glyphs;
     private readonly ReadOnlySpan<ShapeRecord> _shapes;
+    private readonly ReadOnlySpan<CurveRecord> _curves;
+    private readonly ReadOnlySpan<TextPaint> _textPaints;
     private int _command;
     private int _rect;
     private int _color;
     private int _run;
     private int _glyph;
     private int _shape;
+    private int _curve;
     private CommandTag? _current;
 
     internal DisplayListReader(DisplayList list)
@@ -33,14 +37,17 @@ public ref struct DisplayListReader
         _colors = list.Colors;
         _runLengths = list.RunLengths;
         _runCoverages = list.RunCoverages;
+        _runPaints = list.RunPaints;
         _glyphs = list.Glyphs;
         _shapes = list.Shapes;
+        _curves = list.Curves;
+        _textPaints = list.TextPaints;
         Brushes = list.Brushes;
     }
 
     /// <summary>
-    /// Gets the gradients of the list, in the order of their first use: <see cref="ShapeCommand.FillBrush"/> and
-    /// <see cref="ShapeCommand.BorderBrush"/> index into it.
+    /// Gets the gradients of the list, in the order of their first use: <see cref="ShapeCommand.FillBrush"/>,
+    /// <see cref="ShapeCommand.BorderBrush"/>, <see cref="CurveCommand.Brush"/>, and <see cref="GlyphRunCommand.Brush"/> index into it.
     /// </summary>
     public ReadOnlySpan<GradientBrush> Brushes { get; }
 
@@ -64,6 +71,7 @@ public ref struct DisplayListReader
                 || _run != _runLengths.Length
                 || _glyph != _glyphs.Length
                 || _shape != _shapes.Length
+                || _curve != _curves.Length
             )
             {
                 Invariant.Fail("A display list stream has data left after its last command.");
@@ -112,7 +120,48 @@ public ref struct DisplayListReader
         int length = _runLengths[_run++];
         ReadOnlySpan<GlyphInstance> glyphs = _glyphs.Slice(_glyph, length);
         _glyph += length;
-        return new GlyphRunCommand(Unpack(_colors[_color++]), glyphs, coverage);
+        int paint = _runPaints[_run - 1];
+        Color color = Unpack(_colors[_color++]);
+        if (paint < 0)
+        {
+            return new GlyphRunCommand(color, glyphs, coverage);
+        }
+
+        TextPaint text = _textPaints[paint];
+        return new GlyphRunCommand(color, glyphs, coverage, text.Brush, text.Box);
+    }
+
+    /// <summary>
+    /// Reads the current command as a line, an ellipse, an arc, or a sector (<see cref="CommandTag.Line"/> to
+    /// <see cref="CommandTag.Sector"/>).
+    /// </summary>
+    /// <returns>The command.</returns>
+    public CurveCommand ReadCurve()
+    {
+        if (_current is not (CommandTag.Line or CommandTag.FillEllipse or CommandTag.StrokeEllipse or CommandTag.Arc or CommandTag.Sector))
+        {
+            Invariant.Fail("ReadCurve was called for a command that is not a line, an ellipse, an arc, or a sector.");
+        }
+
+        _current = null;
+        ReadOnlySpan<float> geometry = _rects.Slice(_rect, 4);
+        _rect += 4;
+        Color color = Unpack(_colors[_color++]);
+        ref readonly CurveRecord record = ref _curves[_curve++];
+        return new CurveCommand(
+            geometry[0],
+            geometry[1],
+            geometry[2],
+            geometry[3],
+            color,
+            record.Brush,
+            record.Box,
+            record.Width,
+            record.Cap,
+            record.HasDash ? record.Dash : null,
+            record.StartAngle,
+            record.SweepAngle
+        );
     }
 
     /// <summary>

@@ -42,11 +42,21 @@ namespace XylemUI.Rendering.D3D11;
 /// </remarks>
 public sealed unsafe class D3D11Renderer : IDisposable
 {
-    // The rows of one Shape or Shadow command in the shape buffer, and the kinds QuadShaders' ShapeColor tells apart.
+    // The rows of one command in the shape buffer, and the kinds QuadShaders' ShapeColor tells apart (row R4). Brushed text's rows
+    // have the kind of text, which only the text shaders read.
     private const int ShapeRows = 6;
     private const float ShapeKind = 1;
     private const float OuterShadowKind = 2;
     private const float InsetShadowKind = 3;
+    private const float LineKind = 4;
+    private const float FillEllipseKind = 5;
+    private const float StrokeEllipseKind = 6;
+    private const float ArcKind = 7;
+    private const float SectorKind = 8;
+    private const float TextKind = 9;
+
+    // The period of a line without dashes: one dash as long as the line, and a gap no frame reaches.
+    private const float NoDashGap = 1e9f;
 
     private const uint SwapChainFlags = (uint)DXGI_SWAP_CHAIN_FLAG.DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
     private const DXGI_FORMAT BackBufferFormat = DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -57,6 +67,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly ID3D11VertexShader* _vertexShader;
     private readonly ID3D11PixelShader* _pixelShader;
     private readonly ID3D11PixelShader* _clearTypePixelShader;
+    private readonly ID3D11PixelShader* _curvePixelShader;
+    private readonly ID3D11PixelShader* _textPixelShader;
+    private readonly ID3D11PixelShader* _clearTypeTextPixelShader;
     private readonly ID3D11InputLayout* _inputLayout;
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
@@ -99,6 +112,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _vertexShader = CreateVertexShader(device, out _inputLayout);
             _pixelShader = CreatePixelShader(device, QuadShaders.PixelEntry);
             _clearTypePixelShader = CreatePixelShader(device, QuadShaders.ClearTypePixelEntry);
+            _curvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry);
+            _textPixelShader = CreatePixelShader(device, QuadShaders.TextPixelEntry);
+            _clearTypeTextPixelShader = CreatePixelShader(device, QuadShaders.ClearTypeTextPixelEntry);
             _targetConstants = CreateBuffer(device, 48, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
             _blend = CreateBlendState(device);
             _clearTypeBlend = CreateClearTypeBlendState(device);
@@ -322,6 +338,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
         Release((IUnknown*)_blend);
         Release((IUnknown*)_targetConstants);
         Release((IUnknown*)_inputLayout);
+        Release((IUnknown*)_clearTypeTextPixelShader);
+        Release((IUnknown*)_textPixelShader);
+        Release((IUnknown*)_curvePixelShader);
         Release((IUnknown*)_clearTypePixelShader);
         Release((IUnknown*)_pixelShader);
         Release((IUnknown*)_vertexShader);
@@ -422,8 +441,17 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _context->PSSetShaderResources(0, 5, atlasViews);
         foreach (DrawRange draw in _draws.AsSpan(0, draws))
         {
-            _context->PSSetShader(draw.ClearType ? _clearTypePixelShader : _pixelShader, null, 0);
-            _context->OMSetBlendState(draw.ClearType ? _clearTypeBlend : _blend, null, uint.MaxValue);
+            ID3D11PixelShader* shader = draw.Pixel switch
+            {
+                PixelKind.ClearType => _clearTypePixelShader,
+                PixelKind.Curve => _curvePixelShader,
+                PixelKind.Text => _textPixelShader,
+                PixelKind.ClearTypeText => _clearTypeTextPixelShader,
+                _ => _pixelShader,
+            };
+            bool clearType = draw.Pixel is PixelKind.ClearType or PixelKind.ClearTypeText;
+            _context->PSSetShader(shader, null, 0);
+            _context->OMSetBlendState(clearType ? _clearTypeBlend : _blend, null, uint.MaxValue);
             _context->DrawInstanced(4, (uint)draw.Count, 0, (uint)draw.Start);
         }
 
@@ -937,7 +965,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             {
                 if (tag == CommandTag.FillRect)
                 {
-                    draws = AddToDraw(draws, i, clearType: false);
+                    draws = AddToDraw(draws, i, PixelKind.Main);
                     FillRectCommand rect = reader.ReadFillRect();
                     destination[i++] = new QuadInstance
                     {
@@ -949,20 +977,39 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 }
                 else if (tag == CommandTag.Shape)
                 {
-                    draws = AddToDraw(draws, i, clearType: false);
+                    draws = AddToDraw(draws, i, PixelKind.Main);
                     destination[i++] = WriteShape(reader.ReadShape(), shapes, shape);
                     shape += ShapeRows;
                 }
                 else if (tag == CommandTag.Shadow)
                 {
-                    draws = AddToDraw(draws, i, clearType: false);
+                    draws = AddToDraw(draws, i, PixelKind.Main);
                     destination[i++] = WriteShadow(reader.ReadShadow(), shapes, shape);
+                    shape += ShapeRows;
+                }
+                else if (tag != CommandTag.GlyphRun)
+                {
+                    draws = AddToDraw(draws, i, PixelKind.Curve);
+                    destination[i++] = WriteCurve(tag, reader.ReadCurve(), shapes, shape);
                     shape += ShapeRows;
                 }
                 else
                 {
                     GlyphRunCommand run = reader.ReadGlyphRun();
-                    draws = AddToDraw(draws, i, run.Coverage == GlyphCoverage.Rgb);
+                    bool clearType = run.Coverage == GlyphCoverage.Rgb;
+                    uint paintRow = QuadInstance.NoShape;
+                    if (run.Brush >= 0)
+                    {
+                        paintRow = (uint)shape;
+                        shapes.Slice(shape, ShapeRows).Clear();
+                        shapes[shape + 3] = new Vector4(TextKind, BrushRow(run.Brush), 0, 0);
+                        shapes[shape + 4] = run.Box;
+                        shape += ShapeRows;
+                    }
+
+                    PixelKind pixel =
+                        run.Brush >= 0 ? (clearType ? PixelKind.ClearTypeText : PixelKind.Text) : (clearType ? PixelKind.ClearType : PixelKind.Main);
+                    draws = AddToDraw(draws, i, pixel);
                     uint color = run.Color.Packed;
                     uint kind = run.Coverage == GlyphCoverage.Color ? QuadInstance.ColorPage : 0;
                     foreach (GlyphInstance glyph in run.Glyphs)
@@ -973,7 +1020,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
                             Color = color,
                             AtlasOrigin = (uint)glyph.AtlasX | ((uint)glyph.AtlasY << 16),
                             Page = (uint)glyph.Page | kind,
-                            Shape = QuadInstance.NoShape,
+                            Shape = paintRow,
                         };
                     }
                 }
@@ -1057,6 +1104,58 @@ public sealed unsafe class D3D11Renderer : IDisposable
         };
     }
 
+    // The six rows of a line, an ellipse, an arc, or a sector, as QuadShaders' CurveColor reads them: the geometry; half the width,
+    // the cap, the dash's length, and the dash's period; the dash's offset and the arc's start and sweep; the kind with the row of
+    // the gradient and the width (0 for a fill); the gradient's box; and nothing. A line without dashes is one dash as long as the
+    // line. The quad is the shape's box grown by the half width, the caps, and a pixel for the antialiasing.
+    private QuadInstance WriteCurve(CommandTag tag, in CurveCommand command, Span<Vector4> rows, int row)
+    {
+        float half = command.Width * 0.5f;
+        float kind = tag switch
+        {
+            CommandTag.Line => LineKind,
+            CommandTag.FillEllipse => FillEllipseKind,
+            CommandTag.StrokeEllipse => StrokeEllipseKind,
+            CommandTag.Arc => ArcKind,
+            _ => SectorKind,
+        };
+        float length =
+            tag == CommandTag.Line
+                ? Vector2.Distance(new Vector2(command.A, command.B), new Vector2(command.C, command.D))
+                : command.SweepAngle * command.C;
+        Dash dash = command.Dash ?? new Dash(length, NoDashGap);
+        rows[row] = new Vector4(command.A, command.B, command.C, command.D);
+        rows[row + 1] = new Vector4(half, (float)command.Cap, dash.On, dash.On + dash.Off);
+        rows[row + 2] = new Vector4(dash.Offset, command.StartAngle, command.SweepAngle, length);
+        rows[row + 3] = new Vector4(kind, BrushRow(command.Brush), command.Width, 0);
+        rows[row + 4] = command.Box;
+        rows[row + 5] = default;
+
+        // Square caps reach half the width past an end along the line and as far to the side, so √2 times it from the end.
+        float margin = (half * 1.4143f) + 1;
+        Vector4 quad =
+            tag == CommandTag.Line
+                ? new Vector4(
+                    MathF.Min(command.A, command.C) - margin,
+                    MathF.Min(command.B, command.D) - margin,
+                    MathF.Abs(command.C - command.A) + (2 * margin),
+                    MathF.Abs(command.D - command.B) + (2 * margin)
+                )
+                : new Vector4(
+                    command.A - command.C - margin,
+                    command.B - (tag is CommandTag.FillEllipse or CommandTag.StrokeEllipse ? command.D : command.C) - margin,
+                    (2 * command.C) + (2 * margin),
+                    (2 * (tag is CommandTag.FillEllipse or CommandTag.StrokeEllipse ? command.D : command.C)) + (2 * margin)
+                );
+        return new QuadInstance
+        {
+            Rect = quad,
+            Color = command.Color.Packed,
+            Page = QuadInstance.SolidPage,
+            Shape = (uint)row,
+        };
+    }
+
     // CSS's spread radius: a rounded corner grows with the spread (and shrinks with a negative one); a square corner stays square.
     private static float Grown(float radius, float spread) => radius > 0 ? MathF.Max(0, radius + spread) : 0;
 
@@ -1101,10 +1200,10 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _brushRows.Unmap(_context);
     }
 
-    // The draw of the instance at `start`: the last one when its blend state is the same, else a new one that ends the last.
-    private int AddToDraw(int draws, int start, bool clearType)
+    // The draw of the instance at `start`: the last one when its pixel shader is the same, else a new one that ends the last.
+    private int AddToDraw(int draws, int start, PixelKind pixel)
     {
-        if (draws > 0 && _draws[draws - 1].ClearType == clearType)
+        if (draws > 0 && _draws[draws - 1].Pixel == pixel)
         {
             return draws;
         }
@@ -1120,7 +1219,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             GrowDraws();
         }
 
-        _draws[draws] = new DrawRange { Start = start, ClearType = clearType };
+        _draws[draws] = new DrawRange { Start = start, Pixel = pixel };
         return draws + 1;
     }
 
@@ -1153,12 +1252,24 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _instanceCapacity = capacity;
     }
 
-    // A range of the instance buffer drawn with one blend state.
+    // The pixel shader of a draw: the rectangles', shapes', and grayscale and color glyphs'; ClearType glyphs'; lines', ellipses',
+    // and arcs'; and the two for glyphs with a gradient. Each kind added in row R4b has a shader of its own, so that the main one
+    // does not grow with it (docs/benchmarks/r4b-curves.md): a draw starts where the kind changes.
+    private enum PixelKind : byte
+    {
+        Main,
+        ClearType,
+        Curve,
+        Text,
+        ClearTypeText,
+    }
+
+    // A range of the instance buffer drawn with one pixel shader and one blend state.
     private struct DrawRange
     {
         public int Start;
         public int Count;
-        public bool ClearType;
+        public PixelKind Pixel;
     }
 
     // The texture array of one kind of the atlas's pages, a slice per page, and the id of the page each slice holds.

@@ -270,7 +270,7 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
             Assert.Equal(growth, list.GrowthCount);
         });
 
-    private static GradientBrush Brush(string kind)
+    internal static GradientBrush Brush(string kind)
     {
         GradientStop[] redToBlue = [new(0, Color.FromRgb(0xE02020)), new(1, Color.FromRgb(0x2040E0))];
         return kind switch
@@ -303,7 +303,7 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
 
     // Draws the frame `write` writes over the clear color, reads every pixel of `area` grown by 2, and compares it with the
     // reference over the clear color. Returns the largest difference of a channel.
-    private static int Compare(Action<DisplayList> write, Vector4 area, Func<Vector2, Vector4> reference, int tolerance)
+    internal static int Compare(Action<DisplayList> write, Vector4 area, Func<Vector2, Vector4> reference, int tolerance)
     {
         using var window = new Win32Window("shapes", 240, 160);
         (int width, int height) = window.ClientSize;

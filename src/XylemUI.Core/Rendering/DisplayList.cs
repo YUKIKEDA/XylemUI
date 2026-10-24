@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -12,7 +13,7 @@ namespace XylemUI;
 /// <remarks>
 /// <see cref="Reset"/> keeps the arrays and only forgets how much of them is used, so a steady-state frame writes into the
 /// slots of the last one and allocates nothing. A stream grows, to twice its size, only when a frame needs more.
-/// <see cref="DrawText"/> writes the glyphs the atlas has and leaves room for the others; <see cref="ResolveGlyphs"/> fills it
+/// <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> writes the glyphs the atlas has and leaves room for the others; <see cref="ResolveGlyphs"/> fills it
 /// before the list is read (design §5.0.3, "Glyphs seen for the first time").
 /// </remarks>
 public sealed class DisplayList
@@ -27,6 +28,7 @@ public sealed class DisplayList
     private uint[] _colors;
     private int[] _runLengths;
     private GlyphCoverage[] _runCoverages;
+    private int[] _runPaints;
     private GlyphInstance[] _glyphs;
 
     // What only ResolveGlyphs uses, apart from the streams, after the fields of a frame with nothing pending, which keep their
@@ -38,6 +40,9 @@ public sealed class DisplayList
     private long _brushFrame;
     private int _usedShapes;
     private int _brushCount;
+    private int _usedCurves;
+    private int _textPaintCount;
+    private int _brushedRuns;
     private int _usedRects;
     private int _usedColors;
     private int _usedRuns;
@@ -57,6 +62,7 @@ public sealed class DisplayList
         _colors = new uint[commandCapacity];
         _runLengths = new int[commandCapacity];
         _runCoverages = new GlyphCoverage[commandCapacity];
+        _runPaints = new int[commandCapacity];
         _glyphs = new GlyphInstance[glyphCapacity];
     }
 
@@ -76,13 +82,13 @@ public sealed class DisplayList
     public int GrowthCount { get; private set; }
 
     /// <summary>
-    /// Gets the number of Shape and Shadow commands written since the last <see cref="Reset"/> (row R4), for a renderer that sizes
-    /// its buffers.
+    /// Gets the number of commands written since the last <see cref="Reset"/> that carry values beyond a rectangle and a color
+    /// (row R4): shapes, shadows, lines, ellipses, arcs, sectors, and glyph runs with a gradient. A renderer sizes its buffers by it.
     /// </summary>
-    public int ShapeCount => _usedShapes;
+    public int ShapeCount => _usedShapes + _usedCurves + _brushedRuns;
 
     /// <summary>
-    /// Gets a value indicating whether <see cref="DrawText"/> left room for glyphs that <see cref="ResolveGlyphs"/> has not filled
+    /// Gets a value indicating whether <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> left room for glyphs that <see cref="ResolveGlyphs"/> has not filled
     /// yet. Such a list cannot be read.
     /// </summary>
     public bool HasPendingGlyphs => _pendingCount > 0;
@@ -118,6 +124,9 @@ public sealed class DisplayList
         _pendingCount = 0;
         _usedShapes = 0;
         _brushCount = 0;
+        _usedCurves = 0;
+        _textPaintCount = 0;
+        _brushedRuns = 0;
     }
 
     /// <summary>
@@ -212,6 +221,183 @@ public sealed class DisplayList
     }
 
     /// <summary>
+    /// Appends a straight line between two points given in logical pixels (design §5.0, "The API of lines, ellipses, arcs, and the
+    /// paint of text"). The line lies on the middle of the segment and is not put on pixels; draw a line that must sit on pixels,
+    /// such as a separator, with <see cref="FillRect(float, float, float, float, Color)"/>. A line of length 0 draws only its caps,
+    /// so nothing with <see cref="LineCap.Flat"/>.
+    /// </summary>
+    /// <param name="x1">The first end's x, in logical pixels.</param>
+    /// <param name="y1">The first end's y.</param>
+    /// <param name="x2">The second end's x.</param>
+    /// <param name="y2">The second end's y.</param>
+    /// <param name="stroke">How the line is drawn; its dashes start at the first end.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The stroke's width is negative or not a number.</exception>
+    /// <exception cref="ArgumentException">The stroke's dash pattern is not valid.</exception>
+    public void DrawLine(float x1, float y1, float x2, float y2, in Stroke stroke)
+    {
+        float scale = Scale;
+        float width = StrokeWidth(stroke, scale, out Dash dash, out bool dashed);
+        if (width == 0 || (x1 == x2 && y1 == y2 && stroke.Cap == LineCap.Flat))
+        {
+            return;
+        }
+
+        float ax = x1 * scale;
+        float ay = y1 * scale;
+        float bx = x2 * scale;
+        float by = y2 * scale;
+        float half = width * 0.5f;
+        ref CurveRecord record = ref AppendCurve(CommandTag.Line, ax, ay, bx, by, stroke.Paint.Color);
+        record = default;
+        record.Brush = BrushIndex(stroke.Paint.Gradient);
+        record.Box = new Vector4(MathF.Min(ax, bx) - half, MathF.Min(ay, by) - half, MathF.Abs(bx - ax) + width, MathF.Abs(by - ay) + width);
+        record.Width = width;
+        record.Cap = stroke.Cap;
+        record.HasDash = dashed;
+        record.Dash = dash;
+    }
+
+    /// <summary>
+    /// Appends a filled ellipse given by its center and radii in logical pixels. An ellipse with a radius of 0 draws nothing.
+    /// </summary>
+    /// <param name="centerX">The center's x, in logical pixels.</param>
+    /// <param name="centerY">The center's y.</param>
+    /// <param name="radiusX">The radius along x.</param>
+    /// <param name="radiusY">The radius along y.</param>
+    /// <param name="fill">The paint; a gradient's fractions are of the ellipse's box.</param>
+    /// <exception cref="ArgumentOutOfRangeException">A radius is negative or not a number.</exception>
+    public void FillEllipse(float centerX, float centerY, float radiusX, float radiusY, in Paint fill)
+    {
+        CheckRadius(radiusX, nameof(radiusX));
+        CheckRadius(radiusY, nameof(radiusY));
+        if (radiusX == 0 || radiusY == 0)
+        {
+            return;
+        }
+
+        float scale = Scale;
+        float cx = centerX * scale;
+        float cy = centerY * scale;
+        float rx = radiusX * scale;
+        float ry = radiusY * scale;
+        ref CurveRecord record = ref AppendCurve(CommandTag.FillEllipse, cx, cy, rx, ry, fill.Color);
+        record = default;
+        record.Brush = BrushIndex(fill.Gradient);
+        record.Box = new Vector4(cx - rx, cy - ry, 2 * rx, 2 * ry);
+    }
+
+    /// <summary>
+    /// Appends the outline of an ellipse given by its center and radii in logical pixels. A dashed outline needs equal radii (a
+    /// circle), whose dashes start at the top and run clockwise; the dashes of an ellipse come with roadmap row R5. A radius or a
+    /// width of 0 draws nothing.
+    /// </summary>
+    /// <param name="centerX">The center's x, in logical pixels.</param>
+    /// <param name="centerY">The center's y.</param>
+    /// <param name="radiusX">The radius along x, to the middle of the line.</param>
+    /// <param name="radiusY">The radius along y.</param>
+    /// <param name="stroke">How the outline is drawn; a gradient's fractions are of the ellipse's box grown by half the width.</param>
+    /// <exception cref="ArgumentOutOfRangeException">A radius or the stroke's width is negative or not a number.</exception>
+    /// <exception cref="ArgumentException">The dash pattern is not valid, or the ellipse with a dash pattern is not a circle.</exception>
+    public void DrawEllipse(float centerX, float centerY, float radiusX, float radiusY, in Stroke stroke)
+    {
+        CheckRadius(radiusX, nameof(radiusX));
+        CheckRadius(radiusY, nameof(radiusY));
+        float scale = Scale;
+        float width = StrokeWidth(stroke, scale, out Dash dash, out bool dashed);
+        if (dashed && radiusX != radiusY)
+        {
+            throw new ArgumentException("A dashed outline is that of a circle: the dashes of an ellipse come with row R5.", nameof(stroke));
+        }
+
+        if (width == 0 || radiusX == 0 || radiusY == 0)
+        {
+            return;
+        }
+
+        if (dashed)
+        {
+            AppendArc(CommandTag.Arc, centerX, centerY, radiusX, 0, MathF.Tau, stroke.Paint, width, stroke.Cap, dash);
+            return;
+        }
+
+        float cx = centerX * scale;
+        float cy = centerY * scale;
+        float rx = radiusX * scale;
+        float ry = radiusY * scale;
+        float half = width * 0.5f;
+        ref CurveRecord record = ref AppendCurve(CommandTag.StrokeEllipse, cx, cy, rx, ry, stroke.Paint.Color);
+        record = default;
+        record.Brush = BrushIndex(stroke.Paint.Gradient);
+        record.Box = new Vector4(cx - rx - half, cy - ry - half, (2 * rx) + width, (2 * ry) + width);
+        record.Width = width;
+    }
+
+    /// <summary>
+    /// Appends an open arc of a circle, given in logical pixels and degrees: 0 degrees is up, and a positive sweep runs clockwise,
+    /// as XylemUI's linear and conic gradients and CSS turn. A sweep of 360 degrees or more is a circle without caps; a sweep of 0
+    /// draws only the caps. A radius or a width of 0 draws nothing.
+    /// </summary>
+    /// <param name="centerX">The center's x, in logical pixels.</param>
+    /// <param name="centerY">The center's y.</param>
+    /// <param name="radius">The radius, to the middle of the line.</param>
+    /// <param name="startAngle">Where the arc starts, in degrees clockwise from up.</param>
+    /// <param name="sweepAngle">How far it runs, in degrees: clockwise when positive, counterclockwise when negative.</param>
+    /// <param name="stroke">
+    /// How the arc is drawn; its dashes start at <paramref name="startAngle"/>, and a gradient's fractions are of the whole circle's
+    /// box grown by half the width.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">The radius or the width is negative or not a number, or an angle is not a number.</exception>
+    /// <exception cref="ArgumentException">The dash pattern is not valid.</exception>
+    public void DrawArc(float centerX, float centerY, float radius, float startAngle, float sweepAngle, in Stroke stroke)
+    {
+        CheckRadius(radius, nameof(radius));
+        CheckAngle(startAngle, nameof(startAngle));
+        CheckAngle(sweepAngle, nameof(sweepAngle));
+        float width = StrokeWidth(stroke, Scale, out Dash dash, out bool dashed);
+        if (width == 0 || radius == 0 || (sweepAngle == 0 && stroke.Cap == LineCap.Flat))
+        {
+            return;
+        }
+
+        float start = startAngle * (MathF.PI / 180);
+        float sweep = sweepAngle * (MathF.PI / 180);
+        AppendArc(CommandTag.Arc, centerX, centerY, radius, start, sweep, stroke.Paint, width, stroke.Cap, dashed ? dash : null);
+    }
+
+    /// <summary>
+    /// Appends a filled sector of a circle: the part between the center and an arc, given as <see cref="DrawArc"/> gives one. A
+    /// sweep of 360 degrees or more is the whole disc; a radius or a sweep of 0 draws nothing.
+    /// </summary>
+    /// <param name="centerX">The center's x, in logical pixels.</param>
+    /// <param name="centerY">The center's y.</param>
+    /// <param name="radius">The radius.</param>
+    /// <param name="startAngle">Where the sector starts, in degrees clockwise from up.</param>
+    /// <param name="sweepAngle">How far it runs, in degrees: clockwise when positive, counterclockwise when negative.</param>
+    /// <param name="fill">The paint; a gradient's fractions are of the whole circle's box.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The radius is negative or not a number, or an angle is not a number.</exception>
+    public void FillSector(float centerX, float centerY, float radius, float startAngle, float sweepAngle, in Paint fill)
+    {
+        CheckRadius(radius, nameof(radius));
+        CheckAngle(startAngle, nameof(startAngle));
+        CheckAngle(sweepAngle, nameof(sweepAngle));
+        if (radius == 0 || sweepAngle == 0)
+        {
+            return;
+        }
+
+        // A whole disc is a circle, which has no seam where the sector's two sides would meet.
+        if (MathF.Abs(sweepAngle) >= 360)
+        {
+            FillEllipse(centerX, centerY, radius, radius, fill);
+            return;
+        }
+
+        float start = startAngle * (MathF.PI / 180);
+        float sweep = sweepAngle * (MathF.PI / 180);
+        AppendArc(CommandTag.Sector, centerX, centerY, radius, start, sweep, fill, 0, LineCap.Flat, null);
+    }
+
+    /// <summary>
     /// Appends a run of glyphs in one color, whose coverage is already in the glyph atlas. An empty run appends nothing.
     /// </summary>
     /// <param name="glyphs">The glyphs.</param>
@@ -225,7 +411,7 @@ public sealed class DisplayList
         }
 
         glyphs.CopyTo(ReserveGlyphs(glyphs.Length));
-        EndGlyphRun(glyphs.Length, color, coverage);
+        EndGlyphRun(glyphs.Length, color, coverage, -1);
     }
 
     /// <summary>
@@ -269,6 +455,89 @@ public sealed class DisplayList
         Color color,
         GlyphCoverage coverage = GlyphCoverage.Gray,
         bool aliased = false
+    ) => DrawText(glyphs, font, size, atlas, x, baseline, color, -1, coverage, aliased);
+
+    /// <summary>
+    /// Appends shaped text painted with a gradient over a box given in logical pixels, placed as
+    /// <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> places
+    /// it (design §5.0, "The API of lines, ellipses, arcs, and the paint of text"). Each pixel takes the gradient's color there, and
+    /// grayscale and ClearType coverage are corrected with that color. The box is the gradient's: a component passes its own (for
+    /// text of several lines, the box of all of them), so that the gradient runs on across the lines, as CSS's
+    /// <c>background-clip: text</c> takes the element's box.
+    /// </summary>
+    /// <param name="glyphs">The glyphs, from <see cref="TextShaper.Shape"/> with <paramref name="font"/>.</param>
+    /// <param name="font">The font the glyphs were shaped with.</param>
+    /// <param name="size">The size in logical pixels per em.</param>
+    /// <param name="atlas">The glyph atlas the renderer draws from.</param>
+    /// <param name="x">The pen's start, in logical pixels.</param>
+    /// <param name="baseline">The baseline, in logical pixels from the top.</param>
+    /// <param name="brush">The gradient.</param>
+    /// <param name="boxX">The left edge of the gradient's box, in logical pixels.</param>
+    /// <param name="boxY">The top edge of the box.</param>
+    /// <param name="boxWidth">The width of the box.</param>
+    /// <param name="boxHeight">The height of the box.</param>
+    /// <param name="coverage">Grayscale, or ClearType where the window allows it.</param>
+    /// <param name="aliased">Whether the glyphs are bilevel.</param>
+    /// <returns>The advance of the text, in logical pixels.</returns>
+    /// <remarks>
+    /// A color glyph (an emoji) keeps its colors and takes the gradient's alpha. Its layers in the text's color are drawn in the
+    /// brush's first color made opaque: the atlas holds them drawn, so their color cannot change from pixel to pixel.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="size"/> is not a positive number, or the box's edges are not numbers or its width or height is not a
+    /// positive number.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="aliased"/> is set with ClearType coverage.</exception>
+    public float DrawText(
+        ReadOnlySpan<ShapedGlyph> glyphs,
+        Font font,
+        float size,
+        GlyphAtlas atlas,
+        float x,
+        float baseline,
+        GradientBrush brush,
+        float boxX,
+        float boxY,
+        float boxWidth,
+        float boxHeight,
+        GlyphCoverage coverage = GlyphCoverage.Gray,
+        bool aliased = false
+    )
+    {
+        ArgumentNullException.ThrowIfNull(brush);
+        bool edges = float.IsFinite(boxX) && float.IsFinite(boxY) && float.IsFinite(boxWidth) && float.IsFinite(boxHeight);
+        if (!edges || !(boxWidth > 0) || !(boxHeight > 0))
+        {
+            throw new ArgumentOutOfRangeException(nameof(boxWidth), "The box's edges are numbers and its width and height are positive.");
+        }
+
+        float scale = Scale;
+        ShapeStreams streams = _shapeStreams ??= new ShapeStreams();
+        if (_textPaintCount == streams.TextPaints.Length)
+        {
+            Array.Resize(ref streams.TextPaints, streams.TextPaints.Length * 2);
+            GrowthCount++;
+        }
+
+        int paint = _textPaintCount++;
+        var box = new Vector4(boxX * scale, boxY * scale, boxWidth * scale, boxHeight * scale);
+        streams.TextPaints[paint] = new TextPaint(BrushIndex(brush), box);
+        Color first = brush.Stops[0].Color;
+        return DrawText(glyphs, font, size, atlas, x, baseline, new Color(first.R, first.G, first.B), paint, coverage, aliased);
+    }
+
+    // `color` is the text's color, which a color glyph's layers in the text's color take; `paint` is the text's gradient, or -1.
+    private float DrawText(
+        ReadOnlySpan<ShapedGlyph> glyphs,
+        Font font,
+        float size,
+        GlyphAtlas atlas,
+        float x,
+        float baseline,
+        Color color,
+        int paint,
+        GlyphCoverage coverage,
+        bool aliased
     )
     {
         ArgumentNullException.ThrowIfNull(font);
@@ -310,7 +579,7 @@ public sealed class DisplayList
                 {
                     if (written > runStart)
                     {
-                        EndGlyphRun(written - runStart, color, runCoverage);
+                        EndGlyphRun(written - runStart, color, runCoverage, paint);
                         runStart = written;
                     }
 
@@ -327,7 +596,7 @@ public sealed class DisplayList
                 {
                     if (written > runStart)
                     {
-                        EndGlyphRun(written - runStart, color, runCoverage);
+                        EndGlyphRun(written - runStart, color, runCoverage, paint);
                         runStart = written;
                     }
 
@@ -343,14 +612,14 @@ public sealed class DisplayList
 
         if (written > runStart)
         {
-            EndGlyphRun(written - runStart, color, runCoverage);
+            EndGlyphRun(written - runStart, color, runCoverage, paint);
         }
 
         return pen * (size / font.UnitsPerEm);
     }
 
     /// <summary>
-    /// Rasterizes the glyphs <see cref="DrawText"/> left room for, together (on the atlas's worker threads when there are enough),
+    /// Rasterizes the glyphs <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> left room for, together (on the atlas's worker threads when there are enough),
     /// and fills their room: a glyph with no ink or one the atlas refuses leaves the list, and a run splits where a glyph turns out
     /// to be a color glyph (design §5.0.3, "Glyphs seen for the first time"). Called once the list is built and before it is read;
     /// it does nothing when no glyph is pending, so a steady-state frame allocates nothing here.
@@ -402,6 +671,12 @@ public sealed class DisplayList
     internal ReadOnlySpan<int> RunLengths => _runLengths.AsSpan(0, _usedRuns);
 
     internal ReadOnlySpan<GlyphCoverage> RunCoverages => _runCoverages.AsSpan(0, _usedRuns);
+
+    internal ReadOnlySpan<int> RunPaints => _runPaints.AsSpan(0, _usedRuns);
+
+    internal ReadOnlySpan<CurveRecord> Curves => _shapeStreams is null ? default : _shapeStreams.Curves.AsSpan(0, _usedCurves);
+
+    internal ReadOnlySpan<TextPaint> TextPaints => _shapeStreams is null ? default : _shapeStreams.TextPaints.AsSpan(0, _textPaintCount);
 
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
 
@@ -475,6 +750,7 @@ public sealed class DisplayList
             _resolve.NextColors = new uint[_colors.Length];
             _resolve.NextRunLengths = new int[_runLengths.Length];
             _resolve.NextRunCoverages = new GlyphCoverage[_runCoverages.Length];
+            _resolve.NextRunPaints = new int[_runPaints.Length];
             _resolve.NextGlyphs = new GlyphInstance[_glyphs.Length];
             GrowthCount++;
         }
@@ -487,6 +763,7 @@ public sealed class DisplayList
         int run = 0;
         int glyph = 0;
         int pending = 0;
+        _brushedRuns = 0;
         for (int c = 0; c < CommandCount; c++)
         {
             if (_commands[c] != CommandTag.GlyphRun)
@@ -498,6 +775,7 @@ public sealed class DisplayList
 
             uint packed = _colors[color++];
             GlyphCoverage kind = _runCoverages[run];
+            int paint = _runPaints[run];
             int length = _runLengths[run++];
             int start = glyphs;
             GlyphCoverage segment = kind;
@@ -524,7 +802,7 @@ public sealed class DisplayList
 
                 if (glyphs > start && instanceKind != segment)
                 {
-                    EmitRun(ref commands, ref colors, ref runs, packed, segment, glyphs - start);
+                    EmitRun(ref commands, ref colors, ref runs, packed, segment, paint, glyphs - start);
                     start = glyphs;
                 }
 
@@ -534,7 +812,7 @@ public sealed class DisplayList
 
             if (glyphs > start)
             {
-                EmitRun(ref commands, ref colors, ref runs, packed, segment, glyphs - start);
+                EmitRun(ref commands, ref colors, ref runs, packed, segment, paint, glyphs - start);
             }
 
             glyph += length;
@@ -544,6 +822,7 @@ public sealed class DisplayList
         (_colors, _resolve.NextColors) = (_resolve.NextColors, _colors);
         (_runLengths, _resolve.NextRunLengths) = (_resolve.NextRunLengths, _runLengths);
         (_runCoverages, _resolve.NextRunCoverages) = (_resolve.NextRunCoverages, _runCoverages);
+        (_runPaints, _resolve.NextRunPaints) = (_resolve.NextRunPaints, _runPaints);
         (_glyphs, _resolve.NextGlyphs) = (_resolve.NextGlyphs, _glyphs);
         CommandCount = commands;
         _usedColors = colors;
@@ -551,12 +830,19 @@ public sealed class DisplayList
         GlyphCount = glyphs;
     }
 
-    private void EmitRun(ref int commands, ref int colors, ref int runs, uint color, GlyphCoverage coverage, int count)
+    // A run of the rebuilt list. The runs a color glyph splits a run into keep its paint, so brushed text keeps its gradient on
+    // both sides (design §5.0, "The API of lines, ellipses, arcs, and the paint of text").
+    private void EmitRun(ref int commands, ref int colors, ref int runs, uint color, GlyphCoverage coverage, int paint, int count)
     {
         _resolve.NextCommands[commands++] = CommandTag.GlyphRun;
         _resolve.NextColors[colors++] = color;
         _resolve.NextRunCoverages[runs] = coverage;
+        _resolve.NextRunPaints[runs] = paint;
         _resolve.NextRunLengths[runs++] = count;
+        if (paint >= 0)
+        {
+            _brushedRuns++;
+        }
     }
 
     // Room for `count` glyphs after the used ones; they count as used only when EndGlyphRun closes the run.
@@ -568,6 +854,127 @@ public sealed class DisplayList
         }
 
         return _glyphs.AsSpan(GlyphCount, count);
+    }
+
+    // The stroke's width in physical pixels, 0 for none, and its dash pattern in physical pixels.
+    private static float StrokeWidth(in Stroke stroke, float scale, out Dash dash, out bool dashed)
+    {
+        if (!(stroke.Width >= 0) || !float.IsFinite(stroke.Width))
+        {
+            throw new ArgumentOutOfRangeException(nameof(stroke), stroke.Width, "The stroke's width is not a number at or above 0.");
+        }
+
+        dashed = stroke.Dash is not null;
+        dash = default;
+        if (stroke.Dash is { } pattern)
+        {
+            bool numbers = float.IsFinite(pattern.On) && float.IsFinite(pattern.Off) && float.IsFinite(pattern.Offset);
+            if (!numbers || pattern.On < 0 || pattern.Off < 0 || pattern.On + pattern.Off == 0)
+            {
+                throw new ArgumentException(
+                    "A dash pattern's lengths are numbers at or above 0 and not both 0, and its offset is a number.",
+                    nameof(stroke)
+                );
+            }
+
+            dash = new Dash(pattern.On * scale, pattern.Off * scale, pattern.Offset * scale);
+        }
+
+        return stroke.Width * scale;
+    }
+
+    private static void CheckRadius(float radius, string name)
+    {
+        if (!(radius >= 0) || !float.IsFinite(radius))
+        {
+            throw new ArgumentOutOfRangeException(name, radius, "The radius is not a number at or above 0.");
+        }
+    }
+
+    private static void CheckAngle(float angle, string name)
+    {
+        if (!float.IsFinite(angle))
+        {
+            throw new ArgumentOutOfRangeException(name, angle, "The angle is not a number.");
+        }
+    }
+
+    // An arc or a sector given in radians, written running clockwise: a counterclockwise one starts at its other end, and its
+    // dashes move so that they lie where they would from its own start. A sweep of a whole turn or more is a circle.
+    private void AppendArc(
+        CommandTag tag,
+        float centerX,
+        float centerY,
+        float radius,
+        float start,
+        float sweep,
+        in Paint paint,
+        float width,
+        LineCap cap,
+        Dash? dash
+    )
+    {
+        float scale = Scale;
+        float cx = centerX * scale;
+        float cy = centerY * scale;
+        float r = radius * scale;
+        Dash pattern = dash ?? default;
+        if (MathF.Abs(sweep) >= MathF.Tau)
+        {
+            sweep = MathF.Tau;
+        }
+        else if (sweep < 0)
+        {
+            start += sweep;
+            sweep = -sweep;
+            if (dash is not null)
+            {
+                // Dash j of the reversed arc lies at [L + o - on - jP, L + o - jP] from the new start: the pattern from there, with
+                // the offset on - L - o modulo the period P.
+                float period = pattern.On + pattern.Off;
+                float moved = (pattern.On - (sweep * r) - pattern.Offset) % period;
+                pattern = pattern with { Offset = moved < 0 ? moved + period : moved };
+            }
+        }
+
+        start %= MathF.Tau;
+        float half = width * 0.5f;
+        ref CurveRecord record = ref AppendCurve(tag, cx, cy, r, 0, paint.Color);
+        record = default;
+        record.Brush = BrushIndex(paint.Gradient);
+        record.Box = new Vector4(cx - r - half, cy - r - half, (2 * r) + width, (2 * r) + width);
+        record.Width = width;
+        record.Cap = cap;
+        record.HasDash = dash is not null;
+        record.Dash = pattern;
+        record.StartAngle = start < 0 ? start + MathF.Tau : start;
+        record.SweepAngle = sweep;
+    }
+
+    // A line, an ellipse, an arc, or a sector: its geometry in the rectangle stream, its color, and the record it fills in.
+    private ref CurveRecord AppendCurve(CommandTag tag, float a, float b, float c, float d, Color color)
+    {
+        if (CommandCount == _commands.Length)
+        {
+            Grow();
+        }
+
+        _commands[CommandCount++] = tag;
+        Span<float> rect = _rects.AsSpan(_usedRects, FloatsPerRect);
+        rect[0] = a;
+        rect[1] = b;
+        rect[2] = c;
+        rect[3] = d;
+        _usedRects += FloatsPerRect;
+        _colors[_usedColors++] = color.Packed;
+        ShapeStreams streams = _shapeStreams ??= new ShapeStreams();
+        if (_usedCurves == streams.Curves.Length)
+        {
+            Array.Resize(ref streams.Curves, streams.Curves.Length * 2);
+            GrowthCount++;
+        }
+
+        return ref streams.Curves[_usedCurves++];
     }
 
     // CSS's overlapping curves (CSS Backgrounds 3, 5.5; Skia's SkRRect::scaleRadii, which Flutter and Avalonia draw with): when
@@ -650,7 +1057,7 @@ public sealed class DisplayList
         return _brushCount++;
     }
 
-    private void EndGlyphRun(int count, Color color, GlyphCoverage coverage)
+    private void EndGlyphRun(int count, Color color, GlyphCoverage coverage, int paint)
     {
         if (CommandCount == _commands.Length)
         {
@@ -660,8 +1067,13 @@ public sealed class DisplayList
         _commands[CommandCount++] = CommandTag.GlyphRun;
         _colors[_usedColors++] = color.Packed;
         _runCoverages[_usedRuns] = coverage;
+        _runPaints[_usedRuns] = paint;
         _runLengths[_usedRuns++] = count;
         GlyphCount += count;
+        if (paint >= 0)
+        {
+            _brushedRuns++;
+        }
     }
 
     // Every per-command stream grows with the command array, so one check per command is enough (the fast path stays one
@@ -675,6 +1087,7 @@ public sealed class DisplayList
         Array.Resize(ref _colors, capacity);
         Array.Resize(ref _runLengths, capacity);
         Array.Resize(ref _runCoverages, capacity);
+        Array.Resize(ref _runPaints, capacity);
         GrowthCount++;
     }
 
@@ -690,6 +1103,8 @@ public sealed class DisplayList
     {
         public ShapeRecord[] Records = new ShapeRecord[64];
         public GradientBrush[] Brushes = new GradientBrush[16];
+        public CurveRecord[] Curves = new CurveRecord[64];
+        public TextPaint[] TextPaints = new TextPaint[16];
     }
 
     // A glyph DrawText left room for: its instance, its request, and where it goes once its box is known.
@@ -709,6 +1124,7 @@ public sealed class DisplayList
         public uint[] NextColors = [];
         public int[] NextRunLengths = [];
         public GlyphCoverage[] NextRunCoverages = [];
+        public int[] NextRunPaints = [];
         public GlyphInstance[] NextGlyphs = [];
     }
 }
