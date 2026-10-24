@@ -19,13 +19,13 @@ namespace XylemUI.Platform.Windows;
 internal static unsafe class Win32TextRendering
 {
     /// <summary>
-    /// Returns the parameters of the window's monitor.
+    /// Returns the parameters of a monitor.
     /// </summary>
-    /// <param name="window">The window.</param>
+    /// <param name="monitor">The monitor: the window's, or the one it is moving to.</param>
     /// <param name="isOpaque">Whether the window's background is opaque, which ClearType needs.</param>
     /// <returns>The parameters.</returns>
     /// <exception cref="InvalidOperationException">DirectWrite could not create its factory or the monitor's parameters.</exception>
-    public static TextRenderingParameters Read(HWND window, bool isOpaque)
+    public static TextRenderingParameters Read(HMONITOR monitor, bool isOpaque)
     {
         IDWriteFactory* factory = null;
         IDWriteRenderingParams* parameters = null;
@@ -37,7 +37,6 @@ internal static unsafe class Win32TextRendering
                 DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &factoryId, (IUnknown**)&factory),
                 "DWriteCreateFactory"
             );
-            HMONITOR monitor = MonitorFromWindow(window, MONITOR.MONITOR_DEFAULTTONEAREST);
             ThrowIfFailed(factory->CreateMonitorRenderingParams(monitor, &parameters), "IDWriteFactory::CreateMonitorRenderingParams");
             Guid parametersId = IID.IID_IDWriteRenderingParams1;
             ThrowIfFailed(parameters->QueryInterface(&parametersId, (void**)&parameters1), "IDWriteRenderingParams::QueryInterface");

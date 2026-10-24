@@ -29,6 +29,7 @@ UiThread.Initialize();
 int reported = 0;
 Win32MessageLoop.CallbackExceptionHandler = _ => reported++;
 
+// 800 x 600 logical pixels: 1,000 x 750 on the screen at 125 %.
 using var window = new Win32Window("XylemUI HelloWindow", 800, 600);
 bool closed = false;
 window.Closed += (_, _) =>
@@ -175,11 +176,15 @@ bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && f
 return passed ? exitCode : 1;
 
 // 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0) so the pixel check knows its color. A
-// line of text in the band above them.
-void BuildFrame(int frame, int width, int height)
+// line of text in the band above them. Everything is in logical pixels; the display list multiplies them by the window's scale
+// (design §6.1.1, "Windows' display scale"), and width and height are the client area's physical pixels.
+void BuildFrame(int frame, int physicalWidth, int physicalHeight)
 {
+    float scale = window.ScaleFactor;
+    int width = (int)(physicalWidth / scale);
+    int height = (int)(physicalHeight / scale);
     atlas.BeginFrame();
-    list.Reset();
+    list.Reset(scale);
     list.FillRect(0, 0, 40, 40, Color.FromRgb(0x3366CC));
     for (int i = 1; i < Rectangles; i++)
     {

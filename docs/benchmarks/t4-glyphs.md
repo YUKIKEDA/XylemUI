@@ -21,7 +21,7 @@ dotnet publish samples/HelloText -c Release -r win-x64 -o <dir>
 
 ## 見た目の比べ方
 
-4 つのアプリ（と main の XylemUI）が同じ場面を描く（`benchmarks/XylemUI.E2E/TextQuality.cs` と、`benchmarks/compare` の各アプリの同じ場面）。Segoe UI と Yu Gothic UI を 12・14・16・20 px で、見本の行（`Hamburgefonstiv 0123 日本語のテキスト、ひらがな`）と、`l` を 16 個並べた行を描く。白地に黒と、黒地に白。XylemUI はまだ表示の倍率に対応していない（行 W1）ので、この場面だけ DPI aware にし、物理の画素で倍率を掛けて描く。
+4 つのアプリ（と main の XylemUI）が同じ場面を描く（`benchmarks/XylemUI.E2E/TextQuality.cs` と、`benchmarks/compare` の各アプリの同じ場面）。Segoe UI と Yu Gothic UI を 12・14・16・20 px で、見本の行（`Hamburgefonstiv 0123 日本語のテキスト、ひらがな`）と、`l` を 16 個並べた行を描く。白地に黒と、黒地に白。XylemUI はまだ表示の倍率に対応していない（行 W1。W1 で対応した後は、この場面もウィンドウの倍率で描く）ので、この場面だけ DPI aware にし、物理の画素で倍率を掛けて描く。
 
 `text_quality.py` が、取り込んだ画像の `l` の行を、16 本の縦線に分ける。縦線ごとに 1 送り幅の窓を割り当て、16 個の窓は 1 つの格子にする。格子の送り幅と位置は、境目がいちばんインクの少ない所（縦線の間）に来るように選ぶ。小さい大きさでは、アンチエイリアスで縦線が隣とつながるので、閾値では分けられない。最初に窓を「インクの左端から 16 等分」にしたときは、窓の端が隣の縦線の縁にかかり、24 px の行の両端の縦線を 0.3 画素ずらした。窓を 1 本ずつ縦線に寄せ直したときは、LCD の縦線がつながる所で窓が隣へずれた。
 

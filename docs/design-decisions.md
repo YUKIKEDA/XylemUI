@@ -440,7 +440,7 @@ Rejected:
   - Win32 / COM の宣言をすべて手書きする（構造体の配置や vtable の順の誤りを、生成された宣言のように防げない）
   - 「外部 DLL ゼロ」を Linux にも約束する（fontconfig / libdbus-1 / glibc は動的依存）
   - OS から呼ばれる COM を source-generated COM（`[GeneratedComClass]`、`StrategyBasedComWrappers`）で書く（インターフェースの属性をリフレクションで読み、NativeAOT のリフレクションの実行時がリンクされて、実行ファイルが 0.43 MB 増えた。F1、Issue #150）
-  - Windows の DPI 認識を、アプリのマニフェストだけで宣言する（GPUI。XylemUI はライブラリなので、アプリの .csproj の設定次第になる。`UiThread.Initialize` が `SetProcessDpiAwarenessContext` を呼ぶ。W1 の Grill、Issue #231）
+  - Windows の DPI 認識を、アプリのマニフェストだけで宣言する（GPUI。XylemUI はライブラリなので、アプリの .csproj の設定次第になる。`Win32Window` が最初のウィンドウの前に `SetProcessDpiAwarenessContext` を呼ぶ。W1 の Grill、Issue #231）
   - 表示リストが画素の座標を受け取り、倍率を掛けるのは作る側に任せる（倍率を掛ける場所が呼び出しごとに散る。§6.1.1 の「表示リストで画素に合わせる」と合わない。W1 の Grill）
 ---
 

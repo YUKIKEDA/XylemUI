@@ -7,6 +7,119 @@ public sealed class DisplayListTests
     private static readonly Color Blue = Color.FromRgb(0x3366CC);
 
     /// <summary>
+    /// A rectangle is given in logical pixels and each of its edges lands on the nearest pixel at the frame's scale, so rectangles
+    /// that touch in logical pixels touch on the screen (design §6.1.1, "Pixel snapping").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list reset at scale 1.25.
+    ///
+    /// Steps:
+    /// - Fill (0.5, 0.5, 10, 10) and (10.5, 0.5, 10, 10), then read them back.
+    ///
+    /// Expected:
+    /// - Scale is 1.25. The first rectangle is (1, 1, 12, 12): its edges round(0.625) = 1 and round(13.125) = 13. The second
+    ///   starts at 13, where the first ends, and is (13, 1, 13, 12): its right edge is round(25.625) = 26.
+    /// </remarks>
+    [Fact]
+    public void FillRect_AtAScale_PutsEachEdgeOnAPixel()
+    {
+        var list = new DisplayList();
+        list.Reset(1.25f);
+
+        list.FillRect(0.5f, 0.5f, 10, 10, Red);
+        list.FillRect(10.5f, 0.5f, 10, 10, Red);
+
+        Assert.Equal(1.25f, list.Scale);
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new FillRectCommand(1, 1, 12, 12, Red), reader.ReadFillRect());
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new FillRectCommand(13, 1, 13, 12, Red), reader.ReadFillRect());
+    }
+
+    /// <summary>
+    /// A rectangle far from the origin, as a long list's virtual coordinates are, still has its edges on the right pixels.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list at scale 1.
+    ///
+    /// Steps:
+    /// - Fill (5,000,001, 0, 2, 1): past 2^22 pixels, where adding and taking away 1.5 × 2^23 would round 5,000,001 to an even
+    ///   pixel.
+    ///
+    /// Expected:
+    /// - The rectangle is (5,000,001, 0, 2, 1), as MathF.Round gives.
+    /// </remarks>
+    [Fact]
+    public void FillRect_PastTwoToTheTwentySecond_RoundsAsMathFRound()
+    {
+        var list = new DisplayList();
+
+        list.FillRect(5_000_001, 0, 2, 1, Red);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new FillRectCommand(5_000_001, 0, 2, 1, Red), reader.ReadFillRect());
+    }
+
+    /// <summary>
+    /// The rounding of the rectangles' edges (SSE4.1's ROUNDSS where the CPU has it) gives what MathF.Round, its scalar path, gives.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Round the halves from −1,000.5 to 1,000.5, values a little above and below them, ±0, and values past 2^22 and 2^24.
+    ///
+    /// Expected:
+    /// - Each is MathF.Round of the same value, ties to even, bit for bit.
+    /// </remarks>
+    [Fact]
+    public void RoundToPixel_IsMathFRound()
+    {
+        var values = new List<float> { 0f, -0f, 4_194_303.5f, 4_194_305f, 5_000_001f, 16_777_217f, -5_000_001f, 1e30f, -1e30f };
+        for (int i = -2_001; i <= 2_001; i++)
+        {
+            float half = i / 2f;
+            values.AddRange([half, MathF.BitIncrement(half), MathF.BitDecrement(half)]);
+        }
+
+        Assert.All(
+            values,
+            value => Assert.Equal(BitConverter.SingleToInt32Bits(MathF.Round(value)), BitConverter.SingleToInt32Bits(DisplayList.RoundToPixel(value)))
+        );
+    }
+
+    /// <summary>
+    /// A scale that is not a positive number is refused.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list.
+    ///
+    /// Steps:
+    /// - Reset it at 0, at -1, at NaN, and at infinity.
+    ///
+    /// Expected:
+    /// - <see cref="ArgumentOutOfRangeException"/> each time.
+    /// </remarks>
+    /// <param name="scale">The scale.</param>
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-1f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void Reset_ScaleNotPositive_Throws(float scale)
+    {
+        var list = new DisplayList();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.Reset(scale));
+    }
+
+    /// <summary>
     /// The reader returns the commands in the order they were written, with their values.
     /// </summary>
     /// <remarks>

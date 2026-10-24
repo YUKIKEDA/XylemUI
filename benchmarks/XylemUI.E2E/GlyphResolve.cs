@@ -219,6 +219,46 @@ internal static class GlyphResolve
         return 0;
     }
 
+    // Writing the 1,000 rectangles of the frames scene, with nothing drawn: nanoseconds per rectangle, the median of 21 samples of
+    // 1,000 frames, at the scale given (row W1).
+    public static int FillRectCost(float scale)
+    {
+        using var report = new Report("fill-rect");
+        var list = new DisplayList();
+        void Frame(int frame)
+        {
+            list.Reset(scale);
+            list.FillRect(0, 0, 40, 40, Color.FromRgb(0x3366CC));
+            for (int i = 0; i < 1_000; i++)
+            {
+                float x = ((i * 37) + (frame * 3)) % 780;
+                float y = 50 + ((i * 11) % 530);
+                list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
+            }
+        }
+
+        for (int i = 0; i < 1_000; i++)
+        {
+            Frame(i);
+        }
+
+        var samples = new List<double>();
+        for (int s = 0; s < 21; s++)
+        {
+            long start = Stopwatch.GetTimestamp();
+            for (int i = 0; i < 1_000; i++)
+            {
+                Frame(i);
+            }
+
+            samples.Add(Stopwatch.GetElapsedTime(start).TotalNanoseconds / 1_001_000.0);
+        }
+
+        samples.Sort();
+        report.Number("ns_per_rect_p50", samples[10]);
+        return 0;
+    }
+
     // `count` characters of the font with distinct glyphs: kanji from U+4E00 on, or emoji from U+1F300 on.
     private static string TextOf(Font font, TextShaper shaper, TextLanguage language, int count, bool emoji)
     {

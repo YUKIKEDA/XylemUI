@@ -5,7 +5,8 @@ using XylemUI.Text;
 
 namespace XylemUI.E2E;
 
-// The app every framework builds for the comparison (roadmap row M1a, docs/benchmarks/m1-baseline.md): an 800 x 600 window
+// The app every framework builds for the comparison (roadmap row M1a, docs/benchmarks/m1-baseline.md): an 800 x 600 window (logical
+// pixels, row W1)
 // cleared to #2A2A2A, a marker rectangle #3366CC at (0, 0, 40, 40) of the client area (the startup measurement watches the
 // screen for it), 1,000 rectangles in a grid that move with the frame, and one line of Japanese text at 24 px at (60, 30).
 // `heavy` adds full-window translucent rectangles to load the GPU. The text is drawn as the window's TextRendering says (roadmap
@@ -50,13 +51,15 @@ internal sealed class Scene : IDisposable
 
     public static Color Marker { get; } = Color.FromRgb(0x3366CC);
 
-    // The rectangles move with the frame number, so that every frame draws something new.
+    // The rectangles move with the frame number, so that every frame draws something new. The scene is in logical pixels, drawn at
+    // the window's scale (row W1).
     public void Build(int frame, int heavy = 0)
     {
         Atlas.BeginFrame();
-        List.Reset();
-        int width = Renderer.Width;
-        int height = Renderer.Height;
+        float scale = Window.ScaleFactor;
+        List.Reset(scale);
+        int width = (int)(Renderer.Width / scale);
+        int height = (int)(Renderer.Height / scale);
         List.FillRect(0, 0, 40, 40, Marker);
         for (int i = 0; i < Rectangles; i++)
         {
