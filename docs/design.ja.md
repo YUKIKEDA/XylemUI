@@ -2093,13 +2093,14 @@ UiNodeとGPUバックエンドの間にDisplayListという中間表現を挟む
 
 ```csharp
 public readonly record struct CornerRadii(float TopLeft, float TopRight, float BottomRight, float BottomLeft);
-public readonly record struct Border(EdgeInsets Widths, Color Color);
+// Paint・Border・BoxShadow は下の「形・塗り・影の API」（R4 の Grill）で決める。
 
 // 論理表現。テスト・デバッガ表示・レンダラの単体テストで使う。
 // 毎フレームの実体は DisplayListBuffer（§5.0.1）であり、このレコードは生成しない
 public abstract record PaintCommand
 {
-    public sealed record FillRect(Rect Rect, Color Color, CornerRadii Radii, Border? Border) : PaintCommand;  // 非一様な角丸・ボーダー合成に対応(下記参照)
+    public sealed record FillRect(Rect Rect, Paint Fill, CornerRadii Radii, Border? Border) : PaintCommand;  // 非一様な角丸・ボーダー合成に対応(下記参照)
+    public sealed record Shadow(Rect Rect, CornerRadii Radii, BoxShadow BoxShadow) : PaintCommand;
     public sealed record Image(Rect Rect, ImageHandle Handle) : PaintCommand;
     public sealed record GlyphRun(Rect Rect, GlyphInstance[] Glyphs, Color Color) : PaintCommand;
     public sealed record ClipRect(Rect Rect) : PaintCommand;
@@ -2156,6 +2157,48 @@ internal static (DisplayList DisplayList, DamageRegion Damage) BuildDisplayList(
 - **背景のぼかし（Q7）:** アプリ内の Acrylic は、§13.2 のとおり v1.x のままにする。v1 の部品の範囲に要らないためである。形は、層の上に乗せる Flutter の形とする。今描いた分をテクスチャに取ってぼかし、新しい層の最初に描く（`impeller/display_list/canvas.cc` 2415〜2470 行目）。Avalonia はアプリ内ではぼかさず、OS の合成に任せている
 - **利用者が描く拡張点（Q8）:** 表示リストの語彙を記録する公開の API（`DrawingContext`）を持つ。GPUI の `canvas()`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ形である。生の GPU に触れる口（Avalonia の Skia のリースは `[Unstable]`）は持たず、GPU を直接使う描画は行 D11 のネイティブ描画領域に任せる
 - **ヒット領域（Q9）:** v1 は、矩形と角丸の矩形にする（GPUI は矩形だけ）。任意のパスの当たり判定（Avalonia の `Geometry.FillContains`）は、行 R5 で入れる
+
+**形・塗り・影の API（R4 の Grill でオーナーが決定、Issue #242）:** 行 R4 は 3 つに分けて実装する。
+
+- **R4a:** 角丸の矩形（角ごとの半径）とボーダー（辺ごとの幅、1 つの塗り）、塗りを矩形の塗りとボーダーに当てること、影
+- **R4b:** 線・楕円・円弧と、それらと文字に塗りを当てること
+- **R4c:** 角丸のクリップ（文字にも掛ける）、`Transform`、層とグループの不透明度、その中の文字のグレースケール、`DrawingContext`、角丸のヒット領域
+
+型は次のとおりである。上の `PaintCommand.FillRect` の塗りと `Border` の色は、`Paint` である。
+
+```csharp
+// 塗り。Gradient が null なら Color の単色で、今の速い道で描く。
+public readonly record struct Paint(Color Color, GradientBrush? Gradient = null);
+
+// 作ったら変わらない。スタイルの値として 1 回作って使い回すので、フレームごとの確保は無い。
+public sealed class GradientBrush
+{
+    public GradientKind Kind { get; }
+    public float Angle { get; }                    // 線形: CSS と同じく 0 度が上、時計回り
+    public Vector2 Center { get; }                 // 放射・円錐: 塗る形の箱に対する割合（0〜1）
+    public float Radius { get; }                   // 放射: 箱の幅と高さの大きい方に対する割合
+    public float StartAngle { get; }               // 円錐: 0 度が上、時計回り
+    public ReadOnlySpan<GradientStop> Stops { get; } // 2 つ以上、位置の順。上限は無い
+    public GradientColorSpace ColorSpace { get; }  // 補間の色空間
+}
+
+public enum GradientKind { Linear, Radial, Conic }
+public enum GradientColorSpace { Srgb, Oklab }
+public readonly record struct GradientStop(float Offset, Color Color);  // Offset は 0〜1
+
+public readonly record struct BorderWidths(float Left, float Top, float Right, float Bottom);
+public readonly record struct Border(BorderWidths Widths, Paint Paint);
+
+// 角丸の矩形の影。Inset なら形の内側に描く。
+public readonly record struct BoxShadow(Color Color, Vector2 Offset, float BlurRadius, float Spread, bool Inset = false);
+```
+
+- **表示リスト:** `DisplayList.FillRect` は、論理座標の矩形・`Paint`・`CornerRadii`・`Border?` を受け取る。今の `FillRect(x, y, width, height, Color)` は、単色・角丸なし・ボーダーなしの形として残す。`DisplayList.DrawShadow` は、論理座標の矩形・`CornerRadii`・`BoxShadow` を受け取る
+  - 描く順は呼び出し側が決める。外側の影は形の前に、内側の影は塗りの後でボーダーの前に書く（Avalonia の順、`DrawingContextImpl.cs` 416〜540 行目）
+  - 表示リストは、`GradientBrush` の参照を参照の並びに入れる。同じブラシが同じフレームに何度出ても、色の並びは GPU に 1 回だけ送る
+- **グラデーションの位置:** 塗る形の箱に対する割合で持つ（CSS と Avalonia の `RelativePoint` の既定と同じ）。大きさの変わる部品に、そのまま使える
+- **シェーダ:** 矩形のシェーダは 1 つにまとめ、角丸・ボーダー・塗りの種類・影を、インスタンスの種類で分ける。XylemUI は表示リストの順に描くので、影を別のシェーダにすると（GPUI の形）、影が来るたびに描く回数が増えるためである。インスタンスが大きくなる分の費用は、R4a で測ってここに書く
+- **確かめ方:** WARP で描いた画素を読み戻し、CPU で同じ式から求めた画素と、各チャネル 1 以内で比べる（今の文字のテストと同じ形）。影の基準は、GPUI と同じ式（erf の近似、y 方向は 4 点）で書く。加えて、オーナーが 100・125 % で目で確かめる
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
 
