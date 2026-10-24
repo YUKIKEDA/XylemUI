@@ -1,10 +1,14 @@
 <!doctype html>
 <!--
   The CSS side of XylemUI.E2E's `shapes` scene (roadmap row R4a, benchmarks/XylemUI.E2E/ShapeGallery.cs): the same shapes, in
-  logical pixels (CSS px), at the same positions in a 600 x 400 box of #F3F3F3. Open it in a browser at 100 % zoom on a display
+  logical pixels (CSS px), at the same positions in a 600 x 480 box of #F3F3F3. Open it in a browser at 100 % zoom on a display
   of the same scale as the window, and compare the two side by side.
+  Both scale the radii down as CSS 5.5 does when the two on a side sum past it, and both draw a border over the fill (the fill
+  covers the whole box, CSS's default background-clip).
   Known differences: CSS draws the inner corner of a border with unequal widths as an ellipse, XylemUI as a circle of the larger
-  width; XylemUI's radial gradient is a circle (CSS's default is an ellipse, so this page asks for a circle).
+  width; XylemUI's radial gradient is a circle (CSS's default is an ellipse, so this page asks for a circle); a gradient under a
+  border starts at the outer edge of the box in XylemUI, where CSS starts it at the inner edge of the border (background-origin
+  is padding-box), so no shape on this page has both.
 -->
 <html>
 <head>
@@ -12,7 +16,7 @@
   <title>Shapes (CSS)</title>
   <style>
     body { margin: 0; background: #F3F3F3; }
-    .box { position: relative; width: 600px; height: 400px; background: #F3F3F3; }
+    .box { position: relative; width: 600px; height: 480px; background: #F3F3F3; }
     .s { position: absolute; box-sizing: border-box; }
   </style>
 </head>
@@ -38,6 +42,9 @@
       background:linear-gradient(90deg, #E02020 25%, #E02020 50%, #2040E0 50%, #2040E0 75%);"></div>
     <div class="s" style="left:390px; top:290px; width:140px; height:70px; border-radius:12px; background:rgba(255,255,255,0.502);
       box-shadow:0 8px 20px 0 rgba(0,0,0,0.451);"></div>
+    <div class="s" style="left:30px; top:400px; width:140px; height:50px; background:#E02020; border-radius:10px;
+      border:8px solid rgba(32,64,224,0.502);"></div>
+    <div class="s" style="left:210px; top:400px; width:140px; height:50px; background:#2040E0; border-radius:40px;"></div>
   </div>
 </body>
 </html>

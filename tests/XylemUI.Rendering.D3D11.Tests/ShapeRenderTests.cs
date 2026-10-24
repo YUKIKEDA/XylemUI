@@ -45,6 +45,77 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A translucent border lies over the fill, which covers the whole box, as CSS, Flutter, Avalonia, and GPUI draw it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Fill (30, 20, 100, 60) in white with radius 10 and a border 6 wide of black at alpha 31 (Fluent's thin strokes are
+    ///   about this); read every pixel of the rectangle grown by 2.
+    ///
+    /// Expected:
+    /// - Each pixel is within 1 of the reference, whose border is the black over the white: on the border, white darkened by
+    ///   31 / 255, not the black over the clear color.
+    /// </remarks>
+    [Fact]
+    public void Shape_TranslucentBorder_LiesOverTheFill() =>
+        ui.Invoke(() =>
+        {
+            var rect = new Vector4(30, 20, 100, 60);
+            var stroke = new Color(0, 0, 0, 31);
+            Compare(
+                list => list.FillRect(30, 20, 100, 60, Paper, new CornerRadii(10), new Border(new BorderWidths(6), stroke)),
+                rect,
+                p =>
+                    ShapeReference.Shape(
+                        p,
+                        rect,
+                        new Vector4(10),
+                        ShapeReference.Premultiply(Paper),
+                        new Vector4(6),
+                        ShapeReference.Premultiply(stroke)
+                    ),
+                tolerance: 1
+            );
+        });
+
+    /// <summary>
+    /// A radius past half a side is drawn when its side holds it, and radii that sum past a side are scaled as CSS's.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Fill (20, 20, 40, 60) with ink and radii 30, 10, 0, 20 (30 is past half the width, and 30 + 10 is the width); fill
+    ///   (90, 20, 80, 60) with ink and radius 40 at every corner (CSS scales them by min(80 / 80, 60 / 80) to 30); read both.
+    ///
+    /// Expected:
+    /// - Each pixel is within 1 of the reference with radii 30, 10, 0, 20 and 30 at every corner.
+    /// </remarks>
+    [Fact]
+    public void Shape_LargeRadii_AreDrawnAsCssScalesThem() =>
+        ui.Invoke(() =>
+        {
+            var first = new Vector4(20, 20, 40, 60);
+            var second = new Vector4(90, 20, 80, 60);
+            Compare(
+                list =>
+                {
+                    list.FillRect(20, 20, 40, 60, Ink, new CornerRadii(30, 10, 0, 20));
+                    list.FillRect(90, 20, 80, 60, Ink, new CornerRadii(40));
+                },
+                new Vector4(20, 20, 150, 60),
+                p =>
+                    ShapeReference.Shape(p, first, new Vector4(30, 10, 0, 20), ShapeReference.Premultiply(Ink), Vector4.Zero, Vector4.Zero)
+                    + ShapeReference.Shape(p, second, new Vector4(30), ShapeReference.Premultiply(Ink), Vector4.Zero, Vector4.Zero),
+                tolerance: 1
+            );
+        });
+
+    /// <summary>
     /// Each kind of gradient fills its shape with the colors at the fractions of the shape's box that design §5.0 gives.
     /// </summary>
     /// <remarks>

@@ -9,13 +9,33 @@ namespace XylemUI.Rendering.D3D11.Tests;
 // of the shader's approximation (erf's polynomial and four samples along y).
 internal static class ShapeReference
 {
+    // The distance to a rounded rectangle whose radii fit its sides: inside a corner's square, to its arc; elsewhere, to the
+    // nearest edge.
     public static float Distance(Vector2 p, Vector4 rect, Vector4 radii)
     {
-        var half = new Vector2(rect.Z, rect.W) * 0.5f;
-        Vector2 fromCenter = p - (new Vector2(rect.X, rect.Y) + half);
-        float radius = MathF.Min(Corner(fromCenter, radii), MathF.Min(half.X, half.Y));
-        Vector2 q = Vector2.Abs(fromCenter) - half + new Vector2(radius);
-        return radius == 0 ? MathF.Max(q.X, q.Y) : Vector2.Max(q, Vector2.Zero).Length() + MathF.Min(0, MathF.Max(q.X, q.Y)) - radius;
+        var lo = new Vector2(rect.X, rect.Y);
+        var hi = lo + new Vector2(rect.Z, rect.W);
+        if (p.X < lo.X + radii.X && p.Y < lo.Y + radii.X)
+        {
+            return (p - (lo + new Vector2(radii.X))).Length() - radii.X;
+        }
+
+        if (p.X > hi.X - radii.Y && p.Y < lo.Y + radii.Y)
+        {
+            return (p - new Vector2(hi.X - radii.Y, lo.Y + radii.Y)).Length() - radii.Y;
+        }
+
+        if (p.X > hi.X - radii.Z && p.Y > hi.Y - radii.Z)
+        {
+            return (p - (hi - new Vector2(radii.Z))).Length() - radii.Z;
+        }
+
+        if (p.X < lo.X + radii.W && p.Y > hi.Y - radii.W)
+        {
+            return (p - new Vector2(lo.X + radii.W, hi.Y - radii.W)).Length() - radii.W;
+        }
+
+        return MathF.Max(MathF.Max(lo.X - p.X, p.X - hi.X), MathF.Max(lo.Y - p.Y, p.Y - hi.Y));
     }
 
     public static float Coverage(Vector2 p, Vector4 rect, Vector4 radii) => Math.Clamp(0.5f - Distance(p, rect, radii), 0, 1);
@@ -23,7 +43,7 @@ internal static class ShapeReference
     public static Vector4 Premultiply(Color color) =>
         new Vector4(color.R * color.A / 255f, color.G * color.A / 255f, color.B * color.A / 255f, color.A) / 255f;
 
-    // A rounded rectangle filled and bordered, at p.
+    // A rounded rectangle filled and bordered, at p: the border over the fill.
     public static Vector4 Shape(Vector2 p, Vector4 rect, Vector4 radii, Vector4 fill, Vector4 widths, Vector4 border)
     {
         float outer = Coverage(p, rect, radii);
@@ -38,7 +58,7 @@ internal static class ShapeReference
             );
             var innerRadii = Vector4.Max(Vector4.Zero, radii - pulledIn);
             float inside = inner.Z > 0 && inner.W > 0 ? Coverage(p, inner, innerRadii) : 0;
-            fill = Vector4.Lerp(border, fill, inside);
+            fill = Vector4.Lerp(border + (fill * (1 - border.W)), fill, inside);
         }
 
         return fill * outer;
@@ -131,12 +151,11 @@ internal static class ShapeReference
         return (float)sum;
     }
 
-    // The left and right of the rounded rectangle at height v.
+    // The left and right of the rounded rectangle at height v; its radii fit its sides.
     private static (double Left, double Right) Extent(Vector4 rect, Vector4 radii, double v)
     {
-        double half = Math.Min(rect.Z, rect.W) / 2;
-        double left = rect.X + Inward(Math.Min(radii.X, half), Math.Min(radii.W, half), rect.Y, rect.Y + rect.W, v);
-        double right = rect.X + rect.Z - Inward(Math.Min(radii.Y, half), Math.Min(radii.Z, half), rect.Y, rect.Y + rect.W, v);
+        double left = rect.X + Inward(radii.X, radii.W, rect.Y, rect.Y + rect.W, v);
+        double right = rect.X + rect.Z - Inward(radii.Y, radii.Z, rect.Y, rect.Y + rect.W, v);
         return (left, right);
     }
 
@@ -187,9 +206,6 @@ internal static class ShapeReference
         double r = t * Math.Exp(-(z * z) + polynomial);
         return x >= 0 ? 1 - r : r - 1;
     }
-
-    private static float Corner(Vector2 fromCenter, Vector4 radii) =>
-        fromCenter.X < 0 ? (fromCenter.Y < 0 ? radii.X : radii.W) : (fromCenter.Y < 0 ? radii.Y : radii.Z);
 
     private static float Fraction(float value) => value - MathF.Floor(value);
 

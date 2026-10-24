@@ -5,10 +5,11 @@ using XylemUI.Rendering.D3D11;
 namespace XylemUI.E2E;
 
 // The shapes of roadmap row R4a, for the owner to compare with a browser (design §5.0, "Shapes, brushes, and shadows"):
-// benchmarks/compare/shapes.html draws the same shapes with CSS at the same logical positions. A 600 x 400 window of #F3F3F3 with
-// three rows: a rounded rectangle with a different radius at each corner and a border of a different width on each edge, a card
+// benchmarks/compare/shapes.html draws the same shapes with CSS at the same logical positions. A 600 x 480 window of #F3F3F3 with
+// four rows: a rounded rectangle with a different radius at each corner and a border of a different width on each edge, a card
 // with an outer shadow, and an inset shadow; four gradients (linear 45 degrees, radial, conic, Oklab); a fade to transparent, hard
-// stops, and a translucent card over a shadow, whose shadow does not show under it. It draws again on a resize and on a change of
+// stops, and a translucent card over a shadow, whose shadow does not show under it; a red fill under a translucent blue
+// border, which shows the fill under the border, and a radius past half the box's height, which CSS scales down. It draws again on a resize and on a change of
 // the display's scale, and stays open until it is closed.
 internal static class ShapeGallery
 {
@@ -21,7 +22,7 @@ internal static class ShapeGallery
     public static int Run()
     {
         UiThread.Initialize();
-        using var window = new Win32Window("XylemUI shapes", 600, 400);
+        using var window = new Win32Window("XylemUI shapes", 600, 480);
         window.Show();
         (int width, int height) = window.ClientSize;
         using var renderer = D3D11Renderer.Create(window.Handle, width, height);
@@ -50,6 +51,8 @@ internal static class ShapeGallery
             list.FillRect(210, 290, 140, 70, hard, default);
             list.DrawShadow(390, 290, 140, 70, card, new BoxShadow(new Color(0, 0, 0, 115), new Vector2(0, 8), 20));
             list.FillRect(390, 290, 140, 70, new Color(0xFF, 0xFF, 0xFF, 128), card);
+            list.FillRect(30, 400, 140, 50, Red, new CornerRadii(10), new Border(new BorderWidths(8), new Color(0x20, 0x40, 0xE0, 128)));
+            list.FillRect(210, 400, 140, 50, Blue, new CornerRadii(40));
             renderer.Draw(list, Background);
             renderer.Present();
         }

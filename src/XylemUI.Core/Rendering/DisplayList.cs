@@ -161,8 +161,8 @@ public sealed class DisplayList
     /// <param name="width">The width.</param>
     /// <param name="height">The height.</param>
     /// <param name="fill">The paint of the inside.</param>
-    /// <param name="radii">The radius of each corner.</param>
-    /// <param name="border">The border, drawn inside the rectangle, or <see langword="null"/>.</param>
+    /// <param name="radii">The radius of each corner; when the two on a side sum past it, all are scaled down as CSS does.</param>
+    /// <param name="border">The border, drawn inside the rectangle over the fill, or <see langword="null"/>.</param>
     public void FillRect(float x, float y, float width, float height, in Paint fill, in CornerRadii radii, Border? border = null)
     {
         if (fill.Gradient is null && border is null && radii.TopLeft == 0 && radii.TopRight == 0 && radii.BottomRight == 0 && radii.BottomLeft == 0)
@@ -174,7 +174,7 @@ public sealed class DisplayList
         float scale = Scale;
         ref ShapeRecord record = ref AppendShape(CommandTag.Shape, x, y, width, height, fill.Color);
         record = default;
-        record.Radii = Scaled(radii, scale);
+        record.Radii = Scaled(Fitted(radii, width, height), scale);
         record.FillBrush = BrushIndex(fill.Gradient);
         record.BorderBrush = -1;
         if (border is { } edges)
@@ -202,7 +202,7 @@ public sealed class DisplayList
         float scale = Scale;
         ref ShapeRecord record = ref AppendShape(CommandTag.Shadow, x, y, width, height, shadow.Color);
         record = default;
-        record.Radii = Scaled(radii, scale);
+        record.Radii = Scaled(Fitted(radii, width, height), scale);
         record.FillBrush = -1;
         record.BorderBrush = -1;
         record.Offset = shadow.Offset * scale;
@@ -568,6 +568,22 @@ public sealed class DisplayList
         }
 
         return _glyphs.AsSpan(GlyphCount, count);
+    }
+
+    // CSS's overlapping curves (CSS Backgrounds 3, 5.5; Skia's SkRRect::scaleRadii, which Flutter and Avalonia draw with): when
+    // the two radii on a side sum past it, every radius is scaled by the smallest ratio of a side to its sum.
+    private static CornerRadii Fitted(in CornerRadii radii, float width, float height)
+    {
+        float top = radii.TopLeft + radii.TopRight;
+        float bottom = radii.BottomLeft + radii.BottomRight;
+        float left = radii.TopLeft + radii.BottomLeft;
+        float right = radii.TopRight + radii.BottomRight;
+        float f = 1;
+        f = top > width ? MathF.Min(f, width / top) : f;
+        f = bottom > width ? MathF.Min(f, width / bottom) : f;
+        f = left > height ? MathF.Min(f, height / left) : f;
+        f = right > height ? MathF.Min(f, height / right) : f;
+        return f < 1 ? new CornerRadii(radii.TopLeft * f, radii.TopRight * f, radii.BottomRight * f, radii.BottomLeft * f) : radii;
     }
 
     private static CornerRadii Scaled(in CornerRadii radii, float scale) =>

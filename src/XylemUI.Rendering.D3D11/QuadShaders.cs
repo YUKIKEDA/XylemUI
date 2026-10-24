@@ -41,7 +41,9 @@ namespace XylemUI.Rendering.D3D11;
 /// <c>erf</c>, <c>blur_along_x</c>, and <c>gaussian</c> lines 229 to 248, <c>shadow_fragment</c> lines 913 to 953; Copyright
 /// Zed Industries, Inc., Apache License 2.0): the blur integrates the rounded rectangle along x in closed form with an
 /// approximation of erf, and along y with four samples within three standard deviations. An outer shadow is cut out under its
-/// shape, as CSS's. A gradient interpolates premultiplied colors, in sRGB or in Oklab (Björn Ottosson's matrices), and is dithered
+/// shape, as CSS's. The rounded rectangle's distance is taken from the arc of the corner whose square holds the pixel, else from
+/// the nearest edge, so that a radius may pass half a side once the display list has scaled the radii as CSS does. A border lies
+/// over the fill. A gradient interpolates premultiplied colors, in sRGB or in Oklab (Björn Ottosson's matrices), and is dithered
 /// with a triangular noise of one step of 8 bits.
 /// </para>
 /// </remarks>
@@ -86,13 +88,17 @@ internal static class QuadShaders
             {
                 return fromCenter.x < 0 ? (fromCenter.y < 0 ? radii.x : radii.w) : (fromCenter.y < 0 ? radii.y : radii.z);
             }
+            // The signed distance to a rounded rectangle whose radii were scaled as CSS's (the two on a side never sum past it): inside
+            // a corner's square, the distance to its arc; elsewhere, to the nearest edge. A radius may pass half the shorter side.
             float RoundedRectDistance(float2 p, float4 rect, float4 radii)
             {
-                float2 halfSize = rect.zw * 0.5;
-                float2 fromCenter = p - (rect.xy + halfSize);
-                float radius = min(CornerRadius(fromCenter, radii), min(halfSize.x, halfSize.y));
-                float2 q = abs(fromCenter) - halfSize + radius;
-                return radius == 0 ? max(q.x, q.y) : length(max(q, 0)) + min(0, max(q.x, q.y)) - radius;
+                float2 lo = rect.xy;
+                float2 hi = rect.xy + rect.zw;
+                if (p.x < lo.x + radii.x && p.y < lo.y + radii.x) { return length(p - (lo + radii.x)) - radii.x; }
+                if (p.x > hi.x - radii.y && p.y < lo.y + radii.y) { return length(p - float2(hi.x - radii.y, lo.y + radii.y)) - radii.y; }
+                if (p.x > hi.x - radii.z && p.y > hi.y - radii.z) { return length(p - (hi - radii.z)) - radii.z; }
+                if (p.x < lo.x + radii.w && p.y > hi.y - radii.w) { return length(p - float2(lo.x + radii.w, hi.y - radii.w)) - radii.w; }
+                return max(max(lo.x - p.x, p.x - hi.x), max(lo.y - p.y, p.y - hi.y));
             }
             float Coverage(float2 p, float4 rect, float4 radii) { return saturate(0.5 - RoundedRectDistance(p, rect, radii)); }
             float2 Erf(float2 x)
@@ -215,7 +221,9 @@ internal static class QuadShaders
                         float4 innerRadii = max(0, radii - float4(max(widths.x, widths.y), max(widths.z, widths.y), max(widths.z, widths.w), max(widths.x, widths.w)));
                         float inside = inner.z > 0 && inner.w > 0 ? Coverage(p, inner, innerRadii) : 0;
                         float4 border = kind.z >= 0 ? GradientColor(int(kind.z), p, rect) : Premultiply(borderColor);
-                        fill = lerp(border, fill, inside);
+                        // The border lies over the fill, which covers the whole box, as CSS, Flutter, Avalonia, and GPUI draw it
+                        // (GPUI's over, shaders.hlsl lines 840 to 844): a translucent border shows the fill under it.
+                        fill = lerp(border + fill * (1 - border.a), fill, inside);
                     }
                     return fill * outer;
                 }

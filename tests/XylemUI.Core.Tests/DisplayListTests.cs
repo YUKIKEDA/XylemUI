@@ -104,11 +104,11 @@ public sealed class DisplayListTests
     /// - A display list reset at scale 1.25.
     ///
     /// Steps:
-    /// - Fill (0.5, 0.5, 10, 10) in red with radii 2, 4, 6, 8 and a blue border 1, 2, 3, 4 wide; fill (20, 0, 8, 8) in red with no
+    /// - Fill (0.5, 0.5, 10, 10) in red with radii 1, 2, 3, 4 and a blue border 1, 2, 3, 4 wide; fill (20, 0, 8, 8) in red with no
     ///   radius and no border; read both back.
     ///
     /// Expected:
-    /// - A Shape of (1, 1, 12, 12), red, no fill brush, radii 2.5, 5, 7.5, 10, widths 1.25, 2.5, 3.75, 5, a blue border, no border
+    /// - A Shape of (1, 1, 12, 12), red, no fill brush, radii 1.25, 2.5, 3.75, 5, widths 1.25, 2.5, 3.75, 5, a blue border, no border
     ///   brush; then a FillRect of (25, 0, 10, 10).
     /// </remarks>
     [Fact]
@@ -117,20 +117,49 @@ public sealed class DisplayListTests
         var list = new DisplayList();
         list.Reset(1.25f);
 
-        list.FillRect(0.5f, 0.5f, 10, 10, Red, new CornerRadii(2, 4, 6, 8), new Border(new BorderWidths(1, 2, 3, 4), Blue));
+        list.FillRect(0.5f, 0.5f, 10, 10, Red, new CornerRadii(1, 2, 3, 4), new Border(new BorderWidths(1, 2, 3, 4), Blue));
         list.FillRect(20, 0, 8, 8, Red, default);
 
         DisplayListReader reader = list.GetReader();
         Assert.True(reader.TryNext(out CommandTag first));
         Assert.Equal(CommandTag.Shape, first);
         Assert.Equal(
-            new ShapeCommand(1, 1, 12, 12, Red, -1, new CornerRadii(2.5f, 5, 7.5f, 10), new BorderWidths(1.25f, 2.5f, 3.75f, 5), Blue, -1),
+            new ShapeCommand(1, 1, 12, 12, Red, -1, new CornerRadii(1.25f, 2.5f, 3.75f, 5), new BorderWidths(1.25f, 2.5f, 3.75f, 5), Blue, -1),
             reader.ReadShape()
         );
         Assert.True(reader.TryNext(out CommandTag second));
         Assert.Equal(CommandTag.FillRect, second);
         Assert.Equal(new FillRectCommand(25, 0, 10, 10, Red), reader.ReadFillRect());
         Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
+    /// Radii that sum past a side are scaled down together by the smallest ratio of a side to its sum, as CSS and Skia do; radii
+    /// that fit are kept, even past half a side.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list at scale 1.
+    ///
+    /// Steps:
+    /// - Fill (0, 0, 80, 60) with radius 40 at every corner, and (0, 0, 40, 60) with radii 30, 10, 0, 20; read both.
+    ///
+    /// Expected:
+    /// - The first has radius 30 at every corner (40 × min(80 / 80, 60 / 80)); the second keeps 30, 10, 0, 20.
+    /// </remarks>
+    [Fact]
+    public void FillRect_RadiiPastASide_AreScaledAsCss()
+    {
+        var list = new DisplayList();
+
+        list.FillRect(0, 0, 80, 60, Red, new CornerRadii(40));
+        list.FillRect(0, 0, 40, 60, Red, new CornerRadii(30, 10, 0, 20));
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new CornerRadii(30), reader.ReadShape().Radii);
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new CornerRadii(30, 10, 0, 20), reader.ReadShape().Radii);
     }
 
     /// <summary>
