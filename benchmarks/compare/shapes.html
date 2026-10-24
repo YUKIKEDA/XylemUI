@@ -2,7 +2,8 @@
 <!--
   The CSS side of XylemUI.E2E's `shapes` scene (roadmap row R4a, benchmarks/XylemUI.E2E/ShapeGallery.cs): the same shapes, in
   logical pixels (CSS px), at the same positions in a 600 x 480 box of #F3F3F3. Open it in a browser at 100 % zoom on a display
-  of the same scale as the window, and compare the two side by side.
+  of the same scale as the window, and compare the two side by side. Start Edge with --force-color-profile=srgb (every other
+  Edge window closed), or it converts the colors to the monitor's color profile (found in the owner's check of PR #256).
   Both scale the radii down as CSS 5.5 does when the two on a side sum past it, and both draw a border over the fill (the fill
   covers the whole box, CSS's default background-clip).
   Known differences: CSS draws the inner corner of a border with unequal widths as an ellipse, XylemUI as a circle of the larger
