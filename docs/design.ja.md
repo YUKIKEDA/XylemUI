@@ -2147,6 +2147,7 @@ internal static (DisplayList DisplayList, DamageRegion Damage) BuildDisplayList(
 - **線・楕円・円弧（Q4）:** シェーダの SDF で描くので、1 パスのままである（Flutter の `uber_sdf.frag` と同じ）。
   - 線: 太さ、端の形（平ら・丸・四角）、破線
   - 楕円と円弧: 塗りと線
+  - API と細部は、下の「線・楕円・円弧と文字の塗りの API」で決めた（R4b の Grill）。楕円の破線と楕円の円弧は行 R5 で入れる
   - 任意のパス（曲線、塗りと線、つなぎ目の形、破線）は、行 R5 の Grill で描き方を決める。候補は、CPU で三角形にして MSAA の中間テクスチャに描く GPUI の形と、ステンシルで塗ってから覆う Flutter の形
 - **角丸のクリップ（Q6）:** 角丸の矩形のクリップは、命令ごとにシェーダの SDF で掛け、層を作らない。文字のグリフの命令（グレースケール・ClearType・色のグリフ）にも掛ける。角丸の枠の中のテキスト入力で、文字が角からはみ出さないためである（PR #239 のレビュー）。何段まで入れ子にできるかは、行 R4 の実装で決めてここに書く。矩形のクリップは、今の形（シザーかクリップの距離）のまま
 - **層・不透明度・変換の中の文字（§5.0.3「ClearType」の契約、PR #239 のレビュー）:** 次のグリフは、ウィンドウの `GlyphCoverage` を上書きして `Gray` で描く（白黒の設定のときは `Aliased` のまま）。ClearType のカバレッジは下の画素の色が分からないと正しく混ぜられず、透明な ClearType の文字は意味が無いためである（GPUI のブレンドの状態の注記、`directx_renderer.rs` 1513〜1530 行目）。
@@ -2215,6 +2216,50 @@ public readonly record struct BoxShadow(Color Color, Vector2 Offset, float BlurR
   - ボーダーのある箱のグラデーションは、箱の外側の縁を基準にする。CSS はボーダーの内側の縁を基準にする（`background-origin` の既定が `padding-box`）
 - **シェーダ:** 矩形のシェーダは 1 つにまとめ、角丸・ボーダー・塗りの種類・影を、インスタンスの種類で分ける。XylemUI は表示リストの順に描くので、影を別のシェーダにすると（GPUI の形）、影が来るたびに描く回数が増えるためである。インスタンスは、形の行の番号を足して 28 バイトから 32 バイトになった。R4a で測ると、今の場面（矩形 1,000 個と文字 1 行）の CPU の段は main と範囲が重なり、GPU は 110.6〜112.6 µs から 113.7〜114.7 µs になった。影 1,000 個とグラデーションの角丸 1,000 個の場面の GPU は約 1.10 ms で、そのうち影が約 0.72 ms だった（レビューの前の版で測った内訳。`docs/benchmarks/r4a-shapes.md`）
 - **確かめ方:** WARP で描いた画素を読み戻し、CPU で求めた画素と、各チャネル 1 以内で比べる（今の文字のテストと同じ形）。影の CPU の基準は、シェーダの式の写しにしない。ガウス分布を数値で積分した値と比べ、erf の近似と y 方向 4 点の誤差がどれだけかを確かめる（PR #243 のレビュー）。加えて、CSS の `box-shadow` と並べた画像を、オーナーが 100・125 % で目で確かめる
+
+**線・楕円・円弧と文字の塗りの API（R4b の Grill でオーナーが決定、Issue #251）:** Flutter（Impeller）・Avalonia と Skia・GPUI を読んで決めた（Issue #251 に行番号）。Flutter の SDF の道（`uber_sdf.frag`）は既定では切られていて、円弧と破線はいつも三角形に分けて描く。Avalonia に円弧の命令は無い。GPUI には線・楕円・円弧の命令が無く、文字の色は単色だけである。
+
+```csharp
+public enum LineCap { Flat, Round, Square }
+
+// 破線。On を描き、Off を空ける。Offset は、線の始まりが模様のどこから始まるか。どれも論理座標。
+public readonly record struct Dash(float On, float Off, float Offset = 0);
+
+// 線。太さは論理座標で、線は形の線の中心に引く。
+public readonly record struct Stroke(Paint Paint, float Width, LineCap Cap = LineCap.Flat, Dash? Dash = null);
+
+// DisplayList に足す命令。座標・半径・太さは論理座標、角度は度（0 度が上、時計回り）。
+public void DrawLine(float x1, float y1, float x2, float y2, in Stroke stroke);
+public void FillEllipse(float centerX, float centerY, float radiusX, float radiusY, in Paint fill);
+public void DrawEllipse(float centerX, float centerY, float radiusX, float radiusY, in Stroke stroke);
+public void DrawArc(float centerX, float centerY, float radius, float startAngle, float sweepAngle, in Stroke stroke);
+public void FillSector(float centerX, float centerY, float radius, float startAngle, float sweepAngle, in Paint fill);
+
+// 文字をグラデーションで描く。箱は、ブラシの割合を測る箱で、論理座標。単色の DrawText はそのまま残す。
+public float DrawText(ReadOnlySpan<ShapedGlyph> glyphs, Font font, float size, GlyphAtlas atlas, float x, float baseline,
+    GradientBrush brush, float boxX, float boxY, float boxWidth, float boxHeight,
+    GlyphCoverage coverage = GlyphCoverage.Gray, bool aliased = false);
+```
+
+- **線の型（Q1）:** 太さ・端の形・破線と塗りを、1 つの値の `Stroke` にまとめる（Avalonia の `Pen` と同じ形）。スタイルの値として 1 回作って使い回すので、R4a の `Border` と同じく、フレームごとの確保は無い
+- **太さ（Q2）:** 太さ 0 は描かない（Avalonia と同じ）。Skia と Flutter では、太さ 0 は拡大しても 1 画素のまま描くヘアラインだが、部品にそれは要らない。1 画素より細い線は細くせず、覆う面積の分だけ薄く描く（Flutter の `ExpandRectToPixelMinimum` と同じ見え方）。太さが負か数でなければ、`ArgumentOutOfRangeException` を投げる
+- **線の位置（Q3）:** 線は形の線の中心に引き、太さの半分ずつが両側に出る（Flutter・Avalonia・Skia・SVG と同じ）。内側や外側にそろえるときは、部品が形を太さの半分だけ縮めるか広げる（Flutter の `BorderSide.strokeAlign`、Avalonia の `Ellipse` が境界を縮めるのと同じ）。線の座標は画素に丸めない（Skia と Flutter と同じ。Flutter が丸めるのは軸に平行なヘアラインだけで、XylemUI はヘアラインを持たない）。画素にそろった区切り線は、`FillRect` で描く
+- **端の形:** `Flat` は端で切る。`Round` は太さの半分の半円を、`Square` は太さの半分の正方形の半分を、端の先に足す（SVG の `stroke-linecap`）。長さ 0 の線と掃く角度 0 の円弧は、`Flat` なら描かず、`Round` と `Square` なら端の形だけを描く（SVG と同じ。Flutter も、長さ 0 で端の形が `Flat` なら描かない）
+- **破線（Q4・Q5）:** 描く長さと空ける長さの 2 つで、論理座標である（SVG の単位、Flutter の `DrawDashedLine`、Skia の破線の速い道の 2 つの間隔）。端の形は破線の 1 本ごとに付けるので、`On` が 0 で `Round` なら点の並びになる。重なった端も 1 回だけ塗る（SVG と同じく、線全体を 1 つの形として塗る）。`On` と `Off` が負か数でないか、2 つとも 0 なら、`ArgumentException` を投げる
+  - 付けられる形は、線・円（`DrawEllipse` の 2 つの半径が等しいとき）・円の円弧である。長さは、円では中心線の弧の長さ（角度 × 半径）で、円の模様は 0 度（上）から時計回りに始まる
+  - 楕円の破線は行 R5 で入れる。楕円の周りの長さは画素ごとに楕円積分が要り、Skia も楕円の破線はパスに回す。それまでは、半径の違う `DrawEllipse` に破線を渡すと `ArgumentException` を投げる
+  - 一点鎖線のような 3 つ以上の間隔は、行 R5 のパスの線で入れる（Avalonia は太さの倍数の配列を持つ）
+- **円弧（Q6〜Q8）:** 中心と半径で決める円の円弧だけにする。部品の円弧（進み具合の輪、回るしるし）は円である。楕円の円弧は、行 R5 のパスで描く（Flutter は三角形に分けて描き、Skia もパスに回す）
+  - 角度は度で、0 度が上、時計回りが正である。XylemUI の線形と円錐のグラデーション（CSS）と同じにして、円錐のグラデーションと円弧の始まりをそろえる。Flutter・Avalonia・SVG は 0 度が右（3 時）である
+  - 掃く角度が負なら反時計回りで、絶対値が 360 度以上なら円になる（`DrawArc` は端の形の無い円、`FillSector` は円板）
+  - `DrawArc` は開いた円弧の線で、両端に端の形を付ける。`FillSector` は中心を含む扇形の塗りである（Flutter の `useCenter`、Avalonia の `Sector`）。弓形の塗りと、中心まで閉じた扇形の線は入れない
+- **楕円（Q9）:** 半径が 0 なら描かない。負か数でなければ、`ArgumentOutOfRangeException` を投げる。線は楕円までの距離が正しくないと、太い線の幅がむらになる。CPU で求めた正しい距離（数値で求めた最も近い点までの距離）の基準と、各チャネル 1 以内で一致させる。式（Flutter の `uber_sdf.frag` のニュートン法 5 回、または近似式）は、実装で測って選ぶ
+- **形の塗りの箱（Q10）:** グラデーションの割合を測る箱は、塗りでは形の箱（楕円の箱、扇形では円全体の箱）とし、線ではそれを太さの半分だけ広げる（Avalonia と同じ）。線分は、両端を含む箱を太さの半分だけ広げる。Avalonia は線分の箱を広げないので、水平な線で高さが 0 になる。端の形と破線は、箱に入れない
+- **文字の塗り（Q11・Q12）:** グラデーションの文字は、箱を必ず受け取る。部品は自分の箱（何行もあるテキストなら全体の箱）を渡すので、行をまたいで 1 つのグラデーションになる（CSS の `background-clip: text` が要素の箱を使うのと同じ）。Avalonia はグリフのインクの箱、Flutter はキャンバスの座標を使う。既定の箱は持たない。`Font` は文字の縦の大きさ（アセンダとディセンダ）をまだ持たず、それは V1 の `Text` の行の高さと一緒に決めるためである
+  - グリフアトラスのまま描き、画素ごとにグラデーションの色を求めてカバレッジに掛ける。グレースケールと ClearType のコントラストの補正も、その画素の色で行う。Flutter はグラデーションの文字をパスに直して塗るので、ClearType にならない
+  - 色のグリフ（絵文字）は、今と同じく色の不透明度だけを受け取り、その画素のグラデーションのアルファを掛ける
+- **費用（Q13）:** 単色の文字と矩形の費用は変えない。`draw-text` と `frames` の GPU を main と交互に測り、ばらつきの範囲に収める。R4a で、画素シェーダの分岐はすべての画素を遅くした（PR #248）。グリフのシェーダにグラデーションを入れる形（分岐の無い形か、別のシェーダにして描く回数を増やす形か）と、線・楕円・円弧を矩形のシェーダの種類に足す形は、実装で測って選び、ここに書く
+- **確かめ方:** WARP で描いた画素を読み戻し、CPU の基準と各チャネル 1 以内で比べる（R4a と同じ）。基準は線分・円・円弧までは正しい式、楕円は数値で求めた最も近い点で求める。仕様の端の場合（`.cursor/rules/spec-checks.mdc`）として、半透明の線と破線の重なった端、1 画素より細い線、長さ 0 の線、360 度を超える円弧、半透明のグラデーションの文字を入れる。加えて、同じ形を SVG で描いたページと並べた画像を、オーナーが 100・125 % で目で確かめる
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
 
