@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace XylemUI.Tests;
 
 // The display list's reused streams and its reader (S7, design §5.0.1). It has no thread affinity and no static state.
@@ -91,6 +93,138 @@ public sealed class DisplayListTests
             values,
             value => Assert.Equal(BitConverter.SingleToInt32Bits(MathF.Round(value)), BitConverter.SingleToInt32Bits(DisplayList.RoundToPixel(value)))
         );
+    }
+
+    /// <summary>
+    /// A rounded rectangle is written with its edges on pixels and its radii and border widths times the scale; a solid one with
+    /// no radius and no border is written as a solid rectangle.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list reset at scale 1.25.
+    ///
+    /// Steps:
+    /// - Fill (0.5, 0.5, 10, 10) in red with radii 2, 4, 6, 8 and a blue border 1, 2, 3, 4 wide; fill (20, 0, 8, 8) in red with no
+    ///   radius and no border; read both back.
+    ///
+    /// Expected:
+    /// - A Shape of (1, 1, 12, 12), red, no fill brush, radii 2.5, 5, 7.5, 10, widths 1.25, 2.5, 3.75, 5, a blue border, no border
+    ///   brush; then a FillRect of (25, 0, 10, 10).
+    /// </remarks>
+    [Fact]
+    public void FillRect_Rounded_IsAShapeAtTheScale()
+    {
+        var list = new DisplayList();
+        list.Reset(1.25f);
+
+        list.FillRect(0.5f, 0.5f, 10, 10, Red, new CornerRadii(2, 4, 6, 8), new Border(new BorderWidths(1, 2, 3, 4), Blue));
+        list.FillRect(20, 0, 8, 8, Red, default);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out CommandTag first));
+        Assert.Equal(CommandTag.Shape, first);
+        Assert.Equal(
+            new ShapeCommand(1, 1, 12, 12, Red, -1, new CornerRadii(2.5f, 5, 7.5f, 10), new BorderWidths(1.25f, 2.5f, 3.75f, 5), Blue, -1),
+            reader.ReadShape()
+        );
+        Assert.True(reader.TryNext(out CommandTag second));
+        Assert.Equal(CommandTag.FillRect, second);
+        Assert.Equal(new FillRectCommand(25, 0, 10, 10, Red), reader.ReadFillRect());
+        Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
+    /// A gradient used many times in a frame is one entry of the frame's brushes, and the next frame lists it again from the start.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list and two linear brushes, a and b.
+    ///
+    /// Steps:
+    /// - Fill three rectangles with a, b, and a, the second with a border of a; read the brushes and the indices. Reset, fill one
+    ///   with b, and read again.
+    ///
+    /// Expected:
+    /// - The brushes are [a, b]; the fills' indices are 0, 1, 0 and the border's 0. After the reset, the brushes are [b] and the
+    ///   index 0.
+    /// </remarks>
+    [Fact]
+    public void Brushes_UsedTwice_AreListedOncePerFrame()
+    {
+        GradientStop[] stops = [new(0, Red), new(1, Blue)];
+        var a = GradientBrush.Linear(0, stops);
+        var b = GradientBrush.Linear(90, stops);
+        var list = new DisplayList();
+
+        list.FillRect(0, 0, 10, 10, a, default);
+        list.FillRect(0, 0, 10, 10, b, default, new Border(new BorderWidths(1), a));
+        list.FillRect(0, 0, 10, 10, a, default);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.Equal([a, b], reader.Brushes.ToArray());
+        var indices = new List<(int Fill, int Border)>();
+        while (reader.TryNext(out _))
+        {
+            ShapeCommand shape = reader.ReadShape();
+            indices.Add((shape.FillBrush, shape.BorderBrush));
+        }
+
+        Assert.Equal([(0, -1), (1, 0), (0, -1)], indices);
+        list.Reset();
+        list.FillRect(0, 0, 10, 10, b, default);
+        DisplayListReader again = list.GetReader();
+        Assert.Equal([b], again.Brushes.ToArray());
+        Assert.True(again.TryNext(out _));
+        Assert.Equal(0, again.ReadShape().FillBrush);
+    }
+
+    /// <summary>
+    /// A shadow is written with CSS's sigma, half its blur radius, and its values times the scale; its shape's edges are on pixels.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list reset at scale 1.5.
+    ///
+    /// Steps:
+    /// - Draw the shadow of (10, 10, 20, 10) with radius 4: half-black, moved by (2, 3), blur 8, spread 1, inset; read it back.
+    ///
+    /// Expected:
+    /// - A Shadow of (15, 15, 30, 15), radius 6, the color, offset (3, 4.5), sigma 6 (8 / 2 × 1.5), spread 1.5, inset.
+    /// </remarks>
+    [Fact]
+    public void DrawShadow_IsCssSigmaAtTheScale()
+    {
+        var list = new DisplayList();
+        list.Reset(1.5f);
+        var color = new Color(0, 0, 0, 128);
+
+        list.DrawShadow(10, 10, 20, 10, new CornerRadii(4), new BoxShadow(color, new Vector2(2, 3), 8, 1, Inset: true));
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out CommandTag tag));
+        Assert.Equal(CommandTag.Shadow, tag);
+        Assert.Equal(new ShadowCommand(15, 15, 30, 15, new CornerRadii(6), color, new Vector2(3, 4.5f), 6, 1.5f, true), reader.ReadShadow());
+    }
+
+    /// <summary>
+    /// A gradient needs two stops or more in order, and a radial one a positive radius.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Make a linear brush of one stop, one whose offsets go back, and a radial brush of radius 0.
+    ///
+    /// Expected:
+    /// - <see cref="ArgumentException"/>, <see cref="ArgumentException"/>, and <see cref="ArgumentOutOfRangeException"/>.
+    /// </remarks>
+    [Fact]
+    public void GradientBrush_InvalidStopsOrRadius_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => GradientBrush.Linear(0, [new(0, Red)]));
+        Assert.Throws<ArgumentException>(() => GradientBrush.Linear(0, [new(0.6f, Red), new(0.4f, Blue)]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GradientBrush.Radial(new Vector2(0.5f), 0, [new(0, Red), new(1, Blue)]));
     }
 
     /// <summary>
