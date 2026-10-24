@@ -50,6 +50,25 @@ internal static class TestPng
 
     public static byte[] Data(ReadOnlySpan<byte> rows) => Chunk("IDAT", Compressed(rows));
 
+    // The rows followed, in the same zlib stream, by that many zero bytes, written 64 KB at a time: the zeros are never in one array.
+    // A 64 MB array, made on one thread while the steady-state tests measured on others, made TextSteadyStateTests count 1.5 to
+    // 6 KB in TextShaper.Shape on its own thread, with no collection (the cause is not known; Issue #92).
+    public static byte[] CompressedWithZeros(ReadOnlySpan<byte> rows, int zeros)
+    {
+        using var output = new MemoryStream();
+        using (var zlib = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            zlib.Write(rows);
+            byte[] block = new byte[64 * 1024];
+            for (int written = 0; written < zeros; written += block.Length)
+            {
+                zlib.Write(block, 0, Math.Min(block.Length, zeros - written));
+            }
+        }
+
+        return output.ToArray();
+    }
+
     public static byte[] End() => Chunk("IEND", []);
 
     public static byte[] File(params byte[][] chunks)
