@@ -40,6 +40,8 @@ A design PR that changes a decision searches the whole design for the sections t
 
 Every type in a signature the design writes is defined in the design or the code. F1's first `IFontProvider` took `in FontStyle style`, which nothing defined, so whether it carried the language could not be read (PR #146).
 
+A design that changes the unit of a quantity (logical against physical pixels) lists every API that carries it across a boundary, arguments and return values, and writes the unit of each. W1's first design gave the units of the display list's coordinates and of the window's size, and left out the size handed to the layout root (`NotifyWindowResized`) and the advance `DrawText` returns; the review found both (PR #232).
+
 A type in a design signature that holds a size is checked against the scale factors of §6.1 (125 %, 150 %). T4's first `GlyphKey` took `int PixelSize`, which cannot hold the 17.5 px of a 14 px font at 125 % (PR #158 review).
 
 A design that says an OS API does something names the version that has that capability (the interface number and the overload), after reading its declaration in the SDK the build uses. The T6 design took `IDWriteFactory4::TranslateColorGlyphRun` from GPUI's code for COLRv1 too; the paint-tree runs come only from the overload of `IDWriteFactory8` that takes a `DWRITE_PAINT_FEATURE_LEVEL` (Windows SDK 10.0.26100), and the review found it (PR #188).
