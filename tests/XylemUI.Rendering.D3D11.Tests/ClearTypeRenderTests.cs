@@ -73,6 +73,7 @@ public sealed unsafe class ClearTypeRenderTests(UiThreadFixture ui)
 
             list.FillRect(0, 0, 200, 100, paper);
             _ = list.DrawText(shaper.Shape(font, "H", Japanese), font, 32, atlas, 10.25f, 40, inkColor, GlyphCoverage.Rgb);
+            list.ResolveGlyphs(atlas);
             renderer.Draw(list, Clear, atlas);
             renderer.Present();
             int regions = renderer.AtlasRegionUploads;
@@ -81,6 +82,7 @@ public sealed unsafe class ClearTypeRenderTests(UiThreadFixture ui)
             list.FillRect(0, 0, 200, 100, paper);
             _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 10.25f, 40, inkColor, GlyphCoverage.Rgb);
             _ = list.DrawText(shaper.Shape(font, "H", Japanese), font, 32, atlas, 120.5f, 80, HalfRed, GlyphCoverage.Rgb);
+            list.ResolveGlyphs(atlas);
             Painted[] glyphs = Snapshot(list, atlas);
             renderer.Draw(list, Clear, atlas);
 

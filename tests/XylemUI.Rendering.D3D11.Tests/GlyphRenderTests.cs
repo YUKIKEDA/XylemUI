@@ -52,6 +52,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             list.FillRect(0, 0, 200, 100, Paper);
             _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 10, 40, Ink);
             _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 100, 80, HalfRed);
+            list.ResolveGlyphs(atlas);
             Painted[] glyphs = Snapshot(list, atlas);
 
             renderer.Draw(list, Clear, atlas);
@@ -91,6 +92,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             var list = new DisplayList();
             list.FillRect(0, 0, 200, 100, Paper);
             _ = list.DrawText(shaper.Shape(font, "H日", Japanese), font, 32, atlas, 10, 40, Ink);
+            list.ResolveGlyphs(atlas);
             Painted[] glyphs = Snapshot(list, atlas);
             GlyphInstance h = glyphs[0].At;
             var blue = Color.FromRgb(0x3366CC);
@@ -184,6 +186,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             var list = new DisplayList();
             list.FillRect(0, 0, 200, 100, Paper);
             _ = list.DrawText(shaper.Shape(font, "日本語の", Japanese), font, 24, atlas, 10, 40, Ink);
+            list.ResolveGlyphs(atlas);
             Painted[] frame1 = Snapshot(list, atlas);
             renderer.Draw(list, Clear, atlas);
             ID3D11Texture2D* first = renderer.CaptureBackBuffer();
@@ -194,6 +197,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
                 list.Reset();
                 list.FillRect(0, 0, 200, 100, Paper);
                 _ = list.DrawText(shaper.Shape(font, "テ", Japanese), font, 24, atlas, 100, 40, Ink);
+                list.ResolveGlyphs(atlas);
                 Painted[] frame2 = Snapshot(list, atlas);
                 renderer.Draw(list, Clear, atlas);
                 second = renderer.CaptureBackBuffer();
@@ -285,6 +289,46 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A display list whose glyphs were not resolved is an invariant violation for the renderer (design §5.0.3, "Glyphs seen for the
+    /// first time").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Debug build (release ends the process). A WARP renderer, the test font, a shaper, a rasterizer, an empty atlas, and a
+    ///   display list with "H" drawn and not resolved.
+    ///
+    /// Steps:
+    /// - Draw the list.
+    ///
+    /// Expected:
+    /// - The invariant fails (<c>InvariantViolationException</c>), and the atlas has no page.
+    /// </remarks>
+    [Fact]
+    public void Draw_UnresolvedGlyphs_FailsTheInvariant()
+    {
+#if !DEBUG
+        Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
+#endif
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("unresolved", 200, 100);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            using var font = new Font(FontBytes);
+            using var shaper = new TextShaper();
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            var atlas = new GlyphAtlas(rasterizer);
+            var list = new DisplayList();
+            _ = list.DrawText(shaper.Shape(font, "H", Japanese), font, 32, atlas, 10, 40, Ink);
+
+            Exception failed = Assert.ThrowsAny<Exception>(() => renderer.Draw(list, Clear, atlas));
+
+            Assert.Equal("InvariantViolationException", failed.GetType().Name);
+            Assert.Equal(0, atlas.GetPageCount(GlyphCoverage.Gray));
+        });
+    }
+
+    /// <summary>
     /// A steady-state frame with text — start the atlas frame, write rectangles and text, upload, draw, present — allocates
     /// nothing, in grayscale, in ClearType (where the frame is split into draws), and bilevel (design §5.0.3, "When fonts are not
     /// smoothed"), which is drawn as grayscale is, in one draw.
@@ -372,6 +416,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
             );
         }
 
+        list.ResolveGlyphs(atlas);
         renderer.Render(list, Clear, atlas);
     }
 
@@ -381,6 +426,7 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
         list.Reset();
         list.FillRect(0, 0, 200, 100, Paper);
         _ = list.DrawText(shaper.Shape(font, text, Japanese), font, 24, atlas, 10, 40, Ink);
+        list.ResolveGlyphs(atlas);
         Painted[] glyphs = Snapshot(list, atlas);
         renderer.Draw(list, Clear, atlas);
         return glyphs;

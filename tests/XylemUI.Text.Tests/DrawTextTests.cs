@@ -17,7 +17,7 @@ public sealed class DrawTextTests
     /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
     ///
     /// Steps:
-    /// - Shape "H H" and draw it at 32 px with the pen at x 10.25 and the baseline at 50.
+    /// - Shape "H H" and draw it at 32 px with the pen at x 10.25 and the baseline at 50, and resolve the list's glyphs.
     ///
     /// Expected:
     /// - The atlas was asked for "H" at step 1 (10.25 is pixel 10 and one quarter), the space at step 2 (10.25 + 728 × 0.032 =
@@ -36,6 +36,7 @@ public sealed class DrawTextTests
         var list = new DisplayList();
 
         float advance = list.DrawText(shaper.Shape(font, "H H", TestFont.Japanese), font, 32, atlas, 10.25f, 50, Ink);
+        list.ResolveGlyphs(atlas);
 
         Assert.Equal(
             [new GlyphKey(font, 41, 32, 1), new GlyphKey(font, TestRasterizer.Space, 32, 2), new GlyphKey(font, 41, 32, 3)],
@@ -64,7 +65,8 @@ public sealed class DrawTextTests
     /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
     ///
     /// Steps:
-    /// - Draw "H" at 32 px with <see cref="GlyphCoverage.Rgb"/>, then "H" again with the default coverage.
+    /// - Draw "H" at 32 px with <see cref="GlyphCoverage.Rgb"/>, then "H" again with the default coverage, and resolve the list's
+    ///   glyphs.
     ///
     /// Expected:
     /// - The atlas was asked for "H" in Rgb, then in Gray; the first run is Rgb and the second Gray; both glyphs are on page 0 of
@@ -81,6 +83,7 @@ public sealed class DrawTextTests
 
         _ = list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 32, atlas, 0, 50, Ink, GlyphCoverage.Rgb);
         _ = list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 32, atlas, 0, 50, Ink);
+        list.ResolveGlyphs(atlas);
 
         Assert.Equal([new GlyphKey(font, 41, 32, 0, GlyphCoverage.Rgb), new GlyphKey(font, 41, 32, 0)], rasterizer.Measured);
         DisplayListReader reader = list.GetReader();
@@ -105,7 +108,7 @@ public sealed class DrawTextTests
     ///   list.
     ///
     /// Steps:
-    /// - Draw "H日H" at 32 px with the pen at 10.25 and the baseline at 50, in ink.
+    /// - Draw "H日H" at 32 px with the pen at 10.25 and the baseline at 50, in ink, and resolve the list's glyphs.
     ///
     /// Expected:
     /// - Three runs: Gray ("H"), Color ("日"), Gray ("H"), all in ink. "日" is at 10.25 + 728 × 0.032 = 33.546, which rounds to 34:
@@ -122,6 +125,7 @@ public sealed class DrawTextTests
         var list = new DisplayList();
 
         _ = list.DrawText(shaper.Shape(font, "H日H", TestFont.Japanese), font, 32, atlas, 10.25f, 50, Ink);
+        list.ResolveGlyphs(atlas);
 
         Assert.True(atlas.TryGet(new GlyphKey(font, 240, 32, 0, GlyphCoverage.Color), out AtlasGlyph nichi));
         DisplayListReader reader = list.GetReader();
@@ -148,7 +152,7 @@ public sealed class DrawTextTests
     /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
     ///
     /// Steps:
-    /// - Draw "日" at 17.5 px (14 px at 125 %) with the pen at 0.
+    /// - Draw "日" at 17.5 px (14 px at 125 %) with the pen at 0, and resolve the list's glyphs.
     ///
     /// Expected:
     /// - The atlas was asked for "日" at 17.5 px; the advance is 1000 × 0.0175 = 17.5.
@@ -163,6 +167,7 @@ public sealed class DrawTextTests
         var list = new DisplayList();
 
         float advance = list.DrawText(shaper.Shape(font, "日", TestFont.Japanese), font, 17.5f, atlas, 0, 40, Ink);
+        list.ResolveGlyphs(atlas);
 
         Assert.Equal(17.5f, Assert.Single(rasterizer.Measured).PixelSize);
         Assert.Equal(17.5f, advance, 0.001f);
@@ -176,8 +181,8 @@ public sealed class DrawTextTests
     /// - The test font, a shaper, the test rasterizer with "." 8 px square, an atlas of 16 px plots, and an empty display list.
     ///
     /// Steps:
-    /// - Draw "  " (two spaces) at 32 px with the pen at 0.
-    /// - Draw "日." at 32 px with the pen at 0: "日" (26 x 26) is larger than a plot, "." is not.
+    /// - Draw "  " (two spaces) at 32 px with the pen at 0, and resolve the list's glyphs.
+    /// - Draw "日." at 32 px with the pen at 0, and resolve: "日" (26 x 26) is larger than a plot, "." is not.
     ///
     /// Expected:
     /// - The spaces: no command, and the advance is 2 × 224 × 0.032 = 14.336.
@@ -195,10 +200,12 @@ public sealed class DrawTextTests
         var list = new DisplayList();
 
         float spaces = list.DrawText(shaper.Shape(font, "  ", TestFont.Japanese), font, 32, atlas, 0, 40, Ink);
+        list.ResolveGlyphs(atlas);
         Assert.Equal(14.336f, spaces, 0.001f);
         Assert.Equal(0, list.CommandCount);
 
         _ = list.DrawText(shaper.Shape(font, "日.", TestFont.Japanese), font, 32, atlas, 0, 40, Ink);
+        list.ResolveGlyphs(atlas);
         Assert.True(atlas.TryGet(new GlyphKey(font, period, 32, 0), out AtlasGlyph dot));
         DisplayListReader reader = list.GetReader();
         Assert.True(reader.TryNext(out _));
@@ -245,7 +252,8 @@ public sealed class DrawTextTests
     /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
     ///
     /// Steps:
-    /// - Shape "H H" and draw it bilevel at 32 px with the pen at x 10.25 and the baseline at 50; draw it again antialiased.
+    /// - Shape "H H" and draw it bilevel at 32 px with the pen at x 10.25 and the baseline at 50; draw it again antialiased;
+    ///   resolve the list's glyphs.
     ///
     /// Expected:
     /// - The atlas was asked for "H" bilevel at step 0 and the space bilevel at step 0, once each (the second "H", at 40.714, is
@@ -266,6 +274,7 @@ public sealed class DrawTextTests
 
         float aliased = list.DrawText(glyphs, font, 32, atlas, 10.25f, 50, Ink, aliased: true);
         float antialiased = list.DrawText(glyphs, font, 32, atlas, 10.25f, 50, Ink);
+        list.ResolveGlyphs(atlas);
 
         var h = new GlyphKey(font, 41, 32, 0, Aliased: true);
         Assert.Equal([h, new GlyphKey(font, TestRasterizer.Space, 32, 0, Aliased: true)], rasterizer.Measured.Take(2));

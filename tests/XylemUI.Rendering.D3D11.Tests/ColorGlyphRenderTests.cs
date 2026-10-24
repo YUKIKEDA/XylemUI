@@ -31,7 +31,8 @@ public sealed unsafe class ColorGlyphRenderTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Draw paper (0, 0, 200, 100), "H" of the test font in ink at 32 px (pen 10, baseline 50), "😀" at 32 px in ink (pen 40,
-    ///   baseline 50), and "😀" in ink with alpha 128 (pen 100, baseline 50). Read the pixels back before the present.
+    ///   baseline 50), and "😀" in ink with alpha 128 (pen 100, baseline 50); resolve the list's glyphs. Read the pixels back before
+    ///   the present.
     ///
     /// Expected:
     /// - Every pixel of each emoji's box grown by 1 is the CPU composite, each channel within 1, and some pixel of the opaque emoji
@@ -59,6 +60,7 @@ public sealed unsafe class ColorGlyphRenderTests(UiThreadFixture ui)
             _ = list.DrawText(shaper.Shape(font, "H", English), font, 32, atlas, 10, 50, Ink);
             _ = list.DrawText(shaper.Shape(emoji, "😀", English), emoji, 32, atlas, 40, 50, Ink);
             _ = list.DrawText(shaper.Shape(emoji, "😀", English), emoji, 32, atlas, 100, 50, halfInk);
+            list.ResolveGlyphs(atlas);
             Painted[] glyphs = ColorGlyphs(list, atlas, out List<GlyphCoverage> kinds);
             renderer.Draw(list, Clear, atlas);
 
@@ -151,6 +153,7 @@ public sealed unsafe class ColorGlyphRenderTests(UiThreadFixture ui)
                 list.FillRect(0, 0, 200, 100, Paper);
                 float pen = list.DrawText(shaper.Shape(font, "Hello", English), font, 24, atlas, 10 + (frame % 3), 40, Ink);
                 _ = list.DrawText(shaper.Shape(emoji, "😀🎉👍", English), emoji, 24, atlas, 20 + pen, 40, Ink);
+                list.ResolveGlyphs(atlas);
                 renderer.Render(list, Clear, atlas);
             }
         });

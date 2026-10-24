@@ -7,16 +7,17 @@ public sealed class TextSteadyStateTests
     private static long _sink;
 
     /// <summary>
-    /// The text part of a frame (shaping the text again and writing its glyph run from the atlas) allocates nothing once the
-    /// glyphs are cached and the display list has grown.
+    /// The text part of a frame (shaping the text again, writing its glyph run from the atlas, and resolving the list's glyphs)
+    /// allocates nothing once the glyphs are cached and the display list has grown.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The test font, a shaper, an atlas holding the glyphs of the text, and a display list (a warm-up of 10 frames).
+    /// - The test font, a shaper, an atlas made with a function that creates test rasterizers, with 4 threads, holding the glyphs of
+    ///   the text (its workers started in the first frame), and a display list (a warm-up of 10 frames).
     ///
     /// Steps:
-    /// - 1,000 frames: start an atlas frame, reset the display list, shape "Hello, World! 日本語のテキスト", and write it with
-    ///   DrawText. Measure the bytes allocated on this thread.
+    /// - 1,000 frames: start an atlas frame, reset the display list, shape "Hello, World! 日本語のテキスト", write it with
+    ///   DrawText, and resolve the list's glyphs. Measure the bytes allocated on this thread.
     ///
     /// Expected:
     /// - 0 bytes; no glyph was rasterized and no stream grew during the measured loop.
@@ -26,7 +27,7 @@ public sealed class TextSteadyStateTests
     {
         using Font font = TestFont.Open();
         using var shaper = new TextShaper();
-        var atlas = new GlyphAtlas(new TestRasterizer());
+        using var atlas = new GlyphAtlas(() => new TestRasterizer(), threads: 4);
         var list = new DisplayList(commandCapacity: 1, glyphCapacity: 1);
         const string Text = "Hello, World! 日本語のテキスト";
         for (int i = 0; i < 10; i++)
@@ -44,6 +45,7 @@ public sealed class TextSteadyStateTests
 
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
+        Assert.NotNull(atlas.RunningWorkers);
         Assert.Equal(0, allocated);
         Assert.Equal(rasterized, atlas.RasterizeCount);
         Assert.Equal(growth, list.GrowthCount);
@@ -54,5 +56,6 @@ public sealed class TextSteadyStateTests
         atlas.BeginFrame();
         list.Reset();
         _sink += (long)list.DrawText(shaper.Shape(font, text, TestFont.Japanese), font, 24, atlas, 0, 24, Color.FromRgb(0x202020));
+        list.ResolveGlyphs(atlas);
     }
 }
