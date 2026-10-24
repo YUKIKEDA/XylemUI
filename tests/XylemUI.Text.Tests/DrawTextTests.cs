@@ -145,6 +145,48 @@ public sealed class DrawTextTests
     }
 
     /// <summary>
+    /// Text is given in logical pixels: its size, pen, and baseline are multiplied by the frame's scale, and its advance comes back
+    /// in logical pixels (design §6.1.1, "Windows' display scale").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an empty atlas, and a display list reset at scale 1.25.
+    ///
+    /// Steps:
+    /// - Draw "H H" at 14 px with the pen at x 8 and the baseline at 40, and resolve the list's glyphs.
+    ///
+    /// Expected:
+    /// - The atlas was asked for the glyphs at 17.5 px (14 × 1.25): "H" at step 0 (8 × 1.25 = 10), the space at step 3
+    ///   (10 + 728 × 0.0175 = 22.74, rounded to 22.75) and "H" at step 3 (10 + 952 × 0.0175 = 26.66, rounded to 26.75).
+    /// - The glyphs are at x 10 + 1 = 11 and 26 + 1 = 27, y 50 − 14 = 36 (the baseline 40 × 1.25 = 50; the test glyph is
+    ///   round(0.8 × 17.5) = 14 px square).
+    /// - The advance is (728 + 224 + 728) × 0.014 = 23.52 logical pixels.
+    /// </remarks>
+    [Fact]
+    public void DrawText_AtAScale_TakesLogicalPixels()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+        list.Reset(1.25f);
+
+        float advance = list.DrawText(shaper.Shape(font, "H H", TestFont.Japanese), font, 14, atlas, 8, 40, Ink);
+        list.ResolveGlyphs(atlas);
+
+        Assert.Equal(
+            [new GlyphKey(font, 41, 17.5f, 0), new GlyphKey(font, TestRasterizer.Space, 17.5f, 3), new GlyphKey(font, 41, 17.5f, 3)],
+            rasterizer.Measured
+        );
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        GlyphInstance[] glyphs = reader.ReadGlyphRun().Glyphs.ToArray();
+        Assert.Equal([(11, 36), (27, 36)], glyphs.Select(glyph => (glyph.X, glyph.Y)));
+        Assert.Equal(23.52f, advance, 0.001f);
+    }
+
+    /// <summary>
     /// A size with a fraction reaches the atlas unrounded, and the advance is scaled by the same size.
     /// </summary>
     /// <remarks>

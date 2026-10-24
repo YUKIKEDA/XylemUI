@@ -15,6 +15,7 @@
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
 //   glyph-resolve [runs]       ResolveGlyphs for a frame of 1 to 431 new glyphs, and of emoji, on 1, 2, and 4 threads (row T5)
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
+//   dpi-awareness              whether the process is per-monitor DPI aware (V2) when fonts and glyphs come before the window (row W1)
 //   draw-text [--cold]         DrawText of a screen of 40 lines whose glyphs are in the atlas, per glyph (row T5); --cold: the
 //                              frame scene's line once per frame with the caches emptied before, as a frame calls it
 //   font-fallback [splits]     the font fallback of a line: the first split, a split again, one match, the bytes (row F1)
@@ -50,6 +51,7 @@ return scenario switch
     "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
     "glyph-resolve" => GlyphResolve.Run(Number(1, 5)),
+    "dpi-awareness" => DpiAwareness.Run(),
     "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),
     "glyph-resolve-child" => GlyphResolve.Child(
         Number(1, 431),

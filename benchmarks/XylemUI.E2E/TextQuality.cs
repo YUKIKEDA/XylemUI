@@ -19,12 +19,12 @@ namespace XylemUI.E2E;
 // time of building the display list and of Draw, the GPU time, and the draws of a frame (the first 10 frames left out), with the
 // glyphs the atlas rasterized, the atlas's pages of each kind and their bytes, and the process's private memory, at the end.
 //
-// XylemUI does not handle the display's scale yet, so this scene makes the process per-monitor DPI aware and draws in physical
-// pixels at the window's scale, as a DPI-aware app does: sizes and positions are the logical ones times the scale, and the
-// baseline (top + size) is rounded to a whole pixel. --scale S draws at scale S instead (1.0, 1.25, 1.5), so that every scale of
-// design §6.1 can be drawn without changing the display's (row T8). Characters a family lacks take the OS's fallback
+// The scene is in logical pixels, drawn at the window's scale (design §6.1.1, "Windows' display scale", row W1): the display list
+// multiplies sizes and positions by it and puts the baseline (top + size) on a whole pixel. --scale S draws at scale S instead
+// (1.0, 1.25, 1.5), in a window whose client area is 800 x 600 times S, so that every scale of design §6.1 can be drawn without
+// changing the display's (row T8). Characters a family lacks take the OS's fallback
 // (FontFallback.Split).
-internal static class TextQuality
+internal static unsafe class TextQuality
 {
     public const string Sample = "Hamburgefonstiv 0123 日本語のテキスト、ひらがな";
     public const string Probe = "llllllllllllllll";
@@ -37,14 +37,18 @@ internal static class TextQuality
 
     public static int Run(bool dark, bool gray, int frames = 0, bool aliased = false, float scale = 0)
     {
-        _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         UiThread.Initialize();
         using var window = new Win32Window("XylemUI text", 800, 600);
+        if (scale > 0)
+        {
+            // --scale S: the client area of 800 x 600 logical pixels at S, in a window that keeps the display's own DPI.
+            var handle = (HWND)window.Handle;
+            var frame = new RECT { right = (int)MathF.Round(800 * scale), bottom = (int)MathF.Round(600 * scale) };
+            _ = AdjustWindowRectExForDpi(&frame, WS.WS_OVERLAPPEDWINDOW, BOOL.FALSE, 0, GetDpiForWindow(handle));
+            _ = SetWindowPos(handle, HWND.NULL, 0, 0, frame.right - frame.left, frame.bottom - frame.top, SWP.SWP_NOMOVE | SWP.SWP_NOZORDER);
+        }
 
-        // The window's own DPI: the system DPI stays the one of the sign-in when the display's scale changes after it.
-        var handle = (HWND)window.Handle;
-        scale = scale > 0 ? scale : GetDpiForWindow(handle) / 96f;
-        _ = SetWindowPos(handle, HWND.NULL, 0, 0, (int)MathF.Round(800 * scale), (int)MathF.Round(600 * scale), SWP.SWP_NOMOVE | SWP.SWP_NOZORDER);
+        scale = scale > 0 ? scale : window.ScaleFactor;
         window.Show();
         (int width, int height) = window.ClientSize;
         using var renderer = D3D11Renderer.Create(window.Handle, width, height);
@@ -71,15 +75,15 @@ internal static class TextQuality
         void Line(string text, string family, float size, float top, float left = 16)
         {
             FontFallback.Split(fonts, text, japanese, FontRequest.Default with { Family = family }, runs);
-            float pen = left * scale;
-            float baseline = MathF.Round((top + size) * scale);
+            float pen = left;
+            float baseline = top + size;
             foreach (FontRun run in runs)
             {
                 string part = text.Substring(run.Start, run.Length);
                 pen += list.DrawText(
                     shaper.Shape(run.Font, part, japanese),
                     run.Font,
-                    size * scale * run.Scale,
+                    size * run.Scale,
                     atlas,
                     pen,
                     baseline,
@@ -94,7 +98,7 @@ internal static class TextQuality
         {
             start = Stopwatch.GetTimestamp();
             atlas.BeginFrame();
-            list.Reset();
+            list.Reset(scale);
             list.FillRect(0, 0, width, height, background);
             float y = 12;
             foreach (string family in Families)

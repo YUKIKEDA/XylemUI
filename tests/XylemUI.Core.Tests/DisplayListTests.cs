@@ -7,6 +7,64 @@ public sealed class DisplayListTests
     private static readonly Color Blue = Color.FromRgb(0x3366CC);
 
     /// <summary>
+    /// A rectangle is given in logical pixels and each of its edges lands on the nearest pixel at the frame's scale, so rectangles
+    /// that touch in logical pixels touch on the screen (design §6.1.1, "Pixel snapping").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list reset at scale 1.25.
+    ///
+    /// Steps:
+    /// - Fill (0.5, 0.5, 10, 10) and (10.5, 0.5, 10, 10), then read them back.
+    ///
+    /// Expected:
+    /// - Scale is 1.25. The first rectangle is (1, 1, 12, 12): its edges round(0.625) = 1 and round(13.125) = 13. The second
+    ///   starts at 13, where the first ends, and is (13, 1, 13, 12): its right edge is round(25.625) = 26.
+    /// </remarks>
+    [Fact]
+    public void FillRect_AtAScale_PutsEachEdgeOnAPixel()
+    {
+        var list = new DisplayList();
+        list.Reset(1.25f);
+
+        list.FillRect(0.5f, 0.5f, 10, 10, Red);
+        list.FillRect(10.5f, 0.5f, 10, 10, Red);
+
+        Assert.Equal(1.25f, list.Scale);
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new FillRectCommand(1, 1, 12, 12, Red), reader.ReadFillRect());
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new FillRectCommand(13, 1, 13, 12, Red), reader.ReadFillRect());
+    }
+
+    /// <summary>
+    /// A scale that is not a positive number is refused.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list.
+    ///
+    /// Steps:
+    /// - Reset it at 0, at -1, at NaN, and at infinity.
+    ///
+    /// Expected:
+    /// - <see cref="ArgumentOutOfRangeException"/> each time.
+    /// </remarks>
+    /// <param name="scale">The scale.</param>
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-1f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void Reset_ScaleNotPositive_Throws(float scale)
+    {
+        var list = new DisplayList();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.Reset(scale));
+    }
+
+    /// <summary>
     /// The reader returns the commands in the order they were written, with their values.
     /// </summary>
     /// <remarks>

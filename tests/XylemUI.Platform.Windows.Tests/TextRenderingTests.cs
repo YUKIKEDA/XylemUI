@@ -133,7 +133,7 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
     public void SettingChange_ReadsAgainAndRaisesWhenChanged() =>
         ui.Invoke(() =>
         {
-            Func<HWND, TextRenderingParameters> previous = Win32Window.TextRenderingReader;
+            Func<HMONITOR, TextRenderingParameters> previous = Win32Window.TextRenderingReader;
             try
             {
                 using var window = new Win32Window("setting change", 200, 100);
@@ -180,7 +180,7 @@ public sealed class TextRenderingTests(UiThreadFixture ui)
     public void Constructor_ReaderThrows_DestroysTheWindow() =>
         ui.Invoke(() =>
         {
-            Func<HWND, TextRenderingParameters> previous = Win32Window.TextRenderingReader;
+            Func<HMONITOR, TextRenderingParameters> previous = Win32Window.TextRenderingReader;
             var thrown = new InvalidOperationException("The test's reader cannot read.");
             Win32Window.TextRenderingReader = _ => throw thrown;
             string title = $"unreadable {Guid.NewGuid():N}";

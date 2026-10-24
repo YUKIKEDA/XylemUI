@@ -71,10 +71,24 @@ public sealed class DisplayList
     public bool HasPendingGlyphs => _pendingCount > 0;
 
     /// <summary>
-    /// Forgets the commands, keeping the arrays for the next frame.
+    /// Gets the scale of the frame: the window's <c>ScaleFactor</c>, by which the logical pixels the list is given are multiplied
+    /// (design §6.1.1, "Windows' display scale").
     /// </summary>
-    public void Reset()
+    public float Scale { get; private set; } = 1;
+
+    /// <summary>
+    /// Forgets the commands, keeping the arrays for the next frame, and takes the frame's scale.
+    /// </summary>
+    /// <param name="scale">The window's scale (1.25 at 125 %): the list multiplies the logical pixels it is given by it.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="scale"/> is not a positive number.</exception>
+    public void Reset(float scale = 1)
     {
+        if (!(scale > 0) || !float.IsFinite(scale))
+        {
+            throw new ArgumentOutOfRangeException(nameof(scale), scale, "The scale is not a positive number.");
+        }
+
+        Scale = scale;
         CommandCount = 0;
         GlyphCount = 0;
         _usedRects = 0;
@@ -84,9 +98,9 @@ public sealed class DisplayList
     }
 
     /// <summary>
-    /// Appends a solid rectangle.
+    /// Appends a solid rectangle, given in logical pixels, with each edge on the nearest pixel at <see cref="Scale"/>.
     /// </summary>
-    /// <param name="x">The left edge, in physical pixels.</param>
+    /// <param name="x">The left edge, in logical pixels.</param>
     /// <param name="y">The top edge.</param>
     /// <param name="width">The width.</param>
     /// <param name="height">The height.</param>
@@ -98,12 +112,17 @@ public sealed class DisplayList
             Grow();
         }
 
+        // Each edge on the nearest pixel, so that rectangles that touch in logical pixels touch on the screen (design §6.1.1, "Pixel
+        // snapping").
+        float scale = Scale;
+        float left = RoundToPixel(x * scale);
+        float top = RoundToPixel(y * scale);
         _commands[CommandCount++] = CommandTag.FillRect;
         Span<float> rect = _rects.AsSpan(_usedRects, FloatsPerRect);
-        rect[0] = x;
-        rect[1] = y;
-        rect[2] = width;
-        rect[3] = height;
+        rect[0] = left;
+        rect[1] = top;
+        rect[2] = RoundToPixel((x + width) * scale) - left;
+        rect[3] = RoundToPixel((y + height) * scale) - top;
         _usedRects += FloatsPerRect;
         _colors[_usedColors++] = color.Packed;
     }
@@ -137,10 +156,10 @@ public sealed class DisplayList
     /// </summary>
     /// <param name="glyphs">The glyphs, from <see cref="TextShaper.Shape"/> with <paramref name="font"/>.</param>
     /// <param name="font">The font the glyphs were shaped with.</param>
-    /// <param name="pixelSize">The pixels per em: the size in logical pixels times the display's scale, not rounded.</param>
+    /// <param name="size">The size in logical pixels per em; the glyphs are drawn at it times <see cref="Scale"/>, not rounded.</param>
     /// <param name="atlas">The glyph atlas the renderer draws from.</param>
-    /// <param name="x">The pen's start, in physical pixels.</param>
-    /// <param name="baseline">The baseline, in physical pixels from the top.</param>
+    /// <param name="x">The pen's start, in logical pixels.</param>
+    /// <param name="baseline">The baseline, in logical pixels from the top.</param>
     /// <param name="color">The color of the text; a color glyph takes only its alpha, and its color for the layers in the text's color.</param>
     /// <param name="coverage">
     /// Grayscale, or ClearType where the window allows it (design §5.0.3, "ClearType"): the window decides it, not the text.
@@ -149,17 +168,17 @@ public sealed class DisplayList
     /// Whether the glyphs are bilevel, because the OS does not smooth the edges of fonts; the window decides it, as it does
     /// <paramref name="coverage"/>, which is then <see cref="GlyphCoverage.Gray"/>.
     /// </param>
-    /// <returns>The advance of the text, in pixels (the sum of the glyph advances, unrounded).</returns>
+    /// <returns>The advance of the text, in logical pixels (the sum of the glyph advances, unrounded), for a layout that adds it.</returns>
     /// <remarks>
     /// A glyph with no ink (a space) only moves the pen. A glyph larger than an atlas plot (<see cref="GlyphAtlas.PlotSize"/>) is
     /// not drawn (roadmap row T3). The returned advance does not depend on the atlas.
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pixelSize"/> is not a positive number.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is not a positive number.</exception>
     /// <exception cref="ArgumentException"><paramref name="aliased"/> is set with ClearType coverage.</exception>
     public float DrawText(
         ReadOnlySpan<ShapedGlyph> glyphs,
         Font font,
-        float pixelSize,
+        float size,
         GlyphAtlas atlas,
         float x,
         float baseline,
@@ -170,9 +189,10 @@ public sealed class DisplayList
     {
         ArgumentNullException.ThrowIfNull(font);
         ArgumentNullException.ThrowIfNull(atlas);
+        float pixelSize = size * Scale;
         if (!(pixelSize > 0) || !float.IsFinite(pixelSize))
         {
-            throw new ArgumentOutOfRangeException(nameof(pixelSize), pixelSize, "The size is not a positive number.");
+            throw new ArgumentOutOfRangeException(nameof(size), size, "The size is not a positive number.");
         }
 
         if (aliased && coverage == GlyphCoverage.Rgb)
@@ -180,8 +200,11 @@ public sealed class DisplayList
             throw new ArgumentException("Bilevel text has no ClearType coverage.", nameof(aliased));
         }
 
-        // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run.
+        // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run. The pen and the
+        // baseline are in physical pixels from here on.
         float scale = pixelSize / font.UnitsPerEm;
+        x *= Scale;
+        baseline *= Scale;
         Span<GlyphInstance> destination = ReserveGlyphs(glyphs.Length);
         int first = GlyphCount;
         int written = 0;
@@ -239,7 +262,7 @@ public sealed class DisplayList
             EndGlyphRun(written - runStart, color, runCoverage);
         }
 
-        return pen * scale;
+        return pen * (size / font.UnitsPerEm);
     }
 
     /// <summary>
@@ -297,6 +320,11 @@ public sealed class DisplayList
     internal ReadOnlySpan<GlyphCoverage> RunCoverages => _runCoverages.AsSpan(0, _usedRuns);
 
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
+
+    // The nearest whole pixel, ties to even as MathF.Round: adding and taking away 1.5 × 2^23 leaves no fraction a float can hold.
+    // In the NativeAOT build, the 1,000 rectangles of the frames scene took 32.1 to 32.7 µs to write at 125 % with MathF.Round, and
+    // 28.7 to 29.3 µs with this (row W1). Exact while |value| < 2^22 pixels.
+    private static float RoundToPixel(float value) => value + 12582912f - 12582912f;
 
     // A glyph's quad: on the whole pixel of its quarter, or, for a color glyph, on the nearest whole pixel; its top from the row of
     // its baseline.
