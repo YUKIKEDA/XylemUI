@@ -51,9 +51,16 @@ internal sealed class Scene : IDisposable
 
     public static Color Marker { get; } = Color.FromRgb(0x3366CC);
 
+    // A linear gradient for the shapes scene, made once (row R4).
+    private static readonly GradientBrush ShapeGradient = GradientBrush.Linear(
+        135,
+        [new(0, Color.FromRgb(0xCC3333)), new(1, Color.FromRgb(0x3366CC))]
+    );
+
     // The rectangles move with the frame number, so that every frame draws something new. The scene is in logical pixels, drawn at
-    // the window's scale (row W1).
-    public void Build(int frame, int heavy = 0)
+    // the window's scale (row W1). With `shapes`, each rectangle is a rounded one with a gradient and a border over a shadow (row
+    // R4): two instances where the plain scene has one.
+    public void Build(int frame, int heavy = 0, bool shapes = false)
     {
         Atlas.BeginFrame();
         float scale = Window.ScaleFactor;
@@ -65,6 +72,14 @@ internal sealed class Scene : IDisposable
         {
             float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
             float y = 50 + ((i * 11) % Math.Max(1, height - 70));
+            if (shapes)
+            {
+                var radii = new CornerRadii(4);
+                List.DrawShadow(x, y, 16, 16, radii, new BoxShadow(new Color(0, 0, 0, 90), new System.Numerics.Vector2(0, 2), 6));
+                List.FillRect(x, y, 16, 16, ShapeGradient, radii, new Border(new BorderWidths(1), Color.FromRgb(0xE8E8E8)));
+                continue;
+            }
+
             List.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
         }
 

@@ -19,6 +19,9 @@ public sealed class DisplayList
 {
     private const int FloatsPerRect = 4;
 
+    // Numbers each frame that writes a brush, across every list, so a brush's ListFrame tells which list's frame placed it.
+    private static long _brushFrames;
+
     private CommandTag[] _commands;
     private float[] _rects;
     private uint[] _colors;
@@ -29,6 +32,12 @@ public sealed class DisplayList
     // What only ResolveGlyphs uses, apart from the streams, after the fields of a frame with nothing pending, which keep their
     // places (row T5).
     private Resolution _resolve = new();
+
+    // The streams of Shape and Shadow commands, made with the first one (row R4).
+    private ShapeStreams? _shapeStreams;
+    private long _brushFrame;
+    private int _usedShapes;
+    private int _brushCount;
     private int _usedRects;
     private int _usedColors;
     private int _usedRuns;
@@ -67,6 +76,12 @@ public sealed class DisplayList
     public int GrowthCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of Shape and Shadow commands written since the last <see cref="Reset"/> (row R4), for a renderer that sizes
+    /// its buffers.
+    /// </summary>
+    public int ShapeCount => _usedShapes;
+
+    /// <summary>
     /// Gets a value indicating whether <see cref="DrawText"/> left room for glyphs that <see cref="ResolveGlyphs"/> has not filled
     /// yet. Such a list cannot be read.
     /// </summary>
@@ -101,6 +116,8 @@ public sealed class DisplayList
         _usedColors = 0;
         _usedRuns = 0;
         _pendingCount = 0;
+        _usedShapes = 0;
+        _brushCount = 0;
     }
 
     /// <summary>
@@ -131,6 +148,67 @@ public sealed class DisplayList
         rect[3] = RoundToPixel((y + height) * scale) - top;
         _usedRects += FloatsPerRect;
         _colors[_usedColors++] = color.Packed;
+    }
+
+    /// <summary>
+    /// Appends a rounded rectangle with a border, filled with a paint, given in logical pixels (design §5.0, "Shapes, brushes, and
+    /// shadows"). Its edges are on the nearest pixel at <see cref="Scale"/>, as <see cref="FillRect(float, float, float, float, Color)"/>
+    /// puts them; the radii and the border's widths are multiplied by the scale and not rounded. A solid rectangle with no radius
+    /// and no border is written as that solid rectangle.
+    /// </summary>
+    /// <param name="x">The left edge, in logical pixels.</param>
+    /// <param name="y">The top edge.</param>
+    /// <param name="width">The width.</param>
+    /// <param name="height">The height.</param>
+    /// <param name="fill">The paint of the inside.</param>
+    /// <param name="radii">The radius of each corner; when the two on a side sum past it, all are scaled down as CSS does.</param>
+    /// <param name="border">The border, drawn inside the rectangle over the fill, or <see langword="null"/>.</param>
+    public void FillRect(float x, float y, float width, float height, in Paint fill, in CornerRadii radii, Border? border = null)
+    {
+        if (fill.Gradient is null && border is null && radii.TopLeft == 0 && radii.TopRight == 0 && radii.BottomRight == 0 && radii.BottomLeft == 0)
+        {
+            FillRect(x, y, width, height, fill.Color);
+            return;
+        }
+
+        float scale = Scale;
+        ref ShapeRecord record = ref AppendShape(CommandTag.Shape, x, y, width, height, fill.Color);
+        record = default;
+        record.Radii = Scaled(Fitted(radii, width, height), scale);
+        record.FillBrush = BrushIndex(fill.Gradient);
+        record.BorderBrush = -1;
+        if (border is { } edges)
+        {
+            BorderWidths widths = edges.Widths;
+            record.BorderWidths = new BorderWidths(widths.Left * scale, widths.Top * scale, widths.Right * scale, widths.Bottom * scale);
+            record.BorderColor = edges.Paint.Color.Packed;
+            record.BorderBrush = BrushIndex(edges.Paint.Gradient);
+        }
+    }
+
+    /// <summary>
+    /// Appends the shadow of a rounded rectangle given in logical pixels (design §5.0, "Shapes, brushes, and shadows"). The shape's
+    /// edges are on the nearest pixel, as the shape's own are; the offset, blur, and spread are multiplied by <see cref="Scale"/>
+    /// and not rounded. Write an outer shadow before its shape, and an inset one after the shape's fill and before its border.
+    /// </summary>
+    /// <param name="x">The left edge of the shape that casts the shadow, in logical pixels.</param>
+    /// <param name="y">The top edge.</param>
+    /// <param name="width">The width.</param>
+    /// <param name="height">The height.</param>
+    /// <param name="radii">The radius of each corner of the shape.</param>
+    /// <param name="shadow">The shadow, with CSS's values.</param>
+    public void DrawShadow(float x, float y, float width, float height, in CornerRadii radii, in BoxShadow shadow)
+    {
+        float scale = Scale;
+        ref ShapeRecord record = ref AppendShape(CommandTag.Shadow, x, y, width, height, shadow.Color);
+        record = default;
+        record.Radii = Scaled(Fitted(radii, width, height), scale);
+        record.FillBrush = -1;
+        record.BorderBrush = -1;
+        record.Offset = shadow.Offset * scale;
+        record.Sigma = shadow.BlurRadius * 0.5f * scale;
+        record.Spread = shadow.Spread * scale;
+        record.Inset = shadow.Inset;
     }
 
     /// <summary>
@@ -327,6 +405,10 @@ public sealed class DisplayList
 
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
 
+    internal ReadOnlySpan<ShapeRecord> Shapes => _shapeStreams is null ? default : _shapeStreams.Records.AsSpan(0, _usedShapes);
+
+    internal ReadOnlySpan<GradientBrush> Brushes => _shapeStreams is null ? default : _shapeStreams.Brushes.AsSpan(0, _brushCount);
+
     // The nearest whole pixel, ties to even: MathF.Round. In the NativeAOT build, the frames scene's display list took 32.1 to
     // 32.7 µs to write at 125 % with MathF.Round, and 30.2 to 30.7 µs with SSE4.1's ROUNDSS, the same rounding in one instruction,
     // against 26.8 to 28.0 µs on main (row W1, docs/benchmarks/w1-dpi.md).
@@ -488,6 +570,86 @@ public sealed class DisplayList
         return _glyphs.AsSpan(GlyphCount, count);
     }
 
+    // CSS's overlapping curves (CSS Backgrounds 3, 5.5; Skia's SkRRect::scaleRadii, which Flutter and Avalonia draw with): when
+    // the two radii on a side sum past it, every radius is scaled by the smallest ratio of a side to its sum.
+    private static CornerRadii Fitted(in CornerRadii radii, float width, float height)
+    {
+        float top = radii.TopLeft + radii.TopRight;
+        float bottom = radii.BottomLeft + radii.BottomRight;
+        float left = radii.TopLeft + radii.BottomLeft;
+        float right = radii.TopRight + radii.BottomRight;
+        float f = 1;
+        f = top > width ? MathF.Min(f, width / top) : f;
+        f = bottom > width ? MathF.Min(f, width / bottom) : f;
+        f = left > height ? MathF.Min(f, height / left) : f;
+        f = right > height ? MathF.Min(f, height / right) : f;
+        return f < 1 ? new CornerRadii(radii.TopLeft * f, radii.TopRight * f, radii.BottomRight * f, radii.BottomLeft * f) : radii;
+    }
+
+    private static CornerRadii Scaled(in CornerRadii radii, float scale) =>
+        new(radii.TopLeft * scale, radii.TopRight * scale, radii.BottomRight * scale, radii.BottomLeft * scale);
+
+    // A Shape or Shadow command: its rectangle with each edge on a pixel, its color, and the record it fills in.
+    private ref ShapeRecord AppendShape(CommandTag tag, float x, float y, float width, float height, Color color)
+    {
+        if (CommandCount == _commands.Length)
+        {
+            Grow();
+        }
+
+        float scale = Scale;
+        float left = RoundToPixel(x * scale);
+        float top = RoundToPixel(y * scale);
+        _commands[CommandCount++] = tag;
+        Span<float> rect = _rects.AsSpan(_usedRects, FloatsPerRect);
+        rect[0] = left;
+        rect[1] = top;
+        rect[2] = RoundToPixel((x + width) * scale) - left;
+        rect[3] = RoundToPixel((y + height) * scale) - top;
+        _usedRects += FloatsPerRect;
+        _colors[_usedColors++] = color.Packed;
+        ShapeStreams streams = _shapeStreams ??= new ShapeStreams();
+        if (_usedShapes == streams.Records.Length)
+        {
+            Array.Resize(ref streams.Records, streams.Records.Length * 2);
+            GrowthCount++;
+        }
+
+        return ref streams.Records[_usedShapes++];
+    }
+
+    // The brush's place among the frame's brushes, adding it the first time the frame uses it; -1 for none. The brush keeps the
+    // frame and the place it was given, so a brush used many times is found without a lookup.
+    private int BrushIndex(GradientBrush? brush)
+    {
+        if (brush is null)
+        {
+            return -1;
+        }
+
+        if (_brushCount == 0)
+        {
+            _brushFrame = Interlocked.Increment(ref _brushFrames);
+        }
+
+        if (brush.ListFrame == _brushFrame)
+        {
+            return brush.ListIndex;
+        }
+
+        ShapeStreams streams = _shapeStreams!;
+        if (_brushCount == streams.Brushes.Length)
+        {
+            Array.Resize(ref streams.Brushes, streams.Brushes.Length * 2);
+            GrowthCount++;
+        }
+
+        brush.ListFrame = _brushFrame;
+        brush.ListIndex = _brushCount;
+        streams.Brushes[_brushCount] = brush;
+        return _brushCount++;
+    }
+
     private void EndGlyphRun(int count, Color color, GlyphCoverage coverage)
     {
         if (CommandCount == _commands.Length)
@@ -521,6 +683,13 @@ public sealed class DisplayList
     {
         Array.Resize(ref _glyphs, Math.Max(needed, _glyphs.Length * 2));
         GrowthCount++;
+    }
+
+    // The records of the Shape and Shadow commands, and the gradients they use, in the order of their first use in the frame.
+    private sealed class ShapeStreams
+    {
+        public ShapeRecord[] Records = new ShapeRecord[64];
+        public GradientBrush[] Brushes = new GradientBrush[16];
     }
 
     // A glyph DrawText left room for: its instance, its request, and where it goes once its box is known.

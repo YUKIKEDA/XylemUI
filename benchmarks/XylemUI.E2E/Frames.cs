@@ -10,7 +10,7 @@ namespace XylemUI.E2E;
 // ClearType where the window allows it, or grayscale with --gray (roadmap row T2); the report names it and the draws of a frame.
 internal static class Frames
 {
-    public static int Run(int frames, int heavy, bool warp, bool gray = false)
+    public static int Run(int frames, int heavy, bool warp, bool gray = false, bool shapes = false)
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
@@ -35,7 +35,7 @@ internal static class Frames
             }
 
             last = t0;
-            scene.Build(frame, heavy);
+            scene.Build(frame, heavy, shapes);
             long t1 = Stopwatch.GetTimestamp();
             scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
             long t2 = Stopwatch.GetTimestamp();
@@ -76,6 +76,7 @@ internal static class Frames
         report.Text("gpu", scene.Renderer.IsWarp ? "warp" : "hardware");
         report.Number("heavy", heavy);
         report.Text("coverage", scene.Coverage.ToString());
+        report.Text("shapes", shapes ? "yes" : "no");
         report.Number("draws", scene.Renderer.LastDrawCount);
         report.Series("build_ms", [.. build.Skip(Warm)]);
         report.Series("draw_ms", [.. draw.Skip(Warm)]);

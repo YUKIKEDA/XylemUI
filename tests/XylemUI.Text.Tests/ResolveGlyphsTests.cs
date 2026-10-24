@@ -113,6 +113,46 @@ public sealed class ResolveGlyphsTests
     }
 
     /// <summary>
+    /// Shapes and shadows keep their place and their values when ResolveGlyphs writes the list again (row R4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an empty atlas, and an empty display list.
+    ///
+    /// Steps:
+    /// - Write a rounded rectangle with a border, "H" (left for ResolveGlyphs), and a shadow; resolve the list's glyphs; read it.
+    ///
+    /// Expected:
+    /// - Shape, GlyphRun, Shadow, in that order, with the shape's and the shadow's values as written.
+    /// </remarks>
+    [Fact]
+    public void ResolveGlyphs_ShapesAndShadows_KeepTheirPlaces()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var atlas = new GlyphAtlas(new TestRasterizer());
+        var list = new DisplayList();
+        var shadow = new BoxShadow(new Color(0, 0, 0, 100), new System.Numerics.Vector2(1, 2), 6, 1);
+
+        list.FillRect(0, 0, 40, 20, Blue, new CornerRadii(4), new Border(new BorderWidths(1), Ink));
+        _ = list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 32, atlas, 0, 50, Ink);
+        list.DrawShadow(0, 60, 40, 20, new CornerRadii(4), shadow);
+        list.ResolveGlyphs(atlas);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out CommandTag first));
+        Assert.Equal(CommandTag.Shape, first);
+        Assert.Equal(new ShapeCommand(0, 0, 40, 20, Blue, -1, new CornerRadii(4), new BorderWidths(1), Ink, -1), reader.ReadShape());
+        Assert.True(reader.TryNext(out CommandTag second));
+        Assert.Equal(CommandTag.GlyphRun, second);
+        Assert.Single(reader.ReadGlyphRun().Glyphs.ToArray());
+        Assert.True(reader.TryNext(out CommandTag third));
+        Assert.Equal(CommandTag.Shadow, third);
+        Assert.Equal(new ShadowCommand(0, 60, 40, 20, new CornerRadii(4), shadow.Color, shadow.Offset, 3, 1, false), reader.ReadShadow());
+        Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
     /// ResolveGlyphs with nothing pending leaves the list as it is.
     /// </summary>
     /// <remarks>

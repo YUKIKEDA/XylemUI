@@ -1,0 +1,50 @@
+<!doctype html>
+<!--
+  The CSS side of XylemUI.E2E's `shapes` scene (roadmap row R4a, benchmarks/XylemUI.E2E/ShapeGallery.cs): the same shapes, in
+  logical pixels (CSS px), at the same positions in a 600 x 480 box of #F3F3F3. Open it in a browser at 100 % zoom on a display
+  of the same scale as the window, and compare the two side by side.
+  Both scale the radii down as CSS 5.5 does when the two on a side sum past it, and both draw a border over the fill (the fill
+  covers the whole box, CSS's default background-clip).
+  Known differences: CSS draws the inner corner of a border with unequal widths as an ellipse, XylemUI as a circle of the larger
+  width; XylemUI's radial gradient is a circle (CSS's default is an ellipse, so this page asks for a circle); a gradient under a
+  border starts at the outer edge of the box in XylemUI, where CSS starts it at the inner edge of the border (background-origin
+  is padding-box), so no shape on this page has both.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Shapes (CSS)</title>
+  <style>
+    body { margin: 0; background: #F3F3F3; }
+    .box { position: relative; width: 600px; height: 480px; background: #F3F3F3; }
+    .s { position: absolute; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="s" style="left:30px; top:30px; width:140px; height:90px; background:#FFFFFF; border-style:solid; border-color:#2040C0;
+      border-width:4px 8px 2px 1px; border-radius:0 8px 20px 30px;"></div>
+    <div class="s" style="left:210px; top:30px; width:140px; height:90px; background:#FFFFFF; border-radius:12px;
+      box-shadow:0 6px 16px 0 rgba(0,0,0,0.349);"></div>
+    <div class="s" style="left:390px; top:30px; width:140px; height:90px; background:#F3F3F3; border-radius:12px;
+      box-shadow:inset 2px 3px 10px 1px rgba(0,0,0,0.4);"></div>
+    <div class="s" style="left:30px; top:170px; width:110px; height:80px; border-radius:8px;
+      background:linear-gradient(45deg, #E02020, #2040E0);"></div>
+    <div class="s" style="left:160px; top:170px; width:110px; height:80px; border-radius:8px;
+      background:radial-gradient(circle 77px at 30% 60%, #E02020, #2040E0);"></div>
+    <div class="s" style="left:290px; top:170px; width:110px; height:80px; border-radius:8px;
+      background:conic-gradient(from 30deg at 50% 50%, #E02020, #F0E020 50%, #E02020);"></div>
+    <div class="s" style="left:420px; top:170px; width:110px; height:80px; border-radius:8px;
+      background:linear-gradient(in oklab 90deg, #E02020, #2040E0);"></div>
+    <div class="s" style="left:30px; top:290px; width:140px; height:70px;
+      background:linear-gradient(90deg, #E02020, rgba(224,32,32,0));"></div>
+    <div class="s" style="left:210px; top:290px; width:140px; height:70px;
+      background:linear-gradient(90deg, #E02020 25%, #E02020 50%, #2040E0 50%, #2040E0 75%);"></div>
+    <div class="s" style="left:390px; top:290px; width:140px; height:70px; border-radius:12px; background:rgba(255,255,255,0.502);
+      box-shadow:0 8px 20px 0 rgba(0,0,0,0.451);"></div>
+    <div class="s" style="left:30px; top:400px; width:140px; height:50px; background:#E02020; border-radius:10px;
+      border:8px solid rgba(32,64,224,0.502);"></div>
+    <div class="s" style="left:210px; top:400px; width:140px; height:50px; background:#2040E0; border-radius:40px;"></div>
+  </div>
+</body>
+</html>
