@@ -10,6 +10,8 @@
     <!-- The PNG decoder and the scaler of bitmap color glyphs, for the Windows rasterizer and its tests (roadmap row T9). -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows" />
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
+    <!-- The threshold of the atlas's worker threads, which the glyph-resolve scenario moves to measure it (roadmap row T5). -->
+    <InternalsVisibleTo Include="XylemUI.E2E" />
   </ItemGroup>
   <!-- The end of the font fallback (design §4.5, Fonts/README.md). -->
   <ItemGroup>

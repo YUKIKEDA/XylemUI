@@ -6,8 +6,10 @@ namespace XylemUI.Text;
 /// </summary>
 /// <remarks>
 /// The atlas calls <see cref="Measure"/> to learn the size of the glyph's ink, takes room for it, and then calls
-/// <see cref="Rasterize"/> with the same key to write the coverage straight into that room. A rasterizer belongs to the thread of
-/// its atlas.
+/// <see cref="Rasterize"/> with the same key to write the coverage straight into that room; for the new glyphs of a frame, it measures
+/// them all before it rasterizes any (design §5.0.3, "Glyphs seen for the first time"). An instance is used on one thread at a
+/// time; distinct instances of an implementation must work on distinct threads at once, as an atlas made with a function that
+/// creates rasterizers gives each of its threads its own.
 /// </remarks>
 public interface IGlyphRasterizer
 {

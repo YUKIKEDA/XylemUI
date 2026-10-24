@@ -450,8 +450,9 @@ public sealed class GlyphAtlasTests
     /// - Without calling BeginFrame, get the 8 Japanese glyphs, then "W" (glyph 56) at 24 px, twice.
     ///
     /// Expected:
-    /// - PageLimit is 2; the 8 glyphs fit on 2 pages; "W" is refused both times (RefusedCount 2, and it was rasterized both
-    ///   times, since a refused glyph is not cached), the atlas stays at 2 pages, and nothing was evicted.
+    /// - PageLimit is 2; the 8 glyphs fit on 2 pages; "W" is refused both times, but rasterized and counted (RefusedCount 1) only
+    ///   the first time, since the atlas remembers a refusal until the next frame; the atlas stays at 2 pages, and nothing was
+    ///   evicted.
     /// - After BeginFrame, "W" fits by evicting a plot of the frame before.
     /// </remarks>
     [Fact]
@@ -472,8 +473,8 @@ public sealed class GlyphAtlasTests
         Assert.False(atlas.TryGet(new GlyphKey(font, 56, 24, 0), out _));
         Assert.False(atlas.TryGet(new GlyphKey(font, 56, 24, 0), out _));
         Assert.Equal((2, 0), (atlas.GetPageCount(GlyphCoverage.Gray), atlas.EvictionCount));
-        Assert.Equal(2, atlas.RefusedCount);
-        Assert.Equal(rasterized + 2, atlas.RasterizeCount);
+        Assert.Equal(1, atlas.RefusedCount);
+        Assert.Equal(rasterized + 1, atlas.RasterizeCount);
 
         atlas.BeginFrame();
         Assert.True(atlas.TryGet(new GlyphKey(font, 56, 24, 0), out _));

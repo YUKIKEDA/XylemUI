@@ -56,8 +56,7 @@ fontStream.ReadExactly(fontBytes);
 using var font = new Font(fontBytes);
 using var shaper = new TextShaper();
 TextLanguage japanese = TextLanguage.FromTag("ja");
-using var rasterizer = new DirectWriteGlyphRasterizer();
-var atlas = new GlyphAtlas(rasterizer);
+using var atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
 using var fonts = new DirectWriteFontProvider();
 var fallbackRuns = new List<FontRun>();
 long splitStart = Stopwatch.GetTimestamp();
@@ -201,6 +200,9 @@ void BuildFrame(int frame, int width, int height)
         ReadOnlySpan<char> runText = FallbackText.AsSpan(run.Start, run.Length);
         pen += list.DrawText(shaper.Shape(run.Font, runText, japanese), run.Font, size, atlas, pen, 30, Color.FromRgb(0xE8E8E8), coverage, aliased);
     }
+
+    // The glyphs seen for the first time, rasterized together on the atlas's workers.
+    list.ResolveGlyphs(atlas);
 }
 
 // Some pixel of the box of the frame's first glyph is far from the clear color.

@@ -9,13 +9,22 @@ namespace XylemUI.Text.Tests;
 // which is never 0; for ClearType coverage, red is Value and green and blue are Channel(key, row, column, 1 or 2), and the fourth
 // byte is left as it is. A glyph in ColorGlyphs is a color glyph: asked for as grayscale or ClearType, its box only says so (and
 // whether it has a layer in the text's color); as Color, it is the square, blue Value, green and red Channel 1 and 2, alpha 255.
-internal sealed class TestRasterizer : IGlyphRasterizer
+//
+// It records the thread of each Measure, whether it was disposed, and throws InvalidOperationException when asked to rasterize
+// the glyph RasterizeFails names, for the tests of the atlas's worker threads (roadmap row T5).
+internal sealed class TestRasterizer : IGlyphRasterizer, IDisposable
 {
     public const uint Space = 1;
 
     public Dictionary<uint, int> Sides { get; } = [];
 
     public List<GlyphKey> Measured { get; } = [];
+
+    public List<int> MeasureThreads { get; } = [];
+
+    public uint? RasterizeFails { get; set; }
+
+    public bool IsDisposed { get; private set; }
 
     // Color glyphs, each with whether it has a layer in the text's color.
     public Dictionary<uint, bool> ColorGlyphs { get; } = [];
@@ -29,6 +38,7 @@ internal sealed class TestRasterizer : IGlyphRasterizer
     {
         ObjectDisposedException.ThrowIf(glyph.Font.IsDisposed, glyph.Font);
         Measured.Add(glyph);
+        MeasureThreads.Add(Environment.CurrentManagedThreadId);
         if (glyph.GlyphId == Space)
         {
             return default;
@@ -47,8 +57,14 @@ internal sealed class TestRasterizer : IGlyphRasterizer
     public void Rasterize(in GlyphKey glyph, Span<byte> destination, int stride)
     {
         ObjectDisposedException.ThrowIf(glyph.Font.IsDisposed, glyph.Font);
+        if (glyph.GlyphId == RasterizeFails)
+        {
+            throw new InvalidOperationException($"The test rasterizer was told to fail on glyph {glyph.GlyphId}.");
+        }
+
         GlyphBox box = Measure(glyph);
         Measured.RemoveAt(Measured.Count - 1);
+        MeasureThreads.RemoveAt(MeasureThreads.Count - 1);
         bool rgb = glyph.Coverage != GlyphCoverage.Gray;
         for (int row = 0; row < box.Height; row++)
         {
@@ -71,4 +87,6 @@ internal sealed class TestRasterizer : IGlyphRasterizer
             }
         }
     }
+
+    public void Dispose() => IsDisposed = true;
 }

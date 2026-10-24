@@ -16,7 +16,6 @@ internal sealed class Scene : IDisposable
     public const int Rectangles = 1_000;
 
     private readonly Font _font;
-    private readonly DirectWriteGlyphRasterizer _rasterizer = new();
     private readonly TextShaper _shaper = new();
     private readonly TextLanguage _japanese = TextLanguage.FromTag("ja");
 
@@ -32,7 +31,7 @@ internal sealed class Scene : IDisposable
         byte[] bytes = new byte[stream.Length];
         stream.ReadExactly(bytes);
         _font = new Font(bytes);
-        Atlas = new GlyphAtlas(_rasterizer);
+        Atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
     }
 
     public Win32Window Window { get; }
@@ -71,6 +70,8 @@ internal sealed class Scene : IDisposable
         {
             List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));
         }
+
+        List.ResolveGlyphs(Atlas);
     }
 
     private static TextRenderingParameters TextRenderingOf(Win32Window window, bool gray) =>
@@ -80,7 +81,7 @@ internal sealed class Scene : IDisposable
     {
         Renderer.Dispose();
         _shaper.Dispose();
-        _rasterizer.Dispose();
+        Atlas.Dispose();
         _font.Dispose();
         Window.Dispose();
     }

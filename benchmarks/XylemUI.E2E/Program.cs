@@ -13,6 +13,10 @@
 //   layout [samples]           the four layout times of 10,101 nodes in three scenes (design §3.2, row L1a)
 //   layout-loop scene kind N   one of them (kind change, fixed_row, content, or width; scene absolute: its change) repeated N times on one tree, for a profile
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
+//   glyph-resolve [runs]       ResolveGlyphs for a frame of 1 to 431 new glyphs, and of emoji, on 1, 2, and 4 threads (row T5)
+//   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
+//   draw-text [--cold]         DrawText of a screen of 40 lines whose glyphs are in the atlas, per glyph (row T5); --cold: the
+//                              frame scene's line once per frame with the caches emptied before, as a frame calls it
 //   font-fallback [splits]     the font fallback of a line: the first split, a split again, one match, the bytes (row F1)
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
@@ -45,6 +49,14 @@ return scenario switch
     "layout" => LayoutCost.Run(Number(1, 15)),
     "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
+    "glyph-resolve" => GlyphResolve.Run(Number(1, 5)),
+    "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),
+    "glyph-resolve-child" => GlyphResolve.Child(
+        Number(1, 431),
+        Number(2, 1),
+        emoji: args.Contains("--emoji"),
+        from: Array.IndexOf(args, "--from") is int at and >= 0 ? Number(at + 1, 0) : 0
+    ),
     "font-fallback" => CoreCosts.FontFallbackCost(Number(1, 2_000)),
     "dependency-order" => CoreCosts.DependencyOrder(Number(1, 10_000)),
     "scope-cost" => ScopeCost.Run(),
