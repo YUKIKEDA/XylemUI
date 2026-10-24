@@ -39,6 +39,61 @@ public sealed class DisplayListTests
     }
 
     /// <summary>
+    /// A rectangle far from the origin, as a long list's virtual coordinates are, still has its edges on the right pixels.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list at scale 1.
+    ///
+    /// Steps:
+    /// - Fill (5,000,001, 0, 2, 1): past 2^22 pixels, where adding and taking away 1.5 × 2^23 would round 5,000,001 to an even
+    ///   pixel.
+    ///
+    /// Expected:
+    /// - The rectangle is (5,000,001, 0, 2, 1), as MathF.Round gives.
+    /// </remarks>
+    [Fact]
+    public void FillRect_PastTwoToTheTwentySecond_RoundsAsMathFRound()
+    {
+        var list = new DisplayList();
+
+        list.FillRect(5_000_001, 0, 2, 1, Red);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        Assert.Equal(new FillRectCommand(5_000_001, 0, 2, 1, Red), reader.ReadFillRect());
+    }
+
+    /// <summary>
+    /// The rounding of the rectangles' edges (SSE4.1's ROUNDSS where the CPU has it) gives what MathF.Round, its scalar path, gives.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Round the halves from −1,000.5 to 1,000.5, values a little above and below them, ±0, and values past 2^22 and 2^24.
+    ///
+    /// Expected:
+    /// - Each is MathF.Round of the same value, ties to even, bit for bit.
+    /// </remarks>
+    [Fact]
+    public void RoundToPixel_IsMathFRound()
+    {
+        var values = new List<float> { 0f, -0f, 4_194_303.5f, 4_194_305f, 5_000_001f, 16_777_217f, -5_000_001f, 1e30f, -1e30f };
+        for (int i = -2_001; i <= 2_001; i++)
+        {
+            float half = i / 2f;
+            values.AddRange([half, MathF.BitIncrement(half), MathF.BitDecrement(half)]);
+        }
+
+        Assert.All(
+            values,
+            value => Assert.Equal(BitConverter.SingleToInt32Bits(MathF.Round(value)), BitConverter.SingleToInt32Bits(DisplayList.RoundToPixel(value)))
+        );
+    }
+
+    /// <summary>
     /// A scale that is not a positive number is refused.
     /// </summary>
     /// <remarks>

@@ -52,6 +52,7 @@ return scenario switch
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
     "glyph-resolve" => GlyphResolve.Run(Number(1, 5)),
     "dpi-awareness" => DpiAwareness.Run(),
+    "fill-rect" => GlyphResolve.FillRectCost(args.Length > 1 ? float.Parse(args[1], CultureInfo.InvariantCulture) : 1),
     "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),
     "glyph-resolve-child" => GlyphResolve.Child(
         Number(1, 431),

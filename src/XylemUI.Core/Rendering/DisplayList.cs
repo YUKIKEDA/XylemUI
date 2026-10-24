@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using XylemUI.Text;
 
 namespace XylemUI;
@@ -79,7 +81,11 @@ public sealed class DisplayList
     /// <summary>
     /// Forgets the commands, keeping the arrays for the next frame, and takes the frame's scale.
     /// </summary>
-    /// <param name="scale">The window's scale (1.25 at 125 %): the list multiplies the logical pixels it is given by it.</param>
+    /// <param name="scale">
+    /// The window's scale (1.25 at 125 %): the list multiplies the logical pixels it is given by it. It defaults to 1, where logical
+    /// pixels are physical ones, for the tests and the code that writes in the screen's pixels; a frame of a window passes its
+    /// <c>ScaleFactor</c>, or its text and rectangles are drawn too small at 125 %.
+    /// </param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="scale"/> is not a positive number.</exception>
     public void Reset(float scale = 1)
     {
@@ -321,10 +327,12 @@ public sealed class DisplayList
 
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
 
-    // The nearest whole pixel, ties to even as MathF.Round: adding and taking away 1.5 × 2^23 leaves no fraction a float can hold.
-    // In the NativeAOT build, the 1,000 rectangles of the frames scene took 32.1 to 32.7 µs to write at 125 % with MathF.Round, and
-    // 28.7 to 29.3 µs with this (row W1). Exact while |value| < 2^22 pixels.
-    private static float RoundToPixel(float value) => value + 12582912f - 12582912f;
+    // The nearest whole pixel, ties to even: MathF.Round. In the NativeAOT build, the frames scene's display list took 32.1 to
+    // 32.7 µs to write at 125 % with MathF.Round, and 30.2 to 30.7 µs with SSE4.1's ROUNDSS, the same rounding in one instruction,
+    // against 26.8 to 28.0 µs on main (row W1, docs/benchmarks/w1-dpi.md).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static float RoundToPixel(float value) =>
+        Sse41.IsSupported ? Sse41.RoundToNearestIntegerScalar(Vector128.CreateScalarUnsafe(value)).ToScalar() : MathF.Round(value);
 
     // A glyph's quad: on the whole pixel of its quarter, or, for a color glyph, on the nearest whole pixel; its top from the row of
     // its baseline.

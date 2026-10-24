@@ -8,6 +8,7 @@
 dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>
 <dir>/XylemUI.E2E.exe dpi-awareness   # フォントとグリフを先に使ってからウィンドウを作り、DPI の認識を読む
 <dir>/XylemUI.E2E.exe draw-text       # 定常状態の DrawText、1 グリフ
+<dir>/XylemUI.E2E.exe fill-rect 1.25  # frames の場面の矩形 1,000 個を書くだけ、1 個
 <dir>/XylemUI.E2E.exe frames 2400     # フレームの段
 dotnet publish samples/HelloWindow -c Release -r win-x64 -o <dir2>
 <dir2>/HelloWindow.exe --auto
@@ -27,15 +28,19 @@ dotnet publish samples/HelloWindow -c Release -r win-x64 -o <dir2>
 | | main | W1 |
 | --- | --- | --- |
 | `DrawText`（`draw-text`、1 グリフ、4 回） | 47.0〜51.1 ns | 45.7〜47.1 ns |
-| `frames` の表示リストの段（3 回、`MathF.Round` のとき） | 26.6〜31.3 µs | 32.1〜32.7 µs |
-| 同じ（3 回、今の丸め） | 26.6〜31.3 µs | 28.7〜29.3 µs |
+| 矩形を書くだけ（`fill-rect`、1 個、3 回） | 7.2〜8.7 ns | 8.9〜10.2 ns |
+| `frames` の表示リストの段（5 回） | 26.8〜28.0 µs | 30.2〜30.7 µs |
 | HelloWindow `--auto` の表示リストの段（3 回） | 41〜48 µs | 43〜44 µs |
 
-- `frames` の場面は、1 フレームに矩形を 1,000 個書く。W1 は、矩形の 4 つの辺に倍率を掛けて画素に丸める（§6.1.1「ピクセルスナップ」）
-  - 初めは丸めに `MathF.Round` を使った。表示リストの段は、main より 4〜5 µs 長かった
-  - 1.5 × 2²³ を足して引く丸め（最も近い偶数への丸めで、`MathF.Round` と同じ結果）に替えると、3.5 µs 縮んだ
-  - 残る約 2 µs は、矩形 1 つあたり 2 ns で、辺の掛け算と丸めの分である
-- 倍率の違いで、main と W1 は窓の画素の数が違う。main は DPI を宣言しないので 800 × 600、W1 は 125 % で 1,000 × 750 になる。上の段は CPU の時間で、画素の数には寄らない
+- `frames` の場面は、1 フレームに矩形を 1,000 個書く。W1 は、矩形の 4 つの辺に倍率を掛けて画素に丸める（§6.1.1「ピクセルスナップ」）。丸めは次の順に試した
+  - **`MathF.Round`:** 表示リストの段は 32.1〜32.7 µs で、main より 4〜5 µs 長かった
+  - **1.5 × 2²³ を足して引く丸め:** 28.7〜29.3 µs だった。ただし正しいのは 2²² 画素（4,194,304）までで、それを超えると 1 画素ずれる。長いリストの仮想座標（10 万行で 400 万画素を超える）では超えうるので、やめた（PR #236 のレビュー）
+  - **範囲の比較を付けた形:** 31.7〜33.0 µs、インライン化しても 30.6〜30.8 µs だった
+  - **今の形:** SSE4.1 の `ROUNDSS`（CPU が持っていれば。無ければ `MathF.Round`）。`MathF.Round` と同じ、最も近い偶数への丸めを、どの大きさの値でも命令 1 つで行う。`DisplayListTests.RoundToPixel_IsMathFRound` が、2 つの経路の結果をビットまで比べる
+- 残る差の内訳:
+  - 温まったループの `fill-rect` では、矩形 1 つが main より約 2.3 ns 長い（倍率 1 と 1.25 で同じ）。辺 4 つに倍率を掛けて丸める計算の分で、1,000 個で約 2.3 µs になる
+  - `frames` の差は 2.2〜3.9 µs で、この 2.3 µs と範囲が重なる
+- 倍率の違いで、main と W1 は窓の画素の数が違う。main は DPI を宣言しないので 800 × 600、W1 は 125 % で 1,000 × 750 になる。`fill-rect` は描かないので、画素の数に寄らない
 
 ## 目での確認（オーナー）
 

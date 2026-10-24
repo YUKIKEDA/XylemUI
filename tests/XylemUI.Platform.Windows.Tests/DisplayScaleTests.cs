@@ -45,7 +45,8 @@ public sealed unsafe class DisplayScaleTests(UiThreadFixture ui)
     /// - Make a hidden window of 400 x 300 and read its client size.
     ///
     /// Expected:
-    /// - The client size is round(400 × ScaleFactor) x round(300 × ScaleFactor) physical pixels.
+    /// - The client size is round(400 × ScaleFactor) x round(300 × ScaleFactor) physical pixels; where 400 × ScaleFactor is a whole
+    ///   number (100, 125, 150 %), the client size over ScaleFactor is 400 x 300 again, the size the layout root is given.
     /// </remarks>
     [Fact]
     public void Constructor_LogicalSize_IsTheClientAreaAtTheScale() =>
@@ -54,7 +55,49 @@ public sealed unsafe class DisplayScaleTests(UiThreadFixture ui)
             using var window = new Win32Window("size", 400, 300);
 
             float scale = window.ScaleFactor;
-            Assert.Equal(((int)MathF.Round(400 * scale), (int)MathF.Round(300 * scale)), window.ClientSize);
+            (int width, int height) = window.ClientSize;
+            Assert.Equal(((int)MathF.Round(400 * scale), (int)MathF.Round(300 * scale)), (width, height));
+            if (400 * scale == MathF.Round(400 * scale) && 300 * scale == MathF.Round(300 * scale))
+            {
+                Assert.Equal((400f, 300f), (width / scale, height / scale));
+            }
+        });
+
+    /// <summary>
+    /// A window reads its text rendering once while it is made, after its size and monitor are known.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text rendering reader that counts its calls.
+    ///
+    /// Steps:
+    /// - Make a hidden window (CreateWindowExW and the constructor's resize send WM_WINDOWPOSCHANGED).
+    ///
+    /// Expected:
+    /// - The reader was called once, for the window's monitor.
+    /// </remarks>
+    [Fact]
+    public void Constructor_ReadsTheTextRenderingOnce() =>
+        ui.Invoke(() =>
+        {
+            Func<HMONITOR, TextRenderingParameters> previous = Win32Window.TextRenderingReader;
+            try
+            {
+                var read = new List<HMONITOR>();
+                Win32Window.TextRenderingReader = monitor =>
+                {
+                    read.Add(monitor);
+                    return previous(monitor);
+                };
+
+                using var window = new Win32Window("read once", 200, 100);
+
+                Assert.Equal([MonitorFromWindow(window.Hwnd, MONITOR.MONITOR_DEFAULTTONEAREST)], read);
+            }
+            finally
+            {
+                Win32Window.TextRenderingReader = previous;
+            }
         });
 
     /// <summary>

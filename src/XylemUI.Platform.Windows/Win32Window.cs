@@ -334,6 +334,13 @@ public sealed unsafe class Win32Window : IDisposable
     // when the monitor changed. The window procedure still calls DefWindowProc, so that WM_SIZE and WM_MOVE come.
     private void MoveMonitor(HWND hwnd)
     {
+        // CreateWindowExW and the constructor's SetWindowPos send WM_WINDOWPOSCHANGED before the constructor reads the monitor and
+        // its text rendering inside its own try; until then there is nothing to read again (PR #236 review).
+        if (_monitor == HMONITOR.NULL)
+        {
+            return;
+        }
+
         HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR.MONITOR_DEFAULTTONEAREST);
         if (monitor != _monitor)
         {
