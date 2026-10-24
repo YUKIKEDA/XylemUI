@@ -297,7 +297,8 @@ internal static class QuadShaders
             }
             // The signed distance to an ellipse of radii ab around the origin: Inigo Quilez's iterative solver
             // (https://iquilezles.org/articles/ellipsedist, MIT License), whose Newton steps on the angle of the nearest point need
-            // no branch. Five steps, as Flutter's uber_sdf.frag takes.
+            // no branch. Five steps, as Flutter's uber_sdf.frag takes; they converge for an ellipse 100 times as wide as it is tall
+            // (CurveRenderTests.Ellipse_HundredToOne_IsAtItsTrueDistance).
             float EllipseDistance(float2 p, float2 ab)
             {
                 p = abs(p);
@@ -490,7 +491,7 @@ internal static class QuadShaders
     /// <summary>
     /// Gets the entry point of the pixel shader of lines, ellipses, arcs, and sectors, NUL-terminated.
     /// </summary>
-    public static ReadOnlySpan<byte> CurvePixelEntry => "PSCurve "u8;
+    public static ReadOnlySpan<byte> CurvePixelEntry => "PSCurve\0"u8;
 
     /// <summary>
     /// Gets the entry point of the pixel shader of grayscale and color glyphs with a gradient, NUL-terminated.

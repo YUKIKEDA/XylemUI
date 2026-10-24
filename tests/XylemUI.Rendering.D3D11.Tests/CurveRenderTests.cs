@@ -180,6 +180,42 @@ public sealed class CurveRenderTests(UiThreadFixture ui)
         );
 
     /// <summary>
+    /// An ellipse 100 times as wide as it is tall, and one 100 times as tall as it is wide, are still at their true distance: five
+    /// Newton steps converge at that ratio.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Fill an ellipse at (118, 15) with radii 110 and 1.1; outline one at (118, 35), radii 110 and 1.1, 3 wide; outline one at
+    ///   (30, 100), radii 0.5 and 45, 2 wide; fill one at (60, 100), radii 0.5 and 45. Read every pixel of the window.
+    ///
+    /// Expected:
+    /// - Each pixel is the reference's shapes over the clear color, each channel within 1.
+    /// </remarks>
+    [Fact]
+    public void Ellipse_HundredToOne_IsAtItsTrueDistance() =>
+        ui.Invoke(() =>
+            ShapeRenderTests.Compare(
+                list =>
+                {
+                    list.FillEllipse(118, 15, 110, 1.1f, Paper);
+                    list.DrawEllipse(118, 35, 110, 1.1f, new Stroke(Paper, 3));
+                    list.DrawEllipse(30, 100, 0.5f, 45, new Stroke(Paper, 2));
+                    list.FillEllipse(60, 100, 0.5f, 45, Paper);
+                },
+                Window,
+                p =>
+                    Solid(Paper, CurveReference.Ellipse(p, new Vector2(118, 15), new Vector2(110, 1.1f)), 0)
+                    + Solid(Paper, MathF.Abs(CurveReference.Ellipse(p, new Vector2(118, 35), new Vector2(110, 1.1f))) - 1.5f, 3)
+                    + Solid(Paper, MathF.Abs(CurveReference.Ellipse(p, new Vector2(30, 100), new Vector2(0.5f, 45))) - 1, 2)
+                    + Solid(Paper, CurveReference.Ellipse(p, new Vector2(60, 100), new Vector2(0.5f, 45)), 0),
+                tolerance: 1
+            )
+        );
+
+    /// <summary>
     /// An arc runs from its start, clockwise for a positive sweep and counterclockwise for a negative one, with its caps and its
     /// dashes laid in its own direction; a sweep of a turn or more is a circle, and a sweep of 0 is only the caps.
     /// </summary>
