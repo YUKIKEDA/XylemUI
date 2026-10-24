@@ -42,6 +42,7 @@ These rules come from the shape of Cysharp's R3, ZLinq, ZString, MemoryPack, and
 
 - Throwing lives in a separate method marked `[DoesNotReturn]` (and `[StackTraceHidden]` when the frame is noise), so the caller stays small enough to inline. Throw helpers in this repository are `ThrowHelper.*`.
 - Rare work (growing a buffer, requesting a new segment) lives in a `[MethodImpl(MethodImplOptions.NoInlining)]` method; the common check stays inline (MemoryPack `GetSpanReference` / `RequestNewBuffer`).
+- A pixel shader on the frame path does not branch on a value of the pixel or of the instance; it chooses with a conditional value (`a ? b : c` on values both computed). In R4a the rounded rectangle's distance chose a corner with `if`, and the GPU time of the shapes scene (`frames --shapes`) was 6 to 10 % longer than without a branch, even with a branch that every pixel of an instance took the same way, and with `[branch]`. A branch whose other side was emptied was as slow, so the branch itself was the cost; the formula without a branch took two arcs and was 5 % over the formula it replaced (PR #248, `docs/benchmarks/r4a-shapes.md`).
 - `[MethodImpl(MethodImplOptions.AggressiveInlining)]` only where a measurement shows an effect, and the PR says which.
 - A writer over a buffer may be a `ref struct` holding a `ref` field and a remaining length instead of a `Span` field (MemoryPack `MemoryPackWriter`). Bounds are checked once per reservation, not per byte.
 
