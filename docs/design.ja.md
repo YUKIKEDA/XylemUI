@@ -2133,7 +2133,7 @@ internal static (DisplayList DisplayList, DamageRegion Damage) BuildDisplayList(
     - 使い回すと、層 1 つで CPU はほぼ変わらず（1.6〜2.4 µs に対して 1.8 µs）、GPU は 1 つ約 2.2 µs 増えた（10 個で 33.8 µs に対して 56.3 µs）
     - 毎フレーム作ると、CPU が層 1 つで 5〜6 µs 増え、10 個の p95 は 213〜224 µs だった
     - プールの持つメモリは、1 画素 4 バイト（400 × 300 で 480 KB）
-- **グループの不透明度（Q5）:** Flutter と同じ形にする。表示リストを書くときに、子が重ならず、混ぜ方が通常の合成（SrcOver）で、色のフィルタなどが無いかを見分ける。そうなら、アルファを子に配って層を作らない。そうでないときだけ層に描いて、アルファを掛けて合成する（`display_list/dl_builder.h` 732〜773 行目、`impeller/display_list/canvas.cc` 1728〜1734 行目）。GPUI と Avalonia の既定は命令ごとのアルファだけで、子が重なる所の色が正しくないので採らない。子が重なるかの検査は、子の外接矩形を比べるので、子が多いと O(N²) になりうる。検査を打ち切る上限（それを超えたら層にする）は、行 R4 の実装で測って決め、ここに書く（PR #239 のレビュー）
+- **グループの不透明度（Q5）:** Flutter と同じ形にする。表示リストを書くときに、子が重ならず、混ぜ方が通常の合成（SrcOver）で、色のフィルタなどが無いかを見分ける。そうなら、アルファを子に配って層を作らない。そうでないときだけ層に描いて、アルファを掛けて合成する（`display_list/dl_builder.h` 732〜773 行目、`impeller/display_list/canvas.cc` 1728〜1734 行目）。GPUI と Avalonia の既定は命令ごとのアルファだけで、子が重なる所の色が正しくないので採らない。子が重なるかの検査は、子の外接矩形を比べるので、子が多いと O(N²) になりうる（PR #239 のレビュー）。R4c の Grill で、Flutter と同じく、それまでの子の外接矩形の和集合と子ごとに 1 回比べる形に決めた。子 1 つに 1 回なので、打ち切りの上限は要らない（下の「層・クリップ・変換・`DrawingContext` の API」）
 - **影（Q2）:** 角丸の矩形の影は、シェーダで解析的に描く（GPUI と同じ。`gpui_windows/src/shaders.hlsl` 913〜953 行目、x 方向は erf の近似の閉じた式、y 方向は 4 点）。
   - 持つもの: 角ごとの半径、外側と内側の影、広げ（spread）、ぼかしの半径、ずらし
   - Flutter の `rrect_blur.frag` が解析的に描くのは、4 隅が同じ半径のときだけである
@@ -2149,12 +2149,12 @@ internal static (DisplayList DisplayList, DamageRegion Damage) BuildDisplayList(
   - 楕円と円弧: 塗りと線
   - API と細部は、下の「線・楕円・円弧と文字の塗りの API」で決めた（R4b の Grill）。楕円の破線と楕円の円弧は行 R5 で入れる
   - 任意のパス（曲線、塗りと線、つなぎ目の形、破線）は、行 R5 の Grill で描き方を決める。候補は、CPU で三角形にして MSAA の中間テクスチャに描く GPUI の形と、ステンシルで塗ってから覆う Flutter の形
-- **角丸のクリップ（Q6）:** 角丸の矩形のクリップは、命令ごとにシェーダの SDF で掛け、層を作らない。文字のグリフの命令（グレースケール・ClearType・色のグリフ）にも掛ける。角丸の枠の中のテキスト入力で、文字が角からはみ出さないためである（PR #239 のレビュー）。何段まで入れ子にできるかは、行 R4 の実装で決めてここに書く。矩形のクリップは、今の形（シザーかクリップの距離）のまま
+- **角丸のクリップ（Q6）:** 角丸の矩形のクリップは、命令ごとにシェーダの SDF で掛け、層を作らない。文字のグリフの命令（グレースケール・ClearType・色のグリフ）にも掛ける。角丸の枠の中のテキスト入力で、文字が角からはみ出さないためである（PR #239 のレビュー）。入れ子の扱いと矩形のクリップの掛け方は、R4c の Grill で決めた（下の「層・クリップ・変換・`DrawingContext` の API」）
 - **層・不透明度・変換の中の文字（§5.0.3「ClearType」の契約、PR #239 のレビュー）:** 次のグリフは、ウィンドウの `GlyphCoverage` を上書きして `Gray` で描く（白黒の設定のときは `Aliased` のまま）。ClearType のカバレッジは下の画素の色が分からないと正しく混ぜられず、透明な ClearType の文字は意味が無いためである（GPUI のブレンドの状態の注記、`directx_renderer.rs` 1513〜1530 行目）。
   - 不透明度が 1 でないグループの中のグリフ。速い道でアルファを子に配った場合も含む
   - 層の中のグリフ
   - 変換（`Transform`）の中のグリフ。整数の画素の平行移動だけは、ClearType のまま描ける
-  - この状態を `DrawText` にどう伝えるか（`DrawingContext` の保存と復元の状態に持つのか、グループを書き始めるときに決めるのか）は、行 R4 の実装で決める。`Transform` の命令も、R4 で入れる
+  - この状態は、表示リストが自分の積んだ状態から知り、`DrawText` がそれを見る（R4c の Grill、下の「層・クリップ・変換・`DrawingContext` の API」）
 - **背景のぼかし（Q7）:** アプリ内の Acrylic は、§13.2 のとおり v1.x のままにする。v1 の部品の範囲に要らないためである。形は、層の上に乗せる Flutter の形とする。今描いた分をテクスチャに取ってぼかし、新しい層の最初に描く（`impeller/display_list/canvas.cc` 2415〜2470 行目）。Avalonia はアプリ内ではぼかさず、OS の合成に任せている
 - **利用者が描く拡張点（Q8）:** 表示リストの語彙を記録する公開の API（`DrawingContext`）を持つ。GPUI の `canvas()`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ形である。生の GPU に触れる口（Avalonia の Skia のリースは `[Unstable]`）は持たず、GPU を直接使う描画は行 D11 のネイティブ描画領域に任せる
 - **ヒット領域（Q9）:** v1 は、矩形と角丸の矩形にする（GPUI は矩形だけ）。任意のパスの当たり判定（Avalonia の `Geometry.FillContains`）は、行 R5 で入れる
@@ -2163,7 +2163,7 @@ internal static (DisplayList DisplayList, DamageRegion Damage) BuildDisplayList(
 
 - **R4a:** 角丸の矩形（角ごとの半径）とボーダー（辺ごとの幅、1 つの塗り）、塗りを矩形の塗りとボーダーに当てること、影
 - **R4b:** 線・楕円・円弧と、それらと文字に塗りを当てること
-- **R4c:** 角丸のクリップ（文字にも掛ける）、`Transform`、層とグループの不透明度、その中の文字のグレースケール、`DrawingContext`、角丸のヒット領域
+- **R4c 以降:** 角丸のクリップ（文字にも掛ける）、`Transform`、層とグループの不透明度、その中の文字のグレースケール、`DrawingContext`、角丸のヒット領域。R4c の Grill で、R4c・R4d・R4e の 3 つに分けた（下の「層・クリップ・変換・`DrawingContext` の API」）
 
 型は次のとおりである。上の `PaintCommand.FillRect` の塗りと `Border` の色は、`Paint` である。
 
@@ -2268,6 +2268,58 @@ public float DrawText(ReadOnlySpan<ShapedGlyph> glyphs, Font font, float size, G
   - 線・楕円・円弧の値は、形と影の記録（`ShapeRecord`）に入れず、別の並び（`CurveRecord`）に入れる。`ShapeRecord` に足した版は、R4a の形の場面の表示リストの段が 3 µs 延びた
   - 破線は、画素の位置から近い破線だけを測る。線では前後の 2 本（画素の位置を線の長さの中に収めてから選ぶ）、円弧では 3 本である。円弧の平らな端と四角い端は円の外へまっすぐ伸びるので、円の外では 1 つ前の破線の端のほうが近いことがある。円全体では、継ぎ目（始まり）の両側の最初と最後の破線も測り、継ぎ目で接する 2 本は 1 本としてつなぐ。破線の無い円は端の無い輪である
 - **確かめ方:** WARP で描いた画素を読み戻し、CPU の基準と各チャネル 1 以内で比べる（R4a と同じ）。基準は線分・円・円弧までは正しい式、楕円は数値で求めた最も近い点で求める。仕様の端の場合（`.cursor/rules/spec-checks.mdc`）として、半透明の線と破線の重なった端（`Off` が太さより短い `Round` の破線）、1 画素より細い線、長さ 0 の線、360 度を超える円弧、太さの半分が半径を超える円・楕円・円弧の線、半透明のグラデーションの文字を入れる。加えて、同じ形を SVG で描いたページと並べた画像を、オーナーが 100・125 % で目で確かめる
+
+**層・クリップ・変換・`DrawingContext` の API（R4c の Grill でオーナーが決定、Issue #259）:** Flutter（Impeller・DisplayList）・Avalonia と Skia・GPUI を読んで決めた（Issue #259 に行番号）。
+
+- **分け方（Q1）:** 次の順に 3 つの Issue で入れる。Q4 で上限を超えたクリップの受け皿が層なので層を先にし、全部を記録する `DrawingContext` を最後にする
+  - **R4c:** 層、グループの不透明度、その中の文字のグレースケール
+  - **R4d:** 角丸のクリップ（文字にも掛ける）と `Transform`
+  - **R4e:** `DrawingContext` と角丸のヒット領域（§7 の `HitTestList` を作る）
+
+```csharp
+// DisplayList に足す。Pop は最後に積んだものを戻す。座標と半径は論理座標。
+public void PushOpacity(float alpha);                                                       // 0〜1（R4c）
+public void PushClip(float x, float y, float width, float height, in CornerRadii radii);    // R4d
+public void PushTransform(in Matrix3x2 transform);                                          // System.Numerics、R4d
+public void Pop();
+
+// 利用者が描く関数に渡す値型（R4e）。描く命令は DisplayList と同じ名前で、ヒット領域も書く。
+public readonly ref struct DrawingContext
+{
+    public DrawingScope PushOpacity(float alpha);
+    public DrawingScope PushClip(float x, float y, float width, float height, in CornerRadii radii);
+    public DrawingScope PushTransform(in Matrix3x2 transform);
+}
+
+// using で終える。Dispose が Pop を呼ぶ。確保は無い（Avalonia の PushedState と同じ形）。
+public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
+```
+
+- **積む API（Q2）:** 押すと戻すを、平らな命令の並びに並べて書く（Avalonia の命令の並びと同じ形）
+  - 不透明度 1 と単位行列は記録しない。何も描かなかったスコープは捨てる（Avalonia の `RenderDataDrawingContext.cs` 77〜87 行目と同じ）
+  - 積んでいない `Pop` は `InvalidOperationException` を投げる。積んだまま読もうとすると不変条件に反する。`Reset` は積んだものを忘れる
+  - 変換・クリップ・不透明度は、押した後に書いた命令にだけ効く
+- **グループの不透明度（Q3）:** 子が重ならないときは、アルファを子の色に掛けて層を作らない（D10 の Q5）
+  - 重なりの検査は Flutter と同じ形にする。子の外接矩形（変換とクリップを掛けた後の物理座標）を、それまでの子の外接矩形の和集合と比べ、交われば層にする（`dl_accumulation_rect.cc` 31〜50 行目）。子 1 つに 1 回なので打ち切りの上限は要らない。和集合で比べるので、重ならない子を重なると見ることはあるが、その逆は無い
+  - 入れ子のグループは、外のグループから見て 1 つの子である。文字の命令が入ったグループは層にする。グリフどうしが重なるかを調べられないためである（Flutter の `dl_builder.cc` 1849〜1855 行目）
+  - GPUI と Avalonia の既定は重なりを調べないので、子が重なる所の色が正しくない
+- **層（Q7）:** 層は、外接矩形の大きさの premultiplied の RGBA8 のテクスチャに描き、`Pop` の所で、アルファを掛けて親に重ねる。表示リストの順は保つ
+  - テクスチャはプールで使い回す（D10 の試作で、使い回すと層 1 つの GPU は約 2.2 µs）。プールには上限と、上限で断った数の数えを持たせる（`.cursor/rules/perf.mdc`）。大きさの丸め方と、使わなくなったテクスチャを捨てるまでのフレーム数は、R4c の実装で測って決め、ここに書く
+- **文字のグレースケール（Q6）:** 表示リストは自分の積んだ状態を知っている。`DrawText` は、層・1 でない不透明度・物理座標で整数の平行移動でない変換の中にいるとき、グリフの種類を `Gray` にする。引数は足さない
+- **角丸のクリップ（Q4）:** どの種類の命令にも掛ける（矩形・形・影・線・楕円・円弧・扇形・どの種類のグリフも）
+  - 矩形のクリップは、頂点シェーダの `SV_ClipDistance` の 4 つの面で掛ける（GPUI の `shaders.hlsl` 111〜115 行目）。画素のシェーダには費用がかからない。変換の中の矩形は、変換した 4 つの面になる
+  - 角丸のクリップは、画素ごとに距離で掛け、縁は覆う面積でなめらかにする。距離は、押したときの変換の逆でクリップの座標に戻してから求める
+  - 入れ子は、矩形どうしを 1 つの矩形にまとめ、一方が他方を含む角丸どうしを内側の 1 つにまとめる（Skia の `ClipStack.cpp` 654〜710 行目）。まとめた後に解析的に掛ける角丸の数には上限を設ける（Skia は 4、`ClipStack.cpp` 1185 行目）。数は R4d の実装で測って決め、ここに書く。上限を超えたら、外側のクリップの中を層に描き、層を重ねるときに外側のクリップを掛ける
+  - Flutter は深度バッファで掛け、縁のなめらかさを MSAA に頼る（`clip_contents.cc` 70〜166 行目）。XylemUI は MSAA を使わないので採らない
+  - クリップの無い命令の費用は変えない。R4b で、画素シェーダに入ったコードの分だけすべての画素が遅くなった（`.cursor/rules/perf.mdc`）。クリップを全部のシェーダに入れるか、クリップのある命令だけを別のシェーダにするかは、R4d の実装で測って選び、ここに書く
+- **`Transform`（Q5）:** `System.Numerics.Matrix3x2` の 2 次元のアフィン変換で、遠近は持たない（Flutter も遠近の無いときは 2×3 で記録する、`dl_op_records.h` 422〜441 行目）
+  - 論理座標の変換である。物理座標は、変換した論理座標に表示リストの倍率（`Scale`）を掛けたものである。押した変換は、今の変換の内側に掛かる（後に押したものが先に点に掛かる）
+  - 頂点シェーダが四隅に掛ける。形の距離は、変換の逆で戻した座標で求める
+  - 矩形の辺を画素に合わせる W1 の丸めは、変換が物理座標で整数の平行移動のときだけ行う
+  - 変換の中のグリフは、変換の拡大率の大きいほうの大きさでアトラスに描き、回転と斜めは双線形でサンプルする（Flutter の `text_contents.cc` 216〜235・325〜333 行目）。グレースケールで描く（上の契約）
+- **ヒット判定（Q8）:** §7 の `HitTestList` の項目は、ノードの矩形と角の半径、クリップ（まとめた矩形と、上限までの角丸）、累積の変換の逆を持つ。点は、描画と同じ距離の式で、ノードの角丸の内側で、どのクリップの内側でもあるときに当たる。Flutter と Avalonia は角丸のクリップを矩形で判定するので、見えない角の子に当たる（`proxy_box.dart` 1733〜1742 行目、`RenderDataStream.HitTest.cs` 85〜91 行目）
+- **`DrawingContext`（Q9）:** 表示リストとヒットテストの一覧の両方に書く値型で、利用者が描く関数に渡す（GPUI の `canvas`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ）。`Push*` は `using` で終える `DrawingScope` を返す。どのノードのヒット領域を書くか、利用者の関数をいつ呼ぶかは、R4e で V1 の描画の段と一緒に決める
+- **確かめ方:** WARP の画素を CPU の基準と比べる（R4a・R4b と同じ）。仕様の端の場合として、重なる子と重ならない子のグループ、入れ子のグループ、文字の入ったグループ、上限を超える入れ子の角丸のクリップ、回転した変換の中の角丸のクリップとグリフ、整数と端数の平行移動の中の ClearType を入れる。費用は、層・クリップ・変換の無い場面（`frames`・`frames --shapes`・`frames --curves`）が main とばらつきの範囲で同じであることを確かめる
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
 
@@ -2505,7 +2557,7 @@ flowchart TD
 - **グリフとアトラス:** ClearType のグリフは、DirectWrite の `DWRITE_TEXT_ANTIALIAS_MODE_CLEARTYPE` と `DWRITE_TEXTURE_CLEARTYPE_3x1`（1 画素 3 バイト）で描き、R8 のアトラスとは別の、`R8G8B8A8_UNORM` のページのテクスチャ配列に 1 画素 4 バイトで入れる（GPUI の `directx_atlas.rs` 189〜193 行目と同じ）。`GlyphKey` にカバレッジの種類（`GlyphCoverage`）が加わる。そのグリフのメモリは 4 倍になる。ClearType のページは一辺がグレースケールのページの半分（既定 512 px）で、1 枚のバイト数はグレースケールのページと同じ（既定 1 MB）。種類ごとの上限の枚数は 4 倍（既定 16 枚）なので、プロットの数（64）とメモリの上限（16 MB）は 1024 px のページのときと変わらず、ページは使った分だけ取る（T2 のレビューでオーナーが決定、Q10。1024 px の RGBA のページでは、1 行のテキストのためにアイドルのプライベートメモリが 9.5 MB 増え、§11.3 の目安の 64 MB を超えた。512 px にすると、増えなかった）。GPUI は 1024 px の RGBA のテクスチャから始める（`directx_atlas.rs` 164〜174 行目）が、CPU 側の写しを持たない。1 つの `GlyphAtlas` が種類ごとのページの列（`R8` と `R8G8B8A8`。T6 で色のグリフの BGRA の列が加わる）を持ち、`AtlasGlyph` と `GlyphInstance` のページの番号は、その種類の列の中の番号である（GPUI の `directx_atlas.rs` 21〜23 行目も、1 つのアトラスに種類ごとのテクスチャの列を持つ）。ページの id はプロセスの中で一意のまま。`GlyphRun` のコマンドがカバレッジの種類を持ち、レンダラはその種類のテクスチャ配列（`R8` か `R8G8B8A8`）を結びつけて描く
 - **ブレンドと描く順:** ClearType のグリフの並びは、デュアルソースのブレンド（`SRC1_COLOR` と `INV_SRC1_COLOR`、アルファは書かない。GPUI の `directx_renderer.rs` 1513〜1530 行目）で描く。DisplayList の順は保ち、ブレンドの状態が変わる所でだけ描画を分ける（グレースケールのグリフと矩形は 1 回の描画のまま）。デュアルソースのブレンドは Direct3D 10 の API にある（`D3D10_BLEND_SRC1_COLOR`）。XylemUI のシェーダは機能レベル 10 で、T2 で、WARP とハードウェア（NVIDIA GeForce RTX 3060 Ti）の両方で、機能レベル 10.0 だけを求めたデバイスでも、色ごとの合成が CPU で同じ式を計算した結果と各色 1/255 以内で合うことを確かめた（`ClearTypeRenderTests`）
 - **補正と位置:** 色ごとに補正する（GPUI の `apply_contrast_and_gamma_correction3`。コントラストは `IDWriteRenderingParams1::GetEnhancedContrast`、ガンマの比は T4 と同じ）。BGR の画面ではシェーダで並びを入れ替える。¼ 画素の 4 段階のサブピクセル位置は ClearType でも同じに使う（GPUI と同じ）
-- **透過・変換・レイヤー:** 不透明度・変換・画面外のレイヤーの中のグリフはグレースケールで描く。LCD のカバレッジは下の画素の色が分からないと正しく混ぜられないためである（Avalonia もレイヤーでない画面外の描き先で切る、`DrawingContextImpl.cs` 1509 行目）。DisplayList はまだこの 3 つを持たないので、契約だけを今決め、実装は、この 3 つを入れる行 R4 で行う（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）
+- **透過・変換・レイヤー:** 不透明度・変換・画面外のレイヤーの中のグリフはグレースケールで描く。LCD のカバレッジは下の画素の色が分からないと正しく混ぜられないためである（Avalonia もレイヤーでない画面外の描き先で切る、`DrawingContextImpl.cs` 1509 行目）。DisplayList はまだこの 3 つを持たないので、契約だけを今決め、実装は、この 3 つを入れる行 R4 で行う（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。層と不透明度は R4c、変換は R4d で入れる（§5.0「層・クリップ・変換・`DrawingContext` の API」）
 - **比べ方と測るもの:** T2 の受け入れは Issue に書く。T4 の場面（`benchmarks/compare/text.ps1`）で GPUI と Avalonia（どちらも LCD）と並べ、WARP の読み戻しで色ごとの合成を CPU の合成と比べ、アトラスのメモリ・描画の回数・初めてのラスタライズを測る。T2 で測ると、125 % の T4 の場面の 16 行は、白地でも黒地でも GPUI と同じ画素になった（行の縦の位置だけが違う）。アトラスは、游ゴシックの 150 % の画面で 3.0 MB（1024 px を 3 枚）から 12.0 MB（512 px を 12 枚）になり、追い出しは 0 のまま。アイドルのプライベートメモリは、ClearType で 59.0〜59.4 MB、グレースケールで 57.9〜59.2 MB（§11.3 の目安の 64 MB 以下）。1 フレームの描画は 1 回から 2 回になり、`Draw` の CPU の時間に差は見えず、GPU の時間は 384 グリフの場面で 0.009〜0.011 ms 増えた。初めて出るグリフは、同じ大きさのグレースケールの 1.05〜1.21 倍だった（`docs/benchmarks/t2-cleartype.md`）
 
 **色のグリフ（T6 の Grill でオーナーが決定、Issue #187）:** 比べた版は T4 と同じ（Zed v1.24.3 の GPUI、Avalonia 12.1.4 の SkiaSharp 3.119.4 が使う Skia m119、Flutter 3.47.7）。形式と描き方の理由は §4.6。
@@ -2767,7 +2819,7 @@ AT-SPIはD-Bus IPCを前提とするプロトコルであり、SDL3はD-Busの�
 ## 7. 入力 / インタラクション
 
 - **イベントディスパッチ**: DOM方式（capture+bubble）を採用。モーダルのフォーカストラップとグローバル/ローカルショートカットの共存に伝播の概念が必須で、WPF/Avaloniaも同じ理由でTunneling+Bubblingを採用している。Fine-grained reactive（§2）の各ノードが自スコープでハンドラを登録する設計とも整合する。メッセージキュー方式(Elm)は中央集権的でノード単位に閉じる設計思想と衝突するため却下。
-- **ヒットテスト**: v1 の正本は DisplayList 構築と同時に作るフラットな `HitTestList` である。入力は直近完成リストを末尾（最前面）から走査する。祖先への木登りはしない。空間索引は持たない。将来 Canvas 等で O(N) がボトルネックになった場合に備え `IHitTester` で差し替え可能にしておく。木探索実装は将来の `TreeHitTester` 用であり、v1 の入力経路では使わない。ヒット領域は矩形と角丸の矩形で、任意のパスの当たり判定は行 R5 で入れる（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。
+- **ヒットテスト**: v1 の正本は DisplayList 構築と同時に作るフラットな `HitTestList` である。入力は直近完成リストを末尾（最前面）から走査する。祖先への木登りはしない。空間索引は持たない。将来 Canvas 等で O(N) がボトルネックになった場合に備え `IHitTester` で差し替え可能にしておく。木探索実装は将来の `TreeHitTester` 用であり、v1 の入力経路では使わない。ヒット領域は矩形と角丸の矩形で、任意のパスの当たり判定は行 R5 で入れる（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。項目は角丸のクリップも持ち、描画と同じ距離の式で角まで判定する（§5.0「層・クリップ・変換・`DrawingContext` の API」、R4c の Grill。`HitTestList` は行 R4e で作る）。
 
 **Transform:** DisplayList 構築中に累積行列をスタックし、各 `HitTestEntry` に `InverseTransform` とクリップ済み `EffectiveBounds` を書く。逆行列は `Matrix3x2.Invert` で求める。
 
@@ -2784,7 +2836,9 @@ HitTestList is valid iff the producing frame's
 ```csharp
 internal readonly record struct HitTestEntry(
     NodeHandle Node,
-    Rect EffectiveBounds,          // 累積クリップ適用済みの有効ヒット領域
+    Rect EffectiveBounds,          // 累積クリップ適用済みの有効ヒット領域（矩形のクリップをまとめた後）
+    CornerRadii Radii,             // ノードの角の半径（R4c の Grill）
+    int Clips,                     // 角丸のクリップの並びの始まり（上限までの角丸。並びの形は行 R4e で決める）
     Matrix3x2 InverseTransform);   // このノードに至るまでの累積変換の逆行列
 
 internal sealed class HitTestList
@@ -2795,13 +2849,15 @@ internal sealed class HitTestList
 
 internal static NodeHandle? HitTest(HitTestList list, Vector2 point)
 {
-    // 末尾(最前面)から走査。各entryのEffectiveBoundsに収まった最初のノードを返す
+    // 末尾(最前面)から走査。ノードの角丸と、どの角丸のクリップの内側にも収まった最初のノードを返す
     var entries = CollectionsMarshal.AsSpan(list.Entries);
     for (int i = entries.Length - 1; i >= 0; i--)
     {
         ref readonly var entry = ref entries[i];
         var localPoint = Vector2.Transform(point, entry.InverseTransform);
-        if (entry.EffectiveBounds.Contains(localPoint)) return entry.Node;
+        if (entry.EffectiveBounds.Contains(localPoint)
+            && InsideRounded(localPoint, entry)            // 描画と同じ距離の式（§5.0 の角丸の矩形）
+            && InsideClips(list, entry, point)) return entry.Node;
     }
     return null;
 }
