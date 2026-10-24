@@ -220,10 +220,12 @@ internal static class GlyphResolve
     }
 
     // Writing the 1,000 rectangles of the frames scene, with nothing drawn: nanoseconds per rectangle, the median of 21 samples of
-    // 1,000 frames, at the scale given (row W1).
-    public static int FillRectCost(float scale)
+    // 1,000 frames, at the scale given (row W1). With `grouped`, every 10 rectangles are a group of opacity 0.8, so that the
+    // difference is a child's cost of the overlap check with its group's push and pop shared by its 10 children (row R4c).
+    public static int FillRectCost(float scale, bool grouped = false)
     {
         using var report = new Report("fill-rect");
+        report.Text("grouped", grouped ? "yes" : "no");
         var list = new DisplayList();
         void Frame(int frame)
         {
@@ -233,7 +235,16 @@ internal static class GlyphResolve
             {
                 float x = ((i * 37) + (frame * 3)) % 780;
                 float y = 50 + ((i * 11) % 530);
+                if (grouped && i % 10 == 0)
+                {
+                    list.PushOpacity(0.8f);
+                }
+
                 list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
+                if (grouped && i % 10 == 9)
+                {
+                    list.Pop();
+                }
             }
         }
 

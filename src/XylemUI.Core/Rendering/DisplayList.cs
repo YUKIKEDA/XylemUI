@@ -41,6 +41,13 @@ public sealed class DisplayList
     private int _usedShapes;
     private int _brushCount;
     private int _usedCurves;
+
+    // The opacity groups (row R4c): how many are pushed and not popped (alpha 1 included), how many of those are recorded (alpha
+    // below 1), and how many group records the frame wrote. The frames and records live in an object made with the first push.
+    private int _groupDepth;
+    private int _opacityDepth;
+    private int _groupRecords;
+    private GroupStreams? _groupStreams;
     private int _textPaintCount;
     private int _brushedRuns;
     private int _usedRects;
@@ -88,6 +95,12 @@ public sealed class DisplayList
     public int ShapeCount => _usedShapes + _usedCurves + _brushedRuns;
 
     /// <summary>
+    /// Gets the number of opacity groups written since the last <see cref="Reset"/> (row R4c); a renderer writes a list without
+    /// them by a path that has no alpha and no layer.
+    /// </summary>
+    public int GroupCount => _groupRecords;
+
+    /// <summary>
     /// Gets a value indicating whether <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> left room for glyphs that <see cref="ResolveGlyphs"/> has not filled
     /// yet. Such a list cannot be read.
     /// </summary>
@@ -127,6 +140,9 @@ public sealed class DisplayList
         _usedCurves = 0;
         _textPaintCount = 0;
         _brushedRuns = 0;
+        _groupDepth = 0;
+        _opacityDepth = 0;
+        _groupRecords = 0;
     }
 
     /// <summary>
@@ -157,6 +173,117 @@ public sealed class DisplayList
         rect[3] = RoundToPixel((y + height) * scale) - top;
         _usedRects += FloatsPerRect;
         _colors[_usedColors++] = color.Packed;
+        if (_opacityDepth > 0)
+        {
+            AccumulateLastRect();
+        }
+    }
+
+    /// <summary>
+    /// Starts an opacity group: the commands written until the matching <see cref="Pop"/> are drawn with
+    /// <paramref name="alpha"/> as one (design §5.0, "The API of layers, clips, transforms, and DrawingContext"). When the children
+    /// do not overlap and hold no text, each child's color takes the alpha and no layer is made, as Flutter does; otherwise they
+    /// are drawn into a layer that is blended with the alpha. Text inside a group is drawn in grayscale, since ClearType needs to
+    /// know the pixels under it. An opacity of 1 records nothing, and a group with no children is left out.
+    /// </summary>
+    /// <param name="alpha">The opacity, from 0 to 1.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="alpha"/> is not a number from 0 to 1.</exception>
+    public void PushOpacity(float alpha)
+    {
+        if (!(alpha >= 0) || alpha > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(alpha), alpha, "The opacity is not a number from 0 to 1.");
+        }
+
+        GroupStreams groups = _groupStreams ??= new GroupStreams();
+        if (_groupDepth == groups.Frames.Length)
+        {
+            Array.Resize(ref groups.Frames, groups.Frames.Length * 2);
+            GrowthCount++;
+        }
+
+        ref GroupFrame frame = ref groups.Frames[_groupDepth++];
+        frame = default;
+        if (alpha == 1)
+        {
+            return;
+        }
+
+        if (CommandCount == _commands.Length)
+        {
+            Grow();
+        }
+
+        if (_groupRecords == groups.Records.Length)
+        {
+            Array.Resize(ref groups.Records, groups.Records.Length * 2);
+            GrowthCount++;
+        }
+
+        frame.Recorded = true;
+        frame.Command = CommandCount;
+        frame.Record = _groupRecords;
+        frame.Left = float.PositiveInfinity;
+        frame.Top = float.PositiveInfinity;
+        frame.Right = float.NegativeInfinity;
+        frame.Bottom = float.NegativeInfinity;
+        _commands[CommandCount++] = CommandTag.PushOpacity;
+        _colors[_usedColors++] = 0;
+        groups.Records[_groupRecords++] = new GroupRecord { Alpha = alpha };
+        _opacityDepth++;
+    }
+
+    /// <summary>
+    /// Ends the innermost group <see cref="PushOpacity"/> started. Whether its children are drawn into a layer is decided here,
+    /// from whether they overlap: the bounds of each child are compared with the union of the bounds of the ones before it, as
+    /// Flutter's display list compares them, so that two children are never taken as apart when they overlap.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Nothing is pushed.</exception>
+    public void Pop()
+    {
+        if (_groupDepth == 0)
+        {
+            throw new InvalidOperationException("Pop was called with no group pushed.");
+        }
+
+        GroupStreams groups = _groupStreams!;
+        GroupFrame frame = groups.Frames[--_groupDepth];
+        if (!frame.Recorded)
+        {
+            return;
+        }
+
+        _opacityDepth--;
+        if (CommandCount - 1 == frame.Command)
+        {
+            // Nothing was drawn in the group: it leaves the list, as Avalonia rewinds an empty scope.
+            CommandCount--;
+            _usedColors--;
+            _groupRecords--;
+            return;
+        }
+
+        ref GroupRecord record = ref groups.Records[frame.Record];
+        record.Layer = frame.Overlap || frame.Text;
+        record.Left = frame.Left;
+        record.Top = frame.Top;
+        record.Right = frame.Right;
+        record.Bottom = frame.Bottom;
+        if (CommandCount == _commands.Length)
+        {
+            Grow();
+        }
+
+        _commands[CommandCount++] = CommandTag.Pop;
+        _colors[_usedColors++] = 0;
+        if (_opacityDepth > 0)
+        {
+            Accumulate(frame.Left, frame.Top, frame.Right, frame.Bottom);
+            if (frame.Text)
+            {
+                MarkText();
+            }
+        }
     }
 
     /// <summary>
@@ -193,6 +320,13 @@ public sealed class DisplayList
             record.BorderColor = edges.Paint.Color.Packed;
             record.BorderBrush = BrushIndex(edges.Paint.Gradient);
         }
+
+        // Here rather than in AppendShape, which a shadow shares: there the check kept the tag in one more saved register on every
+        // call (R4c, in the machine code).
+        if (_opacityDepth > 0)
+        {
+            AccumulateLastRect();
+        }
     }
 
     /// <summary>
@@ -218,6 +352,15 @@ public sealed class DisplayList
         record.Sigma = shadow.BlurRadius * 0.5f * scale;
         record.Spread = shadow.Spread * scale;
         record.Inset = shadow.Inset;
+        if (_opacityDepth > 0)
+        {
+            // What the shadow draws: the shape for an inset one; the shape moved and grown by the spread, and three sigmas past
+            // that, for an outer one (D3D11Renderer.WriteShadow's quad).
+            ReadOnlySpan<float> rect = _rects.AsSpan(_usedRects - FloatsPerRect, FloatsPerRect);
+            float grow = record.Inset ? 0 : record.Spread + (3 * record.Sigma);
+            Vector2 move = record.Inset ? Vector2.Zero : record.Offset;
+            Accumulate(rect[0] + move.X - grow, rect[1] + move.Y - grow, rect[0] + rect[2] + move.X + grow, rect[1] + rect[3] + move.Y + grow);
+        }
     }
 
     /// <summary>
@@ -247,7 +390,7 @@ public sealed class DisplayList
         float bx = x2 * scale;
         float by = y2 * scale;
         float half = width * 0.5f;
-        ref CurveRecord record = ref AppendCurve(CommandTag.Line, ax, ay, bx, by, stroke.Paint.Color);
+        ref CurveRecord record = ref AppendCurve(CommandTag.Line, ax, ay, bx, by, stroke.Paint.Color, half);
         record = default;
         record.Brush = BrushIndex(stroke.Paint.Gradient);
         record.Box = new Vector4(MathF.Min(ax, bx) - half, MathF.Min(ay, by) - half, MathF.Abs(bx - ax) + width, MathF.Abs(by - ay) + width);
@@ -280,7 +423,7 @@ public sealed class DisplayList
         float cy = centerY * scale;
         float rx = radiusX * scale;
         float ry = radiusY * scale;
-        ref CurveRecord record = ref AppendCurve(CommandTag.FillEllipse, cx, cy, rx, ry, fill.Color);
+        ref CurveRecord record = ref AppendCurve(CommandTag.FillEllipse, cx, cy, rx, ry, fill.Color, 0);
         record = default;
         record.Brush = BrushIndex(fill.Gradient);
         record.Box = new Vector4(cx - rx, cy - ry, 2 * rx, 2 * ry);
@@ -325,7 +468,7 @@ public sealed class DisplayList
         float rx = radiusX * scale;
         float ry = radiusY * scale;
         float half = width * 0.5f;
-        ref CurveRecord record = ref AppendCurve(CommandTag.StrokeEllipse, cx, cy, rx, ry, stroke.Paint.Color);
+        ref CurveRecord record = ref AppendCurve(CommandTag.StrokeEllipse, cx, cy, rx, ry, stroke.Paint.Color, half);
         record = default;
         record.Brush = BrushIndex(stroke.Paint.Gradient);
         record.Box = new Vector4(cx - rx - half, cy - ry - half, (2 * rx) + width, (2 * ry) + width);
@@ -553,6 +696,13 @@ public sealed class DisplayList
             throw new ArgumentException("Bilevel text has no ClearType coverage.", nameof(aliased));
         }
 
+        // ClearType's coverage needs the pixels under the text, which a layer or a group's opacity hides (design §5.0.3,
+        // "ClearType"): text inside a group is grayscale.
+        if (_opacityDepth > 0 && coverage == GlyphCoverage.Rgb)
+        {
+            coverage = GlyphCoverage.Gray;
+        }
+
         // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run. The pen and the
         // baseline are in physical pixels from here on.
         float scale = pixelSize / font.UnitsPerEm;
@@ -659,6 +809,11 @@ public sealed class DisplayList
             Invariant.Fail("The display list has glyphs left for ResolveGlyphs; resolve them before reading the list.");
         }
 
+        if (_groupDepth > 0)
+        {
+            Invariant.Fail("The display list has a group pushed and not popped; pop it before reading the list.");
+        }
+
         return new(this);
     }
 
@@ -673,6 +828,8 @@ public sealed class DisplayList
     internal ReadOnlySpan<GlyphCoverage> RunCoverages => _runCoverages.AsSpan(0, _usedRuns);
 
     internal ReadOnlySpan<int> RunPaints => _runPaints.AsSpan(0, _usedRuns);
+
+    internal ReadOnlySpan<GroupRecord> Groups => _groupStreams is null ? default : _groupStreams.Records.AsSpan(0, _groupRecords);
 
     internal ReadOnlySpan<CurveRecord> Curves => _shapeStreams is null ? default : _shapeStreams.Curves.AsSpan(0, _usedCurves);
 
@@ -763,12 +920,30 @@ public sealed class DisplayList
         int run = 0;
         int glyph = 0;
         int pending = 0;
+        int groupRecord = 0;
+        int open = 0;
         _brushedRuns = 0;
         for (int c = 0; c < CommandCount; c++)
         {
-            if (_commands[c] != CommandTag.GlyphRun)
+            CommandTag tag = _commands[c];
+            if (tag != CommandTag.GlyphRun)
             {
-                _resolve.NextCommands[commands++] = _commands[c];
+                if (tag == CommandTag.PushOpacity)
+                {
+                    GroupStreams groups = _groupStreams!;
+                    if (open == groups.Open.Length)
+                    {
+                        Array.Resize(ref groups.Open, groups.Open.Length * 2);
+                    }
+
+                    groups.Open[open++] = groupRecord++;
+                }
+                else if (tag == CommandTag.Pop)
+                {
+                    open--;
+                }
+
+                _resolve.NextCommands[commands++] = tag;
                 _resolve.NextColors[colors++] = _colors[color++];
                 continue;
             }
@@ -794,6 +969,10 @@ public sealed class DisplayList
 
                     instanceKind = resolved.Coverage;
                     instance = Place(resolved, room.Position, room.Pixel, room.Row);
+                    if (open > 0)
+                    {
+                        Widen(open, instance);
+                    }
                 }
                 else
                 {
@@ -828,6 +1007,20 @@ public sealed class DisplayList
         _usedColors = colors;
         _usedRuns = runs;
         GlyphCount = glyphs;
+    }
+
+    // Adds a glyph that ResolveGlyphs placed to the bounds of the `open` groups around it.
+    private void Widen(int open, in GlyphInstance glyph)
+    {
+        GroupStreams groups = _groupStreams!;
+        foreach (int index in groups.Open.AsSpan(0, open))
+        {
+            ref GroupRecord record = ref groups.Records[index];
+            record.Left = Lesser(record.Left, glyph.X);
+            record.Top = Lesser(record.Top, glyph.Y);
+            record.Right = Greater(record.Right, glyph.X + glyph.Width);
+            record.Bottom = Greater(record.Bottom, glyph.Y + glyph.Height);
+        }
     }
 
     // A run of the rebuilt list. The runs a color glyph splits a run into keep its paint, so brushed text keeps its gradient on
@@ -939,7 +1132,7 @@ public sealed class DisplayList
 
         start %= MathF.Tau;
         float half = width * 0.5f;
-        ref CurveRecord record = ref AppendCurve(tag, cx, cy, r, 0, paint.Color);
+        ref CurveRecord record = ref AppendCurve(tag, cx, cy, r, 0, paint.Color, half);
         record = default;
         record.Brush = BrushIndex(paint.Gradient);
         record.Box = new Vector4(cx - r - half, cy - r - half, (2 * r) + width, (2 * r) + width);
@@ -951,8 +1144,9 @@ public sealed class DisplayList
         record.SweepAngle = sweep;
     }
 
-    // A line, an ellipse, an arc, or a sector: its geometry in the rectangle stream, its color, and the record it fills in.
-    private ref CurveRecord AppendCurve(CommandTag tag, float a, float b, float c, float d, Color color)
+    // A line, an ellipse, an arc, or a sector: its geometry in the rectangle stream, its color, and the record it fills in. In a
+    // group, what it draws is the renderer's quad: the shape grown by half its width, the caps, and a pixel of antialiasing.
+    private ref CurveRecord AppendCurve(CommandTag tag, float a, float b, float c, float d, Color color, float half)
     {
         if (CommandCount == _commands.Length)
         {
@@ -967,6 +1161,20 @@ public sealed class DisplayList
         rect[3] = d;
         _usedRects += FloatsPerRect;
         _colors[_usedColors++] = color.Packed;
+        if (_opacityDepth > 0)
+        {
+            float margin = (half * 1.4143f) + 1;
+            if (tag == CommandTag.Line)
+            {
+                Accumulate(Lesser(a, c) - margin, Lesser(b, d) - margin, Greater(a, c) + margin, Greater(b, d) + margin);
+            }
+            else
+            {
+                float ry = tag is CommandTag.FillEllipse or CommandTag.StrokeEllipse ? d : c;
+                Accumulate(a - c - margin, b - ry - margin, a + c + margin, b + ry + margin);
+            }
+        }
+
         ShapeStreams streams = _shapeStreams ??= new ShapeStreams();
         if (_usedCurves == streams.Curves.Length)
         {
@@ -1069,10 +1277,71 @@ public sealed class DisplayList
         _runCoverages[_usedRuns] = coverage;
         _runPaints[_usedRuns] = paint;
         _runLengths[_usedRuns++] = count;
+        if (_opacityDepth > 0)
+        {
+            // Text makes its group a layer: whether its glyphs overlap cannot be told. The glyphs placed now add their quads to the
+            // group's bounds; ResolveGlyphs adds the ones it places.
+            MarkText();
+            foreach (GlyphInstance glyph in _glyphs.AsSpan(GlyphCount, count))
+            {
+                if (glyph.Width > 0)
+                {
+                    Accumulate(glyph.X, glyph.Y, glyph.X + glyph.Width, glyph.Y + glyph.Height);
+                }
+            }
+        }
+
         GlyphCount += count;
         if (paint >= 0)
         {
             _brushedRuns++;
+        }
+    }
+
+    // The lesser and the greater of two bounds, as one minss or maxss. MathF.Min and MathF.Max order NaN and -0 in about 13
+    // instructions each; these made a child of a group about 2.4 ns cheaper (R4c, 1,000 rectangles in one group).
+    private static float Lesser(float a, float b) => a < b ? a : b;
+
+    private static float Greater(float a, float b) => a > b ? a : b;
+
+    // Adds the rectangle just written to the innermost group; out of line, so that FillRect outside groups stays as it was.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void AccumulateLastRect()
+    {
+        ReadOnlySpan<float> rect = _rects.AsSpan(_usedRects - FloatsPerRect, FloatsPerRect);
+        Accumulate(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]);
+    }
+
+    // Adds a child's bounds to the innermost recorded group: the child overlaps the ones before it when it meets their union.
+    // Inlined: the call cost a child about 0.6 ns more (R4c, 1,000 rectangles in one group).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void Accumulate(float left, float top, float right, float bottom)
+    {
+        Span<GroupFrame> frames = _groupStreams!.Frames.AsSpan(0, _groupDepth);
+        for (int i = frames.Length - 1; i >= 0; i--)
+        {
+            ref GroupFrame frame = ref frames[i];
+            if (!frame.Recorded)
+            {
+                continue;
+            }
+
+            frame.Overlap |= left < frame.Right && right > frame.Left && top < frame.Bottom && bottom > frame.Top;
+            frame.Left = Lesser(frame.Left, left);
+            frame.Top = Lesser(frame.Top, top);
+            frame.Right = Greater(frame.Right, right);
+            frame.Bottom = Greater(frame.Bottom, bottom);
+            return;
+        }
+    }
+
+    // Text inside a group makes every group around it a layer: a group around it cannot tell whether the text overlaps its other
+    // children before ResolveGlyphs places the new glyphs.
+    private void MarkText()
+    {
+        foreach (ref GroupFrame frame in _groupStreams!.Frames.AsSpan(0, _groupDepth))
+        {
+            frame.Text |= frame.Recorded;
         }
     }
 
@@ -1105,6 +1374,30 @@ public sealed class DisplayList
         public GradientBrush[] Brushes = new GradientBrush[16];
         public CurveRecord[] Curves = new CurveRecord[64];
         public TextPaint[] TextPaints = new TextPaint[16];
+    }
+
+    // The groups pushed and not popped, innermost last, and the records of the frame's groups, in the order of their pushes; and
+    // the groups open while Rebuild writes the list again.
+    private sealed class GroupStreams
+    {
+        public GroupFrame[] Frames = new GroupFrame[8];
+        public GroupRecord[] Records = new GroupRecord[16];
+        public int[] Open = new int[8];
+    }
+
+    // A group pushed and not popped: whether it is recorded (its alpha is below 1), its command and record, the union of its
+    // children's bounds, and whether they overlap or hold text.
+    private struct GroupFrame
+    {
+        public bool Recorded;
+        public int Command;
+        public int Record;
+        public float Left;
+        public float Top;
+        public float Right;
+        public float Bottom;
+        public bool Overlap;
+        public bool Text;
     }
 
     // A glyph DrawText left room for: its instance, its request, and where it goes once its box is known.

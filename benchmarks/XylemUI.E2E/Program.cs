@@ -8,7 +8,8 @@
 //   frames [frames] [--warp]   CPU stages, GPU time, present latency, intervals, missed frames of the scene
 //                              (--gray draws its text in grayscale instead of the window's ClearType, row T2; --shapes draws each
 //                              rectangle rounded, with a gradient, a border, and a shadow, row R4a; --curves draws each as a
-//                              dashed line, an ellipse, and an arc, and 1,000 glyphs with a gradient, row R4b)
+//                              dashed line, an ellipse, and an arc, and 1,000 glyphs with a gradient, row R4b; --groups puts
+//                              them in 100 groups of opacity 0.8, 50 of them layers or as many as --layers N, row R4c)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, shaping and cached
@@ -53,7 +54,9 @@ return scenario switch
         warp: args.Contains("--warp"),
         gray: args.Contains("--gray"),
         shapes: args.Contains("--shapes"),
-        curves: args.Contains("--curves")
+        curves: args.Contains("--curves"),
+        groups: args.Contains("--groups"),
+        layers: Array.IndexOf(args, "--layers") is int layersAt and >= 0 ? Number(layersAt + 1, 50) : 50
     ),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
@@ -63,7 +66,10 @@ return scenario switch
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
     "glyph-resolve" => GlyphResolve.Run(Number(1, 5)),
     "dpi-awareness" => DpiAwareness.Run(),
-    "fill-rect" => GlyphResolve.FillRectCost(args.Length > 1 ? float.Parse(args[1], CultureInfo.InvariantCulture) : 1),
+    "fill-rect" => GlyphResolve.FillRectCost(
+        args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? float.Parse(args[1], CultureInfo.InvariantCulture) : 1,
+        grouped: args.Contains("--grouped")
+    ),
     "shapes" => ShapeGallery.Run(),
     "curves" => CurveGallery.Run(),
     "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),

@@ -302,15 +302,25 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
     }
 
     // Draws the frame `write` writes over the clear color, reads every pixel of `area` grown by 2, and compares it with the
-    // reference over the clear color. Returns the largest difference of a channel.
-    internal static int Compare(Action<DisplayList> write, Vector4 area, Func<Vector2, Vector4> reference, int tolerance)
+    // reference over the clear color. Returns the largest difference of a channel. `setup` runs on the renderer before the
+    // draw, and `check` after it.
+    internal static int Compare(
+        Action<DisplayList> write,
+        Vector4 area,
+        Func<Vector2, Vector4> reference,
+        int tolerance,
+        Action<D3D11Renderer>? setup = null,
+        Action<D3D11Renderer>? check = null
+    )
     {
         using var window = new Win32Window("shapes", 240, 160);
         (int width, int height) = window.ClientSize;
         using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+        setup?.Invoke(renderer);
         var list = new DisplayList();
         write(list);
         renderer.Draw(list, Clear);
+        check?.Invoke(renderer);
         ID3D11Texture2D* capture = renderer.CaptureBackBuffer();
         int largest = 0;
         try

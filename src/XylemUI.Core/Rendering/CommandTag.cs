@@ -31,4 +31,10 @@ public enum CommandTag : byte
 
     /// <summary>A filled sector of a circle (<see cref="CurveCommand"/>, row R4).</summary>
     Sector,
+
+    /// <summary>The start of an opacity group (<see cref="GroupCommand"/>, row R4c).</summary>
+    PushOpacity,
+
+    /// <summary>The end of the innermost group (row R4c).</summary>
+    Pop,
 }

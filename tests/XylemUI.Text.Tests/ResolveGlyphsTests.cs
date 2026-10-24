@@ -242,6 +242,54 @@ public sealed class ResolveGlyphsTests
     }
 
     /// <summary>
+    /// Text in a group is grayscale even when asked for ClearType, makes its group and every group around it a layer, and adds
+    /// the glyphs ResolveGlyphs places to the bounds of the groups around it (row R4c).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an empty atlas, and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Push 0.5; fill (0, 0, 10, 10); push 0.5; draw "H" at 32 px in ClearType (pen 100, baseline 60), left for ResolveGlyphs; pop;
+    ///   pop; resolve; read.
+    ///
+    /// Expected:
+    /// - Both groups are layers; the run is grayscale; the inner group's bounds are the glyph's quad, and the outer one's reach from
+    ///   (0, 0) to the glyph's quad.
+    /// </remarks>
+    [Fact]
+    public void ResolveGlyphs_TextInGroups_IsGrayAndWidensTheirBounds()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var atlas = new GlyphAtlas(new TestRasterizer());
+        var list = new DisplayList();
+
+        list.PushOpacity(0.5f);
+        list.FillRect(0, 0, 10, 10, Blue);
+        list.PushOpacity(0.5f);
+        _ = list.DrawText(shaper.Shape(font, "H", TestFont.Japanese), font, 32, atlas, 100, 60, Ink, GlyphCoverage.Rgb);
+        list.Pop();
+        list.Pop();
+        list.ResolveGlyphs(atlas);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out _));
+        GroupCommand outer = reader.ReadGroup();
+        Assert.True(reader.TryNext(out _));
+        _ = reader.ReadFillRect();
+        Assert.True(reader.TryNext(out _));
+        GroupCommand inner = reader.ReadGroup();
+        Assert.True(reader.TryNext(out _));
+        GlyphRunCommand run = reader.ReadGlyphRun();
+        GlyphInstance glyph = run.Glyphs[0];
+        Assert.Equal(GlyphCoverage.Gray, run.Coverage);
+        Assert.True(outer.Layer && inner.Layer);
+        Assert.Equal(new GroupCommand(glyph.X, glyph.Y, glyph.Width, glyph.Height, 0.5f, true), inner);
+        Assert.Equal(new GroupCommand(0, 0, glyph.X + glyph.Width, glyph.Y + glyph.Height, 0.5f, true), outer);
+    }
+
+    /// <summary>
     /// ResolveGlyphs with nothing pending leaves the list as it is.
     /// </summary>
     /// <remarks>

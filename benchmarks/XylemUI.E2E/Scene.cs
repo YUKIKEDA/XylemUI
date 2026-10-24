@@ -68,8 +68,11 @@ internal sealed class Scene : IDisposable
     // The rectangles move with the frame number, so that every frame draws something new. The scene is in logical pixels, drawn at
     // the window's scale (row W1). With `shapes`, each rectangle is a rounded one with a gradient and a border over a shadow (row
     // R4): two instances where the plain scene has one. With `curves`, each is a dashed line with round caps, the outline of an
-    // ellipse, and an arc with a gradient (row R4b), and 125 runs of 8 glyphs (1,000 glyphs) are drawn with a gradient.
-    public void Build(int frame, int heavy = 0, bool shapes = false, bool curves = false)
+    // ellipse, and an arc with a gradient (row R4b), and 125 runs of 8 glyphs (1,000 glyphs) are drawn with a gradient. With
+    // `groups`, the rectangles are 100 cards of 10, each a group of opacity 0.8; the first `layers` of the odd cards (at most 50)
+    // have an 11th rectangle over their first, so that they are layers and the other cards give their alpha to their children
+    // (row R4c).
+    public void Build(int frame, int heavy = 0, bool shapes = false, bool curves = false, bool groups = false, int layers = 50)
     {
         Atlas.BeginFrame();
         float scale = Window.ScaleFactor;
@@ -81,6 +84,32 @@ internal sealed class Scene : IDisposable
         {
             float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
             float y = 50 + ((i * 11) % Math.Max(1, height - 70));
+            if (groups)
+            {
+                // A card of one row of ten rectangles, 17 pixels apart; an odd card that is a layer has one more over its first. (Two rows
+                // would make every card a layer: the second row's second rectangle meets the union of the ones before it.)
+                int g = i / 10;
+                int j = i % 10;
+                float cardX = ((g * 97) + (frame * 3)) % Math.Max(1, width - 180);
+                float cardY = 50 + ((g * 37) % Math.Max(1, height - 80));
+                if (j == 0)
+                {
+                    List.PushOpacity(0.8f);
+                    if (g % 2 == 1 && g / 2 < layers)
+                    {
+                        List.FillRect(cardX + 4, cardY + 4, 16, 16, Color.FromRgb(0x3366CC));
+                    }
+                }
+
+                List.FillRect(cardX + (j * 17), cardY, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
+                if (j == 9)
+                {
+                    List.Pop();
+                }
+
+                continue;
+            }
+
             if (curves)
             {
                 List.DrawLine(x, y, x + 16, y + 12, new Stroke(Color.FromRgb(0xCC3333), 2, LineCap.Round, new Dash(4, 3)));

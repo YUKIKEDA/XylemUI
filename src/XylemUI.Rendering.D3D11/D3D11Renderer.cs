@@ -61,6 +61,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private const uint SwapChainFlags = (uint)DXGI_SWAP_CHAIN_FLAG.DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
     private const DXGI_FORMAT BackBufferFormat = DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM;
 
+    private static readonly Color Opaque = Color.FromRgb(0xFFFFFF);
+
     private readonly ID3D11Device* _device;
     private readonly ID3D11DeviceContext* _context;
     private readonly IDXGISwapChain2* _swapChain;
@@ -70,6 +72,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly ID3D11PixelShader* _curvePixelShader;
     private readonly ID3D11PixelShader* _textPixelShader;
     private readonly ID3D11PixelShader* _clearTypeTextPixelShader;
+    private readonly ID3D11PixelShader* _layerPixelShader;
+    private readonly ID3D11PixelShader* _fadedPixelShader;
+    private readonly ID3D11PixelShader* _fadedCurvePixelShader;
+    private readonly ID3D11PixelShader* _fadedTextPixelShader;
+
     private readonly ID3D11InputLayout* _inputLayout;
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
@@ -78,7 +85,16 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly AtlasTextures _grayAtlas = new(GlyphCoverage.Gray, DXGI_FORMAT.DXGI_FORMAT_R8_UNORM);
     private readonly AtlasTextures _rgbAtlas = new(GlyphCoverage.Rgb, DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM);
     private readonly AtlasTextures _colorAtlas = new(GlyphCoverage.Color, DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM);
+
+    // The layers of opacity groups (row R4c). 32 MB holds two layers of a 2,560 x 1,440 window.
+    private readonly LayerPool _layers = new(32L << 20);
+
     private TextRenderingParameters _textRendering = TextRenderingParameters.Default;
+
+    // The groups open while the instances are written, and the layers open while the draws run, with their bounds (row R4c).
+    private GroupState[] _groupStates = new GroupState[8];
+    private Vector4[] _targetStack = new Vector4[8];
+    private int[] _targetLayers = new int[8];
     private DrawRange[] _draws = new DrawRange[16];
 
     private ID3D11RenderTargetView* _renderTarget;
@@ -115,6 +131,10 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _curvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry);
             _textPixelShader = CreatePixelShader(device, QuadShaders.TextPixelEntry);
             _clearTypeTextPixelShader = CreatePixelShader(device, QuadShaders.ClearTypeTextPixelEntry);
+            _layerPixelShader = CreatePixelShader(device, QuadShaders.LayerPixelEntry);
+            _fadedPixelShader = CreatePixelShader(device, QuadShaders.PixelEntry, faded: true);
+            _fadedCurvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry, faded: true);
+            _fadedTextPixelShader = CreatePixelShader(device, QuadShaders.TextPixelEntry, faded: true);
             _targetConstants = CreateBuffer(device, 48, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
             _blend = CreateBlendState(device);
             _clearTypeBlend = CreateClearTypeBlendState(device);
@@ -157,6 +177,30 @@ public sealed unsafe class D3D11Renderer : IDisposable
     /// Gets the number of draws of the last <see cref="Draw"/>, for the tests of where the frame is split.
     /// </summary>
     internal int LastDrawCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of layer textures the renderer holds (row R4c).
+    /// </summary>
+    internal int LayerCount => _layers.Count;
+
+    /// <summary>
+    /// Gets the bytes the layer textures hold.
+    /// </summary>
+    internal long LayerBytes => _layers.Bytes;
+
+    /// <summary>
+    /// Gets the number of layers refused because the pool of layer textures was full; their children took the group's alpha.
+    /// </summary>
+    internal int LayersRefused => _layers.RefusedCount;
+
+    /// <summary>
+    /// Gets or sets the most bytes the layer textures may hold together.
+    /// </summary>
+    internal long LayerCapacityBytes
+    {
+        get => _layers.CapacityBytes;
+        set => _layers.CapacityBytes = value;
+    }
 
     /// <summary>
     /// Gets the width of the back buffer, in physical pixels.
@@ -338,6 +382,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
         Release((IUnknown*)_blend);
         Release((IUnknown*)_targetConstants);
         Release((IUnknown*)_inputLayout);
+        _layers.Dispose();
+        Release((IUnknown*)_fadedTextPixelShader);
+        Release((IUnknown*)_fadedCurvePixelShader);
+        Release((IUnknown*)_fadedPixelShader);
+        Release((IUnknown*)_layerPixelShader);
         Release((IUnknown*)_clearTypeTextPixelShader);
         Release((IUnknown*)_textPixelShader);
         Release((IUnknown*)_curvePixelShader);
@@ -401,7 +450,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
 
         int draws = bound > 0 ? WriteInstances(list, bound) : 0;
-        LastDrawCount = draws;
+        int drawCalls = 0;
+        foreach (DrawRange range in _draws.AsSpan(0, draws))
+        {
+            drawCalls += range.Op == DrawOp.Draw && range.Count > 0 ? 1 : 0;
+        }
+
+        LastDrawCount = drawCalls;
 
         ID3D11RenderTargetView* target = _renderTarget;
         _context->OMSetRenderTargets(1, &target, null);
@@ -439,23 +494,84 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _brushRows.View,
         };
         _context->PSSetShaderResources(0, 5, atlasViews);
+        int targets = 0;
+        float* transparent = stackalloc float[4];
         foreach (DrawRange draw in _draws.AsSpan(0, draws))
         {
+            if (draw.Op == DrawOp.BeginLayer)
+            {
+                if (targets == _targetLayers.Length)
+                {
+                    Array.Resize(ref _targetLayers, targets * 2);
+                    Array.Resize(ref _targetStack, targets * 2);
+                }
+
+                _targetStack[targets] = draw.Bounds;
+                _targetLayers[targets++] = draw.Layer;
+                SetTarget(_layers.Target(draw.Layer), draw.Bounds);
+                _context->ClearRenderTargetView(_layers.Target(draw.Layer), transparent);
+                continue;
+            }
+
+            if (draw.Op == DrawOp.EndLayer)
+            {
+                targets--;
+                bool root = targets == 0;
+                SetTarget(
+                    root ? _renderTarget : _layers.Target(_targetLayers[targets - 1]),
+                    root ? new Vector4(0, 0, Width, Height) : _targetStack[targets - 1]
+                );
+                continue;
+            }
+
+            if (draw.Count == 0)
+            {
+                continue;
+            }
+
             ID3D11PixelShader* shader = draw.Pixel switch
             {
                 PixelKind.ClearType => _clearTypePixelShader,
                 PixelKind.Curve => _curvePixelShader,
                 PixelKind.Text => _textPixelShader,
                 PixelKind.ClearTypeText => _clearTypeTextPixelShader,
+                PixelKind.Layer => _layerPixelShader,
+                PixelKind.Faded => _fadedPixelShader,
+                PixelKind.CurveFaded => _fadedCurvePixelShader,
+                PixelKind.TextFaded => _fadedTextPixelShader,
                 _ => _pixelShader,
             };
             bool clearType = draw.Pixel is PixelKind.ClearType or PixelKind.ClearTypeText;
             _context->PSSetShader(shader, null, 0);
             _context->OMSetBlendState(clearType ? _clearTypeBlend : _blend, null, uint.MaxValue);
+            if (draw.Pixel == PixelKind.Layer)
+            {
+                ID3D11ShaderResourceView* layer = _layers.View(draw.Layer);
+                _context->PSSetShaderResources(5, 1, &layer);
+                _context->DrawInstanced(4, (uint)draw.Count, 0, (uint)draw.Start);
+                layer = null;
+                _context->PSSetShaderResources(5, 1, &layer);
+                continue;
+            }
+
             _context->DrawInstanced(4, (uint)draw.Count, 0, (uint)draw.Start);
         }
 
         _gpuTimer?.End();
+    }
+
+    // Makes `target`, whose pixels are those of `bounds` in the frame, the target of the draws that follow (row R4c).
+    private void SetTarget(ID3D11RenderTargetView* target, Vector4 bounds)
+    {
+        _context->OMSetRenderTargets(1, &target, null);
+        var viewport = new D3D11_VIEWPORT
+        {
+            Width = bounds.Z,
+            Height = bounds.W,
+            MaxDepth = 1,
+        };
+        _context->RSSetViewports(1, &viewport);
+        WriteTargetConstants(bounds);
     }
 
     /// <summary>
@@ -704,32 +820,41 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
-    private static ID3DBlob* Compile(ReadOnlySpan<byte> entry, ReadOnlySpan<byte> target)
+    // Compiles an entry point of QuadShaders; `faded` defines FADED, for the variants of the groups that give their opacity to their
+    // children (row R4c).
+    private static ID3DBlob* Compile(ReadOnlySpan<byte> entry, ReadOnlySpan<byte> target, bool faded = false)
     {
         ReadOnlySpan<byte> source = QuadShaders.Source;
+        ReadOnlySpan<byte> name = "FADED\0"u8;
+        ReadOnlySpan<byte> value = "1\0"u8;
         ID3DBlob* code;
         ID3DBlob* errors = null;
         HRESULT result;
+        D3D_SHADER_MACRO* macros = stackalloc D3D_SHADER_MACRO[2];
         fixed (byte* sourcePointer = source)
         {
-            fixed (byte* entryPointer = entry)
+            fixed (
+                byte* namePointer = name,
+                    valuePointer = value,
+                    entryPointer = entry,
+                    targetPointer = target
+            )
             {
-                fixed (byte* targetPointer = target)
-                {
-                    result = D3DCompile(
-                        sourcePointer,
-                        (nuint)source.Length,
-                        null,
-                        null,
-                        null,
-                        (sbyte*)entryPointer,
-                        (sbyte*)targetPointer,
-                        D3DCOMPILE.D3DCOMPILE_OPTIMIZATION_LEVEL3,
-                        0,
-                        &code,
-                        &errors
-                    );
-                }
+                macros[0] = new D3D_SHADER_MACRO { Name = (sbyte*)namePointer, Definition = (sbyte*)valuePointer };
+                macros[1] = default;
+                result = D3DCompile(
+                    sourcePointer,
+                    (nuint)source.Length,
+                    null,
+                    faded ? macros : null,
+                    null,
+                    (sbyte*)entryPointer,
+                    (sbyte*)targetPointer,
+                    D3DCOMPILE.D3DCOMPILE_OPTIMIZATION_LEVEL3,
+                    0,
+                    &code,
+                    &errors
+                );
             }
         }
 
@@ -824,9 +949,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
-    private static ID3D11PixelShader* CreatePixelShader(ID3D11Device* device, ReadOnlySpan<byte> entry)
+    private static ID3D11PixelShader* CreatePixelShader(ID3D11Device* device, ReadOnlySpan<byte> entry, bool faded = false)
     {
-        ID3DBlob* code = Compile(entry, QuadShaders.PixelTarget);
+        ID3DBlob* code = Compile(entry, QuadShaders.PixelTarget, faded);
         try
         {
             ID3D11PixelShader* shader;
@@ -924,7 +1049,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
         WriteTargetConstants();
     }
 
-    private void WriteTargetConstants()
+    private void WriteTargetConstants() => WriteTargetConstants(new Vector4(0, 0, Width, Height));
+
+    // The constants of a target of the size (bounds.Z, bounds.W): the back buffer, or a layer (row R4c), whose commands were moved
+    // into its pixels as they were written (Shift).
+    private void WriteTargetConstants(Vector4 bounds)
     {
         D3D11_MAPPED_SUBRESOURCE mapped;
         HResults.ThrowIfFailed(
@@ -933,7 +1062,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         );
         var constants = (Vector4*)mapped.pData;
         TextRenderingParameters text = _textRendering;
-        constants[0] = new Vector4(1f / Width, 1f / Height, text.GrayscaleContrast, text.ClearTypeContrast);
+        constants[0] = new Vector4(1f / bounds.Z, 1f / bounds.W, text.GrayscaleContrast, text.ClearTypeContrast);
         constants[1] = TextGamma.RatiosOf(text.Gamma);
         constants[2] = new Vector4(text.IsBgr ? 1 : 0, 0, 0, 0);
         _context->Unmap((ID3D11Resource*)_targetConstants, 0);
@@ -941,7 +1070,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
     // The instances go straight into the mapped buffer; WRITE_DISCARD gives a fresh buffer while the GPU still reads the last one:
     // one per rectangle and one per glyph. Returns the number of draws, in _draws: a new one starts where the blend state changes.
-    private int WriteInstances(DisplayList list, int bound)
+    // A list without groups takes a copy of the loop specialized for it, in which NativeAOT folds the alpha and the layer's origin
+    // away: with them in the one loop, the Draw stage of frames took 2 us longer and that of frames --curves 9 us (row R4c).
+    private int WriteInstances(DisplayList list, int bound) =>
+        list.GroupCount > 0 ? WriteInstances<WithGroups>(list, bound) : WriteInstances<NoGroups>(list, bound);
+
+    private int WriteInstances<TMode>(DisplayList list, int bound)
+        where TMode : struct, IGroupMode
     {
         D3D11_MAPPED_SUBRESOURCE mapped;
         HResults.ThrowIfFailed(
@@ -958,75 +1093,151 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 WriteBrushes(reader.Brushes);
             }
 
+            _layers.BeginFrame();
             int i = 0;
             int draws = 0;
             int shape = 0;
+            int depth = 0;
+            int layers = 0;
+            float alpha = 1;
+            Vector4 move = default;
+            var target = new Vector4(0, 0, Width, Height);
             while (reader.TryNext(out CommandTag tag))
             {
+                // The common commands first. Inside a layer, `move` is the layer's origin, which each command subtracts from its
+                // positions as it writes them, so that the shaders need no origin (row R4c). The instances and rows are written once:
+                // reading them back from the mapped buffers, which are write-combined, cost 120 us a frame for 1,000 rectangles in layers.
                 if (tag == CommandTag.FillRect)
                 {
                     draws = AddToDraw(draws, i, PixelKind.Main);
                     FillRectCommand rect = reader.ReadFillRect();
-                    destination[i++] = new QuadInstance
+                    destination[i] = new QuadInstance
                     {
-                        Rect = new Vector4(rect.X, rect.Y, rect.Width, rect.Height),
-                        Color = rect.Color.Packed,
+                        Rect = Moved<TMode>(new Vector4(rect.X, rect.Y, rect.Width, rect.Height), move),
+                        Color = Faded<TMode>(rect.Color, alpha),
                         Page = QuadInstance.SolidPage,
                         Shape = QuadInstance.NoShape,
                     };
                 }
                 else if (tag == CommandTag.Shape)
                 {
-                    draws = AddToDraw(draws, i, PixelKind.Main);
-                    destination[i++] = WriteShape(reader.ReadShape(), shapes, shape);
+                    ShapeCommand command = reader.ReadShape();
+                    draws = AddToDraw(draws, i, TMode.Groups && alpha < 1 ? PixelKind.Faded : PixelKind.Main);
+                    destination[i] = WriteShape<TMode>(command, shapes, shape, alpha, move);
                     shape += ShapeRows;
                 }
                 else if (tag == CommandTag.Shadow)
                 {
                     draws = AddToDraw(draws, i, PixelKind.Main);
-                    destination[i++] = WriteShadow(reader.ReadShadow(), shapes, shape);
+                    destination[i] = WriteShadow<TMode>(reader.ReadShadow(), shapes, shape, alpha, move);
                     shape += ShapeRows;
                 }
-                else if (tag != CommandTag.GlyphRun)
+                else if (tag == CommandTag.GlyphRun)
                 {
-                    draws = AddToDraw(draws, i, PixelKind.Curve);
-                    destination[i++] = WriteCurve(tag, reader.ReadCurve(), shapes, shape);
-                    shape += ShapeRows;
+                    i = WriteGlyphRun<TMode>(reader.ReadGlyphRun(), destination, i, shapes, ref shape, ref draws, alpha, move);
+                    continue;
                 }
-                else
+                else if (!TMode.Groups || tag <= CommandTag.Sector)
                 {
-                    GlyphRunCommand run = reader.ReadGlyphRun();
-                    bool clearType = run.Coverage == GlyphCoverage.Rgb;
-                    uint paintRow = QuadInstance.NoShape;
-                    if (run.Brush >= 0)
+                    // Without groups every tag left is a curve, so a curve is compared no more times than before groups, and the
+                    // command goes straight to WriteCurve: a local copy of it cost a Memmove per curve (R4c profile of the curves
+                    // scene).
+                    if (TMode.Groups)
                     {
-                        paintRow = (uint)shape;
-                        shapes.Slice(shape, ShapeRows).Clear();
-                        shapes[shape + 3] = new Vector4(TextKind, BrushRow(run.Brush), 0, 0);
-                        shapes[shape + 4] = run.Box;
-                        shape += ShapeRows;
+                        CurveCommand command = Moved(tag, reader.ReadCurve(), move);
+                        draws = AddToDraw(draws, i, alpha < 1 && command.Brush >= 0 ? PixelKind.CurveFaded : PixelKind.Curve);
+                        destination[i] = WriteCurve<TMode>(tag, command, shapes, shape, alpha);
+                    }
+                    else
+                    {
+                        draws = AddToDraw(draws, i, PixelKind.Curve);
+                        destination[i] = WriteCurve<TMode>(tag, reader.ReadCurve(), shapes, shape, alpha);
                     }
 
-                    PixelKind pixel =
-                        run.Brush >= 0 ? (clearType ? PixelKind.ClearTypeText : PixelKind.Text) : (clearType ? PixelKind.ClearType : PixelKind.Main);
-                    draws = AddToDraw(draws, i, pixel);
-                    uint color = run.Color.Packed;
-                    uint kind = run.Coverage == GlyphCoverage.Color ? QuadInstance.ColorPage : 0;
-                    foreach (GlyphInstance glyph in run.Glyphs)
-                    {
-                        destination[i++] = new QuadInstance
-                        {
-                            Rect = new Vector4(glyph.X, glyph.Y, glyph.Width, glyph.Height),
-                            Color = color,
-                            AtlasOrigin = (uint)glyph.AtlasX | ((uint)glyph.AtlasY << 16),
-                            Page = (uint)glyph.Page | kind,
-                            Shape = paintRow,
-                        };
-                    }
+                    shape += ShapeRows;
                 }
+                else if (TMode.Groups && tag == CommandTag.PushOpacity)
+                {
+                    GroupCommand group = reader.ReadGroup();
+                    if (depth == _groupStates.Length)
+                    {
+                        Array.Resize(ref _groupStates, depth * 2);
+                    }
+
+                    ref GroupState state = ref _groupStates[depth++];
+                    state = new GroupState
+                    {
+                        SavedAlpha = alpha,
+                        Alpha = group.Alpha,
+                        SavedTarget = target,
+                        Layer = -1,
+                    };
+                    if (!group.Layer)
+                    {
+                        alpha *= group.Alpha;
+                        continue;
+                    }
+
+                    // The layer is the group's bounds cut to its target and put on whole pixels outward (design §5.0, "The API of
+                    // layers, clips, transforms, and DrawingContext"); none is made when that is empty.
+                    float left = MathF.Max(MathF.Floor(group.X), target.X);
+                    float top = MathF.Max(MathF.Floor(group.Y), target.Y);
+                    float right = MathF.Min(MathF.Ceiling(group.X + group.Width), target.X + target.Z);
+                    float bottom = MathF.Min(MathF.Ceiling(group.Y + group.Height), target.Y + target.W);
+                    if (group.Width <= 0 || group.Height <= 0 || right <= left || bottom <= top)
+                    {
+                        depth--;
+                        SkipGroup(ref reader);
+                        continue;
+                    }
+
+                    int layer = _layers.Acquire(_device, (int)(right - left), (int)(bottom - top));
+                    if (layer < 0)
+                    {
+                        // The pool is full: the children take the alpha, as GPUI and Avalonia draw every group.
+                        alpha *= group.Alpha;
+                        continue;
+                    }
+
+                    state.Layer = layer;
+                    state.Bounds = new Vector4(left, top, right - left, bottom - top);
+                    draws = AddOp(draws, i, DrawOp.BeginLayer, layer, state.Bounds);
+                    target = state.Bounds;
+                    alpha = 1;
+                    layers++;
+                    move = new Vector4(target.X, target.Y, 0, 0);
+                    continue;
+                }
+                else if (TMode.Groups)
+                {
+                    reader.ReadPop();
+                    GroupState state = _groupStates[--depth];
+                    alpha = state.SavedAlpha;
+                    target = state.SavedTarget;
+                    if (state.Layer < 0)
+                    {
+                        continue;
+                    }
+
+                    // The composite, in the pixels of the target outside the layer.
+                    layers--;
+                    move = layers > 0 ? new Vector4(target.X, target.Y, 0, 0) : default;
+                    draws = AddOp(draws, i, DrawOp.EndLayer, state.Layer, default);
+                    draws = AddToDraw(draws, i, PixelKind.Layer, state.Layer);
+                    destination[i++] = new QuadInstance
+                    {
+                        Rect = state.Bounds - move,
+                        Color = Faded<TMode>(new Color(255, 255, 255, (byte)MathF.Round(255 * state.Alpha)), alpha),
+                        Page = QuadInstance.SolidPage,
+                        Shape = QuadInstance.NoShape,
+                    };
+                    continue;
+                }
+
+                i++;
             }
 
-            if (draws > 0)
+            if (draws > 0 && _draws[draws - 1].Op == DrawOp.Draw)
             {
                 ref DrawRange last = ref _draws[draws - 1];
                 last.Count = i - last.Start;
@@ -1046,16 +1257,20 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
     // The six rows of a rounded rectangle, as QuadShaders' ShapeColor reads them: the radii, the border's widths, the border's
     // color, the kind with the rows of the fill's and the border's gradients, the rectangle, and nothing.
-    private QuadInstance WriteShape(in ShapeCommand command, Span<Vector4> rows, int row)
+    private QuadInstance WriteShape<TMode>(in ShapeCommand command, Span<Vector4> rows, int row, float alpha, in Vector4 move)
+        where TMode : struct, IGroupMode
     {
-        var rect = new Vector4(command.X, command.Y, command.Width, command.Height);
+        Vector4 rect = Moved<TMode>(new Vector4(command.X, command.Y, command.Width, command.Height), move);
         BorderWidths widths = command.BorderWidths;
         rows[row] = Radii(command.Radii);
         rows[row + 1] = new Vector4(widths.Left, widths.Top, widths.Right, widths.Bottom);
         rows[row + 2] = Straight(command.BorderColor);
         rows[row + 3] = new Vector4(ShapeKind, BrushRow(command.FillBrush), BrushRow(command.BorderBrush), 0);
         rows[row + 4] = rect;
-        rows[row + 5] = default;
+
+        // A group's opacity given to its children, which PSFaded multiplies the whole shape by: fading the fill and the border
+        // apart would show the fill through an opaque border.
+        rows[row + 5] = new Vector4(TMode.Groups ? alpha : 1, 0, 0, 0);
         return new QuadInstance
         {
             Rect = rect,
@@ -1069,13 +1284,14 @@ public sealed unsafe class D3D11Renderer : IDisposable
     // blurred rectangle, and the shape's radii. An outer shadow's rectangle is the shape's moved and grown by the spread, and its
     // quad is that grown by three sigmas; an inset shadow's is the hole, moved and shrunk, and its quad the shape's (GPUI's
     // paint_drop_shadows and paint_inset_shadows, window.rs lines 4472 to 4535).
-    private static QuadInstance WriteShadow(in ShadowCommand command, Span<Vector4> rows, int row)
+    private static QuadInstance WriteShadow<TMode>(in ShadowCommand command, Span<Vector4> rows, int row, float alpha, in Vector4 move)
+        where TMode : struct, IGroupMode
     {
-        var element = new Vector4(command.X, command.Y, command.Width, command.Height);
+        Vector4 element = Moved<TMode>(new Vector4(command.X, command.Y, command.Width, command.Height), move);
         float spread = command.Inset ? -command.Spread : command.Spread;
         var blurred = new Vector4(
-            command.X + command.Offset.X - spread,
-            command.Y + command.Offset.Y - spread,
+            element.X + command.Offset.X - spread,
+            element.Y + command.Offset.Y - spread,
             MathF.Max(0, command.Width + (2 * spread)),
             MathF.Max(0, command.Height + (2 * spread))
         );
@@ -1098,7 +1314,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         return new QuadInstance
         {
             Rect = quad,
-            Color = command.Color.Packed,
+            Color = Faded<TMode>(command.Color, alpha),
             Page = QuadInstance.SolidPage,
             Shape = (uint)row,
         };
@@ -1108,7 +1324,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
     // the cap, the dash's length, and the dash's period; the dash's offset and the arc's start and sweep; the kind with the row of
     // the gradient and the width (0 for a fill); the gradient's box; and nothing. A line without dashes is one dash as long as the
     // line. The quad is the shape's box grown by the half width, the caps, and a pixel for the antialiasing.
-    private QuadInstance WriteCurve(CommandTag tag, in CurveCommand command, Span<Vector4> rows, int row)
+    private QuadInstance WriteCurve<TMode>(CommandTag tag, in CurveCommand command, Span<Vector4> rows, int row, float alpha)
+        where TMode : struct, IGroupMode
     {
         float half = command.Width * 0.5f;
         float kind = tag switch
@@ -1147,13 +1364,137 @@ public sealed unsafe class D3D11Renderer : IDisposable
                     (2 * command.C) + (2 * margin),
                     (2 * (tag is CommandTag.FillEllipse or CommandTag.StrokeEllipse ? command.D : command.C)) + (2 * margin)
                 );
+
+        // Only the faded shader reads a gradient's instance color, so a list without groups writes the color as it is.
         return new QuadInstance
         {
             Rect = quad,
-            Color = command.Color.Packed,
+            Color = TMode.Groups ? Faded<TMode>(command.Brush >= 0 ? Opaque : command.Color, alpha) : command.Color.Packed,
             Page = QuadInstance.SolidPage,
             Shape = (uint)row,
         };
+    }
+
+    // A curve less `move` (a layer's origin): a line's two ends, or a center, and the gradient's box. Moving the command before
+    // WriteCurve keeps WriteCurve as it was without groups: moving its four values inside it kept them in four more registers,
+    // which every call saved and restored (R4c, 25 more instructions and about 3 µs in the curves scene).
+    private static CurveCommand Moved(CommandTag tag, in CurveCommand command, Vector4 move) =>
+        command with
+        {
+            A = command.A - move.X,
+            B = command.B - move.Y,
+            C = tag == CommandTag.Line ? command.C - move.X : command.C,
+            D = tag == CommandTag.Line ? command.D - move.Y : command.D,
+            Box = command.Box - move,
+        };
+
+    // A glyph run's instances and the rows of its gradient, less `move` (a layer's origin, or zero).
+    // Returns the next instance. Inlined into the loop as it was before groups: the native compiler kept it as a call, which
+    // the R4c profile of the curves scene showed as its own function.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int WriteGlyphRun<TMode>(
+        in GlyphRunCommand run,
+        Span<QuadInstance> destination,
+        int i,
+        Span<Vector4> shapes,
+        ref int shape,
+        ref int draws,
+        float alpha,
+        Vector4 move
+    )
+        where TMode : struct, IGroupMode
+    {
+        bool clearType = run.Coverage == GlyphCoverage.Rgb;
+        uint paintRow = QuadInstance.NoShape;
+        if (run.Brush >= 0)
+        {
+            paintRow = (uint)shape;
+            shapes.Slice(shape, ShapeRows).Clear();
+            shapes[shape + 3] = new Vector4(TextKind, BrushRow(run.Brush), 0, 0);
+            shapes[shape + 4] = Moved<TMode>(run.Box, move);
+            shape += ShapeRows;
+        }
+
+        PixelKind pixel =
+            run.Brush >= 0
+                ? (
+                    clearType ? PixelKind.ClearTypeText
+                    : TMode.Groups && alpha < 1 ? PixelKind.TextFaded
+                    : PixelKind.Text
+                )
+                : (clearType ? PixelKind.ClearType : PixelKind.Main);
+        draws = AddToDraw(draws, i, pixel);
+        uint color = Faded<TMode>(run.Color, alpha);
+        uint kind = run.Coverage == GlyphCoverage.Color ? QuadInstance.ColorPage : 0;
+        foreach (GlyphInstance glyph in run.Glyphs)
+        {
+            destination[i++] = new QuadInstance
+            {
+                Rect = Moved<TMode>(new Vector4(glyph.X, glyph.Y, glyph.Width, glyph.Height), move),
+                Color = color,
+                AtlasOrigin = (uint)glyph.AtlasX | ((uint)glyph.AtlasY << 16),
+                Page = (uint)glyph.Page | kind,
+                Shape = paintRow,
+            };
+        }
+
+        return i;
+    }
+
+    // Reads, and draws nowhere, the rest of a group whose layer lies outside its target, up to its Pop.
+    private static void SkipGroup(ref DisplayListReader reader)
+    {
+        int open = 1;
+        while (open > 0 && reader.TryNext(out CommandTag tag))
+        {
+            open +=
+                tag == CommandTag.PushOpacity ? 1
+                : tag == CommandTag.Pop ? -1
+                : 0;
+            Discard(ref reader, tag);
+        }
+    }
+
+    // A color with its alpha times a group's opacity that was given to its children (row R4c). A gradient's instance color is
+    // opaque white, so that its alpha is that opacity, which the shaders multiply the gradient by. The inlining keeps the
+    // list without groups free of a call: the native compiler did not inline it on its own (R4c profile).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint Faded<TMode>(Color color, float alpha)
+        where TMode : struct, IGroupMode =>
+        !TMode.Groups || alpha == 1 ? color.Packed : new Color(color.R, color.G, color.B, (byte)MathF.Round(color.A * alpha)).Packed;
+
+    // A position less a layer's origin, in a list with groups.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector4 Moved<TMode>(Vector4 position, Vector4 move)
+        where TMode : struct, IGroupMode => TMode.Groups ? position - move : position;
+
+    // Reads a command of a layer that lies outside its target, which draws nothing.
+    private static void Discard(ref DisplayListReader reader, CommandTag tag)
+    {
+        switch (tag)
+        {
+            case CommandTag.FillRect:
+                _ = reader.ReadFillRect();
+                break;
+            case CommandTag.Shape:
+                _ = reader.ReadShape();
+                break;
+            case CommandTag.Shadow:
+                _ = reader.ReadShadow();
+                break;
+            case CommandTag.GlyphRun:
+                _ = reader.ReadGlyphRun();
+                break;
+            case CommandTag.PushOpacity:
+                _ = reader.ReadGroup();
+                break;
+            case CommandTag.Pop:
+                reader.ReadPop();
+                break;
+            default:
+                _ = reader.ReadCurve();
+                break;
+        }
     }
 
     // CSS's spread radius: a rounded corner grows with the spread (and shrinks with a negative one); a square corner stays square.
@@ -1200,15 +1541,50 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _brushRows.Unmap(_context);
     }
 
-    // The draw of the instance at `start`: the last one when its pixel shader is the same, else a new one that ends the last.
-    private int AddToDraw(int draws, int start, PixelKind pixel)
+    // The draw of the instance at `start`: the last one when its pixel shader (and, for a composite, its layer) is the same, else
+    // a new one that ends the last.
+    private int AddToDraw(int draws, int start, PixelKind pixel, int layer = -1)
     {
-        if (draws > 0 && _draws[draws - 1].Pixel == pixel)
+        // One comparison a command: the key holds the operation, the pixel shader, and a composite's layer.
+        int key = DrawKey(DrawOp.Draw, pixel, layer);
+        if (draws > 0 && _draws[draws - 1].Key == key)
         {
             return draws;
         }
 
-        if (draws > 0)
+        return AddRange(
+            draws,
+            start,
+            new DrawRange
+            {
+                Start = start,
+                Pixel = pixel,
+                Layer = layer,
+                Key = key,
+            }
+        );
+    }
+
+    private static int DrawKey(DrawOp op, PixelKind pixel, int layer) => (int)op | ((int)pixel << 4) | ((layer + 1) << 12);
+
+    // The start or the end of a layer at the instance `start`, ending the draw before it.
+    private int AddOp(int draws, int start, DrawOp op, int layer, Vector4 bounds) =>
+        AddRange(
+            draws,
+            start,
+            new DrawRange
+            {
+                Start = start,
+                Op = op,
+                Layer = layer,
+                Bounds = bounds,
+                Key = DrawKey(op, PixelKind.Main, layer),
+            }
+        );
+
+    private int AddRange(int draws, int start, DrawRange range)
+    {
+        if (draws > 0 && _draws[draws - 1].Op == DrawOp.Draw)
         {
             ref DrawRange last = ref _draws[draws - 1];
             last.Count = start - last.Start;
@@ -1219,7 +1595,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             GrowDraws();
         }
 
-        _draws[draws] = new DrawRange { Start = start, Pixel = pixel };
+        _draws[draws] = range;
         return draws + 1;
     }
 
@@ -1253,7 +1629,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
     }
 
     // The pixel shader of a draw: the rectangles', shapes', and grayscale and color glyphs'; ClearType glyphs'; lines', ellipses',
-    // and arcs'; and the two for glyphs with a gradient. Each kind added in row R4b has a shader of its own, so that the main one
+    // and arcs'; the two for glyphs with a gradient; a layer's composite; and the variants (Faded) that multiply a gradient by the
+    // opacity a group gave its children (row R4c). Each kind added in row R4b has a shader of its own, so that the main one
     // does not grow with it (docs/benchmarks/r4b-curves.md): a draw starts where the kind changes.
     private enum PixelKind : byte
     {
@@ -1262,14 +1639,65 @@ public sealed unsafe class D3D11Renderer : IDisposable
         Curve,
         Text,
         ClearTypeText,
+        Layer,
+        Faded,
+        CurveFaded,
+        TextFaded,
     }
 
-    // A range of the instance buffer drawn with one pixel shader and one blend state.
+    // A range of the instance buffer drawn with one pixel shader and one blend state; or the start of a layer, which makes the
+    // layer's texture the target, or its end, which makes its parent the target again (row R4c). A composite's draw names its layer.
     private struct DrawRange
     {
         public int Start;
         public int Count;
         public PixelKind Pixel;
+        public DrawOp Op;
+        public int Layer;
+        public Vector4 Bounds;
+        public int Key;
+    }
+
+    /// <summary>
+    /// Whether the list being written has opacity groups: the instance loop and the writes are specialized for each (row R4c).
+    /// </summary>
+    private interface IGroupMode
+    {
+        /// <summary>
+        /// Gets a value indicating whether the list has opacity groups.
+        /// </summary>
+        static abstract bool Groups { get; }
+    }
+
+    // A list with no opacity group: no alpha, no layer.
+    private readonly struct NoGroups : IGroupMode
+    {
+        public static bool Groups => false;
+    }
+
+    // A list with opacity groups.
+    private readonly struct WithGroups : IGroupMode
+    {
+        public static bool Groups => true;
+    }
+
+    // What a DrawRange does.
+    private enum DrawOp : byte
+    {
+        Draw,
+        BeginLayer,
+        EndLayer,
+    }
+
+    // An opacity group open while the instances are written: the alpha outside it, its own alpha, the target outside it, and its
+    // layer (-1 when its alpha is given to its children).
+    private struct GroupState
+    {
+        public float SavedAlpha;
+        public float Alpha;
+        public Vector4 SavedTarget;
+        public int Layer;
+        public Vector4 Bounds;
     }
 
     // The texture array of one kind of the atlas's pages, a slice per page, and the id of the page each slice holds.
