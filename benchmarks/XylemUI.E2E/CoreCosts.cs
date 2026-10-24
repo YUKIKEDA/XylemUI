@@ -104,8 +104,8 @@ internal static class CoreCosts
         int before = atlas.RefusedCount;
         report.Number("refused_us", Time(requests, () => atlas.TryGet(refused, out _)));
 
-        // Two refused glyphs in turn: the rasterizer keeps the analysis of the last glyph it measured, so one glyph refused again
-        // and again does not make it again; two in turn do.
+        // Two refused glyphs in turn: the atlas remembers each refusal until the next frame, so neither is rasterized again (row
+        // T5; before, the rasterizer kept only the analysis of the last glyph it measured, and two in turn made it again).
         bool flip = false;
         report.Number("refused_alternating_us", Time(requests, () => atlas.TryGet((flip = !flip) ? refused : second, out _)));
         report.Number("cached_us", Time(requests, () => cachedAtlas.TryGet(refused, out _)));
