@@ -226,6 +226,53 @@ public sealed class GlyphAtlasManyTests
     }
 
     /// <summary>
+    /// When a rasterizer for a worker cannot be made, the glyphs are rasterized on the calling thread, the rasterizers made for the
+    /// workers are disposed, and they are not made again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font and an atlas made with a function that creates test rasterizers, with 4 threads, that throws
+    ///   <see cref="InvalidOperationException"/> on its third call (the second worker's rasterizer), as DirectWrite's factory or
+    ///   loader can.
+    ///
+    /// Steps:
+    /// - Ask with one GetMany for the 300 glyphs of <see cref="GetMany_FourThreads_SamePagesAndRegionsAsOne"/>, and compare with an
+    ///   atlas with 1 thread; in the next frame, ask for 4 new glyphs; dispose the atlas.
+    ///
+    /// Expected:
+    /// - GetMany does not throw; the same regions and pages as the atlas with 1 thread; no workers; every Measure on the calling
+    ///   thread.
+    /// - The function was called 3 times; the first worker's rasterizer was disposed in the first GetMany, the atlas's own one at
+    ///   Dispose.
+    /// </remarks>
+    [Fact]
+    public void GetMany_WorkerRasterizerCannotBeMade_RasterizesOnTheCallingThread()
+    {
+        using Font font = TestFont.Open();
+        GlyphRequest[] requests = Requests(font);
+        var rasterizers = new List<TestRasterizer>();
+        int calls = 0;
+        var atlas = new GlyphAtlas(
+            () => ++calls == 3 ? throw new InvalidOperationException("The test factory fails its third rasterizer.") : NewRasterizer(rasterizers),
+            threads: 4
+        );
+        using var serial = new GlyphAtlas(() => NewRasterizer(), threads: 1);
+
+        (AtlasGlyph[] Glyphs, bool[] Found) made = GetMany(atlas, requests);
+        Assert.Equal(GetMany(serial, requests).Glyphs, made.Glyphs);
+        AssertSamePages(serial, atlas);
+        Assert.Null(atlas.RunningWorkers);
+        Assert.Equal([false, true], rasterizers.Select(rasterizer => rasterizer.IsDisposed));
+        atlas.BeginFrame();
+        _ = GetMany(atlas, [.. Enumerable.Range(130, 4).Select(g => new GlyphRequest(new GlyphKey(font, (uint)g, 24, 0), Ink))]);
+        atlas.Dispose();
+
+        Assert.Equal(3, calls);
+        Assert.All(rasterizers.SelectMany(r => r.MeasureThreads), thread => Assert.Equal(Environment.CurrentManagedThreadId, thread));
+        Assert.All(rasterizers, rasterizer => Assert.True(rasterizer.IsDisposed));
+    }
+
+    /// <summary>
     /// A rasterizer that throws on a worker makes GetMany throw once every worker has finished, and leaves none of the call's glyphs
     /// cached.
     /// </summary>

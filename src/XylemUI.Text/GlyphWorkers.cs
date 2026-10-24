@@ -9,7 +9,8 @@ namespace XylemUI.Text;
 /// </summary>
 /// <remarks>
 /// <see cref="Run"/> is called from one thread at a time. An exception a worker throws is thrown again from <see cref="Run"/> after
-/// every worker has finished, the first one first.
+/// every worker has finished: the one of the lowest worker index, and the others are dropped, since the atlas's rasterizers throw
+/// for causes all threads share (a disposed font, a failed DirectWrite call).
 /// </remarks>
 internal sealed class GlyphWorkers : IDisposable
 {

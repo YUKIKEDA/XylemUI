@@ -91,6 +91,8 @@ public sealed class GlyphAtlas : IDisposable
     /// </summary>
     /// <param name="createRasterizer">
     /// Creates a rasterizer for one thread: each instance is used on one thread, and distinct instances on distinct threads at once.
+    /// When it throws <see cref="InvalidOperationException"/> or <see cref="OutOfMemoryException"/> for a worker, or a worker
+    /// thread cannot be started, the atlas disposes the rasterizers it made for the workers and draws on the calling thread.
     /// </param>
     /// <param name="pageSize">The width and height of a grayscale page, in pixels; a ClearType page is half as wide and high.</param>
     /// <param name="plotSize">The width and height of a plot, in pixels; it divides half of <paramref name="pageSize"/>.</param>
@@ -522,8 +524,8 @@ public sealed class GlyphAtlas : IDisposable
     private bool IsRefused(in GlyphKey key) => _batch.RefusedFrame == Frame && _batch.Refused.Contains(key);
 
     // The worker threads and their rasterizers, made the first time a frame has enough new glyphs; null when the atlas has one
-    // rasterizer, or when the threads could not be started (the glyphs are then rasterized on the calling thread). It is tried
-    // once: the rasterizers made are kept in _batch.Rasterizers as they are made, so Dispose disposes them even if a later one throws.
+    // rasterizer, or when a worker's rasterizer could not be made or a thread could not be started (the glyphs are then rasterized
+    // on the calling thread, and the rasterizers made for the workers are disposed). It is tried once.
     private GlyphWorkers? Workers()
     {
         if (_batch.Running is not null || _batch.NoWorkers || _batch.CreateRasterizer is null || _batch.Threads < 2)
@@ -534,15 +536,41 @@ public sealed class GlyphAtlas : IDisposable
         _batch.NoWorkers = true;
         var rasterizers = new IGlyphRasterizer[_batch.Threads];
         rasterizers[0] = _rasterizer;
-        _batch.Rasterizers = rasterizers;
-        for (int i = 1; i < _batch.Threads; i++)
+        int made = 1;
+        try
         {
-            rasterizers[i] = _batch.CreateRasterizer();
+            for (; made < _batch.Threads; made++)
+            {
+                rasterizers[made] = _batch.CreateRasterizer();
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or OutOfMemoryException)
+        {
+            // A rasterizer for a worker could not be made (DirectWrite's factory or loader): the frame is drawn on the calling
+            // thread, as when a thread cannot be started (design §5.0.3).
+            DisposeExtra(rasterizers, made);
+            return null;
         }
 
         _batch.Running = _batch.StartWorkers(_batch.Threads);
-        _batch.NoWorkers = _batch.Running is null;
+        if (_batch.Running is null)
+        {
+            DisposeExtra(rasterizers, made);
+            return null;
+        }
+
+        _batch.Rasterizers = rasterizers;
+        _batch.NoWorkers = false;
         return _batch.Running;
+    }
+
+    // Disposes the rasterizers made for workers that will not run, all but the atlas's own.
+    private static void DisposeExtra(IGlyphRasterizer[] rasterizers, int made)
+    {
+        for (int i = 1; i < made; i++)
+        {
+            (rasterizers[i] as IDisposable)?.Dispose();
+        }
     }
 
     // The workers, or null when a thread could not be started (GlyphWorkers stops the ones it started).
