@@ -46,6 +46,12 @@ A type that takes a visual value (a blur radius, how a gradient interpolates, wh
 
 An option a Grill offers relies only on what the code or the design already has (a font metric, a type, a value from the OS), checked before the Grill; an option that needs something new says so and offers adding it. R4b's Q11 made the default box of brushed text from the font's ascender and descender, which `Font` does not have; writing the design found it, and the Grill was reopened (PR #252).
 
+A design that allocates by a size the content decides (an offscreen layer as large as its children's bounds) writes what cuts the size (the clip, the target), the cap, and what is drawn when the cap refuses it. R4c's first design said a layer is as large as its bounds; a group around scrolling content or a far transform could ask for a texture past D3D11's 16,384 pixels a side or past 1 GB, and the review found it (PR #260).
+
+A design that adds a new kind of edge (a clip) says whether it is put on pixels by the rounding the other edges take (W1), and under the same condition. Without it, a child's rounded edge and the clip's unrounded edge are half a pixel apart, and a thin line or a gap shows at the clip's border (PR #260).
+
+A new public command states what it does with an argument that is NaN or out of range, as the commands before it do (a `Stroke`'s width throws `ArgumentOutOfRangeException`). R4c's first design left `PushOpacity`'s alpha open (PR #260).
+
 Every type in a signature the design writes is defined in the design or the code. F1's first `IFontProvider` took `in FontStyle style`, which nothing defined, so whether it carried the language could not be read (PR #146).
 
 A design that changes the unit of a quantity (logical against physical pixels) lists every API that carries it across a boundary, arguments and return values, and writes the unit of each. W1's first design gave the units of the display list's coordinates and of the window's size, and left out the size handed to the layout root (`NotifyWindowResized`) and the advance `DrawText` returns; the review found both (PR #232).
