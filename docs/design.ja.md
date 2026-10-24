@@ -2093,13 +2093,14 @@ UiNodeとGPUバックエンドの間にDisplayListという中間表現を挟む
 
 ```csharp
 public readonly record struct CornerRadii(float TopLeft, float TopRight, float BottomRight, float BottomLeft);
-public readonly record struct Border(EdgeInsets Widths, Color Color);
+// Paint・Border・BoxShadow は下の「形・塗り・影の API」（R4 の Grill）で決める。
 
 // 論理表現。テスト・デバッガ表示・レンダラの単体テストで使う。
 // 毎フレームの実体は DisplayListBuffer（§5.0.1）であり、このレコードは生成しない
 public abstract record PaintCommand
 {
-    public sealed record FillRect(Rect Rect, Color Color, CornerRadii Radii, Border? Border) : PaintCommand;  // 非一様な角丸・ボーダー合成に対応(下記参照)
+    public sealed record FillRect(Rect Rect, Paint Fill, CornerRadii Radii, Border? Border) : PaintCommand;  // 非一様な角丸・ボーダー合成に対応(下記参照)
+    public sealed record Shadow(Rect Rect, CornerRadii Radii, BoxShadow BoxShadow) : PaintCommand;
     public sealed record Image(Rect Rect, ImageHandle Handle) : PaintCommand;
     public sealed record GlyphRun(Rect Rect, GlyphInstance[] Glyphs, Color Color) : PaintCommand;
     public sealed record ClipRect(Rect Rect) : PaintCommand;
@@ -2156,6 +2157,57 @@ internal static (DisplayList DisplayList, DamageRegion Damage) BuildDisplayList(
 - **背景のぼかし（Q7）:** アプリ内の Acrylic は、§13.2 のとおり v1.x のままにする。v1 の部品の範囲に要らないためである。形は、層の上に乗せる Flutter の形とする。今描いた分をテクスチャに取ってぼかし、新しい層の最初に描く（`impeller/display_list/canvas.cc` 2415〜2470 行目）。Avalonia はアプリ内ではぼかさず、OS の合成に任せている
 - **利用者が描く拡張点（Q8）:** 表示リストの語彙を記録する公開の API（`DrawingContext`）を持つ。GPUI の `canvas()`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ形である。生の GPU に触れる口（Avalonia の Skia のリースは `[Unstable]`）は持たず、GPU を直接使う描画は行 D11 のネイティブ描画領域に任せる
 - **ヒット領域（Q9）:** v1 は、矩形と角丸の矩形にする（GPUI は矩形だけ）。任意のパスの当たり判定（Avalonia の `Geometry.FillContains`）は、行 R5 で入れる
+
+**形・塗り・影の API（R4 の Grill でオーナーが決定、Issue #242）:** 行 R4 は 3 つに分けて実装する。
+
+- **R4a:** 角丸の矩形（角ごとの半径）とボーダー（辺ごとの幅、1 つの塗り）、塗りを矩形の塗りとボーダーに当てること、影
+- **R4b:** 線・楕円・円弧と、それらと文字に塗りを当てること
+- **R4c:** 角丸のクリップ（文字にも掛ける）、`Transform`、層とグループの不透明度、その中の文字のグレースケール、`DrawingContext`、角丸のヒット領域
+
+型は次のとおりである。上の `PaintCommand.FillRect` の塗りと `Border` の色は、`Paint` である。
+
+```csharp
+// 塗り。Gradient が null なら Color の単色で、今の速い道で描く。
+public readonly record struct Paint(Color Color, GradientBrush? Gradient = null);
+
+// 作ったら変わらない。スタイルの値として 1 回作って使い回すので、フレームごとの確保は無い。
+public sealed class GradientBrush
+{
+    public GradientKind Kind { get; }
+    public float Angle { get; }                    // 線形: CSS と同じく 0 度が上、時計回り
+    public Vector2 Center { get; }                 // 放射・円錐: 塗る形の箱に対する割合（0〜1）
+    public float Radius { get; }                   // 放射: 箱の幅と高さの大きい方に対する割合
+    public float StartAngle { get; }               // 円錐: 0 度が上、時計回り
+    public ReadOnlySpan<GradientStop> Stops { get; } // 2 つ以上、位置の順。上限は無い
+    public GradientColorSpace ColorSpace { get; }  // 補間の色空間
+}
+
+public enum GradientKind { Linear, Radial, Conic }
+public enum GradientColorSpace { Srgb, Oklab }
+public readonly record struct GradientStop(float Offset, Color Color);  // Offset は 0〜1
+
+public readonly record struct BorderWidths(float Left, float Top, float Right, float Bottom);
+public readonly record struct Border(BorderWidths Widths, Paint Paint);
+
+// 角丸の矩形の影。Inset なら形の内側に描く。
+public readonly record struct BoxShadow(Color Color, Vector2 Offset, float BlurRadius, float Spread, bool Inset = false);
+```
+
+- **表示リスト:** `DisplayList.FillRect` は、論理座標の矩形・`Paint`・`CornerRadii`・`Border?` を受け取る。今の `FillRect(x, y, width, height, Color)` は、単色・角丸なし・ボーダーなしの形として残す。`DisplayList.DrawShadow` は、論理座標の矩形・`CornerRadii`・`BoxShadow` を受け取る
+  - 描く順は呼び出し側が決める。外側の影は形の前に、内側の影は塗りの後でボーダーの前に書く（Avalonia の順、`DrawingContextImpl.cs` 416〜540 行目）
+  - 表示リストは、`GradientBrush` の参照を参照の並びに入れる。同じブラシが同じフレームに何度出ても、色の並びは GPU に 1 回だけ送る
+- **グラデーションの位置:** 塗る形の箱に対する割合で持つ（CSS と Avalonia の `RelativePoint` の既定と同じ）。大きさの変わる部品に、そのまま使える
+- **グラデーションの細部（PR #243 のレビュー、オーナー決定）:**
+  - 補間は、アルファを掛けた値（premultiplied）で行う（CSS と同じ）。透明へ向かうフェードが灰色にくすまない。Oklab を選んだときも、アルファを掛けた Oklab で補間する。Skia・Flutter・GPUI の既定は掛けない値で補間する
+  - 線形の長さは、色の両端が箱の角に来る CSS の長さ（|w·sin θ| + |h·cos θ|）にする
+  - 放射は、v1 は円だけにする。半径は箱の幅と高さの大きい方に対する割合で、CSS の既定の楕円（farthest-corner）とは違う。楕円は要るときに足す
+  - 0〜1 の外は端の色にし、繰り返し（CSS の `repeating-*`、Flutter の `TileMode`）は v1 に入れない。位置の等しい 2 つの色は、硬い境目にする
+- **影の細部（PR #243 のレビュー、オーナー決定）:**
+  - `BlurRadius` は CSS と同じく、ガウス分布の標準偏差の 2 倍である（σ = `BlurRadius` / 2）。Fluent 2 のエレベーションのトークン（§13.2）は CSS の `box-shadow` の値なので、そのまま渡せる。換算は 4 つとも違う。CSS の仕様は σ = 半径 / 2、Flutter は σ = 0.57735 × 半径 + 0.5（`lib/ui/painting.dart` 8712〜8714 行目）、Avalonia は σ = 0.288675 × 半径 + 0.5（`DrawingContextImpl.cs` 311〜316 行目）、GPUI は半径をそのまま σ に使う（`shaders.hlsl` 885〜930 行目）
+  - `Offset`・`Spread`・`BlurRadius` は論理座標で、倍率を掛けるが画素には丸めない。影の矩形の辺は、塗りと同じく画素に丸める（W1 の丸め）。塗りの縁と影の縁がずれないためで、広げとぼかしは丸めた辺から描く
+  - 外側の影は、形の内側では描かない（形で切り抜く）。CSS と同じで、半透明の塗りの下に影は透けない。Avalonia も、形の外側だけに描くクリップ（`ClipOperation = Difference`、`DrawingContextImpl.cs` 342・452・465 行目）で同じ結果になる。GPUI と Flutter は切り抜かない。シェーダが形の内側で影のアルファを 0 にする
+- **シェーダ:** 矩形のシェーダは 1 つにまとめ、角丸・ボーダー・塗りの種類・影を、インスタンスの種類で分ける。XylemUI は表示リストの順に描くので、影を別のシェーダにすると（GPUI の形）、影が来るたびに描く回数が増えるためである。インスタンスが大きくなる分の費用は、R4a で測ってここに書く
+- **確かめ方:** WARP で描いた画素を読み戻し、CPU で求めた画素と、各チャネル 1 以内で比べる（今の文字のテストと同じ形）。影の CPU の基準は、シェーダの式の写しにしない。ガウス分布を数値で積分した値と比べ、erf の近似と y 方向 4 点の誤差がどれだけかを確かめる（PR #243 のレビュー）。加えて、CSS の `box-shadow` と並べた画像を、オーナーが 100・125 % で目で確かめる
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
 
