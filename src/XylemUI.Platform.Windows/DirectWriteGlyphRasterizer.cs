@@ -27,8 +27,11 @@ namespace XylemUI.Platform.Windows;
 /// any process has, 2 to 3 µs (Yu Gothic, 2,000 glyphs, NativeAOT, Windows 11 26300, <c>docs/benchmarks/t4-glyphs.md</c>).
 /// </para>
 /// <para>
-/// <see cref="Measure"/> makes the glyph's analysis and keeps it, so that <see cref="Rasterize"/> of the same key, which the
-/// atlas calls next, does not make it again. Used on one thread, as the atlas is.
+/// <see cref="Measure"/> makes the glyph's analysis and keeps it, so that <see cref="Rasterize"/> of the same key right after does
+/// not make it again. The atlas measures all the new glyphs of a frame before it rasterizes them (design §5.0.3, "Glyphs seen for
+/// the first time"), so most analyses are made again; keeping one for every measured key did not change the time (431 new glyphs
+/// of Yu Gothic on one thread, 38.9 to 43.8 ms against 38.3 to 43.4 ms; 64 emoji, 17.8 to 29.5 ms against 16.1 to 26.8 ms; 5
+/// samples each, roadmap row T5). Each instance is used on one thread; distinct instances may be used on distinct threads at once.
 /// </para>
 /// <para>
 /// A color glyph is told apart in a color font (<c>IDWriteFontFace2::IsColorFont</c>) by <c>TranslateColorGlyphRun</c>, as GPUI

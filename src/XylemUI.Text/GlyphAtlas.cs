@@ -34,9 +34,24 @@ namespace XylemUI.Text;
 /// and the upload reads it in place. One atlas belongs to one thread, and its changes go to one renderer: the renderer clears the dirty
 /// regions after uploading them, so a second renderer of the same atlas would miss them (sharing is decided in roadmap row P10).
 /// </para>
+/// <para>
+/// <see cref="GetMany"/> rasterizes the new glyphs of a frame together: on worker threads when the atlas was made with a function
+/// that creates rasterizers and there are at least <see cref="ParallelThreshold"/> of them, else on the calling thread (design
+/// §5.0.3, "Glyphs seen for the first time", roadmap row T5). The regions are taken on the calling thread in the order of the
+/// requests, so the pages are the same whatever the number of threads. Such an atlas owns its rasterizers and its workers until
+/// <see cref="Dispose"/>.
+/// </para>
 /// </remarks>
-public sealed class GlyphAtlas
+public sealed class GlyphAtlas : IDisposable
 {
+    /// <summary>
+    /// The number of new glyphs from which <see cref="GetMany"/> hands them to the worker threads (design §5.0.3, "Glyphs seen for
+    /// the first time"): one glyph cannot be split, and from 2 the workers were faster (Yu Gothic at 16 px, 4 threads, median of 21
+    /// processes: 2 glyphs 130 µs against 146 µs on the calling thread alone, 3 glyphs 188 against 222, 4 glyphs 247 against 308;
+    /// roadmap row T5, <c>docs/benchmarks/t5-glyph-workers.md</c>).
+    /// </summary>
+    public const int ParallelThreshold = 2;
+
     private const int Padding = 1;
 
     // The plot of a cached key that stands for a color glyph, without and with a layer in the text's color; -1 is a glyph with no
@@ -54,6 +69,10 @@ public sealed class GlyphAtlas
     private readonly Pages _rgb;
     private readonly Pages _color;
 
+    // What only GetMany, the refusals, and Dispose use, so that a frame whose glyphs are all in the atlas reads the same fields as
+    // before (row T5).
+    private readonly Batch _batch;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphAtlas"/> class.
     /// </summary>
@@ -63,6 +82,27 @@ public sealed class GlyphAtlas
     /// <param name="maxPages">The number of grayscale pages kept in steady state; four times as many ClearType pages.</param>
     /// <exception cref="ArgumentOutOfRangeException">A size is not positive, or the plot does not divide half the page.</exception>
     public GlyphAtlas(IGlyphRasterizer rasterizer, int pageSize = 1024, int plotSize = 256, int maxPages = 4)
+        : this(rasterizer, null, 1, pageSize, plotSize, maxPages) { }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GlyphAtlas"/> class that rasterizes the new glyphs of a frame on worker threads,
+    /// each with its own rasterizer (design §5.0.3, "Glyphs seen for the first time"). The atlas owns the rasterizers it creates and
+    /// disposes them in <see cref="Dispose"/>.
+    /// </summary>
+    /// <param name="createRasterizer">
+    /// Creates a rasterizer for one thread: each instance is used on one thread, and distinct instances on distinct threads at once.
+    /// </param>
+    /// <param name="pageSize">The width and height of a grayscale page, in pixels; a ClearType page is half as wide and high.</param>
+    /// <param name="plotSize">The width and height of a plot, in pixels; it divides half of <paramref name="pageSize"/>.</param>
+    /// <param name="maxPages">The number of grayscale pages kept in steady state; four times as many ClearType pages.</param>
+    /// <param name="threads">
+    /// The number of threads that rasterize, the calling thread included; 0 takes half the logical processors, kept from 1 to 4.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">A size is not positive, the plot does not divide half the page, or <paramref name="threads"/> is negative.</exception>
+    public GlyphAtlas(Func<IGlyphRasterizer> createRasterizer, int pageSize = 1024, int plotSize = 256, int maxPages = 4, int threads = 0)
+        : this(NewRasterizer(createRasterizer, threads), createRasterizer, ThreadsOf(threads), pageSize, plotSize, maxPages) { }
+
+    private GlyphAtlas(IGlyphRasterizer rasterizer, Func<IGlyphRasterizer>? createRasterizer, int threads, int pageSize, int plotSize, int maxPages)
     {
         ArgumentNullException.ThrowIfNull(rasterizer);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
@@ -74,6 +114,9 @@ public sealed class GlyphAtlas
         }
 
         _rasterizer = rasterizer;
+        _batch = new Batch(rasterizer, createRasterizer, Math.Max(1, threads));
+        _batch.MeasureStep = MeasureWork;
+        _batch.RasterizeStep = RasterizeWork;
         PageSize = pageSize;
         PlotSize = plotSize;
         MaxPages = maxPages;
@@ -124,9 +167,9 @@ public sealed class GlyphAtlas
     public int EvictionCount { get; private set; }
 
     /// <summary>
-    /// Gets the number of requests refused so far because the kind had its page limit and no plot to evict. A
-    /// refused glyph is not cached, so each request for it rasterizes it again; a rising count means a frame needs more than the
-    /// limit, or <see cref="BeginFrame"/> is not called.
+    /// Gets the number of glyphs refused so far because the kind had its page limit and no plot to evict. The atlas remembers a
+    /// refused glyph until the next <see cref="BeginFrame"/> and refuses it again without rasterizing it, so a glyph counts once
+    /// per frame; a rising count means frames need more than the limit, or <see cref="BeginFrame"/> is not called.
     /// </summary>
     public int RefusedCount { get; private set; }
 
@@ -244,6 +287,392 @@ public sealed class GlyphAtlas
     /// <exception cref="ObjectDisposedException">The font was disposed and the glyph is not in the atlas.</exception>
     public bool TryGet(in GlyphKey key, uint textColor, out AtlasGlyph glyph)
     {
+        Validate(key);
+        if (_glyphs.TryGetValue(key, out (AtlasGlyph Glyph, int Plot) cached))
+        {
+            if (cached.Plot >= 0)
+            {
+                PagesOf(key.Coverage).PlotAt(cached.Plot).LastUsedFrame = Frame;
+            }
+            else if (cached.Plot <= ColorGlyph)
+            {
+                return TryGet(ColorKeyOf(key, cached.Plot == ColorGlyphInTextColor, textColor), textColor, out glyph);
+            }
+
+            glyph = cached.Glyph;
+            return true;
+        }
+
+        // A glyph refused in this frame is refused again without rasterizing it: rasterizing it again took 6.4 µs per request
+        // (design §11.3, roadmap row T5).
+        if (IsRefused(key))
+        {
+            glyph = default;
+            return false;
+        }
+
+        return TryRasterize(key, textColor, out glyph);
+    }
+
+    /// <summary>
+    /// Returns whether a glyph is in the atlas without rasterizing it, and if so its region, marking it used in the current frame
+    /// (design §5.0.3, "Glyphs seen for the first time": <c>DisplayList.DrawText</c> writes the glyphs found here and leaves the
+    /// others to <see cref="GetMany"/>).
+    /// </summary>
+    /// <param name="key">The glyph, its size, its subpixel step, and its kind of coverage.</param>
+    /// <param name="textColor">The text's color, packed as red in the low byte, then green, blue, and alpha.</param>
+    /// <param name="glyph">The glyph's region and bearings when it is found.</param>
+    /// <returns>Whether it was found, missing, or refused in the current frame (no room, or larger than a plot).</returns>
+    /// <exception cref="ArgumentException">The key is not valid (see <see cref="TryGet(in GlyphKey, uint, out AtlasGlyph)"/>).</exception>
+    public GlyphLookup Lookup(in GlyphKey key, uint textColor, out AtlasGlyph glyph)
+    {
+        Validate(key);
+        if (_glyphs.TryGetValue(key, out (AtlasGlyph Glyph, int Plot) cached))
+        {
+            if (cached.Plot >= 0)
+            {
+                PagesOf(key.Coverage).PlotAt(cached.Plot).LastUsedFrame = Frame;
+            }
+            else if (cached.Plot <= ColorGlyph)
+            {
+                return Lookup(ColorKeyOf(key, cached.Plot == ColorGlyphInTextColor, textColor), textColor, out glyph);
+            }
+
+            glyph = cached.Glyph;
+            return GlyphLookup.Found;
+        }
+
+        glyph = default;
+        return IsRefused(key) ? GlyphLookup.Refused : GlyphLookup.Missing;
+    }
+
+    /// <summary>
+    /// Returns the regions of many glyphs, rasterizing together the ones not in the atlas: (1) their boxes are measured, (2) their
+    /// regions are taken on the calling thread in the order of <paramref name="requests"/>, (3) they are rasterized into their
+    /// regions. Steps 1 and 3 run on the worker threads when the atlas has them and at least <see cref="ParallelThreshold"/> glyphs
+    /// are new (design §5.0.3, "Glyphs seen for the first time").
+    /// </summary>
+    /// <param name="requests">The glyphs and the text colors they are drawn in.</param>
+    /// <param name="glyphs">The regions, one for each request; the default value for a glyph that is not found.</param>
+    /// <param name="found">
+    /// Whether each glyph is in the atlas: <see langword="false"/> for one larger than a plot or with no room, as
+    /// <see cref="TryGet(in GlyphKey, uint, out AtlasGlyph)"/> returns.
+    /// </param>
+    /// <exception cref="ArgumentException">A key is not valid, or a span is shorter than <paramref name="requests"/>.</exception>
+    /// <exception cref="InvalidOperationException">A rasterizer could not draw a glyph.</exception>
+    /// <exception cref="ObjectDisposedException">A font was disposed and its glyph is not in the atlas, or the atlas was disposed.</exception>
+    public void GetMany(ReadOnlySpan<GlyphRequest> requests, Span<AtlasGlyph> glyphs, Span<bool> found)
+    {
+        ObjectDisposedException.ThrowIf(_batch.Disposed, this);
+        if (glyphs.Length < requests.Length || found.Length < requests.Length)
+        {
+            throw new ArgumentException("The spans for the results are shorter than the requests.", nameof(glyphs));
+        }
+
+        _batch.ItemCount = 0;
+        for (int i = 0; i < requests.Length; i++)
+        {
+            GlyphLookup lookup = Lookup(requests[i].Key, requests[i].TextColor, out glyphs[i]);
+            found[i] = lookup == GlyphLookup.Found;
+            if (lookup == GlyphLookup.Missing)
+            {
+                if (_batch.ItemCount == _batch.Items.Length)
+                {
+                    Array.Resize(ref _batch.Items, _batch.Items.Length * 2);
+                }
+
+                _batch.Items[_batch.ItemCount++] = new Item
+                {
+                    Request = i,
+                    Key = requests[i].Key,
+                    TextColor = requests[i].TextColor,
+                };
+            }
+        }
+
+        if (_batch.ItemCount == 0)
+        {
+            return;
+        }
+
+        GlyphWorkers? workers = _batch.ItemCount >= _batch.ParallelFrom ? Workers() : null;
+        _batch.ActiveThreads = workers?.Count ?? 1;
+        Run(workers, _batch.MeasureStep);
+        bool rasterize = false;
+        for (int i = 0; i < _batch.ItemCount; i++)
+        {
+            rasterize |= Place(ref _batch.Items[i], out glyphs[_batch.Items[i].Request], out found[_batch.Items[i].Request]);
+        }
+
+        if (!rasterize)
+        {
+            return;
+        }
+
+        try
+        {
+            Run(workers, _batch.RasterizeStep);
+        }
+        catch
+        {
+            // A glyph that was not rasterized must not stay cached over the old pixels of its region, so every glyph this call
+            // placed is forgotten, in the cache and in its plot; its room is taken until the plot is evicted.
+            for (int i = 0; i < _batch.ItemCount; i++)
+            {
+                ref Item item = ref _batch.Items[i];
+                if (item.Page is not null)
+                {
+                    _ = _glyphs.Remove(item.Final);
+                    _ = PagesOf(item.Final.Coverage).PlotAt(item.Plot).Keys.Remove(item.Final);
+                }
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the number of new glyphs from which <see cref="GetMany"/> uses the workers: <see cref="ParallelThreshold"/>,
+    /// which the glyph-resolve scenario of <c>benchmarks/XylemUI.E2E</c> moves to measure it.
+    /// </summary>
+    internal int ParallelFrom
+    {
+        get => _batch.ParallelFrom;
+        set => _batch.ParallelFrom = value;
+    }
+
+    /// <summary>
+    /// Gets or sets how the atlas starts its worker threads: the workers, or <see langword="null"/> when a thread could not be
+    /// started. A test replaces it to make the start fail.
+    /// </summary>
+    internal Func<int, GlyphWorkers?> StartWorkers
+    {
+        get => _batch.StartWorkers;
+        set => _batch.StartWorkers = value;
+    }
+
+    /// <summary>
+    /// Gets the worker threads, or <see langword="null"/> before they are started, when they could not be, and after
+    /// <see cref="Dispose"/>.
+    /// </summary>
+    internal GlyphWorkers? RunningWorkers => _batch.Running;
+
+    /// <summary>
+    /// Stops the worker threads and disposes the rasterizers the atlas created. An atlas made with one rasterizer leaves it to the
+    /// caller.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_batch.Disposed)
+        {
+            return;
+        }
+
+        _batch.Disposed = true;
+        _batch.Running?.Dispose();
+        _batch.Running = null;
+        if (_batch.CreateRasterizer is null)
+        {
+            return;
+        }
+
+        foreach (IGlyphRasterizer rasterizer in _batch.Rasterizers)
+        {
+            (rasterizer as IDisposable)?.Dispose();
+        }
+    }
+
+    // Checks the arguments before the first rasterizer is made, so that a wrong argument leaves nothing to dispose.
+    private static IGlyphRasterizer NewRasterizer(Func<IGlyphRasterizer> createRasterizer, int threads)
+    {
+        ArgumentNullException.ThrowIfNull(createRasterizer);
+        ArgumentOutOfRangeException.ThrowIfNegative(threads);
+        return createRasterizer();
+    }
+
+    // Half the logical processors, kept from 1 to 4, as Chromium sizes its raster workers (design §5.0.3).
+    private static int ThreadsOf(int threads) => threads == 0 ? Math.Clamp(Environment.ProcessorCount / 2, 1, 4) : threads;
+
+    private static void Run(GlyphWorkers? workers, Action<int> work)
+    {
+        if (workers is null)
+        {
+            work(0);
+        }
+        else
+        {
+            workers.Run(work);
+        }
+    }
+
+    // Remembers a refused glyph until the next frame. The set is emptied here and not in BeginFrame, which does not read it: a frame
+    // starts with cold caches, where reading it cost 100 to 600 ns (the draw-text --cold scenario of benchmarks/XylemUI.E2E, row
+    // T5).
+    private void Refuse(in GlyphKey key)
+    {
+        if (_batch.RefusedFrame != Frame)
+        {
+            _batch.Refused.Clear();
+            _batch.RefusedFrame = Frame;
+        }
+
+        _ = _batch.Refused.Add(key);
+    }
+
+    private bool IsRefused(in GlyphKey key) => _batch.RefusedFrame == Frame && _batch.Refused.Contains(key);
+
+    // The worker threads and their rasterizers, made the first time a frame has enough new glyphs; null when the atlas has one
+    // rasterizer, or when the threads could not be started (the glyphs are then rasterized on the calling thread). It is tried
+    // once: the rasterizers made are kept in _batch.Rasterizers as they are made, so Dispose disposes them even if a later one throws.
+    private GlyphWorkers? Workers()
+    {
+        if (_batch.Running is not null || _batch.NoWorkers || _batch.CreateRasterizer is null || _batch.Threads < 2)
+        {
+            return _batch.Running;
+        }
+
+        _batch.NoWorkers = true;
+        var rasterizers = new IGlyphRasterizer[_batch.Threads];
+        rasterizers[0] = _rasterizer;
+        _batch.Rasterizers = rasterizers;
+        for (int i = 1; i < _batch.Threads; i++)
+        {
+            rasterizers[i] = _batch.CreateRasterizer();
+        }
+
+        _batch.Running = _batch.StartWorkers(_batch.Threads);
+        _batch.NoWorkers = _batch.Running is null;
+        return _batch.Running;
+    }
+
+    // The workers, or null when a thread could not be started (GlyphWorkers stops the ones it started).
+    private static GlyphWorkers? TryStartWorkers(int count)
+    {
+        try
+        {
+            return new GlyphWorkers(count);
+        }
+        catch (Exception exception) when (exception is OutOfMemoryException or ThreadStartException)
+        {
+            return null;
+        }
+    }
+
+    // Step 1 on one thread: the boxes of the items with index worker, worker + threads, and so on. A color glyph asked for as
+    // grayscale or ClearType is measured again as its color key.
+    private void MeasureWork(int worker)
+    {
+        IGlyphRasterizer rasterizer = _batch.Rasterizers[worker];
+        for (int i = worker; i < _batch.ItemCount; i += _batch.ActiveThreads)
+        {
+            ref Item item = ref _batch.Items[i];
+            GlyphBox box = rasterizer.Measure(item.Key);
+            if (box.IsColor && item.Key.Coverage != GlyphCoverage.Color)
+            {
+                item.Alias = box.UsesTextColor ? ColorGlyphInTextColor : ColorGlyph;
+                item.Final = ColorKeyOf(item.Key, box.UsesTextColor, item.TextColor);
+                item.Box = rasterizer.Measure(item.Final);
+            }
+            else
+            {
+                item.Alias = 0;
+                item.Final = item.Key;
+                item.Box = box;
+            }
+        }
+    }
+
+    // Step 3 on one thread: the items of step 1's partition that took a region are rasterized into it.
+    private void RasterizeWork(int worker)
+    {
+        IGlyphRasterizer rasterizer = _batch.Rasterizers[worker];
+        for (int i = worker; i < _batch.ItemCount; i += _batch.ActiveThreads)
+        {
+            ref Item item = ref _batch.Items[i];
+            if (item.Page is not null)
+            {
+                rasterizer.Rasterize(item.Final, item.Page.AsSpan(item.Start, item.Length), item.Stride);
+            }
+        }
+    }
+
+    // Step 2 for one item, on the calling thread: the region of its final key, taken as TryRasterize takes it. Returns whether the
+    // item is to be rasterized in step 3.
+    private bool Place(ref Item item, out AtlasGlyph glyph, out bool found)
+    {
+        item.Page = null;
+        if (item.Alias != 0)
+        {
+            _ = _glyphs.TryAdd(item.Key, (default, item.Alias));
+        }
+
+        GlyphKey key = item.Final;
+        if (_glyphs.TryGetValue(key, out (AtlasGlyph Glyph, int Plot) cached))
+        {
+            if (cached.Plot >= 0)
+            {
+                PagesOf(key.Coverage).PlotAt(cached.Plot).LastUsedFrame = Frame;
+            }
+
+            glyph = cached.Glyph;
+            found = true;
+            return false;
+        }
+
+        if (IsRefused(key))
+        {
+            glyph = default;
+            found = false;
+            return false;
+        }
+
+        RasterizeCount++;
+        GlyphBox box = item.Box;
+        if (box.Width == 0 || box.Height == 0)
+        {
+            glyph = new AtlasGlyph(0, 0, 0, 0, 0, box.Left, box.Top, key.Coverage);
+            _glyphs.Add(key, (glyph, -1));
+            found = true;
+            return false;
+        }
+
+        if (box.Width + (2 * Padding) > PlotSize || box.Height + (2 * Padding) > PlotSize)
+        {
+            Refuse(key);
+            glyph = default;
+            found = false;
+            return false;
+        }
+
+        Pages pages = PagesOf(key.Coverage);
+        int plotIndex = pages.FindRoom(box.Width, box.Height, out int x, out int y);
+        if (plotIndex < 0)
+        {
+            RefusedCount++;
+            Refuse(key);
+            glyph = default;
+            found = false;
+            return false;
+        }
+
+        ref Plot plot = ref pages.PlotAt(plotIndex);
+        int bytes = pages.BytesPerPixel;
+        item.Stride = pages.Side * bytes;
+        item.Start = (y * item.Stride) + (x * bytes);
+        item.Length = ((box.Height - 1) * item.Stride) + (box.Width * bytes);
+        item.Page = pages.Pixels[plot.Page];
+        item.Plot = plotIndex;
+        plot.LastUsedFrame = Frame;
+        plot.Keys.Add(key);
+        glyph = new AtlasGlyph(plot.Page, x, y, box.Width, box.Height, box.Left, box.Top, key.Coverage);
+        _glyphs.Add(key, (glyph, plotIndex));
+        _dirty.Add(new AtlasRegion(plot.Page, x, y, box.Width, box.Height, key.Coverage));
+        found = true;
+        return true;
+    }
+
+    private static void Validate(in GlyphKey key)
+    {
         if (key.Font is null)
         {
             throw new ArgumentException("The glyph key has no font.", nameof(key));
@@ -273,23 +702,6 @@ public sealed class GlyphAtlas
         {
             throw new ArgumentException($"The subpixel step {key.SubpixelX} of a bilevel glyph is not 0.", nameof(key));
         }
-
-        if (_glyphs.TryGetValue(key, out (AtlasGlyph Glyph, int Plot) cached))
-        {
-            if (cached.Plot >= 0)
-            {
-                PagesOf(key.Coverage).PlotAt(cached.Plot).LastUsedFrame = Frame;
-            }
-            else if (cached.Plot <= ColorGlyph)
-            {
-                return TryGet(ColorKeyOf(key, cached.Plot == ColorGlyphInTextColor, textColor), textColor, out glyph);
-            }
-
-            glyph = cached.Glyph;
-            return true;
-        }
-
-        return TryRasterize(key, textColor, out glyph);
     }
 
     // The key of the color glyph that a grayscale or ClearType key stands for: subpixel step 0, the text's color, opaque, only
@@ -330,6 +742,7 @@ public sealed class GlyphAtlas
 
         if (width + (2 * Padding) > PlotSize || height + (2 * Padding) > PlotSize)
         {
+            Refuse(key);
             glyph = default;
             return false;
         }
@@ -339,6 +752,7 @@ public sealed class GlyphAtlas
         if (plotIndex < 0)
         {
             RefusedCount++;
+            Refuse(key);
             glyph = default;
             return false;
         }
@@ -358,6 +772,43 @@ public sealed class GlyphAtlas
         _glyphs.Add(key, (glyph, plotIndex));
         _dirty.Add(new AtlasRegion(plot.Page, x, y, width, height, key.Coverage));
         return true;
+    }
+
+    // The rasterizers (the first is the atlas's own; the others are made with the workers), the worker threads, the refusals of
+    // frame RefusedFrame, and the new glyphs of the current GetMany call, partitioned over ActiveThreads by index.
+    private sealed class Batch(IGlyphRasterizer rasterizer, Func<IGlyphRasterizer>? createRasterizer, int threads)
+    {
+        public readonly Func<IGlyphRasterizer>? CreateRasterizer = createRasterizer;
+        public readonly int Threads = threads;
+        public readonly HashSet<GlyphKey> Refused = [];
+        public long RefusedFrame;
+        public int ParallelFrom = ParallelThreshold;
+        public Func<int, GlyphWorkers?> StartWorkers = TryStartWorkers;
+        public Action<int> MeasureStep = static _ => { };
+        public Action<int> RasterizeStep = static _ => { };
+        public IGlyphRasterizer[] Rasterizers = [rasterizer];
+        public GlyphWorkers? Running;
+        public bool NoWorkers;
+        public bool Disposed;
+        public Item[] Items = new Item[64];
+        public int ItemCount;
+        public int ActiveThreads;
+    }
+
+    // A new glyph of a GetMany call: its request, its key and the color key it stands for, its box, and the region step 2 took.
+    private struct Item
+    {
+        public int Request;
+        public GlyphKey Key;
+        public uint TextColor;
+        public GlyphKey Final;
+        public GlyphBox Box;
+        public int Alias;
+        public byte[]? Page;
+        public int Plot;
+        public int Start;
+        public int Length;
+        public int Stride;
     }
 
     // The pages of one kind of coverage, their ids, and their plots.

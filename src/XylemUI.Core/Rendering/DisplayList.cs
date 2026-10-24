@@ -10,6 +10,8 @@ namespace XylemUI;
 /// <remarks>
 /// <see cref="Reset"/> keeps the arrays and only forgets how much of them is used, so a steady-state frame writes into the
 /// slots of the last one and allocates nothing. A stream grows, to twice its size, only when a frame needs more.
+/// <see cref="DrawText"/> writes the glyphs the atlas has and leaves room for the others; <see cref="ResolveGlyphs"/> fills it
+/// before the list is read (design §5.0.3, "Glyphs seen for the first time").
 /// </remarks>
 public sealed class DisplayList
 {
@@ -21,9 +23,14 @@ public sealed class DisplayList
     private int[] _runLengths;
     private GlyphCoverage[] _runCoverages;
     private GlyphInstance[] _glyphs;
+
+    // What only ResolveGlyphs uses, apart from the streams, after the fields of a frame with nothing pending, which keep their
+    // places (row T5).
+    private Resolution _resolve = new();
     private int _usedRects;
     private int _usedColors;
     private int _usedRuns;
+    private int _pendingCount;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisplayList"/> class.
@@ -58,6 +65,12 @@ public sealed class DisplayList
     public int GrowthCount { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether <see cref="DrawText"/> left room for glyphs that <see cref="ResolveGlyphs"/> has not filled
+    /// yet. Such a list cannot be read.
+    /// </summary>
+    public bool HasPendingGlyphs => _pendingCount > 0;
+
+    /// <summary>
     /// Forgets the commands, keeping the arrays for the next frame.
     /// </summary>
     public void Reset()
@@ -67,6 +80,7 @@ public sealed class DisplayList
         _usedRects = 0;
         _usedColors = 0;
         _usedRuns = 0;
+        _pendingCount = 0;
     }
 
     /// <summary>
@@ -112,8 +126,9 @@ public sealed class DisplayList
     }
 
     /// <summary>
-    /// Appends shaped text as glyph runs: puts each glyph in the atlas (rasterizing it the first time) and places it on the pen
-    /// (design §5.0.3: the atlas changes while the display list is built and is uploaded after). Across the line a glyph is placed
+    /// Appends shaped text as glyph runs, placing each glyph on the pen: a glyph the atlas has is written now, and room is left for
+    /// one it does not have yet, which <see cref="ResolveGlyphs"/> rasterizes with the other new glyphs of the frame (design §5.0.3,
+    /// "Glyphs seen for the first time"; the atlas is uploaded after). Across the line a glyph is placed
     /// on a quarter of a pixel: its quad sits on the whole pixel, and the atlas holds the glyph drawn at the quarter
     /// (<see cref="GlyphPosition"/>). The baseline is a whole pixel. A color glyph (an emoji) is placed on the nearest whole pixel,
     /// and starts a run of its own kind where the kind changes (design §5.0.3, "Color glyphs"); otherwise the text is one run.
@@ -137,9 +152,8 @@ public sealed class DisplayList
     /// <returns>The advance of the text, in pixels (the sum of the glyph advances, unrounded).</returns>
     /// <remarks>
     /// A glyph with no ink (a space) only moves the pen. A glyph larger than an atlas plot (<see cref="GlyphAtlas.PlotSize"/>) is
-    /// not drawn (roadmap row T3).
+    /// not drawn (roadmap row T3). The returned advance does not depend on the atlas.
     /// </remarks>
-    /// <exception cref="ObjectDisposedException">The font was disposed and a glyph is not in the atlas.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="pixelSize"/> is not a positive number.</exception>
     /// <exception cref="ArgumentException"><paramref name="aliased"/> is set with ClearType coverage.</exception>
     public float DrawText(
@@ -169,6 +183,7 @@ public sealed class DisplayList
         // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run.
         float scale = pixelSize / font.UnitsPerEm;
         Span<GlyphInstance> destination = ReserveGlyphs(glyphs.Length);
+        int first = GlyphCount;
         int written = 0;
         int runStart = 0;
         GlyphCoverage runCoverage = coverage;
@@ -178,10 +193,10 @@ public sealed class DisplayList
             float position = x + ((pen + shaped.XOffset) * scale);
             int subpixel = 0;
             int pixel = aliased ? GlyphPosition.Round(position) : GlyphPosition.Snap(position, out subpixel);
-            if (
-                atlas.TryGet(new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage, Aliased: aliased), color.Packed, out AtlasGlyph glyph)
-                && glyph.Width > 0
-            )
+            var key = new GlyphKey(font, shaped.GlyphId, pixelSize, subpixel, coverage, Aliased: aliased);
+            int row = (int)MathF.Round(baseline - (shaped.YOffset * scale));
+            GlyphLookup lookup = atlas.Lookup(key, color.Packed, out AtlasGlyph glyph);
+            if (lookup == GlyphLookup.Found && glyph.Width > 0)
             {
                 // A color glyph has its own kind of page and no subpixel steps: a new run where the kind changes, on a whole pixel.
                 if (glyph.Coverage != runCoverage)
@@ -195,9 +210,25 @@ public sealed class DisplayList
                     runCoverage = glyph.Coverage;
                 }
 
-                int left = (glyph.Coverage == GlyphCoverage.Color ? GlyphPosition.Round(position) : pixel) + glyph.BearingX;
-                int top = (int)MathF.Round(baseline - (shaped.YOffset * scale)) - glyph.BearingY;
-                destination[written++] = new GlyphInstance(left, top, glyph.Width, glyph.Height, glyph.Page, glyph.X, glyph.Y);
+                destination[written++] = Place(glyph, position, pixel, row);
+            }
+            else if (lookup == GlyphLookup.Missing)
+            {
+                // Room for the glyph in a run of the text's own kind; ResolveGlyphs fills it, or drops it, and splits the run where
+                // the glyph turns out to be a color glyph.
+                if (runCoverage != coverage)
+                {
+                    if (written > runStart)
+                    {
+                        EndGlyphRun(written - runStart, color, runCoverage);
+                        runStart = written;
+                    }
+
+                    runCoverage = coverage;
+                }
+
+                destination[written] = Pend(first + written, key, color, position, pixel, row);
+                written++;
             }
 
             pen += shaped.XAdvance;
@@ -212,10 +243,48 @@ public sealed class DisplayList
     }
 
     /// <summary>
+    /// Rasterizes the glyphs <see cref="DrawText"/> left room for, together (on the atlas's worker threads when there are enough),
+    /// and fills their room: a glyph with no ink or one the atlas refuses leaves the list, and a run splits where a glyph turns out
+    /// to be a color glyph (design §5.0.3, "Glyphs seen for the first time"). Called once the list is built and before it is read;
+    /// it does nothing when no glyph is pending, so a steady-state frame allocates nothing here.
+    /// </summary>
+    /// <param name="atlas">The atlas the pending glyphs were looked up in.</param>
+    /// <exception cref="InvalidOperationException">A rasterizer could not draw a glyph.</exception>
+    /// <exception cref="ObjectDisposedException">A font was disposed and its glyph is not in the atlas.</exception>
+    public void ResolveGlyphs(GlyphAtlas atlas)
+    {
+        ArgumentNullException.ThrowIfNull(atlas);
+        if (_pendingCount == 0)
+        {
+            return;
+        }
+
+        int requests = _resolve.RequestIndex.Count;
+        if (_resolve.Resolved.Length < requests)
+        {
+            Array.Resize(ref _resolve.Resolved, Math.Max(requests, _resolve.Resolved.Length * 2));
+            Array.Resize(ref _resolve.ResolvedFound, _resolve.Resolved.Length);
+        }
+
+        atlas.GetMany(_resolve.Requests.AsSpan(0, requests), _resolve.Resolved, _resolve.ResolvedFound);
+        Rebuild();
+        _pendingCount = 0;
+        _resolve.RequestIndex.Clear();
+    }
+
+    /// <summary>
     /// Returns a reader over the commands written since the last <see cref="Reset"/>.
     /// </summary>
     /// <returns>The reader. It must not outlive the next write.</returns>
-    public DisplayListReader GetReader() => new(this);
+    public DisplayListReader GetReader()
+    {
+        if (_pendingCount > 0)
+        {
+            Invariant.Fail("The display list has glyphs left for ResolveGlyphs; resolve them before reading the list.");
+        }
+
+        return new(this);
+    }
 
     internal ReadOnlySpan<CommandTag> Commands => _commands.AsSpan(0, CommandCount);
 
@@ -228,6 +297,149 @@ public sealed class DisplayList
     internal ReadOnlySpan<GlyphCoverage> RunCoverages => _runCoverages.AsSpan(0, _usedRuns);
 
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
+
+    // A glyph's quad: on the whole pixel of its quarter, or, for a color glyph, on the nearest whole pixel; its top from the row of
+    // its baseline.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static GlyphInstance Place(in AtlasGlyph glyph, float position, int pixel, int row)
+    {
+        int left = (glyph.Coverage == GlyphCoverage.Color ? GlyphPosition.Round(position) : pixel) + glyph.BearingX;
+        return new GlyphInstance(left, row - glyph.BearingY, glyph.Width, glyph.Height, glyph.Page, glyph.X, glyph.Y);
+    }
+
+    // Leaves room for a glyph the atlas does not have, for ResolveGlyphs; out of DrawText's loop, which a frame runs with all its
+    // glyphs found.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private GlyphInstance Pend(int instance, in GlyphKey key, Color color, float position, int pixel, int row)
+    {
+        // The table of a list reset with glyphs still pending is emptied here, so that Reset only writes: a frame starts with cold
+        // caches, where reading the table cost 100 ns (the draw-text --cold scenario of benchmarks/XylemUI.E2E, row T5).
+        if (_pendingCount == 0)
+        {
+            _resolve.RequestIndex.Clear();
+        }
+
+        var request = new GlyphRequest(key, color.Packed);
+        if (!_resolve.RequestIndex.TryGetValue(request, out int index))
+        {
+            index = _resolve.RequestIndex.Count;
+            if (index == _resolve.Requests.Length)
+            {
+                Array.Resize(ref _resolve.Requests, _resolve.Requests.Length * 2);
+            }
+
+            _resolve.Requests[index] = request;
+            _resolve.RequestIndex.Add(request, index);
+        }
+
+        if (_pendingCount == _resolve.Pending.Length)
+        {
+            Array.Resize(ref _resolve.Pending, _resolve.Pending.Length * 2);
+        }
+
+        _resolve.Pending[_pendingCount++] = new Pending(instance, index, position, pixel, row);
+        return default;
+    }
+
+    // Writes the list again with the pending glyphs filled: a dropped glyph leaves its run, an empty run leaves the list, and a run
+    // splits where the kind of its glyphs changes. Rectangles keep their place, and their stream is not touched.
+    private void Rebuild()
+    {
+        // Each pending glyph can split its run in three, adding two runs.
+        while (_commands.Length < CommandCount + (2 * _pendingCount))
+        {
+            Grow();
+        }
+
+        if (_resolve.NextCommands.Length != _commands.Length || _resolve.NextGlyphs.Length != _glyphs.Length)
+        {
+            _resolve.NextCommands = new CommandTag[_commands.Length];
+            _resolve.NextColors = new uint[_colors.Length];
+            _resolve.NextRunLengths = new int[_runLengths.Length];
+            _resolve.NextRunCoverages = new GlyphCoverage[_runCoverages.Length];
+            _resolve.NextGlyphs = new GlyphInstance[_glyphs.Length];
+            GrowthCount++;
+        }
+
+        int commands = 0;
+        int colors = 0;
+        int runs = 0;
+        int glyphs = 0;
+        int color = 0;
+        int run = 0;
+        int glyph = 0;
+        int pending = 0;
+        for (int c = 0; c < CommandCount; c++)
+        {
+            if (_commands[c] != CommandTag.GlyphRun)
+            {
+                _resolve.NextCommands[commands++] = _commands[c];
+                _resolve.NextColors[colors++] = _colors[color++];
+                continue;
+            }
+
+            uint packed = _colors[color++];
+            GlyphCoverage kind = _runCoverages[run];
+            int length = _runLengths[run++];
+            int start = glyphs;
+            GlyphCoverage segment = kind;
+            for (int i = glyph; i < glyph + length; i++)
+            {
+                GlyphInstance instance;
+                GlyphCoverage instanceKind = kind;
+                if (pending < _pendingCount && _resolve.Pending[pending].Instance == i)
+                {
+                    Pending room = _resolve.Pending[pending++];
+                    AtlasGlyph resolved = _resolve.Resolved[room.Request];
+                    if (!_resolve.ResolvedFound[room.Request] || resolved.Width == 0)
+                    {
+                        continue;
+                    }
+
+                    instanceKind = resolved.Coverage;
+                    instance = Place(resolved, room.Position, room.Pixel, room.Row);
+                }
+                else
+                {
+                    instance = _glyphs[i];
+                }
+
+                if (glyphs > start && instanceKind != segment)
+                {
+                    EmitRun(ref commands, ref colors, ref runs, packed, segment, glyphs - start);
+                    start = glyphs;
+                }
+
+                segment = instanceKind;
+                _resolve.NextGlyphs[glyphs++] = instance;
+            }
+
+            if (glyphs > start)
+            {
+                EmitRun(ref commands, ref colors, ref runs, packed, segment, glyphs - start);
+            }
+
+            glyph += length;
+        }
+
+        (_commands, _resolve.NextCommands) = (_resolve.NextCommands, _commands);
+        (_colors, _resolve.NextColors) = (_resolve.NextColors, _colors);
+        (_runLengths, _resolve.NextRunLengths) = (_resolve.NextRunLengths, _runLengths);
+        (_runCoverages, _resolve.NextRunCoverages) = (_resolve.NextRunCoverages, _runCoverages);
+        (_glyphs, _resolve.NextGlyphs) = (_resolve.NextGlyphs, _glyphs);
+        CommandCount = commands;
+        _usedColors = colors;
+        _usedRuns = runs;
+        GlyphCount = glyphs;
+    }
+
+    private void EmitRun(ref int commands, ref int colors, ref int runs, uint color, GlyphCoverage coverage, int count)
+    {
+        _resolve.NextCommands[commands++] = CommandTag.GlyphRun;
+        _resolve.NextColors[colors++] = color;
+        _resolve.NextRunCoverages[runs] = coverage;
+        _resolve.NextRunLengths[runs++] = count;
+    }
 
     // Room for `count` glyphs after the used ones; they count as used only when EndGlyphRun closes the run.
     private Span<GlyphInstance> ReserveGlyphs(int count)
@@ -273,5 +485,25 @@ public sealed class DisplayList
     {
         Array.Resize(ref _glyphs, Math.Max(needed, _glyphs.Length * 2));
         GrowthCount++;
+    }
+
+    // A glyph DrawText left room for: its instance, its request, and where it goes once its box is known.
+    private readonly record struct Pending(int Instance, int Request, float Position, int Pixel, int Row);
+
+    // The glyphs DrawText left room for, in the order of their instances; the distinct glyphs they ask the atlas for, with each one's
+    // index in Requests, and the atlas's answers; and the streams Rebuild writes the resolved list into, then swaps with the list's
+    // own, made the first time they are needed.
+    private sealed class Resolution
+    {
+        public readonly Dictionary<GlyphRequest, int> RequestIndex = [];
+        public Pending[] Pending = new Pending[64];
+        public GlyphRequest[] Requests = new GlyphRequest[64];
+        public AtlasGlyph[] Resolved = new AtlasGlyph[64];
+        public bool[] ResolvedFound = new bool[64];
+        public CommandTag[] NextCommands = [];
+        public uint[] NextColors = [];
+        public int[] NextRunLengths = [];
+        public GlyphCoverage[] NextRunCoverages = [];
+        public GlyphInstance[] NextGlyphs = [];
     }
 }

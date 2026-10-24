@@ -56,9 +56,8 @@ internal static class TextQuality
         };
         renderer.TextRendering = rendering;
         using var fonts = new DirectWriteFontProvider();
-        using var rasterizer = new DirectWriteGlyphRasterizer();
         using var shaper = new TextShaper();
-        var atlas = new GlyphAtlas(rasterizer);
+        using var atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
         var list = new DisplayList();
         TextLanguage japanese = TextLanguage.FromTag("ja");
         Color background = dark ? Color.FromRgb(0x000000) : Color.FromRgb(0xFFFFFF);
@@ -113,6 +112,7 @@ internal static class TextQuality
                 Line(Emoji, "Segoe UI Emoji", EmojiSizes[i], y, EmojiLefts[i]);
             }
 
+            list.ResolveGlyphs(atlas);
             long built = Stopwatch.GetTimestamp();
             renderer.Draw(list, background, atlas);
             long drawn = Stopwatch.GetTimestamp();
