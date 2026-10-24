@@ -6,7 +6,8 @@
 //   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
 //   startup-check [runs]       in one run, the desktop image with the marker against the frame statistics (the outside check)
 //   frames [frames] [--warp]   CPU stages, GPU time, present latency, intervals, missed frames of the scene
-//                              (--gray draws its text in grayscale instead of the window's ClearType, row T2)
+//                              (--gray draws its text in grayscale instead of the window's ClearType, row T2; --shapes draws each
+//                              rectangle rounded, with a gradient, a border, and a shadow, row R4)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, shaping and cached
@@ -15,6 +16,7 @@
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
 //   glyph-resolve [runs]       ResolveGlyphs for a frame of 1 to 431 new glyphs, and of emoji, on 1, 2, and 4 threads (row T5)
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
+//   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
 //   dpi-awareness              whether the process is per-monitor DPI aware (V2) when fonts and glyphs come before the window (row W1)
 //   draw-text [--cold]         DrawText of a screen of 40 lines whose glyphs are in the atlas, per glyph (row T5); --cold: the
 //                              frame scene's line once per frame with the caches emptied before, as a frame calls it
@@ -43,7 +45,7 @@ return scenario switch
     "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray")),
     "idle" => Startup.Idle(Number(1, 3), gray: args.Contains("--gray")),
     "startup-check" => Startup.Check(Number(1, 5)),
-    "frames" => Frames.Run(Number(1, 600), heavy: 0, warp: args.Contains("--warp"), gray: args.Contains("--gray")),
+    "frames" => Frames.Run(Number(1, 600), heavy: 0, warp: args.Contains("--warp"), gray: args.Contains("--gray"), shapes: args.Contains("--shapes")),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
     "resize-text" => CoreCosts.ResizeText(Number(1, 51)),
@@ -53,6 +55,7 @@ return scenario switch
     "glyph-resolve" => GlyphResolve.Run(Number(1, 5)),
     "dpi-awareness" => DpiAwareness.Run(),
     "fill-rect" => GlyphResolve.FillRectCost(args.Length > 1 ? float.Parse(args[1], CultureInfo.InvariantCulture) : 1),
+    "shapes" => ShapeGallery.Run(),
     "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),
     "glyph-resolve-child" => GlyphResolve.Child(
         Number(1, 431),
