@@ -9,36 +9,23 @@ namespace XylemUI.Rendering.D3D11.Tests;
 // of the shader's approximation (erf's polynomial and four samples along y).
 internal static class ShapeReference
 {
-    // The distance to a rounded rectangle whose radii fit its sides: inside a corner's square, to its arc; elsewhere, to the
-    // nearest edge.
+    // The distance to a rounded rectangle whose radii fit its sides: the largest of the edges' and of the arcs of the corners
+    // whose square holds p (the rectangle is the box less each corner's square outside its circle). A corner of radius 0 is sharp.
     public static float Distance(Vector2 p, Vector4 rect, Vector4 radii)
     {
         var lo = new Vector2(rect.X, rect.Y);
         var hi = lo + new Vector2(rect.Z, rect.W);
-        if (p.X < lo.X + radii.X && p.Y < lo.Y + radii.X)
-        {
-            return (p - (lo + new Vector2(radii.X))).Length() - radii.X;
-        }
-
-        if (p.X > hi.X - radii.Y && p.Y < lo.Y + radii.Y)
-        {
-            return (p - new Vector2(hi.X - radii.Y, lo.Y + radii.Y)).Length() - radii.Y;
-        }
-
-        if (p.X > hi.X - radii.Z && p.Y > hi.Y - radii.Z)
-        {
-            return (p - (hi - new Vector2(radii.Z))).Length() - radii.Z;
-        }
-
-        if (p.X < lo.X + radii.W && p.Y > hi.Y - radii.W)
-        {
-            return (p - new Vector2(lo.X + radii.W, hi.Y - radii.W)).Length() - radii.W;
-        }
-
-        return MathF.Max(MathF.Max(lo.X - p.X, p.X - hi.X), MathF.Max(lo.Y - p.Y, p.Y - hi.Y));
+        float d = MathF.Max(MathF.Max(lo.X - p.X, p.X - hi.X), MathF.Max(lo.Y - p.Y, p.Y - hi.Y));
+        d = Arc(d, p, radii.X, lo + new Vector2(radii.X), p.X < lo.X + radii.X && p.Y < lo.Y + radii.X);
+        d = Arc(d, p, radii.Y, new Vector2(hi.X - radii.Y, lo.Y + radii.Y), p.X > hi.X - radii.Y && p.Y < lo.Y + radii.Y);
+        d = Arc(d, p, radii.Z, hi - new Vector2(radii.Z), p.X > hi.X - radii.Z && p.Y > hi.Y - radii.Z);
+        return Arc(d, p, radii.W, new Vector2(lo.X + radii.W, hi.Y - radii.W), p.X < lo.X + radii.W && p.Y > hi.Y - radii.W);
     }
 
     public static float Coverage(Vector2 p, Vector4 rect, Vector4 radii) => Math.Clamp(0.5f - Distance(p, rect, radii), 0, 1);
+
+    private static float Arc(float distance, Vector2 p, float radius, Vector2 center, bool inSquare) =>
+        radius > 0 && inSquare ? MathF.Max(distance, (p - center).Length() - radius) : distance;
 
     public static Vector4 Premultiply(Color color) =>
         new Vector4(color.R * color.A / 255f, color.G * color.A / 255f, color.B * color.A / 255f, color.A) / 255f;

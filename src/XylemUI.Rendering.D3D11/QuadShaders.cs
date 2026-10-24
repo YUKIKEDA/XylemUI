@@ -41,9 +41,10 @@ namespace XylemUI.Rendering.D3D11;
 /// <c>erf</c>, <c>blur_along_x</c>, and <c>gaussian</c> lines 229 to 248, <c>shadow_fragment</c> lines 913 to 953; Copyright
 /// Zed Industries, Inc., Apache License 2.0): the blur integrates the rounded rectangle along x in closed form with an
 /// approximation of erf, and along y with four samples within three standard deviations. An outer shadow is cut out under its
-/// shape, as CSS's. The rounded rectangle's distance is taken from the arc of the corner whose square holds the pixel, else from
-/// the nearest edge, so that a radius may pass half a side once the display list has scaled the radii as CSS does. A border lies
-/// over the fill. A gradient interpolates premultiplied colors, in sRGB or in Oklab (Björn Ottosson's matrices), and is dithered
+/// shape, as CSS's. The rounded rectangle's distance is the largest of the edges' and of the arcs of the corners whose square
+/// holds the pixel (GPUI's while every radius fits half the shorter side), so that a radius may pass half a side once the display
+/// list has scaled the radii as CSS does; the blur still cuts each radius at half the shorter side, as GPUI's. A border lies over
+/// the fill. A gradient interpolates premultiplied colors, in sRGB or in Oklab (Björn Ottosson's matrices), and is dithered
 /// with a triangular noise of one step of 8 bits.
 /// </para>
 /// </remarks>
@@ -88,17 +89,27 @@ internal static class QuadShaders
             {
                 return fromCenter.x < 0 ? (fromCenter.y < 0 ? radii.x : radii.w) : (fromCenter.y < 0 ? radii.y : radii.z);
             }
-            // The signed distance to a rounded rectangle whose radii were scaled as CSS's (the two on a side never sum past it): inside
-            // a corner's square, the distance to its arc; elsewhere, to the nearest edge. A radius may pass half the shorter side.
+            // Where a pixel lies inside a corner's square (q > 0, q measured from the arc's center toward the corner), the distance to
+            // the arc. A sharp corner (radius 0) keeps the distance to its edges.
+            float CornerArc(float d, float2 q, float radius) { return all(q > 0) && radius > 0 ? max(d, length(q) - radius) : d; }
+            // The signed distance to a rounded rectangle whose radii were scaled as CSS's (the two on a side never sum past it): the
+            // largest of the distance to the edges and of the distances to the arcs of the corners whose square holds the pixel. The
+            // two corners on a side cannot both hold it, so at most one diagonal pair (top-left and bottom-right, or top-right and
+            // bottom-left) does: both of a pair can, when a radius passes half a side. While every radius fits half the shorter side,
+            // this is GPUI's formula. It has no branch: a branch here, even one every pixel of a shape takes the same way, made the GPU
+            // time of the shapes scene (frames --shapes) 6 to 10 % longer; this costs 5 % over the formula that cuts each radius at half.
             float RoundedRectDistance(float2 p, float4 rect, float4 radii)
             {
-                float2 lo = rect.xy;
-                float2 hi = rect.xy + rect.zw;
-                if (p.x < lo.x + radii.x && p.y < lo.y + radii.x) { return length(p - (lo + radii.x)) - radii.x; }
-                if (p.x > hi.x - radii.y && p.y < lo.y + radii.y) { return length(p - float2(hi.x - radii.y, lo.y + radii.y)) - radii.y; }
-                if (p.x > hi.x - radii.z && p.y > hi.y - radii.z) { return length(p - (hi - radii.z)) - radii.z; }
-                if (p.x < lo.x + radii.w && p.y > hi.y - radii.w) { return length(p - float2(lo.x + radii.w, hi.y - radii.w)) - radii.w; }
-                return max(max(lo.x - p.x, p.x - hi.x), max(lo.y - p.y, p.y - hi.y));
+                float2 halfSize = rect.zw * 0.5;
+                float2 fromCenter = p - (rect.xy + halfSize);
+                float2 edge = abs(fromCenter) - halfSize;
+                float2 topLeft = -fromCenter - halfSize + radii.x;
+                float2 bottomRight = fromCenter - halfSize + radii.z;
+                bool falling = all(topLeft > 0) || all(bottomRight > 0);
+                float2 first = falling ? topLeft : float2(fromCenter.x, -fromCenter.y) - halfSize + radii.y;
+                float2 second = falling ? bottomRight : float2(-fromCenter.x, fromCenter.y) - halfSize + radii.w;
+                float d = CornerArc(max(edge.x, edge.y), first, falling ? radii.x : radii.y);
+                return CornerArc(d, second, falling ? radii.z : radii.w);
             }
             float Coverage(float2 p, float4 rect, float4 radii) { return saturate(0.5 - RoundedRectDistance(p, rect, radii)); }
             float2 Erf(float2 x)

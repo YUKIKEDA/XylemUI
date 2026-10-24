@@ -82,7 +82,8 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A radius past half a side is drawn when its side holds it, and radii that sum past a side are scaled as CSS's.
+    /// A radius past half a side is drawn when its side holds it, even where the squares of two opposite corners overlap, and
+    /// radii that sum past a side are scaled as CSS's.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -90,10 +91,11 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Fill (20, 20, 40, 60) with ink and radii 30, 10, 0, 20 (30 is past half the width, and 30 + 10 is the width); fill
-    ///   (90, 20, 80, 60) with ink and radius 40 at every corner (CSS scales them by min(80 / 80, 60 / 80) to 30); read both.
+    ///   (90, 20, 80, 60) with ink and radius 40 at every corner (CSS scales them by min(80 / 80, 60 / 80) to 30); fill (20, 90, 60, 60) with ink and radii 60, 0, 60, 0, a lens
+    ///   whose top-left and bottom-right squares are the whole box; read all three.
     ///
     /// Expected:
-    /// - Each pixel is within 1 of the reference with radii 30, 10, 0, 20 and 30 at every corner.
+    /// - Each pixel is within 1 of the reference with radii 30, 10, 0, 20, 30 at every corner, and 60, 0, 60, 0.
     /// </remarks>
     [Fact]
     public void Shape_LargeRadii_AreDrawnAsCssScalesThem() =>
@@ -101,16 +103,19 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
         {
             var first = new Vector4(20, 20, 40, 60);
             var second = new Vector4(90, 20, 80, 60);
+            var lens = new Vector4(20, 90, 60, 60);
             Compare(
                 list =>
                 {
                     list.FillRect(20, 20, 40, 60, Ink, new CornerRadii(30, 10, 0, 20));
                     list.FillRect(90, 20, 80, 60, Ink, new CornerRadii(40));
+                    list.FillRect(20, 90, 60, 60, Ink, new CornerRadii(60, 0, 60, 0));
                 },
-                new Vector4(20, 20, 150, 60),
+                new Vector4(20, 20, 150, 130),
                 p =>
                     ShapeReference.Shape(p, first, new Vector4(30, 10, 0, 20), ShapeReference.Premultiply(Ink), Vector4.Zero, Vector4.Zero)
-                    + ShapeReference.Shape(p, second, new Vector4(30), ShapeReference.Premultiply(Ink), Vector4.Zero, Vector4.Zero),
+                    + ShapeReference.Shape(p, second, new Vector4(30), ShapeReference.Premultiply(Ink), Vector4.Zero, Vector4.Zero)
+                    + ShapeReference.Shape(p, lens, new Vector4(60, 0, 60, 0), ShapeReference.Premultiply(Ink), Vector4.Zero, Vector4.Zero),
                 tolerance: 1
             );
         });
