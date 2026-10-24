@@ -18,7 +18,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 ## 今
 
-- **フェーズ:** W1（T11 は v1.x。Q1 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
+- **フェーズ:** W1（T11 は v1.x。Q1 と Q3 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
 - **作業中:** なし（次は W1）
 - **ブランチ:** —
 - **Issue:** —
@@ -56,6 +56,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | L1b | Flex の残り（既定値以外の値）: wrap と `align-content`、`justify-content`、`align-items` / `align-self`（baseline を含む）、gap、逆向きの軸、`auto` のマージン、あふれたときの揃え方（`safe` / `unsafe`）。Block の `justify-self` / `justify-items` と `align-content`。比較に wrap の場面を足す（Issue #88）。L1 の範囲の Taffy の XML テストが全件通る | done        | [#90](https://github.com/YUKIKEDA/XylemUI/issues/90) | L1a の場面の 1 か所の変更の 4〜8 % の遅れは、オーナーの判断で L4 が扱う。詳細は Issue |
 | Q1  | CI のアロケーション 0 のテストが、ランナーの上でだけ、ときどき数 KB を数える（40〜7,640 バイト。L1a の後の main の 9c664c1 でも 6 回に 1 回。PR #91 では、1,000 回のうち 1 回の `RunLayoutPass` で 2,872 バイト、その窓では測っているスレッドの JIT も GC も 0）。原因を突き止めて直し、`bench.mdc` の記述を合わせる。Core のテストを並行で流さない CI と、プロセスの外からランタイムのアロケーションのイベントを記録する実験から始める | in-progress | [#92](https://github.com/YUKIKEDA/XylemUI/issues/92) | 原因の 1 つ（`ArrayPool` の `Return`）は直した。残りの 1 回（35 回中）が説明できること |
 | Q2  | E2E の `frames` を続けて起動すると、1 回おきに 590 フレーム中 10〜22 フレームを取りこぼす（最大の間隔 33〜35 ms。main の 92d4502 でも同じ）。§11.3 の missed-frame ratio < 0.1 % を超える。T2 のレビューで見つかった。原因を突き止めて直し、M1a の記録が影響を受けたかを確かめる | not-started | [#184](https://github.com/YUKIKEDA/XylemUI/issues/184) | 続けて 10 回起動して、どの回も 0.1 % 未満 |
+| Q3  | T5 の後、前のフレームを描いた後の冷えたキャッシュで、フレームの最初のテキストの 1 行（22 グリフ）が main より 0.5 µs 長い（4.0〜4.3 µs と 4.6〜4.9 µs。`BeginFrame` で約 100 ns、`DrawText` で約 500 ns）。新しいグリフが 1 個のときも、2 本・4 本の設定で 11〜17 µs 長い。温まった状態とフレームの各段では差が見えない。キャッシュミスを数える道具が要る。後の行を止めない（`docs/benchmarks/t5-glyph-workers.md`） | not-started | [#227](https://github.com/YUKIKEDA/XylemUI/issues/227) | 2 つの数字の原因がデータで分かり、直すか、直さない理由を数字で書く |
 | L4  | レイアウトの費用を、3 つ（Flutter・Avalonia・GPUI）の最も速いものに近づける。CSS の結果を変えずに、計算の回数（L1a で葉 1 つにつき 4〜9 回、Flutter は 1 回）と、1 つの子の変更で親の flex を解き直す費用を減らす。Chromium の LayoutNG の flex と Flutter の再 layout の確認を読んで、方式を Grill で決める。あわせて、読んだ結果が内容に依存しなかったとき（自動の最小サイズが指定のサイズで決まったときなど）に読んだ印を付けない、計測のキャッシュ（1 ノード 728 バイト、10,101 ノードで 11.9 MB）を減らす（L4 で、確保を遅らせる案から、数を 9 から 4 にする案に決め直した）、の 2 つを検討する。L1b の wrap の場面の差（Flutter の約 1.7〜4 倍、`docs/benchmarks/l1b-layout.md`）と、L1b で L1a の場面の 1 か所の変更が 4〜8 % 遅くなった分（項目の初期化と最終配置）も扱う（L1a で、最初の layout が Flutter の約 3〜6 倍、1か所の変更が約 5〜9 倍、幅の変更が Avalonia の約 3〜6 倍。`docs/benchmarks/l1a-layout.md`） | done        | [#101](https://github.com/YUKIKEDA/XylemUI/issues/101) | GPUI より 2〜8 倍速い。最も速い相手との差は計算の回数と 1 回の費用で説明した。詳細は Issue |
 | L5  | 子の大きさが測り直しても変わらなければ、親で止める（Avalonia の `Layoutable.Measure` → `ChildDesiredSizeChanged`、D4 で取り入れた）。文字を書き換えても大きさが変わらない変更を、測る場面に足す | done        | [#108](https://github.com/YUKIKEDA/XylemUI/issues/108)・[#110](https://github.com/YUKIKEDA/XylemUI/issues/110) | 内容の変更（大きさは同じ）が 0.2〜0.3 µs（Avalonia 0.8 µs）。詳細は `docs/benchmarks/l5-layout.md` |
 | L2  | 絶対配置（`Position`・`Inset`。基準は親）、相対配置の insets、aspect-ratio、表示しないノード（`Hidden`） | done        | [#120](https://github.com/YUKIKEDA/XylemUI/issues/120)・[#124](https://github.com/YUKIKEDA/XylemUI/issues/124) | L2 の範囲の Taffy の XML テストが通った（199 件）。1 か所の変更が main より最小値で 2〜4 % 遅いのは原因未確定（オーナー判断で PR に記載、L7 で追う）。詳細は `docs/benchmarks/l2-layout.md` |
