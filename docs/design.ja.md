@@ -2586,18 +2586,20 @@ internal sealed class LinuxPlatform : IPlatform
 
 **Windows の表示の倍率（W1 の Grill でオーナーが決定、Issue #231）:** Flutter・Avalonia・GPUI の Windows の実装を読んで決めた（Issue #231 に行番号）。
 
-- **宣言:** `UiThread.Initialize` が、最初のウィンドウを作る前に `SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)` を呼ぶ（Avalonia と同じ）。アプリは何もしなくてよい。アプリのマニフェストで既に宣言されていれば、呼び出しは失敗し、宣言のとおりになる。対象の Windows 10 1703 以降（DirectWrite の要件）では、PerMonitorV2 がいつも使える。マニフェストだけで宣言する形（GPUI。Flutter はアプリのひな形に任せる）は採らない。XylemUI はライブラリなので、マニフェストはアプリの .csproj の設定次第になるためである
+- **宣言:** `UiThread.Initialize` が、最初のウィンドウを作る前に `SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)` を呼ぶ（Avalonia と同じ）。アプリは何もしなくてよい。プロセスの DPI の認識は、プロセスが DPI を一度読むと変えられなくなるので、`UiThread.Initialize` はアプリの初期化の最初に呼ぶ。`Initialize` の前に作れる XylemUI の型（`DirectWriteFontProvider` など）が DPI を読まないことは、実装の Issue のテストで確かめる（PR #232 のレビュー）。アプリのマニフェストで既に宣言されていれば、呼び出しは失敗し、宣言のとおりになる。対象の Windows 10 1703 以降（DirectWrite の要件）では、PerMonitorV2 がいつも使える。マニフェストだけで宣言する形（GPUI。Flutter はアプリのひな形に任せる）は採らない。XylemUI はライブラリなので、マニフェストはアプリの .csproj の設定次第になるためである
 - **倍率:** ウィンドウごとの `ScaleFactor` は `GetDpiForWindow / 96` の float で、丸めない（3 つとも同じ）。ウィンドウを作ったときと `WM_DPICHANGED` で読む
 - **表示リストの座標:** `DisplayList` は論理座標で受け取り、書くときにフレームの倍率（`Reset(scale)` で渡す）を掛けて画素に合わせる。表示リストの中身とレンダラは画素のままである（GPUI がシーンを作るときに CPU で倍率を掛けて画素に合わせるのと同じ、`window.rs` 3219〜3234 行目）。
   - 矩形の辺は `MathF.Round(logical × scale)` の画素に置く。上の 2 の「頂点を詰める直前に画素へ合わせる」は、表示リストに書くときに行う
-  - `DrawText` は、文字の大きさ × 倍率を `GlyphKey.PixelSize` にする。行頭とペンの位置も倍率を掛けてから、上の 3 のとおりに丸める
+  - `DrawText` は、文字の大きさ × 倍率を `GlyphKey.PixelSize` にする。行頭とペンの位置も倍率を掛けてから、上の 3 のとおりに丸める。返す送り幅は、呼び出し側のレイアウトが論理座標で足すので、論理座標の幅である（PR #232 のレビュー）
 - **`WM_DPICHANGED`:** 次の順に扱う。アプリには `ScaleChanged` のイベントで知らせる。
   1. `ScaleFactor` を新しい値にする
-  2. Windows が提案する RECT（lParam）を `SetWindowPos` で当てる（3 つとも同じ）。1 を先にするので、その中で来る `WM_SIZE` の同期の描画（§2.11.1）は、新しい倍率で描く
-  3. そのモニタの `TextRendering` を読み直す（§5.0.3「ClearType」の「読む単位と時機」。倍率が同じモニタへ移ったときの `WM_WINDOWPOSCHANGED` も）
+  2. 移る先のモニタの `TextRendering` を読む（§5.0.3「ClearType」の「読む単位と時機」）。ウィンドウはまだ前のモニタにいるので、モニタは `MonitorFromWindow` ではなく、提案された RECT の `MonitorFromRect` で決める
+  3. Windows が提案する RECT（lParam）を `SetWindowPos` で当てる（3 つとも同じ）。1 と 2 を先にするので、その中で来る `WM_SIZE` の同期の描画（§2.11.1）は、新しい倍率と新しいモニタの描き方で描く。2 を後にすると、ClearType のモードが変わるモニタの間では、1 フレームだけ前のモニタの描き方で描く（PR #232 のレビュー）
+  - 倍率が同じモニタへ移ったとき（`WM_DPICHANGED` は来ない）は、`WM_WINDOWPOSCHANGED` で `MonitorFromWindow` が変わったときに `TextRendering` を読み直す。ウィンドウはもう新しいモニタにいる
   - `WM_GETDPISCALEDSIZE` は扱わない（3 つとも扱わない）
 - **ウィンドウの大きさ:** `Win32Window` は、クライアント領域の大きさを論理座標で受け取る。作った後に、そのモニタの倍率と枠の厚さ（`AdjustWindowRectExForDpi`）から外の大きさを決め直す（GPUI・Avalonia と同じ。Flutter は作る前に主モニタの倍率を使う）。`ClientSize` と同期の描画が渡す大きさは、レンダラが使うので画素のままである
-- **ポインター:** 入力の座標を倍率で割って論理座標にすること（Avalonia・GPUI）は、マウスの入力を入れる行で行う
+- **レイアウトの根の大きさ:** `Invalidation.NotifyWindowResized`（§2.4.1）に渡す大きさは論理座標で、ウィンドウと木をつなぐ側が、画素の `ClientSize` を `ScaleFactor` で割って渡す。割り切れなければ小数になり（125 % で 1,001 画素なら 800.8）、レイアウトは上の 1 のとおり丸めない（PR #232 のレビュー）
+- **ポインター:** 入力の座標を倍率で割って論理座標にすること（Avalonia・GPUI）は、行 V1（Button がクリックできる）で入れる
 
 ### 6.2 AT-SPIのD-Bus依存
 
