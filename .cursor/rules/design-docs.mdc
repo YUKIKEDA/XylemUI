@@ -40,9 +40,11 @@ A design PR that changes a decision searches the whole design for the sections t
 
 Before a row's design is written, the whole design is searched for the row's ID, and every contract an earlier row sent to it is taken into the new section. T2 had left "glyphs inside opacity, transforms, and layers are grayscale; the implementation is in D10 and V1", and D10's first design brought all three without it; the review found it (PR #239).
 
-A mechanism applied per command (a clip, a brush) says which kinds of command it applies to, glyph runs included. D10's first design left open whether the rounded clip applies to text (PR #239).
+A mechanism applied per command (a clip, a brush) says which kinds of command it applies to, glyph runs included. D10's first design left open whether the rounded clip applies to text (PR #239). One applied to text says what it does for each kind of glyph: grayscale, ClearType, color, and color with a layer in the text's color. R4b's first design gave color glyphs the brush's alpha and left open which text color keys a layer drawn in the text's color in the atlas (PR #252).
 
 A type that takes a visual value (a blur radius, how a gradient interpolates, whether a shadow shows under its shape) says what each value means, after listing how each compared implementation reads it, with lines. R4's first design said none of the three; the four implementations read a blur radius four ways (CSS σ = r / 2, Flutter σ = 0.57735 r + 0.5, Avalonia σ = 0.288675 r + 0.5, GPUI σ = r), and the review's own figure for Flutter was wrong when read in the source (PR #243).
+
+An option a Grill offers relies only on what the code or the design already has (a font metric, a type, a value from the OS), checked before the Grill; an option that needs something new says so and offers adding it. R4b's Q11 made the default box of brushed text from the font's ascender and descender, which `Font` does not have; writing the design found it, and the Grill was reopened (PR #252).
 
 Every type in a signature the design writes is defined in the design or the code. F1's first `IFontProvider` took `in FontStyle style`, which nothing defined, so whether it carried the language could not be read (PR #146).
 
@@ -72,7 +74,7 @@ A design that calls an OS API from several threads where its documentation says 
 
 A design that adds threads or OS resources writes their lifetime: who creates them, when they stop, who releases them, and what happens when they cannot be created. T5's first design said resident threads and a rasterizer for each, and no more; the review found it (PR #219).
 
-A design split into two steps (room left now, filled later) says which arrays the later step rewrites (compacts, splits) and which version their readers see. The review of T5 found that the first design did not (PR #219).
+A design split into two steps (room left now, filled later) says which arrays the later step rewrites (compacts, splits) and which version their readers see. The review of T5 found that the first design did not (PR #219). A design that adds a value to a command such a step rewrites says how the step carries it: R4b's first design said how a gradient is drawn on glyphs, and not that `ResolveGlyphs`, when its `Rebuild` splits a run at a color glyph, copies the run's brush to both halves; the review found it (PR #252).
 
 A design that puts outside data into the repository (test images, fonts) names its source, its version, and its license, quoted from the file in the distribution. T9's first design named PngSuite without them; the review found it (PR #208).
 
