@@ -9,7 +9,7 @@ Deferral is an exception. Do not ship "temporary", "for now", "until v0.3", or "
 
 A row says when. A promise to file an Issue later does not.
 
-Before saying that work stays in its row, find that row's ID in `docs/roadmap.md`. In the T4 Grill the agent said color emoji stayed in its row; there was none, and row T6 was added (PR #158).
+Before saying that work stays in its row, find that row's ID in `docs/roadmap.md`. In the T4 Grill the agent said color emoji stayed in its row; there was none, and row T6 was added (PR #158). A sentence of the design that defers is held to the same: W1's first design sent the pointer coordinates to "the row that adds mouse input", which did not exist; the review moved them to row V1 (PR #232).
 
 A recommendation to drop or defer work is not argued from what its result would be. "The measurement will not change the decision" is a result nobody has; the work exists to find it out. What may be put to the owner is what the work costs and what it is for.
 
