@@ -17,6 +17,8 @@ The owner's time is the scarce thing. A row is finished when its own work is don
 
 The test is one question: would this be there if the row had never been written?
 
+Before filing an Issue for a failure, search the open Issues and the roadmap's rows (the Q rows above all) for the same symptom. When one exists, add the new figures to it, and offer options that start from the decisions recorded there. In R4e the agent filed #269 for a Zero-Alloc test that counted a few kilobytes, which row Q1 (#92) already tracks, and offered to change the measurement without saying that the owner had decided how Q1's failures are handled until it is explained (PR #277).
+
 ## A limit on an investigation
 
 After two attempts that change nothing, stop and decide before a third:
