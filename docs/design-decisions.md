@@ -303,6 +303,10 @@ Rejected:
   - 行より広い語を切らずにはみ出させる（CSS の `overflow-wrap: normal`。Avalonia の `Wrap` と skparagraph は切る。T1 の Grill）
   - 内容の幅の最大に行末の空白を含める（skparagraph と同じだが、CSS では折り返す空白は行末で幅に入らない。T1 の Grill）
   - 改行の候補を、手書きの規則で見つける（GPUI。日本語の禁則が無く、強制改行は `\n` だけ。T1 の Grill）
+  - 折り返しの型を、使う側が決まる前に公開にする（Flutter・Avalonia・GPUI は公開だが、`Text` の部品が決まる行 V1d まで約束を作らない。T1b の Grill）
+  - HarfBuzz の切ると危ない印を、内部だけの別の整形の結果の型で持つ（整形の結果が 2 種類になる。T1b の Grill）
+  - 改行した行のソフトハイフンを描かない（Avalonia・GPUI と skparagraph の既定。v1 の要件に反する。T1b の Grill）
+  - 行に収まるかの判定に、ソフトハイフンの幅を入れない（skparagraph。行の幅を超えることがある。T1b の Grill）
   - 文字の葉を 1 行だけにして先に入れ、T1 で折り返しを足す（折り返さない `Text` は要件の半分で、計測関数とキャッシュを作り直すことになる。V1 の Grill）
   - V1 を 1 つの Issue にする（設計の判断が十数点あり、1 つの PR が大きくなりすぎる。V1 の Grill）
   - V1 を描画と入力の 2 つに分ける（文字のキャッシュの測定が描画の行に埋もれる。V1 の Grill）
