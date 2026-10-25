@@ -50,24 +50,85 @@ internal static class Graphemes
     }
 
     /// <summary>
-    /// Returns whether a position is a grapheme cluster boundary.
+    /// Returns whether a position is a grapheme cluster boundary, from the code points around it: the two on its sides, and those
+    /// before it that the rules looking back read (the regional indicators before it for GB12 and GB13, the Extend* before a ZWJ
+    /// for GB11, and the InCB Extend* after a linker for GB9c). It does not walk the text from its start, so a font run's end is
+    /// checked in the time of the cluster around it (PR #285's review).
     /// </summary>
     /// <param name="text">The text, in UTF-16.</param>
     /// <param name="index">The position, from 0 to the text's length.</param>
-    /// <returns><see langword="true"/> at the start, the end, and between two clusters.</returns>
+    /// <returns><see langword="true"/> at the start, the end, and between two clusters; <see langword="false"/> inside a cluster and
+    /// between the two halves of a surrogate pair.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside the text.</exception>
     public static bool IsBoundary(ReadOnlySpan<char> text, int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(index, text.Length);
-        int position = 0;
-        while (position < index)
+        if (index == 0 || index == text.Length)
         {
-            position = NextBoundary(text, position);
+            return true; // GB1, GB2
         }
 
-        return position == index;
+        if (char.IsLowSurrogate(text[index]) && char.IsHighSurrogate(text[index - 1]))
+        {
+            return false;
+        }
+
+        int before = PreviousStart(text, index);
+        uint previous = UnicodeData.Properties(UnicodeData.CodePointAt(text, before, out _));
+        uint next = UnicodeData.Properties(UnicodeData.CodePointAt(text, index, out _));
+
+        // The regional indicators that end the text before the position.
+        int regional = 0;
+        for (int k = index; k > 0; )
+        {
+            k = PreviousStart(text, k);
+            if (UnicodeData.Grapheme(UnicodeData.Properties(UnicodeData.CodePointAt(text, k, out _))) != GraphemeClusterBreak.Regional_Indicator)
+            {
+                break;
+            }
+
+            regional++;
+        }
+
+        // An extended pictographic, Extend*, and a ZWJ just before the position (GB11).
+        bool pictographicZwj = false;
+        if (UnicodeData.Grapheme(previous) == GraphemeClusterBreak.ZWJ)
+        {
+            int k = before;
+            uint properties = 0;
+            while (k > 0)
+            {
+                k = PreviousStart(text, k);
+                properties = UnicodeData.Properties(UnicodeData.CodePointAt(text, k, out _));
+                if (UnicodeData.Grapheme(properties) != GraphemeClusterBreak.Extend)
+                {
+                    break;
+                }
+            }
+
+            pictographicZwj = k < before && UnicodeData.IsPictographic(properties);
+        }
+
+        // An InCB linker and InCB Extend* just before the position (GB9c).
+        bool linker = false;
+        for (int k = index; k > 0; )
+        {
+            k = PreviousStart(text, k);
+            IndicConjunctBreak indic = UnicodeData.Indic(UnicodeData.Properties(UnicodeData.CodePointAt(text, k, out _)));
+            if (indic != IndicConjunctBreak.Extend)
+            {
+                linker = indic == IndicConjunctBreak.Linker;
+                break;
+            }
+        }
+
+        return IsBreak(previous, next, regional, pictographicZwj, linker);
     }
+
+    // The start of the code point that ends at `index`.
+    private static int PreviousStart(ReadOnlySpan<char> text, int index) =>
+        index >= 2 && char.IsLowSurrogate(text[index - 1]) && char.IsHighSurrogate(text[index - 2]) ? index - 2 : index - 1;
 
     // Rules GB3 to GB999 between two code points, with what the rules that look back need.
     private static bool IsBreak(uint previous, uint next, int regional, bool pictographicZwj, bool linker)

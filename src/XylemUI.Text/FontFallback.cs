@@ -65,14 +65,15 @@ public static class FontFallback
             }
 
             Font font = match.Font!;
+
+            // Checked at the run's end alone, not by walking the run: most texts are one run, which ends at the text's end.
             int end = start + match.Length;
-            int clusterEnd = start;
-            while (clusterEnd < end)
+            while (!Unicode.Graphemes.IsBoundary(text, end))
             {
-                clusterEnd = Unicode.Graphemes.NextBoundary(text, clusterEnd);
+                end += char.IsHighSurrogate(text[end]) && end + 1 < text.Length && char.IsLowSurrogate(text[end + 1]) ? 2 : 1;
             }
 
-            int length = clusterEnd - start;
+            int length = end - start;
             if (runs.Count > 0 && runs[^1] is var last && ReferenceEquals(last.Font, font) && last.Scale == match.Scale)
             {
                 runs[^1] = last with { Length = last.Length + length };

@@ -54,6 +54,33 @@ public sealed class UnicodeConformanceTests
     }
 
     /// <summary>
+    /// At every position of one line of GraphemeBreakTest.txt, the check of a boundary from the code points around it agrees with
+    /// the line.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - One line of the Unicode 18.0.0 GraphemeBreakTest.txt.
+    ///
+    /// Steps:
+    /// - Make the UTF-16 text of the code points; call Graphemes.IsBoundary at each position from 0 to its length, the positions
+    ///   between the halves of a surrogate pair included.
+    ///
+    /// Expected:
+    /// - True exactly at the ÷ positions of the line.
+    /// </remarks>
+    /// <param name="line">The line number, for the report.</param>
+    /// <param name="data">The line.</param>
+    [Theory]
+    [MemberData(nameof(GraphemeCases))]
+    public void Graphemes_IsBoundaryAtEachPosition_AgreesWithTheLine(int line, string data)
+    {
+        (string text, List<int> expected) = Parse(data);
+        int[] actual = [.. Enumerable.Range(0, text.Length + 1).Where(i => Graphemes.IsBoundary(text, i))];
+
+        Assert.True(expected.SequenceEqual(actual), $"line {line}: expected [{string.Join(", ", expected)}], got [{string.Join(", ", actual)}]");
+    }
+
+    /// <summary>
     /// The line break opportunities of one line of LineBreakTest.txt are the ones it marks.
     /// </summary>
     /// <remarks>

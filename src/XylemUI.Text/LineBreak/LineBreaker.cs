@@ -18,7 +18,8 @@ internal readonly record struct LineBreakOpportunity(int Position, bool Mandator
 /// The characters are first taken into units: a base character and the combining marks and ZWJs rule LB9 attaches to it, or a mark
 /// rule LB10 makes a letter of. The rules LB4 to LB31 are then tried in order at each boundary between units, where some of them
 /// read a few units before or after. The arrays are kept and grow only when a text needs more, so a steady state allocates
-/// nothing; the opportunities are valid until the next call.
+/// nothing; the opportunities are valid until the next call. An instance is not shared between threads: each thread that breaks
+/// lines (the UI thread's measure functions, a glyph worker) keeps its own.
 /// </remarks>
 internal sealed class LineBreaker
 {

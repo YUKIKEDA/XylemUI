@@ -1,12 +1,15 @@
 using System.Diagnostics;
 using System.Text;
+using XylemUI.Platform.Windows;
+using XylemUI.Text;
 using XylemUI.Text.LineBreak;
 using XylemUI.Text.Unicode;
 
 namespace XylemUI.E2E;
 
 // The cost of the grapheme clusters (UAX #29) and the line break opportunities (UAX #14) of a screen of text, 40 lines of 80
-// characters (row T1, design §4.1): Japanese, English, and English with emoji, per character.
+// characters (row T1, design §4.1): Japanese, English, and English with emoji, per character. And the split of the screen into
+// font runs with the fonts of Windows, which checks each run's end against the grapheme clusters (PR #285's review).
 internal static class SegmentCost
 {
     private const int ScreenCharacters = 40 * 80;
@@ -25,11 +28,16 @@ internal static class SegmentCost
     {
         using var report = new Report("segment");
         var breaker = new LineBreaker();
+        using var provider = new DirectWriteFontProvider();
+        var runs = new List<FontRun>();
+        TextLanguage japanese = TextLanguage.FromTag("ja");
         foreach ((string name, string sentence) in Texts)
         {
             string text = Screen(sentence);
             report.Number($"{name}_line_break_ns_per_char_p50", Median(() => TimeLineBreaks(breaker, text)));
             report.Number($"{name}_grapheme_ns_per_char_p50", Median(() => TimeGraphemes(text)));
+            report.Number($"{name}_split_us_p50", Median(() => TimeSplit(provider, text, japanese, runs)));
+            report.Number($"{name}_runs", runs.Count);
         }
 
         return 0;
@@ -57,6 +65,17 @@ internal static class SegmentCost
 
         double ns = Stopwatch.GetElapsedTime(start).TotalNanoseconds / (100.0 * text.Length);
         return found > 0 ? ns : -1;
+    }
+
+    private static double TimeSplit(DirectWriteFontProvider provider, string text, TextLanguage language, List<FontRun> runs)
+    {
+        long start = Stopwatch.GetTimestamp();
+        for (int i = 0; i < 20; i++)
+        {
+            FontFallback.Split(provider, text, language, FontRequest.Default, runs);
+        }
+
+        return Stopwatch.GetElapsedTime(start).TotalMicroseconds / 20;
     }
 
     private static double TimeGraphemes(string text)
