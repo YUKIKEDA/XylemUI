@@ -31,10 +31,9 @@ public sealed partial class DisplayList
     /// </exception>
     internal void HitRegion(NodeHandle node, float x, float y, float width, float height, in CornerRadii radii)
     {
-        bool numbers = float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(width) && float.IsFinite(height);
-        if (!numbers || width < 0 || height < 0)
+        if (BadEdge(x, y, width, height) is { } name)
         {
-            throw new ArgumentOutOfRangeException(nameof(width), "The hit region's edges are numbers and its width and height are at or above 0.");
+            throw new ArgumentOutOfRangeException(name, "The hit region's edges are numbers and its width and height are at or above 0.");
         }
 
         CheckRadius(radii.TopLeft, nameof(radii));
@@ -61,13 +60,27 @@ public sealed partial class DisplayList
     }
 
     /// <summary>
+    /// Returns the front-most node whose hit region holds a pixel of the window, tested at the pixel's center, where the renderer
+    /// takes the pixel's coverage (see <see cref="HitTestAt"/>).
+    /// </summary>
+    /// <param name="x">The pixel's column, in the window's client coordinates (physical pixels), as Win32 gives it: the pixel's left
+    /// edge. Dividing by the scale and multiplying again could round it apart from the pixels drawn (design §5.0, "Hit regions and
+    /// DrawingContext").</param>
+    /// <param name="y">The pixel's row: its top edge.</param>
+    /// <returns>The node, or <see langword="default"/> when no region holds the pixel.</returns>
+    /// <remarks>
+    /// An integer coordinate names a pixel's top-left corner. Tested as it is, the point on the right or bottom edge of a region
+    /// would hit the pixel past the region, which is not drawn; the center is where the pixel is drawn or not (PR #277's review).
+    /// </remarks>
+    internal NodeHandle HitTest(int x, int y) => HitTestAt(new Vector2(x + 0.5f, y + 0.5f));
+
+    /// <summary>
     /// Returns the front-most node whose hit region holds a point: inside the region's rounded rectangle, the rectangle of its
     /// state's clips, each of its rounded clips, and those of the clips' layers around it, by the distance the renderer draws with.
     /// </summary>
-    /// <param name="physicalPoint">The point, in the window's client coordinates (physical pixels), as Win32 gives it: dividing by the
-    /// scale and multiplying again could round it apart from the pixels drawn (design §5.0, "Hit regions and DrawingContext").</param>
+    /// <param name="physicalPoint">The point, in physical pixels of the window's client area.</param>
     /// <returns>The node, or <see langword="default"/> when no region holds the point.</returns>
-    internal NodeHandle HitTest(Vector2 physicalPoint)
+    internal NodeHandle HitTestAt(Vector2 physicalPoint)
     {
         ReadOnlySpan<HitTestEntry> entries = HitEntries;
         for (int i = entries.Length - 1; i >= 0; i--)
@@ -80,6 +93,14 @@ public sealed partial class DisplayList
 
         return default;
     }
+
+    // The name of the first argument of a rectangle that is not a number or, for a size, is negative; null when all are good.
+    private static string? BadEdge(float x, float y, float width, float height) =>
+        !float.IsFinite(x) ? nameof(x)
+        : !float.IsFinite(y) ? nameof(y)
+        : !float.IsFinite(width) || width < 0 ? nameof(width)
+        : !float.IsFinite(height) || height < 0 ? nameof(height)
+        : null;
 
     private bool Holds(in HitTestEntry entry, Vector2 point)
     {

@@ -33,7 +33,7 @@ internal static class HitCost
                         long start = Stopwatch.GetTimestamp();
                         for (int i = 0; i < 100; i++)
                         {
-                            hit = list.HitTest(new Vector2(-50 - i, -50));
+                            hit = list.HitTest(-50 - i, -50);
                         }
 
                         return Stopwatch.GetElapsedTime(start).TotalMicroseconds / 100;

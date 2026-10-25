@@ -45,7 +45,7 @@ public sealed class HitTestTests
                     continue;
                 }
 
-                Assert.Equal(m < 0 ? First : default, list.HitTest(new Vector2(x, y)));
+                Assert.Equal(m < 0 ? First : default, list.HitTestAt(new Vector2(x, y)));
                 cornerMisses += inCorner && m > 0 ? 1 : 0;
                 cornerHits += inCorner && m < 0 ? 1 : 0;
             }
@@ -94,7 +94,7 @@ public sealed class HitTestTests
                 }
 
                 bool inside = margin is < 0;
-                Assert.Equal(inside ? First : default, list.HitTest(new Vector2(x, y)));
+                Assert.Equal(inside ? First : default, list.HitTestAt(new Vector2(x, y)));
                 hits += inside ? 1 : 0;
                 misses += inside ? 0 : 1;
             }
@@ -137,7 +137,7 @@ public sealed class HitTestTests
         }
 
         Assert.Equal(1, list.GroupCount);
-        Assert.Equal(default, list.HitTest(new Vector2(50, 110)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(50, 110)));
         for (float y = -10; y <= 130; y += 0.61f)
         {
             for (float x = -10; x <= 130; x += 0.61f)
@@ -153,7 +153,7 @@ public sealed class HitTestTests
 
                 if (!near)
                 {
-                    Assert.Equal(inside ? First : default, list.HitTest(new Vector2(x, y)));
+                    Assert.Equal(inside ? First : default, list.HitTestAt(new Vector2(x, y)));
                 }
             }
         }
@@ -184,9 +184,9 @@ public sealed class HitTestTests
         list.Pop();
         list.Pop();
 
-        Assert.Equal(default, list.HitTest(new Vector2(0, 0)));
-        Assert.Equal(default, list.HitTest(new Vector2(50, 50)));
-        Assert.Equal(default, list.HitTest(new Vector2(99, 1)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(0, 0)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(50, 50)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(99, 1)));
     }
 
     /// <summary>
@@ -209,10 +209,10 @@ public sealed class HitTestTests
         list.HitRegion(First, 0, 0, 50, 50, default);
         list.HitRegion(Second, 25, 25, 50, 50, default);
 
-        Assert.Equal(Second, list.HitTest(new Vector2(30, 30)));
-        Assert.Equal(First, list.HitTest(new Vector2(10, 10)));
-        Assert.Equal(Second, list.HitTest(new Vector2(60, 60)));
-        Assert.Equal(default, list.HitTest(new Vector2(90, 90)));
+        Assert.Equal(Second, list.HitTestAt(new Vector2(30, 30)));
+        Assert.Equal(First, list.HitTestAt(new Vector2(10, 10)));
+        Assert.Equal(Second, list.HitTestAt(new Vector2(60, 60)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(90, 90)));
     }
 
     /// <summary>
@@ -256,10 +256,61 @@ public sealed class HitTestTests
                 }
             )
             {
-                Assert.Equal(First, list.HitTest(inside));
-                Assert.Equal(default, list.HitTest(outside));
+                Assert.Equal(First, list.HitTestAt(inside));
+                Assert.Equal(default, list.HitTestAt(outside));
             }
         }
+    }
+
+    /// <summary>
+    /// A pixel named by Win32's integer coordinates, its top-left corner, hits a region where the pixel is drawn: the first and last
+    /// pixels of each edge hit, and the pixels just past them miss, on the right and bottom edges too.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list at scale 1 with the region (10, 10, 100, 60), whose pixels are columns 10 to 109 and rows 10 to 69; and one
+    ///   at scale 1.25 with the rectangle (10.3, 5.2, 20, 10) filled and written as a region.
+    ///
+    /// Steps:
+    /// - Test the pixels (9, 20), (10, 20), (109, 20), (110, 20), (50, 9), (50, 10), (50, 69), and (50, 70). At 1.25, read the
+    ///   rectangle and test the pixels just inside and just past each of its edges, in the middle of the other axis.
+    ///
+    /// Expected:
+    /// - Miss, hit, hit, miss, miss, hit, hit, miss. At 1.25, the pixels inside the drawn rectangle hit and the ones past it miss.
+    /// </remarks>
+    [Fact]
+    public void HitTest_IntegerPixels_HitWhereThePixelIsDrawn()
+    {
+        var list = new DisplayList();
+        list.HitRegion(First, 10, 10, 100, 60, default);
+
+        Assert.Equal(default, list.HitTest(9, 20));
+        Assert.Equal(First, list.HitTest(10, 20));
+        Assert.Equal(First, list.HitTest(109, 20));
+        Assert.Equal(default, list.HitTest(110, 20));
+        Assert.Equal(default, list.HitTest(50, 9));
+        Assert.Equal(First, list.HitTest(50, 10));
+        Assert.Equal(First, list.HitTest(50, 69));
+        Assert.Equal(default, list.HitTest(50, 70));
+
+        list.Reset(1.25f);
+        list.FillRect(10.3f, 5.2f, 20, 10, Red);
+        list.HitRegion(First, 10.3f, 5.2f, 20, 10, default);
+        FillRectCommand rect = ReadRect(list);
+        int left = (int)rect.X;
+        int top = (int)rect.Y;
+        int right = (int)(rect.X + rect.Width);
+        int bottom = (int)(rect.Y + rect.Height);
+        int middleX = (left + right) / 2;
+        int middleY = (top + bottom) / 2;
+        Assert.Equal(First, list.HitTest(left, middleY));
+        Assert.Equal(default, list.HitTest(left - 1, middleY));
+        Assert.Equal(First, list.HitTest(right - 1, middleY));
+        Assert.Equal(default, list.HitTest(right, middleY));
+        Assert.Equal(First, list.HitTest(middleX, top));
+        Assert.Equal(default, list.HitTest(middleX, top - 1));
+        Assert.Equal(First, list.HitTest(middleX, bottom - 1));
+        Assert.Equal(default, list.HitTest(middleX, bottom));
     }
 
     /// <summary>
@@ -302,12 +353,12 @@ public sealed class HitTestTests
             Tags(list)
         );
         Assert.Equal(2, list.StateCount);
-        Assert.Equal(First, list.HitTest(new Vector2(25, 25)));
-        Assert.Equal(default, list.HitTest(new Vector2(60, 60)));
-        Assert.Equal(default, list.HitTest(new Vector2(1, 1)));
-        Assert.Equal(Second, list.HitTest(new Vector2(205, 5)));
-        Assert.Equal(First, list.HitTest(new Vector2(310, 5)));
-        Assert.Equal(default, list.HitTest(new Vector2(330, 5)));
+        Assert.Equal(First, list.HitTestAt(new Vector2(25, 25)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(60, 60)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(1, 1)));
+        Assert.Equal(Second, list.HitTestAt(new Vector2(205, 5)));
+        Assert.Equal(First, list.HitTestAt(new Vector2(310, 5)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(330, 5)));
     }
 
     /// <summary>
@@ -321,19 +372,20 @@ public sealed class HitTestTests
     /// - Write regions with an edge of NaN, an edge of infinity, a width of −1, a height of NaN, and a radius of −1 and of NaN.
     ///
     /// Expected:
-    /// - Each throws <see cref="ArgumentOutOfRangeException"/>, and no region is written.
+    /// - Each throws <see cref="ArgumentOutOfRangeException"/> naming the bad argument (x, y, width, height, radii), and no region
+    ///   is written.
     /// </remarks>
     [Fact]
     public void HitRegion_InvalidValues_Throw()
     {
         var list = new DisplayList();
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.HitRegion(First, float.NaN, 0, 10, 10, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.HitRegion(First, 0, float.PositiveInfinity, 10, 10, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.HitRegion(First, 0, 0, -1, 10, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.HitRegion(First, 0, 0, 10, float.NaN, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.HitRegion(First, 0, 0, 10, 10, new CornerRadii(-1)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.HitRegion(First, 0, 0, 10, 10, new CornerRadii(float.NaN)));
+        Assert.Equal("x", Refused(() => list.HitRegion(First, float.NaN, 0, 10, 10, default)));
+        Assert.Equal("y", Refused(() => list.HitRegion(First, 0, float.PositiveInfinity, 10, 10, default)));
+        Assert.Equal("width", Refused(() => list.HitRegion(First, 0, 0, -1, 10, default)));
+        Assert.Equal("height", Refused(() => list.HitRegion(First, 0, 0, 10, float.NaN, default)));
+        Assert.Equal("radii", Refused(() => list.HitRegion(First, 0, 0, 10, 10, new CornerRadii(-1))));
+        Assert.Equal("radii", Refused(() => list.HitRegion(First, 0, 0, 10, 10, new CornerRadii(float.NaN))));
         Assert.Equal(0, list.HitEntries.Length);
     }
 
@@ -361,7 +413,7 @@ public sealed class HitTestTests
         list.Reset();
 
         Assert.Equal(0, list.HitEntries.Length);
-        Assert.Equal(default, list.HitTest(new Vector2(5, 5)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(5, 5)));
     }
 
     /// <summary>
@@ -494,13 +546,13 @@ public sealed class HitTestTests
 
             for (int i = 0; i < 10; i++)
             {
-                hit = list.HitTest(new Vector2(i == 0 ? 30 : 900 + i, 30));
+                hit = list.HitTestAt(new Vector2(i == 0 ? 30 : 900 + i, 30));
             }
         }
 
         Frame(0);
         SteadyStateAllocation.AssertNone(1_000, Frame);
-        Assert.Equal(default, list.HitTest(new Vector2(900, 900)));
+        Assert.Equal(default, list.HitTestAt(new Vector2(900, 900)));
         Assert.True(hit == default || hit == First);
     }
 
@@ -530,6 +582,8 @@ public sealed class HitTestTests
         float outside = MathF.Max(MathF.Max(left - p.X, p.X - right), MathF.Max(top - p.Y, p.Y - bottom));
         return outside > 0 && !float.IsNaN(cx) && !float.IsNaN(cy) ? (float?)null : outside;
     }
+
+    private static string? Refused(Action write) => Assert.Throws<ArgumentOutOfRangeException>(write).ParamName;
 
     private static FillRectCommand ReadRect(DisplayList list)
     {

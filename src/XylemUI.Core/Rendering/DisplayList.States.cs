@@ -26,10 +26,9 @@ public sealed partial class DisplayList
     /// </exception>
     public void PushClip(float x, float y, float width, float height, in CornerRadii radii)
     {
-        bool numbers = float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(width) && float.IsFinite(height);
-        if (!numbers || width < 0 || height < 0)
+        if (BadEdge(x, y, width, height) is { } name)
         {
-            throw new ArgumentOutOfRangeException(nameof(width), "The clip's edges are numbers and its width and height are at or above 0.");
+            throw new ArgumentOutOfRangeException(name, "The clip's edges are numbers and its width and height are at or above 0.");
         }
 
         CheckRadius(radii.TopLeft, nameof(radii));

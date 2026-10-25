@@ -30,10 +30,11 @@ public sealed unsafe class HitRenderTests(UiThreadFixture ui)
     /// Steps:
     /// - Push a rotation by 20 degrees about (90, 60) and the clip (30, 20, 120, 80) with corners of radius 24; fill (50, 30, 100,
     ///   70) with corners of radius 20 in ink and write the same rectangle as the region of a node; pop both. Draw, read every pixel,
-    ///   and take each pixel's coverage from its blue channel between the clear color and ink. Test the pixel's center.
+    ///   and take each pixel's coverage from its blue channel between the clear color and ink. Test the pixel by its integer
+    ///   coordinates, as Win32 gives them.
     ///
     /// Expected:
-    /// - Where the coverage is 0.53 or more the center hits the node, and where it is 0.47 or less it misses. Pixels where both the
+    /// - Where the coverage is 0.53 or more the pixel hits the node, and where it is 0.47 or less it misses. Pixels where both the
     ///   shape's and the clip's edges pass (a CPU reference covers between 0 and 1 for both) are skipped: the pixel takes the product
     ///   of the two coverages, the hit each one at half. Both hits and misses are checked, at least 50 of them on an edge.
     /// </remarks>
@@ -85,7 +86,7 @@ public sealed unsafe class HitRenderTests(UiThreadFixture ui)
                             continue;
                         }
 
-                        bool hit = list.HitTest(center) == Node;
+                        bool hit = list.HitTest(x, y) == Node;
                         Assert.True(hit == coverage >= 0.53f, $"pixel ({x}, {y}): coverage {coverage}, hit {hit}");
                         edges += coverage is > 0.02f and < 0.98f ? 1 : 0;
                         hits += hit ? 1 : 0;

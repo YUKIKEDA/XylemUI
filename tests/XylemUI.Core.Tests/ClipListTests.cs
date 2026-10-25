@@ -412,17 +412,18 @@ public sealed class ClipListTests
     ///   M31 NaN and with M11 infinite; call Pop on the empty list.
     ///
     /// Expected:
-    /// - ArgumentOutOfRangeException for each push, InvalidOperationException for the Pop; the list has no command.
+    /// - ArgumentOutOfRangeException for each push, naming the clip's argument that is bad (x, width, height, radii);
+    ///   InvalidOperationException for the Pop; the list has no command.
     /// </remarks>
     [Fact]
     public void Scope_BadValues_AreRefused()
     {
         var list = new DisplayList();
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(float.NaN, 0, 10, 10, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, -1, 10, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, 10, float.PositiveInfinity, default));
-        Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, 10, 10, new CornerRadii(-1, 0, 0, 0)));
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(float.NaN, 0, 10, 10, default)).ParamName);
+        Assert.Equal("width", Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, -1, 10, default)).ParamName);
+        Assert.Equal("height", Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, 10, float.PositiveInfinity, default)).ParamName);
+        Assert.Equal("radii", Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, 10, 10, new CornerRadii(-1, 0, 0, 0))).ParamName);
         Assert.Throws<ArgumentOutOfRangeException>(() => list.PushClip(0, 0, 10, 10, new CornerRadii(0, float.NaN, 0, 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => list.PushTransform(new Matrix3x2(1, 0, 0, 1, float.NaN, 0)));
         Assert.Throws<ArgumentOutOfRangeException>(() => list.PushTransform(new Matrix3x2(float.PositiveInfinity, 0, 0, 1, 0, 0)));
