@@ -1248,7 +1248,7 @@ sequenceDiagram
 - **V1a 文字の葉:** `TextShaper` と T1 の改行を使う計測関数、`ShapedTextCache` と `LineBreakCache`（§3.2）、文字の行の高さ、10,101 個の文字の葉のリサイズ（§11.3）、計測関数の例外の報告
 - **V1b 描画の段とフレームの駆動:** ノードの描く関数、木を絶対座標でたどって `DrawingContext` を作る順と段、`PaintUpdates`、`Hidden` の部分木を飛ばすこと、effect → レイアウト → 描画 → Render のフレームの予約、変わらないフレームは Present しないこと
 - **V1c 入力:** Win32 のマウスとポインタのイベントの型、ヒットテストと capture・bubble、ホバーと押下の擬似状態、遮る印、ハンドラに渡す座標を倍率で割ること
-- **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプルと下の 4 つの受け入れ
+- **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプル。受け入れは、§10.5 の MoonBit 版の V1 と同じ到達点（ボタンの中心の画素、クリックで数が増えること、変わらないフレームで Present しないこと）を、同じ判定基準（各段階 4 問 Yes）で確かめる
 
 **V1（MoonBit 版で到達。C# 版で再到達させる）:** Column / Text / Button でこの経路が native で通った。入力は直近 `HitTestList` を末尾から走査し、木は登らない。Button クリックは Signal を `Batch` し Text が変わる。clean フレームは Present しない。C# 版の再現手順（`dotnet test` / `dotnet run` のプロジェクト）は移植時に定義する。
 
@@ -1867,12 +1867,12 @@ internal sealed record LineLayoutResult(GlyphRun[][] Lines);          // 行ご�
 
 - **作るもの:** T1 は `XylemUI.Text` に、Unicode の表の生成器と表（改行の種類、書記素の種類、拡張絵文字、東アジアの幅）、UAX#29 の書記素の列挙、UAX#14 の改行の候補の列挙、折り返し、内容の幅の関数を作る。フォントのフォールバックの境界は、書記素の境界に合わせて切り直す。これらを文字の葉の計測関数とキャッシュ（§3.2）につなぐのは行 V1a である
 - **行の境界の整形のやり直し（Pass2）:** 上の 2 パスのとおり入れる。比べた 3 つはどれも整形をやり直さず、1 回の整形の結果をクラスタの境界で切る（Avalonia の `ShapedBuffer.cs` 591〜640 行目、skparagraph の `ParagraphImpl.cpp` 681〜697 行目、GPUI の `line_layout.rs` 639〜641 行目）。そのため、行末と行頭の字形や、改行した行のソフトハイフンが正しくならない
-- **小書きの仮名（CJ）:** UAX#14 の既定（LB1）のとおり、行頭に置かない種類（NS、strict）に解決する。Avalonia（`LineBreakEnumerator.cs` 1470〜1503 行目）と同じ。CSS の `line-break: normal` のような仕立ては、要るという理由が出たら行を立てる
+- **小書きの仮名（CJ）:** UAX#14 の既定（LB1）のとおり、行頭に置かない種類（NS、strict）に解決する。Avalonia（`LineBreakEnumerator.cs` 1470〜1503 行目）と同じ。CSS の `line-break: normal` のような仕立ては、小書きの仮名を行頭に置く改行を求める要件か不具合の報告が出たら、行を立てる
 - **適合のテスト:** §8.13 の `LineBreakTest.txt` と `GraphemeBreakTest.txt` の全行を、例外なしで通す
 - **表の作り方:** 生成器は、`vendor/versions.lock` に書いたバージョンと SHA-256 で UCD を取り、C# の `*.g.cs` を出力する。出力はリポジトリに入れる。表の構造（2 段の表かトライか）は、実装で大きさと 1 文字を引く時間を測って選び、ここに書く。ゲートは表を作り直さず、表が持つバージョンが lock と一致することをテストで確かめる
-- **折り返し:** 改行の候補のうち、行に収まる最後のものを先頭から詰めて選ぶ（Avalonia の `PerformTextWrapping`、skparagraph の `TextWrapper`）。行末の空白は幅に入れない。強制改行は LF、CR LF、CR、NEL、U+2028（UAX#14 の BK・CR・LF・NL）。1 語が行より広いときは、書記素の境界で切る（Avalonia の `Wrap`、skparagraph はクラスタの境界）。CSS の `overflow-wrap: normal` のように切らずにはみ出す形は採らない
+- **折り返し:** 改行の候補のうち、行に収まる最後のものを先頭から詰めて選ぶ（Avalonia の `PerformTextWrapping`、skparagraph の `TextWrapper`）。行末の空白は幅に入れない。強制改行は、UAX#14 の LB4・LB5 が決めるもの（BK の VT・FF・U+2028・U+2029、CR、LF、NL。CR LF は 1 つの改行）。1 語が行より広いときは、書記素の境界で切る（Avalonia の `Wrap`、skparagraph はクラスタの境界）。CSS の `overflow-wrap: normal` のように切らずにはみ出す形は採らない
 - **内容の幅:** 最小は、改行の候補の間の並びのうち、行末の空白を除いて最も広いもの（skparagraph の `TextWrapper.cpp` 223〜241 行目と同じ）。最大は、強制改行の間の行のうち、行末の空白を除いて最も広いもの。skparagraph は最大に行末の空白を含めるが、CSS では折り返す空白は行末で幅に入らない
-- **確かめ方:** 適合のテストに加えて、端の場合として、強制改行の 5 種類、行末の空白、ソフトハイフン（改行した行だけでハイフンが出る）、行より広い語、緊急ブレークの後に Pass2 で溢れる場合、絵文字の ZWJ の並びと異体字セレクタを切らないこと、フォールバックの境界の切り直しを入れる。費用は、改行の候補の列挙の 1 文字の ns と、S8b の日本語の画面の折り返しの時間を測る。定常状態の割り当ては 0
+- **確かめ方:** 適合のテストに加えて、端の場合として、LB4・LB5 の強制改行のそれぞれ、行末の空白、ソフトハイフン（改行した行だけでハイフンが出る）、行より広い語、緊急ブレークの後に Pass2 で溢れる場合、絵文字の ZWJ の並びと異体字セレクタを切らないこと、フォールバックの境界の切り直しを入れる。費用は、改行の候補の列挙の 1 文字の ns と、S8b の日本語の画面の折り返しの時間を測る。定常状態の割り当ては 0
 
 グラフェムクラスタ検出（UAX#29）は、BiDi(UAX#9)・改行(UAX#14)と同様にコアアルゴリズムが相対的に安定しているため、**同じ判断基準で自前実装する**（§4.2の決定を拡張）。.NET の `StringInfo`（`GetNextTextElementLength`）も UAX#29 の拡張グラフェムクラスタを実装しているが、対応する Unicode バージョンが .NET ランタイムのバージョンに従って変わり、§8.13 のバージョン固定と両立しないため本番経路では使わない（テストの比較対象として使うのはよい）。3アルゴリズムとも同一のUnicodeデータ生成パイプライン（`tools/UnicodeTableGen`）を共有する。生成器は Unicode Character Database から C# のソース（`*.g.cs`）を出力し、テーブルは `ReadOnlySpan<byte>` を返す静的プロパティとして実行ファイルのデータ領域に埋め込む（起動時のアロケーションも初期化処理も発生しない）。
 
