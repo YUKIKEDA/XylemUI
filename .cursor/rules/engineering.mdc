@@ -26,6 +26,7 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 - CSharpier is the only formatter (`.config/dotnet-tools.json`, `.csharpierrc.json`). It also formats `.csproj` and `.props`. Run `dotnet csharpier format .` before a commit.
 - StyleCop.Analyzers and the .NET analyzers at `latest-recommended` run in every build. `EnforceCodeStyleInBuild` is on.
+- Do not use an alignment in an interpolated string (`{x,5}`): CSharpier writes it `{x, 5}`, which StyleCop's SA1001 refuses. Pad with `PadLeft` instead (T1a, PR #285).
 
 ## Gate
 
