@@ -12,7 +12,8 @@ namespace XylemUI.E2E;
 //            exits; with --idle, first stays idle for 10 s and reports the CPU time and the memory of that time.
 internal static class Startup
 {
-    public static int Launch(int runs)
+    // `scopes` (Scene.Build's) draws the first frame in clips and transforms (row R4d), which waits for their shaders.
+    public static int Launch(int runs, string scopes = "")
     {
         string exe = Environment.ProcessPath!;
         var toDisplay = new List<double>();
@@ -20,7 +21,7 @@ internal static class Startup
         for (int i = 0; i < runs; i++)
         {
             long launched = Stopwatch.GetTimestamp();
-            using JsonDocument child = RunChild(exe, "startup-child");
+            using JsonDocument child = RunChild(exe, scopes.Length > 0 ? $"startup-child --scopes {scopes}" : "startup-child");
             JsonElement root = child.RootElement;
             toDisplay.Add(Stopwatch.GetElapsedTime(launched, root.GetProperty("displayed_qpc").GetInt64()).TotalMilliseconds);
             toMain.Add(Stopwatch.GetElapsedTime(launched, root.GetProperty("main_qpc").GetInt64()).TotalMilliseconds);
@@ -33,7 +34,7 @@ internal static class Startup
         return 0;
     }
 
-    public static int Child(bool idle, bool gray = false)
+    public static int Child(bool idle, bool gray = false, string scopes = "")
     {
         long main = Stopwatch.GetTimestamp();
         UiThread.Initialize();
@@ -48,7 +49,7 @@ internal static class Startup
         {
             if (frame++ == 0)
             {
-                scene.Build(0);
+                scene.Build(0, scopes: scopes);
                 firstCall = Stopwatch.GetTimestamp();
                 scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
             }

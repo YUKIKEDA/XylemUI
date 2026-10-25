@@ -16,9 +16,28 @@ namespace XylemUI;
 /// <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> writes the glyphs the atlas has and leaves room for the others; <see cref="ResolveGlyphs"/> fills it
 /// before the list is read (design §5.0.3, "Glyphs seen for the first time").
 /// </remarks>
-public sealed class DisplayList
+public sealed partial class DisplayList
 {
+    /// <summary>
+    /// The most rounded clips a state applies per pixel, after the clips that contain one another are taken together (row R4d):
+    /// a rounded clip past them starts a clip's layer, drawn with it and composited with the ones around it (design §5.0, "The API
+    /// of layers, clips, transforms, and DrawingContext"). A clip per pixel costs every pixel each command covers, and the layer's
+    /// composite applies the clips around it once a pixel: with the window covered four and a half times, three clips took 1,638 µs
+    /// of GPU per pixel and 957 µs with a layer past two; covered half a time, 323 and 410 µs (docs/benchmarks/r4d-clips.md).
+    /// Skia applies at most 4 (<c>ClipStack.cpp</c>).
+    /// </summary>
+    public const int MaxRoundedClips = 2;
+
     private const int FloatsPerRect = 4;
+
+    // The bits of _mode: the scopes open now that change how a command is written.
+    private const int InGroup = 1;
+    private const int Shifted = 2;
+    private const int Transformed = 4;
+    private const int Clipped = 8;
+
+    // The rectangle of no clip: its edges past every pixel.
+    private static readonly Vector4 NoClip = new(float.NegativeInfinity, float.NegativeInfinity, float.PositiveInfinity, float.PositiveInfinity);
 
     // Numbers each frame that writes a brush, across every list, so a brush's ListFrame tells which list's frame placed it.
     private static long _brushFrames;
@@ -47,7 +66,27 @@ public sealed class DisplayList
     private int _groupDepth;
     private int _opacityDepth;
     private int _groupRecords;
-    private GroupStreams? _groupStreams;
+    private ScopeStreams? _scopes;
+
+    // The scopes of every kind pushed and not popped, and the clips and transforms among them (row R4d): how many are pushed, and
+    // how many state and clip records the frame wrote.
+    private int _scopeDepth;
+    private int _stateDepth;
+    private int _stateRecords;
+    private int _clipRecords;
+
+    // What the scopes open now make of a command (row R4d). `_mode` is 0 outside every group, clip, and transform, so that each
+    // command checks one field before it takes the path that knows them. The transform is in logical pixels. When it only moves,
+    // the commands are moved by `_shift` physical pixels as they are written, and their edges stay on pixels (`_snap`) when the
+    // move is by whole pixels; otherwise the renderer applies it (`_transformed`), and text is drawn at `_textScale`.
+    private int _mode;
+    private Matrix3x2 _transform = Matrix3x2.Identity;
+    private Vector2 _shift;
+    private bool _snap = true;
+    private bool _transformed;
+    private float _textScale = 1;
+    private int _state = -1;
+    private Vector4 _clipRect = NoClip;
     private int _textPaintCount;
     private int _brushedRuns;
     private int _usedRects;
@@ -101,6 +140,12 @@ public sealed class DisplayList
     public int GroupCount => _groupRecords;
 
     /// <summary>
+    /// Gets the number of states (<see cref="StateCommand"/>) the clips and transforms written since the last <see cref="Reset"/>
+    /// start (row R4d); a renderer writes a list without them, and without groups, by a path that has neither.
+    /// </summary>
+    public int StateCount => _stateRecords;
+
+    /// <summary>
     /// Gets a value indicating whether <see cref="DrawText(ReadOnlySpan{ShapedGlyph}, Font, float, GlyphAtlas, float, float, Color, GlyphCoverage, bool)"/> left room for glyphs that <see cref="ResolveGlyphs"/> has not filled
     /// yet. Such a list cannot be read.
     /// </summary>
@@ -143,6 +188,18 @@ public sealed class DisplayList
         _groupDepth = 0;
         _opacityDepth = 0;
         _groupRecords = 0;
+        _scopeDepth = 0;
+        _stateDepth = 0;
+        _stateRecords = 0;
+        _clipRecords = 0;
+        _mode = 0;
+        _transform = Matrix3x2.Identity;
+        _shift = default;
+        _snap = true;
+        _transformed = false;
+        _textScale = 1;
+        _state = -1;
+        _clipRect = NoClip;
     }
 
     /// <summary>
@@ -173,9 +230,13 @@ public sealed class DisplayList
         rect[3] = RoundToPixel((y + height) * scale) - top;
         _usedRects += FloatsPerRect;
         _colors[_usedColors++] = color.Packed;
-        if (_opacityDepth > 0)
+
+        // Inside a group, a clip, or a transform: the rectangle is written again as they ask, and added to its group. The one
+        // check stands where R4c checked the group alone; at the start, it made the compiler keep the edges on the stack, and the
+        // rectangle took 0.45 ns longer to write (fill-rect, row R4d).
+        if (_mode != 0)
         {
-            AccumulateLastRect();
+            RewriteLastRect(x, y, width, height);
         }
     }
 
@@ -195,16 +256,47 @@ public sealed class DisplayList
             throw new ArgumentOutOfRangeException(nameof(alpha), alpha, "The opacity is not a number from 0 to 1.");
         }
 
-        GroupStreams groups = _groupStreams ??= new GroupStreams();
-        if (_groupDepth == groups.Frames.Length)
+        PushGroup(alpha, clip: false);
+    }
+
+    /// <summary>
+    /// Ends the innermost scope that <see cref="PushOpacity"/>, <see cref="PushClip"/>, or <see cref="PushTransform"/> started.
+    /// For a group, whether its children are drawn into a layer is decided here, from whether they overlap: the bounds of each
+    /// child are compared with the union of the bounds of the ones before it, as Flutter's display list compares them, so that two
+    /// children are never taken as apart when they overlap.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Nothing is pushed.</exception>
+    public void Pop()
+    {
+        if (_scopeDepth == 0)
         {
-            Array.Resize(ref groups.Frames, groups.Frames.Length * 2);
+            throw new InvalidOperationException("Pop was called with nothing pushed.");
+        }
+
+        if (_scopes!.Kinds[_scopeDepth - 1] == ScopeKind.State)
+        {
+            PopState();
+        }
+        else
+        {
+            PopGroup();
+        }
+    }
+
+    // A group: an opacity group, or the layer of a clip past MaxRoundedClips (row R4d), which is always a layer and has alpha 1.
+    private void PushGroup(float alpha, bool clip)
+    {
+        ScopeStreams scopes = _scopes ??= new ScopeStreams();
+        PushKind(scopes, ScopeKind.Group);
+        if (_groupDepth == scopes.Frames.Length)
+        {
+            Array.Resize(ref scopes.Frames, scopes.Frames.Length * 2);
             GrowthCount++;
         }
 
-        ref GroupFrame frame = ref groups.Frames[_groupDepth++];
+        ref GroupFrame frame = ref scopes.Frames[_groupDepth++];
         frame = default;
-        if (alpha == 1)
+        if (alpha == 1 && !clip)
         {
             return;
         }
@@ -214,9 +306,9 @@ public sealed class DisplayList
             Grow();
         }
 
-        if (_groupRecords == groups.Records.Length)
+        if (_groupRecords == scopes.Records.Length)
         {
-            Array.Resize(ref groups.Records, groups.Records.Length * 2);
+            Array.Resize(ref scopes.Records, scopes.Records.Length * 2);
             GrowthCount++;
         }
 
@@ -229,31 +321,23 @@ public sealed class DisplayList
         frame.Bottom = float.NegativeInfinity;
         _commands[CommandCount++] = CommandTag.PushOpacity;
         _colors[_usedColors++] = 0;
-        groups.Records[_groupRecords++] = new GroupRecord { Alpha = alpha };
+        scopes.Records[_groupRecords++] = new GroupRecord { Alpha = alpha, Clip = clip };
         _opacityDepth++;
+        UpdateMode();
     }
 
-    /// <summary>
-    /// Ends the innermost group <see cref="PushOpacity"/> started. Whether its children are drawn into a layer is decided here,
-    /// from whether they overlap: the bounds of each child are compared with the union of the bounds of the ones before it, as
-    /// Flutter's display list compares them, so that two children are never taken as apart when they overlap.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">Nothing is pushed.</exception>
-    public void Pop()
+    private void PopGroup()
     {
-        if (_groupDepth == 0)
-        {
-            throw new InvalidOperationException("Pop was called with no group pushed.");
-        }
-
-        GroupStreams groups = _groupStreams!;
-        GroupFrame frame = groups.Frames[--_groupDepth];
+        ScopeStreams scopes = _scopes!;
+        _scopeDepth--;
+        GroupFrame frame = scopes.Frames[--_groupDepth];
         if (!frame.Recorded)
         {
             return;
         }
 
         _opacityDepth--;
+        UpdateMode();
         if (CommandCount - 1 == frame.Command)
         {
             // Nothing was drawn in the group: it leaves the list, as Avalonia rewinds an empty scope.
@@ -263,8 +347,8 @@ public sealed class DisplayList
             return;
         }
 
-        ref GroupRecord record = ref groups.Records[frame.Record];
-        record.Layer = frame.Overlap || frame.Text;
+        ref GroupRecord record = ref scopes.Records[frame.Record];
+        record.Layer = frame.Overlap || frame.Text || record.Clip;
         record.Left = frame.Left;
         record.Top = frame.Top;
         record.Right = frame.Right;
@@ -276,6 +360,8 @@ public sealed class DisplayList
 
         _commands[CommandCount++] = CommandTag.Pop;
         _colors[_usedColors++] = 0;
+
+        // The group's bounds are in physical pixels and cut to the clips of its children already, which hold the clips around it.
         if (_opacityDepth > 0)
         {
             Accumulate(frame.Left, frame.Top, frame.Right, frame.Bottom);
@@ -307,8 +393,29 @@ public sealed class DisplayList
             return;
         }
 
+        if (_mode != 0)
+        {
+            FillShapeInScope(x, y, width, height, fill, radii, border);
+            return;
+        }
+
+        FillShape<Outside>(x, y, width, height, fill, radii, border);
+    }
+
+    // The rounded rectangle, written by the path for no scope or for one: a copy of each, so that outside every scope the one check is
+    // FillRect's own (row R4d).
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void FillShapeInScope(float x, float y, float width, float height, in Paint fill, in CornerRadii radii, Border? border) =>
+        FillShape<Inside>(x, y, width, height, fill, radii, border);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void FillShape<TScope>(float x, float y, float width, float height, in Paint fill, in CornerRadii radii, Border? border)
+        where TScope : struct, IScope
+    {
         float scale = Scale;
-        ref ShapeRecord record = ref AppendShape(CommandTag.Shape, x, y, width, height, fill.Color);
+        ref ShapeRecord record = ref TScope.In
+            ? ref AppendShapeInScope(CommandTag.Shape, x, y, width, height, fill.Color)
+            : ref AppendShape(CommandTag.Shape, x, y, width, height, fill.Color);
         record = default;
         record.Radii = Scaled(Fitted(radii, width, height), scale);
         record.FillBrush = BrushIndex(fill.Gradient);
@@ -323,7 +430,7 @@ public sealed class DisplayList
 
         // Here rather than in AppendShape, which a shadow shares: there the check kept the tag in one more saved register on every
         // call (R4c, in the machine code).
-        if (_opacityDepth > 0)
+        if (TScope.In && _opacityDepth > 0)
         {
             AccumulateLastRect();
         }
@@ -342,8 +449,27 @@ public sealed class DisplayList
     /// <param name="shadow">The shadow, with CSS's values.</param>
     public void DrawShadow(float x, float y, float width, float height, in CornerRadii radii, in BoxShadow shadow)
     {
+        if (_mode != 0)
+        {
+            DrawShadowInScope(x, y, width, height, radii, shadow);
+            return;
+        }
+
+        DrawShadow<Outside>(x, y, width, height, radii, shadow);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void DrawShadowInScope(float x, float y, float width, float height, in CornerRadii radii, in BoxShadow shadow) =>
+        DrawShadow<Inside>(x, y, width, height, radii, shadow);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void DrawShadow<TScope>(float x, float y, float width, float height, in CornerRadii radii, in BoxShadow shadow)
+        where TScope : struct, IScope
+    {
         float scale = Scale;
-        ref ShapeRecord record = ref AppendShape(CommandTag.Shadow, x, y, width, height, shadow.Color);
+        ref ShapeRecord record = ref TScope.In
+            ? ref AppendShapeInScope(CommandTag.Shadow, x, y, width, height, shadow.Color)
+            : ref AppendShape(CommandTag.Shadow, x, y, width, height, shadow.Color);
         record = default;
         record.Radii = Scaled(Fitted(radii, width, height), scale);
         record.FillBrush = -1;
@@ -352,14 +478,14 @@ public sealed class DisplayList
         record.Sigma = shadow.BlurRadius * 0.5f * scale;
         record.Spread = shadow.Spread * scale;
         record.Inset = shadow.Inset;
-        if (_opacityDepth > 0)
+        if (TScope.In && _opacityDepth > 0)
         {
             // What the shadow draws: the shape for an inset one; the shape moved and grown by the spread, and three sigmas past
             // that, for an outer one (D3D11Renderer.WriteShadow's quad).
             ReadOnlySpan<float> rect = _rects.AsSpan(_usedRects - FloatsPerRect, FloatsPerRect);
             float grow = record.Inset ? 0 : record.Spread + (3 * record.Sigma);
             Vector2 move = record.Inset ? Vector2.Zero : record.Offset;
-            Accumulate(rect[0] + move.X - grow, rect[1] + move.Y - grow, rect[0] + rect[2] + move.X + grow, rect[1] + rect[3] + move.Y + grow);
+            AccumulateLocal(rect[0] + move.X - grow, rect[1] + move.Y - grow, rect[0] + rect[2] + move.X + grow, rect[1] + rect[3] + move.Y + grow);
         }
     }
 
@@ -378,6 +504,23 @@ public sealed class DisplayList
     /// <exception cref="ArgumentException">The stroke's dash pattern is not valid.</exception>
     public void DrawLine(float x1, float y1, float x2, float y2, in Stroke stroke)
     {
+        if (_mode != 0)
+        {
+            DrawLineInScope(x1, y1, x2, y2, stroke);
+            return;
+        }
+
+        DrawLine<Outside>(x1, y1, x2, y2, stroke);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void DrawLineInScope(float x1, float y1, float x2, float y2, in Stroke stroke) => DrawLine<Inside>(x1, y1, x2, y2, stroke);
+
+    // A line moved by the scopes' move, when TScope has scopes.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void DrawLine<TScope>(float x1, float y1, float x2, float y2, in Stroke stroke)
+        where TScope : struct, IScope
+    {
         float scale = Scale;
         float width = StrokeWidth(stroke, scale, out Dash dash, out bool dashed);
         if (width == 0 || (x1 == x2 && y1 == y2 && stroke.Cap == LineCap.Flat))
@@ -385,12 +528,12 @@ public sealed class DisplayList
             return;
         }
 
-        float ax = x1 * scale;
-        float ay = y1 * scale;
-        float bx = x2 * scale;
-        float by = y2 * scale;
+        float ax = TScope.In ? (x1 * scale) + _shift.X : x1 * scale;
+        float ay = TScope.In ? (y1 * scale) + _shift.Y : y1 * scale;
+        float bx = TScope.In ? (x2 * scale) + _shift.X : x2 * scale;
+        float by = TScope.In ? (y2 * scale) + _shift.Y : y2 * scale;
         float half = width * 0.5f;
-        ref CurveRecord record = ref AppendCurve(CommandTag.Line, ax, ay, bx, by, stroke.Paint.Color, half);
+        ref CurveRecord record = ref AppendCurve<TScope>(CommandTag.Line, ax, ay, bx, by, stroke.Paint.Color, half);
         record = default;
         record.Brush = BrushIndex(stroke.Paint.Gradient);
         record.Box = new Vector4(MathF.Min(ax, bx) - half, MathF.Min(ay, by) - half, MathF.Abs(bx - ax) + width, MathF.Abs(by - ay) + width);
@@ -411,6 +554,23 @@ public sealed class DisplayList
     /// <exception cref="ArgumentOutOfRangeException">A radius is negative or not a number.</exception>
     public void FillEllipse(float centerX, float centerY, float radiusX, float radiusY, in Paint fill)
     {
+        if (_mode != 0)
+        {
+            FillEllipseInScope(centerX, centerY, radiusX, radiusY, fill);
+            return;
+        }
+
+        FillEllipse<Outside>(centerX, centerY, radiusX, radiusY, fill);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void FillEllipseInScope(float centerX, float centerY, float radiusX, float radiusY, in Paint fill) =>
+        FillEllipse<Inside>(centerX, centerY, radiusX, radiusY, fill);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void FillEllipse<TScope>(float centerX, float centerY, float radiusX, float radiusY, in Paint fill)
+        where TScope : struct, IScope
+    {
         CheckRadius(radiusX, nameof(radiusX));
         CheckRadius(radiusY, nameof(radiusY));
         if (radiusX == 0 || radiusY == 0)
@@ -419,11 +579,11 @@ public sealed class DisplayList
         }
 
         float scale = Scale;
-        float cx = centerX * scale;
-        float cy = centerY * scale;
+        float cx = TScope.In ? (centerX * scale) + _shift.X : centerX * scale;
+        float cy = TScope.In ? (centerY * scale) + _shift.Y : centerY * scale;
         float rx = radiusX * scale;
         float ry = radiusY * scale;
-        ref CurveRecord record = ref AppendCurve(CommandTag.FillEllipse, cx, cy, rx, ry, fill.Color, 0);
+        ref CurveRecord record = ref AppendCurve<TScope>(CommandTag.FillEllipse, cx, cy, rx, ry, fill.Color, 0);
         record = default;
         record.Brush = BrushIndex(fill.Gradient);
         record.Box = new Vector4(cx - rx, cy - ry, 2 * rx, 2 * ry);
@@ -443,6 +603,23 @@ public sealed class DisplayList
     /// <exception cref="ArgumentException">The dash pattern is not valid, or the ellipse with a dash pattern is not a circle.</exception>
     public void DrawEllipse(float centerX, float centerY, float radiusX, float radiusY, in Stroke stroke)
     {
+        if (_mode != 0)
+        {
+            DrawEllipseInScope(centerX, centerY, radiusX, radiusY, stroke);
+            return;
+        }
+
+        DrawEllipse<Outside>(centerX, centerY, radiusX, radiusY, stroke);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void DrawEllipseInScope(float centerX, float centerY, float radiusX, float radiusY, in Stroke stroke) =>
+        DrawEllipse<Inside>(centerX, centerY, radiusX, radiusY, stroke);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void DrawEllipse<TScope>(float centerX, float centerY, float radiusX, float radiusY, in Stroke stroke)
+        where TScope : struct, IScope
+    {
         CheckRadius(radiusX, nameof(radiusX));
         CheckRadius(radiusY, nameof(radiusY));
         float scale = Scale;
@@ -459,16 +636,16 @@ public sealed class DisplayList
 
         if (dashed)
         {
-            AppendArc(CommandTag.Arc, centerX, centerY, radiusX, 0, MathF.Tau, stroke.Paint, width, stroke.Cap, dash);
+            AppendArc<TScope>(CommandTag.Arc, centerX, centerY, radiusX, 0, MathF.Tau, stroke.Paint, width, stroke.Cap, dash);
             return;
         }
 
-        float cx = centerX * scale;
-        float cy = centerY * scale;
+        float cx = TScope.In ? (centerX * scale) + _shift.X : centerX * scale;
+        float cy = TScope.In ? (centerY * scale) + _shift.Y : centerY * scale;
         float rx = radiusX * scale;
         float ry = radiusY * scale;
         float half = width * 0.5f;
-        ref CurveRecord record = ref AppendCurve(CommandTag.StrokeEllipse, cx, cy, rx, ry, stroke.Paint.Color, half);
+        ref CurveRecord record = ref AppendCurve<TScope>(CommandTag.StrokeEllipse, cx, cy, rx, ry, stroke.Paint.Color, half);
         record = default;
         record.Brush = BrushIndex(stroke.Paint.Gradient);
         record.Box = new Vector4(cx - rx - half, cy - ry - half, (2 * rx) + width, (2 * ry) + width);
@@ -504,7 +681,13 @@ public sealed class DisplayList
 
         float start = startAngle * (MathF.PI / 180);
         float sweep = sweepAngle * (MathF.PI / 180);
-        AppendArc(CommandTag.Arc, centerX, centerY, radius, start, sweep, stroke.Paint, width, stroke.Cap, dashed ? dash : null);
+        if (_mode != 0)
+        {
+            AppendArc<Inside>(CommandTag.Arc, centerX, centerY, radius, start, sweep, stroke.Paint, width, stroke.Cap, dashed ? dash : null);
+            return;
+        }
+
+        AppendArc<Outside>(CommandTag.Arc, centerX, centerY, radius, start, sweep, stroke.Paint, width, stroke.Cap, dashed ? dash : null);
     }
 
     /// <summary>
@@ -537,7 +720,13 @@ public sealed class DisplayList
 
         float start = startAngle * (MathF.PI / 180);
         float sweep = sweepAngle * (MathF.PI / 180);
-        AppendArc(CommandTag.Sector, centerX, centerY, radius, start, sweep, fill, 0, LineCap.Flat, null);
+        if (_mode != 0)
+        {
+            AppendArc<Inside>(CommandTag.Sector, centerX, centerY, radius, start, sweep, fill, 0, LineCap.Flat, null);
+            return;
+        }
+
+        AppendArc<Outside>(CommandTag.Sector, centerX, centerY, radius, start, sweep, fill, 0, LineCap.Flat, null);
     }
 
     /// <summary>
@@ -553,8 +742,14 @@ public sealed class DisplayList
             return;
         }
 
+        if (_mode != 0)
+        {
+            GlyphRunInScope(glyphs, color, coverage);
+            return;
+        }
+
         glyphs.CopyTo(ReserveGlyphs(glyphs.Length));
-        EndGlyphRun(glyphs.Length, color, coverage, -1);
+        AppendGlyphRun(glyphs.Length, color, coverage, -1);
     }
 
     /// <summary>
@@ -598,7 +793,10 @@ public sealed class DisplayList
         Color color,
         GlyphCoverage coverage = GlyphCoverage.Gray,
         bool aliased = false
-    ) => DrawText(glyphs, font, size, atlas, x, baseline, color, -1, coverage, aliased);
+    ) =>
+        _mode != 0
+            ? DrawTextInScope(glyphs, font, size, atlas, x, baseline, color, -1, coverage, aliased)
+            : DrawText<Outside>(glyphs, font, size, atlas, x, baseline, color, -1, coverage, aliased);
 
     /// <summary>
     /// Appends shaped text painted with a gradient over a box given in logical pixels, placed as
@@ -663,14 +861,33 @@ public sealed class DisplayList
         }
 
         int paint = _textPaintCount++;
-        var box = new Vector4(boxX * scale, boxY * scale, boxWidth * scale, boxHeight * scale);
+        Vector2 shift = _mode != 0 ? _shift : default;
+        var box = new Vector4((boxX * scale) + shift.X, (boxY * scale) + shift.Y, boxWidth * scale, boxHeight * scale);
         streams.TextPaints[paint] = new TextPaint(BrushIndex(brush), box);
         Color first = brush.Stops[0].Color;
-        return DrawText(glyphs, font, size, atlas, x, baseline, new Color(first.R, first.G, first.B), paint, coverage, aliased);
+        return _mode != 0
+            ? DrawTextInScope(glyphs, font, size, atlas, x, baseline, new Color(first.R, first.G, first.B), paint, coverage, aliased)
+            : DrawText<Outside>(glyphs, font, size, atlas, x, baseline, new Color(first.R, first.G, first.B), paint, coverage, aliased);
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private float DrawTextInScope(
+        ReadOnlySpan<ShapedGlyph> glyphs,
+        Font font,
+        float size,
+        GlyphAtlas atlas,
+        float x,
+        float baseline,
+        Color color,
+        int paint,
+        GlyphCoverage coverage,
+        bool aliased
+    ) => DrawText<Inside>(glyphs, font, size, atlas, x, baseline, color, paint, coverage, aliased);
+
     // `color` is the text's color, which a color glyph's layers in the text's color take; `paint` is the text's gradient, or -1.
-    private float DrawText(
+    // Inside a transform the renderer applies, the glyphs are drawn and placed at the transform's text scale, in pixels that much
+    // smaller than the other commands' (row R4d); inside a move, moved by it.
+    private float DrawText<TScope>(
         ReadOnlySpan<ShapedGlyph> glyphs,
         Font font,
         float size,
@@ -682,6 +899,7 @@ public sealed class DisplayList
         GlyphCoverage coverage,
         bool aliased
     )
+        where TScope : struct, IScope
     {
         ArgumentNullException.ThrowIfNull(font);
         ArgumentNullException.ThrowIfNull(atlas);
@@ -696,18 +914,28 @@ public sealed class DisplayList
             throw new ArgumentException("Bilevel text has no ClearType coverage.", nameof(aliased));
         }
 
-        // ClearType's coverage needs the pixels under the text, which a layer or a group's opacity hides (design §5.0.3,
-        // "ClearType"): text inside a group is grayscale.
-        if (_opacityDepth > 0 && coverage == GlyphCoverage.Rgb)
+        // ClearType's coverage needs the pixels under the text, which a layer or a group's opacity hides, and which a transform
+        // other than a move by whole pixels does not lay out as the subpixels (design §5.0.3, "ClearType"): there text is grayscale.
+        if (TScope.In && coverage == GlyphCoverage.Rgb && TextIsGray)
         {
             coverage = GlyphCoverage.Gray;
         }
 
         // The pen moves in font units and is scaled once per glyph, so the rounding does not add up along the run. The pen and the
-        // baseline are in physical pixels from here on.
+        // baseline are in physical pixels from here on (in the text's pixels inside a transform).
+        if (TScope.In)
+        {
+            pixelSize *= _textScale;
+            x = (x * Scale * _textScale) + _shift.X;
+            baseline = (baseline * Scale * _textScale) + _shift.Y;
+        }
+        else
+        {
+            x *= Scale;
+            baseline *= Scale;
+        }
+
         float scale = pixelSize / font.UnitsPerEm;
-        x *= Scale;
-        baseline *= Scale;
         Span<GlyphInstance> destination = ReserveGlyphs(glyphs.Length);
         int first = GlyphCount;
         int written = 0;
@@ -729,7 +957,7 @@ public sealed class DisplayList
                 {
                     if (written > runStart)
                     {
-                        EndGlyphRun(written - runStart, color, runCoverage, paint);
+                        EndGlyphRun<TScope>(written - runStart, color, runCoverage, paint);
                         runStart = written;
                     }
 
@@ -746,7 +974,7 @@ public sealed class DisplayList
                 {
                     if (written > runStart)
                     {
-                        EndGlyphRun(written - runStart, color, runCoverage, paint);
+                        EndGlyphRun<TScope>(written - runStart, color, runCoverage, paint);
                         runStart = written;
                     }
 
@@ -762,7 +990,7 @@ public sealed class DisplayList
 
         if (written > runStart)
         {
-            EndGlyphRun(written - runStart, color, runCoverage, paint);
+            EndGlyphRun<TScope>(written - runStart, color, runCoverage, paint);
         }
 
         return pen * (size / font.UnitsPerEm);
@@ -809,9 +1037,9 @@ public sealed class DisplayList
             Invariant.Fail("The display list has glyphs left for ResolveGlyphs; resolve them before reading the list.");
         }
 
-        if (_groupDepth > 0)
+        if (_scopeDepth > 0)
         {
-            Invariant.Fail("The display list has a group pushed and not popped; pop it before reading the list.");
+            Invariant.Fail("The display list has a group, a clip, or a transform pushed and not popped; pop it before reading the list.");
         }
 
         return new(this);
@@ -829,7 +1057,7 @@ public sealed class DisplayList
 
     internal ReadOnlySpan<int> RunPaints => _runPaints.AsSpan(0, _usedRuns);
 
-    internal ReadOnlySpan<GroupRecord> Groups => _groupStreams is null ? default : _groupStreams.Records.AsSpan(0, _groupRecords);
+    internal ReadOnlySpan<GroupRecord> Groups => _scopes is null ? default : _scopes.Records.AsSpan(0, _groupRecords);
 
     internal ReadOnlySpan<CurveRecord> Curves => _shapeStreams is null ? default : _shapeStreams.Curves.AsSpan(0, _usedCurves);
 
@@ -921,6 +1149,7 @@ public sealed class DisplayList
         int glyph = 0;
         int pending = 0;
         int groupRecord = 0;
+        int stateRecord = 0;
         int open = 0;
         _brushedRuns = 0;
         for (int c = 0; c < CommandCount; c++)
@@ -928,15 +1157,16 @@ public sealed class DisplayList
             CommandTag tag = _commands[c];
             if (tag != CommandTag.GlyphRun)
             {
-                if (tag == CommandTag.PushOpacity)
+                if (tag is CommandTag.PushOpacity or CommandTag.PushState)
                 {
-                    GroupStreams groups = _groupStreams!;
-                    if (open == groups.Open.Length)
+                    // A group by its record, a state as -2 less its record (row R4d).
+                    ScopeStreams scopes = _scopes!;
+                    if (open == scopes.Open.Length)
                     {
-                        Array.Resize(ref groups.Open, groups.Open.Length * 2);
+                        Array.Resize(ref scopes.Open, scopes.Open.Length * 2);
                     }
 
-                    groups.Open[open++] = groupRecord++;
+                    scopes.Open[open++] = tag == CommandTag.PushOpacity ? groupRecord++ : -2 - stateRecord++;
                 }
                 else if (tag == CommandTag.Pop)
                 {
@@ -1009,17 +1239,35 @@ public sealed class DisplayList
         GlyphCount = glyphs;
     }
 
-    // Adds a glyph that ResolveGlyphs placed to the bounds of the `open` groups around it.
+    // Adds a glyph that ResolveGlyphs placed to the bounds of the `open` groups around it, through the innermost state around it.
     private void Widen(int open, in GlyphInstance glyph)
     {
-        GroupStreams groups = _groupStreams!;
-        foreach (int index in groups.Open.AsSpan(0, open))
+        ScopeStreams scopes = _scopes!;
+        ReadOnlySpan<int> scopesOpen = scopes.Open.AsSpan(0, open);
+        int state = -1;
+        for (int i = scopesOpen.Length - 1; i >= 0 && state < 0; i--)
         {
-            ref GroupRecord record = ref groups.Records[index];
-            record.Left = Lesser(record.Left, glyph.X);
-            record.Top = Lesser(record.Top, glyph.Y);
-            record.Right = Greater(record.Right, glyph.X + glyph.Width);
-            record.Bottom = Greater(record.Bottom, glyph.Y + glyph.Height);
+            state = scopesOpen[i] < 0 ? -2 - scopesOpen[i] : -1;
+        }
+
+        Vector4 bounds = GlyphBounds(glyph, state);
+        if (bounds.Z <= bounds.X || bounds.W <= bounds.Y)
+        {
+            return;
+        }
+
+        foreach (int index in scopesOpen)
+        {
+            if (index < 0)
+            {
+                continue;
+            }
+
+            ref GroupRecord record = ref scopes.Records[index];
+            record.Left = Lesser(record.Left, bounds.X);
+            record.Top = Lesser(record.Top, bounds.Y);
+            record.Right = Greater(record.Right, bounds.Z);
+            record.Bottom = Greater(record.Bottom, bounds.W);
         }
     }
 
@@ -1094,7 +1342,7 @@ public sealed class DisplayList
 
     // An arc or a sector given in radians, written running clockwise: a counterclockwise one starts at its other end, and its
     // dashes move so that they lie where they would from its own start. A sweep of a whole turn or more is a circle.
-    private void AppendArc(
+    private void AppendArc<TScope>(
         CommandTag tag,
         float centerX,
         float centerY,
@@ -1106,10 +1354,11 @@ public sealed class DisplayList
         LineCap cap,
         Dash? dash
     )
+        where TScope : struct, IScope
     {
         float scale = Scale;
-        float cx = centerX * scale;
-        float cy = centerY * scale;
+        float cx = TScope.In ? (centerX * scale) + _shift.X : centerX * scale;
+        float cy = TScope.In ? (centerY * scale) + _shift.Y : centerY * scale;
         float r = radius * scale;
         Dash pattern = dash ?? default;
         if (MathF.Abs(sweep) >= MathF.Tau)
@@ -1132,7 +1381,7 @@ public sealed class DisplayList
 
         start %= MathF.Tau;
         float half = width * 0.5f;
-        ref CurveRecord record = ref AppendCurve(tag, cx, cy, r, 0, paint.Color, half);
+        ref CurveRecord record = ref AppendCurve<TScope>(tag, cx, cy, r, 0, paint.Color, half);
         record = default;
         record.Brush = BrushIndex(paint.Gradient);
         record.Box = new Vector4(cx - r - half, cy - r - half, (2 * r) + width, (2 * r) + width);
@@ -1146,7 +1395,8 @@ public sealed class DisplayList
 
     // A line, an ellipse, an arc, or a sector: its geometry in the rectangle stream, its color, and the record it fills in. In a
     // group, what it draws is the renderer's quad: the shape grown by half its width, the caps, and a pixel of antialiasing.
-    private ref CurveRecord AppendCurve(CommandTag tag, float a, float b, float c, float d, Color color, float half)
+    private ref CurveRecord AppendCurve<TScope>(CommandTag tag, float a, float b, float c, float d, Color color, float half)
+        where TScope : struct, IScope
     {
         if (CommandCount == _commands.Length)
         {
@@ -1161,17 +1411,17 @@ public sealed class DisplayList
         rect[3] = d;
         _usedRects += FloatsPerRect;
         _colors[_usedColors++] = color.Packed;
-        if (_opacityDepth > 0)
+        if (TScope.In && _opacityDepth > 0)
         {
             float margin = (half * 1.4143f) + 1;
             if (tag == CommandTag.Line)
             {
-                Accumulate(Lesser(a, c) - margin, Lesser(b, d) - margin, Greater(a, c) + margin, Greater(b, d) + margin);
+                AccumulateLocal(Lesser(a, c) - margin, Lesser(b, d) - margin, Greater(a, c) + margin, Greater(b, d) + margin);
             }
             else
             {
                 float ry = tag is CommandTag.FillEllipse or CommandTag.StrokeEllipse ? d : c;
-                Accumulate(a - c - margin, b - ry - margin, a + c + margin, b + ry + margin);
+                AccumulateLocal(a - c - margin, b - ry - margin, a + c + margin, b + ry + margin);
             }
         }
 
@@ -1265,7 +1515,22 @@ public sealed class DisplayList
         return _brushCount++;
     }
 
-    private void EndGlyphRun(int count, Color color, GlyphCoverage coverage, int paint)
+    // Text makes its group a layer: whether its glyphs overlap cannot be told. The glyphs placed now add their quads to the group's
+    // bounds (EndGlyphRunInScope); ResolveGlyphs adds the ones it places.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void EndGlyphRun<TScope>(int count, Color color, GlyphCoverage coverage, int paint)
+        where TScope : struct, IScope
+    {
+        if (TScope.In)
+        {
+            EndGlyphRunInScope(count, color, coverage, paint);
+            return;
+        }
+
+        AppendGlyphRun(count, color, coverage, paint);
+    }
+
+    private void AppendGlyphRun(int count, Color color, GlyphCoverage coverage, int paint)
     {
         if (CommandCount == _commands.Length)
         {
@@ -1277,20 +1542,6 @@ public sealed class DisplayList
         _runCoverages[_usedRuns] = coverage;
         _runPaints[_usedRuns] = paint;
         _runLengths[_usedRuns++] = count;
-        if (_opacityDepth > 0)
-        {
-            // Text makes its group a layer: whether its glyphs overlap cannot be told. The glyphs placed now add their quads to the
-            // group's bounds; ResolveGlyphs adds the ones it places.
-            MarkText();
-            foreach (GlyphInstance glyph in _glyphs.AsSpan(GlyphCount, count))
-            {
-                if (glyph.Width > 0)
-                {
-                    Accumulate(glyph.X, glyph.Y, glyph.X + glyph.Width, glyph.Y + glyph.Height);
-                }
-            }
-        }
-
         GlyphCount += count;
         if (paint >= 0)
         {
@@ -1304,12 +1555,20 @@ public sealed class DisplayList
 
     private static float Greater(float a, float b) => a > b ? a : b;
 
-    // Adds the rectangle just written to the innermost group; out of line, so that FillRect outside groups stays as it was.
+    // Adds the rectangle just written to the innermost group, through the scopes' transform and clips; out of line, so that FillRect
+    // outside groups stays as it was.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void AccumulateLastRect()
     {
         ReadOnlySpan<float> rect = _rects.AsSpan(_usedRects - FloatsPerRect, FloatsPerRect);
-        Accumulate(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]);
+        if (_state < 0)
+        {
+            // No clip and no transform the renderer applies: the rectangle is in physical pixels already.
+            Accumulate(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]);
+            return;
+        }
+
+        AccumulateLocal(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]);
     }
 
     // Adds a child's bounds to the innermost recorded group: the child overlaps the ones before it when it meets their union.
@@ -1317,7 +1576,7 @@ public sealed class DisplayList
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Accumulate(float left, float top, float right, float bottom)
     {
-        Span<GroupFrame> frames = _groupStreams!.Frames.AsSpan(0, _groupDepth);
+        Span<GroupFrame> frames = _scopes!.Frames.AsSpan(0, _groupDepth);
         for (int i = frames.Length - 1; i >= 0; i--)
         {
             ref GroupFrame frame = ref frames[i];
@@ -1339,7 +1598,7 @@ public sealed class DisplayList
     // children before ResolveGlyphs places the new glyphs.
     private void MarkText()
     {
-        foreach (ref GroupFrame frame in _groupStreams!.Frames.AsSpan(0, _groupDepth))
+        foreach (ref GroupFrame frame in _scopes!.Frames.AsSpan(0, _groupDepth))
         {
             frame.Text |= frame.Recorded;
         }
@@ -1376,12 +1635,17 @@ public sealed class DisplayList
         public TextPaint[] TextPaints = new TextPaint[16];
     }
 
-    // The groups pushed and not popped, innermost last, and the records of the frame's groups, in the order of their pushes; and
-    // the groups open while Rebuild writes the list again.
-    private sealed class GroupStreams
+    // The scopes pushed and not popped, innermost last: the kind of each, and the frames of the groups and of the clips and
+    // transforms among them. The records of the frame's groups, states, and clips, in the order of their pushes; and the groups and
+    // states open while Rebuild writes the list again (a state as -2 less its index).
+    private sealed class ScopeStreams
     {
+        public ScopeKind[] Kinds = new ScopeKind[8];
         public GroupFrame[] Frames = new GroupFrame[8];
         public GroupRecord[] Records = new GroupRecord[16];
+        public StateFrame[] StateFrames = new StateFrame[8];
+        public StateRecord[] States = new StateRecord[8];
+        public ClipCommand[] Clips = new ClipCommand[8];
         public int[] Open = new int[8];
     }
 
@@ -1398,6 +1662,30 @@ public sealed class DisplayList
         public float Bottom;
         public bool Overlap;
         public bool Text;
+    }
+
+    /// <summary>
+    /// Whether a command is written inside a group, a clip, or a transform (row R4d): each command has a copy for each, so that outside
+    /// every scope it checks one field.
+    /// </summary>
+    private interface IScope
+    {
+        /// <summary>
+        /// Gets a value indicating whether the command is written inside a scope.
+        /// </summary>
+        static abstract bool In { get; }
+    }
+
+    // Outside every scope: written as before groups, clips, and transforms.
+    private readonly struct Outside : IScope
+    {
+        public static bool In => false;
+    }
+
+    // Inside a scope: moved, kept off pixels, or added to a group's bounds as the scopes ask.
+    private readonly struct Inside : IScope
+    {
+        public static bool In => true;
     }
 
     // A glyph DrawText left room for: its instance, its request, and where it goes once its box is known.

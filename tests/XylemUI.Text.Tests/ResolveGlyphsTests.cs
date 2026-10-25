@@ -290,6 +290,80 @@ public sealed class ResolveGlyphsTests
     }
 
     /// <summary>
+    /// Text in a transform keeps its state when ResolveGlyphs splits its run where a color glyph is: every run lies between the
+    /// state's PushState and its Pop; and the glyphs it places, in the text's pixels, widen the group around them through the
+    /// transform (row R4d).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer with 日 as a color glyph, an empty atlas, and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Push the scale by 2; push 0.5; draw "H日H" at 16 px (pen 50, baseline 30), left for ResolveGlyphs; pop; pop; resolve; read.
+    ///
+    /// Expected:
+    /// - A state of text scale 2, a group, three runs (grayscale, color, grayscale), and two Pops; the group is a layer whose bounds
+    ///   are the union of the glyphs' quads, which are in the text's pixels (half the transform's), turned into physical pixels by
+    ///   the scale: the same numbers.
+    /// </remarks>
+    [Fact]
+    public void ResolveGlyphs_TextInATransform_KeepsItsStateAndWidensThroughIt()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var rasterizer = new TestRasterizer();
+        rasterizer.ColorGlyphs.Add(Nichi, false);
+        var atlas = new GlyphAtlas(rasterizer);
+        var list = new DisplayList();
+
+        list.PushTransform(System.Numerics.Matrix3x2.CreateScale(2));
+        list.PushOpacity(0.5f);
+        _ = list.DrawText(shaper.Shape(font, "H日H", TestFont.Japanese), font, 16, atlas, 50, 30, Ink);
+        list.Pop();
+        list.Pop();
+        list.ResolveGlyphs(atlas);
+
+        DisplayListReader reader = list.GetReader();
+        var seen = new List<string>();
+        GroupCommand group = default;
+        float left = float.MaxValue;
+        float top = float.MaxValue;
+        float right = float.MinValue;
+        float bottom = float.MinValue;
+        while (reader.TryNext(out CommandTag tag))
+        {
+            switch (tag)
+            {
+                case CommandTag.PushState:
+                    seen.Add($"state {reader.ReadState(out _).TextScale}");
+                    break;
+                case CommandTag.PushOpacity:
+                    group = reader.ReadGroup();
+                    seen.Add("group");
+                    break;
+                case CommandTag.GlyphRun:
+                    GlyphRunCommand run = reader.ReadGlyphRun();
+                    seen.Add(run.Coverage.ToString());
+                    foreach (GlyphInstance glyph in run.Glyphs)
+                    {
+                        (left, top) = (MathF.Min(left, glyph.X), MathF.Min(top, glyph.Y));
+                        (right, bottom) = (MathF.Max(right, glyph.X + glyph.Width), MathF.Max(bottom, glyph.Y + glyph.Height));
+                    }
+
+                    break;
+                default:
+                    reader.ReadPop();
+                    seen.Add("pop");
+                    break;
+            }
+        }
+
+        Assert.Equal(["state 2", "group", "Gray", "Color", "Gray", "pop", "pop"], seen);
+        Assert.True(group.Layer);
+        Assert.Equal(new GroupCommand(left, top, right - left, bottom - top, 0.5f, true), group);
+    }
+
+    /// <summary>
     /// ResolveGlyphs with nothing pending leaves the list as it is.
     /// </summary>
     /// <remarks>

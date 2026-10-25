@@ -22,6 +22,8 @@ public ref struct DisplayListReader
     private readonly ReadOnlySpan<CurveRecord> _curves;
     private readonly ReadOnlySpan<TextPaint> _textPaints;
     private readonly ReadOnlySpan<GroupRecord> _groups;
+    private readonly ReadOnlySpan<StateRecord> _states;
+    private readonly ReadOnlySpan<ClipCommand> _clips;
     private int _command;
     private int _rect;
     private int _color;
@@ -30,6 +32,7 @@ public ref struct DisplayListReader
     private int _shape;
     private int _curve;
     private int _group;
+    private int _state;
     private CommandTag? _current;
 
     internal DisplayListReader(DisplayList list)
@@ -45,6 +48,8 @@ public ref struct DisplayListReader
         _curves = list.Curves;
         _textPaints = list.TextPaints;
         _groups = list.Groups;
+        _states = list.States;
+        _clips = list.Clips;
         Brushes = list.Brushes;
     }
 
@@ -76,6 +81,7 @@ public ref struct DisplayListReader
                 || _shape != _shapes.Length
                 || _curve != _curves.Length
                 || _group != _groups.Length
+                || _state != _states.Length
             )
             {
                 Invariant.Fail("A display list stream has data left after its last command.");
@@ -233,11 +239,41 @@ public ref struct DisplayListReader
         ref readonly GroupRecord record = ref _groups[_group++];
         float width = MathF.Max(0, record.Right - record.Left);
         float height = MathF.Max(0, record.Bottom - record.Top);
-        return new GroupCommand(width > 0 ? record.Left : 0, height > 0 ? record.Top : 0, width, height, record.Alpha, record.Layer);
+        return new GroupCommand(width > 0 ? record.Left : 0, height > 0 ? record.Top : 0, width, height, record.Alpha, record.Layer, record.Clip);
     }
 
     /// <summary>
-    /// Reads the current command as the end of the innermost group.
+    /// Reads the current command as the start of a clip or a transform (row R4d).
+    /// </summary>
+    /// <param name="clips">The clips the state applies per pixel, at most <see cref="DisplayList.MaxRoundedClips"/>.</param>
+    /// <returns>The state the commands up to the matching <see cref="CommandTag.Pop"/> are drawn with.</returns>
+    public StateCommand ReadState(out ReadOnlySpan<ClipCommand> clips)
+    {
+        if (_current != CommandTag.PushState)
+        {
+            Invariant.Fail("ReadState was called for a command that is not a PushState.");
+        }
+
+        _current = null;
+        _color++;
+        return GetState(_state++, out clips);
+    }
+
+    /// <summary>
+    /// Returns a state read before, again: for a renderer that draws the state's commands another way inside a layer (row R4d).
+    /// </summary>
+    /// <param name="index">The state's <see cref="StateCommand.Index"/>.</param>
+    /// <param name="clips">The clips the state applies per pixel.</param>
+    /// <returns>The state.</returns>
+    public readonly StateCommand GetState(int index, out ReadOnlySpan<ClipCommand> clips)
+    {
+        ref readonly StateRecord record = ref _states[index];
+        clips = _clips.Slice(record.ClipStart, record.ClipCount);
+        return new StateCommand(record.Transform, record.TextScale, record.ClipRect, record.Bounds, index);
+    }
+
+    /// <summary>
+    /// Reads the current command as the end of the innermost group, clip, or transform.
     /// </summary>
     public void ReadPop()
     {

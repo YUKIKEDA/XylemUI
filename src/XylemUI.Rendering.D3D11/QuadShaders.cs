@@ -57,7 +57,7 @@ internal static class QuadShaders
         """
             cbuffer Target : register(b0)
             {
-                float2 InverseSize; float GrayscaleContrast; float ClearTypeContrast; float4 GammaRatios; float IsBgr; float3 Unused;
+                float2 InverseSize; float GrayscaleContrast; float ClearTypeContrast; float4 GammaRatios; float IsBgr; float Unused; float2 TargetOrigin;
             };
             Texture2DArray<float> Atlas : register(t0);
             Texture2DArray<float4> AtlasRgb : register(t1);
@@ -65,6 +65,7 @@ internal static class QuadShaders
             Buffer<float4> Shapes : register(t3);
             Buffer<float4> Brushes : register(t4);
             Texture2D<float4> Layer : register(t5);
+            Buffer<float4> States : register(t6);
             // A shader compiled with FADED (D3D11Renderer's faded variants) takes the opacity of a group that gave it to its children
             // (row R4c): a shape multiplies its color by the opacity in its sixth row, and a gradient on a line or text by the instance
             // color's alpha. Without FADED the source is the shaders' of the lists without groups, compiled to the same code: a bool
@@ -80,6 +81,41 @@ internal static class QuadShaders
             };
             struct VertexOut { float4 position : SV_Position; float4 color : COLOR; nointerpolation int4 atlas : ATLAS; nointerpolation uint shape : SHAPE; };
             struct ClearTypeOut { float4 foreground : SV_Target0; float4 alpha : SV_Target1; };
+            // A command inside a clip or a transform (row R4d) reads its state: StateRows rows from its state's index in States, as
+            // D3D11Renderer.WriteState writes them. The vertex shader transforms the quad's corners, grown by a physical pixel. The
+            // pixel shaders take the command's own position (`local`) for its distances, scaled by the transform's span for the
+            // antialiasing, and multiply by the coverage of the state's rectangle and of each rounded clip. The rectangle is taken by
+            // the distance too: four SV_ClipDistance planes (GPUI's shaders.hlsl lines 111 to 115) made the GPU time of 100 clipped
+            // cards 204 to 324 us against 118 to 174 us (frames --scopes rect). Shaders compiled without STATED read none of this:
+            // the macros below expand to the code of the commands outside every state.
+            struct StatedOut
+            {
+                float4 position : SV_Position; float4 color : COLOR; nointerpolation int4 atlas : ATLAS; nointerpolation uint shape : SHAPE;
+                float2 local : LOCAL; nointerpolation float4 rect : QUAD; nointerpolation uint state : STATE; nointerpolation float texelScale : TEXEL;
+            };
+            #ifdef STATED
+            static const uint StateRows = STATE_ROWS;
+            static float StateSpan = 1;
+            #define VS_OUT StatedOut
+            #define AT(input) input.local
+            #define AA(d) ((d) * StateSpan)
+            #define STATE_BEGIN(input) float clip = BeginState(input);
+            #define CLIPPED * clip
+            #define GRAY_AT(input) GrayAt(input)
+            #define RGB_AT(input) RgbAt(input)
+            #define COLOR_AT(input) ColorAt(input)
+            #define LAYER_TEXEL(input) int2(input.local - input.rect.xy)
+            #else
+            #define VS_OUT VertexOut
+            #define AT(input) input.position.xy
+            #define AA(d) (d)
+            #define STATE_BEGIN(input)
+            #define CLIPPED
+            #define GRAY_AT(input) Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0))
+            #define RGB_AT(input) AtlasRgb.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)).rgb
+            #define COLOR_AT(input) AtlasColor.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0))
+            #define LAYER_TEXEL(input) int2(input.position.xy) + input.atlas.xy
+            #endif
             VertexOut VS(VertexIn input)
             {
                 float2 corner = float2(input.vertexId & 1, input.vertexId >> 1);
@@ -121,7 +157,7 @@ internal static class QuadShaders
                 float d = CornerArc(max(edge.x, edge.y), first, falling ? radii.x : radii.y);
                 return CornerArc(d, second, falling ? radii.z : radii.w);
             }
-            float Coverage(float2 p, float4 rect, float4 radii) { return saturate(0.5 - RoundedRectDistance(p, rect, radii)); }
+            float Coverage(float2 p, float4 rect, float4 radii) { return saturate(0.5 - AA(RoundedRectDistance(p, rect, radii))); }
             float2 Erf(float2 x)
             {
                 float2 s = sign(x);
@@ -337,13 +373,83 @@ internal static class QuadShaders
                 float m = length(local - c * clamp(dot(local, c), 0, circle.z));
                 return max(l, m * sign(c.y * local.x - c.x * local.y));
             }
+            #ifdef STATED
+            // The state's clips at the pixel: the rectangle's coverage (a pixel of a rectangle on whole pixels is in or out), and each
+            // rounded clip's, its distance taken in its own space and scaled to physical pixels. Sets the span the commands'
+            // distances are scaled by.
+            float BeginState(StatedOut input)
+            {
+                uint row = input.state * StateRows;
+                float4 move = States.Load(row + 1);
+                float4 rect = States.Load(row + 2);
+                StateSpan = move.z;
+                float2 physical = input.position.xy + TargetOrigin;
+                float2 outside = max(rect.xy - physical, physical - rect.zw);
+                float clip = saturate(0.5 - max(outside.x, outside.y));
+                int count = int(move.w);
+                for (int i = 0; i < count; i++)
+                {
+                    uint at = row + 3 + 4 * i;
+                    float4 inverse = States.Load(at);
+                    float4 more = States.Load(at + 1);
+                    float2 q = float2(dot(physical, inverse.xz) + more.x, dot(physical, inverse.yw) + more.y);
+                    clip *= saturate(0.5 - RoundedRectDistance(q, States.Load(at + 2), States.Load(at + 3)) * more.z);
+                }
+                return clip;
+            }
+            // A glyph's texel at the pixel, sampled between the four nearest texels (Flutter samples transformed glyphs so,
+            // text_contents.cc lines 325 to 333): the pixel's place in the glyph's quad, in the text's pixels, from the glyph's
+            // origin in its page. A texel outside the glyph's box reads 0, as the padding around it in the page does.
+            float2 TexelAt(StatedOut input) { return (input.local - input.rect.xy) * input.texelScale - 0.5; }
+            bool InGlyph(StatedOut input, int2 texel) { return all(texel >= 0) && all(float2(texel) < input.rect.zw * input.texelScale); }
+            float GrayTexel(StatedOut input, int2 texel)
+            {
+                return InGlyph(input, texel) ? Atlas.Load(int4(texel + input.atlas.xy, input.atlas.z, 0)) : 0;
+            }
+            float3 RgbTexel(StatedOut input, int2 texel)
+            {
+                return InGlyph(input, texel) ? AtlasRgb.Load(int4(texel + input.atlas.xy, input.atlas.z, 0)).rgb : 0;
+            }
+            float4 ColorTexel(StatedOut input, int2 texel)
+            {
+                return InGlyph(input, texel) ? AtlasColor.Load(int4(texel + input.atlas.xy, input.atlas.z, 0)) : 0;
+            }
+            float GrayAt(StatedOut input)
+            {
+                float2 t = TexelAt(input);
+                int2 i = int2(floor(t));
+                float2 f = t - floor(t);
+                float top = lerp(GrayTexel(input, i), GrayTexel(input, i + int2(1, 0)), f.x);
+                float bottom = lerp(GrayTexel(input, i + int2(0, 1)), GrayTexel(input, i + int2(1, 1)), f.x);
+                return lerp(top, bottom, f.y);
+            }
+            float3 RgbAt(StatedOut input)
+            {
+                float2 t = TexelAt(input);
+                int2 i = int2(floor(t));
+                float2 f = t - floor(t);
+                float3 top = lerp(RgbTexel(input, i), RgbTexel(input, i + int2(1, 0)), f.x);
+                float3 bottom = lerp(RgbTexel(input, i + int2(0, 1)), RgbTexel(input, i + int2(1, 1)), f.x);
+                return lerp(top, bottom, f.y);
+            }
+            float4 ColorAt(StatedOut input)
+            {
+                float2 t = TexelAt(input);
+                int2 i = int2(floor(t));
+                float2 f = t - floor(t);
+                float4 top = lerp(ColorTexel(input, i), ColorTexel(input, i + int2(1, 0)), f.x);
+                float4 bottom = lerp(ColorTexel(input, i + int2(0, 1)), ColorTexel(input, i + int2(1, 1)), f.x);
+                return lerp(top, bottom, f.y);
+            }
+            #endif
             // A line, an ellipse, an arc, or a sector (row R4b): six rows from the instance's shape row, as D3D11Renderer.WriteCurve
             // writes them. A pixel shader of its own, so that the shapes' and the glyphs' shader does not grow with it: inside PS,
             // it made the GPU time of the frames scene 3 to 4 µs longer and that of the shapes scene 3 %. A line thinner than a pixel
             // covers the share of the pixel it lies on (the second term takes off what is past its far side).
-            float4 PSCurve(VertexOut input) : SV_Target
+            float4 PSCurve(VS_OUT input) : SV_Target
             {
-                float2 p = input.position.xy;
+                STATE_BEGIN(input)
+                float2 p = AT(input);
                 uint row = input.shape;
                 float4 straight = input.color;
                 float4 kind = Shapes.Load(row + 3);
@@ -369,9 +475,9 @@ internal static class QuadShaders
                 {
                     d = SectorDistance(p, geometry, more);
                 }
-                float alpha = saturate(0.5 - d) - saturate(0.5 - d - (kind.z > 0 ? kind.z : 1e9));
+                float alpha = saturate(0.5 - AA(d)) - saturate(0.5 - AA(d) - AA(kind.z > 0 ? kind.z : 1e9));
                 float4 color = kind.y >= 0 ? GradientColor(int(kind.y), p, box) FADE(straight.a) : Premultiply(straight);
-                return color * alpha;
+                return color * alpha CLIPPED;
             }
             // A rounded rectangle, its border, or a shadow (row R4): six rows from `row`, as D3D11Renderer.WriteShape writes them.
             float4 ShapeColor(float2 p, uint row, float4 straight)
@@ -405,33 +511,43 @@ internal static class QuadShaders
                 alpha = kind.x < 2.5 ? alpha * (1 - element) : (1 - alpha) * element;
                 return Premultiply(straight) * alpha;
             }
-            float4 PS(VertexOut input) : SV_Target
+            float4 PS(VS_OUT input) : SV_Target
             {
+                STATE_BEGIN(input)
                 if (input.shape != 0xFFFFFFFF)
                 {
-                    return ShapeColor(input.position.xy, input.shape, input.color);
+                    return ShapeColor(AT(input), input.shape, input.color) CLIPPED;
                 }
 
                 float alpha = input.color.a;
                 if (input.atlas.w != 0)
                 {
-                    return AtlasColor.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)) * alpha;
+                    return COLOR_AT(input) * alpha CLIPPED;
                 }
 
                 if (input.atlas.z >= 0)
                 {
-                    float coverage = Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0));
+                    float coverage = GRAY_AT(input);
                     float brightness = dot(input.color.rgb, float3(0.30, 0.59, 0.11));
                     float k = GrayscaleContrast * saturate(4.0 * (0.75 - brightness));
                     float contrasted = coverage * (k + 1.0) / (coverage * k + 1.0);
                     float4 g = GammaRatios;
                     alpha *= saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * brightness + g.y) * contrasted + (g.z * brightness + g.w)));
                 }
+            #ifdef STATED
+                else
+                {
+                    // A rectangle's edges, which a transform can turn off the pixels, are antialiased as a shape's.
+                    alpha *= Coverage(input.local, input.rect, 0);
+                }
+                alpha *= clip;
+            #endif
                 return float4(input.color.rgb * alpha, alpha);
             }
-            ClearTypeOut PSClearType(VertexOut input)
+            ClearTypeOut PSClearType(VS_OUT input)
             {
-                float3 coverage = AtlasRgb.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)).rgb;
+                STATE_BEGIN(input)
+                float3 coverage = RGB_AT(input);
                 coverage = IsBgr > 0.5 ? coverage.bgr : coverage;
                 float3 color = input.color.rgb;
                 float k = ClearTypeContrast * saturate(4.0 * (0.75 - dot(color, float3(0.30, 0.59, 0.11))));
@@ -440,37 +556,39 @@ internal static class QuadShaders
                 float3 corrected = saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * color + g.y) * contrasted + (g.z * color + g.w)));
                 ClearTypeOut output;
                 output.foreground = float4(color, 1.0);
-                output.alpha = float4(input.color.a * corrected, 1.0);
+                output.alpha = float4(input.color.a * corrected CLIPPED, 1.0);
                 return output;
             }
             // The premultiplied color of brushed text at the pixel (row R4): the gradient of the run's rows over the run's box.
-            float4 TextPaint(VertexOut input)
+            float4 TextPaint(VS_OUT input)
             {
                 float4 kind = Shapes.Load(input.shape + 3);
-                return GradientColor(int(kind.y), input.position.xy, Shapes.Load(input.shape + 4)) FADE(input.color.a);
+                return GradientColor(int(kind.y), AT(input), Shapes.Load(input.shape + 4)) FADE(input.color.a);
             }
             float3 Straight(float4 paint) { return paint.a > 0 ? paint.rgb / paint.a : float3(0, 0, 0); }
             // Grayscale and color glyphs with a gradient: PS's text, with the gradient's color at the pixel for the text's color.
-            float4 PSText(VertexOut input) : SV_Target
+            float4 PSText(VS_OUT input) : SV_Target
             {
+                STATE_BEGIN(input)
                 float4 paint = TextPaint(input);
                 if (input.atlas.w != 0)
                 {
-                    return AtlasColor.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)) * paint.a;
+                    return COLOR_AT(input) * paint.a CLIPPED;
                 }
 
-                float coverage = Atlas.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0));
+                float coverage = GRAY_AT(input);
                 float brightness = dot(Straight(paint), float3(0.30, 0.59, 0.11));
                 float k = GrayscaleContrast * saturate(4.0 * (0.75 - brightness));
                 float contrasted = coverage * (k + 1.0) / (coverage * k + 1.0);
                 float4 g = GammaRatios;
-                return paint * saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * brightness + g.y) * contrasted + (g.z * brightness + g.w)));
+                return paint * saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * brightness + g.y) * contrasted + (g.z * brightness + g.w))) CLIPPED;
             }
             // ClearType glyphs with a gradient: PSClearType, each channel corrected with the gradient's color at the pixel.
-            ClearTypeOut PSClearTypeText(VertexOut input)
+            ClearTypeOut PSClearTypeText(VS_OUT input)
             {
+                STATE_BEGIN(input)
                 float4 paint = TextPaint(input);
-                float3 coverage = AtlasRgb.Load(int4(int2(input.position.xy) + input.atlas.xy, input.atlas.z, 0)).rgb;
+                float3 coverage = RGB_AT(input);
                 coverage = IsBgr > 0.5 ? coverage.bgr : coverage;
                 float3 color = Straight(paint);
                 float k = ClearTypeContrast * saturate(4.0 * (0.75 - dot(color, float3(0.30, 0.59, 0.11))));
@@ -479,15 +597,45 @@ internal static class QuadShaders
                 float3 corrected = saturate(contrasted + contrasted * (1.0 - contrasted) * ((g.x * color + g.y) * contrasted + (g.z * color + g.w)));
                 ClearTypeOut output;
                 output.foreground = float4(color, 1.0);
-                output.alpha = float4(paint.a * corrected, 1.0);
+                output.alpha = float4(paint.a * corrected CLIPPED, 1.0);
                 return output;
             }
             // A layer composited into its parent (row R4c): the layer's premultiplied pixels times the group's alpha. The quad is the
             // layer's bounds in its parent's pixels, and its atlas origin is 0, so the texel is the pixel less the bounds' corner.
-            float4 PSLayer(VertexOut input) : SV_Target
+            float4 PSLayer(VS_OUT input) : SV_Target
             {
-                return Layer.Load(int3(int2(input.position.xy) + input.atlas.xy, 0)) * input.color.a;
+                STATE_BEGIN(input)
+                return Layer.Load(int3(LAYER_TEXEL(input), 0)) * input.color.a CLIPPED;
             }
+            #ifdef STATED
+            // The quad of a command in a state: its corners, grown by a physical pixel for the antialiasing of edges the transform
+            // turns, through the state's transform. A layer's composite (texelScale 0) is in physical pixels already.
+            StatedOut VSStated(VertexIn input, uint state : STATE, float texelScale : TEXELSCALE)
+            {
+                uint row = state * StateRows;
+                float4 axes = States.Load(row);
+                float4 move = States.Load(row + 1);
+                bool physicalQuad = texelScale == 0;
+                float grow = physicalQuad ? 0 : 1 / move.z;
+                float2 corner = float2(input.vertexId & 1, input.vertexId >> 1);
+                float2 local = input.rect.xy - grow + corner * (input.rect.zw + 2 * grow);
+                float2 pixel = physicalQuad ? local : float2(dot(local, axes.xz) + move.x, dot(local, axes.yw) + move.y);
+                StatedOut output;
+                float2 target = pixel - TargetOrigin;
+                output.position = float4(target.x * InverseSize.x * 2 - 1, 1 - target.y * InverseSize.y * 2, 0, 1);
+                uint c = input.color;
+                output.color = float4(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF, c >> 24) / 255.0;
+                bool solid = input.page == 0xFFFFFFFF;
+                bool color = !solid && (input.page & 0x40000000) != 0;
+                output.atlas = int4(input.atlasOrigin & 0xFFFF, input.atlasOrigin >> 16, solid ? -1 : int(input.page & 0x3FFFFFFF), color ? 1 : 0);
+                output.shape = input.shape;
+                output.local = local;
+                output.rect = input.rect;
+                output.state = state;
+                output.texelScale = texelScale;
+                return output;
+            }
+            #endif
             """u8;
 
     /// <summary>
@@ -526,19 +674,10 @@ internal static class QuadShaders
     public static ReadOnlySpan<byte> LayerPixelEntry => "PSLayer\0"u8;
 
     /// <summary>
-    /// Gets the entry point of <see cref="PixelEntry"/>'s variant for a gradient whose group gave its opacity to its children, NUL-terminated.
+    /// Gets the entry point of the vertex shader of the commands inside a clip or a transform (row R4d), NUL-terminated; it is in
+    /// the source compiled with <c>STATED</c>.
     /// </summary>
-    public static ReadOnlySpan<byte> FadedPixelEntry => "PSFaded\0"u8;
-
-    /// <summary>
-    /// Gets the entry point of <see cref="CurvePixelEntry"/>'s variant for a gradient whose group gave its opacity to its children, NUL-terminated.
-    /// </summary>
-    public static ReadOnlySpan<byte> FadedCurvePixelEntry => "PSCurveFaded\0"u8;
-
-    /// <summary>
-    /// Gets the entry point of <see cref="TextPixelEntry"/>'s variant for text whose group gave its opacity to its children, NUL-terminated.
-    /// </summary>
-    public static ReadOnlySpan<byte> FadedTextPixelEntry => "PSTextFaded\0"u8;
+    public static ReadOnlySpan<byte> StatedVertexEntry => "VSStated\0"u8;
 
     /// <summary>
     /// Gets the vertex shader model, NUL-terminated (feature level 10.0 and up).

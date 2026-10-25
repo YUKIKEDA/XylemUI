@@ -35,6 +35,9 @@ public enum CommandTag : byte
     /// <summary>The start of an opacity group (<see cref="GroupCommand"/>, row R4c).</summary>
     PushOpacity,
 
-    /// <summary>The end of the innermost group (row R4c).</summary>
+    /// <summary>The end of the innermost group, clip, or transform (rows R4c and R4d).</summary>
     Pop,
+
+    /// <summary>The start of a clip or a transform (<see cref="StateCommand"/>, row R4d).</summary>
+    PushState,
 }
