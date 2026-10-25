@@ -342,6 +342,64 @@ public sealed class ClipListTests
     }
 
     /// <summary>
+    /// Inside a transform that flattens the plane (a scale of 0), which has no inverse, a rounded clip shows nothing: its state's
+    /// rectangle and bounds are empty numbers, not NaN, and a group inside has empty bounds, so no layer is made for it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list at scale 1.
+    ///
+    /// Steps:
+    /// - Push the scale by 0; push the rounded clip (0, 0, 100, 100) of radius 10; push opacity 0.5; fill (10, 10, 40, 20) and
+    ///   (20, 20, 40, 20); pop three times. Read the states and the group.
+    ///
+    /// Expected:
+    /// - No exception; every state's rectangle and bounds are numbers, and the last one's bounds are empty; the group's width and
+    ///   height are 0.
+    /// </remarks>
+    [Fact]
+    public void Transform_Flattening_ShowsNothingInside()
+    {
+        var list = new DisplayList();
+
+        list.PushTransform(Matrix3x2.CreateScale(0));
+        list.PushClip(0, 0, 100, 100, new CornerRadii(10));
+        list.PushOpacity(0.5f);
+        list.FillRect(10, 10, 40, 20, Red);
+        list.FillRect(20, 20, 40, 20, Red);
+        list.Pop();
+        list.Pop();
+        list.Pop();
+
+        List<(StateCommand State, int Clips)> states = States(list);
+        Assert.NotEmpty(states);
+        foreach ((StateCommand state, _) in states)
+        {
+            Assert.False(HasNaN(state.ClipRect));
+            Assert.False(HasNaN(state.Bounds));
+        }
+
+        Vector4 last = states[^1].State.Bounds;
+        Assert.True(last.Z <= last.X && last.W <= last.Y);
+        DisplayListReader reader = list.GetReader();
+        GroupCommand? group = null;
+        while (reader.TryNext(out CommandTag tag))
+        {
+            if (tag == CommandTag.PushOpacity)
+            {
+                group = reader.ReadGroup();
+            }
+            else
+            {
+                Skip(ref reader, tag);
+            }
+        }
+
+        Assert.NotNull(group);
+        Assert.Equal((0f, 0f), (group.Value.Width, group.Value.Height));
+    }
+
+    /// <summary>
     /// Clips with edges or a size that are not numbers, a negative size or radius, a transform with an element that is not a
     /// number, and a Pop with nothing pushed are refused.
     /// </summary>
@@ -404,6 +462,9 @@ public sealed class ClipListTests
 
         return tags;
     }
+
+    // Each edge on its own: the edges of no clip are infinite, and their sum is not a number.
+    private static bool HasNaN(Vector4 rect) => float.IsNaN(rect.X) || float.IsNaN(rect.Y) || float.IsNaN(rect.Z) || float.IsNaN(rect.W);
 
     private static void Skip(ref DisplayListReader reader, CommandTag tag)
     {

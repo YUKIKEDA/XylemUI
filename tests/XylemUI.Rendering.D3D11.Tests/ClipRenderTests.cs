@@ -361,6 +361,44 @@ public sealed unsafe class ClipRenderTests(UiThreadFixture ui)
     }
 
     /// <summary>
+    /// Inside a transform that flattens the plane (a scale of 0), a rounded clip, a group whose children overlap, and the children
+    /// draw nothing, and no layer is made; a rectangle after them is drawn.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Push the scale by 0 about (118, 78); push the clip (40, 30, 160, 100) of radius 20; push opacity 0.5; fill (0, 0, 236, 156)
+    ///   with ink and (50, 40, 100, 60) with red of alpha 128; pop three times; fill (10, 10, 30, 30) with paper. Read every pixel.
+    ///
+    /// Expected:
+    /// - Paper in (10, 10, 30, 30) and the clear color elsewhere, each channel within 1; no layer.
+    /// </remarks>
+    [Fact]
+    public void Transform_Flattening_DrawsNothingInside() =>
+        ui.Invoke(() =>
+            ShapeRenderTests.Compare(
+                list =>
+                {
+                    list.PushTransform(Matrix3x2.CreateScale(0, new Vector2(118, 78)));
+                    list.PushClip(40, 30, 160, 100, new CornerRadii(20));
+                    list.PushOpacity(0.5f);
+                    list.FillRect(0, 0, 236, 156, Ink);
+                    list.FillRect(50, 40, 100, 60, HalfRed);
+                    list.Pop();
+                    list.Pop();
+                    list.Pop();
+                    list.FillRect(10, 10, 30, 30, Paper);
+                },
+                Window,
+                p => Inside(p, new Vector4(10, 10, 30, 30)) ? ShapeReference.Premultiply(Paper) : Vector4.Zero,
+                tolerance: 1,
+                check: renderer => Assert.Equal(0, renderer.LayerCount)
+            )
+        );
+
+    /// <summary>
     /// Past <see cref="DisplayList.MaxRoundedClips"/> rounded clips, the commands are drawn into a layer with the last clip, and the
     /// layer is composited with the clips around it: the pixels are the product of every clip's coverage.
     /// </summary>

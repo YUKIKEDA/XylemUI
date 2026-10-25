@@ -55,11 +55,16 @@ public sealed partial class DisplayList
             rect = Intersection(rect, _transformed ? Bounds(physical, edges) : edges);
             count = DropContaining(clips[..count], rect);
         }
-        else
+        else if (Matrix3x2.Invert(physical, out Matrix3x2 inverse))
         {
-            Matrix3x2.Invert(physical, out Matrix3x2 inverse);
             var clip = new ClipCommand(inverse, edges.X, edges.Y, edges.Z - edges.X, edges.W - edges.Y, fitted, Spans(physical), _opacityDepth);
             count = Merged(clips, count, clip, rect);
+        }
+        else
+        {
+            // A transform that flattens the plane (a scale of 0, as an entering animation starts from) shows nothing inside: the
+            // clip is the empty rectangle, which no pixel and no group's bounds meet (PR #268's review).
+            rect = Vector4.Zero;
         }
 
         // Past MaxRoundedClips, a layer: its children are drawn with the new clip alone, and the layer with the clips around it.
@@ -83,8 +88,15 @@ public sealed partial class DisplayList
     /// Starts a transform: the positions of the commands written until the matching <see cref="Pop"/>, in logical pixels, are
     /// transformed by <paramref name="transform"/> and then by the transforms pushed before it. A transform that only moves by
     /// whole physical pixels keeps the edges of rectangles on pixels and ClearType text; any other draws its text in grayscale, at
-    /// the larger of its scales (design §5.0.3, "ClearType"). The identity records nothing.
+    /// the larger of its scales (design §5.0.3, "ClearType"). The identity records nothing. A transform that flattens the plane
+    /// (a scale of 0) draws nothing inside it, and a clip inside it shows nothing.
     /// </summary>
+    /// <remarks>
+    /// Edges are smoothed over the distance a unit of the transform spans, the square root of its area's scale: exact for a turn and
+    /// a scale alike along both axes. A scale that differs along the axes smooths an edge across the less scaled axis over less than a
+    /// pixel and one across the more scaled axis over more: with 1 along x and 4 along y (a span of 2), the left and right edges over
+    /// half a pixel and the top and bottom ones over two pixels.
+    /// </remarks>
     /// <param name="transform">The transform, an affine one of System.Numerics.</param>
     /// <exception cref="ArgumentOutOfRangeException">An element of the matrix is not a number.</exception>
     public void PushTransform(in Matrix3x2 transform)
@@ -255,8 +267,7 @@ public sealed partial class DisplayList
         Vector4 bounds = _clipRect;
         foreach (ClipCommand clip in clips)
         {
-            Matrix3x2.Invert(clip.Inverse, out Matrix3x2 forward);
-            bounds = Intersection(bounds, Bounds(forward, new Vector4(clip.X, clip.Y, clip.X + clip.Width, clip.Y + clip.Height)));
+            bounds = Matrix3x2.Invert(clip.Inverse, out Matrix3x2 forward) ? Intersection(bounds, Bounds(forward, RectOf(clip))) : Vector4.Zero;
         }
 
         clips.CopyTo(scopes.Clips.AsSpan(_clipRecords));

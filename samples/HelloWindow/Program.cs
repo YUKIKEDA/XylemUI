@@ -6,6 +6,7 @@
 //       display list, of Draw (read, upload, issue), and of Present, and the interval between frames, as medians; the time to
 //       create the renderer (device, swap chain, and the shaders compiled at run time).
 //   S8b: a line of text in every frame (shaped, put in the atlas, drawn as a glyph run); its first glyph has ink on the screen.
+//   R4d: the first frame's rectangles in a rounded clip; the time of its Draw, which waits for the clips' shaders.
 //   F1: a second line through the font fallback: what the test font lacks takes the fonts of Windows, and an unassigned
 //       character the bundled font's .notdef; the families of its runs, and the time to split it the first time and again
 //       (XylemUI.E2E's font-fallback scenario measures the memory: Process would add about 0.29 MB to this executable).
@@ -169,6 +170,7 @@ if (frames > 0)
     Console.WriteLine(
         $"frame ms (median of {frames}): build {Median(build):F3}, draw {Median(draw):F3}, present {Median(present):F3}, interval {Median(interval):F3}"
     );
+    Console.WriteLine($"firstDraw={draw[0]:F1}ms (in a rounded clip: the wait for the clips' shaders, row R4d)");
 }
 
 bool checks = pixel == "ok" && ink == "ok";
@@ -186,11 +188,24 @@ void BuildFrame(int frame, int physicalWidth, int physicalHeight)
     atlas.BeginFrame();
     list.Reset(scale);
     list.FillRect(0, 0, 40, 40, Color.FromRgb(0x3366CC));
+
+    // The first frame draws the rectangles in a rounded clip, whose shaders the renderer compiles on its threads from its creation:
+    // its Draw waits for whatever is left of that (row R4d), which firstDraw reports.
+    if (frame == 0)
+    {
+        list.PushClip(0, 45, width, height - 45, new CornerRadii(12));
+    }
+
     for (int i = 1; i < Rectangles; i++)
     {
         float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
         float y = 50 + ((i * 11) % Math.Max(1, height - 70));
         list.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
+    }
+
+    if (frame == 0)
+    {
+        list.Pop();
     }
 
     GlyphCoverage coverage = renderer.TextRendering.Coverage;

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using TerraFX.Interop.DirectX;
@@ -90,10 +91,10 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
     private readonly ID3D11InputLayout* _inputLayout;
 
-    // The shaders of the commands inside a clip or a transform (row R4d, StatedShaders). They are compiled on a worker from the
+    // The shaders of the commands inside a clip or a transform (row R4d, StatedShaders). They are compiled on threads from the
     // renderer's creation, and waited for by the first draw of a state: compiled with the others, the ten of them made the time from
     // the launch to the first frame on the display 1,420 ms against 730 ms (row R4d).
-    private readonly Task<StatedShaders> _compiling;
+    private readonly StatedShaders? _statedShaders;
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
     private readonly ID3D11BlendState* _clearTypeBlend;
@@ -113,7 +114,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private int[] _targetLayers = new int[8];
     private DrawRange[] _draws = new DrawRange[16];
 
-    private StatedShaders? _stated;
+    private bool _statedReady;
     private ID3D11RenderTargetView* _renderTarget;
     private ID3D11Buffer* _instances;
     private ID3D11Buffer* _stateStream;
@@ -154,7 +155,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _vertexShader = CreateVertexShader(device, out _inputLayout);
 
             // The device creates shaders on any thread (ID3D11Device is free-threaded).
-            _compiling = Task.Run(() => StatedShaders.Create(_device));
+            _statedShaders = StatedShaders.Start(device);
             _pixelShader = CreatePixelShader(device, QuadShaders.PixelEntry);
             _clearTypePixelShader = CreatePixelShader(device, QuadShaders.ClearTypePixelEntry);
             _curvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry);
@@ -424,17 +425,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
         Release((IUnknown*)_targetConstants);
         Release((IUnknown*)_inputLayout);
 
-        // The worker may still compile the stated shaders: they are released once it is done. A failure of it was the first stated
-        // draw's to report.
-        if (_compiling is not null)
-        {
-            try
-            {
-                _compiling.GetAwaiter().GetResult().Dispose();
-            }
-            catch (InvalidOperationException) { }
-            catch (GpuDeviceLostException) { }
-        }
+        // The stated shaders' threads may still compile: Dispose does not wait for them, and they release what they make.
+        _statedShaders?.Abandon();
 
         _layers.Dispose();
         Release((IUnknown*)_fadedTextPixelShader);
@@ -604,7 +596,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             }
 
             ID3D11PixelShader* shader = draw.Stated
-                ? _stated!.Pixels[(int)draw.Pixel]
+                ? _statedShaders!.Pixel(draw.Pixel)
                 : draw.Pixel switch
                 {
                     PixelKind.ClearType => _clearTypePixelShader,
@@ -1030,8 +1022,17 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
-    // The stated shaders, waiting for the worker that compiles them the first time; a failure to compile is thrown here.
-    private StatedShaders Stated() => _stated ??= _compiling.GetAwaiter().GetResult();
+    // The stated shaders, waiting for the threads that compile them the first time; a failure to compile is thrown here.
+    private StatedShaders Stated()
+    {
+        if (!_statedReady)
+        {
+            _statedShaders!.Wait();
+            _statedReady = true;
+        }
+
+        return _statedShaders!;
+    }
 
     // The vertex shader of the commands inside a clip or a transform: the instance's elements and, from the second vertex buffer,
     // its state and text scale (StateRef).
@@ -2088,56 +2089,138 @@ public sealed unsafe class D3D11Renderer : IDisposable
     }
 
     // The shaders of the commands in a state (row R4d): the vertex shader, its input layout with the state stream, and a pixel shader
-    // of each kind compiled with STATED, by PixelKind.
-    private sealed class StatedShaders : IDisposable
+    // of each kind compiled with STATED, by PixelKind. Each is compiled on a thread of its own, started when the renderer is made:
+    // one after another on one thread, a first frame with a clip waited 240 ms longer than one without (startup --scopes rounded).
+    // The threads are the renderer's own, not the .NET thread pool, which an app's work can fill (the reason T5 gave its glyph
+    // workers their own threads, docs/design-decisions.md). They hold a reference to the device, so a renderer disposed before they
+    // finish does not wait for them: the last one to finish releases the shaders and the device.
+    private sealed class StatedShaders
     {
-        public ID3D11VertexShader* Vertex;
-        public ID3D11InputLayout* Layout;
-        public ID3D11PixelShader*[] Pixels = new ID3D11PixelShader*[PixelKinds];
+        private readonly object _gate = new();
+        private readonly ID3D11PixelShader*[] _pixels = new ID3D11PixelShader*[PixelKinds];
+        private ID3D11Device* _device;
+        private ID3D11VertexShader* _vertex;
+        private ID3D11InputLayout* _layout;
+        private int _pending = PixelKinds + 1;
+        private bool _abandoned;
+        private Exception? _failure;
 
-        // Each shader on a worker of its own: one after another on one worker, a first frame with a clip waited 240 ms longer than
-        // one without (startup --scopes rounded, row R4d).
-        public static StatedShaders Create(ID3D11Device* device)
+        public ID3D11VertexShader* Vertex => _vertex;
+
+        public ID3D11InputLayout* Layout => _layout;
+
+        public ID3D11PixelShader* Pixel(PixelKind kind) => _pixels[(int)kind];
+
+        // Starts the threads, each with the device; -1 is the vertex shader.
+        public static StatedShaders Start(ID3D11Device* device)
         {
-            var shaders = new StatedShaders();
-            nint address = (nint)device;
-            try
+            var shaders = new StatedShaders { _device = device };
+            _ = device->AddRef();
+            for (int kind = -1; kind < PixelKinds; kind++)
             {
-                Parallel.For(
-                    -1,
-                    PixelKinds,
-                    kind =>
-                    {
-                        var on = (ID3D11Device*)address;
-                        if (kind < 0)
-                        {
-                            shaders.Vertex = CreateStatedVertexShader(on, out shaders.Layout);
-                        }
-                        else
-                        {
-                            shaders.Pixels[kind] = CreatePixelShader(on, EntryOf((PixelKind)kind), IsFaded((PixelKind)kind), stated: true);
-                        }
-                    }
-                );
-            }
-            catch (AggregateException failed)
-            {
-                shaders.Dispose();
-                throw failed.InnerExceptions[0];
+                int which = kind;
+                var thread = new Thread(() => shaders.Make(which)) { IsBackground = true, Name = "XylemUI stated shader" };
+                thread.Start();
             }
 
             return shaders;
         }
 
-        public void Dispose()
+        // Waits for every shader; a failure to compile one is thrown here, to the first draw of a state.
+        public void Wait()
         {
-            foreach (ID3D11PixelShader* shader in Pixels)
+            lock (_gate)
             {
-                Release((IUnknown*)shader);
+                while (_pending > 0)
+                {
+                    _ = Monitor.Wait(_gate);
+                }
             }
 
-            Release((IUnknown*)Layout);
-            Release((IUnknown*)Vertex);
+            if (_failure is not null)
+            {
+                ExceptionDispatchInfo.Throw(_failure);
+            }
+        }
+
+        // The renderer is disposed: the shaders made are released now, and the ones still being made by the threads that make them.
+        public void Abandon()
+        {
+            lock (_gate)
+            {
+                _abandoned = true;
+                ReleaseMade();
+            }
+        }
+
+        private void Make(int kind)
+        {
+            ID3D11VertexShader* vertex = null;
+            ID3D11InputLayout* layout = null;
+            ID3D11PixelShader* pixel = null;
+            Exception? failure = null;
+            try
+            {
+                if (kind < 0)
+                {
+                    vertex = CreateStatedVertexShader(_device, out layout);
+                }
+                else
+                {
+                    pixel = CreatePixelShader(_device, EntryOf((PixelKind)kind), IsFaded((PixelKind)kind), stated: true);
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or GpuDeviceLostException)
+            {
+                failure = exception;
+            }
+
+            lock (_gate)
+            {
+                _failure ??= failure;
+                if (_abandoned)
+                {
+                    Release((IUnknown*)pixel);
+                    Release((IUnknown*)layout);
+                    Release((IUnknown*)vertex);
+                }
+                else if (kind < 0)
+                {
+                    _vertex = vertex;
+                    _layout = layout;
+                }
+                else
+                {
+                    _pixels[kind] = pixel;
+                }
+
+                if (--_pending == 0)
+                {
+                    // The last thread lets the device go, and with a failure the shaders made are of no use.
+                    if (_failure is not null)
+                    {
+                        ReleaseMade();
+                    }
+
+                    Release((IUnknown*)_device);
+                    _device = null;
+                    Monitor.PulseAll(_gate);
+                }
+            }
+        }
+
+        private void ReleaseMade()
+        {
+            for (int kind = 0; kind < PixelKinds; kind++)
+            {
+                Release((IUnknown*)_pixels[kind]);
+                _pixels[kind] = null;
+            }
+
+            Release((IUnknown*)_layout);
+            Release((IUnknown*)_vertex);
+            _layout = null;
+            _vertex = null;
         }
     }
 

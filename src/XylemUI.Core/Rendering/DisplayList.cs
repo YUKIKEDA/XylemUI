@@ -914,6 +914,18 @@ public sealed partial class DisplayList
             throw new ArgumentException("Bilevel text has no ClearType coverage.", nameof(aliased));
         }
 
+        // Inside a scale of 0 the text has no size to draw at: nothing is written, and the advance is the text's.
+        if (TScope.In && !(_textScale > 0))
+        {
+            long advance = 0;
+            foreach (ShapedGlyph shaped in glyphs)
+            {
+                advance += shaped.XAdvance;
+            }
+
+            return advance * (size / font.UnitsPerEm);
+        }
+
         // ClearType's coverage needs the pixels under the text, which a layer or a group's opacity hides, and which a transform
         // other than a move by whole pixels does not lay out as the subpixels (design §5.0.3, "ClearType"): there text is grayscale.
         if (TScope.In && coverage == GlyphCoverage.Rgb && TextIsGray)

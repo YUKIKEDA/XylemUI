@@ -364,6 +364,40 @@ public sealed class ResolveGlyphsTests
     }
 
     /// <summary>
+    /// Text inside a scale of 0 writes nothing and returns the advance it would have without the scale (row R4d).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an atlas, and two display lists at scale 1.
+    ///
+    /// Steps:
+    /// - Draw "H日" at 16 px into the first list; into the second, inside the scale by 0.
+    ///
+    /// Expected:
+    /// - The second's advance is the first's; it has no glyph and nothing pending, and no command between its PushState and Pop
+    ///   (its scope is left out, as it is empty).
+    /// </remarks>
+    [Fact]
+    public void DrawText_InAScaleOfZero_WritesNothing()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var atlas = new GlyphAtlas(new TestRasterizer());
+        var plain = new DisplayList();
+        var flat = new DisplayList();
+
+        float advance = plain.DrawText(shaper.Shape(font, "H日", TestFont.Japanese), font, 16, atlas, 5, 20, Ink);
+        flat.PushTransform(System.Numerics.Matrix3x2.CreateScale(0));
+        float flattened = flat.DrawText(shaper.Shape(font, "H日", TestFont.Japanese), font, 16, atlas, 5, 20, Ink);
+        flat.Pop();
+
+        Assert.Equal(advance, flattened);
+        Assert.Equal(0, flat.GlyphCount);
+        Assert.False(flat.HasPendingGlyphs);
+        Assert.Equal(0, flat.CommandCount);
+    }
+
+    /// <summary>
     /// ResolveGlyphs with nothing pending leaves the list as it is.
     /// </summary>
     /// <remarks>

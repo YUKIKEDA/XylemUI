@@ -616,7 +616,8 @@ internal static class QuadShaders
                 float4 axes = States.Load(row);
                 float4 move = States.Load(row + 1);
                 bool physicalQuad = texelScale == 0;
-                float grow = physicalQuad ? 0 : 1 / move.z;
+                // A transform that flattens the plane (span 0) is not grown: its quads have no area.
+                float grow = physicalQuad || move.z <= 0 ? 0 : 1 / move.z;
                 float2 corner = float2(input.vertexId & 1, input.vertexId >> 1);
                 float2 local = input.rect.xy - grow + corner * (input.rect.zw + 2 * grow);
                 float2 pixel = physicalQuad ? local : float2(dot(local, axes.xz) + move.x, dot(local, axes.yw) + move.y);
