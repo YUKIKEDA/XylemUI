@@ -21,6 +21,7 @@ public ref struct DisplayListReader
     private readonly ReadOnlySpan<ShapeRecord> _shapes;
     private readonly ReadOnlySpan<CurveRecord> _curves;
     private readonly ReadOnlySpan<TextPaint> _textPaints;
+    private readonly ReadOnlySpan<GroupRecord> _groups;
     private int _command;
     private int _rect;
     private int _color;
@@ -28,6 +29,7 @@ public ref struct DisplayListReader
     private int _glyph;
     private int _shape;
     private int _curve;
+    private int _group;
     private CommandTag? _current;
 
     internal DisplayListReader(DisplayList list)
@@ -42,6 +44,7 @@ public ref struct DisplayListReader
         _shapes = list.Shapes;
         _curves = list.Curves;
         _textPaints = list.TextPaints;
+        _groups = list.Groups;
         Brushes = list.Brushes;
     }
 
@@ -72,6 +75,7 @@ public ref struct DisplayListReader
                 || _glyph != _glyphs.Length
                 || _shape != _shapes.Length
                 || _curve != _curves.Length
+                || _group != _groups.Length
             )
             {
                 Invariant.Fail("A display list stream has data left after its last command.");
@@ -211,6 +215,39 @@ public ref struct DisplayListReader
         Color color = Unpack(_colors[_color++]);
         ref readonly ShapeRecord record = ref _shapes[_shape++];
         return new ShadowCommand(rect[0], rect[1], rect[2], rect[3], record.Radii, color, record.Offset, record.Sigma, record.Spread, record.Inset);
+    }
+
+    /// <summary>
+    /// Reads the current command as the start of an opacity group.
+    /// </summary>
+    /// <returns>The group. An empty group (its bounds have no area) has nothing to draw.</returns>
+    public GroupCommand ReadGroup()
+    {
+        if (_current != CommandTag.PushOpacity)
+        {
+            Invariant.Fail("ReadGroup was called for a command that is not a PushOpacity.");
+        }
+
+        _current = null;
+        _color++;
+        ref readonly GroupRecord record = ref _groups[_group++];
+        float width = MathF.Max(0, record.Right - record.Left);
+        float height = MathF.Max(0, record.Bottom - record.Top);
+        return new GroupCommand(width > 0 ? record.Left : 0, height > 0 ? record.Top : 0, width, height, record.Alpha, record.Layer);
+    }
+
+    /// <summary>
+    /// Reads the current command as the end of the innermost group.
+    /// </summary>
+    public void ReadPop()
+    {
+        if (_current != CommandTag.Pop)
+        {
+            Invariant.Fail("ReadPop was called for a command that is not a Pop.");
+        }
+
+        _current = null;
+        _color++;
     }
 
     private static Color Unpack(uint packed) => new((byte)packed, (byte)(packed >> 8), (byte)(packed >> 16), (byte)(packed >> 24));

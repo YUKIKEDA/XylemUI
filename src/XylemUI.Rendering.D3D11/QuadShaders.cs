@@ -64,6 +64,16 @@ internal static class QuadShaders
             Texture2DArray<float4> AtlasColor : register(t2);
             Buffer<float4> Shapes : register(t3);
             Buffer<float4> Brushes : register(t4);
+            Texture2D<float4> Layer : register(t5);
+            // A shader compiled with FADED (D3D11Renderer's faded variants) takes the opacity of a group that gave it to its children
+            // (row R4c): a shape multiplies its color by the opacity in its sixth row, and a gradient on a line or text by the instance
+            // color's alpha. Without FADED the source is the shaders' of the lists without groups, compiled to the same code: a bool
+            // parameter folded to false instead made the compiler order PS differently, and the shapes scene's GPU time 2 % longer.
+            #ifdef FADED
+            #define FADE(alpha) * (alpha)
+            #else
+            #define FADE(alpha)
+            #endif
             struct VertexIn
             {
                 float4 rect : RECT; uint color : COLOR; uint atlasOrigin : ATLAS; uint page : PAGE; uint shape : SHAPE; uint vertexId : SV_VertexID;
@@ -360,7 +370,7 @@ internal static class QuadShaders
                     d = SectorDistance(p, geometry, more);
                 }
                 float alpha = saturate(0.5 - d) - saturate(0.5 - d - (kind.z > 0 ? kind.z : 1e9));
-                float4 color = kind.y >= 0 ? GradientColor(int(kind.y), p, box) : Premultiply(straight);
+                float4 color = kind.y >= 0 ? GradientColor(int(kind.y), p, box) FADE(straight.a) : Premultiply(straight);
                 return color * alpha;
             }
             // A rounded rectangle, its border, or a shadow (row R4): six rows from `row`, as D3D11Renderer.WriteShape writes them.
@@ -387,7 +397,8 @@ internal static class QuadShaders
                         // (GPUI's over, shaders.hlsl lines 840 to 844): a translucent border shows the fill under it.
                         fill = lerp(border + fill * (1 - border.a), fill, inside);
                     }
-                    return fill * outer;
+                    // A group's opacity given to its children multiplies the shape as a whole, its border over its fill (row R4c).
+                    return fill * outer FADE(elementRadii.x);
                 }
                 float alpha = BlurredRect(p, rect, radii, kind.w);
                 float element = Coverage(p, second, elementRadii);
@@ -436,7 +447,7 @@ internal static class QuadShaders
             float4 TextPaint(VertexOut input)
             {
                 float4 kind = Shapes.Load(input.shape + 3);
-                return GradientColor(int(kind.y), input.position.xy, Shapes.Load(input.shape + 4));
+                return GradientColor(int(kind.y), input.position.xy, Shapes.Load(input.shape + 4)) FADE(input.color.a);
             }
             float3 Straight(float4 paint) { return paint.a > 0 ? paint.rgb / paint.a : float3(0, 0, 0); }
             // Grayscale and color glyphs with a gradient: PS's text, with the gradient's color at the pixel for the text's color.
@@ -471,6 +482,12 @@ internal static class QuadShaders
                 output.alpha = float4(paint.a * corrected, 1.0);
                 return output;
             }
+            // A layer composited into its parent (row R4c): the layer's premultiplied pixels times the group's alpha. The quad is the
+            // layer's bounds in its parent's pixels, and its atlas origin is 0, so the texel is the pixel less the bounds' corner.
+            float4 PSLayer(VertexOut input) : SV_Target
+            {
+                return Layer.Load(int3(int2(input.position.xy) + input.atlas.xy, 0)) * input.color.a;
+            }
             """u8;
 
     /// <summary>
@@ -502,6 +519,26 @@ internal static class QuadShaders
     /// Gets the entry point of the pixel shader of ClearType glyphs with a gradient, NUL-terminated.
     /// </summary>
     public static ReadOnlySpan<byte> ClearTypeTextPixelEntry => "PSClearTypeText\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of the pixel shader that composites a layer into its parent, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> LayerPixelEntry => "PSLayer\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of <see cref="PixelEntry"/>'s variant for a gradient whose group gave its opacity to its children, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> FadedPixelEntry => "PSFaded\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of <see cref="CurvePixelEntry"/>'s variant for a gradient whose group gave its opacity to its children, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> FadedCurvePixelEntry => "PSCurveFaded\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of <see cref="TextPixelEntry"/>'s variant for text whose group gave its opacity to its children, NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> FadedTextPixelEntry => "PSTextFaded\0"u8;
 
     /// <summary>
     /// Gets the vertex shader model, NUL-terminated (feature level 10.0 and up).
