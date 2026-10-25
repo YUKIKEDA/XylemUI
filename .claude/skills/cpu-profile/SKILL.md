@@ -63,6 +63,12 @@ xperf -i $etl -symbols -o "$scratch\stacks.txt" -a stack -butterfly 50 -process 
 
 In a NativeAOT binary, GC and allocation helpers appear as runtime functions (`RhpNewFast`, `RhpGcAlloc`, `WKS::gc_heap::*`). Their inclusive share is the cost of allocation and collection; report it separately from the frame stages. Frames shown as `ntdll.dll!***unknown***` still have an RVA; resolve it with `dumpbin /exports C:\Windows\System32\ntdll.dll`.
 
+`frames N` presents with the vertical sync, so a run lasts N / 60 seconds: in R4c `frames 20000 --curves` took about 5.5 minutes for each build. Choose N for the length of run the samples need.
+
+### Comparing two builds
+
+To find where a build is slower than main, profile both the same way and compare the leaf weights function by function: sum the weight of each `XylemUI.E2E.exe!` line of `profile -detail` by name, join the two lists, and sort by the difference. A function that exists in one build only is code that was inlined in the other (R4c: `Faded<NoGroups>` and `WriteGlyphRun` showed up as functions of their own; `Memmove` grew under a copy of a command). Then compare the functions' instructions: `dumpbin /disasm` of each published executable, the lines of one function with the addresses taken out, `diff`ed. The count tells whether the code grew, and the diff shows what grew (in R4c, four more XMM registers saved in `WriteCurve`). See `.cursor/rules/bench.mdc` for when a remaining difference may be called code placement.
+
 ## NativeAOT: count hardware events with VTune
 
 `benchmarks/counters/instructions.ps1` counts the instructions and cycles of one relayout for pairs of builds; `-Events` adds cache, branch, and memory events, and `summarize.py` reads the reports (`docs/benchmarks/l8-counters.md`).
