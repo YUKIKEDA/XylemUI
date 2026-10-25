@@ -2283,12 +2283,14 @@ public void PushClip(float x, float y, float width, float height, in CornerRadii
 public void PushTransform(in Matrix3x2 transform);                                          // System.Numerics、R4d
 public void Pop();
 
-// 利用者が描く関数に渡す値型（R4e）。描く命令は DisplayList と同じ名前で、ヒット領域も書く。
+// 利用者が描く関数に渡す値型（R4e）。DisplayList と描くノードを持つ。描く命令（FillRect、DrawText など）は
+// DisplayList と同じ名前と引数で、ヒット領域も書く。
 public readonly ref struct DrawingContext
 {
     public DrawingScope PushOpacity(float alpha);
     public DrawingScope PushClip(float x, float y, float width, float height, in CornerRadii radii);
     public DrawingScope PushTransform(in Matrix3x2 transform);
+    public void HitRegion(float x, float y, float width, float height, in CornerRadii radii);   // 描くノードの当たり（論理座標）
 }
 
 // using で終える。Dispose が Pop を呼ぶ。確保は無い（Avalonia の PushedState と同じ形）。
@@ -2338,8 +2340,16 @@ public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
   - 変換の中のグリフは、変換の拡大率の大きいほうの大きさでアトラスに描き、回転と斜めは双線形でサンプルする（Flutter の `text_contents.cc` 216〜235・325〜333 行目）。グレースケールで描く（上の契約）。双線形は 4 つのテクセルを読み、グリフの箱の外は 0 とする（アトラスのグリフの周りの 1 画素の余白と同じ）
   - 文字の拡大率は状態が持つ。グリフの箱とアトラスのテクセルは、ほかの命令の座標より拡大率だけ細かい画素にあり、レンダラが拡大率で割って命令の座標に戻す。物理画素で与えるグリフの run（`GlyphRun`）は、拡大率 1 の状態を自分で書く。グリフのインスタンスは今の整数の矩形のままで、回転した四角形は頂点シェーダが状態の変換から作る
   - 拡大率はアトラスのキー（`GlyphKey.PixelSize`）に入るので、拡大率が毎フレーム変わる変換の中の文字は、フレームごとに新しいグリフをアトラスに描く。同じ 1 行を 10 行（毎フレーム新しいグリフが約 23 個）拡大率を変えながら描く場面（`frames --scopes zoom`）の表示リストの段は 358〜381 µs で、拡大率を変えない場面の 50〜52 µs より約 310 µs 長かった（p95 は 467〜483 µs）。グリフ 1 つ約 13 µs で、T5 のワーカーが初めて出るグリフを描く費用（8 個で 281〜555 µs、1 つ 35〜69 µs、`docs/benchmarks/t5-glyph-workers.md`）に収まる
-- **ヒット判定（Q8）:** §7 の `HitTestList` の項目は、ノードの矩形と角の半径、クリップ（まとめた矩形と、上限までの角丸）、累積の変換の逆を持つ。点は、描画と同じ距離の式で、ノードの角丸の内側で、どのクリップの内側でもあるときに当たる。Flutter と Avalonia は角丸のクリップを矩形で判定するので、見えない角の子に当たる（`proxy_box.dart` 1733〜1742 行目、`RenderDataStream.HitTest.cs` 85〜91 行目）
-- **`DrawingContext`（Q9）:** 表示リストとヒットテストの一覧の両方に書く値型で、利用者が描く関数に渡す（GPUI の `canvas`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ）。`Push*` は `using` で終える `DrawingScope` を返す。どのノードのヒット領域を書くか、利用者の関数をいつ呼ぶかは、R4e で V1 の描画の段と一緒に決める
+- **ヒット判定（Q8）:** §7 の `HitTestList` の項目は、ノードの矩形と角の半径を持ち、クリップ（まとめた矩形と、上限までの角丸）と変換は表示リストの状態から読む（R4e の Grill）。点は、描画と同じ距離の式で、ノードの角丸の内側で、どのクリップの内側でもあるときに当たる。Flutter の `ClipRRect` は、`clipper` を渡さないと大きさの矩形で判定し（渡すと `RRect.contains` で角まで判定する）、Avalonia は表示リストの中の角丸のクリップを矩形で判定するので、見えない角の子に当たる（`proxy_box.dart` 1733〜1742 行目、`RenderDataStream.HitTest.cs` 85〜91 行目）
+- **`DrawingContext`（Q9）:** 表示リストとヒットテストの一覧の両方に書く値型で、利用者が描く関数に渡す（GPUI の `canvas`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ）。`Push*` は `using` で終える `DrawingScope` を返す
+- **ヒット領域と `DrawingContext`（R4e の Grill でオーナーが決定、Issue #272）:** GPUI・Flutter・Avalonia を読んで決めた（Issue #272 に行番号）
+  - **書き方:** 描く関数は `DrawingContext.HitRegion` で当たりを明示する（GPUI の `insert_hitbox` と同じ形、`crates/gpui/src/window.rs` 5205 行目）。描いた命令から当たりを作らない（Avalonia は命令ごとに判定し、背景を描かない部品は当たらない）。レイアウトの矩形を当たりにもしない（Flutter の `CustomPainter.hitTest` の既定は矩形全体）。フレームワークの部品も、自分の箱（矩形と角の半径）を同じ `HitRegion` で書く
+  - **書くノード:** ポインタのハンドラ・ホバー・カーソルを持つノードだけが書く（GPUI の `should_insert_hitbox`、`elements/div.rs` 2407〜2432 行目）。飾りのノードは後ろへのポインタを遮らない（GPUI と、Flutter の既定 `deferToChild`）。ハンドラが無くても遮る印（GPUI の `BlockMouse`、Flutter の `opaque`）は行 V1 で決める（ポップアップの行 P02 で、前面のノードが後ろを遮る場面に要る）。capture と bubble の経路は、当たったノードから木の親をたどって作る
+  - **呼ぶ時機:** 利用者の描く関数は、表示リストを作るたびに呼ぶ（§5.0.1 の全体線形再構築。GPUI と同じ）。ヒット領域も表示リストと一緒に作り直す。無効にされたときだけ呼んで命令を取っておく形（Avalonia、Flutter の `markNeedsPaint`）は採らない。重い描画を取っておく仕組み（Flutter の `RepaintBoundary`）は、要るという数字が出たら行を立てる。どのノードの関数を呼ぶかの順と段は、行 V1 の描画の段が作る（roadmap の行 V1 に書いた）
+  - **クリップと変換:** 項目は、ノードの矩形と角の半径を命令と同じ座標（物理画素、移動を足し、整数の画素の移動なら辺を画素に置いた値）で持ち、表示リストの状態の番号（R4d の `StateRecord`：変換、まとめた矩形、上限までの角丸）を持つ。クリップの層の中の項目は、層を重ねる状態も、グループの記録を通してたどる。描画と同じ値と同じ距離の式で判定するので、見える画素と当たりが一致する
+  - **座標:** `HitRegion` は論理座標で受け取り、表示リストの命令と同じ倍率と丸めで物理画素の項目にする。`HitTest` は、Win32 のクライアント座標（物理画素）をそのまま受け取る。論理座標に割ってから掛け直すと、描画の画素の丸めと当たりが食い違うことがあるためである。§6.1.1 の「ポインター」の倍率で割る変換は、当たったノードのハンドラに渡す座標にだけ掛ける
+  - **置き場:** 一覧は `DisplayList` の中に置き、同じ `Reset` とスコープの積み重ねを使う。ヒット領域だけを書いたスコープも「何も描かなかったスコープ」として捨てない
+  - **確かめ方:** 点を 1 つずつ当て、CPU で計算した描画の覆い（0.5 以上）と一致する。端の場合として、角丸の角のすぐ外、回転した角丸のクリップの中、上限を超えた入れ子のクリップ（層）の中、拡大率 0 の変換の中（何も当たらない）、重なったノードの手前と奥を入れる。費用は、下の R4c・R4d の「確かめ方」の場面（ヒット領域も無い）に加えて、項目を書く費用（1 項目の ns）と 1,000 項目の判定の時間を測る。どれも割り当て 0
 - **確かめ方:** WARP の画素を CPU の基準と比べる（R4a・R4b と同じ）。仕様の端の場合として、重なる子と重ならない子のグループ、入れ子のグループ、文字の入ったグループ、描き先の外へ大きく出る層と描き先の外だけにある層、プールの上限で作れない層、NaN と範囲外の不透明度、変換の中のクリップの辺と子の矩形の辺、上限を超える入れ子の角丸のクリップ、回転した変換の中の角丸のクリップとグリフ、整数と端数の平行移動の中の ClearType を入れる。費用は、層・クリップ・変換の無い場面（`frames`・`frames --shapes`・`frames --curves`）が main とばらつきの範囲で同じであることを確かめる
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
@@ -2819,7 +2829,7 @@ internal sealed class LinuxPlatform : IPlatform
   - `WM_GETDPISCALEDSIZE` は扱わない（3 つとも扱わない）
 - **ウィンドウの大きさ:** `Win32Window` は、クライアント領域の大きさを論理座標で受け取る。作った後に、そのモニタの倍率と枠の厚さ（`AdjustWindowRectExForDpi`）から外の大きさを決め直す（GPUI・Avalonia と同じ。Flutter は作る前に主モニタの倍率を使う）。`ClientSize` と同期の描画が渡す大きさは、レンダラが使うので画素のままである
 - **レイアウトの根の大きさ:** `Invalidation.NotifyWindowResized`（§2.4.1）に渡す大きさは論理座標で、ウィンドウと木をつなぐ側が、画素の `ClientSize` を `ScaleFactor` で割って渡す。割り切れなければ小数になり（125 % で 1,001 画素なら 800.8）、レイアウトは上の 1 のとおり丸めない（PR #232 のレビュー）
-- **ポインター:** 入力の座標を倍率で割って論理座標にすること（Avalonia・GPUI）は、行 V1（Button がクリックできる）で入れる
+- **ポインター:** 入力の座標を倍率で割って論理座標にすること（Avalonia・GPUI）は、行 V1（Button がクリックできる）で入れる。割るのはハンドラに渡す座標で、ヒットテストは物理画素の座標のまま判定する（§5.0「ヒット領域と `DrawingContext`」の「座標」、R4e の Grill）
 
 ### 6.2 AT-SPIのD-Bus依存
 
@@ -2840,9 +2850,9 @@ AT-SPIはD-Bus IPCを前提とするプロトコルであり、SDL3はD-Busの�
 ## 7. 入力 / インタラクション
 
 - **イベントディスパッチ**: DOM方式（capture+bubble）を採用。モーダルのフォーカストラップとグローバル/ローカルショートカットの共存に伝播の概念が必須で、WPF/Avaloniaも同じ理由でTunneling+Bubblingを採用している。Fine-grained reactive（§2）の各ノードが自スコープでハンドラを登録する設計とも整合する。メッセージキュー方式(Elm)は中央集権的でノード単位に閉じる設計思想と衝突するため却下。
-- **ヒットテスト**: v1 の正本は DisplayList 構築と同時に作るフラットな `HitTestList` である。入力は直近完成リストを末尾（最前面）から走査する。祖先への木登りはしない。空間索引は持たない。将来 Canvas 等で O(N) がボトルネックになった場合に備え `IHitTester` で差し替え可能にしておく。木探索実装は将来の `TreeHitTester` 用であり、v1 の入力経路では使わない。ヒット領域は矩形と角丸の矩形で、任意のパスの当たり判定は行 R5 で入れる（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。項目は角丸のクリップも持ち、描画と同じ距離の式で角まで判定する（§5.0「層・クリップ・変換・`DrawingContext` の API」、R4c の Grill。`HitTestList` は行 R4e で作る）。
+- **ヒットテスト**: v1 の正本は DisplayList 構築と同時に作るフラットな `HitTestList` である。入力は直近完成リストを末尾（最前面）から走査する。祖先への木登りはしない。空間索引は持たない。将来 Canvas 等で O(N) がボトルネックになった場合に備え `IHitTester` で差し替え可能にしておく。木探索実装は将来の `TreeHitTester` 用であり、v1 の入力経路では使わない。ヒット領域は矩形と角丸の矩形で、任意のパスの当たり判定は行 R5 で入れる（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。項目は表示リストの状態の番号を通して角丸のクリップを判定し、描画と同じ距離の式で角まで判定する（§5.0「層・クリップ・変換・`DrawingContext` の API」、R4c の Grill。`HitTestList` は行 R4e で作る）。
 
-**Transform:** DisplayList 構築中に累積行列をスタックし、各 `HitTestEntry` に `InverseTransform` とクリップ済み `EffectiveBounds` を書く。逆行列は `Matrix3x2.Invert` で求める。
+**Transform とクリップ:** 項目は表示リストの状態の番号を持ち、変換とクリップを写さない（R4e の Grill）。判定は、点を状態の変換の逆（`Matrix3x2.Invert`。逆行列が無い変換の中では何も当たらない）でノードの座標に移し、ノードの角丸と、状態のまとめた矩形と角丸のクリップを、描画と同じ距離の式で試す。クリップの層の中の項目は、層を重ねる状態も試す。
 
 **HitTestList の無効化:** Paint とは別の寿命を持たせない。次のいずれかが変わったら DisplayList と同時に再構築する。
 
@@ -2857,30 +2867,23 @@ HitTestList is valid iff the producing frame's
 ```csharp
 internal readonly record struct HitTestEntry(
     NodeHandle Node,
-    Rect EffectiveBounds,          // 累積クリップ適用済みの有効ヒット領域（矩形のクリップをまとめた後）
-    CornerRadii Radii,             // ノードの角の半径（R4c の Grill）
-    int Clips,                     // 角丸のクリップの並びの始まり（上限までの角丸。並びの形は行 R4e で決める）
-    Matrix3x2 InverseTransform);   // このノードに至るまでの累積変換の逆行列
+    float Left, float Top, float Right, float Bottom,   // ノードの矩形（命令と同じ座標: 物理画素、移動を足し、画素に置いた値）
+    CornerRadii Radii,             // ノードの角の半径（物理画素、R4c の Grill）
+    int State,                     // 表示リストの状態の番号（R4d の StateRecord）。状態の外なら -1
+    int Group);                    // 項目を囲む最も内側のクリップの層のグループの番号。無ければ -1（層を重ねる状態をたどる）
 
-internal sealed class HitTestList
+// DisplayList が持ち、同じ Reset で空にする。配列は使い回す（R4e の Grill）。
+internal static NodeHandle HitTest(DisplayList list, Vector2 physicalPoint)
 {
-    // DisplayList構築(§5.0)と並行して構築する。FrameResource と同じく使い回す
-    internal readonly List<HitTestEntry> Entries = new();
-}
-
-internal static NodeHandle? HitTest(HitTestList list, Vector2 point)
-{
-    // 末尾(最前面)から走査。ノードの角丸と、どの角丸のクリップの内側にも収まった最初のノードを返す
-    var entries = CollectionsMarshal.AsSpan(list.Entries);
+    // 末尾(最前面)から走査。ノードの角丸と、状態のクリップと、囲むクリップの層の状態に収まった最初のノードを返す。
+    // 無ければ default（どのノードにも当たらない）
+    ReadOnlySpan<HitTestEntry> entries = list.HitEntries;
     for (int i = entries.Length - 1; i >= 0; i--)
     {
-        ref readonly var entry = ref entries[i];
-        var localPoint = Vector2.Transform(point, entry.InverseTransform);
-        if (entry.EffectiveBounds.Contains(localPoint)
-            && InsideRounded(localPoint, entry)            // 描画と同じ距離の式（§5.0 の角丸の矩形）
-            && InsideClips(list, entry, point)) return entry.Node;
+        ref readonly HitTestEntry entry = ref entries[i];
+        if (Inside(list, entry, physicalPoint)) return entry.Node;
     }
-    return null;
+    return default;
 }
 ```
 - **ドラッグ&ドロップ**: アプリ内はポインタキャプチャ＋独自視覚フィードバックで自前実装（OS D&D特有のレイテンシを回避、Chromium/Flutterと同方式）。アプリ外連携は各OSのネイティブD&D APIを§6のウィンドウ管理層に接続する形で個別実装（Windows の `IDropTarget` は OS から呼ばれる COM なので、§4.4.1 の UIA と同じく、作り方をその行で測って決める）。
