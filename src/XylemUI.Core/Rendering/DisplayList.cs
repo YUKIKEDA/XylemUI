@@ -200,6 +200,8 @@ public sealed partial class DisplayList
         _textScale = 1;
         _state = -1;
         _clipRect = NoClip;
+        _hitCount = 0;
+        _clipLayer = -1;
     }
 
     /// <summary>
@@ -315,13 +317,23 @@ public sealed partial class DisplayList
         frame.Recorded = true;
         frame.Command = CommandCount;
         frame.Record = _groupRecords;
+        frame.Hits = _hitCount;
+        frame.ClipLayer = _clipLayer;
         frame.Left = float.PositiveInfinity;
         frame.Top = float.PositiveInfinity;
         frame.Right = float.NegativeInfinity;
         frame.Bottom = float.NegativeInfinity;
         _commands[CommandCount++] = CommandTag.PushOpacity;
         _colors[_usedColors++] = 0;
-        scopes.Records[_groupRecords++] = new GroupRecord { Alpha = alpha, Clip = clip };
+        scopes.Records[_groupRecords] = new GroupRecord
+        {
+            Alpha = alpha,
+            Clip = clip,
+            State = _state,
+            ClipLayer = _clipLayer,
+        };
+        _clipLayer = clip ? _groupRecords : _clipLayer;
+        _groupRecords++;
         _opacityDepth++;
         UpdateMode();
     }
@@ -337,10 +349,12 @@ public sealed partial class DisplayList
         }
 
         _opacityDepth--;
+        _clipLayer = frame.ClipLayer;
         UpdateMode();
-        if (CommandCount - 1 == frame.Command)
+        if (CommandCount - 1 == frame.Command && _hitCount == frame.Hits)
         {
-            // Nothing was drawn in the group: it leaves the list, as Avalonia rewinds an empty scope.
+            // Nothing was drawn in the group and no hit region was written: it leaves the list, as Avalonia rewinds an empty scope. A
+            // region's group and state stay (row R4e), and the renderer skips a layer with no bounds.
             CommandCount--;
             _usedColors--;
             _groupRecords--;
@@ -1674,6 +1688,8 @@ public sealed partial class DisplayList
         public float Bottom;
         public bool Overlap;
         public bool Text;
+        public int Hits;
+        public int ClipLayer;
     }
 
     /// <summary>
