@@ -2111,7 +2111,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
         public ID3D11PixelShader* Pixel(PixelKind kind) => _pixels[(int)kind];
 
-        // Starts the threads, each with the device; -1 is the vertex shader.
+        // Starts the threads, each with the device; -1 is the vertex shader. A shader whose thread does not start is made on the
+        // calling thread, so every shader is counted and Wait returns (PR #268's review).
         public static StatedShaders Start(ID3D11Device* device)
         {
             var shaders = new StatedShaders { _device = device };
@@ -2119,8 +2120,15 @@ public sealed unsafe class D3D11Renderer : IDisposable
             for (int kind = -1; kind < PixelKinds; kind++)
             {
                 int which = kind;
-                var thread = new Thread(() => shaders.Make(which)) { IsBackground = true, Name = "XylemUI stated shader" };
-                thread.Start();
+                try
+                {
+                    var thread = new Thread(() => shaders.Make(which)) { IsBackground = true, Name = "XylemUI stated shader" };
+                    thread.Start();
+                }
+                catch (Exception exception) when (exception is OutOfMemoryException or ThreadStartException)
+                {
+                    shaders.Make(which);
+                }
             }
 
             return shaders;
