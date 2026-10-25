@@ -100,7 +100,8 @@ function Get-Source($lock) {
 
 $vcvars = Get-VcVars
 $script = (Get-FileHash -Algorithm SHA256 $PSCommandPath).Hash.ToLowerInvariant()
-foreach ($lock in Get-Locks) {
+# A line with no CMake options is data for a generator (unicode-ucd, tools/UnicodeTableGen), not a library to build.
+foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
     $stamp = Join-Path $out "$($lock.Name).stamp"
     # The stamp covers the script too: a change to the build options builds again.
     $expected = "$($lock.Version) $($lock.Sha256) $script"

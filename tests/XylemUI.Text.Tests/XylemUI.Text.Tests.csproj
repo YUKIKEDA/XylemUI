@@ -18,5 +18,7 @@
   <ItemGroup>
     <None Include="Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Png\PngSuite\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Unicode conformance tests, copied from UCD.zip by tools/UnicodeTableGen (design §8.13). -->
+    <None Include="Unicode\*.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

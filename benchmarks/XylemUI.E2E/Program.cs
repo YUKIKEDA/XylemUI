@@ -23,6 +23,7 @@
 //   glyph-resolve [runs]       ResolveGlyphs for a frame of 1 to 431 new glyphs, and of emoji, on 1, 2, and 4 threads (row T5)
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
 //   hit-region                 writing a hit region, and testing a point against 1,000 that miss it, plain and in a clip (row R4e)
+//   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
 //   curves                     the lines, ellipses, and arcs of row R4b, to compare with benchmarks/compare/curves.html
 //   dpi-awareness              whether the process is per-monitor DPI aware (V2) when fonts and glyphs come before the window (row W1)
@@ -80,6 +81,7 @@ return scenario switch
         grouped: args.Contains("--grouped")
     ),
     "hit-region" => HitCost.Run(),
+    "segment" => SegmentCost.Run(),
     "shapes" => ShapeGallery.Run(),
     "curves" => CurveGallery.Run(),
     "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),
