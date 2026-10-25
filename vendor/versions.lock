@@ -3,4 +3,7 @@
 # The URLs are tried in order; every download is checked against the SHA-256. Changing a line rebuilds the library.
 # A version is taken once it has been out for two weeks, except a security fix, which is taken at once
 # (.cursor/rules/dependencies.mdc).
+# A line whose name has no CMake options in vendor/build.ps1 is data, not a library: unicode-ucd is the Unicode Character
+# Database that tools/UnicodeTableGen generates the text pipeline's tables from (design §8.13).
 harfbuzz  14.5.1  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz
+unicode-ucd  18.0.0  7b3e555514060b92290d154f53655c5eb0fa62b16eb04c03434ff72d1a66a0d8  https://www.unicode.org/Public/18.0.0/ucd/UCD.zip

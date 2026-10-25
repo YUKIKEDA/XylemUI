@@ -41,7 +41,9 @@ public static class FontFallback
 
     /// <summary>
     /// Splits <paramref name="text"/> into the runs of the fonts that render it, in order, and writes them into
-    /// <paramref name="runs"/>, which is cleared first. Neighbouring matches of the same font and scale join one run.
+    /// <paramref name="runs"/>, which is cleared first. Neighbouring matches of the same font and scale join one run. A run never
+    /// ends inside a grapheme cluster (UAX #29): a match that does is taken on to the end of the cluster, so the font of the
+    /// cluster's base character draws the whole cluster (design §4.1, "Line breaking and grapheme clusters").
     /// </summary>
     /// <param name="provider">The fonts of the OS.</param>
     /// <param name="text">The text.</param>
@@ -63,16 +65,25 @@ public static class FontFallback
             }
 
             Font font = match.Font!;
+
+            // Checked at the run's end alone, not by walking the run: most texts are one run, which ends at the text's end.
+            int end = start + match.Length;
+            while (!Unicode.Graphemes.IsBoundary(text, end))
+            {
+                end += char.IsHighSurrogate(text[end]) && end + 1 < text.Length && char.IsLowSurrogate(text[end + 1]) ? 2 : 1;
+            }
+
+            int length = end - start;
             if (runs.Count > 0 && runs[^1] is var last && ReferenceEquals(last.Font, font) && last.Scale == match.Scale)
             {
-                runs[^1] = last with { Length = last.Length + match.Length };
+                runs[^1] = last with { Length = last.Length + length };
             }
             else
             {
-                runs.Add(new FontRun(font, start, match.Length, match.Scale));
+                runs.Add(new FontRun(font, start, length, match.Scale));
             }
 
-            start += match.Length;
+            start += length;
         }
     }
 

@@ -128,6 +128,36 @@ public sealed class FontFallbackTests
     }
 
     // Answers the matches in order, and records where it was asked.
+    /// <summary>
+    /// A match that ends inside a grapheme cluster is taken on to the cluster's end, so the font of the cluster's base character
+    /// draws the whole cluster, and the provider is asked again after it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A provider that answers from a script: 1 character in font A, then 1 in B, then 3 in B. The text is "e" + U+0301 (a
+    ///   combining acute) + "x" + the family emoji 👨‍👩‍👧 (8 code units, joined by ZWJ), cut by the script inside both clusters.
+    ///
+    /// Steps:
+    /// - Split the text.
+    ///
+    /// Expected:
+    /// - A 0 + 2 (the e and its accent), B 2 + 9 (x, and the family, which the second match of 3 ends inside). The provider was
+    ///   asked at 0, 2, and 3.
+    /// </remarks>
+    [Fact]
+    public void Split_MatchEndingInsideACluster_TakesTheWholeCluster()
+    {
+        using Font a = TestFont.Open();
+        using Font b = TestFont.Open();
+        var provider = new ScriptedProvider([new(a, 1, 1), new(b, 1, 1), new(b, 3, 1)]);
+        var runs = new List<FontRun>();
+
+        FontFallback.Split(provider, "e\u0301x👨‍👩‍👧", TestFont.Japanese, FontRequest.Default, runs);
+
+        Assert.Equal([new FontRun(a, 0, 2, 1), new FontRun(b, 2, 9, 1)], runs);
+        Assert.Equal([0, 2, 3], provider.Starts);
+    }
+
     private sealed class ScriptedProvider(FontMatch[] script) : IFontProvider
     {
         private int _next;
