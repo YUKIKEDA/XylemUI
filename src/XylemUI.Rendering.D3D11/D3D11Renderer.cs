@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using TerraFX.Interop.DirectX;
@@ -58,6 +59,17 @@ public sealed unsafe class D3D11Renderer : IDisposable
     // The period of a line without dashes: one dash as long as the line, and a gap no frame reaches.
     private const float NoDashGap = 1e9f;
 
+    // The rows of a state in the state buffer (row R4d), as QuadShaders' VSStated and BeginState read them: the transform's four
+    // linear elements; its move, the physical pixels a unit spans, and the number of rounded clips; the rectangle; then four rows a
+    // rounded clip (WriteState).
+    private const int StateRows = 3 + (4 * DisplayList.MaxRoundedClips);
+
+    // The number of kinds of pixel shader (PixelKind).
+    private const int PixelKinds = 9;
+
+    // The bit of a draw's key that tells the stated shaders' draws apart (row R4d), between the pixel shader's and the layer's.
+    private const int StatedKey = 1 << 11;
+
     private const uint SwapChainFlags = (uint)DXGI_SWAP_CHAIN_FLAG.DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
     private const DXGI_FORMAT BackBufferFormat = DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM;
 
@@ -78,6 +90,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private readonly ID3D11PixelShader* _fadedTextPixelShader;
 
     private readonly ID3D11InputLayout* _inputLayout;
+
+    // The shaders of the commands inside a clip or a transform (row R4d, StatedShaders). They are compiled on threads from the
+    // renderer's creation, and waited for by the first draw of a state: compiled with the others, the ten of them made the time from
+    // the launch to the first frame on the display 1,420 ms against 730 ms (row R4d).
+    private readonly StatedShaders? _statedShaders;
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
     private readonly ID3D11BlendState* _clearTypeBlend;
@@ -97,9 +114,19 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private int[] _targetLayers = new int[8];
     private DrawRange[] _draws = new DrawRange[16];
 
+    private bool _statedReady;
     private ID3D11RenderTargetView* _renderTarget;
     private ID3D11Buffer* _instances;
+    private ID3D11Buffer* _stateStream;
     private int _instanceCapacity;
+    private RowBuffer _stateRows;
+
+    // The scopes open while the instances are written (row R4d): whether each is a state, and for a state the state and the text
+    // scale outside it.
+    private bool[] _scopeIsState = new bool[8];
+    private int[] _savedStates = new int[8];
+    private int[] _savedRecords = new int[8];
+    private float[] _savedTextScales = new float[8];
     private RowBuffer _shapeRows;
     private RowBuffer _brushRows;
     private int[] _brushStarts = new int[16];
@@ -126,6 +153,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
             CreateRenderTarget();
             _vertexShader = CreateVertexShader(device, out _inputLayout);
+
+            // The device creates shaders on any thread (ID3D11Device is free-threaded).
+            _statedShaders = StatedShaders.Start(device);
             _pixelShader = CreatePixelShader(device, QuadShaders.PixelEntry);
             _clearTypePixelShader = CreatePixelShader(device, QuadShaders.ClearTypePixelEntry);
             _curvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry);
@@ -135,6 +165,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _fadedPixelShader = CreatePixelShader(device, QuadShaders.PixelEntry, faded: true);
             _fadedCurvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry, faded: true);
             _fadedTextPixelShader = CreatePixelShader(device, QuadShaders.TextPixelEntry, faded: true);
+
             _targetConstants = CreateBuffer(device, 48, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
             _blend = CreateBlendState(device);
             _clearTypeBlend = CreateClearTypeBlendState(device);
@@ -142,6 +173,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
             GrowInstances(256);
             _shapeRows = RowBuffer.Create(device, 64);
             _brushRows = RowBuffer.Create(device, 64);
+            _stateRows = RowBuffer.Create(device, StateRows * 8);
         }
         catch
         {
@@ -384,12 +416,18 @@ public sealed unsafe class D3D11Renderer : IDisposable
         _rgbAtlas.Dispose();
         _colorAtlas.Dispose();
         Release((IUnknown*)_instances);
+        Release((IUnknown*)_stateStream);
         _shapeRows.Dispose();
+        _stateRows.Dispose();
         _brushRows.Dispose();
         Release((IUnknown*)_clearTypeBlend);
         Release((IUnknown*)_blend);
         Release((IUnknown*)_targetConstants);
         Release((IUnknown*)_inputLayout);
+
+        // The stated shaders' threads may still compile: Dispose does not wait for them, and they release what they make.
+        _statedShaders?.Abandon();
+
         _layers.Dispose();
         Release((IUnknown*)_fadedTextPixelShader);
         Release((IUnknown*)_fadedCurvePixelShader);
@@ -502,6 +540,18 @@ public sealed unsafe class D3D11Renderer : IDisposable
             _brushRows.View,
         };
         _context->PSSetShaderResources(0, 5, atlasViews);
+        if (list.StateCount > 0)
+        {
+            // The states, for both stages, and the state stream beside the instances (row R4d).
+            ID3D11ShaderResourceView* states = _stateRows.View;
+            ID3D11Buffer* stream = _stateStream;
+            uint streamStride = (uint)sizeof(StateRef);
+            _context->VSSetShaderResources(6, 1, &states);
+            _context->PSSetShaderResources(6, 1, &states);
+            _context->IASetVertexBuffers(1, 1, &stream, &streamStride, &offset);
+        }
+
+        bool statedBound = false;
         int targets = 0;
         float* transparent = stackalloc float[4];
         foreach (DrawRange draw in _draws.AsSpan(0, draws))
@@ -537,18 +587,28 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 continue;
             }
 
-            ID3D11PixelShader* shader = draw.Pixel switch
+            if (draw.Stated != statedBound)
             {
-                PixelKind.ClearType => _clearTypePixelShader,
-                PixelKind.Curve => _curvePixelShader,
-                PixelKind.Text => _textPixelShader,
-                PixelKind.ClearTypeText => _clearTypeTextPixelShader,
-                PixelKind.Layer => _layerPixelShader,
-                PixelKind.Faded => _fadedPixelShader,
-                PixelKind.CurveFaded => _fadedCurvePixelShader,
-                PixelKind.TextFaded => _fadedTextPixelShader,
-                _ => _pixelShader,
-            };
+                statedBound = draw.Stated;
+                StatedShaders? stated = statedBound ? Stated() : null;
+                _context->IASetInputLayout(statedBound ? stated!.Layout : _inputLayout);
+                _context->VSSetShader(statedBound ? stated!.Vertex : _vertexShader, null, 0);
+            }
+
+            ID3D11PixelShader* shader = draw.Stated
+                ? _statedShaders!.Pixel(draw.Pixel)
+                : draw.Pixel switch
+                {
+                    PixelKind.ClearType => _clearTypePixelShader,
+                    PixelKind.Curve => _curvePixelShader,
+                    PixelKind.Text => _textPixelShader,
+                    PixelKind.ClearTypeText => _clearTypeTextPixelShader,
+                    PixelKind.Layer => _layerPixelShader,
+                    PixelKind.Faded => _fadedPixelShader,
+                    PixelKind.CurveFaded => _fadedCurvePixelShader,
+                    PixelKind.TextFaded => _fadedTextPixelShader,
+                    _ => _pixelShader,
+                };
             bool clearType = draw.Pixel is PixelKind.ClearType or PixelKind.ClearTypeText;
             _context->PSSetShader(shader, null, 0);
             _context->OMSetBlendState(clearType ? _clearTypeBlend : _blend, null, uint.MaxValue);
@@ -744,6 +804,33 @@ public sealed unsafe class D3D11Renderer : IDisposable
         return color;
     }
 
+    /// <summary>
+    /// Waits for a capture of <see cref="CaptureBackBuffer"/> and returns the colors of its pixels from the top left, row by row, in
+    /// one map: for the tests that read a whole frame.
+    /// </summary>
+    /// <param name="staging">The capture.</param>
+    /// <param name="width">The columns to read, from the left; inside the back buffer.</param>
+    /// <param name="height">The rows to read, from the top; inside the back buffer.</param>
+    /// <returns>The colors, <paramref name="width"/> a row.</returns>
+    internal Color[] ReadCapturedPixels(ID3D11Texture2D* staging, int width, int height)
+    {
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        HResults.ThrowIfFailed(_context->Map((ID3D11Resource*)staging, 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped), "ID3D11DeviceContext::Map");
+        var colors = new Color[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            byte* row = (byte*)mapped.pData + (y * mapped.RowPitch);
+            for (int x = 0; x < width; x++)
+            {
+                byte* pixel = row + (x * 4);
+                colors[(y * width) + x] = new Color(pixel[2], pixel[1], pixel[0], pixel[3]);
+            }
+        }
+
+        _context->Unmap((ID3D11Resource*)staging, 0);
+        return colors;
+    }
+
     private static HRESULT TryCreateDevice(D3D_DRIVER_TYPE driver, bool featureLevel10, out ID3D11Device* device, out ID3D11DeviceContext* context)
     {
         D3D_FEATURE_LEVEL* levels = stackalloc D3D_FEATURE_LEVEL[] { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
@@ -829,32 +916,51 @@ public sealed unsafe class D3D11Renderer : IDisposable
     }
 
     // Compiles an entry point of QuadShaders; `faded` defines FADED, for the variants of the groups that give their opacity to their
-    // children (row R4c).
-    private static ID3DBlob* Compile(ReadOnlySpan<byte> entry, ReadOnlySpan<byte> target, bool faded = false)
+    // children (row R4c), and `stated` defines STATED and the rows of a state, for the commands inside a clip or a transform (R4d).
+    private static ID3DBlob* Compile(ReadOnlySpan<byte> entry, ReadOnlySpan<byte> target, bool faded = false, bool stated = false)
     {
         ReadOnlySpan<byte> source = QuadShaders.Source;
-        ReadOnlySpan<byte> name = "FADED\0"u8;
+        ReadOnlySpan<byte> fadedName = "FADED\0"u8;
+        ReadOnlySpan<byte> statedName = "STATED\0"u8;
+        ReadOnlySpan<byte> rowsName = "STATE_ROWS\0"u8;
         ReadOnlySpan<byte> value = "1\0"u8;
+        Span<byte> rows = stackalloc byte[8];
+        _ = StateRows.TryFormat(rows, out int digits, default, System.Globalization.CultureInfo.InvariantCulture);
+        rows[digits] = 0;
         ID3DBlob* code;
         ID3DBlob* errors = null;
         HRESULT result;
-        D3D_SHADER_MACRO* macros = stackalloc D3D_SHADER_MACRO[2];
+        D3D_SHADER_MACRO* macros = stackalloc D3D_SHADER_MACRO[4];
         fixed (byte* sourcePointer = source)
         {
             fixed (
-                byte* namePointer = name,
+                byte* fadedPointer = fadedName,
+                    statedPointer = statedName,
+                    rowsPointer = rowsName,
                     valuePointer = value,
+                    rowsValue = rows,
                     entryPointer = entry,
                     targetPointer = target
             )
             {
-                macros[0] = new D3D_SHADER_MACRO { Name = (sbyte*)namePointer, Definition = (sbyte*)valuePointer };
-                macros[1] = default;
+                int count = 0;
+                if (faded)
+                {
+                    macros[count++] = new D3D_SHADER_MACRO { Name = (sbyte*)fadedPointer, Definition = (sbyte*)valuePointer };
+                }
+
+                if (stated)
+                {
+                    macros[count++] = new D3D_SHADER_MACRO { Name = (sbyte*)statedPointer, Definition = (sbyte*)valuePointer };
+                    macros[count++] = new D3D_SHADER_MACRO { Name = (sbyte*)rowsPointer, Definition = (sbyte*)rowsValue };
+                }
+
+                macros[count] = default;
                 result = D3DCompile(
                     sourcePointer,
                     (nuint)source.Length,
                     null,
-                    faded ? macros : null,
+                    count > 0 ? macros : null,
                     null,
                     (sbyte*)entryPointer,
                     (sbyte*)targetPointer,
@@ -899,49 +1005,8 @@ public sealed unsafe class D3D11Renderer : IDisposable
             // The semantic names in one pinned literal: "RECT" at 0, "COLOR" at 5, "ATLAS" at 11, "PAGE" at 17, "SHAPE" at 22.
             fixed (byte* names = "RECT\0COLOR\0ATLAS\0PAGE\0SHAPE\0"u8)
             {
-                byte* rect = names;
-                byte* color = names + 5;
                 D3D11_INPUT_ELEMENT_DESC* elements = stackalloc D3D11_INPUT_ELEMENT_DESC[5];
-                elements[0] = new D3D11_INPUT_ELEMENT_DESC
-                {
-                    SemanticName = (sbyte*)rect,
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT,
-                    AlignedByteOffset = 0,
-                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
-                    InstanceDataStepRate = 1,
-                };
-                elements[1] = new D3D11_INPUT_ELEMENT_DESC
-                {
-                    SemanticName = (sbyte*)color,
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
-                    AlignedByteOffset = (uint)sizeof(Vector4),
-                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
-                    InstanceDataStepRate = 1,
-                };
-                elements[2] = new D3D11_INPUT_ELEMENT_DESC
-                {
-                    SemanticName = (sbyte*)(names + 11),
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
-                    AlignedByteOffset = (uint)sizeof(Vector4) + 4,
-                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
-                    InstanceDataStepRate = 1,
-                };
-                elements[3] = new D3D11_INPUT_ELEMENT_DESC
-                {
-                    SemanticName = (sbyte*)(names + 17),
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
-                    AlignedByteOffset = (uint)sizeof(Vector4) + 8,
-                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
-                    InstanceDataStepRate = 1,
-                };
-                elements[4] = new D3D11_INPUT_ELEMENT_DESC
-                {
-                    SemanticName = (sbyte*)(names + 22),
-                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
-                    AlignedByteOffset = (uint)sizeof(Vector4) + 12,
-                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
-                    InstanceDataStepRate = 1,
-                };
+                InstanceElements(elements, names);
                 ID3D11InputLayout* layout;
                 HResults.ThrowIfFailed(
                     device->CreateInputLayout(elements, 5, code->GetBufferPointer(), code->GetBufferSize(), &layout),
@@ -957,9 +1022,104 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
     }
 
-    private static ID3D11PixelShader* CreatePixelShader(ID3D11Device* device, ReadOnlySpan<byte> entry, bool faded = false)
+    // The stated shaders, waiting for the threads that compile them the first time; a failure to compile is thrown here.
+    private StatedShaders Stated()
     {
-        ID3DBlob* code = Compile(entry, QuadShaders.PixelTarget, faded);
+        if (!_statedReady)
+        {
+            _statedShaders!.Wait();
+            _statedReady = true;
+        }
+
+        return _statedShaders!;
+    }
+
+    // The vertex shader of the commands inside a clip or a transform: the instance's elements and, from the second vertex buffer,
+    // its state and text scale (StateRef).
+    private static ID3D11VertexShader* CreateStatedVertexShader(ID3D11Device* device, out ID3D11InputLayout* inputLayout)
+    {
+        ID3DBlob* code = Compile(QuadShaders.StatedVertexEntry, QuadShaders.VertexTarget, stated: true);
+        try
+        {
+            ID3D11VertexShader* shader;
+            HResults.ThrowIfFailed(
+                device->CreateVertexShader(code->GetBufferPointer(), code->GetBufferSize(), null, &shader),
+                "ID3D11Device::CreateVertexShader"
+            );
+
+            // "RECT" at 0, "COLOR" at 5, "ATLAS" at 11, "PAGE" at 17, "SHAPE" at 22, "STATE" at 28, "TEXELSCALE" at 34.
+            fixed (byte* names = "RECT\0COLOR\0ATLAS\0PAGE\0SHAPE\0STATE\0TEXELSCALE\0"u8)
+            {
+                D3D11_INPUT_ELEMENT_DESC* elements = stackalloc D3D11_INPUT_ELEMENT_DESC[7];
+                InstanceElements(elements, names);
+                elements[5] = new D3D11_INPUT_ELEMENT_DESC
+                {
+                    SemanticName = (sbyte*)(names + 28),
+                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
+                    InputSlot = 1,
+                    AlignedByteOffset = 0,
+                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
+                    InstanceDataStepRate = 1,
+                };
+                elements[6] = new D3D11_INPUT_ELEMENT_DESC
+                {
+                    SemanticName = (sbyte*)(names + 34),
+                    Format = DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT,
+                    InputSlot = 1,
+                    AlignedByteOffset = 4,
+                    InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
+                    InstanceDataStepRate = 1,
+                };
+                ID3D11InputLayout* layout;
+                HResults.ThrowIfFailed(
+                    device->CreateInputLayout(elements, 7, code->GetBufferPointer(), code->GetBufferSize(), &layout),
+                    "ID3D11Device::CreateInputLayout"
+                );
+                inputLayout = layout;
+                return shader;
+            }
+        }
+        finally
+        {
+            _ = code->Release();
+        }
+    }
+
+    // The five elements of QuadInstance, from the first vertex buffer; `names` holds "RECT", "COLOR", "ATLAS", "PAGE", and "SHAPE"
+    // at 0, 5, 11, 17, and 22.
+    private static void InstanceElements(D3D11_INPUT_ELEMENT_DESC* elements, byte* names)
+    {
+        ReadOnlySpan<int> at = [0, 5, 11, 17, 22];
+        for (int i = 0; i < 5; i++)
+        {
+            elements[i] = new D3D11_INPUT_ELEMENT_DESC
+            {
+                SemanticName = (sbyte*)(names + at[i]),
+                Format = i == 0 ? DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT : DXGI_FORMAT.DXGI_FORMAT_R32_UINT,
+                AlignedByteOffset = i == 0 ? 0 : (uint)sizeof(Vector4) + (uint)(4 * (i - 1)),
+                InputSlotClass = D3D11_INPUT_CLASSIFICATION.D3D11_INPUT_PER_INSTANCE_DATA,
+                InstanceDataStepRate = 1,
+            };
+        }
+    }
+
+    // The entry point of a kind of pixel shader; the FADED kinds are compiled with FADED (IsFaded).
+    private static ReadOnlySpan<byte> EntryOf(PixelKind kind) =>
+        kind switch
+        {
+            PixelKind.ClearType => QuadShaders.ClearTypePixelEntry,
+            PixelKind.Curve or PixelKind.CurveFaded => QuadShaders.CurvePixelEntry,
+            PixelKind.Text or PixelKind.TextFaded => QuadShaders.TextPixelEntry,
+            PixelKind.ClearTypeText => QuadShaders.ClearTypeTextPixelEntry,
+            PixelKind.Layer => QuadShaders.LayerPixelEntry,
+            _ => QuadShaders.PixelEntry,
+        };
+
+    private static bool IsFaded(PixelKind kind) => kind is PixelKind.Faded or PixelKind.CurveFaded or PixelKind.TextFaded;
+
+    private static ID3D11PixelShader* CreatePixelShader(ID3D11Device* device, ReadOnlySpan<byte> entry, bool faded = false, bool stated = false)
+    {
+        ID3DBlob* code = Compile(entry, QuadShaders.PixelTarget, faded, stated);
         try
         {
             ID3D11PixelShader* shader;
@@ -1060,7 +1220,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
     private void WriteTargetConstants() => WriteTargetConstants(new Vector4(0, 0, Width, Height));
 
     // The constants of a target of the size (bounds.Z, bounds.W): the back buffer, or a layer (row R4c), whose commands were moved
-    // into its pixels as they were written (Shift).
+    // into its pixels as they were written; the commands in a state (row R4d) are moved by its origin, (bounds.X, bounds.Y).
     private void WriteTargetConstants(Vector4 bounds)
     {
         D3D11_MAPPED_SUBRESOURCE mapped;
@@ -1072,19 +1232,23 @@ public sealed unsafe class D3D11Renderer : IDisposable
         TextRenderingParameters text = _textRendering;
         constants[0] = new Vector4(1f / bounds.Z, 1f / bounds.W, text.GrayscaleContrast, text.ClearTypeContrast);
         constants[1] = TextGamma.RatiosOf(text.Gamma);
-        constants[2] = new Vector4(text.IsBgr ? 1 : 0, 0, 0, 0);
+        constants[2] = new Vector4(text.IsBgr ? 1 : 0, 0, bounds.X, bounds.Y);
         _context->Unmap((ID3D11Resource*)_targetConstants, 0);
     }
 
     // The instances go straight into the mapped buffer; WRITE_DISCARD gives a fresh buffer while the GPU still reads the last one:
     // one per rectangle and one per glyph. Returns the number of draws, in _draws: a new one starts where the blend state changes.
-    // A list without groups takes a copy of the loop specialized for it, in which NativeAOT folds the alpha and the layer's origin
-    // away: with them in the one loop, the Draw stage of frames took 2 us longer and that of frames --curves 9 us (row R4c).
+    // A list without groups, clips, and transforms takes a copy of the loop specialized for it, in which NativeAOT folds the alpha,
+    // the layer's origin, and the states away: with them in the one loop, the Draw stage of frames took 2 us longer and that of
+    // frames --curves 9 us (row R4c). A list with groups and no state takes a copy without the states: with them, the Draw stage of
+    // frames --groups took about 7 us longer (row R4d).
     private int WriteInstances(DisplayList list, int bound) =>
-        list.GroupCount > 0 ? WriteInstances<WithGroups>(list, bound) : WriteInstances<NoGroups>(list, bound);
+        list.StateCount > 0 ? WriteInstances<ScopedList>(list, bound)
+        : list.GroupCount > 0 ? WriteInstances<GroupList>(list, bound)
+        : WriteInstances<PlainList>(list, bound);
 
     private int WriteInstances<TMode>(DisplayList list, int bound)
-        where TMode : struct, IGroupMode
+        where TMode : struct, IListMode
     {
         D3D11_MAPPED_SUBRESOURCE mapped;
         HResults.ThrowIfFailed(
@@ -1094,6 +1258,11 @@ public sealed unsafe class D3D11Renderer : IDisposable
         try
         {
             var destination = new Span<QuadInstance>(mapped.pData, bound);
+            Span<StateRef> stream = TMode.States && list.StateCount > 0 ? MapStream(bound) : default;
+
+            // A state's rows, and those of a copy of it for each layer that starts in it (the children's, without its clips).
+            Span<Vector4> stateRows =
+                TMode.States && list.StateCount > 0 ? _stateRows.Map(_device, _context, (list.StateCount + list.GroupCount) * StateRows) : default;
             DisplayListReader reader = list.GetReader();
             Span<Vector4> shapes = list.ShapeCount > 0 ? _shapeRows.Map(_device, _context, list.ShapeCount * ShapeRows) : default;
             if (reader.Brushes.Length > 0)
@@ -1110,6 +1279,18 @@ public sealed unsafe class D3D11Renderer : IDisposable
             float alpha = 1;
             Vector4 move = default;
             var target = new Vector4(0, 0, Width, Height);
+
+            // The state of the commands (row R4d): its index in the state buffer, -1 for none, and its text scale. A command in a state
+            // is written where it is, which VSStated transforms, so `at` is the move of a command: the layer's origin outside a state,
+            // none in one. Inside a clip's layer that the pool refused, the clips past it are left out (`refused`).
+            int scopes = 0;
+            int state = -1;
+            int states = 0;
+            int record = -1;
+            int refused = 0;
+            int floor = 0;
+            float textScale = 1;
+            Vector4 at = default;
             while (reader.TryNext(out CommandTag tag))
             {
                 // The common commands first. Inside a layer, `move` is the layer's origin, which each command subtracts from its
@@ -1117,11 +1298,12 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 // reading them back from the mapped buffers, which are write-combined, cost 120 us a frame for 1,000 rectangles in layers.
                 if (tag == CommandTag.FillRect)
                 {
-                    draws = AddToDraw(draws, i, PixelKind.Main);
+                    draws = AddToDraw(draws, i, PixelKind.Main, stated: TMode.States && state >= 0);
                     FillRectCommand rect = reader.ReadFillRect();
+                    Stated<TMode>(stream, i, state, 1);
                     destination[i] = new QuadInstance
                     {
-                        Rect = Moved<TMode>(new Vector4(rect.X, rect.Y, rect.Width, rect.Height), move),
+                        Rect = Moved<TMode>(new Vector4(rect.X, rect.Y, rect.Width, rect.Height), at),
                         Color = Faded<TMode>(rect.Color, alpha),
                         Page = QuadInstance.SolidPage,
                         Shape = QuadInstance.NoShape,
@@ -1130,30 +1312,50 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 else if (tag == CommandTag.Shape)
                 {
                     ShapeCommand command = reader.ReadShape();
-                    draws = AddToDraw(draws, i, TMode.Groups && alpha < 1 ? PixelKind.Faded : PixelKind.Main);
-                    destination[i] = WriteShape<TMode>(command, shapes, shape, alpha, move);
+                    draws = AddToDraw(draws, i, TMode.Scoped && alpha < 1 ? PixelKind.Faded : PixelKind.Main, stated: TMode.States && state >= 0);
+                    Stated<TMode>(stream, i, state, 1);
+                    destination[i] = WriteShape<TMode>(command, shapes, shape, alpha, at);
                     shape += ShapeRows;
                 }
                 else if (tag == CommandTag.Shadow)
                 {
-                    draws = AddToDraw(draws, i, PixelKind.Main);
-                    destination[i] = WriteShadow<TMode>(reader.ReadShadow(), shapes, shape, alpha, move);
+                    draws = AddToDraw(draws, i, PixelKind.Main, stated: TMode.States && state >= 0);
+                    Stated<TMode>(stream, i, state, 1);
+                    destination[i] = WriteShadow<TMode>(reader.ReadShadow(), shapes, shape, alpha, at);
                     shape += ShapeRows;
                 }
                 else if (tag == CommandTag.GlyphRun)
                 {
-                    i = WriteGlyphRun<TMode>(reader.ReadGlyphRun(), destination, i, shapes, ref shape, ref draws, alpha, move);
+                    i = WriteGlyphRun<TMode>(
+                        reader.ReadGlyphRun(),
+                        destination,
+                        i,
+                        shapes,
+                        ref shape,
+                        ref draws,
+                        alpha,
+                        at,
+                        stream,
+                        state,
+                        textScale
+                    );
                     continue;
                 }
-                else if (!TMode.Groups || tag <= CommandTag.Sector)
+                else if (!TMode.Scoped || tag <= CommandTag.Sector)
                 {
                     // Without groups every tag left is a curve, so a curve is compared no more times than before groups, and the
                     // command goes straight to WriteCurve: a local copy of it cost a Memmove per curve (R4c profile of the curves
                     // scene).
-                    if (TMode.Groups)
+                    if (TMode.Scoped)
                     {
-                        CurveCommand command = Moved(tag, reader.ReadCurve(), move);
-                        draws = AddToDraw(draws, i, alpha < 1 && command.Brush >= 0 ? PixelKind.CurveFaded : PixelKind.Curve);
+                        CurveCommand command = Moved(tag, reader.ReadCurve(), at);
+                        draws = AddToDraw(
+                            draws,
+                            i,
+                            alpha < 1 && command.Brush >= 0 ? PixelKind.CurveFaded : PixelKind.Curve,
+                            stated: TMode.States && state >= 0
+                        );
+                        Stated<TMode>(stream, i, state, 1);
                         destination[i] = WriteCurve<TMode>(tag, command, shapes, shape, alpha);
                     }
                     else
@@ -1164,7 +1366,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
                     shape += ShapeRows;
                 }
-                else if (TMode.Groups && tag == CommandTag.PushOpacity)
+                else if (TMode.Scoped && tag == CommandTag.PushOpacity)
                 {
                     GroupCommand group = reader.ReadGroup();
                     if (depth == _groupStates.Length)
@@ -1172,13 +1374,15 @@ public sealed unsafe class D3D11Renderer : IDisposable
                         Array.Resize(ref _groupStates, depth * 2);
                     }
 
-                    ref GroupState state = ref _groupStates[depth++];
-                    state = new GroupState
+                    PushScope(scopes++, isState: false, state, record, textScale);
+                    ref GroupState group_ = ref _groupStates[depth++];
+                    group_ = new GroupState
                     {
                         SavedAlpha = alpha,
                         Alpha = group.Alpha,
                         SavedTarget = target,
                         Layer = -1,
+                        Clip = group.Clip,
                     };
                     if (!group.Layer)
                     {
@@ -1195,6 +1399,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
                     if (group.Width <= 0 || group.Height <= 0 || right <= left || bottom <= top)
                     {
                         depth--;
+                        scopes--;
                         SkipGroup(ref reader);
                         continue;
                     }
@@ -1202,44 +1407,96 @@ public sealed unsafe class D3D11Renderer : IDisposable
                     int layer = _layers.Acquire(_device, (int)(right - left), (int)(bottom - top));
                     if (layer < 0)
                     {
-                        // The pool is full: the children take the alpha, as GPUI and Avalonia draw every group.
+                        // The pool is full: the children take the alpha, as GPUI and Avalonia draw every group. The children of a
+                        // clip's layer are drawn with the clips around it, and its own clips are left out.
                         alpha *= group.Alpha;
+                        refused += group.Clip ? 1 : 0;
+                        group_.Refused = group.Clip;
                         continue;
                     }
 
-                    state.Layer = layer;
-                    state.Bounds = new Vector4(left, top, right - left, bottom - top);
-                    draws = AddOp(draws, i, DrawOp.BeginLayer, layer, state.Bounds);
-                    target = state.Bounds;
+                    group_.Layer = layer;
+                    group_.Bounds = new Vector4(left, top, right - left, bottom - top);
+                    group_.SavedFloor = floor;
+                    floor = depth;
+
+                    // The children are drawn in the state around the group without its clips, which the composite applies to
+                    // them as one.
+                    if (TMode.States && state >= 0)
+                    {
+                        StateCommand current = reader.GetState(record, out ReadOnlySpan<ClipCommand> clips);
+                        state = WriteState(stateRows, states++, current, clips, floor);
+                    }
+
+                    draws = AddOp(draws, i, DrawOp.BeginLayer, layer, group_.Bounds);
+                    target = group_.Bounds;
                     alpha = 1;
                     layers++;
                     move = new Vector4(target.X, target.Y, 0, 0);
+                    at = TMode.States && state >= 0 ? default : move;
                     continue;
                 }
-                else if (TMode.Groups)
+                else if (TMode.States && tag == CommandTag.PushState)
+                {
+                    StateCommand command = reader.ReadState(out ReadOnlySpan<ClipCommand> clips);
+                    PushScope(scopes++, isState: true, state, record, textScale);
+                    if (refused == 0)
+                    {
+                        bool none =
+                            command.IsTranslation
+                            && command.Transform.Translation == Vector2.Zero
+                            && float.IsInfinity(command.ClipRect.X)
+                            && float.IsInfinity(command.ClipRect.Y)
+                            && float.IsInfinity(command.ClipRect.Z)
+                            && float.IsInfinity(command.ClipRect.W)
+                            && clips.IsEmpty;
+                        state = none ? -1 : WriteState(stateRows, states++, command, clips, floor);
+                        record = none ? -1 : command.Index;
+                        textScale = command.TextScale;
+                        at = TMode.States && state >= 0 ? default : move;
+                    }
+
+                    continue;
+                }
+                else if (TMode.Scoped)
                 {
                     reader.ReadPop();
-                    GroupState state = _groupStates[--depth];
-                    alpha = state.SavedAlpha;
-                    target = state.SavedTarget;
-                    if (state.Layer < 0)
+                    scopes--;
+                    state = _savedStates[scopes];
+                    record = _savedRecords[scopes];
+                    textScale = _savedTextScales[scopes];
+                    at = TMode.States && state >= 0 ? default : move;
+                    if (_scopeIsState[scopes])
                     {
                         continue;
                     }
 
-                    // The composite, in the pixels of the target outside the layer.
+                    GroupState popped = _groupStates[--depth];
+                    alpha = popped.SavedAlpha;
+                    target = popped.SavedTarget;
+                    refused -= popped.Refused ? 1 : 0;
+                    if (popped.Layer < 0)
+                    {
+                        continue;
+                    }
+
+                    // The composite, in the pixels of the target outside the layer: in a state, with the clips around the group,
+                    // which its children were drawn without, where it is in physical pixels (row R4d).
                     layers--;
+                    floor = popped.SavedFloor;
                     move = layers > 0 ? new Vector4(target.X, target.Y, 0, 0) : default;
-                    draws = AddOp(draws, i, DrawOp.EndLayer, state.Layer, default);
-                    draws = AddToDraw(draws, i, PixelKind.Layer, state.Layer);
+                    at = TMode.States && state >= 0 ? default : move;
+                    draws = AddOp(draws, i, DrawOp.EndLayer, popped.Layer, default);
+                    draws = AddToDraw(draws, i, PixelKind.Layer, popped.Layer, stated: TMode.States && state >= 0);
+                    Stated<TMode>(stream, i, state, 0);
 
                     // The draws after the composite may clear and draw the texture again: a later sibling layer takes it, so
                     // that a frame needs textures for the layers open at once, not for each layer (PR #264's review).
-                    _layers.Return(state.Layer);
+                    _layers.Return(popped.Layer);
                     destination[i++] = new QuadInstance
                     {
-                        Rect = state.Bounds - move,
-                        Color = Faded<TMode>(new Color(255, 255, 255, (byte)MathF.Round(255 * state.Alpha)), alpha),
+                        Rect = popped.Bounds - at,
+                        Color = Faded<TMode>(new Color(255, 255, 255, (byte)MathF.Round(255 * popped.Alpha)), alpha),
                         Page = QuadInstance.SolidPage,
                         Shape = QuadInstance.NoShape,
                     };
@@ -1264,13 +1521,19 @@ public sealed unsafe class D3D11Renderer : IDisposable
             {
                 _shapeRows.Unmap(_context);
             }
+
+            if (TMode.States && list.StateCount > 0)
+            {
+                _context->Unmap((ID3D11Resource*)_stateStream, 0);
+                _stateRows.Unmap(_context);
+            }
         }
     }
 
     // The six rows of a rounded rectangle, as QuadShaders' ShapeColor reads them: the radii, the border's widths, the border's
     // color, the kind with the rows of the fill's and the border's gradients, the rectangle, and nothing.
     private QuadInstance WriteShape<TMode>(in ShapeCommand command, Span<Vector4> rows, int row, float alpha, in Vector4 move)
-        where TMode : struct, IGroupMode
+        where TMode : struct, IListMode
     {
         Vector4 rect = Moved<TMode>(new Vector4(command.X, command.Y, command.Width, command.Height), move);
         BorderWidths widths = command.BorderWidths;
@@ -1282,7 +1545,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
         // A group's opacity given to its children, which PSFaded multiplies the whole shape by: fading the fill and the border
         // apart would show the fill through an opaque border.
-        rows[row + 5] = new Vector4(TMode.Groups ? alpha : 1, 0, 0, 0);
+        rows[row + 5] = new Vector4(TMode.Scoped ? alpha : 1, 0, 0, 0);
         return new QuadInstance
         {
             Rect = rect,
@@ -1297,7 +1560,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
     // quad is that grown by three sigmas; an inset shadow's is the hole, moved and shrunk, and its quad the shape's (GPUI's
     // paint_drop_shadows and paint_inset_shadows, window.rs lines 4472 to 4535).
     private static QuadInstance WriteShadow<TMode>(in ShadowCommand command, Span<Vector4> rows, int row, float alpha, in Vector4 move)
-        where TMode : struct, IGroupMode
+        where TMode : struct, IListMode
     {
         Vector4 element = Moved<TMode>(new Vector4(command.X, command.Y, command.Width, command.Height), move);
         float spread = command.Inset ? -command.Spread : command.Spread;
@@ -1337,7 +1600,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
     // the gradient and the width (0 for a fill); the gradient's box; and nothing. A line without dashes is one dash as long as the
     // line. The quad is the shape's box grown by the half width, the caps, and a pixel for the antialiasing.
     private QuadInstance WriteCurve<TMode>(CommandTag tag, in CurveCommand command, Span<Vector4> rows, int row, float alpha)
-        where TMode : struct, IGroupMode
+        where TMode : struct, IListMode
     {
         float half = command.Width * 0.5f;
         float kind = tag switch
@@ -1381,7 +1644,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         return new QuadInstance
         {
             Rect = quad,
-            Color = TMode.Groups ? Faded<TMode>(command.Brush >= 0 ? Opaque : command.Color, alpha) : command.Color.Packed,
+            Color = TMode.Scoped ? Faded<TMode>(command.Brush >= 0 ? Opaque : command.Color, alpha) : command.Color.Packed,
             Page = QuadInstance.SolidPage,
             Shape = (uint)row,
         };
@@ -1412,9 +1675,12 @@ public sealed unsafe class D3D11Renderer : IDisposable
         ref int shape,
         ref int draws,
         float alpha,
-        Vector4 move
+        Vector4 move,
+        Span<StateRef> stream,
+        int state,
+        float textScale
     )
-        where TMode : struct, IGroupMode
+        where TMode : struct, IListMode
     {
         bool clearType = run.Coverage == GlyphCoverage.Rgb;
         uint paintRow = QuadInstance.NoShape;
@@ -1431,18 +1697,23 @@ public sealed unsafe class D3D11Renderer : IDisposable
             run.Brush >= 0
                 ? (
                     clearType ? PixelKind.ClearTypeText
-                    : TMode.Groups && alpha < 1 ? PixelKind.TextFaded
+                    : TMode.Scoped && alpha < 1 ? PixelKind.TextFaded
                     : PixelKind.Text
                 )
                 : (clearType ? PixelKind.ClearType : PixelKind.Main);
-        draws = AddToDraw(draws, i, pixel);
+        draws = AddToDraw(draws, i, pixel, stated: TMode.States && state >= 0);
         uint color = Faded<TMode>(run.Color, alpha);
         uint kind = run.Coverage == GlyphCoverage.Color ? QuadInstance.ColorPage : 0;
+        float unit = TMode.States && state >= 0 ? 1 / textScale : 1;
         foreach (GlyphInstance glyph in run.Glyphs)
         {
+            Stated<TMode>(stream, i, state, textScale);
             destination[i++] = new QuadInstance
             {
-                Rect = Moved<TMode>(new Vector4(glyph.X, glyph.Y, glyph.Width, glyph.Height), move),
+                Rect =
+                    TMode.States && state >= 0
+                        ? new Vector4(glyph.X, glyph.Y, glyph.Width, glyph.Height) * unit
+                        : Moved<TMode>(new Vector4(glyph.X, glyph.Y, glyph.Width, glyph.Height), move),
                 Color = color,
                 AtlasOrigin = (uint)glyph.AtlasX | ((uint)glyph.AtlasY << 16),
                 Page = (uint)glyph.Page | kind,
@@ -1460,7 +1731,7 @@ public sealed unsafe class D3D11Renderer : IDisposable
         while (open > 0 && reader.TryNext(out CommandTag tag))
         {
             open +=
-                tag == CommandTag.PushOpacity ? 1
+                tag is CommandTag.PushOpacity or CommandTag.PushState ? 1
                 : tag == CommandTag.Pop ? -1
                 : 0;
             Discard(ref reader, tag);
@@ -1472,13 +1743,13 @@ public sealed unsafe class D3D11Renderer : IDisposable
     // list without groups free of a call: the native compiler did not inline it on its own (R4c profile).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint Faded<TMode>(Color color, float alpha)
-        where TMode : struct, IGroupMode =>
-        !TMode.Groups || alpha == 1 ? color.Packed : new Color(color.R, color.G, color.B, (byte)MathF.Round(color.A * alpha)).Packed;
+        where TMode : struct, IListMode =>
+        !TMode.Scoped || alpha == 1 ? color.Packed : new Color(color.R, color.G, color.B, (byte)MathF.Round(color.A * alpha)).Packed;
 
     // A position less a layer's origin, in a list with groups.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector4 Moved<TMode>(Vector4 position, Vector4 move)
-        where TMode : struct, IGroupMode => TMode.Groups ? position - move : position;
+        where TMode : struct, IListMode => TMode.Scoped ? position - move : position;
 
     // Reads a command of a layer that lies outside its target, which draws nothing.
     private static void Discard(ref DisplayListReader reader, CommandTag tag)
@@ -1502,6 +1773,9 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 break;
             case CommandTag.Pop:
                 reader.ReadPop();
+                break;
+            case CommandTag.PushState:
+                _ = reader.ReadState(out _);
                 break;
             default:
                 _ = reader.ReadCurve();
@@ -1555,10 +1829,10 @@ public sealed unsafe class D3D11Renderer : IDisposable
 
     // The draw of the instance at `start`: the last one when its pixel shader (and, for a composite, its layer) is the same, else
     // a new one that ends the last.
-    private int AddToDraw(int draws, int start, PixelKind pixel, int layer = -1)
+    private int AddToDraw(int draws, int start, PixelKind pixel, int layer = -1, bool stated = false)
     {
-        // One comparison a command: the key holds the operation, the pixel shader, and a composite's layer.
-        int key = DrawKey(DrawOp.Draw, pixel, layer);
+        // One comparison a command: the key holds the operation, the pixel shader, whether it is a state's, and a composite's layer.
+        int key = DrawKey(DrawOp.Draw, pixel, layer) | (stated ? StatedKey : 0);
         if (draws > 0 && _draws[draws - 1].Key == key)
         {
             return draws;
@@ -1573,11 +1847,85 @@ public sealed unsafe class D3D11Renderer : IDisposable
                 Pixel = pixel,
                 Layer = layer,
                 Key = key,
+                Stated = stated,
             }
         );
     }
 
     private static int DrawKey(DrawOp op, PixelKind pixel, int layer) => (int)op | ((int)pixel << 4) | ((layer + 1) << 12);
+
+    // The state of the instance `i`, and its text scale (0 for a composite in physical pixels), for the stated vertex shader.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Stated<TMode>(Span<StateRef> stream, int i, int state, float textScale)
+        where TMode : struct, IListMode
+    {
+        if (TMode.States && state >= 0)
+        {
+            stream[i] = new StateRef { State = (uint)state, TextScale = textScale };
+        }
+    }
+
+    // A scope of the list being written, and the state (its slot and its record) and the text scale outside it.
+    private void PushScope(int scope, bool isState, int state, int record, float textScale)
+    {
+        if (scope == _scopeIsState.Length)
+        {
+            Array.Resize(ref _scopeIsState, scope * 2);
+            Array.Resize(ref _savedStates, scope * 2);
+            Array.Resize(ref _savedRecords, scope * 2);
+            Array.Resize(ref _savedTextScales, scope * 2);
+        }
+
+        _scopeIsState[scope] = isState;
+        _savedStates[scope] = state;
+        _savedRecords[scope] = record;
+        _savedTextScales[scope] = textScale;
+    }
+
+    // The state stream, mapped for the instances.
+    private Span<StateRef> MapStream(int bound)
+    {
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        HResults.ThrowIfFailed(
+            _context->Map((ID3D11Resource*)_stateStream, 0, D3D11_MAP.D3D11_MAP_WRITE_DISCARD, 0, &mapped),
+            "ID3D11DeviceContext::Map"
+        );
+        return new Span<StateRef>(mapped.pData, bound);
+    }
+
+    // The rows of the state `index`, as VSStated and BeginState read them; returns the index. Inside a layer, the clips around its
+    // group (fewer groups than `floor`) are left out: the layer's composite applies them, once to the children as one.
+    private static int WriteState(Span<Vector4> rows, int index, in StateCommand state, ReadOnlySpan<ClipCommand> clips, int floor)
+    {
+        Matrix3x2 m = state.Transform;
+        int row = index * StateRows;
+        int count = 0;
+        foreach (ClipCommand clip in clips)
+        {
+            count += clip.Groups >= floor ? 1 : 0;
+        }
+
+        rows[row] = new Vector4(m.M11, m.M12, m.M21, m.M22);
+        rows[row + 1] = new Vector4(m.M31, m.M32, MathF.Sqrt(MathF.Abs(m.GetDeterminant())), count);
+        rows[row + 2] = state.ClipRect;
+        row += 3;
+        foreach (ClipCommand clip in clips)
+        {
+            if (clip.Groups < floor)
+            {
+                continue;
+            }
+
+            Matrix3x2 inverse = clip.Inverse;
+            rows[row] = new Vector4(inverse.M11, inverse.M12, inverse.M21, inverse.M22);
+            rows[row + 1] = new Vector4(inverse.M31, inverse.M32, clip.Scale, 0);
+            rows[row + 2] = new Vector4(clip.X, clip.Y, clip.Width, clip.Height);
+            rows[row + 3] = Radii(clip.Radii);
+            row += 4;
+        }
+
+        return index;
+    }
 
     // The start or the end of a layer at the instance `start`, ending the draw before it.
     private int AddOp(int draws, int start, DrawOp op, int layer, Vector4 bounds) =>
@@ -1637,6 +1985,12 @@ public sealed unsafe class D3D11Renderer : IDisposable
         }
 
         _instances = CreateBuffer(_device, capacity * sizeof(QuadInstance), D3D11_BIND_FLAG.D3D11_BIND_VERTEX_BUFFER);
+        if (_stateStream is not null)
+        {
+            _ = _stateStream->Release();
+        }
+
+        _stateStream = CreateBuffer(_device, capacity * sizeof(StateRef), D3D11_BIND_FLAG.D3D11_BIND_VERTEX_BUFFER);
         _instanceCapacity = capacity;
     }
 
@@ -1668,29 +2022,48 @@ public sealed unsafe class D3D11Renderer : IDisposable
         public int Layer;
         public Vector4 Bounds;
         public int Key;
+        public bool Stated;
     }
 
     /// <summary>
-    /// Whether the list being written has opacity groups: the instance loop and the writes are specialized for each (row R4c).
+    /// Whether the list being written has opacity groups, clips, or transforms: the instance loop and the writes are specialized for
+    /// each (rows R4c and R4d).
     /// </summary>
-    private interface IGroupMode
+    private interface IListMode
     {
         /// <summary>
-        /// Gets a value indicating whether the list has opacity groups.
+        /// Gets a value indicating whether the list has opacity groups, clips, or transforms.
         /// </summary>
-        static abstract bool Groups { get; }
+        static abstract bool Scoped { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether the list has clips or transforms, which start states.
+        /// </summary>
+        static abstract bool States { get; }
     }
 
-    // A list with no opacity group: no alpha, no layer.
-    private readonly struct NoGroups : IGroupMode
+    // A list with no scope: no alpha, no layer, no state.
+    private readonly struct PlainList : IListMode
     {
-        public static bool Groups => false;
+        public static bool Scoped => false;
+
+        public static bool States => false;
     }
 
-    // A list with opacity groups.
-    private readonly struct WithGroups : IGroupMode
+    // A list with opacity groups and no clip or transform.
+    private readonly struct GroupList : IListMode
     {
-        public static bool Groups => true;
+        public static bool Scoped => true;
+
+        public static bool States => false;
+    }
+
+    // A list with clips or transforms, and groups or not.
+    private readonly struct ScopedList : IListMode
+    {
+        public static bool Scoped => true;
+
+        public static bool States => true;
     }
 
     // What a DrawRange does.
@@ -1710,6 +2083,161 @@ public sealed unsafe class D3D11Renderer : IDisposable
         public Vector4 SavedTarget;
         public int Layer;
         public Vector4 Bounds;
+        public bool Clip;
+        public bool Refused;
+        public int SavedFloor;
+    }
+
+    // The shaders of the commands in a state (row R4d): the vertex shader, its input layout with the state stream, and a pixel shader
+    // of each kind compiled with STATED, by PixelKind. Each is compiled on a thread of its own, started when the renderer is made:
+    // one after another on one thread, a first frame with a clip waited 240 ms longer than one without (startup --scopes rounded).
+    // The threads are the renderer's own, not the .NET thread pool, which an app's work can fill (the reason T5 gave its glyph
+    // workers their own threads, docs/design-decisions.md). They hold a reference to the device, so a renderer disposed before they
+    // finish does not wait for them: the last one to finish releases the shaders and the device.
+    private sealed class StatedShaders
+    {
+        private readonly object _gate = new();
+        private readonly ID3D11PixelShader*[] _pixels = new ID3D11PixelShader*[PixelKinds];
+        private ID3D11Device* _device;
+        private ID3D11VertexShader* _vertex;
+        private ID3D11InputLayout* _layout;
+        private int _pending = PixelKinds + 1;
+        private bool _abandoned;
+        private Exception? _failure;
+
+        public ID3D11VertexShader* Vertex => _vertex;
+
+        public ID3D11InputLayout* Layout => _layout;
+
+        public ID3D11PixelShader* Pixel(PixelKind kind) => _pixels[(int)kind];
+
+        // Starts the threads, each with the device; -1 is the vertex shader. A shader whose thread does not start is made on the
+        // calling thread, so every shader is counted and Wait returns (PR #268's review).
+        public static StatedShaders Start(ID3D11Device* device)
+        {
+            var shaders = new StatedShaders { _device = device };
+            _ = device->AddRef();
+            for (int kind = -1; kind < PixelKinds; kind++)
+            {
+                int which = kind;
+                try
+                {
+                    var thread = new Thread(() => shaders.Make(which)) { IsBackground = true, Name = "XylemUI stated shader" };
+                    thread.Start();
+                }
+                catch (Exception exception) when (exception is OutOfMemoryException or ThreadStartException)
+                {
+                    shaders.Make(which);
+                }
+            }
+
+            return shaders;
+        }
+
+        // Waits for every shader; a failure to compile one is thrown here, to the first draw of a state.
+        public void Wait()
+        {
+            lock (_gate)
+            {
+                while (_pending > 0)
+                {
+                    _ = Monitor.Wait(_gate);
+                }
+            }
+
+            if (_failure is not null)
+            {
+                ExceptionDispatchInfo.Throw(_failure);
+            }
+        }
+
+        // The renderer is disposed: the shaders made are released now, and the ones still being made by the threads that make them.
+        public void Abandon()
+        {
+            lock (_gate)
+            {
+                _abandoned = true;
+                ReleaseMade();
+            }
+        }
+
+        private void Make(int kind)
+        {
+            ID3D11VertexShader* vertex = null;
+            ID3D11InputLayout* layout = null;
+            ID3D11PixelShader* pixel = null;
+            Exception? failure = null;
+            try
+            {
+                if (kind < 0)
+                {
+                    vertex = CreateStatedVertexShader(_device, out layout);
+                }
+                else
+                {
+                    pixel = CreatePixelShader(_device, EntryOf((PixelKind)kind), IsFaded((PixelKind)kind), stated: true);
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or GpuDeviceLostException)
+            {
+                failure = exception;
+            }
+
+            lock (_gate)
+            {
+                _failure ??= failure;
+                if (_abandoned)
+                {
+                    Release((IUnknown*)pixel);
+                    Release((IUnknown*)layout);
+                    Release((IUnknown*)vertex);
+                }
+                else if (kind < 0)
+                {
+                    _vertex = vertex;
+                    _layout = layout;
+                }
+                else
+                {
+                    _pixels[kind] = pixel;
+                }
+
+                if (--_pending == 0)
+                {
+                    // The last thread lets the device go, and with a failure the shaders made are of no use.
+                    if (_failure is not null)
+                    {
+                        ReleaseMade();
+                    }
+
+                    Release((IUnknown*)_device);
+                    _device = null;
+                    Monitor.PulseAll(_gate);
+                }
+            }
+        }
+
+        private void ReleaseMade()
+        {
+            for (int kind = 0; kind < PixelKinds; kind++)
+            {
+                Release((IUnknown*)_pixels[kind]);
+                _pixels[kind] = null;
+            }
+
+            Release((IUnknown*)_layout);
+            Release((IUnknown*)_vertex);
+            _layout = null;
+            _vertex = null;
+        }
+    }
+
+    // A command's state and text scale, in the second vertex buffer beside its instance (row R4d).
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StateRef
+    {
+        public uint State;
+        public float TextScale;
     }
 
     // The texture array of one kind of the atlas's pages, a slice per page, and the id of the page each slice holds.

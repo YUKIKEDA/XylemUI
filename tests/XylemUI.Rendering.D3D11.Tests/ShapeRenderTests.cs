@@ -325,12 +325,13 @@ public sealed unsafe class ShapeRenderTests(UiThreadFixture ui)
         int largest = 0;
         try
         {
+            Color[] pixels = renderer.ReadCapturedPixels(capture, width, height);
             for (int y = Math.Max(0, (int)area.Y - 2); y < Math.Min(height, (int)(area.Y + area.W) + 2); y++)
             {
                 for (int x = Math.Max(0, (int)area.X - 2); x < Math.Min(width, (int)(area.X + area.Z) + 2); x++)
                 {
                     Color expected = ShapeReference.Over(reference(new Vector2(x + 0.5f, y + 0.5f)), Clear);
-                    Color actual = renderer.ReadCapturedPixel(capture, x, y);
+                    Color actual = pixels[(y * width) + x];
                     int difference = Math.Max(
                         Math.Abs(expected.R - actual.R),
                         Math.Max(Math.Abs(expected.G - actual.G), Math.Abs(expected.B - actual.B))

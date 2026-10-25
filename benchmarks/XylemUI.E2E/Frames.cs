@@ -8,7 +8,8 @@ namespace XylemUI.E2E;
 // each present call to the refresh that showed it (frame statistics); and the interval between frames. A frame whose interval
 // is more than 1.5 times the median missed a refresh. `heavy` loads the GPU with full-window translucent rectangles. The text is
 // ClearType where the window allows it, or grayscale with --gray (roadmap row T2); the report names it and the draws of a frame.
-// --shapes, --curves, and --groups change the scene's rectangles (rows R4a, R4b, and R4c, Scene.Build).
+// --shapes, --curves, and --groups change the scene's rectangles (rows R4a, R4b, and R4c, Scene.Build); --scopes puts them in clips
+// and transforms (row R4d).
 internal static class Frames
 {
     public static int Run(
@@ -19,7 +20,9 @@ internal static class Frames
         bool shapes = false,
         bool curves = false,
         bool groups = false,
-        int layers = 50
+        int layers = 50,
+        string scopes = "",
+        int nested = 0
     )
     {
         UiThread.Initialize();
@@ -45,7 +48,7 @@ internal static class Frames
             }
 
             last = t0;
-            scene.Build(frame, heavy, shapes, curves, groups, layers);
+            scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested);
             long t1 = Stopwatch.GetTimestamp();
             scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
             long t2 = Stopwatch.GetTimestamp();
@@ -89,6 +92,8 @@ internal static class Frames
         report.Text("shapes", shapes ? "yes" : "no");
         report.Text("curves", curves ? "yes" : "no");
         report.Text("groups", groups ? "yes" : "no");
+        report.Text("scopes", scopes.Length > 0 ? scopes : "none");
+        report.Number("nested", nested);
         report.Number("layers", scene.Renderer.LayerCount);
         report.Number("layer_bytes", scene.Renderer.LayerBytes);
         report.Number("layers_refused", scene.Renderer.LayersRefused);

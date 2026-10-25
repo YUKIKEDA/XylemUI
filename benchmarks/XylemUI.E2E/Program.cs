@@ -3,13 +3,17 @@
 //   dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>, then <dir>/XylemUI.E2E.exe <scenario>.
 // Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
+//                              (--scopes as frames' draws the first frame in clips and transforms, row R4d)
 //   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
 //   startup-check [runs]       in one run, the desktop image with the marker against the frame statistics (the outside check)
 //   frames [frames] [--warp]   CPU stages, GPU time, present latency, intervals, missed frames of the scene
 //                              (--gray draws its text in grayscale instead of the window's ClearType, row T2; --shapes draws each
 //                              rectangle rounded, with a gradient, a border, and a shadow, row R4a; --curves draws each as a
 //                              dashed line, an ellipse, and an arc, and 1,000 glyphs with a gradient, row R4b; --groups puts
-//                              them in 100 groups of opacity 0.8, 50 of them layers or as many as --layers N, row R4c)
+//                              them in 100 groups of opacity 0.8, 50 of them layers or as many as --layers N, row R4c;
+//                              --scopes cards|rect|rounded|rotated|nested|nested-heavy|zoom|zoom-still puts them in clips
+//                              and transforms (cards and zoom-still are the scenes without them to compare with), with
+//                              --nested N rounded clips for nested and nested-heavy, row R4d)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, shaping and cached
@@ -39,13 +43,15 @@ using XylemUI.E2E;
 string scenario = args.Length > 0 ? args[0] : "frames";
 float Scale() => Array.IndexOf(args, "--scale") is int at and >= 0 ? float.Parse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 0;
 
+string Scopes() => Array.IndexOf(args, "--scopes") is int at and >= 0 && at + 1 < args.Length ? args[at + 1] : string.Empty;
+
 int Number(int index, int fallback) =>
     args.Length > index && int.TryParse(args[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
 
 return scenario switch
 {
-    "startup" => Startup.Launch(Number(1, 10)),
-    "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray")),
+    "startup" => Startup.Launch(Number(1, 10), Scopes()),
+    "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray"), scopes: Scopes()),
     "idle" => Startup.Idle(Number(1, 3), gray: args.Contains("--gray")),
     "startup-check" => Startup.Check(Number(1, 5)),
     "frames" => Frames.Run(
@@ -56,7 +62,9 @@ return scenario switch
         shapes: args.Contains("--shapes"),
         curves: args.Contains("--curves"),
         groups: args.Contains("--groups"),
-        layers: Array.IndexOf(args, "--layers") is int layersAt and >= 0 ? Number(layersAt + 1, 50) : 50
+        layers: Array.IndexOf(args, "--layers") is int layersAt and >= 0 ? Number(layersAt + 1, 50) : 50,
+        scopes: Scopes(),
+        nested: Array.IndexOf(args, "--nested") is int nestedAt and >= 0 ? Number(nestedAt + 1, 0) : 0
     ),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),

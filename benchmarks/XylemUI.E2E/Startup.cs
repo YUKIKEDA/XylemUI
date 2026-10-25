@@ -9,10 +9,16 @@ namespace XylemUI.E2E;
 //            process is created to the display refresh that showed the first frame (frame statistics, SyncQPCTime; the
 //            performance counter is one clock for every process). Also the part up to Main, and the executable's size.
 //   startup-child: shows the scene once, waits until frame statistics say it reached the display, prints the counters, and
-//            exits; with --idle, first stays idle for 10 s and reports the CPU time and the memory of that time.
+//            exits; with --idle, first stays idle for 10 s and reports the CPU time and the memory of that time. If the display
+//            never shows the frame (a hidden window's, for one), the child ends with exit code 1 after DisplayTimeout.
 internal static class Startup
 {
-    public static int Launch(int runs)
+    // The longest wait for the first frame to reach the display. Without it, a child whose frame the display never showed waited
+    // forever: with a hidden window, main's child hung in 4 of 5 runs (PR #268).
+    private static readonly TimeSpan DisplayTimeout = TimeSpan.FromSeconds(2);
+
+    // `scopes` (Scene.Build's) draws the first frame in clips and transforms (row R4d), which waits for their shaders.
+    public static int Launch(int runs, string scopes = "")
     {
         string exe = Environment.ProcessPath!;
         var toDisplay = new List<double>();
@@ -20,7 +26,7 @@ internal static class Startup
         for (int i = 0; i < runs; i++)
         {
             long launched = Stopwatch.GetTimestamp();
-            using JsonDocument child = RunChild(exe, "startup-child");
+            using JsonDocument child = RunChild(exe, scopes.Length > 0 ? $"startup-child --scopes {scopes}" : "startup-child");
             JsonElement root = child.RootElement;
             toDisplay.Add(Stopwatch.GetElapsedTime(launched, root.GetProperty("displayed_qpc").GetInt64()).TotalMilliseconds);
             toMain.Add(Stopwatch.GetElapsedTime(launched, root.GetProperty("main_qpc").GetInt64()).TotalMilliseconds);
@@ -33,7 +39,7 @@ internal static class Startup
         return 0;
     }
 
-    public static int Child(bool idle, bool gray = false)
+    public static int Child(bool idle, bool gray = false, string scopes = "")
     {
         long main = Stopwatch.GetTimestamp();
         UiThread.Initialize();
@@ -42,13 +48,14 @@ internal static class Startup
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         long firstCall = 0;
         long displayed = 0;
+        bool timedOut = false;
         int frame = 0;
         Action? step = null;
         step = () =>
         {
             if (frame++ == 0)
             {
-                scene.Build(0);
+                scene.Build(0, scopes: scopes);
                 firstCall = Stopwatch.GetTimestamp();
                 scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
             }
@@ -66,6 +73,12 @@ internal static class Startup
 
                 return;
             }
+            else if (Stopwatch.GetElapsedTime(firstCall) > DisplayTimeout)
+            {
+                timedOut = true;
+                Win32MessageLoop.Quit();
+                return;
+            }
 
             // Not shown yet: look again at the next wake (the clock's timeout, since nothing is presented).
             Win32MessageLoop.FrameScheduler.RequestFrame(step!);
@@ -73,6 +86,11 @@ internal static class Startup
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         _ = Win32MessageLoop.Run();
         Win32MessageLoop.SetFrameClock(0);
+        if (timedOut)
+        {
+            Console.Error.WriteLine($"startup-child: the first frame did not reach the display within {DisplayTimeout.TotalSeconds} s.");
+            return 1;
+        }
 
         if (idle)
         {

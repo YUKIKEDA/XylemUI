@@ -71,9 +71,30 @@ internal sealed class Scene : IDisposable
     // ellipse, and an arc with a gradient (row R4b), and 125 runs of 8 glyphs (1,000 glyphs) are drawn with a gradient. With
     // `groups`, the rectangles are 100 cards of 10, each a group of opacity 0.8; the first `layers` of the odd cards (at most 50)
     // have an 11th rectangle over their first, so that they are layers and the other cards give their alpha to their children
-    // (row R4c).
-    public void Build(int frame, int heavy = 0, bool shapes = false, bool curves = false, bool groups = false, int layers = 50)
+    // (row R4c). `scopes` puts the scene in clips and transforms (row R4d): "cards" draws the groups' layout without its groups,
+    // and "rect" and "rounded" clip each card of it to a rectangle a little shorter than the card, with radius 0 or 6; "rotated" turns each card
+    // about its middle by an angle that changes with the frame; "nested" puts the 1,000 rectangles in `nested` rounded clips of
+    // the window, each turned a thousandth of a radian more than the one around it so that none is taken into another, and
+    // "nested-heavy" adds four translucent rectangles of the window inside them; "zoom"
+    // draws 10 lines of text in a scale that changes every frame, so that every frame draws its glyphs at a new size, and
+    // "zoom-still" the same in a scale that stays 1.25.
+    public void Build(
+        int frame,
+        int heavy = 0,
+        bool shapes = false,
+        bool curves = false,
+        bool groups = false,
+        int layers = 50,
+        string scopes = "",
+        int nested = 0
+    )
     {
+        if (scopes.Length > 0)
+        {
+            BuildScopes(frame, scopes, nested);
+            return;
+        }
+
         Atlas.BeginFrame();
         float scale = Window.ScaleFactor;
         List.Reset(scale);
@@ -144,6 +165,92 @@ internal sealed class Scene : IDisposable
         for (int i = 0; i < heavy; i++)
         {
             List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 8));
+        }
+
+        List.ResolveGlyphs(Atlas);
+    }
+
+    private void BuildScopes(int frame, string scopes, int nested)
+    {
+        Atlas.BeginFrame();
+        float scale = Window.ScaleFactor;
+        List.Reset(scale);
+        int width = (int)(Renderer.Width / scale);
+        int height = (int)(Renderer.Height / scale);
+        List.FillRect(0, 0, 40, 40, Marker);
+        var middle = new System.Numerics.Vector2(width / 2f, height / 2f);
+        if (scopes is "nested" or "nested-heavy")
+        {
+            for (int k = 0; k < nested; k++)
+            {
+                List.PushTransform(System.Numerics.Matrix3x2.CreateRotation(0.001f, middle));
+                List.PushClip(10 + k, 10 + k, width - 20 - (2 * k), height - 20 - (2 * k), new CornerRadii(40));
+            }
+        }
+
+        for (int i = 0; i < Rectangles; i++)
+        {
+            Color color = (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66);
+            if (scopes is "cards" or "rect" or "rounded" or "rotated")
+            {
+                int g = i / 10;
+                int j = i % 10;
+                float cardX = ((g * 97) + (frame * 3)) % Math.Max(1, width - 180);
+                float cardY = 50 + ((g * 37) % Math.Max(1, height - 80));
+                if (j == 0 && scopes != "cards")
+                {
+                    if (scopes == "rotated")
+                    {
+                        List.PushTransform(System.Numerics.Matrix3x2.CreateRotation(0.01f * ((frame + g) % 60), new(cardX + 85, cardY + 8)));
+                    }
+                    else
+                    {
+                        List.PushClip(cardX, cardY + 2, 165, 12, new CornerRadii(scopes == "rounded" ? 6 : 0));
+                    }
+                }
+
+                List.FillRect(cardX + (j * 17), cardY, 16, 16, color);
+                if (j == 9 && scopes != "cards")
+                {
+                    List.Pop();
+                }
+
+                continue;
+            }
+
+            float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
+            float y = 50 + ((i * 11) % Math.Max(1, height - 70));
+            List.FillRect(x, y, 16, 16, color);
+        }
+
+        if (scopes is "nested" or "nested-heavy")
+        {
+            // "nested-heavy" covers each pixel four times more: the clip's cost per pixel against a layer's composite.
+            for (int k = 0; scopes == "nested-heavy" && k < 4; k++)
+            {
+                List.FillRect(0, 0, width, height, new Color(0x10, 0x20, 0x30, 40));
+            }
+
+            for (int k = 0; k < 2 * nested; k++)
+            {
+                List.Pop();
+            }
+        }
+
+        if (scopes is "zoom" or "zoom-still")
+        {
+            float zoom = scopes == "zoom" ? 1.25f + (0.25f * MathF.Sin(frame * 0.05f)) : 1.25f;
+            List.PushTransform(System.Numerics.Matrix3x2.CreateScale(zoom, new System.Numerics.Vector2(60, 60)));
+            for (int line = 0; line < 10; line++)
+            {
+                _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 16, Atlas, 60, 80 + (line * 20), Color.FromRgb(0xE8E8E8));
+            }
+
+            List.Pop();
+        }
+        else
+        {
+            _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage, IsAliased);
         }
 
         List.ResolveGlyphs(Atlas);
