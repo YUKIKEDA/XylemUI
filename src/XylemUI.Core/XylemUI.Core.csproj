@@ -13,5 +13,7 @@
     <InternalsVisibleTo Include="XylemUI.E2E" />
     <!-- Tests that need a real Win32 window or message loop (the render guard, the dispatcher in the loop) live there. -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
+    <!-- The hit regions are tested against the pixels drawn on WARP (row R4e). -->
+    <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
   </ItemGroup>
 </Project>

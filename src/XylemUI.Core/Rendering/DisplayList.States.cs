@@ -26,10 +26,9 @@ public sealed partial class DisplayList
     /// </exception>
     public void PushClip(float x, float y, float width, float height, in CornerRadii radii)
     {
-        bool numbers = float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(width) && float.IsFinite(height);
-        if (!numbers || width < 0 || height < 0)
+        if (BadEdge(x, y, width, height) is { } name)
         {
-            throw new ArgumentOutOfRangeException(nameof(width), "The clip's edges are numbers and its width and height are at or above 0.");
+            throw new ArgumentOutOfRangeException(name, "The clip's edges are numbers and its width and height are at or above 0.");
         }
 
         CheckRadius(radii.TopLeft, nameof(radii));
@@ -181,9 +180,9 @@ public sealed partial class DisplayList
         UpdateMode();
         if (frame.Recorded)
         {
-            if (CommandCount - 1 == frame.Command)
+            if (CommandCount - 1 == frame.Command && _hitCount == frame.Hits)
             {
-                // Nothing was drawn in the scope: it leaves the list.
+                // Nothing was drawn in the scope and no hit region was written in it: it leaves the list.
                 CommandCount--;
                 _usedColors--;
                 _stateRecords = frame.Record;
@@ -242,6 +241,7 @@ public sealed partial class DisplayList
         frame.Command = CommandCount;
         frame.Record = _stateRecords;
         frame.ClipStart = _clipRecords;
+        frame.Hits = _hitCount;
         _state = AppendState(scopes, physical, _textScale, clips);
     }
 
@@ -606,6 +606,7 @@ public sealed partial class DisplayList
         public int Command;
         public int Record;
         public int ClipStart;
+        public int Hits;
     }
 
     // The kinds of scopes Pop ends.
