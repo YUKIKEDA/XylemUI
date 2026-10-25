@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Text.Tests" />
+    <!-- The text leaf of row V1a lays text out with the internal ShapingResult (design §4.1, the wrapping API, T1b). -->
+    <InternalsVisibleTo Include="XylemUI.Core" />
     <!-- The PNG decoder and the scaler of bitmap color glyphs, for the Windows rasterizer and its tests (roadmap row T9). -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows" />
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />

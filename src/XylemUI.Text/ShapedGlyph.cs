@@ -8,4 +8,9 @@ namespace XylemUI.Text;
 /// <param name="XAdvance">How far the pen moves after the glyph.</param>
 /// <param name="XOffset">The horizontal shift of the glyph from the pen.</param>
 /// <param name="YOffset">The vertical shift of the glyph from the pen, up positive.</param>
-public readonly record struct ShapedGlyph(uint GlyphId, int Cluster, int XAdvance, int XOffset, int YOffset);
+/// <param name="UnsafeToBreak">
+/// Whether a line break before the glyph's cluster changes how the text around it is shaped (HarfBuzz's
+/// <c>HB_GLYPH_FLAG_UNSAFE_TO_BREAK</c>): a ligature or a kerning pair across it, or the contextual form of a joining script. The
+/// line breaking shapes the text around such a break again (design §4.1, "Shaping and line breaking").
+/// </param>
+public readonly record struct ShapedGlyph(uint GlyphId, int Cluster, int XAdvance, int XOffset, int YOffset, bool UnsafeToBreak = false);
