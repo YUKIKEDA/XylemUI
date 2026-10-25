@@ -298,6 +298,15 @@ Rejected:
   - v1 Windows で TSF を最小構成から通す（IMM32 + SurroundingText 非伝達）
   - テキスト位置を UTF-8 バイトや codepoint 数で持つ
   - 本番経路で `StringInfo` / `Rune` / `char.GetUnicodeCategory` を使う
+  - 行の境界で整形をやり直さず、1 回の整形の結果をクラスタの境界で切る（Avalonia・Flutter・GPUI と同じだが、行末と行頭の字形と、改行した行のソフトハイフンが正しくならない。T1 の Grill）
+  - 小書きの仮名（CJ）を、CSS の `line-break: normal` のように行頭に置ける種類に仕立てる（UAX#14 の既定と Avalonia は strict で、適合のテストに例外が出る。T1 の Grill）
+  - 行より広い語を切らずにはみ出させる（CSS の `overflow-wrap: normal`。Avalonia の `Wrap` と skparagraph は切る。T1 の Grill）
+  - 内容の幅の最大に行末の空白を含める（skparagraph と同じだが、CSS では折り返す空白は行末で幅に入らない。T1 の Grill）
+  - 改行の候補を、手書きの規則で見つける（GPUI。日本語の禁則が無く、強制改行は `\n` だけ。T1 の Grill）
+  - 文字の葉を 1 行だけにして先に入れ、T1 で折り返しを足す（折り返さない `Text` は要件の半分で、計測関数とキャッシュを作り直すことになる。V1 の Grill）
+  - V1 を 1 つの Issue にする（設計の判断が十数点あり、1 つの PR が大きくなりすぎる。V1 の Grill）
+  - V1 を描画と入力の 2 つに分ける（文字のキャッシュの測定が描画の行に埋もれる。V1 の Grill）
+  - T1 を V1a に入れる（Unicode の表の生成と改行の実装に、文字の葉とキャッシュが加わり、1 つの PR が大きくなりすぎる。V1 の Grill）
   - DirectWrite / Core Text にレイアウトまで全面委譲する（caret geometry を共通化できない）
   - 同梱フォントに CJK 統合漢字の基本範囲・絵文字・キリル / ギリシャ文字を入れる（約 2 万字で数 MB になり、配布物の目安 5 MB を超える。Flutter・Avalonia・GPUI のどれも CJK のフォールバック用のフォントを同梱せず、Windows は日本語と絵文字のフォントを必ず持つ。`.notdef` と基本ラテン文字だけの終点用のフォントにした。F1 の Grill、Issue #145）
   - フォントを同梱せず、`.notdef` の矩形をエンジンが描く（FreeType とシェーピングを通らない特別な経路が増える。F1 の Grill）
