@@ -203,6 +203,14 @@ public sealed unsafe class D3D11Renderer : IDisposable
     }
 
     /// <summary>
+    /// Sets the function that makes the layer textures; tests make it fail as a device without memory does.
+    /// </summary>
+    internal LayerPool.TextureMaker MakeLayerTexture
+    {
+        set => _layers.MakeTexture = value;
+    }
+
+    /// <summary>
     /// Gets the width of the back buffer, in physical pixels.
     /// </summary>
     public int Width { get; private set; }
@@ -1224,6 +1232,10 @@ public sealed unsafe class D3D11Renderer : IDisposable
                     move = layers > 0 ? new Vector4(target.X, target.Y, 0, 0) : default;
                     draws = AddOp(draws, i, DrawOp.EndLayer, state.Layer, default);
                     draws = AddToDraw(draws, i, PixelKind.Layer, state.Layer);
+
+                    // The draws after the composite may clear and draw the texture again: a later sibling layer takes it, so
+                    // that a frame needs textures for the layers open at once, not for each layer (PR #264's review).
+                    _layers.Return(state.Layer);
                     destination[i++] = new QuadInstance
                     {
                         Rect = state.Bounds - move,

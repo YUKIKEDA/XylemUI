@@ -1,5 +1,6 @@
 using System.Numerics;
 using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
 using XylemUI.Platform.Windows;
 using XylemUI.Text;
 
@@ -294,6 +295,89 @@ public sealed unsafe class GroupRenderTests(UiThreadFixture ui)
         );
 
     /// <summary>
+    /// When the device has no memory for a layer's texture, the group gives its alpha to its children as when the pool is full,
+    /// the refusal is counted, and the frame is drawn.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer whose layer textures are made by a function that returns E_OUTOFMEMORY, and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Push 0.5; fill (20, 20, 80, 60) with ink and (60, 40, 80, 60) with paper; pop. Draw, and read every pixel.
+    ///
+    /// Expected:
+    /// - Each pixel is (paper times 0.5) over (ink times 0.5) over the clear color, each channel within 1; no layer, one refusal.
+    /// </remarks>
+    [Fact]
+    public void Layer_DeviceWithoutMemory_GivesTheAlphaToTheChildren() =>
+        ui.Invoke(() =>
+            ShapeRenderTests.Compare(
+                list =>
+                {
+                    list.PushOpacity(0.5f);
+                    list.FillRect(20, 20, 80, 60, Ink);
+                    list.FillRect(60, 40, 80, 60, Paper);
+                    list.Pop();
+                },
+                Window,
+                p => Over(Rect(p, new Vector4(60, 40, 80, 60), Paper) * 0.5f, Rect(p, new Vector4(20, 20, 80, 60), Ink) * 0.5f),
+                tolerance: 1,
+                setup: WithoutMemory,
+                check: renderer => Assert.Equal((0, 1), (renderer.LayerCount, renderer.LayersRefused))
+            )
+        );
+
+    /// <summary>
+    /// Sibling layers of a frame take turns with the pool's textures: the third takes the texture of the first, and each is drawn
+    /// in its place with its alpha.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - For k from 0 to 2: push 0.5 + 0.1k; fill (10 + 75k, 10, 40, 40) with ink and (30 + 75k, 30, 40, 40) with red of alpha
+    ///   128; pop. Read every pixel.
+    ///
+    /// Expected:
+    /// - (red over ink) times each group's alpha in its place, over the clear color, each channel within 1; the pool holds two
+    ///   textures for the three layers (a returned texture is given out again after one other layer, LayerPool.Spacing).
+    /// </remarks>
+    [Fact]
+    public void Layer_Siblings_TakeTurnsWithTheTextures() =>
+        ui.Invoke(() =>
+            ShapeRenderTests.Compare(
+                list =>
+                {
+                    for (int k = 0; k < 3; k++)
+                    {
+                        list.PushOpacity(0.5f + (0.1f * k));
+                        list.FillRect(10 + (75 * k), 10, 40, 40, Ink);
+                        list.FillRect(30 + (75 * k), 30, 40, 40, HalfRed);
+                        list.Pop();
+                    }
+                },
+                Window,
+                p =>
+                {
+                    Vector4 color = Vector4.Zero;
+                    for (int k = 0; k < 3; k++)
+                    {
+                        Vector4 card = Over(
+                            Rect(p, new Vector4(30 + (75 * k), 30, 40, 40), HalfRed),
+                            Rect(p, new Vector4(10 + (75 * k), 10, 40, 40), Ink)
+                        );
+                        color += card * (0.5f + (0.1f * k));
+                    }
+
+                    return color;
+                },
+                tolerance: 1,
+                check: renderer => Assert.Equal((2, 0), (renderer.LayerCount, renderer.LayersRefused))
+            )
+        );
+
+    /// <summary>
     /// Text in a group is a layer and is drawn in grayscale even where the window draws ClearType: the pixels are those of the
     /// same text drawn in grayscale with its color's alpha times the group's, without a group.
     /// </summary>
@@ -483,4 +567,7 @@ public sealed unsafe class GroupRenderTests(UiThreadFixture ui)
 
     // Premultiplied `top` over `bottom`.
     private static Vector4 Over(Vector4 top, Vector4 bottom) => top + (bottom * (1 - top.W));
+
+    // Makes every layer texture fail as a device without memory does.
+    private static unsafe void WithoutMemory(D3D11Renderer renderer) => renderer.MakeLayerTexture = static (_, _, _) => E.E_OUTOFMEMORY;
 }
