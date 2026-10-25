@@ -1243,6 +1243,13 @@ sequenceDiagram
 
 変更のなかったノードはdirty subtreeフラグが立たないため、Layout/Materialization双方でスキップされる（§2.4）。DamageアキュムレータはGPU側の描画範囲を絞る用途ではなく、「そもそもこのフレームで再描画が必要か（フレームスキップ判定）」の用途に限定する。dirtyが存在する場合、DisplayList・頂点バッファは差分パッチではなく毎フレーム全体を線形に再構築する。入力のヒットテストは常に直近完成の `HitTestList` を使う。スクロール等で Transform だけが変わったフレームでも、次のポインタイベントより前に DisplayList と HitTestList を再構築する（§3.4.1、§7）。
 
+**V1 の分け方（V1 の Grill でオーナーが決定、Issue #280）:** 行 V1 を次の 4 つに分け、この順に入れる。その前に、改行の行 T1 を入れる（文字の葉が最初から折り返し、§3.2 の 2 段のキャッシュの形で作れるため）。各行は、Grill → 設計の PR → 実装の順で進める。
+
+- **V1a 文字の葉:** `TextShaper` と T1 の改行を使う計測関数、`ShapedTextCache` と `LineBreakCache`（§3.2）、文字の行の高さ、10,101 個の文字の葉のリサイズ（§11.3）、計測関数の例外の報告
+- **V1b 描画の段とフレームの駆動:** ノードの描く関数、木を絶対座標でたどって `DrawingContext` を作る順と段、`PaintUpdates`、`Hidden` の部分木を飛ばすこと、effect → レイアウト → 描画 → Render のフレームの予約、変わらないフレームは Present しないこと
+- **V1c 入力:** Win32 のマウスとポインタのイベントの型、ヒットテストと capture・bubble、ホバーと押下の擬似状態、遮る印、ハンドラに渡す座標を倍率で割ること
+- **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプルと下の 4 つの受け入れ
+
 **V1（MoonBit 版で到達。C# 版で再到達させる）:** Column / Text / Button でこの経路が native で通った。入力は直近 `HitTestList` を末尾から走査し、木は登らない。Button クリックは Signal を `Batch` し Text が変わる。clean フレームは Present しない。C# 版の再現手順（`dotnet test` / `dotnet run` のプロジェクト）は移植時に定義する。
 
 ### 2.11 イベントループ / Vsync待機モデル
@@ -1855,6 +1862,17 @@ internal sealed record ShapingResult(GlyphRun[] GlyphRuns);           // 幅に�
 internal sealed record LineBreakResult(int[] BreakPoints);            // 幅に依存、§3.2でキャッシュ
 internal sealed record LineLayoutResult(GlyphRun[][] Lines);          // 行ごとに再分割・L2適用済み、描画直前の最終形
 ```
+
+**改行と書記素の決定（T1 の Grill でオーナーが決定、Issue #280）:** Avalonia（自前の UAX#14・UAX#29）、Flutter（skparagraph と SkUnicode の ICU）、GPUI（手書きの規則）を読んで決めた（Issue #280 に行番号）。
+
+- **作るもの:** T1 は `XylemUI.Text` に、Unicode の表の生成器と表（改行の種類、書記素の種類、拡張絵文字、東アジアの幅）、UAX#29 の書記素の列挙、UAX#14 の改行の候補の列挙、折り返し、内容の幅の関数を作る。フォントのフォールバックの境界は、書記素の境界に合わせて切り直す。これらを文字の葉の計測関数とキャッシュ（§3.2）につなぐのは行 V1a である
+- **行の境界の整形のやり直し（Pass2）:** 上の 2 パスのとおり入れる。比べた 3 つはどれも整形をやり直さず、1 回の整形の結果をクラスタの境界で切る（Avalonia の `ShapedBuffer.cs` 591〜640 行目、skparagraph の `ParagraphImpl.cpp` 681〜697 行目、GPUI の `line_layout.rs` 639〜641 行目）。そのため、行末と行頭の字形や、改行した行のソフトハイフンが正しくならない
+- **小書きの仮名（CJ）:** UAX#14 の既定（LB1）のとおり、行頭に置かない種類（NS、strict）に解決する。Avalonia（`LineBreakEnumerator.cs` 1470〜1503 行目）と同じ。CSS の `line-break: normal` のような仕立ては、要るという理由が出たら行を立てる
+- **適合のテスト:** §8.13 の `LineBreakTest.txt` と `GraphemeBreakTest.txt` の全行を、例外なしで通す
+- **表の作り方:** 生成器は、`vendor/versions.lock` に書いたバージョンと SHA-256 で UCD を取り、C# の `*.g.cs` を出力する。出力はリポジトリに入れる。表の構造（2 段の表かトライか）は、実装で大きさと 1 文字を引く時間を測って選び、ここに書く。ゲートは表を作り直さず、表が持つバージョンが lock と一致することをテストで確かめる
+- **折り返し:** 改行の候補のうち、行に収まる最後のものを先頭から詰めて選ぶ（Avalonia の `PerformTextWrapping`、skparagraph の `TextWrapper`）。行末の空白は幅に入れない。強制改行は LF、CR LF、CR、NEL、U+2028（UAX#14 の BK・CR・LF・NL）。1 語が行より広いときは、書記素の境界で切る（Avalonia の `Wrap`、skparagraph はクラスタの境界）。CSS の `overflow-wrap: normal` のように切らずにはみ出す形は採らない
+- **内容の幅:** 最小は、改行の候補の間の並びのうち、行末の空白を除いて最も広いもの（skparagraph の `TextWrapper.cpp` 223〜241 行目と同じ）。最大は、強制改行の間の行のうち、行末の空白を除いて最も広いもの。skparagraph は最大に行末の空白を含めるが、CSS では折り返す空白は行末で幅に入らない
+- **確かめ方:** 適合のテストに加えて、端の場合として、強制改行の 5 種類、行末の空白、ソフトハイフン（改行した行だけでハイフンが出る）、行より広い語、緊急ブレークの後に Pass2 で溢れる場合、絵文字の ZWJ の並びと異体字セレクタを切らないこと、フォールバックの境界の切り直しを入れる。費用は、改行の候補の列挙の 1 文字の ns と、S8b の日本語の画面の折り返しの時間を測る。定常状態の割り当ては 0
 
 グラフェムクラスタ検出（UAX#29）は、BiDi(UAX#9)・改行(UAX#14)と同様にコアアルゴリズムが相対的に安定しているため、**同じ判断基準で自前実装する**（§4.2の決定を拡張）。.NET の `StringInfo`（`GetNextTextElementLength`）も UAX#29 の拡張グラフェムクラスタを実装しているが、対応する Unicode バージョンが .NET ランタイムのバージョンに従って変わり、§8.13 のバージョン固定と両立しないため本番経路では使わない（テストの比較対象として使うのはよい）。3アルゴリズムとも同一のUnicodeデータ生成パイプライン（`tools/UnicodeTableGen`）を共有する。生成器は Unicode Character Database から C# のソース（`*.g.cs`）を出力し、テーブルは `ReadOnlySpan<byte>` を返す静的プロパティとして実行ファイルのデータ領域に埋め込む（起動時のアロケーションも初期化処理も発生しない）。
 
@@ -3024,7 +3042,7 @@ Linuxのみ動的リンクとする。fontconfigの正当性はユーザー実�
 ### 8.13 UAX#9自前実装の適合性テスト — §4.2
 Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイート（`tests/XylemUI.Text.Tests`）に組み込み、適合をBiDi実装完了の受け入れ基準とする。§8.4で改行アルゴリズム(UAX#14)、§4.1でグラフェムクラスタ検出(UAX#29)も自前実装を決めたため、同様に`LineBreakTest.txt`・`GraphemeBreakTest.txt`も適合性テストとして組み込む。テストデータ1行を1ケースとして xUnit の `[Theory]` で回す。
 
-**Unicodeバージョンの固定**: UAX#9/#14/#29の自前実装が参照するUnicodeデータテーブル（`tools/UnicodeTableGen`の生成元）は、特定のUnicodeバージョン（例: 17.x）に固定し、リポジトリの `vendor/versions.lock` に記録してCIで検証する。「UAX#9アルゴリズム自体」よりも「Unicodeプロパティテーブルの更新作業」の方が長期的な保守負担になりやすいため、バージョンを曖昧にせず明示的に管理する。.NET ランタイムが内蔵する Unicode データ（`char.GetUnicodeCategory`、`Rune`、`StringInfo`）のバージョンとは独立に管理し、テキストパイプラインの判定にはそれらを使わない。
+**Unicodeバージョンの固定**: UAX#9/#14/#29の自前実装が参照するUnicodeデータテーブル（`tools/UnicodeTableGen`の生成元）は、特定のUnicodeバージョン（Unicode 18.0.0。公開は 2026 年 9 月 16 日、T1 の Grill、Issue #280）に固定し、リポジトリの `vendor/versions.lock` に記録してCIで検証する。「UAX#9アルゴリズム自体」よりも「Unicodeプロパティテーブルの更新作業」の方が長期的な保守負担になりやすいため、バージョンを曖昧にせず明示的に管理する。.NET ランタイムが内蔵する Unicode データ（`char.GetUnicodeCategory`、`Rune`、`StringInfo`）のバージョンとは独立に管理し、テキストパイプラインの判定にはそれらを使わない。
 
 ### 8.14 解決済み事項（第1ラウンド、参考）
 
