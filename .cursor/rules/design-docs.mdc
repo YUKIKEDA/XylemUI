@@ -108,6 +108,8 @@ A design that changes what a layout or render algorithm reads checks every cache
 
 A design of what drives a frame or a loop lists every call that the code driving it today makes (a sample, a benchmark scene) and checks each against its own steps. V1b's first design left out `GlyphAtlas.BeginFrame`, which `benchmarks/XylemUI.E2E/Scene.cs` calls before every display list; without it no place of the atlas can be evicted (PR #309's review).
 
+A design in which pending work asks for the next turn of a loop (a frame, a flush) says which work asks for it, including work a turn puts back after a failure. V1b cleared the frame request at the frame's start, so the request the layout pass put back after a measurement threw asked for a new frame each time, and a leaf that kept throwing drew and presented every frame (PR #313's review).
+
 A value a later stage needs that the layout resolves by rules that differ case by case (a percentage of a border, resolved against the parent's width, the outer width, a flex container's inner width, or a containing block) is kept from the layout's commit and read, not resolved again. V1b's design first had the draw stage resolve the border widths against the parent's content box, which differs from the layout for an absolutely positioned child and a parent of undecided width (PR #309's re-review).
 
 An acceptance that a change allocates nothing is checked against each API that makes the change. V1b's first design said a change of color allocates nothing, while the only way to change a box's color was to hand the tree a new `NodeVisual` object (PR #309's review).

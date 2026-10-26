@@ -10,6 +10,8 @@ Formatting is CSharpier's (`.cursor/rules/engineering.mdc`). This rule covers wh
 
 ## Style
 
+- A property with a one-line getter and a setter of several lines does not pass the gate: CSharpier puts the getter on one line and SA1504 refuses accessors of mixed shapes. The setter is one line too, and calls a method that does the work (`WindowFrames.TextRendering`, PR #313).
+
 - Modern C# is allowed: `var` when the type is apparent on the right, collection expressions, target-typed `new`, primary constructors, file-scoped namespaces, `required` members, `ref struct`, `scoped`, `allows ref struct`.
 - Private fields are `_camelCase`, static ones included. Constants are PascalCase. No `this.` unless needed to disambiguate. Interfaces start with `I`.
 - Namespaces follow assembly names (`XylemUI` for `XylemUI.Core`'s public types, `XylemUI.Text`, `XylemUI.Platform.Windows`), not folders.
