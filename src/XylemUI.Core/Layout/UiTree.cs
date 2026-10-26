@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -254,16 +255,175 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Sets the color of a text leaf's text; equal to the one there, nothing changes. Another marks the leaf to be drawn again,
-    /// with no layout.
+    /// Sets a text leaf's own color for its text, or <see langword="null"/> to take the color its ancestors resolve; equal to the
+    /// one there, nothing changes. Another marks the leaf to be drawn again, with no layout.
     /// </summary>
     /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
-    public void SetTextColor(NodeHandle node, Color color)
+    public void SetTextColor(NodeHandle node, Color? color)
     {
         TextLeaf leaf = TextLeafOf(node);
         if (leaf.Color != color)
         {
             leaf.Color = color;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets the color that the text leaves of a node's subtree take when they have none of their own, or <see langword="null"/> to
+    /// take the parent's; equal to the one there, nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    public void SetForeground(NodeHandle node, Color? color)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.Foreground != color)
+        {
+            visual.Foreground = color;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets the opacity of a node and its subtree; equal to the one there, nothing changes. Another marks the node to be drawn
+    /// again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="opacity"/> is not a number from 0 to 1.</exception>
+    public void SetOpacity(NodeHandle node, float opacity)
+    {
+        CheckOpacity(opacity, nameof(opacity));
+        NodeVisual visual = VisualOf(node);
+        if (visual.Opacity != opacity)
+        {
+            visual.Opacity = opacity;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets the transform of a node and its subtree, about the center of the node's border box, or <see langword="null"/> for
+    /// none; equal to the one there, nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">An element of <paramref name="transform"/> is not a finite number.</exception>
+    public void SetTransform(NodeHandle node, Matrix3x2? transform)
+    {
+        CheckTransform(transform, nameof(transform));
+        NodeVisual visual = VisualOf(node);
+        if (visual.Transform != transform)
+        {
+            visual.Transform = transform;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets what the hovered state lays over a node's look, or <see langword="null"/> for nothing; equal to the one there, nothing
+    /// changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetHoveredStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        PseudoStyles states = StatesOf(node);
+        if (states.Hovered != style)
+        {
+            states.Hovered = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets what the pressed state lays over a node's hovered look, or <see langword="null"/> for nothing; equal to the one there,
+    /// nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetPressedStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        PseudoStyles states = StatesOf(node);
+        if (states.Pressed != style)
+        {
+            states.Pressed = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Adds a pointer handler to a node (design §7, "Pointer input"). The node then writes a hit region, so it is drawn again.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of a routed event.</param>
+    /// <param name="handler">The handler.</param>
+    public void AddPointerHandler(NodeHandle node, PointerEventKind kind, EventPhase phase, PointerHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        InputOf(node).Add(new HandlerEntry(kind, phase, handler));
+        Invalidation.Invalidate(this, node, ChangeKind.Color);
+    }
+
+    /// <summary>
+    /// Removes the first pointer handler of a node added with the same kind, phase, and delegate; the node is drawn again when one
+    /// was there.
+    /// </summary>
+    /// <returns>Whether a handler was removed.</returns>
+    public bool RemovePointerHandler(NodeHandle node, PointerEventKind kind, EventPhase phase, PointerHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        if (Nodes.GetRef(node).Input is not { } input || !input.Remove(new HandlerEntry(kind, phase, handler)))
+        {
+            return false;
+        }
+
+        Invalidation.Invalidate(this, node, ChangeKind.Color);
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the cursor over a node and its descendants that set none, or <see langword="null"/> for none; equal to the one there,
+    /// nothing changes. Another marks the node to be drawn again, as whether it writes a hit region may change.
+    /// </summary>
+    public void SetCursor(NodeHandle node, CursorKind? cursor)
+    {
+        NodeInput input = InputOf(node);
+        if (input.Cursor != cursor)
+        {
+            input.Cursor = cursor;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets whether a node writes a hit region with no handler, so that the pointer does not reach the nodes behind it; equal to the
+    /// value there, nothing changes. Another marks the node to be drawn again.
+    /// </summary>
+    public void SetBlocksPointer(NodeHandle node, bool blocks)
+    {
+        NodeInput input = InputOf(node);
+        if (input.BlocksPointer != blocks)
+        {
+            input.BlocksPointer = blocks;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets or clears a pseudo-state of a live node. A change marks the node to be drawn again only when it has a look for that
+    /// state (design §2.13).
+    /// </summary>
+    internal void SetPseudoState(NodeHandle node, PseudoState state, bool on)
+    {
+        ref UiNode n = ref Nodes.GetRef(node);
+        PseudoState next = on ? n.Pseudo | state : n.Pseudo & ~state;
+        if (next == n.Pseudo)
+        {
+            return;
+        }
+
+        n.Pseudo = next;
+        PseudoStyles? styles = n.Visual?.States;
+        bool styled = state == PseudoState.Hovered ? styles?.Hovered is not null : styles?.Pressed is not null;
+        if (styled)
+        {
             Invalidation.Invalidate(this, node, ChangeKind.Color);
         }
     }
@@ -460,6 +620,52 @@ internal sealed class UiTree
 
     // The node's visual, made the first time: the tree owns it, and a later change writes into it.
     private NodeVisual VisualOf(NodeHandle node) => Nodes.GetRef(node).Visual ??= new NodeVisual();
+
+    // The node's pseudo-state looks, made the first time one is set (PR #319's review).
+    private PseudoStyles StatesOf(NodeHandle node) => VisualOf(node).States ??= new PseudoStyles();
+
+    // The node's input part, made the first time.
+    private NodeInput InputOf(NodeHandle node) => Nodes.GetRef(node).Input ??= new NodeInput();
+
+    // The checks of DisplayList.PushOpacity and PushTransform, made when the value is given so that the draw stage does not throw.
+    private static void CheckOpacity(float opacity, string name)
+    {
+        if (!(opacity >= 0) || opacity > 1)
+        {
+            throw new ArgumentOutOfRangeException(name, opacity, "The opacity is not a number from 0 to 1.");
+        }
+    }
+
+    private static void CheckTransform(Matrix3x2? transform, string name)
+    {
+        if (
+            transform is { } t
+            && !(
+                float.IsFinite(t.M11)
+                && float.IsFinite(t.M12)
+                && float.IsFinite(t.M21)
+                && float.IsFinite(t.M22)
+                && float.IsFinite(t.M31)
+                && float.IsFinite(t.M32)
+            )
+        )
+        {
+            throw new ArgumentOutOfRangeException(name, "The transform's elements are finite numbers.");
+        }
+    }
+
+    private static void CheckStyle(PaintStyle? style, string name)
+    {
+        if (style is { } s)
+        {
+            if (s.Opacity is { } opacity)
+            {
+                CheckOpacity(opacity, name);
+            }
+
+            CheckTransform(s.Transform, name);
+        }
+    }
 
     private TextLeaf TextLeafOf(NodeHandle node) =>
         Nodes.GetRef(node).Text ?? throw new InvalidOperationException("The node is not a text leaf; create one with CreateTextNode.");

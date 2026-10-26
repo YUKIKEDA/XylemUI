@@ -12,6 +12,8 @@ namespace XylemUI.E2E;
 // and transforms (row R4d). --tree draws the plain scene from a UI tree with WindowFrames (row V1b, TreeScene): build_ms is then the
 // draw stage (the display list from the tree and its glyphs), layout_ms the layout pass after the boxes moved, and cpu_frame_ms
 // leaves the layout out. --no-text leaves the line of text out of either scene, so that the draw stages compare the boxes alone.
+// --hover (with --tree, row V1c) keeps the boxes still with a hovered background and moves the pointer between two of them each
+// frame: input_ms is the input's delivery of the move, and the frame draws for the change of color alone.
 internal static class Frames
 {
     public static int Run(
@@ -26,13 +28,15 @@ internal static class Frames
         string scopes = "",
         int nested = 0,
         bool tree = false,
-        bool noText = false
+        bool noText = false,
+        bool hover = false
     )
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
-        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText) : null;
+        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover) : null;
         var layout = new List<double>(frames);
+        var input = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         var build = new List<double>(frames);
@@ -60,6 +64,7 @@ internal static class Frames
             if (treeScene is not null)
             {
                 layout.Add(treeScene.Update(frame));
+                input.Add(treeScene.InputMilliseconds);
                 t0 = Stopwatch.GetTimestamp();
                 treeScene.RunFrame();
                 t1 = treeScene.Target.DrawStart;
@@ -117,6 +122,7 @@ internal static class Frames
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
         report.Text("tree", tree ? "yes" : "no");
         report.Text("text", noText ? "no" : "yes");
+        report.Text("hover", hover ? "yes" : "no");
         report.Number("nested", nested);
         report.Number("layers", scene.Renderer.LayerCount);
         report.Number("layer_bytes", scene.Renderer.LayerBytes);
@@ -126,6 +132,10 @@ internal static class Frames
         if (tree)
         {
             report.Series("layout_ms", [.. layout.Skip(Warm)]);
+            if (hover)
+            {
+                report.Series("input_ms", [.. input.Skip(Warm)]);
+            }
         }
 
         report.Series("draw_ms", [.. draw.Skip(Warm)]);

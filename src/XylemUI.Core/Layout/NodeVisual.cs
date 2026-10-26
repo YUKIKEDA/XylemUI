@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace XylemUI;
 
 /// <summary>
@@ -35,6 +37,28 @@ internal sealed class NodeVisual
     /// Gets or sets the user's draw function, called after the box and before the children; <see langword="null"/> for none.
     /// </summary>
     public DrawFunc? Draw { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the color the text leaves of the subtree take when they have none of their own; <see langword="null"/> takes the
+    /// parent's (design §5.0, "Opacity, transforms, and pseudo-states").
+    /// </summary>
+    public Color? Foreground { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the opacity of the node and its subtree, from 0 to 1.
+    /// </summary>
+    public float Opacity { get; internal set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the transform of the node and its subtree, about the center of the node's border box; <see langword="null"/>
+    /// for none. It changes no layout.
+    /// </summary>
+    public Matrix3x2? Transform { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the looks of the node's pseudo-states; <see langword="null"/> for none.
+    /// </summary>
+    public PseudoStyles? States { get; internal set; }
 }
 
 /// <summary>

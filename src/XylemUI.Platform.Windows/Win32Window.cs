@@ -14,7 +14,7 @@ namespace XylemUI.Platform.Windows;
 /// Create, use, and dispose the window on the UI thread (<see cref="UiThread"/>). Native code identifies the window only by a
 /// generational id from the handle table, never by its address (design §2.12, Invariant 8).
 /// </remarks>
-public sealed unsafe class Win32Window : IDisposable
+public sealed unsafe partial class Win32Window : IDisposable
 {
     private const string ClassName = "XylemUI.Window";
     private const uint WmClose = WM.WM_CLOSE;
@@ -440,6 +440,11 @@ public sealed unsafe class Win32Window : IDisposable
     private bool HandleMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
     {
         if (MessageHook is { } hook && hook(this, message))
+        {
+            return true;
+        }
+
+        if (HandlePointerMessage(hwnd, message, wParam, lParam))
         {
             return true;
         }

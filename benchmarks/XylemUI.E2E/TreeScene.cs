@@ -8,7 +8,9 @@ namespace XylemUI.E2E;
 // positioned boxes that move with the frame as the scene's do, and the line of text as a text leaf in the scene's font. A frame
 // moves the boxes (SetStyle), lays the tree out, and changes the background of a hidden node, so that the frame draws although the
 // moves are layout changes; then WindowFrames builds the display list from the tree. The target records when Draw and Present start
-// and end, so that the draw stage's time is apart from the layout's.
+// and end, so that the draw stage's time is apart from the layout's. With hover (row V1c), the boxes stay where the first frame put
+// them, each with a hovered background, and a frame moves the pointer from one box to another through the window's input instead:
+// the frame is drawn for the hover's change of color alone, with no layout.
 internal sealed class TreeScene : IDisposable
 {
     private readonly Scene _scene;
@@ -19,8 +21,9 @@ internal sealed class TreeScene : IDisposable
     private readonly NodeHandle _hidden;
     private readonly WindowFrames _frames;
     private readonly TimingTarget _target;
+    private readonly WindowInput? _input;
 
-    public TreeScene(Scene scene, Font font, bool noText)
+    public TreeScene(Scene scene, Font font, bool noText, bool hover = false)
     {
         _scene = scene;
         _text = new TextContext(new OneFont(font));
@@ -32,6 +35,10 @@ internal sealed class TreeScene : IDisposable
         {
             _boxes[i] = Absolute(0, 0, 16, 16);
             _tree.SetBackground(_boxes[i], new Paint((i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66)));
+            if (hover)
+            {
+                _tree.SetHoveredStyle(_boxes[i], new PaintStyle { Background = Color.FromRgb(0xE8E8E8) });
+            }
         }
 
         // The scene draws the line at the baseline 30; the leaf's top is its ascent above (the test font's 1160 in 1000 units per em).
@@ -52,14 +59,45 @@ internal sealed class TreeScene : IDisposable
         _frames = new WindowFrames(_tree, _root, _target, scene.Atlas, new NoScheduler(), scene.Clear, scene.Renderer.TextRendering);
         scene.Window.TextRenderingChanged += (_, _) => _frames.TextRendering = scene.Renderer.TextRendering;
         float scale = scene.Window.ScaleFactor;
+        if (hover)
+        {
+            _input = new WindowInput(_tree, _frames, new NoPlatform());
+            _ = Update(0);
+        }
+
         _frames.Resize(new Size(scene.Renderer.Width / scale, scene.Renderer.Height / scale), scale);
     }
 
     public TimingTarget Target => _target;
 
-    // Moves the boxes as Scene.Build moves the rectangles, and lays the tree out; returns the milliseconds of the layout pass.
+    // With hover, the milliseconds the input took to deliver the frame's move.
+    public double InputMilliseconds { get; private set; }
+
+    // Moves the boxes as Scene.Build moves the rectangles, and lays the tree out; returns the milliseconds of the layout pass. With
+    // hover after the first frame, moves the pointer over the first box or the second instead, which changes the hover.
     public double Update(int frame)
     {
+        if (_input is not null && frame > 0)
+        {
+            float pixels = _scene.Window.ScaleFactor;
+            Rect box = _tree.GetRect(_boxes[frame & 1]);
+            var move = new PointerInput(
+                PointerInputKind.Move,
+                (int)((box.X + 8) * pixels),
+                (int)((box.Y + 8) * pixels),
+                PointerButton.None,
+                PointerButtons.None,
+                KeyModifiers.None,
+                0,
+                TimeSpan.Zero,
+                PointerType.Mouse
+            );
+            long started = Stopwatch.GetTimestamp();
+            _input.Handle(move);
+            InputMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            return 0;
+        }
+
         float scale = _scene.Window.ScaleFactor;
         int width = (int)(_scene.Renderer.Width / scale);
         int height = (int)(_scene.Renderer.Height / scale);
@@ -122,6 +160,16 @@ internal sealed class TreeScene : IDisposable
             scene.Renderer.Present();
             PresentEnd = Stopwatch.GetTimestamp();
         }
+    }
+
+    // The scene's pointer is made up, so nothing is captured or shown.
+    private sealed class NoPlatform : IPointerPlatform
+    {
+        public void Capture() { }
+
+        public void ReleaseCapture() { }
+
+        public void SetCursor(CursorKind cursor) { }
     }
 
     // The frames here are run by Frames.Run's own callback.
