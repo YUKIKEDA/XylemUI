@@ -66,6 +66,12 @@ internal struct LayoutState
     public IntrinsicWidthsFunc? IntrinsicWidths;
 
     /// <summary>
+    /// The type of the last exception the leaf's measurement threw and the pass reported; <see langword="null"/> when none. The
+    /// same type again is counted, not reported, until a change of the node clears it (design §2.4.1).
+    /// </summary>
+    public Type? ReportedFailure;
+
+    /// <summary>
     /// The border box of the last layout run, relative to the parent's border box.
     /// </summary>
     public Rect Rect;

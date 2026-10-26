@@ -25,16 +25,17 @@ internal sealed class ShapingResult
     private const float Tolerance = 1f / 64;
     private const string Hyphen = "-";
 
-    private char[] _text = new char[64];
-    private char[] _scratch = new char[64];
-    private FontRun[] _runs = new FontRun[4];
-    private float[] _scales = new float[4];
-    private float[] _hyphens = new float[4];
-    private LaidGlyph[] _glyphs = new LaidGlyph[64];
-    private bool[] _unsafe = new bool[64];
-    private int[] _glyphAt = new int[65];
-    private float[] _x = new float[65];
-    private LineBreakOpportunity[] _breaks = new LineBreakOpportunity[16];
+    // Empty until the first text: each array is made at the size its first text needs (design §3.2, "Text leaves", the memory of
+    // a leaf), and grows to the larger of the need and twice its size.
+    private char[] _text = [];
+    private FontRun[] _runs = [];
+    private float[] _scales = [];
+    private float[] _hyphens = [];
+    private LaidGlyph[] _glyphs = [];
+    private bool[] _unsafe = [];
+    private int[] _glyphAt = [];
+    private float[] _x = [];
+    private LineBreakOpportunity[] _breaks = [];
     private int _runCount;
     private int _glyphCount;
     private int _breakCount;
@@ -49,6 +50,16 @@ internal sealed class ShapingResult
     /// Gets the font runs the text was shaped with.
     /// </summary>
     public ReadOnlySpan<FontRun> Runs => _runs.AsSpan(0, _runCount);
+
+    /// <summary>
+    /// Gets the number of glyphs of the text shaped once.
+    /// </summary>
+    public int GlyphCount => _glyphCount;
+
+    /// <summary>
+    /// Gets the number of line break opportunities of the text.
+    /// </summary>
+    public int BreakCount => _breakCount;
 
     /// <summary>
     /// Gets the size, in logical pixels per em, the text was shaped at (a run's scale multiplies it).
@@ -91,7 +102,9 @@ internal sealed class ShapingResult
             covered += run.Length;
             AddRun(run);
             float scale = Scale(run);
-            foreach (ShapedGlyph glyph in shaper.ShapeRange(run.Font, text, run.Start, run.Length, language))
+            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, language);
+            EnsureGlyphs(_glyphCount + shaped.Length);
+            foreach (ShapedGlyph glyph in shaped)
             {
                 AddGlyph(
                     new LaidGlyph(glyph.GlyphId, glyph.Cluster, glyph.XAdvance * scale, glyph.XOffset * scale, glyph.YOffset * scale, _runCount - 1),
@@ -198,7 +211,9 @@ internal sealed class ShapingResult
     {
         ArgumentNullException.ThrowIfNull(lines);
         ArgumentNullException.ThrowIfNull(result);
-        result.Reset();
+
+        // Each line takes the glyphs shaped once, and a hyphen at most: enough unless shaping a line's end again makes more glyphs.
+        result.Reset(_glyphCount + lines.Lines.Length, lines.Lines.Length);
         foreach (LineSpan line in lines.Lines)
         {
             int start = result.NextGlyph;
@@ -346,18 +361,18 @@ internal sealed class ShapingResult
             int run = RunAt(position);
             int runEnd = Math.Min(end, _runs[run].Start + _runs[run].Length);
             int length = contextEnd - contextStart;
-            Ensure(ref _scratch, length);
-            _text.AsSpan(contextStart, length).CopyTo(_scratch);
+            char[] scratch = shaper.Scratch(length);
+            _text.AsSpan(contextStart, length).CopyTo(scratch);
             if (hyphenAt >= position && hyphenAt < runEnd)
             {
-                _scratch[hyphenAt - contextStart] = Hyphen[0];
+                scratch[hyphenAt - contextStart] = Hyphen[0];
             }
 
             float scale = _scales[run];
             foreach (
                 ShapedGlyph glyph in shaper.ShapeRange(
                     _runs[run].Font,
-                    _scratch.AsSpan(0, length),
+                    scratch.AsSpan(0, length),
                     position - contextStart,
                     runEnd - position,
                     _language
@@ -514,7 +529,7 @@ internal sealed class ShapingResult
     {
         if (_runCount == _runs.Length)
         {
-            int size = _runCount * 2;
+            int size = Math.Max(_runCount + 1, _runCount * 2);
             Array.Resize(ref _runs, size);
             Array.Resize(ref _scales, size);
             Array.Resize(ref _hyphens, size);
@@ -528,12 +543,6 @@ internal sealed class ShapingResult
 
     private void AddGlyph(in LaidGlyph glyph, bool unsafeToBreak)
     {
-        if (_glyphCount == _glyphs.Length)
-        {
-            Array.Resize(ref _glyphs, _glyphCount * 2);
-            Array.Resize(ref _unsafe, _glyphCount * 2);
-        }
-
         if (_glyphAt[glyph.Cluster] < 0)
         {
             _glyphAt[glyph.Cluster] = _glyphCount;
@@ -542,6 +551,17 @@ internal sealed class ShapingResult
         _glyphs[_glyphCount] = glyph;
         _unsafe[_glyphCount] = unsafeToBreak;
         _glyphCount++;
+    }
+
+    // Makes room for `count` glyphs before a run's glyphs are added, so a text of one run gets arrays of its size.
+    private void EnsureGlyphs(int count)
+    {
+        if (_glyphs.Length < count)
+        {
+            int size = Math.Max(count, _glyphs.Length * 2);
+            Array.Resize(ref _glyphs, size);
+            Array.Resize(ref _unsafe, size);
+        }
     }
 
     private static void Ensure<T>(ref T[] array, int length)

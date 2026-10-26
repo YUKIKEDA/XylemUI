@@ -31,6 +31,9 @@ internal static class Invalidation
     public static void Invalidate(UiTree tree, NodeHandle node, ChangeKind kind)
     {
         DirtyFlags flags = FlagsFor(kind);
+
+        // A changed node may measure differently: its next failure is reported again, even while it is still dirty from one.
+        tree.Nodes.GetRef(node).Layout.ReportedFailure = null;
         if (kind is ChangeKind.TextContent or ChangeKind.Font && TryMarkContentChange(tree, node, flags))
         {
             return;
@@ -116,6 +119,7 @@ internal static class Invalidation
             return;
         }
 
+        node.Layout.ReportedFailure = null;
         node.Dirty.SelfDirty |= flags;
         MarkPath(tree, origin, flags);
     }

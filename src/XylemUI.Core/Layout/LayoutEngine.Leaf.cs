@@ -7,7 +7,16 @@ internal static partial class LayoutEngine
     // A node without children (Taffy's compute_leaf_layout): its known or styled size on each axis, otherwise its content's (the
     // measure function's, 0 without one) plus its padding and border; clamped by its minimum and maximum, and never smaller than
     // its padding and border. Its first baseline is its content's, below the padding and border.
-    private static Size ComputeLeaf(in LayoutStyle style, MeasureFunc? measure, in LayoutInput input, bool commit, out float baseline)
+    private static Size ComputeLeaf(
+        UiTree tree,
+        NodeHandle handle,
+        in LayoutStyle style,
+        MeasureFunc? measure,
+        TextLeaf? text,
+        in LayoutInput input,
+        bool commit,
+        out float baseline
+    )
     {
         baseline = float.NaN;
         Edges paddingBorder = PaddingBorder(in style, input.ParentSize.Width);
@@ -34,10 +43,10 @@ internal static partial class LayoutEngine
             ContentSpace(input.Available.Height.OrDefinite(nodeSize.Height), min.Height, max.Height, inset.Height)
         );
         Size content = default;
-        if (measure is not null)
+        if (measure is not null || text is not null)
         {
             OptionalSize knownContent = commit ? OptionalSize.None : input.KnownDimensions.Minus(inset);
-            MeasureResult measured = measure(knownContent, available);
+            MeasureResult measured = MeasureContent(tree, handle, measure, text, knownContent, available, commit);
             content = measured.Size;
             baseline = paddingBorder.Top + measured.FirstBaseline;
         }
@@ -88,17 +97,28 @@ internal static partial class LayoutEngine
         return Math.Max(Maybe.Clamp(width, min, max), inset);
     }
 
-    // Asks a leaf for its content widths for a content height of knownHeight (NaN when it is not decided) and keeps them.
+    // Asks a leaf for its content widths for a content height of knownHeight (NaN when it is not decided) and keeps them: a text
+    // leaf from its text shaped once, another leaf from its IntrinsicWidthsFunc.
     private static IntrinsicWidths ComputeIntrinsicWidths(UiTree tree, NodeHandle handle, float knownHeight)
     {
-        IntrinsicWidthsFunc intrinsic = tree.Nodes.GetRef(handle).Layout.IntrinsicWidths!;
+        ref UiNode node = ref tree.Nodes.GetRef(handle);
+        IntrinsicWidthsFunc? intrinsic = node.Layout.IntrinsicWidths;
 #if DEBUG
-        MeasureFunc measure = tree.Nodes.GetRef(handle).Layout.Measure!;
+        MeasureFunc? measure = node.Layout.Measure;
 #endif
+        TextLeaf? text = node.Text;
         tree.LayoutRunHook?.Invoke(handle);
-        IntrinsicWidths widths = intrinsic(knownHeight);
+        IntrinsicWidths widths;
+        try
+        {
+            widths = text is not null ? TextIntrinsicWidths(tree.Text!, text) : intrinsic!(knownHeight);
+        }
+        catch (Exception exception) when (exception is not InvariantViolationException)
+        {
+            throw new LeafMeasureException(handle, exception);
+        }
 #if DEBUG
-        VerifyIntrinsicWidths(measure, knownHeight, widths);
+        VerifyIntrinsicWidths(tree, measure, text, knownHeight, widths);
 #endif
         if (tree.MeasuresOf(handle).StoreIntrinsicWidths(knownHeight, widths))
         {
@@ -112,12 +132,26 @@ internal static partial class LayoutEngine
     // Debug builds check a leaf's two functions against each other each time its content widths are computed: an
     // IntrinsicWidthsFunc that disagrees with the leaf's MeasureFunc under a min-content and a max-content width lays the
     // leaf out wrong without a sign (PR #103's review). Release builds do not call the measure function here.
-    private static void VerifyIntrinsicWidths(MeasureFunc measure, float knownHeight, IntrinsicWidths widths)
+    private static void VerifyIntrinsicWidths(UiTree tree, MeasureFunc? measure, TextLeaf? text, float knownHeight, IntrinsicWidths widths)
     {
         var known = new OptionalSize(float.NaN, knownHeight);
         AvailableSpace height = float.IsNaN(knownHeight) ? AvailableSpace.MaxContent : AvailableSpace.Definite(knownHeight);
-        float min = measure(known, new AvailableSize(AvailableSpace.MinContent, height)).Size.Width;
-        float max = measure(known, new AvailableSize(AvailableSpace.MaxContent, height)).Size.Width;
+        var minSpace = new AvailableSize(AvailableSpace.MinContent, height);
+        var maxSpace = new AvailableSize(AvailableSpace.MaxContent, height);
+        float min;
+        float max;
+        if (text is not null)
+        {
+            // Measured apart from the leaf's cache, which the check must not fill with widths the layout never asked for.
+            min = MeasureTextUncached(tree.Text!, text, AvailableSpace.MinContent);
+            max = MeasureTextUncached(tree.Text!, text, AvailableSpace.MaxContent);
+        }
+        else
+        {
+            min = measure!(known, minSpace).Size.Width;
+            max = measure!(known, maxSpace).Size.Width;
+        }
+
         if (Math.Abs(min - widths.Min) > 0.01f || Math.Abs(max - widths.Max) > 0.01f)
         {
             Invariant.Fail(
@@ -137,4 +171,26 @@ internal static partial class LayoutEngine
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Size ToSize(OptionalSize size) => new(size.Width, size.Height);
+
+    // A leaf's content: its text, or its measure function's result. What either throws is wrapped with the leaf, so that the pass
+    // reports the same failure of the same leaf once (design §2.4.1, the exceptions of a layout).
+    private static MeasureResult MeasureContent(
+        UiTree tree,
+        NodeHandle handle,
+        MeasureFunc? measure,
+        TextLeaf? text,
+        OptionalSize known,
+        AvailableSize available,
+        bool commit
+    )
+    {
+        try
+        {
+            return text is not null ? MeasureText(tree.Text!, text, known, available, commit) : measure!(known, available);
+        }
+        catch (Exception exception) when (exception is not InvariantViolationException and not LeafMeasureException)
+        {
+            throw new LeafMeasureException(handle, exception);
+        }
+    }
 }

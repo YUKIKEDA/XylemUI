@@ -61,6 +61,9 @@ internal static unsafe partial class HarfBuzz
     [LibraryImport(Library, EntryPoint = "hb_font_set_scale")]
     public static partial void FontSetScale(nint font, int xScale, int yScale);
 
+    [LibraryImport(Library, EntryPoint = "hb_font_get_h_extents")]
+    public static partial int FontGetHExtents(nint font, FontExtents* extents);
+
     [LibraryImport(Library, EntryPoint = "hb_buffer_create")]
     public static partial nint BufferCreate();
 
@@ -104,6 +107,25 @@ internal static unsafe partial class HarfBuzz
         public uint NameId;
         public uint Var;
         public nint Language;
+    }
+
+    /// <summary><c>hb_font_extents_t</c>, in the font's scale: the ascender is above the baseline and positive, the descender below it
+    /// and negative (HarfBuzz 14.5.1's <c>hb-font.h</c>).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FontExtents
+    {
+        public int Ascender;
+        public int Descender;
+        public int LineGap;
+        public int Reserved9;
+        public int Reserved8;
+        public int Reserved7;
+        public int Reserved6;
+        public int Reserved5;
+        public int Reserved4;
+        public int Reserved3;
+        public int Reserved2;
+        public int Reserved1;
     }
 
     /// <summary><c>hb_glyph_info_t</c>. After shaping, <see cref="Codepoint"/> holds the glyph id.</summary>

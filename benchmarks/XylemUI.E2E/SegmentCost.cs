@@ -42,7 +42,34 @@ internal static class SegmentCost
             Wrapping(report, name, text, runs, japanese);
         }
 
+        EmojiRuns(report, provider, runs, japanese);
         return 0;
+    }
+
+    // The cost of shaping by the number of font runs (PR #293's review): screens of the same English text with one emoji in
+    // every 64th, 16th, 4th, and every word, each emoji a run of its own between two runs of text. The split and the shaping
+    // are timed apart, so the part of the runs in each shows.
+    private static void EmojiRuns(Report report, DirectWriteFontProvider provider, List<FontRun> runs, TextLanguage language)
+    {
+        using var shaper = new TextShaper();
+        var breaker = new LineBreaker();
+        var shaped = new ShapingResult();
+        foreach (int every in new[] { 0, 64, 16, 4, 1 })
+        {
+            var words = new StringBuilder();
+            for (int word = 1; words.Length < ScreenCharacters; word++)
+            {
+                _ = words.Append(every > 0 && word % every == 0 ? "fox 🎉 " : "fox ");
+            }
+
+            string text = words.ToString();
+            double split = Median(() => TimeSplit(provider, text, language, runs));
+            FontRun[] fontRuns = [.. runs];
+            double shape = Median(() => Time(() => shaped.Shape(text, fontRuns, 16, language, shaper, breaker)));
+            report.Number($"emoji_every_{every}_runs", fontRuns.Length);
+            report.Number($"emoji_every_{every}_split_us_p50", split);
+            report.Number($"emoji_every_{every}_shape_us_p50", shape);
+        }
     }
 
     private static string Screen(string sentence)

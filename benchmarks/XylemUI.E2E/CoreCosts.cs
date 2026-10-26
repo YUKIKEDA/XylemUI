@@ -7,9 +7,10 @@ using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 namespace XylemUI.E2E;
 
 // Costs of Core paths the roadmap row M1a names, without a window:
-//   resize-text: a window resize of a tree of 10,101 nodes (root column, 100 rows of 100 leaves) whose leaves measure a short
-//                Japanese text, laid out again at alternating sizes. Once with leaves that shape their text at each measure
-//                (no text cache yet), once with leaves that keep the shaped width (a cache hit, design §11.3).
+//   resize-text: a window resize of a tree of 10,101 nodes (root column, 100 rows of 100 text leaves of a short Japanese text,
+//                row V1a), with the fonts of Windows: the first layout, the managed heap the tree holds, and layouts again at
+//                two alternating sizes (cache hits) and at a new width each time (misses, design §11.3). Once with leaves that
+//                shrink with their row and wrap, once with leaves that keep their one line.
 //   glyph-refused: a glyph refused at the atlas's page limit is rasterized again at each request (GlyphAtlas.RefusedCount).
 //   dependency-order: each set changes the source of two computed chains that an effect reads; once in the same order every
 //                time, once in alternating order ([C, D] then [D, C]), which relinks the effect's edges and makes the chain it
@@ -22,25 +23,17 @@ internal static class CoreCosts
     {
         UiThread.Initialize();
         using var report = new Report("resize-text");
-        using Font font = OpenFont();
-        using var shaper = new TextShaper();
-        TextLanguage japanese = TextLanguage.FromTag("ja");
-        float scale = 14f / font.UnitsPerEm;
-        MeasureFunc shaping = (_, _) =>
-        {
-            long advance = 0;
-            foreach (ShapedGlyph glyph in shaper.Shape(font, Word, japanese))
-            {
-                advance += glyph.XAdvance;
-            }
+        using var provider = new DirectWriteFontProvider();
+        using var context = new TextContext(provider);
+        var style = new TextStyle(FontRequest.Default, 14, TextLanguage.FromTag("ja"), float.NaN);
+        report.Number("heap_plain_bytes", PlainTreeHeap());
 
-            return MeasureResult.Of(advance * scale, 20);
-        };
-        float cached = shaping(OptionalSize.None, AvailableSize.MaxContent).Size.Width;
-        MeasureFunc cacheHit = (_, _) => MeasureResult.Of(cached, 20);
-        foreach ((string name, MeasureFunc measure) in new[] { ("shaping", shaping), ("cached", cacheHit) })
+        // Wrapped: the leaves shrink with the row (CSS's default), so a resize gives each a new width and new lines. One line: the
+        // leaves keep their max-content width, as the measure functions of row M1a did, and a resize gives them the same width.
+        foreach ((string name, float shrink) in new[] { ("wrapped", 1f), ("one_line", 0f) })
         {
-            var tree = new UiTree();
+            long heapBefore = GC.GetTotalMemory(forceFullCollection: true);
+            var tree = new UiTree(context);
             NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
             for (int r = 0; r < 100; r++)
             {
@@ -48,28 +41,74 @@ internal static class CoreCosts
                 tree.AppendChild(root, row);
                 for (int c = 0; c < 100; c++)
                 {
-                    tree.AppendChild(row, tree.CreateNode(new LayoutStyle(), measure));
+                    NodeHandle leaf = tree.CreateTextNode(new LayoutStyle { FlexShrink = shrink }, style);
+                    tree.SetText(leaf, Word);
+                    tree.AppendChild(row, leaf);
                 }
             }
 
-            var times = new List<double>(passes);
-            for (int i = 0; i < passes + 5; i++)
+            long start = Stopwatch.GetTimestamp();
+            Invalidation.NotifyWindowResized(tree, root, new Size(1_600, 2_000));
+            LayoutEngine.RunLayoutPass(tree);
+            report.Number($"first_layout_{name}_ms", Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            report.Number($"heap_{name}_bytes", GC.GetTotalMemory(forceFullCollection: true) - heapBefore);
+
+            // A hit: two sizes in turn, whose widths the leaves keep. A miss: a new width at each pass, which breaks every leaf's
+            // text again into an entry it reuses.
+            report.Series($"resize_{name}_hit_ms", Resize(tree, root, passes, i => i % 2 == 0 ? 1_600 : 1_200));
+            if (shrink > 0)
             {
-                var size = new Size(i % 2 == 0 ? 1_600 : 1_200, i % 2 == 0 ? 2_000 : 1_800);
-                long start = Stopwatch.GetTimestamp();
-                Invalidation.NotifyWindowResized(tree, root, size);
-                LayoutEngine.RunLayoutPass(tree);
-                if (i >= 5)
-                {
-                    times.Add(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
-                }
+                report.Series($"resize_{name}_miss_ms", Resize(tree, root, passes, i => 1_700 - i));
             }
 
-            report.Series($"resize_{name}_ms", times);
+            GC.KeepAlive(tree);
         }
 
         report.Number("nodes", 10_101);
         return 0;
+    }
+
+    // The managed heap of the same tree with leaves that are not text leaves (one measure function for all), laid out once: the
+    // part of the text leaves' heap that is the tree's own (the arena of nodes and their measurement caches).
+    private static long PlainTreeHeap()
+    {
+        MeasureFunc measure = (_, _) => MeasureResult.Of(112, 20);
+        long heapBefore = GC.GetTotalMemory(forceFullCollection: true);
+        var tree = new UiTree();
+        NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
+        for (int r = 0; r < 100; r++)
+        {
+            NodeHandle row = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Row });
+            tree.AppendChild(root, row);
+            for (int c = 0; c < 100; c++)
+            {
+                tree.AppendChild(row, tree.CreateNode(new LayoutStyle(), measure));
+            }
+        }
+
+        Invalidation.NotifyWindowResized(tree, root, new Size(1_600, 2_000));
+        LayoutEngine.RunLayoutPass(tree);
+        long heap = GC.GetTotalMemory(forceFullCollection: true) - heapBefore;
+        GC.KeepAlive(tree);
+        return heap;
+    }
+
+    private static List<double> Resize(UiTree tree, NodeHandle root, int passes, Func<int, float> width)
+    {
+        var times = new List<double>(passes);
+        for (int i = 0; i < passes + 5; i++)
+        {
+            var size = new Size(width(i), i % 2 == 0 ? 2_000 : 1_800);
+            long start = Stopwatch.GetTimestamp();
+            Invalidation.NotifyWindowResized(tree, root, size);
+            LayoutEngine.RunLayoutPass(tree);
+            if (i >= 5)
+            {
+                times.Add(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            }
+        }
+
+        return times;
     }
 
     public static int GlyphRefused(int requests)

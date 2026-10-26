@@ -22,7 +22,26 @@ internal sealed class UiTree
     /// <summary>
     /// Initializes a new instance of the <see cref="UiTree"/> class.
     /// </summary>
-    public UiTree() => _shallowestFirst = CompareDepth;
+    /// <param name="text">
+    /// The text tools of the UI thread, which its text leaves are measured with (design §3.2, "Text leaves"); <see langword="null"/>
+    /// for a tree without text leaves.
+    /// </param>
+    public UiTree(TextContext? text = null)
+    {
+        _shallowestFirst = CompareDepth;
+        Text = text;
+    }
+
+    /// <summary>
+    /// Gets the text tools its text leaves are measured with; <see langword="null"/> for a tree without text leaves.
+    /// </summary>
+    public TextContext? Text { get; }
+
+    /// <summary>
+    /// Gets or sets the number of exceptions of a leaf's measurement that the layout passes counted and did not report: the same type
+    /// again from the same leaf, before a change of the leaf (design §2.4.1).
+    /// </summary>
+    internal int SuppressedLayoutExceptions { get; set; }
 
     /// <summary>
     /// Gets the root: the node the window's size is given to (<see cref="Invalidation.NotifyWindowResized"/>); none before.
@@ -97,6 +116,62 @@ internal sealed class UiTree
         _measures[handle.Index] = default;
         _measures[handle.Index].Box = box;
         return handle;
+    }
+
+    /// <summary>
+    /// Creates a text leaf that is not in the tree yet, with no text: it measures its text with the tree's
+    /// <see cref="TextContext"/> (design §3.2, "Text leaves"). It needs a layout.
+    /// </summary>
+    /// <param name="style">The layout style.</param>
+    /// <param name="textStyle">The text style.</param>
+    /// <returns>The leaf.</returns>
+    /// <exception cref="InvalidOperationException">The tree has no <see cref="TextContext"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The text style's size or line height is out of its range.</exception>
+    /// <exception cref="ArgumentException">The text style's language is the default value.</exception>
+    public NodeHandle CreateTextNode(LayoutStyle style, TextStyle textStyle)
+    {
+        if (Text is null)
+        {
+            throw new InvalidOperationException("The UI tree has no text context, so it cannot measure a text leaf.");
+        }
+
+        TextStyle.Validate(in textStyle, nameof(textStyle));
+        NodeHandle handle = CreateNode(style);
+        Nodes.GetRef(handle).Text = new TextLeaf(textStyle);
+        return handle;
+    }
+
+    /// <summary>
+    /// Writes the text of a text leaf. A text equal to the one there changes nothing; another drops the leaf's caches and marks
+    /// its layout, as a change of content (row L5).
+    /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <param name="text">The text.</param>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    public void SetText(NodeHandle node, ReadOnlySpan<char> text)
+    {
+        if (TextLeafOf(node).SetContent(text))
+        {
+            Invalidation.Invalidate(this, node, ChangeKind.TextContent);
+        }
+    }
+
+    /// <summary>
+    /// Replaces the text style of a text leaf. A style equal to the one there changes nothing; another drops the leaf's caches and
+    /// marks its layout, as a change of content (row L5).
+    /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <param name="style">The text style.</param>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The size or the line height is out of its range.</exception>
+    /// <exception cref="ArgumentException">The language is the default value.</exception>
+    public void SetTextStyle(NodeHandle node, TextStyle style)
+    {
+        TextStyle.Validate(in style, nameof(style));
+        if (TextLeafOf(node).SetStyle(style))
+        {
+            Invalidation.Invalidate(this, node, ChangeKind.Font);
+        }
     }
 
     /// <summary>
@@ -260,6 +335,9 @@ internal sealed class UiTree
         (_layoutRoots, _layoutRootsSpare) = (_layoutRootsSpare, _layoutRoots);
         return _layoutRootsSpare;
     }
+
+    private TextLeaf TextLeafOf(NodeHandle node) =>
+        Nodes.GetRef(node).Text ?? throw new InvalidOperationException("The node is not a text leaf; create one with CreateTextNode.");
 
     private int CompareDepth(LayoutRequest a, LayoutRequest b) => Nodes.GetRef(a.Node).Depth.CompareTo(Nodes.GetRef(b.Node).Depth);
 

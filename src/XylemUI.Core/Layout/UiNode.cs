@@ -48,6 +48,11 @@ internal struct UiNode
     public LayoutState Layout;
 
     /// <summary>
+    /// The text of a text leaf; <see langword="null"/> on every other node (design §3.2, "Text leaves").
+    /// </summary>
+    public TextLeaf? Text;
+
+    /// <summary>
     /// The child whose first baseline gives this container's in the last layout run, read when a parent reads this node's
     /// (design §2.4.1); none for a leaf, whose <see cref="LayoutState.FirstBaseline"/> is its own. Read it with
     /// <see cref="LayoutState.BaselineFromFirstChildWithOne"/>, which says how the child gives the baseline. It belongs to the

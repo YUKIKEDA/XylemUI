@@ -113,6 +113,11 @@ internal static partial class LayoutEngine
 
                         CompareContentChange(tree, request.Node);
                     }
+                    catch (LeafMeasureException failure)
+                    {
+                        ReportLeafFailure(tree, failure);
+                        tree.DeferRequest(request);
+                    }
                     catch (Exception exception) when (exception is not InvariantViolationException)
                     {
                         ReactiveRuntime.ReportException(exception);
@@ -128,6 +133,23 @@ internal static partial class LayoutEngine
             ReactiveRuntime.ExitLayout();
             tree.RestoreDeferredRequests();
         }
+    }
+
+    // A leaf's measurement threw. The first failure of a type is reported and recorded on the leaf; the same type again from the
+    // same leaf is only counted, until a change of the leaf clears the record (design §2.4.1, the exceptions of a layout). The
+    // request is tried again in the next pass either way.
+    private static void ReportLeafFailure(UiTree tree, LeafMeasureException failure)
+    {
+        Exception inner = failure.InnerException!;
+        ref UiNode leaf = ref tree.Nodes.GetRef(failure.Node);
+        if (leaf.Layout.ReportedFailure == inner.GetType())
+        {
+            tree.SuppressedLayoutExceptions++;
+            return;
+        }
+
+        leaf.Layout.ReportedFailure = inner.GetType();
+        ReactiveRuntime.ReportException(inner);
     }
 
     /// <summary>
@@ -219,7 +241,7 @@ internal static partial class LayoutEngine
         if (
             !commit
             && input.Axis == RequestedAxis.Horizontal
-            && node.Layout.IntrinsicWidths is not null
+            && (node.Layout.IntrinsicWidths is not null || node.Text is not null)
             && node.FirstChild.IsNone
             && float.IsNaN(input.KnownDimensions.Width)
             && input.Available.Width.Kind is AvailableSpaceKind.MinContent or AvailableSpaceKind.MaxContent
@@ -321,6 +343,7 @@ internal static partial class LayoutEngine
         ulong epochBefore = before.Dirty.Epoch;
         LayoutStyle style = before.Layout.Style;
         MeasureFunc? measure = before.Layout.Measure;
+        TextLeaf? text = before.Text;
         NodeHandle firstChild = before.FirstChild;
 
         // A hidden node takes no room and lays out nothing (row L2).
@@ -340,7 +363,7 @@ internal static partial class LayoutEngine
         Size size;
         if (firstChild.IsNone)
         {
-            size = ComputeLeaf(in style, measure, in input, commit, out baseline);
+            size = ComputeLeaf(tree, handle, in style, measure, text, in input, commit, out baseline);
         }
         else if (style.Algorithm is LayoutAlgorithm.Flex flex)
         {

@@ -157,6 +157,22 @@ public sealed unsafe class Font : IDisposable
     public int UnitsPerEm { get; private set; }
 
     /// <summary>
+    /// Gets the distance from the baseline up to the top of the font's line, in font units (HarfBuzz's horizontal font extents,
+    /// design §3.2, "Text leaves").
+    /// </summary>
+    public int Ascent { get; private set; }
+
+    /// <summary>
+    /// Gets the distance from the baseline down to the bottom of the font's line, in font units; positive below the baseline.
+    /// </summary>
+    public int Descent { get; private set; }
+
+    /// <summary>
+    /// Gets the space the font asks for between two lines, in font units.
+    /// </summary>
+    public int LineGap { get; private set; }
+
+    /// <summary>
     /// Gets the HarfBuzz font, scaled to font units.
     /// </summary>
     /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
@@ -233,6 +249,11 @@ public sealed unsafe class Font : IDisposable
 
         // Positions in font units: the caller scales them to the size it draws at.
         HarfBuzz.FontSetScale(_font, UnitsPerEm, UnitsPerEm);
+        HarfBuzz.FontExtents extents;
+        _ = HarfBuzz.FontGetHExtents(_font, &extents);
+        Ascent = extents.Ascender;
+        Descent = -extents.Descender;
+        LineGap = extents.LineGap;
         return FontNames.Family(_face);
     }
 }
