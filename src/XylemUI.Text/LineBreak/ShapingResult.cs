@@ -24,7 +24,8 @@ internal sealed class ShapingResult
     /// running sums of the advances and Pass2 as a sum from the line's start, and a width can come back from a layout less its
     /// padding, which can each differ in the last bit at a fractional size: without it, a text broken at its own most content width
     /// had its widest line cut (PR #293's review), and a padded text leaf at its max-content width wrapped (PR #301's review). A
-    /// kerning a break removes is 0.5 px or more at 13 px, so a real overflow is still found.
+    /// kerning a break removes is 0.5 px or more at 13 px, so a real overflow is still found. Pass2 takes it twice, so that a line
+    /// Pass1 took at the edge of the tolerance is not cut by the last bit Pass2 measures it at.
     /// </summary>
     internal const float Tolerance = 1f / 64;
     private const string Hyphen = "-";
@@ -222,7 +223,10 @@ internal sealed class ShapingResult
         {
             int start = result.NextGlyph;
             (float width, float withSpaces) = LayLine(line, shaper, result);
-            if (width <= lines.Width + Tolerance || line.Emergency || line.End - line.Start <= 1)
+
+            // Twice the tolerance: Pass1 took the line up to one tolerance over the width, and Pass2's sum can differ from Pass1's
+            // in the last bit, so the two bounds do not meet (PR #301's re-review).
+            if (width <= lines.Width + (2 * Tolerance) || line.Emergency || line.End - line.Start <= 1)
             {
                 result.EndLine(line, start, width, withSpaces);
                 continue;
