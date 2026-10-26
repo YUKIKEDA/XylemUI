@@ -37,6 +37,10 @@ internal sealed class WindowInput
     private PointerInput _last;
     private bool _inside;
     private bool _stopped;
+
+    // Whether enters and leaves are being sent, and whether a hover test came meanwhile and waits for them to end (PR #327's review).
+    private bool _hovering;
+    private bool _hoverPending;
     private CursorKind _cursor;
 
     /// <summary>
@@ -181,8 +185,10 @@ internal sealed class WindowInput
             NodeHandle origin = _clickOrigin;
             _clickOrigin = default;
 
-            // A click when the release is over the node pressed or one of its descendants (Avalonia's Button, GPUI's div).
-            if (_tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(HitAt(input), origin))
+            // A click when the release is over the node pressed or one of its descendants (Avalonia's Button, GPUI's div). The node
+            // hit is the one the release's hover test found; a handler of the up may have removed it since (PR #327's review).
+            NodeHandle released = _tree.Nodes.IsAlive(_hit) ? _hit : default;
+            if (_tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
             {
                 Route(PointerEventKind.Click, origin, input, bubbleOnly: true);
             }
@@ -232,7 +238,29 @@ internal sealed class WindowInput
 
     // Tests the position, and changes the hover to the node hit and its ancestors; while captured, to the capture's node and its
     // ancestors when the node hit is it or a descendant, and to nothing otherwise (Avalonia's PointerOverPreProcessor).
+    // A test that comes while enters and leaves are sent (a handler that runs a frame synchronously, whose rehit lands here, or that
+    // pumps messages) waits until they end, and then runs at the pointer's last position: the chains it would change are being read.
     private void UpdateHover(in PointerInput input)
+    {
+        if (_hovering)
+        {
+            _hoverPending = true;
+            return;
+        }
+
+        TestHover(input);
+
+        // A handler that keeps changing the tree under the pointer is not followed past a few tests.
+        for (int again = 0; _hoverPending && again < 4; again++)
+        {
+            _hoverPending = false;
+            TestHover(_last);
+        }
+
+        _hoverPending = false;
+    }
+
+    private void TestHover(in PointerInput input)
     {
         _hit = HitAt(input);
         NodeHandle captured = CapturedNode();
@@ -269,36 +297,49 @@ internal sealed class WindowInput
         int entered = count - shared;
         if (left > 0 || entered > 0)
         {
-            // The old chain is kept apart before the events, since a handler can reach this method again through a rehit.
-            for (int i = 0; i < left; i++)
+            _hovering = true;
+            try
             {
-                NodeHandle node = _hovered[i];
-                if (_tree.Nodes.IsAlive(node))
-                {
-                    _tree.SetPseudoState(node, PseudoState.Hovered, on: false);
-                    Direct(PointerEventKind.Leave, node, input);
-                }
+                SendHoverChange(left, entered, count, input);
             }
-
-            if (_hovered.Length < count)
+            finally
             {
-                Array.Resize(ref _hovered, _nextHovered.Length);
-            }
-
-            Array.Copy(_nextHovered, _hovered, count);
-            _hoveredCount = count;
-            for (int i = entered - 1; i >= 0; i--)
-            {
-                NodeHandle node = _hovered[i];
-                if (_tree.Nodes.IsAlive(node))
-                {
-                    _tree.SetPseudoState(node, PseudoState.Hovered, on: true);
-                    Direct(PointerEventKind.Enter, node, input);
-                }
+                _hovering = false;
             }
         }
 
         UpdateCursor();
+    }
+
+    // The leaves of the nodes left, then the enters of the nodes entered, with the chain changed between them.
+    private void SendHoverChange(int left, int entered, int count, in PointerInput input)
+    {
+        for (int i = 0; i < left; i++)
+        {
+            NodeHandle node = _hovered[i];
+            if (_tree.Nodes.IsAlive(node))
+            {
+                _tree.SetPseudoState(node, PseudoState.Hovered, on: false);
+                Direct(PointerEventKind.Leave, node, input);
+            }
+        }
+
+        if (_hovered.Length < count)
+        {
+            Array.Resize(ref _hovered, _nextHovered.Length);
+        }
+
+        Array.Copy(_nextHovered, _hovered, count);
+        _hoveredCount = count;
+        for (int i = entered - 1; i >= 0; i--)
+        {
+            NodeHandle node = _hovered[i];
+            if (_tree.Nodes.IsAlive(node))
+            {
+                _tree.SetPseudoState(node, PseudoState.Hovered, on: true);
+                Direct(PointerEventKind.Enter, node, input);
+            }
+        }
     }
 
     // The pressed state on the node and its ancestors, kept to clear them on the release.

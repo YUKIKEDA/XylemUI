@@ -169,8 +169,8 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
             _ => IDC.IDC_ARROW,
         };
 
-    // The pointer's messages. Returns whether the message was handled.
-    private bool HandlePointerMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
+    // The pointer's messages. Returns whether the message was handled; WM_SETCURSOR sets the result it returns.
+    private bool HandlePointerMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam, ref LRESULT result)
     {
         switch (message)
         {
@@ -190,13 +190,21 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
                 // In the client area the input's cursor; on the frame, DefWindowProc's.
                 if (((nuint)lParam & 0xFFFF) == HTCLIENT)
                 {
+                    // TRUE stops the processing; FALSE would let the parent window or DefWindowProc set its own (PR #327's review).
                     _ = SetCursor(LoadCursorW(HINSTANCE.NULL, CursorId(_cursor)));
+                    result = 1;
                     return true;
                 }
 
                 return false;
             default:
                 break;
+        }
+
+        // Only a mouse message reads the clock, the Alt key, and the extra information (PR #327's review).
+        if (message is < WM.WM_MOUSEFIRST or > WM.WM_MOUSELAST)
+        {
+            return false;
         }
 
         TimeSpan now = Now();

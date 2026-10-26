@@ -156,19 +156,19 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// WM_SETCURSOR over the client area shows the cursor the input chose, and is left to the window's default handling on the
-    /// frame.
+    /// WM_SETCURSOR over the client area shows the cursor the input chose and returns TRUE, which stops the processing; over the
+    /// frame it is left to the window's default handling (PR #327's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A hidden window whose input chose the text cursor.
     ///
     /// Steps:
-    /// - Send WM_SETCURSOR with HTCLIENT and read the cursor; send it with HTCAPTION.
+    /// - Send WM_SETCURSOR with HTCLIENT and read the cursor; send it with HTCAPTION and read the cursor.
     ///
     /// Expected:
-    /// - The first is handled (0) and the thread's cursor is the system's text cursor; the second goes to DefWindowProc, which
-    ///   returns 0 for a top-level window too, so only the cursor is read.
+    /// - The first returns TRUE and the thread's cursor is the system's text cursor; after the second, DefWindowProc has set the
+    ///   arrow of the window class.
     /// </remarks>
     [Fact]
     public void SetCursorMessage_InTheClientArea_ShowsTheChosenCursor() =>
@@ -177,11 +177,14 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
             using var window = new Win32Window("cursor", 200, 100);
             ((IPointerPlatform)window).SetCursor(CursorKind.IBeam);
 
-            LRESULT result = SendMessageW(window.Hwnd, WM.WM_SETCURSOR, (WPARAM)(nint)window.Hwnd, HTCLIENT);
+            LRESULT client = SendMessageW(window.Hwnd, WM.WM_SETCURSOR, (WPARAM)(nint)window.Hwnd, HTCLIENT);
+            HCURSOR inClient = GetCursor();
+            _ = SendMessageW(window.Hwnd, WM.WM_SETCURSOR, (WPARAM)(nint)window.Hwnd, HTCAPTION);
 
-            Assert.Equal(0, (nint)result);
+            Assert.Equal(1, (nint)client);
             Assert.Equal(CursorKind.IBeam, window.Cursor);
-            Assert.Equal(LoadCursorW(HINSTANCE.NULL, IDC.IDC_IBEAM), GetCursor());
+            Assert.Equal(LoadCursorW(HINSTANCE.NULL, IDC.IDC_IBEAM), inClient);
+            Assert.Equal(LoadCursorW(HINSTANCE.NULL, IDC.IDC_ARROW), GetCursor());
         });
 
     private static void Send(Win32Window window, uint message, uint keys, int x, int y) =>
