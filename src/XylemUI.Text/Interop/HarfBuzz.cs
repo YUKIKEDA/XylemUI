@@ -16,6 +16,9 @@ internal static unsafe partial class HarfBuzz
     /// <summary><c>HB_DIRECTION_LTR</c>.</summary>
     public const int DirectionLtr = 4;
 
+    /// <summary><c>HB_GLYPH_FLAG_UNSAFE_TO_BREAK</c>: in a glyph info's mask after shaping, a break before the glyph's cluster changes the shaping.</summary>
+    public const uint GlyphFlagUnsafeToBreak = 1;
+
     [LibraryImport(Library, EntryPoint = "hb_blob_create")]
     public static partial nint BlobCreate(byte* data, uint length, int mode, void* userData, void* destroy);
 

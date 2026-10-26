@@ -36,9 +36,33 @@ public sealed unsafe class TextShaper : IDisposable
             throw new ArgumentException("The language is the default value; use TextLanguage.FromTag.", nameof(language));
         }
 
+        return ShapeRange(font, text, 0, text.Length, language);
+    }
+
+    /// <summary>
+    /// Shapes the part of <paramref name="text"/> from <paramref name="start"/>, with the text before and after it as context
+    /// (HarfBuzz's pre- and post-context): the glyphs at its ends take the forms they take inside the whole text. The clusters are
+    /// offsets in the whole text. The line breaking shapes the ends of its lines again so (design §4.1, Pass2).
+    /// </summary>
+    /// <param name="font">The font.</param>
+    /// <param name="text">The whole text, UTF-16.</param>
+    /// <param name="start">The first code unit to shape.</param>
+    /// <param name="length">The number of code units to shape.</param>
+    /// <param name="language">The language of the text.</param>
+    /// <returns>The glyphs in visual order. The span is valid until the next call.</returns>
+    /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
+    /// <exception cref="ObjectDisposedException">The shaper or the font was disposed.</exception>
+    internal ReadOnlySpan<ShapedGlyph> ShapeRange(Font font, ReadOnlySpan<char> text, int start, int length, TextLanguage language)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        if (language.Handle == 0)
+        {
+            throw new ArgumentException("The language is the default value; use TextLanguage.FromTag.", nameof(language));
+        }
+
         ObjectDisposedException.ThrowIf(_buffer == 0, this);
         nint harfBuzzFont = font.HarfBuzzFont;
-        if (text.IsEmpty)
+        if (length == 0)
         {
             return [];
         }
@@ -46,7 +70,7 @@ public sealed unsafe class TextShaper : IDisposable
         HarfBuzz.BufferClearContents(_buffer);
         fixed (char* chars = text)
         {
-            HarfBuzz.BufferAddUtf16(_buffer, chars, text.Length, 0, text.Length);
+            HarfBuzz.BufferAddUtf16(_buffer, chars, text.Length, (uint)start, length);
         }
 
         // The language is given, never the process locale's: the script is guessed from the text (a guess keeps a language set
@@ -56,10 +80,10 @@ public sealed unsafe class TextShaper : IDisposable
         HarfBuzz.BufferSetDirection(_buffer, HarfBuzz.DirectionLtr);
         HarfBuzz.Shape(harfBuzzFont, _buffer, null, 0);
 
-        uint length;
-        HarfBuzz.GlyphInfo* infos = HarfBuzz.BufferGetGlyphInfos(_buffer, &length);
+        uint glyphCount;
+        HarfBuzz.GlyphInfo* infos = HarfBuzz.BufferGetGlyphInfos(_buffer, &glyphCount);
         HarfBuzz.GlyphPosition* positions = HarfBuzz.BufferGetGlyphPositions(_buffer, null);
-        int count = (int)length;
+        int count = (int)glyphCount;
         if (count > _glyphs.Length)
         {
             Grow(count);
@@ -72,7 +96,8 @@ public sealed unsafe class TextShaper : IDisposable
                 (int)infos[i].Cluster,
                 positions[i].XAdvance,
                 positions[i].XOffset,
-                positions[i].YOffset
+                positions[i].YOffset,
+                (infos[i].Mask & HarfBuzz.GlyphFlagUnsafeToBreak) != 0
             );
         }
 
