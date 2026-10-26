@@ -529,6 +529,8 @@ Rejected:
   - 変換の原点を左上にする（Flutter の `RenderTransform` の既定。ホバーで拡大すると右下へずれる。Avalonia と CSS は中心）
   - 毎フレーム末尾でカーソルを OS に反映する（ヒットの結果が変わったときだけ反映する。GPUI も変わったときに反映する）
   - 文字の色を文字の葉だけに持つ（V1b の `TextLeaf.Color`。ボタンの Hovered で子の文字の色を変えられない。比べた 3 つとも文字の色を受け継ぐ）
+  - 文字の葉の自分の色も `NodeVisual.Foreground` に持つ（色を持つ文字の葉ごとに `NodeVisual` が要り、1 万の葉で 1.5〜3.4 MB。PR #319 のレビューでオーナーが決定）
+  - Hovered と Pressed の `PaintStyle?` を `NodeVisual` に直接持つ（背景を持つだけのノードも約 200 バイトずつ払う。別の class `PseudoStyles` にした。PR #319 のレビューでオーナーが決定）
 
 ---
 
