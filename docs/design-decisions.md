@@ -352,6 +352,11 @@ Reason:
   `Dispose` で即座に GPU リソースを破棄すると、GPU が実行中のフレームで use-after-free になる。
 
 Rejected:
+  - 箱の見た目も利用者の描く関数で書かせる（比べた 3 つはフレームワークが描く。V1b の Grill、Issue #308）
+  - 描く関数に親からの相対座標を渡す（Flutter の offset。表示リストの命令とヒット領域は絶対座標の論理座標で受け取るので、関数の中で足し直すことになる。V1b の Grill）
+  - 箱の見た目を `UiNode` に struct で埋め込む（見た目の無いノードも約 120 バイト大きくなる。V1b の Grill）
+  - 枠線を子の後に描く（GPUI。Flutter・Avalonia・CSS は子の前に描く。V1b の Grill）
+  - フレームを動かす型を Platform の側に置く（layout と描画の段の順は OS によらない。V1b の Grill）
   - ダーティ領域だけシザー描画して Present
   - CPU 側頂点バッファの差分パッチ
   - `PaintCommand` の record を毎フレーム生成する
