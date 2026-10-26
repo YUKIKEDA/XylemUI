@@ -61,7 +61,13 @@ public sealed class UiThreadFixture : IDisposable
     }
 }
 
-[CollectionDefinition(Name)]
+/// <summary>
+/// The tests that need the UI thread: the text leaf's layout (row V1a). They run apart from every other test of this project, as
+/// <see cref="HeavyAllocationGroup"/> does (<c>.cursor/rules/testing.mdc</c>): together they allocate about 32 MB (the process
+/// allocated 271.1 MB running them and 239.4 MB running one small test of them). Among them are 90 trees of one text leaf and a
+/// tree of 100 leaves laid out hundreds of times (Issue #302).
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class UiThreadGroup : ICollectionFixture<UiThreadFixture>
 {
     public const string Name = "UI thread";
