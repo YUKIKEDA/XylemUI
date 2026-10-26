@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using XylemUI.Text;
 using XylemUI.Text.LineBreak;
 
@@ -206,37 +207,39 @@ internal sealed class WindowFrames
         Rect rect = node.Layout.Rect;
         var box = new Rect(parentX + rect.X, parentY + rect.Y, rect.Width, rect.Height);
         NodeVisual? visual = node.Visual;
-        Look look = visual is null ? Look.None : Resolve(visual, node.Pseudo);
-        Color text = look.Foreground ?? inheritedText;
-        bool writesHit = node.Input?.WritesHitRegion == true || visual?.States is { Hovered: not null } or { Pressed: not null };
-
+        bool writesHit = node.Input?.WritesHitRegion == true;
+        Color text = inheritedText;
         int pushed = 0;
-        if (look.Transform is { } transform)
+        if (visual is not null)
         {
-            // About the box's center: moved there, transformed, and moved back (System.Numerics applies the left one first).
-            var center = new Vector2(box.X + (box.Width * 0.5f), box.Y + (box.Height * 0.5f));
-            _list.PushTransform(Matrix3x2.CreateTranslation(-center) * transform * Matrix3x2.CreateTranslation(center));
-            pushed++;
-        }
+            PseudoStyles? styles = visual.States;
+            if (styles is not null)
+            {
+                writesHit |= styles.Hovered is not null || styles.Pressed is not null;
+            }
 
-        if (look.Opacity == 0)
-        {
-            hitsOnly = true;
-        }
-        else if (look.Opacity < 1 && !hitsOnly)
-        {
-            _list.PushOpacity(look.Opacity);
-            pushed++;
-        }
-
-        if (visual is not null && !hitsOnly)
-        {
-            DrawBox(visual, look, node.Layout.Border, box);
+            // Most nodes have no look of the state they are in and no scope: their values go to the box as they are. The others are
+            // resolved apart, so that the style's and the scopes' locals are not in this frame, which every node pays for: with them
+            // here the frame was 968 bytes, zeroed on each call, and the draw stage of `frames --tree` took 12 µs longer for 1,000
+            // boxes (row V1c).
+            bool styled = styles is not null && (node.Pseudo & (PseudoState.Hovered | PseudoState.Pressed)) != 0;
+            if (styled || visual.Scoped)
+            {
+                pushed = DrawResolved(visual, node.Pseudo, node.Layout.Border, box, ref text, ref hitsOnly);
+            }
+            else
+            {
+                text = visual.Foreground ?? text;
+                if (!hitsOnly)
+                {
+                    DrawBox(visual, node.Layout.Border, box);
+                }
+            }
         }
 
         if (writesHit)
         {
-            WriteHitRegion(handle, box, look.Radii);
+            WriteHitRegion(handle, box, visual?.Radii ?? default);
         }
 
         if (!hitsOnly && visual?.Draw is { } draw)
@@ -264,24 +267,77 @@ internal sealed class WindowFrames
         }
     }
 
-    // The node's look: its values, with the hovered and then the pressed style laid over them where the node is in that state.
-    private static Look Resolve(NodeVisual visual, PseudoState state)
+    // A node with a look of its state or a scope: its values, with the hovered and then the pressed style laid over them where the
+    // node is in that state; the transform and the opacity pushed around the subtree; then its box. Returns the scopes pushed.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private int DrawResolved(NodeVisual visual, PseudoState state, Edges border, Rect box, ref Color text, ref bool hitsOnly)
     {
-        var look = new Look(visual.Background, visual.BorderPaint, visual.Foreground, visual.Opacity, visual.Transform, visual.Radii);
+        Paint? background = visual.Background;
+        Paint? borderPaint = visual.BorderPaint;
+        Color? foreground = visual.Foreground;
+        float opacity = visual.Opacity;
+        Matrix3x2? transform = visual.Transform;
         if (visual.States is { } styles)
         {
             if ((state & PseudoState.Hovered) != 0 && styles.Hovered is { } hovered)
             {
-                look = look.Over(hovered);
+                Over(hovered, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
             }
 
             if ((state & PseudoState.Pressed) != 0 && styles.Pressed is { } pressed)
             {
-                look = look.Over(pressed);
+                Over(pressed, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
             }
         }
 
-        return look;
+        text = foreground ?? text;
+        int pushed = 0;
+        if (transform is { } matrix)
+        {
+            // About the box's center: moved there, transformed, and moved back (System.Numerics applies the left one first).
+            var center = new Vector2(box.X + (box.Width * 0.5f), box.Y + (box.Height * 0.5f));
+            _list.PushTransform(Matrix3x2.CreateTranslation(-center) * matrix * Matrix3x2.CreateTranslation(center));
+            pushed++;
+        }
+
+        if (opacity == 0)
+        {
+            hitsOnly = true;
+        }
+        else if (opacity < 1 && !hitsOnly)
+        {
+            _list.PushOpacity(opacity);
+            pushed++;
+        }
+
+        if (!hitsOnly)
+        {
+            DrawBox(visual.Shadow, visual.Radii, background, borderPaint, border, box);
+        }
+
+        return pushed;
+    }
+
+    // The box of a node with its own values, read here so that their copies are not in DrawNode's frame.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void DrawBox(NodeVisual visual, Edges border, Rect box) =>
+        DrawBox(visual.Shadow, visual.Radii, visual.Background, visual.BorderPaint, border, box);
+
+    // A style's set values replace the look's; the unset ones keep it.
+    private static void Over(
+        in PaintStyle style,
+        ref Paint? background,
+        ref Paint? borderPaint,
+        ref Color? foreground,
+        ref float opacity,
+        ref Matrix3x2? transform
+    )
+    {
+        background = style.Background ?? background;
+        borderPaint = style.BorderPaint ?? borderPaint;
+        foreground = style.Foreground ?? foreground;
+        opacity = style.Opacity ?? opacity;
+        transform = style.Transform ?? transform;
     }
 
     // The node's box as its hit region, and where it is in the list, so that the input finds the node's state for its local position.
@@ -296,21 +352,19 @@ internal sealed class WindowFrames
         _list.HitRegion(handle, box.X, box.Y, box.Width, box.Height, radii);
     }
 
-    private void DrawBox(NodeVisual visual, in Look look, Edges border, Rect box)
+    private void DrawBox(BoxShadow? shadow, in CornerRadii radii, Paint? background, Paint? borderPaint, Edges border, Rect box)
     {
-        if (visual.Shadow is { } shadow)
+        if (shadow is { } cast)
         {
-            _list.DrawShadow(box.X, box.Y, box.Width, box.Height, look.Radii, shadow);
+            _list.DrawShadow(box.X, box.Y, box.Width, box.Height, radii, cast);
         }
 
-        bool hasBorder = look.BorderPaint is not null && (border.Left > 0 || border.Top > 0 || border.Right > 0 || border.Bottom > 0);
-        if (look.Background is not null || hasBorder)
+        bool hasBorder = borderPaint is not null && (border.Left > 0 || border.Top > 0 || border.Right > 0 || border.Bottom > 0);
+        if (background is not null || hasBorder)
         {
-            Paint fill = look.Background ?? new Paint(default(Color));
-            Border? edge = hasBorder
-                ? new Border(new BorderWidths(border.Left, border.Top, border.Right, border.Bottom), look.BorderPaint!.Value)
-                : null;
-            _list.FillRect(box.X, box.Y, box.Width, box.Height, fill, look.Radii, edge);
+            Paint fill = background ?? new Paint(default(Color));
+            Border? edge = hasBorder ? new Border(new BorderWidths(border.Left, border.Top, border.Right, border.Bottom), borderPaint!.Value) : null;
+            _list.FillRect(box.X, box.Y, box.Width, box.Height, fill, radii, edge);
         }
     }
 
@@ -343,29 +397,5 @@ internal sealed class WindowFrames
             );
             top += height;
         }
-    }
-
-    // A node's look after its pseudo-states: the values the draw stage reads.
-    private readonly record struct Look(
-        Paint? Background,
-        Paint? BorderPaint,
-        Color? Foreground,
-        float Opacity,
-        Matrix3x2? Transform,
-        CornerRadii Radii
-    )
-    {
-        public static Look None => new(null, null, null, 1, null, default);
-
-        // A style's set values replace the look's; the unset ones keep it.
-        public Look Over(in PaintStyle style) =>
-            new(
-                style.Background ?? Background,
-                style.BorderPaint ?? BorderPaint,
-                style.Foreground ?? Foreground,
-                style.Opacity ?? Opacity,
-                style.Transform ?? Transform,
-                Radii
-            );
     }
 }

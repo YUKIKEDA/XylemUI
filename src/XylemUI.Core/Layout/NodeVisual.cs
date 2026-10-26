@@ -13,6 +13,9 @@ namespace XylemUI;
 /// </remarks>
 internal sealed class NodeVisual
 {
+    private float _opacity = 1;
+    private Matrix3x2? _transform;
+
     /// <summary>
     /// Gets or sets the shadow under the box; <see langword="null"/> for none.
     /// </summary>
@@ -47,18 +50,39 @@ internal sealed class NodeVisual
     /// <summary>
     /// Gets or sets the opacity of the node and its subtree, from 0 to 1.
     /// </summary>
-    public float Opacity { get; internal set; } = 1;
+    public float Opacity
+    {
+        get => _opacity;
+        internal set => SetScope(value, _transform);
+    }
 
     /// <summary>
     /// Gets or sets the transform of the node and its subtree, about the center of the node's border box; <see langword="null"/>
     /// for none. It changes no layout.
     /// </summary>
-    public Matrix3x2? Transform { get; internal set; }
+    public Matrix3x2? Transform
+    {
+        get => _transform;
+        internal set => SetScope(_opacity, value);
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether the node has an opacity below 1 or a transform, so that the draw stage pushes a scope around
+    /// its subtree. The draw stage reads it instead of the two values, which a frame would otherwise copy for every node (row V1c).
+    /// </summary>
+    internal bool Scoped { get; private set; }
 
     /// <summary>
     /// Gets or sets the looks of the node's pseudo-states; <see langword="null"/> for none.
     /// </summary>
     public PseudoStyles? States { get; internal set; }
+
+    private void SetScope(float opacity, Matrix3x2? transform)
+    {
+        _opacity = opacity;
+        _transform = transform;
+        Scoped = opacity != 1 || transform is not null;
+    }
 }
 
 /// <summary>
