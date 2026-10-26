@@ -456,7 +456,8 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     ///   colors; run each frame the tree asks for.
     ///
     /// Expected:
-    /// - 0 bytes on this thread, and every frame presented.
+    /// - 0 bytes on this thread (in windows of 20 frames, with the methods compiled and the collections in each, after one window
+    ///   unmeasured), and every frame presented.
     /// </remarks>
     [Fact]
     public void SteadyState_FramesThatChangeText_AllocateNothing() =>
@@ -479,29 +480,26 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             Color red = Color.FromRgb(0xCC3333);
             Color blue = Color.FromRgb(0x3366CC);
 
-            void Frame(int i)
+            void Frame(int index)
             {
-                // Each leaf takes the other text and color each time its turn comes, so every frame changes something.
+                // Each leaf takes the other text and color each time its turn comes, so every frame changes something. The
+                // allocation check hands the warm-up window negative indices; the shift keeps them in range.
+                int i = index + 1_000;
                 bool odd = (i / 20) % 2 == 1;
                 tree.SetText(leaves[i % 20], odd ? "テキストの日本語" : "日本語のテキスト");
                 tree.SetTextColor(leaves[(i + 7) % 20], odd ? red : blue);
                 scheduler.Run();
             }
 
-            for (int i = 0; i < 400; i++)
+            // The warm-up runs on into the check's own unmeasured window (-20 to -1), so the indices go on without a repeat.
+            for (int i = -420; i < -20; i++)
             {
                 Frame(i);
             }
 
             int presents = target.Presents;
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 200; i++)
-            {
-                Frame(i);
-            }
-
-            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
-            Assert.Equal(presents + 200, target.Presents);
+            XylemUI.Tests.SteadyStateAllocation.AssertNone(200, Frame);
+            Assert.Equal(presents + 220, target.Presents);
         });
 
     private static long Allocated(UiTree tree, NodeHandle root, int layouts, Func<int, float> width)
