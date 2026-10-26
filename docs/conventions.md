@@ -36,7 +36,7 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（画素、テキストのインク、120 フレーム、フレームの CPU 時間）をして終了する（`PublishAot`。フォントは埋め込みリソース） |
 | `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture`（このアセンブリで `UiThread` を初期化するのはこれだけ）の上で走る |
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
-| `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる。Unicode の適合のテスト（`Unicode/`、生成器が UCD から写す）を 1 行 1 ケースで流す（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
+| `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる。Unicode の適合のテスト（`Unicode/`、生成器が UCD から写す）を 1 行 1 ケースで流す。文字の葉の layout（Core の内部の `UiTree` と `LayoutEngine`、行 V1a）も、HarfBuzz で整形するのでここで確かめる。UI スレッドは `UiThreadFixture` が持つ（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
 | `tests/XylemUI.Rendering.D3D11.Tests` | D3D11 レンダラのテスト。WARP で描き、バックバッファの readback で画素を確かめる。グリフはテキストのテストのフォントで描く（Windows のみ） |
 
 予定しているプロジェクトの全体は設計書 §2.9.1 にある。
