@@ -496,7 +496,7 @@ public static class TextProperties
     {
         Name = "Text",
         ChangeKind = ChangeKind.TextContent,
-        Setter = static (ref UiNode n, string v) => n.Text.SetContent(v),   // TextState.Buffer へコピーする
+        Setter = static (ref UiNode n, string v) => n.Text.SetContent(v),   // TextLeaf.Buffer へコピーする（§3.2「文字の葉」）
     };
 }
 ```
@@ -788,7 +788,7 @@ static void RunLayoutPass(UiTree tree)
 - **計算された境界の修復は持たない:** 上の「前フレームから境界資格が変化した場合は親へ `MarkDirty(Layout)`」は入れなかった。`CachedComputedBoundary` は親が子を layout するたびに書き直され、親は子を layout し直さずに制約を変えられないので、古い値で伝播が止まることがない。S6b のアルゴリズムが両軸 tight の制約を渡すのは根だけで、根以外が計算された境界になるのは L1b の stretch から
 - **`InvalidationBoundary` の構造体は持たない:** `AffectsParentSize` は `IsLayoutBoundaryForInvalidation`、`IsolatesSubtree` はキャッシュの命中で表せた。Paint / Semantics / HitTest の境界はそれぞれの行で足す
 - **根と取り付け:** `UiTree.Root` は、ウィンドウの大きさを渡したノード（`NotifyWindowResized`）。木の根は 1 つで、2 つ目は不変条件違反。根から辿れるノードだけが `IsAttached` を持ち、`MarkDirty` は取り付けられていないノードで止まっても layout root を足さない（dirty フラグは残る。取り付けると `AppendChild` が親を dirty にし、親の layout が子に届く）。子を作ってスタイルを当ててから親に付ける流れ（§2.13 のメソッドチェーン）の間に pass が挟まっても落ちない。S6b のレビューで、親の無いノードをすべて根と見なしていたために、取り付ける前の `SetStyle` の後の pass が不変条件違反になることが見つかり、こうした
-- **layout 中の例外:** 計測関数が投げた例外は、Effect と同じく `ReactiveRuntime.UnhandledExceptionHandler` に渡し、同じ pass の他の要求を続ける。投げた要求は捨てずに、pass の後で `LayoutRoots` に戻す（次の pass で試す）。同じノードの要求が pass 中に積まれていれば、強い理由（ウィンドウのリサイズ）が制約ごと勝つ。不変条件違反は捕まえない。同じ計測関数が毎回投げると毎フレーム同じ例外が報告されるので、報告をまとめるかは、実際のフレームを回す V1 で決める
+- **layout 中の例外:** 計測関数が投げた例外は、Effect と同じく `ReactiveRuntime.UnhandledExceptionHandler` に渡し、同じ pass の他の要求を続ける。投げた要求は捨てずに、pass の後で `LayoutRoots` に戻す（次の pass で試す）。同じノードの要求が pass 中に積まれていれば、強い理由（ウィンドウのリサイズ）が制約ごと勝つ。不変条件違反は捕まえない。同じ例外は 1 回だけ報告する（V1a の Grill でオーナーが決定、Issue #296）。葉の計測（利用者の `MeasureFunc`・`IntrinsicWidthsFunc` と文字の葉）が投げた例外は、葉の呼び出しで捕まえ、投げたノードと元の例外を持つ内部の例外に包んで投げ直す。pass の捕まえる所は、そのノードが前に同じ型の例外を報告していれば報告せずに数だけを数え（`UiTree` の内部の数。テストが読む）、そうでなければ元の例外を報告してノードに型を記録する。記録はノードの layout が dirty になる（内容・スタイル・計測関数の変更、`MarkDirty`）と消え、次の例外はまた報告する。リサイズだけではノードは dirty にならないので、リサイズのたびに同じ例外を報告しない。比べた 3 つのうち、Flutter は 2 回目からの報告を 1 行の要約にする（Flutter 3.47.8 の `assertions.dart` 982〜1042 行目。数はアプリ全体で 1 つで、`resetErrorCount` で戻す）。GPUI（zed v1.25.3）は整形の失敗を毎回ログに出す（`elements/text.rs` 747〜754 行目の `log_err`）。Avalonia 12.1.4 の `LayoutManager` は計測の例外を捕まえない（`LayoutManager.cs` 145〜162・189〜198 行目は `try` と `finally` だけ）。XylemUI は要約も出さない。同じノードの同じ例外の 2 回目からは、利用者に新しい情報が無いため
 - **要求の重複の確認は線形探索:** `MarkDirty` は、同じノードの要求があるかを `LayoutRoots` を先頭から探して確かめる。根の数に比例するので、1 フレームに多数の境界がそれぞれ変わる場合（固定サイズの境界 1 万個なら 5×10⁷ 回程度の比較）は、ノードの `Dirty` に「根の一覧にいる」印を持たせて O(1) にする。S6b の計測（1 か所の変更）には出ない
 - **安定しなかったとき:** `MaxLayoutIterations`（100）を超えると、`LayoutStabilizationException` を `ReactiveRuntime.UnhandledExceptionHandler` に渡して打ち切る。残った要求は次の pass で処理する（Reactive と同じ）
 - **ガード:** layout の pass の間は、Signal の `Get` / `Set` と Computed の `Get` が不変条件違反（debug は `InvariantViolationException`、release は `FailFast`）。layout を書くのはフレームワーク自身なので（オーナー決定）。pass は `ForbidAllocation` の区間でもあり、ノードを作ると不変条件違反
@@ -940,7 +940,7 @@ internal struct UiNode
     public NodeHandle NextSibling;
     public DirtyState Dirty;
     public LayoutState Layout;
-    public TextState Text;
+    public TextLeaf? Text;               // 文字の葉だけが持つ（§3.2「文字の葉」、V1a）
     public PaintState Paint;
     public InteractionState Interaction;
     public SemanticsState Semantics;
@@ -954,14 +954,6 @@ internal struct DirtyState
     public ulong Epoch;
 }
 
-internal struct TextState
-{
-    public char[]? Buffer;               // テキストノードのみ。TextBuilder / Func<string> の結果を書く。使い回し、足りないときだけ拡張する
-    public int Length;                   // Buffer の使用中の長さ（UTF-16 コード単位）
-    public TextStyle Style;
-    public ShapedTextCache? Shaped;      // §3.2
-    public LineBreakCache? LineBreaks;
-}
 
 internal struct PaintState
 {
@@ -1245,7 +1237,7 @@ sequenceDiagram
 
 **V1 の分け方（V1 の Grill でオーナーが決定、Issue #280）:** 行 V1 を次の 4 つに分け、この順に入れる。その前に、改行の行 T1 を入れる（文字の葉が最初から折り返し、§3.2 の 2 段のキャッシュの形で作れるため）。各行は、Grill → 設計の PR → 実装の順で進める。
 
-- **V1a 文字の葉:** `TextShaper` と T1 の改行を使う計測関数、`ShapedTextCache` と `LineBreakCache`（§3.2）、文字の行の高さ、10,101 個の文字の葉のリサイズ（§11.3）、計測関数の例外の報告
+- **V1a 文字の葉:** `TextShaper` と T1 の改行を使う計測関数、`ShapedTextCache` と `LineBreakCache`（§3.2）、文字の行の高さ、10,101 個の文字の葉のリサイズ（§11.3）、計測関数の例外の報告。設計は §3.2「文字の葉」と §2.4.1「layout 中の例外」（V1a の Grill、Issue #296）
 - **V1b 描画の段とフレームの駆動:** ノードの描く関数、木を絶対座標でたどって `DrawingContext` を作る順と段、`PaintUpdates`、`Hidden` の部分木を飛ばすこと、effect → レイアウト → 描画 → Render のフレームの予約、変わらないフレームは Present しないこと
 - **V1c 入力:** Win32 のマウスとポインタのイベントの型、ヒットテストと capture・bubble、ホバーと押下の擬似状態、遮る印、ハンドラに渡す座標を倍率で割ること
 - **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプル。受け入れは、§10.5 の MoonBit 版の V1 と同じ到達点（ボタンの中心の画素、クリックで数が増えること、変わらないフレームで Present しないこと）を、同じ判定基準（各段階 4 問 Yes）で確かめる
@@ -1460,7 +1452,7 @@ public ref struct TextWriter
 }
 ```
 
-- `TextBuilder` はノードが持つ char バッファ（`TextState`、§2.5）へ直接書く。書き終えた内容が前回と同じなら、`ChangeKind.TextContent` の無効化をしない
+- `TextBuilder` はノードが持つ char バッファ（`TextLeaf.Buffer`、§3.2「文字の葉」）へ直接書く。書き終えた内容が前回と同じなら、`ChangeKind.TextContent` の無効化をしない
 - バッファは使い回し、足りないときだけ拡張する（`.cursor/rules/perf.mdc`）。ラムダの確保はノード作成時の1回だけで、更新時は確保しない
 - `TextWriterHandler` は補間文字列ハンドラ（`[InterpolatedStringHandler]`）で、各部分を `ISpanFormattable.TryFormat` でバッファに書く。ZString と同じ目的を、.NET 6 以降の標準の仕組みで実現する
 - 書き込み中に Signal を読むと依存が登録される（`Func<string>` 版と同じ）
@@ -1684,17 +1676,71 @@ internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 ```csharp
 internal sealed class ShapedTextCache
 {
-    public required ShapingResult Result;  // §4.1 Pass1。幅に依存しない
+    public readonly ShapingResult Result = new();  // §4.1 Pass1。幅に依存しない。内容かスタイルが変わると捨てる
 }
 
 internal sealed class LineBreakCache
 {
-    // §4.1。直近数エントリ。容量は固定し、超えたら最も古いものを上書きする
-    public readonly List<(AvailableWidth Width, LineBreakResult Result)> Entries = new(capacity: 4);
+    // §4.1。幅ごとに 4 つまで。超えたら、確定した幅の項目を除いて最も古いものを上書きする（下の「文字の葉」）
+    public readonly LineBreakEntry[] Entries = new LineBreakEntry[4];
+    public int Committed = -1;                     // layout の確定で使った項目。-1 は無し
+}
+
+internal sealed class LineBreakEntry
+{
+    public float Width;                            // 鍵。MinContent / MaxContent は内容の幅に置き換えてから引く
+    public readonly LineBreakResult Lines = new(); // Pass1
+    public readonly LineLayoutResult Layout = new(); // Pass2
+    public float Height;                           // 行の高さの合計
+    public float FirstBaseline;
 }
 ```
 
-テキスト内容が変わった場合は`ShapedTextCache`ごと無効化、幅制約だけが変わった場合は`LineBreakCache`のみ再計算する。`MeasureText`（§4.3）は Signal を読まない。入力は UiNode に既に書き込まれたテキスト（`TextState.Buffer` の `ReadOnlySpan<char>`）と `TextStyle`。
+テキスト内容が変わった場合は`ShapedTextCache`ごと無効化、幅制約だけが変わった場合は`LineBreakCache`のみ再計算する。`MeasureText`（§4.3）は Signal を読まない。入力は UiNode に既に書き込まれたテキスト（`TextLeaf.Buffer` の `ReadOnlySpan<char>`）と `TextStyle`。
+
+**文字の葉（V1a の Grill でオーナーが決定、Issue #296）:** 文字の葉は、上の 2 段のキャッシュを持ち、T1 の整形と折り返し（§4.1）で自分を測る葉である。
+
+```csharp
+internal readonly record struct TextStyle(
+    FontRequest Font,       // §4.5
+    float Size,             // 論理ピクセルの em の大きさ。有限で 0 より大きい
+    TextLanguage Language,  // 漢字の字形とフォールバックを選ぶ（§4.5）
+    float LineHeight);      // 行の高さの倍率（大きさに掛ける）。NaN はフォントの値。指定するなら有限で 0 より大きい
+
+internal sealed class TextContext          // UI スレッドに 1 つ。各 UiTree に渡す
+{
+    public TextContext(IFontProvider fonts);
+    // TextShaper と LineBreaker を持つ。フォントは IFontProvider が持ち、開いたままにする（§4.5）
+}
+
+internal sealed class TextLeaf             // 文字の葉だけが持つ。ほかのノードの UiNode.Text は null
+{
+    public char[] Buffer;                  // SetText が写す。使い回し、足りないときだけ広げる
+    public int Length;                     // UTF-16 コード単位
+    public TextStyle Style;
+    public ShapedTextCache Shaped;
+    public LineBreakCache LineBreaks;
+}
+
+// UiTree（internal）
+public UiTree(TextContext? text = null);
+public NodeHandle CreateTextNode(LayoutStyle style, TextStyle textStyle);   // TextContext の無い木では InvalidOperationException
+public void SetText(NodeHandle node, ReadOnlySpan<char> text);             // 文字の葉でなければ InvalidOperationException
+public void SetTextStyle(NodeHandle node, TextStyle style);
+```
+
+- **`TextStyle` は layout に効くものだけ:** フォントの指定・大きさ・言語・行の高さの倍率を持ち、色は持たない。色は描画の状態で、行 V1b で入れる。比べた 3 つは、色も同じ型に入れる（Flutter 3.47.8 の `TextStyle.color`、`text_style.dart` 544 行目。Avalonia 12.1.4 の `TextRunProperties.ForegroundBrush`、`TextRunProperties.cs` 35 行目。GPUI（zed v1.25.3）の `TextStyle.color`、`style.rs` 438〜440 行目）。同じ型に入れると、色だけが変わったときに layout を飛ばすには、型の中の欄ごとに比べることになる。分けておけば、`TextStyle` の等しさだけで決まる。1 つの文章の中の範囲ごとのスタイルは、行 D9 で決める。`ShapingResult.Shape` は run の並びを受け取るので、範囲ごとのフォントは後から足せる。`Size` と `LineHeight` が範囲の外なら、`CreateTextNode` と `SetTextStyle` が `ArgumentOutOfRangeException` を投げる
+- **計測の呼び方:** layout は、`UiNode.Text` が null でない葉を文字の葉として、`MeasureFunc` と `IntrinsicWidthsFunc` を通さずに文字の計測を直接呼ぶ。葉ごとに closure を作ると、10,101 個の葉が 10,101 個の closure を持ち、呼ぶたびに間接呼び出しと、handle からのノードの引き直しが入る。Taffy の `compute_layout_with_measure` は計測にノードの文脈を渡す （Taffy v0.15.1 の `taffy_tree.rs` 971〜978 行目、`MeasureFunction` は `NodeId` と `Option<&mut NodeContext>` を受け取る）。Flutter の `RenderParagraph` も、自分の `performLayout` の中で `TextPainter` を測る（Flutter 3.47.8 の `paragraph.dart` 900〜904・956〜966 行目）。利用者が書く計測関数は、今のまま `MeasureFunc` と `IntrinsicWidthsFunc` で受ける。文字の葉は内容の幅を返す葉として扱うので、L5 の「親で止める」が効く。Debug のビルドの内容の幅と計測の突き合わせ（L4）も、文字の葉に同じく掛ける
+- **文字の葉の状態は参照 1 つ:** `UiNode` は `TextLeaf?` を 1 つ持つ（8 バイト）。V1a の前の設計の `TextState` の struct（§2.5 にあった）をそのまま埋め込むと、参照 3 つ（24 バイト）、長さと詰め物（8 バイト）、`TextStyle`（約 40 バイト）で、文字の葉でないノードも約 72 バイト大きくなる。Flutter の `RenderParagraph` も、文字を持つ箱だけが文字の状態を持つ
+- **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
+- **内容を書く:** `SetText` は `Buffer` に写す。前と同じ内容（`SequenceEqual`）なら何もしない。違えば `Shaped` と `LineBreaks` を捨て、ノードを layout の dirty にする。`SetTextStyle` も、前と等しいなら何もしない。`TextBuilder` の比べ方（ロードマップの V1 の未決の 1 点）は、公開 API の行 V1d でこの上に作る
+- **キャッシュ:** `ShapedTextCache` は `ShapingResult` を 1 つ持つ（フォントの run、整形、改行の候補、内容の幅）。内容かスタイルが変わると捨てる。`LineBreakCache` は幅を鍵に 4 つまで持ち、1 つが `LineBreakResult`（Pass1）・`LineLayoutResult`（Pass2）・行の高さの合計を持つ。Pass2 は緊急ブレークで行を増やすことがあるので（§4.1）、高さは Pass2 の後で決まり、Pass2 の結果まで持つ。高さは文字の葉の結果に効かないので、鍵は幅だけ（`MinContent` と `MaxContent` は最小と最大の内容の幅に置き換えてから引く）。min-content と max-content の幅は `ShapingResult.IntrinsicWidths` を整形の結果と一緒に持ち、高さに依存しない（`DependsOnHeight` は false）。項目は使い回し、配列は足りないときだけ広げる。キャッシュが当たったときも、外れて項目を使い回すときも、定常状態の割り当ては 0
+- **確定した幅:** layout の確定（commit）で使った幅の項目に印を付け、`LineBreakCache` の上書きの候補から外す（上書きするのは残りの 3 つの最も古いもの）。描画（行 V1b）は印の付いた項目を読み、測り直さない。印は次の確定で動く。Flutter の `RenderParagraph` の `paint` は、`performLayout` の後に計測が捨てられた場合に備えて、同じ制約で `_layoutTextWithConstraints` をもう一度呼ぶ（`paragraph.dart` 1030〜1034 行目）。`TextPainter.layout` は、持っている結果が制約に合えばすぐ戻る（`text_painter.dart` 1229〜1231 行目）。XylemUI では、確定した幅の項目が上書きされないので、描画のときに合うかを確かめずに読める
+- **返す大きさ:** 幅は、行末の空白を除いた最も広い行の幅。高さは行の高さの合計。最初のベースラインは最初の行のもの（`MeasureResult.FirstBaseline`）。内容が空の葉は、幅が 0 で、1 行の高さを持つ。その行のフォントは、要求のフォントで空白（U+0020）を引いたもの（`FontFallback.ResolveWithFallback`）。強制改行の後の空の行は、改行の文字の run のフォントで高さを決める。skparagraph も、空の文章に、スタイルのフォントの 1 行の高さを与える（`ParagraphImpl.cpp` 173〜186・1040〜1066 行目）
+- **行の高さ:** 1 行の高さは、その行で使ったフォント（フォールバックを含む）の ascent・descent・lineGap の、それぞれの最大の和。lineGap は上下に半分ずつ配る（half-leading）。`LineHeight` を指定したときは、`Size × LineHeight` を行の高さとし、ascent + descent との差を上下に半分ずつ配る。最初のベースラインは、行の上端から半分の余白 + ascent。フォントの値は HarfBuzz の `hb_font_get_h_extents`（`hb_font_extents_t` の `ascender`・`descender`・`line_gap`。descender は負、HarfBuzz 14.5.1 の `hb-font.h` 、94〜108・915〜917 行目）から em あたりの値として読み、`Font` に足す。run の大きさ（`Size` と、フォールバックの `FontMatch.Scale`）を掛けて使う。比べた 3 つのうち、Flutter（Skia 8df24be の skparagraph）と Avalonia は lineGap を行の高さに入れる。Avalonia 12.1.4 は、行の高さを descent − ascent + lineGap とし、ベースラインを lineGap の半分だけ下げる（`TextLineImpl.cs` 1417〜1439 行目）。`LineHeight` を指定すると、その値が行の高さになり、ascent + descent との差を上下に半分ずつ配る。skparagraph も lineGap の半分を ascent の上に置く（`Run.cpp` 64〜84 行目）。倍率を指定したときの配り方は 2 通りある。既定では ascent と descent を同じ比で伸ばし、`TextLeadingDistribution.even`（`fUseHalfLeading`）のときだけ半分ずつ配る。XylemUI は Avalonia と、Flutter の `even` の形をとる。同じ比で伸ばすと、倍率を上げるほど文字が行の下へ寄る。GPUI（zed v1.25.3）は lineGap を読まず、既定の行の高さを大きさ × 1.618 とする（`geometry.rs` 3722〜3724 行目の `phi()`、`style.rs` 494 行目）。そのため、フォントによって行が詰まりすぎたり空きすぎたりする。skparagraph（`Run.h` 483〜485 行目）と GPUI（`style.rs` 554〜556 行目）は、行の高さを整数に丸める。XylemUI は、ほかの葉の大きさと同じく、行の高さを論理ピクセルのまま丸めない
+- **例外:** §2.4.1 の「layout 中の例外」のとおり
+- **確かめ方:** fontTools で求めた期待値（T1b と同じ同梱のフォント）で、1 行と複数行の高さとベースライン、フォールバックの run が混ざる行、倍率の指定、空の内容と空の行（強制改行の続き）、同じ内容の `SetText` が dirty にしないこと、確定した幅の項目が上書きされないこと、内容の幅と計測の一致を確かめる
+- **受け入れ:** §11.3 の 10,101 個の文字の葉のリサイズを、本物の文字の葉（`benchmarks/XylemUI.E2E` の `resize-text`）で測り、キャッシュが当たったとき 2.0 ms 以下。外れたとき（幅ごとに初めて折り返す）の値も報告する。キャッシュが当たったときと、外れて項目を使い回すときの割り当ては 0（割り当て 0 のテスト）。T1b のレビュー（PR #293）で約束した 2 つも測る: 絵文字の整形にかかる時間を run の数ごとに、S8b の日本語の画面の折り返しの時間を、改行の候補の列挙（`segment`）と同じ表に。文字の葉 1 つの大きさ（`TextLeaf` と配列）も報告する
 
 ### 3.3 Grid実装のカバー範囲（決着）
 
@@ -1920,6 +1966,8 @@ FriBidi(LGPL)を不採用とする理由は、本プロジェクトの配布方�
 ### 4.3 MeasureText関数（レイアウト層との接続点）
 
 **オフセットの単位（C# 版で確定）:** テキスト上の位置（`TextOffset`、改行位置、選択範囲、IME の範囲）は全て **UTF-16 コード単位のインデックス**で表す。C# の `string` のインデックスと一致し、Windows（IMM32 / TSF / UIA）と macOS（`NSTextInputClient` / NSAccessibility）の API も UTF-16 単位で範囲を受け渡すため、境界で変換が要らない。キャレットや選択の移動は必ずグラフェムクラスタ境界に揃えるので、サロゲートペアの途中を指す位置は外部に出さない。Linux の IBus / AT-SPI は UTF-8 のバイト位置や codepoint 数で受け渡すため、Platform 層で変換する。
+
+**V1a の形（V1a の Grill でオーナーが決定、Issue #296）:** 下の `MeasureText` の静的な関数は作らない。layout が文字の葉を見分けて計測を直接呼び、結果は葉の `LineBreakCache` の項目（`LineBreakResult` と `LineLayoutResult`）に持つ（§3.2「文字の葉」）。下の `TextMeasurement` の欄のうち、行の切れ目とグリフの並びは、この項目が持つ。
 
 ```csharp
 internal static TextMeasurement MeasureText(ReadOnlySpan<char> text, in TextStyle style, float availableWidth)
@@ -3273,7 +3321,7 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 
 **GPU execution time の定義（M1a のレビューの後にオーナーが決定）:** PresentMon の `MsGPUBusy`（そのフレームが GPU を実際に使った時間）で判定する。アプリの中のタイムスタンプのクエリ（アトラスのアップロードから描画の命令の終わりまでの経過時間）は、レンダラの中の内訳に使う。クエリは Present まわりの GPU の仕事を含まず（軽い場面でクエリ 0.09 ms、`MsGPUBusy` 0.63 ms）、間に GPU が他の仕事をした時間を含む（重い場面でクエリ 83 ms、`MsGPUBusy` 67 ms）。
 
-テキスト込みのリサイズ（10,101 個のテキストの葉）は、幅を覚えた葉で 2.0〜2.3 ms、毎回シェーピングすると 25 ms だった。Layout の予算（120 Hz で 2.0 ms）は変えず、テキストの計測のキャッシュ（§3.2 の `ShapedTextCache`）を作る行で、キャッシュが当たったときのリサイズを 2.0 ms 以下にする。アトラスの上限で断られたグリフは要求のたびに 6.4 µs かけてラスタライズし直されるので、断ったグリフの箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（行 T5）。依存を読む順が交互に変わる Effect は同じ順の 1.4〜1.7 倍（連鎖 100 で `Set` 1 回 9〜11 µs）で、Reactive の予算に対して十分小さいので直さない。
+テキスト込みのリサイズ（10,101 個のテキストの葉）は、幅を覚えた葉で 2.0〜2.3 ms、毎回シェーピングすると 25 ms だった。Layout の予算（120 Hz で 2.0 ms）は変えず、テキストの計測のキャッシュ（§3.2 の `ShapedTextCache`）を作る行 V1a で、キャッシュが当たったときのリサイズを 2.0 ms 以下にする。測るのは、計測関数で代わりをした葉ではなく、本物の文字の葉（§3.2「文字の葉」）である。アトラスの上限で断られたグリフは要求のたびに 6.4 µs かけてラスタライズし直されるので、断ったグリフの箱の大きさをそのフレームの間だけ覚え、同じフレームの次の要求はラスタライズせずに断る（行 T5）。依存を読む順が交互に変わる Effect は同じ順の 1.4〜1.7 倍（連鎖 100 で `Set` 1 回 9〜11 µs）で、Reactive の予算に対して十分小さいので直さない。
 
 **CI のゲート方針:** PR を失敗させるのは**正しさのテスト（§12.1 の全層）と Zero-Alloc ゲート**だけとする。時間を測るベンチマーク（10k Rows・タイピングレイテンシ・Jank 率・起動時間）は共有 CI ランナーの揺れが大きいため、結果を記録して推移を追うだけにし、PR は失敗させない。
 
