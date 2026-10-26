@@ -74,15 +74,8 @@ internal sealed class WindowFrames
     /// </summary>
     public TextRenderingParameters TextRendering
     {
-        get { return _textRendering; }
-        set
-        {
-            if (value != _textRendering)
-            {
-                _textRendering = value;
-                Invalidation.Invalidate(_tree, _root, ChangeKind.Color);
-            }
-        }
+        get => _textRendering;
+        set => SetTextRendering(value);
     }
 
     /// <summary>
@@ -146,6 +139,16 @@ internal sealed class WindowFrames
         _scale = scale;
         Invalidation.NotifyWindowResized(_tree, _root, size);
         RunFrame();
+    }
+
+    // A new way of drawing text marks the root to be drawn again, so the next frame draws the whole tree with it.
+    private void SetTextRendering(TextRenderingParameters value)
+    {
+        if (value != _textRendering)
+        {
+            _textRendering = value;
+            Invalidation.Invalidate(_tree, _root, ChangeKind.Color);
+        }
     }
 
     private void RequestFrame()
