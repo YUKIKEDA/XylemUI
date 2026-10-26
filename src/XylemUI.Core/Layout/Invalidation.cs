@@ -110,22 +110,29 @@ internal static class Invalidation
     }
 
     /// <summary>
-    /// Sets <see cref="DirtyState.SelfDirty"/> on <paramref name="origin"/>. A layout change also sets
-    /// <see cref="DirtyState.SubtreeDirty"/> from the origin up to the nearest layout boundary or the root, drops the
-    /// measurements of every node on the way (they depended on what changed), and makes that node a layout root. Other changes
-    /// go to the paint updates.
+    /// Sets <see cref="DirtyState.SelfDirty"/> on <paramref name="origin"/>. The flags other than layout go to the paint updates, with
+    /// a layout change too. A layout change also sets <see cref="DirtyState.SubtreeDirty"/> from the origin up to the nearest layout
+    /// boundary or the root, drops the measurements of every node on the way (they depended on what changed), and makes that node a
+    /// layout root.
     /// </summary>
     public static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
     {
         ref UiNode node = ref tree.Nodes.GetRef(origin);
+        DirtyFlags paint = flags & ~DirtyFlags.Layout;
+        if (paint != 0)
+        {
+            // Only a frame that takes the node from the paint updates clears these flags. Set without the list, they stayed after the
+            // layout pass, and a later change of color found them set and asked for no frame (Issue #324).
+            MarkSelfForPaint(tree, origin, ref node, paint);
+        }
+
         if ((flags & DirtyFlags.Layout) == 0)
         {
-            MarkSelfForPaint(tree, origin, ref node, flags);
             return;
         }
 
         node.Layout.ReportedFailure = null;
-        node.Dirty.SelfDirty |= flags;
+        node.Dirty.SelfDirty |= DirtyFlags.Layout;
         MarkPath(tree, origin, flags);
     }
 

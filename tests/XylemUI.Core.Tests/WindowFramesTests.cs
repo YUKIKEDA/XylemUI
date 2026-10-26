@@ -238,6 +238,43 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A change of color after a change of layout asks for a frame and is drawn: the layout change's paint flags are cleared by the
+    /// frame that draws it, so they do not hide the next change (Issue #324).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - As in the first test, laid out and drawn once.
+    ///
+    /// Steps:
+    /// - Change the box's size with SetStyle; run the frame asked for. Set the box's background red; run the frame asked for.
+    ///
+    /// Expected:
+    /// - Each change asks for one frame, which presents. Before the fix the color asked for none: the scheduler held no frame to run.
+    /// </remarks>
+    [Fact]
+    public void ColorAfterLayoutChange_AsksForAFrameAndIsDrawn() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, NodeHandle box) = Boxes();
+            tree.SetBackground(box, new Paint(Gray));
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
+            frames.Resize(new Size(200, 100), 1);
+            int presents = target.Presents;
+
+            tree.SetStyle(box, Fixed(60, 30));
+            Assert.Equal(1, scheduler.Requests);
+            scheduler.Run();
+            tree.SetBackground(box, new Paint(Red));
+            Assert.Equal(2, scheduler.Requests);
+            scheduler.Run();
+
+            Assert.Equal(presents + 2, target.Presents);
+        });
+
+    /// <summary>
     /// A new way of drawing text (the window's ClearType or smoothing setting changed) asks for a frame, which draws the tree
     /// again; the same value asks for none.
     /// </summary>
