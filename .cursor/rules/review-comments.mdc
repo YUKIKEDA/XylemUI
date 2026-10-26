@@ -19,6 +19,8 @@ A review the owner asks for is posted on the pull request, in the same turn, wit
 
 Before calling a PR ready, and whenever the owner asks for the next step, read the reviews and inline comments of every open PR (`gh pr view <n> --json reviews,comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments`).
 
+Read the pull request's comments again just before posting a reply to a review: a re-review can land while the reply waits for the checks. On PR #309 a re-review of b98a1e3 came while the agent waited for that head's CI, and the agent posted its reply to the review before it without having read the re-review.
+
 ```text
 # BAD
 The ref-lifetime check is missing. A later pull request sits on this head, so merge.
