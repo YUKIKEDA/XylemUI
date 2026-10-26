@@ -143,7 +143,7 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
 
     /// <summary>
     /// A text leaf draws its committed lines at its content box, each glyph where the display list's DrawText puts the same shaped
-    /// glyphs: the glyphs and the pixels are the same.
+    /// glyphs: the glyphs and the pixels are the same, smoothed and bilevel (where the OS does not smooth fonts, row T8).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -151,14 +151,17 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
     ///   font has an ascent of 1160 in 1000 units per em (fontTools), so the first baseline is 23.2 below the content box's top.
     ///
     /// Steps:
-    /// - Run the frames' resize; read the glyphs and pixels of the frame's list. Shape the text directly and DrawText it at (15,
-    ///   15 + 23.2) into another list; read its glyphs and pixels.
+    /// - Set the frames' text rendering bilevel or not; run the frames' resize; read the glyphs and pixels of the frame's list.
+    ///   Shape the text directly and DrawText it at (15, 15 + 23.2) into another list, bilevel or not alike; read its glyphs and
+    ///   pixels.
     ///
     /// Expected:
     /// - The same glyphs, and the same pixels.
     /// </remarks>
-    [Fact]
-    public void TextLeaf_DrawsItsLinesAsDrawText() =>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TextLeaf_DrawsItsLinesAsDrawText(bool aliased) =>
         ui.Invoke(() =>
         {
             const float Scale = 1.25f;
@@ -181,13 +184,14 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
             tree.SetTextColor(leaf, Ink);
             tree.AppendChild(root, leaf);
             var frames = new WindowFrames(tree, root, new NoTarget(), atlas, new NoScheduler(), Clear);
+            frames.TextRendering = frames.TextRendering with { IsAliased = aliased };
             frames.Resize(new Size(width / Scale, height / Scale), Scale);
             List<string> treeGlyphs = Glyphs(frames.List);
             Color[] viaTree = Draw(renderer, frames.List, width, height, atlas);
 
             var direct = new DisplayList();
             direct.Reset(Scale);
-            _ = direct.DrawText(context.Shaper.Shape(font, Text, Japanese), font, 20, atlas, 15, 15 + 23.2f, Ink);
+            _ = direct.DrawText(context.Shaper.Shape(font, Text, Japanese), font, 20, atlas, 15, 15 + 23.2f, Ink, aliased: aliased);
             direct.ResolveGlyphs(atlas);
             List<string> directGlyphs = Glyphs(direct);
             Color[] written = Draw(renderer, direct, width, height, atlas);

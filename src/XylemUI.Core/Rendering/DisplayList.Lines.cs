@@ -21,6 +21,7 @@ public sealed partial class DisplayList
     /// <param name="baseline">The line's baseline, in logical pixels from the top.</param>
     /// <param name="color">The text's color.</param>
     /// <param name="coverage">Grayscale, or ClearType where the window allows it.</param>
+    /// <param name="aliased">Whether the glyphs are bilevel, because the OS does not smooth fonts; the coverage is then grayscale.</param>
     internal void DrawLine(
         ReadOnlySpan<LaidGlyph> glyphs,
         ReadOnlySpan<FontRun> runs,
@@ -29,16 +30,17 @@ public sealed partial class DisplayList
         float x,
         float baseline,
         Color color,
-        GlyphCoverage coverage
+        GlyphCoverage coverage,
+        bool aliased
     )
     {
         if (_mode != 0)
         {
-            DrawLineInScope(glyphs, runs, size, atlas, x, baseline, color, coverage);
+            DrawLineInScope(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
         }
         else
         {
-            DrawLine<Outside>(glyphs, runs, size, atlas, x, baseline, color, coverage);
+            DrawLine<Outside>(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
         }
     }
 
@@ -51,8 +53,9 @@ public sealed partial class DisplayList
         float x,
         float baseline,
         Color color,
-        GlyphCoverage coverage
-    ) => DrawLine<Inside>(glyphs, runs, size, atlas, x, baseline, color, coverage);
+        GlyphCoverage coverage,
+        bool aliased
+    ) => DrawLine<Inside>(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
 
     // As DrawText<TScope>, with the pen in logical pixels and the font and size taken from each glyph's run.
     private void DrawLine<TScope>(
@@ -63,13 +66,20 @@ public sealed partial class DisplayList
         float x,
         float baseline,
         Color color,
-        GlyphCoverage coverage
+        GlyphCoverage coverage,
+        bool aliased
     )
         where TScope : struct, IScope
     {
         if (glyphs.IsEmpty || (TScope.In && !(_textScale > 0)))
         {
             return;
+        }
+
+        // Bilevel glyphs have no ClearType coverage (TextRenderingParameters makes it grayscale when the OS does not smooth fonts).
+        if (aliased)
+        {
+            coverage = GlyphCoverage.Gray;
         }
 
         if (TScope.In && coverage == GlyphCoverage.Rgb && TextIsGray)
@@ -93,8 +103,9 @@ public sealed partial class DisplayList
             FontRun run = runs[laid.Run];
             float pixelSize = size * run.Scale * toPixels;
             float position = originX + ((pen + laid.OffsetX) * toPixels);
-            int pixel = GlyphPosition.Snap(position, out int subpixel);
-            var key = new GlyphKey(run.Font, laid.GlyphId, pixelSize, subpixel, coverage);
+            int subpixel = 0;
+            int pixel = aliased ? GlyphPosition.Round(position) : GlyphPosition.Snap(position, out subpixel);
+            var key = new GlyphKey(run.Font, laid.GlyphId, pixelSize, subpixel, coverage, Aliased: aliased);
             int row = (int)MathF.Round(originY - (laid.OffsetY * toPixels));
             GlyphLookup lookup = atlas.Lookup(key, color.Packed, out AtlasGlyph glyph);
             if (lookup == GlyphLookup.Found && glyph.Width > 0)

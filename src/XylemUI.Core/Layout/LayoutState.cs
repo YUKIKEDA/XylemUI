@@ -79,12 +79,6 @@ internal struct LayoutState
     public Edges Border;
 
     /// <summary>
-    /// The padding and border widths the last layout run resolved, in logical pixels: the content box is the border box less
-    /// them. The draw stage places a text leaf's lines in it.
-    /// </summary>
-    public Edges PaddingBorder;
-
-    /// <summary>
     /// The border box of the last layout run, relative to the parent's border box.
     /// </summary>
     public Rect Rect;

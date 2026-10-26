@@ -437,7 +437,6 @@ internal static partial class LayoutEngine
         {
             node.Layout.Rect = default;
             node.Layout.Border = default;
-            node.Layout.PaddingBorder = default;
             OnRectChanged(tree, handle);
         }
 

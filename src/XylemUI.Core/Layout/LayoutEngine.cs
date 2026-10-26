@@ -394,7 +394,11 @@ internal static partial class LayoutEngine
         float basis =
             !firstChild.IsNone && style.Algorithm is LayoutAlgorithm.Block ? Maybe.Or(input.ParentSize.Width, size.Width) : input.ParentSize.Width;
         n.Layout.Border = EdgeInsets.ResolveOrZero(style.Border, basis);
-        n.Layout.PaddingBorder = PaddingBorder(in style, basis);
+        if (n.Text is { } leaf)
+        {
+            leaf.PaddingBorder = PaddingBorder(in style, basis);
+        }
+
         n.Layout.LastInput = input;
         n.Layout.WasLaidOut = true;
         n.Layout.FirstBaseline = baseline;

@@ -11,7 +11,7 @@ namespace XylemUI.E2E;
 // --shapes, --curves, and --groups change the scene's rectangles (rows R4a, R4b, and R4c, Scene.Build); --scopes puts them in clips
 // and transforms (row R4d). --tree draws the plain scene from a UI tree with WindowFrames (row V1b, TreeScene): build_ms is then the
 // draw stage (the display list from the tree and its glyphs), layout_ms the layout pass after the boxes moved, and cpu_frame_ms
-// leaves the layout out.
+// leaves the layout out. --no-text leaves the line of text out of either scene, so that the draw stages compare the boxes alone.
 internal static class Frames
 {
     public static int Run(
@@ -25,12 +25,13 @@ internal static class Frames
         int layers = 50,
         string scopes = "",
         int nested = 0,
-        bool tree = false
+        bool tree = false,
+        bool noText = false
     )
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
-        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font) : null;
+        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText) : null;
         var layout = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
@@ -67,7 +68,7 @@ internal static class Frames
             }
             else
             {
-                scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested);
+                scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested, noText);
                 t1 = Stopwatch.GetTimestamp();
                 scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
                 t2 = Stopwatch.GetTimestamp();
@@ -115,6 +116,7 @@ internal static class Frames
         report.Text("groups", groups ? "yes" : "no");
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
         report.Text("tree", tree ? "yes" : "no");
+        report.Text("text", noText ? "no" : "yes");
         report.Number("nested", nested);
         report.Number("layers", scene.Renderer.LayerCount);
         report.Number("layer_bytes", scene.Renderer.LayerBytes);

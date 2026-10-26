@@ -23,6 +23,8 @@ internal sealed class WindowFrames
     private readonly Action _runFrame;
     private readonly DisplayList _list = new();
     private float _scale = 1;
+    private TextRenderingParameters _textRendering;
+    private bool _resizing;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WindowFrames"/> class, and asks the scheduler for a frame whenever the tree
@@ -34,7 +36,7 @@ internal sealed class WindowFrames
     /// <param name="atlas">The glyph atlas the target draws glyphs from.</param>
     /// <param name="scheduler">The frame scheduler of the UI thread.</param>
     /// <param name="clearColor">The color behind the tree.</param>
-    /// <param name="textCoverage">Grayscale, or ClearType where the window allows it.</param>
+    /// <param name="textRendering">How the window draws text (<see cref="TextRendering"/>); the OS's defaults when not given.</param>
     public WindowFrames(
         UiTree tree,
         NodeHandle root,
@@ -42,7 +44,7 @@ internal sealed class WindowFrames
         GlyphAtlas atlas,
         IFrameScheduler scheduler,
         Color clearColor,
-        GlyphCoverage textCoverage = GlyphCoverage.Gray
+        TextRenderingParameters? textRendering = null
     )
     {
         ArgumentNullException.ThrowIfNull(tree);
@@ -55,7 +57,7 @@ internal sealed class WindowFrames
         _atlas = atlas;
         _scheduler = scheduler;
         ClearColor = clearColor;
-        TextCoverage = textCoverage;
+        _textRendering = textRendering ?? TextRenderingParameters.Default;
         _runFrame = RunFrame;
         tree.FrameNeeded = RequestFrame;
     }
@@ -66,9 +68,22 @@ internal sealed class WindowFrames
     public Color ClearColor { get; }
 
     /// <summary>
-    /// Gets the coverage the frames draw text with.
+    /// Gets or sets how the window draws text: grayscale or ClearType, and bilevel where the OS does not smooth fonts (design
+    /// §5.0.3). The window sets it again when its value changes (<c>Win32Window.TextRenderingChanged</c>, row T2), and the next
+    /// frame draws the whole tree again with it.
     /// </summary>
-    public GlyphCoverage TextCoverage { get; }
+    public TextRenderingParameters TextRendering
+    {
+        get { return _textRendering; }
+        set
+        {
+            if (value != _textRendering)
+            {
+                _textRendering = value;
+                Invalidation.Invalidate(_tree, _root, ChangeKind.Color);
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the number of frames that drew and presented.
@@ -86,9 +101,14 @@ internal sealed class WindowFrames
     /// </summary>
     public void RunFrame()
     {
-        _tree.ClearFrameRequest();
         bool layout = _tree.LayoutRoots.Count > 0;
         LayoutEngine.RunLayoutPass(_tree);
+
+        // Cleared after the pass: the requests a pass puts back after an exception, or leaves at its cycle limit, ask for no frame
+        // of their own, and are tried by the next frame something else asks for (design §2.4.1); a leaf that keeps throwing would
+        // otherwise draw and present every frame (PR #313's review). A mark made from here on asks for the next frame.
+        _tree.ClearFrameRequest();
+        _resizing = false;
         if (!layout && _tree.PaintUpdates.Count == 0)
         {
             return;
@@ -120,12 +140,21 @@ internal sealed class WindowFrames
     /// <param name="scale">The window's scale, from logical to physical pixels.</param>
     public void Resize(Size size, float scale)
     {
+        // The new size's layout request would ask for a frame; this one runs it now, so no other is asked for until the frame
+        // clears the request (RunFrame), after which a mark asks for the next one as usual.
+        _resizing = true;
         _scale = scale;
         Invalidation.NotifyWindowResized(_tree, _root, size);
         RunFrame();
     }
 
-    private void RequestFrame() => _scheduler.RequestFrame(_runFrame);
+    private void RequestFrame()
+    {
+        if (!_resizing)
+        {
+            _scheduler.RequestFrame(_runFrame);
+        }
+    }
 
     // A node and its subtree, in tree order: the shadow, the background and border, the draw function, the text, then the
     // children. The refs are taken again after each call that can run the user's code (design §2.5).
@@ -149,7 +178,7 @@ internal sealed class WindowFrames
         ref UiNode after = ref _tree.Nodes.GetRef(handle);
         if (after.Text is { } text)
         {
-            Edges inset = after.Layout.PaddingBorder;
+            Edges inset = text.PaddingBorder;
             DrawText(text, x + inset.Left, y + inset.Top);
         }
 
@@ -205,7 +234,8 @@ internal sealed class WindowFrames
                 x,
                 top + baseline,
                 text.Color,
-                TextCoverage
+                _textRendering.Coverage,
+                _textRendering.IsAliased
             );
             top += height;
         }

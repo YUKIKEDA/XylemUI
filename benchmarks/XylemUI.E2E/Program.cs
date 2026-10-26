@@ -14,7 +14,8 @@
 //                              --scopes cards|rect|rounded|rotated|nested|nested-heavy|zoom|zoom-still puts them in clips
 //                              and transforms (cards and zoom-still are the scenes without them to compare with), with
 //                              --nested N rounded clips for nested and nested-heavy, row R4d)
-//                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b)
+//                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b; --no-text leaves
+//                              the line of text out)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
@@ -68,7 +69,8 @@ return scenario switch
         layers: Array.IndexOf(args, "--layers") is int layersAt and >= 0 ? Number(layersAt + 1, 50) : 50,
         scopes: Scopes(),
         nested: Array.IndexOf(args, "--nested") is int nestedAt and >= 0 ? Number(nestedAt + 1, 0) : 0,
-        tree: args.Contains("--tree")
+        tree: args.Contains("--tree"),
+        noText: args.Contains("--no-text")
     ),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),

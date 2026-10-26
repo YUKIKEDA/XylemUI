@@ -20,7 +20,7 @@ internal sealed class TreeScene : IDisposable
     private readonly WindowFrames _frames;
     private readonly TimingTarget _target;
 
-    public TreeScene(Scene scene, Font font)
+    public TreeScene(Scene scene, Font font, bool noText)
     {
         _scene = scene;
         _text = new TextContext(new OneFont(font));
@@ -35,17 +35,22 @@ internal sealed class TreeScene : IDisposable
         }
 
         // The scene draws the line at the baseline 30; the leaf's top is its ascent above (the test font's 1160 in 1000 units per em).
-        NodeHandle line = _tree.CreateTextNode(
-            Place(60, 30 - (24 * 1.16f), float.NaN, float.NaN),
-            new TextStyle(FontRequest.Default, 24, TextLanguage.FromTag("ja"), float.NaN)
-        );
-        _tree.SetText(line, Scene.Line);
-        _tree.SetTextColor(line, Color.FromRgb(0xE8E8E8));
-        _tree.AppendChild(_root, line);
+        if (!noText)
+        {
+            NodeHandle line = _tree.CreateTextNode(
+                Place(60, 30 - (24 * 1.16f), float.NaN, float.NaN),
+                new TextStyle(FontRequest.Default, 24, TextLanguage.FromTag("ja"), float.NaN)
+            );
+            _tree.SetText(line, Scene.Line);
+            _tree.SetTextColor(line, Color.FromRgb(0xE8E8E8));
+            _tree.AppendChild(_root, line);
+        }
+
         _hidden = _tree.CreateNode(new LayoutStyle { Hidden = true });
         _tree.AppendChild(_root, _hidden);
         _target = new TimingTarget(scene);
-        _frames = new WindowFrames(_tree, _root, _target, scene.Atlas, new NoScheduler(), scene.Clear, scene.Coverage);
+        _frames = new WindowFrames(_tree, _root, _target, scene.Atlas, new NoScheduler(), scene.Clear, scene.Renderer.TextRendering);
+        scene.Window.TextRenderingChanged += (_, _) => _frames.TextRendering = scene.Renderer.TextRendering;
         float scale = scene.Window.ScaleFactor;
         _frames.Resize(new Size(scene.Renderer.Width / scale, scene.Renderer.Height / scale), scale);
     }

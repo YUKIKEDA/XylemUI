@@ -121,7 +121,7 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
     /// - 200 frames each: one child's background between two colors; the window between two sizes; nothing changed.
     ///
     /// Expected:
-    /// - 0 bytes on this thread in each loop.
+    /// - 0 bytes on this thread in each loop (in windows of 20 frames, with the methods compiled and the collections in each).
     /// </remarks>
     [Fact]
     public void SteadyState_Frames_AllocateNothing() =>
@@ -144,13 +144,15 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
             var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
             frames.Resize(new Size(200, 500), 1);
 
-            void Colors(int i)
+            // The allocation check hands its unmeasured window negative indices; the shift keeps them in range.
+            void Colors(int index)
             {
-                tree.SetBackground(children[i % 100], new Paint(i % 2 == 0 ? Red : Gray));
+                int i = index + 1_000;
+                tree.SetBackground(children[i % 100], new Paint((i / 100) % 2 == 0 ? Red : Gray));
                 scheduler.Run();
             }
 
-            void Sizes(int i) => frames.Resize(new Size(i % 2 == 0 ? 200 : 180, 500), 1);
+            void Sizes(int index) => frames.Resize(new Size((index + 1_000) % 2 == 0 ? 200 : 180, 500), 1);
 
             void Nothing(int i) => frames.RunFrame();
 
@@ -162,9 +164,112 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
                 }
             }
 
-            Assert.Equal(0, Allocated(Colors));
-            Assert.Equal(0, Allocated(Sizes));
-            Assert.Equal(0, Allocated(Nothing));
+            SteadyStateAllocation.AssertNone(200, Colors);
+            SteadyStateAllocation.AssertNone(200, Sizes);
+            SteadyStateAllocation.AssertNone(200, Nothing);
+        });
+
+    /// <summary>
+    /// A leaf whose measurement keeps throwing does not keep the frames going: the request the layout pass puts back asks for no
+    /// frame, and is tried by the next frame something else asks for. A resize asks for no frame beyond the one it runs.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A root with a box child and a leaf whose measure function throws while a flag is set; a handler that records reports; a
+    ///   counting target and scheduler. Laid out once (Resize) with the flag clear.
+    ///
+    /// Steps:
+    /// - Resize again once the frames ran; check the scheduler's requests after it. Set the flag; invalidate the leaf; run the frame it asked for. Run the
+    ///   scheduler again. Then set the box's background and run the frame it asked for.
+    ///
+    /// Expected:
+    /// - The second resize asked for no frame beyond the one it ran. The failing frame was reported once and asked for no further frame (the second run does
+    ///   nothing). The background asks for one frame, which presents and tries the leaf again (a second report is counted, not
+    ///   reported).
+    /// </remarks>
+    [Fact]
+    public void LeafThatKeepsThrowing_DoesNotKeepTheFramesGoing() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, NodeHandle box) = Boxes();
+            bool fail = false;
+            NodeHandle leaf = tree.CreateNode(
+                new LayoutStyle(),
+                (_, _) => fail ? throw new InvalidOperationException("Thrown from a measure function on purpose.") : MeasureResult.Of(10, 10)
+            );
+            tree.AppendChild(root, leaf);
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
+            var reported = new List<Exception>();
+            Action<Exception> previous = ReactiveRuntime.UnhandledExceptionHandler;
+            ReactiveRuntime.UnhandledExceptionHandler = reported.Add;
+            try
+            {
+                frames.Resize(new Size(200, 100), 1);
+                scheduler.Run();
+                scheduler.Requests = 0;
+                frames.Resize(new Size(180, 100), 1);
+                Assert.Equal(0, scheduler.Requests);
+
+                fail = true;
+                Invalidation.Invalidate(tree, leaf, ChangeKind.Size);
+                Assert.Equal(1, scheduler.Requests);
+                scheduler.Run();
+                Assert.Single(reported);
+                Assert.Equal(1, scheduler.Requests);
+                int presents = target.Presents;
+                scheduler.Run();
+                Assert.Equal(presents, target.Presents);
+
+                tree.SetBackground(box, new Paint(Red));
+                Assert.Equal(2, scheduler.Requests);
+                scheduler.Run();
+                Assert.Equal(presents + 1, target.Presents);
+                Assert.Single(reported);
+                Assert.Equal(1, tree.SuppressedLayoutExceptions);
+                Assert.Equal(2, scheduler.Requests);
+            }
+            finally
+            {
+                ReactiveRuntime.UnhandledExceptionHandler = previous;
+            }
+        });
+
+    /// <summary>
+    /// A new way of drawing text (the window's ClearType or smoothing setting changed) asks for a frame, which draws the tree
+    /// again; the same value asks for none.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - As in the first test, laid out once.
+    ///
+    /// Steps:
+    /// - Set the frames' text rendering to the value it has; then to one with bilevel glyphs; run the frame asked for.
+    ///
+    /// Expected:
+    /// - The same value asks for no frame; the new one asks for one, which presents.
+    /// </remarks>
+    [Fact]
+    public void NewTextRendering_DrawsTheTreeAgain() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, NodeHandle box) = Boxes();
+            tree.SetBackground(box, new Paint(Gray));
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
+            frames.Resize(new Size(200, 100), 1);
+            int presents = target.Presents;
+
+            frames.TextRendering = frames.TextRendering;
+            Assert.Equal(0, scheduler.Requests);
+            frames.TextRendering = frames.TextRendering with { IsAliased = true };
+            Assert.Equal(1, scheduler.Requests);
+            scheduler.Run();
+            Assert.Equal(presents + 1, target.Presents);
         });
 
     /// <summary>
@@ -226,17 +331,6 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
                 Assert.Equal(n.Layout.Border.Top, child.Y);
             }
         });
-
-    private static long Allocated(Action<int> loop)
-    {
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 200; i++)
-        {
-            loop(i);
-        }
-
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
 
     private static (UiTree Tree, NodeHandle Root, NodeHandle Box) Boxes()
     {
