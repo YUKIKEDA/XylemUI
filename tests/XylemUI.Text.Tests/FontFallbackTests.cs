@@ -37,6 +37,47 @@ public sealed class FontFallbackTests
     }
 
     /// <summary>
+    /// Threads that ask for the bundled font at once get the same font (Issue #303).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - 16 threads held at a barrier. When this test is the first of the process to ask, the threads race to open the font; when
+    ///   another test asked before, they read it.
+    ///
+    /// Steps:
+    /// - Release the threads; each reads FontFallback.Bundled.
+    ///
+    /// Expected:
+    /// - The 16 fonts are one instance, which is not disposed.
+    /// </remarks>
+    [Fact]
+    public void Bundled_AskedByManyThreadsAtOnce_IsOneFont()
+    {
+        const int Threads = 16;
+        var fonts = new Font[Threads];
+        using var barrier = new Barrier(Threads);
+        var threads = new Thread[Threads];
+        for (int i = 0; i < Threads; i++)
+        {
+            int index = i;
+            threads[i] = new Thread(() =>
+            {
+                barrier.SignalAndWait();
+                fonts[index] = FontFallback.Bundled;
+            });
+            threads[i].Start();
+        }
+
+        foreach (Thread thread in threads)
+        {
+            thread.Join();
+        }
+
+        Assert.All(fonts, font => Assert.Same(fonts[0], font));
+        Assert.False(fonts[0].IsDisposed);
+    }
+
+    /// <summary>
     /// The split takes each match of the provider in order, joins neighbouring matches of the same font and scale, and puts a
     /// range without a font into the bundled font.
     /// </summary>

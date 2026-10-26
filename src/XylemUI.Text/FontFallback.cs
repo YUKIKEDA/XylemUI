@@ -8,13 +8,16 @@ namespace XylemUI.Text;
 /// </summary>
 public static class FontFallback
 {
-    private static Font? _bundled;
+    // Opened once, whichever thread asks first: with `??=`, two threads asking together each opened one, and the font that
+    // lost had an id of its own (Issue #303).
+    private static readonly Lazy<Font> BundledFont = new(OpenBundled, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// Gets the bundled fallback font, opened from the assembly the first time: printable ASCII and a <c>.notdef</c> glyph one em
-    /// wide (<c>Fonts/README.md</c>). It lives as long as the process and is shared by every caller, so do not dispose it.
+    /// wide (<c>Fonts/README.md</c>). It is opened once, when threads ask for it together too. It lives as long as the process
+    /// and is shared by every caller, so do not dispose it.
     /// </summary>
-    public static Font Bundled => _bundled ??= OpenBundled();
+    public static Font Bundled => BundledFont.Value;
 
     /// <summary>
     /// Returns the font for the characters of <paramref name="text"/> from <paramref name="start"/>: the provider's, or the
