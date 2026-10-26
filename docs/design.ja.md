@@ -561,7 +561,7 @@ internal struct InvalidationBoundary
 // record struct の値等価性をそのままキャッシュ判定に使う。AvailableSpace も IEquatable な struct とする
 internal readonly record struct LayoutCacheKey(
     AvailableSpace AvailableSpace,
-    ulong LayoutStyleVersion,       // NodeVersions.LayoutStyle（PaintProps は含めない）
+    ulong LayoutStyleVersion,       // NodeVersions.LayoutStyle（描画の状態の `NodeVisual` と文字の色は含めない）
     ulong ChildStructureVersion,    // NodeVersions.Children（子の追加/削除/並び替え）
     ulong DescendantLayoutVersion); // NodeVersions.DescendantLayout（子孫のいずれかのrectが実際に変化）
 
@@ -941,7 +941,7 @@ internal struct UiNode
     public DirtyState Dirty;
     public LayoutState Layout;
     public TextLeaf? Text;               // 文字の葉だけが持つ（§3.2「文字の葉」、V1a）
-    public PaintState Paint;
+    public NodeVisual? Visual;           // 箱の見た目と描く関数を持つノードだけ（§5.0「描画の段とフレームの駆動」、V1b）
     public InteractionState Interaction;
     public SemanticsState Semantics;
     public NodeVersions Versions;        // キャッシュ妥当性判定（§11.5.2）
@@ -954,11 +954,6 @@ internal struct DirtyState
     public ulong Epoch;
 }
 
-
-internal struct PaintState
-{
-    public PaintProps Props;             // 色・角丸等（アニメーション補間値もここ）
-}
 
 internal struct InteractionState
 {
@@ -1021,7 +1016,7 @@ public static Element Show(IReadOnlySignal<bool> when, TimeSpan? exit, Func<Elem
 {
     // whenがfalseになった瞬間: ShowStateをExitingへ遷移させ、
     //   1. このサブツリーのReactive graph購読を即座に切断する（ビジネスロジックの再計算を止める）
-    //   2. 直前の描画状態（PaintState）をFreezeし、以降はペイントプロパティ（opacity/transform）
+    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降はペイントプロパティ（opacity/transform）
     //      のみをアニメーションさせる
     //   3. exit期間終了時にScopeArena.Disposeする
     // Exiting中にwhenがtrueに戻った場合: サブツリーを復帰させ(Enteringへ)、購読を再接続する
@@ -1050,7 +1045,7 @@ subscribe（Reactive graphへの再登録）
   ↓
 initial synchronization（現在のSignal値から関連Computed/Effectを即時再評価）
   ↓
-dirty? （再評価の結果、前回のPaintState Freeze時点と値が異なっていればdirty）
+dirty? （再評価の結果、前回の描画状態の Freeze 時点と値が異なっていればdirty）
   ↓
 MarkDirty(§2.4) → 通常のInvalidation〜Layout/Paintパイプラインに合流
 ```
@@ -1062,7 +1057,7 @@ MarkDirty(§2.4) → 通常のInvalidation〜Layout/Paintパイプラインに�
 | 層                | 該当する状態                                                                                                                     | hidden/exiting中の扱い                                                                                                                                                                                                                               |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Logical state     | Signal値、ローカル変数、スクロール位置、選択範囲                                                                                 | 常に保持（メモリコストが小さい）                                                                                                                                                                                                                     |
-| Visual state      | PaintState（§2.5）、アニメーション補間値                                                                                         | 保持しFreeze（§2.7既存の方針通り）                                                                                                                                                                                                                   |
+| Visual state      | 描画状態（`NodeVisual` と文字の色、§5.0）、アニメーション補間値                                                                                         | 保持しFreeze（§2.7既存の方針通り）                                                                                                                                                                                                                   |
 | External resource | native window handle（§2.12）、GPUテクスチャ（§5.0.2のResourceManager）、IMEコンテキスト、a11yノード（§4.4.1）、イベントリスナー | `exiting`中は保持（即座の復帰性を優先）、`exit`タイマー満了によるdispose時に明示的に解放する。ただしGPUテクスチャ等メモリコストの大きいリソースは、`exiting`が一定時間（実装時にチューニング）継続した場合に先行解放し、復帰時に再取得する余地を残す |
 
 - `For<T, TKey>(IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key, Func<T, Element> render)`: create/reuse/move/removeを明示的に扱うreconciliation primitive。並び替え（例: `[A,B,C]`→`[C,A,B]`）では`UiNode`実体を作り直さず**アリーナ内の位置(`FirstChild`/`NextSibling`リンク)だけ動かす**。`key`→`NodeHandle`のマッピング（`Dictionary<TKey, NodeHandle>`）を保持し、リスト更新時に以下の4操作を分けて処理する。
@@ -1238,7 +1233,7 @@ sequenceDiagram
 **V1 の分け方（V1 の Grill でオーナーが決定、Issue #280）:** 行 V1 を次の 4 つに分け、この順に入れる。その前に、改行の行 T1 を入れる（文字の葉が最初から折り返し、§3.2 の 2 段のキャッシュの形で作れるため）。各行は、Grill → 設計の PR → 実装の順で進める。
 
 - **V1a 文字の葉:** `TextShaper` と T1 の改行を使う計測関数、`ShapedTextCache` と `LineBreakCache`（§3.2）、文字の行の高さ、10,101 個の文字の葉のリサイズ（§11.3）、計測関数の例外の報告。設計は §3.2「文字の葉」と §2.4.1「layout 中の例外」（V1a の Grill、Issue #296）
-- **V1b 描画の段とフレームの駆動:** ノードの描く関数、木を絶対座標でたどって `DrawingContext` を作る順と段、`PaintUpdates`、`Hidden` の部分木を飛ばすこと、effect → レイアウト → 描画 → Render のフレームの予約、変わらないフレームは Present しないこと
+- **V1b 描画の段とフレームの駆動:** ノードの描く関数、木を絶対座標でたどって `DrawingContext` を作る順と段、`PaintUpdates`、`Hidden` の部分木を飛ばすこと、effect → レイアウト → 描画 → Render のフレームの予約、変わらないフレームは Present しないこと。設計は §5.0「描画の段とフレームの駆動」（V1b の Grill、Issue #308）
 - **V1c 入力:** Win32 のマウスとポインタのイベントの型、ヒットテストと capture・bubble、ホバーと押下の擬似状態、遮る印、ハンドラに渡す座標を倍率で割ること
 - **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプル。受け入れは、§10.5 の MoonBit 版の V1 と同じ到達点（ボタンの中心の画素、クリックで数が増えること、変わらないフレームで Present しないこと）を、同じ判定基準（各段階 4 問 Yes）で確かめる
 
@@ -1735,7 +1730,7 @@ public void SetText(NodeHandle node, ReadOnlySpan<char> text);             // Se
 public void SetTextStyle(NodeHandle node, TextStyle style);
 ```
 
-- **`TextStyle` は layout に効くものだけ:** フォントの指定・大きさ・言語・行の高さの倍率を持ち、色は持たない。色は描画の状態で、行 V1b で入れる。比べた 3 つは、色も同じ型に入れる（Flutter 3.47.8 の `TextStyle.color`、`text_style.dart` 544 行目。Avalonia 12.1.4 の `TextRunProperties.ForegroundBrush`、`TextRunProperties.cs` 35 行目。GPUI（zed v1.25.3）の `TextStyle.color`、`style.rs` 438〜440 行目）。同じ型に入れると、色だけが変わったときに layout を飛ばすには、型の中の欄ごとに比べることになる。分けておけば、`TextStyle` の等しさだけで決まる。1 つの文章の中の範囲ごとのスタイルは、行 D9 で決める。`ShapingResult.Shape` は run の並びを受け取るので、範囲ごとのフォントは後から足せる。`Size` と `LineHeight` が範囲の外なら、`CreateTextNode` と `SetTextStyle` が `ArgumentOutOfRangeException` を投げる
+- **`TextStyle` は layout に効くものだけ:** フォントの指定・大きさ・言語・行の高さの倍率を持ち、色は持たない。色は描画の状態で、`TextLeaf.Color` に持つ（§5.0「描画の段とフレームの駆動」、V1b）。比べた 3 つは、色も同じ型に入れる（Flutter 3.47.8 の `TextStyle.color`、`text_style.dart` 544 行目。Avalonia 12.1.4 の `TextRunProperties.ForegroundBrush`、`TextRunProperties.cs` 35 行目。GPUI（zed v1.25.3）の `TextStyle.color`、`style.rs` 438〜440 行目）。同じ型に入れると、色だけが変わったときに layout を飛ばすには、型の中の欄ごとに比べることになる。分けておけば、`TextStyle` の等しさだけで決まる。1 つの文章の中の範囲ごとのスタイルは、行 D9 で決める。`ShapingResult.Shape` は run の並びを受け取るので、範囲ごとのフォントは後から足せる。`Size` と `LineHeight` が範囲の外なら、`CreateTextNode` と `SetTextStyle` が `ArgumentOutOfRangeException` を投げる
 - **計測の呼び方:** layout は、`UiNode.Text` が null でない葉を文字の葉として、`MeasureFunc` と `IntrinsicWidthsFunc` を通さずに文字の計測を直接呼ぶ。葉ごとに closure を作ると、10,101 個の葉が 10,101 個の closure を持ち、呼ぶたびに間接呼び出しと、handle からのノードの引き直しが入る。Taffy の `compute_layout_with_measure` は計測にノードの文脈を渡す （Taffy v0.15.1 の `taffy_tree.rs` 971〜978 行目、`MeasureFunction` は `NodeId` と `Option<&mut NodeContext>` を受け取る）。Flutter の `RenderParagraph` も、自分の `performLayout` の中で `TextPainter` を測る（Flutter 3.47.8 の `paragraph.dart` 900〜904・956〜966 行目）。利用者が書く計測関数は、今のまま `MeasureFunc` と `IntrinsicWidthsFunc` で受ける。文字の葉は内容の幅を返す葉として扱うので、L5 の「親で止める」が効く。Debug のビルドの内容の幅と計測の突き合わせ（L4）も、文字の葉に同じく掛ける
 - **文字の葉の状態は参照 1 つ:** `UiNode` は `TextLeaf?` を 1 つ持つ（8 バイト）。V1a の前の設計の `TextState` の struct（§2.5 にあった）をそのまま埋め込むと、参照 3 つ（24 バイト）、長さと詰め物（8 バイト）、`TextStyle`（約 40 バイト）で、文字の葉でないノードも約 72 バイト大きくなる。Flutter の `RenderParagraph` も、文字を持つ箱だけが文字の状態を持つ
 - **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
@@ -1746,7 +1741,7 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
   - 幅の項目 1 つ: 64L + 24g バイト。内訳は、行の範囲 12L（`LineSpan`）、並べた行 28L（`LaidLine`）、グリフ 24(g + L)。改行した行のハイフンで、グリフは 1 行に 1 つまで増える
   - 内容のバッファ: 2n バイト
   - `resize-text` の葉（「日本語のテキスト」、n = g = b = 8、r = L = e = 1）では 384 + 256 + 16 = 656 バイトになる。これに、配列 14 個とオブジェクト 7 個（`TextLeaf`、2 段のキャッシュ、`ShapingResult`、項目、`LineBreakResult`、`LineLayoutResult`）の頭が加わる
-- **確定した幅:** layout の確定（commit）で使った幅の項目に印を付け、`LineBreakCache` の上書きの候補から外す（上書きするのは残りの 3 つの最も古いもの）。描画（行 V1b）は印の付いた項目を読み、測り直さない。印は次の確定で動く。Flutter の `RenderParagraph` の `paint` は、`performLayout` の後に計測が捨てられた場合に備えて、同じ制約で `_layoutTextWithConstraints` をもう一度呼ぶ（`paragraph.dart` 1030〜1034 行目）。`TextPainter.layout` は、持っている結果が制約に合えばすぐ戻る（`text_painter.dart` 1229〜1231 行目）。XylemUI では、確定した幅の項目が上書きされないので、描画のときに合うかを確かめずに読める
+- **確定した幅:** layout の確定（commit）で使った幅の項目に印を付け、`LineBreakCache` の上書きの候補から外す（上書きするのは残りの 3 つの最も古いもの）。描画（§5.0「描画の段とフレームの駆動」、V1b）は印の付いた項目を読み、測り直さない。印は次の確定で動く。Flutter の `RenderParagraph` の `paint` は、`performLayout` の後に計測が捨てられた場合に備えて、同じ制約で `_layoutTextWithConstraints` をもう一度呼ぶ（`paragraph.dart` 1030〜1034 行目）。`TextPainter.layout` は、持っている結果が制約に合えばすぐ戻る（`text_painter.dart` 1229〜1231 行目）。XylemUI では、確定した幅の項目が上書きされないので、描画のときに合うかを確かめずに読める
 - **返す大きさ:** 幅は、行末の空白を除いた最も広い行の幅。高さは行の高さの合計。最初のベースラインは最初の行のもの（`MeasureResult.FirstBaseline`）。内容が空の葉は、幅が 0 で、1 行の高さを持つ。その行のフォントは、要求のフォントで空白（U+0020）を引いたもの（`FontFallback.ResolveWithFallback`）。強制改行の後の空の行は、改行の文字の run のフォントで高さを決める。skparagraph も、空の文章に、スタイルのフォントの 1 行の高さを与える（`ParagraphImpl.cpp` 173〜186・1040〜1066 行目）
 - **行の高さ:** 1 行の高さは、その行で使ったフォント（フォールバックを含む）の ascent・descent・lineGap の、それぞれの最大の和。lineGap は上下に半分ずつ配る（half-leading）。`LineHeight` を指定したときは、`Size × LineHeight` を行の高さとし、ascent + descent との差を上下に半分ずつ配る。最初のベースラインは、行の上端から半分の余白 + ascent。フォントの値は HarfBuzz の `hb_font_get_h_extents`（`hb_font_extents_t` の `ascender`・`descender`・`line_gap`。descender は負、HarfBuzz 14.5.1 の `hb-font.h` 、94〜108・915〜917 行目）から em あたりの値として読み、`Font` に足す。run の大きさ（`Size` と、フォールバックの `FontMatch.Scale`）を掛けて使う。比べた 3 つのうち、Flutter（Skia 8df24be の skparagraph）と Avalonia は lineGap を行の高さに入れる。Avalonia 12.1.4 は、行の高さを descent − ascent + lineGap とし、ベースラインを lineGap の半分だけ下げる（`TextLineImpl.cs` 1417〜1439 行目）。`LineHeight` の扱いも、上の XylemUI の形と同じ（同じ行）。skparagraph も lineGap の半分を ascent の上に置く（`Run.cpp` 64〜84 行目）。倍率を指定したときの配り方は 2 通りある。既定では ascent と descent を同じ比で伸ばし、`TextLeadingDistribution.even`（`fUseHalfLeading`）のときだけ半分ずつ配る。XylemUI は Avalonia と、Flutter の `even` の形をとる。同じ比で伸ばすと、倍率を上げるほど文字が行の下へ寄る。GPUI（zed v1.25.3）は lineGap を読まず、既定の行の高さを大きさ × 1.618 とする（`geometry.rs` 3722〜3724 行目の `phi()`、`style.rs` 494 行目）。そのため、フォントによって行が詰まりすぎたり空きすぎたりする。skparagraph（`Run.h` 483〜485 行目）と GPUI（`style.rs` 554〜556 行目）は、行の高さを整数に丸める。XylemUI は、ほかの葉の大きさと同じく、行の高さを論理ピクセルのまま丸めない
 - **例外:** §2.4.1 の「layout 中の例外」のとおり
@@ -2430,12 +2425,80 @@ public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
 - **ヒット領域と `DrawingContext`（R4e の Grill でオーナーが決定、Issue #272）:** GPUI・Flutter・Avalonia を読んで決めた（Issue #272 に行番号）
   - **書き方:** 描く関数は `DrawingContext.HitRegion` で当たりを明示する（GPUI の `insert_hitbox` と同じ形、`crates/gpui/src/window.rs` 5205 行目）。描いた命令から当たりを作らない（Avalonia は命令ごとに判定し、背景を描かない部品は当たらない）。レイアウトの矩形を当たりにもしない（Flutter の `CustomPainter.hitTest` の既定は矩形全体）。フレームワークの部品も、自分の箱（矩形と角の半径）を同じ `HitRegion` で書く
   - **書くノード:** ポインタのハンドラ・ホバー・カーソルを持つノードだけが書く（GPUI の `should_insert_hitbox`、`elements/div.rs` 2407〜2432 行目）。飾りのノードは後ろへのポインタを遮らない（GPUI と、Flutter の既定 `deferToChild`）。ハンドラが無くても遮る印（GPUI の `BlockMouse`、Flutter の `opaque`）は行 V1 で決める（ポップアップの行 P02 で、前面のノードが後ろを遮る場面に要る）。capture と bubble の経路は、当たったノードから木の親をたどって作る
-  - **呼ぶ時機:** 利用者の描く関数は、表示リストを作るたびに呼ぶ（§5.0.1 の全体線形再構築。GPUI と同じ）。ヒット領域も表示リストと一緒に作り直す。無効にされたときだけ呼んで命令を取っておく形（Avalonia、Flutter の `markNeedsPaint`）は採らない。重い描画を取っておく仕組み（Flutter の `RepaintBoundary`）は、要るという数字が出たら行を立てる。どのノードの関数を呼ぶかの順と段は、行 V1 の描画の段が作る（roadmap の行 V1 に書いた）
+  - **呼ぶ時機:** 利用者の描く関数は、表示リストを作るたびに呼ぶ（§5.0.1 の全体線形再構築。GPUI と同じ）。ヒット領域も表示リストと一緒に作り直す。無効にされたときだけ呼んで命令を取っておく形（Avalonia、Flutter の `markNeedsPaint`）は採らない。重い描画を取っておく仕組み（Flutter の `RepaintBoundary`）は、要るという数字が出たら行を立てる。どのノードの関数を呼ぶかの順と段は、§5.0「描画の段とフレームの駆動」で決めた（V1b の Grill、Issue #308）
   - **クリップと変換:** 項目は、ノードの矩形と角の半径を命令と同じ座標（物理画素、移動を足し、整数の画素の移動なら辺を画素に置いた値）で持ち、表示リストの状態の番号（R4d の `StateRecord`：変換、まとめた矩形、上限までの角丸）を持つ。クリップの層の中の項目は、層を重ねる状態も、グループの記録を通してたどる。描画と同じ値と同じ距離の式で判定するので、見える画素と当たりが一致する
   - **座標:** `HitRegion` は論理座標で受け取り、表示リストの命令と同じ倍率と丸めで物理画素の項目にする。`HitTest` は、Win32 のクライアント座標（物理画素）をそのまま受け取る。整数の座標は画素の左上の角を指すので、0.5 を足した画素の中心で判定する。描画が画素の覆いを決めるのと同じ点で、角のまま判定すると、右と下の辺の 1 画素外まで当たる（PR #277 のレビュー）。論理座標に割ってから掛け直すと、描画の画素の丸めと当たりが食い違うことがあるためである。§6.1.1 の「ポインター」の倍率で割る変換は、当たったノードのハンドラに渡す座標にだけ掛ける
   - **置き場:** 一覧は `DisplayList` の中に置き、同じ `Reset` とスコープの積み重ねを使う。ヒット領域だけを書いたスコープも「何も描かなかったスコープ」として捨てない
   - **確かめ方:** 点を 1 つずつ当て、CPU で計算した描画の覆い（0.5 以上）と一致する。覆いは、ノードの形とそれぞれのクリップについて別々に見る（距離が 0 以下）。画素の色は覆いの積なので、形の縁とクリップの縁が同じ画素を通る所では、色と当たりが半画素ほど違うことがある（R4e の実装で決めた）。端の場合として、角丸の角のすぐ外、回転した角丸のクリップの中、上限を超えた入れ子のクリップ（層）の中、拡大率 0 の変換の中（何も当たらない）、重なったノードの手前と奥を入れる。費用は、下の R4c・R4d の「確かめ方」の場面（ヒット領域も無い）に加えて、項目を書く費用（1 項目の ns）と 1,000 項目の判定の時間を測る。どれも割り当て 0。R4e の実装では、1 項目を書くのが約 21 ns（矩形 1 つは約 9 ns。項目が 56 バイトあり、半径を確かめて縮めるため）、1,000 項目の判定はスコープの外で約 9 µs、回転と角丸のクリップの中で約 39 µs だった（`docs/benchmarks/r4e-hits.md`）
 - **確かめ方:** WARP の画素を CPU の基準と比べる（R4a・R4b と同じ）。仕様の端の場合として、重なる子と重ならない子のグループ、入れ子のグループ、文字の入ったグループ、描き先の外へ大きく出る層と描き先の外だけにある層、プールの上限で作れない層、NaN と範囲外の不透明度、変換の中のクリップの辺と子の矩形の辺、上限を超える入れ子の角丸のクリップ、回転した変換の中の角丸のクリップとグリフ、整数と端数の平行移動の中の ClearType を入れる。費用は、層・クリップ・変換の無い場面（`frames`・`frames --shapes`・`frames --curves`）が main とばらつきの範囲で同じであることを確かめる
+
+**描画の段とフレームの駆動（V1b の Grill でオーナーが決定、Issue #308）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。木をたどって表示リストを作る段と、フレームを頼んで回す型を足す。型はすべて internal で、公開の API は行 V1d で決める。
+
+```csharp
+// 箱の見た目と描く関数。持つノードだけが UiNode.Visual に参照を持つ（見た目の無いノードは null）。
+// 木が、最初の setter のときに作ってノードに持たせる。呼び出し側は作らず、ほかのノードと分け合わない
+internal sealed class NodeVisual
+{
+    public BoxShadow? Shadow { get; internal set; }   // 影（R4a）
+    public Paint? Background { get; internal set; }   // 背景（色かグラデーション）
+    public CornerRadii Radii { get; internal set; }   // 角の半径
+    public Paint? BorderPaint { get; internal set; }  // 枠線の塗り。幅は LayoutStyle.Border（下の「枠線の幅」）
+    public DrawFunc? Draw { get; internal set; }      // 利用者の描く関数
+}
+
+internal delegate void DrawFunc(DrawingContext context, Rect bounds);   // bounds は絶対座標の箱（論理座標）
+
+// TextLeaf（§3.2「文字の葉」）に足す
+public Color Color;                          // 文字の色
+
+// UiTree に足す
+// 描画の状態の setter。前と等しい値なら何もしない（デリゲートは参照で比べるので、描く関数は同じ実体を渡し続ける）。
+// 違えば ChangeKind.Color で描画だけをやり直す。
+// 最初の 1 回だけ NodeVisual を作り、その後の変更は割り当てない
+public void SetShadow(NodeHandle node, BoxShadow? shadow);
+public void SetBackground(NodeHandle node, Paint? background);
+public void SetCornerRadii(NodeHandle node, CornerRadii radii);
+public void SetBorderPaint(NodeHandle node, Paint? paint);
+public void SetDraw(NodeHandle node, DrawFunc? draw);
+public void SetTextColor(NodeHandle node, Color color);       // 文字の葉でなければ InvalidOperationException
+internal Action? FrameNeeded;                // 印の無い状態から最初の印が付いたときに 1 回呼ぶ
+
+// 描く先。D3D11Renderer が実装する（Core から Rendering.D3D11 へ InternalsVisibleTo）
+internal interface IRenderTarget
+{
+    void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas);
+    void Present();
+}
+
+// ウィンドウ 1 つのフレームを動かす
+internal sealed class WindowFrames
+{
+    public WindowFrames(UiTree tree, NodeHandle root, IRenderTarget target, GlyphAtlas atlas, IFrameScheduler scheduler);
+    public void RunFrame();                                       // IFrameScheduler のコールバック
+    public void Resize(Size size, float scale);                   // 同期リサイズ（§2.11.1）
+}
+```
+
+- **ノードが描くもの:** 箱の見た目（影・背景・角の半径・枠線）はフレームワークが描き、利用者の自由な描画は描く関数で受ける。比べた 3 つも、箱の見た目はフレームワークが描く（Flutter の `RenderDecoratedBox`、`proxy_box.dart` 2473〜2512 行目。Avalonia の `Border.Render`、`Border.cs` 179〜189 行目。GPUI の `Style::paint`、`style.rs` 688〜753 行目）。自由な描画は別の口で受ける（Flutter の `CustomPaint`、GPUI の `canvas`）。文字の色は文字の葉が持ち、§3.2 の `TextStyle` には入れない（layout に効かないため）
+- **描画の状態の変え方:** 箱の見た目は、`UiTree` のフィールドごとの setter で変える。`NodeVisual` は木が最初の setter のときに作ってノードに持たせ、その後の変更は同じ実体のフィールドを書き換えるだけなので、割り当てない（ホバーの遷移のように毎フレーム色が変わる場面、§2.7）。呼び出し側は `NodeVisual` を作らず、書き換えもしない（setter が internal）。書き換えたのに印が付かない誤りと、1 つの実体を複数のノードで分け合う誤りを、型で防ぐ（PR #309 のレビュー）。`PaintStyle`（§2.13 の疑似状態）が重ねる背景・文字の色・枠線の色は、この `NodeVisual` と `TextLeaf.Color` の上に重ねる。不透明度と変換（`PaintStyle.Opacity`・`Transform`、§2.7 の退場のアニメーション）の持ち場所は、疑似状態を入れる行 V1c で決める
+- **枠線の幅:** 枠線の幅の持ち主は `LayoutStyle.Border` で、layout はこの幅で中身を置く。描画の段も同じ幅で枠線を描き、`NodeVisual` は塗り（`BorderPaint`）だけを持つ。2 か所に幅を持つと、枠線の太さと中身の位置がずれる（PR #309 のレビュー）。描画の段は幅を解き直さず、layout が確定（commit）したときに解いた枠線の幅を、確定した矩形と一緒に `LayoutState` に残して読む（`Edges`、16 バイト）。layout は、% の幅を解く基準を場合ごとに変える。Block と Flex の子は親の幅の入力（`input.ParentSize.Width`）、親の幅が未定のときは自分の外側の幅（`LayoutEngine.Block.cs` の `Maybe.Or(parent.Width, outerWidth)`）、Flex の項目は容器の内側の幅、絶対配置の子は containing block の幅、根はビューポートである。描画の段がこの規則をもう 1 つ持つと、% の枠線で layout と食い違う（PR #309 の再レビュー）。16 バイトが `UiNode` の詰め物に入るかは、実装で `Unsafe.SizeOf` を足す前と後で読んで決める（`.cursor/rules/perf.mdc`）
+- **箱の見た目は参照 1 つ:** `NodeVisual` を class にして、`UiNode` は参照を 1 つ持つ（8 バイト）。struct で埋め込むと、見た目の無いノードも約 104 バイト大きくなる（見積もり: 影 `BoxShadow?` 32、背景 `Paint?` 24、半径 16、枠線の塗り `Paint?` 24、関数の参照 8。詰め物の分は実装で `Unsafe.SizeOf` で確かめる）。文字の葉の状態（§3.2）と同じ考え方である。§2.5 の `PaintState` の struct は作らない
+- **座標:** 描画の段は、根から木を上にたどる順に下りながら、親の原点に `LayoutState.Rect` の位置を足していき、絶対座標の箱を作る。描く関数にはその箱を渡す。GPUI も絶対座標の箱を渡す（`window.rs` 5285〜5286 行目）。Flutter は親から積み上げた原点を渡し（`box.dart` 3390 行目）、Avalonia は自分の座標で描いて、合成の段で原点を足す（`Visual.Composition.cs` 137 行目）。表示リストの命令とヒット領域は、もう絶対座標の論理座標で受け取る（R4e）ので、同じ座標をそのまま渡す
+- **描く順:** 1 つのノードの中では、影（`DrawShadow`）、背景と枠線（`FillRect` の 1 つの命令、R4a）、描く関数、子の順。ノードどうしは木の順（親が先、子は並びのとおり）。枠線を子より先に描くのは、Flutter（`box_decoration.dart` 571〜582 行目）・Avalonia（`ServerCompositionVisual.Render.cs` 165 行目で自分の命令を子より先に描く）と CSS で、GPUI は子の後に描く（`style.rs` 742〜753 行目）。z-index は持たない。Flutter は子の並びのとおり（`stack.dart` 712〜713 行目）、Avalonia は `ZIndex`（`Visual.Composition.cs` 51〜61 行目）、GPUI は `defer_draw` の優先度（`window.rs` 4504 行目）。前面に出す仕組みは、ポップアップの行 P02 で、前面のノードが後ろを遮る場面と一緒に決める。子を箱で切る処理は、overflow の行 V2 まで行わない（CSS の既定は visible）
+- **文字の葉:** layout で確定した幅の項目（§3.2 の `LineBreakCache.Committed`）の行を、表示リストに描く。`LaidGlyph`（論理ピクセルの幅とずれ、run の番号）の行を描く命令を、`DisplayList` に internal で足す。行のベースラインは、計測と同じ行の高さの関数（§3.2「行の高さ」）で求める。色は `TextLeaf.Color`。比べた 3 つも、layout の結果をそのまま描く（Flutter の `TextPainter.paint`、`text_painter.dart` 1322〜1358 行目。Avalonia の `TextLayout.Draw`、`TextLayout.cs` 295〜307 行目。GPUI の `WrappedLine::paint`、`text_system/line.rs` 460 行目）
+- **`Hidden`:** 描画の段は、`LayoutStyle.Hidden` のノードを部分木ごと飛ばす。ヒット領域は描画と一緒に書く（R4e）ので、当たりも同時に消える。Avalonia の `IsVisible`（`ServerCompositionVisual.Render.cs` 61 行目）、GPUI の `display: none`（`div.rs` 2084 行目）、Flutter の `Offstage`（`proxy_box.dart` 3939〜3943 行目）と同じ
+- **フレームの中身:** `WindowFrames.RunFrame` は、次の順に進む。effect は、batch を閉じたときに同期して流れ終わっている（§2.2）ので、フレームでは流さない
+  1. layout の要求（`UiTree.LayoutRoots`）があったかを覚えてから、`LayoutEngine.RunLayoutPass`
+  2. 1 で覚えた layout の要求か、描画の印（`PaintUpdates`）があったかを見る。どちらも無ければ、ここで終える（下の「変わらないフレーム」）
+  3. `PaintUpdates` を作業用の一覧と入れ替え、取り出したノードの Layout 以外の印を消す。これより後に付いた印（描く関数やグリフを解く処理の中の変更）は、空になった `PaintUpdates` に入り、`FrameNeeded` で次のフレームを頼む。印を Draw の後で消すと、その間に付いた印が、次のフレームを頼まないまま消える。すでに印のあったノードは一覧に積み直されない（`MarkSelfForPaint`）ので、その変更も消える（PR #309 のレビュー）
+  4. `GlyphAtlas.BeginFrame`。§5.0.3 のとおり、これを呼ばないと、アトラスの場所はどれも追い出せず、入らないグリフを `TryGet` が断って描かれない。作り直さないフレームでは呼ばない（場所の使った記録を進めない）
+  5. 表示リストを全体で作り直す（`Reset` と木のたどり、§5.0.1）
+  6. グリフをそろえる（`ResolveGlyphs`）
+  7. `IRenderTarget.Draw` と `Present`
+- **変わらないフレーム:** 2 の条件に当たらないフレームでは、作り直しも Draw も Present もしない。比べた 3 つも、変わらないときは描き直さない。GPUI は dirty でないとき描き直さない。ただし、描いたのにまだ Present していない frame があるときと、入力が高い頻度で続くとき（`is_high_rate`）は、描かずに Present だけをする（`window.rs` 1880〜1906 行目の `needs_present`）。XylemUI は、描いたフレームはその場で Present するので、Present していない frame が残らない。Avalonia は dirty の矩形が空なら描かない（`ServerCompositionTarget.cs` 183〜189 行目）。Flutter は、印が無ければフレームを予約しない（`scheduler/binding.dart` 946〜958 行目）。Present しなかったフレームの後は、§2.11 の「Present しないフレーム」のとおり、待ちの上限で次の予約を回す。GPU のデバイスを作り直した後は、変わらないフレームでも 1 度描き直す必要がある（GPUI も復旧の後に `force_render` で描き直す）。これは、デバイス消失からの復帰の行 R1 で入れる
+- **フレームを頼む合図:** 木は、印の無い状態から最初の印（layout の要求か `PaintUpdates`）が付いたときに、`FrameNeeded` を 1 回呼ぶ。`WindowFrames` はそれを登録して `IFrameScheduler.RequestFrame` を呼ぶ。フレームの中で付いた印は、次のフレームを頼む。Flutter の `requestVisualUpdate` から `scheduleFrame`（予約済みなら何もしない、`scheduler/binding.dart` 946〜958 行目）と同じ形である
+- **同期リサイズ:** `WM_SIZE` の同期描画（§2.11.1、`Win32Window.SynchronousRender`）は、`IRenderTarget` の大きさを変えた後に `WindowFrames.Resize` を呼ぶ。`Resize` は `Invalidation.NotifyWindowResized` で根に新しい大きさを渡し、`RunFrame` と同じ処理をその場で行う。リサイズの間も別の経路を作らない
+- **確かめ方:** WARP の画素を CPU の基準と比べる（R4a と同じ）。場面は、箱（影・背景・角丸・枠線）と文字の葉の木、描く順（重なる兄弟と、子と枠線）、`Hidden` の部分木、描く関数（絶対座標の箱を受け取ること）である。枠線の幅は、layout が `LayoutState.Rect` を書くすべての経路（Block・Flex・葉・絶対配置・L7 で前回の置き場所を使い回す経路・根）で、その経路が使った幅を一緒に書く。% の枠線を、根・普通の子・絶対配置の子・親の幅が未定の子で描き、layout が置いた中身の位置と合うことを確かめる。書き忘れた経路があれば、この場面が落ちる（PR #309 の再レビュー）。変わらないフレームの Present の回数は 0。変わるフレーム（色の変更、文字の変更、リサイズ）と変わらないフレームの割り当ては 0。費用は、`frames` と同じ場面（1,000 個の矩形と文字）を木で作り、表示リストを直接書く今の場面と、描画の段の時間を比べる。差は CPU のプロファイルで説明する
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
 
@@ -2549,7 +2612,7 @@ internal struct QuadInstance
 // MemoryMarshal.AsBytes(instances.AsSpan(0, count)).CopyTo(mappedSpan);
 ```
 
-**v2拡張点の明記**: v1の全体線形再構築は現時点で最も安全な選択だが、将来的に「10万ノード＋カーソル点滅1個」のような局所変化のみのケースで非効率になりうる。将来的な部分再構築（Retained DisplayList、サブツリー単位のキャッシュ）への拡張点として、`PaintState`に`PaintVersion`/`SubtreeVersion`（§11.5.2の`NodeVersions`と連動）を持たせておき、v2でサブツリー単位のDisplayListキャッシュを追加する余地を残す。v1では参照しない（実装しない）が、型としては予約しておく。
+**v2拡張点の明記**: v1の全体線形再構築は現時点で最も安全な選択だが、将来的に「10万ノード＋カーソル点滅1個」のような局所変化のみのケースで非効率になりうる。将来的な部分再構築（Retained DisplayList、サブツリー単位のキャッシュ）への拡張点として、`NodeVersions`（§11.5.2、すべてのノードが持つ）に `PaintVersion`/`SubtreeVersion`（§11.5.2の`NodeVersions`と連動）を持たせておき、v2でサブツリー単位のDisplayListキャッシュを追加する余地を残す。v1では参照しない（実装しない）が、型としては予約しておく。
 
 ### 5.0.2 GPUリソースのライフタイム管理
 
@@ -3406,7 +3469,7 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 | `Unmounted` | `Show`/`For`で条件合致                                      | `Mounted`  | Scope生成、Signal購読開始、`MarkDirty(Layout)`                                        |
 | `Mounted`   | Signal更新                                                  | `Dirty`    | `Invalidate`→`MarkDirty`伝播（§2.4）、`LayoutRoots`登録                               |
 | `Dirty`     | Materialization / Text パイプライン完了後に `RunLayoutPass` | `Clean`    | サイズ・位置確定、`Versions.Layout`更新（下記11.5.2）、DisplayList再構築キューへ      |
-| `Mounted`   | `Show`条件false（`exit`あり）                               | `Exiting`  | Reactive購読切断、PaintStateフリーズ、アニメーション登録（§2.7）                      |
+| `Mounted`   | `Show`条件false（`exit`あり）                               | `Exiting`  | Reactive購読切断、描画状態のフリーズ、アニメーション登録（§2.7）                      |
 | `Exiting`   | `exit`タイマー満了                                          | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
 | `Exiting`   | 条件がtrueに復帰                                            | `Mounted`  | Reactive再購読、アニメーション破棄、`MarkDirty(Paint)`                                |
 
@@ -3422,7 +3485,7 @@ internal struct NodeVersions
     public ulong LayoutStyle;       // LayoutStyle が変わったとき。LayoutCacheKey が参照
     public ulong Layout;            // このノード自身の最終rectが実際に変わったとき（再実行しただけでもrectが同じなら増やさない）
     public ulong DescendantLayout;  // 子孫のいずれかのrectが実際に変わったとき。境界まで親へ伝播
-    public ulong Paint;             // PaintProps 変化、またはこのノードのPaintCommandを再構築したとき
+    public ulong Paint;             // 描画の状態（`NodeVisual` と文字の色、§5.0）の変化
     public ulong Text;              // このノードでMeasureTextを再実行したとき
     public ulong Semantics;         // このノードのAccessibilityInfoが変わったとき
     public ulong Children;          // 子の追加/削除/並び替え（identity/order）のとき
@@ -3431,10 +3494,10 @@ internal struct NodeVersions
 
 | Version            | increment条件                                                             |
 | ------------------ | ------------------------------------------------------------------------- |
-| `LayoutStyle`      | このノードの LayoutStyle が変化。Color 等の PaintProps だけでは増やさない |
+| `LayoutStyle`      | このノードの LayoutStyle が変化。色などの描画の状態だけでは増やさない |
 | `Layout`           | このノードの最終rectが前回と異なる値に確定                                |
 | `DescendantLayout` | 子孫のrectが実際に変化。親へO(depth)伝播しLayout Boundaryで停止           |
-| `Paint`            | PaintProps の変化、またはこのノードのPaintCommandを再構築                 |
+| `Paint`            | 描画の状態の変化（`UiTree` の描画の状態の setter、§5.0「描画の段とフレームの駆動」） |
 | `Text`             | このノードの`MeasureText`を再実行                                         |
 | `Semantics`        | このノードのAccessibilityInfoが変化                                       |
 | `Children`         | 子の追加・削除・並び替え                                                  |
