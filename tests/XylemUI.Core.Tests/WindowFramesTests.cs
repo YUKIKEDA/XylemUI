@@ -273,6 +273,70 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Text rendering that is bilevel with ClearType coverage is refused where it is given, the constructor and the setter, so the
+    /// frame's DrawLine never throws on it (PR #317's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - As in the first test, laid out once; a value of ClearType coverage with bilevel glyphs.
+    ///
+    /// Steps:
+    /// - Make frames with the value; set the value on frames made with the default.
+    ///
+    /// Expected:
+    /// - Both throw <see cref="ArgumentException"/> for the argument; the setter leaves the text rendering as it was and asks for
+    ///   no frame.
+    /// </remarks>
+    [Fact]
+    public void TextRendering_BilevelWithClearType_Throws() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, _) = Boxes();
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            TextRenderingParameters bad = TextRenderingParameters.Default with { Coverage = GlyphCoverage.Rgb, IsAliased = true };
+
+            ArgumentException made = Assert.Throws<ArgumentException>(() => new WindowFrames(tree, root, target, atlas, scheduler, Gray, bad));
+            Assert.Equal("textRendering", made.ParamName);
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
+            frames.Resize(new Size(200, 100), 1);
+            int requests = scheduler.Requests;
+            ArgumentException set = Assert.Throws<ArgumentException>(() => frames.TextRendering = bad);
+            Assert.Equal("value", set.ParamName);
+            Assert.Equal(TextRenderingParameters.Default, frames.TextRendering);
+            Assert.Equal(requests, scheduler.Requests);
+        });
+
+    /// <summary>
+    /// A text leaf's line, as DrawText, has no ClearType coverage when its glyphs are bilevel: the two paths keep one contract
+    /// (PR #313's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list and an atlas.
+    ///
+    /// Steps:
+    /// - Draw an empty line with ClearType coverage and bilevel glyphs; then one with grayscale coverage and bilevel glyphs.
+    ///
+    /// Expected:
+    /// - The first throws <see cref="ArgumentException"/> for the bilevel argument; the second does not.
+    /// </remarks>
+    [Fact]
+    public void DrawLine_BilevelWithClearType_Throws()
+    {
+        var list = new DisplayList();
+        list.Reset(1);
+        using var atlas = new GlyphAtlas(new NoGlyphs());
+
+        ArgumentException thrown = Assert.Throws<ArgumentException>(() =>
+            list.DrawLine([], [], 16, atlas, 0, 0, Gray, GlyphCoverage.Rgb, aliased: true)
+        );
+        Assert.Equal("aliased", thrown.ParamName);
+        list.DrawLine([], [], 16, atlas, 0, 0, Gray, GlyphCoverage.Gray, aliased: true);
+    }
+
+    /// <summary>
     /// The border widths the layout commits are the ones it placed the content inside, wherever it resolves a percentage against
     /// another basis: the root, a block's child, a flex item, an absolutely positioned child, and a block whose containing block
     /// has no width (the root in a max-content viewport).

@@ -37,6 +37,7 @@ internal sealed class WindowFrames
     /// <param name="scheduler">The frame scheduler of the UI thread.</param>
     /// <param name="clearColor">The color behind the tree.</param>
     /// <param name="textRendering">How the window draws text (<see cref="TextRendering"/>); the OS's defaults when not given.</param>
+    /// <exception cref="ArgumentException"><paramref name="textRendering"/> is bilevel with ClearType coverage.</exception>
     public WindowFrames(
         UiTree tree,
         NodeHandle root,
@@ -57,7 +58,7 @@ internal sealed class WindowFrames
         _atlas = atlas;
         _scheduler = scheduler;
         ClearColor = clearColor;
-        _textRendering = textRendering ?? TextRenderingParameters.Default;
+        _textRendering = CheckTextRendering(textRendering ?? TextRenderingParameters.Default, nameof(textRendering));
         _runFrame = RunFrame;
         tree.FrameNeeded = RequestFrame;
     }
@@ -72,6 +73,7 @@ internal sealed class WindowFrames
     /// §5.0.3). The window sets it again when its value changes (<c>Win32Window.TextRenderingChanged</c>, row T2), and the next
     /// frame draws the whole tree again with it.
     /// </summary>
+    /// <exception cref="ArgumentException">The value is bilevel with ClearType coverage.</exception>
     public TextRenderingParameters TextRendering
     {
         get => _textRendering;
@@ -144,12 +146,18 @@ internal sealed class WindowFrames
     // A new way of drawing text marks the root to be drawn again, so the next frame draws the whole tree with it.
     private void SetTextRendering(TextRenderingParameters value)
     {
+        CheckTextRendering(value, nameof(value));
         if (value != _textRendering)
         {
             _textRendering = value;
             Invalidation.Invalidate(_tree, _root, ChangeKind.Color);
         }
     }
+
+    // Bilevel text has no ClearType coverage, and the frame's DrawLine would throw on it. Refusing the value where it is given keeps
+    // the throw out of the frame, which would stop in the middle after the marks are cleared (PR #317's review).
+    private static TextRenderingParameters CheckTextRendering(TextRenderingParameters value, string name) =>
+        value.IsAliased && value.Coverage == GlyphCoverage.Rgb ? throw new ArgumentException("Bilevel text has no ClearType coverage.", name) : value;
 
     private void RequestFrame()
     {
