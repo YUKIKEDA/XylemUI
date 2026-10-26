@@ -37,6 +37,8 @@ internal sealed class Scene : IDisposable
 
     public Win32Window Window { get; }
 
+    public Font Font => _font;
+
     public GlyphCoverage Coverage => Renderer.TextRendering.Coverage;
 
     public bool IsAliased => Renderer.TextRendering.IsAliased;
@@ -86,7 +88,8 @@ internal sealed class Scene : IDisposable
         bool groups = false,
         int layers = 50,
         string scopes = "",
-        int nested = 0
+        int nested = 0,
+        bool noText = false
     )
     {
         if (scopes.Length > 0)
@@ -150,7 +153,11 @@ internal sealed class Scene : IDisposable
             List.FillRect(x, y, 16, 16, (i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66));
         }
 
-        _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage, IsAliased);
+        if (!noText)
+        {
+            _ = List.DrawText(_shaper.Shape(_font, Line, _japanese), _font, 24, Atlas, 60, 30, Color.FromRgb(0xE8E8E8), Coverage, IsAliased);
+        }
+
         if (curves)
         {
             _brushedGlyphs ??= _shaper.Shape(_font, "日本語のテキスト", _japanese).ToArray();

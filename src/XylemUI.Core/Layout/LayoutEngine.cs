@@ -388,6 +388,17 @@ internal static partial class LayoutEngine
 
         bool sizeChanged = n.Layout.Rect.Width != size.Width || n.Layout.Rect.Height != size.Height;
         n.Layout.Rect = n.Layout.Rect with { Width = size.Width, Height = size.Height };
+
+        // The widths the node's algorithm placed its content inside: a block resolves them against the containing block's width,
+        // or its own when that is not decided; a flex container and a leaf against the parent's width of the input.
+        float basis =
+            !firstChild.IsNone && style.Algorithm is LayoutAlgorithm.Block ? Maybe.Or(input.ParentSize.Width, size.Width) : input.ParentSize.Width;
+        n.Layout.Border = EdgeInsets.ResolveOrZero(style.Border, basis);
+        if (n.Text is { } leaf)
+        {
+            leaf.PaddingBorder = PaddingBorder(in style, basis);
+        }
+
         n.Layout.LastInput = input;
         n.Layout.WasLaidOut = true;
         n.Layout.FirstBaseline = baseline;

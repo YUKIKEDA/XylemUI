@@ -9,7 +9,9 @@ namespace XylemUI.E2E;
 // is more than 1.5 times the median missed a refresh. `heavy` loads the GPU with full-window translucent rectangles. The text is
 // ClearType where the window allows it, or grayscale with --gray (roadmap row T2); the report names it and the draws of a frame.
 // --shapes, --curves, and --groups change the scene's rectangles (rows R4a, R4b, and R4c, Scene.Build); --scopes puts them in clips
-// and transforms (row R4d).
+// and transforms (row R4d). --tree draws the plain scene from a UI tree with WindowFrames (row V1b, TreeScene): build_ms is then the
+// draw stage (the display list from the tree and its glyphs), layout_ms the layout pass after the boxes moved, and cpu_frame_ms
+// leaves the layout out. --no-text leaves the line of text out of either scene, so that the draw stages compare the boxes alone.
 internal static class Frames
 {
     public static int Run(
@@ -22,11 +24,15 @@ internal static class Frames
         bool groups = false,
         int layers = 50,
         string scopes = "",
-        int nested = 0
+        int nested = 0,
+        bool tree = false,
+        bool noText = false
     )
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
+        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText) : null;
+        var layout = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         var build = new List<double>(frames);
@@ -48,12 +54,28 @@ internal static class Frames
             }
 
             last = t0;
-            scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested);
-            long t1 = Stopwatch.GetTimestamp();
-            scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
-            long t2 = Stopwatch.GetTimestamp();
-            scene.Renderer.Present();
-            long t3 = Stopwatch.GetTimestamp();
+            long t1;
+            long t2;
+            long t3;
+            if (treeScene is not null)
+            {
+                layout.Add(treeScene.Update(frame));
+                t0 = Stopwatch.GetTimestamp();
+                treeScene.RunFrame();
+                t1 = treeScene.Target.DrawStart;
+                t2 = treeScene.Target.DrawEnd;
+                t3 = treeScene.Target.PresentEnd;
+            }
+            else
+            {
+                scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested, noText);
+                t1 = Stopwatch.GetTimestamp();
+                scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
+                t2 = Stopwatch.GetTimestamp();
+                scene.Renderer.Present();
+                t3 = Stopwatch.GetTimestamp();
+            }
+
             build.Add(Stopwatch.GetElapsedTime(t0, t1).TotalMilliseconds);
             draw.Add(Stopwatch.GetElapsedTime(t1, t2).TotalMilliseconds);
             present.Add(Stopwatch.GetElapsedTime(t2, t3).TotalMilliseconds);
@@ -93,12 +115,19 @@ internal static class Frames
         report.Text("curves", curves ? "yes" : "no");
         report.Text("groups", groups ? "yes" : "no");
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
+        report.Text("tree", tree ? "yes" : "no");
+        report.Text("text", noText ? "no" : "yes");
         report.Number("nested", nested);
         report.Number("layers", scene.Renderer.LayerCount);
         report.Number("layer_bytes", scene.Renderer.LayerBytes);
         report.Number("layers_refused", scene.Renderer.LayersRefused);
         report.Number("draws", scene.Renderer.LastDrawCount);
         report.Series("build_ms", [.. build.Skip(Warm)]);
+        if (tree)
+        {
+            report.Series("layout_ms", [.. layout.Skip(Warm)]);
+        }
+
         report.Series("draw_ms", [.. draw.Skip(Warm)]);
         report.Series("present_ms", [.. present.Skip(Warm)]);
         report.Series("cpu_frame_ms", [.. cpu.Skip(Warm)]);

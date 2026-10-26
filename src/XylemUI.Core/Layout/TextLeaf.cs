@@ -35,6 +35,19 @@ internal sealed class TextLeaf
     public TextStyle Style { get; private set; }
 
     /// <summary>
+    /// Gets or sets the color the text is drawn in; opaque black at first. It is no part of <see cref="Style"/>: the layout does not
+    /// read it (design §5.0, "The draw stage and the frame drive").
+    /// </summary>
+    public Color Color { get; set; } = Color.FromRgb(0x000000);
+
+    /// <summary>
+    /// Gets or sets the padding and border widths the leaf's last layout run resolved, in logical pixels: the draw stage places the
+    /// lines in the content box, the border box less them, and does not resolve the style again (design §5.0, "The draw stage and
+    /// the frame drive"). Only a text leaf keeps them, so that no other node grows by them.
+    /// </summary>
+    public Edges PaddingBorder { get; set; }
+
+    /// <summary>
     /// Gets or sets the text shaped once (the first cache); <see langword="null"/> until the leaf is first measured.
     /// </summary>
     public ShapedTextCache? Shaped { get; set; }

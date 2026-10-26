@@ -15,6 +15,9 @@ internal sealed class UiTree
     private readonly List<LayoutRequest> _deferred = [];
     private List<LayoutRequest> _layoutRoots = [];
     private List<LayoutRequest> _layoutRootsSpare = [];
+    private List<NodeHandle> _paintUpdates = [];
+    private List<NodeHandle> _paintUpdatesSpare = [];
+    private bool _frameRequested;
 
     // The measurement caches, by the node's slot index: apart from the nodes, so that reading a node does not load them.
     private MeasureCache[] _measures = new MeasureCache[256];
@@ -59,10 +62,16 @@ internal sealed class UiTree
     internal List<LayoutRequest> LayoutRoots => _layoutRoots;
 
     /// <summary>
-    /// Gets the nodes whose change needs paint, hit testing, or semantics but no layout. Their stages come with later rows; S6b
-    /// only records them.
+    /// Gets the nodes whose change needs paint, hit testing, or semantics but no layout. A frame of <see cref="WindowFrames"/>
+    /// takes them (<see cref="TakePaintUpdates"/>), clears their marks, and draws the tree again.
     /// </summary>
-    internal List<NodeHandle> PaintUpdates { get; } = [];
+    internal List<NodeHandle> PaintUpdates => _paintUpdates;
+
+    /// <summary>
+    /// Gets or sets what the tree calls when work is first queued after <see cref="ClearFrameRequest"/>: a layout request or a
+    /// paint update (design §5.0, "The draw stage and the frame drive"). <see cref="WindowFrames"/> asks for a frame with it.
+    /// </summary>
+    internal Action? FrameNeeded { get; set; }
 
     /// <summary>
     /// Gets what the parents read from the leaves whose content changed since their last layout (row L5), one per leaf.
@@ -172,6 +181,119 @@ internal sealed class UiTree
         {
             Invalidation.Invalidate(this, node, ChangeKind.Font);
         }
+    }
+
+    /// <summary>
+    /// Sets the shadow under a node's box; equal to the one there, nothing changes. Another marks the node to be drawn again,
+    /// with no layout.
+    /// </summary>
+    public void SetShadow(NodeHandle node, BoxShadow? shadow)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.Shadow != shadow)
+        {
+            visual.Shadow = shadow;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets a node's background; equal to the one there, nothing changes. Another marks the node to be drawn again, with no
+    /// layout.
+    /// </summary>
+    public void SetBackground(NodeHandle node, Paint? background)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.Background != background)
+        {
+            visual.Background = background;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets the corner radii of a node's box; equal to the ones there, nothing changes. Others mark the node to be drawn again,
+    /// with no layout.
+    /// </summary>
+    public void SetCornerRadii(NodeHandle node, CornerRadii radii)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.Radii != radii)
+        {
+            visual.Radii = radii;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets the paint of a node's border, which is drawn at the widths of its <see cref="LayoutStyle.Border"/>; equal to the one
+    /// there, nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    public void SetBorderPaint(NodeHandle node, Paint? paint)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.BorderPaint != paint)
+        {
+            visual.BorderPaint = paint;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets a node's draw function. The same delegate instance as the one there changes nothing (delegates compare by reference,
+    /// so a caller hands the same instance on); another marks the node to be drawn again, with no layout.
+    /// </summary>
+    public void SetDraw(NodeHandle node, DrawFunc? draw)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (!ReferenceEquals(visual.Draw, draw))
+        {
+            visual.Draw = draw;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets the color of a text leaf's text; equal to the one there, nothing changes. Another marks the leaf to be drawn again,
+    /// with no layout.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    public void SetTextColor(NodeHandle node, Color color)
+    {
+        TextLeaf leaf = TextLeafOf(node);
+        if (leaf.Color != color)
+        {
+            leaf.Color = color;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Calls <see cref="FrameNeeded"/> once since the last <see cref="ClearFrameRequest"/>: work was queued.
+    /// </summary>
+    internal void NoteWork()
+    {
+        if (!_frameRequested)
+        {
+            _frameRequested = true;
+            FrameNeeded?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Forgets that a frame was asked for, at the start of one: work queued after it asks for the next.
+    /// </summary>
+    internal void ClearFrameRequest() => _frameRequested = false;
+
+    /// <summary>
+    /// Takes the paint updates for one frame and leaves an empty list in their place, so that a node marked while the frame is drawn
+    /// goes into the next one. The returned list is cleared and handed back by the next call.
+    /// </summary>
+    internal List<NodeHandle> TakePaintUpdates()
+    {
+        (_paintUpdates, _paintUpdatesSpare) = (_paintUpdatesSpare, _paintUpdates);
+        _paintUpdates.Clear();
+        return _paintUpdatesSpare;
     }
 
     /// <summary>
@@ -335,6 +457,9 @@ internal sealed class UiTree
         (_layoutRoots, _layoutRootsSpare) = (_layoutRootsSpare, _layoutRoots);
         return _layoutRootsSpare;
     }
+
+    // The node's visual, made the first time: the tree owns it, and a later change writes into it.
+    private NodeVisual VisualOf(NodeHandle node) => Nodes.GetRef(node).Visual ??= new NodeVisual();
 
     private TextLeaf TextLeafOf(NodeHandle node) =>
         Nodes.GetRef(node).Text ?? throw new InvalidOperationException("The node is not a text leaf; create one with CreateTextNode.");
