@@ -273,6 +273,34 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A text leaf's line, as DrawText, has no ClearType coverage when its glyphs are bilevel: the two paths keep one contract
+    /// (PR #313's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A display list and an atlas.
+    ///
+    /// Steps:
+    /// - Draw an empty line with ClearType coverage and bilevel glyphs; then one with grayscale coverage and bilevel glyphs.
+    ///
+    /// Expected:
+    /// - The first throws <see cref="ArgumentException"/> for the bilevel argument; the second does not.
+    /// </remarks>
+    [Fact]
+    public void DrawLine_BilevelWithClearType_Throws()
+    {
+        var list = new DisplayList();
+        list.Reset(1);
+        using var atlas = new GlyphAtlas(new NoGlyphs());
+
+        ArgumentException thrown = Assert.Throws<ArgumentException>(() =>
+            list.DrawLine([], [], 16, atlas, 0, 0, Gray, GlyphCoverage.Rgb, aliased: true)
+        );
+        Assert.Equal("aliased", thrown.ParamName);
+        list.DrawLine([], [], 16, atlas, 0, 0, Gray, GlyphCoverage.Gray, aliased: true);
+    }
+
+    /// <summary>
     /// The border widths the layout commits are the ones it placed the content inside, wherever it resolves a percentage against
     /// another basis: the root, a block's child, a flex item, an absolutely positioned child, and a block whose containing block
     /// has no width (the root in a max-content viewport).

@@ -21,7 +21,8 @@ public sealed partial class DisplayList
     /// <param name="baseline">The line's baseline, in logical pixels from the top.</param>
     /// <param name="color">The text's color.</param>
     /// <param name="coverage">Grayscale, or ClearType where the window allows it.</param>
-    /// <param name="aliased">Whether the glyphs are bilevel, because the OS does not smooth fonts; the coverage is then grayscale.</param>
+    /// <param name="aliased">Whether the glyphs are bilevel, because the OS does not smooth fonts.</param>
+    /// <exception cref="ArgumentException"><paramref name="aliased"/> is set with ClearType coverage, as for DrawText.</exception>
     internal void DrawLine(
         ReadOnlySpan<LaidGlyph> glyphs,
         ReadOnlySpan<FontRun> runs,
@@ -34,6 +35,11 @@ public sealed partial class DisplayList
         bool aliased
     )
     {
+        if (aliased && coverage == GlyphCoverage.Rgb)
+        {
+            throw new ArgumentException("Bilevel text has no ClearType coverage.", nameof(aliased));
+        }
+
         if (_mode != 0)
         {
             DrawLineInScope(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
@@ -74,12 +80,6 @@ public sealed partial class DisplayList
         if (glyphs.IsEmpty || (TScope.In && !(_textScale > 0)))
         {
             return;
-        }
-
-        // Bilevel glyphs have no ClearType coverage (TextRenderingParameters makes it grayscale when the OS does not smooth fonts).
-        if (aliased)
-        {
-            coverage = GlyphCoverage.Gray;
         }
 
         if (TScope.In && coverage == GlyphCoverage.Rgb && TextIsGray)
