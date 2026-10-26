@@ -32,8 +32,13 @@ internal static class Invalidation
     {
         DirtyFlags flags = FlagsFor(kind);
 
-        // A changed node may measure differently: its next failure is reported again, even while it is still dirty from one.
-        tree.Nodes.GetRef(node).Layout.ReportedFailure = null;
+        // A change the layout reads may make the node measure differently: its next failure is reported again, even while it is
+        // still dirty from one. A change of color or the like does not (design §2.4.1).
+        if ((flags & DirtyFlags.Layout) != 0)
+        {
+            tree.Nodes.GetRef(node).Layout.ReportedFailure = null;
+        }
+
         if (kind is ChangeKind.TextContent or ChangeKind.Font && TryMarkContentChange(tree, node, flags))
         {
             return;

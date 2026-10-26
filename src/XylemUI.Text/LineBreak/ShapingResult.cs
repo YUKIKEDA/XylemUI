@@ -18,11 +18,15 @@ internal sealed class ShapingResult
 {
     private const char SoftHyphen = '\u00AD';
 
-    // How much wider than the break's width a line laid out may be before it is cut. Pass1 measures a line as a difference of running
-    // sums of the advances and Pass2 as a sum from the line's start, which can differ in the last bit at a fractional size: without
-    // it, a text broken at its own most content width had its widest line cut (PR #293's review). A kerning a break removes is
-    // 0.5 px or more at 13 px, so a real overflow is still found.
-    private const float Tolerance = 1f / 64;
+    /// <summary>
+    /// How much wider than a width a line may be and still fit it, in logical pixels: Pass1, Pass2, and the emergency cut take it,
+    /// and so does a text leaf that compares a width with the text's most content width. Pass1 measures a line as a difference of
+    /// running sums of the advances and Pass2 as a sum from the line's start, and a width can come back from a layout less its
+    /// padding, which can each differ in the last bit at a fractional size: without it, a text broken at its own most content width
+    /// had its widest line cut (PR #293's review), and a padded text leaf at its max-content width wrapped (PR #301's review). A
+    /// kerning a break removes is 0.5 px or more at 13 px, so a real overflow is still found.
+    /// </summary>
+    internal const float Tolerance = 1f / 64;
     private const string Hyphen = "-";
 
     // Empty until the first text: each array is made at the size its first text needs (design §3.2, "Text leaves", the memory of
@@ -158,7 +162,7 @@ internal sealed class ShapingResult
             LineBreakOpportunity opportunity = _breaks[k];
             bool hyphen = !opportunity.Mandatory && EndsWithSoftHyphen(opportunity.Position);
             float lineWidth = TrimmedWidth(lineStart, opportunity.Position) + (hyphen ? HyphenWidth(opportunity.Position - 1, shaper) : 0);
-            if (lineWidth <= width)
+            if (lineWidth <= width + Tolerance)
             {
                 if (opportunity.Mandatory)
                 {
@@ -498,7 +502,7 @@ internal sealed class ShapingResult
         int last = first;
         for (int boundary = first; boundary < limit; )
         {
-            if (_x[boundary] - _x[start] > width)
+            if (_x[boundary] - _x[start] > width + Tolerance)
             {
                 break;
             }

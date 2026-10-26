@@ -24,8 +24,9 @@ internal static partial class LayoutEngine
             : available.Width.Value;
 
         // A width no narrower than the longest line breaks only at the hard line breaks, as a max-content space does: one entry
-        // serves both (a row measures its item at max-content and lays it out at that width).
-        if (width >= shaped.MaxWidth)
+        // serves both (a row measures its item at max-content and lays it out at that width). The width may come back a bit
+        // under the longest line after a padding is added and taken off, which the tolerance of the line breaking covers.
+        if (width >= shaped.MaxWidth - ShapingResult.Tolerance)
         {
             width = float.PositiveInfinity;
         }

@@ -178,13 +178,15 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Set InvalidOperationException; invalidate X; run 2 passes; resize the window and run a pass.
+    /// - Change X's color (no layout); run a pass.
     /// - Replace X's style (X is still dirty); run a pass. Mark X dirty; run a pass.
     /// - Set ArgumentException; run a pass.
     /// - Set none; run a pass.
     ///
     /// Expected:
     /// - After the first three passes, 1 report and 2 counted.
-    /// - The style and the mark make 1 report each: 3 reports, 2 counted.
+    /// - The color clears nothing: still 1 report, 3 counted.
+    /// - The style and the mark make 1 report each: 3 reports, 3 counted.
     /// - The new type makes a 4th report.
     /// - The last pass lays X out; nothing is left.
     /// </remarks>
@@ -211,12 +213,17 @@ public sealed class LayoutWorklistTests(UiThreadFixture ui)
                 Assert.Same(failure, Assert.Single(reported));
                 Assert.Equal(2, tree.SuppressedLayoutExceptions);
 
+                Invalidation.Invalidate(tree, x, ChangeKind.Color);
+                LayoutEngine.RunLayoutPass(tree);
+                Assert.Single(reported);
+                Assert.Equal(3, tree.SuppressedLayoutExceptions);
+
                 tree.SetStyle(x, new LayoutStyle { Height = Length.Px(25) });
                 LayoutEngine.RunLayoutPass(tree);
                 Invalidation.MarkDirty(tree, x, DirtyFlags.Layout);
                 LayoutEngine.RunLayoutPass(tree);
                 Assert.Equal(3, reported.Count);
-                Assert.Equal(2, tree.SuppressedLayoutExceptions);
+                Assert.Equal(3, tree.SuppressedLayoutExceptions);
 
                 failure = new ArgumentException("Another type, on purpose.");
                 LayoutEngine.RunLayoutPass(tree);

@@ -294,6 +294,34 @@ public sealed class TextWrapTests : IDisposable
     }
 
     /// <summary>
+    /// A width less than a line by no more than the tolerance (1/64 px) still fits the line, in Pass1 and in the emergency cut: a
+    /// width that came back from a layout less its padding can be one bit under the line (PR #301's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - "nn nn" (1,220 + 224 + 1,220 px) and "nnnnnn" (6 × 610 px) at 1,000 px.
+    ///
+    /// Steps:
+    /// - Wrap "nn nn" at 2,664 − 0.01 px, and "nnnnnn" at 1,830 − 0.01 px and at 1,830 − 0.1 px.
+    ///
+    /// Expected:
+    /// - "nn nn" is one line. "nnnnnn" is cut after 3 clusters at 1,830 − 0.01 px, and after 2 at 1,830 − 0.1 px (past the tolerance).
+    /// </remarks>
+    [Fact]
+    public void Wrap_WidthUnderTheLineWithinTheTolerance_StillFits()
+    {
+        Shape("nn nn");
+        _shaped.Wrap((4 * N) + Space - 0.01f, _shaper, _lines);
+        Assert.Equal([(0, 5)], _lines.Lines.ToArray().Select(l => (l.Start, l.End)));
+
+        Shape("nnnnnn");
+        _shaped.Wrap((3 * N) - 0.01f, _shaper, _lines);
+        Assert.Equal(3, _lines.Lines[0].End);
+        _shaped.Wrap((3 * N) - 0.1f, _shaper, _lines);
+        Assert.Equal(2, _lines.Lines[0].End);
+    }
+
+    /// <summary>
     /// Wrapping and laying out the same shaped text at alternating widths allocate nothing once the arrays have grown.
     /// </summary>
     /// <remarks>

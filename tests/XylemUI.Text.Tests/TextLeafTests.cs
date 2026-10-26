@@ -15,6 +15,10 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     private const float Ascent = 23.2f;
     private const float Line = 28.96f;
 
+    private static readonly string[] PaddedTexts = ["nn nn", "nn-TT and nn", "日本語 の テキスト"];
+    private static readonly float[] PaddedSizes = [11f, 12.5f, 13.3f, 14f, 15.7f, 17.3f];
+    private static readonly float[] Paddings = [1f, 2.5f, 3f, 4.3f, 7f];
+
     private readonly Font _font = TestFont.Open();
 
     public void Dispose() => _font.Dispose();
@@ -245,6 +249,57 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
 
             AssertRect(53.28f, Line, wide.GetRect(one));
             AssertRect(24.4f, 2 * Line, narrow.GetRect(two));
+        });
+
+    /// <summary>
+    /// A text leaf with padding, laid out at its own max-content width, stays on one line: the width it gets back after the
+    /// padding is taken off may be one bit under its longest line (PR #301's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window 1,000 px wide: a column, then a row, then the text leaf with the test font. The row gives the leaf its
+    ///   max-content width plus its padding.
+    ///
+    /// Steps:
+    /// - Lay out each of "nn nn", "nn-TT and nn", and "日本語 の テキスト" at sizes 11, 12.5, 13.3, 14, 15.7, and 17.3 px, with
+    ///   padding of 1, 2.5, 3, 4.3, and 7 px on every side: 90 leaves.
+    ///
+    /// Expected:
+    /// - Each leaf has one line, and one entry, whose key is +∞: the width it is laid out at counts as its max-content width.
+    /// </remarks>
+    [Fact]
+    public void PaddedLeafAtItsMaxContentWidth_StaysOnOneLine() =>
+        ui.Invoke(() =>
+        {
+            using var context = new TextContext(new TestFontProvider(_font));
+            var wrapped = new List<string>();
+            foreach (string text in PaddedTexts)
+            {
+                foreach (float size in PaddedSizes)
+                {
+                    foreach (float padding in Paddings)
+                    {
+                        var tree = new UiTree(context);
+                        NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
+                        NodeHandle row = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Row });
+                        tree.AppendChild(root, row);
+                        NodeHandle leaf = tree.CreateTextNode(new LayoutStyle { Padding = EdgeInsets.All(padding) }, Style() with { Size = size });
+                        tree.SetText(leaf, text);
+                        tree.AppendChild(row, leaf);
+                        LayOut(tree, root, 1000);
+                        LineBreakCache cache = tree.Nodes.GetRef(leaf).Text!.LineBreaks!;
+                        LineBreakEntry entry = cache[cache.Committed];
+                        if (entry.Layout.Lines.Length != 1 || !float.IsPositiveInfinity(entry.Width) || cache.Count != 1)
+                        {
+                            wrapped.Add(
+                                $"{text} at {size} px with {padding} px: {entry.Layout.Lines.Length} lines at {entry.Width}, {cache.Count} widths"
+                            );
+                        }
+                    }
+                }
+            }
+
+            Assert.Empty(wrapped);
         });
 
     /// <summary>
