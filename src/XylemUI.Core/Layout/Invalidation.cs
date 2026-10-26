@@ -137,6 +137,7 @@ internal static class Invalidation
         if ((node.Dirty.SelfDirty & ~DirtyFlags.Layout) == 0)
         {
             tree.PaintUpdates.Add(handle);
+            tree.NoteWork();
         }
 
         node.Dirty.SelfDirty |= flags;
@@ -233,6 +234,7 @@ internal static class Invalidation
         }
 
         tree.LayoutRoots.Add(new LayoutRequest { Node = node, Reason = LayoutReason.IntrinsicSizeChanged });
+        tree.NoteWork();
     }
 
     /// <summary>
@@ -259,6 +261,7 @@ internal static class Invalidation
         }
 
         tree.LayoutRoots.Add(request);
+        tree.NoteWork();
     }
 
     private static void OverwriteLayoutRequest(UiTree tree, NodeHandle node, LayoutInput input, LayoutReason reason)
@@ -283,5 +286,6 @@ internal static class Invalidation
                 Reason = reason,
             }
         );
+        tree.NoteWork();
     }
 }

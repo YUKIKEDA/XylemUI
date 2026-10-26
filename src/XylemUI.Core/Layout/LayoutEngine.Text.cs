@@ -126,6 +126,13 @@ internal static partial class LayoutEngine
         return new MeasureResult(new Size(width, height), firstBaseline);
     }
 
+    /// <summary>
+    /// Returns the height of one line of a text leaf and its baseline from the line's top, as the measurement stacks them: the draw
+    /// stage places the committed lines with it (design §5.0, "The draw stage and the frame drive").
+    /// </summary>
+    internal static (float Height, float Baseline) TextLine(ShapingResult result, LineSpan span, in TextStyle style) =>
+        Line(LineMetricsOf(result, span), style);
+
     // The height of a line and its baseline from its top. The fonts' line gap is split half above and half below (half-leading).
     // A line height of the style replaces the fonts' height, and the difference with ascent and descent is split the same way.
     private static (float Height, float Baseline) Line(LineMetrics metrics, in TextStyle style)

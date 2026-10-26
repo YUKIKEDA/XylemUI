@@ -443,6 +443,67 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             Assert.Equal(0, Allocated(tree, root, 200, i => cycling[i % 6]));
         });
 
+    /// <summary>
+    /// A frame that changes a text leaf's text, or its color, draws it and allocates nothing in steady state (row V1b): the text is
+    /// shaped again into the leaf's arrays, and its lines drawn into the display list.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of 20 text leaves in window frames with a counting target and a test rasterizer's atlas; warmed up with the loop.
+    ///
+    /// Steps:
+    /// - 200 frames: one leaf's text between "日本語のテキスト" and "テキストの日本語", and another leaf's color between two
+    ///   colors; run each frame the tree asks for.
+    ///
+    /// Expected:
+    /// - 0 bytes on this thread, and every frame presented.
+    /// </remarks>
+    [Fact]
+    public void SteadyState_FramesThatChangeText_AllocateNothing() =>
+        ui.Invoke(() =>
+        {
+            using var context = new TextContext(new TestFontProvider(_font));
+            using var atlas = new GlyphAtlas(new TestRasterizer());
+            var tree = new UiTree(context);
+            NodeHandle root = tree.CreateNode(new LayoutStyle { Algorithm = LayoutAlgorithm.Flex.Column });
+            var leaves = new NodeHandle[20];
+            for (int i = 0; i < leaves.Length; i++)
+            {
+                leaves[i] = AddLeaf(tree, root, "日本語のテキスト");
+            }
+
+            var target = new CountingTarget();
+            var scheduler = new OneFrameScheduler();
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Color.FromRgb(0xFFFFFF));
+            frames.Resize(new Size(400, 600), 1);
+            Color red = Color.FromRgb(0xCC3333);
+            Color blue = Color.FromRgb(0x3366CC);
+
+            void Frame(int i)
+            {
+                // Each leaf takes the other text and color each time its turn comes, so every frame changes something.
+                bool odd = (i / 20) % 2 == 1;
+                tree.SetText(leaves[i % 20], odd ? "テキストの日本語" : "日本語のテキスト");
+                tree.SetTextColor(leaves[(i + 7) % 20], odd ? red : blue);
+                scheduler.Run();
+            }
+
+            for (int i = 0; i < 400; i++)
+            {
+                Frame(i);
+            }
+
+            int presents = target.Presents;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 200; i++)
+            {
+                Frame(i);
+            }
+
+            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+            Assert.Equal(presents + 200, target.Presents);
+        });
+
     private static long Allocated(UiTree tree, NodeHandle root, int layouts, Func<int, float> width)
     {
         long before = GC.GetAllocatedBytesForCurrentThread();
@@ -495,6 +556,31 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     {
         Assert.Equal(width, rect.Width, 3);
         Assert.Equal(height, rect.Height, 3);
+    }
+
+    private sealed class CountingTarget : IRenderTarget
+    {
+        public int Presents { get; private set; }
+
+        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+
+        public void Present() => Presents++;
+    }
+
+    private sealed class OneFrameScheduler : IFrameScheduler
+    {
+        private Action? _callback;
+
+        public void RequestFrame(Action callback) => _callback = callback;
+
+        public void CancelFrame() => _callback = null;
+
+        public void Run()
+        {
+            Action? callback = _callback;
+            _callback = null;
+            callback?.Invoke();
+        }
     }
 
     // Answers every character with one font, except the characters of `noFont`, which no font renders (the bundled font takes

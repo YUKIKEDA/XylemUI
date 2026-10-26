@@ -37,6 +37,8 @@ internal sealed class Scene : IDisposable
 
     public Win32Window Window { get; }
 
+    public Font Font => _font;
+
     public GlyphCoverage Coverage => Renderer.TextRendering.Coverage;
 
     public bool IsAliased => Renderer.TextRendering.IsAliased;

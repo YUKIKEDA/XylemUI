@@ -53,6 +53,12 @@ internal struct UiNode
     public TextLeaf? Text;
 
     /// <summary>
+    /// The box and the draw function the draw stage draws; <see langword="null"/> on a node with neither (design §5.0, "The draw
+    /// stage and the frame drive").
+    /// </summary>
+    public NodeVisual? Visual;
+
+    /// <summary>
     /// The child whose first baseline gives this container's in the last layout run, read when a parent reads this node's
     /// (design §2.4.1); none for a leaf, whose <see cref="LayoutState.FirstBaseline"/> is its own. Read it with
     /// <see cref="LayoutState.BaselineFromFirstChildWithOne"/>, which says how the child gives the baseline. It belongs to the

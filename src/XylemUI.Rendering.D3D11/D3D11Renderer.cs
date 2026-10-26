@@ -41,7 +41,7 @@ namespace XylemUI.Rendering.D3D11;
 /// the window's monitor; the kind of coverage of each glyph run comes from the display list.
 /// </para>
 /// </remarks>
-public sealed unsafe class D3D11Renderer : IDisposable
+public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
 {
     // The rows of one command in the shape buffer, and the kinds QuadShaders' ShapeColor tells apart (row R4). Brushed text's rows
     // have the kind of text, which only the text shaders read.
@@ -450,6 +450,20 @@ public sealed unsafe class D3D11Renderer : IDisposable
         Release((IUnknown*)_context);
         Release((IUnknown*)_device);
     }
+
+    /// <summary>
+    /// Uploads the atlas's changes, writes the instances of the display list, and records the draw into the back buffer, without
+    /// presenting.
+    /// </summary>
+    /// <param name="list">The commands of the frame.</param>
+    /// <param name="clearColor">The color of the area no command covers.</param>
+    /// <param name="atlas">
+    /// The glyph atlas the glyph runs of <paramref name="list"/> were written from; null when it has none. Its dirty regions are
+    /// cleared after the upload, so an atlas is drawn by one renderer only.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    /// <exception cref="ArgumentException">The list has glyph runs and <paramref name="atlas"/> is null.</exception>
+    void IRenderTarget.Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) => Draw(list, clearColor, atlas);
 
     /// <summary>
     /// Uploads the atlas's changes, writes the instances of the display list, and records the draw into the back buffer, without

@@ -72,6 +72,19 @@ internal struct LayoutState
     public Type? ReportedFailure;
 
     /// <summary>
+    /// The border widths the last layout run resolved, in logical pixels; the draw stage draws the border at them, and does not
+    /// resolve the style again, since the layout resolves a percentage against a basis that differs case by case (design §5.0,
+    /// "The draw stage and the frame drive").
+    /// </summary>
+    public Edges Border;
+
+    /// <summary>
+    /// The padding and border widths the last layout run resolved, in logical pixels: the content box is the border box less
+    /// them. The draw stage places a text leaf's lines in it.
+    /// </summary>
+    public Edges PaddingBorder;
+
+    /// <summary>
     /// The border box of the last layout run, relative to the parent's border box.
     /// </summary>
     public Rect Rect;
