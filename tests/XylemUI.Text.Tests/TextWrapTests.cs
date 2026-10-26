@@ -329,10 +329,11 @@ public sealed class TextWrapTests : IDisposable
     /// - A Japanese and English text with spaces, a soft hyphen, and a kerned break, shaped once and laid out at both widths once.
     ///
     /// Steps:
-    /// - 1,000 times: wrap at 3,000 px and at 7,000 px, laying out each.
+    /// - 1,000 times, in the windows of <c>SteadyStateAllocation</c>: wrap at 3,000 px and at 7,000 px, laying out each.
     ///
     /// Expected:
-    /// - 0 bytes on this thread.
+    /// - 0 bytes on this thread in every window. A failure lists each window's bytes, the methods compiled on this thread, and the
+    ///   collections (Issue #92).
     /// </remarks>
     [Fact]
     public void SteadyState_WrapAndLay_AllocateNothing()
@@ -340,7 +341,7 @@ public sealed class TextWrapTests : IDisposable
         const string Text = "日本語のテキスト nn-TT and nn\u00ADnn 日本語のテキスト nn-TT and more text";
         Shape(Text);
 
-        void Run()
+        void Run(int index)
         {
             foreach (float width in Widths)
             {
@@ -349,14 +350,8 @@ public sealed class TextWrapTests : IDisposable
             }
         }
 
-        Run();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1_000; i++)
-        {
-            Run();
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Run(0);
+        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Run);
         Assert.True(_laid.Lines.Length > 1);
     }
 

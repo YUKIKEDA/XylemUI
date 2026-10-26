@@ -187,10 +187,11 @@ public sealed class SegmentationTests
     /// - A line breaker that has found the opportunities of the text once, and a text of Japanese, English, and emoji.
     ///
     /// Steps:
-    /// - 1,000 times: find the opportunities, and walk every cluster.
+    /// - 1,000 times, in the windows of <c>SteadyStateAllocation</c>: find the opportunities, and walk every cluster.
     ///
     /// Expected:
-    /// - 0 bytes on this thread.
+    /// - 0 bytes on this thread in every window. A failure lists each window's bytes, the methods compiled on this thread, and the
+    ///   collections (Issue #92).
     /// </remarks>
     [Fact]
     public void SteadyState_Segmentation_AllocatesNothing()
@@ -209,13 +210,7 @@ public sealed class SegmentationTests
         }
 
         Run(0);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1_000; i++)
-        {
-            Run(i);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Run);
         Assert.True(sum > 0);
     }
 }

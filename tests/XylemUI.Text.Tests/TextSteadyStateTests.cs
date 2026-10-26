@@ -16,11 +16,12 @@ public sealed class TextSteadyStateTests
     ///   the text (its workers started in the first frame), and a display list (a warm-up of 10 frames).
     ///
     /// Steps:
-    /// - 1,000 frames: start an atlas frame, reset the display list, shape "Hello, World! 日本語のテキスト", write it with
-    ///   DrawText, and resolve the list's glyphs. Measure the bytes allocated on this thread.
+    /// - 1,000 frames, in the windows of <c>SteadyStateAllocation</c>: start an atlas frame, reset the display list, shape
+    ///   "Hello, World! 日本語のテキスト", write it with DrawText, and resolve the list's glyphs.
     ///
     /// Expected:
-    /// - 0 bytes; no glyph was rasterized and no stream grew during the measured loop.
+    /// - 0 bytes on this thread in every window; no glyph was rasterized and no stream grew during the measured loop. A failure
+    ///   lists each window's bytes, the methods compiled on this thread, and the collections (Issue #92).
     /// </remarks>
     [Fact]
     public void SteadyState_ShapeAndDrawText_AllocatesNothing()
@@ -37,16 +38,9 @@ public sealed class TextSteadyStateTests
 
         int rasterized = atlas.RasterizeCount;
         int growth = list.GrowthCount;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1_000; i++)
-        {
-            Frame(shaper, atlas, list, font, Text);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, _ => Frame(shaper, atlas, list, font, Text));
 
         Assert.NotNull(atlas.RunningWorkers);
-        Assert.Equal(0, allocated);
         Assert.Equal(rasterized, atlas.RasterizeCount);
         Assert.Equal(growth, list.GrowthCount);
     }
