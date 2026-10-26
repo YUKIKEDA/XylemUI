@@ -49,6 +49,7 @@ _slots[index].Generation = 1;
 - A comment that states how a runtime or OS API behaves names what was checked: the call, the version, and the result. In M1a a comment said `Process.Kill` does nothing for an exited process before anyone had run it; the check found it does not throw on .NET 10.0.13, and its documentation names a `Win32Exception` for a process that is exiting.
 - A call that can fail by its result is checked: `Matrix3x2.Invert` returns `false` for a singular matrix and fills the result with NaN. A singular transform is a normal input (a scale of 0 starts an entering animation). In R4d a clip in such a transform carried NaN into the bounds of a layer until the review found it (PR #268).
 - Work counted across threads counts the threads that fail to start: a `Thread.Start` that throws leaves its share undone, and a wait for the count never returns. Do that share on the calling thread (R4d's stated shaders, PR #268).
+- One quantity computed in two places and compared (a line's width from running sums and from a sum along the line) is computed the same way in both, or compared with a tolerance whose size and reason are written beside it (T1b's `ShapingResult.Tolerance`, PR #293).
 - A `global using` alias exists only inside its assembly. A public signature that uses it shows the real type to apps (`ScopeHandle` is `Handle<ScopeData>` outside Core, S9); decide the public name when the API is public.
 
 ## XML docs
