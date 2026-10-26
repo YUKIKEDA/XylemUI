@@ -514,6 +514,26 @@ Rejected:
 
 ---
 
+## 入力
+
+Decision:
+  マウスは `WM_MOUSE*` で受け、押したときに当たったノードへ暗黙にキャプチャする。経路は当たったノードから木の親をたどって作り、capture と bubble で配る。Click は、離した点が押したノードかその子孫に当たるときだけ送る。Hovered は当たったノードと祖先に、Pressed は押したノードと祖先に立てる。不透明度と変換は `NodeVisual` に持ち、変換の原点はノードの中心（V1c の Grill、Issue #318）。
+
+Rejected:
+  - マウスを `WM_POINTER` で受ける（Flutter。Avalonia と GPUI は `WM_MOUSE*`。タッチとペンを本式に受ける行 I1 で `WM_POINTER` を足す）
+  - 左ボタンだけでキャプチャする（Flutter。Avalonia と GPUI はどのボタンでも取る。右ボタンで押したまま外へ出ると Up を取りこぼす）
+  - 動いた距離で Click を取り消す（Flutter の 18 論理画素。マウスでは、押したボタンの上で少し動いて離しても Click にならない。Avalonia と GPUI は離した点で決める）
+  - Click の回数を自前の時間で数える（Flutter の 300 ms。OS のダブルクリックの設定に従わない）
+  - 遮る印の当たったノードで、祖先も遮る（GPUI の `BlockMouse`。経路を木で作るので、祖先のハンドラに届かなくなる）
+  - 不透明度と変換を別のノードにする（Flutter の `Opacity`・`Transform`。疑似状態の `PaintStyle` が同じノードの値を重ねられない）
+  - 変換の原点を左上にする（Flutter の `RenderTransform` の既定。ホバーで拡大すると右下へずれる。Avalonia と CSS は中心）
+  - 毎フレーム末尾でカーソルを OS に反映する（ヒットの結果が変わったときだけ反映する。GPUI も変わったときに反映する）
+  - 文字の色を文字の葉だけに持つ（V1b の `TextLeaf.Color`。ボタンの Hovered で子の文字の色を変えられない。比べた 3 つとも文字の色を受け継ぐ）
+  - 文字の葉の自分の色も `NodeVisual.Foreground` に持つ（色を持つ文字の葉ごとに `NodeVisual` が要り、1 万の葉で 1.5〜3.4 MB。PR #319 のレビューでオーナーが決定）
+  - Hovered と Pressed の `PaintStyle?` を `NodeVisual` に直接持つ（背景を持つだけのノードも約 200 バイトずつ払う。別の class `PseudoStyles` にした。PR #319 のレビューでオーナーが決定）
+
+---
+
 ## ポップアップ
 
 Decision:
