@@ -311,6 +311,14 @@ Rejected:
   - V1 を 1 つの Issue にする（設計の判断が十数点あり、1 つの PR が大きくなりすぎる。V1 の Grill）
   - V1 を描画と入力の 2 つに分ける（文字のキャッシュの測定が描画の行に埋もれる。V1 の Grill）
   - T1 を V1a に入れる（Unicode の表の生成と改行の実装に、文字の葉とキャッシュが加わり、1 つの PR が大きくなりすぎる。V1 の Grill）
+  - 文字の色を `TextStyle` に入れる（Flutter・Avalonia・GPUI の形。色だけを変えたときに layout を飛ばすには、型の中の欄ごとに比べることになる。V1a の Grill、Issue #296）
+  - 文字の葉ごとに closure の `MeasureFunc` を作る（10,101 個の葉で 10,101 個の closure になり、呼ぶたびに間接呼び出しと handle からのノードの引き直しが入る。V1a の Grill）
+  - 文字の葉の状態を `UiNode` に struct で埋め込む（文字の葉でないノードも約 72 バイト大きくなる。V1a の設計）
+  - 整形の道具（`TextShaper`・`LineBreaker`・`IFontProvider`）をウィンドウごとに持つ（同じフォントをウィンドウの数だけ開く。比べた 3 つはアプリで共有する。V1a の Grill）
+  - 描画のたびに、確定した幅で折り返しを測り直す（`LineBreakCache` が確定した幅の項目を上書きしうるため。描画のたびに折り返しをやり直すことになる。V1a の Grill）
+  - 行の高さを大きさ × 1.618 に固定する（GPUI。フォントの lineGap を読まず、フォントによって行が詰まりすぎたり空きすぎたりする。V1a の Grill）
+  - 倍率を指定した行で、ascent と descent を同じ比で伸ばす（Flutter の既定。倍率を上げるほど文字が行の下へ寄る。V1a の Grill）
+  - 計測の例外を毎回報告する（GPUI。リサイズのたびに同じ例外が並ぶ）、2 回目から 1 行の要約にする（Flutter。同じノードの同じ例外では新しい情報が無い。V1a の Grill）
   - DirectWrite / Core Text にレイアウトまで全面委譲する（caret geometry を共通化できない）
   - 同梱フォントに CJK 統合漢字の基本範囲・絵文字・キリル / ギリシャ文字を入れる（約 2 万字で数 MB になり、配布物の目安 5 MB を超える。Flutter・Avalonia・GPUI のどれも CJK のフォールバック用のフォントを同梱せず、Windows は日本語と絵文字のフォントを必ず持つ。`.notdef` と基本ラテン文字だけの終点用のフォントにした。F1 の Grill、Issue #145）
   - フォントを同梱せず、`.notdef` の矩形をエンジンが描く（FreeType とシェーピングを通らない特別な経路が増える。F1 の Grill）
