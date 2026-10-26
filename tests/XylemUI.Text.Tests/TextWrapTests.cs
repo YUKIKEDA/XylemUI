@@ -16,6 +16,7 @@ public sealed class TextWrapTests : IDisposable
     private const int HyphenBeforeT = -55;
 
     private static readonly float[] Widths = [3000, 7000];
+    private static readonly float[] Sizes = [11, 12.5f, 13.3f, 14, 15.7f, 17.3f];
 
     private readonly Font _font = TestFont.Open();
     private readonly TextShaper _shaper = new();
@@ -230,6 +231,40 @@ public sealed class TextWrapTests : IDisposable
         Assert.Equal([(0, 3), (3, 5)], _lines.Lines.ToArray().Select(l => (l.Start, l.End)));
         Assert.Equal([(0, 2, true), (2, 3, false), (3, 5, false)], lines.Select(l => (l.Span.Start, l.Span.End, l.Span.Emergency)));
         Assert.Equal([2 * N, Hyphen, 2 * T], lines.Select(l => l.Width));
+    }
+
+    /// <summary>
+    /// A text broken at its own most content width at a fractional size keeps its lines: Pass2 measures each line as a sum from its
+    /// start where Pass1 measures a difference of running sums, and the last bit they differ in does not cut the widest line.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The texts "nn\nnnnnnnnnnn", "n nn\nnnnn nnnnnnn", and "日本語\nのテキスト日本語", each shaped at 11, 12.5, 13.3, 14, 15.7, and
+    ///   17.3 px.
+    ///
+    /// Steps:
+    /// - Read each text's most content width; wrap at it and lay the lines out.
+    ///
+    /// Expected:
+    /// - The laid lines are the wrapped lines, and none is cut in an emergency.
+    /// </remarks>
+    /// <param name="text">The text.</param>
+    [Theory]
+    [InlineData("nn\nnnnnnnnnnn")]
+    [InlineData("n nn\nnnnn nnnnnnn")]
+    [InlineData("日本語\nのテキスト日本語")]
+    public void Lay_AtTheMostContentWidth_KeepsTheLines(string text)
+    {
+        foreach (float size in Sizes)
+        {
+            _shaped.Shape(text, [new FontRun(_font, 0, text.Length, 1)], size, TestFont.Japanese, _shaper, _breaker);
+            (_, float max) = _shaped.IntrinsicWidths(_shaper);
+            _shaped.Wrap(max, _shaper, _lines);
+            _shaped.Lay(_lines, _shaper, _laid);
+
+            Assert.Equal(_lines.Lines.ToArray(), _laid.Lines.ToArray().Select(l => l.Span));
+            Assert.DoesNotContain(_laid.Lines.ToArray(), l => l.Span.Emergency);
+        }
     }
 
     /// <summary>

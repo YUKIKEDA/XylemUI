@@ -17,6 +17,12 @@ namespace XylemUI.Text.LineBreak;
 internal sealed class ShapingResult
 {
     private const char SoftHyphen = '\u00AD';
+
+    // How much wider than the break's width a line laid out may be before it is cut. Pass1 measures a line as a difference of running
+    // sums of the advances and Pass2 as a sum from the line's start, which can differ in the last bit at a fractional size: without
+    // it, a text broken at its own most content width had its widest line cut (PR #293's review). A kerning a break removes is
+    // 0.5 px or more at 13 px, so a real overflow is still found.
+    private const float Tolerance = 1f / 64;
     private const string Hyphen = "-";
 
     private char[] _text = new char[64];
@@ -197,7 +203,7 @@ internal sealed class ShapingResult
         {
             int start = result.NextGlyph;
             (float width, float withSpaces) = LayLine(line, shaper, result);
-            if (width <= lines.Width || line.Emergency || line.End - line.Start <= 1)
+            if (width <= lines.Width + Tolerance || line.Emergency || line.End - line.Start <= 1)
             {
                 result.EndLine(line, start, width, withSpaces);
                 continue;
