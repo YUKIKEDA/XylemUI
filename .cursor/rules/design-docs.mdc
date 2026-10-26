@@ -68,6 +68,8 @@ A design that changes the unit of a quantity (logical against physical pixels) l
 
 A design that leaves a point to another row ("row X decides") names a row that exists in `docs/roadmap.md`, and that row's text names the point, in the same PR (`.cursor/rules/defer.mdc`). R4e's design left one point to "the input row", which does not exist, and another to row V1, whose text did not mention it; the review found both (PR #273).
 
+A design that reads values from an OS message names, for each value, the field of the message it comes from, or the call that reads it when the message has none, after reading the message's documentation. V1c's first design read Control, Shift, and Alt from the mouse messages together; the `wParam` of `WM_MOUSEMOVE` has `MK_CONTROL` and `MK_SHIFT` and no Alt, which `GetKeyState(VK_MENU)` reads (PR #319's review).
+
 A design that names the type or method a call goes in reads which project that type is in and what the project may reference. W1's design put Win32's `SetProcessDpiAwarenessContext` in `UiThread.Initialize`, which is in Core, where no OS type may be referenced; the implementation found it, and the owner moved the call to the first window (PR #236).
 
 A type in a design signature that holds a size is checked against the scale factors of §6.1 (125 %, 150 %). T4's first `GlyphKey` took `int PixelSize`, which cannot hold the 17.5 px of a 14 px font at 125 % (PR #158 review).
@@ -100,6 +102,8 @@ A figure the design derives (a memory bound, a count) writes its arithmetic besi
 
 A design that keeps a cache or a state per node writes its size per node as a formula of the content (characters, glyphs, lines, entries), and its acceptance bounds it with a number a test checks. Reporting the size is not a bound. V1a's first design only reported the size of a text leaf; with T1b's initial arrays a leaf could hold 5 to 12 KB, 50 to 120 MB for 10,101 leaves, and the review found it (PR #297).
 
+A value that only some nodes use goes behind a reference of its own, made for the nodes that use it. Fields added to a side object that many nodes hold are paid by every node that holds it. V1c's first design put the hovered and pressed `PaintStyle?` (about 200 bytes) in `NodeVisual`, which every node with a background holds: about 2 MB for 10,000 rows of a list. The review found it, and the owner moved them to `PseudoStyles` (PR #319).
+
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
 
 A design that removes a dependency lists every place that calls it now and what replaces each. T4 removed FreeType from Windows without saying that `Font` creates a FreeType face when it opens and reads `FamilyName` from it (PR #158 review).
@@ -119,6 +123,8 @@ A design that stops a propagation with a comparison decides two things in the de
 A sentence added to the design to answer a review is a claim like any other and is checked before it goes in. The L5 re-review explained that a leaf an ancestor lays out first has "nothing to compare", and the design took that over; the parent's measurement cache still held a value of the old content, and the random test with several changes per pass showed the wrong rectangle (PR #109, #115).
 
 After a script edits a Markdown table, read `git diff --stat`. A diff of the whole table means its columns were padded again (it happened in S9 to `docs/roadmap.md`, by no step of the script): restore the file and replace only the rows that change.
+
+A design PR writes what the Grill decided. A better shape found while writing does not replace a decision in the PR, even with a note in its body: it goes to the owner as a question with a recommendation (`.cursor/rules/consent.mdc`). V1c's design moved a text leaf's own color from `TextLeaf.Color` to `NodeVisual.Foreground`, against the Grill's Q14, and said so only in the PR body; the review found that each text leaf with a color would then hold a `NodeVisual`, and the owner kept Q14 (PR #319).
 
 ## Judge the current optimum
 
