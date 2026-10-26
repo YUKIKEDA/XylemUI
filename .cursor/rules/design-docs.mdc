@@ -44,6 +44,8 @@ When the version of a compared framework changes, the claims that cite the old v
 
 A design PR that changes a decision searches the whole design for the sections that restate it, and changes them in the same PR. In F1 the PR changed §4.5's bundled font, and §8.12, §4.6, §11's test mode, §4.1's diagram, and the table of failures still assumed the old one; the review found the five (PR #146).
 
+A design that changes the shape of a type rewrites every example in the design that uses the type so that it works with the new shape; changing the comment beside it is not enough. V1a's design made `UiNode.Text` a nullable `TextLeaf`, and §2.4's `Setter` still called `n.Text.SetContent(v)`, which the new type did not have, with only its comment changed; the review found it (PR #297).
+
 Before a row's design is written, the whole design is searched for the row's ID, and every contract an earlier row sent to it is taken into the new section. T2 had left "glyphs inside opacity, transforms, and layers are grayscale; the implementation is in D10 and V1", and D10's first design brought all three without it; the review found it (PR #239).
 
 A mechanism applied per command (a clip, a brush) says which kinds of command it applies to, glyph runs included. D10's first design left open whether the rounded clip applies to text (PR #239). One applied to text says what it does for each kind of glyph: grayscale, ClearType, color, and color with a layer in the text's color. R4b's first design gave color glyphs the brush's alpha and left open which text color keys a layer drawn in the text's color in the atlas (PR #252).
@@ -51,6 +53,8 @@ A mechanism applied per command (a clip, a brush) says which kinds of command it
 A type that takes a visual value (a blur radius, how a gradient interpolates, whether a shadow shows under its shape) says what each value means, after listing how each compared implementation reads it, with lines. R4's first design said none of the three; the four implementations read a blur radius four ways (CSS σ = r / 2, Flutter σ = 0.57735 r + 0.5, Avalonia σ = 0.288675 r + 0.5, GPUI σ = r), and the review's own figure for Flutter was wrong when read in the source (PR #243).
 
 An option a Grill offers relies only on what the code or the design already has (a font metric, a type, a value from the OS), checked before the Grill; an option that needs something new says so and offers adding it. R4b's Q11 made the default box of brushed text from the font's ascender and descender, which `Font` does not have; writing the design found it, and the Grill was reopened (PR #252).
+
+A claim about another implementation that a Grill question makes (what it does, as a reason for an option) is read in its source before the round is sent, as a claim in the design is. V1a's Grill said that Flutter splits the extra space of a line-height multiplier half above and half below, and that its `paint` draws the one result its layout made; in the source the default scales ascent and descent by the same ratio (`Run.cpp`), and `paint` lays out again (`paragraph.dart`). Writing the design found both (PR #297).
 
 A design that allocates by a size the content decides (an offscreen layer as large as its children's bounds) writes what cuts the size (the clip, the target), the cap, and what is drawn when the cap refuses it. R4c's first design said a layer is as large as its bounds; a group around scrolling content or a far transform could ask for a texture past D3D11's 16,384 pixels a side or past 1 GB, and the review found it (PR #260).
 
@@ -93,6 +97,8 @@ A design split into two steps (room left now, filled later) says which arrays th
 A design that puts outside data into the repository (test images, fonts) names its source, its version, and its license, quoted from the file in the distribution. T9's first design named PngSuite without them; the review found it (PR #208).
 
 A figure the design derives (a memory bound, a count) writes its arithmetic beside it. From T2 the design said both atlas kinds held 4 MB; a ClearType kind holds 16 pages of 1 MB, 16 MB, and an answer to a review found it (PR #192).
+
+A design that keeps a cache or a state per node writes its size per node as a formula of the content (characters, glyphs, lines, entries), and its acceptance bounds it with a number a test checks. Reporting the size is not a bound. V1a's first design only reported the size of a text leaf; with T1b's initial arrays a leaf could hold 5 to 12 KB, 50 to 120 MB for 10,101 leaves, and the review found it (PR #297).
 
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
 
