@@ -62,7 +62,7 @@ internal static partial class LayoutEngine
             return false;
         }
 
-        bool hasIntrinsicWidths = node.Layout.IntrinsicWidths is not null;
+        bool hasIntrinsicWidths = node.Layout.IntrinsicWidths is not null || node.Text is not null;
         ref readonly MeasureCache kept = ref snapshot.Measures;
         for (int i = 0; i < kept.Count; i++)
         {

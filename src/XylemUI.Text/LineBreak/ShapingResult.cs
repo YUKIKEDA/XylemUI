@@ -18,23 +18,29 @@ internal sealed class ShapingResult
 {
     private const char SoftHyphen = '\u00AD';
 
-    // How much wider than the break's width a line laid out may be before it is cut. Pass1 measures a line as a difference of running
-    // sums of the advances and Pass2 as a sum from the line's start, which can differ in the last bit at a fractional size: without
-    // it, a text broken at its own most content width had its widest line cut (PR #293's review). A kerning a break removes is
-    // 0.5 px or more at 13 px, so a real overflow is still found.
-    private const float Tolerance = 1f / 64;
+    /// <summary>
+    /// How much wider than a width a line may be and still fit it, in logical pixels: Pass1, Pass2, and the emergency cut take it,
+    /// and so does a text leaf that compares a width with the text's most content width. Pass1 measures a line as a difference of
+    /// running sums of the advances and Pass2 as a sum from the line's start, and a width can come back from a layout less its
+    /// padding, which can each differ in the last bit at a fractional size: without it, a text broken at its own most content width
+    /// had its widest line cut (PR #293's review), and a padded text leaf at its max-content width wrapped (PR #301's review). A
+    /// kerning a break removes is 0.5 px or more at 13 px, so a real overflow is still found. Pass2 takes it twice, so that a line
+    /// Pass1 took at the edge of the tolerance is not cut by the last bit Pass2 measures it at.
+    /// </summary>
+    internal const float Tolerance = 1f / 64;
     private const string Hyphen = "-";
 
-    private char[] _text = new char[64];
-    private char[] _scratch = new char[64];
-    private FontRun[] _runs = new FontRun[4];
-    private float[] _scales = new float[4];
-    private float[] _hyphens = new float[4];
-    private LaidGlyph[] _glyphs = new LaidGlyph[64];
-    private bool[] _unsafe = new bool[64];
-    private int[] _glyphAt = new int[65];
-    private float[] _x = new float[65];
-    private LineBreakOpportunity[] _breaks = new LineBreakOpportunity[16];
+    // Empty until the first text: each array is made at the size its first text needs (design §3.2, "Text leaves", the memory of
+    // a leaf), and grows to the larger of the need and twice its size.
+    private char[] _text = [];
+    private FontRun[] _runs = [];
+    private float[] _scales = [];
+    private float[] _hyphens = [];
+    private LaidGlyph[] _glyphs = [];
+    private bool[] _unsafe = [];
+    private int[] _glyphAt = [];
+    private float[] _x = [];
+    private LineBreakOpportunity[] _breaks = [];
     private int _runCount;
     private int _glyphCount;
     private int _breakCount;
@@ -49,6 +55,16 @@ internal sealed class ShapingResult
     /// Gets the font runs the text was shaped with.
     /// </summary>
     public ReadOnlySpan<FontRun> Runs => _runs.AsSpan(0, _runCount);
+
+    /// <summary>
+    /// Gets the number of glyphs of the text shaped once.
+    /// </summary>
+    public int GlyphCount => _glyphCount;
+
+    /// <summary>
+    /// Gets the number of line break opportunities of the text.
+    /// </summary>
+    public int BreakCount => _breakCount;
 
     /// <summary>
     /// Gets the size, in logical pixels per em, the text was shaped at (a run's scale multiplies it).
@@ -91,7 +107,9 @@ internal sealed class ShapingResult
             covered += run.Length;
             AddRun(run);
             float scale = Scale(run);
-            foreach (ShapedGlyph glyph in shaper.ShapeRange(run.Font, text, run.Start, run.Length, language))
+            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, language);
+            EnsureGlyphs(_glyphCount + shaped.Length);
+            foreach (ShapedGlyph glyph in shaped)
             {
                 AddGlyph(
                     new LaidGlyph(glyph.GlyphId, glyph.Cluster, glyph.XAdvance * scale, glyph.XOffset * scale, glyph.YOffset * scale, _runCount - 1),
@@ -145,7 +163,7 @@ internal sealed class ShapingResult
             LineBreakOpportunity opportunity = _breaks[k];
             bool hyphen = !opportunity.Mandatory && EndsWithSoftHyphen(opportunity.Position);
             float lineWidth = TrimmedWidth(lineStart, opportunity.Position) + (hyphen ? HyphenWidth(opportunity.Position - 1, shaper) : 0);
-            if (lineWidth <= width)
+            if (lineWidth <= width + Tolerance)
             {
                 if (opportunity.Mandatory)
                 {
@@ -198,12 +216,17 @@ internal sealed class ShapingResult
     {
         ArgumentNullException.ThrowIfNull(lines);
         ArgumentNullException.ThrowIfNull(result);
-        result.Reset();
+
+        // Each line takes the glyphs shaped once, and a hyphen at most: enough unless shaping a line's end again makes more glyphs.
+        result.Reset(_glyphCount + lines.Lines.Length, lines.Lines.Length);
         foreach (LineSpan line in lines.Lines)
         {
             int start = result.NextGlyph;
             (float width, float withSpaces) = LayLine(line, shaper, result);
-            if (width <= lines.Width + Tolerance || line.Emergency || line.End - line.Start <= 1)
+
+            // Twice the tolerance: Pass1 took the line up to one tolerance over the width, and Pass2's sum can differ from Pass1's
+            // in the last bit, so the two bounds do not meet (PR #301's re-review).
+            if (width <= lines.Width + (2 * Tolerance) || line.Emergency || line.End - line.Start <= 1)
             {
                 result.EndLine(line, start, width, withSpaces);
                 continue;
@@ -346,18 +369,18 @@ internal sealed class ShapingResult
             int run = RunAt(position);
             int runEnd = Math.Min(end, _runs[run].Start + _runs[run].Length);
             int length = contextEnd - contextStart;
-            Ensure(ref _scratch, length);
-            _text.AsSpan(contextStart, length).CopyTo(_scratch);
+            char[] scratch = shaper.Scratch(length);
+            _text.AsSpan(contextStart, length).CopyTo(scratch);
             if (hyphenAt >= position && hyphenAt < runEnd)
             {
-                _scratch[hyphenAt - contextStart] = Hyphen[0];
+                scratch[hyphenAt - contextStart] = Hyphen[0];
             }
 
             float scale = _scales[run];
             foreach (
                 ShapedGlyph glyph in shaper.ShapeRange(
                     _runs[run].Font,
-                    _scratch.AsSpan(0, length),
+                    scratch.AsSpan(0, length),
                     position - contextStart,
                     runEnd - position,
                     _language
@@ -483,7 +506,7 @@ internal sealed class ShapingResult
         int last = first;
         for (int boundary = first; boundary < limit; )
         {
-            if (_x[boundary] - _x[start] > width)
+            if (_x[boundary] - _x[start] > width + Tolerance)
             {
                 break;
             }
@@ -514,7 +537,7 @@ internal sealed class ShapingResult
     {
         if (_runCount == _runs.Length)
         {
-            int size = _runCount * 2;
+            int size = Math.Max(_runCount + 1, _runCount * 2);
             Array.Resize(ref _runs, size);
             Array.Resize(ref _scales, size);
             Array.Resize(ref _hyphens, size);
@@ -528,12 +551,6 @@ internal sealed class ShapingResult
 
     private void AddGlyph(in LaidGlyph glyph, bool unsafeToBreak)
     {
-        if (_glyphCount == _glyphs.Length)
-        {
-            Array.Resize(ref _glyphs, _glyphCount * 2);
-            Array.Resize(ref _unsafe, _glyphCount * 2);
-        }
-
         if (_glyphAt[glyph.Cluster] < 0)
         {
             _glyphAt[glyph.Cluster] = _glyphCount;
@@ -542,6 +559,17 @@ internal sealed class ShapingResult
         _glyphs[_glyphCount] = glyph;
         _unsafe[_glyphCount] = unsafeToBreak;
         _glyphCount++;
+    }
+
+    // Makes room for `count` glyphs before a run's glyphs are added, so a text of one run gets arrays of its size.
+    private void EnsureGlyphs(int count)
+    {
+        if (_glyphs.Length < count)
+        {
+            int size = Math.Max(count, _glyphs.Length * 2);
+            Array.Resize(ref _glyphs, size);
+            Array.Resize(ref _unsafe, size);
+        }
     }
 
     private static void Ensure<T>(ref T[] array, int length)

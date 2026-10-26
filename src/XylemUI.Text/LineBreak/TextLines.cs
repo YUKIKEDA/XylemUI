@@ -37,7 +37,8 @@ internal readonly record struct LaidLine(LineSpan Span, int GlyphStart, int Glyp
 /// </summary>
 internal sealed class LineBreakResult
 {
-    private LineSpan[] _lines = new LineSpan[8];
+    // Empty until the first line, then grown to the larger of the need and twice its size (design §3.2, the memory of a leaf).
+    private LineSpan[] _lines = [];
 
     /// <summary>
     /// Gets the width the text was broken at.
@@ -69,7 +70,7 @@ internal sealed class LineBreakResult
     {
         if (Count == _lines.Length)
         {
-            Array.Resize(ref _lines, Count * 2);
+            Array.Resize(ref _lines, Math.Max(Count + 1, Count * 2));
         }
 
         _lines[Count++] = line;
@@ -82,8 +83,9 @@ internal sealed class LineBreakResult
 /// </summary>
 internal sealed class LineLayoutResult
 {
-    private LaidLine[] _lines = new LaidLine[8];
-    private LaidGlyph[] _glyphs = new LaidGlyph[64];
+    // Empty until the first layout, which makes them at the size of its lines and glyphs (design §3.2, the memory of a leaf).
+    private LaidLine[] _lines = [];
+    private LaidGlyph[] _glyphs = [];
 
     /// <summary>
     /// Gets the lines, in order.
@@ -100,12 +102,23 @@ internal sealed class LineLayoutResult
     private int GlyphCount { get; set; }
 
     /// <summary>
-    /// Forgets the lines and glyphs.
+    /// Forgets the lines and glyphs, and makes room for as many as a layout is expected to write.
     /// </summary>
-    public void Reset()
+    /// <param name="glyphs">The glyphs expected.</param>
+    /// <param name="lines">The lines expected.</param>
+    public void Reset(int glyphs, int lines)
     {
         LineCount = 0;
         GlyphCount = 0;
+        if (_glyphs.Length < glyphs)
+        {
+            _glyphs = new LaidGlyph[Math.Max(glyphs, _glyphs.Length * 2)];
+        }
+
+        if (_lines.Length < lines)
+        {
+            _lines = new LaidLine[Math.Max(lines, _lines.Length * 2)];
+        }
     }
 
     /// <summary>
@@ -116,7 +129,7 @@ internal sealed class LineLayoutResult
     {
         if (GlyphCount == _glyphs.Length)
         {
-            Array.Resize(ref _glyphs, GlyphCount * 2);
+            Array.Resize(ref _glyphs, Math.Max(GlyphCount + 1, GlyphCount * 2));
         }
 
         _glyphs[GlyphCount++] = glyph;
@@ -133,7 +146,7 @@ internal sealed class LineLayoutResult
     {
         if (LineCount == _lines.Length)
         {
-            Array.Resize(ref _lines, LineCount * 2);
+            Array.Resize(ref _lines, Math.Max(LineCount + 1, LineCount * 2));
         }
 
         _lines[LineCount++] = new LaidLine(span, glyphStart, GlyphCount - glyphStart, width, widthWithSpaces);

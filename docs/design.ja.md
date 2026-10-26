@@ -1676,23 +1676,28 @@ internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 ```csharp
 internal sealed class ShapedTextCache
 {
-    public readonly ShapingResult Result = new();  // §4.1 Pass1。幅に依存しない。内容かスタイルが変わると捨てる
+    public bool Valid;                             // 内容かスタイルが変わると false。配列は残して使い回す
+    public ShapingResult? Result;                  // §4.1 Pass1。幅に依存しない。空の内容では null
+    public float MinWidth, MaxWidth;               // 内容の幅
+    public LineMetrics EmptyLine;                  // 空の内容の 1 行
 }
 
 internal sealed class LineBreakCache
 {
     // §4.1。幅ごとに 4 つまで。超えたら、確定した幅の項目を除いて最も古いものを上書きする（下の「文字の葉」）
-    public readonly LineBreakEntry[] Entries = new LineBreakEntry[4];
+    private LineBreakEntry?[] _entries;            // 初めて使うときに作り、使い回す
+    private Widths _widths;                        // 鍵（InlineArray(4)）。MinContent は最小の内容の幅に、
+                                                   // 最大の内容の幅以上と MaxContent は +∞ に置き換えてから引く
+    private Stamps _used;                          // 最後に使った時（最も古いものを探す）
+    private Sizes _sizes;                          // 行が作る大きさと最初のベースライン（MeasureResult）
     public int Committed = -1;                     // layout の確定で使った項目。-1 は無し
 }
 
 internal sealed class LineBreakEntry
 {
-    public float Width;                            // 鍵。MinContent / MaxContent は内容の幅に置き換えてから引く
+    public float Width;
     public readonly LineBreakResult Lines = new(); // Pass1
     public readonly LineLayoutResult Layout = new(); // Pass2
-    public float Height;                           // 行の高さの合計
-    public float FirstBaseline;
 }
 ```
 
@@ -1736,7 +1741,7 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
 - **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
 - **内容を書く:** `SetText` は `TextLeaf.SetContent` で `Buffer` に写す。前と同じ内容（`SequenceEqual`）なら何もしない。違えば `Shaped` と `LineBreaks` を捨て、ノードを layout の dirty にする。§2.4 のプロパティの記述子の `Setter` は `SetContent` を呼び、dirty の印は記述子の `ChangeKind` が付ける。`SetTextStyle` も、前と等しいなら何もしない。`TextBuilder` の比べ方（ロードマップの V1 の未決の 1 点）は、公開 API の行 V1d でこの上に作る
 - **キャッシュ:** `ShapedTextCache` は `ShapingResult` を 1 つ持つ（フォントの run、整形、改行の候補、内容の幅）。内容かスタイルが変わると捨てる。`LineBreakCache` は幅を鍵に 4 つまで持ち、1 つが `LineBreakResult`（Pass1）・`LineLayoutResult`（Pass2）・行の高さの合計を持つ。Pass2 は緊急ブレークで行を増やすことがあるので（§4.1）、高さは Pass2 の後で決まり、Pass2 の結果まで持つ。高さは文字の葉の結果に効かないので、鍵は幅だけ（`MinContent` と `MaxContent` は最小と最大の内容の幅に置き換えてから引く）。min-content と max-content の幅は `ShapingResult.IntrinsicWidths` を整形の結果と一緒に持ち、高さに依存しない（`DependsOnHeight` は false）。項目は使い回し、配列は足りないときだけ広げる。キャッシュが当たったときも、外れて項目を使い回すときも、定常状態の割り当ては 0
-- **メモリ:** 配列は、葉を初めて測るときに、内容が要る大きさで確保する。T1b の `ShapingResult` は、作った時点で 64 文字・64 グリフなどの配列を確保していた（約 2.5 KB。PR #297 のレビュー）。V1a ではこれをやめる。空の葉と、まだ測っていない葉は配列を持たない。広げるときは、要る大きさと今の 2 倍の大きいほうにする（今の `Ensure`）。そのため、葉が持つ配列は、それまでで最も長い内容の 2 倍に収まる。行の境界の整形のやり直しに使う作業用の配列（`ShapingResult` の `_scratch`）は葉ごとに持たず、`TextContext` に 1 つ持つ。初めて測った葉 1 つの配列の中身は、次のとおりである。記号は、文字数（UTF-16）を n、グリフ数を g、改行の候補の数を b、フォントの run の数を r、行数を L、幅の項目の数を e とする
+- **メモリ:** 配列は、葉を初めて測るときに、内容が要る大きさで確保する。T1b の `ShapingResult` は、作った時点で 64 文字・64 グリフなどの配列を確保していた（約 2.5 KB。PR #297 のレビュー）。V1a ではこれをやめる。空の葉と、まだ測っていない葉は配列を持たない。広げるときは、要る大きさと今の 2 倍の大きいほうにする（今の `Ensure`）。そのため、葉が持つ配列は、それまでで最も長い内容の 2 倍に収まる。行の境界の整形のやり直しに使う作業用の配列（T1b の `ShapingResult` の `_scratch`）は葉ごとに持たず、`TextShaper` に 1 つ持つ（`TextContext` の shaper を、UI スレッドのすべての葉が使う）。初めて測った葉 1 つの配列の中身は、次のとおりである。記号は、文字数（UTF-16）を n、グリフ数を g、改行の候補の数を b、フォントの run の数を r、行数を L、幅の項目の数を e とする
   - 整形の結果: 10n + 8 + 25g + 8b + 32r バイト。内訳は、文字 2n、位置 4(n + 1)、文字からグリフへの対応 4(n + 1)、グリフ 24g（`LaidGlyph`）、切ると危ない印 g、改行の候補 8b、run 24r、倍率 4r、ハイフンの幅 4r
   - 幅の項目 1 つ: 64L + 24g バイト。内訳は、行の範囲 12L（`LineSpan`）、並べた行 28L（`LaidLine`）、グリフ 24(g + L)。改行した行のハイフンで、グリフは 1 行に 1 つまで増える
   - 内容のバッファ: 2n バイト
@@ -1745,8 +1750,11 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
 - **返す大きさ:** 幅は、行末の空白を除いた最も広い行の幅。高さは行の高さの合計。最初のベースラインは最初の行のもの（`MeasureResult.FirstBaseline`）。内容が空の葉は、幅が 0 で、1 行の高さを持つ。その行のフォントは、要求のフォントで空白（U+0020）を引いたもの（`FontFallback.ResolveWithFallback`）。強制改行の後の空の行は、改行の文字の run のフォントで高さを決める。skparagraph も、空の文章に、スタイルのフォントの 1 行の高さを与える（`ParagraphImpl.cpp` 173〜186・1040〜1066 行目）
 - **行の高さ:** 1 行の高さは、その行で使ったフォント（フォールバックを含む）の ascent・descent・lineGap の、それぞれの最大の和。lineGap は上下に半分ずつ配る（half-leading）。`LineHeight` を指定したときは、`Size × LineHeight` を行の高さとし、ascent + descent との差を上下に半分ずつ配る。最初のベースラインは、行の上端から半分の余白 + ascent。フォントの値は HarfBuzz の `hb_font_get_h_extents`（`hb_font_extents_t` の `ascender`・`descender`・`line_gap`。descender は負、HarfBuzz 14.5.1 の `hb-font.h` 、94〜108・915〜917 行目）から em あたりの値として読み、`Font` に足す。run の大きさ（`Size` と、フォールバックの `FontMatch.Scale`）を掛けて使う。比べた 3 つのうち、Flutter（Skia 8df24be の skparagraph）と Avalonia は lineGap を行の高さに入れる。Avalonia 12.1.4 は、行の高さを descent − ascent + lineGap とし、ベースラインを lineGap の半分だけ下げる（`TextLineImpl.cs` 1417〜1439 行目）。`LineHeight` の扱いも、上の XylemUI の形と同じ（同じ行）。skparagraph も lineGap の半分を ascent の上に置く（`Run.cpp` 64〜84 行目）。倍率を指定したときの配り方は 2 通りある。既定では ascent と descent を同じ比で伸ばし、`TextLeadingDistribution.even`（`fUseHalfLeading`）のときだけ半分ずつ配る。XylemUI は Avalonia と、Flutter の `even` の形をとる。同じ比で伸ばすと、倍率を上げるほど文字が行の下へ寄る。GPUI（zed v1.25.3）は lineGap を読まず、既定の行の高さを大きさ × 1.618 とする（`geometry.rs` 3722〜3724 行目の `phi()`、`style.rs` 494 行目）。そのため、フォントによって行が詰まりすぎたり空きすぎたりする。skparagraph（`Run.h` 483〜485 行目）と GPUI（`style.rs` 554〜556 行目）は、行の高さを整数に丸める。XylemUI は、ほかの葉の大きさと同じく、行の高さを論理ピクセルのまま丸めない
 - **例外:** §2.4.1 の「layout 中の例外」のとおり
+- **当たったときに読むもの（V1a の実装で測って決めた、Issue #300）:** 幅の鍵、使った時、行が作る大きさとベースラインは、項目ではなく `LineBreakCache` の中に並べて持つ（`InlineArray`）。当たったときは項目を読まない。幅を項目に持つと、10,101 個の文字の葉のリサイズで、幅を引く処理だけで標本の 9.8 % になった（1 万の葉の項目がヒープに散らばる）。大きさも中に並べると、折り返す葉のリサイズ（キャッシュが当たったとき）は 1.89〜2.66 ms から 1.66〜1.92 ms になった（NativeAOT、交互に 4 巡、`docs/benchmarks/v1a-text-leaf.md`）
+- **幅の鍵をそろえる:** 最大の内容の幅以上の幅は、MaxContent と同じく +∞ に置き換えてから引く。どちらも強制改行でだけ改行するので、行が同じになる。行（flex）は項目を max-content で測ってから、その幅で layout するので、置き換えないと同じ行の項目が 2 つできた
+- **Debug の突き合わせ:** L4 の内容の幅と計測の突き合わせは、文字の葉では `TextContext` の作業用の項目に折り返し、葉のキャッシュに触れない。キャッシュで測ると、layout が尋ねない min-content の幅の項目が葉に増え、Debug と Release で葉のメモリが変わった
 - **確かめ方:** fontTools で求めた期待値（T1b と同じ同梱のフォント）で、1 行と複数行の高さとベースライン、フォールバックの run が混ざる行、倍率の指定、空の内容と空の行（強制改行の続き）、同じ内容の `SetText` が dirty にしないこと、確定した幅の項目が上書きされないこと、内容の幅と計測の一致を確かめる
-- **受け入れ:** §11.3 の 10,101 個の文字の葉のリサイズを、本物の文字の葉（`benchmarks/XylemUI.E2E` の `resize-text`）で測り、キャッシュが当たったとき 2.0 ms 以下。外れたとき（幅ごとに初めて折り返す）の値も報告する。キャッシュが当たったときと、外れて項目を使い回すときの割り当ては 0（割り当て 0 のテスト）。T1b のレビュー（PR #293）で約束した 2 つも測る: 絵文字の整形にかかる時間を run の数ごとに、S8b の日本語の画面の折り返しの時間を、改行の候補の列挙（`segment`）と同じ表に。文字の葉 1 つの確保は、割り当てのテストで、上の「メモリ」の式の値に、配列 1 つあたり 32 バイトとオブジェクト 1 つあたり 64 バイトの頭を足した値以下であること。テストの内容は、n・g・b・r・L・e を数えられるものにする。`resize-text` の 10,101 個の葉が持つ管理ヒープの大きさも報告する。1 万の日本語テキストノードのメモリを Flutter・Avalonia・GPUI と比べるのは、行 M1b である
+- **受け入れ:** §11.3 の 10,101 個の文字の葉のリサイズを、本物の文字の葉（`benchmarks/XylemUI.E2E` の `resize-text`）で測り、キャッシュが当たったとき 2.0 ms 以下。判定は、5 回の実行の中央値を並べた真ん中の値で行う（PR #301 のレビューでオーナーが決定。機械の負荷で 1 回だけ外れる値を判定から外すため）。外れたとき（幅ごとに初めて折り返す）の値も報告する。外れたときを予算に収める案は、行 M1b で比べる相手と比べて決める（同じレビューでオーナーが決定）。キャッシュが当たったときと、外れて項目を使い回すときの割り当ては 0（割り当て 0 のテスト）。T1b のレビュー（PR #293）で約束した 2 つも測る: 絵文字の整形にかかる時間を run の数ごとに、S8b の日本語の画面の折り返しの時間を、改行の候補の列挙（`segment`）と同じ表に。文字の葉 1 つの確保は、割り当てのテストで、上の「メモリ」の式の値に、配列 1 つあたり 32 バイトとオブジェクト 1 つあたり 64 バイトの頭を足した値以下であること。テストの内容は、n・g・b・r・L・e を数えられるものにする。`resize-text` の 10,101 個の葉が持つ管理ヒープの大きさも報告する。1 万の日本語テキストノードのメモリを Flutter・Avalonia・GPUI と比べるのは、行 M1b である
 
 ### 3.3 Grid実装のカバー範囲（決着）
 
@@ -1924,6 +1932,7 @@ internal sealed record LineLayoutResult(GlyphRun[][] Lines);          // 行ご�
 - **適合のテスト:** §8.13 の `LineBreakTest.txt` と `GraphemeBreakTest.txt` の全行を、例外なしで通す
 - **表の作り方:** 生成器は、`vendor/versions.lock` に書いたバージョンと SHA-256 で UCD を取り、C# の `*.g.cs` を出力する。出力はリポジトリに入れる。表の構造は T1a で測って選んだ。1 文字の値（改行の種類 6 ビット、書記素の種類 4 ビット、拡張絵文字、東アジアの幅、Indic_Conjunct_Break 2 ビット、規則が読む一般カテゴリ 3 ビット）を 32 ビットに詰めると、Unicode 18.0.0 では値が 112 種類しかない。そこで、2 段目に値の表（パレット）の番号を 1 バイトで持つ。2 段の表のブロックの大きさを 16〜1,024 で比べると、128 のときが最も小さく 54,080 バイトだった。32 ビットの値をそのまま持つ表では、最も小さいもので 147,712 バイトだった。1 文字を引く時間は、どの大きさでも 1.1〜1.4 ns だった。表はどれもバイトの列（`ReadOnlySpan<byte>`）で持ち、1 段目と値の表はリトルエンディアンで読む。`ushort` や `uint` の列で持つと、Debug のビルドでは読むたびに配列を作り、割り当て 0 のテストが落ちた（Release では作らない）。ゲートは表を作り直さず、表が持つバージョンが lock と一致することをテストで確かめる
 - **折り返し:** 改行の候補のうち、行に収まる最後のものを先頭から詰めて選ぶ（Avalonia の `PerformTextWrapping`、skparagraph の `TextWrapper`）。行末の空白（UAX#14 の SP と、強制改行の文字）は幅に入れず、行の外にはみ出させる（T1b で実装した）。強制改行は、UAX#14 の LB4・LB5 が決めるもの（BK の VT・FF・U+2028・U+2029、CR、LF、NL。CR LF は 1 つの改行）。1 語が行より広いときは、書記素の境界で切る（Avalonia の `Wrap`、skparagraph はクラスタの境界）。CSS の `overflow-wrap: normal` のように切らずにはみ出す形は採らない
+- **幅の比べの許容:** 行が幅に収まるかの比べには、1/64 px の許容を入れる。入れるのは、Pass1・Pass2・緊急ブレークの比べと、文字の葉が幅を最大の内容の幅と比べる所（§3.2「文字の葉」）である。Pass1 は行の幅を累積の位置の差で、Pass2 は行の先頭からの和で求めるので、小数の大きさでは最後の桁が違うことがある。T1b のレビューで、自分の最大の幅で折り返すと、いちばん広い行が Pass2 で切られることが分かった（PR #293）。また、余白のある文字の葉に layout から返る幅は、余白を足して引いた値で、行の幅より 1 ulp 小さいことがある。V1a のレビューで、そうした葉が最大の内容の幅で折り返されることが分かった（PR #301）。13 px でカーニングが外れる差は 0.5 px 以上なので、本当に溢れる行は許容の外にある。Pass2 の比べは許容の 2 倍をとる。Pass1 が許容のぎりぎりで受け入れた行を、Pass2 が最後の桁だけ大きく測って切らないためである（PR #301 の再レビュー）
 - **内容の幅:** 最小は、改行の候補の間の並びのうち、行末の空白を除いて最も広いもの（skparagraph の `TextWrapper.cpp` 223〜241 行目と同じ）。最大は、強制改行の間の行のうち、行末の空白を除いて最も広いもの。skparagraph は最大に行末の空白を含めるが、CSS では折り返す空白は行末で幅に入らない
 - **折り返しの API（T1b の Grill でオーナーが決定、Issue #288）:** 下の `ShapingResult`・`LineBreakResult`・`LineLayoutResult` は内部の型のままにし、`XylemUI.Text` から Core に `InternalsVisibleTo` で見せる。比べた 3 つ（Flutter の `Paragraph`・`TextPainter`、Avalonia の `TextLayout`、GPUI の `WrappedLineLayout`）はどれも公開だが、使う側（`Text` の部品）が決まる前に公開の約束を作らない。利用者が自分で描く関数（`DrawingContext`）から折り返した文字を使う公開の API は、部品の API を決める行 V1d で決める。3 つとも 1 回整形した結果を持ち、幅ごとに折り返しだけをやり直す（skparagraph の `ParagraphImpl.cpp` 153〜155 行目、Avalonia の `TextRunCache.cs` 8〜17 行目、GPUI の `line_layout.rs` 602〜665 行目）。§3.2 の 2 段のキャッシュと同じ形である
 - **切ると危ない印:** 公開の `ShapedGlyph` に `UnsafeToBreak`（HarfBuzz の `HB_GLYPH_FLAG_UNSAFE_TO_BREAK`）を足し、Pass2 はこの印で整形し直す範囲を決める。比べた 3 つは、行の境界で整形し直すことにこの印を使わない（Pass2 が無い）。Avalonia（`GlyphInfo.cs` 8〜34 行目）と GPUI（`line_layout.rs` 45〜57 行目）は印を持たない。Skia の `SkShaper` は、自分の折り返し（`ShaperDrivenWrapper::wrap`）で、印のないクラスタの先頭を、整形の結果を使い回せる切れ目として記録するために読む（`modules/skshaper/src/SkShaper_harfbuzz.cpp` 970・1563 行目、skia fae1d2bd）。skparagraph は文を 1 本の行に整形してから自分で折り返すので（`ParagraphImpl.cpp` 681〜697 行目）、この折り返しを通らない

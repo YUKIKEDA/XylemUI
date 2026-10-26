@@ -15,5 +15,7 @@
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
     <!-- The hit regions are tested against the pixels drawn on WARP (row R4e). -->
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
+    <!-- Text leaves are measured with HarfBuzz, whose native library the Windows-only text tests load (row V1a). -->
+    <InternalsVisibleTo Include="XylemUI.Text.Tests" />
   </ItemGroup>
 </Project>

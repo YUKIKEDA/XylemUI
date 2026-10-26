@@ -15,6 +15,7 @@ public sealed unsafe class TextShaper : IDisposable
 {
     private nint _buffer = HarfBuzz.BufferCreate();
     private ShapedGlyph[] _glyphs = new ShapedGlyph[64];
+    private char[] _scratch = [];
 
     /// <summary>
     /// Shapes <paramref name="text"/> with <paramref name="font"/>.
@@ -37,6 +38,21 @@ public sealed unsafe class TextShaper : IDisposable
         }
 
         return ShapeRange(font, text, 0, text.Length, language);
+    }
+
+    /// <summary>
+    /// Returns a work array of this thread of at least <paramref name="length"/> characters, for a copy of a text to shape again
+    /// (the line ends of Pass2, design §4.1). It is shared by every text this shaper shapes, so a text leaf does not keep one
+    /// (design §3.2, "Text leaves"); its content is valid until the next call.
+    /// </summary>
+    internal char[] Scratch(int length)
+    {
+        if (_scratch.Length < length)
+        {
+            _scratch = new char[Math.Max(length, _scratch.Length * 2)];
+        }
+
+        return _scratch;
     }
 
     /// <summary>

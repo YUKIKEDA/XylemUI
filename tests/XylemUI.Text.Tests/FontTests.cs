@@ -4,6 +4,31 @@ namespace XylemUI.Text.Tests;
 public sealed class FontTests
 {
     /// <summary>
+    /// A font's ascent, descent, and line gap are HarfBuzz's horizontal extents, which read the hhea table, or OS/2's typographic
+    /// values when the font sets USE_TYPO_METRICS (design §3.2, "Text leaves").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font (hhea 1160, -288, 0; no USE_TYPO_METRICS) and the bundled font (OS/2 typographic 1069, -293, 0, with
+    ///   USE_TYPO_METRICS), read with fontTools.
+    ///
+    /// Steps:
+    /// - Read Ascent, Descent, and LineGap of each.
+    ///
+    /// Expected:
+    /// - 1160, 288, 0 and 1069, 293, 0: the descent positive below the baseline.
+    /// </remarks>
+    [Fact]
+    public void Extents_AreTheFontsLineMetrics()
+    {
+        using Font font = TestFont.Open();
+        Font bundled = FontFallback.Bundled;
+
+        Assert.Equal((1160, 288, 0), (font.Ascent, font.Descent, font.LineGap));
+        Assert.Equal((1069, 293, 0), (bundled.Ascent, bundled.Descent, bundled.LineGap));
+    }
+
+    /// <summary>
     /// Bytes that are not a font are refused with an exception, not opened as an empty font.
     /// </summary>
     /// <remarks>
