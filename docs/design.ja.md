@@ -561,7 +561,7 @@ internal struct InvalidationBoundary
 // record struct の値等価性をそのままキャッシュ判定に使う。AvailableSpace も IEquatable な struct とする
 internal readonly record struct LayoutCacheKey(
     AvailableSpace AvailableSpace,
-    ulong LayoutStyleVersion,       // NodeVersions.LayoutStyle（PaintProps は含めない）
+    ulong LayoutStyleVersion,       // NodeVersions.LayoutStyle（描画の状態の `NodeVisual` と文字の色は含めない）
     ulong ChildStructureVersion,    // NodeVersions.Children（子の追加/削除/並び替え）
     ulong DescendantLayoutVersion); // NodeVersions.DescendantLayout（子孫のいずれかのrectが実際に変化）
 
@@ -2435,14 +2435,15 @@ public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
 **描画の段とフレームの駆動（V1b の Grill でオーナーが決定、Issue #308）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。木をたどって表示リストを作る段と、フレームを頼んで回す型を足す。型はすべて internal で、公開の API は行 V1d で決める。
 
 ```csharp
-// 箱の見た目と描く関数。持つノードだけが UiNode.Visual に参照を持つ（見た目の無いノードは null）
+// 箱の見た目と描く関数。持つノードだけが UiNode.Visual に参照を持つ（見た目の無いノードは null）。
+// 木が、最初の setter のときに作ってノードに持たせる。呼び出し側は作らず、ほかのノードと分け合わない
 internal sealed class NodeVisual
 {
-    public BoxShadow? Shadow;                // 影（R4a）
-    public Paint? Background;                // 背景（色かグラデーション）
-    public CornerRadii Radii;                // 角の半径
-    public Border? Border;                   // 枠線
-    public DrawFunc? Draw;                   // 利用者の描く関数
+    public BoxShadow? Shadow { get; internal set; }   // 影（R4a）
+    public Paint? Background { get; internal set; }   // 背景（色かグラデーション）
+    public CornerRadii Radii { get; internal set; }   // 角の半径
+    public Paint? BorderPaint { get; internal set; }  // 枠線の塗り。幅は LayoutStyle.Border（下の「枠線の幅」）
+    public DrawFunc? Draw { get; internal set; }      // 利用者の描く関数
 }
 
 internal delegate void DrawFunc(DrawingContext context, Rect bounds);   // bounds は絶対座標の箱（論理座標）
@@ -2451,8 +2452,14 @@ internal delegate void DrawFunc(DrawingContext context, Rect bounds);   // bound
 public Color Color;                          // 文字の色
 
 // UiTree に足す
-public void SetVisual(NodeHandle node, NodeVisual? visual);   // ChangeKind.Color で描画だけをやり直す
-public void SetTextColor(NodeHandle node, Color color);       // 同上。文字の葉でなければ InvalidOperationException
+// 描画の状態の setter。前と等しい値なら何もしない。違えば ChangeKind.Color で描画だけをやり直す。
+// 最初の 1 回だけ NodeVisual を作り、その後の変更は割り当てない
+public void SetShadow(NodeHandle node, BoxShadow? shadow);
+public void SetBackground(NodeHandle node, Paint? background);
+public void SetCornerRadii(NodeHandle node, CornerRadii radii);
+public void SetBorderPaint(NodeHandle node, Paint? paint);
+public void SetDraw(NodeHandle node, DrawFunc? draw);
+public void SetTextColor(NodeHandle node, Color color);       // 文字の葉でなければ InvalidOperationException
 internal Action? FrameNeeded;                // 印の無い状態から最初の印が付いたときに 1 回呼ぶ
 
 // 描く先。D3D11Renderer が実装する（Core から Rendering.D3D11 へ InternalsVisibleTo）
@@ -2472,18 +2479,22 @@ internal sealed class WindowFrames
 ```
 
 - **ノードが描くもの:** 箱の見た目（影・背景・角の半径・枠線）はフレームワークが描き、利用者の自由な描画は描く関数で受ける。比べた 3 つも、箱の見た目はフレームワークが描く（Flutter の `RenderDecoratedBox`、`proxy_box.dart` 2473〜2512 行目。Avalonia の `Border.Render`、`Border.cs` 179〜189 行目。GPUI の `Style::paint`、`style.rs` 688〜753 行目）。自由な描画は別の口で受ける（Flutter の `CustomPaint`、GPUI の `canvas`）。文字の色は文字の葉が持ち、§3.2 の `TextStyle` には入れない（layout に効かないため）
-- **箱の見た目は参照 1 つ:** `NodeVisual` を class にして、`UiNode` は参照を 1 つ持つ（8 バイト）。struct で埋め込むと、見た目の無いノードも約 120 バイト大きくなる（見積もり: 影 `BoxShadow?` 32、背景 `Paint?` 24、半径 16、枠線 `Border?` 40、関数の参照 8。詰め物の分は実装で `Unsafe.SizeOf` で確かめる）。文字の葉の状態（§3.2）と同じ考え方である。§2.5 の `PaintState` の struct は作らない
+- **描画の状態の変え方:** 箱の見た目は、`UiTree` のフィールドごとの setter で変える。`NodeVisual` は木が最初の setter のときに作ってノードに持たせ、その後の変更は同じ実体のフィールドを書き換えるだけなので、割り当てない（ホバーの遷移のように毎フレーム色が変わる場面、§2.7）。呼び出し側は `NodeVisual` を作らず、書き換えもしない（setter が internal）。書き換えたのに印が付かない誤りと、1 つの実体を複数のノードで分け合う誤りを、型で防ぐ（PR #309 のレビュー）。`PaintStyle`（§2.13 の疑似状態）が重ねる背景・文字の色・枠線の色は、この `NodeVisual` と `TextLeaf.Color` の上に重ねる。不透明度と変換（`PaintStyle.Opacity`・`Transform`、§2.7 の退場のアニメーション）の持ち場所は、疑似状態を入れる行 V1c で決める
+- **枠線の幅:** 枠線の幅の持ち主は `LayoutStyle.Border` で、layout はこの幅で中身を置く。描画の段も同じ幅で枠線を描き、`NodeVisual` は塗り（`BorderPaint`）だけを持つ。2 か所に幅を持つと、枠線の太さと中身の位置がずれる（PR #309 のレビュー）。幅は layout と同じく、親の内容の箱の幅に対して解く（`EdgeInsets.ResolveOrZero`）。描画の段は、たどりながら親の内容の箱の幅を子に渡す
+- **箱の見た目は参照 1 つ:** `NodeVisual` を class にして、`UiNode` は参照を 1 つ持つ（8 バイト）。struct で埋め込むと、見た目の無いノードも約 104 バイト大きくなる（見積もり: 影 `BoxShadow?` 32、背景 `Paint?` 24、半径 16、枠線の塗り `Paint?` 24、関数の参照 8。詰め物の分は実装で `Unsafe.SizeOf` で確かめる）。文字の葉の状態（§3.2）と同じ考え方である。§2.5 の `PaintState` の struct は作らない
 - **座標:** 描画の段は、根から木を上にたどる順に下りながら、親の原点に `LayoutState.Rect` の位置を足していき、絶対座標の箱を作る。描く関数にはその箱を渡す。GPUI も絶対座標の箱を渡す（`window.rs` 5285〜5286 行目）。Flutter は親から積み上げた原点を渡し（`box.dart` 3390 行目）、Avalonia は自分の座標で描いて、合成の段で原点を足す（`Visual.Composition.cs` 137 行目）。表示リストの命令とヒット領域は、もう絶対座標の論理座標で受け取る（R4e）ので、同じ座標をそのまま渡す
 - **描く順:** 1 つのノードの中では、影（`DrawShadow`）、背景と枠線（`FillRect` の 1 つの命令、R4a）、描く関数、子の順。ノードどうしは木の順（親が先、子は並びのとおり）。枠線を子より先に描くのは、Flutter（`box_decoration.dart` 571〜582 行目）・Avalonia（`ServerCompositionVisual.Render.cs` 165 行目で自分の命令を子より先に描く）と CSS で、GPUI は子の後に描く（`style.rs` 742〜753 行目）。z-index は持たない。Flutter は子の並びのとおり（`stack.dart` 712〜713 行目）、Avalonia は `ZIndex`（`Visual.Composition.cs` 51〜61 行目）、GPUI は `defer_draw` の優先度（`window.rs` 4504 行目）。前面に出す仕組みは、ポップアップの行 P02 で、前面のノードが後ろを遮る場面と一緒に決める。子を箱で切る処理は、overflow の行 V2 まで行わない（CSS の既定は visible）
 - **文字の葉:** layout で確定した幅の項目（§3.2 の `LineBreakCache.Committed`）の行を、表示リストに描く。`LaidGlyph`（論理ピクセルの幅とずれ、run の番号）の行を描く命令を、`DisplayList` に internal で足す。行のベースラインは、計測と同じ行の高さの関数（§3.2「行の高さ」）で求める。色は `TextLeaf.Color`。比べた 3 つも、layout の結果をそのまま描く（Flutter の `TextPainter.paint`、`text_painter.dart` 1322〜1358 行目。Avalonia の `TextLayout.Draw`、`TextLayout.cs` 295〜307 行目。GPUI の `WrappedLine::paint`、`text_system/line.rs` 460 行目）
 - **`Hidden`:** 描画の段は、`LayoutStyle.Hidden` のノードを部分木ごと飛ばす。ヒット領域は描画と一緒に書く（R4e）ので、当たりも同時に消える。Avalonia の `IsVisible`（`ServerCompositionVisual.Render.cs` 61 行目）、GPUI の `display: none`（`div.rs` 2084 行目）、Flutter の `Offstage`（`proxy_box.dart` 3939〜3943 行目）と同じ
 - **フレームの中身:** `WindowFrames.RunFrame` は、次の順に進む。effect は、batch を閉じたときに同期して流れ終わっている（§2.2）ので、フレームでは流さない
   1. `LayoutEngine.RunLayoutPass`
-  2. layout の要求か描画の印（`PaintUpdates`）があったフレームだけ、表示リストを全体で作り直す（`Reset` と木のたどり、§5.0.1）
-  3. グリフをそろえる（`ResolveGlyphs`）
-  4. `IRenderTarget.Draw` と `Present`
-  5. `PaintUpdates` のノードの、Layout 以外の印を消して、一覧を空にする
-- **変わらないフレーム:** 2 の条件に当たらないフレームでは、作り直しも Draw も Present もしない。比べた 3 つも、変わらないときは描かない。GPUI は dirty でないとき描かず、Present もしない（`window.rs` 1884〜1906 行目）。Avalonia は dirty の矩形が空なら描かない（`ServerCompositionTarget.cs` 183〜189 行目）。Flutter は、印が無ければフレームを予約しない（`scheduler/binding.dart` 946〜958 行目）。Present しなかったフレームの後は、§2.11 の「Present しないフレーム」のとおり、待ちの上限で次の予約を回す
+  2. layout の要求か描画の印（`PaintUpdates`）があったかを見る。無ければ、ここで終える（下の「変わらないフレーム」）
+  3. `PaintUpdates` を作業用の一覧と入れ替え、取り出したノードの Layout 以外の印を消す。これより後に付いた印（描く関数やグリフを解く処理の中の変更）は、空になった `PaintUpdates` に入り、`FrameNeeded` で次のフレームを頼む。印を Draw の後で消すと、その間に付いた印が、次のフレームを頼まないまま消える。すでに印のあったノードは一覧に積み直されない（`MarkSelfForPaint`）ので、その変更も消える（PR #309 のレビュー）
+  4. `GlyphAtlas.BeginFrame`。§5.0.3 のとおり、これを呼ばないと、アトラスの場所はどれも追い出せず、入らないグリフを `TryGet` が断って描かれない。作り直さないフレームでは呼ばない（場所の使った記録を進めない）
+  5. 表示リストを全体で作り直す（`Reset` と木のたどり、§5.0.1）
+  6. グリフをそろえる（`ResolveGlyphs`）
+  7. `IRenderTarget.Draw` と `Present`
+- **変わらないフレーム:** 2 の条件に当たらないフレームでは、作り直しも Draw も Present もしない。比べた 3 つも、変わらないときは描き直さない。GPUI は dirty でないとき描き直さない。ただし、描いたのにまだ Present していない frame があるときと、入力が高い頻度で続くとき（`is_high_rate`）は、描かずに Present だけをする（`window.rs` 1880〜1906 行目の `needs_present`）。XylemUI は、描いたフレームはその場で Present するので、Present していない frame が残らない。Avalonia は dirty の矩形が空なら描かない（`ServerCompositionTarget.cs` 183〜189 行目）。Flutter は、印が無ければフレームを予約しない（`scheduler/binding.dart` 946〜958 行目）。Present しなかったフレームの後は、§2.11 の「Present しないフレーム」のとおり、待ちの上限で次の予約を回す。GPU のデバイスを作り直した後は、変わらないフレームでも 1 度描き直す必要がある（GPUI も復旧の後に `force_render` で描き直す）。これは、デバイス消失からの復帰の行 R1 で入れる
 - **フレームを頼む合図:** 木は、印の無い状態から最初の印（layout の要求か `PaintUpdates`）が付いたときに、`FrameNeeded` を 1 回呼ぶ。`WindowFrames` はそれを登録して `IFrameScheduler.RequestFrame` を呼ぶ。フレームの中で付いた印は、次のフレームを頼む。Flutter の `requestVisualUpdate` から `scheduleFrame`（予約済みなら何もしない、`scheduler/binding.dart` 946〜958 行目）と同じ形である
 - **同期リサイズ:** `WM_SIZE` の同期描画（§2.11.1、`Win32Window.SynchronousRender`）は、`IRenderTarget` の大きさを変えた後に `WindowFrames.Resize` を呼ぶ。`Resize` は `Invalidation.NotifyWindowResized` で根に新しい大きさを渡し、`RunFrame` と同じ処理をその場で行う。リサイズの間も別の経路を作らない
 - **確かめ方:** WARP の画素を CPU の基準と比べる（R4a と同じ）。場面は、箱（影・背景・角丸・枠線）と文字の葉の木、描く順（重なる兄弟と、子と枠線）、`Hidden` の部分木、描く関数（絶対座標の箱を受け取ること）である。変わらないフレームの Present の回数は 0。変わるフレーム（色の変更、文字の変更、リサイズ）と変わらないフレームの割り当ては 0。費用は、`frames` と同じ場面（1,000 個の矩形と文字）を木で作り、表示リストを直接書く今の場面と、描画の段の時間を比べる。差は CPU のプロファイルで説明する
@@ -2600,7 +2611,7 @@ internal struct QuadInstance
 // MemoryMarshal.AsBytes(instances.AsSpan(0, count)).CopyTo(mappedSpan);
 ```
 
-**v2拡張点の明記**: v1の全体線形再構築は現時点で最も安全な選択だが、将来的に「10万ノード＋カーソル点滅1個」のような局所変化のみのケースで非効率になりうる。将来的な部分再構築（Retained DisplayList、サブツリー単位のキャッシュ）への拡張点として、`NodeVisual` に `PaintVersion`/`SubtreeVersion`（§11.5.2の`NodeVersions`と連動）を持たせておき、v2でサブツリー単位のDisplayListキャッシュを追加する余地を残す。v1では参照しない（実装しない）が、型としては予約しておく。
+**v2拡張点の明記**: v1の全体線形再構築は現時点で最も安全な選択だが、将来的に「10万ノード＋カーソル点滅1個」のような局所変化のみのケースで非効率になりうる。将来的な部分再構築（Retained DisplayList、サブツリー単位のキャッシュ）への拡張点として、`NodeVersions`（§11.5.2、すべてのノードが持つ）に `PaintVersion`/`SubtreeVersion`（§11.5.2の`NodeVersions`と連動）を持たせておき、v2でサブツリー単位のDisplayListキャッシュを追加する余地を残す。v1では参照しない（実装しない）が、型としては予約しておく。
 
 ### 5.0.2 GPUリソースのライフタイム管理
 
@@ -3473,7 +3484,7 @@ internal struct NodeVersions
     public ulong LayoutStyle;       // LayoutStyle が変わったとき。LayoutCacheKey が参照
     public ulong Layout;            // このノード自身の最終rectが実際に変わったとき（再実行しただけでもrectが同じなら増やさない）
     public ulong DescendantLayout;  // 子孫のいずれかのrectが実際に変わったとき。境界まで親へ伝播
-    public ulong Paint;             // PaintProps 変化、またはこのノードのPaintCommandを再構築したとき
+    public ulong Paint;             // 描画の状態（`NodeVisual` と文字の色、§5.0）の変化
     public ulong Text;              // このノードでMeasureTextを再実行したとき
     public ulong Semantics;         // このノードのAccessibilityInfoが変わったとき
     public ulong Children;          // 子の追加/削除/並び替え（identity/order）のとき
@@ -3482,10 +3493,10 @@ internal struct NodeVersions
 
 | Version            | increment条件                                                             |
 | ------------------ | ------------------------------------------------------------------------- |
-| `LayoutStyle`      | このノードの LayoutStyle が変化。Color 等の PaintProps だけでは増やさない |
+| `LayoutStyle`      | このノードの LayoutStyle が変化。色などの描画の状態だけでは増やさない |
 | `Layout`           | このノードの最終rectが前回と異なる値に確定                                |
 | `DescendantLayout` | 子孫のrectが実際に変化。親へO(depth)伝播しLayout Boundaryで停止           |
-| `Paint`            | PaintProps の変化、またはこのノードのPaintCommandを再構築                 |
+| `Paint`            | 描画の状態の変化（`UiTree` の描画の状態の setter、§5.0「描画の段とフレームの駆動」） |
 | `Text`             | このノードの`MeasureText`を再実行                                         |
 | `Semantics`        | このノードのAccessibilityInfoが変化                                       |
 | `Children`         | 子の追加・削除・並び替え                                                  |
