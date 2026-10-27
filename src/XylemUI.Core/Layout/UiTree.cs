@@ -45,9 +45,11 @@ internal sealed class UiTree
 
     /// <summary>
     /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
-    /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); "und" (undetermined) until it does.
+    /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); <see langword="null"/> until it does,
+    /// for "und" (undetermined). It is not made here: a language is HarfBuzz's, and a tree with no text runs where HarfBuzz is not
+    /// built (the Core tests on Linux and macOS until rows P04 and P06).
     /// </summary>
-    internal TextLanguage UiLanguage { get; set; } = TextLanguage.FromTag("und");
+    internal TextLanguage? UiLanguage { get; set; }
 
     /// <summary>
     /// Gets the text tools its text leaves are measured with; <see langword="null"/> for a tree without text leaves.

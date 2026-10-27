@@ -149,8 +149,9 @@ public static class Elements
         UiTree.Current
         ?? throw new InvalidOperationException("Elements are made while a window's root function runs (XylemApp.Run); no tree is current.");
 
-    // The text style of text that sets none, in the tree's UI language.
-    internal static TextStyle DefaultTextStyle(UiTree tree) => new(FontRequest.Default, DefaultFontSize, tree.UiLanguage, float.NaN);
+    // The text style of text that sets none, in the tree's UI language, or undetermined when the host gave none.
+    internal static TextStyle DefaultTextStyle(UiTree tree) =>
+        new(FontRequest.Default, DefaultFontSize, tree.UiLanguage ?? TextLanguage.FromTag("und"), float.NaN);
 
     // A node of the current tree, owned by the current scope: disposing the scope takes it out and frees it.
     private static Element Own(LayoutStyle style)
