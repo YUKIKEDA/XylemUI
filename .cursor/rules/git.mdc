@@ -18,5 +18,6 @@ When asked about such an operation, answer with the current `HEAD` SHA, the targ
 - A push that follows a test is chained to it so that a failed test stops the push (`./build.ps1; if ($LASTEXITCODE -eq 0) { git push }`).
 - When the gate fails only on a test that an open Issue tracks and the PR does not touch, the push still stops. The gate stops at the first failing step, so run the remaining test projects by hand; then write the failed test and its Issue under Verification and ask the owner whether to push. In PR #130 (only `docs/`) the gate failed on #126's message-loop test, the rest passed by hand, and the owner allowed the push.
 - Read `gh pr view <n> --json state` before pushing to a branch that has a PR. A push to the branch of a merged PR recreates the deleted branch and reaches nothing.
+- Fetch before pushing to a branch that has a PR, and compare it with the local branch (`git status -sb`). The owner may rebase a stacked branch after its base merges: in PR #327 the local branch was 5 ahead and 6 behind. Continue on the remote head (`git switch --detach origin/<branch>`) and push a fast-forward; do not push the stale local branch.
 - If history was rewritten, put the SHA from before the rewrite on the first line of the reply.
 - Never skip hooks (`--no-verify`) or signing unless the owner orders it.
