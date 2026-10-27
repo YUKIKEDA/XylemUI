@@ -321,8 +321,6 @@ internal static partial class LayoutEngine
             item.HasInset = c.Layout.HasInset;
             item.AspectRatio = s.AspectRatio;
             item.HasKeywordLimits = c.Layout.HasKeywordLimits;
-            item.IsScrollContainer = s.IsScrollContainer;
-            item.MainScrolls = (row ? s.OverflowX : s.OverflowY) >= Overflow.Hidden;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
@@ -500,7 +498,7 @@ internal static partial class LayoutEngine
             // CSS Flexbox §4.5: an automatic minimum is the content's min-content size, no larger than the specified size; 0 along
             // an axis the item scrolls (Taffy's maybe_into_automatic_min_size).
             float styleMinMain = item.Min.Main(row);
-            if (float.IsNaN(styleMinMain) && item.MainScrolls)
+            if (float.IsNaN(styleMinMain) && MainScrolls(tree, item.Node, row))
             {
                 styleMinMain = 0;
             }
@@ -544,6 +542,16 @@ internal static partial class LayoutEngine
                 ResolvedMinMain = item.ResolvedMinMain,
             };
         }
+    }
+
+    // Whether an item scrolls along the main axis, so that its automatic minimum there is 0 (Taffy's flexbox.rs 1139, design
+    // §3.4.1); read from the node where the minimum is automatic, not copied for every item (row V2), as is whether it is a scroll
+    // container, whose content contribution is its flex basis (flexbox.rs 1525).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool MainScrolls(UiTree tree, NodeHandle node, bool row)
+    {
+        ref readonly LayoutStyle style = ref tree.Nodes.GetRef(node).Layout.Style;
+        return (row ? style.OverflowX : style.OverflowY) >= Overflow.Hidden;
     }
 
     // Whether an item's base-size step reads the container's main size: through a percentage in its style, or through a basis
@@ -775,7 +783,7 @@ internal static partial class LayoutEngine
         {
             contribution = minMain + marginSum;
         }
-        else if (item.IsScrollContainer)
+        else if (tree.Nodes.GetRef(item.Node).Layout.Style.IsScrollContainer)
         {
             contribution = item.FlexBasis + marginSum;
         }
@@ -1556,11 +1564,6 @@ internal static partial class LayoutEngine
         public bool Stretched;
         public bool HasInset;
         public bool HasKeywordLimits;
-
-        // A scroll container's contribution to its container's content size is its flex basis, and its automatic minimum along
-        // an axis it scrolls is 0 (Taffy's flexbox.rs 1139 and 1525, design §3.4.1).
-        public bool IsScrollContainer;
-        public bool MainScrolls;
 
         // The style's aspect ratio, copied with the item's other lengths: two later steps read it for every item, and taking
         // the node from the arena again for it was part of the 10,000 instructions a relayout of row L1a's scene gained in L2

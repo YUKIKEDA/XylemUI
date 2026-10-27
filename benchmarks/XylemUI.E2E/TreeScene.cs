@@ -10,7 +10,9 @@ namespace XylemUI.E2E;
 // moves are layout changes; then WindowFrames builds the display list from the tree. The target records when Draw and Present start
 // and end, so that the draw stage's time is apart from the layout's. With hover (row V1c), the boxes stay where the first frame put
 // them, each with a hovered background, and a frame moves the pointer from one box to another through the window's input instead:
-// the frame is drawn for the hover's change of color alone, with no layout.
+// the frame is drawn for the hover's change of color alone, with no layout. With scroll (row V2), the boxes are in a scroll container
+// as large as the window, with a box far below that gives it room to scroll, and stay where the first frame put them; a frame
+// changes the scroll position, which draws the boxes moved inside a clip with no layout (design §3.4.1).
 internal sealed class TreeScene : IDisposable
 {
     private readonly Scene _scene;
@@ -22,18 +24,36 @@ internal sealed class TreeScene : IDisposable
     private readonly WindowFrames _frames;
     private readonly TimingTarget _target;
     private readonly WindowInput? _input;
+    private readonly ScrollState? _scroll;
 
-    public TreeScene(Scene scene, Font font, bool noText, bool hover = false)
+    public TreeScene(Scene scene, Font font, bool noText, bool hover = false, bool scroll = false)
     {
         _scene = scene;
         _text = new TextContext(new OneFont(font));
         _tree = new UiTree(_text);
         _root = _tree.CreateNode(new LayoutStyle());
-        NodeHandle marker = Absolute(0, 0, 40, 40);
+        NodeHandle marker = Absolute(_root, 0, 0, 40, 40);
         _tree.SetBackground(marker, new Paint(Scene.Marker));
+        NodeHandle parent = _root;
+        if (scroll)
+        {
+            var all = LengthPercentageAuto.Px(0);
+            parent = _tree.CreateNode(
+                new LayoutStyle
+                {
+                    Position = Position.Absolute,
+                    Inset = new EdgeInsets<LengthPercentageAuto>(all, all, all, all),
+                    OverflowY = Overflow.Scroll,
+                }
+            );
+            _tree.AppendChild(_root, parent);
+            _ = Absolute(parent, 0, 2_000, 16, 16);
+            _scroll = _tree.ScrollStateFor(parent);
+        }
+
         for (int i = 0; i < _boxes.Length; i++)
         {
-            _boxes[i] = Absolute(0, 0, 16, 16);
+            _boxes[i] = Absolute(parent, 0, 0, 16, 16);
             _tree.SetBackground(_boxes[i], new Paint((i & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66)));
             if (hover)
             {
@@ -62,6 +82,10 @@ internal sealed class TreeScene : IDisposable
         if (hover)
         {
             _input = new WindowInput(_tree, _frames, new NoPlatform());
+            _ = Update(0);
+        }
+        else if (scroll)
+        {
             _ = Update(0);
         }
 
@@ -98,6 +122,15 @@ internal sealed class TreeScene : IDisposable
             return 0;
         }
 
+        // A new position each frame, within the room the far box gives: no box moves in the layout.
+        if (_scroll is not null && frame > 0)
+        {
+            _ = _scroll.SetOffset(new System.Numerics.Vector2(0, (frame * 3) % 1_000));
+            long layoutStart = Stopwatch.GetTimestamp();
+            LayoutEngine.RunLayoutPass(_tree);
+            return Stopwatch.GetElapsedTime(layoutStart).TotalMilliseconds;
+        }
+
         float scale = _scene.Window.ScaleFactor;
         int width = (int)(_scene.Renderer.Width / scale);
         int height = (int)(_scene.Renderer.Height / scale);
@@ -132,10 +165,10 @@ internal sealed class TreeScene : IDisposable
             Height = float.IsNaN(height) ? Length.Auto : Length.Px(height),
         };
 
-    private NodeHandle Absolute(float x, float y, float width, float height)
+    private NodeHandle Absolute(NodeHandle parent, float x, float y, float width, float height)
     {
         NodeHandle node = _tree.CreateNode(Place(x, y, width, height));
-        _tree.AppendChild(_root, node);
+        _tree.AppendChild(parent, node);
         return node;
     }
 

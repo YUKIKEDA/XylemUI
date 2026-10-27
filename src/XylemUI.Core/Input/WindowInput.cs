@@ -558,9 +558,22 @@ internal sealed class WindowInput
         }
 
         delta = new Vector2(horizontal ? delta.X : 0, vertical ? delta.Y : 0);
-        Size max = _tree.MaxScrollOffsetOf(node);
+
+        // The range the last layout wrote to the state; a container without one yet finds its range from its boxes.
+        ScrollState? state = _tree.ScrollStateOf(node);
+        Vector2 max;
+        if (state is not null)
+        {
+            max = state.MaxOffsetValue;
+        }
+        else
+        {
+            Size range = _tree.MaxScrollOffsetOf(node);
+            max = new Vector2(range.Width, range.Height);
+        }
+
         Vector2 current = _tree.ScrollOffsetOf(node);
-        Vector2 next = Vector2.Clamp(current + delta, Vector2.Zero, new Vector2(max.Width, max.Height));
+        Vector2 next = Vector2.Clamp(current + delta, Vector2.Zero, max);
         return next != current && _tree.ScrollStateFor(node).SetOffset(next);
     }
 

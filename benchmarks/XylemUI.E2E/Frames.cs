@@ -14,6 +14,8 @@ namespace XylemUI.E2E;
 // leaves the layout out. --no-text leaves the line of text out of either scene, so that the draw stages compare the boxes alone.
 // --hover (with --tree, row V1c) keeps the boxes still with a hovered background and moves the pointer between two of them each
 // frame: input_ms is the input's delivery of the move, and the frame draws for the change of color alone.
+// --scroll (with --tree, row V2) keeps the boxes still in a scroll container and changes its scroll position each frame: the frame
+// draws them moved with no layout (layout_ms is the pass that finds nothing to do).
 internal static class Frames
 {
     public static int Run(
@@ -29,12 +31,13 @@ internal static class Frames
         int nested = 0,
         bool tree = false,
         bool noText = false,
-        bool hover = false
+        bool hover = false,
+        bool scroll = false
     )
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
-        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover) : null;
+        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll) : null;
         var layout = new List<double>(frames);
         var input = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
@@ -123,6 +126,7 @@ internal static class Frames
         report.Text("tree", tree ? "yes" : "no");
         report.Text("text", noText ? "no" : "yes");
         report.Text("hover", hover ? "yes" : "no");
+        report.Text("scroll", scroll ? "yes" : "no");
         report.Number("nested", nested);
         report.Number("layers", scene.Renderer.LayerCount);
         report.Number("layer_bytes", scene.Renderer.LayerBytes);

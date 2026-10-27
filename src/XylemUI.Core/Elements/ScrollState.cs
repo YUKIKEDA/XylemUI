@@ -48,6 +48,11 @@ public sealed class ScrollState
     internal Vector2 OffsetValue => _offset.Peek();
 
     /// <summary>
+    /// Gets the largest scroll position without reading it as a signal.
+    /// </summary>
+    internal Vector2 MaxOffsetValue => _maxOffset.Peek();
+
+    /// <summary>
     /// Scrolls to a position, kept between 0 and <see cref="MaxOffset"/>. The node is drawn again at the next frame, with no
     /// layout (<see cref="ChangeKind.TransformProp"/>).
     /// </summary>

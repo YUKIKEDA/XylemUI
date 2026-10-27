@@ -156,13 +156,14 @@ internal sealed class UiTree
     /// <returns>The largest position on each axis.</returns>
     internal Size MaxScrollOffsetOf(NodeHandle node)
     {
+        (float right, float bottom) = LayoutEngine.ScrollableOverflowOf(this, node);
         ref readonly LayoutState layout = ref Nodes.GetRef(node).Layout;
         Size gutter = layout.Style.ScrollbarGutter;
         Rect rect = layout.Rect;
         Edges border = layout.Border;
         return new Size(
-            Math.Max(0, layout.OverflowRight + Math.Min(gutter.Width, rect.Width) - rect.Width + border.Left + border.Right),
-            Math.Max(0, layout.OverflowBottom + Math.Min(gutter.Height, rect.Height) - rect.Height + border.Top + border.Bottom)
+            Math.Max(0, right + Math.Min(gutter.Width, rect.Width) - rect.Width + border.Left + border.Right),
+            Math.Max(0, bottom + Math.Min(gutter.Height, rect.Height) - rect.Height + border.Top + border.Bottom)
         );
     }
 

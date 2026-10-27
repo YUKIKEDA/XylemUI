@@ -715,10 +715,8 @@ public sealed class WindowInputTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A node holds its input, its pseudo-states, and its scrollable overflow without growing past 584 bytes, and the state looks
-    /// live apart from the box's look, so that a node with a background alone pays for neither (PR #319's review). The bound was 576
-    /// until row V2 added the right and bottom edges of the scrollable overflow (8 bytes), which every node keeps for its parent's
-    /// scroll range, as Taffy's Layout does (design §3.4.1).
+    /// A node holds its input and its pseudo-states without growing past 576 bytes, and the state looks live apart from the box's
+    /// look, so that a node with a background alone pays for neither (PR #319's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -729,12 +727,12 @@ public sealed class WindowInputTests(UiThreadFixture ui)
     ///   <see cref="PseudoStyles"/> and read what each allocated.
     ///
     /// Expected:
-    /// - The node is at most 584 bytes, a style at most 104, a box look at most 192, and the state looks at most 232.
+    /// - The node is at most 576 bytes, a style at most 104, a box look at most 192, and the state looks at most 232.
     /// </remarks>
     [Fact]
     public void Sizes_NodeAndLooks_StayWithinTheirBounds()
     {
-        Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<UiNode>(), 0, 584);
+        Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<UiNode>(), 0, 576);
         Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<PaintStyle>(), 0, 104);
         Assert.InRange(Allocated(static () => new NodeVisual()), 0, 192);
         Assert.InRange(Allocated(static () => new PseudoStyles()), 0, 232);

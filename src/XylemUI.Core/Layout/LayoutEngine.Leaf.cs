@@ -60,9 +60,9 @@ internal static partial class LayoutEngine
             // The content from the padding box's corner; a scroll container's end padding is part of it (Taffy main's leaf.rs).
             Edges padding = EdgeInsets.ResolveOrZero(style.Padding, input.ParentSize.Width);
             bool scrolls = style.IsScrollContainer;
-            ref LayoutState state = ref tree.Nodes.GetRef(handle).Layout;
-            state.OverflowRight = padding.Left + content.Width + (scrolls ? padding.Right : 0);
-            state.OverflowBottom = padding.Top + content.Height + (scrolls ? padding.Bottom : 0);
+            ref MeasureCache cache = ref tree.MeasuresOf(handle);
+            cache.ContentRight = padding.Left + content.Width + (scrolls ? padding.Right : 0);
+            cache.ContentBottom = padding.Top + content.Height + (scrolls ? padding.Bottom : 0);
         }
 
         // A leaf with an aspect ratio is at least as high as its width gives (Taffy's compute_leaf_layout); its maximum does not
