@@ -549,6 +549,22 @@ Rejected:
 
 ---
 
+## スクロール
+
+Decision:
+  スクロールする箱の layout は CSS の `overflow` の意味（Taffy）にし、子は箱の内容領域で layout する。位置の変化は layout をやり直さず、描画とヒットテストで子を平行移動する（`ChangeKind.TransformProp`）。ホイールは論理画素（1 ノッチは Windows の行数 × 100/3）で、当たったノードから配り、位置が変わった箱が止める。位置はアプリが読み書きできる `ScrollState` に持つ（V2 の Grill、Issue #343）。
+
+Rejected:
+  - スクロールの軸で子に無限の空きを渡す（Flutter・Avalonia。Taffy の Chrome の比べを基準にできない）
+  - 位置が変わるたびに arrange し直す（Avalonia。§3.4.1 の契約に反し、スクロールのたびに layout が走る）
+  - ホイールの 1 ノッチを 50 画素にして設定を読まない（Avalonia。Windows の行数の設定が効かない）
+  - ホイールを行で渡し、受け手に行の高さを掛けさせる（GPUI。利用者のハンドラが行の高さを知る必要がある）
+  - ホバー中のスクロールする箱すべてに量を配る（GPUI。内側と外側が同時に動く）
+  - 位置の Signal だけを受ける `.ScrollOffset(signal)`（ホイールが書く先と、最大値を読む口が無い）
+  - V2 で見えるスクロールバーを作る（3 つとも中身に重ねる別の部品。行 G1 で部品として作る）
+
+---
+
 ## ポップアップ
 
 Decision:

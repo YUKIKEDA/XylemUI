@@ -1484,6 +1484,7 @@ public static class Elements
     public static Element Text(string content);
     public static Element Text(Func<string> content);                // 読んだ Signal が変わるたびに書き直す（string を確保する）
     public static Element Text(TextBuilder content);                 // 同じ。確保しない
+    public static Element ScrollView(Element child, ScrollState? state = null);   // 縦にスクロールする箱（V2、§3.4.1）
 }
 
 // メソッドチェーン。どれもその木の setter に直接書き、同じ Element を返す。長さは論理画素
@@ -1513,6 +1514,9 @@ public static class ElementExtensions
     // 入力
     public static Element Cursor(this Element e, CursorKind cursor);
     public static Element BlocksPointer(this Element e);
+    // スクロール（V2、§3.4.1「スクロールする箱」）
+    public static Element Overflow(this Element e, Overflow x, Overflow y);   // layout（ChangeKind.Size）
+    public static Element ScrollState(this Element e, ScrollState state);
     public static Element OnClick(this Element e, Action handler);
     public static Element On(this Element e, PointerEventKind kind, EventPhase phase, PointerHandler handler);
     // Signal とノードをつなぐ 1 つの経路（§2.4）。上の Signal を受ける多重定義はこれを呼ぶ
@@ -1757,7 +1761,7 @@ internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 - **min / max の内容の大きさと `Stretch`:** 入れる。幅では、内容の大きさ（子の内容を測る）と stretch-fit の大きさが、ブロック・フレックス・絶対配置のどこでも効く。高さの内容の大きさは、列のフレックスの主軸でだけ内容の高さになり、ブロック・行の交差軸・絶対配置では初期値（min は `auto`、max は上限なし）として扱う。折り返す行と列でも同じ。高さの `Stretch` はどこでも効く。解いた制限は、固定の制限と同じく aspect-ratio でもう一方の軸に移る（Chrome 155 の結果）。制限は親が子を測って解く。子の内容を読むので、固定の大きさでも構造の境界にしない。根は、layout の pass がウィンドウに対して解く。Taffy の XML テストに使うものが 0 件なので、期待値は Chrome から作る（36 件。折り返す行と列、aspect-ratio を持つノードの 6 件は PR #134 のレビューで足した）。Taffy の gentest（ChromeDriver で Chrome for Testing を動かし、HTML を開いて結果を XML に書く道具。clone の `scripts/gentest`）を作業用のフォルダに写し、XylemUI のテストの HTML だけを置いて動かす。HTML と作った XML は `tests/XylemUI.Core.Tests/Fixtures/XylemUI/` に置き、作り方の手順と Chrome の版（試しに作ったときは 155.0.8059.84）を同じフォルダに書く。Flutter は内容の幅に合わせる `IntrinsicWidth` を持つが、推測の layout を 1 回足すので高くつき、最悪で木の深さについて O(N²) になる（API ドキュメント）。XylemUI は内容の幅を 1 回の計算で求める（L4）ので、min / max に内容の大きさを書いても、問い合わせは増えない
 - **`FitContent(長さ)` は入れない（実装で決め直した、オーナー決定）:** Chrome 155 は `width`・`max-width`・`flex-basis` の値として受け付けず、宣言ごと捨てる。MDN の互換データでも Chrome と Safari は未対応で、Firefox は設定フラグの後ろにあるだけ。外の正解で確かめられず、Flutter・Avalonia も持たない（`docs/design-decisions.md`）。GPUI は、crates.io の gpui 0.2.2 の Taffy 0.9.0 は持たないが、Zed が出荷する Taffy 0.13.0 は持つ（行 L9 で分かった）。それでも、期待値を確かめる外の正解が無いことは変わらないので、外したままにする（オーナー決定、Issue #139）。Taffy の実装をなぞって期待値を作ると、自分の写しと比べるテストになる
 - **`Stretch`:** CSS どおり。Taffy の XML テスト 24 件を基準にする（実装では 14 件が通る。子のマージンが親の辺と接して Chrome が相殺する 4 件は、マージンを相殺しない設計（§3.2）により外した。float を使う 4 件は設計に float が無いので、`overflow` を使う 2 件は行 V2 を待つので外れる）。Avalonia の既定の `HorizontalAlignment.Stretch` と、Flutter の `double.infinity` の幅に当たる、場所いっぱいに広げる意味を、大きさとして書ける
-- **`flex-basis: content` は行 V2:** Taffy の XML テストの 2 件は、どちらも `overflow` も使うので、V2 まで通せない。外の正解で確かめられないまま入れない
+- **`flex-basis: content` は行 V2:** Taffy の XML テストの 2 件（`flex_basis_content_row`・`flex_basis_content_column`）で確かめて入れる。L3 の Grill は、この 2 件が `overflow` も使うので V2 まで通せないとしたが、2 件とも `overflow` を使わない（Taffy の HTML の原本も同じ。V2 の Grill の調べ）。Taffy 0.13.0 には無く、main は主軸の大きさのプロパティを無視して max-content で測る（`style/compact_length.rs` 268・404 行目、`compute/flexbox.rs` 1009〜1013・1089〜1112 行目）
 - **受け入れ:** スキップの理由が行 L3 の Taffy の XML テストが 0 件。Chrome から作ったテストが全件通る。L1a・L1b・L2 の場面の指標が、main と順番をそろえて測ってばらつきを超えて遅くならない。定常状態のアロケーション 0
 
 **L2 の方式（L2 の Grill で決定、Issue #120）:** Taffy の XML テスト（Chrome の結果）のうち、L2 の機能だけを使う 204 件を基準にする（実装では 199 件が通る。親が `position: static` で、CSS の基準が親より外の祖先になる 3 件は下の決定により、マージンの相殺を見る 2 件はマージンを相殺しない設計（§3.2）により外した。PR #125、Issue #124）。L2 の機能とほかの行の機能（`overflow` の V2、右から左の P03、Grid の P02、`stretch` などの L3、balance の L6）を両方使う 28 件は、L2 の後もその行を待つ（PR #121 のレビューで、テストの属性を全部数えた）。
@@ -1779,7 +1783,7 @@ internal delegate IntrinsicWidths IntrinsicWidthsFunc(float knownHeight);
 - **計測のキャッシュ:** 数を 9 から 4 にする（オーナー決定、L4 で決め直した）。内容の幅で、葉の幅の計測がキャッシュを通らなくなったので、4 で計算の回数が変わらない（L1a の 4 つの場面とも同じ回数）。1 ノードが 760 から 360 バイト、10,101 ノードの木で 12.5 から 5.9 MB（基準の大きさの引き継ぎを足して 456 バイト、7.5 MB）。2 では幅の変更が 3 倍遅くなった。初めて保存するときに確保する案（Chromium の `measure_cache_`）は、この場面で測られるノードが 10,100 あり 7.8 MB にしか減らず、間接参照と layout の中での確保で最初の layout が 15〜48 % 遅くなったので採らない。測られないノードが多い木を測る場面ができたら決め直す
 - **受け入れ:** 指標（最初の layout・1か所の変更・幅の変更、L1a の 3 つの場面と wrap の場面）ごとに、Flutter・Avalonia・GPUI のうち最も速いものと、ばらつきの中で同等を目標にする。届かない指標は、CSS の手順で避けられない計算の回数と 1 回の費用で説明できるときだけ受け入れる（オーナー決定）。Flutter の `Row` は自動の最小サイズも shrink も持たないので、同じ計算をしていない。L1a と L1b の受け入れ（GPUI より遅くない、幅の変更が 2.0 ms の内側、定常状態のアロケーション 0）は保つ
 
-テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロール領域は「子要素の合計サイズが親のavailableを超えてよい」特殊なBlockレイアウトとして扱う。
+テキストノードは4章の`MeasureText`をBlock/Flexの葉ノードとして利用する。スクロールする箱は、CSS の `overflow` の意味で扱う（§3.4.1「スクロールする箱」、V2 の Grill）。
 
 **Width-for-Height問題とテキスト計測キャッシュ**: Flexboxのmin-content/max-content計算では、幅が確定する前に複数回サイズ計測が走りうる。テキストは「幅が決まるまで高さが確定しない」強い非線形性を持つため、`MeasureText`（§4.3、BiDi解析+HarfBuzzシェーピングを含む）が同一フレーム内で複数回呼ばれるとボトルネックになる。これを避けるため、シェーピング結果と改行位置計算を分離した2段階キャッシュにする。
 
@@ -1955,6 +1959,45 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 **V2（MoonBit 版で到達。C# 版で再到達させる）:** 仮想化なしの ScrollView でこの契約を確認した。offset 変更後も子の仮想座標は動かず、layout は増えない。クリップ外の Button が translate 後に画素として出る。ヒットは `InverseTransform`（translate の逆）とクリップ済み bounds。
 
 **V3（MoonBit 版で到達。C# 版で再到達させる）:** 同じ契約の上に項目を動的追加した。Add は `Invalidate(Size)`、スクロールは `TransformProp`。item2 の `y=232` は offset=64 後も不変。
+
+**スクロールする箱（V2 の Grill でオーナーが決定、Issue #343）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3。Taffy 0.13.0 を固定し、feature `content_size` を使う）と、Taffy main（0.15.0、e82f526）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。
+
+- **layout は CSS の `overflow` の意味:** 子は、スクロールする箱でも、箱の内容領域の中で普通の箱と同じく layout する。はみ出した分は、スクロールできる範囲として記録するだけである。スクロールする箱は BFC を作り、マージンを相殺しない（Taffy 0.13.0 の `compute/block.rs` 496〜514 行目）。flex の項目としては、最小の内容の寄与を flex-basis で打ち切る（同 `compute/flexbox.rs` 1063〜1065 行目、main 1525 行目）。GPUI は Taffy のままである。Flutter（`widgets/single_child_scroll_view.dart` 455〜460 行目、`_getInnerConstraints`）と Avalonia（`Avalonia.Controls/Presenters/ScrollContentPresenter.cs` 432〜434 行目）は、スクロールの軸で子に無限の空きを渡す。XylemUI の layout は CSS の部分集合なので（§3.1）、Taffy の Chrome の比べを基準に保てる形を採る。Taffy の XML テストのうち、Block と Flex だけで V2 の機能（`overflow`・`scrollbar-width`・`flex-basis: content`）を使う 54 件（block 23、blockflex 2、flex 21、leaf 8）を基準にする。RTL の 2 件（`block_overflow_scroll_direction_rtl`・`block_scrollbar_rtl`）は行 P03、Grid の 1 件（`flex_container_baseline_column_scroll_container_clamped`）は行 P02 に残す
+- **`overflow` の値:** `Visible`・`Clip`・`Hidden`・`Scroll` を軸ごとに持つ（`LayoutStyle.OverflowX`・`OverflowY`）。`Hidden` と `Scroll` の箱はスクロールする箱で、その軸では自動の最小サイズが 0 になる。`Clip` は切るだけで、スクロールする箱にしない（Taffy 0.13.0 の `style/mod.rs` 354〜391 行目の `is_scroll_container` と `maybe_into_automatic_min_size`、軸ごとの使い方は `compute/flexbox.rs` 830〜831 行目）。`Auto` と、片方が visible ならもう片方を auto と計算する CSS の規則は、Taffy と同じく持たない（Taffy の Chrome のテストは、指定した値を記録している）
+- **スクロールバーの幅:** `LayoutStyle.ScrollbarWidth`（既定 0）は、`Scroll` の軸でだけ、内容領域の内側に場所を取る（縦にスクロールするなら右、横なら下。Taffy 0.13.0 の `compute/flexbox.rs` 458〜471 行目、`compute/block.rs` 443〜448 行目）。既定の 0 では場所を取らない。比べた 3 つの見えるスクロールバーは、中身に重ねて描く別の部品で、場所を取らない（Flutter の `widgets/scrollbar.dart` 2268〜2271 行目、Avalonia の Fluent の `ScrollViewer.xaml` 69〜71 行目の `AllowAutoHide`、zed の `ui/src/components/scrollbar.rs` 1257〜1264 行目）。見えるスクロールバーは行 G1 の部品で作る
+- **スクロールできる範囲:** Taffy main の `scrollable_overflow_rect` の求め方にする（`tree/layout.rs` 603 行目、最大の位置は 693〜712 行目）。スクロールする箱は両軸とも自分の枠の箱だけを親に寄与し、`Clip` はその軸だけを止める（`compute/common/scrollable_overflow.rs` 25〜62 行目）。末尾の padding はスクロールする箱だけが足す（`compute/block.rs` 871〜882 行目）。Taffy 0.13.0 の `content_size` は、Visible の軸だけが子の内容を伝える古い形（`compute/common/content_size.rs` 8〜34 行目）。Flutter は `max(0, 子 − 自分)`（`single_child_scroll_view.dart` 444〜453 行目）、Avalonia は子の bounds に margin と padding を足した `Extent`（`ScrollContentPresenter.cs` 532〜533・570〜583 行目）、GPUI は子の bounds の和から自分で求める（`gpui/src/elements/div.rs` 1985〜2013 行目）。Taffy のテストが持つ Chrome の `scroll_width`・`scroll_height` とも比べる
+- **位置は描画とヒットテストでの平行移動:** スクロール位置が変わっても layout をやり直さない。子の `LayoutState.Rect` は変わらず（上の「スクロール座標系」）、描画の段が子を −offset 平行移動する。無効化は `ChangeKind.TransformProp`（Paint と HitTest の印、layout の印は付けない）。V1 までの `SetTransform` は `ChangeKind.Color` で無効化しており、`TransformProp` は印の対応表にあるだけだった。Flutter は `markNeedsPaint` だけで layout をやり直さず（`widgets/single_child_scroll_view.dart` 402〜405 行目）、`pushClipRect` の中で `paintChild(child, offset + _paintOffset)` で描き、ヒットも同じ移動で戻す（545〜560・592〜600 行目）。GPUI は prepaint で子を `with_element_offset(scroll_offset, …)` の中に置き（`div.rs` 2033 行目）、Taffy の結果には入れない。Avalonia は位置が変わるたびに `InvalidateArrange` し、子を負の位置に arrange し直す（`ScrollContentPresenter.cs` 491・800〜807 行目）
+- **描く順と切る範囲:** `overflow` が `Visible` でない箱は、自分の影・背景と枠線・ヒット領域・描く関数・文字の後、子の前に、子を padding の箱（枠線の内側）で切る（`PushClip`）。角丸の箱は、枠線の内側の角丸（外の半径から枠線の幅を引いた値）で切る。CSS と同じである。スクロールする箱は、その中で子を −offset 平行移動する（平行移動だけなので状態を作らない、§5.0）。自分の箱とヒット領域は動かない。ヒットテストは、今のクリップと平行移動の中に書いたヒット領域をそのまま使う（§5.0「ヒット領域と `DrawingContext`」）
+- **範囲に収める時:** 位置は `[0, max(0, 内容 − 見える大きさ)]` に収める。ホイールで変えたときと、layout の pass のたび（内容が縮んだとき）の両方で収める。Avalonia は `CoerceOffset` で、`Extent` か `Viewport` が変わるたびに収め直す（`Avalonia.Controls/ScrollViewer.cs` 699〜720・779〜786 行目）。Flutter は `applyContentDimensions` から `correctForNewDimensions` で直す（`widgets/scroll_position.dart` 642〜700 行目）。GPUI は次の prepaint で収める（`div.rs` 2474〜2489 行目）
+- **layout が出す値を Signal に書く時:** `ScrollState.MaxOffset` と `Viewport` は、layout の pass の後、描画の段の前に、1 つの batch で書く。layout の中で書くと、Effect が layout の中で走って木を変える。等しい値は書かない。Avalonia の `ScrollChanged` は `LayoutUpdated` から出る（`ScrollViewer.cs` 190・881 行目）。Flutter の `ScrollMetricsNotification` も layout の後に出る
+- **公開の API:** `Elements.ScrollView(Element child, ScrollState? state = null)` は、縦にスクロールする箱（`OverflowY = Scroll`）を作る。一般の形は `.Overflow(Overflow x, Overflow y)` と `.ScrollState(ScrollState)` で、`ScrollView` はその近道である。`state` を渡さなければ、箱が自分で持つ。比べた 3 つは、どれもアプリが位置を読み書きできる（Flutter の `ScrollController` の `offset`・`jumpTo`、`widgets/scroll_controller.dart` 179・239 行目。GPUI の `ScrollHandle` の `offset`・`max_offset`・`set_offset`、`div.rs` 4264・4269・4400 行目。Avalonia の `Offset`・`Extent`・`Viewport`、`ScrollViewer.cs` 35・28・41 行目）。位置の Signal だけを受ける形（`.ScrollOffset(signal)`）は、ホイールが書く先と、最大値を読む口が無いので採らない
+
+```csharp
+public enum Overflow : byte { Visible, Clip, Hidden, Scroll }
+
+public sealed class ScrollState
+{
+    public IReadOnlySignal<Vector2> Offset { get; }     // 今の位置（論理画素）。ホイールと ScrollTo が書く
+    public IReadOnlySignal<Vector2> MaxOffset { get; }  // 内容 − 見える大きさ（0 以上）。layout の後に書く
+    public IReadOnlySignal<Size> Viewport { get; }      // 見える大きさ（padding の箱）
+    public void ScrollTo(Vector2 offset);               // 範囲に収めて書く
+}
+```
+
+- **名前:** `Overflow` は、Taffy・GPUI と同じく、型（列挙）と `ElementExtensions` の拡張メソッドの両方の名前になる。`ElementExtensions` の中では、メソッドの名前が型の名前より先に見つかり、`Overflow.Scroll` が CS0119 になる（V2 の設計で、リポジトリの設定の scratch のプロジェクトでコンパイルして確かめた）。`ElementExtensions` の中だけ `XylemUI.Overflow.Scroll` と書く。アプリと、ほかのクラスでは起きない
+- **ホイールの単位:** 論理画素で渡す。1 ノッチ（`WHEEL_DELTA` 120）は、縦が `SPI_GETWHEELSCROLLLINES` の行数 × 100/3 画素、横が `SPI_GETWHEELSCROLLCHARS` の文字数 × 100/3 画素で、既定の 3 なら 100 画素である。Flutter と同じ（Chromium の値、`flutter_window.cc` 469〜479 行目）。設定は `WM_SETTINGCHANGE` で読み直す（GPUI の `gpui_windows/src/system_settings.rs` 15〜95 行目）。Avalonia は設定を読まず、1 ノッチを 50 画素にする（`ScrollContentPresenter.cs` 777・785 行目）。GPUI は行で渡し、ウィンドウの行の高さを掛ける（`gpui/src/interactive.rs` 614〜619 行目）。画素で渡すと、利用者のハンドラは行の高さを知らなくて済む。`WHEEL_PAGESCROLL` は 3 つとも別に扱わないので、扱わない。120 より小さい量（タッチパッド）は、溜めずに分数で渡す（3 つとも同じ）。正の値は位置が増える向き（下と右）にする。Windows の縦のホイールは上に回すと正なので符号を反転し、横は右が正なのでそのまま使う
+- **ホイールを配る相手:** 当たったノードから、Down などと同じ経路（capture と bubble）で配る。スクロールする箱は bubble で受け、範囲に収めた位置が実際に変わるときだけ受け取って `StopPropagation` する。端にいて位置が変わらなければ、外側の箱へ渡る（スクロールの連鎖）。Flutter は、位置が変わる Scrollable だけが `PointerSignalResolver` に名乗り出て、最初の（最も深い）ものが受ける（`widgets/scrollable.dart` 954〜966 行目、`gestures/pointer_signal_resolver.dart` 86〜93 行目）。Avalonia は `e.Handled = !IsScrollChainingEnabled || offsetChanged`（`ScrollContentPresenter.cs` 796 行目、連鎖は既定で有効）。GPUI は止めずに、ホバー中のスクロールする箱すべてに量を配る（`div.rs` 3339〜3384 行目）。ボタンを押してキャプチャしている間も、当たったノードから配る（Flutter と GPUI。Avalonia はキャプチャしたノードに配る、`Avalonia.Base/Input/MouseDevice.cs` 232〜246 行目）
+- **Shift で横:** マウスの、Shift を押した縦のホイールは、スクロールする箱の側で横のスクロールにする（Flutter の `scrollable.dart` 933〜951 行目はマウスだけ、Avalonia の `ScrollContentPresenter.cs` 764〜769 行目）。入力の層は来たままの量を渡す。GPUI はバックエンドで変える（`gpui_windows/src/events.rs` 555〜585 行目）
+- **滑らかなスクロール:** しない。ホイールで位置をすぐ変える。3 つともアニメーションさせない（Avalonia の `ScrollContentPresenter.cs` 794 行目、Flutter の `widgets/scroll_position_with_single_context.dart` 210〜236 行目、GPUI の `div.rs` 3378〜3382 行目）
+- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜811 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜103 行目）は行 I1。キーボードでのスクロール（矢印・PageUp など。Flutter の `ScrollAction` は 1 行 50 画素、1 ページはビューポートの 0.8 倍、`widgets/scrollable_helpers.dart` 386・410・445〜446 行目）は行 K1。見えるスクロールバーは行 G1
+- **確かめ方:**
+  - layout: 上の Taffy の 54 件が通る。`scroll_width`・`scroll_height` を持つノードは、スクロールできる範囲が Chrome と一致する
+  - WARP: 箱の外にあって切られていたボタンが、位置を変えた後に画素として出る（MoonBit 版の V2 と同じ到達点）。箱の外は切られる
+  - Core: 位置を変えても layout が走らない（回数が増えない）。子の仮想座標は変わらない。スクロールした子をクリックすると当たり、切られた部分では当たらない。内容が縮むと位置が範囲の中に戻る。スクロールの連鎖。マウスの Shift で横になる
+  - 本物のウィンドウ: `WM_MOUSEWHEEL` の 1 ノッチで、設定の行数 × 100/3 画素動く。`WM_MOUSEHWHEEL` で横に動く。動いた後のフレームが Present する
+  - 割り当て 0: ホイールでスクロールするフレーム（配送を含む）
+  - 計測: `frames` に、1,000 個の箱を ScrollView に入れて毎フレーム位置を変える場面を足し、描画の段と layout の pass（0 のはず）を、main の `--tree` と比べる
+  - サンプルは作らない。追加とスクロールする一覧の TODO のサンプルは行 V3
 
 ### 3.4.2 Active/Cached/Releasedの3段階モデル
 
@@ -2634,7 +2677,7 @@ internal sealed class WindowFrames
 - **枠線の幅:** 枠線の幅の持ち主は `LayoutStyle.Border` で、layout はこの幅で中身を置く。描画の段も同じ幅で枠線を描き、`NodeVisual` は塗り（`BorderPaint`）だけを持つ。2 か所に幅を持つと、枠線の太さと中身の位置がずれる（PR #309 のレビュー）。描画の段は幅を解き直さず、layout が確定（commit）したときに解いた枠線の幅を、確定した矩形と一緒に `LayoutState` に残して読む（`LayoutState.Border`）。文字の葉の行を置く内容の箱にも、同じ理由で、確定したときの余白と枠線の幅を残す。使うのは文字の葉だけなので、`TextLeaf.PaddingBorder` に持ち、ほかのノードを大きくしない（V1b の実装で足した。PR #313 のレビュー）。layout は、% の幅を解く基準を場合ごとに変える。Block と Flex の子は親の幅の入力（`input.ParentSize.Width`）、親の幅が未定のときは自分の外側の幅（`LayoutEngine.Block.cs` の `Maybe.Or(parent.Width, outerWidth)`）、Flex の項目は容器の内側の幅、絶対配置の子は containing block の幅、根はビューポートである。描画の段がこの規則をもう 1 つ持つと、% の枠線で layout と食い違う（PR #309 の再レビュー）。V1b の実装で `Unsafe.SizeOf<UiNode>` は 536 から 560 バイトになり（描画の状態の参照 8 と、枠線の幅の `Edges` 16。詰め物には入らなかった）、L1a の layout の場面は main と交互に 4 巡測って、どの指標も遅くならなかった（`docs/benchmarks/v1b-draw-stage.md`）
 - **箱の見た目は参照 1 つ:** `NodeVisual` を class にして、`UiNode` は参照を 1 つ持つ（8 バイト）。struct で埋め込むと、見た目の無いノードも約 104 バイト大きくなる（見積もり: 影 `BoxShadow?` 32、背景 `Paint?` 24、半径 16、枠線の塗り `Paint?` 24、関数の参照 8。詰め物の分は実装で `Unsafe.SizeOf` で確かめる）。文字の葉の状態（§3.2）と同じ考え方である。§2.5 の `PaintState` の struct は作らない
 - **座標:** 描画の段は、根から木を上にたどる順に下りながら、親の原点に `LayoutState.Rect` の位置を足していき、絶対座標の箱を作る。描く関数にはその箱を渡す。GPUI も絶対座標の箱を渡す（`window.rs` 5285〜5286 行目）。Flutter は親から積み上げた原点を渡し（`box.dart` 3390 行目）、Avalonia は自分の座標で描いて、合成の段で原点を足す（`Visual.Composition.cs` 137 行目）。表示リストの命令とヒット領域は、もう絶対座標の論理座標で受け取る（R4e）ので、同じ座標をそのまま渡す
-- **描く順:** 1 つのノードの中では、影（`DrawShadow`）、背景と枠線（`FillRect` の 1 つの命令、R4a）、描く関数、子の順。ノードどうしは木の順（親が先、子は並びのとおり）。枠線を子より先に描くのは、Flutter（`box_decoration.dart` 571〜582 行目）・Avalonia（`ServerCompositionVisual.Render.cs` 165 行目で自分の命令を子より先に描く）と CSS で、GPUI は子の後に描く（`style.rs` 742〜753 行目）。z-index は持たない。Flutter は子の並びのとおり（`stack.dart` 712〜713 行目）、Avalonia は `ZIndex`（`Visual.Composition.cs` 51〜61 行目）、GPUI は `defer_draw` の優先度（`window.rs` 4504 行目）。前面に出す仕組みは、ポップアップの行 P02 で、前面のノードが後ろを遮る場面と一緒に決める。子を箱で切る処理は、overflow の行 V2 まで行わない（CSS の既定は visible）
+- **描く順:** 1 つのノードの中では、影（`DrawShadow`）、背景と枠線（`FillRect` の 1 つの命令、R4a）、描く関数、子の順。ノードどうしは木の順（親が先、子は並びのとおり）。枠線を子より先に描くのは、Flutter（`box_decoration.dart` 571〜582 行目）・Avalonia（`ServerCompositionVisual.Render.cs` 165 行目で自分の命令を子より先に描く）と CSS で、GPUI は子の後に描く（`style.rs` 742〜753 行目）。z-index は持たない。Flutter は子の並びのとおり（`stack.dart` 712〜713 行目）、Avalonia は `ZIndex`（`Visual.Composition.cs` 51〜61 行目）、GPUI は `defer_draw` の優先度（`window.rs` 4504 行目）。前面に出す仕組みは、ポップアップの行 P02 で、前面のノードが後ろを遮る場面と一緒に決める。`overflow` が `Visible` でない箱は、文字の後、子の前に、子を padding の箱で切る。スクロールする箱は、その中で子を −offset 平行移動する（§3.4.1「スクロールする箱」、V2 の Grill）
 - **文字の葉:** layout で確定した幅の項目（§3.2 の `LineBreakCache.Committed`）の行を、表示リストに描く。`LaidGlyph`（論理ピクセルの幅とずれ、run の番号）の行を描く命令を、`DisplayList` に internal で足す。行のベースラインは、計測と同じ行の高さの関数（§3.2「行の高さ」）で求める。色は、解決した後の文字の色（下の「不透明度・変換・擬似状態」の「文字の色」）。比べた 3 つも、layout の結果をそのまま描く（Flutter の `TextPainter.paint`、`text_painter.dart` 1322〜1358 行目。Avalonia の `TextLayout.Draw`、`TextLayout.cs` 295〜307 行目。GPUI の `WrappedLine::paint`、`text_system/line.rs` 460 行目）
 - **描く関数の例外（V1d の Grill、PR #313 で送った点）:** 描く段は、利用者の描く関数の呼び出しを囲む。投げた例外は `ReactiveRuntime.UnhandledExceptionHandler` に渡し、関数が開いたスコープ（`PushOpacity`・`PushClip`・`PushTransform`）を呼ぶ前の深さまで閉じてから、そのノードの文字の葉と子、兄弟を描き続け、フレームを Present する。表示リストに、スコープの深さを読む口と、その深さまで閉じる口（internal）を足す。V1d の前は、印を消した後に表示リストが途中で終わり、Present しなかった。Flutter は描画の例外を `FlutterError.reportError` で報告して、親が兄弟を描き続け、フレームを出す（`rendering/object.dart` 3579〜3585 行目、`PaintingContext.paintChild` 249〜267 行目。`CustomPainter` の `canvas.save()` は戻さない、`rendering/custom_paint.dart` 583〜593 行目）。Avalonia は、`Dispatcher.UnhandledException` を受ける人がいなければアプリを落とす（`Avalonia.Base/Threading/DispatcherOperation.cs` 290〜317 行目、`Dispatcher.Exceptions.cs` 49〜133 行目）。GPUI は描く関数の panic を捕まえない（`gpui/src/elements/canvas.rs` 74〜88 行目）
 - **`Hidden`:** 描画の段は、`LayoutStyle.Hidden` のノードを部分木ごと飛ばす。ヒット領域は描画と一緒に書く（R4e）ので、当たりも同時に消える。Avalonia の `IsVisible`（`ServerCompositionVisual.Render.cs` 61 行目）、GPUI の `display: none`（`div.rs` 2084 行目）、Flutter の `Offstage`（`proxy_box.dart` 3939〜3943 行目）と同じ
@@ -3238,7 +3281,7 @@ public enum PointerButton : byte { None, Left, Right, Middle, XButton1, XButton2
 [Flags] public enum PointerButtons : byte { None = 0, Left = 1, Right = 2, Middle = 4, XButton1 = 8, XButton2 = 16 }
 [Flags] public enum KeyModifiers : byte { None = 0, Control = 1, Shift = 2, Alt = 4 }
 public enum PointerType : byte { Mouse, Touch, Pen }
-public enum PointerEventKind : byte { Down, Up, Move, Enter, Leave, Cancel, Click }
+public enum PointerEventKind : byte { Down, Up, Move, Enter, Leave, Cancel, Click, Wheel }   // Wheel は V2
 
 // ハンドラに渡すイベント。in で渡す。V1d で公開した（§2.13）
 public readonly struct PointerEvent
@@ -3248,6 +3291,7 @@ public readonly struct PointerEvent
     public Element CurrentTarget { get; }    // 今呼んでいるハンドラのノード（DOM の currentTarget、PR #319 のレビュー）
     public Vector2 Position { get; }         // ウィンドウの論理座標（物理画素を ScaleFactor で割った値）
     public Vector2 LocalPosition { get; }    // ハンドラのノードの論理座標（下の「座標」）
+    public Vector2 WheelDelta { get; }       // Wheel の量（論理画素、正は位置が増える向き）。ほかの種類では 0（V2、§3.4.1）
     public PointerButton Button { get; }
     public PointerButtons Buttons { get; }
     public KeyModifiers Modifiers { get; }
@@ -3302,7 +3346,7 @@ internal sealed class WindowInput
   - Flutter は `WM_POINTER*` でタッチ・ペン・マウスを受け（`flutter_window.cc` 613〜676 行目）、`WM_MOUSEMOVE` も受ける（678〜698 行目）
   - OS がタッチとペンから作るマウスのメッセージは、マウスとして受ける。`PointerType` は `GetMessageExtraInfo()` の印で入れる。`& 0xFFFFFF00` が `0xFF515700` ならタッチかペンで、`0x80` のビットが立っていればタッチ（Flutter の `flutter_window.cc` 56〜69 行目と同じ判別。Flutter はこの印のメッセージを捨て、`WM_POINTER` で受ける）。`WM_POINTER` でタッチとペンを受ける形（複数のポインタ、筆圧、傾き）は行 I1 で入れる
   - 修飾キーは、Control と Shift を `wParam` の `MK_CONTROL`・`MK_SHIFT` から読み、`wParam` に無い Alt を `GetKeyState(VK_MENU)` から読む（PR #319 のレビュー）
-  - ホイール（`WM_MOUSEWHEEL`）は、スクロールの意味を決める行 V2 で入れる。それまでは `DefWindowProc` に渡す
+  - ホイール（`WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL`）は V2 で入れる（§3.4.1「スクロールする箱」、V2 の Grill）。`wParam` の上の語が、符号付きの回した量（`WHEEL_DELTA` 120 で 1 ノッチ）。`lParam` の位置は画面の座標なので、`ScreenToClient` でクライアントの座標にする（ほかのマウスのメッセージはクライアントの座標）。下の語の `MK_*` のボタンとキー、`GetMessageExtraInfo` の印は、ほかのマウスのメッセージと同じに読む。Avalonia（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 403〜433 行目）と GPUI（`gpui_windows/src/events.rs` 543〜628 行目）も、`lParam` を画面の座標として読む。量は論理画素の `PointerInput.WheelDelta` にして Core に渡す
 - **イベントの種類:** Down・Up・Move・Cancel・Click は経路で配る。Enter と Leave は、ホバーの集合に入ったノードと出たノードに 1 回ずつ送る直接のイベントで、伝播しない。直接のイベントは、登録したフェーズによらず、そのノードのハンドラだけを呼ぶ。Avalonia の `PointerEntered`・`PointerExited` は Direct で（`Avalonia.Base/Input/InputElement.cs` 107〜219 行目）、Flutter の Enter と Exit は MouseTracker が注釈ごとに作る（`gestures/mouse_tracker.dart` 399〜428 行目）。Cancel は、キャプチャを奪われたときに送る（Avalonia の `PointerCaptureLost`、Flutter の `PointerCancelEvent`）
 - **座標:** ヒットテストは物理画素の座標のまま試す（§5.0「ヒット領域と `DrawingContext`」の「座標」）。`Position` は物理画素を `WindowFrames` の倍率で割った論理座標で、Avalonia（`WindowImpl.AppWndProc.cs` 1398〜1401 行目の `DipFromLParam`）・GPUI（`gpui_windows/src/util.rs` 151〜156 行目の `logical_point`）・Flutter（`gestures/converter.dart` 62〜80 行目）と同じく、画素の中心に寄せない。`LocalPosition` は、ハンドラのノードのヒット領域の項目の状態の変換の逆で `Position` を戻し、ノードの境界の箱の左上を引いた値である。ハンドラを持つノードは必ずヒット領域を書く（§5.0）ので、項目はある。ただし、直近のフレームでヒット領域を書かなかったノード（直近のフレームの後に初めてハンドラを足した祖先が、次のフレームの前に経路に入るときなど）では、`LocalPosition` は NaN になる。木から外したノードは解放されるので、Leave も届かない（PR #340 のレビュー）。公開の API の XML ドキュメントにそう書く（V1d の Grill）。Flutter は `localPosition`（`gestures/events.dart` 326 行目）、Avalonia は `GetPosition(relativeTo)`（`Avalonia.Base/Input/PointerEventArgs.cs` 86〜114 行目）を持つ。GPUI はウィンドウの座標だけを渡す
 - **届ける時機:** `Handle` は、ウィンドウ手続きがメッセージを受けたその場で、直近に完成した表示リストのヒット領域で試し、ハンドラを呼ぶ。3 つとも同じである（Avalonia の `PresentationSource.Input.cs` 19〜41 行目、GPUI の `gpui/src/window.rs` 2041〜2049 行目、Flutter の `gestures/binding.dart` 302〜311 行目。Flutter のリサンプリングは既定で切ってある、610 行目）。`WM_MOUSEMOVE` の間引きは OS に任せる。1 回の `Handle` の全体（Enter・Leave と、経路の配送）を 1 つの `Batch` で包み、Effect はその後に流れる（§2.2）。ハンドラが変えた木は次のフレームで描かれ、その前に来たイベントは古いヒット領域で試す（§2.10 の「直近完成」）

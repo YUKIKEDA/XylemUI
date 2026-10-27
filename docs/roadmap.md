@@ -19,9 +19,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 ## 今
 
 - **フェーズ:** V1（T11 は v1.x。Q3 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** V1 の次の行（オーナーが決める）。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
-- **ブランチ:** —
-- **Issue:** —
+- **作業中:** V2（ScrollView）の設計（#343）。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
+- **ブランチ:** `docs/343-v2-scroll-design`
+- **Issue:** #343
 
 ## ツールチェーン
 
@@ -85,9 +85,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | R5  | 任意のパス（曲線、塗りと線、つなぎ目の形、破線）と、パスの当たり判定・パスの形の影。楕円の破線、楕円の円弧、3 つ以上の間隔の破線もこの行で入れる（R4b の Grill、設計書 §5.0「線・楕円・円弧と文字の塗りの API」）。三角形化の方式（CPU で三角形にして MSAA の中間テクスチャに描く GPUI の形か、ステンシルで塗ってから覆う Flutter の形か）を Grill で決め、依存を入れないなら自前で書く（D10 の Grill）。アイコンの形式がこの行に乗るかは、行 D13 で決める。V1 の後に行う | not-started | —     | §5.0 |
 | D9  | リッチテキスト（1 つの文章の中の混在スタイル、下線・取り消し線、リンク、インラインオブジェクト）を要件にするか、範囲と時期の Grill。テキストの葉の状態の形を T1 の前に決める（§10.4 の「型・フックは最初から」）（Issue #174 で行にした） | not-started | [#168](https://github.com/YUKIKEDA/XylemUI/issues/168) | — |
 | T1  | 改行（UAX#14 の 2 パス、§4.1）、グラフェム（UAX#29）、`tools/UnicodeTableGen`。テキストの葉が、整形の結果から内容の幅の関数（`IntrinsicWidthsFunc`）を持つ（L5 の「親で止める」は、この関数を持つ葉でだけ効く。持たない葉は計測のキャッシュから溢れて親へ伝わる、PR #112 のレビュー）。行 V1a の前に入れる（Issue #280）。T1a（Unicode の表、書記素と改行の候補、適合のテスト、フォールバックの境界）と T1b（折り返しと内容の幅）に分ける | done        | [#284](https://github.com/YUKIKEDA/XylemUI/issues/284)（T1a）・[#292](https://github.com/YUKIKEDA/XylemUI/issues/292)（T1b） | §4.1                                       |
-| V2  | ScrollView。`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）と、Taffy の `overflow` の XML テスト。`flex-basis: content`（L3 の Grill で移した。Taffy の XML テストの 2 件が `overflow` も使う）。ホイール（`WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL`）のイベントと、スクロールの量の意味（行か画素か、OS の行数の設定）（V1c の Grill） | not-started | —     |                                            |
-| K1  | キーボードとフォーカス（§7.1・§7.2）: `KeyEvent`、Tab の順、`FocusScope` と `FocusManager`、`Focusable`、Focused と Disabled の擬似状態（§2.13）、Enter と Space でのボタンの Click。V3 の前に入れる（V1c の Grill） | not-started | —     | §7.2 |
-| I1  | タッチとペン（§8.10）: `WM_POINTER`、複数のポインタ、筆圧と傾き。V1c は、OS がタッチとペンから作るマウスのメッセージをマウスとして受け、`PointerType` だけを入れる。V3 の前に入れる（V1c の Grill） | not-started | —     | §8.10 |
+| V2  | ScrollView。`overflow` のレイアウトの意味（スクロールする箱の自動の最小サイズは 0、スクロールバーの幅）と、Taffy の `overflow` の XML テスト。`flex-basis: content`（L3 の Grill で移した。L3 は Taffy の XML テストの 2 件が `overflow` も使うとしたが、2 件とも使わない、V2 の Grill の調べ）。設計は §3.4.1「スクロールする箱」（V2 の Grill、Issue #343）。ホイール（`WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL`）のイベントと、スクロールの量の意味（行か画素か、OS の行数の設定）（V1c の Grill） | in-progress | [#343](https://github.com/YUKIKEDA/XylemUI/issues/343)（設計） |                                            |
+| K1  | キーボードとフォーカス（§7.1・§7.2）: `KeyEvent`、Tab の順、`FocusScope` と `FocusManager`、`Focusable`、Focused と Disabled の擬似状態（§2.13）、Enter と Space でのボタンの Click。V3 の前に入れる（V1c の Grill）。キーボードでのスクロール（矢印・PageUp など。Flutter の `ScrollAction` は 1 行 50 画素、1 ページはビューポートの 0.8 倍）もこの行で入れる（V2 の Grill） | not-started | —     | §7.2 |
+| I1  | タッチとペン（§8.10）: `WM_POINTER`、複数のポインタ、筆圧と傾き。V1c は、OS がタッチとペンから作るマウスのメッセージをマウスとして受け、`PointerType` だけを入れる。V3 の前に入れる（V1c の Grill）。DirectManipulation で受けるタッチパッドのパンと慣性もこの行で入れる（Flutter・GPUI の形、V2 の Grill）。V2 は小さい `WM_MOUSEWHEEL` の量をそのまま渡すだけ | not-started | —     | §8.10 |
 | V3  | TODO アプリ相当。部分を作り直す `Show` と `For`（§2.7）が要る。`For` で行を 1 つずつ外す前に、`UiTree.Unlink` が前の兄弟を先頭から探す（O(子の数)、1 万行の一覧を 1 行ずつ外すと O(n²)）のを直す: 前の兄弟を持つか、外す順を決める（PR #340 のレビュー） | not-started | —     |                                            |
 | M1b | 部品が要る性能のシナリオ（§11.3: 1,000 ボタン・1 万の日本語テキストノード・TextField と IME の入力遅延・スクロール・テーマの切り替え・a11y の更新）を `benchmarks/XylemUI.E2E` で測り、M1a の目標と比べる。1 万ノードのメモリでは、`UiNode` の大きさの内訳を見る（`LayoutState.Box` の 64 バイトは `%` を使うノードでは使われない、PR #103 のレビュー）。1 万の日本語テキストノードのメモリ（管理ヒープを含む）を Flutter・Avalonia・GPUI と比べる（V1a の設計、Issue #296）。折り返す文字の葉のリサイズでキャッシュが外れたとき（幅が変わり続ける間、10,101 個の葉で約 10 ms）を、Flutter・Avalonia・GPUI の同じ場面と比べ、予算（120 Hz で 2.0 ms）に収める案を決める（PR #301 のレビューでオーナーが決定）。1 万のテキストの葉の内容を一度に変える場面を測る（`EnqueueLayoutRoot` の重複の確認は、積んだ要求の数に比例する。PR #112 のレビュー） | not-started | —     | §11.3                                      |
 | T3  | アトラスのプロットより大きいグリフ（既定 256 px 超）の描画。Skia のようにパスで描くか専用の領域を取るかを比べて決める（S8b では描かない、§5.0.3） | not-started | —     | §5.0.3                                     |
@@ -106,7 +106,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | D13 | 画像の経路（`ImageHandle` とテクスチャキャッシュの行、対応する形式、デコーダと依存、アイコンの形式）の Grill（Issue #174 で行にした） | not-started | [#165](https://github.com/YUKIKEDA/XylemUI/issues/165) | — |
 | D14 | §13.1 のほかに出す部品の範囲（Calendar・ProgressBar・SplitView・Expander・ContextMenu・ツリー・表など）と、出す基準の Grill（Issue #174 で行にした） | not-started | [#169](https://github.com/YUKIKEDA/XylemUI/issues/169) | — |
 | D15 | ローカライズ（メッセージの辞書、複数形と選択、ロケールに応じた書式、ロケールの解決、部品の文言）を要件にするか、方式の Grill（Issue #174 で行にした） | not-started | [#170](https://github.com/YUKIKEDA/XylemUI/issues/170) | — |
-| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3）。子の背景などを親の状態で変える形（GPUI の `group_hover`、Avalonia のテンプレートのセレクタ）を、テーマの部品で決める（V1 は文字の色の受け継ぎで済ませた、V1d の Grill） | not-started | —     | §13.3                                      |
+| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3）。子の背景などを親の状態で変える形（GPUI の `group_hover`、Avalonia のテンプレートのセレクタ）を、テーマの部品で決める（V1 は文字の色の受け継ぎで済ませた、V1d の Grill）。見えるスクロールバー（中身に重ねて描く部品、Flutter・Avalonia・zed と同じ）もこの行で作る（V2 の Grill） | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト。揃えの `self-start` / `self-end`（子自身の書字の向きで揃える。Issue #88） | not-started | —     | §10.4                                      |
 | P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した）。フォントのフォールバックを fontconfig（`FcFontMatch`）で、`IFontProvider` の実装として入れる（F1 の Grill）。FreeType を `vendor/` のビルドに戻し（T4 で Windows から外した）、`IGlyphRasterizer` の FreeType の実装を入れる。グリフは FreeType の light（`FT_LOAD_TARGET_LIGHT`）と横 4 段階のサブピクセル位置で描き、ガンマとコントラストは既定の 1.8 と 1.0（T4 の Grill）。S8a のインクの箱のテスト（アウトラインの箱との一致）を FreeType の実装に書く。LCD の AA は、wgpu がデュアルソースのブレンドを持つときだけ使う（GPUI と同じ、T2 の Grill） | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
