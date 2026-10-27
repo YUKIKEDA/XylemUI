@@ -134,9 +134,11 @@ internal sealed class WindowInput
                 // While a button is down the window keeps the pointer's moves, which decide the hover outside it.
                 if (CapturedNode().IsNone)
                 {
+                    // Through UpdateHover, so that a leave that comes while enters and leaves are sent waits for them too (a
+                    // handler that pumps messages, Issue #329).
                     _inside = false;
                     _hit = default;
-                    SetHover(0, input);
+                    UpdateHover(input);
                 }
 
                 break;
@@ -260,8 +262,16 @@ internal sealed class WindowInput
         _hoverPending = false;
     }
 
+    // The hover at the position, or none when the pointer left the window.
     private void TestHover(in PointerInput input)
     {
+        if (!_inside)
+        {
+            _hit = default;
+            SetHover(0, input);
+            return;
+        }
+
         _hit = HitAt(input);
         NodeHandle captured = CapturedNode();
         NodeHandle start =
