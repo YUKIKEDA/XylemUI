@@ -205,6 +205,85 @@ public sealed class ScrollTests(UiThreadFixture ui)
     }
 
     /// <summary>
+    /// A scroll container the app gave no state keeps its range between wheels: the state the first wheel attaches gets the range
+    /// at once, with no layout pass to write it (PR #348's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box of 200 x 100 whose height scrolls, with no state, holding a column of ten boxes 50 high (largest position 400).
+    ///
+    /// Steps:
+    /// - Send a wheel of (0, 100) at (10, 10); run the frame; send another.
+    ///
+    /// Expected:
+    /// - The state attached to the box is at (0, 200), and its largest position is (0, 400).
+    /// </remarks>
+    [Fact]
+    public void Wheel_ContainerWithoutAState_KeepsItsRangeBetweenWheels()
+    {
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element view = default;
+            scene.Mount(() => view = Box(Column(Boxes(10))).Overflow(Overflow.Visible, Overflow.Scroll).Width(200).Height(100));
+
+            scene.Wheel(10, 10, new Vector2(0, 100));
+            scene.Scheduler.Run();
+            scene.Wheel(10, 10, new Vector2(0, 100));
+
+            ScrollState state = scene.Tree.ScrollStateOf(view.Node)!;
+            Assert.Equal(new Vector2(0, 200), state.Offset.Get());
+            Assert.Equal(new Vector2(0, 400), state.MaxOffset.Get());
+            scene.Dispose();
+        });
+    }
+
+    /// <summary>
+    /// A position set before the first layout is kept until the state has a range, which then keeps it in itself; a state attached
+    /// to a node already laid out gets the node's range at once.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two scroll views of 200 x 100 in a column, each holding a column of ten boxes 50 high (largest position 400); a state for
+    ///   the first, and one for the second that is not attached at the mount.
+    ///
+    /// Steps:
+    /// - Scroll the first state to (0, 120) before the mount and again to (0, 1,000) in the root function; mount. Attach the
+    ///   second state to the second view; scroll it to (0, 50).
+    ///
+    /// Expected:
+    /// - Before the mount the first state is at (0, 120); after it, at (0, 400). The second state's largest position is (0, 400)
+    ///   once attached, and it is at (0, 50).
+    /// </remarks>
+    [Fact]
+    public void ScrollTo_BeforeTheFirstLayout_IsKeptUntilTheRange()
+    {
+        ui.Invoke(() =>
+        {
+            var scene = new Scene(height: 200);
+            var first = new ScrollState();
+            var second = new ScrollState();
+            Element secondView = default;
+            first.ScrollTo(new Vector2(0, 120));
+            Assert.Equal(new Vector2(0, 120), first.Offset.Get());
+            scene.Mount(() =>
+            {
+                Element view = ScrollView(Column(Boxes(10)), first).Width(200).Height(100);
+                first.ScrollTo(new Vector2(0, 1_000));
+                secondView = ScrollView(Column(Boxes(10))).Width(200).Height(100);
+                return Column(view, secondView);
+            });
+            Assert.Equal(new Vector2(0, 400), first.Offset.Get());
+
+            _ = secondView.ScrollState(second);
+            Assert.Equal(new Vector2(0, 400), second.MaxOffset.Get());
+            second.ScrollTo(new Vector2(0, 50));
+            Assert.Equal(new Vector2(0, 50), second.Offset.Get());
+            scene.Dispose();
+        });
+    }
+
+    /// <summary>
     /// A scroll container at the end of its range lets the wheel go on to the one outside it (scroll chaining), and one that moves
     /// stops it there.
     /// </summary>

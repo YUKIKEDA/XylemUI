@@ -302,6 +302,10 @@ internal sealed class WindowFrames
         ref readonly LayoutStyle style = ref node.Layout.Style;
         Edges border = node.Layout.Border;
         CornerRadii outer = node.Visual?.Radii ?? default;
+
+        // Each inner radius is the outer one less the wider of the corner's two borders: CSS takes the horizontal radius less the
+        // side's width and the vertical one less the top's or bottom's, an ellipse that a circular radius cannot hold. The two
+        // agree for a uniform border.
         bool scrolls = style.IsScrollContainer;
         bool clipX = scrolls || style.OverflowX != Overflow.Visible;
         bool clipY = scrolls || style.OverflowY != Overflow.Visible;

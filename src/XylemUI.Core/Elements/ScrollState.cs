@@ -8,13 +8,15 @@ namespace XylemUI;
 /// </summary>
 /// <remarks>
 /// It belongs to the UI thread, as signals do. It is attached to one node at a time (<see cref="ElementExtensions.ScrollState"/>);
-/// <see cref="MaxOffset"/> and <see cref="Viewport"/> are written after each layout of the node, before it is drawn.
+/// <see cref="MaxOffset"/> and <see cref="Viewport"/> are written after each layout of the node, before it is drawn, and when the
+/// state is attached to a node already laid out.
 /// </remarks>
 public sealed class ScrollState
 {
     private readonly Signal<Vector2> _offset = Signal.Create(Vector2.Zero);
     private readonly Signal<Vector2> _maxOffset = Signal.Create(Vector2.Zero);
     private readonly Signal<Size> _viewport = Signal.Create(default(Size));
+    private bool _hasRange;
 
     /// <summary>
     /// Gets the scroll position, in logical pixels: how far the content is moved up and to the left, from 0 to
@@ -54,7 +56,9 @@ public sealed class ScrollState
 
     /// <summary>
     /// Scrolls to a position, kept between 0 and <see cref="MaxOffset"/>. The node is drawn again at the next frame, with no
-    /// layout (<see cref="ChangeKind.TransformProp"/>).
+    /// layout (<see cref="ChangeKind.TransformProp"/>). Before the state has a range (it is not attached, or its node was not laid
+    /// out yet), the position is only kept at 0 or more, and the first range keeps it in itself: an app can set where a list
+    /// starts in its root function (GPUI's <c>ScrollHandle</c> keeps the offset until the next prepaint).
     /// </summary>
     /// <param name="offset">The position, in logical pixels.</param>
     /// <exception cref="ArgumentOutOfRangeException">A coordinate is not a number.</exception>
@@ -65,7 +69,8 @@ public sealed class ScrollState
             throw new ArgumentOutOfRangeException(nameof(offset), offset, "The scroll position's coordinates are numbers.");
         }
 
-        SetOffset(Vector2.Clamp(offset, Vector2.Zero, _maxOffset.Peek()));
+        Vector2 max = _hasRange ? _maxOffset.Peek() : new Vector2(float.PositiveInfinity);
+        _ = SetOffset(Vector2.Clamp(offset, Vector2.Zero, max));
     }
 
     /// <summary>
@@ -77,6 +82,7 @@ public sealed class ScrollState
     {
         Tree = tree;
         Node = node;
+        _hasRange = false;
     }
 
     /// <summary>
@@ -116,6 +122,7 @@ public sealed class ScrollState
     /// <param name="viewport">The viewport.</param>
     internal void Publish(Vector2 maxOffset, Size viewport)
     {
+        _hasRange = true;
         _maxOffset.Set(maxOffset);
         _viewport.Set(viewport);
         _ = SetOffset(Vector2.Clamp(_offset.Peek(), Vector2.Zero, maxOffset));

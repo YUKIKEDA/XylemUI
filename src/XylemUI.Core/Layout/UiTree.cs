@@ -82,7 +82,9 @@ internal sealed class UiTree
 
     /// <summary>
     /// Attaches a scroll state to a node, in place of the one it had; a state attached to another node is moved here. The node is
-    /// drawn again with the state's position.
+    /// drawn again with the state's position. A node already laid out writes its range to the state here, since a position change
+    /// runs no layout pass to write it (PR #348's review: the wheel gave a container without a state a new one whose range stayed
+    /// 0, and the next wheel brought it back to 0).
     /// </summary>
     /// <param name="node">The node.</param>
     /// <param name="state">The state.</param>
@@ -100,6 +102,19 @@ internal sealed class UiTree
 
         _scrollStates[node] = state;
         state.Attach(this, node);
+        if (Nodes.GetRef(node).Layout.WasLaidOut)
+        {
+            ReactiveRuntime.EnterBatch();
+            try
+            {
+                PublishScrollRange(node, state);
+            }
+            finally
+            {
+                ReactiveRuntime.ExitBatch();
+            }
+        }
+
         Invalidation.Invalidate(this, node, ChangeKind.TransformProp);
     }
 
@@ -126,25 +141,30 @@ internal sealed class UiTree
         {
             foreach (KeyValuePair<NodeHandle, ScrollState> pair in _scrollStates)
             {
-                if (!Nodes.IsAlive(pair.Key) || !Nodes.GetRef(pair.Key).Layout.WasLaidOut)
+                if (Nodes.IsAlive(pair.Key) && Nodes.GetRef(pair.Key).Layout.WasLaidOut)
                 {
-                    continue;
+                    PublishScrollRange(pair.Key, pair.Value);
                 }
-
-                ref readonly LayoutState layout = ref Nodes.GetRef(pair.Key).Layout;
-                Size max = MaxScrollOffsetOf(pair.Key);
-                Size gutter = layout.Style.ScrollbarGutter;
-                var viewport = new Size(
-                    Math.Max(0, layout.Rect.Width - layout.Border.Left - layout.Border.Right - gutter.Width),
-                    Math.Max(0, layout.Rect.Height - layout.Border.Top - layout.Border.Bottom - gutter.Height)
-                );
-                pair.Value.Publish(new Vector2(max.Width, max.Height), viewport);
             }
         }
         finally
         {
             ReactiveRuntime.ExitBatch();
         }
+    }
+
+    // Writes the range a laid-out node's last layout gave it to its state: the largest position, and the viewport (the padding box
+    // less the scrollbars' room).
+    private void PublishScrollRange(NodeHandle node, ScrollState state)
+    {
+        Size max = MaxScrollOffsetOf(node);
+        ref readonly LayoutState layout = ref Nodes.GetRef(node).Layout;
+        Size gutter = layout.Style.ScrollbarGutter;
+        var viewport = new Size(
+            Math.Max(0, layout.Rect.Width - layout.Border.Left - layout.Border.Right - gutter.Width),
+            Math.Max(0, layout.Rect.Height - layout.Border.Top - layout.Border.Bottom - gutter.Height)
+        );
+        state.Publish(new Vector2(max.Width, max.Height), viewport);
     }
 
     /// <summary>

@@ -16,16 +16,18 @@ dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>
 
 `input` の `us_per_wheel` は、高さ 300 のスクロールする箱の中の、高さ 3,000 の列の葉に当てたホイールである。50 画素ずつ下と上へ交互に回し、どの回でも位置が変わる。
 
-`layout` は、比べるビルドを巡ごとに順を変えて交互に走らせ、論理プロセッサ 2 に固定し、優先度を高くした。
+`layout` は、比べるビルドを巡ごとに順を変えて交互に走らせ、論理プロセッサ 2 に固定し、優先度を高くした。`layout` の `scroll_change_us` と `scroll_publish_us` は、S6b の場面の木の根をスクロールする箱（`OverflowY = Scroll`）にして状態を付け、1 つの葉を変えた後の layout の pass と、その後に範囲を状態に書く `UiTree.PublishScrollRanges` を測る（PR #348 のレビュー）。
 
 ## 正しさ
 
 - **Taffy の XML テスト:** Block と Flex だけで V2 の機能を使う 54 件のうち、49 件が通る。行 V2 を理由にスキップするテストは 0 件である。`scroll_width`・`scroll_height` を持つノードは、`UiTree.MaxScrollOffsetOf` を Chrome の値と比べる。残る 5 件は、スクロールする箱の周りの兄弟と親のマージンを Chrome が相殺するテストで、ほかのマージンの相殺のテストと同じ理由（設計書 §3.2、相殺しない）で除外の一覧に置いた
   - `block_margin_y_collapse_through_blocked_by_overflow_x_hidden`・`_x_scroll`・`_y_hidden`・`_y_scroll`
   - `block_height_stretch_margins_siblings`
-- **Core（`ScrollTests`、9 件）:**
+- **Core（`ScrollTests`、11 件）:**
   - `ScrollTo` で子が動いて描かれ、layout の回数は増えず、子の `Rect` は変わらない
   - 範囲は layout の後に書かれ、内容が縮むと位置が範囲に戻る
+  - 最初の layout の前の `ScrollTo` は、範囲が出るまで持ち越され、出た範囲に収まる。layout の済んだノードに付けた状態は、すぐに範囲を持つ
+  - 状態を渡していない箱は、最初のホイールが付けた状態がすぐに範囲を持ち、2 回目のホイールでも 0 に戻らない（PR #348 のレビューで見つかった不具合）
   - スクロールした子をクリックすると当たり、切られた部分では当たらない
   - ホイールはポインタの下の箱を動かす。内側の箱が端にいると、外側の箱が動く（連鎖）。マウスの Shift の縦は横になる。`Hidden` の箱はホイールでは動かない
   - ハンドラがホイールを止めると、箱は動かない
@@ -33,7 +35,9 @@ dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>
   - 割り当て 0（`SteadyState_WheelFrames_AllocateNothing`）: ホイールの配送と、それを描くフレーム
 - **Win32（`Win32WindowPointerTests`、2 件）:** `WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL` の量を、設定の行数・文字数 × 100/3 の論理画素にし、縦の符号を反転する。スクリーン座標の `lParam` は、クライアント座標にして配る
 - **本物のウィンドウ（`ScrollWindowTests`、WARP、2 件）:** 高さ 100 の箱の外の青い箱は、位置を 150 にすると (20, 25) に画素として出る。それまでは切られて、その場所は白い。`WM_MOUSEWHEEL` の 1 ノッチで、設定の行数 × 100/3 画素動き、次のフレームが Present する。`WM_MOUSEHWHEEL` で横に動く
-- **ミュータント:** 4 個。どれも狙ったテストが落ちた
+- **ミュータント:** 6 個。どれも狙ったテストが落ちた
+  - 状態を付けたときに範囲を書かない: `Wheel_ContainerWithoutAState_KeepsItsRangeBetweenWheels`、`ScrollTo_BeforeTheFirstLayout_IsKeptUntilTheRange`
+  - 範囲の無い状態の `ScrollTo` も範囲（0）に収める: `ScrollTo_BeforeTheFirstLayout_IsKeptUntilTheRange`
   - 切る範囲を 10⁶ 画素広げる: `ScrollTo_MovesTheChildren_WithNoLayout`、`Hit_FollowsThePosition_AndTheClip`
   - 位置が変わらなくてもホイールを止める: `Wheel_AtTheEnd_GoesOnToTheOuterContainer`
   - 位置が変わっても描き直しを頼まない: 4 件（`ScrollTo_MovesTheChildren_WithNoLayout`、`Wheel_ScrollsTheContainerUnderThePointer`、`Hit_FollowsThePosition_AndTheClip`、`SteadyState_WheelFrames_AllocateNothing`）
@@ -95,6 +99,18 @@ main は c26d801。
 - 木全体を layout し直す時（最初と幅の変更）は、3〜8 % 長い。回ごとの揺れは ±4 % 前後ある（同じビルドの 5 回の幅）
 - 約半分は `LayoutStyle` が 216 バイトから 224 バイトになった分である。main に 8 バイトの使わない欄だけを足したビルド（`UiNode` も V2 と同じ 576 バイト）を、main と V2 と 4 回ずつ交互に走らせた。その中央値は、auto_min の最初が main の 5,077 µs に対して 5,335 µs（+5.1 %、V2 は 5,316 µs）、S6b の最初が 3,384 µs に対して 3,501 µs（+3.5 %、V2 は 3,420 µs）だった。プロファイルでも、伸びた分は style の写しと 0 埋めに出た。percent の最初（+0.9 %、V2 は +5.4 %）と auto_min の幅の変更（+3.3 %、V2 は +7.0 %）では、残りがノードごとの新しい確かめ（スクロールバーの場所、flex の項目のスクロールの印、葉のはみ出し）の分である
 - `ScrollbarWidth` を `Half` にしても、詰め物で 224 バイトのままだった
+
+#### layout の後に範囲を書く時間（`layout` の `scroll_*`、3 回、15 標本の中央値）
+
+| 指標 | 3 回 |
+| --- | --- |
+| S6b・1 か所の変更（スクロールする箱の無い木、同じ回） | 21.8〜22.1 µs |
+| スクロールする箱の中の S6b・1 か所の変更（layout の pass と範囲を書くこと） | 128.6〜143.2 µs |
+| そのうち範囲を書くこと（`PublishScrollRanges`） | 106.3〜117.3 µs |
+
+- 範囲を書くことは、layout の pass の約 5 倍である。`ScrollableOverflowOf` は、変わったかどうかによらず、スクロールする箱の部分木（`Visible` の子孫、10,101 ノード）をすべてたどる。1 ノード約 11 ns で、どのノードも 576 バイトの別の場所にある
+- layout の pass そのもの（差の約 22 µs）は、スクロールする箱の無い木と同じである
+- V3 の TODO の一覧（スクロールする箱の中の多数の行の、1 行だけが変わる）がこの形になるので、変わらない部分木の辺を使い回す形を行 V3 に送った（`docs/roadmap.md`）。Taffy は、キャッシュから返したノードの layout の結果（`content_size` を含む）を求め直さないので、たどる量が layout し直したノードの数で決まる（Taffy 0.13.0 の `tree/layout.rs` 161〜166 行目の `LayoutOutput`、`compute/mod.rs` 174〜186 行目の `compute_cached_layout`）
 
 #### 直したもの
 

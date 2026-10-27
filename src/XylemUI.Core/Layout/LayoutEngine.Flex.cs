@@ -447,6 +447,8 @@ internal static partial class LayoutEngine
             }
             else
             {
+                // `flex-basis: content` (Length.Content) is neither a keyword nor auto, and resolves to NaN: it skips the main size
+                // and falls through to the measuring below, as CSS asks (row V2). A new kind of Length must keep that.
                 float definite = Maybe.Or(flexBasis, item.FlexBasisStyle.IsAuto ? mainSize : float.NaN);
                 if (!float.IsNaN(definite))
                 {
