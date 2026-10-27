@@ -315,26 +315,4 @@ public sealed class CounterTests(UiThreadFixture ui)
             (int)MathF.Round((columnBox.Y + box.Y + (box.Height / 2)) * scale)
         );
     }
-
-    // Draws with the renderer and reads one pixel of each draw, before the present makes the back buffer undefined.
-    private sealed class ReadingTarget(D3D11Renderer renderer) : IRenderTarget
-    {
-        public (int X, int Y)? Point { get; set; }
-
-        public Color Pixel { get; private set; }
-
-        public int Draws { get; private set; }
-
-        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas)
-        {
-            renderer.Draw(list, clearColor, atlas);
-            Draws++;
-            if (Point is (int x, int y))
-            {
-                Pixel = renderer.ReadPixel(x, y);
-            }
-        }
-
-        public void Present() => renderer.Present();
-    }
 }

@@ -275,7 +275,22 @@ internal static partial class LayoutEngine
     // child of fixed size, which no measuring run reads, still reaches the parent. A container's baseline comes from a child of
     // its own and is read here when a parent asks for it (as Flutter's getDistanceToBaseline), so the marks follow the
     // baselines that are read: a container whose baseline no parent reads does not mark its first child.
+    // A box that scrolls vertically keeps its baseline inside its border box, and has one at its bottom when its content gives
+    // none (Taffy main's child_first_baseline, design §3.4.1).
     private static float ReadBaseline(UiTree tree, NodeHandle handle)
+    {
+        float baseline = ReadContentBaseline(tree, handle);
+        ref readonly LayoutState layout = ref tree.Nodes.GetRef(handle).Layout;
+        if (layout.Style.OverflowY >= Overflow.Hidden)
+        {
+            float height = layout.Rect.Height;
+            return Math.Max(Math.Min(Maybe.Or(baseline, height), height), 0);
+        }
+
+        return baseline;
+    }
+
+    private static float ReadContentBaseline(UiTree tree, NodeHandle handle)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
@@ -428,6 +443,117 @@ internal static partial class LayoutEngine
         return size;
     }
 
+    /// <summary>
+    /// Returns the right and bottom edges of a node's scrollable overflow rectangle from its last committed layout, from its padding
+    /// box's corner (Taffy main's scrollable_overflow_rect; block.rs 740 to 765 and 871 to 882, flexbox.rs 2629 to 2640 and 2752
+    /// to 2763, oof.rs 369, leaf.rs 162 to 173): a leaf's content; a container's children's contributions with the origin, then a
+    /// scroll container's end padding, then the absolutely positioned children's. Only the right and bottom edges are found: the
+    /// scroll range reads no other (Layout.scroll_width).
+    /// </summary>
+    /// <remarks>
+    /// It walks the committed boxes when a scroll container's range is asked for, down through the children that let their
+    /// overflow out (Visible on an axis, no scroll container), as GPUI finds a scroll container's content from its children's
+    /// bounds after its layout (div.rs 1985 to 2013). Taffy finds the rectangle of every node in every layout; doing so here, as
+    /// the children were placed, made a width change of row L1a's scene 20 to 35 % slower, with no scroll container in it (row
+    /// V2, docs/benchmarks/v2-scroll.md).
+    /// </remarks>
+    /// <param name="tree">The tree.</param>
+    /// <param name="handle">The node, laid out.</param>
+    /// <returns>The right and bottom edges.</returns>
+    internal static (float Right, float Bottom) ScrollableOverflowOf(UiTree tree, NodeHandle handle)
+    {
+        ref UiNode node = ref tree.Nodes.GetRef(handle);
+        NodeHandle child = node.FirstChild;
+        if (child.IsNone)
+        {
+            // A leaf whose content fits adds nothing past its box, which its parent counts.
+            if (!node.Layout.ContentOverflows)
+            {
+                return (0, 0);
+            }
+
+            ref MeasureCache cache = ref tree.MeasuresOf(handle);
+            return (cache.ContentRight, cache.ContentBottom);
+        }
+
+        LayoutStyle style = node.Layout.Style;
+        Edges border = node.Layout.Border;
+        bool scrolls = style.IsScrollContainer;
+
+        // The padding resolves against the width the node's algorithm placed its content in, as Compute resolved the border.
+        float basis =
+            style.Algorithm is LayoutAlgorithm.Block
+                ? Maybe.Or(node.Layout.LastInput.ParentSize.Width, node.Layout.Rect.Width)
+                : node.Layout.LastInput.ParentSize.Width;
+        Edges padding = EdgeInsets.ResolveOrZero(style.Padding, basis);
+        float right = 0;
+        float bottom = 0;
+        float absoluteRight = 0;
+        float absoluteBottom = 0;
+        while (!child.IsNone)
+        {
+            ref UiNode c = ref tree.Nodes.GetRef(child);
+            NodeHandle next = c.NextSibling;
+            bool hidden = c.Layout.Style.Hidden;
+            bool absolute = c.Layout.Style.Position == Position.Absolute;
+            if (!hidden)
+            {
+                (float r, float b) = OverflowContribution(tree, child, border, scrolls);
+                if (absolute)
+                {
+                    absoluteRight = Math.Max(absoluteRight, r);
+                    absoluteBottom = Math.Max(absoluteBottom, b);
+                }
+                else
+                {
+                    right = Math.Max(right, r);
+                    bottom = Math.Max(bottom, b);
+                }
+            }
+
+            child = next;
+        }
+
+        if (scrolls)
+        {
+            right += padding.Right;
+            bottom += padding.Bottom;
+        }
+
+        return (Math.Max(right, absoluteRight), Math.Max(bottom, absoluteBottom));
+    }
+
+    // The right and bottom edges a child adds to its parent's scrollable overflow rectangle (Taffy main's
+    // compute_scrollable_overflow_contribution): its border box, and its own overflow where it is not clipped; nothing when it is
+    // empty, or wholly before a scroll container's origin.
+    private static (float Right, float Bottom) OverflowContribution(UiTree tree, NodeHandle child, Edges parentBorder, bool parentScrolls)
+    {
+        ref UiNode c = ref tree.Nodes.GetRef(child);
+        Overflow overflowX = c.Layout.Style.OverflowX;
+        Overflow overflowY = c.Layout.Style.OverflowY;
+        Rect rect = c.Layout.Rect;
+        bool contained = overflowX >= Overflow.Hidden || overflowY >= Overflow.Hidden;
+        bool outX = !contained && overflowX == Overflow.Visible;
+        bool outY = !contained && overflowY == Overflow.Visible;
+        float width = rect.Width;
+        float height = rect.Height;
+        if (outX || outY)
+        {
+            (float ownRight, float ownBottom) = ScrollableOverflowOf(tree, child);
+            width = outX ? Math.Max(width, ownRight) : width;
+            height = outY ? Math.Max(height, ownBottom) : height;
+        }
+
+        if (width <= 0 || height <= 0)
+        {
+            return (0, 0);
+        }
+
+        float right = rect.X - parentBorder.Left + width;
+        float bottom = rect.Y - parentBorder.Top + height;
+        return parentScrolls && (right <= 0 || bottom <= 0) ? (0, 0) : (right, bottom);
+    }
+
     // A value the parent read may be among the ones overwritten: a change of the node's content then goes on to the parent
     // without a comparison while the parent keeps its results (design §2.4.1, row L5).
     private static void NoteOverwrite(UiTree tree, NodeHandle handle)
@@ -523,6 +649,21 @@ internal static partial class LayoutEngine
         return width && !height ? new OptionalSize(size.Width, size.Width / ratio)
             : height && !width ? new OptionalSize(size.Height * ratio, size.Height)
             : size;
+    }
+
+    // Edges with the scrollbars' room added inside them: the vertical scrollbar's at the right, the horizontal one's at the bottom
+    // (Taffy's scrollbar gutter, left to right). A style with no room returns the edges as they are: the addition, not inlined
+    // there, took 2.5 % of a width change of row L1a's percent scene (row V2).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Edges WithGutter(Edges edges, in LayoutStyle style)
+    {
+        if (!style.HasScrollbarGutter)
+        {
+            return edges;
+        }
+
+        Size gutter = style.ScrollbarGutter;
+        return new Edges(edges.Left, edges.Top, edges.Right + gutter.Width, edges.Bottom + gutter.Height);
     }
 
     // The padding and the border, which CSS resolves against the parent's width on every side.

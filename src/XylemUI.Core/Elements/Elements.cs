@@ -39,6 +39,19 @@ public static class Elements
     }
 
     /// <summary>
+    /// Makes a box that scrolls its one child vertically (design §3.4.1, "The scroll container"): its height overflows on
+    /// <see cref="Overflow.Scroll"/>, its width stays <see cref="Overflow.Visible"/>. Give it a height, or a parent that bounds
+    /// it, for the content to have room to scroll in.
+    /// </summary>
+    /// <param name="child">The child: a node of the same tree with no parent.</param>
+    /// <param name="state">The scroll state the app reads and writes; <see langword="null"/> for one of the box's own.</param>
+    /// <returns>The box.</returns>
+    /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    /// <exception cref="ArgumentException">The child is no node, is of another tree, or has a parent.</exception>
+    public static Element ScrollView(Element child, ScrollState? state = null) =>
+        Box(child).Overflow(Overflow.Visible, Overflow.Scroll).ScrollState(state ?? new ScrollState());
+
+    /// <summary>
     /// Makes a container that lays its children out in a column, in the order given (a flex column).
     /// </summary>
     /// <param name="children">The children: nodes of the same tree with no parent.</param>

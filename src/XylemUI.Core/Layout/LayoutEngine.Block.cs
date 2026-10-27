@@ -5,12 +5,14 @@ internal static partial class LayoutEngine
     // CSS block layout (Taffy's compute_block_layout) without margin collapsing, floats, or out-of-flow children (design §3.2):
     // the children stack from the top, each as wide as the content box less its margins unless its style says otherwise, and
     // their margins always add up. The block's first baseline is its first child's that has one, read when a parent asks for
-    // it (ReadBaseline).
+    // it (ReadBaseline). A scrollbar's room (Overflow.Scroll) is taken inside the padding, at the right and the bottom of the
+    // content box (Taffy's block.rs, the scrollbar gutter); the floor of the size is the padding and border alone.
     private static Size ComputeBlock(UiTree tree, in LayoutStyle style, BlockProps props, NodeHandle firstChild, in LayoutInput input, bool commit)
     {
         OptionalSize parent = input.ParentSize;
         Edges paddingBorder = PaddingBorder(in style, parent.Width);
         Size inset = paddingBorder.Sum();
+        Size contentInset = style.HasScrollbarGutter ? WithGutter(paddingBorder, in style).Sum() : inset;
         OptionalSize min = MinSize(in style, parent);
         OptionalSize max = MaxSize(in style, parent);
         OptionalSize styleSize = StyleSize(in style, parent);
@@ -41,13 +43,13 @@ internal static partial class LayoutEngine
 
         // Percentages of the children resolve against the content box, the height only when it is definite.
         var percentBasis = new OptionalSize(known.Width, input.KnownHeightIsDefinite ? known.Height : float.NaN);
-        OptionalSize contentBox = percentBasis.Minus(inset);
+        OptionalSize contentBox = percentBasis.Minus(contentInset);
 
         float outerWidth = known.Width;
         if (float.IsNaN(outerWidth))
         {
-            AvailableSpace availableWidth = input.Available.Width.Minus(inset.Width);
-            float intrinsic = ContentBasedBlockWidth(tree, firstChild, contentBox, availableWidth) + inset.Width;
+            AvailableSpace availableWidth = input.Available.Width.Minus(contentInset.Width);
+            float intrinsic = ContentBasedBlockWidth(tree, firstChild, contentBox, availableWidth) + contentInset.Width;
             outerWidth = Math.Max(Maybe.Clamp(intrinsic, min.Width, max.Width), inset.Width);
         }
 
@@ -71,7 +73,7 @@ internal static partial class LayoutEngine
         );
 
         // Percentage paddings and borders resolve against the containing block's width, or the node's own at the root.
-        Edges resolvedInset = PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth));
+        Edges resolvedInset = WithGutter(PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth)), in style);
         float contentHeight = LayOutBlockChildren(
             tree,
             props,

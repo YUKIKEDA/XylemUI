@@ -258,6 +258,45 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets what the node does with the content that overflows it on each axis (design §3.4.1, "The scroll container"). A node
+    /// whose overflow is not <see cref="XylemUI.Overflow.Visible"/> clips its children to its padding box; one that is
+    /// <see cref="XylemUI.Overflow.Hidden"/> or <see cref="XylemUI.Overflow.Scroll"/> on an axis scrolls, and the wheel scrolls
+    /// the axes that are <see cref="XylemUI.Overflow.Scroll"/>.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="x">The overflow of the width.</param>
+    /// <param name="y">The overflow of the height.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">An overflow is not a value of <see cref="XylemUI.Overflow"/>.</exception>
+    /// <remarks>
+    /// Inside this class the method's name is found before the type's, so the values are written as <c>XylemUI.Overflow</c>
+    /// (CS0119, design §3.4.1, "The names").
+    /// </remarks>
+    public static Element Overflow(this Element element, Overflow x, Overflow y)
+    {
+        if (!Enum.IsDefined(x) || !Enum.IsDefined(y))
+        {
+            throw new ArgumentOutOfRangeException(!Enum.IsDefined(x) ? nameof(x) : nameof(y), "The overflow is a value of Overflow.");
+        }
+
+        return Layout(element, style => style with { OverflowX = x, OverflowY = y });
+    }
+
+    /// <summary>
+    /// Attaches a scroll state to the node: the wheel and <see cref="XylemUI.ScrollState.ScrollTo"/> write its position, and the
+    /// layout its range (design §3.4.1). A state attached to another node is moved to this one.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="state">The state.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element ScrollState(this Element element, ScrollState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        element.TreeOrThrow().SetScrollState(element.Node, state);
+        return element;
+    }
+
+    /// <summary>
     /// Makes the node take the pointer with no handler, so that it does not reach the nodes behind it (design §7, "Pointer input").
     /// </summary>
     /// <param name="element">The node.</param>

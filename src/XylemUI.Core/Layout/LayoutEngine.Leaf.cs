@@ -6,7 +6,8 @@ internal static partial class LayoutEngine
 {
     // A node without children (Taffy's compute_leaf_layout): its known or styled size on each axis, otherwise its content's (the
     // measure function's, 0 without one) plus its padding and border; clamped by its minimum and maximum, and never smaller than
-    // its padding and border. Its first baseline is its content's, below the padding and border.
+    // its padding and border. Its first baseline is its content's, below the padding and border. A scrollbar's room (Overflow.Scroll)
+    // is taken from the content box, inside the padding (Taffy's leaf.rs, the scrollbar gutter).
     private static Size ComputeLeaf(
         UiTree tree,
         NodeHandle handle,
@@ -21,6 +22,12 @@ internal static partial class LayoutEngine
         baseline = float.NaN;
         Edges paddingBorder = PaddingBorder(in style, input.ParentSize.Width);
         Size inset = paddingBorder.Sum();
+        Size contentInset = inset;
+        if (style.HasScrollbarGutter)
+        {
+            Size gutter = style.ScrollbarGutter;
+            contentInset = new Size(inset.Width + gutter.Width, inset.Height + gutter.Height);
+        }
 
         // A content-size run ignores the node's own size styles (CSS Flexbox §4.5, the content size suggestion).
         OptionalSize nodeSize = input.KnownDimensions;
@@ -39,19 +46,19 @@ internal static partial class LayoutEngine
         }
 
         var available = new AvailableSize(
-            ContentSpace(input.Available.Width.OrDefinite(nodeSize.Width), min.Width, max.Width, inset.Width),
-            ContentSpace(input.Available.Height.OrDefinite(nodeSize.Height), min.Height, max.Height, inset.Height)
+            ContentSpace(input.Available.Width.OrDefinite(nodeSize.Width), min.Width, max.Width, contentInset.Width),
+            ContentSpace(input.Available.Height.OrDefinite(nodeSize.Height), min.Height, max.Height, contentInset.Height)
         );
         Size content = default;
         if (measure is not null || text is not null)
         {
-            OptionalSize knownContent = commit ? OptionalSize.None : input.KnownDimensions.Minus(inset);
+            OptionalSize knownContent = commit ? OptionalSize.None : input.KnownDimensions.Minus(contentInset);
             MeasureResult measured = MeasureContent(tree, handle, measure, text, knownContent, available, commit);
             content = measured.Size;
             baseline = paddingBorder.Top + measured.FirstBaseline;
         }
 
-        OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + inset.Width, content.Height + inset.Height)).Clamp(min, max);
+        OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + contentInset.Width, content.Height + contentInset.Height)).Clamp(min, max);
 
         // A leaf with an aspect ratio is at least as high as its width gives (Taffy's compute_leaf_layout); its maximum does not
         // follow the ratio there.
@@ -60,7 +67,38 @@ internal static partial class LayoutEngine
             size = size with { Height = Math.Max(size.Height, size.Width / style.AspectRatio) };
         }
 
-        return ToSize(size.AtLeast(inset));
+        Size result = ToSize(size.AtLeast(inset));
+        if (commit)
+        {
+            CommitLeafContent(tree, handle, in style, input.ParentSize.Width, content, result, contentInset);
+        }
+
+        return result;
+    }
+
+    // Keeps a committed leaf's scrollable overflow where its content is larger than its content box: the content from the padding
+    // box's corner, and a scroll container's end padding (Taffy main's leaf.rs 162 to 173). Content that fits adds nothing past the
+    // box, so only the flag is written.
+    private static void CommitLeafContent(
+        UiTree tree,
+        NodeHandle handle,
+        in LayoutStyle style,
+        float parentWidth,
+        Size content,
+        Size size,
+        Size contentInset
+    )
+    {
+        bool overflows = content.Width > size.Width - contentInset.Width || content.Height > size.Height - contentInset.Height;
+        tree.Nodes.GetRef(handle).Layout.ContentOverflows = overflows;
+        if (overflows)
+        {
+            Edges padding = EdgeInsets.ResolveOrZero(style.Padding, parentWidth);
+            bool scrolls = style.IsScrollContainer;
+            ref MeasureCache cache = ref tree.MeasuresOf(handle);
+            cache.ContentRight = padding.Left + content.Width + (scrolls ? padding.Right : 0);
+            cache.ContentBottom = padding.Top + content.Height + (scrolls ? padding.Bottom : 0);
+        }
     }
 
     // The border-box width of a leaf under a min-content or max-content width, as ComputeLeaf gives it, from the content
@@ -73,6 +111,9 @@ internal static partial class LayoutEngine
         ref readonly ResolvedBox box = ref tree.MeasuresOf(handle).Box;
         Edges paddingBorder = hasBox ? box.PaddingBorder : PaddingBorder(in style, input.ParentSize.Width);
         float inset = paddingBorder.Horizontal;
+
+        // The content widths are the content box's; a scrollbar's room is added to them, not to the floor of the padding and border.
+        float contentInset = inset + style.ScrollbarGutter.Width;
         float width = float.NaN;
         float min = float.NaN;
         float max = float.NaN;
@@ -85,13 +126,13 @@ internal static partial class LayoutEngine
 
         if (float.IsNaN(width))
         {
-            float knownHeight = input.KnownDimensions.Height - paddingBorder.Vertical;
+            float knownHeight = input.KnownDimensions.Height - paddingBorder.Vertical - style.ScrollbarGutter.Height;
             if (!tree.MeasuresOf(handle).TryGetIntrinsicWidths(knownHeight, out IntrinsicWidths widths))
             {
                 widths = ComputeIntrinsicWidths(tree, handle, knownHeight);
             }
 
-            width = (input.Available.Width.Kind == AvailableSpaceKind.MinContent ? widths.Min : widths.Max) + inset;
+            width = (input.Available.Width.Kind == AvailableSpaceKind.MinContent ? widths.Min : widths.Max) + contentInset;
         }
 
         return Math.Max(Maybe.Clamp(width, min, max), inset);

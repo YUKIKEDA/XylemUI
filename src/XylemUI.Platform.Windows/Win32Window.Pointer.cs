@@ -1,3 +1,4 @@
+using System.Numerics;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
 
@@ -27,12 +28,25 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
     private const uint WmMouseLeave = WM.WM_MOUSELEAVE;
     private const uint WmCaptureChanged = WM.WM_CAPTURECHANGED;
     private const uint WmSetCursor = WM.WM_SETCURSOR;
+    private const uint WmMouseWheel = WM.WM_MOUSEWHEEL;
+    private const uint WmMouseHWheel = WM.WM_MOUSEHWHEEL;
+
+    // One notch of a wheel (WHEEL_DELTA), and the logical pixels of one line or one character of its scrolling: Chromium's and
+    // Flutter's 100/3, so that the default 3 lines are 100 pixels (Flutter's flutter_window.cc 469 to 479, design §3.4.1).
+    private const float WheelNotch = 120;
+    private const float PixelsPerWheelLine = 100f / 3;
 
     // The signature that marks a mouse message the OS made from touch or a pen, and the bit that marks touch (Flutter's
     // flutter_window.cc, lines 56 to 69).
     private const uint TouchOrPenMask = 0xFFFFFF00;
     private const uint TouchOrPenSignature = 0xFF515700;
     private const uint TouchBit = 0x80;
+
+    // The lines a notch of the vertical wheel scrolls and the characters of the horizontal one, which Windows sets for the user
+    // (SPI_GETWHEELSCROLLLINES, SPI_GETWHEELSCROLLCHARS). Read when the first window is made and on each WM_SETTINGCHANGE, as
+    // GPUI's system_settings.rs reads them.
+    private static float _wheelLines = 3;
+    private static float _wheelChars = 3;
 
     private bool _trackingLeave;
     private bool _releasingCapture;
@@ -72,8 +86,26 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
     /// or a pen.</param>
     /// <param name="clickCount">The presses in a row, for a press or a release.</param>
     /// <param name="timestamp">When the message was received.</param>
+    /// <param name="wheelLines">The lines a notch of the vertical wheel scrolls.</param>
+    /// <param name="wheelChars">The characters a notch of the horizontal wheel scrolls.</param>
     /// <returns>The input.</returns>
-    internal static PointerInput? Decode(uint message, nuint wParam, nint lParam, bool alt, nint extraInfo, int clickCount, TimeSpan timestamp)
+    /// <remarks>
+    /// A wheel's <c>lParam</c> is in screen coordinates; the caller gives it in client coordinates, as the other messages have it.
+    /// Its amount is the signed high word of <c>wParam</c>, in notches of 120: a vertical wheel turned up is positive and scrolls
+    /// up, so its sign is turned; a horizontal one turned right is positive and scrolls right. An amount smaller than a notch
+    /// (a touchpad) goes on as a fraction.
+    /// </remarks>
+    internal static PointerInput? Decode(
+        uint message,
+        nuint wParam,
+        nint lParam,
+        bool alt,
+        nint extraInfo,
+        int clickCount,
+        TimeSpan timestamp,
+        float wheelLines = 3,
+        float wheelChars = 3
+    )
     {
         (PointerInputKind Kind, PointerButton Button)? decoded = message switch
         {
@@ -86,6 +118,7 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
             WmMButtonUp => (PointerInputKind.Up, PointerButton.Middle),
             WmXButtonDown => (PointerInputKind.Down, ExtraButton(wParam)),
             WmXButtonUp => (PointerInputKind.Up, ExtraButton(wParam)),
+            WmMouseWheel or WmMouseHWheel => (PointerInputKind.Wheel, PointerButton.None),
             _ => null,
         };
         if (decoded is not { } d)
@@ -115,8 +148,18 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         // The position is signed: left of or above the client area, while the pointer is captured, it is negative.
         int x = (short)((nuint)lParam & 0xFFFF);
         int y = (short)(((nuint)lParam >> 16) & 0xFFFF);
-        int count = d.Kind == PointerInputKind.Move ? 0 : clickCount;
-        return new PointerInput(d.Kind, x, y, d.Button, buttons, modifiers, count, timestamp, type);
+        int count = d.Kind is PointerInputKind.Move or PointerInputKind.Wheel ? 0 : clickCount;
+        Vector2 wheel = default;
+        if (d.Kind == PointerInputKind.Wheel)
+        {
+            float notches = (short)(((uint)wParam >> 16) & 0xFFFF) / WheelNotch;
+            wheel =
+                message == WmMouseWheel
+                    ? new Vector2(0, -notches * wheelLines * PixelsPerWheelLine)
+                    : new Vector2(notches * wheelChars * PixelsPerWheelLine, 0);
+        }
+
+        return new PointerInput(d.Kind, x, y, d.Button, buttons, modifiers, count, timestamp, type, wheel);
     }
 
     /// <inheritdoc/>
@@ -207,9 +250,17 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
             return false;
         }
 
+        // A wheel's position is in screen coordinates; the others' in the client area's.
+        if (message is WmMouseWheel or WmMouseHWheel)
+        {
+            var point = new POINT { x = (short)((nuint)lParam & 0xFFFF), y = (short)(((nuint)lParam >> 16) & 0xFFFF) };
+            _ = ScreenToClient(hwnd, &point);
+            lParam = (nint)(((uint)(ushort)(short)point.y << 16) | (ushort)(short)point.x);
+        }
+
         TimeSpan now = Now();
         bool alt = GetKeyState(VK.VK_MENU) < 0;
-        if (Decode(message, wParam, lParam, alt, GetMessageExtraInfo(), 0, now) is not { } input)
+        if (Decode(message, wParam, lParam, alt, GetMessageExtraInfo(), 0, now, _wheelLines, _wheelChars) is not { } input)
         {
             return false;
         }
@@ -225,13 +276,30 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
             _trackingLeave = TrackMouseEvent(&track) != BOOL.FALSE;
         }
 
-        if (input.Kind != PointerInputKind.Move)
+        if (input.Kind is PointerInputKind.Down or PointerInputKind.Up)
         {
             input = input with { ClickCount = Count(input) };
         }
 
         Deliver(input);
         return true;
+    }
+
+    // Reads the wheel's lines and characters a notch (SPI_GETWHEELSCROLLLINES, SPI_GETWHEELSCROLLCHARS); a call that fails keeps
+    // the value before.
+    private static void ReadWheelSettings()
+    {
+        uint lines;
+        if (SystemParametersInfoW(SPI.SPI_GETWHEELSCROLLLINES, 0, &lines, 0) != BOOL.FALSE)
+        {
+            _wheelLines = lines;
+        }
+
+        uint chars;
+        if (SystemParametersInfoW(SPI.SPI_GETWHEELSCROLLCHARS, 0, &chars, 0) != BOOL.FALSE)
+        {
+            _wheelChars = chars;
+        }
     }
 
     // Counts a press as GPUI's ClickState does: one more when it is the same button, within the OS's double-click time, and within

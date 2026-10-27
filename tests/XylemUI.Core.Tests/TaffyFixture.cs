@@ -197,7 +197,20 @@ internal static class TaffyFixture
             ),
             FlexGrow = ParseFloat(e.Attribute("flex-grow")?.Value, 0),
             FlexShrink = ParseFloat(e.Attribute("flex-shrink")?.Value, 1),
-            FlexBasis = ParseLength(e, "flex-basis"),
+            FlexBasis = e.Attribute("flex-basis")?.Value == "content" ? Length.Content : ParseLength(e, "flex-basis"),
+            OverflowX = ParseOverflow(e.Attribute("overflow-x")?.Value),
+            OverflowY = ParseOverflow(e.Attribute("overflow-y")?.Value),
+            ScrollbarWidth = ParseFloat(e.Attribute("scrollbar-width")?.Value, 0),
+        };
+
+    private static Overflow ParseOverflow(string? value) =>
+        value switch
+        {
+            null or "visible" => Overflow.Visible,
+            "clip" => Overflow.Clip,
+            "hidden" => Overflow.Hidden,
+            "scroll" => Overflow.Scroll,
+            _ => throw new InvalidOperationException($"The overflow {value} is not read by these tests."),
         };
 
     private static Length ParseLength(XElement e, string name) =>
@@ -338,6 +351,17 @@ internal static class TaffyFixture
         if (!Near(actual.X, want.X) || !Near(actual.Y, want.Y) || !Near(actual.Width, want.Width) || !Near(actual.Height, want.Height))
         {
             differences.Add($"{path}: expected {Show(want)}, got {Show(actual)} (unrounded {Show((rect.X, rect.Y, rect.Width, rect.Height))})");
+        }
+
+        // Chrome's largest scroll position, on the scroll containers Taffy's gentest records it for (design §3.4.1).
+        if (expected.Attribute("scroll_width") is { } scrollWidth)
+        {
+            Size max = tree.MaxScrollOffsetOf(node);
+            Size want2 = new(ParseFloat(scrollWidth.Value, 0), ParseFloat(expected.Attribute("scroll_height")!.Value, 0));
+            if (!Near(max.Width, want2.Width) || !Near(max.Height, want2.Height))
+            {
+                differences.Add($"{path}: expected the scroll range {want2.Width} x {want2.Height}, got {max.Width} x {max.Height}");
+            }
         }
 
         int index = 0;

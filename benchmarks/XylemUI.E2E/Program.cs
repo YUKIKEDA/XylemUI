@@ -15,7 +15,8 @@
 //                              and transforms (cards and zoom-still are the scenes without them to compare with), with
 //                              --nested N rounded clips for nested and nested-heavy, row R4d)
 //                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b; --no-text leaves
-//                              the line of text out; --hover keeps its boxes still and changes the hover each frame, row V1c)
+//                              the line of text out; --hover keeps its boxes still and changes the hover each frame, row V1c;
+//                              --scroll keeps them still in a scroll container and changes its scroll position each frame, row V2)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
@@ -73,7 +74,8 @@ return scenario switch
         nested: Array.IndexOf(args, "--nested") is int nestedAt and >= 0 ? Number(nestedAt + 1, 0) : 0,
         tree: args.Contains("--tree"),
         noText: args.Contains("--no-text"),
-        hover: args.Contains("--hover")
+        hover: args.Contains("--hover"),
+        scroll: args.Contains("--scroll")
     ),
     "input" => InputCost.Run(),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),

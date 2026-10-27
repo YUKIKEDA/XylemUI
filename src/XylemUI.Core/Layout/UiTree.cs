@@ -43,6 +43,9 @@ internal sealed class UiTree
     /// </summary>
     internal static UiTree? Current { get; set; }
 
+    // The scroll states attached to nodes (design §3.4.1): few nodes scroll, so they are kept apart from UiNode.
+    private readonly Dictionary<NodeHandle, ScrollState> _scrollStates = [];
+
     /// <summary>
     /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
     /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); <see langword="null"/> until it does,
@@ -50,6 +53,139 @@ internal sealed class UiTree
     /// built (the Core tests on Linux and macOS until rows P04 and P06).
     /// </summary>
     internal TextLanguage? UiLanguage { get; set; }
+
+    /// <summary>
+    /// Returns the scroll state attached to a node, or <see langword="null"/>.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The state.</returns>
+    internal ScrollState? ScrollStateOf(NodeHandle node) =>
+        _scrollStates.Count > 0 && _scrollStates.TryGetValue(node, out ScrollState? state) ? state : null;
+
+    /// <summary>
+    /// Returns the scroll state attached to a node, attaching a new one when it has none: the wheel scrolls a scroll container
+    /// that the app gave no state (design §3.4.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The state.</returns>
+    internal ScrollState ScrollStateFor(NodeHandle node)
+    {
+        if (ScrollStateOf(node) is { } state)
+        {
+            return state;
+        }
+
+        state = new ScrollState();
+        SetScrollState(node, state);
+        return state;
+    }
+
+    /// <summary>
+    /// Attaches a scroll state to a node, in place of the one it had; a state attached to another node is moved here. The node is
+    /// drawn again with the state's position. A node already laid out writes its range to the state here, since a position change
+    /// runs no layout pass to write it (PR #348's review: the wheel gave a container without a state a new one whose range stayed
+    /// 0, and the next wheel brought it back to 0).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="state">The state.</param>
+    internal void SetScrollState(NodeHandle node, ScrollState state)
+    {
+        if (state.Tree is { } previousTree && previousTree.Nodes.IsAlive(state.Node))
+        {
+            _ = previousTree._scrollStates.Remove(state.Node);
+        }
+
+        if (_scrollStates.Remove(node, out ScrollState? replaced))
+        {
+            replaced.Detach();
+        }
+
+        _scrollStates[node] = state;
+        state.Attach(this, node);
+        if (Nodes.GetRef(node).Layout.WasLaidOut)
+        {
+            ReactiveRuntime.EnterBatch();
+            try
+            {
+                PublishScrollRange(node, state);
+            }
+            finally
+            {
+                ReactiveRuntime.ExitBatch();
+            }
+        }
+
+        Invalidation.Invalidate(this, node, ChangeKind.TransformProp);
+    }
+
+    /// <summary>
+    /// Returns a node's scroll position, in logical pixels: its state's, or none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The position.</returns>
+    internal Vector2 ScrollOffsetOf(NodeHandle node) => ScrollStateOf(node)?.OffsetValue ?? Vector2.Zero;
+
+    /// <summary>
+    /// Writes the range the last layout gave each node with a scroll state, in one batch, after the layout pass and before the
+    /// draw stage (design §3.4.1): its largest position and its viewport, and its position kept in the range.
+    /// </summary>
+    internal void PublishScrollRanges()
+    {
+        if (_scrollStates.Count == 0)
+        {
+            return;
+        }
+
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            foreach (KeyValuePair<NodeHandle, ScrollState> pair in _scrollStates)
+            {
+                if (Nodes.IsAlive(pair.Key) && Nodes.GetRef(pair.Key).Layout.WasLaidOut)
+                {
+                    PublishScrollRange(pair.Key, pair.Value);
+                }
+            }
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    // Writes the range a laid-out node's last layout gave it to its state: the largest position, and the viewport (the padding box
+    // less the scrollbars' room).
+    private void PublishScrollRange(NodeHandle node, ScrollState state)
+    {
+        Size max = MaxScrollOffsetOf(node);
+        ref readonly LayoutState layout = ref Nodes.GetRef(node).Layout;
+        Size gutter = layout.Style.ScrollbarGutter;
+        var viewport = new Size(
+            Math.Max(0, layout.Rect.Width - layout.Border.Left - layout.Border.Right - gutter.Width),
+            Math.Max(0, layout.Rect.Height - layout.Border.Top - layout.Border.Bottom - gutter.Height)
+        );
+        state.Publish(new Vector2(max.Width, max.Height), viewport);
+    }
+
+    /// <summary>
+    /// Returns the largest scroll position of a node from its last committed layout, in logical pixels: the reachable end of its
+    /// scrollable overflow less its padding box, without the scrollbars' room, and at least 0 (Taffy main's
+    /// <c>Layout.scroll_width</c> and <c>scroll_height</c>, design §3.4.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The largest position on each axis.</returns>
+    internal Size MaxScrollOffsetOf(NodeHandle node)
+    {
+        (float right, float bottom) = LayoutEngine.ScrollableOverflowOf(this, node);
+        ref readonly LayoutState layout = ref Nodes.GetRef(node).Layout;
+        Size gutter = layout.Style.ScrollbarGutter;
+        Rect rect = layout.Rect;
+        Edges border = layout.Border;
+        return new Size(
+            Math.Max(0, right + Math.Min(gutter.Width, rect.Width) - rect.Width + border.Left + border.Right),
+            Math.Max(0, bottom + Math.Min(gutter.Height, rect.Height) - rect.Height + border.Top + border.Bottom)
+        );
+    }
 
     /// <summary>
     /// Gets the text tools its text leaves are measured with; <see langword="null"/> for a tree without text leaves.
@@ -788,6 +924,11 @@ internal sealed class UiTree
             NodeHandle next = Nodes.GetRef(child).NextSibling;
             FreeSubtree(child);
             child = next;
+        }
+
+        if (_scrollStates.Count > 0 && _scrollStates.Remove(node, out ScrollState? state))
+        {
+            state.Detach();
         }
 
         Nodes.Free(node);

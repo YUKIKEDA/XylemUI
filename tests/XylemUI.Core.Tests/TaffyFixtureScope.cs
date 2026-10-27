@@ -67,6 +67,13 @@ internal static class TaffyFixtureScope
         ["block/block_margin_y_total_collapse__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_total_collapse_complex__border_box_ltr"] = MarginCollapsing,
         ["blockflex/blockflex_margin_y_collapse_through_blocked_by_flex__border_box_ltr"] = MarginCollapsing,
+
+        // A scroll container stops the margins collapsing through it, but the others around it still collapse (row V2).
+        ["block/block_margin_y_collapse_through_blocked_by_overflow_x_hidden__border_box_ltr"] = MarginCollapsing,
+        ["block/block_margin_y_collapse_through_blocked_by_overflow_x_scroll__border_box_ltr"] = MarginCollapsing,
+        ["block/block_margin_y_collapse_through_blocked_by_overflow_y_hidden__border_box_ltr"] = MarginCollapsing,
+        ["block/block_margin_y_collapse_through_blocked_by_overflow_y_scroll__border_box_ltr"] = MarginCollapsing,
+        ["block/block_height_stretch_margins_siblings__border_box_ltr"] = MarginCollapsing,
     };
 
     public static string? ExclusionOf(string name, XElement test)
@@ -118,9 +125,6 @@ internal static class TaffyFixtureScope
                 "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
                     $"{attribute.Name.LocalName}: {value}, the item's own writing direction (row P03)",
                 "text-align" => "text-align moving a block's children (CSS's history; the design does not take it, §3.2)",
-                "flex-basis" when value is "content" => "flex-basis: content (row V2)",
-                "overflow-x" or "overflow-y" when value is not "visible" => "overflow (row V2)",
-                "scrollbar-width" => "a scrollbar's width (row V2)",
                 "direction" when value is "rtl" => "right-to-left (row P03)",
                 "writing-mode" => "a vertical writing mode (row P03)",
                 "box-sizing" when value is "content-box" => "content-box sizing (the design keeps border-box, §3.2)",
@@ -147,7 +151,8 @@ internal static class TaffyFixtureScope
                 or "direction"
                 or "box-sizing"
                 or "overflow-x"
-                or "overflow-y" => null,
+                or "overflow-y"
+                or "scrollbar-width" => null,
                 "width"
                 or "height"
                 or "min-width"

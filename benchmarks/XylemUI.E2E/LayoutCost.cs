@@ -31,6 +31,7 @@ internal static class LayoutCost
         }
 
         MeasureAbsolute(report, samples);
+        MeasureScroll(report, samples);
         return 0;
     }
 
@@ -224,6 +225,39 @@ internal static class LayoutCost
         report.Number("absolute_change_runs", runs);
         report.Series("absolute_first_us", first);
         report.Series("absolute_change_us", change);
+    }
+
+    // The S6b scene's tree in one scroll container, its root with a scroll state (row V2): a relayout after one leaf changes, and
+    // then the range written to the state, which walks the committed boxes of the container's subtree (design §3.4.1). The
+    // change is the relayout and the walk together, the walk also on its own.
+    private static void MeasureScroll(Report report, int samples)
+    {
+        var change = new List<double>(samples);
+        var publish = new List<double>(samples);
+        for (int s = 0; s < samples + 3; s++)
+        {
+            bool record = s >= 3;
+            (UiTree tree, NodeHandle root, NodeHandle target) = Build("s6b", fixedRows: false);
+            tree.SetStyle(root, tree.Nodes.GetRef(root).Layout.Style with { OverflowY = Overflow.Scroll });
+            _ = tree.ScrollStateFor(root);
+            Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
+            LayoutEngine.RunLayoutPass(tree);
+            tree.PublishScrollRanges();
+            LayoutStyle style = tree.Nodes.GetRef(target).Layout.Style;
+            for (int i = 0; i < 2; i++)
+            {
+                tree.SetStyle(target, style with { Width = Length.Px(i % 2 == 0 ? 20 : 10) });
+                long start = Stopwatch.GetTimestamp();
+                LayoutEngine.RunLayoutPass(tree);
+                long walk = Stopwatch.GetTimestamp();
+                tree.PublishScrollRanges();
+                Add(change, start, record && i == 1);
+                Add(publish, walk, record && i == 1);
+            }
+        }
+
+        report.Series("scroll_change_us", change);
+        report.Series("scroll_publish_us", publish);
     }
 
     private static (UiTree Tree, NodeHandle Root, NodeHandle Target) BuildAbsolute(Func<float> targetWidth)

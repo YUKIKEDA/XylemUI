@@ -27,6 +27,12 @@ internal enum LengthKind : byte
 
     /// <summary>The available size less the margins (CSS Sizing 4's stretch-fit, row L3).</summary>
     Stretch,
+
+    /// <summary>
+    /// A flex basis from the item's content: its max-content size, whatever its main size (CSS's <c>flex-basis: content</c>,
+    /// row V2). Only a flex basis takes it.
+    /// </summary>
+    Content,
 }
 
 /// <summary>
@@ -64,6 +70,11 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     public static Length Stretch => new(LengthKind.Stretch, 0);
 
     /// <summary>
+    /// Gets the flex basis from the item's content (<see cref="LengthKind.Content"/>).
+    /// </summary>
+    public static Length Content => new(LengthKind.Content, 0);
+
+    /// <summary>
     /// Gets a value indicating whether the length is a fixed number of pixels.
     /// </summary>
     public bool IsPx => Kind == LengthKind.Px;
@@ -93,7 +104,7 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     /// <summary>
     /// Gets a value indicating whether the length is a sizing keyword: a content size or <see cref="LengthKind.Stretch"/>.
     /// </summary>
-    public bool IsSizingKeyword => Kind >= LengthKind.MinContent;
+    public bool IsSizingKeyword => Kind is >= LengthKind.MinContent and <= LengthKind.Stretch;
 
     /// <summary>
     /// Returns the pixels the length stands for against <paramref name="basis"/>, or NaN when it has none: an auto or content

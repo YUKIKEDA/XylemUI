@@ -150,6 +150,11 @@ internal sealed class WindowInput
             case PointerInputKind.CaptureLost:
                 CaptureLost(input);
                 break;
+            case PointerInputKind.Wheel:
+                // From the node under the pointer even while a button is captured (Flutter, GPUI; design §3.4.1).
+                Point(input);
+                Route(PointerEventKind.Wheel, _hit, input, bubbleOnly: false);
+                break;
             default:
                 break;
         }
@@ -442,6 +447,12 @@ internal sealed class WindowInput
             for (int i = start; i < end && !_stopped; i++)
             {
                 Invoke(kind, EventPhase.Bubble, target, _route[i], input);
+
+                // After the node's own handlers, which can stop the wheel before it scrolls anything.
+                if (kind == PointerEventKind.Wheel && !_stopped && Scroll(_route[i], input))
+                {
+                    _stopped = true;
+                }
             }
         }
         finally
@@ -519,6 +530,51 @@ internal sealed class WindowInput
                 return;
             }
         }
+    }
+
+    // A wheel's scrolling of a scroll container on the route (design §3.4.1): the axes whose overflow is Scroll take the amount, a
+    // mouse's vertical wheel with Shift held going across (Flutter's and Avalonia's scrollers); the position is kept in the range
+    // the last layout gave. Returns whether the position changed: then the wheel stops here; otherwise it goes on to the scroll
+    // containers outside (scroll chaining). A container without a state gets one the first time it scrolls.
+    private bool Scroll(NodeHandle node, in PointerInput input)
+    {
+        if (!_tree.Nodes.IsAlive(node))
+        {
+            return false;
+        }
+
+        ref readonly LayoutStyle style = ref _tree.Nodes.GetRef(node).Layout.Style;
+        bool horizontal = style.OverflowX == Overflow.Scroll;
+        bool vertical = style.OverflowY == Overflow.Scroll;
+        if (!horizontal && !vertical)
+        {
+            return false;
+        }
+
+        Vector2 delta = input.WheelDelta;
+        if (input.PointerType == PointerType.Mouse && (input.Modifiers & KeyModifiers.Shift) != 0 && delta.X == 0)
+        {
+            delta = new Vector2(delta.Y, 0);
+        }
+
+        delta = new Vector2(horizontal ? delta.X : 0, vertical ? delta.Y : 0);
+
+        // The range the last layout wrote to the state; a container without one yet finds its range from its boxes.
+        ScrollState? state = _tree.ScrollStateOf(node);
+        Vector2 max;
+        if (state is not null)
+        {
+            max = state.MaxOffsetValue;
+        }
+        else
+        {
+            Size range = _tree.MaxScrollOffsetOf(node);
+            max = new Vector2(range.Width, range.Height);
+        }
+
+        Vector2 current = _tree.ScrollOffsetOf(node);
+        Vector2 next = Vector2.Clamp(current + delta, Vector2.Zero, max);
+        return next != current && _tree.ScrollStateFor(node).SetOffset(next);
     }
 
     // The node the last display list puts at the position; none when that node was removed since.

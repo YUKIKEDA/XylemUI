@@ -9,7 +9,8 @@ namespace XylemUI.E2E;
 // that changes the hover (a leave and an enter, and the hovered state of the leaves). The display list is built once, as a frame
 // builds it; the moves change nothing that asks for a frame, so each one is the input's work alone. `scoped` adds the handlers in a
 // scope, as the component API does (row V1d, design §2.13): each call enters it and leaves it. A click is a press and a release
-// on the first leaf, whose click handler counts.
+// on the first leaf, whose click handler counts. A wheel (row V2) is routed from a leaf in a scroll container 300 high whose content
+// is 3,000 high, alternately down and up by 50 pixels, so that each one moves the container's scroll position (design §3.4.1).
 internal static class InputCost
 {
     private const int Moves = 10_000;
@@ -33,6 +34,8 @@ internal static class InputCost
             report.Number($"us_per_click{suffix}_p50", Median(21, hover.TimeClicks));
         }
 
+        using var wheel = new WheelScroll();
+        report.Number("us_per_wheel_p50", Median(21, wheel.Time));
         return 0;
     }
 
@@ -176,6 +179,54 @@ internal static class InputCost
                 int x = changeHover && (i & 1) == 1 ? 25 : 5;
                 _input.Handle(new PointerInput(PointerInputKind.Move, x, 5, PointerButton.None, 0, 0, 0, TimeSpan.Zero, PointerType.Mouse));
                 _moves++;
+            }
+        }
+    }
+
+    // A window of 400 x 300 whose root is a scroll container as large, holding a column 3,000 high of one box 10 high.
+    private sealed class WheelScroll : IDisposable
+    {
+        private readonly GlyphAtlas _atlas = new(new NoGlyphs());
+        private readonly WindowInput _input;
+        private readonly ScrollState _state;
+
+        public WheelScroll()
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle { OverflowY = Overflow.Scroll });
+            NodeHandle content = tree.CreateNode(new LayoutStyle { Height = Length.Px(3_000) });
+            NodeHandle leaf = tree.CreateNode(new LayoutStyle { Height = Length.Px(10) });
+            tree.AppendChild(root, content);
+            tree.AppendChild(content, leaf);
+            var frames = new WindowFrames(tree, root, new NoTarget(), _atlas, new NoScheduler(), default);
+            frames.Resize(new Size(400, 300), 1);
+            _input = new WindowInput(tree, frames, new NoPlatform());
+            _state = tree.ScrollStateFor(root);
+        }
+
+        // The microseconds of one wheel that moves the position. Wheels as many before, unmeasured.
+        public double Time()
+        {
+            Turn();
+            long start = Stopwatch.GetTimestamp();
+            Turn();
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            if (_state.OffsetValue.Y != 0)
+            {
+                throw new InvalidOperationException($"The wheels left the position at {_state.OffsetValue.Y}.");
+            }
+
+            return microseconds;
+        }
+
+        public void Dispose() => _atlas.Dispose();
+
+        private void Turn()
+        {
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                var delta = new System.Numerics.Vector2(0, (i & 1) == 0 ? 50 : -50);
+                _input.Handle(new PointerInput(PointerInputKind.Wheel, 5, 5, PointerButton.None, 0, 0, 0, TimeSpan.Zero, PointerType.Mouse, delta));
             }
         }
     }

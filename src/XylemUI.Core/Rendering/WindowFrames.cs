@@ -17,6 +17,10 @@ namespace XylemUI;
 /// </remarks>
 internal sealed class WindowFrames
 {
+    // How far a clip reaches past the box on an axis that does not clip (overflow-x: clip with overflow-y: visible), in logical
+    // pixels: farther than a window shows.
+    private const float UnclippedReach = 1_000_000;
+
     private readonly UiTree _tree;
     private readonly NodeHandle _root;
     private readonly IRenderTarget _target;
@@ -130,6 +134,13 @@ internal sealed class WindowFrames
         // otherwise draw and present every frame (PR #313's review). A mark made from here on asks for the next frame.
         _tree.ClearFrameRequest();
         _resizing = false;
+
+        // After the pass and its frame request: an effect that reads a scroll range and changes the tree asks for the next frame.
+        if (layout)
+        {
+            _tree.PublishScrollRanges();
+        }
+
         if (!layout && _tree.PaintUpdates.Count == 0)
         {
             return;
@@ -212,7 +223,9 @@ internal sealed class WindowFrames
         Rect rect = node.Layout.Rect;
         var box = new Rect(parentX + rect.X, parentY + rect.Y, rect.Width, rect.Height);
         NodeVisual? visual = node.Visual;
-        bool writesHit = node.Input?.WritesHitRegion == true;
+
+        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1).
+        bool writesHit = node.Input?.WritesHitRegion == true || node.Layout.Style.IsScrollContainer;
         Color text = inheritedText;
         int pushed = 0;
         if (visual is not null)
@@ -259,7 +272,13 @@ internal sealed class WindowFrames
             DrawText(leaf, box.X + inset.Left, box.Y + inset.Top, leaf.Color ?? text);
         }
 
-        NodeHandle child = _tree.Nodes.GetRef(handle).FirstChild;
+        ref UiNode container = ref _tree.Nodes.GetRef(handle);
+        NodeHandle child = container.FirstChild;
+        if (!child.IsNone && container.Layout.Style.ClipsChildren)
+        {
+            pushed += PushChildScopes(handle, box);
+        }
+
         while (!child.IsNone)
         {
             DrawNode(child, box.X, box.Y, text, hitsOnly);
@@ -270,6 +289,50 @@ internal sealed class WindowFrames
         {
             _list.Pop();
         }
+    }
+
+    // The scopes of a node's children when its overflow is not visible (design §3.4.1, "The scroll container"): a clip to the
+    // padding box, rounded by the inner radii (the outer ones less the border, CSS's inner border edge), on the axes that clip; a
+    // scroll container clips both. Inside it, a scroll container moves its children by its scroll position, which is a translation
+    // the list folds into the coordinates (§5.0). Its own box and hit region stay. Returns the scopes pushed.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private int PushChildScopes(NodeHandle handle, Rect box)
+    {
+        ref UiNode node = ref _tree.Nodes.GetRef(handle);
+        ref readonly LayoutStyle style = ref node.Layout.Style;
+        Edges border = node.Layout.Border;
+        CornerRadii outer = node.Visual?.Radii ?? default;
+
+        // Each inner radius is the outer one less the wider of the corner's two borders: CSS takes the horizontal radius less the
+        // side's width and the vertical one less the top's or bottom's, an ellipse that a circular radius cannot hold. The two
+        // agree for a uniform border.
+        bool scrolls = style.IsScrollContainer;
+        bool clipX = scrolls || style.OverflowX != Overflow.Visible;
+        bool clipY = scrolls || style.OverflowY != Overflow.Visible;
+        float x = clipX ? box.X + border.Left : box.X - UnclippedReach;
+        float y = clipY ? box.Y + border.Top : box.Y - UnclippedReach;
+        float width = clipX ? Math.Max(0, box.Width - border.Left - border.Right) : box.Width + (2 * UnclippedReach);
+        float height = clipY ? Math.Max(0, box.Height - border.Top - border.Bottom) : box.Height + (2 * UnclippedReach);
+        var inner = new CornerRadii(
+            Math.Max(0, outer.TopLeft - Math.Max(border.Left, border.Top)),
+            Math.Max(0, outer.TopRight - Math.Max(border.Right, border.Top)),
+            Math.Max(0, outer.BottomRight - Math.Max(border.Right, border.Bottom)),
+            Math.Max(0, outer.BottomLeft - Math.Max(border.Left, border.Bottom))
+        );
+        _list.PushClip(x, y, width, height, inner);
+        if (!scrolls)
+        {
+            return 1;
+        }
+
+        Vector2 offset = _tree.ScrollOffsetOf(handle);
+        if (offset == Vector2.Zero)
+        {
+            return 1;
+        }
+
+        _list.PushTransform(Matrix3x2.CreateTranslation(-offset));
+        return 2;
     }
 
     // A node with a look of its state or a scope: its values, with the hovered and then the pressed style laid over them where the
