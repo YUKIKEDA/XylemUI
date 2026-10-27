@@ -71,7 +71,7 @@ public readonly struct PointerEvent
     /// <summary>
     /// Gets the pointer's position in <see cref="CurrentTarget"/>'s coordinates, in logical pixels: before the node's transforms,
     /// from the top left of its border box. It is not a number (<see cref="float.NaN"/>) for a node that wrote no hit region in the
-    /// last frame, such as a node taken out of the tree that gets its leave.
+    /// last frame: an ancestor on the route that got its first handler after that frame, before the next one draws.
     /// </summary>
     public Vector2 LocalPosition { get; }
 

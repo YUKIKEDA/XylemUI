@@ -9,6 +9,7 @@ namespace XylemUI;
 public static class XylemApp
 {
     private static int _openWindows;
+    private static bool _running;
 
     /// <summary>
     /// Opens a window whose content <paramref name="root"/> makes, and runs the message loop until the last window is closed. The
@@ -26,14 +27,24 @@ public static class XylemApp
     {
         ArgumentNullException.ThrowIfNull(root);
         UiThread.Initialize();
-        if (_openWindows > 0)
+        if (_running)
         {
             throw new InvalidOperationException("XylemApp.Run runs one message loop; it already runs.");
         }
 
-        using var window = new DesktopWindow(root, options ?? new WindowOptions(), show: true);
-        Open(window);
-        return Win32MessageLoop.Run();
+        // The loop can end with windows open (Win32MessageLoop.Quit from the app); the next run starts with none counted.
+        _running = true;
+        try
+        {
+            using var window = new DesktopWindow(root, options ?? new WindowOptions(), show: true);
+            Open(window);
+            return Win32MessageLoop.Run();
+        }
+        finally
+        {
+            _running = false;
+            _openWindows = 0;
+        }
     }
 
     // Counts the window as open until it closes; the last to close ends the loop.

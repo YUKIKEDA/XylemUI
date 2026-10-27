@@ -210,6 +210,53 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A loop that the app ended with its window open (<c>Win32MessageLoop.Quit</c>) does not keep the next <c>XylemApp.Run</c> from
+    /// running: the run counts no window of the one before (PR #340's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The message loop's iteration hook quits with 5 at its first iteration in the first run, and asks the window of the second
+    ///   run's title to close in the second; both quit after 5 s.
+    ///
+    /// Steps:
+    /// - Run the app twice.
+    ///
+    /// Expected:
+    /// - The first run returns 5, and the second 0, both before the watchdog.
+    /// </remarks>
+    [Fact]
+    public void Run_AfterALoopTheAppQuit_RunsAgain() =>
+        ui.Invoke(() =>
+        {
+            using var watchdog = new LoopWatchdog();
+            int first;
+            int second;
+            try
+            {
+                Win32MessageLoop.IterationHook = () => Win32MessageLoop.Quit(watchdog.Expired ? 1 : 5);
+                first = XylemApp.Run(Elements.Box, new WindowOptions("Run quit test", 100, 80));
+                Win32MessageLoop.IterationHook = () =>
+                {
+                    if (watchdog.Expired)
+                    {
+                        Win32MessageLoop.Quit(1);
+                        return;
+                    }
+
+                    AskToClose("Run again test");
+                };
+                second = XylemApp.Run(Elements.Box, new WindowOptions("Run again test", 100, 80));
+            }
+            finally
+            {
+                Win32MessageLoop.IterationHook = null;
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.Equal((5, 0), (first, second));
+        });
+
+    /// <summary>
     /// The window's options are checked before a window is made.
     /// </summary>
     /// <remarks>
