@@ -122,7 +122,7 @@ public static class Elements
             char[]? released = buffer;
             try
             {
-                var writer = new TextWriter(buffer);
+                var writer = new NodeTextWriter(buffer);
                 content(ref writer);
                 released = writer.Buffer;
                 if (leaf.TakeWritten(writer.Buffer, writer.Length, out released))

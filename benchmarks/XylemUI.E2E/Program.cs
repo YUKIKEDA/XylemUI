@@ -42,6 +42,7 @@
 //                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
 //   text-capture out.png app [args]  launch an app, and save its client area from the screen as a PNG (row T4)
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
+//   app-startup <exe> [--at x,y] [--runs N]   an app's launch to its marker color on the display, and its close (row V1d)
 using System.Globalization;
 using XylemUI.E2E;
 
@@ -111,6 +112,7 @@ return scenario switch
     "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
     "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
     "external" => External.Run(args),
+    "app-startup" => AppStartup.Run(args),
     _ => Unknown(scenario),
 };
 

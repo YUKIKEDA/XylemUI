@@ -19,8 +19,9 @@ internal static unsafe class DisplayWatch
     public static double? LaunchToMarkerOnScreen(string app, string arguments, out Process process) =>
         LaunchToMarkerOnScreen(app, arguments, out process, out _);
 
-    // The same, also giving the performance counter of that present.
-    public static double? LaunchToMarkerOnScreen(string app, string arguments, out Process process, out long presentQpc)
+    // The same, also giving the performance counter of that present. The marker is read at (x, y) of the client area, in physical
+    // pixels: (20, 20), inside the scene's marker, unless another app's marker is elsewhere (app-startup).
+    public static double? LaunchToMarkerOnScreen(string app, string arguments, out Process process, out long presentQpc, int x = 20, int y = 20)
     {
         presentQpc = 0;
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 15063))
@@ -86,7 +87,7 @@ internal static unsafe class DisplayWatch
                             continue;
                         }
 
-                        var point = new POINT { x = 20, y = 20 };
+                        var point = new POINT { x = x, y = y };
                         _ = ClientToScreen(window, &point);
 
                         // The desktop image is the duplicated output's; a window outside it would never show the marker.

@@ -26,16 +26,31 @@ internal sealed class DesktopWindow : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DesktopWindow"/> class: makes the window hidden, runs the root function, and lays
-    /// the tree out and draws it once at the window's size.
+    /// Initializes a new instance of the <see cref="DesktopWindow"/> class: makes the window, shown or hidden, runs the root function,
+    /// and lays the tree out and draws it once at the window's size.
     /// </summary>
+    /// <remarks>
+    /// A window that is shown is shown before the renderer is made, as the startup scene of <c>XylemUI.E2E</c> (the baseline of row
+    /// M1a), Avalonia, and GPUI show theirs: the counter's first frame reached the display 694 to 708 ms after the launch, against
+    /// 749 to 776 ms when the window was shown after its first present (as Flutter's Windows runner does, to show no empty window).
+    /// The renderer took about 635 ms of it, most of which is the shaders' compiling at run time until row C0 (row V1d).
+    /// </remarks>
     /// <param name="root">The root function.</param>
     /// <param name="options">The window.</param>
+    /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <param name="useWarp"><see langword="true"/> to draw with the WARP software rasterizer, for the tests.</param>
+    /// <param name="target">What the frames draw on, made from the renderer; the renderer itself when <see langword="null"/>. The
+    /// tests read the pixels between the draw and the present through it.</param>
     /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the root function returned no node of
     /// the window's tree or one that has a parent.</exception>
-    public DesktopWindow(Func<Element> root, WindowOptions options, bool useWarp = false)
+    public DesktopWindow(
+        Func<Element> root,
+        WindowOptions options,
+        bool show = false,
+        bool useWarp = false,
+        Func<D3D11Renderer, IRenderTarget>? target = null
+    )
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -55,11 +70,24 @@ internal sealed class DesktopWindow : IDisposable
         try
         {
             Window = new Win32Window(options.Title, (int)MathF.Ceiling(options.Width), (int)MathF.Ceiling(options.Height));
+            if (show)
+            {
+                Window.Show();
+            }
+
             (int width, int height) = Window.ClientSize;
             Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
             Renderer.TextRendering = Window.TextRendering;
             _atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer());
-            Frames = new WindowFrames(Tree, _rootNode, Renderer, _atlas, Win32MessageLoop.FrameScheduler, Background, Window.TextRendering);
+            Frames = new WindowFrames(
+                Tree,
+                _rootNode,
+                target?.Invoke(Renderer) ?? Renderer,
+                _atlas,
+                Win32MessageLoop.FrameScheduler,
+                Background,
+                Window.TextRendering
+            );
             Input = new WindowInput(Tree, Frames, Window);
             Window.PointerInputReceived = Input.Handle;
             Window.SynchronousRender = Render;
@@ -111,11 +139,6 @@ internal sealed class DesktopWindow : IDisposable
     /// Gets the root scope, which owns what the root function made; disposed when the window closes.
     /// </summary>
     public ScopeHandle RootScope => _rootScope;
-
-    /// <summary>
-    /// Shows the window.
-    /// </summary>
-    public void Show() => Window.Show();
 
     /// <summary>
     /// Disposes the root scope, destroys the window, and releases the renderer and the text tools.

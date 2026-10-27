@@ -20,7 +20,9 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/XylemUI.Core.Tests/XylemUI.Core.Tests.csproj" />
+    <Project Path="tests/XylemUI.Desktop.Tests/XylemUI.Desktop.Tests.csproj" />
     <Project Path="tests/XylemUI.Platform.Windows.Tests/XylemUI.Platform.Windows.Tests.csproj" />
+    <Project Path="tests/XylemUI.Primitives.Tests/XylemUI.Primitives.Tests.csproj" />
     <Project Path="tests/XylemUI.Rendering.D3D11.Tests/XylemUI.Rendering.D3D11.Tests.csproj" />
     <Project Path="tests/XylemUI.Text.Tests/XylemUI.Text.Tests.csproj" />
   </Folder>

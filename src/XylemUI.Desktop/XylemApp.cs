@@ -31,9 +31,8 @@ public static class XylemApp
             throw new InvalidOperationException("XylemApp.Run runs one message loop; it already runs.");
         }
 
-        using var window = new DesktopWindow(root, options ?? new WindowOptions());
+        using var window = new DesktopWindow(root, options ?? new WindowOptions(), show: true);
         Open(window);
-        window.Show();
         return Win32MessageLoop.Run();
     }
 
