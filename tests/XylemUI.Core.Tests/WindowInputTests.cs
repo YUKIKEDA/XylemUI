@@ -493,6 +493,59 @@ public sealed class WindowInputTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A leave of the window that comes while enters and leaves are sent (a handler that pumps messages) waits for them, then empties
+    /// the hover: each node gets one leave, and none stays hovered (Issue #329).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box A (10, 10, 50 x 50) and a box B (100, 10, 50 x 50) log their enters and leaves. A's leave handler hands the input a
+    ///   leave of the window, as a message pumped inside it would. The pointer moved to (20, 20), over A.
+    ///
+    /// Steps:
+    /// - Move to (110, 20), over B.
+    ///
+    /// Expected:
+    /// - Leave A, enter B, then, from the waiting leave of the window, leave B. Neither box is hovered.
+    /// </remarks>
+    [Fact]
+    public void WindowLeave_FromALeaveHandler_WaitsForTheChangeBeingSent() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            NodeHandle a = scene.Place(scene.Root, 10, 10, 50, 50);
+            NodeHandle b = scene.Place(scene.Root, 100, 10, 50, 50);
+            var log = new List<string>();
+            bool left = false;
+            foreach ((NodeHandle node, string name) in new[] { (a, "A"), (b, "B") })
+            {
+                scene.Tree.AddPointerHandler(node, PointerEventKind.Enter, EventPhase.Bubble, (in PointerEvent e) => log.Add($"enter {name}"));
+                scene.Tree.AddPointerHandler(
+                    node,
+                    PointerEventKind.Leave,
+                    EventPhase.Bubble,
+                    (in PointerEvent e) =>
+                    {
+                        log.Add($"leave {name}");
+                        if (name == "A" && !left)
+                        {
+                            left = true;
+                            scene.Send(PointerInputKind.Leave, 0, 0, PointerButton.None, PointerButtons.None);
+                        }
+                    }
+                );
+            }
+
+            scene.Draw();
+            scene.Move(20, 20);
+            log.Clear();
+            scene.Move(110, 20);
+
+            Assert.Equal(["leave A", "enter B", "leave B"], log);
+            Assert.False(scene.Has(a, PseudoState.Hovered));
+            Assert.False(scene.Has(b, PseudoState.Hovered));
+        });
+
+    /// <summary>
     /// A handler's local position is in its own node's coordinates before the node's transform, from the top left of its border
     /// box, in logical pixels, at a window scale that is not 1; the window position is the physical one over the scale.
     /// </summary>
