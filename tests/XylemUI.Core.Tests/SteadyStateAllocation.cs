@@ -9,8 +9,9 @@ namespace XylemUI.Tests;
 /// </summary>
 /// <remarks>
 /// The iterations run in windows, and a failure lists each window's bytes, the methods compiled on this thread in it, and the
-/// collections in it. A runner once reported a few kilobytes that no local run reproduced; the windows tell such a figure
-/// apart from an allocation that every iteration makes (<c>.cursor/rules/bench.mdc</c>).
+/// collections in it, which tell a one-off figure apart from an allocation that every iteration makes. The one-off kilobytes the
+/// runners reported came from background GCs, which empty a thread's allocation context at the end of their mark without taking
+/// its unused rest off the thread's count; the test projects run without concurrent GC (Issue #332, <c>.cursor/rules/bench.mdc</c>).
 /// </remarks>
 internal static class SteadyStateAllocation
 {
