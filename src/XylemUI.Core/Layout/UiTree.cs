@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using XylemUI.Text;
 
 namespace XylemUI;
 
@@ -41,6 +42,12 @@ internal sealed class UiTree
     /// <see langword="null"/> outside it. It belongs to the UI thread.
     /// </summary>
     internal static UiTree? Current { get; set; }
+
+    /// <summary>
+    /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
+    /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); "und" (undetermined) until it does.
+    /// </summary>
+    internal TextLanguage UiLanguage { get; set; } = TextLanguage.FromTag("und");
 
     /// <summary>
     /// Gets the text tools its text leaves are measured with; <see langword="null"/> for a tree without text leaves.

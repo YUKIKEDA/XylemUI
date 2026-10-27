@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XylemUI.Primitives</RootNamespace>
+    <Description>The headless primitives of XylemUI: behavior, state, and input without a look (design §13.1).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+</Project>

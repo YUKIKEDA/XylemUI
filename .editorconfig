@@ -124,9 +124,3 @@ dotnet_diagnostic.CA1707.severity = none
 # Generated code.
 [*.g.cs]
 generated_code = true
-
-# TextWriter.Write(ref TextWriterHandler) passes its receiver to the interpolated-string handler ([InterpolatedStringHandlerArgument("")]),
-# so it must be an instance method, and the handler has written the parts through its ref field by the time the body runs; CA1822
-# cannot see the receiver's use (design §2.13, "TextBuilder").
-[src/XylemUI.Core/Elements/TextWriter.cs]
-dotnet_diagnostic.CA1822.severity = none

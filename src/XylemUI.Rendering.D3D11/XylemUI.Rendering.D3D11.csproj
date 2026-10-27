@@ -18,5 +18,7 @@
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
     <!-- The frame measurements (GPU time, present latency) are for the benchmarks only (roadmap row M1a). -->
     <InternalsVisibleTo Include="XylemUI.E2E" />
+    <!-- The real window's tests count the draws and read the pixels of the sample (row V1d). -->
+    <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
   </ItemGroup>
 </Project>

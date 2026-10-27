@@ -1,4 +1,3 @@
-using System.Globalization;
 using XylemUI.Text;
 
 namespace XylemUI;
@@ -58,7 +57,7 @@ public static class Elements
     public static Element Row(params ReadOnlySpan<Element> children) => Container(LayoutAlgorithm.Flex.Row, children);
 
     /// <summary>
-    /// Makes text that does not change, at <see cref="DefaultFontSize"/>, in the OS's UI language, with the color its ancestors give
+    /// Makes text that does not change, at <see cref="DefaultFontSize"/>, in the OS's UI language (the one the window's host reads), with the color its ancestors give
     /// (design §5.0, "The color of text").
     /// </summary>
     /// <param name="content">The text.</param>
@@ -97,8 +96,9 @@ public static class Elements
     }
 
     /// <summary>
-    /// Makes text that <paramref name="content"/> writes into the node's buffer again whenever a signal it read changes. A text equal
-    /// to the one there changes nothing, and writing it again allocates nothing once the buffer has grown (design §2.13).
+    /// Makes text that <paramref name="content"/> writes again whenever a signal it read changes, into a buffer that the node takes
+    /// in place of its own when the text differs. A text equal to the one there changes nothing, and writing again allocates nothing
+    /// once the buffers have grown (design §2.13).
     /// </summary>
     /// <param name="content">The text's writer, run in an effect of the current scope.</param>
     /// <returns>The text node.</returns>
@@ -116,11 +116,26 @@ public static class Elements
                 return;
             }
 
-            var writer = new TextWriter(leaf);
-            content(ref writer);
-            if (leaf.CommitSpare(writer.Length))
+            // The tree of a text leaf has text tools (CreateTextNode).
+            TextContext context = tree.Text!;
+            char[] buffer = context.RentSpare(out bool shared);
+            char[]? released = buffer;
+            try
             {
-                Invalidation.Invalidate(tree, node, ChangeKind.TextContent);
+                var writer = new TextWriter(buffer);
+                content(ref writer);
+                released = writer.Buffer;
+                if (leaf.TakeWritten(writer.Buffer, writer.Length, out released))
+                {
+                    Invalidation.Invalidate(tree, node, ChangeKind.TextContent);
+                }
+            }
+            finally
+            {
+                if (shared)
+                {
+                    context.ReturnSpare(released);
+                }
             }
         });
         return text;
@@ -134,8 +149,8 @@ public static class Elements
         UiTree.Current
         ?? throw new InvalidOperationException("Elements are made while a window's root function runs (XylemApp.Run); no tree is current.");
 
-    // The text style of text that sets none.
-    internal static TextStyle DefaultTextStyle() => new(FontRequest.Default, DefaultFontSize, UiLanguage(), float.NaN);
+    // The text style of text that sets none, in the tree's UI language.
+    internal static TextStyle DefaultTextStyle(UiTree tree) => new(FontRequest.Default, DefaultFontSize, tree.UiLanguage, float.NaN);
 
     // A node of the current tree, owned by the current scope: disposing the scope takes it out and frees it.
     private static Element Own(LayoutStyle style)
@@ -168,7 +183,7 @@ public static class Elements
             throw new InvalidOperationException("Elements are made inside a scope, which owns them; there is no current scope.");
         }
 
-        NodeHandle node = tree.CreateTextNode(new LayoutStyle(), DefaultTextStyle());
+        NodeHandle node = tree.CreateTextNode(new LayoutStyle(), DefaultTextStyle(tree));
         Own(tree, node);
         return new Element(tree, node);
     }
@@ -197,12 +212,5 @@ public static class Elements
         }
 
         parent.Tree!.AppendChild(parent.Node, child.Node);
-    }
-
-    // The OS's UI language, or "und" (undetermined) where the culture is the invariant one.
-    private static TextLanguage UiLanguage()
-    {
-        string name = CultureInfo.CurrentUICulture.Name;
-        return TextLanguage.FromTag(name.Length > 0 ? name : "und");
     }
 }

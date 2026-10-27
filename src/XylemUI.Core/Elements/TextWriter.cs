@@ -5,13 +5,13 @@ namespace XylemUI;
 /// <summary>
 /// Writes the text of a text node (<see cref="Elements.Text(TextBuilder)"/>, design §2.13).
 /// </summary>
-/// <param name="text">The writer: each <c>Write</c> appends to the text being written.</param>
+/// <param name="text">The writer: each <c>Write</c> (<see cref="TextWriterExtensions"/>) appends to the text being written.</param>
 public delegate void TextBuilder(ref TextWriter text);
 
 /// <summary>
-/// Appends to the text a <see cref="TextBuilder"/> writes, in the node's own buffer, with no string made: spans, values that format
-/// themselves (<see cref="ISpanFormattable"/>), and interpolated strings. The node takes the text when it differs from the one
-/// there (design §2.13).
+/// The text a <see cref="TextBuilder"/> writes, in a buffer the node takes in place of its own, with no string made. The writes are the extension methods
+/// of <see cref="TextWriterExtensions"/>: spans, values that format themselves (<see cref="ISpanFormattable"/>), and interpolated
+/// strings. The node takes the text when it differs from the one there (design §2.13).
 /// </summary>
 /// <remarks>
 /// It is a struct and not a <c>ref struct</c>: <see cref="TextWriterHandler"/> holds it in a <c>ref</c> field, and a <c>ref</c> field
@@ -19,39 +19,33 @@ public delegate void TextBuilder(ref TextWriter text);
 /// </remarks>
 public struct TextWriter
 {
-    private readonly TextLeaf _leaf;
     private char[] _buffer;
     private int _length;
 
-    internal TextWriter(TextLeaf leaf)
+    internal TextWriter(char[] buffer)
     {
-        _leaf = leaf;
-        _buffer = leaf.SpareFor(0, 0);
+        _buffer = buffer;
         _length = 0;
     }
+
+    /// <summary>
+    /// Gets the buffer written into; a write that needs more room replaces it with a larger one.
+    /// </summary>
+    internal readonly char[] Buffer => _buffer;
 
     /// <summary>
     /// Gets the number of characters written.
     /// </summary>
     internal readonly int Length => _length;
 
-    /// <summary>
-    /// Appends characters.
-    /// </summary>
-    /// <param name="value">The characters.</param>
-    public void Write(ReadOnlySpan<char> value)
+    internal void Append(ReadOnlySpan<char> value)
     {
         Ensure(value.Length);
         value.CopyTo(_buffer.AsSpan(_length));
         _length += value.Length;
     }
 
-    /// <summary>
-    /// Appends a value that formats itself, with no boxing and no string.
-    /// </summary>
-    /// <typeparam name="T">The value's type.</typeparam>
-    /// <param name="value">The value.</param>
-    public void Write<T>(T value)
+    internal void Append<T>(T value)
         where T : ISpanFormattable
     {
         int written;
@@ -63,19 +57,51 @@ public struct TextWriter
         _length += written;
     }
 
-    /// <summary>
-    /// Appends an interpolated string, each part written straight into the buffer.
-    /// </summary>
-    /// <param name="handler">The handler the compiler builds from the interpolated string; it has written the parts already.</param>
-    public readonly void Write([InterpolatedStringHandlerArgument("")] ref TextWriterHandler handler) => _ = handler;
-
-    // Room for count more characters, keeping what was written.
+    // Room for count more characters, keeping what was written: the larger of what is needed and twice the buffer.
     private void Ensure(int count)
     {
         if (_length + count > _buffer.Length)
         {
-            _buffer = _leaf.SpareFor(_length + count, _length);
+            var grown = new char[Math.Max(_length + count, _buffer.Length * 2)];
+            _buffer.AsSpan(0, _length).CopyTo(grown);
+            _buffer = grown;
         }
+    }
+}
+
+/// <summary>
+/// The writes of a <see cref="TextWriter"/> (design §2.13). They are extension methods on <c>ref TextWriter</c> and not members of it:
+/// an interpolated string handler takes the writer by reference only from a parameter that names it
+/// (<c>[InterpolatedStringHandlerArgument("writer")]</c>); from the receiver of a member it takes a copy (CS1620). They are all here so
+/// that an interpolated string takes the handler, which allocates nothing, and not the overload of a span, which would make a string.
+/// </summary>
+public static class TextWriterExtensions
+{
+    /// <summary>
+    /// Appends characters.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    /// <param name="value">The characters.</param>
+    public static void Write(this ref TextWriter writer, ReadOnlySpan<char> value) => writer.Append(value);
+
+    /// <summary>
+    /// Appends a value that formats itself, with no boxing and no string.
+    /// </summary>
+    /// <typeparam name="T">The value's type.</typeparam>
+    /// <param name="writer">The writer.</param>
+    /// <param name="value">The value.</param>
+    public static void Write<T>(this ref TextWriter writer, T value)
+        where T : ISpanFormattable => writer.Append(value);
+
+    /// <summary>
+    /// Appends an interpolated string, each part written straight into the buffer.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    /// <param name="handler">The handler the compiler builds from the interpolated string; it has written the parts already.</param>
+    public static void Write(this ref TextWriter writer, [InterpolatedStringHandlerArgument("writer")] ref TextWriterHandler handler)
+    {
+        _ = writer;
+        _ = handler;
     }
 }
 
@@ -105,7 +131,7 @@ public ref struct TextWriterHandler
     /// Writes a literal part.
     /// </summary>
     /// <param name="value">The part.</param>
-    public readonly void AppendLiteral(string value) => _writer.Write(value);
+    public readonly void AppendLiteral(string value) => _writer.Append(value);
 
     /// <summary>
     /// Writes a value that formats itself.
@@ -113,17 +139,17 @@ public ref struct TextWriterHandler
     /// <typeparam name="T">The value's type.</typeparam>
     /// <param name="value">The value.</param>
     public readonly void AppendFormatted<T>(T value)
-        where T : ISpanFormattable => _writer.Write(value);
+        where T : ISpanFormattable => _writer.Append(value);
 
     /// <summary>
     /// Writes characters.
     /// </summary>
     /// <param name="value">The characters.</param>
-    public readonly void AppendFormatted(ReadOnlySpan<char> value) => _writer.Write(value);
+    public readonly void AppendFormatted(ReadOnlySpan<char> value) => _writer.Append(value);
 
     /// <summary>
     /// Writes a string; <see langword="null"/> writes nothing.
     /// </summary>
     /// <param name="value">The string.</param>
-    public readonly void AppendFormatted(string? value) => _writer.Write(value);
+    public readonly void AppendFormatted(string? value) => _writer.Append(value);
 }
