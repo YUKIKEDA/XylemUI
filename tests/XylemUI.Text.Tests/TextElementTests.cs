@@ -426,6 +426,43 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
             Assert.NotNull(thrown);
         });
 
+    /// <summary>
+    /// A text leaf whose draw function throws still draws its text: the draw function comes before the leaf's text, and the
+    /// exception is reported (design §5.0, "The exceptions of draw functions").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn" whose draw function throws; the reactive runtime's handler records what it is given.
+    ///
+    /// Steps:
+    /// - Mount and draw.
+    ///
+    /// Expected:
+    /// - One exception reported, the one thrown; the list has one glyph run of two glyphs.
+    /// </remarks>
+    [Fact]
+    public void DrawFunction_OfATextLeafThrows_DrawsItsText() =>
+        ui.Invoke(() =>
+        {
+            var reported = new List<Exception>();
+            Action<Exception> previous = ReactiveRuntime.UnhandledExceptionHandler;
+            ReactiveRuntime.UnhandledExceptionHandler = reported.Add;
+            try
+            {
+                using var scene = new Scene(_font);
+                var thrown = new InvalidOperationException("thrown by the draw function");
+                scene.Mount(() => Elements.Text("nn").Draw((DrawingContext context, Rect box) => throw thrown));
+                Assert.Equal([thrown], reported);
+                List<GlyphInstance[]> runs = scene.GlyphRuns();
+                Assert.Single(runs);
+                Assert.Equal(2, runs[0].Length);
+            }
+            finally
+            {
+                ReactiveRuntime.UnhandledExceptionHandler = previous;
+            }
+        });
+
     // A window of 400 x 300 logical pixels with the test font: its tree and frames, and what it mounted.
     private sealed class Scene : IDisposable
     {

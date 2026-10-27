@@ -31,9 +31,9 @@ internal sealed class DesktopWindow : IDisposable
     /// </summary>
     /// <remarks>
     /// A window that is shown is shown before the renderer is made, as the startup scene of <c>XylemUI.E2E</c> (the baseline of row
-    /// M1a), Avalonia, and GPUI show theirs: the counter's first frame reached the display 694 to 708 ms after the launch, against
-    /// 749 to 776 ms when the window was shown after its first present (as Flutter's Windows runner does, to show no empty window).
-    /// The renderer took about 635 ms of it, most of which is the shaders' compiling at run time until row C0 (row V1d).
+    /// M1a), Avalonia, and GPUI show theirs. Shown after its first present, as Flutter's Windows runner does to show no empty
+    /// window, the counter's first frame reached the display 40 to 60 ms later; the renderer, whose shaders compile at run time until
+    /// row C0, takes most of the time before it (<c>docs/benchmarks/v1d-components.md</c>).
     /// </remarks>
     /// <param name="root">The root function.</param>
     /// <param name="options">The window.</param>

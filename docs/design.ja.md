@@ -1421,7 +1421,7 @@ static Element Counter()
     var count = Signal.Create(0);
 
     return Column(
-        Text((ref TextWriter text) => text.Write($"clicks: {count.Get()}")),
+        Text((ref text) => text.Write($"clicks: {count.Get()}")),
         Button("+1", () => count.Set(count.Get() + 1))
             .Padding(8)
             .Background(Color.FromRgb(0x3366CC))
@@ -1442,19 +1442,23 @@ public static Element Text(string content);         // 変わらない文字
 public static Element Text(Func<string> content);   // 簡便版。更新のたびに string を確保する
 public static Element Text(TextBuilder content);    // 頻繁に変わるテキスト用。更新時に確保しない
 
-public delegate void TextBuilder(ref TextWriter text);
+public delegate void TextBuilder(ref NodeTextWriter text);
 
-public ref struct TextWriter
+public struct NodeTextWriter { }   // 書いた文字と長さを持つ。書くのは下の拡張メソッド
+
+public static class NodeTextWriterExtensions
 {
-    public void Write(ReadOnlySpan<char> value);
-    public void Write<T>(T value) where T : ISpanFormattable;      // 数値などをボクシングせずに書く
-    public void Write([InterpolatedStringHandlerArgument("")] ref TextWriterHandler handler);  // $"..." を直接書く
+    public static void Write(this ref NodeTextWriter writer, ReadOnlySpan<char> value);
+    public static void Write<T>(this ref NodeTextWriter writer, T value) where T : ISpanFormattable;   // 数値などをボクシングせずに書く
+    public static void Write(this ref NodeTextWriter writer,
+        [InterpolatedStringHandlerArgument("writer")] ref NodeTextWriterHandler handler);           // $"..." を直接書く
 }
 ```
 
-- `TextBuilder` はノードが持つ char バッファ（`TextLeaf.Buffer`、§3.2「文字の葉」）へ直接書く。書き終えた内容が前回と同じなら、`ChangeKind.TextContent` の無効化をしない
+- `TextBuilder` は、UI スレッドに 1 つの予備のバッファ（`TextContext`）へ書く。書き終えた内容が前回と同じなら、`ChangeKind.TextContent` の無効化をしない。違えば、ノードの char バッファ（`TextLeaf.Buffer`、§3.2「文字の葉」）と入れ替える（下の「`TextBuilder` の 2 点」）
 - バッファは使い回し、足りないときだけ拡張する（`.cursor/rules/perf.mdc`）。ラムダの確保はノード作成時の1回だけで、更新時は確保しない
-- `TextWriterHandler` は補間文字列ハンドラ（`[InterpolatedStringHandler]`）で、各部分を `ISpanFormattable.TryFormat` でバッファに書く。ZString と同じ目的を、.NET 6 以降の標準の仕組みで実現する
+- `NodeTextWriterHandler` は補間文字列ハンドラ（`[InterpolatedStringHandler]`）で、各部分を `ISpanFormattable.TryFormat` でバッファに書く。ZString と同じ目的を、.NET 6 以降の標準の仕組みで実現する
+- 書き手の名前は `NodeTextWriter` にした。`TextWriter` は、implicit usings で見える `System.IO.TextWriter` とぶつかり、`(ref TextWriter text) =>` と書くと CS0104 になる（V1d の実装で見つけ、オーナーが決定。§8.9 の `EventHandler<TEvent>` を `PointerHandler` にしたのと同じ理由）。C# 14 では型を書かずに `(ref text) =>` と書ける
 - 書き込み中に Signal を読むと依存が登録される（`Func<string>` 版と同じ）
 - テキスト更新を Zero-Alloc ゲート（§11.3）のシナリオに入れるかは、シェーピング側の確保を S8 で測ってから決める。S8a の計測では、同じ文字列のシェーピングとキャッシュ済みのグリフのアトラスの引き当ては、定常状態で 0 バイト（Debug・Release、1,000 回）だった。シナリオに入れられる条件は満たしている。入れるかは Zero-Alloc ゲートを作る P02（`XylemUI.Testing`）で決める
 
@@ -1536,21 +1540,27 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - GPUI: core の要素は `div`・`text`・`canvas` などで（`gpui/src/elements/mod.rs` 1〜27 行目）、ボタンは Zed の `ui` crate にある（`ui/src/components/button/button_like.rs` 751〜900 行目）
   - Avalonia: `StackPanel`・`TextBlock`・`Button` はどれも Avalonia.Controls にある（`Avalonia.Controls/StackPanel.cs` 19 行目、`TextBlock.cs` 19 行目、`Button.cs` 36 行目）。`Button` の見た目はすべてテーマから来て、テーマが無ければ何も描かない（`Avalonia.Controls/Primitives/TemplatedControl.cs` 306〜343 行目、テーマは `Avalonia.Themes.Fluent/Controls/Button.xaml` 13〜95 行目）
   - V1 の `Button` は、押せることと押した状態だけを持つ。Click のハンドラ（`OnClick`）、Pressed の擬似状態（V1c）、ヒット領域を持つ `Box` で、背景も文字の色も付けない。見た目はアプリかテーマ（§13.2）が、メソッドチェーンで付ける。キーボードでの Click（Enter と Space）とフォーカスは行 K1 で足す
+- **名前空間 `XylemUI.*` の中から `Text` を呼ぶ:** `XylemUI.Primitives` などの名前空間の中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかり、CS0118 になる。アプリの名前空間（`Counter` など）では起きない。`XylemUI.*` の中のコード（部品・テーマ・テスト）は `Elements.Text(...)` と書く（V1d の実装で、オーナーが決定。`docs/conventions.md`）
 - **部品の関数が木を見つける方法:** 部品の関数は引数を取らない（上の `Counter`）。ウィンドウの host（`XylemApp.Run`）が根の関数を呼んでいる間だけ、その木を UI スレッドの「今の木」にする（Scope の「今の Scope」と同じ形、§2.3）。`Elements` の関数は、今の木にノードを作る。今の木が無い所（根の関数の外、ハンドラの中）で作ると `InvalidOperationException` を投げる。後でノードを作る `Show` と `For`（§2.7）は、その時に今の木を立て直す。Flutter は `BuildContext`（`widgets/framework.dart` 2308 行目。中身は `Element` で 3570 行目）を、GPUI は `window` と `cx` を、どの描く関数とハンドラにも引数で渡す（`gpui/src/element.rs` 164〜167 行目）。Avalonia は、木の外で作った部品を、根に付いた親に足したときに付ける（`Avalonia.Base/Visual.cs` 715〜737 行目）。引数で渡す形は §2.13 の書き方を変えるので、採らない
 - **`Element`:** 木とノードの組で、ウィンドウが複数あってもどの木のノードかが分かる。`Foreground` は、文字の葉には自分の色（`SetTextColor`、`TextLeaf.Color`）として、ほかのノードには子孫に渡す色（`SetForeground`、`NodeVisual.Foreground`）として書く。1 万行の文字の葉が `NodeVisual` を持たずに済む（§5.0「文字の色」）。`Border(width, paint)` は、幅を `LayoutStyle.Border`（`ChangeKind.Size`）に、塗りを `SetBorderPaint`（`ChangeKind.Color`）に書く（§2.4 の対応表、§5.0「枠線の幅」）。メソッドチェーンは中間の値を作らず、割り当てない。Signal を受ける多重定義だけが Effect を 1 つ作る
 - **子の渡し方:** `Column` と `Row` は `params ReadOnlySpan<Element>`（C# 13）で受け、配列を作らない。子は並びの順に付く。子を持たない `Column()` は、空の容器になる。別の木の `Element` を子に渡すと `ArgumentException`
 - **Signal とノード:** §2.4 の Binding の層の `NodeProperty<T>` を、Signal からノードへ書く唯一の経路にする。`Bind` は、今の Scope が持つ Effect を 1 つ作る。Effect は Signal を読み、`NodeProperty<T>` の setter（`UiTree` の setter と同じ。等しい値なら何もしない）で書く。Effect は、batch を閉じたときに layout の前に流れ終わる（§2.2、§2.4）。Avalonia の `Bind(property, IObservable)` は `IDisposable` を返し、呼んだ人が後始末する（`Avalonia.Base/AvaloniaObject.cs` 446〜573 行目）。ここでは Effect を今の Scope が持つので、Scope の破棄で消える。記述子は手で書き、Source Generator は使わない（§2.4 は「使ってよい」）
 - **`TextBuilder` の 2 点（D2 のレビューで送った点）:**
-  - 書いた内容が前回と同じかは、文字の葉の予備のバッファに書いてから `SequenceEqual` で比べて決める。違えば 2 つのバッファを入れ替え、`ChangeKind.TextContent` で無効化する。同じなら何もしない。予備のバッファは、足りないときだけ伸ばす（`.cursor/rules/perf.mdc`）
-  - `TextWriterHandler` は ref struct にし、`ref TextWriter` のフィールド（C# 11 の ref フィールド）で、元の書き手の位置を直接進める。値で受け取ると、補間文字列の部分を書いた長さが、書き手の写しにだけ残って失われる
+  - 書いた内容が前回と同じかは、予備のバッファに書いてから `SequenceEqual` で比べて決める。違えば、文字の葉のバッファと入れ替え（文字の葉が書いたバッファを持ち、古いバッファを予備に返す）、`ChangeKind.TextContent` で無効化する。同じなら何もしない。予備のバッファは、足りないときだけ伸ばす（`.cursor/rules/perf.mdc`）
+  - 予備のバッファは、文字の葉ごとではなく UI スレッドに 1 つ（`TextContext`）持つ（V1d の実装で、オーナーが決定）。文字の葉ごとに持つと、`TextBuilder` を使わない葉も参照 1 つ（8 バイト）大きくなり、V1a の受け入れ（文字の葉 1 つの最初の確保が §3.2「メモリ」の式と頭の和以下）が 1,560 バイト対 1,552 バイトで外れた。§3.2「メモリ」が作業用の配列を葉ごとに持たず `TextShaper` に 1 つ持つのと同じ扱いである。書いている間に別の書き手が始まったとき（根の関数の中で作る Effect はすぐ走る）は、その書き手が自分のバッファを持つ
+  - `NodeTextWriterHandler` は ref struct にし、`ref NodeTextWriter` のフィールド（C# 11 の ref フィールド）で、元の書き手の位置を直接進める。値で受け取ると、補間文字列の部分を書いた長さが、書き手の写しにだけ残って失われる
+  - `NodeTextWriter` は ref struct でない struct にする。ref フィールドは ref struct を指せない（CS9050）。中に span を持たないので、スタックに縛る必要も無い
+  - 書く 3 つのメソッドは、`NodeTextWriter` のメンバーではなく `this ref NodeTextWriter` の拡張メソッドにする（V1d の実装で見つけた）。補間文字列ハンドラのコンストラクタは、メンバーの受け手（`[InterpolatedStringHandlerArgument("")]`）を `ref` で受け取れず、CS1620 になる。名前の付いた引数（`"writer"`）なら `ref` で受け取れる。3 つとも同じクラスの拡張メソッドに置く。span を受けるメソッドだけがメンバーだと、`$"..."` は string に変わってそちらに渡り、文字列を確保する
 - **持ち主と外し方:** 要素を作ると、今の Scope の後始末に「木から外し、アリーナから解放し、ハンドラを捨てる」を登録する（`Scope.OnCleanup`）。Binding の Effect は、作った Scope が持つ（§2.3）。Scope を破棄すると、その Scope で作ったノード・ハンドラ・Effect が残らない。木の内部に、ノードとその部分木を親から外す `UiTree.Remove` を足す（親の layout の印を付け、部分木のノードを解放する）。公開の「外す」API は持たず、部分を作り直す `Show` と `For` が使う。Flutter は、要素を外すと `State.dispose` を呼ぶ（`widgets/framework.dart` の `Element.unmount` 4864〜4880 行目、`StatefulElement.unmount` 6041〜6043 行目）。GPUI は、エンティティを手放すとそのリスナーを外す（`gpui/src/app.rs` 2069〜2086 行目）。Avalonia は、木から外してもハンドラと Binding を外さない（`Avalonia.Base/Interactivity/Interactive.cs` 16 行目の `_eventHandlers` は外す経路が触らない）
 - **ハンドラを動かす Scope（S9 で送った点）:** イベントのハンドラと Binding の Effect は、それを登録した Scope の中で動かす（`Scope.Run` と同じ意味）。ハンドラの中で作った Effect や後始末は、その Scope に入る。その Scope が破棄されていたとき（`Scope.Run` が `false` を返す場合）は、何もしない。`OnClick` と `On` の XML ドキュメントに、そう書く
   - 入力の配送は frame path にある（`.cursor/rules/perf.mdc`）ので、`Scope.Run(scope, () => handler(in e))` のようにイベントごとにクロージャを作らない（`in` の引数はラムダに捕まえられない）。`Scope` に internal の `TryEnter(ScopeHandle scope, out ScopeHandle previous)` と `Exit(ScopeHandle previous)` を足す。`TryEnter` は `Scope.Run` と同じ検査（UI スレッド、計算中の Computed でない、破棄されていない）をして今の Scope を差し替え、`Scope.Run` もこの 2 つで書く。`WindowInput` は、ハンドラを呼ぶ前に `TryEnter` し、`finally` で `Exit` する（PR #336 のレビュー）
   - 登録した Scope は、ハンドラごとに持つ（`HandlerEntry` に `ScopeHandle` を 1 つ）。部分を作り直す `Show` と `For` が入ると、あるノードに、そのノードを作った Scope とは別の Scope からハンドラを足すことがあるので、ノードに 1 つでは足りない。SolidJS の `runWithOwner` も、登録した時の持ち主で呼ぶ
 - **部品ごとの Scope:** 部品の関数はふつうのメソッドで、部品ごとに Scope を作らない（SolidJS と同じ）。V1d で Scope を作るのは、ウィンドウの根だけである。部分を作り直す `Show` と `For` が、その部分の Scope を作る
 - **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
-- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（`CultureInfo.CurrentUICulture` の名前から `TextLanguage.FromTag`）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
-- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）と、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
+  - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
+  - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした
+- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
+- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
 - **確かめ方:**
   - `samples/Counter`: `Column` に `Text`（`clicks: N`）と `Button`（自分で付けた背景・角丸・余白・ホバーと押下の見た目）を載せる
   - WARP: ボタンの中心の画素が、付けた背景の色になる（MoonBit 版の V1 と同じ到達点、§10.5）
@@ -1806,7 +1816,7 @@ internal sealed class LineBreakEntry
 **文字の葉（V1a の Grill でオーナーが決定、Issue #296）:** 文字の葉は、上の 2 段のキャッシュを持ち、T1 の整形と折り返し（§4.1）で自分を測る葉である。
 
 ```csharp
-internal readonly record struct TextStyle(
+public readonly record struct TextStyle(
     FontRequest Font,       // §4.5
     float Size,             // 論理ピクセルの em の大きさ。有限で 0 より大きい
     TextLanguage Language,  // 漢字の字形とフォールバックを選ぶ（§4.5）
@@ -2581,7 +2591,7 @@ internal sealed class PseudoStyles
     public PaintStyle? Pressed { get; internal set; }
 }
 
-internal delegate void DrawFunc(DrawingContext context, Rect bounds);   // bounds は絶対座標の箱（論理座標）
+public delegate void DrawFunc(DrawingContext context, Rect bounds);   // bounds は絶対座標の箱（論理座標）
 
 // TextLeaf（§3.2「文字の葉」）に足す
 public Color? Color;                         // 文字の葉の自分の色。null なら祖先から受け継ぐ（V1c で Color? にした）
@@ -3210,7 +3220,7 @@ Widget event（capture/bubbleでコンポーネントに配送）
 
 **ポインタキャプチャとモーダル境界の優先順位**: §7.2の`IsModal`なスコープは「スコープ外へのフォーカス移動・イベント到達を遮断する」が、これとポインタキャプチャが衝突するケースを定める。モーダルダイアログ内のスライダーをドラッグしたまま、マウスがダイアログ矩形の外（あるいはウィンドウ外）まで大きく移動した場合、遮断ルールが優先されるとポインタ移動イベントがキャプチャ先に届かなくなり、`PointerUp`まで取りこぼしてドラッグ状態が解除不能になるという典型的なUIバグが発生する。**明確な優先規約: アクティブなポインタキャプチャは、モーダル境界による遮断より常に優先される。** キャプチャ中のポインタ対象ノードがモーダルスコープ内部に属している限り、グローバルなポインタ移動および`PointerUp`は、モーダル境界の内外を問わず常にキャプチャ先へバイパス配送する。この例外規約はイベントルーティングパイプライン（§7.2の captureフェーズ処理）に組み込む。
 
-**ポインタの入力（V1c の Grill でオーナーが決定、Issue #318）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。GPUI の Windows の層は、この版で `gpui_windows` の crate に移っている。型は V1c で internal として入れ、V1d で `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開した（§2.13「部品の API」、V1d の Grill）。`PointerInput`・`IPointerPlatform`・`WindowInput`・`NodeInput` は internal のまま。
+**ポインタの入力（V1c の Grill でオーナーが決定、Issue #318）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。GPUI の Windows の層は、この版で `gpui_windows` の crate に移っている。型は V1c で internal として入れ、V1d で `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開した（§2.13「部品の API」、V1d の Grill）。`NodeHandle` は internal のままなので、公開した `PointerEvent` の `Target` と `CurrentTarget` は、木とノードの組の `Element` を返す（V1d の実装。公開の型が internal の型を見せると CS0053 になる）。`PointerInput`・`IPointerPlatform`・`WindowInput`・`NodeInput` は internal のまま。
 
 ```csharp
 // Platform が正規化して Core に渡す 1 つの入力（上の図の PlatformInput）
@@ -3224,18 +3234,18 @@ internal readonly record struct PointerInput(
     TimeSpan Timestamp,         // Platform がメッセージを受けた時刻（Stopwatch）
     PointerType PointerType);   // Mouse / Touch / Pen
 
-internal enum PointerButton : byte { None, Left, Right, Middle, XButton1, XButton2 }
-[Flags] internal enum PointerButtons : byte { None = 0, Left = 1, Right = 2, Middle = 4, XButton1 = 8, XButton2 = 16 }
-[Flags] internal enum KeyModifiers : byte { None = 0, Control = 1, Shift = 2, Alt = 4 }
-internal enum PointerType : byte { Mouse, Touch, Pen }
-internal enum PointerEventKind : byte { Down, Up, Move, Enter, Leave, Cancel, Click }
+public enum PointerButton : byte { None, Left, Right, Middle, XButton1, XButton2 }
+[Flags] public enum PointerButtons : byte { None = 0, Left = 1, Right = 2, Middle = 4, XButton1 = 8, XButton2 = 16 }
+[Flags] public enum KeyModifiers : byte { None = 0, Control = 1, Shift = 2, Alt = 4 }
+public enum PointerType : byte { Mouse, Touch, Pen }
+public enum PointerEventKind : byte { Down, Up, Move, Enter, Leave, Cancel, Click }
 
-// ハンドラに渡すイベント。in で渡す
-internal readonly struct PointerEvent
+// ハンドラに渡すイベント。in で渡す。V1d で公開した（§2.13）
+public readonly struct PointerEvent
 {
     public PointerEventKind Kind { get; }
-    public NodeHandle Target { get; }        // 経路の元のノード（当たったノードか、キャプチャしたノード）
-    public NodeHandle CurrentTarget { get; } // 今呼んでいるハンドラのノード（DOM の currentTarget、PR #319 のレビュー）
+    public Element Target { get; }           // 経路の元のノード（当たったノードか、キャプチャしたノード）
+    public Element CurrentTarget { get; }    // 今呼んでいるハンドラのノード（DOM の currentTarget、PR #319 のレビュー）
     public Vector2 Position { get; }         // ウィンドウの論理座標（物理画素を ScaleFactor で割った値）
     public Vector2 LocalPosition { get; }    // ハンドラのノードの論理座標（下の「座標」）
     public PointerButton Button { get; }
@@ -3247,7 +3257,7 @@ internal readonly struct PointerEvent
     public void StopPropagation();           // 経路の残りのハンドラを呼ばない。配送の状態（class）への参照を通して書く
 }
 
-internal delegate void PointerHandler(in PointerEvent e);
+public delegate void PointerHandler(in PointerEvent e);
 
 // ハンドラ・カーソル・遮る印。持つノードだけが UiNode.Input に参照を持つ（NodeVisual と同じ作り方）
 internal sealed class NodeInput
@@ -3257,7 +3267,7 @@ internal sealed class NodeInput
     // ハンドラの一覧（種類・フェーズ・デリゲート）と、そのフレームに書いたヒット領域の項目の番号
 }
 
-internal enum CursorKind : byte
+public enum CursorKind : byte
 {
     Arrow, IBeam, Hand, Crosshair, Wait, Progress, Help, NotAllowed,
     ResizeAll, ResizeEW, ResizeNS, ResizeNWSE, ResizeNESW,

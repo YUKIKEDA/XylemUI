@@ -25,18 +25,23 @@ docs/                        設計・判断・ロードマップ・規約（本
 
 | プロジェクト | 責務 |
 | --- | --- |
-| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`）、同期描画のガード（`SynchronousRenderGuard`）、UI スレッドのキュー（`UiMessage`・`IUiDispatcher`・`UiDispatcher`）と `SynchronizationContext`、Reactive（`Signal<T>`・`Computed<T>`・`Effect`・`ReactiveRuntime`・所有ツリーの `Scope` と `ScopeTracker`、`Reactive/`）、UI ツリーと Invalidation と Block / Flex の layout（`UiTree`・`Invalidation`・`LayoutEngine`、`Layout/`）、ポインタの入力（`PointerInput`・`PointerEvent`・`WindowInput`・`NodeInput`、`Input/`）、描画命令（`Color`・`DisplayList`・`DisplayListReader`・`GlyphInstance`、`Rendering/`。`DrawText` のため `XylemUI.Text` を参照する） |
+| `src/XylemUI.Core` | エンジン本体。現時点では UI スレッドの記録と検査（`UiThread`）、世代付きハンドルとアリーナ（`Handle<T>`・`Arena<T>`）、不変条件（`Invariant`）、フレームスケジューラの契約（`IFrameScheduler`）、同期描画のガード（`SynchronousRenderGuard`）、UI スレッドのキュー（`UiMessage`・`IUiDispatcher`・`UiDispatcher`）と `SynchronizationContext`、Reactive（`Signal<T>`・`Computed<T>`・`Effect`・`ReactiveRuntime`・所有ツリーの `Scope` と `ScopeTracker`、`Reactive/`）、UI ツリーと Invalidation と Block / Flex の layout（`UiTree`・`Invalidation`・`LayoutEngine`、`Layout/`）、ポインタの入力（`PointerInput`・`PointerEvent`・`WindowInput`・`NodeInput`、`Input/`）、部品の API（`Element`・`Elements`・`ElementExtensions`・`NodeProperty<T>`・`NodeTextWriter`・`TextLayout`、`Elements/`）、描画命令（`Color`・`DisplayList`・`DisplayListReader`・`GlyphInstance`、`Rendering/`。`DrawText` のため `XylemUI.Text` を参照する） |
 | `src/XylemUI.Platform.Windows` | Win32 バックエンド。ウィンドウ、`[UnmanagedCallersOnly]` のウィンドウプロシージャと例外バリア、`NativeHandleTable`、`MsgWaitForMultipleObjectsEx` で待つメッセージループとフレームスケジューラ、他スレッドからの起床、`WM_SIZE` からの同期描画、ループでのキューの取り出しと `SynchronizationContext` の設定、スワップチェーンの待機オブジェクトをフレームクロックにする、DirectWrite のフォールバック（`DirectWriteFontProvider`）とグリフのラスタライズ（`DirectWriteGlyphRasterizer`、グレースケールと ClearType、色のグリフは COLRv0 の層を CPU で重ねる）、ウィンドウのいるモニタの文字の描き方の読み取り（`Win32TextRendering`、`Win32Window.TextRendering`）（`net10.0-windows10.0.17763.0`、unsafe 可） |
 | `src/XylemUI.Rendering.D3D11` | D3D11 のレンダラ（`D3D11Renderer`）。`DisplayList` を描く。デバイス・スワップチェーン・シェーダ・`ResizeBuffers`・グリフアトラスのテクスチャ配列（グレースケール・ClearType・色のグリフ）とアップロード・readback、グリフのカバレッジのガンマとコントラストの補正、ClearType のデュアルソースのブレンド（`net10.0-windows10.0.17763.0`、unsafe 可） |
 | `src/XylemUI.Text` | テキストのパイプライン。HarfBuzz の `LibraryImport`、`Font`・`TextShaper`・`TextLanguage`・`GlyphAtlas`・`IGlyphRasterizer`（OS ごとのラスタライザが実装する、設計書 §5.0.3）・`GlyphCoverage`・`TextRenderingParameters`、生成した Unicode の表と書記素（`Unicode/`）と改行の候補（`LineBreak/`）（`net10.0`、unsafe 可）。NativeAOT のアプリは `XylemUI.Text.targets` を取り込む |
+| `src/XylemUI.Primitives` | 見た目のない部品（設計書 §13.1）。今は `Primitive.Button`（押せることと押した状態だけを持つ箱） |
+| `src/XylemUI.Desktop` | アプリの起動（`XylemApp.Run`・`WindowOptions`）。1 つのウィンドウの Core・Platform.Windows・Rendering.D3D11 をつなぐ（`DesktopWindow`）（`net10.0-windows10.0.17763.0`） |
 | `tools/UnicodeTableGen` | Unicode の表の生成器（設計書 §4.1、§8.13）。`vendor/versions.lock` の `unicode-ucd` のバージョンと SHA-256 で UCD を取り、`src/XylemUI.Text/Unicode/UnicodeData.g.cs` を出力し、適合のテストのファイルを `tests/XylemUI.Text.Tests/Unicode/` に写す。出力はリポジトリに入れ、ゲートは生成器を動かさない |
 | `samples/HelloText` | テキストをシェーピングしてラスタライズするコンソールのサンプル。`--auto` で S8a の検査と計測をして終了する。`--atlas-sizing` はアトラスの大きさを決める測定（S8b）（`PublishAot`。フォントは埋め込みリソース） |
-| `benchmarks/XylemUI.E2E` | End-to-end の計測（M1a、`docs/benchmarks/m1-baseline.md`）。起動・アイドル・フレーム・入力の代理指標・テキスト込みのリサイズ・Scope の cleanup（ADR 0001）など。`external` は他のフレームワークのアプリをプロセスの外から測る（`PublishAot`、記録するがゲートにしない） |
+| `benchmarks/XylemUI.E2E` | End-to-end の計測（M1a、`docs/benchmarks/m1-baseline.md`）。起動・アイドル・フレーム・入力の代理指標・テキスト込みのリサイズ・Scope の cleanup（ADR 0001）など。`external` は他のフレームワークのアプリを、`app-startup` は部品の API のアプリ（`samples/Counter`）の起動を、プロセスの外から測る（`PublishAot`、記録するがゲートにしない） |
 | `benchmarks/compare` | 比較のための同じ場面のアプリ（Avalonia・Flutter・GPUI）と、`build.ps1`・`measure.ps1`・`summarize.py`。リポジトリのビルドの設定は引き継がない |
 | `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（画素、テキストのインク、120 フレーム、フレームの CPU 時間）をして終了する（`PublishAot`。フォントは埋め込みリソース） |
+| `samples/Counter` | 部品の API の最初のアプリ（設計書 §2.13）。`Column` に `Text`（`clicks: N`）と `Button`。テストが根の関数（`CounterApp.Counter`）を使う（`PublishAot`、`WinExe`） |
 | `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture`（このアセンブリで `UiThread` を初期化するのはこれだけ）の上で走る |
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
 | `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる。Unicode の適合のテスト（`Unicode/`、生成器が UCD から写す）を 1 行 1 ケースで流す。文字の葉の layout（Core の内部の `UiTree` と `LayoutEngine`、行 V1a）も、HarfBuzz で整形するのでここで確かめる。UI スレッドは `UiThreadFixture` が持つ（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
+| `tests/XylemUI.Primitives.Tests` | 見た目のない部品のテスト。ウィンドウの無い木で、文字を使わずに確かめる |
+| `tests/XylemUI.Desktop.Tests` | アプリの起動のテスト。`samples/Counter` を本物のウィンドウ（WARP）で動かし、画素、メッセージで送った Click、フレーム、閉じたときの後始末を確かめる（Windows のみ） |
 | `tests/XylemUI.Rendering.D3D11.Tests` | D3D11 レンダラのテスト。WARP で描き、バックバッファの readback で画素を確かめる。グリフはテキストのテストのフォントで描く（Windows のみ） |
 
 予定しているプロジェクトの全体は設計書 §2.9.1 にある。
@@ -58,6 +63,7 @@ docs/                        設計・判断・ロードマップ・規約（本
 - 不正な状態は型で表せないようにする。`bool` と、その `bool` 次第で意味を失う nullable の組み合わせは使わない
 - 引数・状態の検査は `ThrowHelper` 経由で例外を投げ、内部の不変条件の破れは `Invariant.Fail` にする
 - 公開 API には英語の XML ドキュメントを書く。internal は必須にしない
+- 名前空間 `XylemUI.*` の中（部品・テーマ・テスト）では、文字の要素を `Elements.Text(...)` と書く。`using static XylemUI.Elements;` の `Text(...)` は、名前空間 `XylemUI.Text` が先に見つかって CS0118 になる（設計書 §2.13、V1d）
 - フレームの経路では、アロケーション・LINQ・キャプチャするラムダ・`params`・ボクシング・要素ごとのインターフェース呼び出しを使わない（詳細は `.cursor/rules/perf.mdc`）
 
 ## テスト

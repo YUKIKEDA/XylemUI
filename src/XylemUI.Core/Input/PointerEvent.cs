@@ -70,7 +70,8 @@ public readonly struct PointerEvent
 
     /// <summary>
     /// Gets the pointer's position in <see cref="CurrentTarget"/>'s coordinates, in logical pixels: before the node's transforms,
-    /// from the top left of its border box.
+    /// from the top left of its border box. It is not a number (<see cref="float.NaN"/>) for a node that wrote no hit region in the
+    /// last frame, such as a node taken out of the tree that gets its leave.
     /// </summary>
     public Vector2 LocalPosition { get; }
 
@@ -168,7 +169,7 @@ public enum EventPhase : byte
 }
 
 /// <summary>
-/// Handles an event of the pointer (design §8.9). Its public name is decided in row V1d.
+/// Handles an event of the pointer (design §8.9). It is not named <c>EventHandler</c>, which the implicit usings' <see cref="System.EventHandler{TEventArgs}"/> would hide (row V1d).
 /// </summary>
 /// <param name="e">The event.</param>
 public delegate void PointerHandler(in PointerEvent e);
