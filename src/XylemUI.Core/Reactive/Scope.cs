@@ -34,7 +34,12 @@ public static class Scope
     /// <see langword="default"/> outside any scope. It does not flow across an <c>await</c>: keep it before the
     /// <c>await</c> and pass it to <see cref="Run"/> after.
     /// </summary>
-    public static ScopeHandle Current { get; internal set; }
+    public static ScopeHandle Current => new(CurrentRef);
+
+    /// <summary>
+    /// Gets or sets the current scope's handle in the arena (<see cref="Current"/>).
+    /// </summary>
+    internal static ScopeRef CurrentRef { get; set; }
 
     /// <summary>
     /// Creates a scope owned by the current one and runs <paramref name="body"/> with it as the current scope. If
@@ -52,16 +57,16 @@ public static class Scope
         ArgumentNullException.ThrowIfNull(body);
         UiThread.VerifyAccess();
         VerifyNotInComputed();
-        ScopeHandle scope = Allocate(Current, null, owner);
-        ScopeHandle previous = Current;
-        Current = scope;
+        ScopeRef scope = Allocate(CurrentRef, null, owner);
+        ScopeRef previous = CurrentRef;
+        CurrentRef = scope;
         try
         {
             body();
         }
         catch (Exception bodyError) when (bodyError is not InvariantViolationException)
         {
-            Current = previous;
+            CurrentRef = previous;
             List<Exception>? errors = null;
             DisposeScope(scope, ref errors);
             if (errors is null)
@@ -74,10 +79,10 @@ public static class Scope
         }
         finally
         {
-            Current = previous;
+            CurrentRef = previous;
         }
 
-        return scope;
+        return new ScopeHandle(scope);
     }
 
     /// <summary>
@@ -94,26 +99,53 @@ public static class Scope
     public static bool Run(ScopeHandle scope, Action body)
     {
         ArgumentNullException.ThrowIfNull(body);
-        UiThread.VerifyAccess();
-        VerifyNotInComputed();
-        if (!Scopes.IsAlive(scope) || Scopes.GetRef(scope).Disposing)
+        if (!TryEnter(scope.Value, out ScopeRef previous))
         {
             return false;
         }
 
-        ScopeHandle previous = Current;
-        Current = scope;
         try
         {
             body();
         }
         finally
         {
-            Current = previous;
+            Exit(previous);
         }
 
         return true;
     }
+
+    /// <summary>
+    /// Makes <paramref name="scope"/> the current scope, as <see cref="Run"/> does around its body, for a caller on the frame path
+    /// that calls a delegate with arguments a lambda could not capture (an input handler's <c>in</c> event, design §2.13). Pair it
+    /// with <see cref="Exit"/> in a <c>finally</c>.
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="previous">The scope that was current, for <see cref="Exit"/>.</param>
+    /// <returns><see langword="false"/> when <paramref name="scope"/> was disposed; the current scope is then unchanged.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread, or a computed value is computing.
+    /// </exception>
+    internal static bool TryEnter(ScopeRef scope, out ScopeRef previous)
+    {
+        UiThread.VerifyAccess();
+        VerifyNotInComputed();
+        previous = CurrentRef;
+        if (!Scopes.IsAlive(scope) || Scopes.GetRef(scope).Disposing)
+        {
+            return false;
+        }
+
+        CurrentRef = scope;
+        return true;
+    }
+
+    /// <summary>
+    /// Makes <paramref name="previous"/> current again after <see cref="TryEnter"/>.
+    /// </summary>
+    /// <param name="previous">The scope <see cref="TryEnter"/> gave.</param>
+    internal static void Exit(ScopeRef previous) => CurrentRef = previous;
 
     /// <summary>
     /// Registers a cleanup with the current scope, or with the running effect. It runs when that scope is disposed, or before
@@ -129,7 +161,7 @@ public static class Scope
         ArgumentNullException.ThrowIfNull(cleanup);
         UiThread.VerifyAccess();
         VerifyNotInComputed();
-        ScopeHandle scope = Current;
+        ScopeRef scope = CurrentRef;
         if (!Scopes.IsAlive(scope))
         {
             ThrowHelper.ThrowNoCurrentScope();
@@ -147,7 +179,12 @@ public static class Scope
     /// <param name="scope">The scope, from <see cref="Create"/>.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="AggregateException">One or more cleanups threw; every cleanup still ran.</exception>
-    public static void Dispose(ScopeHandle scope)
+    public static void Dispose(ScopeHandle scope) => DisposeRef(scope.Value);
+
+    /// <summary>
+    /// Disposes the scope with this handle in the arena (<see cref="Dispose(ScopeHandle)"/>).
+    /// </summary>
+    internal static void DisposeRef(ScopeRef scope)
     {
         UiThread.VerifyAccess();
         if (Scopes.IsAlive(scope))
@@ -159,13 +196,13 @@ public static class Scope
     /// <summary>
     /// Makes the scope of a new effect, owned by the current scope.
     /// </summary>
-    internal static ScopeHandle AllocateForEffect(Effect effect, string owner) => Allocate(Current, effect, owner);
+    internal static ScopeRef AllocateForEffect(Effect effect, string owner) => Allocate(CurrentRef, effect, owner);
 
     /// <summary>
     /// Disposes what an effect's scope owns, keeping the scope, before the effect runs again. Exceptions of its cleanups are
     /// returned together, or <see langword="null"/>.
     /// </summary>
-    internal static AggregateException? ClearForRerun(ScopeHandle scope)
+    internal static AggregateException? ClearForRerun(ScopeRef scope)
     {
         List<Exception>? errors = null;
         ref ScopeData data = ref Scopes.GetRef(scope);
@@ -178,7 +215,7 @@ public static class Scope
     /// <summary>
     /// Disposes an effect's scope when the effect is disposed; the exceptions of its cleanups are thrown together.
     /// </summary>
-    internal static void DisposeForEffect(ScopeHandle scope)
+    internal static void DisposeForEffect(ScopeRef scope)
     {
         if (Scopes.IsAlive(scope))
         {
@@ -189,12 +226,17 @@ public static class Scope
     /// <summary>
     /// Returns whether a handle points to a live scope.
     /// </summary>
-    internal static bool IsAlive(ScopeHandle scope) => Scopes.IsAlive(scope);
+    internal static bool IsAlive(ScopeRef scope) => Scopes.IsAlive(scope);
+
+    /// <summary>
+    /// Returns whether a scope is still alive (not disposed).
+    /// </summary>
+    internal static bool IsAlive(ScopeHandle scope) => Scopes.IsAlive(scope.Value);
 
     /// <summary>
     /// Returns a copy of a live scope's data, for <see cref="ScopeTracker"/> and tests.
     /// </summary>
-    internal static ScopeData Get(ScopeHandle scope) => Scopes.GetRef(scope);
+    internal static ScopeData Get(ScopeRef scope) => Scopes.GetRef(scope);
 
     private static void VerifyNotInComputed()
     {
@@ -204,7 +246,7 @@ public static class Scope
         }
     }
 
-    private static ScopeHandle Allocate(ScopeHandle parent, Effect? effect, string owner)
+    private static ScopeRef Allocate(ScopeRef parent, Effect? effect, string owner)
     {
         // A parent that is gone (an effect that disposed itself while it runs) or being disposed takes no new children: what is
         // made then belongs to nothing.
@@ -213,10 +255,10 @@ public static class Scope
             parent = default;
         }
 
-        ScopeHandle scope = Scopes.Allocate(new ScopeData { Parent = parent, Effect = effect });
+        ScopeRef scope = Scopes.Allocate(new ScopeData { Parent = parent, Effect = effect });
         if (!parent.IsNone)
         {
-            ScopeHandle older = Scopes.GetRef(parent).LastChild;
+            ScopeRef older = Scopes.GetRef(parent).LastChild;
             Scopes.GetRef(scope).OlderSibling = older;
             if (!older.IsNone)
             {
@@ -234,7 +276,7 @@ public static class Scope
         return scope;
     }
 
-    private static void DisposeAndThrow(ScopeHandle scope)
+    private static void DisposeAndThrow(ScopeRef scope)
     {
         List<Exception>? errors = null;
         DisposeScope(scope, ref errors);
@@ -246,7 +288,7 @@ public static class Scope
 
     // Children, LIFO; then cleanups, LIFO; then the effect, the link from the parent, and the slot. A cleanup can make scopes and
     // grow the arena, so no ref into it is held across a call out.
-    private static void DisposeScope(ScopeHandle scope, ref List<Exception>? errors)
+    private static void DisposeScope(ScopeRef scope, ref List<Exception>? errors)
     {
         ref ScopeData data = ref Scopes.GetRef(scope);
         if (data.Disposing)
@@ -267,11 +309,11 @@ public static class Scope
         Scopes.Free(scope);
     }
 
-    private static void DisposeContents(ScopeHandle scope, ref List<Exception>? errors)
+    private static void DisposeContents(ScopeRef scope, ref List<Exception>? errors)
     {
         while (true)
         {
-            ScopeHandle child = Scopes.GetRef(scope).LastChild;
+            ScopeRef child = Scopes.GetRef(scope).LastChild;
             if (child.IsNone)
             {
                 break;
@@ -302,7 +344,7 @@ public static class Scope
         }
     }
 
-    private static void Unlink(ScopeHandle scope, in ScopeData data)
+    private static void Unlink(ScopeRef scope, in ScopeData data)
     {
         if (!data.OlderSibling.IsNone)
         {

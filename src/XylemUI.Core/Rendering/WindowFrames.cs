@@ -95,6 +95,11 @@ internal sealed class WindowFrames
     internal DisplayList List => _list;
 
     /// <summary>
+    /// Gets the window's tree.
+    /// </summary>
+    internal UiTree Tree => _tree;
+
+    /// <summary>
     /// Gets the window's scale, from logical to physical pixels, that the last <see cref="Resize"/> gave.
     /// </summary>
     internal float Scale => _scale;
@@ -244,7 +249,7 @@ internal sealed class WindowFrames
 
         if (!hitsOnly && visual?.Draw is { } draw)
         {
-            draw(new DrawingContext(_list, handle), box);
+            CallDraw(draw, handle, box);
         }
 
         ref UiNode after = ref _tree.Nodes.GetRef(handle);
@@ -323,6 +328,25 @@ internal sealed class WindowFrames
     private void DrawBox(NodeVisual visual, Edges border, Rect box) =>
         DrawBox(visual.Shadow, visual.Radii, visual.Background, visual.BorderPaint, border, box);
 
+    // The user's draw function, apart from DrawNode so that only a node with one pays for the exception's frame. An exception goes to
+    // the handler of unhandled exceptions, and the scopes the function left open are closed, so that the rest of the frame is drawn
+    // and presented (design §5.0, "The draw function's exceptions"). Flutter reports a paint's exception and paints the siblings.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CallDraw(DrawFunc draw, NodeHandle handle, Rect box)
+    {
+        int depth = _list.ScopeDepth;
+        try
+        {
+            draw(new DrawingContext(_list, handle, this), box);
+        }
+        catch (Exception exception) when (exception is not InvariantViolationException)
+        {
+            ReactiveRuntime.ReportException(exception);
+        }
+
+        _list.PopTo(depth);
+    }
+
     // A style's set values replace the look's; the unset ones keep it.
     private static void Over(
         in PaintStyle style,
@@ -367,6 +391,11 @@ internal sealed class WindowFrames
             _list.FillRect(box.X, box.Y, box.Width, box.Height, fill, radii, edge);
         }
     }
+
+    /// <summary>
+    /// Draws the lines a text layout committed, from its box's top left (<see cref="DrawingContext.DrawText(TextLayout, float, float, Color)"/>).
+    /// </summary>
+    internal void DrawLaidText(TextLeaf text, float x, float y, Color color) => DrawText(text, x, y, color);
 
     // The lines of the width the layout committed, from the content box's top left, each at its baseline.
     private void DrawText(TextLeaf text, float x, float y, Color color)

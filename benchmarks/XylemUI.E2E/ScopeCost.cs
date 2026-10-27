@@ -10,7 +10,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime;
-using ScopeHandle = XylemUI.Handle<XylemUI.ScopeData>;
 
 namespace XylemUI.E2E;
 

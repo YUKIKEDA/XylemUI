@@ -576,7 +576,7 @@ public sealed class WindowInputTests(UiThreadFixture ui)
                     node,
                     PointerEventKind.Down,
                     EventPhase.Bubble,
-                    (in PointerEvent e) => seen.Add((e.CurrentTarget, e.Position, e.LocalPosition, e.Target))
+                    (in PointerEvent e) => seen.Add((e.CurrentNode, e.Position, e.LocalPosition, e.TargetNode))
                 );
             }
 

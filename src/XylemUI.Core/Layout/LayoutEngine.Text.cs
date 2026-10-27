@@ -46,6 +46,20 @@ internal static partial class LayoutEngine
         return cache.ResultOf(index);
     }
 
+    /// <summary>
+    /// Lays a text leaf's lines out at a width, as the layout would for a leaf of that width, and commits the entry for drawing: a
+    /// <see cref="TextLayout"/> of a draw function (design §3.2, "Text from a draw function").
+    /// </summary>
+    /// <param name="context">The text tools.</param>
+    /// <param name="leaf">The text and its caches.</param>
+    /// <param name="maxWidth">The width the lines break at; <see cref="float.PositiveInfinity"/> for the hard breaks only.</param>
+    /// <returns>The size of the lines' box.</returns>
+    internal static Size LayOutText(TextContext context, TextLeaf leaf, float maxWidth)
+    {
+        AvailableSpace width = float.IsPositiveInfinity(maxWidth) ? AvailableSpace.MaxContent : AvailableSpace.Definite(maxWidth);
+        return MeasureText(context, leaf, OptionalSize.None, new AvailableSize(width, AvailableSpace.MaxContent), commit: true).Size;
+    }
+
 #if DEBUG
     // The width of a text leaf's lines at a min-content or max-content space, broken into an entry of the context's own: the
     // Debug check of the content widths (VerifyIntrinsicWidths) leaves the leaf's cache as the layout made it.

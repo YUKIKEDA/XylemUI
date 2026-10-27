@@ -7,4 +7,4 @@ namespace XylemUI;
 /// <param name="Y">The top edge, from the parent's top edge.</param>
 /// <param name="Width">The width.</param>
 /// <param name="Height">The height.</param>
-internal readonly record struct Rect(float X, float Y, float Width, float Height);
+public readonly record struct Rect(float X, float Y, float Width, float Height);

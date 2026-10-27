@@ -262,6 +262,24 @@ public sealed partial class DisplayList
     }
 
     /// <summary>
+    /// Gets the number of scopes pushed and not popped.
+    /// </summary>
+    internal int ScopeDepth => _scopeDepth;
+
+    /// <summary>
+    /// Ends scopes until <paramref name="depth"/> are open: those a draw function pushed and did not pop, after it threw or forgot
+    /// (design §5.0, "The draw function's exceptions").
+    /// </summary>
+    /// <param name="depth">The depth to end at, from <see cref="ScopeDepth"/>.</param>
+    internal void PopTo(int depth)
+    {
+        while (_scopeDepth > depth)
+        {
+            Pop();
+        }
+    }
+
+    /// <summary>
     /// Ends the innermost scope that <see cref="PushOpacity"/>, <see cref="PushClip"/>, or <see cref="PushTransform"/> started.
     /// For a group, whether its children are drawn into a layer is decided here, from whether they overlap: the bounds of each
     /// child are compared with the union of the bounds of the ones before it, as Flutter's display list compares them, so that two

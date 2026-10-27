@@ -3,12 +3,15 @@
     <Project Path="benchmarks/XylemUI.E2E/XylemUI.E2E.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Counter/Counter.csproj" />
     <Project Path="samples/HelloText/HelloText.csproj" />
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/XylemUI.Core/XylemUI.Core.csproj" />
+    <Project Path="src/XylemUI.Desktop/XylemUI.Desktop.csproj" />
     <Project Path="src/XylemUI.Platform.Windows/XylemUI.Platform.Windows.csproj" />
+    <Project Path="src/XylemUI.Primitives/XylemUI.Primitives.csproj" />
     <Project Path="src/XylemUI.Rendering.D3D11/XylemUI.Rendering.D3D11.csproj" />
     <Project Path="src/XylemUI.Text/XylemUI.Text.csproj" />
   </Folder>
@@ -17,7 +20,9 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/XylemUI.Core.Tests/XylemUI.Core.Tests.csproj" />
+    <Project Path="tests/XylemUI.Desktop.Tests/XylemUI.Desktop.Tests.csproj" />
     <Project Path="tests/XylemUI.Platform.Windows.Tests/XylemUI.Platform.Windows.Tests.csproj" />
+    <Project Path="tests/XylemUI.Primitives.Tests/XylemUI.Primitives.Tests.csproj" />
     <Project Path="tests/XylemUI.Rendering.D3D11.Tests/XylemUI.Rendering.D3D11.Tests.csproj" />
     <Project Path="tests/XylemUI.Text.Tests/XylemUI.Text.Tests.csproj" />
   </Folder>

@@ -90,4 +90,4 @@ internal sealed class NodeVisual
 /// </summary>
 /// <param name="context">The context to draw and write hit regions in.</param>
 /// <param name="bounds">The node's border box, in absolute logical pixels.</param>
-internal delegate void DrawFunc(DrawingContext context, Rect bounds);
+public delegate void DrawFunc(DrawingContext context, Rect bounds);

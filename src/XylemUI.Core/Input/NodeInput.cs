@@ -55,11 +55,20 @@ internal sealed class NodeInput
     }
 
     /// <summary>
-    /// Removes the first handler equal to <paramref name="entry"/>; returns whether there was one.
+    /// Removes the first handler of the kind and the phase with the same delegate; returns whether there was one.
     /// </summary>
-    internal bool Remove(in HandlerEntry entry)
+    internal bool Remove(PointerEventKind kind, EventPhase phase, PointerHandler handler)
     {
-        int index = Array.IndexOf(Handlers, entry);
+        int index = -1;
+        for (int i = 0; i < Handlers.Length; i++)
+        {
+            if (Handlers[i].Kind == kind && Handlers[i].Phase == phase && Handlers[i].Handler == handler)
+            {
+                index = i;
+                break;
+            }
+        }
+
         if (index < 0)
         {
             return false;
@@ -79,4 +88,6 @@ internal sealed class NodeInput
 /// <param name="Kind">The kind of event.</param>
 /// <param name="Phase">The phase of a routed event; an enter and a leave call the handlers of either phase.</param>
 /// <param name="Handler">The handler.</param>
-internal readonly record struct HandlerEntry(PointerEventKind Kind, EventPhase Phase, PointerHandler Handler);
+/// <param name="Scope">The scope that was current when the handler was added, which the handler runs in (design §2.13); none for a
+/// handler added outside every scope, which runs in none.</param>
+internal readonly record struct HandlerEntry(PointerEventKind Kind, EventPhase Phase, PointerHandler Handler, ScopeRef Scope);

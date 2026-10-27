@@ -23,6 +23,12 @@ internal sealed class TextContext : IDisposable
         Fonts = fonts;
     }
 
+    // The buffer a text writer writes into before its text is compared with the leaf's (design §2.13, "TextBuilder"). One for the
+    // thread, as the shaper's scratch is (design §3.2, "Memory"): a buffer in each leaf made every text leaf 8 bytes larger, and
+    // V1a's bound on a leaf's first measurement is exact. A leaf that takes a written text gives its old buffer back here.
+    private char[]? _spare;
+    private bool _spareRented;
+
     /// <summary>
     /// Gets the fonts the leaves' text is split into runs of.
     /// </summary>
@@ -54,4 +60,33 @@ internal sealed class TextContext : IDisposable
     /// Releases the shaper.
     /// </summary>
     public void Dispose() => Shaper.Dispose();
+
+    /// <summary>
+    /// Returns the buffer for a text writer, at least 16 characters long. A writer that starts while another writes (a builder that
+    /// runs an effect that writes) gets a buffer of its own.
+    /// </summary>
+    /// <param name="shared"><see langword="true"/> when it is the thread's buffer, which <see cref="ReturnSpare"/> takes back.</param>
+    /// <returns>The buffer.</returns>
+    internal char[] RentSpare(out bool shared)
+    {
+        if (_spareRented)
+        {
+            shared = false;
+            return new char[16];
+        }
+
+        _spareRented = true;
+        shared = true;
+        return _spare ??= new char[16];
+    }
+
+    /// <summary>
+    /// Takes the thread's buffer back after a write: the one the writer grew to, or the one a leaf gave back for it.
+    /// </summary>
+    /// <param name="buffer">The buffer; <see langword="null"/> when the leaf that took the written text had none.</param>
+    internal void ReturnSpare(char[]? buffer)
+    {
+        _spare = buffer;
+        _spareRented = false;
+    }
 }

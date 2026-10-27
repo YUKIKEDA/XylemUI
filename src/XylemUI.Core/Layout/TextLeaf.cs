@@ -82,6 +82,31 @@ internal sealed class TextLeaf
     }
 
     /// <summary>
+    /// Takes the first <paramref name="length"/> characters of a text writer's buffer as the text when they differ from it (design
+    /// §2.13, "TextBuilder"): the leaf keeps the written buffer and gives its old one back, so that neither is copied and the next
+    /// write reuses it. Both caches are then dropped. When the text is the same, the written buffer is given back.
+    /// </summary>
+    /// <param name="written">The buffer the writer wrote.</param>
+    /// <param name="length">The characters the writer wrote.</param>
+    /// <param name="released">The buffer the leaf does not keep: its old one, or <paramref name="written"/>; <see langword="null"/>
+    /// when the leaf had none.</param>
+    /// <returns><see langword="true"/> when the text changed.</returns>
+    public bool TakeWritten(char[] written, int length, out char[]? released)
+    {
+        if (written.AsSpan(0, length).SequenceEqual(Text))
+        {
+            released = written;
+            return false;
+        }
+
+        released = Buffer;
+        Buffer = written;
+        Length = length;
+        DropCaches();
+        return true;
+    }
+
+    /// <summary>
     /// Replaces the style. When it differs from the style there, both caches are dropped.
     /// </summary>
     /// <param name="style">The style.</param>

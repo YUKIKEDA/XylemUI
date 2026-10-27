@@ -61,7 +61,7 @@ internal enum PointerInputKind : byte
 /// <summary>
 /// A button of the pointer.
 /// </summary>
-internal enum PointerButton : byte
+public enum PointerButton : byte
 {
     /// <summary>
     /// No button.
@@ -98,7 +98,7 @@ internal enum PointerButton : byte
 /// The buttons of the pointer held down.
 /// </summary>
 [Flags]
-internal enum PointerButtons : byte
+public enum PointerButtons : byte
 {
     /// <summary>
     /// No button.
@@ -135,7 +135,7 @@ internal enum PointerButtons : byte
 /// The modifier keys held down.
 /// </summary>
 [Flags]
-internal enum KeyModifiers : byte
+public enum KeyModifiers : byte
 {
     /// <summary>
     /// No modifier key.
@@ -162,7 +162,7 @@ internal enum KeyModifiers : byte
 /// What a pointer is (design §8.10). Row V1c takes every pointer through the mouse messages, which the OS also makes from touch
 /// and a pen; row I1 receives touch and pens on their own.
 /// </summary>
-internal enum PointerType : byte
+public enum PointerType : byte
 {
     /// <summary>
     /// A mouse or a touchpad.

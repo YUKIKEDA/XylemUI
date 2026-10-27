@@ -8,19 +8,19 @@ namespace XylemUI;
 /// The children and the cleanups are lists linked through the arenas, newest first, so that walking them from the head is the
 /// LIFO order of the disposal contract and creating a scope in steady state allocates nothing (the arena slots are reused).
 /// </remarks>
-public struct ScopeData
+internal struct ScopeData
 {
     /// <summary>The owner; <see langword="default"/> for a scope created outside any scope.</summary>
-    internal ScopeHandle Parent;
+    internal ScopeRef Parent;
 
     /// <summary>The newest child, the first to be disposed.</summary>
-    internal ScopeHandle LastChild;
+    internal ScopeRef LastChild;
 
     /// <summary>The next older sibling in the parent's list.</summary>
-    internal ScopeHandle OlderSibling;
+    internal ScopeRef OlderSibling;
 
     /// <summary>The next newer sibling in the parent's list, kept so that a child is unlinked in O(1).</summary>
-    internal ScopeHandle NewerSibling;
+    internal ScopeRef NewerSibling;
 
     /// <summary>The newest cleanup, the first to run.</summary>
     internal Handle<CleanupEntry> LastCleanup;

@@ -6,7 +6,7 @@ namespace XylemUI;
 /// What a pseudo-state lays over a node's look (design §2.13): only values that do not change the layout. A value that is set
 /// replaces the one below it; <see langword="null"/> keeps it (design §5.0, "Opacity, transforms, and pseudo-states").
 /// </summary>
-internal readonly record struct PaintStyle
+public readonly record struct PaintStyle
 {
     /// <summary>
     /// Gets the background; <see langword="null"/> keeps the one below.

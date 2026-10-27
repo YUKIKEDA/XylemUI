@@ -407,7 +407,7 @@ public sealed class ScopeTests(UiThreadFixture ui)
                     })
                     .Get()
             );
-            Assert.Throws<InvalidOperationException>(() => Computed.Create(() => Scope.Create(() => { }).Index).Get());
+            Assert.Throws<InvalidOperationException>(() => Computed.Create(() => Scope.Create(() => { }).IsNone).Get());
             Assert.Throws<InvalidOperationException>(() => Computed.Create(() => Effect.Create(() => { }).SourceCount).Get());
 
             ScopeHandle scope = Scope.Create(() => { });
