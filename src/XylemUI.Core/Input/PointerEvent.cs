@@ -6,7 +6,7 @@ namespace XylemUI;
 /// An event of the pointer, as a handler receives it (design §7, "Pointer input"). Each handler gets its own copy, whose
 /// <see cref="CurrentTarget"/> and <see cref="LocalPosition"/> are its node's.
 /// </summary>
-internal readonly struct PointerEvent
+public readonly struct PointerEvent
 {
     private readonly WindowInput _input;
 
@@ -25,8 +25,8 @@ internal readonly struct PointerEvent
     {
         _input = input;
         Kind = kind;
-        Target = target;
-        CurrentTarget = currentTarget;
+        TargetNode = target;
+        CurrentNode = currentTarget;
         Position = position;
         LocalPosition = localPosition;
         Button = source.Button;
@@ -46,12 +46,22 @@ internal readonly struct PointerEvent
     /// Gets the node the route starts from: the node hit, or the node that holds the capture. For an enter or a leave, the node
     /// that entered or left.
     /// </summary>
-    public NodeHandle Target { get; }
+    public Element Target => new(_input.Tree, TargetNode);
 
     /// <summary>
     /// Gets the node of the handler called now.
     /// </summary>
-    public NodeHandle CurrentTarget { get; }
+    public Element CurrentTarget => new(_input.Tree, CurrentNode);
+
+    /// <summary>
+    /// Gets the node of <see cref="Target"/>.
+    /// </summary>
+    internal NodeHandle TargetNode { get; }
+
+    /// <summary>
+    /// Gets the node of <see cref="CurrentTarget"/>.
+    /// </summary>
+    internal NodeHandle CurrentNode { get; }
 
     /// <summary>
     /// Gets the pointer's position in the window, in logical pixels: the physical position divided by the window's scale.
@@ -103,7 +113,7 @@ internal readonly struct PointerEvent
 /// <summary>
 /// The kinds of <see cref="PointerEvent"/>.
 /// </summary>
-internal enum PointerEventKind : byte
+public enum PointerEventKind : byte
 {
     /// <summary>
     /// A button went down. Routed.
@@ -144,7 +154,7 @@ internal enum PointerEventKind : byte
 /// <summary>
 /// The phase of a routed event a handler is called in (design §8.9).
 /// </summary>
-internal enum EventPhase : byte
+public enum EventPhase : byte
 {
     /// <summary>
     /// From the root down to the target.
@@ -161,4 +171,4 @@ internal enum EventPhase : byte
 /// Handles an event of the pointer (design §8.9). Its public name is decided in row V1d.
 /// </summary>
 /// <param name="e">The event.</param>
-internal delegate void PointerHandler(in PointerEvent e);
+public delegate void PointerHandler(in PointerEvent e);

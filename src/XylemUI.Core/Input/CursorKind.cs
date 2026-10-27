@@ -4,7 +4,7 @@ namespace XylemUI;
 /// The shape of the mouse cursor over a node (design §7, "Pointer input"). Each has a Win32 cursor (<c>IDC_*</c>); the rows of Linux
 /// and macOS write their own.
 /// </summary>
-internal enum CursorKind : byte
+public enum CursorKind : byte
 {
     /// <summary>
     /// The arrow (<c>IDC_ARROW</c>), where no node gives a shape.

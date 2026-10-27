@@ -62,6 +62,11 @@ internal sealed class WindowInput
     }
 
     /// <summary>
+    /// Gets the window's tree.
+    /// </summary>
+    internal UiTree Tree => _tree;
+
+    /// <summary>
     /// Gets the node that holds the capture of the pointer; none while no button is down.
     /// </summary>
     internal NodeHandle Capture => _capture;
@@ -485,6 +490,14 @@ internal sealed class WindowInput
                     ? _frames.List.PointInRegion(nodeInput.HitEntry, physical) / scale
                     : new Vector2(float.NaN);
             var e = new PointerEvent(this, kind, target, node, physical / scale, local, input);
+
+            // In the scope the handler was added in, entered with no closure (design §2.13); a scope disposed since calls nothing.
+            ScopeRef previous = default;
+            if (!entry.Scope.IsNone && !Scope.TryEnter(entry.Scope, out previous))
+            {
+                continue;
+            }
+
             try
             {
                 entry.Handler(in e);
@@ -492,6 +505,13 @@ internal sealed class WindowInput
             catch (Exception exception) when (exception is not InvariantViolationException)
             {
                 ReactiveRuntime.ReportException(exception);
+            }
+            finally
+            {
+                if (!entry.Scope.IsNone)
+                {
+                    Scope.Exit(previous);
+                }
             }
 
             if (_stopped)

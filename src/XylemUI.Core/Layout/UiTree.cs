@@ -37,6 +37,12 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Gets or sets the tree whose root function a window's host runs now, where <see cref="Elements"/> makes nodes (design §2.13);
+    /// <see langword="null"/> outside it. It belongs to the UI thread.
+    /// </summary>
+    internal static UiTree? Current { get; set; }
+
+    /// <summary>
     /// Gets the text tools its text leaves are measured with; <see langword="null"/> for a tree without text leaves.
     /// </summary>
     public TextContext? Text { get; }
@@ -357,7 +363,7 @@ internal sealed class UiTree
     public void AddPointerHandler(NodeHandle node, PointerEventKind kind, EventPhase phase, PointerHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        InputOf(node).Add(new HandlerEntry(kind, phase, handler));
+        InputOf(node).Add(new HandlerEntry(kind, phase, handler, Scope.CurrentRef));
         Invalidation.Invalidate(this, node, ChangeKind.Color);
     }
 
@@ -369,7 +375,7 @@ internal sealed class UiTree
     public bool RemovePointerHandler(NodeHandle node, PointerEventKind kind, EventPhase phase, PointerHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        if (Nodes.GetRef(node).Input is not { } input || !input.Remove(new HandlerEntry(kind, phase, handler)))
+        if (Nodes.GetRef(node).Input is not { } input || !input.Remove(kind, phase, handler))
         {
             return false;
         }
@@ -499,6 +505,47 @@ internal sealed class UiTree
 
         SetDepth(child, p.Depth + 1, p.IsAttached);
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+    }
+
+    /// <summary>
+    /// Takes a node and its subtree out of the tree and frees their slots (design §2.13, "The component API"): the parent, if any,
+    /// is marked for layout, and the pending layout requests, content snapshots, and deferred requests of the subtree's nodes are
+    /// dropped, so that no pass reads a freed node. A node that is the root stops being the root.
+    /// </summary>
+    /// <param name="node">The node, alive.</param>
+    internal void Remove(NodeHandle node)
+    {
+        ref UiNode n = ref Nodes.GetRef(node);
+        NodeHandle parent = n.Parent;
+        bool inFlow = n.Layout.Style.IsInFlow;
+        if (!parent.IsNone)
+        {
+            Unlink(parent, node, inFlow);
+            Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        }
+
+        if (Root == node)
+        {
+            Root = default;
+        }
+
+        FreeSubtree(node);
+        DropDead(_layoutRoots);
+        DropDead(_deferred);
+        for (int i = ContentSnapshots.Count - 1; i >= 0; i--)
+        {
+            if (!Nodes.IsAlive(ContentSnapshots[i].Node))
+            {
+                int last = ContentSnapshots.Count - 1;
+                if (i != last)
+                {
+                    ContentSnapshots[i] = ContentSnapshots[last];
+                    Nodes.GetRef(ContentSnapshots[i].Node).Layout.ContentSnapshotSlot = i + 1;
+                }
+
+                ContentSnapshots.RemoveAt(last);
+            }
+        }
     }
 
     /// <summary>
@@ -671,6 +718,71 @@ internal sealed class UiTree
         Nodes.GetRef(node).Text ?? throw new InvalidOperationException("The node is not a text leaf; create one with CreateTextNode.");
 
     private int CompareDepth(LayoutRequest a, LayoutRequest b) => Nodes.GetRef(a.Node).Depth.CompareTo(Nodes.GetRef(b.Node).Depth);
+
+    // The requests whose node was freed, taken out of a list in place.
+    private void DropDead(List<LayoutRequest> requests)
+    {
+        int kept = 0;
+        for (int i = 0; i < requests.Count; i++)
+        {
+            if (Nodes.IsAlive(requests[i].Node))
+            {
+                requests[kept++] = requests[i];
+            }
+        }
+
+        requests.RemoveRange(kept, requests.Count - kept);
+    }
+
+    // Takes node out of parent's list of children.
+    private void Unlink(NodeHandle parent, NodeHandle node, bool inFlow)
+    {
+        ref UiNode p = ref Nodes.GetRef(parent);
+        NodeHandle next = Nodes.GetRef(node).NextSibling;
+        NodeHandle previous = default;
+        for (NodeHandle child = p.FirstChild; child != node; child = Nodes.GetRef(child).NextSibling)
+        {
+            previous = child;
+        }
+
+        if (previous.IsNone)
+        {
+            p.FirstChild = next;
+        }
+        else
+        {
+            Nodes.GetRef(previous).NextSibling = next;
+        }
+
+        if (p.LastChild == node)
+        {
+            p.LastChild = previous;
+        }
+
+        p.Versions.Children++;
+        if (!inFlow)
+        {
+            p.Layout.OutOfFlowChildren--;
+        }
+
+        ref UiNode n = ref Nodes.GetRef(node);
+        n.Parent = default;
+        n.NextSibling = default;
+    }
+
+    // Frees a node and its subtree, children first. The links are read before each slot is freed (design §2.5).
+    private void FreeSubtree(NodeHandle node)
+    {
+        NodeHandle child = Nodes.GetRef(node).FirstChild;
+        while (!child.IsNone)
+        {
+            NodeHandle next = Nodes.GetRef(child).NextSibling;
+            FreeSubtree(child);
+            child = next;
+        }
+
+        Nodes.Free(node);
+    }
 
     // Values are copied before each step down, so no ref is held across the recursion (design §2.5).
     private void SetDepth(NodeHandle node, int depth, bool attached)

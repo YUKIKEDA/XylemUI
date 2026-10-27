@@ -13,7 +13,7 @@ namespace XylemUI;
 /// The line height as a multiple of <paramref name="Size"/>; <see cref="float.NaN"/> for the fonts' own (ascent, descent, and line
 /// gap). Finite and greater than 0 when given.
 /// </param>
-internal readonly record struct TextStyle(FontRequest Font, float Size, TextLanguage Language, float LineHeight)
+public readonly record struct TextStyle(FontRequest Font, float Size, TextLanguage Language, float LineHeight)
 {
     /// <summary>
     /// Throws when a value is out of its range.

@@ -8,6 +8,9 @@ namespace XylemUI;
 /// </summary>
 internal sealed class TextLeaf
 {
+    // The buffer a text writer writes into before the text is compared and the two trade places (design §2.13).
+    private char[]? _spare;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="TextLeaf"/> class, with no text.
     /// </summary>
@@ -77,6 +80,45 @@ internal sealed class TextLeaf
 
         text.CopyTo(Buffer);
         Length = text.Length;
+        DropCaches();
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the spare buffer a text writer writes into (design §2.13, "TextBuilder"), with room for at least
+    /// <paramref name="length"/> characters and the first <paramref name="kept"/> of the old one kept when it grows.
+    /// </summary>
+    /// <param name="length">The room needed.</param>
+    /// <param name="kept">The characters written so far.</param>
+    /// <returns>The spare buffer.</returns>
+    public char[] SpareFor(int length, int kept)
+    {
+        if (_spare is null || _spare.Length < length)
+        {
+            var grown = new char[Math.Max(Math.Max(length, 16), (_spare?.Length ?? 0) * 2)];
+            _spare?.AsSpan(0, kept).CopyTo(grown);
+            _spare = grown;
+        }
+
+        return _spare;
+    }
+
+    /// <summary>
+    /// Takes the first <paramref name="length"/> characters of the spare buffer as the text when they differ from it: the two buffers
+    /// trade places, so that neither is copied and the next write reuses the old text's buffer. Both caches are then dropped.
+    /// </summary>
+    /// <param name="length">The characters the writer wrote.</param>
+    /// <returns><see langword="true"/> when the text changed.</returns>
+    public bool CommitSpare(int length)
+    {
+        ReadOnlySpan<char> written = _spare is null ? default : _spare.AsSpan(0, length);
+        if (written.SequenceEqual(Text))
+        {
+            return false;
+        }
+
+        (Buffer, _spare) = (_spare, Buffer);
+        Length = length;
         DropCaches();
         return true;
     }

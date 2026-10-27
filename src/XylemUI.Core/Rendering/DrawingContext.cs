@@ -15,16 +15,64 @@ public readonly ref struct DrawingContext
 {
     private readonly DisplayList _list;
     private readonly NodeHandle _node;
+    private readonly WindowFrames? _frames;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DrawingContext"/> struct for a node.
     /// </summary>
     /// <param name="list">The display list of the frame.</param>
     /// <param name="node">The node drawn, whose hit regions it writes.</param>
-    internal DrawingContext(DisplayList list, NodeHandle node)
+    /// <param name="frames">The window's frames, whose tree's text tools and glyph atlas lay out and draw a <see cref="TextLayout"/>;
+    /// <see langword="null"/> for a context with no window, which draws no text layout.</param>
+    internal DrawingContext(DisplayList list, NodeHandle node, WindowFrames? frames = null)
     {
         _list = list;
         _node = node;
+        _frames = frames;
+    }
+
+    /// <summary>
+    /// Shapes a text layout and breaks it into lines at a width (design §3.2, "Text from a draw function"). The same text, style, and
+    /// width hit its caches.
+    /// </summary>
+    /// <param name="layout">The text.</param>
+    /// <param name="maxWidth">The width the lines break at, in logical pixels; <see cref="float.PositiveInfinity"/> for the hard
+    /// breaks only.</param>
+    /// <returns>The size of the lines' box, in logical pixels.</returns>
+    /// <exception cref="InvalidOperationException">The window's tree has no text tools, or the context has no window.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxWidth"/> is negative or not a number.</exception>
+    public Size LayoutText(TextLayout layout, float maxWidth)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        if (!(maxWidth >= 0))
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWidth), maxWidth, "The width is a number at or above 0.");
+        }
+
+        TextContext context =
+            _frames?.Tree.Text ?? throw new InvalidOperationException("The window's tree has no text tools to lay the text out with.");
+        Size size = LayoutEngine.LayOutText(context, layout.Leaf, maxWidth);
+        layout.Laid = true;
+        return size;
+    }
+
+    /// <summary>
+    /// Draws the lines <see cref="LayoutText"/> made last, with the top left of their box at a point.
+    /// </summary>
+    /// <param name="layout">The text.</param>
+    /// <param name="x">The left edge, in logical pixels.</param>
+    /// <param name="y">The top edge.</param>
+    /// <param name="color">The color of the text.</param>
+    /// <exception cref="InvalidOperationException">The text was not laid out since it last changed, or the context has no window.</exception>
+    public void DrawText(TextLayout layout, float x, float y, Color color)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        if (!layout.Laid || _frames is null)
+        {
+            throw new InvalidOperationException("The text is laid out with LayoutText before it is drawn.");
+        }
+
+        _frames.DrawLaidText(layout.Leaf, x, y, color);
     }
 
     /// <summary>
