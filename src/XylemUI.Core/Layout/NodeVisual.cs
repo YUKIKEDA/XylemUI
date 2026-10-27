@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace XylemUI;
 
 /// <summary>
@@ -11,6 +13,9 @@ namespace XylemUI;
 /// </remarks>
 internal sealed class NodeVisual
 {
+    private float _opacity = 1;
+    private Matrix3x2? _transform;
+
     /// <summary>
     /// Gets or sets the shadow under the box; <see langword="null"/> for none.
     /// </summary>
@@ -35,6 +40,49 @@ internal sealed class NodeVisual
     /// Gets or sets the user's draw function, called after the box and before the children; <see langword="null"/> for none.
     /// </summary>
     public DrawFunc? Draw { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the color the text leaves of the subtree take when they have none of their own; <see langword="null"/> takes the
+    /// parent's (design §5.0, "Opacity, transforms, and pseudo-states").
+    /// </summary>
+    public Color? Foreground { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the opacity of the node and its subtree, from 0 to 1.
+    /// </summary>
+    public float Opacity
+    {
+        get => _opacity;
+        internal set => SetScope(value, _transform);
+    }
+
+    /// <summary>
+    /// Gets or sets the transform of the node and its subtree, about the center of the node's border box; <see langword="null"/>
+    /// for none. It changes no layout.
+    /// </summary>
+    public Matrix3x2? Transform
+    {
+        get => _transform;
+        internal set => SetScope(_opacity, value);
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether the node has an opacity below 1 or a transform, so that the draw stage pushes a scope around
+    /// its subtree. The draw stage reads it instead of the two values, which a frame would otherwise copy for every node (row V1c).
+    /// </summary>
+    internal bool Scoped { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the looks of the node's pseudo-states; <see langword="null"/> for none.
+    /// </summary>
+    public PseudoStyles? States { get; internal set; }
+
+    private void SetScope(float opacity, Matrix3x2? transform)
+    {
+        _opacity = opacity;
+        _transform = transform;
+        Scoped = opacity != 1 || transform is not null;
+    }
 }
 
 /// <summary>

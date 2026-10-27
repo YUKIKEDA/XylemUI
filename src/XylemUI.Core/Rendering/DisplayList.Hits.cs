@@ -94,6 +94,29 @@ public sealed partial class DisplayList
         return default;
     }
 
+    /// <summary>
+    /// Returns a point of the window in a hit region's coordinates: moved back through the region's state's transform, from the
+    /// region's top left, in physical pixels. Inside a transform that flattens the plane the result is not a number.
+    /// </summary>
+    /// <param name="index">The region's index in <see cref="HitEntries"/>.</param>
+    /// <param name="physicalPoint">The point, in physical pixels of the window's client area.</param>
+    /// <returns>The point from the region's top left, before its transforms, in physical pixels.</returns>
+    internal Vector2 PointInRegion(int index, Vector2 physicalPoint)
+    {
+        ref readonly HitTestEntry entry = ref _hitEntries[index];
+        Vector2 local = physicalPoint;
+        if (entry.State >= 0)
+        {
+            Matrix3x2 transform = _scopes!.States[entry.State].Transform;
+            if (!transform.IsIdentity)
+            {
+                local = Matrix3x2.Invert(transform, out Matrix3x2 inverse) ? Vector2.Transform(physicalPoint, inverse) : new Vector2(float.NaN);
+            }
+        }
+
+        return local - new Vector2(entry.Left, entry.Top);
+    }
+
     // The name of the first argument of a rectangle that is not a number or, for a size, is negative; null when all are good.
     private static string? BadEdge(float x, float y, float width, float height) =>
         !float.IsFinite(x) ? nameof(x)

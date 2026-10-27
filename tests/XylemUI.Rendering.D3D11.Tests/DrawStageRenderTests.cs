@@ -244,6 +244,165 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
             Assert.Equal(new Rect(0, 0, newWidth, newHeight), tree.GetRect(root));
         });
 
+    /// <summary>
+    /// A node's pseudo-states lay their styles over its look, the pressed one over the hovered one, and a text leaf with no color of
+    /// its own draws in the color its ancestors resolve: the pixels are those of the resolved commands written directly (row V1c,
+    /// design §5.0, "Opacity, transforms, and pseudo-states").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer at scale 1.25. A button box (absolutely at 20, 20, 120 x 40, border 2, corner radius 6) has a gray
+    ///   background, an ink border, and the ink text color; its hovered style sets a red background, a green border, and a white
+    ///   text color; its pressed style a green background. It holds a text leaf of "nn" at 20 px with no color.
+    ///
+    /// Steps:
+    /// - Set the button's states (none, hovered, pressed, both); run the frames' resize; read the pixels. Write the background and
+    ///   border the states resolve, and the text in the color they resolve at the leaf's content box (22, 22 + 23.2), into another
+    ///   list; read its pixels.
+    ///
+    /// Expected:
+    /// - The same pixels: none gray, ink, ink; hovered red, green, white; pressed green, ink, ink; both green, green, white.
+    /// </remarks>
+    /// <param name="states">The pseudo-states, as the bits of <c>PseudoState</c>: 1 hovered, 2 pressed.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void PseudoStates_LayTheirStylesOver_AsTheCommandsWrittenDirectly(int states) =>
+        ui.Invoke(() =>
+        {
+            const float Scale = 1.25f;
+            Color white = Color.FromRgb(0xFFFFFF);
+            Color gray = Color.FromRgb(0x808080);
+            using var window = new Win32Window("pseudo-states", 300, 200);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            using var atlas = new GlyphAtlas(rasterizer);
+            using var font = new Font(FontBytes);
+            using var context = new TextContext(new OneFont(font));
+
+            var tree = new UiTree(context);
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle button = Child(tree, root, At(20, 20, 120, 40) with { Border = EdgeInsets.All(2) });
+            tree.SetBackground(button, new Paint(gray));
+            tree.SetBorderPaint(button, new Paint(Ink));
+            tree.SetCornerRadii(button, new CornerRadii(6));
+            tree.SetForeground(button, Ink);
+            tree.SetHoveredStyle(
+                button,
+                new PaintStyle
+                {
+                    Background = Red,
+                    BorderPaint = Green,
+                    Foreground = white,
+                }
+            );
+            tree.SetPressedStyle(button, new PaintStyle { Background = Green });
+            NodeHandle leaf = tree.CreateTextNode(new LayoutStyle(), new TextStyle(FontRequest.Default, 20, Japanese, float.NaN));
+            tree.SetText(leaf, "nn");
+            tree.AppendChild(button, leaf);
+            tree.SetPseudoState(button, PseudoState.Hovered, (states & 1) != 0);
+            tree.SetPseudoState(button, PseudoState.Pressed, (states & 2) != 0);
+            var frames = new WindowFrames(tree, root, new NoTarget(), atlas, new NoScheduler(), Clear);
+            frames.TextRendering = frames.TextRendering with { Coverage = GlyphCoverage.Gray };
+            frames.Resize(new Size(width / Scale, height / Scale), Scale);
+            Color[] viaTree = Draw(renderer, frames.List, width, height, atlas);
+
+            bool hovered = (states & 1) != 0;
+            bool pressed = (states & 2) != 0;
+            Color background =
+                pressed ? Green
+                : hovered ? Red
+                : gray;
+            Color border = hovered ? Green : Ink;
+            Color text = hovered ? white : Ink;
+            var direct = new DisplayList();
+            direct.Reset(Scale);
+            direct.FillRect(20, 20, 120, 40, new Paint(background), new CornerRadii(6), new Border(new BorderWidths(2, 2, 2, 2), new Paint(border)));
+            _ = direct.DrawText(context.Shaper.Shape(font, "nn", Japanese), font, 20, atlas, 22, 22 + 23.2f, text);
+            direct.ResolveGlyphs(atlas);
+            Color[] written = Draw(renderer, direct, width, height, atlas);
+
+            Assert.Equal(written, viaTree);
+        });
+
+    /// <summary>
+    /// A node's transform turns and scales its subtree about the center of its border box, and its opacity draws its subtree as one
+    /// group: the pixels are those of the same scopes written directly around the same commands.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer at scale 1.25. A red box (absolutely at 40, 30, 60 x 40) turned 30° and scaled 1.5 about its center
+    ///   (70, 50) holds a green child (20 x 20 at its top left). An ink box (absolutely at 140, 20, 50 x 50) of opacity 0.5 holds a
+    ///   red child (30 x 30 at its top left) that overlaps it.
+    ///
+    /// Steps:
+    /// - Run the frames' resize; read the pixels. Write into another list: a transform of the turn and scale about (70, 50) around
+    ///   the red box and its child; an opacity group of 0.5 around the ink box and its child; read its pixels.
+    ///
+    /// Expected:
+    /// - The same pixels.
+    /// </remarks>
+    [Fact]
+    public void TransformAndOpacity_DrawAsTheScopesWrittenDirectly() =>
+        ui.Invoke(() =>
+        {
+            const float Scale = 1.25f;
+            using var window = new Win32Window("transform and opacity", 300, 200);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            using var atlas = new GlyphAtlas(rasterizer);
+            Matrix3x2 turn = Matrix3x2.CreateRotation(MathF.PI / 6) * Matrix3x2.CreateScale(1.5f);
+
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle turned = Child(tree, root, At(40, 30, 60, 40));
+            tree.SetBackground(turned, new Paint(Red));
+            tree.SetTransform(turned, turn);
+            NodeHandle inner = Child(tree, turned, new LayoutStyle { Width = Length.Px(20), Height = Length.Px(20) });
+            tree.SetBackground(inner, new Paint(Green));
+            NodeHandle faded = Child(tree, root, At(140, 20, 50, 50));
+            tree.SetBackground(faded, new Paint(Ink));
+            tree.SetOpacity(faded, 0.5f);
+            NodeHandle overlap = Child(tree, faded, new LayoutStyle { Width = Length.Px(30), Height = Length.Px(30) });
+            tree.SetBackground(overlap, new Paint(Red));
+            var frames = new WindowFrames(tree, root, new NoTarget(), atlas, new NoScheduler(), Clear);
+            frames.Resize(new Size(width / Scale, height / Scale), Scale);
+            Color[] viaTree = Draw(renderer, frames.List, width, height, atlas);
+
+            var direct = new DisplayList();
+            direct.Reset(Scale);
+            direct.PushTransform(Matrix3x2.CreateTranslation(-70, -50) * turn * Matrix3x2.CreateTranslation(70, 50));
+            direct.FillRect(40, 30, 60, 40, new Paint(Red), default);
+            direct.FillRect(40, 30, 20, 20, new Paint(Green), default);
+            direct.Pop();
+            direct.PushOpacity(0.5f);
+            direct.FillRect(140, 20, 50, 50, new Paint(Ink), default);
+            direct.FillRect(140, 20, 30, 30, new Paint(Red), default);
+            direct.Pop();
+            direct.ResolveGlyphs(atlas);
+            Color[] written = Draw(renderer, direct, width, height, atlas);
+
+            Assert.Equal(written, viaTree);
+        });
+
+    private static LayoutStyle At(float x, float y, float width, float height) =>
+        new()
+        {
+            Position = Position.Absolute,
+            Inset = new EdgeInsets<LengthPercentageAuto>(
+                LengthPercentageAuto.Px(x),
+                LengthPercentageAuto.Px(y),
+                LengthPercentageAuto.Auto,
+                LengthPercentageAuto.Auto
+            ),
+            Width = Length.Px(width),
+            Height = Length.Px(height),
+        };
+
     private static NodeHandle Child(UiTree tree, NodeHandle parent, LayoutStyle style)
     {
         NodeHandle child = tree.CreateNode(style);

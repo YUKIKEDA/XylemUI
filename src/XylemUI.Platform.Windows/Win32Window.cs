@@ -14,7 +14,7 @@ namespace XylemUI.Platform.Windows;
 /// Create, use, and dispose the window on the UI thread (<see cref="UiThread"/>). Native code identifies the window only by a
 /// generational id from the handle table, never by its address (design §2.12, Invariant 8).
 /// </remarks>
-public sealed unsafe class Win32Window : IDisposable
+public sealed unsafe partial class Win32Window : IDisposable
 {
     private const string ClassName = "XylemUI.Window";
     private const uint WmClose = WM.WM_CLOSE;
@@ -424,9 +424,14 @@ public sealed unsafe class Win32Window : IDisposable
             }
 
             nint id = GetWindowLongPtrW(hwnd, GWLP.GWLP_USERDATA);
-            if (id != 0 && NativeHandleTable.TryResolve(id, out Win32Window? window) && window.HandleMessage(hwnd, message, wParam, lParam))
+            LRESULT result = 0;
+            if (
+                id != 0
+                && NativeHandleTable.TryResolve(id, out Win32Window? window)
+                && window.HandleMessage(hwnd, message, wParam, lParam, ref result)
+            )
             {
-                return 0;
+                return result;
             }
         }
         catch (Exception exception)
@@ -437,9 +442,15 @@ public sealed unsafe class Win32Window : IDisposable
         return DefWindowProcW(hwnd, message, wParam, lParam);
     }
 
-    private bool HandleMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
+    // Returns whether the message was handled; a handled message returns result, 0 unless the handler sets another.
+    private bool HandleMessage(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam, ref LRESULT result)
     {
         if (MessageHook is { } hook && hook(this, message))
+        {
+            return true;
+        }
+
+        if (HandlePointerMessage(hwnd, message, wParam, lParam, ref result))
         {
             return true;
         }

@@ -17,6 +17,8 @@
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
     <!-- The D3D11 renderer is what a window's frames draw on (IRenderTarget, row V1b). -->
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11" />
+    <!-- The window hands its pointer input to the tree's input and implements what the input asks of it (IPointerPlatform, row V1c). -->
+    <InternalsVisibleTo Include="XylemUI.Platform.Windows" />
     <!-- Text leaves are measured with HarfBuzz, whose native library the Windows-only text tests load (row V1a). -->
     <InternalsVisibleTo Include="XylemUI.Text.Tests" />
   </ItemGroup>

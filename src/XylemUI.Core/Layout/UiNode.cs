@@ -38,6 +38,11 @@ internal struct UiNode
     public bool IsAttached;
 
     /// <summary>
+    /// The pseudo-states the pointer's input set (design §2.13). It sits in the padding after <see cref="IsAttached"/>.
+    /// </summary>
+    public PseudoState Pseudo;
+
+    /// <summary>
     /// What the node and its subtree need again.
     /// </summary>
     public DirtyState Dirty;
@@ -57,6 +62,12 @@ internal struct UiNode
     /// stage and the frame drive").
     /// </summary>
     public NodeVisual? Visual;
+
+    /// <summary>
+    /// The pointer handlers, the cursor, and the block of the pointer; <see langword="null"/> on a node with none (design §7,
+    /// "Pointer input").
+    /// </summary>
+    public NodeInput? Input;
 
     /// <summary>
     /// The child whose first baseline gives this container's in the last layout run, read when a parent reads this node's

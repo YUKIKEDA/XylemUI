@@ -15,7 +15,7 @@
 //                              and transforms (cards and zoom-still are the scenes without them to compare with), with
 //                              --nested N rounded clips for nested and nested-heavy, row R4d)
 //                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b; --no-text leaves
-//                              the line of text out)
+//                              the line of text out; --hover keeps its boxes still and changes the hover each frame, row V1c)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
@@ -25,6 +25,7 @@
 //   glyph-resolve [runs]       ResolveGlyphs for a frame of 1 to 431 new glyphs, and of emoji, on 1, 2, and 4 threads (row T5)
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
 //   hit-region                 writing a hit region, and testing a point against 1,000 that miss it, plain and in a clip (row R4e)
+//   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
 //   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
 //   curves                     the lines, ellipses, and arcs of row R4b, to compare with benchmarks/compare/curves.html
@@ -70,8 +71,10 @@ return scenario switch
         scopes: Scopes(),
         nested: Array.IndexOf(args, "--nested") is int nestedAt and >= 0 ? Number(nestedAt + 1, 0) : 0,
         tree: args.Contains("--tree"),
-        noText: args.Contains("--no-text")
+        noText: args.Contains("--no-text"),
+        hover: args.Contains("--hover")
     ),
+    "input" => InputCost.Run(),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
     "resize-text" => CoreCosts.ResizeText(Number(1, 51)),

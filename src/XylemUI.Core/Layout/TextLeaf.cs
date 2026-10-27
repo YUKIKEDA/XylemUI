@@ -35,10 +35,11 @@ internal sealed class TextLeaf
     public TextStyle Style { get; private set; }
 
     /// <summary>
-    /// Gets or sets the color the text is drawn in; opaque black at first. It is no part of <see cref="Style"/>: the layout does not
-    /// read it (design §5.0, "The draw stage and the frame drive").
+    /// Gets or sets the leaf's own color for its text; <see langword="null"/> at first, which takes the color its ancestors resolve
+    /// (<see cref="NodeVisual.Foreground"/>, design §5.0, "Opacity, transforms, and pseudo-states"). It is no part of
+    /// <see cref="Style"/>: the layout does not read it.
     /// </summary>
-    public Color Color { get; set; } = Color.FromRgb(0x000000);
+    public Color? Color { get; set; }
 
     /// <summary>
     /// Gets or sets the padding and border widths the leaf's last layout run resolved, in logical pixels: the draw stage places the
