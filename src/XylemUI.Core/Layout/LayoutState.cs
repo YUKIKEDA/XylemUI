@@ -42,6 +42,13 @@ internal struct LayoutState
     public bool HasKeywordLimits;
 
     /// <summary>
+    /// Whether a leaf's content in its last committed layout is larger than its content box, so that its scrollable overflow
+    /// (<see cref="MeasureCache.ContentRight"/>) goes past its box (design §3.4.1). A leaf whose content fits writes nothing there:
+    /// writing every leaf's edges made the first layout of row L2's scene about 7 % slower (row V2).
+    /// </summary>
+    public bool ContentOverflows;
+
+    /// <summary>
     /// The number of children that are hidden or absolutely positioned (row L2), kept by <see cref="UiTree.AppendChild"/> and
     /// <see cref="UiTree.SetStyle"/>. Where it is 0, the usual case, a container's algorithm reads no child's style to find its
     /// items: reading it cost the relayout after one change of row L1a's scene about 5 % (another part of each child's node).

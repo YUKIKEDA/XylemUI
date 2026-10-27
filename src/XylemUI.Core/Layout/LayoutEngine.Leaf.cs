@@ -55,15 +55,6 @@ internal static partial class LayoutEngine
         }
 
         OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + contentInset.Width, content.Height + contentInset.Height)).Clamp(min, max);
-        if (commit)
-        {
-            // The content from the padding box's corner; a scroll container's end padding is part of it (Taffy main's leaf.rs).
-            Edges padding = EdgeInsets.ResolveOrZero(style.Padding, input.ParentSize.Width);
-            bool scrolls = style.IsScrollContainer;
-            ref MeasureCache cache = ref tree.MeasuresOf(handle);
-            cache.ContentRight = padding.Left + content.Width + (scrolls ? padding.Right : 0);
-            cache.ContentBottom = padding.Top + content.Height + (scrolls ? padding.Bottom : 0);
-        }
 
         // A leaf with an aspect ratio is at least as high as its width gives (Taffy's compute_leaf_layout); its maximum does not
         // follow the ratio there.
@@ -72,7 +63,38 @@ internal static partial class LayoutEngine
             size = size with { Height = Math.Max(size.Height, size.Width / style.AspectRatio) };
         }
 
-        return ToSize(size.AtLeast(inset));
+        Size result = ToSize(size.AtLeast(inset));
+        if (commit)
+        {
+            CommitLeafContent(tree, handle, in style, input.ParentSize.Width, content, result, contentInset);
+        }
+
+        return result;
+    }
+
+    // Keeps a committed leaf's scrollable overflow where its content is larger than its content box: the content from the padding
+    // box's corner, and a scroll container's end padding (Taffy main's leaf.rs 162 to 173). Content that fits adds nothing past the
+    // box, so only the flag is written.
+    private static void CommitLeafContent(
+        UiTree tree,
+        NodeHandle handle,
+        in LayoutStyle style,
+        float parentWidth,
+        Size content,
+        Size size,
+        Size contentInset
+    )
+    {
+        bool overflows = content.Width > size.Width - contentInset.Width || content.Height > size.Height - contentInset.Height;
+        tree.Nodes.GetRef(handle).Layout.ContentOverflows = overflows;
+        if (overflows)
+        {
+            Edges padding = EdgeInsets.ResolveOrZero(style.Padding, parentWidth);
+            bool scrolls = style.IsScrollContainer;
+            ref MeasureCache cache = ref tree.MeasuresOf(handle);
+            cache.ContentRight = padding.Left + content.Width + (scrolls ? padding.Right : 0);
+            cache.ContentBottom = padding.Top + content.Height + (scrolls ? padding.Bottom : 0);
+        }
     }
 
     // The border-box width of a leaf under a min-content or max-content width, as ComputeLeaf gives it, from the content

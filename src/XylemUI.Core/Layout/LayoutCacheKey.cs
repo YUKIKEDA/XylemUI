@@ -155,11 +155,11 @@ internal struct MeasureCache
     public ResolvedBox Box;
 
     /// <summary>
-    /// A leaf's right and bottom edges of its scrollable overflow in its last committed layout, from its padding box's corner: its
-    /// content from the measure function or its text, past its box where the content is larger (Taffy main's leaf.rs, design
-    /// §3.4.1). A scroll container's range reads them through the leaves under it. They sit here, apart from the node: on it,
-    /// with every container's edges collected in the layout, they made the node 584 bytes and a width change of row L1a's scene
-    /// 20 to 35 % slower (row V2).
+    /// A leaf's right and bottom edges of its scrollable overflow in its last committed layout, from its padding box's corner, when
+    /// its content is larger than its content box (<see cref="LayoutState.ContentOverflows"/>): its content from the measure
+    /// function or its text (Taffy main's leaf.rs, design §3.4.1). A scroll container's range reads them through the leaves under
+    /// it. They sit here, apart from the node: on it, with every container's edges collected in the layout, they made the node 584
+    /// bytes and a width change of row L1a's scene 20 to 35 % slower (row V2).
     /// </summary>
     public float ContentRight;
 

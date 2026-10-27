@@ -466,6 +466,12 @@ internal static partial class LayoutEngine
         NodeHandle child = node.FirstChild;
         if (child.IsNone)
         {
+            // A leaf whose content fits adds nothing past its box, which its parent counts.
+            if (!node.Layout.ContentOverflows)
+            {
+                return (0, 0);
+            }
+
             ref MeasureCache cache = ref tree.MeasuresOf(handle);
             return (cache.ContentRight, cache.ContentBottom);
         }
