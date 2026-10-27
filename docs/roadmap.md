@@ -20,8 +20,8 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 
 - **フェーズ:** V1（T11 は v1.x。Q1 と Q3 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
 - **作業中:** Q1（#92）の次の段: 割り当て 0 のテストの不定の失敗が、この機械で再現するようになったので、原因を調べる。その後に V1d（部品の API とサンプル）（PR #327 のレビューでオーナーが決定）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
-- **ブランチ:** —
-- **Issue:** —
+- **ブランチ:** `docs/335-v1d-component-api`
+- **Issue:** #335
 
 ## ツールチェーン
 
@@ -93,7 +93,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | T3  | アトラスのプロットより大きいグリフ（既定 256 px 超）の描画。Skia のようにパスで描くか専用の領域を取るかを比べて決める（S8b では描かない、§5.0.3） | not-started | —     | §5.0.3                                     |
 | D11 | ネイティブ描画領域（外部サーフェス: 3D ビューポート・動画・地図）の契約（描画先の所有、フレームの受け渡し、リサイズ、入力、同期）と時期の Grill。Core の公開 API を固める前に決める（Issue #174 で行にした） | not-started | [#162](https://github.com/YUKIKEDA/XylemUI/issues/162) | — |
 | D12 | WebView などのネイティブ部品の置き方の Grill（D11 の結果が前提。テクスチャで受けられるかの spike を含む）（Issue #174 で行にした） | not-started | [#172](https://github.com/YUKIKEDA/XylemUI/issues/172) | — |
-| C0  | Core 抽出（`XylemUI.Core` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）。シェーダをビルド時に `fxc` でコンパイルして同梱（§5.2）。R4d の変種のシェーダ 10 個（`STATED`）も含める。R4d はこれを裏でコンパイルするので、クリップの無い起動が main より 40〜60 ms 長い。オーナーは C0 までの費用として受け入れた（PR #268 の再レビュー）。C0 で、この差は無くなる。NuGet にするとき、`XylemUI.Text.targets`（HarfBuzz / FreeType の静的リンク）を `buildTransitive` に置き、Core を参照するだけで取り込まれるようにする（今はアプリが手で `Import` する、S8b のレビュー）。`LayoutStyle` の既定値（margin 0、`FlexShrink` 1）は初期化子とコンストラクタで決めるので、`default(LayoutStyle)` では margin が `Auto`、`FlexShrink` が 0 になる（今の使い手はテストの `StyleOrDefault` だけ）。公開 API にするときに、`default` を受け取らない形（`LayoutStyle.Default`、または既定値が型の既定と一致する表現）を決める（PR #91 のレビュー） | not-started | —     |                                            |
+| C0  | Core 抽出（`XylemUI.Core` + `XylemUI.Platform.Windows` + `XylemUI.Rendering.D3D11` + `samples/Todo`）。シェーダをビルド時に `fxc` でコンパイルして同梱（§5.2）。R4d の変種のシェーダ 10 個（`STATED`）も含める。R4d はこれを裏でコンパイルするので、クリップの無い起動が main より 40〜60 ms 長い。オーナーは C0 までの費用として受け入れた（PR #268 の再レビュー）。C0 で、この差は無くなる。NuGet にするとき、`XylemUI.Text.targets`（HarfBuzz / FreeType の静的リンク）を `buildTransitive` に置き、Core を参照するだけで取り込まれるようにする（今はアプリが手で `Import` する、S8b のレビュー）。`LayoutStyle` の既定値（margin 0、`FlexShrink` 1）は初期化子とコンストラクタで決めるので、`default(LayoutStyle)` では margin が `Auto`、`FlexShrink` が 0 になる（今の使い手はテストの `StyleOrDefault` だけ）。公開 API にするときに、`default` を受け取らない形（`LayoutStyle.Default`、または既定値が型の既定と一致する表現）を決める（PR #91 のレビュー）。Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11・Platform.Windows・Desktop に見せている今の形（V1b・V1c・V1d）をやめ、公開の境界（§2.9.1、§11.6 Invariant 9/10）を決める（V1d の Grill） | not-started | —     |                                            |
 | H1  | ホットリロード（§2.13）。コンポーネント関数のローカルな状態を残すかを、Flutter（`State` を保つ）を基準に Grill し直す（v1 で残さない理由が仕組みの規模だった、Issue #54） | not-started | —     | §2.13                                      |
 | R1  | D3D11 のデバイス消失（`DXGI_ERROR_DEVICE_REMOVED` など）からの復帰。デバイスと GPU 資源を作り直す。作り直した後は、変わらないフレームでも 1 度描き直す（V1b の `WindowFrames` は変わらないフレームを描かない、PR #309 のレビュー）。WARP への切り替えをレンダラ全体の作成の失敗まで広げるか | not-started | —     | §5.0.2                                     |
 | R2  | GPU が重いときに UI スレッドを `Present` で止めない。`ID3D11Fence` のイベントをメッセージと多重待機し、前のフレームの GPU 完了を待ってから Present する。フレームの契約、フェンスのないデバイス、GPU 律速の間隔（S8b で 67 ms が素朴な実装で 77〜83 ms）を設計 PR から決める（§2.11）。重い GPU で `Present` が止まる測定（S8b はサンプルの手動の測定）を再現できる回帰テストの形も決める（S8b のレビュー） | not-started | —     | §2.11                                      |
@@ -106,7 +106,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | D13 | 画像の経路（`ImageHandle` とテクスチャキャッシュの行、対応する形式、デコーダと依存、アイコンの形式）の Grill（Issue #174 で行にした） | not-started | [#165](https://github.com/YUKIKEDA/XylemUI/issues/165) | — |
 | D14 | §13.1 のほかに出す部品の範囲（Calendar・ProgressBar・SplitView・Expander・ContextMenu・ツリー・表など）と、出す基準の Grill（Issue #174 で行にした） | not-started | [#169](https://github.com/YUKIKEDA/XylemUI/issues/169) | — |
 | D15 | ローカライズ（メッセージの辞書、複数形と選択、ロケールに応じた書式、ロケールの解決、部品の文言）を要件にするか、方式の Grill（Issue #174 で行にした） | not-started | [#170](https://github.com/YUKIKEDA/XylemUI/issues/170) | — |
-| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3） | not-started | —     | §13.3                                      |
+| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3）。子の背景などを親の状態で変える形（GPUI の `group_hover`、Avalonia のテンプレートのセレクタ）を、テーマの部品で決める（V1 は文字の色の受け継ぎで済ませた、V1d の Grill） | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト。揃えの `self-start` / `self-end`（子自身の書字の向きで揃える。Issue #88） | not-started | —     | §10.4                                      |
 | P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した）。フォントのフォールバックを fontconfig（`FcFontMatch`）で、`IFontProvider` の実装として入れる（F1 の Grill）。FreeType を `vendor/` のビルドに戻し（T4 で Windows から外した）、`IGlyphRasterizer` の FreeType の実装を入れる。グリフは FreeType の light（`FT_LOAD_TARGET_LIGHT`）と横 4 段階のサブピクセル位置で描き、ガンマとコントラストは既定の 1.8 と 1.0（T4 の Grill）。S8a のインクの箱のテスト（アウトラインの箱との一致）を FreeType の実装に書く。LCD の AA は、wgpu がデュアルソースのブレンドを持つときだけ使う（GPUI と同じ、T2 の Grill） | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |

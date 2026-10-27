@@ -435,7 +435,7 @@ public readonly record struct TrackedScope(int Id, string Owner, bool IsEffect, 
 - `ScopeTracker` は有効な間、所有者の名前（既定は `[CallerMemberName]` の呼び出し元）・Effect か・所有されているかを一覧にし、破棄で外れる。無効な間は記録しない。
 - `static` のラムダだけで Scope を作って破棄する定常状態はアロケーション 0（1,000 回）。
 
-公開 API の `Scope.Create` は `Handle<ScopeData>` を返す（`ScopeHandle` は Core の中の別名で、アプリからは見えない）。コンポーネントの API でこの型名をどう見せるかは V1 で決める。変異 9 個を試し、8 個がテストで落ちた。残りの 1 個（読み手を登録し直すときに dirty にする分岐）は到達しない分岐だった。登録し直すのは、同じ全体の版で値を確かめた直後だけだからで、分岐は消した。
+公開 API の `Scope.Create` は、公開の `readonly record struct ScopeHandle`（中に `Handle<ScopeData>` を持つ）を返し、`ScopeData` は internal にする（V1d の Grill、Issue #335）。V1d の前は `Handle<ScopeData>` を返し、`ScopeHandle` は Core の中の別名だった。アプリが見る名前を 1 つに決める。変異 9 個を試し、8 個がテストで落ちた。残りの 1 個（読み手を登録し直すときに dirty にする分岐）は到達しない分岐だった。登録し直すのは、同じ全体の版で値を確かめた直後だけだからで、分岐は消した。
 
 ### 2.4 Invalidation Architecture
 
@@ -501,7 +501,7 @@ public static class TextProperties
 }
 ```
 
-記述子の定型部分は Source Generator で生成してよい。Binding は Effect として outermost batch 内で走り、`LayoutPass` の前に UiNode へ値を書き終える。Layout / `MeasureText` は Signal を読まない。
+記述子の定型部分は Source Generator で生成してよい。Binding は Effect として outermost batch 内で走り、`LayoutPass` の前に UiNode へ値を書き終える。公開の入口は `Element.Bind(property, signal)` で、`.Background(IReadOnlySignal<Paint>)` などの多重定義もこれを呼ぶ。Effect は要素を作った Scope が持ち、Scope の破棄で消える（§2.13「部品の API」、V1d の Grill）。V1d の記述子は手で書く。Layout / `MeasureText` は Signal を読まない。
 
 **DirtyFlagsと必要なパイプライン段階の対応**: `FlagsFor`が返す各フラグは、実行すべきパイプライン段階に機械的に対応する。
 
@@ -1162,6 +1162,7 @@ src/
                                #       DisplayList / HitTest / Input / Focus / Popup。OS API を参照しない。部品は持たない
   XylemUI.Text/                # テキストパイプライン（§4.1）。XylemUI.Core から独立
   XylemUI.Primitives/          # 見た目のない部品（§13.1）。ロジック・a11y・キーボード・フォーカス・開閉状態だけ
+  XylemUI.Desktop/             # アプリの起動（XylemApp.Run）。Core・Platform・Rendering をつなぐ（V1d）
   XylemUI.Theme.Fluent/        # Fluent 2 デザインシステム（§13.2）。Primitives に見た目を被せる
   XylemUI.Testing/             # ヘッドレスホスト・仮想クロック・入力注入・PNG（§12）。製品バイナリには含めない
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
@@ -1191,7 +1192,7 @@ vendor/
 - `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
 - 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
 - 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
-- Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。
+- Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
 - アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とし、具体的なパッケージ構成は C0 相当の抽出時に決める。
 
 ### 2.10 フレーム実行サイクル
@@ -1231,7 +1232,7 @@ sequenceDiagram
 - **V1a 文字の葉:** `TextShaper` と T1 の改行を使う計測関数、`ShapedTextCache` と `LineBreakCache`（§3.2）、文字の行の高さ、10,101 個の文字の葉のリサイズ（§11.3）、計測関数の例外の報告。設計は §3.2「文字の葉」と §2.4.1「layout 中の例外」（V1a の Grill、Issue #296）
 - **V1b 描画の段とフレームの駆動:** ノードの描く関数、木を絶対座標でたどって `DrawingContext` を作る順と段、`PaintUpdates`、`Hidden` の部分木を飛ばすこと、effect → レイアウト → 描画 → Render のフレームの予約、変わらないフレームは Present しないこと。設計は §5.0「描画の段とフレームの駆動」（V1b の Grill、Issue #308）
 - **V1c 入力:** Win32 のマウスとポインタのイベントの型、ヒットテストと capture・bubble、ホバーと押下の擬似状態、遮る印、ハンドラに渡す座標を倍率で割ること、カーソル、ノードの不透明度と変換。設計は §7「ポインタの入力」と §5.0「描画の段とフレームの駆動」の「不透明度・変換・擬似状態」（V1c の Grill、Issue #318）
-- **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプル。受け入れは、§10.5 の MoonBit 版の V1 と同じ到達点（ボタンの中心の画素、クリックで数が増えること、変わらないフレームで Present しないこと）を、同じ判定基準（各段階 4 問 Yes）で確かめる
+- **V1d 部品の API とサンプル:** `Element`、`Column`・`Text`・`Button`、`TextBuilder` の未決の 2 点、`Scope.Run` の包み方と Scope の型名の見せ方、ノードを外す操作、クリックで数が増えるサンプル。設計は §2.13「部品の API」（V1d の Grill、Issue #335）。受け入れは、§10.5 の MoonBit 版の V1 と同じ到達点（ボタンの中心の画素、クリックで数が増えること、変わらないフレームで Present しないこと）を、同じ判定基準（各段階 4 問 Yes）で確かめる
 
 **V1（MoonBit 版で到達。C# 版で再到達させる）:** Column / Text / Button でこの経路が native で通った。入力は直近 `HitTestList` を末尾から走査し、木は登らない。Button クリックは Signal を `Batch` し Text が変わる。clean フレームは Present しない。C# 版の再現手順（`dotnet test` / `dotnet run` のプロジェクト）は移植時に定義する。
 
@@ -1412,19 +1413,26 @@ internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 アプリとテーマの作者が書くのは、`Element` を返す C# のメソッドである。XAML・CSS・スタイル文字列は持たない。状態はメソッド内のローカル変数として `Signal.Create` で作る。ViewModel クラスも手動の `Dispose` も要らない。コンポーネント関数は初回に1度だけ実行され、以降は Signal を読んでいる箇所だけが更新される（§2.1）。
 
 ```csharp
+using static XylemUI.Elements;
+using static XylemUI.Primitives.Primitive;
+
 static Element Counter()
 {
     var count = Signal.Create(0);
 
     return Column(
         Text((ref TextWriter text) => text.Write($"clicks: {count.Get()}")),
-        Button("+1", onClick: () => count.Set(count.Get() + 1))
+        Button("+1", () => count.Set(count.Get() + 1))
             .Padding(8)
-            .Background(Colors.Accent)
+            .Background(Color.FromRgb(0x3366CC))
+            .Foreground(Color.FromRgb(0xFFFFFF))
             .CornerRadius(4)
-            .Hovered(new PaintStyle { Background = Colors.AccentHover })
-            .Pressed(new PaintStyle { Background = Colors.AccentPressed }));
+            .Hovered(new PaintStyle { Background = Color.FromRgb(0x4477DD) })
+            .Pressed(new PaintStyle { Background = Color.FromRgb(0x2255AA) }));
 }
+
+// アプリの入口（XylemUI.Desktop）
+XylemApp.Run(Counter, new WindowOptions("Counter", 320, 200));
 ```
 
 **テキストの更新:** `Text` は2つのオーバーロードを持つ。
@@ -1450,6 +1458,103 @@ public ref struct TextWriter
 - テキスト更新を Zero-Alloc ゲート（§11.3）のシナリオに入れるかは、シェーピング側の確保を S8 で測ってから決める。S8a の計測では、同じ文字列のシェーピングとキャッシュ済みのグリフのアトラスの引き当ては、定常状態で 0 バイト（Debug・Release、1,000 回）だった。シナリオに入れられる条件は満たしている。入れるかは Zero-Alloc ゲートを作る P02（`XylemUI.Testing`）で決める
 
 **スタイルのメソッドチェーン:** `.Padding()` / `.Background()` / `.CornerRadius()` 等は `Element`（`NodeHandle` を包む struct）の拡張メソッドとする。各メソッドはアリーナ上のノードのスタイルへ直接書き込み、同じ `Element` を返す。中間のスタイルオブジェクトは作らないので、チェーンはアロケーションを発生させない。Signal を受け取るオーバーロード（`.Background(IReadOnlySignal<Color>)`）は Binding 層（§2.4）に繋ぎ、該当する `ChangeKind` で無効化する。
+
+**部品の API（V1d の Grill でオーナーが決定、Issue #335）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。
+
+```csharp
+// Core（名前空間 XylemUI）。木とノードの組。default は何も指さない
+public readonly struct Element
+{
+    internal UiTree Tree { get; }
+    internal NodeHandle Node { get; }
+}
+
+// using static XylemUI.Elements; で Column(...) と書く
+public static class Elements
+{
+    public static Element Box();                                     // 子を持たない箱
+    public static Element Box(Element child);
+    public static Element Column(params ReadOnlySpan<Element> children);   // 縦に並べる（Flex の column）
+    public static Element Row(params ReadOnlySpan<Element> children);      // 横に並べる（Flex の row）
+    public static Element Text(string content);
+    public static Element Text(Func<string> content);                // 読んだ Signal が変わるたびに書き直す（string を確保する）
+    public static Element Text(TextBuilder content);                 // 同じ。確保しない
+}
+
+// メソッドチェーン。どれもその木の setter に直接書き、同じ Element を返す。長さは論理画素
+public static class ElementExtensions
+{
+    // layout（ChangeKind.Size）
+    public static Element Width(this Element e, float width);
+    public static Element Height(this Element e, float height);
+    public static Element Padding(this Element e, float all);
+    public static Element Padding(this Element e, float horizontal, float vertical);
+    public static Element Gap(this Element e, float gap);
+    public static Element Border(this Element e, float width, Paint paint);
+    public static Element FontSize(this Element e, float size);              // 文字の葉だけ（ChangeKind.Font）
+    public static Element Language(this Element e, TextLanguage language);   // 文字の葉だけ
+    // 見た目（ChangeKind.Color）
+    public static Element Background(this Element e, Paint paint);
+    public static Element Background(this Element e, IReadOnlySignal<Paint> paint);
+    public static Element CornerRadius(this Element e, float radius);
+    public static Element Shadow(this Element e, BoxShadow shadow);
+    public static Element Foreground(this Element e, Color color);
+    public static Element Foreground(this Element e, IReadOnlySignal<Color> color);
+    public static Element Opacity(this Element e, float opacity);
+    public static Element Transform(this Element e, Matrix3x2 transform);
+    public static Element Hovered(this Element e, PaintStyle style);
+    public static Element Pressed(this Element e, PaintStyle style);
+    public static Element Draw(this Element e, DrawFunc draw);
+    // 入力
+    public static Element Cursor(this Element e, CursorKind cursor);
+    public static Element BlocksPointer(this Element e);
+    public static Element OnClick(this Element e, Action handler);
+    public static Element On(this Element e, PointerEventKind kind, EventPhase phase, PointerHandler handler);
+    // Signal とノードをつなぐ 1 つの経路（§2.4）。上の Signal を受ける多重定義はこれを呼ぶ
+    public static Element Bind<T>(this Element e, NodeProperty<T> property, IReadOnlySignal<T> value);
+}
+
+// XylemUI.Primitives（見た目のない部品、§13.1）。名前空間 XylemUI.Primitives、using static XylemUI.Primitives.Primitive;
+public static class Primitive
+{
+    public static Element Button(Element content, Action onClick);
+    public static Element Button(string label, Action onClick);   // Button(Text(label), onClick)
+}
+
+// XylemUI.Desktop（Core・Platform.Windows・Rendering.D3D11 をつなぐ）
+public static class XylemApp
+{
+    public static int Run(Func<Element> root, WindowOptions? options = null);   // 最後のウィンドウを閉じたら戻る
+}
+
+public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, float Height = 600);   // 論理画素
+```
+
+- **部品の置き場所:** Core には `Element` と、並べ方と文字の要素（`Box`・`Column`・`Row`・`Text`）だけを置き、ボタンは `XylemUI.Primitives` に置く（§2.9.1）。比べた 3 つも、並べ方と文字の要素は土台の層にあり、ボタンはその上の層にある
+  - Flutter: `Column` と `Row` は `widgets/basic.dart`（`Flex` は 5294 行目、`Row` は 5695 行目、`Column` は 5887 行目）、`Text` は `widgets/text.dart` 497 行目にある。widgets の層にボタンは無い。押せるものは `GestureDetector`（`widgets/gesture_detector.dart` 223 行目）と `Listener`・`MouseRegion`（`widgets/basic.dart` 7146・7288 行目）を組んで作る。ボタンは material（`material/button_style_button.dart` 75 行目）と cupertino（`cupertino/button.dart` 71 行目）にある
+  - GPUI: core の要素は `div`・`text`・`canvas` などで（`gpui/src/elements/mod.rs` 1〜27 行目）、ボタンは Zed の `ui` crate にある（`ui/src/components/button/button_like.rs` 751〜900 行目）
+  - Avalonia: `StackPanel`・`TextBlock`・`Button` はどれも Avalonia.Controls にある（`Avalonia.Controls/StackPanel.cs` 19 行目、`TextBlock.cs` 19 行目、`Button.cs` 36 行目）。`Button` の見た目はすべてテーマから来て、テーマが無ければ何も描かない（`Avalonia.Controls/Primitives/TemplatedControl.cs` 306〜343 行目、テーマは `Avalonia.Themes.Fluent/Controls/Button.xaml` 13〜95 行目）
+  - V1 の `Button` は、押せることと押した状態だけを持つ。Click のハンドラ（`OnClick`）、Pressed の擬似状態（V1c）、ヒット領域を持つ `Box` で、背景も文字の色も付けない。見た目はアプリかテーマ（§13.2）が、メソッドチェーンで付ける。キーボードでの Click（Enter と Space）とフォーカスは行 K1 で足す
+- **部品の関数が木を見つける方法:** 部品の関数は引数を取らない（上の `Counter`）。ウィンドウの host（`XylemApp.Run`）が根の関数を呼んでいる間だけ、その木を UI スレッドの「今の木」にする（Scope の「今の Scope」と同じ形、§2.3）。`Elements` の関数は、今の木にノードを作る。今の木が無い所（根の関数の外、ハンドラの中）で作ると `InvalidOperationException` を投げる。後でノードを作る `Show` と `For`（§2.7）は、その時に今の木を立て直す。Flutter は `BuildContext`（`widgets/framework.dart` 2308 行目。中身は `Element` で 3570 行目）を、GPUI は `window` と `cx` を、どの描く関数とハンドラにも引数で渡す（`gpui/src/element.rs` 164〜167 行目）。Avalonia は、木の外で作った部品を、根に付いた親に足したときに付ける（`Avalonia.Base/Visual.cs` 715〜737 行目）。引数で渡す形は §2.13 の書き方を変えるので、採らない
+- **`Element`:** 木とノードの組で、ウィンドウが複数あってもどの木のノードかが分かる。メソッドチェーンは中間の値を作らず、割り当てない。Signal を受ける多重定義だけが Effect を 1 つ作る
+- **子の渡し方:** `Column` と `Row` は `params ReadOnlySpan<Element>`（C# 13）で受け、配列を作らない。子は並びの順に付く。子を持たない `Column()` は、空の容器になる。別の木の `Element` を子に渡すと `ArgumentException`
+- **Signal とノード:** §2.4 の Binding の層の `NodeProperty<T>` を、Signal からノードへ書く唯一の経路にする。`Bind` は、今の Scope が持つ Effect を 1 つ作る。Effect は Signal を読み、`NodeProperty<T>` の setter（`UiTree` の setter と同じ。等しい値なら何もしない）で書く。Effect は、batch を閉じたときに layout の前に流れ終わる（§2.2、§2.4）。Avalonia の `Bind(property, IObservable)` は `IDisposable` を返し、呼んだ人が後始末する（`Avalonia.Base/AvaloniaObject.cs` 446〜573 行目）。ここでは Effect を今の Scope が持つので、Scope の破棄で消える。記述子は手で書き、Source Generator は使わない（§2.4 は「使ってよい」）
+- **`TextBuilder` の 2 点（D2 のレビューで送った点）:**
+  - 書いた内容が前回と同じかは、文字の葉の予備のバッファに書いてから `SequenceEqual` で比べて決める。違えば 2 つのバッファを入れ替え、`ChangeKind.TextContent` で無効化する。同じなら何もしない。予備のバッファは、足りないときだけ伸ばす（`.cursor/rules/perf.mdc`）
+  - `TextWriterHandler` は ref struct にし、`ref TextWriter` のフィールド（C# 11 の ref フィールド）で、元の書き手の位置を直接進める。値で受け取ると、補間文字列の部分を書いた長さが、書き手の写しにだけ残って失われる
+- **持ち主と外し方:** 要素を作ると、今の Scope の後始末に「木から外し、アリーナから解放し、ハンドラを捨てる」を登録する（`Scope.OnCleanup`）。Binding の Effect は、作った Scope が持つ（§2.3）。Scope を破棄すると、その Scope で作ったノード・ハンドラ・Effect が残らない。木の内部に、ノードとその部分木を親から外す `UiTree.Remove` を足す（親の layout の印を付け、部分木のノードを解放する）。公開の「外す」API は持たず、部分を作り直す `Show` と `For` が使う。Flutter は、要素を外すと `State.dispose` を呼ぶ（`widgets/framework.dart` の `Element.unmount` 4864〜4880 行目、`StatefulElement.unmount` 6041〜6043 行目）。GPUI は、エンティティを手放すとそのリスナーを外す（`gpui/src/app.rs` 2069〜2086 行目）。Avalonia は、木から外してもハンドラと Binding を外さない（`Avalonia.Base/Interactivity/Interactive.cs` 16 行目の `_eventHandlers` は外す経路が触らない）
+- **ハンドラを動かす Scope（S9 で送った点）:** イベントのハンドラと Binding の Effect は、その要素を作った Scope の中で動かす（`Scope.Run`）。ハンドラの中で作った Effect や後始末は、その Scope に入る。`Scope.Run` が `false` を返したとき（その間に部品の Scope が破棄された）は、何もしない。`OnClick` と `On` の XML ドキュメントに、そう書く
+- **部品ごとの Scope:** 部品の関数はふつうのメソッドで、部品ごとに Scope を作らない（SolidJS と同じ）。V1d で Scope を作るのは、ウィンドウの根だけである。部分を作り直す `Show` と `For` が、その部分の Scope を作る
+- **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
+- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（`CultureInfo.CurrentUICulture` の名前から `TextLanguage.FromTag`）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
+- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）と、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
+- **確かめ方:**
+  - `samples/Counter`: `Column` に `Text`（`clicks: N`）と `Button`（自分で付けた背景・角丸・余白・ホバーと押下の見た目）を載せる
+  - WARP: ボタンの中心の画素が、付けた背景の色になる（MoonBit 版の V1 と同じ到達点、§10.5）
+  - 本物のウィンドウ: ボタンの中心に `WM_LBUTTONDOWN` と `WM_LBUTTONUP` を送ると、文字が `clicks: 1` になり、次のフレームで描かれる。変わらないフレームでは Present の回数が増えない
+  - サンプルを NativeAOT で publish し、警告 0 で、1 つの実行ファイルで動く。大きさを記録する
+  - 根の Scope を破棄すると、ノード・ハンドラ・Effect が残らない（アリーナの生きたノードの数、`ScopeTracker`）
+  - Core: `Elements` の関数を今の木の外で呼ぶと投げる。`Bind` の Effect が Signal の変化を 1 回の batch で 1 回書く。`TextBuilder` の比べ（同じ内容なら無効化しない）と、補間文字列の長さ。描く関数の例外（§5.0）。割り当て 0: Signal で背景の色を変えるフレームと、`TextBuilder` で数を書き直すフレーム
 
 **疑似状態（Hover / Pressed / Focused / Disabled）:** 疑似状態はノードの `PseudoState`（`UiNode.Pseudo`、§2.5）に持つビットフラグで表し、状態ごとに Signal を作らない。疑似状態ごとに変えられるのは **Paint 系のプロパティ（背景色・前景色・ボーダー色・不透明度・transform）だけ**で、サイズ・パディング・マージンなどレイアウトに影響する値は変えられない。これは型で強制する。`.Hovered()` 等が受け取る `PaintStyle` は Paint 系のプロパティしか持たない struct である。したがって疑似状態の変化は常に Paint dirty（`ChangeKind.Color` 相当）で済み、ホバーで Layout が走ることは構造的に起こらない。
 
@@ -1731,7 +1836,7 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
 - **計測の呼び方:** layout は、`UiNode.Text` が null でない葉を文字の葉として、`MeasureFunc` と `IntrinsicWidthsFunc` を通さずに文字の計測を直接呼ぶ。葉ごとに closure を作ると、10,101 個の葉が 10,101 個の closure を持ち、呼ぶたびに間接呼び出しと、handle からのノードの引き直しが入る。Taffy の `compute_layout_with_measure` は計測にノードの文脈を渡す （Taffy v0.15.1 の `taffy_tree.rs` 971〜978 行目、`MeasureFunction` は `NodeId` と `Option<&mut NodeContext>` を受け取る）。Flutter の `RenderParagraph` も、自分の `performLayout` の中で `TextPainter` を測る（Flutter 3.47.8 の `paragraph.dart` 900〜904・956〜966 行目）。利用者が書く計測関数は、今のまま `MeasureFunc` と `IntrinsicWidthsFunc` で受ける。文字の葉は内容の幅を返す葉として扱うので、L5 の「親で止める」が効く。Debug のビルドの内容の幅と計測の突き合わせ（L4）も、文字の葉に同じく掛ける
 - **文字の葉の状態は参照 1 つ:** `UiNode` は `TextLeaf?` を 1 つ持つ（8 バイト）。V1a の前の設計の `TextState` の struct（§2.5 にあった）をそのまま埋め込むと、参照 3 つ（24 バイト）、長さと詰め物（8 バイト）、`TextStyle`（約 40 バイト）で、文字の葉でないノードも約 72 バイト大きくなる。Flutter の `RenderParagraph` も、文字を持つ箱だけが文字の状態を持つ
 - **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
-- **内容を書く:** `SetText` は `TextLeaf.SetContent` で `Buffer` に写す。前と同じ内容（`SequenceEqual`）なら何もしない。違えば `Shaped` と `LineBreaks` を捨て、ノードを layout の dirty にする。§2.4 のプロパティの記述子の `Setter` は `SetContent` を呼び、dirty の印は記述子の `ChangeKind` が付ける。`SetTextStyle` も、前と等しいなら何もしない。`TextBuilder` の比べ方（ロードマップの V1 の未決の 1 点）は、公開 API の行 V1d でこの上に作る
+- **内容を書く:** `SetText` は `TextLeaf.SetContent` で `Buffer` に写す。前と同じ内容（`SequenceEqual`）なら何もしない。違えば `Shaped` と `LineBreaks` を捨て、ノードを layout の dirty にする。§2.4 のプロパティの記述子の `Setter` は `SetContent` を呼び、dirty の印は記述子の `ChangeKind` が付ける。`SetTextStyle` も、前と等しいなら何もしない。`TextBuilder` の比べ方（ロードマップの V1 の未決の 1 点）は、V1d でこの上に作った（§2.13「部品の API」の「`TextBuilder` の 2 点」）
 - **キャッシュ:** `ShapedTextCache` は `ShapingResult` を 1 つ持つ（フォントの run、整形、改行の候補、内容の幅）。内容かスタイルが変わると捨てる。`LineBreakCache` は幅を鍵に 4 つまで持ち、1 つが `LineBreakResult`（Pass1）・`LineLayoutResult`（Pass2）・行の高さの合計を持つ。Pass2 は緊急ブレークで行を増やすことがあるので（§4.1）、高さは Pass2 の後で決まり、Pass2 の結果まで持つ。高さは文字の葉の結果に効かないので、鍵は幅だけ（`MinContent` と `MaxContent` は最小と最大の内容の幅に置き換えてから引く）。min-content と max-content の幅は `ShapingResult.IntrinsicWidths` を整形の結果と一緒に持ち、高さに依存しない（`DependsOnHeight` は false）。項目は使い回し、配列は足りないときだけ広げる。キャッシュが当たったときも、外れて項目を使い回すときも、定常状態の割り当ては 0
 - **メモリ:** 配列は、葉を初めて測るときに、内容が要る大きさで確保する。T1b の `ShapingResult` は、作った時点で 64 文字・64 グリフなどの配列を確保していた（約 2.5 KB。PR #297 のレビュー）。V1a ではこれをやめる。空の葉と、まだ測っていない葉は配列を持たない。広げるときは、要る大きさと今の 2 倍の大きいほうにする（今の `Ensure`）。そのため、葉が持つ配列は、それまでで最も長い内容の 2 倍に収まる。行の境界の整形のやり直しに使う作業用の配列（T1b の `ShapingResult` の `_scratch`）は葉ごとに持たず、`TextShaper` に 1 つ持つ（`TextContext` の shaper を、UI スレッドのすべての葉が使う）。初めて測った葉 1 つの配列の中身は、次のとおりである。記号は、文字数（UTF-16）を n、グリフ数を g、改行の候補の数を b、フォントの run の数を r、行数を L、幅の項目の数を e とする
   - 整形の結果: 10n + 8 + 25g + 8b + 32r バイト。内訳は、文字 2n、位置 4(n + 1)、文字からグリフへの対応 4(n + 1)、グリフ 24g（`LaidGlyph`）、切ると危ない印 g、改行の候補 8b、run 24r、倍率 4r、ハイフンの幅 4r
@@ -1747,6 +1852,24 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
 - **Debug の突き合わせ:** L4 の内容の幅と計測の突き合わせは、文字の葉では `TextContext` の作業用の項目に折り返し、葉のキャッシュに触れない。キャッシュで測ると、layout が尋ねない min-content の幅の項目が葉に増え、Debug と Release で葉のメモリが変わった
 - **確かめ方:** fontTools で求めた期待値（T1b と同じ同梱のフォント）で、1 行と複数行の高さとベースライン、フォールバックの run が混ざる行、倍率の指定、空の内容と空の行（強制改行の続き）、同じ内容の `SetText` が dirty にしないこと、確定した幅の項目が上書きされないこと、内容の幅と計測の一致を確かめる
 - **受け入れ:** §11.3 の 10,101 個の文字の葉のリサイズを、本物の文字の葉（`benchmarks/XylemUI.E2E` の `resize-text`）で測り、キャッシュが当たったとき 2.0 ms 以下。判定は、5 回の実行の中央値を並べた真ん中の値で行う（PR #301 のレビューでオーナーが決定。機械の負荷で 1 回だけ外れる値を判定から外すため）。外れたとき（幅ごとに初めて折り返す）の値も報告する。外れたときを予算に収める案は、行 M1b で比べる相手と比べて決める（同じレビューでオーナーが決定）。キャッシュが当たったときと、外れて項目を使い回すときの割り当ては 0（割り当て 0 のテスト）。T1b のレビュー（PR #293）で約束した 2 つも測る: 絵文字の整形にかかる時間を run の数ごとに、S8b の日本語の画面の折り返しの時間を、改行の候補の列挙（`segment`）と同じ表に。文字の葉 1 つの確保は、割り当てのテストで、上の「メモリ」の式の値に、配列 1 つあたり 32 バイトとオブジェクト 1 つあたり 64 バイトの頭を足した値以下であること。テストの内容は、n・g・b・r・L・e を数えられるものにする。`resize-text` の 10,101 個の葉が持つ管理ヒープの大きさも報告する。1 万の日本語テキストノードのメモリを Flutter・Avalonia・GPUI と比べるのは、行 M1b である
+
+**描く関数から折り返した文字を使う（V1d の Grill、T1b で送った点）:** 利用者は `TextLayout` を持ち、描く関数（§5.0）の中で `DrawingContext` に整形・折り返しと描画を頼む。中は文字の葉と同じ 2 段のキャッシュ（`ShapedTextCache` と `LineBreakCache`）で、同じ内容・同じスタイル・同じ幅では割り当てない。
+
+```csharp
+public sealed class TextLayout
+{
+    public TextLayout(string text, TextStyle style);   // TextStyle.Validate と同じ検査（範囲の外は ArgumentOutOfRangeException）
+    public void SetText(ReadOnlySpan<char> text);      // 前と同じ内容なら何もしない
+    public void SetStyle(TextStyle style);
+}
+
+// DrawingContext に足す
+public Size LayoutText(TextLayout layout, float maxWidth);           // 整形と、最大の幅での折り返し。行の箱の大きさを返す
+public void DrawText(TextLayout layout, float x, float y, Color color);  // 直前の LayoutText の行を、(x, y) を左上として描く
+```
+
+- `LayoutText` は、木の `TextContext`（§3.2「文字の葉」）で整形する。木が `TextContext` を持たなければ `InvalidOperationException`。`DrawText` の前に `LayoutText` が呼ばれていなければ `InvalidOperationException`
+- 比べた 3 つと同じ形である。Flutter は `TextPainter` を `layout(maxWidth:)` で折り返して `paint(canvas, offset)` で描く（`painting/text_painter.dart` 1221・1322 行目）。Avalonia は `TextLayout(..., maxWidth)` を作って `Draw(DrawingContext, Point)` で描く（`Avalonia.Base/Media/TextFormatting/TextLayout.cs` 41〜58・295 行目）。GPUI は `shape_text(..., wrap_width, ...)` で `WrappedLine` を得て `paint` で描く（`gpui/src/text_system.rs` 747〜757 行目、`gpui/src/text_system/line.rs` 460〜468 行目）
 
 ### 3.3 Grid実装のカバー範囲（決着）
 
@@ -1926,7 +2049,7 @@ internal sealed record LineLayoutResult(GlyphRun[][] Lines);          // 行ご�
 - **折り返し:** 改行の候補のうち、行に収まる最後のものを先頭から詰めて選ぶ（Avalonia の `PerformTextWrapping`、skparagraph の `TextWrapper`）。行末の空白（UAX#14 の SP と、強制改行の文字）は幅に入れず、行の外にはみ出させる（T1b で実装した）。強制改行は、UAX#14 の LB4・LB5 が決めるもの（BK の VT・FF・U+2028・U+2029、CR、LF、NL。CR LF は 1 つの改行）。1 語が行より広いときは、書記素の境界で切る（Avalonia の `Wrap`、skparagraph はクラスタの境界）。CSS の `overflow-wrap: normal` のように切らずにはみ出す形は採らない
 - **幅の比べの許容:** 行が幅に収まるかの比べには、1/64 px の許容を入れる。入れるのは、Pass1・Pass2・緊急ブレークの比べと、文字の葉が幅を最大の内容の幅と比べる所（§3.2「文字の葉」）である。Pass1 は行の幅を累積の位置の差で、Pass2 は行の先頭からの和で求めるので、小数の大きさでは最後の桁が違うことがある。T1b のレビューで、自分の最大の幅で折り返すと、いちばん広い行が Pass2 で切られることが分かった（PR #293）。また、余白のある文字の葉に layout から返る幅は、余白を足して引いた値で、行の幅より 1 ulp 小さいことがある。V1a のレビューで、そうした葉が最大の内容の幅で折り返されることが分かった（PR #301）。13 px でカーニングが外れる差は 0.5 px 以上なので、本当に溢れる行は許容の外にある。Pass2 の比べは許容の 2 倍をとる。Pass1 が許容のぎりぎりで受け入れた行を、Pass2 が最後の桁だけ大きく測って切らないためである（PR #301 の再レビュー）
 - **内容の幅:** 最小は、改行の候補の間の並びのうち、行末の空白を除いて最も広いもの（skparagraph の `TextWrapper.cpp` 223〜241 行目と同じ）。最大は、強制改行の間の行のうち、行末の空白を除いて最も広いもの。skparagraph は最大に行末の空白を含めるが、CSS では折り返す空白は行末で幅に入らない
-- **折り返しの API（T1b の Grill でオーナーが決定、Issue #288）:** 下の `ShapingResult`・`LineBreakResult`・`LineLayoutResult` は内部の型のままにし、`XylemUI.Text` から Core に `InternalsVisibleTo` で見せる。比べた 3 つ（Flutter の `Paragraph`・`TextPainter`、Avalonia の `TextLayout`、GPUI の `WrappedLineLayout`）はどれも公開だが、使う側（`Text` の部品）が決まる前に公開の約束を作らない。利用者が自分で描く関数（`DrawingContext`）から折り返した文字を使う公開の API は、部品の API を決める行 V1d で決める。3 つとも 1 回整形した結果を持ち、幅ごとに折り返しだけをやり直す（skparagraph の `ParagraphImpl.cpp` 153〜155 行目、Avalonia の `TextRunCache.cs` 8〜17 行目、GPUI の `line_layout.rs` 602〜665 行目）。§3.2 の 2 段のキャッシュと同じ形である
+- **折り返しの API（T1b の Grill でオーナーが決定、Issue #288）:** 下の `ShapingResult`・`LineBreakResult`・`LineLayoutResult` は内部の型のままにし、`XylemUI.Text` から Core に `InternalsVisibleTo` で見せる。比べた 3 つ（Flutter の `Paragraph`・`TextPainter`、Avalonia の `TextLayout`、GPUI の `WrappedLineLayout`）はどれも公開だが、使う側（`Text` の部品）が決まる前に公開の約束を作らない。利用者が自分で描く関数（`DrawingContext`）から折り返した文字を使う公開の API は、V1d で `TextLayout` にした（§3.2「描く関数から折り返した文字を使う」）。3 つとも 1 回整形した結果を持ち、幅ごとに折り返しだけをやり直す（skparagraph の `ParagraphImpl.cpp` 153〜155 行目、Avalonia の `TextRunCache.cs` 8〜17 行目、GPUI の `line_layout.rs` 602〜665 行目）。§3.2 の 2 段のキャッシュと同じ形である
 - **切ると危ない印:** 公開の `ShapedGlyph` に `UnsafeToBreak`（HarfBuzz の `HB_GLYPH_FLAG_UNSAFE_TO_BREAK`）を足し、Pass2 はこの印で整形し直す範囲を決める。比べた 3 つは、行の境界で整形し直すことにこの印を使わない（Pass2 が無い）。Avalonia（`GlyphInfo.cs` 8〜34 行目）と GPUI（`line_layout.rs` 45〜57 行目）は印を持たない。Skia の `SkShaper` は、自分の折り返し（`ShaperDrivenWrapper::wrap`）で、印のないクラスタの先頭を、整形の結果を使い回せる切れ目として記録するために読む（`modules/skshaper/src/SkShaper_harfbuzz.cpp` 970・1563 行目、skia fae1d2bd）。skparagraph は文を 1 本の行に整形してから自分で折り返すので（`ParagraphImpl.cpp` 681〜697 行目）、この折り返しを通らない
 - **ソフトハイフン:** 改行した行の末尾のソフトハイフン（U+00AD）は、既定で描く。描く文字は U+002D（skparagraph の既定の文字と同じ、`ParagraphStyle.h` 166〜167 行目）で、行の末尾のクラスタと同じフォントで整形し直す。行に収まるかの判定にハイフンの幅を入れる。ハイフンを足すと収まらないソフトハイフンは、収まらない候補として扱い、手前の候補（空白や手前のソフトハイフン）を選ぶ。緊急ブレークに入るのは、行に収まる候補が 1 つも無いとき（語が行より広いとき）だけである。改行しなかったソフトハイフン（行の途中、段落の終わり、空白の前）は描かず、幅は 0 である。U+002D のほかの文字（言語によるハイフンの字形、フォントにハイフンの字が無い場合）は、要る理由が出たら行を立てる。skparagraph は既定で描かず、オンにしても判定にハイフンの幅を入れないので、行の幅を超えることがある（`TextLine.cpp` 672〜705 行目）。Avalonia と GPUI は描かない
 - **確かめ方:** 適合のテストに加えて、端の場合として、LB4・LB5 の強制改行のそれぞれ、行末の空白、ソフトハイフン（改行した行だけでハイフンが出る）、行より広い語、緊急ブレークの後に Pass2 で溢れる場合、絵文字の ZWJ の並びと異体字セレクタを切らないこと、フォールバックの境界の切り直しを入れる。費用は、改行の候補の列挙の 1 文字の ns と、S8b の日本語の画面の折り返しの時間を測る。定常状態の割り当ては 0
@@ -2429,7 +2552,7 @@ public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
   - **確かめ方:** 点を 1 つずつ当て、CPU で計算した描画の覆い（0.5 以上）と一致する。覆いは、ノードの形とそれぞれのクリップについて別々に見る（距離が 0 以下）。画素の色は覆いの積なので、形の縁とクリップの縁が同じ画素を通る所では、色と当たりが半画素ほど違うことがある（R4e の実装で決めた）。端の場合として、角丸の角のすぐ外、回転した角丸のクリップの中、上限を超えた入れ子のクリップ（層）の中、拡大率 0 の変換の中（何も当たらない）、重なったノードの手前と奥を入れる。費用は、下の R4c・R4d の「確かめ方」の場面（ヒット領域も無い）に加えて、項目を書く費用（1 項目の ns）と 1,000 項目の判定の時間を測る。どれも割り当て 0。R4e の実装では、1 項目を書くのが約 21 ns（矩形 1 つは約 9 ns。項目が 56 バイトあり、半径を確かめて縮めるため）、1,000 項目の判定はスコープの外で約 9 µs、回転と角丸のクリップの中で約 39 µs だった（`docs/benchmarks/r4e-hits.md`）
 - **確かめ方:** WARP の画素を CPU の基準と比べる（R4a・R4b と同じ）。仕様の端の場合として、重なる子と重ならない子のグループ、入れ子のグループ、文字の入ったグループ、描き先の外へ大きく出る層と描き先の外だけにある層、プールの上限で作れない層、NaN と範囲外の不透明度、変換の中のクリップの辺と子の矩形の辺、上限を超える入れ子の角丸のクリップ、回転した変換の中の角丸のクリップとグリフ、整数と端数の平行移動の中の ClearType を入れる。費用は、層・クリップ・変換の無い場面（`frames`・`frames --shapes`・`frames --curves`）が main とばらつきの範囲で同じであることを確かめる
 
-**描画の段とフレームの駆動（V1b の Grill でオーナーが決定、Issue #308）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。木をたどって表示リストを作る段と、フレームを頼んで回す型を足す。型はすべて internal で、公開の API は行 V1d で決める。
+**描画の段とフレームの駆動（V1b の Grill でオーナーが決定、Issue #308）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。木をたどって表示リストを作る段と、フレームを頼んで回す型を足す。型は V1b で internal として入れた。V1d で、描く関数（`DrawFunc`）と `Rect` を公開し、ノードの見た目は `Element` のメソッドチェーンで書く形にした（§2.13「部品の API」）。
 
 ```csharp
 // 箱の見た目と描く関数。持つノードだけが UiNode.Visual に参照を持つ（見た目の無いノードは null）。
@@ -2500,14 +2623,15 @@ internal sealed class WindowFrames
 - **座標:** 描画の段は、根から木を上にたどる順に下りながら、親の原点に `LayoutState.Rect` の位置を足していき、絶対座標の箱を作る。描く関数にはその箱を渡す。GPUI も絶対座標の箱を渡す（`window.rs` 5285〜5286 行目）。Flutter は親から積み上げた原点を渡し（`box.dart` 3390 行目）、Avalonia は自分の座標で描いて、合成の段で原点を足す（`Visual.Composition.cs` 137 行目）。表示リストの命令とヒット領域は、もう絶対座標の論理座標で受け取る（R4e）ので、同じ座標をそのまま渡す
 - **描く順:** 1 つのノードの中では、影（`DrawShadow`）、背景と枠線（`FillRect` の 1 つの命令、R4a）、描く関数、子の順。ノードどうしは木の順（親が先、子は並びのとおり）。枠線を子より先に描くのは、Flutter（`box_decoration.dart` 571〜582 行目）・Avalonia（`ServerCompositionVisual.Render.cs` 165 行目で自分の命令を子より先に描く）と CSS で、GPUI は子の後に描く（`style.rs` 742〜753 行目）。z-index は持たない。Flutter は子の並びのとおり（`stack.dart` 712〜713 行目）、Avalonia は `ZIndex`（`Visual.Composition.cs` 51〜61 行目）、GPUI は `defer_draw` の優先度（`window.rs` 4504 行目）。前面に出す仕組みは、ポップアップの行 P02 で、前面のノードが後ろを遮る場面と一緒に決める。子を箱で切る処理は、overflow の行 V2 まで行わない（CSS の既定は visible）
 - **文字の葉:** layout で確定した幅の項目（§3.2 の `LineBreakCache.Committed`）の行を、表示リストに描く。`LaidGlyph`（論理ピクセルの幅とずれ、run の番号）の行を描く命令を、`DisplayList` に internal で足す。行のベースラインは、計測と同じ行の高さの関数（§3.2「行の高さ」）で求める。色は、解決した後の文字の色（下の「不透明度・変換・擬似状態」の「文字の色」）。比べた 3 つも、layout の結果をそのまま描く（Flutter の `TextPainter.paint`、`text_painter.dart` 1322〜1358 行目。Avalonia の `TextLayout.Draw`、`TextLayout.cs` 295〜307 行目。GPUI の `WrappedLine::paint`、`text_system/line.rs` 460 行目）
+- **描く関数の例外（V1d の Grill、PR #313 で送った点）:** 描く段は、利用者の描く関数の呼び出しを囲む。投げた例外は `ReactiveRuntime.UnhandledExceptionHandler` に渡し、関数が開いたスコープ（`PushOpacity`・`PushClip`・`PushTransform`）を呼ぶ前の深さまで閉じてから、そのノードの文字の葉と子、兄弟を描き続け、フレームを Present する。表示リストに、スコープの深さを読む口と、その深さまで閉じる口（internal）を足す。V1d の前は、印を消した後に表示リストが途中で終わり、Present しなかった。Flutter は描画の例外を `FlutterError.reportError` で報告して、親が兄弟を描き続け、フレームを出す（`rendering/object.dart` 3579〜3585 行目、`PaintingContext.paintChild` 249〜267 行目。`CustomPainter` の `canvas.save()` は戻さない、`rendering/custom_paint.dart` 583〜593 行目）。Avalonia は、`Dispatcher.UnhandledException` を受ける人がいなければアプリを落とす（`Avalonia.Base/Threading/DispatcherOperation.cs` 290〜317 行目、`Dispatcher.Exceptions.cs` 49〜133 行目）。GPUI は描く関数の panic を捕まえない（`gpui/src/elements/canvas.rs` 74〜88 行目）
 - **`Hidden`:** 描画の段は、`LayoutStyle.Hidden` のノードを部分木ごと飛ばす。ヒット領域は描画と一緒に書く（R4e）ので、当たりも同時に消える。Avalonia の `IsVisible`（`ServerCompositionVisual.Render.cs` 61 行目）、GPUI の `display: none`（`div.rs` 2084 行目）、Flutter の `Offstage`（`proxy_box.dart` 3939〜3943 行目）と同じ
 - **不透明度・変換・擬似状態（V1c の Grill でオーナーが決定、Issue #318）:** 描画の段は、1 つのノードで次の順に進む
   1. `Hidden` なら部分木ごと飛ばす（上の「`Hidden`」）
   2. 見た目を解決する。`NodeVisual` の基本の値に、Hovered のフラグ（§7「ポインタの入力」）が立っていれば `States.Hovered` の `PaintStyle` を、Pressed が立っていれば `States.Pressed` を、この順に重ねる。`PaintStyle` の値が `null` の欄は下の値のまま、値のある欄は置き換える。`Transform` も掛け合わせずに置き換える。Avalonia のスタイルの setter は値を置き換え（`:pointerover` などの擬似クラスは `Avalonia.Base/Input/InputElement.cs` 980〜982・1069〜1072 行目で立つ）、GPUI の `hover` と `active` もスタイルを上書きする（`gpui/src/elements/div.rs` 844〜860・1565〜1580 行目）
   3. 変換があれば `PushTransform` で部分木（影・箱・ヒット領域・描く関数・文字・子）を包む。原点はノードの境界の箱の中心で、絶対座標の中心を `c` として、`Matrix3x2.CreateTranslation(-c) * transform * Matrix3x2.CreateTranslation(c)` を積む（System.Numerics の行ベクトルの順）。Avalonia の `RenderTransformOrigin` の既定は中心で（`Avalonia.Base/Visual.cs` 64〜101 行目、`Visual.Composition.cs` 137〜169 行目で `-origin · RenderTransform · origin`）、CSS の `transform-origin` の既定も中心である。Flutter の `RenderTransform` は、`origin` も `alignment` も渡さなければ変換をそのまま使うので、左上が原点になる（`rendering/proxy_box.dart` 2689〜2692 行目）。GPUI は要素の変換を持たない（`Svg::with_transformation` は描画だけを変え、ヒットボックスもレイアウトも変えない、`gpui/src/elements/svg.rs` 64〜69 行目）
-  4. 不透明度が 1 より小さければ、`PushOpacity` で部分木を包む（R4c のグループ。1 なら包まず、層も作らない）。0 なら、部分木の命令を描かず、ヒット領域だけを書いて部分木をたどる。利用者の描く関数は呼ばないので、描く関数が自分で書くヒット領域（`DrawingContext.HitRegion`）も書かれない。描く関数は命令とヒット領域を同じ呼び出しで書き、命令だけを捨てる口は無い（`DrawText` は描いた幅を返す）。描く関数を公開する行 V1d で見直す（V1c の実装で決め、PR #327 のレビューでオーナーが承認した）。Flutter は不透明度 0 で子を描かないが、当たりは残る（`rendering/proxy_box.dart` 872〜941 行目は `hitTest` を上書きしない）。Avalonia もヒットテストで不透明度を見ない（`Rendering/Composition/CompositionTarget.cs` 122 行目は `Visible` だけを見る）
+  4. 不透明度が 1 より小さければ、`PushOpacity` で部分木を包む（R4c のグループ。1 なら包まず、層も作らない）。0 なら、部分木の命令を描かず、ヒット領域だけを書いて部分木をたどる。利用者の描く関数は呼ばないので、描く関数が自分で書くヒット領域（`DrawingContext.HitRegion`）も書かれない。描く関数は命令とヒット領域を同じ呼び出しで書き、命令だけを捨てる口は無い（`DrawText` は描いた幅を返す）。描く関数を公開する行 V1d で見直した（V1c の実装で決め、PR #327 のレビューでオーナーが承認した）。V1d の Grill で、今の形のままにすると決めた。命令だけを捨てる口は、表示リストのすべての書く関数に分岐が入るので入れない。Flutter は不透明度 0 で子を描かないが、当たりは残る（`rendering/proxy_box.dart` 872〜941 行目は `hitTest` を上書きしない）。Avalonia もヒットテストで不透明度を見ない（`Rendering/Composition/CompositionTarget.cs` 122 行目は `Visible` だけを見る）
   5. 影、背景と枠線、ヒット領域、描く関数、文字の葉の行、子の順に描く。ヒット領域は、`NodeInput` がハンドラ・カーソル・`BlocksPointer` のどれかを持つか、`NodeVisual.States` が `Hovered` か `Pressed` の `PaintStyle` を持つノードだけが、境界の箱と角の半径（解決した後の値）で書く（§7「ポインタの入力」）。描く関数が自分で書くヒット領域（`DrawingContext.HitRegion`）は、その後に続く。子の領域は親より後に書くので、親より前面になる
-- **文字の色:** 文字の葉は、自分の色（`TextLeaf.Color`）があればそれで描き、無ければ、自分の解決した後の文字の色で描く。ノードの解決した後の文字の色は、自分の解決した後の `Foreground`（状態の `PaintStyle` を重ねた後）があればそれ、無ければ親の解決した後の文字の色である。文字の葉の自分の色は `TextLeaf` に持ち、`NodeVisual` を作らない。一覧の 1 万行のように、行ごとに色を付けた文字の葉も、`NodeVisual`（V1c の後で約 170 バイト。V1b の欄の見積もり 104 に、上の 48 と、オブジェクトの頭の 16）を持たずに済む（PR #319 のレビュー）。根の親の値は黒（`Color.FromRgb(0x000000)`。V1b の `TextLeaf.Color` の既定と、Avalonia の `Foreground` の既定 `Brushes.Black` と同じ）。描画の段は、木を下りながらこの色を引数で渡す。比べた 3 つとも、文字の色は親から子へ受け継がれる（Avalonia の `TextElement.ForegroundProperty` は `inherits: true`、`Avalonia.Controls/Documents/TextElement.cs` 73〜77 行目。GPUI の `text_color` は文字のスタイルとして子へ流れる、`gpui/src/elements/div.rs` 2386 行目の `with_text_style`。Flutter の `Text` は `DefaultTextStyle.of(context)` に自分のスタイルを重ねる、`widgets/text.dart` 717〜721 行目）。そのため、ボタンの Hovered の `Foreground` は、自分の色を持たない子の文字に効く。子の背景などを親の状態で変える形（GPUI の `group_hover`、`div.rs` 844〜860 行目）は、部品の API を決める行 V1d で決める
+- **文字の色:** 文字の葉は、自分の色（`TextLeaf.Color`）があればそれで描き、無ければ、自分の解決した後の文字の色で描く。ノードの解決した後の文字の色は、自分の解決した後の `Foreground`（状態の `PaintStyle` を重ねた後）があればそれ、無ければ親の解決した後の文字の色である。文字の葉の自分の色は `TextLeaf` に持ち、`NodeVisual` を作らない。一覧の 1 万行のように、行ごとに色を付けた文字の葉も、`NodeVisual`（V1c の後で約 170 バイト。V1b の欄の見積もり 104 に、上の 48 と、オブジェクトの頭の 16）を持たずに済む（PR #319 のレビュー）。根の親の値は黒（`Color.FromRgb(0x000000)`。V1b の `TextLeaf.Color` の既定と、Avalonia の `Foreground` の既定 `Brushes.Black` と同じ）。描画の段は、木を下りながらこの色を引数で渡す。比べた 3 つとも、文字の色は親から子へ受け継がれる（Avalonia の `TextElement.ForegroundProperty` は `inherits: true`、`Avalonia.Controls/Documents/TextElement.cs` 73〜77 行目。GPUI の `text_color` は文字のスタイルとして子へ流れる、`gpui/src/elements/div.rs` 2386 行目の `with_text_style`。Flutter の `Text` は `DefaultTextStyle.of(context)` に自分のスタイルを重ねる、`widgets/text.dart` 717〜721 行目）。そのため、ボタンの Hovered の `Foreground` は、自分の色を持たない子の文字に効く。子の背景などを親の状態で変える形（GPUI の `group_hover`、`div.rs` 844〜860 行目）は、テーマの部品が要る行 G1 で決める（V1d の Grill。V1 は文字の色の受け継ぎで足りる。Flutter のボタンも、子の文字の色を `DefaultTextStyle` で変える、`material/button_style_button.dart` 601 行目）
 - **setter の検査:** `SetOpacity` と、`PaintStyle` の `Opacity` は、0〜1 の数でなければ `ArgumentOutOfRangeException`（`PushOpacity` と同じ範囲）。`SetTransform` と `PaintStyle` の `Transform` は、要素が有限の数でなければ同じ例外（`PushTransform` と同じ）。描画の段では投げないように、受け取るときに確かめる。どの setter も、前と等しい値なら何もせず、違えば `ChangeKind.Color` で表示リストとヒット領域を作り直す。どちらもレイアウトを変えない（§2.13）
 - **大きさ:** `UiNode` は `NodeInput?` の参照（8 バイト）と `PseudoState`（1 バイト）が増える。V1b の 560 バイトから、詰め物を含めて 576 バイト以下であることをテストで確かめる（`Unsafe.SizeOf<UiNode>()`）。`NodeVisual` は約 48 バイト大きくなる（見積もり: 不透明度 4、変換の `Matrix3x2?` 28、文字の色の `Color?` 8、`PseudoStyles` への参照 8）。見た目を持つノードだけが払う。Hovered と Pressed の値は `PseudoStyles` に分け、`SetHoveredStyle` か `SetPressedStyle` を呼んだノードだけが持つ。1 つ約 200 バイト（`PaintStyle?` 2 つで 1 つ約 100。`PaintStyle` は `Paint?` 24 が 2 つ、`Color?` 8、`float?` 8、`Matrix3x2?` 28 の 92 バイトに、詰め物と null の印が付く）。`NodeVisual` に直接持つと、背景を持つだけのノード（一覧の 1 万行など）も約 200 バイトずつ払い、1 万ノードで約 2 MB になる（PR #319 のレビュー）。大きさは実装で測り、テストで上限を確かめる。struct の `UiNode` と `PaintStyle` は `Unsafe.SizeOf` で、class の `NodeVisual` と `PseudoStyles` は 1 つ作ったときの割り当ての増え（`GC.GetAllocatedBytesForCurrentThread`）で測る。class に `Unsafe.SizeOf` を使うと、参照の 8 バイトが返るためである。`NodeInput` は、ハンドラ 1 つにつき一覧の 1 項目（種類・フェーズ・参照）と、デリゲートの実体を持つ
 - **フレームの合図を戻す時機:** `UiTree.ClearFrameRequest` は、手順 1 の layout の pass の後に呼ぶ。pass が例外の後に戻した要求と、pass の回数の上限で残った要求は、それだけではフレームを頼まず、ほかの何かが頼んだ次のフレームで試す（§2.4.1 の「次の pass で試す」）。pass の前に戻すと、計測が投げ続ける葉が、毎フレーム描いて Present させ続ける（PR #313 のレビュー）。`WindowFrames.Resize` は、自分が今流すフレームのほかには、フレームを頼まない
@@ -3083,7 +3207,7 @@ Widget event（capture/bubbleでコンポーネントに配送）
 
 **ポインタキャプチャとモーダル境界の優先順位**: §7.2の`IsModal`なスコープは「スコープ外へのフォーカス移動・イベント到達を遮断する」が、これとポインタキャプチャが衝突するケースを定める。モーダルダイアログ内のスライダーをドラッグしたまま、マウスがダイアログ矩形の外（あるいはウィンドウ外）まで大きく移動した場合、遮断ルールが優先されるとポインタ移動イベントがキャプチャ先に届かなくなり、`PointerUp`まで取りこぼしてドラッグ状態が解除不能になるという典型的なUIバグが発生する。**明確な優先規約: アクティブなポインタキャプチャは、モーダル境界による遮断より常に優先される。** キャプチャ中のポインタ対象ノードがモーダルスコープ内部に属している限り、グローバルなポインタ移動および`PointerUp`は、モーダル境界の内外を問わず常にキャプチャ先へバイパス配送する。この例外規約はイベントルーティングパイプライン（§7.2の captureフェーズ処理）に組み込む。
 
-**ポインタの入力（V1c の Grill でオーナーが決定、Issue #318）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。GPUI の Windows の層は、この版で `gpui_windows` の crate に移っている。型はすべて internal で、公開の API（§8.9 の `Element.On`）は行 V1d で決める。
+**ポインタの入力（V1c の Grill でオーナーが決定、Issue #318）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。GPUI の Windows の層は、この版で `gpui_windows` の crate に移っている。型は V1c で internal として入れ、V1d で `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開した（§2.13「部品の API」、V1d の Grill）。`PointerInput`・`IPointerPlatform`・`WindowInput`・`NodeInput` は internal のまま。
 
 ```csharp
 // Platform が正規化して Core に渡す 1 つの入力（上の図の PlatformInput）
@@ -3167,7 +3291,7 @@ internal sealed class WindowInput
   - 修飾キーは、Control と Shift を `wParam` の `MK_CONTROL`・`MK_SHIFT` から読み、`wParam` に無い Alt を `GetKeyState(VK_MENU)` から読む（PR #319 のレビュー）
   - ホイール（`WM_MOUSEWHEEL`）は、スクロールの意味を決める行 V2 で入れる。それまでは `DefWindowProc` に渡す
 - **イベントの種類:** Down・Up・Move・Cancel・Click は経路で配る。Enter と Leave は、ホバーの集合に入ったノードと出たノードに 1 回ずつ送る直接のイベントで、伝播しない。直接のイベントは、登録したフェーズによらず、そのノードのハンドラだけを呼ぶ。Avalonia の `PointerEntered`・`PointerExited` は Direct で（`Avalonia.Base/Input/InputElement.cs` 107〜219 行目）、Flutter の Enter と Exit は MouseTracker が注釈ごとに作る（`gestures/mouse_tracker.dart` 399〜428 行目）。Cancel は、キャプチャを奪われたときに送る（Avalonia の `PointerCaptureLost`、Flutter の `PointerCancelEvent`）
-- **座標:** ヒットテストは物理画素の座標のまま試す（§5.0「ヒット領域と `DrawingContext`」の「座標」）。`Position` は物理画素を `WindowFrames` の倍率で割った論理座標で、Avalonia（`WindowImpl.AppWndProc.cs` 1398〜1401 行目の `DipFromLParam`）・GPUI（`gpui_windows/src/util.rs` 151〜156 行目の `logical_point`）・Flutter（`gestures/converter.dart` 62〜80 行目）と同じく、画素の中心に寄せない。`LocalPosition` は、ハンドラのノードのヒット領域の項目の状態の変換の逆で `Position` を戻し、ノードの境界の箱の左上を引いた値である。ハンドラを持つノードは必ずヒット領域を書く（§5.0）ので、項目はある。Flutter は `localPosition`（`gestures/events.dart` 326 行目）、Avalonia は `GetPosition(relativeTo)`（`Avalonia.Base/Input/PointerEventArgs.cs` 86〜114 行目）を持つ。GPUI はウィンドウの座標だけを渡す
+- **座標:** ヒットテストは物理画素の座標のまま試す（§5.0「ヒット領域と `DrawingContext`」の「座標」）。`Position` は物理画素を `WindowFrames` の倍率で割った論理座標で、Avalonia（`WindowImpl.AppWndProc.cs` 1398〜1401 行目の `DipFromLParam`）・GPUI（`gpui_windows/src/util.rs` 151〜156 行目の `logical_point`）・Flutter（`gestures/converter.dart` 62〜80 行目）と同じく、画素の中心に寄せない。`LocalPosition` は、ハンドラのノードのヒット領域の項目の状態の変換の逆で `Position` を戻し、ノードの境界の箱の左上を引いた値である。ハンドラを持つノードは必ずヒット領域を書く（§5.0）ので、項目はある。ただし、直近のフレームでヒット領域を書かなかったノード（そのフレームで外されたノードへの Leave など）では、`LocalPosition` は NaN になる。公開の API の XML ドキュメントにそう書く（V1d の Grill）。Flutter は `localPosition`（`gestures/events.dart` 326 行目）、Avalonia は `GetPosition(relativeTo)`（`Avalonia.Base/Input/PointerEventArgs.cs` 86〜114 行目）を持つ。GPUI はウィンドウの座標だけを渡す
 - **届ける時機:** `Handle` は、ウィンドウ手続きがメッセージを受けたその場で、直近に完成した表示リストのヒット領域で試し、ハンドラを呼ぶ。3 つとも同じである（Avalonia の `PresentationSource.Input.cs` 19〜41 行目、GPUI の `gpui/src/window.rs` 2041〜2049 行目、Flutter の `gestures/binding.dart` 302〜311 行目。Flutter のリサンプリングは既定で切ってある、610 行目）。`WM_MOUSEMOVE` の間引きは OS に任せる。1 回の `Handle` の全体（Enter・Leave と、経路の配送）を 1 つの `Batch` で包み、Effect はその後に流れる（§2.2）。ハンドラが変えた木は次のフレームで描かれ、その前に来たイベントは古いヒット領域で試す（§2.10 の「直近完成」）
 - **経路:** 元のノードから木の親をたどって経路を作り、capture のフェーズは根から元へ、bubble のフェーズは元から根へ呼ぶ（§7 の DOM 方式）。経路は使い回す配列に、配送の前に作る。ハンドラがノードを外しても、外されたノードは `TryGet` で飛ばす（§2.5 の「ソフトな文脈」）。`StopPropagation` の後は、同じフェーズの残りも、bubble も呼ばない（GPUI の `gpui/src/window.rs` 5930〜5980 行目で、Capture の中で止めると Bubble も飛ぶ。Avalonia は `Handled` で、`handledEventsToo` のハンドラだけは呼ぶ、`Avalonia.Base/Interactivity/EventRoute.cs` 158〜160 行目）。Flutter は葉から根へ呼ぶだけで、止める仕組みを持たない（`gestures/binding.dart` 497〜534 行目）
 - **ハンドラの例外:** ハンドラが投げた例外は `ReactiveRuntime.UnhandledExceptionHandler` に渡し、経路の次のハンドラへ続ける（§2.2 の Effect と同じ）。ウィンドウ手続きの外へは出さない（§2.11.1）。Flutter は例外を `FlutterError.reportError` で報告して次の項目へ続ける（`gestures/binding.dart` 506〜533 行目の `dispatchEvent`）
@@ -3288,17 +3412,15 @@ Windowsは`DwmExtendFrameIntoClientArea`+`WM_NCHITTEST`、macOSは`titlebarAppea
 ```csharp
 public enum EventPhase { Capture, Bubble }
 
-public readonly partial struct Element
+public static class ElementExtensions
 {
-    public void On<TEvent>(EventType<TEvent> eventType, EventPhase phase, EventHandler<TEvent> handler)
-        where TEvent : struct { ... }
-
-    public void OnClick(EventHandler<PointerEvent> handler)
-        => On(EventTypes.Click, EventPhase.Bubble, handler);
+    public static Element On(this Element e, PointerEventKind kind, EventPhase phase, PointerHandler handler);
+    public static Element OnClick(this Element e, Action handler);   // On(PointerEventKind.Click, EventPhase.Bubble, ...) と同じ
 }
 
-public delegate void EventHandler<TEvent>(in TEvent e) where TEvent : struct;
+public delegate void PointerHandler(in PointerEvent e);
 ```
+V1d の Grill（Issue #335）で、上の形にした。前の形は、ジェネリックの `On<TEvent>(EventType<TEvent>, EventPhase, EventHandler<TEvent>)` と `public delegate void EventHandler<TEvent>(in TEvent e)` だった。`EventHandler<TEvent>` は、implicit usings で見える `System.EventHandler<TEventArgs>` と名前がぶつかるのでやめた。V1 の入力はポインタだけなので、種類は `PointerEventKind` で選ぶ。キーボードのハンドラ（`KeyHandler`）は、行 K1 で同じ形の多重定義として足す。`OnClick` は引数を取らない `Action` で、Flutter の `onPressed: VoidCallback`（`material/button_style_button.dart` 107 行目）と同じ形である。GPUI の `on_click` は `ClickEvent` を受け（`gpui/src/elements/div.rs` 1590 行目）、Avalonia の `Click` は `EventHandler<RoutedEventArgs>` である（`Avalonia.Controls/Button.cs` 123〜128 行目）。イベントの値が要るときは `On(PointerEventKind.Click, ...)` を使う。
 登録は当該ノードの`Scope`（§2.3）にクリーンアップ関数として紐づき、ノード破棄時に自動解除される。C# の `event` キーワード（`+=` / `-=`）は使わない。解除をScope に紐づけられず、フェーズも指定できないためである。
 
 ### 8.10 タッチ/ペン入力の正規化 — §7

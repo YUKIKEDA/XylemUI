@@ -534,6 +534,21 @@ Rejected:
 
 ---
 
+## 部品の API
+
+Decision:
+  部品の関数は引数を取らず、ウィンドウの host が根の関数を呼ぶ間だけ UI スレッドの「今の木」に要素を作る。Core には `Element` と `Box`・`Column`・`Row`・`Text` を置き、`Button` は `XylemUI.Primitives` に見た目の無い部品として置く。Signal とノードは `NodeProperty<T>` と `Bind` の 1 つの経路でつなぐ。描く関数の例外は報告して描き続ける（V1d の Grill、Issue #335）。
+
+Rejected:
+  - 文脈を引数で渡す（Flutter の `BuildContext`、GPUI の `window`・`cx`。§2.13 の引数の無い部品の関数の書き方を変える）
+  - ボタンを Core に置く（§2.9.1 の「Core は部品を持たない」に反する。比べた 3 つも土台の層にボタンを持たない）
+  - 描く関数の例外でアプリを落とす（Avalonia の既定、GPUI。1 つの部品の誤りで画面がすべて止まる）
+  - V1d で `group_hover` の相当を入れる（V1 は文字の色の受け継ぎで足りる。テーマの部品が要る行 G1 で決める）
+  - V1d で Core の公開の境界を作る（行 C0 で、Core の抽出と一緒に決める）
+  - ハンドラの型を `EventHandler<TEvent>` にする（§8.9 の前の形。`System.EventHandler<TEventArgs>` と名前がぶつかる）
+
+---
+
 ## ポップアップ
 
 Decision:
