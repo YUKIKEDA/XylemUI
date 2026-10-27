@@ -12,8 +12,7 @@ internal static partial class LayoutEngine
         OptionalSize parent = input.ParentSize;
         Edges paddingBorder = PaddingBorder(in style, parent.Width);
         Size inset = paddingBorder.Sum();
-        Edges gutter = GutterEdges(in style);
-        Size contentInset = (paddingBorder + gutter).Sum();
+        Size contentInset = style.HasScrollbarGutter ? WithGutter(paddingBorder, in style).Sum() : inset;
         OptionalSize min = MinSize(in style, parent);
         OptionalSize max = MaxSize(in style, parent);
         OptionalSize styleSize = StyleSize(in style, parent);
@@ -74,7 +73,7 @@ internal static partial class LayoutEngine
         );
 
         // Percentage paddings and borders resolve against the containing block's width, or the node's own at the root.
-        Edges resolvedInset = PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth)) + gutter;
+        Edges resolvedInset = WithGutter(PaddingBorder(in style, Maybe.Or(parent.Width, outerWidth)), in style);
         float contentHeight = LayOutBlockChildren(
             tree,
             props,

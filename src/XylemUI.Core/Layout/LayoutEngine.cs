@@ -651,13 +651,19 @@ internal static partial class LayoutEngine
             : size;
     }
 
-    // The scrollbars' room as edges of the content box: the vertical scrollbar's at the right, the horizontal one's at the bottom
-    // (Taffy's scrollbar gutter, left to right).
+    // Edges with the scrollbars' room added inside them: the vertical scrollbar's at the right, the horizontal one's at the bottom
+    // (Taffy's scrollbar gutter, left to right). A style with no room returns the edges as they are: the addition, not inlined
+    // there, took 2.5 % of a width change of row L1a's percent scene (row V2).
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Edges GutterEdges(in LayoutStyle style)
+    private static Edges WithGutter(Edges edges, in LayoutStyle style)
     {
+        if (!style.HasScrollbarGutter)
+        {
+            return edges;
+        }
+
         Size gutter = style.ScrollbarGutter;
-        return new Edges(0, 0, gutter.Width, gutter.Height);
+        return new Edges(edges.Left, edges.Top, edges.Right + gutter.Width, edges.Bottom + gutter.Height);
     }
 
     // The padding and the border, which CSS resolves against the parent's width on every side.

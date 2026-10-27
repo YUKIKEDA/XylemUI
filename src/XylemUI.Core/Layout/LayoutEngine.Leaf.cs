@@ -22,8 +22,12 @@ internal static partial class LayoutEngine
         baseline = float.NaN;
         Edges paddingBorder = PaddingBorder(in style, input.ParentSize.Width);
         Size inset = paddingBorder.Sum();
-        Size gutter = style.ScrollbarGutter;
-        var contentInset = new Size(inset.Width + gutter.Width, inset.Height + gutter.Height);
+        Size contentInset = inset;
+        if (style.HasScrollbarGutter)
+        {
+            Size gutter = style.ScrollbarGutter;
+            contentInset = new Size(inset.Width + gutter.Width, inset.Height + gutter.Height);
+        }
 
         // A content-size run ignores the node's own size styles (CSS Flexbox §4.5, the content size suggestion).
         OptionalSize nodeSize = input.KnownDimensions;

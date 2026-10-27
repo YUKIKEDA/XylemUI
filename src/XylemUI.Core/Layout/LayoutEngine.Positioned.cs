@@ -24,7 +24,7 @@ internal static partial class LayoutEngine
     )
     {
         bool row = constants.Row;
-        Edges border = EdgeInsets.ResolveOrZero(style.Border, parentWidth) + GutterEdges(in style);
+        Edges border = WithGutter(EdgeInsets.ResolveOrZero(style.Border, parentWidth), in style);
         Edges inset = constants.Inset;
         float mainSize = row ? containerSize.Width : containerSize.Height;
         float crossSize = row ? containerSize.Height : containerSize.Width;
@@ -103,7 +103,7 @@ internal static partial class LayoutEngine
         float alignOffset
     )
     {
-        Edges border = EdgeInsets.ResolveOrZero(style.Border, parentWidth) + GutterEdges(in style);
+        Edges border = WithGutter(EdgeInsets.ResolveOrZero(style.Border, parentWidth), in style);
         float innerWidth = Math.Max(0, outerSize.Width - inset.Horizontal);
         var inlineArea = new StaticArea(inset.Left, outerSize.Width - inset.Right);
         float staticY = inset.Top;
