@@ -19,7 +19,7 @@ namespace XylemUI;
 public sealed class Effect : Computation, IDisposable
 {
     private readonly Action _run;
-    private ScopeHandle _scope;
+    private ScopeRef _scope;
 
     private Effect(Action run) => _run = run;
 
@@ -118,15 +118,15 @@ public sealed class Effect : Computation, IDisposable
     /// <inheritdoc />
     private protected override void Execute()
     {
-        ScopeHandle previous = Scope.Current;
-        Scope.Current = _scope;
+        ScopeRef previous = Scope.CurrentRef;
+        Scope.CurrentRef = _scope;
         try
         {
             _run();
         }
         finally
         {
-            Scope.Current = previous;
+            Scope.CurrentRef = previous;
         }
     }
 
