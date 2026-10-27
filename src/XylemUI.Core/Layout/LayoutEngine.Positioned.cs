@@ -24,7 +24,7 @@ internal static partial class LayoutEngine
     )
     {
         bool row = constants.Row;
-        Edges border = EdgeInsets.ResolveOrZero(style.Border, parentWidth);
+        Edges border = EdgeInsets.ResolveOrZero(style.Border, parentWidth) + GutterEdges(in style);
         Edges inset = constants.Inset;
         float mainSize = row ? containerSize.Width : containerSize.Height;
         float crossSize = row ? containerSize.Height : containerSize.Width;
@@ -103,7 +103,7 @@ internal static partial class LayoutEngine
         float alignOffset
     )
     {
-        Edges border = EdgeInsets.ResolveOrZero(style.Border, parentWidth);
+        Edges border = EdgeInsets.ResolveOrZero(style.Border, parentWidth) + GutterEdges(in style);
         float innerWidth = Math.Max(0, outerSize.Width - inset.Horizontal);
         var inlineArea = new StaticArea(inset.Left, outerSize.Width - inset.Right);
         float staticY = inset.Top;
@@ -142,8 +142,9 @@ internal static partial class LayoutEngine
         }
     }
 
-    // Sizes and places one absolutely positioned child against its parent's padding box (Taffy's layout_oof_box), and lays it
-    // out. The static positions are relative to the parent's border box.
+    // Sizes and places one absolutely positioned child against its parent's padding box less the scrollbars' room (Taffy's
+    // layout_oof_box, and block.rs's absolute_position_inset of the border and the scrollbar gutter), and lays it out. The
+    // static positions are relative to the parent's border box; `border` holds the gutter at its right and bottom.
     //
     // A clean child placed last time with the same container size, border, and static positions keeps its size and place
     // (row L7): nothing else this reads can change without marking the child, as its style and its subtree do. Flutter's

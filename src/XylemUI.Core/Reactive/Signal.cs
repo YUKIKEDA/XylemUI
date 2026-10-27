@@ -49,6 +49,17 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
     }
 
     /// <summary>
+    /// Returns the value without recording a read: for the layout and the draw stage, which no effect follows (a scroll
+    /// position, design §3.4.1).
+    /// </summary>
+    /// <returns>The value.</returns>
+    internal T Peek()
+    {
+        UiThread.VerifyAccess();
+        return _value;
+    }
+
+    /// <summary>
     /// Sets the value. A value equal to the current one does nothing. Otherwise the readers are marked dirty, and the effects
     /// run when the outermost batch ends (design §2.2.1); outside a batch, before this method returns.
     /// </summary>

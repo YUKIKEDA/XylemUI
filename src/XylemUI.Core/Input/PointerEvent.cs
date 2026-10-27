@@ -35,6 +35,7 @@ public readonly struct PointerEvent
         ClickCount = source.ClickCount;
         Timestamp = source.Timestamp;
         PointerType = source.PointerType;
+        WheelDelta = source.WheelDelta;
     }
 
     /// <summary>
@@ -106,6 +107,13 @@ public readonly struct PointerEvent
     public PointerType PointerType { get; }
 
     /// <summary>
+    /// Gets how far a <see cref="PointerEventKind.Wheel"/> scrolls, in logical pixels: positive moves the scroll position down and
+    /// to the right. One notch of a mouse's wheel is the lines Windows sets times 100/3 (design §3.4.1); a touchpad gives less. Zero
+    /// for the other kinds.
+    /// </summary>
+    public Vector2 WheelDelta { get; }
+
+    /// <summary>
     /// Stops the event: no handler after this one is called, in this phase or the next.
     /// </summary>
     public void StopPropagation() => _input.StopPropagation();
@@ -150,6 +158,12 @@ public enum PointerEventKind : byte
     /// The left button went down and up over the node or its descendants. Routed, in the bubble phase only.
     /// </summary>
     Click,
+
+    /// <summary>
+    /// The wheel turned, or a touchpad scrolled (<see cref="PointerEvent.WheelDelta"/>). Routed from the node under the pointer,
+    /// even while a button is captured; a scroll container whose position it changes stops it in the bubble phase (design §3.4.1).
+    /// </summary>
+    Wheel,
 }
 
 /// <summary>

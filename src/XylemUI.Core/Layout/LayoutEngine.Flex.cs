@@ -171,7 +171,7 @@ internal static partial class LayoutEngine
                     min.Cross(row),
                     max.Cross(row)
                 ),
-                insetCross
+                insetCross - constants.GutterCross
             );
             float innerCross = Math.Max(outerCross - insetCross, 0);
             Size containerSize = row ? new Size(constants.ContainerMain, outerCross) : new Size(outerCross, constants.ContainerMain);
@@ -210,7 +210,11 @@ internal static partial class LayoutEngine
     )
     {
         bool row = props.Direction is FlexDirection.Row or FlexDirection.RowReverse;
-        Edges inset = PaddingBorder(in style, input.ParentSize.Width);
+
+        // The content box is inside the scrollbars' room too (Taffy's content_box_inset of the padding, the border, and the
+        // scrollbar gutter); the floors of the container's sizes are the padding and border alone (GutterMain, GutterCross).
+        Size gutter = style.ScrollbarGutter;
+        Edges inset = PaddingBorder(in style, input.ParentSize.Width) + GutterEdges(in style);
         bool mainIsDefinite = row ? widthIsDefinite : heightIsDefinite;
         bool crossIsDefinite = row ? heightIsDefinite : widthIsDefinite;
         bool hasDefiniteCross = crossIsDefinite && !float.IsNaN(known.Cross(row));
@@ -246,6 +250,8 @@ internal static partial class LayoutEngine
             Min = min,
             Max = max,
             Inset = inset,
+            GutterMain = row ? gutter.Width : gutter.Height,
+            GutterCross = row ? gutter.Height : gutter.Width,
             NodeOuterSize = known,
             NodeInnerSize = inner,
             KnownMainSizeIsDefinite = mainIsDefinite,
@@ -315,6 +321,8 @@ internal static partial class LayoutEngine
             item.HasInset = c.Layout.HasInset;
             item.AspectRatio = s.AspectRatio;
             item.HasKeywordLimits = c.Layout.HasKeywordLimits;
+            item.IsScrollContainer = s.IsScrollContainer;
+            item.MainScrolls = (row ? s.OverflowX : s.OverflowY) >= Overflow.Hidden;
             AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
@@ -489,8 +497,14 @@ internal static partial class LayoutEngine
             item.FlexBasis = Math.Max(item.FlexBasis, paddingBorderMain);
             item.InnerFlexBasis = item.FlexBasis - paddingBorderMain;
 
-            // CSS Flexbox §4.5: an automatic minimum is the content's min-content size, no larger than the specified size.
+            // CSS Flexbox §4.5: an automatic minimum is the content's min-content size, no larger than the specified size; 0 along
+            // an axis the item scrolls (Taffy's maybe_into_automatic_min_size).
             float styleMinMain = item.Min.Main(row);
+            if (float.IsNaN(styleMinMain) && item.MainScrolls)
+            {
+                styleMinMain = 0;
+            }
+
             if (float.IsNaN(styleMinMain))
             {
                 readContent = true;
@@ -730,7 +744,7 @@ internal static partial class LayoutEngine
             }
         }
 
-        outerMain = Math.Max(Maybe.Clamp(outerMain, constants.Min.Main(row), constants.Max.Main(row)), insetMain);
+        outerMain = Math.Max(Maybe.Clamp(outerMain, constants.Min.Main(row), constants.Max.Main(row)), insetMain - constants.GutterMain);
         constants.ContainerMain = outerMain;
         constants.InnerContainerMain = Math.Max(outerMain - insetMain, 0);
     }
@@ -760,6 +774,10 @@ internal static partial class LayoutEngine
         else if (maxMain <= minMain)
         {
             contribution = minMain + marginSum;
+        }
+        else if (item.IsScrollContainer)
+        {
+            contribution = item.FlexBasis + marginSum;
         }
         else if (!float.IsNaN(stylePreferred))
         {
@@ -1471,6 +1489,11 @@ internal static partial class LayoutEngine
         public OptionalSize Min;
         public OptionalSize Max;
         public Edges Inset;
+
+        // The scrollbars' room along and across the main axis, which Inset holds and the floors of the container's sizes do not.
+        public float GutterMain;
+
+        public float GutterCross;
         public OptionalSize NodeOuterSize;
         public OptionalSize NodeInnerSize;
         public bool KnownMainSizeIsDefinite;
@@ -1533,6 +1556,11 @@ internal static partial class LayoutEngine
         public bool Stretched;
         public bool HasInset;
         public bool HasKeywordLimits;
+
+        // A scroll container's contribution to its container's content size is its flex basis, and its automatic minimum along
+        // an axis it scrolls is 0 (Taffy's flexbox.rs 1139 and 1525, design §3.4.1).
+        public bool IsScrollContainer;
+        public bool MainScrolls;
 
         // The style's aspect ratio, copied with the item's other lengths: two later steps read it for every item, and taking
         // the node from the arena again for it was part of the 10,000 instructions a relayout of row L1a's scene gained in L2

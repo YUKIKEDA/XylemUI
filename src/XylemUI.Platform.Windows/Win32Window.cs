@@ -408,6 +408,7 @@ public sealed unsafe partial class Win32Window : IDisposable
         }
 
         _classRegistered = true;
+        ReadWheelSettings();
     }
 
     // Every message for every XylemUI window enters here. No managed exception may leave this method (Invariant 13).
@@ -465,6 +466,7 @@ public sealed unsafe partial class Win32Window : IDisposable
                 return false;
             case WmSettingChange:
                 ReadTextRendering(_monitor);
+                ReadWheelSettings();
                 return false;
             case WmDpiChanged:
                 ChangeScale(hwnd, wParam, (RECT*)lParam);

@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace XylemUI;
 
 /// <summary>
@@ -15,6 +17,8 @@ namespace XylemUI;
 /// release has the count of its press. 0 for the other kinds.</param>
 /// <param name="Timestamp">When the platform received the input.</param>
 /// <param name="PointerType">What the pointer is.</param>
+/// <param name="WheelDelta">For a <see cref="PointerInputKind.Wheel"/>, how far the wheel scrolls, in logical pixels: positive moves
+/// the scroll position down and to the right (design §3.4.1); zero for the other kinds.</param>
 internal readonly record struct PointerInput(
     PointerInputKind Kind,
     int X,
@@ -24,7 +28,8 @@ internal readonly record struct PointerInput(
     KeyModifiers Modifiers,
     int ClickCount,
     TimeSpan Timestamp,
-    PointerType PointerType
+    PointerType PointerType,
+    Vector2 WheelDelta = default
 );
 
 /// <summary>
@@ -56,6 +61,11 @@ internal enum PointerInputKind : byte
     /// Another window took the capture of the pointer.
     /// </summary>
     CaptureLost,
+
+    /// <summary>
+    /// The wheel turned, or a touchpad scrolled (row V2): <see cref="PointerInput.WheelDelta"/> says how far.
+    /// </summary>
+    Wheel,
 }
 
 /// <summary>

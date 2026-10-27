@@ -84,6 +84,18 @@ internal struct LayoutState
     public Rect Rect;
 
     /// <summary>
+    /// The right and bottom edges of the scrollable overflow rectangle of the last committed layout, from the node's scroll origin
+    /// (the top left of its padding box): Taffy main's <c>scrollable_overflow_rect</c>, whose left and top edges no scroll range
+    /// reads (design §3.4.1, "The scroll container").
+    /// </summary>
+    public float OverflowRight;
+
+    /// <summary>
+    /// The bottom edge of the scrollable overflow rectangle (<see cref="OverflowRight"/>).
+    /// </summary>
+    public float OverflowBottom;
+
+    /// <summary>
     /// A leaf's first baseline of the last layout run, from the top of the border box, or NaN when it has none (a parent
     /// synthesizes one from the border box, CSS Flexbox §9.4). A container's comes from <see cref="UiNode.BaselineChild"/>.
     /// </summary>

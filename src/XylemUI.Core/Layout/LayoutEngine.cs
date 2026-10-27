@@ -275,7 +275,22 @@ internal static partial class LayoutEngine
     // child of fixed size, which no measuring run reads, still reaches the parent. A container's baseline comes from a child of
     // its own and is read here when a parent asks for it (as Flutter's getDistanceToBaseline), so the marks follow the
     // baselines that are read: a container whose baseline no parent reads does not mark its first child.
+    // A box that scrolls vertically keeps its baseline inside its border box, and has one at its bottom when its content gives
+    // none (Taffy main's child_first_baseline, design §3.4.1).
     private static float ReadBaseline(UiTree tree, NodeHandle handle)
+    {
+        float baseline = ReadContentBaseline(tree, handle);
+        ref readonly LayoutState layout = ref tree.Nodes.GetRef(handle).Layout;
+        if (layout.Style.OverflowY >= Overflow.Hidden)
+        {
+            float height = layout.Rect.Height;
+            return Math.Max(Math.Min(Maybe.Or(baseline, height), height), 0);
+        }
+
+        return baseline;
+    }
+
+    private static float ReadContentBaseline(UiTree tree, NodeHandle handle)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         node.Layout.ContentReadGeneration = tree.Nodes.GetRef(node.Parent).Layout.CacheGeneration;
@@ -399,6 +414,12 @@ internal static partial class LayoutEngine
             leaf.PaddingBorder = PaddingBorder(in style, basis);
         }
 
+        if (!firstChild.IsNone)
+        {
+            CommitScrollableOverflow(tree, handle, in style, n.Layout.Border, EdgeInsets.ResolveOrZero(style.Padding, basis));
+            n = ref tree.Nodes.GetRef(handle);
+        }
+
         n.Layout.LastInput = input;
         n.Layout.WasLaidOut = true;
         n.Layout.FirstBaseline = baseline;
@@ -426,6 +447,66 @@ internal static partial class LayoutEngine
         // children were placed: a change of content inside drops the cache. Re-stamp the measurements so they stay valid.
         tree.MeasuresOf(handle).Restamp(after.Versions.DescendantLayout);
         return size;
+    }
+
+    // The right and bottom edges of a container's scrollable overflow rectangle, from its padding box's corner (Taffy main's
+    // block.rs 740 to 765 and 871 to 882, flexbox.rs 2629 to 2640 and 2752 to 2763, oof.rs 369): the union of its children's
+    // contributions with the origin, then a scroll container's end padding, then the absolutely positioned children's. Only the
+    // right and bottom edges are kept: the scroll range reads no other (Layout.scroll_width).
+    private static void CommitScrollableOverflow(UiTree tree, NodeHandle handle, in LayoutStyle style, Edges border, Edges padding)
+    {
+        bool scrolls = style.IsScrollContainer;
+        float right = 0;
+        float bottom = 0;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            for (NodeHandle child = tree.Nodes.GetRef(handle).FirstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
+            {
+                ref UiNode c = ref tree.Nodes.GetRef(child);
+                ref readonly LayoutStyle childStyle = ref c.Layout.Style;
+                if (childStyle.Hidden || (childStyle.Position == Position.Absolute) != (pass == 1))
+                {
+                    continue;
+                }
+
+                (float r, float b) = OverflowContribution(in c.Layout, in childStyle, border, scrolls);
+                right = Math.Max(right, r);
+                bottom = Math.Max(bottom, b);
+            }
+
+            if (pass == 0 && scrolls)
+            {
+                right += padding.Right;
+                bottom += padding.Bottom;
+            }
+        }
+
+        ref LayoutState state = ref tree.Nodes.GetRef(handle).Layout;
+        state.OverflowRight = right;
+        state.OverflowBottom = bottom;
+    }
+
+    // The right and bottom edges a child adds to its parent's scrollable overflow rectangle (Taffy main's
+    // compute_scrollable_overflow_contribution): its border box, and its own overflow where it is not clipped; nothing when it is
+    // empty, or wholly before a scroll container's origin.
+    private static (float Right, float Bottom) OverflowContribution(
+        in LayoutState child,
+        in LayoutStyle style,
+        Edges parentBorder,
+        bool parentScrolls
+    )
+    {
+        bool contained = style.IsScrollContainer;
+        float width = !contained && style.OverflowX == Overflow.Visible ? Math.Max(child.Rect.Width, child.OverflowRight) : child.Rect.Width;
+        float height = !contained && style.OverflowY == Overflow.Visible ? Math.Max(child.Rect.Height, child.OverflowBottom) : child.Rect.Height;
+        if (width <= 0 || height <= 0)
+        {
+            return (0, 0);
+        }
+
+        float right = child.Rect.X - parentBorder.Left + width;
+        float bottom = child.Rect.Y - parentBorder.Top + height;
+        return parentScrolls && (right <= 0 || bottom <= 0) ? (0, 0) : (right, bottom);
     }
 
     // A value the parent read may be among the ones overwritten: a change of the node's content then goes on to the parent
@@ -523,6 +604,15 @@ internal static partial class LayoutEngine
         return width && !height ? new OptionalSize(size.Width, size.Width / ratio)
             : height && !width ? new OptionalSize(size.Height * ratio, size.Height)
             : size;
+    }
+
+    // The scrollbars' room as edges of the content box: the vertical scrollbar's at the right, the horizontal one's at the bottom
+    // (Taffy's scrollbar gutter, left to right).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Edges GutterEdges(in LayoutStyle style)
+    {
+        Size gutter = style.ScrollbarGutter;
+        return new Edges(0, 0, gutter.Width, gutter.Height);
     }
 
     // The padding and the border, which CSS resolves against the parent's width on every side.

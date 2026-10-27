@@ -68,6 +68,86 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
     }
 
     /// <summary>
+    /// A wheel message decodes to a wheel of logical pixels: a notch is the lines (vertical) or characters (horizontal) set times
+    /// 100/3, a vertical notch up scrolls up (negative), a horizontal notch right scrolls right (positive), a part of a notch is a
+    /// part of it, and the keys of wParam come as for the other messages (design §3.4.1).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None: the decoding is a function of the message's values and the settings given.
+    ///
+    /// Steps:
+    /// - Decode WM_MOUSEWHEEL of +120 with Shift at (5, 6), 3 lines; of −120, 5 lines; of +30, 3 lines. Decode WM_MOUSEHWHEEL of
+    ///   +120, 3 characters.
+    ///
+    /// Expected:
+    /// - (0, −100) with Shift at (5, 6), kind Wheel, no button, count 0; (0, 166.67); (0, −25); (100, 0).
+    /// </remarks>
+    [Fact]
+    public void Decode_WheelMessages_GiveLogicalPixels()
+    {
+        TimeSpan at = TimeSpan.FromSeconds(1);
+        nint position = (nint)((6 << 16) | 5);
+        PointerInput? up = Win32Window.Decode(WM.WM_MOUSEWHEEL, (nuint)(120 << 16) | MK.MK_SHIFT, position, false, 0, 7, at, 3, 3);
+        PointerInput? down = Win32Window.Decode(WM.WM_MOUSEWHEEL, unchecked((nuint)(uint)(-120 << 16)), position, false, 0, 0, at, 5, 3);
+        PointerInput? part = Win32Window.Decode(WM.WM_MOUSEWHEEL, (nuint)(30 << 16), position, false, 0, 0, at, 3, 3);
+        PointerInput? right = Win32Window.Decode(WM.WM_MOUSEHWHEEL, (nuint)(120 << 16), position, false, 0, 0, at, 3, 3);
+
+        Assert.Equal(
+            new PointerInput(
+                PointerInputKind.Wheel,
+                5,
+                6,
+                PointerButton.None,
+                PointerButtons.None,
+                KeyModifiers.Shift,
+                0,
+                at,
+                PointerType.Mouse,
+                new System.Numerics.Vector2(0, -100)
+            ),
+            up
+        );
+        Assert.Equal(500f / 3, down!.Value.WheelDelta.Y, 3);
+        Assert.Equal(-25f, part!.Value.WheelDelta.Y, 3);
+        Assert.Equal(new System.Numerics.Vector2(100, 0), right!.Value.WheelDelta);
+    }
+
+    /// <summary>
+    /// The window delivers a wheel at the client position of the screen point its message carries, with the wheel settings of
+    /// Windows, and counts no click.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window that records its inputs; the lines a notch scrolls on this machine (SPI_GETWHEELSCROLLLINES).
+    ///
+    /// Steps:
+    /// - Send WM_MOUSEWHEEL of −120 with the screen point of the client's (12, 34).
+    ///
+    /// Expected:
+    /// - One wheel input at (12, 34), of (0, lines × 100/3), with a count of 0.
+    /// </remarks>
+    [Fact]
+    public void WheelMessage_IsDeliveredAtItsClientPosition() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("wheel", 200, 100);
+            var inputs = new List<PointerInput>();
+            window.PointerInputReceived = (in PointerInput input) => inputs.Add(input);
+            uint lines;
+            Assert.True(SystemParametersInfoW(SPI.SPI_GETWHEELSCROLLLINES, 0, &lines, 0) != BOOL.FALSE);
+            var point = new POINT { x = 12, y = 34 };
+            Assert.True(ClientToScreen(window.Hwnd, &point) != BOOL.FALSE);
+
+            nint lParam = (nint)(((uint)(ushort)(short)point.y << 16) | (ushort)(short)point.x);
+            _ = SendMessageW(window.Hwnd, WM.WM_MOUSEWHEEL, unchecked((nuint)(uint)(-120 << 16)), lParam);
+
+            PointerInput input = Assert.Single(inputs);
+            Assert.Equal((PointerInputKind.Wheel, 12, 34, 0), (input.Kind, input.X, input.Y, input.ClickCount));
+            Assert.Equal(lines * 100f / 3, input.WheelDelta.Y, 3);
+        });
+
+    /// <summary>
     /// The window delivers its mouse messages as inputs: a press counts the presses in a row within the double-click time and area,
     /// a release takes its press's count, and the leave of the window comes as a leave.
     /// </summary>

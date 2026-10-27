@@ -121,6 +121,41 @@ internal readonly record struct LayoutStyle
     public AlignItems? JustifySelf { get; init; }
 
     /// <summary>
+    /// Gets what the node does with content that overflows its width (design §3.4.1, "The scroll container").
+    /// </summary>
+    public Overflow OverflowX { get; init; }
+
+    /// <summary>
+    /// Gets what the node does with content that overflows its height.
+    /// </summary>
+    public Overflow OverflowY { get; init; }
+
+    /// <summary>
+    /// Gets the room a scrollbar takes inside the padding box on an axis whose overflow is <see cref="Overflow.Scroll"/>, in
+    /// logical pixels: the width of a vertical one at the end of a row, the height of a horizontal one at the bottom (CSS's
+    /// <c>scrollbar-width</c>, Taffy's <c>scrollbar_width</c>). 0 by default: the scrollbars are drawn over the content.
+    /// </summary>
+    public float ScrollbarWidth { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the node is a scroll container: its overflow is <see cref="Overflow.Hidden"/> or
+    /// <see cref="Overflow.Scroll"/> on an axis (Taffy's <c>is_scroll_container</c>).
+    /// </summary>
+    public bool IsScrollContainer => OverflowX >= Overflow.Hidden || OverflowY >= Overflow.Hidden;
+
+    /// <summary>
+    /// Gets a value indicating whether the node clips its children to its padding box on an axis.
+    /// </summary>
+    public bool ClipsChildren => OverflowX != Overflow.Visible || OverflowY != Overflow.Visible;
+
+    /// <summary>
+    /// Gets the room the scrollbars take inside the padding box: the width of the vertical one (<see cref="OverflowY"/> is
+    /// <see cref="Overflow.Scroll"/>) and the height of the horizontal one (<see cref="OverflowX"/> is
+    /// <see cref="Overflow.Scroll"/>), as Taffy's <c>scrollbar_gutter</c> takes them.
+    /// </summary>
+    public Size ScrollbarGutter => new(OverflowY == Overflow.Scroll ? ScrollbarWidth : 0, OverflowX == Overflow.Scroll ? ScrollbarWidth : 0);
+
+    /// <summary>
     /// Gets a value indicating whether <see cref="AspectRatio"/> is set.
     /// </summary>
     public bool HasAspectRatio => AspectRatio > 0;
