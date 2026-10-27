@@ -1960,7 +1960,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 
 **V3（MoonBit 版で到達。C# 版で再到達させる）:** 同じ契約の上に項目を動的追加した。Add は `Invalidate(Size)`、スクロールは `TransformProp`。item2 の `y=232` は offset=64 後も不変。
 
-**スクロールする箱（V2 の Grill でオーナーが決定、Issue #343）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3。Taffy 0.13.0 を固定し、feature `content_size` を使う）と、Taffy main（0.15.0、e82f526）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。
+**スクロールする箱（V2 の Grill でオーナーが決定、Issue #343）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3。Taffy 0.13.0 を固定し、feature `content_size` を使う）と、Taffy main（0.15.0、e82f526）を読んで決めた。§3.2 の計測の呼び方が引く Taffy v0.15.1 とは別に、main の e82f526 を固定して読んだので、Taffy の版を上げるときは両方の引用を見直す。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。
 
 - **layout は CSS の `overflow` の意味:** 子は、スクロールする箱でも、箱の内容領域の中で普通の箱と同じく layout する。はみ出した分は、スクロールできる範囲として記録するだけである。スクロールする箱は BFC を作り、マージンを相殺しない（Taffy 0.13.0 の `compute/block.rs` 496〜514 行目）。flex の項目としては、最小の内容の寄与を flex-basis で打ち切る（同 `compute/flexbox.rs` 1063〜1065 行目、main 1525 行目）。GPUI は Taffy のままである。Flutter（`widgets/single_child_scroll_view.dart` 455〜460 行目、`_getInnerConstraints`）と Avalonia（`Avalonia.Controls/Presenters/ScrollContentPresenter.cs` 432〜434 行目）は、スクロールの軸で子に無限の空きを渡す。XylemUI の layout は CSS の部分集合なので（§3.1）、Taffy の Chrome の比べを基準に保てる形を採る。Taffy の XML テストのうち、Block と Flex だけで V2 の機能（`overflow`・`scrollbar-width`・`flex-basis: content`）を使う 54 件（block 23、blockflex 2、flex 21、leaf 8）を基準にする。RTL の 2 件（`block_overflow_scroll_direction_rtl`・`block_scrollbar_rtl`）は行 P03、Grid の 1 件（`flex_container_baseline_column_scroll_container_clamped`）は行 P02 に残す
 - **`overflow` の値:** `Visible`・`Clip`・`Hidden`・`Scroll` を軸ごとに持つ（`LayoutStyle.OverflowX`・`OverflowY`）。`Hidden` と `Scroll` の箱はスクロールする箱で、その軸では自動の最小サイズが 0 になる。`Clip` は切るだけで、スクロールする箱にしない（Taffy 0.13.0 の `style/mod.rs` 354〜391 行目の `is_scroll_container` と `maybe_into_automatic_min_size`、軸ごとの使い方は `compute/flexbox.rs` 830〜831 行目）。`Auto` と、片方が visible ならもう片方を auto と計算する CSS の規則は、Taffy と同じく持たない（Taffy の Chrome のテストは、指定した値を記録している）
@@ -3268,14 +3268,15 @@ Widget event（capture/bubbleでコンポーネントに配送）
 ```csharp
 // Platform が正規化して Core に渡す 1 つの入力（上の図の PlatformInput）
 internal readonly record struct PointerInput(
-    PointerInputKind Kind,      // Move / Down / Up / Leave（ウィンドウから出た）/ CaptureLost（キャプチャを奪われた）
-    int X, int Y,               // Win32 のクライアント座標（物理画素）。Leave と CaptureLost では使わない
+    PointerInputKind Kind,      // Move / Down / Up / Leave（ウィンドウから出た）/ CaptureLost（キャプチャを奪われた）/ Wheel（V2）
+    int X, int Y,               // Win32 のクライアント座標（物理画素。Wheel は lParam の画面の座標を ScreenToClient で直す）。Leave と CaptureLost では使わない
     PointerButton Button,       // Down と Up で変わったボタン。ほかでは None
     PointerButtons Buttons,     // 今押されているボタン
     KeyModifiers Modifiers,     // Control・Shift・Alt
     int ClickCount,             // Down と Up だけ。Platform が数える（下の「Click」）
     TimeSpan Timestamp,         // Platform がメッセージを受けた時刻（Stopwatch）
-    PointerType PointerType);   // Mouse / Touch / Pen
+    PointerType PointerType,    // Mouse / Touch / Pen
+    Vector2 WheelDelta);        // Wheel の量（論理画素、正は位置が増える向き、§3.4.1）。Wheel 以外は 0（V2）
 
 public enum PointerButton : byte { None, Left, Right, Middle, XButton1, XButton2 }
 [Flags] public enum PointerButtons : byte { None = 0, Left = 1, Right = 2, Middle = 4, XButton1 = 8, XButton2 = 16 }
