@@ -10,6 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
+    <!-- The todo scene runs the sample's own TodoApp (row V3c). -->
+    <ProjectReference Include="..\..\samples\Todo\Todo.csproj" />
   </ItemGroup>
   <!-- The test font, inside the executable, so the measured app needs no file next to it. -->
   <ItemGroup>

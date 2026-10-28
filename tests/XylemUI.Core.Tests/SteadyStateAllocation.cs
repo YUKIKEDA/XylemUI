@@ -25,7 +25,16 @@ internal static class SteadyStateAllocation
     /// </summary>
     /// <param name="iterations">The number of runs, a multiple of 10.</param>
     /// <param name="iteration">One run of the steady state; created before the call, so that creating it is not measured.</param>
-    public static void AssertNone(int iterations, Action<int> iteration)
+    public static void AssertNone(int iterations, Action<int> iteration) => AssertNone(iterations, null, iteration);
+
+    /// <summary>
+    /// The same, with <paramref name="prepare"/> run before each run and not measured: a change the steady state follows, whose
+    /// own allocations are the caller's (an app that builds a new list), while the frame that follows it must allocate nothing.
+    /// </summary>
+    /// <param name="iterations">The number of runs, a multiple of 10.</param>
+    /// <param name="prepare">What goes before each run, with its index; <see langword="null"/> for nothing.</param>
+    /// <param name="iteration">One run of the steady state, measured.</param>
+    public static void AssertNone(int iterations, Action<int>? prepare, Action<int> iteration)
     {
         Assert.Equal(0, iterations % Windows);
         var bytes = new long[Windows];
@@ -41,6 +50,7 @@ internal static class SteadyStateAllocation
         int perWindow = iterations / Windows;
         for (int warm = -perWindow; warm < 0; warm++)
         {
+            prepare?.Invoke(warm);
             iteration(warm);
         }
 
@@ -50,13 +60,27 @@ internal static class SteadyStateAllocation
             int collectionsBefore = GC.CollectionCount(0);
             int fullBefore = GC.CollectionCount(2);
             long compiledBefore = JitInfo.GetCompiledMethodCount(currentThread: true);
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int end = index + perWindow; index < end; index++)
+            if (prepare is null)
             {
-                iteration(index);
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                for (int end = index + perWindow; index < end; index++)
+                {
+                    iteration(index);
+                }
+
+                bytes[window] = GC.GetAllocatedBytesForCurrentThread() - before;
+            }
+            else
+            {
+                for (int end = index + perWindow; index < end; index++)
+                {
+                    prepare(index);
+                    long before = GC.GetAllocatedBytesForCurrentThread();
+                    iteration(index);
+                    bytes[window] += GC.GetAllocatedBytesForCurrentThread() - before;
+                }
             }
 
-            bytes[window] = GC.GetAllocatedBytesForCurrentThread() - before;
             compiled[window] = JitInfo.GetCompiledMethodCount(currentThread: true) - compiledBefore;
             collections[window] = GC.CollectionCount(0) - collectionsBefore;
             fullCollections[window] = GC.CollectionCount(2) - fullBefore;

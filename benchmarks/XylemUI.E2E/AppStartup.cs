@@ -9,14 +9,19 @@ namespace XylemUI.E2E;
 // a point of its client area (DisplayWatch, the definition of design §11.3's startup target), then a WM_CLOSE to its window, as its
 // close button sends, and the exit code it returns. samples/Counter has the color in its button: --at 20,40 is inside the button at
 // the scales of 100 % to 150 % (its text row is about 19 logical pixels high). A pointer over the button shows its hovered color, and
-// the run is counted as missed.
-//   app-startup <exe> [--at x,y] [--runs N]
+// the run is counted as missed. With --idle, each run then waits 3 s and measures the idle app as the comparison of frameworks does
+// (External.Idle, row M1a): the CPU time of 10 s, then its working set and private bytes (row V3c).
+//   app-startup <exe> [--at x,y] [--runs N] [--idle]
 internal static class AppStartup
 {
     public static int Run(string[] args)
     {
         string app = args.Length > 1 ? args[1] : throw new ArgumentException("app-startup needs the app's executable.");
         int runs = Array.IndexOf(args, "--runs") is int runsAt and >= 0 ? int.Parse(args[runsAt + 1], CultureInfo.InvariantCulture) : 10;
+        bool idle = args.Contains("--idle");
+        var idleCpu = new List<double>();
+        var idleWorkingSet = new List<double>();
+        var idlePrivate = new List<double>();
         (int x, int y) = (20, 40);
         if (Array.IndexOf(args, "--at") is int at and >= 0)
         {
@@ -41,6 +46,18 @@ internal static class AppStartup
                     missed++;
                 }
 
+                if (idle && !process.HasExited)
+                {
+                    Thread.Sleep(3_000);
+                    process.Refresh();
+                    TimeSpan before = process.TotalProcessorTime;
+                    Thread.Sleep(10_000);
+                    process.Refresh();
+                    idleCpu.Add((process.TotalProcessorTime - before).TotalMilliseconds);
+                    idleWorkingSet.Add(process.WorkingSet64 / 1048576.0);
+                    idlePrivate.Add(process.PrivateMemorySize64 / 1048576.0);
+                }
+
                 if (Close(process) == 0)
                 {
                     closedWithZero++;
@@ -58,6 +75,14 @@ internal static class AppStartup
         report.Number("closed_with_exit_code_0", closedWithZero);
         report.Number("runs", runs);
         report.Number("exe_bytes", new FileInfo(app).Length);
+        if (idle)
+        {
+            report.Number("idle_seconds", 10);
+            report.Series("idle_cpu_ms", idleCpu);
+            report.Series("idle_working_set_mb", idleWorkingSet);
+            report.Series("idle_private_mb", idlePrivate);
+        }
+
         return missed == 0 && closedWithZero == runs ? 0 : 1;
     }
 
