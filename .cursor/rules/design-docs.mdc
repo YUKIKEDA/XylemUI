@@ -132,7 +132,15 @@ A sentence added to the design to answer a review is a claim like any other and 
 
 After a script edits a Markdown table, read `git diff --stat`. A diff of the whole table means its columns were padded again (it happened in S9 to `docs/roadmap.md`, by no step of the script): restore the file and replace only the rows that change.
 
-A design PR writes what the Grill decided. A better shape found while writing does not replace a decision in the PR, even with a note in its body: it goes to the owner as a question with a recommendation (`.cursor/rules/consent.mdc`). V1c's design moved a text leaf's own color from `TextLeaf.Color` to `NodeVisual.Foreground`, against the Grill's Q14, and said so only in the PR body; the review found that each text leaf with a color would then hold a `NodeVisual`, and the owner kept Q14 (PR #319).
+A design PR writes what the Grill decided. A better shape found while writing does not replace a decision in the PR, even with a note in its body: it goes to the owner as a question with a recommendation (`.cursor/rules/consent.mdc`). V1c's design moved a text leaf's own color from `TextLeaf.Color` to `NodeVisual.Foreground`, against the Grill's Q14, and said so only in the PR body; the review found that each text leaf with a color would then hold a `NodeVisual`, and the owner kept Q14 (PR #319). Before the design PR is opened, each answer of the Grill is read against the sentence of the design that writes it, one by one, and a difference goes to the owner. K1's design sent FocusIn and FocusOut in capture and bubble against Q10's bubble, and its body did not say so; the review found it (PR #352).
+
+A design that makes a value of an existing type from another source (a Click from a key) gives every field of the type a value. K1's first design gave the keyboard Click its `ClickCount`, `Position`, and `Button`, and left `PointerType`, `Buttons`, and `Modifiers` open (PR #352's review).
+
+A design that adds a value to a type that several events share says, for each event, whether it sets the value and where it reads it. K1 added `KeyModifiers.Meta` for the keys and did not say whether pointer events, which share `KeyModifiers`, read the Windows keys too (PR #352's review). A condition over a node's ancestors says whether it covers the node itself: K1's "has no `Hidden` ancestor" left a `Hidden` node focusable, against §7.1's "skips `Hidden` subtrees" (PR #352's review).
+
+What the framework does to an input before the handlers receive it (moving the focus on a press) says how an app stops it, or that it cannot. K1's first design moved the focus before the route and did not say that `.Focusable(false)` is the only way out; zed's button stops it with `prevent_default` (PR #352's review).
+
+A row's design says where its input is injected in tests (design §12.4) and which test layer of §12.1 checks each part. K1's Grill asked nothing about §12 until the owner pointed it out.
 
 ## Judge the current optimum
 

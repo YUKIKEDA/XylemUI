@@ -45,6 +45,7 @@ Labels have the form `<axis>:<value>`. The only axis today is `type`.
 - Starting implementation without an Issue number and a branch.
 - Treating a roadmap title, or a file under `.dev/`, as permission to code.
 - Copying acceptance text onto the roadmap.
+- Taking a row out of the roadmap's order without moving it in `docs/roadmap.md` in the same design PR. K1 was chosen before rows listed above it, and the owner had to ask for the roadmap to follow (PR #352's Grill).
 - Adding or removing roadmap rows, or touching **Intentionally out of scope**, without a Grill. A row that a measurement shows to be needed is put to the owner as a question with a recommendation before the PR: R4c added row Q4 for the layers' GPU time inside its PR, with no Grill (PR #264's retrospective).
 - Merging. Closing an Issue or PR without an order that names it.
 - Ending a turn on a branch that has no Issue and no PR.
