@@ -3477,6 +3477,7 @@ internal readonly record struct PointerInput(
     float TiltX, float TiltY,   // 度（−90〜90。X は正で右へ、Y は正で使う人の側へ。POINTER_PEN_INFO のまま）。ペンだけ。ほかは 0
     float Twist,                // 度（0〜359）。ペンだけ。ほかは 0
     PenFlags PenFlags,          // Eraser・Inverted。ペンだけ
+    int HistoryCount);          // そのメッセージにまとめて届いた点の数（POINTER_INFO.historyCount）。自身を含む。マウスは 1
 
 // PointerEvent に足す（公開）
 public int PointerId { get; }
@@ -3516,6 +3517,8 @@ int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
   - Flutter は圧力を 0〜1024 のまま渡し（`flutter_windows_view.cc` 22〜25・709〜712 行目）、傾きは渡さない。組み込みの API に傾きの欄が無い（`embedder.h` 1352〜1399 行目）。バレルは `StylusPrimary` のボタンである（`flutter_window.cc` 111〜126 行目）
 - **途中の点:** 1 つのメッセージにまとめて届いた点は、`GetIntermediatePoints()` が、読まれたときに `GetPointerInfoHistory`（ペンは `GetPointerPenInfoHistory`、タッチは `GetPointerTouchInfoHistory`）から古い順に作る。最大 512 点で、読まれなければ何もしない。手書きや描画のアプリが、点を飛ばさずに線を引ける
   - Avalonia が同じ形である（`AppWndProc.cs` 1062〜1117 行目、上限は `WindowImpl.cs` 113 行目の 512）。Flutter と GPUI は読まない
+  - **層の分け方:** Platform は、メッセージの `POINTER_INFO.historyCount` を `PointerInput.HistoryCount` に入れる。`IPointerPlatform.ReadHistory` は、Win32 の履歴を物理画素のクライアントの座標で書き、書いた点の数を返す。`WindowInput` は、配っている入力の番号と件数を覚え、使い回す配列（最大 512 点、足りないときだけ伸ばす）を持つ。`PointerEvent` は、今の `WindowInput` への参照を通して、最初の `GetIntermediatePoints()` で `ReadHistory` を呼ばせ、論理座標に直して古い順に並べる。最後の点がそのイベント自身の点である。同じ配送の中の 2 回目からは、同じ点を返す
+  - **読める時:** Win32 の履歴は、呼んだスレッドが最後に受けたポインタのメッセージのもので、新しい順に並ぶ（Microsoft の `GetPointerPenInfoHistory` の頁）。そのため `GetIntermediatePoints()` が読めるのは、そのイベントを配っている間（ハンドラの中）だけである。ハンドラが `PointerEvent` を持ち出して後で呼ぶと `InvalidOperationException` を投げる。返す `ReadOnlySpan` も、配送が終わるまでしか使えない。マウスは `WM_MOUSE*` で受けるので履歴が無く、自身の 1 点だけを返す
 - **タッチのタップ:** タッチの Down と Up は、左ボタンとして配る。Down から閾値（下の「タッチのドラッグ」と同じ 18 論理画素）を超えずに離せば Click になる。`ClickCount` は、マウスと同じ `GetDoubleClickTime` の時間の中で、50 論理画素の中に続いたタップを数える。マウスの `SM_CXDOUBLECLK`（4 画素）は指には狭い
   - Avalonia はタッチとペンのダブルタップの距離を 50 にする（`Platform/DefaultPlatformSettings.cs` 17〜33 行目）
 - **タッチのドラッグ（I1b）:** タッチのドラッグが閾値（18 論理画素）を超えたら、スクロールする箱を動かす。マウスのドラッグでは動かさない。動かすのは、ドラッグの向きに範囲を持つ、最も内側のスクロールする箱で、範囲の端に着いても外の箱へは渡さない。スクロールに変わったら、押したノードに Cancel を送って Click を出さず、キャプチャはスクロールする箱が取る。離したときの速さで慣性をつけて流す。慣性は Flutter の `ClampingScrollSimulation` の式で、最小の速さ 50、最大 8,000 論理画素毎秒である。速さの求め方と式の細部は、I1b の実装の前に Flutter の `VelocityTracker` と `ClampingScrollSimulation` を読んでこの節に書く
@@ -3530,7 +3533,7 @@ int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
   - XylemUI はフレームを要るときだけ描くので、GPUI のように描くたびに呼ぶだけでは、触れていない間に止まる。Flutter のタイマーは、触れていない間も回る
 - **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1c では DirectManipulation の 1 回の更新の時間を測る
 - **確かめ方:**
-  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム
+  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム。途中の点は、`PointerInput.HistoryCount` と、履歴を返す偽の `IPointerPlatform` を入れて、古い順に並ぶこと、最後が自身の点であること、配送の後に呼ぶと投げること、マウスが 1 点だけであることを確かめる
   - Platform: ポインタの情報を読む所（`GetPointerType`・`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo`・履歴）を差し替えられる形にし、テストは偽の情報を入れて `WM_POINTER*` を `SendMessage` で送る。Flutter の `MockWindowsProcTable` と同じ形である（`flutter_window_unittests.cc` 86・291〜333 行目）。DirectManipulation は COM の部分を偽物にして確かめる（Flutter の `direct_manipulation_unittests.cc`）。3 つとも `InjectSyntheticPointerInput` は使わない
 
 **キーの入力とフォーカス（K1 の Grill でオーナーが決定、Issue #351）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じで、Flutter の `fm` は `widgets/focus_manager.dart`、zed の Button は `crates/ui/src/components/button/` から書く。Win32 のメッセージは Microsoft の文書（`WM_KEYDOWN`・`WM_SYSKEYDOWN`・`WM_ACTIVATE`・`WM_SYSCOMMAND`・`WM_MENUCHAR`・`ToUnicodeEx` の頁）を読んだ。実装は 2 つに分ける。K1a はキーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化。K1b は Disabled、ボタンの Enter と Space、キーボードでのスクロール、フォーカスしたノードを見える所まで動かすこと。
