@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace XylemUI;
 
@@ -30,6 +31,9 @@ namespace XylemUI;
 /// <param name="Twist">A pen's clockwise twist, 0 to 359 degrees; 0 for the others.</param>
 /// <param name="PenFlags">A pen's eraser and inverted marks.</param>
 /// <param name="HistoryCount">The points the message coalesced, its own included (Win32's <c>historyCount</c>); 1 for the mouse.</param>
+// Auto, so that the runtime packs the byte-sized values together: in their declared order the padding made it 80 bytes, and
+// NativeAOT copied it with a call to Memmove (row I1a's VTune count; docs/benchmarks/i1a-touch-pen.md).
+[StructLayout(LayoutKind.Auto)]
 internal readonly record struct PointerInput(
     PointerInputKind Kind,
     int X,

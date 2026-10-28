@@ -736,6 +736,7 @@ public sealed class WindowInputTests(UiThreadFixture ui)
     {
         Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<UiNode>(), 0, 576);
         Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<PaintStyle>(), 0, 104);
+        Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<PointerInput>(), 0, 64);
         Assert.InRange(Allocated(static () => new NodeVisual()), 0, 192);
         Assert.InRange(Allocated(static () => new PseudoStyles()), 0, 336);
         Assert.InRange(Allocated(static () => new FocusStyles()), 0, 328);

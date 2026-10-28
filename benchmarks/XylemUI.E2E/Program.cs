@@ -84,6 +84,7 @@ return scenario switch
     "event-latency" => EventLatency.Run(Number(1, 100)),
     "resize-text" => CoreCosts.ResizeText(Number(1, 51)),
     "layout" => LayoutCost.Run(Number(1, 15)),
+    "input-loop" => InputLoop.Run(args.Length > 1 ? args[1] : "wheel", Number(2, 10_000)),
     "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),
     "glyph-refused" => CoreCosts.GlyphRefused(Number(1, 2_000)),
     "glyph-resolve" => GlyphResolve.Run(Number(1, 5)),
