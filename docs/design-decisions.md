@@ -602,6 +602,24 @@ Rejected:
 
 ---
 
+## タッチとペン
+
+Decision:
+  タッチとペンは `WM_POINTER*` で受け、マウスは `WM_MOUSE*` のまま、OS が作るマウスのメッセージは捨てる。ポインタごとに番号とキャプチャを持ち、ホバーはマウスとペンだけがデバイスごとに持つ。ペンは W3C Pointer Events の値（圧力 0〜1、傾き、ひねり、消しゴム、裏返し、バレルは右ボタン）と、読まれたときに作る途中の点を持つ。タッチのドラッグとタッチパッドのパンは、同じ式（Flutter の `ClampingScrollSimulation`）の慣性で流し、タッチパッドは DirectManipulation で受けて OS の慣性を捨てる（I1 の Grill、Issue #384）。
+
+Rejected:
+  - `EnableMouseInPointer` でマウスも `WM_POINTER` で受ける（3 つとも呼ばず、マウスを `WM_MOUSE*` で受ける。比べる相手に、マウスを `WM_POINTER` で受ける形の基準が無い）
+  - タッチとペンを、OS が作るマウスのメッセージのまま受ける（GPUI。圧力・傾き・複数の指が届かない）
+  - ホバーを 1 つだけ持つ（Avalonia。ペンを近づけている間、マウスのホバーが消える）
+  - タッチでも Enter と Leave を送る（W3C。指の下で Hovered の見た目が立つ。Flutter と Avalonia はタッチを外す）
+  - ペンのバレルを別の印にする（Avalonia）か、別のボタンにする（Flutter）。右ボタンにすれば、右クリックのメニューがペンでも動く（W3C）
+  - タッチパッドの OS の慣性をそのまま渡す（GPUI。タッチのドラッグと流し方が変わる）
+  - タッチパッドをホイールのメッセージだけで受ける（Avalonia。パンの始まりと終わりが分からず、慣性が無い）
+  - DirectManipulation の `Update` をタイマーで回す（Flutter。触れていない間も回る）か、描くたびにだけ呼ぶ（GPUI。要るときだけ描く XylemUI では、触れていない間に止まる）
+  - 複数の指のジェスチャーを I1 に入れる（行 I2 で、統一したポインタの上に組む）
+
+---
+
 ## ポップアップ
 
 Decision:
