@@ -37,7 +37,7 @@ cmd /c start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe todo           
   - **消す:** その項目だけが消える
   - **絞り込み:** 3 つとも、通す項目と、選んだボタンの背景
   - **並べ替え:** 順とボタンの文字
-- **割り当て 0:** 済みの切り替えと並べ替えの後のフレーム（`SteadyStateAllocation`、1,000 回、100 項目）。変更そのものはアプリが新しい一覧を作るので、測る外に置いた。そのため `SteadyStateAllocation` に、測らない準備を受ける形を足した
+- **割り当て 0:** 済みの切り替えと並べ替えの後のフレーム（`SteadyStateAllocation`、1,000 回、100 項目）。描き先は、描くことも Present もしない（確かめるのはフレームの段の割り当て。WARP で 1,120 回 Present すると、CI の Windows のジョブが 30 分の上限を超えた）。変更そのものはアプリが新しい一覧を作るので、測る外に置いた。そのため `SteadyStateAllocation` に、測らない準備を受ける形を足した
 
 ## 起動と、何もしていないときのメモリ（Todo と Counter を交互に 6 巡）
 

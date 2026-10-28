@@ -2,6 +2,7 @@ using System.Numerics;
 using TerraFX.Interop.Windows;
 using Todo;
 using XylemUI.Tests;
+using XylemUI.Text;
 using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Desktop.Tests;
@@ -212,7 +213,9 @@ public sealed class TodoTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The todo window on WARP with 100 items added by the model. Warmed up with the same iterations.
+    /// - The todo window with 100 items added by the model, its target drawing and presenting nothing: the frame's own stages are
+    ///   what is checked, and 1,120 presents on WARP took longer than the CI's job allows (PR #381). Warmed up with the same
+    ///   iterations.
     ///
     /// Steps:
     /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: unmeasured, toggle the first item on even iterations and
@@ -226,7 +229,7 @@ public sealed class TodoTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             var model = new TodoModel();
-            using var window = new DesktopWindow(() => TodoApp.Todo(model), Options, useWarp: true);
+            using var window = new DesktopWindow(() => TodoApp.Todo(model), Options, useWarp: true, target: _ => new NoDrawTarget());
             for (int i = 0; i < 100; i++)
             {
                 model.Add();
@@ -256,6 +259,14 @@ public sealed class TodoTests(UiThreadFixture ui)
 
             SteadyStateAllocation.AssertNone(1_000, Change, Frame);
         });
+
+    // A target that draws and presents nothing, for the frames whose layout and display list are what a test checks.
+    private sealed class NoDrawTarget : IRenderTarget
+    {
+        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+
+        public void Present() { }
+    }
 
     private static void AddThree(TodoModel model, App app)
     {
