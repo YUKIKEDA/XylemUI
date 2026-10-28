@@ -3472,11 +3472,11 @@ internal sealed class WindowInput
 internal readonly record struct PointerInput(
     /* … V1c と V2 の欄 … */
     int PointerId,              // マウスはいつも 0。タッチとペンは、Win32 の pointerId を 1 から順の小さい番号に写す
-    bool IsPrimary,             // マウスと、触れているタッチのうち最初に触れたもの。ペンはいつも true
+    bool IsPrimary,             // マウスはいつも true。タッチとペンは、それぞれの種類で今いるもののうち最初に来たもの
     float Pressure,             // 0〜1。ペンは POINTER_PEN_INFO.pressure / 1024。マウスとタッチは押している間 0.5、ほかは 0
-    float TiltX, float TiltY,   // 度（POINTER_PEN_INFO の tiltX・tiltY のまま）。ペンだけ。ほかは 0
+    float TiltX, float TiltY,   // 度（−90〜90。X は正で右へ、Y は正で使う人の側へ。POINTER_PEN_INFO のまま）。ペンだけ。ほかは 0
     float Twist,                // 度（0〜359）。ペンだけ。ほかは 0
-    PenFlags PenFlags);         // Eraser・Inverted。ペンだけ
+    PenFlags PenFlags,          // Eraser・Inverted。ペンだけ
 
 // PointerEvent に足す（公開）
 public int PointerId { get; }
@@ -3493,6 +3493,10 @@ public ReadOnlySpan<PointerPoint> GetIntermediatePoints();   // まとめて届�
 public readonly record struct PointerPoint(Vector2 Position, float Pressure, float TiltX, float TiltY, float Twist, TimeSpan Timestamp);
 
 [Flags] internal enum PenFlags : byte { None = 0, Eraser = 1, Inverted = 2 }
+
+// IPointerPlatform に足す。Win32 の履歴の 1 点（物理画素のクライアントの座標）。書いた点の数を返す
+internal readonly record struct PointerHistoryPoint(int X, int Y, float Pressure, float TiltX, float TiltY, float Twist, TimeSpan Timestamp);
+int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
 ```
 
 - **受けるメッセージ:** タッチとペンは `WM_POINTERDOWN`・`WM_POINTERUPDATE`・`WM_POINTERUP`・`WM_POINTERLEAVE`・`WM_POINTERCAPTURECHANGED` で受け、`GetPointerType` で種類を決め、`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo` で読む。座標は画面の座標を `ScreenToClient` でクライアントの座標にする。マウスは今の `WM_MOUSE*` のままで、OS がタッチとペンから作るマウスのメッセージは捨てる（V1c の `GetMessageExtraInfo` の判別で、タッチかペンなら受けない）。`POINTER_FLAG_CANCELED` と `WM_POINTERCAPTURECHANGED` は、そのポインタの CaptureLost にする
@@ -3500,7 +3504,7 @@ public readonly record struct PointerPoint(Vector2 Position, float Pressure, flo
   - Avalonia は Windows 8 以降で `WM_POINTER*` を受け（`WindowImpl.cs` 153 行目、`WindowImpl.AppWndProc.cs` 567〜622 行目）、`GetPointerType` の後にペンなら `GetPointerPenInfo`、タッチなら `GetPointerTouchInfo` を読む（1191〜1238 行目）。合成のマウスは捨てる（1408〜1418 行目）
   - GPUI は Windows でタッチとペンを受けず、OS が作るマウスのメッセージを、マウスとして受ける（`events.rs` 89〜164・352〜384 行目）
   - `EnableMouseInPointer`（マウスも `WM_POINTER` で受ける形）は、3 つとも呼ばない（Avalonia は宣言だけ、`Interop/UnmanagedMethods.cs` 1219 行目）
-- **ポインタの番号:** マウスはいつも 0 である。タッチとペンは、最初に受けたときに 1 から順の空いている番号を取り、タッチは Up で、ペンは `WM_POINTERLEAVE`（範囲から出たとき）で返す。キャプチャはポインタごとに持ち、押したノードへ暗黙に取る（上の「キャプチャ」の規則を、ポインタごとに当てる）
+- **ポインタの番号:** マウスはいつも 0 である。タッチとペンは、最初に受けたときに 1 から順の空いている番号を取り、`WM_POINTERLEAVE` で返す。Windows はタッチでも `WM_POINTERUP` の後に `WM_POINTERLEAVE` を送るので、タッチもペン（範囲から出たとき）も同じ所で返す（Flutter と同じ）。キャプチャはポインタごとに持ち、押したノードへ暗黙に取る（上の「キャプチャ」の規則を、ポインタごとに当てる）
   - Flutter は Win32 の pointerId を 0〜128 の番号に写し、`WM_POINTERLEAVE` で返す（`flutter_window.cc` 29〜30・639・671〜673 行目）。ヒットテストの結果をポインタごとに持つ（`gestures/binding.dart` 409〜438 行目）
   - Avalonia はデバイスごとに pointerId から `Pointer` を引く表を持ち、最初のポインタを primary にする（`TouchDevice.cs` 24・43〜52 行目、`PenDevice.cs` 20・44〜52 行目）
 - **ホバー:** マウスとペンだけがホバーし、デバイスごとに自分のホバーの集合を持つ。ノードの Hovered は、どれか 1 つの集合に入っていれば立てる。タッチはホバーせず、Enter と Leave を送らない。押した間の Pressed は、タッチでも立てる。ペンが範囲から出たら（`WM_POINTERLEAVE`）、ペンの集合のノードに Leave を送り、番号を返す
