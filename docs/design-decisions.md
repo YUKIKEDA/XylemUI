@@ -534,6 +534,26 @@ Rejected:
 
 ---
 
+## キーボードとフォーカス
+
+Decision:
+  キーのイベントは、フォーカスしたノード（無ければ根）から capture と bubble で配り、止めたものは OS に渡さない。Tab の順は `TabIndex`（既定 0）と木の順で、端で戻る。左ボタンの Down で、フォーカスできる最も近い祖先にフォーカスする。輪（FocusVisible）は、最後の入力がキーボードのときに見せる。Disabled は子孫に受け継ぐ。ボタンは Enter の Down と Space の Up で Click にする。スクロールする箱は、止められなかった矢印・PageUp・PageDown・Home・End で動く（K1 の Grill、Issue #351）。
+
+Rejected:
+  - bubble だけで配る（Flutter。モーダルのフォーカストラップとショートカットに capture が要る、§7。ポインタと形がそろわない）
+  - Tab の順を位置から読む順にする（Flutter の `ReadingOrderTraversalPolicy`。§7.1 の木の順。Avalonia と GPUI も木の順）
+  - `TabIndex` の既定を `int.MaxValue` にする（Avalonia。値を付けたノードが付けないノードより先になる。GPUI の既定 0 にした）
+  - ボタンを押してもフォーカスしない（Flutter、zed の Button。Avalonia は押した要素にフォーカスする）
+  - Tab と方向キーで来たフォーカスだけに輪を見せる（Avalonia の `:focus-visible`。マウスでフォーカスした後にキーを押しても輪が出ない）
+  - Disabled を部品ごとの印にして受け継がない（Flutter、zed。容器を Disabled にしても中の部品が動く）
+  - ボタンの Enter と Space を Down と繰り返しのたびに Click にする（Flutter。Space を押したまま外す取り消しができない）
+  - ボタンの Enter と Space を Up で Click にする（GPUI。Enter を押してすぐ動かない）
+  - キーでスクロールしない（GPUI）、PageUp と PageDown だけにする（Avalonia）
+  - K1 でスコープの積み重ねとモーダルを入れる（使うダイアログとポップアップが行 P02 で、K1 には確かめる相手が無い）
+  - K1 でキーの組み合わせから動作への仕組みを入れる（Flutter の `Shortcuts`、Avalonia の `KeyBindings`、GPUI の keymap。行 K2 にした）
+
+---
+
 ## 部品の API
 
 Decision:

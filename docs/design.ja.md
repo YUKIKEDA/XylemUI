@@ -942,8 +942,8 @@ internal struct UiNode
     public LayoutState Layout;
     public TextLeaf? Text;               // 文字の葉だけが持つ（§3.2「文字の葉」、V1a）
     public NodeVisual? Visual;           // 箱の見た目と描く関数を持つノードだけ（§5.0「描画の段とフレームの駆動」、V1b）
-    public NodeInput? Input;             // ハンドラ・カーソル・遮る印を持つノードだけ（§7「ポインタの入力」、V1c）
-    public PseudoState Pseudo;           // Hovered / Pressed（§2.13、V1c）
+    public NodeInput? Input;             // ハンドラ・カーソル・遮る印・フォーカスの印を持つノードだけ（§7、V1c・K1）
+    public PseudoState Pseudo;           // Hovered / Pressed（V1c）、Focused / FocusVisible / FocusWithin / Disabled（K1）。§2.13
     public SemanticsState Semantics;
     public NodeVersions Versions;        // キャッシュ妥当性判定（§11.5.2）
 }
@@ -957,7 +957,8 @@ internal struct DirtyState
 
 
 // V1c の前の InteractionState（疑似状態・Focusable・カーソル・IME の状態）は作らない。疑似状態は UiNode.Pseudo、
-// カーソルは NodeInput に置いた（V1c の Grill）。Focusable は行 K1、IME の状態は行 P02 で、持つノードだけが払う形に置く
+// カーソルは NodeInput に置いた（V1c の Grill）。Focusable・TabIndex・自分の Disabled も NodeInput に置き（K1）、
+// 受け継いだ Disabled は Pseudo のビットに持つ。IME の状態は行 P02 で、持つノードだけが払う形に置く
 
 internal struct SemanticsState
 {
@@ -1510,10 +1511,23 @@ public static class ElementExtensions
     public static Element Transform(this Element e, Matrix3x2 transform);
     public static Element Hovered(this Element e, PaintStyle style);
     public static Element Pressed(this Element e, PaintStyle style);
+    public static Element Focused(this Element e, PaintStyle style);        // K1（§7「キーの入力とフォーカス」）
+    public static Element FocusVisible(this Element e, PaintStyle style);   // K1。フォーカスしていて、最後の入力がキーボード
+    public static Element FocusWithin(this Element e, PaintStyle style);    // K1。自分か子孫がフォーカスしている
+    public static Element Disabled(this Element e, PaintStyle style);       // K1。自分か祖先が Disabled
     public static Element Draw(this Element e, DrawFunc draw);
     // 入力
     public static Element Cursor(this Element e, CursorKind cursor);
     public static Element BlocksPointer(this Element e);
+    // キーボードとフォーカス（K1、§7「キーの入力とフォーカス」）
+    public static Element Focusable(this Element e, bool focusable = true);
+    public static Element TabIndex(this Element e, int index);                       // 既定 0。小さい値が先、同じ値は木の順
+    public static Element Disabled(this Element e, bool disabled = true);            // 子孫に受け継ぐ
+    public static Element Disabled(this Element e, IReadOnlySignal<bool> disabled);
+    public static Element On(this Element e, KeyEventKind kind, EventPhase phase, KeyHandler handler);
+    public static Element On(this Element e, FocusEventKind kind, EventPhase phase, FocusHandler handler);
+    public static bool Focus(this Element e);                                        // フォーカスできなければ false
+    public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
     // スクロール（V2、§3.4.1「スクロールする箱」）
     public static Element Overflow(this Element e, Overflow x, Overflow y);   // layout（ChangeKind.Size）
     public static Element ScrollState(this Element e, ScrollState state);
@@ -1526,7 +1540,7 @@ public static class ElementExtensions
 // XylemUI.Primitives（見た目のない部品、§13.1）。名前空間 XylemUI.Primitives、using static XylemUI.Primitives.Primitive;
 public static class Primitive
 {
-    public static Element Button(Element content, Action onClick);
+    public static Element Button(Element content, Action onClick);   // フォーカスでき、Enter と Space で Click（K1）
     public static Element Button(string label, Action onClick);   // Button(Text(label), onClick)
 }
 
@@ -1543,7 +1557,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - Flutter: `Column` と `Row` は `widgets/basic.dart`（`Flex` は 5294 行目、`Row` は 5695 行目、`Column` は 5887 行目）、`Text` は `widgets/text.dart` 497 行目にある。widgets の層にボタンは無い。押せるものは `GestureDetector`（`widgets/gesture_detector.dart` 223 行目）と `Listener`・`MouseRegion`（`widgets/basic.dart` 7146・7288 行目）を組んで作る。ボタンは material（`material/button_style_button.dart` 75 行目）と cupertino（`cupertino/button.dart` 71 行目）にある
   - GPUI: core の要素は `div`・`text`・`canvas` などで（`gpui/src/elements/mod.rs` 1〜27 行目）、ボタンは Zed の `ui` crate にある（`ui/src/components/button/button_like.rs` 751〜900 行目）
   - Avalonia: `StackPanel`・`TextBlock`・`Button` はどれも Avalonia.Controls にある（`Avalonia.Controls/StackPanel.cs` 19 行目、`TextBlock.cs` 19 行目、`Button.cs` 36 行目）。`Button` の見た目はすべてテーマから来て、テーマが無ければ何も描かない（`Avalonia.Controls/Primitives/TemplatedControl.cs` 306〜343 行目、テーマは `Avalonia.Themes.Fluent/Controls/Button.xaml` 13〜95 行目）
-  - V1 の `Button` は、押せることと押した状態だけを持つ。Click のハンドラ（`OnClick`）、Pressed の擬似状態（V1c）、ヒット領域を持つ `Box` で、背景も文字の色も付けない。見た目はアプリかテーマ（§13.2）が、メソッドチェーンで付ける。キーボードでの Click（Enter と Space）とフォーカスは行 K1 で足す
+  - V1 の `Button` は、押せることと押した状態だけを持つ。Click のハンドラ（`OnClick`）、Pressed の擬似状態（V1c）、ヒット領域を持つ `Box` で、背景も文字の色も付けない。見た目はアプリかテーマ（§13.2）が、メソッドチェーンで付ける。K1 で、フォーカスできることと、キーボードでの Click（Enter と Space）を足す（§7「キーの入力とフォーカス」の「ボタンのキー」）
 - **名前空間 `XylemUI.*` の中から `Text` を呼ぶ:** `XylemUI.Primitives` などの名前空間の中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかり、CS0118 になる。アプリの名前空間（`Counter` など）では起きない。`XylemUI.*` の中のコード（部品・テーマ・テスト）は `Elements.Text(...)` と書く（V1d の実装で、オーナーが決定。`docs/conventions.md`）
 - **部品の関数が木を見つける方法:** 部品の関数は引数を取らない（上の `Counter`）。ウィンドウの host（`XylemApp.Run`）が根の関数を呼んでいる間だけ、その木を UI スレッドの「今の木」にする（Scope の「今の Scope」と同じ形、§2.3）。`Elements` の関数は、今の木にノードを作る。今の木が無い所（根の関数の外、ハンドラの中）で作ると `InvalidOperationException` を投げる。後でノードを作る `Show` と `For`（§2.7）は、その時に今の木を立て直す。Flutter は `BuildContext`（`widgets/framework.dart` 2308 行目。中身は `Element` で 3570 行目）を、GPUI は `window` と `cx` を、どの描く関数とハンドラにも引数で渡す（`gpui/src/element.rs` 164〜167 行目）。Avalonia は、木の外で作った部品を、根に付いた親に足したときに付ける（`Avalonia.Base/Visual.cs` 715〜737 行目）。引数で渡す形は §2.13 の書き方を変えるので、採らない
 - **`Element`:** 木とノードの組で、ウィンドウが複数あってもどの木のノードかが分かる。`Foreground` は、文字の葉には自分の色（`SetTextColor`、`TextLeaf.Color`）として、ほかのノードには子孫に渡す色（`SetForeground`、`NodeVisual.Foreground`）として書く。1 万行の文字の葉が `NodeVisual` を持たずに済む（§5.0「文字の色」）。`Border(width, paint)` は、幅を `LayoutStyle.Border`（`ChangeKind.Size`）に、塗りを `SetBorderPaint`（`ChangeKind.Color`）に書く（§2.4 の対応表、§5.0「枠線の幅」）。メソッドチェーンは中間の値を作らず、割り当てない。Signal を受ける多重定義だけが Effect を 1 つ作る
@@ -1580,7 +1594,11 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 internal enum PseudoState : byte
 {
     None = 0, Hovered = 1 << 0, Pressed = 1 << 1,
-    // Focused と Disabled は、フォーカスを入れる行 K1 で足す（V1c の Grill）
+    // K1（§7「キーの入力とフォーカス」）
+    Focused = 1 << 2,        // フォーカスしているノード
+    FocusVisible = 1 << 3,   // Focused で、最後の入力がキーボード（輪を見せる）
+    FocusWithin = 1 << 4,    // 自分か子孫が Focused
+    Disabled = 1 << 5,       // 自分か祖先が Disabled（受け継いだ値。自分の印は NodeInput.Disabled）
 }
 
 public readonly record struct PaintStyle  // レイアウトに影響するプロパティは持たない
@@ -1593,7 +1611,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 }
 ```
 
-フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
+フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。K1 の 4 つは、その上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
 **Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。
 
@@ -1991,7 +2009,7 @@ public sealed class ScrollState
 - **ホイールを配る相手:** 当たったノードから、Down などと同じ経路（capture と bubble）で配る。スクロールする箱は bubble で受け、範囲に収めた位置が実際に変わるときだけ受け取って `StopPropagation` する。端にいて位置が変わらなければ、外側の箱へ渡る（スクロールの連鎖）。Flutter は、位置が変わる Scrollable だけが `PointerSignalResolver` に名乗り出て、最初の（最も深い）ものが受ける（`widgets/scrollable.dart` 954〜966 行目、`gestures/pointer_signal_resolver.dart` 86〜93 行目）。Avalonia は `e.Handled = !IsScrollChainingEnabled || offsetChanged`（`ScrollContentPresenter.cs` 796 行目、連鎖は既定で有効）。GPUI は止めずに、ホバー中のスクロールする箱すべてに量を配る（`div.rs` 3339〜3384 行目）。ボタンを押してキャプチャしている間も、当たったノードから配る（Flutter と GPUI。Avalonia はキャプチャしたノードに配る、`Avalonia.Base/Input/MouseDevice.cs` 232〜246 行目）
 - **Shift で横:** マウスの、Shift を押した縦のホイールは、スクロールする箱の側で横のスクロールにする（Flutter の `scrollable.dart` 933〜951 行目はマウスだけ、Avalonia の `ScrollContentPresenter.cs` 764〜769 行目）。入力の層は来たままの量を渡す。GPUI はバックエンドで変える（`gpui_windows/src/events.rs` 555〜585 行目）
 - **滑らかなスクロール:** しない。ホイールで位置をすぐ変える。3 つともアニメーションさせない（Avalonia の `ScrollContentPresenter.cs` 794 行目、Flutter の `widgets/scroll_position_with_single_context.dart` 210〜236 行目、GPUI の `div.rs` 3378〜3382 行目）
-- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜811 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜103 行目）は行 I1。キーボードでのスクロール（矢印・PageUp など。Flutter の `ScrollAction` は 1 行 50 画素、1 ページはビューポートの 0.8 倍、`widgets/scrollable_helpers.dart` 386・410・445〜446 行目）は行 K1。見えるスクロールバーは行 G1
+- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜811 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜103 行目）は行 I1。キーボードでのスクロールと、フォーカスしたノードを見える所まで動かすことは行 K1 で、§7「キーの入力とフォーカス」に書く。見えるスクロールバーは行 G1
 - **確かめ方:**
   - layout: 上の Taffy の 54 件のうち、マージンの相殺の 5 件を除く 49 件が通る。`scroll_width`・`scroll_height` を持つノードは、スクロールできる範囲が Chrome と一致する
   - WARP: 箱の外にあって切られていたボタンが、位置を変えた後に画素として出る（MoonBit 版の V2 と同じ到達点）。箱の外は切られる
@@ -3348,7 +3366,7 @@ internal sealed class WindowInput
   - GPUI もマウスに `WM_POINTER` を使わない（`gpui_windows/src/events.rs` 112〜149 行目）。`TrackMouseEvent` は 1414〜1436 行目、`SetCapture` はどのボタンでも押したとき（476 行目）、`ReleaseCapture` は離したとき（506 行目）
   - Flutter は `WM_POINTER*` でタッチ・ペン・マウスを受け（`flutter_window.cc` 613〜676 行目）、`WM_MOUSEMOVE` も受ける（678〜698 行目）
   - OS がタッチとペンから作るマウスのメッセージは、マウスとして受ける。`PointerType` は `GetMessageExtraInfo()` の印で入れる。`& 0xFFFFFF00` が `0xFF515700` ならタッチかペンで、`0x80` のビットが立っていればタッチ（Flutter の `flutter_window.cc` 56〜69 行目と同じ判別。Flutter はこの印のメッセージを捨て、`WM_POINTER` で受ける）。`WM_POINTER` でタッチとペンを受ける形（複数のポインタ、筆圧、傾き）は行 I1 で入れる
-  - 修飾キーは、Control と Shift を `wParam` の `MK_CONTROL`・`MK_SHIFT` から読み、`wParam` に無い Alt を `GetKeyState(VK_MENU)` から読む（PR #319 のレビュー）
+  - 修飾キーは、Control と Shift を `wParam` の `MK_CONTROL`・`MK_SHIFT` から読み、`wParam` に無い Alt を `GetKeyState(VK_MENU)` から読む（PR #319 のレビュー）。K1 で足す Meta（Windows キー）も、`wParam` に無いので `GetKeyState(VK_LWIN)`・`GetKeyState(VK_RWIN)` から読み、ポインタのイベントとキーのイベントで `Modifiers` の意味をそろえる（PR #352 のレビュー）
   - ホイール（`WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL`）は V2 で入れる（§3.4.1「スクロールする箱」、V2 の Grill）。`wParam` の上の語が、符号付きの回した量（`WHEEL_DELTA` 120 で 1 ノッチ）。`lParam` の位置は画面の座標なので、`ScreenToClient` でクライアントの座標にする（ほかのマウスのメッセージはクライアントの座標）。下の語の `MK_*` のボタンとキー、`GetMessageExtraInfo` の印は、ほかのマウスのメッセージと同じに読む。Avalonia（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 403〜433 行目）と GPUI（`gpui_windows/src/events.rs` 543〜628 行目）も、`lParam` を画面の座標として読む。量は論理画素の `PointerInput.WheelDelta` にして Core に渡す
 - **イベントの種類:** Down・Up・Move・Cancel・Click・Wheel（V2）は経路で配る。Enter と Leave は、ホバーの集合に入ったノードと出たノードに 1 回ずつ送る直接のイベントで、伝播しない。直接のイベントは、登録したフェーズによらず、そのノードのハンドラだけを呼ぶ。Avalonia の `PointerEntered`・`PointerExited` は Direct で（`Avalonia.Base/Input/InputElement.cs` 107〜219 行目）、Flutter の Enter と Exit は MouseTracker が注釈ごとに作る（`gestures/mouse_tracker.dart` 399〜428 行目）。Cancel は、キャプチャを奪われたときに送る（Avalonia の `PointerCaptureLost`、Flutter の `PointerCancelEvent`）
 - **座標:** ヒットテストは物理画素の座標のまま試す（§5.0「ヒット領域と `DrawingContext`」の「座標」）。`Position` は物理画素を `WindowFrames` の倍率で割った論理座標で、Avalonia（`WindowImpl.AppWndProc.cs` 1398〜1401 行目の `DipFromLParam`）・GPUI（`gpui_windows/src/util.rs` 151〜156 行目の `logical_point`）・Flutter（`gestures/converter.dart` 62〜80 行目）と同じく、画素の中心に寄せない。`LocalPosition` は、ハンドラのノードのヒット領域の項目の状態の変換の逆で `Position` を戻し、ノードの境界の箱の左上を引いた値である。ハンドラを持つノードは必ずヒット領域を書く（§5.0）ので、項目はある。ただし、直近のフレームでヒット領域を書かなかったノード（直近のフレームの後に初めてハンドラを足した祖先が、次のフレームの前に経路に入るときなど）では、`LocalPosition` は NaN になる。木から外したノードは解放されるので、Leave も届かない（PR #340 のレビュー）。公開の API の XML ドキュメントにそう書く（V1d の Grill）。Flutter は `localPosition`（`gestures/events.dart` 326 行目）、Avalonia は `GetPosition(relativeTo)`（`Avalonia.Base/Input/PointerEventArgs.cs` 86〜114 行目）を持つ。GPUI はウィンドウの座標だけを渡す
@@ -3368,7 +3386,7 @@ internal sealed class WindowInput
   - `ClickCount` は Platform が Down で数え、Up は同じ値を使う。同じボタンで、`GetDoubleClickTime` の時間の中で、`SM_CXDOUBLECLK`・`SM_CYDOUBLECLK` の範囲の中なら 1 つ増やし、そうでなければ 1 に戻す（GPUI の `gpui_windows/src/window.rs` 1290〜1356 行目と同じ。Avalonia は OS のダブルクリックの時間と大きさで数える、`MouseDevice.cs` 150〜165 行目。Flutter は自前の 300 ms、`gestures/constants.dart` 35 行目）
 - **ホバー:** ホバーの集合は、当たったノードとその祖先である。キャプチャ中は、当たったのがキャプチャしたノードかその子孫のときだけ、キャプチャしたノードとその祖先で、それ以外は空である（Avalonia は、当たった要素がキャプチャした要素でなければ何も pointer-over にしない、`Avalonia.Base/Input/PointerOverPreProcessor.cs` 114〜117 行目）。`Handle` の始めに今の点で集合を求め、出たノードに内側から順に Leave、入ったノードに外側から順に Enter を送り（Flutter の `mouse_tracker.dart` 399〜428 行目と同じ順）、Hovered のフラグを付け替える。Leave（ウィンドウから出た）では、キャプチャが無ければ集合を空にする。キャプチャ中は `WM_MOUSEMOVE` がウィンドウの外でも届くので、それで決める
 - **当て直し:** 表示リストを作り直したフレームでは、Present の後に `WindowFrames` が `Rehit` を呼ぶ。`Rehit` は最後のポインタの位置（ウィンドウの中にあるとき）で集合を求め直し、Enter・Leave とフラグとカーソルを更新する。Move は送らない。`Handle` と同じく全体を 1 つの `Batch` で包み、ハンドラの例外も同じに扱う。Enter・Leave を送っている間に来た当て直し（ハンドラがその場でフレームを回したときの `Rehit`、ハンドラの中で回したメッセージ）は、その場では行わず、送り終えてから最後のポインタの位置で行う。送っている間の鎖を書き換えないためである（PR #327 のレビュー）。ハンドラが付けた印は、フレームの手順 3 で入れ替えた後の `PaintUpdates` に入るので、次のフレームを頼む。変われば印が付き、次のフレームを頼む。3 つとも、ポインタが動かなくても、絵が変わったら当て直す（Flutter は毎フレームの後の `updateAllDevices`、`rendering/binding.dart` 557〜576 行目。Avalonia は描いた後の `SceneInvalidated`、`Rendering/Composition/CompositingRenderer.cs` 197〜207 行目。GPUI は描く途中の `mouse_hit_test`、`gpui/src/window.rs` 3740 行目）
-- **擬似状態のフラグ:** Hovered はホバーの集合のノードに立てる。Pressed は、左ボタンの Down で、キャプチャしたノードとその祖先に立て、左ボタンの Up と CaptureLost で下ろす。外へ出ても押下のままである（GPUI の active は、どの Up でも下ろすまで残る、`gpui/src/elements/div.rs` 3233〜3270 行目。Avalonia の `IsPressed` は、離すかキャプチャを失うまで残る、`Button.cs` 439〜469 行目）。フラグが変わっても、その状態の `PaintStyle`（§2.13）を持つノードにだけ `ChangeKind.Color` の印を付ける。Focused と Disabled は、フォーカスを入れる行 K1 で足す
+- **擬似状態のフラグ:** Hovered はホバーの集合のノードに立てる。Pressed は、左ボタンの Down で、キャプチャしたノードとその祖先に立て、左ボタンの Up と CaptureLost で下ろす。外へ出ても押下のままである（GPUI の active は、どの Up でも下ろすまで残る、`gpui/src/elements/div.rs` 3233〜3270 行目。Avalonia の `IsPressed` は、離すかキャプチャを失うまで残る、`Button.cs` 439〜469 行目）。フラグが変わっても、その状態の `PaintStyle`（§2.13）を持つノードにだけ `ChangeKind.Color` の印を付ける。Disabled のノードには Hovered も Pressed も立てない。Focused・FocusVisible・FocusWithin・Disabled は、下の「キーの入力とフォーカス」に書く（K1）
 - **遮る印:** `BlocksPointer` は、ハンドラ・カーソル・ホバーの見た目が無くてもヒット領域を書くノードの印である。`HitTest` は最前面の 1 項目だけを返すので、ヒット領域を書いたノードは、それだけで後ろのノードを遮る。当たったら、そのノードから木の祖先へ経路を作る。Flutter の `HitTestBehavior.opaque` と同じく祖先に届く（`rendering/proxy_box.dart` 148〜195 行目）。GPUI の `BlockMouse` は、祖先のヒットボックスも遮る。親は子より先にヒットボックスを入れ（`gpui/src/elements/div.rs` 2390〜2398 行目で、子を prepaint する前に `insert_hitbox`）、当てるときは後ろから試して `BlockMouse` で止まる（`gpui/src/window.rs` 1165〜1187 行目）が、ここでは経路を木で作るので祖先に届く。当たっても後ろへ通す印（Avalonia の `IsHitTestVisible=false`、Flutter の `translucent`）は、ポップアップの行 P02 で決める
 - **カーソル:** カーソルを求める元は、キャプチャ中はキャプチャしたノード、そうでなければ当たったノードである。元から祖先へたどり、最初に `NodeInput.Cursor` を持つノードの形を使う。どれも持たないか、どこにも当たらなければ `Arrow`。求めた形が前と変わったら `IPointerPlatform.SetCursor` を呼ぶ。Win32 は `WM_SETCURSOR` が `HTCLIENT` のとき今の形で `SetCursor` して `TRUE` を返し、ほかは `DefWindowProc` に渡す
   - Avalonia はカーソルを継承し、キャプチャ中はキャプチャした要素から求める（`Avalonia.Base/Input/PointerOverPreProcessor.cs` 248 行目）
@@ -3382,9 +3400,131 @@ internal sealed class WindowInput
   - WARP: ホバーと押下の絵と、変換・不透明度の絵を CPU の基準と比べる（§5.0）
   - 費用: `benchmarks/XylemUI.E2E` にホバーの出入りの場面を足し、イベント 1 つの配送の µs、深さ 50 の経路の配送、ホバーで変わるフレームの段ごとの時間を測る。どれも割り当て 0
 
+**キーの入力とフォーカス（K1 の Grill でオーナーが決定、Issue #351）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じで、Flutter の `fm` は `widgets/focus_manager.dart`、zed の Button は `crates/ui/src/components/button/` から書く。Win32 のメッセージは Microsoft の文書（`WM_KEYDOWN`・`WM_SYSKEYDOWN`・`WM_ACTIVATE`・`WM_SYSCOMMAND`・`WM_MENUCHAR`・`ToUnicodeEx` の頁）を読んだ。実装は 2 つに分ける。K1a はキーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化。K1b は Disabled、ボタンの Enter と Space、キーボードでのスクロール、フォーカスしたノードを見える所まで動かすこと。
+
+```csharp
+// Platform が正規化して Core に渡すキーの入力（上の図の PlatformInput。§12.4 の注入の入口）
+internal readonly record struct KeyInput(
+    KeyEventKind Kind,          // Down / Up
+    Key Key,                    // 論理キー（Win32 の VK から。配列に依存する）
+    PhysicalKey PhysicalKey,    // 物理キー（スキャンコードと拡張の印から。配列に依存しない）
+    Rune KeyChar,               // 押したキーの文字（ToUnicodeEx）。無いか、制御文字なら default
+    KeyModifiers Modifiers,     // 押されている修飾キー
+    bool IsRepeat,              // Down の自動の繰り返し（lParam の bit 30）。Up では false
+    TimeSpan Timestamp);        // Platform がメッセージを受けた時刻（Stopwatch）
+
+public enum Key : ushort { None, Back, Tab, Enter, Escape, Space, PageUp, PageDown, End, Home, Left, Up, Right, Down, /* … */ }
+public enum PhysicalKey : ushort { None, Backquote, Digit1, KeyA, Enter, ShiftLeft, ArrowLeft, /* … */ }
+public enum KeyEventKind : byte { Down, Up }
+[Flags] public enum KeyModifiers : byte { None = 0, Control = 1, Shift = 2, Alt = 4, Meta = 8 }   // Meta（Windows キー）は K1 で足す
+public enum FocusEventKind : byte { FocusIn, FocusOut }
+
+// ハンドラに渡すイベント。in で渡す。PointerEvent と同じ作り
+public readonly struct KeyEvent
+{
+    public KeyEventKind Kind { get; }
+    public Element Target { get; }           // 経路の元のノード（フォーカスしたノードか、根）
+    public Element CurrentTarget { get; }    // 今呼んでいるハンドラのノード
+    public Key Key { get; }
+    public PhysicalKey PhysicalKey { get; }
+    public Rune KeyChar { get; }
+    public KeyModifiers Modifiers { get; }
+    public bool IsRepeat { get; }
+    public TimeSpan Timestamp { get; }
+    public void StopPropagation();
+}
+
+public readonly struct FocusEvent
+{
+    public FocusEventKind Kind { get; }
+    public Element Target { get; }           // フォーカスを得た（FocusIn）か失った（FocusOut）ノード
+    public Element CurrentTarget { get; }
+    public void StopPropagation();
+}
+
+public delegate void KeyHandler(in KeyEvent e);
+public delegate void FocusHandler(in FocusEvent e);
+
+// NodeInput（上）に足す。持つノードだけが払う（§2.5）
+//   bool Focusable;  int TabIndex;  bool Disabled（自分の印。受け継いだ値は UiNode.Pseudo の Disabled）
+
+// ウィンドウ（木）に 1 つ。K1 は根のスコープ 1 つ（§7.2）。UiTree から引ける（Element.Focus() のため）
+internal sealed class FocusManager
+{
+    public NodeHandle Focused { get; }        // フォーカスしているノード（非アクティブの間も覚えている）。無ければ default
+    public bool IsWindowActive { get; }
+    public bool LastInputWasKeyboard { get; } // FocusVisible の元
+}
+
+// WindowInput（上）に足す
+//   public bool Handle(in KeyInput input);   // 止めたら true（Platform は 0 を返す）。止めなければ false（DefWindowProc に渡す）
+//   public void SetActive(bool active);      // Platform が WM_ACTIVATE から呼ぶ
+```
+
+- **`Key` と `PhysicalKey` の名前:** `Key` は Avalonia の `Key`（WPF の系統、`Avalonia.Base/Input/Key.cs` 15〜760 行目）の名前にそろえ、同じ値の別名（`Return` と `Enter`、`Prior` と `PageUp`）は持たない。左右の修飾キーは分ける（`LeftShift`・`RightShift` など。Avalonia の `Key.cs` 630 行目）。`PhysicalKey` は W3C の UI Events の `code` の名前にそろえる（Avalonia の `PhysicalKey.cs` 11 行目、`KeyA`・`Digit1`・`ShiftLeft`）。値の一覧は実装の PR で、Win32 の VK とスキャンコードの表と一緒に書く
+- **Win32 のメッセージ:** `WM_KEYDOWN`・`WM_SYSKEYDOWN` を Down に、`WM_KEYUP`・`WM_SYSKEYUP` を Up にする（Avalonia の `Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 231〜259 行目。Flutter も 4 つと文字のメッセージを `KeyboardManager` に渡す、`flutter_window.cc` 862〜869 行目）。値ごとの元は次のとおり
+  - `Key`: `wParam` の VK。`VK_SHIFT`・`VK_CONTROL`・`VK_MENU` は左右を区別しないので、`lParam` のスキャンコード（bit 16〜23）と拡張の印（bit 24、右の Ctrl と Alt で 1、文書）で左右を決める
+  - `PhysicalKey`: `lParam` の bit 16〜23 のスキャンコードに、bit 24 が立てば `0xE000` を足した値を表で引く（Avalonia の `Input/KeyInterop.cs` 380〜392・475〜491 行目、Flutter の `keyboard_manager.cc` 250〜254 行目）
+  - `IsRepeat`: `lParam` の bit 30（「キーがメッセージの前から押されていたら 1」、文書）。GPUI の `is_held` も bit 30 から読む（`gpui_windows/src/events.rs` 425 行目）。Flutter は自分の押下の記録から繰り返しを決める（`keyboard_key_embedder_handler.cc` 240〜245 行目）
+  - `Modifiers`: メッセージに無いので、`GetKeyState` で `VK_CONTROL`・`VK_SHIFT`・`VK_MENU`・`VK_LWIN`・`VK_RWIN` を読む
+  - `KeyChar`: `ToUnicodeEx` を `wFlags` の bit 2（「キーボードの状態を変えない」、Windows 10 1607 以降、文書）で呼ぶ。GPUI も同じ印で呼ぶ（`events.rs` 1613〜1689 行目）。デッドキー（負の戻り値）、何も書かなかったとき（0）、1 つの `Rune` にならないとき、制御文字（U+0000〜U+001F と U+007F）は `default`。Flutter も Ctrl+A の 0x01 のような制御文字を文字にしない（`keyboard_manager.cc` 191〜202 行目）
+  - Down と Up は修飾キーそのものにも送る（Flutter と Avalonia。GPUI は修飾キーを `ModifiersChanged` にして、Down を送らない、`events.rs` 1490〜1538 行目）
+  - 配らないもの: IME が使う `VK_PROCESSKEY`（Flutter も配らない、`keyboard_key_embedder_handler.cc` 177〜183 行目）と、`SendInput` の文字の `VK_PACKET`（GPUI も捨てる、`events.rs` 1490〜1538 行目）は、`DefWindowProc` に渡すだけにする
+  - Windows は AltGr を左の Ctrl と右の Alt の 2 つの Down で送る。K1 はそのまま 2 つを配る（`Modifiers` は Control と Alt）。Flutter は偽の Ctrl の Up を作り（`keyboard_manager.cc` 20〜42・256〜279 行目）、GPUI は文字の入力を優先する印を立てる（`gpui/src/interactive.rs` 25〜35 行目）。文字の入力にどう渡すかは行 P02 で決める
+  - メッセージを `KeyInput` に直す関数は、修飾キーの状態と `ToUnicodeEx` の結果を引数で受ける。`SendMessage` ではキーの状態と配列を作れないので、本物のウィンドウのテストではその関数を直接確かめる（上の「ポインタの入力」の Alt と同じ）
+- **OS に返す値:** `Handle` が止めた（`StopPropagation` された）キーには 0 を返し（「処理したら 0」、文書）、止めなかったものは `DefWindowProc` に渡す（Avalonia の `AppWndProc.cs` 987〜993 行目、GPUI の `events.rs` 417〜442 行目）。Flutter は止めなかったキーを送り直して `DefWindowProc` に届け、`WM_SYS*` は答えによらず OS に渡す（`keyboard_manager.cc` 109〜121・218〜220 行目）。メッセージループは今のまま、すべてのキーを `TranslateMessage` してから配るので、`WM_CHAR` と `WM_SYSCHAR` も来る。K1 は文字の入力を持たないので、どちらも `DefWindowProc` に渡す。止めた Down の後の `WM_CHAR` を文字の入力にしないこと（Avalonia は `_ignoreWmChar`、`AppWndProc.cs` 261〜276・974〜978 行目。GPUI は `TranslateMessage` の前に配る、`gpui_windows/src/platform.rs` 502〜516・605〜609 行目）は、文字の入力と一緒に行 P02 で決める
+- **Alt とメニューのキー:** XylemUI のウィンドウにはメニューが無いので、`WM_SYSCOMMAND` の `wParam & 0xFFF0`（下の 4 ビットはシステムが使う、文書）が `SC_KEYMENU`（キーで開くウィンドウメニュー）なら 0 を返し、`DefWindowProc` に渡さない。Alt を押して離したとき、F10（`WM_KEYDOWN` の文書の Remarks）、Alt と文字、Alt+Space のどれも開かない。`SC_KEYMENU` の `lParam` は Alt と押した文字の文字コードである（文書）。Avalonia も上の語が 0 以下の `SC_KEYMENU` に 0 を返す（`AppWndProc.cs` 239〜243 行目）が、文字コードの上の語は常に 0 なので同じになる。`WM_MENUCHAR` には `MNC_CLOSE` を上の語にして返し、警告音を止める（Avalonia の 245〜249 行目、文書）。マウスで開く `SC_MOUSEMENU` は止めない。Alt+F4 は `WM_SYSKEYDOWN` を `DefWindowProc` に渡すと閉じる（アプリが止めれば閉じない。Avalonia と同じ）
+- **配る経路:** 元は、ウィンドウがアクティブでフォーカスしたノードがあればそのノード、なければ根である（Avalonia の `KeyboardDevice.cs` 238 行目、GPUI の `gpui/src/window.rs` 6463〜6471 行目）。ポインタと同じく、capture のフェーズを根から元へ、bubble のフェーズを元から根へ呼び、`StopPropagation` で止める（Avalonia の Tunnel と Bubble、`InputElement.cs` 109 行目。GPUI の `window.rs` 6260〜6289 行目。Flutter は葉から根の bubble だけ、`fm` 2273〜2303 行目）。届ける時機、`Batch`、ハンドラの例外、ハンドラを動かす Scope は、上の「ポインタの入力」と同じ。止められなかった Down には、次の既定の動作をこの順で行う
+  1. スクロールする箱のキー（下の「キーボードでのスクロール」）は、bubble の各ノードのハンドラの後に、そのノードで行う（ホイールと同じ場所）
+  2. Tab（下の「Tab の順」）は、bubble の最後、根の後で行う（Avalonia の `KeyboardNavigationHandler` は TopLevel の bubble のハンドラ、`KeyboardNavigationHandler.cs` 36・127〜133 行目）
+  3. ボタンの Enter と Space は、`Primitive.Button` が自分に付けるふつうのハンドラである（下の「ボタンのキー」）
+- **フォーカスできるノード:** `NodeInput.Focusable` が立ち、自分も祖先も Disabled でなく、自分も祖先も `Hidden` でなく、ウィンドウの木にあるノード（Avalonia の `FocusManager.cs` 225・315〜319 行目と同じ条件）。`.Focusable()` の既定は false（Avalonia の `InputElement.cs` 24〜25 行目）。`Primitive.Button` は立てる（Avalonia の `Button.cs` 109 行目、Flutter の `material/ink_well.dart` 1333〜1336 行目）。フォーカスできるノードは Tab で止まる（Avalonia の `IsTabStop` の既定 true、`KeyboardNavigation.cs` 48〜52 行目。GPUI は `tab_stop` を付けたものだけ、`gpui/src/window.rs` 538〜560 行目）
+- **Tab の順:** 下の §7.1。Tab の Down（繰り返しを含む）で、修飾キーが無ければ次へ、Shift だけなら前へ動かす。Control・Alt・Meta が付いた Tab は動かさない。動かしたら止める。フォーカスできるノードが 1 つも無ければ止めず、`DefWindowProc` に渡す（Flutter も動かせないときは OS に渡す、`focus_traversal.dart` 2333〜2349 行目）
+- **押したときのフォーカス:** 左ボタンの Down で、経路を配る前に、元のノード（キャプチャ中はキャプチャしたノード）から祖先へたどり、最初のフォーカスできるノードにフォーカスする。何も無ければ変えない（何も無い所を押してもフォーカスを外さない、3 つとも）。Avalonia は PointerPressed の Tunnel のクラスのハンドラで同じことをする（`FocusManager.cs` 31〜41・289〜313 行目）。GPUI も、フォーカスを持つ要素は押すとフォーカスする（`div.rs` 2771〜2786 行目）が、zed の Button はそれを止める（`ui/button_like.rs` 877〜881 行目）。Flutter はボタンを押してもフォーカスしない（`ink_well.dart` の `handleTap`、1216〜1226 行目）。経路を配る前にフォーカスするので、アプリがこれを止める口は `.Focusable(false)` だけである。押してもフォーカスを奪わない印が要るかは、文字の入力を入れる行 P02 で決める（PR #352 のレビュー）
+- **擬似状態:** Focused はフォーカスしたノードに、FocusWithin はそのノードと祖先に立てる。FocusVisible は、Focused で、`LastInputWasKeyboard` のときに立てる。`LastInputWasKeyboard` は、キーの Down で true、ポインタの Down と Move で false になり、false から始まる（GPUI の `window.rs` 5600〜5609・2178 行目、`focus_visible_style` は `div.rs` 3416〜3434 行目）。マウスでフォーカスした後にキーを押すと輪が出る。Avalonia は Tab と方向キーで来たフォーカスだけに `:focus-visible` を立てる（`InputElement.cs` 599 行目）。フラグが変わったら、その状態の `PaintStyle` を持つノードにだけ `ChangeKind.Color` の印を付ける（V1c と同じ）
+- **ウィンドウの活性化:** Platform は `WM_ACTIVATE` の `wParam` の下の語で `SetActive` を呼ぶ。`WA_INACTIVE` なら false、`WA_ACTIVE` と `WA_CLICKACTIVE` なら true である（文書）。メッセージは `DefWindowProc` にも渡す（最小化されていなければキーボードのフォーカスをウィンドウに置く、文書）。非アクティブになると、フォーカスしたノードに FocusOut を配り、Focused・FocusVisible・FocusWithin を下ろし、ノードは覚えておく。アクティブに戻ると、覚えたノードがまだフォーカスできれば、フラグを立て直して FocusIn を配る。3 つとも同じ形である（Avalonia の `TopLevel.cs` 867〜873 行目と `WindowBase.cs` 332〜344 行目、Flutter の `fm` 1868〜1891 行目、GPUI の `window.rs` 3519〜3549 行目）。Core は OS の状態を読まず、`SetActive` だけで決める（§12.4）
+- **フォーカスの知らせ:** フォーカスが移るときは、フラグと `IsFocused` を書き換えてから、前のノードに FocusOut を、新しいノードに FocusIn を、それぞれのノードを元とする経路（capture と bubble）で配る（Avalonia は `LostFocus` の後に `GotFocus`、どちらも bubble、`KeyboardDevice.cs` 203〜218 行目と `InputElement.cs` 82〜101 行目。DOM の `focusout`・`focusin`）。自分のことかは、ハンドラが `Target` で見分ける。GPUI は自分だけの `on_focus`・`on_blur` と、経路の `on_focus_in`・`on_focus_out` を持つ（`app/context.rs` 558〜621 行目）。FocusIn と FocusOut を配っている間にフォーカスを動かすこと（ハンドラの中の `Element.Focus()`、Tab）は、その場では行わず、配り終えてから行う。配っている途中の経路とフラグを書き換えないためである（上の「当て直し」と同じ、PR #327 のレビュー）
+- **`Element.Focus()` と `IsFocused()`:** `Focus()` はフォーカスできるノードにフォーカスして true を返し、できなければ何もせず false を返す（Avalonia の `Focus()` も bool を返す）。`LastInputWasKeyboard` は変えないので、輪はその前の入力で決まる。非アクティブの間に呼ぶと、覚えるノードを替えるだけで、アクティブに戻ったときにそこへ戻す。`IsFocused()` は Focused のフラグと同じ値の `IReadOnlySignal<bool>` で、初めて求めたときに作り、`UiTree` の表に持ち、ノードを解放すると捨てる（`ScrollState` と同じ置き方、§3.4.1）
+- **外す・隠す・Disabled にする:** フォーカスしたノードかその祖先を木から外す（`UiTree.Remove`）と、外す前に、そのノードから FocusOut を配ってから、フォーカスを空にする。Scope を破棄している途中なら、破棄された Scope のハンドラは呼ばない（§2.13「ハンドラを動かす Scope」）。`Hidden` にする、Disabled にする（自分か祖先）、`.Focusable(false)` にしたときも、フォーカスを空にして FocusOut を配る。空になった後のキーは根へ配り、次の Tab は先頭から始める。兄弟へは移さない（Avalonia の `FocusManager.cs` 81〜104・134〜146 行目と `InputElement.cs` 523〜527・564〜576 行目。Flutter は囲むスコープの前のノードに戻す、`fm` 950〜960 行目。GPUI は id を持ったまま失ったと知らせる、`window.rs` 3521〜3531 行目）
+- **Disabled（K1b）:** `.Disabled(bool)` と `.Disabled(IReadOnlySignal<bool>)` は自分の印（`NodeInput.Disabled`）を書き、自分か祖先の印が立つノードに `PseudoState.Disabled` を立てる（Avalonia の `IsEffectivelyEnabled`、`InputElement.cs` 1043〜1059 行目。Flutter と zed は部品ごとの印で受け継がない、`ink_well.dart` 1292〜1294 行目と `ui/button_like.rs` 486 行目）
+  - 自分の印が変わると、部分木をたどってビットを立て直す（自分の印を持つ子孫の部分木は、その印のまま）。Disabled の親に子を付けると、付けた部分木にビットを立てる。費用は変わった部分木のノードの数で、変化のときだけ払う
+  - Disabled のノードとその子孫のハンドラ（ポインタ・キー・フォーカス）は呼ばない。ヒット領域は今のまま書くので、ポインタは Disabled のノードで止まり、後ろへ通らない。経路の元は、当たったノードから祖先へたどった最初の Disabled でないノードにする（Avalonia のヒットテストは Disabled の要素を飛ばす、`Input/InputExtensions.cs` 45〜49 行目）。Hovered・Pressed・カーソルもその元から決める
+  - Disabled のノードはフォーカスできない。フォーカスしたノードが Disabled になったら、上の「外す・隠す」と同じにする
+- **ボタンのキー（K1b）:** `Primitive.Button` は、修飾キー（Control・Alt・Meta・Shift）の無い Enter と Space を、自分の bubble のハンドラで受けて止める
+  - Enter は Down（繰り返しを含む）で Click にする
+  - Space は Down（繰り返しでないもの）で自分に Pressed を立て、Up で Pressed が立っていれば下ろして Click にする。Pressed の間にフォーカスを失ったら（非アクティブを含む）、Click せずに下ろす
+  - Avalonia と同じ形である（`Button.cs` 307〜344・465〜469 行目。Avalonia の Enter はフォーカスを要らないが、ここではフォーカスしたボタンだけ）。Flutter は Enter と Space を Down と繰り返しのたびに Click にし（`widgets/app.dart` 1265〜1269 行目、`widgets/shortcuts.dart` 576〜580 行目）、GPUI はどちらも Up で Click にする（`div.rs` 3016〜3079 行目）
+  - キーでの Click も、ボタンを元に `PointerEventKind.Click` を bubble で配る。`OnClick` と、祖先の Click のハンドラが同じに受ける。`ClickCount` は 0、`Position`・`LocalPosition` は NaN、`Button` と `Buttons` は `None`、`Modifiers` は `None`（修飾キーの無い Enter と Space だけが Click になる）、`PointerType` は `Mouse` にする。ハンドラは `ClickCount` の 0 でキーからの Click と見分ける。`PointerType` にキーボードの値は足さない（ポインタの機器の種類の列挙で、Touch と Pen の行 I1 が使う）（PR #352 のレビュー）
+- **キーボードでのスクロール（K1b）:** bubble の各ノードのハンドラの後、そのノードが `Scroll` の軸を持てば、修飾キーの無い Down（繰り返しを含む）を次のように受ける。位置が実際に変わったときだけ止め、端なら外側の箱へ渡す（ホイールと同じ連鎖、§3.4.1）。量は論理画素で、アニメーションは付けない（V2 と同じ。Flutter は 100 ms で動かす、`scrollable_helpers.dart` 512〜516 行目）
+  - 上下の矢印: 縦が `Scroll` なら ±50（Flutter の 1 行、`scrollable_helpers.dart` 445〜446 行目）
+  - 左右の矢印: 横が `Scroll` なら ±50
+  - PageUp と PageDown: 縦が `Scroll` なら、見える大きさ（`ScrollState.Viewport`）の高さの ±0.8 倍（Flutter の 1 ページ、同 438〜442 行目。Avalonia は見える大きさの 1 倍、`ScrollViewer.cs` 428〜433・797〜809 行目）
+  - Home と End: 縦が `Scroll` なら縦の 0 と最大へ、縦が無く横が `Scroll` なら横の 0 と最大へ
+  - Flutter は Ctrl+矢印と PageUp・PageDown を割り当て、矢印だけはデスクトップではフォーカスの方向移動に使う（`app.dart` 1275〜1305 行目）。XylemUI は矢印でのフォーカス移動を部品に任せる（§7.2）ので、部品が止めなかった矢印を行のスクロールにし、Home と End を端にあてる（K1 の Grill の Q15）。GPUI はキーでスクロールしない（`div.rs` 2833 行目のホイールだけ）
+- **見える所まで動かす（K1b）:** キーボード（Tab）か `Element.Focus()` でフォーカスが移ったら、次のフレームの layout の pass の後（スクロールの範囲を書いた後、§3.4.1）、フォーカスしたノードから祖先へ、スクロールする箱（`Hidden` か `Scroll` の軸）ごとに、ノードの枠の箱が見える大きさに入るよう最小の量だけ位置を動かす。箱より大きいノードは、始まりの辺をそろえる。外側の箱へは、内側の箱で動かした後の位置で続ける。押したときのフォーカスでは動かさない。Flutter は移動の後に `Scrollable.ensureVisible` を呼び（`focus_traversal.dart` 202〜215 行目）、Avalonia は `BringIntoViewOnFocusChange`（既定 true、`ScrollViewer.cs` 22〜23・789〜795 行目）で同じことをする
+- **費用:** キーの経路は、ポインタの経路の配列を使い回す。Tab は木を 1 回たどるだけで（§7.1）、割り当てない。定常状態のキーの配送、Tab の移動、キーボードでのスクロールのフレーム、フォーカスが変わるフレームは割り当て 0
+- **確かめ方（§12.1 の層）:**
+  - 第 2 層（Core、すべての OS）: `KeyInput` と `SetActive` を `WindowInput` に注入する（§12.4）。capture と bubble の順と `StopPropagation`、フォーカスの無いときの根、Tab の順（`TabIndex`、同じ値の木の順、端で先頭へ、Shift で前、`Hidden` と Disabled を飛ばす、候補が無ければ止めない）、押したときのフォーカス（最も近い祖先、何も無い所）、Focused・FocusVisible・FocusWithin の立ち方と印、非アクティブと戻り、FocusIn と FocusOut の順と経路、配っている途中の `Focus()`、外す・隠す・Disabled にしたとき、Disabled の受け継ぎとハンドラ、ボタンの Enter と Space（Space を押している間に失ったフォーカス）、キーボードでのスクロール（量・連鎖・修飾キー）、見える所まで動かすこと
+  - 第 3 層（表示リスト）: Focused・FocusVisible・Disabled の `PaintStyle` が表示リストに出ること、キーボードでスクロールした後の子の位置
+  - Platform の本物のウィンドウ: メッセージを `KeyInput` に直す関数（VK・スキャンコード・拡張の印・bit 30・修飾キー・`ToUnicodeEx` の結果を引数で）、`WM_KEYDOWN` を止めたときに 0 を返すこと、`SC_KEYMENU` に 0 を返すこと、`WM_MENUCHAR`、`WM_ACTIVATE` から `SetActive`
+  - WARP: 足さない。擬似状態の見た目の画素は、V1c の WARP のテストが確かめている
+  - 費用: `input` に、キー 1 つの配送（深さ 1 と 50）と、10,101 ノードの木での Tab 1 回を足す。どれも割り当て 0
+- **後の行に送るもの:**
+  - 文字の入力（`TextInputEvent`）、IME、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02
+  - スコープを積むことと `IsModal` のフォーカストラップ（§7.2）、`XylemUI.Testing` の `app.Keyboard` と `app.Focus`（§12.4）は行 P02
+  - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）と、a11y へのフォーカスの知らせ（§4.4.1 の `NotifyFocusChange`）は、仮想化と a11y を入れる行 P02
+  - キーの組み合わせから動作への仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）は行 K2
+
 ### 7.1 フォーカス順序
 
 **フォーカスナビゲーションのデフォルトはUIツリー順（§2.5のアリーナにおける`FirstChild`/`NextSibling`の並び）とし、BiDiはこの順序決定に関与しない。** BiDi論理順はテキストノード内部でのみ意味を持つ。明示的なタブインデックス（`TabIndex`スタイルプロパティ）による上書きを許可するハイブリッド方式とする。視覚的な配置とツリー順が乖離するレイアウト（CSSの`order`相当の視覚並び替えを使った場合等）でのみ、明示的な上書きが必要になる。
+
+**K1 の決め方（K1 の Grill、Issue #351）:** Tab で止まるのは、§7「キーの入力とフォーカス」のフォーカスできるノードである。その並びは、`TabIndex`（`.TabIndex(int)`、既定 0）の小さい順、同じ値どうしは木の前順（`FirstChild` / `NextSibling`）である。Tab は今のノードより後ろで最初のノード、Shift+Tab は前で最後のノードへ動かし、どちらも端で反対の端へ戻る。フォーカスが無ければ、Tab は先頭、Shift+Tab は末尾から始める。`Hidden` の部分木と Disabled の部分木は、中へ入らずに飛ばす。
+
+- GPUI と同じく、`TabIndex` の値の組と木の順で並べる（`tab_stop.rs` 39〜59・78〜101 行目、既定 0 は `gpui/src/window.rs` 538〜560 行目、端で戻るのは `tab_stop.rs` 112〜132 行目）。Avalonia も、同じ `TabIndex` の中は木の順で、無ければ次に大きい `TabIndex` へ進み、TopLevel の `Cycle` で端に戻る（`Navigation/TabNavigation.cs` 422〜475 行目、`TopLevel.cs` 159 行目）。Avalonia の既定は `int.MaxValue` で、値を付けたノードが付けないノードより先になる（`KeyboardNavigation.cs` 11〜15 行目）。XylemUI は GPUI の 0 にし、先にしたいノードには負の値を付ける
+- Flutter の既定は位置から読む順（`ReadingOrderTraversalPolicy`、`focus_traversal.dart` 2049 行目）で、採らない（上の「UIツリー順」）
+- 求め方は、木を §2.6 の走査器で 1 回たどり、(TabIndex, 前順の番号) が今のノードの組より大きいものの最小（Shift+Tab は小さいものの最大）を覚えるだけにする。並べた一覧を作らず、割り当てない。費用は木のノードの数に比例し、10,101 ノードでの 1 回を `input` で測る（Tab は 1 回のキーで 1 回）
+- 仮想化のコンテナの境界（§3.4.2 の `IVirtualizedFocusHost`）は、仮想化を入れる行 P02 で、この走査に足す
 
 ### 7.2 FocusManager
 
@@ -3407,6 +3547,8 @@ internal sealed class FocusManager
     private readonly Arena<FocusScope> _scopes = new();          // §2.5と同様のArena+世代管理パターンを流用
 }
 ```
+
+**K1 で入れる範囲（K1 の Grill、Issue #351）:** K1 の `FocusManager` は、ウィンドウ（木）ごとに 1 つで、根のスコープ 1 つだけを持つ（フォーカスしたノード、ウィンドウがアクティブか、最後の入力がキーボードか。§7「キーの入力とフォーカス」）。下のスコープを積むことと `IsModal` のフォーカストラップは、それを使うダイアログとポップアップを入れる行 P02 で入れる。K1 には確かめる相手が無いためである。
 
 Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子として積み、閉じると`CurrentScope`を親へ戻す。`IsModal`なスコープが積まれている間は、§7の captureフェーズでそのスコープ外へのフォーカス移動・イベント到達を遮断する（フォーカストラップの実装）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7の`ITextInputBackend`）は`CurrentScope.FocusedChild`がテキスト入力可能な場合にのみ有効化される。
 
@@ -3912,7 +4054,7 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 ### 12.4 入力と IME のシミュレーション
 
-入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。
+入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02 で、この入口の薄い包みとして入れる。
 
 **IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
