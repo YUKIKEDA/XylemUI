@@ -571,6 +571,77 @@ public static class ElementExtensions
         }
     }
 
+    /// <summary>
+    /// Fills an empty box with a row for each item, and keeps the rows in the items' order as the items change (design §2.7, "The
+    /// shape of V3"). A row is found again by its item's key: a key that stays keeps its row, with its focus and its state, and the
+    /// row's signal takes the item's new value; a key that comes makes a row in a scope of its own; a key that goes disposes its row
+    /// and what the row made. Rows that change places move with the fewest moves (the longest increasing subsequence). A key given
+    /// twice maps to the rows of that key in order. The rows are the box's only children.
+    /// </summary>
+    /// <typeparam name="T">The type of an item.</typeparam>
+    /// <typeparam name="TKey">The type of an item's key.</typeparam>
+    /// <param name="container">The box, with no child.</param>
+    /// <param name="items">The items.</param>
+    /// <param name="key">The key of an item.</param>
+    /// <param name="render">Makes a row from its item's signal: a node of the box's tree with no parent. A render that throws is
+    /// reported to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/>, and its row is an empty hidden node.</param>
+    /// <returns>The box, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentException">The box has children, or a <c>For</c> fills it already.</exception>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element For<T, TKey>(
+        this Element container,
+        IReadOnlySignal<IReadOnlyList<T>> items,
+        Func<T, TKey> key,
+        Func<IReadOnlySignal<T>, Element> render
+    )
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(render);
+        StartFor(container, items, key);
+        ForBlock<T, TKey>.Create(container.Tree!, container.Node, items, key, render, null);
+        return container;
+    }
+
+    /// <summary>
+    /// Fills an empty box with a row for each item, as <see cref="For{T, TKey}(Element, IReadOnlySignal{IReadOnlyList{T}}, Func{T, TKey}, Func{IReadOnlySignal{T}, Element})"/>
+    /// does, and gives each row the signal of its place in the items too, which changes as the rows move.
+    /// </summary>
+    /// <typeparam name="T">The type of an item.</typeparam>
+    /// <typeparam name="TKey">The type of an item's key.</typeparam>
+    /// <param name="container">The box, with no child.</param>
+    /// <param name="items">The items.</param>
+    /// <param name="key">The key of an item.</param>
+    /// <param name="render">Makes a row from its item's signal and its place's signal.</param>
+    /// <returns>The box, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentException">The box has children, or a <c>For</c> fills it already.</exception>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element For<T, TKey>(
+        this Element container,
+        IReadOnlySignal<IReadOnlyList<T>> items,
+        Func<T, TKey> key,
+        Func<IReadOnlySignal<T>, IReadOnlySignal<int>, Element> render
+    )
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(render);
+        StartFor(container, items, key);
+        ForBlock<T, TKey>.Create(container.Tree!, container.Node, items, key, null, render);
+        return container;
+    }
+
+    // The checks of For, and the mark that the box takes no second one.
+    private static void StartFor<T, TKey>(Element container, IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(key);
+        UiTree tree = container.TreeOrThrow();
+        RequireScope();
+        if (!tree.Nodes.GetRef(container.Node).FirstChild.IsNone || !tree.ForContainers.Add(container.Node))
+        {
+            throw new ArgumentException("For fills a box with no child, and only one For fills a box.", nameof(container));
+        }
+    }
+
     private static void RequireScope()
     {
         if (Scope.CurrentRef.IsNone)
