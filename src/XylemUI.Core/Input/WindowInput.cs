@@ -39,6 +39,9 @@ internal sealed class WindowInput
     // and pen"). A slot is kept when its pointer leaves, and taken again by the next pointer of that number.
     private PointerState[] _pointers = [new PointerState()];
 
+    // The pointers whose state is live: 1 while the mouse is the only one.
+    private int _livePointers;
+
     // The serial of the pointer message being delivered, 0 when none; the intermediate points of its events are read only while
     // it lasts, as Win32 keeps the history of the thread's last pointer message only.
     private int _dispatch;
@@ -331,6 +334,7 @@ internal sealed class WindowInput
         if (!pointer.Live)
         {
             pointer.Live = true;
+            _livePointers++;
             pointer.Type = input.PointerType;
             pointer.Inside = false;
             pointer.Capture = default;
@@ -452,6 +456,7 @@ internal sealed class WindowInput
         pointer.Hit = default;
         UpdateHover(pointer, input);
         pointer.Live = false;
+        _livePointers--;
         if (_cursorPointer == input.PointerId)
         {
             _cursorPointer = 0;
@@ -516,7 +521,16 @@ internal sealed class WindowInput
         }
 
         TestHover(pointer, input);
+        if (_hoverPending)
+        {
+            TestPendingHovers();
+        }
+    }
 
+    // The tests that waited while enters and leaves were sent; apart from UpdateHover, which every move and wheel calls.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void TestPendingHovers()
+    {
         // A handler that keeps changing the tree under the pointer is not followed past a few tests.
         for (int again = 0; _hoverPending && again < 4; again++)
         {
@@ -639,6 +653,12 @@ internal sealed class WindowInput
     // Whether a pointer other than this one holds the node in its hover, or in its pressed chain.
     private bool HeldByAnother(PointerState pointer, NodeHandle node, bool pressed)
     {
+        // The mouse alone, the usual case: no other pointer to look at.
+        if (_livePointers <= 1)
+        {
+            return false;
+        }
+
         for (int p = 0; p < _pointers.Length; p++)
         {
             PointerState other = _pointers[p];
