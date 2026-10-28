@@ -716,18 +716,20 @@ public sealed class WindowInputTests(UiThreadFixture ui)
 
     /// <summary>
     /// A node holds its input and its pseudo-states without growing past 576 bytes, and the state looks live apart from the box's
-    /// look, so that a node with a background alone pays for neither (PR #319's review).
+    /// look, so that a node with a background alone pays for neither (PR #319's review); the focus looks live apart from the hovered
+    /// and pressed ones (row K1a).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The types as built.
     ///
     /// Steps:
-    /// - Read <c>Unsafe.SizeOf</c> of <see cref="UiNode"/> and <see cref="PaintStyle"/>; allocate one <see cref="NodeVisual"/> and one
-    ///   <see cref="PseudoStyles"/> and read what each allocated.
+    /// - Read <c>Unsafe.SizeOf</c> of <see cref="UiNode"/> and <see cref="PaintStyle"/>; allocate one <see cref="NodeVisual"/>, one
+    ///   <see cref="PseudoStyles"/>, and one <see cref="FocusStyles"/> and read what each allocated.
     ///
     /// Expected:
-    /// - The node is at most 576 bytes, a style at most 104, a box look at most 192, and the state looks at most 232.
+    /// - The node is at most 576 bytes, a style at most 104, a box look at most 192, the state looks at most 232, and the focus looks
+    ///   at most 328.
     /// </remarks>
     [Fact]
     public void Sizes_NodeAndLooks_StayWithinTheirBounds()
@@ -736,6 +738,7 @@ public sealed class WindowInputTests(UiThreadFixture ui)
         Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<PaintStyle>(), 0, 104);
         Assert.InRange(Allocated(static () => new NodeVisual()), 0, 192);
         Assert.InRange(Allocated(static () => new PseudoStyles()), 0, 232);
+        Assert.InRange(Allocated(static () => new FocusStyles()), 0, 328);
     }
 
     private static long Allocated(Func<object> make)

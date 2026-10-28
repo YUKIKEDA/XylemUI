@@ -166,6 +166,11 @@ public enum KeyModifiers : byte
     /// An Alt key.
     /// </summary>
     Alt = 4,
+
+    /// <summary>
+    /// A Windows key (row K1).
+    /// </summary>
+    Meta = 8,
 }
 
 /// <summary>

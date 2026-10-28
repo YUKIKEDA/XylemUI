@@ -1,13 +1,13 @@
 namespace XylemUI;
 
 /// <summary>
-/// The input part of a node (design §7, "Pointer input"): its pointer handlers, its cursor, and whether it blocks the pointer
-/// without a handler. Only a node with any of them has one (<see cref="UiNode.Input"/>); the tree makes it at the first setter, as
-/// it makes <see cref="NodeVisual"/>.
+/// The input part of a node (design §7, "Pointer input" and "Keys and the focus"): its handlers, its cursor, whether it blocks the
+/// pointer without a handler, and whether it takes the focus. Only a node with any of them has one (<see cref="UiNode.Input"/>); the
+/// tree makes it at the first setter, as it makes <see cref="NodeVisual"/>.
 /// </summary>
 /// <remarks>
-/// The handlers are an array that a change replaces, so that a handler that adds or removes one while the event is delivered does
-/// not change the array being walked. Adding or removing allocates; delivering does not.
+/// The handlers are arrays that a change replaces, so that a handler that adds or removes one while the event is delivered does not
+/// change the array being walked. Adding or removing allocates; delivering does not.
 /// </remarks>
 internal sealed class NodeInput
 {
@@ -15,6 +15,16 @@ internal sealed class NodeInput
     /// Gets the pointer handlers, in the order they were added.
     /// </summary>
     public HandlerEntry[] Handlers { get; private set; } = [];
+
+    /// <summary>
+    /// Gets the key handlers, in the order they were added.
+    /// </summary>
+    public KeyHandlerEntry[] KeyHandlers { get; private set; } = [];
+
+    /// <summary>
+    /// Gets the focus handlers, in the order they were added.
+    /// </summary>
+    public FocusHandlerEntry[] FocusHandlers { get; private set; } = [];
 
     /// <summary>
     /// Gets or sets the cursor over the node and its descendants that set none; <see langword="null"/> for none.
@@ -28,6 +38,18 @@ internal sealed class NodeInput
     public bool BlocksPointer { get; internal set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the node takes the focus: from a press on it or a descendant, from Tab, and from
+    /// <see cref="ElementExtensions.Focus"/>, while neither it nor an ancestor is hidden (design §7, "Keys and the focus").
+    /// </summary>
+    public bool Focusable { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the node's place in the order of Tab (design §7.1): a smaller index comes first, and the nodes of the same index
+    /// come in the order of the tree. 0 by default.
+    /// </summary>
+    public int TabIndex { get; internal set; }
+
+    /// <summary>
     /// Gets or sets the index of the node's hit region in the display list (<see cref="DisplayList.HitEntries"/>), valid while
     /// <see cref="HitBuild"/> is the frame's build.
     /// </summary>
@@ -39,46 +61,91 @@ internal sealed class NodeInput
     internal int HitBuild { get; set; }
 
     /// <summary>
-    /// Gets a value indicating whether the node writes a hit region for its input: a handler, a cursor, or the block.
+    /// Gets a value indicating whether the node writes a hit region for its input: a pointer handler, a cursor, the block, or the
+    /// focus, which a press on the node takes.
     /// </summary>
-    public bool WritesHitRegion => Handlers.Length > 0 || Cursor is not null || BlocksPointer;
+    public bool WritesHitRegion => Handlers.Length > 0 || Cursor is not null || BlocksPointer || Focusable;
 
     /// <summary>
-    /// Adds a handler.
+    /// Adds a pointer handler.
     /// </summary>
-    internal void Add(in HandlerEntry entry)
-    {
-        var handlers = new HandlerEntry[Handlers.Length + 1];
-        Handlers.CopyTo(handlers, 0);
-        handlers[^1] = entry;
-        Handlers = handlers;
-    }
+    internal void Add(in HandlerEntry entry) => Handlers = Added(Handlers, entry);
 
     /// <summary>
-    /// Removes the first handler of the kind and the phase with the same delegate; returns whether there was one.
+    /// Adds a key handler.
+    /// </summary>
+    internal void Add(in KeyHandlerEntry entry) => KeyHandlers = Added(KeyHandlers, entry);
+
+    /// <summary>
+    /// Adds a focus handler.
+    /// </summary>
+    internal void Add(in FocusHandlerEntry entry) => FocusHandlers = Added(FocusHandlers, entry);
+
+    /// <summary>
+    /// Removes the first pointer handler of the kind and the phase with the same delegate; returns whether there was one.
     /// </summary>
     internal bool Remove(PointerEventKind kind, EventPhase phase, PointerHandler handler)
     {
-        int index = -1;
         for (int i = 0; i < Handlers.Length; i++)
         {
             if (Handlers[i].Kind == kind && Handlers[i].Phase == phase && Handlers[i].Handler == handler)
             {
-                index = i;
-                break;
+                Handlers = Removed(Handlers, i);
+                return true;
             }
         }
 
-        if (index < 0)
+        return false;
+    }
+
+    /// <summary>
+    /// Removes the first key handler of the kind and the phase with the same delegate; returns whether there was one.
+    /// </summary>
+    internal bool Remove(KeyEventKind kind, EventPhase phase, KeyHandler handler)
+    {
+        for (int i = 0; i < KeyHandlers.Length; i++)
         {
-            return false;
+            if (KeyHandlers[i].Kind == kind && KeyHandlers[i].Phase == phase && KeyHandlers[i].Handler == handler)
+            {
+                KeyHandlers = Removed(KeyHandlers, i);
+                return true;
+            }
         }
 
-        var handlers = new HandlerEntry[Handlers.Length - 1];
-        Array.Copy(Handlers, handlers, index);
-        Array.Copy(Handlers, index + 1, handlers, index, handlers.Length - index);
-        Handlers = handlers;
-        return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Removes the first focus handler of the kind and the phase with the same delegate; returns whether there was one.
+    /// </summary>
+    internal bool Remove(FocusEventKind kind, EventPhase phase, FocusHandler handler)
+    {
+        for (int i = 0; i < FocusHandlers.Length; i++)
+        {
+            if (FocusHandlers[i].Kind == kind && FocusHandlers[i].Phase == phase && FocusHandlers[i].Handler == handler)
+            {
+                FocusHandlers = Removed(FocusHandlers, i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static T[] Added<T>(T[] entries, in T entry)
+    {
+        var added = new T[entries.Length + 1];
+        entries.CopyTo(added, 0);
+        added[^1] = entry;
+        return added;
+    }
+
+    private static T[] Removed<T>(T[] entries, int index)
+    {
+        var removed = new T[entries.Length - 1];
+        Array.Copy(entries, removed, index);
+        Array.Copy(entries, index + 1, removed, index, removed.Length - index);
+        return removed;
     }
 }
 
@@ -91,3 +158,21 @@ internal sealed class NodeInput
 /// <param name="Scope">The scope that was current when the handler was added, which the handler runs in (design §2.13); none for a
 /// handler added outside every scope, which runs in none.</param>
 internal readonly record struct HandlerEntry(PointerEventKind Kind, EventPhase Phase, PointerHandler Handler, ScopeRef Scope);
+
+/// <summary>
+/// A key handler of a node: the kind of event and the phase it is called for.
+/// </summary>
+/// <param name="Kind">The kind of event.</param>
+/// <param name="Phase">The phase of the route.</param>
+/// <param name="Handler">The handler.</param>
+/// <param name="Scope">The scope the handler runs in, as <see cref="HandlerEntry.Scope"/>.</param>
+internal readonly record struct KeyHandlerEntry(KeyEventKind Kind, EventPhase Phase, KeyHandler Handler, ScopeRef Scope);
+
+/// <summary>
+/// A focus handler of a node: the kind of event and the phase it is called for.
+/// </summary>
+/// <param name="Kind">The kind of event.</param>
+/// <param name="Phase">The phase of the route.</param>
+/// <param name="Handler">The handler.</param>
+/// <param name="Scope">The scope the handler runs in, as <see cref="HandlerEntry.Scope"/>.</param>
+internal readonly record struct FocusHandlerEntry(FocusEventKind Kind, EventPhase Phase, FocusHandler Handler, ScopeRef Scope);

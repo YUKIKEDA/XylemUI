@@ -232,6 +232,46 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets what the focus-within state lays over the node's pressed look: while the node or one of its descendants has the focus.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="style">The values that replace the node's while the focus is in its subtree.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public static Element FocusWithin(this Element element, PaintStyle style)
+    {
+        element.TreeOrThrow().SetFocusWithinStyle(element.Node, style);
+        return element;
+    }
+
+    /// <summary>
+    /// Sets what the focused state lays over the node's focus-within look: while the node has the focus and the window is active.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="style">The values that replace the node's while it has the focus.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public static Element Focused(this Element element, PaintStyle style)
+    {
+        element.TreeOrThrow().SetFocusedStyle(element.Node, style);
+        return element;
+    }
+
+    /// <summary>
+    /// Sets what the focus-visible state lays over the node's focused look: while the node has the focus and the last input was the
+    /// keyboard, the state that shows a focus ring (design §7, "Keys and the focus"). A press clears it; the next key brings it back.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="style">The values that replace the node's while its focus shows.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public static Element FocusVisible(this Element element, PaintStyle style)
+    {
+        element.TreeOrThrow().SetFocusVisibleStyle(element.Node, style);
+        return element;
+    }
+
+    /// <summary>
     /// Sets the node's draw function, called after its box and before its children each time the window draws (design §5.0). An
     /// exception it throws goes to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/>, and the rest of the frame is drawn.
     /// </summary>
@@ -308,6 +348,106 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets whether the node takes the focus (design §7, "Keys and the focus"): a press on it or on a descendant that takes none
+    /// gives it the focus, Tab stops at it, and <see cref="Focus"/> can give it the focus, while neither it nor an ancestor is
+    /// hidden. A node does not take the focus by default. A focused node that stops taking it loses the focus.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="focusable">Whether the node takes the focus.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element Focusable(this Element element, bool focusable = true)
+    {
+        element.TreeOrThrow().SetFocusable(element.Node, focusable);
+        return element;
+    }
+
+    /// <summary>
+    /// Sets the node's place in the order of Tab (design §7.1): a smaller index comes first, and the nodes of the same index come in
+    /// the order of the tree. 0 by default; a negative index puts a node before the ones that set none.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="index">The index.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element TabIndex(this Element element, int index)
+    {
+        element.TreeOrThrow().SetTabIndex(element.Node, index);
+        return element;
+    }
+
+    /// <summary>
+    /// Gives the node the focus (design §7, "Keys and the focus"). It changes whether the focus ring shows no more than the last input
+    /// did. While the window is not active, the node takes the focus when the window is active again. A call from a handler of a
+    /// focus event moves the focus after the events being sent.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <returns><see langword="true"/> when the node takes the focus; <see langword="false"/>, with nothing changed, when it is not
+    /// focusable, not in the window's tree, or hidden with itself or an ancestor.</returns>
+    public static bool Focus(this Element element) => element.TreeOrThrow().Focus.Focus(element.Node);
+
+    /// <summary>
+    /// Returns a signal of whether the node has the focus: the value of its focused state, <see langword="false"/> while the window is
+    /// not active. It is made the first time and dropped with the node.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <returns>The signal.</returns>
+    public static IReadOnlySignal<bool> IsFocused(this Element element) => element.TreeOrThrow().IsFocusedSignal(element.Node);
+
+    /// <summary>
+    /// Adds a handler of a kind of key event, in a phase of its route from the focused node (design §7, "Keys and the focus"). It runs
+    /// in the current scope; once the scope is disposed it is not called, and the handler is removed (design §2.13).
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element On(this Element element, KeyEventKind kind, EventPhase phase, KeyHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        UiTree tree = element.TreeOrThrow();
+        NodeHandle node = element.Node;
+        RequireScope();
+        tree.AddKeyHandler(node, kind, phase, handler);
+        Scope.OnCleanup(() =>
+        {
+            if (tree.Nodes.IsAlive(node))
+            {
+                _ = tree.RemoveKeyHandler(node, kind, phase, handler);
+            }
+        });
+        return element;
+    }
+
+    /// <summary>
+    /// Adds a handler of a kind of focus event, in a phase of its route from the node that took or lost the focus (design §7, "Keys
+    /// and the focus"); <see cref="FocusEvent.Target"/> tells the node's own change from a descendant's. It runs in the current scope;
+    /// once the scope is disposed it is not called, and the handler is removed (design §2.13).
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element On(this Element element, FocusEventKind kind, EventPhase phase, FocusHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        UiTree tree = element.TreeOrThrow();
+        NodeHandle node = element.Node;
+        RequireScope();
+        tree.AddFocusHandler(node, kind, phase, handler);
+        Scope.OnCleanup(() =>
+        {
+            if (tree.Nodes.IsAlive(node))
+            {
+                _ = tree.RemoveFocusHandler(node, kind, phase, handler);
+            }
+        });
+        return element;
+    }
+
+    /// <summary>
     /// Adds a handler of clicks: the left button went down and up over the node or a descendant. It runs in the current scope; once
     /// the scope is disposed it is not called (design §2.13).
     /// </summary>
@@ -336,11 +476,7 @@ public static class ElementExtensions
         ArgumentNullException.ThrowIfNull(handler);
         UiTree tree = element.TreeOrThrow();
         NodeHandle node = element.Node;
-        if (Scope.CurrentRef.IsNone)
-        {
-            throw new InvalidOperationException("A handler is added inside a scope, which owns it; there is no current scope.");
-        }
-
+        RequireScope();
         tree.AddPointerHandler(node, kind, phase, handler);
         Scope.OnCleanup(() =>
         {
@@ -395,6 +531,14 @@ public static class ElementExtensions
         else
         {
             tree.SetForeground(node, color);
+        }
+    }
+
+    private static void RequireScope()
+    {
+        if (Scope.CurrentRef.IsNone)
+        {
+            throw new InvalidOperationException("A handler is added inside a scope, which owns it; there is no current scope.");
         }
     }
 

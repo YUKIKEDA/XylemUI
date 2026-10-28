@@ -35,7 +35,17 @@ internal sealed class UiTree
     {
         _shallowestFirst = CompareDepth;
         Text = text;
+        Focus = new FocusManager(this);
     }
+
+    /// <summary>
+    /// Gets the focus of the tree's window (design §7, "Keys and the focus").
+    /// </summary>
+    internal FocusManager Focus { get; }
+
+    // The signals of IsFocused, made the first time a node's is asked for (design §7, "Element.Focus() and IsFocused()"): few nodes
+    // read theirs, so they are kept apart from UiNode, as the scroll states.
+    private readonly Dictionary<NodeHandle, Signal<bool>> _focusSignals = [];
 
     /// <summary>
     /// Gets or sets the tree whose root function a window's host runs now, where <see cref="Elements"/> makes nodes (design §2.13);
@@ -558,6 +568,147 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Sets what the focus-within state lays over a node's pressed look, or <see langword="null"/> for nothing; equal to the one
+    /// there, nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetFocusWithinStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        FocusStyles states = FocusStatesOf(node);
+        if (states.FocusWithin != style)
+        {
+            states.FocusWithin = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets what the focused state lays over a node's focus-within look, or <see langword="null"/> for nothing; equal to the one
+    /// there, nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetFocusedStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        FocusStyles states = FocusStatesOf(node);
+        if (states.Focused != style)
+        {
+            states.Focused = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets what the focus-visible state lays over a node's focused look, or <see langword="null"/> for nothing; equal to the one
+    /// there, nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetFocusVisibleStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        FocusStyles states = FocusStatesOf(node);
+        if (states.FocusVisible != style)
+        {
+            states.FocusVisible = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Adds a key handler to a node (design §7, "Keys and the focus"). The node writes no hit region for it.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    public void AddKeyHandler(NodeHandle node, KeyEventKind kind, EventPhase phase, KeyHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        InputOf(node).Add(new KeyHandlerEntry(kind, phase, handler, Scope.CurrentRef));
+    }
+
+    /// <summary>
+    /// Removes the first key handler of a node added with the same kind, phase, and delegate.
+    /// </summary>
+    /// <returns>Whether a handler was removed.</returns>
+    public bool RemoveKeyHandler(NodeHandle node, KeyEventKind kind, EventPhase phase, KeyHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return Nodes.GetRef(node).Input is { } input && input.Remove(kind, phase, handler);
+    }
+
+    /// <summary>
+    /// Adds a focus handler to a node (design §7, "Keys and the focus"). The node writes no hit region for it.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    public void AddFocusHandler(NodeHandle node, FocusEventKind kind, EventPhase phase, FocusHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        InputOf(node).Add(new FocusHandlerEntry(kind, phase, handler, Scope.CurrentRef));
+    }
+
+    /// <summary>
+    /// Removes the first focus handler of a node added with the same kind, phase, and delegate.
+    /// </summary>
+    /// <returns>Whether a handler was removed.</returns>
+    public bool RemoveFocusHandler(NodeHandle node, FocusEventKind kind, EventPhase phase, FocusHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return Nodes.GetRef(node).Input is { } input && input.Remove(kind, phase, handler);
+    }
+
+    /// <summary>
+    /// Sets whether a node takes the focus (design §7, "Keys and the focus"); equal to the value there, nothing changes. Another marks
+    /// the node to be drawn again, as a focusable node writes a hit region; a focused node that stops being focusable loses the focus.
+    /// </summary>
+    public void SetFocusable(NodeHandle node, bool focusable)
+    {
+        NodeInput input = InputOf(node);
+        if (input.Focusable != focusable)
+        {
+            input.Focusable = focusable;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+            if (!focusable)
+            {
+                Focus.Lose(node);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets a node's place in the order of Tab (design §7.1): a smaller index comes first; the nodes of one index come in the order
+    /// of the tree.
+    /// </summary>
+    public void SetTabIndex(NodeHandle node, int index) => InputOf(node).TabIndex = index;
+
+    /// <summary>
+    /// Returns the signal of whether a node is focused, made the first time (design §7, "Element.Focus() and IsFocused()"): it has
+    /// the value of the focused state, and it is dropped when the node is freed.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The signal.</returns>
+    internal IReadOnlySignal<bool> IsFocusedSignal(NodeHandle node)
+    {
+        if (!_focusSignals.TryGetValue(node, out Signal<bool>? signal))
+        {
+            signal = Signal.Create((Nodes.GetRef(node).Pseudo & PseudoState.Focused) != 0);
+            _focusSignals[node] = signal;
+        }
+
+        return signal;
+    }
+
+    /// <summary>
+    /// Returns the signal of whether a node is focused, or <see langword="null"/> when no one asked for it.
+    /// </summary>
+    internal Signal<bool>? FocusSignalOf(NodeHandle node) =>
+        _focusSignals.Count > 0 && _focusSignals.TryGetValue(node, out Signal<bool>? signal) ? signal : null;
+
+    /// <summary>
     /// Sets or clears a pseudo-state of a live node. A change marks the node to be drawn again only when it has a look for that
     /// state (design §2.13).
     /// </summary>
@@ -571,9 +722,7 @@ internal sealed class UiTree
         }
 
         n.Pseudo = next;
-        PseudoStyles? styles = n.Visual?.States;
-        bool styled = state == PseudoState.Hovered ? styles?.Hovered is not null : styles?.Pressed is not null;
-        if (styled)
+        if (n.Visual?.States?.Has(state) == true)
         {
             Invalidation.Invalidate(this, node, ChangeKind.Color);
         }
@@ -660,6 +809,8 @@ internal sealed class UiTree
     /// <param name="node">The node, alive.</param>
     internal void Remove(NodeHandle node)
     {
+        // The focused node gets its focus-out while it is still in the tree (design §7, "Removed, hidden, or disabled").
+        Focus.Lose(node);
         ref UiNode n = ref Nodes.GetRef(node);
         NodeHandle parent = n.Parent;
         bool inFlow = n.Layout.Style.IsInFlow;
@@ -706,6 +857,7 @@ internal sealed class UiTree
         }
 
         ref UiNode changed = ref Nodes.GetRef(node);
+        bool hides = style.Hidden && !changed.Layout.Style.Hidden;
         changed.Layout.Style = style;
         changed.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
         changed.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
@@ -718,6 +870,12 @@ internal sealed class UiTree
         if (!parent.IsNone)
         {
             Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        }
+
+        // A hidden subtree takes no focus (design §7, "Removed, hidden, or disabled").
+        if (hides)
+        {
+            Focus.Lose(node);
         }
     }
 
@@ -815,6 +973,9 @@ internal sealed class UiTree
 
     // The node's pseudo-state looks, made the first time one is set (PR #319's review).
     private PseudoStyles StatesOf(NodeHandle node) => VisualOf(node).States ??= new PseudoStyles();
+
+    // The node's focus looks, made the first time one is set.
+    private FocusStyles FocusStatesOf(NodeHandle node) => StatesOf(node).Focus ??= new FocusStyles();
 
     // The node's input part, made the first time.
     private NodeInput InputOf(NodeHandle node) => Nodes.GetRef(node).Input ??= new NodeInput();
@@ -929,6 +1090,11 @@ internal sealed class UiTree
         if (_scrollStates.Count > 0 && _scrollStates.Remove(node, out ScrollState? state))
         {
             state.Detach();
+        }
+
+        if (_focusSignals.Count > 0)
+        {
+            _ = _focusSignals.Remove(node);
         }
 
         Nodes.Free(node);

@@ -240,7 +240,7 @@ internal sealed class WindowFrames
             // resolved apart, so that the style's and the scopes' locals are not in this frame, which every node pays for: with them
             // here the frame was 968 bytes, zeroed on each call, and the draw stage of `frames --tree` took 12 µs longer for 1,000
             // boxes (row V1c).
-            bool styled = styles is not null && (node.Pseudo & (PseudoState.Hovered | PseudoState.Pressed)) != 0;
+            bool styled = styles is not null && node.Pseudo != PseudoState.None;
             if (styled || visual.Scoped)
             {
                 pushed = DrawResolved(visual, node.Pseudo, node.Layout.Border, box, ref text, ref hitsOnly);
@@ -335,8 +335,8 @@ internal sealed class WindowFrames
         return 2;
     }
 
-    // A node with a look of its state or a scope: its values, with the hovered and then the pressed style laid over them where the
-    // node is in that state; the transform and the opacity pushed around the subtree; then its box. Returns the scopes pushed.
+    // A node with a look of its state or a scope: its values, with the hovered, the pressed, and the focus styles laid over them where
+    // the node is in that state; the transform and the opacity pushed around the subtree; then its box. Returns the scopes pushed.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private int DrawResolved(NodeVisual visual, PseudoState state, Edges border, Rect box, ref Color text, ref bool hitsOnly)
     {
@@ -355,6 +355,25 @@ internal sealed class WindowFrames
             if ((state & PseudoState.Pressed) != 0 && styles.Pressed is { } pressed)
             {
                 Over(pressed, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+            }
+
+            // The focus states over the pressed one, the later the stronger (design §2.13).
+            if (styles.Focus is { } focus)
+            {
+                if ((state & PseudoState.FocusWithin) != 0 && focus.FocusWithin is { } within)
+                {
+                    Over(within, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+                }
+
+                if ((state & PseudoState.Focused) != 0 && focus.Focused is { } focused)
+                {
+                    Over(focused, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+                }
+
+                if ((state & PseudoState.FocusVisible) != 0 && focus.FocusVisible is { } visible)
+                {
+                    Over(visible, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+                }
             }
         }
 

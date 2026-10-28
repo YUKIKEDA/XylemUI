@@ -90,6 +90,11 @@ internal sealed class DesktopWindow : IDisposable
             );
             Input = new WindowInput(Tree, Frames, Window);
             Window.PointerInputReceived = Input.Handle;
+            Window.KeyInputReceived = Input.Handle;
+            Window.ActivationChanged = Input.SetActive;
+
+            // A window shown above was activated before the input listened.
+            Input.SetActive(Window.IsActive);
             Window.SynchronousRender = Render;
             Window.TextRenderingChanged += OnTextRenderingChanged;
             Window.Closed += OnClosed;
@@ -158,6 +163,8 @@ internal sealed class DesktopWindow : IDisposable
             Window.TextRenderingChanged -= OnTextRenderingChanged;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
+            Window.KeyInputReceived = null;
+            Window.ActivationChanged = null;
             Window.Dispose();
         }
 

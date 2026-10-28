@@ -19,9 +19,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 ## 今
 
 - **フェーズ:** V1（T11 は v1.x。Q3 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** K1（キーボードとフォーカス）の設計（#351）。V2 は済み: #347 の PR（`docs/benchmarks/v2-scroll.md`）、設計は #343。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
-- **ブランチ:** `docs/351-k1-keyboard-focus-design`
-- **Issue:** #351
+- **作業中:** K1a（キーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化、#355）。K1 の設計は #351 の PR。V2 は済み: #347 の PR（`docs/benchmarks/v2-scroll.md`）、設計は #343。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
+- **ブランチ:** `feat/355-k1a-keys-focus`
+- **Issue:** #355
 
 ## ツールチェーン
 
@@ -107,7 +107,7 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 | D14 | §13.1 のほかに出す部品の範囲（Calendar・ProgressBar・SplitView・Expander・ContextMenu・ツリー・表など）と、出す基準の Grill（Issue #174 で行にした） | not-started | [#169](https://github.com/YUKIKEDA/XylemUI/issues/169) | — |
 | D15 | ローカライズ（メッセージの辞書、複数形と選択、ロケールに応じた書式、ロケールの解決、部品の文言）を要件にするか、方式の Grill（Issue #174 で行にした） | not-started | [#170](https://github.com/YUKIKEDA/XylemUI/issues/170) | — |
 | K2  | ショートカットと動作: キーの組み合わせから動作を呼ぶ仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）を Grill で決め、K1 が既定のハンドラとして組み込んだ Tab・ボタンのキー・スクロールのキーをその上に載せ直すかも決める。G1 の前に入れる（K1 の Grill、Issue #351） | not-started | —     | §7 |
-| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3）。子の背景などを親の状態で変える形（GPUI の `group_hover`、Avalonia のテンプレートのセレクタ）を、テーマの部品で決める（V1 は文字の色の受け継ぎで済ませた、V1d の Grill）。見えるスクロールバー（中身に重ねて描く部品、Flutter・Avalonia・zed と同じ）もこの行で作る（V2 の Grill） | not-started | —     | §13.3                                      |
+| G1  | XylemUI Gallery（Windows のみ）。Primitives + Theme.Fluent の最初の完成点、Gallery E2E を CI へ。部品が揃った Gallery で配布物のサイズの目標を決め直す（M1a はこの場面で 5 MB 以下、§11.3）。子の背景などを親の状態で変える形（GPUI の `group_hover`、Avalonia のテンプレートのセレクタ）を、テーマの部品で決める（V1 は文字の色の受け継ぎで済ませた、V1d の Grill）。見えるスクロールバー（中身に重ねて描く部品、Flutter・Avalonia・zed と同じ）もこの行で作る（V2 の Grill）。擬似状態の見た目（`.Hovered()`・`.Pressed()`・`.Focused()`・`.FocusVisible()`・`.FocusWithin()`）に Signal を受ける多重定義が要るか（テーマを変えたときに見た目を書き直すため）を、テーマの部品で決める（PR #356 のレビュー） | not-started | —     | §13.3                                      |
 | P03 | v0.3 BiDi / 複雑スクリプト。揃えの `self-start` / `self-end`（子自身の書字の向きで揃える。Issue #88） | not-started | —     | §10.4                                      |
 | P04 | v0.4 Linux 基盤。`IGpuSync` と FrameResourcePool（wgpu の完了通知。§5.0.1・§5.0.2、S8b の Grill で D3D11 から移した）。フォントのフォールバックを fontconfig（`FcFontMatch`）で、`IFontProvider` の実装として入れる（F1 の Grill）。FreeType を `vendor/` のビルドに戻し（T4 で Windows から外した）、`IGlyphRasterizer` の FreeType の実装を入れる。グリフは FreeType の light（`FT_LOAD_TARGET_LIGHT`）と横 4 段階のサブピクセル位置で描き、ガンマとコントラストは既定の 1.8 と 1.0（T4 の Grill）。S8a のインクの箱のテスト（アウトラインの箱との一致）を FreeType の実装に書く。LCD の AA は、wgpu がデュアルソースのブレンドを持つときだけ使う（GPUI と同じ、T2 の Grill） | not-started | —     | §10.4                                      |
 | P05 | v0.5 Linux extended                                                                                   | not-started | —     | §10.4                                      |
