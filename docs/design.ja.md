@@ -2074,7 +2074,7 @@ public sealed class ScrollState
 - **ホイールを配る相手:** 当たったノードから、Down などと同じ経路（capture と bubble）で配る。スクロールする箱は bubble で受け、範囲に収めた位置が実際に変わるときだけ受け取って `StopPropagation` する。端にいて位置が変わらなければ、外側の箱へ渡る（スクロールの連鎖）。Flutter は、位置が変わる Scrollable だけが `PointerSignalResolver` に名乗り出て、最初の（最も深い）ものが受ける（`widgets/scrollable.dart` 954〜966 行目、`gestures/pointer_signal_resolver.dart` 86〜93 行目）。Avalonia は `e.Handled = !IsScrollChainingEnabled || offsetChanged`（`ScrollContentPresenter.cs` 796 行目、連鎖は既定で有効）。GPUI は止めずに、ホバー中のスクロールする箱すべてに量を配る（`div.rs` 3339〜3384 行目）。ボタンを押してキャプチャしている間も、当たったノードから配る（Flutter と GPUI。Avalonia はキャプチャしたノードに配る、`Avalonia.Base/Input/MouseDevice.cs` 232〜246 行目）
 - **Shift で横:** マウスの、Shift を押した縦のホイールは、スクロールする箱の側で横のスクロールにする（Flutter の `scrollable.dart` 933〜951 行目はマウスだけ、Avalonia の `ScrollContentPresenter.cs` 764〜769 行目）。入力の層は来たままの量を渡す。GPUI はバックエンドで変える（`gpui_windows/src/events.rs` 555〜585 行目）
 - **滑らかなスクロール:** しない。ホイールで位置をすぐ変える。3 つともアニメーションさせない（Avalonia の `ScrollContentPresenter.cs` 794 行目、Flutter の `widgets/scroll_position_with_single_context.dart` 210〜236 行目、GPUI の `div.rs` 3378〜3382 行目）
-- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜811 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜103 行目）は行 I1。キーボードでのスクロールと、フォーカスしたノードを見える所まで動かすことは行 K1 で、§7「キーの入力とフォーカス」に書く。見えるスクロールバーは行 G1
+- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜811 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜103 行目）は行 I1（形は §7「タッチとペン」の I1c）。タッチのドラッグでのスクロールと慣性も同じ節の I1b である。キーボードでのスクロールと、フォーカスしたノードを見える所まで動かすことは行 K1 で、§7「キーの入力とフォーカス」に書く。見えるスクロールバーは行 G1
 - **確かめ方:**
   - layout: 上の Taffy の 54 件のうち、マージンの相殺の 5 件を除く 49 件が通る。`scroll_width`・`scroll_height` を持つノードは、スクロールできる範囲が Chrome と一致する
   - WARP: 箱の外にあって切られていたボタンが、位置を変えた後に画素として出る（MoonBit 版の V2 と同じ到達点）。箱の外は切られる
@@ -3430,7 +3430,7 @@ internal sealed class WindowInput
   - Avalonia はマウスを `WM_MOUSE*` で受け、`WM_POINTER` は、アプリがマウスを pointer に入れたときだけマウスに使う（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 283・318・349 行目などで `IsMouseInPointerEnabled` なら抜ける。`EnableMouseInPointer` は呼ばない）。`TrackMouseEvent` は 358〜369 行目、`WM_CAPTURECHANGED` は 452〜470 行目
   - GPUI もマウスに `WM_POINTER` を使わない（`gpui_windows/src/events.rs` 112〜149 行目）。`TrackMouseEvent` は 1414〜1436 行目、`SetCapture` はどのボタンでも押したとき（476 行目）、`ReleaseCapture` は離したとき（506 行目）
   - Flutter は `WM_POINTER*` でタッチ・ペン・マウスを受け（`flutter_window.cc` 613〜676 行目）、`WM_MOUSEMOVE` も受ける（678〜698 行目）
-  - OS がタッチとペンから作るマウスのメッセージは、マウスとして受ける。`PointerType` は `GetMessageExtraInfo()` の印で入れる。`& 0xFFFFFF00` が `0xFF515700` ならタッチかペンで、`0x80` のビットが立っていればタッチ（Flutter の `flutter_window.cc` 56〜69 行目と同じ判別。Flutter はこの印のメッセージを捨て、`WM_POINTER` で受ける）。`WM_POINTER` でタッチとペンを受ける形（複数のポインタ、筆圧、傾き）は行 I1 で入れる
+  - OS がタッチとペンから作るマウスのメッセージは、マウスとして受ける。`PointerType` は `GetMessageExtraInfo()` の印で入れる。`& 0xFFFFFF00` が `0xFF515700` ならタッチかペンで、`0x80` のビットが立っていればタッチ（Flutter の `flutter_window.cc` 56〜69 行目と同じ判別。Flutter はこの印のメッセージを捨て、`WM_POINTER` で受ける）。`WM_POINTER` でタッチとペンを受ける形（複数のポインタ、筆圧、傾き）は行 I1 で入れる。I1a からは、この印のメッセージを Flutter と同じく捨て、タッチとペンは `WM_POINTER` で受ける（下の「タッチとペン」）
   - 修飾キーは、Control と Shift を `wParam` の `MK_CONTROL`・`MK_SHIFT` から読み、`wParam` に無い Alt を `GetKeyState(VK_MENU)` から読む（PR #319 のレビュー）。K1 で足す Meta（Windows キー）も、`wParam` に無いので `GetKeyState(VK_LWIN)`・`GetKeyState(VK_RWIN)` から読み、ポインタのイベントとキーのイベントで `Modifiers` の意味をそろえる（PR #352 のレビュー）
   - ホイール（`WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL`）は V2 で入れる（§3.4.1「スクロールする箱」、V2 の Grill）。`wParam` の上の語が、符号付きの回した量（`WHEEL_DELTA` 120 で 1 ノッチ）。`lParam` の位置は画面の座標なので、`ScreenToClient` でクライアントの座標にする（ほかのマウスのメッセージはクライアントの座標）。下の語の `MK_*` のボタンとキー、`GetMessageExtraInfo` の印は、ほかのマウスのメッセージと同じに読む。Avalonia（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 403〜433 行目）と GPUI（`gpui_windows/src/events.rs` 543〜628 行目）も、`lParam` を画面の座標として読む。量は論理画素の `PointerInput.WheelDelta` にして Core に渡す
 - **イベントの種類:** Down・Up・Move・Cancel・Click・Wheel（V2）は経路で配る。Enter と Leave は、ホバーの集合に入ったノードと出たノードに 1 回ずつ送る直接のイベントで、伝播しない。直接のイベントは、登録したフェーズによらず、そのノードのハンドラだけを呼ぶ。Avalonia の `PointerEntered`・`PointerExited` は Direct で（`Avalonia.Base/Input/InputElement.cs` 107〜219 行目）、Flutter の Enter と Exit は MouseTracker が注釈ごとに作る（`gestures/mouse_tracker.dart` 399〜428 行目）。Cancel は、キャプチャを奪われたときに送る（Avalonia の `PointerCaptureLost`、Flutter の `PointerCancelEvent`）
@@ -3464,6 +3464,70 @@ internal sealed class WindowInput
   - Platform: 本物のウィンドウに `SendMessage` で `WM_MOUSEMOVE`・`WM_LBUTTONDOWN`・`WM_LBUTTONUP`・`WM_MOUSELEAVE`・`WM_CAPTURECHANGED`・`WM_SETCURSOR` を送り、論理座標・ボタン・修飾キー・`ClickCount`・`PointerType`・キャプチャを確かめる。Alt は `SendMessage` では作れない（キーの状態はメッセージに乗らない）ので、メッセージを `PointerInput` に直す関数に Alt の状態を引数で渡す形にし、その関数を直接確かめる
   - WARP: ホバーと押下の絵と、変換・不透明度の絵を CPU の基準と比べる（§5.0）
   - 費用: `benchmarks/XylemUI.E2E` にホバーの出入りの場面を足し、イベント 1 つの配送の µs、深さ 50 の経路の配送、ホバーで変わるフレームの段ごとの時間を測る。どれも割り当て 0
+
+**タッチとペン（I1 の Grill でオーナーが決定、Issue #384）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Flutter の枠組みは `packages/flutter/lib/src/` から、Avalonia の Win32 の層は `src/Windows/Avalonia.Win32/` から、Avalonia の入力は `src/Avalonia.Base/Input/` から、GPUI の Windows の層は `crates/gpui_windows/src/` から書く。実装は 3 つに分け、この順に入れる。I1a は `WM_POINTER`・複数のポインタ・ペンの値・タッチのタップ、I1b はタッチのドラッグでのスクロールと慣性、I1c は DirectManipulation で受けるタッチパッドのパンと慣性である。複数の指のジェスチャー（ピンチ・長押し・DirectManipulation の拡大）は、この統一したポインタの上に、行 I2 で組む（§8.10）。
+
+```csharp
+// PointerInput に足す（上の「ポインタの入力」の形に続けて）
+internal readonly record struct PointerInput(
+    /* … V1c と V2 の欄 … */
+    int PointerId,              // マウスはいつも 0。タッチとペンは、Win32 の pointerId を 1 から順の小さい番号に写す
+    bool IsPrimary,             // マウスと、触れているタッチのうち最初に触れたもの。ペンはいつも true
+    float Pressure,             // 0〜1。ペンは POINTER_PEN_INFO.pressure / 1024。マウスとタッチは押している間 0.5、ほかは 0
+    float TiltX, float TiltY,   // 度（POINTER_PEN_INFO の tiltX・tiltY のまま）。ペンだけ。ほかは 0
+    float Twist,                // 度（0〜359）。ペンだけ。ほかは 0
+    PenFlags PenFlags);         // Eraser・Inverted。ペンだけ
+
+// PointerEvent に足す（公開）
+public int PointerId { get; }
+public bool IsPrimary { get; }
+public float Pressure { get; }
+public float TiltX { get; }
+public float TiltY { get; }
+public float Twist { get; }
+public bool IsEraser { get; }
+public bool IsInverted { get; }
+public ReadOnlySpan<PointerPoint> GetIntermediatePoints();   // まとめて届いた途中の点。古い順。読まれたときに作る
+
+// 途中の点の 1 つ（公開）。位置は PointerEvent.Position と同じく、ウィンドウの論理座標
+public readonly record struct PointerPoint(Vector2 Position, float Pressure, float TiltX, float TiltY, float Twist, TimeSpan Timestamp);
+
+[Flags] internal enum PenFlags : byte { None = 0, Eraser = 1, Inverted = 2 }
+```
+
+- **受けるメッセージ:** タッチとペンは `WM_POINTERDOWN`・`WM_POINTERUPDATE`・`WM_POINTERUP`・`WM_POINTERLEAVE`・`WM_POINTERCAPTURECHANGED` で受け、`GetPointerType` で種類を決め、`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo` で読む。座標は画面の座標を `ScreenToClient` でクライアントの座標にする。マウスは今の `WM_MOUSE*` のままで、OS がタッチとペンから作るマウスのメッセージは捨てる（V1c の `GetMessageExtraInfo` の判別で、タッチかペンなら受けない）。`POINTER_FLAG_CANCELED` と `WM_POINTERCAPTURECHANGED` は、そのポインタの CaptureLost にする
+  - Flutter は `WM_POINTERDOWN`・`UPDATE`・`UP`・`LEAVE` で受け、`GetPointerInfo` と、ペンなら `GetPointerPenInfo` を読む（`flutter_window.cc` 613〜676 行目）。合成のマウスは 57〜69 行目の判別で捨てる（733〜736・762〜765 行目）
+  - Avalonia は Windows 8 以降で `WM_POINTER*` を受け（`WindowImpl.cs` 153 行目、`WindowImpl.AppWndProc.cs` 567〜622 行目）、`GetPointerType` の後にペンなら `GetPointerPenInfo`、タッチなら `GetPointerTouchInfo` を読む（1191〜1238 行目）。合成のマウスは捨てる（1408〜1418 行目）
+  - GPUI は Windows でタッチとペンを受けず、OS が作るマウスのメッセージを、マウスとして受ける（`events.rs` 89〜164・352〜384 行目）
+  - `EnableMouseInPointer`（マウスも `WM_POINTER` で受ける形）は、3 つとも呼ばない（Avalonia は宣言だけ、`Interop/UnmanagedMethods.cs` 1219 行目）
+- **ポインタの番号:** マウスはいつも 0 である。タッチとペンは、最初に受けたときに 1 から順の空いている番号を取り、タッチは Up で、ペンは `WM_POINTERLEAVE`（範囲から出たとき）で返す。キャプチャはポインタごとに持ち、押したノードへ暗黙に取る（上の「キャプチャ」の規則を、ポインタごとに当てる）
+  - Flutter は Win32 の pointerId を 0〜128 の番号に写し、`WM_POINTERLEAVE` で返す（`flutter_window.cc` 29〜30・639・671〜673 行目）。ヒットテストの結果をポインタごとに持つ（`gestures/binding.dart` 409〜438 行目）
+  - Avalonia はデバイスごとに pointerId から `Pointer` を引く表を持ち、最初のポインタを primary にする（`TouchDevice.cs` 24・43〜52 行目、`PenDevice.cs` 20・44〜52 行目）
+- **ホバー:** マウスとペンだけがホバーし、デバイスごとに自分のホバーの集合を持つ。ノードの Hovered は、どれか 1 つの集合に入っていれば立てる。タッチはホバーせず、Enter と Leave を送らない。押した間の Pressed は、タッチでも立てる。ペンが範囲から出たら（`WM_POINTERLEAVE`）、ペンの集合のノードに Leave を送り、番号を返す
+  - Flutter は、マウスとスタイラスだけを、デバイスごとに追う（`rendering/mouse_tracker.dart` 179・302 行目）
+  - Avalonia はホバーを 1 つだけ持ち、タッチを外す（`PointerOverPreProcessor.cs` 8〜9・79〜88 行目）
+  - W3C Pointer Events は、タッチでも押したときに over と enter を、離したときに leave を送る。XylemUI は Flutter と Avalonia に合わせ、指の下で Hovered の見た目を立てない
+- **ペンの値:** 圧力は `POINTER_PEN_INFO.pressure` を 1024 で割った 0〜1、傾き X・Y は `tiltX`・`tiltY` の度、ひねりは `rotation` の度。消しゴムは `PEN_FLAG_ERASER` を `IsEraser` に、裏返しは `PEN_FLAG_INVERTED` を `IsInverted` にする。バレルボタン（`PEN_FLAG_BARREL`）は `PointerButton.Right` として渡す。W3C Pointer Events がペンのバレルを右ボタン（button 2）と同じに扱うので、右クリックのメニューなどが、ペンでもそのまま動く。触れずに近づけている間の `WM_POINTERUPDATE` は Move で、ペンのホバーになる
+  - Avalonia はこの値を持つ（`AppWndProc.cs` 1207〜1218・1284〜1296 行目、`PointerPoint.cs` 71〜107 行目）。バレルは `IsBarrelButtonPressed` の印である
+  - Flutter は圧力を 0〜1024 のまま渡し（`flutter_windows_view.cc` 22〜25・709〜712 行目）、傾きは渡さない。組み込みの API に傾きの欄が無い（`embedder.h` 1352〜1399 行目）。バレルは `StylusPrimary` のボタンである（`flutter_window.cc` 111〜126 行目）
+- **途中の点:** 1 つのメッセージにまとめて届いた点は、`GetIntermediatePoints()` が、読まれたときに `GetPointerInfoHistory`（ペンは `GetPointerPenInfoHistory`、タッチは `GetPointerTouchInfoHistory`）から古い順に作る。最大 512 点で、読まれなければ何もしない。手書きや描画のアプリが、点を飛ばさずに線を引ける
+  - Avalonia が同じ形である（`AppWndProc.cs` 1062〜1117 行目、上限は `WindowImpl.cs` 113 行目の 512）。Flutter と GPUI は読まない
+- **タッチのタップ:** タッチの Down と Up は、左ボタンとして配る。Down から閾値（下の「タッチのドラッグ」と同じ 18 論理画素）を超えずに離せば Click になる。`ClickCount` は、マウスと同じ `GetDoubleClickTime` の時間の中で、50 論理画素の中に続いたタップを数える。マウスの `SM_CXDOUBLECLK`（4 画素）は指には狭い
+  - Avalonia はタッチとペンのダブルタップの距離を 50 にする（`Platform/DefaultPlatformSettings.cs` 17〜33 行目）
+- **タッチのドラッグ（I1b）:** タッチのドラッグが閾値（18 論理画素）を超えたら、スクロールする箱を動かす。マウスのドラッグでは動かさない。動かすのは、ドラッグの向きに範囲を持つ、最も内側のスクロールする箱で、範囲の端に着いても外の箱へは渡さない。スクロールに変わったら、押したノードに Cancel を送って Click を出さず、キャプチャはスクロールする箱が取る。離したときの速さで慣性をつけて流す。慣性は Flutter の `ClampingScrollSimulation` の式で、最小の速さ 50、最大 8,000 論理画素毎秒である。速さの求め方と式の細部は、I1b の実装の前に Flutter の `VelocityTracker` と `ClampingScrollSimulation` を読んでこの節に書く
+  - Flutter の閾値は `kTouchSlop` の 18（`gestures/constants.dart` 65 行目）、慣性は `ClampingScrollSimulation`（`widgets/scroll_physics.dart` 895〜923 行目、`kMinFlingVelocity` 50 と `kMaxFlingVelocity` 8,000 は `constants.dart` 90・95 行目、`monodrag.dart` 942〜960 行目）。タッチ・スタイラス・タッチパッドでドラッグし、マウスではしない（`widgets/scroll_configuration.dart` 29〜36・115〜120 行目）
+  - Avalonia の閾値は 5（`ScrollGestureRecognizer.cs` 22〜23 行目）、慣性は `v·0.15^t` で 5 px/s で止まる（284〜330 行目）。タッチとペンだけで動かす（161〜170 行目）
+  - GPUI の閾値は 8、慣性は iOS の減衰（毎 ms 0.998）で、最小 50・最大 8,000（`gpui/src/gestures.rs` 114〜142・458〜476 行目）
+  - 慣性の式を Flutter に合わせるのは、タッチとタッチパッド（I1c）を同じ流し方にする実装が Flutter だけだからである
+- **タッチパッドのパンと慣性（I1c）:** 精密タッチパッドのパンは DirectManipulation で受ける。`DM_POINTERHITTEST` で `GetPointerType` が `PT_TOUCHPAD` なら、viewport に `SetContact` する。動いた量はパンとして I1b と同じスクロールに渡し、OS の慣性の段は捨てて、離したときの速さから I1b と同じ式で流す。DirectManipulation は `Update` を呼ばないと進まないので、接触が RUNNING か INERTIA の間だけフレームを頼み続け、各フレームの最初に `Update` を呼ぶ
+  - Flutter は viewport をウィンドウの大きさで作り（`direct_manipulation.cc` 179〜214 行目）、`PT_TOUCHPAD` で `SetContact` し（`flutter_window.cc` 805〜815 行目）、14 ms のタイマーで `Update` を呼ぶ（507〜513・799〜803 行目）。OS の慣性の間の更新を捨て（`direct_manipulation.cc` 73・152 行目）、慣性が終わったら viewport を戻す（98〜124 行目）。枠組みがパンの速さから同じ流し方で流す（`gestures/monodrag.dart` 441・657〜666・724 行目）
+  - GPUI は 1000 × 1000 の viewport で `SetContact` し（`direct_manipulation.rs` 16〜19・97〜106 行目）、描くたびの最初に `Update` を呼び（`events.rs` 1338〜1347 行目）、OS の慣性をそのままスクロールのイベントとして渡す（`direct_manipulation.rs` 166〜249 行目）
+  - Avalonia は DirectManipulation を使わず、タッチパッドのスクロールはホイールのメッセージだけで受ける（`AppWndProc.cs` 403〜433・607〜622・653〜658 行目）
+  - XylemUI はフレームを要るときだけ描くので、GPUI のように描くたびに呼ぶだけでは、触れていない間に止まる。Flutter のタイマーは、触れていない間も回る
+- **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1c では DirectManipulation の 1 回の更新の時間を測る
+- **確かめ方:**
+  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム
+  - Platform: ポインタの情報を読む所（`GetPointerType`・`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo`・履歴）を差し替えられる形にし、テストは偽の情報を入れて `WM_POINTER*` を `SendMessage` で送る。Flutter の `MockWindowsProcTable` と同じ形である（`flutter_window_unittests.cc` 86・291〜333 行目）。DirectManipulation は COM の部分を偽物にして確かめる（Flutter の `direct_manipulation_unittests.cc`）。3 つとも `InjectSyntheticPointerInput` は使わない
 
 **キーの入力とフォーカス（K1 の Grill でオーナーが決定、Issue #351）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じで、Flutter の `fm` は `widgets/focus_manager.dart`、zed の Button は `crates/ui/src/components/button/` から書く。Win32 のメッセージは Microsoft の文書（`WM_KEYDOWN`・`WM_SYSKEYDOWN`・`WM_ACTIVATE`・`WM_SYSCOMMAND`・`WM_MENUCHAR`・`ToUnicodeEx` の頁）を読んだ。実装は 2 つに分ける。K1a はキーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化。K1b は Disabled、ボタンの Enter と Space、キーボードでのスクロール、フォーカスしたノードを見える所まで動かすこと。
 
@@ -3559,7 +3623,7 @@ internal sealed class FocusManager
   - Enter は Down（繰り返しを含む）で Click にする
   - Space は Down（繰り返しでないもの）で自分に Pressed を立て、Up で Pressed が立っていれば下ろして Click にする。Pressed の間にフォーカスを失ったら（非アクティブを含む）、Click せずに下ろす
   - Avalonia と同じ形である（`Button.cs` 307〜344・465〜469 行目。Avalonia の Enter はフォーカスを要らないが、ここではフォーカスしたボタンだけ）。Flutter は Enter と Space を Down と繰り返しのたびに Click にし（`widgets/app.dart` 1265〜1269 行目、`widgets/shortcuts.dart` 576〜580 行目）、GPUI はどちらも Up で Click にする（`div.rs` 3016〜3079 行目）
-  - キーでの Click も、ボタンを元に `PointerEventKind.Click` を bubble で配る。`OnClick` と、祖先の Click のハンドラが同じに受ける。`ClickCount` は 0、`Position`・`LocalPosition` は NaN、`Button` と `Buttons` は `None`、`Modifiers` は `None`（修飾キーの無い Enter と Space だけが Click になる）、`PointerType` は `Mouse` にする。ハンドラは `ClickCount` の 0 でキーからの Click と見分ける。`PointerType` にキーボードの値は足さない（ポインタの機器の種類の列挙で、Touch と Pen の行 I1 が使う）（PR #352 のレビュー）
+  - キーでの Click も、ボタンを元に `PointerEventKind.Click` を bubble で配る。`OnClick` と、祖先の Click のハンドラが同じに受ける。`ClickCount` は 0、`Position`・`LocalPosition` は NaN、`Button` と `Buttons` は `None`、`Modifiers` は `None`（修飾キーの無い Enter と Space だけが Click になる）、`PointerType` は `Mouse` にする。ハンドラは `ClickCount` の 0 でキーからの Click と見分ける。`PointerType` にキーボードの値は足さない（ポインタの機器の種類の列挙で、Touch と Pen の行 I1 が使う）（PR #352 のレビュー）。I1 で足した欄は、`PointerId` が 0、`IsPrimary` が true、`Pressure`・`TiltX`・`TiltY`・`Twist` が 0、`IsEraser`・`IsInverted` が false、`GetIntermediatePoints()` が空である（§7「タッチとペン」）
 - **キーボードでのスクロール（K1b）:** bubble の各ノードのハンドラの後、そのノードが `Scroll` の軸を持てば、修飾キーの無い Down（繰り返しを含む）を次のように受ける。位置が実際に変わったときだけ止め、端なら外側の箱へ渡す（ホイールと同じ連鎖、§3.4.1）。量は論理画素で、アニメーションは付けない（V2 と同じ。Flutter は 100 ms で動かす、`scrollable_helpers.dart` 512〜516 行目）
   - 上下の矢印: 縦が `Scroll` なら ±50（Flutter の 1 行、`scrollable_helpers.dart` 445〜446 行目）
   - 左右の矢印: 横が `Scroll` なら ±50
@@ -3691,7 +3755,7 @@ V1d の Grill（Issue #335）で、上の形にした。前の形は、ジェネ
 登録は当該ノードの`Scope`（§2.3）にクリーンアップ関数として紐づき、ノード破棄時に自動解除される。C# の `event` キーワード（`+=` / `-=`）は使わない。解除をScope に紐づけられず、フェーズも指定できないためである。
 
 ### 8.10 タッチ/ペン入力の正規化 — §7
-W3C Pointer Events同様、マウス・タッチ・ペンを単一の`PointerEvent`（`PointerType: Mouse | Touch | Pen`、Pen限定で圧力・傾き等）に統一する。ChromiumもFlutterも同じ設計。マルチタッチジェスチャー認識（§7でオプション拡張と位置づけ済み）はこの統一ポインタイベント列を`PointerType`でフィルタして上位に構築する。
+W3C Pointer Events同様、マウス・タッチ・ペンを単一の`PointerEvent`（`PointerType: Mouse | Touch | Pen`、Pen限定で圧力・傾き等）に統一する。ChromiumもFlutterも同じ設計。マルチタッチジェスチャー認識（§7でオプション拡張と位置づけ済み）はこの統一ポインタイベント列を`PointerType`でフィルタして上位に構築する。形は §7「タッチとペン」（I1 の Grill、Issue #384）で決めた。値の約束は W3C Pointer Events に合わせ、圧力はマウスとタッチでも押している間 0.5 にし、傾きとひねりはペンだけが持つ。ジェスチャーの認識は行 I2 で組む。
 
 ### 8.11 fontconfigの静的/動的リンク — §4.5
 Linuxのみ動的リンクとする。fontconfigの正当性はユーザー実機の実際のフォント・設定ファイル(`/etc/fonts`等)と一致する必要があり、静的同梱は実機の状態と乖離するリスクがある。§4.5で「フォールバック解決自体はOSに委譲する」と決めた判断の自然な帰結。`libfontconfig`は`libc`/`libX11`同様、ほぼ全Linuxデスクトップに標準で存在する共有ライブラリであり、許容範囲内の動的依存として扱う（Linuxに限り完全な単一静的バイナリは成立しない。配布形態は§0）。P/Invoke 先は `NativeLibrary.SetDllImportResolver` で `libfontconfig.so.1` を解決する。
