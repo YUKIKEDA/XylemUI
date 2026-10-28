@@ -278,6 +278,22 @@ internal sealed class UiTree
     internal Action<NodeHandle>? LayoutRunHook { get; set; }
 
     /// <summary>
+    /// Gets or sets a hook that runs each time a <c>For</c> moves a row (design §2.7). Tests count the moves with it.
+    /// </summary>
+    internal Action<NodeHandle>? RowMovedHook { get; set; }
+
+    /// <summary>
+    /// Gets the number of siblings walked to find a previous sibling (the removal of a node nobody gave the previous sibling of,
+    /// and <c>Show</c>'s replacement): tests check that <c>For</c> walks none.
+    /// </summary>
+    internal long SiblingWalks { get; private set; }
+
+    /// <summary>
+    /// Gets the containers that a <c>For</c> fills: each takes one, and no other child.
+    /// </summary>
+    internal HashSet<NodeHandle> ForContainers { get; } = [];
+
+    /// <summary>
     /// Creates a node that is not in the tree yet. It needs a layout. A leaf with content has <paramref name="measure"/>, and
     /// may have <paramref name="intrinsicWidths"/>, which must agree with it.
     /// </summary>
@@ -877,6 +893,156 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Puts <paramref name="child"/>, a node with no parent, among the children of <paramref name="parent"/> right after
+    /// <paramref name="previous"/>, or first when <paramref name="previous"/> is none, and marks the parent's layout dirty
+    /// (design §2.7, "The tree's moves"). It costs no walk of the children: <c>For</c> knows each row's previous sibling. A node
+    /// put back in the parent it came from keeps its depth, so a move walks no subtree. It does not move a node to another parent:
+    /// it takes a node back to the parent it came from, or a node that never had one. A disabled parent disables the node, but a
+    /// node that took Disabled from another parent keeps it here.
+    /// </summary>
+    /// <param name="parent">The parent.</param>
+    /// <param name="previous">The child that goes before it, or none.</param>
+    /// <param name="child">The node.</param>
+    internal void InsertAfter(NodeHandle parent, NodeHandle previous, NodeHandle child)
+    {
+        ref UiNode c = ref Nodes.GetRef(child);
+        if (!c.Parent.IsNone)
+        {
+            Invariant.Fail("InsertAfter was given a node that already has a parent.");
+        }
+
+        c.Parent = parent;
+        ref UiNode p = ref Nodes.GetRef(parent);
+        if (previous.IsNone)
+        {
+            c.NextSibling = p.FirstChild;
+            p.FirstChild = child;
+        }
+        else
+        {
+            ref UiNode before = ref Nodes.GetRef(previous);
+            if (before.Parent != parent)
+            {
+                Invariant.Fail("InsertAfter was given a previous sibling of another parent.");
+            }
+
+            c.NextSibling = before.NextSibling;
+            before.NextSibling = child;
+        }
+
+        if (p.LastChild == previous)
+        {
+            p.LastChild = child;
+        }
+
+        p.Versions.Children++;
+        if (!c.Layout.Style.IsInFlow)
+        {
+            p.Layout.OutOfFlowChildren++;
+        }
+
+        if (c.Depth != p.Depth + 1 || c.IsAttached != p.IsAttached)
+        {
+            SetDepth(child, p.Depth + 1, p.IsAttached);
+        }
+
+        if ((Nodes.GetRef(parent).Pseudo & PseudoState.Disabled) != 0 && (Nodes.GetRef(child).Pseudo & PseudoState.Disabled) == 0)
+        {
+            SetDisabledStates(child, inherited: true);
+        }
+
+        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+    }
+
+    /// <summary>
+    /// Takes <paramref name="node"/> out of the children of <paramref name="parent"/>, given the child right before it (none for the
+    /// first child), and marks the parent's layout dirty; the node and its subtree stay alive, with no parent (design §2.7, "The tree's
+    /// moves"). It costs no walk of the children. Its focus is the caller's: a move keeps it, a removal loses it first.
+    /// </summary>
+    /// <param name="parent">The parent.</param>
+    /// <param name="previous">The child right before <paramref name="node"/>, or none.</param>
+    /// <param name="node">The node.</param>
+    internal void DetachAfter(NodeHandle parent, NodeHandle previous, NodeHandle node)
+    {
+        ref UiNode n = ref Nodes.GetRef(node);
+        if (n.Parent != parent)
+        {
+            Invariant.Fail("DetachAfter was given a node that is not a child of the parent.");
+        }
+
+        NodeHandle first = Nodes.GetRef(parent).FirstChild;
+        if (previous.IsNone ? first != node : Nodes.GetRef(previous).NextSibling != node)
+        {
+            Invariant.Fail("DetachAfter was given a previous sibling that is not right before the node.");
+        }
+
+        Detach(parent, previous, node, n.Layout.Style.IsInFlow);
+        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+    }
+
+    /// <summary>
+    /// Puts <paramref name="replacement"/>, a node with no parent, in the place of <paramref name="node"/> among the children of its
+    /// parent, and leaves <paramref name="node"/> with no parent (design §2.7, <c>Show</c>). It walks the children before the node
+    /// to find its previous sibling: one walk of its siblings for one change of a condition.
+    /// </summary>
+    /// <param name="node">The child replaced, which has a parent.</param>
+    /// <param name="replacement">The node put in its place.</param>
+    internal void ReplaceChild(NodeHandle node, NodeHandle replacement)
+    {
+        NodeHandle parent = Nodes.GetRef(node).Parent;
+        NodeHandle previous = default;
+        for (NodeHandle child = Nodes.GetRef(parent).FirstChild; child != node; child = Nodes.GetRef(child).NextSibling)
+        {
+            previous = child;
+            SiblingWalks++;
+        }
+
+        Detach(parent, previous, node, Nodes.GetRef(node).Layout.Style.IsInFlow);
+        InsertAfter(parent, previous, replacement);
+    }
+
+    /// <summary>
+    /// Takes every child out of a parent in one pass and marks its layout dirty; the children stay alive, with no parent (design
+    /// §2.7: a <c>For</c> that goes away leaves its rows so, and their removal then walks no siblings).
+    /// </summary>
+    /// <param name="parent">The parent.</param>
+    internal void DetachChildren(NodeHandle parent)
+    {
+        NodeHandle child = Nodes.GetRef(parent).FirstChild;
+        while (!child.IsNone)
+        {
+            ref UiNode c = ref Nodes.GetRef(child);
+            NodeHandle next = c.NextSibling;
+            c.Parent = default;
+            c.NextSibling = default;
+            child = next;
+        }
+
+        ref UiNode p = ref Nodes.GetRef(parent);
+        p.FirstChild = default;
+        p.LastChild = default;
+        p.Layout.OutOfFlowChildren = 0;
+        p.Versions.Children++;
+        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+    }
+
+    /// <summary>
+    /// Returns whether a node is <paramref name="ancestor"/> or one of its descendants.
+    /// </summary>
+    internal bool IsInSubtree(NodeHandle node, NodeHandle ancestor)
+    {
+        for (; !node.IsNone; node = Nodes.GetRef(node).Parent)
+        {
+            if (node == ancestor)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Takes a node and its subtree out of the tree and frees their slots (design §2.13, "The component API"): the parent, if any,
     /// is marked for layout, and the pending layout requests, content snapshots, and deferred requests of the subtree's nodes are
     /// dropped, so that no pass reads a freed node. A node that is the root stops being the root.
@@ -1115,17 +1281,25 @@ internal sealed class UiTree
         requests.RemoveRange(kept, requests.Count - kept);
     }
 
-    // Takes node out of parent's list of children.
+    // Takes node out of parent's list of children, walking the children before it to find its previous sibling: the removal of a
+    // node whose previous sibling nobody knows. For gives the previous sibling of its rows (DetachAfter).
     private void Unlink(NodeHandle parent, NodeHandle node, bool inFlow)
+    {
+        NodeHandle previous = default;
+        for (NodeHandle child = Nodes.GetRef(parent).FirstChild; child != node; child = Nodes.GetRef(child).NextSibling)
+        {
+            previous = child;
+            SiblingWalks++;
+        }
+
+        Detach(parent, previous, node, inFlow);
+    }
+
+    // Takes node out of parent's list of children, given the child right before it.
+    private void Detach(NodeHandle parent, NodeHandle previous, NodeHandle node, bool inFlow)
     {
         ref UiNode p = ref Nodes.GetRef(parent);
         NodeHandle next = Nodes.GetRef(node).NextSibling;
-        NodeHandle previous = default;
-        for (NodeHandle child = p.FirstChild; child != node; child = Nodes.GetRef(child).NextSibling)
-        {
-            previous = child;
-        }
-
         if (previous.IsNone)
         {
             p.FirstChild = next;
@@ -1170,6 +1344,11 @@ internal sealed class UiTree
         if (_focusSignals.Count > 0)
         {
             _ = _focusSignals.Remove(node);
+        }
+
+        if (ForContainers.Count > 0)
+        {
+            _ = ForContainers.Remove(node);
         }
 
         Nodes.Free(node);

@@ -155,6 +155,33 @@ public static class Elements
     }
 
     /// <summary>
+    /// Shows one part or another by a condition (design §2.7): <paramref name="render"/>'s node while the condition is true, and
+    /// <paramref name="fallback"/>'s, or nothing, while it is false. No box is added around the part: its node takes the place in
+    /// the parent, as a child of it, so the parent lays it out as it would lay out the part itself. Each change of the condition's
+    /// truth makes the other part again, in a new scope, and disposes the part shown before, with what it made; a value of the same
+    /// truth changes nothing. Nothing in place shows as an empty hidden node, which the layout does not see.
+    /// </summary>
+    /// <param name="when">The condition.</param>
+    /// <param name="render">What the true state shows: a node of the current tree with no parent, made in the part's scope.</param>
+    /// <param name="fallback">What the false state shows; nothing when <see langword="null"/>.</param>
+    /// <returns>The node of the part shown first, to put in a parent. Put it in a parent before the condition changes: a change
+    /// before that is reported to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/> and shows nothing new.</returns>
+    /// <exception cref="InvalidOperationException">No window's root function is running, there is no current scope, or a part returns
+    /// no node of the current tree with no parent.</exception>
+    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null)
+    {
+        ArgumentNullException.ThrowIfNull(when);
+        ArgumentNullException.ThrowIfNull(render);
+        UiTree tree = CurrentTree();
+        if (Scope.CurrentRef.IsNone)
+        {
+            throw new InvalidOperationException("Show is made inside a scope, which owns its parts; there is no current scope.");
+        }
+
+        return new Element(tree, ShowBlock.Create(tree, when, render, fallback).Node);
+    }
+
+    /// <summary>
     /// Returns the tree whose root function runs now.
     /// </summary>
     /// <exception cref="InvalidOperationException">No window's root function is running.</exception>
