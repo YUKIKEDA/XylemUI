@@ -1030,9 +1030,11 @@ Column(
   - CSS の `display: contents` の箱を layout に足す形は採らない。それなら一覧を兄弟と混ぜられ、Flutter と SolidJS の書き方に近い。しかし木を 1 つしか持たない XylemUI では、contents を使わない木も含め、layout の 3 つの方式・描画の段・ヒット領域・Tab の走査・範囲の走査・無効化が、子をたどるたびに contents かを確かめることになる。V2 では、ノードごとの新しい確かめが、木全体の layout が 3〜8 % 長くなった分の約半分だった（`docs/benchmarks/v2-scroll.md`）。Flutter は木を分けて、この確かめを layout で払わない。contents の子が変わると layout し直すのは箱を持つ祖先なので、`Versions.Children`・測りのキャッシュ・layout 境界の規則も 2 段になる。contents の戻り値に `.Background()` や `.On(...)` を付けても効かない。Taffy には `display: contents` が無いので（main 4204e36 の `Display` は Block・FlowRoot・Flex・Grid・None、`src/style/mod.rs` 251〜266 行目）、Taffy のテストを写す今の確かめ方も使えない。一覧を兄弟と混ぜる部品が要るようになったら、その費用を一時のビルドで測って決め直す
 - **`Show` の作り直し:** 中身は、false から true に変わるたびに新しい Scope で作り、true から false に変わったらその Scope を破棄する。`fallback` も同じく、false の間だけの Scope で作る。true の間に true が書かれても作り直さない
   - SolidJS の既定の `Show` も、真偽が変わったときだけ作り直す（`render/flow.ts` 115〜124 行目）。Flutter の `Visibility` の既定（`maintainState: false`）は `visible ? child : replacement` で、隠した子を破棄する（`widgets/indexed_stack.dart` 452〜475 行目）
+  - `Show` のノードを親に入れる前に条件が変わったら、`InvalidOperationException` を投げる。呼び手が持っているのは最初のノードなので、入れ替えると、呼び手には解放したノードが残る（V3a の実装、PR #369）
   - 値を中身に渡す形（SolidJS の `keyed`、`render/flow.ts` 113〜114 行目）は、要る部品が出るまで足さない。状態を残したまま隠したいときは、`Hidden` を Signal で切り替える。Flutter の `Offstage` は描かないが layout はする（`widgets/basic.dart` 3592〜3623 行目）ので、`Hidden` とは違う
 - **同じキーの項目の値が変わったとき:** 行は使い回す。`render` は項目を `IReadOnlySignal<T>` で受け、値が変われば（`EqualityComparer<T>.Default` で比べる）その Signal に書く。行のフォーカスやスクロールの位置は残る
   - Flutter も、型とキーが同じなら Element を使い回し、新しい Widget で更新する（`widgets/framework.dart` 382〜384・3995〜4087 行目）。SolidJS の `For` は項目の参照がキーなので、同じ位置に新しいオブジェクトが来ると行を作り直す（`reactive/array.ts` 147・158 行目）。SolidJS の `Index` は項目を Signal にして書き直す（同 232〜233 行目）
+  - 前と同じオブジェクトの項目は、比べずに Signal へも書かない。1 行の変更でも差分は全行を合わせるので、書くたびに Signal 自身の比較（レコードなら各欄）を払うと、1 万行で 1 行あたり約 26 ns かかり、差分の大半になった（V3a の実装、`docs/benchmarks/v3a-show-for.md`）
   - 順番の `IReadOnlySignal<int>` は、2 つ目の多重定義のときだけ作る。SolidJS の `For` も、描く関数が 2 つ目の引数を持つときだけ順番の Signal を作る（`reactive/array.ts` 58・169〜172 行目）
 - **差分:** Vue の 5 段と最長増加部分列で、動かすノードの数を最小にする（`renderer.ts` の `patchKeyedChildren` 1834〜2076 行目、最長増加部分列は 2608〜2647 行目で O(n log n)）
   - 5 段は次のとおりである。1. 先頭から一致する分を合わせる。2. 末尾から一致する分を合わせる。3. 増えた分を作る。4. 減った分を消す。5. 残った中間を、キーからの表で突き合わせ、部分列に入らない行だけを動かす（2035〜2074 行目）。Inferno（`packages/inferno/src/DOM/patching.ts` 1318〜1320 行目）と ivi（`packages/ivi/src/lib/core.ts` 1356 行目）も最長増加部分列を使う。SolidJS の DOM の差分（dom-expressions の `reconcile.js` 2〜75 行目）は udomdiff 由来で、動かす数が最小になる保証は無い。Flutter は、先頭と末尾を合わせた後、中間の子を位置の順に置き直す（`widgets/framework.dart` 4138〜4329 行目）
@@ -1044,6 +1046,7 @@ Column(
   - 今の `Unlink` は前の兄弟を先頭から探すので（O(子の数)）、1 万行から 1 行ずつ外すと O(n²) だった（PR #340 のレビュー）。`UiNode` に `PrevSibling` を持たせる形は採らない。`NodeHandle` は 16 バイトで、空きは 2 バイトしか無く、すべてのノードが 576 → 592 バイトになる。V2 では、`LayoutStyle` が 8 バイト大きくなったことが、木全体の layout が 3〜8 % 長くなった分の約半分だった（`docs/benchmarks/v2-scroll.md`）
 - **Scope:** `Show` と `For` は、呼ばれたときの今の Scope の下に、自分の Scope を 1 つ作る。行ごとの Scope と、`Show` の中身・`fallback` の Scope は、自分の Scope の下に `Scope.Run` で作る。項目と条件を読む Effect の中では作らない。Effect は作り直す前に、自分の中で作った Scope を破棄するからである（§2.3）。行を消すときは行の Scope を、`Show` と `For` の Scope を破棄するときはすべての行と中身を破棄する。描く間は、`UiTree.Current` をその木にする（§2.13「部品の関数が木を見つける方法」）
   - SolidJS も、行ごとに `createRoot` で所有者を作り（`reactive/array.ts` 102・158・168 行目）、`For` の所有者が片付けられると全行を破棄する（60 行目）
+  - 行の `render` が投げたとき、または入れられないノード（無いノード、別の木のノード、親のあるノード）を返したときは、例外を未処理の例外のハンドラへ渡し、その行は `Hidden` の空のノードで位置を保つ。差分の途中で投げると、`For` の配列と木の並びが食い違うからである。`Show` の中身は 1 つなので、そのまま投げる（V3a の実装、PR #369）
 - **費用:** 並べ替えと、項目の値の変更（行を作らない変更）は、割り当て 0 にする。差分に使う配列（キー、新しい順、最長増加部分列）は `For` が持ち、足りないときだけ伸ばす。行を作る・消すときは、ノード・Scope・ハンドラ・Effect の分を割り当てる
 - **確かめ方（§12.1 の層）:**
   - 第 2 層（Core）: `Show` の切り替えと作り直し、`fallback`、同じ位置への入れ替え。`For` の作る・消す・動かす・値の変更・順番の Signal、最長増加部分列で動かす行の数、行の Scope の破棄とハンドラ・Effect が残らないこと、子を持つ箱への `For` が投げること、1 万行から 1 行ずつ外す時間が行の数に比例すること

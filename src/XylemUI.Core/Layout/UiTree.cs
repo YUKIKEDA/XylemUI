@@ -896,7 +896,9 @@ internal sealed class UiTree
     /// Puts <paramref name="child"/>, a node with no parent, among the children of <paramref name="parent"/> right after
     /// <paramref name="previous"/>, or first when <paramref name="previous"/> is none, and marks the parent's layout dirty
     /// (design §2.7, "The tree's moves"). It costs no walk of the children: <c>For</c> knows each row's previous sibling. A node
-    /// put back in the parent it came from keeps its depth, so a move walks no subtree.
+    /// put back in the parent it came from keeps its depth, so a move walks no subtree. It does not move a node to another parent:
+    /// it takes a node back to the parent it came from, or a node that never had one. A disabled parent disables the node, but a
+    /// node that took Disabled from another parent keeps it here.
     /// </summary>
     /// <param name="parent">The parent.</param>
     /// <param name="previous">The child that goes before it, or none.</param>
