@@ -106,6 +106,8 @@ A figure the design derives (a memory bound, a count) writes its arithmetic besi
 
 A design that keeps a cache or a state per node writes its size per node as a formula of the content (characters, glyphs, lines, entries), and its acceptance bounds it with a number a test checks. Reporting the size is not a bound. V1a's first design only reported the size of a text leaf; with T1b's initial arrays a leaf could hold 5 to 12 KB, 50 to 120 MB for 10,101 leaves, and the review found it (PR #297).
 
+A design that keeps a state in an array indexed by the node's slot says what that state is when the slot is used again for a new node. V3b's design said that a new node starts with its remembered overflow marked stale, and not that a freed node's slot keeps the old node's value and mark until the new node resets them in `CreateNode`; the review found it (PR #373).
+
 A value that only some nodes use goes behind a reference of its own, made for the nodes that use it. Fields added to a side object that many nodes hold are paid by every node that holds it. V1c's first design put the hovered and pressed `PaintStyle?` (about 200 bytes) in `NodeVisual`, which every node with a background holds: about 2 MB for 10,000 rows of a list. The review found it, and the owner moved them to `PseudoStyles` (PR #319).
 
 A contract that hands work to an OS API is written after reading that API's output parameters, not only its inputs: what it returns when it finds nothing, and what else it returns. F1's first interface dropped `MapCharacters`'s `scale` and left the length of a range that no font renders undefined; the documentation defines both (PR #146).
@@ -131,6 +133,10 @@ A value a later stage needs that the layout resolves by rules that differ case b
 An acceptance that a change allocates nothing is checked against each API that makes the change. V1b's first design said a change of color allocates nothing, while the only way to change a box's color was to hand the tree a new `NodeVisual` object (PR #309's review).
 
 A design that stops a propagation with a comparison decides two things in the design itself: everything the propagation carried, and what happens when a value to compare is gone. In L5 both came from reviews: the measurement cache (4 entries) can overwrite a value the parent read, and the path's `SubtreeDirty` carried Paint, HitTest, and Text with Layout, so stopping at the parent left the repaint with no carrier (PR #109).
+
+A design that relies on an invariant says where the state it rests on may change and where it must not, in a sentence of its own. V3b's invariant held only if a mark is cleared nowhere but in the recomputation of a range; the design wrote the clearing as a step of that recomputation and did not say that nothing else clears it, and the review asked for the sentence, so that a later path (a removal) does not clear it (PR #373).
+
+Before a design PR states an invariant, each path that could break it is followed in the design's own terms, nested and unused cases included. V3b's first sentence said a marked node stays under an unmarked one only when the unmarked one is a scroll container; following a nested scroll container whose range nothing reads showed that the marked nodes are that container and its content, and the sentence was corrected before the PR (PR #373).
 
 A sentence added to the design to answer a review is a claim like any other and is checked before it goes in. The L5 re-review explained that a leaf an ancestor lays out first has "nothing to compare", and the design took that over; the parent's measurement cache still held a value of the old content, and the random test with several changes per pass showed the wrong rectangle (PR #109, #115).
 
