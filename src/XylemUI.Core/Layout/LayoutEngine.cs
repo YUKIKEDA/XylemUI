@@ -90,6 +90,8 @@ internal static partial class LayoutEngine
 
                     // A dirty root is never skipped by the cache. A measure function may throw: the exception is reported like an
                     // effect's, the other roots go on, and the request waits for the next pass.
+                    // Before the layout, so that a layout that throws halfway still leaves the ancestors marked.
+                    MarkOverflowAbove(tree, request.Node);
                     try
                     {
                         LayoutInput input = ResolveInput(tree, request);
@@ -132,6 +134,36 @@ internal static partial class LayoutEngine
         {
             ReactiveRuntime.ExitLayout();
             tree.RestoreDeferredRequests();
+        }
+    }
+
+    // A layout root's subtree changed, and the layout stopped at the root: the remembered overflow of its ancestors is stale up to
+    // the first scroll container above it, which gives its parent only its border box and keeps its own mark (design §3.4.1).
+    // The parent is marked even when the root is a scroll container: a root can leave its layout with another border box. In the
+    // random test of row V3b a scrolling root laid out again with its last input came out 0 high where it had been 12 (that box
+    // came from a run its cache had matched to another input), and its parent's range kept the old box when the walk skipped the
+    // parent of a root that scrolls. An
+    // ancestor already marked stops the walk too: finding a value again always goes down into the children that are no scroll
+    // container, so the ancestors of a marked node that is no scroll container are marked as well.
+    private static void MarkOverflowAbove(UiTree tree, NodeHandle root)
+    {
+        NodeHandle ancestor = tree.Nodes.GetRef(root).Parent;
+        while (!ancestor.IsNone)
+        {
+            ref OverflowMemo memo = ref tree.OverflowOf(ancestor);
+            if (!memo.Known)
+            {
+                return;
+            }
+
+            memo.Known = false;
+            ref UiNode node = ref tree.Nodes.GetRef(ancestor);
+            if (node.Layout.Style.IsScrollContainer)
+            {
+                return;
+            }
+
+            ancestor = node.Parent;
         }
     }
 
@@ -372,6 +404,14 @@ internal static partial class LayoutEngine
             return default;
         }
 
+        // Its boxes or its children's may change: its remembered overflow is found again when a range reads it (design §3.4.1). The
+        // commit runs down from a layout root, so the nodes it marks hang together under the root. The mark goes before the
+        // children's layouts, so that a measurement that throws below leaves no marked child under an unmarked node.
+        if (commit)
+        {
+            tree.OverflowOf(handle).Known = false;
+        }
+
         tree.LayoutRunHook?.Invoke(handle);
         float baseline = float.NaN;
         NodeHandle baselineChild = default;
@@ -476,6 +516,26 @@ internal static partial class LayoutEngine
             return (cache.ContentRight, cache.ContentBottom);
         }
 
+        // A subtree the layout did not change keeps the edges found last (design §3.4.1). Only here is the mark cleared.
+        ref OverflowMemo memo = ref tree.OverflowOf(handle);
+        if (memo.Known)
+        {
+            return (memo.Right, memo.Bottom);
+        }
+
+        (float right, float bottom) = FindScrollableOverflow(tree, handle);
+        memo.Right = right;
+        memo.Bottom = bottom;
+        memo.Known = true;
+        return (right, bottom);
+    }
+
+    // The edges of a container from its children's contributions, each child's own overflow taken from its memo.
+    private static (float Right, float Bottom) FindScrollableOverflow(UiTree tree, NodeHandle handle)
+    {
+        tree.OverflowFinds++;
+        ref UiNode node = ref tree.Nodes.GetRef(handle);
+        NodeHandle child = node.FirstChild;
         LayoutStyle style = node.Layout.Style;
         Edges border = node.Layout.Border;
         bool scrolls = style.IsScrollContainer;

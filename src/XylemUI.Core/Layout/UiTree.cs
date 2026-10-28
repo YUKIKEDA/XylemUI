@@ -23,6 +23,7 @@ internal sealed class UiTree
 
     // The measurement caches, by the node's slot index: apart from the nodes, so that reading a node does not load them.
     private MeasureCache[] _measures = new MeasureCache[256];
+    private OverflowMemo[] _overflows = new OverflowMemo[256];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UiTree"/> class.
@@ -325,10 +326,14 @@ internal sealed class UiTree
         if (handle.Index >= _measures.Length)
         {
             Array.Resize(ref _measures, Math.Max(_measures.Length * 2, handle.Index + 1));
+            Array.Resize(ref _overflows, _measures.Length);
         }
 
         _measures[handle.Index] = default;
         _measures[handle.Index].Box = box;
+
+        // A slot used again would keep the freed node's edges as known (design §3.4.1).
+        _overflows[handle.Index] = default;
         return handle;
     }
 
@@ -844,6 +849,19 @@ internal sealed class UiTree
     /// Returns the measurement cache of a live node.
     /// </summary>
     internal ref MeasureCache MeasuresOf(NodeHandle node) => ref _measures[node.Index];
+
+    /// <summary>
+    /// Returns the remembered scrollable overflow of a node (design §3.4.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>A reference to its memo.</returns>
+    internal ref OverflowMemo OverflowOf(NodeHandle node) => ref _overflows[node.Index];
+
+    /// <summary>
+    /// Gets or sets the number of containers whose scrollable overflow was found again rather than taken from their memo (design
+    /// §3.4.1). Tests read it to show that writing a range costs the path that changed.
+    /// </summary>
+    internal long OverflowFinds { get; set; }
 
     /// <summary>
     /// Gets the bytes the measurement caches take: one per slot of the arena, grown by doubling (row L1a's layout scenario
