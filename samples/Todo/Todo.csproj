@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Desktop\XylemUI.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Primitives\XylemUI.Primitives.csproj" />
+  </ItemGroup>
+  <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
+</Project>
