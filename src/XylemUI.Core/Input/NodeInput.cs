@@ -50,6 +50,12 @@ internal sealed class NodeInput
     public int TabIndex { get; internal set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the node itself is disabled: the mark <see cref="ElementExtensions.Disabled(Element, bool)"/>
+    /// writes. The node and its descendants have <see cref="PseudoState.Disabled"/> while it is set (design §7, "Disabled").
+    /// </summary>
+    public bool Disabled { get; internal set; }
+
+    /// <summary>
     /// Gets or sets the index of the node's hit region in the display list (<see cref="DisplayList.HitEntries"/>), valid while
     /// <see cref="HitBuild"/> is the frame's build.
     /// </summary>

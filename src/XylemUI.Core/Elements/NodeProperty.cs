@@ -50,6 +50,12 @@ public static class NodeProperties
         new(nameof(Foreground), static (tree, node, value) => ElementExtensions.WriteForeground(tree, node, value));
 
     /// <summary>
+    /// Gets whether the node itself is disabled (<see cref="ElementExtensions.Disabled(Element, bool)"/>), which its descendants
+    /// take on.
+    /// </summary>
+    public static NodeProperty<bool> Disabled { get; } = new(nameof(Disabled), static (tree, node, value) => tree.SetDisabled(node, value));
+
+    /// <summary>
     /// Gets the opacity of the node and its subtree (<see cref="ElementExtensions.Opacity"/>).
     /// </summary>
     public static NodeProperty<float> Opacity { get; } = new(nameof(Opacity), static (tree, node, value) => tree.SetOpacity(node, value));

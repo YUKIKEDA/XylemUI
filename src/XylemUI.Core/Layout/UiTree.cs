@@ -168,13 +168,40 @@ internal sealed class UiTree
     private void PublishScrollRange(NodeHandle node, ScrollState state)
     {
         Size max = MaxScrollOffsetOf(node);
+        state.Publish(new Vector2(max.Width, max.Height), ViewportOf(node));
+    }
+
+    /// <summary>
+    /// Returns the largest scroll position of a container: the one the last layout wrote to its state, or, for a container without
+    /// a state yet, the one its boxes give (<see cref="MaxScrollOffsetOf"/>).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The largest position on each axis.</returns>
+    internal Vector2 ScrollRangeOf(NodeHandle node)
+    {
+        if (ScrollStateOf(node) is { } state)
+        {
+            return state.MaxOffsetValue;
+        }
+
+        Size range = MaxScrollOffsetOf(node);
+        return new Vector2(range.Width, range.Height);
+    }
+
+    /// <summary>
+    /// Returns the part of a scroll container that shows its content, from its last committed layout, in logical pixels: the padding
+    /// box less the scrollbars' room (design §3.4.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The viewport.</returns>
+    internal Size ViewportOf(NodeHandle node)
+    {
         ref readonly LayoutState layout = ref Nodes.GetRef(node).Layout;
         Size gutter = layout.Style.ScrollbarGutter;
-        var viewport = new Size(
+        return new Size(
             Math.Max(0, layout.Rect.Width - layout.Border.Left - layout.Border.Right - gutter.Width),
             Math.Max(0, layout.Rect.Height - layout.Border.Top - layout.Border.Bottom - gutter.Height)
         );
-        state.Publish(new Vector2(max.Width, max.Height), viewport);
     }
 
     /// <summary>
@@ -680,6 +707,47 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Sets what the disabled state lays over a node's other looks, or <see langword="null"/> for nothing; equal to the one there,
+    /// nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetDisabledStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        PseudoStyles states = StatesOf(node);
+        if (states.Disabled != style)
+        {
+            states.Disabled = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets whether a node itself is disabled (design §7, "Disabled"); equal to the value there, nothing changes. Another sets the
+    /// disabled state of the node and its descendants again, which costs the subtree's nodes; a descendant with its own mark stays
+    /// disabled. A focused node in a subtree that becomes disabled loses the focus, and the node is drawn again, so that the pointer's
+    /// hover is tested again with the new state.
+    /// </summary>
+    public void SetDisabled(NodeHandle node, bool disabled)
+    {
+        NodeInput input = InputOf(node);
+        if (input.Disabled == disabled)
+        {
+            return;
+        }
+
+        input.Disabled = disabled;
+        ref UiNode n = ref Nodes.GetRef(node);
+        bool inherited = !n.Parent.IsNone && (Nodes.GetRef(n.Parent).Pseudo & PseudoState.Disabled) != 0;
+        SetDisabledStates(node, inherited);
+        Invalidation.Invalidate(this, node, ChangeKind.Color);
+        if (disabled)
+        {
+            Focus.Lose(node);
+        }
+    }
+
+    /// <summary>
     /// Sets a node's place in the order of Tab (design §7.1): a smaller index comes first; the nodes of one index come in the order
     /// of the tree.
     /// </summary>
@@ -798,6 +866,13 @@ internal sealed class UiTree
         }
 
         SetDepth(child, p.Depth + 1, p.IsAttached);
+
+        // A subtree appended to a disabled parent becomes disabled (design §7, "Disabled"); a new subtree is enabled unless marked.
+        if ((Nodes.GetRef(parent).Pseudo & PseudoState.Disabled) != 0)
+        {
+            SetDisabledStates(child, inherited: true);
+        }
+
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
     }
 
@@ -1098,6 +1173,21 @@ internal sealed class UiTree
         }
 
         Nodes.Free(node);
+    }
+
+    // The disabled state of a node and its subtree: its own mark or its parent's state. Values are copied before each step down.
+    private void SetDisabledStates(NodeHandle node, bool inherited)
+    {
+        ref UiNode n = ref Nodes.GetRef(node);
+        bool disabled = inherited || n.Input?.Disabled == true;
+        SetPseudoState(node, PseudoState.Disabled, disabled);
+        NodeHandle child = Nodes.GetRef(node).FirstChild;
+        while (!child.IsNone)
+        {
+            NodeHandle next = Nodes.GetRef(child).NextSibling;
+            SetDisabledStates(child, disabled);
+            child = next;
+        }
     }
 
     // Values are copied before each step down, so no ref is held across the recursion (design §2.5).

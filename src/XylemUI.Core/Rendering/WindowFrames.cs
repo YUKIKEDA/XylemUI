@@ -141,6 +141,9 @@ internal sealed class WindowFrames
             _tree.PublishScrollRanges();
         }
 
+        // With the ranges written: a position it changes is a paint update of this frame (design §7, "Bring into view").
+        _tree.Focus.RevealPending();
+
         if (!layout && _tree.PaintUpdates.Count == 0)
         {
             return;
@@ -374,6 +377,12 @@ internal sealed class WindowFrames
                 {
                     Over(visible, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
                 }
+            }
+
+            // Last: a disabled node is neither pressed nor focused, so its look wins (design §2.13).
+            if ((state & PseudoState.Disabled) != 0 && styles.Disabled is { } disabled)
+            {
+                Over(disabled, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
             }
         }
 
