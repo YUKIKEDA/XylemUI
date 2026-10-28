@@ -1004,6 +1004,54 @@ Fine-grained reactiveはview関数が初回しか実行されないため、素�
 
 公開 API のコンポーネント関数は、アリーナ上のノードを指す軽量な値 `Element`（内部に `NodeHandle` を持つ）を返す。
 
+**V3 で入れる形（V3 の Grill でオーナーが決定、Issue #363）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）・SolidJS v1.9.16（dom-expressions v0.40.11）・Vue v3.5.44 を読んで決めた。Flutter は `packages/flutter/lib/src/` から、SolidJS は `packages/solid/src/` から、Vue は `packages/runtime-core/src/` から、GPUI は `crates/` から書く。実装は 3 つに分け、この順に入れる。V3a は `Show` と `For` と木の操作、V3b はスクロールの範囲の使い回し（§3.4.1）、V3c は `samples/Todo` と測定である。下の `ShowState` と `exit` の契約は、アニメーションを入れる行（行 D7 が決める）のもので、V3 の `Show` は持たない。
+
+```csharp
+// Elements に足す（using static XylemUI.Elements;）
+public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null);
+
+// ElementExtensions に足す。container は子を持たない箱で、For だけがその子を決める
+public static Element For<T, TKey>(this Element container, IReadOnlySignal<IReadOnlyList<T>> items,
+    Func<T, TKey> key, Func<IReadOnlySignal<T>, Element> render) where TKey : notnull;
+public static Element For<T, TKey>(this Element container, IReadOnlySignal<IReadOnlyList<T>> items,
+    Func<T, TKey> key, Func<IReadOnlySignal<T>, IReadOnlySignal<int>, Element> render) where TKey : notnull;   // 順番も受ける
+
+// 使い方（V3 の設計の PR で、リポジトリの設定のまま一時の project でコンパイルを確かめた）
+Column(
+    Button("Add", () => items.Set([.. items.Get(), new TodoItem(next++, $"Task {next}", false)])),
+    Show(empty, () => Text("Nothing to do"), fallback: () => Text("Things to do")),
+    Column().For(shown, item => item.Id, item => Row(Text(() => item.Get().Title), Button("Done", () => Toggle(item.Get().Id)))).Gap(4));
+```
+
+- **置くノード:** `Show` と `For` は、包む箱を木に足さない。行と中身は、layout の親の直接の子になる
+  - 比べた実装も同じである。Flutter は要素の木と描画の木を分け、条件や一覧を組み立てる `ComponentElement` は `RenderObject` を作らない（`widgets/framework.dart` 5782〜5799 行目）。layout をするのは `RenderObjectElement` の `RenderObject` だけで（6445〜6451 行目）、`ComponentElement` が持てる子は 1 つだけである（3818〜3824 行目）。SolidJS も、行を親の子の並びにそのまま置く（`render/flow.ts` 34〜49 行目、`reactive/array.ts` 49〜177 行目）。GPUI の `.when()` は、組み立てのための糖衣にすぎない（`gpui/src/util.rs` 11〜60 行目）
+  - `Show` は、条件が true なら中身のノードそのものを、false なら `fallback` のノードか `Hidden` の空のノードを、親の同じ位置に入れ替えて置く。`Hidden` のノードは layout の流れに入らない（`LayoutStyle.IsInFlow`）。入れ替えは、親の子を先頭からたどって位置を探す（O(兄弟の数)、1 回の切り替えで 1 回）
+  - `For` は、子を持たない箱（`Column()` など）を受け取る拡張メソッドで、その箱の子をすべて決める。箱に子があれば `ArgumentException` を投げる。一覧と別の子を同じ列に並べるときは、列を入れ子にする（`Column(見出し, Column().For(...), ボタン)`）。Flutter の `Column(children: [見出し, ...行, ボタン])` より箱が 1 つ多い
+  - CSS の `display: contents` の箱を layout に足す形は採らない。それなら一覧を兄弟と混ぜられ、Flutter と SolidJS の書き方に近い。しかし木を 1 つしか持たない XylemUI では、contents を使わない木も含め、layout の 3 つの方式・描画の段・ヒット領域・Tab の走査・範囲の走査・無効化が、子をたどるたびに contents かを確かめることになる。V2 では、ノードごとの新しい確かめが、木全体の layout が 3〜8 % 長くなった分の約半分だった（`docs/benchmarks/v2-scroll.md`）。Flutter は木を分けて、この確かめを layout で払わない。contents の子が変わると layout し直すのは箱を持つ祖先なので、`Versions.Children`・測りのキャッシュ・layout 境界の規則も 2 段になる。contents の戻り値に `.Background()` や `.On(...)` を付けても効かない。Taffy には `display: contents` が無いので（main 4204e36 の `Display` は Block・FlowRoot・Flex・Grid・None、`src/style/mod.rs` 251〜266 行目）、Taffy のテストを写す今の確かめ方も使えない。一覧を兄弟と混ぜる部品が要るようになったら、その費用を一時のビルドで測って決め直す
+- **`Show` の作り直し:** 中身は、false から true に変わるたびに新しい Scope で作り、true から false に変わったらその Scope を破棄する。`fallback` も同じく、false の間だけの Scope で作る。true の間に true が書かれても作り直さない
+  - SolidJS の既定の `Show` も、真偽が変わったときだけ作り直す（`render/flow.ts` 115〜124 行目）。Flutter の `Visibility` の既定（`maintainState: false`）は `visible ? child : replacement` で、隠した子を破棄する（`widgets/indexed_stack.dart` 452〜475 行目）
+  - 値を中身に渡す形（SolidJS の `keyed`、`render/flow.ts` 113〜114 行目）は、要る部品が出るまで足さない。状態を残したまま隠したいときは、`Hidden` を Signal で切り替える。Flutter の `Offstage` は描かないが layout はする（`widgets/basic.dart` 3592〜3623 行目）ので、`Hidden` とは違う
+- **同じキーの項目の値が変わったとき:** 行は使い回す。`render` は項目を `IReadOnlySignal<T>` で受け、値が変われば（`EqualityComparer<T>.Default` で比べる）その Signal に書く。行のフォーカスやスクロールの位置は残る
+  - Flutter も、型とキーが同じなら Element を使い回し、新しい Widget で更新する（`widgets/framework.dart` 382〜384・3995〜4087 行目）。SolidJS の `For` は項目の参照がキーなので、同じ位置に新しいオブジェクトが来ると行を作り直す（`reactive/array.ts` 147・158 行目）。SolidJS の `Index` は項目を Signal にして書き直す（同 232〜233 行目）
+  - 順番の `IReadOnlySignal<int>` は、2 つ目の多重定義のときだけ作る。SolidJS の `For` も、描く関数が 2 つ目の引数を持つときだけ順番の Signal を作る（`reactive/array.ts` 58・169〜172 行目）
+- **差分:** Vue の 5 段と最長増加部分列で、動かすノードの数を最小にする（`renderer.ts` の `patchKeyedChildren` 1834〜2076 行目、最長増加部分列は 2608〜2647 行目で O(n log n)）
+  - 5 段は次のとおりである。1. 先頭から一致する分を合わせる。2. 末尾から一致する分を合わせる。3. 増えた分を作る。4. 減った分を消す。5. 残った中間を、キーからの表で突き合わせ、部分列に入らない行だけを動かす（2035〜2074 行目）。Inferno（`packages/inferno/src/DOM/patching.ts` 1318〜1320 行目）と ivi（`packages/ivi/src/lib/core.ts` 1356 行目）も最長増加部分列を使う。SolidJS の DOM の差分（dom-expressions の `reconcile.js` 2〜75 行目）は udomdiff 由来で、動かす数が最小になる保証は無い。Flutter は、先頭と末尾を合わせた後、中間の子を位置の順に置き直す（`widgets/framework.dart` 4138〜4329 行目）
+  - キーを比べるのは項目とキーの配列の上で、ノードに触るのは、作る・消す・動かす・値が変わった行だけである。1 行足す、1 行消す、2 行を入れ替える、といった変更で、触るノードは数個で済む。全行の `NextSibling` を 1 回で書き直す形は、1 行足すだけでも 1 万行のノード（576 バイト）すべてに触るので採らない
+  - **重なるキー:** 同じキーが一覧に 2 度以上出たら、古い一覧の同じキーの行と、出た順に 1 つずつ対応させる。対応する行の無い分は新しく作る。例外は投げない。SolidJS の `For` も、同じ項目が重なると次の位置へ順につなぐ（`reactive/array.ts` 130〜136・145〜146 行目）。Vue は開発ビルドで警告して続ける（`renderer.ts` 1955〜1971 行目）（V3 の設計の PR で、オーナーに確かめる点）
+- **木の操作と `Unlink`:** `For` は、行のノードを並びの順の配列に持ち、外す・差し込む・動かすときに前の兄弟を渡す。どれも O(1) になる
+  - `UiTree` に internal の 2 つの操作を足す。前の兄弟を受け取ってノードを外す操作と、前の兄弟の後ろにノードを差し込む操作である。どちらも親の `Versions.Children` と layout の印を、今の `AppendChild` と同じに扱う
+  - 行の Scope を破棄すると、その行のノードの `UiTree.Remove` が走る（§2.13「持ち主と外し方」）。`For` が先に外したノードなら、`Remove` は外す手順を飛ばして解放だけをする
+  - 今の `Unlink` は前の兄弟を先頭から探すので（O(子の数)）、1 万行から 1 行ずつ外すと O(n²) だった（PR #340 のレビュー）。`UiNode` に `PrevSibling` を持たせる形は採らない。`NodeHandle` は 16 バイトで、空きは 2 バイトしか無く、すべてのノードが 576 → 592 バイトになる。V2 では、`LayoutStyle` が 8 バイト大きくなったことが、木全体の layout が 3〜8 % 長くなった分の約半分だった（`docs/benchmarks/v2-scroll.md`）
+- **Scope:** `Show` と `For` は、呼ばれたときの今の Scope の下に、自分の Scope を 1 つ作る。行ごとの Scope と、`Show` の中身・`fallback` の Scope は、自分の Scope の下に `Scope.Run` で作る。項目と条件を読む Effect の中では作らない。Effect は作り直す前に、自分の中で作った Scope を破棄するからである（§2.3）。行を消すときは行の Scope を、`Show` と `For` の Scope を破棄するときはすべての行と中身を破棄する。描く間は、`UiTree.Current` をその木にする（§2.13「部品の関数が木を見つける方法」）
+  - SolidJS も、行ごとに `createRoot` で所有者を作り（`reactive/array.ts` 102・158・168 行目）、`For` の所有者が片付けられると全行を破棄する（60 行目）
+- **費用:** 並べ替えと、項目の値の変更（行を作らない変更）は、割り当て 0 にする。差分に使う配列（キー、新しい順、最長増加部分列）は `For` が持ち、足りないときだけ伸ばす。行を作る・消すときは、ノード・Scope・ハンドラ・Effect の分を割り当てる
+- **確かめ方（§12.1 の層）:**
+  - 第 2 層（Core）: `Show` の切り替えと作り直し、`fallback`、同じ位置への入れ替え。`For` の作る・消す・動かす・値の変更・順番の Signal、最長増加部分列で動かす行の数、行の Scope の破棄とハンドラ・Effect が残らないこと、子を持つ箱への `For` が投げること、1 万行から 1 行ずつ外す時間が行の数に比例すること
+  - 第 3 層（表示リスト）: 並べ替えた後の行の位置
+  - 割り当て 0: 並べ替えのフレームと、値の変更のフレーム
+  - 費用: 1 万行の一覧に対して、末尾に 1 行足す・1 行消す・逆順に並べ替える・1 行の値を変える、のそれぞれの差分の時間と次のフレームの段ごとの時間。`Show` の切り替え 1 回
+  - V3c（`samples/Todo`）: MoonBit 版の V3 と同じ到達点を、C# 版でも満たす（§10.5 の表、§3.4.2「V3」）。見出しに件数を出し、Add を 3 回押すと `todos: 3` になる。項目は `ScrollView` の中の Button で、位置を 64 にした後も 2 つ目の項目の y は変わらず、行の間の位置の画素がボタンの色になる。その上に、済みの印・消す・絞り込み・並べ替えを足す
+
 **`Show`の状態機械:** (1)退場アニメーション中に親のSignalが先に破棄されると、退場中のノードが存在しないデータを参照しうる（ゾンビComputation）。対策として`Exiting`遷移時にReactive購読を切断する。(2)`exit`期間中に条件が`false→true`と高速に切り替わった場合の復帰契約は下表。
 
 ```csharp
@@ -1057,7 +1105,7 @@ MarkDirty(§2.4) → 通常のInvalidation〜Layout/Paintパイプラインに�
 | Visual state      | 描画状態（`NodeVisual` と文字の色、§5.0）、アニメーション補間値                                                                                         | 保持しFreeze（§2.7既存の方針通り）                                                                                                                                                                                                                   |
 | External resource | native window handle（§2.12）、GPUテクスチャ（§5.0.2のResourceManager）、IMEコンテキスト、a11yノード（§4.4.1）、イベントリスナー | `exiting`中は保持（即座の復帰性を優先）、`exit`タイマー満了によるdispose時に明示的に解放する。ただしGPUテクスチャ等メモリコストの大きいリソースは、`exiting`が一定時間（実装時にチューニング）継続した場合に先行解放し、復帰時に再取得する余地を残す |
 
-- `For<T, TKey>(IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key, Func<T, Element> render)`: create/reuse/move/removeを明示的に扱うreconciliation primitive。並び替え（例: `[A,B,C]`→`[C,A,B]`）では`UiNode`実体を作り直さず**アリーナ内の位置(`FirstChild`/`NextSibling`リンク)だけ動かす**。`key`→`NodeHandle`のマッピング（`Dictionary<TKey, NodeHandle>`）を保持し、リスト更新時に以下の4操作を分けて処理する。
+- `For<T, TKey>(IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key, Func<T, Element> render)`（V3 の形は上の「V3 で入れる形」で、`render` は項目の Signal を受け、子を持たない箱への拡張メソッドにした）: create/reuse/move/removeを明示的に扱うreconciliation primitive。並び替え（例: `[A,B,C]`→`[C,A,B]`）では`UiNode`実体を作り直さず**アリーナ内の位置(`FirstChild`/`NextSibling`リンク)だけ動かす**。`key`→`NodeHandle`のマッピング（`Dictionary<TKey, NodeHandle>`）を保持し、リスト更新時に以下の4操作を分けて処理する。
 
 ```csharp
 internal enum ForOpKind : byte { Create, Reuse, Move, Remove }
@@ -1486,6 +1534,7 @@ public static class Elements
     public static Element Text(Func<string> content);                // 読んだ Signal が変わるたびに書き直す（string を確保する）
     public static Element Text(TextBuilder content);                 // 同じ。確保しない
     public static Element ScrollView(Element child, ScrollState? state = null);   // 縦にスクロールする箱（V2、§3.4.1）
+    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null);   // V3（§2.7）
 }
 
 // メソッドチェーン。どれもその木の setter に直接書き、同じ Element を返す。長さは論理画素
@@ -1533,6 +1582,11 @@ public static class ElementExtensions
     public static Element ScrollState(this Element e, ScrollState state);
     public static Element OnClick(this Element e, Action handler);
     public static Element On(this Element e, PointerEventKind kind, EventPhase phase, PointerHandler handler);
+    // 一覧（V3、§2.7）。e は子を持たない箱で、その子を For が決める
+    public static Element For<T, TKey>(this Element e, IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key,
+        Func<IReadOnlySignal<T>, Element> render) where TKey : notnull;
+    public static Element For<T, TKey>(this Element e, IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key,
+        Func<IReadOnlySignal<T>, IReadOnlySignal<int>, Element> render) where TKey : notnull;
     // Signal とノードをつなぐ 1 つの経路（§2.4）。上の Signal を受ける多重定義はこれを呼ぶ
     public static Element Bind<T>(this Element e, NodeProperty<T> property, IReadOnlySignal<T> value);
 }
@@ -1984,7 +2038,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 - **`overflow` の値:** `Visible`・`Clip`・`Hidden`・`Scroll` を軸ごとに持つ（`LayoutStyle.OverflowX`・`OverflowY`）。`Hidden` と `Scroll` の箱はスクロールする箱で、その軸では自動の最小サイズが 0 になる。`Clip` は切るだけで、スクロールする箱にしない（Taffy 0.13.0 の `style/mod.rs` 354〜391 行目の `is_scroll_container` と `maybe_into_automatic_min_size`、軸ごとの使い方は `compute/flexbox.rs` 830〜831 行目）。`Auto` と、片方が visible ならもう片方を auto と計算する CSS の規則は、Taffy と同じく持たない（Taffy の Chrome のテストは、指定した値を記録している）。ホイールが動かすのは `Scroll` の軸だけで、`Hidden` の軸はアプリの `ScrollTo` でだけ動く。CSS Overflow 3 の `hidden` は、利用者の操作ではスクロールせず、プログラムからはスクロールできる箱である。GPUI も、ホイールの量を `Overflow::Scroll` の軸にだけ渡す（`gpui/src/elements/div.rs` 3354〜3370 行目）
 - **ベースライン:** 縦がスクロールする箱（`OverflowY` が `Hidden` か `Scroll`）のベースラインは、自分の枠の箱の中に収める。中身がスクロールで動いても、行の並びが揺れない（Taffy 0.13.0 の `compute/flexbox.rs` 1519〜1521・2034〜2038 行目）
 - **スクロールバーの幅:** `LayoutStyle.ScrollbarWidth`（既定 0）は、`Scroll` の軸でだけ、内容領域の内側に場所を取る（縦にスクロールするなら右、横なら下。Taffy 0.13.0 の `compute/flexbox.rs` 458〜471 行目、`compute/block.rs` 443〜448 行目）。既定の 0 では場所を取らない。比べた 3 つの見えるスクロールバーは、中身に重ねて描く別の部品で、場所を取らない（Flutter の `widgets/scrollbar.dart` 2268〜2271 行目、Avalonia の Fluent の `ScrollViewer.xaml` 69〜71 行目の `AllowAutoHide`、zed の `ui/src/components/scrollbar.rs` 1257〜1264 行目）。見えるスクロールバーは行 G1 の部品で作る
-- **スクロールできる範囲:** Taffy main の `scrollable_overflow_rect` の求め方にする（`tree/layout.rs` 603 行目、最大の位置は 693〜712 行目）。スクロールする箱は両軸とも自分の枠の箱だけを親に寄与し、`Clip` はその軸だけを止める（`compute/common/scrollable_overflow.rs` 25〜62 行目）。末尾の padding はスクロールする箱だけが足す（`compute/block.rs` 871〜882 行目）。Taffy 0.13.0 の `content_size` は、Visible の軸だけが子の内容を伝える古い形（`compute/common/content_size.rs` 8〜34 行目）。Flutter は `max(0, 子 − 自分)`（`single_child_scroll_view.dart` 444〜453 行目）、Avalonia は子の bounds に margin と padding を足した `Extent`（`ScrollContentPresenter.cs` 532〜533・570〜583 行目）、GPUI は子の bounds の和から自分で求める（`gpui/src/elements/div.rs` 1985〜2013 行目）。Taffy のテストが持つ Chrome の `scroll_width`・`scroll_height` とも比べる。範囲は、スクロールする箱についてだけ、layout が確定させた子孫の箱をたどって求める（`LayoutEngine.ScrollableOverflowOf`）。layout の pass の後に状態を持つ箱へ書くときと、ホイールが状態の無い箱を動かすときに求める。Taffy は、どのノードの layout でも矩形を求める。XylemUI の最初の実装もノードごとに求めたが、`layout` の S6b の場面で、1 か所を変えた後の layout が main より約 17 % 長かった（`docs/benchmarks/v2-scroll.md`）。葉は、内容が自分の内容の箱からはみ出したときだけ、内容の右と下の辺をキャッシュに残す（`LayoutState.ContentOverflows`）。この走査は、変わらない部分木もたどる。10,101 ノードの S6b の木を 1 つのスクロールする箱に入れると、1 か所を変えた後の layout の pass（約 22 µs）に、範囲を書く 106〜117 µs が足される（PR #348 のレビュー）。変わらない部分木の辺を使い回す形は行 V3 で入れる
+- **スクロールできる範囲:** Taffy main の `scrollable_overflow_rect` の求め方にする（`tree/layout.rs` 603 行目、最大の位置は 693〜712 行目）。スクロールする箱は両軸とも自分の枠の箱だけを親に寄与し、`Clip` はその軸だけを止める（`compute/common/scrollable_overflow.rs` 25〜62 行目）。末尾の padding はスクロールする箱だけが足す（`compute/block.rs` 871〜882 行目）。Taffy 0.13.0 の `content_size` は、Visible の軸だけが子の内容を伝える古い形（`compute/common/content_size.rs` 8〜34 行目）。Flutter は `max(0, 子 − 自分)`（`single_child_scroll_view.dart` 444〜453 行目）、Avalonia は子の bounds に margin と padding を足した `Extent`（`ScrollContentPresenter.cs` 532〜533・570〜583 行目）、GPUI は子の bounds の和から自分で求める（`gpui/src/elements/div.rs` 1985〜2013 行目）。Taffy のテストが持つ Chrome の `scroll_width`・`scroll_height` とも比べる。範囲は、スクロールする箱についてだけ、layout が確定させた子孫の箱をたどって求める（`LayoutEngine.ScrollableOverflowOf`）。layout の pass の後に状態を持つ箱へ書くときと、ホイールが状態の無い箱を動かすときに求める。Taffy は、どのノードの layout でも矩形を求める。XylemUI の最初の実装もノードごとに求めたが、`layout` の S6b の場面で、1 か所を変えた後の layout が main より約 17 % 長かった（`docs/benchmarks/v2-scroll.md`）。葉は、内容が自分の内容の箱からはみ出したときだけ、内容の右と下の辺をキャッシュに残す（`LayoutState.ContentOverflows`）。この走査は、変わらない部分木もたどる。10,101 ノードの S6b の木を 1 つのスクロールする箱に入れると、1 か所を変えた後の layout の pass（約 22 µs）に、範囲を書く 106〜117 µs が足される（PR #348 のレビュー）。行 V3b で、変わらない部分木の分を使い回す（V3 の Grill、Issue #363）。ノードごとに、そのノードの部分木がはみ出す量を、覚えたときの layout の版と一緒に覚え、layout の pass が部分木のどの矩形も変えなかったノードは、覚えた値を使う。覚える先は `UiNode`（576 バイトで上限）ではなく、ノードの番号で引く測りのキャッシュ（`MeasureCache`）の側の配列にする。Taffy も、キャッシュから返したノードの layout の結果（`content_size` を含む）を求め直さないので、たどる量が layout し直したノードの数で決まる（Taffy 0.13.0 の `tree/layout.rs` 161〜166 行目の `LayoutOutput`、`compute/mod.rs` 174〜186 行目の `compute_cached_layout`）。どのノードの layout でも求める形は、上に書いたとおり約 17 % 長かったので採らない。`Versions.DescendantLayout` は、部分木の矩形が変わったときに最も近い layout 境界まで上がるだけで、境界の上の祖先には届かない。部分木が変わらなかったと決める印をどこまで伝えるかは、V3b の実装の前にこの節に書く
 - **位置は描画とヒットテストでの平行移動:** スクロール位置が変わっても layout をやり直さない。子の `LayoutState.Rect` は変わらず（上の「スクロール座標系」）、描画の段が子を −offset 平行移動する。無効化は `ChangeKind.TransformProp`（Paint と HitTest の印、layout の印は付けない）。V1 までの `SetTransform` は `ChangeKind.Color` で無効化しており、`TransformProp` は印の対応表にあるだけだった。Flutter は `markNeedsPaint` だけで layout をやり直さず（`widgets/single_child_scroll_view.dart` 402〜405 行目）、`pushClipRect` の中で `paintChild(child, offset + _paintOffset)` で描き、ヒットも同じ移動で戻す（545〜560・592〜600 行目）。GPUI は prepaint で子を `with_element_offset(scroll_offset, …)` の中に置き（`div.rs` 2033 行目）、Taffy の結果には入れない。Avalonia は位置が変わるたびに `InvalidateArrange` し、子を負の位置に arrange し直す（`ScrollContentPresenter.cs` 491・800〜807 行目）
 - **描く順と切る範囲:** `overflow` が `Visible` でない箱は、自分の影・背景と枠線・ヒット領域・描く関数・文字の後、子の前に、子を padding の箱（枠線の内側）で切る（`PushClip`）。角丸の箱は、枠線の内側の角丸（外の半径から枠線の幅を引いた値）で切る。CSS と同じである。スクロールする箱は、その中で子を −offset 平行移動する（平行移動だけなので状態を作らない、§5.0）。自分の箱とヒット領域は動かない。ヒットテストは、今のクリップと平行移動の中に書いたヒット領域をそのまま使う（§5.0「ヒット領域と `DrawingContext`」）。スクロールする箱は、ハンドラが無くても自分のヒット領域を書く。子の無い所の上でも、ホイールが箱に当たる
 - **状態の置き場所:** `ScrollState` は、`UiTree` がノードから引く表に持つ。`UiNode` には置かない。スクロールする箱は木の中の少数で、ほかのノードに欄を持たせない。ノードを解放すると、表から外して状態を切り離す。`LayoutStyle` は `OverflowX`・`OverflowY`・`ScrollbarWidth` で 216 バイトから 224 バイトになり、`UiNode` は 568 バイトから 576 バイトになった。`ScrollbarWidth` を `Half` にしても、詰め物で 224 バイトのままだった
@@ -3587,7 +3641,7 @@ public interface IPopupHost
 以下の項目は決定済みである。
 
 ### 8.1 `Show`のdispose猶予期間 — §2.7
-`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。
+`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。V3 の `Show` は `exit` を持たず、いつも即 dispose する。`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す（V3 の Grill、Issue #363）。
 
 ### 8.2 Signal読み取りのAPI形状 — §2
 `signal.Get()` / `signal.Set(v)`の明示的メソッドを採用する。MoonBit 版では「演算子オーバーロード的な糖衣構文のサポート有無を前提にしない」ことが理由だった。C# ではプロパティ（`signal.Value`）が通常の言語機能として使えるが、それでもメソッドを採る。getter に依存登録という副作用があるため、プロパティにするとデバッガのウォッチ・データヒント・`DebuggerDisplay` の評価が getter を呼び、ブレークポイントで止まっている Computation に意図しない依存を登録してしまうからである（デバッガはメソッドを自動評価しない）。暗黙の型変換演算子（`Signal<T>` → `T`）も同じ理由で定義しない。
@@ -3937,6 +3991,8 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 | `Mounted`   | `Show`条件false（`exit`あり）                               | `Exiting`  | Reactive購読切断、描画状態のフリーズ、アニメーション登録（§2.7）                      |
 | `Exiting`   | `exit`タイマー満了                                          | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
 | `Exiting`   | 条件がtrueに復帰                                            | `Mounted`  | Reactive再購読、アニメーション破棄、`MarkDirty(Paint)`                                |
+
+`Exiting` の 3 行は、`Show` の `exit`（§8.1）を入れる行のもので、V3 の `Show` と `For` には無い。V3 では、`Show` の条件が false になったときも、`For` が行を消すときも、`Mounted` からすぐ `Disposed` になる（V3 の Grill、Issue #363）。
 
 Frame lifecycleは§2.10のフレーム実行サイクル図（シーケンス図）が状態遷移表に相当する。両者は`UiNode`の状態と`UiTree`全体の処理サイクルという異なる粒度の遷移であり、Node lifecycleの`Dirty→Clean`遷移がFrame lifecycleの`invalidation→layout`区間の中で発生する、という関係にある。
 
