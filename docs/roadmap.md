@@ -19,9 +19,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 ## 今
 
 - **フェーズ:** V1（T11 は v1.x。Q3 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** K1（キーボードとフォーカス）の設計（#351）。V2 は済み: #347 の PR（`docs/benchmarks/v2-scroll.md`）、設計は #343。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
-- **ブランチ:** `docs/351-k1-keyboard-focus-design`
-- **Issue:** #351
+- **作業中:** K1a（キーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化、#355）。K1 の設計は #351 の PR。V2 は済み: #347 の PR（`docs/benchmarks/v2-scroll.md`）、設計は #343。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
+- **ブランチ:** `feat/355-k1a-keys-focus`
+- **Issue:** #355
 
 ## ツールチェーン
 

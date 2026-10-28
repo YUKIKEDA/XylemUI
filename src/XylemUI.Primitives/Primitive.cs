@@ -9,8 +9,9 @@ namespace XylemUI.Primitives;
 public static class Primitive
 {
     /// <summary>
-    /// Makes a button: a box that holds the content, takes clicks, and has the pressed pseudo-state while the left button is down on
-    /// it (design §2.13). It sets no background and no color of text; the keyboard's Enter and Space and the focus come with row K1.
+    /// Makes a button: a box that holds the content, takes clicks, has the pressed pseudo-state while the left button is down on it,
+    /// and takes the focus, from a press and from Tab (design §2.13). It sets no background and no color of text; the keyboard's Enter
+    /// and Space come with row K1b.
     /// </summary>
     /// <param name="content">The content: a node of the current tree with no parent.</param>
     /// <param name="onClick">What a click runs, in the scope current now (<see cref="ElementExtensions.OnClick"/>).</param>
@@ -20,7 +21,7 @@ public static class Primitive
     public static Element Button(Element content, Action onClick)
     {
         ArgumentNullException.ThrowIfNull(onClick);
-        return Box(content).OnClick(onClick);
+        return Box(content).Focusable().OnClick(onClick);
     }
 
     /// <summary>

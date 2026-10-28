@@ -9,21 +9,21 @@ namespace XylemUI.Platform.Windows.Tests;
 public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
 {
     /// <summary>
-    /// A mouse message decodes to its kind, its button, the buttons and keys of its wParam, its signed position, the Alt state given
-    /// apart, and the pointer type its extra information marks.
+    /// A mouse message decodes to its kind, its button, the buttons and keys of its wParam, its signed position, the Alt and Windows
+    /// keys given apart, and the pointer type its extra information marks.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - None: the decoding is a function of the message's values.
     ///
     /// Steps:
-    /// - Decode a left press with the left button, Control, and Shift down at (-3, 70000 truncated to 4464), Alt down, and the touch
-    ///   signature; an extra-button release of the second extra button with the pen signature; a move with no signature; a message
-    ///   that is no mouse message.
+    /// - Decode a left press with the left button, Control, and Shift down at (-3, 70000 truncated to 4464), Alt and a Windows key
+    ///   down, and the touch signature; an extra-button release of the second extra button with the pen signature and Control given
+    ///   in the key state; a move with no signature; a message that is no mouse message.
     ///
     /// Expected:
-    /// - Down, left, left held, Control | Shift | Alt, (-3, 4464), touch, the count given. Up, the second extra button, none held,
-    ///   pen. Move with a count of 0, mouse. None for the other message.
+    /// - Down, left, left held, Control | Shift | Alt | Meta, (-3, 4464), touch, the count given. Up, the second extra button, none
+    ///   held, no modifier (Control comes from wParam alone), pen. Move with a count of 0, mouse. None for the other message.
     /// </remarks>
     [Fact]
     public void Decode_MouseMessages_GiveTheirInput()
@@ -34,13 +34,21 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
             WM.WM_LBUTTONDOWN,
             MK.MK_LBUTTON | MK.MK_CONTROL | MK.MK_SHIFT,
             position,
-            alt: true,
+            keyState: KeyModifiers.Alt | KeyModifiers.Meta,
             unchecked((nint)0xFF515780),
             2,
             at
         );
-        PointerInput? up = Win32Window.Decode(WM.WM_XBUTTONUP, (nuint)(XBUTTON2 << 16), 0, alt: false, unchecked((nint)0xFF515700), 1, at);
-        PointerInput? move = Win32Window.Decode(WM.WM_MOUSEMOVE, MK.MK_RBUTTON, (nint)((20 << 16) | 10), alt: false, 0, 5, at);
+        PointerInput? up = Win32Window.Decode(
+            WM.WM_XBUTTONUP,
+            (nuint)(XBUTTON2 << 16),
+            0,
+            keyState: KeyModifiers.Control,
+            unchecked((nint)0xFF515700),
+            1,
+            at
+        );
+        PointerInput? move = Win32Window.Decode(WM.WM_MOUSEMOVE, MK.MK_RBUTTON, (nint)((20 << 16) | 10), KeyModifiers.None, 0, 5, at);
 
         Assert.Equal(
             new PointerInput(
@@ -49,7 +57,7 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
                 70000 - 65536,
                 PointerButton.Left,
                 PointerButtons.Left,
-                KeyModifiers.Control | KeyModifiers.Shift | KeyModifiers.Alt,
+                KeyModifiers.Control | KeyModifiers.Shift | KeyModifiers.Alt | KeyModifiers.Meta,
                 2,
                 at,
                 PointerType.Touch
@@ -64,7 +72,7 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
             new PointerInput(PointerInputKind.Move, 10, 20, PointerButton.None, PointerButtons.Right, KeyModifiers.None, 0, at, PointerType.Mouse),
             move
         );
-        Assert.Null(Win32Window.Decode(WM.WM_KEYDOWN, 0, 0, alt: false, 0, 1, at));
+        Assert.Null(Win32Window.Decode(WM.WM_KEYDOWN, 0, 0, KeyModifiers.None, 0, 1, at));
     }
 
     /// <summary>
@@ -88,10 +96,10 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
     {
         TimeSpan at = TimeSpan.FromSeconds(1);
         nint position = (nint)((6 << 16) | 5);
-        PointerInput? up = Win32Window.Decode(WM.WM_MOUSEWHEEL, (nuint)(120 << 16) | MK.MK_SHIFT, position, false, 0, 7, at, 3, 3);
-        PointerInput? down = Win32Window.Decode(WM.WM_MOUSEWHEEL, unchecked((nuint)(uint)(-120 << 16)), position, false, 0, 0, at, 5, 3);
-        PointerInput? part = Win32Window.Decode(WM.WM_MOUSEWHEEL, (nuint)(30 << 16), position, false, 0, 0, at, 3, 3);
-        PointerInput? right = Win32Window.Decode(WM.WM_MOUSEHWHEEL, (nuint)(120 << 16), position, false, 0, 0, at, 3, 3);
+        PointerInput? up = Win32Window.Decode(WM.WM_MOUSEWHEEL, (nuint)(120 << 16) | MK.MK_SHIFT, position, KeyModifiers.None, 0, 7, at, 3, 3);
+        PointerInput? down = Win32Window.Decode(WM.WM_MOUSEWHEEL, unchecked((nuint)(uint)(-120 << 16)), position, KeyModifiers.None, 0, 0, at, 5, 3);
+        PointerInput? part = Win32Window.Decode(WM.WM_MOUSEWHEEL, (nuint)(30 << 16), position, KeyModifiers.None, 0, 0, at, 3, 3);
+        PointerInput? right = Win32Window.Decode(WM.WM_MOUSEHWHEEL, (nuint)(120 << 16), position, KeyModifiers.None, 0, 0, at, 3, 3);
 
         Assert.Equal(
             new PointerInput(

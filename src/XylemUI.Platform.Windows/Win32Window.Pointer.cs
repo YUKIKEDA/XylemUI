@@ -74,14 +74,16 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
 
     /// <summary>
     /// Returns the input a mouse message reports, or <see langword="null"/> for a message that is not a mouse message. The state the
-    /// message does not carry comes in the arguments: Alt is in no mouse message's <c>wParam</c> (PR #319's review).
+    /// message does not carry comes in the arguments: Alt and the Windows keys are in no mouse message's <c>wParam</c> (PR #319's and
+    /// PR #352's reviews).
     /// </summary>
     /// <param name="message">The message.</param>
     /// <param name="wParam">The message's <c>wParam</c>: the buttons and the keys held down (<c>MK_*</c>), and for an extra button
     /// which one in the high word.</param>
     /// <param name="lParam">The message's <c>lParam</c>: the position in the client area, x in the low word and y in the high one,
     /// both signed.</param>
-    /// <param name="alt">Whether an Alt key is down (<c>GetKeyState(VK_MENU)</c>).</param>
+    /// <param name="keyState">The modifiers the message does not carry, read from the keyboard's state: <see cref="KeyModifiers.Alt"/>
+    /// (<c>GetKeyState(VK_MENU)</c>) and <see cref="KeyModifiers.Meta"/> (<c>VK_LWIN</c>, <c>VK_RWIN</c>); the others are ignored.</param>
     /// <param name="extraInfo">The message's extra information (<c>GetMessageExtraInfo</c>), which tells a message made from touch
     /// or a pen.</param>
     /// <param name="clickCount">The presses in a row, for a press or a release.</param>
@@ -99,7 +101,7 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         uint message,
         nuint wParam,
         nint lParam,
-        bool alt,
+        KeyModifiers keyState,
         nint extraInfo,
         int clickCount,
         TimeSpan timestamp,
@@ -136,7 +138,7 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         KeyModifiers modifiers =
             ((keys & MK.MK_CONTROL) != 0 ? KeyModifiers.Control : 0)
             | ((keys & MK.MK_SHIFT) != 0 ? KeyModifiers.Shift : 0)
-            | (alt ? KeyModifiers.Alt : 0);
+            | (keyState & (KeyModifiers.Alt | KeyModifiers.Meta));
 
         // The signature is in the low 32 bits of the extra information.
         uint info = (uint)extraInfo;
@@ -244,7 +246,7 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
                 break;
         }
 
-        // Only a mouse message reads the clock, the Alt key, and the extra information (PR #327's review).
+        // Only a mouse message reads the clock, the Alt and Windows keys, and the extra information (PR #327's review).
         if (message is < WM.WM_MOUSEFIRST or > WM.WM_MOUSELAST)
         {
             return false;
@@ -259,8 +261,8 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         }
 
         TimeSpan now = Now();
-        bool alt = GetKeyState(VK.VK_MENU) < 0;
-        if (Decode(message, wParam, lParam, alt, GetMessageExtraInfo(), 0, now, _wheelLines, _wheelChars) is not { } input)
+        KeyModifiers keyState = (IsDown(VK.VK_MENU) ? KeyModifiers.Alt : 0) | (IsMetaDown() ? KeyModifiers.Meta : 0);
+        if (Decode(message, wParam, lParam, keyState, GetMessageExtraInfo(), 0, now, _wheelLines, _wheelChars) is not { } input)
         {
             return false;
         }

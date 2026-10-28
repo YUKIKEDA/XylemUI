@@ -3,14 +3,15 @@ using System.Numerics;
 namespace XylemUI;
 
 /// <summary>
-/// Delivers the pointer's input of one window to the handlers of its tree (design §7, "Pointer input"): tests the hit regions of
-/// the display list the window's frames built last, routes each event in the capture and the bubble phase, captures the pointer
-/// while a button is down, makes clicks, keeps the hovered and pressed nodes, and chooses the cursor.
+/// Delivers the input of one window to the handlers of its tree (design §7, "Pointer input" and "Keys and the focus"): tests the hit
+/// regions of the display list the window's frames built last, routes each event in the capture and the bubble phase, captures the
+/// pointer while a button is down, makes clicks, keeps the hovered and pressed nodes, chooses the cursor, routes the keys from the
+/// focused node, and hands the focus its changes (<see cref="UiTree.Focus"/>).
 /// </summary>
 /// <remarks>
-/// It belongs to the UI thread, as the tree does. The platform calls <see cref="Handle"/> from its window procedure; the frames call
-/// <see cref="Rehit"/> after a frame that built the display list. Each call runs as one batch, so effects run once after it. The
-/// routes and the hovered nodes are arrays it reuses: the steady state allocates nothing.
+/// It belongs to the UI thread, as the tree does. The platform calls <c>Handle</c> and <see cref="SetActive"/> from its window
+/// procedure; the frames call <see cref="Rehit"/> after a frame that built the display list. Each call runs as one batch, so effects
+/// run once after it. The routes and the hovered nodes are arrays it reuses: the steady state allocates nothing.
 /// </remarks>
 internal sealed class WindowInput
 {
@@ -94,6 +95,32 @@ internal sealed class WindowInput
     }
 
     /// <summary>
+    /// Delivers one input of the keyboard (design §7, "Keys and the focus"): routes it from the focused node, or from the root when
+    /// the window is not active or no node has the focus, in the capture and the bubble phase; then, for a down no handler stopped,
+    /// moves the focus on Tab (no modifier) and Shift+Tab.
+    /// </summary>
+    /// <param name="input">The input.</param>
+    /// <returns>Whether the key was handled: a handler stopped it, or Tab moved the focus. The platform passes the others to the OS.</returns>
+    public bool Handle(in KeyInput input)
+    {
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            return HandleKeyInBatch(input);
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <summary>
+    /// Sets whether the window is active (design §7, "The window's activation"); the platform calls it from its activation message.
+    /// </summary>
+    /// <param name="active">Whether the window is active.</param>
+    public void SetActive(bool active) => _tree.Focus.SetActive(active);
+
+    /// <summary>
     /// Tests the pointer's last position again against the display list just built, when the pointer is in the window: the nodes
     /// under a pointer that did not move may have changed. Sends the enters and leaves and updates the hovered state and the cursor;
     /// sends no move.
@@ -121,11 +148,35 @@ internal sealed class WindowInput
     /// </summary>
     internal void StopPropagation() => _stopped = true;
 
+    private bool HandleKeyInBatch(in KeyInput input)
+    {
+        FocusManager focus = _tree.Focus;
+        if (input.Kind == KeyEventKind.Down)
+        {
+            focus.SetLastInputWasKeyboard(true);
+        }
+
+        if (RouteKey(focus.KeyTarget, input))
+        {
+            return true;
+        }
+
+        // Tab is the root's default action, after the bubble phase (Avalonia's KeyboardNavigationHandler); a Tab with Control, Alt, or
+        // Meta does not move the focus.
+        if (input.Kind == KeyEventKind.Down && input.Key == Key.Tab && (input.Modifiers & ~KeyModifiers.Shift) == 0)
+        {
+            return focus.MoveInTabOrder(backward: input.Modifiers == KeyModifiers.Shift);
+        }
+
+        return false;
+    }
+
     private void HandleInBatch(in PointerInput input)
     {
         switch (input.Kind)
         {
             case PointerInputKind.Move:
+                _tree.Focus.SetLastInputWasKeyboard(false);
                 Point(input);
                 Route(PointerEventKind.Move, Target(), input, bubbleOnly: false);
                 break;
@@ -170,6 +221,7 @@ internal sealed class WindowInput
 
     private void Down(in PointerInput input)
     {
+        _tree.Focus.SetLastInputWasKeyboard(false);
         Point(input);
         NodeHandle target = Target();
         if (CapturedNode().IsNone && !target.IsNone)
@@ -182,6 +234,9 @@ internal sealed class WindowInput
         {
             _clickOrigin = target;
             SetPressed(target);
+
+            // Before the route, from the node the press starts at (design §7, "Focus on a press", Avalonia's FocusManager).
+            _tree.Focus.FocusFromPress(target);
         }
 
         Route(PointerEventKind.Down, target, input, bubbleOnly: false);
@@ -459,6 +514,95 @@ internal sealed class WindowInput
         {
             _routeCount = start;
             _stopped = stopped;
+        }
+    }
+
+    // Delivers a key from target as Route delivers the pointer's events, on the same array of routes. Returns whether a handler
+    // stopped it.
+    private bool RouteKey(NodeHandle target, in KeyInput input)
+    {
+        if (target.IsNone || !_tree.Nodes.IsAlive(target))
+        {
+            return false;
+        }
+
+        int start = _routeCount;
+        bool stopped = _stopped;
+        _stopped = false;
+        try
+        {
+            for (NodeHandle node = target; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+            {
+                if (_routeCount == _route.Length)
+                {
+                    Array.Resize(ref _route, _routeCount * 2);
+                }
+
+                _route[_routeCount++] = node;
+            }
+
+            int end = _routeCount;
+            for (int i = end - 1; i >= start && !_stopped; i--)
+            {
+                InvokeKey(EventPhase.Capture, target, _route[i], input);
+            }
+
+            for (int i = start; i < end && !_stopped; i++)
+            {
+                InvokeKey(EventPhase.Bubble, target, _route[i], input);
+            }
+
+            return _stopped;
+        }
+        finally
+        {
+            _routeCount = start;
+            _stopped = stopped;
+        }
+    }
+
+    // Calls the key handlers of one node for the input's kind and the phase, as Invoke calls the pointer's.
+    private void InvokeKey(EventPhase phase, NodeHandle target, NodeHandle node, in KeyInput input)
+    {
+        if (!_tree.Nodes.IsAlive(node) || _tree.Nodes.GetRef(node).Input is not { } nodeInput)
+        {
+            return;
+        }
+
+        foreach (KeyHandlerEntry entry in nodeInput.KeyHandlers)
+        {
+            if (entry.Kind != input.Kind || entry.Phase != phase)
+            {
+                continue;
+            }
+
+            ScopeRef previous = default;
+            if (!entry.Scope.IsNone && !Scope.TryEnter(entry.Scope, out previous))
+            {
+                continue;
+            }
+
+            var e = new KeyEvent(this, target, node, input);
+            try
+            {
+                entry.Handler(in e);
+            }
+            catch (Exception exception) when (exception is not InvariantViolationException)
+            {
+                ReactiveRuntime.ReportException(exception);
+            }
+            finally
+            {
+                if (!entry.Scope.IsNone)
+                {
+                    Scope.Exit(previous);
+                }
+            }
+
+            if (_stopped)
+            {
+                return;
+            }
         }
     }
 

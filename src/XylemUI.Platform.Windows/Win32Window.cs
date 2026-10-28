@@ -451,7 +451,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             return true;
         }
 
-        if (HandlePointerMessage(hwnd, message, wParam, lParam, ref result))
+        if (HandlePointerMessage(hwnd, message, wParam, lParam, ref result) || HandleKeyMessage(message, wParam, lParam, ref result))
         {
             return true;
         }

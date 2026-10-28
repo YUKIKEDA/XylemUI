@@ -50,4 +50,47 @@ internal sealed class PseudoStyles
     /// Gets or sets what the pressed state lays over the hovered one; <see langword="null"/> for nothing.
     /// </summary>
     public PaintStyle? Pressed { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the looks of the focus states, made the first time one is set: a node with a hovered look alone does not hold
+    /// three more styles.
+    /// </summary>
+    public FocusStyles? Focus { get; internal set; }
+
+    /// <summary>
+    /// Returns whether one state has a look. It tests each style where it is, without copying it out.
+    /// </summary>
+    /// <param name="state">One state.</param>
+    /// <returns>Whether the state has a look.</returns>
+    public bool Has(PseudoState state) =>
+        state switch
+        {
+            PseudoState.Hovered => Hovered is not null,
+            PseudoState.Pressed => Pressed is not null,
+            PseudoState.Focused => Focus?.Focused is not null,
+            PseudoState.FocusVisible => Focus?.FocusVisible is not null,
+            PseudoState.FocusWithin => Focus?.FocusWithin is not null,
+            _ => false,
+        };
+}
+
+/// <summary>
+/// The looks of a node's focus states (design §2.13), laid over the pressed one in this order: focus within, focused, focus visible.
+/// </summary>
+internal sealed class FocusStyles
+{
+    /// <summary>
+    /// Gets or sets what the focus-within state lays over the pressed one; <see langword="null"/> for nothing.
+    /// </summary>
+    public PaintStyle? FocusWithin { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets what the focused state lays over the focus-within one; <see langword="null"/> for nothing.
+    /// </summary>
+    public PaintStyle? Focused { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets what the focus-visible state lays over the focused one; <see langword="null"/> for nothing.
+    /// </summary>
+    public PaintStyle? FocusVisible { get; internal set; }
 }
