@@ -28,7 +28,7 @@ dotnet publish samples/Counter -c Release -r win-x64 -o <dir>
   - `Focus()` は、フォーカスできないノード・`Hidden` の祖先を持つノード・木に無いノード・自分が `Hidden` のノードに false を返す
   - 割り当て 0（`SteadyState_KeysTabAndFocusFrames_AllocateNothing`）: 深さ 50 のキーの配送、見た目を持つ 2 つのノードの間の Tab、それを描くフレーム
 - **部品（`ButtonTests`、2 件）:** ボタンは Tab と押したときにフォーカスする。チェーンの `Focus`・`IsFocused`・`On(KeyEventKind…)`・`On(FocusEventKind…)` は、足した Scope で動く
-- **Win32（`Win32WindowKeyboardTests`、5 件）:** メッセージを `KeyInput` に直す関数（左右の修飾キー、スキャンコードと拡張の印、bit 30 は Down だけ、`VK_PROCESSKEY`・`VK_PACKET` は配らない）。`ToUnicodeEx` の結果の文字（死んだキー・2 文字・制御文字は無し、サロゲートの組は 1 文字）。処理したキーのメッセージは 0 を返す。`SC_KEYMENU` は 0 を返してメニューのループに入らず、`WM_MENUCHAR` は `MNC_CLOSE` を返す。`WM_ACTIVATE` の 3 つの値。止めなかったキーを `DefWindowProc` がどう扱うか（Alt+F4 で閉じる）は、キーボードの状態を読むので `SendMessage` では作れず、確かめていない
+- **Win32（`Win32WindowKeyboardTests`、6 件）:** メッセージを `KeyInput` に直す関数（左右の修飾キー、スキャンコードと拡張の印、bit 30 は Down だけ、`VK_PROCESSKEY`・`VK_PACKET` は配らない）。スキャンコードが 0 のメッセージは、レイアウトのスキャンコードと拡張の印を引き直す（PR #356 のレビュー。拡張の印を VK から立てないと、矢印は `Numpad4` になった）。`ToUnicodeEx` の結果の文字（死んだキー・2 文字・制御文字は無し、サロゲートの組は 1 文字）。処理したキーのメッセージは 0 を返す。`SC_KEYMENU` は 0 を返してメニューのループに入らず、`WM_MENUCHAR` は `MNC_CLOSE` を返す。`WM_ACTIVATE` の 3 つの値。止めなかったキーを `DefWindowProc` がどう扱うか（Alt+F4 で閉じる）は、キーボードの状態を読むので `SendMessage` では作れず、確かめていない
 - **ポインタ（`Win32WindowPointerTests`）:** マウスのメッセージの修飾キーに、`GetKeyState` から読んだ Meta が入る
 - **ミュータント:** 22 個。21 個は狙ったテストが落ちた。残る 1 個（アクティブに戻ったとき、覚えたノードがフォーカスできるかを確かめない）は、届かない分岐だった。覚えたノードがフォーカスできなくなる道（外す・隠す・`Focusable(false)`）は、どれもその場でフォーカスを空にする。分岐を消した
   - 最初は 2 個が残った。もう 1 個（新しいノードの状態を FocusOut の後に立てる）は、FocusOut のハンドラの中で状態を確かめていなかった。テストに足した

@@ -152,12 +152,63 @@ public sealed unsafe partial class Win32Window
         return TypedCharacter(written, new ReadOnlySpan<char>(buffer, 8));
     }
 
+    // A key message's lParam with a scan code: one that has none (a key SendInput gave by its virtual-key code alone) takes the scan
+    // code the layout maps the key to, as Avalonia's KeyInterop does (lines 475 to 491), and its extended bit, which such a message
+    // does not set either (PR #356's review). MAPVK_VK_TO_VSC_EX gave VK_LEFT 0x4B with no 0xE0 on Windows 11 26300, so the bit also
+    // comes from the keys that exist only as extended keys: the list of "About Keyboard Input" ("Extended-Key Flag") less the number
+    // pad's Enter, whose VK_RETURN the main Enter shares, and Break (Control+Pause); and the Windows and Application keys, whose scan
+    // codes are 0xE05B to 0xE05D.
+    private static LPARAM WithScanCode(uint virtualKey, LPARAM lParam)
+    {
+        uint data = (uint)(nint)lParam;
+        if (((data >> 16) & 0xFF) != 0)
+        {
+            return lParam;
+        }
+
+        uint mapped = MapVirtualKeyW(virtualKey, MAPVK_VK_TO_VSC_EX);
+        if ((mapped & 0xFF) == 0)
+        {
+            return lParam;
+        }
+
+        data |= (mapped & 0xFF) << 16;
+        if ((mapped & 0xFF00) == 0xE000 || IsExtendedOnly(virtualKey))
+        {
+            data |= 1u << 24;
+        }
+
+        return (nint)(int)data;
+    }
+
+    private static bool IsExtendedOnly(uint virtualKey) =>
+        (int)virtualKey
+            is VK.VK_INSERT
+                or VK.VK_DELETE
+                or VK.VK_HOME
+                or VK.VK_END
+                or VK.VK_PRIOR
+                or VK.VK_NEXT
+                or VK.VK_LEFT
+                or VK.VK_UP
+                or VK.VK_RIGHT
+                or VK.VK_DOWN
+                or VK.VK_NUMLOCK
+                or VK.VK_SNAPSHOT
+                or VK.VK_DIVIDE
+                or VK.VK_RCONTROL
+                or VK.VK_RMENU
+                or VK.VK_LWIN
+                or VK.VK_RWIN
+                or VK.VK_APPS;
+
     // The keyboard's messages and the window's activation. Returns whether the message was handled, with the result it returns.
     private bool HandleKeyMessage(uint message, WPARAM wParam, LPARAM lParam, ref LRESULT result)
     {
         switch (message)
         {
             case WmKeyDown or WmSysKeyDown or WmKeyUp or WmSysKeyUp:
+                lParam = WithScanCode((uint)(nuint)wParam & 0xFFFF, lParam);
                 if (DecodeKey(message, wParam, lParam, ReadModifiers(), default, Now()) is not { } input)
                 {
                     return false;

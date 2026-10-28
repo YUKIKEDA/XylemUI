@@ -127,6 +127,39 @@ public sealed unsafe class Win32WindowKeyboardTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A key message with no scan code, as <c>SendInput</c> makes from a virtual-key code alone, takes the scan code and the extended
+    /// bit the layout maps the key to, so its physical key is known (PR #356's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window whose input records the physical key of each key.
+    ///
+    /// Steps:
+    /// - Send WM_KEYDOWN of VK_LEFT and of VK_ESCAPE with an lParam of 0, and of VK_ESCAPE with its own scan code 0x01.
+    ///
+    /// Expected:
+    /// - ArrowLeft (an extended key), Escape, and Escape. The arrow and Esc have the same scan codes on every layout.
+    /// </remarks>
+    [Fact]
+    public void KeyMessage_WithNoScanCode_TakesTheLayoutsScanCode() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("scan", 200, 100);
+            var keys = new List<PhysicalKey>();
+            window.KeyInputReceived = (in KeyInput input) =>
+            {
+                keys.Add(input.PhysicalKey);
+                return true;
+            };
+
+            _ = SendMessageW(window.Hwnd, WM.WM_KEYDOWN, VK.VK_LEFT, 0);
+            _ = SendMessageW(window.Hwnd, WM.WM_KEYDOWN, VK.VK_ESCAPE, 0);
+            _ = SendMessageW(window.Hwnd, WM.WM_KEYDOWN, VK.VK_ESCAPE, (nint)((0x01u << 16) | 1));
+
+            Assert.Equal([PhysicalKey.ArrowLeft, PhysicalKey.Escape, PhysicalKey.Escape], keys);
+        });
+
+    /// <summary>
     /// The window menu does not open from the keyboard: <c>SC_KEYMENU</c> returns 0 and enters no menu loop, and <c>WM_MENUCHAR</c>
     /// closes with no beep.
     /// </summary>
