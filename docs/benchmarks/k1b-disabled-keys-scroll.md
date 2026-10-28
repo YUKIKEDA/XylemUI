@@ -25,7 +25,7 @@ dotnet publish samples/Counter -c Release -r win-x64 -o <dir>
   - 入れ子の箱では、内側を動かした後の位置で外側を動かす
   - 表示リストで、Disabled の見た目がほかの見た目の上に重なる
   - 割り当て 0: キーボードでのスクロールと見える所まで動かすことのフレーム（`SteadyState_KeyScrollAndRevealFrames_AllocateNothing`）、キーからの Click（`SteadyState_ClickFromAKey_AllocatesNothing`）
-- **部品（`ButtonTests`、K1b の 2 件）:** Enter は Down のたびに（繰り返しを含む）Click にし、Control の付いた Enter は受けない。キーの Click は `ClickCount` 0、`Position`・`LocalPosition` NaN、`Button`・`Buttons`・`Modifiers` `None`、`PointerType` `Mouse` で、祖先の Click のハンドラも受ける。Space は Down で押下にし、Up で Click にし、繰り返しでは何もしない。Space を押している間にフォーカスが移ると、Click せずに押下を下ろす
+- **部品（`ButtonTests`、K1b の 3 件）:** Space を押している間に Disabled になったボタンは、戻しても押下が残らず、次の Space の Up で Click にならない（PR #360 のレビュー。Disabled にするノードの Pressed を下ろす、ボタンの Up は Pressed のときだけ Click。ミュータント 2 個はどちらもこのテストで落ちた）。 Enter は Down のたびに（繰り返しを含む）Click にし、Control の付いた Enter は受けない。キーの Click は `ClickCount` 0、`Position`・`LocalPosition` NaN、`Button`・`Buttons`・`Modifiers` `None`、`PointerType` `Mouse` で、祖先の Click のハンドラも受ける。Space は Down で押下にし、Up で Click にし、繰り返しでは何もしない。Space を押している間にフォーカスが移ると、Click せずに押下を下ろす
 - **ミュータント:** 21 個。どれも狙ったテストが落ちた
   - 最初は 1 個が残った（スクロールをノードのハンドラの前に行う）。止めるハンドラを箱の子に付けていたので、どちらの順でも先に止まっていた。箱自身に付けた
   - 「Disabled のノードのハンドラも呼ぶ」は、最初はどのテストの経路にも Disabled のノードが入らなかった（当たったノードは祖先に替わり、フォーカスは Disabled の中に無い）。経路に入るのは、キャプチャした後に Disabled になったときだけなので、そのテストを足した

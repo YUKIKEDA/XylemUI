@@ -77,8 +77,10 @@ public static class Primitive
 
         public void Up(in KeyEvent e)
         {
-            if (e.TargetNode != node || e.Key != Key.Space || !_spaceDown)
+            // Pressed is gone when the button was disabled meanwhile, whose handlers missed the focus-out (PR #360's review).
+            if (e.TargetNode != node || e.Key != Key.Space || !_spaceDown || (tree.Nodes.GetRef(node).Pseudo & PseudoState.Pressed) == 0)
             {
+                _spaceDown &= e.Key != Key.Space;
                 return;
             }
 

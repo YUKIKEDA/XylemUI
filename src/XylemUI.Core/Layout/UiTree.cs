@@ -1181,6 +1181,14 @@ internal sealed class UiTree
         ref UiNode n = ref Nodes.GetRef(node);
         bool disabled = inherited || n.Input?.Disabled == true;
         SetPseudoState(node, PseudoState.Disabled, disabled);
+
+        // A disabled node is neither hovered nor pressed (design §7): a press a key made, which no pointer's up clears, ends here
+        // (PR #360's review). The pointer's press list clears its own nodes on the up.
+        if (disabled)
+        {
+            SetPseudoState(node, PseudoState.Pressed, on: false);
+        }
+
         NodeHandle child = Nodes.GetRef(node).FirstChild;
         while (!child.IsNone)
         {

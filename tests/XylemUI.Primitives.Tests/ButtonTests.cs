@@ -236,6 +236,42 @@ public sealed class ButtonTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A button disabled while Space is down is released: enabled again it is not pressed, and the next up of Space makes no click
+    /// (PR #360's review). Its own focus-out handler is not called, as a disabled node's handlers are not.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 holding a focused button whose action counts. The window is active.
+    ///
+    /// Steps:
+    /// - Down of Space; disable the button; enable it; read the pressed state; focus it again; up of Space.
+    ///
+    /// Expected:
+    /// - Not pressed after it is enabled; no click.
+    /// </remarks>
+    [Fact]
+    public void Button_DisabledWhileSpaceIsDown_IsReleasedWithNoClick() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new Scene();
+            int clicks = 0;
+            Element button = default;
+            scene.Mount(() => button = Button(Box().Width(40).Height(20), () => clicks++));
+            scene.Input.SetActive(true);
+            Assert.True(button.Focus());
+
+            _ = scene.Key(Key.Space);
+            scene.Tree.SetDisabled(button.Node, true);
+            scene.Tree.SetDisabled(button.Node, false);
+            bool pressed = (scene.Tree.Nodes.GetRef(button.Node).Pseudo & PseudoState.Pressed) != 0;
+            Assert.True(button.Focus());
+            _ = scene.Key(Key.Space, KeyEventKind.Up);
+
+            Assert.False(pressed);
+            Assert.Equal(0, clicks);
+        });
+
+    /// <summary>
     /// A button refuses no action, as the chain's click handler does.
     /// </summary>
     /// <remarks>

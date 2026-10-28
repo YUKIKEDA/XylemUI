@@ -1193,7 +1193,7 @@ vendor/
 - `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
 - 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
 - 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
-- Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
+- Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。K1b で `XylemUI.Primitives` にも見せた。ボタンのキーが、キーから Click を配る `WindowInput.ClickFromKey` と、押下の状態を書く `UiTree.SetPseudoState` を使うためである（オーナーの決定、PR #360）。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
 - アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とし、具体的なパッケージ構成は C0 相当の抽出時に決める。
 
 ### 2.10 フレーム実行サイクル
@@ -3490,7 +3490,7 @@ internal sealed class FocusManager
   - 自分の印が変わると、部分木をたどってビットを立て直す（自分の印を持つ子孫の部分木は、その印のまま）。Disabled の親に子を付けると、付けた部分木にビットを立てる。費用は変わった部分木のノードの数で、変化のときだけ払う
   - Disabled のノードとその子孫のハンドラ（ポインタ・キー・フォーカス）は呼ばない。ヒット領域は今のまま書くので、ポインタは Disabled のノードで止まり、後ろへ通らない。経路の元は、当たったノードから祖先へたどった最初の Disabled でないノードにする（Avalonia のヒットテストは Disabled の要素を飛ばす、`Input/InputExtensions.cs` 45〜49 行目）。Hovered・Pressed・カーソルもその元から決める
   - Disabled のノードはフォーカスできない。フォーカスしたノードが Disabled になったら、上の「外す・隠す」と同じにする
-- **ボタンのキー（K1b）:** `Primitive.Button` は、修飾キー（Control・Alt・Meta・Shift）の無い Enter と Space を、自分の bubble のハンドラで受けて止める
+- **ボタンのキー（K1b）:** `Primitive.Button` は、修飾キー（Control・Alt・Meta・Shift）の無い Enter と Space を、自分の bubble のハンドラで受けて止める。受けるのは、ボタン自身がキーの元（`Target`）のときだけで、フォーカスした子孫のキーは子孫のものにする。Space の Up は、修飾キーによらず Click にする（Down は修飾キーの無いときだけ受ける）。Space を押している間にボタンが Disabled になると、`UiTree` が Disabled にするノードの Pressed を下ろすので、ボタンは Click せずに離れる。Disabled のノードのハンドラは呼ばないので、FocusOut からは下ろせない（PR #360 のレビュー）
   - Enter は Down（繰り返しを含む）で Click にする
   - Space は Down（繰り返しでないもの）で自分に Pressed を立て、Up で Pressed が立っていれば下ろして Click にする。Pressed の間にフォーカスを失ったら（非アクティブを含む）、Click せずに下ろす
   - Avalonia と同じ形である（`Button.cs` 307〜344・465〜469 行目。Avalonia の Enter はフォーカスを要らないが、ここではフォーカスしたボタンだけ）。Flutter は Enter と Space を Down と繰り返しのたびに Click にし（`widgets/app.dart` 1265〜1269 行目、`widgets/shortcuts.dart` 576〜580 行目）、GPUI はどちらも Up で Click にする（`div.rs` 3016〜3079 行目）
