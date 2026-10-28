@@ -228,12 +228,15 @@ internal static class LayoutCost
     }
 
     // The S6b scene's tree in one scroll container, its root with a scroll state (row V2): a relayout after one leaf changes, and
-    // then the range written to the state, which walks the committed boxes of the container's subtree (design §3.4.1). The
-    // change is the relayout and the walk together, the walk also on its own.
+    // then the range written to the state, which finds the overflow of the containers the layout changed (design §3.4.1, row
+    // V3b). The change is the relayout and the range together, the range also on its own. Then the same after a resize of the
+    // window, which lays the whole tree out again, so that every container's overflow is found again.
     private static void MeasureScroll(Report report, int samples)
     {
         var change = new List<double>(samples);
         var publish = new List<double>(samples);
+        var resize = new List<double>(samples);
+        var resizePublish = new List<double>(samples);
         for (int s = 0; s < samples + 3; s++)
         {
             bool record = s >= 3;
@@ -254,10 +257,23 @@ internal static class LayoutCost
                 Add(change, start, record && i == 1);
                 Add(publish, walk, record && i == 1);
             }
+
+            for (int i = 0; i < 2; i++)
+            {
+                Invalidation.NotifyWindowResized(tree, root, new Size(i % 2 == 0 ? 1_999 : 2_000, 2_000));
+                long start = Stopwatch.GetTimestamp();
+                LayoutEngine.RunLayoutPass(tree);
+                long walk = Stopwatch.GetTimestamp();
+                tree.PublishScrollRanges();
+                Add(resize, start, record && i == 1);
+                Add(resizePublish, walk, record && i == 1);
+            }
         }
 
         report.Series("scroll_change_us", change);
         report.Series("scroll_publish_us", publish);
+        report.Series("scroll_resize_us", resize);
+        report.Series("scroll_resize_publish_us", resizePublish);
     }
 
     private static (UiTree Tree, NodeHandle Root, NodeHandle Target) BuildAbsolute(Func<float> targetWidth)
