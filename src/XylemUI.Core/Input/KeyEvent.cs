@@ -85,6 +85,11 @@ public readonly struct KeyEvent
     internal NodeHandle CurrentNode { get; }
 
     /// <summary>
+    /// Gets the window's input that delivers the event, which the button routes its keys' clicks through.
+    /// </summary>
+    internal WindowInput Input => _input;
+
+    /// <summary>
     /// Stops the event: no handler after this one is called, in this phase or the next, and the default action (Tab) does not run.
     /// A stopped key is handled, so the platform does not pass it to the OS.
     /// </summary>

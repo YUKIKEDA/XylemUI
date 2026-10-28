@@ -8,7 +8,7 @@ namespace XylemUI.Tests;
 // on a press, the focus pseudo-states, the window's activation, the focus events, and the nodes that lose the focus. The keys are
 // injected as KeyInput and the activation with SetActive, the entry of §12.4.
 [Collection(UiThreadGroup.Name)]
-public sealed class KeyFocusTests(UiThreadFixture ui)
+public sealed partial class KeyFocusTests(UiThreadFixture ui)
 {
     private static readonly Color Gray = Color.FromRgb(0x808080);
     private static readonly Color Red = Color.FromRgb(0xCC3333);
@@ -659,7 +659,7 @@ public sealed class KeyFocusTests(UiThreadFixture ui)
     }
 
     // A window of 200 x 100 logical pixels whose root holds the boxes placed in it, with its frames and input.
-    private sealed class Scene
+    private sealed partial class Scene
     {
         public Scene()
         {

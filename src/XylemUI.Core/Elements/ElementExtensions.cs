@@ -362,6 +362,43 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets whether the node itself is disabled (design §7, "Disabled"). A disabled node and its descendants have the disabled state:
+    /// their handlers of the pointer, the keys, and the focus are not called, they take no focus, and Tab skips them. They still take
+    /// the pointer from the nodes behind them; the nearest ancestor that is not disabled gets its route, its hover, its press, and its
+    /// cursor. A focused node in the subtree loses the focus. Disabling an ancestor again does not enable a descendant marked itself.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="disabled">Whether the node is disabled.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element Disabled(this Element element, bool disabled = true)
+    {
+        element.TreeOrThrow().SetDisabled(element.Node, disabled);
+        return element;
+    }
+
+    /// <summary>
+    /// Sets whether the node itself is disabled from a signal, written again whenever it changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="disabled">The signal.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope to own the effect.</exception>
+    public static Element Disabled(this Element element, IReadOnlySignal<bool> disabled) => Bind(element, NodeProperties.Disabled, disabled);
+
+    /// <summary>
+    /// Sets what the disabled state lays over every other look of the node: while it or an ancestor is disabled.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="style">The values that replace the node's while it is disabled.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public static Element Disabled(this Element element, PaintStyle style)
+    {
+        element.TreeOrThrow().SetDisabledStyle(element.Node, style);
+        return element;
+    }
+
+    /// <summary>
     /// Sets the node's place in the order of Tab (design §7.1): a smaller index comes first, and the nodes of the same index come in
     /// the order of the tree. 0 by default; a negative index puts a node before the ones that set none.
     /// </summary>

@@ -2,7 +2,7 @@ namespace XylemUI;
 
 /// <summary>
 /// The pseudo-states of a node (design §2.13): bits that the input sets, and that choose which <see cref="PaintStyle"/> the draw
-/// stage lays over the node's look. Disabled comes with row K1b.
+/// stage lays over the node's look.
 /// </summary>
 [Flags]
 internal enum PseudoState : byte
@@ -36,4 +36,10 @@ internal enum PseudoState : byte
     /// The node or one of its descendants is <see cref="Focused"/>.
     /// </summary>
     FocusWithin = 1 << 4,
+
+    /// <summary>
+    /// The node or an ancestor is disabled (<see cref="NodeInput.Disabled"/>): its handlers and its descendants' are not called,
+    /// and it takes no focus.
+    /// </summary>
+    Disabled = 1 << 5,
 }

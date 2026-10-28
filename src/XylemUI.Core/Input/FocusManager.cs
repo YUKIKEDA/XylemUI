@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace XylemUI;
 
 /// <summary>
@@ -23,6 +25,9 @@ internal sealed class FocusManager
     private bool _sending;
     private bool _hasPending;
     private NodeHandle _pending;
+
+    // The node Tab or Focus moved the focus to, which the next frame scrolls into view.
+    private NodeHandle _reveal;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FocusManager"/> class.
@@ -70,7 +75,7 @@ internal sealed class FocusManager
         }
 
         ref UiNode n = ref Tree.Nodes.GetRef(node);
-        if (!n.IsAttached || n.Input is not { Focusable: true })
+        if (!n.IsAttached || n.Input is not { Focusable: true } || (n.Pseudo & PseudoState.Disabled) != 0)
         {
             return false;
         }
@@ -100,7 +105,76 @@ internal sealed class FocusManager
         }
 
         Request(node);
+        AskToReveal(node);
         return true;
+    }
+
+    /// <summary>
+    /// Scrolls the focused node into view when a move from Tab or <see cref="Focus"/> asked for it (design §7, "Bring into view"):
+    /// from the node up, each scroll container moves its position on the axes that scroll (<see cref="Overflow.Hidden"/> or
+    /// <see cref="Overflow.Scroll"/>) by the least that brings the node's border box into its viewport, or puts the node's start at
+    /// the viewport's start when the node is larger; the containers outside go on from the position the inner one moved to. The
+    /// frame calls it after the layout pass has written the ranges (design §3.4.1).
+    /// </summary>
+    public void RevealPending()
+    {
+        NodeHandle node = _reveal;
+        _reveal = default;
+        if (node.IsNone || node != Focused || !Tree.Nodes.IsAlive(node))
+        {
+            return;
+        }
+
+        Rect rect = Tree.Nodes.GetRef(node).Layout.Rect;
+        var start = new Vector2(rect.X, rect.Y);
+        var size = new Vector2(rect.Width, rect.Height);
+        for (NodeHandle parent = Tree.Nodes.GetRef(node).Parent; !parent.IsNone; parent = Tree.Nodes.GetRef(parent).Parent)
+        {
+            // start is in the parent's border box, before the parent's own scroll position.
+            ref readonly LayoutState layout = ref Tree.Nodes.GetRef(parent).Layout;
+            Overflow x = layout.Style.OverflowX;
+            Overflow y = layout.Style.OverflowY;
+            Vector2 origin = new(layout.Rect.X, layout.Rect.Y);
+            if (x >= Overflow.Hidden || y >= Overflow.Hidden)
+            {
+                var edge = new Vector2(layout.Border.Left, layout.Border.Top);
+                Size viewport = Tree.ViewportOf(parent);
+                Vector2 offset = Tree.ScrollOffsetOf(parent);
+                var next = new Vector2(
+                    x >= Overflow.Hidden ? Reveal(start.X, size.X, offset.X, edge.X, viewport.Width) : offset.X,
+                    y >= Overflow.Hidden ? Reveal(start.Y, size.Y, offset.Y, edge.Y, viewport.Height) : offset.Y
+                );
+                next = Vector2.Clamp(next, Vector2.Zero, Tree.ScrollRangeOf(parent));
+                if (next != offset)
+                {
+                    _ = Tree.ScrollStateFor(parent).SetOffset(next);
+                }
+
+                start -= next;
+            }
+
+            start += origin;
+        }
+    }
+
+    // The scroll position that shows [start, start + length) of the content in the viewport [view, view + viewLength): unchanged
+    // when it shows already, the least move otherwise, and the start at the viewport's start for a node larger than the viewport.
+    private static float Reveal(float start, float length, float offset, float view, float viewLength)
+    {
+        float shown = start - offset;
+        if (length > viewLength || shown < view)
+        {
+            return start - view;
+        }
+
+        return shown + length > view + viewLength ? start + length - view - viewLength : offset;
+    }
+
+    // Asks the next frame to scroll the node into view, once the move is done (Tab and Focus; not a press, design §7).
+    private void AskToReveal(NodeHandle node)
+    {
+        _reveal = node;
+        Tree.NoteWork();
     }
 
     /// <summary>
@@ -146,7 +220,7 @@ internal sealed class FocusManager
         while (!node.IsNone)
         {
             ref UiNode n = ref Tree.Nodes.GetRef(node);
-            if (!n.Layout.Style.Hidden)
+            if (!n.Layout.Style.Hidden && (n.Pseudo & PseudoState.Disabled) == 0)
             {
                 if (n.Input is { Focusable: true } input)
                 {
@@ -200,6 +274,7 @@ internal sealed class FocusManager
         }
 
         Request(next);
+        AskToReveal(next);
         return true;
     }
 
@@ -444,7 +519,14 @@ internal sealed class FocusManager
     // of unhandled exceptions, and the next handler is called (as the pointer's).
     private void Invoke(FocusEventKind kind, EventPhase phase, NodeHandle target, NodeHandle node)
     {
-        if (!Tree.Nodes.IsAlive(node) || Tree.Nodes.GetRef(node).Input is not { } input)
+        // A disabled node's handlers and its descendants' are not called (design §7, "Disabled").
+        if (!Tree.Nodes.IsAlive(node))
+        {
+            return;
+        }
+
+        ref UiNode n = ref Tree.Nodes.GetRef(node);
+        if (n.Input is not { } input || (n.Pseudo & PseudoState.Disabled) != 0)
         {
             return;
         }

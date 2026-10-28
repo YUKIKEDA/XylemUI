@@ -12,7 +12,8 @@ namespace XylemUI.E2E;
 // on the first leaf, whose click handler counts. A wheel (row V2) is routed from a leaf in a scroll container 300 high whose content
 // is 3,000 high, alternately down and up by 50 pixels, so that each one moves the container's scroll position (design §3.4.1). A key
 // (row K1a) is routed from a focused leaf at the end of a chain of depth 1 and 50, each box with a key handler in both phases; a Tab
-// walks a tree of 10,101 nodes whose 10,000 leaves are focusable (design §7.1).
+// walks a tree of 10,101 nodes whose 10,000 leaves are focusable (design §7.1), whose root is also disabled and enabled again (row
+// K1b). A key that scrolls moves a scroll container from a focused leaf in it, and Enter makes a click from that leaf.
 internal static class InputCost
 {
     private const int Moves = 10_000;
@@ -47,6 +48,11 @@ internal static class InputCost
 
         using var tabs = new TabTree();
         report.Number("us_per_tab_10101_nodes_p50", Median(21, tabs.Time));
+        report.Number("us_per_disabled_change_10101_nodes_p50", Median(21, tabs.TimeDisabled));
+
+        using var keyScroll = new KeyScroll();
+        report.Number("us_per_scroll_key_p50", Median(21, keyScroll.TimeScroll));
+        report.Number("us_per_key_click_p50", Median(21, keyScroll.TimeClick));
         return 0;
     }
 
@@ -342,6 +348,32 @@ internal static class InputCost
             return Stopwatch.GetElapsedTime(start).TotalMicroseconds / Tabs;
         }
 
+        // The microseconds of disabling the root and enabling it again, each of which sets the state of the 10,101 nodes (row K1b).
+        // Times as many before, unmeasured.
+        public double TimeDisabled()
+        {
+            const int Changes = 100;
+            NodeHandle root = _tree.Root;
+            for (int i = 0; i < Changes; i++)
+            {
+                _tree.SetDisabled(root, (i & 1) == 0);
+            }
+
+            long start = Stopwatch.GetTimestamp();
+            for (int i = 0; i < Changes; i++)
+            {
+                _tree.SetDisabled(root, (i & 1) == 0);
+            }
+
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / Changes;
+            if ((_tree.Nodes.GetRef(root).Pseudo & PseudoState.Disabled) != 0)
+            {
+                throw new InvalidOperationException("The root stayed disabled.");
+            }
+
+            return microseconds;
+        }
+
         public void Dispose() => _atlas.Dispose();
 
         private void Tab()
@@ -357,6 +389,99 @@ internal static class InputCost
                 if (_tree.Focus.Focused == before)
                 {
                     throw new InvalidOperationException("Tab left the focus where it was.");
+                }
+            }
+        }
+    }
+
+    // A window of 400 x 300 whose root is a scroll container as large, holding a column 3,000 high with a focused leaf: Down and Up
+    // alternate, each moving the position by 50 (row K1b, design §7, "Keyboard scrolling"). The leaf's Enter makes a click, as the
+    // button's does.
+    private sealed class KeyScroll : IDisposable
+    {
+        private readonly GlyphAtlas _atlas = new(new NoGlyphs());
+        private readonly WindowInput _input;
+        private readonly UiTree _tree;
+        private readonly NodeHandle _root;
+        private int _clicks;
+
+        public KeyScroll()
+        {
+            _tree = new UiTree();
+            _root = _tree.CreateNode(new LayoutStyle { OverflowY = Overflow.Scroll });
+            NodeHandle content = _tree.CreateNode(new LayoutStyle { Height = Length.Px(3_000) });
+            NodeHandle leaf = _tree.CreateNode(new LayoutStyle { Height = Length.Px(10) });
+            _tree.AppendChild(_root, content);
+            _tree.AppendChild(content, leaf);
+            _tree.SetFocusable(leaf, true);
+            _tree.AddKeyHandler(
+                leaf,
+                KeyEventKind.Down,
+                EventPhase.Bubble,
+                static (in KeyEvent e) =>
+                {
+                    if (e.Key == Key.Enter)
+                    {
+                        e.StopPropagation();
+                        e.Input.ClickFromKey(e.CurrentNode, e.Timestamp);
+                    }
+                }
+            );
+            _tree.AddPointerHandler(leaf, PointerEventKind.Click, EventPhase.Bubble, (in PointerEvent _) => _clicks++);
+            var frames = new WindowFrames(_tree, _root, new NoTarget(), _atlas, new NoScheduler(), default);
+            frames.Resize(new Size(400, 300), 1);
+            _input = new WindowInput(_tree, frames, new NoPlatform());
+            _input.SetActive(true);
+            if (!_tree.Focus.Focus(leaf))
+            {
+                throw new InvalidOperationException("The leaf did not take the focus.");
+            }
+        }
+
+        // The microseconds of one key that moves the position. Sends as many before, unmeasured.
+        public double TimeScroll()
+        {
+            Press(scroll: true);
+            long start = Stopwatch.GetTimestamp();
+            Press(scroll: true);
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            if (_tree.ScrollOffsetOf(_root).Y != 0)
+            {
+                throw new InvalidOperationException($"The keys left the position at {_tree.ScrollOffsetOf(_root).Y}.");
+            }
+
+            return microseconds;
+        }
+
+        // The microseconds of one click from Enter. Clicks as many before, unmeasured.
+        public double TimeClick()
+        {
+            _clicks = 0;
+            Press(scroll: false);
+            long start = Stopwatch.GetTimestamp();
+            Press(scroll: false);
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            if (_clicks != 2 * InputCost.Moves)
+            {
+                throw new InvalidOperationException($"The leaf counted {_clicks} clicks of {2 * InputCost.Moves}.");
+            }
+
+            return microseconds;
+        }
+
+        public void Dispose() => _atlas.Dispose();
+
+        private void Press(bool scroll)
+        {
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                Key key =
+                    !scroll ? Key.Enter
+                    : (i & 1) == 0 ? Key.Down
+                    : Key.Up;
+                if (!_input.Handle(new KeyInput(KeyEventKind.Down, key, PhysicalKey.None, default, KeyModifiers.None, false, TimeSpan.Zero)))
+                {
+                    throw new InvalidOperationException($"The key {key} was not handled.");
                 }
             }
         }

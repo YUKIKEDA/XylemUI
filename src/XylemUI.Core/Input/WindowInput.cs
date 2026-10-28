@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace XylemUI;
 
@@ -141,6 +142,29 @@ internal sealed class WindowInput
         {
             ReactiveRuntime.ExitBatch();
         }
+    }
+
+    /// <summary>
+    /// Routes the click a key makes on a node (design §7, "The button's keys"): a <see cref="PointerEventKind.Click"/> in the bubble
+    /// phase from the node, which the pointer's click handlers take as theirs. It has a <see cref="PointerEvent.ClickCount"/> of 0,
+    /// which tells it from the pointer's, no position (<see cref="float.NaN"/>), no button and no modifier, and the mouse as its type.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="timestamp">When the key's input was received.</param>
+    internal void ClickFromKey(NodeHandle node, TimeSpan timestamp)
+    {
+        var input = new PointerInput(
+            PointerInputKind.Up,
+            0,
+            0,
+            PointerButton.None,
+            PointerButtons.None,
+            KeyModifiers.None,
+            0,
+            timestamp,
+            PointerType.Mouse
+        );
+        Route(PointerEventKind.Click, node, input, bubbleOnly: true, fromKey: true);
     }
 
     /// <summary>
@@ -468,7 +492,7 @@ internal sealed class WindowInput
 
     // Delivers a routed event from target: the capture phase from the root down, then the bubble phase back up, until a handler
     // stops it. The route is made before the first handler runs.
-    private void Route(PointerEventKind kind, NodeHandle target, in PointerInput input, bool bubbleOnly)
+    private void Route(PointerEventKind kind, NodeHandle target, in PointerInput input, bool bubbleOnly, bool fromKey = false)
     {
         if (target.IsNone || !_tree.Nodes.IsAlive(target))
         {
@@ -495,13 +519,13 @@ internal sealed class WindowInput
             {
                 for (int i = end - 1; i >= start && !_stopped; i--)
                 {
-                    Invoke(kind, EventPhase.Capture, target, _route[i], input);
+                    Invoke(kind, EventPhase.Capture, target, _route[i], input, fromKey);
                 }
             }
 
             for (int i = start; i < end && !_stopped; i++)
             {
-                Invoke(kind, EventPhase.Bubble, target, _route[i], input);
+                Invoke(kind, EventPhase.Bubble, target, _route[i], input, fromKey);
 
                 // After the node's own handlers, which can stop the wheel before it scrolls anything.
                 if (kind == PointerEventKind.Wheel && !_stopped && Scroll(_route[i], input))
@@ -542,6 +566,9 @@ internal sealed class WindowInput
             }
 
             int end = _routeCount;
+
+            // Only a down of a scrolling key with no modifier scrolls: decided once, so the other keys pay nothing for it per node.
+            bool scrolls = input.Kind == KeyEventKind.Down && input.Modifiers == KeyModifiers.None && IsScrollKey(input.Key);
             for (int i = end - 1; i >= start && !_stopped; i--)
             {
                 InvokeKey(EventPhase.Capture, target, _route[i], input);
@@ -550,6 +577,12 @@ internal sealed class WindowInput
             for (int i = start; i < end && !_stopped; i++)
             {
                 InvokeKey(EventPhase.Bubble, target, _route[i], input);
+
+                // After the node's own handlers, as the wheel: a part that takes the arrows stops them first (design §7).
+                if (scrolls && !_stopped && ScrollByKey(_route[i], input))
+                {
+                    _stopped = true;
+                }
             }
 
             return _stopped;
@@ -564,7 +597,7 @@ internal sealed class WindowInput
     // Calls the key handlers of one node for the input's kind and the phase, as Invoke calls the pointer's.
     private void InvokeKey(EventPhase phase, NodeHandle target, NodeHandle node, in KeyInput input)
     {
-        if (!_tree.Nodes.IsAlive(node) || _tree.Nodes.GetRef(node).Input is not { } nodeInput)
+        if (EnabledInput(node) is not { } nodeInput)
         {
             return;
         }
@@ -623,9 +656,9 @@ internal sealed class WindowInput
 
     // Calls the handlers of one node for the kind and phase. A handler's exception goes to the handler of unhandled exceptions,
     // and the next handler is called (design §7, as the effects of §2.2).
-    private void Invoke(PointerEventKind kind, EventPhase? phase, NodeHandle target, NodeHandle node, in PointerInput input)
+    private void Invoke(PointerEventKind kind, EventPhase? phase, NodeHandle target, NodeHandle node, in PointerInput input, bool fromKey = false)
     {
-        if (!_tree.Nodes.IsAlive(node) || _tree.Nodes.GetRef(node).Input is not { } nodeInput)
+        if (EnabledInput(node) is not { } nodeInput)
         {
             return;
         }
@@ -641,10 +674,10 @@ internal sealed class WindowInput
             float scale = _frames.Scale;
             var physical = new Vector2(input.X, input.Y);
             Vector2 local =
-                nodeInput.HitBuild == _frames.Builds && nodeInput.HitBuild > 0
-                    ? _frames.List.PointInRegion(nodeInput.HitEntry, physical) / scale
-                    : new Vector2(float.NaN);
-            var e = new PointerEvent(this, kind, target, node, physical / scale, local, input);
+                fromKey ? new Vector2(float.NaN)
+                : nodeInput.HitBuild == _frames.Builds && nodeInput.HitBuild > 0 ? _frames.List.PointInRegion(nodeInput.HitEntry, physical) / scale
+                : new Vector2(float.NaN);
+            var e = new PointerEvent(this, kind, target, node, fromKey ? new Vector2(float.NaN) : physical / scale, local, input);
 
             // In the scope the handler was added in, entered with no closure (design §2.13); a scope disposed since calls nothing.
             ScopeRef previous = default;
@@ -701,31 +734,105 @@ internal sealed class WindowInput
             delta = new Vector2(delta.Y, 0);
         }
 
-        delta = new Vector2(horizontal ? delta.X : 0, vertical ? delta.Y : 0);
-
-        // The range the last layout wrote to the state; a container without one yet finds its range from its boxes.
-        ScrollState? state = _tree.ScrollStateOf(node);
-        Vector2 max;
-        if (state is not null)
-        {
-            max = state.MaxOffsetValue;
-        }
-        else
-        {
-            Size range = _tree.MaxScrollOffsetOf(node);
-            max = new Vector2(range.Width, range.Height);
-        }
-
-        Vector2 current = _tree.ScrollOffsetOf(node);
-        Vector2 next = Vector2.Clamp(current + delta, Vector2.Zero, max);
-        return next != current && _tree.ScrollStateFor(node).SetOffset(next);
+        return ScrollBy(node, new Vector2(horizontal ? delta.X : 0, vertical ? delta.Y : 0));
     }
 
-    // The node the last display list puts at the position; none when that node was removed since.
+    // A key's scrolling of a scroll container on the route (design §7, "Keyboard scrolling"): with no modifier, the arrows by 50 on
+    // the axes that scroll, Page Up and Page Down by 0.8 of the viewport's height, and Home and End to the vertical ends, or to the
+    // horizontal ones when only the width scrolls. No animation. Returns whether the position changed; otherwise the key goes on to
+    // the containers outside, as the wheel does.
+    private bool ScrollByKey(NodeHandle node, in KeyInput input)
+    {
+        const float Line = 50;
+        const float Page = 0.8f;
+        if (!_tree.Nodes.IsAlive(node))
+        {
+            return false;
+        }
+
+        ref UiNode n = ref _tree.Nodes.GetRef(node);
+        if ((n.Pseudo & PseudoState.Disabled) != 0)
+        {
+            return false;
+        }
+
+        ref readonly LayoutStyle style = ref n.Layout.Style;
+        bool horizontal = style.OverflowX == Overflow.Scroll;
+        bool vertical = style.OverflowY == Overflow.Scroll;
+        if (!horizontal && !vertical)
+        {
+            return false;
+        }
+
+        float end = float.PositiveInfinity;
+        Vector2 delta = input.Key switch
+        {
+            Key.Up when vertical => new Vector2(0, -Line),
+            Key.Down when vertical => new Vector2(0, Line),
+            Key.Left when horizontal => new Vector2(-Line, 0),
+            Key.Right when horizontal => new Vector2(Line, 0),
+            Key.PageUp when vertical => new Vector2(0, -Page * _tree.ViewportOf(node).Height),
+            Key.PageDown when vertical => new Vector2(0, Page * _tree.ViewportOf(node).Height),
+            Key.Home => vertical ? new Vector2(0, -end) : new Vector2(-end, 0),
+            Key.End => vertical ? new Vector2(0, end) : new Vector2(end, 0),
+            _ => default,
+        };
+        return delta != default && ScrollBy(node, delta);
+    }
+
+    private static bool IsScrollKey(Key key) =>
+        key is Key.Up or Key.Down or Key.Left or Key.Right or Key.PageUp or Key.PageDown or Key.Home or Key.End;
+
+    // Moves a container's position by delta, kept in the range the last layout gave; a container without a state gets one the
+    // first time it scrolls. Returns whether the position changed. The state is looked up once: looking it up for the position,
+    // the range, and the write each made a wheel 0.02 µs longer than main's (PR for Issue #359).
+    private bool ScrollBy(NodeHandle node, Vector2 delta)
+    {
+        ScrollState? state = _tree.ScrollStateOf(node);
+        Vector2 current = state?.OffsetValue ?? Vector2.Zero;
+        Vector2 max = state?.MaxOffsetValue ?? _tree.ScrollRangeOf(node);
+        Vector2 next = Vector2.Clamp(current + delta, Vector2.Zero, max);
+        return next != current && (state ?? _tree.ScrollStateFor(node)).SetOffset(next);
+    }
+
+    // The node the last display list puts at the position, or its nearest ancestor that is not disabled: a disabled node still takes
+    // the pointer from the nodes behind it, and its enabled ancestor gets the route, the hover, the press, and the cursor (design §7,
+    // "Disabled", as Avalonia's hit test skips disabled elements). None when that node was removed since.
     private NodeHandle HitAt(in PointerInput input)
     {
         NodeHandle hit = _frames.List.HitTest(input.X, input.Y);
-        return _tree.Nodes.IsAlive(hit) ? hit : default;
+        if (!_tree.Nodes.IsAlive(hit))
+        {
+            return default;
+        }
+
+        return (_tree.Nodes.GetRef(hit).Pseudo & PseudoState.Disabled) == 0 ? hit : EnabledAncestor(hit);
+    }
+
+    // The nearest ancestor of a disabled node that is not disabled, apart from HitAt, which every move calls.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private NodeHandle EnabledAncestor(NodeHandle node)
+    {
+        while (!node.IsNone && (_tree.Nodes.GetRef(node).Pseudo & PseudoState.Disabled) != 0)
+        {
+            node = _tree.Nodes.GetRef(node).Parent;
+        }
+
+        return node;
+    }
+
+    // Whether a node is alive and not disabled: a disabled node's handlers and its descendants' are not called (design §7).
+    // The input part of a node that is alive and not disabled, with one read of the node; null otherwise, and for a node with none.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private NodeInput? EnabledInput(NodeHandle node)
+    {
+        if (!_tree.Nodes.IsAlive(node))
+        {
+            return null;
+        }
+
+        ref UiNode n = ref _tree.Nodes.GetRef(node);
+        return (n.Pseudo & PseudoState.Disabled) == 0 ? n.Input : null;
     }
 
     // Whether node is ancestor itself or one of its descendants.

@@ -58,6 +58,12 @@ internal sealed class PseudoStyles
     public FocusStyles? Focus { get; internal set; }
 
     /// <summary>
+    /// Gets or sets what the disabled state lays over every other look, the last and the strongest (design §2.13);
+    /// <see langword="null"/> for nothing.
+    /// </summary>
+    public PaintStyle? Disabled { get; internal set; }
+
+    /// <summary>
     /// Returns whether one state has a look. It tests each style where it is, without copying it out.
     /// </summary>
     /// <param name="state">One state.</param>
@@ -70,6 +76,7 @@ internal sealed class PseudoStyles
             PseudoState.Focused => Focus?.Focused is not null,
             PseudoState.FocusVisible => Focus?.FocusVisible is not null,
             PseudoState.FocusWithin => Focus?.FocusWithin is not null,
+            PseudoState.Disabled => Disabled is not null,
             _ => false,
         };
 }

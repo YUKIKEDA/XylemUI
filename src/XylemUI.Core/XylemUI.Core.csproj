@@ -22,6 +22,8 @@
     <!-- The app's host joins the window, the renderer, the frames, and the input of a tree (row V1d); the boundary is row C0's. -->
     <InternalsVisibleTo Include="XylemUI.Desktop" />
     <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
+    <!-- The button routes the click its Enter and Space make, and sets its pressed state (row K1b); the boundary is row C0's. -->
+    <InternalsVisibleTo Include="XylemUI.Primitives" />
     <!-- The primitives are tested on a tree with no window (row V1d). -->
     <InternalsVisibleTo Include="XylemUI.Primitives.Tests" />
     <!-- Text leaves are measured with HarfBuzz, whose native library the Windows-only text tests load (row V1a). -->

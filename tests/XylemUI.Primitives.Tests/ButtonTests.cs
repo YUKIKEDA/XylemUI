@@ -144,6 +144,134 @@ public sealed class ButtonTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A focused button clicks on each down of Enter, repeats included, and stops it; Enter with a modifier is not the button's. The
+    /// click is a pointer click with a count of 0, no position, no button, no modifier, and the mouse as its type, and an ancestor's
+    /// click handler gets it too (row K1b).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 holding a column with a click handler that records the click's values, around a focused button of a
+    ///   box of 40 x 20 whose action counts. The window is active.
+    ///
+    /// Steps:
+    /// - Send a down of Enter, a repeated down of Enter, and a down of Control+Enter.
+    ///
+    /// Expected:
+    /// - Two clicks, the first two keys handled and the third not; each recorded click has count 0, a NaN position and local position,
+    ///   no button, no buttons, no modifier, the mouse, and the key's timestamp.
+    /// </remarks>
+    [Fact]
+    public void Button_Enter_ClicksOnEachDown() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new Scene();
+            int clicks = 0;
+            Element button = default;
+            var seen = new List<string>();
+            scene.Mount(() =>
+            {
+                button = Button(Box().Width(40).Height(20), () => clicks++);
+                return Column(button)
+                    .On(
+                        PointerEventKind.Click,
+                        EventPhase.Bubble,
+                        (in PointerEvent e) =>
+                            seen.Add(
+                                $"{e.ClickCount} {float.IsNaN(e.Position.X)} {float.IsNaN(e.LocalPosition.X)} {e.Button} {e.Buttons} {e.Modifiers} {e.PointerType} {e.Timestamp.TotalSeconds}"
+                            )
+                    );
+            });
+            scene.Input.SetActive(true);
+            Assert.True(button.Focus());
+
+            var handled = new[] { scene.Key(Key.Enter), scene.Key(Key.Enter, repeat: true), scene.Key(Key.Enter, modifiers: KeyModifiers.Control) };
+
+            Assert.Equal([true, true, false], handled);
+            Assert.Equal(2, clicks);
+            Assert.Equal(["0 True True None None None Mouse 1", "0 True True None None None Mouse 1"], seen);
+        });
+
+    /// <summary>
+    /// Space presses a focused button on its down and clicks it on its up; a repeat does nothing more, and a focus lost while Space is
+    /// down releases the button with no click (row K1b, Avalonia's Button).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 holding a row of a focused button (whose action counts) and a second button. The window is active.
+    ///
+    /// Steps:
+    /// - Down of Space; read the pressed state; repeated down; up. Down of Space; Tab to the second button; up of Space.
+    ///
+    /// Expected:
+    /// - Pressed after the down, one click after the up and not pressed. After the Tab not pressed, and the up makes no click: one
+    ///   click in all.
+    /// </remarks>
+    [Fact]
+    public void Button_Space_PressesOnDownAndClicksOnUp() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new Scene();
+            int clicks = 0;
+            Element button = default;
+            scene.Mount(() => Row(button = Button(Box().Width(40).Height(20), () => clicks++), Button(Box().Width(40).Height(20), () => { })));
+            scene.Input.SetActive(true);
+            Assert.True(button.Focus());
+            bool Pressed() => (scene.Tree.Nodes.GetRef(button.Node).Pseudo & PseudoState.Pressed) != 0;
+
+            Assert.True(scene.Key(Key.Space));
+            bool pressedAfterDown = Pressed();
+            Assert.True(scene.Key(Key.Space, repeat: true));
+            Assert.True(scene.Key(Key.Space, KeyEventKind.Up));
+            (int, bool) afterUp = (clicks, Pressed());
+
+            _ = scene.Key(Key.Space);
+            Assert.True(scene.Key(Key.Tab));
+            bool pressedAfterTab = Pressed();
+            _ = scene.Key(Key.Space, KeyEventKind.Up);
+
+            Assert.True(pressedAfterDown);
+            Assert.Equal((1, false), afterUp);
+            Assert.False(pressedAfterTab);
+            Assert.Equal(1, clicks);
+        });
+
+    /// <summary>
+    /// A button disabled while Space is down is released: enabled again it is not pressed, and the next up of Space makes no click
+    /// (PR #360's review). Its own focus-out handler is not called, as a disabled node's handlers are not.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 holding a focused button whose action counts. The window is active.
+    ///
+    /// Steps:
+    /// - Down of Space; disable the button; enable it; read the pressed state; focus it again; up of Space.
+    ///
+    /// Expected:
+    /// - Not pressed after it is enabled; no click.
+    /// </remarks>
+    [Fact]
+    public void Button_DisabledWhileSpaceIsDown_IsReleasedWithNoClick() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new Scene();
+            int clicks = 0;
+            Element button = default;
+            scene.Mount(() => button = Button(Box().Width(40).Height(20), () => clicks++));
+            scene.Input.SetActive(true);
+            Assert.True(button.Focus());
+
+            _ = scene.Key(Key.Space);
+            scene.Tree.SetDisabled(button.Node, true);
+            scene.Tree.SetDisabled(button.Node, false);
+            bool pressed = (scene.Tree.Nodes.GetRef(button.Node).Pseudo & PseudoState.Pressed) != 0;
+            Assert.True(button.Focus());
+            _ = scene.Key(Key.Space, KeyEventKind.Up);
+
+            Assert.False(pressed);
+            Assert.Equal(0, clicks);
+        });
+
+    /// <summary>
     /// A button refuses no action, as the chain's click handler does.
     /// </summary>
     /// <remarks>
@@ -205,8 +333,8 @@ public sealed class ButtonTests(UiThreadFixture ui)
         public void Send(PointerInputKind kind, int x, int y, PointerButtons buttons) =>
             Input.Handle(new PointerInput(kind, x, y, PointerButton.Left, buttons, KeyModifiers.None, 1, TimeSpan.Zero, PointerType.Mouse));
 
-        public bool Key(Key key) =>
-            Input.Handle(new KeyInput(KeyEventKind.Down, key, PhysicalKey.None, default, KeyModifiers.None, false, TimeSpan.Zero));
+        public bool Key(Key key, KeyEventKind kind = KeyEventKind.Down, KeyModifiers modifiers = KeyModifiers.None, bool repeat = false) =>
+            Input.Handle(new KeyInput(kind, key, PhysicalKey.None, default, modifiers, repeat, TimeSpan.FromSeconds(1)));
 
         public void Dispose()
         {
