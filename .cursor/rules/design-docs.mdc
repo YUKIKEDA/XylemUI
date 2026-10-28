@@ -116,6 +116,10 @@ A design that changes what a layout or render algorithm reads checks every cache
 
 A design of what drives a frame or a loop lists every call that the code driving it today makes (a sample, a benchmark scene) and checks each against its own steps. V1b's first design left out `GlyphAtlas.BeginFrame`, which `benchmarks/XylemUI.E2E/Scene.cs` calls before every display list; without it no place of the atlas can be evicted (PR #309's review).
 
+A design that stops calling a node's handlers (a disabled node) lists the states those handlers would have cleared, and clears them where it stops the calls. K1b's button cleared its Space press in its focus-out handler; a button disabled while Space was down lost the focus with that handler skipped, and stayed pressed once enabled again. The review found it, and `UiTree.SetDisabledStates` now clears the pressed state of the nodes it disables (PR #360).
+
+A design in which a part does something through handlers it adds (a button's keys) names the API each handler calls, and checks that the part's project may call it. K1's design called the button's Enter and Space "ordinary handlers"; routing a click from a key and setting the pressed state had no public API, and the implementation asked the owner to let `XylemUI.Primitives` see Core's internals (PR #360).
+
 A design that calls a user's handler in the middle of changing its own state says what happens when the handler comes back into it: a frame run synchronously, a message pumped inside the handler. V1c's design did not; the review found that a rehit from a leave handler rewrote the hover chains being sent (PR #327), and the re-review found the same through the window's leave (Issue #329).
 
 A mechanism where a stage clears marks only for the items of a list (the paint updates) says that every path that sets the mark puts the item in the list. V1b's design said a frame clears the marks of its paint updates, and the layout changes set the paint mark without the list; the mark stayed, and a later change asked for no frame (Issue #324).
