@@ -406,7 +406,8 @@ internal static partial class LayoutEngine
 
         // Its boxes or its children's may change: its remembered overflow is found again when a range reads it (design §3.4.1). The
         // commit runs down from a layout root, so the nodes it marks hang together under the root. The mark goes before the
-        // children's layouts, so that a measurement that throws below leaves no marked child under an unmarked node.
+        // children's layouts, so that a measurement that throws below leaves no marked child under an unmarked node. Writing it only
+        // when it is set was no faster on a first layout, where every memo starts stale (docs/benchmarks/v3b-scroll-range.md).
         if (commit)
         {
             tree.OverflowOf(handle).Known = false;
