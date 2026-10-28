@@ -21,4 +21,26 @@ internal interface IPointerPlatform
     /// </summary>
     /// <param name="cursor">The shape.</param>
     void SetCursor(CursorKind cursor);
+
+    /// <summary>
+    /// Writes the coalesced points of the pointer message being handled for a pointer, newest first, in the window's client
+    /// coordinates (physical pixels), as Win32's pointer history gives them (design §7, "Touch and pen"). It is called while the
+    /// message is delivered: Win32 keeps the history of the thread's last pointer message only.
+    /// </summary>
+    /// <param name="pointerId">The pointer's number, as <see cref="PointerInput.PointerId"/> has it.</param>
+    /// <param name="destination">Where to write; no more points than it holds.</param>
+    /// <returns>The points written; 0 when the platform keeps no history, which leaves the event's own point alone.</returns>
+    int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination) => 0;
 }
+
+/// <summary>
+/// One coalesced point of a pointer's history as the platform reads it (design §7, "Touch and pen").
+/// </summary>
+/// <param name="X">The column, in the window's client coordinates (physical pixels).</param>
+/// <param name="Y">The row, in physical pixels.</param>
+/// <param name="Pressure">The pressure, 0 to 1.</param>
+/// <param name="TiltX">The tilt along x, in degrees.</param>
+/// <param name="TiltY">The tilt along y, in degrees.</param>
+/// <param name="Twist">The twist, in degrees.</param>
+/// <param name="Timestamp">When the point was taken.</param>
+internal readonly record struct PointerHistoryPoint(int X, int Y, float Pressure, float TiltX, float TiltY, float Twist, TimeSpan Timestamp);

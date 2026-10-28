@@ -4,18 +4,26 @@ using System.Runtime.CompilerServices;
 namespace XylemUI;
 
 /// <summary>
-/// Delivers the input of one window to the handlers of its tree (design §7, "Pointer input" and "Keys and the focus"): tests the hit
-/// regions of the display list the window's frames built last, routes each event in the capture and the bubble phase, captures the
-/// pointer while a button is down, makes clicks, keeps the hovered and pressed nodes, chooses the cursor, routes the keys from the
-/// focused node, and hands the focus its changes (<see cref="UiTree.Focus"/>).
+/// Delivers the input of one window to the handlers of its tree (design §7, "Pointer input", "Touch and pen", and "Keys and the
+/// focus"): tests the hit regions of the display list the window's frames built last, routes each event in the capture and the
+/// bubble phase, captures each pointer while it presses, makes clicks, keeps the hovered and pressed nodes of each pointer, chooses
+/// the cursor, routes the keys from the focused node, and hands the focus its changes (<see cref="UiTree.Focus"/>).
 /// </summary>
 /// <remarks>
 /// It belongs to the UI thread, as the tree does. The platform calls <c>Handle</c> and <see cref="SetActive"/> from its window
 /// procedure; the frames call <see cref="Rehit"/> after a frame that built the display list. Each call runs as one batch, so effects
-/// run once after it. The routes and the hovered nodes are arrays it reuses: the steady state allocates nothing.
+/// run once after it. The routes, the pointers' states, and the hovered nodes are arrays it reuses: the steady state allocates
+/// nothing.
 /// </remarks>
 internal sealed class WindowInput
 {
+    // A touch's tap stays a click while it moves no more than this from its press, in logical pixels (Flutter's kTouchSlop,
+    // gestures/constants.dart line 65; design §7, "Touch and pen").
+    private const float TouchSlop = 18;
+
+    // The most coalesced points a message's history gives (Avalonia's MaxPointerHistorySize, WindowImpl.cs line 113).
+    private const int MaxHistory = 512;
+
     private readonly UiTree _tree;
     private readonly WindowFrames _frames;
     private readonly IPointerPlatform _platform;
@@ -24,26 +32,30 @@ internal sealed class WindowInput
     private NodeHandle[] _route = new NodeHandle[16];
     private int _routeCount;
 
-    // The hovered nodes, innermost first, and the ones the hover is being changed to.
-    private NodeHandle[] _hovered = new NodeHandle[16];
-    private int _hoveredCount;
+    // The nodes a pointer's hover is being changed to, innermost first.
     private NodeHandle[] _nextHovered = new NodeHandle[16];
 
-    // The nodes with the pressed state, innermost first.
-    private NodeHandle[] _pressed = new NodeHandle[16];
-    private int _pressedCount;
+    // The state of each pointer, by its number: the mouse is 0, touches and pens take 1 and up from the platform (design §7, "Touch
+    // and pen"). A slot is kept when its pointer leaves, and taken again by the next pointer of that number.
+    private PointerState[] _pointers = [new PointerState()];
 
-    private NodeHandle _capture;
-    private NodeHandle _clickOrigin;
-    private NodeHandle _hit;
-    private PointerInput _last;
-    private bool _inside;
+    // The serial of the pointer message being delivered, 0 when none; the intermediate points of its events are read only while
+    // it lasts, as Win32 keeps the history of the thread's last pointer message only.
+    private int _dispatch;
+    private int _nextDispatch;
+    private int _pointsDispatch;
+    private int _pointsCount;
+    private PointerHistoryPoint[] _history = new PointerHistoryPoint[16];
+    private PointerPoint[] _points = new PointerPoint[16];
     private bool _stopped;
 
     // Whether enters and leaves are being sent, and whether a hover test came meanwhile and waits for them to end (PR #327's review).
     private bool _hovering;
     private bool _hoverPending;
     private CursorKind _cursor;
+
+    // The pointer whose position chooses the cursor: the mouse, or the pen that moved last.
+    private int _cursorPointer;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WindowInput"/> class, and has <paramref name="frames"/> call
@@ -69,9 +81,9 @@ internal sealed class WindowInput
     internal UiTree Tree => _tree;
 
     /// <summary>
-    /// Gets the node that holds the capture of the pointer; none while no button is down.
+    /// Gets the node that holds the capture of the mouse; none while no button is down.
     /// </summary>
-    internal NodeHandle Capture => _capture;
+    internal NodeHandle Capture => _pointers[0].Capture;
 
     /// <summary>
     /// Gets the cursor chosen last.
@@ -79,18 +91,21 @@ internal sealed class WindowInput
     internal CursorKind Cursor => _cursor;
 
     /// <summary>
-    /// Delivers one input of the pointer.
+    /// Delivers one input of a pointer.
     /// </summary>
     /// <param name="input">The input, in the window's physical pixels.</param>
     public void Handle(in PointerInput input)
     {
         ReactiveRuntime.EnterBatch();
+        _dispatch = ++_nextDispatch;
         try
         {
             HandleInBatch(input);
         }
         finally
         {
+            // A message pumped by a handler ends the delivery around it too: Win32 then holds that message's history.
+            _dispatch = 0;
             ReactiveRuntime.ExitBatch();
         }
     }
@@ -122,21 +137,23 @@ internal sealed class WindowInput
     public void SetActive(bool active) => _tree.Focus.SetActive(active);
 
     /// <summary>
-    /// Tests the pointer's last position again against the display list just built, when the pointer is in the window: the nodes
-    /// under a pointer that did not move may have changed. Sends the enters and leaves and updates the hovered state and the cursor;
-    /// sends no move.
+    /// Tests each hovering pointer's last position again against the display list just built, when the pointer is in the window:
+    /// the nodes under a pointer that did not move may have changed. Sends the enters and leaves and updates the hovered state and
+    /// the cursor; sends no move.
     /// </summary>
     internal void Rehit()
     {
-        if (!_inside)
-        {
-            return;
-        }
-
         ReactiveRuntime.EnterBatch();
         try
         {
-            UpdateHover(_last);
+            for (int i = 0; i < _pointers.Length; i++)
+            {
+                PointerState pointer = _pointers[i];
+                if (pointer.Live && pointer.Inside && pointer.Hovers)
+                {
+                    UpdateHover(pointer, pointer.Last);
+                }
+            }
         }
         finally
         {
@@ -147,7 +164,8 @@ internal sealed class WindowInput
     /// <summary>
     /// Routes the click a key makes on a node (design §7, "The button's keys"): a <see cref="PointerEventKind.Click"/> in the bubble
     /// phase from the node, which the pointer's click handlers take as theirs. It has a <see cref="PointerEvent.ClickCount"/> of 0,
-    /// which tells it from the pointer's, no position (<see cref="float.NaN"/>), no button and no modifier, and the mouse as its type.
+    /// which tells it from the pointer's, no position (<see cref="float.NaN"/>), no button and no modifier, the mouse as its type,
+    /// pointer 0, primary, and no intermediate point.
     /// </summary>
     /// <param name="node">The node.</param>
     /// <param name="timestamp">When the key's input was received.</param>
@@ -171,6 +189,69 @@ internal sealed class WindowInput
     /// Stops the event being delivered (<see cref="PointerEvent.StopPropagation"/>).
     /// </summary>
     internal void StopPropagation() => _stopped = true;
+
+    /// <summary>
+    /// Returns the intermediate points of an event (design §7, "Touch and pen"): the points its message brought, oldest first, the
+    /// last being the event's own. They are read from the platform the first time an event of the message asks, into an array this
+    /// reuses. An event that no pointer message made (a key's click, a rehit's enter or leave) has none.
+    /// </summary>
+    /// <param name="e">The event.</param>
+    /// <returns>The points, valid until the delivery ends.</returns>
+    /// <exception cref="InvalidOperationException">The delivery of the event's message has ended.</exception>
+    internal ReadOnlySpan<PointerPoint> IntermediatePoints(scoped in PointerEvent e)
+    {
+        if (e.Dispatch == 0)
+        {
+            return default;
+        }
+
+        if (e.Dispatch != _dispatch)
+        {
+            throw new InvalidOperationException("The intermediate points of a pointer event are read while the event is delivered, in its handler.");
+        }
+
+        if (_pointsDispatch != _dispatch)
+        {
+            _pointsDispatch = _dispatch;
+            _pointsCount = ReadPoints(e);
+        }
+
+        return _points.AsSpan(0, _pointsCount);
+    }
+
+    private int ReadPoints(in PointerEvent e)
+    {
+        var own = new PointerPoint(e.Position, e.Pressure, e.TiltX, e.TiltY, e.Twist, e.Timestamp);
+        int wanted = Math.Min(e.HistoryCount, MaxHistory);
+        if (e.PointerType == PointerType.Mouse || wanted <= 1)
+        {
+            _points[0] = own;
+            return 1;
+        }
+
+        if (_history.Length < wanted)
+        {
+            Array.Resize(ref _history, Math.Max(wanted, _history.Length * 2));
+            Array.Resize(ref _points, _history.Length);
+        }
+
+        // Win32 gives the history newest first; the points go oldest first.
+        int read = Math.Clamp(_platform.ReadHistory(e.PointerId, _history.AsSpan(0, wanted)), 0, wanted);
+        if (read == 0)
+        {
+            _points[0] = own;
+            return 1;
+        }
+
+        float scale = _frames.Scale;
+        for (int i = 0; i < read; i++)
+        {
+            PointerHistoryPoint h = _history[read - 1 - i];
+            _points[i] = new PointerPoint(new Vector2(h.X, h.Y) / scale, h.Pressure, h.TiltX, h.TiltY, h.Twist, h.Timestamp);
+        }
+
+        return read;
+    }
 
     private bool HandleKeyInBatch(in KeyInput input)
     {
@@ -197,67 +278,109 @@ internal sealed class WindowInput
 
     private void HandleInBatch(in PointerInput input)
     {
+        PointerState pointer = PointerOf(input);
         switch (input.Kind)
         {
             case PointerInputKind.Move:
                 _tree.Focus.SetLastInputWasKeyboard(false);
-                Point(input);
-                Route(PointerEventKind.Move, Target(), input, bubbleOnly: false);
-                break;
-            case PointerInputKind.Down:
-                Down(input);
-                break;
-            case PointerInputKind.Up:
-                Up(input);
-                break;
-            case PointerInputKind.Leave:
-                // While a button is down the window keeps the pointer's moves, which decide the hover outside it.
-                if (CapturedNode().IsNone)
+                Point(pointer, input);
+                if (pointer.Pressing && !pointer.PastSlop && pointer.Type == PointerType.Touch)
                 {
-                    // Through UpdateHover, so that a leave that comes while enters and leaves are sent waits for them too (a
-                    // handler that pumps messages, Issue #329).
-                    _inside = false;
-                    _hit = default;
-                    UpdateHover(input);
+                    pointer.PastSlop = Vector2.Distance(new Vector2(input.X, input.Y), pointer.DownAt) > TouchSlop * _frames.Scale;
                 }
 
+                Route(PointerEventKind.Move, Target(pointer), input, bubbleOnly: false);
+                break;
+            case PointerInputKind.Down:
+                Down(pointer, input);
+                break;
+            case PointerInputKind.Up:
+                Up(pointer, input);
+                break;
+            case PointerInputKind.Leave:
+                Leave(pointer, input);
                 break;
             case PointerInputKind.CaptureLost:
-                CaptureLost(input);
+                CaptureLost(pointer, input);
                 break;
             case PointerInputKind.Wheel:
                 // From the node under the pointer even while a button is captured (Flutter, GPUI; design §3.4.1).
-                Point(input);
-                Route(PointerEventKind.Wheel, _hit, input, bubbleOnly: false);
+                Point(pointer, input);
+                Route(PointerEventKind.Wheel, pointer.Hit, input, bubbleOnly: false);
                 break;
             default:
                 break;
         }
     }
 
-    // A new position: the hit node, the hover, and the cursor.
-    private void Point(in PointerInput input)
+    // The state of the input's pointer, made the first time its number comes; a number taken again starts with its slot cleared.
+    private PointerState PointerOf(in PointerInput input)
     {
-        _inside = true;
-        _last = input;
-        UpdateHover(input);
+        int id = input.PointerId;
+        if (id >= _pointers.Length)
+        {
+            int old = _pointers.Length;
+            Array.Resize(ref _pointers, Math.Max(id + 1, old * 2));
+            for (int i = old; i < _pointers.Length; i++)
+            {
+                _pointers[i] = new PointerState();
+            }
+        }
+
+        PointerState pointer = _pointers[id];
+        if (!pointer.Live)
+        {
+            pointer.Live = true;
+            pointer.Type = input.PointerType;
+            pointer.Inside = false;
+            pointer.Capture = default;
+            pointer.ClickOrigin = default;
+            pointer.Hit = default;
+            pointer.HoveredCount = 0;
+            pointer.PressedCount = 0;
+            pointer.Pressing = false;
+            pointer.PastSlop = false;
+        }
+
+        return pointer;
     }
 
-    private void Down(in PointerInput input)
+    // A new position: the hit node, the hover, and the cursor.
+    private void Point(PointerState pointer, in PointerInput input)
+    {
+        pointer.Inside = true;
+        pointer.Last = input;
+        if (pointer.Hovers)
+        {
+            _cursorPointer = input.PointerId;
+        }
+
+        UpdateHover(pointer, input);
+    }
+
+    private void Down(PointerState pointer, in PointerInput input)
     {
         _tree.Focus.SetLastInputWasKeyboard(false);
-        Point(input);
-        NodeHandle target = Target();
-        if (CapturedNode().IsNone && !target.IsNone)
+        Point(pointer, input);
+        NodeHandle target = Target(pointer);
+        if (CapturedNode(pointer).IsNone && !target.IsNone)
         {
-            _capture = target;
-            _platform.Capture();
+            pointer.Capture = target;
+
+            // Win32 captures a touch and a pen in contact to the window by itself; only the mouse asks.
+            if (pointer.Type == PointerType.Mouse)
+            {
+                _platform.Capture();
+            }
         }
 
         if (input.Button == PointerButton.Left && !target.IsNone)
         {
-            _clickOrigin = target;
-            SetPressed(target);
+            pointer.ClickOrigin = target;
+            pointer.Pressing = true;
+            pointer.PastSlop = false;
+            pointer.DownAt = new Vector2(input.X, input.Y);
+            SetPressed(pointer, target);
 
             // Before the route, from the node the press starts at (design §7, "Focus on a press", Avalonia's FocusManager).
             _tree.Focus.FocusFromPress(target);
@@ -266,106 +389,171 @@ internal sealed class WindowInput
         Route(PointerEventKind.Down, target, input, bubbleOnly: false);
     }
 
-    private void Up(in PointerInput input)
+    private void Up(PointerState pointer, in PointerInput input)
     {
-        Point(input);
-        Route(PointerEventKind.Up, Target(), input, bubbleOnly: false);
+        Point(pointer, input);
+        Route(PointerEventKind.Up, Target(pointer), input, bubbleOnly: false);
         if (input.Button == PointerButton.Left)
         {
-            ClearPressed();
-            NodeHandle origin = _clickOrigin;
-            _clickOrigin = default;
+            ClearPressed(pointer);
+            NodeHandle origin = pointer.ClickOrigin;
+            bool tapped = !pointer.PastSlop;
+            pointer.ClickOrigin = default;
+            pointer.Pressing = false;
 
-            // A click when the release is over the node pressed or one of its descendants (Avalonia's Button, GPUI's div). The node
-            // hit is the one the release's hover test found; a handler of the up may have removed it since (PR #327's review).
-            NodeHandle released = _tree.Nodes.IsAlive(_hit) ? _hit : default;
-            if (_tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
+            // A click when the release is over the node pressed or one of its descendants (Avalonia's Button, GPUI's div), and, for
+            // a touch, when it did not move past the slop (Flutter's tap). The node hit is the one the release's hover test found; a
+            // handler of the up may have removed it since (PR #327's review).
+            NodeHandle released = _tree.Nodes.IsAlive(pointer.Hit) ? pointer.Hit : default;
+            if (tapped && _tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
             {
                 Route(PointerEventKind.Click, origin, input, bubbleOnly: true);
             }
         }
 
-        if (input.Buttons == PointerButtons.None && !_capture.IsNone)
+        if (input.Buttons == PointerButtons.None && !pointer.Capture.IsNone)
         {
-            _capture = default;
-            _platform.ReleaseCapture();
+            pointer.Capture = default;
+            if (pointer.Type == PointerType.Mouse)
+            {
+                _platform.ReleaseCapture();
+            }
 
             // The hover followed the capture until now.
-            UpdateHover(input);
+            UpdateHover(pointer, input);
         }
     }
 
-    private void CaptureLost(in PointerInput input)
+    // The pointer left the window, or (a touch or a pen) ended: its hover ends. A touch or a pen gives its number back, which the
+    // next pointer of that number takes with a cleared slot.
+    private void Leave(PointerState pointer, in PointerInput input)
     {
-        NodeHandle captured = CapturedNode();
-        _capture = default;
-        _clickOrigin = default;
-        ClearPressed();
+        if (pointer.Type == PointerType.Mouse)
+        {
+            // While a button is down the window keeps the mouse's moves, which decide the hover outside it.
+            if (CapturedNode(pointer).IsNone)
+            {
+                // Through UpdateHover, so that a leave that comes while enters and leaves are sent waits for them too (a handler that
+                // pumps messages, Issue #329).
+                pointer.Inside = false;
+                pointer.Hit = default;
+                UpdateHover(pointer, input);
+            }
+
+            return;
+        }
+
+        if (!pointer.Capture.IsNone || pointer.PressedCount > 0)
+        {
+            CaptureLost(pointer, input);
+        }
+
+        pointer.Inside = false;
+        pointer.Hit = default;
+        UpdateHover(pointer, input);
+        pointer.Live = false;
+        if (_cursorPointer == input.PointerId)
+        {
+            _cursorPointer = 0;
+            UpdateCursor();
+        }
+    }
+
+    private void CaptureLost(PointerState pointer, in PointerInput input)
+    {
+        NodeHandle captured = CapturedNode(pointer);
+        pointer.Capture = default;
+        pointer.ClickOrigin = default;
+        pointer.Pressing = false;
+        ClearPressed(pointer);
         if (!captured.IsNone)
         {
             Route(PointerEventKind.Cancel, captured, input, bubbleOnly: false);
         }
 
-        if (_inside)
+        if (pointer.Inside)
         {
-            UpdateHover(_last);
+            UpdateHover(pointer, pointer.Last);
         }
     }
 
     // The node a routed event starts from: the capture's while there is one, the node hit otherwise.
-    private NodeHandle Target() => CapturedNode() is { IsNone: false } captured ? captured : _hit;
+    private NodeHandle Target(PointerState pointer) => CapturedNode(pointer) is { IsNone: false } captured ? captured : pointer.Hit;
 
     // The capture's node, or none; a capture whose node was removed is released.
-    private NodeHandle CapturedNode()
+    private NodeHandle CapturedNode(PointerState pointer)
     {
-        if (!_capture.IsNone && !_tree.Nodes.IsAlive(_capture))
+        if (!pointer.Capture.IsNone && !_tree.Nodes.IsAlive(pointer.Capture))
         {
-            _capture = default;
-            _platform.ReleaseCapture();
+            pointer.Capture = default;
+            if (pointer.Type == PointerType.Mouse)
+            {
+                _platform.ReleaseCapture();
+            }
         }
 
-        return _capture;
+        return pointer.Capture;
     }
 
-    // Tests the position, and changes the hover to the node hit and its ancestors; while captured, to the capture's node and its
-    // ancestors when the node hit is it or a descendant, and to nothing otherwise (Avalonia's PointerOverPreProcessor).
-    // A test that comes while enters and leaves are sent (a handler that runs a frame synchronously, whose rehit lands here, or that
-    // pumps messages) waits until they end, and then runs at the pointer's last position: the chains it would change are being read.
-    private void UpdateHover(in PointerInput input)
+    // Tests the position, and changes the pointer's hover to the node hit and its ancestors; while captured, to the capture's node
+    // and its ancestors when the node hit is it or a descendant, and to nothing otherwise (Avalonia's PointerOverPreProcessor). A
+    // touch keeps no hover: only its node hit changes. A test that comes while enters and leaves are sent (a handler that runs a
+    // frame synchronously, whose rehit lands here, or that pumps messages) waits until they end, and then runs at the pointer's
+    // last position: the chains it would change are being read.
+    private void UpdateHover(PointerState pointer, in PointerInput input)
     {
+        if (!pointer.Hovers)
+        {
+            pointer.Hit = pointer.Inside ? HitAt(input) : default;
+            return;
+        }
+
         if (_hovering)
         {
+            pointer.HoverPending = true;
             _hoverPending = true;
             return;
         }
 
-        TestHover(input);
+        TestHover(pointer, input);
 
         // A handler that keeps changing the tree under the pointer is not followed past a few tests.
         for (int again = 0; _hoverPending && again < 4; again++)
         {
             _hoverPending = false;
-            TestHover(_last);
+            for (int i = 0; i < _pointers.Length; i++)
+            {
+                PointerState waiting = _pointers[i];
+                if (waiting.HoverPending)
+                {
+                    waiting.HoverPending = false;
+                    TestHover(waiting, waiting.Last);
+                }
+            }
         }
 
         _hoverPending = false;
+        for (int i = 0; i < _pointers.Length; i++)
+        {
+            _pointers[i].HoverPending = false;
+        }
     }
 
-    // The hover at the position, or none when the pointer left the window.
-    private void TestHover(in PointerInput input)
+    // The pointer's hover at the position, or none when it left the window.
+    private void TestHover(PointerState pointer, in PointerInput input)
     {
-        if (!_inside)
+        if (!pointer.Inside)
         {
-            _hit = default;
-            SetHover(0, input);
+            pointer.Hit = default;
+            SetHover(pointer, 0, input);
             return;
         }
 
-        _hit = HitAt(input);
-        NodeHandle captured = CapturedNode();
+        pointer.Hit = HitAt(input);
+        NodeHandle captured = CapturedNode(pointer);
         NodeHandle start =
-            captured.IsNone ? _hit
-            : IsSelfOrDescendant(_hit, captured) ? captured
+            captured.IsNone ? pointer.Hit
+            : IsSelfOrDescendant(pointer.Hit, captured) ? captured
             : default;
         int count = 0;
         for (NodeHandle node = start; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
@@ -378,28 +566,30 @@ internal sealed class WindowInput
             _nextHovered[count++] = node;
         }
 
-        SetHover(count, input);
+        SetHover(pointer, count, input);
     }
 
-    // Changes the hover to the first count nodes of _nextHovered: a leave for each node that left, innermost first, then an enter
-    // for each that entered, outermost first (Flutter's MouseTracker). Both chains end at the root, so the nodes they share are
-    // their common tail.
-    private void SetHover(int count, in PointerInput input)
+    // Changes the pointer's hover to the first count nodes of _nextHovered: a leave for each node that left, innermost first, then
+    // an enter for each that entered, outermost first (Flutter's MouseTracker). Both chains end at the root, so the nodes they share
+    // are their common tail.
+    private void SetHover(PointerState pointer, int count, in PointerInput input)
     {
         int shared = 0;
-        while (shared < _hoveredCount && shared < count && _hovered[_hoveredCount - 1 - shared] == _nextHovered[count - 1 - shared])
+        while (
+            shared < pointer.HoveredCount && shared < count && pointer.Hovered[pointer.HoveredCount - 1 - shared] == _nextHovered[count - 1 - shared]
+        )
         {
             shared++;
         }
 
-        int left = _hoveredCount - shared;
+        int left = pointer.HoveredCount - shared;
         int entered = count - shared;
         if (left > 0 || entered > 0)
         {
             _hovering = true;
             try
             {
-                SendHoverChange(left, entered, count, input);
+                SendHoverChange(pointer, left, entered, count, input);
             }
             finally
             {
@@ -410,29 +600,34 @@ internal sealed class WindowInput
         UpdateCursor();
     }
 
-    // The leaves of the nodes left, then the enters of the nodes entered, with the chain changed between them.
-    private void SendHoverChange(int left, int entered, int count, in PointerInput input)
+    // The leaves of the nodes left, then the enters of the nodes entered, with the chain changed between them. A node keeps the
+    // hovered state while another pointer's hover holds it (design §7, "Touch and pen").
+    private void SendHoverChange(PointerState pointer, int left, int entered, int count, in PointerInput input)
     {
         for (int i = 0; i < left; i++)
         {
-            NodeHandle node = _hovered[i];
+            NodeHandle node = pointer.Hovered[i];
             if (_tree.Nodes.IsAlive(node))
             {
-                _tree.SetPseudoState(node, PseudoState.Hovered, on: false);
+                if (!HeldByAnother(pointer, node, pressed: false))
+                {
+                    _tree.SetPseudoState(node, PseudoState.Hovered, on: false);
+                }
+
                 Direct(PointerEventKind.Leave, node, input);
             }
         }
 
-        if (_hovered.Length < count)
+        if (pointer.Hovered.Length < count)
         {
-            Array.Resize(ref _hovered, _nextHovered.Length);
+            Array.Resize(ref pointer.Hovered, _nextHovered.Length);
         }
 
-        Array.Copy(_nextHovered, _hovered, count);
-        _hoveredCount = count;
+        Array.Copy(_nextHovered, pointer.Hovered, count);
+        pointer.HoveredCount = count;
         for (int i = entered - 1; i >= 0; i--)
         {
-            NodeHandle node = _hovered[i];
+            NodeHandle node = pointer.Hovered[i];
             if (_tree.Nodes.IsAlive(node))
             {
                 _tree.SetPseudoState(node, PseudoState.Hovered, on: true);
@@ -441,40 +636,68 @@ internal sealed class WindowInput
         }
     }
 
-    // The pressed state on the node and its ancestors, kept to clear them on the release.
-    private void SetPressed(NodeHandle target)
+    // Whether a pointer other than this one holds the node in its hover, or in its pressed chain.
+    private bool HeldByAnother(PointerState pointer, NodeHandle node, bool pressed)
     {
-        ClearPressed();
-        for (NodeHandle node = target; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+        for (int p = 0; p < _pointers.Length; p++)
         {
-            if (_pressedCount == _pressed.Length)
+            PointerState other = _pointers[p];
+            if (other == pointer || !other.Live)
             {
-                Array.Resize(ref _pressed, _pressedCount * 2);
+                continue;
             }
 
-            _pressed[_pressedCount++] = node;
+            NodeHandle[] chain = pressed ? other.Pressed : other.Hovered;
+            int length = pressed ? other.PressedCount : other.HoveredCount;
+            for (int i = 0; i < length; i++)
+            {
+                if (chain[i] == node)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // The pressed state on the node and its ancestors, kept to clear them on the release.
+    private void SetPressed(PointerState pointer, NodeHandle target)
+    {
+        ClearPressed(pointer);
+        for (NodeHandle node = target; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+        {
+            if (pointer.PressedCount == pointer.Pressed.Length)
+            {
+                Array.Resize(ref pointer.Pressed, pointer.PressedCount * 2);
+            }
+
+            pointer.Pressed[pointer.PressedCount++] = node;
             _tree.SetPseudoState(node, PseudoState.Pressed, on: true);
         }
     }
 
-    private void ClearPressed()
+    private void ClearPressed(PointerState pointer)
     {
-        for (int i = 0; i < _pressedCount; i++)
+        int count = pointer.PressedCount;
+        pointer.PressedCount = 0;
+        for (int i = 0; i < count; i++)
         {
-            if (_tree.Nodes.IsAlive(_pressed[i]))
+            NodeHandle node = pointer.Pressed[i];
+            if (_tree.Nodes.IsAlive(node) && !HeldByAnother(pointer, node, pressed: true))
             {
-                _tree.SetPseudoState(_pressed[i], PseudoState.Pressed, on: false);
+                _tree.SetPseudoState(node, PseudoState.Pressed, on: false);
             }
         }
-
-        _pressedCount = 0;
     }
 
-    // The cursor of the first node from the capture's node, or the node hit, up to the root that sets one; the arrow when none does.
+    // The cursor of the first node from the capture's node, or the node hit, of the pointer that chooses it (the mouse, or the pen
+    // that moved last) up to the root that sets one; the arrow when none does.
     private void UpdateCursor()
     {
+        PointerState pointer = _pointers[_cursorPointer < _pointers.Length && _pointers[_cursorPointer].Live ? _cursorPointer : 0];
         CursorKind cursor = CursorKind.Arrow;
-        for (NodeHandle node = Target(); !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+        for (NodeHandle node = Target(pointer); !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
         {
             if (_tree.Nodes.GetRef(node).Input?.Cursor is { } set)
             {
@@ -677,7 +900,16 @@ internal sealed class WindowInput
                 fromKey ? new Vector2(float.NaN)
                 : nodeInput.HitBuild == _frames.Builds && nodeInput.HitBuild > 0 ? _frames.List.PointInRegion(nodeInput.HitEntry, physical) / scale
                 : new Vector2(float.NaN);
-            var e = new PointerEvent(this, kind, target, node, fromKey ? new Vector2(float.NaN) : physical / scale, local, input);
+            var e = new PointerEvent(
+                this,
+                kind,
+                target,
+                node,
+                fromKey ? new Vector2(float.NaN) : physical / scale,
+                local,
+                input,
+                fromKey ? 0 : _dispatch
+            );
 
             // In the scope the handler was added in, entered with no closure (design §2.13); a scope disposed since calls nothing.
             ScopeRef previous = default;
@@ -847,5 +1079,29 @@ internal sealed class WindowInput
         }
 
         return false;
+    }
+
+    // The input state of one pointer (design §7, "Touch and pen"): its capture, the node its press started at, its node hit, its
+    // last input, its hover, and its pressed chain.
+    private sealed class PointerState
+    {
+        public bool Live;
+        public PointerType Type;
+        public bool Inside;
+        public NodeHandle Capture;
+        public NodeHandle ClickOrigin;
+        public NodeHandle Hit;
+        public PointerInput Last;
+        public NodeHandle[] Hovered = new NodeHandle[16];
+        public int HoveredCount;
+        public NodeHandle[] Pressed = new NodeHandle[16];
+        public int PressedCount;
+        public bool HoverPending;
+        public bool Pressing;
+        public bool PastSlop;
+        public Vector2 DownAt;
+
+        // Whether the pointer has a hover: the mouse and pens do, a touch does not (design §7, "Touch and pen").
+        public bool Hovers => Type != PointerType.Touch;
     }
 }

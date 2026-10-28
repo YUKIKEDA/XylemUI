@@ -19,6 +19,17 @@ namespace XylemUI;
 /// <param name="PointerType">What the pointer is.</param>
 /// <param name="WheelDelta">For a <see cref="PointerInputKind.Wheel"/>, how far the wheel scrolls, in logical pixels: positive moves
 /// the scroll position down and to the right (design §3.4.1); zero for the other kinds.</param>
+/// <param name="PointerId">The pointer's number (design §7, "Touch and pen"): 0 for the mouse; 1 and up for touches and pens, which
+/// the platform gives back when the pointer leaves.</param>
+/// <param name="IsPrimary">Whether the pointer is the primary one: the mouse always; a touch or a pen that came first among those of
+/// its kind present.</param>
+/// <param name="Pressure">The pressure, 0 to 1: a pen's from its device; 0.5 for the mouse and a touch while a button or the contact
+/// is down, 0 otherwise (W3C Pointer Events).</param>
+/// <param name="TiltX">A pen's tilt along x, −90 to 90 degrees, positive to the right; 0 for the others.</param>
+/// <param name="TiltY">A pen's tilt along y, −90 to 90 degrees, positive toward the user; 0 for the others.</param>
+/// <param name="Twist">A pen's clockwise twist, 0 to 359 degrees; 0 for the others.</param>
+/// <param name="PenFlags">A pen's eraser and inverted marks.</param>
+/// <param name="HistoryCount">The points the message coalesced, its own included (Win32's <c>historyCount</c>); 1 for the mouse.</param>
 internal readonly record struct PointerInput(
     PointerInputKind Kind,
     int X,
@@ -29,8 +40,50 @@ internal readonly record struct PointerInput(
     int ClickCount,
     TimeSpan Timestamp,
     PointerType PointerType,
-    Vector2 WheelDelta = default
+    Vector2 WheelDelta = default,
+    int PointerId = 0,
+    bool IsPrimary = true,
+    float Pressure = 0,
+    float TiltX = 0,
+    float TiltY = 0,
+    float Twist = 0,
+    PenFlags PenFlags = PenFlags.None,
+    int HistoryCount = 1
 );
+
+/// <summary>
+/// The marks of a pen (design §7, "Touch and pen").
+/// </summary>
+[Flags]
+internal enum PenFlags : byte
+{
+    /// <summary>
+    /// No mark.
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// The eraser end touches or hovers (Win32's <c>PEN_FLAG_ERASER</c>).
+    /// </summary>
+    Eraser = 1,
+
+    /// <summary>
+    /// The pen is turned over (Win32's <c>PEN_FLAG_INVERTED</c>).
+    /// </summary>
+    Inverted = 2,
+}
+
+/// <summary>
+/// One of the points a pointer message coalesced (design §7, "Touch and pen"), as <see cref="PointerEvent.GetIntermediatePoints"/>
+/// gives it.
+/// </summary>
+/// <param name="Position">The position in the window, in logical pixels, as <see cref="PointerEvent.Position"/> has it.</param>
+/// <param name="Pressure">The pressure, 0 to 1.</param>
+/// <param name="TiltX">The tilt along x, in degrees.</param>
+/// <param name="TiltY">The tilt along y, in degrees.</param>
+/// <param name="Twist">The twist, in degrees.</param>
+/// <param name="Timestamp">When the point was taken.</param>
+public readonly record struct PointerPoint(Vector2 Position, float Pressure, float TiltX, float TiltY, float Twist, TimeSpan Timestamp);
 
 /// <summary>
 /// What a <see cref="PointerInput"/> reports.
@@ -174,8 +227,8 @@ public enum KeyModifiers : byte
 }
 
 /// <summary>
-/// What a pointer is (design §8.10). Row V1c takes every pointer through the mouse messages, which the OS also makes from touch
-/// and a pen; row I1 receives touch and pens on their own.
+/// What a pointer is (design §8.10). The mouse comes through the mouse messages; touches and pens through Win32's pointer messages
+/// (row I1a), and the mouse messages the OS makes from them are dropped.
 /// </summary>
 public enum PointerType : byte
 {
