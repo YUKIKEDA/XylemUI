@@ -9,6 +9,7 @@ namespace XylemUI;
 public readonly struct PointerEvent
 {
     private readonly WindowInput _input;
+    private readonly Vector2 _delta;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PointerEvent"/> struct.
@@ -37,9 +38,9 @@ public readonly struct PointerEvent
         Timestamp = source.Timestamp;
         PointerType = source.PointerType;
 
-        // One field of the input holds either amount (row I1c).
-        WheelDelta = source.Kind == PointerInputKind.Wheel ? source.Delta : default;
-        PanDelta = source.Kind == PointerInputKind.PanUpdate ? source.Delta : default;
+        // One field holds either amount, as the input's does (row I1c): the event is copied for each handler, and a field for each
+        // would make every copy 8 bytes larger.
+        _delta = source.Delta;
         PointerId = source.PointerId;
         IsPrimary = source.IsPrimary;
         Pressure = source.Pressure;
@@ -125,14 +126,14 @@ public readonly struct PointerEvent
     /// to the right. One notch of a mouse's wheel is the lines Windows sets times 100/3 (design §3.4.1); a touchpad gives less. Zero
     /// for the other kinds.
     /// </summary>
-    public Vector2 WheelDelta { get; }
+    public Vector2 WheelDelta => Kind == PointerEventKind.Wheel ? _delta : default;
 
     /// <summary>
     /// Gets how far the fingers of a <see cref="PointerEventKind.PanUpdate"/> moved on the touchpad since the last update, in logical
     /// pixels: positive to the right and down. The content moves the same way, so a scroll position goes down by it, against the sign
     /// of <see cref="WheelDelta"/>. Zero for the other kinds (row I1c).
     /// </summary>
-    public Vector2 PanDelta { get; }
+    public Vector2 PanDelta => Kind == PointerEventKind.PanUpdate ? _delta : default;
 
     /// <summary>
     /// Gets the pointer's number (design §7, "Touch and pen"): 0 for the mouse; 1 and up for touches and pens, each its own while
