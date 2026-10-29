@@ -1312,6 +1312,7 @@ public interface IFrameScheduler
 {
     void RequestFrame(Action callback);  // 次の描画タイミングでcallbackを1回呼ぶ
     void CancelFrame();
+    void FramePresented();               // 今のコールバックの中で Present した（I1c、下の「Present しないフレーム」）
 }
 ```
 
@@ -1333,7 +1334,10 @@ public interface IFrameScheduler
 
 **S7（C# 版で検証済み、Issue #34）:** スワップチェーン（flip モデル、`FRAME_LATENCY_WAITABLE_OBJECT`、最大レイテンシ 1）の待機オブジェクトを `Win32MessageLoop.SetFrameClock` でフレームクロックにすると、ループはフレームを要求している間だけそれをメッセージと多重待機し、フレームの間隔はディスプレイの更新（60 Hz で中央値 16.66 ms）に揃った。要求していない間は待たないので、Present もしない。スワップチェーンができる前（と、スワップチェーンを持たないウィンドウ）は、S3 の waitable timer が残る。
 
-**Present しないフレーム（S7 のレビューで決定）:** 待機オブジェクトはセマフォのように数える。待つと 1 つ減り、Present で 1 つ戻る。フレームのコールバックが Present せずに戻ると（何も変わっていない、最小化している、エラー）、待機オブジェクトは鳴らないままになり、次のフレームが二度と来ない。そこで、スワップチェーンのクロックを待つときは 50 ms（60 Hz の 3 フレーム）のタイムアウトを付け、切れたらそのままフレームを回す。Present を飛ばした次のフレームは遅れても 50 ms で来る。最小化などで待機オブジェクトが鳴らない場合もループは止まらない。普段の間隔（16.7 ms）は変わらない。却下した案は、「割り当てたフレームは必ず Present する」と契約に書くだけにする（守らないと黙って描画が止まる）と、Present したかをレンダラから Platform に知らせて、していなければタイマーで回す（レンダラと Platform の間に新しい連絡が要る）
+**Present しないフレーム（S7 のレビューで決定、I1c の Grill で改めた、Issue #400）:** 待機オブジェクトはセマフォのように数える。待つと 1 つ減り、Present で 1 つ戻る。フレームのコールバックが Present せずに戻ると（何も変わっていない、最小化している、エラー）、待機オブジェクトは鳴らないままになる。そこで、`WindowFrames` は Present したら、同じコールバックの中で `IFrameScheduler.FramePresented` を呼ぶ。Windows のスケジューラは、最後のコールバックが Present したかを状態として持つ。Present しなかったら、次のフレームがいつ、どこから頼まれても（そのコールバックの中でも、後のマウスのホバーの変化や Effect が付けた印からでも）、待機オブジェクトの代わりに S3 の高分解能の waitable timer（16 ms）を待つ。待機オブジェクトは、Present しなかったコールバックの後は、次のフレームがいつ頼まれても鳴らないためである。Present したコールバックで、待機オブジェクトに戻す。待機オブジェクトを待つときの 50 ms（60 Hz の 3 フレーム）のタイムアウトは残し、Present したのに鳴らない場合もループを止めない。普段の間隔（16.7 ms）は変わらない
+  - I1c で改めた理由: 指をタッチパッドに置いて止めている間は描くものがなく Present しないが、DirectManipulation の `Update` は 1 フレームごとに要る（§7「タッチとペン」の I1c）。50 ms のタイムアウトのままでは、指が動き出した最初の量が最大 50 ms 遅れる。Flutter は 14 ms のタイマーで、GPUI と Chromium は vsync ごとに `Update` を呼ぶ
+  - S7 は、Present したかをレンダラから Platform に知らせる形を、「レンダラと Platform の間に新しい連絡が要る」として却下した。それは作りの手間で、遅れの元を残す理由にならないので、採り直した
+  - 却下した案は、「割り当てたフレームは必ず Present する」と契約に書くだけにする（守らないと黙って描画が止まる）、DirectManipulation の接触の間だけタイマーに切り替える（ほかの、頼んだのに描かなかったフレームに、同じ遅れが残る）、別のスレッドで vblank を待って UI スレッドに知らせる（`IDXGIOutput::WaitForVBlank`。スレッドが 1 つ増え、描かないフレームを表示に揃えても得るものが無い）
 
 **GPU が重いときの Present（S8b で測定、Grill でオーナーが決定）:** GPU 律速のフレームでは、UI スレッドが `Present` の中で止まる。NativeAOT・ハードウェアでウィンドウ全体を半透明で 20,000 回塗り、GPU が 1 フレームに約 67 ms かかる状態にすると、待機オブジェクトはすぐ鳴り（50 ms のタイムアウトは関係しない）、`Present` が 66.6 ms（中央値）戻らず、その間メッセージを処理しなかった。上の「待機中も OS メッセージは割り込めること」に反する。バッファを 3 つにしても 57 ms 止まった。前のフレームの GPU 完了を待ってから `Present` すると `Present` は 0.1 ms になったが、イベントクエリを回して待つ素朴な実装では、GPU 律速のフレーム間隔が 67 ms から 77〜83 ms に延びた（`Flush` を足しても同じ）。通常の負荷（1,000 矩形）では `Present` は 0.05 ms で、間隔は 16.67 ms のまま。Flutter（raster スレッド）・Avalonia と WPF（レンダースレッド）・Chromium（GPU プロセス）は UI スレッドの外で Present するので UI スレッドは GPU を待たず、GPUI は描画もメインスレッドで行う（macOS では `nextDrawable` の待ちがメインスレッドに出る）。決定: 1 スレッドの今の設計のまま、`ID3D11Fence`（Windows 10 1703 以降）のイベントを `MsgWaitForMultipleObjectsEx` の多重待機に加え、前のフレームの GPU 完了までメッセージを処理しながら待ってから `Present` する。フレームの契約（描画と Present の間で待てるように分ける）、フェンスのないデバイスでの扱い、GPU 律速の間隔を落とさない形は行 R2 で、設計 PR から決める。描画スレッドを分ける案（Flutter / Avalonia の方式）は、DisplayList の受け渡し・アトラスの所有・同期リサイズ描画（§2.11.1）が変わるので採らなかった。測定は `samples/HelloWindow --auto --heavy 20000`（M1a で `benchmarks/XylemUI.E2E frames-heavy 20000` に移した。同じ場面で GPU 66 ms、Present 66 ms、`docs/benchmarks/m1-baseline.md`）。
 
@@ -2075,11 +2079,11 @@ public sealed class ScrollState
 ```
 
 - **名前:** `Overflow` は、Taffy・GPUI と同じく、型（列挙）と `ElementExtensions` の拡張メソッドの両方の名前になる。`ElementExtensions` の中では、メソッドの名前が型の名前より先に見つかり、`Overflow.Scroll` が CS0119 になる（V2 の設計で、リポジトリの設定の scratch のプロジェクトでコンパイルして確かめた）。`ElementExtensions` の中だけ `XylemUI.Overflow.Scroll` と書く。アプリと、ほかのクラスでは起きない
-- **ホイールの単位:** 論理画素で渡す。1 ノッチ（`WHEEL_DELTA` 120）は、縦が `SPI_GETWHEELSCROLLLINES` の行数 × 100/3 画素、横が `SPI_GETWHEELSCROLLCHARS` の文字数 × 100/3 画素で、既定の 3 なら 100 画素である。Flutter と同じ（Chromium の値、`flutter_window.cc` 469〜479 行目）。設定は `WM_SETTINGCHANGE` で読み直す（GPUI の `gpui_windows/src/system_settings.rs` 15〜95 行目）。Avalonia は設定を読まず、1 ノッチを 50 画素にする（`ScrollContentPresenter.cs` 777・785 行目）。GPUI は行で渡し、ウィンドウの行の高さを掛ける（`gpui/src/interactive.rs` 614〜619 行目）。画素で渡すと、利用者のハンドラは行の高さを知らなくて済む。`WHEEL_PAGESCROLL` は 3 つとも別に扱わないので、扱わない。120 より小さい量（タッチパッド）は、溜めずに分数で渡す（3 つとも同じ）。正の値は位置が増える向き（下と右）にする。Windows の縦のホイールは上に回すと正なので符号を反転し、横は右が正なのでそのまま使う
+- **ホイールの単位:** 論理画素で渡す。1 ノッチ（`WHEEL_DELTA` 120）は、縦が `SPI_GETWHEELSCROLLLINES` の行数 × 100/3 画素、横が `SPI_GETWHEELSCROLLCHARS` の文字数 × 100/3 画素で、既定の 3 なら 100 画素である。Flutter と同じ（Chromium の値、`flutter_window.cc` 469〜479 行目）。設定は `WM_SETTINGCHANGE` で読み直す（GPUI の `gpui_windows/src/system_settings.rs` 15〜95 行目）。Avalonia は設定を読まず、1 ノッチを 50 画素にする（`ScrollContentPresenter.cs` 777・785 行目）。GPUI は行で渡し、ウィンドウの行の高さを掛ける（`gpui/src/interactive.rs` 614〜619 行目）。画素で渡すと、利用者のハンドラは行の高さを知らなくて済む。`WHEEL_PAGESCROLL` は 3 つとも別に扱わないので、扱わない。120 より小さい量（タッチパッド）は、溜めずに分数で渡す（3 つとも同じ）。I1c からは、タッチパッドのパンを DirectManipulation で受ける。ホイールのメッセージで受けるのは、DirectManipulation を作れなかったウィンドウのタッチパッドと、ホイールしかないタッチパッドだけである（§7「タッチとペン」の I1c）。正の値は位置が増える向き（下と右）にする。Windows の縦のホイールは上に回すと正なので符号を反転し、横は右が正なのでそのまま使う
 - **ホイールを配る相手:** 当たったノードから、Down などと同じ経路（capture と bubble）で配る。スクロールする箱は bubble で受け、範囲に収めた位置が実際に変わるときだけ受け取って `StopPropagation` する。端にいて位置が変わらなければ、外側の箱へ渡る（スクロールの連鎖）。Flutter は、位置が変わる Scrollable だけが `PointerSignalResolver` に名乗り出て、最初の（最も深い）ものが受ける（`widgets/scrollable.dart` 954〜966 行目、`gestures/pointer_signal_resolver.dart` 86〜93 行目）。Avalonia は `e.Handled = !IsScrollChainingEnabled || offsetChanged`（`ScrollContentPresenter.cs` 796 行目、連鎖は既定で有効）。GPUI は止めずに、ホバー中のスクロールする箱すべてに量を配る（`div.rs` 3339〜3384 行目）。ボタンを押してキャプチャしている間も、当たったノードから配る（Flutter と GPUI。Avalonia はキャプチャしたノードに配る、`Avalonia.Base/Input/MouseDevice.cs` 232〜246 行目）
 - **Shift で横:** マウスの、Shift を押した縦のホイールは、スクロールする箱の側で横のスクロールにする（Flutter の `scrollable.dart` 933〜951 行目はマウスだけ、Avalonia の `ScrollContentPresenter.cs` 764〜769 行目）。入力の層は来たままの量を渡す。GPUI はバックエンドで変える（`gpui_windows/src/events.rs` 555〜585 行目）
 - **滑らかなスクロール:** しない。ホイールで位置をすぐ変える。3 つともアニメーションさせない（Avalonia の `ScrollContentPresenter.cs` 794 行目、Flutter の `widgets/scroll_position_with_single_context.dart` 210〜236 行目、GPUI の `div.rs` 3378〜3382 行目）
-- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜811 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜103 行目）は行 I1（形は §7「タッチとペン」の I1c）。タッチのドラッグでのスクロールと慣性も同じ節の I1b である。キーボードでのスクロールと、フォーカスしたノードを見える所まで動かすことは行 K1 で、§7「キーの入力とフォーカス」に書く。見えるスクロールバーは行 G1
+- **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜815 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜106 行目）は行 I1（形は §7「タッチとペン」の I1c、Issue #400）。タッチのドラッグでのスクロールと慣性も同じ節の I1b である。キーボードでのスクロールと、フォーカスしたノードを見える所まで動かすことは行 K1 で、§7「キーの入力とフォーカス」に書く。見えるスクロールバーは行 G1
 - **確かめ方:**
   - layout: 上の Taffy の 54 件のうち、マージンの相殺の 5 件を除く 49 件が通る。`scroll_width`・`scroll_height` を持つノードは、スクロールできる範囲が Chrome と一致する
   - WARP: 箱の外にあって切られていたボタンが、位置を変えた後に画素として出る（MoonBit 版の V2 と同じ到達点）。箱の外は切られる
@@ -3038,7 +3042,7 @@ flowchart TD
 **色のグリフ（T6 の Grill でオーナーが決定、Issue #187）:** 比べた版は T4 と同じ（Zed v1.24.3 の GPUI、Avalonia 12.1.4 の SkiaSharp 3.119.4 が使う Skia m119、Flutter 3.47.7）。形式と描き方の理由は §4.6。
 
 - **描き方（PR #192 で Q11、オーナー決定）:** Windows のラスタライザは、`IDWriteFactory4::TranslateColorGlyphRun` で色のグリフを COLRv0 の層（と色の無い部分の輪郭）に分け、層ごとに `CreateGlyphRunAnalysis` でグレースケールのカバレッジを作り（GPUI が層に使う形: `NATURAL_SYMMETRIC`、grid fit は既定、`direct_write.rs` 956〜967 行目）、層の色で premultiplied の BGRA に CPU の上で順に重ねる（"over"）。GPUI は層を GPU で重ねて CPU に読み戻す（885〜1080 行目）。Direct2D・WIC・COM は使わない。T6 で測ると、初めて出る絵文字 1 つは、どのプロセスもまだその大きさで描いていないとき中央値 0.49〜0.66 ms、ほかのプロセスが描いた後は 13〜41 µs、同じプロセスで 2 回目は 10〜30 µs で、最初の絵文字でプライベートメモリは 0.2〜0.4 MB 増えた（`docs/benchmarks/t6-color-glyphs.md`）。COLRv1 か SVG だけを持つグリフは色のグリフとして見分けられず、輪郭を文字の色で描く（§4.6 の縮退動作、行 T11）。PNG のビットマップは下の「PNG のビットマップ」
-- **COM の初期化:** PR #188 のレビューの後に Q8 で、WIC のために UI スレッドで `OleInitialize`（STA）を呼ぶと決めた。Q11 で Direct2D と WIC を使わなくなったので、T6 では COM を初期化しない。UI スレッドの STA（GPUI・Avalonia・Flutter はどれも UI スレッドで COM を STA で初期化する。GPUI は `crates/gpui_windows/src/platform.rs` 182 行目、Avalonia は `src/Windows/Avalonia.Win32/OleContext.cs` 29 行目、Flutter のランナーは `windows/runner/main.cpp` 18 行目）は、それを使う最初の行（クリップボード・ドラッグアンドドロップ・UIA の行 P02）で入れる。T6 の実装で分かったこと: .NET はスレッドを COM の MTA で始めるので、UI スレッドで `OleInitialize` を呼ぶと `RPC_E_CHANGED_MODE` が返る（NativeAOT でも同じ）。そのため、その行では、ウィンドウを作るアプリの `Main` に `[STAThread]` を付ける（WPF・WinForms・Avalonia と同じ）
+- **COM の初期化:** PR #188 のレビューの後に Q8 で、WIC のために UI スレッドで `OleInitialize`（STA）を呼ぶと決めた。Q11 で Direct2D と WIC を使わなくなったので、T6 では COM を初期化しない。UI スレッドの STA（GPUI・Avalonia・Flutter はどれも UI スレッドで COM を STA で初期化する。GPUI は `crates/gpui_windows/src/platform.rs` 182 行目、Avalonia は `src/Windows/Avalonia.Win32/OleContext.cs` 29 行目、Flutter のランナーは `windows/runner/main.cpp` 18 行目）は、それを使う最初の行で入れる。最初の行は I1c の DirectManipulation で、`XylemApp.Run` が `OleInitialize` を呼ぶ（§7「タッチとペン」の I1c、Issue #400）。後のクリップボード・ドラッグアンドドロップ・UIA（行 P02）も、それを使う。T6 の実装で分かったこと: .NET はスレッドを COM の MTA で始めるので、UI スレッドで `OleInitialize` を呼ぶと `RPC_E_CHANGED_MODE` が返る（NativeAOT でも同じ）。そのため、その行では、ウィンドウを作るアプリの `Main` に `[STAThread]` を付ける（WPF・WinForms・Avalonia と同じ）
 - **見分け方:** 色のグリフかどうかは、ラスタライザが決める。`Measure` は、色のフォント（`IDWriteFontFace2::IsColorFont`）のグリフのうち、COLRv0 の層を求めた `TranslateColorGlyphRun` が `DWRITE_E_NOCOLOR` を返さないものを色のグリフとして返す（GPUI と同じ判定、`direct_write.rs` 1562 行目と 1925〜1952 行目）。色のフォントでなければ調べないので、単色のフォントのグリフの費用は増えない（T6 で、初めても 2 回目も main と同じ範囲だった）。run の形式はフラグの重なりで返る（COLRv0 の層は `TRUETYPE | COLR`。Windows 11 26300 の Segoe UI Emoji で確かめた）ので、フラグとして読む（GPUI も `TRUETYPE` を外してから比べる、954 行目）。アトラスは、単色のキーで聞かれたグリフが色のグリフだと分かると、そのキーを色のグリフへの参照として覚え、色のキーで描いて入れる。`AtlasGlyph` は、入れた種類（`Coverage`）を持つ。`DisplayList.DrawText` は、種類が変わる所でグリフの並びを分ける
 - **文字の色:** 層の色が文字の色のとき（COLRv0 のパレットの番号 `0xFFFF`、または色の無い輪郭）は、文字の色で描く（Skia も同じ、`SkScalerContext_win_dw.cpp` 2222 行目）。そのため、そうした層を持つ色のグリフだけ、キーに文字の色を入れる（`GlyphKey.TextColor`。`Color` は `XylemUI.Core` にあり、`XylemUI.Text` から参照できないので、詰めた RGB の `uint` で持つ）。キーに入れる色は不透明（アルファ 255）で、文字の色のアルファ（不透明度）は画素のシェーダだけが掛ける。アルファをキーに入れると、文字の色の層に 2 回掛かり、不透明度だけが違う文字が別のグリフになるためである。Windows 11 26300 の Segoe UI Emoji の色のグリフ 3,487 個には、文字の色の層を持つものは無かった。`GlyphAtlas.TryGet` は文字の色も受け取る
 - **PNG のビットマップ（T9 の Grill でオーナーが決定、Issue #207）:** COLRv0 の層を持たず、PNG の絵を持つグリフ（sbix・CBDT）を、色のグリフとして描く。Flutter と Avalonia は Skia の DirectWrite の経路で描き（`src/ports/SkScalerContext_win_dw.cpp` 1727〜1775 行目と 2346〜2381 行目）、GPUI は描かない（輪郭を黒で描き、輪郭が無ければ何も描かない、`direct_write.rs` 752〜814 行目）。T9 の試作で Noto Color Emoji の CBDT 版を読むと、DirectWrite は色のフォントとして扱い、グリフの形式は PNG だけ（輪郭が無い）、PNG の段は 109 ppem の 1 つだけだった
@@ -3358,7 +3362,7 @@ Widget event（capture/bubbleでコンポーネントに配送）
 ```csharp
 // Platform が正規化して Core に渡す 1 つの入力（上の図の PlatformInput）
 internal readonly record struct PointerInput(
-    PointerInputKind Kind,      // Move / Down / Up / Leave（ウィンドウから出た）/ CaptureLost（キャプチャを奪われた）/ Wheel（V2）
+    PointerInputKind Kind,      // Move / Down / Up / Leave（ウィンドウから出た）/ CaptureLost（キャプチャを奪われた）/ Wheel（V2）/ PanStart・PanUpdate・PanEnd（I1c）
     int X, int Y,               // Win32 のクライアント座標（物理画素。Wheel は lParam の画面の座標を ScreenToClient で直す）。Leave と CaptureLost では使わない
     PointerButton Button,       // Down と Up で変わったボタン。ほかでは None
     PointerButtons Buttons,     // 今押されているボタン
@@ -3371,8 +3375,8 @@ internal readonly record struct PointerInput(
 public enum PointerButton : byte { None, Left, Right, Middle, XButton1, XButton2 }
 [Flags] public enum PointerButtons : byte { None = 0, Left = 1, Right = 2, Middle = 4, XButton1 = 8, XButton2 = 16 }
 [Flags] public enum KeyModifiers : byte { None = 0, Control = 1, Shift = 2, Alt = 4 }
-public enum PointerType : byte { Mouse, Touch, Pen }
-public enum PointerEventKind : byte { Down, Up, Move, Enter, Leave, Cancel, Click, Wheel }   // Wheel は V2
+public enum PointerType : byte { Mouse, Touch, Pen, Touchpad }   // Touchpad は I1c
+public enum PointerEventKind : byte { Down, Up, Move, Enter, Leave, Cancel, Click, Wheel, PanStart, PanUpdate, PanEnd }   // Wheel は V2、Pan の 3 つは I1c
 
 // ハンドラに渡すイベント。in で渡す。V1d で公開した（§2.13）
 public readonly struct PointerEvent
@@ -3503,6 +3507,16 @@ public readonly record struct PointerPoint(Vector2 Position, float Pressure, flo
 // IPointerPlatform に足す。Win32 の履歴の 1 点（物理画素のクライアントの座標）。書いた点の数を返す
 internal readonly record struct PointerHistoryPoint(int X, int Y, float Pressure, float TiltX, float TiltY, float Twist, TimeSpan Timestamp);
 int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
+
+// I1c で足す。PointerInput の最後の欄
+    Vector2 PanDelta);          // PanUpdate の量（論理画素。指の動きの向きで、正は右と下）。ほかの種類では 0
+
+// I1c で PointerEvent に足す（公開）
+public Vector2 PanDelta { get; }   // PanUpdate の量（論理画素。指の動きの向きで、正は右と下）。ほかの種類では 0
+
+// I1c で IPointerPlatform に足す。フレームの最初に、フレームの時刻を読んだ直後に WindowInput.UpdateGestures から呼ぶ。
+// Platform は DirectManipulation の Update を呼び、溜めたパンの入力を配る。接触が続いて次のフレームが要るなら true
+bool UpdateGestures(TimeSpan frameTime);
 ```
 
 - **受けるメッセージ:** タッチとペンは `WM_POINTERDOWN`・`WM_POINTERUPDATE`・`WM_POINTERUP`・`WM_POINTERLEAVE`・`WM_POINTERCAPTURECHANGED` で受け、`GetPointerType` で種類を決め、`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo` で読む。座標は画面の座標を `ScreenToClient` でクライアントの座標にする。マウスは今の `WM_MOUSE*` のままで、OS がタッチとペンから作るマウスのメッセージは捨てる（V1c の `GetMessageExtraInfo` の判別で、タッチかペンなら受けない）。`POINTER_FLAG_CANCELED` と `WM_POINTERCAPTURECHANGED` は、そのポインタの CaptureLost にする
@@ -3545,15 +3559,54 @@ int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
   - Avalonia の閾値は 5（`ScrollGestureRecognizer.cs` 22〜23 行目）、慣性は `v·0.15^t` で 5 px/s で止まる（284〜330 行目）。タッチとペンだけで動かす（161〜170 行目）
   - GPUI の閾値は 8、慣性は iOS の減衰（毎 ms 0.998）で、最小 50・最大 8,000（`gpui/src/gestures.rs` 114〜142・458〜476 行目）
   - 慣性の式を Flutter に合わせるのは、タッチとタッチパッド（I1c）を同じ流し方にする実装が Flutter だけだからである
-- **タッチパッドのパンと慣性（I1c）:** 精密タッチパッドのパンは DirectManipulation で受ける。`DM_POINTERHITTEST` で `GetPointerType` が `PT_TOUCHPAD` なら、viewport に `SetContact` する。動いた量はパンとして I1b と同じスクロールに渡し、OS の慣性の段は捨てて、離したときの速さから I1b と同じ式で流す。DirectManipulation は `Update` を呼ばないと進まないので、接触が RUNNING か INERTIA の間だけフレームを頼み続け、各フレームの最初に `Update` を呼ぶ。I1b の慣性は最初のフレームの経過時間が 0 で、離してから 1 フレームは位置が動かない（Flutter の Ticker も最初の tick で始めの時刻を取る）。I1c では、OS の慣性を捨てた直後のこの 1 フレームの止まりが見えるかを確かめる。内側の箱が流れ、外側の箱がドラッグ中のときの押下（I1b では内側の箱が受け、どのドラッグにも加わらない）の場面も、I1c で確かめる（PR #397 のレビュー）
-  - Flutter は viewport をウィンドウの大きさで作り（`direct_manipulation.cc` 179〜214 行目）、`PT_TOUCHPAD` で `SetContact` し（`flutter_window.cc` 805〜815 行目）、14 ms のタイマーで `Update` を呼ぶ（507〜513・799〜803 行目）。OS の慣性の間の更新を捨て（`direct_manipulation.cc` 73・152 行目）、慣性が終わったら viewport を戻す（98〜124 行目）。枠組みがパンの速さから同じ流し方で流す（`gestures/monodrag.dart` 441・657〜666・724 行目）
-  - GPUI は 1000 × 1000 の viewport で `SetContact` し（`direct_manipulation.rs` 16〜19・97〜106 行目）、描くたびの最初に `Update` を呼び（`events.rs` 1338〜1347 行目）、OS の慣性をそのままスクロールのイベントとして渡す（`direct_manipulation.rs` 166〜249 行目）
-  - Avalonia は DirectManipulation を使わず、タッチパッドのスクロールはホイールのメッセージだけで受ける（`AppWndProc.cs` 403〜433・607〜622・653〜658 行目）
-  - XylemUI はフレームを要るときだけ描くので、GPUI のように描くたびに呼ぶだけでは、触れていない間に止まる。Flutter のタイマーは、触れていない間も回る
-- **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1b では、フレームの時刻の読み出し（`TimeProvider.GetTimestamp` の 1 回）と、慣性で流れる 1 フレームの位置の更新の時間を記録に書く。I1c では DirectManipulation の 1 回の更新の時間を測る
+- **タッチパッドのパンと慣性（I1c）:** 精密タッチパッドの 2 本指のパンは DirectManipulation で受け、パンのイベント（PanStart・PanUpdate・PanEnd）として配る。スクロールは I1b のタッチのドラッグと同じ規則で、閾値・箱の選び方・速さ・流す条件・流し方を共有する。OS の慣性の段は捨て、離したときの速さから I1b の式で流す。細部は次のとおりで、I1c の Grill（Issue #400）で決めた。文書は Microsoft の DirectManipulation の各頁と、Windows SDK 10.0.26100 の `directmanipulation.h`・`winuser.h` を読んだ。Chromium は 159.0.8130.1 の `content/browser/renderer_host/` から書く
+  - **作る物と寿命:** Platform が、ウィンドウごとに 1 組、ウィンドウを作った直後に作る。順に `CoCreateInstance(CLSID_DirectManipulationManager, CLSCTX_INPROC_SERVER)`、`GetUpdateManager`、`CreateViewport(null, hwnd)`、`ActivateConfiguration(INTERACTION | TRANSLATION_X | TRANSLATION_Y | TRANSLATION_INERTIA)`、`SetViewportOptions(MANUALUPDATE)`、`AddEventHandler(hwnd, ハンドラ)`、`SetViewportRect`（クライアントの大きさ、物理画素。Flutter と同じで、`direct_manipulation.cc` 179〜214 行目、`flutter_window.cc` 455〜460 行目。GPUI は 1000 × 1000 で固定する、`direct_manipulation.rs` 16〜19 行目）、`Activate(hwnd)`、`Enable`、`Update` を 1 回呼ぶ。`WM_SIZE` で `SetViewportRect` を直す。ウィンドウを壊すときは、`Stop`、`RemoveEventHandler`、`Abandon`、`Deactivate(hwnd)` の順に呼び、参照を返す（Chromium の `direct_manipulation_helper_win.cc` 290〜301 行目。292 行目の `UpdateEventHandler(nullptr, nullptr)` が、173 行目で `Stop`、177 行目で `RemoveEventHandler` を呼び、296 行目で `Abandon`、300 行目で `Deactivate` を呼ぶ。GPUI も `Stop`・`Abandon`・`Deactivate` の順、`direct_manipulation.rs` 119〜126 行目）。DirectManipulation は Windows 8 から、`PT_TOUCHPAD` は 8.1 から（`winuser.h` 6306 行目）、`DM_POINTERHITTEST` の頁の最小は Windows 10 である
+  - **作れなかったとき:** どれかの呼び出しが失敗したら、作った物を返し、そのウィンドウは DirectManipulation なしで動く。タッチパッドは、OS が送るホイールのメッセージを今の Wheel として受ける。COM を初期化していないスレッド（`CO_E_NOTINITIALIZED`）も同じである。Flutter と同じ形である（`direct_manipulation.cc` 14〜21・210・240・251 行目）。GPUI は、ウィンドウを作るのに失敗する（`gpui_windows/src/window.rs` 158〜159 行目）
+  - **COM の初期化:** `XylemApp.Run` が、ウィンドウを作る前に UI スレッドで `OleInitialize` を呼び、終わるときに `OleUninitialize` を呼ぶ。.NET はスレッドを MTA で始めるので、`Main` に `[STAThread]` が無いと `RPC_E_CHANGED_MODE` が返る（§5.0.3「色のグリフ」の「COM の初期化」）。そのときは、`Main` に `[STAThread]` が要ると書いた `InvalidOperationException` を投げる。サンプルとベンチマークの、`XylemApp.Run` を呼ぶ `Main` に `[STAThread]` を付ける。NativeAOT の実行ファイルで `[STAThread]` が効くことを、実装で確かめる。Microsoft の文書は STA を求めるとは書かず、コールバックはウィンドウを持つスレッドで呼ばれるとだけ書く（`IDirectManipulationViewport::AddEventHandler` の頁）。比べる 3 つは、どれも UI スレッドを STA にする。後の行のクリップボード・ドラッグアンドドロップ・UIA（P02）も STA が要る
+  - **ハンドラ:** `IDirectManipulationViewportEventHandler` は、XylemUI が書く COM の物である。`TextAnalysisSource` と同じく、最初の欄が `[UnmanagedCallersOnly]` の関数の表を指す native の構造体にする（`.cursor/rules/interop.mdc`）。参照の数は `Interlocked` で数える。ハンドラの各インターフェイスの頁が、スレッド安全な数え方を求めるためである。ウィンドウは `NativeHandleTable` の番号で引き、例外は入口で捕まえる。コールバックは、受けた状態と変換を Platform の待ち行列（使い回す配列）に入れるだけで、Core に配らない。`Update` の後に、待ち行列を古い順に配る（GPUI の `pending_events` と同じ、`direct_manipulation.rs` 137〜146 行目）。文書は、コールバックが `Update` の中で呼ばれるとは書かず、同じメソッドの続いた呼び出しはまとめられうると書く（`AddEventHandler` の頁）。外で呼ばれても、次のフレームで配る
+  - **接触:** `DM_POINTERHITTEST`（0x0250、`winuser.h` 2424 行目）の `wParam` の下の語（`GET_POINTERID_WPARAM`、6445 行目）がポインタの番号である。`GetPointerType` が `PT_TOUCHPAD` なら、viewport に `SetContact` する。ほかの種類と、`GetPointerType` の失敗では何もしない。どちらも `DefWindowProc` に渡す。Microsoft の頁は `wParam` を「使わない」と書くが、Flutter（`flutter_window.cc` 805〜815 行目）・GPUI（`events.rs` 163〜171・1315〜1318 行目、`direct_manipulation.rs` 97〜106 行目）・Chromium（`direct_manipulation_helper_win.cc` 235〜264 行目）は、どれもこの形で番号を読む。Chromium は、タッチパッドの入力の列の最初のメッセージになりうるのは `DM_POINTERHITTEST` だけだと書く（256 行目）。`SetContact` したら、ウィンドウのフレームを頼む。`Win32Window` が `GestureFrameNeeded` を呼び、`DesktopWindow` がそれを `WindowFrames.RequestFrame` につなぐ
+  - **フレームと `Update`:** `SetContact` から、viewport が READY に戻り、中身を元の位置に戻し終えるまで、ウィンドウのフレームの最初（フレームの時刻を読んだ直後、layout の前）に `WindowFrames` が `Input?.UpdateGestures(FrameTime)` を呼び、`WindowInput` が自分の `IPointerPlatform.UpdateGestures` に渡す（`AdvanceFlings` と同じく、`WindowFrames` は `IPointerPlatform` を持たず、`WindowInput` を通す）。Platform は `Update` を呼んで待ち行列を配り、まだ続くなら true を返す。true なら次のフレームを頼む。指を止めている間は描くものがなく Present しないが、次のフレームは 16 ms のタイマーで来る（§2.11「Present しないフレーム」）。触れていない間は回さない
+    - Flutter は 14 ms のタイマーを、ウィンドウの寿命の間ずっと回す（`flutter_window.cc` 507〜513・799〜803 行目）
+    - GPUI は vsync ごとにすべてのウィンドウを描き直させ、描くたびの最初に `Update` を呼ぶ（`gpui_windows/src/platform.rs` 479〜494 行目、`events.rs` 1321〜1347 行目）
+    - Chromium は、操作の始まり（`DIRECTMANIPULATION_INTERACTION_BEGIN`）から終わりまで、vsync ごとに `Update` を呼ぶ（`direct_manipulation_helper_win.cc` 148〜151 行目、`direct_manipulation_event_handler_win.cc` 291〜305 行目）
+    - Microsoft の文書は、compositor が更新するたびに `Update` を呼ぶよう勧め、アプリに更新を知らせる仕組みを示さない（`IDirectManipulationUpdateManager::Update` の頁）
+  - **変換からパンへ:** Flutter の embedder と同じ形である（`direct_manipulation.cc` 49〜63・65〜127・134〜158 行目）
+    - 状態が RUNNING になったら、その時の中身の変換（`GetContentTransform` の 6 つの値の 5 番目と 6 番目が平行移動、物理画素）を始まりの値として覚え、PanStart を配る
+    - RUNNING の間の `OnContentUpdated` は、始まりからの累計を求め、前の累計との差を `ScaleFactor` で割って、PanUpdate の `PanDelta` にする。差が 0 なら配らない
+    - RUNNING から離れたら（指が離れて INERTIA に入るか、READY に戻る）、PanEnd を配る
+    - INERTIA の間の変換は捨てる
+    - INERTIA から離れたら、`GetViewportRect` の矩形へ `ZoomToRect(…, animate: false)` で中身を元に戻し、それが起こす状態の変化は、READY になるまで捨てる
+    - 構成に `SCALING` を入れないので、拡大は来ない。拡大は行 I2 で足す。`RAILS_X`・`RAILS_Y`（GPUI と Chromium は付ける）は付けない。両方の軸の箱は、I1b と同じくベクトルで動かすためである
+  - **パンの入力の値:** PanStart・PanUpdate・PanEnd の `PointerInput` は、次の値を持つ
+    - `PointerType` は `Touchpad`。位置は、PanStart の時のカーソルの位置（`GetCursorPos` を `ScreenToClient` で直した物理画素）を、そのパンの間ずっと使う（Flutter の `flutter_windows_view.cc` 553〜593 行目）
+    - `Timestamp` は、その `UpdateGestures` のフレームの時刻である
+    - `PointerId` は、タッチとペンと同じく空いている番号を PanStart で取り、PanEnd で返す。`IsPrimary` は true。ボタン・`ClickCount`・圧力・傾きは 0 である
+    - `PanDelta` は指の動きの向きで、正は右と下である。中身は指と同じ向きに動くので、スクロールの位置は `PanDelta` だけ減る。正で位置が増える `WheelDelta` とは、向きが逆になる。Flutter も DirectManipulation の平行移動をそのまま渡し、中身を指と同じ向きに動かす（`widgets/scroll_activity.dart` 400〜415 行目）。DirectManipulation の量は倍率で割らずに来るので、Platform が `ScaleFactor` で割る（Flutter は枠組みが `devicePixelRatio` で割る、`gestures/converter.dart` 250〜252 行目。GPUI も割る、`direct_manipulation.rs` 268〜277 行目）
+  - **配り方:** PanStart の位置で 1 回だけヒットテストし、当たったノードへ capture と bubble で配る。PanUpdate と PanEnd は、同じパンの間、PanStart で当たったノードへ配る（Flutter の `gestures/binding.dart` 407〜438 行目）。パンはホバーを変えない
+  - **スクロールに変わる時:** I1b のタッチの Move と同じく決める
+    - PanUpdate の bubble で、箱のハンドラの後に、まだパンを持たないスクロールする箱が、PanStart からの累計を自分の軸に沿って測る。両方の軸の箱は直線の距離で、I1b と同じく 18 にする。18 を超え、その向きに動ける範囲があれば、箱がパンを取る。Flutter はトラックパッドにも、タッチと同じ `kTouchSlop` を使う（`gestures/events.dart` 2552〜2562 行目、`monodrag.dart` 965〜970 行目）。GPUI は閾値なしで動かす
+    - 閾値を越えた点から動かし、端に着いても外の箱へは渡さない
+    - 中のハンドラが PanUpdate を `StopPropagation` で止めたら、箱には着かないので、スクロールに変わらない
+    - 箱がパンを取った後の PanUpdate と PanEnd は、その箱へ配る。押していないので、Cancel は送らない
+    - タッチでドラッグ中の箱は、パンを取らない。パンは、タッチのドラッグに加わらない
+    - Flutter は、閾値を最初に越えた認識器が勝ち、内側が先である（`gestures/arena.dart` 226〜240 行目）。端に着いた内側の箱は外に譲らない（`widgets/scroll_physics.dart` 218〜227 行目）。GPUI はイベントごとにカーソルの下でヒットテストし直し、重なった箱がすべて同じ量を受ける（`gpui/src/elements/div.rs` 3339〜3384 行目、`gpui/src/window.rs` 5931〜5966 行目）
+  - **速さと流す条件:** PanStart で追跡器を空にして 0 を入れ、PanUpdate ごとに累計のパンを 1 点として入れる（Flutter の `monodrag.dart` 661〜666 行目）。時刻は `Timestamp`（フレームの時刻）である。PanEnd のフレームの時刻で速さを求め、I1b の「流す条件」と「流し方」で流す。点はフレームごとに 1 つなので、60 Hz では 100 ms の窓に 6 点ほど入る
+  - **流れている間の入力:** タッチパッドから始まったパンとその慣性は、箱の中への入力を止めない（Flutter の `DragScrollActivity.shouldIgnorePointer` はトラックパッドで false、`scroll_activity.dart` 538 行目。慣性はこれを引き継ぐ、`widgets/scroll_position.dart` 291 行目）
+    - マウスのホバーとクリックは、中のノードに届く。マウスの押下は、流れを止めない
+    - タッチとペンの押下は、流れを止め、中のノードにも届く
+    - タッチパッドに新しく触れたら（PanStart）、その位置の経路の箱の流れを止める（`widgets/scrollable.dart` 863〜866 行目）
+    - ホイールとキーは、I1b と同じく、止めてからスクロールする
+    - I1b のタッチとペンの流れの上の押下は、今までどおり止めるだけで、中に届けない
+  - **実機で確かめること:** ソースと文書から決められない 2 点を、実装の最初の段で、オーナーの精密タッチパッドで確かめる
+    - `SetContact` の後も、同じ動きの `WM_MOUSEWHEEL`・`WM_MOUSEHWHEEL` が届くか。`SetContact` の頁は、操作として認識された接触の入力はアプリに届かないとだけ書く。Flutter と GPUI はホイールを無条件に受け、ソースにもテストにも書いていない。届くなら、接触の間（`SetContact` から PanEnd まで）のホイールを捨てる
+    - Windows の「スクロールの方向」の設定が、平行移動に効くか。効かないなら、設定値を読んで向きを合わせる
+    - あわせて、I1b の慣性の最初のフレームの経過時間が 0 で、離してから 1 フレーム位置が動かないことが、OS の慣性を捨てた直後に見えるかを確かめる。内側の箱が流れ、外側の箱がドラッグ中のときの押下（I1b では内側の箱が受け、どのドラッグにも加わらない）の場面も確かめる（PR #397 のレビュー）
+  - Avalonia は DirectManipulation を使わず、タッチパッドのスクロールはホイールのメッセージだけで受ける（`AppWndProc.cs` 403〜433・607〜622・653〜658 行目）。慣性はタッチとペンだけである（`Avalonia.Base/Input/GestureRecognizers/ScrollGestureRecognizer.cs` 161〜162 行目）
+  - GPUI は OS の慣性を、そのままスクロールのイベントとして渡す（`direct_manipulation.rs` 166〜249・319〜333 行目）
+- **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1b では、フレームの時刻の読み出し（`TimeProvider.GetTimestamp` の 1 回）と、慣性で流れる 1 フレームの位置の更新の時間を記録に書く。I1c では、パンの 1 回の配送（PanUpdate、`input` の場面）と、DirectManipulation の 1 回の `Update`（接触の無い viewport の `Update` と、待ち行列を配る所）の時間を測る。I1c の割り当て 0 は、パンの配送、`UpdateGestures`、Present しないフレームの後のタイマーへの切り替えである
 - **確かめ方:**
-  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム。I1b は、スクロールに変わる閾値を軸ごとに（横の箱の中の縦の動き）、越えた点から動くこと、中のハンドラが Move を止めたらスクロールしないこと、複数の指、決まった点の列から求めた速さ（Flutter の `velocity_tracker_test.dart` と同じ点の列で同じ値）、流す条件の境、偽の時計で進めたフレームごとの式の位置と終わり、流れている間の押下とホイールを確かめる。途中の点は、`PointerInput.HistoryCount` と、履歴を返す偽の `IPointerPlatform` を入れて、古い順に並ぶこと、最後が自身の点であること、配送の後に呼ぶと投げること、マウスが 1 点だけであることを確かめる
-  - Platform: ポインタの情報を読む所（`GetPointerType`・`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo`・履歴）を差し替えられる形にし、テストは偽の情報を入れて `WM_POINTER*` を `SendMessage` で送る。Flutter の `MockWindowsProcTable` と同じ形である（`flutter_window_unittests.cc` 86・291〜333 行目）。DirectManipulation は COM の部分を偽物にして確かめる（Flutter の `direct_manipulation_unittests.cc`）。3 つとも `InjectSyntheticPointerInput` は使わない
+  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム。I1b は、スクロールに変わる閾値を軸ごとに（横の箱の中の縦の動き）、越えた点から動くこと、中のハンドラが Move を止めたらスクロールしないこと、複数の指、決まった点の列から求めた速さ（Flutter の `velocity_tracker_test.dart` と同じ点の列で同じ値）、流す条件の境、偽の時計で進めたフレームごとの式の位置と終わり、流れている間の押下とホイールを確かめる。途中の点は、`PointerInput.HistoryCount` と、履歴を返す偽の `IPointerPlatform` を入れて、古い順に並ぶこと、最後が自身の点であること、配送の後に呼ぶと投げること、マウスが 1 点だけであることを確かめる。I1c は、PanStart から PanEnd を入れて、閾値を軸ごとに、PanStart で決めた箱へ配ること、中のハンドラが PanUpdate を止めたらスクロールしないこと、流れること、流れている間にマウスのクリックが中に届いて流れが止まらないこと、タッチの押下と新しい PanStart で止まることを確かめる。`UpdateGestures` が true を返す間フレームを頼み続けることは、偽の `IPointerPlatform` で確かめる
+  - Platform: ポインタの情報を読む所（`GetPointerType`・`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo`・履歴）を差し替えられる形にし、テストは偽の情報を入れて `WM_POINTER*` を `SendMessage` で送る。Flutter の `MockWindowsProcTable` と同じ形である（`flutter_window_unittests.cc` 86・291〜333 行目）。3 つとも `InjectSyntheticPointerInput` は使わない。DirectManipulation は、viewport と中身の呼び出しを差し替えられる形にし、偽物で確かめる。Flutter の `direct_manipulation_unittests.cc` と `window_unittests.cc` と同じ場面を持つ: `DM_POINTERHITTEST` で `PT_TOUCHPAD` なら 1 回 `SetContact` し、ほかの種類と `GetPointerType` の失敗ではしない。状態と変換の列から PanStart・PanUpdate・PanEnd が出て、量が `ScaleFactor` で割られる。INERTIA の間の変換は捨て、INERTIA から READY で `ZoomToRect` を 1 回呼び、それが起こす状態の変化を捨てる。始まりの変換が 0 でないときは差だけを渡す。作るのに失敗したウィンドウは、ホイールでスクロールする。本物の DirectManipulation の物は、STA のテストのスレッドで作れて、壊せることだけを確かめる。`XylemApp.Run` は MTA のスレッドで `InvalidOperationException` を投げる。スケジューラは、Present しなかったフレームの次がタイマーを待ち、Present したフレームの次がスワップチェーンの待機オブジェクトを待つことを確かめる。Present しなかったフレームが次を頼まずに終わり、その後にコールバックの外から頼んだフレームも、タイマーを待つことを確かめる
 
 **キーの入力とフォーカス（K1 の Grill でオーナーが決定、Issue #351）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じで、Flutter の `fm` は `widgets/focus_manager.dart`、zed の Button は `crates/ui/src/components/button/` から書く。Win32 のメッセージは Microsoft の文書（`WM_KEYDOWN`・`WM_SYSKEYDOWN`・`WM_ACTIVATE`・`WM_SYSCOMMAND`・`WM_MENUCHAR`・`ToUnicodeEx` の頁）を読んだ。実装は 2 つに分ける。K1a はキーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化。K1b は Disabled、ボタンの Enter と Space、キーボードでのスクロール、フォーカスしたノードを見える所まで動かすこと。
 
@@ -3781,7 +3834,7 @@ V1d の Grill（Issue #335）で、上の形にした。前の形は、ジェネ
 登録は当該ノードの`Scope`（§2.3）にクリーンアップ関数として紐づき、ノード破棄時に自動解除される。C# の `event` キーワード（`+=` / `-=`）は使わない。解除をScope に紐づけられず、フェーズも指定できないためである。
 
 ### 8.10 タッチ/ペン入力の正規化 — §7
-W3C Pointer Events同様、マウス・タッチ・ペンを単一の`PointerEvent`（`PointerType: Mouse | Touch | Pen`、Pen限定で圧力・傾き等）に統一する。ChromiumもFlutterも同じ設計。マルチタッチジェスチャー認識（§7でオプション拡張と位置づけ済み）はこの統一ポインタイベント列を`PointerType`でフィルタして上位に構築する。形は §7「タッチとペン」（I1 の Grill、Issue #384）で決めた。値の約束は W3C Pointer Events に合わせ、圧力はマウスとタッチでも押している間 0.5 にし、傾きとひねりはペンだけが持つ。ジェスチャーの認識は行 I2 で組む。
+W3C Pointer Events同様、マウス・タッチ・ペンを単一の`PointerEvent`（`PointerType: Mouse | Touch | Pen | Touchpad`、Pen限定で圧力・傾き等。Touchpad は I1c のパンの PanStart・PanUpdate・PanEnd だけに付く）に統一する。ChromiumもFlutterも同じ設計。マルチタッチジェスチャー認識（§7でオプション拡張と位置づけ済み）はこの統一ポインタイベント列を`PointerType`でフィルタして上位に構築する。形は §7「タッチとペン」（I1 の Grill、Issue #384）で決めた。値の約束は W3C Pointer Events に合わせ、圧力はマウスとタッチでも押している間 0.5 にし、傾きとひねりはペンだけが持つ。ジェスチャーの認識は行 I2 で組む。
 
 ### 8.11 fontconfigの静的/動的リンク — §4.5
 Linuxのみ動的リンクとする。fontconfigの正当性はユーザー実機の実際のフォント・設定ファイル(`/etc/fonts`等)と一致する必要があり、静的同梱は実機の状態と乖離するリスクがある。§4.5で「フォールバック解決自体はOSに委譲する」と決めた判断の自然な帰結。`libfontconfig`は`libc`/`libX11`同様、ほぼ全Linuxデスクトップに標準で存在する共有ライブラリであり、許容範囲内の動的依存として扱う（Linuxに限り完全な単一静的バイナリは成立しない。配布形態は§0）。P/Invoke 先は `NativeLibrary.SetDllImportResolver` で `libfontconfig.so.1` を解決する。
@@ -4211,7 +4264,7 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 ### 12.4 入力と IME のシミュレーション
 
-入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02 で、この入口の薄い包みとして入れる。
+入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c。タッチパッドのパンの PanStart・PanUpdate・PanEnd も、I1c でここから入れる）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02 で、この入口の薄い包みとして入れる。
 
 **IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
