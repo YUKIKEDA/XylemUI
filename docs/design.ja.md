@@ -1317,6 +1317,11 @@ public interface IFrameScheduler
 
 保留できるコールバックは1つだけで、フレームの前に `RequestFrame` を再度呼ぶと置き換わる。コールバックは1回だけ走り、次のフレームが要るならその中で `RequestFrame` を呼ぶ。要求ごとに確保しないよう、デリゲートは一度だけ作って渡す。コールバックの例外は Platform の例外ハンドラに渡し、ループは続ける（§2.11.1）。フレームクロックは、要求がある間だけ動かす（アイドルの UI スレッドを起こす原因を作らない）。
 
+**フレームの時刻（I1b の Grill でオーナーが決定、Issue #392）:** ウィンドウのフレームは、コールバックの始めに `TimeProvider`（§12.2）から時刻を 1 回読み、そのフレームの時刻として持つ。そのフレームの中で時間で動くもの（I1b のタッチの慣性、§7「タッチとペン」）は、この時刻で位置を決める。同じフレームの中では、どれも同じ時刻を見る。今は Core の内部の値で、公開しない。アニメーションの API（行 D7）は、この時刻を使う
+  - Flutter の Ticker は、フレームの時刻（`SchedulerBinding.currentFrameTimeStamp`）から始めの時刻を引いた経過時間で進む（`scheduler/ticker.dart` 205・272〜278 行目）
+  - GPUI の慣性は、次のフレームで `Instant::now()` を読んで進む（`gpui/src/window.rs` 5919〜5927 行目、`gpui/src/gestures.rs` 968〜978 行目）
+  - Avalonia の慣性は、ディスパッチャに投げた処理の中で `Stopwatch` を読んで進む（`Input/GestureRecognizers/ScrollGestureRecognizer.cs` 284〜311 行目）
+
 | プラットフォーム       | マッピング先                                                                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Windows                | DXGI待機可能スワップチェーンのフレームレイテンシオブジェクトを `MsgWaitForMultipleObjectsEx` でメッセージと多重待機。`DwmFlush` は UI スレッドで使わない |
@@ -3521,8 +3526,22 @@ int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
   - **読める時:** Win32 の履歴は、呼んだスレッドが最後に受けたポインタのメッセージのもので、新しい順に並ぶ（Microsoft の `GetPointerPenInfoHistory` の頁）。そのため `GetIntermediatePoints()` が読めるのは、そのイベントを配っている間（ハンドラの中）だけである。ハンドラが `PointerEvent` を持ち出して後で呼ぶと `InvalidOperationException` を投げる。返す `ReadOnlySpan` も、配送が終わるまでしか使えない。マウスは `WM_MOUSE*` で受けるので履歴が無く、自身の 1 点だけを返す
 - **タッチのタップ:** タッチの Down と Up は、左ボタンとして配る。Down から閾値（下の「タッチのドラッグ」と同じ 18 論理画素）を超えずに離せば Click になる。`ClickCount` は、マウスと同じ `GetDoubleClickTime` の時間の中で、50 論理画素の中に続いたタップを数える。マウスの `SM_CXDOUBLECLK`（4 画素）は指には狭い
   - Avalonia はタッチとペンのダブルタップの距離を 50 にする（`Platform/DefaultPlatformSettings.cs` 17〜33 行目）
-- **タッチのドラッグ（I1b）:** タッチのドラッグが閾値（18 論理画素）を超えたら、スクロールする箱を動かす。マウスのドラッグでは動かさない。動かすのは、ドラッグの向きに範囲を持つ、最も内側のスクロールする箱で、範囲の端に着いても外の箱へは渡さない。スクロールに変わったら、押したノードに Cancel を送って Click を出さず、キャプチャはスクロールする箱が取る。離したときの速さで慣性をつけて流す。慣性は Flutter の `ClampingScrollSimulation` の式で、最小の速さ 50、最大 8,000 論理画素毎秒である。速さの求め方と式の細部は、I1b の実装の前に Flutter の `VelocityTracker` と `ClampingScrollSimulation` を読んでこの節に書く
-  - Flutter の閾値は `kTouchSlop` の 18（`gestures/constants.dart` 65 行目）、慣性は `ClampingScrollSimulation`（`widgets/scroll_physics.dart` 895〜923 行目、`kMinFlingVelocity` 50 と `kMaxFlingVelocity` 8,000 は `constants.dart` 90・95 行目、`monodrag.dart` 942〜960 行目）。タッチ・スタイラス・タッチパッドでドラッグし、マウスではしない（`widgets/scroll_configuration.dart` 29〜36・115〜120 行目）
+- **タッチとペンのドラッグ（I1b）:** タッチとペンのドラッグが閾値（18 論理画素）を超えたら、スクロールする箱を動かす。マウスのドラッグでは動かさない。動かすのは、ドラッグの向きに範囲を持つ、最も内側のスクロールする箱で、範囲の端に着いても外の箱へは渡さない。スクロールに変わったら、押したノードに Cancel を送って Click を出さず、キャプチャはスクロールする箱が取る。離したときの速さで慣性をつけて流す。慣性は Flutter の `ClampingScrollSimulation` の式で、最小の速さ 50、最大 8,000 論理画素毎秒である。細部は次のとおりで、I1b の Grill（Issue #392）で決めた
+  - **スクロールに変わる時:** タッチかペンが押している間の Move を、いつものように経路で配る。bubble が、まだドラッグを持たないスクロールする箱に着いたら、箱は、押した点からの動きを自分のスクロールの軸に沿って測る。縦の箱は $|\Delta y|$、横の箱は $|\Delta x|$、両方の軸の箱は直線の距離である。両方の軸の箱も 18 にする。Flutter の両軸のドラッグ（`PanGestureRecognizer`）は `kPanSlop` の 36 で判定するが（`gestures/monodrag.dart` 1058・1090 行目、`gestures/events.dart` 2566〜2576 行目、`constants.dart` 76 行目）、XylemUI は、タップの閾値（18）と、スクロールに変わる閾値を揃える。それが 18 を超え、その向きにまだ動ける範囲があれば、箱がドラッグを取る。ホイールやキーと同じく、箱のハンドラの後で決め（§3.4.1・K1b）、内側の箱から先に決める。中のノードのハンドラが、その Move を `StopPropagation` で止めたら、箱には着かないので、スクロールに変わらない。スライダーや描く面は、こうして自分でドラッグを取る。マウスの Move では決めない
+  - **動き始める位置:** 閾値を越えた点から動かし始める。それまでの 18 は動かさない。その後の Move は、前の Move からの差だけ位置を変える。位置は範囲の中に切る
+  - **複数の指:** 同じ箱を 2 本以上でドラッグしているときは、最後に下りた指の動きだけで動かす。その指が離れたら、残りの指のうち最初に下りたものに移る
+  - **離したときの速さ:** ドラッグしている指の Down と Move ごとに、論理画素の位置と `PointerInput.Timestamp` を 1 点として覚える。途中の点（`GetIntermediatePoints()`）は入れない。離したとき、最も新しい点から古い方へ、20 点まで、最も新しい点から 100 ms 以内で、点と点の間が 40 ms 以内のものを集める。3 点以上あれば、時刻に対する位置へ 2 次の多項式を最小二乗で当てはめ、1 次の係数を速さとする。3 点に足りなければ速さは 0 である。最後の点から 40 ms 以上たって離したときも 0 である。Flutter の `VelocityTracker` と同じである
+  - **流す条件:** 軸の速さを $v$ として、$|v| > 50$ で、速さを集めた点の最初から最後までの軸の動きが 18 を超えたときだけ流す。$v$ は $\pm 8000$ に切る。$|v|$ が許容値 $1 / (0.05 \cdot s)$（$s$ は窓の倍率）より小さいとき、$v$ の向きの端にすでに着いているときは流さない
+  - **流し方:** 離した位置を $p_0$、速さを $v$ として、経過時間 $t$ 秒の位置を次の式で決める。$t$ は、上の §2.11「フレームの時刻」の、流し始めたフレームからの経過時間である
+
+    $$x(t) = p_0 + D\left(1 - \left(1 - \min(t / T, 1)\right)^{r}\right)$$
+
+    $$r = \frac{\ln 0.78}{\ln 0.9}, \quad v_{\mathrm{ref}} = \frac{0.015\,c}{0.35}, \quad c = 9.80665 \cdot 39.37 \cdot 160 \cdot 0.84, \quad T = 0.35\,r\left(\frac{|v|}{v_{\mathrm{ref}}}\right)^{1/(r-1)}, \quad D = \frac{v\,T}{r}$$
+
+    両方の軸の箱は、軸ごとに別の流れを持つ。流れている間は、フレームごとに位置を変え、次のフレームを頼む
+  - **流れの終わり:** $t \ge T$ になったとき、または範囲の端に着いたとき（位置を範囲に切ったとき）に止まる。端を越えて跳ね返らない
+  - **流れている間の入力:** 流れている箱の上の押下は、ポインタの種類によらず、流れを止めるだけである。その押下は、箱の中のノードに Down・Up・Click を送らない。止めた指は、そのまま箱をまたドラッグできる。ホイールとキーは、流れを止めてから、いつもどおりスクロールする
+  - Flutter の閾値は `kTouchSlop` の 18（`gestures/constants.dart` 65 行目）で、縦や横のドラッグは軸に沿った距離で測る（`gestures/monodrag.dart` 697〜701・965〜970 行目）。閾値を越えた点から動かす（`DragStartBehavior.start`、806〜808 行目）。速さは Windows で `VelocityTracker`（`widgets/scroll_configuration.dart` 222〜223 行目、`gestures/velocity_tracker.dart` 142〜145・179〜256 行目）で、点は合成でない Down と Move ごとに 1 つ入れる（`monodrag.dart` 656〜667 行目）。時刻はメッセージを処理した時刻である（`shell/platform/windows/flutter_windows_view.cc` 716〜719 行目）。流す条件は `monodrag.dart` 942〜947・954〜955 行目と `widgets/scroll_physics.dart` 442・914〜922 行目、`kMinFlingVelocity` 50 と `kMaxFlingVelocity` 8,000 は `constants.dart` 90・95 行目。式は `ClampingScrollSimulation`（`widgets/scroll_simulation.dart` 165〜266 行目）で、端に着いたら止まる（`widgets/scroll_activity.dart` 620〜621 行目）。ドラッグと、その後の流れの間は、中にポインタを届けない（トラックパッド以外。`scroll_activity.dart` 538 行目、`widgets/scroll_position_with_single_context.dart` 153 行目）。ホイールは流れを止める（224 行目）。Apple 以外では最後に下りた指で動かし（`scroll_configuration.dart` 122〜131 行目、`monodrag.dart` 450〜457・739〜741 行目）、その指が離れたら残りの最初の指に移る（781〜782 行目）。タッチ・スタイラス・タッチパッドでドラッグし、マウスではしない（29〜36・115〜120 行目）
   - Avalonia の閾値は 5（`ScrollGestureRecognizer.cs` 22〜23 行目）、慣性は `v·0.15^t` で 5 px/s で止まる（284〜330 行目）。タッチとペンだけで動かす（161〜170 行目）
   - GPUI の閾値は 8、慣性は iOS の減衰（毎 ms 0.998）で、最小 50・最大 8,000（`gpui/src/gestures.rs` 114〜142・458〜476 行目）
   - 慣性の式を Flutter に合わせるのは、タッチとタッチパッド（I1c）を同じ流し方にする実装が Flutter だけだからである
@@ -3531,9 +3550,9 @@ int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
   - GPUI は 1000 × 1000 の viewport で `SetContact` し（`direct_manipulation.rs` 16〜19・97〜106 行目）、描くたびの最初に `Update` を呼び（`events.rs` 1338〜1347 行目）、OS の慣性をそのままスクロールのイベントとして渡す（`direct_manipulation.rs` 166〜249 行目）
   - Avalonia は DirectManipulation を使わず、タッチパッドのスクロールはホイールのメッセージだけで受ける（`AppWndProc.cs` 403〜433・607〜622・653〜658 行目）
   - XylemUI はフレームを要るときだけ描くので、GPUI のように描くたびに呼ぶだけでは、触れていない間に止まる。Flutter のタイマーは、触れていない間も回る
-- **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1c では DirectManipulation の 1 回の更新の時間を測る
+- **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1b では、フレームの時刻の読み出し（`TimeProvider.GetTimestamp` の 1 回）と、慣性で流れる 1 フレームの位置の更新の時間を記録に書く。I1c では DirectManipulation の 1 回の更新の時間を測る
 - **確かめ方:**
-  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム。途中の点は、`PointerInput.HistoryCount` と、履歴を返す偽の `IPointerPlatform` を入れて、古い順に並ぶこと、最後が自身の点であること、配送の後に呼ぶと投げること、マウスが 1 点だけであることを確かめる
+  - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム。I1b は、スクロールに変わる閾値を軸ごとに（横の箱の中の縦の動き）、越えた点から動くこと、中のハンドラが Move を止めたらスクロールしないこと、複数の指、決まった点の列から求めた速さ（Flutter の `velocity_tracker_test.dart` と同じ点の列で同じ値）、流す条件の境、偽の時計で進めたフレームごとの式の位置と終わり、流れている間の押下とホイールを確かめる。途中の点は、`PointerInput.HistoryCount` と、履歴を返す偽の `IPointerPlatform` を入れて、古い順に並ぶこと、最後が自身の点であること、配送の後に呼ぶと投げること、マウスが 1 点だけであることを確かめる
   - Platform: ポインタの情報を読む所（`GetPointerType`・`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo`・履歴）を差し替えられる形にし、テストは偽の情報を入れて `WM_POINTER*` を `SendMessage` で送る。Flutter の `MockWindowsProcTable` と同じ形である（`flutter_window_unittests.cc` 86・291〜333 行目）。DirectManipulation は COM の部分を偽物にして確かめる（Flutter の `direct_manipulation_unittests.cc`）。3 つとも `InjectSyntheticPointerInput` は使わない
 
 **キーの入力とフォーカス（K1 の Grill でオーナーが決定、Issue #351）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じで、Flutter の `fm` は `widgets/focus_manager.dart`、zed の Button は `crates/ui/src/components/button/` から書く。Win32 のメッセージは Microsoft の文書（`WM_KEYDOWN`・`WM_SYSKEYDOWN`・`WM_ACTIVATE`・`WM_SYSCOMMAND`・`WM_MENUCHAR`・`ToUnicodeEx` の頁）を読んだ。実装は 2 つに分ける。K1a はキーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化。K1b は Disabled、ボタンの Enter と Space、キーボードでのスクロール、フォーカスしたノードを見える所まで動かすこと。
@@ -4155,7 +4174,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 ### 12.2 仮想クロックと PumpAndSettle
 
-フレームワーク内の時刻・タイマー・アニメーションの経過時間は、すべて .NET 標準の `TimeProvider` 経由で得る（§11.6 Invariant 15）。`DateTime.Now`・`Stopwatch`・`Task.Delay` の直接使用は Core では禁止する（アナライザで検出する）。テストでは `TimeProvider` を仮想クロック（`FakeTimeProvider` 相当）に差し替え、`IFrameScheduler`（§2.11）もテスト用の実装に差し替える。実時間は一切進まない。
+フレームワーク内の時刻・タイマー・アニメーションの経過時間は、すべて .NET 標準の `TimeProvider` 経由で得る（§11.6 Invariant 15）。`DateTime.Now`・`Stopwatch`・`Task.Delay` の直接使用は Core では禁止する（アナライザで検出する）。テストでは `TimeProvider` を仮想クロック（`FakeTimeProvider` 相当）に差し替え、`IFrameScheduler`（§2.11）もテスト用の実装に差し替える。実時間は一切進まない。フレームの時刻（§2.11）も `TimeProvider` から読むので、慣性の位置は、テストが進めた仮想の時間で決まる。
 
 `PumpAndSettle()` は、次の4つがすべて空になるまで、仮想時間を進めながらフレームを離散的に回し続ける。
 
