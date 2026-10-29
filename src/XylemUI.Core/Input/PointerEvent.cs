@@ -36,7 +36,10 @@ public readonly struct PointerEvent
         ClickCount = source.ClickCount;
         Timestamp = source.Timestamp;
         PointerType = source.PointerType;
-        WheelDelta = source.WheelDelta;
+
+        // One field of the input holds either amount (row I1c).
+        WheelDelta = source.Kind == PointerInputKind.Wheel ? source.Delta : default;
+        PanDelta = source.Kind == PointerInputKind.PanUpdate ? source.Delta : default;
         PointerId = source.PointerId;
         IsPrimary = source.IsPrimary;
         Pressure = source.Pressure;
@@ -123,6 +126,13 @@ public readonly struct PointerEvent
     /// for the other kinds.
     /// </summary>
     public Vector2 WheelDelta { get; }
+
+    /// <summary>
+    /// Gets how far the fingers of a <see cref="PointerEventKind.PanUpdate"/> moved on the touchpad since the last update, in logical
+    /// pixels: positive to the right and down. The content moves the same way, so a scroll position goes down by it, against the sign
+    /// of <see cref="WheelDelta"/>. Zero for the other kinds (row I1c).
+    /// </summary>
+    public Vector2 PanDelta { get; }
 
     /// <summary>
     /// Gets the pointer's number (design §7, "Touch and pen"): 0 for the mouse; 1 and up for touches and pens, each its own while
@@ -235,10 +245,29 @@ public enum PointerEventKind : byte
     Click,
 
     /// <summary>
-    /// The wheel turned, or a touchpad scrolled (<see cref="PointerEvent.WheelDelta"/>). Routed from the node under the pointer,
-    /// even while a button is captured; a scroll container whose position it changes stops it in the bubble phase (design §3.4.1).
+    /// The wheel turned, or a touchpad without DirectManipulation scrolled (<see cref="PointerEvent.WheelDelta"/>). Routed from the
+    /// node under the pointer, even while a button is captured; a scroll container whose position it changes stops it in the bubble
+    /// phase (design §3.4.1).
     /// </summary>
     Wheel,
+
+    /// <summary>
+    /// Two fingers started a pan on a precision touchpad (row I1c). Routed from the node under the cursor, which the pan's later
+    /// events keep; a pan stops the flings of the scroll containers on the route.
+    /// </summary>
+    PanStart,
+
+    /// <summary>
+    /// The touchpad's pan moved by <see cref="PointerEvent.PanDelta"/>. Routed as the start was; in the bubble phase, after its
+    /// own handlers, a scroll container past 18 logical pixels along its axes takes the pan and scrolls with it, unless a handler
+    /// stopped the event.
+    /// </summary>
+    PanUpdate,
+
+    /// <summary>
+    /// The fingers left the touchpad: a container that took the pan flings with the pan's velocity.
+    /// </summary>
+    PanEnd,
 }
 
 /// <summary>

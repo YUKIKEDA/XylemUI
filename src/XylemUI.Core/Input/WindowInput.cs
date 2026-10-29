@@ -305,6 +305,15 @@ internal sealed partial class WindowInput
                 Point(pointer, input);
                 Route(PointerEventKind.Wheel, pointer.Hit, input, bubbleOnly: false);
                 break;
+            case PointerInputKind.PanStart:
+                PanStart(pointer, input);
+                break;
+            case PointerInputKind.PanUpdate:
+                PanUpdate(pointer, input);
+                break;
+            case PointerInputKind.PanEnd:
+                PanEnd(pointer, input);
+                break;
             default:
                 break;
         }
@@ -769,7 +778,10 @@ internal sealed partial class WindowInput
             }
 
             int end = _routeCount;
-            PointerState? dragger = kind == PointerEventKind.Move ? DragCandidate(input) : null;
+            PointerState? dragger =
+                kind == PointerEventKind.Move ? DragCandidate(input)
+                : kind == PointerEventKind.PanUpdate ? PanCandidate(input)
+                : null;
             if (!bubbleOnly)
             {
                 for (int i = end - 1; i >= start && !_stopped; i--)
@@ -788,8 +800,13 @@ internal sealed partial class WindowInput
                     _stopped = true;
                 }
 
-                // A touch's or a pen's drag turns into a scroll the same way, after the container's handlers (row I1b).
-                if (dragger is not null && !_stopped && TryStartDrag(_route[i], dragger, input))
+                // A touch's or a pen's drag turns into a scroll the same way, after the container's handlers (row I1b), and so does a
+                // touchpad's pan (row I1c).
+                if (
+                    dragger is not null
+                    && !_stopped
+                    && (kind == PointerEventKind.Move ? TryStartDrag(_route[i], dragger, input) : TryStartPan(_route[i], dragger, input))
+                )
                 {
                     _stopped = true;
                 }
@@ -1001,7 +1018,7 @@ internal sealed partial class WindowInput
         // A fling of the container stops first, as Flutter's pointerScroll goes idle (row I1b).
         StopFling(node);
 
-        Vector2 delta = input.WheelDelta;
+        Vector2 delta = input.Delta;
         if (input.PointerType == PointerType.Mouse && (input.Modifiers & KeyModifiers.Shift) != 0 && delta.X == 0)
         {
             delta = new Vector2(delta.Y, 0);
@@ -1151,7 +1168,10 @@ internal sealed partial class WindowInput
         // The drag of a scroll container the pointer takes part in, or none (row I1b).
         public ScrollDrag? Drag;
 
-        // Whether the pointer has a hover: the mouse and pens do, a touch does not (design §7, "Touch and pen").
-        public bool Hovers => Type != PointerType.Touch;
+        // A touchpad's pan since its start, in logical pixels (row I1c).
+        public Vector2 PanTotal;
+
+        // Whether the pointer has a hover: the mouse and pens do; a touch and a touchpad's pan do not (design §7, "Touch and pen").
+        public bool Hovers => Type is PointerType.Mouse or PointerType.Pen;
     }
 }

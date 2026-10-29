@@ -134,9 +134,9 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
             ),
             up
         );
-        Assert.Equal(500f / 3, down!.Value.WheelDelta.Y, 3);
-        Assert.Equal(-25f, part!.Value.WheelDelta.Y, 3);
-        Assert.Equal(new System.Numerics.Vector2(100, 0), right!.Value.WheelDelta);
+        Assert.Equal(500f / 3, down!.Value.Delta.Y, 3);
+        Assert.Equal(-25f, part!.Value.Delta.Y, 3);
+        Assert.Equal(new System.Numerics.Vector2(100, 0), right!.Value.Delta);
     }
 
     /// <summary>
@@ -170,7 +170,7 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
 
             PointerInput input = Assert.Single(inputs);
             Assert.Equal((PointerInputKind.Wheel, 12, 34, 0), (input.Kind, input.X, input.Y, input.ClickCount));
-            Assert.Equal(lines * 100f / 3, input.WheelDelta.Y, 3);
+            Assert.Equal(lines * 100f / 3, input.Delta.Y, 3);
         });
 
     /// <summary>

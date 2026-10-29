@@ -137,6 +137,10 @@ internal sealed class WindowFrames
     public void RunFrame()
     {
         FrameTime = _time.GetElapsedTime(0);
+
+        // Before the layout pass: a touchpad's pan scrolls with this frame's time, and its changes are this frame's (row I1c). The
+        // next frame it needs is asked for once a resize's frame no longer holds the requests back.
+        bool gestures = Input?.UpdateGestures(FrameTime) == true;
         bool layout = _tree.LayoutRoots.Count > 0;
         LayoutEngine.RunLayoutPass(_tree);
 
@@ -145,6 +149,10 @@ internal sealed class WindowFrames
         // otherwise draw and present every frame (PR #313's review). A mark made from here on asks for the next frame.
         _tree.ClearFrameRequest();
         _resizing = false;
+        if (gestures)
+        {
+            RequestFrame();
+        }
 
         // After the pass and its frame request: an effect that reads a scroll range and changes the tree asks for the next frame.
         if (layout)
