@@ -27,6 +27,7 @@ internal sealed class WindowFrames
     private readonly GlyphAtlas _atlas;
     private readonly IFrameScheduler _scheduler;
     private readonly Action _runFrame;
+    private readonly TimeProvider _time;
     private static readonly Color RootText = Color.FromRgb(0x000000);
 
     private readonly DisplayList _list = new();
@@ -45,6 +46,7 @@ internal sealed class WindowFrames
     /// <param name="scheduler">The frame scheduler of the UI thread.</param>
     /// <param name="clearColor">The color behind the tree.</param>
     /// <param name="textRendering">How the window draws text (<see cref="TextRendering"/>); the OS's defaults when not given.</param>
+    /// <param name="time">The clock a frame reads its time from (design §2.11, "The frame's time"); the system's when not given.</param>
     /// <exception cref="ArgumentException"><paramref name="textRendering"/> is bilevel with ClearType coverage.</exception>
     public WindowFrames(
         UiTree tree,
@@ -53,7 +55,8 @@ internal sealed class WindowFrames
         GlyphAtlas atlas,
         IFrameScheduler scheduler,
         Color clearColor,
-        TextRenderingParameters? textRendering = null
+        TextRenderingParameters? textRendering = null,
+        TimeProvider? time = null
     )
     {
         ArgumentNullException.ThrowIfNull(tree);
@@ -67,6 +70,7 @@ internal sealed class WindowFrames
         _scheduler = scheduler;
         ClearColor = clearColor;
         _textRendering = CheckTextRendering(textRendering ?? TextRenderingParameters.Default, nameof(textRendering));
+        _time = time ?? TimeProvider.System;
         _runFrame = RunFrame;
         tree.FrameNeeded = RequestFrame;
     }
@@ -115,6 +119,12 @@ internal sealed class WindowFrames
     internal int Builds { get; private set; }
 
     /// <summary>
+    /// Gets the time of the frame running, or of the last one: read once from the clock at the start of each frame, so that what
+    /// moves with time in the frame (a touch's fling) sees the same time (design §2.11, "The frame's time").
+    /// </summary>
+    internal TimeSpan FrameTime { get; private set; }
+
+    /// <summary>
     /// Gets or sets the window's input, whose hover a frame that built the display list tests again after presenting
     /// (<see cref="WindowInput.Rehit"/>).
     /// </summary>
@@ -126,6 +136,7 @@ internal sealed class WindowFrames
     /// </summary>
     public void RunFrame()
     {
+        FrameTime = _time.GetElapsedTime(0);
         bool layout = _tree.LayoutRoots.Count > 0;
         LayoutEngine.RunLayoutPass(_tree);
 
@@ -141,7 +152,13 @@ internal sealed class WindowFrames
             _tree.PublishScrollRanges();
         }
 
-        // With the ranges written: a position it changes is a paint update of this frame (design §7, "Bring into view").
+        // With the ranges written: a position it changes is a paint update of this frame (design §7, "Bring into view"), and a fling
+        // that goes on asks for the next frame (design §7, "Touch and pen").
+        if (Input?.AdvanceFlings(FrameTime) == true)
+        {
+            RequestFrame();
+        }
+
         _tree.Focus.RevealPending();
 
         if (!layout && _tree.PaintUpdates.Count == 0)
@@ -203,7 +220,10 @@ internal sealed class WindowFrames
     private static TextRenderingParameters CheckTextRendering(TextRenderingParameters value, string name) =>
         value.IsAliased && value.Coverage == GlyphCoverage.Rgb ? throw new ArgumentException("Bilevel text has no ClearType coverage.", name) : value;
 
-    private void RequestFrame()
+    /// <summary>
+    /// Asks the scheduler for the next frame, unless a resize runs one now.
+    /// </summary>
+    internal void RequestFrame()
     {
         if (!_resizing)
         {

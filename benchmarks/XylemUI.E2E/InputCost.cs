@@ -15,7 +15,9 @@ namespace XylemUI.E2E;
 // walks a tree of 10,101 nodes whose 10,000 leaves are focusable (design §7.1), whose root is also disabled and enabled again (row
 // K1b). A key that scrolls moves a scroll container from a focused leaf in it, and Enter makes a click from that leaf. A pen's move goes
 // through the same chains as the mouse's; a touch's tap is a down, an up, and the end of the touch on the first leaf; and a pen's move
-// brings 8 coalesced points that the first leaf's handler reads (row I1a, design §7, "Touch and pen").
+// brings 8 coalesced points that the first leaf's handler reads (row I1a, design §7, "Touch and pen"). A touch's drag moves the wheel's
+// scroll container 1 pixel up and down by turns; a fling's frame moves a container 100,000 high one step of a fling at 8,000 pixels a
+// second; and a frame reads its time from the system's clock (row I1b).
 internal static class InputCost
 {
     private const int Moves = 10_000;
@@ -57,6 +59,13 @@ internal static class InputCost
 
         using var wheel = new WheelScroll();
         report.Number("us_per_wheel_p50", Median(21, wheel.Time));
+        report.Number("us_per_touch_drag_move_p50", Median(21, wheel.TimeDrag));
+        using (var fling = new WheelScroll(100_000))
+        {
+            report.Number("us_per_fling_frame_p50", Median(21, fling.TimeFling));
+        }
+
+        report.Number("us_per_frame_time_read_p50", Median(21, TimeFrameClock));
         foreach (int depth in new[] { 1, 50 })
         {
             using var keys = new KeyChain(depth);
@@ -72,6 +81,20 @@ internal static class InputCost
         report.Number("us_per_scroll_key_p50", Median(21, keyScroll.TimeScroll));
         report.Number("us_per_key_click_p50", Median(21, keyScroll.TimeClick));
         return 0;
+    }
+
+    // The microseconds of one read of the frame's time from the system's clock (WindowFrames.RunFrame), 10,000 reads.
+    private static double TimeFrameClock()
+    {
+        TimeSpan last = default;
+        long start = Stopwatch.GetTimestamp();
+        for (int i = 0; i < Moves; i++)
+        {
+            last = TimeProvider.System.GetElapsedTime(0);
+        }
+
+        double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / Moves;
+        return last == default ? -1 : microseconds;
     }
 
     private static double Median(int samples, Func<double> sample)
@@ -307,11 +330,11 @@ internal static class InputCost
         private readonly WindowInput _input;
         private readonly ScrollState _state;
 
-        public WheelScroll()
+        public WheelScroll(float height = 3_000)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(new LayoutStyle { OverflowY = Overflow.Scroll });
-            NodeHandle content = tree.CreateNode(new LayoutStyle { Height = Length.Px(3_000) });
+            NodeHandle content = tree.CreateNode(new LayoutStyle { Height = Length.Px(height) });
             NodeHandle leaf = tree.CreateNode(new LayoutStyle { Height = Length.Px(10) });
             tree.AppendChild(root, content);
             tree.AppendChild(content, leaf);
@@ -336,7 +359,95 @@ internal static class InputCost
             return microseconds;
         }
 
+        // The microseconds of one move of a touch that drags the container, 1 pixel up and down by turns. Moves as many before,
+        // unmeasured. The drag starts with a move of 50 up and a move of 10, and ends with a slow release, which does not fling.
+        public double TimeDrag()
+        {
+            Touch(PointerInputKind.Down, 150, 0);
+            Touch(PointerInputKind.Move, 100, 1);
+            Touch(PointerInputKind.Move, 90, 2);
+            Drag(90);
+            long start = Stopwatch.GetTimestamp();
+            Drag(90);
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            Touch(PointerInputKind.Up, 90, 1_000);
+            Touch(PointerInputKind.Leave, 90, 1_000);
+            if (_state.OffsetValue.Y != 10)
+            {
+                throw new InvalidOperationException($"The drag left the position at {_state.OffsetValue.Y}.");
+            }
+
+            _state.ScrollTo(default);
+            return microseconds;
+        }
+
+        // The microseconds of one frame's step of a fling at 8,000 pixels a second, 0.05 ms apart so that it neither ends nor reaches
+        // the end of the range. Steps as many before, unmeasured.
+        public double TimeFling()
+        {
+            _state.ScrollTo(default);
+            Touch(PointerInputKind.Down, 200, 0);
+            for (int i = 1; i <= 10; i++)
+            {
+                Touch(PointerInputKind.Move, 200 - (10 * i), i);
+            }
+
+            Touch(PointerInputKind.Up, 100, 10);
+            Touch(PointerInputKind.Leave, 100, 10);
+            var time = TimeSpan.FromMilliseconds(10);
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                time += TimeSpan.FromMilliseconds(0.05);
+                _ = _input.AdvanceFlings(time);
+            }
+
+            long start = Stopwatch.GetTimestamp();
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                time += TimeSpan.FromMilliseconds(0.05);
+                if (!_input.AdvanceFlings(time))
+                {
+                    throw new InvalidOperationException("The fling ended.");
+                }
+            }
+
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            _state.ScrollTo(default);
+            Touch(PointerInputKind.Down, 100, time.TotalMilliseconds + 1_000);
+            Touch(PointerInputKind.Up, 100, time.TotalMilliseconds + 2_000);
+            Touch(PointerInputKind.Leave, 100, time.TotalMilliseconds + 2_000);
+            return microseconds;
+        }
+
         public void Dispose() => _atlas.Dispose();
+
+        private void Drag(int y)
+        {
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                Touch(PointerInputKind.Move, (i & 1) == 0 ? y - 1 : y, 3);
+            }
+        }
+
+        private void Touch(PointerInputKind kind, int y, double milliseconds)
+        {
+            bool down = kind is PointerInputKind.Down or PointerInputKind.Move;
+            _input.Handle(
+                new PointerInput(
+                    kind,
+                    5,
+                    y,
+                    kind is PointerInputKind.Down or PointerInputKind.Up ? PointerButton.Left : PointerButton.None,
+                    down ? PointerButtons.Left : PointerButtons.None,
+                    0,
+                    kind is PointerInputKind.Down or PointerInputKind.Up ? 1 : 0,
+                    TimeSpan.FromMilliseconds(milliseconds),
+                    PointerType.Touch,
+                    PointerId: 1,
+                    Pressure: down ? 0.5f : 0
+                )
+            );
+        }
 
         private void Turn()
         {

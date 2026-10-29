@@ -22,6 +22,9 @@ internal static class FrameDoubles
 
         public int Requests { get; set; }
 
+        // Whether a frame is asked for and has not run.
+        public bool Pending => _callback is not null;
+
         public void RequestFrame(Action callback)
         {
             Requests++;

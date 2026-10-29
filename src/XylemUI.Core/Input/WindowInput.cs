@@ -15,7 +15,7 @@ namespace XylemUI;
 /// run once after it. The routes, the pointers' states, and the hovered nodes are arrays it reuses: the steady state allocates
 /// nothing.
 /// </remarks>
-internal sealed class WindowInput
+internal sealed partial class WindowInput
 {
     // A touch's tap stays a click while it moves no more than this from its press, in logical pixels (Flutter's kTouchSlop,
     // gestures/constants.dart line 65; design §7, "Touch and pen").
@@ -286,13 +286,7 @@ internal sealed class WindowInput
         {
             case PointerInputKind.Move:
                 _tree.Focus.SetLastInputWasKeyboard(false);
-                Point(pointer, input);
-                if (pointer.Pressing && !pointer.PastSlop && pointer.Type == PointerType.Touch)
-                {
-                    pointer.PastSlop = Vector2.Distance(new Vector2(input.X, input.Y), pointer.DownAt) > TouchSlop * _frames.Scale;
-                }
-
-                Route(PointerEventKind.Move, Target(pointer), input, bubbleOnly: false);
+                Move(pointer, input);
                 break;
             case PointerInputKind.Down:
                 Down(pointer, input);
@@ -344,6 +338,7 @@ internal sealed class WindowInput
             pointer.PressedCount = 0;
             pointer.Pressing = false;
             pointer.PastSlop = false;
+            pointer.Drag = null;
         }
 
         return pointer;
@@ -366,6 +361,12 @@ internal sealed class WindowInput
     {
         _tree.Focus.SetLastInputWasKeyboard(false);
         Point(pointer, input);
+        Track(pointer, input, reset: true);
+        if (HoldScroll(pointer, input))
+        {
+            return;
+        }
+
         NodeHandle target = Target(pointer);
         if (CapturedNode(pointer).IsNone && !target.IsNone)
         {
@@ -413,6 +414,11 @@ internal sealed class WindowInput
             {
                 Route(PointerEventKind.Click, origin, input, bubbleOnly: true);
             }
+        }
+
+        if (pointer.Drag is not null && input.Button == PointerButton.Left)
+        {
+            EndDrag(pointer, input, fling: true);
         }
 
         if (input.Buttons == PointerButtons.None && !pointer.Capture.IsNone)
@@ -466,6 +472,11 @@ internal sealed class WindowInput
 
     private void CaptureLost(PointerState pointer, in PointerInput input)
     {
+        if (pointer.Drag is not null)
+        {
+            EndDrag(pointer, input, fling: false);
+        }
+
         NodeHandle captured = CapturedNode(pointer);
         pointer.Capture = default;
         pointer.ClickOrigin = default;
@@ -758,6 +769,7 @@ internal sealed class WindowInput
             }
 
             int end = _routeCount;
+            PointerState? dragger = kind == PointerEventKind.Move ? DragCandidate(input) : null;
             if (!bubbleOnly)
             {
                 for (int i = end - 1; i >= start && !_stopped; i--)
@@ -772,6 +784,12 @@ internal sealed class WindowInput
 
                 // After the node's own handlers, which can stop the wheel before it scrolls anything.
                 if (kind == PointerEventKind.Wheel && !_stopped && Scroll(_route[i], input))
+                {
+                    _stopped = true;
+                }
+
+                // A touch's or a pen's drag turns into a scroll the same way, after the container's handlers (row I1b).
+                if (dragger is not null && !_stopped && TryStartDrag(_route[i], dragger, input))
                 {
                     _stopped = true;
                 }
@@ -980,6 +998,9 @@ internal sealed class WindowInput
             return false;
         }
 
+        // A fling of the container stops first, as Flutter's pointerScroll goes idle (row I1b).
+        StopFling(node);
+
         Vector2 delta = input.WheelDelta;
         if (input.PointerType == PointerType.Mouse && (input.Modifiers & KeyModifiers.Shift) != 0 && delta.X == 0)
         {
@@ -1015,6 +1036,9 @@ internal sealed class WindowInput
         {
             return false;
         }
+
+        // A fling of the container stops first, as Flutter's pointerScroll goes idle (row I1b).
+        StopFling(node);
 
         float end = float.PositiveInfinity;
         Vector2 delta = input.Key switch
@@ -1120,6 +1144,12 @@ internal sealed class WindowInput
         public bool Pressing;
         public bool PastSlop;
         public Vector2 DownAt;
+
+        // A touch's or a pen's positions since its press, for the velocity of a drag; made at its first press (row I1b).
+        public VelocityTracker? Tracker;
+
+        // The drag of a scroll container the pointer takes part in, or none (row I1b).
+        public ScrollDrag? Drag;
 
         // Whether the pointer has a hover: the mouse and pens do, a touch does not (design §7, "Touch and pen").
         public bool Hovers => Type != PointerType.Touch;
