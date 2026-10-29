@@ -618,6 +618,18 @@ Rejected:
   - DirectManipulation の `Update` をタイマーで回す（Flutter。触れていない間も回る）か、描くたびにだけ呼ぶ（GPUI。要るときだけ描く XylemUI では、触れていない間に止まる）
   - 複数の指のジェスチャーを I1 に入れる（行 I2 で、統一したポインタの上に組む）
 
+I1b の細部（I1b の Grill、Issue #392）:
+
+Rejected:
+  - 慣性のフレームの時刻を、アニメーションの API を決める行 D7 まで待つ（I1b が D7 の後になる。フレームの始めに `TimeProvider` から読む内部の時刻を足せば、D7 はそれを使える）
+  - 閾値を、スクロールの軸によらず直線の距離で測る（Flutter と Avalonia は軸に沿って測る。横の箱の中で縦に動かすと、横の箱が先に動き出しうる）
+  - 閾値を越えたとき、それまでの 18 を一度に動かす（Flutter の `DragStartBehavior.down`。内容が跳ぶ。Flutter のスクロールの既定と Avalonia は、越えた点から動かす）
+  - 速さに、move の途中の点（Win32 の履歴）も入れる（Flutter は move のイベントごとに 1 点で、20 点の窓が短くなり、Flutter と数字が変わる）
+  - 流れている間の押下を、流れを止めた上で中のノードにも届ける（Flutter は届けない。止めるつもりで触れた所の Click が出る）
+  - 2 本の指の動きの平均で動かす（Flutter の Apple の既定 `averageBoundaryPointers`。Windows での Flutter の既定は、最後に下りた指）
+  - タッチだけでスクロールし、ペンではしない（Flutter と Avalonia はペンでもスクロールする。描く部品は、閾値を越えた move を止めて自分で取る）
+  - 中のノードのハンドラが move を止めても、箱がドラッグを取る（スライダーや描く面が、スクロールの箱の中で使えない）
+
 ---
 
 ## ポップアップ
