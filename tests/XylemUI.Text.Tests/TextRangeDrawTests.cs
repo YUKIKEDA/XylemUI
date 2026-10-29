@@ -110,7 +110,8 @@ public sealed class TextRangeDrawTests(UiThreadFixture ui) : IDisposable
     ///
     /// Expected:
     /// - Two glyph runs, then two solid lines: the first blue from 0, the second red from the end of the first range, each two
-    ///   hyphens long, with its top at the baseline less the font's underline offset and its width the font's underline size.
+    ///   hyphens long, with its center at the baseline less the font's underline offset, as SkParagraph and Avalonia center it, and
+    ///   its width the font's underline size.
     /// </remarks>
     [Fact]
     public void Draw_Underline_IsAtTheFontsPosition() =>
@@ -147,7 +148,7 @@ public sealed class TextRangeDrawTests(UiThreadFixture ui) : IDisposable
                 line =>
                 {
                     Assert.Equal(line.A + hyphens, line.C, 3);
-                    Assert.Equal(Baseline() - (metrics.UnderlineOffset!.Value * units) + (thickness / 2), line.B, 3);
+                    Assert.Equal(Baseline() - (metrics.UnderlineOffset!.Value * units), line.B, 3);
                     Assert.Equal(line.B, line.D);
                     Assert.Equal(thickness, line.Width, 3);
                     Assert.Null(line.Dash);

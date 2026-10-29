@@ -106,15 +106,16 @@ internal sealed partial class WindowFrames
                 continue;
             }
 
-            // The font's offsets are the line's top, y up (OpenType's post.underlinePosition and OS/2.yStrikeoutPosition); the
-            // center below the baseline is what is drawn around.
+            // The line is centered on the font's offset (y up), as SkParagraph and Avalonia center theirs (Avalonia's
+            // TextDecoration.cs lines 193, 196, and 258 to 261), though OpenType calls post.underlinePosition and
+            // OS/2.yStrikeoutPosition the line's top. GPUI does not read the font's offset.
             float own = line == DecorationLines.LineThrough && metrics.StrikeoutSize is > 0 and int s ? s * units : underline;
             float thickness = own * decoration.Thickness;
             float center = line switch
             {
-                DecorationLines.Underline => metrics.UnderlineOffset is < 0 and int offset ? (-offset * units) + (own / 2) : thickness,
+                DecorationLines.Underline => metrics.UnderlineOffset is < 0 and int offset ? -offset * units : thickness,
                 DecorationLines.Overline => -font.Ascent * units,
-                _ => metrics.StrikeoutOffset is int offset ? (-offset * units) + (own / 2) : -(metrics.XHeight ?? 0) * units / 2,
+                _ => metrics.StrikeoutOffset is int offset ? -offset * units : -(metrics.XHeight ?? 0) * units / 2,
             };
             bool skips = line != DecorationLines.LineThrough;
             DrawDecorationLine(decoration.Style, font, size, glyphs, left, right, baseline, center, thickness, skips, color);
@@ -179,7 +180,7 @@ internal sealed partial class WindowFrames
         }
     }
 
-    // A piece of a decoration's line, a line with flat ends: the rectangle SkParagraph fills (draw_line_as_rect, lines 14 to 19),
+    // A piece of a decoration's line, a line with flat ends: the rectangle SkParagraph fills (draw_line_as_rect, src/Decorations.cpp lines 11 to 19),
     // at its thickness. A FillRect would put its edges on pixels, and the 0.7 px underline of a 14 px text would be 0 or 1 px. A
     // dotted or dashed one keeps the pattern of the whole line, which starts at `origin` (SkParagraph's intervals: a dot of a
     // fourteenth of the size and a gap of 1.5 dots; a dash of four and a gap of two).

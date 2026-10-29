@@ -83,9 +83,9 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
             float line = (font.Ascent + font.Descent + font.LineGap) * units;
             float baseline = (font.LineGap * units / 2) + ascent;
             float underline = metrics.UnderlineSize!.Value * units;
-            float under = (-metrics.UnderlineOffset!.Value * units) + (underline / 2);
+            float under = -metrics.UnderlineOffset!.Value * units;
             float strike = metrics.StrikeoutSize!.Value * units;
-            float through = (-metrics.StrikeoutOffset!.Value * units) + (strike / 2);
+            float through = -metrics.StrikeoutOffset!.Value * units;
             float dot = 20f / 14;
             Vector4 red = ShapeReference.Premultiply(Red);
 
@@ -176,9 +176,8 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
 
             float units = 40f / font.UnitsPerEm;
             DecorationMetrics metrics = font.Decorations;
-            float own = metrics.UnderlineSize!.Value * units;
             float baseline = 10 + (font.LineGap * units / 2) + (font.Ascent * units);
-            int row = (int)(baseline + (-metrics.UnderlineOffset!.Value * units) + (own / 2));
+            int row = (int)(baseline - (metrics.UnderlineOffset!.Value * units));
             for (int x = 10; x < 34; x++)
             {
                 Assert.NotEqual(Green, pixels[(row * width) + x]);
