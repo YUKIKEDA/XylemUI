@@ -238,6 +238,67 @@ public sealed class TextRangeDrawTests(UiThreadFixture ui) : IDisposable
             Assert.Equal(2 * N, Length(120, 300), 3);
         });
 
+    /// <summary>
+    /// A piece of an underline shorter than a twelfth of an em between two crossings is left out; a dashed underline cut by the
+    /// glyphs keeps the pattern of the whole line in its pieces.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The crossing of "n" with the band of an underline 12 times as thick as the font's line, read from a cache of its own. Two
+    ///   texts "nn" with that underline: one solid with the letter spacing that leaves 0.5 px between the second glyph's crossing,
+    ///   widened by the thickness, and the first's; one dashed with letter spacing 30.
+    ///
+    /// Steps:
+    /// - Mount and draw.
+    ///
+    /// Expected:
+    /// - The solid underline is one piece, after the second glyph. The dashed one has pieces after each glyph, each with the dash
+    ///   offset of its start from the line's left.
+    /// </remarks>
+    [Fact]
+    public void Draw_UnderlinePieces_DropShortOnesAndKeepTheDashes() =>
+        ui.Invoke(() =>
+        {
+            float units = Size / _font.UnitsPerEm;
+            float thickness = 12 * _font.Decorations.UnderlineSize!.Value * units;
+            float center = -_font.Decorations.UnderlineOffset!.Value * units;
+            using var shaper = new TextShaper();
+            uint n = shaper.Shape(_font, "n", TestFont.Japanese)[0].GlyphId;
+            Assert.True(
+                new GlyphIntercepts().Intercept(
+                    _font,
+                    n,
+                    (center - (thickness / 2)) / Size,
+                    (center + (thickness / 2)) / Size,
+                    out float from,
+                    out float to
+                )
+            );
+            float spacing = (2 * thickness) + 0.5f + ((to - from) * Size) - N;
+            var solid = new TextDecoration(DecorationLines.Underline, Thickness: 12);
+            var dashed = new TextDecoration(DecorationLines.Underline, DecorationStyle.Dashed, Thickness: 12);
+
+            using var scene = new TextScene(_font);
+            scene.Mount(() => Elements.Column(Spaced(solid, spacing), Elements.Box().Height(50), Spaced(dashed, 30)));
+
+            TextScene.Drawn[] lines = [.. scene.Commands().Where(c => c.Tag == CommandTag.Line)];
+            Assert.Single(lines, l => l.B < 50);
+            TextScene.Drawn[] dashes = [.. lines.Where(l => l.B >= 50)];
+            Assert.True(dashes.Length >= 2);
+            Assert.All(dashes, l => Assert.Equal(l.A, l.Dash!.Value.Offset, 3));
+        });
+
+    private static Element Spaced(TextDecoration decoration, float spacing) =>
+        Elements.Text(
+            (ref w) =>
+            {
+                using (w.Style(new SpanStyle(LetterSpacing: spacing, Decoration: decoration)))
+                {
+                    w.Write("nn".AsSpan());
+                }
+            }
+        );
+
     private static Element Through(DecorationStyle style) => Decorated(new TextDecoration(DecorationLines.LineThrough, style));
 
     private static Element Decorated(TextDecoration decoration) =>

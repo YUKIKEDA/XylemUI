@@ -59,6 +59,44 @@ public sealed class TextRangeLayoutTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// A write that changes a range's size and keeps the text shapes the leaf again at the new size.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn" in a range whose size a signal gives: 20 px.
+    ///
+    /// Steps:
+    /// - Mount; set 28; run the frame.
+    ///
+    /// Expected:
+    /// - The glyphs advance 12.2 at 20 px, then 17.08 at 28 px.
+    /// </remarks>
+    [Fact]
+    public void Range_NewSize_ShapesAgain() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var size = Signal.Create(20f);
+            Element text = default;
+            scene.Mount(() =>
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        using (w.Style(new SpanStyle(Size: size.Get())))
+                        {
+                            w.Write("nn".AsSpan());
+                        }
+                    }
+                )
+            );
+
+            Assert.Equal(20 * N, Committed(scene.Leaf(text)).Glyphs[0].Advance, 3);
+            size.Set(28);
+            scene.Draw();
+            Assert.Equal(28 * N, Committed(scene.Leaf(text)).Glyphs[0].Advance, 3);
+        });
+
+    /// <summary>
     /// Letter spacing is added to each cluster's advance, the last one's too, and counts in the width.
     /// </summary>
     /// <remarks>

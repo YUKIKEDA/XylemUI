@@ -2,7 +2,8 @@ namespace XylemUI.Text.Tests;
 
 // The links in a text leaf (row T12, design §4.8 and §7, "Links in text"): the enter and the leave of the link under the mouse,
 // its hovered look, the hand cursor before the leaf's, the click of a press and a release over it in place of the leaf's click,
-// a touch's tap, and no allocation. The text is 14 px: "nn" (0 to 17.08), "nn" in a link (to 34.16), "nn"; a line is 20.272 high.
+// a touch's tap, and no allocation. The text is 14 px: "nn" (0 to 17.08), "nnnnnn" in a link (to 68.32), "nn"; a line is 20.272
+// high.
 [Collection(UiThreadGroup.Name)]
 public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
 {
@@ -96,7 +97,7 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
     /// - The text and its link.
     ///
     /// Steps:
-    /// - Touch down and up at (25, 10). Touch down at (25, 10), move to (25, 40), up at (25, 40).
+    /// - Touch down and up at (25, 10). Touch down at (25, 10), move to (50, 10) on the link, past the slop of 18, and up there.
     ///
     /// Expected:
     /// - "click" alone.
@@ -111,10 +112,59 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
             scene.Touch(PointerInputKind.Down, 25, 10);
             scene.Touch(PointerInputKind.Up, 25, 10);
             scene.Touch(PointerInputKind.Down, 25, 10);
-            scene.Touch(PointerInputKind.Move, 25, 40);
-            scene.Touch(PointerInputKind.Up, 25, 40);
+            scene.Touch(PointerInputKind.Move, 50, 10);
+            scene.Touch(PointerInputKind.Up, 50, 10);
 
             Assert.Equal(["click"], _log);
+        });
+
+    /// <summary>
+    /// A builder that writes the text again while its link is hovered, with another look for another range, keeps the link
+    /// hovered and drawn in its hovered look.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn", a link "nn" with an underline while hovered, and "nn" in a range whose color a signal gives.
+    ///
+    /// Steps:
+    /// - Move onto the link; draw. Set the signal to another color; draw.
+    ///
+    /// Expected:
+    /// - The link is still the hovered one, and an underline is drawn.
+    /// </remarks>
+    [Fact]
+    public void Rewrite_WhileHovered_KeepsTheHoveredLook() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var color = Signal.Create(Color.FromRgb(0xFF0000));
+            PointerHandler none = (in PointerEvent e) => { };
+            Element text = default;
+            scene.Mount(() =>
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn".AsSpan());
+                        using (w.Link(none, hovered: Hovered))
+                        {
+                            w.Write("nn".AsSpan());
+                        }
+
+                        using (w.Style(new SpanStyle(Color: color.Get())))
+                        {
+                            w.Write("nn".AsSpan());
+                        }
+                    }
+                )
+            );
+
+            scene.Mouse(PointerInputKind.Move, 25, 10);
+            scene.Draw();
+            color.Set(Color.FromRgb(0x0000FF));
+            scene.Draw();
+
+            Assert.Equal(0, scene.Leaf(text).Ranges!.HoveredLink);
+            Assert.Contains(scene.Commands(), c => c.Tag == CommandTag.Line);
         });
 
     /// <summary>
@@ -168,7 +218,7 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
             XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
         });
 
-    // The text of the tests: "nn", a link "nn", "nn".
+    // The text of the tests: "nn", a link "nnnnnn", "nn".
     private Element Mount(TextScene scene, CursorKind? cursor = null, Action? onLeafClick = null)
     {
         Element text = default;
@@ -187,7 +237,7 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
                         )
                     )
                     {
-                        w.Write("nn".AsSpan());
+                        w.Write("nnnnnn".AsSpan());
                     }
 
                     w.Write("nn".AsSpan());

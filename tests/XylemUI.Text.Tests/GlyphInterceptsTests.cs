@@ -46,6 +46,29 @@ public sealed class GlyphInterceptsTests : IDisposable
     }
 
     /// <summary>
+    /// A band is kept by its top and its bottom: one with the same top and another bottom is worked out apart.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The glyph of "n", whose top is about half an em above the baseline.
+    ///
+    /// Steps:
+    /// - Intercept the band from 0.9 to 0.8 em above the baseline, then the band from 0.9 to 0.2 em above it.
+    ///
+    /// Expected:
+    /// - The first is not crossed; the second is.
+    /// </remarks>
+    [Fact]
+    public void Intercept_SameTopOtherBottom_IsAnotherBand()
+    {
+        var intercepts = new GlyphIntercepts();
+        uint n = _shaper.Shape(_font, "n", TestFont.Japanese)[0].GlyphId;
+
+        Assert.False(intercepts.Intercept(_font, n, -0.9f, -0.8f, out _, out _));
+        Assert.True(intercepts.Intercept(_font, n, -0.9f, -0.2f, out _, out _));
+    }
+
+    /// <summary>
     /// The cache keeps no more outlines than its capacity, and a new one takes the place of the one used longest ago.
     /// </summary>
     /// <remarks>
