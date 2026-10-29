@@ -33,5 +33,8 @@ public interface IFrameScheduler
     /// <summary>
     /// Tells the scheduler that the callback running has presented a frame. Called from inside the callback, after the present.
     /// </summary>
-    void FramePresented();
+    /// <remarks>
+    /// The default does nothing: a scheduler whose clock does not count presents (a timer, a test's) needs nothing of it.
+    /// </remarks>
+    void FramePresented() { }
 }

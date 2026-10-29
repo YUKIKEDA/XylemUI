@@ -175,8 +175,6 @@ internal static class ListCost
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
-
-        public void FramePresented() { }
     }
 
     private sealed class NoGlyphs : IGlyphRasterizer

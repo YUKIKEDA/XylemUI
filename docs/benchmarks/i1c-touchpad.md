@@ -13,7 +13,7 @@ cmd /c start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe touchpad
 I1c で次の 2 つを足した。
 
 - **タッチパッドのパンの 1 回の更新（`input`）:** ホイールの場面の箱（高さ 300、中身 3,000）を、箱が取ったパンが 1 画素ずつ上と下に交互に動かす（`us_per_touchpad_pan_update`）
-- **DirectManipulation の 1 回の更新（`touchpad`、新しい場面）:** COM の STA のスレッドで、隠したウィンドウの DirectManipulation の viewport を、フレームと同じく `IPointerPlatform.UpdateGestures` で 1 回進める。接触は無いので、`IDirectManipulationUpdateManager::Update` と空の待ち行列だけである（`us_per_direct_manipulation_update`）
+- **DirectManipulation の 1 回の更新（`touchpad`、新しい場面）:** DirectManipulation を作れる Windows でだけ動く。作れないとき（COM を初期化できない環境など）は、場面が例外で止まる。COM の STA のスレッドで、隠したウィンドウの DirectManipulation の viewport を、フレームと同じく `IPointerPlatform.UpdateGestures` で 1 回進める。接触は無いので、`IDirectManipulationUpdateManager::Update` と空の待ち行列だけである（`us_per_direct_manipulation_update`）
 
 ## タッチパッド（I1c の 8 回、21 標本の中央値）
 

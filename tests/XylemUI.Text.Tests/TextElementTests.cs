@@ -540,8 +540,6 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
 
             public void CancelFrame() => _callback = null;
 
-            public void FramePresented() { }
-
             public void Run()
             {
                 Action? callback = _callback;

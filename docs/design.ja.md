@@ -1312,7 +1312,7 @@ public interface IFrameScheduler
 {
     void RequestFrame(Action callback);  // 次の描画タイミングでcallbackを1回呼ぶ
     void CancelFrame();
-    void FramePresented();               // 今のコールバックの中で Present した（I1c、下の「Present しないフレーム」）
+    void FramePresented() { }            // 今のコールバックの中で Present した（I1c、下の「Present しないフレーム」）。既定は何もしない: Present を数えない時計（タイマー、テストの物）の実装は書かなくてよい（PR #410 のレビュー）
 }
 ```
 
@@ -3607,6 +3607,7 @@ bool UpdateGestures(TimeSpan frameTime);
     - 接触の間にホイールが届くか（届いても二重に動かないこと）と、スクロールの方向の設定に合った向きに動くこと。合わないときは、設定値を読む形を G1 で決める
     - I1b の慣性の最初のフレームの経過時間が 0 で、離してから 1 フレーム位置が動かないことが、OS の慣性を捨てた直後に見えるか
     - 内側の箱が流れ、外側の箱がドラッグ中のときの押下（I1b では内側の箱が受け、どのドラッグにも加わらない）の場面（PR #397 のレビュー）
+    - 慣性なしで離したとき（RUNNING から READY に直に戻る）は中身を元に戻さず、次のパンはその位置を始まりとして読む（Flutter と同じ形）。同じ向きに何度もパンしても、平行移動が viewport の端に溜まって量が欠けないこと（PR #410 のレビュー）
   - Avalonia は DirectManipulation を使わず、タッチパッドのスクロールはホイールのメッセージだけで受ける（`AppWndProc.cs` 403〜433・607〜622・653〜658 行目）。慣性はタッチとペンだけである（`Avalonia.Base/Input/GestureRecognizers/ScrollGestureRecognizer.cs` 161〜162 行目）
   - GPUI は OS の慣性を、そのままスクロールのイベントとして渡す（`direct_manipulation.rs` 166〜249・319〜333 行目）
 - **費用:** 割り当て 0 は、タッチとペンの `WM_POINTER` の 1 回の配送と、慣性で流れるフレーム（`GetIntermediatePoints()` は読んだときだけ配列を使い回して作る）。`benchmarks/XylemUI.E2E` の `input` の場面にタッチとペンの配送を足し、マウスの配送と同じ程度であることを main と交互に測る。I1b では、フレームの時刻の読み出し（`TimeProvider.GetTimestamp` の 1 回）と、慣性で流れる 1 フレームの位置の更新の時間を記録に書く。I1c では、パンの 1 回の配送（PanUpdate、`input` の場面）と、DirectManipulation の 1 回の `Update`（接触の無い viewport の `Update` と、待ち行列を配る所）の時間を測る。I1c の割り当て 0 は、パンの配送、`UpdateGestures`、Present しないフレームの後のタイマーへの切り替えである

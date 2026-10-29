@@ -452,8 +452,6 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
-
-        public void FramePresented() { }
     }
 
     private sealed class OneFont(Font font) : IFontProvider

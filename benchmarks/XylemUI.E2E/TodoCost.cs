@@ -165,7 +165,5 @@ internal static class TodoCost
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
-
-        public void FramePresented() { }
     }
 }
