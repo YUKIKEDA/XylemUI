@@ -93,6 +93,9 @@ internal sealed class DesktopWindow : IDisposable
             Window.KeyInputReceived = Input.Handle;
             Window.ActivationChanged = Input.SetActive;
 
+            // A touchpad's interaction begins: the frames poll its viewport while it goes on (design §7, "Touch and pen", I1c).
+            Window.GestureFrameNeeded = Frames.RequestFrame;
+
             // A window shown above was activated before the input listened.
             Input.SetActive(Window.IsActive);
             Window.SynchronousRender = Render;
