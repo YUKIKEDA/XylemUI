@@ -8,8 +8,8 @@ namespace XylemUI;
 /// client area, and the state of the buttons and the modifier keys.
 /// </summary>
 /// <param name="Kind">What happened.</param>
-/// <param name="X">The column, in the window's client coordinates (physical pixels), as Win32 gives it; not used by
-/// <see cref="PointerInputKind.Leave"/> and <see cref="PointerInputKind.CaptureLost"/>.</param>
+/// <param name="X">The column, in the window's client coordinates (physical pixels), as Win32 gives it. A touch's or a pen's
+/// <see cref="PointerInputKind.Leave"/> has where it left; the mouse's leave and <see cref="PointerInputKind.CaptureLost"/> do not use it.</param>
 /// <param name="Y">The row, in physical pixels.</param>
 /// <param name="Button">The button that went down or up; <see cref="PointerButton.None"/> for the other kinds.</param>
 /// <param name="Buttons">The buttons held down now, after the change.</param>

@@ -91,11 +91,11 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - A touch goes down at (20, 20), moves, goes up, and ends. The mouse moves to (20, 20); a pen comes to (30, 30); the mouse
-    ///   leaves the window; the pen ends.
+    ///   leaves the window; the pen ends at (35, 30).
     ///
     /// Expected:
     /// - Nothing from the touch, and the box is not hovered while it is down. Enter Mouse, enter Pen; the box is still hovered when
-    ///   the mouse leaves; leave Mouse, leave Pen, the last when the pen ends.
+    ///   the mouse leaves; leave Mouse, then leave Pen at (35, 30) when the pen ends.
     /// </remarks>
     [Fact]
     public void Hover_TouchNone_PenAndMouseEachTheirOwn() =>
@@ -106,7 +106,12 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
             scene.Tree.SetHoveredStyle(box, new PaintStyle { Background = Red });
             var log = new List<string>();
             scene.Tree.AddPointerHandler(box, PointerEventKind.Enter, EventPhase.Bubble, (in PointerEvent e) => log.Add($"enter {e.PointerType}"));
-            scene.Tree.AddPointerHandler(box, PointerEventKind.Leave, EventPhase.Bubble, (in PointerEvent e) => log.Add($"leave {e.PointerType}"));
+            scene.Tree.AddPointerHandler(
+                box,
+                PointerEventKind.Leave,
+                EventPhase.Bubble,
+                (in PointerEvent e) => log.Add($"leave {e.PointerType} {e.Position}")
+            );
             scene.Draw();
 
             scene.TouchDown(1, 20, 20);
@@ -144,9 +149,9 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
                 )
             );
             Assert.True(scene.Has(box, PseudoState.Hovered));
-            scene.End(1, PointerType.Pen);
+            scene.End(1, PointerType.Pen, 35, 30);
 
-            Assert.Equal(["enter Mouse", "enter Pen", "leave Mouse", "leave Pen"], log);
+            Assert.Equal(["enter Mouse", "enter Pen", $"leave Mouse {Vector2.Zero}", $"leave Pen {new Vector2(35, 30)}"], log);
             Assert.False(scene.Has(box, PseudoState.Hovered));
         });
 
@@ -517,12 +522,12 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
         public void TouchUp(int id, int x, int y) => Send(Touch(PointerInputKind.Up, id, x, y, PointerButton.Left, PointerButtons.None));
 
         // The pointer of the number given left the window or lifted away: Win32's WM_POINTERLEAVE.
-        public void End(int id, PointerType type) =>
+        public void End(int id, PointerType type, int x = 0, int y = 0) =>
             Send(
                 new PointerInput(
                     PointerInputKind.Leave,
-                    0,
-                    0,
+                    x,
+                    y,
                     PointerButton.None,
                     PointerButtons.None,
                     KeyModifiers.None,

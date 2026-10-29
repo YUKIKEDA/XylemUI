@@ -236,18 +236,15 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         PointerButtons buttons =
             ((flags & PointerFlagFirstButton) != 0 ? PointerButtons.Left : 0) | ((flags & PointerFlagSecondButton) != 0 ? PointerButtons.Right : 0);
         KeyModifiers modifiers = keyState;
-        bool contact = (flags & PointerFlagInContact) != 0;
-        float pressure = contact ? 0.5f : 0;
+        float pressure = (flags & PointerFlagInContact) != 0 ? 0.5f : 0;
         float tiltX = 0;
         float tiltY = 0;
         float twist = 0;
         PenFlags penFlags = PenFlags.None;
         if (pen is { } p)
         {
-            pressure = (p.penMask & PEN_MASK_PRESSURE) != 0 ? p.pressure / PenPressureMax : pressure;
-            tiltX = (p.penMask & PEN_MASK_TILT_X) != 0 ? p.tiltX : 0;
-            tiltY = (p.penMask & PEN_MASK_TILT_Y) != 0 ? p.tiltY : 0;
-            twist = (p.penMask & PEN_MASK_ROTATION) != 0 ? p.rotation : 0;
+            // The pen's own information, whose flags are the message's (POINTER_PEN_INFO holds its POINTER_INFO).
+            (pressure, tiltX, tiltY, twist) = PenValues(p);
             penFlags = ((p.penFlags & PEN_FLAG_ERASER) != 0 ? PenFlags.Eraser : 0) | ((p.penFlags & PEN_FLAG_INVERTED) != 0 ? PenFlags.Inverted : 0);
         }
 
@@ -309,9 +306,9 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
             for (int i = 0; i < read; i++)
             {
                 ref readonly POINTER_PEN_INFO p = ref _penHistory[i];
-                PointerInput point = DecodePointer(p.pointerInfo, p, 0, 0, pointerId, true, 0, default);
+                (float pressure, float tiltX, float tiltY, float twist) = PenValues(p);
                 (int x, int y) = ToClient(p.pointerInfo.ptPixelLocation);
-                destination[i] = new PointerHistoryPoint(x, y, point.Pressure, point.TiltX, point.TiltY, point.Twist, TimeOf(p.pointerInfo));
+                destination[i] = new PointerHistoryPoint(x, y, pressure, tiltX, tiltY, twist, TimeOf(p.pointerInfo));
             }
         }
         else
@@ -340,6 +337,19 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         {
             _ = SetCursor(LoadCursorW(HINSTANCE.NULL, CursorId(cursor)));
         }
+    }
+
+    // A pen's pressure (0 to 1), tilts, and twist, each 0 when its mask leaves it out; a pressure left out is 0.5 in contact.
+    private static (float Pressure, float TiltX, float TiltY, float Twist) PenValues(in POINTER_PEN_INFO pen)
+    {
+        uint mask = pen.penMask;
+        float contact = (pen.pointerInfo.pointerFlags & PointerFlagInContact) != 0 ? 0.5f : 0;
+        return (
+            (mask & PEN_MASK_PRESSURE) != 0 ? pen.pressure / PenPressureMax : contact,
+            (mask & PEN_MASK_TILT_X) != 0 ? pen.tiltX : 0,
+            (mask & PEN_MASK_TILT_Y) != 0 ? pen.tiltY : 0,
+            (mask & PEN_MASK_ROTATION) != 0 ? pen.rotation : 0
+        );
     }
 
     private static PointerButton ExtraButton(nuint wParam) => ((uint)wParam >> 16) == XBUTTON1 ? PointerButton.XButton1 : PointerButton.XButton2;
@@ -381,7 +391,7 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
                 return true;
             case WM.WM_POINTERDOWN or WM.WM_POINTERUPDATE or WM.WM_POINTERUP or WM.WM_POINTERLEAVE or WM.WM_POINTERCAPTURECHANGED:
                 // DefWindowProc still runs: the mouse messages it makes from them are dropped (Flutter's flutter_window.cc 878).
-                HandleTouchOrPen(message, (uint)((nuint)wParam & 0xFFFF));
+                HandleTouchOrPen(message, (uint)((nuint)wParam & 0xFFFF), lParam);
                 return false;
             case WmSetCursor:
                 // In the client area the input's cursor; on the frame, DefWindowProc's.
@@ -441,7 +451,7 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
 
     // A touch's or a pen's pointer message (design §7, "Touch and pen"): the mouse and a touchpad come through the mouse messages.
     // The leave gives the number back, a cancel or a capture changed loses the press, and the others make an input.
-    private void HandleTouchOrPen(uint message, uint win32)
+    private void HandleTouchOrPen(uint message, uint win32, LPARAM lParam)
     {
         if (!PointerReader.TryGetType(win32, out POINTER_INPUT_TYPE kind) || kind is not (POINTER_INPUT_TYPE.PT_TOUCH or POINTER_INPUT_TYPE.PT_PEN))
         {
@@ -453,8 +463,14 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         TimeSpan now = Now();
         if (message is WM.WM_POINTERLEAVE or WM.WM_POINTERCAPTURECHANGED)
         {
+            // WM_POINTERLEAVE's lParam is the point in physical screen coordinates; WM_POINTERCAPTURECHANGED's is the window that takes
+            // the capture (Microsoft's pages of the two messages).
             PointerInputKind ending = message == WM.WM_POINTERLEAVE ? PointerInputKind.Leave : PointerInputKind.CaptureLost;
-            Deliver(new PointerInput(ending, 0, 0, PointerButton.None, 0, 0, 0, now, type, default, id, _pointerPrimary[id]));
+            (int leftX, int leftY) =
+                ending == PointerInputKind.Leave
+                    ? ToClient(new POINT { x = (short)((nuint)lParam & 0xFFFF), y = (short)(((nuint)lParam >> 16) & 0xFFFF) })
+                    : (0, 0);
+            Deliver(new PointerInput(ending, leftX, leftY, PointerButton.None, 0, 0, 0, now, type, default, id, _pointerPrimary[id]));
             ForgetPress(id);
             if (message == WM.WM_POINTERLEAVE)
             {
