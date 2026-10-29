@@ -10,7 +10,8 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
 {
     /// <summary>
     /// A mouse message decodes to its kind, its button, the buttons and keys of its wParam, its signed position, the Alt and Windows
-    /// keys given apart, and the pointer type its extra information marks.
+    /// keys given apart, and a pressure of 0.5 while a button is down (W3C Pointer Events); a message the OS made from touch or a pen,
+    /// which its extra information marks, decodes to nothing (design §7, "Touch and pen").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -18,12 +19,13 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Decode a left press with the left button, Control, and Shift down at (-3, 70000 truncated to 4464), Alt and a Windows key
-    ///   down, and the touch signature; an extra-button release of the second extra button with the pen signature and Control given
-    ///   in the key state; a move with no signature; a message that is no mouse message.
+    ///   down; an extra-button release of the second extra button with Control given in the key state; a move with the right button
+    ///   held; the same press with the touch signature, and with the pen signature; a message that is no mouse message.
     ///
     /// Expected:
-    /// - Down, left, left held, Control | Shift | Alt | Meta, (-3, 4464), touch, the count given. Up, the second extra button, none
-    ///   held, no modifier (Control comes from wParam alone), pen. Move with a count of 0, mouse. None for the other message.
+    /// - Down, left, left held, Control | Shift | Alt | Meta, (-3, 4464), the mouse, the count given, pressure 0.5. Up, the second
+    ///   extra button, none held, no modifier (Control comes from wParam alone), pressure 0. Move with a count of 0 and pressure 0.5.
+    ///   None for the two marked presses and for the other message.
     /// </remarks>
     [Fact]
     public void Decode_MouseMessages_GiveTheirInput()
@@ -35,20 +37,22 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
             MK.MK_LBUTTON | MK.MK_CONTROL | MK.MK_SHIFT,
             position,
             keyState: KeyModifiers.Alt | KeyModifiers.Meta,
-            unchecked((nint)0xFF515780),
+            0,
             2,
             at
         );
-        PointerInput? up = Win32Window.Decode(
-            WM.WM_XBUTTONUP,
-            (nuint)(XBUTTON2 << 16),
-            0,
-            keyState: KeyModifiers.Control,
-            unchecked((nint)0xFF515700),
+        PointerInput? up = Win32Window.Decode(WM.WM_XBUTTONUP, (nuint)(XBUTTON2 << 16), 0, keyState: KeyModifiers.Control, 0, 1, at);
+        PointerInput? move = Win32Window.Decode(WM.WM_MOUSEMOVE, MK.MK_RBUTTON, (nint)((20 << 16) | 10), KeyModifiers.None, 0, 5, at);
+        PointerInput? fromTouch = Win32Window.Decode(
+            WM.WM_LBUTTONDOWN,
+            MK.MK_LBUTTON,
+            position,
+            KeyModifiers.None,
+            unchecked((nint)0xFF515780),
             1,
             at
         );
-        PointerInput? move = Win32Window.Decode(WM.WM_MOUSEMOVE, MK.MK_RBUTTON, (nint)((20 << 16) | 10), KeyModifiers.None, 0, 5, at);
+        PointerInput? fromPen = Win32Window.Decode(WM.WM_LBUTTONDOWN, MK.MK_LBUTTON, position, KeyModifiers.None, unchecked((nint)0xFF515700), 1, at);
 
         Assert.Equal(
             new PointerInput(
@@ -60,18 +64,32 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
                 KeyModifiers.Control | KeyModifiers.Shift | KeyModifiers.Alt | KeyModifiers.Meta,
                 2,
                 at,
-                PointerType.Touch
+                PointerType.Mouse,
+                Pressure: 0.5f
             ),
             down
         );
         Assert.Equal(
-            new PointerInput(PointerInputKind.Up, 0, 0, PointerButton.XButton2, PointerButtons.None, KeyModifiers.None, 1, at, PointerType.Pen),
+            new PointerInput(PointerInputKind.Up, 0, 0, PointerButton.XButton2, PointerButtons.None, KeyModifiers.None, 1, at, PointerType.Mouse),
             up
         );
         Assert.Equal(
-            new PointerInput(PointerInputKind.Move, 10, 20, PointerButton.None, PointerButtons.Right, KeyModifiers.None, 0, at, PointerType.Mouse),
+            new PointerInput(
+                PointerInputKind.Move,
+                10,
+                20,
+                PointerButton.None,
+                PointerButtons.Right,
+                KeyModifiers.None,
+                0,
+                at,
+                PointerType.Mouse,
+                Pressure: 0.5f
+            ),
             move
         );
+        Assert.Null(fromTouch);
+        Assert.Null(fromPen);
         Assert.Null(Win32Window.Decode(WM.WM_KEYDOWN, 0, 0, KeyModifiers.None, 0, 1, at));
     }
 

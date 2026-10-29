@@ -3505,7 +3505,7 @@ int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination);
   - Avalonia は Windows 8 以降で `WM_POINTER*` を受け（`WindowImpl.cs` 153 行目、`WindowImpl.AppWndProc.cs` 567〜622 行目）、`GetPointerType` の後にペンなら `GetPointerPenInfo`、タッチなら `GetPointerTouchInfo` を読む（1191〜1238 行目）。合成のマウスは捨てる（1408〜1418 行目）
   - GPUI は Windows でタッチとペンを受けず、OS が作るマウスのメッセージを、マウスとして受ける（`events.rs` 89〜164・352〜384 行目）
   - `EnableMouseInPointer`（マウスも `WM_POINTER` で受ける形）は、3 つとも呼ばない（Avalonia は宣言だけ、`Interop/UnmanagedMethods.cs` 1219 行目）
-- **ポインタの番号:** マウスはいつも 0 である。タッチとペンは、最初に受けたときに 1 から順の空いている番号を取り、`WM_POINTERLEAVE` で返す。Windows はタッチでも `WM_POINTERUP` の後に `WM_POINTERLEAVE` を送るので、タッチもペン（範囲から出たとき）も同じ所で返す（Flutter と同じ）。キャプチャはポインタごとに持ち、押したノードへ暗黙に取る（上の「キャプチャ」の規則を、ポインタごとに当てる）
+- **ポインタの番号:** マウスはいつも 0 である。タッチとペンは、最初に受けたときに 1 から順の空いている番号を取り、`WM_POINTERLEAVE` で返す。Windows はタッチでも `WM_POINTERUP` の後に `WM_POINTERLEAVE` を送るので、タッチもペン（範囲から出たとき）も同じ所で返す（Flutter と同じ）。キャプチャはポインタごとに持ち、押したノードへ暗黙に取る（上の「キャプチャ」の規則を、ポインタごとに当てる）。ただし `IPointerPlatform.Capture`（Win32 の `SetCapture`）を呼ぶのはマウスだけである。タッチとペンは、接触したウィンドウへ Win32 が暗黙にキャプチャし、接触が切れるまでそのウィンドウに入力を届ける（Microsoft の WM_POINTERDOWN の頁）
   - Flutter は Win32 の pointerId を 0〜128 の番号に写し、`WM_POINTERLEAVE` で返す（`flutter_window.cc` 29〜30・639・671〜673 行目）。ヒットテストの結果をポインタごとに持つ（`gestures/binding.dart` 409〜438 行目）
   - Avalonia はデバイスごとに pointerId から `Pointer` を引く表を持ち、最初のポインタを primary にする（`TouchDevice.cs` 24・43〜52 行目、`PenDevice.cs` 20・44〜52 行目）
 - **ホバー:** マウスとペンだけがホバーし、デバイスごとに自分のホバーの集合を持つ。ノードの Hovered は、どれか 1 つの集合に入っていれば立てる。タッチはホバーせず、Enter と Leave を送らない。押した間の Pressed は、タッチでも立てる。ペンが範囲から出たら（`WM_POINTERLEAVE`）、ペンの集合のノードに Leave を送り、番号を返す

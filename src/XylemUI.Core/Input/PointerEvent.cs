@@ -20,7 +20,8 @@ public readonly struct PointerEvent
         NodeHandle currentTarget,
         Vector2 position,
         Vector2 localPosition,
-        in PointerInput source
+        in PointerInput source,
+        int dispatch
     )
     {
         _input = input;
@@ -36,6 +37,16 @@ public readonly struct PointerEvent
         Timestamp = source.Timestamp;
         PointerType = source.PointerType;
         WheelDelta = source.WheelDelta;
+        PointerId = source.PointerId;
+        IsPrimary = source.IsPrimary;
+        Pressure = source.Pressure;
+        TiltX = source.TiltX;
+        TiltY = source.TiltY;
+        Twist = source.Twist;
+        IsEraser = (source.PenFlags & PenFlags.Eraser) != 0;
+        IsInverted = (source.PenFlags & PenFlags.Inverted) != 0;
+        HistoryCount = source.HistoryCount;
+        Dispatch = dispatch;
     }
 
     /// <summary>
@@ -114,9 +125,73 @@ public readonly struct PointerEvent
     public Vector2 WheelDelta { get; }
 
     /// <summary>
+    /// Gets the pointer's number (design §7, "Touch and pen"): 0 for the mouse; 1 and up for touches and pens, each its own while
+    /// it is present, so that several fingers tell apart.
+    /// </summary>
+    public int PointerId { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the pointer is the primary one: the mouse always; a touch or a pen that came first among those
+    /// of its kind present (W3C Pointer Events).
+    /// </summary>
+    public bool IsPrimary { get; }
+
+    /// <summary>
+    /// Gets the pressure, 0 to 1: a pen's from its device; 0.5 for the mouse and a touch while a button or the contact is down, 0
+    /// otherwise (W3C Pointer Events).
+    /// </summary>
+    public float Pressure { get; }
+
+    /// <summary>
+    /// Gets a pen's tilt along x, −90 to 90 degrees, positive to the right; 0 for the others.
+    /// </summary>
+    public float TiltX { get; }
+
+    /// <summary>
+    /// Gets a pen's tilt along y, −90 to 90 degrees, positive toward the user; 0 for the others.
+    /// </summary>
+    public float TiltY { get; }
+
+    /// <summary>
+    /// Gets a pen's clockwise twist, 0 to 359 degrees; 0 for the others.
+    /// </summary>
+    public float Twist { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether a pen's eraser end makes the input.
+    /// </summary>
+    public bool IsEraser { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether a pen is turned over.
+    /// </summary>
+    public bool IsInverted { get; }
+
+    /// <summary>
+    /// Gets the points the event's message coalesced, its own included.
+    /// </summary>
+    internal int HistoryCount { get; }
+
+    /// <summary>
+    /// Gets the serial of the delivery of the event's message; 0 for an event no pointer message made.
+    /// </summary>
+    internal int Dispatch { get; }
+
+    /// <summary>
     /// Stops the event: no handler after this one is called, in this phase or the next.
     /// </summary>
     public void StopPropagation() => _input.StopPropagation();
+
+    /// <summary>
+    /// Returns the points the event's message brought (design §7, "Touch and pen"): a pen or a touch that moved faster than the
+    /// messages came gives several, oldest first, the last being the event's own; the mouse gives its own alone. A drawing app reads
+    /// them to draw a line through every point. An event no pointer message made (a key's click, the enters and leaves of a frame's
+    /// test of the hover) gives none.
+    /// </summary>
+    /// <returns>The points, which hold until the event's delivery ends.</returns>
+    /// <exception cref="InvalidOperationException">The event's delivery has ended: Win32 keeps the history of the thread's last
+    /// pointer message only, so the points are read in the handler.</exception>
+    public ReadOnlySpan<PointerPoint> GetIntermediatePoints() => _input.IntermediatePoints(this);
 }
 
 /// <summary>

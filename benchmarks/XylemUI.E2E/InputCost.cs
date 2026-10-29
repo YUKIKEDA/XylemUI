@@ -13,7 +13,9 @@ namespace XylemUI.E2E;
 // is 3,000 high, alternately down and up by 50 pixels, so that each one moves the container's scroll position (design §3.4.1). A key
 // (row K1a) is routed from a focused leaf at the end of a chain of depth 1 and 50, each box with a key handler in both phases; a Tab
 // walks a tree of 10,101 nodes whose 10,000 leaves are focusable (design §7.1), whose root is also disabled and enabled again (row
-// K1b). A key that scrolls moves a scroll container from a focused leaf in it, and Enter makes a click from that leaf.
+// K1b). A key that scrolls moves a scroll container from a focused leaf in it, and Enter makes a click from that leaf. A pen's move goes
+// through the same chains as the mouse's; a touch's tap is a down, an up, and the end of the touch on the first leaf; and a pen's move
+// brings 8 coalesced points that the first leaf's handler reads (row I1a, design §7, "Touch and pen").
 internal static class InputCost
 {
     private const int Moves = 10_000;
@@ -35,6 +37,22 @@ internal static class InputCost
             using var hover = new Chain(1, scoped);
             report.Number($"us_per_hover_change{suffix}_p50", Median(21, () => hover.Time(changeHover: true)));
             report.Number($"us_per_click{suffix}_p50", Median(21, hover.TimeClicks));
+        }
+
+        foreach (int depth in new[] { 1, 50 })
+        {
+            using var pens = new Chain(depth, scoped: false);
+            report.Number($"us_per_pen_move_depth_{depth}_p50", Median(21, () => pens.Time(changeHover: false, PointerType.Pen)));
+        }
+
+        using (var taps = new Chain(1, scoped: false))
+        {
+            report.Number("us_per_touch_tap_p50", Median(21, taps.TimeTaps));
+        }
+
+        using (var points = new Chain(1, scoped: false, readPoints: true))
+        {
+            report.Number("us_per_pen_move_8_points_p50", Median(21, points.TimePoints));
         }
 
         using var wheel = new WheelScroll();
@@ -72,14 +90,17 @@ internal static class InputCost
     private sealed class Chain : IDisposable
     {
         private readonly GlyphAtlas _atlas = new(new NoGlyphs());
+        private readonly bool _readPoints;
         private WindowInput _input = null!;
         private ScopeHandle _scope;
         private int _handled;
         private int _moves;
         private int _clicks;
+        private int _points;
 
-        public Chain(int depth, bool scoped)
+        public Chain(int depth, bool scoped, bool readPoints = false)
         {
+            _readPoints = readPoints;
             var tree = new UiTree();
             if (scoped)
             {
@@ -95,13 +116,13 @@ internal static class InputCost
 
         // The microseconds of one move: over the first leaf, or alternately over each when the hover changes. Moves as many before,
         // unmeasured.
-        public double Time(bool changeHover)
+        public double Time(bool changeHover, PointerType type = PointerType.Mouse)
         {
             _handled = 0;
             _moves = 0;
-            Move(changeHover);
+            Move(changeHover, type);
             long start = Stopwatch.GetTimestamp();
-            Move(changeHover);
+            Move(changeHover, type);
             return Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
         }
 
@@ -118,6 +139,40 @@ internal static class InputCost
             }
 
             _clicks = 0;
+            return microseconds;
+        }
+
+        // The microseconds of one touch's tap on the first leaf: its down, its up, which clicks, and its end. Taps as many before,
+        // unmeasured.
+        public double TimeTaps()
+        {
+            Tap();
+            long start = Stopwatch.GetTimestamp();
+            Tap();
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            if (_clicks != 2 * InputCost.Moves)
+            {
+                throw new InvalidOperationException($"The leaf counted {_clicks} taps of {2 * InputCost.Moves}.");
+            }
+
+            _clicks = 0;
+            return microseconds;
+        }
+
+        // The microseconds of one pen's move over the first leaf with 8 coalesced points, which its handler reads. Moves as many
+        // before, unmeasured.
+        public double TimePoints()
+        {
+            _points = 0;
+            MovePen(8);
+            long start = Stopwatch.GetTimestamp();
+            MovePen(8);
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            if (_points != 2 * 8 * InputCost.Moves)
+            {
+                throw new InvalidOperationException($"The leaf read {_points} points of {2 * 8 * InputCost.Moves}.");
+            }
+
             return microseconds;
         }
 
@@ -168,6 +223,15 @@ internal static class InputCost
                 if (x == 0)
                 {
                     tree.AddPointerHandler(leaf, PointerEventKind.Click, EventPhase.Bubble, (in PointerEvent _) => _clicks++);
+                    if (_readPoints)
+                    {
+                        tree.AddPointerHandler(
+                            leaf,
+                            PointerEventKind.Move,
+                            EventPhase.Bubble,
+                            (in PointerEvent e) => _points += e.GetIntermediatePoints().Length
+                        );
+                    }
                 }
             }
 
@@ -189,13 +253,49 @@ internal static class InputCost
             }
         }
 
-        private void Move(bool changeHover)
+        private void Move(bool changeHover, PointerType type)
         {
+            int id = type == PointerType.Mouse ? 0 : 1;
             for (int i = 0; i < InputCost.Moves; i++)
             {
                 int x = changeHover && (i & 1) == 1 ? 25 : 5;
-                _input.Handle(new PointerInput(PointerInputKind.Move, x, 5, PointerButton.None, 0, 0, 0, TimeSpan.Zero, PointerType.Mouse));
+                _input.Handle(new PointerInput(PointerInputKind.Move, x, 5, PointerButton.None, 0, 0, 0, TimeSpan.Zero, type, PointerId: id));
                 _moves++;
+            }
+        }
+
+        private void Tap()
+        {
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                _input.Handle(Touch(PointerInputKind.Down, PointerButton.Left, PointerButtons.Left));
+                _input.Handle(Touch(PointerInputKind.Up, PointerButton.Left, PointerButtons.None));
+                _input.Handle(Touch(PointerInputKind.Leave, PointerButton.None, PointerButtons.None));
+            }
+        }
+
+        private static PointerInput Touch(PointerInputKind kind, PointerButton button, PointerButtons buttons) =>
+            new(kind, 5, 5, button, buttons, 0, 1, TimeSpan.Zero, PointerType.Touch, PointerId: 1, Pressure: buttons == 0 ? 0 : 0.5f);
+
+        private void MovePen(int points)
+        {
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                _input.Handle(
+                    new PointerInput(
+                        PointerInputKind.Move,
+                        5,
+                        5,
+                        PointerButton.None,
+                        0,
+                        0,
+                        0,
+                        TimeSpan.Zero,
+                        PointerType.Pen,
+                        PointerId: 1,
+                        HistoryCount: points
+                    )
+                );
             }
         }
     }
@@ -509,6 +609,13 @@ internal static class InputCost
         public void ReleaseCapture() { }
 
         public void SetCursor(CursorKind cursor) { }
+
+        // A history of as many points as asked, as Win32 gives a pen's coalesced moves.
+        public int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination)
+        {
+            destination.Clear();
+            return destination.Length;
+        }
     }
 
     private sealed class NoGlyphs : IGlyphRasterizer
