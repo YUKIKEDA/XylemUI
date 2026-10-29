@@ -17,9 +17,10 @@ namespace XylemUI.Text;
 internal sealed unsafe class GlyphIntercepts
 {
     /// <summary>
-    /// The number of outlines kept. Skia's strike cache keeps 2 MB of glyphs by default (<c>SK_DEFAULT_FONT_CACHE_LIMIT</c>); an
-    /// outline of a Han character here is about 3 KB (some 200 segments of 16 bytes), so 1,024 outlines stay within 3 MB. A window of
-    /// Japanese text whose every character is underlined shows fewer distinct characters than that.
+    /// The number of outlines kept (design §4.8). A window of 1,920 by 1,080 holds about 7,400 characters of 14 px text, and such a
+    /// stretch of the Japanese design document has 336 to 561 distinct ones: this keeps about two screens whose every character is
+    /// underlined. The test font's 日, 本, and 語 have 16 to 90 segments of 16 bytes, so 1,024 such outlines take about 1.5 MB;
+    /// Skia's strike cache keeps 2 MB by default (<c>SK_DEFAULT_FONT_CACHE_LIMIT</c>, src/core/SkStrikeCache.h line 36).
     /// </summary>
     public const int Capacity = 1024;
 
