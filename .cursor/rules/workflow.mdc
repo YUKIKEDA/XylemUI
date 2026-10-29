@@ -61,7 +61,7 @@ Create an Issue before its number is written anywhere: a branch name, a commit, 
 
 ## Stacked PRs
 
-A second Issue that builds on an open PR gets its own branch and PR based on the first. A stacked PR is merged only after its base has merged. When the base merges, retarget the next PR to `main` first, then delete the merged branch.
+A second Issue that builds on an open PR gets its own branch and PR based on the first. A stacked PR is merged only after its base has merged. When the base merges, retarget the next PR to `main` first, then delete the merged branch. Before `gh pr create` on a stacked base, check that the base branch still exists (`git ls-remote --heads origin <base>`): I1c's PR was about to stack on #408 when the owner merged #406 and #408, GitHub deleted the base, and the create failed. Opened on `main`, a branch that had merged the base's own commits showed them again in its diff, since `main` holds them squashed; merge `main` into the branch before the PR, so that the diff is the branch's own (PR #410).
 
 ## Retrospective
 

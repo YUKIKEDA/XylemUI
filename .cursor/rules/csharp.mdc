@@ -10,7 +10,8 @@ Formatting is CSharpier's (`.cursor/rules/engineering.mdc`). This rule covers wh
 
 ## Style
 
-- A property with a one-line getter and a setter of several lines does not pass the gate: CSharpier puts the getter on one line and SA1504 refuses accessors of mixed shapes. The setter is one line too, and calls a method that does the work (`WindowFrames.TextRendering`, PR #313).
+- A property with a one-line getter and a setter of several lines does not pass the gate: CSharpier puts the getter on one line and SA1504 refuses accessors of mixed shapes. The setter is one line too, and calls a method that does the work (`WindowFrames.TextRendering`, PR #313). I1c met it again (`Win32Window.TouchpadViewport`), as this line was not read first; a read-only property and a method that replaces the value (`UseTouchpadViewport`) avoid it (PR #410).
+- A function pointer cast whose type does not fit on one line does not pass the gate either: CSharpier breaks the type over several lines and SA1003 refuses the operator at the line's end. Give the `[UnmanagedCallersOnly]` function short parameter types (`void*` for a pointer it does not read, `int` for an enum) and convert inside, as `ViewportEventHandler` does (PR #410).
 
 - Modern C# is allowed: `var` when the type is apparent on the right, collection expressions, target-typed `new`, primary constructors, file-scoped namespaces, `required` members, `ref struct`, `scoped`, `allows ref struct`.
 - Private fields are `_camelCase`, static ones included. Constants are PascalCase. No `this.` unless needed to disambiguate. Interfaces start with `I`.
