@@ -53,6 +53,43 @@ internal sealed class TextScene : IDisposable
         return runs;
     }
 
+    // The rectangles, glyph runs, and lines of the last frame, in order.
+    public List<Drawn> Commands()
+    {
+        var commands = new List<Drawn>();
+        DisplayListReader reader = _frames.List.GetReader();
+        while (reader.TryNext(out CommandTag tag))
+        {
+            switch (tag)
+            {
+                case CommandTag.FillRect:
+                    FillRectCommand rect = reader.ReadFillRect();
+                    commands.Add(new Drawn(tag, rect.X, rect.Y, rect.Width, rect.Height, rect.Color, 0, null));
+                    break;
+                case CommandTag.GlyphRun:
+                    GlyphRunCommand run = reader.ReadGlyphRun();
+                    commands.Add(new Drawn(tag, 0, 0, 0, 0, run.Color, run.Glyphs.Length, null));
+                    break;
+                case CommandTag.Line:
+                    CurveCommand line = reader.ReadCurve();
+                    commands.Add(new Drawn(tag, line.A, line.B, line.C, line.D, line.Color, 0, line.Dash, line.Width));
+                    break;
+                default:
+                    Assert.Fail($"A text leaf drew a {tag}.");
+                    break;
+            }
+        }
+
+        return commands;
+    }
+
+    // Draws again: the frame that a change asked for.
+    public void Draw() => Scheduler.Run();
+
+    // A command of the display list: a rectangle (x, y, width, height), a glyph run (its glyph count), or a line (its two
+    // ends, width, and dash).
+    internal readonly record struct Drawn(CommandTag Tag, float A, float B, float C, float D, Color Color, int Glyphs, Dash? Dash, float Width = 0);
+
     public void Dispose()
     {
         if (Scope.IsAlive(_scope))

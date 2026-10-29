@@ -49,6 +49,12 @@ internal sealed class TextContext : IDisposable
     public LineBreaker Breaker { get; } = new();
 
     /// <summary>
+    /// Gets where the glyphs' outlines cross the underlines and overlines drawn under them (design §4.8), kept for every window of
+    /// the thread.
+    /// </summary>
+    public GlyphIntercepts Intercepts { get; } = new();
+
+    /// <summary>
     /// Gets the list a text is split into font runs in, reused for every leaf.
     /// </summary>
     public List<FontRun> Runs { get; } = [];

@@ -257,12 +257,13 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
-    /// A frame that a builder writes the same ranges in, or ranges whose colors swap, allocates nothing.
+    /// A frame that a builder writes the same ranges in, or ranges whose looks swap, allocates nothing, the drawing of their colors,
+    /// backgrounds, and decorations included.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A builder that writes "clicks " in a link and a number in a range whose color a signal picks from red and blue; warmed up
-    ///   with the iteration.
+    /// - A builder that writes "clicks " in a link and a number in a range whose style a signal picks: red, underlined and struck
+    ///   through, or blue on red, with a dashed overline; warmed up with the iteration.
     ///
     /// Steps:
     /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: set the signal to the iteration's number modulo 2, run
@@ -278,8 +279,8 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
             using var scene = new TextScene(_font);
             var pick = Signal.Create(0);
             PointerHandler click = (in PointerEvent e) => { };
-            var red = new SpanStyle(Color: Red);
-            var blue = new SpanStyle(Color: Blue);
+            var red = new SpanStyle(Color: Red, Decoration: new TextDecoration(DecorationLines.Underline | DecorationLines.LineThrough));
+            var blue = new SpanStyle(Color: Blue, Background: Red, Decoration: new TextDecoration(DecorationLines.Overline, DecorationStyle.Dashed));
             scene.Mount(() =>
                 Elements.Text(
                     (ref w) =>

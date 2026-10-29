@@ -15,7 +15,7 @@ namespace XylemUI;
 /// queued after a frame started, so work queued while a frame is drawn asks for the next one. Effects need no step of their own:
 /// they have run when the batch that set their signals closed (design §2.2).
 /// </remarks>
-internal sealed class WindowFrames
+internal sealed partial class WindowFrames
 {
     // How far a clip reaches past the box on an axis that does not clip (overflow-x: clip with overflow-y: visible), in logical
     // pixels: farther than a window shows.
@@ -533,6 +533,13 @@ internal sealed class WindowFrames
         foreach (LaidLine line in layout.Lines)
         {
             (float height, float baseline) = LayoutEngine.TextLine(result, line.Span, text.Style);
+            if (text.Ranges is { } ranges)
+            {
+                DrawRanges(ranges, result, glyphs.Slice(line.GlyphStart, line.GlyphCount), x, top, height, top + baseline, color);
+                top += height;
+                continue;
+            }
+
             _list.DrawLine(
                 glyphs.Slice(line.GlyphStart, line.GlyphCount),
                 result.Runs,

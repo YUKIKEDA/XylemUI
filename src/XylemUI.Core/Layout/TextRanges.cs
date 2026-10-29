@@ -85,6 +85,11 @@ internal sealed class TextRanges
     public ReadOnlySpan<TextLink> Links => _links.AsSpan(0, _linkCount);
 
     /// <summary>
+    /// Gets or sets the link a pointer is over, whose range takes its hovered look; -1 when none is.
+    /// </summary>
+    public int HoveredLink { get; set; } = -1;
+
+    /// <summary>
     /// Forgets the ranges, keeping the arrays.
     /// </summary>
     public void Clear()

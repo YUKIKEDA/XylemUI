@@ -19,6 +19,21 @@ internal static unsafe partial class HarfBuzz
     /// <summary><c>HB_GLYPH_FLAG_UNSAFE_TO_BREAK</c>: in a glyph info's mask after shaping, a break before the glyph's cluster changes the shaping.</summary>
     public const uint GlyphFlagUnsafeToBreak = 1;
 
+    /// <summary><c>HB_OT_METRICS_TAG_UNDERLINE_OFFSET</c> (<c>'undo'</c>, <c>hb-ot-metrics.h</c> line 102).</summary>
+    public const uint MetricsUnderlineOffset = 0x756E646F;
+
+    /// <summary><c>HB_OT_METRICS_TAG_UNDERLINE_SIZE</c> (<c>'unds'</c>, line 101).</summary>
+    public const uint MetricsUnderlineSize = 0x756E6473;
+
+    /// <summary><c>HB_OT_METRICS_TAG_STRIKEOUT_OFFSET</c> (<c>'stro'</c>, line 100).</summary>
+    public const uint MetricsStrikeoutOffset = 0x7374726F;
+
+    /// <summary><c>HB_OT_METRICS_TAG_STRIKEOUT_SIZE</c> (<c>'strs'</c>, line 99).</summary>
+    public const uint MetricsStrikeoutSize = 0x73747273;
+
+    /// <summary><c>HB_OT_METRICS_TAG_X_HEIGHT</c> (<c>'xhgt'</c>, line 89).</summary>
+    public const uint MetricsXHeight = 0x78686774;
+
     [LibraryImport(Library, EntryPoint = "hb_blob_create")]
     public static partial nint BlobCreate(byte* data, uint length, int mode, void* userData, void* destroy);
 
@@ -63,6 +78,33 @@ internal static unsafe partial class HarfBuzz
 
     [LibraryImport(Library, EntryPoint = "hb_font_get_h_extents")]
     public static partial int FontGetHExtents(nint font, FontExtents* extents);
+
+    [LibraryImport(Library, EntryPoint = "hb_ot_metrics_get_position")]
+    public static partial int OtMetricsGetPosition(nint font, uint tag, int* position);
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_create")]
+    public static partial nint DrawFuncsCreate();
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_set_move_to_func")]
+    public static partial void DrawFuncsSetMoveToFunc(nint funcs, void* func, void* userData, void* destroy);
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_set_line_to_func")]
+    public static partial void DrawFuncsSetLineToFunc(nint funcs, void* func, void* userData, void* destroy);
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_set_quadratic_to_func")]
+    public static partial void DrawFuncsSetQuadraticToFunc(nint funcs, void* func, void* userData, void* destroy);
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_set_cubic_to_func")]
+    public static partial void DrawFuncsSetCubicToFunc(nint funcs, void* func, void* userData, void* destroy);
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_set_close_path_func")]
+    public static partial void DrawFuncsSetClosePathFunc(nint funcs, void* func, void* userData, void* destroy);
+
+    [LibraryImport(Library, EntryPoint = "hb_draw_funcs_make_immutable")]
+    public static partial void DrawFuncsMakeImmutable(nint funcs);
+
+    [LibraryImport(Library, EntryPoint = "hb_font_draw_glyph")]
+    public static partial void FontDrawGlyph(nint font, uint glyph, nint funcs, void* drawData);
 
     [LibraryImport(Library, EntryPoint = "hb_buffer_create")]
     public static partial nint BufferCreate();
@@ -137,6 +179,20 @@ internal static unsafe partial class HarfBuzz
         public uint Cluster;
         public uint Var1;
         public uint Var2;
+    }
+
+    /// <summary>
+    /// <c>hb_draw_state_t</c> (HarfBuzz 14.5.1's <c>hb-draw.h</c>, lines 49 to 66): where the pen is, which a draw callback starts
+    /// its segment from. Its seven reserved fields are not read.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DrawState
+    {
+        public int PathOpen;
+        public float PathStartX;
+        public float PathStartY;
+        public float CurrentX;
+        public float CurrentY;
     }
 
     /// <summary><c>hb_feature_t</c>: a feature's tag and value over the clusters from <see cref="Start"/> to <see cref="End"/>.</summary>
