@@ -39,7 +39,11 @@ foreach ($configuration in "Release", "Debug") {
             continue
         }
 
-        Invoke-Step "Test $($project.BaseName) ($configuration)" { dotnet test --project $project.FullName --no-build -c $configuration }
+        # Each test's name as it ends, so that a run that hangs shows which test never ended (PR #410: the Desktop tests stopped
+        # once on the Windows runner until the job's 30-minute limit, and the log named none). xUnit's long-running notices do not
+        # reach this output. The text tests, 21,000 and more, stay quiet.
+        [string[]]$output = $project.BaseName -eq 'XylemUI.Text.Tests' ? @() : @('--output', 'Detailed')
+        Invoke-Step "Test $($project.BaseName) ($configuration)" { dotnet test --project $project.FullName --no-build -c $configuration @output }
     }
 }
 

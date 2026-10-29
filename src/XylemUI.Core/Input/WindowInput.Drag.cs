@@ -138,6 +138,8 @@ internal sealed partial class WindowInput
     // A press over a scroll container that is flinging or dragged: the flings under it stop, and the press goes to the innermost
     // such container, not to the nodes inside (Flutter ignores their pointers while it drags and flings, scroll_activity.dart line
     // 538). A touch or a pen on a container another finger drags joins the drag and drives it. Returns whether it took the press.
+    // A touchpad's pan and its fling keep no press out (Flutter's shouldIgnorePointer is false for a trackpad): a touch's or a pen's
+    // press stops its fling and goes on inside, and the mouse's leaves it alone (row I1c).
     private bool HoldScroll(PointerState pointer, in PointerInput input)
     {
         if (_drags.Count == 0)
@@ -151,6 +153,16 @@ internal sealed partial class WindowInput
         {
             if (FindDrag(node) is not { } drag)
             {
+                continue;
+            }
+
+            if (drag.FromTouchpad)
+            {
+                if (drag.Flinging && pointer.Type != PointerType.Mouse)
+                {
+                    Release(drag);
+                }
+
                 continue;
             }
 
@@ -214,6 +226,15 @@ internal sealed partial class WindowInput
     // DragStartBehavior.start, monodrag.dart lines 806 to 808).
     private bool TryStartDrag(NodeHandle node, PointerState pointer, in PointerInput input)
     {
+        float scale = _frames.Scale;
+        return TakeScroll(node, pointer, input, (input.X - pointer.DownAt.X) / scale, (input.Y - pointer.DownAt.Y) / scale, cancelPress: true);
+    }
+
+    // Whether the node, a scroll container, takes the pointer's scroll for a move of (dx, dy) logical pixels from where it started
+    // (row I1b, and a touchpad's pan, row I1c): along the container's axes, past the slop, with room that way, and not in another
+    // drag. A press's node then gets a cancel and no click, and the container takes the capture.
+    private bool TakeScroll(NodeHandle node, PointerState pointer, in PointerInput input, float dx, float dy, bool cancelPress)
+    {
         ref readonly LayoutStyle style = ref _tree.Nodes.GetRef(node).Layout.Style;
         bool horizontal = style.OverflowX == Overflow.Scroll;
         bool vertical = style.OverflowY == Overflow.Scroll;
@@ -222,9 +243,6 @@ internal sealed partial class WindowInput
             return false;
         }
 
-        float scale = _frames.Scale;
-        float dx = (input.X - pointer.DownAt.X) / scale;
-        float dy = (input.Y - pointer.DownAt.Y) / scale;
         float distance =
             horizontal && vertical ? MathF.Sqrt((dx * dx) + (dy * dy))
             : vertical ? Math.Abs(dy)
@@ -245,13 +263,16 @@ internal sealed partial class WindowInput
             return false;
         }
 
-        NodeHandle pressed = CapturedNode(pointer);
-        pointer.ClickOrigin = default;
-        pointer.Pressing = false;
-        ClearPressed(pointer);
-        if (!pressed.IsNone)
+        if (cancelPress)
         {
-            Route(PointerEventKind.Cancel, pressed, input, bubbleOnly: false);
+            NodeHandle pressed = CapturedNode(pointer);
+            pointer.ClickOrigin = default;
+            pointer.Pressing = false;
+            ClearPressed(pointer);
+            if (!pressed.IsNone)
+            {
+                Route(PointerEventKind.Cancel, pressed, input, bubbleOnly: false);
+            }
         }
 
         pointer.Capture = node;
@@ -384,6 +405,9 @@ internal sealed partial class WindowInput
         public NodeHandle Container;
         public bool Horizontal;
         public bool Vertical;
+
+        // Whether a touchpad's pan made it (row I1c), which keeps no press out of the container.
+        public bool FromTouchpad;
         public int Active;
         public bool Flinging;
         public bool Started;
@@ -402,6 +426,7 @@ internal sealed partial class WindowInput
             Container = container;
             Horizontal = horizontal;
             Vertical = vertical;
+            FromTouchpad = false;
             Count = 0;
             Flinging = false;
             Add(pointer);

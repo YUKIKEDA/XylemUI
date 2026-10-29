@@ -18,6 +18,14 @@ public sealed class UiThreadFixture : IDisposable
     public UiThreadFixture()
     {
         _thread = new Thread(Loop) { IsBackground = true, Name = "XylemUI test UI thread" };
+
+        // A single-threaded apartment, as an app's Main with [STAThread] has, so that a window makes its DirectManipulation viewport
+        // (row I1c).
+        if (OperatingSystem.IsWindows())
+        {
+            _thread.SetApartmentState(ApartmentState.STA);
+        }
+
         _thread.Start();
         Invoke(UiThread.Initialize);
     }

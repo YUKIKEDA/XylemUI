@@ -10,22 +10,24 @@ namespace XylemUI.Rendering.D3D11.Tests;
 public sealed class FrameClockTests(UiThreadFixture ui)
 {
     /// <summary>
-    /// A frame that returns without presenting leaves the swap chain's object unsignaled; the next requested frame still runs,
-    /// after the wait's timeout.
+    /// A frame that returns without presenting leaves the swap chain's object unsignaled; the next requested frame waits on the
+    /// timer instead, and a frame that presents goes back to the object (design §2.11, "Frames that do not present").
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A WARP renderer whose waitable object is the loop's frame clock. A frame callback that asks for the next frame until 6
-    ///   ran; frames 2 and 3 return without presenting, the others render.
+    ///   ran; frames 2 and 3 return without presenting, the others render and report the present.
     ///
     /// Steps:
-    /// - Run the loop and request the first frame.
+    /// - Run the loop and request the first frame. Each frame records, at its start, whether the timer runs.
     ///
     /// Expected:
-    /// - All 6 frames ran (the watchdog did not fire); the gap after each frame that did not present is at least the timeout.
+    /// - All 6 frames ran (the watchdog did not fire).
+    /// - Frames 3 and 4, which follow a frame that did not present, came on the timer; frames 2, 5, and 6 did not.
+    /// - The gap after each frame that did not present is shorter than the swap chain's wait timeout.
     /// </remarks>
     [Fact]
-    public void FrameWithoutPresent_DoesNotStopTheNextFrames()
+    public void FrameWithoutPresent_NextFrameComesOnTheTimer()
     {
         ITestOutputHelper? output = TestContext.Current.TestOutputHelper;
         ui.Invoke(() =>
@@ -33,16 +35,20 @@ public sealed class FrameClockTests(UiThreadFixture ui)
             using var window = new Win32Window("skip", 200, 100);
             (int width, int height) = window.ClientSize;
             using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            var scheduler = (Win32FrameScheduler)Win32MessageLoop.FrameScheduler;
             var list = new DisplayList();
             var starts = new List<long>();
+            var onTimer = new List<bool>();
             Action? frame = null;
             frame = () =>
             {
                 starts.Add(Stopwatch.GetTimestamp());
+                onTimer.Add(scheduler.IsClockRunning);
                 int index = starts.Count;
                 if (index != 2 && index != 3)
                 {
                     renderer.Render(list, Color.FromRgb(0x2A2A2A));
+                    scheduler.FramePresented();
                 }
 
                 if (index < 6)
@@ -67,8 +73,9 @@ public sealed class FrameClockTests(UiThreadFixture ui)
             TimeSpan afterThird = Stopwatch.GetElapsedTime(starts[2], starts[3]);
             output?.WriteLine($"gap after a frame without present: {afterSecond.TotalMilliseconds:F1} ms, {afterThird.TotalMilliseconds:F1} ms");
             Assert.Equal(6, starts.Count);
-            Assert.True(afterSecond >= TimeSpan.FromMilliseconds(Win32FrameScheduler.SwapChainWaitTimeoutMilliseconds - 5));
-            Assert.True(afterThird >= TimeSpan.FromMilliseconds(Win32FrameScheduler.SwapChainWaitTimeoutMilliseconds - 5));
+            Assert.Equal((false, false, true, true, false, false), (onTimer[0], onTimer[1], onTimer[2], onTimer[3], onTimer[4], onTimer[5]));
+            Assert.True(afterSecond < TimeSpan.FromMilliseconds(Win32FrameScheduler.SwapChainWaitTimeoutMilliseconds));
+            Assert.True(afterThird < TimeSpan.FromMilliseconds(Win32FrameScheduler.SwapChainWaitTimeoutMilliseconds));
         });
     }
 

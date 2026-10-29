@@ -31,6 +31,15 @@ internal interface IPointerPlatform
     /// <param name="destination">Where to write; no more points than it holds.</param>
     /// <returns>The points written; 0 when the platform keeps no history, which leaves the event's own point alone.</returns>
     int ReadHistory(int pointerId, Span<PointerHistoryPoint> destination) => 0;
+
+    /// <summary>
+    /// Moves the platform's gestures one frame on (design §7, "Touch and pen", row I1c): Win32 calls DirectManipulation's
+    /// <c>Update</c> and delivers the touchpad's pan inputs that came meanwhile, oldest first, with the frame's time. The frames call it
+    /// at their start, after reading the frame's time and before the layout pass.
+    /// </summary>
+    /// <param name="frameTime">The frame's time (<see cref="WindowFrames.FrameTime"/>), which the inputs carry as their time.</param>
+    /// <returns>Whether a gesture goes on and asks for the next frame; <see langword="false"/> for a platform without gestures.</returns>
+    bool UpdateGestures(TimeSpan frameTime) => false;
 }
 
 /// <summary>

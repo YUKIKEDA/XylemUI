@@ -99,6 +99,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             ResizeClient(hwnd, width, height);
             _monitor = MonitorFromWindow(hwnd, MONITOR.MONITOR_DEFAULTTONEAREST);
             TextRendering = TextRenderingReader(_monitor);
+            CreateTouchpad(hwnd);
         }
         catch
         {
@@ -451,7 +452,11 @@ public sealed unsafe partial class Win32Window : IDisposable
             return true;
         }
 
-        if (HandlePointerMessage(hwnd, message, wParam, lParam, ref result) || HandleKeyMessage(message, wParam, lParam, ref result))
+        if (
+            HandleTouchpadMessage(message, wParam)
+            || HandlePointerMessage(hwnd, message, wParam, lParam, ref result)
+            || HandleKeyMessage(message, wParam, lParam, ref result)
+        )
         {
             return true;
         }
@@ -462,6 +467,7 @@ public sealed unsafe partial class Win32Window : IDisposable
                 _ = DestroyWindow(hwnd);
                 return true;
             case WmSize:
+                ResizeTouchpad(wParam, lParam);
                 RenderSynchronously(wParam, lParam);
                 return false;
             case WmSettingChange:
@@ -475,6 +481,8 @@ public sealed unsafe partial class Win32Window : IDisposable
                 MoveMonitor(hwnd);
                 return false;
             case WmDestroy:
+                DestroyTouchpad();
+
                 // An application callback: during a synchronous render it runs after the render returns.
                 SynchronousRenderGuard.RunOrDefer(RaiseClosed);
                 return true;

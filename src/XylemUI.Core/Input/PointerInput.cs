@@ -18,8 +18,11 @@ namespace XylemUI;
 /// release has the count of its press. 0 for the other kinds.</param>
 /// <param name="Timestamp">When the platform received the input.</param>
 /// <param name="PointerType">What the pointer is.</param>
-/// <param name="WheelDelta">For a <see cref="PointerInputKind.Wheel"/>, how far the wheel scrolls, in logical pixels: positive moves
-/// the scroll position down and to the right (design §3.4.1); zero for the other kinds.</param>
+/// <param name="Delta">For a <see cref="PointerInputKind.Wheel"/>, how far the wheel scrolls, in logical pixels: positive moves the
+/// scroll position down and to the right (design §3.4.1). For a <see cref="PointerInputKind.PanUpdate"/>, how far the fingers moved
+/// on the touchpad since the last update, in logical pixels: positive to the right and down, the way the content moves (row I1c).
+/// Zero for the other kinds. One field holds both, as an input is one kind or the other: a field of its own would make the record
+/// 72 bytes, past the 64 that keep NativeAOT's copy of it inline (design §7, "Touch and pen").</param>
 /// <param name="PointerId">The pointer's number (design §7, "Touch and pen"): 0 for the mouse; 1 and up for touches and pens, which
 /// the platform gives back when the pointer leaves.</param>
 /// <param name="IsPrimary">Whether the pointer is the primary one: the mouse always; a touch or a pen that came first among those of
@@ -44,7 +47,7 @@ internal readonly record struct PointerInput(
     int ClickCount,
     TimeSpan Timestamp,
     PointerType PointerType,
-    Vector2 WheelDelta = default,
+    Vector2 Delta = default,
     int PointerId = 0,
     bool IsPrimary = true,
     float Pressure = 0,
@@ -120,9 +123,24 @@ internal enum PointerInputKind : byte
     CaptureLost,
 
     /// <summary>
-    /// The wheel turned, or a touchpad scrolled (row V2): <see cref="PointerInput.WheelDelta"/> says how far.
+    /// The wheel turned, or a touchpad without DirectManipulation scrolled (row V2): <see cref="PointerInput.Delta"/> says how far.
     /// </summary>
     Wheel,
+
+    /// <summary>
+    /// Fingers started a pan on the touchpad (row I1c): DirectManipulation's viewport began to run.
+    /// </summary>
+    PanStart,
+
+    /// <summary>
+    /// The touchpad's pan moved: <see cref="PointerInput.Delta"/> says how far.
+    /// </summary>
+    PanUpdate,
+
+    /// <summary>
+    /// The fingers left the touchpad, or the pan stopped otherwise.
+    /// </summary>
+    PanEnd,
 }
 
 /// <summary>
@@ -232,12 +250,12 @@ public enum KeyModifiers : byte
 
 /// <summary>
 /// What a pointer is (design §8.10). The mouse comes through the mouse messages; touches and pens through Win32's pointer messages
-/// (row I1a), and the mouse messages the OS makes from them are dropped.
+/// (row I1a), and the mouse messages the OS makes from them are dropped; a touchpad's pan through DirectManipulation (row I1c).
 /// </summary>
 public enum PointerType : byte
 {
     /// <summary>
-    /// A mouse or a touchpad.
+    /// A mouse, or a touchpad's cursor, clicks, and its scrolling where DirectManipulation is not available.
     /// </summary>
     Mouse,
 
@@ -250,4 +268,10 @@ public enum PointerType : byte
     /// A pen.
     /// </summary>
     Pen,
+
+    /// <summary>
+    /// Fingers panning on a precision touchpad: the events <see cref="PointerEventKind.PanStart"/>,
+    /// <see cref="PointerEventKind.PanUpdate"/>, and <see cref="PointerEventKind.PanEnd"/> alone have it (row I1c).
+    /// </summary>
+    Touchpad,
 }

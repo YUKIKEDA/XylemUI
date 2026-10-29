@@ -27,6 +27,7 @@
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
 //   hit-region                 writing a hit region, and testing a point against 1,000 that miss it, plain and in a clip (row R4e)
 //   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
+//   touchpad                   a frame's poll of a hidden window's DirectManipulation viewport with no contact (row I1c)
 //   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
 //   curves                     the lines, ellipses, and arcs of row R4b, to compare with benchmarks/compare/curves.html
@@ -78,6 +79,7 @@ return scenario switch
         scroll: args.Contains("--scroll")
     ),
     "input" => InputCost.Run(),
+    "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(),
     "todo" => TodoCost.Run(),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),

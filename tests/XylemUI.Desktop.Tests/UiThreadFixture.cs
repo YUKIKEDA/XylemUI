@@ -18,6 +18,13 @@ public sealed class UiThreadFixture : IDisposable
     public UiThreadFixture()
     {
         _thread = new Thread(Loop) { IsBackground = true, Name = "XylemUI test UI thread" };
+
+        // XylemApp.Run needs a single-threaded apartment, as an app's Main with [STAThread] has (row I1c).
+        if (OperatingSystem.IsWindows())
+        {
+            _thread.SetApartmentState(ApartmentState.STA);
+        }
+
         _thread.Start();
         Invoke(UiThread.Initialize);
     }
