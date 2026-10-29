@@ -256,8 +256,9 @@ internal sealed partial class WindowFrames
         var box = new Rect(parentX + rect.X, parentY + rect.Y, rect.Width, rect.Height);
         NodeVisual? visual = node.Visual;
 
-        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1).
-        bool writesHit = node.Input?.WritesHitRegion == true || node.Layout.Style.IsScrollContainer;
+        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1), and a text leaf with links takes
+        // the pointer over them (design §4.8).
+        bool writesHit = node.Input?.WritesHitRegion == true || node.Layout.Style.IsScrollContainer || node.Text?.Ranges?.HasLinks == true;
         Color text = inheritedText;
         int pushed = 0;
         if (visual is not null)
@@ -487,10 +488,17 @@ internal sealed partial class WindowFrames
     // The node's box as its hit region, and where it is in the list, so that the input finds the node's state for its local position.
     private void WriteHitRegion(NodeHandle handle, Rect box, in CornerRadii radii)
     {
-        if (_tree.Nodes.GetRef(handle).Input is { } input)
+        ref UiNode node = ref _tree.Nodes.GetRef(handle);
+        if (node.Input is { } input)
         {
             input.HitEntry = _list.HitEntries.Length;
             input.HitBuild = Builds;
+        }
+
+        if (node.Text?.Ranges is { } ranges)
+        {
+            ranges.HitEntry = _list.HitEntries.Length;
+            ranges.HitBuild = Builds;
         }
 
         _list.HitRegion(handle, box.X, box.Y, box.Width, box.Height, radii);

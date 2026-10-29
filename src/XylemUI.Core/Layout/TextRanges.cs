@@ -90,6 +90,34 @@ internal sealed class TextRanges
     public int HoveredLink { get; set; } = -1;
 
     /// <summary>
+    /// Gets or sets the index of the leaf's hit region in the display list of <see cref="HitBuild"/>, which a leaf with links writes
+    /// (design §4.8).
+    /// </summary>
+    public int HitEntry { get; set; }
+
+    /// <summary>
+    /// Gets or sets the build of the display list <see cref="HitEntry"/> belongs to (<see cref="WindowFrames.Builds"/>); 0 for none.
+    /// </summary>
+    public int HitBuild { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the text has a link.
+    /// </summary>
+    public bool HasLinks => _linkCount > 0;
+
+    /// <summary>
+    /// Takes the hovered link and the hit region of the ranges a leaf held before these: a rewrite keeps the pointer's hover until
+    /// the next hit test, and the region until the next frame. A hovered link these do not have is dropped.
+    /// </summary>
+    /// <param name="before">The leaf's ranges before.</param>
+    public void TakeStateOf(TextRanges before)
+    {
+        HoveredLink = before.HoveredLink < _linkCount ? before.HoveredLink : -1;
+        HitEntry = before.HitEntry;
+        HitBuild = before.HitBuild;
+    }
+
+    /// <summary>
     /// Forgets the ranges, keeping the arrays.
     /// </summary>
     public void Clear()
@@ -98,6 +126,8 @@ internal sealed class TextRanges
         _paintCount = 0;
         Array.Clear(_links, 0, _linkCount);
         _linkCount = 0;
+        HoveredLink = -1;
+        HitBuild = 0;
     }
 
     /// <summary>

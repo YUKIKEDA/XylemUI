@@ -10,6 +10,7 @@ internal sealed class TextScene : IDisposable
     private readonly NodeHandle _root;
     private readonly WindowFrames _frames;
     private ScopeHandle _scope;
+    private WindowInput? _input;
 
     public TextScene(Font font)
     {
@@ -85,6 +86,56 @@ internal sealed class TextScene : IDisposable
 
     // Draws again: the frame that a change asked for.
     public void Draw() => Scheduler.Run();
+
+    // The window's pointer input, made the first time, and the cursors it showed.
+    public WindowInput Input => _input ??= new WindowInput(Tree, _frames, Pointer);
+
+    public CursorPlatform Pointer { get; } = new();
+
+    public void Mouse(PointerInputKind kind, int x, int y, PointerButton button = PointerButton.None) =>
+        Input.Handle(
+            new PointerInput(
+                kind,
+                x,
+                y,
+                button,
+                kind == PointerInputKind.Down ? PointerButtons.Left : PointerButtons.None,
+                KeyModifiers.None,
+                kind == PointerInputKind.Down ? 1 : 0,
+                TimeSpan.Zero,
+                PointerType.Mouse
+            )
+        );
+
+    public void Touch(PointerInputKind kind, int x, int y) =>
+        Input.Handle(
+            new PointerInput(
+                kind,
+                x,
+                y,
+                kind is PointerInputKind.Down or PointerInputKind.Up ? PointerButton.Left : PointerButton.None,
+                kind is PointerInputKind.Down or PointerInputKind.Move ? PointerButtons.Left : PointerButtons.None,
+                KeyModifiers.None,
+                kind == PointerInputKind.Down ? 1 : 0,
+                TimeSpan.Zero,
+                PointerType.Touch,
+                PointerId: 1,
+                IsPrimary: true,
+                Pressure: kind == PointerInputKind.Up ? 0 : 0.5f
+            )
+        );
+
+    // Records the cursors the input shows.
+    internal sealed class CursorPlatform : IPointerPlatform
+    {
+        public CursorKind Cursor { get; private set; } = CursorKind.Arrow;
+
+        public void Capture() { }
+
+        public void ReleaseCapture() { }
+
+        public void SetCursor(CursorKind cursor) => Cursor = cursor;
+    }
 
     // A command of the display list: a rectangle (x, y, width, height), a glyph run (its glyph count), or a line (its two
     // ends, width, and dash).

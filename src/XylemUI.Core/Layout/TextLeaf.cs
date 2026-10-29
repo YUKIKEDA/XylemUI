@@ -147,6 +147,7 @@ internal sealed class TextLeaf
                 return false;
             }
 
+            writer.Ranges.TakeStateOf(Ranges);
             (Ranges, writer.Ranges) = (writer.Ranges, Ranges);
         }
 
