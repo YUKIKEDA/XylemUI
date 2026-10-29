@@ -94,12 +94,13 @@ internal sealed partial class WindowInput
     }
 
     // A pointer's move: its position and hover, the tap's slop, the velocity's position, the route, and, for the finger that
-    // drives a drag that ran before this move, the container's position by the move's difference (Flutter's latestPointer).
+    // drives a drag that ran before this move, the container's position by the move's difference (Flutter's latestPointer). The
+    // move that starts a drag moves nothing: the pointer had no drag before it.
     private void Move(PointerState pointer, in PointerInput input)
     {
         int previousX = pointer.Last.X;
         int previousY = pointer.Last.Y;
-        bool driving = pointer.Drag is { Flinging: false } before && before.Active == input.PointerId;
+        bool driving = pointer.Drag is { Flinging: false };
         Point(pointer, input);
         if (pointer.Pressing && !pointer.PastSlop && pointer.Type == PointerType.Touch)
         {

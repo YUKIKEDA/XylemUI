@@ -187,18 +187,21 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
 
     /// <summary>
     /// A node inside the container that stops the move keeps the drag for itself: the container does not scroll, and the press
-    /// still clicks.
+    /// still clicks. A pen's drag elsewhere scrolls; the mouse's does not.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The box whose height scrolls; its item stops each move in the bubble phase and logs its click.
     ///
     /// Steps:
-    /// - Pen down at (50, 20) on the item; move to (50, -20), 40 up; release.
+    /// - Pen down at (50, 20) on the item; move to (50, -20), 40 up; release. The mouse down at (50, 90) below the item, moved 40 up,
+    ///   moved 10 more, released. The pen down at (50, 90), moved 30 and 10 up,
+    ///   released. The same pen drag with a move handler on the box that stops the move.
     ///
     /// Expected:
     /// - The position stays 0, and the release over the item clicks: the slop of a tap is a touch's, and a pen clicks as the mouse
-    ///   does (design §7, "Touch and pen").
+    ///   does (design §7, "Touch and pen"). The mouse's drag moves nothing. The pen's drag outside the item scrolls 10; with the box's
+    ///   handler stopping the move, the same drag moves nothing more.
     /// </remarks>
     [Fact]
     public void Drag_StoppedByANodeInside_DoesNotScroll() =>
@@ -213,9 +216,28 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
             scene.Pen(PointerInputKind.Down, 1, 50, 20, 0);
             scene.Pen(PointerInputKind.Move, 1, 50, -20, 10);
             scene.Pen(PointerInputKind.Up, 1, 50, 20, 20);
-
             Assert.Equal(0, scene.Offset.Y);
             Assert.Equal(1, clicks);
+
+            scene.Mouse(PointerInputKind.Down, 50, 90, 1_000);
+            scene.Mouse(PointerInputKind.Move, 50, 50, 1_010);
+            scene.Mouse(PointerInputKind.Move, 50, 40, 1_020);
+            scene.Mouse(PointerInputKind.Up, 50, 50, 1_200);
+            Assert.Equal(0, scene.Offset.Y);
+
+            scene.Pen(PointerInputKind.Down, 1, 50, 90, 2_000);
+            scene.Pen(PointerInputKind.Move, 1, 50, 60, 2_010);
+            scene.Pen(PointerInputKind.Move, 1, 50, 50, 2_020);
+            scene.Pen(PointerInputKind.Up, 1, 50, 50, 2_200);
+            Assert.Equal(10, scene.Offset.Y);
+
+            // The box's own handler stops the move before the box takes it, as it stops a wheel.
+            scene.Tree.AddPointerHandler(scene.Container, PointerEventKind.Move, EventPhase.Bubble, (in PointerEvent e) => e.StopPropagation());
+            scene.Pen(PointerInputKind.Down, 1, 50, 90, 3_000);
+            scene.Pen(PointerInputKind.Move, 1, 50, 60, 3_010);
+            scene.Pen(PointerInputKind.Move, 1, 50, 50, 3_020);
+            scene.Pen(PointerInputKind.Up, 1, 50, 50, 3_200);
+            Assert.Equal(10, scene.Offset.Y);
         });
 
     /// <summary>
@@ -323,8 +345,9 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
     ///   the frames run to the end.
     ///
     /// Expected:
-    /// - The first three keep their position over the frames. The last one's second frame is at the fling of 8,000 from the
-    ///   release, and it ends at 900 with no frame asked for.
+    /// - The first three keep their position over a frame and ask for none after it. The last one's second frame is at the
+    ///   fling of 8,000 from the release; after the frame that reaches 900, and the one its position asked
+    ///   for, none is asked for, in less than half the fling's duration.
     /// </remarks>
     [Fact]
     public void Fling_OnlyPastFluttersConditions_AndStopsAtTheEnd() =>
@@ -333,28 +356,34 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
             var scene = new Scene(scale: 10);
             scene.Draw();
 
+            // A fling that did not start asks for no frame after the one the release's own move asked for: a fling's first frame,
+            // even one that moves nothing, asks for the next.
             float released = scene.Swipe(fromY: 90, steps: 5, step: -0.4f, milliseconds: 10, start: 0, preDrag: true);
-            Assert.Equal(released, scene.FramesAfter(3));
+            Assert.Equal((released, false), (scene.FramesAfter(1), scene.Scheduler.Pending));
             released = scene.Swipe(fromY: 90, steps: 8, step: -2, milliseconds: 1, start: 1_000, preDrag: true);
-            Assert.Equal(released, scene.FramesAfter(3));
+            Assert.Equal((released, false), (scene.FramesAfter(1), scene.Scheduler.Pending));
             scene.ScrollTo(30);
             scene.Frames(1);
             released = scene.Swipe(fromY: 10, steps: 10, step: 10, milliseconds: 10, start: 2_000);
             Assert.Equal(0, released);
-            Assert.Equal(0, scene.FramesAfter(3));
+            Assert.Equal((0f, false), (scene.FramesAfter(1), scene.Scheduler.Pending));
 
             scene.ScrollTo(600);
             scene.Frames(1);
             released = scene.Swipe(fromY: 90, steps: 5, step: -6, milliseconds: 0.3, start: 3_000, preDrag: true);
             scene.Frames(2);
             Assert.Equal((float)new ClampingFling(released, 8_000).At(0.016), scene.Offset.Y, 2);
-            for (int i = 0; i < 1_000 && scene.Scheduler.Pending; i++)
+            for (int i = 0; i < 1_000 && scene.Offset.Y < 900; i++)
             {
                 scene.Frames(1);
             }
 
-            Assert.False(scene.Scheduler.Pending);
+            // The frame that reaches the end is the fling's last, long before its time is over: the position it wrote asks for one more
+            // frame, which draws nothing new and asks for none.
             Assert.Equal(900, scene.Offset.Y);
+            scene.Frames(1);
+            Assert.False(scene.Scheduler.Pending);
+            Assert.True(scene.Time.Now.TotalMilliseconds - 3_000 < new ClampingFling(released, 8_000).Duration * 1_000 / 2);
         });
 
     /// <summary>
@@ -419,6 +448,70 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
             scene.Frames(1);
             Assert.Equal(before + 50, scene.Offset.Y);
             Assert.False(scene.Scheduler.Pending);
+        });
+
+    /// <summary>
+    /// A container at the end the drag moves it to does not take the drag: the node pressed keeps its press and its moves.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The box whose height scrolls, at position 0; its item logs its down, cancel, and moves.
+    ///
+    /// Steps:
+    /// - Touch down at (50, 10) on the item; move to (50, 40) and to (50, 45), down.
+    ///
+    /// Expected:
+    /// - The item logs the down and both moves, and no cancel; the position stays 0.
+    /// </remarks>
+    [Fact]
+    public void Drag_TowardTheEndItIsAt_IsNotTaken() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            var log = new List<string>();
+            scene.Log(scene.Item, log, "item");
+            scene.Draw();
+
+            scene.Touch(PointerInputKind.Down, 1, 50, 10, 0);
+            scene.Touch(PointerInputKind.Move, 1, 50, 40, 10);
+            scene.Touch(PointerInputKind.Move, 1, 50, 45, 20);
+
+            Assert.Equal(["item down", "item move", "item move"], log);
+            Assert.Equal(0, scene.Offset.Y);
+        });
+
+    /// <summary>
+    /// A press starts its positions again: its velocity reads none of the press before it, even when it comes within 40 ms of
+    /// that press's last move.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The box whose height scrolls, its column 10,000 high.
+    ///
+    /// Steps:
+    /// - Fling at 1,000 and run a frame. 10 ms after the fling's last move, touch down again at (50, 50), which stops the fling;
+    ///   10 ms later move to (50, 120), down, which starts a drag, and release there; run three frames.
+    ///
+    /// Expected:
+    /// - The new press has two positions, too few for a velocity, so the position stays where the release left it. With the
+    ///   positions of the press before, which end 10 ms earlier, the velocity would read a movement of 50 and fling.
+    /// </remarks>
+    [Fact]
+    public void Velocity_AnotherPress_ReadsNoneOfThePressBefore() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene(contentHeight: 10_000);
+            scene.Draw();
+            _ = scene.Swipe(fromY: 90, steps: 10, step: -10, milliseconds: 10);
+            scene.Frames(1);
+            double last = 100;
+
+            scene.Touch(PointerInputKind.Down, 1, 50, 50, last + 10);
+            scene.Touch(PointerInputKind.Move, 1, 50, 120, last + 20);
+            scene.Touch(PointerInputKind.Up, 1, 50, 120, last + 20);
+            float released = scene.Offset.Y;
+
+            Assert.Equal(released, scene.FramesAfter(3));
         });
 
     /// <summary>
@@ -598,6 +691,8 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
         public void Touch(PointerInputKind kind, int id, int x, int y, double milliseconds) => Send(kind, id, x, y, milliseconds, PointerType.Touch);
 
         public void Pen(PointerInputKind kind, int id, int x, int y, double milliseconds) => Send(kind, id, x, y, milliseconds, PointerType.Pen);
+
+        public void Mouse(PointerInputKind kind, int x, int y, double milliseconds) => Send(kind, 0, x, y, milliseconds, PointerType.Mouse);
 
         private void Send(PointerInputKind kind, int id, int x, int y, double milliseconds, PointerType type)
         {
