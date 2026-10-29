@@ -257,6 +257,58 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// The ranges of a leaf take design §4.8's bytes: 136 + 80 L + 60 P + 144 K, for arrays of L ranges of the layout, P of the
+    /// look, and K links, each 2 long at first and doubled when full.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The sizes of a range of the layout, of the look, and of a link, read with <c>Unsafe.SizeOf</c>: 80, 60, and 144 bytes.
+    ///
+    /// Steps:
+    /// - Measure the bytes allocated while a <c>TextRanges</c> is made and given 3 links and 5 pieces of text, each of a size and
+    ///   a color of its own.
+    ///
+    /// Expected:
+    /// - The sizes are as above; the arrays are 8, 8, and 4 long, and the bytes are the formula for them, to the 8 bytes each array
+    ///   is rounded to.
+    /// </remarks>
+    [Fact]
+    public void Ranges_Memory_IsTheFormula()
+    {
+        Assert.Equal(
+            (80, 60, 144),
+            (
+                System.Runtime.CompilerServices.Unsafe.SizeOf<LayoutRun>(),
+                System.Runtime.CompilerServices.Unsafe.SizeOf<PaintRun>(),
+                System.Runtime.CompilerServices.Unsafe.SizeOf<TextLink>()
+            )
+        );
+        PointerHandler click = (in PointerEvent e) => { };
+        var link = new TextLink(click, null, null, default);
+        _ = new TextRanges();
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var ranges = new TextRanges();
+        for (int i = 0; i < 3; i++)
+        {
+            _ = ranges.AddLink(link);
+        }
+
+        for (int i = 0; i < 5; i++)
+        {
+            ranges.Add(i, 1, new SpanStyle(Size: 10 + i, Color: Color.FromRgb((uint)i)), -1);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal((5, 5, 3), (ranges.Layout.Length, ranges.Paint.Length, ranges.Links.Length));
+
+        // The links' array grew from 2 to 4, and the others from 2 to 4 and 8; the arrays they left were allocated too.
+        long kept = 136 + (80 * 8) + (60 * 8) + (144 * 4);
+        long left = (24 + (80 * 2)) + (24 + (80 * 4)) + (24 + (60 * 2)) + (24 + (60 * 4)) + (24 + (144 * 2));
+        Assert.InRange(allocated, kept + left, kept + left + (8 * 8));
+    }
+
+    /// <summary>
     /// A frame that a builder writes the same ranges in, or ranges whose looks swap, allocates nothing, the drawing of their colors,
     /// backgrounds, and decorations included.
     /// </summary>
