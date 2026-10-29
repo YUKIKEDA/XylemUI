@@ -282,15 +282,9 @@ internal unsafe struct ViewportEventHandler
         table[0] = (delegate* unmanaged<ViewportEventHandler*, Guid*, void**, int>)&QueryInterface;
         table[1] = (delegate* unmanaged<ViewportEventHandler*, uint>)&AddRef;
         table[2] = (delegate* unmanaged<ViewportEventHandler*, uint>)&ReleaseCallback;
-        table[3] = (delegate* unmanaged<
-            ViewportEventHandler*,
-            IDirectManipulationViewport*,
-            DIRECTMANIPULATION_STATUS,
-            DIRECTMANIPULATION_STATUS,
-            int>)
-            &OnViewportStatusChanged;
-        table[4] = (delegate* unmanaged<ViewportEventHandler*, IDirectManipulationViewport*, int>)&OnViewportUpdated;
-        table[5] = (delegate* unmanaged<ViewportEventHandler*, IDirectManipulationViewport*, IDirectManipulationContent*, int>)&OnContentUpdated;
+        table[3] = (delegate* unmanaged<ViewportEventHandler*, void*, int, int, int>)&OnViewportStatusChanged;
+        table[4] = (delegate* unmanaged<ViewportEventHandler*, void*, int>)&OnViewportUpdated;
+        table[5] = (delegate* unmanaged<ViewportEventHandler*, void*, IDirectManipulationContent*, int>)&OnContentUpdated;
         return table;
     }
 
@@ -301,7 +295,7 @@ internal unsafe struct ViewportEventHandler
         table[0] = (delegate* unmanaged<void*, Guid*, void**, int>)&InteractionQueryInterface;
         table[1] = (delegate* unmanaged<void*, uint>)&InteractionAddRef;
         table[2] = (delegate* unmanaged<void*, uint>)&InteractionRelease;
-        table[3] = (delegate* unmanaged<void*, IDirectManipulationViewport2*, DIRECTMANIPULATION_INTERACTION_TYPE, int>)&OnInteraction;
+        table[3] = (delegate* unmanaged<void*, void*, int, int>)&OnInteraction;
         return table;
     }
 
@@ -324,19 +318,16 @@ internal unsafe struct ViewportEventHandler
     [UnmanagedCallersOnly]
     private static uint InteractionRelease(void* face) => ReleaseThis(FromInteraction(face));
 
+    // The viewport's pointer is not read, and the statuses come as their int values: the short types keep the table's casts on one
+    // line.
     [UnmanagedCallersOnly]
-    private static int OnViewportStatusChanged(
-        ViewportEventHandler* self,
-        IDirectManipulationViewport* viewport,
-        DIRECTMANIPULATION_STATUS current,
-        DIRECTMANIPULATION_STATUS previous
-    )
+    private static int OnViewportStatusChanged(ViewportEventHandler* self, void* viewport, int current, int previous)
     {
         try
         {
             if (NativeHandleTable.TryResolve(self->_windowId, out Win32Window? window))
             {
-                window.TouchpadStatusChanged(current, previous);
+                window.TouchpadStatusChanged((DIRECTMANIPULATION_STATUS)current, (DIRECTMANIPULATION_STATUS)previous);
             }
         }
         catch (Exception exception)
@@ -348,10 +339,10 @@ internal unsafe struct ViewportEventHandler
     }
 
     [UnmanagedCallersOnly]
-    private static int OnViewportUpdated(ViewportEventHandler* self, IDirectManipulationViewport* viewport) => S.S_OK;
+    private static int OnViewportUpdated(ViewportEventHandler* self, void* viewport) => S.S_OK;
 
     [UnmanagedCallersOnly]
-    private static int OnContentUpdated(ViewportEventHandler* self, IDirectManipulationViewport* viewport, IDirectManipulationContent* content)
+    private static int OnContentUpdated(ViewportEventHandler* self, void* viewport, IDirectManipulationContent* content)
     {
         try
         {
@@ -370,8 +361,9 @@ internal unsafe struct ViewportEventHandler
     }
 
     [UnmanagedCallersOnly]
-    private static int OnInteraction(void* face, IDirectManipulationViewport2* viewport, DIRECTMANIPULATION_INTERACTION_TYPE interaction)
+    private static int OnInteraction(void* face, void* viewport, int type)
     {
+        var interaction = (DIRECTMANIPULATION_INTERACTION_TYPE)type;
         try
         {
             if (NativeHandleTable.TryResolve(FromInteraction(face)->_windowId, out Win32Window? window))

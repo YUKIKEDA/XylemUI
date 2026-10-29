@@ -37,7 +37,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
         {
             using var window = new Win32Window("touchpad", 200, 100);
             var viewport = new FakeViewport();
-            window.TouchpadViewport = viewport;
+            window.UseTouchpadViewport(viewport);
             window.PointerReader = new TypeReader { Types = { [7] = POINTER_INPUT_TYPE.PT_TOUCHPAD, [8] = POINTER_INPUT_TYPE.PT_TOUCH } };
             int frames = 0;
             window.GestureFrameNeeded = () => frames++;
@@ -75,7 +75,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
         {
             using var window = new Win32Window("touchpad", 200, 100);
             var viewport = new FakeViewport();
-            window.TouchpadViewport = viewport;
+            window.UseTouchpadViewport(viewport);
             float s = window.ScaleFactor;
             var inputs = new List<PointerInput>();
             window.PointerInputReceived = (in PointerInput input) => inputs.Add(input);
@@ -128,7 +128,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
             using var window = new Win32Window("touchpad", 200, 100);
             float s = window.ScaleFactor;
             var viewport = new FakeViewport { Translation = (5 * s, 100 * s) };
-            window.TouchpadViewport = viewport;
+            window.UseTouchpadViewport(viewport);
             var inputs = new List<PointerInput>();
             window.PointerInputReceived = (in PointerInput input) => inputs.Add(input);
 
@@ -166,7 +166,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
         {
             using var window = new Win32Window("touchpad", 200, 100);
             var viewport = new FakeViewport();
-            window.TouchpadViewport = viewport;
+            window.UseTouchpadViewport(viewport);
             var platform = (IPointerPlatform)window;
             int frames = 0;
             window.GestureFrameNeeded = () => frames++;
@@ -210,7 +210,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var window = new Win32Window("touchpad", 200, 100);
-            window.TouchpadViewport = new FakeViewport();
+            window.UseTouchpadViewport(new FakeViewport());
             window.PointerReader = new TypeReader { Types = { [7] = POINTER_INPUT_TYPE.PT_TOUCHPAD } };
             int wheels = 0;
             var counted = new List<int>();
@@ -259,7 +259,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var window = new Win32Window("touchpad", 200, 100);
-            window.TouchpadViewport = new FakeViewport();
+            window.UseTouchpadViewport(new FakeViewport());
             var platform = (IPointerPlatform)window;
             int inputs = 0;
             window.PointerInputReceived = (in PointerInput _) => inputs++;

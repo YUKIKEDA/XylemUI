@@ -60,6 +60,7 @@ internal static class InputCost
         using var wheel = new WheelScroll();
         report.Number("us_per_wheel_p50", Median(21, wheel.Time));
         report.Number("us_per_touch_drag_move_p50", Median(21, wheel.TimeDrag));
+        report.Number("us_per_touchpad_pan_update_p50", Median(21, wheel.TimePan));
         using (var fling = new WheelScroll(100_000))
         {
             report.Number("us_per_fling_frame_p50", Median(21, fling.TimeFling));
@@ -381,6 +382,28 @@ internal static class InputCost
             return microseconds;
         }
 
+        // The microseconds of one update of a touchpad's pan that the container took, 1 pixel up and down by turns (row I1c). Updates
+        // as many before, unmeasured. The pan starts with an update of 20 up, past the slop, and an update of 10, and ends at once, so
+        // slowly that it does not fling.
+        public double TimePan()
+        {
+            Pan(PointerInputKind.PanStart, 0, 0);
+            Pan(PointerInputKind.PanUpdate, -20, 1);
+            Pan(PointerInputKind.PanUpdate, -10, 2);
+            Panning();
+            long start = Stopwatch.GetTimestamp();
+            Panning();
+            double microseconds = Stopwatch.GetElapsedTime(start).TotalMicroseconds / InputCost.Moves;
+            Pan(PointerInputKind.PanEnd, 0, 1_000);
+            if (_state.OffsetValue.Y != 10)
+            {
+                throw new InvalidOperationException($"The pan left the position at {_state.OffsetValue.Y}.");
+            }
+
+            _state.ScrollTo(default);
+            return microseconds;
+        }
+
         // The microseconds of one frame's step of a fling at 8,000 pixels a second, 0.05 ms apart so that it neither ends nor reaches
         // the end of the range. Steps as many before, unmeasured.
         public double TimeFling()
@@ -428,6 +451,31 @@ internal static class InputCost
                 Touch(PointerInputKind.Move, (i & 1) == 0 ? y - 1 : y, 3);
             }
         }
+
+        private void Panning()
+        {
+            for (int i = 0; i < InputCost.Moves; i++)
+            {
+                Pan(PointerInputKind.PanUpdate, (i & 1) == 0 ? -1 : 1, 3);
+            }
+        }
+
+        private void Pan(PointerInputKind kind, float dy, double milliseconds) =>
+            _input.Handle(
+                new PointerInput(
+                    kind,
+                    5,
+                    150,
+                    PointerButton.None,
+                    PointerButtons.None,
+                    0,
+                    0,
+                    TimeSpan.FromMilliseconds(milliseconds),
+                    PointerType.Touchpad,
+                    new System.Numerics.Vector2(0, dy),
+                    PointerId: 2
+                )
+            );
 
         private void Touch(PointerInputKind kind, int y, double milliseconds)
         {

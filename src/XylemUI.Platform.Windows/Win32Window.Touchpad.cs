@@ -27,17 +27,19 @@ public sealed unsafe partial class Win32Window
     internal Action? GestureFrameNeeded { get; set; }
 
     /// <summary>
-    /// Gets or sets the window's DirectManipulation viewport: DirectManipulation's, made with the window, <see langword="null"/>
-    /// when it could not be made, or the tests'. Setting one disposes the one before.
+    /// Gets the window's DirectManipulation viewport: DirectManipulation's, made with the window, <see langword="null"/> when it
+    /// could not be made, or the tests' (<see cref="UseTouchpadViewport"/>).
     /// </summary>
-    internal ITouchpadViewport? TouchpadViewport
+    internal ITouchpadViewport? TouchpadViewport => _touchpad?.Viewport;
+
+    /// <summary>
+    /// Replaces the window's viewport, disposing the one before: the tests' fake, or none.
+    /// </summary>
+    /// <param name="viewport">The viewport, or <see langword="null"/>.</param>
+    internal void UseTouchpadViewport(ITouchpadViewport? viewport)
     {
-        get { return _touchpad?.Viewport; }
-        set
-        {
-            _touchpad?.Viewport.Dispose();
-            _touchpad = value is null ? null : new TouchpadGestures(value);
-        }
+        _touchpad?.Viewport.Dispose();
+        _touchpad = viewport is null ? null : new TouchpadGestures(viewport);
     }
 
     /// <inheritdoc />
