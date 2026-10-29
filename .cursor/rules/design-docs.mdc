@@ -59,6 +59,10 @@ A claim about another implementation that a Grill question makes (what it does, 
 
 A recommendation that picks a value other than a compared implementation's puts that value and the reason for the difference in the question itself. I1b's Q2 recommended a slop of 18 for a container that scrolls on both axes; Flutter's two-axis drag uses `kPanSlop`, 36, which neither the question nor the design said, and the review found it (PR #393).
 
+Before a Grill offers an option, search `docs/design-decisions.md` and the design's records of rejected options for it. An option rejected before is named as such in the question, with the old reason and why it no longer holds. I1c's Q10 offered telling the scheduler whether a frame presented, which S7 had rejected as needing a new link between the renderer and the platform; the question did not say so, and writing the design found it (PR #401).
+
+A checkout under `.repos/` can hold part of a repository: `.repos/flutter` lacked `gestures/converter.dart`, `binding.dart`, `arena.dart`, `widgets/scroll_position.dart`, and the Windows embedder's headers, and `.repos/avalonia12` lacks `Avalonia.Controls` and the macOS backend. A file that is not there is not evidence that the implementation lacks it. Fetch the file at the same tag (`raw.githubusercontent.com/<owner>/<repo>/<tag>/<path>`), read it, and delete the copy (PR #401).
+
 Before a line of a compared implementation is cited, the version of its checkout under `.repos/` is read with `git describe --tags` and compared with the version the design names. Before I1b's Grill, `.repos/flutter` was at 3.47.7 and `.repos/zed` at v1.24.3, while the design cites Flutter 3.47.8 and zed v1.25.3; lines read from another version can move without notice (PR #393).
 
 A design that allocates by a size the content decides (an offscreen layer as large as its children's bounds) writes what cuts the size (the clip, the target), the cap, and what is drawn when the cap refuses it. R4c's first design said a layer is as large as its bounds; a group around scrolling content or a far transform could ask for a texture past D3D11's 16,384 pixels a side or past 1 GB, and the review found it (PR #260).
@@ -132,6 +136,8 @@ A design in which a part does something through handlers it adds (a button's key
 A design that calls a user's handler in the middle of changing its own state says what happens when the handler comes back into it: a frame run synchronously, a message pumped inside the handler. V1c's design did not; the review found that a rehit from a leave handler rewrote the hover chains being sent (PR #327), and the re-review found the same through the window's leave (Issue #329).
 
 A mechanism where a stage clears marks only for the items of a list (the paint updates) says that every path that sets the mark puts the item in the list. V1b's design said a frame clears the marks of its paint updates, and the layout changes set the paint mark without the list; the mark stayed, and a later change asked for no frame (Issue #324).
+
+A decision that changes what happens under a condition (a frame that did not present) is written for every path on which the condition holds, read against the mechanism, not only for the path that led to it. I1c's first §2.11 had the scheduler wait on the timer when the next frame was asked for inside a callback that did not present; the swap chain's object stays unsignaled after such a callback whoever asks next, so a frame asked for later by a hover change still waited 50 ms. The review found it (PR #401).
 
 A design in which pending work asks for the next turn of a loop (a frame, a flush) says which work asks for it, including work a turn puts back after a failure. V1b cleared the frame request at the frame's start, so the request the layout pass put back after a measurement threw asked for a new frame each time, and a leaf that kept throwing drew and presented every frame (PR #313's review).
 
