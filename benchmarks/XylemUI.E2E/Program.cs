@@ -29,6 +29,7 @@
 //   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
 //   touchpad                   a frame's poll of a hidden window's DirectManipulation viewport with no contact (row I1c)
 //   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
+//   rich-text                  the layout, draw, restyle, and link hover of text leaves with ranges, next to plain ones (row T12)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
 //   curves                     the lines, ellipses, and arcs of row R4b, to compare with benchmarks/compare/curves.html
 //   dpi-awareness              whether the process is per-monitor DPI aware (V2) when fonts and glyphs come before the window (row W1)
@@ -97,6 +98,7 @@ return scenario switch
     ),
     "hit-region" => HitCost.Run(),
     "segment" => SegmentCost.Run(),
+    "rich-text" => RichTextCost.Run(args.Length > 1 ? args[1] : null),
     "shapes" => ShapeGallery.Run(),
     "curves" => CurveGallery.Run(),
     "draw-text" => GlyphResolve.DrawTextCost(cold: args.Contains("--cold")),
