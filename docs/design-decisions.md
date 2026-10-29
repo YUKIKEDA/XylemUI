@@ -333,7 +333,7 @@ Decision:
   dirty フレームは DisplayList / 頂点バッファを全体線形再構築。SoA の再利用バッファ。
   定常状態は allocation-free。不足時のみ grow。
   頂点データは、`Map(WRITE_DISCARD)` した頂点バッファを unmanaged struct の `Span` として直接書く（S7。中間の配列もコピーも無い）。
-  フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。Present しなかったフレームの次の 1 回は、待機オブジェクトの代わりに waitable timer（16 ms）を待つ。Core は Present したら `IFrameScheduler.FramePresented` を呼ぶ（I1c の Grill、Issue #400）。待機オブジェクトには 50 ms のタイムアウトを付け、切れたらフレームを回す（Present したのに鳴らない場合も止まらない）。
+  フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。最後のフレームが Present しなかったら、次のフレームは、いつ頼まれても、待機オブジェクトの代わりに waitable timer（16 ms）を待つ。Present したフレームで待機オブジェクトに戻す。Core は Present したら `IFrameScheduler.FramePresented` を呼ぶ（I1c の Grill、Issue #400）。待機オブジェクトには 50 ms のタイムアウトを付け、切れたらフレームを回す（Present したのに鳴らない場合も止まらない）。
   Frame-in-flight pool。GPU 完了前のスロット再利用は禁止。
   GPU 描画と Present は画面全体。D3D11.0 は Event Query 必須。
   Fine-grained は UI/Layout に限定。Paint は v1 では coarse。
