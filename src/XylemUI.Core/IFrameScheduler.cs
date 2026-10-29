@@ -10,8 +10,9 @@ namespace XylemUI;
 /// request does not allocate.
 /// </para>
 /// <para>
-/// When the clock is a swap chain, a callback that returns without presenting delays the next frame by up to the platform's
-/// wait timeout (50 ms on Win32) instead of stopping frames (design §2.11).
+/// When the clock is a swap chain, a callback that presents calls <see cref="FramePresented"/>. After a callback that did not,
+/// the next frame waits on a timer instead of the swap chain, which stays unsignaled until a present (design §2.11, "Frames
+/// that do not present").
 /// </para>
 /// </remarks>
 public interface IFrameScheduler
@@ -28,4 +29,9 @@ public interface IFrameScheduler
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     void CancelFrame();
+
+    /// <summary>
+    /// Tells the scheduler that the callback running has presented a frame. Called from inside the callback, after the present.
+    /// </summary>
+    void FramePresented();
 }

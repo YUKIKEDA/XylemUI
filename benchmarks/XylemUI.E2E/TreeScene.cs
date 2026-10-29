@@ -211,6 +211,8 @@ internal sealed class TreeScene : IDisposable
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
+
+        public void FramePresented() { }
     }
 
     private sealed class OneFont(Font font) : IFontProvider

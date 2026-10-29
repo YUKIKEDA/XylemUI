@@ -359,6 +359,8 @@ public sealed class ButtonTests(UiThreadFixture ui)
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
+
+        public void FramePresented() { }
     }
 
     private sealed class NoPlatform : IPointerPlatform

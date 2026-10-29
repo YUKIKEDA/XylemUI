@@ -711,6 +711,8 @@ internal static class InputCost
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
+
+        public void FramePresented() { }
     }
 
     private sealed class NoPlatform : IPointerPlatform

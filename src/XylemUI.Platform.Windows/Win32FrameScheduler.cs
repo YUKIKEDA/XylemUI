@@ -17,8 +17,12 @@ namespace XylemUI.Platform.Windows;
 /// </para>
 /// <para>
 /// The swap chain's object counts like a semaphore: a wait takes one, a present gives it back. A frame callback that returns
-/// without presenting (nothing changed, the window is minimized, an error) leaves it at zero, so the wait has a timeout of
-/// <see cref="SwapChainWaitTimeoutMilliseconds"/>, after which the frame runs anyway. The next frame is late, never lost.
+/// without presenting (nothing changed, the window is minimized, an error) leaves it at zero, and it stays so whoever asks for
+/// the next frame. The scheduler keeps whether the last callback presented (<see cref="FramePresented"/>): after one that did
+/// not, the next frame waits on the timer instead, however and whenever it is asked for, and a callback that presents goes back
+/// to the object (design §2.11, "Frames that do not present"). A touchpad contact that rests asks for frames that draw nothing,
+/// and DirectManipulation needs one each frame (design §7, I1c). The wait on the object keeps a timeout of
+/// <see cref="SwapChainWaitTimeoutMilliseconds"/>, so that an object that stays unsignaled after a present stops no frame.
 /// </para>
 /// </remarks>
 internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
@@ -38,6 +42,11 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     private Action? _pending;
     private bool _timerRunning;
 
+    // Whether the callback running has presented, and whether the last one that ran did not: the swap chain's object is then
+    // unsignaled until a present, so the clock is the timer.
+    private bool _presented;
+    private bool _lastDidNotPresent;
+
     public Win32FrameScheduler()
     {
         _timer = CreateWaitableTimerExW(null, null, (uint)CREATE.CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, (uint)TIMER_ALL_ACCESS);
@@ -54,10 +63,13 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     internal bool IsClockRunning => _timerRunning;
 
     /// <summary>Gets the handle the message loop waits on while a frame is pending.</summary>
-    public HANDLE WaitHandle => _swapChainClock != HANDLE.NULL ? _swapChainClock : _timer;
+    public HANDLE WaitHandle => UsesTimer ? _timer : _swapChainClock;
 
     /// <summary>Gets how long the loop waits on <see cref="WaitHandle"/> before it runs the pending frame anyway.</summary>
-    public uint WaitTimeoutMilliseconds => _swapChainClock != HANDLE.NULL ? SwapChainWaitTimeoutMilliseconds : INFINITE;
+    public uint WaitTimeoutMilliseconds => UsesTimer ? INFINITE : SwapChainWaitTimeoutMilliseconds;
+
+    // The timer is the clock without a swap chain, and after a callback that did not present.
+    private bool UsesTimer => _swapChainClock == HANDLE.NULL || _lastDidNotPresent;
 
     /// <summary>
     /// Uses a swap chain's frame latency waitable object as the clock, or the timer again when it is zero. A pending frame
@@ -68,6 +80,9 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
         UiThread.VerifyAccess();
         StopTimer();
         _swapChainClock = waitableObject;
+
+        // A new swap chain's object starts signaled: no present is owed to it.
+        _lastDidNotPresent = false;
         if (_pending is not null)
         {
             StartTimer();
@@ -94,6 +109,17 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
         StopTimer();
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// A present outside a callback (the synchronous resize path, design §2.11.1) gives the swap chain's object back too, so the
+    /// clock goes back to it at once.
+    /// </remarks>
+    public void FramePresented()
+    {
+        _presented = true;
+        _lastDidNotPresent = false;
+    }
+
     public void Dispose()
     {
         StopTimer();
@@ -109,6 +135,7 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
         _pending = null;
         if (callback is not null)
         {
+            _presented = false;
             try
             {
                 callback();
@@ -117,19 +144,26 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
             {
                 Win32MessageLoop.ReportCallbackException(exception);
             }
+
+            _lastDidNotPresent = !_presented;
         }
 
-        // The callback may have asked for the next frame; keep the timer running only then.
-        if (_pending is null)
+        // The callback may have asked for the next frame; keep the timer running only then, and only while it is the clock. A
+        // request made later starts it (RequestFrame).
+        if (_pending is null || !UsesTimer)
         {
             StopTimer();
+        }
+        else if (!_timerRunning)
+        {
+            StartTimer();
         }
     }
 
     // The swap chain's object signals by itself; only the timer has to be armed.
     private void StartTimer()
     {
-        if (_swapChainClock != HANDLE.NULL)
+        if (!UsesTimer)
         {
             return;
         }

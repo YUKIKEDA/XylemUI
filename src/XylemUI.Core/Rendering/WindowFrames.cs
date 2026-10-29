@@ -182,6 +182,7 @@ internal sealed class WindowFrames
         _list.ResolveGlyphs(_atlas);
         _target.Draw(_list, ClearColor, _atlas);
         _target.Present();
+        _scheduler.FramePresented();
         PresentCount++;
 
         // The hit regions changed: a pointer that did not move may be over other nodes now (design §7, "Pointer input").

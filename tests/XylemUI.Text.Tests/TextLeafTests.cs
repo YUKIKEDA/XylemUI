@@ -573,6 +573,8 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
 
         public void CancelFrame() => _callback = null;
 
+        public void FramePresented() { }
+
         public void Run()
         {
             Action? callback = _callback;

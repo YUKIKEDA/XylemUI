@@ -33,6 +33,8 @@ internal static class FrameDoubles
 
         public void CancelFrame() => _callback = null;
 
+        public void FramePresented() { }
+
         public void Run()
         {
             Action? callback = _callback;
