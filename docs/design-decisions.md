@@ -333,7 +333,7 @@ Decision:
   dirty フレームは DisplayList / 頂点バッファを全体線形再構築。SoA の再利用バッファ。
   定常状態は allocation-free。不足時のみ grow。
   頂点データは、`Map(WRITE_DISCARD)` した頂点バッファを unmanaged struct の `Span` として直接書く（S7。中間の配列もコピーも無い）。
-  フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。待機には 50 ms のタイムアウトを付け、切れたらフレームを回す（Present しないフレームの後も止まらない）。
+  フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。Present しなかったフレームの次の 1 回は、待機オブジェクトの代わりに waitable timer（16 ms）を待つ。Core は Present したら `IFrameScheduler.FramePresented` を呼ぶ（I1c の Grill、Issue #400）。待機オブジェクトには 50 ms のタイムアウトを付け、切れたらフレームを回す（Present したのに鳴らない場合も止まらない）。
   Frame-in-flight pool。GPU 完了前のスロット再利用は禁止。
   GPU 描画と Present は画面全体。D3D11.0 は Event Query 必須。
   Fine-grained は UI/Layout に限定。Paint は v1 では coarse。
@@ -629,6 +629,22 @@ Rejected:
   - 2 本の指の動きの平均で動かす（Flutter の Apple の既定 `averageBoundaryPointers`。Windows での Flutter の既定は、最後に下りた指）
   - タッチだけでスクロールし、ペンではしない（Flutter と Avalonia はペンでもスクロールする。描く部品は、閾値を越えた move を止めて自分で取る）
   - 中のノードのハンドラが move を止めても、箱がドラッグを取る（スライダーや描く面が、スクロールの箱の中で使えない）
+
+I1c の細部（I1c の Grill、Issue #400）:
+
+Rejected:
+  - COM を MTA のまま `CoInitializeEx(MULTITHREADED)` で初期化する（比べる 3 つはどれも UI スレッドを STA にする。後のクリップボード・ドラッグアンドドロップ・UIA も STA が要る）
+  - DirectManipulation を作れなかったら、ウィンドウを作るのに失敗する（GPUI。タッチパッドはホイールのメッセージで動き続けられる）
+  - パンを、段（始まり・途中・終わり）の付いた Wheel として渡す（GPUI。閾値・箱の固定・慣性でホイールと違う動きをするので、ホイールのハンドラが別の意味の量を受け取る）
+  - パンをハンドラに見せず、スクロールだけにする（中のノードが、パンを止めて自分で使えない）
+  - タッチパッドは閾値なしで動かす（GPUI。Flutter はタッチと同じ 18 を使う）
+  - パンのイベントごとに、カーソルの下でヒットテストし直す（GPUI。慣性の途中で別の箱に移り、重なった箱がすべて同じ量を受ける）
+  - タッチパッドのパンと慣性の間も、タッチと同じく中への入力を止める（Flutter はトラックパッドで止めない、`scroll_activity.dart` 538 行目。慣性の間もマウスのクリックが中に届く）
+  - OS の慣性の変換も、パンとして渡す（GPUI。タッチのドラッグと流し方が変わる）
+  - 構成に `SCALING` を入れる（Flutter と GPUI。拡大は行 I2 で、受けても使わない値を I1c で入れない）
+  - `RAILS_X`・`RAILS_Y` を付ける（GPUI と Chromium。両方の軸の箱は、I1b と同じくベクトルで動かす）
+  - viewport を 1000 × 1000 で固定する（GPUI。Flutter はクライアントの大きさに合わせる）
+  - 指を止めている間の `Update` を、待機オブジェクトの 50 ms のタイムアウトのまま回す（指が動き出した最初の量が最大 50 ms 遅れる。§2.11「Present しないフレーム」）
 
 ---
 
