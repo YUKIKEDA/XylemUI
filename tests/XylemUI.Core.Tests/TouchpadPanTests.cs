@@ -133,6 +133,66 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The container's own handler that stops a pan update keeps the container from taking it: the container decides after its own
+    /// handlers, as for the wheel (row K1b's lesson, PR #360).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The scene, with the container's bubble handler of the update stopping it.
+    ///
+    /// Steps:
+    /// - A pan at (50, 40) by −20 and −20 on y.
+    ///
+    /// Expected:
+    /// - The position stays 0.
+    /// </remarks>
+    [Fact]
+    public void Pan_StoppedByTheContainersOwnHandler_DoesNotScroll() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            scene.Tree.AddPointerHandler(scene.Container, PointerEventKind.PanUpdate, EventPhase.Bubble, (in PointerEvent e) => e.StopPropagation());
+            scene.Draw();
+
+            scene.Pan(PointerInputKind.PanStart, default, 0);
+            scene.Pan(PointerInputKind.PanUpdate, new Vector2(0, -20), 16);
+            scene.Pan(PointerInputKind.PanUpdate, new Vector2(0, -20), 32);
+            scene.Pan(PointerInputKind.PanEnd, default, 48);
+
+            Assert.Equal(0f, scene.Offset.Y);
+        });
+
+    /// <summary>
+    /// A pan changes no hover, also when a frame tests the pointers again under it: a touchpad's pan is no cursor.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The scene, its item logging its enters.
+    ///
+    /// Steps:
+    /// - Start a pan at (50, 40); move the item and run a frame, which builds the display list and tests the hovering pointers again.
+    ///
+    /// Expected:
+    /// - The item got no enter, and is not hovered.
+    /// </remarks>
+    [Fact]
+    public void Pan_ChangesNoHover_WhenAFrameTestsAgain() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            var log = new List<string>();
+            scene.Log(scene.Item, log);
+            scene.Draw();
+
+            scene.Pan(PointerInputKind.PanStart, default, 0);
+            scene.Tree.SetStyle(scene.Item, Scene.At(0, 10, 200, 50));
+            scene.Frames(1);
+
+            Assert.DoesNotContain("item enter", log);
+            Assert.Equal(0, (int)(scene.Tree.Nodes.GetRef(scene.Item).Pseudo & PseudoState.Hovered));
+        });
+
+    /// <summary>
     /// The end flings the container with the velocity of the pan's totals and the frames' times, by the formula of a touch's
     /// fling; the fling's frames move the position until it stops.
     /// </summary>

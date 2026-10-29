@@ -108,6 +108,34 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The OS's inertia queues no pan input, whatever the content does meanwhile (Flutter's <c>direct_manipulation.cc</c> line
+    /// 152), and the end is queued once.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The gestures of a fake viewport whose content starts at 0.
+    ///
+    /// Steps:
+    /// - READY to RUNNING; translation (0, −10); RUNNING to INERTIA; translations (0, −30) and (0, −45).
+    ///
+    /// Expected:
+    /// - Three inputs are queued: the start, the update, and the end.
+    /// </remarks>
+    [Fact]
+    public void Inertia_QueuesNoInput()
+    {
+        var gestures = new TouchpadGestures(new FakeViewport());
+
+        gestures.OnStatusChanged(Running, Ready);
+        gestures.OnContentUpdated(0, -10);
+        gestures.OnStatusChanged(Inertia, Running);
+        gestures.OnContentUpdated(0, -30);
+        gestures.OnContentUpdated(0, -45);
+
+        Assert.Equal(3, gestures.Pending);
+    }
+
+    /// <summary>
     /// A content not yet back from the last gesture starts a pan from where it is: only the change goes on (Flutter's
     /// <c>TestGestureWithInitialData</c>).
     /// </summary>
