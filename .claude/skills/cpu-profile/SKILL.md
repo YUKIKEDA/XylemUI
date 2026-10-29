@@ -71,7 +71,9 @@ To find where a build is slower than main, profile both the same way and compare
 
 ## NativeAOT: count hardware events with VTune
 
-`benchmarks/counters/instructions.ps1` counts the instructions and cycles of one relayout for pairs of builds; `-Events` adds cache, branch, and memory events, and `summarize.py` reads the reports (`docs/benchmarks/l8-counters.md`).
+`benchmarks/counters/instructions.ps1` counts the instructions and cycles of one relayout for pairs of builds; `-Events` adds cache, branch, and memory events, and `summarize.py` reads the reports (`docs/benchmarks/l8-counters.md`). `-Command input-loop -Scenes wheel,move` counts one pointer input instead (`benchmarks/XylemUI.E2E/InputLoop.cs`, `docs/benchmarks/i1a-touch-pen.md`).
+
+To see which function a difference sits in, report a result by function: `vtune -report hw-events -group-by function -r <result> -format csv -csv-delimiter comma -report-output <file>.csv`. Read only a large difference, such as a function one build calls and the other does not: the samples move between functions from run to run. In I1a this showed `SpanHelpers.Memmove` at about 290 instructions a wheel, which main did not call (PR #389).
 
 - The hardware events need the VTune sampling driver, which the medium-integrity agent shell cannot use ("Run the product as administrator"). The owner approves the UAC prompt, and only while present: send the elevated run only when the owner says it can be approved now.
 - VTune's raw result is about 100 MB per run; the runs of L8 reached 20 GB. Keep the CSV of `vtune -report hw-events` and delete the result directories in the same turn.

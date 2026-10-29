@@ -23,6 +23,7 @@ alwaysApply: true
 - Contract, public API, invariant, or phase: open a `design` Issue, update `docs/design.ja.md` (and `docs/design-decisions.md` for what was rejected) in its PR, and merge it before implementation Issues.
 - Wording, typos, and examples: may ship in the same PR as code.
 - Do not implement first and update the design later. If code and design conflict, stop and fix the design through the process above.
+- An implementation that takes a narrower form of a design sentence (a rule applied to some pointers only) writes it into the design and into the PR's decisions before the PR is called ready, with the OS document when the OS's behavior is the reason. I1a called `IPointerPlatform.Capture` for the mouse alone, since Win32 captures a touch and a pen in contact by itself (Microsoft's `WM_POINTERDOWN` page), while §7 "Capture" still said to call it; the review found it (PR #389).
 
 A comparison of approaches in the design includes the approach of each framework that a measurement found fastest, judged by the requirements. In L4 Flutter and Avalonia were the fastest, while §3.1 compared neither Flutter's box constraints nor Avalonia's measure and arrange beyond a reason of structure; the owner's question reopened it (D4, PR #105).
 
