@@ -65,7 +65,8 @@ internal static class SegmentCost
             string text = words.ToString();
             double split = Median(() => TimeSplit(provider, text, language, runs));
             FontRun[] fontRuns = [.. runs];
-            double shape = Median(() => Time(() => shaped.Shape(text, fontRuns, 16, language, shaper, breaker)));
+            RunStyle[] styles = Styles(fontRuns, language);
+            double shape = Median(() => Time(() => shaped.Shape(text, fontRuns, styles, shaper, breaker)));
             report.Number($"emoji_every_{every}_runs", fontRuns.Length);
             report.Number($"emoji_every_{every}_split_us_p50", split);
             report.Number($"emoji_every_{every}_shape_us_p50", shape);
@@ -104,12 +105,16 @@ internal static class SegmentCost
         var lines = new LineBreakResult();
         var laid = new LineLayoutResult();
         FontRun[] fontRuns = [.. runs];
-        report.Number($"{name}_shape_us_p50", Median(() => Time(() => shaped.Shape(text, fontRuns, 16, language, shaper, breaker))));
+        RunStyle[] styles = Styles(fontRuns, language);
+        report.Number($"{name}_shape_us_p50", Median(() => Time(() => shaped.Shape(text, fontRuns, styles, shaper, breaker))));
         report.Number($"{name}_wrap_us_p50", Median(() => Time(() => shaped.Wrap(640, shaper, lines))));
         report.Number($"{name}_lines", lines.Lines.Length);
         report.Number($"{name}_lay_us_p50", Median(() => Time(() => shaped.Lay(lines, shaper, laid))));
         report.Number($"{name}_rewrap_us_p50", Median(() => Time(() => shaped.Wrap(480, shaper, lines))));
     }
+
+    // One style for each run: the text's size and language, as a text leaf with no ranges shapes it.
+    private static RunStyle[] Styles(FontRun[] runs, TextLanguage language) => [.. runs.Select(_ => new RunStyle(16, language, 0, null))];
 
     private static double Time(Action action)
     {

@@ -98,23 +98,48 @@ internal static partial class LayoutEngine
         if (text.IsEmpty)
         {
             FontMatch match = FontFallback.ResolveWithFallback(context.Fonts, " ", 0, style.Language, style.Font);
-            shaped.FillEmpty(MetricsOf(match.Font!, style.Size * match.Scale));
+            shaped.FillEmpty(MetricsOf(match.Font!, style.Size * match.Scale, style.Size));
             return shaped;
         }
 
-        FontFallback.Split(context.Fonts, text, style.Language, style.Font, context.Runs);
+        // The font runs of each range of the layout (design §4.8), each with the range's fields over the leaf's style; a leaf with
+        // no ranges is one range of its style.
+        context.Runs.Clear();
+        context.RunStyles.Clear();
+        if (leaf.Ranges is { } ranges)
+        {
+            foreach (LayoutRun range in ranges.Layout)
+            {
+                var runStyle = new RunStyle(range.Size ?? style.Size, range.Language ?? style.Language, range.LetterSpacing ?? 0, range.Features);
+                AddRuns(context, text, range.Start, range.Start + range.Length, range.Font ?? style.Font, runStyle);
+            }
+        }
+        else
+        {
+            AddRuns(context, text, 0, text.Length, style.Font, new RunStyle(style.Size, style.Language, 0, null));
+        }
+
         ShapingResult result = shaped.ResultToFill();
         result.Shape(
             text,
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(context.Runs),
-            style.Size,
-            style.Language,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(context.RunStyles),
             context.Shaper,
             context.Breaker
         );
         (float min, float max) = result.IntrinsicWidths(context.Shaper);
         shaped.Fill(min, max);
         return shaped;
+    }
+
+    // The font runs of a part of the text, each with the part's style.
+    private static void AddRuns(TextContext context, ReadOnlySpan<char> text, int start, int end, in FontRequest font, in RunStyle style)
+    {
+        FontFallback.SplitRange(context.Fonts, text, start, end, style.Language, font, context.Runs);
+        while (context.RunStyles.Count < context.Runs.Count)
+        {
+            context.RunStyles.Add(style);
+        }
     }
 
     // An entry of the second cache: the lines at its width (Pass1 and Pass2). Returns the size and first baseline they make.
@@ -148,41 +173,48 @@ internal static partial class LayoutEngine
         Line(LineMetricsOf(result, span), style);
 
     // The height of a line and its baseline from its top. The fonts' line gap is split half above and half below (half-leading).
-    // A line height of the style replaces the fonts' height, and the difference with ascent and descent is split the same way.
+    // A line height of the style replaces the fonts' height: the factor times the largest size on the line (design §4.8), and the
+    // difference with ascent and descent is split the same way.
     private static (float Height, float Baseline) Line(LineMetrics metrics, in TextStyle style)
     {
         float content = metrics.Ascent + metrics.Descent;
-        float height = float.IsNaN(style.LineHeight) ? content + metrics.LineGap : style.Size * style.LineHeight;
+        float height = float.IsNaN(style.LineHeight) ? content + metrics.LineGap : metrics.Size * style.LineHeight;
         return (height, ((height - content) / 2) + metrics.Ascent);
     }
 
-    // The largest ascent, descent, and line gap of the font runs a line takes, its hard line break included. An empty span (none
-    // is made today) takes the run at its position.
+    // The largest ascent, descent, line gap, and size of the font runs a line takes, its hard line break included. An empty span
+    // (none is made today) takes the run at its position.
     private static LineMetrics LineMetricsOf(ShapingResult result, LineSpan span)
     {
         float ascent = 0;
         float descent = 0;
         float gap = 0;
+        float size = 0;
         int end = Math.Max(span.End, span.Start + 1);
-        foreach (FontRun run in result.Runs)
+        ReadOnlySpan<FontRun> runs = result.Runs;
+        ReadOnlySpan<RunStyle> styles = result.Styles;
+        for (int r = 0; r < runs.Length; r++)
         {
+            FontRun run = runs[r];
             if (run.Start >= end || run.Start + run.Length <= span.Start)
             {
                 continue;
             }
 
-            LineMetrics metrics = MetricsOf(run.Font, result.Size * run.Scale);
+            LineMetrics metrics = MetricsOf(run.Font, styles[r].Size * run.Scale, styles[r].Size);
             ascent = MathF.Max(ascent, metrics.Ascent);
             descent = MathF.Max(descent, metrics.Descent);
             gap = MathF.Max(gap, metrics.LineGap);
+            size = MathF.Max(size, metrics.Size);
         }
 
-        return new LineMetrics(ascent, descent, gap);
+        return new LineMetrics(ascent, descent, gap, size);
     }
 
-    private static LineMetrics MetricsOf(Font font, float size)
+    // The metrics of a font at an em size (the size asked for times the fallback's scale), for a range of a size.
+    private static LineMetrics MetricsOf(Font font, float emSize, float size)
     {
-        float scale = size / font.UnitsPerEm;
-        return new LineMetrics(font.Ascent * scale, font.Descent * scale, font.LineGap * scale);
+        float scale = emSize / font.UnitsPerEm;
+        return new LineMetrics(font.Ascent * scale, font.Descent * scale, font.LineGap * scale, size);
     }
 }

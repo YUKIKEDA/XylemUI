@@ -131,16 +131,25 @@ public static class Elements
 
             // The tree of a text leaf has text tools (CreateTextNode).
             TextContext context = tree.Text!;
-            char[] buffer = context.RentSpare(out bool shared);
+            char[] buffer = context.RentSpare(out bool shared, out TextRangeWriter ranges);
             char[]? released = buffer;
             try
             {
-                var writer = new NodeTextWriter(buffer);
+                var writer = new NodeTextWriter(buffer, ranges);
                 content(ref writer);
                 released = writer.Buffer;
-                if (leaf.TakeWritten(writer.Buffer, writer.Length, out released))
+                writer.Finish();
+                bool text = leaf.TakeWritten(writer.Buffer, writer.Length, out released);
+                bool look = leaf.TakeRanges(ranges, out bool layout);
+
+                // A change of the text or of the layout's ranges lays the leaf out again; a change of the look's only draws it again.
+                if (text || layout)
                 {
                     Invalidation.Invalidate(tree, node, ChangeKind.TextContent);
+                }
+                else if (look)
+                {
+                    Invalidation.Invalidate(tree, node, ChangeKind.Color);
                 }
             }
             finally

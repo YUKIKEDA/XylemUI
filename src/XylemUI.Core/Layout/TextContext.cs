@@ -23,6 +23,10 @@ internal sealed class TextContext : IDisposable
         Fonts = fonts;
     }
 
+    // The ranges a text writer writes (design §4.8), rented with the buffer below: one for the thread, and a leaf that takes
+    // written ranges gives its old ones back to it.
+    private readonly TextRangeWriter _ranges = new();
+
     // The buffer a text writer writes into before its text is compared with the leaf's (design §2.13, "TextBuilder"). One for the
     // thread, as the shaper's scratch is (design §3.2, "Memory"): a buffer in each leaf made every text leaf 8 bytes larger, and
     // V1a's bound on a leaf's first measurement is exact. A leaf that takes a written text gives its old buffer back here.
@@ -49,6 +53,11 @@ internal sealed class TextContext : IDisposable
     /// </summary>
     public List<FontRun> Runs { get; } = [];
 
+    /// <summary>
+    /// Gets the list of what each of <see cref="Runs"/> is shaped with besides its font, reused for every leaf.
+    /// </summary>
+    public List<RunStyle> RunStyles { get; } = [];
+
 #if DEBUG
     /// <summary>
     /// Gets the entry Debug builds break a leaf's text into to check its content widths, apart from the leaf's cache.
@@ -66,17 +75,21 @@ internal sealed class TextContext : IDisposable
     /// runs an effect that writes) gets a buffer of its own.
     /// </summary>
     /// <param name="shared"><see langword="true"/> when it is the thread's buffer, which <see cref="ReturnSpare"/> takes back.</param>
+    /// <param name="ranges">The writer of the text's ranges, reset: the thread's with its buffer, otherwise one of its own.</param>
     /// <returns>The buffer.</returns>
-    internal char[] RentSpare(out bool shared)
+    internal char[] RentSpare(out bool shared, out TextRangeWriter ranges)
     {
         if (_spareRented)
         {
             shared = false;
+            ranges = new TextRangeWriter();
             return new char[16];
         }
 
         _spareRented = true;
         shared = true;
+        ranges = _ranges;
+        ranges.Reset();
         return _spare ??= new char[16];
     }
 

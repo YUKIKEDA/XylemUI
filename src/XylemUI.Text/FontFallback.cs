@@ -55,11 +55,38 @@ public static class FontFallback
     /// <param name="runs">The list to fill; reused, so a text split again into as many runs allocates nothing.</param>
     public static void Split(IFontProvider provider, ReadOnlySpan<char> text, TextLanguage language, in FontRequest request, List<FontRun> runs)
     {
-        ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(runs);
         runs.Clear();
-        int start = 0;
-        while (start < text.Length)
+        SplitRange(provider, text, 0, text.Length, language, request, runs);
+    }
+
+    /// <summary>
+    /// Splits the part of <paramref name="text"/> from <paramref name="start"/> to <paramref name="end"/> into font runs, as
+    /// <see cref="Split"/> splits a whole text, and adds them to <paramref name="runs"/>: a range of a text leaf with a font or a
+    /// language of its own (design §4.8). The provider sees the whole text; a run ends at the part's end, and does not join the
+    /// runs before the part.
+    /// </summary>
+    /// <param name="provider">The fonts of the OS.</param>
+    /// <param name="text">The whole text.</param>
+    /// <param name="start">The part's first character.</param>
+    /// <param name="end">The character after the part.</param>
+    /// <param name="language">The language of the part.</param>
+    /// <param name="request">The font the part asks for.</param>
+    /// <param name="runs">The list to add to.</param>
+    internal static void SplitRange(
+        IFontProvider provider,
+        ReadOnlySpan<char> text,
+        int start,
+        int end,
+        TextLanguage language,
+        in FontRequest request,
+        List<FontRun> runs
+    )
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(runs);
+        int first = runs.Count;
+        while (start < end)
         {
             FontMatch match = ResolveWithFallback(provider, text, start, language, request);
             if (match.Length <= 0 || match.Length > text.Length - start)
@@ -70,14 +97,14 @@ public static class FontFallback
             Font font = match.Font!;
 
             // Checked at the run's end alone, not by walking the run: most texts are one run, which ends at the text's end.
-            int end = start + match.Length;
-            while (!Unicode.Graphemes.IsBoundary(text, end))
+            int stop = Math.Min(end, start + match.Length);
+            while (stop < end && !Unicode.Graphemes.IsBoundary(text, stop))
             {
-                end += char.IsHighSurrogate(text[end]) && end + 1 < text.Length && char.IsLowSurrogate(text[end + 1]) ? 2 : 1;
+                stop += char.IsHighSurrogate(text[stop]) && stop + 1 < end && char.IsLowSurrogate(text[stop + 1]) ? 2 : 1;
             }
 
-            int length = end - start;
-            if (runs.Count > 0 && runs[^1] is var last && ReferenceEquals(last.Font, font) && last.Scale == match.Scale)
+            int length = stop - start;
+            if (runs.Count > first && runs[^1] is var last && ReferenceEquals(last.Font, font) && last.Scale == match.Scale)
             {
                 runs[^1] = last with { Length = last.Length + length };
             }
@@ -86,7 +113,7 @@ public static class FontFallback
                 runs.Add(new FontRun(font, start, length, match.Scale));
             }
 
-            start += length;
+            start = stop;
         }
     }
 

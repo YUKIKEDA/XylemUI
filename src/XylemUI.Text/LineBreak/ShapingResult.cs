@@ -34,6 +34,7 @@ internal sealed class ShapingResult
     // a leaf), and grows to the larger of the need and twice its size.
     private char[] _text = [];
     private FontRun[] _runs = [];
+    private RunStyle[] _styles = [];
     private float[] _scales = [];
     private float[] _hyphens = [];
     private LaidGlyph[] _glyphs = [];
@@ -44,7 +45,6 @@ internal sealed class ShapingResult
     private int _runCount;
     private int _glyphCount;
     private int _breakCount;
-    private TextLanguage _language;
 
     /// <summary>
     /// Gets the number of code units of the text.
@@ -67,27 +67,29 @@ internal sealed class ShapingResult
     public int BreakCount => _breakCount;
 
     /// <summary>
-    /// Gets the size, in logical pixels per em, the text was shaped at (a run's scale multiplies it).
+    /// Gets what each font run was shaped with besides its font, by the index of <see cref="Runs"/>.
     /// </summary>
-    public float Size { get; private set; }
+    public ReadOnlySpan<RunStyle> Styles => _styles.AsSpan(0, _runCount);
 
     /// <summary>
     /// Shapes a text, run by run of its fonts, and finds its line break opportunities.
     /// </summary>
     /// <param name="text">The text.</param>
     /// <param name="runs">Its font runs, from <see cref="FontFallback.Split"/>: in order, covering the text.</param>
-    /// <param name="size">The size in logical pixels per em.</param>
-    /// <param name="language">The language of the text.</param>
+    /// <param name="styles">What each run is shaped with besides its font: its size, language, letter spacing, and features.</param>
     /// <param name="shaper">The shaper, of this thread.</param>
     /// <param name="breaker">The line breaker, of this thread.</param>
-    /// <exception cref="ArgumentException">The runs do not cover the text in order.</exception>
-    public void Shape(ReadOnlySpan<char> text, ReadOnlySpan<FontRun> runs, float size, TextLanguage language, TextShaper shaper, LineBreaker breaker)
+    /// <exception cref="ArgumentException">The runs do not cover the text in order, or there is not one style for each run.</exception>
+    public void Shape(ReadOnlySpan<char> text, ReadOnlySpan<FontRun> runs, ReadOnlySpan<RunStyle> styles, TextShaper shaper, LineBreaker breaker)
     {
         ArgumentNullException.ThrowIfNull(shaper);
         ArgumentNullException.ThrowIfNull(breaker);
+        if (styles.Length != runs.Length)
+        {
+            throw new ArgumentException("A font run has no style, or a style no run.", nameof(styles));
+        }
+
         Length = text.Length;
-        Size = size;
-        _language = language;
         Ensure(ref _text, text.Length);
         text.CopyTo(_text);
         Ensure(ref _x, text.Length + 1);
@@ -97,24 +99,25 @@ internal sealed class ShapingResult
         _runCount = 0;
         _glyphCount = 0;
         int covered = 0;
-        foreach (FontRun run in runs)
+        for (int r = 0; r < runs.Length; r++)
         {
+            FontRun run = runs[r];
             if (run.Start != covered || run.Length <= 0)
             {
                 throw new ArgumentException("The font runs do not cover the text in order.", nameof(runs));
             }
 
             covered += run.Length;
-            AddRun(run);
-            float scale = Scale(run);
-            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, language);
+            AddRun(run, styles[r]);
+            float scale = _scales[r];
+            float spacing = styles[r].LetterSpacing;
+            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, styles[r].Language, styles[r].Features);
             EnsureGlyphs(_glyphCount + shaped.Length);
-            foreach (ShapedGlyph glyph in shaped)
+            for (int g = 0; g < shaped.Length; g++)
             {
-                AddGlyph(
-                    new LaidGlyph(glyph.GlyphId, glyph.Cluster, glyph.XAdvance * scale, glyph.XOffset * scale, glyph.YOffset * scale, _runCount - 1),
-                    glyph.UnsafeToBreak
-                );
+                ShapedGlyph glyph = shaped[g];
+                float advance = (glyph.XAdvance * scale) + Spacing(shaped, g, spacing);
+                AddGlyph(new LaidGlyph(glyph.GlyphId, glyph.Cluster, advance, glyph.XOffset * scale, glyph.YOffset * scale, r), glyph.UnsafeToBreak);
             }
         }
 
@@ -377,20 +380,22 @@ internal sealed class ShapingResult
             }
 
             float scale = _scales[run];
-            foreach (
-                ShapedGlyph glyph in shaper.ShapeRange(
-                    _runs[run].Font,
-                    scratch.AsSpan(0, length),
-                    position - contextStart,
-                    runEnd - position,
-                    _language
-                )
-            )
+            RunStyle style = _styles[run];
+            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(
+                _runs[run].Font,
+                scratch.AsSpan(0, length),
+                position - contextStart,
+                runEnd - position,
+                style.Language,
+                style.Features
+            );
+            for (int g = 0; g < shaped.Length; g++)
             {
+                ShapedGlyph glyph = shaped[g];
                 var laid = new LaidGlyph(
                     glyph.GlyphId,
                     glyph.Cluster + contextStart,
-                    glyph.XAdvance * scale,
+                    (glyph.XAdvance * scale) + Spacing(shaped, g, style.LetterSpacing),
                     glyph.XOffset * scale,
                     glyph.YOffset * scale,
                     run
@@ -401,6 +406,11 @@ internal sealed class ShapingResult
             position = runEnd;
         }
     }
+
+    // The letter spacing goes to the last glyph of each cluster, after its advance, as SkParagraph adds it to each cluster
+    // (design §4.8). The glyphs are left to right, so a cluster's glyphs are next to each other.
+    private static float Spacing(ReadOnlySpan<ShapedGlyph> shaped, int index, float spacing) =>
+        spacing != 0 && (index + 1 == shaped.Length || shaped[index + 1].Cluster != shaped[index].Cluster) ? spacing : 0;
 
     private static void Append(in LaidGlyph glyph, LineLayoutResult result, int trimmed, ref float width, ref float withSpaces)
     {
@@ -486,7 +496,7 @@ internal sealed class ShapingResult
         if (float.IsNaN(_hyphens[run]))
         {
             float advance = 0;
-            foreach (ShapedGlyph glyph in shaper.Shape(_runs[run].Font, Hyphen, _language))
+            foreach (ShapedGlyph glyph in shaper.ShapeRange(_runs[run].Font, Hyphen, 0, Hyphen.Length, _styles[run].Language, _styles[run].Features))
             {
                 advance += glyph.XAdvance;
             }
@@ -531,20 +541,20 @@ internal sealed class ShapingResult
         return 0;
     }
 
-    private float Scale(in FontRun run) => Size * run.Scale / run.Font.UnitsPerEm;
-
-    private void AddRun(in FontRun run)
+    private void AddRun(in FontRun run, in RunStyle style)
     {
         if (_runCount == _runs.Length)
         {
             int size = Math.Max(_runCount + 1, _runCount * 2);
             Array.Resize(ref _runs, size);
+            Array.Resize(ref _styles, size);
             Array.Resize(ref _scales, size);
             Array.Resize(ref _hyphens, size);
         }
 
         _runs[_runCount] = run;
-        _scales[_runCount] = Scale(run);
+        _styles[_runCount] = style;
+        _scales[_runCount] = style.Size * run.Scale / run.Font.UnitsPerEm;
         _hyphens[_runCount] = float.NaN;
         _runCount++;
     }

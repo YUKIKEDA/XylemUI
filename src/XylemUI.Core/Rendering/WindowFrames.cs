@@ -536,7 +536,7 @@ internal sealed class WindowFrames
             _list.DrawLine(
                 glyphs.Slice(line.GlyphStart, line.GlyphCount),
                 result.Runs,
-                result.Size,
+                result.Styles,
                 _atlas,
                 x,
                 top + baseline,

@@ -139,6 +139,16 @@ internal static unsafe partial class HarfBuzz
         public uint Var2;
     }
 
+    /// <summary><c>hb_feature_t</c>: a feature's tag and value over the clusters from <see cref="Start"/> to <see cref="End"/>.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Feature
+    {
+        public uint Tag;
+        public uint Value;
+        public uint Start;
+        public uint End;
+    }
+
     /// <summary><c>hb_glyph_position_t</c>, in the font's scale.</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct GlyphPosition
