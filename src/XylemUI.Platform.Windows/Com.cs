@@ -38,6 +38,36 @@ internal static unsafe class Com
         }
     }
 
+    /// <summary>
+    /// Initializes COM and OLE on the calling thread, in a single-threaded apartment (design §5.0.3, "COM initialization"; row
+    /// I1c): DirectManipulation needs COM, and the clipboard, drag and drop, and UI Automation will need the apartment. Each call
+    /// that returns is balanced by <see cref="UninitializeUiThread"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The thread is in the multithreaded apartment, as .NET starts a thread unless its <c>Main</c> has <c>[STAThread]</c>, or OLE
+    /// failed to initialize.
+    /// </exception>
+    public static void InitializeUiThread()
+    {
+        int result = TerraFX.Interop.Windows.Windows.OleInitialize(null);
+        if (result == RPC.RPC_E_CHANGED_MODE)
+        {
+            throw new InvalidOperationException(
+                "The UI thread is in COM's multithreaded apartment; put [STAThread] on the app's Main, as WPF and WinForms ask."
+            )
+            {
+                HResult = result,
+            };
+        }
+
+        ThrowIfFailed(result, "OleInitialize");
+    }
+
+    /// <summary>
+    /// Ends what <see cref="InitializeUiThread"/> began on the calling thread.
+    /// </summary>
+    public static void UninitializeUiThread() => TerraFX.Interop.Windows.Windows.OleUninitialize();
+
     [DoesNotReturn]
     private static void Throw(int result, string operation) =>
         throw new InvalidOperationException($"{operation} failed with 0x{result:X8}.") { HResult = result };

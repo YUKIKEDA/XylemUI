@@ -20,7 +20,8 @@ public static class XylemApp
     /// <param name="options">The window; <see langword="null"/> for the defaults of <see cref="WindowOptions"/>.</param>
     /// <returns>The exit code of the message loop: 0 when the last window closed.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Another thread is the UI thread, a message loop already runs, or the window, its renderer, or the root function failed.
+    /// Another thread is the UI thread, a message loop already runs, the calling thread is in COM's multithreaded apartment (the
+    /// app's <c>Main</c> lacks <c>[STAThread]</c>), or the window, its renderer, or the root function failed.
     /// </exception>
     /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
     public static int Run(Func<Element> root, WindowOptions? options = null)
@@ -31,6 +32,9 @@ public static class XylemApp
         {
             throw new InvalidOperationException("XylemApp.Run runs one message loop; it already runs.");
         }
+
+        // Before the first window, which makes its DirectManipulation viewport with COM (design §7, "Touch and pen", I1c).
+        Platform.Windows.Com.InitializeUiThread();
 
         // The loop can end with windows open (Win32MessageLoop.Quit from the app); the next run starts with none counted.
         _running = true;
@@ -44,6 +48,7 @@ public static class XylemApp
         {
             _running = false;
             _openWindows = 0;
+            Platform.Windows.Com.UninitializeUiThread();
         }
     }
 
