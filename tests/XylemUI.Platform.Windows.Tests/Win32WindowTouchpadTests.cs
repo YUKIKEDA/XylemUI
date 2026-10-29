@@ -65,7 +65,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
     ///   then the reset's READY to RUNNING and RUNNING to READY. Update the gestures with a frame's time of 1 s.
     ///
     /// Expected:
-    /// - The viewport updated once and reset once.
+    /// - The viewport reset once and was not updated: no interaction began, and the reset ended before the frame (Issue #419).
     /// - The inputs are a pan's start, updates of (0, −20) and (6, −30) logical pixels, and an end, each of the touchpad, the same
     ///   number, and the frame's time.
     /// </remarks>
@@ -90,7 +90,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
             window.TouchpadStatusChanged(Ready, Running);
             _ = ((IPointerPlatform)window).UpdateGestures(TimeSpan.FromSeconds(1));
 
-            Assert.Equal((1, 1), (viewport.Updates, viewport.Resets));
+            Assert.Equal((0, 1), (viewport.Updates, viewport.Resets));
             Assert.Equal(
                 [
                     (PointerInputKind.PanStart, Vector2.Zero),
@@ -187,6 +187,7 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
     /// - Before the begin, no polling; the begin asked for one frame, and the second asked for none; polling until the end, none
     ///   after.
     /// - Polling while the content is away after the reset, none once it reads 0.
+    /// - The viewport was updated only by the updates that polled: none before the begin and none after the end (Issue #419).
     /// </remarks>
     [Fact]
     public void Interaction_PollsFromItsBeginToItsEnd_AndUntilTheContentIsBack() =>
@@ -199,23 +200,32 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
             int frames = 0;
             window.GestureFrameNeeded = () => frames++;
 
+            var updates = new List<int>();
             bool before = platform.UpdateGestures(TimeSpan.Zero);
+            updates.Add(viewport.Updates);
             window.TouchpadInteraction(begin: true);
             bool during = platform.UpdateGestures(TimeSpan.Zero);
+            updates.Add(viewport.Updates);
             window.TouchpadInteraction(begin: true);
             window.TouchpadInteraction(begin: false);
             bool after = platform.UpdateGestures(TimeSpan.Zero);
+            updates.Add(viewport.Updates);
 
             window.TouchpadStatusChanged(Running, Ready);
             window.TouchpadStatusChanged(Inertia, Running);
             viewport.Translation = (0, -40);
             window.TouchpadStatusChanged(Ready, Inertia);
             bool resetting = platform.UpdateGestures(TimeSpan.Zero);
+            updates.Add(viewport.Updates);
             viewport.Translation = (0, 0);
             bool back = platform.UpdateGestures(TimeSpan.Zero);
+            updates.Add(viewport.Updates);
+            _ = platform.UpdateGestures(TimeSpan.Zero);
+            updates.Add(viewport.Updates);
 
             Assert.Equal((false, true, false, 1), (before, during, after, frames));
             Assert.Equal((true, false), (resetting, back));
+            Assert.Equal([0, 1, 1, 2, 3, 3], updates);
         });
 
     /// <summary>

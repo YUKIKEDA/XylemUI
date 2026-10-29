@@ -50,8 +50,15 @@ public sealed unsafe partial class Win32Window
             return false;
         }
 
-        touchpad.Viewport.Update();
-        touchpad.CheckReset();
+        // DirectManipulation is polled only while an interaction runs or the content goes back, as Chromium polls it (design §7,
+        // "Touch and pen", I1c): every frame of every window called it before, and the Desktop tests stopped twice on the CI's
+        // Windows runner inside frames run that way (row Q5, Issue #419). Inputs its callbacks queued meanwhile are still delivered.
+        if (touchpad.Polling)
+        {
+            touchpad.Viewport.Update();
+            touchpad.CheckReset();
+        }
+
         while (touchpad.TryDequeue(out TouchpadPanKind kind, out float x, out float y))
         {
             DeliverPan(kind, x, y, frameTime);
