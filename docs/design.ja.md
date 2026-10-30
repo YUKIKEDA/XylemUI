@@ -2018,9 +2018,9 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
 - **キャッシュ:** `ShapedTextCache` は `ShapingResult` を 1 つ持つ（フォントの run、整形、改行の候補、内容の幅）。内容かスタイルが変わると捨てる。`LineBreakCache` は幅を鍵に 4 つまで持ち、1 つが `LineBreakResult`（Pass1）・`LineLayoutResult`（Pass2）・行の高さの合計を持つ。Pass2 は緊急ブレークで行を増やすことがあるので（§4.1）、高さは Pass2 の後で決まり、Pass2 の結果まで持つ。高さは文字の葉の結果に効かないので、鍵は幅だけ（`MinContent` と `MaxContent` は最小と最大の内容の幅に置き換えてから引く）。min-content と max-content の幅は `ShapingResult.IntrinsicWidths` を整形の結果と一緒に持ち、高さに依存しない（`DependsOnHeight` は false）。項目は使い回し、配列は足りないときだけ広げる。キャッシュが当たったときも、外れて項目を使い回すときも、定常状態の割り当ては 0
 - **メモリ:** 配列は、葉を初めて測るときに、内容が要る大きさで確保する。T1b の `ShapingResult` は、作った時点で 64 文字・64 グリフなどの配列を確保していた（約 2.5 KB。PR #297 のレビュー）。V1a ではこれをやめる。空の葉と、まだ測っていない葉は配列を持たない。広げるときは、要る大きさと今の 2 倍の大きいほうにする（今の `Ensure`）。そのため、葉が持つ配列は、それまでで最も長い内容の 2 倍に収まる。行の境界の整形のやり直しに使う作業用の配列（T1b の `ShapingResult` の `_scratch`）は葉ごとに持たず、`TextShaper` に 1 つ持つ（`TextContext` の shaper を、UI スレッドのすべての葉が使う）。初めて測った葉 1 つの配列の中身は、次のとおりである。記号は、文字数（UTF-16）を n、グリフ数を g、改行の候補の数を b、フォントの run の数を r、行数を L、幅の項目の数を e とする
   - 整形の結果: 10n + 8 + 25g + 8b + 56r バイト。内訳は、文字 2n、位置 4(n + 1)、文字からグリフへの対応 4(n + 1)、グリフ 24g（`LaidGlyph`）、切ると危ない印 g、改行の候補 8b、run 24r、run の大きさ・言語・字間・機能 24r（`RunStyle`、T12 で §4.8 の範囲のために足した）、倍率 4r、ハイフンの幅 4r
-  - 幅の項目 1 つ: 72L + 24g バイト。内訳は、行の範囲 12L（`LineSpan`）、並べた行 36L（`LaidLine`。P02b で行の上端と高さの 8L を足した、§4.9「行の上端」）、グリフ 24(g + L)。改行した行のハイフンで、グリフは 1 行に 1 つまで増える
+  - 幅の項目 1 つ: 64L + 24g バイト。内訳は、行の範囲 12L（`LineSpan`）、並べた行 28L（`LaidLine`）、グリフ 24(g + L)。改行した行のハイフンで、グリフは 1 行に 1 つまで増える
   - 内容のバッファ: 2n バイト
-  - `resize-text` の葉（「日本語のテキスト」、n = g = b = 8、r = L = e = 1）では 408 + 264 + 16 = 688 バイトになる。これに、配列 15 個とオブジェクト 7 個（`TextLeaf`、2 段のキャッシュ、`ShapingResult`、項目、`LineBreakResult`、`LineLayoutResult`）の頭が加わる
+  - `resize-text` の葉（「日本語のテキスト」、n = g = b = 8、r = L = e = 1）では 408 + 256 + 16 = 680 バイトになる。これに、配列 15 個とオブジェクト 7 個（`TextLeaf`、2 段のキャッシュ、`ShapingResult`、項目、`LineBreakResult`、`LineLayoutResult`）の頭が加わる
 - **確定した幅:** layout の確定（commit）で使った幅の項目に印を付け、`LineBreakCache` の上書きの候補から外す（上書きするのは残りの 3 つの最も古いもの）。描画（§5.0「描画の段とフレームの駆動」、V1b）は印の付いた項目を読み、測り直さない。印は次の確定で動く。Flutter の `RenderParagraph` の `paint` は、`performLayout` の後に計測が捨てられた場合に備えて、同じ制約で `_layoutTextWithConstraints` をもう一度呼ぶ（`paragraph.dart` 1030〜1034 行目）。`TextPainter.layout` は、持っている結果が制約に合えばすぐ戻る（`text_painter.dart` 1229〜1231 行目）。XylemUI では、確定した幅の項目が上書きされないので、描画のときに合うかを確かめずに読める
 - **返す大きさ:** 幅は、行末の空白を除いた最も広い行の幅。高さは行の高さの合計。最初のベースラインは最初の行のもの（`MeasureResult.FirstBaseline`）。内容が空の葉は、幅が 0 で、1 行の高さを持つ。その行のフォントは、要求のフォントで空白（U+0020）を引いたもの（`FontFallback.ResolveWithFallback`）。強制改行の後の空の行は、改行の文字の run のフォントで高さを決める。skparagraph も、空の文章に、スタイルのフォントの 1 行の高さを与える（`ParagraphImpl.cpp` 173〜186・1040〜1066 行目）
 - **行の高さ:** 1 行の高さは、その行で使ったフォント（フォールバックを含む）の ascent・descent・lineGap の、それぞれの最大の和。lineGap は上下に半分ずつ配る（half-leading）。`LineHeight` を指定したときは、その行に載る範囲の大きさの最大（範囲を持たない葉では `Size`、§4.8）× `LineHeight` を行の高さとし、ascent + descent との差を上下に半分ずつ配る。最初のベースラインは、行の上端から半分の余白 + ascent。フォントの値は HarfBuzz の `hb_font_get_h_extents`（`hb_font_extents_t` の `ascender`・`descender`・`line_gap`。descender は負、HarfBuzz 14.5.1 の `hb-font.h` 、94〜108・915〜917 行目）から em あたりの値として読み、`Font` に足す。run の大きさ（`Size` と、フォールバックの `FontMatch.Scale`）を掛けて使う。比べた 3 つのうち、Flutter（Skia 8df24be の skparagraph）と Avalonia は lineGap を行の高さに入れる。Avalonia 12.1.4 は、行の高さを descent − ascent + lineGap とし、ベースラインを lineGap の半分だけ下げる（`TextLineImpl.cs` 1417〜1439 行目）。`LineHeight` の扱いも、上の XylemUI の形と同じ（同じ行）。skparagraph も lineGap の半分を ascent の上に置く（`Run.cpp` 64〜84 行目）。倍率を指定したときの配り方は 2 通りある。既定では ascent と descent を同じ比で伸ばし、`TextLeadingDistribution.even`（`fUseHalfLeading`）のときだけ半分ずつ配る。XylemUI は Avalonia と、Flutter の `even` の形をとる。同じ比で伸ばすと、倍率を上げるほど文字が行の下へ寄る。GPUI（zed v1.25.3）は lineGap を読まず、既定の行の高さを大きさ × 1.618 とする（`geometry.rs` 3722〜3724 行目の `phi()`、`style.rs` 494 行目）。そのため、フォントによって行が詰まりすぎたり空きすぎたりする。skparagraph（`Run.h` 483〜485 行目）と GPUI（`style.rs` 554〜556 行目）は、行の高さを整数に丸める。XylemUI は、ほかの葉の大きさと同じく、行の高さを論理ピクセルのまま丸めない
@@ -2372,7 +2372,7 @@ internal static CaretPosition HitTestText(TextMeasurement measurement, int lineI
 }
 ```
 
-このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。行の上端は、P02b からレイアウトが `LaidLine` に書き、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
+このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。TextField は、自分の葉の行の上端を 1 回積んで持ち、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
 
 ### 4.4 a11y読み上げ順序
 
@@ -2747,15 +2747,15 @@ public interface IClipboardBackend
 - **最大の長さ:** 書記素で数え、打ち込みと貼り付けを収まる分で切る（Avalonia も収まる分で切るが、UTF-16 のコード単位で数える、`TextBox.cs` 1212〜1216 行目）
 - **無効:** 今の `.Disabled`（§7）を使う。フォーカスできず、押しても何もしない
 
-**行の上端:** レイアウトが `LaidLine` に各行の上端を書き、`TextCaret.LineAt` は二分探索にする（§4.3）。今は呼ぶたびに上端を積み直すので、費用が行の数 × run の数になる（PR #426 のレビュー）。選択の描画と ↑・↓ の移動は、1 フレームに何度も呼ぶ。
+**行の上端:** `TextCaret.LineAt` は、呼ぶたびに行の上端を積み直すので、費用が行の数 × run の数になる（PR #426 のレビュー）。選択の描画と ↑・↓ の移動は、1 フレームに何度も行を引く。TextField は、描くときとキーを処理するときに、自分の葉の各行の上端と高さを 1 回積んで持ち、行を二分探索で引く。レイアウトが行を作り直したら捨てて積み直す。ほかの葉と `LineAt` は今のままで、リンクの当たり判定はポインタの操作 1 回に 1 回しか引かない。Grill では「レイアウトが `LaidLine` に書く」と決めたが、P02b の実装で測ると、行の結果（`LineLayoutResult`）を大きくすると、使わないフィールドを足しただけでも、`resize-text` の折り返す 1 万の葉の最初のレイアウトが 71〜76 ms になった（main は 59〜61 ms）。この結果は、葉の幅の項目ごとにある。オーナーが、TextField が持つ形に改めた（`docs/benchmarks/p02b-text-field.md`）。
 
 **Todo:** `samples/Todo` に欄を足す。Enter（`OnSubmit`）でも「Add」でも、前後の空白を取った文字が空でなければ項目を足して欄を空にし、空なら何もしない。「Add」には `.KeepsFocusOnPress()` を付け、フォーカスを欄に残す。V3 は欄を足すことを退けた（`docs/design-decisions.md` の「`Show` と `For`」）が、理由は「IME の無い欄では日本語を打てない」で、上の「IME の前」の形で打てるようにする。
 
 - **費用:** 1 回の編集は、新しい文字列と元に戻す記録を確保する（Flutter も Avalonia も、編集ごとに新しい文字列を作る）。描くだけのフレーム（キャレットの点滅、変わらない選択）は割り当て 0 にする（§11.3）。`input` に、1,000 文字の欄への 1 文字の打ち込み（配送からフレームまで）、点滅の 1 フレーム、選択のドラッグの 1 フレームを足す
 - **確かめ方:**
   - Text: UAX #29 の単語の規則を、Unicode の `WordBreakTest.txt` のすべての行で確かめる
-  - Core: `TextInputEvent` の経路と止め方、`KeepsFocusOnPress`、`LaidLine` の上端と `LineAt`
-  - Primitives: 上の命令の表の行ごと、ポインタの回数ごと、元に戻すのまとめ方、付属機能、値の流れ（アプリが書いたとき）、ヘッドレスの点滅と仮想の時計
+  - Core: `TextInputEvent` の経路と止め方、`KeepsFocusOnPress`
+  - Primitives: 行の上端と行の引き方、上の命令の表の行ごと、ポインタの回数ごと、元に戻すのまとめ方、付属機能、値の流れ（アプリが書いたとき）、ヘッドレスの点滅と仮想の時計
   - Platform: 止めたキーから `WM_CHAR` が生まれないこと、サロゲートペアがつながること、`PrefersCharacter`（キーの状態と `ToUnicodeEx` の結果を引数で受ける関数を、§7 と同じく直接確かめる）、クリップボードの読み書き、点滅と幅の設定の読み直し
   - Todo: 欄から項目を足す（`HeadlessApp`）
 

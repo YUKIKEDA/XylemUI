@@ -41,18 +41,7 @@ internal readonly record struct LineSpan(int Start, int End, bool Hyphenated, bo
 /// <param name="GlyphCount">The number of the line's glyphs.</param>
 /// <param name="Width">The width without the spaces and hard line breaks at the line's end, which hang past it.</param>
 /// <param name="WidthWithSpaces">The width with them.</param>
-/// <param name="Top">The line's top from the first line's, which the layout of the lines' heights writes (Core's
-/// <c>LayoutEngine</c>; design §4.9, "The lines' tops"); 0 until then.</param>
-/// <param name="Height">The line's height, written with <paramref name="Top"/>.</param>
-internal readonly record struct LaidLine(
-    LineSpan Span,
-    int GlyphStart,
-    int GlyphCount,
-    float Width,
-    float WidthWithSpaces,
-    float Top = 0,
-    float Height = 0
-);
+internal readonly record struct LaidLine(LineSpan Span, int GlyphStart, int GlyphCount, float Width, float WidthWithSpaces);
 
 /// <summary>
 /// The line breaks of a text at one width (design §4.1, Pass1; cached by width, §3.2's <c>LineBreakCache</c>). Reused: a text
@@ -174,14 +163,6 @@ internal sealed class LineLayoutResult
 
         _lines[LineCount++] = new LaidLine(span, glyphStart, GlyphCount - glyphStart, width, widthWithSpaces);
     }
-
-    /// <summary>
-    /// Writes where a line is placed: its top from the first line's and its height.
-    /// </summary>
-    /// <param name="line">The line's index.</param>
-    /// <param name="top">The top.</param>
-    /// <param name="height">The height.</param>
-    public void Place(int line, float top, float height) => _lines[line] = _lines[line] with { Top = top, Height = height };
 
     /// <summary>
     /// Gets the index the next glyph is written at.
