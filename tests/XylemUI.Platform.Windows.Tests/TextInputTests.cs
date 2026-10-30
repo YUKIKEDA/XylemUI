@@ -92,7 +92,8 @@ public sealed unsafe class TextInputTests(UiThreadFixture ui)
     ///   flag, post it again, and run the loop again.
     ///
     /// Expected:
-    /// - The first run logs one down and no text. The second logs one down and the text "a".
+    /// - The first run logs one down and no text. The second logs one down and one text, the character the down reported: what A
+    ///   types depends on the machine's layout and Caps Lock, so the test compares with the key's own character.
     /// </remarks>
     [Fact]
     public void KeyDown_DeliveredBeforeTranslate_StoppedMakesNoCharacter() =>
@@ -102,9 +103,15 @@ public sealed unsafe class TextInputTests(UiThreadFixture ui)
             bool stop = true;
             var downs = 0;
             var texts = new List<string>();
+            string typed = string.Empty;
             window.KeyInputReceived = (in KeyInput input) =>
             {
-                downs += input.Kind == KeyEventKind.Down ? 1 : 0;
+                if (input.Kind == KeyEventKind.Down)
+                {
+                    downs++;
+                    typed = input.KeyChar.ToString();
+                }
+
                 return stop;
             };
             window.TextInputReceived = (in TextInput input) =>
@@ -119,7 +126,7 @@ public sealed unsafe class TextInputTests(UiThreadFixture ui)
             downs = 0;
             Run(window);
             Assert.Equal(1, downs);
-            Assert.Equal(["a"], texts);
+            Assert.Equal([typed], texts);
         });
 
     /// <summary>
