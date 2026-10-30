@@ -17,6 +17,8 @@ A reason written as likely ("probably", 「と考えられる」) is checked fir
 
 A figure that a delegate's research gives (a share, a size, a count) is traced to where it was counted or read before it goes in a document: the command and the head, or the file and the line. In D3 the docs took "about 15 %" of internal members without documentation, a count with no method, and "14.4 KB" for the bundled font, where the record gives 14 KB and the file is 14,416 bytes; the review found both (PR #442).
 
+A claim about a table is one the table shows as it is laid out. Q2's record said the misses were high on every other launch beside a table sorted by count, and gave "13 to 27 in 10 s" where the table had 2 to 27 in 590 frames; the review found both, and the table went back to launch order (PR #446).
+
 A size a record gives for a type is read from the type's definition (its fields' types, or `Unsafe.SizeOf`), not from what the field stands for. V1d's record said the handler entry grew by a reference, 8 bytes; the field is a `Handle<ScopeData>(int, ulong)`, 16 bytes, and the review found it (PR #340).
 
 A comment in the code is held to the same line: it says what was measured, and marks a cause that was not confirmed as not confirmed, with the Issue number.
