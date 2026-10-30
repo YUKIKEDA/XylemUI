@@ -1,6 +1,6 @@
 # Test font
 
-`XylemUITestSans.ttf` is a subset of Noto Sans JP (SIL Open Font License 1.1, `OFL.txt`) for the text tests (design §4.5). It
+`XylemUITestSans.ttf` (in `src/XylemUI.Testing/Fonts/`, which embeds it for the headless tests, design §12.3) is a subset of Noto Sans JP (SIL Open Font License 1.1, `OFL.txt`) for the text tests (design §4.5). It
 holds printable ASCII (U+0020–U+007E), the characters of `日本語のテキスト`, and `.notdef`; the euro sign (U+20AC) is left out on
 purpose, so the tests have a character the font lacks. Units per em: 1000.
 

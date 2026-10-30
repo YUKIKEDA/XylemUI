@@ -193,7 +193,7 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var window = new Win32Window("pointer", 200, 100);
-            var time = new StepTime();
+            var time = new TestTime();
             window.Time = time;
             var inputs = new List<(PointerInputKind Kind, PointerButton Button, int Count)>();
             window.PointerInputReceived = (in PointerInput input) => inputs.Add((input.Kind, input.Button, input.ClickCount));
@@ -295,16 +295,4 @@ public sealed unsafe class Win32WindowPointerTests(UiThreadFixture ui)
 
     private static void Send(Win32Window window, uint message, uint keys, int x, int y) =>
         _ = SendMessageW(window.Hwnd, message, keys, (nint)(((uint)y << 16) | ((uint)x & 0xFFFF)));
-
-    // A clock that moves only when the test moves it.
-    private sealed class StepTime : TimeProvider
-    {
-        private long _now = 1;
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-
-        public override long GetTimestamp() => _now;
-
-        public void Advance(TimeSpan by) => _now += by.Ticks;
-    }
 }

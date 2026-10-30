@@ -14,7 +14,7 @@ internal sealed class TextScene : IDisposable
 
     public TextScene(Font font)
     {
-        _text = new TextContext(new OneFont(font));
+        _text = new TextContext(new TestFontProvider(font));
         Tree = new UiTree(_text);
         _root = Tree.CreateNode(new LayoutStyle());
         _frames = new WindowFrames(Tree, _root, new NoTarget(), _atlas, Scheduler, Color.FromRgb(0xFFFFFF));
@@ -181,10 +181,4 @@ internal sealed class NoTarget : IRenderTarget
     public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
 
     public void Present() { }
-}
-
-internal sealed class OneFont(Font font) : IFontProvider
-{
-    public FontMatch ResolveFont(ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request) =>
-        new(font, text.Length - start, 1);
 }

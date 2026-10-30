@@ -16,11 +16,9 @@
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The Zero-Alloc tests of the text leaf report windows, JIT counts, and collections as Core's do (Issue #92). -->
-    <Compile Include="..\XylemUI.Core.Tests\SteadyStateAllocation.cs" Link="SteadyStateAllocation.cs" />
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The test font moved to XylemUI.Testing, which embeds it (design §12.3); the tests that open it from a file read it here. -->
+    <None Include="..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Png\PngSuite\*.png" CopyToOutputDirectory="PreserveNewest" />
     <!-- The Unicode conformance tests, copied from UCD.zip by tools/UnicodeTableGen (design §8.13). -->
     <None Include="Unicode\*.txt" CopyToOutputDirectory="PreserveNewest" />

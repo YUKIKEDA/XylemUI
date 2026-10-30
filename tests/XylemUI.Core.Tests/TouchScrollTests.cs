@@ -312,19 +312,19 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
             Assert.True(scene.Scheduler.Pending);
 
             var fling = new ClampingFling(released, 1_000);
-            TimeSpan first = scene.Time.Now + TimeSpan.FromMilliseconds(16);
+            TimeSpan first = scene.Time.Elapsed + TimeSpan.FromMilliseconds(16);
             int frames = 0;
             while (scene.Scheduler.Pending)
             {
-                scene.Time.Now += TimeSpan.FromMilliseconds(16);
+                scene.Time.Advance(TimeSpan.FromMilliseconds(16));
                 scene.Scheduler.Run();
-                double t = (scene.Time.Now - first).TotalSeconds;
+                double t = (scene.Time.Elapsed - first).TotalSeconds;
                 Assert.Equal((float)fling.At(t), scene.Offset.Y, 3);
                 frames++;
                 Assert.InRange(frames, 1, 1_000);
             }
 
-            Assert.True((scene.Time.Now - first).TotalSeconds >= fling.Duration);
+            Assert.True((scene.Time.Elapsed - first).TotalSeconds >= fling.Duration);
             Assert.Equal((float)(released + fling.Distance), scene.Offset.Y, 3);
         });
 
@@ -383,7 +383,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
             Assert.Equal(900, scene.Offset.Y);
             scene.Frames(1);
             Assert.False(scene.Scheduler.Pending);
-            Assert.True(scene.Time.Now.TotalMilliseconds - 3_000 < new ClampingFling(released, 8_000).Duration * 1_000 / 2);
+            Assert.True(scene.Time.Elapsed.TotalMilliseconds - 3_000 < new ClampingFling(released, 8_000).Duration * 1_000 / 2);
         });
 
     /// <summary>
@@ -440,7 +440,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
                     PointerButtons.None,
                     KeyModifiers.None,
                     0,
-                    scene.Time.Now,
+                    scene.Time.Elapsed,
                     PointerType.Mouse,
                     new Vector2(0, 50)
                 )
@@ -523,7 +523,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
     /// - The box whose height scrolls, its column 10,000 high; warmed up with the same iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: put the position at 0; swipe up at 1,000 pixels a second;
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: put the position at 0; swipe up at 1,000 pixels a second;
     ///   run the frames until none is asked for.
     ///
     /// Expected:
@@ -543,7 +543,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
                 _ = scene.Swipe(fromY: 90, steps: 10, step: -10, milliseconds: 10, start: scene.Milliseconds + 1_000);
                 for (int i = 0; i < 1_000 && scene.Scheduler.Pending; i++)
                 {
-                    scene.Time.Now += TimeSpan.FromMilliseconds(16);
+                    scene.Time.Advance(TimeSpan.FromMilliseconds(16));
                     scene.Scheduler.Run();
                 }
 
@@ -559,8 +559,10 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
             }
 
             flings = 0;
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
-            Assert.Equal(1_100, flings);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
+
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal(runs, flings);
         });
 
     private static bool Within((double X, double Y) actual, (double X, double Y) expected) =>
@@ -598,7 +600,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
 
         public CountingScheduler Scheduler { get; } = new();
 
-        public StepTime Time { get; } = new();
+        public TestTime Time { get; } = new();
 
         public WindowFrames FrameRunner { get; }
 
@@ -606,7 +608,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
 
         public Vector2 Offset => Tree.ScrollOffsetOf(Container);
 
-        public double Milliseconds => Time.Now.TotalMilliseconds;
+        public double Milliseconds => Time.Elapsed.TotalMilliseconds;
 
         public static LayoutStyle At(float x, float y, float width, float height) =>
             new()
@@ -650,7 +652,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
         {
             for (int i = 0; i < count; i++)
             {
-                Time.Now += TimeSpan.FromMilliseconds(16);
+                Time.Advance(TimeSpan.FromMilliseconds(16));
                 Scheduler.Run();
             }
         }
@@ -682,7 +684,7 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
                 Touch(PointerInputKind.Move, 1, 50, (int)MathF.Round(y * _scale), now);
             }
 
-            Time.Now = TimeSpan.FromMilliseconds(now);
+            Time.Advance(TimeSpan.FromMilliseconds(now) - Time.Elapsed);
             float released = Offset.Y;
             Touch(PointerInputKind.Up, 1, 50, (int)MathF.Round(y * _scale), now);
             return released;
@@ -714,16 +716,6 @@ public sealed class TouchScrollTests(UiThreadFixture ui)
                 )
             );
         }
-    }
-
-    // A clock that moves only when the test moves it.
-    private sealed class StepTime : TimeProvider
-    {
-        public TimeSpan Now { get; set; }
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-
-        public override long GetTimestamp() => Now.Ticks;
     }
 
     private sealed class NoPlatform : IPointerPlatform

@@ -6,6 +6,8 @@
   <ItemGroup>
     <!-- The tests of the harness set the background-GC count that PerformanceAssert reads, to make a window overlap one. -->
     <InternalsVisibleTo Include="XylemUI.Testing.Tests" />
+    <!-- The todo tests walk the headless app's tree to its rows (the sample gives them no test IDs); the boundary is row C0's. -->
+    <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />

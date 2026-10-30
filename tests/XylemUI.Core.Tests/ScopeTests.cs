@@ -498,7 +498,7 @@ public sealed class ScopeTests(UiThreadFixture ui)
             }
 
             long ran = _sink;
-            SteadyStateAllocation.AssertNone(1_000, _ => Round());
+            PerformanceAssert.DoesNotAllocate(1_000, _ => Round());
 
             Assert.Equal(ran + 3_300, _sink);
         });

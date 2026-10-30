@@ -2,8 +2,6 @@
   <PropertyGroup>
     <RootNamespace>XylemUI.Testing.XUnit</RootNamespace>
     <Description>xUnit v3's [UiFact] and [UiTheory] for XylemUI.Testing: the test's body runs on the headless UI thread (design §12.5).</Description>
-    <!-- A test runner loads this assembly under the JIT; xUnit's extensibility is not built for NativeAOT. -->
-    <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Testing\XylemUI.Testing.csproj" />

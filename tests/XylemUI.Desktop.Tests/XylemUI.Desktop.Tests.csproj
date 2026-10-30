@@ -11,9 +11,8 @@
     <!-- The tests run the sample's own root function (row V1d). -->
     <ProjectReference Include="..\..\samples\Counter\Counter.csproj" />
     <ProjectReference Include="..\..\samples\Todo\Todo.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="..\XylemUI.Core.Tests\SteadyStateAllocation.cs" Link="SteadyStateAllocation.cs" />
+    <!-- The app tests run headless, as [UiFact] tests (design §12, row P02a). -->
+    <ProjectReference Include="..\..\src\XylemUI.Testing.XUnit\XylemUI.Testing.XUnit.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

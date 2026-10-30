@@ -1,13 +1,14 @@
 <Project>
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
-  <PropertyGroup>
-    <!--
-      The zero-allocation tests read GC.GetAllocatedBytesForCurrentThread. At the end of a background GC's mark, the runtime empties
-      every thread's allocation context without taking its unused rest off the thread's count (void_allocation in gc.cpp, dotnet/runtime
-      v10.0.9), so a test that allocated nothing counted up to about 8 KB in one window, with no GC counted in it: another test's
-      garbage had started the background GC (Issue #332). Without concurrent GC there is no background GC. The tests measure the code's
-      allocations, which do not depend on the GC's mode; the apps and the benchmarks keep the default.
-    -->
-    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
-  </PropertyGroup>
+  <!--
+    Every test project uses XylemUI.Testing: its Zero-Alloc assertion, its clock, and its UI thread, which the shared fixture runs a
+    test's code on (one UI thread for the process, design §12.5, "Threads"). The tests run with concurrent GC, as an app's tests do:
+    PerformanceAssert runs again a window that a background GC overlapped (design §11.3, Issue #332).
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'XylemUI.Testing.Tests'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../src/XylemUI.Testing/XylemUI.Testing.csproj" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/UiThreadFixture.cs" Link="UiThreadFixture.cs" />
+    <Using Include="XylemUI.TestSupport" />
+    <Using Include="XylemUI.Testing" />
+  </ItemGroup>
 </Project>

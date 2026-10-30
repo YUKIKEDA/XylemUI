@@ -12,7 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- The glyph tests draw with the text tests' font (tests/XylemUI.Text.Tests/Fonts/README.md). -->
-    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

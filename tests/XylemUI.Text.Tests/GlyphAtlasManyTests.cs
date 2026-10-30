@@ -394,7 +394,7 @@ public sealed class GlyphAtlasManyTests
     ///   result spans.
     ///
     /// Steps:
-    /// - 100 frames, in the windows of <c>SteadyStateAllocation</c>: start a frame and ask for the 296 glyphs with GetMany.
+    /// - 100 frames, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: start a frame and ask for the 296 glyphs with GetMany.
     ///
     /// Expected:
     /// - 0 bytes on this thread in every window, and nothing rasterized. A failure lists each window's bytes, the methods compiled
@@ -412,7 +412,7 @@ public sealed class GlyphAtlasManyTests
         Assert.NotNull(atlas.RunningWorkers);
         int rasterized = atlas.RasterizeCount;
 
-        XylemUI.Tests.SteadyStateAllocation.AssertNone(
+        PerformanceAssert.DoesNotAllocate(
             100,
             _ =>
             {

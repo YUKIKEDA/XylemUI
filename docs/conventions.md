@@ -36,12 +36,16 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `benchmarks/XylemUI.E2E` | End-to-end の計測（M1a、`docs/benchmarks/m1-baseline.md`）。起動・アイドル・フレーム・入力の代理指標・テキスト込みのリサイズ・Scope の cleanup（ADR 0001）など。`external` は他のフレームワークのアプリを、`app-startup` は部品の API のアプリ（`samples/Counter`）の起動を、プロセスの外から測る（`PublishAot`、記録するがゲートにしない） |
 | `benchmarks/compare` | 比較のための同じ場面のアプリ（Avalonia・Flutter・GPUI）と、`build.ps1`・`measure.ps1`・`summarize.py`。リポジトリのビルドの設定は引き継がない |
 | `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（画素、テキストのインク、120 フレーム、フレームの CPU 時間）をして終了する（`PublishAot`。フォントは埋め込みリソース） |
+| `src/XylemUI.Testing` | テスト基盤（設計書 §12、行 P02a）。UI スレッドを 1 つ持つ `HeadlessSession`、OS のウィンドウを作らない `HeadlessApp`（ポインタ・キーボード・フォーカスの注入、`PumpAndSettle`、`Find` / `FindAll`、`AssertNoLeakedScopes`）、仮想の時計 `TestTime`、テスト用のフォント（`TestFontProvider`、`Fonts/` の OFL のサブセットを埋め込む）、`PerformanceAssert.DoesNotAllocate`。Core の internal を `InternalsVisibleTo` で使う（`net10.0`。時計とスレッドを持つので `BannedSymbols.txt` の外） |
+| `src/XylemUI.Testing.XUnit` | xUnit v3 の `[UiFact]` / `[UiTheory]`。テストのクラスと本体を `HeadlessSession` の UI スレッドで動かす（`net10.0`） |
 | `samples/Counter` | 部品の API の最初のアプリ（設計書 §2.13）。`Column` に `Text`（`clicks: N`）と `Button`。テストが根の関数（`CounterApp.Counter`）を使う（`PublishAot`、`WinExe`） |
-| `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture`（このアセンブリで `UiThread` を初期化するのはこれだけ）の上で走る |
-| `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。専用の UI スレッド（`UiThreadFixture`）で実行する |
-| `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる。Unicode の適合のテスト（`Unicode/`、生成器が UCD から写す）を 1 行 1 ケースで流す。文字の葉の layout（Core の内部の `UiTree` と `LayoutEngine`、行 V1a）も、HarfBuzz で整形するのでここで確かめる。UI スレッドは `UiThreadFixture` が持つ（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
+| `tests/Shared` | すべてのテストのプロジェクトが `tests/Directory.Build.props` でリンクするファイル。`UiThreadFixture` は、テストのコードを `HeadlessSession` の UI スレッドに渡す（プロセスで UI スレッドは 1 つ） |
+| `tests/XylemUI.Testing.Tests` | テスト基盤のテスト。文字を使わない木で、3 つの OS で動く |
+| `tests/XylemUI.Core.Tests` | Core の単体テスト。UI スレッドが要るテストは `UiThreadFixture` の上で走る |
+| `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。UI スレッド（`UiThreadFixture`）で実行する |
+| `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`src/XylemUI.Testing/Fonts/` と `Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる。Unicode の適合のテスト（`Unicode/`、生成器が UCD から写す）を 1 行 1 ケースで流す。文字の葉の layout（Core の内部の `UiTree` と `LayoutEngine`、行 V1a）も、HarfBuzz で整形するのでここで確かめる。UI スレッドは `UiThreadFixture` が持つ（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
 | `tests/XylemUI.Primitives.Tests` | 見た目のない部品のテスト。ウィンドウの無い木で、文字を使わずに確かめる |
-| `tests/XylemUI.Desktop.Tests` | アプリの起動のテスト。`samples/Counter` を本物のウィンドウ（WARP）で動かし、画素、メッセージで送った Click、フレーム、閉じたときの後始末を確かめる（Windows のみ） |
+| `tests/XylemUI.Desktop.Tests` | アプリのテスト（設計書 §12.1 の第 5 層）。`samples/Counter` と `samples/Todo` の振る舞いは `HeadlessApp` で、起動・メッセージで送った Click・画素・閉じたときの後始末は本物のウィンドウ（WARP）で確かめる（文字を HarfBuzz で整形するので Windows のみ） |
 | `tests/XylemUI.Rendering.D3D11.Tests` | D3D11 レンダラのテスト。WARP で描き、バックバッファの readback で画素を確かめる。グリフはテキストのテストのフォントで描く（Windows のみ） |
 
 予定しているプロジェクトの全体は設計書 §2.9.1 にある。

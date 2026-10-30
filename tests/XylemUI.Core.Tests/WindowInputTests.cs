@@ -669,7 +669,7 @@ public sealed class WindowInputTests(UiThreadFixture ui)
     ///   same iterations until one allocates nothing.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: move in, run the frame asked for, press, release, move
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: move in, run the frame asked for, press, release, move
     ///   out, run the frame.
     ///
     /// Expected:
@@ -707,11 +707,11 @@ public sealed class WindowInputTests(UiThreadFixture ui)
 
             int before = scene.Frames.PresentCount;
             (enters, leaves, clicks) = (0, 0, 0);
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
-            // The helper's unmeasured window runs 100 iterations before the 1,000.
-            Assert.Equal((1_100, 1_100, 1_100), (enters, leaves, clicks));
-            Assert.Equal(before + 2_200, scene.Frames.PresentCount);
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal((runs, runs, runs), (enters, leaves, clicks));
+            Assert.Equal(before + (2 * runs), scene.Frames.PresentCount);
         });
 
     /// <summary>

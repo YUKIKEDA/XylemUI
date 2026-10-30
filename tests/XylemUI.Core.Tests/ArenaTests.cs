@@ -220,7 +220,7 @@ public sealed class ArenaTests
         Handle<TreeNode>[] nodes = BuildTree(arena, 10_000, branching: 8);
         RunLookupsAndTraversal(arena, nodes);
 
-        SteadyStateAllocation.AssertNone(100, _ => RunLookupsAndTraversal(arena, nodes));
+        PerformanceAssert.DoesNotAllocate(100, _ => RunLookupsAndTraversal(arena, nodes));
     }
 
     private static void RunLookupsAndTraversal(Arena<TreeNode> arena, Handle<TreeNode>[] nodes)

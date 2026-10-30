@@ -490,7 +490,7 @@ public sealed class ElementsTests(UiThreadFixture ui)
     /// - A box of 50 x 50 whose background is bound to a signal and whose click handler sets it; warmed up with the iteration.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: press and release on the box, then run the frame asked for.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: press and release on the box, then run the frame asked for.
     ///
     /// Expected:
     /// - 0 bytes in every window; each iteration clicked once and presented once.
@@ -529,11 +529,11 @@ public sealed class ElementsTests(UiThreadFixture ui)
 
             int presents = scene.Target.Presents;
             clicks = 0;
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
-            // The helper's unmeasured window runs 100 iterations before the 1,000.
-            Assert.Equal(1_100, clicks);
-            Assert.Equal(presents + 1_100, scene.Target.Presents);
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal(runs, clicks);
+            Assert.Equal(presents + runs, scene.Target.Presents);
             scene.Dispose();
         });
 

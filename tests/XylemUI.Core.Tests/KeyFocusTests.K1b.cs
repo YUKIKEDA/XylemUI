@@ -396,7 +396,7 @@ public sealed partial class KeyFocusTests
     ///   iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: focus the leaf at 0 and run a frame, send Down and run a
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: focus the leaf at 0 and run a frame, send Down and run a
     ///   frame, focus the leaf at 600 and run a frame.
     ///
     /// Expected:
@@ -427,7 +427,7 @@ public sealed partial class KeyFocusTests
                 Iteration(i);
             }
 
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
             Assert.Equal(520f, scene.Tree.ScrollOffsetOf(container).Y);
         });
 
@@ -440,7 +440,7 @@ public sealed partial class KeyFocusTests
     ///   <c>Primitive.Button</c> does) and a click handler that counts; warmed up with the same iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: send a down of Enter.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: send a down of Enter.
     ///
     /// Expected:
     /// - 0 bytes in every window; one click each iteration.
@@ -474,8 +474,10 @@ public sealed partial class KeyFocusTests
             }
 
             clicks = 0;
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
-            Assert.Equal(1_100, clicks);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
+
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal(runs, clicks);
         });
 
     private sealed partial class Scene

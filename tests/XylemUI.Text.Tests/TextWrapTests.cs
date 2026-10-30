@@ -329,7 +329,7 @@ public sealed class TextWrapTests : IDisposable
     /// - A Japanese and English text with spaces, a soft hyphen, and a kerned break, shaped once and laid out at both widths once.
     ///
     /// Steps:
-    /// - 1,000 times, in the windows of <c>SteadyStateAllocation</c>: wrap at 3,000 px and at 7,000 px, laying out each.
+    /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: wrap at 3,000 px and at 7,000 px, laying out each.
     ///
     /// Expected:
     /// - 0 bytes on this thread in every window. A failure lists each window's bytes, the methods compiled on this thread, and the
@@ -351,7 +351,7 @@ public sealed class TextWrapTests : IDisposable
         }
 
         Run(0);
-        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Run);
+        PerformanceAssert.DoesNotAllocate(1_000, Run);
         Assert.True(_laid.Lines.Length > 1);
     }
 

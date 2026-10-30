@@ -443,7 +443,7 @@ public sealed class ScrollTests(UiThreadFixture ui)
     /// - A scroll view of 200 x 100 holding a column of ten boxes 50 high with backgrounds; warmed up with the iteration.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: a wheel of (0, 50), the frame, a wheel of (0, −50), the
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: a wheel of (0, 50), the frame, a wheel of (0, −50), the
     ///   frame.
     ///
     /// Expected:
@@ -471,7 +471,7 @@ public sealed class ScrollTests(UiThreadFixture ui)
             }
 
             int presents = scene.Target.Presents;
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
             // The helper's unmeasured window runs 100 iterations before the 1,000.
             Assert.Equal(presents + 2_200, scene.Target.Presents);

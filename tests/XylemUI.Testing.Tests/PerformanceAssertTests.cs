@@ -22,13 +22,13 @@ public sealed class PerformanceAssertTests : IDisposable
     /// - Assert that a run that records its index into an array made before allocates nothing.
     ///
     /// Expected:
-    /// - It passes; the indices −10 to 99 each ran once.
+    /// - It passes and returns 110 runs; the indices −10 to 99 each ran once.
     /// </remarks>
     [Fact]
     public void DoesNotAllocate_NoAllocation_Passes()
     {
         var ran = new int[110];
-        PerformanceAssert.DoesNotAllocate(100, index => ran[index + 10]++);
+        Assert.Equal(110, PerformanceAssert.DoesNotAllocate(100, index => ran[index + 10]++));
         Assert.All(ran, count => Assert.Equal(1, count));
     }
 
@@ -87,7 +87,7 @@ public sealed class PerformanceAssertTests : IDisposable
     /// - Assert that the runs allocate nothing, counting the runs.
     ///
     /// Expected:
-    /// - It passes, after 1 warm-up run, 10 measured runs, and 1 more for window 3: 12 runs.
+    /// - It passes, after 1 warm-up run, 10 measured runs, and 1 more for window 3: 12 runs, which it returns.
     /// </remarks>
     [Fact]
     public void DoesNotAllocate_ABackgroundGcOverlapsAWindow_RunsItAgain()
@@ -95,7 +95,7 @@ public sealed class PerformanceAssertTests : IDisposable
         long gcs = 0;
         int runs = 0;
         PerformanceAssert.BackgroundGcCount = () => gcs;
-        PerformanceAssert.DoesNotAllocate(
+        int returned = PerformanceAssert.DoesNotAllocate(
             10,
             index =>
             {
@@ -103,6 +103,39 @@ public sealed class PerformanceAssertTests : IDisposable
                 if (index == 3 && runs == 5)
                 {
                     gcs++;
+                }
+            }
+        );
+        Assert.Equal(12, runs);
+        Assert.Equal(12, returned);
+    }
+
+    /// <summary>
+    /// A window in which a collection of generation 2 starts runs again: a background GC counts one at its start, and its mark may
+    /// end in the window before its index moves.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - 10 runs, windows of 1; a run that, the first time it is index 6, starts a blocking collection of generation 2.
+    ///
+    /// Steps:
+    /// - Assert that the runs allocate nothing.
+    ///
+    /// Expected:
+    /// - It passes after 12 runs: window 6 ran again once.
+    /// </remarks>
+    [Fact]
+    public void DoesNotAllocate_AGenerationTwoCollectionInAWindow_RunsItAgain()
+    {
+        bool collected = false;
+        int runs = PerformanceAssert.DoesNotAllocate(
+            10,
+            index =>
+            {
+                if (index == 6 && !collected)
+                {
+                    collected = true;
+                    GC.Collect(2, GCCollectionMode.Forced, blocking: true);
                 }
             }
         );

@@ -187,7 +187,7 @@ public sealed class SegmentationTests
     /// - A line breaker that has found the opportunities of the text once, and a text of Japanese, English, and emoji.
     ///
     /// Steps:
-    /// - 1,000 times, in the windows of <c>SteadyStateAllocation</c>: find the opportunities, and walk every cluster.
+    /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: find the opportunities, and walk every cluster.
     ///
     /// Expected:
     /// - 0 bytes on this thread in every window. A failure lists each window's bytes, the methods compiled on this thread, and the
@@ -210,7 +210,7 @@ public sealed class SegmentationTests
         }
 
         Run(0);
-        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Run);
+        PerformanceAssert.DoesNotAllocate(1_000, Run);
         Assert.True(sum > 0);
     }
 }

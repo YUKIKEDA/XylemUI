@@ -171,7 +171,7 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
             using var rasterizer = new DirectWriteGlyphRasterizer();
             using var atlas = new GlyphAtlas(rasterizer);
             using var font = new Font(FontBytes);
-            using var context = new TextContext(new OneFont(font));
+            using var context = new TextContext(new TestFontProvider(font));
             const string Text = "nn日nn";
 
             var tree = new UiTree(context);
@@ -281,7 +281,7 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
             using var rasterizer = new DirectWriteGlyphRasterizer();
             using var atlas = new GlyphAtlas(rasterizer);
             using var font = new Font(FontBytes);
-            using var context = new TextContext(new OneFont(font));
+            using var context = new TextContext(new TestFontProvider(font));
 
             var tree = new UiTree(context);
             NodeHandle root = tree.CreateNode(new LayoutStyle());
@@ -452,11 +452,5 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
-    }
-
-    internal sealed class OneFont(Font font) : IFontProvider
-    {
-        public FontMatch ResolveFont(ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request) =>
-            new(font, text.Length - start, 1);
     }
 }

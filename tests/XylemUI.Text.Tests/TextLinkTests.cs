@@ -249,7 +249,7 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
     /// - The text and its link, whose handlers record nothing; warmed up with the iteration.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: move onto the link, press and release on it, draw, move
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: move onto the link, press and release on it, draw, move
     ///   off it, draw.
     ///
     /// Expected:
@@ -289,7 +289,7 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
                 Iteration(i);
             }
 
-            XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
         });
 
     // "nn", then "nn" in a link whose leave is the handler when the link is written, and in no range when it is not.

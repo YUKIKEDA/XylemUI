@@ -33,12 +33,17 @@ public sealed class HeadlessApp : IAsyncDisposable
     private readonly NodeHandle _rootNode;
     private readonly bool _trackerWasEnabled;
     private readonly HashSet<int> _scopesBefore = [];
+
+    // Keeps what the work on the UI queue throws in _errors; made once, so that a pump in a Zero-Alloc test allocates nothing.
+    private readonly Action<Exception> _report;
     private ScopeHandle _rootScope;
     private bool _disposed;
+    private List<Exception>? _errors;
 
     private HeadlessApp(Func<Element> root, HeadlessOptions options)
     {
         _options = options;
+        _report = exception => (_errors ??= []).Add(exception);
         _dispatcher = HeadlessSession.Dispatcher;
         _text = new TextContext(_fonts);
         _atlas = new GlyphAtlas(new HeadlessGlyphs());
@@ -358,20 +363,20 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <returns><see langword="true"/> when it ran something.</returns>
     internal bool DrainQueue()
     {
-        List<Exception>? errors = null;
         bool ran = false;
-        while (_dispatcher.Drain(exception => (errors ??= []).Add(exception)) > 0)
+        while (_dispatcher.Drain(_report) > 0)
         {
             ran = true;
         }
 
         while (Unobserved.TryDequeue(out Exception? exception))
         {
-            (errors ??= []).Add(exception);
+            (_errors ??= []).Add(exception);
         }
 
-        if (errors is not null)
+        if (_errors is { } errors)
         {
+            _errors = null;
             if (errors.Count == 1)
             {
                 ExceptionDispatchInfo.Throw(errors[0]);

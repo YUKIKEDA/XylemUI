@@ -336,7 +336,7 @@ public sealed class ScrollRangeReuseTests(UiThreadFixture ui)
     ///   alternates between 10 and 20. Warmed up with the same iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: change the leaf, run the layout pass, write the ranges.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: change the leaf, run the layout pass, write the ranges.
     ///
     /// Expected:
     /// - 0 bytes in every window.
@@ -377,7 +377,7 @@ public sealed class ScrollRangeReuseTests(UiThreadFixture ui)
                 Iteration(i);
             }
 
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
         });
 
     private static LayoutStyle Scroller(float width, float height) => Fixed(width, height) with { OverflowY = Overflow.Scroll, ScrollbarWidth = 0 };

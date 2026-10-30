@@ -498,7 +498,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             }
 
             int presents = target.Presents;
-            XylemUI.Tests.SteadyStateAllocation.AssertNone(200, Frame);
+            PerformanceAssert.DoesNotAllocate(200, Frame);
             Assert.Equal(presents + 220, target.Presents);
         });
 

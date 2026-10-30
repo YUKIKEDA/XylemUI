@@ -16,7 +16,11 @@ namespace XylemUI.Testing;
 /// A background GC empties every thread's allocation context at the end of its mark without taking the unused rest off the
 /// thread's count (<c>void_allocation</c> in gc.cpp, dotnet/runtime v10.0.9), so a window it overlaps counts up to about 8 KB that
 /// the code did not allocate (Issue #332). A test project cannot always turn concurrent GC off, so a window across which
-/// <c>GC.GetGCMemoryInfo(GCKind.Background).Index</c> changed is run again, up to 3 times.
+/// <c>GC.GetGCMemoryInfo(GCKind.Background).Index</c> changed, or in which a collection of generation 2 started, is run again, up to 3
+/// times. A blocking collection before each window ends a background GC in progress: one that started before a window can end its
+/// mark inside it and move the index only after it, and with the index alone the Core tests on concurrent GC counted 5 to 8 KB in
+/// one window in 2 runs of 8 (Issue #460). A window that every run overlapped is
+/// listed with a note when the runs allocated; when every window counted 0 bytes the runs pass, as an overlap only adds bytes.
 /// </para>
 /// </remarks>
 public static class PerformanceAssert
@@ -35,8 +39,10 @@ public static class PerformanceAssert
     /// </summary>
     /// <param name="iterations">The number of runs, a multiple of 10.</param>
     /// <param name="iteration">One run of the steady state; made before the call, so that making it is not measured.</param>
+    /// <returns>The runs made: the warm-up's, the measured ones, and those of the windows run again; a test that counts the work of
+    /// its runs compares it with this.</returns>
     /// <exception cref="ZeroAllocationException">The runs allocated.</exception>
-    public static void DoesNotAllocate(int iterations, Action<int> iteration) => DoesNotAllocate(iterations, null, iteration);
+    public static int DoesNotAllocate(int iterations, Action<int> iteration) => DoesNotAllocate(iterations, null, iteration);
 
     /// <summary>
     /// The same, with <paramref name="prepare"/> run before each run and not measured: a change the steady state follows, whose
@@ -45,8 +51,9 @@ public static class PerformanceAssert
     /// <param name="iterations">The number of runs, a multiple of 10.</param>
     /// <param name="prepare">What goes before each run, with its index; <see langword="null"/> for nothing.</param>
     /// <param name="iteration">One run of the steady state, measured.</param>
+    /// <returns>The runs made: the warm-up's, the measured ones, and those of the windows run again.</returns>
     /// <exception cref="ZeroAllocationException">The runs allocated.</exception>
-    public static void DoesNotAllocate(int iterations, Action<int>? prepare, Action<int> iteration)
+    public static int DoesNotAllocate(int iterations, Action<int>? prepare, Action<int> iteration)
     {
         ArgumentNullException.ThrowIfNull(iteration);
         if (iterations <= 0 || iterations % Windows != 0)
@@ -63,6 +70,7 @@ public static class PerformanceAssert
         _ = BackgroundGcIndex();
 
         int perWindow = iterations / Windows;
+        int runs = perWindow;
         for (int warm = -perWindow; warm < 0; warm++)
         {
             prepare?.Invoke(warm);
@@ -74,9 +82,13 @@ public static class PerformanceAssert
             int start = window * perWindow;
             for (int attempt = 0; ; attempt++)
             {
+                // A blocking collection waits for a background GC in progress, so none runs into the window from before it. One
+                // that starts in the window counts a collection of generation 2 at its start; one that ends in it moves the index.
+                GC.Collect(2, GCCollectionMode.Forced, blocking: true);
                 long gcBefore = BackgroundGcIndex();
                 Window measured = Measure(start, perWindow, prepare, iteration);
-                bool overlapped = BackgroundGcIndex() != gcBefore;
+                runs += perWindow;
+                bool overlapped = BackgroundGcIndex() != gcBefore || measured.FullCollections > 0;
                 windows[window] = measured with { Retries = attempt, Overlapped = overlapped };
                 if (!overlapped || attempt == MaxRetries)
                 {
@@ -93,7 +105,7 @@ public static class PerformanceAssert
 
         if (total == 0)
         {
-            return;
+            return runs;
         }
 
         var message = new StringBuilder();

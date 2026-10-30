@@ -243,7 +243,7 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
     /// - A text "clicks: N" written by a builder from a signal; warmed up with the iteration.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: set the signal to the iteration's number modulo 100, run
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: set the signal to the iteration's number modulo 100, run
     ///   the frame asked for.
     ///
     /// Expected:
@@ -269,7 +269,7 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
                 Iteration(i);
             }
 
-            XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
             Assert.Equal("clicks: 99", scene.Leaf(text).Text.ToString());
         });
 

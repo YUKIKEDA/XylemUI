@@ -523,7 +523,7 @@ public sealed class HitTestTests
     /// - 1,000 frames: reset; in a rotation and a rounded clip, write 100 regions through the context; test 10 points, one that hits.
     ///
     /// Expected:
-    /// - 0 bytes on this thread (SteadyStateAllocation).
+    /// - 0 bytes on this thread (PerformanceAssert.DoesNotAllocate).
     /// </remarks>
     [Fact]
     public void SteadyState_HitRegionsAndHitTest_AllocateNothing()
@@ -551,7 +551,7 @@ public sealed class HitTestTests
         }
 
         Frame(0);
-        SteadyStateAllocation.AssertNone(1_000, Frame);
+        PerformanceAssert.DoesNotAllocate(1_000, Frame);
         Assert.Equal(default, list.HitTestAt(new Vector2(900, 900)));
         Assert.True(hit == default || hit == First);
     }

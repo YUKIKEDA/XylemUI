@@ -165,9 +165,9 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
                 }
             }
 
-            SteadyStateAllocation.AssertNone(200, Colors);
-            SteadyStateAllocation.AssertNone(200, Sizes);
-            SteadyStateAllocation.AssertNone(200, Nothing);
+            PerformanceAssert.DoesNotAllocate(200, Colors);
+            PerformanceAssert.DoesNotAllocate(200, Sizes);
+            PerformanceAssert.DoesNotAllocate(200, Nothing);
         });
 
     /// <summary>

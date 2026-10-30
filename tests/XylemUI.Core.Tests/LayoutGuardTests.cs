@@ -191,7 +191,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 LayoutEngine.RunLayoutPass(tree);
             }
 
-            SteadyStateAllocation.AssertNone(
+            PerformanceAssert.DoesNotAllocate(
                 1_000,
                 i =>
                 {
@@ -265,7 +265,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 Change(i);
             }
 
-            SteadyStateAllocation.AssertNone(1_000, Change);
+            PerformanceAssert.DoesNotAllocate(1_000, Change);
 
             Assert.Equal(10, tree.GetRect(target).Width);
         });

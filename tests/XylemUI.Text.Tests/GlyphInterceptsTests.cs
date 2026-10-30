@@ -108,7 +108,7 @@ public sealed class GlyphInterceptsTests : IDisposable
     /// - A cache that has read "n" and "T" at two bands.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: intercept both glyphs at both bands.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: intercept both glyphs at both bands.
     ///
     /// Expected:
     /// - 0 bytes in every window.
@@ -129,7 +129,7 @@ public sealed class GlyphInterceptsTests : IDisposable
         }
 
         Iteration(0);
-        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
+        PerformanceAssert.DoesNotAllocate(1_000, Iteration);
     }
 
     /// <summary>

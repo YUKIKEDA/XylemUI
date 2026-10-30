@@ -404,7 +404,7 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
     ///   intermediate points; the platform gives a history of 8; warmed up with the same iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: touches 1 and 2 down, both up, both end; the pen moves in
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: touches 1 and 2 down, both up, both end; the pen moves in
     ///   with a history of 8, the frame runs, the pen ends, the frame runs.
     ///
     /// Expected:
@@ -450,7 +450,7 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
             }
 
             (clicks, points) = (0, 0);
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
             // The helper's unmeasured window runs 100 iterations before the 1,000.
             Assert.Equal((2_200, 8_800), (clicks, points));

@@ -970,7 +970,7 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
     /// - A box; a text that writes "nn" in a range whose color a signal picks, then the box; warmed up with the iteration.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: set the signal to the iteration's number's lowest bit, give
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: set the signal to the iteration's number's lowest bit, give
     ///   the box a padding of the same, run the frame asked for.
     ///
     /// Expected:
@@ -1016,7 +1016,7 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
                 Iteration(i);
             }
 
-            XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
         });
 
     private static void SetWidth(TextScene scene, Element element, float width)
