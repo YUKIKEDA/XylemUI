@@ -1598,6 +1598,8 @@ public static class ElementExtensions
     public static Element On(this Element e, FocusEventKind kind, EventPhase phase, FocusHandler handler);
     public static bool Focus(this Element e);                                        // フォーカスできなければ false
     public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
+    // アニメーション（AN1、§2.14）。描画の値のプロパティだけ（NodeProperties の描画の値）。変わると今の値から補間する
+    public static Element Transition<T>(this Element e, NodeProperty<T> property, TimeSpan duration, Curve curve);
     // テスト（P02a、§12.5「鍵」）。付けたノードだけを持つ表に入れる。どのノードにも付けられる
     public static Element TestId(this Element e, string id);
     // スクロール（V2、§3.4.1「スクロールする箱」）
@@ -1700,7 +1702,8 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 要件 7（§1）の「補間状態保持、ジェスチャー追従、フレーム駆動」を、2 つの宣言の形で満たす。実装は行 AN1 で行う。比べた相手は Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）で、3 つとも、アニメーションを UI スレッドで動かす仕組みを主に持つ。
 
-**宣言の形:**
+**宣言の形:** 公開の型は `ElementExtensions.Transition`（§2.6 の一覧）、`Animation`、`Curve`、`ShowMotion` である。`NodeProperties` は、今あるプロパティの記述子（`NodeProperty<T>`、§2.13 のシグナルの結び付きが使う）で、`Transition` はそのうち描画の値のものだけを受け取る。`Animation`・`Curve`・`ShowMotion` のメンバーの形は AN1 で決め、§2.6 に足す。
+
 
 - **遷移（implicit）:** ノードに `.Transition(NodeProperties.Background, TimeSpan.FromMilliseconds(83), Curve.DecelerateMid)` のように付ける。プロパティの値が変わると（シグナルの結び付きでも、疑似状態の `PaintStyle` でも）、今画面に出ている値から新しい値へ補間する。Avalonia の `Transitions`（12.1.4 の `src/Avalonia.Base/Animation/Animatable.cs` 171〜185 行目）と Flutter の `ImplicitlyAnimatedWidget`（3.47.8 の `packages/flutter/lib/src/widgets/implicit_animations.dart` 387〜406 行目）に当たる。WinUI のボタンのホバーの色（`BrushTransition` 83 ms）はこれで書く
 - **外から動かすアニメーション（explicit）:** `Animation` は値を `IReadOnlySignal<float>` として出す。`Forward`・`Reverse`・`AnimateTo(target, duration, curve)`・値の直接の設定（ジェスチャーで追う）・`Fling(velocity, spring)`（バネ）を持つ。Flutter の `AnimationController`（`packages/flutter/lib/src/animation/animation_controller.dart` 470〜830 行目）、GPUI の `with_spring`（zed v1.25.3 の `crates/gpui/src/spring.rs` 13〜43 行目）に当たる。ドロワーを指で引いて離すと、値を直接動かした後に `Fling` で閉じるか開く（Flutter の `Drawer` と同じ）
@@ -3954,7 +3957,7 @@ public interface IPopupHost
 以下の項目は決定済みである。
 
 ### 8.1 `Show`のdispose猶予期間 — §2.7
-`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。D7 の Grill（Issue #166）で、この引数は `motion: ShowMotion?`（長さ・カーブ・プリセット）にした。`Show` が子の木を包むノードの不透明度と位置を動かし、退場の長さは `motion` の長さである（§2.14「`Show` の登場と退場」）。V3 の `Show` は `exit` を持たず、いつも即 dispose する。`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す（V3 の Grill、Issue #363）。
+`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。D7 の Grill（Issue #166）で、この引数は `motion: ShowMotion?`（長さ・カーブ・プリセット）にした。`Show` が子の木を包むノードの不透明度と位置を動かし、退場の長さは `motion` の長さである（§2.14「`Show` の登場と退場」）。V3 の `Show` は `exit` を持たず、いつも即 dispose する。`motion` は行 AN1 で足す（D7 の前の文言は「`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す」、V3 の Grill、Issue #363）。
 
 ### 8.2 Signal読み取りのAPI形状 — §2
 `signal.Get()` / `signal.Set(v)`の明示的メソッドを採用する。MoonBit 版では「演算子オーバーロード的な糖衣構文のサポート有無を前提にしない」ことが理由だった。C# ではプロパティ（`signal.Value`）が通常の言語機能として使えるが、それでもメソッドを採る。getter に依存登録という副作用があるため、プロパティにするとデバッガのウォッチ・データヒント・`DebuggerDisplay` の評価が getter を呼び、ブレークポイントで止まっている Computation に意図しない依存を登録してしまうからである（デバッガはメソッドを自動評価しない）。暗黙の型変換演算子（`Signal<T>` → `T`）も同じ理由で定義しない。
