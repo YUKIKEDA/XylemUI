@@ -84,6 +84,7 @@ return scenario switch
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
+    "animations" => AnimationCost.Run(),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
     "resize-text" => CoreCosts.ResizeText(Number(1, 51)),

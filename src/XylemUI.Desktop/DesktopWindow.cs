@@ -86,7 +86,7 @@ internal sealed class DesktopWindow : IDisposable
             Window.TextRenderingChanged += OnTextRenderingChanged;
 
             // Less motion when Windows asks for it (design §2.14, "Reduced motion").
-            Tree.Animations.ReduceMotion = Win32Window.ReducesMotion;
+            Tree.Animations.ReduceMotion = Window.ReducesMotion;
             Window.ReducesMotionChanged += OnReducesMotionChanged;
             Window.Closed += OnClosed;
             Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject);
@@ -221,7 +221,7 @@ internal sealed class DesktopWindow : IDisposable
         Frames.Resize(new Size(width / scale, height / scale), scale);
     }
 
-    private void OnReducesMotionChanged(object? sender, EventArgs e) => Tree.Animations.ReduceMotion = Win32Window.ReducesMotion;
+    private void OnReducesMotionChanged(object? sender, EventArgs e) => Tree.Animations.ReduceMotion = Window.ReducesMotion;
 
     private void OnTextRenderingChanged(object? sender, EventArgs e)
     {

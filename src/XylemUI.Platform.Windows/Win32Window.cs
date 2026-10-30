@@ -38,6 +38,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     private int _pendingWidth;
     private int _pendingHeight;
     private Action? _raiseTextRenderingChanged;
+    private Action? _raiseReducesMotionChanged;
     private Action? _raiseScaleChanged;
     private HMONITOR _monitor;
 
@@ -99,6 +100,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             ResizeClient(hwnd, width, height);
             _monitor = MonitorFromWindow(hwnd, MONITOR.MONITOR_DEFAULTTONEAREST);
             TextRendering = TextRenderingReader(_monitor);
+            ReducesMotion = ReducesMotionReader(false);
             CreateTouchpad(hwnd);
         }
         catch
@@ -134,9 +136,9 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// <summary>
     /// Gets a value indicating whether Windows asks for less motion: "Animation effects" is off in the settings
     /// (<c>SPI_GETCLIENTAREAANIMATION</c> is false). Animations then jump to their end values (design §2.14, "Reduced motion").
-    /// Read when the first window is made and on each <c>WM_SETTINGCHANGE</c>.
+    /// Read when the window is created and on each <c>WM_SETTINGCHANGE</c> it receives.
     /// </summary>
-    public static bool ReducesMotion { get; private set; }
+    public bool ReducesMotion { get; private set; }
 
     /// <summary>
     /// Gets how the window's text is drawn (design §5.0.3, "ClearType"): read for the window's monitor when the window is created,
@@ -151,6 +153,12 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// </summary>
     internal static Func<HMONITOR, TextRenderingParameters> TextRenderingReader { get; set; } =
         static monitor => Win32TextRendering.Read(monitor, isOpaque: true);
+
+    /// <summary>
+    /// Gets or sets what reads <see cref="ReducesMotion"/> from the value before it, for the tests of the change without changing a
+    /// setting of Windows.
+    /// </summary>
+    internal static Func<bool, bool> ReducesMotionReader { get; set; } = ReadReducesMotion;
 
     /// <summary>
     /// Gets the window's scale: its monitor's DPI over 96, not rounded (1.25 at 125 %). The display list multiplies logical pixels
@@ -422,14 +430,25 @@ public sealed unsafe partial class Win32Window : IDisposable
 
         _classRegistered = true;
         ReadWheelSettings();
-        ReducesMotion = ReadReducesMotion();
     }
 
     // Whether the client area's animations are off (SPI_GETCLIENTAREAANIMATION); a call that fails keeps the value before.
-    private static bool ReadReducesMotion()
+    private static bool ReadReducesMotion(bool before)
     {
         BOOL animates;
-        return SystemParametersInfoW(SPI.SPI_GETCLIENTAREAANIMATION, 0, &animates, 0) == BOOL.FALSE ? ReducesMotion : animates == BOOL.FALSE;
+        return SystemParametersInfoW(SPI.SPI_GETCLIENTAREAANIMATION, 0, &animates, 0) == BOOL.FALSE ? before : animates == BOOL.FALSE;
+    }
+
+    // Each window compares with its own value: Windows sends WM_SETTINGCHANGE to every top-level window, and a value shared by the
+    // windows would be changed by the first one only, so the others would not raise the event.
+    private void ReadReducesMotionAgain()
+    {
+        bool read = ReducesMotionReader(ReducesMotion);
+        if (read != ReducesMotion)
+        {
+            ReducesMotion = read;
+            SynchronousRenderGuard.RunOrDefer(_raiseReducesMotionChanged ??= () => ReducesMotionChanged?.Invoke(this, EventArgs.Empty));
+        }
     }
 
     // Every message for every XylemUI window enters here. No managed exception may leave this method (Invariant 13).
@@ -493,13 +512,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             case WmSettingChange:
                 ReadTextRendering(_monitor);
                 ReadWheelSettings();
-                bool reduces = ReadReducesMotion();
-                if (reduces != ReducesMotion)
-                {
-                    ReducesMotion = reduces;
-                    SynchronousRenderGuard.RunOrDefer(() => ReducesMotionChanged?.Invoke(this, EventArgs.Empty));
-                }
-
+                ReadReducesMotionAgain();
                 return false;
             case WmDpiChanged:
                 ChangeScale(hwnd, wParam, (RECT*)lParam);

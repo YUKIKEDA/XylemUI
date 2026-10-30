@@ -1008,7 +1008,7 @@ Fine-grained reactiveはview関数が初回しか実行されないため、素�
 
 ```csharp
 // Elements に足す（using static XylemUI.Elements;）
-public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null);
+public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null, ShowMotion? motion = null);   // motion は AN1（§2.14）
 
 // ElementExtensions に足す。container は子を持たない箱で、For だけがその子を決める
 public static Element For<T, TKey>(this Element container, IReadOnlySignal<IReadOnlyList<T>> items,
@@ -1065,8 +1065,8 @@ public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Sho
 {
     // whenがfalseになった瞬間: ShowStateをExitingへ遷移させ、
     //   1. このサブツリーのReactive graph購読を即座に切断する（ビジネスロジックの再計算を止める）
-    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降は子の木を包むノードの
-    //      ペイントプロパティ（opacity/transform）のみを Show 自身がアニメーションさせる（§2.14「`Show` の登場と退場」）
+    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降は部分の根のノードの
+    //      出ている度合い（opacity/位置、使う人の値とは別）のみを Show 自身がアニメーションさせる（§2.14「`Show` の登場と退場」）
     //   3. motion の長さの終わりにScopeArena.Disposeする
     // Exiting中にwhenがtrueに戻った場合: サブツリーを復帰させ(Enteringへ)、購読を再接続する
     ...
@@ -1555,7 +1555,7 @@ public static class Elements
     public static Element Text(Func<string> content);                // 読んだ Signal が変わるたびに書き直す（string を確保する）
     public static Element Text(TextBuilder content);                 // 同じ。確保しない
     public static Element ScrollView(Element child, ScrollState? state = null);   // 縦にスクロールする箱（V2、§3.4.1）
-    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null);   // V3（§2.7）
+    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null, ShowMotion? motion = null);   // V3（§2.7）、motion は AN1（§2.14）
 }
 
 // メソッドチェーン。どれもその木の setter に直接書き、同じ Element を返す。長さは論理画素
@@ -1599,7 +1599,7 @@ public static class ElementExtensions
     public static bool Focus(this Element e);                                        // フォーカスできなければ false
     public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
     // アニメーション（AN1、§2.14）。描画の値のプロパティだけ（NodeProperties の描画の値）。変わると今の値から補間する
-    public static Element Transition<T>(this Element e, NodeProperty<T> property, TimeSpan duration, Curve curve);
+    public static Element Transition<T>(this Element e, NodeProperty<T> property, TimeSpan duration, Curve? curve = null);
     // テスト（P02a、§12.5「鍵」）。付けたノードだけを持つ表に入れる。どのノードにも付けられる
     public static Element TestId(this Element e, string id);
     // スクロール（V2、§3.4.1「スクロールする箱」）
@@ -1614,6 +1614,36 @@ public static class ElementExtensions
         Func<IReadOnlySignal<T>, IReadOnlySignal<int>, Element> render) where TKey : notnull;
     // Signal とノードをつなぐ 1 つの経路（§2.4）。上の Signal を受ける多重定義はこれを呼ぶ
     public static Element Bind<T>(this Element e, NodeProperty<T> property, IReadOnlySignal<T> value);
+}
+
+// アニメーション（AN1、§2.14）。値をシグナルで出す
+public sealed class Animation
+{
+    public static Animation Create(TimeSpan duration, Curve? curve = null, float value = 0);   // 今の Scope が持つ
+    public IReadOnlySignal<float> Value { get; }
+    public bool IsAnimating { get; }
+    public void Forward();                                                   // 1 へ。長さは残りの距離の分（Flutter の forward）
+    public void Reverse();                                                   // 0 へ
+    public void AnimateTo(float target, TimeSpan? duration = null, Curve? curve = null);
+    public void Set(float value);                                            // すぐ設定して止める（指で追う）
+    public void Fling(float velocity, Spring? spring = null);                 // 速度 ≥ 0 なら 1 へ、< 0 なら 0 へ
+    public void SpringTo(float target, Spring? spring = null);                // 今の位置と速度から
+    public void Stop();
+}
+
+public readonly record struct Spring(float Stiffness, float Damping, float Mass = 1);   // Default は臨界減衰、stiffness 300
+
+public sealed class Curve
+{
+    public static Curve CubicBezier(float x1, float y1, float x2, float y2);
+    public static Curve Linear { get; }   // Ease、EaseIn、EaseOut、EaseInOut、DecelerateMid も
+    public float Transform(float progress);
+}
+
+public sealed class ShowMotion
+{
+    public static ShowMotion Fade(TimeSpan duration, Curve? curve = null);
+    public static ShowMotion FadeSlide(float dx, float dy, TimeSpan duration, Curve? curve = null);
 }
 
 // XylemUI.Primitives（見た目のない部品、§13.1）。名前空間 XylemUI.Primitives、using static XylemUI.Primitives.Primitive;
@@ -1719,9 +1749,9 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 **カーブ:** Core に `Curve` を置く。3 次ベジェ（`Curve.CubicBezier(x1, y1, x2, y2)`）と、よく使う定数（`Linear`、`EaseInOut` など）を持つ。Fluent 2 の 9 つのカーブはどれも 3 次ベジェである（microsoft/fluentui のコミット `1f59fc2` の `packages/tokens/src/global/curves.ts` 4〜12 行目）。Fluent 2 の 8 つの長さ（50〜500 ms、同じコミットの `durations.ts` 4〜11 行目）と 9 つのカーブは、`XylemUI.Theme.Fluent` のトークンとして置く（§13.2）。
 
-**動きを減らす設定:** OS の「動きを減らす」設定がオンのときは、アニメーションを終わりの値まで飛ばし、フレームを予約しない。Windows は `SPI_GETCLIENTAREAANIMATION` を読む。GPUI の `reduce_motion`（`crates/gpui/src/app.rs` 1293〜1304 行目）、Fluent 2 の「no motion」の推奨（https://fluent2.microsoft.design/motion）、WCAG 2.3.3 に合わせる。
+**動きを減らす設定:** OS の「動きを減らす」設定がオンのときは、アニメーションを終わりの値まで飛ばし、フレームを予約しない。Windows は `SPI_GETCLIENTAREAANIMATION` を、ウィンドウを作るときと、そのウィンドウが `WM_SETTINGCHANGE` を受けるたびに読む。値はウィンドウごとに持つ（Windows はトップレベルのウィンドウごとにこのメッセージを送るので、どのウィンドウも自分の値と比べて変わったかを知る）。GPUI の `reduce_motion`（`crates/gpui/src/app.rs` 1293〜1304 行目）、Fluent 2 の「no motion」の推奨（https://fluent2.microsoft.design/motion）、WCAG 2.3.3 に合わせる。
 
-**`Show` の登場と退場:** `Show(when, render, motion: ShowMotion.Fade(duration, curve))` のように動きを渡す。`Show` は子の木を包むノードを持ち、その不透明度と位置（変換）を 0 から 1 で動かす。プリセットは `ShowMotion.Fade` と `ShowMotion.FadeSlide(dx, dy)` で、呼ぶ人が長さとカーブを選ぶ。Fluent React の presence 部品（`Fade`・`Slide`、`visible` と `unmountOnExit`）と、Flutter の `AnimatedSwitcher`（既定はフェード、`packages/flutter/lib/src/widgets/animated_switcher.dart` 299〜359 行目）と同じ考え方である。退場の間は、§2.7 の決まりのとおり、子の木の購読を切って描画の状態を止める（`Exiting`、§11.5.1）。包むノードの値は `Show` 自身が動かすので、子の Effect は要らない。退場の途中で条件が true に戻れば、そのときの値から登場へ戻る。最初に作るときは登場を動かさない（Fluent の `appear` と同じく、既定は false）。
+**`Show` の登場と退場:** `Show(when, render, motion: ShowMotion.Fade(duration, curve))` のように動きを渡す。`Show` は、部分の根のノードの「出ている度合い」（0〜1）を動かす。描画は、その度合いを根のノードの不透明度に掛け、`ShowMotion` のずれに (1 − 度合い) を掛けた分だけ位置を動かす。度合いは、使う人がそのノードに付けた不透明度や変換とは別に持つ。AN1 の実装で、D7 の「子の木を包むノード」から改めた。V3 で `Show` は包む箱を木に足さないと決めた（layout の親の直接の子にする、§2.7）ので、箱を足すと layout が変わるためである。プリセットは `ShowMotion.Fade` と `ShowMotion.FadeSlide(dx, dy)` で、呼ぶ人が長さとカーブを選ぶ。Fluent React の presence 部品（`Fade`・`Slide`、`visible` と `unmountOnExit`）と、Flutter の `AnimatedSwitcher`（既定はフェード、`packages/flutter/lib/src/widgets/animated_switcher.dart` 299〜359 行目）と同じ考え方である。退場の間は、§2.7 の決まりのとおり、子の木の購読を切って描画の状態を止める（`Exiting`、§11.5.1）。実装では部分の Scope を止める（`Scope.Pause`）。止めた Scope の下の Effect は、ソースが変わってもキューの中で溜められて走らず、Scope を再開すると（条件が true に戻ったとき）溜めた Effect のうちソースの変わったものが走る（§2.7「復帰時の初期同期プロトコル」）。止めた Scope が 1 つも無いときの費用は、Effect を走らせるたびの整数の比較 1 回である。度合いは `Show` 自身が動かすので、子の Effect は要らない。退場が終わってから、次の部分（`fallback`、無ければ空のノード）と差し替え、次の部分は度合い 0 から登場する。退場の途中で条件が true に戻れば、同じノードのまま、そのときの度合いから登場へ戻る（§2.7 の復帰の表）。登場はカーブを前へ、退場はカーブを後ろへ走らせる（Flutter の曲線つきアニメーションの reverse と同じ。EaseOut の退場は、ゆっくり始まって速く終わる）。動く長さは、`ShowMotion` の長さに残りの距離を掛けたものである。最初に作るときは登場を動かさない（Fluent の `appear` と同じく、既定は false）。
 
 **テストとアロケーション:**
 
