@@ -69,11 +69,11 @@ internal readonly record struct TextLink(PointerHandler OnClick, PointerHandler?
 internal readonly record struct InlineObject(NodeHandle Child, int Position, PlaceholderAlignment Alignment);
 
 /// <summary>
-/// The room an inline object takes, from the child's last measurement under the text's width (design §4.8): its margin box, its
-/// first baseline from the margin box's top (NaN when it has none), and its margin box's widths under a min-content and a
-/// max-content width.
+/// The room an inline object takes, from the child's last measurement under the text's width (design §4.8): its margin box, and
+/// its first baseline from the margin box's top (NaN when it has none). Under a min-content or a max-content width the child is
+/// measured under the same, so the text's content widths take the child's.
 /// </summary>
-internal readonly record struct InlineBox(float Width, float Height, float Baseline, float MinWidth, float MaxWidth);
+internal readonly record struct InlineBox(float Width, float Height, float Baseline);
 
 /// <summary>
 /// The ranges of a text leaf (design §4.8): two flat lists that cover its text, the layout's and the look's, its links, and its

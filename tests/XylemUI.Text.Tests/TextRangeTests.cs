@@ -257,14 +257,14 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
-    /// The ranges of a leaf take design §4.8's bytes: 160 + 80 L + 60 P + 144 K + 44 I, for arrays of L ranges of the layout, P of
+    /// The ranges of a leaf take design §4.8's bytes: 160 + 80 L + 60 P + 144 K + 36 I, for arrays of L ranges of the layout, P of
     /// the look, K links, and I inline objects, each 2 long at first and doubled when full; the inline objects' two arrays add their
     /// headers, 48 bytes.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The sizes of a range of the layout, of the look, of a link, of an inline object, and of its room, read with
-    ///   <c>Unsafe.SizeOf</c>: 80, 60, 144, 24, and 20 bytes.
+    ///   <c>Unsafe.SizeOf</c>: 80, 60, 144, 24, and 12 bytes.
     ///
     /// Steps:
     /// - Measure the bytes allocated while a <c>TextRanges</c> is made and given 3 links, 3 inline objects, and 5 pieces of text,
@@ -278,7 +278,7 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
     public void Ranges_Memory_IsTheFormula()
     {
         Assert.Equal(
-            (80, 60, 144, 24, 20),
+            (80, 60, 144, 24, 12),
             (
                 System.Runtime.CompilerServices.Unsafe.SizeOf<LayoutRun>(),
                 System.Runtime.CompilerServices.Unsafe.SizeOf<PaintRun>(),
@@ -309,8 +309,8 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
 
         // The links' and the inline objects' arrays grew from 2 to 4, and the others from 2 to 4 and 8; the arrays they left were
         // allocated too.
-        long kept = 160 + (80 * 8) + (60 * 8) + (144 * 4) + 48 + (44 * 4);
-        long left = (24 + (80 * 2)) + (24 + (80 * 4)) + (24 + (60 * 2)) + (24 + (60 * 4)) + (24 + (144 * 2)) + (24 + (24 * 2)) + (24 + (20 * 2));
+        long kept = 160 + (80 * 8) + (60 * 8) + (144 * 4) + 48 + (36 * 4);
+        long left = (24 + (80 * 2)) + (24 + (80 * 4)) + (24 + (60 * 2)) + (24 + (60 * 4)) + (24 + (144 * 2)) + (24 + (24 * 2)) + (24 + (12 * 2));
         Assert.InRange(allocated, kept + left, kept + left + (8 * 8));
     }
 

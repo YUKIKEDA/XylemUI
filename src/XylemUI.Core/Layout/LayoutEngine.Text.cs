@@ -153,7 +153,7 @@ internal static partial class LayoutEngine
             CollectionsMarshal.AsSpan(context.Rooms),
             CollectionsMarshal.AsSpan(context.RoomWidths)
         );
-        (float min, float max) = IntrinsicWidthsOf(context, result);
+        (float min, float max) = result.IntrinsicWidths(context.Shaper);
         shaped.Fill(min, max);
         return shaped;
     }
@@ -178,8 +178,6 @@ internal static partial class LayoutEngine
         {
             context.Rooms.Add(inlines[i].Position);
             context.RoomWidths.Add(boxes[i].Width);
-            context.RoomMinWidths.Add(boxes[i].MinWidth);
-            context.RoomMaxWidths.Add(boxes[i].MaxWidth);
         }
     }
 
@@ -187,23 +185,11 @@ internal static partial class LayoutEngine
     {
         context.Rooms.Clear();
         context.RoomWidths.Clear();
-        context.RoomMinWidths.Clear();
-        context.RoomMaxWidths.Clear();
     }
 
-    // The content widths of a text just shaped, its inline objects at their content widths (design §4.8).
-    private static (float Min, float Max) IntrinsicWidthsOf(TextContext context, ShapingResult result) =>
-        context.Rooms.Count == 0
-            ? result.IntrinsicWidths(context.Shaper)
-            : result.IntrinsicWidths(
-                context.Shaper,
-                CollectionsMarshal.AsSpan(context.Rooms),
-                CollectionsMarshal.AsSpan(context.RoomMinWidths),
-                CollectionsMarshal.AsSpan(context.RoomMaxWidths)
-            );
-
     // Measures a text leaf's inline objects under the width its text is measured at (design §4.8): each child with a width-only
-    // constraint, the content box's width less its margins, or the same min-content or max-content width; its first baseline from
+    // constraint, the content box's width less its margins, or the same min-content or max-content width, so that the text's content
+    // widths take the child's (Flutter measures the children's intrinsic widths into the paragraph's); its first baseline from
     // a layout at that size when it aligns by it, as a flex container reads its items' (CalculateChildrenBaselines). Rooms of a new
     // size give the text shaped once their widths and drop the lines broken at the old ones (Flutter's
     // TextPainter.setPlaceholderDimensions); the same sizes keep both. A child that is gone takes no room.
@@ -240,17 +226,7 @@ internal static partial class LayoutEngine
                     baseline = ReadBaseline(tree, child) + margin.Top;
                 }
 
-                var content = new AvailableSize(AvailableSpace.MinContent, AvailableSpace.MaxContent);
-                float min = MeasureChild(tree, child, OptionalSize.None, parentSize, content, SizingMode.InherentSize, horizontal: true);
-                content = new AvailableSize(AvailableSpace.MaxContent, AvailableSpace.MaxContent);
-                float max = MeasureChild(tree, child, OptionalSize.None, parentSize, content, SizingMode.InherentSize, horizontal: true);
-                box = new InlineBox(
-                    size.Width + margin.Horizontal,
-                    size.Height + margin.Vertical,
-                    baseline,
-                    min + margin.Horizontal,
-                    max + margin.Horizontal
-                );
+                box = new InlineBox(size.Width + margin.Horizontal, size.Height + margin.Vertical, baseline);
             }
 
             if (!ranges.Boxes[i].Equals(box))
@@ -270,7 +246,7 @@ internal static partial class LayoutEngine
             TextContext context = tree.Text!;
             FillRooms(context, ranges);
             result.SetPlaceholderWidths(CollectionsMarshal.AsSpan(context.Rooms), CollectionsMarshal.AsSpan(context.RoomWidths));
-            (float min, float max) = IntrinsicWidthsOf(context, result);
+            (float min, float max) = result.IntrinsicWidths(context.Shaper);
             shaped.Fill(min, max);
         }
 

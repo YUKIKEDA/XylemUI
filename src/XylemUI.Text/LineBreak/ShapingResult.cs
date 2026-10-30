@@ -6,7 +6,7 @@ namespace XylemUI.Text.LineBreak;
 /// A text shaped once, run by run of its fonts, with its line break opportunities (design §4.1, "Shaping and line breaking", and
 /// "Line breaking and grapheme clusters"; cached while the text does not change, §3.2's <c>ShapedTextCache</c>). It breaks the text
 /// into lines at a width (<see cref="Wrap"/>, Pass1), lays the lines out for drawing (<see cref="Lay"/>, Pass2), and gives the
-/// text's content widths (<see cref="IntrinsicWidths(TextShaper)"/>).
+/// text's content widths (<see cref="IntrinsicWidths"/>).
 /// </summary>
 /// <remarks>
 /// The text is shaped once and broken again for each width, as skparagraph, Avalonia's <c>TextRunCache</c>, and GPUI do. The
@@ -134,6 +134,9 @@ internal sealed class ShapingResult
                     throw new ArgumentException("A room of an inline object is not a font run of its own.", nameof(placeholders));
                 }
 
+                // A line may break on either side of the room, and no line end shapes it again: the glyph after it starts a run of
+                // its own, which HarfBuzz marks safe to break before (there is nothing before it to shape with), so Pass2 finds a
+                // safe position at the room or after it.
                 EnsureGlyphs(_glyphCount + 1);
                 AddGlyph(new LaidGlyph(LaidGlyph.Placeholder, run.Start, widths[room], 0, 0, r), unsafeToBreak: false);
                 room++;
@@ -298,59 +301,21 @@ internal sealed class ShapingResult
     /// </summary>
     /// <param name="shaper">The shaper, of this thread, for the width of a hyphen.</param>
     /// <returns>The least and the most content width, in logical pixels.</returns>
-    public (float Min, float Max) IntrinsicWidths(TextShaper shaper) => IntrinsicWidths(shaper, default, default, default);
-
-    /// <summary>
-    /// Returns the content widths of the text as <see cref="IntrinsicWidths(TextShaper)"/> does, with the rooms of inline objects at
-    /// other widths than their glyphs have: a room is a piece of its own (UAX #14 breaks before and after U+FFFC), which takes its
-    /// least width in the least content width, and a line between hard line breaks takes each room's most width (Flutter's
-    /// RenderParagraph measures the children's intrinsic widths into the paragraph's, design §4.8).
-    /// </summary>
-    /// <param name="shaper">The shaper, of this thread, for the width of a hyphen.</param>
-    /// <param name="placeholders">The positions of the rooms, as <see cref="Shape"/> was given them.</param>
-    /// <param name="minWidths">The width of each room under the least content width.</param>
-    /// <param name="maxWidths">The width of each room under the most content width.</param>
-    /// <returns>The least and the most content width, in logical pixels.</returns>
-    public (float Min, float Max) IntrinsicWidths(
-        TextShaper shaper,
-        ReadOnlySpan<int> placeholders,
-        ReadOnlySpan<float> minWidths,
-        ReadOnlySpan<float> maxWidths
-    )
+    public (float Min, float Max) IntrinsicWidths(TextShaper shaper)
     {
         float min = 0;
         float max = 0;
         int piece = 0;
         int line = 0;
-        int pieceRoom = 0;
-        int lineRoom = 0;
         for (int k = 0; k < _breakCount; k++)
         {
             LineBreakOpportunity opportunity = _breaks[k];
             bool hyphen = !opportunity.Mandatory && EndsWithSoftHyphen(opportunity.Position);
-            float width = TrimmedWidth(piece, opportunity.Position) + (hyphen ? HyphenWidth(opportunity.Position - 1, shaper) : 0);
-            while (pieceRoom < placeholders.Length && placeholders[pieceRoom] < piece)
-            {
-                pieceRoom++;
-            }
-
-            if (pieceRoom < placeholders.Length && placeholders[pieceRoom] == piece && opportunity.Position == piece + 1)
-            {
-                width = minWidths[pieceRoom];
-            }
-
-            min = MathF.Max(min, width);
+            min = MathF.Max(min, TrimmedWidth(piece, opportunity.Position) + (hyphen ? HyphenWidth(opportunity.Position - 1, shaper) : 0));
             piece = opportunity.Position;
             if (opportunity.Mandatory)
             {
-                // The rooms on the line, at their most width in place of their glyphs'.
-                float extra = 0;
-                for (; lineRoom < placeholders.Length && placeholders[lineRoom] < opportunity.Position; lineRoom++)
-                {
-                    extra += maxWidths[lineRoom] - _glyphs[_glyphAt[placeholders[lineRoom]]].Advance;
-                }
-
-                max = MathF.Max(max, TrimmedWidth(line, opportunity.Position) + extra);
+                max = MathF.Max(max, TrimmedWidth(line, opportunity.Position));
                 line = opportunity.Position;
             }
         }
@@ -446,15 +411,6 @@ internal sealed class ShapingResult
         {
             int run = RunAt(position);
             int runEnd = Math.Min(end, _runs[run].Start + _runs[run].Length);
-
-            // The room of an inline object is not shaped: it keeps its glyph.
-            if (_glyphAt[position] >= 0 && _glyphs[_glyphAt[position]].IsPlaceholder)
-            {
-                Append(_glyphs[_glyphAt[position]], result, trimmed, ref width, ref withSpaces);
-                position = runEnd;
-                continue;
-            }
-
             int length = contextEnd - contextStart;
             char[] scratch = shaper.Scratch(length);
             _text.AsSpan(contextStart, length).CopyTo(scratch);

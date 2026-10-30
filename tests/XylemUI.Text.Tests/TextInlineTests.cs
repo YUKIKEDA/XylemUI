@@ -532,6 +532,108 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// A write that puts another element in the same place, the text the same, gives the text node the new child and lets go of the
+    /// old one.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two boxes, of 30 x 10 and 20 x 10; a text "nn" and the box a signal picks.
+    ///
+    /// Steps:
+    /// - Mount with the first; pick the second; draw.
+    ///
+    /// Expected:
+    /// - The second box is the text's only child, 20 wide at x 17.08; the first has no parent.
+    /// </remarks>
+    [Fact]
+    public void Rewrite_WithAnotherChild_InTheSamePlace_TakesIt() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var second = Signal.Create(false);
+            Element first = default;
+            Element other = default;
+            Element text = default;
+            scene.Mount(() =>
+            {
+                first = Elements.Box().Width(30).Height(10);
+                other = Elements.Box().Width(20).Height(10);
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn".AsSpan());
+                        w.Inline(second.Get() ? other : first);
+                    }
+                );
+                return Elements.Row(text);
+            });
+
+            second.Set(true);
+            scene.Draw();
+            ref UiNode node = ref scene.Tree.Nodes.GetRef(text.Node);
+            Assert.Equal(other.Node, node.FirstChild);
+            Assert.Equal(other.Node, node.LastChild);
+            Assert.True(scene.Tree.Nodes.GetRef(first.Node).Parent.IsNone);
+            AssertRect(new Rect(2 * N, Ascent - 10, 20, 10), scene.Tree.GetRect(other.Node));
+        });
+
+    /// <summary>
+    /// A write that places an element its scope removed throws: the element is gone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box made in a scope of its own; a text that writes it while a signal is true. The handler of the effects' exceptions
+    ///   records what it is given.
+    ///
+    /// Steps:
+    /// - Mount with false; dispose the box's scope; set true.
+    ///
+    /// Expected:
+    /// - One <see cref="InvalidOperationException"/> reported; the text has no child.
+    /// </remarks>
+    [Fact]
+    public void Inline_OfARemovedElement_Throws() =>
+        ui.Invoke(() =>
+        {
+            var reported = new List<Exception>();
+            Action<Exception> previous = ReactiveRuntime.UnhandledExceptionHandler;
+            ReactiveRuntime.UnhandledExceptionHandler = reported.Add;
+            try
+            {
+                using var scene = new TextScene(_font);
+                var placed = Signal.Create(false);
+                ScopeHandle owner = default;
+                Element box = default;
+                Element text = default;
+                scene.Mount(() =>
+                {
+                    owner = Scope.Create(() => box = Elements.Box().Width(10).Height(10));
+                    text = Elements.Text(
+                        (ref w) =>
+                        {
+                            w.Write("n".AsSpan());
+                            if (placed.Get())
+                            {
+                                w.Inline(box);
+                            }
+                        }
+                    );
+                    return Elements.Row(text);
+                });
+
+                Scope.Dispose(owner);
+                Assert.False(scene.Tree.Nodes.IsAlive(box.Node));
+                placed.Set(true);
+                Assert.IsType<InvalidOperationException>(Assert.Single(reported));
+                Assert.True(scene.Tree.Nodes.GetRef(text.Node).FirstChild.IsNone);
+            }
+            finally
+            {
+                ReactiveRuntime.UnhandledExceptionHandler = previous;
+            }
+        });
+
+    /// <summary>
     /// A text node that goes away lets go of its inline objects first: the scope that made them keeps them.
     /// </summary>
     /// <remarks>

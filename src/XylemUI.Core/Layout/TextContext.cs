@@ -74,16 +74,6 @@ internal sealed class TextContext : IDisposable
     /// </summary>
     public List<float> RoomWidths { get; } = [];
 
-    /// <summary>
-    /// Gets the list of the widths of a text's inline objects under a min-content width, by the index of <see cref="Rooms"/>.
-    /// </summary>
-    public List<float> RoomMinWidths { get; } = [];
-
-    /// <summary>
-    /// Gets the list of the widths of a text's inline objects under a max-content width, by the index of <see cref="Rooms"/>.
-    /// </summary>
-    public List<float> RoomMaxWidths { get; } = [];
-
 #if DEBUG
     /// <summary>
     /// Gets the entry Debug builds break a leaf's text into to check its content widths, apart from the leaf's cache.
