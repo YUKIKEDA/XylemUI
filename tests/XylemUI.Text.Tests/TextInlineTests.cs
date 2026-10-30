@@ -322,6 +322,46 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// A child that grows past the line's width moves to a line of its own.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text 60 wide: "nn" and a box of 30 x 10.
+    ///
+    /// Steps:
+    /// - Mount and lay out; make the box 50 wide; lay out.
+    ///
+    /// Expected:
+    /// - One line, then two (17.08 + 50 is over 60): the text is 20.272 high, then 40.544, and the box at x 0.
+    /// </remarks>
+    [Fact]
+    public void ChildThatGrows_PastTheLine_BreaksIt() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element box = default;
+            Element text = default;
+            scene.Mount(() =>
+            {
+                box = Elements.Box().Width(30).Height(10);
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn".AsSpan());
+                        w.Inline(box);
+                    }
+                ).Width(60);
+                return Elements.Row(text);
+            });
+
+            Assert.Equal(Line, scene.Tree.GetRect(text.Node).Height, 3);
+            SetWidth(scene, box, 50);
+            scene.Draw();
+            Assert.Equal(2 * Line, scene.Tree.GetRect(text.Node).Height, 3);
+            Assert.Equal(0, scene.Tree.GetRect(box.Node).X, 3);
+        });
+
+    /// <summary>
     /// A child whose size changes gives the text a room of its new size; a layout of the child that keeps its size keeps the
     /// lines the text was broken into at each width.
     /// </summary>
