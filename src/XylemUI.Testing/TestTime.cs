@@ -65,8 +65,8 @@ public sealed class TestTime : TimeProvider
     }
 
     /// <summary>
-    /// Advances the clock, firing each timer that falls due on the way at its due time, earliest first; a timer that two fire at
-    /// the same time fires in the order the timers were made.
+    /// Advances the clock, firing each timer that falls due on the way at its due time, earliest first; timers due at the same time
+    /// fire in the order they were scheduled, by <see cref="CreateTimer"/> or by the last <see cref="ITimer.Change"/>.
     /// </summary>
     /// <param name="by">How far; 0 or more.</param>
     public void Advance(TimeSpan by)

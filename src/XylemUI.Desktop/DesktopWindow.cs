@@ -103,6 +103,10 @@ internal sealed class DesktopWindow : IDisposable
             Window.Closed += OnClosed;
             Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject);
             Mount(root);
+
+            // The frame the root function's nodes asked for is the first one, which the size runs at once: without this, an empty
+            // frame ran after it (found by the headless app's check at its end, row P02a). A frame that one asks for stays.
+            Win32MessageLoop.FrameScheduler.CancelFrame();
             float scale = Window.ScaleFactor;
             Frames.Resize(new Size(width / scale, height / scale), scale);
         }

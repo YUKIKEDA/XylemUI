@@ -41,6 +41,30 @@ public sealed class HeadlessAppTests
     }
 
     /// <summary>
+    /// The start runs the frame that the root function's nodes asked for and leaves none: a pump right after it runs nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A root function of a column of two boxes with a background, which ask for a frame as they are made.
+    ///
+    /// Steps:
+    /// - Start the app; pump until settled.
+    ///
+    /// Expected:
+    /// - The first frame presented, and the pump ran 0 iterations.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task StartAsync_RunsTheFirstFrame_AndLeavesNoneAsked()
+    {
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(Box().Width(10).Height(10).Background(Red), Box().Width(10).Height(10).Background(Blue))
+        );
+        Assert.Equal(1, app.PresentCount);
+        Assert.Equal(0, app.PumpAndSettle());
+    }
+
+    /// <summary>
     /// With no frame asked for, a pump jumps the clock to the next timer and fires it.
     /// </summary>
     /// <remarks>

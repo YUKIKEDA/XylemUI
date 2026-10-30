@@ -17,6 +17,7 @@ public static class HeadlessSession
 {
     private static readonly Lock Gate = new();
     private static readonly AutoResetEvent Wake = new(false);
+    private static readonly SemaphoreSlim OneAtATime = new(1, 1);
     private static UiDispatcher? _dispatcher;
 
     /// <summary>
@@ -35,6 +36,11 @@ public static class HeadlessSession
     /// Runs a test's body on the UI thread and returns when it has ended, with its exception if it threw. Called on the UI thread,
     /// it runs the body there at once.
     /// </summary>
+    /// <remarks>
+    /// Bodies handed over from other threads run one at a time: a body that awaits keeps the next one waiting until it ends, so two
+    /// tests never interleave on the UI thread, where the scope tracker and the queue are the process's. A body therefore does not
+    /// wait, on another thread, for a second body it hands over.
+    /// </remarks>
     /// <param name="body">The test's body.</param>
     /// <returns>A task that completes when the body's task has completed.</returns>
     public static Task Run(Func<Task> body)
@@ -46,6 +52,24 @@ public static class HeadlessSession
             return body();
         }
 
+        return RunOneAtATime(dispatcher, body);
+    }
+
+    private static async Task RunOneAtATime(UiDispatcher dispatcher, Func<Task> body)
+    {
+        await OneAtATime.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await Post(dispatcher, body).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = OneAtATime.Release();
+        }
+    }
+
+    private static Task Post(UiDispatcher dispatcher, Func<Task> body)
+    {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         dispatcher.PostCallback(
             static state =>

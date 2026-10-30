@@ -62,9 +62,24 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
 
         ScopeTracker.IsEnabled = true;
-        Input.SetActive(true);
-        Mount(root);
-        Frames.Resize(new Size(options.Width, options.Height), options.Scale);
+
+        // A root function that throws, or returns a node it may not, leaves the process as it found it: the tracker as it was, and
+        // nothing of the app held.
+        try
+        {
+            Input.SetActive(true);
+            Mount(root);
+
+            // The frame the root function's nodes asked for is the first one, which the size runs at once; a frame that one asks
+            // for stays.
+            _scheduler.CancelFrame();
+            Frames.Resize(new Size(options.Width, options.Height), options.Scale);
+        }
+        catch
+        {
+            Free();
+            throw;
+        }
     }
 
     /// <summary>
@@ -331,13 +346,25 @@ public sealed class HeadlessApp : IAsyncDisposable
 
         bool frame = _scheduler.Pending;
         int timers = Time.PendingTimers;
-        _disposed = true;
-        DisposeRoot();
-        _scheduler.CancelFrame();
-        ScopeTracker.IsEnabled = _trackerWasEnabled;
-        _atlas.Dispose();
-        _text.Dispose();
-        _fonts.Dispose();
+        Free();
+
+        // Work on the UI thread that no test awaited threw since the last pump: the test it ran in sees it here, not the next one.
+        if (!Unobserved.IsEmpty)
+        {
+            var errors = new List<Exception>();
+            while (Unobserved.TryDequeue(out Exception? exception))
+            {
+                errors.Add(exception);
+            }
+
+            if (errors.Count == 1)
+            {
+                ExceptionDispatchInfo.Throw(errors[0]);
+            }
+
+            throw new AggregateException("Work on the UI queue threw.", errors);
+        }
+
         if (frame || timers > 0)
         {
             throw new InvalidOperationException(
@@ -352,7 +379,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Keeps an exception of work on the UI thread that no test awaited, for the next app that pumps to rethrow.
+    /// Keeps an exception of work on the UI thread that no test awaited, for the app that pumps or is disposed next to rethrow.
     /// </summary>
     /// <param name="exception">The exception.</param>
     internal static void ReportUnobserved(Exception exception) => Unobserved.Enqueue(exception);
@@ -480,6 +507,18 @@ public sealed class HeadlessApp : IAsyncDisposable
         {
             UiTree.Current = previous;
         }
+    }
+
+    // Frees what the app holds and gives the tracker back the state it had; the app is disposed after it.
+    private void Free()
+    {
+        _disposed = true;
+        DisposeRoot();
+        _scheduler.CancelFrame();
+        ScopeTracker.IsEnabled = _trackerWasEnabled;
+        _atlas.Dispose();
+        _text.Dispose();
+        _fonts.Dispose();
     }
 
     private void DisposeRoot()

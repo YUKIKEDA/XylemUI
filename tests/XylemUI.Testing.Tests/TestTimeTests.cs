@@ -72,30 +72,33 @@ public sealed class TestTimeTests
     }
 
     /// <summary>
-    /// The time until the next timer is measured from now, and two timers due at once fire in the order they were made.
+    /// The time until the next timer is measured from now, and timers due at once fire in the order they were scheduled: a timer
+    /// changed again goes after those scheduled before the change.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A clock advanced by 4 ms, with timers A and then B both due 6 ms later.
+    /// - A clock advanced by 4 ms, with timers A, B, and C made in that order, all due 6 ms later.
     ///
     /// Steps:
-    /// - Read the time until the next timer; advance by 6 ms.
+    /// - Change A to the same due time; read the time until the next timer; advance by 6 ms.
     ///
     /// Expected:
-    /// - 6 ms; A fired before B.
+    /// - 6 ms; B, C, then A fired.
     /// </remarks>
     [Fact]
-    public void UntilNextTimer_IsFromNow_AndTimersDueAtOnceFireInTheOrderMade()
+    public void UntilNextTimer_IsFromNow_AndTimersDueAtOnceFireInTheOrderScheduled()
     {
         var time = new TestTime();
         time.Advance(Ms(4));
         var order = new List<char>();
         using ITimer a = time.CreateTimer(_ => order.Add('A'), null, Ms(6), Timeout.InfiniteTimeSpan);
         using ITimer b = time.CreateTimer(_ => order.Add('B'), null, Ms(6), Timeout.InfiniteTimeSpan);
+        using ITimer c = time.CreateTimer(_ => order.Add('C'), null, Ms(6), Timeout.InfiniteTimeSpan);
+        Assert.True(a.Change(Ms(6), Timeout.InfiniteTimeSpan));
 
         Assert.Equal(Ms(6), time.UntilNextTimer());
         time.Advance(Ms(6));
-        Assert.Equal(['A', 'B'], order);
+        Assert.Equal(['B', 'C', 'A'], order);
     }
 
     private static TimeSpan Ms(int milliseconds) => TimeSpan.FromMilliseconds(milliseconds);
