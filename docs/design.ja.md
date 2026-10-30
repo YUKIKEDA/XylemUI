@@ -2527,7 +2527,7 @@ Text((ref NodeTextWriter w) =>
   - ベースライン: `Baseline` の揃えは子の最初のベースラインを使う。子がベースラインを持たなければ、子の下端をベースラインに置く（`AboveBaseline` と同じ）。Flutter と同じである（`engine/src/flutter/lib/ui/text.dart` 3500〜3505 行目）。行の高さは、空きの上下の端を含むように広がる（SkParagraph の `src/Run.cpp` 236〜290 行目）
   - 描く順と当たり判定: 子は文字の後に描き、ふつうの子として、文字より先に当たり判定をする。Flutter も文字の後に子を描く（`rendering/paragraph.dart` 1030〜1075 行目）
   - キャレットと選択: 空きは 1 つのクラスタで、キャレットと `HitTestText` は 1 文字として数える。範囲をまたぐ選択（P02）は空きを選ばず、子が選べるなら子が選ぶ（Flutter の `rendering/paragraph.dart` 447〜474 行目）
-  - リンク: リンクのスコープの中に置いた子は、リンクのホバーと Click を受けない。子の当たり判定が先に当たる。Flutter の `WidgetSpan` も、リンクの認識器を持たない（`widgets/widget_span.dart` 190〜196 行目）
+  - リンク: リンクのスコープの中に置いた子は、リンクのホバーと Click を受けない。子の当たり判定が先に当たる。Flutter でも、認識器（`recognizer`）は `TextSpan` の欄で、その文字に当たった入力だけを受け（`painting/text_span.dart` 114〜122 行目）、`WidgetSpan` が継ぐ `PlaceholderSpan` は認識器を持たない（`painting/placeholder_span.dart` 39 行目、`widgets/widget_span.dart` 71 行目）
 - **費用:** 範囲を持たない葉は、`Ranges` の 8 バイトだけ大きくなり、ほかは今のままである。範囲を持つ葉の `TextRanges` の大きさは $H + s_L L + s_P P + s_K K + s_I I$ バイト（$L$・$P$・$K$・$I$ はレイアウトの範囲・描画の範囲・リンク・インラインオブジェクトの配列の長さで、2 から始まり、足りないときに 2 倍にする）。T12 で `Unsafe.SizeOf` を読むと、$H = 136$（オブジェクト 64 と配列の頭 24 が 3 つ）、$s_L = 80$（`LayoutRun`）、$s_P = 60$（`PaintRun`）、$s_K = 144$（`TextLink`。ホバー中のスタイルの `SpanStyle` だけで 120）だった。リンクの無い葉はリンクの配列が空で、その頭の 24 バイトも無い。$s_I$ は T13 で書く。テストは、この式と割り当てたバイト数を比べる（`Ranges_Memory_IsTheFormula`）。割り当て 0 は、範囲を持つ葉の作り直し（内容が同じとき）、色だけの変更、リンクのホバーの変化と Click の配送である
 - **確かめ方:**
   - Text: 範囲ごとの大きさと言語でシェーピングすること、字間、行の高さ、描画の範囲だけの違いでシェーピングの単位が分かれないこと
