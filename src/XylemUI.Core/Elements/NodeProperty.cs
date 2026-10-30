@@ -9,6 +9,11 @@ namespace XylemUI;
 /// <typeparam name="T">The value's type.</typeparam>
 public sealed class NodeProperty<T>
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NodeProperty{T}"/> class.
+    /// </summary>
+    /// <param name="name">The property's name.</param>
+    /// <param name="setter">Writes a value to a node of a tree.</param>
     internal NodeProperty(string name, Action<UiTree, NodeHandle, T> setter)
     {
         Name = name;

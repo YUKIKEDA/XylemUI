@@ -35,6 +35,10 @@ public ref struct DisplayListReader
     private int _state;
     private CommandTag? _current;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DisplayListReader"/> struct before the first command of <paramref name="list"/>.
+    /// </summary>
+    /// <param name="list">The display list to read.</param>
     internal DisplayListReader(DisplayList list)
     {
         _commands = list.Commands;

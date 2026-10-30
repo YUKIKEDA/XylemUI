@@ -55,6 +55,13 @@ internal sealed class ForBlock<T, TKey>
     /// disposes its newest children first, so the effect stops, then the rows leave the container, then they are freed, and freeing
     /// them walks no siblings.
     /// </summary>
+    /// <param name="tree">The tree the container is in.</param>
+    /// <param name="container">The empty box that holds the rows.</param>
+    /// <param name="items">The items, a row for each.</param>
+    /// <param name="key">Returns an item's key, which keeps its row across updates.</param>
+    /// <param name="render">Makes a row from its item; <see langword="null"/> when <paramref name="renderIndexed"/> is given.</param>
+    /// <param name="renderIndexed">Makes a row from its item and its index; <see langword="null"/> when <paramref name="render"/> is
+    /// given.</param>
     internal static void Create(
         UiTree tree,
         NodeHandle container,

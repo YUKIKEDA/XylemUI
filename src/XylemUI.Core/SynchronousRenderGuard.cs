@@ -114,6 +114,10 @@ public static class SynchronousRenderGuard
     {
         private readonly int _depthAtEnter;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="Scope"/> struct.
+        /// </summary>
+        /// <param name="depthAtEnter">The nesting depth of the path that <see cref="Enter"/> started; the paths end in the reverse order.</param>
         internal Scope(int depthAtEnter) => _depthAtEnter = depthAtEnter;
 
         /// <summary>Ends the path. The outermost end runs the deferred callbacks in the order they were queued.</summary>

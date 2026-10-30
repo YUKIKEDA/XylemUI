@@ -14,6 +14,9 @@ public abstract class ReactiveNode
 {
     private ObserverEdge[] _observers = [];
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReactiveNode"/> class, with no readers.
+    /// </summary>
     private protected ReactiveNode() { }
 
     /// <summary>
@@ -58,6 +61,12 @@ public abstract class ReactiveNode
         }
     }
 
+    /// <summary>
+    /// Adds a computation that reads this node.
+    /// </summary>
+    /// <param name="observer">The computation.</param>
+    /// <param name="slotInObserver">The position of the matching source edge in the computation's sources.</param>
+    /// <returns>The position of the new edge in <see cref="Observers"/>.</returns>
     internal int AddObserver(Computation observer, int slotInObserver)
     {
         if (ObserverCount == _observers.Length)
@@ -75,6 +84,11 @@ public abstract class ReactiveNode
         return slot;
     }
 
+    /// <summary>
+    /// Removes the edge at a position in <see cref="Observers"/>. The last edge takes its place, and its computation learns the new
+    /// position.
+    /// </summary>
+    /// <param name="slot">The edge's position in <see cref="Observers"/>.</param>
     internal void RemoveObserver(int slot)
     {
         int last = --ObserverCount;

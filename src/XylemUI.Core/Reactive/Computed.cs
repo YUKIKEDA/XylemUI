@@ -53,6 +53,11 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
     // The global version at which the value was last known current while nothing read it; 0 when unknown.
     private ulong _currentAt;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Computed{T}"/> class, not yet computed.
+    /// </summary>
+    /// <param name="compute">Computes the value.</param>
+    /// <param name="comparer">Decides whether a new result equals the previous one; <see langword="null"/> for the default.</param>
     internal Computed(Func<T> compute, IEqualityComparer<T>? comparer)
     {
         _compute = compute;

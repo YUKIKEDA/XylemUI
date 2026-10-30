@@ -40,6 +40,13 @@ public static class ScopeTracker
         }
     }
 
+    /// <summary>
+    /// Records a scope that was just made.
+    /// </summary>
+    /// <param name="owner">The name given when it was made.</param>
+    /// <param name="isEffect">Whether it is the scope of an effect.</param>
+    /// <param name="isOwned">Whether it was made inside another scope.</param>
+    /// <returns>The scope's id, which <see cref="Remove"/> takes.</returns>
     internal static int Add(string owner, bool isEffect, bool isOwned)
     {
         int id = ++_lastId;
@@ -48,6 +55,10 @@ public static class ScopeTracker
         return id;
     }
 
+    /// <summary>
+    /// Forgets a scope that was disposed; an id that is not recorded is ignored.
+    /// </summary>
+    /// <param name="id">The id <see cref="Add"/> returned.</param>
     internal static void Remove(int id) => _ = Live.Remove(id);
 }
 

@@ -215,12 +215,17 @@ public static class Elements
     /// <summary>
     /// Returns the tree whose root function runs now.
     /// </summary>
+    /// <returns>The current tree.</returns>
     /// <exception cref="InvalidOperationException">No window's root function is running.</exception>
     internal static UiTree CurrentTree() =>
         UiTree.Current
         ?? throw new InvalidOperationException("Elements are made while a window's root function runs (XylemApp.Run); no tree is current.");
 
-    // The text style of text that sets none, in the tree's UI language, or undetermined when the host gave none.
+    /// <summary>
+    /// Returns the text style of text that sets none, in the tree's UI language, or undetermined when the host gave none.
+    /// </summary>
+    /// <param name="tree">The tree whose UI language the style takes.</param>
+    /// <returns>The default text style.</returns>
     internal static TextStyle DefaultTextStyle(UiTree tree) =>
         new(FontRequest.Default, DefaultFontSize, tree.UiLanguage ?? TextLanguage.FromTag("und"), float.NaN);
 

@@ -19,6 +19,9 @@ internal static class NativeHandleTable
     /// <summary>
     /// Registers a target and returns the id to hand to native code. The id is never zero.
     /// </summary>
+    /// <param name="target">The object the id resolves to.</param>
+    /// <returns>The id.</returns>
+    /// <exception cref="PlatformNotSupportedException">The process is not 64-bit.</exception>
     public static nint Register(object target)
     {
         UiThread.VerifyAccess();
@@ -46,6 +49,10 @@ internal static class NativeHandleTable
     /// <summary>
     /// Returns the target of a registered id. Fails for zero, for a released id, and for a target of another type.
     /// </summary>
+    /// <typeparam name="T">The type the target must have.</typeparam>
+    /// <param name="id">The id <see cref="Register"/> returned.</param>
+    /// <param name="target">The target when the id resolves; otherwise <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="id"/> is registered and its target is a <typeparamref name="T"/>.</returns>
     public static bool TryResolve<T>(nint id, [NotNullWhen(true)] out T? target)
         where T : class
     {
@@ -62,6 +69,7 @@ internal static class NativeHandleTable
     /// <summary>
     /// Releases an id. Later calls to <see cref="TryResolve{T}"/> with it fail. Releasing an id that is not registered does nothing.
     /// </summary>
+    /// <param name="id">The id to release.</param>
     public static void Release(nint id)
     {
         UiThread.VerifyAccess();

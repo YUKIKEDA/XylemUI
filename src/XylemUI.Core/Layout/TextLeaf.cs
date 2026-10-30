@@ -220,11 +220,14 @@ internal sealed class ShapedTextCache
     /// <summary>
     /// Returns the result to shape a text into, made the first time.
     /// </summary>
+    /// <returns><see cref="Result"/>, which later calls return again.</returns>
     public ShapingResult ResultToFill() => Result ??= new ShapingResult();
 
     /// <summary>
     /// Records the content widths of a text just shaped into <see cref="Result"/>.
     /// </summary>
+    /// <param name="minWidth">The min-content width.</param>
+    /// <param name="maxWidth">The max-content width.</param>
     public void Fill(float minWidth, float maxWidth)
     {
         MinWidth = minWidth;
@@ -235,6 +238,7 @@ internal sealed class ShapedTextCache
     /// <summary>
     /// Records the line of an empty text.
     /// </summary>
+    /// <param name="line">The metrics of the font a space takes in the style.</param>
     public void FillEmpty(LineMetrics line)
     {
         EmptyLine = line;
@@ -294,23 +298,29 @@ internal sealed class LineBreakCache
     /// <summary>
     /// Returns a kept entry.
     /// </summary>
+    /// <param name="index">The entry's index, below <see cref="Count"/>.</param>
     public LineBreakEntry this[int index] => _entries[index]!;
 
     /// <summary>
     /// Returns the size and the first baseline the lines of a kept entry make.
     /// </summary>
+    /// <param name="index">The entry's index, below <see cref="Count"/>.</param>
+    /// <returns>The result recorded by <see cref="SetResult"/>.</returns>
     public MeasureResult ResultOf(int index) => _sizes[index];
 
     /// <summary>
     /// Records the size and the first baseline the lines of an entry just filled make.
     /// </summary>
+    /// <param name="index">The entry's index, below <see cref="Count"/>.</param>
+    /// <param name="result">The size and the first baseline.</param>
     public void SetResult(int index, MeasureResult result) => _sizes[index] = result;
 
     /// <summary>
     /// Returns the entry of a width when it is kept.
     /// </summary>
     /// <param name="width">The width.</param>
-    /// <param name="index">The entry's index.</param>
+    /// <param name="index">The entry's index, or -1 when the width is not kept.</param>
+    /// <returns><see langword="true"/> when the width is kept; otherwise <see langword="false"/>.</returns>
     public bool TryGet(float width, out int index)
     {
         for (int i = 0; i < Count; i++)
@@ -333,6 +343,7 @@ internal sealed class LineBreakCache
     /// </summary>
     /// <param name="width">The width.</param>
     /// <param name="index">The entry's index.</param>
+    /// <returns>The entry, its width set to <paramref name="width"/>.</returns>
     public LineBreakEntry Take(float width, out int index)
     {
         if (Count < Capacity)
@@ -365,6 +376,7 @@ internal sealed class LineBreakCache
     /// <summary>
     /// Marks the entry the layout committed: it is not overwritten until another one is committed.
     /// </summary>
+    /// <param name="index">The entry's index, below <see cref="Count"/>.</param>
     public void Commit(int index) => Committed = index;
 
     /// <summary>

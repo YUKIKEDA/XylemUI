@@ -19,6 +19,8 @@ internal sealed class ScratchStack<T>
     /// Returns <paramref name="count"/> elements above the ones taken. When the buffer is full, a larger one replaces it; the
     /// spans taken before stay in the old buffer, which they keep alive until they are given back.
     /// </summary>
+    /// <param name="count">The number of elements to take.</param>
+    /// <returns>The elements taken; their contents are not cleared.</returns>
     public Span<T> Push(int count)
     {
         if (Top + count > _buffer.Length)
@@ -34,5 +36,6 @@ internal sealed class ScratchStack<T>
     /// <summary>
     /// Gives back the elements taken after <paramref name="top"/>, a value <see cref="Top"/> had before.
     /// </summary>
+    /// <param name="top">The value of <see cref="Top"/> to go back to.</param>
     public void PopTo(int top) => Top = top;
 }

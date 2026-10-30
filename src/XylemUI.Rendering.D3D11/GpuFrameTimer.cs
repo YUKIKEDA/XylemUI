@@ -24,6 +24,13 @@ internal sealed unsafe class GpuFrameTimer : IDisposable
     private int _pending;
     private bool _open;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GpuFrameTimer"/> class with the queries of every slot.
+    /// </summary>
+    /// <param name="device">The device that creates the queries.</param>
+    /// <param name="context">The immediate context the frames are drawn on, which issues and reads the queries.</param>
+    /// <exception cref="GpuDeviceLostException">The device was lost while a query was created.</exception>
+    /// <exception cref="InvalidOperationException">A query could not be created.</exception>
     public GpuFrameTimer(ID3D11Device* device, ID3D11DeviceContext* context)
     {
         _context = context;
@@ -115,6 +122,9 @@ internal sealed unsafe class GpuFrameTimer : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// Releases the queries.
+    /// </summary>
     public void Dispose()
     {
         for (int i = 0; i < Slots; i++)

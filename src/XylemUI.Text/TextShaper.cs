@@ -46,6 +46,8 @@ public sealed unsafe class TextShaper : IDisposable
     /// (the line ends of Pass2, design §4.1). It is shared by every text this shaper shapes, so a text leaf does not keep one
     /// (design §3.2, "Text leaves"); its content is valid until the next call.
     /// </summary>
+    /// <param name="length">The number of characters the array must hold at least.</param>
+    /// <returns>The work array.</returns>
     internal char[] Scratch(int length)
     {
         if (_scratch.Length < length)

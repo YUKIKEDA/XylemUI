@@ -14,6 +14,14 @@ public readonly struct PointerEvent
     /// <summary>
     /// Initializes a new instance of the <see cref="PointerEvent"/> struct.
     /// </summary>
+    /// <param name="input">The input of the window the event is routed in.</param>
+    /// <param name="kind">What happened.</param>
+    /// <param name="target">The node the route starts from.</param>
+    /// <param name="currentTarget">The node of the handler called now.</param>
+    /// <param name="position">The pointer's position in the window, in logical pixels.</param>
+    /// <param name="localPosition">The pointer's position in <paramref name="currentTarget"/>'s coordinates, in logical pixels.</param>
+    /// <param name="source">The input the platform gave.</param>
+    /// <param name="dispatch">The serial of the delivery of the event's message; 0 for an event no pointer message made.</param>
     internal PointerEvent(
         WindowInput input,
         PointerEventKind kind,

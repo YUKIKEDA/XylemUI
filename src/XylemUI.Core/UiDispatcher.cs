@@ -108,6 +108,11 @@ public sealed class UiDispatcher : IUiDispatcher
         return ran;
     }
 
+    /// <summary>
+    /// Queues a callback to run on the UI thread, after the work queued before it. Any thread may call it.
+    /// </summary>
+    /// <param name="callback">The callback.</param>
+    /// <param name="state">The object passed to <paramref name="callback"/>.</param>
     internal void PostCallback(SendOrPostCallback callback, object? state) => Enqueue(new WorkItem(null, callback, state));
 
     private void Enqueue(WorkItem item)

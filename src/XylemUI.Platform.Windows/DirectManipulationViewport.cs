@@ -125,8 +125,12 @@ internal sealed unsafe class DirectManipulationViewport : ITouchpadViewport
         }
     }
 
-    // The translation of a content's transform: a 3 x 2 matrix whose fifth and sixth values move it (Flutter's
-    // direct_manipulation.cc lines 49 to 63).
+    /// <summary>
+    /// Returns the translation of a content's transform: a 3 x 2 matrix whose fifth and sixth values move it (Flutter's
+    /// <c>direct_manipulation.cc</c> lines 49 to 63).
+    /// </summary>
+    /// <param name="content">The content.</param>
+    /// <returns>The translation, or (0, 0) when the transform cannot be read.</returns>
     internal static (float X, float Y) Translation(IDirectManipulationContent* content)
     {
         float* matrix = stackalloc float[6];

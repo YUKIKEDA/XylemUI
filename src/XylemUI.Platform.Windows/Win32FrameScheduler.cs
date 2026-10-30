@@ -47,6 +47,10 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     private bool _presented;
     private bool _lastDidNotPresent;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Win32FrameScheduler"/> class with its high-resolution timer as the clock.
+    /// </summary>
+    /// <exception cref="Win32Exception">The timer could not be created.</exception>
     public Win32FrameScheduler()
     {
         _timer = CreateWaitableTimerExW(null, null, (uint)CREATE.CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, (uint)TIMER_ALL_ACCESS);
@@ -75,6 +79,7 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     /// Uses a swap chain's frame latency waitable object as the clock, or the timer again when it is zero. A pending frame
     /// carries over to the new clock.
     /// </summary>
+    /// <param name="waitableObject">The swap chain's frame latency waitable object, or zero for the timer.</param>
     public void SetFrameClock(HANDLE waitableObject)
     {
         UiThread.VerifyAccess();
@@ -120,6 +125,9 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
         _lastDidNotPresent = false;
     }
 
+    /// <summary>
+    /// Stops the clock and closes the timer.
+    /// </summary>
     public void Dispose()
     {
         StopTimer();

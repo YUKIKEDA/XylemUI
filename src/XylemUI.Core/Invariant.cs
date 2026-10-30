@@ -12,6 +12,7 @@ internal static class Invariant
     /// Reports a broken invariant. Debug builds throw <see cref="InvariantViolationException"/>, so a debugger breaks there and a
     /// test can observe it. Release builds end the process with <see cref="Environment.FailFast(string)"/> and do not try to recover.
     /// </summary>
+    /// <param name="message">What broke.</param>
     [DoesNotReturn]
     [StackTraceHidden]
     public static void Fail(string message)
@@ -27,4 +28,5 @@ internal static class Invariant
 /// <summary>
 /// Thrown in debug builds when an internal invariant is broken. It signals a bug in XylemUI, not a caller error.
 /// </summary>
+/// <param name="message">What broke.</param>
 internal sealed class InvariantViolationException(string message) : Exception(message);

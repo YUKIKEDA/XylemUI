@@ -10,6 +10,9 @@ internal readonly record struct MeasureResult(Size Size, float FirstBaseline)
     /// <summary>
     /// Returns a size without a baseline.
     /// </summary>
+    /// <param name="width">The content's width.</param>
+    /// <param name="height">The content's height.</param>
+    /// <returns>The result with the size and a NaN baseline.</returns>
     public static MeasureResult Of(float width, float height) => new(new Size(width, height), float.NaN);
 }
 

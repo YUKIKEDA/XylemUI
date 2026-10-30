@@ -19,6 +19,9 @@ public readonly unsafe struct TextLanguage : IEquatable<TextLanguage>
     /// </summary>
     public string Tag => Handle == 0 ? string.Empty : new string((sbyte*)HarfBuzz.LanguageToString(Handle));
 
+    /// <summary>
+    /// Gets the HarfBuzz language (<c>hb_language_t</c>), or zero for the default value.
+    /// </summary>
     internal nint Handle { get; }
 
     /// <summary>

@@ -62,6 +62,9 @@ public abstract class Computation : ReactiveNode
     /// </summary>
     private protected abstract bool IsLive { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Computation"/> class, with no sources.
+    /// </summary>
     private protected Computation() { }
 
     /// <summary>
@@ -72,6 +75,7 @@ public abstract class Computation : ReactiveNode
     /// <summary>
     /// Records a read of <paramref name="source"/> during this computation's run.
     /// </summary>
+    /// <param name="source">The node read.</param>
     internal void RegisterDependency(ReactiveNode source)
     {
         // A computation disposed while it runs records nothing more.
@@ -101,6 +105,8 @@ public abstract class Computation : ReactiveNode
     /// <summary>
     /// Updates the position of an edge in <see cref="Sources"/> after its source moved the matching observer edge.
     /// </summary>
+    /// <param name="position">The edge's position in <see cref="Sources"/>.</param>
+    /// <param name="newSlotInSource">The position of the matching observer edge in the source's observers.</param>
     internal void MoveSourceSlot(int position, int newSlotInSource) => _sources[position].SlotInSource = newSlotInSource;
 
     /// <summary>
@@ -108,6 +114,7 @@ public abstract class Computation : ReactiveNode
     /// date on the way. Sources are checked in the order they were read and the check stops at the first change, so a source
     /// that the next run may no longer read is not evaluated.
     /// </summary>
+    /// <returns>Whether a source changed.</returns>
     private protected bool AnySourceChanged()
     {
         for (int i = 0; i < SourceCount; i++)
@@ -172,6 +179,7 @@ public abstract class Computation : ReactiveNode
     /// <summary>
     /// Handles an exception thrown by the body (design §2.2.2, exceptions).
     /// </summary>
+    /// <param name="exception">The exception.</param>
     private protected abstract void OnException(Exception exception);
 
     /// <summary>

@@ -311,6 +311,11 @@ internal sealed class UiTree
     /// Creates a node that is not in the tree yet. It needs a layout. A leaf with content has <paramref name="measure"/>, and
     /// may have <paramref name="intrinsicWidths"/>, which must agree with it.
     /// </summary>
+    /// <param name="style">The layout style.</param>
+    /// <param name="measure">The measure function of a leaf with content, or <see langword="null"/>.</param>
+    /// <param name="intrinsicWidths">The content widths of a leaf with <paramref name="measure"/>, or <see langword="null"/>.</param>
+    /// <returns>The node.</returns>
+    /// <exception cref="ArgumentException"><paramref name="intrinsicWidths"/> is given without <paramref name="measure"/>.</exception>
     public NodeHandle CreateNode(LayoutStyle style, MeasureFunc? measure = null, IntrinsicWidthsFunc? intrinsicWidths = null)
     {
         if (intrinsicWidths is not null && measure is null)
@@ -410,6 +415,8 @@ internal sealed class UiTree
     /// Sets the shadow under a node's box; equal to the one there, nothing changes. Another marks the node to be drawn again,
     /// with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="shadow">The shadow, or <see langword="null"/> for none.</param>
     public void SetShadow(NodeHandle node, BoxShadow? shadow)
     {
         NodeVisual visual = VisualOf(node);
@@ -424,6 +431,8 @@ internal sealed class UiTree
     /// Sets a node's background; equal to the one there, nothing changes. Another marks the node to be drawn again, with no
     /// layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="background">The background, or <see langword="null"/> for none.</param>
     public void SetBackground(NodeHandle node, Paint? background)
     {
         NodeVisual visual = VisualOf(node);
@@ -438,6 +447,8 @@ internal sealed class UiTree
     /// Sets the corner radii of a node's box; equal to the ones there, nothing changes. Others mark the node to be drawn again,
     /// with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="radii">The corner radii.</param>
     public void SetCornerRadii(NodeHandle node, CornerRadii radii)
     {
         NodeVisual visual = VisualOf(node);
@@ -452,6 +463,8 @@ internal sealed class UiTree
     /// Sets the paint of a node's border, which is drawn at the widths of its <see cref="LayoutStyle.Border"/>; equal to the one
     /// there, nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="paint">The border's paint, or <see langword="null"/> for no border.</param>
     public void SetBorderPaint(NodeHandle node, Paint? paint)
     {
         NodeVisual visual = VisualOf(node);
@@ -466,6 +479,8 @@ internal sealed class UiTree
     /// Sets a node's draw function. The same delegate instance as the one there changes nothing (delegates compare by reference,
     /// so a caller hands the same instance on); another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="draw">The draw function, or <see langword="null"/> for none.</param>
     public void SetDraw(NodeHandle node, DrawFunc? draw)
     {
         NodeVisual visual = VisualOf(node);
@@ -480,6 +495,8 @@ internal sealed class UiTree
     /// Sets a text leaf's own color for its text, or <see langword="null"/> to take the color its ancestors resolve; equal to the
     /// one there, nothing changes. Another marks the leaf to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <param name="color">The text color, or <see langword="null"/>.</param>
     /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
     public void SetTextColor(NodeHandle node, Color? color)
     {
@@ -495,6 +512,8 @@ internal sealed class UiTree
     /// Sets the color that the text leaves of a node's subtree take when they have none of their own, or <see langword="null"/> to
     /// take the parent's; equal to the one there, nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="color">The text color for the subtree, or <see langword="null"/>.</param>
     public void SetForeground(NodeHandle node, Color? color)
     {
         NodeVisual visual = VisualOf(node);
@@ -509,6 +528,8 @@ internal sealed class UiTree
     /// Sets the opacity of a node and its subtree; equal to the one there, nothing changes. Another marks the node to be drawn
     /// again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="opacity">The opacity, from 0 to 1.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="opacity"/> is not a number from 0 to 1.</exception>
     public void SetOpacity(NodeHandle node, float opacity)
     {
@@ -525,6 +546,8 @@ internal sealed class UiTree
     /// Sets the transform of a node and its subtree, about the center of the node's border box, or <see langword="null"/> for
     /// none; equal to the one there, nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="transform">The transform, or <see langword="null"/> for none.</param>
     /// <exception cref="ArgumentOutOfRangeException">An element of <paramref name="transform"/> is not a finite number.</exception>
     public void SetTransform(NodeHandle node, Matrix3x2? transform)
     {
@@ -541,6 +564,8 @@ internal sealed class UiTree
     /// Sets what the hovered state lays over a node's look, or <see langword="null"/> for nothing; equal to the one there, nothing
     /// changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The hovered look, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
     public void SetHoveredStyle(NodeHandle node, PaintStyle? style)
     {
@@ -557,6 +582,8 @@ internal sealed class UiTree
     /// Sets what the pressed state lays over a node's hovered look, or <see langword="null"/> for nothing; equal to the one there,
     /// nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The pressed look, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
     public void SetPressedStyle(NodeHandle node, PaintStyle? style)
     {
@@ -587,6 +614,10 @@ internal sealed class UiTree
     /// Removes the first pointer handler of a node added with the same kind, phase, and delegate; the node is drawn again when one
     /// was there.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of a routed event.</param>
+    /// <param name="handler">The handler.</param>
     /// <returns>Whether a handler was removed.</returns>
     public bool RemovePointerHandler(NodeHandle node, PointerEventKind kind, EventPhase phase, PointerHandler handler)
     {
@@ -604,6 +635,8 @@ internal sealed class UiTree
     /// Sets the cursor over a node and its descendants that set none, or <see langword="null"/> for none; equal to the one there,
     /// nothing changes. Another marks the node to be drawn again, as whether it writes a hit region may change.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="cursor">The cursor, or <see langword="null"/> for none.</param>
     public void SetCursor(NodeHandle node, CursorKind? cursor)
     {
         NodeInput input = InputOf(node);
@@ -618,6 +651,8 @@ internal sealed class UiTree
     /// Sets whether a node writes a hit region with no handler, so that the pointer does not reach the nodes behind it; equal to the
     /// value there, nothing changes. Another marks the node to be drawn again.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="blocks">Whether the node blocks the pointer.</param>
     public void SetBlocksPointer(NodeHandle node, bool blocks)
     {
         NodeInput input = InputOf(node);
@@ -632,6 +667,8 @@ internal sealed class UiTree
     /// Sets what the focus-within state lays over a node's pressed look, or <see langword="null"/> for nothing; equal to the one
     /// there, nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The focus-within look, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
     public void SetFocusWithinStyle(NodeHandle node, PaintStyle? style)
     {
@@ -648,6 +685,8 @@ internal sealed class UiTree
     /// Sets what the focused state lays over a node's focus-within look, or <see langword="null"/> for nothing; equal to the one
     /// there, nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The focused look, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
     public void SetFocusedStyle(NodeHandle node, PaintStyle? style)
     {
@@ -664,6 +703,8 @@ internal sealed class UiTree
     /// Sets what the focus-visible state lays over a node's focused look, or <see langword="null"/> for nothing; equal to the one
     /// there, nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The focus-visible look, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
     public void SetFocusVisibleStyle(NodeHandle node, PaintStyle? style)
     {
@@ -692,6 +733,10 @@ internal sealed class UiTree
     /// <summary>
     /// Removes the first key handler of a node added with the same kind, phase, and delegate.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
     /// <returns>Whether a handler was removed.</returns>
     public bool RemoveKeyHandler(NodeHandle node, KeyEventKind kind, EventPhase phase, KeyHandler handler)
     {
@@ -715,6 +760,10 @@ internal sealed class UiTree
     /// <summary>
     /// Removes the first focus handler of a node added with the same kind, phase, and delegate.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
     /// <returns>Whether a handler was removed.</returns>
     public bool RemoveFocusHandler(NodeHandle node, FocusEventKind kind, EventPhase phase, FocusHandler handler)
     {
@@ -726,6 +775,8 @@ internal sealed class UiTree
     /// Sets whether a node takes the focus (design §7, "Keys and the focus"); equal to the value there, nothing changes. Another marks
     /// the node to be drawn again, as a focusable node writes a hit region; a focused node that stops being focusable loses the focus.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="focusable">Whether the node takes the focus.</param>
     public void SetFocusable(NodeHandle node, bool focusable)
     {
         NodeInput input = InputOf(node);
@@ -744,6 +795,8 @@ internal sealed class UiTree
     /// Sets what the disabled state lays over a node's other looks, or <see langword="null"/> for nothing; equal to the one there,
     /// nothing changes. Another marks the node to be drawn again, with no layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The disabled look, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
     public void SetDisabledStyle(NodeHandle node, PaintStyle? style)
     {
@@ -762,6 +815,8 @@ internal sealed class UiTree
     /// disabled. A focused node in a subtree that becomes disabled loses the focus, and the node is drawn again, so that the pointer's
     /// hover is tested again with the new state.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="disabled">Whether the node itself is disabled.</param>
     public void SetDisabled(NodeHandle node, bool disabled)
     {
         NodeInput input = InputOf(node);
@@ -785,6 +840,8 @@ internal sealed class UiTree
     /// Sets a node's place in the order of Tab (design §7.1): a smaller index comes first; the nodes of one index come in the order
     /// of the tree.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="index">The node's tab index.</param>
     public void SetTabIndex(NodeHandle node, int index) => InputOf(node).TabIndex = index;
 
     /// <summary>
@@ -807,6 +864,8 @@ internal sealed class UiTree
     /// <summary>
     /// Returns the signal of whether a node is focused, or <see langword="null"/> when no one asked for it.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The signal, or <see langword="null"/>.</returns>
     internal Signal<bool>? FocusSignalOf(NodeHandle node) =>
         _focusSignals.Count > 0 && _focusSignals.TryGetValue(node, out Signal<bool>? signal) ? signal : null;
 
@@ -814,6 +873,9 @@ internal sealed class UiTree
     /// Sets or clears a pseudo-state of a live node. A change marks the node to be drawn again only when it has a look for that
     /// state (design §2.13).
     /// </summary>
+    /// <param name="node">The live node.</param>
+    /// <param name="state">The pseudo-state.</param>
+    /// <param name="on"><see langword="true"/> to set <paramref name="state"/>; <see langword="false"/> to clear it.</param>
     internal void SetPseudoState(NodeHandle node, PseudoState state, bool on)
     {
         ref UiNode n = ref Nodes.GetRef(node);
@@ -851,6 +913,7 @@ internal sealed class UiTree
     /// Takes the paint updates for one frame and leaves an empty list in their place, so that a node marked while the frame is drawn
     /// goes into the next one. The returned list is cleared and handed back by the next call.
     /// </summary>
+    /// <returns>The paint updates of this frame.</returns>
     internal List<NodeHandle> TakePaintUpdates()
     {
         (_paintUpdates, _paintUpdatesSpare) = (_paintUpdatesSpare, _paintUpdates);
@@ -861,6 +924,8 @@ internal sealed class UiTree
     /// <summary>
     /// Returns the measurement cache of a live node.
     /// </summary>
+    /// <param name="node">The live node.</param>
+    /// <returns>A reference to its measurement cache.</returns>
     internal ref MeasureCache MeasuresOf(NodeHandle node) => ref _measures[node.Index];
 
     /// <summary>
@@ -886,6 +951,8 @@ internal sealed class UiTree
     /// Appends <paramref name="child"/>, a node with no parent, as the last child of <paramref name="parent"/>, and marks the
     /// parent's layout dirty.
     /// </summary>
+    /// <param name="parent">The parent.</param>
+    /// <param name="child">The node to append; it has no parent.</param>
     public void AppendChild(NodeHandle parent, NodeHandle child)
     {
         ref UiNode c = ref Nodes.GetRef(child);
@@ -1060,6 +1127,9 @@ internal sealed class UiTree
     /// <summary>
     /// Returns whether a node is <paramref name="ancestor"/> or one of its descendants.
     /// </summary>
+    /// <param name="node">The node to check, or <see langword="default"/>.</param>
+    /// <param name="ancestor">The root of the subtree.</param>
+    /// <returns><see langword="true"/> if <paramref name="node"/> is in the subtree; otherwise, <see langword="false"/>.</returns>
     internal bool IsInSubtree(NodeHandle node, NodeHandle ancestor)
     {
         for (; !node.IsNone; node = Nodes.GetRef(node).Parent)
@@ -1120,6 +1190,8 @@ internal sealed class UiTree
     /// Replaces the layout style of a node and marks it and its parent for layout: the parent's algorithm reads the style (the
     /// size, the margins, the flex factors), so a boundary does not stop the change at the node itself.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The layout style.</param>
     public void SetStyle(NodeHandle node, LayoutStyle style)
     {
         ref UiNode n = ref Nodes.GetRef(node);
@@ -1154,11 +1226,14 @@ internal sealed class UiTree
     /// <summary>
     /// Returns the rectangle of the node's last layout.
     /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The node's rectangle.</returns>
     public Rect GetRect(NodeHandle node) => Nodes.GetRef(node).Layout.Rect;
 
     /// <summary>
     /// Makes <paramref name="node"/> the root, the first time a window size is given. The root has no parent, and a tree has one.
     /// </summary>
+    /// <param name="node">The node with no parent to make the root.</param>
     internal void SetRoot(NodeHandle node)
     {
         if (Root == node)
@@ -1185,11 +1260,14 @@ internal sealed class UiTree
     /// it (<see cref="LayoutState.ContentSnapshotSlot"/>): a search of the list would make N changes before one pass cost N²
     /// (PR #112's review).
     /// </summary>
+    /// <param name="node">The live node.</param>
+    /// <returns>The index of the node's snapshot, or -1 when it has none.</returns>
     internal int FindContentSnapshot(NodeHandle node) => Nodes.GetRef(node).Layout.ContentSnapshotSlot - 1;
 
     /// <summary>
     /// Adds the snapshot of a node that has none.
     /// </summary>
+    /// <param name="snapshot">The snapshot of a live node.</param>
     internal void AddContentSnapshot(in ContentSnapshot snapshot)
     {
         ContentSnapshots.Add(snapshot);
@@ -1199,6 +1277,7 @@ internal sealed class UiTree
     /// <summary>
     /// Removes the snapshot at <paramref name="index"/>; the last one takes its place.
     /// </summary>
+    /// <param name="index">The index in <see cref="ContentSnapshots"/>.</param>
     internal void RemoveContentSnapshotAt(int index)
     {
         int last = ContentSnapshots.Count - 1;
@@ -1215,6 +1294,7 @@ internal sealed class UiTree
     /// <summary>
     /// Keeps a request whose layout threw, to put back after the pass (<see cref="RestoreDeferredRequests"/>).
     /// </summary>
+    /// <param name="request">The request whose layout threw.</param>
     internal void DeferRequest(LayoutRequest request) => _deferred.Add(request);
 
     /// <summary>
@@ -1234,6 +1314,7 @@ internal sealed class UiTree
     /// Takes the current layout roots for one cycle of the worklist and leaves an empty list in their place, so that requests
     /// made during the cycle wait for the next one. The returned list is cleared and handed back by the next call.
     /// </summary>
+    /// <returns>The layout roots of this cycle.</returns>
     internal List<LayoutRequest> TakeLayoutRoots()
     {
         (_layoutRoots, _layoutRootsSpare) = (_layoutRootsSpare, _layoutRoots);

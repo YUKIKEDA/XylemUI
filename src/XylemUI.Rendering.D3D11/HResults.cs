@@ -12,6 +12,8 @@ internal static class HResults
     /// <summary>
     /// Returns a value indicating whether <paramref name="result"/> means the device is gone, so the renderer cannot go on.
     /// </summary>
+    /// <param name="result">The <c>HRESULT</c>.</param>
+    /// <returns><see langword="true"/> when the device was removed, reset, or hung, or the driver had an internal error.</returns>
     public static bool IsDeviceLost(int result) =>
         result
             is DXGI.DXGI_ERROR_DEVICE_REMOVED
@@ -23,6 +25,11 @@ internal static class HResults
     /// Throws for a failed result: <see cref="GpuDeviceLostException"/> when the device is gone, otherwise
     /// <see cref="InvalidOperationException"/> with the result in <see cref="Exception.HResult"/>.
     /// </summary>
+    /// <param name="result">The <c>HRESULT</c>; a negative value is a failure.</param>
+    /// <param name="operation">The call that returned <paramref name="result"/>, for the exception's message.</param>
+    /// <param name="removedReason">The device's removed reason, for <see cref="GpuDeviceLostException.RemovedReason"/>; 0 when it was not asked.</param>
+    /// <exception cref="GpuDeviceLostException"><paramref name="result"/> means the device is gone.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="result"/> is any other failure.</exception>
     public static void ThrowIfFailed(int result, string operation, int removedReason = 0)
     {
         if (result < 0)

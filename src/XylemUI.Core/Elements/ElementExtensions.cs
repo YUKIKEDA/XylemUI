@@ -558,7 +558,12 @@ public static class ElementExtensions
         return element;
     }
 
-    // A text node's own color, or the color another node gives the text nodes below it (design §5.0, "The color of text").
+    /// <summary>
+    /// Sets a text node's own color, or the color another node gives the text nodes below it (design §5.0, "The color of text").
+    /// </summary>
+    /// <param name="tree">The tree the node is in.</param>
+    /// <param name="node">The node.</param>
+    /// <param name="color">The color.</param>
     internal static void WriteForeground(UiTree tree, NodeHandle node, Color color)
     {
         if (tree.Nodes.GetRef(node).Text is not null)

@@ -12,6 +12,8 @@ internal static class Invalidation
     /// <summary>
     /// Returns the stages a change needs (design §2.4, the dependency matrix).
     /// </summary>
+    /// <param name="kind">The kind of change.</param>
+    /// <returns>The stages that <paramref name="kind"/> makes dirty.</returns>
     public static DirtyFlags FlagsFor(ChangeKind kind) =>
         kind switch
         {
@@ -28,6 +30,9 @@ internal static class Invalidation
     /// Marks the work a change on <paramref name="node"/> needs. A change of a laid-out leaf's content marks only the leaf
     /// (<see cref="TryMarkContentChange"/>); other changes mark the path to the boundary (<see cref="MarkDirty"/>).
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="node"/>.</param>
+    /// <param name="node">The live node that changed.</param>
+    /// <param name="kind">The kind of change.</param>
     public static void Invalidate(UiTree tree, NodeHandle node, ChangeKind kind)
     {
         DirtyFlags flags = FlagsFor(kind);
@@ -56,6 +61,10 @@ internal static class Invalidation
     /// the root or a boundary (the change stops at it anyway), is dirty from another change, or overwrote a value its parent
     /// read (<see cref="MeasureCache.EvictedGeneration"/>).
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="handle"/>.</param>
+    /// <param name="handle">The live leaf whose content changed.</param>
+    /// <param name="flags">The stages the change needs (<see cref="FlagsFor"/>).</param>
+    /// <returns><see langword="true"/> if the leaf alone was marked; otherwise, <see langword="false"/>.</returns>
     public static bool TryMarkContentChange(UiTree tree, NodeHandle handle, DirtyFlags flags)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
@@ -115,6 +124,9 @@ internal static class Invalidation
     /// boundary or the root, drops the measurements of every node on the way (they depended on what changed), and makes that node a
     /// layout root.
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="origin"/>.</param>
+    /// <param name="origin">The live node that changed.</param>
+    /// <param name="flags">The stages the change needs.</param>
     public static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
     {
         ref UiNode node = ref tree.Nodes.GetRef(origin);
@@ -156,6 +168,9 @@ internal static class Invalidation
     /// <see cref="MarkDirty"/> for a layout change, which a leaf whose content changed also takes from its parent when a value
     /// the parent read differs (row L5).
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="from"/>.</param>
+    /// <param name="from">The live node the path starts at.</param>
+    /// <param name="flags">The flags to add to <see cref="DirtyState.SubtreeDirty"/> on the path.</param>
     public static void MarkPath(UiTree tree, NodeHandle from, DirtyFlags flags)
     {
         NodeHandle current = from;
@@ -183,6 +198,9 @@ internal static class Invalidation
     /// <summary>
     /// Lays out the window's root at the size the operating system gave it (design §2.4.1).
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="root"/>.</param>
+    /// <param name="root">The live node to make the tree's root.</param>
+    /// <param name="size">The window's client size.</param>
     public static void NotifyWindowResized(UiTree tree, NodeHandle root, Size size)
     {
         tree.SetRoot(root);
@@ -195,6 +213,9 @@ internal static class Invalidation
     /// containing block (Taffy's in-flow root). The layout tests that take Chrome's results use it; a window gives an exact
     /// size (<see cref="NotifyWindowResized"/>).
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="root"/>.</param>
+    /// <param name="root">The live node to make the tree's root.</param>
+    /// <param name="viewport">The space the root is laid out in.</param>
     internal static void NotifyViewport(UiTree tree, NodeHandle root, AvailableSize viewport)
     {
         tree.SetRoot(root);
@@ -207,6 +228,9 @@ internal static class Invalidation
     /// content, by its style or by the exact input of its last layout, and its parent did not read its content in a result
     /// the parent still keeps (design §2.4.1). This frame's input does not exist yet.
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="node"/>.</param>
+    /// <param name="node">The node to check.</param>
+    /// <returns><see langword="true"/> if <paramref name="node"/> is a layout boundary for a change inside it; otherwise, <see langword="false"/>.</returns>
     public static bool IsLayoutBoundaryForInvalidation(UiTree tree, in UiNode node) =>
         node.Layout.Style.Hidden
         || ((node.Layout.Style.IsStructuralBoundary || node.Layout.CachedComputedBoundary) && !ContentReadByParent(tree, in node));
@@ -215,6 +239,9 @@ internal static class Invalidation
     /// Returns a value indicating whether the parent of <paramref name="node"/> read its content (a measuring run or a
     /// baseline) for a result it still caches.
     /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="node"/>.</param>
+    /// <param name="node">The node to check.</param>
+    /// <returns><see langword="true"/> if the parent's cached result read the content; otherwise, <see langword="false"/>.</returns>
     public static bool ContentReadByParent(UiTree tree, in UiNode node) =>
         !node.Parent.IsNone
         && node.Layout.ContentReadGeneration != 0
@@ -248,6 +275,8 @@ internal static class Invalidation
     /// Puts a request back after its layout threw. When the node has a request already (made during the pass), the stronger
     /// reason wins with its constraint, the rule of a window resize over a content change; otherwise the request is added.
     /// </summary>
+    /// <param name="tree">The tree whose layout roots take the request.</param>
+    /// <param name="request">The request whose layout threw.</param>
     internal static void RestoreRequest(UiTree tree, LayoutRequest request)
     {
         Span<LayoutRequest> roots = CollectionsMarshal.AsSpan(tree.LayoutRoots);

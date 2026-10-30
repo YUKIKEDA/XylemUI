@@ -27,6 +27,12 @@ public sealed class GpuDeviceLostException : Exception
     public GpuDeviceLostException(string message, Exception innerException)
         : base(message, innerException) { }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GpuDeviceLostException"/> class for a call that found the device gone.
+    /// </summary>
+    /// <param name="operation">The call that failed.</param>
+    /// <param name="result">The <c>HRESULT</c> it returned, which becomes <see cref="Exception.HResult"/>.</param>
+    /// <param name="removedReason">The reason the device gave for the removal, or 0 when it was not asked.</param>
     internal GpuDeviceLostException(string operation, int result, int removedReason)
         : base($"The GPU device was lost during {operation} (0x{result:X8}, reason 0x{removedReason:X8}).")
     {

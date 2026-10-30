@@ -6,7 +6,7 @@
       "xmlHeader": false,
       "documentExposedElements": true,
       "documentInterfaces": true,
-      "documentInternalElements": false,
+      "documentInternalElements": true,
       "documentPrivateElements": false,
       "documentPrivateFields": false
     },

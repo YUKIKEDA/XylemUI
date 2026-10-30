@@ -8,6 +8,10 @@ public readonly ref struct DrawingScope
 {
     private readonly DisplayList? _list;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DrawingScope"/> struct that pops the last push of <paramref name="list"/>.
+    /// </summary>
+    /// <param name="list">The display list that was pushed.</param>
     internal DrawingScope(DisplayList list) => _list = list;
 
     /// <summary>

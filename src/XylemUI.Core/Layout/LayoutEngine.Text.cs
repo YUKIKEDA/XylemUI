@@ -390,6 +390,10 @@ internal static partial class LayoutEngine
     /// stage places the committed lines with it (design §5.0, "The draw stage and the frame drive"). The rooms of the inline objects
     /// on the line count (design §4.8).
     /// </summary>
+    /// <param name="leaf">The text leaf.</param>
+    /// <param name="result">The shaped text of the leaf.</param>
+    /// <param name="span">The line.</param>
+    /// <returns>The line's height and its baseline from the line's top.</returns>
     internal static (float Height, float Baseline) TextLine(TextLeaf leaf, ShapingResult result, LineSpan span) =>
         leaf.Ranges is { HasInlines: true } ranges ? RoomLine(ranges, result, span, leaf.Style) : Line(LineMetricsOf(result, span), leaf.Style);
 
