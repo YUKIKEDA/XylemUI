@@ -1004,7 +1004,7 @@ Fine-grained reactiveはview関数が初回しか実行されないため、素�
 
 公開 API のコンポーネント関数は、アリーナ上のノードを指す軽量な値 `Element`（内部に `NodeHandle` を持つ）を返す。
 
-**V3 で入れる形（V3 の Grill でオーナーが決定、Issue #363）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）・SolidJS v1.9.16（dom-expressions v0.40.11）・Vue v3.5.44 を読んで決めた。Flutter は `packages/flutter/lib/src/` から、SolidJS は `packages/solid/src/` から、Vue は `packages/runtime-core/src/` から、GPUI は `crates/` から書く。実装は 3 つに分け、この順に入れる。V3a は `Show` と `For` と木の操作、V3b はスクロールの範囲の使い回し（§3.4.1）、V3c は `samples/Todo` と測定である。下の `ShowState` と `exit` の契約は、アニメーションを入れる行（行 D7 が決める）のもので、V3 の `Show` は持たない。
+**V3 で入れる形（V3 の Grill でオーナーが決定、Issue #363）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）・SolidJS v1.9.16（dom-expressions v0.40.11）・Vue v3.5.44 を読んで決めた。Flutter は `packages/flutter/lib/src/` から、SolidJS は `packages/solid/src/` から、Vue は `packages/runtime-core/src/` から、GPUI は `crates/` から書く。実装は 3 つに分け、この順に入れる。V3a は `Show` と `For` と木の操作、V3b はスクロールの範囲の使い回し（§3.4.1）、V3c は `samples/Todo` と測定である。下の `ShowState` と `motion`（もとは `exit`）の契約は、アニメーションを入れる行 AN1 のもので（D7 の Grill、§2.14）、V3 の `Show` は持たない。
 
 ```csharp
 // Elements に足す（using static XylemUI.Elements;）
@@ -1056,24 +1056,24 @@ Column(
   - V3c（`samples/Todo`）: MoonBit 版の V3 と同じ到達点を、C# 版でも満たす（§10.5 の表、§3.4.2「V3」）。見出しに件数を出し、Add を 3 回押すと `todos: 3` になる。項目は `ScrollView` の中の Button で、位置を 64 にした後も 2 つ目の項目の y は変わらず、行の間の位置の画素がボタンの色になる。その上に、済みの印・消す・絞り込み・並べ替えを足す。形は V3c の Grill（Issue #380）で決めた。済みは文字の頭の印と灰色の文字、消すボタンはいつも見せ（行に載せたときだけ見せる形は、ホバーを読む口が要るので行 G1）、絞り込みは 3 つのボタンで選んだものの背景を変え、並べ替えは新しい順と古い順を切り替える 1 つのボタンである
   - 費用（V3c）: `samples/Todo` の起動と、何もしていないときのメモリ（`app-startup --idle`）。1,000 項目での各操作（足す・済みの切り替え・消す・絞り込み・並べ替え）の、変更・layout・描画の段の時間（`benchmarks/XylemUI.E2E` の `todo`。サンプルの `TodoApp` を参照する。サンプルは公開の API だけで書くので、段の時刻を読めない）
 
-**`Show`の状態機械:** (1)退場アニメーション中に親のSignalが先に破棄されると、退場中のノードが存在しないデータを参照しうる（ゾンビComputation）。対策として`Exiting`遷移時にReactive購読を切断する。(2)`exit`期間中に条件が`false→true`と高速に切り替わった場合の復帰契約は下表。
+**`Show`の状態機械:** (1)退場アニメーション中に親のSignalが先に破棄されると、退場中のノードが存在しないデータを参照しうる（ゾンビComputation）。対策として`Exiting`遷移時にReactive購読を切断する。(2)退場（`motion` の退場の間）に条件が`false→true`と高速に切り替わった場合の復帰契約は下表。
 
 ```csharp
 public enum ShowState { Hidden, Entering, Visible, Exiting }
 
-public static Element Show(IReadOnlySignal<bool> when, TimeSpan? exit, Func<Element> render)
+public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, ShowMotion? motion = null)   // motion は D7 の Grill（§2.14）
 {
     // whenがfalseになった瞬間: ShowStateをExitingへ遷移させ、
     //   1. このサブツリーのReactive graph購読を即座に切断する（ビジネスロジックの再計算を止める）
-    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降はペイントプロパティ（opacity/transform）
-    //      のみをアニメーションさせる
-    //   3. exit期間終了時にScopeArena.Disposeする
+    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降は子の木を包むノードの
+    //      ペイントプロパティ（opacity/transform）のみを Show 自身がアニメーションさせる（§2.14「`Show` の登場と退場」）
+    //   3. motion の長さの終わりにScopeArena.Disposeする
     // Exiting中にwhenがtrueに戻った場合: サブツリーを復帰させ(Enteringへ)、購読を再接続する
     ...
 }
 ```
 
-- `Show(IReadOnlySignal<bool> when, TimeSpan? exit, Func<Element> render)`: `exit`省略時（`null`）は条件がfalseになった瞬間に即disposeする。
+- `Show(IReadOnlySignal<bool> when, Func<Element> render, ShowMotion? motion = null)`: `motion`省略時（`null`）は条件がfalseになった瞬間に即disposeする（V3 の形）。`motion` は D7 の Grill で `TimeSpan? exit` から改めた（§2.14、§8.1）。
 
 **Show revival semantics**: `Exiting`中に`when`が`true`に戻った際の復帰契約を以下に明示する。
 
@@ -1083,7 +1083,7 @@ public static Element Show(IReadOnlySignal<bool> when, TimeSpan? exit, Func<Elem
 | Reactive graph（依存関係）の購読                             | 再subscribeする                            |
 | local state（例: スクロール位置、選択範囲）                  | 保持したまま復帰                           |
 | Scope配下のexternal resource（native handle、GPUリソース等） | 破棄済みでなければ保持、破棄済みなら再取得 |
-| dispose済み（`exit`期間終了後）                              | 必ず新規`UiNode`として作り直す             |
+| dispose済み（`motion` の退場の終了後）                       | 必ず新規`UiNode`として作り直す             |
 
 **復帰時の初期同期プロトコル**: 再購読した瞬間に現在のSignal値とComputed/Effectの状態がズレている可能性がある（`Exiting`中もSignal自体は更新され続けている場合があるため）。再subscribe直後に「現在のSignal値から一気にComputed/Effectを再評価し、その結果に応じて必要ならdirty化してLayout/Paintへ反映する」という初期同期ステップを明示する。
 
@@ -1299,7 +1299,7 @@ Win32の`GetMessage`やAppKitの`nextEventMatchingMask`はブロッキングす�
 
 **採用: Event Loop Waiterとして以下の規約を設ける。**
 
-- **アニメーション実行中、またはディスパッチ待ちの非同期イベントがある場合**: Vsync同期で次フレームまで待機する。待機中もOSメッセージは割り込めること。Windowsは UI スレッドで `DwmFlush` のような同期ブロックをしない。`IDXGISwapChain2::GetFrameLatencyWaitableObject` のハンドルとメッセージキューを `MsgWaitForMultipleObjectsEx` で多重待機し、メッセージ到着か GPU フレーム準備完了の早い方で起こす。macOSは `CADisplayLink`（下記）。Linuxはwgpu-nativeのSurface present待機に準ずる。
+- **アニメーション実行中（ウィンドウのアニメーションの一覧が空でない、§2.14「フレームの時計」）、またはディスパッチ待ちの非同期イベントがある場合**: Vsync同期で次フレームまで待機する。待機中もOSメッセージは割り込めること。Windowsは UI スレッドで `DwmFlush` のような同期ブロックをしない。`IDXGISwapChain2::GetFrameLatencyWaitableObject` のハンドルとメッセージキューを `MsgWaitForMultipleObjectsEx` で多重待機し、メッセージ到着か GPU フレーム準備完了の早い方で起こす。macOSは `CADisplayLink`（下記）。Linuxはwgpu-nativeのSurface present待機に準ずる。
 - **完全アイドル時**: OSイベントキューのブロッキング待機（`GetMessage`/`[NSApp run]`/SDL3のイベント待機API）へ移行する。
 - **外部スレッドからの起床**: .NET の ThreadPool・非同期I/O完了・ワーカースレッドからUIスレッドを起こすため、OS固有の起床機構をプラットフォーム層（§6）の必須要件として定義する。UI スレッドの `SynchronizationContext`（§2.12）の `Post` もこの起床機構を使う。
 
@@ -1695,6 +1695,36 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 **ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
 **MVVM との互換:** `INotifyPropertyChanged` や CommunityToolkit.Mvvm / ReactiveProperty との橋渡しは v1 では提供しない（D3 の Grill でオーナーが決定、Issue #441）。理由は 3 つある。§0 の要件に、MVVM も Avalonia からの移行も無い。比べた 3 つのうち Flutter と GPUI は MVVM の層を持たず、それぞれの状態の仕組みで書く（Flutter の `ChangeNotifier`、`packages/flutter/lib/src/foundation/change_notifier.dart` 139 行目。GPUI の `Entity` と `notify`、`crates/gpui/src/app/context.rs` 221 行目）。XylemUI では Signal がそれに当たる。利用者は公開の API だけでつなげる。`PropertyChanged` を購読し、受けた値で `Signal.Set` を呼べばよい（UI スレッドの外の通知は `IUiDispatcher.Post` を通す）。互換のパッケージは、v1.0 の後の行 MV1 で作る。
+
+### 2.14 アニメーション（D7 の Grill、Issue #166）
+
+要件 7（§1）の「補間状態保持、ジェスチャー追従、フレーム駆動」を、2 つの宣言の形で満たす。実装は行 AN1 で行う。比べた相手は Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）で、3 つとも、アニメーションを UI スレッドで動かす仕組みを主に持つ。
+
+**宣言の形:**
+
+- **遷移（implicit）:** ノードに `.Transition(NodeProperties.Background, TimeSpan.FromMilliseconds(83), Curve.DecelerateMid)` のように付ける。プロパティの値が変わると（シグナルの結び付きでも、疑似状態の `PaintStyle` でも）、今画面に出ている値から新しい値へ補間する。Avalonia の `Transitions`（12.1.4 の `src/Avalonia.Base/Animation/Animatable.cs` 171〜185 行目）と Flutter の `ImplicitlyAnimatedWidget`（3.47.8 の `packages/flutter/lib/src/widgets/implicit_animations.dart` 387〜406 行目）に当たる。WinUI のボタンのホバーの色（`BrushTransition` 83 ms）はこれで書く
+- **外から動かすアニメーション（explicit）:** `Animation` は値を `IReadOnlySignal<float>` として出す。`Forward`・`Reverse`・`AnimateTo(target, duration, curve)`・値の直接の設定（ジェスチャーで追う）・`Fling(velocity, spring)`（バネ）を持つ。Flutter の `AnimationController`（`packages/flutter/lib/src/animation/animation_controller.dart` 470〜830 行目）、GPUI の `with_spring`（zed v1.25.3 の `crates/gpui/src/spring.rs` 13〜43 行目）に当たる。ドロワーを指で引いて離すと、値を直接動かした後に `Fling` で閉じるか開く（Flutter の `Drawer` と同じ）
+- **キーフレーム**（Avalonia の `Animation` と `Cue`）は v1 に入れない。Fluent の部品が使うのは 1 区間の動きだけである（WinUI の `ToggleSwitch` も 83 ms の 1 区間）。要るようになったら行を足す
+
+**動かせるプロパティ:** 遷移は描画の値だけを動かす（不透明度・変換・背景と枠の色・文字の色・角丸・影）。疑似状態は描画の値しか変えず、layout を無効にしない（§2.13、Invariant 14）ので、それと同じ範囲である。外から動かすアニメーションの値はただのシグナルなので、`Width` などの layout のプロパティにも結べる。そのときは毎フレーム layout をやり直す。3 つの比べた相手も、layout のプロパティを動かせ、費用は layout をやり直すかどうかで決まる。Flutter の `RenderConstrainedBox` は `markNeedsLayout`、不透明度は層だけを直す（`packages/flutter/lib/src/rendering/proxy_box.dart` 226〜233 行目、1052〜1066 行目）。Avalonia は `AffectsMeasure` と `AffectsRender` で分ける（`src/Avalonia.Base/Layout/Layoutable.cs` 146〜158 行目）。GPUI は毎フレーム要素を作り直す。layout を動かす費用は AN1 で測る。
+
+**スレッド:** アニメーションは UI スレッドだけで動かす。Flutter はアニメーションを UI の isolate で進め（`docs/about/The-Engine-architecture.md` 149〜180 行目）、GPUI も UI スレッドで動かす。Avalonia の Composition アニメーションは描画スレッドで動くが、描画スレッドの側にビジュアルの木を持つ別の層の仕組みである。XylemUI は木を 1 つだけ持って毎フレーム描き直す（§5.0.1）ので、描画スレッドに写しを持たない。
+
+**フレームの時計:** 動いているアニメーション（遷移・外から動かすもの・`Show` の動き）は、ウィンドウごとの一覧に入る。フレームの初め（layout の前）に、フレームの時刻（`WindowFrames.FrameTime`、`TimeProvider` から読む、§2.11）で一覧を進める。一覧に何かがある間だけ次のフレームを予約し、空になれば予約しない（§2.11 の「アニメーション実行中」）。Flutter の `Ticker` は動いている間だけフレームのコールバックを登録し直し（`packages/flutter/lib/src/scheduler/ticker.dart` 272〜304 行目）、Avalonia の時計は購読がある間だけ描画を予約し（`src/Avalonia.Base/Media/MediaContext.Clock.cs` 31〜42 行目）、GPUI は終わるまで `request_animation_frame` を呼ぶ（`crates/gpui/src/elements/animation.rs` 451〜469 行目）。3 つとも、時刻はフレームの時刻で、壁の時計ではない。`PumpAndSettle` は、この一覧が空になるまで回す（§12.2 の 2 つ目の項目）。
+
+**途中で目標が変わったとき:** 遷移は、今出ている値から新しい目標へ、長さを初めからにして進み直す。速度は引き継がない。Flutter の implicit アニメーションと Avalonia の Transition が同じ動きである（上の引用の行）。速度を引き継ぐのはバネだけで、`Fling` の途中で目標が変わっても、そのときの位置と速度から新しい目標へ向かう（GPUI の `SpringAnimationElement` と同じ）。
+
+**カーブ:** Core に `Curve` を置く。3 次ベジェ（`Curve.CubicBezier(x1, y1, x2, y2)`）と、よく使う定数（`Linear`、`EaseInOut` など）を持つ。Fluent 2 の 9 つのカーブはどれも 3 次ベジェである（microsoft/fluentui のコミット `1f59fc2` の `packages/tokens/src/global/curves.ts` 4〜12 行目）。Fluent 2 の 8 つの長さ（50〜500 ms、同じコミットの `durations.ts` 4〜11 行目）と 9 つのカーブは、`XylemUI.Theme.Fluent` のトークンとして置く（§13.2）。
+
+**動きを減らす設定:** OS の「動きを減らす」設定がオンのときは、アニメーションを終わりの値まで飛ばし、フレームを予約しない。Windows は `SPI_GETCLIENTAREAANIMATION` を読む。GPUI の `reduce_motion`（`crates/gpui/src/app.rs` 1293〜1304 行目）、Fluent 2 の「no motion」の推奨（https://fluent2.microsoft.design/motion）、WCAG 2.3.3 に合わせる。
+
+**`Show` の登場と退場:** `Show(when, render, motion: ShowMotion.Fade(duration, curve))` のように動きを渡す。`Show` は子の木を包むノードを持ち、その不透明度と位置（変換）を 0 から 1 で動かす。プリセットは `ShowMotion.Fade` と `ShowMotion.FadeSlide(dx, dy)` で、呼ぶ人が長さとカーブを選ぶ。Fluent React の presence 部品（`Fade`・`Slide`、`visible` と `unmountOnExit`）と、Flutter の `AnimatedSwitcher`（既定はフェード、`packages/flutter/lib/src/widgets/animated_switcher.dart` 299〜359 行目）と同じ考え方である。退場の間は、§2.7 の決まりのとおり、子の木の購読を切って描画の状態を止める（`Exiting`、§11.5.1）。包むノードの値は `Show` 自身が動かすので、子の Effect は要らない。退場の途中で条件が true に戻れば、そのときの値から登場へ戻る。最初に作るときは登場を動かさない（Fluent の `appear` と同じく、既定は false）。
+
+**テストとアロケーション:**
+
+- 仮想の時計（`TestTime`、§12.2）で、アニメーションは決まった結果になる。`Pump(TimeSpan)` で途中の値を確かめられる
+- 動いたまま終わったアニメーションは、予約したフレームとして残るので、`HeadlessApp.DisposeAsync` の終わりの検査で失敗になる。Flutter の「A Ticker was active at the end of the test」（`packages/flutter_test/lib/src/widget_tester.dart` 1042〜1063 行目）と同じである
+- アニメーションの状態は、フレームの経路で確保しない形で持つ（`perf`）。§11.3 の Zero-Alloc のシナリオ 5（アニメーション 1 本の再生）を、AN1 で通す
 
 ---
 
@@ -3924,7 +3954,7 @@ public interface IPopupHost
 以下の項目は決定済みである。
 
 ### 8.1 `Show`のdispose猶予期間 — §2.7
-`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。V3 の `Show` は `exit` を持たず、いつも即 dispose する。`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す（V3 の Grill、Issue #363）。
+`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。D7 の Grill（Issue #166）で、この引数は `motion: ShowMotion?`（長さ・カーブ・プリセット）にした。`Show` が子の木を包むノードの不透明度と位置を動かし、退場の長さは `motion` の長さである（§2.14「`Show` の登場と退場」）。V3 の `Show` は `exit` を持たず、いつも即 dispose する。`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す（V3 の Grill、Issue #363）。
 
 ### 8.2 Signal読み取りのAPI形状 — §2
 `signal.Get()` / `signal.Set(v)`の明示的メソッドを採用する。MoonBit 版では「演算子オーバーロード的な糖衣構文のサポート有無を前提にしない」ことが理由だった。C# ではプロパティ（`signal.Value`）が通常の言語機能として使えるが、それでもメソッドを採る。getter に依存登録という副作用があるため、プロパティにするとデバッガのウォッチ・データヒント・`DebuggerDisplay` の評価が getter を呼び、ブレークポイントで止まっている Computation に意図しない依存を登録してしまうからである（デバッガはメソッドを自動評価しない）。暗黙の型変換演算子（`Signal<T>` → `T`）も同じ理由で定義しない。
@@ -4271,11 +4301,11 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 | `Unmounted` | `Show`/`For`で条件合致                                      | `Mounted`  | Scope生成、Signal購読開始、`MarkDirty(Layout)`                                        |
 | `Mounted`   | Signal更新                                                  | `Dirty`    | `Invalidate`→`MarkDirty`伝播（§2.4）、`LayoutRoots`登録                               |
 | `Dirty`     | Materialization / Text パイプライン完了後に `RunLayoutPass` | `Clean`    | サイズ・位置確定、`Versions.Layout`更新（下記11.5.2）、DisplayList再構築キューへ      |
-| `Mounted`   | `Show`条件false（`exit`あり）                               | `Exiting`  | Reactive購読切断、描画状態のフリーズ、アニメーション登録（§2.7）                      |
-| `Exiting`   | `exit`タイマー満了                                          | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
+| `Mounted`   | `Show`条件false（`motion`あり）                             | `Exiting`  | Reactive購読切断、描画状態のフリーズ、アニメーション登録（§2.7）                      |
+| `Exiting`   | `motion` の退場の終了                                       | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
 | `Exiting`   | 条件がtrueに復帰                                            | `Mounted`  | Reactive再購読、アニメーション破棄、`MarkDirty(Paint)`                                |
 
-`Exiting` の 3 行は、`Show` の `exit`（§8.1）を入れる行のもので、V3 の `Show` と `For` には無い。V3 では、`Show` の条件が false になったときも、`For` が行を消すときも、`Mounted` からすぐ `Disposed` になる（V3 の Grill、Issue #363）。
+`Exiting` の 3 行は、`Show` の `motion`（§2.14、§8.1）を入れる行 AN1 のもので、V3 の `Show` と `For` には無い。V3 では、`Show` の条件が false になったときも、`For` が行を消すときも、`Mounted` からすぐ `Disposed` になる（V3 の Grill、Issue #363）。
 
 Frame lifecycleは§2.10のフレーム実行サイクル図（シーケンス図）が状態遷移表に相当する。両者は`UiNode`の状態と`UiTree`全体の処理サイクルという異なる粒度の遷移であり、Node lifecycleの`Dirty→Clean`遷移がFrame lifecycleの`invalidation→layout`区間の中で発生する、という関係にある。
 
@@ -4367,7 +4397,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 `PumpAndSettle()` は、次の4つがすべて空になるまで、仮想時間を進めながらフレームを離散的に回し続ける。
 
 1. 予約済みのフレーム（`IFrameScheduler.RequestFrame`）
-2. 実行中のアニメーション
+2. 実行中のアニメーション（ウィンドウのアニメーションの一覧、§2.14。行 AN1 で入れる）
 3. UI キュー（`UiMessage` と `SynchronizationContext` に積まれた `await` の継続、§2.12）
 4. 予約済みのタイマー
 
@@ -4446,7 +4476,7 @@ v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）
 
 ### 13.2 XylemUI.Theme.Fluent
 
-**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は `IReadOnlySignal<Theme>` を Context で Provide して切り替える（§2.13）。
+**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。モーションのトークンは、8 つの長さ（`durationUltraFast` 50 ms 〜 `durationUltraSlow` 500 ms）と 9 つの 3 次ベジェのカーブ（`curveAccelerate*`・`curveDecelerate*`・`curveEasyEase*`・`curveLinear`）で、Core の `Curve` と `TimeSpan` の定数として持つ（§2.14「カーブ」）。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は `IReadOnlySignal<Theme>` を Context で Provide して切り替える（§2.13）。
 
 **Mica と Acrylic:**
 - **v1 で入れるもの**: ウィンドウ背景の **Mica**（Mica のウィンドウは背景が不透明でないので、文字は ClearType でなくグレースケールで描く。§5.0.3「ClearType」）。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
