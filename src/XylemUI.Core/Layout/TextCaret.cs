@@ -55,7 +55,7 @@ internal static class TextCaret
         ReadOnlySpan<LaidLine> lines = layout.Lines;
         for (int i = 0; i < lines.Length; i++)
         {
-            (height, _) = LayoutEngine.TextLine(leaf.Shaped!.Result!, lines[i].Span, leaf.Style);
+            (height, _) = LayoutEngine.TextLine(leaf, leaf.Shaped!.Result!, lines[i].Span);
             if (y < top + height || i == lines.Length - 1)
             {
                 return i;
@@ -204,10 +204,10 @@ internal static class TextCaret
         float top = 0;
         for (int i = 0; i < index; i++)
         {
-            top += LayoutEngine.TextLine(result, lines[i].Span, leaf.Style).Height;
+            top += LayoutEngine.TextLine(leaf, result, lines[i].Span).Height;
         }
 
-        height = LayoutEngine.TextLine(result, lines[index].Span, leaf.Style).Height;
+        height = LayoutEngine.TextLine(leaf, result, lines[index].Span).Height;
         return top;
     }
 

@@ -97,6 +97,43 @@ public enum DecorationStyle : byte
 }
 
 /// <summary>
+/// Where an inline object sits on its line, up and down (design §4.8, Flutter's <c>PlaceholderAlignment</c>). The line grows to
+/// hold the object.
+/// </summary>
+public enum PlaceholderAlignment : byte
+{
+    /// <summary>
+    /// The object's first baseline on the line's baseline; an object with no baseline has its bottom there.
+    /// </summary>
+    Baseline,
+
+    /// <summary>
+    /// The object's bottom on the line's baseline.
+    /// </summary>
+    AboveBaseline,
+
+    /// <summary>
+    /// The object's top on the line's baseline.
+    /// </summary>
+    BelowBaseline,
+
+    /// <summary>
+    /// The object's top at the top of the line's text: the largest ascent of its fonts above the baseline.
+    /// </summary>
+    Top,
+
+    /// <summary>
+    /// The object's bottom at the bottom of the line's text: the largest descent of its fonts below the baseline.
+    /// </summary>
+    Bottom,
+
+    /// <summary>
+    /// The object's middle at the middle of the line's text, between its ascent and its descent.
+    /// </summary>
+    Middle,
+}
+
+/// <summary>
 /// The lines drawn with a range of text (design §4.8): an underline and an overline skip the glyphs they cross; a line through
 /// does not.
 /// </summary>

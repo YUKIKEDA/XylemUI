@@ -288,6 +288,100 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
         return leaf;
     }
 
+    /// <summary>
+    /// An inline object is drawn over its room after the text: the range's background goes under the room, the underline stops at
+    /// it, and the child's own background fills its box where its alignment puts it (row T13, design §4.8).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A WARP renderer; a text leaf at (10, 10) at 20 px of two spaces, a room, and two spaces, in a range of a light background
+    ///   and a red underline; in the room, a box of 12 x 8 with a green background, aligned by its bottom on the baseline.
+    ///
+    /// Steps:
+    /// - Run the frames' resize, draw the list, and read the pixels of the leaf's box grown by 2.
+    ///
+    /// Expected:
+    /// - Each pixel is within 1 of the reference over the clear color: the background's rectangle with its edges on pixels; the
+    ///   underline at the font's underline center from the leaf's left to the room and from the room's right to the end of the last
+    ///   space; over both, the green box with its edges on pixels, 12 wide from the end of the second space, its bottom on the
+    ///   baseline.
+    /// </remarks>
+    [Fact]
+    public void InlineObject_IsDrawnInItsRoom() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("inline object", 300, 200);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            using var rasterizer = new DirectWriteGlyphRasterizer();
+            using var atlas = new GlyphAtlas(rasterizer);
+            using var font = new Font(FontBytes);
+            using var context = new TextContext(new DrawStageRenderTests.OneFont(font));
+            var tree = new UiTree(context);
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            const string Text = "  ￼  ";
+            var style = new SpanStyle(Background: Back, Decoration: new TextDecoration(DecorationLines.Underline, Color: Red));
+            NodeHandle leaf = Leaf(tree, root, Text, 20, 10, (0, Text.Length, style));
+            NodeHandle box = tree.CreateNode(new LayoutStyle { Width = Length.Px(12), Height = Length.Px(8) });
+            tree.SetBackground(box, new Paint(Green));
+            var writer = new TextRangeWriter { Tree = tree, Owner = leaf };
+            writer.Reset();
+            writer.Open(0, style, -1);
+            writer.AddInline(2, new Element(tree, box), PlaceholderAlignment.AboveBaseline);
+            writer.Close(Text.Length);
+            writer.Finish(Text.Length);
+            _ = tree.Nodes.GetRef(leaf).Text!.TakeRanges(writer, out _);
+            tree.AppendChild(leaf, box);
+            var frames = new WindowFrames(
+                tree,
+                root,
+                new DrawStageRenderTests.NoTarget(),
+                atlas,
+                new DrawStageRenderTests.NoScheduler(),
+                DrawStageRenderTests.Clear
+            );
+            frames.Resize(new Size(width, height), 1);
+            Color[] pixels = DrawStageRenderTests.Draw(renderer, frames.List, width, height, atlas);
+
+            float units = 20f / font.UnitsPerEm;
+            float advance = context.Shaper.Shape(font, " ", Japanese)[0].XAdvance * units;
+            float room = 10 + (2 * advance);
+            float right = room + 12 + (2 * advance);
+            float line = (font.Ascent + font.Descent + font.LineGap) * units;
+            float baseline = 10 + (font.LineGap * units / 2) + (font.Ascent * units);
+            float underline = font.Decorations.UnderlineSize!.Value * units;
+            float under = baseline - (font.Decorations.UnderlineOffset!.Value * units);
+            Vector4 red = ShapeReference.Premultiply(Red);
+
+            Vector4 Line(Vector2 p, float from, float to) =>
+                red
+                * CurveReference.Coverage(
+                    CurveReference.Line(p, new Vector2(from, under), new Vector2(to, under), underline / 2, LineCap.Flat, null),
+                    underline
+                );
+
+            Vector4 Reference(Vector2 p)
+            {
+                Vector4 back = ShapeReference.Premultiply(Back) * ShapeReference.Coverage(p, Snapped(10, 10, right - 10, line), default);
+                Vector4 lines = Over(Line(p, room + 12, right), Over(Line(p, 10, room), back));
+                return Over(ShapeReference.Premultiply(Green) * ShapeReference.Coverage(p, Snapped(room, baseline - 8, 12, 8), default), lines);
+            }
+
+            for (int y = 8; y < (int)(10 + line) + 2; y++)
+            {
+                for (int x = 8; x < (int)right + 2; x++)
+                {
+                    Color expected = ShapeReference.Over(Reference(new Vector2(x + 0.5f, y + 0.5f)), DrawStageRenderTests.Clear);
+                    Color actual = pixels[(y * width) + x];
+                    int difference = Math.Max(
+                        Math.Abs(expected.R - actual.R),
+                        Math.Max(Math.Abs(expected.G - actual.G), Math.Abs(expected.B - actual.B))
+                    );
+                    Assert.True(difference <= 1, $"pixel ({x}, {y}): expected {expected}, got {actual}");
+                }
+            }
+        });
+
     // A rectangle with its edges on the nearest pixels, as FillRect puts them at scale 1.
     private static Vector4 Snapped(float x, float y, float width, float height)
     {

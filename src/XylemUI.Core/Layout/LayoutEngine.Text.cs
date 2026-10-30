@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using XylemUI.Text;
 using XylemUI.Text.LineBreak;
 
@@ -35,7 +36,7 @@ internal static partial class LayoutEngine
         if (!cache.TryGet(width, out int index))
         {
             LineBreakEntry entry = cache.Take(width, out index);
-            cache.SetResult(index, Fill(context, leaf.Style, shaped.Result, entry));
+            cache.SetResult(index, Fill(context, leaf, shaped.Result, entry));
         }
 
         if (commit)
@@ -73,7 +74,7 @@ internal static partial class LayoutEngine
 
         LineBreakEntry entry = context.CheckEntry;
         entry.Width = space.Kind == AvailableSpaceKind.MinContent ? shaped.MinWidth : float.PositiveInfinity;
-        return Fill(context, leaf.Style, shaped.Result, entry).Size.Width;
+        return Fill(context, leaf, shaped.Result, entry).Size.Width;
     }
 #endif
 
@@ -103,16 +104,39 @@ internal static partial class LayoutEngine
         }
 
         // The font runs of each range of the layout (design §4.8), each with the range's fields over the leaf's style; a leaf with
-        // no ranges is one range of its style.
+        // no ranges is one range of its style. An inline object's room is a run of its own.
         context.Runs.Clear();
         context.RunStyles.Clear();
+        ClearRooms(context);
         if (leaf.Ranges is { } ranges)
         {
+            ReadOnlySpan<InlineObject> inlines = ranges.Inlines;
+            int room = 0;
             foreach (LayoutRun range in ranges.Layout)
             {
                 var runStyle = new RunStyle(range.Size ?? style.Size, range.Language ?? style.Language, range.LetterSpacing ?? 0, range.Features);
-                AddRuns(context, text, range.Start, range.Start + range.Length, range.Font ?? style.Font, runStyle);
+                FontRequest font = range.Font ?? style.Font;
+                int start = range.Start;
+                int end = range.Start + range.Length;
+                for (; room < inlines.Length && inlines[room].Position < end; room++)
+                {
+                    int at = inlines[room].Position;
+                    if (at > start)
+                    {
+                        AddRuns(context, text, start, at, font, runStyle);
+                    }
+
+                    AddRoom(context, at, font, runStyle);
+                    start = at + 1;
+                }
+
+                if (start < end)
+                {
+                    AddRuns(context, text, start, end, font, runStyle);
+                }
             }
+
+            FillRooms(context, ranges);
         }
         else
         {
@@ -122,14 +146,227 @@ internal static partial class LayoutEngine
         ShapingResult result = shaped.ResultToFill();
         result.Shape(
             text,
-            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(context.Runs),
-            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(context.RunStyles),
+            CollectionsMarshal.AsSpan(context.Runs),
+            CollectionsMarshal.AsSpan(context.RunStyles),
             context.Shaper,
-            context.Breaker
+            context.Breaker,
+            CollectionsMarshal.AsSpan(context.Rooms),
+            CollectionsMarshal.AsSpan(context.RoomWidths)
         );
-        (float min, float max) = result.IntrinsicWidths(context.Shaper);
+        (float min, float max) = IntrinsicWidthsOf(context, result);
         shaped.Fill(min, max);
         return shaped;
+    }
+
+    // The room of an inline object: a font run of one code unit, in the font a space of its range takes, which gives the line the
+    // metrics of the text around it (SkParagraph's placeholder run takes the font of its style, src/OneLineShaper.cpp).
+    private static void AddRoom(TextContext context, int at, in FontRequest font, in RunStyle style)
+    {
+        FontMatch match = FontFallback.ResolveWithFallback(context.Fonts, " ", 0, style.Language, font);
+        context.Runs.Add(new FontRun(match.Font!, at, 1, match.Scale));
+        context.RunStyles.Add(style);
+    }
+
+    // The positions and widths of the inline objects' rooms, from their last measurement, into the context's lists, which held
+    // another leaf's before.
+    private static void FillRooms(TextContext context, TextRanges ranges)
+    {
+        ClearRooms(context);
+        ReadOnlySpan<InlineObject> inlines = ranges.Inlines;
+        Span<InlineBox> boxes = ranges.Boxes;
+        for (int i = 0; i < inlines.Length; i++)
+        {
+            context.Rooms.Add(inlines[i].Position);
+            context.RoomWidths.Add(boxes[i].Width);
+            context.RoomMinWidths.Add(boxes[i].MinWidth);
+            context.RoomMaxWidths.Add(boxes[i].MaxWidth);
+        }
+    }
+
+    private static void ClearRooms(TextContext context)
+    {
+        context.Rooms.Clear();
+        context.RoomWidths.Clear();
+        context.RoomMinWidths.Clear();
+        context.RoomMaxWidths.Clear();
+    }
+
+    // The content widths of a text just shaped, its inline objects at their content widths (design §4.8).
+    private static (float Min, float Max) IntrinsicWidthsOf(TextContext context, ShapingResult result) =>
+        context.Rooms.Count == 0
+            ? result.IntrinsicWidths(context.Shaper)
+            : result.IntrinsicWidths(
+                context.Shaper,
+                CollectionsMarshal.AsSpan(context.Rooms),
+                CollectionsMarshal.AsSpan(context.RoomMinWidths),
+                CollectionsMarshal.AsSpan(context.RoomMaxWidths)
+            );
+
+    // Measures a text leaf's inline objects under the width its text is measured at (design §4.8): each child with a width-only
+    // constraint, the content box's width less its margins, or the same min-content or max-content width; its first baseline from
+    // a layout at that size when it aligns by it, as a flex container reads its items' (CalculateChildrenBaselines). Rooms of a new
+    // size give the text shaped once their widths and drop the lines broken at the old ones (Flutter's
+    // TextPainter.setPlaceholderDimensions); the same sizes keep both. A child that is gone takes no room.
+    private static void MeasureInlines(UiTree tree, NodeHandle handle, TextLeaf leaf, TextRanges ranges, float knownWidth, AvailableSpace width)
+    {
+        AvailableSpace space = !float.IsNaN(knownWidth) ? AvailableSpace.Definite(knownWidth) : width;
+        float parentWidth = space.IsDefinite ? space.Value : float.NaN;
+        var parentSize = new OptionalSize(parentWidth, float.NaN);
+        ReadOnlySpan<InlineObject> inlines = ranges.Inlines;
+        bool changed = false;
+        for (int i = 0; i < inlines.Length; i++)
+        {
+            NodeHandle child = inlines[i].Child;
+            InlineBox box = default;
+            if (tree.Nodes.IsAlive(child) && tree.Nodes.GetRef(child).Parent == handle)
+            {
+                Edges margin = EdgeInsets.ResolveOrZero(tree.Nodes.GetRef(child).Layout.Style.Margin, parentWidth);
+                AvailableSpace childSpace = space.IsDefinite ? AvailableSpace.Definite(Math.Max(0, space.Value - margin.Horizontal)) : space;
+                var input = new LayoutInput(
+                    OptionalSize.None,
+                    true,
+                    true,
+                    parentSize,
+                    new AvailableSize(childSpace, AvailableSpace.MaxContent),
+                    SizingMode.InherentSize,
+                    RequestedAxis.Both
+                );
+                Size size = LayoutChild(tree, child, in input, commit: false);
+                float baseline = float.NaN;
+                if (inlines[i].Alignment == PlaceholderAlignment.Baseline)
+                {
+                    LayoutInput exact = input with { KnownDimensions = new OptionalSize(size.Width, size.Height) };
+                    _ = LayoutChild(tree, child, in exact, commit: true);
+                    baseline = ReadBaseline(tree, child) + margin.Top;
+                }
+
+                var content = new AvailableSize(AvailableSpace.MinContent, AvailableSpace.MaxContent);
+                float min = MeasureChild(tree, child, OptionalSize.None, parentSize, content, SizingMode.InherentSize, horizontal: true);
+                content = new AvailableSize(AvailableSpace.MaxContent, AvailableSpace.MaxContent);
+                float max = MeasureChild(tree, child, OptionalSize.None, parentSize, content, SizingMode.InherentSize, horizontal: true);
+                box = new InlineBox(
+                    size.Width + margin.Horizontal,
+                    size.Height + margin.Vertical,
+                    baseline,
+                    min + margin.Horizontal,
+                    max + margin.Horizontal
+                );
+            }
+
+            if (!ranges.Boxes[i].Equals(box))
+            {
+                ranges.Boxes[i] = box;
+                changed = true;
+            }
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        if (leaf.Shaped is { Valid: true, Result: { } result } shaped)
+        {
+            TextContext context = tree.Text!;
+            FillRooms(context, ranges);
+            result.SetPlaceholderWidths(CollectionsMarshal.AsSpan(context.Rooms), CollectionsMarshal.AsSpan(context.RoomWidths));
+            (float min, float max) = IntrinsicWidthsOf(context, result);
+            shaped.Fill(min, max);
+        }
+
+        leaf.LineBreaks?.Drop();
+    }
+
+    // Lays a committed text leaf's inline objects out at the sizes they were measured to, each in its room: right of the glyphs
+    // before it on its line, and up or down by its alignment (design §4.8).
+    private static void PlaceInlines(UiTree tree, NodeHandle handle, TextLeaf leaf, TextRanges ranges, Edges paddingBorder)
+    {
+        if (leaf.Shaped?.Result is not { } result || leaf.LineBreaks is not { Committed: >= 0 } cache)
+        {
+            return;
+        }
+
+        LineBreakEntry entry = cache[cache.Committed];
+        float parentWidth = float.IsFinite(entry.Width) ? entry.Width : float.NaN;
+        ReadOnlySpan<LaidGlyph> glyphs = entry.Layout.Glyphs;
+        ReadOnlySpan<InlineObject> inlines = ranges.Inlines;
+        int next = 0;
+        float top = 0;
+        foreach (LaidLine line in entry.Layout.Lines)
+        {
+            (float height, float baseline) = TextLine(leaf, result, line.Span);
+            LineMetrics metrics = LineMetricsOf(result, line.Span);
+            float pen = 0;
+            foreach (LaidGlyph glyph in glyphs.Slice(line.GlyphStart, line.GlyphCount))
+            {
+                if (glyph.IsPlaceholder)
+                {
+                    while (next < inlines.Length && inlines[next].Position < glyph.Cluster)
+                    {
+                        next++;
+                    }
+
+                    if (next < inlines.Length && inlines[next].Position == glyph.Cluster)
+                    {
+                        InlineBox box = ranges.Boxes[next];
+                        (float above, _) = Extent(inlines[next].Alignment, in box, in metrics);
+                        PlaceInline(
+                            tree,
+                            handle,
+                            inlines[next].Child,
+                            in box,
+                            parentWidth,
+                            paddingBorder.Left + pen,
+                            paddingBorder.Top + top + baseline - above
+                        );
+                    }
+                }
+
+                pen += glyph.Advance;
+            }
+
+            top += height;
+        }
+    }
+
+    // One inline object laid out at its measured size, its margin box's corner at (x, y).
+    private static void PlaceInline(UiTree tree, NodeHandle handle, NodeHandle child, in InlineBox box, float parentWidth, float x, float y)
+    {
+        if (!tree.Nodes.IsAlive(child) || tree.Nodes.GetRef(child).Parent != handle)
+        {
+            return;
+        }
+
+        Edges margin = EdgeInsets.ResolveOrZero(tree.Nodes.GetRef(child).Layout.Style.Margin, parentWidth);
+        var size = new OptionalSize(Math.Max(0, box.Width - margin.Horizontal), Math.Max(0, box.Height - margin.Vertical));
+        var input = new LayoutInput(
+            size,
+            true,
+            true,
+            new OptionalSize(parentWidth, float.NaN),
+            new AvailableSize(AvailableSpace.Definite(size.Width), AvailableSpace.Definite(size.Height)),
+            SizingMode.InherentSize,
+            RequestedAxis.Both
+        );
+        _ = LayoutChild(tree, child, in input, commit: true);
+        Place(tree, child, x + margin.Left, y + margin.Top);
+    }
+
+    // How far an inline object's room reaches above and below its line's baseline, by its alignment (SkParagraph's
+    // Run::updateMetrics, src/Run.cpp lines 236 to 290): from the line's text, its largest ascent and descent.
+    private static (float Above, float Below) Extent(PlaceholderAlignment alignment, in InlineBox box, in LineMetrics text)
+    {
+        float height = box.Height;
+        float above = alignment switch
+        {
+            PlaceholderAlignment.Baseline => float.IsNaN(box.Baseline) ? height : box.Baseline,
+            PlaceholderAlignment.AboveBaseline => height,
+            PlaceholderAlignment.BelowBaseline => 0,
+            PlaceholderAlignment.Top => text.Ascent,
+            PlaceholderAlignment.Bottom => height - text.Descent,
+            _ => (height / 2) + ((text.Ascent - text.Descent) / 2),
+        };
+        return (above, height - above);
     }
 
     // The font runs of a part of the text, each with the part's style.
@@ -143,7 +380,7 @@ internal static partial class LayoutEngine
     }
 
     // An entry of the second cache: the lines at its width (Pass1 and Pass2). Returns the size and first baseline they make.
-    private static MeasureResult Fill(TextContext context, in TextStyle style, ShapingResult result, LineBreakEntry entry)
+    private static MeasureResult Fill(TextContext context, TextLeaf leaf, ShapingResult result, LineBreakEntry entry)
     {
         result.Wrap(entry.Width, context.Shaper, entry.Lines);
         result.Lay(entry.Lines, context.Shaper, entry.Layout);
@@ -153,7 +390,7 @@ internal static partial class LayoutEngine
         foreach (LaidLine line in entry.Layout.Lines)
         {
             width = MathF.Max(width, line.Width);
-            (float lineHeight, float baseline) = Line(LineMetricsOf(result, line.Span), style);
+            (float lineHeight, float baseline) = TextLine(leaf, result, line.Span);
             if (float.IsNaN(firstBaseline))
             {
                 firstBaseline = height + baseline;
@@ -167,10 +404,35 @@ internal static partial class LayoutEngine
 
     /// <summary>
     /// Returns the height of one line of a text leaf and its baseline from the line's top, as the measurement stacks them: the draw
-    /// stage places the committed lines with it (design §5.0, "The draw stage and the frame drive").
+    /// stage places the committed lines with it (design §5.0, "The draw stage and the frame drive"). The rooms of the inline objects
+    /// on the line count (design §4.8).
     /// </summary>
-    internal static (float Height, float Baseline) TextLine(ShapingResult result, LineSpan span, in TextStyle style) =>
-        Line(LineMetricsOf(result, span), style);
+    internal static (float Height, float Baseline) TextLine(TextLeaf leaf, ShapingResult result, LineSpan span)
+    {
+        LineMetrics metrics = LineMetricsOf(result, span);
+        (float height, float baseline) = Line(metrics, leaf.Style);
+        if (leaf.Ranges is not { HasInlines: true } ranges)
+        {
+            return (height, baseline);
+        }
+
+        // The line grows to hold the rooms of the inline objects on it (SkParagraph's TextLine metrics, src/Run.h lines 432 to 443).
+        float above = baseline;
+        float below = height - baseline;
+        ReadOnlySpan<InlineObject> inlines = ranges.Inlines;
+        Span<InlineBox> boxes = ranges.Boxes;
+        for (int i = 0; i < inlines.Length; i++)
+        {
+            if (inlines[i].Position >= span.Start && inlines[i].Position < span.End)
+            {
+                (float up, float down) = Extent(inlines[i].Alignment, in boxes[i], in metrics);
+                above = MathF.Max(above, up);
+                below = MathF.Max(below, down);
+            }
+        }
+
+        return (above + below, above);
+    }
 
     // The height of a line and its baseline from its top. The fonts' line gap is split half above and half below (half-leading).
     // A line height of the style replaces the fonts' height: the factor times the largest size on the line (design §4.8), and the

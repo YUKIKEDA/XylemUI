@@ -417,8 +417,9 @@ internal static partial class LayoutEngine
         float baseline = float.NaN;
         NodeHandle baselineChild = default;
         Size size;
-        if (firstChild.IsNone)
+        if (firstChild.IsNone || text is not null)
         {
+            // A text node's children are its inline objects, which its lines place (design §4.8).
             size = ComputeLeaf(tree, handle, in style, measure, text, in input, commit, out baseline);
         }
         else if (style.Algorithm is LayoutAlgorithm.Flex flex)
@@ -447,8 +448,8 @@ internal static partial class LayoutEngine
 
         // The widths the node's algorithm placed its content inside: a block resolves them against the containing block's width,
         // or its own when that is not decided; a flex container and a leaf against the parent's width of the input.
-        float basis =
-            !firstChild.IsNone && style.Algorithm is LayoutAlgorithm.Block ? Maybe.Or(input.ParentSize.Width, size.Width) : input.ParentSize.Width;
+        bool block = !firstChild.IsNone && text is null && style.Algorithm is LayoutAlgorithm.Block;
+        float basis = block ? Maybe.Or(input.ParentSize.Width, size.Width) : input.ParentSize.Width;
         n.Layout.Border = EdgeInsets.ResolveOrZero(style.Border, basis);
         if (n.Text is { } leaf)
         {
@@ -459,7 +460,7 @@ internal static partial class LayoutEngine
         n.Layout.WasLaidOut = true;
         n.Layout.FirstBaseline = baseline;
         n.BaselineChild = baselineChild;
-        n.Layout.BaselineFromFirstChildWithOne = !firstChild.IsNone && style.Algorithm is LayoutAlgorithm.Block;
+        n.Layout.BaselineFromFirstChildWithOne = block;
         n.Layout.CachedComputedBoundary = input.IsExact;
 
         // Marked again while it was laid out: the flags stay, and its new request runs in the next cycle.

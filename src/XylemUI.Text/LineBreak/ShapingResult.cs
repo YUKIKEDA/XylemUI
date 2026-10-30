@@ -6,7 +6,7 @@ namespace XylemUI.Text.LineBreak;
 /// A text shaped once, run by run of its fonts, with its line break opportunities (design §4.1, "Shaping and line breaking", and
 /// "Line breaking and grapheme clusters"; cached while the text does not change, §3.2's <c>ShapedTextCache</c>). It breaks the text
 /// into lines at a width (<see cref="Wrap"/>, Pass1), lays the lines out for drawing (<see cref="Lay"/>, Pass2), and gives the
-/// text's content widths (<see cref="IntrinsicWidths"/>).
+/// text's content widths (<see cref="IntrinsicWidths(TextShaper)"/>).
 /// </summary>
 /// <remarks>
 /// The text is shaped once and broken again for each width, as skparagraph, Avalonia's <c>TextRunCache</c>, and GPUI do. The
@@ -79,14 +79,31 @@ internal sealed class ShapingResult
     /// <param name="styles">What each run is shaped with besides its font: its size, language, letter spacing, and features.</param>
     /// <param name="shaper">The shaper, of this thread.</param>
     /// <param name="breaker">The line breaker, of this thread.</param>
-    /// <exception cref="ArgumentException">The runs do not cover the text in order, or there is not one style for each run.</exception>
-    public void Shape(ReadOnlySpan<char> text, ReadOnlySpan<FontRun> runs, ReadOnlySpan<RunStyle> styles, TextShaper shaper, LineBreaker breaker)
+    /// <param name="placeholders">The positions of the rooms of inline objects (design §4.8), in order: each is a font run of its own
+    /// of one code unit, which is not shaped but takes one glyph of <see cref="LaidGlyph.Placeholder"/> as wide as its width.</param>
+    /// <param name="widths">The width of each room, in logical pixels.</param>
+    /// <exception cref="ArgumentException">The runs do not cover the text in order, there is not one style for each run, or a room is
+    /// not a font run of its own or has no width.</exception>
+    public void Shape(
+        ReadOnlySpan<char> text,
+        ReadOnlySpan<FontRun> runs,
+        ReadOnlySpan<RunStyle> styles,
+        TextShaper shaper,
+        LineBreaker breaker,
+        ReadOnlySpan<int> placeholders = default,
+        ReadOnlySpan<float> widths = default
+    )
     {
         ArgumentNullException.ThrowIfNull(shaper);
         ArgumentNullException.ThrowIfNull(breaker);
         if (styles.Length != runs.Length)
         {
             throw new ArgumentException("A font run has no style, or a style no run.", nameof(styles));
+        }
+
+        if (widths.Length != placeholders.Length)
+        {
+            throw new ArgumentException("A room of an inline object has no width, or a width no room.", nameof(widths));
         }
 
         Length = text.Length;
@@ -99,6 +116,7 @@ internal sealed class ShapingResult
         _runCount = 0;
         _glyphCount = 0;
         int covered = 0;
+        int room = 0;
         for (int r = 0; r < runs.Length; r++)
         {
             FontRun run = runs[r];
@@ -109,6 +127,19 @@ internal sealed class ShapingResult
 
             covered += run.Length;
             AddRun(run, styles[r]);
+            if (room < placeholders.Length && placeholders[room] < covered)
+            {
+                if (placeholders[room] != run.Start || run.Length != 1)
+                {
+                    throw new ArgumentException("A room of an inline object is not a font run of its own.", nameof(placeholders));
+                }
+
+                EnsureGlyphs(_glyphCount + 1);
+                AddGlyph(new LaidGlyph(LaidGlyph.Placeholder, run.Start, widths[room], 0, 0, r), unsafeToBreak: false);
+                room++;
+                continue;
+            }
+
             float scale = _scales[r];
             float spacing = styles[r].LetterSpacing;
             ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, styles[r].Language, styles[r].Features);
@@ -126,22 +157,28 @@ internal sealed class ShapingResult
             throw new ArgumentException("The font runs do not cover the text in order.", nameof(runs));
         }
 
-        // The advance of each cluster goes to its first code unit; the running sum puts every code unit at the left of the next
-        // cluster after it, so the width of a range between clusters is one subtraction.
-        for (int g = 0; g < _glyphCount; g++)
-        {
-            _x[_glyphs[g].Cluster + 1] += _glyphs[g].Advance;
-        }
-
-        for (int i = 1; i <= text.Length; i++)
-        {
-            _x[i] += _x[i - 1];
-        }
-
+        SumAdvances();
         ReadOnlySpan<LineBreakOpportunity> breaks = breaker.Find(text);
         Ensure(ref _breaks, breaks.Length);
         breaks.CopyTo(_breaks);
         _breakCount = breaks.Length;
+    }
+
+    /// <summary>
+    /// Gives the rooms of inline objects new widths, without shaping the text again (design §4.8: a child's size changed, its text
+    /// did not). Lines broken before are of the old widths.
+    /// </summary>
+    /// <param name="placeholders">The positions of the rooms, as <see cref="Shape"/> was given them.</param>
+    /// <param name="widths">The new width of each room, in logical pixels.</param>
+    public void SetPlaceholderWidths(ReadOnlySpan<int> placeholders, ReadOnlySpan<float> widths)
+    {
+        for (int i = 0; i < placeholders.Length; i++)
+        {
+            int g = _glyphAt[placeholders[i]];
+            _glyphs[g] = _glyphs[g] with { Advance = widths[i] };
+        }
+
+        SumAdvances();
     }
 
     /// <summary>
@@ -261,21 +298,59 @@ internal sealed class ShapingResult
     /// </summary>
     /// <param name="shaper">The shaper, of this thread, for the width of a hyphen.</param>
     /// <returns>The least and the most content width, in logical pixels.</returns>
-    public (float Min, float Max) IntrinsicWidths(TextShaper shaper)
+    public (float Min, float Max) IntrinsicWidths(TextShaper shaper) => IntrinsicWidths(shaper, default, default, default);
+
+    /// <summary>
+    /// Returns the content widths of the text as <see cref="IntrinsicWidths(TextShaper)"/> does, with the rooms of inline objects at
+    /// other widths than their glyphs have: a room is a piece of its own (UAX #14 breaks before and after U+FFFC), which takes its
+    /// least width in the least content width, and a line between hard line breaks takes each room's most width (Flutter's
+    /// RenderParagraph measures the children's intrinsic widths into the paragraph's, design §4.8).
+    /// </summary>
+    /// <param name="shaper">The shaper, of this thread, for the width of a hyphen.</param>
+    /// <param name="placeholders">The positions of the rooms, as <see cref="Shape"/> was given them.</param>
+    /// <param name="minWidths">The width of each room under the least content width.</param>
+    /// <param name="maxWidths">The width of each room under the most content width.</param>
+    /// <returns>The least and the most content width, in logical pixels.</returns>
+    public (float Min, float Max) IntrinsicWidths(
+        TextShaper shaper,
+        ReadOnlySpan<int> placeholders,
+        ReadOnlySpan<float> minWidths,
+        ReadOnlySpan<float> maxWidths
+    )
     {
         float min = 0;
         float max = 0;
         int piece = 0;
         int line = 0;
+        int pieceRoom = 0;
+        int lineRoom = 0;
         for (int k = 0; k < _breakCount; k++)
         {
             LineBreakOpportunity opportunity = _breaks[k];
             bool hyphen = !opportunity.Mandatory && EndsWithSoftHyphen(opportunity.Position);
-            min = MathF.Max(min, TrimmedWidth(piece, opportunity.Position) + (hyphen ? HyphenWidth(opportunity.Position - 1, shaper) : 0));
+            float width = TrimmedWidth(piece, opportunity.Position) + (hyphen ? HyphenWidth(opportunity.Position - 1, shaper) : 0);
+            while (pieceRoom < placeholders.Length && placeholders[pieceRoom] < piece)
+            {
+                pieceRoom++;
+            }
+
+            if (pieceRoom < placeholders.Length && placeholders[pieceRoom] == piece && opportunity.Position == piece + 1)
+            {
+                width = minWidths[pieceRoom];
+            }
+
+            min = MathF.Max(min, width);
             piece = opportunity.Position;
             if (opportunity.Mandatory)
             {
-                max = MathF.Max(max, TrimmedWidth(line, opportunity.Position));
+                // The rooms on the line, at their most width in place of their glyphs'.
+                float extra = 0;
+                for (; lineRoom < placeholders.Length && placeholders[lineRoom] < opportunity.Position; lineRoom++)
+                {
+                    extra += maxWidths[lineRoom] - _glyphs[_glyphAt[placeholders[lineRoom]]].Advance;
+                }
+
+                max = MathF.Max(max, TrimmedWidth(line, opportunity.Position) + extra);
                 line = opportunity.Position;
             }
         }
@@ -371,6 +446,15 @@ internal sealed class ShapingResult
         {
             int run = RunAt(position);
             int runEnd = Math.Min(end, _runs[run].Start + _runs[run].Length);
+
+            // The room of an inline object is not shaped: it keeps its glyph.
+            if (_glyphAt[position] >= 0 && _glyphs[_glyphAt[position]].IsPlaceholder)
+            {
+                Append(_glyphs[_glyphAt[position]], result, trimmed, ref width, ref withSpaces);
+                position = runEnd;
+                continue;
+            }
+
             int length = contextEnd - contextStart;
             char[] scratch = shaper.Scratch(length);
             _text.AsSpan(contextStart, length).CopyTo(scratch);
@@ -539,6 +623,22 @@ internal sealed class ShapingResult
         }
 
         return 0;
+    }
+
+    // The advance of each cluster goes to its first code unit; the running sum puts every code unit at the left of the next cluster
+    // after it, so the width of a range between clusters is one subtraction.
+    private void SumAdvances()
+    {
+        Array.Fill(_x, 0, 0, Length + 1);
+        for (int g = 0; g < _glyphCount; g++)
+        {
+            _x[_glyphs[g].Cluster + 1] += _glyphs[g].Advance;
+        }
+
+        for (int i = 1; i <= Length; i++)
+        {
+            _x[i] += _x[i - 1];
+        }
     }
 
     private void AddRun(in FontRun run, in RunStyle style)
