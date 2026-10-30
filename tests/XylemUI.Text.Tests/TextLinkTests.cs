@@ -168,6 +168,80 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// The tree counts the text leaves whose ranges have a link: a write that adds or removes the link, and a leaf removed with
+    /// one, change the count.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of two texts with a link each: one that a signal shows, and one whose link a signal writes.
+    ///
+    /// Steps:
+    /// - Mount; write the second text without its link; write it with it again; hide the first text. Draw after each.
+    ///
+    /// Expected:
+    /// - The count is 2, 1, 2, then 1.
+    /// </remarks>
+    [Fact]
+    public void LinkLeaves_CountTheLeavesWithALink() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var shown = Signal.Create(true);
+            var linked = Signal.Create(true);
+            PointerHandler none = (in PointerEvent e) => { };
+            scene.Mount(() =>
+                Elements.Column(
+                    Elements.Show(shown, () => Elements.Text((ref w) => LinkText(ref w, none, true))),
+                    Elements.Text((ref w) => LinkText(ref w, none, linked.Get()))
+                )
+            );
+
+            Assert.Equal(2, scene.Tree.LinkLeaves);
+            linked.Set(false);
+            scene.Draw();
+            Assert.Equal(1, scene.Tree.LinkLeaves);
+            linked.Set(true);
+            scene.Draw();
+            Assert.Equal(2, scene.Tree.LinkLeaves);
+            shown.Set(false);
+            scene.Draw();
+            Assert.Equal(1, scene.Tree.LinkLeaves);
+        });
+
+    /// <summary>
+    /// A link that a write removes while the mouse is over it is left at the hover test of the next frame, though the tree has no
+    /// link left; a move after it sends nothing more.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn" and a link "nn" with a leave, which a signal writes.
+    ///
+    /// Steps:
+    /// - Move onto the link; write the text without it and draw; move inside the text.
+    ///
+    /// Expected:
+    /// - After the draw, the tree counts no leaf with a link and "leave" is logged; after the move, still the one "leave".
+    /// </remarks>
+    [Fact]
+    public void Leave_OfALinkRemovedUnderTheMouse_ComesAtTheNextFrame() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var linked = Signal.Create(true);
+            PointerHandler leave = (in PointerEvent e) => _log.Add("leave");
+            scene.Mount(() => Elements.Text((ref w) => LinkText(ref w, leave, linked.Get())));
+
+            scene.Mouse(PointerInputKind.Move, 25, 10);
+            linked.Set(false);
+            scene.Draw();
+            Assert.Equal(0, scene.Tree.LinkLeaves);
+            Assert.Equal(["leave"], _log);
+            scene.Mouse(PointerInputKind.Move, 26, 10);
+
+            Assert.Equal(["leave"], _log);
+        });
+
+    /// <summary>
     /// Hovering a link and moving off it, and clicking it, allocate nothing once the text is drawn.
     /// </summary>
     /// <remarks>
@@ -217,6 +291,23 @@ public sealed class TextLinkTests(UiThreadFixture ui) : IDisposable
 
             XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
         });
+
+    // "nn", then "nn" in a link whose leave is the handler when the link is written, and in no range when it is not.
+    private static void LinkText(ref NodeTextWriter w, PointerHandler onLeave, bool link)
+    {
+        w.Write("nn".AsSpan());
+        if (!link)
+        {
+            w.Write("nn".AsSpan());
+            return;
+        }
+
+        PointerHandler none = (in PointerEvent e) => { };
+        using (w.Link(none, onLeave: onLeave))
+        {
+            w.Write("nn".AsSpan());
+        }
+    }
 
     // The text of the tests: "nn", a link "nnnnnn", "nn".
     private Element Mount(TextScene scene, CursorKind? cursor = null, Action? onLeafClick = null)

@@ -49,6 +49,12 @@ internal sealed partial class WindowInput
     // MouseTracker sends the enters from the outermost annotation in, and the leaves from the innermost out).
     private bool FindLink(PointerState pointer, in PointerInput input)
     {
+        // A tree with no link, under a pointer over none, has nothing to find (the review of PR #426: the click was 0.03 µs longer).
+        if (_tree.LinkLeaves == 0 && pointer.Link < 0)
+        {
+            return false;
+        }
+
         int link = LinkAt(pointer, input);
         NodeHandle leaf = link >= 0 ? pointer.Hit : default;
         if (leaf == pointer.LinkLeaf && link == pointer.Link)

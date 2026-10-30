@@ -140,7 +140,12 @@ public static class Elements
                 released = writer.Buffer;
                 writer.Finish();
                 bool text = leaf.TakeWritten(writer.Buffer, writer.Length, out released);
+                bool hadLinks = leaf.Ranges?.HasLinks == true;
                 bool look = leaf.TakeRanges(ranges, out bool layout);
+                if (look)
+                {
+                    tree.CountLinkLeaf(hadLinks, leaf.Ranges?.HasLinks == true);
+                }
 
                 // A change of the text or of the layout's ranges lays the leaf out again; a change of the look's only draws it again.
                 if (text || layout)

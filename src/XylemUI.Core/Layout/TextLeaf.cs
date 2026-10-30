@@ -116,7 +116,9 @@ internal sealed class TextLeaf
     /// <summary>
     /// Takes the ranges a text writer wrote when they differ from the leaf's (design §4.8): the leaf keeps the written ranges and
     /// gives its old ones to the writer, so that neither is copied. When the layout's ranges differ, both caches are dropped; when
-    /// only the look's do, the layout stays.
+    /// only the look's do, the layout stays. A write with ranges after one without allocates the writer's new ranges, and a write
+    /// without them after one with drops the leaf's: a builder that adds and removes a style by a condition allocates at each
+    /// change. Writes that keep having ranges allocate nothing.
     /// </summary>
     /// <param name="writer">The writer of the ranges, its write finished.</param>
     /// <param name="layout"><see langword="true"/> when the layout's ranges changed.</param>

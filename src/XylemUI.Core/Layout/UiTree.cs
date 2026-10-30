@@ -231,6 +231,19 @@ internal sealed class UiTree
     public TextContext? Text { get; }
 
     /// <summary>
+    /// Gets the number of text leaves whose ranges have a link (design §4.8). While it is 0 and no pointer is over a link, the input
+    /// does not look for links: a tree without links takes the pointer path it took before row T12.
+    /// </summary>
+    internal int LinkLeaves { get; private set; }
+
+    /// <summary>
+    /// Counts a text leaf whose ranges were written again: one more when they have a link and had none, one less the other way.
+    /// </summary>
+    /// <param name="before">Whether the ranges had a link before.</param>
+    /// <param name="after">Whether they have one now.</param>
+    internal void CountLinkLeaf(bool before, bool after) => LinkLeaves += (after ? 1 : 0) - (before ? 1 : 0);
+
+    /// <summary>
     /// Gets or sets the number of exceptions of a leaf's measurement that the layout passes counted and did not report: the same type
     /// again from the same leaf, before a change of the leaf (design §2.4.1).
     /// </summary>
@@ -1367,6 +1380,11 @@ internal sealed class UiTree
         if (ForContainers.Count > 0)
         {
             _ = ForContainers.Remove(node);
+        }
+
+        if (LinkLeaves > 0 && Nodes.GetRef(node).Text?.Ranges?.HasLinks == true)
+        {
+            LinkLeaves--;
         }
 
         Nodes.Free(node);

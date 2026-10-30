@@ -426,7 +426,8 @@ internal sealed partial class WindowInput
             // a touch, when it did not move past the slop (Flutter's tap). The node hit is the one the release's hover test found; a
             // handler of the up may have removed it since (PR #327's review).
             NodeHandle released = _tree.Nodes.IsAlive(pointer.Hit) ? pointer.Hit : default;
-            if (!ClickLink(pointer, tapped, input) && tapped && _tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
+            bool linkClicked = pointer.PressedLink >= 0 && ClickLink(pointer, tapped, input);
+            if (!linkClicked && tapped && _tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
             {
                 Route(PointerEventKind.Click, origin, input, bubbleOnly: true);
             }
