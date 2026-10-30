@@ -714,12 +714,16 @@ Decision:
   テストは5層（Unicode / Core 単体 / DisplayList スナップショット / WARP ゴールデン / Gallery E2E）。
   PR を落とすのは正しさと Zero-Alloc（ウォームアップ後、5シナリオ）だけ。時間系ベンチマークは記録のみ。
   タイピングレイテンシは CI では「入力注入→Present 発行」の代理指標。Input-to-photon は手動計測。
+  P02a で操作の土台、P02a2 で描画の土台を作る。`XylemUI.Testing` は UI スレッドを 1 つ持ってテストの本体をそこで動かし、xUnit v3 の属性は `XylemUI.Testing.XUnit` に分ける。OS のウィンドウを作らない。`Find` はテスト ID か文字で探す。Core の internal は `InternalsVisibleTo` で使う。`DoesNotAllocate` は背景の GC が重なった区間をやり直す（P02a の Grill、Issue #456）。
 
 Reason:
   `Thread.Sleep` / 実時間に依存するテストはタイミングでぶれる。
   WARP は Windows にしかない。Linux の描画バックエンドは v0.4 まで存在しない。
   OS フォントは CI イメージの更新で変わり、ゴールデン画像がずれる。
   共有 CI ランナーの時間の揺れでは、時間で PR を落とすと誤検出だらけになる。確保バイト数は決定論的に測れる。
+  Core の UI スレッドはプロセスで 1 つで、xUnit はテストをいろいろなスレッドで動かす。Avalonia もテストの本体を UI スレッドで動かす属性を、ランナーごとのパッケージに分けている。
+  Avalonia の `Avalonia.Headless` と GPUI の `TestWindow` は OS のウィンドウを作らない。本物のウィンドウの開け閉めは、アプリのテストを遅くし、Q5 のハング（`D3D11Renderer.Dispose`）の経路にもなった。
+  利用者のテストのプロジェクトでは並行 GC を切れない。
 
 Rejected:
   - Linux Docker で WARP を使ったヘッドレス描画（WARP は Windows 専用）
@@ -727,6 +731,12 @@ Rejected:
   - 本物の IME 変換エンジンをテストで動かす
   - 時間系ベンチマークで PR を失敗させる
   - PNG のために画像ライブラリへ依存する
+  - 行 P02a を、行の文言の 3 項目（`app.Keyboard`・`app.Focus`、readback の移動、`DoesNotAllocate`）だけにする（置き場の `XylemUI.Testing` と §12 の土台が無く、半端な機能になる）
+  - `app.*` の呼び出しごとに UI スレッドへ渡す（`Element` を読むたびに渡すことになる）、コールバックで包む（§12 の例を同期で書けない）
+  - アプリのテストで本物のウィンドウを使い続ける
+  - アクセシブル名だけで探す（名前を持つ a11y の木は P02g まで無い）
+  - `WindowInput`・`PointerInput`・`KeyInput` を公開してテストから使う（Platform との間の内部の型が公開の API になる）
+  - リポジトリのテストだけ並行 GC を切ったままにする（利用者と条件が違い、やり直しの仕組みを CI で確かめられない）
 
 ---
 
