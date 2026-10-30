@@ -349,7 +349,7 @@ Rejected:
   - すべての葉に範囲の並びを持たせる（1 万の葉の場面で、範囲を持たない葉も大きくなる）
   - 波線を、範囲のスタイルの行の中で専用の命令にする（行 R5 の曲線と同じ物を 2 度作る）、円弧をつないで描く（Flutter の 2 次ベジェと形が違う）
   - 文字の影を、範囲のスタイルの行の中で層とぼかしで描く（ぼかしは行 R5 のパスの形の影とも共有する描き方で、別に決める）
-  - リンクの a11y を `SemanticsTree` の行まで出さない（P02 の UIA の provider が、テキストのノードの子の部分として出せる）
+  - リンクの a11y を `SemanticsTree` の行まで出さない（P02g の UIA の provider が、テキストのノードの子の部分として出せる）
   - リンクの範囲を Tab の順に入れ、Enter で押す（Issue #423。Flutter・Avalonia・GPUI のどれも、文の中のリンクにフォーカスを持たせない。フォーカスの対象がノードでなく範囲になり、K1 のフォーカスの仕組みを変える）
   - 字形との交わりを、グリフのアトラスの面と同じ寿命で覚える（Issue #423。アトラスの鍵がサブピクセルの段・塗りの種類・色を含み、同じ字形の交わりを何度も持つ）、覚えずに描くたびに輪郭から求める（XylemUI の下には、交わりを覚える Skia が無い）
 
@@ -419,7 +419,7 @@ Rejected:
   - 色のグリフを Direct2D で、COLRv1 のペイントの木を含む OS のすべての形式で描く（T6 の Grill で一度採った。実装して測ると、COLRv1 は初めて出る絵文字 1 つに 4〜4.6 ms（COLRv0 の 10〜30 倍）、Direct2D と WIC でプライベートメモリが 8.5 MB 増え、§11.3 の目安の 64 MB を超えた。比べた 3 つはどれも画面では COLRv0 だった。行 T9 で、速さとメモリの目途が立ってから入れる。PR #192 で Q11）
   - 色のグリフを Direct2D で、COLRv1 を除く形式で描く（COLRv0 で 0.14〜0.46 ms だが、Direct2D と WIC で 8.5 MB 増える。COLRv0 の層は DirectWrite のカバレッジを CPU で重ねれば描け、増えるのは 0.2〜0.4 MB。PR #192 で Q11）
   - 色の層を GPU で重ねて CPU に読み戻す（GPUI。描くたびに GPU の往復があり、レンダラとラスタライザの間に GPU の連絡が要る。CPU で重ねれば、ラスタライザがアトラスに直接書く今の形のままになる。T6 の Grill）
-  - 色のグリフのために、UI スレッドで COM（OLE）を T6 で初期化する（PR #188 のレビューの後に Q8 で決めたが、Q11 で WIC を使わなくなった。UI スレッドの STA は、それを使う最初の行（クリップボード・ドラッグアンドドロップ・UIA の P02）で入れる）
+  - 色のグリフのために、UI スレッドで COM（OLE）を T6 で初期化する（PR #188 のレビューの後に Q8 で決めたが、Q11 で WIC を使わなくなった。UI スレッドの STA は、それを使う最初の行（クリップボード・ドラッグアンドドロップ・UIA の P02b・DD1・P02g）で入れる）
   - COLRv1 のペイントの木を自分で描く（Skia。グラデーション・変換・合成のモードを持つ大きな仕事で、Direct2D が同じものを描く。T6 の Grill）
   - T9 で COLRv1 も描く（Chromium と同じ。比べた 3 つは Windows の出荷されたビルドで描かず、Windows のフォントにも COLRv1 だけのグリフが無い。v1.x の行 T11 にした。T9 の Grill）
   - T9 をまるごと v1.x に送る（Flutter と Avalonia は PNG のビットマップを描けるが、XylemUI では輪郭の無い CBDT のフォントが何も表示されない差が残る。T9 の Grill）
@@ -465,7 +465,7 @@ Decision:
   ワーカーからは `IUiDispatcher` / 独自 `SynchronizationContext` で UI スレッドへ戻る。
   キューは `ConcurrentQueue`（メッセージと継続を同じキューに積む）。ループは開始時と毎反復の待機の前に取り出し、取り出しは呼んだ時点の件数だけ実行する。同期描画の中では取り出さない。
   `[UnmanagedCallersOnly]` の境界で全例外を捕捉する。
-  Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。（見直し: 理由が工数なので、P02 の前に要件で比べ直す。Issue #54）
+  Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。（見直し: 理由が工数なので、P02c の前に要件で比べ直す。Issue #54）
   Vsync 待機中も OS メッセージを多重待機する（Windows: `MsgWaitForMultipleObjectsEx`）。
   同期リサイズ描画は `WM_SIZE` だけで行い、ガード（Core の `SynchronousRenderGuard`、深さで数える）の中で走らせる。入れ子のリサイズはその場では描かず、最新サイズを区間の後に1回描く。アプリのコールバックは描画の後まで遅らせて順に実行する。
 
@@ -577,7 +577,7 @@ Rejected:
   - ボタンの Enter と Space を Down と繰り返しのたびに Click にする（Flutter。Space を押したまま外す取り消しができない）
   - ボタンの Enter と Space を Up で Click にする（GPUI。Enter を押してすぐ動かない）
   - キーでスクロールしない（GPUI）、PageUp と PageDown だけにする（Avalonia）
-  - K1 でスコープの積み重ねとモーダルを入れる（使うダイアログとポップアップが行 P02 で、K1 には確かめる相手が無い）
+  - K1 でスコープの積み重ねとモーダルを入れる（使うダイアログとポップアップが行 P02d で、K1 には確かめる相手が無い）
   - K1 でキーの組み合わせから動作への仕組みを入れる（Flutter の `Shortcuts`、Avalonia の `KeyBindings`、GPUI の keymap。行 K2 にした）
 
 ---
@@ -595,7 +595,7 @@ Rejected:
   - 全行の `NextSibling` を 1 回で書き直す（1 行足すだけでも 1 万行のノードすべてに触る）。udomdiff の形（SolidJS。動かす数が最小になる保証が無い）
   - 行の Scope を、項目を読む Effect の中で作る（Effect は作り直す前に中の Scope を破棄するので、項目が変わるたびに全行が消える、§2.3）
   - V3 の `Show` に `exit` を入れる（§2.7 の `exit` の契約は、退場の間に opacity と transform を補間することで、補間する仕組みが無いと満たせない。その API は行 D7 が決める。時間だけ待ってから消す形は、補間しないので契約を満たさない）
-  - TODO の打ち込む欄を V3 で入れる（打ち込む欄の要件には IME での入力が入り、その方式（IMM32 か TSF）は行 P02 で要件から比べ直す。IME の無い欄は日本語を打てず、要件を満たさない）
+  - TODO の打ち込む欄を V3 で入れる（打ち込む欄の要件には IME での入力が入り、その方式（IMM32 か TSF）は行 P02c で要件から比べ直す。IME の無い欄は日本語を打てず、要件を満たさない）
 
 ---
 
@@ -767,7 +767,7 @@ Rejected:
 
 Decision:
   Vision は Flutter / Avalonia / GPUI 級のまま。Engineering Requirement は §11 の Acceptance で切る。
-  a11y は、ノードの上で書き、そこから別の木を作る（GPUI の形）。支援技術がつながっている間だけ作る。行 P02 で UIA の provider と一緒に入れる（D3 の Grill、Issue #441）。
+  a11y は、ノードの上で書き、そこから別の木を作る（GPUI の形）。支援技術がつながっている間だけ作る。行 P02g で UIA の provider と一緒に入れる（D3 の Grill、Issue #441）。
 
 Rejected:
   - Vision を副次目標に格下げする
