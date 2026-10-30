@@ -344,13 +344,15 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
             scene.Mount(() =>
             {
                 box = Elements.Box().Width(30).Height(10);
-                text = Elements.Text(
-                    (ref w) =>
-                    {
-                        w.Write("nn".AsSpan());
-                        w.Inline(box);
-                    }
-                ).Width(60);
+                text = Elements
+                    .Text(
+                        (ref w) =>
+                        {
+                            w.Write("nn".AsSpan());
+                            w.Inline(box);
+                        }
+                    )
+                    .Width(60);
                 return Elements.Row(text);
             });
 
