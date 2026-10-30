@@ -1219,6 +1219,7 @@ src/
   XylemUI.Theme.Fluent/        # Fluent 2 デザインシステム（§13.2）。Primitives に見た目を被せる
   XylemUI.Testing/             # ヘッドレスホスト・仮想クロック・入力注入・PNG（§12）。製品バイナリには含めない
   XylemUI.Testing.XUnit/       # xUnit v3 の [UiFact] / [UiTheory]（§12.5「スレッド」）
+  XylemUI.Testing.D3D11/       # ヘッドレスのアプリに差し込む WARP の描画（§12.3「差し込み」、Windows）
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
@@ -4387,11 +4388,13 @@ Assert.Single(app.FindAll("clicks: 1"));   // 文字で探す（§12.5「鍵」�
 
 ### 12.3 ヘッドレス描画と PNG 出力
 
-**方式（行 P02a2）:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
+**方式（行 P02a2）:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。
+
+**差し込み（P02a2 の Grill、Issue #464）:** 描画は別のパッケージ `XylemUI.Testing.D3D11`（`net10.0-windows`）から差し込む。`HeadlessOptions.Renderer` にそのレンダラを渡したアプリだけが画素を出し、渡さないアプリは描かずに動く（§12.4「土台」）。`XylemUI.Testing` は `net10.0` のままで、Windows の依存を持たない。GPUI のヘッドレスもレンダラを外から渡し（zed v1.25.3 の `crates/gpui/src/app/headless_app_context.rs` 1〜37 行目）、Avalonia 12.1.4 も Skia を別のパッケージから差し込む（`UseSkia`、`src/Headless/Avalonia.Headless/AvaloniaHeadlessPlatform.cs` 115 行目）。v0.4 の lavapipe も、同じ形の別のパッケージにする。`D3D11Renderer` は、スワップチェーンの代わりにテクスチャへ描く internal の作り方を持つ。その `Present` は何もせず、読み戻しはフレーム全体を CPU に写す。グリフは Windows のレンダラと同じく DirectWrite で描く。公開の `D3D11Renderer.ReadPixel`（S7 でサンプルの検査のために公開した）は外し、レンダラのテストは internal の読み戻しを使う。HelloWindow の `--auto` の画素の検査はテストへ移し、フレームの時間の計測はサンプルに残す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
 
 **フォント:** テストモードでは OS のフォント解決を使わず、**テスト用のフォント**（§4.5 の「テストのフォント」、Noto Sans JP の ASCII とテストで使う日本語のサブセット）だけで描く（テスト用の `IFontProvider`、`XylemUI.Testing` の `TestFontProvider`。フォントは `XylemUI.Testing` に埋め込み、文字が初めて出るときに開くので、文字の無い木は HarfBuzz の無い OS でも動く。行 P02a）。製品の同梱フォントは基本ラテン文字だけなので、Latin / CJK のゴールデンテストを描けない（PR #146 のレビュー）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
 
-**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。WARP のバージョンや、グリフを描く DirectWrite のバージョンが変わった場合はゴールデン画像を更新する（§5.0.3）。
+**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。`await app.MatchesGoldenAsync("counter.png")` は、合わなければ例外を投げ、実際の画像と差の画像を結果のフォルダに書く。ゴールデンはテストのソースの隣の `Goldens/` に置き（`[CallerFilePath]` で探す）、環境変数 `XYLEMUI_UPDATE_GOLDENS=1` のときは比べずに書き直す（Flutter の `--update-goldens`、Zed の `UPDATE_BASELINE`）。既定の許容差は、チャンネルごとに ±2、それを超える画素は 0 個で、呼ぶときに変えられる。Zed のアプリの比較は ±2 で 99 % の画素（zed v1.25.3 の `crates/zed/src/visual_test_runner.rs` 139 行目、784〜835 行目）、Flutter の `LocalFileComparator` は完全一致である（`flutter_test` 3.47.8 の `lib/src/_goldens_io.dart` 95〜108 行目）。WARP は同じ版なら同じ結果を出すので、超えてよい画素は 0 から始める。最初のゴールデンは Counter と Todo の 2 枚である（P02a2 の Grill）。WARP のバージョンや、グリフを描く DirectWrite のバージョンが変わった場合はゴールデン画像を更新する（§5.0.3）。
 
 **PNG:** PNG の書き出しと読み込みは、BCL の `ZLibStream`（deflate）を使って自前で書く。RGBA 8bit・非インターレースの最小限の実装とし、追加の依存は持たない。
 
