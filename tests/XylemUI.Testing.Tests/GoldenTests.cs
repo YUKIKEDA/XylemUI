@@ -5,8 +5,9 @@ using static XylemUI.Elements;
 namespace XylemUI.Testing.Tests;
 
 // The PNG files and the goldens (design §12.3): a renderer of this file's own gives the frame, so these run on every OS. The goldens
-// go to a folder of each test's own, and the update is set through the comparison's switch rather than the environment, so the
-// tests do not run beside each other.
+// and the failures' images go to a folder of each test's own, deleted after it, so the failures these tests mean stay out of the
+// folder the CI uploads; the update is set through the comparison's switch rather than the environment, so the tests do not run
+// beside each other.
 [CollectionDefinition(nameof(GoldenTests), DisableParallelization = true)]
 [Collection(nameof(GoldenTests))]
 public sealed class GoldenTests : IDisposable
@@ -19,7 +20,8 @@ public sealed class GoldenTests : IDisposable
     /// </summary>
     public GoldenTests()
     {
-        Goldens.RootForTests = _root;
+        Goldens.RootForTests = Path.Combine(_root, "Goldens");
+        Goldens.FailureFolderForTests = Path.Combine(_root, "GoldenFailures");
         Goldens.UpdateForTests = false;
     }
 
@@ -27,6 +29,7 @@ public sealed class GoldenTests : IDisposable
     public void Dispose()
     {
         Goldens.RootForTests = null;
+        Goldens.FailureFolderForTests = null;
         Goldens.UpdateForTests = null;
         if (Directory.Exists(_root))
         {
@@ -83,7 +86,7 @@ public sealed class GoldenTests : IDisposable
 
         Goldens.UpdateForTests = true;
         await app.MatchesGoldenAsync("gray.png");
-        Assert.True(File.Exists(Path.Combine(_root, "gray.png")));
+        Assert.True(File.Exists(Path.Combine(_root, "Goldens", "gray.png")));
 
         Goldens.UpdateForTests = false;
         await app.MatchesGoldenAsync("gray.png");
@@ -103,7 +106,7 @@ public sealed class GoldenTests : IDisposable
     ///
     /// Expected:
     /// - The default and 1 pixel throw <see cref="GoldenMismatchException"/> naming 2 pixels and at most 40, and the frame and its
-    ///   difference are in GoldenFailures; 2 pixels and a channel of 40 pass.
+    ///   difference are in GoldenFailures; 2 pixels and a channel of 40 pass, and the pass removes the failure's images.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -125,6 +128,8 @@ public sealed class GoldenTests : IDisposable
 
         _ = await Assert.ThrowsAsync<GoldenMismatchException>(() => app.MatchesGoldenAsync("beyond.png", new GoldenTolerance(2, 1)));
         await app.MatchesGoldenAsync("beyond.png", new GoldenTolerance(2, 2));
+        Assert.False(File.Exists(Path.Combine(Goldens.FailureFolder, "beyond.png")));
+        Assert.False(File.Exists(Path.Combine(Goldens.FailureFolder, "beyond.diff.png")));
         await app.MatchesGoldenAsync("beyond.png", new GoldenTolerance(40, 0));
     }
 
@@ -151,11 +156,11 @@ public sealed class GoldenTests : IDisposable
 
         GoldenMismatchException missing = await Assert.ThrowsAsync<GoldenMismatchException>(() => app.MatchesGoldenAsync("missing.png"));
         Assert.Contains(Goldens.UpdateVariable, missing.Message, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(_root, "missing.png")));
+        Assert.False(File.Exists(Path.Combine(_root, "Goldens", "missing.png")));
         Assert.True(File.Exists(Path.Combine(Goldens.FailureFolder, "missing.png")));
 
-        _ = Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(Path.Combine(_root, "small.png"), Png.Encode([Gray, Gray, Gray, Gray], 2, 2));
+        _ = Directory.CreateDirectory(Path.Combine(_root, "Goldens"));
+        await File.WriteAllBytesAsync(Path.Combine(_root, "Goldens", "small.png"), Png.Encode([Gray, Gray, Gray, Gray], 2, 2));
         GoldenMismatchException size = await Assert.ThrowsAsync<GoldenMismatchException>(() => app.MatchesGoldenAsync("small.png"));
         Assert.Contains("4 × 4", size.Message, StringComparison.Ordinal);
         Assert.Contains("2 × 2", size.Message, StringComparison.Ordinal);

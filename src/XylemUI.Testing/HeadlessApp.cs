@@ -48,15 +48,28 @@ public sealed class HeadlessApp : IAsyncDisposable
         _dispatcher = HeadlessSession.Dispatcher;
         _text = new TextContext(_fonts);
         _renderer = options.Renderer?.Invoke();
-        _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
-        _target = new HeadlessTarget(_renderer?.Target);
-        _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
-        Tree = new UiTree(_text);
-        _rootNode = Tree.CreateNode(new LayoutStyle());
-        Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
-        Input = new WindowInput(Tree, Frames, _platform);
-        Pointer = new HeadlessPointer(this);
-        Keyboard = new HeadlessKeyboard(this);
+
+        // A renderer that fails to size, or a part made after it that throws, does not leave its device behind (PR #469's review).
+        try
+        {
+            _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
+            _target = new HeadlessTarget(_renderer?.Target);
+            _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
+            Tree = new UiTree(_text);
+            _rootNode = Tree.CreateNode(new LayoutStyle());
+            Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
+            Input = new WindowInput(Tree, Frames, _platform);
+            Pointer = new HeadlessPointer(this);
+            Keyboard = new HeadlessKeyboard(this);
+        }
+        catch
+        {
+            _atlas?.Dispose();
+            _renderer?.Dispose();
+            _text.Dispose();
+            _fonts.Dispose();
+            throw;
+        }
 
         // Scopes made before the app are not its leaks (AssertNoLeakedScopes).
         _trackerWasEnabled = ScopeTracker.IsEnabled;

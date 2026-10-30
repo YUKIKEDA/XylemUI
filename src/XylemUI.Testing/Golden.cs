@@ -74,7 +74,13 @@ internal static class Goldens
     /// <summary>
     /// Gets the folder the failures' images go to: the test's output folder's <c>GoldenFailures</c>.
     /// </summary>
-    public static string FailureFolder => Path.Combine(AppContext.BaseDirectory, "GoldenFailures");
+    public static string FailureFolder => FailureFolderForTests ?? Path.Combine(AppContext.BaseDirectory, "GoldenFailures");
+
+    /// <summary>
+    /// Gets or sets the folder the failures' images go to, for the tests of the comparison, whose failures are meant: they stay out
+    /// of the folder the CI uploads (PR #469's review). <see langword="null"/> for the test's output folder's.
+    /// </summary>
+    internal static string? FailureFolderForTests { get; set; }
 
     /// <summary>
     /// Compares a screenshot with its golden, or writes the golden when asked to.
@@ -99,6 +105,7 @@ internal static class Goldens
         {
             _ = Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await File.WriteAllBytesAsync(path, Png.Encode(pixels, width, height)).ConfigureAwait(true);
+            DeleteFailures(name);
             return;
         }
 
@@ -128,6 +135,8 @@ internal static class Goldens
         (int beyond, int largest, Color[] diff) = Compare(pixels, golden, tolerance.Channel);
         if (beyond <= tolerance.Pixels)
         {
+            // An image of an earlier failure of this golden is old now; left there, it would read as this run's.
+            DeleteFailures(name);
             return;
         }
 
@@ -195,6 +204,18 @@ internal static class Goldens
         throw new InvalidOperationException(
             $"The test assembly has no {ProjectDirectoryKey} metadata: its project imports XylemUI.Testing.targets, which the package adds."
         );
+    }
+
+    private static void DeleteFailures(string name)
+    {
+        string stem = Path.Combine(FailureFolder, Path.ChangeExtension(name, null));
+        if (!Directory.Exists(Path.GetDirectoryName(stem)))
+        {
+            return;
+        }
+
+        File.Delete(stem + ".png");
+        File.Delete(stem + ".diff.png");
     }
 
     private static async Task<string> WriteFailureAsync(string name, string suffix, byte[] png)

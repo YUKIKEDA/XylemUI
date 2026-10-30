@@ -6,7 +6,16 @@
 
 ## 1 フレームの時間
 
-同じ木を、本物のウィンドウ（`DesktopWindow`、WARP、スワップチェーン）と、ヘッドレスのアプリ（`WarpRenderer`）で描いた。木全体の色を変えて 1 フレームを回すことを、50 回の慣らしの後に 400 回測り、中央値をとった。3 回流した。測りの道具は一時的なテストで、リポジトリには入れていない。
+同じ木を、本物のウィンドウ（`DesktopWindow`、WARP、スワップチェーン）と、ヘッドレスのアプリ（`WarpRenderer`）で描いた。木全体の色を変えて 1 フレームを回すことを、50 回の慣らしの後に 400 回測り、中央値をとった。3 回流した。測りの道具は一時的なテストで、リポジトリには入れていない。形は次のとおりである（`XylemUI.Desktop.Tests` の中の `[UiFact]`、Release で流した）。
+
+```csharp
+// 1 フレーム: 木全体の色を変えて、フレームを 1 つ回す
+Invalidation.Invalidate(tree, tree.Root, ChangeKind.Color);
+frames.RunFrame();                  // ウィンドウは desktop.Frames、ヘッドレスは app.Frames
+// 読み戻し: ヘッドレスのアプリで、フレーム全体を読む
+_ = app.Capture(out _, out _);
+// 各々 50 回慣らし、400 回を Stopwatch で測って中央値
+```
 
 | 木 | ウィンドウの 1 フレーム | ヘッドレスの 1 フレーム | 読み戻し（`Capture`） |
 | --- | --- | --- | --- |
