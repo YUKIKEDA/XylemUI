@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text;
+using XylemUI.Text.LineBreak;
 using XylemUI.Text.Unicode;
 using static XylemUI.Elements;
 using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
@@ -50,6 +51,14 @@ public static partial class Primitive
         private bool _writing;
         private float? _preferredX;
 
+        // The tops and heights of the leaf's lines, for the layout they were stacked for.
+        private float[] _tops = [];
+        private float[] _heights = [];
+        private object? _topsOf;
+        private float _topsWidth;
+        private int _topsVersion;
+        private int _topsCount;
+
         // What a press and a drag select: by cluster, by word (a double click), or by line or all (a triple click), from the anchor
         // range the press made.
         private int _dragUnit;
@@ -74,11 +83,19 @@ public static partial class Primitive
             _tree.SetStyle(_caret, Layer());
             Element field = options.Placeholder is { } placeholder ? Container(leaf, PlaceholderOf(placeholder), caret) : Container(leaf, caret);
             _field = field.Node;
-            if (!options.Multiline)
-            {
-                // One line: the text keeps its width and scrolls sideways (design §4.9, "Scrolling").
-                _tree.SetStyle(_leaf, _tree.Nodes.GetRef(_leaf).Layout.Style with { FlexShrink = 0 });
-            }
+
+            // The caret at the end of a line has room inside the content, so that scrolling to it shows all of it (Flutter's
+            // EditableText adds the caret's width the same way). One line keeps its width and scrolls sideways (design §4.9,
+            // "Scrolling").
+            float room = Math.Max(1, _tree.TextEditing.CaretWidth);
+            _tree.SetStyle(
+                _leaf,
+                _tree.Nodes.GetRef(_leaf).Layout.Style with
+                {
+                    FlexShrink = options.Multiline ? 1 : 0,
+                    Padding = EdgeInsets.Px(0, 0, room, 0),
+                }
+            );
 
             _ = field
                 .Focusable()
@@ -528,7 +545,7 @@ public static partial class Primitive
             }
 
             CaretPosition caret = TextCaret.CaretGeometry(leaf, ToShown(_editor.Selection.Caret), Affinity.Downstream);
-            int line = TextCaret.LineAt(leaf, caret.Rect.Y + (caret.Rect.Height / 2), out _, out _);
+            int line = LineAt(leaf, caret.Rect.Y + (caret.Rect.Height / 2), out _, out _);
             return FromShown(TextCaret.HitTestText(leaf, line, end ? float.MaxValue : float.MinValue).TextOffset);
         }
 
@@ -549,13 +566,70 @@ public static partial class Primitive
                 return 0;
             }
 
-            int line = TextCaret.LineAt(leaf, y, out float top, out float height);
+            int line = LineAt(leaf, y, out float top, out float height);
             if (y >= top + height)
             {
                 return _editor.Text.Length;
             }
 
             return FromShown(TextCaret.HitTestText(leaf, line, x).TextOffset);
+        }
+
+        // The line at a height of the leaf, found by halves on the lines' tops, which the field stacks once for each layout of its
+        // lines (design §4.9, "The lines' tops"). TextCaret.LineAt stacks them at each call.
+        private int LineAt(TextLeaf leaf, float y, out float top, out float height)
+        {
+            top = 0;
+            height = 0;
+            if (leaf.Shaped?.Result is not { } result || leaf.LineBreaks is not { Committed: >= 0 } cache)
+            {
+                return -1;
+            }
+
+            LineBreakEntry entry = cache[cache.Committed];
+            ReadOnlySpan<LaidLine> lines = entry.Layout.Lines;
+            if (lines.IsEmpty)
+            {
+                return -1;
+            }
+
+            if (!ReferenceEquals(entry.Layout, _topsOf) || _topsWidth != entry.Width || _topsVersion != _version.Peek() || _topsCount != lines.Length)
+            {
+                if (_tops.Length < lines.Length)
+                {
+                    _tops = new float[lines.Length];
+                    _heights = new float[lines.Length];
+                }
+
+                float stacked = 0;
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    _tops[i] = stacked;
+                    _heights[i] = LayoutEngine.TextLine(leaf, result, lines[i].Span).Height;
+                    stacked += _heights[i];
+                }
+
+                (_topsOf, _topsWidth, _topsVersion, _topsCount) = (entry.Layout, entry.Width, _version.Peek(), lines.Length);
+            }
+
+            int low = 0;
+            int high = lines.Length - 1;
+            while (low < high)
+            {
+                int middle = (low + high + 1) / 2;
+                if (_tops[middle] <= y)
+                {
+                    low = middle;
+                }
+                else
+                {
+                    high = middle - 1;
+                }
+            }
+
+            top = _tops[low];
+            height = _heights[low];
+            return low;
         }
 
         // The leaf with its lines laid out for the text now: a layout pass first when an edit left it to be laid out.
@@ -575,7 +649,7 @@ public static partial class Primitive
             }
 
             Vector2 point = local + _scroll.OffsetValue - LeafOrigin() + LayerOffset();
-            int line = TextCaret.LineAt(leaf, point.Y, out _, out _);
+            int line = LineAt(leaf, point.Y, out _, out _);
             return line < 0 ? 0 : FromShown(TextCaret.HitTestText(leaf, line, point.X).TextOffset);
         }
 
