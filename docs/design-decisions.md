@@ -737,6 +737,8 @@ Rejected:
   - アクセシブル名だけで探す（名前を持つ a11y の木は P02g まで無い）
   - `WindowInput`・`PointerInput`・`KeyInput` を公開してテストから使う（Platform との間の内部の型が公開の API になる）
   - リポジトリのテストだけ並行 GC を切ったままにする（利用者と条件が違い、やり直しの仕組みを CI で確かめられない）
+  - `XylemUI.Testing` を `net10.0` と `net10.0-windows` の 2 つの形にして、Windows の形から D3D11 を参照する（Windows の依存がテスト基盤の中に入り、v0.4 の lavapipe でまた形を足すことになる。GPUI と Avalonia はレンダラを外から差し込む。P02a2 の Grill、Issue #464）
+  - ゴールデンを完全一致だけで比べる（設計書 §12.3 が許容差と画素数の 2 つで決めている。Zed は ±2 を許す）
 
 ---
 

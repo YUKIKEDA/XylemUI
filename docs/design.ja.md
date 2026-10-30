@@ -1219,6 +1219,7 @@ src/
   XylemUI.Theme.Fluent/        # Fluent 2 デザインシステム（§13.2）。Primitives に見た目を被せる
   XylemUI.Testing/             # ヘッドレスホスト・仮想クロック・入力注入・PNG（§12）。製品バイナリには含めない
   XylemUI.Testing.XUnit/       # xUnit v3 の [UiFact] / [UiTheory]（§12.5「スレッド」）
+  XylemUI.Testing.D3D11/       # ヘッドレスのアプリに差し込む WARP の描画（§12.3「差し込み」、Windows）
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
@@ -4341,9 +4342,9 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 ヘッドレスのアプリホスト・仮想クロック・入力の注入・スクリーンショットを、別パッケージ `XylemUI.Testing` として公開する。フレームワーク自身のテスト、アプリ開発者のテスト、AI エージェントによる生成と自己評価（§0）は、すべて同じ API を使う。製品のバイナリ（`XylemUI.Core`）には含めない。
 
-**作る行:** 操作の土台（`HeadlessApp`、仮想の時計と `PumpAndSettle`、ポインタ・キーボード・フォーカスの注入、`Find` / `FindAll`、`AssertNoLeakedScopes`、`PerformanceAssert.DoesNotAllocate`、テスト用のフォント）は行 P02a、描画の土台（ウィンドウなしの描画と読み戻し、PNG、`SaveScreenshotAsync`、ゴールデン比較）は行 P02a2 で作る。テスト用のフォントは、`HeadlessApp` がどの OS でも文字を測れるように P02a に入れた。`XylemUI.Testing` は Windows だけの DirectWrite のフォント解決に頼れない（P02a の実装の前のオーナーの決定、Issue #460）。ほかの行の土台が要るものは、その行で足す。`app.Ime` は P02c（`ITextInputBackend`、§4.7）、文字の入力の `app.Keyboard.Type` は P02b（`TextInputEvent`）、アクセシブル名での検索は P02g（§4.4）、アニメーションを待つことは AN1 である（P02a の Grill、Issue #456）。
+**作る行:** 操作の土台（`HeadlessApp`、仮想の時計と `PumpAndSettle`、ポインタ・キーボード・フォーカスの注入、`Find` / `FindAll`、`AssertNoLeakedScopes`、`PerformanceAssert.DoesNotAllocate`、テスト用のフォント）は行 P02a、描画の土台（PNG、`SaveScreenshotAsync`、ゴールデン比較は `XylemUI.Testing` に、ウィンドウなしの WARP の描画と読み戻しは別のパッケージ `XylemUI.Testing.D3D11` に置き、`HeadlessOptions.Renderer` で差し込む、§12.3「差し込み」）は行 P02a2 で作る。テスト用のフォントは、`HeadlessApp` がどの OS でも文字を測れるように P02a に入れた。`XylemUI.Testing` は Windows だけの DirectWrite のフォント解決に頼れない（P02a の実装の前のオーナーの決定、Issue #460）。ほかの行の土台が要るものは、その行で足す。`app.Ime` は P02c（`ITextInputBackend`、§4.7）、文字の入力の `app.Keyboard.Type` は P02b（`TextInputEvent`）、アクセシブル名での検索は P02g（§4.4）、アニメーションを待つことは AN1 である（P02a の Grill、Issue #456）。
 
-**Core との関係:** `XylemUI.Testing` は Core と同じ版で出し、`InternalsVisibleTo` で Core の internal（`WindowInput`、`PointerInput`、`KeyInput`、`UiTree`、`WindowFrames`）を使う。これらを公開すると、Platform との間の内部の型が公開の API になるためである。テストのための公開の口を Core に置かない（`D3D11Renderer.ReadPixel` は S7 でサンプルの検査のために公開したが、P02a2 で `XylemUI.Testing` の読み戻しへ移して公開の API から外す。HelloWindow の自己検査はテストへ移す）。
+**Core との関係:** `XylemUI.Testing` は Core と同じ版で出し、`InternalsVisibleTo` で Core の internal（`WindowInput`、`PointerInput`、`KeyInput`、`UiTree`、`WindowFrames`）を使う。これらを公開すると、Platform との間の内部の型が公開の API になるためである。テストのための公開の口を Core に置かない（`D3D11Renderer.ReadPixel` は S7 でサンプルの検査のために公開したが、P02a2 で公開の API から外す。ウィンドウなしの読み戻しは `XylemUI.Testing.D3D11` が持ち、レンダラのテストは internal の読み戻しを使う（§12.3「差し込み」）。HelloWindow の自己検査はテストへ移す）。
 
 ### 12.1 テストピラミッド（5層）
 
@@ -4352,7 +4353,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 | 1. Unicode 適合性               | UAX#9 / #14 / #29 の公式テストデータ（§8.13）                   | 全OS                        | `XylemUI.Text.Tests`      |
 | 2. Core の単体テスト            | Reactive・Invalidation・Layout・Focus をレンダラなしで検証      | 全OS                        | `XylemUI.Core.Tests`      |
 | 3. DisplayList スナップショット | `BuildDisplayList` の結果をテキストに直して比較。GPU を使わない | 全OS                        | `XylemUI.Core.Tests`      |
-| 4. 画素のゴールデン画像         | WARP で描画して読み戻し、許容差つきで比較                       | Windows（v0.4 で Linux も） | `XylemUI.Rendering.D3D11.Tests`（ゴールデン比較は P02a2 から） |
+| 4. 画素のゴールデン画像         | WARP で描画して読み戻し、許容差つきで比較                       | Windows（v0.4 で Linux も） | `XylemUI.Rendering.D3D11.Tests`（今は画素を CPU の基準と比べる。ゴールデンの画像は第 5 層の Counter と Todo の 2 枚から始め、この層に置くゴールデンは描く語彙を足す行で足す） |
 | 5. E2E                          | アプリを丸ごと `HeadlessApp` で動かす。今は Counter と Todo、G1 から Gallery（§13.3） | Windows（文字を整形する HarfBuzz を P04 / P06 まで Windows 向けにしか作らない） | `XylemUI.Desktop.Tests`（G1 で `XylemUI.Gallery.Tests` を足す） |
 
 この 5 層のほかに、OS の API を直接確かめる `XylemUI.Platform.Windows.Tests`（本物のウィンドウを使うテストはここに置く）と、見た目のない部品の `XylemUI.Primitives.Tests` がある。
@@ -4387,11 +4388,13 @@ Assert.Single(app.FindAll("clicks: 1"));   // 文字で探す（§12.5「鍵」�
 
 ### 12.3 ヘッドレス描画と PNG 出力
 
-**方式（行 P02a2）:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
+**方式（行 P02a2）:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。
+
+**差し込み（P02a2 の Grill、Issue #464）:** 描画は別のパッケージ `XylemUI.Testing.D3D11`（`net10.0-windows`）から差し込む。`HeadlessOptions.Renderer` にそのレンダラを渡したアプリだけが画素を出し、渡さないアプリは描かずに動く（§12.4「土台」）。`XylemUI.Testing` は `net10.0` のままで、Windows の依存を持たない。GPUI のヘッドレスもレンダラを外から渡し（zed v1.25.3 の `crates/gpui/src/app/headless_app_context.rs` 1〜37 行目）、Avalonia 12.1.4 も、描く仕組みを別のパッケージから差し込む（`UseHeadlessDrawing` を切って Avalonia.Skia で描く、`src/Headless/Avalonia.Headless/AvaloniaHeadlessPlatform.cs` 110〜115 行目）。差し込む型は、`XylemUI.Testing` の公開の抽象クラス `HeadlessRenderer` で、渡すものは internal のメンバー（描き先の `IRenderTarget`、フレーム全体の読み戻し、グリフを描く `IGlyphRasterizer`）である。`XylemUI.Testing` は `XylemUI.Testing.D3D11` に `InternalsVisibleTo` で見せる（どちらも Core と同じ版で出す）。レンダラがあるとき、`HeadlessApp` はグリフに空の箱を返す今のラスタライザを、レンダラのものに置き換える。レンダラを渡していないアプリの `SaveScreenshotAsync` と `MatchesGoldenAsync` は、`InvalidOperationException` を投げる（PR #465 のレビュー）。v0.4 の lavapipe も、同じ形の別のパッケージにする。`D3D11Renderer` は、スワップチェーンの代わりにテクスチャへ描く internal の作り方を持つ。その `Present` は何もせず、読み戻しはフレーム全体を CPU に写す。グリフは Windows のレンダラと同じく DirectWrite で描く。公開の `D3D11Renderer.ReadPixel`（S7 でサンプルの検査のために公開した）は外し、レンダラのテストは internal の読み戻しを使う。HelloWindow の `--auto` の画素の検査はテストへ移し、フレームの時間の計測はサンプルに残す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
 
 **フォント:** テストモードでは OS のフォント解決を使わず、**テスト用のフォント**（§4.5 の「テストのフォント」、Noto Sans JP の ASCII とテストで使う日本語のサブセット）だけで描く（テスト用の `IFontProvider`、`XylemUI.Testing` の `TestFontProvider`。フォントは `XylemUI.Testing` に埋め込み、文字が初めて出るときに開くので、文字の無い木は HarfBuzz の無い OS でも動く。行 P02a）。製品の同梱フォントは基本ラテン文字だけなので、Latin / CJK のゴールデンテストを描けない（PR #146 のレビュー）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
 
-**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。WARP のバージョンや、グリフを描く DirectWrite のバージョンが変わった場合はゴールデン画像を更新する（§5.0.3）。
+**比較:** ゴールデン画像との比較は、チャンネルごとの差の許容値と、差のある画素数の上限の2つで判定する。`await app.MatchesGoldenAsync("counter.png")` は、合わなければ例外を投げ、実際の画像と差の画像を結果のフォルダに書く。ゴールデンはテストのプロジェクトの `Goldens/` に置き、環境変数 `XYLEMUI_UPDATE_GOLDENS=1` のときは比べずに書き直す（Flutter の `--update-goldens`、Zed の `UPDATE_BASELINE`）。ゴールデンの場所は、`XylemUI.Testing` が配る MSBuild の targets が、テストのプロジェクトのフォルダをテストのアセンブリの属性（`AssemblyMetadata`）に埋め込み、そこから読む。`[CallerFilePath]` は使わない。リポジトリの CI は `ContinuousIntegrationBuild` と `Deterministic` でソースのパスを `/_/` に書き換えるので、呼んだファイルのパスから元のフォルダに戻れないためである（PR #465 のレビュー）。環境変数が無く、ゴールデンも無いときは、作らずに失敗にする。CI で黙って通らないためである。合わなかったときの実際の画像と差の画像は、テストの出力のフォルダ（`AppContext.BaseDirectory`）の `GoldenFailures/` に書き、CI は失敗したジョブでそれを成果物に載せる。既定の許容差は、チャンネルごとに ±2、それを超える画素は 0 個で、呼ぶときに変えられる。Zed のアプリの比較は ±2 で 99 % の画素（zed v1.25.3 の `crates/zed/src/visual_test_runner.rs` 139 行目、784〜835 行目）、Flutter の `LocalFileComparator` は完全一致である（`flutter_test` 3.47.8 の `lib/src/_goldens_io.dart` 95〜108 行目）。WARP は同じ版なら同じ結果を出すので、超えてよい画素は 0 から始める。最初のゴールデンは Counter と Todo の 2 枚である（P02a2 の Grill）。WARP のバージョンや、グリフを描く DirectWrite のバージョンが変わった場合はゴールデン画像を更新する（§5.0.3）。
 
 **PNG:** PNG の書き出しと読み込みは、BCL の `ZLibStream`（deflate）を使って自前で書く。RGBA 8bit・非インターレースの最小限の実装とし、追加の依存は持たない。
 
