@@ -257,30 +257,34 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
-    /// The ranges of a leaf take design §4.8's bytes: 136 + 80 L + 60 P + 144 K, for arrays of L ranges of the layout, P of the
-    /// look, and K links, each 2 long at first and doubled when full.
+    /// The ranges of a leaf take design §4.8's bytes: 160 + 80 L + 60 P + 144 K + 36 I, for arrays of L ranges of the layout, P of
+    /// the look, K links, and I inline objects, each 2 long at first and doubled when full; the inline objects' two arrays add their
+    /// headers, 48 bytes.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The sizes of a range of the layout, of the look, and of a link, read with <c>Unsafe.SizeOf</c>: 80, 60, and 144 bytes.
+    /// - The sizes of a range of the layout, of the look, of a link, of an inline object, and of its room, read with
+    ///   <c>Unsafe.SizeOf</c>: 80, 60, 144, 24, and 12 bytes.
     ///
     /// Steps:
-    /// - Measure the bytes allocated while a <c>TextRanges</c> is made and given 3 links and 5 pieces of text, each of a size and
-    ///   a color of its own.
+    /// - Measure the bytes allocated while a <c>TextRanges</c> is made and given 3 links, 3 inline objects, and 5 pieces of text,
+    ///   each of a size and a color of its own.
     ///
     /// Expected:
-    /// - The sizes are as above; the arrays are 8, 8, and 4 long, and the bytes are the formula for them, to the 8 bytes each array
-    ///   is rounded to.
+    /// - The sizes are as above; the arrays are 8, 8, 4, and 4 long, and the bytes are the formula for them, to the 8 bytes each
+    ///   array is rounded to.
     /// </remarks>
     [Fact]
     public void Ranges_Memory_IsTheFormula()
     {
         Assert.Equal(
-            (80, 60, 144),
+            (80, 60, 144, 24, 12),
             (
                 System.Runtime.CompilerServices.Unsafe.SizeOf<LayoutRun>(),
                 System.Runtime.CompilerServices.Unsafe.SizeOf<PaintRun>(),
-                System.Runtime.CompilerServices.Unsafe.SizeOf<TextLink>()
+                System.Runtime.CompilerServices.Unsafe.SizeOf<TextLink>(),
+                System.Runtime.CompilerServices.Unsafe.SizeOf<InlineObject>(),
+                System.Runtime.CompilerServices.Unsafe.SizeOf<InlineBox>()
             )
         );
         PointerHandler click = (in PointerEvent e) => { };
@@ -292,6 +296,7 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
         for (int i = 0; i < 3; i++)
         {
             _ = ranges.AddLink(link);
+            ranges.AddInline(new InlineObject(default, i, PlaceholderAlignment.Baseline));
         }
 
         for (int i = 0; i < 5; i++)
@@ -300,11 +305,12 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
         }
 
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal((5, 5, 3), (ranges.Layout.Length, ranges.Paint.Length, ranges.Links.Length));
+        Assert.Equal((5, 5, 3, 3), (ranges.Layout.Length, ranges.Paint.Length, ranges.Links.Length, ranges.Inlines.Length));
 
-        // The links' array grew from 2 to 4, and the others from 2 to 4 and 8; the arrays they left were allocated too.
-        long kept = 136 + (80 * 8) + (60 * 8) + (144 * 4);
-        long left = (24 + (80 * 2)) + (24 + (80 * 4)) + (24 + (60 * 2)) + (24 + (60 * 4)) + (24 + (144 * 2));
+        // The links' and the inline objects' arrays grew from 2 to 4, and the others from 2 to 4 and 8; the arrays they left were
+        // allocated too.
+        long kept = 160 + (80 * 8) + (60 * 8) + (144 * 4) + 48 + (36 * 4);
+        long left = (24 + (80 * 2)) + (24 + (80 * 4)) + (24 + (60 * 2)) + (24 + (60 * 4)) + (24 + (144 * 2)) + (24 + (24 * 2)) + (24 + (12 * 2));
         Assert.InRange(allocated, kept + left, kept + left + (8 * 8));
     }
 

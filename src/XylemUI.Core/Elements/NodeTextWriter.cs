@@ -51,6 +51,15 @@ public struct NodeTextWriter
     internal readonly void CloseSpan() => _ranges.Close(_length);
 
     /// <summary>
+    /// Writes the room of an inline object: its U+FFFC, and the child it stands for.
+    /// </summary>
+    internal void AppendInline(Element child, PlaceholderAlignment alignment)
+    {
+        _ranges.AddInline(_length, child, alignment);
+        Append("\uFFFC");
+    }
+
+    /// <summary>
     /// Ends the write.
     /// </summary>
     /// <exception cref="InvalidOperationException">A range is still open.</exception>
@@ -168,6 +177,25 @@ public static class NodeTextWriterExtensions
         writer.OpenLink(new TextLink(onClick, onEnter, onLeave, hovered));
         return new TextSpanScope(ref writer);
     }
+
+    /// <summary>
+    /// Places an element on the text's line, as an inline object (design §4.8): the text node takes it as a child, measures it
+    /// under the line's width, and leaves it the room of one character, which the lines may break before and after. It takes the
+    /// pointer, the focus, and the screen reader as any child does, and over a link it takes the pointer before the link.
+    /// </summary>
+    /// <remarks>
+    /// Make the element once, outside the write, in the component that keeps it: a write runs again when what it reads changes,
+    /// and an element made inside it would be made again, losing its state. The text node lets go of an element a later write
+    /// leaves out, and of all of them before it goes away; the scope that made the element removes it.
+    /// </remarks>
+    /// <param name="writer">The writer.</param>
+    /// <param name="child">The element.</param>
+    /// <param name="alignment">Where it sits on its line.</param>
+    /// <exception cref="ArgumentException">The element is not of the text node's tree.</exception>
+    /// <exception cref="InvalidOperationException">The element was removed, has another parent, or this write placed it
+    /// already.</exception>
+    public static void Inline(this ref NodeTextWriter writer, Element child, PlaceholderAlignment alignment = PlaceholderAlignment.Baseline) =>
+        writer.AppendInline(child, alignment);
 }
 
 /// <summary>

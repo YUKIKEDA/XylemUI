@@ -9,7 +9,19 @@ namespace XylemUI.Text.LineBreak;
 /// <param name="OffsetX">The horizontal shift of the glyph from the pen.</param>
 /// <param name="OffsetY">The vertical shift of the glyph from the pen, up positive.</param>
 /// <param name="Run">The font run the glyph was shaped with (its index in <see cref="ShapingResult"/>).</param>
-internal readonly record struct LaidGlyph(uint GlyphId, int Cluster, float Advance, float OffsetX, float OffsetY, int Run);
+internal readonly record struct LaidGlyph(uint GlyphId, int Cluster, float Advance, float OffsetX, float OffsetY, int Run)
+{
+    /// <summary>
+    /// The glyph of the room an inline object takes (design §4.8): no font has it (OpenType counts glyphs in 16 bits), its advance
+    /// is the object's width, and no glyph is drawn for it.
+    /// </summary>
+    public const uint Placeholder = uint.MaxValue;
+
+    /// <summary>
+    /// Gets a value indicating whether the glyph is the room of an inline object.
+    /// </summary>
+    public bool IsPlaceholder => GlyphId == Placeholder;
+}
 
 /// <summary>
 /// One line of a text: where it starts and ends, and how it ends.

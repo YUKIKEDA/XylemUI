@@ -540,7 +540,7 @@ internal sealed partial class WindowFrames
         float top = y;
         foreach (LaidLine line in layout.Lines)
         {
-            (float height, float baseline) = LayoutEngine.TextLine(result, line.Span, text.Style);
+            (float height, float baseline) = LayoutEngine.TextLine(text, result, line.Span);
             if (text.Ranges is { } ranges)
             {
                 DrawRanges(ranges, result, glyphs.Slice(line.GlyphStart, line.GlyphCount), x, top, height, top + baseline, color);

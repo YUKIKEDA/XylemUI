@@ -56,6 +56,10 @@ internal static partial class LayoutEngine
             MeasureResult measured = MeasureContent(tree, handle, measure, text, knownContent, available, commit);
             content = measured.Size;
             baseline = paddingBorder.Top + measured.FirstBaseline;
+            if (commit && text?.Ranges is { HasInlines: true } ranges)
+            {
+                PlaceInlines(tree, handle, text, ranges, paddingBorder);
+            }
         }
 
         OptionalSize size = nodeSize.Or(new OptionalSize(content.Width + contentInset.Width, content.Height + contentInset.Height)).Clamp(min, max);
@@ -227,6 +231,11 @@ internal static partial class LayoutEngine
     {
         try
         {
+            if (text?.Ranges is { HasInlines: true } ranges)
+            {
+                MeasureInlines(tree, handle, text, ranges, known.Width, available.Width);
+            }
+
             return text is not null ? MeasureText(tree.Text!, text, known, available, commit) : measure!(known, available);
         }
         catch (Exception exception) when (exception is not InvariantViolationException and not LeafMeasureException)

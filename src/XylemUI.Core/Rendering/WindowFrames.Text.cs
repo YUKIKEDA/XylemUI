@@ -11,7 +11,9 @@ internal sealed partial class WindowFrames
 
     // One line of a text leaf with ranges (design §4.8), in SkParagraph's order (src/TextLine.cpp lines 201 to 233): the
     // backgrounds, the text, then the decorations. The line's glyphs are cut where the look's range changes, and for the text and
-    // the decorations also where the font run does, as the decorations take the metrics of their run's font.
+    // the decorations also where the font run does, as the decorations take the metrics of their run's font. The room of an inline
+    // object takes its range's background, as CSS's inline-block does and SkParagraph's placeholder; it draws no glyph, and the
+    // decorations stop at it, as they do at an inline-block (Avalonia draws neither).
     private void DrawRanges(
         TextRanges ranges,
         ShapingResult result,
@@ -43,7 +45,7 @@ internal sealed partial class WindowFrames
             Color ink = Look(ranges, run).Color ?? color;
             if (current is { } open && open != ink)
             {
-                DrawGlyphs(result, glyphs[from..start], x + at, baseline, open);
+                DrawGlyphs(ranges, result, glyphs[from..start], x + at, baseline, open);
                 from = start;
                 at = left;
             }
@@ -53,14 +55,14 @@ internal sealed partial class WindowFrames
 
         if (current is { } last)
         {
-            DrawGlyphs(result, glyphs[from..], x + at, baseline, last);
+            DrawGlyphs(ranges, result, glyphs[from..], x + at, baseline, last);
         }
 
         pieces = new Pieces(glyphs, paint, byFont: true);
         while (pieces.Next(out int start, out int end, out PaintRun run, out float left, out float right))
         {
             SpanStyle look = Look(ranges, run);
-            if (look.Decoration is { Lines: not DecorationLines.None } decoration && right > left)
+            if (look.Decoration is { Lines: not DecorationLines.None } decoration && right > left && !glyphs[start].IsPlaceholder)
             {
                 int font = glyphs[start].Run;
                 float size = result.Styles[font].Size * result.Runs[font].Scale;
@@ -68,6 +70,33 @@ internal sealed partial class WindowFrames
                 DrawDecoration(decoration, result.Runs[font].Font, size, glyphs[start..end], x + left, x + right, baseline, ink);
             }
         }
+    }
+
+    // A glyph run of one color; with inline objects, a run on each side of each one's room, which has no glyph to draw.
+    private void DrawGlyphs(TextRanges ranges, ShapingResult result, ReadOnlySpan<LaidGlyph> glyphs, float x, float baseline, Color color)
+    {
+        if (!ranges.HasInlines)
+        {
+            DrawGlyphs(result, glyphs, x, baseline, color);
+            return;
+        }
+
+        int from = 0;
+        float at = 0;
+        float pen = 0;
+        for (int g = 0; g < glyphs.Length; g++)
+        {
+            if (glyphs[g].IsPlaceholder)
+            {
+                DrawGlyphs(result, glyphs[from..g], x + at, baseline, color);
+                from = g + 1;
+                at = pen + glyphs[g].Advance;
+            }
+
+            pen += glyphs[g].Advance;
+        }
+
+        DrawGlyphs(result, glyphs[from..], x + at, baseline, color);
     }
 
     private void DrawGlyphs(ShapingResult result, ReadOnlySpan<LaidGlyph> glyphs, float x, float baseline, Color color) =>

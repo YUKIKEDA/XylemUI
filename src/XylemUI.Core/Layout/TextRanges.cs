@@ -56,18 +56,41 @@ internal readonly record struct TextLink(PointerHandler OnClick, PointerHandler?
 }
 
 /// <summary>
-/// The ranges of a text leaf (design §4.8): two flat lists that cover its text, the layout's and the look's, and its links. Only a
-/// leaf that a writer gave a range holds one (<see cref="TextLeaf.Ranges"/>); the arrays are kept and grow only when a write needs
-/// more.
+/// An inline object of a text leaf (design §4.8): the child of the text node that takes the room of its U+FFFC, and where it sits
+/// on its line.
+/// </summary>
+/// <remarks>
+/// The handle goes first: it is 16 bytes, aligned to 8, and the position and the alignment then share its last 8 (24 bytes, where
+/// the position first made it 32).
+/// </remarks>
+/// <param name="Child">The child node.</param>
+/// <param name="Position">The code unit of its U+FFFC in the text.</param>
+/// <param name="Alignment">Where it sits on its line.</param>
+internal readonly record struct InlineObject(NodeHandle Child, int Position, PlaceholderAlignment Alignment);
+
+/// <summary>
+/// The room an inline object takes, from the child's last measurement under the text's width (design §4.8): its margin box, and
+/// its first baseline from the margin box's top (NaN when it has none). Under a min-content or a max-content width the child is
+/// measured under the same, so the text's content widths take the child's.
+/// </summary>
+internal readonly record struct InlineBox(float Width, float Height, float Baseline);
+
+/// <summary>
+/// The ranges of a text leaf (design §4.8): two flat lists that cover its text, the layout's and the look's, its links, and its
+/// inline objects. Only a leaf that a writer gave a range or an inline object holds one (<see cref="TextLeaf.Ranges"/>); the arrays
+/// are kept and grow only when a write needs more.
 /// </summary>
 internal sealed class TextRanges
 {
     private LayoutRun[] _layout = new LayoutRun[2];
     private PaintRun[] _paint = new PaintRun[2];
     private TextLink[] _links = [];
+    private InlineObject[] _inlines = [];
+    private InlineBox[] _boxes = [];
     private int _layoutCount;
     private int _paintCount;
     private int _linkCount;
+    private int _inlineCount;
 
     /// <summary>
     /// Gets the ranges of one layout, in order, covering the text.
@@ -83,6 +106,21 @@ internal sealed class TextRanges
     /// Gets the links the look's ranges point to.
     /// </summary>
     public ReadOnlySpan<TextLink> Links => _links.AsSpan(0, _linkCount);
+
+    /// <summary>
+    /// Gets the inline objects, in the order of the text.
+    /// </summary>
+    public ReadOnlySpan<InlineObject> Inlines => _inlines.AsSpan(0, _inlineCount);
+
+    /// <summary>
+    /// Gets the rooms the inline objects take, by the index of <see cref="Inlines"/>, from their last measurement.
+    /// </summary>
+    public Span<InlineBox> Boxes => _boxes.AsSpan(0, _inlineCount);
+
+    /// <summary>
+    /// Gets a value indicating whether the text has an inline object.
+    /// </summary>
+    public bool HasInlines => _inlineCount > 0;
 
     /// <summary>
     /// Gets or sets the link a pointer is over, whose range takes its hovered look; -1 when none is.
@@ -115,6 +153,12 @@ internal sealed class TextRanges
         HoveredLink = before.HoveredLink < _linkCount ? before.HoveredLink : -1;
         HitEntry = before.HitEntry;
         HitBuild = before.HitBuild;
+
+        // The same inline objects keep the rooms they were measured to: the layout stays (TextLeaf.TakeRanges).
+        if (Inlines.SequenceEqual(before.Inlines))
+        {
+            before.Boxes.CopyTo(Boxes);
+        }
     }
 
     /// <summary>
@@ -126,8 +170,45 @@ internal sealed class TextRanges
         _paintCount = 0;
         Array.Clear(_links, 0, _linkCount);
         _linkCount = 0;
+        _inlineCount = 0;
         HoveredLink = -1;
         HitBuild = 0;
+    }
+
+    /// <summary>
+    /// Adds an inline object, its room not measured yet.
+    /// </summary>
+    /// <param name="inline">The object.</param>
+    public void AddInline(in InlineObject inline)
+    {
+        if (_inlineCount == _inlines.Length)
+        {
+            int size = Math.Max(2, _inlineCount * 2);
+            Array.Resize(ref _inlines, size);
+            Array.Resize(ref _boxes, size);
+        }
+
+        _inlines[_inlineCount] = inline;
+        _boxes[_inlineCount] = default;
+        _inlineCount++;
+    }
+
+    /// <summary>
+    /// Returns whether a node is one of the inline objects.
+    /// </summary>
+    /// <param name="child">The node.</param>
+    /// <returns><see langword="true"/> when it is.</returns>
+    public bool HasInline(NodeHandle child)
+    {
+        foreach (InlineObject inline in Inlines)
+        {
+            if (inline.Child == child)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -178,11 +259,11 @@ internal sealed class TextRanges
     }
 
     /// <summary>
-    /// Returns whether the layout's ranges are the same as another's.
+    /// Returns whether the layout's ranges and the inline objects are the same as another's.
     /// </summary>
     /// <param name="other">The other ranges.</param>
     /// <returns><see langword="true"/> when they are.</returns>
-    public bool LayoutEquals(TextRanges other) => Layout.SequenceEqual(other.Layout);
+    public bool LayoutEquals(TextRanges other) => Layout.SequenceEqual(other.Layout) && Inlines.SequenceEqual(other.Inlines);
 
     /// <summary>
     /// Returns whether the look's ranges and the links are the same as another's.
@@ -233,9 +314,19 @@ internal sealed class TextRangeWriter
     public TextRanges Ranges { get; set; } = new();
 
     /// <summary>
-    /// Gets a value indicating whether the write opened a range: a text with none keeps no ranges.
+    /// Gets a value indicating whether the write opened a range or wrote an inline object: a text with neither keeps no ranges.
     /// </summary>
     public bool Used { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the tree of the text node being written, which its inline objects belong to.
+    /// </summary>
+    public UiTree? Tree { get; set; }
+
+    /// <summary>
+    /// Gets or sets the text node being written, which its inline objects become children of.
+    /// </summary>
+    public NodeHandle Owner { get; set; }
 
     /// <summary>
     /// Starts a write.
@@ -265,6 +356,45 @@ internal sealed class TextRangeWriter
         }
 
         _open[_depth++] = (style.Over(outer.Style), link >= 0 ? link : outer.Link);
+        Used = true;
+    }
+
+    /// <summary>
+    /// Adds an inline object at a position (design §4.8): the child the text node takes as its own, which a component made outside
+    /// the write and keeps.
+    /// </summary>
+    /// <param name="at">The position of its U+FFFC: what the writer has written.</param>
+    /// <param name="child">The child.</param>
+    /// <param name="alignment">Where it sits on its line.</param>
+    /// <exception cref="ArgumentException">The child is not an element of the text node's tree.</exception>
+    /// <exception cref="InvalidOperationException">The child was removed, has another parent, or was written already.</exception>
+    public void AddInline(int at, Element child, PlaceholderAlignment alignment)
+    {
+        if (Tree is not { } tree || child.Tree != tree)
+        {
+            throw new ArgumentException("An inline object is an element of the text node's own tree.", nameof(child));
+        }
+
+        NodeHandle node = child.Node;
+        if (!tree.Nodes.IsAlive(node))
+        {
+            throw new InvalidOperationException("An inline object was removed; the scope that made it was disposed.");
+        }
+
+        NodeHandle parent = tree.Nodes.GetRef(node).Parent;
+        if (node == Owner || (!parent.IsNone && parent != Owner))
+        {
+            throw new InvalidOperationException("An inline object has a parent of its own; an element sits in one place of the tree.");
+        }
+
+        // A walk of the inline objects written so far: I objects cost I² / 2 steps, for the few that a line of text holds (an icon,
+        // a badge, a button; tens at most). A text of many would want a set of the nodes written.
+        if (Ranges.HasInline(node))
+        {
+            throw new InvalidOperationException("An inline object was written twice; an element sits in one place of the text.");
+        }
+
+        Ranges.AddInline(new InlineObject(node, at, alignment));
         Used = true;
     }
 

@@ -79,8 +79,20 @@ internal sealed class ShapingResult
     /// <param name="styles">What each run is shaped with besides its font: its size, language, letter spacing, and features.</param>
     /// <param name="shaper">The shaper, of this thread.</param>
     /// <param name="breaker">The line breaker, of this thread.</param>
-    /// <exception cref="ArgumentException">The runs do not cover the text in order, or there is not one style for each run.</exception>
-    public void Shape(ReadOnlySpan<char> text, ReadOnlySpan<FontRun> runs, ReadOnlySpan<RunStyle> styles, TextShaper shaper, LineBreaker breaker)
+    /// <param name="placeholders">The positions of the rooms of inline objects (design §4.8), in order: each is a font run of its own
+    /// of one code unit, which is not shaped but takes one glyph of <see cref="LaidGlyph.Placeholder"/> as wide as its width.</param>
+    /// <param name="widths">The width of each room, in logical pixels.</param>
+    /// <exception cref="ArgumentException">The runs do not cover the text in order, there is not one style for each run, or a room is
+    /// not a font run of its own or has no width.</exception>
+    public void Shape(
+        ReadOnlySpan<char> text,
+        ReadOnlySpan<FontRun> runs,
+        ReadOnlySpan<RunStyle> styles,
+        TextShaper shaper,
+        LineBreaker breaker,
+        ReadOnlySpan<int> placeholders = default,
+        ReadOnlySpan<float> widths = default
+    )
     {
         ArgumentNullException.ThrowIfNull(shaper);
         ArgumentNullException.ThrowIfNull(breaker);
@@ -89,16 +101,21 @@ internal sealed class ShapingResult
             throw new ArgumentException("A font run has no style, or a style no run.", nameof(styles));
         }
 
+        if (widths.Length != placeholders.Length)
+        {
+            throw new ArgumentException("A room of an inline object has no width, or a width no room.", nameof(widths));
+        }
+
         Length = text.Length;
         Ensure(ref _text, text.Length);
         text.CopyTo(_text);
         Ensure(ref _x, text.Length + 1);
         Ensure(ref _glyphAt, text.Length + 1);
-        Array.Fill(_x, 0, 0, text.Length + 1);
         Array.Fill(_glyphAt, -1, 0, text.Length + 1);
         _runCount = 0;
         _glyphCount = 0;
         int covered = 0;
+        int room = 0;
         for (int r = 0; r < runs.Length; r++)
         {
             FontRun run = runs[r];
@@ -109,6 +126,22 @@ internal sealed class ShapingResult
 
             covered += run.Length;
             AddRun(run, styles[r]);
+            if (room < placeholders.Length && placeholders[room] < covered)
+            {
+                if (placeholders[room] != run.Start || run.Length != 1)
+                {
+                    throw new ArgumentException("A room of an inline object is not a font run of its own.", nameof(placeholders));
+                }
+
+                // A line may break on either side of the room, and no line end shapes it again: the glyph after it starts a run of
+                // its own, which HarfBuzz marks safe to break before (there is nothing before it to shape with), so Pass2 finds a
+                // safe position at the room or after it.
+                EnsureGlyphs(_glyphCount + 1);
+                AddGlyph(new LaidGlyph(LaidGlyph.Placeholder, run.Start, widths[room], 0, 0, r), unsafeToBreak: false);
+                room++;
+                continue;
+            }
+
             float scale = _scales[r];
             float spacing = styles[r].LetterSpacing;
             ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, styles[r].Language, styles[r].Features);
@@ -126,22 +159,28 @@ internal sealed class ShapingResult
             throw new ArgumentException("The font runs do not cover the text in order.", nameof(runs));
         }
 
-        // The advance of each cluster goes to its first code unit; the running sum puts every code unit at the left of the next
-        // cluster after it, so the width of a range between clusters is one subtraction.
-        for (int g = 0; g < _glyphCount; g++)
-        {
-            _x[_glyphs[g].Cluster + 1] += _glyphs[g].Advance;
-        }
-
-        for (int i = 1; i <= text.Length; i++)
-        {
-            _x[i] += _x[i - 1];
-        }
-
+        SumAdvances();
         ReadOnlySpan<LineBreakOpportunity> breaks = breaker.Find(text);
         Ensure(ref _breaks, breaks.Length);
         breaks.CopyTo(_breaks);
         _breakCount = breaks.Length;
+    }
+
+    /// <summary>
+    /// Gives the rooms of inline objects new widths, without shaping the text again (design §4.8: a child's size changed, its text
+    /// did not). Lines broken before are of the old widths.
+    /// </summary>
+    /// <param name="placeholders">The positions of the rooms, as <see cref="Shape"/> was given them.</param>
+    /// <param name="widths">The new width of each room, in logical pixels.</param>
+    public void SetPlaceholderWidths(ReadOnlySpan<int> placeholders, ReadOnlySpan<float> widths)
+    {
+        for (int i = 0; i < placeholders.Length; i++)
+        {
+            int g = _glyphAt[placeholders[i]];
+            _glyphs[g] = _glyphs[g] with { Advance = widths[i] };
+        }
+
+        SumAdvances();
     }
 
     /// <summary>
@@ -539,6 +578,22 @@ internal sealed class ShapingResult
         }
 
         return 0;
+    }
+
+    // The advance of each cluster goes to its first code unit; the running sum puts every code unit at the left of the next cluster
+    // after it, so the width of a range between clusters is one subtraction.
+    private void SumAdvances()
+    {
+        Array.Fill(_x, 0, 0, Length + 1);
+        for (int g = 0; g < _glyphCount; g++)
+        {
+            _x[_glyphs[g].Cluster + 1] += _glyphs[g].Advance;
+        }
+
+        for (int i = 1; i <= Length; i++)
+        {
+            _x[i] += _x[i - 1];
+        }
     }
 
     private void AddRun(in FontRun run, in RunStyle style)

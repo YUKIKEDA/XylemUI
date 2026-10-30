@@ -122,6 +122,16 @@ public static class Elements
         Element text = TextLeaf();
         UiTree tree = text.Tree!;
         NodeHandle node = text.Node;
+
+        // The inline objects belong to the scopes that made them: the node lets go of them before it goes away, which runs before
+        // its removal (a scope's cleanups run newest first), so that the removal of its subtree does not free them (design §4.8).
+        Scope.OnCleanup(() =>
+        {
+            if (tree.Nodes.IsAlive(node) && !tree.Nodes.GetRef(node).FirstChild.IsNone)
+            {
+                DetachInlines(tree, node);
+            }
+        });
         _ = Effect.Create(() =>
         {
             if (!tree.Nodes.IsAlive(node) || tree.Nodes.GetRef(node).Text is not { } leaf)
@@ -132,6 +142,8 @@ public static class Elements
             // The tree of a text leaf has text tools (CreateTextNode).
             TextContext context = tree.Text!;
             char[] buffer = context.RentSpare(out bool shared, out TextRangeWriter ranges);
+            ranges.Tree = tree;
+            ranges.Owner = node;
             char[]? released = buffer;
             try
             {
@@ -145,6 +157,11 @@ public static class Elements
                 if (look)
                 {
                     tree.CountLinkLeaf(hadLinks, leaf.Ranges?.HasLinks == true);
+                }
+
+                if (layout)
+                {
+                    TakeInlines(tree, node, leaf.Ranges);
                 }
 
                 // A change of the text or of the layout's ranges lays the leaf out again; a change of the look's only draws it again.
@@ -229,6 +246,48 @@ public static class Elements
                 tree.Remove(node);
             }
         });
+
+    // Makes the inline objects of a text's ranges the children of its node, in the order of the text (design §4.8). The children
+    // the write left out are let go of, alive: their scopes remove them. A write with the same children changes nothing.
+    private static void TakeInlines(UiTree tree, NodeHandle node, TextRanges? ranges)
+    {
+        ReadOnlySpan<InlineObject> inlines = ranges is { } r ? r.Inlines : default;
+        NodeHandle child = tree.Nodes.GetRef(node).FirstChild;
+        int same = 0;
+        while (same < inlines.Length && !child.IsNone && inlines[same].Child == child)
+        {
+            child = tree.Nodes.GetRef(child).NextSibling;
+            same++;
+        }
+
+        if (same == inlines.Length && child.IsNone)
+        {
+            return;
+        }
+
+        DetachInlines(tree, node, ranges);
+        NodeHandle previous = default;
+        foreach (InlineObject inline in inlines)
+        {
+            tree.InsertAfter(node, previous, inline.Child);
+            previous = inline.Child;
+        }
+    }
+
+    // Lets go of a text node's children, alive; one that the ranges do not keep loses the focus first, as a node taken out of the
+    // tree does (design §7, "Removed, hidden, or disabled").
+    private static void DetachInlines(UiTree tree, NodeHandle node, TextRanges? keep = null)
+    {
+        for (NodeHandle child = tree.Nodes.GetRef(node).FirstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
+        {
+            if (keep?.HasInline(child) != true)
+            {
+                tree.Focus.Lose(child);
+            }
+        }
+
+        tree.DetachChildren(node);
+    }
 
     private static Element TextLeaf()
     {

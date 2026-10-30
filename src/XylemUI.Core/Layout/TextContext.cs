@@ -64,6 +64,16 @@ internal sealed class TextContext : IDisposable
     /// </summary>
     public List<RunStyle> RunStyles { get; } = [];
 
+    /// <summary>
+    /// Gets the list of the positions of a text's inline objects as it is shaped, reused for every leaf (design §4.8).
+    /// </summary>
+    public List<int> Rooms { get; } = [];
+
+    /// <summary>
+    /// Gets the list of the widths of a text's inline objects, by the index of <see cref="Rooms"/>.
+    /// </summary>
+    public List<float> RoomWidths { get; } = [];
+
 #if DEBUG
     /// <summary>
     /// Gets the entry Debug builds break a leaf's text into to check its content widths, apart from the leaf's cache.
