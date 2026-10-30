@@ -286,6 +286,20 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Gives the node an ID that the tests find it by (<c>XylemUI.Testing</c>'s <c>Find</c>, design §12.5, "The keys"). Only the nodes
+    /// given one hold it, and it goes when the node is removed.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="id">The ID; it replaces the one the node had.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element TestId(this Element element, string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        element.TreeOrThrow().SetTestId(element.Node, id);
+        return element;
+    }
+
+    /// <summary>
     /// Sets the cursor over the node and its descendants that set none.
     /// </summary>
     /// <param name="element">The node.</param>

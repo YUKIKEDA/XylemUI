@@ -57,6 +57,10 @@ internal sealed class UiTree
     // The scroll states attached to nodes (design §3.4.1): few nodes scroll, so they are kept apart from UiNode.
     private readonly Dictionary<NodeHandle, ScrollState> _scrollStates = [];
 
+    // The test IDs that XylemUI.Testing finds nodes by (design §12.5, "The keys"): only the nodes given one are in it, so a node with
+    // none costs nothing, and removing a node takes its ID with it.
+    private readonly Dictionary<NodeHandle, string> _testIds = [];
+
     /// <summary>
     /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
     /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); <see langword="null"/> until it does,
@@ -72,6 +76,30 @@ internal sealed class UiTree
     /// <returns>The state.</returns>
     internal ScrollState? ScrollStateOf(NodeHandle node) =>
         _scrollStates.Count > 0 && _scrollStates.TryGetValue(node, out ScrollState? state) ? state : null;
+
+    /// <summary>
+    /// Gets the number of nodes that have a test ID.
+    /// </summary>
+    internal int TestIdCount => _testIds.Count;
+
+    /// <summary>
+    /// Gives a node a test ID, replacing the one it had (design §12.5, "The keys").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="id">The ID.</param>
+    internal void SetTestId(NodeHandle node, string id)
+    {
+        // A stale handle throws here, as the other setters' InputOf does.
+        _ = Nodes.GetRef(node);
+        _testIds[node] = id;
+    }
+
+    /// <summary>
+    /// Returns the test ID of a node, or <see langword="null"/> when it has none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The ID.</returns>
+    internal string? TestIdOf(NodeHandle node) => _testIds.Count > 0 && _testIds.TryGetValue(node, out string? id) ? id : null;
 
     /// <summary>
     /// Returns the scroll state attached to a node, attaching a new one when it has none: the wheel scrolls a scroll container
@@ -1456,6 +1484,11 @@ internal sealed class UiTree
         if (_focusSignals.Count > 0)
         {
             _ = _focusSignals.Remove(node);
+        }
+
+        if (_testIds.Count > 0)
+        {
+            _ = _testIds.Remove(node);
         }
 
         if (ForContainers.Count > 0)

@@ -4,13 +4,15 @@ namespace XylemUI;
 /// Resumes <c>await</c> continuations on the UI thread through the <see cref="UiDispatcher"/> queue (design §2.12).
 /// </summary>
 /// <param name="dispatcher">The UI thread's queue.</param>
-internal sealed class UiSynchronizationContext(UiDispatcher dispatcher) : SynchronizationContext
+/// <param name="batched">Whether each continuation runs in a batch of its own, as in an app; <see langword="false"/> for the headless
+/// tests' UI thread (<see cref="UiDispatcher.UnbatchedSynchronizationContext"/>).</param>
+internal sealed class UiSynchronizationContext(UiDispatcher dispatcher, bool batched = true) : SynchronizationContext
 {
     /// <inheritdoc />
     public override void Post(SendOrPostCallback d, object? state)
     {
         ArgumentNullException.ThrowIfNull(d);
-        dispatcher.PostCallback(d, state);
+        dispatcher.PostCallback(d, state, batched);
     }
 
     /// <summary>
@@ -50,7 +52,8 @@ internal sealed class UiSynchronizationContext(UiDispatcher dispatcher) : Synchr
                     done.Set();
                 }
             },
-            null
+            null,
+            batched
         );
         done.Wait();
         if (error is not null)

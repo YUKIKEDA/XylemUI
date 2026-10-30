@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XylemUI.Testing</RootNamespace>
+    <Description>The headless test harness of XylemUI: an app host with no OS window, a virtual clock, input injection, tree search, and the Zero-Alloc assertion (design §12).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The tests of the harness set the background-GC count that PerformanceAssert reads, to make a window overlap one. -->
+    <InternalsVisibleTo Include="XylemUI.Testing.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The test font (design §12.3, "Fonts"): a Noto Sans JP subset under the OFL, so that text is measured the same on every OS. -->
+    <EmbeddedResource Include="Fonts\XylemUITestSans.ttf" LogicalName="XylemUITestSans.ttf" />
+    <None Include="Fonts\OFL.txt" Pack="true" PackagePath="Fonts\" />
+  </ItemGroup>
+</Project>

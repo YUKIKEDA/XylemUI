@@ -13,7 +13,10 @@ namespace XylemUI.Text;
 /// </remarks>
 public sealed unsafe class TextShaper : IDisposable
 {
-    private nint _buffer = HarfBuzz.BufferCreate();
+    // Made by the first Shape, so that a tree with no text runs where HarfBuzz is not built (a headless app on Linux and macOS
+    // until rows P04 and P06, design §12.3).
+    private nint _buffer;
+    private bool _disposed;
     private ShapedGlyph[] _glyphs = new ShapedGlyph[64];
     private char[] _scratch = [];
     private HarfBuzz.Feature[] _features = [];
@@ -88,11 +91,16 @@ public sealed unsafe class TextShaper : IDisposable
             throw new ArgumentException("The language is the default value; use TextLanguage.FromTag.", nameof(language));
         }
 
-        ObjectDisposedException.ThrowIf(_buffer == 0, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         nint harfBuzzFont = font.HarfBuzzFont;
         if (length == 0)
         {
             return [];
+        }
+
+        if (_buffer == 0)
+        {
+            _buffer = HarfBuzz.BufferCreate();
         }
 
         HarfBuzz.BufferClearContents(_buffer);
@@ -141,6 +149,7 @@ public sealed unsafe class TextShaper : IDisposable
     /// </summary>
     public void Dispose()
     {
+        _disposed = true;
         if (_buffer != 0)
         {
             HarfBuzz.BufferDestroy(_buffer);
