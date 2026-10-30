@@ -56,3 +56,12 @@ jobs:
 
       - name: Gate
         run: ./build.ps1
+
+      # The dump that build.ps1 writes when the Desktop tests hang (row Q5).
+      - uses: actions/upload-artifact@v7
+        if: failure() && runner.os == 'Windows'
+        with:
+          name: hangdump-${{ github.run_attempt }}
+          path: artifacts/hangdump
+          if-no-files-found: ignore
+          retention-days: 14

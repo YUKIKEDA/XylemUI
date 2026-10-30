@@ -43,6 +43,13 @@ foreach ($configuration in "Release", "Debug") {
         # once on the Windows runner until the job's 30-minute limit, and the log named none). xUnit's long-running notices do not
         # reach this output. The text tests, 21,000 and more, stay quiet.
         [string[]]$output = $project.BaseName -eq 'XylemUI.Text.Tests' ? @() : @('--output', 'Detailed')
+
+        # The Desktop tests stopped on the Windows runner until the job's 30-minute limit, four times by PR #426, with no stack
+        # (row Q5). A run that passes takes well under a minute; after 5 minutes the hang dump names the tests still running, writes
+        # a dump of the process with its heap, and ends the run. The CI uploads the dump.
+        if ($project.BaseName -eq 'XylemUI.Desktop.Tests') {
+            $output += @('--hangdump', '--hangdump-timeout', '5m', '--hangdump-type', 'Heap', '--results-directory', (Join-Path $PSScriptRoot 'artifacts' 'hangdump'))
+        }
         Invoke-Step "Test $($project.BaseName) ($configuration)" { dotnet test --project $project.FullName --no-build -c $configuration @output }
     }
 }
