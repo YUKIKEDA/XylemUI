@@ -29,6 +29,8 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 - StyleCop.Analyzers and the .NET analyzers at `latest-recommended` run in every build. `EnforceCodeStyleInBuild` is on.
 - Do not use an alignment in an interpolated string (`{x,5}`): CSharpier writes it `{x, 5}`, which StyleCop's SA1001 refuses. Pad with `PadLeft` instead (T1a, PR #285).
 
+A file found from the caller's source path is found another way: under `ContinuousIntegrationBuild` with `Deterministic` (`Directory.Build.props`), the SDK maps source paths to `/_/`, so in CI `[CallerFilePath]` names no file on disk. Set the path from MSBuild instead (an `AssemblyMetadata` attribute); P02a2's design first found the goldens with `[CallerFilePath]`, and the review caught it (PR #465).
+
 ## Gate
 
 `./build.ps1` before a PR. It runs tool restore, the CSharpier check, the native libraries (`vendor/build.ps1`: HarfBuzz from the source pinned in `vendor/versions.lock`, with CMake and MSVC; it does nothing when the library is up to date), restore, then for Release and for Debug a build and every test project. Release is what ships; Debug runs the checks that only exist there (`Invariant.Fail` throws instead of ending the process). Hosted CI runs the same script.
