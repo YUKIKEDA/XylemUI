@@ -82,8 +82,13 @@ internal static class Frames
                 t2 = Stopwatch.GetTimestamp();
                 scene.Renderer.Present();
                 t3 = Stopwatch.GetTimestamp();
+            }
 
-                // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11, I1c).
+            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11,
+            // I1c). The tree's frames tell a scheduler of their own (TreeScene's NoScheduler), not this loop's, so they are told here
+            // too, when the frame presented.
+            if (treeScene is null || treeScene.Target.PresentEnd >= t0)
+            {
                 Win32MessageLoop.FrameScheduler.FramePresented();
             }
 

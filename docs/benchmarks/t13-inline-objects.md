@@ -62,7 +62,7 @@ cmd /c "start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe resize-text 51
 
 ### 入力（`input`）とフレーム（`frames`、`frames --tree`、ウィンドウあり、600 フレーム）
 
-> この節の `frames` の値は、62.5 Hz のタイマーの時計で測った（Issue #445、`docs/benchmarks/q2-frames-clock.md`）。基点との比べは成り立つが、CPU のフレームの約 16.5 ms は、Present が止まっていた時間を含む。
+> この節の `frames` と `frames --tree` の値は、62.5 Hz のタイマーの時計で測った（Issue #445、`docs/benchmarks/q2-frames-clock.md`）。基点との比べは成り立つが、CPU のフレームの約 16.5 ms は、Present が止まっていた時間を含む。
 
 | 指標 | 基点 | T13 |
 | --- | --- | --- |
