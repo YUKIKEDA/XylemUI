@@ -27,6 +27,11 @@ internal sealed class NodeInput
     public FocusHandlerEntry[] FocusHandlers { get; private set; } = [];
 
     /// <summary>
+    /// Gets the text input handlers, in the order they were added.
+    /// </summary>
+    public TextHandlerEntry[] TextHandlers { get; private set; } = [];
+
+    /// <summary>
     /// Gets or sets the cursor over the node and its descendants that set none; <see langword="null"/> for none.
     /// </summary>
     public CursorKind? Cursor { get; internal set; }
@@ -42,6 +47,13 @@ internal sealed class NodeInput
     /// <see cref="ElementExtensions.Focus"/>, while neither it nor an ancestor is hidden (design §7, "Keys and the focus").
     /// </summary>
     public bool Focusable { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a press on the node, or on a descendant with no node that takes the focus between them,
+    /// leaves the focus where it is, even when the node takes the focus itself (design §4.9, "A press that keeps the focus"; zed's
+    /// button).
+    /// </summary>
+    public bool KeepsFocusOnPress { get; internal set; }
 
     /// <summary>
     /// Gets or sets the node's place in the order of Tab (design §7.1): a smaller index comes first, and the nodes of the same index
@@ -89,6 +101,12 @@ internal sealed class NodeInput
     /// </summary>
     /// <param name="entry">The handler, with its kind, phase, and scope.</param>
     internal void Add(in FocusHandlerEntry entry) => FocusHandlers = Added(FocusHandlers, entry);
+
+    /// <summary>
+    /// Adds a text input handler.
+    /// </summary>
+    /// <param name="entry">The handler, with its phase and scope.</param>
+    internal void Add(in TextHandlerEntry entry) => TextHandlers = Added(TextHandlers, entry);
 
     /// <summary>
     /// Removes the first pointer handler of the kind and the phase with the same delegate.
@@ -153,6 +171,26 @@ internal sealed class NodeInput
         return false;
     }
 
+    /// <summary>
+    /// Removes the first text input handler of the phase with the same delegate.
+    /// </summary>
+    /// <param name="phase">The phase the handler runs in.</param>
+    /// <param name="handler">The delegate.</param>
+    /// <returns>Whether there was such a handler.</returns>
+    internal bool Remove(EventPhase phase, TextInputHandler handler)
+    {
+        for (int i = 0; i < TextHandlers.Length; i++)
+        {
+            if (TextHandlers[i].Phase == phase && TextHandlers[i].Handler == handler)
+            {
+                TextHandlers = Removed(TextHandlers, i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static T[] Added<T>(T[] entries, in T entry)
     {
         var added = new T[entries.Length + 1];
@@ -197,3 +235,11 @@ internal readonly record struct KeyHandlerEntry(KeyEventKind Kind, EventPhase Ph
 /// <param name="Handler">The handler.</param>
 /// <param name="Scope">The scope the handler runs in, as <see cref="HandlerEntry.Scope"/>.</param>
 internal readonly record struct FocusHandlerEntry(FocusEventKind Kind, EventPhase Phase, FocusHandler Handler, ScopeRef Scope);
+
+/// <summary>
+/// A text input handler of a node: the phase it is called in.
+/// </summary>
+/// <param name="Phase">The phase of the route.</param>
+/// <param name="Handler">The handler.</param>
+/// <param name="Scope">The scope the handler runs in, as <see cref="HandlerEntry.Scope"/>.</param>
+internal readonly record struct TextHandlerEntry(EventPhase Phase, TextInputHandler Handler, ScopeRef Scope);

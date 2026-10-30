@@ -95,8 +95,8 @@ public sealed class HeadlessPointer
 
 /// <summary>
 /// The keyboard of a <see cref="HeadlessApp"/>: it sends keys into the window's input as the OS's key messages do (design §12.4),
-/// so they go to the focused node with capture and bubbling. Each call runs the UI queue after the input. Typing text is row P02b's
-/// (<c>TextInputEvent</c>).
+/// so they go to the focused node with capture and bubbling. Each call runs the UI queue after the input. <see cref="Type"/> sends
+/// text as the OS's <c>WM_CHAR</c> does (design §4.9).
 /// </summary>
 public sealed class HeadlessKeyboard
 {
@@ -137,6 +137,31 @@ public sealed class HeadlessKeyboard
     /// <param name="modifiers">The modifier keys held.</param>
     /// <returns><see langword="true"/> when a handler handled it.</returns>
     public bool Up(Key key, KeyModifiers modifiers = KeyModifiers.None) => Send(KeyEventKind.Up, key, modifiers, isRepeat: false);
+
+    /// <summary>
+    /// Types text: one <see cref="TextInputEvent"/> for each code point, as Windows sends one <c>WM_CHAR</c> for each character and
+    /// the platform joins a surrogate pair (design §4.9, "Text input on Windows"). Control characters are not text and are not sent.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns><see langword="true"/> when a handler stopped every code point sent.</returns>
+    public bool Type(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        _app.VerifyRunning();
+        bool handled = true;
+        foreach (Rune rune in text.EnumerateRunes())
+        {
+            if (rune.Value is < 0x20 or 0x7F)
+            {
+                continue;
+            }
+
+            handled &= _app.Input.Handle(new TextInput(rune.ToString(), _app.Time.Elapsed));
+            _ = _app.DrainQueue();
+        }
+
+        return handled;
+    }
 
     private bool Send(KeyEventKind kind, Key key, KeyModifiers modifiers, bool isRepeat)
     {

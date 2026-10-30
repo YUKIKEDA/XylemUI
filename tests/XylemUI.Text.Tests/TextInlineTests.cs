@@ -568,6 +568,57 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// The layout writes each line's top and height, the lines above stacked, and the line at a height is found from them: a line that
+    /// an inline object makes taller moves the tops of the lines below it (design §4.9, "The lines' tops").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn", a hard break, a box 10 x 40 inline, a hard break, and "nn": three lines, the middle one 40 + the descent high.
+    ///
+    /// Steps:
+    /// - Mount; find the line at 1, at the first line's height + 1, and at the first two lines' heights + 1.
+    ///
+    /// Expected:
+    /// - Lines 0, 1, and 2, with tops 0, 20.272, and 20.272 + 40 + the descent, and heights 20.272, 40 + the descent, and 20.272.
+    /// </remarks>
+    [Fact]
+    public void LineAt_LinesOfOtherHeights_FindsEachFromTheTopsTheLayoutWrote() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element text = default;
+            scene.Mount(() =>
+            {
+                Element box = Elements.Box().Width(10).Height(40);
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn\n".AsSpan());
+                        w.Inline(box);
+                        w.Write("\nnn".AsSpan());
+                    }
+                );
+                return Elements.Row(text);
+            });
+
+            TextLeaf leaf = scene.Leaf(text);
+            float tall = 40 + Descent;
+            (int Line, float Top, float Height) At(float y) => (TextCaret.LineAt(leaf, y, out float top, out float height), top, height);
+
+            (int line, float top, float height) = At(1);
+            Assert.Equal((0, 0f), (line, top));
+            Assert.Equal(Line, height, 3);
+            (line, top, height) = At(Line + 1);
+            Assert.Equal(1, line);
+            Assert.Equal(Line, top, 3);
+            Assert.Equal(tall, height, 3);
+            (line, top, height) = At(Line + tall + 1);
+            Assert.Equal(2, line);
+            Assert.Equal(Line + tall, top, 3);
+            Assert.Equal(Line, height, 3);
+        });
+
+    /// <summary>
     /// A child that a write leaves out loses the focus, as a node taken out of the tree does.
     /// </summary>
     /// <remarks>

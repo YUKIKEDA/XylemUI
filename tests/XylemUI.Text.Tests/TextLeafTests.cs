@@ -355,7 +355,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     ///
     /// Expected:
     /// - n = g = 8 and r = L = e = 1 (the formula's terms, read from the leaf); the bytes are at most the formula for its
-    ///   counts (10n + 8 + 25g + 8b + 56r, 64L + 24g a width, 2n of text) plus 15 array headers and 7 object headers.
+    ///   counts (10n + 8 + 25g + 8b + 56r, 72L + 24g a width, 2n of text) plus 15 array headers and 7 object headers.
     /// </remarks>
     [Fact]
     public void FirstMeasurement_AllocatesNoMoreThanTheFormula() =>
@@ -394,7 +394,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             int lines = cache[cache.Committed].Layout.Lines.Length;
             int e = cache.Count;
             Assert.Equal((8, 8, 1, 1, 1), (n, g, r, lines, e));
-            long formula = (10 * n) + 8 + (25 * g) + (8 * b) + (56 * r) + (e * ((64 * lines) + (24 * g))) + (2 * n);
+            long formula = (10 * n) + 8 + (25 * g) + (8 * b) + (56 * r) + (e * ((72 * lines) + (24 * g))) + (2 * n);
             Assert.InRange(allocated, formula, formula + (15 * 32) + (7 * 64));
         });
 

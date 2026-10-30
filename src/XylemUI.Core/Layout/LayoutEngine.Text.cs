@@ -368,8 +368,10 @@ internal static partial class LayoutEngine
         float width = 0;
         float height = 0;
         float firstBaseline = float.NaN;
-        foreach (LaidLine line in entry.Layout.Lines)
+        ReadOnlySpan<LaidLine> lines = entry.Layout.Lines;
+        for (int i = 0; i < lines.Length; i++)
         {
+            LaidLine line = lines[i];
             width = MathF.Max(width, line.Width);
             (float lineHeight, float baseline) = rooms is null
                 ? Line(LineMetricsOf(result, line.Span), style)
@@ -379,6 +381,9 @@ internal static partial class LayoutEngine
                 firstBaseline = height + baseline;
             }
 
+            // The caret and the selection find a line by its top (design §4.9, "The lines' tops"); a change of an inline object's
+            // room drops the entry, so the tops are written again with the heights.
+            entry.Layout.Place(i, height, lineHeight);
             height += lineHeight;
         }
 

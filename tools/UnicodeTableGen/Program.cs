@@ -3,7 +3,8 @@
 //
 //   dotnet run --project tools/UnicodeTableGen -c Release
 //
-// Writes src/XylemUI.Text/Unicode/UnicodeData.g.cs and copies the conformance tests (GraphemeBreakTest.txt, LineBreakTest.txt)
+// Writes src/XylemUI.Text/Unicode/UnicodeData.g.cs and copies the conformance tests (GraphemeBreakTest.txt, LineBreakTest.txt,
+// WordBreakTest.txt)
 // to tests/XylemUI.Text.Tests/Unicode/. Run `dotnet csharpier format src/XylemUI.Text/Unicode` after it. The output is committed;
 // the gate does not run this tool.
 using System.Diagnostics;
@@ -36,6 +37,28 @@ string[] graphemeNames =
     "LV",
     "LVT",
 ];
+string[] wordNames =
+[
+    "Other",
+    "CR",
+    "LF",
+    "Newline",
+    "Extend",
+    "ZWJ",
+    "Regional_Indicator",
+    "Format",
+    "Katakana",
+    "Hebrew_Letter",
+    "ALetter",
+    "Single_Quote",
+    "Double_Quote",
+    "MidNumLet",
+    "MidLetter",
+    "MidNum",
+    "Numeric",
+    "ExtendNumLet",
+    "WSegSpace",
+];
 string[] indicNames = ["None", "Linker", "Consonant", "Extend"];
 string[] categoryNames = ["Other", "Pi", "Pf", "Mn", "Mc", "Cn"];
 if (lineBreakNames.Count > 64)
@@ -50,9 +73,11 @@ bool[] pictographic = new bool[CodePoints];
 bool[] eastAsian = new bool[CodePoints];
 byte[] indic = new byte[CodePoints];
 byte[] category = new byte[CodePoints];
+byte[] word = new byte[CodePoints];
 
 Fill(Read(zip, "LineBreak.txt"), null, value => (byte)IndexOf(lineBreakNames, value), lineBreak);
 Fill(Read(zip, "auxiliary/GraphemeBreakProperty.txt"), null, value => (byte)IndexOf(graphemeNames, value), grapheme);
+Fill(Read(zip, "auxiliary/WordBreakProperty.txt"), null, value => (byte)IndexOf(wordNames, value), word);
 FillFlag(Read(zip, "emoji/emoji-data.txt"), "Extended_Pictographic", pictographic);
 var eastAsianValues = new byte[CodePoints];
 Fill(Read(zip, "EastAsianWidth.txt"), null, value => value is "F" or "W" or "H" ? (byte)1 : (byte)0, eastAsianValues);
@@ -70,7 +95,7 @@ Fill(
 );
 
 // One 32-bit value a code point: the line break class (6 bits), the grapheme cluster break (4), Extended_Pictographic (1), an East
-// Asian width of F, W, or H (1), Indic_Conjunct_Break (2), and the general categories the rules read (3).
+// Asian width of F, W, or H (1), Indic_Conjunct_Break (2), the general categories the rules read (3), and the word break (5).
 uint[] values = new uint[CodePoints];
 for (int c = 0; c < CodePoints; c++)
 {
@@ -80,10 +105,11 @@ for (int c = 0; c < CodePoints; c++)
         | (pictographic[c] ? 1u << 10 : 0)
         | (eastAsian[c] ? 1u << 11 : 0)
         | ((uint)indic[c] << 12)
-        | ((uint)category[c] << 14);
+        | ((uint)category[c] << 14)
+        | ((uint)word[c] << 17);
 }
 
-// The distinct values are few (112 in Unicode 18.0.0): the second stage holds a byte, the index of a value in a palette.
+// The distinct values are few (150 in Unicode 18.0.0, with the word breaks): the second stage holds a byte, the index of a value in a palette.
 uint[] palette = [.. values.Distinct().Order()];
 if (palette.Length > 256)
 {
@@ -120,12 +146,15 @@ for (int shift = 4; shift <= 10; shift++)
 Console.WriteLine($"chosen: shift {best.Shift}, {best.Bytes:N0} bytes (the smallest)");
 string output = Path.Combine(root, "src", "XylemUI.Text", "Unicode", "UnicodeData.g.cs");
 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-File.WriteAllText(output, Emit(version, best.Shift, best.Stage1, best.Stage2, palette, lineBreakNames, graphemeNames, indicNames, categoryNames));
+File.WriteAllText(
+    output,
+    Emit(version, best.Shift, best.Stage1, best.Stage2, palette, lineBreakNames, graphemeNames, indicNames, categoryNames, wordNames)
+);
 Console.WriteLine($"wrote {output}");
 
 string tests = Path.Combine(root, "tests", "XylemUI.Text.Tests", "Unicode");
 Directory.CreateDirectory(tests);
-foreach (string name in new[] { "GraphemeBreakTest.txt", "LineBreakTest.txt" })
+foreach (string name in new[] { "GraphemeBreakTest.txt", "LineBreakTest.txt", "WordBreakTest.txt" })
 {
     File.WriteAllText(Path.Combine(tests, name), Read(zip, "auxiliary/" + name));
     Console.WriteLine($"copied {name}");
@@ -368,7 +397,8 @@ static string Emit(
     List<string> lineBreakNames,
     string[] graphemeNames,
     string[] indicNames,
-    string[] categoryNames
+    string[] categoryNames,
+    string[] wordNames
 )
 {
     var text = new StringBuilder();
@@ -402,6 +432,7 @@ static string Emit(
     AppendEnum(text, "GraphemeClusterBreak", graphemeNames);
     AppendEnum(text, "IndicConjunctBreak", indicNames);
     AppendEnum(text, "CategoryOfInterest", categoryNames);
+    AppendEnum(text, "WordBreak", wordNames);
     return text.ToString();
 }
 

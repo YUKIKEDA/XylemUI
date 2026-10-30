@@ -50,6 +50,17 @@ internal sealed class UiTree
     /// </summary>
     internal AnimationClock Animations { get; }
 
+    /// <summary>
+    /// Gets or sets the clipboard a text field copies to and pastes from (design §4.9, "The clipboard"); <see langword="null"/> for a
+    /// tree no host gave one, where copying and pasting do nothing.
+    /// </summary>
+    internal IClipboardBackend? Clipboard { get; set; }
+
+    /// <summary>
+    /// Gets the OS's settings text fields draw their caret and selection with (design §4.9).
+    /// </summary>
+    internal TextEditingSettings TextEditing { get; private set; } = TextEditingSettings.Default;
+
     // The signals of IsFocused, made the first time a node's is asked for (design §7, "Element.Focus() and IsFocused()"): few nodes
     // read theirs, so they are kept apart from UiNode, as the scroll states.
     private readonly Dictionary<NodeHandle, Signal<bool>> _focusSignals = [];
@@ -777,6 +788,55 @@ internal sealed class UiTree
         ArgumentNullException.ThrowIfNull(handler);
         return Nodes.GetRef(node).Input is { } input && input.Remove(kind, phase, handler);
     }
+
+    /// <summary>
+    /// Adds a text input handler to a node (design §4.9, "Text input on Windows"). The node writes no hit region for it.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    public void AddTextHandler(NodeHandle node, EventPhase phase, TextInputHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        InputOf(node).Add(new TextHandlerEntry(phase, handler, Scope.CurrentRef));
+    }
+
+    /// <summary>
+    /// Removes the first text input handler of a node added with the same phase and delegate.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    /// <returns>Whether a handler was removed.</returns>
+    public bool RemoveTextHandler(NodeHandle node, EventPhase phase, TextInputHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return Nodes.GetRef(node).Input is { } input && input.Remove(phase, handler);
+    }
+
+    /// <summary>
+    /// Sets the OS's settings text fields draw with, from the host; a change draws the tree again, so that every field takes it.
+    /// </summary>
+    /// <param name="settings">The settings.</param>
+    internal void SetTextEditing(TextEditingSettings settings)
+    {
+        if (TextEditing != settings)
+        {
+            TextEditing = settings;
+            if (!Root.IsNone && Nodes.IsAlive(Root))
+            {
+                Invalidation.Invalidate(this, Root, ChangeKind.Color);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets whether a press on a node, or on a descendant with no node that takes the focus between them, leaves the focus where it
+    /// is (design §4.9, "A press that keeps the focus").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="keeps">Whether the press keeps the focus.</param>
+    public void SetKeepsFocusOnPress(NodeHandle node, bool keeps) => InputOf(node).KeepsFocusOnPress = keeps;
 
     /// <summary>
     /// Adds a focus handler to a node (design §7, "Keys and the focus"). The node writes no hit region for it.

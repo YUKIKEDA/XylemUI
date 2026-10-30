@@ -179,13 +179,20 @@ internal sealed class FocusManager
 
     /// <summary>
     /// Gives the focus to the first node that can take it from a pressed node up to the root, before the press is routed (design
-    /// §7, "Focus on a press"). A press where no node can take it leaves the focus.
+    /// §7, "Focus on a press"). A press where no node can take it leaves the focus, and so does one that reaches a node that keeps the
+    /// focus on a press before a node that can take it, that node itself included: a focusable button with the mark does not take the
+    /// focus (design §4.9, "A press that keeps the focus").
     /// </summary>
     /// <param name="pressed">The node the press is routed from.</param>
     public void FocusFromPress(NodeHandle pressed)
     {
         for (NodeHandle node = pressed; !node.IsNone; node = Tree.Nodes.GetRef(node).Parent)
         {
+            if (Tree.Nodes.GetRef(node).Input is { KeepsFocusOnPress: true })
+            {
+                return;
+            }
+
             if (CanFocus(node))
             {
                 Request(node);

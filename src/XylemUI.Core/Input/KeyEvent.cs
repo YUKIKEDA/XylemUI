@@ -30,6 +30,7 @@ public readonly struct KeyEvent
         Modifiers = source.Modifiers;
         IsRepeat = source.IsRepeat;
         Timestamp = source.Timestamp;
+        PrefersCharacter = source.PrefersCharacter;
     }
 
     /// <summary>
@@ -59,9 +60,16 @@ public readonly struct KeyEvent
 
     /// <summary>
     /// Gets the character the key types with the modifiers held; <see langword="default"/> for a key that types none, a dead key,
-    /// and a control character (Control+A). It is not text input: an IME's text and a dead key's character come with row P02.
+    /// and a control character (Control+A). It is not text input: the text comes as a <see cref="TextInputEvent"/> (design §4.9).
     /// </summary>
     public Rune KeyChar { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the key types another character with its modifiers than without them, or is a dead key: AltGr
+    /// on Windows comes as Control and Alt (design §4.9, "Text input on Windows"). A text field does not take such a key as a
+    /// command, so that AltGr+A types its character and does not select all.
+    /// </summary>
+    public bool PrefersCharacter { get; }
 
     /// <summary>
     /// Gets the modifier keys held down. A modifier key's own down already has it.

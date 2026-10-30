@@ -10,9 +10,9 @@ namespace XylemUI.Text.Unicode;
 /// type is an array made at each read in a Debug build.
 /// </summary>
 /// <remarks>
-/// Of the two-stage tables the tool compared for Unicode 18.0.0, blocks of 128 code points were the smallest: 54,080 bytes with
-/// the palette of 112 values, against 147,712 for the smallest table of 32-bit values; every block size took 1.1 to 1.4 ns a
-/// look-up. The tables are static data of the executable: nothing is allocated or initialized at startup.
+/// Of the two-stage tables the tool compared for Unicode 18.0.0, blocks of 128 code points were the smallest: 55,256 bytes with
+/// the palette of 150 values (54,080 with 112 before the word breaks of row P02b), and every block size took 0.94 to 1.04 ns a
+/// look-up (1.1 to 1.4 ns when row T1 measured, which found 147,712 bytes for the smallest table of 32-bit values). The tables are static data of the executable: nothing is allocated or initialized at startup.
 /// </remarks>
 internal static partial class UnicodeData
 {
@@ -25,6 +25,8 @@ internal static partial class UnicodeData
     private const int IndicMask = 0x3;
     private const int CategoryShift = 14;
     private const int CategoryMask = 0x7;
+    private const int WordShift = 17;
+    private const int WordMask = 0x1F;
 
     /// <summary>
     /// Returns the properties of a code point, read by the other members.
@@ -80,6 +82,13 @@ internal static partial class UnicodeData
     /// <param name="properties">The properties.</param>
     /// <returns>The category, or <see cref="CategoryOfInterest.Other"/>.</returns>
     public static CategoryOfInterest Category(uint properties) => (CategoryOfInterest)((properties >> CategoryShift) & CategoryMask);
+
+    /// <summary>
+    /// Returns the word break of packed properties (UAX #29).
+    /// </summary>
+    /// <param name="properties">The properties.</param>
+    /// <returns>The value.</returns>
+    public static WordBreak Word(uint properties) => (WordBreak)((properties >> WordShift) & WordMask);
 
     /// <summary>
     /// Returns the code point at a position of UTF-16 text and the number of code units it takes.

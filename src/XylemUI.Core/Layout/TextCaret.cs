@@ -52,19 +52,32 @@ internal static class TextCaret
             return -1;
         }
 
+        // The last line whose top is at or above the height, found by halves: the layout wrote the tops (design §4.9, "The lines'
+        // tops"). Stacking the heights again at each call took time in lines × runs (PR #426's review).
         ReadOnlySpan<LaidLine> lines = layout.Lines;
-        for (int i = 0; i < lines.Length; i++)
+        if (lines.IsEmpty)
         {
-            (height, _) = LayoutEngine.TextLine(leaf, leaf.Shaped!.Result!, lines[i].Span);
-            if (y < top + height || i == lines.Length - 1)
-            {
-                return i;
-            }
-
-            top += height;
+            return -1;
         }
 
-        return -1;
+        int low = 0;
+        int high = lines.Length - 1;
+        while (low < high)
+        {
+            int middle = (low + high + 1) / 2;
+            if (lines[middle].Top <= y)
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        top = lines[low].Top;
+        height = lines[low].Height;
+        return low;
     }
 
     /// <summary>
@@ -82,7 +95,7 @@ internal static class TextCaret
         ReadOnlySpan<LaidLine> lines = layout.Lines;
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)lineIndex, (uint)lines.Length, nameof(lineIndex));
         LaidLine line = lines[lineIndex];
-        float top = Top(leaf, lines, lineIndex, out float height);
+        float top = Top(lines, lineIndex, out float height);
         ReadOnlySpan<LaidGlyph> glyphs = layout.Glyphs.Slice(line.GlyphStart, line.GlyphCount);
         int end = VisibleEnd(leaf, line.Span);
         float pen = 0;
@@ -148,7 +161,7 @@ internal static class TextCaret
         }
 
         LaidLine line = lines[index];
-        float top = Top(leaf, lines, index, out float height);
+        float top = Top(lines, index, out float height);
         float pen = 0;
         foreach (LaidGlyph glyph in layout.Glyphs.Slice(line.GlyphStart, line.GlyphCount))
         {
@@ -197,18 +210,11 @@ internal static class TextCaret
     private static LineLayoutResult? Committed(TextLeaf leaf) =>
         leaf.Shaped?.Result is not null && leaf.LineBreaks is { Committed: >= 0 } cache ? cache[cache.Committed].Layout : null;
 
-    // The top and the height of a line, the lines above it stacked as the measurement stacks them.
-    private static float Top(TextLeaf leaf, ReadOnlySpan<LaidLine> lines, int index, out float height)
+    // The top and the height of a line, as the layout wrote them.
+    private static float Top(ReadOnlySpan<LaidLine> lines, int index, out float height)
     {
-        ShapingResult result = leaf.Shaped!.Result!;
-        float top = 0;
-        for (int i = 0; i < index; i++)
-        {
-            top += LayoutEngine.TextLine(leaf, result, lines[i].Span).Height;
-        }
-
-        height = LayoutEngine.TextLine(leaf, result, lines[index].Span).Height;
-        return top;
+        height = lines[index].Height;
+        return lines[index].Top;
     }
 
     // A line's end before the hard line break that ends it (UAX #14's BK, CR, LF, and NL, as ShapingResult trims them): a caret

@@ -450,10 +450,10 @@ public sealed class TouchPenInputTests(UiThreadFixture ui)
             }
 
             (clicks, points) = (0, 0);
-            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
-            // The helper's unmeasured window runs 100 iterations before the 1,000.
-            Assert.Equal((2_200, 8_800), (clicks, points));
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal((2 * runs, 8 * runs), (clicks, points));
         });
 
     // A window of 200 x 100 logical pixels whose root holds the boxes placed in it, with its frames and input.

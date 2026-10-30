@@ -471,10 +471,10 @@ public sealed class ScrollTests(UiThreadFixture ui)
             }
 
             int presents = scene.Target.Presents;
-            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
-            // The helper's unmeasured window runs 100 iterations before the 1,000.
-            Assert.Equal(presents + 2_200, scene.Target.Presents);
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal(presents + (2 * runs), scene.Target.Presents);
             scene.Dispose();
         });
     }

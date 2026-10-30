@@ -108,6 +108,78 @@ public sealed class HeadlessAppTests
     }
 
     /// <summary>
+    /// The keyboard types text as one text input for each code point, to the focused node, and sends no control character.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app of a focusable box that logs each text it gets and stops it; the box has the focus.
+    ///
+    /// Steps:
+    /// - Type "a", the emoji U+1F600, a Tab, and "b" in one string.
+    ///
+    /// Expected:
+    /// - The box got "a", "😀", and "b"; the typing reports every text sent handled.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task KeyboardType_Text_SendsEachCodePointToTheFocus()
+    {
+        var texts = new List<string>();
+        Element box = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            box = Box()
+                .Width(20)
+                .Height(20)
+                .Focusable()
+                .OnTextInput(
+                    EventPhase.Bubble,
+                    (in TextInputEvent e) =>
+                    {
+                        texts.Add(e.Text);
+                        e.StopPropagation();
+                    }
+                )
+        );
+        Assert.True(app.Focus(box));
+
+        bool handled = app.Keyboard.Type("a😀\tb");
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(["a", "😀", "b"], texts);
+        Assert.True(handled);
+    }
+
+    /// <summary>
+    /// The app's text fields use the app's clipboard in memory, and a caret that does not blink unless the options ask for it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app with the default options, and one with <see cref="HeadlessOptions.CaretBlink"/>.
+    ///
+    /// Steps:
+    /// - Read each app's tree: its clipboard and its settings; set the first app's clipboard through the tree and read the app's.
+    ///
+    /// Expected:
+    /// - The tree's clipboard is the app's, empty at the start, and holds what the tree set. The first app's caret does not blink;
+    ///   the second blinks every 530 ms. Both have a caret 1 wide and Windows' default selection colors.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ClipboardAndCaret_DefaultOptions_AreInMemoryAndSteady()
+    {
+        await using HeadlessApp steady = await HeadlessApp.StartAsync(() => Box());
+        await using HeadlessApp blinking = await HeadlessApp.StartAsync(() => Box(), new HeadlessOptions { CaretBlink = true });
+
+        Assert.Same(steady.Clipboard, steady.Tree.Clipboard);
+        Assert.Null(steady.Clipboard.Text);
+        Assert.True(steady.Tree.Clipboard!.SetText("copied"));
+        Assert.Equal("copied", steady.Clipboard.Text);
+        Assert.Equal(TextEditingSettings.Default with { CaretBlink = null }, steady.Tree.TextEditing);
+        Assert.Equal(TextEditingSettings.Default, blinking.Tree.TextEditing);
+        Assert.Equal(TimeSpan.FromMilliseconds(530), blinking.Tree.TextEditing.CaretBlink);
+    }
+
+    /// <summary>
     /// With no frame asked for, a pump jumps the clock to the next timer and fires it.
     /// </summary>
     /// <remarks>

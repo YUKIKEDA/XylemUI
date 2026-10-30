@@ -57,6 +57,8 @@ public sealed class HeadlessApp : IAsyncDisposable
             _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
             Tree = new UiTree(_text);
             Tree.Animations.ReduceMotion = options.ReduceMotion;
+            Tree.Clipboard = Clipboard;
+            Tree.SetTextEditing(options.CaretBlink ? TextEditingSettings.Default : TextEditingSettings.Default with { CaretBlink = null });
             _rootNode = Tree.CreateNode(new LayoutStyle());
             Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
             Input = new WindowInput(Tree, Frames, _platform);
@@ -114,6 +116,12 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// Gets the keyboard of the window.
     /// </summary>
     public HeadlessKeyboard Keyboard { get; }
+
+    /// <summary>
+    /// Gets the clipboard the app's text fields copy to and paste from: one in memory, empty at the start (design §4.9, "The
+    /// clipboard").
+    /// </summary>
+    public HeadlessClipboard Clipboard { get; } = new();
 
     /// <summary>
     /// Gets the number of frames that presented: a frame that changed nothing presents nothing (design §2.11).

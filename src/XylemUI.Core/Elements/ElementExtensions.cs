@@ -411,6 +411,21 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets whether a press on the node leaves the focus where it is (design §4.9, "A press that keeps the focus"): the press walks
+    /// up from the pressed node, and when it reaches this node before a node that takes the focus, the focus does not move, even when
+    /// this node takes the focus itself. A toolbar's button with it leaves the focus in a text field; a node that takes the focus
+    /// inside it still takes it. Off by default: a pressed button takes the focus, as on Windows.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="keeps">Whether a press keeps the focus.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
+    {
+        element.TreeOrThrow().SetKeepsFocusOnPress(element.Node, keeps);
+        return element;
+    }
+
+    /// <summary>
     /// Sets whether the node itself is disabled (design §7, "Disabled"). A disabled node and its descendants have the disabled state:
     /// their handlers of the pointer, the keys, and the focus are not called, they take no focus, and Tab skips them. They still take
     /// the pointer from the nodes behind them; the nearest ancestor that is not disabled gets its route, its hover, its press, and its
@@ -500,6 +515,32 @@ public static class ElementExtensions
             if (tree.Nodes.IsAlive(node))
             {
                 _ = tree.RemoveKeyHandler(node, kind, phase, handler);
+            }
+        });
+        return element;
+    }
+
+    /// <summary>
+    /// Adds a handler of the text typed into the window, in a phase of its route from the focused node (design §4.9, "Text input on
+    /// Windows"). It runs in the current scope; once the scope is disposed it is not called, and the handler is removed (design §2.13).
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element OnTextInput(this Element element, EventPhase phase, TextInputHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        UiTree tree = element.TreeOrThrow();
+        NodeHandle node = element.Node;
+        RequireScope();
+        tree.AddTextHandler(node, phase, handler);
+        Scope.OnCleanup(() =>
+        {
+            if (tree.Nodes.IsAlive(node))
+            {
+                _ = tree.RemoveTextHandler(node, phase, handler);
             }
         });
         return element;

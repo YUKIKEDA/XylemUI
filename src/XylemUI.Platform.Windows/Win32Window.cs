@@ -101,6 +101,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             _monitor = MonitorFromWindow(hwnd, MONITOR.MONITOR_DEFAULTTONEAREST);
             TextRendering = TextRenderingReader(_monitor);
             ReducesMotion = ReducesMotionReader(false);
+            TextEditing = TextEditingReader(TextEditingSettings.Default);
             CreateTouchpad(hwnd);
         }
         catch
@@ -513,6 +514,10 @@ public sealed unsafe partial class Win32Window : IDisposable
                 ReadTextRendering(_monitor);
                 ReadWheelSettings();
                 ReadReducesMotionAgain();
+                ReadTextEditingAgain();
+                return false;
+            case WmSysColorChange:
+                ReadTextEditingAgain();
                 return false;
             case WmDpiChanged:
                 ChangeScale(hwnd, wParam, (RECT*)lParam);

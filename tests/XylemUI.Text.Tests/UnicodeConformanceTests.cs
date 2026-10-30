@@ -5,13 +5,15 @@ using XylemUI.Text.Unicode;
 
 namespace XylemUI.Text.Tests;
 
-// The Unicode conformance tests of the grapheme clusters (UAX #29) and the line break opportunities (UAX #14) of Unicode 18.0.0
-// (design §4.1, "Line breaking and grapheme clusters"; §8.13; roadmap row T1). The test files come from UCD.zip with the tables
+// The Unicode conformance tests of the grapheme clusters and the word boundaries (UAX #29) and the line break opportunities
+// (UAX #14) of Unicode 18.0.0 (design §4.1, "Line breaking and grapheme clusters"; §4.9, "The keys"; §8.13; roadmap rows T1 and
+// P02b). The test files come from UCD.zip with the tables
 // (tools/UnicodeTableGen); each line is one case, and every line passes with no exception.
 public sealed class UnicodeConformanceTests
 {
     private static readonly Lazy<TheoryData<int, string>> GraphemeLines = new(() => Lines("GraphemeBreakTest.txt"));
     private static readonly Lazy<TheoryData<int, string>> LineBreakLines = new(() => Lines("LineBreakTest.txt"));
+    private static readonly Lazy<TheoryData<int, string>> WordLines = new(() => Lines("WordBreakTest.txt"));
 
     /// <summary>
     /// Gets the cases of GraphemeBreakTest.txt: the line number and the line.
@@ -22,6 +24,11 @@ public sealed class UnicodeConformanceTests
     /// Gets the cases of LineBreakTest.txt: the line number and the line.
     /// </summary>
     public static TheoryData<int, string> LineBreakCases => LineBreakLines.Value;
+
+    /// <summary>
+    /// Gets the cases of WordBreakTest.txt: the line number and the line.
+    /// </summary>
+    public static TheoryData<int, string> WordCases => WordLines.Value;
 
     /// <summary>
     /// The grapheme cluster boundaries of one line of GraphemeBreakTest.txt are the ones it marks.
@@ -78,6 +85,47 @@ public sealed class UnicodeConformanceTests
         int[] actual = [.. Enumerable.Range(0, text.Length + 1).Where(i => Graphemes.IsBoundary(text, i))];
 
         Assert.True(expected.SequenceEqual(actual), $"line {line}: expected [{string.Join(", ", expected)}], got [{string.Join(", ", actual)}]");
+    }
+
+    /// <summary>
+    /// The word boundaries of one line of WordBreakTest.txt are the ones it marks, walked forward and back.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - One line of the Unicode 18.0.0 WordBreakTest.txt: code points separated by ÷ (a boundary) and × (none).
+    ///
+    /// Steps:
+    /// - Make the UTF-16 text of the code points; walk its words with Words.NextBoundary from 0, then with Words.PreviousBoundary
+    ///   from the end.
+    ///
+    /// Expected:
+    /// - The positions reached forward are the ÷ positions of the line, the start and the end included; the positions reached back
+    ///   are the same ones in the other order.
+    /// </remarks>
+    /// <param name="line">The line number, for the report.</param>
+    /// <param name="data">The line.</param>
+    [Theory]
+    [MemberData(nameof(WordCases))]
+    public void Words_ConformanceLine_HasItsBoundaries(int line, string data)
+    {
+        (string text, List<int> expected) = Parse(data);
+        var forward = new List<int> { 0 };
+        for (int position = 0; position < text.Length; )
+        {
+            position = Words.NextBoundary(text, position);
+            forward.Add(position);
+        }
+
+        var back = new List<int> { text.Length };
+        for (int position = text.Length; position > 0; )
+        {
+            position = Words.PreviousBoundary(text, position);
+            back.Add(position);
+        }
+
+        back.Reverse();
+        Assert.True(expected.SequenceEqual(forward), $"line {line}: expected [{string.Join(", ", expected)}], got [{string.Join(", ", forward)}]");
+        Assert.True(expected.SequenceEqual(back), $"line {line}: back, expected [{string.Join(", ", expected)}], got [{string.Join(", ", back)}]");
     }
 
     /// <summary>
