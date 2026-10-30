@@ -50,6 +50,8 @@ A benchmark, a NativeAOT publish, or a profile keeps the tree busy for minutes.
 
 A CI run started for an experiment (`gh workflow run`, `gh run rerun`) is a long run too: while it runs, go on with work that does not need its result, on another branch. In Q1 the agent waited on rounds of reruns with the next row's research undone, and the owner pointed it out.
 
+A CI job that runs past the time its passing runs take is looked at then, not waited on to its limit. The Windows job passes in 14 to 19 minutes; in T12 it stopped twice in the Desktop tests, and the agent waited both times to the 30-minute limit with no other work going, until the owner pointed it out (PR #426). Since PR #428 the Desktop tests end after 5 minutes when they hang.
+
 Before a long run, a short one: run the script on one case, and look at the output of a background run within its first minute.
 
 A scratch variant (a source file swapped for a measurement) is built on its own worktree, never in the tree the gate runs in. A publish with `-r` still builds the referenced libraries into the tree's shared `obj/`, and a source put back with `Copy-Item` keeps its old time (`.cursor/rules/powershell-shell.mdc`). In R4d the gate then tested a variant that compiled no stated shaders, and every test of a clip waited forever (PR #268).

@@ -19,9 +19,9 @@ GitHub Issue は着手中の作業単位だけ切る。完了条件の詳細は 
 ## 今
 
 - **フェーズ:** V1（T11 は v1.x。Q3 は開いたまま。L6 は仕様か比べる相手が持つのを待つ）
-- **作業中:** T12（範囲のスタイル・装飾・リンク、#425、`docs/benchmarks/t12-rich-text.md`）。本文で P02 の前に行うとした行。D9 は済み: 設計は #418 と #424 の PR。D9 は、本文で T1 の前に決めるとした行で、表で I1 より上にあった。I1 は済み: I1c は #404 の PR（`docs/benchmarks/i1c-touchpad.md`）、I1c の設計は #400 の PR と、#405・#407 の PR。I1b は済み: #396 の PR（`docs/benchmarks/i1b-drag-scroll.md`）、I1b の設計は #392 の PR。I1a は済み: #388 の PR（`docs/benchmarks/i1a-touch-pen.md`）。I1 の設計は済み（#384 の PR）。V3 の後、表で V3 より上にあり、本文で V3 の前とした行 I1 をオーナーが選んだ。V3 は済み: V3c は #380 の PR（`docs/benchmarks/v3c-todo.md`）、V3b は #376 の PR（`docs/benchmarks/v3b-scroll-range.md`）、V3b の設計は #372 の PR。V3a は済み: #368 の PR（`docs/benchmarks/v3a-show-for.md`）。V3 の設計は済み（#363 の PR）。K1 は済み: K1b は #359 の PR（`docs/benchmarks/k1b-disabled-keys-scroll.md`）、K1a は #355 の PR（`docs/benchmarks/k1a-keys-focus.md`）、設計は #351 の PR。V2 は済み: #347 の PR（`docs/benchmarks/v2-scroll.md`）、設計は #343。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
-- **ブランチ:** `feat/425-t12-rich-text`
-- **Issue:** #425
+- **作業中:** T13（インラインオブジェクト）。本文で T12 の後に行うとした行。T12 は済み: #426 の PR（`docs/benchmarks/t12-rich-text.md`）。T12 は、本文で P02 の前に行うとした行。D9 は済み: 設計は #418 と #424 の PR。D9 は、本文で T1 の前に決めるとした行で、表で I1 より上にあった。I1 は済み: I1c は #404 の PR（`docs/benchmarks/i1c-touchpad.md`）、I1c の設計は #400 の PR と、#405・#407 の PR。I1b は済み: #396 の PR（`docs/benchmarks/i1b-drag-scroll.md`）、I1b の設計は #392 の PR。I1a は済み: #388 の PR（`docs/benchmarks/i1a-touch-pen.md`）。I1 の設計は済み（#384 の PR）。V3 の後、表で V3 より上にあり、本文で V3 の前とした行 I1 をオーナーが選んだ。V3 は済み: V3c は #380 の PR（`docs/benchmarks/v3c-todo.md`）、V3b は #376 の PR（`docs/benchmarks/v3b-scroll-range.md`）、V3b の設計は #372 の PR。V3a は済み: #368 の PR（`docs/benchmarks/v3a-show-for.md`）。V3 の設計は済み（#363 の PR）。K1 は済み: K1b は #359 の PR（`docs/benchmarks/k1b-disabled-keys-scroll.md`）、K1a は #355 の PR（`docs/benchmarks/k1a-keys-focus.md`）、設計は #351 の PR。V2 は済み: #347 の PR（`docs/benchmarks/v2-scroll.md`）、設計は #343。V1 は済み: V1d は #339 の PR（`docs/benchmarks/v1d-components.md`）。Q1 は済み（#332 の PR）。V1c は #323 の PR、V1b は #312 の PR、V1a は #300 の PR。T1 は済み: T1a は #284 の PR、T1b は #292 の PR。R4 は済み: R4a は PR #248、R4b は PR #256、R4c は PR #264、R4d は #267 の PR、R4e は #276 の PR
+- **ブランチ:** —
+- **Issue:** —
 
 ## ツールチェーン
 
