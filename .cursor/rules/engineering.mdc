@@ -18,6 +18,7 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 - `net10.0` everywhere (`Directory.Build.props`). C# 14. Nullable on. `InvariantGlobalization` on.
 - `TreatWarningsAsErrors` is on from the first commit. Do not add `NoWarn` or `#pragma warning disable` to get a build through; fix the cause, or change `.editorconfig` with the reason in a comment when a rule is wrong for this repository, in a PR that says so.
+- Before a stricter rule is turned on, what it will flag is counted on the whole solution with `-p:TreatWarningsAsErrors=false`, then the warnings of that rule are counted without repeats. With warnings as errors the build stops at the first project that fails, and the projects that depend on it are not built: in Q6 the first count was 73 (`XylemUI.Text` only) and the whole was 605 (PR #450). The setting is for that count only, never for a commit.
 - Libraries under `src/` are `IsAotCompatible` (`.cursor/rules/aot.mdc`) and need XML docs on the public API.
 - Package versions live in `Directory.Packages.props` (Central Package Management). A new package goes through `.cursor/rules/dependencies.mdc` first.
 - Engine projects (everything under `src/` except `XylemUI.Platform.*` and `XylemUI.Testing`) build with `BannedSymbols.txt`. Do not remove an entry to get a build through.
