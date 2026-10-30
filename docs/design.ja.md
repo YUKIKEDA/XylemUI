@@ -1218,6 +1218,7 @@ src/
   XylemUI.Desktop/             # アプリの起動（XylemApp.Run）。Core・Platform・Rendering をつなぐ（V1d）
   XylemUI.Theme.Fluent/        # Fluent 2 デザインシステム（§13.2）。Primitives に見た目を被せる
   XylemUI.Testing/             # ヘッドレスホスト・仮想クロック・入力注入・PNG（§12）。製品バイナリには含めない
+  XylemUI.Testing.XUnit/       # xUnit v3 の [UiFact] / [UiTheory]（§12.5「スレッド」）
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
@@ -1231,8 +1232,10 @@ samples/
 tests/
   XylemUI.Core.Tests/          # 第2層・第3層（§12.1）
   XylemUI.Text.Tests/          # 第1層：Unicode 適合性テスト（§8.13）
-  XylemUI.Rendering.Tests/     # 第4層：WARP ゴールデン画像
-  XylemUI.Gallery.Tests/       # 第5層：Gallery の E2E
+  XylemUI.Rendering.D3D11.Tests/ # 第4層：WARP ゴールデン画像
+  XylemUI.Desktop.Tests/       # 第5層：アプリの E2E（G1 で XylemUI.Gallery.Tests を足す）
+  XylemUI.Platform.Windows.Tests/ # OS の API と本物のウィンドウ
+  XylemUI.Primitives.Tests/    # 見た目のない部品
 benchmarks/
   XylemUI.Benchmarks/          # BenchmarkDotNet のマイクロベンチマーク
   E2E/                         # §11.3 のシナリオ（10k Rows、タイピング、Jank、起動時間）
@@ -1594,6 +1597,8 @@ public static class ElementExtensions
     public static Element On(this Element e, FocusEventKind kind, EventPhase phase, FocusHandler handler);
     public static bool Focus(this Element e);                                        // フォーカスできなければ false
     public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
+    // テスト（P02a、§12.5「鍵」）。付けたノードだけを持つ表に入れる。どのノードにも付けられる
+    public static Element TestId(this Element e, string id);
     // スクロール（V2、§3.4.1「スクロールする箱」）
     public static Element Overflow(this Element e, Overflow x, Overflow y);   // layout（ChangeKind.Size）
     public static Element ScrollState(this Element e, ScrollState state);
@@ -4009,7 +4014,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 全要件を維持する方針（既存）は変更しない。以下はあくまで実装に着手する順序であり、後段のフェーズにある項目も設計（型・フック）には最初から含める。
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
-2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d）、`XylemUI.Testing`（§12、行 P02a）。行の順は P02a → D7 → AN1 → P02b → P02c → P02d → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
+2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02c → P02d → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
 3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
 4. **v0.3**: RTL（レイアウトの向き、行 P03b）、BiDi と複雑スクリプト（行 P03a）、縦書き（行 P03c）、カラー絵文字（COLRv0 は済み、COLRv1 と SVG は行 T11 で v1.x）（D5 の Grill、Issue #163）
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
@@ -4199,7 +4204,7 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 
 **CI のゲート方針:** PR を失敗させるのは**正しさのテスト（§12.1 の全層）と Zero-Alloc ゲート**だけとする。時間を測るベンチマーク（10k Rows・タイピングレイテンシ・Jank 率・起動時間）は共有 CI ランナーの揺れが大きいため、結果を記録して推移を追うだけにし、PR は失敗させない。
 
-**Zero-Alloc ゲート:** `XylemUI.Testing` の `PerformanceAssert.DoesNotAllocate` が、ウォームアップ（N フレーム）の後の区間で `GC.GetAllocatedBytesForCurrentThread()` の差分が 0 であることを検査する。1バイトでも確保されたら失敗する。対象は次の5シナリオ。ノードの生成・テキストの変更・リストの更新は確保が避けられないため対象外とする。
+**Zero-Alloc ゲート:** `XylemUI.Testing` の `PerformanceAssert.DoesNotAllocate` が、ウォームアップ（N フレーム）の後の区間で `GC.GetAllocatedBytesForCurrentThread()` の差分が 0 であることを検査する。1バイトでも確保されたら失敗する。慣らしの 1 区間の後に 10 区間を測り、失敗したときは区間ごとのバイト数・JIT したメソッドの数・GC の回数を書く（テストの中の `SteadyStateAllocation` の測り方を移す）。テストのランナーには頼らず、自前の例外を投げる。利用者のテストのプロジェクトでは並行 GC を切れず、背景の GC が区間に重なると最大約 8 KB を数える（#332）ので、区間の前後で `GC.GetGCMemoryInfo(GCKind.Background).Index` が変わった区間はやり直す（最大 3 回。それでも重なれば、そう書いて失敗にする）。リポジトリのテストも利用者と同じ条件で動かし、並行 GC を切る設定を外す（P02a の Grill、Issue #456）。対象は次の5シナリオ。ノードの生成・テキストの変更・リストの更新は確保が避けられないため対象外とする。
 
 1. アイドル（再描画なし）
 2. ホバーの出入り（疑似状態の切り替え、§2.13）
@@ -4336,6 +4341,10 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 ヘッドレスのアプリホスト・仮想クロック・入力の注入・スクリーンショットを、別パッケージ `XylemUI.Testing` として公開する。フレームワーク自身のテスト、アプリ開発者のテスト、AI エージェントによる生成と自己評価（§0）は、すべて同じ API を使う。製品のバイナリ（`XylemUI.Core`）には含めない。
 
+**作る行:** 操作の土台（`HeadlessApp`、仮想の時計と `PumpAndSettle`、ポインタ・キーボード・フォーカスの注入、`Find` / `FindAll`、`AssertNoLeakedScopes`、`PerformanceAssert.DoesNotAllocate`）は行 P02a、描画の土台（ウィンドウなしの描画と読み戻し、PNG、`SaveScreenshotAsync`、ゴールデン比較、テスト用のフォント）は行 P02a2 で作る。ほかの行の土台が要るものは、その行で足す。`app.Ime` は P02c（`ITextInputBackend`、§4.7）、文字の入力の `app.Keyboard.Type` は P02b（`TextInputEvent`）、アクセシブル名での検索は P02g（§4.4）、アニメーションを待つことは AN1 である（P02a の Grill、Issue #456）。
+
+**Core との関係:** `XylemUI.Testing` は Core と同じ版で出し、`InternalsVisibleTo` で Core の internal（`WindowInput`、`PointerInput`、`KeyInput`、`UiTree`、`WindowFrames`）を使う。これらを公開すると、Platform との間の内部の型が公開の API になるためである。テストのための公開の口を Core に置かない（`D3D11Renderer.ReadPixel` は S7 でサンプルの検査のために公開したが、P02a2 で `XylemUI.Testing` の読み戻しへ移して公開の API から外す。HelloWindow の自己検査はテストへ移す）。
+
 ### 12.1 テストピラミッド（5層）
 
 | 層                              | 内容                                                            | 実行するOS                  | プロジェクト              |
@@ -4343,14 +4352,16 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 | 1. Unicode 適合性               | UAX#9 / #14 / #29 の公式テストデータ（§8.13）                   | 全OS                        | `XylemUI.Text.Tests`      |
 | 2. Core の単体テスト            | Reactive・Invalidation・Layout・Focus をレンダラなしで検証      | 全OS                        | `XylemUI.Core.Tests`      |
 | 3. DisplayList スナップショット | `BuildDisplayList` の結果をテキストに直して比較。GPU を使わない | 全OS                        | `XylemUI.Core.Tests`      |
-| 4. 画素のゴールデン画像         | WARP で描画して読み戻し、許容差つきで比較                       | Windows（v0.4 で Linux も） | `XylemUI.Rendering.Tests` |
-| 5. E2E                          | Gallery アプリ（§13.3）を丸ごと動かす                           | Windows から                | `XylemUI.Gallery.Tests`   |
+| 4. 画素のゴールデン画像         | WARP で描画して読み戻し、許容差つきで比較                       | Windows（v0.4 で Linux も） | `XylemUI.Rendering.D3D11.Tests`（ゴールデン比較は P02a2 から） |
+| 5. E2E                          | アプリを丸ごと `HeadlessApp` で動かす。今は Counter と Todo、G1 から Gallery（§13.3） | 全OS（画素を読むものは Windows） | `XylemUI.Desktop.Tests`（G1 で `XylemUI.Gallery.Tests` を足す） |
+
+この 5 層のほかに、OS の API を直接確かめる `XylemUI.Platform.Windows.Tests`（本物のウィンドウを使うテストはここに置く）と、見た目のない部品の `XylemUI.Primitives.Tests` がある。
 
 画素を使わずに検証できることは第3層で検証し、第4層は最小限にする。第3層は GPU にもフォントのラスタライズ結果にも依存しないため、全OSの CI で同じ結果になる。
 
 ### 12.2 仮想クロックと PumpAndSettle
 
-フレームワーク内の時刻・タイマー・アニメーションの経過時間は、すべて .NET 標準の `TimeProvider` 経由で得る（§11.6 Invariant 15）。`DateTime.Now`・`Stopwatch`・`Task.Delay` の直接使用は Core では禁止する（アナライザで検出する）。テストでは `TimeProvider` を仮想クロック（`FakeTimeProvider` 相当）に差し替え、`IFrameScheduler`（§2.11）もテスト用の実装に差し替える。実時間は一切進まない。フレームの時刻（§2.11）も `TimeProvider` から読むので、慣性の位置は、テストが進めた仮想の時間で決まる。
+フレームワーク内の時刻・タイマー・アニメーションの経過時間は、すべて .NET 標準の `TimeProvider` 経由で得る（§11.6 Invariant 15）。`DateTime.Now`・`Stopwatch`・`Task.Delay` の直接使用は Core では禁止する（アナライザで検出する）。テストでは `TimeProvider` を仮想クロック（`XylemUI.Testing` の `TestTime`。タイマー（`CreateTimer`）も持つ自前の実装で、テストの中にあった 4 つの写しを置き換える。Flutter の `fake_async`（`flutter_test` 3.47.8 の `pubspec.yaml` 28 行目）、GPUI の `TestScheduler`（zed v1.25.3 の `crates/scheduler/src/test_scheduler.rs`）も自前）に差し替え、`IFrameScheduler`（§2.11）もテスト用の実装に差し替える。実時間は一切進まない。フレームの時刻（§2.11）も `TimeProvider` から読むので、慣性の位置は、テストが進めた仮想の時間で決まる。
 
 `PumpAndSettle()` は、次の4つがすべて空になるまで、仮想時間を進めながらフレームを離散的に回し続ける。
 
@@ -4361,18 +4372,22 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 `Task.Run` 等でスレッドプールに投げた処理は待たない。フレームワークの管理下にないためである。テストで待つ必要がある場合は、その `Task` をテストコードから明示的に `await` してから `PumpAndSettle()` を呼ぶ。無限アニメーション等で静止しない場合に備えて、反復の上限（既定 1,000 フレーム）を超えたら失敗させる。
 
+**1 回の反復（P02a の Grill、Issue #456）:** UI キューを空にする。予約したフレームがあれば、時計を 1 フレーム分（`HeadlessOptions.FrameInterval`、既定 1/60 秒）進めて 1 フレーム回す。無ければ、次のタイマーの時刻まで時計を飛ばしてそのタイマーを動かす（GPUI の `advance_clock_to_next_timer` と同じ。zed v1.25.3 の `crates/scheduler/src/test_scheduler.rs` 442〜449 行目）。どちらも無く UI キューも空なら静止とする。上限を超えたら `InvalidOperationException` を投げ、残っている待ちの種類を書く。時間を決めて進める `Pump(TimeSpan)` も出す（Flutter の `pump(duration)`、`flutter_test` 3.47.8 の `lib/src/binding.dart` 2249〜2265 行目）。
+
+**終わりの検査:** `DisposeAsync` のとき、予約したフレームかタイマーが残っていればテストを失敗させる（Flutter の「A Timer is still pending」と同じ。`lib/src/binding.dart` 2543 行目）。止め忘れたタイマーは、別のテストの時計を動かすためである。
+
 ```csharp
 await using var app = await HeadlessApp.StartAsync(() => Counter());
 
 app.Pointer.Click(app.Find("+1"));
 app.PumpAndSettle();
 
-Assert.Equal("clicks: 1", app.Find<TextNode>("clicks").Text);
+Assert.Single(app.FindAll("clicks: 1"));   // 文字で探す（§12.5「鍵」）
 ```
 
 ### 12.3 ヘッドレス描画と PNG 出力
 
-**方式:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
+**方式（行 P02a2）:** Core〜v0.3 の間、画素を出すヘッドレス描画は **Windows の D3D11 WARP**（Microsoft 純正のソフトウェアラスタライザ）に限る。OS のウィンドウもスワップチェーンも作らず、オフスクリーンのレンダーターゲットに描いて CPU へ読み戻す。WARP は Windows にしかないため、Linux / macOS では画素を出せない。v0.4（Linux 基盤、§10.4）で Linux の wgpu バックエンドができた時点で、lavapipe（CPU 上で動く Vulkan 実装）経由の Linux 対応を足す。
 
 **フォント:** テストモードでは OS のフォント解決を使わず、**テスト用のフォント**（§4.5 の「テストのフォント」、Noto Sans JP の ASCII とテストで使う日本語のサブセット）だけで描く（テスト用の `IFontProvider`）。製品の同梱フォントは基本ラテン文字だけなので、Latin / CJK のゴールデンテストを描けない（PR #146 のレビュー）。CI イメージの更新で OS のフォントが変わると、WARP を使っていてもゴールデン画像がずれるためである。
 
@@ -4389,6 +4404,8 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c。タッチパッドのパンの PanStart・PanUpdate・PanEnd も、I1c でここから入れる）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02a で、この入口の薄い包みとして入れる。
 
+**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
+
 **IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
 ```csharp
@@ -4404,13 +4421,15 @@ app.PumpAndSettle();
 `XylemUI.Testing` は、テストと AI エージェントが UI を操作・検査するための検索 API を持つ。Core の内部走査器（§2.6）の上に作り、Core には公開の検索 API を置かない。
 
 ```csharp
-Element button = app.Find("+1");                       // アクセシブル名またはテストID で1つ探す。0件・複数件は失敗
-IReadOnlyList<Element> items = app.FindAll(role: SemanticsRole.ListItem);
+Element button = app.Find("+1");                       // テスト ID か文字で1つ探す。0件・複数件は失敗
+IReadOnlyList<Element> items = app.FindAll("todo-item");  // 同じ鍵で、0 件以上を前順に返す
 app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3）で破棄されていない Scope がないことを確かめる
 ```
 
 - `HeadlessApp` は起動時に `ScopeTracker.IsEnabled` を有効にし、`AssertNoLeakedScopes()` はウィンドウを閉じて `PumpAndSettle()` した後に、残っている Scope を生成スタックつきで報告する
 - 検索は前順（`FirstChild` / `NextSibling` の順）で、a11y の順序（§4.4）と同じ順に結果を返す
+- **鍵（P02a の Grill、Issue #456）:** `Find(string)` は、テスト ID が一致するノードを探し、無ければ文字が一致する文字の葉（§3.2）を探す。テスト ID は Core のノードの属性 `.TestId(string)` で付け、付けたノードだけを持つ表（`UiTree` の `NodeHandle` から文字列への表、ノードを消すと消える）に入れる。付けないノードの費用は増えない。Flutter の `Key`（`find.byKey`、`flutter_test` 3.47.8 の `lib/src/finders.dart`）、Avalonia 12.1.4 の `Name`（`src/Avalonia.Base/Controls/NameScopeExtensions.cs` 20〜107 行目）、GPUI（zed v1.25.3）の `debug_selector`（`crates/gpui/src/elements/div.rs` 885 行目）に当たる。`FindAll(string)` は `Find` と同じ鍵で探し、0 件以上を前順に返す（例外にしない）。アクセシブル名と役（`SemanticsRole`）での検索（§12.5 の最初の案）は、名前と役を持つ a11y の木ができる行 P02g で足す。型を指定して中身を読む `Find<T>` は作らない。文字は文字で探して確かめる（Flutter の `find.text` と `findsOneWidget`、`flutter_test` 3.47.8 の `lib/src/finders.dart` 124〜623 行目と `lib/src/matchers.dart` 45〜165 行目）
+- **スレッド:** Core の UI スレッドはプロセスで 1 つなので（§2.12）、`XylemUI.Testing` は UI スレッドを 1 つ持ち、テストの本体をそこで動かす口 `HeadlessSession.Run(Func<Task>)` を出す。xUnit v3 の `[UiFact]` / `[UiTheory]` は、その上の薄い別のアセンブリ `XylemUI.Testing.XUnit` に置く（Avalonia 12.1.4 の `src/Headless/Avalonia.Headless.XUnit/Avalonia.Headless.XUnit.csproj` 8・12 行目と同じ分け方）。テストの本体が UI スレッドで動くので、§12 の例は同期の呼び出しのまま書ける
 
 ---
 
