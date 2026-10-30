@@ -803,3 +803,36 @@ Rejected:
   - 途中で目標が変わったとき、残りの距離に応じて長さを縮める（Flutter の `animateTo` の形。implicit の遷移は、Flutter も Avalonia も長さを初めからにする）
   - `Show` の退場で、子の Effect に動きを書かせる（退場の間は子の購読を切る §2.7 の決まりと合わない）
   - `Show` の部分を包むノードを足して、その不透明度と位置を動かす（D7 の文言。V3 で `Show` は箱を木に足さないと決め、足すと layout が変わる。AN1 で、部分の根のノードに使う人の値とは別の「出ている度合い」を持たせる形にした、Issue #475）
+
+---
+
+## 文字の入力
+
+Decision:
+  `Primitive.TextField`（1 行と複数行）を、双方向の `Signal<string>` と任意の `Signal<TextSelection>` で入れる。`WM_KEYDOWN` と `WM_SYSKEYDOWN` を `TranslateMessage` の前に配り、止めたキーは翻訳しない。AltGr は修飾キーを外した `ToUnicodeEx` と比べた `PrefersCharacter` で見分ける。キャレットの点滅と幅は Windows の設定から読み、`TimeProvider` のタイマーで切り替える。クリップボードは同期でプレーンテキストだけ、やり直さない。元に戻すは 300 ms 未満の続く編集をまとめる。押してもフォーカスを移さない印 `.KeepsFocusOnPress()` を足す（P02b の Grill、Issue #481、設計書 §4.9）。
+
+Reason:
+  Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読み、問いごとに比べた。翻訳の前に配る GPUI の形は、印の状態を持たず、SYS のキーもまとめて扱える。Windows のクリップボードは同期で開くので、非同期の API は要らない。キャレットの点滅と太さは Windows のアクセシビリティの設定で、XylemUI は「動きを減らす」設定と同じく OS のアクセシビリティの設定に従う。
+
+Rejected:
+  - 範囲をまたぐ静的な文字の選択（`SelectionArea`）を P02b に入れる（Flutter でも欄の選択とは別の仕組みで、互いに依らない。行 P02b2 に分けた）
+  - 文字と選択を 1 つのコントローラーに持つ（Flutter の `TextEditingController`。文字だけを結ぶアプリも選択を扱うことになる。Avalonia と同じく、シグナルを 2 つに分けた）
+  - 止めた Down の後の `WM_CHAR` を、印で無視する（Avalonia の `_ignoreWmChar`。印の状態を持ち、`WM_SYSKEYDOWN` では立てない）
+  - キーの Down を次の `WM_CHAR` まで持ち、まとめて送る（Flutter の `keyboard_manager.cc`。キーの配送が文字のメッセージを待つことになる）
+  - AltGr で、偽の Ctrl の Up を作る（Flutter。K1 は 2 つの Down をそのまま配ると決めた。欄は `PrefersCharacter` で見分ければよい）
+  - 1 つの `WM_CHAR` を 1 文字の文字列にする（Avalonia。絵文字が 2 つのイベントに分かれる）
+  - キャレットの点滅を決まった 500 ms にする（3 つとも。Windows の「テキストカーソル」の設定に従わない）
+  - キャレットの幅を 2 にする（Flutter と zed。Windows の「テキストカーソルの太さ」に従わない）
+  - キャレットの点滅をアニメーションの一覧で動かす（一覧は空でない間、毎回の垂直同期でフレームを予約する）
+  - 単語の境界を、文字の種類で歩いて決める（Avalonia の `StringUtils`。サロゲートを扱わず、UAX #29 と違う）
+  - 3 回のクリックで、いつも全体を選ぶ（Avalonia）、または行を選ぶ（zed）（Flutter の Windows の、1 行は全体、複数行は段落にした）
+  - クリップボードの API を非同期にする（Flutter と Avalonia。Windows のクリップボードは同期で開く）
+  - 開けないクリップボードを、待ちながらやり直す（Avalonia の 100 ms おきに 10 回。UI スレッドが止まる）
+  - 1 行の欄への貼り付けで、`\n` だけを取り除く（Flutter。2 行が間に何も挟まずにつながる）
+  - 元に戻すを、500 ms に 1 回までの保存にする（Flutter）、または 7 文字ごとの保存と 10 の上限にする（Avalonia）
+  - 元に戻すの記録に、文字全体の写しを持つ（長い複数行の欄で、まとまりごとに文字全体を持つことになる）
+  - 1 行の欄の Enter で、フォーカスを手放す（Flutter。Todo で続けて項目を足せない。Avalonia と zed はフォーカスを残す）
+  - フォーカスを失ったときに選択を消す（Avalonia の `ClearSelectionOnLostFocus`。Flutter は消さない）
+  - 欄の外を押したら、欄がフォーカスを手放す（Flutter のデスクトップ。何も無い所を押してもフォーカスを外さない §7 の決まりと合わない）
+  - `Primitive.Button` の既定で、押してもフォーカスを移さない（zed。Windows では、押したボタンがフォーカスを取るのがふつうの動きである）
+  - 選択した文字の色を変えない（Flutter。Windows の濃い選択色の上で、黒い文字が読みにくい）
