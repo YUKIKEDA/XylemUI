@@ -6,49 +6,14 @@ using static XylemUI.Elements;
 
 namespace XylemUI.Desktop.Tests;
 
-// The scroll container in a real window (row V2, design §3.4.1, "The scroll container"): its pixels on WARP before and after it
-// scrolls, and the wheel's messages of Windows that scroll it.
+// The scroll container in a real window (row V2, design §3.4.1, "The scroll container"): the wheel's messages of Windows that scroll
+// it. Its pixels before and after it scrolls are drawn headless (HeadlessPixelTests, row P02a2).
 [Collection(UiThreadGroup.Name)]
 public sealed unsafe class ScrollWindowTests(UiThreadFixture ui)
 {
     private static readonly Color First = Color.FromRgb(0xCC3333);
     private static readonly Color Below = Color.FromRgb(0x3366CC);
     private static readonly Color Gray = Color.FromRgb(0x808080);
-
-    /// <summary>
-    /// A box below the scroll view's height is clipped, and drawn where the view shows it once it scrolls.
-    /// </summary>
-    /// <remarks>
-    /// Preconditions:
-    /// - A window of 200 x 200 on WARP, hidden: a scroll view 100 high holding a column of five boxes 50 high, the first red, the
-    ///   fourth blue, the others gray; the window behind is white.
-    ///
-    /// Steps:
-    /// - Read the pixels at (20, 25) and (20, 175) in logical pixels. Scroll to (0, 150); draw; read (20, 25).
-    ///
-    /// Expected:
-    /// - Red at (20, 25) and white at (20, 175), where the fourth box would be without the clip; blue at (20, 25) after the scroll.
-    /// </remarks>
-    [Fact]
-    public void ClippedBox_IsDrawnOnceScrolledIntoView() =>
-        ui.Invoke(() =>
-        {
-            var state = new ScrollState();
-            ReadingTarget? reading = null;
-            using var window = new DesktopWindow(
-                () => Column(ScrollView(Column(Box5()), state).Height(100)),
-                new WindowOptions("Scroll pixels", 200, 200),
-                useWarp: true,
-                target: renderer => reading = new ReadingTarget(renderer)
-            );
-            float scale = window.Window.ScaleFactor;
-
-            Assert.Equal(First, Read(window, reading!, 20, 25, scale));
-            Assert.Equal(Color.FromRgb(0xFFFFFF), Read(window, reading!, 20, 175, scale));
-
-            state.ScrollTo(new Vector2(0, 150));
-            Assert.Equal(Below, Read(window, reading!, 20, 25, scale));
-        });
 
     /// <summary>
     /// A notch of the vertical wheel scrolls the view under the pointer by the lines Windows sets times 100/3, a notch of the
@@ -106,15 +71,6 @@ public sealed unsafe class ScrollWindowTests(UiThreadFixture ui)
             SendWheel(window, WM.WM_MOUSEHWHEEL, 120, 20 * scale, 150 * scale);
             Assert.Equal(Math.Min(chars * 100f / 3, 1_800), across.Offset.Get().X, 2);
         });
-
-    // Draws the tree again with the pixel at (x, y) logical pixels read, and returns it.
-    private static Color Read(DesktopWindow window, ReadingTarget reading, float x, float y, float scale)
-    {
-        reading.Point = ((int)(x * scale), (int)(y * scale));
-        Invalidation.Invalidate(window.Tree, window.Tree.Root, ChangeKind.Color);
-        window.Frames.RunFrame();
-        return reading.Pixel;
-    }
 
     // Sends a wheel message of the amount at a client point in physical pixels, given as Windows gives it: in screen coordinates.
     private static void SendWheel(DesktopWindow window, uint message, int amount, float x, float y)

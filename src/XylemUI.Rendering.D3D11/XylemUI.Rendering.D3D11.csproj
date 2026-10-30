@@ -20,5 +20,7 @@
     <InternalsVisibleTo Include="XylemUI.E2E" />
     <!-- The real window's tests count the draws and read the pixels of the sample (row V1d). -->
     <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
+    <!-- The headless WARP renderer draws offscreen and reads the frame back (CreateOffscreen, CaptureFrame; design §12.3). -->
+    <InternalsVisibleTo Include="XylemUI.Testing.D3D11" />
   </ItemGroup>
 </Project>

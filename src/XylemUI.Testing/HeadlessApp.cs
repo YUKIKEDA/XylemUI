@@ -28,7 +28,8 @@ public sealed class HeadlessApp : IAsyncDisposable
     private readonly GlyphAtlas _atlas;
     private readonly HeadlessScheduler _scheduler = new();
     private readonly HeadlessPlatform _platform = new();
-    private readonly HeadlessTarget _target = new();
+    private readonly HeadlessTarget _target;
+    private readonly HeadlessRenderer? _renderer;
     private readonly UiDispatcher _dispatcher;
     private readonly NodeHandle _rootNode;
     private readonly bool _trackerWasEnabled;
@@ -46,13 +47,29 @@ public sealed class HeadlessApp : IAsyncDisposable
         _report = exception => (_errors ??= []).Add(exception);
         _dispatcher = HeadlessSession.Dispatcher;
         _text = new TextContext(_fonts);
-        _atlas = new GlyphAtlas(new HeadlessGlyphs());
-        Tree = new UiTree(_text);
-        _rootNode = Tree.CreateNode(new LayoutStyle());
-        Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
-        Input = new WindowInput(Tree, Frames, _platform);
-        Pointer = new HeadlessPointer(this);
-        Keyboard = new HeadlessKeyboard(this);
+        _renderer = options.Renderer?.Invoke();
+
+        // A renderer that fails to size, or a part made after it that throws, does not leave its device behind (PR #469's review).
+        try
+        {
+            _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
+            _target = new HeadlessTarget(_renderer?.Target);
+            _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
+            Tree = new UiTree(_text);
+            _rootNode = Tree.CreateNode(new LayoutStyle());
+            Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
+            Input = new WindowInput(Tree, Frames, _platform);
+            Pointer = new HeadlessPointer(this);
+            Keyboard = new HeadlessKeyboard(this);
+        }
+        catch
+        {
+            _atlas?.Dispose();
+            _renderer?.Dispose();
+            _text.Dispose();
+            _fonts.Dispose();
+            throw;
+        }
 
         // Scopes made before the app are not its leaks (AssertNoLeakedScopes).
         _trackerWasEnabled = ScopeTracker.IsEnabled;
@@ -199,6 +216,41 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// Writes the frame drawn last to a PNG file (design §12.3): what an agent looks at to judge the UI.
+    /// </summary>
+    /// <param name="path">The file; its folder is made when missing.</param>
+    /// <returns>A task that completes when the file is written.</returns>
+    /// <exception cref="InvalidOperationException">The app has no renderer (<see cref="HeadlessOptions.Renderer"/>).</exception>
+    public async Task SaveScreenshotAsync(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        Color[] pixels = Capture(out int width, out int height);
+        string? folder = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (folder is not null)
+        {
+            _ = Directory.CreateDirectory(folder);
+        }
+
+        await File.WriteAllBytesAsync(path, Png.Encode(pixels, width, height)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Compares the frame drawn last with a golden of the test project's <c>Goldens/</c> folder (design §12.3, "Comparison"). With
+    /// the environment variable <c>XYLEMUI_UPDATE_GOLDENS=1</c>, it writes the golden instead.
+    /// </summary>
+    /// <param name="name">The golden's file name, with <c>.png</c>; it may name a subfolder.</param>
+    /// <param name="tolerance">How far the frame may be; <see cref="GoldenTolerance.Default"/> when <see langword="null"/>.</param>
+    /// <returns>A task that completes when the comparison or the update is done.</returns>
+    /// <exception cref="InvalidOperationException">The app has no renderer (<see cref="HeadlessOptions.Renderer"/>).</exception>
+    /// <exception cref="GoldenMismatchException">The golden is missing, or differs by more than the tolerance; the frame and the
+    /// image of the difference are written to the test's output folder's <c>GoldenFailures</c>.</exception>
+    public Task MatchesGoldenAsync(string name, GoldenTolerance? tolerance = null)
+    {
+        Color[] pixels = Capture(out int width, out int height);
+        return Goldens.MatchAsync(name, pixels, width, height, tolerance ?? GoldenTolerance.Default);
     }
 
     /// <summary>
@@ -444,6 +496,26 @@ public sealed class HeadlessApp : IAsyncDisposable
     }
 
     /// <summary>
+    /// Reads back the frame drawn last.
+    /// </summary>
+    /// <param name="width">Its width, in physical pixels.</param>
+    /// <param name="height">Its height.</param>
+    /// <returns>Its colors.</returns>
+    /// <exception cref="InvalidOperationException">The app has no renderer.</exception>
+    internal Color[] Capture(out int width, out int height)
+    {
+        VerifyRunning();
+        if (_renderer is null)
+        {
+            throw new InvalidOperationException(
+                "The app draws no pixels: give HeadlessOptions.Renderer a renderer, such as XylemUI.Testing.D3D11's WARP renderer."
+            );
+        }
+
+        return _renderer.Capture(out width, out height);
+    }
+
+    /// <summary>
     /// Throws when the app is disposed, or when the caller is not on the UI thread.
     /// </summary>
     internal void VerifyRunning()
@@ -517,6 +589,7 @@ public sealed class HeadlessApp : IAsyncDisposable
         _scheduler.CancelFrame();
         ScopeTracker.IsEnabled = _trackerWasEnabled;
         _atlas.Dispose();
+        _renderer?.Dispose();
         _text.Dispose();
         _fonts.Dispose();
     }

@@ -8,6 +8,8 @@
     <InternalsVisibleTo Include="XylemUI.Testing.Tests" />
     <!-- The todo tests walk the headless app's tree to its rows (the sample gives them no test IDs); the boundary is row C0's. -->
     <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
+    <!-- The WARP renderer implements HeadlessRenderer's internal members (design §12.3, "The plug-in"); it ships with this version. -->
+    <InternalsVisibleTo Include="XylemUI.Testing.D3D11" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
@@ -16,5 +18,7 @@
     <!-- The test font (design §12.3, "Fonts"): a Noto Sans JP subset under the OFL, so that text is measured the same on every OS. -->
     <EmbeddedResource Include="Fonts\XylemUITestSans.ttf" LogicalName="XylemUITestSans.ttf" />
     <None Include="Fonts\OFL.txt" Pack="true" PackagePath="Fonts\" />
+    <!-- Writes the test project's folder into its assembly, where the goldens are found (design §12.3). -->
+    <None Include="build\XylemUI.Testing.targets" Pack="true" PackagePath="buildTransitive\" />
   </ItemGroup>
 </Project>

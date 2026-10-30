@@ -23,6 +23,17 @@ A change on the frame path reports its time and allocations before and after und
 - Windows for the GPU tests (WARP) and the merge gate. Linux and macOS run the other test layers.
 - `dotnet tool restore` once after cloning (CSharpier).
 
+## Golden images
+
+The pixel tests compare a headless app's frame, drawn on WARP, with a PNG in the test project's `Goldens/` folder (design §12.3).
+The goldens are made on the CI's Windows image (`windows-latest`): WARP gives the same pixels for the same version of Windows, and
+another version may differ at the edges of text by more than the default tolerance.
+
+- To add or change a golden, run the tests with `XYLEMUI_UPDATE_GOLDENS=1`, look at the PNG it wrote, and commit it.
+- When a golden does not match on your machine but matches in CI, your Windows draws it differently: leave the golden as it is.
+- When it does not match in CI, the failed job uploads the screenshot and the image of the difference (`golden-failures-<attempt>`);
+  if the change is meant, commit that screenshot as the new golden.
+
 ## Versioning
 
 Packages are versioned with SemVer from `VersionPrefix` in `Directory.Build.props`. Before 1.0, a minor version may break the public API. Nothing is published to NuGet yet.

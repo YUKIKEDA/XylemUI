@@ -26,6 +26,13 @@ public sealed record HeadlessOptions
     public TimeSpan FrameInterval { get; init; } = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
 
     /// <summary>
+    /// Gets what makes the renderer that draws the app's frames into pixels (design §12.3, "The plug-in"), such as
+    /// <c>XylemUI.Testing.D3D11</c>'s WARP renderer; <see langword="null"/> by default, for an app that draws nothing. The app
+    /// disposes the renderer.
+    /// </summary>
+    public Func<HeadlessRenderer>? Renderer { get; init; }
+
+    /// <summary>
     /// Gets the most iterations <see cref="HeadlessApp.PumpAndSettle"/> runs before it throws; 1,000 by default.
     /// </summary>
     public int MaxIterations { get; init; } = 1_000;

@@ -30,5 +30,9 @@
     <InternalsVisibleTo Include="XylemUI.Text.Tests" />
     <!-- The headless harness ships with Core's version and drives the internal input, frames, and tree (design §12, P02a). -->
     <InternalsVisibleTo Include="XylemUI.Testing" />
+    <!-- The WARP renderer hands a headless app its IRenderTarget (design §12.3, row P02a2). -->
+    <InternalsVisibleTo Include="XylemUI.Testing.D3D11" />
+    <!-- The harness's tests make a renderer of their own to test the goldens on every OS (row P02a2). -->
+    <InternalsVisibleTo Include="XylemUI.Testing.Tests" />
   </ItemGroup>
 </Project>

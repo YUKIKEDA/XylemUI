@@ -1,80 +1,14 @@
-using System.Numerics;
-using TerraFX.Interop.Windows;
 using Todo;
 using XylemUI.Testing.XUnit;
 using XylemUI.Text;
-using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Desktop.Tests;
 
-// The todo sample (row V3c, design §2.7, "How it is checked"): MoonBit's V3 and the parts row V3c adds. The app's behavior runs in a
-// headless app (design §12, row P02a), with no OS window; the pixels of the scrolled list are read in a real window on WARP, with
-// the clicks sent as the window's messages, until row P02a2 reads pixels without one.
-[Collection(UiThreadGroup.Name)]
-public sealed class TodoTests(UiThreadFixture ui)
+// The todo sample (row V3c, design §2.7, "How it is checked"): MoonBit's V3 and the parts row V3c adds, in a headless app (design
+// §12, row P02a) with no OS window. The pixels of the scrolled list and its golden are in HeadlessPixelTests (row P02a2).
+public sealed class TodoTests
 {
-    private static readonly WindowOptions Options = new("Todo test", 420, 360);
     private static readonly HeadlessOptions Headless = new() { Width = 420, Height = 360 };
-
-    /// <summary>
-    /// Three clicks on Add make "todos: 3"; with the list scrolled to 64, the second item keeps its y, and the pixel of an item
-    /// shown by the scroll is the buttons' color (MoonBit's V3).
-    /// </summary>
-    /// <remarks>
-    /// Preconditions:
-    /// - The todo window on WARP, hidden; its target reads a pixel after each draw.
-    ///
-    /// Steps:
-    /// - Click Add three times, a frame after each. Click it seven times more, so that the ten items are taller than the list. Read
-    ///   the second item's y and the first item hidden below the list's bottom. Read the pixel of that item's button, in its left
-    ///   padding (3 logical pixels in, away from its text). Scroll the list to 64; run a frame; read the pixel where the scroll put it.
-    ///
-    /// Expected:
-    /// - The heading reads "todos: 3" and "left: 3" after three clicks. Before the scroll the pixel is not the buttons' color: the
-    ///   list clips the item. After the scroll, the list's position is 64, the second item's y is the same, and the pixel is
-    ///   <c>TodoApp.ButtonBackground</c>.
-    /// </remarks>
-    [Fact]
-    public void ThreeAdds_CountThree_AndTheScrolledListKeepsItsRows() =>
-        ui.Invoke(() =>
-        {
-            ReadingTarget? reading = null;
-            var model = new TodoModel();
-            using var window = new DesktopWindow(
-                () => TodoApp.Todo(model),
-                Options,
-                useWarp: true,
-                target: renderer => reading = new ReadingTarget(renderer)
-            );
-            var app = App.Of(window, model);
-            for (int i = 0; i < 3; i++)
-            {
-                app.Click(app.Add);
-            }
-
-            Assert.Equal(("todos: 3", "left: 3"), app.Heading());
-            for (int i = 0; i < 7; i++)
-            {
-                app.Click(app.Add);
-            }
-
-            NodeHandle second = app.Rows()[1];
-            float y = window.Tree.GetRect(second).Y;
-            NodeHandle hidden = app.Rows().First(row => window.Tree.GetRect(row).Y > TodoApp.ListHeight);
-            NodeHandle button = window.Tree.Nodes.GetRef(hidden).FirstChild;
-            reading!.Point = App.At(window.Tree, button, 3, window.Window.ScaleFactor);
-            Invalidation.Invalidate(window.Tree, button, ChangeKind.Color);
-            window.Frames.RunFrame();
-            Color clipped = reading.Pixel;
-            window.Tree.ScrollStateOf(app.List)!.ScrollTo(new Vector2(0, 64));
-            reading.Point = App.At(window.Tree, button, 3, window.Window.ScaleFactor);
-            window.Frames.RunFrame();
-
-            Assert.Equal(64, window.Tree.ScrollOffsetOf(app.List).Y);
-            Assert.Equal(y, window.Tree.GetRect(second).Y);
-            Assert.NotEqual(TodoApp.ButtonBackground, clipped);
-            Assert.Equal(TodoApp.ButtonBackground, reading.Pixel);
-        });
 
     /// <summary>
     /// Clicking an item marks it done, with a mark and a gray text, and again marks it not done; "left" follows.
@@ -271,8 +205,8 @@ public sealed class TodoTests(UiThreadFixture ui)
     }
 
     // The parts of the todo app's tree, found from its root: the column of the heading, the buttons, and the scroll view; and
-    // clicks at a node's center, each followed by the frame that lays out and draws what they changed. In a real window the clicks
-    // are its messages; in a headless app, the app's pointer.
+    // clicks at a node's center with the headless app's pointer, each followed by the frames that lay out and draw what they
+    // changed.
     private sealed class App
     {
         private readonly Action<NodeHandle> _click;
@@ -312,43 +246,7 @@ public sealed class TodoTests(UiThreadFixture ui)
                 () => _ = headless.PumpAndSettle()
             );
 
-        public static App Of(DesktopWindow window, TodoModel model)
-        {
-            window.Frames.RunFrame();
-            return new(
-                window.Tree,
-                model,
-                node =>
-                {
-                    (int x, int y) = At(window.Tree, node, window.Tree.GetRect(node).Width / 2, window.Window.ScaleFactor);
-                    nint point = (y << 16) | (x & 0xFFFF);
-                    _ = SendMessageW(window.Window.Hwnd, WM.WM_LBUTTONDOWN, MK.MK_LBUTTON, point);
-                    _ = SendMessageW(window.Window.Hwnd, WM.WM_LBUTTONUP, 0, point);
-                    window.Frames.RunFrame();
-                },
-                window.Frames.RunFrame
-            );
-        }
-
         public static string Label(UiTree tree, NodeHandle button) => tree.Nodes.GetRef(tree.Nodes.GetRef(button).FirstChild).Text!.Text.ToString();
-
-        // A point of a node's box at its middle height, `fromLeft` logical pixels from its left edge, in the window's physical
-        // pixels: its box and its ancestors' boxes added, less the scroll position of each scroll container above it.
-        public static (int X, int Y) At(UiTree tree, NodeHandle node, float fromLeft, float scale)
-        {
-            Rect box = tree.GetRect(node);
-            float x = box.X + fromLeft;
-            float y = box.Y + (box.Height / 2);
-            for (NodeHandle ancestor = tree.Nodes.GetRef(node).Parent; !ancestor.IsNone; ancestor = tree.Nodes.GetRef(ancestor).Parent)
-            {
-                Rect outer = tree.GetRect(ancestor);
-                Vector2 offset = tree.ScrollOffsetOf(ancestor);
-                x += outer.X - offset.X;
-                y += outer.Y - offset.Y;
-            }
-
-            return ((int)MathF.Round(x * scale), (int)MathF.Round(y * scale));
-        }
 
         public void Click(NodeHandle node) => _click(node);
 

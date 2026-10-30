@@ -64,9 +64,11 @@ internal sealed class HeadlessPlatform : IPointerPlatform
 }
 
 /// <summary>
-/// Takes each frame's display list and draws nothing; it counts the presents. Drawing pixels is row P02a2's.
+/// Counts the presents of a headless app's frames, and hands each frame to the renderer's target when the app has one; with none,
+/// it draws nothing (design §12.3).
 /// </summary>
-internal sealed class HeadlessTarget : IRenderTarget
+/// <param name="inner">The renderer's target, or <see langword="null"/>.</param>
+internal sealed class HeadlessTarget(IRenderTarget? inner) : IRenderTarget
 {
     /// <summary>
     /// Gets the number of frames presented.
@@ -74,10 +76,14 @@ internal sealed class HeadlessTarget : IRenderTarget
     public int Presents { get; private set; }
 
     /// <inheritdoc/>
-    public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+    public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) => inner?.Draw(list, clearColor, atlas);
 
     /// <inheritdoc/>
-    public void Present() => Presents++;
+    public void Present()
+    {
+        inner?.Present();
+        Presents++;
+    }
 }
 
 /// <summary>
