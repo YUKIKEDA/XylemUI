@@ -1359,6 +1359,24 @@ internal sealed class UiTree
     private NodeVisual VisualOf(NodeHandle node) => Nodes.GetRef(node).Visual ??= new NodeVisual();
 
     /// <summary>
+    /// Sets how far a <c>Show</c>'s part is in, and where it is when wholly out (design §2.14); a change marks the node to be drawn
+    /// again, with no layout.
+    /// </summary>
+    /// <param name="node">The part's root node.</param>
+    /// <param name="presence">How far it is in, 0 to 1.</param>
+    /// <param name="offset">Where it is when wholly out, in logical pixels.</param>
+    internal void SetPresence(NodeHandle node, float presence, Vector2 offset)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.Presence != presence || visual.PresenceOffset != offset)
+        {
+            visual.Presence = presence;
+            visual.PresenceOffset = offset;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
     /// Makes one of a node's paint values follow its changes over a duration along a curve (design §2.14, "Transitions"); a
     /// duration of 0 stops it following.
     /// </summary>

@@ -65,6 +65,49 @@ public sealed class HeadlessAppTests
     }
 
     /// <summary>
+    /// A pump waits for a running animation, frame by frame on the virtual clock, and an app that ends with one running fails at its
+    /// disposal (design §2.14, "Tests").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two apps of a box whose root makes an animation of 100 ms, at a frame interval of 1/60 s.
+    ///
+    /// Steps:
+    /// - In the first, animate to 1 and pump until settled. In the second, animate to 1 and dispose it without a pump.
+    ///
+    /// Expected:
+    /// - The first pump runs 8 iterations and ends with the value at 1: the first frame starts the move, and 1/60 s is 166,666
+    ///   ticks, so 6 frames reach 99.9996 ms and the 7th reaches 100 ms; the second disposal throws <see cref="InvalidOperationException"/> naming a frame.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task PumpAndSettle_WaitsForAnAnimation_AndARunningOneFailsTheEnd()
+    {
+        Animation animation = null!;
+        await using (
+            HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            {
+                animation = Animation.Create(TimeSpan.FromMilliseconds(100));
+                return Box();
+            })
+        )
+        {
+            animation.AnimateTo(1);
+            Assert.Equal(8, app.PumpAndSettle());
+            Assert.Equal(1, animation.Value.Get());
+        }
+
+        HeadlessApp running = await HeadlessApp.StartAsync(() =>
+        {
+            animation = Animation.Create(TimeSpan.FromMilliseconds(100));
+            return Box();
+        });
+        animation.AnimateTo(1);
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => running.DisposeAsync().AsTask());
+        Assert.Contains("a frame", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// With no frame asked for, a pump jumps the clock to the next timer and fires it.
     /// </summary>
     /// <remarks>

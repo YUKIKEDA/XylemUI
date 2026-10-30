@@ -33,4 +33,10 @@ internal struct ScopeData
 
     /// <summary>Set while the scope disposes its children and cleanups, so that a nested dispose of it does nothing.</summary>
     internal bool Disposing;
+
+    /// <summary>
+    /// Whether the scope is paused: the effects under it are held, not run, until it resumes (design §2.7, a <c>Show</c>'s
+    /// exit).
+    /// </summary>
+    internal bool Paused;
 }

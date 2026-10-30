@@ -56,6 +56,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             _target = new HeadlessTarget(_renderer?.Target);
             _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
             Tree = new UiTree(_text);
+            Tree.Animations.ReduceMotion = options.ReduceMotion;
             _rootNode = Tree.CreateNode(new LayoutStyle());
             Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
             Input = new WindowInput(Tree, Frames, _platform);

@@ -82,6 +82,17 @@ internal sealed class NodeVisual
     /// </summary>
     internal NodeTransitions? Transitions { get; set; }
 
+    /// <summary>
+    /// Gets or sets how far a <c>Show</c>'s part is in, 0 to 1 (design §2.14, "The entry and exit of Show"): it multiplies the
+    /// opacity, apart from the node's own; 1 when the node is no entering or leaving part.
+    /// </summary>
+    internal float Presence { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets where the part is when it is wholly out, in logical pixels: the node is moved by it times 1 − <see cref="Presence"/>.
+    /// </summary>
+    internal Vector2 PresenceOffset { get; set; }
+
     private void SetScope(float opacity, Matrix3x2? transform)
     {
         _opacity = opacity;

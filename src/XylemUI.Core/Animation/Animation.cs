@@ -180,16 +180,22 @@ public sealed class Animation
             return;
         }
 
+        // A spring that already moves goes on from this frame's time, with its speed; anything else starts on the next frame.
+        bool moving = _spring && IsAnimating;
         _spring = true;
         _to = target;
         _springConfig = spring;
-        Begin();
+        Begin(restart: !moving);
     }
 
-    // The move starts on the next frame, at its time.
-    private void Begin()
+    // The move starts on the next frame, at its time, unless it goes on from where it is.
+    private void Begin(bool restart = true)
     {
-        _started = false;
+        if (restart)
+        {
+            _started = false;
+        }
+
         _tree.Animations.Add(_driver);
     }
 

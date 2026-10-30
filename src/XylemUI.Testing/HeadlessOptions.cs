@@ -33,6 +33,12 @@ public sealed record HeadlessOptions
     public Func<HeadlessRenderer>? Renderer { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the app acts as if the OS asked for less motion: animations jump to their end values (design
+    /// §2.14, "Reduced motion"); <see langword="false"/> by default.
+    /// </summary>
+    public bool ReduceMotion { get; init; }
+
+    /// <summary>
     /// Gets the most iterations <see cref="HeadlessApp.PumpAndSettle"/> runs before it throws; 1,000 by default.
     /// </summary>
     public int MaxIterations { get; init; } = 1_000;

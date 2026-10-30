@@ -284,7 +284,7 @@ internal sealed partial class WindowFrames
             // here the frame was 968 bytes, zeroed on each call, and the draw stage of `frames --tree` took 12 µs longer for 1,000
             // boxes (row V1c).
             bool styled = styles is not null && node.Pseudo != PseudoState.None;
-            if (styled || visual.Scoped || visual.Transitions is not null)
+            if (styled || visual.Scoped || visual.Transitions is not null || visual.Presence < 1)
             {
                 pushed = DrawResolved(visual, node.Pseudo, node.Layout.Border, box, ref text, ref hitsOnly);
             }
@@ -429,6 +429,19 @@ internal sealed partial class WindowFrames
         CornerRadii radii = visual.Radii;
         BoxShadow? shadow = visual.Shadow;
         visual.Transitions?.Apply(FrameTime, ref background, ref borderPaint, ref foreground, ref opacity, ref transform, ref radii, ref shadow);
+
+        // A Show's part on its way in or out: its own opacity times how far in it is, and moved toward where it is when out.
+        if (visual.Presence < 1)
+        {
+            float presence = visual.Presence;
+            opacity *= presence;
+            Vector2 offset = visual.PresenceOffset * (1 - presence);
+            if (offset != Vector2.Zero)
+            {
+                transform = (transform ?? Matrix3x2.Identity) * Matrix3x2.CreateTranslation(offset);
+            }
+        }
+
         text = foreground ?? text;
         int pushed = 0;
         if (transform is { } matrix)

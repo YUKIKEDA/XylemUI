@@ -22,7 +22,15 @@ namespace XylemUI;
 public static class Scope
 {
     private static readonly Arena<ScopeData> Scopes = new();
+
+    // The effects held under each paused scope, in the order they were queued (Pause, Resume).
+    private static readonly Dictionary<ScopeRef, List<Effect>> Held = [];
     private static readonly Arena<CleanupEntry> Cleanups = new();
+
+    /// <summary>
+    /// Gets the number of paused scopes: 0 keeps the effects' run free of the walk up their scopes.
+    /// </summary>
+    internal static int PausedCount { get; private set; }
 
     /// <summary>
     /// Gets the number of live scopes, effects' scopes included.
@@ -237,6 +245,81 @@ public static class Scope
     internal static bool IsAlive(ScopeRef scope) => Scopes.IsAlive(scope);
 
     /// <summary>
+    /// Pauses a scope (design §2.7, a <c>Show</c>'s exit): the effects under it that their sources mark are held, not run, so the
+    /// subtree computes nothing while it leaves. Its nodes and their look stay as they are.
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    internal static void Pause(ScopeHandle scope)
+    {
+        UiThread.VerifyAccess();
+        ref ScopeData data = ref Scopes.GetRef(scope.Value);
+        if (!data.Paused)
+        {
+            data.Paused = true;
+            PausedCount++;
+        }
+    }
+
+    /// <summary>
+    /// Resumes a paused scope: the effects held under it run, those whose sources changed while it was paused (design §2.7, "Show
+    /// revival semantics").
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    internal static void Resume(ScopeHandle scope)
+    {
+        UiThread.VerifyAccess();
+        ref ScopeData data = ref Scopes.GetRef(scope.Value);
+        if (!data.Paused)
+        {
+            return;
+        }
+
+        data.Paused = false;
+        PausedCount--;
+        if (Held.Remove(scope.Value, out List<Effect>? held))
+        {
+            ReactiveRuntime.EnterBatch();
+            try
+            {
+                foreach (Effect effect in held)
+                {
+                    effect.Release();
+                }
+            }
+            finally
+            {
+                ReactiveRuntime.ExitBatch();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Holds a queued effect when a scope above it is paused.
+    /// </summary>
+    /// <param name="scope">The effect's own scope.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns><see langword="true"/> when it is held, and is not to run now.</returns>
+    internal static bool TryHold(ScopeRef scope, Effect effect)
+    {
+        for (ScopeRef at = scope; !at.IsNone && Scopes.IsAlive(at); at = Scopes.GetRef(at).Parent)
+        {
+            if (Scopes.GetRef(at).Paused)
+            {
+                if (!Held.TryGetValue(at, out List<Effect>? held))
+                {
+                    held = [];
+                    Held[at] = held;
+                }
+
+                held.Add(effect);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Returns whether a scope is still alive (not disposed).
     /// </summary>
     /// <param name="scope">The scope.</param>
@@ -313,6 +396,12 @@ public static class Scope
         ScopeData final = Scopes.GetRef(scope);
         final.Effect?.StopForDispose();
         Unlink(scope, final);
+        if (final.Paused)
+        {
+            PausedCount--;
+            _ = Held.Remove(scope);
+        }
+
         if (final.TrackerId != 0)
         {
             ScopeTracker.Remove(final.TrackerId);
