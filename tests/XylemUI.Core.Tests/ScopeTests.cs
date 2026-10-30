@@ -498,9 +498,11 @@ public sealed class ScopeTests(UiThreadFixture ui)
             }
 
             long ran = _sink;
-            PerformanceAssert.DoesNotAllocate(1_000, _ => Round());
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, _ => Round());
 
-            Assert.Equal(ran + 3_300, _sink);
+            // Three a round: the helper runs 100 unmeasured rounds before the 1,000, and a window again when a background GC
+            // overlapped it.
+            Assert.Equal(ran + (3 * runs), _sink);
         });
 
     private static void Round()

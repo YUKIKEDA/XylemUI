@@ -11,6 +11,13 @@ namespace XylemUI.Platform.Windows;
 /// <returns>Whether the key was handled; the window returns 0 for it and does not pass it to the OS.</returns>
 internal delegate bool KeyInputHandler(in KeyInput input);
 
+/// <summary>
+/// Receives the text typed into a window (design §4.9, "Text input on Windows").
+/// </summary>
+/// <param name="input">The input.</param>
+/// <returns>Whether a handler stopped the text.</returns>
+internal delegate bool TextInputReceiver(in TextInput input);
+
 /// <content>
 /// The keyboard part of the window (design §7, "Keys and the focus"): turns the key messages into <see cref="KeyInput"/>, keeps the
 /// window menu from opening on Alt, and reports the window's activation.
@@ -24,6 +31,7 @@ public sealed unsafe partial class Win32Window
     private const uint WmSysCommand = WM.WM_SYSCOMMAND;
     private const uint WmMenuChar = WM.WM_MENUCHAR;
     private const uint WmActivate = WM.WM_ACTIVATE;
+    private const uint WmChar = WM.WM_CHAR;
 
     // The scan code of the right Shift, which Windows does not mark as extended (Avalonia's KeyInterop reads it with MapVirtualKey).
     private const uint RightShiftScanCode = 0x36;
@@ -36,6 +44,18 @@ public sealed unsafe partial class Win32Window
     /// </summary>
     internal KeyInputHandler? KeyInputReceived { get; set; }
 
+    // Set when the message loop delivered a key down before TranslateMessage and no handler stopped it, so that the dispatch of the
+    // same message passes it to DefWindowProc and does not deliver it again.
+    private bool _keyDeliveredBeforeTranslate;
+
+    // The high surrogate of a WM_CHAR whose low half has not come yet.
+    private TypedText _characters;
+
+    /// <summary>
+    /// Gets or sets what receives the text typed into the window (<c>WM_CHAR</c>); <see langword="null"/> for nothing.
+    /// </summary>
+    internal TextInputReceiver? TextInputReceived { get; set; }
+
     /// <summary>
     /// Gets or sets what receives whether the window is active (<c>WM_ACTIVATE</c>); <see langword="null"/> for nothing.
     /// </summary>
@@ -46,6 +66,44 @@ public sealed unsafe partial class Win32Window
     /// starts to listen to <see cref="ActivationChanged"/> after the window was shown, whose first <c>WM_ACTIVATE</c> it missed.
     /// </summary>
     internal bool IsActive => _hwnd != HWND.NULL && GetActiveWindow() == _hwnd;
+
+    /// <summary>
+    /// Delivers a key down of a XylemUI window before the message loop translates it (design §4.9, "Text input on Windows"; GPUI's
+    /// <c>translate_accelerator</c>, <c>platform.rs</c> lines 501 to 515 and 604 to 610). A stopped key is neither translated nor
+    /// dispatched, so no <c>WM_CHAR</c> comes from it; the others are, and their dispatch passes them to <c>DefWindowProc</c>.
+    /// </summary>
+    /// <param name="message">The message the loop took from the queue.</param>
+    /// <returns>Whether a handler stopped the key: the loop then neither translates nor dispatches it.</returns>
+    internal static bool DeliverKeyBeforeTranslate(MSG* message)
+    {
+        if (message->message is not (WmKeyDown or WmSysKeyDown))
+        {
+            return false;
+        }
+
+        try
+        {
+            nint id = GetWindowLongPtrW(message->hwnd, GWLP.GWLP_USERDATA);
+            if (id == 0 || !NativeHandleTable.TryResolve(id, out Win32Window? window))
+            {
+                return false;
+            }
+
+            LRESULT result = 0;
+            if (window.HandleKeyMessage(message->message, message->wParam, message->lParam, ref result))
+            {
+                return true;
+            }
+
+            window._keyDeliveredBeforeTranslate = true;
+        }
+        catch (Exception exception)
+        {
+            Win32MessageLoop.ReportCallbackException(exception);
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Returns the input a key message reports, or <see langword="null"/> for a message that is not a key message and for the keys
@@ -113,6 +171,40 @@ public sealed unsafe partial class Win32Window
         return rune.Value is < 0x20 or 0x7F ? default : rune;
     }
 
+    /// <summary>
+    /// Returns whether a key prefers to type its character over being a command (design §4.9, "Text input on Windows"; GPUI's
+    /// <c>process_key</c>, <c>events.rs</c> lines 1641 to 1688): a dead key does, and a key that types a character with Control, Alt,
+    /// or Windows held does when the character without them differs, as AltGr's does.
+    /// </summary>
+    /// <param name="written">What <c>ToUnicodeEx</c> returned with the keyboard's state.</param>
+    /// <param name="buffer">The characters it wrote.</param>
+    /// <param name="writtenWithout">What it returned with Control, Alt, and Windows taken off the state.</param>
+    /// <param name="bufferWithout">The characters it wrote then.</param>
+    /// <param name="modifiersHeld">Whether Control, Alt, or Windows is held.</param>
+    /// <returns>Whether the key prefers its character.</returns>
+    internal static bool PrefersCharacter(
+        int written,
+        ReadOnlySpan<char> buffer,
+        int writtenWithout,
+        ReadOnlySpan<char> bufferWithout,
+        bool modifiersHeld
+    )
+    {
+        if (written < 0)
+        {
+            return true;
+        }
+
+        if (TypedCharacter(written, buffer) == default || !modifiersHeld)
+        {
+            return false;
+        }
+
+        int count = Math.Min(written, buffer.Length);
+        int countWithout = Math.Min(Math.Abs(writtenWithout), bufferWithout.Length);
+        return written != writtenWithout || !buffer[..count].SequenceEqual(bufferWithout[..countWithout]);
+    }
+
     // The virtual-key code that names the side of Shift, Control, and Alt: Shift by its scan code, the others by the extended bit,
     // which the right Control and Alt have (WM_KEYDOWN's documentation).
     private static uint Side(uint virtualKey, uint scanCode, bool extended) =>
@@ -137,19 +229,43 @@ public sealed unsafe partial class Win32Window
         | (IsDown(VK.VK_MENU) ? KeyModifiers.Alt : 0)
         | (IsMetaDown() ? KeyModifiers.Meta : 0);
 
-    // The character a key types with the keyboard's state, without changing the state (GPUI's events.rs calls ToUnicode with the same
-    // flag).
-    private static Rune ReadTypedCharacter(uint virtualKey, uint scanCode)
+    // The keys PrefersCharacter takes off the keyboard's state.
+    private static ReadOnlySpan<int> ModifierKeys =>
+        [VK.VK_CONTROL, VK.VK_LCONTROL, VK.VK_RCONTROL, VK.VK_MENU, VK.VK_LMENU, VK.VK_RMENU, VK.VK_LWIN, VK.VK_RWIN];
+
+    // The character a key types with the keyboard's state, and whether it prefers to type it (PrefersCharacter). Both calls of
+    // ToUnicodeEx keep the keyboard's state: one that changed it would break a dead key's composition (GPUI's events.rs calls
+    // ToUnicode with the same flag both times, lines 1613 to 1688).
+    private static (Rune KeyChar, bool PrefersCharacter) ReadTypedCharacter(uint virtualKey, uint scanCode)
     {
         byte* state = stackalloc byte[256];
         if (GetKeyboardState(state) == BOOL.FALSE)
         {
-            return default;
+            return (default, false);
         }
 
+        HKL layout = GetKeyboardLayout(0);
         char* buffer = stackalloc char[8];
-        int written = ToUnicodeEx(virtualKey, scanCode, state, buffer, 8, KeepKeyboardState, GetKeyboardLayout(0));
-        return TypedCharacter(written, new ReadOnlySpan<char>(buffer, 8));
+        int written = ToUnicodeEx(virtualKey, scanCode, state, buffer, 8, KeepKeyboardState, layout);
+        bool held =
+            (state[VK.VK_CONTROL] & 0x80) != 0
+            || (state[VK.VK_MENU] & 0x80) != 0
+            || (state[VK.VK_LWIN] & 0x80) != 0
+            || (state[VK.VK_RWIN] & 0x80) != 0;
+        int writtenWithout = 0;
+        char* bufferWithout = stackalloc char[8];
+        if (held && written > 0)
+        {
+            foreach (int key in ModifierKeys)
+            {
+                state[key] = 0;
+            }
+
+            writtenWithout = ToUnicodeEx(virtualKey, scanCode, state, bufferWithout, 8, KeepKeyboardState, layout);
+        }
+
+        var typed = new ReadOnlySpan<char>(buffer, 8);
+        return (TypedCharacter(written, typed), PrefersCharacter(written, typed, writtenWithout, new ReadOnlySpan<char>(bufferWithout, 8), held));
     }
 
     // A key message's lParam with a scan code: one that has none (a key SendInput gave by its virtual-key code alone) takes the scan
@@ -207,6 +323,18 @@ public sealed unsafe partial class Win32Window
     {
         switch (message)
         {
+            case WmKeyDown or WmSysKeyDown when _keyDeliveredBeforeTranslate:
+                // The message loop delivered this down before TranslateMessage, and no handler stopped it (DeliverKeyBeforeTranslate).
+                _keyDeliveredBeforeTranslate = false;
+                return false;
+            case WmChar:
+                if (_characters.Next((char)(nuint)wParam) is { } text && TextInputReceived?.Invoke(new TextInput(text, Now())) == true)
+                {
+                    result = 0;
+                    return true;
+                }
+
+                return false;
             case WmKeyDown or WmSysKeyDown or WmKeyUp or WmSysKeyUp:
                 lParam = WithScanCode((uint)(nuint)wParam & 0xFFFF, lParam);
                 if (DecodeKey(message, wParam, lParam, ReadModifiers(), default, Now()) is not { } input)
@@ -216,7 +344,8 @@ public sealed unsafe partial class Win32Window
 
                 if (input.Kind == KeyEventKind.Down)
                 {
-                    input = input with { KeyChar = ReadTypedCharacter((uint)(nuint)wParam & 0xFFFF, ((uint)(nint)lParam >> 16) & 0xFF) };
+                    (Rune keyChar, bool prefers) = ReadTypedCharacter((uint)(nuint)wParam & 0xFFFF, ((uint)(nint)lParam >> 16) & 0xFF);
+                    input = input with { KeyChar = keyChar, PrefersCharacter = prefers };
                 }
 
                 // A key a handler stopped returns 0, "if an application processes this message" (WM_KEYDOWN's documentation); the
@@ -250,5 +379,39 @@ public sealed unsafe partial class Win32Window
             default:
                 return false;
         }
+    }
+}
+
+/// <summary>
+/// Turns the UTF-16 units of <c>WM_CHAR</c> into text (design §4.9, "Text input on Windows"): a surrogate pair comes as two messages
+/// and is one text; a control character, a Tab included, is none. GPUI joins the pairs the same way (<c>events.rs</c> lines 1375 to
+/// 1404).
+/// </summary>
+internal struct TypedText
+{
+    private char _high;
+
+    /// <summary>
+    /// Returns the text a unit completes.
+    /// </summary>
+    /// <param name="unit">The unit of one <c>WM_CHAR</c>.</param>
+    /// <returns>The text; <see langword="null"/> for a high surrogate, which waits for its low half, a lone low surrogate, and a
+    /// control character (below U+0020, and U+007F).</returns>
+    public string? Next(char unit)
+    {
+        if (char.IsHighSurrogate(unit))
+        {
+            _high = unit;
+            return null;
+        }
+
+        char high = _high;
+        _high = default;
+        if (char.IsLowSurrogate(unit))
+        {
+            return high == default ? null : new string([high, unit]);
+        }
+
+        return unit is < (char)0x20 or (char)0x7F ? null : unit.ToString();
     }
 }

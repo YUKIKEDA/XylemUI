@@ -100,6 +100,12 @@ public static unsafe class Win32MessageLoop
                     return (int)message.wParam;
                 }
 
+                // A key down goes to its window before it is translated: a stopped key makes no WM_CHAR (design §4.9).
+                if (Win32Window.DeliverKeyBeforeTranslate(&message))
+                {
+                    continue;
+                }
+
                 _ = TranslateMessage(&message);
                 _ = DispatchMessageW(&message);
             }

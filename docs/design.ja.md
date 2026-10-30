@@ -2372,7 +2372,7 @@ internal static CaretPosition HitTestText(TextMeasurement measurement, int lineI
 }
 ```
 
-このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。行の上端は、P02b からレイアウトが `LaidLine` に書き、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
+このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。TextField は、自分の葉の行の上端を 1 回積んで持ち、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
 
 ### 4.4 a11y読み上げ順序
 
@@ -2716,7 +2716,7 @@ public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
 - 選択が空でない間は、キャレットを描かない（Avalonia、`TextPresenter.cs` 450〜453 行目）
 - フォーカスを失っても選択は消さず、フォーカスの無い間は選択もキャレットも描かない。Flutter はフォーカスの変化で選択に触れない（`editable_text.dart` 4939〜4961 行目）。Avalonia は既定で選択を消す（`ClearSelectionOnLostFocus`、`TextBox.cs` 66〜67・1153〜1166 行目）
 - 1 行の欄は、フォーカスを得ると全体を選ぶ。複数行の欄は選択を変えない。Flutter のデスクトップと同じである（`selectAllOnFocus`、`editable_text.dart` 1824〜1832・2115〜2125・4963〜4983 行目）。クリックで得たときは、その後のクリックの処理がキャレットを置き直す
-- **押してもフォーカスを移さない印:** `.KeepsFocusOnPress()` を付けたノードとその子孫を押すと、§7「押したときのフォーカス」はフォーカスを動かさない。zed のボタンは、マウスの Down で `prevent_default` を呼び（`ui/src/components/button/button_like.rs` 877〜885 行目）、祖先へのフォーカスの移動を止める（`gpui/src/elements/div.rs` 2771〜2786 行目）。Avalonia は `Focusable=false` のときだけ、ボタンがフォーカスを取らない。Flutter のボタンは押してもフォーカスを取らないが、デスクトップの欄は外を押されるとフォーカスを手放す（`editable_text.dart` 6898〜6904 行目）。`Primitive.Button` の既定では付けない。Windows では、押したボタンがフォーカスを取るのがふつうの動きだからである
+- **押してもフォーカスを移さない印:** `.KeepsFocusOnPress()` を付けたノードとその子孫を押すと、§7「押したときのフォーカス」はフォーカスを動かさない。押した所から祖先へたどり、各ノードでこの印を、フォーカスできるかより先に見る。フォーカスできるノードより先にこの印のノードに着けば（そのノード自身がフォーカスできても）動かさず、印の中のフォーカスできる子孫を押したときは、その子孫がフォーカスを取る。zed のボタンは、マウスの Down で `prevent_default` を呼び（`ui/src/components/button/button_like.rs` 877〜885 行目）、祖先へのフォーカスの移動を止める（`gpui/src/elements/div.rs` 2771〜2786 行目）。Avalonia は `Focusable=false` のときだけ、ボタンがフォーカスを取らない。Flutter のボタンは押してもフォーカスを取らないが、デスクトップの欄は外を押されるとフォーカスを手放す（`editable_text.dart` 6898〜6904 行目）。`Primitive.Button` の既定では付けない。Windows では、押したボタンがフォーカスを取るのがふつうの動きだからである
 
 **クリップボード:** §6.0 の `IClipboardBackend` は同期で、プレーンテキストだけを扱う。
 
@@ -2747,15 +2747,15 @@ public interface IClipboardBackend
 - **最大の長さ:** 書記素で数え、打ち込みと貼り付けを収まる分で切る（Avalonia も収まる分で切るが、UTF-16 のコード単位で数える、`TextBox.cs` 1212〜1216 行目）
 - **無効:** 今の `.Disabled`（§7）を使う。フォーカスできず、押しても何もしない
 
-**行の上端:** レイアウトが `LaidLine` に各行の上端を書き、`TextCaret.LineAt` は二分探索にする（§4.3）。今は呼ぶたびに上端を積み直すので、費用が行の数 × run の数になる（PR #426 のレビュー）。選択の描画と ↑・↓ の移動は、1 フレームに何度も呼ぶ。
+**行の上端:** `TextCaret.LineAt` は、呼ぶたびに行の上端を積み直すので、費用が行の数 × run の数になる（PR #426 のレビュー）。選択の描画と ↑・↓ の移動は、1 フレームに何度も行を引く。TextField は、描くときとキーを処理するときに、自分の葉の各行の上端と高さを 1 回積んで持ち、行を二分探索で引く。レイアウトが行を作り直したら捨てて積み直す。ほかの葉と `LineAt` は今のままで、リンクの当たり判定はポインタの操作 1 回に 1 回しか引かない。Grill では「レイアウトが `LaidLine` に書く」と決めたが、P02b の実装で測ると、行の結果（`LineLayoutResult`）を大きくすると、使わないフィールドを足しただけでも、`resize-text` の折り返す 1 万の葉の最初のレイアウトが 71〜76 ms になった（main は 59〜61 ms）。この結果は、葉の幅の項目ごとにある。オーナーが、TextField が持つ形に改めた（`docs/benchmarks/p02b-text-field.md`）。
 
 **Todo:** `samples/Todo` に欄を足す。Enter（`OnSubmit`）でも「Add」でも、前後の空白を取った文字が空でなければ項目を足して欄を空にし、空なら何もしない。「Add」には `.KeepsFocusOnPress()` を付け、フォーカスを欄に残す。V3 は欄を足すことを退けた（`docs/design-decisions.md` の「`Show` と `For`」）が、理由は「IME の無い欄では日本語を打てない」で、上の「IME の前」の形で打てるようにする。
 
 - **費用:** 1 回の編集は、新しい文字列と元に戻す記録を確保する（Flutter も Avalonia も、編集ごとに新しい文字列を作る）。描くだけのフレーム（キャレットの点滅、変わらない選択）は割り当て 0 にする（§11.3）。`input` に、1,000 文字の欄への 1 文字の打ち込み（配送からフレームまで）、点滅の 1 フレーム、選択のドラッグの 1 フレームを足す
 - **確かめ方:**
   - Text: UAX #29 の単語の規則を、Unicode の `WordBreakTest.txt` のすべての行で確かめる
-  - Core: `TextInputEvent` の経路と止め方、`KeepsFocusOnPress`、`LaidLine` の上端と `LineAt`
-  - Primitives: 上の命令の表の行ごと、ポインタの回数ごと、元に戻すのまとめ方、付属機能、値の流れ（アプリが書いたとき）、ヘッドレスの点滅と仮想の時計
+  - Core: `TextInputEvent` の経路と止め方、`KeepsFocusOnPress`
+  - Primitives: 行の上端と行の引き方、上の命令の表の行ごと、ポインタの回数ごと、元に戻すのまとめ方、付属機能、値の流れ（アプリが書いたとき）、ヘッドレスの点滅と仮想の時計
   - Platform: 止めたキーから `WM_CHAR` が生まれないこと、サロゲートペアがつながること、`PrefersCharacter`（キーの状態と `ToUnicodeEx` の結果を引数で受ける関数を、§7 と同じく直接確かめる）、クリップボードの読み書き、点滅と幅の設定の読み直し
   - Todo: 欄から項目を足す（`HeadlessApp`）
 
@@ -3956,10 +3956,10 @@ internal readonly record struct KeyInput(
     Key Key,                    // 論理キー（Win32 の VK から。配列に依存する）
     PhysicalKey PhysicalKey,    // 物理キー（スキャンコードと拡張の印から。配列に依存しない）
     Rune KeyChar,               // 押したキーの文字（ToUnicodeEx）。無いか、制御文字なら default
-    bool PrefersCharacter,      // 修飾キーを外すと文字が変わるか、デッドキー（AltGr、P02b、§4.9）
     KeyModifiers Modifiers,     // 押されている修飾キー
     bool IsRepeat,              // Down の自動の繰り返し（lParam の bit 30）。Up では false
-    TimeSpan Timestamp);        // Platform がメッセージを受けた時刻（Stopwatch）
+    TimeSpan Timestamp,         // Platform がメッセージを受けた時刻（Stopwatch）
+    bool PrefersCharacter = false);   // 修飾キーを外すと文字が変わるか、デッドキー（AltGr、P02b、§4.9）
 
 public enum Key : ushort { None, Back, Tab, Enter, Escape, Space, PageUp, PageDown, End, Home, Left, Up, Right, Down, /* … */ }
 public enum PhysicalKey : ushort { None, Backquote, Digit1, KeyA, Enter, ShiftLeft, ArrowLeft, /* … */ }

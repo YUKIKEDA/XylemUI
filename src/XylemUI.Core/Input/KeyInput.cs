@@ -14,6 +14,8 @@ namespace XylemUI;
 /// <param name="Modifiers">The modifier keys held down.</param>
 /// <param name="IsRepeat">Whether a down is the key's automatic repeat; <see langword="false"/> for an up.</param>
 /// <param name="Timestamp">When the platform received the input.</param>
+/// <param name="PrefersCharacter">Whether the key types another character with the modifiers held than without them, or is a dead
+/// key (AltGr; design §4.9, "Text input on Windows"): a text field does not take it as a command.</param>
 internal readonly record struct KeyInput(
     KeyEventKind Kind,
     Key Key,
@@ -21,5 +23,6 @@ internal readonly record struct KeyInput(
     Rune KeyChar,
     KeyModifiers Modifiers,
     bool IsRepeat,
-    TimeSpan Timestamp
+    TimeSpan Timestamp,
+    bool PrefersCharacter = false
 );

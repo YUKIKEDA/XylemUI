@@ -39,6 +39,14 @@ public sealed record HeadlessOptions
     public bool ReduceMotion { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether a text field's caret blinks, every 530 ms of the virtual clock (design §4.9, "The caret");
+    /// <see langword="false"/> by default, where the caret is always drawn: a blinking caret keeps a timer that
+    /// <see cref="HeadlessApp.PumpAndSettle"/> waits for and that fails the end of the test (design §12.2). The caret's width and the
+    /// selection's colors are always Windows' defaults (1, and the selection's colors of Windows 11's default theme).
+    /// </summary>
+    public bool CaretBlink { get; init; }
+
+    /// <summary>
     /// Gets the most iterations <see cref="HeadlessApp.PumpAndSettle"/> runs before it throws; 1,000 by default.
     /// </summary>
     public int MaxIterations { get; init; } = 1_000;

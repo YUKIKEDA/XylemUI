@@ -134,6 +134,25 @@ internal sealed partial class WindowInput
     }
 
     /// <summary>
+    /// Delivers text typed into the window (design §4.9, "Text input on Windows"): routes it from the focused node, or from the root
+    /// when the window is not active or no node has the focus, in the capture and the bubble phase, as a key.
+    /// </summary>
+    /// <param name="input">The input.</param>
+    /// <returns>Whether a handler stopped the text.</returns>
+    public bool Handle(in TextInput input)
+    {
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            return RouteText(_tree.Focus.KeyTarget, input);
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <summary>
     /// Sets whether the window is active (design §7, "The window's activation"); the platform calls it from its activation message.
     /// </summary>
     /// <param name="active">Whether the window is active.</param>
@@ -887,6 +906,94 @@ internal sealed partial class WindowInput
         {
             _routeCount = start;
             _stopped = stopped;
+        }
+    }
+
+    // Delivers text from target as RouteKey delivers a key, on the same array of routes. Returns whether a handler stopped it.
+    private bool RouteText(NodeHandle target, in TextInput input)
+    {
+        if (target.IsNone || !_tree.Nodes.IsAlive(target))
+        {
+            return false;
+        }
+
+        int start = _routeCount;
+        bool stopped = _stopped;
+        _stopped = false;
+        try
+        {
+            for (NodeHandle node = target; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+            {
+                if (_routeCount == _route.Length)
+                {
+                    Array.Resize(ref _route, _routeCount * 2);
+                }
+
+                _route[_routeCount++] = node;
+            }
+
+            int end = _routeCount;
+            for (int i = end - 1; i >= start && !_stopped; i--)
+            {
+                InvokeText(EventPhase.Capture, target, _route[i], input);
+            }
+
+            for (int i = start; i < end && !_stopped; i++)
+            {
+                InvokeText(EventPhase.Bubble, target, _route[i], input);
+            }
+
+            return _stopped;
+        }
+        finally
+        {
+            _routeCount = start;
+            _stopped = stopped;
+        }
+    }
+
+    // Calls the text input handlers of one node for the phase, as InvokeKey calls the key handlers.
+    private void InvokeText(EventPhase phase, NodeHandle target, NodeHandle node, in TextInput input)
+    {
+        if (EnabledInput(node) is not { } nodeInput)
+        {
+            return;
+        }
+
+        foreach (TextHandlerEntry entry in nodeInput.TextHandlers)
+        {
+            if (entry.Phase != phase)
+            {
+                continue;
+            }
+
+            ScopeRef previous = default;
+            if (!entry.Scope.IsNone && !Scope.TryEnter(entry.Scope, out previous))
+            {
+                continue;
+            }
+
+            var e = new TextInputEvent(this, target, node, input);
+            try
+            {
+                entry.Handler(in e);
+            }
+            catch (Exception exception) when (exception is not InvariantViolationException)
+            {
+                ReactiveRuntime.ReportException(exception);
+            }
+            finally
+            {
+                if (!entry.Scope.IsNone)
+                {
+                    Scope.Exit(previous);
+                }
+            }
+
+            if (_stopped)
+            {
+                return;
+            }
         }
     }
 

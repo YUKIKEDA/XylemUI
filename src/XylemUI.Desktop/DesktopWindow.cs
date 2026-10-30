@@ -75,7 +75,13 @@ internal sealed class DesktopWindow : IDisposable
             Input = new WindowInput(Tree, Frames, Window);
             Window.PointerInputReceived = Input.Handle;
             Window.KeyInputReceived = Input.Handle;
+            Window.TextInputReceived = Input.Handle;
             Window.ActivationChanged = Input.SetActive;
+
+            // Text fields copy and paste through Windows' clipboard, and draw their caret and selection with its settings (design §4.9).
+            Tree.Clipboard = new Win32Clipboard(Window);
+            Tree.SetTextEditing(Window.TextEditing);
+            Window.TextEditingChanged += OnTextEditingChanged;
 
             // A touchpad's interaction begins: the frames poll its viewport while it goes on (design §7, "Touch and pen", I1c).
             Window.GestureFrameNeeded = Frames.RequestFrame;
@@ -157,9 +163,11 @@ internal sealed class DesktopWindow : IDisposable
             Window.Closed -= OnClosed;
             Window.TextRenderingChanged -= OnTextRenderingChanged;
             Window.ReducesMotionChanged -= OnReducesMotionChanged;
+            Window.TextEditingChanged -= OnTextEditingChanged;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
             Window.KeyInputReceived = null;
+            Window.TextInputReceived = null;
             Window.ActivationChanged = null;
             Window.Dispose();
         }
@@ -222,6 +230,8 @@ internal sealed class DesktopWindow : IDisposable
     }
 
     private void OnReducesMotionChanged(object? sender, EventArgs e) => Tree.Animations.ReduceMotion = Window.ReducesMotion;
+
+    private void OnTextEditingChanged(object? sender, EventArgs e) => Tree.SetTextEditing(Window.TextEditing);
 
     private void OnTextRenderingChanged(object? sender, EventArgs e)
     {
