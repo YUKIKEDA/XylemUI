@@ -15,7 +15,7 @@ public sealed partial class DisplayList
     /// </summary>
     /// <param name="glyphs">The line's glyphs, with advances and offsets in logical pixels.</param>
     /// <param name="runs">The text's font runs, which the glyphs' <see cref="LaidGlyph.Run"/> index.</param>
-    /// <param name="size">The text's size in logical pixels per em; a run's scale multiplies it.</param>
+    /// <param name="styles">What each run was shaped with: its size in logical pixels per em, which the run's scale multiplies.</param>
     /// <param name="atlas">The glyph atlas the renderer draws from.</param>
     /// <param name="x">The line's left edge, in logical pixels.</param>
     /// <param name="baseline">The line's baseline, in logical pixels from the top.</param>
@@ -26,7 +26,7 @@ public sealed partial class DisplayList
     internal void DrawLine(
         ReadOnlySpan<LaidGlyph> glyphs,
         ReadOnlySpan<FontRun> runs,
-        float size,
+        ReadOnlySpan<RunStyle> styles,
         GlyphAtlas atlas,
         float x,
         float baseline,
@@ -42,11 +42,11 @@ public sealed partial class DisplayList
 
         if (_mode != 0)
         {
-            DrawLineInScope(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
+            DrawLineInScope(glyphs, runs, styles, atlas, x, baseline, color, coverage, aliased);
         }
         else
         {
-            DrawLine<Outside>(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
+            DrawLine<Outside>(glyphs, runs, styles, atlas, x, baseline, color, coverage, aliased);
         }
     }
 
@@ -54,20 +54,20 @@ public sealed partial class DisplayList
     private void DrawLineInScope(
         ReadOnlySpan<LaidGlyph> glyphs,
         ReadOnlySpan<FontRun> runs,
-        float size,
+        ReadOnlySpan<RunStyle> styles,
         GlyphAtlas atlas,
         float x,
         float baseline,
         Color color,
         GlyphCoverage coverage,
         bool aliased
-    ) => DrawLine<Inside>(glyphs, runs, size, atlas, x, baseline, color, coverage, aliased);
+    ) => DrawLine<Inside>(glyphs, runs, styles, atlas, x, baseline, color, coverage, aliased);
 
-    // As DrawText<TScope>, with the pen in logical pixels and the font and size taken from each glyph's run.
+    // As DrawText<TScope>, with the pen in logical pixels and the font and size taken from each glyph's run and its style.
     private void DrawLine<TScope>(
         ReadOnlySpan<LaidGlyph> glyphs,
         ReadOnlySpan<FontRun> runs,
-        float size,
+        ReadOnlySpan<RunStyle> styles,
         GlyphAtlas atlas,
         float x,
         float baseline,
@@ -101,7 +101,7 @@ public sealed partial class DisplayList
         foreach (LaidGlyph laid in glyphs)
         {
             FontRun run = runs[laid.Run];
-            float pixelSize = size * run.Scale * toPixels;
+            float pixelSize = styles[laid.Run].Size * run.Scale * toPixels;
             float position = originX + ((pen + laid.OffsetX) * toPixels);
             int subpixel = 0;
             int pixel = aliased ? GlyphPosition.Round(position) : GlyphPosition.Snap(position, out subpixel);

@@ -15,7 +15,7 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
 {
     private static readonly byte[] FontBytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "XylemUITestSans.ttf"));
     private static readonly TextLanguage Japanese = TextLanguage.FromTag("ja");
-    private static readonly Color Clear = Color.FromRgb(0x2A2A2A);
+    internal static readonly Color Clear = Color.FromRgb(0x2A2A2A);
     private static readonly Color Back = Color.FromRgb(0xE8E8E8);
     private static readonly Color Ink = Color.FromRgb(0x2040C0);
     private static readonly Color Red = Color.FromRgb(0xCC3333);
@@ -410,7 +410,7 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
         return child;
     }
 
-    private static Color[] Draw(D3D11Renderer renderer, DisplayList list, int width, int height, GlyphAtlas atlas)
+    internal static Color[] Draw(D3D11Renderer renderer, DisplayList list, int width, int height, GlyphAtlas atlas)
     {
         renderer.Draw(list, Clear, atlas);
         ID3D11Texture2D* capture = renderer.CaptureBackBuffer();
@@ -440,21 +440,21 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
     }
 
     // The frames here are drawn by the test, which reads the back buffer before any present.
-    private sealed class NoTarget : IRenderTarget
+    internal sealed class NoTarget : IRenderTarget
     {
         public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
 
         public void Present() { }
     }
 
-    private sealed class NoScheduler : IFrameScheduler
+    internal sealed class NoScheduler : IFrameScheduler
     {
         public void RequestFrame(Action callback) { }
 
         public void CancelFrame() { }
     }
 
-    private sealed class OneFont(Font font) : IFontProvider
+    internal sealed class OneFont(Font font) : IFontProvider
     {
         public FontMatch ResolveFont(ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request) =>
             new(font, text.Length - start, 1);

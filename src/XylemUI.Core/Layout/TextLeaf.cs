@@ -59,7 +59,8 @@ internal sealed class TextLeaf
     public LineBreakCache? LineBreaks { get; set; }
 
     /// <summary>
-    /// Copies <paramref name="text"/> into the buffer. When it differs from the text there, both caches are dropped.
+    /// Copies <paramref name="text"/> into the buffer. When it differs from the text there, both caches and the ranges, which
+    /// covered the old text, are dropped.
     /// </summary>
     /// <param name="text">The text.</param>
     /// <returns><see langword="true"/> when the text changed.</returns>
@@ -77,6 +78,7 @@ internal sealed class TextLeaf
 
         text.CopyTo(Buffer);
         Length = text.Length;
+        Ranges = null;
         DropCaches();
         return true;
     }
@@ -103,6 +105,59 @@ internal sealed class TextLeaf
         Buffer = written;
         Length = length;
         DropCaches();
+        return true;
+    }
+
+    /// <summary>
+    /// Gets the ranges of the text (design §4.8): <see langword="null"/> for a text no writer gave a range.
+    /// </summary>
+    public TextRanges? Ranges { get; private set; }
+
+    /// <summary>
+    /// Takes the ranges a text writer wrote when they differ from the leaf's (design §4.8): the leaf keeps the written ranges and
+    /// gives its old ones to the writer, so that neither is copied. When the layout's ranges differ, both caches are dropped; when
+    /// only the look's do, the layout stays. A write with ranges after one without allocates the writer's new ranges, and a write
+    /// without them after one with drops the leaf's: a builder that adds and removes a style by a condition allocates at each
+    /// change. Writes that keep having ranges allocate nothing.
+    /// </summary>
+    /// <param name="writer">The writer of the ranges, its write finished.</param>
+    /// <param name="layout"><see langword="true"/> when the layout's ranges changed.</param>
+    /// <returns><see langword="true"/> when the ranges changed.</returns>
+    public bool TakeRanges(TextRangeWriter writer, out bool layout)
+    {
+        if (!writer.Used)
+        {
+            layout = Ranges is not null;
+            if (!layout)
+            {
+                return false;
+            }
+
+            Ranges = null;
+        }
+        else if (Ranges is null)
+        {
+            layout = true;
+            Ranges = writer.Ranges;
+            writer.Ranges = new TextRanges();
+        }
+        else
+        {
+            layout = !Ranges.LayoutEquals(writer.Ranges);
+            if (!layout && Ranges.LookEquals(writer.Ranges))
+            {
+                return false;
+            }
+
+            writer.Ranges.TakeStateOf(Ranges);
+            (Ranges, writer.Ranges) = (writer.Ranges, Ranges);
+        }
+
+        if (layout)
+        {
+            DropCaches();
+        }
+
         return true;
     }
 
@@ -195,12 +250,14 @@ internal sealed class ShapedTextCache
 }
 
 /// <summary>
-/// The vertical metrics of a line, in logical pixels: the largest ascent, descent, and line gap of the fonts on it.
+/// The vertical metrics of a line, in logical pixels: the largest ascent, descent, and line gap of the fonts on it, and the
+/// largest size of its ranges.
 /// </summary>
 /// <param name="Ascent">The distance from the baseline up.</param>
 /// <param name="Descent">The distance from the baseline down.</param>
 /// <param name="LineGap">The gap the fonts ask for between lines.</param>
-internal readonly record struct LineMetrics(float Ascent, float Descent, float LineGap);
+/// <param name="Size">The largest size asked for on the line, in logical pixels per em, which a line height multiplies.</param>
+internal readonly record struct LineMetrics(float Ascent, float Descent, float LineGap, float Size);
 
 /// <summary>
 /// The second cache of a text leaf (design §3.2): the lines of its text at up to four widths. When it is full, a new width takes

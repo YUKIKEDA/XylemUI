@@ -173,6 +173,11 @@ public sealed unsafe class Font : IDisposable
     public int LineGap { get; private set; }
 
     /// <summary>
+    /// Gets the lines of a text decoration as the font asks for them, in font units (design §4.8).
+    /// </summary>
+    internal DecorationMetrics Decorations { get; private set; }
+
+    /// <summary>
     /// Gets the HarfBuzz font, scaled to font units.
     /// </summary>
     /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
@@ -254,6 +259,31 @@ public sealed unsafe class Font : IDisposable
         Ascent = extents.Ascender;
         Descent = -extents.Descender;
         LineGap = extents.LineGap;
+        Decorations = new DecorationMetrics(
+            Metric(HarfBuzz.MetricsUnderlineOffset),
+            Metric(HarfBuzz.MetricsUnderlineSize),
+            Metric(HarfBuzz.MetricsStrikeoutOffset),
+            Metric(HarfBuzz.MetricsStrikeoutSize),
+            Metric(HarfBuzz.MetricsXHeight)
+        );
         return FontNames.Family(_face);
     }
+
+    // A metric of the font's tables in font units (y up), or null when the font has none.
+    private int? Metric(uint tag)
+    {
+        int position;
+        return HarfBuzz.OtMetricsGetPosition(_font, tag, &position) != 0 ? position : null;
+    }
 }
+
+/// <summary>
+/// The decoration lines a font asks for, in font units with y up, as HarfBuzz reads them from its <c>post</c> and <c>OS/2</c>
+/// tables (<c>hb_ot_metrics_get_position</c>); <see langword="null"/> where the font has no value.
+/// </summary>
+/// <param name="UnderlineOffset">The top of the underline from the baseline: negative below it (OpenType's <c>post.underlinePosition</c>).</param>
+/// <param name="UnderlineSize">The underline's thickness.</param>
+/// <param name="StrikeoutOffset">The top of the line through from the baseline (<c>OS/2.yStrikeoutPosition</c>).</param>
+/// <param name="StrikeoutSize">The line through's thickness.</param>
+/// <param name="XHeight">The height of a lower-case x.</param>
+internal readonly record struct DecorationMetrics(int? UnderlineOffset, int? UnderlineSize, int? StrikeoutOffset, int? StrikeoutSize, int? XHeight);

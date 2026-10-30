@@ -16,6 +16,7 @@ public sealed unsafe class TextShaper : IDisposable
     private nint _buffer = HarfBuzz.BufferCreate();
     private ShapedGlyph[] _glyphs = new ShapedGlyph[64];
     private char[] _scratch = [];
+    private HarfBuzz.Feature[] _features = [];
 
     /// <summary>
     /// Shapes <paramref name="text"/> with <paramref name="font"/>.
@@ -65,10 +66,19 @@ public sealed unsafe class TextShaper : IDisposable
     /// <param name="start">The first code unit to shape.</param>
     /// <param name="length">The number of code units to shape.</param>
     /// <param name="language">The language of the text.</param>
+    /// <param name="features">The OpenType features over the whole part (design §4.8); <see langword="null"/> for the font's
+    /// defaults.</param>
     /// <returns>The glyphs in visual order. The span is valid until the next call.</returns>
     /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
     /// <exception cref="ObjectDisposedException">The shaper or the font was disposed.</exception>
-    internal ReadOnlySpan<ShapedGlyph> ShapeRange(Font font, ReadOnlySpan<char> text, int start, int length, TextLanguage language)
+    internal ReadOnlySpan<ShapedGlyph> ShapeRange(
+        Font font,
+        ReadOnlySpan<char> text,
+        int start,
+        int length,
+        TextLanguage language,
+        FontFeatures? features = null
+    )
     {
         ArgumentNullException.ThrowIfNull(font);
         if (language.Handle == 0)
@@ -94,7 +104,11 @@ public sealed unsafe class TextShaper : IDisposable
         HarfBuzz.BufferSetLanguage(_buffer, language.Handle);
         HarfBuzz.BufferGuessSegmentProperties(_buffer);
         HarfBuzz.BufferSetDirection(_buffer, HarfBuzz.DirectionLtr);
-        HarfBuzz.Shape(harfBuzzFont, _buffer, null, 0);
+        int featureCount = features is null ? 0 : Features(features.Features);
+        fixed (HarfBuzz.Feature* pinned = _features)
+        {
+            HarfBuzz.Shape(harfBuzzFont, _buffer, pinned, (uint)featureCount);
+        }
 
         uint glyphCount;
         HarfBuzz.GlyphInfo* infos = HarfBuzz.BufferGetGlyphInfos(_buffer, &glyphCount);
@@ -130,6 +144,29 @@ public sealed unsafe class TextShaper : IDisposable
             HarfBuzz.BufferDestroy(_buffer);
             _buffer = 0;
         }
+    }
+
+    // The features as HarfBuzz takes them, each over every cluster (HB_FEATURE_GLOBAL_START to HB_FEATURE_GLOBAL_END), in the kept
+    // array. Returns their count.
+    private int Features(ReadOnlySpan<FontFeature> features)
+    {
+        if (_features.Length < features.Length)
+        {
+            _features = new HarfBuzz.Feature[Math.Max(features.Length, _features.Length * 2)];
+        }
+
+        for (int i = 0; i < features.Length; i++)
+        {
+            _features[i] = new HarfBuzz.Feature
+            {
+                Tag = features[i].Tag,
+                Value = features[i].Value,
+                Start = 0,
+                End = uint.MaxValue,
+            };
+        }
+
+        return features.Length;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

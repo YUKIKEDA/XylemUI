@@ -15,7 +15,7 @@ namespace XylemUI;
 /// queued after a frame started, so work queued while a frame is drawn asks for the next one. Effects need no step of their own:
 /// they have run when the batch that set their signals closed (design §2.2).
 /// </remarks>
-internal sealed class WindowFrames
+internal sealed partial class WindowFrames
 {
     // How far a clip reaches past the box on an axis that does not clip (overflow-x: clip with overflow-y: visible), in logical
     // pixels: farther than a window shows.
@@ -256,8 +256,9 @@ internal sealed class WindowFrames
         var box = new Rect(parentX + rect.X, parentY + rect.Y, rect.Width, rect.Height);
         NodeVisual? visual = node.Visual;
 
-        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1).
-        bool writesHit = node.Input?.WritesHitRegion == true || node.Layout.Style.IsScrollContainer;
+        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1), and a text leaf with links takes
+        // the pointer over them (design §4.8).
+        bool writesHit = node.Input?.WritesHitRegion == true || node.Layout.Style.IsScrollContainer || node.Text?.Ranges?.HasLinks == true;
         Color text = inheritedText;
         int pushed = 0;
         if (visual is not null)
@@ -487,10 +488,17 @@ internal sealed class WindowFrames
     // The node's box as its hit region, and where it is in the list, so that the input finds the node's state for its local position.
     private void WriteHitRegion(NodeHandle handle, Rect box, in CornerRadii radii)
     {
-        if (_tree.Nodes.GetRef(handle).Input is { } input)
+        ref UiNode node = ref _tree.Nodes.GetRef(handle);
+        if (node.Input is { } input)
         {
             input.HitEntry = _list.HitEntries.Length;
             input.HitBuild = Builds;
+        }
+
+        if (node.Text?.Ranges is { } ranges)
+        {
+            ranges.HitEntry = _list.HitEntries.Length;
+            ranges.HitBuild = Builds;
         }
 
         _list.HitRegion(handle, box.X, box.Y, box.Width, box.Height, radii);
@@ -533,10 +541,17 @@ internal sealed class WindowFrames
         foreach (LaidLine line in layout.Lines)
         {
             (float height, float baseline) = LayoutEngine.TextLine(result, line.Span, text.Style);
+            if (text.Ranges is { } ranges)
+            {
+                DrawRanges(ranges, result, glyphs.Slice(line.GlyphStart, line.GlyphCount), x, top, height, top + baseline, color);
+                top += height;
+                continue;
+            }
+
             _list.DrawLine(
                 glyphs.Slice(line.GlyphStart, line.GlyphCount),
                 result.Runs,
-                result.Size,
+                result.Styles,
                 _atlas,
                 x,
                 top + baseline,

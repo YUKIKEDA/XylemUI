@@ -257,7 +257,7 @@ public sealed class TextWrapTests : IDisposable
     {
         foreach (float size in Sizes)
         {
-            _shaped.Shape(text, [new FontRun(_font, 0, text.Length, 1)], size, TestFont.Japanese, _shaper, _breaker);
+            _shaped.Shape(text, [new FontRun(_font, 0, text.Length, 1)], [new RunStyle(size, TestFont.Japanese, 0, null)], _shaper, _breaker);
             (_, float max) = _shaped.IntrinsicWidths(_shaper);
             _shaped.Wrap(max, _shaper, _lines);
             _shaped.Lay(_lines, _shaper, _laid);
@@ -358,7 +358,7 @@ public sealed class TextWrapTests : IDisposable
     private void Shape(string text)
     {
         FontRun[] runs = [new FontRun(_font, 0, text.Length, 1)];
-        _shaped.Shape(text, runs, Size, TestFont.Japanese, _shaper, _breaker);
+        _shaped.Shape(text, runs, [new RunStyle(Size, TestFont.Japanese, 0, null)], _shaper, _breaker);
     }
 
     private LaidLine[] Lay(string text, float width)

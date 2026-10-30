@@ -348,6 +348,11 @@ internal sealed partial class WindowInput
             pointer.Pressing = false;
             pointer.PastSlop = false;
             pointer.Drag = null;
+            pointer.LinkLeaf = default;
+            pointer.Link = -1;
+            pointer.LinkLeave = null;
+            pointer.PressedLinkLeaf = default;
+            pointer.PressedLink = -1;
         }
 
         return pointer;
@@ -394,6 +399,8 @@ internal sealed partial class WindowInput
             pointer.Pressing = true;
             pointer.PastSlop = false;
             pointer.DownAt = new Vector2(input.X, input.Y);
+            pointer.PressedLinkLeaf = pointer.LinkLeaf;
+            pointer.PressedLink = pointer.Link;
             SetPressed(pointer, target);
 
             // Before the route, from the node the press starts at (design §7, "Focus on a press", Avalonia's FocusManager).
@@ -419,7 +426,8 @@ internal sealed partial class WindowInput
             // a touch, when it did not move past the slop (Flutter's tap). The node hit is the one the release's hover test found; a
             // handler of the up may have removed it since (PR #327's review).
             NodeHandle released = _tree.Nodes.IsAlive(pointer.Hit) ? pointer.Hit : default;
-            if (tapped && _tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
+            bool linkClicked = pointer.PressedLink >= 0 && ClickLink(pointer, tapped, input);
+            if (!linkClicked && tapped && _tree.Nodes.IsAlive(origin) && IsSelfOrDescendant(released, origin))
             {
                 Route(PointerEventKind.Click, origin, input, bubbleOnly: true);
             }
@@ -490,6 +498,7 @@ internal sealed partial class WindowInput
         pointer.Capture = default;
         pointer.ClickOrigin = default;
         pointer.Pressing = false;
+        pointer.PressedLink = -1;
         ClearPressed(pointer);
         if (!captured.IsNone)
         {
@@ -530,6 +539,7 @@ internal sealed partial class WindowInput
         if (!pointer.Hovers)
         {
             pointer.Hit = pointer.Inside ? HitAt(input) : default;
+            _ = FindLink(pointer, input);
             return;
         }
 
@@ -579,11 +589,13 @@ internal sealed partial class WindowInput
         if (!pointer.Inside)
         {
             pointer.Hit = default;
+            _ = FindLink(pointer, input);
             SetHover(pointer, 0, input);
             return;
         }
 
         pointer.Hit = HitAt(input);
+        bool enteredLink = FindLink(pointer, input);
         NodeHandle captured = CapturedNode(pointer);
         NodeHandle start =
             captured.IsNone ? pointer.Hit
@@ -601,6 +613,10 @@ internal sealed partial class WindowInput
         }
 
         SetHover(pointer, count, input);
+        if (enteredLink)
+        {
+            EnterLink(pointer, input);
+        }
     }
 
     // Changes the pointer's hover to the first count nodes of _nextHovered: a leave for each node that left, innermost first, then
@@ -736,8 +752,10 @@ internal sealed partial class WindowInput
     private void UpdateCursor()
     {
         PointerState pointer = _pointers[_cursorPointer < _pointers.Length && _pointers[_cursorPointer].Live ? _cursorPointer : 0];
-        CursorKind cursor = CursorKind.Arrow;
-        for (NodeHandle node = Target(pointer); !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+
+        // Over a link, the hand, before the cursors of its leaf and the leaf's ancestors (design §4.8, as Flutter's TextSpan).
+        CursorKind cursor = pointer.Link >= 0 ? CursorKind.Hand : CursorKind.Arrow;
+        for (NodeHandle node = pointer.Link >= 0 ? default : Target(pointer); !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
         {
             if (_tree.Nodes.GetRef(node).Input?.Cursor is { } set)
             {
@@ -1170,6 +1188,14 @@ internal sealed partial class WindowInput
 
         // A touchpad's pan since its start, in logical pixels (row I1c).
         public Vector2 PanTotal;
+
+        // The link the pointer is over (its leaf, and its index in the leaf's ranges or -1) and that link's leave; and the link the
+        // left button was pressed over (row T12).
+        public NodeHandle LinkLeaf;
+        public int Link = -1;
+        public PointerHandler? LinkLeave;
+        public NodeHandle PressedLinkLeaf;
+        public int PressedLink = -1;
 
         // Whether the pointer has a hover: the mouse and pens do; a touch and a touchpad's pan do not (design §7, "Touch and pen").
         public bool Hovers => Type is PointerType.Mouse or PointerType.Pen;

@@ -368,10 +368,10 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
         using var atlas = new GlyphAtlas(new NoGlyphs());
 
         ArgumentException thrown = Assert.Throws<ArgumentException>(() =>
-            list.DrawLine([], [], 16, atlas, 0, 0, Gray, GlyphCoverage.Rgb, aliased: true)
+            list.DrawLine([], [], [], atlas, 0, 0, Gray, GlyphCoverage.Rgb, aliased: true)
         );
         Assert.Equal("aliased", thrown.ParamName);
-        list.DrawLine([], [], 16, atlas, 0, 0, Gray, GlyphCoverage.Gray, aliased: true);
+        list.DrawLine([], [], [], atlas, 0, 0, Gray, GlyphCoverage.Gray, aliased: true);
     }
 
     /// <summary>

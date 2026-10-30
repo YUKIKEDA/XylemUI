@@ -19,14 +19,42 @@ public delegate void TextBuilder(ref NodeTextWriter text);
 /// </remarks>
 public struct NodeTextWriter
 {
+    private readonly TextRangeWriter _ranges;
     private char[] _buffer;
     private int _length;
 
-    internal NodeTextWriter(char[] buffer)
+    internal NodeTextWriter(char[] buffer, TextRangeWriter ranges)
     {
         _buffer = buffer;
+        _ranges = ranges;
         _length = 0;
     }
+
+    /// <summary>
+    /// Gets the writer of the text's ranges (design §4.8).
+    /// </summary>
+    internal readonly TextRangeWriter Ranges => _ranges;
+
+    /// <summary>
+    /// Opens a range of a style at what has been written.
+    /// </summary>
+    internal readonly void OpenSpan(in SpanStyle style) => _ranges.Open(_length, style, -1);
+
+    /// <summary>
+    /// Opens the range of a link at what has been written.
+    /// </summary>
+    internal readonly void OpenLink(in TextLink link) => _ranges.Open(_length, default, _ranges.Ranges.AddLink(link));
+
+    /// <summary>
+    /// Closes the innermost range at what has been written.
+    /// </summary>
+    internal readonly void CloseSpan() => _ranges.Close(_length);
+
+    /// <summary>
+    /// Ends the write.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A range is still open.</exception>
+    internal readonly void Finish() => _ranges.Finish(_length);
 
     /// <summary>
     /// Gets the buffer written into; a write that needs more room replaces it with a larger one.
@@ -102,6 +130,43 @@ public static class NodeTextWriterExtensions
     {
         _ = writer;
         _ = handler;
+    }
+
+    /// <summary>
+    /// Opens a range of a style (design §4.8), closed by <c>using</c>. Ranges nest: the inner one takes the fields it leaves
+    /// <see langword="null"/> from the outer one, and the outermost from the text node's own style and color.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    /// <param name="style">The range's style. Make it once and use it again in each write.</param>
+    /// <returns>The scope that closes the range.</returns>
+    public static TextSpanScope Style(this ref NodeTextWriter writer, in SpanStyle style)
+    {
+        writer.OpenSpan(style);
+        return new TextSpanScope(ref writer);
+    }
+
+    /// <summary>
+    /// Opens the range of a link (design §4.8), closed by <c>using</c>. A left click, or a touch tap, on the range calls
+    /// <paramref name="onClick"/> in place of the text node's own Click; a pointer over it takes the hand cursor.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    /// <param name="onClick">What a click on the link calls.</param>
+    /// <param name="onEnter">What a pointer that comes over the link calls.</param>
+    /// <param name="onLeave">What a pointer that leaves the link calls.</param>
+    /// <param name="hovered">The look of the link while a pointer is over it, over its own: only its color, background, decoration,
+    /// and shadow are read.</param>
+    /// <returns>The scope that closes the range.</returns>
+    public static TextSpanScope Link(
+        this ref NodeTextWriter writer,
+        PointerHandler onClick,
+        PointerHandler? onEnter = null,
+        PointerHandler? onLeave = null,
+        in SpanStyle hovered = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(onClick);
+        writer.OpenLink(new TextLink(onClick, onEnter, onLeave, hovered));
+        return new TextSpanScope(ref writer);
     }
 }
 
