@@ -1008,7 +1008,7 @@ Fine-grained reactiveはview関数が初回しか実行されないため、素�
 
 ```csharp
 // Elements に足す（using static XylemUI.Elements;）
-public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null);
+public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null, ShowMotion? motion = null);   // motion は AN1（§2.14）
 
 // ElementExtensions に足す。container は子を持たない箱で、For だけがその子を決める
 public static Element For<T, TKey>(this Element container, IReadOnlySignal<IReadOnlyList<T>> items,
@@ -1056,7 +1056,7 @@ Column(
   - V3c（`samples/Todo`）: MoonBit 版の V3 と同じ到達点を、C# 版でも満たす（§10.5 の表、§3.4.2「V3」）。見出しに件数を出し、Add を 3 回押すと `todos: 3` になる。項目は `ScrollView` の中の Button で、位置を 64 にした後も 2 つ目の項目の y は変わらず、行の間の位置の画素がボタンの色になる。その上に、済みの印・消す・絞り込み・並べ替えを足す。形は V3c の Grill（Issue #380）で決めた。済みは文字の頭の印と灰色の文字、消すボタンはいつも見せ（行に載せたときだけ見せる形は、ホバーを読む口が要るので行 G1）、絞り込みは 3 つのボタンで選んだものの背景を変え、並べ替えは新しい順と古い順を切り替える 1 つのボタンである
   - 費用（V3c）: `samples/Todo` の起動と、何もしていないときのメモリ（`app-startup --idle`）。1,000 項目での各操作（足す・済みの切り替え・消す・絞り込み・並べ替え）の、変更・layout・描画の段の時間（`benchmarks/XylemUI.E2E` の `todo`。サンプルの `TodoApp` を参照する。サンプルは公開の API だけで書くので、段の時刻を読めない）
 
-**`Show`の状態機械:** (1)退場アニメーション中に親のSignalが先に破棄されると、退場中のノードが存在しないデータを参照しうる（ゾンビComputation）。対策として`Exiting`遷移時にReactive購読を切断する。(2)退場（`motion` の退場の間）に条件が`false→true`と高速に切り替わった場合の復帰契約は下表。
+**`Show`の状態機械:** (1)退場アニメーション中に親のSignalが先に破棄されると、退場中のノードが存在しないデータを参照しうる（ゾンビComputation）。対策として`Exiting`遷移時に部分のスコープを一時停止する（`Scope.Pause`、§2.14「`Show` の登場と退場」）。部分の effect は依存の辺を残したまま走らず、走るはずだったものは溜めておく。(2)退場（`motion` の退場の間）に条件が`false→true`と高速に切り替わった場合の復帰契約は下表。
 
 ```csharp
 public enum ShowState { Hidden, Entering, Visible, Exiting }
@@ -1064,11 +1064,11 @@ public enum ShowState { Hidden, Entering, Visible, Exiting }
 public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, ShowMotion? motion = null)   // motion は D7 の Grill（§2.14）
 {
     // whenがfalseになった瞬間: ShowStateをExitingへ遷移させ、
-    //   1. このサブツリーのReactive graph購読を即座に切断する（ビジネスロジックの再計算を止める）
-    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降は子の木を包むノードの
-    //      ペイントプロパティ（opacity/transform）のみを Show 自身がアニメーションさせる（§2.14「`Show` の登場と退場」）
+    //   1. このサブツリーのスコープを一時停止する（Scope.Pause。effect は走らずに溜まり、ビジネスロジックの再計算が止まる）
+    //   2. 直前の描画状態（`NodeVisual` と文字の色、§5.0「描画の段とフレームの駆動」）をFreezeし、以降は部分の根のノードの
+    //      出ている度合い（opacity/位置、使う人の値とは別）のみを Show 自身がアニメーションさせる（§2.14「`Show` の登場と退場」）
     //   3. motion の長さの終わりにScopeArena.Disposeする
-    // Exiting中にwhenがtrueに戻った場合: サブツリーを復帰させ(Enteringへ)、購読を再接続する
+    // Exiting中にwhenがtrueに戻った場合: サブツリーを復帰させ(Enteringへ)、スコープを再開して溜めた effect を走らせる（Scope.Resume）
     ...
 }
 ```
@@ -1080,19 +1080,19 @@ public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Sho
 | 状態                                                         | 復帰時の扱い                               |
 | ------------------------------------------------------------ | ------------------------------------------ |
 | Exiting中の再表示                                            | 同一`UiNode`を復帰させる（作り直さない）   |
-| Reactive graph（依存関係）の購読                             | 再subscribeする                            |
+| Reactive graph（依存関係）の購読                             | 一時停止を解く（辺は残っている）           |
 | local state（例: スクロール位置、選択範囲）                  | 保持したまま復帰                           |
 | Scope配下のexternal resource（native handle、GPUリソース等） | 破棄済みでなければ保持、破棄済みなら再取得 |
 | dispose済み（`motion` の退場の終了後）                       | 必ず新規`UiNode`として作り直す             |
 
-**復帰時の初期同期プロトコル**: 再購読した瞬間に現在のSignal値とComputed/Effectの状態がズレている可能性がある（`Exiting`中もSignal自体は更新され続けている場合があるため）。再subscribe直後に「現在のSignal値から一気にComputed/Effectを再評価し、その結果に応じて必要ならdirty化してLayout/Paintへ反映する」という初期同期ステップを明示する。
+**復帰時の初期同期プロトコル**: 再開した瞬間に現在のSignal値とComputed/Effectの状態がズレている可能性がある（`Exiting`中もSignal自体は更新され続けている場合があるため）。再開の直後に「溜めた effect のうち依存が変わったものを、現在のSignal値から再評価し、その結果に応じて必要ならdirty化してLayout/Paintへ反映する」という初期同期ステップを明示する。
 
 ```text
 Exiting → (whenがtrueに戻る)
   ↓
-subscribe（Reactive graphへの再登録）
+resume（Scope.Resume。溜めた effect を 1 つのバッチで enqueue する）
   ↓
-initial synchronization（現在のSignal値から関連Computed/Effectを即時再評価）
+initial synchronization（依存が変わった effect だけを、現在のSignal値から再評価）
   ↓
 dirty? （再評価の結果、前回の描画状態の Freeze 時点と値が異なっていればdirty）
   ↓
@@ -1555,7 +1555,7 @@ public static class Elements
     public static Element Text(Func<string> content);                // 読んだ Signal が変わるたびに書き直す（string を確保する）
     public static Element Text(TextBuilder content);                 // 同じ。確保しない
     public static Element ScrollView(Element child, ScrollState? state = null);   // 縦にスクロールする箱（V2、§3.4.1）
-    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null);   // V3（§2.7）
+    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null, ShowMotion? motion = null);   // V3（§2.7）、motion は AN1（§2.14）
 }
 
 // メソッドチェーン。どれもその木の setter に直接書き、同じ Element を返す。長さは論理画素
@@ -1599,7 +1599,7 @@ public static class ElementExtensions
     public static bool Focus(this Element e);                                        // フォーカスできなければ false
     public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
     // アニメーション（AN1、§2.14）。描画の値のプロパティだけ（NodeProperties の描画の値）。変わると今の値から補間する
-    public static Element Transition<T>(this Element e, NodeProperty<T> property, TimeSpan duration, Curve curve);
+    public static Element Transition<T>(this Element e, NodeProperty<T> property, TimeSpan duration, Curve? curve = null);
     // テスト（P02a、§12.5「鍵」）。付けたノードだけを持つ表に入れる。どのノードにも付けられる
     public static Element TestId(this Element e, string id);
     // スクロール（V2、§3.4.1「スクロールする箱」）
@@ -1614,6 +1614,36 @@ public static class ElementExtensions
         Func<IReadOnlySignal<T>, IReadOnlySignal<int>, Element> render) where TKey : notnull;
     // Signal とノードをつなぐ 1 つの経路（§2.4）。上の Signal を受ける多重定義はこれを呼ぶ
     public static Element Bind<T>(this Element e, NodeProperty<T> property, IReadOnlySignal<T> value);
+}
+
+// アニメーション（AN1、§2.14）。値をシグナルで出す
+public sealed class Animation
+{
+    public static Animation Create(TimeSpan duration, Curve? curve = null, float value = 0);   // 今の Scope が持つ
+    public IReadOnlySignal<float> Value { get; }
+    public bool IsAnimating { get; }
+    public void Forward();                                                   // 1 へ。長さは残りの距離の分（Flutter の forward）
+    public void Reverse();                                                   // 0 へ
+    public void AnimateTo(float target, TimeSpan? duration = null, Curve? curve = null);
+    public void Set(float value);                                            // すぐ設定して止める（指で追う）
+    public void Fling(float velocity, Spring? spring = null);                 // 速度 ≥ 0 なら 1 へ、< 0 なら 0 へ
+    public void SpringTo(float target, Spring? spring = null);                // 今の位置と速度から
+    public void Stop();
+}
+
+public readonly record struct Spring(float Stiffness, float Damping, float Mass = 1);   // Default は臨界減衰、stiffness 300
+
+public sealed class Curve
+{
+    public static Curve CubicBezier(float x1, float y1, float x2, float y2);
+    public static Curve Linear { get; }   // Ease、EaseIn、EaseOut、EaseInOut、DecelerateMid も
+    public float Transform(float progress);
+}
+
+public sealed class ShowMotion
+{
+    public static ShowMotion Fade(TimeSpan duration, Curve? curve = null);
+    public static ShowMotion FadeSlide(float dx, float dy, TimeSpan duration, Curve? curve = null);
 }
 
 // XylemUI.Primitives（見た目のない部品、§13.1）。名前空間 XylemUI.Primitives、using static XylemUI.Primitives.Primitive;
@@ -1700,7 +1730,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 ### 2.14 アニメーション（D7 の Grill、Issue #166）
 
-要件 7（§1）の「補間状態保持、ジェスチャー追従、フレーム駆動」を、2 つの宣言の形で満たす。実装は行 AN1 で行う。比べた相手は Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）で、3 つとも、アニメーションを UI スレッドで動かす仕組みを主に持つ。
+要件 7（§1）の「補間状態保持、ジェスチャー追従、フレーム駆動」を、2 つの宣言の形で満たす。実装は行 AN1 で入れた。比べた相手は Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）で、3 つとも、アニメーションを UI スレッドで動かす仕組みを主に持つ。
 
 **宣言の形:** 公開の型は `ElementExtensions.Transition`（§2.6 の一覧）、`Animation`、`Curve`、`ShowMotion` である。`NodeProperties` は、今あるプロパティの記述子（`NodeProperty<T>`、§2.13 のシグナルの結び付きが使う）で、`Transition` はそのうち描画の値のものだけを受け取る。`Animation`・`Curve`・`ShowMotion` のメンバーの形は AN1 で決め、§2.6 に足す。
 
@@ -1709,7 +1739,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 - **外から動かすアニメーション（explicit）:** `Animation` は値を `IReadOnlySignal<float>` として出す。`Forward`・`Reverse`・`AnimateTo(target, duration, curve)`・値の直接の設定（ジェスチャーで追う）・`Fling(velocity, spring)`（バネ）を持つ。Flutter の `AnimationController`（`packages/flutter/lib/src/animation/animation_controller.dart` 470〜830 行目）、GPUI の `with_spring`（zed v1.25.3 の `crates/gpui/src/spring.rs` 13〜43 行目）に当たる。ドロワーを指で引いて離すと、値を直接動かした後に `Fling` で閉じるか開く（Flutter の `Drawer` と同じ）
 - **キーフレーム**（Avalonia の `Animation` と `Cue`）は v1 に入れない。Fluent の部品が使うのは 1 区間の動きだけである（WinUI の `ToggleSwitch` も 83 ms の 1 区間）。要るようになったら行を足す
 
-**動かせるプロパティ:** 遷移は描画の値だけを動かす（不透明度・変換・背景と枠の色・文字の色・角丸・影）。疑似状態は描画の値しか変えず、layout を無効にしない（§2.13、Invariant 14）ので、それと同じ範囲である。外から動かすアニメーションの値はただのシグナルなので、`Width` などの layout のプロパティにも結べる。そのときは毎フレーム layout をやり直す。3 つの比べた相手も、layout のプロパティを動かせ、費用は layout をやり直すかどうかで決まる。Flutter の `RenderConstrainedBox` は `markNeedsLayout`、不透明度は層だけを直す（`packages/flutter/lib/src/rendering/proxy_box.dart` 226〜233 行目、1052〜1066 行目）。Avalonia は `AffectsMeasure` と `AffectsRender` で分ける（`src/Avalonia.Base/Layout/Layoutable.cs` 146〜158 行目）。GPUI は毎フレーム要素を作り直す。layout を動かす費用は AN1 で測る。
+**動かせるプロパティ:** 遷移は描画の値だけを動かす（不透明度・変換・背景と枠の色・文字の色・角丸・影）。疑似状態は描画の値しか変えず、layout を無効にしない（§2.13、Invariant 14）ので、それと同じ範囲である。外から動かすアニメーションの値はただのシグナルなので、`Width` などの layout のプロパティにも結べる。そのときは毎フレーム layout をやり直す。3 つの比べた相手も、layout のプロパティを動かせ、費用は layout をやり直すかどうかで決まる。Flutter の `RenderConstrainedBox` は `markNeedsLayout`、不透明度は層だけを直す（`packages/flutter/lib/src/rendering/proxy_box.dart` 226〜233 行目、1052〜1066 行目）。Avalonia は `AffectsMeasure` と `AffectsRender` で分ける（`src/Avalonia.Base/Layout/Layoutable.cs` 146〜158 行目）。GPUI は毎フレーム要素を作り直す。layout を動かす費用は AN1 で測った（1,000 個の箱の列で、1 つの幅を動かすと layout の pass が 66〜70 µs、`docs/benchmarks/an1-animations.md`）。混ぜない値は、長さの半分で切り替える（AN1 の実装で決めた）: 片方がグラデーションのペイント、片方が無い影、内側と外側の影、片方が無い文字の色（無い文字の色は親から受け継ぐという意味で、透明ではない）。Avalonia の `BrushTransition` も、片方が無いブラシなど混ぜられないものは半分で切り替える（12.1.4 の `src/Avalonia.Base/Animation/Transitions/BrushTransition.cs` 21〜24 行目、63〜65 行目）。グラデーションは、Flutter（3.47.8 の `packages/flutter/lib/src/painting/gradient.dart` 332 行目の `Gradient.lerp`）と Avalonia（同じ版の `src/Avalonia.Base/Animation/Animators/GradientBrushAnimator.cs` 22 行目）が混ぜるが、XylemUI の `GradientBrush` は変えられないクラスなので、混ぜると毎フレーム新しいブラシを確保する（フレームの経路で確保しない決まり、`perf`）。確保せずに混ぜる形は、行 AN2 で決める。無いペイントは、もう片方の色の透明度 0 として混ぜるので、背景は浮かび上がり、消えていく。Flutter の `Color.lerp` も、片方が無ければ透明度だけを動かす（`engine/src/flutter/lib/ui/painting.dart` 424〜436 行目）。遷移の途中でノードが描かれなくなる（そのノードか祖先が `Hidden` になる）と、遷移は目標の値で終わり、一覧から外れる。
 
 **スレッド:** アニメーションは UI スレッドだけで動かす。Flutter はアニメーションを UI の isolate で進め（`docs/about/The-Engine-architecture.md` 149〜180 行目）、GPUI も UI スレッドで動かす。Avalonia の Composition アニメーションは描画スレッドで動くが、描画スレッドの側にビジュアルの木を持つ別の層の仕組みである。XylemUI は木を 1 つだけ持って毎フレーム描き直す（§5.0.1）ので、描画スレッドに写しを持たない。
 
@@ -1719,15 +1749,15 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 **カーブ:** Core に `Curve` を置く。3 次ベジェ（`Curve.CubicBezier(x1, y1, x2, y2)`）と、よく使う定数（`Linear`、`EaseInOut` など）を持つ。Fluent 2 の 9 つのカーブはどれも 3 次ベジェである（microsoft/fluentui のコミット `1f59fc2` の `packages/tokens/src/global/curves.ts` 4〜12 行目）。Fluent 2 の 8 つの長さ（50〜500 ms、同じコミットの `durations.ts` 4〜11 行目）と 9 つのカーブは、`XylemUI.Theme.Fluent` のトークンとして置く（§13.2）。
 
-**動きを減らす設定:** OS の「動きを減らす」設定がオンのときは、アニメーションを終わりの値まで飛ばし、フレームを予約しない。Windows は `SPI_GETCLIENTAREAANIMATION` を読む。GPUI の `reduce_motion`（`crates/gpui/src/app.rs` 1293〜1304 行目）、Fluent 2 の「no motion」の推奨（https://fluent2.microsoft.design/motion）、WCAG 2.3.3 に合わせる。
+**動きを減らす設定:** OS の「動きを減らす」設定がオンのときは、新しく始まる動きを終わりの値まで飛ばし、フレームを予約しない。動いている途中で設定が変わっても、その動きは終わりまで進む（設定はめったに変わらない）。Windows は `SPI_GETCLIENTAREAANIMATION` を、ウィンドウを作るときと、そのウィンドウが `WM_SETTINGCHANGE` を受けるたびに読む。値はウィンドウごとに持つ（Windows はトップレベルのウィンドウごとにこのメッセージを送るので、どのウィンドウも自分の値と比べて変わったかを知る）。GPUI の `reduce_motion`（`crates/gpui/src/app.rs` 1293〜1304 行目）、Fluent 2 の「no motion」の推奨（https://fluent2.microsoft.design/motion）、WCAG 2.3.3 に合わせる。
 
-**`Show` の登場と退場:** `Show(when, render, motion: ShowMotion.Fade(duration, curve))` のように動きを渡す。`Show` は子の木を包むノードを持ち、その不透明度と位置（変換）を 0 から 1 で動かす。プリセットは `ShowMotion.Fade` と `ShowMotion.FadeSlide(dx, dy)` で、呼ぶ人が長さとカーブを選ぶ。Fluent React の presence 部品（`Fade`・`Slide`、`visible` と `unmountOnExit`）と、Flutter の `AnimatedSwitcher`（既定はフェード、`packages/flutter/lib/src/widgets/animated_switcher.dart` 299〜359 行目）と同じ考え方である。退場の間は、§2.7 の決まりのとおり、子の木の購読を切って描画の状態を止める（`Exiting`、§11.5.1）。包むノードの値は `Show` 自身が動かすので、子の Effect は要らない。退場の途中で条件が true に戻れば、そのときの値から登場へ戻る。最初に作るときは登場を動かさない（Fluent の `appear` と同じく、既定は false）。
+**`Show` の登場と退場:** `Show(when, render, motion: ShowMotion.Fade(duration, curve))` のように動きを渡す。`Show` は、部分の根のノードの「出ている度合い」（0〜1）を動かす。描画は、その度合いを根のノードの不透明度に掛け、`ShowMotion` のずれに (1 − 度合い) を掛けた分だけ位置を動かす。度合いは、使う人がそのノードに付けた不透明度や変換とは別に持つ。AN1 の実装で、D7 の「子の木を包むノード」から改めた。V3 で `Show` は包む箱を木に足さないと決めた（layout の親の直接の子にする、§2.7）ので、箱を足すと layout が変わるためである。プリセットは `ShowMotion.Fade` と `ShowMotion.FadeSlide(dx, dy)` で、呼ぶ人が長さとカーブを選ぶ。Fluent React の presence 部品（`Fade`・`Slide`、`visible` と `unmountOnExit`）と、Flutter の `AnimatedSwitcher`（既定はフェード、`packages/flutter/lib/src/widgets/animated_switcher.dart` 299〜359 行目）と同じ考え方である。退場の間は、§2.7 の決まりのとおり、子の木の購読を切って描画の状態を止める（`Exiting`、§11.5.1）。実装では部分の Scope を止める（`Scope.Pause`）。止めた Scope の下の Effect は、ソースが変わってもキューの中で溜められて走らず、Scope を再開すると（条件が true に戻ったとき）溜めた Effect のうちソースの変わったものが走る（§2.7「復帰時の初期同期プロトコル」）。止めた Scope が 1 つも無いときの費用は、Effect を走らせるたびの整数の比較 1 回である。度合いは `Show` 自身が動かすので、子の Effect は要らない。退場が終わってから、次の部分（`fallback`、無ければ空のノード）と差し替え、次の部分は度合い 0 から登場する。退場の途中で条件が true に戻れば、同じノードのまま、そのときの度合いから登場へ戻る（§2.7 の復帰の表）。登場はカーブを前へ、退場はカーブを後ろへ走らせる（Flutter の曲線つきアニメーションの reverse と同じ。EaseOut の退場は、ゆっくり始まって速く終わる）。動く長さは、`ShowMotion` の長さに残りの距離を掛けたものである。最初に作るときは登場を動かさない（Fluent の `appear` と同じく、既定は false）。
 
 **テストとアロケーション:**
 
 - 仮想の時計（`TestTime`、§12.2）で、アニメーションは決まった結果になる。`Pump(TimeSpan)` で途中の値を確かめられる
 - 動いたまま終わったアニメーションは、予約したフレームとして残るので、`HeadlessApp.DisposeAsync` の終わりの検査で失敗になる。Flutter の「A Ticker was active at the end of the test」（`packages/flutter_test/lib/src/widget_tester.dart` 1042〜1063 行目）と同じである
-- アニメーションの状態は、フレームの経路で確保しない形で持つ（`perf`）。§11.3 の Zero-Alloc のシナリオ 5（アニメーション 1 本の再生）を、AN1 で通す
+- アニメーションの状態は、フレームの経路で確保しない形で持つ（`perf`）。§11.3 の Zero-Alloc のシナリオ 5（アニメーション 1 本の再生）は、`AnimationTests.SteadyState_RunningAnimationAndTransition_AllocatesNothing` で確かめる
 
 ---
 
@@ -3957,7 +3987,7 @@ public interface IPopupHost
 以下の項目は決定済みである。
 
 ### 8.1 `Show`のdispose猶予期間 — §2.7
-`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。D7 の Grill（Issue #166）で、この引数は `motion: ShowMotion?`（長さ・カーブ・プリセット）にした。`Show` が子の木を包むノードの不透明度と位置を動かし、退場の長さは `motion` の長さである（§2.14「`Show` の登場と退場」）。V3 の `Show` は `exit` を持たず、いつも即 dispose する。`motion` は行 AN1 で足す（D7 の前の文言は「`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す」、V3 の Grill、Issue #363）。
+`exit: TimeSpan?`パラメータを追加。省略時（`null`）は条件がfalseになった瞬間に即disposeする。値を指定した場合のみサブツリーを維持しつつアニメーション補間を継続し、期間終了後にdisposeする。D7 の Grill（Issue #166）で、この引数は `motion: ShowMotion?`（長さ・カーブ・プリセット）にした。`Show` は部分の根のノードの出ている度合いを動かし（AN1 で、子の木を包むノードを足す D7 の形から改めた）、退場の長さは `motion` の長さである（§2.14「`Show` の登場と退場」）。V3 の `Show` は `exit` を持たず、いつも即 dispose した。`motion` は行 AN1 で足した（D7 の前の文言は「`exit` は、アニメーションの API を決める行 D7 と、それを入れる行で足す」、V3 の Grill、Issue #363）。
 
 ### 8.2 Signal読み取りのAPI形状 — §2
 `signal.Get()` / `signal.Set(v)`の明示的メソッドを採用する。MoonBit 版では「演算子オーバーロード的な糖衣構文のサポート有無を前提にしない」ことが理由だった。C# ではプロパティ（`signal.Value`）が通常の言語機能として使えるが、それでもメソッドを採る。getter に依存登録という副作用があるため、プロパティにするとデバッガのウォッチ・データヒント・`DebuggerDisplay` の評価が getter を呼び、ブレークポイントで止まっている Computation に意図しない依存を登録してしまうからである（デバッガはメソッドを自動評価しない）。暗黙の型変換演算子（`Signal<T>` → `T`）も同じ理由で定義しない。
@@ -4304,9 +4334,9 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 | `Unmounted` | `Show`/`For`で条件合致                                      | `Mounted`  | Scope生成、Signal購読開始、`MarkDirty(Layout)`                                        |
 | `Mounted`   | Signal更新                                                  | `Dirty`    | `Invalidate`→`MarkDirty`伝播（§2.4）、`LayoutRoots`登録                               |
 | `Dirty`     | Materialization / Text パイプライン完了後に `RunLayoutPass` | `Clean`    | サイズ・位置確定、`Versions.Layout`更新（下記11.5.2）、DisplayList再構築キューへ      |
-| `Mounted`   | `Show`条件false（`motion`あり）                             | `Exiting`  | Reactive購読切断、描画状態のフリーズ、アニメーション登録（§2.7）                      |
+| `Mounted`   | `Show`条件false（`motion`あり）                             | `Exiting`  | スコープの一時停止（`Scope.Pause`、§2.14）、描画状態のフリーズ、アニメーション登録（§2.7） |
 | `Exiting`   | `motion` の退場の終了                                       | `Disposed` | アリーナ解放、generationインクリメント（§2.5）、Externalリソース破棄（§2.7の3層方針） |
-| `Exiting`   | 条件がtrueに復帰                                            | `Mounted`  | Reactive再購読、アニメーション破棄、`MarkDirty(Paint)`                                |
+| `Exiting`   | 条件がtrueに復帰                                            | `Mounted`  | スコープの再開（`Scope.Resume`）、出ている度合いを今の値から 1 へ、`MarkDirty(Paint)` |
 
 `Exiting` の 3 行は、`Show` の `motion`（§2.14、§8.1）を入れる行 AN1 のもので、V3 の `Show` と `For` には無い。V3 では、`Show` の条件が false になったときも、`For` が行を消すときも、`Mounted` からすぐ `Disposed` になる（V3 の Grill、Issue #363）。
 
@@ -4400,7 +4430,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 `PumpAndSettle()` は、次の4つがすべて空になるまで、仮想時間を進めながらフレームを離散的に回し続ける。
 
 1. 予約済みのフレーム（`IFrameScheduler.RequestFrame`）
-2. 実行中のアニメーション（ウィンドウのアニメーションの一覧、§2.14。行 AN1 で入れる）
+2. 実行中のアニメーション（ウィンドウのアニメーションの一覧、§2.14）
 3. UI キュー（`UiMessage` と `SynchronizationContext` に積まれた `await` の継続、§2.12）
 4. 予約済みのタイマー
 

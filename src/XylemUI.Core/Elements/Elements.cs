@@ -195,11 +195,14 @@ public static class Elements
     /// <param name="when">The condition.</param>
     /// <param name="render">What the true state shows: a node of the current tree with no parent, made in the part's scope.</param>
     /// <param name="fallback">What the false state shows; nothing when <see langword="null"/>.</param>
+    /// <param name="motion">How a part enters and leaves (design §2.14): the part shown leaves first, paused (its effects held), and
+    /// the new one enters; a condition that comes back while a part leaves turns its exit into an entry. The part shown first does
+    /// not enter. At once when <see langword="null"/>.</param>
     /// <returns>The node of the part shown first, to put in a parent. Put it in a parent before the condition changes: a change
     /// before that is reported to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/> and shows nothing new.</returns>
     /// <exception cref="InvalidOperationException">No window's root function is running, there is no current scope, or a part returns
     /// no node of the current tree with no parent.</exception>
-    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null)
+    public static Element Show(IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback = null, ShowMotion? motion = null)
     {
         ArgumentNullException.ThrowIfNull(when);
         ArgumentNullException.ThrowIfNull(render);
@@ -209,7 +212,7 @@ public static class Elements
             throw new InvalidOperationException("Show is made inside a scope, which owns its parts; there is no current scope.");
         }
 
-        return new Element(tree, ShowBlock.Create(tree, when, render, fallback).Node);
+        return new Element(tree, ShowBlock.Create(tree, when, render, fallback, motion).Node);
     }
 
     /// <summary>

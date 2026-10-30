@@ -3,7 +3,8 @@ namespace XylemUI;
 /// <summary>
 /// What a <see cref="Elements.Show"/> keeps (design §2.7, "The shape of V3"): the node it put in its parent, the scope of that
 /// node's part, and whether a part was shown yet. A change of the condition makes the other part in a new scope, puts it in the
-/// place of the old node, and disposes the old part.
+/// place of the old node, and disposes the old part. With a motion (design §2.14), the old part first leaves, paused, and the new
+/// one enters; a condition that comes back while the old part leaves turns its exit into an entry.
 /// </summary>
 internal sealed class ShowBlock
 {
@@ -11,16 +12,25 @@ internal sealed class ShowBlock
     private readonly Func<Element> _render;
     private readonly Func<Element>? _fallback;
     private readonly ScopeRef _owner;
+    private readonly ShowMotion? _motion;
+    private readonly Presence? _presence;
     private ScopeHandle _part;
     private NodeHandle _placeholder;
     private bool _hasPart;
 
-    private ShowBlock(UiTree tree, Func<Element> render, Func<Element>? fallback, ScopeRef owner)
+    // The truth the shown part stands for, and the last truth of the condition; they differ while the part leaves.
+    private bool _partShown;
+    private bool _target;
+    private bool _leaving;
+
+    private ShowBlock(UiTree tree, Func<Element> render, Func<Element>? fallback, ShowMotion? motion, ScopeRef owner)
     {
         _tree = tree;
         _render = render;
         _fallback = fallback;
+        _motion = motion;
         _owner = owner;
+        _presence = motion is null ? null : new Presence(this);
     }
 
     /// <summary>
@@ -35,27 +45,111 @@ internal sealed class ShowBlock
     /// <param name="when">The condition.</param>
     /// <param name="render">What the true state shows.</param>
     /// <param name="fallback">What the false state shows; nothing when <see langword="null"/>.</param>
+    /// <param name="motion">How a part enters and leaves; at once when <see langword="null"/>.</param>
     /// <returns>The block.</returns>
-    internal static ShowBlock Create(UiTree tree, IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback)
+    internal static ShowBlock Create(UiTree tree, IReadOnlySignal<bool> when, Func<Element> render, Func<Element>? fallback, ShowMotion? motion)
     {
         ShowBlock? block = null;
         _ = Scope.Create(
             () =>
             {
-                block = new ShowBlock(tree, render, fallback, Scope.CurrentRef);
+                block = new ShowBlock(tree, render, fallback, motion, Scope.CurrentRef);
                 ShowBlock made = block;
                 Scope.OnCleanup(made.FreePlaceholder);
-                _ = Effect.Create(() => made.Show(when.Get()));
+                Scope.OnCleanup(made.StopMotion);
+                _ = Effect.Create(() => made.Change(when.Get()));
             },
             "Show"
         );
         return block!;
     }
 
-    // Shows the part of the condition's truth. The effect runs again only when the condition's value changed, and a bool's change
-    // is a change of its truth.
+    // A change of the condition's truth. With no motion, or nothing shown yet, the part changes at once. With one, the shown part
+    // leaves first (Leave), or, when the condition came back to its truth while it left, enters again from where it is.
+    private void Change(bool shown)
+    {
+        _target = shown;
+        if (_motion is null || !_hasPart)
+        {
+            Show(shown);
+            return;
+        }
+
+        if (shown == _partShown)
+        {
+            if (_leaving)
+            {
+                _leaving = false;
+                if (!_part.IsNone)
+                {
+                    Scope.Resume(_part);
+                }
+
+                _presence!.Run(1);
+            }
+
+            return;
+        }
+
+        if (!_leaving)
+        {
+            Leave();
+        }
+    }
+
+    // The shown part starts to leave: its scope paused, so it computes nothing, and its presence going to 0. Nothing shown (the
+    // empty node) has nothing to fade, and gives way at once.
+    private void Leave()
+    {
+        if (Node == _placeholder)
+        {
+            Swap();
+            return;
+        }
+
+        if (_tree.Nodes.GetRef(Node).Parent.IsNone)
+        {
+            throw new InvalidOperationException("The condition of Show changed before its node was put in a parent; put the node in a parent first.");
+        }
+
+        _leaving = true;
+        _tree.Focus.Lose(Node);
+        if (!_part.IsNone)
+        {
+            Scope.Pause(_part);
+        }
+
+        _presence!.Run(0);
+    }
+
+    // The part that left gives way to the part of the condition's last truth, which enters from nothing.
+    private void Swap()
+    {
+        _leaving = false;
+        Show(_target);
+        if (Node != _placeholder)
+        {
+            _presence!.Start(0);
+            _presence.Run(1);
+        }
+    }
+
+    // The presence reached the end it ran to: a part that left gives way.
+    private void Arrived(float presence)
+    {
+        if (presence == 0 && _leaving)
+        {
+            Swap();
+        }
+    }
+
+    private void StopMotion() => _presence?.Stop();
+
+    // Shows the part of the condition's truth at once. The effect runs again only when the condition's value changed, and a bool's
+    // change is a change of its truth.
     private void Show(bool shown)
     {
+        _partShown = shown;
         bool first = !_hasPart;
         NodeHandle old = Node;
         ScopeHandle oldPart = _part;
@@ -134,6 +228,89 @@ internal sealed class ShowBlock
         }
 
         return _placeholder;
+    }
+
+    // How far the shown part is in, moved on the window's frames from where it is to an end along the motion's curve (design
+    // §2.14): its root node's presence, which the frame multiplies into its opacity and its offset.
+    private sealed class Presence(ShowBlock block) : Ticking
+    {
+        private float _value = 1;
+        private float _from;
+        private float _to = 1;
+        private bool _started;
+        private TimeSpan _start;
+
+        // Sets where the part is now, with no move.
+        public void Start(float value)
+        {
+            _value = value;
+            Write();
+        }
+
+        // Moves the part to an end: in the motion's duration times the distance left, so that a turned exit takes as long back as
+        // it went. Less motion, or a part already there, arrives at once.
+        public void Run(float to)
+        {
+            _from = _value;
+            _to = to;
+            if (block._tree.Animations.ReduceMotion || _value == to)
+            {
+                Stop();
+                _value = to;
+                Write();
+                block.Arrived(to);
+                return;
+            }
+
+            _started = false;
+            block._tree.Animations.Add(this);
+        }
+
+        public void Stop() => block._tree.Animations.Remove(this);
+
+        internal override bool Tick(TimeSpan now)
+        {
+            if (!_started)
+            {
+                _started = true;
+                _start = now;
+            }
+
+            ShowMotion motion = block._motion!;
+            TimeSpan length = motion.Duration * Math.Abs(_to - _from);
+            double progress = length <= TimeSpan.Zero ? 1 : (now - _start) / length;
+            if (progress < 1)
+            {
+                // The curve runs forward on the way in, and backward on the way out (Flutter's reverse of a curved animation).
+                float p = (float)progress;
+                _value = _to > _from ? _from + ((_to - _from) * motion.Curve.Transform(p)) : _to + ((_from - _to) * motion.Curve.Transform(1 - p));
+                Write();
+                return true;
+            }
+
+            _value = _to;
+            Write();
+
+            // A part that left gives way here, and the part that enters runs this again (Run): it stays in the list then.
+            block.Arrived(_to);
+            if (!_started && Slot >= 0)
+            {
+                // The part that entered starts at this frame's time: the frame that ended the exit.
+                _started = true;
+                _start = now;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void Write()
+        {
+            if (block._tree.Nodes.IsAlive(block.Node) && block.Node != block._placeholder)
+            {
+                block._tree.SetPresence(block.Node, _value, block._motion!.Offset);
+            }
+        }
     }
 
     private void FreePlaceholder()

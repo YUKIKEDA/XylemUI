@@ -80,6 +80,17 @@ public sealed class Effect : Computation, IDisposable
     /// </summary>
     internal void StopForDispose() => DisposeSources();
 
+    /// <summary>
+    /// Queues an effect that a paused scope held, when the scope resumes; it runs if a source changed meanwhile.
+    /// </summary>
+    internal void Release()
+    {
+        if (!IsDisposed)
+        {
+            ReactiveRuntime.Enqueue(this);
+        }
+    }
+
     /// <inheritdoc />
     internal override void MarkDirty()
     {
@@ -101,6 +112,12 @@ public sealed class Effect : Computation, IDisposable
     internal void RunQueued()
     {
         if (IsDisposed)
+        {
+            return;
+        }
+
+        // Under a paused scope (a Show's exit, design §2.7), it waits, queued, until the scope resumes.
+        if (Scope.PausedCount > 0 && Scope.TryHold(_scope, this))
         {
             return;
         }

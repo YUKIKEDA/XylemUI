@@ -84,6 +84,10 @@ internal sealed class DesktopWindow : IDisposable
             Input.SetActive(Window.IsActive);
             Window.SynchronousRender = Render;
             Window.TextRenderingChanged += OnTextRenderingChanged;
+
+            // Less motion when Windows asks for it (design §2.14, "Reduced motion").
+            Tree.Animations.ReduceMotion = Window.ReducesMotion;
+            Window.ReducesMotionChanged += OnReducesMotionChanged;
             Window.Closed += OnClosed;
             Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject);
             Mount(root);
@@ -152,6 +156,7 @@ internal sealed class DesktopWindow : IDisposable
         {
             Window.Closed -= OnClosed;
             Window.TextRenderingChanged -= OnTextRenderingChanged;
+            Window.ReducesMotionChanged -= OnReducesMotionChanged;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
             Window.KeyInputReceived = null;
@@ -215,6 +220,8 @@ internal sealed class DesktopWindow : IDisposable
         float scale = window.ScaleFactor;
         Frames.Resize(new Size(width / scale, height / scale), scale);
     }
+
+    private void OnReducesMotionChanged(object? sender, EventArgs e) => Tree.Animations.ReduceMotion = Window.ReducesMotion;
 
     private void OnTextRenderingChanged(object? sender, EventArgs e)
     {

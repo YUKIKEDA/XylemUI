@@ -37,12 +37,18 @@ internal sealed class UiTree
         _shallowestFirst = CompareDepth;
         Text = text;
         Focus = new FocusManager(this);
+        Animations = new AnimationClock(this);
     }
 
     /// <summary>
     /// Gets the focus of the tree's window (design §7, "Keys and the focus").
     /// </summary>
     internal FocusManager Focus { get; }
+
+    /// <summary>
+    /// Gets the animations of the tree's window that are running (design §2.14, "The frame clock").
+    /// </summary>
+    internal AnimationClock Animations { get; }
 
     // The signals of IsFocused, made the first time a node's is asked for (design §7, "Element.Focus() and IsFocused()"): few nodes
     // read theirs, so they are kept apart from UiNode, as the scroll states.
@@ -1351,6 +1357,38 @@ internal sealed class UiTree
 
     // The node's visual, made the first time: the tree owns it, and a later change writes into it.
     private NodeVisual VisualOf(NodeHandle node) => Nodes.GetRef(node).Visual ??= new NodeVisual();
+
+    /// <summary>
+    /// Sets how far a <c>Show</c>'s part is in, and where it is when wholly out (design §2.14); a change marks the node to be drawn
+    /// again, with no layout.
+    /// </summary>
+    /// <param name="node">The part's root node.</param>
+    /// <param name="presence">How far it is in, 0 to 1.</param>
+    /// <param name="offset">Where it is when wholly out, in logical pixels.</param>
+    internal void SetPresence(NodeHandle node, float presence, Vector2 offset)
+    {
+        NodeVisual visual = VisualOf(node);
+        if (visual.Presence != presence || visual.PresenceOffset != offset)
+        {
+            visual.Presence = presence;
+            visual.PresenceOffset = offset;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Makes one of a node's paint values follow its changes over a duration along a curve (design §2.14, "Transitions"); a
+    /// duration of 0 stops it following.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="kind">The value.</param>
+    /// <param name="duration">The duration.</param>
+    /// <param name="curve">The curve.</param>
+    internal void SetTransition(NodeHandle node, NodeTransitions.Kind kind, TimeSpan duration, Curve curve)
+    {
+        NodeVisual visual = VisualOf(node);
+        (visual.Transitions ??= new NodeTransitions(this, node)).Set(kind, duration, curve);
+    }
 
     // The node's pseudo-state looks, made the first time one is set (PR #319's review).
     private PseudoStyles StatesOf(NodeHandle node) => VisualOf(node).States ??= new PseudoStyles();
