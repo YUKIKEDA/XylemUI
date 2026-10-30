@@ -11,7 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- The glyph rasterizer tests draw with the text tests' font (tests/XylemUI.Text.Tests/Fonts/README.md). -->
-    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestColor.ttf" Link="Fonts\XylemUITestColor.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestBitmap.ttf" Link="Fonts\XylemUITestBitmap.ttf" CopyToOutputDirectory="PreserveNewest" />
     <!-- The PNG decoder is checked against WIC on PngSuite (tests/XylemUI.Text.Tests/Png/README.md, roadmap row T9). -->

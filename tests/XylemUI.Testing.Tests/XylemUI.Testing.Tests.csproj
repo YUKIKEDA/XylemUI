@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XylemUI.Testing.Tests</RootNamespace>
+    <!-- The allocation tests measure under JIT; tiered compilation adds one-off allocations (.cursor/rules/bench.mdc). -->
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Testing\XylemUI.Testing.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Testing.XUnit\XylemUI.Testing.XUnit.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

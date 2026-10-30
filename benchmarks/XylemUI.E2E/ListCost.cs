@@ -16,11 +16,12 @@ internal static class ListCost
     private const int Rows = 10_000;
     private const int Samples = 31;
 
-    public static int Run()
+    // testIds: each row has a test ID (design §12.5, "The keys"), so that removing a row also removes its ID (row P02a).
+    public static int Run(bool testIds = false)
     {
         UiThread.Initialize();
-        using var report = new Report("lists");
-        using var list = new ListScene();
+        using var report = new Report(testIds ? "lists-test-ids" : "lists");
+        using var list = new ListScene(testIds);
         report.Number("rows", Rows);
         Measure(report, "append", list, () => list.Set(list.Appended), () => list.Set(list.Forward));
         Measure(report, "remove_middle", list, () => list.Set(list.WithoutMiddle), () => list.Set(list.Forward));
@@ -70,7 +71,7 @@ internal static class ListCost
         private readonly ScopeHandle _scope;
         private readonly NodeHandle _root;
 
-        public ListScene()
+        public ListScene(bool testIds)
         {
             Color gray = Color.FromRgb(0x808080);
             Color red = Color.FromRgb(0xCC3333);
@@ -92,7 +93,15 @@ internal static class ListCost
                 {
                     Element toggled = Column(Box().Height(10), Show(_shown, () => Box().Height(10)), Box().Height(10));
                     Element rows = Column()
-                        .For(_items, item => item.Id, item => Box().Height(10).Background(Computed.Create(() => new Paint(item.Get().Color))));
+                        .For(
+                            _items,
+                            item => item.Id,
+                            item =>
+                            {
+                                Element row = Box().Height(10).Background(Computed.Create(() => new Paint(item.Get().Color)));
+                                return testIds ? row.TestId("row") : row;
+                            }
+                        );
                     _tree.AppendChild(root, Column(toggled, rows).Node);
                 });
             }

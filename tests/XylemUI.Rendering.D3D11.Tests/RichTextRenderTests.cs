@@ -48,7 +48,7 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
             using var rasterizer = new DirectWriteGlyphRasterizer();
             using var atlas = new GlyphAtlas(rasterizer);
             using var font = new Font(FontBytes);
-            using var context = new TextContext(new DrawStageRenderTests.OneFont(font));
+            using var context = new TextContext(new TestFontProvider(font));
             const string Spaces = "        ";
             var tree = new UiTree(context);
             NodeHandle root = tree.CreateNode(new LayoutStyle());
@@ -158,7 +158,7 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
             using var rasterizer = new DirectWriteGlyphRasterizer();
             using var atlas = new GlyphAtlas(rasterizer);
             using var font = new Font(FontBytes);
-            using var context = new TextContext(new DrawStageRenderTests.OneFont(font));
+            using var context = new TextContext(new TestFontProvider(font));
             var tree = new UiTree(context);
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             var style = new SpanStyle(LetterSpacing: 60, Decoration: new TextDecoration(DecorationLines.Underline, Color: Green, Thickness: 8));
@@ -214,7 +214,7 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
             using var rasterizer = new DirectWriteGlyphRasterizer();
             using var atlas = new GlyphAtlas(rasterizer);
             using var font = new Font(FontBytes);
-            using var context = new TextContext(new DrawStageRenderTests.OneFont(font));
+            using var context = new TextContext(new TestFontProvider(font));
             var tree = new UiTree(context);
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             _ = Leaf(tree, root, "nn日nn", 20, 10, (2, 3, new SpanStyle(Color: Red)));
@@ -316,7 +316,7 @@ public sealed class RichTextRenderTests(UiThreadFixture ui)
             using var rasterizer = new DirectWriteGlyphRasterizer();
             using var atlas = new GlyphAtlas(rasterizer);
             using var font = new Font(FontBytes);
-            using var context = new TextContext(new DrawStageRenderTests.OneFont(font));
+            using var context = new TextContext(new TestFontProvider(font));
             var tree = new UiTree(context);
             NodeHandle root = tree.CreateNode(new LayoutStyle());
             const string Text = "  ￼  ";

@@ -216,7 +216,7 @@ public sealed class ComputedOwnershipTests(UiThreadFixture ui)
                 flag.Set(false);
             }
 
-            SteadyStateAllocation.AssertNone(
+            PerformanceAssert.DoesNotAllocate(
                 1_000,
                 _ =>
                 {

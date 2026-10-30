@@ -14,6 +14,6 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
   </ItemGroup>
   <ItemGroup>
-    <AvaloniaResource Include="..\..\..\tests\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf" Link="Assets\XylemUITestSans.ttf" />
+    <AvaloniaResource Include="..\..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" Link="Assets\XylemUITestSans.ttf" />
   </ItemGroup>
 </Project>

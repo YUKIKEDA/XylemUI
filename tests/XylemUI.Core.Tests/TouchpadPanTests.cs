@@ -223,7 +223,7 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
                 tracker.Add(TimeSpan.FromMilliseconds(i * 16), 0, -20 * i);
             }
 
-            scene.Time.Now = TimeSpan.FromMilliseconds(112);
+            scene.Time.Advance(TimeSpan.FromMilliseconds(112) - scene.Time.Elapsed);
             float released = scene.Offset.Y;
             scene.Pan(PointerInputKind.PanEnd, default, 112);
             double velocity = tracker.Estimate(TimeSpan.FromMilliseconds(112)).VelocityY;
@@ -409,8 +409,10 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
                 }
             }
 
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
-            Assert.Equal(1_100, flings);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
+
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal(runs, flings);
         });
 
     // A window of 200 x 100 logical pixels: a box of the window's size whose height scrolls, holding a column of the height given,
@@ -442,7 +444,7 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
 
         public CountingScheduler Scheduler { get; } = new();
 
-        public StepTime Time { get; } = new();
+        public TestTime Time { get; } = new();
 
         public GesturePlatform Platform { get; } = new();
 
@@ -452,7 +454,7 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
 
         public Vector2 Offset => Tree.ScrollOffsetOf(Container);
 
-        public double Milliseconds => Time.Now.TotalMilliseconds;
+        public double Milliseconds => Time.Elapsed.TotalMilliseconds;
 
         public static LayoutStyle At(float x, float y, float width, float height) =>
             new()
@@ -499,7 +501,7 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
         {
             for (int i = 0; i < count; i++)
             {
-                Time.Now += TimeSpan.FromMilliseconds(16);
+                Time.Advance(TimeSpan.FromMilliseconds(16));
                 Scheduler.Run();
             }
         }
@@ -513,7 +515,7 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
                 Pan(PointerInputKind.PanUpdate, new Vector2(0, -40), start + (i * 16));
             }
 
-            Time.Now = TimeSpan.FromMilliseconds(start + 80);
+            Time.Advance(TimeSpan.FromMilliseconds(start + 80) - Time.Elapsed);
             Pan(PointerInputKind.PanEnd, default, start + 80);
         }
 
@@ -557,16 +559,6 @@ public sealed class TouchpadPanTests(UiThreadFixture ui)
                 )
             );
         }
-    }
-
-    // A clock that moves only when the test moves it.
-    private sealed class StepTime : TimeProvider
-    {
-        public TimeSpan Now { get; set; }
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-
-        public override long GetTimestamp() => Now.Ticks;
     }
 
     // A platform whose gestures go on for a number of calls, delivering what the test gives in the first, and records the frames'

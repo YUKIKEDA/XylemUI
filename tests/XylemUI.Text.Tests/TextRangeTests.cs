@@ -324,7 +324,7 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
     ///   through, or blue on red, with a dashed overline; warmed up with the iteration.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: set the signal to the iteration's number modulo 2, run
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: set the signal to the iteration's number modulo 2, run
     ///   the frame asked for.
     ///
     /// Expected:
@@ -367,6 +367,6 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
                 Iteration(i);
             }
 
-            XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
         });
 }

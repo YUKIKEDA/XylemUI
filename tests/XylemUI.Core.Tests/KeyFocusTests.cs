@@ -586,7 +586,7 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
     ///   boxes with focused and focus-visible looks. The window is active; warmed up with the same iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: focus the innermost box, send a down and an up of A, Tab
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: focus the innermost box, send a down and an up of A, Tab
     ///   twice (to the first box and the second), and run the frame asked for.
     ///
     /// Expected:
@@ -638,8 +638,10 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
             }
 
             calls = 0;
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
-            Assert.Equal(1_100 * 6, calls);
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
+
+            // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
+            Assert.Equal(runs * 6, calls);
         });
 
     // The focusable a, b, c, d of the order test in a started scene, with nothing focused.

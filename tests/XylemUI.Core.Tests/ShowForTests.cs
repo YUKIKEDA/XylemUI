@@ -702,7 +702,7 @@ public sealed class ShowForTests(UiThreadFixture ui)
     ///   new values, and the reverse with new values. Warmed up with the same iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>SteadyStateAllocation</c>: set the next of the four lists, and run the frame.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: set the next of the four lists, and run the frame.
     ///
     /// Expected:
     /// - 0 bytes in every window; no row was made after the first 100.
@@ -747,7 +747,7 @@ public sealed class ShowForTests(UiThreadFixture ui)
                 Iteration(i);
             }
 
-            SteadyStateAllocation.AssertNone(1_000, Iteration);
+            PerformanceAssert.DoesNotAllocate(1_000, Iteration);
             Assert.Equal(100, makes);
         });
 

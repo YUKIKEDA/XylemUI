@@ -16,7 +16,7 @@ public sealed class TextSteadyStateTests
     ///   the text (its workers started in the first frame), and a display list (a warm-up of 10 frames).
     ///
     /// Steps:
-    /// - 1,000 frames, in the windows of <c>SteadyStateAllocation</c>: start an atlas frame, reset the display list, shape
+    /// - 1,000 frames, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: start an atlas frame, reset the display list, shape
     ///   "Hello, World! 日本語のテキスト", write it with DrawText, and resolve the list's glyphs.
     ///
     /// Expected:
@@ -38,7 +38,7 @@ public sealed class TextSteadyStateTests
 
         int rasterized = atlas.RasterizeCount;
         int growth = list.GrowthCount;
-        XylemUI.Tests.SteadyStateAllocation.AssertNone(1_000, _ => Frame(shaper, atlas, list, font, Text));
+        PerformanceAssert.DoesNotAllocate(1_000, _ => Frame(shaper, atlas, list, font, Text));
 
         Assert.NotNull(atlas.RunningWorkers);
         Assert.Equal(rasterized, atlas.RasterizeCount);

@@ -35,6 +35,7 @@ public sealed class UiDispatcher : IUiDispatcher
         ArgumentNullException.ThrowIfNull(wake);
         _wake = wake;
         SynchronizationContext = new UiSynchronizationContext(this);
+        UnbatchedSynchronizationContext = new UiSynchronizationContext(this, batched: false);
     }
 
     /// <summary>
@@ -48,11 +49,18 @@ public sealed class UiDispatcher : IUiDispatcher
     /// </summary>
     public SynchronizationContext SynchronizationContext { get; }
 
+    /// <summary>
+    /// Gets a synchronization context that resumes continuations through this queue without a batch around each: the headless
+    /// tests' UI thread (design §12.5, "Threads"), where a test's body and its continuations run as items of this queue, and a
+    /// batch around one would hold every effect back until the test's body ended.
+    /// </summary>
+    internal SynchronizationContext UnbatchedSynchronizationContext { get; }
+
     /// <inheritdoc />
     public void Post(UiMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
-        Enqueue(new WorkItem(message, null, null));
+        Enqueue(new WorkItem(message, null, null, Batched: true));
     }
 
     /// <summary>
@@ -82,8 +90,13 @@ public sealed class UiDispatcher : IUiDispatcher
                 Invariant.Fail("A UiMessage was drained with no MessageHandler set.");
             }
 
-            // Each item is one batch: however many signals it sets, the effects run once, after it (design §2.2.1).
-            ReactiveRuntime.EnterBatch();
+            // Each item is one batch: however many signals it sets, the effects run once, after it (design §2.2.1). An unbatched
+            // item is a headless test's (UnbatchedSynchronizationContext).
+            if (item.Batched)
+            {
+                ReactiveRuntime.EnterBatch();
+            }
+
             try
             {
                 if (item.Message is { } message)
@@ -101,7 +114,10 @@ public sealed class UiDispatcher : IUiDispatcher
             }
             finally
             {
-                ReactiveRuntime.ExitBatch();
+                if (item.Batched)
+                {
+                    ReactiveRuntime.ExitBatch();
+                }
             }
         }
 
@@ -113,7 +129,9 @@ public sealed class UiDispatcher : IUiDispatcher
     /// </summary>
     /// <param name="callback">The callback.</param>
     /// <param name="state">The object passed to <paramref name="callback"/>.</param>
-    internal void PostCallback(SendOrPostCallback callback, object? state) => Enqueue(new WorkItem(null, callback, state));
+    /// <param name="batched">Whether it runs in a batch of its own; <see langword="false"/> only for <see cref="UnbatchedSynchronizationContext"/>.</param>
+    internal void PostCallback(SendOrPostCallback callback, object? state, bool batched = true) =>
+        Enqueue(new WorkItem(null, callback, state, batched));
 
     private void Enqueue(WorkItem item)
     {
@@ -121,5 +139,5 @@ public sealed class UiDispatcher : IUiDispatcher
         _wake();
     }
 
-    private readonly record struct WorkItem(UiMessage? Message, SendOrPostCallback? Callback, object? State);
+    private readonly record struct WorkItem(UiMessage? Message, SendOrPostCallback? Callback, object? State, bool Batched);
 }

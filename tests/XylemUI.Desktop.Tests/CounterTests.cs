@@ -15,6 +15,29 @@ public sealed class CounterTests(UiThreadFixture ui)
     private static readonly WindowOptions Options = new("Counter test", 320, 200);
 
     /// <summary>
+    /// Opening the window runs the frame that the root function's nodes asked for, and leaves none asked for: the first frame did
+    /// their work.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The counter's window on WARP, hidden.
+    ///
+    /// Steps:
+    /// - Make the window; read the frame scheduler.
+    ///
+    /// Expected:
+    /// - One frame built its display list, and the scheduler holds no frame.
+    /// </remarks>
+    [Fact]
+    public void Open_RunsTheFirstFrame_AndLeavesNoneAsked() =>
+        ui.Invoke(() =>
+        {
+            using var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true);
+            Assert.Equal(1, window.Frames.Builds);
+            Assert.False(((Win32FrameScheduler)Win32MessageLoop.FrameScheduler).HasPendingFrame);
+        });
+
+    /// <summary>
     /// The pixel at the center of the counter's button is the background the sample gives it.
     /// </summary>
     /// <remarks>

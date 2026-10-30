@@ -14,6 +14,8 @@
     <Project Path="src/XylemUI.Platform.Windows/XylemUI.Platform.Windows.csproj" />
     <Project Path="src/XylemUI.Primitives/XylemUI.Primitives.csproj" />
     <Project Path="src/XylemUI.Rendering.D3D11/XylemUI.Rendering.D3D11.csproj" />
+    <Project Path="src/XylemUI.Testing.XUnit/XylemUI.Testing.XUnit.csproj" />
+    <Project Path="src/XylemUI.Testing/XylemUI.Testing.csproj" />
     <Project Path="src/XylemUI.Text/XylemUI.Text.csproj" />
   </Folder>
   <Folder Name="/tools/">
@@ -25,6 +27,7 @@
     <Project Path="tests/XylemUI.Platform.Windows.Tests/XylemUI.Platform.Windows.Tests.csproj" />
     <Project Path="tests/XylemUI.Primitives.Tests/XylemUI.Primitives.Tests.csproj" />
     <Project Path="tests/XylemUI.Rendering.D3D11.Tests/XylemUI.Rendering.D3D11.Tests.csproj" />
+    <Project Path="tests/XylemUI.Testing.Tests/XylemUI.Testing.Tests.csproj" />
     <Project Path="tests/XylemUI.Text.Tests/XylemUI.Text.Tests.csproj" />
   </Folder>
 </Solution>
