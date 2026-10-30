@@ -121,6 +121,9 @@ internal static unsafe class TextQuality
             renderer.Draw(list, background, atlas);
             long drawn = Stopwatch.GetTimestamp();
             renderer.Present();
+
+            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11, I1c).
+            Win32MessageLoop.FrameScheduler.FramePresented();
             if (frames == 0)
             {
                 return;

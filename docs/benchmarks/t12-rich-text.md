@@ -74,6 +74,8 @@ cmd /c "start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe segment > segm
 
 ### フレーム（`frames`、`frames --tree`、ウィンドウあり、600 フレーム）
 
+> この節の `frames` と `frames --tree` の値は、62.5 Hz のタイマーの時計で測った（Issue #445、`docs/benchmarks/q2-frames-clock.md`）。基点との比べは成り立つが、CPU のフレームの約 16.5 ms は、Present が止まっていた時間を含む。
+
 | 場面 | 表示リストを作る（基点） | 表示リストを作る（T12） | CPU のフレーム（基点） | CPU のフレーム（T12） |
 | --- | --- | --- | --- | --- |
 | `frames`（1 行の文字を含む） | 0.0229〜0.0273 ms | 0.0221〜0.0277 ms | 16.48〜16.53 ms | 16.50〜16.53 ms |

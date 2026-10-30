@@ -51,6 +51,9 @@ internal static class CurveGallery
             list.DrawEllipse(490, 330, 40, 40, new Stroke(new Color(0xE0, 0x20, 0x20, 128), 10, LineCap.Round, new Dash(4, 3)));
             renderer.Draw(list, Background);
             renderer.Present();
+
+            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11, I1c).
+            Win32MessageLoop.FrameScheduler.FramePresented();
         }
 
         window.SynchronousRender = (_, newWidth, newHeight) =>

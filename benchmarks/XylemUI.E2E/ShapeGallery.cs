@@ -55,6 +55,9 @@ internal static class ShapeGallery
             list.FillRect(210, 400, 140, 50, Blue, new CornerRadii(40));
             renderer.Draw(list, Background);
             renderer.Present();
+
+            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11, I1c).
+            Win32MessageLoop.FrameScheduler.FramePresented();
         }
 
         window.SynchronousRender = (_, newWidth, newHeight) =>
