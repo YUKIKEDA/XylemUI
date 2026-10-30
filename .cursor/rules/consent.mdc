@@ -34,6 +34,8 @@ An outward-facing action (creating a GitHub repository, publishing a package, po
 
 The owner's screen is the owner's. Before a run opens windows on it (a startup measurement, a sample, a GPU test), say how many it opens and the time after which a stuck one is stopped. A window that hangs is not launched again to see whether it hangs again: find the cause first, without windows if possible. Do not report what the screen shows from a process list: say what was checked. In R4d the agent opened dozens of startup windows, one of which hung, and reported a hung window as closed while it was still on the owner's screen (PR #268).
 
+Text written by a delegate (a subagent, a fork) is read for decisions nobody made before it goes in a PR: an order between rows, a scope, a default. In D3 a fork that wrote the decisions into the docs added "before P02" to rows T15 and T16 and pointed **今** at T15 on that ground; the order had not been decided, and it was taken out before the PR (PR #442).
+
 A decision rests on the figures it was given. When a later change moves those figures (a cost, a frame budget, a binary size), report the new ones beside the old before the PR that carries the change is merged, and let the owner decide again.
 
 ```text

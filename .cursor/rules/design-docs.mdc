@@ -170,6 +170,10 @@ What the framework does to an input before the handlers receive it (moving the f
 
 A row's design says where its input is injected in tests (design §12.4) and which test layer of §12.1 checks each part. K1's Grill asked nothing about §12 until the owner pointed it out.
 
+## Citing other frameworks
+
+A citation that a delegate's research gives is read again at the tag before it is written: the path, the line, and that the line says what the sentence claims. A library the design cites at more than one version (Taffy 0.9.0, 0.13.0, and 0.15.1) is cited with its version. In D3 the review found a Taffy line of 0.13.0 written with no version, an Avalonia line that pointed at another method, and lines of `a11y.rs` and `text_system.rs` that did not hold the claim. One of the review's own corrections named the wrong file, and reading the source again found the right one (PR #442).
+
 ## Judge the current optimum
 
 The design records a decision made at that time. It is not proof that the decision is still the best one.

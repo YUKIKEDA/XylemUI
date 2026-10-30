@@ -15,6 +15,8 @@ What is out of the row's scope is a roadmap row that names when (`.cursor/rules/
 
 A reason written as likely ("probably", 「と考えられる」) is checked first when a cheap check exists: reading the font with fontTools, reading values from a picture the PR kept, one more run. The T4 review found three such reasons in the record; one of them ("the same glyph") was half right: the outlines were the same and the hints were not (PR #173).
 
+A figure that a delegate's research gives (a share, a size, a count) is traced to where it was counted or read before it goes in a document: the command and the head, or the file and the line. In D3 the docs took "about 15 %" of internal members without documentation, a count with no method, and "14.4 KB" for the bundled font, where the record gives 14 KB and the file is 14,416 bytes; the review found both (PR #442).
+
 A size a record gives for a type is read from the type's definition (its fields' types, or `Unsafe.SizeOf`), not from what the field stands for. V1d's record said the handler entry grew by a reference, 8 bytes; the field is a `Handle<ScopeData>(int, ulong)`, 16 bytes, and the review found it (PR #340).
 
 A comment in the code is held to the same line: it says what was measured, and marks a cause that was not confirmed as not confirmed, with the Issue number.
