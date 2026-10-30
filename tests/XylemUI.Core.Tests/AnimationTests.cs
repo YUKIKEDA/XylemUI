@@ -428,6 +428,138 @@ public sealed class AnimationTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A node hidden while a transition moves its value is no longer drawn, so the transition ends at its target and the window asks
+    /// for no more frames (design §2.14, "The frame's clock": no frame while the list is empty).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box of 10 x 10 whose background is a signal at red, with a transition of the background, 100 ms, linear; drawn once.
+    ///
+    /// Steps:
+    /// - Set blue; frames at +0 and +50. Hide the box (<see cref="LayoutStyle.Hidden"/>); frames at +16 while one is asked for, 10 at
+    ///   most. Show it again; a frame.
+    ///
+    /// Expected:
+    /// - At +50 the fill is halfway. After hiding, a frame or two run, then none is asked for. Shown again, the box is blue at once.
+    /// </remarks>
+    [Fact]
+    public void Transition_OfANodeHiddenMidway_EndsAndAsksForNoMoreFrames() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new Scene();
+            var paint = Signal.Create<Paint>(Red);
+            Element box = default;
+            scene.Mount(() =>
+                box = Box().Width(10).Height(10).Background(paint).Transition(NodeProperties.Background, TimeSpan.FromMilliseconds(100))
+            );
+            paint.Set(Blue);
+            scene.Frame(0);
+            scene.Frame(50);
+            Assert.Equal([new Color(0x80, 0, 0x80)], scene.Fills());
+
+            LayoutStyle shown = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+            scene.Tree.SetStyle(box.Node, shown with { Hidden = true });
+            int frames = 0;
+            while (scene.Scheduler.Pending && frames < 10)
+            {
+                scene.Frame(16);
+                frames++;
+            }
+
+            Assert.False(scene.Scheduler.Pending);
+            Assert.InRange(frames, 1, 2);
+            scene.Tree.SetStyle(box.Node, shown);
+            scene.Frame(16);
+            Assert.Equal([Blue], scene.Fills());
+        });
+
+    /// <summary>
+    /// The values a transition cannot mix change halfway (row AN1, design §2.14, "Properties that move"): a gradient on either side
+    /// of a paint, and shadows when one is missing or one is inset and the other not. A missing paint mixes as the other's color
+    /// with no alpha; a missing text color changes halfway.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A node's transitions of the background, the border's paint, the text color, and the shadow, 100 ms, linear, each given its
+    ///   first value at 0 ms: background none, border red, text color none, shadow outer.
+    ///
+    /// Steps:
+    /// - At 0 ms give the targets: background red, border a gradient, text color blue, shadow inset. Read the values at 40 and 60 ms.
+    ///
+    /// Expected:
+    /// - The background is red with alpha 0x66 at 40 ms and 0x99 at 60 ms. The border, the text color, and the shadow are the first
+    ///   values at 40 ms and the targets at 60 ms.
+    /// </remarks>
+    [Fact]
+    public void Transition_ValuesThatDoNotMix_ChangeHalfway() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle node = tree.CreateNode(new LayoutStyle());
+            var transitions = new NodeTransitions(tree, node);
+            foreach (
+                NodeTransitions.Kind kind in new[]
+                {
+                    NodeTransitions.Kind.Background,
+                    NodeTransitions.Kind.BorderPaint,
+                    NodeTransitions.Kind.Foreground,
+                    NodeTransitions.Kind.Shadow,
+                }
+            )
+            {
+                transitions.Set(kind, TimeSpan.FromMilliseconds(100), Curve.Linear);
+            }
+
+            GradientBrush gradient = GradientBrush.Linear(90, [new GradientStop(0, Red), new GradientStop(1, Blue)]);
+            var outer = new BoxShadow(Gray, new System.Numerics.Vector2(0, 2), 4);
+            BoxShadow inset = outer with { Inset = true };
+            _ = Read(0, null, new Paint(Red), null, outer);
+
+            (Paint? Background, Paint? Border, Color? Text, BoxShadow? Shadow) early = Read(40, new Paint(Red), gradient, Blue, inset, 0);
+            (Paint? Background, Paint? Border, Color? Text, BoxShadow? Shadow) late = Read(60, new Paint(Red), gradient, Blue, inset);
+
+            Assert.Equal(new Paint(Red with { A = 0x66 }), early.Background);
+            Assert.Equal(new Paint(Red with { A = 0x99 }), late.Background);
+            Assert.Equal(new Paint(Red), early.Border);
+            Assert.Equal(new Paint(default, gradient), late.Border);
+            Assert.Null(early.Text);
+            Assert.Equal(Blue, late.Text);
+            Assert.Equal(outer, early.Shadow);
+            Assert.Equal(inset, late.Shadow);
+
+            // Gives the targets at a time (the first call at `given` starts the moves) and returns the values to draw.
+            (Paint?, Paint?, Color?, BoxShadow?) Read(
+                int milliseconds,
+                Paint? background,
+                Paint? border,
+                Color? text,
+                BoxShadow? shadow,
+                int given = -1
+            )
+            {
+                if (given >= 0)
+                {
+                    _ = Read(given, background, border, text, shadow);
+                }
+
+                float opacity = 1;
+                System.Numerics.Matrix3x2? transform = null;
+                CornerRadii radii = default;
+                transitions.Apply(
+                    TimeSpan.FromMilliseconds(milliseconds),
+                    ref background,
+                    ref border,
+                    ref text,
+                    ref opacity,
+                    ref transform,
+                    ref radii,
+                    ref shadow
+                );
+                return (background, border, text, shadow);
+            }
+        });
+
+    /// <summary>
     /// A frame that moves one animation and one transition allocates nothing (design §11.3, the Zero-Alloc scenario 5).
     /// </summary>
     /// <remarks>

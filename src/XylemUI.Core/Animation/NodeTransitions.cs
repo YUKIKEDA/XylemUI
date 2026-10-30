@@ -38,6 +38,7 @@ internal sealed class NodeTransitions(UiTree tree, NodeHandle node) : Ticking
     private TransitionSlot<Matrix3x2?> _transform;
     private TransitionSlot<CornerRadii> _radii;
     private TransitionSlot<BoxShadow?> _shadow;
+    private bool _drawn;
 
     /// <summary>
     /// The paint values a transition can move.
@@ -131,6 +132,7 @@ internal sealed class NodeTransitions(UiTree tree, NodeHandle node) : Ticking
         transform = _transform.Apply(transform, now, reduce, LerpTransform);
         radii = _radii.Apply(radii, now, reduce, LerpRadii);
         shadow = _shadow.Apply(shadow, now, reduce, LerpShadow);
+        _drawn = true;
         if (Running)
         {
             tree.Animations.Add(this);
@@ -145,9 +147,29 @@ internal sealed class NodeTransitions(UiTree tree, NodeHandle node) : Ticking
             return false;
         }
 
+        // A node not drawn since the last move (it or an ancestor became hidden) would never move its values on, and the list would
+        // ask for frames that change nothing: its values go to their targets, and it leaves the list.
+        if (!_drawn)
+        {
+            Finish();
+            return false;
+        }
+
         // The node is drawn again in this frame, which moves its values on (Apply).
+        _drawn = false;
         Invalidation.Invalidate(tree, node, ChangeKind.Color);
         return true;
+    }
+
+    private void Finish()
+    {
+        _background.Finish();
+        _borderPaint.Finish();
+        _foreground.Finish();
+        _opacity.Finish();
+        _transform.Finish();
+        _radii.Finish();
+        _shadow.Finish();
     }
 
     private bool Running =>
@@ -168,8 +190,8 @@ internal sealed class NodeTransitions(UiTree tree, NodeHandle node) : Ticking
             (byte)MathF.Round(a.A + ((b.A - a.A) * t))
         );
 
-    // Two solid colors mix; none is the other's color with no alpha, so a background fades in or out. A gradient on either side
-    // changes halfway, as Avalonia's BrushTransition does between paints it cannot mix.
+    // Two solid colors mix; none is the other's color with no alpha, so a background fades in or out (Flutter's Color.lerp). A
+    // gradient on either side changes halfway: a gradient brush cannot be changed, and mixing two would allocate one each frame.
     private static Paint? Lerp(Paint? a, Paint? b, float t)
     {
         if (a?.Gradient is not null || b?.Gradient is not null)
@@ -233,6 +255,18 @@ internal struct TransitionSlot<T>
         if (!_configured)
         {
             Running = false;
+        }
+    }
+
+    /// <summary>
+    /// Ends the move: the value on the screen is the last target.
+    /// </summary>
+    public void Finish()
+    {
+        if (Running)
+        {
+            Running = false;
+            _shown = _to;
         }
     }
 
