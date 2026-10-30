@@ -21,5 +21,6 @@ When asked about such an operation, answer with the current `HEAD` SHA, the targ
 - Read the CI of a pushed head through its Windows job before the next push to the branch: a push cancels the run in progress, and that head's result stays unknown. In V3c the first head's Windows run was cancelled by the next push, and the test that hung `XylemUI.Desktop.Tests` for 27 minutes was found one run later (PR #381).
 - Read `gh pr view <n> --json state` before pushing to a branch that has a PR. A push to the branch of a merged PR recreates the deleted branch and reaches nothing.
 - Fetch before pushing to a branch that has a PR, and compare it with the local branch (`git status -sb`). The owner may rebase a stacked branch after its base merges: in PR #327 the local branch was 5 ahead and 6 behind. Continue on the remote head (`git switch --detach origin/<branch>`) and push a fast-forward; do not push the stale local branch.
+- Before pushing a fix for a review, check that the PR is still open (`gh pr view <n> --json state`). Once it is merged, the fix goes on the next PR's branch: in PR #486 a push after the merge made the branch again on the remote, and its commit did not reach `main`.
 - If history was rewritten, put the SHA from before the rewrite on the first line of the reply.
 - Never skip hooks (`--no-verify`) or signing unless the owner orders it.
