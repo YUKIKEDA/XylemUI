@@ -11,8 +11,10 @@ namespace XylemUI.Text;
 /// at a fixed size in its strike (<c>src/core/SkGlyph.cpp</c> lines 567 to 610 at fae1d2bd).
 /// </summary>
 /// <remarks>
-/// It keeps at most <see cref="Capacity"/> outlines, and a new one takes the place of the one used longest ago. One belongs to one
-/// thread, as the shaper does; a steady state of glyphs and bands it keeps allocates nothing.
+/// It keeps at most <see cref="Capacity"/> outlines, and a new one takes the place of the one used longest ago. That one is found by
+/// a scan of the last use of every outline kept, linear in <see cref="Capacity"/>; it runs only for an outline not kept, whose
+/// reading from HarfBuzz comes with it. One belongs to one thread, as the shaper does; a steady state of glyphs and bands it keeps
+/// allocates nothing.
 /// </remarks>
 internal sealed unsafe class GlyphIntercepts
 {
