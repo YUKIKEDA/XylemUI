@@ -387,6 +387,8 @@ internal sealed class TextRangeWriter
             throw new InvalidOperationException("An inline object has a parent of its own; an element sits in one place of the tree.");
         }
 
+        // A walk of the inline objects written so far: I objects cost I² / 2 steps, for the few that a line of text holds (an icon,
+        // a badge, a button; tens at most). A text of many would want a set of the nodes written.
         if (Ranges.HasInline(node))
         {
             throw new InvalidOperationException("An inline object was written twice; an element sits in one place of the text.");
