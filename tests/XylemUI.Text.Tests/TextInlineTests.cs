@@ -568,8 +568,8 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
-    /// The layout writes each line's top and height, the lines above stacked, and the line at a height is found from them: a line that
-    /// an inline object makes taller moves the tops of the lines below it (design §4.9, "The lines' tops").
+    /// The line at a height is found with the lines above it stacked at their own heights: a line that an inline object makes taller
+    /// moves the tops of the lines below it (design §4.3).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -582,7 +582,7 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
     /// - Lines 0, 1, and 2, with tops 0, 20.272, and 20.272 + 40 + the descent, and heights 20.272, 40 + the descent, and 20.272.
     /// </remarks>
     [Fact]
-    public void LineAt_LinesOfOtherHeights_FindsEachFromTheTopsTheLayoutWrote() =>
+    public void LineAt_LinesOfOtherHeights_StacksTheirHeights() =>
         ui.Invoke(() =>
         {
             using var scene = new TextScene(_font);
