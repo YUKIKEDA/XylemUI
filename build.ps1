@@ -46,9 +46,10 @@ foreach ($configuration in "Release", "Debug") {
 
         # The Desktop tests stopped on the Windows runner until the job's 30-minute limit, four times by PR #426, with no stack
         # (row Q5). A run that passes takes well under a minute; after 5 minutes the hang dump names the tests still running, writes
-        # a dump of the process with its heap, and ends the run. The CI uploads the dump.
+        # a full dump of the process, and ends the run. The CI uploads the dump. A dump of the heap alone held no metadata of the
+        # modules, so dotnet-dump named no method of the stuck thread (PR #432's run, #415).
         if ($project.BaseName -eq 'XylemUI.Desktop.Tests') {
-            $output += @('--hangdump', '--hangdump-timeout', '5m', '--hangdump-type', 'Heap', '--results-directory', (Join-Path $PSScriptRoot 'artifacts' 'hangdump'))
+            $output += @('--hangdump', '--hangdump-timeout', '5m', '--hangdump-type', 'Full', '--results-directory', (Join-Path $PSScriptRoot 'artifacts' 'hangdump'))
         }
         Invoke-Step "Test $($project.BaseName) ($configuration)" { dotnet test --project $project.FullName --no-build -c $configuration @output }
     }
