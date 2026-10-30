@@ -1596,6 +1596,8 @@ public static class ElementExtensions
     public static Element Disabled(this Element e, IReadOnlySignal<bool> disabled);
     public static Element On(this Element e, KeyEventKind kind, EventPhase phase, KeyHandler handler);
     public static Element On(this Element e, FocusEventKind kind, EventPhase phase, FocusHandler handler);
+    public static Element OnTextInput(this Element e, EventPhase phase, TextInputHandler handler);    // P02b（§4.9）
+    public static Element KeepsFocusOnPress(this Element e, bool keeps = true);                      // P02b。押してもフォーカスを移さない（§4.9）
     public static bool Focus(this Element e);                                        // フォーカスできなければ false
     public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
     // アニメーション（AN1、§2.14）。描画の値のプロパティだけ（NodeProperties の描画の値）。変わると今の値から補間する
@@ -1651,6 +1653,7 @@ public static class Primitive
 {
     public static Element Button(Element content, Action onClick);   // フォーカスでき、Enter と Space で Click（K1）
     public static Element Button(string label, Action onClick);   // Button(Text(label), onClick)
+    public static Element TextField(Signal<string> text, TextFieldOptions? options = null);   // P02b（§4.9）
 }
 
 // XylemUI.Desktop（Core・Platform.Windows・Rendering.D3D11 をつなぐ）
@@ -2369,7 +2372,7 @@ internal static CaretPosition HitTestText(TextMeasurement measurement, int lineI
 }
 ```
 
-このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
+このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。行の上端は、P02b からレイアウトが `LaidLine` に書き、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
 
 ### 4.4 a11y読み上げ順序
 
@@ -2601,7 +2604,7 @@ Text((ref NodeTextWriter w) =>
   - 改行: 前後の文字によらず、空きの前と後で改行できる。行より広い空きは、その行に 1 つだけ置いてはみ出させる。SkParagraph も前後で改行でき（`src/ParagraphImpl.cpp` 546〜547 行目）、行より広い空きを 1 つで置く（`src/TextWrapper.cpp` 74〜91 行目）
   - ベースライン: `Baseline` の揃えは子の最初のベースラインを使う。子がベースラインを持たなければ、子の下端をベースラインに置く（`AboveBaseline` と同じ）。Flutter と同じである（`engine/src/flutter/lib/ui/text.dart` 3500〜3505 行目）。行の高さは、空きの上下の端を含むように広がる（SkParagraph の `src/Run.cpp` 236〜290 行目）
   - 描く順と当たり判定: 子は文字の後に描き、ふつうの子として、文字より先に当たり判定をする。Flutter も文字の後に子を描く（`rendering/paragraph.dart` 1030〜1075 行目）
-  - キャレットと選択: 空きは 1 つのクラスタで、キャレットと `HitTestText` は 1 文字として数える。範囲をまたぐ選択（P02b）は空きを選ばず、子が選べるなら子が選ぶ（Flutter の `rendering/paragraph.dart` 447〜474 行目）
+  - キャレットと選択: 空きは 1 つのクラスタで、キャレットと `HitTestText` は 1 文字として数える。範囲をまたぐ選択（行 P02b2、§4.9）は空きを選ばず、子が選べるなら子が選ぶ（Flutter の `rendering/paragraph.dart` 447〜474 行目）
   - リンク: リンクのスコープの中に置いた子は、リンクのホバーと Click を受けない。子の当たり判定が先に当たる。Flutter でも、認識器（`recognizer`）は `TextSpan` の欄で、その文字に当たった入力だけを受け（`painting/text_span.dart` 114〜122 行目）、`WidgetSpan` が継ぐ `PlaceholderSpan` は認識器を持たない（`painting/placeholder_span.dart` 39 行目、`widgets/widget_span.dart` 71 行目）
   - 実装（T13、Issue #437）: 空きは長さ 1 のフォントの run で、HarfBuzz を通さず、グリフ番号 `LaidGlyph.Placeholder`（`uint.MaxValue`。OpenType のグリフ番号は 16 ビットに収まる）の 1 つのグリフになる。空きの幅はそのグリフの送りに持ち、`ShapingResult` に欄を足さない。範囲を持たない葉の大きさは、T12 のままである。空きの run のフォントは、その範囲で空白が取るフォントで、行の高さに周りの文字と同じ値を入れる。SkParagraph の空きの run も、そのスタイルのフォントを持つ（`src/OneLineShaper.cpp` 563〜642 行目）。改行の機会は、UAX #14 の LB20（U+FFFC は CB で、前と後で改行できる）がそのまま与える。子を持つテキストのノードは、子を持たない葉と同じく葉として測り、確定のときに子を空きに置く。測った空きの箱（`InlineBox`：余白を含む大きさとベースライン）は `TextRanges` に持つ。min-content と max-content の幅で葉を測るときは、子も同じ幅で測るので、空きのグリフの送りがそのまま子の内容の幅になる。空きごとに内容の幅を差し替える計算は、届く場面が無かった（ミュータントで確かめた）ので持たない。行の端を整形し直す範囲には空きが入らない。空きの後の文字は自分の run の先頭で、HarfBuzz はそこに「切ると危ない」の印を付けないので、Pass2 は空きかその後に安全な位置を見つける。テキストのノードが消えるときは、その前に子を外す。スコープの片付けは新しい順なので、ノードを消す片付けより先に走る。描画では、範囲を持つ葉の道だけが空きのグリフを飛ばす。範囲を持たない葉が通る表示リストの `DrawLine` は変わらない
 - **費用:** 範囲を持たない葉は、`Ranges` の 8 バイトだけ大きくなり、ほかは今のままである。範囲を持つ葉の `TextRanges` の大きさは $H + s_L L + s_P P + s_K K + s_I I$ バイト（$L$・$P$・$K$・$I$ はレイアウトの範囲・描画の範囲・リンク・インラインオブジェクトの配列の長さで、2 から始まり、足りないときに 2 倍にする）。T13 で `Unsafe.SizeOf` を読むと、$H = 160$（オブジェクト 88 と配列の頭 24 が 3 つ。T12 では 64 と 3 つで 136）、$s_L = 80$（`LayoutRun`）、$s_P = 60$（`PaintRun`）、$s_K = 144$（`TextLink`。ホバー中のスタイルの `SpanStyle` だけで 120）、$s_I = 36$（`InlineObject` の 24 と `InlineBox` の 12）だった。`InlineObject` は 16 バイトのノードのハンドルを先に置き、位置と揃え方をその後の 8 バイトに収める。位置を先に置くと 32 バイトだった。リンクの無い葉はリンクの配列が空で、その頭の 24 バイトも無い。インラインオブジェクトの無い葉も、その 2 つの配列が空で、頭の 48 バイトが無い。テストは、この式と割り当てたバイト数を比べる（`Ranges_Memory_IsTheFormula`）。割り当て 0 は、範囲を持つ葉の作り直し（内容が同じとき）、色だけの変更、リンクのホバーの変化と Click の配送、インラインオブジェクトを持つ葉の作り直しと、子の大きさが変わらない layout である
@@ -2609,6 +2612,152 @@ Text((ref NodeTextWriter w) =>
   - Text: 範囲ごとの大きさと言語でシェーピングすること、字間、行の高さ、描画の範囲だけの違いでシェーピングの単位が分かれないこと
   - Core: 書き手の入れ子と受け継ぎ、閉じないスコープで投げること、描画の範囲だけの変更でレイアウトしないこと、リンクのホバー・カーソル・Click（マウスとタッチ）、リンクの Click が葉の Click に配られないこと、`HitTestText`
   - 画素（WARP）: 範囲の色、背景、下線・上線・取り消し線と 4 つの線の形、字形との重なりの空き、CPU で組んだ参照の画像と比べる（§12.1）
+
+### 4.9 文字の入力と TextField（P02b の Grill でオーナーが決定、Issue #481）
+
+1 行と複数行の文字の欄 `Primitive.TextField` を、打ち込み・キャレット・選択・クリップボード・元に戻すとともに入れる。実装は行 P02b で行う。Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。Flutter の枠組みは `packages/flutter/lib/src/` から、Flutter の Windows の engine は `engine/src/flutter/shell/platform/windows/` から、Avalonia の部品は `src/Avalonia.Controls/` から、zed の Windows は `crates/gpui_windows/src/` から引く。
+
+**範囲:** P02b は欄だけを入れる。静的な文字の、範囲をまたぐ選択（Flutter の `SelectionArea`、§4.8）は、行 P02b2 で P02b の後に入れる。Flutter の欄の選択は欄の `TextEditingValue` に持ち、`editable_text.dart` は `SelectionContainer` を参照しない。Avalonia の `SelectableTextBlock` は自分の中だけを選ぶ（`SelectableTextBlock.cs` 20〜22 行目）。どちらでも、静的な文字の選択と欄の編集は互いに依らない。IME の組み立て（§4.7）は行 P02c で足す。
+
+```csharp
+// XylemUI.Primitives（§2.6 の一覧）
+public static Element TextField(Signal<string> text, TextFieldOptions? options = null);
+
+public sealed record TextFieldOptions
+{
+    public bool Multiline { get; init; }                     // false: 1 行。true: 折り返し、縦にスクロール
+    public Signal<TextSelection>? Selection { get; init; }   // null なら欄が自分で持つ
+    public Action<string>? OnSubmit { get; init; }           // 1 行の欄の Enter
+    public string? Placeholder { get; init; }                // 文字が空のとき
+    public bool ReadOnly { get; init; }                      // 選んでコピーはできる
+    public bool Password { get; init; }                      // 伏せ字
+    public int? MaxLength { get; init; }                     // 書記素の数
+    public Color? CaretColor { get; init; }                  // 既定は文字の色
+    public Color? SelectionBackground { get; init; }         // 既定は OS の選択色
+    public Color? SelectionForeground { get; init; }         // 既定は OS の選択した文字の色
+}
+
+// XylemUI（Core）
+public readonly record struct TextSelection(int Anchor, int Caret)   // UTF-16 コード単位。Anchor は選び始め
+{
+    public int Start { get; }
+    public int End { get; }
+    public bool IsCollapsed { get; }
+}
+
+public readonly struct TextInputEvent   // §7 の統一イベント
+{
+    public Element Target { get; }           // フォーカスしたノード
+    public Element CurrentTarget { get; }
+    public string Text { get; }          // 1 つ以上のコードポイント。制御文字は含まない
+    public TimeSpan Timestamp { get; }
+    public void StopPropagation();
+}
+
+public delegate void TextInputHandler(in TextInputEvent e);
+
+// ElementExtensions（§2.6 の一覧）
+public static Element OnTextInput(this Element element, EventPhase phase, TextInputHandler handler);
+public static Element KeepsFocusOnPress(this Element element, bool keeps = true);   // 押してもフォーカスを移さない
+```
+
+**値の流れ:** 文字は双方向のシグナルである。欄の中の編集はシグナルに書き、アプリがシグナルに書くと、欄はキャレットを末尾に移して元に戻す履歴を消す。Avalonia も、バインディングなど外からの書き換えで履歴を消す（`TextBox.cs` 652〜679 行目）。選択は、アプリが `Selection` を渡せばそのシグナルに、渡さなければ欄の中に持つ。Flutter は文字と選択を `TextEditingController` 1 つに持ち、アプリが渡さなければ欄が作る（`material/text_field.dart` 1151〜1152・1353〜1360 行目）。Avalonia は `Text` を双方向にし、`CaretIndex`・`SelectionStart`・`SelectionEnd` を別のプロパティに持つ（`TextBox.cs` 84〜86・159〜163 行目）。XylemUI は、シグナルを 2 つに分ける Avalonia の形にする。文字だけを結ぶアプリは選択を気にしなくてよい。
+
+**Windows の文字の入力:**
+
+- **翻訳の前に配る:** メッセージのループは、`WM_KEYDOWN` と `WM_SYSKEYDOWN` を `TranslateMessage` の前にウィンドウへ配り、キーが止められたら `TranslateMessage` も `DispatchMessage` も呼ばない。止めたキーからは `WM_CHAR` が生まれない。GPUI と同じ形である（`platform.rs` 501〜515・604〜610 行目、`events.rs` 417〜443 行目）。Avalonia は配った後に `_ignoreWmChar = e.Handled` とし、キーの Up で戻す（`WindowImpl.AppWndProc.cs` 251〜259・964〜979 行目）。この形は印の状態を持ち、`WM_SYSKEYDOWN` では立てない。Flutter はキーの Down を次の `WM_CHAR` まで持ち、2 つを 1 つのイベントで送り、止められなかったときだけ文字を送る（`keyboard_manager.cc` 182〜218・368〜385 行目）
+- **`TextInputEvent`:** `WM_CHAR` を文字にする。サロゲートペアの前半は持っておき、後半と合わせて 1 つの文字列にする。0x20 未満と 0x7F は落とす。GPUI もペアをつなぎ、制御文字を落とす（`events.rs` 1375〜1404 行目）。Avalonia は 1 つの `WM_CHAR` を 1 文字の文字列にするので、絵文字は 2 つのイベントで届く（`WindowImpl.AppWndProc.cs` 261〜276 行目）。`WM_SYSCHAR` は文字にしない（Flutter も、`keyboard_manager.cc` 377〜382 行目）。経路は `KeyEvent` と同じで、フォーカスしたノードへ、capture を根から、bubble を根へ配る（§7「配る経路」）
+- **AltGr:** Windows は AltGr を左の Ctrl と右の Alt で送る（§7）。プラットフォームは、`KeyChar` を読む `ToUnicodeEx` を、Ctrl・Alt・Win を外したキーボードの状態でも呼び、結果が違うかデッドキーなら `KeyEvent.PrefersCharacter` を立てる。GPUI と同じ比べ方である（`events.rs` 1641〜1688 行目）。GPUI は、その印があり、フォーカスした受け手が文字を受けるなら、キーの割り当てを飛ばす（`gpui/src/window.rs` 5988〜6007 行目）。TextField は、印のあるキーを命令にしない。命令は修飾キーの完全な一致で比べるので、AltGr の Ctrl+Alt+A は Ctrl+A にならない。Flutter は、左の Ctrl のすぐ後の右の Alt を見て、右の Alt を離したときに偽の Ctrl の Up を作る（`keyboard_manager.cc` 256〜279 行目）。XylemUI は作らない（K1 の決定のまま）
+- **IME の前:** XylemUI は P02c まで `WM_IME_*` を扱わず、`DefWindowProc` に渡す。`WM_IME_COMPOSITION` の文書は、`DefWindowProc` がそれを既定の IME ウィンドウに渡すと書く。日本語は、ウィンドウの隅に浮かぶ既定の IME ウィンドウで組み立てる。確定した文字が `WM_CHAR` で届くことは文書で確かめられないので、P02b の実装の最初に実機で確かめる。届かなければ、Todo の欄は P02c へ移す
+
+**キャレット:**
+
+- **点滅:** 間隔は Windows の `GetCaretBlinkTime`（既定 530 ms）で、`INFINITE` なら点滅しない。Windows の設定を変えると `WM_SETTINGCHANGE` で読み直す。比べた 3 つは決まった 500 ms で、OS の設定を読まない（Flutter の `_kCursorBlinkHalfPeriod`、`editable_text.dart` 109 行目。Avalonia の `CaretBlinkInterval`、`TextBox.cs` 121〜122 行目。zed の `CURSOR_BLINK_INTERVAL`、`editor/src/editor.rs` 301 行目）。Windows の「テキストカーソル」の設定はアクセシビリティの設定で、XylemUI は「動きを減らす」設定（§2.14）と同じく、OS のアクセシビリティの設定に従う
+- **いつ点滅するか:** フォーカスがあり、ウィンドウがアクティブで、選択が閉じているときだけ。打ち込みとキャレットの移動で、見えた状態からやり直す。Flutter も、フォーカスがあり選択が閉じているときだけ点滅させ（`editable_text.dart` 4817〜4822 行目）、3 つとも打ち込みと移動でやり直す
+- **動かし方:** `TimeProvider` のタイマーで、切り替えのたびにノードを描き直させ、フレームを 1 つ頼む。アニメーションの一覧（§2.14）は使わない。一覧は空でない間、毎回の垂直同期でフレームを予約するためである。Flutter も、デスクトップでは `Timer.periodic` で切り替える（`editable_text.dart` 4864〜4866・4891〜4894 行目）
+- **幅:** Windows の `SPI_GETCARETWIDTH`（既定 1）を論理画素として使い、描くときに物理の画素にそろえる。Flutter の既定は 2.0（`editable_text.dart` 880 行目）、zed の縦棒は 2 px（`editor/src/element.rs` 11017〜11020 行目）、Avalonia は既定の太さのペンの線（`TextPresenter.cs` 477 行目）である。違う理由は点滅と同じで、「テキストカーソルの太さ」はアクセシビリティの設定である
+- **ヘッドレス:** `HeadlessApp` の既定では点滅させず、キャレットをいつも描く（§12.2 の `PumpAndSettle` はタイマーを待ち、終わりの検査は残ったタイマーで失敗するため）。`HeadlessOptions.CaretBlink = true` で、仮想の時計の上で点滅を確かめられる。幅と選択の色も、`HeadlessOptions` の決まった値を使う
+
+**キーの命令（Windows）:** Flutter の Windows の一覧（`widgets/default_text_editing_shortcuts.dart` 172〜343・779〜826 行目）を元にし、Avalonia にある Ctrl+Y のやり直しを足す（Flutter は Ctrl+Y を割り当てない）。
+
+| キー | 動き |
+| --- | --- |
+| ←・→ | 1 書記素。選択があれば、その端へ閉じる |
+| Ctrl+←・Ctrl+→ | 1 単語 |
+| Home・End | 表示の行の端 |
+| Ctrl+Home・Ctrl+End | 文書の端 |
+| ↑・↓・PageUp・PageDown | 複数行の欄で、表示の行・1 画面分。1 行の欄では止めない |
+| 上のキー + Shift | 選択を広げる |
+| Backspace・Delete | 1 書記素を消す。選択があれば選択を消す |
+| Ctrl+Backspace・Ctrl+Delete | 単語の境界まで消す |
+| Ctrl+A | すべて選ぶ |
+| Ctrl+C・Ctrl+Insert | コピー |
+| Ctrl+X・Shift+Delete | 切り取り |
+| Ctrl+V・Shift+Insert | 貼り付け |
+| Ctrl+Z | 元に戻す |
+| Ctrl+Y・Ctrl+Shift+Z | やり直す |
+| Enter | 1 行の欄: `OnSubmit` があれば今の文字で呼んで止める。無ければ止めない。複数行の欄: 改行を入れる |
+
+- 命令にしたキーは止める（§7 の `StopPropagation`）。命令にしないキーは止めないので、Tab のフォーカスの移動（§7.1）とスクロールのキー（§7 の既定の動作）は欄の外へ届く
+- Enter で、フォーカスは欄に残す。Flutter の 1 行の欄は `onSubmitted` を呼んでフォーカスを手放す（`editable_text.dart` 3738〜3763 行目）が、Avalonia は `AcceptsReturn` でなければ Enter を扱わずに親へ送り、zed の 1 行の編集は `menu::Confirm` へ渡す（`assets/keymaps/default-windows.json` 18 行目）。Todo で続けて項目を足すには、フォーカスが残るほうがよい
+- **単語の境界:** UAX #29 の単語の規則を `XylemUI.Text` に足し、`tools/UnicodeTableGen` で表を作る。Flutter は UAX #29 の境界を使う（`painting/text_painter.dart` 164〜186 行目）。Avalonia は文字を空白・英数字・その他の 3 つに分けて歩き、サロゲートを扱わない（`Utils/StringUtils.cs` 237〜250 行目）。単語の移動は、Flutter と同じく、空白と句読点で終わる境界を飛ばす。辞書を持たないので、漢字とひらがなは 1 字ずつ分かれ、続いたカタカナは 1 語になる
+
+**ポインタ:** 回数は `PointerEvent.ClickCount`（OS のダブルクリックの時間と範囲、§7）で数える。Flutter の Windows の動きにする（`widgets/text_selection.dart` 3055〜3071 行目）。
+
+- 1 回でキャレットを置く。Shift+クリックは選択を広げる
+- 2 回で単語を選ぶ。3 回で、1 行の欄は全体、複数行の欄は段落を選ぶ。Avalonia は 3 回で全体を選び（`TextBox.cs` 1887〜1890 行目）、zed は行を選んで 4 回目で全体を選ぶ（`editor/src/selection.rs` 1220〜1278 行目）
+- ドラッグは選択を広げ、2 回か 3 回の後は単語か段落の単位で広げる。押したときの暗黙のキャプチャ（§7）で、欄の外へ出ても選択は動き続け、欄はキャレットが見えるようにスクロールする
+
+**スクロール:** 1 行の欄は横に、複数行の欄は縦にスクロールし、キャレットが見えるいちばん近い位置へ動かす。Flutter と同じ形である（`editable_text.dart` 4053〜4069 行目）。スクロールの仕組みは §3.4 のものを使う。
+
+**選択の描き方とフォーカス:**
+
+- 選択は行ごとの矩形で、文字の後ろに塗る。既定の色は背景が `COLOR_HIGHLIGHT`、選択した文字が `COLOR_HIGHLIGHTTEXT`（`GetSysColor`、`WM_SYSCOLORCHANGE` で読み直す）。Avalonia も矩形を先に塗ってから文字を描き（`TextPresenter.cs` 423〜449 行目）、選択した文字の色を `SelectionForegroundBrush` で変えられる（同じファイルの 593〜601 行目）。Windows の選択色は濃いので、文字の色を変えないと読みにくい
+- 選択が空でない間は、キャレットを描かない（Avalonia、`TextPresenter.cs` 450〜453 行目）
+- フォーカスを失っても選択は消さず、フォーカスの無い間は選択もキャレットも描かない。Flutter はフォーカスの変化で選択に触れない（`editable_text.dart` 4939〜4961 行目）。Avalonia は既定で選択を消す（`ClearSelectionOnLostFocus`、`TextBox.cs` 66〜67・1153〜1166 行目）
+- 1 行の欄は、フォーカスを得ると全体を選ぶ。複数行の欄は選択を変えない。Flutter のデスクトップと同じである（`selectAllOnFocus`、`editable_text.dart` 1824〜1832・2115〜2125・4963〜4983 行目）。クリックで得たときは、その後のクリックの処理がキャレットを置き直す
+- **押してもフォーカスを移さない印:** `.KeepsFocusOnPress()` を付けたノードとその子孫を押すと、§7「押したときのフォーカス」はフォーカスを動かさない。zed のボタンは、マウスの Down で `prevent_default` を呼び（`ui/src/components/button/button_like.rs` 877〜885 行目）、祖先へのフォーカスの移動を止める（`gpui/src/elements/div.rs` 2771〜2786 行目）。Avalonia は `Focusable=false` のときだけ、ボタンがフォーカスを取らない。Flutter のボタンは押してもフォーカスを取らないが、デスクトップの欄は外を押されるとフォーカスを手放す（`editable_text.dart` 6898〜6904 行目）。`Primitive.Button` の既定では付けない。Windows では、押したボタンがフォーカスを取るのがふつうの動きだからである
+
+**クリップボード:** §6.0 の `IClipboardBackend` は同期で、プレーンテキストだけを扱う。
+
+```csharp
+public interface IClipboardBackend
+{
+    string? GetText();          // 文字が無い、または開けなければ null
+    bool SetText(string text);  // 開けなければ false
+}
+```
+
+- Windows は `OpenClipboard` を 1 回だけ呼び、`CF_UNICODETEXT` を読み書きする。開けなければ、やり直さずに失敗を返し、欄は何もしない。GPUI と同じ形である（`clipboard.rs` 346〜355 行目）。Avalonia は 100 ms おきに 10 回やり直してから例外を投げる（`ClipboardImpl.cs` 16〜39 行目）が、待ちながらやり直すと UI スレッドが止まる。Flutter と Avalonia の API は非同期だが、Windows のクリップボードは同期で開くので、非同期の形は要らない
+- 1 行の欄への貼り付けは、最初の改行より前だけを残す。Avalonia と同じ形である（`TextBox.cs` 1257〜1279 行目）。Flutter は `\n` を取り除くだけなので（`editable_text.dart` 967〜972 行目、`services/text_formatter.dart` 425 行目）、2 行が間に何も挟まずにつながる
+- `HeadlessApp` は、メモリに持つクリップボードを使う（§12.4）
+
+**元に戻す:** zed のまとめ方にする（`text/src/text.rs` 225〜230 行目の 300 ms）。
+
+- 前の編集から 300 ms より短い間隔の編集は、同じまとまりに入れる。貼り付け、切り取り、キャレットの移動は、それぞれ新しいまとまりを始める
+- 1 つの記録は編集そのもの（範囲、消した文字、入れた文字）と、前後の選択である。文字全体の写しは持たない
+- 上限は持たない。Flutter も上限を持たない（`widgets/undo_history.dart`）。Avalonia は 10 の状態までで（`Utils/UndoRedoHelper.cs` 7 行目）、7 文字ごとに保存する（`TextBox.cs` 397 行目）。Flutter は 500 ms に 1 回まで保存する（`undo_history.dart` 100〜106 行目）
+- 戻した後に編集すると、やり直しの記録を捨てる。アプリが文字のシグナルに書くと、履歴を消す（上の「値の流れ」）
+
+**付属機能:** 3 つとも欄に持つ（Avalonia の `PlaceholderText`・`IsReadOnly`・`PasswordChar`・`MaxLength`、`TextBox.cs` 91・97・141・195 行目。Flutter の `hintText`・`readOnly`・`obscureText`・`maxLength`。zed の `set_placeholder_text`・`set_read_only`・`set_masked`、`editor/src/editor.rs` 3310・3428・9056 行目）。
+
+- **プレースホルダー:** 文字が空のとき、文字の色を半分の不透明度にして描く。選択とキャレットは、その上に描く
+- **読み取り専用:** 選択・コピー・キャレットの移動はでき、文字を変える命令と打ち込みは何もしない
+- **伏せ字:** 書記素ごとに ● を 1 つ描く。コピーと切り取りはせず、単語の移動と削除は文書の端までになる（Flutter の `obscureText` の単語の移動と同じ、`editable_text.dart` 5501〜5502 行目）
+- **最大の長さ:** 書記素で数え、打ち込みと貼り付けを収まる分で切る（Avalonia も収まる分で切るが、UTF-16 のコード単位で数える、`TextBox.cs` 1212〜1216 行目）
+- **無効:** 今の `.Disabled`（§7）を使う。フォーカスできず、押しても何もしない
+
+**行の上端:** レイアウトが `LaidLine` に各行の上端を書き、`TextCaret.LineAt` は二分探索にする（§4.3）。今は呼ぶたびに上端を積み直すので、費用が行の数 × run の数になる（PR #426 のレビュー）。選択の描画と ↑・↓ の移動は、1 フレームに何度も呼ぶ。
+
+**Todo:** `samples/Todo` に欄を足す。Enter（`OnSubmit`）でも「Add」でも、前後の空白を取った文字が空でなければ項目を足して欄を空にし、空なら何もしない。「Add」には `.KeepsFocusOnPress()` を付け、フォーカスを欄に残す。V3 は欄を足すことを退けた（`docs/design-decisions.md` の「`Show` と `For`」）が、理由は「IME の無い欄では日本語を打てない」で、上の「IME の前」で確かめる。
+
+- **費用:** 1 回の編集は、新しい文字列と元に戻す記録を確保する（Flutter も Avalonia も、編集ごとに新しい文字列を作る）。描くだけのフレーム（キャレットの点滅、変わらない選択）は割り当て 0 にする（§11.3）。`input` に、1,000 文字の欄への 1 文字の打ち込み（配送からフレームまで）、点滅の 1 フレーム、選択のドラッグの 1 フレームを足す
+- **確かめ方:**
+  - Text: UAX #29 の単語の規則を、Unicode の `WordBreakTest.txt` のすべての行で確かめる
+  - Core: `TextInputEvent` の経路と止め方、`KeepsFocusOnPress`、`LaidLine` の上端と `LineAt`
+  - Primitives: 上の命令の表の行ごと、ポインタの回数ごと、元に戻すのまとめ方、付属機能、値の流れ（アプリが書いたとき）、ヘッドレスの点滅と仮想の時計
+  - Platform: 止めたキーから `WM_CHAR` が生まれないこと、サロゲートペアがつながること、`PrefersCharacter`（キーの状態と `ToUnicodeEx` の結果を引数で受ける関数を、§7 と同じく直接確かめる）、クリップボードの読み書き、点滅と幅の設定の読み直し
+  - Todo: 欄から項目を足す（`HeadlessApp`）
 
 ---
 
@@ -3391,7 +3540,7 @@ public interface IAccessibilityBridge
 public interface IPlatform
 {
     IWindowBackend Windows { get; }
-    IClipboardBackend Clipboard { get; }
+    IClipboardBackend Clipboard { get; }          // 同期、プレーンテキストだけ（P02b、§4.9）
     IDialogBackend Dialogs { get; }
     IFrameScheduler FrameScheduler { get; }
     ITextInputBackend TextInput { get; }
@@ -3807,6 +3956,7 @@ internal readonly record struct KeyInput(
     Key Key,                    // 論理キー（Win32 の VK から。配列に依存する）
     PhysicalKey PhysicalKey,    // 物理キー（スキャンコードと拡張の印から。配列に依存しない）
     Rune KeyChar,               // 押したキーの文字（ToUnicodeEx）。無いか、制御文字なら default
+    bool PrefersCharacter,      // 修飾キーを外すと文字が変わるか、デッドキー（AltGr、P02b、§4.9）
     KeyModifiers Modifiers,     // 押されている修飾キー
     bool IsRepeat,              // Down の自動の繰り返し（lParam の bit 30）。Up では false
     TimeSpan Timestamp);        // Platform がメッセージを受けた時刻（Stopwatch）
@@ -3826,6 +3976,7 @@ public readonly struct KeyEvent
     public Key Key { get; }
     public PhysicalKey PhysicalKey { get; }
     public Rune KeyChar { get; }
+    public bool PrefersCharacter { get; }    // P02b（§4.9）
     public KeyModifiers Modifiers { get; }
     public bool IsRepeat { get; }
     public TimeSpan Timestamp { get; }
@@ -3868,9 +4019,9 @@ internal sealed class FocusManager
   - `KeyChar`: `ToUnicodeEx` を `wFlags` の bit 2（「キーボードの状態を変えない」、Windows 10 1607 以降、文書）で呼ぶ。GPUI も同じ印で呼ぶ（`events.rs` 1613〜1689 行目）。デッドキー（負の戻り値）、何も書かなかったとき（0）、1 つの `Rune` にならないとき、制御文字（U+0000〜U+001F と U+007F）は `default`。Flutter も Ctrl+A の 0x01 のような制御文字を文字にしない（`keyboard_manager.cc` 191〜202 行目）
   - Down と Up は修飾キーそのものにも送る（Flutter と Avalonia。GPUI は修飾キーを `ModifiersChanged` にして、Down を送らない、`events.rs` 1490〜1538 行目）
   - 配らないもの: IME が使う `VK_PROCESSKEY`（Flutter も配らない、`keyboard_key_embedder_handler.cc` 177〜183 行目）と、`SendInput` の文字の `VK_PACKET`（GPUI も捨てる、`events.rs` 1490〜1538 行目）は、`DefWindowProc` に渡すだけにする
-  - Windows は AltGr を左の Ctrl と右の Alt の 2 つの Down で送る。K1 はそのまま 2 つを配る（`Modifiers` は Control と Alt）。Flutter は偽の Ctrl の Up を作り（`keyboard_manager.cc` 20〜42・256〜279 行目）、GPUI は文字の入力を優先する印を立てる（`gpui/src/interactive.rs` 25〜35 行目）。文字の入力にどう渡すかは行 P02b で決める
+  - Windows は AltGr を左の Ctrl と右の Alt の 2 つの Down で送る。K1 はそのまま 2 つを配る（`Modifiers` は Control と Alt）。Flutter は偽の Ctrl の Up を作り（`keyboard_manager.cc` 20〜42・256〜279 行目）、GPUI は文字の入力を優先する印を立てる（`gpui/src/interactive.rs` 25〜35 行目）。文字の入力では、修飾キーを外した `ToUnicodeEx` と比べて `PrefersCharacter` を立て、TextField はその印のキーを命令にしない（P02b の Grill、§4.9）
   - メッセージを `KeyInput` に直す関数は、修飾キーの状態と `ToUnicodeEx` の結果を引数で受ける。`SendMessage` ではキーの状態と配列を作れないので、本物のウィンドウのテストではその関数を直接確かめる（上の「ポインタの入力」の Alt と同じ）
-- **OS に返す値:** `Handle` が止めた（`StopPropagation` された）キーには 0 を返し（「処理したら 0」、文書）、止めなかったものは `DefWindowProc` に渡す（Avalonia の `AppWndProc.cs` 987〜993 行目、GPUI の `events.rs` 417〜442 行目）。Flutter は止めなかったキーを送り直して `DefWindowProc` に届け、`WM_SYS*` は答えによらず OS に渡す（`keyboard_manager.cc` 109〜121・218〜220 行目）。メッセージループは今のまま、すべてのキーを `TranslateMessage` してから配るので、`WM_CHAR` と `WM_SYSCHAR` も来る。K1 は文字の入力を持たないので、どちらも `DefWindowProc` に渡す。止めた Down の後の `WM_CHAR` を文字の入力にしないこと（Avalonia は `_ignoreWmChar`、`AppWndProc.cs` 261〜276・974〜978 行目。GPUI は `TranslateMessage` の前に配る、`gpui_windows/src/platform.rs` 502〜516・605〜609 行目）は、文字の入力と一緒に行 P02b で決める
+- **OS に返す値:** `Handle` が止めた（`StopPropagation` された）キーには 0 を返し（「処理したら 0」、文書）、止めなかったものは `DefWindowProc` に渡す（Avalonia の `AppWndProc.cs` 987〜993 行目、GPUI の `events.rs` 417〜442 行目）。Flutter は止めなかったキーを送り直して `DefWindowProc` に届け、`WM_SYS*` は答えによらず OS に渡す（`keyboard_manager.cc` 109〜121・218〜220 行目）。P02b から、メッセージループは `WM_KEYDOWN` と `WM_SYSKEYDOWN` を `TranslateMessage` の前に配り、止めたキーは翻訳しないので、止めた Down からは `WM_CHAR` が生まれない（GPUI の形、§4.9）。K1 の間は、すべてのキーを `TranslateMessage` してから配り、`WM_CHAR` と `WM_SYSCHAR` を `DefWindowProc` に渡していた。`WM_CHAR` は `TextInputEvent` になり、`WM_SYSCHAR` は今のまま `DefWindowProc` に渡す
 - **Alt とメニューのキー:** XylemUI のウィンドウにはメニューが無いので、`WM_SYSCOMMAND` の `wParam & 0xFFF0`（下の 4 ビットはシステムが使う、文書）が `SC_KEYMENU`（キーで開くウィンドウメニュー）なら 0 を返し、`DefWindowProc` に渡さない。Alt を押して離したとき、F10（`WM_KEYDOWN` の文書の Remarks）、Alt と文字、Alt+Space のどれも開かない。`SC_KEYMENU` の `lParam` は Alt と押した文字の文字コードである（文書）。Avalonia も上の語が 0 以下の `SC_KEYMENU` に 0 を返す（`AppWndProc.cs` 239〜243 行目）が、文字コードの上の語は常に 0 なので同じになる。`WM_MENUCHAR` には `MNC_CLOSE` を上の語にして返し、警告音を止める（Avalonia の 245〜249 行目、文書）。マウスで開く `SC_MOUSEMENU` は止めない。Alt+F4 は `WM_SYSKEYDOWN` を `DefWindowProc` に渡すと閉じる（アプリが止めれば閉じない。Avalonia と同じ）
 - **配る経路:** 元は、ウィンドウがアクティブでフォーカスしたノードがあればそのノード、なければ根である（Avalonia の `KeyboardDevice.cs` 238 行目、GPUI の `gpui/src/window.rs` 6463〜6471 行目）。ポインタと同じく、capture のフェーズを根から元へ、bubble のフェーズを元から根へ呼び、`StopPropagation` で止める（Avalonia の Tunnel と Bubble、`InputElement.cs` 109 行目。GPUI の `window.rs` 6260〜6289 行目。Flutter は葉から根の bubble だけ、`fm` 2273〜2303 行目）。届ける時機、`Batch`、ハンドラの例外、ハンドラを動かす Scope は、上の「ポインタの入力」と同じ。止められなかった Down には、次の既定の動作をこの順で行う
   1. スクロールする箱のキー（下の「キーボードでのスクロール」）は、bubble の各ノードのハンドラの後に、そのノードで行う（ホイールと同じ場所）
@@ -3878,7 +4029,7 @@ internal sealed class FocusManager
   3. ボタンの Enter と Space は、`Primitive.Button` が自分に付けるふつうのハンドラである（下の「ボタンのキー」）
 - **フォーカスできるノード:** `NodeInput.Focusable` が立ち、自分も祖先も Disabled でなく、自分も祖先も `Hidden` でなく、ウィンドウの木にあるノード（Avalonia の `FocusManager.cs` 225・315〜319 行目と同じ条件）。`.Focusable()` の既定は false（Avalonia の `InputElement.cs` 24〜25 行目）。`Primitive.Button` は立てる（Avalonia の `Button.cs` 109 行目、Flutter の `material/ink_well.dart` 1333〜1336 行目）。フォーカスできるノードは Tab で止まる（Avalonia の `IsTabStop` の既定 true、`KeyboardNavigation.cs` 48〜52 行目。GPUI は `tab_stop` を付けたものだけ、`gpui/src/window.rs` 538〜560 行目）。`Focusable` のノードは、ハンドラが無くてもヒット領域を書く。押したときのフォーカスは当たったノードから祖先をたどるので、書かなければ、子の無い所を押しても後ろのノードに当たり、そのノードはフォーカスを得ない。後ろのノードへのポインタは、`BlocksPointer` と同じく遮る（K1a の実装で決めた）
 - **Tab の順:** 下の §7.1。Tab の Down（繰り返しを含む）で、修飾キーが無ければ次へ、Shift だけなら前へ動かす。Control・Alt・Meta が付いた Tab は動かさない。動かしたら止める。フォーカスできるノードが 1 つも無ければ止めず、`DefWindowProc` に渡す（Flutter も動かせないときは OS に渡す、`focus_traversal.dart` 2333〜2349 行目）
-- **押したときのフォーカス:** 左ボタンの Down で、経路を配る前に、元のノード（キャプチャ中はキャプチャしたノード）から祖先へたどり、最初のフォーカスできるノードにフォーカスする。何も無ければ変えない（何も無い所を押してもフォーカスを外さない、3 つとも）。Avalonia は PointerPressed の Tunnel のクラスのハンドラで同じことをする（`FocusManager.cs` 31〜41・289〜313 行目）。GPUI も、フォーカスを持つ要素は押すとフォーカスする（`div.rs` 2771〜2786 行目）が、zed の Button はそれを止める（`ui/button_like.rs` 877〜881 行目）。Flutter はボタンを押してもフォーカスしない（`ink_well.dart` の `handleTap`、1216〜1226 行目）。経路を配る前にフォーカスするので、アプリがこれを止める口は `.Focusable(false)` だけである。押してもフォーカスを奪わない印が要るかは、文字の入力を入れる行 P02b で決める（PR #352 のレビュー）
+- **押したときのフォーカス:** 左ボタンの Down で、経路を配る前に、元のノード（キャプチャ中はキャプチャしたノード）から祖先へたどり、最初のフォーカスできるノードにフォーカスする。何も無ければ変えない（何も無い所を押してもフォーカスを外さない、3 つとも）。Avalonia は PointerPressed の Tunnel のクラスのハンドラで同じことをする（`FocusManager.cs` 31〜41・289〜313 行目）。GPUI も、フォーカスを持つ要素は押すとフォーカスする（`div.rs` 2771〜2786 行目）が、zed の Button はそれを止める（`ui/button_like.rs` 877〜881 行目）。Flutter はボタンを押してもフォーカスしない（`ink_well.dart` の `handleTap`、1216〜1226 行目）。経路を配る前にフォーカスするので、アプリがこれを止める口は `.Focusable(false)` と、P02b の `.KeepsFocusOnPress()` である。後者を付けたノードとその子孫を押しても、フォーカスは動かない（zed の Button の形、§4.9。PR #352 のレビューの問い）
 - **擬似状態:** Focused はフォーカスしたノードに、FocusWithin はそのノードと祖先に立てる。FocusVisible は、Focused で、`LastInputWasKeyboard` のときに立てる。`LastInputWasKeyboard` は、キーの Down で true、ポインタの Down と Move で false になり、false から始まる（GPUI の `window.rs` 5600〜5609・2178 行目、`focus_visible_style` は `div.rs` 3416〜3434 行目）。マウスでフォーカスした後にキーを押すと輪が出る。Avalonia は Tab と方向キーで来たフォーカスだけに `:focus-visible` を立てる（`InputElement.cs` 599 行目）。フラグが変わったら、その状態の `PaintStyle` を持つノードにだけ `ChangeKind.Color` の印を付ける（V1c と同じ）
 - **ウィンドウの活性化:** Platform は `WM_ACTIVATE` の `wParam` の下の語で `SetActive` を呼ぶ。`WA_INACTIVE` なら false、`WA_ACTIVE` と `WA_CLICKACTIVE` なら true である（文書）。メッセージは `DefWindowProc` にも渡す（最小化されていなければキーボードのフォーカスをウィンドウに置く、文書）。非アクティブになると、フォーカスしたノードに FocusOut を配り、Focused・FocusVisible・FocusWithin を下ろし、ノードは覚えておく。アクティブに戻ると、覚えたノードのフラグを立て直して FocusIn を配る。非アクティブの間に、覚えたノードを外す・隠す・`.Focusable(false)` にすると、その場で（イベント無しで）フォーカスが空になるので、戻ったときに覚えたノードはいつもフォーカスできる（下の「外す・隠す・Disabled にする」、PR #356 のレビュー）。3 つとも同じ形である（Avalonia の `TopLevel.cs` 867〜873 行目と `WindowBase.cs` 332〜344 行目、Flutter の `fm` 1868〜1891 行目、GPUI の `window.rs` 3519〜3549 行目）。Core は OS の状態を読まず、`SetActive` だけで決める（§12.4）
 - **フォーカスの知らせ:** フォーカスが移るときは、フラグと `IsFocused` を書き換えてから、前のノードに FocusOut を、新しいノードに FocusIn を、それぞれのノードを元とする経路（capture と bubble）で配る（Avalonia は `LostFocus` の後に `GotFocus`、どちらも bubble、`KeyboardDevice.cs` 203〜218 行目と `InputElement.cs` 82〜101 行目。DOM の `focusout`・`focusin`）。自分のことかは、ハンドラが `Target` で見分ける。GPUI は自分だけの `on_focus`・`on_blur` と、経路の `on_focus_in`・`on_focus_out` を持つ（`app/context.rs` 558〜621 行目）。FocusIn と FocusOut を配っている間にフォーカスを動かすこと（ハンドラの中の `Element.Focus()`、Tab）は、その場では行わず、配り終えてから行う。配っている途中の経路とフラグを書き換えないためである（上の「当て直し」と同じ、PR #327 のレビュー）
@@ -3908,7 +4059,7 @@ internal sealed class FocusManager
   - WARP: 足さない。擬似状態の見た目の画素は、V1c の WARP のテストが確かめている
   - 費用: `input` に、キー 1 つの配送（深さ 1 と 50）と、10,101 ノードの木での Tab 1 回を足す。どれも割り当て 0
 - **後の行に送るもの:**
-  - 文字の入力（`TextInputEvent`）、IME、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02b（IME は P02c）
+  - 文字の入力（`TextInputEvent`）、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02b で決めた（§4.9）。IME は行 P02c
   - スコープを積むことと `IsModal` のフォーカストラップ（§7.2）、`XylemUI.Testing` の `app.Keyboard` と `app.Focus`（§12.4）は行 P02d（スコープとトラップ）と P02a（`app.Keyboard` と `app.Focus`）
   - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）と、a11y へのフォーカスの知らせ（§4.4.1 の `NotifyFocusChange`）は、仮想化と a11y を入れる行 P02e と P02g
   - キーの組み合わせから動作への仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）は行 K2
@@ -4078,7 +4229,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 全要件を維持する方針（既存）は変更しない。以下はあくまで実装に着手する順序であり、後段のフェーズにある項目も設計（型・フック）には最初から含める。
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
-2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02c → P02d → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
+2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
 3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
 4. **v0.3**: RTL（レイアウトの向き、行 P03b）、BiDi と複雑スクリプト（行 P03a）、縦書き（行 P03c）、カラー絵文字（COLRv0 は済み、COLRv1 と SVG は行 T11 で v1.x）（D5 の Grill、Issue #163）
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
@@ -4438,7 +4589,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 **1 回の反復（P02a の Grill、Issue #456）:** UI キューを空にする。予約したフレームがあれば、時計を 1 フレーム分（`HeadlessOptions.FrameInterval`、既定 1/60 秒）進めて 1 フレーム回す。無ければ、次のタイマーの時刻まで時計を飛ばしてそのタイマーを動かす（GPUI の `advance_clock_to_next_timer` と同じ。zed v1.25.3 の `crates/scheduler/src/test_scheduler.rs` 442〜449 行目）。どちらも無く UI キューも空なら静止とする。上限を超えたら `InvalidOperationException` を投げ、残っている待ちの種類を書く。時間を決めて進める `Pump(TimeSpan)` も出す（Flutter の `pump(duration)`、`flutter_test` 3.47.8 の `lib/src/binding.dart` 2249〜2265 行目）。
 
-**終わりの検査:** `DisposeAsync` のとき、予約したフレームかタイマーが残っていればテストを失敗させる（Flutter の「A Timer is still pending」と同じ。`lib/src/binding.dart` 2543 行目）。止め忘れたタイマーは、別のテストの時計を動かすためである。
+**終わりの検査:** `DisposeAsync` のとき、予約したフレームかタイマーが残っていればテストを失敗させる（Flutter の「A Timer is still pending」と同じ。`lib/src/binding.dart` 2543 行目）。止め忘れたタイマーは、別のテストの時計を動かすためである。点滅するキャレットはタイマーを持ち続けるので、`HeadlessApp` の既定では点滅させない（`HeadlessOptions.CaretBlink`、§4.9）。
 
 ```csharp
 await using var app = await HeadlessApp.StartAsync(() => Counter());
@@ -4470,7 +4621,7 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c。タッチパッドのパンの PanStart・PanUpdate・PanEnd も、I1c でここから入れる）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02a で、この入口の薄い包みとして入れる。
 
-**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
+**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）と、メモリに持つクリップボード `app.Clipboard` を足す（§4.9）。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
 
 **IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
