@@ -286,6 +286,41 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Makes one of the node's paint values follow its changes over a duration (design §2.14, "Transitions"): when the value the
+    /// node draws with changes, from a binding or from a pseudo-state's look, it moves there from the value on the screen along the
+    /// curve, with the duration started again. The values are the background, the border's paint, the color of the text, the
+    /// opacity, the transform, the corner radii, and the shadow; a layout value moves with an <see cref="Animation"/> bound to it.
+    /// </summary>
+    /// <typeparam name="T">The value's type.</typeparam>
+    /// <param name="element">The node.</param>
+    /// <param name="property">The value, one of <see cref="NodeProperties"/>' paint values.</param>
+    /// <param name="duration">The duration of a move; 0 stops the value following.</param>
+    /// <param name="curve">The curve of a move; <see cref="Curve.Linear"/> when <see langword="null"/>.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentException">The property is not a paint value.</exception>
+    public static Element Transition<T>(this Element element, NodeProperty<T> property, TimeSpan duration, Curve? curve = null)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+        ArgumentOutOfRangeException.ThrowIfLessThan(duration, TimeSpan.Zero);
+        NodeTransitions.Kind kind = property switch
+        {
+            _ when ReferenceEquals(property, NodeProperties.Background) => NodeTransitions.Kind.Background,
+            _ when ReferenceEquals(property, NodeProperties.BorderPaint) => NodeTransitions.Kind.BorderPaint,
+            _ when ReferenceEquals(property, NodeProperties.Foreground) => NodeTransitions.Kind.Foreground,
+            _ when ReferenceEquals(property, NodeProperties.Opacity) => NodeTransitions.Kind.Opacity,
+            _ when ReferenceEquals(property, NodeProperties.Transform) => NodeTransitions.Kind.Transform,
+            _ when ReferenceEquals(property, NodeProperties.CornerRadius) => NodeTransitions.Kind.CornerRadius,
+            _ when ReferenceEquals(property, NodeProperties.Shadow) => NodeTransitions.Kind.Shadow,
+            _ => throw new ArgumentException(
+                $"A transition moves a paint value; {property.Name} is not one (bind an Animation to it instead).",
+                nameof(property)
+            ),
+        };
+        element.TreeOrThrow().SetTransition(element.Node, kind, duration, curve ?? Curve.Linear);
+        return element;
+    }
+
+    /// <summary>
     /// Gives the node an ID that the tests find it by (<c>XylemUI.Testing</c>'s <c>Find</c>, design §12.5, "The keys"). Only the nodes
     /// given one hold it, and it goes when the node is removed.
     /// </summary>

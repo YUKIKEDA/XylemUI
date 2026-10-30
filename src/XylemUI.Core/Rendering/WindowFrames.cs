@@ -138,6 +138,9 @@ internal sealed partial class WindowFrames
     {
         FrameTime = _time.GetElapsedTime(0);
 
+        // The animations first, at the frame's time: what they set is laid out and drawn in this frame (design §2.14).
+        _tree.Animations.Tick(FrameTime);
+
         // Before the layout pass: a touchpad's pan scrolls with this frame's time, and its changes are this frame's (row I1c). The
         // next frame it needs is asked for once a resize's frame no longer holds the requests back.
         bool gestures = Input?.UpdateGestures(FrameTime) == true;
@@ -149,6 +152,13 @@ internal sealed partial class WindowFrames
         // otherwise draw and present every frame (PR #313's review). A mark made from here on asks for the next frame.
         _tree.ClearFrameRequest();
         _resizing = false;
+
+        // An animation that still runs asks for the next frame; with none running, no frame is asked for (design §2.14).
+        if (_tree.Animations.Count > 0)
+        {
+            _tree.NoteWork();
+        }
+
         if (gestures)
         {
             RequestFrame();
@@ -274,7 +284,7 @@ internal sealed partial class WindowFrames
             // here the frame was 968 bytes, zeroed on each call, and the draw stage of `frames --tree` took 12 µs longer for 1,000
             // boxes (row V1c).
             bool styled = styles is not null && node.Pseudo != PseudoState.None;
-            if (styled || visual.Scoped)
+            if (styled || visual.Scoped || visual.Transitions is not null)
             {
                 pushed = DrawResolved(visual, node.Pseudo, node.Layout.Border, box, ref text, ref hitsOnly);
             }
@@ -416,6 +426,9 @@ internal sealed partial class WindowFrames
             }
         }
 
+        CornerRadii radii = visual.Radii;
+        BoxShadow? shadow = visual.Shadow;
+        visual.Transitions?.Apply(FrameTime, ref background, ref borderPaint, ref foreground, ref opacity, ref transform, ref radii, ref shadow);
         text = foreground ?? text;
         int pushed = 0;
         if (transform is { } matrix)
@@ -438,7 +451,7 @@ internal sealed partial class WindowFrames
 
         if (!hitsOnly)
         {
-            DrawBox(visual.Shadow, visual.Radii, background, borderPaint, border, box);
+            DrawBox(shadow, radii, background, borderPaint, border, box);
         }
 
         return pushed;

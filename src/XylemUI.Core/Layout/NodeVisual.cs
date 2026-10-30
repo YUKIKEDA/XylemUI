@@ -77,6 +77,11 @@ internal sealed class NodeVisual
     /// </summary>
     public PseudoStyles? States { get; internal set; }
 
+    /// <summary>
+    /// Gets or sets the paint values that follow their changes over a duration (design §2.14); <see langword="null"/> for none.
+    /// </summary>
+    internal NodeTransitions? Transitions { get; set; }
+
     private void SetScope(float opacity, Matrix3x2? transform)
     {
         _opacity = opacity;

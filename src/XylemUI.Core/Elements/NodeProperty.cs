@@ -71,6 +71,17 @@ public static class NodeProperties
     public static NodeProperty<Matrix3x2> Transform { get; } = new(nameof(Transform), static (tree, node, value) => tree.SetTransform(node, value));
 
     /// <summary>
+    /// Gets the radii of the box's corners (<see cref="ElementExtensions.CornerRadius"/>).
+    /// </summary>
+    public static NodeProperty<CornerRadii> CornerRadius { get; } =
+        new(nameof(CornerRadius), static (tree, node, value) => tree.SetCornerRadii(node, value));
+
+    /// <summary>
+    /// Gets the shadow under the box (<see cref="ElementExtensions.Shadow"/>); <see langword="null"/> for none.
+    /// </summary>
+    public static NodeProperty<BoxShadow?> Shadow { get; } = new(nameof(Shadow), static (tree, node, value) => tree.SetShadow(node, value));
+
+    /// <summary>
     /// Gets the text of a text node (<see cref="Elements.Text(string)"/>).
     /// </summary>
     public static NodeProperty<string> Text { get; } = new(nameof(Text), static (tree, node, value) => tree.SetText(node, value));
