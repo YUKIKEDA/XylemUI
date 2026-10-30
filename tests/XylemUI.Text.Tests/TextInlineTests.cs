@@ -401,6 +401,137 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// A child's margins count in its room, and the child sits inside them.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn", a box of 30 x 10 with margins of 5, "nn".
+    ///
+    /// Steps:
+    /// - Mount and lay out.
+    ///
+    /// Expected:
+    /// - The room is 40 x 20 with its bottom on the baseline, which it raises to 20: the line is 24.032 high, the text 64.16 + 10
+    ///   wide, and the box at (17.08 + 5, 5).
+    /// </remarks>
+    [Fact]
+    public void Margins_CountInTheRoom() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element box = default;
+            Element text = default;
+            scene.Mount(() =>
+            {
+                box = Elements.Box().Width(30).Height(10);
+                LayoutStyle style = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                scene.Tree.SetStyle(box.Node, style with { Margin = EdgeInsets.Margin(5) });
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn".AsSpan());
+                        w.Inline(box);
+                        w.Write("nn".AsSpan());
+                    }
+                );
+                return Elements.Row(text);
+            });
+
+            AssertRect(new Rect((2 * N) + 5, 5, 30, 10), scene.Tree.GetRect(box.Node));
+            Rect leaf = scene.Tree.GetRect(text.Node);
+            Assert.Equal((4 * N) + 40, leaf.Width, 3);
+            Assert.Equal(20 + Descent, leaf.Height, 3);
+        });
+
+    /// <summary>
+    /// A write that changes only the look keeps the rooms the children were measured to: the lines keep their heights.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn" in a range whose color a signal gives, then a box of 10 x 40.
+    ///
+    /// Steps:
+    /// - Mount; change the color; draw; read the line's height.
+    ///
+    /// Expected:
+    /// - The line is still 44.032 high, as the room raises it.
+    /// </remarks>
+    [Fact]
+    public void LookRewrite_KeepsTheRooms() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var color = Signal.Create(Red);
+            Element text = default;
+            scene.Mount(() =>
+            {
+                Element box = Elements.Box().Width(10).Height(40);
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        using (w.Style(new SpanStyle(Color: color.Get())))
+                        {
+                            w.Write("nn".AsSpan());
+                        }
+
+                        w.Inline(box);
+                    }
+                );
+                return Elements.Row(text);
+            });
+
+            color.Set(Blue);
+            scene.Draw();
+            Assert.Equal(0, TextCaret.LineAt(scene.Leaf(text), 1, out _, out float height));
+            Assert.Equal(40 + Descent, height, 3);
+        });
+
+    /// <summary>
+    /// A child that a write leaves out loses the focus, as a node taken out of the tree does.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An active window; a focusable box; a text that writes it while a signal is true.
+    ///
+    /// Steps:
+    /// - Mount; focus the box; set the signal false; draw.
+    ///
+    /// Expected:
+    /// - The box has the focus, then nothing has.
+    /// </remarks>
+    [Fact]
+    public void ChildLeftOut_LosesTheFocus() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            var placed = Signal.Create(true);
+            Element box = default;
+            scene.Mount(() =>
+            {
+                box = Elements.Box().Width(10).Height(10).Focusable();
+                return Elements.Row(
+                    Elements.Text(
+                        (ref w) =>
+                        {
+                            w.Write("n".AsSpan());
+                            if (placed.Get())
+                            {
+                                w.Inline(box);
+                            }
+                        }
+                    )
+                );
+            });
+
+            scene.Tree.Focus.SetActive(true);
+            Assert.True(box.Focus());
+            Assert.Equal(box.Node, scene.Tree.Focus.Focused);
+            placed.Set(false);
+            scene.Draw();
+            Assert.True(scene.Tree.Focus.Focused.IsNone);
+        });
+
+    /// <summary>
     /// A text node that goes away lets go of its inline objects first: the scope that made them keeps them.
     /// </summary>
     /// <remarks>
