@@ -82,6 +82,9 @@ internal static class Frames
                 t2 = Stopwatch.GetTimestamp();
                 scene.Renderer.Present();
                 t3 = Stopwatch.GetTimestamp();
+
+                // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11, I1c).
+                Win32MessageLoop.FrameScheduler.FramePresented();
             }
 
             build.Add(Stopwatch.GetElapsedTime(t0, t1).TotalMilliseconds);

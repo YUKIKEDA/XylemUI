@@ -114,6 +114,9 @@ frame = () =>
     long t3 = Stopwatch.GetTimestamp();
     renderer.Present();
     long t4 = Stopwatch.GetTimestamp();
+
+    // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11, I1c).
+    Win32MessageLoop.FrameScheduler.FramePresented();
     build.Add(Stopwatch.GetElapsedTime(t0, t1).TotalMilliseconds);
     draw.Add(Stopwatch.GetElapsedTime(t1, t2).TotalMilliseconds);
     present.Add(Stopwatch.GetElapsedTime(t3, t4).TotalMilliseconds);
