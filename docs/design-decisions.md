@@ -44,7 +44,7 @@ Reason:
   公開 API に出さなければ、後から自作に置き換えても利用者に影響しない。
 
 Rejected:
-  - 外部依存を原則禁止し、すべて自作する（基準を満たすライブラリまで書き直すことになる）
+  - 外部依存を原則禁止し、すべて自作する（性能の制御は 3 つ目の条件が守るので、禁止しても得るものが無い。OpenType と Unicode の改定に追いつけず、正しさで比べる相手と並べなくなる。Flutter・Avalonia・GPUI も外部の整形とテキストの部品に依存する。D3 の Grill、Issue #441）
   - 条件を確かめずに依存を足す（AOT 警告や追加 DLL は後から外すのが難しい）
 
 ---
@@ -68,7 +68,7 @@ Decision:
 Reason:
   グラフ全体のソートは 10 万 Signal 更新で破綻する。動的依存では Depth が増減する。
   Computed → Computed の辺を `SignalId` だけでは表せない。
-  Source Generator は既存メソッド本体を書き換えられず、Svelte 方式のコンパイル時解析には使えない。
+  Source Generator は既存メソッド本体を書き換えられず、Svelte 方式のコンパイル時解析には使えない。本体を書き換える IL の書き換えは、Hot Reload（Roslyn の差分を元の IL に当てる）とずれ、比べた 3 つも依存をコンパイル時に解析しない。
   プロパティにするとデバッガのウォッチ・データヒントが getter を評価し、意図しない依存を登録する。
   読まれない Computed が Signal から参照され続けると、GC に回収されず、`Set` のたびに dirty にされる（Preact・Vue 3.5・MobX・Angular も外す）。
 
@@ -81,7 +81,7 @@ Rejected:
   - 上限超過を「循環検出」と呼ぶ
   - 上限超過を debug で `Debug.Fail` にする（.NET ではデバッガが無いとプロセスが終わり、テストで確かめられない。アプリ側の循環であり不変条件違反ではない）
   - Computed を batch 終了時に一括 push 評価する
-  - Source Generator / Interceptors によるコンパイル時の依存解析
+  - Source Generator / Interceptors によるコンパイル時の依存解析、IL の書き換え（Fody、Mono.Cecil）による依存解析（Hot Reload とずれる。Flutter・Avalonia・GPUI のどれも依存をコンパイル時に解析しない。誤りを見つける道具は Roslyn のアナライザーとして行 A1 で配る。D3 の Grill、Issue #441）
   - `signal.Value` プロパティ、`Signal<T>` → `T` の暗黙変換演算子
   - `INotifyPropertyChanged` / `DependencyProperty` 方式の変更通知
   - 「現在の computation」を `[ThreadStatic]` にする（Core は UI スレッド専用なので不要）
@@ -130,11 +130,11 @@ Rejected:
   - `SelfDirty` があるノードだけ algorithm を実行
   - `LastAvailableSpace` を layout root の制約源として無条件使用
   - 固定配列を `Clear()` する走査（pass 中の新規 dirty を消す）
-  - 開発者が手動で Layout Boundary を立てる
+  - 開発者が「信じて」の旗で Layout Boundary を立てる（WPF の形。誤った宣言で結果が狂う。手で置く境界は、中身を無いものとして測る CSS の containment として行 L11 で足す。D3 の Grill、Issue #441）
   - `NodeVersions.Layout` を「自身の再計算」と「子孫 rect 変化」の両方に使う
   - 同一ノードの enqueue を無視して MaterializationChanged を落とす
   - 親境界の再帰が子境界の隔離を突き抜ける
-  - `LayoutCacheKey.DescendantLayout` を v1 でさらに細分化する
+  - 実験の前に `LayoutCacheKey.DescendantLayout` の扱いを決める（比べた 4 つは子孫の版を持たない。鍵から外せるかを行 L12 で無作為のテストとミュータントで確かめ、同じならば外し、違えば大きさと位置に分ける。D3 の Grill、Issue #441）
   - WPF / Avalonia の Panel ごとの Measure/Arrange（並べ方がパネルごとに分かれ、内容に合わせる大きさの意味がパネルで違い、外の正解が無い。D4、Issue #104）
   - Flutter の箱の制約に切り替える（最初の layout と 1 か所の変更で最も速いが、Chrome の結果による検証を失い、内容に合わせる大きさを高くつく問い合わせに追い出す。D4、Issue #104）
   - CSS のサブセットに加えて、Flutter の `Row` / `Column` に当たる簡単な並べ方を選べるようにする（同じ見た目に 2 つの意味を持ち込む。`min-width: 0` で計算は減る。D4、Issue #104）
@@ -156,7 +156,7 @@ Rejected:
   - 内容が変わっても、今のまま印を付けた時点で境界まで上へ伝える（大きさが変わらない変更でも親を解き直す。L5 の Grill、Issue #108）
   - 絶対配置の基準を CSS どおり最も近い positioned の祖先にする（GPUI の Taffy 0.9.0 と、Zed が出荷する 0.13.0・Flutter・Avalonia はそろって親を基準にする。Taffy 0.15 は CSS どおりにした。祖先をたどる処理と無効化が増える。L2 の Grill、Issue #120）
   - 絶対配置の子を構造の境界にして、親は絶対配置の子の配置だけをやり直す（費用を測る前に仕組みを足さない。Flutter・Avalonia は親を解き直す。L2 の Grill、Issue #120）
-  - 表示しないノードを Taffy の `Display::None` のように `LayoutAlgorithm` の 1 つにする（切り替えのたびに元のアルゴリズムを覚えておくことになる。L2 の Grill、Issue #120）
+  - 表示しないノードを Taffy の `Display::None` のように `LayoutAlgorithm` の 1 つにする（表示するかどうかと layout の方式は、別々の Signal につなぐ別々の性質である。保持する木の Avalonia の `IsVisible` と Flutter の `Offstage` も分けて持つ。GPUI はスタイルをフレームごとに作り直すので 1 つにできる。L2 の Grill、Issue #120。理由は D3 の Grill、Issue #441 で書き直した。場所を取ったまま描かない形は行 L13）
   - `flex-wrap: balance` を L2 に入れる（CSS の草案で、Flutter・Avalonia・GPUI のどれも持たない。行 L6 に置いた。L2 の Grill、Issue #120）
   - 計測のキャッシュを、初めて保存するときに確保する（L1a の場面では測られるノードが 10,100 あり 12.5 MB が 7.8 MB にしか減らず、最初の layout が 15〜48 % 遅くなった。数を 9 から 4 にして 5.9 MB にした。Issue #101）
   - 今の最小・最大の制約に min-content の印を足す（`%` の基準と、親が決めた寸法を表せない。L1 の Grill）
@@ -279,6 +279,7 @@ Decision:
   フォント解決の単位は grapheme cluster。
   v1 のハイフンは UAX#14 + soft hyphen のみ。
   テキスト位置は UTF-16 コード単位。UAX#9/#14/#29 は自前実装し、Unicode バージョンを固定する。
+  `XylemUI.Text` は Core と別のパッケージのまま、版は Core と同じにする（D3 の Grill、Issue #441）。Core は `InternalsVisibleTo` で Text の内部の型を使うので、版の違う 2 つの組み合わせは公開 API の検査に掛からずに壊れる。Avalonia もすべてのパッケージを 1 つの版で出す。
 
 Reason:
   結合筆記体は改行位置が決まらないと正しい字形にならない。
@@ -289,6 +290,7 @@ Reason:
   .NET 内蔵の Unicode データはランタイムのバージョンに従って変わり、バージョン固定と両立しない。
 
 Rejected:
+  - `XylemUI.Text` の版を Core と分ける（理由は日程だけだった。`InternalsVisibleTo` でつながる 2 つが黙って壊れ、利用者に組み合わせの表を負わせる。Flutter・Avalonia・GPUI のどれもテキストを中心と別の版にしない。D3 の Grill、Issue #441）
   - 段落全体をシェーピングしてから切る
   - Pass2 溢れ時に改行位置を再計算する
   - FriBidi（配布方針と LGPL 再リンク条件の相性確認コスト）
@@ -304,14 +306,14 @@ Rejected:
   - 内容の幅の最大に行末の空白を含める（skparagraph と同じだが、CSS では折り返す空白は行末で幅に入らない。T1 の Grill）
   - 改行の候補を、手書きの規則で見つける（GPUI。日本語の禁則が無く、強制改行は `\n` だけ。T1 の Grill）
   - 折り返しの型を、使う側が決まる前に公開にする（Flutter・Avalonia・GPUI は公開だが、`Text` の部品が決まる行 V1d まで約束を作らない。T1b の Grill）
-  - HarfBuzz の切ると危ない印を、内部だけの別の整形の結果の型で持つ（整形の結果が 2 種類になる。T1b の Grill）
+  - HarfBuzz の切ると危ない印を、公開の `ShapedGlyph` に持つ（T1b で採ったが、D3 の Grill、Issue #441 で改めた。比べた 3 つはどれも印を公開せず、公開の描画の入力では印に意味が無い。内部の型に移すのは行 T16）
   - 改行した行のソフトハイフンを描かない（Avalonia・GPUI と skparagraph の既定。v1 の要件に反する。T1b の Grill）
   - 行に収まるかの判定に、ソフトハイフンの幅を入れない（skparagraph。行の幅を超えることがある。T1b の Grill）
   - 文字の葉を 1 行だけにして先に入れ、T1 で折り返しを足す（折り返さない `Text` は要件の半分で、計測関数とキャッシュを作り直すことになる。V1 の Grill）
   - V1 を 1 つの Issue にする（設計の判断が十数点あり、1 つの PR が大きくなりすぎる。V1 の Grill）
   - V1 を描画と入力の 2 つに分ける（文字のキャッシュの測定が描画の行に埋もれる。V1 の Grill）
   - T1 を V1a に入れる（Unicode の表の生成と改行の実装に、文字の葉とキャッシュが加わり、1 つの PR が大きくなりすぎる。V1 の Grill）
-  - 文字の色を `TextStyle` に入れる（Flutter・Avalonia・GPUI の形。色だけを変えたときに layout を飛ばすには、型の中の欄ごとに比べることになる。V1a の Grill、Issue #296）
+  - 文字の色を `TextStyle` に入れない（V1a で採ったが、D3 の Grill、Issue #441 で改めた。比べた 3 つは色を文字のスタイルに持ち、XylemUI の公開の `SpanStyle` も色を持つ。挙げた理由の比べの費用は測っていなかった。公開の `TextStyle` に `Color?` を足し、中では layout の鍵と色に分けるのは行 T15）
   - 文字の葉ごとに closure の `MeasureFunc` を作る（10,101 個の葉で 10,101 個の closure になり、呼ぶたびに間接呼び出しと handle からのノードの引き直しが入る。V1a の Grill）
   - 文字の葉の状態を `UiNode` に struct で埋め込む（文字の葉でないノードも約 72 バイト大きくなる。V1a の設計）
   - 整形の道具（`TextShaper`・`LineBreaker`・`IFontProvider`）をウィンドウごとに持つ（同じフォントをウィンドウの数だけ開く。比べた 3 つはアプリで共有する。V1a の Grill）
@@ -321,7 +323,7 @@ Rejected:
   - 計測の例外を毎回報告する（GPUI。リサイズのたびに同じ例外が並ぶ）、2 回目から 1 行の要約にする（Flutter。同じノードの同じ例外では新しい情報が無い。V1a の Grill）
   - DirectWrite / Core Text にレイアウトまで全面委譲する（caret geometry を共通化できない）
   - 同梱フォントに CJK 統合漢字の基本範囲・絵文字・キリル / ギリシャ文字を入れる（約 2 万字で数 MB になり、配布物の目安 5 MB を超える。Flutter・Avalonia・GPUI のどれも CJK のフォールバック用のフォントを同梱せず、Windows は日本語と絵文字のフォントを必ず持つ。`.notdef` と基本ラテン文字だけの終点用のフォントにした。F1 の Grill、Issue #145）
-  - フォントを同梱せず、`.notdef` の矩形をエンジンが描く（FreeType とシェーピングを通らない特別な経路が増える。F1 の Grill）
+  - フォントを同梱せず、`.notdef` の矩形をエンジンが描く（OS にフォントが無い環境で、フォールバックが終わらない。豆腐が、切り抜き・変換・ClearType・キャレットを、ふつうのグリフと同じ経路で通らない。比べた 3 つも箱を描かず、フォントの `.notdef` を使う。同梱するフォントのファイルは 14,416 バイト。F1 の Grill。理由は D3 の Grill、Issue #441 で書き直した）
   - フォールバックを grapheme cluster ごとに解くため、UAX#29（行 T1）を F1 より先に入れる（GPUI と同じく DirectWrite に範囲ごとに任せ、cluster を切らないことはテストで確かめる。F1 の Grill）
   - DirectWrite のラスタライザが、`Measure` した解析と色のグリフの画素を、`Rasterize` するまでキーごとに保つ（アトラスはフレームの新しいグリフをすべて測ってから描くので、今の形では解析をほとんど作り直す。それでも新しいグリフ 431 個を 1 本で描く時間は、保つ形で 38.3〜43.4 ms、今の形で 38.9〜43.8 ms、絵文字 64 個は 16.1〜26.8 ms と 17.8〜29.5 ms で変わらなかった。5 プロセスずつ、行 T5）
 
@@ -389,7 +391,7 @@ Rejected:
   - CPU 側頂点バッファの差分パッチ
   - `PaintCommand` の record を毎フレーム生成する
   - GlyphRun の入れ子配列を毎フレーム new
-  - 固定容量で DisplayList を打ち切る
+  - 固定容量で DisplayList を打ち切る（黙って誤ったフレームを描き、ヒット領域も落とす。Flutter・Skia・GPUI・Avalonia はどれも広げる。GPU のバッファの上限と診断は行 R1。D3 の Grill、Issue #441）
   - Windows で D3D12 / Vulkan を第一選択
   - Linux で blade（薄い Vulkan）へ回帰
   - Silk.NET / Vortice.Windows などの GPU 抽象・ラッパーへの依存（宣言だけの TerraFX は採用、Interop の節）
@@ -399,7 +401,6 @@ Rejected:
   - D3D11 で Event Query の `IGpuSync` と FrameResourcePool を持つ（ランタイムが順序と寿命を保証する。Metal / wgpu で要る）
   - 頂点データを managed の struct 配列に書いてからマップしたバッファへ `CopyTo` する（マップしたメモリに直接書けば、配列もコピーも要らない）
   - 「スワップチェーンのクロックで割り当てたフレームは必ず Present する」を契約にするだけ（守らないと黙って描画が止まる）
-  - Present したかをレンダラから Platform に知らせ、していなければタイマーで回す（レンダラと Platform の間に新しい連絡が要る）
   - 頂点バッファに 4 頂点ずつ書く（インスタンスごとに矩形 1 つ、頂点シェーダが `SV_VertexID` から隅を作る）
   - どの OS でも FreeType でグリフをラスタライズする（3 つとも Windows と macOS では OS のラスタライザで描き、フォントの `gasp` 表とヒントが効く。T4 の Grill）
   - グリフの位置を整数の画素に丸める（3 つとも横に 4 段階のサブピクセル位置を持つ。T4 の Grill）
@@ -447,7 +448,7 @@ Rejected:
   - すべてのノードがヒット領域を書く（Flutter は木のすべての箱を試す。一覧が長くなり、飾りのノードが後ろへのポインタを遮る。ハンドラ・ホバー・カーソルを持つノードだけが書く。R4e の Grill）
   - 利用者の描く関数を、無効にされたときだけ呼んで命令を取っておく（Avalonia、Flutter。ノードごとに命令の置き場が要り、§5.0.1 の全体線形再構築と食い違う。R4e の Grill）
   - ヒットテストの項目ごとに、クリップと変換の逆を写して持つ（§7 の最初の案。写す量が多く、上限を超えたクリップの層を組み立て直す。表示リストの状態の番号を持つ。R4e の Grill）
-  - ヒットテストの一覧を、`DisplayList` と別のオブジェクトにする（2 つのスコープの積み重ねを同じ順に保つ必要がある。R4e の Grill）
+  - ヒットテストの一覧を、`DisplayList` と別のオブジェクトにする（描画と同じ状態の記録で判定するから、角丸や回転した切り抜きでも画素と一致する。分けると状態の記録を写すことになる。GPUI は分けるが矩形で判定する。描画のスレッド、描画のキャッシュ、測って分かる同じフレームのホバーのどれかが来たら考え直す。R4e の Grill。理由は D3 の Grill、Issue #441 で書き直した）
 
 ---
 
@@ -458,7 +459,7 @@ Decision:
   C API は `LibraryImport`。Windows の宣言は TerraFX.Interop.Windows を使う。
   消費側の COM（D3D11 / DXGI / DirectWrite）は vtable を unmanaged 関数ポインタで直接呼び、参照カウントを自分で管理する。
   OS から呼ばれる COM は、`[UnmanagedCallersOnly]` の関数の vtable を持つネイティブの構造体（F1 の `IDWriteTextAnalysisSource`）。UIA プロバイダと `IDropTarget` は、その行で作り方を測って決める（§4.4.1）。
-  macOS は Obj-C ランタイムを P/Invoke。block 等の扱いにくい箇所だけ薄い Obj-C shim を許す。
+  macOS は Obj-C ランタイムを P/Invoke。中継層（shim）は、P/Invoke で書けない API（C のマクロ、`static inline`、可変長の引数、block）だけの例外で、どの OS も同じ規則で判断する（D3 の Grill、Issue #441、行 P06 で決める）。
   OS 側には世代付きの整数IDだけを渡す（`NativeHandleTable`）。
   Core の型は UI スレッドでのみ操作する。公開 API の入口でスレッド ID を検査する。
   ワーカーからは `IUiDispatcher` / 独自 `SynchronizationContext` で UI スレッドへ戻る。
@@ -486,7 +487,7 @@ Rejected:
   - マネージドオブジェクトのアドレスやピン留めポインタを `GWLP_USERDATA` に渡す
   - `GCHandle.ToIntPtr` を OS 側の ID として使う
   - `[ComImport]` の RCW で D3D11 を呼ぶ
-  - Windows / Linux に C/C++ の中間 shim を置く
+  - Windows / Linux に C/C++ の中間 shim を既定で置く（性能でも NativeAOT でも利点が無く、ABI がもう 1 つ増える。Avalonia の Win32・X11・Wayland と GPUI の 3 つの OS は、中継層を置かずに OS を直に呼ぶ。D3 の Grill、Issue #441）
   - Core をスレッドセーフにする（全操作にロック）
   - `PostMessage` の `LPARAM` にマネージド参照を詰める
   - キューを `Channel<T>` にする（非同期の読み手がいない。UI スレッドのループが同期で取り出す）
@@ -499,7 +500,7 @@ Rejected:
   - `WM_EXITSIZEMOVE` で必ず1回描く（モーダルループの外のリサイズ、たとえば別ウィンドウの描画中のリサイズを拾えない）
   - `WM_SIZING` で描画する（ウィンドウとスワップチェーンはまだ古いサイズ）
   - ガードを Platform に置く（Core の Effect や `await` 継続も同じ判定を使う）
-  - 今すぐ `UiMessage` をドメイン別に分割する
+  - `UiMessage` を領域（画像・ファイル・フォント）ごとの基底の型に分ける（型が増えるだけで配り方は変わらない。Avalonia と GPUI も作業の結果を領域の型に分けない。直すのは 1 つの `MessageHandler` を取り合う受け手で、型ごとの登録（`On<T>`）を行 U1 で入れる。D3 の Grill、Issue #441）
   - Tmds.DBus 等のマネージド D-Bus 実装への依存（AT-SPI と通知だけには過大）
   - Win32 / COM の宣言をすべて手書きする（構造体の配置や vtable の順の誤りを、生成された宣言のように防げない）
   - 「外部 DLL ゼロ」を Linux にも約束する（fontconfig / libdbus-1 / glibc は動的依存）
@@ -515,7 +516,7 @@ Decision:
   疑似状態はノードのビットフラグ。疑似状態で変えられるのは Paint 系のプロパティだけ（`PaintStyle` 型で強制）。
   Context はノード作成時に1度だけ解決する静的な仕組み。変化させたい値は Signal を Provide する。
   ホットリロードで保持するのは、コンポーネント関数の外にある Signal だけ。（見直し: 理由が規模なので、行 H1 で Flutter を基準に決め直す。Issue #54）
-  MVVM 互換レイヤーは v1 では提供しない。（見直し: 要件と比べた理由が無いので、行 D3 で決め直す。Issue #54）
+  MVVM 互換レイヤーは v1 では提供しない（D3 の Grill、Issue #441、オーナーが決定）。v1.0 の後の行 MV1 で作る。
   `Text` は `Func<string>`（簡便版）と `TextBuilder`（ノードの char バッファへ直接書く、補間文字列ハンドラ付き）の2つ。
   Block は margin collapsing・float・inline formatting context を持たず、常に border-box。
 
@@ -525,6 +526,7 @@ Reason:
   Context の値に変更通知を持たせると、Reactive graph とは別の伝播経路ができる。
   関数は1度しか実行されないので、ローカル変数の引き継ぎには位置メモ化が要る。
   CSS の歴史的挙動は人間にも AI にも結果を予測しにくくする。
+  MVVM は要件に無い。Flutter と GPUI も MVVM の層を持たない。利用者は、`PropertyChanged` を購読して `Signal.Set` を呼べば、公開の API だけでつなげる。
 
 Rejected:
   - XAML / CSS / スタイル文字列
@@ -532,7 +534,7 @@ Rejected:
   - 疑似状態でサイズ・パディングを変えられるようにする
   - Context の値そのものを reactive にして子孫へ通知する
   - Compose 式の位置メモ化でローカル状態をホットリロード後も保持する（v1）
-  - `INotifyPropertyChanged` / CommunityToolkit.Mvvm との互換レイヤー（v1）
+  - `INotifyPropertyChanged` / CommunityToolkit.Mvvm との互換レイヤーを v1 に入れる（要件に無く、本体の作業を遅らせる。利用者は公開の API でつなげる。D3 の Grill、Issue #441）
   - テキストを `Func<string>` だけで更新する（頻繁に変わるテキストが毎回 string を確保する）
   - ZString をテキストの書き込みに使う（ビルダーが自分のバッファを持つのでノードのバッファへのコピーが残る。.NET 6 以降は補間文字列ハンドラで同じことができる）
   - Core に公開の木の検索 API を持つ（アプリは `Element` を保持しており不要。検索は `XylemUI.Testing` に置く）
@@ -685,7 +687,7 @@ Rejected:
 
 Decision:
   `IPopupHost` で出す先を抽象化し、ウィンドウ内オーバーレイと別 OS ウィンドウの2実装を持つ（Avalonia と同じ構造）。
-  v0.2 / G1 はオーバーレイのみ。v1.0 までに Windows の別ウィンドウ実装を足し、デスクトップの既定にする。
+  v0.2 / G1 はオーバーレイのみ。v1.0 までに 3 つの OS の別ウィンドウ実装を足し、デスクトップの既定にする（D3 の Grill、Issue #441）。macOS は行 P06、Linux は行 P04 と P05 で入れる。
   ポップアップは独立した描画ルート（LayoutRoots の根・HitTestList・DisplayList・FocusScope）。Reactive graph と ScopeArena は共有。
 
 Reason:
@@ -695,6 +697,7 @@ Reason:
 Rejected:
   - オーバーレイだけで v1.0 を出す（メニューがウィンドウ端で切れる）
   - v0.2 から別ウィンドウ実装を必須にする（マルチウィンドウのフォーカス・IME・DPI で v0.2 が膨らむ）
+  - macOS と Linux の別ウィンドウを v1.x に送る（メニューがウィンドウ端で切れる理由は、どの OS にも当てはまる。Avalonia は 4 つのバックエンドすべてで別ウィンドウを持ち、Flutter も 3 つのデスクトップに同時に入れた。D3 の Grill、Issue #441）
   - オーバーレイをメインツリーの最上位の子として実装する（別ウィンドウ化で作り直しになる）
 
 ---
@@ -764,9 +767,9 @@ Rejected:
 
 Decision:
   Vision は Flutter / Avalonia / GPUI 級のまま。Engineering Requirement は §11 の Acceptance で切る。
-  v1 a11y は UiNode 1:1。独立 SemanticsTree は v1.1。
+  a11y は、ノードの上で書き、そこから別の木を作る（GPUI の形）。支援技術がつながっている間だけ作る。行 P02 で UIA の provider と一緒に入れる（D3 の Grill、Issue #441）。
 
 Rejected:
   - Vision を副次目標に格下げする
   - v1.0 終了条件を「Flutter 級」の一言にする
-  - v1 で独立 SemanticsTree まで実装する
+  - a11y を UiNode 1:1 のまま v1.0 を出し、別の木を v1.1 に送る（比べた 3 つはどれも別の a11y の木を持つ。公開の `AccessibilityInfo` を v1.0 で固めた後に変えると破壊的な変更になる。v1.1 に送る理由は、v1.0 の終了条件を作ることだけだった。D3 の Grill、Issue #441）
