@@ -7,7 +7,7 @@ namespace XylemUI.Primitives;
 /// Makes the headless primitives (design §13.1): parts with behavior and state but no look, which the app or a theme styles with
 /// the method chain. Write <c>using static XylemUI.Primitives.Primitive;</c> to call them by name.
 /// </summary>
-public static class Primitive
+public static partial class Primitive
 {
     /// <summary>
     /// Makes a button: a box that holds the content, takes clicks, has the pressed pseudo-state while the left button is down on it,

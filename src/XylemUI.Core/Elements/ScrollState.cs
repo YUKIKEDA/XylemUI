@@ -55,6 +55,11 @@ public sealed class ScrollState
     internal Vector2 MaxOffsetValue => _maxOffset.Peek();
 
     /// <summary>
+    /// Gets the viewport without reading it as a signal.
+    /// </summary>
+    internal Size ViewportValue => _viewport.Peek();
+
+    /// <summary>
     /// Scrolls to a position, kept between 0 and <see cref="MaxOffset"/>. The node is drawn again at the next frame, with no
     /// layout (<see cref="ChangeKind.TransformProp"/>). Before the state has a range (it is not attached, or its node was not laid
     /// out yet), the position is only kept at 0 or more, and the first range keeps it in itself: an app can set where a list

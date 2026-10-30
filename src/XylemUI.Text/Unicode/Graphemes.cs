@@ -126,6 +126,28 @@ internal static class Graphemes
         return IsBreak(previous, next, regional, pictographicZwj, linker);
     }
 
+    /// <summary>
+    /// Returns the start of the grapheme cluster that ends at a position: the boundary before it.
+    /// </summary>
+    /// <param name="text">The text, in UTF-16.</param>
+    /// <param name="index">The position, from 1 to the text's length.</param>
+    /// <returns>The last boundary before the position: 0 if there is none other.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not from 1 to the text's length.</exception>
+    public static int PreviousBoundary(ReadOnlySpan<char> text, int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(index, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(index, text.Length);
+        for (int position = index - 1; position > 0; position--)
+        {
+            if (IsBoundary(text, position))
+            {
+                return position;
+            }
+        }
+
+        return 0;
+    }
+
     // The start of the code point that ends at `index`.
     private static int PreviousStart(ReadOnlySpan<char> text, int index) =>
         index >= 2 && char.IsLowSurrogate(text[index - 1]) && char.IsHighSurrogate(text[index - 2]) ? index - 2 : index - 1;
