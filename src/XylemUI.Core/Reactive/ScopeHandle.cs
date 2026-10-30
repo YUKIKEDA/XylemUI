@@ -6,6 +6,10 @@ namespace XylemUI;
 /// </summary>
 public readonly record struct ScopeHandle
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopeHandle"/> struct.
+    /// </summary>
+    /// <param name="value">The scope's handle in the arena.</param>
     internal ScopeHandle(ScopeRef value) => Value = value;
 
     /// <summary>

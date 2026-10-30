@@ -25,6 +25,8 @@ internal sealed class EffectQueue
     /// <summary>
     /// Queues an effect at its depth.
     /// </summary>
+    /// <param name="effect">The effect.</param>
+    /// <param name="depth">The effect's depth, which picks its bucket.</param>
     internal void Enqueue(Effect effect, uint depth)
     {
         int index = (int)depth;

@@ -14,6 +14,10 @@ public readonly struct KeyEvent
     /// <summary>
     /// Initializes a new instance of the <see cref="KeyEvent"/> struct.
     /// </summary>
+    /// <param name="input">The input of the window the event is routed in.</param>
+    /// <param name="target">The node the route starts from.</param>
+    /// <param name="currentTarget">The node of the handler called now.</param>
+    /// <param name="source">The input the platform gave.</param>
     internal KeyEvent(WindowInput input, NodeHandle target, NodeHandle currentTarget, in KeyInput source)
     {
         _input = input;
@@ -108,6 +112,10 @@ public readonly struct FocusEvent
     /// <summary>
     /// Initializes a new instance of the <see cref="FocusEvent"/> struct.
     /// </summary>
+    /// <param name="focus">The focus of the window the event is routed in.</param>
+    /// <param name="kind">Whether the focus came or went.</param>
+    /// <param name="target">The node that took or lost the focus.</param>
+    /// <param name="currentTarget">The node of the handler called now.</param>
     internal FocusEvent(FocusManager focus, FocusEventKind kind, NodeHandle target, NodeHandle currentTarget)
     {
         _focus = focus;

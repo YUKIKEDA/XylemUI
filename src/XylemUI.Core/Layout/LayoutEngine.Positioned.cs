@@ -468,10 +468,18 @@ internal static partial class LayoutEngine
         return false;
     }
 
+    /// <summary>
+    /// The edge of its static area by which a box whose insets are both auto is aligned in one axis.
+    /// </summary>
     internal enum StaticEdge : byte
     {
+        /// <summary>The box's start sits at the area's start.</summary>
         Start,
+
+        /// <summary>The box is centered in the area.</summary>
         Center,
+
+        /// <summary>The box's end sits at the area's end.</summary>
         End,
     }
 
@@ -484,21 +492,57 @@ internal static partial class LayoutEngine
         End,
     }
 
-    // The inputs an absolutely positioned child was placed with in its container's last layout run, and whether that run
-    // measured its content (row L7). They sit in the child's MeasureCache, so marking the child dirty drops them.
+    /// <summary>
+    /// The inputs an absolutely positioned child was placed with in its container's last layout run, and whether that run
+    /// measured its content (row L7). They sit in the child's <see cref="MeasureCache"/>, so marking the child dirty drops them.
+    /// </summary>
     internal struct AbsoluteMemo
     {
+        /// <summary>
+        /// A value indicating whether the memo holds the inputs of a run.
+        /// </summary>
         public bool Valid;
+
+        /// <summary>
+        /// A value indicating whether the run measured the child's content.
+        /// </summary>
         public bool ReadContent;
+
+        /// <summary>
+        /// The container's size the child was placed in.
+        /// </summary>
         public Size ContainerSize;
+
+        /// <summary>
+        /// The container's border the child was placed in.
+        /// </summary>
         public Edges Border;
+
+        /// <summary>
+        /// The child's static position on the horizontal axis.
+        /// </summary>
         public StaticPosition StaticX;
+
+        /// <summary>
+        /// The child's static position on the vertical axis.
+        /// </summary>
         public StaticPosition StaticY;
 
-        // The floats compared with ==: the generated equality of the record structs goes through EqualityComparer<float> and was
-        // not inlined, 19 % of the samples of a change in the absolute scene (NativeAOT profile). Inlined, the change takes
-        // 1.98 µs, and 2.22 µs without the attribute (layout-loop absolute change, alternated with main 12 times each). A NaN
-        // never matches, which only places the child again.
+        /// <summary>
+        /// Returns a value indicating whether the memo holds the inputs of a run and they are these. A NaN never matches, which
+        /// only places the child again.
+        /// </summary>
+        /// <param name="containerSize">The container's size.</param>
+        /// <param name="border">The container's border.</param>
+        /// <param name="staticX">The child's static position on the horizontal axis.</param>
+        /// <param name="staticY">The child's static position on the vertical axis.</param>
+        /// <returns><see langword="true"/> when the inputs match; otherwise <see langword="false"/>.</returns>
+        /// <remarks>
+        /// The floats are compared with <c>==</c>: the generated equality of the record structs goes through
+        /// <c>EqualityComparer&lt;float&gt;</c> and was not inlined, 19 % of the samples of a change in the absolute scene
+        /// (NativeAOT profile). Inlined, the change takes 1.98 µs, and 2.22 µs without the attribute (layout-loop absolute change,
+        /// alternated with main 12 times each).
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool Matches(Size containerSize, Edges border, StaticPosition staticX, StaticPosition staticY) =>
             Valid
@@ -516,17 +560,37 @@ internal static partial class LayoutEngine
             a.Area.Start == b.Area.Start && a.Area.End == b.Area.End && a.Edge == b.Edge && a.Safe == b.Safe;
     }
 
-    // A line of one axis: its start and end.
+    /// <summary>
+    /// A line of one axis: its start and end.
+    /// </summary>
+    /// <param name="Start">The start of the line.</param>
+    /// <param name="End">The end of the line.</param>
     internal readonly record struct StaticArea(float Start, float End)
     {
+        /// <summary>
+        /// Returns the line moved back by an offset.
+        /// </summary>
+        /// <param name="offset">The offset to take from both ends.</param>
+        /// <returns>The line less <paramref name="offset"/>.</returns>
         public StaticArea Minus(float offset) => new(Start - offset, End - offset);
     }
 
-    // Where a box whose insets are both auto goes in one axis: aligned by an edge in an area, or at the start of the
-    // inset-modified containing block when the alignment is `safe` and the box overflows it.
+    /// <summary>
+    /// Where a box whose insets are both auto goes in one axis: aligned by an edge in an area, or at the start of the
+    /// inset-modified containing block when the alignment is <c>safe</c> and the box overflows it.
+    /// </summary>
+    /// <param name="Area">The area the box is aligned in.</param>
+    /// <param name="Edge">The edge of the area the box is aligned by.</param>
+    /// <param name="Safe">The alignment is <c>safe</c>.</param>
     internal readonly record struct StaticPosition(StaticArea Area, StaticEdge Edge, bool Safe)
     {
-        // `normal`, `stretch`, and the start alignments take the start.
+        /// <summary>
+        /// Returns the static position of an alignment in an area: <c>normal</c>, <c>stretch</c>, and the start alignments take
+        /// the start.
+        /// </summary>
+        /// <param name="alignment">The box's alignment.</param>
+        /// <param name="area">The area the box is aligned in.</param>
+        /// <returns>The static position.</returns>
         public static StaticPosition Of(AlignItems alignment, StaticArea area)
         {
             StaticEdge edge = alignment.Keyword switch
@@ -538,6 +602,11 @@ internal static partial class LayoutEngine
             return new StaticPosition(area, edge, alignment.Safe);
         }
 
+        /// <summary>
+        /// Returns the static position with its area moved back by an offset.
+        /// </summary>
+        /// <param name="offset">The offset to take from both ends of the area.</param>
+        /// <returns>The static position with its area less <paramref name="offset"/>.</returns>
         public StaticPosition Minus(float offset) => this with { Area = Area.Minus(offset) };
     }
 

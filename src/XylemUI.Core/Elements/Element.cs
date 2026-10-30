@@ -7,6 +7,11 @@ namespace XylemUI;
 /// </summary>
 public readonly struct Element : IEquatable<Element>
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Element"/> struct.
+    /// </summary>
+    /// <param name="tree">The tree the node is in.</param>
+    /// <param name="node">The node.</param>
     internal Element(UiTree tree, NodeHandle node)
     {
         Tree = tree;
@@ -56,6 +61,7 @@ public readonly struct Element : IEquatable<Element>
     /// <summary>
     /// Returns the tree, or throws when this is no node.
     /// </summary>
+    /// <returns>The tree the node is in.</returns>
     /// <exception cref="InvalidOperationException">This is no node (<see langword="default"/>).</exception>
     internal UiTree TreeOrThrow() => Tree ?? throw new InvalidOperationException("The element is no node (default).");
 }

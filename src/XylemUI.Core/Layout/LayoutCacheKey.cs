@@ -32,6 +32,9 @@ internal readonly record struct LayoutCacheKey(
     /// known does not change the result (Taffy keys the same way), and neither does the parent size on an axis where the node
     /// uses no percentage of it (design §3.2).
     /// </summary>
+    /// <param name="node">The node the input is for.</param>
+    /// <param name="input">The layout input.</param>
+    /// <returns>The key of <paramref name="input"/> for <paramref name="node"/>.</returns>
     public static LayoutCacheKey Of(in UiNode node, in LayoutInput input)
     {
         OptionalSize known = input.KnownDimensions;
@@ -58,11 +61,15 @@ internal readonly record struct LayoutCacheKey(
     /// the compiler's comparison went through a comparer per field and cost about 200 ns a hit in a scan of the measurement
     /// cache (row L1a's layout scenario).
     /// </summary>
+    /// <param name="other">The key to compare with.</param>
+    /// <returns><see langword="true"/> if the keys are equal; otherwise, <see langword="false"/>.</returns>
     public bool Equals(LayoutCacheKey other) => Matches(in other);
 
     /// <summary>
     /// Returns the same as <see cref="Equals(LayoutCacheKey)"/> without copying the other key.
     /// </summary>
+    /// <param name="other">The key to compare with.</param>
+    /// <returns><see langword="true"/> if the keys are equal; otherwise, <see langword="false"/>.</returns>
     public bool Matches(in LayoutCacheKey other) =>
         DescendantLayoutVersion == other.DescendantLayoutVersion
         && LayoutStyleVersion == other.LayoutStyleVersion
@@ -83,6 +90,9 @@ internal readonly record struct LayoutCacheKey(
     /// Returns the same as <see cref="Matches"/> with the key of <paramref name="input"/> for <paramref name="node"/>, without
     /// making that key: a parent asks it of every clean child it lays out again (row L4).
     /// </summary>
+    /// <param name="node">The node the input is for.</param>
+    /// <param name="input">The layout input.</param>
+    /// <returns><see langword="true"/> if this key equals the key of <paramref name="input"/>; otherwise, <see langword="false"/>.</returns>
     public bool MatchesInput(in UiNode node, in LayoutInput input)
     {
         OptionalSize known = input.KnownDimensions;
@@ -200,6 +210,9 @@ internal struct MeasureCache
     /// <summary>
     /// Returns the content widths kept for a content height of <paramref name="knownHeight"/> (NaN when it is not decided).
     /// </summary>
+    /// <param name="knownHeight">The content height, or NaN.</param>
+    /// <param name="widths">The kept widths, or <see langword="default"/> when none serve <paramref name="knownHeight"/>.</param>
+    /// <returns><see langword="true"/> if widths were kept for <paramref name="knownHeight"/>; otherwise, <see langword="false"/>.</returns>
     public readonly bool TryGetIntrinsicWidths(float knownHeight, out IntrinsicWidths widths)
     {
         if (_hasAnyHeight && (!_anyHeight.DependsOnHeight || float.IsNaN(knownHeight)))
@@ -219,9 +232,11 @@ internal struct MeasureCache
     }
 
     /// <summary>
-    /// Keeps the content widths returned for <paramref name="knownHeight"/>. Returns <see langword="true"/> when they replace
-    /// the widths kept for another height.
+    /// Keeps the content widths returned for <paramref name="knownHeight"/>.
     /// </summary>
+    /// <param name="knownHeight">The content height the widths were measured at, or NaN.</param>
+    /// <param name="widths">The widths to keep.</param>
+    /// <returns><see langword="true"/> if they replace the widths kept for another height; otherwise, <see langword="false"/>.</returns>
     public bool StoreIntrinsicWidths(float knownHeight, IntrinsicWidths widths)
     {
         if (float.IsNaN(knownHeight) || !widths.DependsOnHeight)
@@ -241,6 +256,8 @@ internal struct MeasureCache
     /// <summary>
     /// Returns the content widths kept for every height, if any.
     /// </summary>
+    /// <param name="widths">The kept widths; meaningless when the method returns <see langword="false"/>.</param>
+    /// <returns><see langword="true"/> if widths for every height are kept; otherwise, <see langword="false"/>.</returns>
     public readonly bool TryGetAnyHeightWidths(out IntrinsicWidths widths)
     {
         widths = _anyHeight;
@@ -250,6 +267,9 @@ internal struct MeasureCache
     /// <summary>
     /// Returns the content widths kept for one height, and that height, if any.
     /// </summary>
+    /// <param name="knownHeight">The height the widths were kept for; meaningless when the method returns <see langword="false"/>.</param>
+    /// <param name="widths">The kept widths; meaningless when the method returns <see langword="false"/>.</param>
+    /// <returns><see langword="true"/> if widths for one height are kept; otherwise, <see langword="false"/>.</returns>
     public readonly bool TryGetAtHeightWidths(out float knownHeight, out IntrinsicWidths widths)
     {
         knownHeight = _height;
@@ -265,6 +285,10 @@ internal struct MeasureCache
     /// <summary>
     /// Returns the entry at <paramref name="index"/>, below <see cref="Count"/>.
     /// </summary>
+    /// <param name="index">The entry's index, from 0 to below <see cref="Count"/>.</param>
+    /// <param name="key">The entry's key.</param>
+    /// <param name="axis">The axes the entry was measured for.</param>
+    /// <param name="size">The entry's size.</param>
     public readonly void GetEntry(int index, out LayoutCacheKey key, out RequestedAxis axis, out Size size)
     {
         ref readonly Entry entry = ref _entries[index];
@@ -277,6 +301,10 @@ internal struct MeasureCache
     /// Returns the size cached for <paramref name="key"/>. An entry measured for both axes serves either; one measured for one
     /// axis serves only that axis, since its other axis means nothing.
     /// </summary>
+    /// <param name="key">The key of the measuring run's input.</param>
+    /// <param name="axis">The axes the run asks for.</param>
+    /// <param name="size">The cached size, or <see langword="default"/> when no entry serves the request.</param>
+    /// <returns><see langword="true"/> if an entry serves the request; otherwise, <see langword="false"/>.</returns>
     public bool TryGet(in LayoutCacheKey key, RequestedAxis axis, out Size size)
     {
         for (int i = 0; i < _count; i++)
@@ -295,8 +323,12 @@ internal struct MeasureCache
     }
 
     /// <summary>
-    /// Keeps the size of a measuring run. Returns <see langword="true"/> when it replaces the entry of another input.
+    /// Keeps the size of a measuring run.
     /// </summary>
+    /// <param name="key">The key of the run's input.</param>
+    /// <param name="axis">The axes the run measured.</param>
+    /// <param name="size">The measured size.</param>
+    /// <returns><see langword="true"/> if it replaces the entry of another input; otherwise, <see langword="false"/>.</returns>
     public bool Store(in LayoutCacheKey key, RequestedAxis axis, Size size)
     {
         for (int i = 0; i < _count; i++)
@@ -359,6 +391,7 @@ internal struct MeasureCache
     /// Gives every entry the node's current descendant version: a layout run moved the children, and a measurement does not
     /// depend on where they were placed (a change of content inside drops the cache instead).
     /// </summary>
+    /// <param name="descendantLayoutVersion">The node's current <see cref="NodeVersions.DescendantLayout"/>.</param>
     public void Restamp(ulong descendantLayoutVersion)
     {
         for (int i = 0; i < _count; i++)

@@ -28,6 +28,10 @@ public sealed class ReactiveStabilizationException : Exception
     public ReactiveStabilizationException(string message, Exception innerException)
         : base(message, innerException) { }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReactiveStabilizationException"/> class, with a message that names the limit.
+    /// </summary>
+    /// <param name="cycleLimit">The cycle limit that was reached.</param>
     internal ReactiveStabilizationException(int cycleLimit)
         : base($"Reactive graph failed to stabilize within the configured cycle limit ({cycleLimit} cycles).") { }
 }

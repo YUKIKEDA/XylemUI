@@ -184,6 +184,7 @@ public static class Scope
     /// <summary>
     /// Disposes the scope with this handle in the arena (<see cref="Dispose(ScopeHandle)"/>).
     /// </summary>
+    /// <param name="scope">The scope's handle in the arena.</param>
     internal static void DisposeRef(ScopeRef scope)
     {
         UiThread.VerifyAccess();
@@ -196,12 +197,16 @@ public static class Scope
     /// <summary>
     /// Makes the scope of a new effect, owned by the current scope.
     /// </summary>
+    /// <param name="effect">The effect.</param>
+    /// <param name="owner">The name <see cref="ScopeTracker"/> shows for the scope.</param>
+    /// <returns>The new scope's handle in the arena.</returns>
     internal static ScopeRef AllocateForEffect(Effect effect, string owner) => Allocate(CurrentRef, effect, owner);
 
     /// <summary>
-    /// Disposes what an effect's scope owns, keeping the scope, before the effect runs again. Exceptions of its cleanups are
-    /// returned together, or <see langword="null"/>.
+    /// Disposes what an effect's scope owns, keeping the scope, before the effect runs again.
     /// </summary>
+    /// <param name="scope">The effect's scope.</param>
+    /// <returns>The exceptions of its cleanups together, or <see langword="null"/> when none threw.</returns>
     internal static AggregateException? ClearForRerun(ScopeRef scope)
     {
         List<Exception>? errors = null;
@@ -215,6 +220,7 @@ public static class Scope
     /// <summary>
     /// Disposes an effect's scope when the effect is disposed; the exceptions of its cleanups are thrown together.
     /// </summary>
+    /// <param name="scope">The effect's scope.</param>
     internal static void DisposeForEffect(ScopeRef scope)
     {
         if (Scopes.IsAlive(scope))
@@ -226,16 +232,22 @@ public static class Scope
     /// <summary>
     /// Returns whether a handle points to a live scope.
     /// </summary>
+    /// <param name="scope">The scope's handle in the arena.</param>
+    /// <returns>Whether the scope is alive.</returns>
     internal static bool IsAlive(ScopeRef scope) => Scopes.IsAlive(scope);
 
     /// <summary>
     /// Returns whether a scope is still alive (not disposed).
     /// </summary>
+    /// <param name="scope">The scope.</param>
+    /// <returns>Whether the scope is alive.</returns>
     internal static bool IsAlive(ScopeHandle scope) => Scopes.IsAlive(scope.Value);
 
     /// <summary>
     /// Returns a copy of a live scope's data, for <see cref="ScopeTracker"/> and tests.
     /// </summary>
+    /// <param name="scope">The scope's handle in the arena; the scope is alive.</param>
+    /// <returns>The copy.</returns>
     internal static ScopeData Get(ScopeRef scope) => Scopes.GetRef(scope);
 
     private static void VerifyNotInComputed()

@@ -1089,33 +1089,50 @@ public sealed partial class DisplayList
         return new(this);
     }
 
+    /// <summary>Gets the tag of each command the frame wrote, in order.</summary>
     internal ReadOnlySpan<CommandTag> Commands => _commands.AsSpan(0, CommandCount);
 
+    /// <summary>Gets the rectangle stream: the four floats of the geometry of each command that has one.</summary>
     internal ReadOnlySpan<float> Rects => _rects.AsSpan(0, _usedRects);
 
+    /// <summary>Gets the color stream: one packed color per command.</summary>
     internal ReadOnlySpan<uint> Colors => _colors.AsSpan(0, _usedColors);
 
+    /// <summary>Gets the number of glyphs of each glyph run.</summary>
     internal ReadOnlySpan<int> RunLengths => _runLengths.AsSpan(0, _usedRuns);
 
+    /// <summary>Gets the coverage of each glyph run.</summary>
     internal ReadOnlySpan<GlyphCoverage> RunCoverages => _runCoverages.AsSpan(0, _usedRuns);
 
+    /// <summary>Gets the paint of each glyph run, as an index into <see cref="TextPaints"/>, or -1 for a run of one color.</summary>
     internal ReadOnlySpan<int> RunPaints => _runPaints.AsSpan(0, _usedRuns);
 
+    /// <summary>Gets the record of each opacity group and clip's layer, in the order they were pushed.</summary>
     internal ReadOnlySpan<GroupRecord> Groups => _scopes is null ? default : _scopes.Records.AsSpan(0, _groupRecords);
 
+    /// <summary>Gets the record of each line, ellipse, arc, and sector.</summary>
     internal ReadOnlySpan<CurveRecord> Curves => _shapeStreams is null ? default : _shapeStreams.Curves.AsSpan(0, _usedCurves);
 
+    /// <summary>Gets the paints of brushed text, which <see cref="RunPaints"/> index into.</summary>
     internal ReadOnlySpan<TextPaint> TextPaints => _shapeStreams is null ? default : _shapeStreams.TextPaints.AsSpan(0, _textPaintCount);
 
+    /// <summary>Gets the glyphs of every glyph run, one run after another.</summary>
     internal ReadOnlySpan<GlyphInstance> Glyphs => _glyphs.AsSpan(0, GlyphCount);
 
+    /// <summary>Gets the record of each Shape and Shadow command.</summary>
     internal ReadOnlySpan<ShapeRecord> Shapes => _shapeStreams is null ? default : _shapeStreams.Records.AsSpan(0, _usedShapes);
 
+    /// <summary>Gets the gradients of the list, in the order of their first use.</summary>
     internal ReadOnlySpan<GradientBrush> Brushes => _shapeStreams is null ? default : _shapeStreams.Brushes.AsSpan(0, _brushCount);
 
-    // The nearest whole pixel, ties to even: MathF.Round. In the NativeAOT build, the frames scene's display list took 32.1 to
-    // 32.7 µs to write at 125 % with MathF.Round, and 30.2 to 30.7 µs with SSE4.1's ROUNDSS, the same rounding in one instruction,
-    // against 26.8 to 28.0 µs on main (row W1, docs/benchmarks/w1-dpi.md).
+    /// <summary>Rounds a value to the nearest whole pixel, ties to even, as <see cref="MathF.Round(float)"/>.</summary>
+    /// <param name="value">The value, in physical pixels.</param>
+    /// <returns>The rounded value.</returns>
+    /// <remarks>
+    /// In the NativeAOT build, the frames scene's display list took 32.1 to 32.7 µs to write at 125 % with MathF.Round, and 30.2 to
+    /// 30.7 µs with SSE4.1's ROUNDSS, the same rounding in one instruction, against 26.8 to 28.0 µs on main (row W1,
+    /// docs/benchmarks/w1-dpi.md).
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static float RoundToPixel(float value) =>
         Sse41.IsSupported ? Sse41.RoundToNearestIntegerScalar(Vector128.CreateScalarUnsafe(value)).ToScalar() : MathF.Round(value);

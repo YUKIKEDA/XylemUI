@@ -27,6 +27,10 @@ public sealed class LayoutStabilizationException : Exception
     public LayoutStabilizationException(string message, Exception innerException)
         : base(message, innerException) { }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LayoutStabilizationException"/> class with a message that names the cycle limit.
+    /// </summary>
+    /// <param name="cycleLimit">The cycle limit the layout pass reached.</param>
     internal LayoutStabilizationException(int cycleLimit)
         : base($"Layout failed to stabilize within the configured cycle limit ({cycleLimit} cycles).") { }
 }

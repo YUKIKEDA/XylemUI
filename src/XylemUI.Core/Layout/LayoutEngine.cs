@@ -32,6 +32,7 @@ internal static partial class LayoutEngine
     /// Lays out every layout root, shallowest first, until no request is left. A root that an earlier root's layout already
     /// cleaned is skipped; a node marked during the pass is laid out in the next cycle.
     /// </summary>
+    /// <param name="tree">The tree whose layout roots are laid out.</param>
     public static void RunLayoutPass(UiTree tree)
     {
         UiThread.VerifyAccess();
@@ -188,6 +189,9 @@ internal static partial class LayoutEngine
     /// Returns the input of a root laid out in a viewport, as CSS lays out the root element in the initial containing block
     /// (Taffy's in-flow root): the viewport less the root's margins, and for a block root the viewport's width.
     /// </summary>
+    /// <param name="style">The root's layout style.</param>
+    /// <param name="viewport">The space of the viewport.</param>
+    /// <returns>The input to lay the root out with.</returns>
     internal static LayoutInput RootInput(in LayoutStyle style, AvailableSize viewport)
     {
         var parent = new OptionalSize(viewport.Width.ToOption(), viewport.Height.ToOption());
@@ -258,8 +262,15 @@ internal static partial class LayoutEngine
         Place(tree, root, margin.Left + dx, margin.Top + dy);
     }
 
-    // Lays out or measures a child. A clean child keeps the result of its last run with the same key: a layout for either mode,
-    // a measurement for measuring. A measuring run reads the child's content, which the child records (design §2.4.1).
+    /// <summary>
+    /// Lays out or measures a child. A clean child keeps the result of its last run with the same key: a layout for either mode,
+    /// a measurement for measuring. A measuring run reads the child's content, which the child records (design §2.4.1).
+    /// </summary>
+    /// <param name="tree">The tree that holds the child.</param>
+    /// <param name="handle">The child.</param>
+    /// <param name="input">What the parent gives the child.</param>
+    /// <param name="commit"><see langword="true"/> to lay the child out; <see langword="false"/> to only measure it.</param>
+    /// <returns>The size of the child's border box.</returns>
     internal static Size LayoutChild(UiTree tree, NodeHandle handle, in LayoutInput input, bool commit)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
@@ -657,7 +668,12 @@ internal static partial class LayoutEngine
         }
     }
 
-    // A style's lengths in pixels where it uses no percentage (LayoutState.Box); none otherwise.
+    /// <summary>
+    /// Returns a style's lengths in pixels where it uses no percentage (<see cref="ResolvedBox"/>); none otherwise.
+    /// </summary>
+    /// <param name="style">The style to resolve.</param>
+    /// <param name="box">The lengths in pixels, or <see langword="default"/> when the method returns <see langword="false"/>.</param>
+    /// <returns><see langword="true"/> when the lengths are the same for every parent; otherwise <see langword="false"/>.</returns>
     internal static bool TryResolveBox(in LayoutStyle style, out ResolvedBox box)
     {
         // With an aspect ratio, the maximum depends on who resolves it: a leaf does not apply the ratio to it (Taffy). A keyword

@@ -30,6 +30,11 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
     private readonly IEqualityComparer<T>? _comparer;
     private T _value;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Signal{T}"/> class.
+    /// </summary>
+    /// <param name="value">The first value.</param>
+    /// <param name="comparer">Decides whether a new value equals the current one; <see langword="null"/> for the default.</param>
     internal Signal(T value, IEqualityComparer<T>? comparer)
     {
         _value = value;

@@ -28,7 +28,12 @@ public readonly record struct SpanStyle(
     TextShadow? Shadow = null
 )
 {
-    // The inner range's fields where it sets them, the outer's where it does not.
+    /// <summary>
+    /// Returns this style laid over the style of the range around it: this inner range's fields where it sets them, the outer's where it
+    /// does not.
+    /// </summary>
+    /// <param name="outer">The style of the range around this one.</param>
+    /// <returns>The combined style.</returns>
     internal SpanStyle Over(in SpanStyle outer) =>
         new(
             Font ?? outer.Font,
@@ -164,6 +169,10 @@ public ref struct TextSpanScope
 {
     private ref NodeTextWriter _writer;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TextSpanScope"/> struct.
+    /// </summary>
+    /// <param name="writer">The writer whose range this closes.</param>
     internal TextSpanScope(ref NodeTextWriter writer) => _writer = ref writer;
 
     /// <summary>

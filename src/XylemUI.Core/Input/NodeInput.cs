@@ -75,21 +75,28 @@ internal sealed class NodeInput
     /// <summary>
     /// Adds a pointer handler.
     /// </summary>
+    /// <param name="entry">The handler, with its kind, phase, and scope.</param>
     internal void Add(in HandlerEntry entry) => Handlers = Added(Handlers, entry);
 
     /// <summary>
     /// Adds a key handler.
     /// </summary>
+    /// <param name="entry">The handler, with its kind, phase, and scope.</param>
     internal void Add(in KeyHandlerEntry entry) => KeyHandlers = Added(KeyHandlers, entry);
 
     /// <summary>
     /// Adds a focus handler.
     /// </summary>
+    /// <param name="entry">The handler, with its kind, phase, and scope.</param>
     internal void Add(in FocusHandlerEntry entry) => FocusHandlers = Added(FocusHandlers, entry);
 
     /// <summary>
-    /// Removes the first pointer handler of the kind and the phase with the same delegate; returns whether there was one.
+    /// Removes the first pointer handler of the kind and the phase with the same delegate.
     /// </summary>
+    /// <param name="kind">The kind of event the handler is for.</param>
+    /// <param name="phase">The phase the handler runs in.</param>
+    /// <param name="handler">The delegate.</param>
+    /// <returns>Whether there was such a handler.</returns>
     internal bool Remove(PointerEventKind kind, EventPhase phase, PointerHandler handler)
     {
         for (int i = 0; i < Handlers.Length; i++)
@@ -105,8 +112,12 @@ internal sealed class NodeInput
     }
 
     /// <summary>
-    /// Removes the first key handler of the kind and the phase with the same delegate; returns whether there was one.
+    /// Removes the first key handler of the kind and the phase with the same delegate.
     /// </summary>
+    /// <param name="kind">The kind of event the handler is for.</param>
+    /// <param name="phase">The phase the handler runs in.</param>
+    /// <param name="handler">The delegate.</param>
+    /// <returns>Whether there was such a handler.</returns>
     internal bool Remove(KeyEventKind kind, EventPhase phase, KeyHandler handler)
     {
         for (int i = 0; i < KeyHandlers.Length; i++)
@@ -122,8 +133,12 @@ internal sealed class NodeInput
     }
 
     /// <summary>
-    /// Removes the first focus handler of the kind and the phase with the same delegate; returns whether there was one.
+    /// Removes the first focus handler of the kind and the phase with the same delegate.
     /// </summary>
+    /// <param name="kind">The kind of event the handler is for.</param>
+    /// <param name="phase">The phase the handler runs in.</param>
+    /// <param name="handler">The delegate.</param>
+    /// <returns>Whether there was such a handler.</returns>
     internal bool Remove(FocusEventKind kind, EventPhase phase, FocusHandler handler)
     {
         for (int i = 0; i < FocusHandlers.Length; i++)

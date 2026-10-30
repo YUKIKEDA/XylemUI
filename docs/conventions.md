@@ -62,7 +62,7 @@ docs/                        設計・判断・ロードマップ・規約（本
 - 名前空間はアセンブリ名に合わせ、フォルダには合わせない
 - 不正な状態は型で表せないようにする。`bool` と、その `bool` 次第で意味を失う nullable の組み合わせは使わない
 - 引数・状態の検査は `ThrowHelper` 経由で例外を投げ、内部の不変条件の破れは `Invariant.Fail` にする
-- 公開 API には英語の XML ドキュメントを書く。internal は必須にしない
+- 公開 API と internal の要素には、英語の XML ドキュメントを書く（`stylecop.json` の `documentInternalElements`、行 Q6）。読み手はエージェントと保守する人で、Core の internal は `InternalsVisibleTo` を通したアセンブリ間の API である。private は必須にしない
 - 名前空間 `XylemUI.*` の中（部品・テーマ・テスト）では、文字の要素を `Elements.Text(...)` と書く。`using static XylemUI.Elements;` の `Text(...)` は、名前空間 `XylemUI.Text` が先に見つかって CS0118 になる（設計書 §2.13、V1d）
 - フレームの経路では、アロケーション・LINQ・キャプチャするラムダ・`params`・ボクシング・要素ごとのインターフェース呼び出しを使わない（詳細は `.cursor/rules/perf.mdc`）
 

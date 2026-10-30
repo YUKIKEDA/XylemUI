@@ -52,7 +52,10 @@ public static class XylemApp
         }
     }
 
-    // Counts the window as open until it closes; the last to close ends the loop.
+    /// <summary>
+    /// Counts <paramref name="window"/> as open until it closes; the last window to close ends the message loop.
+    /// </summary>
+    /// <param name="window">The window that was opened.</param>
     internal static void Open(DesktopWindow window)
     {
         _openWindows++;

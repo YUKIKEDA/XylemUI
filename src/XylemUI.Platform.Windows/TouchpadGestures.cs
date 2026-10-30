@@ -49,6 +49,7 @@ internal interface ITouchpadViewport : IDisposable
 /// The frames go on, polling the viewport, from the interaction's begin to its end, and until the content is back, as Chromium's
 /// helper polls (<c>direct_manipulation_event_handler_win.cc</c> lines 291 to 305). The queue is an array it reuses.
 /// </remarks>
+/// <param name="viewport">The viewport whose states and transforms become the pan.</param>
 internal sealed class TouchpadGestures(ITouchpadViewport viewport)
 {
     private (TouchpadPanKind Kind, float X, float Y)[] _queue = new (TouchpadPanKind, float, float)[16];

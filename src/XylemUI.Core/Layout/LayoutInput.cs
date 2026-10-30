@@ -58,6 +58,8 @@ internal readonly record struct LayoutInput(
     /// Returns the input of a node the parent decides fully: both sizes known and definite, the same size as the parent size and
     /// the available space (a window's root).
     /// </summary>
+    /// <param name="size">The size of the node's border box.</param>
+    /// <returns>The input that lays the node out at <paramref name="size"/>.</returns>
     public static LayoutInput Exact(Size size) =>
         new(
             new OptionalSize(size.Width, size.Height),

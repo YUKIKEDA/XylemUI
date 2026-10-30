@@ -23,6 +23,8 @@ internal sealed class Arena<T>
     private int _count;
     private int _forbidAllocationDepth;
 
+    /// <summary>Initializes a new instance of the <see cref="Arena{T}"/> class.</summary>
+    /// <param name="initialCapacity">The number of slots to reserve at first; a value below 1 reserves one.</param>
     public Arena(int initialCapacity = 256)
     {
         _slots = new Slot[Math.Max(initialCapacity, 1)];
@@ -38,6 +40,8 @@ internal sealed class Arena<T>
     public int GrowthCount { get; private set; }
 
     /// <summary>Stores a value and returns its handle. Reuses a freed slot first.</summary>
+    /// <param name="value">The value to store.</param>
+    /// <returns>A live handle to the stored value.</returns>
     public Handle<T> Allocate(in T value)
     {
         if (_forbidAllocationDepth != 0)
@@ -65,6 +69,8 @@ internal sealed class Arena<T>
     }
 
     /// <summary>Returns whether the handle points to a live value of its own generation.</summary>
+    /// <param name="handle">The handle to check. It may be stale or <see langword="default"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="handle"/> is live; otherwise, <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsAlive(Handle<T> handle) =>
         (uint)handle.Index < (uint)_count && _slots[handle.Index].IsAlive && _slots[handle.Index].Generation == handle.Generation;
@@ -72,6 +78,9 @@ internal sealed class Arena<T>
     /// <summary>
     /// Copies the value for a handle that may be stale. Use it where a freed target is normal (timers, animations, IME callbacks).
     /// </summary>
+    /// <param name="handle">The handle to read. It may be stale.</param>
+    /// <param name="value">The copied value, or <see langword="default"/> when <paramref name="handle"/> is stale.</param>
+    /// <returns><see langword="true"/> if <paramref name="handle"/> is live; otherwise, <see langword="false"/>.</returns>
     public bool TryGet(Handle<T> handle, out T value)
     {
         if (!IsAlive(handle))
@@ -87,6 +96,8 @@ internal sealed class Arena<T>
     /// <summary>
     /// Returns a reference to the value of a live handle. A stale handle here is a broken internal link and fails the invariant.
     /// </summary>
+    /// <param name="handle">A live handle.</param>
+    /// <returns>A reference into the backing array, valid until the array grows (see the remarks).</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T GetRef(Handle<T> handle)
     {
@@ -99,6 +110,7 @@ internal sealed class Arena<T>
     }
 
     /// <summary>Frees a live value. Every handle to it becomes stale, also after the slot is reused.</summary>
+    /// <param name="handle">A live handle. A stale one fails the invariant.</param>
     public void Free(Handle<T> handle)
     {
         if (!IsAlive(handle))
@@ -116,6 +128,7 @@ internal sealed class Arena<T>
     /// <summary>
     /// Starts a region in which <see cref="Allocate"/> fails the invariant. Dispose the result to end it. Regions nest.
     /// </summary>
+    /// <returns>The region; disposing it ends the region.</returns>
     public AllocationForbidden ForbidAllocation()
     {
         _forbidAllocationDepth++;
@@ -130,8 +143,10 @@ internal sealed class Arena<T>
     }
 
     /// <summary>Ends a region started by <see cref="ForbidAllocation"/>.</summary>
+    /// <param name="arena">The arena whose region this ends.</param>
     internal readonly ref struct AllocationForbidden(Arena<T> arena)
     {
+        /// <summary>Ends the region. Call it once.</summary>
         public void Dispose() => arena._forbidAllocationDepth--;
     }
 

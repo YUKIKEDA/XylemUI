@@ -3,6 +3,7 @@ namespace XylemUI;
 /// <summary>
 /// Resumes <c>await</c> continuations on the UI thread through the <see cref="UiDispatcher"/> queue (design §2.12).
 /// </summary>
+/// <param name="dispatcher">The UI thread's queue.</param>
 internal sealed class UiSynchronizationContext(UiDispatcher dispatcher) : SynchronizationContext
 {
     /// <inheritdoc />
@@ -20,6 +21,8 @@ internal sealed class UiSynchronizationContext(UiDispatcher dispatcher) : Synchr
     /// On the UI thread the callback runs even inside a synchronous render, where application callbacks are otherwise deferred
     /// (design §2.11.1). The framework itself never calls <c>Send</c>.
     /// </remarks>
+    /// <param name="d">The callback.</param>
+    /// <param name="state">The object passed to <paramref name="d"/>.</param>
     public override void Send(SendOrPostCallback d, object? state)
     {
         ArgumentNullException.ThrowIfNull(d);

@@ -141,6 +141,7 @@ public static class ReactiveRuntime
     /// <summary>
     /// Queues an effect for the current flush, or for the next cycle while a flush runs.
     /// </summary>
+    /// <param name="effect">The effect.</param>
     internal static void Enqueue(Effect effect)
     {
         effect.Status = ComputationStatus.Queued;
@@ -155,6 +156,7 @@ public static class ReactiveRuntime
     /// <summary>
     /// Passes an exception to the handler. An exception from the handler itself is dropped, so the flush goes on.
     /// </summary>
+    /// <param name="exception">The exception.</param>
     internal static void ReportException(Exception exception)
     {
         try

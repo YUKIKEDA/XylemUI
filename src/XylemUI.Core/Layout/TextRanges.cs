@@ -6,6 +6,13 @@ namespace XylemUI;
 /// A range of a text leaf with one layout: the fields of its <see cref="SpanStyle"/> that the shaping reads (design §4.8). Its
 /// <see langword="null"/> fields take the leaf's <see cref="TextStyle"/>.
 /// </summary>
+/// <param name="Start">The code unit where the range starts.</param>
+/// <param name="Length">The number of code units in the range.</param>
+/// <param name="Font">The font, or <see langword="null"/>.</param>
+/// <param name="Size">The size in logical pixels per em, or <see langword="null"/>.</param>
+/// <param name="Language">The language, or <see langword="null"/>.</param>
+/// <param name="LetterSpacing">The logical pixels added to each grapheme cluster's advance, or <see langword="null"/>.</param>
+/// <param name="Features">The OpenType features, or <see langword="null"/>.</param>
 internal readonly record struct LayoutRun(
     int Start,
     int Length,
@@ -16,6 +23,12 @@ internal readonly record struct LayoutRun(
     FontFeatures? Features
 )
 {
+    /// <summary>
+    /// Returns a value indicating whether a style has the same layout as this range: the fields the shaping reads, the features
+    /// compared by reference.
+    /// </summary>
+    /// <param name="style">The style to compare.</param>
+    /// <returns><see langword="true"/> when the layout is the same; otherwise <see langword="false"/>.</returns>
     public bool SameLayout(in SpanStyle style) =>
         Font == style.Font
         && Size == style.Size
@@ -28,6 +41,13 @@ internal readonly record struct LayoutRun(
 /// A range of a text leaf with one look: the fields of its <see cref="SpanStyle"/> that only the draw stage reads, and its link
 /// (design §4.8). <see cref="Link"/> is an index in <see cref="TextRanges.Links"/>, or -1.
 /// </summary>
+/// <param name="Start">The code unit where the range starts.</param>
+/// <param name="Length">The number of code units in the range.</param>
+/// <param name="Color">The color of the text, or <see langword="null"/>.</param>
+/// <param name="Background">The color behind the text, or <see langword="null"/>.</param>
+/// <param name="Decoration">The lines drawn with the text, or <see langword="null"/>.</param>
+/// <param name="Shadow">The shadow of the text, or <see langword="null"/>.</param>
+/// <param name="Link">The index of the range's link in <see cref="TextRanges.Links"/>, or -1.</param>
 internal readonly record struct PaintRun(
     int Start,
     int Length,
@@ -38,6 +58,12 @@ internal readonly record struct PaintRun(
     int Link
 )
 {
+    /// <summary>
+    /// Returns a value indicating whether a style and a link have the same look as this range.
+    /// </summary>
+    /// <param name="style">The style to compare.</param>
+    /// <param name="link">The link to compare, or -1.</param>
+    /// <returns><see langword="true"/> when the look is the same; otherwise <see langword="false"/>.</returns>
     public bool SameLook(in SpanStyle style, int link) =>
         Color == style.Color && Background == style.Background && Decoration == style.Decoration && Shadow == style.Shadow && Link == link;
 }
@@ -46,8 +72,18 @@ internal readonly record struct PaintRun(
 /// A link of a text leaf (design §4.8): what its click, its hover's start, and its hover's end call, and the look it takes while
 /// a pointer hovers it.
 /// </summary>
+/// <param name="OnClick">The handler a click calls.</param>
+/// <param name="OnEnter">The handler the start of a hover calls, or <see langword="null"/>.</param>
+/// <param name="OnLeave">The handler the end of a hover calls, or <see langword="null"/>.</param>
+/// <param name="Hovered">The look the link's range takes while a pointer hovers it.</param>
 internal readonly record struct TextLink(PointerHandler OnClick, PointerHandler? OnEnter, PointerHandler? OnLeave, SpanStyle Hovered)
 {
+    /// <summary>
+    /// Returns a value indicating whether another link is the same: the same handlers, compared by reference, and the same
+    /// hovered style.
+    /// </summary>
+    /// <param name="other">The link to compare.</param>
+    /// <returns><see langword="true"/> when the links are the same; otherwise <see langword="false"/>.</returns>
     public bool Same(in TextLink other) =>
         ReferenceEquals(OnClick, other.OnClick)
         && ReferenceEquals(OnEnter, other.OnEnter)
@@ -73,6 +109,9 @@ internal readonly record struct InlineObject(NodeHandle Child, int Position, Pla
 /// its first baseline from the margin box's top (NaN when it has none). Under a min-content or a max-content width the child is
 /// measured under the same, so the text's content widths take the child's.
 /// </summary>
+/// <param name="Width">The width of the margin box.</param>
+/// <param name="Height">The height of the margin box.</param>
+/// <param name="Baseline">The distance from the margin box's top to the first baseline, or NaN when there is none.</param>
 internal readonly record struct InlineBox(float Width, float Height, float Baseline);
 
 /// <summary>

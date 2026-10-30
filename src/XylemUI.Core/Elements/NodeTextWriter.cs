@@ -23,6 +23,11 @@ public struct NodeTextWriter
     private char[] _buffer;
     private int _length;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NodeTextWriter"/> struct, with nothing written.
+    /// </summary>
+    /// <param name="buffer">The buffer to write into.</param>
+    /// <param name="ranges">The writer of the text's ranges.</param>
     internal NodeTextWriter(char[] buffer, TextRangeWriter ranges)
     {
         _buffer = buffer;
@@ -38,11 +43,13 @@ public struct NodeTextWriter
     /// <summary>
     /// Opens a range of a style at what has been written.
     /// </summary>
+    /// <param name="style">The range's style.</param>
     internal readonly void OpenSpan(in SpanStyle style) => _ranges.Open(_length, style, -1);
 
     /// <summary>
     /// Opens the range of a link at what has been written.
     /// </summary>
+    /// <param name="link">The link.</param>
     internal readonly void OpenLink(in TextLink link) => _ranges.Open(_length, default, _ranges.Ranges.AddLink(link));
 
     /// <summary>
@@ -53,6 +60,8 @@ public struct NodeTextWriter
     /// <summary>
     /// Writes the room of an inline object: its U+FFFC, and the child it stands for.
     /// </summary>
+    /// <param name="child">The element the inline object shows.</param>
+    /// <param name="alignment">How the object lines up with the text around it.</param>
     internal void AppendInline(Element child, PlaceholderAlignment alignment)
     {
         _ranges.AddInline(_length, child, alignment);
@@ -75,6 +84,10 @@ public struct NodeTextWriter
     /// </summary>
     internal readonly int Length => _length;
 
+    /// <summary>
+    /// Appends characters to the text.
+    /// </summary>
+    /// <param name="value">The characters.</param>
     internal void Append(ReadOnlySpan<char> value)
     {
         Ensure(value.Length);
@@ -82,6 +95,11 @@ public struct NodeTextWriter
         _length += value.Length;
     }
 
+    /// <summary>
+    /// Appends a value to the text, formatted with the current culture and no format string.
+    /// </summary>
+    /// <typeparam name="T">The value's type.</typeparam>
+    /// <param name="value">The value.</param>
     internal void Append<T>(T value)
         where T : ISpanFormattable
     {

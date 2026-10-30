@@ -523,6 +523,10 @@ internal sealed partial class WindowFrames
     /// <summary>
     /// Draws the lines a text layout committed, from its box's top left (<see cref="DrawingContext.DrawText(TextLayout, float, float, Color)"/>).
     /// </summary>
+    /// <param name="text">The text leaf whose layout committed its lines.</param>
+    /// <param name="x">The left edge of the box, in logical pixels.</param>
+    /// <param name="y">The top edge of the box, in logical pixels.</param>
+    /// <param name="color">The color of the text.</param>
     internal void DrawLaidText(TextLeaf text, float x, float y, Color color) => DrawText(text, x, y, color);
 
     // The lines of the width the layout committed, from the content box's top left, each at its baseline.

@@ -60,7 +60,7 @@ _slots[index].Generation = 1;
 
 ## XML docs
 
-- Public members under `src/` have `summary`, and `param` / `returns` / `exception` when a caller might be unsure. Sentences end with a period. Properties start with "Gets" / "Gets or sets"; constructors with "Initializes a new instance of the <see cref="T"/> class".
+- Public and internal members under `src/` have `summary`, `param`, and `returns`, and `exception` when a caller might be unsure; private members may. StyleCop enforces it (`documentInternalElements`, row Q6, Issue #449): internal types are an API between the assemblies that see them through `InternalsVisibleTo`, and their readers are agents and maintainers (D3). Sentences end with a period. Properties start with "Gets" / "Gets or sets"; constructors with "Initializes a new instance of the <see cref="T"/> class".
 - XML docs state the caller's contract only. How it works lives in `docs/design.ja.md`; refer to the section instead of restating it.
 - Use `<inheritdoc />` when an implementation has the interface's contract.
 - A member that returns one shared instance of a public `IDisposable` says in its XML docs that callers do not dispose it (`FontFallback.Bundled`, PR #152 review).

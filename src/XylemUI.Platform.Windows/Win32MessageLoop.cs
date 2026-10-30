@@ -158,6 +158,10 @@ public static unsafe class Win32MessageLoop
         }
     }
 
+    /// <summary>
+    /// Passes an exception that a callback threw to <see cref="CallbackExceptionHandler"/>, and swallows one the handler throws.
+    /// </summary>
+    /// <param name="exception">The exception the callback threw.</param>
     internal static void ReportCallbackException(Exception exception)
     {
         try

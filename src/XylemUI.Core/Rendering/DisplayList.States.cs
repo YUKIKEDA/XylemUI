@@ -154,8 +154,10 @@ public sealed partial class DisplayList
         UpdateMode();
     }
 
+    /// <summary>Gets the record of each state of clips and a transform, in the order they were written.</summary>
     internal ReadOnlySpan<StateRecord> States => _scopes is null ? default : _scopes.States.AsSpan(0, _stateRecords);
 
+    /// <summary>Gets the clip stream, which each <see cref="StateRecord"/> points into.</summary>
     internal ReadOnlySpan<ClipCommand> Clips => _scopes is null ? default : _scopes.Clips.AsSpan(0, _clipRecords);
 
     // The renderer's transform of the commands' positions to physical pixels: the logical transform with its move in physical

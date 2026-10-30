@@ -92,12 +92,16 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     /// <summary>
     /// Returns a fixed length.
     /// </summary>
+    /// <param name="pixels">The logical pixels.</param>
+    /// <returns>The length of <paramref name="pixels"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Length Px(float pixels) => new(LengthKind.Px, pixels);
 
     /// <summary>
     /// Returns a percentage; <paramref name="fraction"/> 0.5 is 50 %.
     /// </summary>
+    /// <param name="fraction">The fraction of the size the length resolves against.</param>
+    /// <returns>The percentage.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Length Percent(float fraction) => new(LengthKind.Percent, fraction);
 
@@ -110,6 +114,8 @@ internal readonly record struct Length(LengthKind Kind, float Value)
     /// Returns the pixels the length stands for against <paramref name="basis"/>, or NaN when it has none: an auto or content
     /// length, or a percentage of an unknown (NaN) basis.
     /// </summary>
+    /// <param name="basis">The pixels a percentage is taken of, or NaN.</param>
+    /// <returns>The pixels, or NaN.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Resolve(float basis) =>
         Kind switch
@@ -135,18 +141,24 @@ internal readonly record struct LengthPercentage(bool IsPercent, float Value)
     /// <summary>
     /// Returns a fixed length.
     /// </summary>
+    /// <param name="pixels">The logical pixels.</param>
+    /// <returns>The length of <paramref name="pixels"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentage Px(float pixels) => new(false, pixels);
 
     /// <summary>
     /// Returns a percentage; <paramref name="fraction"/> 0.5 is 50 %.
     /// </summary>
+    /// <param name="fraction">The fraction of the size the length resolves against.</param>
+    /// <returns>The percentage.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentage Percent(float fraction) => new(true, fraction);
 
     /// <summary>
     /// Returns the pixels against <paramref name="basis"/>; a percentage of an unknown (NaN) basis is 0 (CSS).
     /// </summary>
+    /// <param name="basis">The pixels a percentage is taken of, or NaN.</param>
+    /// <returns>The pixels.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float ResolveOrZero(float basis) =>
         !IsPercent ? Value
@@ -175,12 +187,16 @@ internal readonly record struct LengthPercentageAuto(LengthKind Kind, float Valu
     /// <summary>
     /// Returns a fixed length.
     /// </summary>
+    /// <param name="pixels">The logical pixels.</param>
+    /// <returns>The length of <paramref name="pixels"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentageAuto Px(float pixels) => new(LengthKind.Px, pixels);
 
     /// <summary>
     /// Returns a percentage; <paramref name="fraction"/> 0.5 is 50 %.
     /// </summary>
+    /// <param name="fraction">The fraction of the size the length resolves against.</param>
+    /// <returns>The percentage.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LengthPercentageAuto Percent(float fraction) => new(LengthKind.Percent, fraction);
 
@@ -193,6 +209,8 @@ internal readonly record struct LengthPercentageAuto(LengthKind Kind, float Valu
     /// Returns the pixels against <paramref name="basis"/>; <see cref="LengthKind.Auto"/> and a percentage of an unknown (NaN)
     /// basis are 0 (an automatic margin before the free space is shared).
     /// </summary>
+    /// <param name="basis">The pixels a percentage is taken of, or NaN.</param>
+    /// <returns>The pixels.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float ResolveOrZero(float basis) =>
         Kind switch
@@ -206,6 +224,8 @@ internal readonly record struct LengthPercentageAuto(LengthKind Kind, float Valu
     /// Returns the pixels against <paramref name="basis"/>, or NaN for <see cref="LengthKind.Auto"/> and for a percentage of an
     /// unknown (NaN) basis.
     /// </summary>
+    /// <param name="basis">The pixels a percentage is taken of, or NaN.</param>
+    /// <returns>The pixels, or NaN.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Resolve(float basis) =>
         Kind switch
