@@ -21,4 +21,4 @@ Not allowed:
 - Closing a milestone while a temporary gap is still in the code.
 - A `TODO` comment that stands in for a roadmap row.
 
-When a row becomes `done` or moves out of scope, search `docs/`, the READMEs, and `.cursor/rules/` for its title and keywords, and rewrite stale "until X" text in the same PR.
+When a row becomes `done` or moves out of scope, search `docs/`, the READMEs, and `.cursor/rules/` for its title and keywords, and rewrite stale "until X" text in the same PR. Search for the row's ID too (`行 AN1`, `AN1 で`): after AN1, "行 AN1 で入れる" and "AN1 で測る" stayed in §12.2, §2.14, and §8.1 until the review (PR #476).
