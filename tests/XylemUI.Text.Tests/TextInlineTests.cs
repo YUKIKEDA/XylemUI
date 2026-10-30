@@ -283,6 +283,45 @@ public sealed class TextInlineTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// A child that grows gives the text's least content width its new width.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text "nn" and a box of 40 x 10, in a row of 10 wide.
+    ///
+    /// Steps:
+    /// - Mount and lay out; make the box 50 wide; lay out.
+    ///
+    /// Expected:
+    /// - The text is 40 wide, then 50: the box is its widest piece.
+    /// </remarks>
+    [Fact]
+    public void ChildThatGrows_WidensTheLeastContentWidth() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element box = default;
+            Element text = default;
+            scene.Mount(() =>
+            {
+                box = Elements.Box().Width(40).Height(10);
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn".AsSpan());
+                        w.Inline(box);
+                    }
+                );
+                return Elements.Row(text).Width(10);
+            });
+
+            Assert.Equal(40, scene.Tree.GetRect(text.Node).Width, 3);
+            SetWidth(scene, box, 50);
+            scene.Draw();
+            Assert.Equal(50, scene.Tree.GetRect(text.Node).Width, 3);
+        });
+
+    /// <summary>
     /// A child whose size changes gives the text a room of its new size; a layout of the child that keeps its size keeps the
     /// lines the text was broken into at each width.
     /// </summary>
