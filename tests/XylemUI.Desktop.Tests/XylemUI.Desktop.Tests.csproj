@@ -18,5 +18,7 @@
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />
     <PackageReference Include="xunit.v3" />
+    <!-- build.ps1 dumps the process and names the tests running when the run hangs (row Q5). -->
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
   </ItemGroup>
 </Project>

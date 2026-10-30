@@ -14,5 +14,7 @@
   </ItemGroup>
   <ItemGroup Label="Tests">
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <!-- The version of Microsoft.Testing.Platform that xunit.v3 brings (row Q5). -->
+    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="2.5.1" />
   </ItemGroup>
 </Project>
