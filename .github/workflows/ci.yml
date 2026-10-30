@@ -65,3 +65,12 @@ jobs:
           path: artifacts/hangdump
           if-no-files-found: ignore
           retention-days: 14
+
+      # The screenshots and the differences of the goldens that did not match (design §12.3, row P02a2).
+      - uses: actions/upload-artifact@v7
+        if: failure() && runner.os == 'Windows'
+        with:
+          name: golden-failures-${{ github.run_attempt }}
+          path: tests/*/bin/*/*/GoldenFailures
+          if-no-files-found: ignore
+          retention-days: 14

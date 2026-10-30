@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <RootNamespace>XylemUI.Testing.D3D11</RootNamespace>
+    <Description>The WARP renderer of XylemUI.Testing: a headless app's frames drawn into a texture and read back, with no window (design §12.3).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XylemUI.Testing\XylemUI.Testing.csproj" />
+    <ProjectReference Include="..\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
+    <ProjectReference Include="..\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
+  </ItemGroup>
+</Project>

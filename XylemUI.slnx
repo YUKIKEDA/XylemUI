@@ -14,6 +14,7 @@
     <Project Path="src/XylemUI.Platform.Windows/XylemUI.Platform.Windows.csproj" />
     <Project Path="src/XylemUI.Primitives/XylemUI.Primitives.csproj" />
     <Project Path="src/XylemUI.Rendering.D3D11/XylemUI.Rendering.D3D11.csproj" />
+    <Project Path="src/XylemUI.Testing.D3D11/XylemUI.Testing.D3D11.csproj" />
     <Project Path="src/XylemUI.Testing.XUnit/XylemUI.Testing.XUnit.csproj" />
     <Project Path="src/XylemUI.Testing/XylemUI.Testing.csproj" />
     <Project Path="src/XylemUI.Text/XylemUI.Text.csproj" />

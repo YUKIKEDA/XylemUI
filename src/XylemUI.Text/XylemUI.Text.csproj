@@ -16,6 +16,8 @@
     <InternalsVisibleTo Include="XylemUI.E2E" />
     <!-- The decoration metrics of a font, which the pixel tests of the ranges place their reference lines by (roadmap row T12). -->
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
+    <!-- The goldens of the headless tests are read with the PNG decoder (design §12.3, row P02a2). -->
+    <InternalsVisibleTo Include="XylemUI.Testing" />
   </ItemGroup>
   <!-- The end of the font fallback (design §4.5, Fonts/README.md). -->
   <ItemGroup>

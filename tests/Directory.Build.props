@@ -11,4 +11,6 @@
     <Using Include="XylemUI.TestSupport" />
     <Using Include="XylemUI.Testing" />
   </ItemGroup>
+  <!-- The package imports it in an app's test project; the repository's import it here (the goldens' folder, design §12.3). -->
+  <Import Project="$(MSBuildThisFileDirectory)../src/XylemUI.Testing/build/XylemUI.Testing.targets" />
 </Project>

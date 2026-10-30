@@ -115,6 +115,10 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     private DrawRange[] _draws = new DrawRange[16];
 
     private bool _statedReady;
+
+    // The texture an offscreen renderer draws into in place of a swap chain's back buffer (design §12.3, row P02a2); null with a
+    // swap chain.
+    private ID3D11Texture2D* _offscreen;
     private ID3D11RenderTargetView* _renderTarget;
     private ID3D11Buffer* _instances;
     private ID3D11Buffer* _stateStream;
@@ -148,9 +152,17 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         // that the device is not leaked and the window can get a swap chain again.
         try
         {
-            _swapChain = CreateSwapChain(device, window, width, height);
-            _ = _swapChain->SetMaximumFrameLatency(1);
-            _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
+            if (window == HWND.NULL)
+            {
+                _offscreen = CreateOffscreenTexture(device, width, height);
+            }
+            else
+            {
+                _swapChain = CreateSwapChain(device, window, width, height);
+                _ = _swapChain->SetMaximumFrameLatency(1);
+                _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
+            }
+
             CreateRenderTarget();
             _vertexShader = CreateVertexShader(device, out _inputLayout);
 
@@ -317,6 +329,28 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         Create(window, width, height, useWarp, featureLevel10: false);
 
     /// <summary>
+    /// Creates a renderer on WARP that draws into a texture in place of a window's swap chain (design §12.3, row P02a2): a headless
+    /// app's. <see cref="Present"/> does nothing, <see cref="FrameLatencyWaitableObject"/> is 0, and <see cref="CaptureFrame"/>
+    /// reads the frame back.
+    /// </summary>
+    /// <param name="width">The width, in physical pixels.</param>
+    /// <param name="height">The height, in physical pixels.</param>
+    /// <returns>The renderer.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or Direct3D could not create the device,
+    /// the texture, or the shaders.</exception>
+    internal static D3D11Renderer CreateOffscreen(int width, int height)
+    {
+        UiThread.VerifyAccess();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        HResults.ThrowIfFailed(
+            TryCreateDevice(D3D_DRIVER_TYPE_WARP, featureLevel10: false, out ID3D11Device* device, out ID3D11DeviceContext* context),
+            "D3D11CreateDevice (WARP)"
+        );
+        return new D3D11Renderer(device, context, isWarp: true, HWND.NULL, width, height);
+    }
+
+    /// <summary>
     /// Creates a renderer, on a device of feature level 10.0 when <paramref name="featureLevel10"/> is set: the lowest level the
     /// renderer supports, for the tests that its shaders and blend states work there.
     /// </summary>
@@ -383,9 +417,18 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         _ = _renderTarget->Release();
         _renderTarget = null;
 
-        // 2. ResizeBuffers, keeping the count, the format, and the flags.
-        HRESULT result = _swapChain->ResizeBuffers(0, (uint)width, (uint)height, DXGI_FORMAT.DXGI_FORMAT_UNKNOWN, SwapChainFlags);
-        HResults.ThrowIfFailed(result, "IDXGISwapChain::ResizeBuffers", RemovedReason(result));
+        // 2. ResizeBuffers, keeping the count, the format, and the flags; an offscreen renderer makes its texture again.
+        if (_offscreen is not null)
+        {
+            _ = _offscreen->Release();
+            _offscreen = null;
+            _offscreen = CreateOffscreenTexture(_device, width, height);
+        }
+        else
+        {
+            HRESULT result = _swapChain->ResizeBuffers(0, (uint)width, (uint)height, DXGI_FORMAT.DXGI_FORMAT_UNKNOWN, SwapChainFlags);
+            HResults.ThrowIfFailed(result, "IDXGISwapChain::ResizeBuffers", RemovedReason(result));
+        }
 
         // 3. The view again, and the constants that depend on the size.
         Width = width;
@@ -447,6 +490,8 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         }
 
         Release((IUnknown*)_swapChain);
+        Release((IUnknown*)_offscreen);
+        _offscreen = null;
         Release((IUnknown*)_context);
         Release((IUnknown*)_device);
     }
@@ -665,6 +710,12 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     {
         UiThread.VerifyAccess();
 
+        // An offscreen renderer's frame is in its texture already; nothing shows it.
+        if (_swapChain is null)
+        {
+            return;
+        }
+
         // The time of the call, only while frames are measured (the frame path makes no call for the measurement otherwise).
         LARGE_INTEGER called = default;
         if (_gpuTimer is not null)
@@ -754,7 +805,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// <returns>The color of the pixel.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The pixel is outside the back buffer.</exception>
-    public Color ReadPixel(int x, int y)
+    internal Color ReadPixel(int x, int y)
     {
         UiThread.VerifyAccess();
         ArgumentOutOfRangeException.ThrowIfNegative(x);
@@ -780,8 +831,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// <returns>The staging texture.</returns>
     internal ID3D11Texture2D* CaptureBackBuffer()
     {
-        ID3D11Texture2D* backBuffer;
-        HResults.ThrowIfFailed(_swapChain->GetBuffer(0, __uuidof<ID3D11Texture2D>(), (void**)&backBuffer), "IDXGISwapChain::GetBuffer");
+        ID3D11Texture2D* backBuffer = BackBuffer();
         D3D11_TEXTURE2D_DESC description;
         backBuffer->GetDesc(&description);
         description.Usage = D3D11_USAGE.D3D11_USAGE_STAGING;
@@ -816,6 +866,26 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         var color = new Color(pixel[2], pixel[1], pixel[0], pixel[3]);
         _context->Unmap((ID3D11Resource*)staging, 0);
         return color;
+    }
+
+    /// <summary>
+    /// Copies the frame drawn last and waits for it: its colors from the top left, row by row, <see cref="Width"/> a row. For a
+    /// headless app's screenshot (design §12.3); it allocates the array and waits for the GPU.
+    /// </summary>
+    /// <returns>The colors.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    internal Color[] CaptureFrame()
+    {
+        UiThread.VerifyAccess();
+        ID3D11Texture2D* staging = CaptureBackBuffer();
+        try
+        {
+            return ReadCapturedPixels(staging, Width, Height);
+        }
+        finally
+        {
+            _ = staging->Release();
+        }
     }
 
     /// <summary>
@@ -1208,10 +1278,24 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
 
     private int RemovedReason(HRESULT result) => HResults.IsDeviceLost(result) ? _device->GetDeviceRemovedReason() : 0;
 
-    private void CreateRenderTarget()
+    // The texture the frame is drawn into, with a reference the caller releases: the swap chain's back buffer, or the offscreen
+    // texture.
+    private ID3D11Texture2D* BackBuffer()
     {
+        if (_offscreen is not null)
+        {
+            _ = _offscreen->AddRef();
+            return _offscreen;
+        }
+
         ID3D11Texture2D* backBuffer;
         HResults.ThrowIfFailed(_swapChain->GetBuffer(0, __uuidof<ID3D11Texture2D>(), (void**)&backBuffer), "IDXGISwapChain::GetBuffer");
+        return backBuffer;
+    }
+
+    private void CreateRenderTarget()
+    {
+        ID3D11Texture2D* backBuffer = BackBuffer();
         try
         {
             ID3D11RenderTargetView* view;
@@ -1222,6 +1306,24 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         {
             _ = backBuffer->Release();
         }
+    }
+
+    private static ID3D11Texture2D* CreateOffscreenTexture(ID3D11Device* device, int width, int height)
+    {
+        var description = new D3D11_TEXTURE2D_DESC
+        {
+            Width = (uint)width,
+            Height = (uint)height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = BackBufferFormat,
+            SampleDesc = new DXGI_SAMPLE_DESC(1, 0),
+            Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
+            BindFlags = (uint)D3D11_BIND_FLAG.D3D11_BIND_RENDER_TARGET,
+        };
+        ID3D11Texture2D* texture;
+        HResults.ThrowIfFailed(device->CreateTexture2D(&description, null, &texture), "ID3D11Device::CreateTexture2D (offscreen)");
+        return texture;
     }
 
     private void SetTextRendering(TextRenderingParameters value)

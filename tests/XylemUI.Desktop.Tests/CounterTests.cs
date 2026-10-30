@@ -38,44 +38,6 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// The pixel at the center of the counter's button is the background the sample gives it.
-    /// </summary>
-    /// <remarks>
-    /// Preconditions:
-    /// - The counter's window on WARP, hidden; its target reads the pixel at the button's center after each draw, before the present.
-    ///
-    /// Steps:
-    /// - Make the window, which draws the first frame.
-    ///
-    /// Expected:
-    /// - The pixel is <c>CounterApp.ButtonBackground</c>, and the button's text is "+1".
-    /// </remarks>
-    [Fact]
-    public void Button_CenterPixel_IsItsBackground() =>
-        ui.Invoke(() =>
-        {
-            ReadingTarget? reading = null;
-            using var window = new DesktopWindow(
-                CounterApp.Counter,
-                Options,
-                useWarp: true,
-                target: renderer => reading = new ReadingTarget(renderer)
-            );
-            (NodeHandle text, NodeHandle button) = Parts(window.Tree);
-            reading!.Point = Center(window, button);
-            window.Frames.RunFrame();
-            Assert.Equal(1, reading.Draws);
-
-            // The first frame drew before the point was known: draw the tree again to read it.
-            Invalidation.Invalidate(window.Tree, button, ChangeKind.Color);
-            window.Frames.RunFrame();
-            Assert.Equal(CounterApp.ButtonBackground, reading.Pixel);
-            NodeHandle label = window.Tree.Nodes.GetRef(button).FirstChild;
-            Assert.Equal("+1", window.Tree.Nodes.GetRef(label).Text!.Text.ToString());
-            Assert.Equal("clicks: 0", window.Tree.Nodes.GetRef(text).Text!.Text.ToString());
-        });
-
-    /// <summary>
     /// A press and a release of the left button at the button's center, sent as the window's messages, make the text "clicks: 1",
     /// and the next frame lays it out and presents it; frames with nothing changed present nothing.
     /// </summary>

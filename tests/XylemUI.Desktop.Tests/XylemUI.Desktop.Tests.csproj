@@ -13,6 +13,8 @@
     <ProjectReference Include="..\..\samples\Todo\Todo.csproj" />
     <!-- The app tests run headless, as [UiFact] tests (design §12, row P02a). -->
     <ProjectReference Include="..\..\src\XylemUI.Testing.XUnit\XylemUI.Testing.XUnit.csproj" />
+    <!-- The pixels and the goldens are drawn headless on WARP (design §12.3, row P02a2). -->
+    <ProjectReference Include="..\..\src\XylemUI.Testing.D3D11\XylemUI.Testing.D3D11.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

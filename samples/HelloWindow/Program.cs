@@ -2,10 +2,12 @@
 // With --auto, it checks with the public API and exits:
 //   S1: a compacting collection while the window is alive, then the close goes through the window procedure and the handle
 //       table; a Closed handler that throws is reported instead of crashing; a thread-pool thread touching the window is rejected.
-//   S7: 120 frames of 1,000 rectangles paced by the swap chain's waitable object; one pixel read back; the CPU time of building the
+//   S7: 120 frames of 1,000 rectangles paced by the swap chain's waitable object; the CPU time of building the
 //       display list, of Draw (read, upload, issue), and of Present, and the interval between frames, as medians; the time to
 //       create the renderer (device, swap chain, and the shaders compiled at run time).
-//   S8b: a line of text in every frame (shaped, put in the atlas, drawn as a glyph run); its first glyph has ink on the screen.
+//   S8b: a line of text in every frame (shaped, put in the atlas, drawn as a glyph run).
+// The pixels of the rectangle and the ink of the text are checked by OffscreenRenderTests in XylemUI.Rendering.D3D11.Tests,
+// which reads them back with no window (row P02a2: the renderer's read-back is no longer public).
 //   R4d: the first frame's rectangles in a rounded clip; the time of its Draw, which waits for the clips' shaders.
 //   F1: a second line through the font fallback: what the test font lacks takes the fonts of Windows, and an unassigned
 //       character the bundled font's .notdef; the families of its runs, and the time to split it the first time and again
@@ -50,7 +52,6 @@ renderer.TextRendering = window.TextRendering;
 window.TextRenderingChanged += (_, _) => renderer.TextRendering = window.TextRendering;
 double createMilliseconds = Stopwatch.GetElapsedTime(createStart).TotalMilliseconds;
 var clear = Color.FromRgb(0x2A2A2A);
-var accent = Color.FromRgb(0x3366CC);
 var list = new DisplayList();
 using Stream fontStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
 byte[] fontBytes = new byte[fontStream.Length];
@@ -74,14 +75,12 @@ foreach (FontRun run in fallbackRuns)
 }
 
 string fallbackFamilies = families.ToString();
-string ink = "not checked";
 var build = new List<double>();
 var draw = new List<double>();
 var present = new List<double>();
 var interval = new List<double>();
 long lastFrame = 0;
 int frames = 0;
-string pixel = "not checked";
 
 window.SynchronousRender = (_, newWidth, newHeight) =>
 {
@@ -104,13 +103,6 @@ frame = () =>
     long t1 = Stopwatch.GetTimestamp();
     renderer.Draw(list, clear, atlas);
     long t2 = Stopwatch.GetTimestamp();
-    if (frames == 5)
-    {
-        // The first rectangle of a frame always covers (0, 0) to (40, 40); the text is in the band above the moving rectangles.
-        pixel = renderer.ReadPixel(20, 20) == accent ? "ok" : "wrong";
-        ink = HasInk(renderer, list, clear) ? "ok" : "wrong";
-    }
-
     long t3 = Stopwatch.GetTimestamp();
     renderer.Present();
     long t4 = Stopwatch.GetTimestamp();
@@ -163,8 +155,8 @@ Win32MessageLoop.SetFrameClock(0);
 // PublishAot turns RuntimeFeature.IsDynamicCode* off under `dotnet run` too, so ask the JIT whether it has compiled anything.
 string runtime = JitInfo.GetCompiledMethodCount() > 0 ? "jit" : "nativeaot";
 Console.WriteLine(
-    $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} create={createMilliseconds:F1}ms frames={frames} pixel={pixel} "
-        + $"text={ink} closed={closed} "
+    $"HelloWindow build={runtime} gpu={(renderer.IsWarp ? "warp" : "hardware")} create={createMilliseconds:F1}ms frames={frames} "
+        + $"closed={closed} "
         + $"reported={reported} offThread={offThread} exit={exitCode}"
 );
 Console.WriteLine($"fallback runs: {fallbackFamilies}; split {firstSplitMicroseconds:F1} us the first time, {splitMicroseconds:F1} us again");
@@ -176,11 +168,10 @@ if (frames > 0)
     Console.WriteLine($"firstDraw={draw[0]:F1}ms (in a rounded clip: the wait for the clips' shaders, row R4d)");
 }
 
-bool checks = pixel == "ok" && ink == "ok";
-bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && frames == AutoFrames && checks));
+bool passed = closed && (!auto || (reported == 1 && offThread == "rejected" && frames == AutoFrames));
 return passed ? exitCode : 1;
 
-// 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0) so the pixel check knows its color. A
+// 1,000 rectangles in a grid, shifted by the frame number; the first one stays at (0, 0). A
 // line of text in the band above them. Everything is in logical pixels; the display list multiplies them by the window's scale
 // (design §6.1.1, "Windows' display scale"), and width and height are the client area's physical pixels.
 void BuildFrame(int frame, int physicalWidth, int physicalHeight)
@@ -226,39 +217,6 @@ void BuildFrame(int frame, int physicalWidth, int physicalHeight)
 
     // The glyphs seen for the first time, rasterized together on the atlas's workers.
     list.ResolveGlyphs(atlas);
-}
-
-// Some pixel of the box of the frame's first glyph is far from the clear color.
-static bool HasInk(D3D11Renderer renderer, DisplayList list, Color clear)
-{
-    GlyphInstance glyph = default;
-    DisplayListReader reader = list.GetReader();
-    while (reader.TryNext(out CommandTag tag))
-    {
-        if (tag == CommandTag.FillRect)
-        {
-            _ = reader.ReadFillRect();
-        }
-        else
-        {
-            GlyphRunCommand run = reader.ReadGlyphRun();
-            glyph = glyph.Width == 0 ? run.Glyphs[0] : glyph;
-        }
-    }
-
-    for (int y = glyph.Y; y < glyph.Y + glyph.Height; y++)
-    {
-        for (int x = glyph.X; x < glyph.X + glyph.Width; x++)
-        {
-            Color color = renderer.ReadPixel(x, y);
-            if (Math.Abs(color.R - clear.R) > 100)
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
 }
 
 static double Median(List<double> values)

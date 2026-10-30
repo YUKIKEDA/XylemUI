@@ -39,18 +39,10 @@ internal sealed class DesktopWindow : IDisposable
     /// <param name="options">The window.</param>
     /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <param name="useWarp"><see langword="true"/> to draw with the WARP software rasterizer, for the tests.</param>
-    /// <param name="target">What the frames draw on, made from the renderer; the renderer itself when <see langword="null"/>. The
-    /// tests read the pixels between the draw and the present through it.</param>
     /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the root function returned no node of
     /// the window's tree or one that has a parent.</exception>
-    public DesktopWindow(
-        Func<Element> root,
-        WindowOptions options,
-        bool show = false,
-        bool useWarp = false,
-        Func<D3D11Renderer, IRenderTarget>? target = null
-    )
+    public DesktopWindow(Func<Element> root, WindowOptions options, bool show = false, bool useWarp = false)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(options);
@@ -79,15 +71,7 @@ internal sealed class DesktopWindow : IDisposable
             Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
             Renderer.TextRendering = Window.TextRendering;
             _atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer());
-            Frames = new WindowFrames(
-                Tree,
-                _rootNode,
-                target?.Invoke(Renderer) ?? Renderer,
-                _atlas,
-                Win32MessageLoop.FrameScheduler,
-                Background,
-                Window.TextRendering
-            );
+            Frames = new WindowFrames(Tree, _rootNode, Renderer, _atlas, Win32MessageLoop.FrameScheduler, Background, Window.TextRendering);
             Input = new WindowInput(Tree, Frames, Window);
             Window.PointerInputReceived = Input.Handle;
             Window.KeyInputReceived = Input.Handle;

@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    Imported by a test project that uses XylemUI.Testing (the package adds it; the repository's tests import it from
+    tests/Directory.Build.props). It writes the project's folder into the test assembly, where MatchesGoldenAsync finds the project's
+    Goldens/ (design §12.3). A source path cannot tell it: under ContinuousIntegrationBuild the SDK maps [CallerFilePath] to /_/.
+  -->
+  <ItemGroup>
+    <AssemblyMetadata Include="XylemUI.Testing.ProjectDirectory" Value="$(MSBuildProjectDirectory)" />
+  </ItemGroup>
+</Project>
