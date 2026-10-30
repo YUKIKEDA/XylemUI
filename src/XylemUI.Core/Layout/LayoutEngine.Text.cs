@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using XylemUI.Text;
 using XylemUI.Text.LineBreak;
@@ -358,6 +359,10 @@ internal static partial class LayoutEngine
     // An entry of the second cache: the lines at its width (Pass1 and Pass2). Returns the size and first baseline they make.
     private static MeasureResult Fill(TextContext context, TextLeaf leaf, ShapingResult result, LineBreakEntry entry)
     {
+        // The style is read once: the lines of a leaf with no inline objects take the fonts' metrics alone, as before row T13. Read
+        // for each line, the miss of a wrapped leaf in resize-text was 10.53 to 11.08 ms against main's 9.02 to 9.99.
+        TextStyle style = leaf.Style;
+        TextRanges? rooms = leaf.Ranges is { HasInlines: true } ranges ? ranges : null;
         result.Wrap(entry.Width, context.Shaper, entry.Lines);
         result.Lay(entry.Lines, context.Shaper, entry.Layout);
         float width = 0;
@@ -366,7 +371,9 @@ internal static partial class LayoutEngine
         foreach (LaidLine line in entry.Layout.Lines)
         {
             width = MathF.Max(width, line.Width);
-            (float lineHeight, float baseline) = TextLine(leaf, result, line.Span);
+            (float lineHeight, float baseline) = rooms is null
+                ? Line(LineMetricsOf(result, line.Span), style)
+                : RoomLine(rooms, result, line.Span, style);
             if (float.IsNaN(firstBaseline))
             {
                 firstBaseline = height + baseline;
@@ -383,16 +390,16 @@ internal static partial class LayoutEngine
     /// stage places the committed lines with it (design §5.0, "The draw stage and the frame drive"). The rooms of the inline objects
     /// on the line count (design §4.8).
     /// </summary>
-    internal static (float Height, float Baseline) TextLine(TextLeaf leaf, ShapingResult result, LineSpan span)
+    internal static (float Height, float Baseline) TextLine(TextLeaf leaf, ShapingResult result, LineSpan span) =>
+        leaf.Ranges is { HasInlines: true } ranges ? RoomLine(ranges, result, span, leaf.Style) : Line(LineMetricsOf(result, span), leaf.Style);
+
+    // A line with the rooms of the inline objects on it, which it grows to hold (SkParagraph's TextLine metrics, src/Run.h lines 432
+    // to 443). Apart from the lines of the other leaves, which take none of it.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (float Height, float Baseline) RoomLine(TextRanges ranges, ShapingResult result, LineSpan span, in TextStyle style)
     {
         LineMetrics metrics = LineMetricsOf(result, span);
-        (float height, float baseline) = Line(metrics, leaf.Style);
-        if (leaf.Ranges is not { HasInlines: true } ranges)
-        {
-            return (height, baseline);
-        }
-
-        // The line grows to hold the rooms of the inline objects on it (SkParagraph's TextLine metrics, src/Run.h lines 432 to 443).
+        (float height, float baseline) = Line(metrics, style);
         float above = baseline;
         float below = height - baseline;
         ReadOnlySpan<InlineObject> inlines = ranges.Inlines;

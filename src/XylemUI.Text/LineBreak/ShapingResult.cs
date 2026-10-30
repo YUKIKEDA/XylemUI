@@ -111,7 +111,6 @@ internal sealed class ShapingResult
         text.CopyTo(_text);
         Ensure(ref _x, text.Length + 1);
         Ensure(ref _glyphAt, text.Length + 1);
-        Array.Fill(_x, 0, 0, text.Length + 1);
         Array.Fill(_glyphAt, -1, 0, text.Length + 1);
         _runCount = 0;
         _glyphCount = 0;

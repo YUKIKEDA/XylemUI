@@ -124,7 +124,11 @@ internal static class InlineCost
             report.Series($"relayout_{name}_us", relayout);
             report.Series($"child_{name}_us", child);
             report.Number($"children_{name}", inline ? 2 * Leaves : 0);
-            report.Number($"first_box_x_{name}", inline ? tree.GetRect(boxes[0]).X : float.NaN);
+            if (inline)
+            {
+                report.Number("first_box_x_inline", tree.GetRect(boxes[0]).X);
+            }
+
             GC.KeepAlive(tree);
         }
 
