@@ -197,12 +197,13 @@ public sealed class HeadlessPixelTests
     /// - A field of one line in black at 14 px on white, in a headless app of 200 x 40 on WARP, with the focus.
     ///
     /// Steps:
-    /// - Compose "日本語ab" with "日本" thick and solid, "語" dotted, and "ab" dotted; find the row of the thick underline under the
-    ///   middle of "日本"; read the pixels of that row 3 and 1 pixels left of the end of "日本"; compare the frame with
-    ///   "ime-composition.png".
+    /// - Compose "日本語ab" with "日本" thick and solid, and "語" and "ab" each thin and solid, two clauses that look the same; find
+    ///   the row of each underline under the middle of its clause; read the pixels of those rows 3 and 1 pixels left of the end of
+    ///   "日本" and of "語"; compare the frame with "ime-composition.png".
     ///
     /// Expected:
-    /// - The pixel 3 left of the end is dark (the line), the one 1 left of it is lighter (the gap); the frame matches the golden.
+    /// - At both ends, the pixel 3 left of the end is dark (the line), the one 1 left of it is lighter (the gap); the frame matches
+    ///   the golden.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -227,19 +228,23 @@ public sealed class HeadlessPixelTests
             clauses:
             [
                 new(0, 2, DecorationStyle.Solid, Thick: true),
-                new(2, 3, DecorationStyle.Dotted, Thick: false),
-                new(3, 5, DecorationStyle.Dotted, Thick: false),
+                new(2, 3, DecorationStyle.Solid, Thick: false),
+                new(3, 5, DecorationStyle.Solid, Thick: false),
             ]
         );
         _ = app.PumpAndSettle();
 
-        Rect target = app.Ime.BoundsOf(0, 2)!.Value;
-        int end = (int)MathF.Round(target.X + target.Width);
-        int middle = (int)MathF.Round(target.X + (target.Width / 2));
-        int row = LowestDark(app, middle, (int)target.Y, (int)MathF.Ceiling(target.Y + target.Height) + 4);
+        foreach ((int start, int end) in (ReadOnlySpan<(int, int)>)[(0, 2), (2, 3)])
+        {
+            Rect clause = app.Ime.BoundsOf(start, end)!.Value;
+            int right = (int)MathF.Round(clause.X + clause.Width);
+            int middle = (int)MathF.Round(clause.X + (clause.Width / 2));
+            int row = LowestDark(app, middle, (int)clause.Y, (int)MathF.Ceiling(clause.Y + clause.Height) + 4);
 
-        Assert.True(Darkness(Pixel(app, (end - 3, row))) > 128);
-        Assert.True(Darkness(Pixel(app, (end - 1, row))) < Darkness(Pixel(app, (end - 3, row))));
+            Assert.True(Darkness(Pixel(app, (right - 3, row))) > 64);
+            Assert.True(Darkness(Pixel(app, (right - 1, row))) < Darkness(Pixel(app, (right - 3, row))));
+        }
+
         await app.MatchesGoldenAsync("ime-composition.png");
     }
 

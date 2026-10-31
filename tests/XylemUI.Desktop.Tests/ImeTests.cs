@@ -50,7 +50,7 @@ public sealed class ImeTests
     }
 
     /// <summary>
-    /// A cancel puts back the text the composition replaced, and leaves nothing to undo.
+    /// A cancel puts back the text the composition replaced and the selection it started from, and leaves nothing to undo.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -60,7 +60,7 @@ public sealed class ImeTests
     /// - Compose "にほ" over the selection; cancel; press Control+Z.
     ///
     /// Expected:
-    /// - After the cancel, the text "abc", no composition; the undo changes nothing.
+    /// - After the cancel, the text "abc", all of it selected again, no composition; the undo changes nothing.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -71,9 +71,11 @@ public sealed class ImeTests
 
         _ = field.App.Ime.Compose("にほ", cursor: 2).Cancel();
         string cancelled = field.Text;
+        TextSelection selection = field.Client.Selection;
         _ = field.App.Keyboard.Press(Key.Z, KeyModifiers.Control);
 
         Assert.Equal("abc", cancelled);
+        Assert.Equal(new TextSelection(0, 3), selection);
         Assert.Null(field.Client.Composition);
         Assert.Equal("abc", text.Get());
     }
@@ -119,6 +121,39 @@ public sealed class ImeTests
         var solid = TextDecoration.Clause(DecorationStyle.Solid, null, 2);
         var dotted = TextDecoration.Clause(DecorationStyle.Dotted, red, 1);
         Assert.Equal([(0, 2, solid, null), (2, 3, dotted, blue), (3, 5, null, null)], looks);
+    }
+
+    /// <summary>
+    /// Two clauses side by side that look the same keep a range each, so that each underline is shortened at its own ends.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An empty field of one line with the focus.
+    ///
+    /// Steps:
+    /// - Compose "にほんご" with two clauses, "にほ" and "んご", both thin and dotted, as Google Japanese Input marks the text not
+    ///   converted and the other clauses.
+    ///
+    /// Expected:
+    /// - The leaf's ranges of look are 0 to 2 and 2 to 4, each a clause's dotted underline.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Clauses_ThatLookTheSame_KeepARangeEach()
+    {
+        await using Field field = await Field.StartAsync(Signal.Create(string.Empty));
+        var dotted = new ImeAttributeRun(0, 2, DecorationStyle.Dotted, Thick: false);
+
+        _ = field.App.Ime.Compose("にほんご", cursor: 4, clauses: [dotted, dotted with { Start = 2, End = 4 }]);
+        _ = field.App.PumpAndSettle();
+        var looks = new List<(int, int, TextDecoration?)>();
+        foreach (PaintRun run in field.App.Tree.Nodes.GetRef(field.Leaf).Text!.Ranges!.Paint)
+        {
+            looks.Add((run.Start, run.Start + run.Length, run.Decoration));
+        }
+
+        TextDecoration line = TextDecoration.Clause(DecorationStyle.Dotted, null, 1);
+        Assert.Equal([(0, 2, line), (2, 4, line)], looks);
     }
 
     /// <summary>

@@ -114,7 +114,8 @@ internal interface ITextInputPlatform
     void SelectionChanged();
 
     /// <summary>
-    /// Tells that where the text is on the screen changed. The field calls it.
+    /// Tells that where the text is on the screen changed. The field calls it while it draws, in the middle of building the display
+    /// list: a platform that tells the OS (TSF's <c>OnLayoutChange</c>) does so after the frame, outside its document's lock.
     /// </summary>
     void LayoutChanged();
 

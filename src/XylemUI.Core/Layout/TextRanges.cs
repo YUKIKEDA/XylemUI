@@ -59,13 +59,20 @@ internal readonly record struct PaintRun(
 )
 {
     /// <summary>
-    /// Returns a value indicating whether a style and a link have the same look as this range.
+    /// Returns a value indicating whether a style and a link have the same look as this range, so that the range takes them in. A
+    /// clause of an IME's composition is never taken in: each clause keeps its range, whose underline is shortened at its ends
+    /// even next to a clause that looks the same (design §4.7).
     /// </summary>
     /// <param name="style">The style to compare.</param>
     /// <param name="link">The link to compare, or -1.</param>
     /// <returns><see langword="true"/> when the look is the same; otherwise <see langword="false"/>.</returns>
     public bool SameLook(in SpanStyle style, int link) =>
-        Color == style.Color && Background == style.Background && Decoration == style.Decoration && Shadow == style.Shadow && Link == link;
+        Decoration is not { Composition: true }
+        && Color == style.Color
+        && Background == style.Background
+        && Decoration == style.Decoration
+        && Shadow == style.Shadow
+        && Link == link;
 }
 
 /// <summary>

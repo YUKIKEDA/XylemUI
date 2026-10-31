@@ -11,6 +11,7 @@ public sealed class HeadlessIme : ITextInputPlatform
     private readonly List<(int Start, int OldEnd, int NewEnd)> _textChanges = [];
     private ITextInputClient? _client;
     private string _replaced = string.Empty;
+    private TextSelection _selected;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HeadlessIme"/> class for an app's window.
@@ -62,6 +63,7 @@ public sealed class HeadlessIme : ITextInputPlatform
         if (client.Composition is null)
         {
             _replaced = Copy(client, start, end);
+            _selected = client.Selection;
         }
 
         client.Compose(start, end, text, cursor, clauses);
@@ -95,7 +97,8 @@ public sealed class HeadlessIme : ITextInputPlatform
     }
 
     /// <summary>
-    /// Cancels the composition: its text goes back to the text it replaced, and it ends.
+    /// Cancels the composition: its text goes back to the text it replaced, the selection to the one it started from, and it ends,
+    /// as an input method sets the selection itself when it cancels (TSF's <c>SetSelection</c>).
     /// </summary>
     /// <returns>This input method, for the next call.</returns>
     /// <exception cref="InvalidOperationException">No node that takes text has the focus, or the focused field takes no input
@@ -106,6 +109,7 @@ public sealed class HeadlessIme : ITextInputPlatform
         if (client.Composition is { } composition)
         {
             client.Replace(composition.Start, composition.End, _replaced);
+            client.Select(_selected);
             client.EndComposition();
         }
 
