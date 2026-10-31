@@ -269,6 +269,8 @@ public sealed class TextRangeTests(UiThreadFixture ui) : IDisposable
     /// Steps:
     /// - Measure the bytes allocated while a <c>TextRanges</c> is made and given 3 links, 3 inline objects, and 5 pieces of text,
     ///   each of a size and a color of its own.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: the check is what the ranges
+    ///   allocate against a formula, not a steady state that allocates nothing.
     ///
     /// Expected:
     /// - The sizes are as above; the arrays are 8, 8, 4, and 4 long, and the bytes are the formula for them, to the 8 bytes each

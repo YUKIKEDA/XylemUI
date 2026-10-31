@@ -136,6 +136,8 @@ public sealed class PngDecoderTests
     ///
     /// Steps:
     /// - Read it, measuring the bytes allocated on this thread.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: the check is a bound on what one
+    ///   call allocates, not a steady state that allocates nothing.
     ///
     /// Expected:
     /// - It reads, with the pixels of the image, and allocates less than 1 MB (inflating the 64 MB would need a buffer of it).
@@ -170,6 +172,8 @@ public sealed class PngDecoderTests
     /// Steps:
     /// - Read the large header with a limit of 4,096 a side, measuring the bytes allocated on this thread; then read a 1,100 x 1,100
     ///   gray image of zeros (1.2 MB of rows, 4.8 MB of pixels) and the 2 x 1 image, measuring the bytes allocated by the last.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: the check is a bound on what one
+    ///   call allocates, not a steady state that allocates nothing.
     ///
     /// Expected:
     /// - The large header returns <see langword="false"/> and allocates less than 1 MB.

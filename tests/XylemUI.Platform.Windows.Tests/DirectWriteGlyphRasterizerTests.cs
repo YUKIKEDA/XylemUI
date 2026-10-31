@@ -249,18 +249,19 @@ public sealed unsafe class DirectWriteGlyphRasterizerTests
         GlyphBox warmBox = rasterizer.Measure(warm);
         rasterizer.Rasterize(warm, buffer, warmBox.Width * bytes);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int size = 10; size <= 40; size++)
-        {
-            for (int step = 0; step < GlyphPosition.SubpixelSteps; step++)
+        // Each run is one size and step of the 31 x 4 from 10 px, in order; the 130 measured runs go through all 124, and the
+        // unmeasured window's negative indices wrap to the last ones.
+        const int Glyphs = 31 * GlyphPosition.SubpixelSteps;
+        PerformanceAssert.DoesNotAllocate(
+            130,
+            i =>
             {
-                var key = new GlyphKey(font, GlyphH, size, step, coverage);
+                int n = ((i % Glyphs) + Glyphs) % Glyphs;
+                var key = new GlyphKey(font, GlyphH, 10 + (n / GlyphPosition.SubpixelSteps), n % GlyphPosition.SubpixelSteps, coverage);
                 GlyphBox box = rasterizer.Measure(key);
                 rasterizer.Rasterize(key, buffer, box.Width * bytes);
             }
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        );
     }
 
     /// <summary>

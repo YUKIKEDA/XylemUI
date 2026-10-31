@@ -145,15 +145,10 @@ public sealed unsafe class D3D11RendererTests(UiThreadFixture ui)
             }
 
             int growth = list.GrowthCount;
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++)
-            {
-                Frame(renderer, list, i);
-            }
 
-            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-            Assert.Equal(0, allocated);
+            // The helper hands its unmeasured window negative indices; the shift keeps the frames' coordinates in the warm-up's
+            // cycle.
+            PerformanceAssert.DoesNotAllocate(100, i => Frame(renderer, list, i + 1_000));
             Assert.Equal(growth, list.GrowthCount);
         });
 

@@ -408,6 +408,9 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Run 70 frames; read the UI thread's allocated bytes at frame 10 and at frame 70.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: the loop runs the frames and
+    ///   calls back between them, so the bytes are read at frames 10 and 70 inside the callback, where PerformanceAssert cannot
+    ///   drive the runs.
     ///
     /// Expected:
     /// - The two readings are equal.

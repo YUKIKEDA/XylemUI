@@ -726,6 +726,8 @@ public sealed class WindowInputTests(UiThreadFixture ui)
     /// Steps:
     /// - Read <c>Unsafe.SizeOf</c> of <see cref="UiNode"/> and <see cref="PaintStyle"/>; allocate one <see cref="NodeVisual"/>, one
     ///   <see cref="PseudoStyles"/>, and one <see cref="FocusStyles"/> and read what each allocated.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: each count is the size of one
+    ///   object made once, not a steady state that allocates nothing.
     ///
     /// Expected:
     /// - The node is at most 576 bytes, a style at most 104, a box look at most 192, the state looks at most 336 (with the disabled look, row K1b), and the focus looks
