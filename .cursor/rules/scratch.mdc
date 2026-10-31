@@ -9,6 +9,7 @@ Remove, in the turn that made them: extra worktrees and checkouts, throwaway pro
 
 - The checkout that is already open is where edits go.
 - The only paths allowed to stay: build output (`bin/`, `obj/`, `artifacts/`), `BenchmarkDotNet.Artifacts/`, `.repos/` (shallow clones for reading upstream code, `docs/references.md`), and `.dev/` for the owner's local notes. All are gitignored.
+- A scratch project under `.dev/` inherits the repository's `Directory.Build.props` (warnings as errors, analyzers) and `Directory.Packages.props`. Put an empty `Directory.Build.props` and `Directory.Build.targets` beside it, and a `Directory.Packages.props` that sets `ManagePackageVersionsCentrally` to false; then turn on `ImplicitUsings` in the project itself, since the repository's props no longer do (spike #510, PR #511).
 - A script that writes scratch stops at its first failed command (`$ErrorActionPreference = 'Stop'`) and names its targets by absolute path.
 - Long text for `gh` goes through a temporary UTF-8 file that is deleted after the call.
 - A removal names its targets with a literal absolute path, or with `"${DIR:?}"` in Bash. `rm -rf "$DIR"/*` is refused by the agent's safety check and stops the whole command, the steps before the removal included (twice in S8b and S9, the second time right after the rule was written in `powershell-shell.mdc`).
