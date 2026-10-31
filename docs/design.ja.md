@@ -2518,7 +2518,7 @@ public readonly record struct ImeAttributeRun(
     int End,
     DecorationStyle? Line,      // §4.8。null なら線を引かない（TF_LS_NONE）
     bool Thick,                 // fBoldLine
-    Color? LineColor = null,    // crLine。null なら文字の色
+    Color? LineColor = null,    // crLine。null なら、この範囲の文字を描く色（TextColor があればそれ、無ければ欄の文字の色）
     Color? TextColor = null);   // crText。null なら欄の文字の色
 ```
 
@@ -2544,7 +2544,7 @@ internal interface ITextInputPlatform
 - 位置の知らせは、フレームの後に、欄の矩形かスクロールの位置が変わったときに送る。`BoundsOf` が `TS_E_NOLAYOUT` を返したときも、レイアウトが済んだら送る（TSF が求める。Microsoft Learn の OnLayoutChange の説明）
 - TSF では、OS は文書を読み書きする前にロックを求める（`RequestLock`、同期と非同期がある）。ロックの間に文書を変えるのは、OS が呼ぶ文書の口のメソッドだけである。アプリはロックの間に文書を変えず、知らせも送らない（Microsoft Learn の RequestLock の説明）。TSF の実装は、ロックの間に欄から来た知らせを溜め、ロックが終わってから送る。送っていない知らせがある間は、同期のロックを断り（`TS_E_SYNCHRONOUS`）、非同期のロックだけを受ける
 
-**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。線の形・太さ・色は、IME が表示の属性（`GUID_PROP_ATTRIBUTE` の `TF_DISPLAYATTRIBUTE`）で示すとおりにする。Google 日本語入力は、変換中の文節を太い実線、未変換の文字とほかの文節を点線で示した（スパイク #510）。Chromium も WPF も、IME の線の形（実線・点線・破線・波線）と太さのとおりに描く（Chromium の `ui/base/ime/win/tsf_text_store.cc` 1708〜1751 行目、86c7d7a6。WPF の `CompositionAdorner.cs` 159〜222 行目、bd4acbb1）。Chromium は、IME が示した文字の色と線の色も使う。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。太い線は、ふつうの線の 2 倍の太さにする（Blink は 1 px と 2 px、`third_party/blink/renderer/core/paint/styleable_marker_painter.cc` 176〜188 行目、19cfb62b）。波線（`TF_LS_SQUIGGLE`）は、`DecorationStyle.Wavy` を足す行 R5 までは実線で描く。キャレットは変換中の文字の中の、IME が示す位置に描く。
+**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。線の形・太さ・色は、IME が表示の属性（`GUID_PROP_ATTRIBUTE` の `TF_DISPLAYATTRIBUTE`）で示すとおりにする。Google 日本語入力は、変換中の文節を太い実線、未変換の文字とほかの文節を点線で示した（スパイク #510）。Chromium も WPF も、IME の線の形（実線・点線・破線・波線）と太さのとおりに描く（Chromium の `ui/base/ime/win/tsf_text_store.cc` 1708〜1751 行目、86c7d7a6。WPF の `CompositionAdorner.cs` 159〜228 行目、bd4acbb1）。Chromium は、IME が示した文字の色と線の色も使う。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。太い線は、ふつうの線の 2 倍の太さにする（Blink は 1 px と 2 px、`third_party/blink/renderer/core/paint/styleable_marker_painter.cc` 176〜188 行目、19cfb62b）。波線（`TF_LS_SQUIGGLE`）は、`DecorationStyle.Wavy` を足す行 R5 までは実線で描く。キャレットは変換中の文字の中の、IME が示す位置に描く。
 
 **フォーカスとアプリの書き込み:**
 
