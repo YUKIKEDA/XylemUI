@@ -2537,6 +2537,7 @@ internal interface ITextInputPlatform
     void TextChanged(int start, int oldEnd, int newEnd);    // 欄が呼ぶ。start〜oldEnd が start〜newEnd になった
     void SelectionChanged();                                // 欄が呼ぶ
     void LayoutChanged();                                   // 欄が呼ぶ。範囲の画面の位置が変わった
+    void CommitComposition();                               // 欄が呼ぶ。IME に変換中の文字を確定させる（変換中のアプリの書き込みの前）
 }
 ```
 
@@ -2549,7 +2550,7 @@ internal interface ITextInputPlatform
 **フォーカスとアプリの書き込み:**
 
 - 変換中にフォーカスが移ったら、変換中の文字を確定する。Avalonia と GPUI も確定する（GPUI は `CPS_COMPLETE`、同じ 683〜711 行目）。Flutter は取り消すので、打った文字が消える（`text_input_manager.cc` 126〜143 行目の `CPS_CANCEL`）。TSF では `ITfContextOwnerCompositionServices::TerminateComposition` で確定する。確定は呼び出しの中で終わり、`OnEndComposition` は戻る前に届く（スパイク #510）
-- 変換中にアプリが文字のシグナルに書いたら、先に変換を確定してから、アプリの値を置く（§4.9「値の流れ」）
+- 変換中にアプリが文字のシグナルに書いたら、先に変換を確定してから、アプリの値を置く（§4.9「値の流れ」）。欄だけで確定すると、IME は変換を続けたままになるので、欄は `ITextInputPlatform.CommitComposition` で IME に確定させる。TSF では `TerminateComposition` に当たり、`EndComposition` は呼び出しが戻る前に欄へ届く（スパイク #510）
 
 **候補の窓:** TSF の IME は、範囲の画面の位置を問い合わせる（`ITextStoreACP2::GetTextExt`）。欄は `BoundsOf` で、葉の行とグリフから求めた位置を返し、プラットフォームが画面の物理の画素に直す。レイアウトが済む前は `TS_E_NOLAYOUT` を返す。`OnLayoutChange` を送ると、TSF は位置を問い合わせ直し、候補の窓は欄についてくる（スパイク #510）。
 
