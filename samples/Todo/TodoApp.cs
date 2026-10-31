@@ -55,36 +55,45 @@ public static class TodoApp
 
     /// <summary>
     /// Makes the list over a state the caller holds: a column of the heading, the field with its button, the buttons, and the
-    /// items in a scroll view. Enter in the field and the button both add; the button keeps the focus in the field.
+    /// items in a scroll view. Enter in the field and the button both add; the button keeps the focus in the field. The column is a
+    /// selection area (row P02b2, design §4.10): a drag selects the heading's and the items' text across them, and Control+C copies
+    /// it.
     /// </summary>
     /// <param name="model">The state.</param>
     /// <returns>The list's column.</returns>
     public static Element Todo(TodoModel model) =>
-        Column(
-                Row(Text((ref text) => text.Write($"todos: {model.Items.Get().Count}")), Text((ref text) => text.Write($"left: {model.Left.Get()}")))
-                    .Gap(16),
-                Row(
-                        TextField(model.Draft, new TextFieldOptions { Placeholder = Placeholder, OnSubmit = _ => model.Add() })
-                            .Width(260)
-                            .Padding(8, 6)
-                            .Background(FieldBackground)
-                            .Foreground(TextColor)
-                            .CornerRadius(4),
-                        Styled(Text("Add"), model.Add).KeepsFocusOnPress()
-                    )
-                    .Gap(6),
-                Row(
-                        FilterButton(model, TodoFilter.All, "All"),
-                        FilterButton(model, TodoFilter.Active, "Active"),
-                        FilterButton(model, TodoFilter.Done, "Done"),
-                        Styled(Text((ref text) => text.Write(model.NewestFirst.Get() ? "Newest first" : "Oldest first")), model.Reverse)
-                    )
-                    .Gap(6),
-                ScrollView(Column().Gap(4).For(model.Shown, item => item.Id, item => Row(ItemButton(model, item), RemoveButton(model, item)).Gap(4)))
-                    .Height(ListHeight)
-            )
-            .Gap(8)
-            .Padding(12);
+        SelectionArea(
+            Column(
+                    Row(
+                            Text((ref text) => text.Write($"todos: {model.Items.Get().Count}")),
+                            Text((ref text) => text.Write($"left: {model.Left.Get()}"))
+                        )
+                        .Gap(16),
+                    Row(
+                            TextField(model.Draft, new TextFieldOptions { Placeholder = Placeholder, OnSubmit = _ => model.Add() })
+                                .Width(260)
+                                .Padding(8, 6)
+                                .Background(FieldBackground)
+                                .Foreground(TextColor)
+                                .CornerRadius(4),
+                            Styled(Text("Add"), model.Add).KeepsFocusOnPress()
+                        )
+                        .Gap(6),
+                    Row(
+                            FilterButton(model, TodoFilter.All, "All"),
+                            FilterButton(model, TodoFilter.Active, "Active"),
+                            FilterButton(model, TodoFilter.Done, "Done"),
+                            Styled(Text((ref text) => text.Write(model.NewestFirst.Get() ? "Newest first" : "Oldest first")), model.Reverse)
+                        )
+                        .Gap(6),
+                    ScrollView(
+                            Column().Gap(4).For(model.Shown, item => item.Id, item => Row(ItemButton(model, item), RemoveButton(model, item)).Gap(4))
+                        )
+                        .Height(ListHeight)
+                )
+                .Gap(8)
+                .Padding(12)
+        );
 
     // The button that marks an item done: its name after a mark, gray when done.
     private static Element ItemButton(TodoModel model, IReadOnlySignal<TodoItem> item) =>

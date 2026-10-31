@@ -84,6 +84,11 @@ internal sealed partial class WindowInput
     internal UiTree Tree => _tree;
 
     /// <summary>
+    /// Gets the frames whose display list the input hit-tests (a selection area finds its leaves' points in it, design §4.10).
+    /// </summary>
+    internal WindowFrames Frames => _frames;
+
+    /// <summary>
     /// Gets the node that holds the capture of the mouse; none while no button is down.
     /// </summary>
     internal NodeHandle Capture => _pointers[0].Capture;
@@ -779,6 +784,13 @@ internal sealed partial class WindowInput
             if (_tree.Nodes.GetRef(node).Input?.Cursor is { } set)
             {
                 cursor = set;
+                break;
+            }
+
+            // A text leaf a selection area selects counts as one with the I-beam (design §4.10, §7 "Cursor shape").
+            if (_tree.Nodes.GetRef(node).Text is not null && _tree.IsSelectableText(node))
+            {
+                cursor = CursorKind.IBeam;
                 break;
             }
         }

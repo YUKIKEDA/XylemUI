@@ -30,6 +30,17 @@ internal sealed class LeafSelection
     public Color? Foreground { get; private set; }
 
     /// <summary>
+    /// Gets or sets the selection area that collected the leaf last (design §4.10, "Order"), and <see cref="Index"/> its place in
+    /// the area's list; an area checks both before it takes a leaf of the display list for one of its own.
+    /// </summary>
+    public object? Owner { get; set; }
+
+    /// <summary>
+    /// Gets or sets the leaf's place in the list of the area that collected it last (<see cref="Owner"/>).
+    /// </summary>
+    public int Index { get; set; }
+
+    /// <summary>
     /// Gets a value indicating whether the range holds no text, so that nothing is drawn.
     /// </summary>
     public bool IsEmpty => End <= Start;

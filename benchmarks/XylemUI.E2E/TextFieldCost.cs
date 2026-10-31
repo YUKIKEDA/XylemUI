@@ -17,7 +17,7 @@ namespace XylemUI.E2E;
 // - text_field_blink_frame_us: a tick of the caret's timer, which hides or shows it, and the frame that draws it.
 // - text_field_drag_frame_us: a move of the mouse with its left button down, from a press on the first line, alternately to two
 //   points on other lines; the selection changes at each.
-internal static class TextFieldCost
+internal static partial class TextFieldCost
 {
     private const string Sentence = "The quick brown fox jumps over the lazy dog. ";
     private const int Samples = 400;
@@ -39,6 +39,7 @@ internal static class TextFieldCost
             Write(report, "text_field_drag_frame", scene.Time(scene.Drag, null));
             scene.ReleaseDrag();
             report.Number("text_field_chars", scene.Text.Get().Length);
+            RunSelectionArea(report);
         }
         finally
         {
@@ -61,6 +62,33 @@ internal static class TextFieldCost
     }
 
     private sealed record Parts(List<double> Total, List<double> Input, List<double> Layout, List<double> Draw);
+
+    // The microseconds of each run of a delivery, of the layout pass after it, and of the rest of its frame; then an untimed run of
+    // what undoes it.
+    private static Parts Measure(UiTree tree, HeldFrames scheduler, Action deliver, Action? undo)
+    {
+        var samples = new Parts(new List<double>(Samples), new List<double>(Samples), new List<double>(Samples), new List<double>(Samples));
+        for (int i = 0; i < Samples + Warm; i++)
+        {
+            long start = Stopwatch.GetTimestamp();
+            deliver();
+            long delivered = Stopwatch.GetTimestamp();
+            LayoutEngine.RunLayoutPass(tree);
+            long laidOut = Stopwatch.GetTimestamp();
+            scheduler.Run();
+            long drawn = Stopwatch.GetTimestamp();
+            undo?.Invoke();
+            if (i >= Warm)
+            {
+                samples.Total.Add(Stopwatch.GetElapsedTime(start, drawn).TotalMicroseconds);
+                samples.Input.Add(Stopwatch.GetElapsedTime(start, delivered).TotalMicroseconds);
+                samples.Layout.Add(Stopwatch.GetElapsedTime(delivered, laidOut).TotalMicroseconds);
+                samples.Draw.Add(Stopwatch.GetElapsedTime(laidOut, drawn).TotalMicroseconds);
+            }
+        }
+
+        return samples;
+    }
 
     private sealed class Scene : IDisposable
     {
@@ -184,26 +212,7 @@ internal static class TextFieldCost
         // of what undoes it.
         public Parts Time(Action deliver, Action? undo)
         {
-            var samples = new Parts(new List<double>(Samples), new List<double>(Samples), new List<double>(Samples), new List<double>(Samples));
-            for (int i = 0; i < Samples + Warm; i++)
-            {
-                long start = Stopwatch.GetTimestamp();
-                deliver();
-                long delivered = Stopwatch.GetTimestamp();
-                LayoutEngine.RunLayoutPass(_tree);
-                long laidOut = Stopwatch.GetTimestamp();
-                _scheduler.Run();
-                long drawn = Stopwatch.GetTimestamp();
-                undo?.Invoke();
-                if (i >= Warm)
-                {
-                    samples.Total.Add(Stopwatch.GetElapsedTime(start, drawn).TotalMicroseconds);
-                    samples.Input.Add(Stopwatch.GetElapsedTime(start, delivered).TotalMicroseconds);
-                    samples.Layout.Add(Stopwatch.GetElapsedTime(delivered, laidOut).TotalMicroseconds);
-                    samples.Draw.Add(Stopwatch.GetElapsedTime(laidOut, drawn).TotalMicroseconds);
-                }
-            }
-
+            Parts samples = Measure(_tree, _scheduler, deliver, undo);
             if (Text.Get().Length != 1_000)
             {
                 throw new InvalidOperationException($"The text is {Text.Get().Length} characters long after the runs.");

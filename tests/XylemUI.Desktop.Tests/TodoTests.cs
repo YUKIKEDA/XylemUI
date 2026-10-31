@@ -63,6 +63,41 @@ public sealed class TodoTests
     }
 
     /// <summary>
+    /// The list is a selection area (row P02b2): a click on the heading's text gives it the focus, Control+A selects the text of
+    /// the heading, the buttons, and the items, and Control+C copies it a leaf to a line; the field's text is left out.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo app, headless, with the items "Buy milk" and "Call Bob" added by the model, and "draft" typed in the field.
+    ///
+    /// Steps:
+    /// - Click on the heading's "todos: 2"; Control+A; Control+C.
+    ///
+    /// Expected:
+    /// - The clipboard holds the heading's two texts, the buttons' labels, and each item's label and its remove button's "×", one
+    ///   to a line, in the order of the tree; not "draft".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task List_SelectAllAndCopy_TakesTheTextButTheField()
+    {
+        var model = new TodoModel();
+        await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
+        var app = App.Of(headless, model);
+        _ = model.Add("Buy milk");
+        _ = model.Add("Call Bob");
+        model.Draft.Set("draft");
+        app.Settle();
+
+        headless.Pointer.Click(headless.Find("todos: 2"));
+        _ = headless.Keyboard.Press(Key.A, KeyModifiers.Control);
+        _ = headless.Keyboard.Press(Key.C, KeyModifiers.Control);
+        app.Settle();
+
+        Assert.Equal("todos: 2\nleft: 2\nAdd\nAll\nActive\nDone\nOldest first\n[ ] Buy milk\n×\n[ ] Call Bob\n×", headless.Clipboard.Text);
+    }
+
+    /// <summary>
     /// Clicking an item marks it done, with a mark and a gray text, and again marks it not done; "left" follows.
     /// </summary>
     /// <remarks>
@@ -285,7 +320,8 @@ public sealed class TodoTests
 
         public NodeHandle List => Child(Column, 3);
 
-        private NodeHandle Column => Tree.Nodes.GetRef(Tree.Root).FirstChild;
+        // The column inside the selection area at the root.
+        private NodeHandle Column => Tree.Nodes.GetRef(Tree.Nodes.GetRef(Tree.Root).FirstChild).FirstChild;
 
         private NodeHandle Entry => Child(Column, 1);
 

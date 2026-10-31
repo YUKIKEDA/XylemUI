@@ -91,6 +91,9 @@ public static partial class Primitive
             // so that the placeholder has the field's width to wrap in.
             Element content = options.Placeholder is { } placeholder ? Container(leaf, PlaceholderOf(placeholder)) : Container(leaf);
             _content = content.Node;
+
+            // A field's text has the field's own selection, and joins no selection area's (design §4.10).
+            _tree.SetUnselectable(_content);
             _tree.SetStyle(
                 _content,
                 _tree.Nodes.GetRef(_content).Layout.Style with
@@ -769,10 +772,7 @@ public static partial class Primitive
                 return new TextSelection(0, _editor.Text.Length);
             }
 
-            string value = _editor.Text;
-            int start = offset > 0 ? value.LastIndexOf('\n', offset - 1) + 1 : 0;
-            int end = value.IndexOf('\n', Math.Min(offset, value.Length));
-            return new TextSelection(start, end < 0 ? value.Length : end);
+            return TextUnits.ParagraphAt(_editor.Text, offset);
         }
 
         // The caret shows again, and blinks from there at Windows' interval while the field has the focus.
