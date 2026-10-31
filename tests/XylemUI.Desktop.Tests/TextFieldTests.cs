@@ -559,7 +559,7 @@ public sealed class TextFieldTests
 
     /// <summary>
     /// The placeholder is drawn where the text starts, inside the field's padding; an empty field that has the focus draws its caret
-    /// there, as high as a line.
+    /// there, as high as a line, and again once a typed text is deleted.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -567,12 +567,12 @@ public sealed class TextFieldTests
     ///
     /// Steps:
     /// - Read the rectangles of the box the text and the placeholder share, of the placeholder, and of the text leaf (each in its
-    ///   parent); and the red rectangles of the last frame.
+    ///   parent); and the red rectangles of the last frame. Type "ab", press Backspace twice, pump, and read the red rectangles again.
     ///
     /// Expected:
     /// - The shared box is at (8, 6) in the field, the placeholder and the leaf at (0, 0) in it; the caret is one rectangle at (8, 6)
     ///   in the window (the field is at its top left), 1 px wide and 20 px high: the test font's line at 14 px, 20.272 px, snapped to
-    ///   the pixels as the display list snaps a rectangle.
+    ///   the pixels as the display list snaps a rectangle. After the deletion, the same one rectangle.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -596,6 +596,13 @@ public sealed class TextFieldTests
         Assert.Equal((0f, 0f), (leaf.X, leaf.Y));
         FillRectCommand caret = Assert.Single(carets);
         Assert.Equal((8f, 6f, 1f, 20f), (caret.X, caret.Y, caret.Width, caret.Height));
+
+        field.App.Keyboard.Type("ab");
+        _ = field.App.Keyboard.Press(Key.Back);
+        _ = field.App.Keyboard.Press(Key.Back);
+        _ = field.App.PumpAndSettle();
+        FillRectCommand erased = Assert.Single(field.Fills().FindAll(fill => fill.Color == red));
+        Assert.Equal((8f, 6f, 1f, 20f), (erased.X, erased.Y, erased.Width, erased.Height));
     }
 
     /// <summary>

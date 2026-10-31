@@ -32,6 +32,7 @@ cmd /c "start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe lists --test-i
 - **番号だけで見たとき:** Core のテストを Release で 8 回流し、2 回で 1 つの区間が 5,376 バイトと 7,840 バイトを数えて失敗した（`ElementsTests.SteadyState_ClickThatChangesTheBackground_AllocatesNothing`）。ほかの 9 区間は 0 バイトで、その区間に GC は数えられていない。#332 の、背景の GC の mark の終わりで数えられるバイトと同じ形である。背景の GC が区間の前に始まって区間の中で mark を終え、番号は区間の後で動いたので、やり直さなかった
 - **直した形:** 各区間の前にブロックする第 2 世代の GC を 1 回回し、走っている背景の GC を終わらせる。区間の中で始まった背景の GC は、始まりで第 2 世代の GC の数を 1 つ増やすので、それでやり直す
 - **直した後:** Core を 10 回、Text・Desktop・Testing・Primitives を 3 回ずつ流し、失敗は 0 だった。本物の重なりでやり直した区間は延べ 67 だった（`XylemUI.Testing.Tests` が偽の数でわざと重ねた分を引いた）。3 回やり直しても重なった区間もあったが、どれも 0 バイトで通った。重なりはバイトを足すだけなので、0 バイトは本物の 0 である
+- **後で落ちた回（P02b の 3 つ目の PR、#492）:** 手元のゲートを 3 回流し、2 回で、その PR が触っていない経路の割り当てのテストが 1 つずつ落ちた。`DirectWriteGlyphRasterizerTests.Rasterize_NewGlyphs_AllocatesNothing(Gray)`（Release）と `ReactiveDependencyTests.SteadyState_SetAndFlush_AllocateNothing`（Debug）である。どちらも、そのプロジェクトだけを流し直すと通った（前者は 3 回とも）。数えたバイトとやり直しの回数は残していない。やり直しの後も落ちたので、背景の GC の重なりとは別の理由である。次に落ちたら、失敗の文（区間ごとのバイト）をここに足す
 - **回数の数え方:** 回数を確かめるテスト（クリックやフリングを数える 6 つ）は、やり直した区間の回数も数える。`DoesNotAllocate` は、回した回数（慣らし・測った回・やり直した回）を返し、テストはそれと比べる。前の `1_100` の決め打ちは、やり直しがあると 1,200 になって失敗した
 
 ## テストの時間
