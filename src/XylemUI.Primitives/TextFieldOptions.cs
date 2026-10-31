@@ -40,6 +40,13 @@ public sealed record TextFieldOptions
     public bool Password { get; init; }
 
     /// <summary>
+    /// Gets the kind of text the field takes, which the input method and the touch keyboard read (design §4.7, "The kinds of
+    /// input"): a URL, an email address, a number, or a telephone number lay out their keys for it. <see cref="TextInputKind.Text"/>
+    /// by default. A field with <see cref="Password"/> is a password field whatever this says.
+    /// </summary>
+    public TextInputKind InputKind { get; init; } = TextInputKind.Text;
+
+    /// <summary>
     /// Gets the most grapheme clusters the text holds; <see langword="null"/> for no limit. Typing and pasting are cut to fit.
     /// </summary>
     public int? MaxLength { get; init; }

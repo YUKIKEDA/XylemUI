@@ -46,6 +46,22 @@ public sealed class HeadlessIme : ITextInputPlatform
     public int LayoutChanges { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether the touch keyboard shows: a press of a finger or a pen gave a field the focus, and the
+    /// focus has not left the fields since (design §4.7, "The touch keyboard").
+    /// </summary>
+    public bool IsKeyboardShown { get; private set; }
+
+    /// <summary>
+    /// Gets the number of times the touch keyboard was shown.
+    /// </summary>
+    public int KeyboardShows { get; private set; }
+
+    /// <summary>
+    /// Gets the number of times the touch keyboard was hidden.
+    /// </summary>
+    public int KeyboardHides { get; private set; }
+
+    /// <summary>
     /// Composes text: the composition's text, or the selection's when nothing is composed yet, becomes <paramref name="text"/>, with
     /// the caret and the clauses given.
     /// </summary>
@@ -141,16 +157,27 @@ public sealed class HeadlessIme : ITextInputPlatform
         LayoutChanges = 0;
     }
 
-    void ITextInputPlatform.Attach(ITextInputClient client) => _client = client;
+    void ITextInputPlatform.Attach(ITextInputClient client, bool showKeyboard)
+    {
+        // The input method commits what it composes when the focus leaves a field, for another too (design §4.7).
+        Commit(_client);
+        _client = client;
+        if (showKeyboard && !IsKeyboardShown)
+        {
+            IsKeyboardShown = true;
+            KeyboardShows++;
+        }
+    }
 
     void ITextInputPlatform.Detach()
     {
-        // The input method commits what it composes when the focus leaves (design §4.7).
         ITextInputClient? client = _client;
         _client = null;
-        if (client?.Composition is not null)
+        Commit(client);
+        if (IsKeyboardShown)
         {
-            client.EndComposition();
+            IsKeyboardShown = false;
+            KeyboardHides++;
         }
     }
 
@@ -165,6 +192,14 @@ public sealed class HeadlessIme : ITextInputPlatform
         if (_client?.Composition is not null)
         {
             _client.EndComposition();
+        }
+    }
+
+    private static void Commit(ITextInputClient? client)
+    {
+        if (client?.Composition is not null)
+        {
+            client.EndComposition();
         }
     }
 

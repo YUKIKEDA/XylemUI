@@ -2535,7 +2535,7 @@ public readonly record struct ImeAttributeRun(
 // XylemUI（Core）。プラットフォームが実装し、木と欄が呼ぶ
 internal interface ITextInputPlatform
 {
-    void Attach(ITextInputClient client);                   // 木が呼ぶ。フォーカスが相手を持つノードへ移った
+    void Attach(ITextInputClient client, bool showKeyboard); // 木が呼ぶ。フォーカスが相手を持つノードへ移った。前の相手の代わりなら、その変換を確定してから。showKeyboard は指かペンの押下
     void Detach();                                          // 木が呼ぶ。相手を持たないノードへ移った。変換中なら先に確定する
     void TextChanged(int start, int oldEnd, int newEnd);    // 欄が呼ぶ。start〜oldEnd が start〜newEnd になった
     void SelectionChanged();                                // 欄が呼ぶ
@@ -2565,7 +2565,9 @@ internal interface ITextInputPlatform
 
 **タッチキーボード:** 指かペンで欄を押してフォーカスが入ったら、`InputPane` の `TryShow`（`IInputPaneInterop::GetForWindow` で窓の分を取る、Windows 10 1607 から）で出し、相手を持たないノードへフォーカスが移ったら `TryHide` で隠す。マウスやキーでフォーカスが移ったときは出さない。Chromium は、TSF に任せる形を一度入れたが、出たり消えたりがそろわず、2020 年に外して自分で出す形にした（コミット 125cf9f247、"Cleanup TSF InputPanelPolicy changes"）。
 
-**入力の種類:** `TextFieldOptions.InputKind`（ふつう・URL・メール・数字・電話番号）を、TSF の入力の種類として伝える。伏せ字の欄はパスワードの種類にする。
+フォーカスを入れた押下の種類は、木のフォーカスの管理が持つ（押下で指・ペン・マウスを覚え、キーで消す）。相手を結ぶとき（`Attach`）に、指かペンの押下なら `showKeyboard` を真にして渡す。ある欄から別の欄へフォーカスが移るときは、外して結び直すのではなく 1 回の `Attach` にする。タッチキーボードが欄の間で消えて出直さないためである。相手を持たないノードへ移ったとき（`Detach`）に隠す（P02c の 3 つ目の PR）。
+
+**入力の種類:** `TextFieldOptions.InputKind`（ふつう・URL・メール・数字・電話番号）を、TSF の入力の種類として伝える。文書の属性 `GUID_PROP_INPUTSCOPE` を求められたら、`ITfInputScope` のオブジェクトを返す（`IS_URL`・`IS_EMAIL_SMTPEMAILADDRESS`・`IS_NUMBER`・`IS_TELEPHONE_FULLTELEPHONENUMBER`・`IS_PASSWORD`、ふつうは `IS_DEFAULT`）。Chromium も同じ形で渡す（`ui/base/ime/win/tsf_text_store.cc` 884〜950 行目、86c7d7a6。P02c の 3 つ目の PR）。伏せ字の欄はパスワードの種類にする。
 
 **伏せ字と読み取り専用:** 伏せ字の欄は IME を使わない。打った文字を変換の窓や候補に出さないためである。読み取り専用の欄は、文書の口を読むだけ（`TS_SD_READONLY`）として渡す。
 

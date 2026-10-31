@@ -106,7 +106,7 @@ internal unsafe struct TsfTextStore
         table[19] = (delegate* unmanaged<TsfTextStore*, int, uint, Guid*, uint, int>)&RequestAttrsAtPosition;
         table[20] = (delegate* unmanaged<TsfTextStore*, int, uint, Guid*, uint, int>)&RequestAttrsTransitioningAtPosition;
         table[21] = (delegate* unmanaged<TsfTextStore*, int, int, uint, Guid*, uint, int*, int*, int*, int>)&FindNextAttrTransition;
-        table[22] = (delegate* unmanaged<TsfTextStore*, uint, void*, uint*, int>)&RetrieveRequestedAttrs;
+        table[22] = (delegate* unmanaged<TsfTextStore*, uint, TS_ATTRVAL*, uint*, int>)&RetrieveRequestedAttrs;
         table[23] = (delegate* unmanaged<TsfTextStore*, int*, int>)&GetEndACP;
         table[24] = (delegate* unmanaged<TsfTextStore*, uint*, int>)&GetActiveView;
         table[25] = (delegate* unmanaged<TsfTextStore*, uint, POINT*, uint, int*, int>)&GetACPFromPoint;
@@ -312,12 +312,32 @@ internal unsafe struct TsfTextStore
     private static int InsertEmbeddedAtSelection(TsfTextStore* self, uint flags, void* data, int* start, int* end, TS_TEXTCHANGE* change) =>
         E.E_NOTIMPL;
 
-    // The document has no attributes for TSF to read; the requests find none.
+    // The document has one attribute for TSF to read, the input scope, the same at every position.
     [UnmanagedCallersOnly]
-    private static int RequestSupportedAttrs(TsfTextStore* self, uint flags, uint count, Guid* attributes) => S.S_OK;
+    private static int RequestSupportedAttrs(TsfTextStore* self, uint flags, uint count, Guid* attributes)
+    {
+        try
+        {
+            return Document(self) is { } document ? document.RequestAttributes(count, attributes) : E.E_UNEXPECTED;
+        }
+        catch (Exception exception)
+        {
+            return Fail(exception);
+        }
+    }
 
     [UnmanagedCallersOnly]
-    private static int RequestAttrsAtPosition(TsfTextStore* self, int position, uint count, Guid* attributes, uint flags) => S.S_OK;
+    private static int RequestAttrsAtPosition(TsfTextStore* self, int position, uint count, Guid* attributes, uint flags)
+    {
+        try
+        {
+            return Document(self) is { } document ? document.RequestAttributes(count, attributes) : E.E_UNEXPECTED;
+        }
+        catch (Exception exception)
+        {
+            return Fail(exception);
+        }
+    }
 
     [UnmanagedCallersOnly]
     private static int RequestAttrsTransitioningAtPosition(TsfTextStore* self, int position, uint count, Guid* attributes, uint flags) => S.S_OK;
@@ -342,10 +362,16 @@ internal unsafe struct TsfTextStore
     }
 
     [UnmanagedCallersOnly]
-    private static int RetrieveRequestedAttrs(TsfTextStore* self, uint count, void* values, uint* fetched)
+    private static int RetrieveRequestedAttrs(TsfTextStore* self, uint count, TS_ATTRVAL* values, uint* fetched)
     {
-        *fetched = 0;
-        return S.S_OK;
+        try
+        {
+            return Document(self) is { } document ? document.RetrieveRequestedAttrs(count, values, fetched) : E.E_UNEXPECTED;
+        }
+        catch (Exception exception)
+        {
+            return Fail(exception);
+        }
     }
 
     [UnmanagedCallersOnly]

@@ -49,6 +49,12 @@ internal sealed class FocusManager
     private ITextInputClient? _attached;
 
     /// <summary>
+    /// Gets the kind of the pointer of the last press; <see langword="null"/> after a key, or before any press. A press of a
+    /// finger or a pen that gives a text field the focus shows the touch keyboard (design §4.7).
+    /// </summary>
+    public PointerType? LastPress { get; private set; }
+
+    /// <summary>
     /// Gets a value indicating whether the window is active. Only <see cref="SetActive"/> changes it: Core reads no state of the OS
     /// (design §12.4). A window is not active until the platform says so.
     /// </summary>
@@ -328,11 +334,26 @@ internal sealed class FocusManager
     }
 
     /// <summary>
+    /// Records a press of a pointer: the last input was not the keyboard, and the press's kind is kept for the focus it may give.
+    /// </summary>
+    /// <param name="kind">The pointer's kind.</param>
+    public void SetLastPress(PointerType kind)
+    {
+        LastPress = kind;
+        SetLastInputWasKeyboard(false);
+    }
+
+    /// <summary>
     /// Records whether the last input was the keyboard, and shows or hides the focused node's ring with it.
     /// </summary>
     /// <param name="keyboard">Whether the input was the keyboard.</param>
     public void SetLastInputWasKeyboard(bool keyboard)
     {
+        if (keyboard)
+        {
+            LastPress = null;
+        }
+
         if (keyboard == LastInputWasKeyboard)
         {
             return;
@@ -448,12 +469,15 @@ internal sealed class FocusManager
             return;
         }
 
-        DetachTextInput();
-        if (client is not null && Tree.TextInput is { } platform)
+        if (client is null || Tree.TextInput is not { } platform)
         {
-            _attached = client;
-            platform.Attach(client);
+            DetachTextInput();
+            return;
         }
+
+        // A client in place of another is one attach, not a detach and an attach: the touch keyboard stays between two fields.
+        _attached = client;
+        platform.Attach(client, LastPress is PointerType.Touch or PointerType.Pen);
     }
 
     /// <summary>

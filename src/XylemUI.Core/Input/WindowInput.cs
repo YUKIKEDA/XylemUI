@@ -397,7 +397,7 @@ internal sealed partial class WindowInput
 
     private void Down(PointerState pointer, in PointerInput input)
     {
-        _tree.Focus.SetLastInputWasKeyboard(false);
+        _tree.Focus.SetLastPress(input.PointerType);
         Point(pointer, input);
         Track(pointer, input, reset: true);
         if (HoldScroll(pointer, input))

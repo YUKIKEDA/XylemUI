@@ -318,6 +318,87 @@ public sealed class ImeTests
     }
 
     /// <summary>
+    /// The touch keyboard shows when a press of a finger or a pen gives the field the focus, not a mouse's or a key's, and hides
+    /// when the focus goes to a node that takes no text (design §4.7, "The touch keyboard").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of one line, 300 wide, and a focusable box beside it; the box has the focus.
+    ///
+    /// Steps:
+    /// - Click the field with the mouse; focus the box; press the field with a finger and lift it; focus the box; press the field
+    ///   with a pen; focus the box.
+    ///
+    /// Expected:
+    /// - The mouse's click shows nothing; the finger's press shows it and the box hides it; the pen's press shows it and the box
+    ///   hides it: 2 shows and 2 hides.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task TouchKeyboard_ShowsForAFingerOrAPen_AndHidesOffTheFields()
+    {
+        await using Field field = await Field.StartAsync(Signal.Create(string.Empty), other: true);
+        HeadlessApp app = field.App;
+        Assert.True(app.Focus(field.Other));
+
+        app.Pointer.Click(field.Element);
+        bool byMouse = app.Ime.IsKeyboardShown;
+        Assert.True(app.Focus(field.Other));
+        Press(app, PointerType.Touch);
+        bool byFinger = app.Ime.IsKeyboardShown;
+        Assert.True(app.Focus(field.Other));
+        bool afterBox = app.Ime.IsKeyboardShown;
+        Press(app, PointerType.Pen);
+        bool byPen = app.Ime.IsKeyboardShown;
+        Assert.True(app.Focus(field.Other));
+
+        Assert.Equal((false, true, false, true), (byMouse, byFinger, afterBox, byPen));
+        Assert.Equal((2, 2), (app.Ime.KeyboardShows, app.Ime.KeyboardHides));
+
+        // A press and a lift at the field's left, 10 down, with the pointer's kind.
+        static void Press(HeadlessApp app, PointerType kind)
+        {
+            foreach (PointerInputKind step in (ReadOnlySpan<PointerInputKind>)[PointerInputKind.Down, PointerInputKind.Up])
+            {
+                PointerButtons held = step == PointerInputKind.Down ? PointerButtons.Left : PointerButtons.None;
+                var input = new PointerInput(step, 10, 10, PointerButton.Left, held, KeyModifiers.None, 1, app.Time.Elapsed, kind, PointerId: 7);
+                app.Input.Handle(input);
+            }
+
+            _ = app.PumpAndSettle();
+        }
+    }
+
+    /// <summary>
+    /// The field's kind of input is its client's, and a field that hides its text is a password field whatever its kind says.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field with <see cref="TextFieldOptions.InputKind"/> of email, then one of number that also hides its text.
+    ///
+    /// Steps:
+    /// - Read each client's kind.
+    ///
+    /// Expected:
+    /// - Email; then Password.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task InputKind_IsTheClients_AndAHiddenFieldIsAPassword()
+    {
+        await using (Field email = await Field.StartAsync(Signal.Create(string.Empty), new TextFieldOptions { InputKind = TextInputKind.Email }))
+        {
+            Assert.Equal(TextInputKind.Email, email.Client.Kind);
+        }
+
+        await using Field hidden = await Field.StartAsync(
+            Signal.Create(string.Empty),
+            new TextFieldOptions { InputKind = TextInputKind.Number, Password = true }
+        );
+        Assert.Equal(TextInputKind.Password, hidden.Client.Kind);
+    }
+
+    /// <summary>
     /// A press in the field while the input method composes commits the composition before it moves the caret.
     /// </summary>
     /// <remarks>

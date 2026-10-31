@@ -77,6 +77,7 @@ internal sealed unsafe class TsfDocument(
     private bool _selectionChanged;
     private bool _layoutChanged;
     private ITfCompositionView* _view;
+    private bool _scopeRequested;
     private ImeAttributeRun[] _clauses = [];
 
     /// <summary>
@@ -393,6 +394,51 @@ internal sealed unsafe class TsfDocument(
     }
 
     /// <summary>
+    /// Takes the attributes the manager asks for (<c>RequestSupportedAttrs</c>, <c>RequestAttrsAtPosition</c>): the document has
+    /// the input scope alone, which <see cref="RetrieveRequestedAttrs"/> then gives.
+    /// </summary>
+    /// <param name="count">The number of attributes asked for.</param>
+    /// <param name="attributes">The attributes.</param>
+    /// <returns>The result.</returns>
+    public int RequestAttributes(uint count, Guid* attributes)
+    {
+        _scopeRequested = false;
+        for (uint i = 0; attributes is not null && i < count; i++)
+        {
+            if (attributes[i] == TsfInputScope.Attribute)
+            {
+                _scopeRequested = true;
+            }
+        }
+
+        return S.S_OK;
+    }
+
+    /// <summary>
+    /// Gives the attributes asked for (<c>ITextStoreACP2::RetrieveRequestedAttrs</c>, design §4.7, "The kinds of input"): the input
+    /// scope of the field's kind of input, as an <c>ITfInputScope</c> whose reference is the manager's.
+    /// </summary>
+    /// <param name="count">The room for values.</param>
+    /// <param name="values">The values.</param>
+    /// <param name="fetched">Receives how many were written.</param>
+    /// <returns>The result.</returns>
+    public int RetrieveRequestedAttrs(uint count, TS_ATTRVAL* values, uint* fetched)
+    {
+        *fetched = 0;
+        if (!_scopeRequested || count == 0 || values is null)
+        {
+            return S.S_OK;
+        }
+
+        values->idAttr = TsfInputScope.Attribute;
+        values->dwOverlapId = 0;
+        values->varValue.vt = (ushort)VARENUM.VT_UNKNOWN;
+        values->varValue.punkVal = TsfInputScope.Create(Client.Kind);
+        *fetched = 1;
+        return S.S_OK;
+    }
+
+    /// <summary>
     /// Answers the length of the text (<c>ITextStoreACP2::GetEndACP</c>).
     /// </summary>
     /// <param name="end">Receives it.</param>
@@ -505,7 +551,9 @@ internal sealed unsafe class TsfDocument(
     /// <param name="readOnly">The edit cookie to read with.</param>
     public void EndEdit(ITfContext* context, uint readOnly)
     {
-        if (!Composing || _view is null || Client.Composition is null)
+        // A composition over text that is there already (a reconversion) may start with no write, so the field is told of it here
+        // whether or not it composes yet.
+        if (!Composing || _view is null)
         {
             return;
         }

@@ -61,10 +61,20 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
         return input;
     }
 
+    /// <summary>
+    /// Gets or sets the touch keyboard of the window: the OS's <c>InputPane</c>, made the first time it is needed, or a test's.
+    /// </summary>
+    internal ITouchKeyboard? Keyboard { get; set; }
+
     /// <inheritdoc/>
-    public void Attach(ITextInputClient client)
+    public void Attach(ITextInputClient client, bool showKeyboard)
     {
-        Detach();
+        ReleaseAttached();
+        if (showKeyboard)
+        {
+            (Keyboard ??= InputPaneKeyboard.TryCreate(_window.Handle))?.Show();
+        }
+
         if (client.Kind == TextInputKind.Password)
         {
             // A hidden text shows nothing to an input method's windows (design §4.7, "Hidden and read-only fields").
@@ -105,15 +115,21 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
     /// <inheritdoc/>
     public void Detach()
     {
+        ReleaseAttached();
+        Off();
+        Keyboard?.Hide();
+    }
+
+    // The attached field's document, its composition committed, before another field's or none.
+    private void ReleaseAttached()
+    {
         if (_attached is not { } attached)
         {
-            Off();
             return;
         }
 
         CommitComposition();
         _attached = null;
-        Off();
         Release(attached);
     }
 
@@ -177,6 +193,8 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
             _ = _threads->Deactivate();
         }
 
+        (Keyboard as IDisposable)?.Dispose();
+        Keyboard = null;
         Com.Release(ref _displayAttributes);
         Com.Release(ref _categories);
         Com.Release(ref _threads);
