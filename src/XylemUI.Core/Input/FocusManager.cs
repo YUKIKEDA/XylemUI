@@ -45,6 +45,9 @@ internal sealed class FocusManager
     /// </summary>
     public NodeHandle Focused { get; private set; }
 
+    // The client of the text input attached to the tree's platform: the focused node's (design §4.7).
+    private ITextInputClient? _attached;
+
     /// <summary>
     /// Gets a value indicating whether the window is active. Only <see cref="SetActive"/> changes it: Core reads no state of the OS
     /// (design §12.4). A window is not active until the platform says so.
@@ -365,6 +368,7 @@ internal sealed class FocusManager
         try
         {
             Focused = default;
+            SyncTextInput();
             if (IsWindowActive)
             {
                 SetStates(focused, on: false, keepWithin: default);
@@ -431,6 +435,41 @@ internal sealed class FocusManager
         }
     }
 
+    /// <summary>
+    /// Attaches the focused node's client of the text input to the tree's platform, and detaches the one attached before, when
+    /// they differ (design §4.7): the client follows the focused node, kept while the window is not active, as the OS keeps a
+    /// window's input context. Detaching commits a composition first, before the old node's focus-out.
+    /// </summary>
+    public void SyncTextInput()
+    {
+        ITextInputClient? client = Tree.TextInputClientOf(Focused);
+        if (ReferenceEquals(client, _attached))
+        {
+            return;
+        }
+
+        DetachTextInput();
+        if (client is not null && Tree.TextInput is { } platform)
+        {
+            _attached = client;
+            platform.Attach(client);
+        }
+    }
+
+    /// <summary>
+    /// Detaches the client of the text input attached, if any.
+    /// </summary>
+    public void DetachTextInput()
+    {
+        if (_attached is null)
+        {
+            return;
+        }
+
+        _attached = null;
+        Tree.TextInput?.Detach();
+    }
+
     // The move itself: the states and the signals change first, then the old node gets its focus-out and the new one its focus-in,
     // while the window is active (Avalonia's KeyboardDevice: LostFocus, then GotFocus).
     private void MoveTo(NodeHandle node)
@@ -442,6 +481,7 @@ internal sealed class FocusManager
         }
 
         Focused = node;
+        SyncTextInput();
         if (!IsWindowActive)
         {
             return;

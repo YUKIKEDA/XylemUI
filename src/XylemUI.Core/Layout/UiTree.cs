@@ -57,6 +57,24 @@ internal sealed class UiTree
     internal IClipboardBackend? Clipboard { get; set; }
 
     /// <summary>
+    /// Gets the OS's input method (design §4.7); <see langword="null"/> for a tree no host gave one (<see cref="SetTextInput"/>),
+    /// where a text field takes the committed text of <see cref="TextInputEvent"/> alone (§4.9, "Before the IME").
+    /// </summary>
+    internal ITextInputPlatform? TextInput { get; private set; }
+
+    /// <summary>
+    /// Gives the tree the OS's input method, or takes it away: the one before loses the focused node's client, and the new one
+    /// gets it.
+    /// </summary>
+    /// <param name="platform">The input method; <see langword="null"/> for none.</param>
+    internal void SetTextInput(ITextInputPlatform? platform)
+    {
+        Focus.DetachTextInput();
+        TextInput = platform;
+        Focus.SyncTextInput();
+    }
+
+    /// <summary>
     /// Gets or sets the clock of the tree's window, which its frames read and a text field's caret blinks by (design §4.9, "The
     /// caret"): the window's frames set theirs; <see cref="TimeProvider.System"/> before.
     /// </summary>
@@ -890,6 +908,25 @@ internal sealed class UiTree
     /// </summary>
     /// <param name="node">The node.</param>
     public void SetUnselectable(NodeHandle node) => InputOf(node).Unselectable = true;
+
+    /// <summary>
+    /// Gives a node the client of the text input that the OS's input method reads while the node has the focus (design §4.7), or
+    /// takes it away.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="client">The client; <see langword="null"/> for none.</param>
+    internal void SetTextInputClient(NodeHandle node, ITextInputClient? client)
+    {
+        InputOf(node).TextInputClient = client;
+        Focus.SyncTextInput();
+    }
+
+    /// <summary>
+    /// Returns the client of the text input a node has (design §4.7).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The client; <see langword="null"/> for none.</returns>
+    internal ITextInputClient? TextInputClientOf(NodeHandle node) => Nodes.IsAlive(node) ? Nodes.GetRef(node).Input?.TextInputClient : null;
 
     /// <summary>
     /// Marks a node as a selection area (design §4.10), whose text leaves show the I-beam.

@@ -31,7 +31,7 @@ public static partial class Primitive
     }
 
     // One text field: its editor, the nodes that show it, and the caret's blink.
-    private sealed class TextFieldState(Signal<string> text, TextFieldOptions options)
+    private sealed class TextFieldState(Signal<string> text, TextFieldOptions options) : ITextInputClient
     {
         private const char Bullet = '●';
 
@@ -73,6 +73,23 @@ public static partial class Primitive
         // The display text of a hidden text, and where each of its clusters starts in the text.
         private string _shown = string.Empty;
         private int[] _clusterStarts = [];
+
+        // The composition of the OS's input method (design §4.7): its range in the text, its clauses with their looks, and the text
+        // and the selection it started from, which its commit is recorded against as one undo.
+        private (int Start, int End)? _composition;
+        private ImeAttributeRun[] _clauses = [];
+        private SpanStyle[] _clauseLooks = [];
+        private int _clauseCount;
+        private string _composeBase = string.Empty;
+        private TextSelection _composeBaseSelection;
+
+        // What the input method knows of the field, to tell it what changed without it: the text and the selection it saw last, and
+        // where the text was on the screen. A change the input method made itself is not told back.
+        private string _known = string.Empty;
+        private TextSelection _knownSelection;
+        private Vector2 _knownOrigin = new(float.NaN);
+        private bool _fromInputMethod;
+        private bool _layoutOwed;
 
         private bool Focused => _tree.Nodes.IsAlive(_field) && (_tree.Nodes.GetRef(_field).Pseudo & PseudoState.Focused) != 0;
 
@@ -136,6 +153,7 @@ public static partial class Primitive
                 string value = text.Get();
                 if (!_writing && value != _editor.Text)
                 {
+                    CommitComposition();
                     _editor.Reset(value);
                     Changed(selectionOnly: false);
                 }
@@ -147,12 +165,14 @@ public static partial class Primitive
                     TextSelection value = shared.Get();
                     if (!_writing && value != _editor.Selection)
                     {
+                        CommitComposition();
                         _editor.Select(value);
                         Changed(selectionOnly: true);
                     }
                 });
             }
 
+            _tree.SetTextInputClient(_field, this);
             Scope.OnCleanup(StopBlink);
             return field;
         }
@@ -186,7 +206,37 @@ public static partial class Primitive
         private void Write(ref NodeTextWriter writer)
         {
             _ = _version.Get();
-            writer.Write(Shown().AsSpan());
+            ReadOnlySpan<char> shown = Shown();
+            if (_composition is not { } composition || options.Password)
+            {
+                writer.Write(shown);
+                return;
+            }
+
+            // The text being composed, each clause in its look, between the text before it and after it (design §4.7).
+            int at = composition.Start;
+            writer.Write(shown[..at]);
+            for (int i = 0; i < _clauseCount; i++)
+            {
+                int start = Math.Clamp(composition.Start + _clauses[i].Start, at, composition.End);
+                int end = Math.Clamp(composition.Start + _clauses[i].End, start, composition.End);
+                writer.Write(shown[at..start]);
+                using (writer.Style(_clauseLooks[i]))
+                {
+                    writer.Write(shown[start..end]);
+                }
+
+                at = end;
+            }
+
+            writer.Write(shown[at..]);
+        }
+
+        // The look of a clause: its underline (thick twice the normal, a clause's, design §4.7) and its text's color.
+        private static SpanStyle LookOf(in ImeAttributeRun clause)
+        {
+            TextDecoration? underline = clause.Line is { } line ? TextDecoration.Clause(line, clause.LineColor, clause.Thick ? 2 : 1) : null;
+            return new SpanStyle(Color: clause.TextColor, Decoration: underline);
         }
 
         // The selection the leaf draws: the field's while it has the focus and the selection holds text, none otherwise (design §4.9,
@@ -270,6 +320,16 @@ public static partial class Primitive
             }
 
             PaintSelection();
+            TellInputMethod();
+
+            // The signals take committed text only: the text being composed is the field's until its commit (as Avalonia keeps it
+            // in PreeditText, out of Text).
+            if (_composition is not null)
+            {
+                RestartBlink();
+                return;
+            }
+
             _writing = true;
             try
             {
@@ -284,10 +344,58 @@ public static partial class Primitive
             RestartBlink();
         }
 
+        // Tells the input method what changed without it, as the change between the text and the selection it saw last and the
+        // ones now (design §4.7, "What the app tells the OS"). A change it made itself is not told back.
+        private void TellInputMethod()
+        {
+            string now = _editor.Text;
+            TextSelection selection = _editor.Selection;
+            if (!_fromInputMethod && Focused && _tree.TextInput is { } platform)
+            {
+                if (!ReferenceEquals(now, _known) && now != _known)
+                {
+                    int prefix = now.AsSpan().CommonPrefixLength(_known);
+                    int rest = Math.Min(now.Length, _known.Length) - prefix;
+                    int suffix = 0;
+                    while (suffix < rest && now[^(suffix + 1)] == _known[^(suffix + 1)])
+                    {
+                        suffix++;
+                    }
+
+                    platform.TextChanged(prefix, _known.Length - suffix, now.Length - suffix);
+                }
+
+                if (selection != _knownSelection)
+                {
+                    platform.SelectionChanged();
+                }
+            }
+
+            _known = now;
+            _knownSelection = selection;
+        }
+
+        // Asks the input method to commit what it composes, before the app or the user changes the text or the selection: the
+        // input method ends the composition before it returns (design §4.7, "The focus and the app's writes").
+        private void CommitComposition()
+        {
+            if (_composition is null)
+            {
+                return;
+            }
+
+            _tree.TextInput?.CommitComposition();
+            if (_composition is not null)
+            {
+                ((ITextInputClient)this).EndComposition();
+            }
+        }
+
         // The caret, over the text: its geometry from the leaf's lines, at the width Windows asks for, while the field has the focus,
         // the selection is collapsed, and the blink shows it. The field scrolls to keep it in view.
         private void DrawCaret(DrawingContext context, Rect bounds)
         {
+            TellLayout();
             if (!Focused || !_editor.Selection.IsCollapsed || !CaretRect(out Rect caret))
             {
                 return;
@@ -406,7 +514,14 @@ public static partial class Primitive
                 return;
             }
 
-            // The selection stays, not drawn (design §4.9, "Drawing the selection").
+            // A composition the input method left when the focus moved away is committed (design §4.7); a window that stops being
+            // active keeps it, as the OS keeps the window's input context. The selection stays, not drawn (design §4.9, "Drawing
+            // the selection").
+            if (_composition is not null && _tree.Focus.Focused != _field)
+            {
+                ((ITextInputClient)this).EndComposition();
+            }
+
             StopBlink();
             _dragging = false;
             PaintSelection();
@@ -421,6 +536,12 @@ public static partial class Primitive
             }
 
             e.StopPropagation();
+            if (_composition is not null)
+            {
+                // The input method takes the keys while it composes (design §4.7, "The keys while composing").
+                return;
+            }
+
             if (_editor.Type(e.Text, e.Timestamp))
             {
                 _preferredX = null;
@@ -432,6 +553,13 @@ public static partial class Primitive
         {
             if (e.TargetNode != _field || e.PrefersCharacter)
             {
+                return;
+            }
+
+            if (_composition is not null)
+            {
+                // The keys while composing are the input method's, not the field's commands (design §4.7).
+                e.StopPropagation();
                 return;
             }
 
@@ -707,6 +835,8 @@ public static partial class Primitive
                 return;
             }
 
+            // A press commits a composition before it moves the caret (design §4.7, "The focus and the app's writes").
+            CommitComposition();
             int offset = OffsetAt(e.LocalPosition);
             int clicks = e.ClickCount;
             bool extend = (e.Modifiers & KeyModifiers.Shift) != 0;
@@ -774,6 +904,203 @@ public static partial class Primitive
 
             return TextUnits.ParagraphAt(_editor.Text, offset);
         }
+
+        // Tells the input method that the text moved on the screen: the field's box or its scroll moved since it was told last, or
+        // it asked for a box before the text was laid out (design §4.7, "What the app tells the OS"). It runs at each display list,
+        // after the frame's layout.
+        private void TellLayout()
+        {
+            if (!Focused || _tree.TextInput is not { } platform)
+            {
+                _knownOrigin = new Vector2(float.NaN);
+                return;
+            }
+
+            Vector2 origin = WindowOrigin(_caret);
+            if (origin != _knownOrigin || _layoutOwed)
+            {
+                bool told = !float.IsNaN(_knownOrigin.X) || _layoutOwed;
+                _knownOrigin = origin;
+                _layoutOwed = false;
+                if (told)
+                {
+                    platform.LayoutChanged();
+                }
+            }
+        }
+
+        // A node's origin in the window's logical pixels: its layout box, moved by the scroll of the boxes it is in.
+        private Vector2 WindowOrigin(NodeHandle node)
+        {
+            Rect rect = _tree.Nodes.GetRef(node).Layout.Rect;
+            var point = new Vector2(rect.X, rect.Y);
+            for (NodeHandle parent = _tree.Nodes.GetRef(node).Parent; !parent.IsNone; parent = _tree.Nodes.GetRef(parent).Parent)
+            {
+                Rect box = _tree.Nodes.GetRef(parent).Layout.Rect;
+                point += new Vector2(box.X, box.Y) - _tree.ScrollOffsetOf(parent);
+            }
+
+            return point;
+        }
+
+        int ITextInputClient.Length => _editor.Text.Length;
+
+        TextSelection ITextInputClient.Selection => _editor.Selection;
+
+        void ITextInputClient.Select(TextSelection selection)
+        {
+            int length = _editor.Text.Length;
+            _editor.Select(new TextSelection(Math.Clamp(selection.Anchor, 0, length), Math.Clamp(selection.Caret, 0, length)));
+            FromInputMethod(selectionOnly: true);
+        }
+
+        (int Start, int End)? ITextInputClient.Composition => _composition;
+
+        bool ITextInputClient.ReadOnly => options.ReadOnly;
+
+        TextInputKind ITextInputClient.Kind => options.Password ? TextInputKind.Password : TextInputKind.Text;
+
+        void ITextInputClient.CopyText(int start, Span<char> into)
+        {
+            string value = _editor.Text;
+            start = Math.Clamp(start, 0, value.Length);
+            value.AsSpan(start, Math.Min(into.Length, value.Length - start)).CopyTo(into);
+        }
+
+        bool ITextInputClient.BoundsOf(int start, int end, out Rect bounds)
+        {
+            if (!LaidOut(out TextLeaf leaf))
+            {
+                // The input method asks again when the field tells it the layout is there (TSF's TS_E_NOLAYOUT).
+                _layoutOwed = true;
+                bounds = default;
+                return false;
+            }
+
+            int length = _editor.Text.Length;
+            Rect first = TextCaret.CaretGeometry(leaf, ToShown(Math.Clamp(start, 0, length)), Affinity.Downstream).Rect;
+            Rect last = TextCaret.CaretGeometry(leaf, ToShown(Math.Clamp(end, 0, length)), Affinity.Upstream).Rect;
+            Vector2 origin = WindowOrigin(_caret) + LeafOrigin();
+            float left = Math.Min(first.X, last.X);
+            float top = Math.Min(first.Y, last.Y);
+            float right = Math.Max(first.X + first.Width, last.X + last.Width);
+            float bottom = Math.Max(first.Y + first.Height, last.Y + last.Height);
+            bounds = new Rect(origin.X + left, origin.Y + top, Math.Max(right - left, 1), bottom - top);
+            return true;
+        }
+
+        void ITextInputClient.Replace(int start, int end, ReadOnlySpan<char> value)
+        {
+            if (options.ReadOnly)
+            {
+                return;
+            }
+
+            int length = _editor.Text.Length;
+            start = Math.Clamp(start, 0, length);
+            end = Math.Clamp(end, start, length);
+            string inserted = value.ToString();
+            if (_composition is { } composition)
+            {
+                // Committed text that comes inside a composition is the composition's, recorded when it ends.
+                int from = Math.Min(start, composition.Start);
+                int to = Math.Max(end, composition.End) - (end - start) + inserted.Length;
+                _editor.Compose(start, end, inserted, start + inserted.Length);
+                _composition = (from, Math.Max(from, to));
+                _clauseCount = 0;
+                FromInputMethod(selectionOnly: false);
+                return;
+            }
+
+            if (_editor.ReplaceRange(start, end, inserted, Now()))
+            {
+                _preferredX = null;
+
+                // Text the maximum length cut is told back, as a commit's is.
+                if (_editor.Text.Length != length - (end - start) + inserted.Length)
+                {
+                    Changed(selectionOnly: false);
+                }
+                else
+                {
+                    FromInputMethod(selectionOnly: false);
+                }
+            }
+        }
+
+        void ITextInputClient.Compose(int start, int end, ReadOnlySpan<char> value, int cursor, ReadOnlySpan<ImeAttributeRun> clauses)
+        {
+            if (options.ReadOnly)
+            {
+                return;
+            }
+
+            if (_composition is null)
+            {
+                _composeBase = _editor.Text;
+                _composeBaseSelection = _editor.Selection;
+            }
+
+            int length = _editor.Text.Length;
+            start = Math.Clamp(start, 0, length);
+            end = Math.Clamp(end, start, length);
+            _editor.Compose(start, end, value.ToString(), start + Math.Clamp(cursor, 0, value.Length));
+            _composition = (start, start + value.Length);
+            if (_clauses.Length < clauses.Length)
+            {
+                _clauses = new ImeAttributeRun[clauses.Length];
+                _clauseLooks = new SpanStyle[clauses.Length];
+            }
+
+            _clauseCount = clauses.Length;
+            for (int i = 0; i < clauses.Length; i++)
+            {
+                _clauses[i] = clauses[i];
+                _clauseLooks[i] = LookOf(clauses[i]);
+            }
+
+            _preferredX = null;
+            FromInputMethod(selectionOnly: false);
+        }
+
+        void ITextInputClient.EndComposition()
+        {
+            if (_composition is null)
+            {
+                return;
+            }
+
+            _composition = null;
+            _clauseCount = 0;
+            bool cut = _editor.EndComposition(_composeBase, _composeBaseSelection, Now());
+            _composeBase = string.Empty;
+
+            // A commit the maximum length cut is told back: the input method's copy holds what it composed (design §4.7).
+            if (cut)
+            {
+                Changed(selectionOnly: false);
+            }
+            else
+            {
+                FromInputMethod(selectionOnly: false);
+            }
+        }
+
+        // A change the input method made, which is not told back to it.
+        private void FromInputMethod(bool selectionOnly)
+        {
+            _fromInputMethod = true;
+            try
+            {
+                Changed(selectionOnly);
+            }
+            finally
+            {
+                _fromInputMethod = false;
+            }
+        }
+
+        private TimeSpan Now() => _tree.Time.GetElapsedTime(0);
 
         // The caret shows again, and blinks from there at Windows' interval while the field has the focus.
         private void RestartBlink()
