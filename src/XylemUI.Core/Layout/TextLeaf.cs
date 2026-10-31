@@ -42,6 +42,12 @@ internal sealed class TextLeaf
     public Color? Color { get; set; }
 
     /// <summary>
+    /// Gets or sets the selection the leaf draws (design §4.10, "Drawing"); <see langword="null"/> until the leaf is first
+    /// selected. It is no part of <see cref="Style"/>: the layout does not read it.
+    /// </summary>
+    public LeafSelection? Selection { get; set; }
+
+    /// <summary>
     /// Gets or sets the padding and border widths the leaf's last layout run resolved, in logical pixels: the draw stage places the
     /// lines in the content box, the border box less them, and does not resolve the style again (design §5.0, "The draw stage and
     /// the frame drive"). Only a text leaf keeps them, so that no other node grows by them.

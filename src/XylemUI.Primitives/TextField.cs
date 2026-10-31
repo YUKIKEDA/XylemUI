@@ -179,35 +179,26 @@ public static partial class Primitive
             return shown;
         }
 
-        // The text the leaf shows, with the selection's colors over the selected part while the field has the focus.
+        // The text the leaf shows, written again after each edit; the selection is the leaf's own (design §4.10, "Drawing").
         private void Write(ref NodeTextWriter writer)
         {
             _ = _version.Get();
-            string shown = Shown();
+            writer.Write(Shown().AsSpan());
+        }
+
+        // The selection the leaf draws: the field's while it has the focus and the selection holds text, none otherwise (design §4.9,
+        // "Drawing the selection").
+        private void PaintSelection()
+        {
             TextSelection selection = _editor.Selection;
-            if (!Focused || selection.IsCollapsed)
-            {
-                writer.Write(shown.AsSpan());
-                return;
-            }
-
-            int start = ToShown(selection.Start);
-            int end = ToShown(selection.End);
-            TextEditingSettings settings = _tree.TextEditing;
-            writer.Write(shown.AsSpan(0, start));
-            using (
-                writer.Style(
-                    new SpanStyle(
-                        Color: options.SelectionForeground ?? settings.SelectionForeground,
-                        Background: options.SelectionBackground ?? settings.SelectionBackground
-                    )
-                )
-            )
-            {
-                writer.Write(shown.AsSpan(start, end - start));
-            }
-
-            writer.Write(shown.AsSpan(end));
+            bool shown = Focused && !selection.IsCollapsed;
+            _tree.SetTextSelection(
+                _leaf,
+                shown ? ToShown(selection.Start) : 0,
+                shown ? ToShown(selection.End) : 0,
+                options.SelectionBackground,
+                options.SelectionForeground
+            );
         }
 
         // The text on the screen: the text itself, or one bullet for each cluster of a hidden text.
@@ -259,8 +250,8 @@ public static partial class Primitive
             return _clusterStarts[Math.Clamp(offset, 0, _clusterStarts.Length - 1)];
         }
 
-        // After an edit or a move: the leaf writes again, the placeholder follows the text, the signals take the values, and the caret
-        // shows and blinks again.
+        // After an edit or a move: after an edit, the leaf writes again and the placeholder follows the text; the leaf's selection
+        // follows the field's, the signals take the values, and the caret shows and blinks again.
         private void Changed(bool selectionOnly)
         {
             if (!selectionOnly)
@@ -271,9 +262,11 @@ public static partial class Primitive
                 {
                     _tree.SetStyle(_placeholder, _tree.Nodes.GetRef(_placeholder).Layout.Style with { Hidden = _editor.Text.Length > 0 });
                 }
+
+                _version.Set(_version.Peek() + 1);
             }
 
-            _version.Set(_version.Peek() + 1);
+            PaintSelection();
             _writing = true;
             try
             {
@@ -413,7 +406,8 @@ public static partial class Primitive
             // The selection stays, not drawn (design §4.9, "Drawing the selection").
             StopBlink();
             _dragging = false;
-            _version.Set(_version.Peek() + 1);
+            PaintSelection();
+            Invalidation.Invalidate(_tree, _caret, ChangeKind.Color);
         }
 
         private void TextInput(in TextInputEvent e)
