@@ -28,6 +28,7 @@ These rules come from the shape of Cysharp's R3, ZLinq, ZString, MemoryPack, and
 
 - Work that can be refused is done after it is accepted. T9's rasterizer scaled a PNG glyph in `Measure`, so it scaled glyphs the atlas then refused as larger than a plot; it now scales in `Rasterize`, into the atlas (PR #212 review).
 - An unsigned integer becomes a `float` through `int` (`(float)(int)value`) where the value fits: x64 has no instruction from an unsigned integer to a float. In T9's scaler, scaling 136 x 128 to 15 x 15 went from 53 µs to 38 µs (PR #212, found in a profile).
+- A cache is keyed on a number that changes only when what the cached value reads changes. P02b's text field stacked its lines' tops again on a version that each move of the caret also raised, more often than its PR said; it now keys them on the count of the text's edits (PR #489).
 
 ## Collections of subscribers and handles
 
