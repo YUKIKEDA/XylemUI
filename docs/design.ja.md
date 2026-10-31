@@ -2642,7 +2642,9 @@ public readonly record struct TextSelection(int Anchor, int Caret)   // UTF-16 �
 {
     public int Start { get; }
     public int End { get; }
+    public int Length { get; }
     public bool IsCollapsed { get; }
+    public static TextSelection Collapsed(int offset);
 }
 
 public readonly struct TextInputEvent   // §7 の統一イベント
@@ -2696,7 +2698,7 @@ public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
 | Ctrl+V・Shift+Insert | 貼り付け |
 | Ctrl+Z | 元に戻す |
 | Ctrl+Y・Ctrl+Shift+Z | やり直す |
-| Enter | 1 行の欄: `OnSubmit` があれば今の文字で呼んで止める。無ければ止めない。複数行の欄: 改行を入れる |
+| Enter | 1 行の欄: `OnSubmit` があれば今の文字で呼んで止める。無ければ止めない。Shift+Enter は止めない。複数行の欄: Enter と Shift+Enter で改行を入れる（Avalonia の `TextBox.cs` 1700 行目は修飾キーを見ず、zed は `default-windows.json` 131〜132 行目）。Ctrl+Enter は止めない（zed でも場所ごとに違う。133 行目は下に行を足し、381 行目は送信） |
 
 - 命令にしたキーは止める（§7 の `StopPropagation`）。命令にしないキーは止めないので、Tab のフォーカスの移動（§7.1）とスクロールのキー（§7 の既定の動作）は欄の外へ届く
 - Enter で、フォーカスは欄に残す。Flutter の 1 行の欄は `onSubmitted` を呼んでフォーカスを手放す（`editable_text.dart` 3738〜3763 行目）が、Avalonia は `AcceptsReturn` でなければ Enter を扱わずに親へ送り、zed の 1 行の編集は `menu::Confirm` へ渡す（`assets/keymaps/default-windows.json` 18 行目）。Todo で続けて項目を足すには、フォーカスが残るほうがよい
@@ -2712,7 +2714,7 @@ public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
 
 **選択の描き方とフォーカス:**
 
-- 選択は行ごとの矩形で、文字の後ろに塗る。既定の色は背景が `COLOR_HIGHLIGHT`、選択した文字が `COLOR_HIGHLIGHTTEXT`（`GetSysColor`、`WM_SYSCOLORCHANGE` で読み直す）。Avalonia も矩形を先に塗ってから文字を描き（`TextPresenter.cs` 423〜449 行目）、選択した文字の色を `SelectionForegroundBrush` で変えられる（同じファイルの 593〜601 行目）。Windows の選択色は濃いので、文字の色を変えないと読みにくい
+- 選択は行ごとの矩形で、文字の後ろに塗る。欄は、フォーカスがある間、選択した範囲を範囲のスタイル（§4.8 の `SpanStyle` の `Background` と `Color`）で書き直すので、範囲の背景が行ごとに文字の後ろに描かれる。既定の色は背景が `COLOR_HIGHLIGHT`、選択した文字が `COLOR_HIGHLIGHTTEXT`（`GetSysColor`、`WM_SYSCOLORCHANGE` で読み直す）。Avalonia も矩形を先に塗ってから文字を描き（`TextPresenter.cs` 423〜449 行目）、選択した文字の色を `SelectionForegroundBrush` で変えられる（同じファイルの 593〜601 行目）。Windows の選択色は濃いので、文字の色を変えないと読みにくい
 - 選択が空でない間は、キャレットを描かない（Avalonia、`TextPresenter.cs` 450〜453 行目）
 - フォーカスを失っても選択は消さず、フォーカスの無い間は選択もキャレットも描かない。Flutter はフォーカスの変化で選択に触れない（`editable_text.dart` 4939〜4961 行目）。Avalonia は既定で選択を消す（`ClearSelectionOnLostFocus`、`TextBox.cs` 66〜67・1153〜1166 行目）
 - 1 行の欄は、フォーカスを得ると全体を選ぶ。複数行の欄は選択を変えない。Flutter のデスクトップと同じである（`selectAllOnFocus`、`editable_text.dart` 1824〜1832・2115〜2125・4963〜4983 行目）。クリックで得たときは、その後のクリックの処理がキャレットを置き直す
@@ -4621,7 +4623,7 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c。タッチパッドのパンの PanStart・PanUpdate・PanEnd も、I1c でここから入れる）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02a で、この入口の薄い包みとして入れる。
 
-**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）と、メモリに持つクリップボード `app.Clipboard` を足す（§4.9）。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
+**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）、メモリに持つクリップボード `app.Clipboard`、`app.Pointer.Down` のクリックの回数（`clickCount`、ダブルクリックとトリプルクリック）を足す（§4.9）。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
 
 **IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 

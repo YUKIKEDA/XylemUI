@@ -6,4 +6,8 @@
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The text field's editing model is tested apart from its nodes (design §4.9, row P02b). -->
+    <InternalsVisibleTo Include="XylemUI.Primitives.Tests" />
+  </ItemGroup>
 </Project>

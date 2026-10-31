@@ -18,6 +18,9 @@
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
     <!-- The goldens of the headless tests are read with the PNG decoder (design §12.3, row P02a2). -->
     <InternalsVisibleTo Include="XylemUI.Testing" />
+    <!-- A text field moves by grapheme cluster and by word, and cuts a pasted text at its first line break (design §4.9, row P02b). -->
+    <InternalsVisibleTo Include="XylemUI.Primitives" />
+    <InternalsVisibleTo Include="XylemUI.Primitives.Tests" />
   </ItemGroup>
   <!-- The end of the font fallback (design §4.5, Fonts/README.md). -->
   <ItemGroup>

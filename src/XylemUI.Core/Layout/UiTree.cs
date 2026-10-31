@@ -57,6 +57,12 @@ internal sealed class UiTree
     internal IClipboardBackend? Clipboard { get; set; }
 
     /// <summary>
+    /// Gets or sets the clock of the tree's window, which its frames read and a text field's caret blinks by (design §4.9, "The
+    /// caret"): the window's frames set theirs; <see cref="TimeProvider.System"/> before.
+    /// </summary>
+    internal TimeProvider Time { get; set; } = TimeProvider.System;
+
+    /// <summary>
     /// Gets the OS's settings text fields draw their caret and selection with (design §4.9).
     /// </summary>
     internal TextEditingSettings TextEditing { get; private set; } = TextEditingSettings.Default;

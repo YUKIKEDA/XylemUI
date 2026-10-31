@@ -56,10 +56,13 @@ public sealed class HeadlessPointer
     /// </summary>
     /// <param name="button">The button.</param>
     /// <param name="modifiers">The modifier keys held.</param>
-    public void Down(PointerButton button = PointerButton.Left, KeyModifiers modifiers = KeyModifiers.None)
+    /// <param name="clickCount">The presses of the same button in a row this one is, as the OS counts them within its double-click
+    /// time: 2 for a double click, 3 for a triple click (a text field's word and line, design §4.9).</param>
+    public void Down(PointerButton button = PointerButton.Left, KeyModifiers modifiers = KeyModifiers.None, int clickCount = 1)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(clickCount, 1);
         _buttons |= Bit(button);
-        Send(PointerInputKind.Down, button, modifiers, clickCount: 1);
+        Send(PointerInputKind.Down, button, modifiers, clickCount);
     }
 
     /// <summary>

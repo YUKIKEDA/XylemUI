@@ -71,6 +71,7 @@ internal sealed partial class WindowFrames
         ClearColor = clearColor;
         _textRendering = CheckTextRendering(textRendering ?? TextRenderingParameters.Default, nameof(textRendering));
         _time = time ?? TimeProvider.System;
+        tree.Time = _time;
         _runFrame = RunFrame;
         tree.FrameNeeded = RequestFrame;
     }

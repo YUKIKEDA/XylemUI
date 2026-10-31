@@ -88,6 +88,37 @@ public sealed class UnicodeConformanceTests
     }
 
     /// <summary>
+    /// Walked back from the end of one line of GraphemeBreakTest.txt, the cluster boundaries are the ones it marks.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - One line of the Unicode 18.0.0 GraphemeBreakTest.txt.
+    ///
+    /// Steps:
+    /// - Make the UTF-16 text of the code points; walk its clusters with Graphemes.PreviousBoundary from the end.
+    ///
+    /// Expected:
+    /// - The positions reached are the ÷ positions of the line, in the other order.
+    /// </remarks>
+    /// <param name="line">The line number, for the report.</param>
+    /// <param name="data">The line.</param>
+    [Theory]
+    [MemberData(nameof(GraphemeCases))]
+    public void Graphemes_WalkedBack_HasTheLinesBoundaries(int line, string data)
+    {
+        (string text, List<int> expected) = Parse(data);
+        var back = new List<int> { text.Length };
+        for (int position = text.Length; position > 0; )
+        {
+            position = Graphemes.PreviousBoundary(text, position);
+            back.Add(position);
+        }
+
+        back.Reverse();
+        Assert.True(expected.SequenceEqual(back), $"line {line}: expected [{string.Join(", ", expected)}], got [{string.Join(", ", back)}]");
+    }
+
+    /// <summary>
     /// The word boundaries of one line of WordBreakTest.txt are the ones it marks, walked forward and back.
     /// </summary>
     /// <remarks>
