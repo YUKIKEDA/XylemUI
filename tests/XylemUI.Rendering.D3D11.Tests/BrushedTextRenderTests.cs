@@ -145,13 +145,7 @@ public sealed unsafe class BrushedTextRenderTests(UiThreadFixture ui)
             }
 
             int growth = list.GrowthCount;
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++)
-            {
-                Frame();
-            }
-
-            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+            PerformanceAssert.DoesNotAllocate(100, _ => Frame());
             Assert.Equal(growth, list.GrowthCount);
         });
 

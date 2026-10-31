@@ -287,10 +287,11 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
     /// - A hidden window with a fake viewport, warmed by one round.
     ///
     /// Steps:
-    /// - 1,000 rounds of a start, 4 translations, an end, and an update of the gestures.
+    /// - 1,000 rounds through PerformanceAssert.DoesNotAllocate of a start, 4 translations, an end, and an update of the gestures.
     ///
     /// Expected:
-    /// - No bytes were allocated, and 6,000 inputs were delivered.
+    /// - No bytes were allocated, and 6 inputs were delivered for each round the helper ran (its unmeasured window and any window it
+    ///   ran again included).
     /// </remarks>
     [Fact]
     public void SteadyState_UpdateGestures_AllocatesNothing() =>
@@ -315,13 +316,8 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
 
             Round();
             inputs = 0;
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 1_000; i++)
-            {
-                Round();
-            }
-
-            Assert.Equal((0L, 6_000), (GC.GetAllocatedBytesForCurrentThread() - before, inputs));
+            int runs = PerformanceAssert.DoesNotAllocate(1_000, _ => Round());
+            Assert.Equal(6 * runs, inputs);
         });
 
     /// <summary>

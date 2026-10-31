@@ -153,6 +153,8 @@ public sealed class BitmapGlyphTests
     /// Steps:
     /// - Get "H" at 5,000 px from the atlas, measuring the bytes allocated on this thread; measure "H" at 10,000,000 px as a color
     ///   key.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: the check is a bound on what one
+    ///   call allocates, not a steady state that allocates nothing.
     ///
     /// Expected:
     /// - The atlas refuses it (larger than a plot) and less than 1 MB is allocated (at 5,000 px the 64 ppem strike, 51 pixels, is

@@ -369,15 +369,10 @@ public sealed unsafe class GlyphRenderTests(UiThreadFixture ui)
 
             int rasterized = atlas.RasterizeCount;
             int growth = list.GrowthCount;
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++)
-            {
-                TextFrame(renderer, atlas, list, font, shaper, i, coverage, aliased);
-            }
 
-            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-            Assert.Equal(0, allocated);
+            // The helper hands its unmeasured window negative indices; the shift keeps the frames' coordinates in the warm-up's
+            // cycle.
+            PerformanceAssert.DoesNotAllocate(100, i => TextFrame(renderer, atlas, list, font, shaper, i + 1_000, coverage, aliased));
             Assert.Equal(rasterized, atlas.RasterizeCount);
             Assert.Equal(growth, list.GrowthCount);
             Assert.True(coverage == GlyphCoverage.Rgb || renderer.LastDrawCount == 1, $"{renderer.LastDrawCount} draws.");

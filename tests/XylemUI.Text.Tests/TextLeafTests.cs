@@ -387,6 +387,8 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     ///
     /// Steps:
     /// - Measure the bytes allocated while a second leaf of "日本語のテキスト" is created, given its text, appended, and laid out.
+    /// - The bytes are counted with GC.GetAllocatedBytesForCurrentThread, not PerformanceAssert: the check is what a first
+    ///   measurement allocates against a formula, not a steady state that allocates nothing.
     ///
     /// Expected:
     /// - n = g = 8 and r = L = e = 1 (the formula's terms, read from the leaf); the bytes are at most the formula for its
@@ -443,8 +445,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     ///
     /// Steps:
     /// - 200 layouts alternating 120 and 90 wide (cached widths), and 200 cycling through 6 widths from 60 to 160 (more than 4:
-    ///   every layout overwrites an entry). Run both to warm up until a run of both allocates nothing (10 runs at most), then
-    ///   again, measuring the bytes allocated.
+    ///   every layout overwrites an entry). Run both 10 times to warm up, then each through PerformanceAssert.DoesNotAllocate.
     ///
     /// Expected:
     /// - 0 bytes in each loop.
@@ -465,18 +466,24 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             float[] cycling = [60, 80, 100, 120, 140, 160];
 
             // An entry grows its arrays the first time it holds a width of more lines than before, and which entry holds which width
-            // depends on the order of the layouts before. So the warm-up runs both loops, as they are measured, until a run of
-            // both allocates nothing.
+            // depends on the order of the layouts before. So the warm-up runs both loops, as they are measured, 10 times: the most
+            // the check before PerformanceAssert ran them to reach a run that allocated nothing.
             for (int warm = 0; warm < 10; warm++)
             {
-                if (Allocated(tree, root, 200, i => cached[i % 2]) + Allocated(tree, root, 200, i => cycling[i % 6]) == 0)
+                for (int i = 0; i < 200; i++)
                 {
-                    break;
+                    LayOut(tree, root, cached[i % 2]);
+                }
+
+                for (int i = 0; i < 200; i++)
+                {
+                    LayOut(tree, root, cycling[i % 6]);
                 }
             }
 
-            Assert.Equal(0, Allocated(tree, root, 200, i => cached[i % 2]));
-            Assert.Equal(0, Allocated(tree, root, 200, i => cycling[i % 6]));
+            // The helper hands its unmeasured window negative indices; the shift keeps them in the widths' cycles.
+            PerformanceAssert.DoesNotAllocate(200, i => LayOut(tree, root, cached[(i + 1_200) % 2]));
+            PerformanceAssert.DoesNotAllocate(200, i => LayOut(tree, root, cycling[(i + 1_200) % 6]));
         });
 
     /// <summary>
@@ -541,17 +548,6 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             int runs = PerformanceAssert.DoesNotAllocate(200, _ => Frame());
             Assert.Equal(presents + runs, target.Presents);
         });
-
-    private static long Allocated(UiTree tree, NodeHandle root, int layouts, Func<int, float> width)
-    {
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < layouts; i++)
-        {
-            LayOut(tree, root, width(i));
-        }
-
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
 
     private static TextStyle Style(float lineHeight = float.NaN) => new(FontRequest.Default, Size, TestFont.Japanese, lineHeight);
 

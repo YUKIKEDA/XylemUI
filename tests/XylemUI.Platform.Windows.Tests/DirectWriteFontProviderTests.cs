@@ -217,13 +217,7 @@ public sealed class DirectWriteFontProviderTests(UiThreadFixture ui)
                 FontFallback.Split(provider, text, Japanese, FontRequest.Default, runs);
             }
 
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 1_000; i++)
-            {
-                FontFallback.Split(provider, text, Japanese, FontRequest.Default, runs);
-            }
-
-            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+            PerformanceAssert.DoesNotAllocate(1_000, _ => FontFallback.Split(provider, text, Japanese, FontRequest.Default, runs));
         });
 
     private static void SkipWithout(string family)
