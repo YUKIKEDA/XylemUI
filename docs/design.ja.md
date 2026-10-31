@@ -1748,7 +1748,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 **スレッド:** アニメーションは UI スレッドだけで動かす。Flutter はアニメーションを UI の isolate で進め（`docs/about/The-Engine-architecture.md` 149〜180 行目）、GPUI も UI スレッドで動かす。Avalonia の Composition アニメーションは描画スレッドで動くが、描画スレッドの側にビジュアルの木を持つ別の層の仕組みである。XylemUI は木を 1 つだけ持って毎フレーム描き直す（§5.0.1）ので、描画スレッドに写しを持たない。
 
-**フレームの時計:** 動いているアニメーション（遷移・外から動かすもの・`Show` の動き）は、ウィンドウごとの一覧に入る。フレームの初め（layout の前）に、フレームの時刻（`WindowFrames.FrameTime`、`TimeProvider` から読む、§2.11）で一覧を進める。一覧に何かがある間だけ次のフレームを予約し、空になれば予約しない（§2.11 の「アニメーション実行中」）。Flutter の `Ticker` は動いている間だけフレームのコールバックを登録し直し（`packages/flutter/lib/src/scheduler/ticker.dart` 272〜304 行目）、Avalonia の時計は購読がある間だけ描画を予約し（`src/Avalonia.Base/Media/MediaContext.Clock.cs` 31〜42 行目）、GPUI は終わるまで `request_animation_frame` を呼ぶ（`crates/gpui/src/elements/animation.rs` 451〜469 行目）。3 つとも、時刻はフレームの時刻で、壁の時計ではない。`PumpAndSettle` は、この一覧が空になるまで回す（§12.2 の 2 つ目の項目）。
+**フレームの時計:** 動いているアニメーション（遷移・外から動かすもの・`Show` の動き・選択のドラッグでのスクロール（§4.10））は、ウィンドウごとの一覧に入る。フレームの初め（layout の前）に、フレームの時刻（`WindowFrames.FrameTime`、`TimeProvider` から読む、§2.11）で一覧を進める。一覧に何かがある間だけ次のフレームを予約し、空になれば予約しない（§2.11 の「アニメーション実行中」）。Flutter の `Ticker` は動いている間だけフレームのコールバックを登録し直し（`packages/flutter/lib/src/scheduler/ticker.dart` 272〜304 行目）、Avalonia の時計は購読がある間だけ描画を予約し（`src/Avalonia.Base/Media/MediaContext.Clock.cs` 31〜42 行目）、GPUI は終わるまで `request_animation_frame` を呼ぶ（`crates/gpui/src/elements/animation.rs` 451〜469 行目）。3 つとも、時刻はフレームの時刻で、壁の時計ではない。`PumpAndSettle` は、この一覧が空になるまで回す（§12.2 の 2 つ目の項目）。
 
 **途中で目標が変わったとき:** 遷移は、今出ている値から新しい目標へ、長さを初めからにして進み直す。速度は引き継がない。Flutter の implicit アニメーションと Avalonia の Transition が同じ動きである（上の引用の行）。速度を引き継ぐのはバネだけで、`Fling` の途中で目標が変わっても、そのときの位置と速度から新しい目標へ向かう（GPUI の `SpringAnimationElement` と同じ）。
 
@@ -2791,7 +2791,7 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 
 - 領域は 1 つの選択を持ち、押されるとフォーカスを取る（§7「押したときのフォーカス」）。選択の中身を外から読む API（Flutter の `onSelectionChanged`）は、使う場面がまだ無いので持たない
 - **加わる葉:** 領域の中の文字の葉のうち、`.Unselectable()` の部分木の中に無いもの。`.Unselectable()` は Flutter の `SelectionContainer.disabled`（`widgets/selection_container.dart` 65〜66 行目）に当たる。欄（§4.9）の文字は加わらない。欄は自分の選択を持ち、Flutter の欄も領域に加わらない（`editable_text.dart` は `SelectionContainer` を参照しない）
-- **押せる部品:** 子孫が止めた押下（`Primitive.Button` の押下など）では、選択を始めない。ボタンの文字も、ほかの場所から始めたドラッグなら選ぶ。Flutter も、ボタンの中の `Text` を選べる
+- **押せる部品:** 子孫が止めた押下（`Primitive.Button` の押下など）では、選択を始めない。ボタンの文字も、ほかの場所から始めたドラッグなら選ぶ。Flutter も、ボタンの中の `Text` を選べる。`Text` は上に登録先があれば必ず加わり（`widgets/text.dart` 745〜756 行目）、フレームワークで `SelectionContainer.disabled` を使うのは `raw_tooltip.dart` 835 行目だけである
 - **リンク:** 文字の中のリンク（§4.8）を押すと、リンクのクリックとして扱い、選択は始めない。zed も、リンクを押したときは選択を始めない（`markdown.rs` 2341〜2354 行目）。ほかの場所から始めたドラッグは、リンクの上も選ぶ
 
 **並べる順:** 選択の始まりと終わりの間の葉は、木の順（文書の順）で決める。zed も文書の位置で決める。Flutter は選び始めるたびに、すべての葉を画面の位置で並べ替え、3 px 以内の重なりを同じ行とみなす目安を持つ（`selectable_region.dart` 52 行目、2578〜2624 行目）。木の順では、逆向きの並び（`RowReverse`・`ColumnReverse`）と絶対配置で、見た目の順と選ぶ順が食い違う。領域は選び始めるときに、中の葉を木の順に集めて持ち、選択の間は持ったものを使う。
@@ -2804,8 +2804,8 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 - 1 回のクリックで選択を消し、押した位置を始めの点にする。Shift+クリックは、始めの点から選択を広げる
 - 2 回で単語（§4.9 の UAX #29 の単語の境界）、3 回で段落（葉の中の、改行から改行まで）を選ぶ。回数は 3 で止める（同じファイルの 641〜648 行目）。zed は 3 回で行、4 回で全体を選び（`markdown.rs` 2369〜2400 行目）、Avalonia は 3 回で全体を選ぶ
 - ドラッグは選択を広げる。2 回と 3 回の後は、単語と段落の単位で広げる。押したときの暗黙のキャプチャ（§7）で、領域の外へ出ても続く
-- カーソルは、加わる文字の葉の上だけ I ビームにする。葉と葉の間は既定の矢印のまま（Flutter、`widgets/text.dart` 752〜756 行目）
-- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、ポップアップ（行 P02d）と一緒に、欄のメニューとともに入れる。Flutter と Avalonia はどちらもメニューを出す
+- カーソルは、加わる文字の葉の上だけ I ビームにする。葉と葉の間は既定の矢印のまま（Flutter、`widgets/text.dart` 752〜756 行目）。§7「カーソル形状」は当たったノードから祖先へたどるので、加わる葉は、自分が `Cursor` を持たなければ I ビームを持つものとして数える。領域のノードには `Cursor` を置かない（置くと葉と葉の間も I ビームになる）。ボタンの中の葉も I ビームで、Flutter も `Text` の `MouseRegion` がいちばん内側で勝つ。リンクの手のカーソル（§4.8）は、これより先に決まる
+- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、ポップアップ（行 P02d）と一緒に、欄のメニューとともに入れる。Flutter の `SelectionArea` は `contextMenuBuilder` で（`material/selection_area.dart` 54・92 行目）、Avalonia はテーマの `ContextFlyout` で（`Avalonia.Themes.Fluent/Controls/SelectableTextBlock.xaml` 8〜19 行目）、どちらもメニューを出す
 
 **ドラッグでのスクロール:** ドラッグが、領域の祖先でいちばん近いスクロールの箱の端を越えたら、越えた距離 × 30（論理画素毎秒）の速さで、その箱をスクロールし続ける。Flutter の `EdgeDraggingAutoScroller` と同じ式である（`widgets/scrollable.dart` 1185 行目、`widgets/scrollable_helpers.dart` 150〜156 行目）。ポインタが止まっていても続くので、フレームの時計で動かす（§2.14 のアニメーションの一覧に載せ、端の内側に戻るかドラッグが終わると外す）。スクロールした後は、ポインタの位置で終点を置き直す。zed は、終点の行が見える範囲の端から 3 行の内側に入るまでスクロールする（`markdown.rs` 2510〜2554 行目）。Avalonia の `SelectableTextBlock` はスクロールしない。
 
@@ -2822,9 +2822,9 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 
 **費用:**
 
-- 描くだけのフレーム（選択の変わらないフレーム）と、ドラッグで選択が変わるフレームの割り当てを 0 にする（§11.3）。コピーは文字列を作るので、0 の対象にしない
+- 描くだけのフレーム（選択の変わらないフレーム）と、ドラッグで選択が変わるフレーム、選び始める押下のフレームの割り当てを 0 にする（§11.3）。押下で集める葉の一覧は、領域が持ち続けて使い回す（中身を空にして詰め直し、容量は残す）。コピーは文字列を作るので、0 の対象にしない
 - ドラッグの 1 回の仕事は、終点の葉の当たり判定（§4.8 の `HitTestText`）と、前と今の終点の間の葉の選択の範囲を置き直すことである。葉の外の点では、集めた葉を木の順に見る
-- `input` に、1,000 の文字の葉を持つ領域での、50 の葉にまたがるドラッグの 1 フレーム（配送・レイアウト・描く段に分ける）、Ctrl+A の 1 回、1,000 の葉のコピーの 1 回を足す。今ある `input`・`lists`・`rich-text` と、欄の 4 つの計測（`docs/benchmarks/p02b-text-field.md`）が遅くならないこと
+- `input` に、1,000 の文字の葉を持つ領域での、50 の葉にまたがるドラッグの 1 フレーム（配送・レイアウト・描く段に分ける。終点が葉の上にある場合と、葉の無い所にあって集めた葉を木の順に見る場合を、別に測る）、Ctrl+A の 1 回、1,000 の葉のコピーの 1 回を足す。今ある `input`・`lists`・`rich-text` と、欄の 4 つの計測（`docs/benchmarks/p02b-text-field.md`）が遅くならないこと
 
 **確かめ方:**
 
@@ -3741,7 +3741,7 @@ internal NodeHandle HitTest(int x, int y)   // DisplayList のメソッド。Win
 }
 ```
 - **ドラッグ&ドロップ**: アプリ内はポインタキャプチャ＋独自視覚フィードバックで自前実装（OS D&D特有のレイテンシを回避、Chromium/Flutterと同方式）。アプリ外連携は各OSのネイティブD&D APIを§6のウィンドウ管理層に接続する形で個別実装（Windows の `IDropTarget` は OS から呼ばれる COM なので、§4.4.1 の UIA と同じく、作り方をその行で測って決める）。
-- **カーソル形状**: ノードごとに `Cursor: CursorKind?` を持たせ、当たったノードから祖先へたどって最初に値を持つノードの形を、ヒットの結果が変わったときに OS に反映する（下の「ポインタの入力」の「カーソル」、V1c の Grill）。
+- **カーソル形状**: ノードごとに `Cursor: CursorKind?` を持たせ、当たったノードから祖先へたどって最初に値を持つノードの形を、ヒットの結果が変わったときに OS に反映する（下の「ポインタの入力」の「カーソル」、V1c の Grill）。選べる領域（§4.10）に加わる文字の葉は、自分が値を持たなければ I ビームを持つものとして数える。
 - **ジェスチャー認識**: 基本ポインタイベントのみをコア機能とし、マルチタッチジェスチャーはオプション拡張として分離（v1のブロッカーにしない）。
 
 **段階的な入力パイプライン**: pointer/mouse/touch/pen/keyboard/IME/drag-drop/gesture/pointer capture/focus/shortcutを単一のモデルで扱うと肥大化するため、明確な段階に分ける。
