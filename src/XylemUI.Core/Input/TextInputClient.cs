@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace XylemUI;
 
 /// <summary>
@@ -55,6 +57,15 @@ internal interface ITextInputClient
     /// <param name="bounds">The range's box; for an empty range, the caret's box there.</param>
     /// <returns><see langword="false"/> when the field is not laid out yet (TSF's <c>TS_E_NOLAYOUT</c>).</returns>
     bool BoundsOf(int start, int end, out Rect bounds);
+
+    /// <summary>
+    /// Returns the position of the text under a point of the window, in its logical pixels: the nearest position when the point is
+    /// beside the text. The input method asks it for a press on the text being composed (TSF's <c>GetACPFromPoint</c>).
+    /// </summary>
+    /// <param name="point">The point.</param>
+    /// <param name="position">The position.</param>
+    /// <returns><see langword="false"/> when the field is not laid out yet.</returns>
+    bool PositionAt(Vector2 point, out int position);
 
     /// <summary>
     /// Replaces a range of the text with committed text.

@@ -1,3 +1,4 @@
+using System.Numerics;
 using XylemUI.Primitives;
 using XylemUI.Testing.XUnit;
 using static XylemUI.Elements;
@@ -288,6 +289,32 @@ public sealed class ImeTests
 
         Assert.False(field.App.Ime.IsComposing);
         Assert.Equal("xyz", field.Text);
+    }
+
+    /// <summary>
+    /// The position under a point of the window is the field's, the nearest one beside the text, for an input method that asks
+    /// for a press on the text being composed.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of one line holding "abc", 300 wide at the window's left, with the focus.
+    ///
+    /// Steps:
+    /// - Ask the client for the position under the window's 0, 5, and under 290, 5.
+    ///
+    /// Expected:
+    /// - 0, then 3: the end of the text, the nearest to a point past it.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task PositionAt_IsTheFieldsPositionUnderAPoint()
+    {
+        await using Field field = await Field.StartAsync(Signal.Create("abc"));
+
+        Assert.True(field.Client.PositionAt(new Vector2(0, 5), out int start));
+        Assert.True(field.Client.PositionAt(new Vector2(290, 5), out int end));
+
+        Assert.Equal((0, 3), (start, end));
     }
 
     /// <summary>

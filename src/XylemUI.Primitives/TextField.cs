@@ -989,6 +989,19 @@ public static partial class Primitive
             return true;
         }
 
+        bool ITextInputClient.PositionAt(Vector2 point, out int position)
+        {
+            if (!LaidOut(out _))
+            {
+                position = 0;
+                return false;
+            }
+
+            // A pointer's local position starts at the field's border box.
+            position = OffsetAt(point - WindowOrigin(_field));
+            return true;
+        }
+
         void ITextInputClient.Replace(int start, int end, ReadOnlySpan<char> value)
         {
             if (options.ReadOnly)
