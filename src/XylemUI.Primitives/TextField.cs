@@ -958,7 +958,7 @@ public static partial class Primitive
 
         bool ITextInputClient.ReadOnly => options.ReadOnly;
 
-        TextInputKind ITextInputClient.Kind => options.Password ? TextInputKind.Password : TextInputKind.Text;
+        TextInputKind ITextInputClient.Kind => options.Password ? TextInputKind.Password : options.InputKind;
 
         void ITextInputClient.CopyText(int start, Span<char> into)
         {

@@ -100,13 +100,17 @@ internal interface ITextInputClient
 internal interface ITextInputPlatform
 {
     /// <summary>
-    /// Attaches the client of the node that took the focus. The tree calls it.
+    /// Attaches the client of the node that took the focus, in place of the one attached, whose composition is committed first. The
+    /// tree calls it.
     /// </summary>
     /// <param name="client">The client.</param>
-    void Attach(ITextInputClient client);
+    /// <param name="showKeyboard">Whether a press of a finger or a pen gave the node the focus: the touch keyboard shows (design
+    /// §4.7, "The touch keyboard"). A mouse's press or a key leaves it as it is.</param>
+    void Attach(ITextInputClient client, bool showKeyboard);
 
     /// <summary>
-    /// Detaches the client attached: the focus went to a node with none. A composition is committed first. The tree calls it.
+    /// Detaches the client attached: the focus went to a node with none. A composition is committed first, and the touch keyboard
+    /// hides. The tree calls it.
     /// </summary>
     void Detach();
 

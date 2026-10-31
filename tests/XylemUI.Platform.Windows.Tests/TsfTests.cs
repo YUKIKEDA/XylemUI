@@ -241,10 +241,10 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
             TsfTextInput a = TsfTextInput.TryCreate(first) ?? throw new InvalidOperationException("TSF is not there.");
             using TsfTextInput b = TsfTextInput.TryCreate(second) ?? throw new InvalidOperationException("TSF is not there.");
 
-            b.Attach(new FakeClient("abc"));
+            b.Attach(new FakeClient("abc"), showKeyboard: false);
             a.Dispose();
             b.Detach();
-            b.Attach(new FakeClient("abc"));
+            b.Attach(new FakeClient("abc"), showKeyboard: false);
 
             Assert.NotNull(b.Attached);
             Assert.True(HasContext(second));
@@ -366,6 +366,90 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The document gives the input scope of the field's kind when the manager asks for <c>GUID_PROP_INPUTSCOPE</c>, as an
+    /// <c>ITfInputScope</c>; it gives nothing when the manager asks for other attributes (design §4.7, "The kinds of input").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A document of a field whose kind is email.
+    ///
+    /// Steps:
+    /// - Ask for an attribute that is not the input scope and retrieve; ask for the input scope and retrieve; read the input scopes
+    ///   of the object given.
+    ///
+    /// Expected:
+    /// - 0 values; then 1 value, the input scope's attribute as an unknown object whose one input scope is
+    ///   <c>IS_EMAIL_SMTPEMAILADDRESS</c>. The kinds map to their input scopes, a password to <c>IS_PASSWORD</c>.
+    /// </remarks>
+    [Fact]
+    public void InputScope_IsGivenForItsAttribute_AsTheFieldsKind() =>
+        ui.Invoke(() =>
+        {
+            var client = new FakeClient("a") { Kind = TextInputKind.Email };
+            (TsfDocument document, FakeSink _) = Make(client);
+            TS_ATTRVAL value = default;
+            uint fetched;
+            Guid other = Guid.NewGuid();
+            _ = document.RequestAttributes(1, &other);
+            _ = document.RetrieveRequestedAttrs(1, &value, &fetched);
+            uint none = fetched;
+
+            Guid scope = TsfInputScope.Attribute;
+            _ = document.RequestAttributes(1, &scope);
+            _ = document.RetrieveRequestedAttrs(1, &value, &fetched);
+            var unknown = (IUnknown*)value.varValue.punkVal;
+            ITfInputScope* inputScope;
+            Assert.True(unknown->QueryInterface(__uuidof<ITfInputScope>(), (void**)&inputScope) >= 0);
+            InputScope* scopes;
+            uint count;
+            _ = inputScope->GetInputScopes(&scopes, &count);
+            InputScope first = *scopes;
+            CoTaskMemFree(scopes);
+            _ = inputScope->Release();
+            _ = unknown->Release();
+
+            Assert.Equal(0u, none);
+            Assert.Equal((1u, (ushort)VARENUM.VT_UNKNOWN, TsfInputScope.Attribute), (fetched, value.varValue.vt, value.idAttr));
+            Assert.Equal((1u, InputScope.IS_EMAIL_SMTPEMAILADDRESS), (count, first));
+            Assert.Equal(InputScope.IS_PASSWORD, TsfInputScope.ScopeOf(TextInputKind.Password));
+            Assert.Equal(InputScope.IS_NUMBER, TsfInputScope.ScopeOf(TextInputKind.Number));
+        });
+
+    /// <summary>
+    /// The window's touch keyboard shows when a field is attached by a finger's or a pen's press, stays when another field takes
+    /// its place, and hides when the focus leaves the fields.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window with TSF's input method and a test's touch keyboard.
+    ///
+    /// Steps:
+    /// - Attach a field with the keyboard asked for; attach another without; detach.
+    ///
+    /// Expected:
+    /// - One show after the first attach, no hide after the second, one hide after the detach.
+    /// </remarks>
+    [Fact]
+    public void TouchKeyboard_ShowsOnAPress_StaysBetweenFields_AndHidesOnDetach() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("keyboard", 200, 100);
+            using TsfTextInput input = TsfTextInput.TryCreate(window) ?? throw new InvalidOperationException("TSF is not there.");
+            var keyboard = new FakeKeyboard();
+            input.Keyboard = keyboard;
+
+            input.Attach(new FakeClient("a"), showKeyboard: true);
+            (int, int) first = (keyboard.Shows, keyboard.Hides);
+            input.Attach(new FakeClient("b"), showKeyboard: false);
+            (int, int) second = (keyboard.Shows, keyboard.Hides);
+            input.Detach();
+
+            Assert.Equal((1, 0), first);
+            Assert.Equal((1, 0), second);
+            Assert.Equal((1, 1), (keyboard.Shows, keyboard.Hides));
+        });
+
+    /// <summary>
     /// A display attribute becomes the run it asks for: the shape of its line (a squiggle solid until row R5, none for no line), its
     /// bold line as thick, and its colors from a COLORREF (design §4.7).
     /// </summary>
@@ -416,11 +500,11 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
             using var window = new Win32Window("tsf", 200, 100);
             using TsfTextInput input = TsfTextInput.TryCreate(window) ?? throw new InvalidOperationException("TSF is not there.");
 
-            input.Attach(new FakeClient("abc"));
+            input.Attach(new FakeClient("abc"), showKeyboard: false);
             (bool, bool) on = (input.Attached is not null, HasContext(window));
             input.Detach();
             (bool, bool) off = (input.Attached is not null, HasContext(window));
-            input.Attach(new FakeClient("pw") { Kind = TextInputKind.Password });
+            input.Attach(new FakeClient("pw") { Kind = TextInputKind.Password }, showKeyboard: false);
             (bool, bool) hidden = (input.Attached is not null, HasContext(window));
             input.Detach();
 
@@ -472,6 +556,18 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
             Sink = sink,
         };
         return (document, sink);
+    }
+
+    // A touch keyboard that counts.
+    private sealed class FakeKeyboard : ITouchKeyboard
+    {
+        public int Shows { get; private set; }
+
+        public int Hides { get; private set; }
+
+        public void Show() => Shows++;
+
+        public void Hide() => Hides++;
     }
 
     // The manager's sink: it runs Granted in each lock, and records what it was told.

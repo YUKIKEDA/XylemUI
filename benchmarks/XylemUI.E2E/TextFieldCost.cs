@@ -17,6 +17,10 @@ namespace XylemUI.E2E;
 // - text_field_blink_frame_us: a tick of the caret's timer, which hides or shows it, and the frame that draws it.
 // - text_field_drag_frame_us: a move of the mouse with its left button down, from a press on the first line, alternately to two
 //   points on other lines; the selection changes at each.
+// - text_field_compose_update_us: an update of the text being composed at the end, alternately "にほんご" and "日本語" in two
+//   clauses, as an input method sends it (row P02c, design §4.7, "Cost"); a composition goes on throughout.
+// - text_field_compose_commit_us: the commit of "日本語" composed at the end; after each, untimed, the committed text is erased and
+//   the next composition starts. The two run in a scene of their own, which has an input method; the others have none, as before.
 internal static partial class TextFieldCost
 {
     private const string Sentence = "The quick brown fox jumps over the lazy dog. ";
@@ -39,6 +43,13 @@ internal static partial class TextFieldCost
             Write(report, "text_field_drag_frame", scene.Time(scene.Drag, null));
             scene.ReleaseDrag();
             report.Number("text_field_chars", scene.Text.Get().Length);
+            using (var ime = new Scene(withIme: true))
+            {
+                ime.StartComposition();
+                Write(report, "text_field_compose_update", ime.Time(ime.ComposeUpdate, null));
+                Write(report, "text_field_compose_commit", ime.Time(ime.Commit, ime.EraseCommit));
+            }
+
             RunSelectionArea(report);
         }
         finally
@@ -101,10 +112,12 @@ internal static partial class TextFieldCost
         private readonly ManualTime _time = new();
         private readonly WindowInput _input;
         private readonly ScopeHandle _scope;
+        private readonly BenchIme? _ime;
         private TimeSpan _now = TimeSpan.FromSeconds(1);
         private int _drags;
+        private int _updates;
 
-        public Scene()
+        public Scene(bool withIme = false)
         {
             _atlas = new GlyphAtlas(_rasterizer);
             _context = new TextContext(_fonts);
@@ -131,6 +144,12 @@ internal static partial class TextFieldCost
             frames.Resize(new Size(420, 320), 1);
             frames.RunFrame();
             _input = new WindowInput(_tree, frames, new NoPlatform());
+            if (withIme)
+            {
+                _ime = new BenchIme();
+                _tree.SetTextInput(_ime);
+            }
+
             _input.SetActive(true);
             if (!_tree.Focus.Focus(field))
             {
@@ -171,6 +190,47 @@ internal static partial class TextFieldCost
             }
 
             Press(Key.End, KeyModifiers.Control);
+        }
+
+        // Starts the composition at the end, with its frame.
+        public void StartComposition()
+        {
+            ITextInputClient client = Client();
+            int end = client.Length;
+            client.Compose(end, end, "にほんご", 4, Kana);
+            _scheduler.Run();
+        }
+
+        // Delivers an update of the text being composed, alternately the kana and the kanji.
+        public void ComposeUpdate()
+        {
+            ITextInputClient client = Client();
+            (int start, int end) = client.Composition ?? throw new InvalidOperationException("No composition goes on.");
+            bool kanji = (_updates++ & 1) == 0;
+            client.Compose(start, end, kanji ? "日本語" : "にほんご", kanji ? 3 : 4, kanji ? Kanji : Kana);
+        }
+
+        // Delivers the commit of "日本語" in place of the text being composed.
+        public void Commit()
+        {
+            ITextInputClient client = Client();
+            (int start, int end) = client.Composition ?? throw new InvalidOperationException("No composition goes on.");
+            client.Compose(start, end, "日本語", 3, Kanji);
+            client.EndComposition();
+        }
+
+        // Erases the committed text, with its frame, checks that it went in, and starts the next composition.
+        public void EraseCommit()
+        {
+            ITextInputClient client = Client();
+            if (Text.Get().Length != 1_003)
+            {
+                throw new InvalidOperationException("The committed text did not go in.");
+            }
+
+            client.Replace(1_000, 1_003, string.Empty);
+            _scheduler.Run();
+            StartComposition();
         }
 
         // Ticks the caret's timer.
@@ -245,6 +305,34 @@ internal static partial class TextFieldCost
 
         // A second between inputs, so that no two edits are one group of the undo.
         private TimeSpan Next() => _now += TimeSpan.FromSeconds(1);
+
+        private ITextInputClient Client() => _ime?.Client ?? throw new InvalidOperationException("The scene has no input method.");
+    }
+
+    // The clauses of the kana, not converted (dotted), and of the kanji, the first clause the target (thick).
+    private static readonly ImeAttributeRun[] Kana = [new(0, 4, DecorationStyle.Dotted, Thick: false)];
+    private static readonly ImeAttributeRun[] Kanji =
+    [
+        new(0, 2, DecorationStyle.Solid, Thick: true),
+        new(2, 3, DecorationStyle.Dotted, Thick: false),
+    ];
+
+    // An input method that keeps the focused field's client and is told nothing it needs.
+    private sealed class BenchIme : ITextInputPlatform
+    {
+        public ITextInputClient? Client { get; private set; }
+
+        public void Attach(ITextInputClient client, bool showKeyboard) => Client = client;
+
+        public void Detach() => Client = null;
+
+        public void TextChanged(int start, int oldEnd, int newEnd) { }
+
+        public void SelectionChanged() { }
+
+        public void LayoutChanged() { }
+
+        public void CommitComposition() => Client?.EndComposition();
     }
 
     // A clock whose timers tick only when told to.
