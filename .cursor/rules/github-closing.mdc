@@ -11,6 +11,7 @@ GitHub closes an Issue when a closing verb (`close(s/d)`, `fix(es/ed)`, `resolve
 - A PR that does not finish it never puts a closing verb before `#N`. Write `Part of #N` or `Refs #N`.
 - The line lives in the PR body only, never in a commit body.
 - After a PR is created or its body edited, run `gh pr view <n> --json closingIssuesReferences` and compare the list with the intent.
+- An acceptance item that the owner checks on the real machine (typing Japanese in a field) keeps the PR at `Part of #N` until the owner reports the result; then the PR goes back to `Closes #N`, and the result is written on the Issue. P02b's last PR wrote `Closes #485` with that item unchecked; the review asked for `Part of`, and the owner's check then found a bug before the merge (PR #492).
 - When the PR body itself says a condition of the Issue is not met, the PR does not close the Issue. Either move the unmet conditions to an Issue and a roadmap row of their own, or write `Part of #N`. Which of the two is the owner's to say when the owner set the conditions.
 
 ```text

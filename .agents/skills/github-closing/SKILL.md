@@ -29,6 +29,10 @@ Write `#12` with none of those verbs before it.
 Part of #12. The NativeAOT check on #12 is still unmet.
 ```
 
+An item of the issue that the owner checks by hand (on the real machine) keeps the PR at `Part of #12` until the owner reports it; then write the result on the issue and change the line to `Closes #12`.
+
+An item of the issue that the owner checks by hand (on the real machine) keeps the PR at `Part of #12` until the owner reports it; then write the result on the issue and change the line to `Closes #12`.
+
 ## Before sending
 
 1. Read the title and the full body. For each issue number, decide whether this PR finishes it.
