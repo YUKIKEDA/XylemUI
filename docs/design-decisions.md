@@ -684,18 +684,27 @@ Rejected:
 
 Decision:
   `IPopupHost` で出す先を抽象化し、ウィンドウ内オーバーレイと別 OS ウィンドウの2実装を持つ（Avalonia と同じ構造）。
-  v0.2 / G1 はオーバーレイのみ。v1.0 までに 3 つの OS の別ウィンドウ実装を足し、デスクトップの既定にする（D3 の Grill、Issue #441）。macOS は行 P06、Linux は行 P04 と P05 で入れる。
-  ポップアップは独立した描画ルート（LayoutRoots の根・HitTestList・DisplayList・FocusScope）。Reactive graph と ScopeArena は共有。
+  v0.2 / G1 はオーバーレイのみで、ダイアログもウィンドウ内のモーダルにする。v1.0 までに 3 つの OS の別ウィンドウ実装を足し、デスクトップの既定にする（D3 の Grill、Issue #441）。macOS は行 P06、Linux は行 P04 と P05 で入れる。
+  ポップアップは独立した描画ルート（レイアウトの根・DisplayList・FocusScope）。Reactive graph・ScopeArena・木のアリーナは共有（P02d の Grill、Issue #547、設計書 §7.3）。
+  開閉は `Show` と同じ宣言の形（`Popup(isOpen, render)`）。キーはポップアップの根から開いた側へ伝え、ポインタは根で止める。後ろへ通す印は `HitTestVisible(false)`。
 
 Reason:
   Flutter / GPUI はウィンドウ内に留まるが、WPF / Avalonia / WinUI 3 / Qt は最終的に別ウィンドウに行き着いている。
-  最初から独立ルートにしておけば、別ウィンドウ化は出力先の違いだけになる。
+  独立した描画ルート: 比べた 3 つとも、ポップアップのレイアウトを開いた側から切り離す（Flutter は窓の大きさの tight な制約、GPUI は `layout_as_root` と `prepaint_as_root` で自分を根にして測る）。別ウィンドウを出荷している Avalonia は、別ウィンドウを完全に独立した TopLevel にする。
+  v0.2 はオーバーレイだけ: 安定版の Flutter と GPUI は、メニューもダイアログもウィンドウ内で出荷している。別ウィンドウには、グリフアトラスを共有するかという行 P10 の決定が要る。
 
 Rejected:
   - オーバーレイだけで v1.0 を出す（メニューがウィンドウ端で切れる）
-  - v0.2 から別ウィンドウ実装を必須にする（マルチウィンドウのフォーカス・IME・DPI で v0.2 が膨らむ）
+  - v0.2 から別ウィンドウ実装を必須にする（安定版の Flutter と GPUI はウィンドウ内で出荷し、別ウィンドウには行 P10 のグリフアトラスの決定が要る。この項の前の版は、理由を「v0.2 が膨らむ」としていた。Issue #365、#547）
   - macOS と Linux の別ウィンドウを v1.x に送る（メニューがウィンドウ端で切れる理由は、どの OS にも当てはまる。Avalonia は 4 つのバックエンドすべてで別ウィンドウを持ち、Flutter も 3 つのデスクトップに同時に入れた。D3 の Grill、Issue #441）
-  - オーバーレイをメインツリーの最上位の子として実装する（別ウィンドウ化で作り直しになる）
+  - オーバーレイをメインツリーの最上位の子として実装する（3 つとも、ポップアップのレイアウトを開いた側から切り離し、別ウィンドウの Avalonia は独立したルートにする。この項の前の版は、理由を「別ウィンドウ化で作り直しになる」としていた。Issue #365、#547）
+  - 主の木とポップアップを 1 つの表示リストに書く（比べた 3 つの形。XylemUI は表示リストを全部作り直すので、メニューの中のホバーでも主の木のリストを作り直す。P02d の Q15）
+  - 当たっても後ろも試す印（Flutter の `translucent`。1 回の押下に当たり先が 2 つできると、押したときの暗黙のキャプチャをどちらに付けるかが決まらない。P02d の Q5）
+  - ポップアップの中のポインタのイベントを開いた側へ伝える（Avalonia。開いた側の Click が、メニューの項目の押下でも走る。Flutter と GPUI は伝えない。P02d の Q14）
+  - 外を押したときの押下を、既定で消費する（Avalonia の flyout。Flutter の `MenuAnchor`・Avalonia の `ContextMenu`・GPUI は下へ届ける。`ConsumeOutsidePress` で選べる。P02d の Q4）
+  - モーダルの背景を押したら既定で閉じる（GPUI の `ModalLayer`、`workspace/src/modal_layer.rs` 288〜330 行目。Avalonia の `ShowDialog` は持ち主の窓を OS の側で使えなくし、外を押しても閉じない。`DismissOnBackdropPress` で選べる。P02d の Q4）
+  - 右クリックのメニューで、使えない項目を出さない（Flutter。Avalonia は灰色で出す。項目の位置が開くたびに変わる。P02d の Q7）
+  - 部品に既定の見た目を付ける（§13.1 の見た目を持たない部品の方針に反する。見た目は Theme.Fluent で付ける。P02d の Q7）
 
 ---
 
