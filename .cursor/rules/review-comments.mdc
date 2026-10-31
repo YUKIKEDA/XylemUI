@@ -17,7 +17,7 @@ A finding that asks to change a decision the owner made is not declined by citin
 
 A review the owner asks for is posted on the pull request, in the same turn, without waiting for an ask to post it. A review shown only in the conversation is not seen by anyone else, and the pull request does not show that it was reviewed (PR #146). A re-review after fixes is posted the same way.
 
-Before calling a PR ready, and whenever the owner asks for the next step, read the reviews and inline comments of every open PR (`gh pr view <n> --json reviews,comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments`).
+Before calling a PR ready, whenever the owner asks for the next step, and whenever a report gives a PR's state (its checks included), read the reviews and inline comments of every open PR (`gh pr view <n> --json reviews,comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments`). On PR #496 the owner asked whether the checks had ended; the answer read the checks alone and said the PR waited for a review, while the review had been posted before.
 
 A reply that says a finding is fixed is written after the fix is read in the head's files or diff, not after the edit reported success. On PR #385 the reply said the intermediate points' layers were written, while the scripted replacement had kept only the first line of each new text (`.cursor/rules/powershell-shell.mdc`), and the re-review found them missing.
 
