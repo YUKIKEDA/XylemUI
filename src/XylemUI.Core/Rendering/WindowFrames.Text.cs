@@ -67,7 +67,11 @@ internal sealed partial class WindowFrames
                 int font = glyphs[start].Run;
                 float size = result.Styles[font].Size * result.Runs[font].Scale;
                 Color ink = decoration.Color ?? look.Color ?? color;
-                DrawDecoration(decoration, result.Runs[font].Font, size, glyphs[start..end], x + left, x + right, baseline, ink);
+                (float lineLeft, float lineRight) = Inset(decoration, glyphs, start, end, run, left, right);
+                if (lineRight > lineLeft)
+                {
+                    DrawDecoration(decoration, result.Runs[font].Font, size, glyphs[start..end], x + lineLeft, x + lineRight, baseline, ink);
+                }
             }
         }
     }
@@ -143,10 +147,41 @@ internal sealed partial class WindowFrames
                 int font = glyphs[start].Run;
                 float size = result.Styles[font].Size * result.Runs[font].Scale;
                 Color ink = decoration.Color ?? look.Color ?? color;
-                DrawDecoration(decoration, result.Runs[font].Font, size, glyphs[start..end], x + left, x + right, baseline, ink);
+                (float lineLeft, float lineRight) = Inset(decoration, glyphs, start, end, run, left, right);
+                if (lineRight > lineLeft)
+                {
+                    DrawDecoration(decoration, result.Runs[font].Font, size, glyphs[start..end], x + lineLeft, x + lineRight, baseline, ink);
+                }
             }
         }
     }
+
+    // The ends of a decoration's piece: a clause of a composition's is shortened by 1 logical pixel where the piece starts or ends
+    // its range or its line, and not where a range is split across font runs (design §4.7, "Drawing the text being composed").
+    private static (float From, float To) Inset(
+        in TextDecoration decoration,
+        ReadOnlySpan<LaidGlyph> glyphs,
+        int start,
+        int end,
+        in PaintRun run,
+        float left,
+        float right
+    )
+    {
+        if (!decoration.Composition)
+        {
+            return (left, right);
+        }
+
+        bool startsRange = start == 0 || !InRun(run, glyphs[start - 1].Cluster);
+        bool endsRange = end == glyphs.Length || !InRun(run, glyphs[end].Cluster);
+        return (startsRange ? left + ClauseGap : left, endsRange ? right - ClauseGap : right);
+    }
+
+    // The logical pixels a clause's underline is shortened by at each end (Blink's 1 px).
+    private const float ClauseGap = 1;
+
+    private static bool InRun(in PaintRun run, int cluster) => cluster >= run.Start && cluster < run.Start + run.Length;
 
     // A glyph run of one color of a selected line: with ranges, around the rooms of the inline objects.
     private void DrawSelectedGlyphs(TextRanges? ranges, ShapingResult result, ReadOnlySpan<LaidGlyph> glyphs, float x, float baseline, Color color)
@@ -235,7 +270,7 @@ internal sealed partial class WindowFrames
                 DecorationLines.Overline => -font.Ascent * units,
                 _ => metrics.StrikeoutOffset is int offset ? -offset * units : -(metrics.XHeight ?? 0) * units / 2,
             };
-            bool skips = line != DecorationLines.LineThrough;
+            bool skips = line != DecorationLines.LineThrough && !decoration.Composition;
             DrawDecorationLine(decoration.Style, font, size, glyphs, left, right, baseline, center, thickness, skips, color);
             if (decoration.Style == DecorationStyle.Double)
             {

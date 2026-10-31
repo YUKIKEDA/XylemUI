@@ -151,7 +151,30 @@ public readonly record struct TextDecoration(
     DecorationStyle Style = DecorationStyle.Solid,
     Color? Color = null,
     float Thickness = 1
-);
+)
+{
+    // The bit of Lines that marks a clause's underline: a bit no line uses, so that the mark takes no byte of its own and the
+    // ranges keep design §4.8's sizes.
+    private const DecorationLines ClauseBit = (DecorationLines)0x80;
+
+    /// <summary>
+    /// Gets a value indicating whether the lines underline a clause of an IME's composition (design §4.7): shortened by 1 logical
+    /// pixel at each end of the range and of each line the range is broken across, so that two clauses side by side show a gap,
+    /// and not cut where the glyphs cross them (Blink's <c>styleable_marker_painter.cc</c> lines 163 to 170 shorten its composition
+    /// underlines, and draw them at the bottom of the line, under the glyphs). No decoration an app makes is one.
+    /// </summary>
+    internal bool Composition => (Lines & ClauseBit) != 0;
+
+    /// <summary>
+    /// Returns the underline of a clause of an IME's composition (<see cref="Composition"/>).
+    /// </summary>
+    /// <param name="style">The shape of the line.</param>
+    /// <param name="color">Its color; <see langword="null"/> takes the range's text color.</param>
+    /// <param name="thickness">A factor on the font's thickness for the line.</param>
+    /// <returns>The decoration.</returns>
+    internal static TextDecoration Clause(DecorationStyle style, Color? color, float thickness) =>
+        new(DecorationLines.Underline | ClauseBit, style, color, thickness);
+}
 
 /// <summary>
 /// The shadow of a range of text (design §4.8). Kept by the style from row T12 on; drawn from row T14 on.

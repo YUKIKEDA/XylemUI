@@ -2498,9 +2498,10 @@ internal interface ITextInputClient
 {
     int Length { get; }                                         // 変換中の文字を含む、欄の文字の長さ
     void CopyText(int start, Span<char> into);                  // 範囲の文字
-    TextSelection Selection { get; set; }
+    TextSelection Selection { get; }
+    void Select(TextSelection selection);                       // IME が選ぶ。IME へは知らせない
     (int Start, int End)? Composition { get; }                  // 変換中の範囲。無ければ null
-    Rect BoundsOf(int start, int end);                          // 範囲の画面の位置。ウィンドウの論理の画素
+    bool BoundsOf(int start, int end, out Rect bounds);         // 範囲の画面の位置。ウィンドウの論理の画素。レイアウトの前は false（TS_E_NOLAYOUT）
     void Replace(int start, int end, ReadOnlySpan<char> text);  // start〜end を確定した文字で置き換える
     // start〜end を text で置き換え、変換中の文字にする。変換が無いときも、置き換えるのは選択ではなく
     // この範囲（TSF の SetText と同じ）。cursor と clauses は text の中の位置
@@ -2522,8 +2523,8 @@ public readonly record struct ImeAttributeRun(
     Color? TextColor = null);   // crText。null なら欄の文字の色
 ```
 
-- 変換の状態（変換中の文字、その中のキャレット、文節）は欄が持つ。木のノードには持たせない。この節の前の版の `ImeCompositionState` と `SurroundingText` は使わない。周辺の文字は、OS が `CopyText` で直接読む
-- 木は、フォーカスのあるノードの相手を持つ。フォーカスが相手を持つノードへ移ると、プラットフォームは IME を有効にし、相手を持たないノードへ移ると無効にする。Avalonia と GPUI も、文字を受け付けない部品にフォーカスがあるときは IME を外す（GPUI の `crates/gpui_windows/src/events.rs` 683〜711 行目の `ImmAssociateContextEx`）。Windows では、文書の管理を外す（`AssociateFocus` に null）だけでは IME は止まらない。半角/全角で IME を入れ直すと IMM32 の道が働き、既定の変換の窓が出た。入力の文脈も外す（`ImmAssociateContextEx` に null。外した後の `ImmGetContext` は 0、スパイク #510）。無効の間、キーは命令として配る
+- 変換の状態（変換中の文字、その中のキャレット、文節）は欄が持つ。木のノードには持たせない。この節の前の版の `ImeCompositionState` と `SurroundingText` は使わない。周辺の文字は、OS が `CopyText` で直接読む。文字のシグナルには、確定した文字だけを書く。アプリが確定の前の文字を受け取らないためで、Avalonia も変換中の文字を `PreeditText` に分け、`Text` に入れない（`TextBoxTextInputMethodClient.cs` 147〜157 行目の `SetPreeditText`、12.1.4。P02c の 1 つ目の PR）
+- 木は、フォーカスのあるノードの相手を持つ。フォーカスが相手を持つノードへ移ると、プラットフォームは IME を有効にし、相手を持たないノードへ移ると無効にする。Avalonia と GPUI も、文字を受け付けない部品にフォーカスがあるときは IME を外す（GPUI の `crates/gpui_windows/src/events.rs` 683〜711 行目の `ImmAssociateContextEx`）。Windows では、文書の管理を外す（`AssociateFocus` に null）だけでは IME は止まらない。半角/全角で IME を入れ直すと IMM32 の道が働き、既定の変換の窓が出た。入力の文脈も外す（`ImmAssociateContextEx` に null。外した後の `ImmGetContext` は 0、スパイク #510）。無効の間、キーは命令として配る。窓が非活性の間も、相手は結んだままにする。OS は窓ごとに入力の文脈を保ち、窓に戻ると変換を続けられるためである（P02c の 1 つ目の PR）
 - macOS と Linux は、後の行で同じ口につなぐ
 
 **アプリから OS への知らせ:** OS の IME は欄の文書の写しを持つので、OS を通さずに欄が変わったら、欄から OS へ知らせる。知らせないと、再変換・周辺の文字・候補の窓の位置が古い内容で動く。TSF では文書の口の相手（`ITextStoreACPSink`）の `OnTextChange`・`OnSelectionChange`・`OnLayoutChange` に当たる。
@@ -2545,7 +2546,7 @@ internal interface ITextInputPlatform
 - 位置の知らせは、フレームの後に、欄の矩形かスクロールの位置が変わったときに送る。`BoundsOf` が `TS_E_NOLAYOUT` を返したときも、レイアウトが済んだら送る（TSF が求める。Microsoft Learn の OnLayoutChange の説明）
 - TSF では、OS は文書を読み書きする前にロックを求める（`RequestLock`、同期と非同期がある）。ロックの間に文書を変えるのは、OS が呼ぶ文書の口のメソッドだけである。アプリはロックの間に文書を変えず、知らせも送らない（Microsoft Learn の RequestLock の説明）。TSF の実装は、ロックの間に欄から来た知らせを溜め、ロックが終わってから送る。送っていない知らせがある間は、同期のロックを断り（`TS_E_SYNCHRONOUS`）、非同期のロックだけを受ける
 
-**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。線の形・太さ・色は、IME が表示の属性（`GUID_PROP_ATTRIBUTE` の `TF_DISPLAYATTRIBUTE`）で示すとおりにする。Google 日本語入力は、変換中の文節を太い実線、未変換の文字とほかの文節を点線で示した（スパイク #510）。Chromium も WPF も、IME の線の形（実線・点線・破線・波線）と太さのとおりに描く（Chromium の `ui/base/ime/win/tsf_text_store.cc` 1708〜1751 行目、86c7d7a6。WPF の `CompositionAdorner.cs` 159〜228 行目、bd4acbb1）。Chromium は、IME が示した文字の色と線の色も使う。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。太い線は、ふつうの線の 2 倍の太さにする（Blink は 1 px と 2 px、`third_party/blink/renderer/core/paint/styleable_marker_painter.cc` 176〜188 行目、19cfb62b）。波線（`TF_LS_SQUIGGLE`）は、`DecorationStyle.Wavy` を足す行 R5 までは実線で描く。文節の下線は、両端を 1 論理画素ずつ縮める。変換中の文字の最初の文節の左端と最後の文節の右端も縮める（Blink と同じ。Blink のコメントは、これを害のない副作用と書く）。同じ形の文節が隣り合っても区切りが見えるためで、Google 日本語入力は未変換の文字とほかの文節を同じ点線で示した。Blink も両端を 1 px ずつ縮め（`styleable_marker_painter.cc` 163〜170 行目、19cfb62b）、WPF も文字の高さの 0.09 倍の隙間を空ける（`CompositionAdorner.cs` 178・421 行目、bd4acbb1）。縮めるのは変換中の文節の範囲だけで、公開の `TextDecoration` には足さない（Issue #518）。キャレットは変換中の文字の中の、IME が示す位置に描く。
+**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。線の形・太さ・色は、IME が表示の属性（`GUID_PROP_ATTRIBUTE` の `TF_DISPLAYATTRIBUTE`）で示すとおりにする。Google 日本語入力は、変換中の文節を太い実線、未変換の文字とほかの文節を点線で示した（スパイク #510）。Chromium も WPF も、IME の線の形（実線・点線・破線・波線）と太さのとおりに描く（Chromium の `ui/base/ime/win/tsf_text_store.cc` 1708〜1751 行目、86c7d7a6。WPF の `CompositionAdorner.cs` 159〜228 行目、bd4acbb1）。Chromium は、IME が示した文字の色と線の色も使う。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。太い線は、ふつうの線の 2 倍の太さにする（Blink は 1 px と 2 px、`third_party/blink/renderer/core/paint/styleable_marker_painter.cc` 176〜188 行目、19cfb62b）。波線（`TF_LS_SQUIGGLE`）は、`DecorationStyle.Wavy` を足す行 R5 までは実線で描く。文節の下線は、両端を 1 論理画素ずつ縮める。変換中の文字の最初の文節の左端と最後の文節の右端も縮める（Blink と同じ。Blink のコメントは、これを害のない副作用と書く）。同じ形の文節が隣り合っても区切りが見えるためで、Google 日本語入力は未変換の文字とほかの文節を同じ点線で示した。Blink も両端を 1 px ずつ縮め（`styleable_marker_painter.cc` 163〜170 行目、19cfb62b）、WPF も文字の高さの 0.09 倍の隙間を空ける（`CompositionAdorner.cs` 178・421 行目、bd4acbb1）。縮めるのは変換中の文節の範囲だけで、公開の `TextDecoration` には足さない（Issue #518）。文節の印は `DecorationLines` の使っていないビットに持たせ、範囲の大きさ（§4.8）を変えない。`bool` を足すと、見た目の範囲が 60 バイトから 64 バイトに、リンクが 144 バイトから 152 バイトになった（P02c の 1 つ目の PR）。文節の下線は、字形と重なる所も空けずに引く。範囲の装飾の下線は字形を避けるが（§4.8）、漢字の下端が下線に掛かると、太い下線が字の下で途切れた（P02c の 1 つ目の PR の画素のテスト）。Blink は文節の下線を行の下端に引くので、字形と重ならない（`styleable_marker_painter.cc` 195〜198 行目、19cfb62b）。キャレットは変換中の文字の中の、IME が示す位置に描く。
 
 **最大の長さと元に戻す（Issue #518）:**
 
@@ -2556,6 +2557,7 @@ internal interface ITextInputPlatform
 
 - 変換中にフォーカスが移ったら、変換中の文字を確定する。Avalonia と GPUI も確定する（GPUI は `CPS_COMPLETE`、同じ 683〜711 行目）。Flutter は取り消すので、打った文字が消える（`text_input_manager.cc` 126〜143 行目の `CPS_CANCEL`）。TSF では `ITfContextOwnerCompositionServices::TerminateComposition` で確定する。確定は呼び出しの中で終わり、`OnEndComposition` は戻る前に届く（スパイク #510）
 - 変換中にアプリが文字のシグナルに書いたら、先に変換を確定してから、アプリの値を置く（§4.9「値の流れ」）。欄だけで確定すると、IME は変換を続けたままになるので、欄は `ITextInputPlatform.CommitComposition` で IME に確定させる。TSF では `TerminateComposition` に当たり、`EndComposition` は呼び出しが戻る前に欄へ届く（スパイク #510）
+- 変換中に欄を押したときも、キャレットを動かす前に `CommitComposition` で確定させる。押すと選択が IME を通さずに動くので、変換を続けたままにすると、IME の写しと欄がずれる（P02c の 1 つ目の PR）
 
 **候補の窓:** TSF の IME は、範囲の画面の位置を問い合わせる（`ITextStoreACP2::GetTextExt`）。欄は `BoundsOf` で、葉の行とグリフから求めた位置を返し、プラットフォームが画面の物理の画素に直す。レイアウトが済む前は `TS_E_NOLAYOUT` を返す。`OnLayoutChange` を送ると、TSF は位置を問い合わせ直し、候補の窓は欄についてくる（スパイク #510）。
 
@@ -4769,7 +4771,7 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 **土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）、メモリに持つクリップボード `app.Clipboard`、`app.Pointer.Down` のクリックの回数（`clickCount`、ダブルクリックとトリプルクリック）を足す（§4.9）。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
 
-**IME:** 模擬するのは、IME からフレームワークへ届く**呼び出しの列**だけである。フォーカスのある欄の文字の入力の相手（§4.7 の `ITextInputClient`）を、TSF の文書の口が呼ぶのと同じ順で呼び、変換中の文字の更新・文節・確定・取り消しを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
+**IME:** 模擬するのは、IME からフレームワークへ届く**呼び出しの列**だけである。`app.Ime`（`HeadlessIme`、行 P02c）は、木の `ITextInputPlatform` で、`Compose(text, cursor, clauses)`・`Commit(text)`・`Cancel()` を、フォーカスのある欄の相手に流し込む。変換が無いときは選択を、あるときは変換中の範囲を置き換え、取り消しは変換の始めに置き換えた文字に戻す。相手の無いとき・伏せ字の欄・読み取り専用の欄への流し込みは `InvalidOperationException` を投げる（IME が無効、§4.7）。欄から受けた知らせ（`TextChanges`・`SelectionChanges`・`LayoutChanges`）を数え、`BoundsOf(start, end)` で候補の窓の位置を読める。フォーカスのある欄の文字の入力の相手（§4.7 の `ITextInputClient`）を、TSF の文書の口が呼ぶのと同じ順で呼び、変換中の文字の更新・文節・確定・取り消しを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
 ```csharp
 app.Focus(app.Find("name"));

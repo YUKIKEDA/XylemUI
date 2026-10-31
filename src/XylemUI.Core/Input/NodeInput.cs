@@ -68,6 +68,11 @@ internal sealed class NodeInput
     internal bool SelectsText { get; set; }
 
     /// <summary>
+    /// Gets or sets the client of the text input the OS's input method reads while the node has the focus (design §4.7).
+    /// </summary>
+    internal ITextInputClient? TextInputClient { get; set; }
+
+    /// <summary>
     /// Gets or sets the node's place in the order of Tab (design §7.1): a smaller index comes first, and the nodes of the same index
     /// come in the order of the tree. 0 by default.
     /// </summary>

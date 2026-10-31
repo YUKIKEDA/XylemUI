@@ -188,6 +188,80 @@ public sealed class HeadlessPixelTests
         await app.MatchesGoldenAsync("selection-across-leaves.png");
     }
 
+    /// <summary>
+    /// A composition draws each clause's underline as its attribute says, the thick one twice the normal, not cut at the glyphs,
+    /// each shortened at its ends so that two clauses side by side show a gap (design §4.7); the frame matches its golden.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of one line in black at 14 px on white, in a headless app of 200 x 40 on WARP, with the focus.
+    ///
+    /// Steps:
+    /// - Compose "日本語ab" with "日本" thick and solid, "語" dotted, and "ab" dotted; find the row of the thick underline under the
+    ///   middle of "日本"; read the pixels of that row 3 and 1 pixels left of the end of "日本"; compare the frame with
+    ///   "ime-composition.png".
+    ///
+    /// Expected:
+    /// - The pixel 3 left of the end is dark (the line), the one 1 left of it is lighter (the gap); the frame matches the golden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Composition_ClausesAndTheirGaps_MatchTheirGolden()
+    {
+        Element field = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Row(field = Primitives.Primitive.TextField(Signal.Create(string.Empty)).Width(180))
+                    .Background(White)
+                    .Foreground(Color.FromRgb(0x000000)),
+            Options(200, 40) with
+            {
+                CaretBlink = false,
+            }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(field));
+        _ = app.Ime.Compose(
+            "日本語ab",
+            cursor: 5,
+            clauses:
+            [
+                new(0, 2, DecorationStyle.Solid, Thick: true),
+                new(2, 3, DecorationStyle.Dotted, Thick: false),
+                new(3, 5, DecorationStyle.Dotted, Thick: false),
+            ]
+        );
+        _ = app.PumpAndSettle();
+
+        Rect target = app.Ime.BoundsOf(0, 2)!.Value;
+        int end = (int)MathF.Round(target.X + target.Width);
+        int middle = (int)MathF.Round(target.X + (target.Width / 2));
+        int row = LowestDark(app, middle, (int)target.Y, (int)MathF.Ceiling(target.Y + target.Height) + 4);
+
+        Assert.True(Darkness(Pixel(app, (end - 3, row))) > 128);
+        Assert.True(Darkness(Pixel(app, (end - 1, row))) < Darkness(Pixel(app, (end - 3, row))));
+        await app.MatchesGoldenAsync("ime-composition.png");
+    }
+
+    // How dark a pixel is, from 0 (white) to 255 (black), by its green channel.
+    private static int Darkness(Color color) => 255 - color.G;
+
+    // The lowest row from top to bottom (exclusive) where a column's pixel is dark: the underline under a glyph.
+    private static int LowestDark(HeadlessApp app, int x, int top, int bottom)
+    {
+        int found = -1;
+        for (int y = Math.Max(0, top); y < bottom; y++)
+        {
+            if (Darkness(Pixel(app, (x, y))) > 128)
+            {
+                found = y;
+            }
+        }
+
+        Assert.True(found >= 0);
+        return found;
+    }
+
     private static HeadlessOptions Options(float width, float height) =>
         new()
         {

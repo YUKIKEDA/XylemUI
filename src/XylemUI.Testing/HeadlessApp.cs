@@ -58,6 +58,8 @@ public sealed class HeadlessApp : IAsyncDisposable
             Tree = new UiTree(_text);
             Tree.Animations.ReduceMotion = options.ReduceMotion;
             Tree.Clipboard = Clipboard;
+            Ime = new HeadlessIme(this);
+            Tree.SetTextInput(Ime);
             Tree.SetTextEditing(options.CaretBlink ? TextEditingSettings.Default : TextEditingSettings.Default with { CaretBlink = null });
             _rootNode = Tree.CreateNode(new LayoutStyle());
             Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
@@ -122,6 +124,11 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// clipboard").
     /// </summary>
     public HeadlessClipboard Clipboard { get; } = new();
+
+    /// <summary>
+    /// Gets the OS's input method of the window, which sends the focused field the calls an input method sends (design §12.4, "IME").
+    /// </summary>
+    public HeadlessIme Ime { get; }
 
     /// <summary>
     /// Gets the number of frames that presented: a frame that changed nothing presents nothing (design §2.11).

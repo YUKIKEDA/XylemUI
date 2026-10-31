@@ -231,6 +231,93 @@ internal sealed class TextEditor(bool multiline)
     }
 
     /// <summary>
+    /// Replaces a range with committed text from an input method, as typing: the range is the one given, not the selection.
+    /// </summary>
+    /// <param name="start">The start of the range.</param>
+    /// <param name="end">The end of the range.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="now">The time of the input.</param>
+    /// <returns>Whether the text changed.</returns>
+    public bool ReplaceRange(int start, int end, string text, TimeSpan now)
+    {
+        Selection = new TextSelection(Math.Clamp(start, 0, Text.Length), Math.Clamp(end, 0, Text.Length));
+        return Replace(text, now, joins: true);
+    }
+
+    /// <summary>
+    /// Replaces a range with text an input method is composing, and puts the selection, with no undo and no maximum length: what a
+    /// composition writes is recorded once, when it ends (<see cref="EndComposition"/>, design §4.7, "The maximum length and undo").
+    /// </summary>
+    /// <param name="start">The start of the range.</param>
+    /// <param name="end">The end of the range.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="caret">Where the caret goes.</param>
+    public void Compose(int start, int end, string text, int caret)
+    {
+        start = Math.Clamp(start, 0, Text.Length);
+        end = Math.Clamp(end, start, Text.Length);
+        Text = string.Concat(Text.AsSpan(0, start), text, Text.AsSpan(end));
+        Selection = TextSelection.Collapsed(Math.Clamp(caret, 0, Text.Length));
+        _groupOpen = false;
+    }
+
+    /// <summary>
+    /// Ends a composition that started from a text: what it changed, cut to the room the maximum length leaves, is one group of undo
+    /// of its own (design §4.7, "The maximum length and undo"). A composition that changed nothing records nothing.
+    /// </summary>
+    /// <param name="before">The text when the composition started.</param>
+    /// <param name="selectionBefore">The selection when it started.</param>
+    /// <param name="now">The time of the commit.</param>
+    /// <returns>Whether the maximum length cut the committed text.</returns>
+    public bool EndComposition(string before, TextSelection selectionBefore, TimeSpan now)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        int prefix = 0;
+        int shorter = Math.Min(before.Length, Text.Length);
+        while (prefix < shorter && before[prefix] == Text[prefix])
+        {
+            prefix++;
+        }
+
+        int suffix = 0;
+        while (suffix < shorter - prefix && before[before.Length - 1 - suffix] == Text[Text.Length - 1 - suffix])
+        {
+            suffix++;
+        }
+
+        _groupOpen = false;
+        string removed = before.Substring(prefix, before.Length - prefix - suffix);
+        string inserted = Text.Substring(prefix, Text.Length - prefix - suffix);
+        if (removed.Length == 0 && inserted.Length == 0)
+        {
+            return false;
+        }
+
+        bool cut = false;
+        if (MaxLength is { } max && inserted.Length > 0)
+        {
+            int room = max - (Clusters(before) - Clusters(removed));
+            string kept = room <= 0 ? string.Empty : Take(inserted, room);
+            if (kept.Length != inserted.Length)
+            {
+                Text = string.Concat(Text.AsSpan(0, prefix), kept, Text.AsSpan(prefix + inserted.Length));
+                Selection = TextSelection.Collapsed(prefix + kept.Length);
+                inserted = kept;
+                cut = true;
+            }
+        }
+
+        if (removed.Length > 0 || inserted.Length > 0)
+        {
+            _undo.Add(new UndoGroup([new Edit(prefix, removed, inserted, selectionBefore, Selection)]));
+            _redo.Clear();
+        }
+
+        _lastEdit = now;
+        return cut;
+    }
+
+    /// <summary>
     /// Undoes the last group of edits.
     /// </summary>
     /// <returns>Whether there was one.</returns>
