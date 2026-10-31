@@ -39,6 +39,7 @@ return new Handle<T>(index, slot.Generation);   // Generation starts at 0
 _slots[index].Generation = 1;
 ```
 - A struct that `UiNode` holds (`LayoutState`) cannot have a field of `Handle<UiNode>`: the runtime does not load `UiNode` (`TypeLoadException`). Such a link is a field of `UiNode` itself, beside `Parent` and `FirstChild` (`UiNode.BaselineChild`, L1b).
+- A value whose `null` means "the OS's" (or a default that can change) is kept as `null` and resolved where it is read, not where it is stored: a value resolved when stored stays old after the OS's changes. P02b2's text field wrote Windows' selection colors into the leaf when it set the selection, so a change of Windows' colors did not reach a selection until it moved (PR #500's review).
 - A method that cannot fail returns its value, not a `bool`/`out` pair or a nullable.
 - A public method does not throw because the caller used the wrong phase of the same type; split the type instead.
 - Core types are `internal` (design §2.9.1). The public surface is `Signal`, `Element`, the component functions, the interfaces Platform and Rendering implement, and the snapshot and message types they receive.
