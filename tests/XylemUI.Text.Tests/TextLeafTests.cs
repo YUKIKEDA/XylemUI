@@ -151,6 +151,41 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
         });
 
     /// <summary>
+    /// A text set to empty after it was laid out is laid out as an empty text: one line high, 0 wide, with no shaped text and no
+    /// lines; set again, it is shaped again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - "nn" laid out as above.
+    ///
+    /// Steps:
+    /// - Set ""; lay out; read the leaf. Set "nnn"; lay out; read it.
+    ///
+    /// Expected:
+    /// - Empty: 0 x 28.96, no shaping result, and no committed lines. Then 36.6 wide, with a shaping result of 3 glyphs.
+    /// </remarks>
+    [Fact]
+    public void TextSetToEmpty_HasNoShapedTextOrLines() =>
+        ui.Invoke(() =>
+        {
+            using var context = new TextContext(new TestFontProvider(_font));
+            (UiTree tree, NodeHandle leaf) = Build(context, "nn", 400);
+            TextLeaf text = tree.Nodes.GetRef(leaf).Text!;
+
+            tree.SetText(leaf, string.Empty);
+            LayoutEngine.RunLayoutPass(tree);
+            Rect emptied = tree.GetRect(leaf);
+            (ShapingResult? Result, bool Committed) empty = (text.Shaped!.Result, text.LineBreaks is { Committed: >= 0 });
+            tree.SetText(leaf, "nnn");
+            LayoutEngine.RunLayoutPass(tree);
+
+            AssertRect(0, Line, emptied);
+            Assert.Equal((null, false), empty);
+            Assert.Equal(36.6f, tree.GetRect(leaf).Width, 3);
+            Assert.Equal(3, text.Shaped!.Result!.GlyphCount);
+        });
+
+    /// <summary>
     /// The text and the style that are already there mark nothing; another text or style drops the caches and marks the layout.
     /// </summary>
     /// <remarks>

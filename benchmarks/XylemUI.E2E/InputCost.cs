@@ -17,7 +17,8 @@ namespace XylemUI.E2E;
 // through the same chains as the mouse's; a touch's tap is a down, an up, and the end of the touch on the first leaf; and a pen's move
 // brings 8 coalesced points that the first leaf's handler reads (row I1a, design §7, "Touch and pen"). A touch's drag moves the wheel's
 // scroll container 1 pixel up and down by turns; a fling's frame moves a container 100,000 high one step of a fling at 8,000 pixels a
-// second; and a frame reads its time from the system's clock (row I1b).
+// second; and a frame reads its time from the system's clock (row I1b). The text field's typing, word move, blink, and drag are in
+// TextFieldCost (row P02b).
 internal static class InputCost
 {
     private const int Moves = 10_000;
@@ -81,6 +82,7 @@ internal static class InputCost
         using var keyScroll = new KeyScroll();
         report.Number("us_per_scroll_key_p50", Median(21, keyScroll.TimeScroll));
         report.Number("us_per_key_click_p50", Median(21, keyScroll.TimeClick));
+        TextFieldCost.Run(report);
         return 0;
     }
 

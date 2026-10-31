@@ -272,6 +272,7 @@ public sealed class TextFieldTests
         var text = Signal.Create(string.Empty);
         await using Field field = await Field.StartAsync(text);
         field.App.Keyboard.Type("ab");
+        _ = field.App.PumpAndSettle();
         var after = new List<string>();
         var stopped = new List<bool>();
         void Press(Key key, KeyModifiers modifiers)
@@ -558,6 +559,93 @@ public sealed class TextFieldTests
     }
 
     /// <summary>
+    /// The placeholder is drawn where the text starts, inside the field's padding; an empty field that has the focus draws its caret
+    /// there, as high as a line, and again once a typed text is deleted.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An empty field of one line with the placeholder "Name", a red caret, and a padding of 8 by 6, with the focus.
+    ///
+    /// Steps:
+    /// - Read the rectangles of the box the text and the placeholder share, of the placeholder, and of the text leaf (each in its
+    ///   parent); and the red rectangles of the last frame. Type "ab" and pump, so that it is shaped; press Backspace twice, pump, and read the red rectangles again.
+    ///
+    /// Expected:
+    /// - The shared box is at (8, 6) in the field, the placeholder and the leaf at (0, 0) in it; the caret is one rectangle at (8, 6)
+    ///   in the window (the field is at its top left), 1 px wide and 20 px high: the test font's line at 14 px, 20.272 px, snapped to
+    ///   the pixels as the display list snaps a rectangle. After the deletion, the same one rectangle, and the leaf keeps no shaped
+    ///   text, so that it draws none of the deleted glyphs.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task EmptyField_PlaceholderAndCaret_AtTheTextsStart()
+    {
+        Color red = Color.FromRgb(0xFF0000);
+        await using Field field = await Field.StartAsync(
+            Signal.Create(string.Empty),
+            new TextFieldOptions { Placeholder = "Name", CaretColor = red },
+            padding: true
+        );
+        _ = field.App.PumpAndSettle();
+        UiTree tree = field.App.Tree;
+        Rect content = tree.GetRect(tree.Nodes.GetRef(field.Element.Node).FirstChild);
+        Rect placeholder = tree.GetRect(field.App.Find("Name").Node);
+        Rect leaf = tree.GetRect(field.Leaf);
+        List<FillRectCommand> carets = field.Fills().FindAll(fill => fill.Color == red);
+
+        Assert.Equal((8f, 6f), (content.X, content.Y));
+        Assert.Equal((0f, 0f), (placeholder.X, placeholder.Y));
+        Assert.Equal((0f, 0f), (leaf.X, leaf.Y));
+        FillRectCommand caret = Assert.Single(carets);
+        Assert.Equal((8f, 6f, 1f, 20f), (caret.X, caret.Y, caret.Width, caret.Height));
+
+        field.App.Keyboard.Type("ab");
+        _ = field.App.PumpAndSettle();
+        _ = field.App.Keyboard.Press(Key.Back);
+        _ = field.App.Keyboard.Press(Key.Back);
+        _ = field.App.PumpAndSettle();
+        FillRectCommand erased = Assert.Single(field.Fills().FindAll(fill => fill.Color == red));
+        Assert.Equal((8f, 6f, 1f, 20f), (erased.X, erased.Y, erased.Width, erased.Height));
+        Assert.Null(tree.Nodes.GetRef(field.Leaf).Text!.Shaped!.Result);
+    }
+
+    /// <summary>
+    /// A disabled field (<c>.Disabled()</c>, design §7) takes no focus and does nothing when pressed; disabled while it has the
+    /// focus, it loses it and takes no typing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of one line holding "ab" with the focus, bound to a selection signal, whose disabled mark is a signal.
+    ///
+    /// Steps:
+    /// - Set the mark and pump; type "x". Click the field at its start; ask to focus it.
+    ///
+    /// Expected:
+    /// - The field lost the focus; the text stays "ab"; the selection stays 0 to 2 (all, from when it took the focus); the focus
+    ///   is refused.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Disabled_TakesNoFocusAndNoPress()
+    {
+        var text = Signal.Create("ab");
+        var selection = Signal.Create(default(TextSelection));
+        var disabled = Signal.Create(false);
+        await using Field field = await Field.StartAsync(text, new TextFieldOptions { Selection = selection }, disabled: disabled);
+
+        disabled.Set(true);
+        _ = field.App.PumpAndSettle();
+        bool focused = (field.App.Tree.Nodes.GetRef(field.Element.Node).Pseudo & PseudoState.Focused) != 0;
+        field.App.Keyboard.Type("x");
+        field.Click(1, 10);
+
+        Assert.False(focused);
+        Assert.Equal("ab", text.Get());
+        Assert.Equal(new TextSelection(0, 2), selection.Get());
+        Assert.False(field.App.Focus(field.Element));
+    }
+
+    /// <summary>
     /// The selection is drawn with Windows' colors over the selected text while the field has the focus, and kept but not drawn
     /// while it has none; a field of one line selects all when it takes the focus.
     /// </summary>
@@ -680,7 +768,9 @@ public sealed class TextFieldTests
             float width = 300,
             float? height = null,
             bool other = false,
-            bool blink = false
+            bool blink = false,
+            IReadOnlySignal<bool>? disabled = null,
+            bool padding = false
         )
         {
             Element field = default;
@@ -692,6 +782,16 @@ public sealed class TextFieldTests
                     if (height is { } fixedHeight)
                     {
                         field = field.Height(fixedHeight);
+                    }
+
+                    if (disabled is not null)
+                    {
+                        field = field.Disabled(disabled);
+                    }
+
+                    if (padding)
+                    {
+                        field = field.Padding(8, 6);
                     }
 
                     return other ? Row(field, box = Box().Width(20).Height(20).Focusable()) : Row(field);
@@ -719,11 +819,52 @@ public sealed class TextFieldTests
             App.Pointer.Up(modifiers: modifiers);
         }
 
+        // The field's text leaf, the first child of the box it shares with the placeholder.
+        public NodeHandle Leaf => App.Tree.Nodes.GetRef(App.Tree.Nodes.GetRef(Element.Node).FirstChild).FirstChild;
+
+        // The rectangles the last frame filled.
+        public List<FillRectCommand> Fills()
+        {
+            var fills = new List<FillRectCommand>();
+            DisplayListReader reader = App.Frames.List.GetReader();
+            while (reader.TryNext(out CommandTag tag))
+            {
+                switch (tag)
+                {
+                    case CommandTag.FillRect:
+                        fills.Add(reader.ReadFillRect());
+                        break;
+                    case CommandTag.GlyphRun:
+                        _ = reader.ReadGlyphRun();
+                        break;
+                    case CommandTag.Shape:
+                        _ = reader.ReadShape();
+                        break;
+                    case CommandTag.Pop:
+                        reader.ReadPop();
+                        break;
+                    case CommandTag.Shadow:
+                        _ = reader.ReadShadow();
+                        break;
+                    case CommandTag.PushOpacity:
+                        _ = reader.ReadGroup();
+                        break;
+                    case CommandTag.PushState:
+                        _ = reader.ReadState(out _);
+                        break;
+                    default:
+                        _ = reader.ReadCurve();
+                        break;
+                }
+            }
+
+            return fills;
+        }
+
         // The paint runs of the field's text: their start, end, background, and color.
         public List<(int Start, int End, Color? Background, Color? Color)> SelectionRuns()
         {
-            NodeHandle leaf = App.Tree.Nodes.GetRef(Element.Node).FirstChild;
-            if (App.Tree.Nodes.GetRef(leaf).Text!.Ranges is not { } ranges)
+            if (App.Tree.Nodes.GetRef(Leaf).Text!.Ranges is not { } ranges)
             {
                 return [];
             }

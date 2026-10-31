@@ -43,6 +43,7 @@ public static partial class Primitive
         private UiTree _tree = null!;
         private NodeHandle _field;
         private NodeHandle _leaf;
+        private NodeHandle _content;
         private NodeHandle _caret;
         private NodeHandle _placeholder;
         private ITimer? _timer;
@@ -85,7 +86,20 @@ public static partial class Primitive
             Element caret = Box().Draw(DrawCaret);
             _caret = caret.Node;
             _tree.SetStyle(_caret, Layer());
-            Element field = options.Placeholder is { } placeholder ? Container(leaf, PlaceholderOf(placeholder), caret) : Container(leaf, caret);
+
+            // The text and the placeholder share a box in the field's flow, inside the field's padding, at least as wide as the field
+            // so that the placeholder has the field's width to wrap in.
+            Element content = options.Placeholder is { } placeholder ? Container(leaf, PlaceholderOf(placeholder)) : Container(leaf);
+            _content = content.Node;
+            _tree.SetStyle(
+                _content,
+                _tree.Nodes.GetRef(_content).Layout.Style with
+                {
+                    FlexShrink = options.Multiline ? 1 : 0,
+                    MinWidth = Length.Percent(1),
+                }
+            );
+            Element field = Container(content, caret);
             _field = field.Node;
 
             // The caret at the end of a line has room inside the content, so that scrolling to it shows all of it (Flutter's
@@ -140,10 +154,10 @@ public static partial class Primitive
             return field;
         }
 
-        // The field's box: a row for one line, which keeps the text's width, or a column for many, which wraps it.
+        // The field's box and its content's: a row for one line, which keeps the text's width, or a column for many, which wraps it.
         private Element Container(params ReadOnlySpan<Element> children) => options.Multiline ? Column(children) : Row(children);
 
-        // An absolute layer over the field's padding box.
+        // An absolute layer over its parent's padding box: the caret's over the field's, the placeholder's over the content's.
         private static LayoutStyle Layer() =>
             new()
             {
@@ -156,7 +170,7 @@ public static partial class Primitive
                 ),
             };
 
-        // The placeholder: at the text's place, at half the opacity, while the text is empty.
+        // The placeholder: over the content's box, where the text starts, at half the opacity, while the text is empty.
         private Element PlaceholderOf(string placeholder)
         {
             Element shown = Elements.Text(placeholder).Opacity(0.5f);
@@ -278,30 +292,51 @@ public static partial class Primitive
         // the selection is collapsed, and the blink shows it. The field scrolls to keep it in view.
         private void DrawCaret(DrawingContext context, Rect bounds)
         {
-            if (!Focused || !_editor.Selection.IsCollapsed || Leaf.LineBreaks is not { Committed: >= 0 })
+            if (!Focused || !_editor.Selection.IsCollapsed || !CaretRect(out Rect caret))
             {
                 return;
             }
 
-            CaretPosition caret = TextCaret.CaretGeometry(Leaf, ToShown(_editor.Selection.Caret), Affinity.Downstream);
             Vector2 origin = LeafOrigin();
             float width = Math.Max(1, _tree.TextEditing.CaretWidth);
-            float x = origin.X + caret.Rect.X;
-            float y = origin.Y + caret.Rect.Y;
-            Reveal(x, y, width, caret.Rect.Height);
+            float x = origin.X + caret.X;
+            float y = origin.Y + caret.Y;
+            Reveal(x, y, width, caret.Height);
             if (_caretShown)
             {
-                context.FillRect(bounds.X + x, bounds.Y + y, width, caret.Rect.Height, options.CaretColor ?? Foreground());
+                context.FillRect(bounds.X + x, bounds.Y + y, width, caret.Height, options.CaretColor ?? Foreground());
             }
+        }
+
+        // The caret's box in the leaf's content, from its lines; an empty text has none, and its caret is at the start of the line
+        // the measurement gave it.
+        private bool CaretRect(out Rect caret)
+        {
+            TextLeaf leaf = Leaf;
+            if (leaf.LineBreaks is { Committed: >= 0 })
+            {
+                caret = TextCaret.CaretGeometry(leaf, ToShown(_editor.Selection.Caret), Affinity.Downstream).Rect;
+                return true;
+            }
+
+            if (leaf.Length > 0 || leaf.Shaped is not { Valid: true })
+            {
+                caret = default;
+                return false;
+            }
+
+            caret = new Rect(0, 0, 0, LayoutEngine.EmptyTextLine(leaf).Height);
+            return true;
         }
 
         // The leaf's content box, from the layer's origin (the field's padding box), in the content's coordinates.
         private Vector2 LeafOrigin()
         {
+            Rect content = _tree.Nodes.GetRef(_content).Layout.Rect;
             Rect leaf = _tree.Nodes.GetRef(_leaf).Layout.Rect;
             Rect layer = _tree.Nodes.GetRef(_caret).Layout.Rect;
             Edges inner = Leaf.PaddingBorder;
-            return new Vector2(leaf.X - layer.X + inner.Left, leaf.Y - layer.Y + inner.Top);
+            return new Vector2(content.X + leaf.X - layer.X + inner.Left, content.Y + leaf.Y - layer.Y + inner.Top);
         }
 
         // Scrolls to the nearest offset that shows a box of the content (Flutter's _getOffsetToRevealCaret, editable_text.dart lines

@@ -197,10 +197,14 @@ internal sealed class ShapedTextCache
     /// </summary>
     public bool Valid { get; private set; }
 
+    // The result a text is shaped into, kept with its arrays while the text is empty, so that a text typed again reuses them.
+    private ShapingResult? _result;
+    private bool _empty;
+
     /// <summary>
     /// Gets the text shaped once; <see langword="null"/> for an empty text, which has no glyphs.
     /// </summary>
-    public ShapingResult? Result { get; private set; }
+    public ShapingResult? Result => _empty ? null : _result;
 
     /// <summary>
     /// Gets the min-content width.
@@ -221,7 +225,11 @@ internal sealed class ShapedTextCache
     /// Returns the result to shape a text into, made the first time.
     /// </summary>
     /// <returns><see cref="Result"/>, which later calls return again.</returns>
-    public ShapingResult ResultToFill() => Result ??= new ShapingResult();
+    public ShapingResult ResultToFill()
+    {
+        _empty = false;
+        return _result ??= new ShapingResult();
+    }
 
     /// <summary>
     /// Records the content widths of a text just shaped into <see cref="Result"/>.
@@ -241,6 +249,9 @@ internal sealed class ShapedTextCache
     /// <param name="line">The metrics of the font a space takes in the style.</param>
     public void FillEmpty(LineMetrics line)
     {
+        // A text emptied after it was shaped had its glyphs drawn again: the last text's result stood as the empty text's (row
+        // P02b, the todo field emptied by an add).
+        _empty = true;
         EmptyLine = line;
         MinWidth = 0;
         MaxWidth = 0;
