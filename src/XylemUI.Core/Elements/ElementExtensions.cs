@@ -426,6 +426,18 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Keeps the text of the node's subtree out of the selection of a selection area around it (design §4.10, Flutter's
+    /// <c>SelectionContainer.disabled</c>): a drag across it selects none of it, a copy leaves it out, and its text shows no I-beam.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element Unselectable(this Element element)
+    {
+        element.TreeOrThrow().SetUnselectable(element.Node);
+        return element;
+    }
+
+    /// <summary>
     /// Sets whether the node itself is disabled (design §7, "Disabled"). A disabled node and its descendants have the disabled state:
     /// their handlers of the pointer, the keys, and the focus are not called, they take no focus, and Tab skips them. They still take
     /// the pointer from the nodes behind them; the nearest ancestor that is not disabled gets its route, its hover, its press, and its

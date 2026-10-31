@@ -295,6 +295,12 @@ internal sealed class UiTree
     internal void CountLinkLeaf(bool before, bool after) => LinkLeaves += (after ? 1 : 0) - (before ? 1 : 0);
 
     /// <summary>
+    /// Gets the number of selection areas in the tree (design §4.10). While it is 0, the draw stage does not look for the text
+    /// leaves an area selects: a tree without one draws as it did before row P02b2.
+    /// </summary>
+    internal int SelectionAreas { get; private set; }
+
+    /// <summary>
     /// Gets or sets the number of exceptions of a leaf's measurement that the layout passes counted and did not report: the same type
     /// again from the same leaf, before a change of the leaf (design §2.4.1).
     /// </summary>
@@ -568,6 +574,14 @@ internal sealed class UiTree
             Invalidation.Invalidate(this, node, ChangeKind.Color);
         }
     }
+
+    /// <summary>
+    /// Returns a text leaf's selection, made the first time (design §4.10): a selection area keeps its place in it.
+    /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <returns>The leaf's selection.</returns>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    internal LeafSelection TextSelectionOf(NodeHandle node) => TextLeafOf(node).Selection ??= new LeafSelection();
 
     /// <summary>
     /// Sets a text leaf's own color for its text, or <see langword="null"/> to take the color its ancestors resolve; equal to the
@@ -870,6 +884,53 @@ internal sealed class UiTree
     /// <param name="node">The node.</param>
     /// <param name="keeps">Whether the press keeps the focus.</param>
     public void SetKeepsFocusOnPress(NodeHandle node, bool keeps) => InputOf(node).KeepsFocusOnPress = keeps;
+
+    /// <summary>
+    /// Keeps the text of a node's subtree out of a selection area's selection (design §4.10).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    public void SetUnselectable(NodeHandle node) => InputOf(node).Unselectable = true;
+
+    /// <summary>
+    /// Marks a node as a selection area (design §4.10), whose text leaves show the I-beam.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void SetSelectsText(NodeHandle node)
+    {
+        NodeInput input = InputOf(node);
+        if (!input.SelectsText)
+        {
+            input.SelectsText = true;
+            SelectionAreas++;
+        }
+    }
+
+    /// <summary>
+    /// Returns whether a text leaf takes part in a selection area's selection (design §4.10): a selection area is above it, and no
+    /// node marked unselectable is between them.
+    /// </summary>
+    /// <param name="leaf">The text leaf.</param>
+    /// <returns>Whether the leaf is selectable.</returns>
+    internal bool IsSelectableText(NodeHandle leaf)
+    {
+        for (NodeHandle node = leaf; !node.IsNone; node = Nodes.GetRef(node).Parent)
+        {
+            if (Nodes.GetRef(node).Input is { } input)
+            {
+                if (input.Unselectable)
+                {
+                    return false;
+                }
+
+                if (input.SelectsText)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Adds a focus handler to a node (design §7, "Keys and the focus"). The node writes no hit region for it.
@@ -1630,6 +1691,11 @@ internal sealed class UiTree
         if (LinkLeaves > 0 && Nodes.GetRef(node).Text?.Ranges?.HasLinks == true)
         {
             LinkLeaves--;
+        }
+
+        if (SelectionAreas > 0 && Nodes.GetRef(node).Input?.SelectsText == true)
+        {
+            SelectionAreas--;
         }
 
         Nodes.Free(node);

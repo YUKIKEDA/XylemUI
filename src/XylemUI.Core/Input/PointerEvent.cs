@@ -73,6 +73,11 @@ public readonly struct PointerEvent
     public Element Target => new(_input.Tree, TargetNode);
 
     /// <summary>
+    /// Gets the window's input that sent the event (a selection area reads the display list through it, design §4.10).
+    /// </summary>
+    internal WindowInput Input => _input;
+
+    /// <summary>
     /// Gets the node of the handler called now.
     /// </summary>
     public Element CurrentTarget => new(_input.Tree, CurrentNode);

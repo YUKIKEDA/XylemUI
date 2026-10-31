@@ -161,28 +161,7 @@ internal sealed class TextEditor(bool multiline)
     /// </summary>
     /// <param name="offset">The position.</param>
     /// <returns>The word as a selection from its start to its end.</returns>
-    public TextSelection WordAt(int offset)
-    {
-        if (Text.Length == 0)
-        {
-            return default;
-        }
-
-        int at = Math.Clamp(offset, 0, Text.Length - 1);
-        int start = 0;
-        for (int position = 0; position < Text.Length; )
-        {
-            int end = Words.NextBoundary(Text, position);
-            if (at < end)
-            {
-                return new TextSelection(start, end);
-            }
-
-            start = position = end;
-        }
-
-        return new TextSelection(start, Text.Length);
-    }
+    public TextSelection WordAt(int offset) => TextUnits.WordAt(Text, offset);
 
     /// <summary>
     /// Types text at the selection, which it replaces. Typing less than 300 ms after the last edit joins its group of undo.

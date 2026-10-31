@@ -267,9 +267,14 @@ internal sealed partial class WindowFrames
         var box = new Rect(parentX + rect.X, parentY + rect.Y, rect.Width, rect.Height);
         NodeVisual? visual = node.Visual;
 
-        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1), and a text leaf with links takes
-        // the pointer over them (design §4.8).
-        bool writesHit = node.Input?.WritesHitRegion == true || node.Layout.Style.IsScrollContainer || node.Text?.Ranges?.HasLinks == true;
+        // A scroll container takes the wheel over the parts of it no child takes (design §3.4.1), a text leaf with links takes
+        // the pointer over them (design §4.8), and a text leaf a selection area selects is found by its region (§4.10), looked for
+        // only while the tree has an area.
+        bool writesHit =
+            node.Input?.WritesHitRegion == true
+            || node.Layout.Style.IsScrollContainer
+            || node.Text?.Ranges?.HasLinks == true
+            || (_tree.SelectionAreas > 0 && node.Text is not null && _tree.IsSelectableText(handle));
         Color text = inheritedText;
         int pushed = 0;
         if (visual is not null)

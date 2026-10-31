@@ -148,6 +148,46 @@ public sealed class HeadlessPixelTests
         Assert.Equal(below, Pixel(app, (20, 25)));
     }
 
+    /// <summary>
+    /// A selection across two text leaves of an area draws its background behind the selected glyphs of each, line by line, and
+    /// the selected glyphs in its text color; the frame matches its golden.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A selection area around a column of "Selected text" and "across two leaves" in black at 14 px on white, in a headless app
+    ///   of 200 x 60 on WARP, with the headless app's selection colors.
+    ///
+    /// Steps:
+    /// - Drag from x = 30 on the first leaf to x = 60 on the second; read the pixel at the start of the first leaf (left of the
+    ///   selection) and at its end; compare the frame with "selection-across-leaves.png".
+    ///
+    /// Expected:
+    /// - The pixel left of the selection is white; the one at x = 40 is the selection's background; the frame matches
+    ///   the golden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task SelectionArea_AcrossTwoLeaves_MatchesItsGolden()
+    {
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Primitives
+                    .Primitive.SelectionArea(Column(Elements.Text("Selected text"), Elements.Text("across two leaves")))
+                    .Background(White)
+                    .Foreground(Color.FromRgb(0x000000)),
+            Options(200, 60)
+        );
+        app.Pointer.Move(30, 10);
+        app.Pointer.Down();
+        app.Pointer.Move(60, 30);
+        app.Pointer.Up();
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(White, Pixel(app, (2, 2)));
+        Assert.Equal(TextEditingSettings.Default.SelectionBackground, Pixel(app, (40, 2)));
+        await app.MatchesGoldenAsync("selection-across-leaves.png");
+    }
+
     private static HeadlessOptions Options(float width, float height) =>
         new()
         {

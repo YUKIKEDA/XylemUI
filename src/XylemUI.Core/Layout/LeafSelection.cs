@@ -3,8 +3,9 @@ namespace XylemUI;
 /// <summary>
 /// The selection a text leaf draws (design §4.10, "Drawing"): a range of its text, behind which the draw stage fills the line's
 /// rectangles, and whose glyphs it draws in the selection's text color. A text field and a selection area set it through
-/// <see cref="UiTree.SetTextSelection"/>. A leaf makes one the first time it is selected and keeps it, so that a leaf never
-/// selected grows by its reference alone and a selection that moves allocates nothing.
+/// <see cref="UiTree.SetTextSelection"/>. A leaf in a selection area makes one at the area's first press, which keeps its place in
+/// it; another leaf makes one the first time it is selected. The leaf keeps it, so that a leaf of no area and never selected grows
+/// by its reference alone and a selection that moves allocates nothing.
 /// </summary>
 internal sealed class LeafSelection
 {
@@ -28,6 +29,17 @@ internal sealed class LeafSelection
     /// Gets the color of the selected glyphs; <see langword="null"/> for the OS's.
     /// </summary>
     public Color? Foreground { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the selection area that collected the leaf last (design §4.10, "Order"), and <see cref="Index"/> its place in
+    /// the area's list; an area checks both before it takes a leaf of the display list for one of its own.
+    /// </summary>
+    public object? Owner { get; set; }
+
+    /// <summary>
+    /// Gets or sets the leaf's place in the list of the area that collected it last (<see cref="Owner"/>).
+    /// </summary>
+    public int Index { get; set; }
 
     /// <summary>
     /// Gets a value indicating whether the range holds no text, so that nothing is drawn.

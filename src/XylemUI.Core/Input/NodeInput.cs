@@ -56,6 +56,18 @@ internal sealed class NodeInput
     public bool KeepsFocusOnPress { get; internal set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the node's subtree keeps its text out of a selection area's selection
+    /// (<see cref="ElementExtensions.Unselectable"/>, design §4.10).
+    /// </summary>
+    public bool Unselectable { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the node is a selection area, whose subtree's text leaves are selected across
+    /// (design §4.10): a text leaf in it shows the I-beam (§7, "Cursor shape").
+    /// </summary>
+    internal bool SelectsText { get; set; }
+
+    /// <summary>
     /// Gets or sets the node's place in the order of Tab (design §7.1): a smaller index comes first, and the nodes of the same index
     /// come in the order of the tree. 0 by default.
     /// </summary>

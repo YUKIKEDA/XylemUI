@@ -2022,7 +2022,7 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
   - 整形の結果: 10n + 8 + 25g + 8b + 56r バイト。内訳は、文字 2n、位置 4(n + 1)、文字からグリフへの対応 4(n + 1)、グリフ 24g（`LaidGlyph`）、切ると危ない印 g、改行の候補 8b、run 24r、run の大きさ・言語・字間・機能 24r（`RunStyle`、T12 で §4.8 の範囲のために足した）、倍率 4r、ハイフンの幅 4r
   - 幅の項目 1 つ: 64L + 24g バイト。内訳は、行の範囲 12L（`LineSpan`）、並べた行 28L（`LaidLine`）、グリフ 24(g + L)。改行した行のハイフンで、グリフは 1 行に 1 つまで増える
   - 内容のバッファ: 2n バイト
-  - `resize-text` の葉（「日本語のテキスト」、n = g = b = 8、r = L = e = 1）では 408 + 256 + 16 = 680 バイトになる。これに、配列 15 個とオブジェクト 7 個（`TextLeaf`、2 段のキャッシュ、`ShapingResult`、項目、`LineBreakResult`、`LineLayoutResult`）の頭が加わる。`TextLeaf` は、選択（§4.10）への参照の 8 バイトを持つ。選択の中身は、初めて選ばれた葉だけが作る（P02b2 で測ると、`resize-text` の最初のレイアウトは main の回ごとの幅の中だった）
+  - `resize-text` の葉（「日本語のテキスト」、n = g = b = 8、r = L = e = 1）では 408 + 256 + 16 = 680 バイトになる。これに、配列 15 個とオブジェクト 7 個（`TextLeaf`、2 段のキャッシュ、`ShapingResult`、項目、`LineBreakResult`、`LineLayoutResult`）の頭が加わる。`TextLeaf` は、選択（§4.10）への参照の 8 バイトを持つ。選択の中身は、選べる領域に加わる葉は領域の最初の押下で（領域の中の番号を持つため、§4.10）、ほかの葉は初めて選ばれたときに作る（P02b2 で測ると、`resize-text` の最初のレイアウトは main の回ごとの幅の中だった）
 - **確定した幅:** layout の確定（commit）で使った幅の項目に印を付け、`LineBreakCache` の上書きの候補から外す（上書きするのは残りの 3 つの最も古いもの）。描画（§5.0「描画の段とフレームの駆動」、V1b）は印の付いた項目を読み、測り直さない。印は次の確定で動く。Flutter の `RenderParagraph` の `paint` は、`performLayout` の後に計測が捨てられた場合に備えて、同じ制約で `_layoutTextWithConstraints` をもう一度呼ぶ（`paragraph.dart` 1030〜1034 行目）。`TextPainter.layout` は、持っている結果が制約に合えばすぐ戻る（`text_painter.dart` 1229〜1231 行目）。XylemUI では、確定した幅の項目が上書きされないので、描画のときに合うかを確かめずに読める
 - **返す大きさ:** 幅は、行末の空白を除いた最も広い行の幅。高さは行の高さの合計。最初のベースラインは最初の行のもの（`MeasureResult.FirstBaseline`）。内容が空の葉は、幅が 0 で、1 行の高さを持つ。その行のフォントは、要求のフォントで空白（U+0020）を引いたもの（`FontFallback.ResolveWithFallback`）。強制改行の後の空の行は、改行の文字の run のフォントで高さを決める。skparagraph も、空の文章に、スタイルのフォントの 1 行の高さを与える（`ParagraphImpl.cpp` 173〜186・1040〜1066 行目）
 - **行の高さ:** 1 行の高さは、その行で使ったフォント（フォールバックを含む）の ascent・descent・lineGap の、それぞれの最大の和。lineGap は上下に半分ずつ配る（half-leading）。`LineHeight` を指定したときは、その行に載る範囲の大きさの最大（範囲を持たない葉では `Size`、§4.8）× `LineHeight` を行の高さとし、ascent + descent との差を上下に半分ずつ配る。最初のベースラインは、行の上端から半分の余白 + ascent。フォントの値は HarfBuzz の `hb_font_get_h_extents`（`hb_font_extents_t` の `ascender`・`descender`・`line_gap`。descender は負、HarfBuzz 14.5.1 の `hb-font.h` 、94〜108・915〜917 行目）から em あたりの値として読み、`Font` に足す。run の大きさ（`Size` と、フォールバックの `FontMatch.Scale`）を掛けて使う。比べた 3 つのうち、Flutter（Skia 8df24be の skparagraph）と Avalonia は lineGap を行の高さに入れる。Avalonia 12.1.4 は、行の高さを descent − ascent + lineGap とし、ベースラインを lineGap の半分だけ下げる（`TextLineImpl.cs` 1417〜1439 行目）。`LineHeight` の扱いも、上の XylemUI の形と同じ（同じ行）。skparagraph も lineGap の半分を ascent の上に置く（`Run.cpp` 64〜84 行目）。倍率を指定したときの配り方は 2 通りある。既定では ascent と descent を同じ比で伸ばし、`TextLeadingDistribution.even`（`fUseHalfLeading`）のときだけ半分ずつ配る。XylemUI は Avalonia と、Flutter の `even` の形をとる。同じ比で伸ばすと、倍率を上げるほど文字が行の下へ寄る。GPUI（zed v1.25.3）は lineGap を読まず、既定の行の高さを大きさ × 1.618 とする（`geometry.rs` 3722〜3724 行目の `phi()`、`style.rs` 494 行目）。そのため、フォントによって行が詰まりすぎたり空きすぎたりする。skparagraph（`Run.h` 483〜485 行目）と GPUI（`style.rs` 554〜556 行目）は、行の高さを整数に丸める。XylemUI は、ほかの葉の大きさと同じく、行の高さを論理ピクセルのまま丸めない
@@ -2791,17 +2791,18 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 
 - 領域は 1 つの選択を持ち、押されるとフォーカスを取る（§7「押したときのフォーカス」）。選択の中身を外から読む API（Flutter の `onSelectionChanged`）は、使う場面がまだ無いので持たない
 - **加わる葉:** 領域の中の文字の葉のうち、`.Unselectable()` の部分木の中に無いもの。`.Unselectable()` は Flutter の `SelectionContainer.disabled`（`widgets/selection_container.dart` 65〜66 行目）に当たる。欄（§4.9）の文字は加わらない。欄は自分の選択を持ち、Flutter の欄も領域に加わらない（`editable_text.dart` は `SelectionContainer` を参照しない）
-- **押せる部品:** 子孫が止めた押下（`Primitive.Button` の押下など）では、選択を始めない。ボタンの文字も、ほかの場所から始めたドラッグなら選ぶ。Flutter も、ボタンの中の `Text` を選べる。`Text` は上に登録先があれば必ず加わり（`widgets/text.dart` 745〜756 行目）、フレームワークで `SelectionContainer.disabled` を使うのは `raw_tooltip.dart` 835 行目だけである
+- **押せる部品:** 押下の後にフォーカスが領域に無ければ、選択を始めない。フォーカスできる子孫（ボタンや欄）がフォーカスを取った押下と、`.KeepsFocusOnPress()` の部品がフォーカスを動かさなかった押下である（§7「押したときのフォーカス」は、経路を配る前にフォーカスを決める）。`Primitive.Button` は押下を止めないので、子孫が止めた押下だけを見る形では、ボタンを押しても選択が始まる（P02b2 の実装で改めた）。ボタンの文字も、ほかの場所から始めたドラッグなら選ぶ。Flutter も、ボタンの中の `Text` を選べる。`Text` は上に登録先があれば必ず加わり（`widgets/text.dart` 745〜756 行目）、フレームワークで `SelectionContainer.disabled` を使うのは `raw_tooltip.dart` 835 行目だけである
 - **リンク:** 文字の中のリンク（§4.8）を押すと、リンクのクリックとして扱い、選択は始めない。zed も、リンクを押したときは選択を始めない（`markdown.rs` 2341〜2354 行目）。ほかの場所から始めたドラッグは、リンクの上も選ぶ
 
 **並べる順:** 選択の始まりと終わりの間の葉は、木の順（文書の順）で決める。zed も文書の位置で決める。Flutter は選び始めるたびに、すべての葉を画面の位置で並べ替え、3 px 以内の重なりを同じ行とみなす目安を持つ（`selectable_region.dart` 52 行目、2578〜2624 行目）。木の順では、逆向きの並び（`RowReverse`・`ColumnReverse`）と絶対配置で、見た目の順と選ぶ順が食い違う。領域は選び始めるときに、中の葉を木の順に集めて持ち、選択の間は持ったものを使う。
 
+- **当たりの領域:** 領域に加わる文字の葉は、描く段で当たりの領域を書く（§5.0「ヒット領域と `DrawingContext`」）。領域は、表示リストの当たりの領域を後ろから 1 回たどり、点の上の葉と、点より前の最後の葉を同時に見つける。葉の中の点は、領域の変換とスクロールを戻した位置で、§4.8 の `HitTestText` に渡す。木に領域が 1 つも無い間（`UiTree.SelectionAreas` が 0）は、描く段はこの確かめをしない
 - **選択の持ち方:** 起点と終点を、それぞれ（集めた葉の番号、葉の中の位置）で持つ。2 つの間の葉はすべて選ばれ、両端の葉は一部が選ばれる。終点が動いたときは、前と今の終点の間の葉だけ、選択の範囲を置き直す
 - **葉の外の点:** 点が葉の上に無いときは、木の順で、点より前（点より上の行、同じ行なら左）にある最後の葉の終わりとみなす。前に葉が無ければ、最初の葉の始まりとみなす。Flutter も、段落の間の点では前の段落を最後まで選ぶ（`rendering/selection.dart` 321〜332 行目）
 
 **ポインタ:** Flutter の Windows の動きにする（`selectable_region.dart` 749〜804 行目）。
 
-- 1 回のクリックで選択を消し、押した位置を始めの点にする。Shift+クリックは、始めの点から選択を広げる
+- 1 回のクリックで選択を消し、押した位置を始めの点にする。Shift+クリックは、前の押下の始めの点から選択を広げる。始めの点が無いとき（領域がフォーカスを失った後など）は、1 回のクリックと同じにする（Flutter、`selectable_region.dart` 753〜762 行目）
 - 2 回で単語（§4.9 の UAX #29 の単語の境界）、3 回で段落（葉の中の、改行から改行まで）を選ぶ。回数は 3 で止める（同じファイルの 641〜648 行目）。zed は 3 回で行、4 回で全体を選び（`markdown.rs` 2369〜2400 行目）、Avalonia は 3 回で全体を選ぶ
 - ドラッグは選択を広げる。2 回と 3 回の後は、単語と段落の単位で広げる。押したときの暗黙のキャプチャ（§7）で、領域の外へ出ても続く
 - カーソルは、加わる文字の葉の上だけ I ビームにする。葉と葉の間は既定の矢印のまま（Flutter、`widgets/text.dart` 752〜756 行目）。§7「カーソル形状」は当たったノードから祖先へたどるので、加わる葉は、自分が `Cursor` を持たなければ I ビームを持つものとして数える。領域のノードには `Cursor` を置かない（置くと葉と葉の間も I ビームになる）。ボタンの中の葉も I ビームで、Flutter も `Text` の `MouseRegion` がいちばん内側で勝つ。リンクの手のカーソル（§4.8）は、これより先に決まる
