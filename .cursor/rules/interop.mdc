@@ -33,6 +33,8 @@ The design for this is `docs/design.ja.md` §2.9, §2.11.1, §2.12. This rule is
 
 ## Callbacks from native code
 
+- What the OS gives a window (a COM manager, a handle) is held by that window's object, not in a static field: an app has many windows. P02c's TSF first put its category and display attribute managers in static fields; a second window replaced them, and closing a window left the other's clauses without attributes or calling a released object (PR #540's review).
+- A list of notices sent to the OS, which may call back while it is told, is taken out and emptied before it is sent. P02c's document sent its held text changes from the list itself; a lock the manager asked for while told one ended by sending the same list again (PR #540's review).
 - A callback is a `static` method with `[UnmanagedCallersOnly]`. It catches every exception at its entry; a managed exception never crosses into native code (Invariant 13). An invariant failure still fails fast. A callback whose body only reads and writes through its pointer arguments, calls nothing that can throw (a constant such as a TerraFX IID, `Guid`'s `==`), and allocates nothing cannot throw a managed exception and has no `catch`, which would be a branch nothing reaches; its type says so in a comment (F1's `TextAnalysisSource`, PR #152's review).
 - Native code never holds a managed object's address. It holds a generational id from `NativeHandleTable` (Invariant 8). No long-lived `GCHandle.Alloc(..., Pinned)`.
 - A callback that arrives on a thread other than the UI thread does not touch Core; it posts to the UI queue (design §2.12).
