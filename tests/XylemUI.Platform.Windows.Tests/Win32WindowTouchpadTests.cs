@@ -287,7 +287,8 @@ public sealed unsafe class Win32WindowTouchpadTests(UiThreadFixture ui)
     /// - A hidden window with a fake viewport, warmed by one round.
     ///
     /// Steps:
-    /// - 1,000 rounds through PerformanceAssert.DoesNotAllocate of a start, 4 translations, an end, and an update of the gestures.
+    /// - 1,000 rounds through PerformanceAssert.DoesNotAllocate, after the helper's unmeasured window of 100, of a start, 4
+    ///   translations, an end, and an update of the gestures.
     ///
     /// Expected:
     /// - No bytes were allocated, and 6 inputs were delivered for each round the helper ran (its unmeasured window and any window it
