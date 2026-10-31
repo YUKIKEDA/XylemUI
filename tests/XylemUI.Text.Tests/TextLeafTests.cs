@@ -516,27 +516,29 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             Color red = Color.FromRgb(0xCC3333);
             Color blue = Color.FromRgb(0x3366CC);
 
-            void Frame(int index)
+            int turn = 0;
+
+            // Each leaf takes the other text and color each time its turn comes, so every frame changes something. The turn counts
+            // the calls, not the index: a window that a background GC makes run again repeats its indices, and a frame that wrote
+            // the values its index wrote before would change nothing and present nothing (Issue #528).
+            void Frame()
             {
-                // Each leaf takes the other text and color each time its turn comes, so every frame changes something. The
-                // allocation check hands the warm-up window negative indices; the shift keeps them in range.
-                int i = index + 1_000;
+                int i = turn++;
                 bool odd = (i / 20) % 2 == 1;
                 tree.SetText(leaves[i % 20], odd ? "テキストの日本語" : "日本語のテキスト");
                 tree.SetTextColor(leaves[(i + 7) % 20], odd ? red : blue);
                 scheduler.Run();
             }
 
-            // The warm-up runs on into the check's own unmeasured window (-20 to -1), so the indices go on without a repeat.
-            for (int i = -420; i < -20; i++)
+            for (int i = 0; i < 400; i++)
             {
-                Frame(i);
+                Frame();
             }
 
             int presents = target.Presents;
 
             // The runs it returns include the warm-up window and any window a background GC made it run again.
-            int runs = PerformanceAssert.DoesNotAllocate(200, Frame);
+            int runs = PerformanceAssert.DoesNotAllocate(200, _ => Frame());
             Assert.Equal(presents + runs, target.Presents);
         });
 

@@ -125,9 +125,12 @@ public static class PerformanceAssert
         for (int window = 0; window < Windows; window++)
         {
             Window w = windows[window];
+
+            // A window that ran again lists its run of the fewest bytes; its retries and its overlap are of its last run.
+            string fewest = w.Retries > 0 ? " in its run of the fewest bytes" : string.Empty;
             message.Append(
                 CultureInfo.InvariantCulture,
-                $"\n  window {window}: {w.Bytes} bytes, {w.Compiled} methods compiled on this thread, {w.Collections} collections ({w.FullCollections} of generation 2)"
+                $"\n  window {window}: {w.Bytes} bytes{fewest}, {w.Compiled} methods compiled on this thread, {w.Collections} collections ({w.FullCollections} of generation 2)"
             );
             if (w.Overlapped)
             {
