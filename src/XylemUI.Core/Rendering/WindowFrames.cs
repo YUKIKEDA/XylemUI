@@ -568,10 +568,20 @@ internal sealed partial class WindowFrames
 
         LineLayoutResult layout = cache[cache.Committed].Layout;
         ReadOnlySpan<LaidGlyph> glyphs = layout.Glyphs;
+        LeafSelection? selection = text.Selection is { IsEmpty: false } selected ? selected : null;
         float top = y;
         foreach (LaidLine line in layout.Lines)
         {
             (float height, float baseline) = LayoutEngine.TextLine(text, result, line.Span);
+
+            if (selection is not null && selection.Start < line.Span.End && selection.End > line.Span.Start)
+            {
+                ReadOnlySpan<LaidGlyph> on = glyphs.Slice(line.GlyphStart, line.GlyphCount);
+                DrawSelected(text.Ranges, selection, result, on, x, top, height, top + baseline, color);
+                top += height;
+                continue;
+            }
+
             if (text.Ranges is { } ranges)
             {
                 DrawRanges(ranges, result, glyphs.Slice(line.GlyphStart, line.GlyphCount), x, top, height, top + baseline, color);

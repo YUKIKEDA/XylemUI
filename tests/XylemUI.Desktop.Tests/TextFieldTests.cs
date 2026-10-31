@@ -654,11 +654,13 @@ public sealed class TextFieldTests
     /// - A field of one line holding "abcd" and a focusable box beside it; the field has the focus.
     ///
     /// Steps:
-    /// - Read the text leaf's paint runs; focus the box; read them and the selection; focus the field again.
+    /// - Read the text leaf's selection and the rectangles of the last frame; focus the box; read them and the field's selection;
+    ///   focus the field again.
     ///
     /// Expected:
-    /// - Focused: one run from 0 to 4 with the background and the color of the headless app's selection; unfocused: none, the
-    ///   selection still 0 to 4; focused again: the run again.
+    /// - Focused: the leaf's selection from 0 to 4 with the background and the color of the headless app's selection, and a
+    ///   rectangle of that background in the frame; unfocused: no selection and no such rectangle, the field's selection still 0 to
+    ///   4; focused again: the leaf's selection and its rectangle again.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -667,16 +669,25 @@ public sealed class TextFieldTests
         var selection = Signal.Create(default(TextSelection));
         await using Field field = await Field.StartAsync(Signal.Create("abcd"), new TextFieldOptions { Selection = selection }, other: true);
 
-        List<(int Start, int End, Color? Background, Color? Color)> focused = field.SelectionRuns();
+        TextEditingSettings settings = TextEditingSettings.Default;
+        bool Highlighted() => field.Fills().Exists(fill => fill.Color == settings.SelectionBackground);
+
+        _ = field.App.PumpAndSettle();
+        (List<(int Start, int End, Color? Background, Color? Color)> Runs, bool Drawn) focused = (field.SelectionRuns(), Highlighted());
         Assert.True(field.App.Focus(field.Other));
         _ = field.App.PumpAndSettle();
-        List<(int Start, int End, Color? Background, Color? Color)> unfocused = field.SelectionRuns();
+        (List<(int Start, int End, Color? Background, Color? Color)> Runs, bool Drawn) unfocused = (field.SelectionRuns(), Highlighted());
         TextSelection kept = selection.Get();
+        Assert.True(field.App.Focus(field.Element));
+        _ = field.App.PumpAndSettle();
 
-        TextEditingSettings settings = TextEditingSettings.Default;
-        Assert.Equal([(0, 4, settings.SelectionBackground, settings.SelectionForeground)], focused);
-        Assert.Empty(unfocused);
+        Assert.Equal([(0, 4, settings.SelectionBackground, settings.SelectionForeground)], focused.Runs);
+        Assert.True(focused.Drawn);
+        Assert.Empty(unfocused.Runs);
+        Assert.False(unfocused.Drawn);
         Assert.Equal(new TextSelection(0, 4), kept);
+        Assert.Equal([(0, 4, settings.SelectionBackground, settings.SelectionForeground)], field.SelectionRuns());
+        Assert.True(Highlighted());
     }
 
     /// <summary>
@@ -861,24 +872,16 @@ public sealed class TextFieldTests
             return fills;
         }
 
-        // The paint runs of the field's text: their start, end, background, and color.
+        // The selection the field's text leaf draws (design §4.10, "Drawing"): its start, end, background, and color; none when
+        // it is empty.
         public List<(int Start, int End, Color? Background, Color? Color)> SelectionRuns()
         {
-            if (App.Tree.Nodes.GetRef(Leaf).Text!.Ranges is not { } ranges)
+            if (App.Tree.Nodes.GetRef(Leaf).Text!.Selection is not { IsEmpty: false } selection)
             {
                 return [];
             }
 
-            var runs = new List<(int Start, int End, Color? Background, Color? Color)>();
-            foreach (PaintRun run in ranges.Paint)
-            {
-                if (run.Background is not null)
-                {
-                    runs.Add((run.Start, run.Start + run.Length, run.Background, run.Color));
-                }
-            }
-
-            return runs;
+            return [(selection.Start, selection.End, selection.Background, selection.Foreground)];
         }
 
         public async ValueTask DisposeAsync()

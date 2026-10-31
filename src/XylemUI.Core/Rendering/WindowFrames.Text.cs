@@ -72,6 +72,97 @@ internal sealed partial class WindowFrames
         }
     }
 
+    // One line that a selection reaches (design §4.10, "Drawing"), with or without ranges, in DrawRanges' order: the glyphs are
+    // also cut at the selection's ends; the selection's background goes over the range's, and its text color takes the place of
+    // the range's. The room of an inline object is not selected. A line the selection does not reach goes through DrawRanges or
+    // the plain glyph run, as before the selection (row P02b2: checking the selection in DrawRanges made the ranged leaves' draw
+    // stage of rich-text 4 to 14 % longer).
+    private void DrawSelected(
+        TextRanges? ranges,
+        LeafSelection selection,
+        ShapingResult result,
+        ReadOnlySpan<LaidGlyph> glyphs,
+        float x,
+        float top,
+        float height,
+        float baseline,
+        Color color
+    )
+    {
+        ReadOnlySpan<PaintRun> paint = ranges is null ? default : ranges.Paint;
+        var pieces = new SelectedPieces(glyphs, paint, selection);
+        while (pieces.Next(out int _, out PaintRun run, out bool selected, out float left, out float right))
+        {
+            if (right <= left)
+            {
+                continue;
+            }
+
+            if (ranges is not null && Look(ranges, run).Background is { } background)
+            {
+                _list.FillRect(x + left, top, right - left, height, background);
+            }
+
+            if (selected)
+            {
+                _list.FillRect(x + left, top, right - left, height, selection.Background);
+            }
+        }
+
+        pieces = new SelectedPieces(glyphs, paint, selection);
+        int from = 0;
+        float at = 0;
+        Color? current = null;
+        while (pieces.Next(out int start, out PaintRun run, out bool selected, out float left, out float _))
+        {
+            Color ink = selected ? selection.Foreground : (ranges is null ? null : Look(ranges, run).Color) ?? color;
+            if (current is { } open && open != ink)
+            {
+                DrawSelectedGlyphs(ranges, result, glyphs[from..start], x + at, baseline, open);
+                from = start;
+                at = left;
+            }
+
+            current = ink;
+        }
+
+        if (current is { } last)
+        {
+            DrawSelectedGlyphs(ranges, result, glyphs[from..], x + at, baseline, last);
+        }
+
+        if (ranges is null)
+        {
+            return;
+        }
+
+        var decorated = new Pieces(glyphs, paint, byFont: true);
+        while (decorated.Next(out int start, out int end, out PaintRun run, out float left, out float right))
+        {
+            SpanStyle look = Look(ranges, run);
+            if (look.Decoration is { Lines: not DecorationLines.None } decoration && right > left && !glyphs[start].IsPlaceholder)
+            {
+                int font = glyphs[start].Run;
+                float size = result.Styles[font].Size * result.Runs[font].Scale;
+                Color ink = decoration.Color ?? look.Color ?? color;
+                DrawDecoration(decoration, result.Runs[font].Font, size, glyphs[start..end], x + left, x + right, baseline, ink);
+            }
+        }
+    }
+
+    // A glyph run of one color of a selected line: with ranges, around the rooms of the inline objects.
+    private void DrawSelectedGlyphs(TextRanges? ranges, ShapingResult result, ReadOnlySpan<LaidGlyph> glyphs, float x, float baseline, Color color)
+    {
+        if (ranges is null)
+        {
+            DrawGlyphs(result, glyphs, x, baseline, color);
+        }
+        else
+        {
+            DrawGlyphs(ranges, result, glyphs, x, baseline, color);
+        }
+    }
+
     // A glyph run of one color; with inline objects, a run on each side of each one's room, which has no glyph to draw.
     private void DrawGlyphs(TextRanges ranges, ShapingResult result, ReadOnlySpan<LaidGlyph> glyphs, float x, float baseline, Color color)
     {
@@ -272,6 +363,57 @@ internal sealed partial class WindowFrames
         }
 
         // The range of a cluster, from the one the last piece was in on.
+        private int RangeOf(int cluster)
+        {
+            int range = _range;
+            while (range + 1 < _paint.Length && cluster >= _paint[range + 1].Start)
+            {
+                range++;
+            }
+
+            return range;
+        }
+    }
+
+    // The pieces of a line that a selection reaches: the glyphs that share a range of the look (when there are ranges) and whether
+    // the selection holds them, with their range, and where they start and end from the line's left edge.
+    private ref struct SelectedPieces(ReadOnlySpan<LaidGlyph> glyphs, ReadOnlySpan<PaintRun> paint, LeafSelection selection)
+    {
+        private readonly ReadOnlySpan<LaidGlyph> _glyphs = glyphs;
+        private readonly ReadOnlySpan<PaintRun> _paint = paint;
+        private int _next;
+        private int _range;
+        private float _pen;
+
+        public bool Next(out int start, out PaintRun run, out bool selected, out float left, out float right)
+        {
+            start = _next;
+            left = _pen;
+            if (_next >= _glyphs.Length)
+            {
+                run = default;
+                selected = false;
+                right = left;
+                return false;
+            }
+
+            _range = RangeOf(_glyphs[_next].Cluster);
+            selected = Selected(_glyphs[_next]);
+            while (_next < _glyphs.Length && RangeOf(_glyphs[_next].Cluster) == _range && Selected(_glyphs[_next]) == selected)
+            {
+                _pen += _glyphs[_next].Advance;
+                _next++;
+            }
+
+            run = _paint.IsEmpty ? default : _paint[_range];
+            right = _pen;
+            return true;
+        }
+
+        // Whether the selection holds a glyph: the one of a cluster it holds, not the room of an inline object.
+        private readonly bool Selected(in LaidGlyph glyph) => !glyph.IsPlaceholder && selection.Holds(glyph.Cluster);
+
+        // The range of a cluster, from the one the last piece was in on; 0 with no ranges.
         private int RangeOf(int cluster)
         {
             int range = _range;

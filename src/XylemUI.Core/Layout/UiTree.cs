@@ -543,6 +543,32 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Sets the selection a text leaf draws (design §4.10, "Drawing"): the range of its text, from <paramref name="start"/> to
+    /// <paramref name="end"/> in UTF-16 code units, with its colors; an empty range draws none. Equal to the one there, nothing
+    /// changes. Another marks the leaf to be drawn again, with no layout.
+    /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <param name="start">The first code unit of the range.</param>
+    /// <param name="end">The end of the range; at or before <paramref name="start"/>, no selection.</param>
+    /// <param name="background">The color behind the selected glyphs.</param>
+    /// <param name="foreground">The color of the selected glyphs.</param>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    internal void SetTextSelection(NodeHandle node, int start, int end, Color background, Color foreground)
+    {
+        TextLeaf leaf = TextLeafOf(node);
+        if (leaf.Selection is null && end <= start)
+        {
+            return;
+        }
+
+        leaf.Selection ??= new LeafSelection();
+        if (leaf.Selection.Set(start, end, background, foreground))
+        {
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
     /// Sets a text leaf's own color for its text, or <see langword="null"/> to take the color its ancestors resolve; equal to the
     /// one there, nothing changes. Another marks the leaf to be drawn again, with no layout.
     /// </summary>
