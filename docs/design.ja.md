@@ -1223,7 +1223,7 @@ src/
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
-  XylemUI.Platform.Windows/    # Win32 / IMM32 / UIA / DirectWrite
+  XylemUI.Platform.Windows/    # Win32 / TSF / UIA / DirectWrite
   XylemUI.Platform.MacOS/      # AppKit / CoreText / NSAccessibility（+ P/Invoke で書けない API だけの、native/macos の薄い Obj-C shim）
   XylemUI.Platform.Linux/      # SDL3 / fontconfig / D-Bus / AT-SPI / portal
   XylemUI.Generators/          # Source Generator（Binding 記述子等、§2.4）
@@ -2500,7 +2500,9 @@ internal interface ITextInputClient
     TextSelection Selection { get; set; }
     (int Start, int End)? Composition { get; }                  // 変換中の範囲。無ければ null
     Rect BoundsOf(int start, int end);                          // 範囲の画面の位置。ウィンドウの論理の画素
-    void Replace(int start, int end, ReadOnlySpan<char> text);  // 確定した文字で置き換える
+    void Replace(int start, int end, ReadOnlySpan<char> text);  // start〜end を確定した文字で置き換える
+    // start〜end を text で置き換え、変換中の文字にする。変換が無いときも、置き換えるのは選択ではなく
+    // この範囲（TSF の SetText と同じ）。cursor と clauses は text の中の位置
     void Compose(int start, int end, ReadOnlySpan<char> text, int cursor, ReadOnlySpan<ImeAttributeRun> clauses);
     void EndComposition();                                      // 変換が終わった（確定か取り消し）
     bool ReadOnly { get; }
@@ -2517,6 +2519,24 @@ public readonly record struct ImeAttributeRun(int Start, int End, ImeAttributeKi
 - 変換の状態（変換中の文字、その中のキャレット、文節）は欄が持つ。木のノードには持たせない。この節の前の版の `ImeCompositionState` と `SurroundingText` は使わない。周辺の文字は、OS が `CopyText` で直接読む
 - 木は、フォーカスのあるノードの相手を持つ。フォーカスが相手を持つノードへ移ると、プラットフォームは IME を有効にし、相手を持たないノードへ移ると無効にする。Avalonia と GPUI も、文字を受け付けない部品にフォーカスがあるときは IME を外す（GPUI の `crates/gpui_windows/src/events.rs` 683〜711 行目の `ImmAssociateContextEx`）。無効の間、キーは命令として配る
 - macOS と Linux は、後の行で同じ口につなぐ
+
+**アプリから OS への知らせ:** OS の IME は欄の文書の写しを持つので、OS を通さずに欄が変わったら、欄から OS へ知らせる。知らせないと、再変換・周辺の文字・候補の窓の位置が古い内容で動く。TSF では文書の口の相手（`ITextStoreACPSink`）の `OnTextChange`・`OnSelectionChange`・`OnLayoutChange` に当たる。
+
+```csharp
+// XylemUI（Core）。プラットフォームが実装し、木と欄が呼ぶ
+internal interface ITextInputPlatform
+{
+    void Attach(ITextInputClient client);                   // 木が呼ぶ。フォーカスが相手を持つノードへ移った
+    void Detach();                                          // 木が呼ぶ。相手を持たないノードへ移った。変換中なら先に確定する
+    void TextChanged(int start, int oldEnd, int newEnd);    // 欄が呼ぶ。start〜oldEnd が start〜newEnd になった
+    void SelectionChanged();                                // 欄が呼ぶ
+    void LayoutChanged();                                   // 欄が呼ぶ。範囲の画面の位置が変わった
+}
+```
+
+- 文字と選択の知らせは、欄が `Changed` の道（§4.9「値の流れ」）で送る。アプリの書き込み・貼り付け・元に戻す・キーやポインタによる選択の移動が当たる。OS が `Replace`・`Compose`・`Selection` で変えた分は送らない。TSF も、文書の口のメソッドで変えた分には `OnTextChange` を呼ばない（Microsoft Learn の OnTextChange の説明）
+- 位置の知らせは、フレームの後に、欄の矩形かスクロールの位置が変わったときに送る。`BoundsOf` が `TS_E_NOLAYOUT` を返したときも、レイアウトが済んだら送る（TSF が求める。Microsoft Learn の OnLayoutChange の説明）
+- TSF では、OS は文書を読み書きする前にロックを求める（`RequestLock`、同期と非同期がある）。ロックの間に文書を変えるのは、OS が呼ぶ文書の口のメソッドだけである。アプリはロックの間に文書を変えず、知らせも送らない（Microsoft Learn の RequestLock の説明）。TSF の実装は、ロックの間に欄から来た知らせを溜め、ロックが終わってから送る。送っていない知らせがある間は、同期のロックを断り（`TS_E_SYNCHRONOUS`）、非同期のロックだけを受ける
 
 **変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。変換中の文節は太い下線（`ThickUnderline`）、ほかの文節は細い下線である。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。キャレットは変換中の文字の中の、IME が示す位置に描く。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。属性は TSF の表示の属性（`GUID_PROP_ATTRIBUTE`）から読む。
 
@@ -2546,8 +2566,8 @@ public readonly record struct ImeAttributeRun(int Start, int End, ImeAttributeKi
 
 **確かめ方:**
 
-- Primitives（ヘッドレス、全 OS）: 変換の開始・更新・確定・取り消し、文節の下線、変換中のキャレット、フォーカスが移ったときの確定、変換中のアプリの書き込み、変換中のキー、伏せ字と読み取り専用の欄、IME の有効と無効
-- Windows: 文書の口のメソッドを直接呼ぶ（文字を読む、選択を読む、確定した文字を入れる、ロックの順、`GetTextExt`）。`TryShow` と `TryHide` が呼ばれること
+- Primitives（ヘッドレス、全 OS）: 変換の開始・更新・確定・取り消し、文節の下線、変換中のキャレット、フォーカスが移ったときの確定、変換中のアプリの書き込み、変換中のキー、伏せ字と読み取り専用の欄、IME の有効と無効、欄から OS への知らせ（アプリの書き込み・貼り付け・元に戻す・選択の移動・位置の変化で送り、OS の書き換えでは送らない）
+- Windows: 文書の口のメソッドを直接呼ぶ（文字を読む、選択を読む、確定した文字を入れる、ロックの順、`GetTextExt`）。ロックの間に来た知らせが、ロックの後に送られること。`TryShow` と `TryHide` が呼ばれること
 - 実機（オーナー）: 実装の最初に、作業用のウィンドウに最小の文書の口を付け、Microsoft の日本語 IME で変換中の文字が届くか、候補の窓が欄の下に出るか、キーの順を確かめる。最後に、Todo の欄で変換・候補の窓の位置・確定した文字の再変換を確かめる。タッチの画面での確かめは行 Q8 に残す（オーナーの機械はデスクトップ）
 
 ### 4.8 リッチテキスト（D9 の Grill でオーナーが決定、Issue #417）
@@ -3658,7 +3678,7 @@ public interface IPlatform
     IClipboardBackend Clipboard { get; }          // 同期、プレーンテキストだけ（P02b、§4.9）
     IDialogBackend Dialogs { get; }
     IFrameScheduler FrameScheduler { get; }
-    ITextInputPlatform TextInput { get; }         // フォーカスのある文字の入力の相手を OS の IME に結ぶ（P02c、§4.7）
+    ITextInputPlatform TextInput { get; }         // フォーカスのある文字の入力の相手を OS の IME に結び、欄の変更を知らせる（P02c、§4.7）
     IAccessibilityBridge Accessibility { get; }
     IFontProvider Fonts { get; }
 }
