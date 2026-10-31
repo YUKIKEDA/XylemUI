@@ -596,7 +596,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
     {
         public int Presents { get; private set; }
 
-        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) { }
 
         public void Present() => Presents++;
     }

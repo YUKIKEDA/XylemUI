@@ -138,7 +138,7 @@ internal static class InlineCost
 
     private sealed class NoTarget : IRenderTarget
     {
-        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) { }
 
         public void Present() { }
     }

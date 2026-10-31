@@ -16,7 +16,7 @@ internal sealed partial class WindowInput
             return -1;
         }
 
-        if (_tree.Nodes.GetRef(hit).Text is not { Ranges: { HasLinks: true } ranges } leaf || ranges.HitBuild != _frames.Builds)
+        if (_tree.Nodes.GetRef(hit).Text is not { Ranges: { HasLinks: true } ranges } leaf || _frames.ListOf(ranges.HitBuild) is not { } list)
         {
             return -1;
         }
@@ -26,7 +26,7 @@ internal sealed partial class WindowInput
             return -1;
         }
 
-        Vector2 local = _frames.List.PointInRegion(ranges.HitEntry, new Vector2(input.X, input.Y)) / _frames.Scale;
+        Vector2 local = list.PointInRegion(ranges.HitEntry, new Vector2(input.X, input.Y)) / _frames.Scale;
         int cluster = TextCaret.ClusterAt(leaf, local.X - leaf.PaddingBorder.Left, local.Y - leaf.PaddingBorder.Top);
         if (cluster < 0)
         {
@@ -156,8 +156,8 @@ internal sealed partial class WindowInput
         float scale = _frames.Scale;
         var physical = new Vector2(input.X, input.Y);
         Vector2 local =
-            RangesOf(leaf) is { } ranges && ranges.HitBuild == _frames.Builds
-                ? _frames.List.PointInRegion(ranges.HitEntry, physical) / scale
+            RangesOf(leaf) is { } ranges && _frames.ListOf(ranges.HitBuild) is { } list
+                ? list.PointInRegion(ranges.HitEntry, physical) / scale
                 : new Vector2(float.NaN);
         var e = new PointerEvent(this, kind, leaf, leaf, physical / scale, local, input, _dispatch);
         try

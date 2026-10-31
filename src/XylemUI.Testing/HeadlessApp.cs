@@ -131,6 +131,26 @@ public sealed class HeadlessApp : IAsyncDisposable
     public HeadlessIme Ime { get; }
 
     /// <summary>
+    /// Gets the roots of the popups open over the window, back to front (design §7.3, §12.4): the ones leaving with a motion
+    /// included. The nodes in a popup are found with <see cref="Find"/> too.
+    /// </summary>
+    public IReadOnlyList<Element> Popups
+    {
+        get
+        {
+            VerifyRunning();
+            IReadOnlyList<PopupHandle> open = Tree.Popups.Opened;
+            var roots = new Element[open.Count];
+            for (int i = 0; i < roots.Length; i++)
+            {
+                roots[i] = new Element(Tree, open[i].Root);
+            }
+
+            return roots;
+        }
+    }
+
+    /// <summary>
     /// Gets the number of frames that presented: a frame that changed nothing presents nothing (design §2.11).
     /// </summary>
     public int PresentCount => _target.Presents;

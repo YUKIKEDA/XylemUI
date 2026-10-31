@@ -397,6 +397,48 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets whether the node and its subtree take the pointer (design §7.3, "Passing the pointer"): with false, none of them writes a
+    /// hit region, a draw function's regions included, and the pointer reaches the nodes behind them (Avalonia's
+    /// <c>IsHitTestVisible</c>, Flutter's <c>IgnorePointer</c>).
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="visible">Whether the subtree takes the pointer.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element HitTestVisible(this Element element, bool visible)
+    {
+        element.TreeOrThrow().SetHitTestVisible(element.Node, visible);
+        return element;
+    }
+
+    /// <summary>
+    /// Opens a popup against the node while <paramref name="isOpen"/> is true (design §7.3): <paramref name="render"/> runs in a scope
+    /// of its own under the current one, and its node is drawn over the window in a render root of its own, placed against this
+    /// node. When the signal turns false, the popup leaves and its scope is disposed; a popup that closes itself (a press outside it,
+    /// Esc, the window's deactivation, a scroll of the node's scroll containers) writes false to the signal. The keys of the popup's
+    /// focused node go on to this node and its ancestors; the pointer's events stop at the popup's root.
+    /// </summary>
+    /// <param name="anchor">The node the popup is placed against.</param>
+    /// <param name="isOpen">Whether the popup is open.</param>
+    /// <param name="render">What the popup shows: a node of the same tree with no parent.</param>
+    /// <param name="options">How it is placed and closed; the defaults when <see langword="null"/>.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope, or <paramref name="render"/> returns no node of the tree
+    /// with no parent.</exception>
+    public static Element Popup(this Element anchor, Signal<bool> isOpen, Func<Element> render, PopupOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(isOpen);
+        ArgumentNullException.ThrowIfNull(render);
+        UiTree tree = anchor.TreeOrThrow();
+        if (Scope.CurrentRef.IsNone)
+        {
+            throw new InvalidOperationException("Popup is made inside a scope, which owns its content; there is no current scope.");
+        }
+
+        _ = PopupBlock.Create(tree, anchor.Node, isOpen, render, options ?? new PopupOptions());
+        return anchor;
+    }
+
+    /// <summary>
     /// Sets whether the node takes the focus (design §7, "Keys and the focus"): a press on it or on a descendant that takes none
     /// gives it the focus, Tab stops at it, and <see cref="Focus"/> can give it the focus, while neither it nor an ancestor is
     /// hidden. A node does not take the focus by default. A focused node that stops taking it loses the focus.

@@ -76,6 +76,7 @@ internal sealed partial class WindowInput
         _frames = frames;
         _platform = platform;
         frames.Input = this;
+        tree.Popups.ModalOpened = ReleaseCapturesBehind;
     }
 
     /// <summary>
@@ -161,7 +162,24 @@ internal sealed partial class WindowInput
     /// Sets whether the window is active (design §7, "The window's activation"); the platform calls it from its activation message.
     /// </summary>
     /// <param name="active">Whether the window is active.</param>
-    public void SetActive(bool active) => _tree.Focus.SetActive(active);
+    public void SetActive(bool active)
+    {
+        // A popup that is not modal closes when the window stops being active (design §7.3, "Closing").
+        if (!active && _tree.Popups.Count > 0)
+        {
+            ReactiveRuntime.EnterBatch();
+            try
+            {
+                _tree.Popups.CloseNonModal();
+            }
+            finally
+            {
+                ReactiveRuntime.ExitBatch();
+            }
+        }
+
+        _tree.Focus.SetActive(active);
+    }
 
     /// <summary>
     /// Tests each hovering pointer's last position again against the display list just built, when the pointer is in the window:
@@ -300,6 +318,12 @@ internal sealed partial class WindowInput
             return focus.MoveInTabOrder(backward: input.Modifiers == KeyModifiers.Shift);
         }
 
+        // Esc closes the front popup, after no handler stopped it (design §7.3, "Closing").
+        if (input.Kind == KeyEventKind.Down && input.Key == Key.Escape && input.Modifiers == KeyModifiers.None && _tree.Popups.Count > 0)
+        {
+            return _tree.Popups.CloseFront();
+        }
+
         return false;
     }
 
@@ -399,6 +423,13 @@ internal sealed partial class WindowInput
     {
         _tree.Focus.SetLastPress(input.PointerType);
         Point(pointer, input);
+
+        // A press outside a popup closes it, and goes on to the node under it unless the popup consumes it (design §7.3, "Closing").
+        if (_tree.Popups.Count > 0 && PressOutsidePopups(pointer, input))
+        {
+            return;
+        }
+
         Track(pointer, input, reset: true);
         if (HoldScroll(pointer, input))
         {
@@ -802,6 +833,56 @@ internal sealed partial class WindowInput
         }
     }
 
+    // The popups a press outside them closes, before the press is routed. Returns whether the press stops there; when it goes on, the
+    // node under it is found again without the popups closed, as their roots left the tree.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool PressOutsidePopups(PointerState pointer, in PointerInput input)
+    {
+        NodeHandle hit = pointer.Hit;
+        PopupHandle? pressed = hit.IsNone ? null : _tree.Popups.PopupContaining(hit);
+        bool onBackdrop = pressed is not null && hit == pressed.Root;
+        int open = _tree.Popups.Count;
+        if (_tree.Popups.PressOutside(pressed, onBackdrop))
+        {
+            return true;
+        }
+
+        if (_tree.Popups.Count != open)
+        {
+            UpdateHover(pointer, input);
+        }
+
+        return false;
+    }
+
+    // A modal popup opened: a pointer captured by a node behind it loses the capture (design §7.3, "Closing"). A signal's effect opens
+    // it, outside the batches of the input, so the cancels run in one of their own.
+    private void ReleaseCapturesBehind(NodeHandle modalRoot)
+    {
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            for (int i = 0; i < _pointers.Length; i++)
+            {
+                PointerState pointer = _pointers[i];
+                NodeHandle captured = pointer.Live ? CapturedNode(pointer) : default;
+                if (!captured.IsNone && _tree.Popups.PopupContaining(captured)?.Root != modalRoot)
+                {
+                    if (pointer.Type == PointerType.Mouse)
+                    {
+                        _platform.ReleaseCapture();
+                    }
+
+                    CaptureLost(pointer, pointer.Last);
+                }
+            }
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
     // Delivers a routed event from target: the capture phase from the root down, then the bubble phase back up, until a handler
     // stops it. The route is made before the first handler runs.
     private void Route(PointerEventKind kind, NodeHandle target, in PointerInput input, bool bubbleOnly, bool fromKey = false)
@@ -882,7 +963,8 @@ internal sealed partial class WindowInput
         _stopped = false;
         try
         {
-            for (NodeHandle node = target; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+            // A popup's keys go on to its anchor and the anchor's ancestors (design §7.3, "The route of events").
+            for (NodeHandle node = target; !node.IsNone; node = _tree.KeyParent(node))
             {
                 if (_routeCount == _route.Length)
                 {
@@ -934,7 +1016,7 @@ internal sealed partial class WindowInput
         _stopped = false;
         try
         {
-            for (NodeHandle node = target; !node.IsNone; node = _tree.Nodes.GetRef(node).Parent)
+            for (NodeHandle node = target; !node.IsNone; node = _tree.KeyParent(node))
             {
                 if (_routeCount == _route.Length)
                 {
@@ -1090,7 +1172,7 @@ internal sealed partial class WindowInput
             var physical = new Vector2(input.X, input.Y);
             Vector2 local =
                 fromKey ? new Vector2(float.NaN)
-                : nodeInput.HitBuild == _frames.Builds && nodeInput.HitBuild > 0 ? _frames.List.PointInRegion(nodeInput.HitEntry, physical) / scale
+                : _frames.ListOf(nodeInput.HitBuild) is { } list ? list.PointInRegion(nodeInput.HitEntry, physical) / scale
                 : new Vector2(float.NaN);
             var e = new PointerEvent(
                 this,
@@ -1230,13 +1312,42 @@ internal sealed partial class WindowInput
     // "Disabled", as Avalonia's hit test skips disabled elements). None when that node was removed since.
     private NodeHandle HitAt(in PointerInput input)
     {
-        NodeHandle hit = _frames.List.HitTest(input.X, input.Y);
+        NodeHandle hit = _tree.Popups.Count > 0 ? HitPopups(input) : default;
+        if (hit.IsNone)
+        {
+            hit = _frames.List.HitTest(input.X, input.Y);
+        }
+
         if (!_tree.Nodes.IsAlive(hit))
         {
             return default;
         }
 
         return (_tree.Nodes.GetRef(hit).Pseudo & PseudoState.Disabled) == 0 ? hit : EnabledAncestor(hit);
+    }
+
+    // The front node of the popups' lists at the position, the front popup first (design §7.3, "Hit testing"); none when no popup's
+    // region holds it. A popup that leaves takes no pointer.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private NodeHandle HitPopups(in PointerInput input)
+    {
+        IReadOnlyList<PopupHandle> open = _tree.Popups.Opened;
+        for (int i = open.Count - 1; i >= 0; i--)
+        {
+            PopupHandle popup = open[i];
+            if (popup.Closing || popup.List.Build == 0)
+            {
+                continue;
+            }
+
+            NodeHandle hit = popup.List.HitTest(input.X, input.Y);
+            if (!hit.IsNone)
+            {
+                return hit;
+            }
+        }
+
+        return default;
     }
 
     // The nearest ancestor of a disabled node that is not disabled, apart from HitAt, which every move calls.

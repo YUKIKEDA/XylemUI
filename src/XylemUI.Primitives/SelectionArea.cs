@@ -281,7 +281,7 @@ public static partial class Primitive
                 return false;
             }
 
-            DisplayList list = _input.Frames.List;
+            DisplayList list = _input.Frames.ListFor(_area);
             float scale = _input.Frames.Scale;
             ReadOnlySpan<HitTestEntry> entries = list.HitEntries;
             int before = -1;
@@ -479,7 +479,7 @@ public static partial class Primitive
                 return Vector2.Zero;
             }
 
-            DisplayList list = _input.Frames.List;
+            DisplayList list = _input.Frames.ListFor(_area);
             ReadOnlySpan<HitTestEntry> entries = list.HitEntries;
             for (int i = entries.Length - 1; i >= 0; i--)
             {

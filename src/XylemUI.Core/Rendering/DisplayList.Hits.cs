@@ -16,6 +16,18 @@ public sealed partial class DisplayList
     internal ReadOnlySpan<HitTestEntry> HitEntries => _hitEntries.AsSpan(0, _hitCount);
 
     /// <summary>
+    /// Gets or sets the build of the window's frames that wrote the list (<see cref="WindowFrames.Builds"/>); 0 before the first. A
+    /// node's hit region index is valid in the list of its build (<see cref="NodeInput.HitBuild"/>).
+    /// </summary>
+    internal int Build { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether <see cref="HitRegion"/> writes nothing: a draw function inside a subtree that takes
+    /// no pointer (design §7.3, "Passing the pointer").
+    /// </summary>
+    internal bool HitsSuppressed { get; set; }
+
+    /// <summary>
     /// Appends the hit region of a node: a rectangle, given in logical pixels, with rounded corners, in the clips and the transform
     /// open now. Its edges are put where a command's are, and it is tested with the distance the renderer draws with, so a point
     /// hits it where a shape of the same rectangle covers half a pixel or more.
@@ -34,6 +46,11 @@ public sealed partial class DisplayList
         if (BadEdge(x, y, width, height) is { } name)
         {
             throw new ArgumentOutOfRangeException(name, "The hit region's edges are numbers and its width and height are at or above 0.");
+        }
+
+        if (HitsSuppressed)
+        {
+            return;
         }
 
         CheckRadius(radii.TopLeft, nameof(radii));

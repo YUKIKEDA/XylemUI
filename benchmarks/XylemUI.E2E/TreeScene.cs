@@ -181,10 +181,10 @@ internal sealed class TreeScene : IDisposable
 
         public long PresentEnd { get; private set; }
 
-        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas)
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas)
         {
             DrawStart = Stopwatch.GetTimestamp();
-            scene.Renderer.Draw(list, clearColor, atlas);
+            scene.Renderer.Draw(lists, clearColor, atlas);
             DrawEnd = Stopwatch.GetTimestamp();
         }
 

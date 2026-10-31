@@ -55,6 +55,42 @@ public sealed unsafe class D3D11RendererTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Lists drawn in one call are laid over each other, back to front, and only the first is drawn over the clear color: a window's
+    /// list and its popup's (design §7.3, "Display lists").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window and a WARP renderer; a list with red (10, 10, 100, 60), and a second list with blue (50, 30, 100, 60).
+    ///
+    /// Steps:
+    /// - Draw both lists in one call over a dark clear color; read pixels back before the present.
+    ///
+    /// Expected:
+    /// - Red at (20, 20), where the second list draws nothing; blue at (60, 40), where both draw; blue at (140, 80), where the
+    ///   second alone draws; clear at (200, 120).
+    /// </remarks>
+    [Fact]
+    public void Draw_TwoLists_TheSecondOverTheFirst_WithOneClear() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("two lists", 400, 300);
+            (int width, int height) = window.ClientSize;
+            using var renderer = D3D11Renderer.Create(window.Handle, width, height, useWarp: true);
+            var back = new DisplayList();
+            back.FillRect(10, 10, 100, 60, Red);
+            var front = new DisplayList();
+            front.FillRect(50, 30, 100, 60, Blue);
+
+            renderer.Draw([back, front], Clear);
+
+            Assert.Equal(Red, renderer.ReadPixel(20, 20));
+            Assert.Equal(Blue, renderer.ReadPixel(60, 40));
+            Assert.Equal(Blue, renderer.ReadPixel(140, 80));
+            Assert.Equal(Clear, renderer.ReadPixel(200, 120));
+            renderer.Present();
+        });
+
+    /// <summary>
     /// Reading a pixel outside the back buffer throws instead of reading past the mapped texture.
     /// </summary>
     /// <remarks>

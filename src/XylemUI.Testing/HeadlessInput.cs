@@ -30,12 +30,33 @@ public sealed class HeadlessPointer
     /// </summary>
     /// <param name="element">The node.</param>
     /// <param name="modifiers">The modifier keys held.</param>
-    public void Click(Element element, KeyModifiers modifiers = KeyModifiers.None)
+    public void Click(Element element, KeyModifiers modifiers = KeyModifiers.None) => Click(element, PointerButton.Left, modifiers);
+
+    /// <summary>
+    /// Moves the pointer to the center of a node's box, presses a button, and releases it there: the right button opens a context
+    /// menu (design §12.4).
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="button">The button.</param>
+    /// <param name="modifiers">The modifier keys held.</param>
+    public void Click(Element element, PointerButton button, KeyModifiers modifiers = KeyModifiers.None)
     {
         (int x, int y) = _app.CenterOf(element);
+        Click(x, y, button, modifiers);
+    }
+
+    /// <summary>
+    /// Moves the pointer to a point, presses a button, and releases it there: a press outside a popup, which closes it (design §12.4).
+    /// </summary>
+    /// <param name="x">The x of the window's client area, in physical pixels.</param>
+    /// <param name="y">The y.</param>
+    /// <param name="button">The button.</param>
+    /// <param name="modifiers">The modifier keys held.</param>
+    public void Click(int x, int y, PointerButton button = PointerButton.Left, KeyModifiers modifiers = KeyModifiers.None)
+    {
         Move(x, y, modifiers);
-        Down(PointerButton.Left, modifiers);
-        Up(PointerButton.Left, modifiers);
+        Down(button, modifiers);
+        Up(button, modifiers);
     }
 
     /// <summary>
