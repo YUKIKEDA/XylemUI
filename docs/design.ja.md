@@ -1598,6 +1598,7 @@ public static class ElementExtensions
     public static Element On(this Element e, FocusEventKind kind, EventPhase phase, FocusHandler handler);
     public static Element OnTextInput(this Element e, EventPhase phase, TextInputHandler handler);    // P02b（§4.9）
     public static Element KeepsFocusOnPress(this Element e, bool keeps = true);                      // P02b。押してもフォーカスを移さない（§4.9）
+    public static Element Unselectable(this Element e);                                              // P02b2。子孫の文字を領域の選択に加えない（§4.10）
     public static bool Focus(this Element e);                                        // フォーカスできなければ false
     public static IReadOnlySignal<bool> IsFocused(this Element e);                   // Focused の擬似状態と同じ
     // アニメーション（AN1、§2.14）。描画の値のプロパティだけ（NodeProperties の描画の値）。変わると今の値から補間する
@@ -1654,6 +1655,7 @@ public static class Primitive
     public static Element Button(Element content, Action onClick);   // フォーカスでき、Enter と Space で Click（K1）
     public static Element Button(string label, Action onClick);   // Button(Text(label), onClick)
     public static Element TextField(Signal<string> text, TextFieldOptions? options = null);   // P02b（§4.9）
+    public static Element SelectionArea(Element child, SelectionAreaOptions? options = null);   // P02b2。中の文字の葉をまたいで選ぶ（§4.10）
 }
 
 // XylemUI.Desktop（Core・Platform.Windows・Rendering.D3D11 をつなぐ）
@@ -2604,7 +2606,7 @@ Text((ref NodeTextWriter w) =>
   - 改行: 前後の文字によらず、空きの前と後で改行できる。行より広い空きは、その行に 1 つだけ置いてはみ出させる。SkParagraph も前後で改行でき（`src/ParagraphImpl.cpp` 546〜547 行目）、行より広い空きを 1 つで置く（`src/TextWrapper.cpp` 74〜91 行目）
   - ベースライン: `Baseline` の揃えは子の最初のベースラインを使う。子がベースラインを持たなければ、子の下端をベースラインに置く（`AboveBaseline` と同じ）。Flutter と同じである（`engine/src/flutter/lib/ui/text.dart` 3500〜3505 行目）。行の高さは、空きの上下の端を含むように広がる（SkParagraph の `src/Run.cpp` 236〜290 行目）
   - 描く順と当たり判定: 子は文字の後に描き、ふつうの子として、文字より先に当たり判定をする。Flutter も文字の後に子を描く（`rendering/paragraph.dart` 1030〜1075 行目）
-  - キャレットと選択: 空きは 1 つのクラスタで、キャレットと `HitTestText` は 1 文字として数える。範囲をまたぐ選択（行 P02b2、§4.9）は空きを選ばず、子が選べるなら子が選ぶ（Flutter の `rendering/paragraph.dart` 447〜474 行目）
+  - キャレットと選択: 空きは 1 つのクラスタで、キャレットと `HitTestText` は 1 文字として数える。範囲をまたぐ選択（行 P02b2、§4.10）は空きを選ばず、子が選べるなら子が選ぶ（Flutter の `rendering/paragraph.dart` 447〜474 行目）
   - リンク: リンクのスコープの中に置いた子は、リンクのホバーと Click を受けない。子の当たり判定が先に当たる。Flutter でも、認識器（`recognizer`）は `TextSpan` の欄で、その文字に当たった入力だけを受け（`painting/text_span.dart` 114〜122 行目）、`WidgetSpan` が継ぐ `PlaceholderSpan` は認識器を持たない（`painting/placeholder_span.dart` 39 行目、`widgets/widget_span.dart` 71 行目）
   - 実装（T13、Issue #437）: 空きは長さ 1 のフォントの run で、HarfBuzz を通さず、グリフ番号 `LaidGlyph.Placeholder`（`uint.MaxValue`。OpenType のグリフ番号は 16 ビットに収まる）の 1 つのグリフになる。空きの幅はそのグリフの送りに持ち、`ShapingResult` に欄を足さない。範囲を持たない葉の大きさは、T12 のままである。空きの run のフォントは、その範囲で空白が取るフォントで、行の高さに周りの文字と同じ値を入れる。SkParagraph の空きの run も、そのスタイルのフォントを持つ（`src/OneLineShaper.cpp` 563〜642 行目）。改行の機会は、UAX #14 の LB20（U+FFFC は CB で、前と後で改行できる）がそのまま与える。子を持つテキストのノードは、子を持たない葉と同じく葉として測り、確定のときに子を空きに置く。測った空きの箱（`InlineBox`：余白を含む大きさとベースライン）は `TextRanges` に持つ。min-content と max-content の幅で葉を測るときは、子も同じ幅で測るので、空きのグリフの送りがそのまま子の内容の幅になる。空きごとに内容の幅を差し替える計算は、届く場面が無かった（ミュータントで確かめた）ので持たない。行の端を整形し直す範囲には空きが入らない。空きの後の文字は自分の run の先頭で、HarfBuzz はそこに「切ると危ない」の印を付けないので、Pass2 は空きかその後に安全な位置を見つける。テキストのノードが消えるときは、その前に子を外す。スコープの片付けは新しい順なので、ノードを消す片付けより先に走る。描画では、範囲を持つ葉の道だけが空きのグリフを飛ばす。範囲を持たない葉が通る表示リストの `DrawLine` は変わらない
 - **費用:** 範囲を持たない葉は、`Ranges` の 8 バイトだけ大きくなり、ほかは今のままである。範囲を持つ葉の `TextRanges` の大きさは $H + s_L L + s_P P + s_K K + s_I I$ バイト（$L$・$P$・$K$・$I$ はレイアウトの範囲・描画の範囲・リンク・インラインオブジェクトの配列の長さで、2 から始まり、足りないときに 2 倍にする）。T13 で `Unsafe.SizeOf` を読むと、$H = 160$（オブジェクト 88 と配列の頭 24 が 3 つ。T12 では 64 と 3 つで 136）、$s_L = 80$（`LayoutRun`）、$s_P = 60$（`PaintRun`）、$s_K = 144$（`TextLink`。ホバー中のスタイルの `SpanStyle` だけで 120）、$s_I = 36$（`InlineObject` の 24 と `InlineBox` の 12）だった。`InlineObject` は 16 バイトのノードのハンドルを先に置き、位置と揃え方をその後の 8 バイトに収める。位置を先に置くと 32 バイトだった。リンクの無い葉はリンクの配列が空で、その頭の 24 バイトも無い。インラインオブジェクトの無い葉も、その 2 つの配列が空で、頭の 48 バイトが無い。テストは、この式と割り当てたバイト数を比べる（`Ranges_Memory_IsTheFormula`）。割り当て 0 は、範囲を持つ葉の作り直し（内容が同じとき）、色だけの変更、リンクのホバーの変化と Click の配送、インラインオブジェクトを持つ葉の作り直しと、子の大きさが変わらない layout である
@@ -2617,7 +2619,7 @@ Text((ref NodeTextWriter w) =>
 
 1 行と複数行の文字の欄 `Primitive.TextField` を、打ち込み・キャレット・選択・クリップボード・元に戻すとともに入れる。実装は行 P02b で行う。Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。Flutter の枠組みは `packages/flutter/lib/src/` から、Flutter の Windows の engine は `engine/src/flutter/shell/platform/windows/` から、Avalonia の部品は `src/Avalonia.Controls/` から、zed の Windows は `crates/gpui_windows/src/` から引く。
 
-**範囲:** P02b は欄だけを入れる。静的な文字の、範囲をまたぐ選択（Flutter の `SelectionArea`、§4.8）は、行 P02b2 で P02b の後に入れる。Flutter の欄の選択は欄の `TextEditingValue` に持ち、`editable_text.dart` は `SelectionContainer` を参照しない。Avalonia の `SelectableTextBlock` は自分の中だけを選ぶ（`SelectableTextBlock.cs` 20〜22 行目）。どちらでも、静的な文字の選択と欄の編集は互いに依らない。IME の組み立て（§4.7）は行 P02c で足す。
+**範囲:** P02b は欄だけを入れる。静的な文字の、範囲をまたぐ選択（Flutter の `SelectionArea`）は、行 P02b2 で P02b の後に入れる（§4.10）。Flutter の欄の選択は欄の `TextEditingValue` に持ち、`editable_text.dart` は `SelectionContainer` を参照しない。Avalonia の `SelectableTextBlock` は自分の中だけを選ぶ（`SelectableTextBlock.cs` 20〜22 行目）。どちらでも、静的な文字の選択と欄の編集は互いに依らない。IME の組み立て（§4.7）は行 P02c で足す。
 
 ```csharp
 // XylemUI.Primitives（§2.6 の一覧）
@@ -2714,7 +2716,7 @@ public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
 
 **選択の描き方とフォーカス:**
 
-- 選択は行ごとの矩形で、文字の後ろに塗る。欄は、フォーカスがある間、選択した範囲を範囲のスタイル（§4.8 の `SpanStyle` の `Background` と `Color`）で書き直すので、範囲の背景が行ごとに文字の後ろに描かれる。既定の色は背景が `COLOR_HIGHLIGHT`、選択した文字が `COLOR_HIGHLIGHTTEXT`（`GetSysColor`、`WM_SYSCOLORCHANGE` で読み直す）。Avalonia も矩形を先に塗ってから文字を描き（`TextPresenter.cs` 423〜449 行目）、選択した文字の色を `SelectionForegroundBrush` で変えられる（同じファイルの 593〜601 行目）。Windows の選択色は濃いので、文字の色を変えないと読みにくい
+- 選択は行ごとの矩形で、文字の後ろに塗る。欄は、フォーカスがある間、選択した範囲を自分の文字の葉に置き、描く段が矩形と文字の色を描く（§4.10「描き方」、P02b2 の Grill）。P02b の実装は、選択を範囲のスタイル（§4.8 の `SpanStyle`）で書き直していたが、選択が変わるたびに葉を書き直し、ドラッグの描く段が点滅だけのフレームより長かった（`docs/benchmarks/p02b-text-field.md`）。既定の色は背景が `COLOR_HIGHLIGHT`、選択した文字が `COLOR_HIGHLIGHTTEXT`（`GetSysColor`、`WM_SYSCOLORCHANGE` で読み直す）。Avalonia も矩形を先に塗ってから文字を描き（`TextPresenter.cs` 423〜449 行目）、選択した文字の色を `SelectionForegroundBrush` で変えられる（同じファイルの 593〜601 行目）。Windows の選択色は濃いので、文字の色を変えないと読みにくい
 - 選択が空でない間は、キャレットを描かない（Avalonia、`TextPresenter.cs` 450〜453 行目）
 - フォーカスを失っても選択は消さず、フォーカスの無い間は選択もキャレットも描かない。Flutter はフォーカスの変化で選択に触れない（`editable_text.dart` 4939〜4961 行目）。Avalonia は既定で選択を消す（`ClearSelectionOnLostFocus`、`TextBox.cs` 66〜67・1153〜1166 行目）
 - 1 行の欄は、フォーカスを得ると全体を選ぶ。複数行の欄は選択を変えない。Flutter のデスクトップと同じである（`selectAllOnFocus`、`editable_text.dart` 1824〜1832・2115〜2125・4963〜4983 行目）。クリックで得たときは、その後のクリックの処理がキャレットを置き直す
@@ -2760,6 +2762,76 @@ public interface IClipboardBackend
   - Primitives: 行の上端と行の引き方、上の命令の表の行ごと、ポインタの回数ごと、元に戻すのまとめ方、付属機能、値の流れ（アプリが書いたとき）、ヘッドレスの点滅と仮想の時計
   - Platform: 止めたキーから `WM_CHAR` が生まれないこと、サロゲートペアがつながること、`PrefersCharacter`（キーの状態と `ToUnicodeEx` の結果を引数で受ける関数を、§7 と同じく直接確かめる）、クリップボードの読み書き、点滅と幅の設定の読み直し
   - Todo: 欄から項目を足す（`HeadlessApp`）
+
+### 4.10 範囲をまたぐ文字の選択（P02b2 の Grill でオーナーが決定、Issue #495）
+
+静的な文字を、複数の文字の葉にまたがって選び、コピーできるようにする。実装は行 P02b2 で、PR を 2 つに分ける。1 つ目は文字の葉が選択を持って描く仕組みで、§4.9 の欄もこれに移す。2 つ目は `Primitive.SelectionArea` で、`samples/Todo` の見出しと一覧を包む。Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。
+
+**比べた 3 つ:** 範囲をまたいで選べるのは Flutter の `SelectionArea` と、zed のマークダウンの文書だけである。
+
+- Flutter: `SelectableRegion` が領域の中の `Text` を集め、子が自分の選択を持つ。領域は選び始めるたびに子を画面の位置で並べ直す（`widgets/selectable_region.dart` 3179〜3183 行目）
+- Avalonia: `SelectableTextBlock` は自分の中だけを選ぶ（`SelectableTextBlock.cs` 20〜26 行目）。複数のコントロールをまたぐ仕組みは無い
+- zed: GPUI に選べる静的な文字は無い。マークダウンの文書が、元の文字の位置で 1 つの範囲を持ち、段落ごとの行が自分の分を描く（`markdown/src/markdown.rs`）
+
+**領域:** `Primitive.SelectionArea(child, options)` が包む部分木の中の、文字の葉をまたいで選ぶ。
+
+```csharp
+// XylemUI.Primitives
+public static Element SelectionArea(Element child, SelectionAreaOptions? options = null);
+
+public sealed record SelectionAreaOptions
+{
+    public Color? SelectionBackground { get; init; }   // null は OS の色（COLOR_HIGHLIGHT、§4.9）
+    public Color? SelectionForeground { get; init; }   // null は OS の色（COLOR_HIGHLIGHTTEXT）
+}
+
+// XylemUI.Core の ElementExtensions（§2.6 の一覧）
+public static Element Unselectable(this Element element);   // 子孫の文字を領域の選択に加えない
+```
+
+- 領域は 1 つの選択を持ち、押されるとフォーカスを取る（§7「押したときのフォーカス」）。選択の中身を外から読む API（Flutter の `onSelectionChanged`）は、使う場面がまだ無いので持たない
+- **加わる葉:** 領域の中の文字の葉のうち、`.Unselectable()` の部分木の中に無いもの。`.Unselectable()` は Flutter の `SelectionContainer.disabled`（`widgets/selection_container.dart` 65〜66 行目）に当たる。欄（§4.9）の文字は加わらない。欄は自分の選択を持ち、Flutter の欄も領域に加わらない（`editable_text.dart` は `SelectionContainer` を参照しない）
+- **押せる部品:** 子孫が止めた押下（`Primitive.Button` の押下など）では、選択を始めない。ボタンの文字も、ほかの場所から始めたドラッグなら選ぶ。Flutter も、ボタンの中の `Text` を選べる
+- **リンク:** 文字の中のリンク（§4.8）を押すと、リンクのクリックとして扱い、選択は始めない。zed も、リンクを押したときは選択を始めない（`markdown.rs` 2341〜2354 行目）。ほかの場所から始めたドラッグは、リンクの上も選ぶ
+
+**並べる順:** 選択の始まりと終わりの間の葉は、木の順（文書の順）で決める。zed も文書の位置で決める。Flutter は選び始めるたびに、すべての葉を画面の位置で並べ替え、3 px 以内の重なりを同じ行とみなす目安を持つ（`selectable_region.dart` 52 行目、2578〜2624 行目）。木の順では、逆向きの並び（`RowReverse`・`ColumnReverse`）と絶対配置で、見た目の順と選ぶ順が食い違う。領域は選び始めるときに、中の葉を木の順に集めて持ち、選択の間は持ったものを使う。
+
+- **選択の持ち方:** 起点と終点を、それぞれ（集めた葉の番号、葉の中の位置）で持つ。2 つの間の葉はすべて選ばれ、両端の葉は一部が選ばれる。終点が動いたときは、前と今の終点の間の葉だけ、選択の範囲を置き直す
+- **葉の外の点:** 点が葉の上に無いときは、木の順で、点より前（点より上の行、同じ行なら左）にある最後の葉の終わりとみなす。前に葉が無ければ、最初の葉の始まりとみなす。Flutter も、段落の間の点では前の段落を最後まで選ぶ（`rendering/selection.dart` 321〜332 行目）
+
+**ポインタ:** Flutter の Windows の動きにする（`selectable_region.dart` 749〜804 行目）。
+
+- 1 回のクリックで選択を消し、押した位置を始めの点にする。Shift+クリックは、始めの点から選択を広げる
+- 2 回で単語（§4.9 の UAX #29 の単語の境界）、3 回で段落（葉の中の、改行から改行まで）を選ぶ。回数は 3 で止める（同じファイルの 641〜648 行目）。zed は 3 回で行、4 回で全体を選び（`markdown.rs` 2369〜2400 行目）、Avalonia は 3 回で全体を選ぶ
+- ドラッグは選択を広げる。2 回と 3 回の後は、単語と段落の単位で広げる。押したときの暗黙のキャプチャ（§7）で、領域の外へ出ても続く
+- カーソルは、加わる文字の葉の上だけ I ビームにする。葉と葉の間は既定の矢印のまま（Flutter、`widgets/text.dart` 752〜756 行目）
+- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、ポップアップ（行 P02d）と一緒に、欄のメニューとともに入れる。Flutter と Avalonia はどちらもメニューを出す
+
+**ドラッグでのスクロール:** ドラッグが、領域の祖先でいちばん近いスクロールの箱の端を越えたら、越えた距離 × 30（論理画素毎秒）の速さで、その箱をスクロールし続ける。Flutter の `EdgeDraggingAutoScroller` と同じ式である（`widgets/scrollable.dart` 1185 行目、`widgets/scrollable_helpers.dart` 150〜156 行目）。ポインタが止まっていても続くので、フレームの時計で動かす（§2.14 のアニメーションの一覧に載せ、端の内側に戻るかドラッグが終わると外す）。スクロールした後は、ポインタの位置で終点を置き直す。zed は、終点の行が見える範囲の端から 3 行の内側に入るまでスクロールする（`markdown.rs` 2510〜2554 行目）。Avalonia の `SelectableTextBlock` はスクロールしない。
+
+**キー:** 領域がフォーカスを持つ間、Ctrl+A で領域の中をすべて選び、Ctrl+C と Ctrl+Insert でコピーする。どちらも止める（§7 の `StopPropagation`）。Shift+矢印・Shift+Home・Shift+End で選択を広げることはしない。キャレットの無い文字の上で、葉をまたいで上下の行へ移る仕組みが要るためで、Avalonia と zed も広げない。Flutter は広げる。
+
+**選択が消える時:** ウィンドウの中で、領域がフォーカスを失ったときに消す。別のウィンドウへ移っただけなら残す。Flutter と同じである（`selectable_region.dart` 526〜542 行目）。フォーカスを取る別の部品を押すと消え、何も無い所を押しても、フォーカスは動かないので残る。Avalonia もフォーカスを失うと消し（`SelectableTextBlock.cs` 180〜191 行目）、zed は外を押すと消してフォーカスを失っても残す（`markdown.rs` 2414〜2418 行目）。
+
+**コピー:** 選んだ範囲の文字を、葉ごとに切り出し、葉と葉の間に改行（`\n`）を 1 つ入れてつなぐ。葉の中の改行はそのまま残す。インラインオブジェクトの空き（§4.8）の文字は入れない。zed も段落を改行 1 つでつなぐ（`markdown.rs` 5062〜5094 行目）。Flutter は区切りを入れない（`selectable_region.dart` 2829〜2842 行目）ので、Todo の見出しの「todos: 3」と「left: 3」が 1 語につながる。クリップボードは §4.9 の `IClipboardBackend` を使う。
+
+**描き方:** 文字の葉（Core）が、選択の範囲（葉の文字の中の始まりと終わり）を持つ。描く段は、その範囲の行ごとの矩形を文字の後ろに塗り、選んだ文字を選択の文字の色で描く。範囲の変更は描画だけの変更（`ChangeKind.Color`）で、レイアウトをやり直さない。Flutter（`rendering/paragraph.dart` 1043〜1054 行目、3625〜3641 行目）も zed（`markdown.rs` 4400〜4415 行目）も、文字を描く部品が自分の選択を、文字より先に塗る。
+
+- 色は、領域の `SelectionAreaOptions`、なければ OS の色（§4.9 の `TextEditingSettings`）である
+- §4.9 の欄も、この描き方に移る。欄はフォーカスがある間、自分の葉に選択を置き、フォーカスを失うと葉の選択を空にする（欄の選択は持ったまま）。範囲のスタイルで選択を書き直す形は取り除く
+
+**費用:**
+
+- 描くだけのフレーム（選択の変わらないフレーム）と、ドラッグで選択が変わるフレームの割り当てを 0 にする（§11.3）。コピーは文字列を作るので、0 の対象にしない
+- ドラッグの 1 回の仕事は、終点の葉の当たり判定（§4.8 の `HitTestText`）と、前と今の終点の間の葉の選択の範囲を置き直すことである。葉の外の点では、集めた葉を木の順に見る
+- `input` に、1,000 の文字の葉を持つ領域での、50 の葉にまたがるドラッグの 1 フレーム（配送・レイアウト・描く段に分ける）、Ctrl+A の 1 回、1,000 の葉のコピーの 1 回を足す。今ある `input`・`lists`・`rich-text` と、欄の 4 つの計測（`docs/benchmarks/p02b-text-field.md`）が遅くならないこと
+
+**確かめ方:**
+
+- Core: 葉の選択の矩形と色（行をまたぐ範囲、葉の終わりまでの範囲）、範囲の変更でレイアウトしないこと
+- Primitives: 欄の既存のテストが、新しい描き方でそのまま通ること。上の決まりの行ごとに 1 つのテスト（並ぶ順、葉の外の点、クリックの回数、Shift+クリック、ドラッグの単位、キー、消える時、コピーのつなぎ方、リンク、除外、押せる部品、ドラッグでのスクロール、欄が加わらないこと）
+- 画素: 2 つの葉にまたがる選択のゴールデン画像
+- Todo: 見出しと一覧を領域で包み、複数の項目にまたがって選んでコピーできることを、オーナーが実機で確かめる
 
 ---
 
