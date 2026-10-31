@@ -4,11 +4,58 @@ using XylemUI.Text;
 
 namespace XylemUI.Desktop.Tests;
 
-// The todo sample (row V3c, design §2.7, "How it is checked"): MoonBit's V3 and the parts row V3c adds, in a headless app (design
-// §12, row P02a) with no OS window. The pixels of the scrolled list and its golden are in HeadlessPixelTests (row P02a2).
+// The todo sample (row V3c, design §2.7, "How it is checked"): MoonBit's V3 and the parts row V3c adds, and the field that names
+// an item (row P02b, design §4.9, "Todo"), in a headless app (design §12, row P02a) with no OS window. The pixels of the scrolled list and its golden are in HeadlessPixelTests (row P02a2).
 public sealed class TodoTests
 {
     private static readonly HeadlessOptions Headless = new() { Width = 420, Height = 360 };
+
+    /// <summary>
+    /// Enter in the field and the Add button each add an item of the text typed, without its leading and trailing spaces, and empty
+    /// the field; a text of spaces alone adds nothing; the button leaves the focus in the field.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo app, headless, with no item; the field clicked, so that it has the focus.
+    ///
+    /// Steps:
+    /// - Type "  Buy milk  " and press Enter; type "Call Bob" and click Add; type "   " and press Enter, then click Add.
+    ///
+    /// Expected:
+    /// - After Enter: the rows "[ ] Buy milk", the field empty. After the click: "[ ] Buy milk" and "[ ] Call Bob", the field empty
+    ///   and still focused. After the spaces: the same two rows, and the field keeps "   ".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Field_EnterOrAdd_AddsTheTrimmedName_AndEmptiesTheField()
+    {
+        var model = new TodoModel();
+        await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
+        var app = App.Of(headless, model);
+        app.Click(app.Field);
+
+        headless.Keyboard.Type("  Buy milk  ");
+        _ = headless.Keyboard.Press(Key.Enter);
+        app.Settle();
+        (List<string> Rows, string Field) entered = (app.Labels(), model.Draft.Get());
+        headless.Keyboard.Type("Call Bob");
+        app.Click(app.Add);
+        (List<string> Rows, string Field, bool Focused) clicked = (
+            app.Labels(),
+            model.Draft.Get(),
+            (app.Tree.Nodes.GetRef(app.Field).Pseudo & PseudoState.Focused) != 0
+        );
+        headless.Keyboard.Type("   ");
+        _ = headless.Keyboard.Press(Key.Enter);
+        app.Click(app.Add);
+
+        Assert.Equal(["[ ] Buy milk"], entered.Rows);
+        Assert.Equal(string.Empty, entered.Field);
+        Assert.Equal(["[ ] Buy milk", "[ ] Call Bob"], clicked.Rows);
+        Assert.Equal((string.Empty, true), (clicked.Field, clicked.Focused));
+        Assert.Equal(["[ ] Buy milk", "[ ] Call Bob"], app.Labels());
+        Assert.Equal("   ", model.Draft.Get());
+    }
 
     /// <summary>
     /// Clicking an item marks it done, with a mark and a gray text, and again marks it not done; "left" follows.
@@ -166,7 +213,7 @@ public sealed class TodoTests
         await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
         for (int i = 0; i < 100; i++)
         {
-            model.Add();
+            _ = model.Add($"Item {i + 1}");
         }
 
         _ = headless.PumpAndSettle();
@@ -198,13 +245,14 @@ public sealed class TodoTests
     {
         for (int i = 0; i < 3; i++)
         {
-            app.Model.Add();
+            _ = app.Model.Add($"Item {i + 1}");
         }
 
         app.Settle();
     }
 
-    // The parts of the todo app's tree, found from its root: the column of the heading, the buttons, and the scroll view; and
+    // The parts of the todo app's tree, found from its root: the column of the heading, the field and its button, the buttons, and
+    // the scroll view; and
     // clicks at a node's center with the headless app's pointer, each followed by the frames that lay out and draw what they
     // changed.
     private sealed class App
@@ -224,15 +272,19 @@ public sealed class TodoTests
 
         public TodoModel Model { get; }
 
-        public NodeHandle Add => Child(Buttons, 0);
+        public NodeHandle Field => Child(Entry, 0);
 
-        public NodeHandle Order => Child(Buttons, 4);
+        public NodeHandle Add => Child(Entry, 1);
 
-        public NodeHandle List => Child(Column, 2);
+        public NodeHandle Order => Child(Buttons, 3);
+
+        public NodeHandle List => Child(Column, 3);
 
         private NodeHandle Column => Tree.Nodes.GetRef(Tree.Root).FirstChild;
 
-        private NodeHandle Buttons => Child(Column, 1);
+        private NodeHandle Entry => Child(Column, 1);
+
+        private NodeHandle Buttons => Child(Column, 2);
 
         public static App Of(HeadlessApp headless, TodoModel model) =>
             new(
@@ -252,7 +304,7 @@ public sealed class TodoTests
 
         public void Settle() => _settle();
 
-        public NodeHandle Filter(int index) => Child(Buttons, 1 + index);
+        public NodeHandle Filter(int index) => Child(Buttons, index);
 
         public (string Count, string Left) Heading()
         {

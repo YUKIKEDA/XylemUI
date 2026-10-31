@@ -26,9 +26,9 @@ internal static class TodoCost
         using var scene = new TodoScene();
         report.Number("items", Items);
         TodoModel model = scene.Model;
-        Measure(report, "add", scene, model.Add, () => model.Remove(model.Items.Get()[^1].Id));
+        Measure(report, "add", scene, () => _ = model.Add("Item"), () => model.Remove(model.Items.Get()[^1].Id));
         Measure(report, "toggle", scene, () => model.Toggle(Middle(model)), () => model.Toggle(Middle(model)));
-        Measure(report, "remove", scene, () => model.Remove(Middle(model)), model.Add);
+        Measure(report, "remove", scene, () => model.Remove(Middle(model)), () => _ = model.Add("Item"));
         Measure(report, "filter_active", scene, () => model.Show(TodoFilter.Active), () => model.Show(TodoFilter.All));
         Measure(
             report,
@@ -96,7 +96,7 @@ internal static class TodoCost
                 {
                     for (int i = 0; i < Items; i++)
                     {
-                        Model.Add();
+                        _ = Model.Add($"Item {i + 1}");
                     }
 
                     for (int i = 0; i < Items; i += 2)

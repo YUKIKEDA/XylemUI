@@ -397,6 +397,14 @@ internal static partial class LayoutEngine
     internal static (float Height, float Baseline) TextLine(TextLeaf leaf, ShapingResult result, LineSpan span) =>
         leaf.Ranges is { HasInlines: true } ranges ? RoomLine(ranges, result, span, leaf.Style) : Line(LineMetricsOf(result, span), leaf.Style);
 
+    /// <summary>
+    /// Returns the height of the one line of an empty text leaf and its baseline from the line's top, as the measurement gives
+    /// them: a text field draws its caret on it (design §4.9).
+    /// </summary>
+    /// <param name="leaf">The text leaf, empty and shaped.</param>
+    /// <returns>The line's height and its baseline from the line's top.</returns>
+    internal static (float Height, float Baseline) EmptyTextLine(TextLeaf leaf) => Line(leaf.Shaped!.EmptyLine, leaf.Style);
+
     // A line with the rooms of the inline objects on it, which it grows to hold (SkParagraph's TextLine metrics, src/Run.h lines 432
     // to 443). Apart from the lines of the other leaves, which take none of it.
     [MethodImpl(MethodImplOptions.NoInlining)]

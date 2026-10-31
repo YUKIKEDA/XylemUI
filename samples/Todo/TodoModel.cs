@@ -26,8 +26,8 @@ public enum TodoFilter
 }
 
 /// <summary>
-/// The state of the todo list (row V3c): the items, the filter, and the order, and what the buttons do with them. The list the
-/// rows show is a computed value of the three.
+/// The state of the todo list (row V3c): the items, the filter, the order, the name being typed (row P02b), and what the buttons
+/// do with them. The list the rows show is a computed value of the first three.
 /// </summary>
 public sealed class TodoModel
 {
@@ -44,6 +44,11 @@ public sealed class TodoModel
         Shown = Computed.Create(Select);
         Left = Computed.Create(() => _items.Get().Count(item => !item.Done));
     }
+
+    /// <summary>
+    /// Gets the name being typed in the field, which <see cref="Add()"/> takes and empties.
+    /// </summary>
+    public Signal<string> Draft { get; } = Signal.Create(string.Empty);
 
     /// <summary>
     /// Gets every item, the oldest first.
@@ -71,12 +76,32 @@ public sealed class TodoModel
     public IReadOnlySignal<int> Left { get; }
 
     /// <summary>
-    /// Adds an item named after its number, not done.
+    /// Adds an item named after the field's text, and empties the field (design §4.9, "Todo"). A text of spaces alone adds nothing
+    /// and stays.
     /// </summary>
     public void Add()
     {
-        int id = _next++;
-        _items.Set([.. _items.Get(), new TodoItem(id, $"Item {id}", false)]);
+        if (Add(Draft.Get()))
+        {
+            Draft.Set(string.Empty);
+        }
+    }
+
+    /// <summary>
+    /// Adds an item, not done, named after a text without its leading and trailing white space.
+    /// </summary>
+    /// <param name="name">The text.</param>
+    /// <returns>Whether the item was added: <see langword="false"/> when the text was white space alone.</returns>
+    public bool Add(string name)
+    {
+        string trimmed = name.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        _items.Set([.. _items.Get(), new TodoItem(_next++, trimmed, false)]);
+        return true;
     }
 
     /// <summary>

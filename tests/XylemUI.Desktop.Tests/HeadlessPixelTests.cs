@@ -46,12 +46,12 @@ public sealed class HeadlessPixelTests
     /// - The todo list in a headless app of 420 x 360 on WARP.
     ///
     /// Steps:
-    /// - Click Add three times; read the heading. Click it seven times more. Read the second item's y, and the pixel of the first item
-    ///   below the list's bottom, 3 logical pixels into its button (away from its text). Scroll the list to 64; pump; read them again;
-    ///   compare the frame with "todo-scrolled.png".
+    /// - Click the field; three times, type "Item n" in it and click Add; read the heading. Add seven items more the same way. Read
+    ///   the second item's y, and the pixel of the first item below the list's bottom, 3 logical pixels into its button (away from
+    ///   its text). Scroll the list to 64; pump; read them again; compare the frame with "todo-scrolled.png".
     ///
     /// Expected:
-    /// - "todos: 3" after three clicks. Before the scroll the pixel is not the buttons' color; after it, the list's position is 64,
+    /// - "todos: 3" after three items. Before the scroll the pixel is not the buttons' color; after it, the list's position is 64,
     ///   the second item's y is the same, the pixel is <c>TodoApp.ButtonBackground</c>, and the frame matches the golden.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
@@ -61,17 +61,23 @@ public sealed class HeadlessPixelTests
         var model = new TodoModel();
         await using HeadlessApp app = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Options(420, 360));
         Element add = app.Find("Add");
-        for (int i = 0; i < 3; i++)
+        app.Pointer.Click(app.Find(TodoApp.Placeholder));
+        void AddItem(int number)
         {
+            app.Keyboard.Type($"Item {number}");
             app.Pointer.Click(add);
             _ = app.PumpAndSettle();
         }
 
-        _ = app.Find("todos: 3");
-        for (int i = 0; i < 7; i++)
+        for (int i = 1; i <= 3; i++)
         {
-            app.Pointer.Click(add);
-            _ = app.PumpAndSettle();
+            AddItem(i);
+        }
+
+        _ = app.Find("todos: 3");
+        for (int i = 4; i <= 10; i++)
+        {
+            AddItem(i);
         }
 
         UiTree tree = app.Tree;
