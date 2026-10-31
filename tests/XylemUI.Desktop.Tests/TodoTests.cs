@@ -19,10 +19,11 @@ public sealed class TodoTests
     /// - The todo app, headless, with no item; the field clicked, so that it has the focus.
     ///
     /// Steps:
-    /// - Type "  Buy milk  " and press Enter; type "Call Bob" and click Add; type "   " and press Enter, then click Add.
+    /// - Type "  Buy milk  ", let the frames shape it, and press Enter; type "Call Bob" and click Add; type "   " and press Enter, then click Add.
     ///
     /// Expected:
-    /// - After Enter: the rows "[ ] Buy milk", the field empty. After the click: "[ ] Buy milk" and "[ ] Call Bob", the field empty
+    /// - After Enter: the rows "[ ] Buy milk", the field empty, and its text leaf keeps no shaped text (it drew "  Buy milk  "
+    ///   when the shaped text of the last text stood for the empty one). After the click: "[ ] Buy milk" and "[ ] Call Bob", the field empty
     ///   and still focused. After the spaces: the same two rows, and the field keeps "   ".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
@@ -35,9 +36,12 @@ public sealed class TodoTests
         app.Click(app.Field);
 
         headless.Keyboard.Type("  Buy milk  ");
+        app.Settle();
         _ = headless.Keyboard.Press(Key.Enter);
         app.Settle();
         (List<string> Rows, string Field) entered = (app.Labels(), model.Draft.Get());
+        bool drawsTheOldName =
+            app.Tree.Nodes.GetRef(app.Tree.Nodes.GetRef(app.Tree.Nodes.GetRef(app.Field).FirstChild).FirstChild).Text!.Shaped!.Result is not null;
         headless.Keyboard.Type("Call Bob");
         app.Click(app.Add);
         (List<string> Rows, string Field, bool Focused) clicked = (
@@ -51,6 +55,7 @@ public sealed class TodoTests
 
         Assert.Equal(["[ ] Buy milk"], entered.Rows);
         Assert.Equal(string.Empty, entered.Field);
+        Assert.False(drawsTheOldName);
         Assert.Equal(["[ ] Buy milk", "[ ] Call Bob"], clicked.Rows);
         Assert.Equal((string.Empty, true), (clicked.Field, clicked.Focused));
         Assert.Equal(["[ ] Buy milk", "[ ] Call Bob"], app.Labels());

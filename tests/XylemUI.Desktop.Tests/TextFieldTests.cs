@@ -272,6 +272,7 @@ public sealed class TextFieldTests
         var text = Signal.Create(string.Empty);
         await using Field field = await Field.StartAsync(text);
         field.App.Keyboard.Type("ab");
+        _ = field.App.PumpAndSettle();
         var after = new List<string>();
         var stopped = new List<bool>();
         void Press(Key key, KeyModifiers modifiers)
@@ -567,12 +568,13 @@ public sealed class TextFieldTests
     ///
     /// Steps:
     /// - Read the rectangles of the box the text and the placeholder share, of the placeholder, and of the text leaf (each in its
-    ///   parent); and the red rectangles of the last frame. Type "ab", press Backspace twice, pump, and read the red rectangles again.
+    ///   parent); and the red rectangles of the last frame. Type "ab" and pump, so that it is shaped; press Backspace twice, pump, and read the red rectangles again.
     ///
     /// Expected:
     /// - The shared box is at (8, 6) in the field, the placeholder and the leaf at (0, 0) in it; the caret is one rectangle at (8, 6)
     ///   in the window (the field is at its top left), 1 px wide and 20 px high: the test font's line at 14 px, 20.272 px, snapped to
-    ///   the pixels as the display list snaps a rectangle. After the deletion, the same one rectangle.
+    ///   the pixels as the display list snaps a rectangle. After the deletion, the same one rectangle, and the leaf keeps no shaped
+    ///   text, so that it draws none of the deleted glyphs.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -598,11 +600,13 @@ public sealed class TextFieldTests
         Assert.Equal((8f, 6f, 1f, 20f), (caret.X, caret.Y, caret.Width, caret.Height));
 
         field.App.Keyboard.Type("ab");
+        _ = field.App.PumpAndSettle();
         _ = field.App.Keyboard.Press(Key.Back);
         _ = field.App.Keyboard.Press(Key.Back);
         _ = field.App.PumpAndSettle();
         FillRectCommand erased = Assert.Single(field.Fills().FindAll(fill => fill.Color == red));
         Assert.Equal((8f, 6f, 1f, 20f), (erased.X, erased.Y, erased.Width, erased.Height));
+        Assert.Null(tree.Nodes.GetRef(field.Leaf).Text!.Shaped!.Result);
     }
 
     /// <summary>

@@ -88,4 +88,6 @@ dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>
 
 どちらも `TextFieldTests.EmptyField_PlaceholderAndCaret_AtTheTextsStart` で確かめ、Todo のゴールデン画像（`todo-scrolled.png`）も描き直した。
 
+もう 1 つ、オーナーが実機で日本語を打って確かめたときに、Core の不具合が見つかった。Enter で項目を足して欄を空にしても、欄に前の名前が描かれ続け、プレースホルダーと重なった。欄の中身は空なので、Backspace と Delete も効かなかった。文字の葉の整形の結果（`ShapedTextCache.Result`）は配列を使い回すために残しておくが、文字が空になったときに、それを空の文字の結果（null）に戻していなかった。計測が古い結果で行を組み、描画が前の文字を描いていた。今は空の文字では null を返し、配列は次に打った文字のために残す（`TextLeafTests.TextSetToEmpty_HasNoShapedTextOrLines`、`TodoTests.Field_EnterOrAdd_AddsTheTrimmedName_AndEmptiesTheField`、`TextFieldTests.EmptyField_PlaceholderAndCaret_AtTheTextsStart`）。ヘッドレスのテストがこれを見逃したのは、打った文字を整形するフレームを回さずに欄を空にしていたためである。
+
 NativeAOT で発行した `Todo.exe` は、main の 3,874,304 バイトから 3,929,600 バイト（+55,296 バイト）になった。TextField とその編集の型を使うようになった分である。発行の警告は、どちらも 0 だった。
