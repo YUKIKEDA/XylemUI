@@ -22,6 +22,7 @@ internal sealed class DesktopWindow : IDisposable
     private readonly TextContext _text;
     private readonly GlyphAtlas? _atlas;
     private readonly NodeHandle _rootNode;
+    private TsfTextInput? _textInput;
     private ScopeHandle _rootScope;
     private bool _disposed;
 
@@ -82,6 +83,10 @@ internal sealed class DesktopWindow : IDisposable
             Tree.Clipboard = new Win32Clipboard(Window);
             Tree.SetTextEditing(Window.TextEditing);
             Window.TextEditingChanged += OnTextEditingChanged;
+
+            // The OS's input method through TSF (design §4.7); without it, the fields take WM_CHAR's committed text (§4.9).
+            _textInput = TsfTextInput.TryCreate(Window);
+            Tree.SetTextInput(_textInput);
 
             // A touchpad's interaction begins: the frames poll its viewport while it goes on (design §7, "Touch and pen", I1c).
             Window.GestureFrameNeeded = Frames.RequestFrame;
@@ -169,6 +174,11 @@ internal sealed class DesktopWindow : IDisposable
             Window.KeyInputReceived = null;
             Window.TextInputReceived = null;
             Window.ActivationChanged = null;
+
+            // TSF lets go of the window before it is destroyed: an AssociateFocus on a destroyed window fails (spike #510).
+            Tree.SetTextInput(null);
+            _textInput?.Dispose();
+            _textInput = null;
             Window.Dispose();
         }
 
