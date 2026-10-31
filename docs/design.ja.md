@@ -2488,7 +2488,7 @@ static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> 
 - TSF でしか届かないものがある。タッチキーボードの予測と自動修正（`TS_STATUS` の `TS_SS_TKBAUTOCORRECTENABLE`・`TS_SS_TKBPREDICTIONENABLE`）、入力の種類の通知、候補の窓を欄にそろえること（`TS_SD_UIINTEGRATIONENABLE`）である。`SetInputScope` の文書は、文書の管理（Document Manager）に結び付いていない窓では、タッチキーボードなどへ通知しないと書く。WPF の `TextStore` の説明は、文書の口が IME の入力・音声入力・手書きを可能にすると書く
 - IME そのものは TSF で作ることが求められ、IMM32 の IME は止められる（Microsoft Learn の Input Method Editor requirements）。TSF の働きは、TSF も IMM32 も使うように書かれていないアプリにも、Windows XP から与えられる（Microsoft Learn の ImmDisableTextFrameService の説明）
 - 実装は、OS から呼ばれる文書の口 `ITextStoreACP2`（25 のメソッド）と、変換の始まりと終わりを受ける `ITfContextOwnerCompositionSink`、表示の属性を読む `ITfTextEditSink` である。NativeAOT で使える COM の作り方（`GeneratedComInterface` と `ComWrappers`）で書く。組み込みの COM 相互運用は、実行時に IL を作るので NativeAOT で使えない。スレッドの管理（`ITfThreadMgr`）は UI スレッドに 1 つで、WPF の `TextServicesHost` と同じく、欄ごとに文書の管理と文脈を作って積む（`CreateDocumentMgr`・`CreateContext`・`Push`）。フォーカスは `AssociateFocus` で窓に結ぶ。窓を壊す前に外す（壊した後の `AssociateFocus` は `E_INVALIDARG` を返した、スパイク #510）
-- 変換中の範囲は、変換の見え方（`ITfCompositionView::GetRange`）から読む。`OnUpdateComposition` の新しい範囲は、Microsoft の日本語 IME では毎回 null だった（スパイク #510）
+- 変換中の範囲は、変換の見え方（`ITfCompositionView::GetRange`）から読む。`OnUpdateComposition` の新しい範囲は、Google 日本語入力では毎回 null だった（スパイク #510）
 
 **文字の入力の相手（Core）:** OS の IME は、欄の文字・選択・位置を読みに来て、書き換えを頼む。この節の前の版の `ITextInputBackend` は、アプリから OS へ押し付ける形で、TSF とは向きが逆だった。GPUI の `InputHandler` は、macOS の `NSTextInputClient` と 1 対 1 の口で、Windows でも同じ口を使う（`crates/gpui/src/platform.rs` 2236〜2420 行目）。XylemUI もこの形にする。
 
@@ -2544,7 +2544,7 @@ internal interface ITextInputPlatform
 - 位置の知らせは、フレームの後に、欄の矩形かスクロールの位置が変わったときに送る。`BoundsOf` が `TS_E_NOLAYOUT` を返したときも、レイアウトが済んだら送る（TSF が求める。Microsoft Learn の OnLayoutChange の説明）
 - TSF では、OS は文書を読み書きする前にロックを求める（`RequestLock`、同期と非同期がある）。ロックの間に文書を変えるのは、OS が呼ぶ文書の口のメソッドだけである。アプリはロックの間に文書を変えず、知らせも送らない（Microsoft Learn の RequestLock の説明）。TSF の実装は、ロックの間に欄から来た知らせを溜め、ロックが終わってから送る。送っていない知らせがある間は、同期のロックを断り（`TS_E_SYNCHRONOUS`）、非同期のロックだけを受ける
 
-**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。線の形・太さ・色は、IME が表示の属性（`GUID_PROP_ATTRIBUTE` の `TF_DISPLAYATTRIBUTE`）で示すとおりにする。Microsoft の日本語 IME は、変換中の文節を太い実線、未変換の文字とほかの文節を点線で示した（スパイク #510）。Chromium も WPF も、IME の線の形（実線・点線・破線・波線）と太さのとおりに描く（Chromium の `ui/base/ime/win/tsf_text_store.cc` 1708〜1751 行目、86c7d7a6。WPF の `CompositionAdorner.cs` 159〜222 行目、bd4acbb1）。Chromium は、IME が示した文字の色と線の色も使う。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。太い線は、ふつうの線の 2 倍の太さにする（Blink は 1 px と 2 px、`third_party/blink/renderer/core/paint/styleable_marker_painter.cc` 176〜188 行目、19cfb62b）。波線（`TF_LS_SQUIGGLE`）は、`DecorationStyle.Wavy` を足す行 R5 までは実線で描く。キャレットは変換中の文字の中の、IME が示す位置に描く。
+**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。線の形・太さ・色は、IME が表示の属性（`GUID_PROP_ATTRIBUTE` の `TF_DISPLAYATTRIBUTE`）で示すとおりにする。Google 日本語入力は、変換中の文節を太い実線、未変換の文字とほかの文節を点線で示した（スパイク #510）。Chromium も WPF も、IME の線の形（実線・点線・破線・波線）と太さのとおりに描く（Chromium の `ui/base/ime/win/tsf_text_store.cc` 1708〜1751 行目、86c7d7a6。WPF の `CompositionAdorner.cs` 159〜222 行目、bd4acbb1）。Chromium は、IME が示した文字の色と線の色も使う。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。太い線は、ふつうの線の 2 倍の太さにする（Blink は 1 px と 2 px、`third_party/blink/renderer/core/paint/styleable_marker_painter.cc` 176〜188 行目、19cfb62b）。波線（`TF_LS_SQUIGGLE`）は、`DecorationStyle.Wavy` を足す行 R5 までは実線で描く。キャレットは変換中の文字の中の、IME が示す位置に描く。
 
 **フォーカスとアプリの書き込み:**
 
@@ -2574,7 +2574,7 @@ internal interface ITextInputPlatform
 
 - Primitives（ヘッドレス、全 OS）: 変換の開始・更新・確定・取り消し、文節の下線、変換中のキャレット、フォーカスが移ったときの確定、変換中のアプリの書き込み、変換中のキー、伏せ字と読み取り専用の欄、IME の有効と無効、欄から OS への知らせ（アプリの書き込み・貼り付け・元に戻す・選択の移動・位置の変化で送り、OS の書き換えでは送らない）
 - Windows: 文書の口のメソッドを直接呼ぶ（文字を読む、選択を読む、確定した文字を入れる、ロックの順、`GetTextExt`）。ロックの間に来た知らせが、ロックの後に送られること。`TryShow` と `TryHide` が呼ばれること
-- 実機（オーナー）: 実装の前のスパイク（#510）で、作業用のウィンドウに最小の文書の口を付け、Microsoft の日本語 IME で変換中の文字・文節の属性・候補の窓の位置・キーの届き方・確定と IME の無効を確かめた。最後に、Todo の欄で変換・候補の窓の位置・確定した文字の再変換を確かめる。タッチの画面での確かめは行 Q8 に残す（オーナーの機械はデスクトップ）
+- 実機（オーナー）: 実装の前のスパイク（#510）で、作業用のウィンドウに最小の文書の口を付け、Google 日本語入力で変換中の文字・文節の属性・候補の窓の位置・キーの届き方・確定と IME の無効を確かめた。Windows の既定の Microsoft IME は確かめていない。最後に、Todo の欄で、Microsoft IME と Google 日本語入力の両方で、変換・候補の窓の位置・確定した文字の再変換を確かめる。タッチの画面での確かめは行 Q8 に残す（オーナーの機械はデスクトップ）
 
 ### 4.8 リッチテキスト（D9 の Grill でオーナーが決定、Issue #417）
 
