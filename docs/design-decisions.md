@@ -690,7 +690,7 @@ Decision:
 
 Reason:
   Flutter / GPUI はウィンドウ内に留まるが、WPF / Avalonia / WinUI 3 / Qt は最終的に別ウィンドウに行き着いている。
-  独立した描画ルート: 比べた 3 つとも、ポップアップのレイアウトを開いた側から切り離す（Flutter は窓の大きさの tight な制約、GPUI は `layout_as_root`）。別ウィンドウを出荷している Avalonia は、別ウィンドウを完全に独立した TopLevel にする。
+  独立した描画ルート: 比べた 3 つとも、ポップアップのレイアウトを開いた側から切り離す（Flutter は窓の大きさの tight な制約、GPUI は `layout_as_root` と `prepaint_as_root` で自分を根にして測る）。別ウィンドウを出荷している Avalonia は、別ウィンドウを完全に独立した TopLevel にする。
   v0.2 はオーバーレイだけ: 安定版の Flutter と GPUI は、メニューもダイアログもウィンドウ内で出荷している。別ウィンドウには、グリフアトラスを共有するかという行 P10 の決定が要る。
 
 Rejected:
