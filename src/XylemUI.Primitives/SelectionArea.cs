@@ -77,8 +77,9 @@ public static partial class Primitive
         private void PointerDown(in PointerEvent e)
         {
             // A press that a focusable descendant took the focus for (a button, a text field), or that kept it elsewhere
-            // (.KeepsFocusOnPress()), starts no selection (design §4.10, "Pressable parts").
-            if (e.Button != PointerButton.Left || _tree.Focus.Focused != _area)
+            // (.KeepsFocusOnPress()), starts no selection (design §4.10, "Pressable parts"); a part that keeps the focus does not
+            // move it from the area either, so the press is looked up from its node to the area (PR #503's review).
+            if (e.Button != PointerButton.Left || _tree.Focus.Focused != _area || KeepsFocus(e.TargetNode))
             {
                 return;
             }
@@ -140,7 +141,7 @@ public static partial class Primitive
 
         private void KeyDown(in KeyEvent e)
         {
-            if (e.PrefersCharacter || (e.Modifiers & ~KeyModifiers.Shift) != KeyModifiers.Control || (e.Modifiers & KeyModifiers.Shift) != 0)
+            if (e.PrefersCharacter || e.Modifiers != KeyModifiers.Control)
             {
                 return;
             }
@@ -517,8 +518,24 @@ public static partial class Primitive
             }
 
             state.ScrollTo(state.OffsetValue + (past * ScrollSpeed * (float)elapsed.TotalSeconds));
+
+            // The leaves' regions are the last frame's, so the focus reaches what the scroll shows one frame late.
             DragTo(_pointer);
             return true;
+        }
+
+        // Whether a node between a pressed node and the area keeps the focus on press (.KeepsFocusOnPress()), the area left out.
+        private bool KeepsFocus(NodeHandle pressed)
+        {
+            for (NodeHandle node = pressed; !node.IsNone && node != _area; node = _tree.Nodes.GetRef(node).Parent)
+            {
+                if (_tree.Nodes.GetRef(node).Input is { KeepsFocusOnPress: true })
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // The area's scrolling on the window's animation list.

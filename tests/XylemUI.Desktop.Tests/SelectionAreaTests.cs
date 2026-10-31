@@ -149,8 +149,7 @@ public sealed class SelectionAreaTests
     }
 
     /// <summary>
-    /// Control+A selects every leaf of the area, and Control+C and Control+Insert copy; the three keys are stopped. Control+A in a
-    /// text field inside the area is the field's.
+    /// Control+A selects every leaf of the area, and Control+C and Control+Insert copy; the three keys are stopped.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -302,17 +301,20 @@ public sealed class SelectionAreaTests
     }
 
     /// <summary>
-    /// The text under <c>.Unselectable()</c> and a text field's text are left out of the selection and of the copy.
+    /// The text under <c>.Unselectable()</c> and a text field's text are left out of the selection and of the copy; Control+A in
+    /// the field is the field's.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - An area around a column of "n", "nn" under <c>.Unselectable()</c>, a text field holding "nnn", and "nnnn".
     ///
     /// Steps:
-    /// - Click on the first leaf; Control+A; Control+C.
+    /// - Click on the first leaf; Control+A; Control+C; read. Click on the field (which takes the focus, and the area loses its
+    ///   selection); Control+A; read.
     ///
     /// Expected:
-    /// - The clipboard holds "n\nnnnn"; the unselectable leaf and the field's leaf have no selection.
+    /// - The clipboard holds "n\nnnnn"; the unselectable leaf and the field's leaf have no selection. In the field, Control+A
+    ///   selects the field's text (its leaf draws 0 to 3) and no leaf of the area.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -341,20 +343,28 @@ public sealed class SelectionAreaTests
         Assert.Equal([(0, 1), (0, 4)], area.Selections(leaves));
         Assert.Equal((0, 0), area.SelectionOf(unselectable.Node));
         Assert.Equal((0, 0), area.SelectionOf(fieldLeaf));
+
+        area.Click(10, (2 * Line) + 10);
+        _ = area.App.Keyboard.Press(Key.A, KeyModifiers.Control);
+        _ = area.App.PumpAndSettle();
+        Assert.Equal((0, 3), area.SelectionOf(fieldLeaf));
+        Assert.Equal([(0, 0), (0, 0)], area.Selections(leaves));
     }
 
     /// <summary>
-    /// A press that a focusable descendant takes the focus for, or that keeps the focus elsewhere, starts no selection.
+    /// A press that a focusable descendant takes the focus for, or on a part that keeps the focus, starts no selection, also while
+    /// the area has the focus.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - An area around a column of a leaf of "nnnn", a button of "nn", and a box of "nn" that keeps the focus on press.
     ///
     /// Steps:
-    /// - Drag from x = 1 n to 3 n on the button's text; read; drag the same on the box's text; read.
+    /// - Drag from x = 1 n to 3 n on the button's text; read; drag the same on the box's text; read. Click on the first leaf, so
+    ///   that the area has the focus, and drag the same on the box's text again; read.
     ///
     /// Expected:
-    /// - No leaf has a selection after either drag.
+    /// - No leaf has a selection after any of the three drags.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -374,8 +384,12 @@ public sealed class SelectionAreaTests
         area.Drag((N, Line + 10), (3 * N, Line + 10));
         List<(int, int)> button = area.Selections(leaves);
         area.Drag((N, (2 * Line) + 10), (3 * N, (2 * Line) + 10));
+        List<(int Start, int End)> kept = area.Selections(leaves);
+        area.Click(N, 10);
+        area.Drag((N, (2 * Line) + 10), (3 * N, (2 * Line) + 10));
 
         Assert.Equal([(0, 0), (0, 0), (0, 0)], button);
+        Assert.Equal([(0, 0), (0, 0), (0, 0)], kept);
         Assert.Equal([(0, 0), (0, 0), (0, 0)], area.Selections(leaves));
     }
 
