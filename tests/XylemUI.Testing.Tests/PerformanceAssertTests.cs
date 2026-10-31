@@ -7,9 +7,14 @@ namespace XylemUI.Testing.Tests;
 public sealed class PerformanceAssertTests : IDisposable
 {
     private readonly Func<long> _count = PerformanceAssert.BackgroundGcCount;
+    private readonly Action _settle = PerformanceAssert.Settle;
 
     /// <inheritdoc/>
-    public void Dispose() => PerformanceAssert.BackgroundGcCount = _count;
+    public void Dispose()
+    {
+        PerformanceAssert.BackgroundGcCount = _count;
+        PerformanceAssert.Settle = _settle;
+    }
 
     /// <summary>
     /// A steady state that allocates nothing passes, with each index from the warm-up's negatives to the last run once.
@@ -175,6 +180,93 @@ public sealed class PerformanceAssertTests : IDisposable
         );
         Assert.Equal(1 + (10 * (PerformanceAssert.MaxRetries + 1)), runs);
         Assert.Contains("run 3 more times, and a background GC overlapped it each time", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A background GC that ends after a window, during the wait that follows it, counts as an overlap, and the window runs again:
+    /// its mark may have ended in the window (Issue #526).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - 10 runs, windows of 1; a background-GC count that the wait after window 4 moves, the first time only; runs that allocate
+    ///   nothing.
+    ///
+    /// Steps:
+    /// - Assert that the runs allocate nothing.
+    ///
+    /// Expected:
+    /// - It passes after 12 runs: window 4 ran again once.
+    /// </remarks>
+    [Fact]
+    public void DoesNotAllocate_ABackgroundGcEndsAfterAWindow_RunsItAgain()
+    {
+        long gcs = 0;
+        int runs = 0;
+        int last = int.MinValue;
+        bool moved = false;
+        PerformanceAssert.BackgroundGcCount = () => gcs;
+        PerformanceAssert.Settle = () =>
+        {
+            if (last == 4 && !moved)
+            {
+                moved = true;
+                gcs++;
+            }
+        };
+
+        int returned = PerformanceAssert.DoesNotAllocate(
+            10,
+            index =>
+            {
+                runs++;
+                last = index;
+            }
+        );
+
+        Assert.Equal(12, runs);
+        Assert.Equal(12, returned);
+    }
+
+    /// <summary>
+    /// A window that ran again is judged by its fewest bytes: a steady state allocates the same in each run, and an overlap only
+    /// adds bytes, so a run of 0 bytes shows that the others' were not the code's.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - 10 runs, windows of 1; a background-GC count that moves in each run of window 2; window 2 allocates 100 bytes in its last
+    ///   three runs and nothing in its first.
+    ///
+    /// Steps:
+    /// - Assert that the runs allocate nothing.
+    ///
+    /// Expected:
+    /// - It passes after 14 runs: window 2 ran 3 more times, and its first run counted 0 bytes.
+    /// </remarks>
+    [Fact]
+    public void DoesNotAllocate_ARetriedWindow_IsJudgedByItsFewestBytes()
+    {
+        long gcs = 0;
+        int runs = 0;
+        int windowTwo = 0;
+        PerformanceAssert.BackgroundGcCount = () => gcs;
+        int returned = PerformanceAssert.DoesNotAllocate(
+            10,
+            index =>
+            {
+                runs++;
+                if (index == 2)
+                {
+                    gcs++;
+                    if (windowTwo++ > 0)
+                    {
+                        GC.KeepAlive(new byte[100]);
+                    }
+                }
+            }
+        );
+
+        Assert.Equal(14, runs);
+        Assert.Equal(14, returned);
     }
 
     /// <summary>

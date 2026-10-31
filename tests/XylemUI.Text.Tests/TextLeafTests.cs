@@ -534,8 +534,10 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             }
 
             int presents = target.Presents;
-            PerformanceAssert.DoesNotAllocate(200, Frame);
-            Assert.Equal(presents + 220, target.Presents);
+
+            // The runs it returns include the warm-up window and any window a background GC made it run again.
+            int runs = PerformanceAssert.DoesNotAllocate(200, Frame);
+            Assert.Equal(presents + runs, target.Presents);
         });
 
     private static long Allocated(UiTree tree, NodeHandle root, int layouts, Func<int, float> width)

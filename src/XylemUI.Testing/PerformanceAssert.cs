@@ -17,10 +17,13 @@ namespace XylemUI.Testing;
 /// thread's count (<c>void_allocation</c> in gc.cpp, dotnet/runtime v10.0.9), so a window it overlaps counts up to about 8 KB that
 /// the code did not allocate (Issue #332). A test project cannot always turn concurrent GC off, so a window across which
 /// <c>GC.GetGCMemoryInfo(GCKind.Background).Index</c> changed, or in which a collection of generation 2 started, is run again, up to 3
-/// times. A blocking collection before each window ends a background GC in progress: one that started before a window can end its
-/// mark inside it and move the index only after it, and with the index alone the Core tests on concurrent GC counted 5 to 8 KB in
-/// one window in 2 runs of 8 (Issue #460). A window that every run overlapped is
-/// listed with a note when the runs allocated; when every window counted 0 bytes the runs pass, as an overlap only adds bytes.
+/// times. A blocking collection before the first window and after each window waits for a background GC in progress to end: one
+/// that started before a window can end its mark inside it and move the index only after it, and with the index alone the Core
+/// tests on concurrent GC counted 5 to 8 KB in one window in 2 runs of 8 (Issue #460). The collection after the window is the one
+/// that catches a background GC that starts just after the collection before it and ends after the window: CI's Windows runner
+/// counted 7,912 bytes in one window with no overlap seen (Issue #526). A window that ran again is judged by its fewest bytes:
+/// the code allocates the same in each run of a steady state, and an overlap only adds bytes. A window that every run overlapped
+/// is listed with a note when the runs allocated; when every window counted 0 bytes the runs pass.
 /// </para>
 /// </remarks>
 public static class PerformanceAssert
@@ -77,19 +80,28 @@ public static class PerformanceAssert
             iteration(warm);
         }
 
+        // A blocking collection waits for a background GC in progress, so none runs into the first window from before it; the one
+        // after each window does so for the next.
+        Settle();
         for (int window = 0; window < Windows; window++)
         {
             int start = window * perWindow;
+            Window? fewest = null;
             for (int attempt = 0; ; attempt++)
             {
-                // A blocking collection waits for a background GC in progress, so none runs into the window from before it. One
-                // that starts in the window counts a collection of generation 2 at its start; one that ends in it moves the index.
-                GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+                // One that starts in the window counts a collection of generation 2 at its start; one that ends in it, or after it
+                // with its mark in it, moves the index by the time the collection after the window returns.
                 long gcBefore = BackgroundGcIndex();
                 Window measured = Measure(start, perWindow, prepare, iteration);
                 runs += perWindow;
+                Settle();
                 bool overlapped = BackgroundGcIndex() != gcBefore || measured.FullCollections > 0;
-                windows[window] = measured with { Retries = attempt, Overlapped = overlapped };
+                if (fewest is null || measured.Bytes < fewest.Value.Bytes)
+                {
+                    fewest = measured;
+                }
+
+                windows[window] = fewest.Value with { Retries = attempt, Overlapped = overlapped };
                 if (!overlapped || attempt == MaxRetries)
                 {
                     break;
@@ -138,6 +150,13 @@ public static class PerformanceAssert
     /// set it to a count of their own, as a background GC cannot be made to overlap a window on demand.
     /// </summary>
     internal static Func<long> BackgroundGcCount { get; set; } = static () => GC.GetGCMemoryInfo(GCKind.Background).Index;
+
+    /// <summary>
+    /// Gets or sets what waits for a background GC in progress to end, before the first window and after each one: a blocking
+    /// collection of generation 2 by default. The tests of the retry set it to move their count of background GCs, as a background
+    /// GC that ends during the wait cannot be made on demand.
+    /// </summary>
+    internal static Action Settle { get; set; } = static () => GC.Collect(2, GCCollectionMode.Forced, blocking: true);
 
     // It allocates (GCMemoryInfo's data), so it is read outside the measured runs.
     private static long BackgroundGcIndex() => BackgroundGcCount();
