@@ -2487,7 +2487,8 @@ static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> 
 - IMM32 でも、`WM_IME_REQUEST` に答えれば、再変換（`IMR_RECONVERTSTRING`）と周辺の文字（`IMR_DOCUMENTFEED`）は扱える。`IMR_DOCUMENTFEED` は、IME が変換の精度のために、変換した文字を文書から取り直す問い合わせである（Microsoft Learn の IMR_DOCUMENTFEED）。この節の前の版は「IMM32 には周辺の文字を渡す仕組みが無い」と書いていたが、誤りだった
 - TSF でしか届かないものがある。タッチキーボードの予測と自動修正（`TS_STATUS` の `TS_SS_TKBAUTOCORRECTENABLE`・`TS_SS_TKBPREDICTIONENABLE`）、入力の種類の通知、候補の窓を欄にそろえること（`TS_SD_UIINTEGRATIONENABLE`）である。`SetInputScope` の文書は、文書の管理（Document Manager）に結び付いていない窓では、タッチキーボードなどへ通知しないと書く。WPF の `TextStore` の説明は、文書の口が IME の入力・音声入力・手書きを可能にすると書く
 - IME そのものは TSF で作ることが求められ、IMM32 の IME は止められる（Microsoft Learn の Input Method Editor requirements）。TSF の働きは、TSF も IMM32 も使うように書かれていないアプリにも、Windows XP から与えられる（Microsoft Learn の ImmDisableTextFrameService の説明）
-- 実装は、OS から呼ばれる文書の口 `ITextStoreACP2`（25 のメソッド）と、変換の始まりと終わりを受ける `ITfContextOwnerCompositionSink`、表示の属性を読む `ITfTextEditSink` である。NativeAOT で使える COM の作り方（`GeneratedComInterface` と `ComWrappers`）で書く。組み込みの COM 相互運用は、実行時に IL を作るので NativeAOT で使えない。スレッドの管理（`ITfThreadMgr`）は UI スレッドに 1 つで、WPF の `TextServicesHost` と同じく、欄ごとに文書の管理と文脈を作って積む（`CreateDocumentMgr`・`CreateContext`・`Push`）。フォーカスは `AssociateFocus` で窓に結ぶ
+- 実装は、OS から呼ばれる文書の口 `ITextStoreACP2`（25 のメソッド）と、変換の始まりと終わりを受ける `ITfContextOwnerCompositionSink`、表示の属性を読む `ITfTextEditSink` である。NativeAOT で使える COM の作り方（`GeneratedComInterface` と `ComWrappers`）で書く。組み込みの COM 相互運用は、実行時に IL を作るので NativeAOT で使えない。スレッドの管理（`ITfThreadMgr`）は UI スレッドに 1 つで、WPF の `TextServicesHost` と同じく、欄ごとに文書の管理と文脈を作って積む（`CreateDocumentMgr`・`CreateContext`・`Push`）。フォーカスは `AssociateFocus` で窓に結ぶ。窓を壊す前に外す（壊した後の `AssociateFocus` は `E_INVALIDARG` を返した、スパイク #510）
+- 変換中の範囲は、変換の見え方（`ITfCompositionView::GetRange`）から読む。`OnUpdateComposition` の新しい範囲は、Microsoft の日本語 IME では毎回 null だった（スパイク #510）
 
 **文字の入力の相手（Core）:** OS の IME は、欄の文字・選択・位置を読みに来て、書き換えを頼む。この節の前の版の `ITextInputBackend` は、アプリから OS へ押し付ける形で、TSF とは向きが逆だった。GPUI の `InputHandler` は、macOS の `NSTextInputClient` と 1 対 1 の口で、Windows でも同じ口を使う（`crates/gpui/src/platform.rs` 2236〜2420 行目）。XylemUI もこの形にする。
 
@@ -2517,7 +2518,7 @@ public readonly record struct ImeAttributeRun(int Start, int End, ImeAttributeKi
 ```
 
 - 変換の状態（変換中の文字、その中のキャレット、文節）は欄が持つ。木のノードには持たせない。この節の前の版の `ImeCompositionState` と `SurroundingText` は使わない。周辺の文字は、OS が `CopyText` で直接読む
-- 木は、フォーカスのあるノードの相手を持つ。フォーカスが相手を持つノードへ移ると、プラットフォームは IME を有効にし、相手を持たないノードへ移ると無効にする。Avalonia と GPUI も、文字を受け付けない部品にフォーカスがあるときは IME を外す（GPUI の `crates/gpui_windows/src/events.rs` 683〜711 行目の `ImmAssociateContextEx`）。無効の間、キーは命令として配る
+- 木は、フォーカスのあるノードの相手を持つ。フォーカスが相手を持つノードへ移ると、プラットフォームは IME を有効にし、相手を持たないノードへ移ると無効にする。Avalonia と GPUI も、文字を受け付けない部品にフォーカスがあるときは IME を外す（GPUI の `crates/gpui_windows/src/events.rs` 683〜711 行目の `ImmAssociateContextEx`）。Windows では、文書の管理を外す（`AssociateFocus` に null）だけでは IME は止まらない。半角/全角で IME を入れ直すと IMM32 の道が働き、既定の変換の窓が出た。入力の文脈も外す（`ImmAssociateContextEx` に null。外した後の `ImmGetContext` は 0、スパイク #510）。無効の間、キーは命令として配る
 - macOS と Linux は、後の行で同じ口につなぐ
 
 **アプリから OS への知らせ:** OS の IME は欄の文書の写しを持つので、OS を通さずに欄が変わったら、欄から OS へ知らせる。知らせないと、再変換・周辺の文字・候補の窓の位置が古い内容で動く。TSF では文書の口の相手（`ITextStoreACPSink`）の `OnTextChange`・`OnSelectionChange`・`OnLayoutChange` に当たる。
@@ -2542,10 +2543,10 @@ internal interface ITextInputPlatform
 
 **フォーカスとアプリの書き込み:**
 
-- 変換中にフォーカスが移ったら、変換中の文字を確定する。Avalonia と GPUI も確定する（GPUI は `CPS_COMPLETE`、同じ 683〜711 行目）。Flutter は取り消すので、打った文字が消える（`text_input_manager.cc` 126〜143 行目の `CPS_CANCEL`）
+- 変換中にフォーカスが移ったら、変換中の文字を確定する。Avalonia と GPUI も確定する（GPUI は `CPS_COMPLETE`、同じ 683〜711 行目）。Flutter は取り消すので、打った文字が消える（`text_input_manager.cc` 126〜143 行目の `CPS_CANCEL`）。TSF では `ITfContextOwnerCompositionServices::TerminateComposition` で確定する。確定は呼び出しの中で終わり、`OnEndComposition` は戻る前に届く（スパイク #510）
 - 変換中にアプリが文字のシグナルに書いたら、先に変換を確定してから、アプリの値を置く（§4.9「値の流れ」）
 
-**候補の窓:** TSF の IME は、範囲の画面の位置を問い合わせる（`ITextStoreACP2::GetTextExt`）。欄は `BoundsOf` で、葉の行とグリフから求めた位置を返し、プラットフォームが画面の物理の画素に直す。レイアウトが済む前は `TS_E_NOLAYOUT` を返す。
+**候補の窓:** TSF の IME は、範囲の画面の位置を問い合わせる（`ITextStoreACP2::GetTextExt`）。欄は `BoundsOf` で、葉の行とグリフから求めた位置を返し、プラットフォームが画面の物理の画素に直す。レイアウトが済む前は `TS_E_NOLAYOUT` を返す。`OnLayoutChange` を送ると、TSF は位置を問い合わせ直し、候補の窓は欄についてくる（スパイク #510）。
 
 **タッチキーボード:** 指かペンで欄を押してフォーカスが入ったら、`InputPane` の `TryShow`（`IInputPaneInterop::GetForWindow` で窓の分を取る、Windows 10 1607 から）で出し、相手を持たないノードへフォーカスが移ったら `TryHide` で隠す。マウスやキーでフォーカスが移ったときは出さない。Chromium は、TSF に任せる形を一度入れたが、出たり消えたりがそろわず、2020 年に外して自分で出す形にした（コミット 125cf9f247、"Cleanup TSF InputPanelPolicy changes"）。
 
@@ -2555,7 +2556,7 @@ internal interface ITextInputPlatform
 
 **再変換と周辺の文字:** 文書の口は欄の文字の全体を見せる。IME は確定した文字の再変換も、変換の精度のための周辺の文字も、自分で読む。
 
-**変換中のキー:** IME が使ったキー（`VK_PROCESSKEY`）は配らない（§7）。変換中のキーも、欄の命令として配らない。Flutter も `VK_PROCESSKEY` を配らない（`keyboard_key_embedder_handler.cc` 177〜183 行目）。TSF の下でキーが IME とアプリにどの順で届くかは、実装の最初に実機で確かめる。
+**変換中のキー:** TSF の下では、IME が使うキーはウィンドウに届かない。変換中は、F2 や F5 のように IME が変換に使わないキーも届かなかった。メッセージのループで `ITfKeystrokeMgr` を呼ばなくてよい（スパイク #510）。それでも、変換中のキーは欄の命令として配らない。IMM32 の道（縮退）では、IME が使ったキーは `VK_PROCESSKEY` で届くので配らない（§7）。Flutter も `VK_PROCESSKEY` を配らない（`keyboard_key_embedder_handler.cc` 177〜183 行目）。
 
 **縮退:** TSF のスレッドの管理を作れないときは、変換を OS の既定の IME の窓に任せ、確定した文字を `WM_CHAR` で受ける（行 P02b の形、§4.9「IME の前」）。
 
@@ -2568,7 +2569,7 @@ internal interface ITextInputPlatform
 
 - Primitives（ヘッドレス、全 OS）: 変換の開始・更新・確定・取り消し、文節の下線、変換中のキャレット、フォーカスが移ったときの確定、変換中のアプリの書き込み、変換中のキー、伏せ字と読み取り専用の欄、IME の有効と無効、欄から OS への知らせ（アプリの書き込み・貼り付け・元に戻す・選択の移動・位置の変化で送り、OS の書き換えでは送らない）
 - Windows: 文書の口のメソッドを直接呼ぶ（文字を読む、選択を読む、確定した文字を入れる、ロックの順、`GetTextExt`）。ロックの間に来た知らせが、ロックの後に送られること。`TryShow` と `TryHide` が呼ばれること
-- 実機（オーナー）: 実装の最初に、作業用のウィンドウに最小の文書の口を付け、Microsoft の日本語 IME で変換中の文字が届くか、候補の窓が欄の下に出るか、キーの順を確かめる。最後に、Todo の欄で変換・候補の窓の位置・確定した文字の再変換を確かめる。タッチの画面での確かめは行 Q8 に残す（オーナーの機械はデスクトップ）
+- 実機（オーナー）: 実装の前のスパイク（#510）で、作業用のウィンドウに最小の文書の口を付け、Microsoft の日本語 IME で変換中の文字・文節の属性・候補の窓の位置・キーの届き方・確定と IME の無効を確かめた。最後に、Todo の欄で変換・候補の窓の位置・確定した文字の再変換を確かめる。タッチの画面での確かめは行 Q8 に残す（オーナーの機械はデスクトップ）
 
 ### 4.8 リッチテキスト（D9 の Grill でオーナーが決定、Issue #417）
 
