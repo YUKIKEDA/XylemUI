@@ -550,10 +550,11 @@ internal sealed class UiTree
     /// <param name="node">The text leaf.</param>
     /// <param name="start">The first code unit of the range.</param>
     /// <param name="end">The end of the range; at or before <paramref name="start"/>, no selection.</param>
-    /// <param name="background">The color behind the selected glyphs.</param>
-    /// <param name="foreground">The color of the selected glyphs.</param>
+    /// <param name="background">The color behind the selected glyphs; <see langword="null"/> for the OS's
+    /// (<see cref="TextEditing"/>), read when the leaf is drawn.</param>
+    /// <param name="foreground">The color of the selected glyphs; <see langword="null"/> for the OS's.</param>
     /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
-    internal void SetTextSelection(NodeHandle node, int start, int end, Color background, Color foreground)
+    internal void SetTextSelection(NodeHandle node, int start, int end, Color? background, Color? foreground)
     {
         TextLeaf leaf = TextLeafOf(node);
         if (leaf.Selection is null && end <= start)

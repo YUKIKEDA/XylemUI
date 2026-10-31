@@ -191,14 +191,13 @@ public static partial class Primitive
         private void PaintSelection()
         {
             TextSelection selection = _editor.Selection;
-            TextEditingSettings settings = _tree.TextEditing;
             bool shown = Focused && !selection.IsCollapsed;
             _tree.SetTextSelection(
                 _leaf,
                 shown ? ToShown(selection.Start) : 0,
                 shown ? ToShown(selection.End) : 0,
-                options.SelectionBackground ?? settings.SelectionBackground,
-                options.SelectionForeground ?? settings.SelectionForeground
+                options.SelectionBackground,
+                options.SelectionForeground
             );
         }
 

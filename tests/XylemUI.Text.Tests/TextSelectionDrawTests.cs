@@ -1,3 +1,5 @@
+using XylemUI.Text.LineBreak;
+
 namespace XylemUI.Text.Tests;
 
 // The selection a text leaf draws (row P02b2, design §4.10, "Drawing"): the rectangles behind the selected glyphs, line by line,
@@ -63,9 +65,9 @@ public sealed class TextSelectionDrawTests(UiThreadFixture ui) : IDisposable
     /// - Mount, select, and draw.
     ///
     /// Expected:
-    /// - Two red rectangles: one from x = 8.54 on the first line, over the second "n" and the hard break's glyph (as P02b's field drew
-    ///   it with a range's background), and one from x = 0 on the second line, one "n" wide; no rectangle on the third line, whose
-    ///   "nn" is one glyph run of the leaf's color.
+    /// - Two red rectangles: one from x = 8.54 on the first line to the end of the hard break's glyph (2 n and the break's advance,
+    ///   read from the leaf's layout), as P02b's field drew it with a range's background; and one from x = 0 on the second line, one
+    ///   "n" wide; no rectangle on the third line, whose "nn" is one glyph run of the leaf's color.
     /// </remarks>
     [Fact]
     public void Draw_SelectionAcrossLines_FillsEachLineItReaches() =>
@@ -79,9 +81,9 @@ public sealed class TextSelectionDrawTests(UiThreadFixture ui) : IDisposable
 
             List<TextScene.Drawn> rects = scene.Commands().FindAll(c => c.Tag == CommandTag.FillRect);
             float line = LineHeight();
+            float end = MathF.Round((2 * N) + Advance(scene.Leaf(text), 2));
             Assert.Equal(2, rects.Count);
-            Assert.Equal((MathF.Round(N), 0f), (rects[0].A, rects[0].B));
-            Assert.True(rects[0].C >= MathF.Round(2 * N) - MathF.Round(N));
+            Assert.Equal((MathF.Round(N), 0f, end - MathF.Round(N)), (rects[0].A, rects[0].B, rects[0].C));
             Assert.Equal((0f, MathF.Round(line), MathF.Round(N)), (rects[1].A, rects[1].B, rects[1].C));
             TextScene.Drawn last = scene.Commands()[^1];
             Assert.Equal((CommandTag.GlyphRun, 2), (last.Tag, last.Glyphs));
@@ -204,6 +206,134 @@ public sealed class TextSelectionDrawTests(UiThreadFixture ui) : IDisposable
 
             PerformanceAssert.DoesNotAllocate(1_000, Iteration);
         });
+
+    /// <summary>
+    /// A selection that reaches the leaf's end fills to the end of its last glyph.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A leaf of "nn\nnnn" (two lines), selected from 4 to its end, 6.
+    ///
+    /// Steps:
+    /// - Mount, select, and draw.
+    ///
+    /// Expected:
+    /// - One red rectangle on the second line, from x = 8.54 to the end of the last "n", 3 n; the first line draws none.
+    /// </remarks>
+    [Fact]
+    public void Draw_SelectionToTheLeafsEnd_FillsToTheLastGlyph() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element text = default;
+            scene.Mount(() => text = Elements.Text("nn\nnnn"));
+            scene.Tree.SetTextSelection(text.Node, 4, 6, Red, Blue);
+            scene.Draw();
+
+            TextScene.Drawn rect = Assert.Single(scene.Commands().FindAll(c => c.Tag == CommandTag.FillRect));
+            Assert.Equal((MathF.Round(N), MathF.Round(LineHeight()), MathF.Round(3 * N) - MathF.Round(N)), (rect.A, rect.B, rect.C));
+        });
+
+    /// <summary>
+    /// The room of an inline object is not selected (design §4.8, "Caret and selection", and §4.10): a selection across it fills
+    /// the glyphs on its two sides and leaves the room's width without a rectangle.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A row holding a leaf of "nn", an inline box 30 wide, and "nn"; selected from 1 to 4 (the second "n", the room, the third
+    ///   "n").
+    ///
+    /// Steps:
+    /// - Mount, select, and draw.
+    ///
+    /// Expected:
+    /// - Two red rectangles: one under the second "n", from 8.54 to 17.08, and one under the third, from 17.08 + 30 to 25.62 + 30;
+    ///   none over the room between them.
+    /// </remarks>
+    [Fact]
+    public void Draw_SelectionAcrossAnInlineObject_LeavesItsRoom() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element text = default;
+            scene.Mount(() =>
+            {
+                Element box = Elements.Box().Width(30).Height(10);
+                text = Elements.Text(
+                    (ref w) =>
+                    {
+                        w.Write("nn".AsSpan());
+                        w.Inline(box);
+                        w.Write("nn".AsSpan());
+                    }
+                );
+                return Elements.Row(text);
+            });
+            scene.Tree.SetTextSelection(text.Node, 1, 4, Red, Blue);
+            scene.Draw();
+
+            List<TextScene.Drawn> rects = scene.Commands().FindAll(c => c.Tag == CommandTag.FillRect && c.Color == Red);
+            Assert.Equal(
+                [
+                    (MathF.Round(N), MathF.Round(2 * N) - MathF.Round(N)),
+                    (MathF.Round((2 * N) + 30), MathF.Round((3 * N) + 30) - MathF.Round((2 * N) + 30)),
+                ],
+                rects.Select(c => (c.A, c.C))
+            );
+        });
+
+    /// <summary>
+    /// A selection with no colors of its own draws in Windows' colors as the tree reads them at each frame: after the settings
+    /// change, the same selection draws in the new colors, with no new selection set.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A leaf of "nnnn", selected from 1 to 3 with no colors.
+    ///
+    /// Steps:
+    /// - Draw; read the rectangle and the selected glyph run's color. Set the tree's settings to a green background and a red text
+    ///   (as WM_SYSCOLORCHANGE does); draw; read them again.
+    ///
+    /// Expected:
+    /// - First the default settings' colors, then green and red.
+    /// </remarks>
+    [Fact]
+    public void Draw_SelectionWithNoColors_TakesTheOsColorsOfTheFrame() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element text = default;
+            scene.Mount(() => text = Elements.Text("nnnn"));
+            scene.Tree.SetTextSelection(text.Node, 1, 3, null, null);
+            scene.Draw();
+            (Color Back, Color Ink) before = Colors(scene.Commands());
+            scene.Tree.SetTextEditing(TextEditingSettings.Default with { SelectionBackground = Green, SelectionForeground = Red });
+            scene.Draw();
+
+            TextEditingSettings defaults = TextEditingSettings.Default;
+            Assert.Equal((defaults.SelectionBackground, defaults.SelectionForeground), before);
+            Assert.Equal((Green, Red), Colors(scene.Commands()));
+        });
+
+    // The selection's rectangle and the color of the middle glyph run (the selected one) of a leaf drawn in three runs.
+    private static (Color Back, Color Ink) Colors(List<TextScene.Drawn> commands) =>
+        (Assert.Single(commands.FindAll(c => c.Tag == CommandTag.FillRect)).Color, commands.FindAll(c => c.Tag == CommandTag.GlyphRun)[1].Color);
+
+    // The advance of the glyphs of a cluster in the leaf's committed layout.
+    private static float Advance(TextLeaf leaf, int cluster)
+    {
+        LineBreakCache cache = leaf.LineBreaks!;
+        float advance = 0;
+        foreach (LaidGlyph glyph in cache[cache.Committed].Layout.Glyphs)
+        {
+            if (glyph.Cluster == cluster)
+            {
+                advance += glyph.Advance;
+            }
+        }
+
+        return advance;
+    }
 
     private float LineHeight() => (_font.Ascent + _font.Descent + _font.LineGap) * Size / _font.UnitsPerEm;
 }

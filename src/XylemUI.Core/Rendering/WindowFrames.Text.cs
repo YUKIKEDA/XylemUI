@@ -89,23 +89,21 @@ internal sealed partial class WindowFrames
         Color color
     )
     {
+        // The colors the selection has, or Windows' as the tree reads them now (design §4.10, "Drawing").
+        Color selectedBackground = selection.Background ?? _tree.TextEditing.SelectionBackground;
+        Color selectedInk = selection.Foreground ?? _tree.TextEditing.SelectionForeground;
         ReadOnlySpan<PaintRun> paint = ranges is null ? default : ranges.Paint;
         var pieces = new SelectedPieces(glyphs, paint, selection);
         while (pieces.Next(out int _, out PaintRun run, out bool selected, out float left, out float right))
         {
-            if (right <= left)
-            {
-                continue;
-            }
-
-            if (ranges is not null && Look(ranges, run).Background is { } background)
+            if (ranges is not null && Look(ranges, run).Background is { } background && right > left)
             {
                 _list.FillRect(x + left, top, right - left, height, background);
             }
 
-            if (selected)
+            if (selected && right > left)
             {
-                _list.FillRect(x + left, top, right - left, height, selection.Background);
+                _list.FillRect(x + left, top, right - left, height, selectedBackground);
             }
         }
 
@@ -115,7 +113,7 @@ internal sealed partial class WindowFrames
         Color? current = null;
         while (pieces.Next(out int start, out PaintRun run, out bool selected, out float left, out float _))
         {
-            Color ink = selected ? selection.Foreground : (ranges is null ? null : Look(ranges, run).Color) ?? color;
+            Color ink = selected ? selectedInk : (ranges is null ? null : Look(ranges, run).Color) ?? color;
             if (current is { } open && open != ink)
             {
                 DrawSelectedGlyphs(ranges, result, glyphs[from..start], x + at, baseline, open);

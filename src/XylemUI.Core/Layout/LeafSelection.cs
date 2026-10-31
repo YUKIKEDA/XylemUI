@@ -19,14 +19,15 @@ internal sealed class LeafSelection
     public int End { get; private set; }
 
     /// <summary>
-    /// Gets the color filled behind the selected glyphs.
+    /// Gets the color filled behind the selected glyphs; <see langword="null"/> for the OS's (<see cref="TextEditingSettings"/>),
+    /// which the draw stage reads at each frame, so that a change of Windows' colors reaches a selection that does not move.
     /// </summary>
-    public Color Background { get; private set; }
+    public Color? Background { get; private set; }
 
     /// <summary>
-    /// Gets the color of the selected glyphs.
+    /// Gets the color of the selected glyphs; <see langword="null"/> for the OS's.
     /// </summary>
-    public Color Foreground { get; private set; }
+    public Color? Foreground { get; private set; }
 
     /// <summary>
     /// Gets a value indicating whether the range holds no text, so that nothing is drawn.
@@ -45,10 +46,10 @@ internal sealed class LeafSelection
     /// </summary>
     /// <param name="start">The first code unit of the range.</param>
     /// <param name="end">The end of the range.</param>
-    /// <param name="background">The color behind the selected glyphs.</param>
-    /// <param name="foreground">The color of the selected glyphs.</param>
+    /// <param name="background">The color behind the selected glyphs; <see langword="null"/> for the OS's.</param>
+    /// <param name="foreground">The color of the selected glyphs; <see langword="null"/> for the OS's.</param>
     /// <returns>Whether anything the draw stage reads changed.</returns>
-    public bool Set(int start, int end, Color background, Color foreground)
+    public bool Set(int start, int end, Color? background, Color? foreground)
     {
         if (end <= start)
         {

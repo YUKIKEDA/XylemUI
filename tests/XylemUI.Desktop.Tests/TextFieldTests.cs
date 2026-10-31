@@ -872,8 +872,8 @@ public sealed class TextFieldTests
             return fills;
         }
 
-        // The selection the field's text leaf draws (design §4.10, "Drawing"): its start, end, background, and color; none when
-        // it is empty.
+        // The selection the field's text leaf draws (design §4.10, "Drawing"): its start, end, background, and color, the OS's
+        // where it has none; none when it is empty.
         public List<(int Start, int End, Color? Background, Color? Color)> SelectionRuns()
         {
             if (App.Tree.Nodes.GetRef(Leaf).Text!.Selection is not { IsEmpty: false } selection)
@@ -881,7 +881,8 @@ public sealed class TextFieldTests
                 return [];
             }
 
-            return [(selection.Start, selection.End, selection.Background, selection.Foreground)];
+            TextEditingSettings os = App.Tree.TextEditing;
+            return [(selection.Start, selection.End, selection.Background ?? os.SelectionBackground, selection.Foreground ?? os.SelectionForeground)];
         }
 
         public async ValueTask DisposeAsync()
