@@ -2698,7 +2698,7 @@ public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
 | Ctrl+V・Shift+Insert | 貼り付け |
 | Ctrl+Z | 元に戻す |
 | Ctrl+Y・Ctrl+Shift+Z | やり直す |
-| Enter | 1 行の欄: `OnSubmit` があれば今の文字で呼んで止める。無ければ止めない。複数行の欄: 改行を入れる |
+| Enter | 1 行の欄: `OnSubmit` があれば今の文字で呼んで止める。無ければ止めない。Shift+Enter は止めない。複数行の欄: Enter と Shift+Enter で改行を入れる（Avalonia の `TextBox.cs` 1700 行目は修飾キーを見ず、zed は `default-windows.json` 131〜132 行目）。Ctrl+Enter は止めない（zed でも場所ごとに違う。133 行目は下に行を足し、381 行目は送信） |
 
 - 命令にしたキーは止める（§7 の `StopPropagation`）。命令にしないキーは止めないので、Tab のフォーカスの移動（§7.1）とスクロールのキー（§7 の既定の動作）は欄の外へ届く
 - Enter で、フォーカスは欄に残す。Flutter の 1 行の欄は `onSubmitted` を呼んでフォーカスを手放す（`editable_text.dart` 3738〜3763 行目）が、Avalonia は `AcceptsReturn` でなければ Enter を扱わずに親へ送り、zed の 1 行の編集は `menu::Confirm` へ渡す（`assets/keymaps/default-windows.json` 18 行目）。Todo で続けて項目を足すには、フォーカスが残るほうがよい

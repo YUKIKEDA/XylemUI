@@ -56,8 +56,12 @@ public static partial class Primitive
         private float[] _heights = [];
         private object? _topsOf;
         private float _topsWidth;
-        private int _topsVersion;
+        private int _topsEdits;
         private int _topsCount;
+
+        // The count of the edits to the text, which a move of the caret or the selection does not change: the lines' tops are
+        // stacked again only after an edit.
+        private int _edits;
 
         // What a press and a drag select: by cluster, by word (a double click), or by line or all (a triple click), from the anchor
         // range the press made.
@@ -247,6 +251,7 @@ public static partial class Primitive
         {
             if (!selectionOnly)
             {
+                _edits++;
                 _clusterStarts = [];
                 if (!_placeholder.IsNone && _tree.Nodes.IsAlive(_placeholder))
                 {
@@ -324,6 +329,8 @@ public static partial class Primitive
                 next.Y = y + height - viewport.Height;
             }
 
+            // This runs at each display list (the caret is drawn at each one), so it scrolls only when the offset changes: a frame with
+            // the caret in view marks nothing. A scroll draws at the next frame, one frame late.
             if (next != offset)
             {
                 _scroll.ScrollTo(next);
@@ -435,13 +442,14 @@ public static partial class Primitive
                     return Copy();
                 case Key.Insert when shift && rest == KeyModifiers.None:
                     return Paste(now);
-                case Key.Enter when rest == KeyModifiers.None && !shift:
+                case Key.Enter when rest == KeyModifiers.None:
+                    // Shift+Enter breaks a line too, as in Avalonia (TextBox.cs line 1700) and zed (default-windows.json line 131).
                     if (options.Multiline)
                     {
                         return !options.ReadOnly && Edit(_editor.Type("\n", now));
                     }
 
-                    if (options.OnSubmit is { } submit)
+                    if (!shift && options.OnSubmit is { } submit)
                     {
                         submit(_editor.Text);
                         return true;
@@ -593,7 +601,7 @@ public static partial class Primitive
                 return -1;
             }
 
-            if (!ReferenceEquals(entry.Layout, _topsOf) || _topsWidth != entry.Width || _topsVersion != _version.Peek() || _topsCount != lines.Length)
+            if (!ReferenceEquals(entry.Layout, _topsOf) || _topsWidth != entry.Width || _topsEdits != _edits || _topsCount != lines.Length)
             {
                 if (_tops.Length < lines.Length)
                 {
@@ -609,7 +617,7 @@ public static partial class Primitive
                     stacked += _heights[i];
                 }
 
-                (_topsOf, _topsWidth, _topsVersion, _topsCount) = (entry.Layout, entry.Width, _version.Peek(), lines.Length);
+                (_topsOf, _topsWidth, _topsEdits, _topsCount) = (entry.Layout, entry.Width, _edits, lines.Length);
             }
 
             int low = 0;
@@ -749,7 +757,14 @@ public static partial class Primitive
                 return;
             }
 
+            // The timer ticks on the thread pool, and the blink posts itself to the UI thread's context: with none, the caret stays.
             _ui ??= SynchronizationContext.Current;
+            if (_ui is null)
+            {
+                StopBlink();
+                return;
+            }
+
             if (_timer is null)
             {
                 _timer = _tree.Time.CreateTimer(static state => ((TextFieldState)state!).Tick(), this, interval, interval);
@@ -770,9 +785,9 @@ public static partial class Primitive
         // A tick of the timer, which may come on another thread: the blink runs on the UI thread.
         private void Tick()
         {
-            if (_ui is { } ui && SynchronizationContext.Current != ui)
+            if (SynchronizationContext.Current != _ui)
             {
-                ui.Post(_tick, this);
+                _ui!.Post(_tick, this);
             }
             else
             {

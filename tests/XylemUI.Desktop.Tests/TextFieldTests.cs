@@ -52,19 +52,22 @@ public sealed class TextFieldTests
     }
 
     /// <summary>
-    /// The moves of the keys' table: by cluster, by word with Control, to the ends with Home and End, Shift to extend, and a
-    /// selection collapsed to its end by an arrow; Control+A selects all.
+    /// The moves of the keys' table: by cluster, by word with Control, to the line's ends with Home and End and to the text's with
+    /// Control, Shift to extend, and a selection collapsed to its end by an arrow; Control+A selects all. Up, Down, PageUp, and
+    /// PageDown in a field of one line are not stopped.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A field of one line holding "one two three", with the focus (which selected all).
     ///
     /// Steps:
-    /// - Left (the selection collapses to its start); End; Control+Left; Shift+Control+Left; Right; Home; Shift+End; Control+A.
+    /// - Left (the selection collapses to its start); End; Control+Left; Shift+Control+Left; Right; Home; Shift+End; Control+A;
+    ///   End; Shift+Left; Shift+Right; Shift+Home; Control+Home; Control+End. Then Up, Down, PageUp, and PageDown.
     ///
     /// Expected:
     /// - Carets at 0, 13, 8; the selection 8 to 4; the caret at 8 (Right collapses to the end); 0; the selection 0 to 13; again 0
-    ///   to 13. Each of the keys was stopped.
+    ///   to 13; the caret at 13; the selection 13 to 12; the caret at 13; the selection 13 to 0; the carets at 0 and 13. Each of
+    ///   these keys was stopped. None of the four vertical keys was stopped, and the caret stays at 13.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -88,6 +91,17 @@ public sealed class TextFieldTests
         Press(Key.Home);
         Press(Key.End, KeyModifiers.Shift);
         Press(Key.A, KeyModifiers.Control);
+        Press(Key.End);
+        Press(Key.Left, KeyModifiers.Shift);
+        Press(Key.Right, KeyModifiers.Shift);
+        Press(Key.Home, KeyModifiers.Shift);
+        Press(Key.Home, KeyModifiers.Control);
+        Press(Key.End, KeyModifiers.Control);
+        var vertical = new List<bool>();
+        foreach (Key key in new[] { Key.Up, Key.Down, Key.PageUp, Key.PageDown })
+        {
+            vertical.Add(field.App.Keyboard.Press(key));
+        }
 
         Assert.Equal(
             [
@@ -99,25 +113,33 @@ public sealed class TextFieldTests
                 TextSelection.Collapsed(0),
                 new TextSelection(0, 13),
                 new TextSelection(0, 13),
+                TextSelection.Collapsed(13),
+                new TextSelection(13, 12),
+                TextSelection.Collapsed(13),
+                new TextSelection(13, 0),
+                TextSelection.Collapsed(0),
+                TextSelection.Collapsed(13),
             ],
             steps
         );
         Assert.All(stopped, Assert.True);
+        Assert.Equal([false, false, false, false], vertical);
+        Assert.Equal(TextSelection.Collapsed(13), selection.Get());
     }
 
     /// <summary>
-    /// Backspace and Delete delete a cluster or the selection, with Control to the word; a read-only field takes no deletion and no
-    /// typing.
+    /// Backspace and Delete delete a cluster or the selection, with Control to the word's boundary; a read-only field takes no
+    /// deletion and no typing.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A field of one line holding "one two", with the focus and the caret at the end; and a read-only one holding "fixed".
     ///
     /// Steps:
-    /// - Backspace; Control+Backspace; Home and Delete. In the read-only field: Backspace, type "x".
+    /// - Backspace; Control+Backspace; Home and Delete; Control+Delete. In the read-only field: Backspace, type "x".
     ///
     /// Expected:
-    /// - "one tw", "one ", "ne "; the read-only field stays "fixed".
+    /// - "one tw", "one ", "ne ", " "; the read-only field stays "fixed".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -135,7 +157,9 @@ public sealed class TextFieldTests
             _ = field.App.Keyboard.Press(Key.Home);
             _ = field.App.Keyboard.Press(Key.Delete);
             after.Add(text.Get());
-            Assert.Equal(["one tw", "one ", "ne "], after);
+            _ = field.App.Keyboard.Press(Key.Delete, KeyModifiers.Control);
+            after.Add(text.Get());
+            Assert.Equal(["one tw", "one ", "ne ", " "], after);
         }
 
         var fixedText = Signal.Create("fixed");
@@ -193,18 +217,93 @@ public sealed class TextFieldTests
     }
 
     /// <summary>
+    /// Control+Insert copies, Shift+Delete cuts, and Shift+Insert pastes, as Control+C, Control+X, and Control+V do.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of one line holding "hello world", with the focus.
+    ///
+    /// Steps:
+    /// - Select "hello" (Home, then Shift+Control+Right); Control+Insert; Shift+Delete; put "hi" on the clipboard and Shift+Insert.
+    ///
+    /// Expected:
+    /// - The clipboard holds "hello" after the copy, and after the cut with the text " world"; the text is "hi world" after the
+    ///   paste. Each of the three keys was stopped.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Clipboard_InsertAndDeleteKeys_CopyCutAndPaste()
+    {
+        var text = Signal.Create("hello world");
+        await using Field field = await Field.StartAsync(text);
+        _ = field.App.Keyboard.Press(Key.Home);
+        _ = field.App.Keyboard.Press(Key.Right, KeyModifiers.Control | KeyModifiers.Shift);
+
+        bool copyStopped = field.App.Keyboard.Press(Key.Insert, KeyModifiers.Control);
+        string? copied = field.App.Clipboard.Text;
+        bool cutStopped = field.App.Keyboard.Press(Key.Delete, KeyModifiers.Shift);
+        (string? Clipboard, string Text) cut = (field.App.Clipboard.Text, text.Get());
+        field.App.Clipboard.Text = "hi";
+        bool pasteStopped = field.App.Keyboard.Press(Key.Insert, KeyModifiers.Shift);
+
+        Assert.Equal("hello", copied);
+        Assert.Equal(("hello", " world"), cut);
+        Assert.Equal("hi world", text.Get());
+        Assert.Equal((true, true, true), (copyStopped, cutStopped, pasteStopped));
+    }
+
+    /// <summary>
+    /// Control+Z undoes, and Control+Y and Control+Shift+Z each redo what it undid.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An empty field of one line, with the focus.
+    ///
+    /// Steps:
+    /// - Type "ab"; Control+Z; Control+Y; Control+Z; Control+Shift+Z.
+    ///
+    /// Expected:
+    /// - "", "ab", "", "ab"; each of the four keys was stopped.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task UndoRedo_ControlYAndControlShiftZ_Redo()
+    {
+        var text = Signal.Create(string.Empty);
+        await using Field field = await Field.StartAsync(text);
+        field.App.Keyboard.Type("ab");
+        var after = new List<string>();
+        var stopped = new List<bool>();
+        void Press(Key key, KeyModifiers modifiers)
+        {
+            stopped.Add(field.App.Keyboard.Press(key, modifiers));
+            after.Add(text.Get());
+        }
+
+        Press(Key.Z, KeyModifiers.Control);
+        Press(Key.Y, KeyModifiers.Control);
+        Press(Key.Z, KeyModifiers.Control);
+        Press(Key.Z, KeyModifiers.Control | KeyModifiers.Shift);
+
+        Assert.Equal([string.Empty, "ab", string.Empty, "ab"], after);
+        Assert.All(stopped, Assert.True);
+    }
+
+    /// <summary>
     /// Enter in a field of one line runs <see cref="TextFieldOptions.OnSubmit"/> with the text and is stopped, or goes on with
-    /// none; in a field of many lines it breaks the line.
+    /// none; Shift+Enter there goes on. In a field of many lines, Enter and Shift+Enter break the line, and Control+Enter goes on.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A field of one line holding "go" with a submit that logs; one with none; a field of many lines holding "a".
     ///
     /// Steps:
-    /// - Press Enter in each; in the field of many lines, after End.
+    /// - Press Shift+Enter, then Enter, in the field with the submit; Enter in the one with none. In the field of many lines, after
+    ///   Control+End: Enter, Shift+Enter, Control+Enter.
     ///
     /// Expected:
-    /// - The log holds "go" and the press was stopped; the press in the field with none was not; the field of many lines holds "a\n".
+    /// - Shift+Enter was not stopped and logged nothing; Enter logged "go" and was stopped; the press in the field with none was
+    ///   not. In the field of many lines, Enter and Shift+Enter were stopped and Control+Enter was not; it holds "a\n\n".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -213,6 +312,8 @@ public sealed class TextFieldTests
         var log = new List<string>();
         await using (Field submitting = await Field.StartAsync(Signal.Create("go"), new TextFieldOptions { OnSubmit = log.Add }))
         {
+            Assert.False(submitting.App.Keyboard.Press(Key.Enter, KeyModifiers.Shift));
+            Assert.Empty(log);
             Assert.True(submitting.App.Keyboard.Press(Key.Enter));
         }
 
@@ -224,10 +325,13 @@ public sealed class TextFieldTests
         var many = Signal.Create("a");
         await using Field multiline = await Field.StartAsync(many, new TextFieldOptions { Multiline = true });
         _ = multiline.App.Keyboard.Press(Key.End, KeyModifiers.Control);
-        _ = multiline.App.Keyboard.Press(Key.Enter);
+        bool enter = multiline.App.Keyboard.Press(Key.Enter);
+        bool shiftEnter = multiline.App.Keyboard.Press(Key.Enter, KeyModifiers.Shift);
+        bool controlEnter = multiline.App.Keyboard.Press(Key.Enter, KeyModifiers.Control);
 
         Assert.Equal(["go"], log);
-        Assert.Equal("a\n", many.Get());
+        Assert.Equal((true, true, false), (enter, shiftEnter, controlEnter));
+        Assert.Equal("a\n\n", many.Get());
     }
 
     /// <summary>
@@ -347,6 +451,51 @@ public sealed class TextFieldTests
         carets.Add(selection.Get().Caret);
 
         Assert.Equal([5, 9, 5, 1, 0, 11, 11], carets);
+    }
+
+    /// <summary>
+    /// In a field of many lines, PageDown and PageUp move by the field's height at the same x, and Shift with Down and Up extends
+    /// the selection.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of many lines 40 px wide and 41 px high (two lines of 20.272 px) holding "nnn nnn nnn", which wraps into three
+    ///   lines of "nnn", with the focus and the caret at 1.
+    ///
+    /// Steps:
+    /// - PageDown; PageUp; Shift+Down; Shift+Up.
+    ///
+    /// Expected:
+    /// - The caret at 9 (41 px down from the first line's middle is the third line); at 1; the selection 1 to 5; the caret at 1.
+    ///   Each key was stopped.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task PageAndShiftVertical_MultilineField_MoveAPageAndExtend()
+    {
+        var selection = Signal.Create(default(TextSelection));
+        await using Field field = await Field.StartAsync(
+            Signal.Create("nnn nnn nnn"),
+            new TextFieldOptions { Multiline = true, Selection = selection },
+            width: 40,
+            height: 41
+        );
+        selection.Set(TextSelection.Collapsed(1));
+        var steps = new List<TextSelection>();
+        var stopped = new List<bool>();
+        void Press(Key key, KeyModifiers modifiers = KeyModifiers.None)
+        {
+            stopped.Add(field.App.Keyboard.Press(key, modifiers));
+            steps.Add(selection.Get());
+        }
+
+        Press(Key.PageDown);
+        Press(Key.PageUp);
+        Press(Key.Down, KeyModifiers.Shift);
+        Press(Key.Up, KeyModifiers.Shift);
+
+        Assert.Equal([TextSelection.Collapsed(9), TextSelection.Collapsed(1), new TextSelection(1, 5), TextSelection.Collapsed(1)], steps);
+        Assert.All(stopped, Assert.True);
     }
 
     /// <summary>
@@ -529,6 +678,7 @@ public sealed class TextFieldTests
             Signal<string> text,
             TextFieldOptions? options = null,
             float width = 300,
+            float? height = null,
             bool other = false,
             bool blink = false
         )
@@ -539,6 +689,11 @@ public sealed class TextFieldTests
                 () =>
                 {
                     field = TextField(text, options).Width(width).TestId("field");
+                    if (height is { } fixedHeight)
+                    {
+                        field = field.Height(fixedHeight);
+                    }
+
                     return other ? Row(field, box = Box().Width(20).Height(20).Focusable()) : Row(field);
                 },
                 new HeadlessOptions
