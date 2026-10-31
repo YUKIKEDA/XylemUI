@@ -2816,14 +2816,14 @@ public interface IClipboardBackend
 {
     string? GetText();          // 文字が無い、または開けなければ null
     bool SetText(string text);  // 開けなければ false
-    bool HasText();             // P02d。文字があるか。開かずに確かめる（右クリックのメニューの「貼り付け」）
+    bool HasText();             // P02d。文字があるか（右クリックのメニューの「貼り付け」）
 }
 ```
 
 - Windows は `OpenClipboard` を 1 回だけ呼び、`CF_UNICODETEXT` を読み書きする。開けなければ、やり直さずに失敗を返し、欄は何もしない。GPUI と同じ形である（`clipboard.rs` 346〜355 行目）。Avalonia は 100 ms おきに 10 回やり直してから例外を投げる（`ClipboardImpl.cs` 16〜39 行目）が、待ちながらやり直すと UI スレッドが止まる。Flutter と Avalonia の API は非同期だが、Windows のクリップボードは同期で開くので、非同期の形は要らない
 - 1 行の欄への貼り付けは、最初の改行より前だけを残す。Avalonia と同じ形である（`TextBox.cs` 1257〜1279 行目）。Flutter は `\n` を取り除くだけなので（`editable_text.dart` 967〜972 行目、`services/text_formatter.dart` 425 行目）、2 行が間に何も挟まずにつながる
 - `HeadlessApp` は、メモリに持つクリップボードを使う（§12.4）
-- `HasText` は、Windows では `IsClipboardFormatAvailable(CF_UNICODETEXT)` で、クリップボードを開かずに確かめる（P02d。下の「右クリックのメニュー」）
+- `HasText` は、Windows では `IsClipboardFormatAvailable(CF_UNICODETEXT)` で確かめる（P02d。下の「右クリックのメニュー」）。Microsoft の文書も、メニューを開くときにこの関数で「貼り付け」を使えるかを決める、と書く（`IsClipboardFormatAvailable` の Remarks）
 
 **右クリックのメニュー（P02d の Grill の Q7、Issue #547）:** 欄は `TextFieldOptions.ContextMenu` があるとき、§13.1 の `ContextMenu` の形でメニューを開く。関数は、開くたびに作る `TextMenuCommands`（切り取り・コピー・貼り付け・すべて選ぶの 4 つの `MenuCommand`）を受け取り、`MenuItem` を並べたメニューの見た目を返す。見た目は部品の外で付け（§13.1）、Todo のサンプルで付ける。null ならメニューを出さない。テーマの既定の見た目は、Theme.Fluent の行（§13.2）で付ける。
 
@@ -2849,7 +2849,7 @@ public sealed class TextMenuCommands
   - コピー: 伏せ字でなく、選択が空でない
   - 貼り付け: 読み取り専用でなく、クリップボードに文字がある（`HasText`）。Flutter も、メニューを出す前にクリップボードを確かめる（`editable_text.dart` 5208 行目）。Avalonia の `CanPaste` は確かめない（`Avalonia.Controls/TextBox.cs` 1116〜1122 行目）
   - すべて選ぶ: 文字が空でなく、まだ全部は選んでいない（Flutter の Windows と Linux。macOS では使えない）
-- **開く位置:** 右ボタンの Up では、ポインタの位置に開く（比べた 3 つとも同じ。Flutter の `editable_text.dart` 3210〜3226 行目、Avalonia の `PopupFlyoutBase.cs` 544〜547・597〜599 行目、GPUI の `editor/src/element/mouse.rs` 802〜842 行目）。Shift+F10 とアプリケーションキーでは、キャレットの矩形の左下に開く（GPUI はキャレットから文字の幅と行の高さだけずらす、`editor/src/editor.rs` 10955〜10966 行目）
+- **開く位置:** 右ボタンの Up では、ポインタの位置に開く（比べた 3 つとも同じ。Flutter の `editable_text.dart` 3210〜3226 行目、Avalonia の `PopupFlyoutBase.cs` 544〜547・597〜599 行目、GPUI の `editor/src/element/mouse.rs` 802〜842 行目）。Shift+F10 とアプリケーションキーでは、キャレットの矩形の左下に開く。Microsoft の文書も、キーボードから出たメニューは今の選択の位置に出すとする（`WM_CONTEXTMENU`）。GPUI はキャレットから文字の幅と行の高さだけずらす（`editor/src/editor.rs` 10955〜10966 行目）
 - **選択:** 右ボタンの Down の位置が選択の外なら、先にキャレットをその位置に動かす（GPUI の `editor/src/mouse_context_menu.rs` 193〜199 行目）。中なら選択を保つ。欄にフォーカスが無ければ、フォーカスを取る（Flutter は、フォーカスが無ければ位置を選ぶ、`widgets/text_selection.dart` 2895〜2916 行目）。§7「押したときのフォーカス」は左ボタンだけなので、欄が自分で取る
 - **選んだ後:** メニューを閉じ、フォーカスを欄に戻してから命令を走らせる（§13.1 の `MenuItem`）。命令は、キーの Ctrl+X・Ctrl+C・Ctrl+V・Ctrl+A と同じ処理で、元に戻すのまとまりも同じである
 - **変換中:** 変換中（§4.7）に右クリックしたら、先に確定する（§4.7 の、変換中に欄を押したときと同じ）
