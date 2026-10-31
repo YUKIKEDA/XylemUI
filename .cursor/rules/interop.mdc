@@ -47,4 +47,5 @@ The design for this is `docs/design.ja.md` §2.9, §2.11.1, §2.12. This rule is
 ## Checks on a real machine
 
 - While an IME composes, TSF takes every key, function keys included, and none reaches the window procedure. A check that must act during a composition (move the field, take the focus away) acts with the mouse. Spike #510 bound those actions to F2 and F5 for two runs, and neither reached the window (PR #511).
+- A real machine's steps are written after asking the owner's keyboard layout, and they use only keys it has. P02c's reconversion step said to press the 変換 key; the owner's US keyboard has none, Space put a space in place of the selection, and a scratch tool that sent `VK_CONVERT` on F9 checked it again (PR #544).
 - A check on a real machine names the IME (and the input method's version) that was used, read from the log or asked of the owner, not assumed. Spike #510 wrote Microsoft's Japanese IME; the owner had typed with Google Japanese Input, which a process list showed later (PR #515).
