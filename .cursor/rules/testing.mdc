@@ -74,6 +74,7 @@ public void Dispose_NestedScopes_RunsChildrenThenOwnCleanupsInLifoOrder()
 }
 ```
 
+- Steps and Expected count the runs the same way: when Expected counts the work of the helper's unmeasured window and of the windows it runs again, Steps names them too. PR #532's touch tests said 1,000 runs in Steps and multiplied the runs the helper returned in Expected; the review asked for the window in Steps.
 - A `[Theory]` is documented once; list what the cases cover under Preconditions or Steps.
 - No custom XML tags. Link a design section when the why is not obvious.
 
