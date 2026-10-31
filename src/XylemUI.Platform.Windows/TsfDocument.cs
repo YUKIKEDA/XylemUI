@@ -43,7 +43,14 @@ internal interface ITsfSink
 /// <param name="toScreen">Turns a box in the window's logical pixels into the screen's physical pixels.</param>
 /// <param name="screen">Returns the window's client area in the screen's physical pixels.</param>
 /// <param name="fromScreen">Turns a point of the screen's physical pixels into the window's logical pixels.</param>
-internal sealed unsafe class TsfDocument(ITextInputClient client, Func<Rect, RECT> toScreen, Func<RECT> screen, Func<POINT, Vector2> fromScreen)
+/// <param name="managers">The window's managers of display attributes, held by its input method (none in a test).</param>
+internal sealed unsafe class TsfDocument(
+    ITextInputClient client,
+    Func<Rect, RECT> toScreen,
+    Func<RECT> screen,
+    Func<POINT, Vector2> fromScreen,
+    TsfAttributes.TsfManagers managers = default
+)
 {
     /// <summary>
     /// The one view of the document (<c>TsViewCookie</c>).
@@ -86,6 +93,11 @@ internal sealed unsafe class TsfDocument(ITextInputClient client, Func<Rect, REC
     /// Gets a value indicating whether the manager holds a lock.
     /// </summary>
     public bool Locked => _lock != 0;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a notice of the layout is on its way to this document, after the frame.
+    /// </summary>
+    public bool LayoutPosted { get; set; }
 
     /// <summary>
     /// Gets a value indicating whether a composition is going on.
@@ -192,7 +204,8 @@ internal sealed unsafe class TsfDocument(ITextInputClient client, Func<Rect, REC
     /// <summary>
     /// Answers the selection (<c>ITextStoreACP2::GetSelection</c>).
     /// </summary>
-    /// <param name="count">How many selections the manager takes.</param>
+    /// <param name="count">How many selections the manager takes. The field has one selection, so the index the manager asks
+    /// from, <c>TS_DEFAULT_SELECTION</c> or 0, gives the same one.</param>
     /// <param name="selection">Receives the selection.</param>
     /// <param name="fetched">Receives how many were written.</param>
     /// <returns>The result.</returns>
@@ -510,7 +523,7 @@ internal sealed unsafe class TsfDocument(ITextInputClient client, Func<Rect, REC
                 return;
             }
 
-            _clauses = TsfAttributes.Clauses(context, readOnly, start, length);
+            _clauses = TsfAttributes.Clauses(managers, context, readOnly, start, length);
             var text = new char[length];
             Client.CopyText(start, text);
             TextSelection selection = Client.Selection;
@@ -600,13 +613,14 @@ internal sealed unsafe class TsfDocument(ITextInputClient client, Func<Rect, REC
             return;
         }
 
-        for (int i = 0; i < _textChanges.Count; i++)
+        // Taken out before they are told: the manager may ask for a lock while it is told one, and that lock's end tells its own.
+        (int Start, int OldEnd, int NewEnd)[] held = [.. _textChanges];
+        _textChanges.Clear();
+        foreach ((int start, int oldEnd, int newEnd) in held)
         {
-            (int start, int oldEnd, int newEnd) = _textChanges[i];
             sink.OnTextChange(start, oldEnd, newEnd);
         }
 
-        _textChanges.Clear();
         if (_selectionChanged)
         {
             _selectionChanged = false;

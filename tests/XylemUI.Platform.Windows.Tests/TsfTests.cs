@@ -171,6 +171,87 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A manager that asks for a lock while it is told a held change gets it, and the changes are each told once, in order: the
+    /// held ones are taken out before they are told (PR #540's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A document of a field holding "abc"; a sink that, when told the first change, asks for a synchronous lock in which the
+    ///   field tells a third change.
+    ///
+    /// Steps:
+    /// - In a read lock, the field tells two changes.
+    ///
+    /// Expected:
+    /// - The sink was told the first change, the third (after the inner lock), and the second, each once.
+    /// </remarks>
+    [Fact]
+    public void HeldChanges_AManagerThatLocksWhileTold_TellsEachOnce() =>
+        ui.Invoke(() =>
+        {
+            var client = new FakeClient("abc");
+            (TsfDocument document, FakeSink sink) = Make(client);
+            int locks = 0;
+            sink.Granted = flags =>
+            {
+                if (++locks == 1)
+                {
+                    document.TextChanged(0, 0, 1);
+                    document.TextChanged(1, 1, 2);
+                }
+                else
+                {
+                    document.TextChanged(2, 2, 3);
+                }
+            };
+            sink.Told.Clear();
+            sink.OnTold = told =>
+            {
+                if (told == "text 0 0 1")
+                {
+                    int inner;
+                    _ = document.RequestLock(Read | Sync, &inner);
+                }
+            };
+            int session;
+            _ = document.RequestLock(Read | Sync, &session);
+
+            Assert.Equal(["text 0 0 1", "text 2 2 3", "text 1 1 2"], sink.Told);
+        });
+
+    /// <summary>
+    /// Each window's input method holds its own managers: one window's that ends leaves the other's working (PR #540's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two hidden windows, each with TSF's input method.
+    ///
+    /// Steps:
+    /// - Attach a field to the second; dispose the first; detach and attach again on the second.
+    ///
+    /// Expected:
+    /// - The second has a document and an input context after the first ended.
+    /// </remarks>
+    [Fact]
+    public void TwoWindows_OneEnding_LeavesTheOthersInputMethod() =>
+        ui.Invoke(() =>
+        {
+            using var first = new Win32Window("tsf 1", 200, 100);
+            using var second = new Win32Window("tsf 2", 200, 100);
+            TsfTextInput a = TsfTextInput.TryCreate(first) ?? throw new InvalidOperationException("TSF is not there.");
+            using TsfTextInput b = TsfTextInput.TryCreate(second) ?? throw new InvalidOperationException("TSF is not there.");
+
+            b.Attach(new FakeClient("abc"));
+            a.Dispose();
+            b.Detach();
+            b.Attach(new FakeClient("abc"));
+
+            Assert.NotNull(b.Attached);
+            Assert.True(HasContext(second));
+            b.Detach();
+        });
+
+    /// <summary>
     /// A read-only field's document says so in its status, and refuses text.
     /// </summary>
     /// <remarks>
@@ -398,6 +479,8 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
     {
         public Action<uint>? Granted { get; set; }
 
+        public Action<string>? OnTold { get; set; }
+
         public List<string> Told { get; } = [];
 
         public int OnLockGranted(uint flags)
@@ -406,7 +489,12 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
             return 0;
         }
 
-        public void OnTextChange(int start, int oldEnd, int newEnd) => Told.Add($"text {start} {oldEnd} {newEnd}");
+        public void OnTextChange(int start, int oldEnd, int newEnd)
+        {
+            string told = $"text {start} {oldEnd} {newEnd}";
+            Told.Add(told);
+            OnTold?.Invoke(told);
+        }
 
         public void OnSelectionChange() => Told.Add("selection");
 

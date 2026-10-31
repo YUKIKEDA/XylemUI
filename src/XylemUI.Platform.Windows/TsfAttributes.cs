@@ -10,18 +10,26 @@ namespace XylemUI.Platform.Windows;
 /// </summary>
 internal static unsafe class TsfAttributes
 {
+    /// <summary>
+    /// A window's managers that turn an attribute's atom into a display attribute: none in a test's document.
+    /// </summary>
+    /// <param name="categories">The category manager, or null.</param>
+    /// <param name="displayAttributes">The display attribute manager, or null.</param>
+    internal readonly struct TsfManagers(ITfCategoryMgr* categories, ITfDisplayAttributeMgr* displayAttributes)
+    {
+        /// <summary>
+        /// Gets the category manager, or null.
+        /// </summary>
+        public ITfCategoryMgr* Categories { get; } = categories;
+
+        /// <summary>
+        /// Gets the display attribute manager, or null.
+        /// </summary>
+        public ITfDisplayAttributeMgr* DisplayAttributes { get; } = displayAttributes;
+    }
+
     // msctf.h; checked in spike #510.
     private static readonly Guid PropAttribute = new(0x34b45670, 0x7526, 0x11d2, 0xa1, 0x47, 0x00, 0x10, 0x5a, 0x27, 0x99, 0xb5);
-
-    /// <summary>
-    /// Gets or sets the category manager, which the platform makes on the UI thread.
-    /// </summary>
-    public static ITfCategoryMgr* Categories { get; set; }
-
-    /// <summary>
-    /// Gets or sets the display attribute manager, which the platform makes on the UI thread.
-    /// </summary>
-    public static ITfDisplayAttributeMgr* DisplayAttributes { get; set; }
 
     /// <summary>
     /// Reads where a range starts and how long it is.
@@ -51,14 +59,15 @@ internal static unsafe class TsfAttributes
     /// Reads the clauses of a composition from start to start + length: each range of the attribute property inside it, as the
     /// run its display attribute asks for, in the composition's positions.
     /// </summary>
+    /// <param name="managers">The window's category and display attribute managers; without them the clauses have no attributes.</param>
     /// <param name="context">The document's context.</param>
     /// <param name="readOnly">The edit cookie to read with.</param>
     /// <param name="start">The composition's start in the document.</param>
     /// <param name="length">Its length.</param>
     /// <returns>The clauses, in order.</returns>
-    public static ImeAttributeRun[] Clauses(ITfContext* context, uint readOnly, int start, int length)
+    public static ImeAttributeRun[] Clauses(TsfManagers managers, ITfContext* context, uint readOnly, int start, int length)
     {
-        if (Categories is null || DisplayAttributes is null)
+        if (managers.Categories is null || managers.DisplayAttributes is null)
         {
             return [];
         }
@@ -85,7 +94,7 @@ internal static unsafe class TsfAttributes
             {
                 try
                 {
-                    if (Read(property, readOnly, range, start, length) is { } clause)
+                    if (Read(managers, property, readOnly, range, start, length) is { } clause)
                     {
                         clauses.Add(clause);
                     }
@@ -150,7 +159,7 @@ internal static unsafe class TsfAttributes
     }
 
     // One range of the attribute property: its display attribute over the part of it inside the composition.
-    private static ImeAttributeRun? Read(ITfProperty* property, uint readOnly, ITfRange* range, int start, int length)
+    private static ImeAttributeRun? Read(TsfManagers managers, ITfProperty* property, uint readOnly, ITfRange* range, int start, int length)
     {
         if (!Extent(range, out int at, out int count))
         {
@@ -178,14 +187,14 @@ internal static unsafe class TsfAttributes
             }
 
             Guid guid;
-            if (Categories->GetGUID((uint)value.lVal, &guid) < 0)
+            if (managers.Categories->GetGUID((uint)value.lVal, &guid) < 0)
             {
                 return null;
             }
 
             ITfDisplayAttributeInfo* info = null;
             Guid owner;
-            if (DisplayAttributes->GetDisplayAttributeInfo(&guid, &info, &owner) < 0 || info is null)
+            if (managers.DisplayAttributes->GetDisplayAttributeInfo(&guid, &info, &owner) < 0 || info is null)
             {
                 return null;
             }

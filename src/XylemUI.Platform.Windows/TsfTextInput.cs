@@ -20,7 +20,14 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
     private static readonly Guid CategoryMgrClass = new(0xa4b544a1, 0x438d, 0x4b41, 0x93, 0x25, 0x86, 0x95, 0x23, 0xe2, 0xd6, 0xc7);
     private static readonly Guid DisplayAttributeMgrClass = new(0x3ce74de4, 0x53d3, 0x4d74, 0x8b, 0x83, 0x43, 0x1b, 0x38, 0x28, 0xba, 0x53);
 
-    private static readonly SendOrPostCallback TellLayout = static state => ((TsfTextInput)state!).FlushLayout();
+    // The notice goes to the document it was posted for, which a later focus does not change; a document detached meanwhile has
+    // no sink and tells nothing.
+    private static readonly SendOrPostCallback TellLayout = static state =>
+    {
+        var document = (TsfDocument)state!;
+        document.LayoutPosted = false;
+        document.LayoutChanged();
+    };
 
     private readonly Win32Window _window;
     private ITfThreadMgr* _threads;
@@ -28,7 +35,6 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
     private ITfDisplayAttributeMgr* _displayAttributes;
     private uint _clientId;
     private Document? _attached;
-    private bool _layoutPosted;
 
     private TsfTextInput(Win32Window window) => _window = window;
 
@@ -66,7 +72,7 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
             return;
         }
 
-        var document = new TsfDocument(client, ToScreen, Screen, FromScreen);
+        var document = new TsfDocument(client, ToScreen, Screen, FromScreen, new TsfAttributes.TsfManagers(_categories, _displayAttributes));
         nint id = NativeHandleTable.Register(document);
         ITextStoreACP2* store = TsfTextStore.Create(id);
         ITfTextEditSink* editSink = TsfEditSink.Create(id);
@@ -121,19 +127,19 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
     public void LayoutChanged()
     {
         // The field tells it while it draws; the manager is told after the frame, as it asks the field for boxes again at once.
-        if (_attached is null || _layoutPosted)
+        if (_attached?.Value is not { LayoutPosted: false } document)
         {
             return;
         }
 
         if (SynchronizationContext.Current is { } ui)
         {
-            _layoutPosted = true;
-            ui.Post(TellLayout, this);
+            document.LayoutPosted = true;
+            ui.Post(TellLayout, document);
         }
         else
         {
-            _attached?.Value.LayoutChanged();
+            document.LayoutChanged();
         }
     }
 
@@ -171,8 +177,6 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
             _ = _threads->Deactivate();
         }
 
-        TsfAttributes.Categories = null;
-        TsfAttributes.DisplayAttributes = null;
         Com.Release(ref _displayAttributes);
         Com.Release(ref _categories);
         Com.Release(ref _threads);
@@ -242,9 +246,8 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
             _displayAttributes = displayAttributes;
         }
 
-        // Without the two managers the clauses come with no attributes, and the field draws the text being composed plainly.
-        TsfAttributes.Categories = _categories;
-        TsfAttributes.DisplayAttributes = _displayAttributes;
+        // Without the two managers the clauses come with no attributes, and the field draws the text being composed plainly. Each
+        // window's input method holds its own, and hands them to its documents.
         return true;
     }
 
@@ -260,12 +263,6 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
         _ = _threads->AssociateFocus((HWND)_window.Handle, null, &previous);
         Com.Release(ref previous);
         _ = ImmAssociateContextEx((HWND)_window.Handle, HIMC.NULL, 0);
-    }
-
-    private void FlushLayout()
-    {
-        _layoutPosted = false;
-        _attached?.Value.LayoutChanged();
     }
 
     // A box in the window's logical pixels as the screen's physical pixels.
