@@ -340,7 +340,17 @@ internal unsafe struct TsfTextStore
     }
 
     [UnmanagedCallersOnly]
-    private static int RequestAttrsTransitioningAtPosition(TsfTextStore* self, int position, uint count, Guid* attributes, uint flags) => S.S_OK;
+    private static int RequestAttrsTransitioningAtPosition(TsfTextStore* self, int position, uint count, Guid* attributes, uint flags)
+    {
+        try
+        {
+            return Document(self) is { } document ? document.RequestTransitions() : E.E_UNEXPECTED;
+        }
+        catch (Exception exception)
+        {
+            return Fail(exception);
+        }
+    }
 
     [UnmanagedCallersOnly]
     private static int FindNextAttrTransition(

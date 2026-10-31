@@ -30,7 +30,7 @@ TextField の計測（P02b、`benchmarks/XylemUI.E2E/TextFieldCost.cs`）と同�
 
 ## main への影響
 
-`input`・`lists`・`rich-text` のどの値も、この PR の 4 回の範囲が main の 4 回の範囲と重なった。この PR が main のどの回よりも上になった値は無かった。
+`input`・`lists`・`rich-text` のどの値も、この PR の 4 回の範囲が main の 4 回の範囲と重なった。4 回とも main のどの回よりも上になった値は無かった。1 回だけ main のどの回よりも上になったのは、この PR の 3 回目の欄の値（1 文字打つの 205.8 µs など）で、上の節に書いたとおり、同じ回のほかの場面も長かった。
 
 | 場面の値 | main | この PR |
 | --- | --- | --- |

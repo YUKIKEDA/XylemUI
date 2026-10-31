@@ -35,6 +35,7 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
     private ITfDisplayAttributeMgr* _displayAttributes;
     private uint _clientId;
     private Document? _attached;
+    private bool _keyboardShown;
 
     private TsfTextInput(Win32Window window) => _window = window;
 
@@ -72,7 +73,11 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
         ReleaseAttached();
         if (showKeyboard)
         {
-            (Keyboard ??= InputPaneKeyboard.TryCreate(_window.Handle))?.Show();
+            if ((Keyboard ??= InputPaneKeyboard.TryCreate(_window.Handle)) is { } keyboard)
+            {
+                keyboard.Show();
+                _keyboardShown = true;
+            }
         }
 
         if (client.Kind == TextInputKind.Password)
@@ -117,7 +122,13 @@ internal sealed unsafe class TsfTextInput : ITextInputPlatform, IDisposable
     {
         ReleaseAttached();
         Off();
-        Keyboard?.Hide();
+
+        // Hidden only when the app showed it: a mouse's or a key's focus does not call the OS each time.
+        if (_keyboardShown)
+        {
+            _keyboardShown = false;
+            Keyboard?.Hide();
+        }
     }
 
     // The attached field's document, its composition committed, before another field's or none.

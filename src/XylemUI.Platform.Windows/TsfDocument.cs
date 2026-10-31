@@ -415,6 +415,17 @@ internal sealed unsafe class TsfDocument(
     }
 
     /// <summary>
+    /// Takes a request for the attributes that change at a position (<c>RequestAttrsTransitioningAtPosition</c>): the input scope is
+    /// the same at every position, so no attribute changes, and <see cref="RetrieveRequestedAttrs"/> then gives none.
+    /// </summary>
+    /// <returns>The result.</returns>
+    public int RequestTransitions()
+    {
+        _scopeRequested = false;
+        return S.S_OK;
+    }
+
+    /// <summary>
     /// Gives the attributes asked for (<c>ITextStoreACP2::RetrieveRequestedAttrs</c>, design §4.7, "The kinds of input"): the input
     /// scope of the field's kind of input, as an <c>ITfInputScope</c> whose reference is the manager's.
     /// </summary>
