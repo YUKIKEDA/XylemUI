@@ -1589,6 +1589,9 @@ public static class ElementExtensions
     // 入力
     public static Element Cursor(this Element e, CursorKind cursor);
     public static Element BlocksPointer(this Element e);
+    public static Element HitTestVisible(this Element e, bool visible);   // P02d。false で部分木がヒット領域を書かない（§7.3）
+    // ポップアップ（P02d、§7.3）。isOpen が true の間、開いた側の子の Scope で render を走らせ、別の描画ルートに出す
+    public static Element Popup(this Element anchor, Signal<bool> isOpen, Func<Element> render, PopupOptions? options = null);
     // キーボードとフォーカス（K1、§7「キーの入力とフォーカス」）
     public static Element Focusable(this Element e, bool focusable = true);
     public static Element TabIndex(this Element e, int index);                       // 既定 0。小さい値が先、同じ値は木の順
@@ -1656,6 +1659,11 @@ public static class Primitive
     public static Element Button(string label, Action onClick);   // Button(Text(label), onClick)
     public static Element TextField(Signal<string> text, TextFieldOptions? options = null);   // P02b（§4.9）
     public static Element SelectionArea(Element child, SelectionAreaOptions? options = null);   // P02b2。中の文字の葉をまたいで選ぶ（§4.10）
+    public static Element Menu(this Element anchor, Signal<bool> isOpen, Func<Element> panel, MenuOptions? options = null);   // P02d（§13.1）
+    public static Element MenuItem(Element content, Action onSelect, bool enabled = true);
+    public static Element SubmenuItem(Element content, Func<Element> panel, bool enabled = true);
+    public static Element ContextMenu(this Element target, Func<Element> panel);   // 右ボタンの Up、Shift+F10、アプリケーションキー
+    public static Element Dialog(Signal<bool> isOpen, Func<Element> content, DialogOptions? options = null);   // モーダル
 }
 
 // XylemUI.Desktop（Core・Platform.Windows・Rendering.D3D11 をつなぐ）
@@ -2715,6 +2723,7 @@ public sealed record TextFieldOptions
     public Color? SelectionBackground { get; init; }         // 既定は OS の選択色
     public Color? SelectionForeground { get; init; }         // 既定は OS の選択した文字の色
     public TextInputKind InputKind { get; init; }            // P02c。タッチキーボードの配列（§4.7）。伏せ字はパスワード
+    public Func<TextMenuCommands, Element>? ContextMenu { get; init; }   // P02d。右クリックのメニュー（下の「右クリックのメニュー」）
 }
 
 // XylemUI（Core）
@@ -2807,12 +2816,43 @@ public interface IClipboardBackend
 {
     string? GetText();          // 文字が無い、または開けなければ null
     bool SetText(string text);  // 開けなければ false
+    bool HasText();             // P02d。文字があるか。開かずに確かめる（右クリックのメニューの「貼り付け」）
 }
 ```
 
 - Windows は `OpenClipboard` を 1 回だけ呼び、`CF_UNICODETEXT` を読み書きする。開けなければ、やり直さずに失敗を返し、欄は何もしない。GPUI と同じ形である（`clipboard.rs` 346〜355 行目）。Avalonia は 100 ms おきに 10 回やり直してから例外を投げる（`ClipboardImpl.cs` 16〜39 行目）が、待ちながらやり直すと UI スレッドが止まる。Flutter と Avalonia の API は非同期だが、Windows のクリップボードは同期で開くので、非同期の形は要らない
 - 1 行の欄への貼り付けは、最初の改行より前だけを残す。Avalonia と同じ形である（`TextBox.cs` 1257〜1279 行目）。Flutter は `\n` を取り除くだけなので（`editable_text.dart` 967〜972 行目、`services/text_formatter.dart` 425 行目）、2 行が間に何も挟まずにつながる
 - `HeadlessApp` は、メモリに持つクリップボードを使う（§12.4）
+- `HasText` は、Windows では `IsClipboardFormatAvailable(CF_UNICODETEXT)` で、クリップボードを開かずに確かめる（P02d。下の「右クリックのメニュー」）
+
+**右クリックのメニュー（P02d の Grill の Q7、Issue #547）:** 欄は `TextFieldOptions.ContextMenu` があるとき、§13.1 の `ContextMenu` の形でメニューを開く。関数は、開くたびに作る `TextMenuCommands`（切り取り・コピー・貼り付け・すべて選ぶの 4 つの `MenuCommand`）を受け取り、`MenuItem` を並べたメニューの見た目を返す。見た目は部品の外で付け（§13.1）、Todo のサンプルで付ける。null ならメニューを出さない。テーマの既定の見た目は、Theme.Fluent の行（§13.2）で付ける。
+
+```csharp
+public sealed class MenuCommand          // XylemUI.Primitives
+{
+    public bool Enabled { get; }         // 開いたときに決める
+    public void Run();                   // Enabled が false なら何もしない
+}
+
+public sealed class TextMenuCommands
+{
+    public MenuCommand Cut { get; }
+    public MenuCommand Copy { get; }
+    public MenuCommand Paste { get; }
+    public MenuCommand SelectAll { get; }
+}
+```
+
+- **項目:** 4 つを常に出し、使えない項目は使えない状態にする（`MenuItem` の `enabled`）。Avalonia も、使えない項目を灰色で出す（`Avalonia.Themes.Fluent/Controls/TextBox.xaml` 24〜33 行目）。Flutter は使えない項目を出さない（`widgets/editable_text.dart` 2147〜2178 行目）
+- **使える条件:** Flutter と同じ（`widgets/editable_text.dart` 2649〜2697 行目）
+  - 切り取り: 読み取り専用でも伏せ字でもなく、選択が空でない
+  - コピー: 伏せ字でなく、選択が空でない
+  - 貼り付け: 読み取り専用でなく、クリップボードに文字がある（`HasText`）。Flutter も、メニューを出す前にクリップボードを確かめる（`editable_text.dart` 5208 行目）。Avalonia の `CanPaste` は確かめない（`Avalonia.Controls/TextBox.cs` 1116〜1122 行目）
+  - すべて選ぶ: 文字が空でなく、まだ全部は選んでいない（Flutter の Windows と Linux。macOS では使えない）
+- **開く位置:** 右ボタンの Up では、ポインタの位置に開く（比べた 3 つとも同じ。Flutter の `editable_text.dart` 3210〜3226 行目、Avalonia の `PopupFlyoutBase.cs` 544〜547・597〜599 行目、GPUI の `editor/src/element/mouse.rs` 802〜842 行目）。Shift+F10 とアプリケーションキーでは、キャレットの矩形の左下に開く（GPUI はキャレットから文字の幅と行の高さだけずらす、`editor/src/editor.rs` 10955〜10966 行目）
+- **選択:** 右ボタンの Down の位置が選択の外なら、先にキャレットをその位置に動かす（GPUI の `editor/src/mouse_context_menu.rs` 193〜199 行目）。中なら選択を保つ。欄にフォーカスが無ければ、フォーカスを取る（Flutter は、フォーカスが無ければ位置を選ぶ、`widgets/text_selection.dart` 2895〜2916 行目）。§7「押したときのフォーカス」は左ボタンだけなので、欄が自分で取る
+- **選んだ後:** メニューを閉じ、フォーカスを欄に戻してから命令を走らせる（§13.1 の `MenuItem`）。命令は、キーの Ctrl+X・Ctrl+C・Ctrl+V・Ctrl+A と同じ処理で、元に戻すのまとまりも同じである
+- **変換中:** 変換中（§4.7）に右クリックしたら、先に確定する（§4.7 の、変換中に欄を押したときと同じ）
 
 **元に戻す:** zed のまとめ方にする（`text/src/text.rs` 225〜230 行目の 300 ms）。IME の 1 回の変換は 1 回分にまとめる（§4.7「最大の長さと元に戻す」）。
 
@@ -2861,6 +2901,7 @@ public sealed record SelectionAreaOptions
 {
     public Color? SelectionBackground { get; init; }   // null は OS の色（COLOR_HIGHLIGHT、§4.9）
     public Color? SelectionForeground { get; init; }   // null は OS の色（COLOR_HIGHLIGHTTEXT）
+    public Func<SelectionMenuCommands, Element>? ContextMenu { get; init; }   // P02d。右クリックのメニュー
 }
 
 // XylemUI.Core の ElementExtensions（§2.6 の一覧）
@@ -2884,7 +2925,7 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 - 2 回で単語（§4.9 の UAX #29 の単語の境界）、3 回で段落（葉の中の、改行から改行まで）を選ぶ。回数は 3 で止める（同じファイルの 641〜648 行目）。zed は 3 回で行、4 回で全体を選び（`markdown.rs` 2369〜2400 行目）、Avalonia は 3 回で全体を選ぶ
 - ドラッグは選択を広げる。2 回と 3 回の後は、単語と段落の単位で広げる。押したときの暗黙のキャプチャ（§7）で、領域の外へ出ても続く
 - カーソルは、加わる文字の葉の上だけ I ビームにする。葉と葉の間は既定の矢印のまま（Flutter、`widgets/text.dart` 752〜756 行目）。§7「カーソル形状」は当たったノードから祖先へたどるので、加わる葉は、自分が `Cursor` を持たなければ I ビームを持つものとして数える。領域のノードには `Cursor` を置かない（置くと葉と葉の間も I ビームになる）。ボタンの中の葉も I ビームで、Flutter も `Text` の `MouseRegion` がいちばん内側で勝つ。リンクの手のカーソル（§4.8）は、これより先に決まる
-- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、ポップアップ（行 P02d）と一緒に、欄のメニューとともに入れる。Flutter の `SelectionArea` は `contextMenuBuilder` で（`material/selection_area.dart` 54・92 行目）、Avalonia はテーマの `ContextFlyout` で（`Avalonia.Themes.Fluent/Controls/SelectableTextBlock.xaml` 8〜19 行目）、どちらもメニューを出す
+- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、`SelectionAreaOptions.ContextMenu`（`Func<SelectionMenuCommands, Element>?`）があるとき、§4.9「右クリックのメニュー」と同じ形で開く（行 P02d、Issue #547）。`SelectionMenuCommands` は `Copy`（選択が空でない）と `SelectAll`（加わる葉に文字がある）の 2 つの `MenuCommand` を持つ。Shift+F10 とアプリケーションキーでは、選択の終点の行の左下に開き、選択が無ければ領域の箱の下に開く。Flutter の `SelectionArea` は `contextMenuBuilder` で（`material/selection_area.dart` 54・92 行目）、Avalonia はテーマの `ContextFlyout` で（`Avalonia.Themes.Fluent/Controls/SelectableTextBlock.xaml` 8〜19 行目）、どちらもメニューを出す
 
 **ドラッグでのスクロール:** ドラッグが、領域の祖先でいちばん近いスクロールの箱の端を越えたら、越えた距離 × 30（論理画素毎秒）の速さで、その箱をスクロールし続ける。Flutter の `EdgeDraggingAutoScroller` と同じ式である（`widgets/scrollable.dart` 1185 行目、`widgets/scrollable_helpers.dart` 150〜156 行目）。ポインタが止まっていても続くので、フレームの時計で動かす（§2.14 のアニメーションの一覧に載せ、端の内側に戻るかドラッグが終わると外す）。スクロールした後は、ポインタの位置で終点を置き直す。zed は、終点の行が見える範囲の端から 3 行の内側に入るまでスクロールする（`markdown.rs` 2510〜2554 行目）。Avalonia の `SelectableTextBlock` はスクロールしない。
 
@@ -3178,7 +3219,7 @@ public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
 - **`DrawingContext`（Q9）:** 表示リストとヒットテストの一覧の両方に書く値型で、利用者が描く関数に渡す（GPUI の `canvas`、Flutter の `CustomPainter`、Avalonia の `Render` と同じ）。`Push*` は `using` で終える `DrawingScope` を返す
 - **ヒット領域と `DrawingContext`（R4e の Grill でオーナーが決定、Issue #272）:** GPUI・Flutter・Avalonia を読んで決めた（Issue #272 に行番号）
   - **書き方:** 描く関数は `DrawingContext.HitRegion` で当たりを明示する（GPUI の `insert_hitbox` と同じ形、`crates/gpui/src/window.rs` 5205 行目）。描いた命令から当たりを作らない（Avalonia は命令ごとに判定し、背景を描かない部品は当たらない）。レイアウトの矩形を当たりにもしない（Flutter の `CustomPainter.hitTest` の既定は矩形全体）。フレームワークの部品も、自分の箱（矩形と角の半径）を同じ `HitRegion` で書く
-  - **書くノード:** ポインタのハンドラ・ホバー・カーソルを持つノードだけが書く（GPUI の `should_insert_hitbox`、`elements/div.rs` 2407〜2432 行目）。飾りのノードは後ろへのポインタを遮らない（GPUI と、Flutter の既定 `deferToChild`）。ハンドラが無くても遮る印（GPUI の `BlockMouse`、Flutter の `opaque`）は、V1c で `BlocksPointer` にした（§7「ポインタの入力」の「遮る印」）。ホバーの見た目（`Hovered`・`Pressed` の `PaintStyle`）を持つノードも書く（GPUI の `should_insert_hitbox` も hover のスタイルで入れる）。capture と bubble の経路は、当たったノードから木の親をたどって作る
+  - **書くノード:** ポインタのハンドラ・ホバー・カーソルを持つノードだけが書く（GPUI の `should_insert_hitbox`、`elements/div.rs` 2407〜2432 行目）。飾りのノードは後ろへのポインタを遮らない（GPUI と、Flutter の既定 `deferToChild`）。ハンドラが無くても遮る印（GPUI の `BlockMouse`、Flutter の `opaque`）は、V1c で `BlocksPointer` にした（§7「ポインタの入力」の「遮る印」）。逆に、ハンドラを持つノードの部分木を当たらなくする印は、P02d で `.HitTestVisible(false)` にした。印のあるノードの部分木では、どのノードも書かない（§7.3「後ろへ通す印」）。ホバーの見た目（`Hovered`・`Pressed` の `PaintStyle`）を持つノードも書く（GPUI の `should_insert_hitbox` も hover のスタイルで入れる）。capture と bubble の経路は、当たったノードから木の親をたどって作る
   - **呼ぶ時機:** 利用者の描く関数は、表示リストを作るたびに呼ぶ（§5.0.1 の全体線形再構築。GPUI と同じ）。ヒット領域も表示リストと一緒に作り直す。無効にされたときだけ呼んで命令を取っておく形（Avalonia、Flutter の `markNeedsPaint`）は採らない。重い描画を取っておく仕組み（Flutter の `RepaintBoundary`）は、要るという数字が出たら行を立てる。どのノードの関数を呼ぶかの順と段は、§5.0「描画の段とフレームの駆動」で決めた（V1b の Grill、Issue #308）
   - **クリップと変換:** 項目は、ノードの矩形と角の半径を命令と同じ座標（物理画素、移動を足し、整数の画素の移動なら辺を画素に置いた値）で持ち、表示リストの状態の番号（R4d の `StateRecord`：変換、まとめた矩形、上限までの角丸）を持つ。クリップの層の中の項目は、層を重ねる状態も、グループの記録を通してたどる。描画と同じ値と同じ距離の式で判定するので、見える画素と当たりが一致する
   - **座標:** `HitRegion` は論理座標で受け取り、表示リストの命令と同じ倍率と丸めで物理画素の項目にする。`HitTest` は、Win32 のクライアント座標（物理画素）をそのまま受け取る。整数の座標は画素の左上の角を指すので、0.5 を足した画素の中心で判定する。描画が画素の覆いを決めるのと同じ点で、角のまま判定すると、右と下の辺の 1 画素外まで当たる（PR #277 のレビュー）。論理座標に割ってから掛け直すと、描画の画素の丸めと当たりが食い違うことがあるためである。§6.1.1 の「ポインター」の倍率で割る変換は、当たったノードのハンドラに渡す座標にだけ掛ける
@@ -3237,7 +3278,7 @@ internal Action? FrameNeeded;                // 印の無い状態から最初�
 // 描く先。D3D11Renderer が実装する（Core から Rendering.D3D11 へ InternalsVisibleTo）
 internal interface IRenderTarget
 {
-    void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas);
+    void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas);   // P02d。奥から順に重ねる。消すのは最初の前だけ（§7.3）
     void Present();
 }
 
@@ -3275,9 +3316,9 @@ internal sealed class WindowFrames
   2. 1 で覚えた layout の要求か、描画の印（`PaintUpdates`）があったかを見る。どちらも無ければ、ここで終える（下の「変わらないフレーム」）
   3. `PaintUpdates` を作業用の一覧と入れ替え、取り出したノードの Layout 以外の印を消す。これより後に付いた印（描く関数やグリフを解く処理の中の変更）は、空になった `PaintUpdates` に入り、`FrameNeeded` で次のフレームを頼む。印を Draw の後で消すと、その間に付いた印が、次のフレームを頼まないまま消える。すでに印のあったノードは一覧に積み直されない（`MarkSelfForPaint`）ので、その変更も消える（PR #309 のレビュー）
   4. `GlyphAtlas.BeginFrame`。§5.0.3 のとおり、これを呼ばないと、アトラスの場所はどれも追い出せず、入らないグリフを `TryGet` が断って描かれない。作り直さないフレームでは呼ばない（場所の使った記録を進めない）
-  5. 表示リストを全体で作り直す（`Reset` と木のたどり、§5.0.1）
-  6. グリフをそろえる（`ResolveGlyphs`）
-  7. `IRenderTarget.Draw` と `Present`
+  5. 表示リストを全体で作り直す（`Reset` と木のたどり、§5.0.1）。ポップアップ（P02d、§7.3）があれば、描画ルートごとに、自分の部分木に 1 の layout の要求か `PaintUpdates` の印があったルートのリストだけを作り直す。主の木に layout があったフレームでは、置き場所を求め直すので（§7.3「置き場所」）、ポップアップのリストも作り直す
+  6. グリフをそろえる（`ResolveGlyphs`）。作り直さなかったリストのグリフも、4 で使った記録を進める
+  7. `IRenderTarget.Draw`（主のリスト、ポップアップのリストを開いた順に）と `Present`
   8. `WindowInput.Rehit` を呼ぶ（§7「ポインタの入力」の「当て直し」、V1c）。5 でヒット領域を作り直したので、動かないポインタのホバーとカーソルを新しい領域に合わせる
 - **変わらないフレーム:** 2 の条件に当たらないフレームでは、作り直しも Draw も Present もしない。比べた 3 つも、変わらないときは描き直さない。GPUI は dirty でないとき描き直さない。ただし、描いたのにまだ Present していない frame があるときと、入力が高い頻度で続くとき（`is_high_rate`）は、描かずに Present だけをする（`window.rs` 1880〜1906 行目の `needs_present`）。XylemUI は、描いたフレームはその場で Present するので、Present していない frame が残らない。Avalonia は dirty の矩形が空なら描かない（`ServerCompositionTarget.cs` 183〜189 行目）。Flutter は、印が無ければフレームを予約しない（`scheduler/binding.dart` 946〜958 行目）。Present しなかったフレームの後は、§2.11 の「Present しないフレーム」のとおり、待ちの上限で次の予約を回す。GPU のデバイスを作り直した後は、変わらないフレームでも 1 度描き直す必要がある（GPUI も復旧の後に `force_render` で描き直す）。これは、デバイス消失からの復帰の行 R1 で入れる
 - **フレームを頼む合図:** 木は、印の無い状態から最初の印（layout の要求か `PaintUpdates`）が付いたときに、`FrameNeeded` を 1 回呼ぶ。`WindowFrames` はそれを登録して `IFrameScheduler.RequestFrame` を呼ぶ。フレームの中で付いた印は、次のフレームを頼む。Flutter の `requestVisualUpdate` から `scheduleFrame`（予約済みなら何もしない、`scheduler/binding.dart` 946〜958 行目）と同じ形である
@@ -3782,7 +3823,7 @@ AT-SPIはD-Bus IPCを前提とするプロトコルであり、SDL3はD-Busの�
 ## 7. 入力 / インタラクション
 
 - **イベントディスパッチ**: DOM方式（capture+bubble）を採用。モーダルのフォーカストラップとグローバル/ローカルショートカットの共存に伝播の概念が必須で、WPF/Avaloniaも同じ理由でTunneling+Bubblingを採用している。Fine-grained reactive（§2）の各ノードが自スコープでハンドラを登録する設計とも整合する。メッセージキュー方式(Elm)は中央集権的でノード単位に閉じる設計思想と衝突するため却下。
-- **ヒットテスト**: v1 の正本は DisplayList 構築と同時に作るフラットな `HitTestList` である。`HitTestList` は、表示リストの中のヒット領域の一覧（`DisplayList.HitEntries`、R4e）を指す呼び名で、その名前の型は無い（PR #319 のレビュー）。入力は直近完成リストを末尾（最前面）から走査する。祖先への木登りはしない。空間索引は持たない。将来 Canvas 等で O(N) がボトルネックになった場合に備え `IHitTester` で差し替え可能にしておく。木探索実装は将来の `TreeHitTester` 用であり、v1 の入力経路では使わない。ヒット領域は矩形と角丸の矩形で、任意のパスの当たり判定は行 R5 で入れる（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。項目は表示リストの状態の番号を通して角丸のクリップを判定し、描画と同じ距離の式で角まで判定する（§5.0「層・クリップ・変換・`DrawingContext` の API」、R4c の Grill。`HitTestList` は行 R4e で作る）。
+- **ヒットテスト**: v1 の正本は DisplayList 構築と同時に作るフラットな `HitTestList` である。`HitTestList` は、表示リストの中のヒット領域の一覧（`DisplayList.HitEntries`、R4e）を指す呼び名で、その名前の型は無い（PR #319 のレビュー）。入力は直近完成リストを末尾（最前面）から走査する。ポップアップ（P02d、§7.3）があれば、描画ルートごとのリストを手前のルートから順に走査し、最後に主のリストを走査する。祖先への木登りはしない。空間索引は持たない。将来 Canvas 等で O(N) がボトルネックになった場合に備え `IHitTester` で差し替え可能にしておく。木探索実装は将来の `TreeHitTester` 用であり、v1 の入力経路では使わない。ヒット領域は矩形と角丸の矩形で、任意のパスの当たり判定は行 R5 で入れる（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）。項目は表示リストの状態の番号を通して角丸のクリップを判定し、描画と同じ距離の式で角まで判定する（§5.0「層・クリップ・変換・`DrawingContext` の API」、R4c の Grill。`HitTestList` は行 R4e で作る）。
 
 **Transform とクリップ:** 項目は表示リストの状態の番号を持ち、変換とクリップを写さない（R4e の Grill）。判定は、点を状態の変換の逆（`Matrix3x2.Invert`。逆行列が無い変換の中では何も当たらない）でノードの座標に移し、ノードの角丸と、状態のまとめた矩形と角丸のクリップを、描画と同じ距離の式で試す。クリップの層の中の項目は、層を重ねる状態も試す。
 
@@ -3794,7 +3835,7 @@ HitTestList is valid iff the producing frame's
   versions match the current node versions used by BuildDisplayList.
 ```
 
-スクロール offset（`ChangeKind.TransformProp`）だけでも再構築する。pointer move だけでは Layout/DisplayList を走らせないが、ヒット判定は常に直近完成のリストを使う。
+描画ルートごとのリスト（§7.3）では、この条件をルートの部分木のノードで見る。作り直さなかったルートのリストは、前のフレームのまま正しい。スクロール offset（`ChangeKind.TransformProp`）だけでも再構築する。pointer move だけでは Layout/DisplayList を走らせないが、ヒット判定は常に直近完成のリストを使う。
 
 ```csharp
 internal readonly record struct HitTestEntry(
@@ -3839,7 +3880,7 @@ Widget event（capture/bubbleでコンポーネントに配送）
 
 統一イベント型（`PointerEvent` 等）は高頻度に発生するため、`readonly struct` とし、ハンドラへは `in` で渡す。
 
-**ポインタキャプチャとモーダル境界の優先順位**: §7.2の`IsModal`なスコープは「スコープ外へのフォーカス移動・イベント到達を遮断する」が、これとポインタキャプチャが衝突するケースを定める。モーダルダイアログ内のスライダーをドラッグしたまま、マウスがダイアログ矩形の外（あるいはウィンドウ外）まで大きく移動した場合、遮断ルールが優先されるとポインタ移動イベントがキャプチャ先に届かなくなり、`PointerUp`まで取りこぼしてドラッグ状態が解除不能になるという典型的なUIバグが発生する。**明確な優先規約: アクティブなポインタキャプチャは、モーダル境界による遮断より常に優先される。** キャプチャ中のポインタ対象ノードがモーダルスコープ内部に属している限り、グローバルなポインタ移動および`PointerUp`は、モーダル境界の内外を問わず常にキャプチャ先へバイパス配送する。この例外規約はイベントルーティングパイプライン（§7.2の captureフェーズ処理）に組み込む。
+**ポインタキャプチャとモーダル境界の優先順位**: §7.2の`IsModal`なスコープは「スコープ外へのフォーカス移動を断り、外のノードへのポインタを遮る」が、これとポインタキャプチャが衝突するケースを定める。モーダルダイアログ内のスライダーをドラッグしたまま、マウスがダイアログ矩形の外（あるいはウィンドウ外）まで大きく移動した場合、遮断ルールが優先されるとポインタ移動イベントがキャプチャ先に届かなくなり、`PointerUp`まで取りこぼしてドラッグ状態が解除不能になるという典型的なUIバグが発生する。**明確な優先規約: アクティブなポインタキャプチャは、モーダル境界による遮断より常に優先される。** キャプチャ中のポインタ対象ノードがモーダルスコープ内部に属している限り、グローバルなポインタ移動および`PointerUp`は、モーダル境界の内外を問わず常にキャプチャ先へバイパス配送する。この例外規約はイベントルーティングパイプライン（§7.2の captureフェーズ処理）に組み込む。P02d では、モーダルの根が窓全体のヒット領域で後ろを遮り（§7.3「閉じ方」）、キャプチャ中の Move と Up は当たりによらずキャプチャ先へ送る（§7「ポインタの入力」）。モーダルを開いたときに後ろのノードが持っていたキャプチャは外す。
 
 **ポインタの入力（V1c の Grill でオーナーが決定、Issue #318）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Flutter の Windows の組み込みは `engine/src/flutter/shell/platform/windows/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。GPUI の Windows の層は、この版で `gpui_windows` の crate に移っている。型は V1c で internal として入れ、V1d で `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開した（§2.13「部品の API」、V1d の Grill）。`NodeHandle` は internal のままなので、公開した `PointerEvent` の `Target` と `CurrentTarget` は、木とノードの組の `Element` を返す（V1d の実装。公開の型が internal の型を見せると CS0053 になる）。`PointerInput`・`IPointerPlatform`・`WindowInput`・`NodeInput` は internal のまま。
 
@@ -3945,7 +3986,7 @@ internal sealed class WindowInput
 - **ホバー:** ホバーの集合は、当たったノードとその祖先である。キャプチャ中は、当たったのがキャプチャしたノードかその子孫のときだけ、キャプチャしたノードとその祖先で、それ以外は空である（Avalonia は、当たった要素がキャプチャした要素でなければ何も pointer-over にしない、`Avalonia.Base/Input/PointerOverPreProcessor.cs` 114〜117 行目）。`Handle` の始めに今の点で集合を求め、出たノードに内側から順に Leave、入ったノードに外側から順に Enter を送り（Flutter の `mouse_tracker.dart` 399〜428 行目と同じ順）、Hovered のフラグを付け替える。Leave（ウィンドウから出た）では、キャプチャが無ければ集合を空にする。キャプチャ中は `WM_MOUSEMOVE` がウィンドウの外でも届くので、それで決める
 - **当て直し:** 表示リストを作り直したフレームでは、Present の後に `WindowFrames` が `Rehit` を呼ぶ。`Rehit` は最後のポインタの位置（ウィンドウの中にあるとき）で集合を求め直し、Enter・Leave とフラグとカーソルを更新する。Move は送らない。`Handle` と同じく全体を 1 つの `Batch` で包み、ハンドラの例外も同じに扱う。Enter・Leave を送っている間に来た当て直し（ハンドラがその場でフレームを回したときの `Rehit`、ハンドラの中で回したメッセージ）は、その場では行わず、送り終えてから最後のポインタの位置で行う。送っている間の鎖を書き換えないためである（PR #327 のレビュー）。ハンドラが付けた印は、フレームの手順 3 で入れ替えた後の `PaintUpdates` に入るので、次のフレームを頼む。変われば印が付き、次のフレームを頼む。3 つとも、ポインタが動かなくても、絵が変わったら当て直す（Flutter は毎フレームの後の `updateAllDevices`、`rendering/binding.dart` 557〜576 行目。Avalonia は描いた後の `SceneInvalidated`、`Rendering/Composition/CompositingRenderer.cs` 197〜207 行目。GPUI は描く途中の `mouse_hit_test`、`gpui/src/window.rs` 3740 行目）
 - **擬似状態のフラグ:** Hovered はホバーの集合のノードに立てる。Pressed は、左ボタンの Down で、キャプチャしたノードとその祖先に立て、左ボタンの Up と CaptureLost で下ろす。外へ出ても押下のままである（GPUI の active は、どの Up でも下ろすまで残る、`gpui/src/elements/div.rs` 3233〜3270 行目。Avalonia の `IsPressed` は、離すかキャプチャを失うまで残る、`Button.cs` 439〜469 行目）。フラグが変わっても、その状態の `PaintStyle`（§2.13）を持つノードにだけ `ChangeKind.Color` の印を付ける。Disabled のノードには Hovered も Pressed も立てない。Focused・FocusVisible・FocusWithin・Disabled は、下の「キーの入力とフォーカス」に書く（K1）
-- **遮る印:** `BlocksPointer` は、ハンドラ・カーソル・ホバーの見た目が無くてもヒット領域を書くノードの印である。`HitTest` は最前面の 1 項目だけを返すので、ヒット領域を書いたノードは、それだけで後ろのノードを遮る。当たったら、そのノードから木の祖先へ経路を作る。Flutter の `HitTestBehavior.opaque` と同じく祖先に届く（`rendering/proxy_box.dart` 148〜195 行目）。GPUI の `BlockMouse` は、祖先のヒットボックスも遮る。親は子より先にヒットボックスを入れ（`gpui/src/elements/div.rs` 2390〜2398 行目で、子を prepaint する前に `insert_hitbox`）、当てるときは後ろから試して `BlockMouse` で止まる（`gpui/src/window.rs` 1165〜1187 行目）が、ここでは経路を木で作るので祖先に届く。当たっても後ろへ通す印（Avalonia の `IsHitTestVisible=false`、Flutter の `translucent`）は、ポップアップの行 P02d で決める
+- **遮る印:** `BlocksPointer` は、ハンドラ・カーソル・ホバーの見た目が無くてもヒット領域を書くノードの印である。`HitTest` は最前面の 1 項目だけを返すので、ヒット領域を書いたノードは、それだけで後ろのノードを遮る。当たったら、そのノードから木の祖先へ経路を作る。Flutter の `HitTestBehavior.opaque` と同じく祖先に届く（`rendering/proxy_box.dart` 148〜195 行目）。GPUI の `BlockMouse` は、祖先のヒットボックスも遮る。親は子より先にヒットボックスを入れ（`gpui/src/elements/div.rs` 2390〜2398 行目で、子を prepaint する前に `insert_hitbox`）、当てるときは後ろから試して `BlockMouse` で止まる（`gpui/src/window.rs` 1165〜1187 行目）が、ここでは経路を木で作るので祖先に届く。当たっても後ろへ通す印は、ポップアップの行 P02d で `.HitTestVisible(false)` にした（部分木がヒット領域を書かない。Flutter の `translucent` は採らない、§7.3「後ろへ通す印」）
 - **カーソル:** カーソルを求める元は、キャプチャ中はキャプチャしたノード、そうでなければ当たったノードである。元から祖先へたどり、最初に `NodeInput.Cursor` を持つノードの形を使う。どれも持たないか、どこにも当たらなければ `Arrow`。求めた形が前と変わったら `IPointerPlatform.SetCursor` を呼ぶ。Win32 は `WM_SETCURSOR` が `HTCLIENT` のとき今の形で `SetCursor` して `TRUE` を返し、ほかは `DefWindowProc` に渡す
 - **テキストの中のリンク（§4.8、D9 の Grill）:** リンクを持つテキストの葉の上の Move と Down では、位置を文字の当たり判定（§4.3 の `HitTestText`）で文字の位置にし、その位置のリンクを引く。リンクのカーソル（既定は手の形）は、葉と祖先のカーソルより先に選ぶ。リンクのホバー（`onEnter`・`onLeave`）と Click は、ノードのホバーと Click とは別に、§4.8 のとおり配る（行 T12）
   - Avalonia はカーソルを継承し、キャプチャ中はキャプチャした要素から求める（`Avalonia.Base/Input/PointerOverPreProcessor.cs` 248 行目）
@@ -4213,7 +4254,7 @@ internal sealed class FocusManager
   - 費用: `input` に、キー 1 つの配送（深さ 1 と 50）と、10,101 ノードの木での Tab 1 回を足す。どれも割り当て 0
 - **後の行に送るもの:**
   - 文字の入力（`TextInputEvent`）、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02b で決めた（§4.9）。IME は §4.7（行 P02c）
-  - スコープを積むことと `IsModal` のフォーカストラップ（§7.2）、`XylemUI.Testing` の `app.Keyboard` と `app.Focus`（§12.4）は行 P02d（スコープとトラップ）と P02a（`app.Keyboard` と `app.Focus`）
+  - スコープを積むことと `IsModal` のフォーカストラップ（§7.2）、`XylemUI.Testing` の `app.Keyboard` と `app.Focus`（§12.4）は行 P02d（スコープとトラップ。§7.2「P02d で入れる形」）と P02a（`app.Keyboard` と `app.Focus`）
   - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）と、a11y へのフォーカスの知らせ（§4.4.1 の `NotifyFocusChange`）は、仮想化と a11y を入れる行 P02e と P02g
   - キーの組み合わせから動作への仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）は行 K2
 
@@ -4240,7 +4281,8 @@ internal struct FocusScope
     public NodeHandle Owner;               // このスコープを持つノード(Window/Dialog/Menu等)
     public FocusScopeHandle Parent;        // 親スコープ（ルートウィンドウのスコープは default）
     public NodeHandle FocusedChild;        // このスコープ内で現在フォーカスされているノード（なければ default）
-    public bool IsModal;                   // trueの場合、このスコープの外へフォーカス・イベントが漏れない(§7のcaptureで遮断)
+    public NodeHandle RestoreTo;           // P02d。積んだときにフォーカスしていたノード（閉じたら戻す先）
+    public bool IsModal;                   // trueの場合、このスコープの外へフォーカスが移らない。ポインタは根が遮る（下の「P02d で入れる形」）
 }
 
 internal sealed class FocusManager
@@ -4252,7 +4294,19 @@ internal sealed class FocusManager
 
 **K1 で入れる範囲（K1 の Grill、Issue #351）:** K1 の `FocusManager` は、ウィンドウ（木）ごとに 1 つで、根のスコープ 1 つだけを持つ（フォーカスしたノード、ウィンドウがアクティブか、最後の入力がキーボードか。§7「キーの入力とフォーカス」）。下のスコープを積むことと `IsModal` のフォーカストラップは、それを使うダイアログとポップアップを入れる行 P02d で入れる。K1 には確かめる相手が無いためである。
 
-Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子として積み、閉じると`CurrentScope`を親へ戻す。`IsModal`なスコープが積まれている間は、§7の captureフェーズでそのスコープ外へのフォーカス移動・イベント到達を遮断する（フォーカストラップの実装）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7 の文字の入力の相手、`ITextInputClient`）は`CurrentScope.FocusedChild`がテキスト入力可能な場合にのみ有効化される。
+Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子として積み、閉じると`CurrentScope`を親へ戻す。`IsModal`なスコープが積まれている間は、そのスコープ外へのフォーカス移動を断り、外のノードへのポインタを遮る（フォーカストラップの実装。キーの経路は遮らない。下の「P02d で入れる形」）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7 の文字の入力の相手、`ITextInputClient`）は`CurrentScope.FocusedChild`がテキスト入力可能な場合にのみ有効化される。
+
+**P02d で入れる形（P02d の Grill の Q6、Issue #547）:** スコープは、ポップアップ（§7.3）を開くたびに 1 つ積む。持ち主はポップアップの根のノードで、親は開いた側のノードが入っているスコープである。比べた 3 つは次のとおり。
+- Flutter は、ルートごとに `FocusScopeNode` を持ち（`widgets/routes.dart` 1095・1201 行目）、閉じたら、スコープが覚えたフォーカスの履歴をさかのぼって戻す（`widgets/focus_manager.dart` 1503〜1523 行目）
+- GPUI は、開く前にフォーカスしていた要素を覚えて戻す（`ui/src/components/popover_menu.rs` 281〜293 行目、`workspace/src/modal_layer.rs` 160・254〜258 行目）
+- Avalonia は、ウィンドウ内のポップアップの Tab を `Cycle` にする（`Avalonia.Controls/Primitives/OverlayPopupHost.cs` 32〜33 行目）
+
+XylemUI の規則:
+- **Tab:** 一番上のスコープの中だけで、§7.1 の順に回る。端では、そのスコープの反対の端へ戻る。モーダルでもメニューでも同じである
+- **戻す先:** 積んだときにフォーカスしていたノードを `RestoreTo` に覚える。閉じたら、そのノードがまだフォーカスできれば戻す（GPUI の形）。できなければ、親のスコープの `FocusedChild` に戻す（Flutter の履歴の形を予備にする）。どちらもできなければ、フォーカスを外す。外を押して閉じたときは、先に戻してから、その押下を配る（§7.3「閉じ方」）。押下が当たったノードは、§7「押したときのフォーカス」のとおりフォーカスを取る
+- **`IsModal`:** モーダルのスコープが積まれている間は、その外のノードへのフォーカスの移動（`Focus()`、押下、Tab）を断る。外のノードの `Focus()` は false を返す。ポインタは、モーダルの根が窓全体のヒット領域を書いて遮る（§7.3「閉じ方」）
+- **キーの経路:** キーは、スコープの境界でも止めない（§7.3「イベントの経路」）
+- **閉じる動き:** 閉じる動きの間（§7.3「動き」）は、スコープの中のノードがフォーカスできない。スコープは、閉じ始めたときに外す
 
 ### 7.3 ポップアップ（メニュー・フライアウト・ツールチップ・ドロップダウン）
 
@@ -4269,20 +4323,97 @@ Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子とし�
 
 **3 つの OS とも v1.0 で別ウィンドウ（D3 の Grill、Issue #441）:** Windows で別ウィンドウを既定にした理由（メニューがウィンドウの端で切れる）は、どの OS にも当てはまる。Avalonia は 4 つのバックエンドすべてで別ウィンドウのポップアップを持つ（Win32 の `WindowImpl.cs` 654 行目、X11 の `X11Window.cs` 1431〜1432 行目、macOS の `native/.../OSX/PopupImpl.mm`、Wayland の `src/Avalonia.Wayland/PopupImpl.cs`）。Flutter 3.47.8 も、実験として 3 つのデスクトップに同時に入れた（`widgets/_window.dart` 779・921 行目）。GPUI は Wayland だけで、ほかは「まだ入れていない」として窓の中に描く（`crates/gpui_windows/src/window.rs` 443〜446 行目）。macOS は行 P06、Linux（Wayland の xdg_popup、X11）は行 P04 と P05 で、それぞれの OS の窓の扱いと一緒に入れる。行 P10 で既定にする。
 
-**ポップアップは独立した描画ルートである。** どちらに出す場合でも、ポップアップは自身の `LayoutRoots` の根・`HitTestList`・`DisplayList`・`FocusScope`（§7.2）を持つ。Reactive graph と `ScopeArena` はメインウィンドウと共有し、ポップアップの内容は開いた側の Scope の子として所有される。こうしておくことで、オーバーレイから別ウィンドウへの切り替えは「出力先が同じスワップチェーンへの重ね描きか、別のスワップチェーンか」の違いだけになる。オーバーレイを「メインツリーの最上位の子」として実装すると、別ウィンドウ化のときに Layout・ヒットテスト・フォーカスの境界を作り直すことになるため採らない。
+**P02d の決め方（P02d の Grill、Issue #547）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。以下、Flutter のパスは `packages/flutter/lib/src/` から、Avalonia は `src/` から、GPUI と zed は `crates/` から書く。#365 で手間だけを理由にしていた 2 つの判断（独立した描画ルートにすること、v0.2 で別ウィンドウを必須にしないこと）は、下の Q1 と Q2 の理由に置き換えた。
+
+**ポップアップは独立した描画ルートである（Q1）。** どちらに出す場合でも、ポップアップは自分のレイアウトの根・`DisplayList`（ヒット領域を含む、§5.0）・`FocusScope`（§7.2）を持つ。Reactive graph・`ScopeArena`・木のアリーナは主の木と共有し、ポップアップの内容は開いた側の Scope の子が持つ。理由は次の 2 つである。
+- 比べた 3 つとも、ポップアップのレイアウトを開いた側から切り離している。Flutter は `Overlay` の子に窓の大きさを tight な制約で渡す（`widgets/overlay.dart` 1466〜1484 行目）。GPUI のメニューとツールチップは `layout_as_root` で、自分を根にして測る（`editor/src/element/mouse.rs` 345 行目、`gpui/src/window.rs` 3814 行目）
+- v1.0 で 3 つの OS の既定にする別ウィンドウ（上の D3）を出荷している Avalonia は、別ウィンドウの `PopupRoot` を、レイアウト・描画・入力・フォーカスを自分で持つ TopLevel にしている（`Avalonia.Controls/PresentationSource/PresentationSource.cs` 22〜45 行目）
+
+ウィンドウ内に重ねる実装では、3 つとも主の木の中に置く。Flutter は `_RenderTheater` の子（`widgets/overlay.dart` 1194 行目）、GPUI は同じフレームの最後に描く `deferred`（`gpui/src/elements/deferred.rs` 15〜16・65 行目）、Avalonia は窓の木の `PopupOverlayLayer`（`Avalonia.Controls/Primitives/VisualLayerManager.cs` 57〜65 行目）である。XylemUI は、ウィンドウ内でも別ウィンドウと同じ境界を持つ。
+
+- **v0.2 の形:** ポップアップの根は、同じ `UiTree` の中で親を持たない 2 つ目以降の根（`Box`）である。`WindowFrames` は根の並びを持ち、レイアウトは主の根の後に、開いた順に根ごとに走らせる。根には窓のクライアント領域の大きさを tight な制約で渡し（Flutter と同じ）、内容は根の中で「置き場所」の位置に置く。内容は、窓の大きさを上限にした制約で測る
+- **別ウィンドウは P10（Q2）:** v0.2 はウィンドウ内に重ねる方式（`OverlayPopupHost`）だけにし、ダイアログもウィンドウ内のモーダルにする。別ウィンドウ（`WindowedPopupHost`）は行 P10 で入れる。理由は次の 2 つである
+  - 安定版の Flutter と GPUI は、メニューもダイアログもウィンドウ内で出荷している。Flutter の別ウィンドウは `windowing` のフラグの裏の実験で（`foundation/_features.dart` 23 行目）、`menu_anchor.dart`・`tooltip.dart`・`dialog.dart` のどれも使わない。GPUI の `AnchoredPopup`（`gpui/src/platform.rs` 2714〜2720 行目）は、gpui の外のどこからも作られていない
+  - 別ウィンドウには、グリフアトラスを 2 つのレンダラで共有するかという行 P10 の未決事項が要る
+- **表示リスト（Q15）:** 根ごとに `DisplayList` を持ち、作り直すのは、自分の部分木のノードに描画の印かレイアウトがあった根のリストだけである。描画先は、主のリストの上に、ポップアップのリストを開いた順（後に開いたものほど手前）に重ね、1 回 Present する。`IRenderTarget.Draw` はリストの並びを受け取り、消す色で消すのは最初のリストの前だけである（§5.0）
+  - 比べた 3 つは、ウィンドウ内のポップアップを窓と同じ 1 つの場面に描く。XylemUI はフレームごとに表示リストを全部作り直す（§5.0.1）ので、1 つのリストにすると、メニューの中でホバーが動いただけでも主の木のリストを作り直す。Avalonia は変わったビジュアルだけを描き直すので、主の木を描き直さない
+- **ヒットテスト:** 手前のポップアップのリストから順に試し、どこにも当たらなければ主のリストを試す。GPUI もヒットボックスを後ろから試し、`deferred` のものは後に入る（`gpui/src/window.rs` 1168 行目）。Flutter も最後の entry から試す（`widgets/overlay.dart` 1444〜1461 行目）。ポップアップの根はハンドラを持たないのでヒット領域を書かず、内容の外を押すと後ろに当たる（モーダルを除く、下の「閉じ方」）
+- **イベントの経路（Q14）:** キー（`KeyEvent`・`TextInputEvent`）の bubble は、ポップアップの根から開いた側のノード（アンカー）へ、さらにその祖先へ続く。capture はその逆順である。ポインタの経路は、ポップアップの根で止まる
+  - キーは 3 つとも開いた側へ伝える。Flutter は、フォーカスしたノードから祖先へキーを渡し（`widgets/focus_manager.dart` 2278〜2281 行目）、ポップアップの中のフォーカスは開いた側のスコープの子になる（`widgets/overlay.dart` 1798 行目、`widgets/focus_scope.dart` 460〜462 行目）。GPUI の `deferred` は、開いた側の dispatch tree の位置を残す（`gpui/src/window.rs` 4504〜4524 行目）。Avalonia は、ポップアップの親を `Popup` にし（`Avalonia.Controls/Primitives/Popup.cs` 462 行目）、そこから祖先へ伝える（`OverlayPopupHost.cs` 67 行目、`PopupRoot.cs` 100 行目）。ウィンドウの根に付けたキーのハンドラ（Ctrl+S など）は、メニューやダイアログを開いている間も働く
+  - ポインタは 3 つで分かれる。Flutter は描画の木（`_RenderTheater`）で経路を作り、GPUI はリスナーごとに自分のヒットボックスで判定するので、どちらもポップアップの中の押下を開いた側に渡さない。Avalonia はキーと同じ経路で渡す。開いた側の Click は自分の箱の押下のために書いてあり、渡すと、メニューの項目の押下で、メニューを開いたボタンの Click まで走る
+- **置き場所（Q3）:** xdg_positioner の型にする（Avalonia の `Avalonia.Controls/PopupPositioning/ManagedPopupPositioner.cs` 104〜235 行目と同じ）。アンカーの矩形、アンカー（矩形のどの点か）、重力（その点からどちらへ広げるか）、ずらし、直し方の印で決める
+  - はみ出したら、X、Y の軸の順に、軸ごとに反転、スライド、縮小の順で直す。反転は、反転した位置が範囲に入るときだけ採る。スライドは範囲の中へ寄せ、縮小は範囲の端で切る。既定は 3 つともオン（Avalonia の `Popup.cs` 61〜66 行目）。範囲は、v0.2 では窓のクライアント領域、別ウィンドウ（P10）ではアンカーのある画面の作業領域である
+  - GPUI は反転の後に 8 px の余白を残して寄せ（`gpui/src/elements/anchored.rs` 155〜205 行目）、Flutter のメニューは反転し、入らなければ寄せる（`material/menu_anchor.dart` 3478〜3530 行目）。XylemUI は余白を持たず、要るならずらしで付ける。この型の印は、Wayland の xdg_popup と Flutter の `widgets/_window_positioner.dart`（198〜261 行目）の印と同じなので、P10 の別ウィンドウにもそのまま渡せる
+  - 座標は論理画素である。アンカーの矩形は、開いた側のノードの境界の箱を窓の座標にしたもの（変換を含む）である。右クリックのメニューは、ポインタの位置の 1×1 の矩形を使う（Avalonia の `PlacementMode.Pointer`、`PopupPositioning/IPopupPositioner.cs` 480〜546 行目）
+  - 置き場所は、主の木のレイアウトの後、ポップアップの根のレイアウトの中で求める。主の木のレイアウトがあったフレームでは、置き直す
+- **閉じ方（Q4）:**
+  - **メニュー（モーダルでないポップアップ）:** 外を押したら閉じる。その押下は下のノードにも届く。Flutter の `MenuAnchor` の既定（`consumeOutsideTaps: false`、`material/menu_anchor.dart` 258 行目）、Avalonia の `ContextMenu`（`Avalonia.Controls/ContextMenu.cs` 314〜315 行目、`Primitives/Popup.cs` 902〜917 行目）、GPUI の `on_mouse_down_out`（`gpui/src/elements/div.rs` 263〜275 行目）と同じである。`PopupOptions.ConsumeOutsidePress` で、押下を消費する側にできる（Avalonia の flyout の既定）。届けるときは、閉じたポップアップを除いて同じ押下を当て直し、次のフレームを待たない
+  - **モーダル:** 根が窓全体のヒット領域を書き（`BlocksPointer`、§7「遮る印」）、後ろへの押下・ホバー・ホイールをすべて遮る。Flutter の `ModalBarrier`（`HitTestBehavior.opaque`、`widgets/modal_barrier.dart` 441 行目）、GPUI の `ModalLayer` の背景（`occlude`、`workspace/src/modal_layer.rs` 288〜330 行目）と同じである。背景を押して閉じるかは `DialogOptions.DismissOnBackdropPress` で選び、既定は閉じない。Avalonia の `ShowDialog` は持ち主の窓を OS の側で使えなくし（`Avalonia.Controls/Window.cs` 1195〜1207 行目）、外を押しても閉じない
+  - **ほかの閉じる時機:** メニューは、Esc、窓が非アクティブになったとき（Avalonia の `Popup.cs` 994〜1033 行目）、アンカーの祖先のスクロールの箱がスクロールしたとき（Flutter の `widgets/raw_menu_anchor.dart` 512〜570 行目）に閉じる。モーダルは Esc だけで閉じ、窓が非アクティブになっても閉じない。Avalonia のダイアログも別の窓で、持ち主が非アクティブになっても閉じない（Q4 の推奨は「どちらも」と書いたが、設計を書くときに、ダイアログを Alt+Tab で閉じる誤りと分かって直した）。モーダルの後ろはスクロールできないので、スクロールでも閉じない
+  - ポップアップが自分で閉じたら、開閉の signal に false を書く。開いた側のノードが木から外れたら、ポップアップも閉じる（開いた側の Scope が持つため）
+  - モーダルを開いたとき、後ろのノードがポインタをキャプチャしていれば外す（CaptureLost）。モーダルの中のノードのキャプチャは、§7「ポインタキャプチャとモーダル境界の優先順位」のとおり、外へ出ても続く
+- **後ろへ通す印（Q5）:** `.HitTestVisible(false)` を付けたノードの部分木は、どのノードもヒット領域を書かない（描く関数が書く `DrawingContext.HitRegion` も捨てる）。ポインタは後ろのノードに当たる。Avalonia の `IsHitTestVisible`（`Avalonia.Base/Input/InputExtensions.cs` 82 行目。部分木ごと外す、`Rendering/Composition/CompositionTarget.cs` 118〜126 行目）、Flutter の `IgnorePointer`（`rendering/proxy_box.dart` 3797 行目）と同じである
+  - 使う場面は、ハンドラを持つノードの部分木を、一時的に当たらなくするときである（閉じる動きの間のポップアップ、操作させない間のカード）。飾りのノードは、もともとヒット領域を書かない（§5.0「ヒット領域と `DrawingContext`」）
+  - Flutter の `translucent`（自分も受け、後ろも試す、`rendering/proxy_box.dart` 183〜195 行目）は採らない。`HitTest` は最前面の 1 項目だけを返し、押したときの暗黙のキャプチャ（§7）も 1 つのノードに付く。1 回の押下に当たり先が 2 つあると、どちらがキャプチャするかが決まらない
+- **入れ子（Q10）:** サブメニューは、親のポップアップの中のノードを開いた側とする、子のポップアップである。ポップアップは開いた側のポップアップを覚えておき、親を閉じると子も閉じる。兄弟を開くと、前の兄弟は閉じる（Flutter の `widgets/raw_menu_anchor.dart` 745 行目）。「外を押した」かは、親子の組のどれかの中なら内側として判定する（Flutter の `TapRegion` の groupId、`widgets/tap_region.dart` 319〜400 行目）。GPUI も、フォーカスがサブメニューにある間は親を閉じない（`ui/src/components/context_menu.rs` 307〜328 行目）
+- **動き（Q11）:** `PopupOptions.Motion` は `Show` と同じ `ShowMotion`（§2.14）で、既定は動きなしである。閉じる動きの間は、根に `HitTestVisible(false)` を付け、部分木をフォーカスできなくする（Flutter の `material/menu_anchor.dart` 693〜704 行目の `IgnorePointer` と `ExcludeFocus`）。動きが終わったら根を外す
+- **IME:** ウィンドウ内のポップアップの中の欄は、主の木の欄と同じく、フォーカスを取ったときに文字の入力の相手を登録する（§4.7）。ComboBox の検索欄のようにポップアップ内でテキスト入力する場合、別ウィンドウ実装（P10）では IME の対象ウィンドウを切り替える
+- **DPI:** 別ウィンドウ実装（P10）では、ポップアップが表示されるモニタの `ScaleFactor`（§6.1.1）で描く
+
+**API（Q9）:** `Show`（§2.7）と同じ宣言の形にする。開閉の signal が true の間、開いた側の Scope の子の Scope で内容を作る関数を走らせ、返した要素を新しい根に付ける。false になったら、その Scope を破棄して根を外す（動きがあれば終わってから）。アンカーは、ポップアップを付けたノードである。Avalonia の `Popup.IsOpen` と Radix の `open` も、値で開閉する。Flutter は `OverlayPortal` のコントローラーで、GPUI は描く関数の中で `deferred` に書いて開く。
 
 ```csharp
-public interface IPopupHost
+// XylemUI（Core）。ElementExtensions に足す
+public static Element Popup(this Element anchor, Signal<bool> isOpen, Func<Element> render, PopupOptions? options = null);
+public static Element HitTestVisible(this Element e, bool visible);
+
+public sealed record PopupOptions
 {
-    PopupHandle Open(Element content, in PopupPlacement placement, PopupOptions options);
+    public PopupPlacement Placement { get; init; } = PopupPlacement.Below;
+    public bool IsModal { get; init; }               // 根が窓全体を遮り、FocusScope.IsModal を立てる
+    public bool ConsumeOutsidePress { get; init; }   // モーダルでないとき、外の押下を下に届けない
+    public bool DismissOnOutsidePress { get; init; } = true;   // モーダルでは背景の押下
+    public ShowMotion? Motion { get; init; }
+}
+
+public readonly record struct PopupPlacement(
+    PopupAnchor Anchor, PopupAnchor Gravity, Vector2 Offset = default,
+    PopupAdjustment Adjustment = PopupAdjustment.All, Rect? AnchorRect = null)   // AnchorRect は窓の座標。null はアンカーのノードの箱
+{
+    public static PopupPlacement Below { get; }          // (BottomLeft, BottomRight)
+    public static PopupPlacement Right { get; }          // (TopRight, BottomRight)。サブメニュー
+    public static PopupPlacement Fill { get; }           // 内容を根いっぱいに置く（モーダルの背景）
+    public static PopupPlacement AtPoint(Vector2 point); // ポインタの位置。(TopLeft, BottomRight)
+}
+
+public enum PopupAnchor : byte { Center, Top, Bottom, Left, Right, TopLeft, TopRight, BottomLeft, BottomRight }   // Gravity も同じ値
+
+[Flags]
+public enum PopupAdjustment : byte
+{
+    None = 0, FlipX = 1, FlipY = 2, SlideX = 4, SlideY = 8, ResizeX = 16, ResizeY = 32, All = 63,
+}
+
+// internal。v0.2 の実装は OverlayPopupHost だけ（P10 で WindowedPopupHost）
+internal interface IPopupHost
+{
+    PopupHandle Open(NodeHandle anchor, NodeHandle root, in PopupPlacement placement, PopupOptions options);
     void Close(PopupHandle popup);
 }
 ```
 
-- **入力:** 描画ルートごとに `HitTestList` を持つ。オーバーレイでは、開いているポップアップのリストを前面から順に試してからメインのリストを試す。別ウィンドウでは OS がウィンドウ単位で振り分ける。
-- **フォーカスと IME:** ポップアップの `FocusScope` は開いた側のスコープの子として積む（§7.2）。ComboBox の検索欄のようにポップアップ内でテキスト入力する場合、別ウィンドウ実装では IME の対象ウィンドウを切り替える。
-- **外側クリックで閉じる（light dismiss）:** オーバーレイ・別ウィンドウのどちらでも同じ規則で、ポップアップの外を押したら閉じる。ポインタキャプチャ中は §7 の優先規約に従う。
-- **DPI:** 別ウィンドウ実装では、ポップアップが表示されるモニタの `ScaleFactor`（§6.1.1）で描く。
+- 開閉の signal は書き込める `Signal<bool>` である。ポップアップが自分で閉じるとき（外の押下、Esc、非アクティブ、スクロール）に false を書くためで、Avalonia の `IsOpen` も双方向である。Q9 の推奨は `IReadOnlySignal<bool>` と書いたが、設計を書くときに、自分で閉じるには書き込める signal が要ると分かって直した。`TextField` の `Signal<string>` と同じ形である
+- `Fill` は、根と同じ矩形に内容を置く（直し方は使わない）。`Dialog` の背景と中央に置く箱は、部品がこの中で並べる
+- 部品（`Menu`・`ContextMenu`・`Dialog`）は §13.1 の `XylemUI.Primitives` に置く
+
+**範囲（Q8）:** P02d で入れるのは、`Popup` と `OverlayPopupHost`、`Menu`（サブメニューとキー）、右クリックのメニュー（`ContextMenu`、欄と選べる領域、§4.9・§4.10）、モーダルの `Dialog`（§13.1）である。Tooltip・Select（ComboBox）・メニューのアクセスキーは、行 P02d2 で入れる。
+
+**確かめ方（Q12）:**
+- 第 1 層（Core）: 置き場所の反転・スライド・縮小（4 辺と、窓より大きい内容）、手前から試すヒットテスト、`HitTestVisible(false)` の部分木、キーとポインタの経路、`FocusScope` の Tab の循環と戻す先、`IsModal` で外の `Focus()` が false を返すこと、外の押下で閉じて下に届くこと（`ConsumeOutsidePress` では届かない）、入れ子のポップアップを閉じる順、閉じる動きの間に当たらないこと、開いた側の Scope の破棄で閉じること
+- 回数: メニューの中のホバーとキーの移動では、主の木のレイアウトと主の表示リストを作り直さない（作り直した回数を数える）
+- golden: メニューとモーダルの 2 枚（`HeadlessPixelTests`）
+- 費用（`XylemUI.E2E`）: 10 項目のメニューを開くフレーム（作る・レイアウト・描く）、開いたまま上下キーで項目を移るフレーム、開いたままポインタを動かすフレーム。後の 2 つは割り当て 0
+- `HeadlessApp` に、開いているポップアップの根の一覧（`app.Popups`）と、ボタンと座標を指定するクリックを足す（§12.4）
 
 ---
 
@@ -4382,7 +4513,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 全要件を維持する方針（既存）は変更しない。以下はあくまで実装に着手する順序であり、後段のフェーズにある項目も設計（型・フック）には最初から含める。
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
-2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
+2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d。Tooltip・Select・メニューのアクセスキーは行 P02d2）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → P02d2 → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
 3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
 4. **v0.3**: RTL（レイアウトの向き、行 P03b）、BiDi と複雑スクリプト（行 P03a）、縦書き（行 P03c）、カラー絵文字（COLRv0 は済み、COLRv1 と SVG は行 T11 で v1.x）（D5 の Grill、Issue #163）
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
@@ -4773,7 +4904,7 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 入力は OS のウィンドウサーバーやマウスカーソルを使わず、§7 の統一イベント層（`PointerEvent` / `KeyEvent` / `TextInputEvent`）へ直接注入する。ヒットテスト・capture/bubble・ポインタキャプチャ・モーダル境界の規約（§7）は本番と同じ経路を通る。ドラッグ中にポインタがウィンドウ外へ出るケースも、座標を注入するだけで再現できる。注入の入口は、Platform が OS のメッセージを直した値を渡すのと同じ `WindowInput.Handle(in PointerInput)`（V1c。タッチパッドのパンの PanStart・PanUpdate・PanEnd も、I1c でここから入れる）、`Handle(in KeyInput)` とウィンドウの活性化の `SetActive(bool)`（K1、§7「キーの入力とフォーカス」）である。キーボードの注入（`app.Keyboard`）とフォーカス（下の `app.Focus`、`Element.Focus()` を包む）は、`XylemUI.Testing` を作る行 P02a で、この入口の薄い包みとして入れる。
 
-**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）、メモリに持つクリップボード `app.Clipboard`、`app.Pointer.Down` のクリックの回数（`clickCount`、ダブルクリックとトリプルクリック）を足す（§4.9）。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
+**土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）、メモリに持つクリップボード `app.Clipboard`、`app.Pointer.Down` のクリックの回数（`clickCount`、ダブルクリックとトリプルクリック）を足す（§4.9）。P02d で、開いているポップアップの根の一覧 `app.Popups`（奥から手前の順、§7.3）と、ボタンを指定する `app.Pointer.Click(Element, PointerButton)`・座標を指定する `app.Pointer.Click(int x, int y, PointerButton)`（右クリックと、外の押下）を足す。ポップアップの中のノードも同じ木にあるので、`Find` と `FindAll` で見つかる。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
 
 **IME:** 模擬するのは、IME からフレームワークへ届く**呼び出しの列**だけである。`app.Ime`（`HeadlessIme`、行 P02c）は、木の `ITextInputPlatform` で、`Compose(text, cursor, clauses)`・`Commit(text)`・`Cancel()` を、フォーカスのある欄の相手に流し込む。変換が無いときは選択を、あるときは変換中の範囲を置き換え、取り消しは変換の始めに置き換えた文字に戻す。相手の無いとき・伏せ字の欄・読み取り専用の欄への流し込みは `InvalidOperationException` を投げる（IME が無効、§4.7）。欄から受けた知らせ（`TextChanges`・`SelectionChanges`・`LayoutChanges`）を数え、`BoundsOf(start, end)` で候補の窓の位置を読める。フォーカスのある欄の文字の入力の相手（§4.7 の `ITextInputClient`）を、TSF の文書の口が呼ぶのと同じ順で呼び、変換中の文字の更新・文節・確定・取り消しを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
@@ -4809,6 +4940,39 @@ app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3�
 Web の Radix UI / shadcn/ui と同じ考え方で、**振る舞いだけを持ち見た目を持たない部品**を `XylemUI.Primitives` に置く。各部品が提供するのは、状態（開閉・選択・押下・値）、キーボード操作、フォーカスの扱い（§7.2）、a11y の役割と状態（§4.4.1）、ポップアップの開閉（§7.3）である。見た目はテーマ（§13.2）またはアプリが被せる。Core には部品を一切置かない（§2.9.1）。
 
 v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）が必要とする範囲とする: Button / ToggleButton / Checkbox / RadioGroup / Slider / TextField / Select（ComboBox）/ Menu / Tooltip / Dialog / Tabs / ListBox（仮想化対応）/ NavigationView。
+
+**Menu と Dialog（行 P02d、P02d の Grill、Issue #547）:** ポップアップ（§7.3 の `Popup`）の上に作る。Tooltip・Select とメニューのアクセスキーは行 P02d2 で入れる。
+
+```csharp
+// XylemUI.Primitives の Primitive に足す
+public static Element Menu(this Element anchor, Signal<bool> isOpen, Func<Element> panel, MenuOptions? options = null);
+public static Element MenuItem(Element content, Action onSelect, bool enabled = true);
+public static Element SubmenuItem(Element content, Func<Element> panel, bool enabled = true);
+public static Element ContextMenu(this Element target, Func<Element> panel);
+public static Element Dialog(Signal<bool> isOpen, Func<Element> content, DialogOptions? options = null);
+
+public sealed record MenuOptions
+{
+    public PopupPlacement Placement { get; init; } = PopupPlacement.Below;
+    public ShowMotion? Motion { get; init; }
+}
+
+public sealed record DialogOptions
+{
+    public bool DismissOnBackdropPress { get; init; }   // 既定は閉じない（§7.3「閉じ方」）
+    public Paint? Backdrop { get; init; }               // 背景の塗り。null は塗らない（遮るのは同じ）
+    public ShowMotion? Motion { get; init; }
+}
+```
+
+- **見た目:** `panel` が返す要素が、メニューの見た目（背景・枠・影と、`MenuItem` を並べた列）である。部品は見た目を付けない。項目の見た目は、`.Hovered`・`.Focused`・`.Disabled` の `PaintStyle` でアプリが付ける
+- **`MenuItem`:** フォーカスでき、押すか Enter か Space で選ばれる。`enabled: false` の項目は Disabled（§7「キーの入力とフォーカス」）で、押しても選ばれず、キーの移動でも止まらない（Tab が Disabled を飛ばすのと同じ、§7.1）。選ばれたら、メニューの組を全部閉じ、フォーカスを開いた側に戻してから `onSelect` を走らせる。GPUI も、開いたときのフォーカスに戻してから命令を送る（`ui/src/components/context_menu.rs` 739〜750 行目）。ポインタが入った項目はフォーカスを取る
+- **キー:** 上下キーで前後の項目へ移り、端では反対の端へ回る（Avalonia の `DefaultMenuInteractionHandler.cs` 418〜545 行目、GPUI の `context_menu.rs` 1093〜1109 行目）。Home と End で最初と最後の項目へ移る（zed の `assets/keymaps/default-windows.json` 6〜21 行目）。Enter と Space で選ぶ。Esc で、サブメニューなら自分だけを閉じて親の項目にフォーカスを戻し、根のメニューならメニューを閉じる。右キーでサブメニューを開いて最初の項目にフォーカスし、左キーでサブメニューを閉じる。左右は、右から左に書く向き（P03b）では入れ替える
+- **開いたとき:** 最初の使える項目にフォーカスする（Avalonia の flyout は最初のタブストップにフォーカスする、`Avalonia.Controls/Flyouts/PopupFlyoutBase.cs` 315〜326 行目）。ポインタで開いたときは最後の入力がポインタなので、フォーカスの輪（FocusVisible）は出ない
+- **`SubmenuItem`:** ポインタが入るか右キーで、`PopupPlacement.Right` に子のポップアップを開く（Flutter の既定の `hoverOpenDelay` は 0、`material/menu_anchor.dart` 1768 行目）。兄弟の項目にポインタが入ると閉じる（§7.3「入れ子」）
+- **`ContextMenu`:** 付けたノードの上で右ボタンの Up があったら、そのポインタの位置（`PopupPlacement.AtPoint`）に開く。フォーカスがあるときの Shift+F10 の Down とアプリケーションキー（`Key.Apps`）の Up では、ノードの箱の下に開く（Avalonia の `ContextMenu` はポインタ以外の要求で `PlacementMode.Bottom`、`Avalonia.Controls/ContextMenu.cs` 427〜430 行目）。欄と選べる領域は、キャレットか選択の位置に開く（§4.9・§4.10）。Windows も、右ボタンの Up、Shift+F10、アプリケーションキーで `WM_CONTEXTMENU` を出す（`WM_CONTEXTMENU` の文書）
+- **`Dialog`:** 置いた所に大きさ 0 のノードを置き、それをアンカーにしてモーダル（`IsModal`、`PopupPlacement.Fill`）で開く。背景（`Backdrop`）の上の中央に `content` を置く。開いたら、`content` の中で最初のフォーカスできるノードにフォーカスする。Esc で閉じる（§7.3「閉じ方」）
+- **確かめ方:** `XylemUI.Primitives.Tests` に、キーの表の各行、使えない項目を飛ばすこと、選んだ後の閉じる順とフォーカス、サブメニューの開閉、`Dialog` のフォーカスの閉じ込めと戻す先。Todo のサンプルに、欄の右クリックのメニューと、項目を消す前に確かめるダイアログを足す
 
 ### 13.2 XylemUI.Theme.Fluent
 
