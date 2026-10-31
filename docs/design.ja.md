@@ -958,7 +958,7 @@ internal struct DirtyState
 
 // V1c の前の InteractionState（疑似状態・Focusable・カーソル・IME の状態）は作らない。疑似状態は UiNode.Pseudo、
 // カーソルは NodeInput に置いた（V1c の Grill）。Focusable・TabIndex・自分の Disabled も NodeInput に置き（K1）、
-// 受け継いだ Disabled は Pseudo のビットに持つ。IME の状態は行 P02c で、持つノードだけが払う形に置く
+// 受け継いだ Disabled は Pseudo のビットに持つ。IME の状態は欄が持ち、ノードには置かない（§4.7、P02c の Grill）
 
 internal struct SemanticsState
 {
@@ -1223,7 +1223,7 @@ src/
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
-  XylemUI.Platform.Windows/    # Win32 / IMM32 / UIA / DirectWrite
+  XylemUI.Platform.Windows/    # Win32 / TSF / UIA / DirectWrite
   XylemUI.Platform.MacOS/      # AppKit / CoreText / NSAccessibility（+ P/Invoke で書けない API だけの、native/macos の薄い Obj-C shim）
   XylemUI.Platform.Linux/      # SDL3 / fontconfig / D-Bus / AT-SPI / portal
   XylemUI.Generators/          # Source Generator（Binding 記述子等、§2.4）
@@ -2352,7 +2352,7 @@ public enum Affinity { Upstream, Downstream }
 public readonly record struct CaretPosition(
     int TextOffset,     // UTF-16 コード単位
     Affinity Affinity,
-    Rect Rect);         // 視覚座標。IME SetCursorRect とキャレット描画が使う
+    Rect Rect);         // 視覚座標。IME の位置の問い合わせ（§4.7）とキャレット描画が使う
 
 internal static CaretPosition CaretGeometry(TextMeasurement measurement, int textOffset, Affinity affinity)
 {
@@ -2361,7 +2361,7 @@ internal static CaretPosition CaretGeometry(TextMeasurement measurement, int tex
 }
 ```
 
-IME合成中の未確定文字列（`ImeCompositionState`。どのノードに持たせるかは行 P02c で決める、§2.5）も同じ`MeasureText`を通し、都度dirty flagをセットしてInvalidation（§2.4）に乗せる。
+IME の変換中の文字（欄が持つ、§4.7）も、欄が文字の葉に書くので同じ`MeasureText`を通し、都度dirty flagをセットしてInvalidation（§2.4）に乗せる。
 
 **テキスト選択・カーソル位置のヒットテスト**: BiDiテキストでは画面上のX座標を左から右にスキャンしても論理インデックスは単調増加しない。クリック/ドラッグ座標からカーソル位置を求めるには、視覚順グリフ列に対するヒットテストと、視覚順→論理順の逆引きが必要になる。
 
@@ -2374,7 +2374,7 @@ internal static CaretPosition HitTestText(TextMeasurement measurement, int lineI
 }
 ```
 
-このAPIはテキスト選択・IMEカーソル位置制御（§4.7の`SetCursorRect`）双方から利用する。TextField は、自分の葉の行の上端を 1 回積んで持ち、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
+このAPIはテキスト選択・IME の位置の問い合わせ（§4.7 の `ITextInputClient.BoundsOf`）双方から利用する。TextField は、自分の葉の行の上端を 1 回積んで持ち、行を探すときは二分探索にする（§4.9「行の上端」）。リンクの当たり判定（§4.8）も使い、行 T12 で、葉の `LineBreakCache` の確定した結果の上に入れる（D9 の Grill）。`LogicalToVisual` だけでは TextField に足りない。caret geometry（論理位置 ↔ 視覚位置 ↔ 行 ↔ x/y ↔ affinity）が正本である。
 
 ### 4.4 a11y読み上げ順序
 
@@ -2472,44 +2472,103 @@ static FontMatch ResolveWithFallback(IFontProvider provider, ReadOnlySpan<char> 
 
 **ロードマップへの明記**: macOS の Apple Color Emoji は Core Text が描く（T4 の Grill）。Linux の FreeType の経路での sbix・SVG・CBDT/CBLC は§10.4の段階的実装順序における**v1.x（v1.0達成後の追加フェーズ）**として明示的にロードマップへ位置づける。「対象外」は「いつか対応する」の曖昧な先送りではなく、v1.0の後続フェーズとして具体的に追跡する。
 
-### 4.7 IMEの責務範囲
+### 4.7 IME（P02c の Grill でオーナーが決定、Issue #506）
 
-候補ウィンドウの位置だけでは、macOSのライブ変換やWindows IMEでの適切な文脈変換・未確定文字列の視覚表現が機能しない。`ImeCompositionState` は次の状態を持つ。
+変換中の文字（未確定の文字）を欄の中に描き、OS の IME と文書をやりとりする。実装は行 P02c で、PR を 3 つに分ける。1 つ目は Core の口と欄の描き方とヘッドレスの道具、2 つ目は Windows の TSF、3 つ目はタッチキーボードと入力の種類と計測である。Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）・Chromium・WPF と、Microsoft の文書を読んで決めた。
+
+**比べた 5 つ:**
+
+- Flutter・Avalonia・GPUI の Windows は IMM32 である。3 つとも IME 自身の変換の窓を隠し、変換中の文字を欄の中に下線 1 本で描く。文節の区切りは描かず、IME の問い合わせ（`WM_IME_REQUEST`）にも答えない。Flutter の `OnImeRequest` は空で、TODO だけがある（`engine/src/flutter/shell/platform/windows/flutter_window.cc` 997〜1003 行目）
+- Chromium は 2019 年に TSF を既定にし（コミット ddcdbef496）、2024 年に IMM32 のコードを消した（cc3c872a63、"Remove IMM32 from Windows"）
+- WPF は TSF の文書の口（`System.Windows.Documents.TextStore`、`ITextStoreACP` の実装）を持つ
+
+**方式: Windows は TSF。** 要件に挙げた再変換・周辺の文字・タッチキーボードを、すべて満たせるのは TSF だけである。
+
+- IMM32 でも、`WM_IME_REQUEST` に答えれば、再変換（`IMR_RECONVERTSTRING`）と周辺の文字（`IMR_DOCUMENTFEED`）は扱える。`IMR_DOCUMENTFEED` は、IME が変換の精度のために、変換した文字を文書から取り直す問い合わせである（Microsoft Learn の IMR_DOCUMENTFEED）。この節の前の版は「IMM32 には周辺の文字を渡す仕組みが無い」と書いていたが、誤りだった
+- TSF でしか届かないものがある。タッチキーボードの予測と自動修正（`TS_STATUS` の `TS_SS_TKBAUTOCORRECTENABLE`・`TS_SS_TKBPREDICTIONENABLE`）、入力の種類の通知、候補の窓を欄にそろえること（`TS_SD_UIINTEGRATIONENABLE`）である。`SetInputScope` の文書は、文書の管理（Document Manager）に結び付いていない窓では、タッチキーボードなどへ通知しないと書く。WPF の `TextStore` の説明は、文書の口が IME の入力・音声入力・手書きを可能にすると書く
+- IME そのものは TSF で作ることが求められ、IMM32 の IME は止められる（Microsoft Learn の Input Method Editor requirements）。TSF の働きは、TSF も IMM32 も使うように書かれていないアプリにも、Windows XP から与えられる（Microsoft Learn の ImmDisableTextFrameService の説明）
+- 実装は、OS から呼ばれる文書の口 `ITextStoreACP2`（25 のメソッド）と、変換の始まりと終わりを受ける `ITfContextOwnerCompositionSink`、表示の属性を読む `ITfTextEditSink` である。NativeAOT で使える COM の作り方（`GeneratedComInterface` と `ComWrappers`）で書く。組み込みの COM 相互運用は、実行時に IL を作るので NativeAOT で使えない。スレッドの管理（`ITfThreadMgr`）は UI スレッドに 1 つで、WPF の `TextServicesHost` と同じく、欄ごとに文書の管理と文脈を作って積む（`CreateDocumentMgr`・`CreateContext`・`Push`）。フォーカスは `AssociateFocus` で窓に結ぶ
+
+**文字の入力の相手（Core）:** OS の IME は、欄の文字・選択・位置を読みに来て、書き換えを頼む。この節の前の版の `ITextInputBackend` は、アプリから OS へ押し付ける形で、TSF とは向きが逆だった。GPUI の `InputHandler` は、macOS の `NSTextInputClient` と 1 対 1 の口で、Windows でも同じ口を使う（`crates/gpui/src/platform.rs` 2236〜2420 行目）。XylemUI もこの形にする。
 
 ```csharp
-public sealed class ImeCompositionState
+// XylemUI（Core）。欄が実装し、フォーカスを得たときに木に登録する。位置は UTF-16 コード単位
+internal interface ITextInputClient
 {
-    public string CompositionText = "";                    // 未確定文字列
-    public int CursorPosition;                             // 未確定文字列内のカーソル位置（UTF-16 単位）
-    public List<ImeAttributeRun> AttributeRuns = new();    // 下線種別(実線/点線/太線)・選択範囲反転等、IMEが指定する装飾区間
-    public SurroundingText SurroundingText;                // 確定済みテキストのうち、カーソル前後の文脈（同音異義語変換等に必要）
+    int Length { get; }                                         // 変換中の文字を含む、欄の文字の長さ
+    void CopyText(int start, Span<char> into);                  // 範囲の文字
+    TextSelection Selection { get; set; }
+    (int Start, int End)? Composition { get; }                  // 変換中の範囲。無ければ null
+    Rect BoundsOf(int start, int end);                          // 範囲の画面の位置。ウィンドウの論理の画素
+    void Replace(int start, int end, ReadOnlySpan<char> text);  // start〜end を確定した文字で置き換える
+    // start〜end を text で置き換え、変換中の文字にする。変換が無いときも、置き換えるのは選択ではなく
+    // この範囲（TSF の SetText と同じ）。cursor と clauses は text の中の位置
+    void Compose(int start, int end, ReadOnlySpan<char> text, int cursor, ReadOnlySpan<ImeAttributeRun> clauses);
+    void EndComposition();                                      // 変換が終わった（確定か取り消し）
+    bool ReadOnly { get; }
+    TextInputKind Kind { get; }
 }
 
-public readonly record struct SurroundingText(string Text, int CursorOffset);  // CursorOffset は Text 内の位置
+public enum TextInputKind { Text, Url, Email, Number, Telephone, Password }
 
 public enum ImeAttributeKind { Underline, ThickUnderline, DottedUnderline, ReversedSelection }
 
-public readonly record struct ImeAttributeRun(TextRange Range, ImeAttributeKind Kind);
+public readonly record struct ImeAttributeRun(int Start, int End, ImeAttributeKind Kind);   // 変換中の文字の中の位置
 ```
 
-`SurroundingText`はフォーカス中のテキストノードが持つ確定済みテキストからカーソル前後を切り出した Core 側の状態である。OS への伝達はバックエンド依存。Windows v1（IMM32）は渡さない（§4.7末尾、§11.2）。`AttributeRuns`はIMEから受け取った装飾情報をテキストノードの`MeasureText`結果（§4.3の`GlyphRuns`）に重ね描画する際に使用する。
+- 変換の状態（変換中の文字、その中のキャレット、文節）は欄が持つ。木のノードには持たせない。この節の前の版の `ImeCompositionState` と `SurroundingText` は使わない。周辺の文字は、OS が `CopyText` で直接読む
+- 木は、フォーカスのあるノードの相手を持つ。フォーカスが相手を持つノードへ移ると、プラットフォームは IME を有効にし、相手を持たないノードへ移ると無効にする。Avalonia と GPUI も、文字を受け付けない部品にフォーカスがあるときは IME を外す（GPUI の `crates/gpui_windows/src/events.rs` 683〜711 行目の `ImmAssociateContextEx`）。無効の間、キーは命令として配る
+- macOS と Linux は、後の行で同じ口につなぐ
 
-**プラットフォーム別バックエンド抽象**: macOSのmarked text、Windows TSF、Linux IBus/Fcitxはモデルの差異が大きく、無理に完全共通化するとどのOSにも最適化されない中途半端な抽象になる。共通インターフェースは最小限の操作列にとどめ、各OS実装（§2.9.1 の `XylemUI.Platform.*`）がその差異を吸収する。
+**アプリから OS への知らせ:** OS の IME は欄の文書の写しを持つので、OS を通さずに欄が変わったら、欄から OS へ知らせる。知らせないと、再変換・周辺の文字・候補の窓の位置が古い内容で動く。TSF では文書の口の相手（`ITextStoreACPSink`）の `OnTextChange`・`OnSelectionChange`・`OnLayoutChange` に当たる。
 
 ```csharp
-public interface ITextInputBackend
+// XylemUI（Core）。プラットフォームが実装し、木と欄が呼ぶ
+internal interface ITextInputPlatform
 {
-    void Begin();
-    void UpdateComposition(ImeCompositionState state);
-    void Commit(string text);
-    void Cancel();
-    void SetSelection(TextRange range);
-    void SetSurroundingText(SurroundingText text);
-    void SetCursorRect(Rect rect);
+    void Attach(ITextInputClient client);                   // 木が呼ぶ。フォーカスが相手を持つノードへ移った
+    void Detach();                                          // 木が呼ぶ。相手を持たないノードへ移った。変換中なら先に確定する
+    void TextChanged(int start, int oldEnd, int newEnd);    // 欄が呼ぶ。start〜oldEnd が start〜newEnd になった
+    void SelectionChanged();                                // 欄が呼ぶ
+    void LayoutChanged();                                   // 欄が呼ぶ。範囲の画面の位置が変わった
 }
 ```
 
-**WindowsのIME実装方式：v1はIMM32、TSFはv0.2以降。** 正式なTSFは多数の COM インターフェース（`ITextStoreACP` 等）を OS から呼ばれる側として実装する必要があり、規模が大きい。v1は`IMM32`（C API なので `LibraryImport` で足りる）で実装し、TSF直叩きは§10.4のv0.2以降に送る。**見直し（Issue #54）:** この理由は規模（工数）で、要件と比べていない。P02c の IME に入る前に、再変換・周辺テキスト・タッチキーボードの要件と、Flutter・Avalonia（IMM32）、WPF・Chromium（TSF）の方式で比べ直す。IMM32 には確定済み周辺テキストを OS IME へ渡す標準プロトコルが無い。したがって **Windows v1 では `SurroundingText` を OS へ渡さない（Core の `ImeCompositionState` には保持するが `SetSurroundingText` は no-op）**。候補窓位置（`ImmSetCompositionWindow`）は Per-Monitor DPI v2 で二重スケールしないよう、物理ピクセルへ変換してから渡す。macOS / Linux は各 API の surrounding text を通常どおり渡す。縮退は §11.2。
+- 文字と選択の知らせは、欄が `Changed` の道（§4.9「値の流れ」）で送る。アプリの書き込み・貼り付け・元に戻す・キーやポインタによる選択の移動が当たる。OS が `Replace`・`Compose`・`Selection` で変えた分は送らない。TSF も、文書の口のメソッドで変えた分には `OnTextChange` を呼ばない（Microsoft Learn の OnTextChange の説明）
+- 位置の知らせは、フレームの後に、欄の矩形かスクロールの位置が変わったときに送る。`BoundsOf` が `TS_E_NOLAYOUT` を返したときも、レイアウトが済んだら送る（TSF が求める。Microsoft Learn の OnLayoutChange の説明）
+- TSF では、OS は文書を読み書きする前にロックを求める（`RequestLock`、同期と非同期がある）。ロックの間に文書を変えるのは、OS が呼ぶ文書の口のメソッドだけである。アプリはロックの間に文書を変えず、知らせも送らない（Microsoft Learn の RequestLock の説明）。TSF の実装は、ロックの間に欄から来た知らせを溜め、ロックが終わってから送る。送っていない知らせがある間は、同期のロックを断り（`TS_E_SYNCHRONOUS`）、非同期のロックだけを受ける
+
+**変換中の文字の描き方:** 欄は、変換中の文字を選択の位置に入れて文字の葉に書き、文節ごとに下線を付ける。変換中の文節は太い下線（`ThickUnderline`）、ほかの文節は細い下線である。下線は範囲のスタイル（§4.8 の `TextDecoration`）で描く。キャレットは変換中の文字の中の、IME が示す位置に描く。比べた 3 つの UI フレームワークは下線 1 本だけで、文節を見分けない。属性は TSF の表示の属性（`GUID_PROP_ATTRIBUTE`）から読む。
+
+**フォーカスとアプリの書き込み:**
+
+- 変換中にフォーカスが移ったら、変換中の文字を確定する。Avalonia と GPUI も確定する（GPUI は `CPS_COMPLETE`、同じ 683〜711 行目）。Flutter は取り消すので、打った文字が消える（`text_input_manager.cc` 126〜143 行目の `CPS_CANCEL`）
+- 変換中にアプリが文字のシグナルに書いたら、先に変換を確定してから、アプリの値を置く（§4.9「値の流れ」）
+
+**候補の窓:** TSF の IME は、範囲の画面の位置を問い合わせる（`ITextStoreACP2::GetTextExt`）。欄は `BoundsOf` で、葉の行とグリフから求めた位置を返し、プラットフォームが画面の物理の画素に直す。レイアウトが済む前は `TS_E_NOLAYOUT` を返す。
+
+**タッチキーボード:** 指かペンで欄を押してフォーカスが入ったら、`InputPane` の `TryShow`（`IInputPaneInterop::GetForWindow` で窓の分を取る、Windows 10 1607 から）で出し、相手を持たないノードへフォーカスが移ったら `TryHide` で隠す。マウスやキーでフォーカスが移ったときは出さない。Chromium は、TSF に任せる形を一度入れたが、出たり消えたりがそろわず、2020 年に外して自分で出す形にした（コミット 125cf9f247、"Cleanup TSF InputPanelPolicy changes"）。
+
+**入力の種類:** `TextFieldOptions.InputKind`（ふつう・URL・メール・数字・電話番号）を、TSF の入力の種類として伝える。伏せ字の欄はパスワードの種類にする。
+
+**伏せ字と読み取り専用:** 伏せ字の欄は IME を使わない。打った文字を変換の窓や候補に出さないためである。読み取り専用の欄は、文書の口を読むだけ（`TS_SD_READONLY`）として渡す。
+
+**再変換と周辺の文字:** 文書の口は欄の文字の全体を見せる。IME は確定した文字の再変換も、変換の精度のための周辺の文字も、自分で読む。
+
+**変換中のキー:** IME が使ったキー（`VK_PROCESSKEY`）は配らない（§7）。変換中のキーも、欄の命令として配らない。Flutter も `VK_PROCESSKEY` を配らない（`keyboard_key_embedder_handler.cc` 177〜183 行目）。TSF の下でキーが IME とアプリにどの順で届くかは、実装の最初に実機で確かめる。
+
+**縮退:** TSF のスレッドの管理を作れないときは、変換を OS の既定の IME の窓に任せ、確定した文字を `WM_CHAR` で受ける（行 P02b の形、§4.9「IME の前」）。
+
+**費用:**
+
+- 変換していないフレームの割り当ては 0 のまま（§11.3）。変換中の文字の更新は、OS から受け取る新しい文字列の分だけ割り当てる
+- `input` に、1,000 文字の欄での変換中の文字の更新 1 回と確定 1 回を足す（配送・レイアウト・描く段に分ける）。今ある `input`・`lists`・`rich-text` と、欄の 4 つの計測が遅くならないこと
+
+**確かめ方:**
+
+- Primitives（ヘッドレス、全 OS）: 変換の開始・更新・確定・取り消し、文節の下線、変換中のキャレット、フォーカスが移ったときの確定、変換中のアプリの書き込み、変換中のキー、伏せ字と読み取り専用の欄、IME の有効と無効、欄から OS への知らせ（アプリの書き込み・貼り付け・元に戻す・選択の移動・位置の変化で送り、OS の書き換えでは送らない）
+- Windows: 文書の口のメソッドを直接呼ぶ（文字を読む、選択を読む、確定した文字を入れる、ロックの順、`GetTextExt`）。ロックの間に来た知らせが、ロックの後に送られること。`TryShow` と `TryHide` が呼ばれること
+- 実機（オーナー）: 実装の最初に、作業用のウィンドウに最小の文書の口を付け、Microsoft の日本語 IME で変換中の文字が届くか、候補の窓が欄の下に出るか、キーの順を確かめる。最後に、Todo の欄で変換・候補の窓の位置・確定した文字の再変換を確かめる。タッチの画面での確かめは行 Q8 に残す（オーナーの機械はデスクトップ）
 
 ### 4.8 リッチテキスト（D9 の Grill でオーナーが決定、Issue #417）
 
@@ -2637,6 +2696,7 @@ public sealed record TextFieldOptions
     public Color? CaretColor { get; init; }                  // 既定は文字の色
     public Color? SelectionBackground { get; init; }         // 既定は OS の選択色
     public Color? SelectionForeground { get; init; }         // 既定は OS の選択した文字の色
+    public TextInputKind InputKind { get; init; }            // P02c。タッチキーボードの配列（§4.7）。伏せ字はパスワード
 }
 
 // XylemUI（Core）
@@ -2672,7 +2732,7 @@ public static Element KeepsFocusOnPress(this Element element, bool keeps = true)
 - **翻訳の前に配る:** メッセージのループは、`WM_KEYDOWN` と `WM_SYSKEYDOWN` を `TranslateMessage` の前にウィンドウへ配り、キーが止められたら `TranslateMessage` も `DispatchMessage` も呼ばない。止めたキーからは `WM_CHAR` が生まれない。GPUI と同じ形である（`platform.rs` 501〜515・604〜610 行目、`events.rs` 417〜443 行目）。Avalonia は配った後に `_ignoreWmChar = e.Handled` とし、キーの Up で戻す（`WindowImpl.AppWndProc.cs` 251〜259・964〜979 行目）。この形は印の状態を持ち、`WM_SYSKEYDOWN` では立てない。Flutter はキーの Down を次の `WM_CHAR` まで持ち、2 つを 1 つのイベントで送り、止められなかったときだけ文字を送る（`keyboard_manager.cc` 182〜218・368〜385 行目）
 - **`TextInputEvent`:** `WM_CHAR` を文字にする。サロゲートペアの前半は持っておき、後半と合わせて 1 つの文字列にする。0x20 未満と 0x7F は落とす。Tab（0x09）も落ちるので、複数行の欄でも Tab は文字にせず、フォーカスの移動（§7.1）に使う。GPUI もペアをつなぎ、制御文字を落とす（`events.rs` 1375〜1404 行目）。Avalonia は 1 つの `WM_CHAR` を 1 文字の文字列にするので、絵文字は 2 つのイベントで届く（`WindowImpl.AppWndProc.cs` 261〜276 行目）。`WM_SYSCHAR` は文字にしない（Flutter も、`keyboard_manager.cc` 377〜382 行目）。経路は `KeyEvent` と同じで、フォーカスしたノードへ、capture を根から、bubble を根へ配る（§7「配る経路」）
 - **AltGr:** Windows は AltGr を左の Ctrl と右の Alt で送る（§7）。プラットフォームは、`KeyChar` を読む `ToUnicodeEx` を、Ctrl・Alt・Win を外したキーボードの状態でもう 1 回呼び、結果が違うかデッドキーなら `KeyEvent.PrefersCharacter` を立てる。`ToUnicodeEx` は、呼ぶとキーボードのデッドキーの状態を進めるので、2 回とも `wFlags` の bit 2（「キーボードの状態を変えない」、Windows 10 1607 以降、文書）で呼ぶ。1 回目は §7 の `KeyChar` の読み取りのとおり、すでにこの印で呼んでいる。印が無いと、2 回目の呼び出しがデッドキー（US-International の `'` の後の `a` など）の組み立てを壊す。GPUI と同じ比べ方で、GPUI も 2 回とも `0x4` を渡す（`events.rs` 1613〜1630・1641〜1688 行目）。GPUI は、その印があり、フォーカスした受け手が文字を受けるなら、キーの割り当てを飛ばす（`gpui/src/window.rs` 5988〜6007 行目）。TextField は、印のあるキーを命令にしない。命令は修飾キーの完全な一致で比べるので、AltGr の Ctrl+Alt+A は Ctrl+A にならない。Flutter は、左の Ctrl のすぐ後の右の Alt を見て、右の Alt を離したときに偽の Ctrl の Up を作る（`keyboard_manager.cc` 256〜279 行目）。XylemUI は作らない（K1 の決定のまま）
-- **IME の前:** XylemUI は P02c まで `WM_IME_*` を扱わず、`DefWindowProc` に渡す。`WM_IME_COMPOSITION` の文書は、`DefWindowProc` がそれを既定の IME ウィンドウに渡すと書く。日本語は、ウィンドウの隅に浮かぶ既定の IME ウィンドウで組み立てる。`WM_IME_CHAR` の文書は、このメッセージを「IME が変換の結果の文字を得たときに」送り、「Unicode のウィンドウでは `WM_CHAR` と同じ」と書く。`DefWindowProc` に渡すと `WM_CHAR` に直すと書いているのは、Unicode でないウィンドウについてだけである。確定した文字が `WM_CHAR` で届くかは、P02b の実装の最初に実機で確かめる。届くなら、そのまま `TextInputEvent` にする。届かなければ、`WM_IME_CHAR` を `WM_CHAR` と同じに文字にし、`DefWindowProc` には渡さない（渡すと、後から `WM_CHAR` でも届いて二重になりうる）。どちらでも、Todo の欄は P02b に残す（PR #482 のレビューへの対応で、オーナーが決めた）
+- **IME の前:** P02c からは §4.7 の TSF に替わり、この形は TSF のスレッドの管理を作れないときの縮退として残る。XylemUI は P02c まで `WM_IME_*` を扱わず、`DefWindowProc` に渡す。`WM_IME_COMPOSITION` の文書は、`DefWindowProc` がそれを既定の IME ウィンドウに渡すと書く。日本語は、ウィンドウの隅に浮かぶ既定の IME ウィンドウで組み立てる。`WM_IME_CHAR` の文書は、このメッセージを「IME が変換の結果の文字を得たときに」送り、「Unicode のウィンドウでは `WM_CHAR` と同じ」と書く。`DefWindowProc` に渡すと `WM_CHAR` に直すと書いているのは、Unicode でないウィンドウについてだけである。確定した文字が `WM_CHAR` で届くかは、P02b の実装の最初に実機で確かめる。届くなら、そのまま `TextInputEvent` にする。届かなければ、`WM_IME_CHAR` を `WM_CHAR` と同じに文字にし、`DefWindowProc` には渡さない（渡すと、後から `WM_CHAR` でも届いて二重になりうる）。どちらでも、Todo の欄は P02b に残す（PR #482 のレビューへの対応で、オーナーが決めた）
 
 **キャレット:**
 
@@ -3609,7 +3669,7 @@ public interface IAccessibilityBridge
 
 ウィンドウ管理・GPU・IME等を機能ごとに個別方針として決めてきたが、それらを横断する共通の`IPlatform`契約と、機能ごとのサポート状況マトリクスを定める。
 
-`IPlatform` は巨大な実装 interface ではなく、OS capability の集合を返す provider とする。ウィンドウ・クリップボード・ダイアログは個別バックエンド、`IFrameScheduler` / `ITextInputBackend` / `IAccessibilityBridge` も別インターフェース。Linux の機能別バックエンド（§6.1）と同じ分割を全 OS に適用する。
+`IPlatform` は巨大な実装 interface ではなく、OS capability の集合を返す provider とする。ウィンドウ・クリップボード・ダイアログは個別バックエンド、`IFrameScheduler` / `ITextInputPlatform` / `IAccessibilityBridge` も別インターフェース。Linux の機能別バックエンド（§6.1）と同じ分割を全 OS に適用する。
 
 ```csharp
 public interface IPlatform
@@ -3618,7 +3678,7 @@ public interface IPlatform
     IClipboardBackend Clipboard { get; }          // 同期、プレーンテキストだけ（P02b、§4.9）
     IDialogBackend Dialogs { get; }
     IFrameScheduler FrameScheduler { get; }
-    ITextInputBackend TextInput { get; }
+    ITextInputPlatform TextInput { get; }         // フォーカスのある文字の入力の相手を OS の IME に結び、欄の変更を知らせる（P02c、§4.7）
     IAccessibilityBridge Accessibility { get; }
     IFontProvider Fonts { get; }
 }
@@ -4134,7 +4194,7 @@ internal sealed class FocusManager
   - WARP: 足さない。擬似状態の見た目の画素は、V1c の WARP のテストが確かめている
   - 費用: `input` に、キー 1 つの配送（深さ 1 と 50）と、10,101 ノードの木での Tab 1 回を足す。どれも割り当て 0
 - **後の行に送るもの:**
-  - 文字の入力（`TextInputEvent`）、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02b で決めた（§4.9）。IME は行 P02c
+  - 文字の入力（`TextInputEvent`）、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02b で決めた（§4.9）。IME は §4.7（行 P02c）
   - スコープを積むことと `IsModal` のフォーカストラップ（§7.2）、`XylemUI.Testing` の `app.Keyboard` と `app.Focus`（§12.4）は行 P02d（スコープとトラップ）と P02a（`app.Keyboard` と `app.Focus`）
   - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）と、a11y へのフォーカスの知らせ（§4.4.1 の `NotifyFocusChange`）は、仮想化と a11y を入れる行 P02e と P02g
   - キーの組み合わせから動作への仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）は行 K2
@@ -4174,7 +4234,7 @@ internal sealed class FocusManager
 
 **K1 で入れる範囲（K1 の Grill、Issue #351）:** K1 の `FocusManager` は、ウィンドウ（木）ごとに 1 つで、根のスコープ 1 つだけを持つ（フォーカスしたノード、ウィンドウがアクティブか、最後の入力がキーボードか。§7「キーの入力とフォーカス」）。下のスコープを積むことと `IsModal` のフォーカストラップは、それを使うダイアログとポップアップを入れる行 P02d で入れる。K1 には確かめる相手が無いためである。
 
-Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子として積み、閉じると`CurrentScope`を親へ戻す。`IsModal`なスコープが積まれている間は、§7の captureフェーズでそのスコープ外へのフォーカス移動・イベント到達を遮断する（フォーカストラップの実装）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7の`ITextInputBackend`）は`CurrentScope.FocusedChild`がテキスト入力可能な場合にのみ有効化される。
+Dialog/Menu/Popupが開くと新しい`FocusScope`を`CurrentScope`の子として積み、閉じると`CurrentScope`を親へ戻す。`IsModal`なスコープが積まれている間は、§7の captureフェーズでそのスコープ外へのフォーカス移動・イベント到達を遮断する（フォーカストラップの実装）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7 の文字の入力の相手、`ITextInputClient`）は`CurrentScope.FocusedChild`がテキスト入力可能な場合にのみ有効化される。
 
 ### 7.3 ポップアップ（メニュー・フライアウト・ツールチップ・ドロップダウン）
 
@@ -4386,8 +4446,7 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 | GPU利用不可                               | v1では非対応（将来的なソフトウェアレンダラ対応はDisplayListの原則§5.0により拡張可能）                              | §5.0    |
 | フォント解決失敗                          | 同梱フォールバックフォントを使用                                                                                   | §4.5    |
 | カラー絵文字フォーマット非対応（sbix等）  | モノクロ輪郭で表示                                                                                                 | §4.6    |
-| IME機能欠落                               | 基本的なテキスト入力（composition非対応）にフォールバック                                                          | §4.7    |
-| Windows IMM32: SurroundingText            | OS へ渡さない。候補位置制御のみ。Core の状態保持はする                                                             | §4.7    |
+| Windows の TSF のスレッドの管理を作れない | 変換は OS の既定の IME の窓に任せ、確定した文字を `WM_CHAR` で受ける（行 P02b の形）                                 | §4.7    |
 | a11y API利用不可                          | アプリの動作は継続（a11y機能のみ欠落）                                                                             | §6.2    |
 | トレイ作成失敗（Wayland等）               | メインウィンドウ内メニュー項目に代替導線                                                                           | §8.6    |
 | Grid `auto-fill`/`auto-fit`等の高度な指定 | v1範囲外の指定は§3.3の対象外機能として無視                                                                         | §3.3    |
@@ -4531,7 +4590,7 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
   仮想化リストではActiveなmaterialize済みノードだけをノードとして載せ、項目の数と位置を報告する（§3.4.2）。
   v1 の対象 control は Button / Text / TextField / Checkbox / Slider / List / Dialog（§4.4.1）。
   merged semantics・decorative node も扱う
-- IME（日本語IME、§4.7のITextInputBackend経由で composition が機能する。surrounding text は macOS/Linux で機能し、Windows v1 IMM32 では OS 非伝達、§11.2）
+- IME（日本語 IME。§4.7 の文字の入力の相手を通して、変換中の文字を欄の中に描く。Windows は TSF で、周辺の文字と再変換は IME が文書の口から読む）
 - Performance（§11.3の全ベンチマークシナリオがAcceptance内に収まる）
 - NativeAOT（3プラットフォームとも trim / AOT 警告ゼロでリリースビルドが成立する）
 - ポップアップ（3 つの OS とも別ウィンドウ実装が既定として動く、§7.3）
@@ -4631,7 +4690,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 ヘッドレスのアプリホスト・仮想クロック・入力の注入・スクリーンショットを、別パッケージ `XylemUI.Testing` として公開する。フレームワーク自身のテスト、アプリ開発者のテスト、AI エージェントによる生成と自己評価（§0）は、すべて同じ API を使う。製品のバイナリ（`XylemUI.Core`）には含めない。
 
-**作る行:** 操作の土台（`HeadlessApp`、仮想の時計と `PumpAndSettle`、ポインタ・キーボード・フォーカスの注入、`Find` / `FindAll`、`AssertNoLeakedScopes`、`PerformanceAssert.DoesNotAllocate`、テスト用のフォント）は行 P02a、描画の土台（PNG、`SaveScreenshotAsync`、ゴールデン比較は `XylemUI.Testing` に、ウィンドウなしの WARP の描画と読み戻しは別のパッケージ `XylemUI.Testing.D3D11` に置き、`HeadlessOptions.Renderer` で差し込む、§12.3「差し込み」）は行 P02a2 で作る。テスト用のフォントは、`HeadlessApp` がどの OS でも文字を測れるように P02a に入れた。`XylemUI.Testing` は Windows だけの DirectWrite のフォント解決に頼れない（P02a の実装の前のオーナーの決定、Issue #460）。ほかの行の土台が要るものは、その行で足す。`app.Ime` は P02c（`ITextInputBackend`、§4.7）、文字の入力の `app.Keyboard.Type` は P02b（`TextInputEvent`）、アクセシブル名での検索は P02g（§4.4）、アニメーションを待つことは AN1 である（P02a の Grill、Issue #456）。
+**作る行:** 操作の土台（`HeadlessApp`、仮想の時計と `PumpAndSettle`、ポインタ・キーボード・フォーカスの注入、`Find` / `FindAll`、`AssertNoLeakedScopes`、`PerformanceAssert.DoesNotAllocate`、テスト用のフォント）は行 P02a、描画の土台（PNG、`SaveScreenshotAsync`、ゴールデン比較は `XylemUI.Testing` に、ウィンドウなしの WARP の描画と読み戻しは別のパッケージ `XylemUI.Testing.D3D11` に置き、`HeadlessOptions.Renderer` で差し込む、§12.3「差し込み」）は行 P02a2 で作る。テスト用のフォントは、`HeadlessApp` がどの OS でも文字を測れるように P02a に入れた。`XylemUI.Testing` は Windows だけの DirectWrite のフォント解決に頼れない（P02a の実装の前のオーナーの決定、Issue #460）。ほかの行の土台が要るものは、その行で足す。`app.Ime` は P02c（`ITextInputClient`、§4.7）、文字の入力の `app.Keyboard.Type` は P02b（`TextInputEvent`）、アクセシブル名での検索は P02g（§4.4）、アニメーションを待つことは AN1 である（P02a の Grill、Issue #456）。
 
 **Core との関係:** `XylemUI.Testing` は Core と同じ版で出し、`InternalsVisibleTo` で Core の internal（`WindowInput`、`PointerInput`、`KeyInput`、`UiTree`、`WindowFrames`）を使う。これらを公開すると、Platform との間の内部の型が公開の API になるためである。テストのための公開の口を Core に置かない（`D3D11Renderer.ReadPixel` は S7 でサンプルの検査のために公開したが、P02a2 で公開の API から外す。ウィンドウなしの読み戻しは `XylemUI.Testing.D3D11` が持ち、レンダラのテストは internal の読み戻しを使う（§12.3「差し込み」）。HelloWindow の自己検査はテストへ移す）。
 
@@ -4698,12 +4757,12 @@ await app.SaveScreenshotAsync("counter.png");   // AI エージェントはこ�
 
 **土台（P02a の Grill、Issue #456）:** `HeadlessApp` は OS のウィンドウもスワップチェーンも作らない。テスト用の `IPointerPlatform`（カーソルの形とキャプチャを覚えるだけ）、テスト用の `IFrameScheduler`（予約を 1 つ持ち、`PumpAndSettle` が回す）、`TestTime` で組む。Avalonia 12.1.4 の `Avalonia.Headless`（`src/Headless/Avalonia.Headless/HeadlessWindowImpl.cs`）と GPUI の `TestWindow`（zed v1.25.3 の `crates/gpui/src/platform/test/window.rs`）も、OS のウィンドウを作らない。`app.Pointer` は `Click(Element)`（矩形の中央）と、座標を取る `Down` / `Move` / `Up`、`app.Keyboard` は `Press(Key, KeyModifiers)` と `Down` / `Up`、`app.Focus(Element)` と `app.SetActive(bool)` を持つ。P02b で、`app.Keyboard.Type(string)`（`TextInputEvent` を注入する）、メモリに持つクリップボード `app.Clipboard`、`app.Pointer.Down` のクリックの回数（`clickCount`、ダブルクリックとトリプルクリック）を足す（§4.9）。どれも注入の後に UI キューを空にする。アプリの層のテスト（Counter と Todo）は、本物のウィンドウを使わずに `HeadlessApp` で書く。本物のウィンドウとメッセージループを確かめるテストは、Platform の層（`XylemUI.Platform.Windows.Tests`）に残す。
 
-**IME:** 模擬するのは、IME からフレームワークへ届く**イベント列**だけである。偽の `ITextInputBackend`（§4.7）から、合成の更新・属性ラン・確定・キャンセルを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
+**IME:** 模擬するのは、IME からフレームワークへ届く**呼び出しの列**だけである。フォーカスのある欄の文字の入力の相手（§4.7 の `ITextInputClient`）を、TSF の文書の口が呼ぶのと同じ順で呼び、変換中の文字の更新・文節・確定・取り消しを流し込む。本物の IME の変換エンジンや、OS の IME API との往復は対象外で、これらは手動の実機 QA（§11.4）で確認する。
 
 ```csharp
 app.Focus(app.Find("name"));
 app.Ime.Compose("にほんご", cursor: 4)
-       .Compose("日本語", cursor: 3, attributes: [new(0..3, ImeAttributeKind.ThickUnderline)])
+       .Compose("日本語", cursor: 3, clauses: [new(0, 3, ImeAttributeKind.ThickUnderline)])
        .Commit("日本語");
 app.PumpAndSettle();
 ```

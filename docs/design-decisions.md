@@ -297,7 +297,6 @@ Rejected:
   - 「a11y 読み上げ順 = BiDi 論理順」
   - `ResolveFont(CodepointRange)`
   - v1 で辞書ハイフネーション
-  - v1 Windows で TSF を最小構成から通す（IMM32 + SurroundingText 非伝達）
   - テキスト位置を UTF-8 バイトや codepoint 数で持つ
   - 本番経路で `StringInfo` / `Rune` / `char.GetUnicodeCategory` を使う
   - 行の境界で整形をやり直さず、1 回の整形の結果をクラスタの境界で切る（Avalonia・Flutter・GPUI と同じだが、行末と行頭の字形と、改行した行のソフトハイフンが正しくならない。T1 の Grill）
@@ -465,7 +464,7 @@ Decision:
   ワーカーからは `IUiDispatcher` / 独自 `SynchronizationContext` で UI スレッドへ戻る。
   キューは `ConcurrentQueue`（メッセージと継続を同じキューに積む）。ループは開始時と毎反復の待機の前に取り出し、取り出しは呼んだ時点の件数だけ実行する。同期描画の中では取り出さない。
   `[UnmanagedCallersOnly]` の境界で全例外を捕捉する。
-  Windows v1 IME は IMM32。`SurroundingText` は OS へ渡さない。（見直し: 理由が工数なので、P02c の前に要件で比べ直す。Issue #54）
+  Windows の IME は TSF（P02c の Grill で決め直した、Issue #506、下の「IME」の節）。
   Vsync 待機中も OS メッセージを多重待機する（Windows: `MsgWaitForMultipleObjectsEx`）。
   同期リサイズ描画は `WM_SIZE` だけで行い、ガード（Core の `SynchronousRenderGuard`、深さで数える）の中で走らせる。入れ子のリサイズはその場では描かず、最新サイズを区間の後に1回描く。アプリのコールバックは描画の後まで遅らせて順に実行する。
 
@@ -478,7 +477,6 @@ Reason:
   Win32 ウィンドウはスレッドアフィン、AppKit はメインスレッド専用、Core の型はロックを持たない。
   マネージド例外がネイティブ境界を越えるとプロセスが終了する。
   `CVDisplayLink` はメインスレッドで呼ばれない。
-  IMM32 に surrounding text の標準プロトコルは無い。
   UI スレッドでの `DwmFlush` は入力遅延を悪化させる。
 
 Rejected:
@@ -493,7 +491,6 @@ Rejected:
   - キューを `Channel<T>` にする（非同期の読み手がいない。UI スレッドのループが同期で取り出す）
   - メッセージと `await` の継続を別のキューにする（両者の順序が保てない）
   - 取り出しで、実行中に積まれたものまで実行する（すぐ完了する継続が続くと取り出しが終わらない）
-  - v1 で TSF 最小 COM ラッパーを必須にする
   - 同期リサイズ中に application callback / 新規モーダルループ / `await` 継続の実行を許可する
   - 同期リサイズ中のアプリのコールバックを捨てる（クリックや `Closed` を失う）
   - 入れ子のリサイズを捨てて、次のリサイズか次のフレームに任せる（モーダルループの中ではフレームが来ず、最終サイズが描かれない）
@@ -860,3 +857,23 @@ Rejected:
   - 葉と葉の間に何も入れずにつなぐ（Flutter。並んだ短い文字が 1 語につながる）
   - 右クリックのメニューを P02b2 で入れる（ポップアップは行 P02d。欄のメニューと一緒に入れる）
   - ドラッグで端を越えてもスクロールしない（Avalonia。見える範囲より先を選べない）
+
+---
+
+## IME
+
+Decision:
+  Windows の IME は TSF でつなぐ（設計書 §4.7、P02c の Grill、Issue #506）。欄が Core の「文字の入力の相手」（`ITextInputClient`、文字・選択・変換中の範囲・範囲の位置・置き換え）を実装し、TSF の文書の口（`ITextStoreACP2`）はこれに読み替える。変換中の文字は欄の中に、文節ごとの下線で描く。変換中にフォーカスが移ったら確定する。IME は文字を受け付ける部品にフォーカスがある間だけ有効にする。タッチキーボードは、指かペンで欄にフォーカスが入ったら `InputPane.TryShow` で出す。
+
+Reason:
+  要件に挙げた再変換・周辺の文字・タッチキーボードを、すべて満たせるのは TSF だけである。IMM32 でも `WM_IME_REQUEST` で再変換と周辺の文字は扱えるが、タッチキーボードの予測と自動修正、入力の種類の通知、候補の窓を欄にそろえることは TSF の文書の口の側にしかない。Chromium は 2019 年に TSF を既定にし、2024 年に IMM32 を消した。WPF も TSF の文書の口を持つ。比べた 3 つの UI フレームワーク（Flutter・Avalonia・GPUI）は IMM32 だが、どれも再変換と周辺の文字に答えない。
+
+Rejected:
+  - IMM32 でつなぐ（Flutter・Avalonia・GPUI。タッチキーボードの予測と自動修正、入力の種類、候補の窓をそろえることが届かない。この節の前の版は、理由を工数としていた。Issue #54）
+  - IMM32 で `IMR_RECONVERTSTRING` と `IMR_DOCUMENTFEED` にも答える（再変換と周辺の文字は届くが、タッチキーボードの機能が届かない）
+  - アプリから OS へ変換の状態を押し付ける口（この節の前の版の `ITextInputBackend`。TSF は OS が文書を読みに来る形で、向きが逆）
+  - 変換の状態をノードに持たせる（この節の前の版の `ImeCompositionState`。持つのは欄だけで、ノードの大きさは要らない）
+  - 変換中の文字を IME の窓に任せる（比べた 5 つとも欄の中に描く）
+  - 変換中の文字を下線 1 本で描く（Flutter・Avalonia・GPUI。変換中の文節が分からない）
+  - 変換中にフォーカスが移ったら取り消す（Flutter。打った文字が消える）
+  - タッチキーボードを TSF に任せて出す（Chromium は出たり消えたりが揃わず、2020 年に外した）
