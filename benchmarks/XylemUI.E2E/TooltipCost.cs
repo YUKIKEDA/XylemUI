@@ -134,13 +134,15 @@ internal static class TooltipCost
                 times[i] = Stopwatch.GetElapsedTime(start).TotalMicroseconds;
             }
 
+            // The median first: its sort allocates the first time, and is not a frame's.
+            double median = Median(times);
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < Frames; i++)
             {
                 Frame(i);
             }
 
-            return (Median(times), GC.GetAllocatedBytesForCurrentThread() - before);
+            return (median, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 
         public void Dispose()
