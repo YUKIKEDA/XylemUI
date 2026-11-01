@@ -45,6 +45,8 @@ The test layers are in `docs/design.ja.md` §12.1. This rule is how a test is wr
 - A test of what asks for a frame also changes one kind of state after another (a layout change, then a color), not each alone on a fresh tree. V1b's tests did each once, and missed that a node whose layout changed kept its paint flag outside the paint updates, so a later change of color asked for no frame; V1c's hover scene found it (Issue #324, PR #326).
 - A clue added to a test that fails now and then lives in the test, not in shipped code, and is checked once with a failure caused on purpose. For Issue #126 the idle test's thread hooks record the messages the UI thread handles, and posting `WM_USER + 7` during the wait made the failure name `0x0407` (PR #217).
 - Every run of `./build.ps1` writes its output to a file in the scratchpad, so that a failure seen once can be named. In T8 one run in four failed one Release test, and the output was not kept, so the test could not be named (PR #204).
+- A test that presses keys which enter and leave a state (Alt, F10, Esc) reads the state after each key. PR #584's first test pressed Alt alone and then F10 while another popup was open and read the focus once; a mutant that let the bar be selected then passed, since F10 left what Alt had entered.
+- A new kind added to an existing mechanism (a new target of the access keys) is tested on each branch of the mechanism: one, several, and none that can act. PR #584 added the menu bar's item as a target and tested the one-target branch; with several targets the focus went round to the item, which takes no focus while the bar is not selected, and stopped there (the review found it).
 
 ## Structure
 
