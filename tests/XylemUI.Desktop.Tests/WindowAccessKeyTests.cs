@@ -147,10 +147,11 @@ public sealed class WindowAccessKeyTests
     ///   that a false signal does not show.
     ///
     /// Steps:
-    /// - Press A; Control+Alt+A; Alt+A three times, reading the focused button after each.
+    /// - Press A; Control+Alt+A; Control+Alt with the letter "a" given, as a layout whose AltGr types a letter sends; Alt+A three
+    ///   times, reading the focused button after each.
     ///
     /// Expected:
-    /// - A and Control+Alt+A do nothing with the buttons. Alt+A focuses "_Apply", "_Abort", "_Apply"; no button is clicked.
+    /// - A and the two Control+Alt keys do nothing with the buttons: the field keeps the focus. Alt+A focuses "_Apply", "_Abort", "_Apply"; no button is clicked.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -174,6 +175,19 @@ public sealed class WindowAccessKeyTests
 
         _ = app.Keyboard.Press(Key.A);
         _ = app.Keyboard.Press(Key.A, KeyModifiers.Control | KeyModifiers.Alt);
+
+        // A layout whose AltGr types a letter (Polish AltGr+A is "ą"): Control and Alt with the letter "a" is still no access key.
+        _ = app.Input.Handle(
+            new KeyInput(
+                KeyEventKind.Down,
+                Key.A,
+                PhysicalKey.None,
+                new System.Text.Rune('a'),
+                KeyModifiers.Control | KeyModifiers.Alt,
+                false,
+                app.Time.Elapsed
+            )
+        );
         NodeHandle afterPlain = app.Tree.Focus.Focused;
         var focused = new List<string>();
         for (int i = 0; i < 3; i++)

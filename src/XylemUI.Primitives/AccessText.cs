@@ -71,8 +71,9 @@ public static partial class Primitive
     }
 
     // The window's access key (design §13.1, "The window's access keys"): the access texts of the key, in the window's tree and its
-    // open popups in the order of the tree, each with the target its nearest host or focusable ancestor gives, inside the top modal
-    // scope. One target is invoked; several take the focus in turn, round the end, and none is invoked.
+    // open popups in the order of the tree, each with the target its nearest host or focusable ancestor gives. Each target needs a
+    // node that can take the focus, which a node outside the top modal scope cannot (FocusManager.CanFocus), so a modal dialog keeps
+    // the keys inside it. One target is invoked; several take the focus in turn, round the end, and none is invoked.
     private static bool WindowKey(WindowInput input, char letter, TimeSpan timestamp)
     {
         UiTree tree = input.Tree;
@@ -118,7 +119,6 @@ public static partial class Primitive
                 registry.Texts.TryGetValue(node, out char text)
                 && char.ToUpperInvariant(text) == key
                 && TargetOf(tree, registry, node) is { } target
-                && tree.Focus.InsideTopModal(target.FocusNode)
                 && !targets.Exists(t => t.Node == target.Node)
             )
             {
