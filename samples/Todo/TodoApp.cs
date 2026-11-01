@@ -115,11 +115,15 @@ public static class TodoApp
                             Styled(Text((ref text) => text.Write(model.NewestFirst.Get() ? "Newest first" : "Oldest first")), model.Reverse)
                         )
                         .Gap(6),
-                    ScrollView(Column().Gap(4).For(model.Shown, item => item.Id, item => ItemRow(model, item))).Height(ListHeight),
+                    ScrollView(Column().Gap(4).For(model.Shown, item => item.Id, item => ItemRow(model, item)))
+                        .Height(ListHeight)
+                        .DropTarget(new DropTargetOptions<DroppedText> { Drop = (in DragEvent<DroppedText> e) => model.Add(e.Value.Text) })
+                        .DragOver(new PaintStyle { Background = ItemHighlight }),
                     Dialog(model.Confirming, () => ConfirmPanel(model), new DialogOptions { Backdrop = Backdrop })
                 )
                 .Gap(8)
                 .Padding(12)
+                .DropTarget(new DropTargetOptions<DroppedFiles> { Drop = (in DragEvent<DroppedFiles> e) => AddFiles(model, e.Value) })
         );
 
     // The field's context menu: the four commands, the ones that cannot run grayed out.
@@ -156,12 +160,29 @@ public static class TodoApp
             .Foreground(TextColor)
             .CornerRadius(8);
 
-    // An item's row: dragged by its number onto another row, it moves there (design §7, "Drag and drop"); the row under the drag is
-    // lighter.
+    // Files dropped from the OS anywhere on the app: an item for each, named after the file (design §7, "Drag and drop").
+    private static void AddFiles(TodoModel model, DroppedFiles files)
+    {
+        foreach (string path in files.Paths)
+        {
+            _ = model.Add(Path.GetFileName(path));
+        }
+    }
+
+    // An item's row: dragged by its number onto another row, it moves there; dragged out of the window, it is its name as text for
+    // the OS (design §7, "Drag and drop"). The row under the drag is lighter.
     private static Element ItemRow(TodoModel model, IReadOnlySignal<TodoItem> item) =>
         Row(ItemButton(model, item), RemoveButton(model, item))
             .Gap(4)
-            .DragSource(() => item.Get().Id, new DragSourceOptions { Preview = () => DragPreview(item.Get().Name) })
+            .DragSource(
+                () => item.Get().Id,
+                new DragSourceOptions
+                {
+                    Preview = () => DragPreview(item.Get().Name),
+                    Allowed = DragEffects.Move | DragEffects.Copy,
+                    External = () => new ExternalDragData(null, item.Get().Name),
+                }
+            )
             .DropTarget(
                 new DropTargetOptions<int> { CanDrop = id => id != item.Get().Id, Drop = (in DragEvent<int> e) => model.Move(e.Value, item.Get().Id) }
             )
