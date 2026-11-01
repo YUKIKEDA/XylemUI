@@ -60,19 +60,25 @@ public static partial class ElementExtensions
     /// <param name="gap">The gap, finite and at or above 0.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="gap"/> is negative or not a finite number.</exception>
-    /// <exception cref="InvalidOperationException">The node is not a column or a row.</exception>
+    /// <exception cref="InvalidOperationException">The node is not a column, a row, or a virtualized list.</exception>
     public static Element Gap(this Element element, float gap)
     {
         float g = Check(gap, nameof(gap));
         return Layout(
             element,
             style =>
-                style.Algorithm is LayoutAlgorithm.Flex flex
-                    ? style with
+                style.Algorithm switch
+                {
+                    LayoutAlgorithm.Flex flex => style with
                     {
                         Algorithm = new LayoutAlgorithm.Flex(flex.Props with { RowGap = LengthPercentage.Px(g), ColumnGap = LengthPercentage.Px(g) }),
-                    }
-                    : throw new InvalidOperationException("Only a column or a row has a gap between its children.")
+                    },
+                    LayoutAlgorithm.Virtual list => style with
+                    {
+                        Algorithm = new LayoutAlgorithm.Virtual(list.Props with { Gap = LengthPercentage.Px(g) }),
+                    },
+                    _ => throw new InvalidOperationException("Only a column, a row, or a virtualized list has a gap between its children."),
+                }
         );
     }
 
@@ -791,6 +797,95 @@ public static partial class ElementExtensions
         StartFor(container, items, key);
         ForBlock<T, TKey>.Create(container.Tree!, container.Node, items, key, null, render);
         return container;
+    }
+
+    /// <summary>
+    /// Fills an empty box that scrolls along one axis with rows for the items it shows, and keeps only those (design §3.4, "The
+    /// shape of P02e"): the rows in the viewport, and those within <see cref="VirtualOptions.CacheExtent"/> before and after it,
+    /// which are laid out but not drawn. A row is found again by its item's key, as <c>For</c> finds it, and is made in a scope of
+    /// its own; a row that leaves the range is disposed with its scope, unless it holds the focus, the pointer's capture, or a drag's
+    /// source, or its <see cref="KeepAlive"/> signal is true. The rows fill the box's content box across, take their content's
+    /// length along the axis, and are apart by the box's gap (<see cref="Gap"/>). The box's scroll position follows the row at the
+    /// start of its viewport, which stays in place when the rows above it are measured.
+    /// </summary>
+    /// <typeparam name="T">The type of an item.</typeparam>
+    /// <typeparam name="TKey">The type of an item's key; the keys of the items differ.</typeparam>
+    /// <param name="container">The box: with no child, and with exactly one axis that scrolls (<see cref="Overflow.Hidden"/> or
+    /// <see cref="Overflow.Scroll"/>).</param>
+    /// <param name="items">The items.</param>
+    /// <param name="key">The key of an item.</param>
+    /// <param name="render">Makes a row from its item's signal: a node of the box's tree with no parent. A render that throws is
+    /// reported to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/>, and its row is an empty hidden node.</param>
+    /// <param name="state">The list's state, which the app reads and moves; with <see langword="null"/>, one with the box's scroll
+    /// state, or a new one.</param>
+    /// <param name="options">How the rows are made; with <see langword="null"/>, the defaults.</param>
+    /// <returns>The box, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentException">The box has children, a <c>For</c> fills it already, or it does not scroll along exactly
+    /// one axis.</exception>
+    /// <exception cref="InvalidOperationException">There is no current scope. A change of the items that gives a key twice is reported
+    /// to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/> with this type, and the list keeps the items before it.</exception>
+    public static Element VirtualFor<T, TKey>(
+        this Element container,
+        IReadOnlySignal<IReadOnlyList<T>> items,
+        Func<T, TKey> key,
+        Func<IReadOnlySignal<T>, Element> render,
+        VirtualListState? state = null,
+        VirtualOptions? options = null
+    )
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(render);
+        UiTree tree = container.TreeOrThrow();
+        LayoutStyle style = tree.Nodes.GetRef(container.Node).Layout.Style;
+        bool scrollsX = style.OverflowX >= XylemUI.Overflow.Hidden;
+        bool scrollsY = style.OverflowY >= XylemUI.Overflow.Hidden;
+        if (scrollsX == scrollsY)
+        {
+            throw new ArgumentException("A virtualized list's box scrolls along exactly one axis.", nameof(container));
+        }
+
+        StartFor(container, items, key);
+        LengthPercentage gap = style.Algorithm switch
+        {
+            LayoutAlgorithm.Flex flex => scrollsX ? flex.Props.ColumnGap : flex.Props.RowGap,
+            LayoutAlgorithm.Virtual list => list.Props.Gap,
+            _ => default,
+        };
+        tree.SetStyle(container.Node, style with { Algorithm = new LayoutAlgorithm.Virtual(new VirtualProps { Horizontal = scrollsX, Gap = gap }) });
+        state ??= new VirtualListState(tree.ScrollStateFor(container.Node));
+        if (state.Scroll.Tree != tree || state.Scroll.Node != container.Node)
+        {
+            tree.SetScrollState(container.Node, state.Scroll);
+        }
+
+        VirtualBlock<T, TKey>.Create(tree, container.Node, items, key, render, state, options ?? new VirtualOptions(), scrollsX);
+        return container;
+    }
+
+    /// <summary>
+    /// Keeps a row of a virtualized list after it leaves the list's range while a signal is true (design §3.4, "The rows that leave
+    /// the range"), as Flutter's <c>AutomaticKeepAlive</c> keeps one: the row is neither laid out nor drawn there, and keeps its
+    /// state. When the signal turns false, the next frame disposes the row if it is still outside the range.
+    /// </summary>
+    /// <param name="row">The node a row's render returns.</param>
+    /// <param name="keep">Whether to keep the row.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element KeepAlive(this Element row, IReadOnlySignal<bool> keep)
+    {
+        ArgumentNullException.ThrowIfNull(keep);
+        UiTree tree = row.TreeOrThrow();
+        RequireScope();
+        NodeHandle node = row.Node;
+        _ = Effect.Create(() =>
+        {
+            bool kept = keep.Get();
+            if (tree.Nodes.IsAlive(node))
+            {
+                tree.SetKeepAlive(node, kept);
+            }
+        });
+        return row;
     }
 
     // The checks of For, and the mark that the box takes no second one.

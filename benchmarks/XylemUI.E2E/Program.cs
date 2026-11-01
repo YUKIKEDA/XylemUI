@@ -83,7 +83,8 @@ return scenario switch
         tree: args.Contains("--tree"),
         noText: args.Contains("--no-text"),
         hover: args.Contains("--hover"),
-        scroll: args.Contains("--scroll")
+        scroll: args.Contains("--scroll"),
+        list: Array.IndexOf(args, "--list") is int listAt and >= 0 && listAt + 1 < args.Length ? args[listAt + 1] : string.Empty
     ),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),

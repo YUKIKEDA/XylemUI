@@ -2146,7 +2146,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 
 **P02e で入れる形（P02e の Grill でオーナーが決定、Issue #606）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。Flutter のパスは `packages/flutter/lib/src/` から、Avalonia は `src/Avalonia.Controls/` から、GPUI は `crates/` から書く。
 
-- **API と同一性:** `.VirtualFor(items, key, render, state, options)` は、`For`（§2.7）と同じく、項目の Signal とキーと `render` を受ける。行の同一性はキーで持つので、上に項目が足されても、行の状態とフォーカスが残る。比べた 3 つは、どれも番号で持つ。Flutter は `findChildIndexCallback` を渡さないと番号で行を合わせ、挿入で状態がずれる（`widgets/scroll_delegate.dart` 208〜211 行目）。Avalonia は移動を外して入れることとして扱い、入れ物を使い回す（`VirtualizingStackPanel.cs` 365〜380 行目、`Utils/RealizedStackElements.cs` 14〜17 行目）。GPUI の `ListState::splice` は番号の範囲を入れ替える（`gpui/src/elements/list.rs` 503〜549 行目）
+- **API と同一性:** `.VirtualFor(items, key, render, state, options)` は、`For`（§2.7）と同じく、項目の Signal とキーと `render` を受ける。行の同一性はキーで持つので、上に項目が足されても、行の状態とフォーカスが残る。比べた 3 つは、どれも番号で持つ。Flutter は `findChildIndexCallback` を渡さないと番号で行を合わせ、挿入で状態がずれる（`widgets/scroll_delegate.dart` 208〜211 行目）。Avalonia は移動を外して入れることとして扱い、入れ物を使い回す（`VirtualizingStackPanel.cs` 365〜380 行目、`Utils/RealizedStackElements.cs` 14〜17 行目）。GPUI の `ListState::splice` は番号の範囲を入れ替える（`gpui/src/elements/list.rs` 503〜549 行目）。キーは項目ごとに違う。`For` は同じキーを順に対応させるが、仮想化した並びはキーから番号を引く表を持つので、同じキーが 2 度来る項目の変化は `InvalidOperationException` として報告し、前の項目のままにする（#610 の実装）
 - **付ける箱:** スクロールする軸（`Overflow.Hidden` か `Scroll`）がちょうど 1 つで、子の無い箱に付ける。縦でも横でもよい。Flutter と Avalonia は同じコードで両方の軸を扱う（`rendering/sliver_multi_box_adaptor.dart` 701〜725 行目、`VirtualizingStackPanel.cs` 213〜215 行目）。GPUI の `list` は縦だけで、ホイールの量の縦だけを使う（`list.rs` 916〜918 行目）。格子の仮想化は入れない。要件（§13 の ListBox）が求めるのは一覧だけである
 - **行の並べ方（`LayoutAlgorithm.Virtual`）:** 箱は Block と Flex のほかの、新しい並べ方を持つ。行の交差軸の大きさは、箱の内容の箱の幅（横の並びなら高さ）に固定する。スクロールの軸の大きさは、行の内容で決まる。行の margin は、その行の大きさに含める。行と行の間は、箱の `.Gap()` のその軸の値、箱の padding は並びの前後の余白である。スクロールできる範囲は、padding と、行の大きさの和と、間の和である。grow・shrink・wrap・justify は使わない。Flutter の `SliverList` は、交差軸を固定した制約で子を layout する（`rendering/sliver_list.dart` 56 行目、`rendering/sliver.dart` 492〜500 行目）。Avalonia は交差軸に伸ばし（`VirtualizingStackPanel.cs` 268〜270 行目）、GPUI は一覧の幅で layout する（`list.rs` 1268〜1270 行目）
 - **大きさのキャッシュ:** 行を layout したら、その大きさをキーごとに覚え、番号の順の累積の和（Fenwick 木）を作り直す。累積の和は、位置から番号を引くのと、番号から位置を引くのに使う。まだ測っていない行は、`EstimatedExtent` か、null なら測った行の大きさの平均で見積もる。Flutter は、作った行の平均に残りの数を掛ける（`widgets/sliver.dart` 1129〜1143 行目）。Avalonia も実測の平均を使い、最初の値は 25 画素である（`VirtualizingStackPanel.cs` 73 行目、806〜833 行目）。`FixedExtent` を渡した箱は、行を測らずに、位置を割り算で求める。Flutter の `itemExtent`（`rendering/sliver_fixed_extent_list.dart` 114〜123 行目）と GPUI の `uniform_list`（`gpui/src/elements/uniform_list.rs` 473〜483 行目）と同じである。項目が変わったときは、残ったキーの大きさを使い、消えたキーの大きさを捨てて、累積の和を作り直す
@@ -2157,7 +2157,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 - **範囲の外へ出た行:** `CacheExtent` の外へ出た行（Released）は、行の Scope ごと捨てる。入れ物は使い回さない。次の 3 つの行は、範囲の外でも捨てずに持ち、layout も描画もヒットもさせない（Flutter の `keepAlive` の行と同じ。`rendering/sliver_multi_box_adaptor.dart` 373〜387 行目・418〜421 行目）。
   - フォーカスを持つノードを含む行。Avalonia はフォーカスのある入れ物を残し（`VirtualizingStackPanel.cs` 1151〜1155 行目）、Flutter の TextField はフォーカスがある間だけ自分を残す（`widgets/editable_text.dart` 2638 行目）。GPUI は `splice_focusable` で渡したフォーカスの項目を描き続ける（`list.rs` 507〜510 行目）
   - ポインタのキャプチャ（§7）か D&D の元（§7「ドラッグ＆ドロップ」）を持つノードを含む行。端の自動スクロールで、ドラッグしている行が範囲の外へ出ることがある
-  - `.KeepAlive(keep)` の Signal が true の行。Flutter の `AutomaticKeepAlive` に当たる。比べた中で、アプリが行を残せるのは Flutter だけである
+  - `.KeepAlive(keep)` の Signal が true の行。Flutter の `AutomaticKeepAlive` に当たる。比べた中で、アプリが行を残せるのは Flutter だけである。`KeepAlive` は `render` が返した行の根に付ける。行の中のノードに付けても行は残らない。範囲の外の行ごとに部分木をたどらず、表を 1 回引くだけで済むからである（#610 の実装）
   - 持った行に `Focus` か Tab の移動が見える所まで動かすことを求めたら（§7「Bring into view」）、その行の番号へ `ScrollToIndex(Nearest)` してから動かす。持った行には今の位置が無いからである
   - 使い回すのは比べた中で Avalonia だけで（`VirtualizingStackPanel.cs` 1158〜1161 行目）、使い回すと、項目に結び付いていない状態が別の項目に残る。Flutter と GPUI は作り直す
 - **番号で動かす API:** `VirtualListState.ScrollToIndex(index, align)` は、その行の位置を累積の和から求めて基準を置き、次のフレームの Materialization で行を作る。`ScrollAlign` は Nearest（見えていれば動かさない）・Top・Center・Bottom である。GPUI の `ScrollStrategy`（`uniform_list.rs` 84〜99 行目）と同じ 4 つにした。Avalonia は `ScrollIntoView(int)` を持つ（`VirtualizingStackPanel.cs` 635〜720 行目）。Flutter には番号で動かす API が無い。`VisibleRange` は、見えている行の番号の範囲で、layout の後の batch で書く。GPUI の `ListScrollEvent` の `visible_range` に当たる（`list.rs` 172〜184 行目）。矢印キーで動く部品（ListBox など）は、この 2 つを使う
@@ -2166,7 +2166,8 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 - **確かめ方:**
   - Core: 1 万項目の並びで、作る行の数が見える範囲と `CacheExtent` の分だけになる。項目の数を 1 千・1 万・10 万に変えても、layout の pass で layout するノードの数が変わらない。上に項目を足しても、基準の行が画面の同じ位置に残り、行の状態とフォーカスが残る。見積もりと実測が違っても、上へスクロールしたときに基準の行が跳ばない。基準の行が消えたときの規則。範囲の外のフォーカスの行・キャプチャの行・`KeepAlive` の行が残り、それ以外が捨てられる（Scope の Dispose）。`ScrollToIndex` の 4 つの揃え方。`FixedExtent` の箱が行を測らない。Tab が並びの全部をたどり、フォーカスできるノードの無い行が続くと、上限で並びを出る
   - WARP: スクロールした後の行の画素。Cached の行が描かれない
-  - 割り当て 0: 作る行が変わらないスクロールのフレーム（配送を含む）
+  - 割り当て 0: 作る行が変わらないスクロールのフレーム（ホイールの配送を含む）
+  - `VisibleRange` は、layout の後の batch で書く。layout の無いフレーム（範囲の中のスクロール）でも、layout の段の後に書く
   - 計測: `frames` に 1 万項目の並びを毎フレームスクロールする場面を足し、`For` で 1 万行を全部作る形と、フレームの段と layout の pass で比べる。行を作るフレームは、`render` の分を除いた割り当てを測る
   - サンプル: Todo の一覧を `.VirtualFor` に変え、D&D の並べ替えと端の自動スクロールがそのまま動く
   - PR は、作る範囲・大きさのキャッシュ・基準・Cached と持つ行（1 つ目）と、キーボード・`ScrollToIndex`・Todo（2 つ目）に分ける

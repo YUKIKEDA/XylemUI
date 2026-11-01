@@ -16,6 +16,8 @@ namespace XylemUI.E2E;
 // frame: input_ms is the input's delivery of the move, and the frame draws for the change of color alone.
 // --scroll (with --tree, row V2) keeps the boxes still in a scroll container and changes its scroll position each frame: the frame
 // draws them moved with no layout (layout_ms is the pass that finds nothing to do).
+// --list virtual and --list for (with --tree, row P02e) put a box over 10,000 rows 20 high in place of the boxes, made with
+// VirtualFor or with For, and scroll it 7 px each frame: layout_ms is the materialization stage with its layout passes.
 internal static class Frames
 {
     public static int Run(
@@ -32,12 +34,13 @@ internal static class Frames
         bool tree = false,
         bool noText = false,
         bool hover = false,
-        bool scroll = false
+        bool scroll = false,
+        string list = ""
     )
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
-        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll) : null;
+        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;
         var layout = new List<double>(frames);
         var input = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
@@ -135,6 +138,7 @@ internal static class Frames
         report.Text("text", noText ? "no" : "yes");
         report.Text("hover", hover ? "yes" : "no");
         report.Text("scroll", scroll ? "yes" : "no");
+        report.Text("list", list.Length > 0 ? list : "none");
         report.Number("nested", nested);
         report.Number("layers", scene.Renderer.LayerCount);
         report.Number("layer_bytes", scene.Renderer.LayerBytes);
