@@ -701,7 +701,13 @@ internal sealed partial class WindowFrames
                 Over(pressed, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
             }
 
-            // The focus states over the pressed one, the later the stronger (design §2.13).
+            // Open over the pressed state and under the focus states, so that a focus ring still shows over it (design §2.13).
+            if ((state & PseudoState.Open) != 0 && styles.Open is { } open)
+            {
+                Over(open, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+            }
+
+            // The focus states over the open one, the later the stronger (design §2.13).
             if (styles.Focus is { } focus)
             {
                 if ((state & PseudoState.FocusWithin) != 0 && focus.FocusWithin is { } within)

@@ -175,6 +175,12 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         if (!options.IsTransient)
         {
             tree.Focus.PushScope(root, options.IsModal);
+
+            // The anchor shows that its popup is open (design §7.3, "The anchor's Open").
+            if (tree.Nodes.IsAlive(anchor))
+            {
+                tree.SetPseudoState(anchor, PseudoState.Open, on: true);
+            }
         }
 
         if (options.IsModal)
@@ -278,6 +284,24 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         popup.Closing = true;
         tree.SetInert(popup.Root, inert: true);
         tree.Focus.PopScope(popup.Root);
+        if (!popup.Options.IsTransient && tree.Nodes.IsAlive(popup.Anchor) && !OpenAgainst(popup.Anchor))
+        {
+            tree.SetPseudoState(popup.Anchor, PseudoState.Open, on: false);
+        }
+    }
+
+    // Whether another popup that is not transient is open against a node and not leaving.
+    private bool OpenAgainst(NodeHandle anchor)
+    {
+        foreach (PopupHandle popup in _open)
+        {
+            if (popup.Anchor == anchor && !popup.Closing && !popup.Options.IsTransient)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

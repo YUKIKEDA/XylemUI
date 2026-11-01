@@ -726,6 +726,24 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Sets what the open state lays over a node's pressed look, or <see langword="null"/> for nothing; equal to the one there,
+    /// nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The open look, or <see langword="null"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetOpenStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        PseudoStyles states = StatesOf(node);
+        if (states.Open != style)
+        {
+            states.Open = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
     /// Adds a pointer handler to a node (design §7, "Pointer input"). The node then writes a hit region, so it is drawn again.
     /// </summary>
     /// <param name="node">The node.</param>

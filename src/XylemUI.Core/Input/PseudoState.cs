@@ -42,4 +42,10 @@ internal enum PseudoState : byte
     /// and it takes no focus.
     /// </summary>
     Disabled = 1 << 5,
+
+    /// <summary>
+    /// A popup is open against the node, a transient one (a tooltip) aside (design §7.3, "The anchor's Open"): set when the popup
+    /// opens, and cleared when it starts to close.
+    /// </summary>
+    Open = 1 << 6,
 }

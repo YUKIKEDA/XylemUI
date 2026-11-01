@@ -52,6 +52,12 @@ internal sealed class PseudoStyles
     public PaintStyle? Pressed { get; internal set; }
 
     /// <summary>
+    /// Gets or sets what the open state lays over the pressed one, under the focus states (design §2.13); <see langword="null"/> for
+    /// nothing.
+    /// </summary>
+    public PaintStyle? Open { get; internal set; }
+
+    /// <summary>
     /// Gets or sets the looks of the focus states, made the first time one is set: a node with a hovered look alone does not hold
     /// three more styles.
     /// </summary>
@@ -73,6 +79,7 @@ internal sealed class PseudoStyles
         {
             PseudoState.Hovered => Hovered is not null,
             PseudoState.Pressed => Pressed is not null,
+            PseudoState.Open => Open is not null,
             PseudoState.Focused => Focus?.Focused is not null,
             PseudoState.FocusVisible => Focus?.FocusVisible is not null,
             PseudoState.FocusWithin => Focus?.FocusWithin is not null,
