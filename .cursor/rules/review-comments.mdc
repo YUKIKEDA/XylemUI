@@ -13,6 +13,8 @@ A finding that is tried and not adopted is answered with the measurement or the 
 
 Before acting on a finding or declining it, check its claim against the code of that head: run the reproduction, or read the lines it names. A finding can be right about the reader's difficulty and wrong about the fact.
 
+A change a finding suggests is checked on each path it touches before it goes in. When it breaks one, the finding's aim goes in another way, and the reply says which path and why. On PR #611 the review suggested writing a list's visible rows only in the batch after the layout pass; that batch runs only in a frame with a layout pass, so a wheel inside the range would have left them stale. The frame now writes them after the layout stage also when no pass ran, and a test fails without it.
+
 A finding that asks to change a decision the owner made is not declined by citing the rule that records the decision. Reply with what the decision was and what the finding shows, and ask the owner (`.cursor/rules/consent.mdc`).
 
 A review the owner asks for is posted on the pull request, in the same turn, without waiting for an ask to post it. A review shown only in the conversation is not seen by anyone else, and the pull request does not show that it was reviewed (PR #146). A re-review after fixes is posted the same way.

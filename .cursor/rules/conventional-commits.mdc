@@ -18,7 +18,7 @@ optional footer
 - Subject: English, imperative, no trailing period. The type and scope are always English (`.cursor/rules/language.mdc`).
 - Breaking change: `type(scope)!: subject` and/or a `BREAKING CHANGE:` footer.
 - A closing keyword (`Closes #N`) never goes in a commit body; the squash message concatenates commit bodies (`.cursor/rules/github-closing.mdc`). Write `Refs #N` or `Part of #N`. From #71 to #85 the agent wrote `Closes #N` in commit bodies and in a squash message without reading this rule; the Issues closed were the PRs' own, so nothing closed early.
-- Every commit takes one of the types above, the ones in the middle of a row too. There is no `wip`: in L1a four `wip(layout)` commits left the owner to rewrite the squash message (a review found it).
+- Every commit takes one of the types above, the ones in the middle of a row too. There is no `wip`: in L1a four `wip(layout)` commits left the owner to rewrite the squash message (a review found it). A local commit that is not pushed yet takes a type too: in P02e a `wip` commit and a `perf-free` one had to be folded into one before the push (PR #611).
 
 ```text
 feat(reactive): flush effects in depth order at the outermost batch
