@@ -13,6 +13,11 @@ internal interface IVirtualHost
     float? FixedExtent { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the list's box scrolls along the horizontal axis; along the vertical one otherwise.
+    /// </summary>
+    bool Horizontal { get; }
+
+    /// <summary>
     /// Returns whether a row is laid out (in view or in the cache extent), with its index; a row kept outside them is not.
     /// </summary>
     /// <param name="row">A child of the list's box.</param>

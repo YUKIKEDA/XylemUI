@@ -524,18 +524,11 @@ internal static partial class LayoutEngine
     internal static (float Right, float Bottom) ScrollableOverflowOf(UiTree tree, NodeHandle handle)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
-
-        // A virtualized list's content is all its items, most of them not made: the list gives its end (design §3.4).
-        if (node.Layout.Style.Algorithm is LayoutAlgorithm.Virtual list && tree.VirtualHostOf(handle) is { } host)
-        {
-            float end = host.ScrollableEnd();
-            return list.Props.Horizontal ? (end, 0) : (0, end);
-        }
-
         NodeHandle child = node.FirstChild;
         if (child.IsNone)
         {
-            // A leaf whose content fits adds nothing past its box, which its parent counts.
+            // A leaf whose content fits adds nothing past its box, which its parent counts. A virtualized list's box with no row
+            // made yet wrote its list's end here when it was laid out.
             if (!node.Layout.ContentOverflows)
             {
                 return (0, 0);
@@ -566,6 +559,17 @@ internal static partial class LayoutEngine
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         NodeHandle child = node.FirstChild;
         LayoutStyle style = node.Layout.Style;
+
+        // A virtualized list's content is all its items, most of them not made: the list gives its end (design §3.4). Its layout
+        // writes the end to its memo, so the walk comes here only when a row's own layout marked the memo stale; the table of lists is
+        // empty in most trees. A check of each node's algorithm in the walk made the range written after a resize of `layout`'s
+        // scroll scene about 100 µs longer (10,101 nodes, docs/benchmarks/p02e.md).
+        if (tree.VirtualHostOf(handle) is { } host)
+        {
+            float end = host.ScrollableEnd();
+            return host.Horizontal ? (end, 0) : (0, end);
+        }
+
         Edges border = node.Layout.Border;
         bool scrolls = style.IsScrollContainer;
 

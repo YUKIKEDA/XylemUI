@@ -84,6 +84,9 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     /// <inheritdoc/>
     public float? FixedExtent => _options.FixedExtent;
 
+    /// <inheritdoc/>
+    public bool Horizontal => _horizontal;
+
     // The length a row not measured yet takes: the option's, the mean of the rows measured, or 0 when neither is known yet.
     private float Estimate => _options.EstimatedExtent ?? (_measuredRows > 0 ? (float)(_measuredTotal / _measuredRows) : 0);
 

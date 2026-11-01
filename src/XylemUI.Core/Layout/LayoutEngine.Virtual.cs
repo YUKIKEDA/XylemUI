@@ -107,6 +107,18 @@ internal static partial class LayoutEngine
             }
         }
 
+        // The box's scrollable overflow is its list's end, written where the range's walk reads it: the memo, and for a box with no
+        // row, which the walk takes for a leaf, the leaf's content edges.
+        float end = host.ScrollableEnd();
+        (float right, float bottom) = horizontal ? (end, 0f) : (0f, end);
+        ref OverflowMemo memo = ref tree.OverflowOf(handle);
+        memo.Right = right;
+        memo.Bottom = bottom;
+        memo.Known = true;
+        ref MeasureCache cache = ref tree.MeasuresOf(handle);
+        cache.ContentRight = right;
+        cache.ContentBottom = bottom;
+        tree.Nodes.GetRef(handle).Layout.ContentOverflows = true;
         return size;
     }
 
