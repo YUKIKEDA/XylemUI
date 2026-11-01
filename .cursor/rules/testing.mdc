@@ -48,6 +48,7 @@ The test layers are in `docs/design.ja.md` §12.1. This rule is how a test is wr
 
 - `tests/<Project>.Tests` mirrors `src/<Project>`. `Foo.cs` → `FooTests.cs`, in the same folder.
 - Method names: `{Target}_{Scenario}_{Expected}` in PascalCase, English.
+- A test in a namespace under `XylemUI` writes `Elements.Text(...)`. With `using static XylemUI.Elements` alone, the bare `Text(...)` names the namespace `XylemUI.Text`, and the build fails with CS0118. P02d's tests in `XylemUI.Text.Tests` and `XylemUI.Desktop.Tests` both did this (PR #552).
 - Each test owns its state. Tests run in parallel; a test that cannot (a real window, the UI thread) says why in its collection definition.
 
 ## Documentation
