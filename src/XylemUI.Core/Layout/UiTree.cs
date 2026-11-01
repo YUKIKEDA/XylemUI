@@ -736,9 +736,9 @@ internal sealed class UiTree
     {
         CheckStyle(style, nameof(style));
         PseudoStyles states = StatesOf(node);
-        if (states.Open != style)
+        if (states.Open?.Style != style)
         {
-            states.Open = style;
+            states.Open = style is { } look ? new OpenStyle(look) : null;
             Invalidation.Invalidate(this, node, ChangeKind.Color);
         }
     }

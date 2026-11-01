@@ -53,9 +53,9 @@ internal sealed class PseudoStyles
 
     /// <summary>
     /// Gets or sets what the open state lays over the pressed one, under the focus states (design §2.13); <see langword="null"/> for
-    /// nothing.
+    /// nothing. It lives apart, made when it is set, so that a node with a hovered look alone holds a reference, not a style.
     /// </summary>
-    public PaintStyle? Open { get; internal set; }
+    public OpenStyle? Open { get; internal set; }
 
     /// <summary>
     /// Gets or sets the looks of the focus states, made the first time one is set: a node with a hovered look alone does not hold
@@ -86,6 +86,18 @@ internal sealed class PseudoStyles
             PseudoState.Disabled => Disabled is not null,
             _ => false,
         };
+}
+
+/// <summary>
+/// The look of a node's open state (design §2.13, §7.3 "The anchor's Open"), apart from <see cref="PseudoStyles"/>.
+/// </summary>
+/// <param name="style">The look.</param>
+internal sealed class OpenStyle(PaintStyle style)
+{
+    /// <summary>
+    /// Gets the look.
+    /// </summary>
+    public PaintStyle Style { get; } = style;
 }
 
 /// <summary>
