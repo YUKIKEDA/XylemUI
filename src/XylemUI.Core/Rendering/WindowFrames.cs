@@ -191,6 +191,12 @@ internal sealed partial class WindowFrames
     {
         FrameTime = _time.GetElapsedTime(0);
 
+        // The popups asked for while their anchors were in no root open now, and are laid out in this frame (design §7.3).
+        if (_tree.Popups.HasWaiting)
+        {
+            _tree.Popups.OpenWaiting();
+        }
+
         // The animations first, at the frame's time: what they set is laid out and drawn in this frame (design §2.14).
         _tree.Animations.Tick(FrameTime);
 

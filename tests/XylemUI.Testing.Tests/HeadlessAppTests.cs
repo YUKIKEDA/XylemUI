@@ -358,6 +358,43 @@ public sealed class HeadlessAppTests
     }
 
     /// <summary>
+    /// Find and FindAll look in the open popups too, after the window's tree, back to front.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app of a box "p" with two open popups: the first holds a box "p", the second, opened from the first's, a box "q".
+    ///
+    /// Steps:
+    /// - Settle; find "q"; find all of "p".
+    ///
+    /// Expected:
+    /// - "q" is the second popup's box; all of "p" are the window's box and then the first popup's.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Find_LooksInTheOpenPopups_AfterTheWindow()
+    {
+        Element inWindow = default;
+        Element inFirst = default;
+        Element inSecond = default;
+        var open = Signal.Create(true);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            inWindow = Box()
+                .Width(10)
+                .Height(10)
+                .TestId("p")
+                .Popup(
+                    open,
+                    () => inFirst = Box().Width(10).Height(10).TestId("p").Popup(open, () => inSecond = Box().Width(10).Height(10).TestId("q"))
+                )
+        );
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(inSecond, app.Find("q"));
+        Assert.Equal([inWindow, inFirst], app.FindAll("p"));
+    }
+
+    /// <summary>
     /// A test ID set again replaces the old one, and a node that is removed takes its test ID with it.
     /// </summary>
     /// <remarks>

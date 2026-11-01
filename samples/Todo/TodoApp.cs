@@ -8,7 +8,8 @@ namespace Todo;
 /// <summary>
 /// The todo list of row V3c (design §2.7, "How it is checked"): a heading with the number of items and of the items left, a field
 /// and the button that add an item of the name typed (row P02b, design §4.9, "Todo"), the buttons that filter the list and reverse
-/// its order, and the items in a scroll view, each a button that marks it done and one that removes it.
+/// its order, and the items in a scroll view, each a button that marks it done and one that removes it after a dialog asks. The field
+/// has a context menu (row P02d, design §4.9, "The context menu").
 /// </summary>
 public static class TodoApp
 {
@@ -48,6 +49,26 @@ public static class TodoApp
     public static float ListHeight => 200;
 
     /// <summary>
+    /// Gets the background of the menu's panel and of the dialog.
+    /// </summary>
+    public static Color PanelBackground { get; } = Color.FromRgb(0x2B3245);
+
+    /// <summary>
+    /// Gets the background of the menu's item the pointer is over or the focus is on.
+    /// </summary>
+    public static Color ItemHighlight { get; } = Color.FromRgb(0x3F4A66);
+
+    /// <summary>
+    /// Gets the color of a menu item's text when it is not enabled.
+    /// </summary>
+    public static Color DisabledColor { get; } = Color.FromRgb(0x707888);
+
+    /// <summary>
+    /// Gets the backdrop of the dialog over the window.
+    /// </summary>
+    public static Color Backdrop { get; } = new(0, 0, 0, 0x80);
+
+    /// <summary>
     /// Makes the list with a state of its own.
     /// </summary>
     /// <returns>The list's column.</returns>
@@ -57,7 +78,7 @@ public static class TodoApp
     /// Makes the list over a state the caller holds: a column of the heading, the field with its button, the buttons, and the
     /// items in a scroll view. Enter in the field and the button both add; the button keeps the focus in the field. The column is a
     /// selection area (row P02b2, design §4.10): a drag selects the heading's and the items' text across them, and Control+C copies
-    /// it.
+    /// it. The dialog that asks before an item is removed sits in the column, and takes no room in it.
     /// </summary>
     /// <param name="model">The state.</param>
     /// <returns>The list's column.</returns>
@@ -70,7 +91,15 @@ public static class TodoApp
                         )
                         .Gap(16),
                     Row(
-                            TextField(model.Draft, new TextFieldOptions { Placeholder = Placeholder, OnSubmit = _ => model.Add() })
+                            TextField(
+                                    model.Draft,
+                                    new TextFieldOptions
+                                    {
+                                        Placeholder = Placeholder,
+                                        OnSubmit = _ => model.Add(),
+                                        ContextMenu = FieldMenu,
+                                    }
+                                )
                                 .Width(260)
                                 .Padding(8, 6)
                                 .Background(FieldBackground)
@@ -89,11 +118,46 @@ public static class TodoApp
                     ScrollView(
                             Column().Gap(4).For(model.Shown, item => item.Id, item => Row(ItemButton(model, item), RemoveButton(model, item)).Gap(4))
                         )
-                        .Height(ListHeight)
+                        .Height(ListHeight),
+                    Dialog(model.Confirming, () => ConfirmPanel(model), new DialogOptions { Backdrop = Backdrop })
                 )
                 .Gap(8)
                 .Padding(12)
         );
+
+    // The field's context menu: the four commands, the ones that cannot run grayed out.
+    private static Element FieldMenu(TextMenuCommands commands) =>
+        Column(
+                MenuEntry("Cut", commands.Cut),
+                MenuEntry("Copy", commands.Copy),
+                MenuEntry("Paste", commands.Paste),
+                MenuEntry("Select all", commands.SelectAll)
+            )
+            .Width(160)
+            .Padding(4)
+            .Background(PanelBackground)
+            .Foreground(TextColor)
+            .CornerRadius(6)
+            .Shadow(new BoxShadow(new Color(0, 0, 0, 0x60), new System.Numerics.Vector2(0, 4), 12));
+
+    private static Element MenuEntry(string label, MenuCommand command) =>
+        MenuItem(Text(label).Padding(8, 4), command.Run, command.Enabled)
+            .CornerRadius(4)
+            .Hovered(new PaintStyle { Background = ItemHighlight })
+            .Focused(new PaintStyle { Background = ItemHighlight })
+            .Disabled(new PaintStyle { Foreground = DisabledColor });
+
+    // The dialog's panel: the question, and the buttons that remove the item and keep it.
+    private static Element ConfirmPanel(TodoModel model) =>
+        Column(
+                Text((ref text) => text.Write($"Remove \"{model.Pending.Get()?.Name}\"?")),
+                Row(Styled(Text("Remove"), model.ConfirmRemove), Styled(Text("Cancel"), model.CancelRemove)).Gap(6)
+            )
+            .Gap(12)
+            .Padding(16)
+            .Background(PanelBackground)
+            .Foreground(TextColor)
+            .CornerRadius(8);
 
     // The button that marks an item done: its name after a mark, gray when done.
     private static Element ItemButton(TodoModel model, IReadOnlySignal<TodoItem> item) =>
@@ -109,7 +173,7 @@ public static class TodoApp
             )
             .Foreground(Computed.Create(() => item.Get().Done ? DoneColor : TextColor));
 
-    private static Element RemoveButton(TodoModel model, IReadOnlySignal<TodoItem> item) => Styled(Text("×"), () => model.Remove(item.Get().Id));
+    private static Element RemoveButton(TodoModel model, IReadOnlySignal<TodoItem> item) => Styled(Text("×"), () => model.AskToRemove(item.Get().Id));
 
     // A filter's button: chosen, it has a darker background.
     private static Element FilterButton(TodoModel model, TodoFilter filter, string label) =>

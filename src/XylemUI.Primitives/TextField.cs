@@ -91,6 +91,10 @@ public static partial class Primitive
         private bool _fromInputMethod;
         private bool _layoutOwed;
 
+        // The context menu, and the commands it was last opened with.
+        private ContextMenuHost? _menu;
+        private TextMenuCommands? _commands;
+
         private bool Focused => _tree.Nodes.IsAlive(_field) && (_tree.Nodes.GetRef(_field).Pseudo & PseudoState.Focused) != 0;
 
         private TextLeaf Leaf => _tree.Nodes.GetRef(_leaf).Text!;
@@ -141,6 +145,7 @@ public static partial class Primitive
                 .Overflow(XylemUI.Overflow.Hidden, XylemUI.Overflow.Hidden)
                 .ScrollState(_scroll)
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
+                .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .OnTextInput(EventPhase.Bubble, TextInput)
                 .On(PointerEventKind.Down, EventPhase.Bubble, PointerDown)
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
@@ -170,6 +175,11 @@ public static partial class Primitive
                         Changed(selectionOnly: true);
                     }
                 });
+            }
+
+            if (options.ContextMenu is { } menu)
+            {
+                _menu = new ContextMenuHost(_tree, _field, () => menu(_commands!));
             }
 
             _tree.SetTextInputClient(_field, this);
@@ -498,8 +508,8 @@ public static partial class Primitive
             }
 
             // A field of one line selects all when it takes the focus (Flutter's selectAllOnFocus on the desktop); a press then puts
-            // the caret where it is.
-            if (!options.Multiline)
+            // the caret where it is. The focus its own context menu gives back keeps the selection the menu's command works on.
+            if (!options.Multiline && _menu is not { IsOpen: true })
             {
                 _editor.SelectAll();
             }
@@ -563,10 +573,62 @@ public static partial class Primitive
                 return;
             }
 
+            if (_menu is not null && IsMenuKey(e))
+            {
+                e.StopPropagation();
+                OpenMenu(at: null);
+                return;
+            }
+
             if (Command(e.Key, e.Modifiers, e.Timestamp))
             {
                 e.StopPropagation();
             }
+        }
+
+        // The application key asks for the menu on its up.
+        private void KeyUp(in KeyEvent e)
+        {
+            if (e.TargetNode == _field && _composition is null && _menu is not null && IsMenuKey(e))
+            {
+                e.StopPropagation();
+                OpenMenu(at: null);
+            }
+        }
+
+        // Opens the context menu with the commands as they are now (design §4.9, "The context menu"): at the pointer, or at the
+        // bottom left of the caret's box (Microsoft's WM_CONTEXTMENU: a menu from the keyboard opens at the selection).
+        private void OpenMenu(Vector2? at)
+        {
+            TextSelection selection = _editor.Selection;
+            bool selected = !selection.IsCollapsed;
+            int length = _editor.Text.Length;
+            _commands = new TextMenuCommands(
+                new MenuCommand(!options.ReadOnly && !options.Password && selected, () => Cut(Now())),
+                new MenuCommand(!options.Password && selected, () => Copy()),
+                new MenuCommand(!options.ReadOnly && _tree.Clipboard?.HasText() == true, () => Paste(Now())),
+                new MenuCommand(length > 0 && (selection.Start > 0 || selection.End < length), SelectAll)
+            );
+            _menu!.OpenAt(at ?? CaretCorner());
+        }
+
+        private void SelectAll()
+        {
+            _editor.SelectAll();
+            Changed(selectionOnly: true);
+        }
+
+        // The bottom left of the caret's box, in the window's logical pixels; the field's when the text is not laid out.
+        private Vector2 CaretCorner()
+        {
+            Vector2 layer = WindowOrigin(_tree, _caret);
+            if (!LaidOut(out TextLeaf leaf))
+            {
+                return layer + new Vector2(0, _tree.Nodes.GetRef(_field).Layout.Rect.Height);
+            }
+
+            Rect caret = TextCaret.CaretGeometry(leaf, ToShown(_editor.Selection.Caret), Affinity.Downstream).Rect;
+            return layer + LeafOrigin() + new Vector2(caret.X, caret.Y + caret.Height);
         }
 
         // The keys of design §4.9's table. Returns whether the key was a command, which stops it.
@@ -830,6 +892,12 @@ public static partial class Primitive
 
         private void PointerDown(in PointerEvent e)
         {
+            if (e.Button == PointerButton.Right && _menu is not null)
+            {
+                RightDown(e.LocalPosition);
+                return;
+            }
+
             if (e.Button != PointerButton.Left)
             {
                 return;
@@ -886,7 +954,36 @@ public static partial class Primitive
             }
         }
 
-        private void PointerUp(in PointerEvent e) => _dragging &= e.Button != PointerButton.Left;
+        private void PointerUp(in PointerEvent e)
+        {
+            _dragging &= e.Button != PointerButton.Left;
+            if (e.Button == PointerButton.Right && _menu is not null)
+            {
+                e.StopPropagation();
+                OpenMenu(e.Position);
+            }
+        }
+
+        // The right button's down before the menu (design §4.9, "The context menu"): it commits a composition, and puts the caret at
+        // the point when the point is outside the selection or the field had no focus (Flutter selects the position then,
+        // text_selection.dart lines 2895 to 2916); inside the selection, it stays. The field takes the focus itself, as the window
+        // gives it on the left button only.
+        private void RightDown(Vector2 local)
+        {
+            CommitComposition();
+            bool focused = Focused;
+            if (!focused && !_tree.Focus.Focus(_field))
+            {
+                return;
+            }
+
+            int offset = OffsetAt(local);
+            TextSelection selection = _editor.Selection;
+            if (!focused || selection.IsCollapsed || offset < selection.Start || offset > selection.End)
+            {
+                _ = Move(offset, extend: false);
+            }
+        }
 
         // The unit a double or a triple click selects at a position: a word; all of a field of one line, or a paragraph of a field of
         // many (Flutter on Windows, text_selection.dart lines 3055 to 3071).
@@ -916,7 +1013,7 @@ public static partial class Primitive
                 return;
             }
 
-            Vector2 origin = WindowOrigin(_caret);
+            Vector2 origin = WindowOrigin(_tree, _caret);
             if (origin != _knownOrigin || _layoutOwed)
             {
                 bool told = !float.IsNaN(_knownOrigin.X) || _layoutOwed;
@@ -927,20 +1024,6 @@ public static partial class Primitive
                     platform.LayoutChanged();
                 }
             }
-        }
-
-        // A node's origin in the window's logical pixels: its layout box, moved by the scroll of the boxes it is in.
-        private Vector2 WindowOrigin(NodeHandle node)
-        {
-            Rect rect = _tree.Nodes.GetRef(node).Layout.Rect;
-            var point = new Vector2(rect.X, rect.Y);
-            for (NodeHandle parent = _tree.Nodes.GetRef(node).Parent; !parent.IsNone; parent = _tree.Nodes.GetRef(parent).Parent)
-            {
-                Rect box = _tree.Nodes.GetRef(parent).Layout.Rect;
-                point += new Vector2(box.X, box.Y) - _tree.ScrollOffsetOf(parent);
-            }
-
-            return point;
         }
 
         int ITextInputClient.Length => _editor.Text.Length;
@@ -980,7 +1063,7 @@ public static partial class Primitive
             int length = _editor.Text.Length;
             Rect first = TextCaret.CaretGeometry(leaf, ToShown(Math.Clamp(start, 0, length)), Affinity.Downstream).Rect;
             Rect last = TextCaret.CaretGeometry(leaf, ToShown(Math.Clamp(end, 0, length)), Affinity.Upstream).Rect;
-            Vector2 origin = WindowOrigin(_caret) + LeafOrigin();
+            Vector2 origin = WindowOrigin(_tree, _caret) + LeafOrigin();
             float left = Math.Min(first.X, last.X);
             float top = Math.Min(first.Y, last.Y);
             float right = Math.Max(first.X + first.Width, last.X + last.Width);
@@ -998,7 +1081,7 @@ public static partial class Primitive
             }
 
             // A pointer's local position starts at the field's border box.
-            position = OffsetAt(point - WindowOrigin(_field));
+            position = OffsetAt(point - WindowOrigin(_tree, _field));
             return true;
         }
 

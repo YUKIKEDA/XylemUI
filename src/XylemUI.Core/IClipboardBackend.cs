@@ -18,4 +18,11 @@ public interface IClipboardBackend
     /// <param name="text">The text.</param>
     /// <returns>Whether the text is on the clipboard: <see langword="false"/> when the clipboard cannot be opened.</returns>
     bool SetText(string text);
+
+    /// <summary>
+    /// Returns whether the clipboard holds text, without reading it: a context menu enables its paste with it when it opens (design
+    /// §4.9, "The context menu").
+    /// </summary>
+    /// <returns>Whether the clipboard holds text.</returns>
+    bool HasText();
 }

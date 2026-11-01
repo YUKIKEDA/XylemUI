@@ -309,7 +309,18 @@ internal sealed class FocusManager
     /// </summary>
     /// <param name="backward">Whether to move to the node before (Shift+Tab).</param>
     /// <returns>Whether a node can take the focus; with none, nothing changes.</returns>
-    public bool MoveInTabOrder(bool backward)
+    public bool MoveInTabOrder(bool backward) => Move(backward, Tree.Nodes.IsAlive(Focused) && CanFocus(Focused) ? Focused : default);
+
+    /// <summary>
+    /// Moves the focus to the first or the last node in the order of Tab in the top scope: a menu's Home and End, and the item a
+    /// menu focuses when it opens (design §13.1).
+    /// </summary>
+    /// <param name="last">Whether to move to the last node.</param>
+    /// <returns>Whether a node can take the focus; with none, nothing changes.</returns>
+    public bool MoveToTabEnd(bool last) => Move(last, current: default);
+
+    // Moves in the order of Tab from a node, or to an end from none.
+    private bool Move(bool backward, NodeHandle current)
     {
         // Round the top scope only (design §7.2).
         NodeHandle root = _scopes.Count > 0 ? _scopes[^1].Owner : Tree.Root;
@@ -318,7 +329,6 @@ internal sealed class FocusManager
             return false;
         }
 
-        NodeHandle current = Tree.Nodes.IsAlive(Focused) && CanFocus(Focused) ? Focused : default;
         int currentIndex = current.IsNone ? 0 : Tree.Nodes.GetRef(current).Input!.TabIndex;
         bool passed = false;
         NodeHandle best = default;

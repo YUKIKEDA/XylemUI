@@ -56,6 +56,13 @@ internal sealed unsafe class Win32Clipboard(Win32Window window) : IClipboardBack
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// It asks with <c>IsClipboardFormatAvailable</c>, which needs no open clipboard; Microsoft's documentation gives it for a menu
+    /// that enables its paste.
+    /// </remarks>
+    public bool HasText() => IsClipboardFormatAvailable(UnicodeText) != BOOL.FALSE;
+
+    /// <inheritdoc/>
     public bool SetText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);

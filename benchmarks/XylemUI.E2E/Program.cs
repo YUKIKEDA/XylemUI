@@ -27,6 +27,7 @@
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
 //   hit-region                 writing a hit region, and testing a point against 1,000 that miss it, plain and in a clip (row R4e)
 //   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
+//   menu                       a 10-item menu over the todo sample: the frame that opens it, and its key and hover frames (row P02d)
 //   touchpad                   a frame's poll of a hidden window's DirectManipulation viewport with no contact (row I1c)
 //   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
 //   rich-text                  the layout, draw, restyle, and link hover of text leaves with ranges, next to plain ones (row T12)
@@ -84,6 +85,7 @@ return scenario switch
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
+    "menu" => MenuCost.Run(),
     "animations" => AnimationCost.Run(),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),

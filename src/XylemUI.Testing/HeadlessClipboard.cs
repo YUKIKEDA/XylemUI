@@ -15,6 +15,12 @@ public sealed class HeadlessClipboard : IClipboardBackend
     public string? GetText() => Text;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// An empty text is no text, as a paste of it changes nothing.
+    /// </remarks>
+    public bool HasText() => !string.IsNullOrEmpty(Text);
+
+    /// <inheritdoc/>
     public bool SetText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);

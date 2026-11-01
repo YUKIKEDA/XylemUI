@@ -232,7 +232,8 @@ public sealed class HeadlessApp : IAsyncDisposable
 
     /// <summary>
     /// Finds the nodes whose test ID is <paramref name="key"/>, or, when no node has that ID, the text leaves whose text is
-    /// <paramref name="key"/>, in preorder, the order of the a11y tree (design §12.5).
+    /// <paramref name="key"/>, in preorder, the order of the a11y tree (design §12.5): the window's tree first, then each open popup's,
+    /// back to front.
     /// </summary>
     /// <param name="key">The test ID or the text.</param>
     /// <returns>The nodes; empty when none matches.</returns>
@@ -243,15 +244,26 @@ public sealed class HeadlessApp : IAsyncDisposable
         var found = new List<Element>();
         if (Tree.TestIdCount > 0)
         {
-            Collect(_rootNode, key, byText: false, found);
+            CollectAll(key, byText: false, found);
         }
 
         if (found.Count == 0)
         {
-            Collect(_rootNode, key, byText: true, found);
+            CollectAll(key, byText: true, found);
         }
 
         return found;
+    }
+
+    // The window's tree, then each open popup's, back to front (Popups).
+    private void CollectAll(string key, bool byText, List<Element> found)
+    {
+        Collect(_rootNode, key, byText, found);
+        IReadOnlyList<PopupHandle> open = Tree.Popups.Opened;
+        for (int i = 0; i < open.Count; i++)
+        {
+            Collect(open[i].Root, key, byText, found);
+        }
     }
 
     /// <summary>

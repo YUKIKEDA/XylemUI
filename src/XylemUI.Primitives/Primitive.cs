@@ -1,3 +1,4 @@
+using System.Numerics;
 using static XylemUI.Elements;
 using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
@@ -44,6 +45,20 @@ public static partial class Primitive
         ArgumentNullException.ThrowIfNull(label);
         ArgumentNullException.ThrowIfNull(onClick);
         return Button(Elements.Text(label), onClick);
+    }
+
+    // A node's origin in the window's logical pixels: its layout box, moved by the scroll of the boxes it is in.
+    private static Vector2 WindowOrigin(UiTree tree, NodeHandle node)
+    {
+        Rect rect = tree.Nodes.GetRef(node).Layout.Rect;
+        var point = new Vector2(rect.X, rect.Y);
+        for (NodeHandle parent = tree.Nodes.GetRef(node).Parent; !parent.IsNone; parent = tree.Nodes.GetRef(parent).Parent)
+        {
+            Rect box = tree.Nodes.GetRef(parent).Layout.Rect;
+            point += new Vector2(box.X, box.Y) - tree.ScrollOffsetOf(parent);
+        }
+
+        return point;
     }
 
     // The keys of one button, as Avalonia's Button takes them (Button.cs lines 307 to 344 and 465 to 469): its own bubble handlers,
