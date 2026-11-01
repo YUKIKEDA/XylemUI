@@ -365,6 +365,100 @@ public sealed class MenuTests
     }
 
     /// <summary>
+    /// A context menu asked for again while it is open closes and opens once more at the new place.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column: a 100 px spacer, then a focusable 300 × 50 target at (0, 100) with a context menu of one item.
+    ///
+    /// Steps:
+    /// - Click the right button at (50, 110) and settle; with the menu open and its item focused, press Shift+F10 (the key goes on
+    ///   from the menu to the target) and settle.
+    ///
+    /// Expected:
+    /// - One popup each time; the item's center at (150, 125), then at (100, 165), below the target.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ContextMenu_AskedForWhileOpen_OpensAgainAtTheNewPlace()
+    {
+        Element item = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                Box().Height(100),
+                Box().Width(300).Height(50).Focusable().ContextMenu(() => item = MenuItem(Box().Width(200).Height(30), () => { }))
+            )
+        );
+        var seen = new List<(int Popups, (int X, int Y) Center)>();
+
+        app.Pointer.Click(50, 110, PointerButton.Right);
+        _ = app.PumpAndSettle();
+        seen.Add((app.Popups.Count, app.CenterOf(item)));
+        _ = app.Keyboard.Press(Key.F10, KeyModifiers.Shift);
+        _ = app.PumpAndSettle();
+        seen.Add((app.Popups.Count, app.CenterOf(item)));
+
+        Assert.Equal([(1, (150, 125)), (1, (100, 165))], seen);
+    }
+
+    /// <summary>
+    /// The keys that open a submenu open already focus its own first item: a submenu open from it closes first.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An open menu at (0, 30) of a submenu item; its submenu, to the right at (200, 30), holds a submenu item over an item, and
+    ///   that one's submenu holds one item.
+    ///
+    /// Steps:
+    /// - Move the pointer over the first submenu item (100, 45), then over the second (300, 45), then back over the first; press
+    ///   Enter; settle after each.
+    ///
+    /// Expected:
+    /// - Before Enter: three popups, the first submenu item focused. After Enter: two popups, the second submenu item focused (the
+    ///   first item of the first submenu).
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task SubmenuOpen_KeysFocusItsOwnFirstItem_PastASubmenuOfIt()
+    {
+        var open = Signal.Create(true);
+        Element first = default;
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Box()
+                .Width(100)
+                .Height(30)
+                .Menu(
+                    open,
+                    () =>
+                        first = SubmenuItem(
+                            Box().Width(200).Height(30),
+                            () =>
+                                Column(
+                                    second = SubmenuItem(Box().Width(200).Height(30), () => MenuItem(Box().Width(200).Height(30), () => { })),
+                                    MenuItem(Box().Width(200).Height(30), () => { })
+                                )
+                        )
+                )
+        );
+        _ = app.PumpAndSettle();
+
+        foreach ((int x, int y) in new[] { (100, 45), (300, 45), (100, 45) })
+        {
+            app.Pointer.Move(x, y);
+            _ = app.PumpAndSettle();
+        }
+
+        (int Popups, bool FirstFocused) before = (app.Popups.Count, app.Tree.Focus.Focused == first.Node);
+        _ = app.Keyboard.Press(Key.Enter);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal((3, true), before);
+        Assert.Equal(2, app.Popups.Count);
+        Assert.Equal(second.Node, app.Tree.Focus.Focused);
+    }
+
+    /// <summary>
     /// While a menu is open, a hover that moves between its items and the keys that move the focus between them neither lay out the
     /// window's tree nor build its display list (design §7.3, "Checks").
     /// </summary>

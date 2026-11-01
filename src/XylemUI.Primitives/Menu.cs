@@ -275,10 +275,12 @@ public static partial class Primitive
         // Opens the submenu; the keys also focus its first item, there or in a submenu open already.
         public void Open(bool focusFirst)
         {
-            if (_block.Popup is { Closing: false })
+            if (_block.Popup is { Closing: false } popup)
             {
+                // A submenu open from this one closes first, so that its scope is not the top one the focus moves in.
                 if (focusFirst)
                 {
+                    CloseSubmenus(_tree, popup, except: default);
                     _ = _tree.Focus.MoveToTabEnd(last: false);
                 }
 

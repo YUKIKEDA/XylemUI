@@ -46,6 +46,52 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The clipboard holds text after text is put on it, and none after it is emptied (row P02d, design §4.9, "The clipboard").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window's clipboard; the text the clipboard holds is kept and put back after the test.
+    ///
+    /// Steps:
+    /// - Set "text"; ask whether it holds text. Empty the clipboard with <c>EmptyClipboard</c>; ask again.
+    ///
+    /// Expected:
+    /// - The set succeeds; true, then false.
+    /// </remarks>
+    [Fact]
+    public void Clipboard_HasText_AfterASetAndNotAfterEmptying() =>
+        ui.Invoke(() =>
+        {
+            using var window = new Win32Window("clipboard", 200, 100);
+            var clipboard = new Win32Clipboard(window);
+            string? before = clipboard.GetText();
+            try
+            {
+                Assert.True(clipboard.SetText("text"));
+                bool afterSet = clipboard.HasText();
+                Assert.True(OpenClipboard(window.Hwnd) != BOOL.FALSE);
+                try
+                {
+                    Assert.True(EmptyClipboard() != BOOL.FALSE);
+                }
+                finally
+                {
+                    _ = CloseClipboard();
+                }
+
+                Assert.True(afterSet);
+                Assert.False(clipboard.HasText());
+            }
+            finally
+            {
+                if (before is not null)
+                {
+                    _ = clipboard.SetText(before);
+                }
+            }
+        });
+
+    /// <summary>
     /// A new window reads the caret's blink and width and the selection's colors from Windows.
     /// </summary>
     /// <remarks>
