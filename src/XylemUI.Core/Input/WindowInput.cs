@@ -81,6 +81,7 @@ internal sealed partial class WindowInput
         _platform = platform;
         frames.Input = this;
         tree.Popups.ModalOpened = ReleaseCapturesBehind;
+        tree.HoldsPointer = HoldsPointerIn;
     }
 
     /// <summary>
@@ -654,6 +655,21 @@ internal sealed partial class WindowInput
         {
             UpdateHover(pointer, pointer.Last);
         }
+    }
+
+    // Whether a pointer's capture or the drag's source is the node or in its subtree: a virtualized list keeps such a row outside its
+    // range (design §3.4, "The rows that leave the range").
+    private bool HoldsPointerIn(NodeHandle node)
+    {
+        foreach (PointerState pointer in _pointers)
+        {
+            if (!pointer.Capture.IsNone && _tree.Nodes.IsAlive(pointer.Capture) && _tree.IsInSubtree(pointer.Capture, node))
+            {
+                return true;
+            }
+        }
+
+        return _dragSession is { } drag && _tree.Nodes.IsAlive(drag.Source) && _tree.IsInSubtree(drag.Source, node);
     }
 
     // The node a routed event starts from: the capture's while there is one, the node hit otherwise.

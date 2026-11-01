@@ -36,6 +36,14 @@ internal abstract record LayoutAlgorithm
         /// </summary>
         public static Flex Column { get; } = new(new FlexProps { Direction = FlexDirection.Column });
     }
+
+    /// <summary>
+    /// Places the rows a virtualized list made along the axis that scrolls, each at the position its index has among all the items
+    /// (design §3.4, "The shape of P02e"): the rows fill the content box across, take their content's length along, and are apart
+    /// by the gap.
+    /// </summary>
+    /// <param name="Props">The list's axis and gap.</param>
+    public sealed record Virtual(VirtualProps Props) : LayoutAlgorithm;
 }
 
 /// <summary>
@@ -93,4 +101,20 @@ internal readonly record struct BlockProps
     /// Gets where the children, taken as one, go along the height.
     /// </summary>
     public AlignContent AlignContent { get; init; }
+}
+
+/// <summary>
+/// The properties of a virtualized list's layout (design §3.4, "The shape of P02e").
+/// </summary>
+internal readonly record struct VirtualProps
+{
+    /// <summary>
+    /// Gets a value indicating whether the rows go along the horizontal axis; along the vertical one otherwise.
+    /// </summary>
+    public bool Horizontal { get; init; }
+
+    /// <summary>
+    /// Gets the gap between two rows.
+    /// </summary>
+    public LengthPercentage Gap { get; init; }
 }

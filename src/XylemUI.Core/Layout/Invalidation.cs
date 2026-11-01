@@ -148,6 +148,28 @@ internal static class Invalidation
         MarkPath(tree, origin, flags);
     }
 
+    /// <summary>
+    /// Marks a virtualized list's box after it made or took out rows (design §2.4.1, §3.4): its layout is dirty up to the nearest
+    /// boundary, as <see cref="MarkDirty"/> marks it, and a request for the box itself takes the reason
+    /// <see cref="LayoutReason.MaterializationChanged"/>, laid out from its last constraint. The rows are not requested one by one:
+    /// the box's layout reaches them.
+    /// </summary>
+    /// <param name="tree">The tree that holds the box.</param>
+    /// <param name="box">The live box.</param>
+    internal static void MarkMaterialized(UiTree tree, NodeHandle box)
+    {
+        MarkDirty(tree, box, DirtyFlags.Layout);
+        Span<LayoutRequest> roots = CollectionsMarshal.AsSpan(tree.LayoutRoots);
+        for (int i = 0; i < roots.Length; i++)
+        {
+            ref LayoutRequest request = ref roots[i];
+            if (request.Node == box && request.Reason < LayoutReason.MaterializationChanged)
+            {
+                request.Reason = LayoutReason.MaterializationChanged;
+            }
+        }
+    }
+
     // Sets the node's own flags, and records it in the paint updates unless a stage other than layout was pending already: it
     // waits there once until the paint stage takes the list and the flags, so the list holds at most one entry a node, however
     // often the node changes (PR #112's review).

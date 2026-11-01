@@ -222,7 +222,7 @@ internal static partial class LayoutEngine
             return input;
         }
 
-        // IntrinsicSizeChanged: the parent is clean, so the input it gave last time still holds.
+        // IntrinsicSizeChanged and MaterializationChanged: the parent is clean, so the input it gave last time still holds.
         ref UiNode node = ref tree.Nodes.GetRef(request.Node);
         if (!node.Layout.WasLaidOut)
         {
@@ -431,7 +431,12 @@ internal static partial class LayoutEngine
         float baseline = float.NaN;
         NodeHandle baselineChild = default;
         Size size;
-        if (firstChild.IsNone || text is not null)
+        if (style.Algorithm is LayoutAlgorithm.Virtual list && text is null)
+        {
+            // A virtualized list's box, with its rows or none made yet (design §3.4).
+            size = ComputeVirtual(tree, handle, in style, list.Props, firstChild, in input, commit);
+        }
+        else if (firstChild.IsNone || text is not null)
         {
             // A text node's children are its inline objects, which its lines place (design §4.8).
             size = ComputeLeaf(tree, handle, in style, measure, text, in input, commit, out baseline);
@@ -519,6 +524,14 @@ internal static partial class LayoutEngine
     internal static (float Right, float Bottom) ScrollableOverflowOf(UiTree tree, NodeHandle handle)
     {
         ref UiNode node = ref tree.Nodes.GetRef(handle);
+
+        // A virtualized list's content is all its items, most of them not made: the list gives its end (design §3.4).
+        if (node.Layout.Style.Algorithm is LayoutAlgorithm.Virtual list && tree.VirtualHostOf(handle) is { } host)
+        {
+            float end = host.ScrollableEnd();
+            return list.Props.Horizontal ? (end, 0) : (0, end);
+        }
+
         NodeHandle child = node.FirstChild;
         if (child.IsNone)
         {

@@ -149,6 +149,67 @@ public sealed class HeadlessPixelTests
     }
 
     /// <summary>
+    /// A virtualized list draws the rows in its viewport alone, and a row scrolled into view shows where the viewport shows it; the
+    /// rows of the cache extent are made and laid out, and not drawn (design §3.4).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 200 x 200 on WARP: a box 100 high that scrolls vertically, holding a list of 1,000 rows 50 high, the even
+    ///   red and the odd blue, each with a draw function that records its index.
+    ///
+    /// Steps:
+    /// - Read the pixels at (20, 25) and (20, 75) and the rows drawn. Scroll to (0, 5,050); pump; read (20, 25) and the rows drawn
+    ///   since.
+    ///
+    /// Expected:
+    /// - Red, then blue, with rows 0 and 1 drawn of the 8 made (the cache's 5 after them included); after the scroll, blue at
+    ///   (20, 25) (row 101), with rows 101 and 102 drawn.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task VirtualList_DrawsTheRowsInView_AndAScrolledRowShows()
+    {
+        Color even = Color.FromRgb(0xCC3333);
+        Color odd = Color.FromRgb(0x3366CC);
+        var state = new VirtualListState();
+        var drawn = new SortedSet<int>();
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Column(
+                    Box()
+                        .Height(100)
+                        .Overflow(Overflow.Visible, Overflow.Scroll)
+                        .VirtualFor(
+                            items,
+                            static i => i,
+                            item =>
+                            {
+                                int i = item.Get();
+                                return Box().Height(50).Background(new Paint(i % 2 == 0 ? even : odd)).Draw((_, _) => drawn.Add(i));
+                            },
+                            state
+                        )
+                ),
+            Options(200, 200)
+        );
+
+        (Color, Color, string) top = (Pixel(app, (20, 25)), Pixel(app, (20, 75)), string.Join(',', drawn));
+        int made = app.Tree.Nodes.GetRef(app.Tree.Nodes.GetRef(app.Tree.Nodes.GetRef(app.RootNode).FirstChild).FirstChild).FirstChild
+            is { IsNone: false } first
+            ? CountSiblings(app, first)
+            : 0;
+        drawn.Clear();
+        state.Scroll.ScrollTo(new Vector2(0, 5_050));
+        _ = app.PumpAndSettle();
+        (Color, string) scrolled = (Pixel(app, (20, 25)), string.Join(',', drawn));
+
+        Assert.Equal((even, odd, "0,1"), top);
+        Assert.Equal(8, made);
+        Assert.Equal((odd, "101,102"), scrolled);
+    }
+
+    /// <summary>
     /// A selection across two text leaves of an area draws its background behind the selected glyphs of each, line by line, and
     /// the selected glyphs in its text color; the frame matches its golden.
     /// </summary>
@@ -671,6 +732,17 @@ public sealed class HeadlessPixelTests
         };
 
     // The pixel of the frame drawn last at a point in physical pixels (the scale is 1).
+    private static int CountSiblings(HeadlessApp app, NodeHandle first)
+    {
+        int count = 0;
+        for (NodeHandle node = first; !node.IsNone; node = app.Tree.Nodes.GetRef(node).NextSibling)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     private static Color Pixel(HeadlessApp app, (int X, int Y) point)
     {
         Color[] frame = app.Capture(out int width, out _);

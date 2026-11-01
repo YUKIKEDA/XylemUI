@@ -22,6 +22,10 @@ internal sealed partial class WindowFrames
     // pixels: farther than a window shows.
     private const float UnclippedReach = 1_000_000;
 
+    // The rounds of the materialization stage a frame runs after its first layout pass at most: each makes at least twice as many
+    // more rows as the one before, so 32 rounds reach more items than a list can hold.
+    private const int MaxMaterializationRounds = 32;
+
     private readonly UiTree _tree;
     private readonly NodeHandle _root;
     private readonly IRenderTarget _target;
@@ -203,10 +207,21 @@ internal sealed partial class WindowFrames
         // Before the layout pass: a touchpad's pan scrolls with this frame's time, and its changes are this frame's (row I1c). The
         // next frame it needs is asked for once a resize's frame no longer holds the requests back.
         bool gestures = Input?.UpdateGestures(FrameTime) == true;
+
+        // The materialization stage, after the changes of this frame's positions and before the layout pass: each virtualized list
+        // makes the rows its range needs and takes out the others (design §2.10, §3.4).
+        _ = _tree.Materialize(0);
         bool layout = _tree.LayoutRoots.Count > 0;
         bool popups = _tree.Popups.Count > 0;
         bool mainLayout = layout && (!popups || NoteLayoutRoots());
         LayoutEngine.RunLayoutPass(_tree);
+
+        // Rows shorter than their estimate may leave a list's range unfilled: the list makes more and lays its box out again, in
+        // this frame (design §3.4, "The frame's stages"). Each round makes twice as many more rows as the one before.
+        for (int round = 1; round <= MaxMaterializationRounds && _tree.Materialize(round); round++)
+        {
+            LayoutEngine.RunLayoutPass(_tree);
+        }
 
         // Cleared after the pass: the requests a pass puts back after an exception, or leaves at its cycle limit, ask for no frame
         // of their own, and are tried by the next frame something else asks for (design §2.4.1); a leaf that keeps throwing would
@@ -638,9 +653,16 @@ internal sealed partial class WindowFrames
             pushed += PushChildScopes(handle, box);
         }
 
+        // A virtualized list draws the rows in its viewport alone: the rows of the cache extent and the rows it keeps are laid out or
+        // held, and neither drawn nor hit (design §3.4).
+        IVirtualHost? list = !child.IsNone && container.Layout.Style.Algorithm is LayoutAlgorithm.Virtual ? _tree.VirtualHostOf(handle) : null;
         while (!child.IsNone)
         {
-            DrawNode(child, box.X, box.Y, text, hitsOnly);
+            if (list is null || list.Draws(child))
+            {
+                DrawNode(child, box.X, box.Y, text, hitsOnly);
+            }
+
             child = _tree.Nodes.GetRef(child).NextSibling;
         }
 

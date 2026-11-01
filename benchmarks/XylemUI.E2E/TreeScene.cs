@@ -12,7 +12,10 @@ namespace XylemUI.E2E;
 // them, each with a hovered background, and a frame moves the pointer from one box to another through the window's input instead:
 // the frame is drawn for the hover's change of color alone, with no layout. With scroll (row V2), the boxes are in a scroll container
 // as large as the window, with a box far below that gives it room to scroll, and stay where the first frame put them; a frame
-// changes the scroll position, which draws the boxes moved inside a clip with no layout (design §3.4.1).
+// changes the scroll position, which draws the boxes moved inside a clip with no layout (design §3.4.1). With a list (row P02e),
+// the tree holds, in place of the boxes, a box as large as the window that scrolls vertically over 10,000 rows 20 high, made with
+// VirtualFor ("virtual") or with For in a column ("for"); a frame scrolls it 7 more pixels, so that the virtualized list makes a row
+// and takes one out about every third frame. Its layout time is the materialization stage's rounds with their layout passes.
 internal sealed class TreeScene : IDisposable
 {
     private readonly Scene _scene;
@@ -25,8 +28,10 @@ internal sealed class TreeScene : IDisposable
     private readonly TimingTarget _target;
     private readonly WindowInput? _input;
     private readonly ScrollState? _scroll;
+    private readonly ScopeHandle _listScope;
+    private readonly bool _list;
 
-    public TreeScene(Scene scene, Font font, bool noText, bool hover = false, bool scroll = false)
+    public TreeScene(Scene scene, Font font, bool noText, bool hover = false, bool scroll = false, string list = "")
     {
         _scene = scene;
         _text = new TextContext(new OneFont(font));
@@ -34,6 +39,19 @@ internal sealed class TreeScene : IDisposable
         _root = _tree.CreateNode(new LayoutStyle());
         NodeHandle marker = Absolute(_root, 0, 0, 40, 40);
         _tree.SetBackground(marker, new Paint(Scene.Marker));
+        if (list.Length > 0)
+        {
+            _list = true;
+            float s = scene.Window.ScaleFactor;
+            (_scroll, _listScope) = MountList(list, scene.Renderer.Width / s, scene.Renderer.Height / s);
+            _hidden = _tree.CreateNode(new LayoutStyle { Hidden = true });
+            _tree.AppendChild(_root, _hidden);
+            _target = new TimingTarget(scene);
+            _frames = new WindowFrames(_tree, _root, _target, scene.Atlas, new NoScheduler(), scene.Clear, scene.Renderer.TextRendering);
+            _frames.Resize(new Size(scene.Renderer.Width / s, scene.Renderer.Height / s), s);
+            return;
+        }
+
         NodeHandle parent = _root;
         if (scroll)
         {
@@ -101,6 +119,23 @@ internal sealed class TreeScene : IDisposable
     // hover after the first frame, moves the pointer over the first box or the second instead, which changes the hover.
     public double Update(int frame)
     {
+        if (_list && _scroll is not null)
+        {
+            float range = Math.Max(1, _scroll.MaxOffsetValue.Y);
+            _ = _scroll.SetOffset(new System.Numerics.Vector2(0, (frame * 7) % range));
+            long listStart = Stopwatch.GetTimestamp();
+            for (int round = 0; round <= 32 && _tree.Materialize(round); round++)
+            {
+                LayoutEngine.RunLayoutPass(_tree);
+            }
+
+            LayoutEngine.RunLayoutPass(_tree);
+            _tree.PublishScrollRanges();
+            double ms = Stopwatch.GetElapsedTime(listStart).TotalMilliseconds;
+            _tree.SetBackground(_hidden, new Paint((frame & 1) == 0 ? Color.FromRgb(0x000000) : Color.FromRgb(0xFFFFFF)));
+            return ms;
+        }
+
         if (_input is not null && frame > 0)
         {
             float pixels = _scene.Window.ScaleFactor;
@@ -149,7 +184,15 @@ internal sealed class TreeScene : IDisposable
 
     public void RunFrame() => _frames.RunFrame();
 
-    public void Dispose() => _text.Dispose();
+    public void Dispose()
+    {
+        if (_list)
+        {
+            Scope.Dispose(_listScope);
+        }
+
+        _text.Dispose();
+    }
 
     private static LayoutStyle Place(float x, float y, float width, float height) =>
         new()
@@ -164,6 +207,40 @@ internal sealed class TreeScene : IDisposable
             Width = float.IsNaN(width) ? Length.Auto : Length.Px(width),
             Height = float.IsNaN(height) ? Length.Auto : Length.Px(height),
         };
+
+    // The box that scrolls over 10,000 rows, in a scope of its own, put under the root: a virtualized list, or For in a column.
+    private (ScrollState Scroll, ScopeHandle Scope) MountList(string list, float width, float height)
+    {
+        IReadOnlySignal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 10_000)]);
+        var state = new VirtualListState();
+        Element box = default;
+        UiTree.Current = _tree;
+        ScopeHandle scope;
+        try
+        {
+            scope = Scope.Create(() =>
+            {
+                Element Row(IReadOnlySignal<int> item) =>
+                    Elements.Box().Height(20).Background(new Paint((item.Get() & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66)));
+                box =
+                    list == "virtual"
+                        ? Elements
+                            .Box()
+                            .Width(width)
+                            .Height(height)
+                            .Overflow(Overflow.Visible, Overflow.Scroll)
+                            .VirtualFor(items, static i => i, Row, state)
+                        : Elements.ScrollView(Elements.Column().For(items, static i => i, Row), state.Scroll).Width(width).Height(height);
+                _tree.AppendChild(_root, box.Node);
+            });
+        }
+        finally
+        {
+            UiTree.Current = null;
+        }
+
+        return (state.Scroll, scope);
+    }
 
     private NodeHandle Absolute(NodeHandle parent, float x, float y, float width, float height)
     {

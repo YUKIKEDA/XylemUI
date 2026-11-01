@@ -103,6 +103,9 @@ internal sealed class UiTree
     // The signals of IsFocused, made the first time a node's is asked for (design §7, "Element.Focus() and IsFocused()"): few nodes
     // read theirs, so they are kept apart from UiNode, as the scroll states.
     private readonly Dictionary<NodeHandle, Signal<bool>> _focusSignals = [];
+    private readonly Dictionary<NodeHandle, IVirtualHost> _virtualHosts = [];
+    private readonly Dictionary<NodeHandle, bool> _keepAlive = [];
+    private readonly List<NodeHandle> _hostsToRun = [];
 
     // Why the access keys are underlined: Alt went down, or menus opened from the keys are open.
     private bool _altCues;
@@ -238,12 +241,23 @@ internal sealed class UiTree
         ReactiveRuntime.EnterBatch();
         try
         {
+            // A virtualized list writes the position its anchor gives first, and notes the one its range kept (design §3.4).
+            foreach (KeyValuePair<NodeHandle, IVirtualHost> pair in _virtualHosts)
+            {
+                pair.Value.AfterLayout();
+            }
+
             foreach (KeyValuePair<NodeHandle, ScrollState> pair in _scrollStates)
             {
                 if (Nodes.IsAlive(pair.Key) && Nodes.GetRef(pair.Key).Layout.WasLaidOut)
                 {
                     PublishScrollRange(pair.Key, pair.Value);
                 }
+            }
+
+            foreach (KeyValuePair<NodeHandle, IVirtualHost> pair in _virtualHosts)
+            {
+                pair.Value.NotePosition();
             }
         }
         finally
@@ -400,6 +414,95 @@ internal sealed class UiTree
     /// Gets the containers that a <c>For</c> fills: each takes one, and no other child.
     /// </summary>
     internal HashSet<NodeHandle> ForContainers { get; } = [];
+
+    /// <summary>
+    /// Gets or sets what answers whether the pointer's capture or a drag's source is a node or one of its descendants: the window's
+    /// input, which a virtualized list asks before it takes a row out (design §3.4, "The rows that leave the range").
+    /// </summary>
+    internal Func<NodeHandle, bool>? HoldsPointer { get; set; }
+
+    /// <summary>
+    /// Returns the virtualized list whose box a node is, or <see langword="null"/>.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The list.</returns>
+    internal IVirtualHost? VirtualHostOf(NodeHandle node) =>
+        _virtualHosts.Count > 0 && _virtualHosts.TryGetValue(node, out IVirtualHost? host) ? host : null;
+
+    /// <summary>
+    /// Makes a virtualized list the host of its box, or, with <see langword="null"/>, ends it.
+    /// </summary>
+    /// <param name="node">The box.</param>
+    /// <param name="host">The list, or <see langword="null"/>.</param>
+    internal void SetVirtualHost(NodeHandle node, IVirtualHost? host)
+    {
+        if (host is null)
+        {
+            _ = _virtualHosts.Remove(node);
+        }
+        else
+        {
+            _virtualHosts[node] = host;
+        }
+    }
+
+    /// <summary>
+    /// Runs one round of the materialization stage on every virtualized list (design §3.4, "The frame's stages").
+    /// </summary>
+    /// <param name="round">The round of the frame, from 0: before the layout pass, then after each pass whose rows did not fill a
+    /// list's range.</param>
+    /// <returns>Whether a list made or took out a row.</returns>
+    internal bool Materialize(int round)
+    {
+        if (_virtualHosts.Count == 0)
+        {
+            return false;
+        }
+
+        // A row made or taken out may make or end a list inside it: the lists are read into a list of their own first.
+        _hostsToRun.Clear();
+        foreach (KeyValuePair<NodeHandle, IVirtualHost> pair in _virtualHosts)
+        {
+            _hostsToRun.Add(pair.Key);
+        }
+
+        bool changed = false;
+        foreach (NodeHandle node in _hostsToRun)
+        {
+            if (Nodes.IsAlive(node) && _virtualHosts.TryGetValue(node, out IVirtualHost? host))
+            {
+                changed |= host.Materialize(round);
+            }
+        }
+
+        _hostsToRun.Clear();
+        return changed;
+    }
+
+    /// <summary>
+    /// Records whether a virtualized list's row is kept outside the range (design §3.4, "The rows that leave the range"): the value
+    /// its KeepAlive signal had when it last changed. A change asks for a frame, whose materialization takes the row out when it is
+    /// false.
+    /// </summary>
+    /// <param name="node">The row's node.</param>
+    /// <param name="keep">Whether to keep it.</param>
+    internal void SetKeepAlive(NodeHandle node, bool keep)
+    {
+        if (_keepAlive.TryGetValue(node, out bool before) && before == keep)
+        {
+            return;
+        }
+
+        _keepAlive[node] = keep;
+        NoteWork();
+    }
+
+    /// <summary>
+    /// Returns whether a node is kept by its KeepAlive signal.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>Whether it is kept.</returns>
+    internal bool KeepsAlive(NodeHandle node) => _keepAlive.Count > 0 && _keepAlive.TryGetValue(node, out bool keep) && keep;
 
     /// <summary>
     /// Creates a node that is not in the tree yet. It needs a layout. A leaf with content has <paramref name="measure"/>, and
@@ -1946,6 +2049,16 @@ internal sealed class UiTree
         if (ForContainers.Count > 0)
         {
             _ = ForContainers.Remove(node);
+        }
+
+        if (_virtualHosts.Count > 0)
+        {
+            _ = _virtualHosts.Remove(node);
+        }
+
+        if (_keepAlive.Count > 0)
+        {
+            _ = _keepAlive.Remove(node);
         }
 
         if (LinkLeaves > 0 && Nodes.GetRef(node).Text?.Ranges?.HasLinks == true)
