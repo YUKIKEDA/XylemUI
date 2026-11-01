@@ -32,3 +32,5 @@ DisplayList の構築は 1,000 ボタンで 0.62 → 0.21 ms。内訳を測る�
 グリフ配列の拡張を事前確保に変えた。48 バイトの確保は Dictionary の列挙子のボクシングで、IEnumerable 経由の
 foreach を CollectionsMarshal.AsSpan に変えて 0 になった（ウォームアップ後 1,000 フレームで確認）。
 ```
+
+A figure the record explains with an estimate ("推定する（未確認）") is checked by the next PR that runs its scene, and the estimate is replaced by what was found. PR #569's record put the open frame's spread down to collections; PR #570 counted them, found none, and found the spread in the runs where the machine was in its slow state.
