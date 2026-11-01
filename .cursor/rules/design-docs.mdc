@@ -202,3 +202,5 @@ The design records a decision made at that time. It is not proof that the decisi
 - Do not cite an existing sentence as the reason to keep that shape.
 - Do not add public API only so an older shape can stay.
 - If the written decision is no longer the best one, say so and change the design through the process above.
+
+A design of a headless part (design §13.1) says, for each piece of screen the part shows (its box, its list or panel, its rows and their states), where the app gives it its look. The first design of P02d2's Select took only the options' look, so the app could give the open list no background and its rows no highlight; making the golden found it, and the Select gained `SelectOptions.Panel`, with its rows the options' own looks (PR #569). The menu's `panel` (P02d) is the same answer.
