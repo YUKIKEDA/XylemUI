@@ -253,19 +253,27 @@ Rejected:
 Decision:
   Key reconciliation（`For`）と Viewport reconciliation は別パイプライン。
   仮想化は Layout より前。v1 a11y は Active なノードだけ。
-  Released のみ dispose。Cached は保持。フォーカス中は常に Active。
-  仮想化境界のキーボード移動は `IVirtualizedFocusHost.MaterializeAndScrollTo`。
+  Released のみ dispose。Cached は保持し、測るために layout するが描かない。
+  CacheExtent の外でも、フォーカス・キャプチャ・D&D の元・KeepAlive の行は捨てずに持つ（layout も描画もしない）。
+  行の同一性はキー。位置は（最初に見える行のキー, ずれ）で持つ。入れ物は使い回さない（P02e の Grill、Issue #606）。
+  仮想化境界のキーボード移動は内部の `IVirtualizedFocusHost`。作るのは CacheExtent 1 つ分まで。
 
 Reason:
   ペイントだけ間引いても `LayoutPass` が全件走査するなら仮想化ではない。
   2 種の reconciliation を混ぜると仮想化 List が破綻する。
   ツリー順フォーカスだけでは未 materialize 要素へ進めない。
+  キーで持てば、上に項目が足されても行の状態とフォーカスが残る（比べた 3 つは番号で持つ）。
 
 Rejected:
   - 仮想化をペイント層の責務にする
   - `For` の create/reuse/move/remove を viewport 更新に流用する
-  - identity を index で管理する
+  - identity を index で管理する（Flutter・Avalonia・GPUI の形。Flutter は `findChildIndexCallback` が無いと挿入で状態がずれる、`widgets/scroll_delegate.dart` 208〜211 行目）
   - 画面外ノードを即座に dispose する
+  - 入れ物を使い回す（Avalonia の recycle pool。項目に結び付いていない状態が別の項目に残る）
+  - CacheExtent を見える長さの倍数にする（Avalonia の CacheLength、既定 0。画素で決めた Flutter の既定 250 に合わせた）
+  - 位置を画素だけで持つ（Flutter。上の行の見積もりが実測で変わると、先頭へ戻したときにずれる）
+  - フォーカスを持つ行を常に Active にし、画面に戻す（ホイールで離れた位置を勝手に戻す。比べた 3 つはしない）
+  - Tab の先の行を、フォーカスできるノードが見つかるまで作る（フォーカスできない 1 万行で、1 回のキーが全部を作る）
   - フォーカスが Cached のまま a11y から外れる状態
   - `ForOp<T>` を record class にする（リスト更新のたびに大量に確保される）
 
