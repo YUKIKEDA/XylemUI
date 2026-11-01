@@ -711,6 +711,11 @@ Rejected:
   - Tooltip を Esc で消さない（比べた 3 つ）。WCAG 1.4.13 は、ポインタを動かさずに消せることを求める。P02d2 の Q3
   - Select を開くとき、選ばれている項目を箱に重ねる（Flutter の `DropdownButton`、`material/dropdown.dart` 597〜598 行目）。Avalonia と Flutter の `DropdownMenu` は箱の下に開く。P02d2 の Q9
   - 開いた Select の上下キーを端で回す（zed のメニューと Flutter の `DropdownMenu`）。Avalonia と Flutter の `DropdownButton` と Windows のリストは端で止まる。P02d2 の Q8
+  - メニューバーの Esc で、前のフォーカスへ戻さない（Avalonia、`DefaultMenuInteractionHandler.cs` 496〜506 行目）。Windows の標準と zed は戻す。P02d3 の Q3
+  - 選んでいない間のメニューバーを Tab で止める（Avalonia はバー全体で 1 つ、zed は項目ごと）。Windows の標準と Flutter は止めない。P02d3 の Q6
+  - F10 で最初のメニューを開く（zed、`default-windows.json` 662 行目）。Windows の標準は、Alt と同じく選んだ状態にするだけで開かない。P02d3 の Q2
+  - 相手の無い `AccessText` のキーを何もしないままにする（Avalonia、`AccessKeyHandler.cs` 382 行目）。キーが黙って効かない。フォーカスできる祖先にフォーカスを移す。P02d3 の Q7
+  - 窓全体のアクセスキーをモーダルで絞らない（Avalonia）。ダイアログの外のボタンがキーで押される。P02d3 の Q9
   - アクセスキーの下線を Alt を押している間だけ見せ、開いたメニューでも Alt+文字を求める（Flutter、`material/menu_anchor.dart` 3134〜3139・3171〜3173 行目）。Windows の標準のメニューは、Alt を離しても合図を残し、開いたメニューでは文字だけで選ぶ。P02d2 の Q12・Q13
 
 ---

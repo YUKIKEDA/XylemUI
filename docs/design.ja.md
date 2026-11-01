@@ -4222,6 +4222,7 @@ internal sealed class FocusManager
   1. スクロールする箱のキー（下の「キーボードでのスクロール」）は、bubble の各ノードのハンドラの後に、そのノードで行う（ホイールと同じ場所）
   2. Tab（下の「Tab の順」）は、bubble の最後、根の後で行う（Avalonia の `KeyboardNavigationHandler` は TopLevel の bubble のハンドラ、`KeyboardNavigationHandler.cs` 36・127〜133 行目）
   3. ボタンの Enter と Space は、`Primitive.Button` が自分に付けるふつうのハンドラである（下の「ボタンのキー」）
+  4. 窓全体のアクセスキー（Alt+文字）と、メニューバーを選ぶ Alt と F10 は、Tab と同じく bubble の最後、根の後で行う（§13.1「窓全体のアクセスキー・Label・メニューバー」、行 P02d3）
 - **フォーカスできるノード:** `NodeInput.Focusable` が立ち、自分も祖先も Disabled でなく、自分も祖先も `Hidden` でなく、ウィンドウの木にあるノード（Avalonia の `FocusManager.cs` 225・315〜319 行目と同じ条件）。`.Focusable()` の既定は false（Avalonia の `InputElement.cs` 24〜25 行目）。`Primitive.Button` は立てる（Avalonia の `Button.cs` 109 行目、Flutter の `material/ink_well.dart` 1333〜1336 行目）。フォーカスできるノードは Tab で止まる（Avalonia の `IsTabStop` の既定 true、`KeyboardNavigation.cs` 48〜52 行目。GPUI は `tab_stop` を付けたものだけ、`gpui/src/window.rs` 538〜560 行目）。`Focusable` のノードは、ハンドラが無くてもヒット領域を書く。押したときのフォーカスは当たったノードから祖先をたどるので、書かなければ、子の無い所を押しても後ろのノードに当たり、そのノードはフォーカスを得ない。後ろのノードへのポインタは、`BlocksPointer` と同じく遮る（K1a の実装で決めた）
 - **Tab の順:** 下の §7.1。Tab の Down（繰り返しを含む）で、修飾キーが無ければ次へ、Shift だけなら前へ動かす。Control・Alt・Meta が付いた Tab は動かさない。動かしたら止める。フォーカスできるノードが 1 つも無ければ止めず、`DefWindowProc` に渡す（Flutter も動かせないときは OS に渡す、`focus_traversal.dart` 2333〜2349 行目）
 - **押したときのフォーカス:** 左ボタンの Down で、経路を配る前に、元のノード（キャプチャ中はキャプチャしたノード）から祖先へたどり、最初のフォーカスできるノードにフォーカスする。何も無ければ変えない（何も無い所を押してもフォーカスを外さない、3 つとも）。Avalonia は PointerPressed の Tunnel のクラスのハンドラで同じことをする（`FocusManager.cs` 31〜41・289〜313 行目）。GPUI も、フォーカスを持つ要素は押すとフォーカスする（`div.rs` 2771〜2786 行目）が、zed の Button はそれを止める（`ui/button_like.rs` 877〜881 行目）。Flutter はボタンを押してもフォーカスしない（`ink_well.dart` の `handleTap`、1216〜1226 行目）。経路を配る前にフォーカスするので、アプリがこれを止める口は `.Focusable(false)` と、P02b の `.KeepsFocusOnPress()` である。後者を付けたノードとその子孫を押しても、フォーカスは動かない（zed の Button の形、§4.9。PR #352 のレビューの問い）
@@ -5046,6 +5047,40 @@ public sealed record SelectOptions<T>
   - `XylemUI.Primitives.Tests`: Tooltip の出るまでの時間・続けて移ったとき・隠れる 6 つの場合・置き場所・同時に 1 つ・スコープを積まないこと・長押し。Select の閉じているときと開いているときのキーの表の各行・使えない選択肢・値が無いとき・決めると取り消し・文字で探す。アクセスキーの `_` と `__`・下線を見せる 3 つの場合・1 つと複数の文字
   - golden: Tooltip と、開いた Select の 2 枚（`HeadlessPixelTests`）
   - 費用（`XylemUI.E2E`）: Tooltip を出すフレームと、開いた Select の中でキーとポインタで移るフレーム。後の 2 つは割り当て 0
+
+**窓全体のアクセスキー・Label・メニューバー（行 P02d3、P02d3 の Grill、Issue #573）:** P02d2 のアクセスキー（上の節）の上に作る。比べた版は Flutter 3.47.8、Avalonia 12.1.4、zed v1.25.3。Flutter と GPUI には、メニューの外のアクセスキーも、Alt で選ぶメニューバーも無い（Flutter の `MenuBar` は Alt を押している間に下線を見せるだけ）。
+
+```csharp
+// XylemUI.Primitives の Primitive に足す
+public static Element MenuBar(params ReadOnlySpan<Element> items);
+public static Element MenuBarItem(Element content, Func<Element> panel);   // content の AccessText がキー
+public static Element Label(Element content, Element target);              // content の AccessText がキー
+```
+
+- **窓全体のアクセスキーの相手:** `AccessText` は窓のどこにあってもキーを登録する。キーで何をするかは、文字のノードから根へたどって最初に見つかった相手で決める
+  - `MenuBarItem`: そのメニューを開き、最初の項目にフォーカスする
+  - ボタン（`Primitive.Button`）: クリックする
+  - `Label`: `target` にフォーカスを移す
+  - それ以外のフォーカスできるノード: フォーカスを移す
+  - Avalonia は、ボタン・ラベル・タブ・メニューの項目が相手を決め（`AccessKeyPressed` の祖先のハンドラ）、相手の無い `AccessText` は何もしない（`Avalonia.Base/Input/AccessKeyHandler.cs` 382 行目）。最後の「フォーカスできるノード」は Avalonia に無い追加で、相手の無い文字のキーが黙って効かないのを避ける
+- **`Label`:** アクセスキーと、左ボタンの押下で、`target` にフォーカスを移す（Avalonia の `Label.cs` 44〜47・74〜80 行目）。`Label` 自身はフォーカスを取らない
+- **探す範囲:** 窓全体（主の木と、開いているポップアップ）から探す。モーダルのダイアログが開いている間は、その中だけから探す。Avalonia は窓（TopLevel）全体から探し、モーダルかどうかで絞らない。絞らないと、ダイアログの外のボタンがキーで押される。開いたメニューと、選んだ状態のメニューバーの中では、上の節の「開いたメニューの中の文字」を先に使う
+- **Alt:** メニューの外では Alt+文字が要る。Ctrl+Alt（AltGr）は除く（Avalonia の `AccessKeyHandler.cs` 235〜238 行目）。文字だけでよいのは、開いたメニューと、選んだ状態のメニューバーの中だけである
+- **同じキーと、使えないもの:** 同じキーの相手が複数あるときは、何もせず、今のフォーカスの次の相手へフォーカスを回す。ボタンも押さない（Avalonia の 342〜346・357 行目）。Disabled と、見えていないものは飛ばす（401〜402 行目）
+- **処理する時:** フォーカスのあるノードの経路を流し終えた後の、既定の動作として処理する（§7「キーの入力とフォーカス」の 4 つ目）。Alt+文字を自分で使う部品があれば、そちらが先に受ける。文字の欄は Alt+文字を命令にしないので、欄にフォーカスがあってもアクセスキーが効く
+- **メニューバーの形:** `MenuBar` は `MenuBarItem` を横に並べる。項目は見た目を付けず、パネルは §13.1 のメニューと同じもの（`panel` がメニューの見た目）である。Avalonia は `Menu` と上の段の `MenuItem`、Flutter は `MenuBar` と `SubmenuButton` の形である
+- **選んだ状態:** Alt だけを押して離すか F10 で、メニューバーを選んだ状態にし、最初の項目を強調して、メニューは開かない。Windows の標準のメニューバーと Avalonia（`AccessKeyHandler.cs` 256〜263 行目）の形である。zed の F10 は、最初のメニューを開く（`assets/keymaps/default-windows.json` 662 行目）。Alt が Down の間にほかのキーを押したら、Alt の Up では選ばない
+- **抜けるとき:** Alt・F10・メニューの開いていないときの Esc で選んだ状態を抜け、選ぶ前にフォーカスしていたノードへフォーカスを戻す。メニューの開いているときの Esc は、メニューだけを閉じ、選んだ状態は残す。Avalonia は Esc でフォーカスを戻さない（`Platform/DefaultMenuInteractionHandler.cs` 496〜506 行目）。zed は閉じるときに前のフォーカスへ戻す（`ui/src/components/popover_menu.rs` 281〜292 行目）
+- **選んだ状態のキー:**
+  - 左右キーで上の段を移り、端で回る（Avalonia、zed、Windows の標準）
+  - 下キー・Enter・Space でメニューを開き、最初の項目にフォーカスする。上キーでも開き、最後の項目にフォーカスする（Flutter の `menu_anchor.dart` の `_SubmenuDirectionalFocusAction`）
+  - メニューが開いている間の左右キーは、隣の上の段の項目のメニューを開く
+  - 開いたメニューの中で、サブメニューの無い項目での右キーと、1 段目のパネルでの左キーは、隣の上の段の項目のメニューへ移る（Avalonia、Flutter、Windows の標準）
+- **ポインタ:** 上の段の項目を押すと、そのメニューを開閉する（3 つとも同じ）。項目にポインタが入っただけでは開かず、ほかのメニューが開いているときだけ、その項目のメニューに切り替わる（3 つとも同じ。Flutter の `menu_anchor.dart` 2189〜2195 行目）
+- **Tab:** 選んでいない間のメニューバーは、Tab で止まらない。Flutter はメニューが開くまでフォーカスを取らない（2773〜2777 行目）。Windows の標準も止まらない。Avalonia はバー全体で 1 つの止まり所（`Menu.cs` 40〜42 行目）、zed は項目ごとに止まる
+- **確かめ方:**
+  - `XylemUI.Desktop.Tests`（文字を使うので Windows）: 相手の 4 つの種類、`Label` の押下、モーダルの中だけ、Alt が要ることと Ctrl+Alt、同じキーと使えないもの、欄にフォーカスがあるとき。メニューバーの選んだ状態に入る 2 つと抜ける 3 つ、キーの表の各行、ポインタの開閉と切り替え、Tab で止まらないこと
+  - golden: 選んだ状態のメニューバーの 1 枚
 
 ### 13.2 XylemUI.Theme.Fluent
 
