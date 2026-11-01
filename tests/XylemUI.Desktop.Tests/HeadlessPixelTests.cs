@@ -427,6 +427,55 @@ public sealed class HeadlessPixelTests
 
         _ = Assert.Single(app.Popups);
         await app.MatchesGoldenAsync("menu-access-keys.png");
+
+    /// An open select draws its list below its box in the panel the app gives, with the focused row's look, and matches its golden
+    /// (row P02d2, design §13.1, "Select").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 240 x 160 on WARP: on white, a select of "Apple", "Banana", "Cherry", its value "Banana", 140 wide at
+    ///   (10, 10), each option's look its text with a padding of 8 by 4 and a highlight when focused; the box gray, the panel dark
+    ///   with a padding of 4.
+    ///
+    /// Steps:
+    /// - Click the box; read the pixel 2 px into the panel; compare the frame with "select-open.png".
+    ///
+    /// Expected:
+    /// - One popup; the pixel is the panel's background; the frame matches the golden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Select_Open_MatchesItsGolden()
+    {
+        Color dark = Color.FromRgb(0x2B3245);
+        var value = Signal.Create("Banana");
+        Element select = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Box(
+                        select = Primitives
+                            .Primitive.Select(
+                                value,
+                                ["Apple", "Banana", "Cherry"],
+                                option => Elements.Text(option).Padding(8, 4).Focused(new PaintStyle { Background = Color.FromRgb(0x3F4A66) }),
+                                new Primitives.SelectOptions<string> { Panel = list => list.Padding(4).Background(dark).Foreground(White) }
+                            )
+                            .Width(140)
+                            .Background(Color.FromRgb(0xC0C0C0))
+                    )
+                    .Padding(10)
+                    .Background(White),
+            Options(240, 160)
+        );
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Click(select);
+        _ = app.PumpAndSettle();
+
+        _ = Assert.Single(app.Popups);
+        Rect box = app.Tree.GetRect(select.Node);
+        Assert.Equal(dark, Pixel(app, (12, (int)(10 + box.Height) + 2)));
+        await app.MatchesGoldenAsync("select-open.png");
     }
 
     private static HeadlessOptions Options(float width, float height) =>
