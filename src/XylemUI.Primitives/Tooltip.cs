@@ -11,7 +11,8 @@ namespace XylemUI.Primitives;
 public sealed record TooltipOptions
 {
     /// <summary>
-    /// Gets how long the pointer stays over the anchor before the tooltip shows; 400 ms by default, Windows' hover time.
+    /// Gets how long the pointer stays over the anchor before the tooltip shows; 400 ms by default, Windows' hover time. 0 shows it at
+    /// once, as Flutter's tooltip does.
     /// </summary>
     public TimeSpan ShowDelay { get; init; } = TimeSpan.FromMilliseconds(400);
 
@@ -291,14 +292,22 @@ public static partial class Primitive
             }
         }
 
+        // Waits on the timer; a delay of 0 does not wait (Flutter's tooltip shows at once by default).
         private void Wait(Waiting waiting, TimeSpan delay)
         {
-            if (_ui is null)
+            _waiting = waiting;
+            if (delay <= TimeSpan.Zero)
             {
+                Elapsed();
                 return;
             }
 
-            _waiting = waiting;
+            if (_ui is null)
+            {
+                _waiting = Waiting.None;
+                return;
+            }
+
             if (_timer is null)
             {
                 _timer = _tree.Time.CreateTimer(static state => ((TooltipState)state!).Tick(), this, delay, Timeout.InfiniteTimeSpan);

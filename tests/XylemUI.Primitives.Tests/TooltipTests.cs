@@ -48,6 +48,34 @@ public sealed class TooltipTests
     }
 
     /// <summary>
+    /// A show delay of 0 shows the tooltip as the pointer comes over the anchor, with no time passing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A 100 × 30 anchor at (0, 0) with a tooltip whose <see cref="TooltipOptions.ShowDelay"/> is 0.
+    ///
+    /// Steps:
+    /// - Move the pointer to (50, 15); pump 0 ms.
+    ///
+    /// Expected:
+    /// - One popup.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Tooltip_ShowDelayZero_ShowsAtOnce()
+    {
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Box().Width(100).Height(30).Tooltip(() => Box().Width(80).Height(20), new TooltipOptions { ShowDelay = TimeSpan.Zero })
+        );
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Move(50, 15);
+        app.Pump(TimeSpan.Zero);
+
+        _ = Assert.Single(app.Popups);
+    }
+
+    /// <summary>
     /// A tooltip hides 100 ms after the pointer left both its anchor and the tooltip; the pointer can move into the tooltip, and a
     /// tooltip does not hide with time.
     /// </summary>
