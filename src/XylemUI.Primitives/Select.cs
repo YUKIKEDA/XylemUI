@@ -71,8 +71,8 @@ public static partial class Primitive
         return new SelectState<T>(value, options, item, selectOptions ?? new SelectOptions<T>()).Build();
     }
 
-    // The value shown in the box: a new row each time the value changes, so that the box makes its look again.
-    private readonly record struct Shown<T>(T Value, int Version);
+    // The key of a null value in the box's one row, which takes the value as its key.
+    private static readonly object NullValue = new();
 
     // One select: its box, its list's popup, and the rows of the list while it is open.
     private sealed class SelectState<T>(Signal<T> value, IReadOnlyList<T> options, Func<T, Element> item, SelectOptions<T> settings)
@@ -86,12 +86,12 @@ public static partial class Primitive
         private PopupBlock _block = null!;
         private NodeHandle[] _rows = [];
         private long _typedAt;
-        private int _version;
 
         public Element Build()
         {
-            IReadOnlySignal<IReadOnlyList<Shown<T>>> shown = Computed.Create<IReadOnlyList<Shown<T>>>(() => [new Shown<T>(value.Get(), ++_version)]);
-            Element box = Box().For(shown, s => s.Version, s => item(s.Get().Value));
+            // The box's one row is keyed by the value: a new value makes the look again, and the same value keeps it.
+            IReadOnlySignal<IReadOnlyList<T>> shown = Computed.Create<IReadOnlyList<T>>(() => [value.Get()]);
+            Element box = Box().For(shown, v => (object?)v ?? NullValue, v => item(v.Get()));
             _tree = box.Tree!;
             _box = box.Node;
 
@@ -199,6 +199,14 @@ public static partial class Primitive
         // The list's keys, from its focused row: the moves stop at the ends; Enter and Space choose; Tab closes and goes on.
         private void ListKeys(in KeyEvent e)
         {
+            // Tab and Shift+Tab close the list and give the focus back to the box; their default action then moves it on from there
+            // (Avalonia's ComboBox.cs lines 277 to 280 close on Tab with or without Shift, and leave it unhandled).
+            if (e.Key == Key.Tab && e.Modifiers is KeyModifiers.None or KeyModifiers.Shift)
+            {
+                _block.Dismiss();
+                return;
+            }
+
             if (e.Modifiers != KeyModifiers.None)
             {
                 return;
@@ -222,10 +230,6 @@ public static partial class Primitive
                 case Key.Enter or Key.Space when at >= 0:
                     Choose(at);
                     break;
-                case Key.Tab:
-                    // The list closes and gives the focus back to the box; Tab's default action then moves it on from there.
-                    _block.Dismiss();
-                    return;
                 default:
                     return;
             }
@@ -256,8 +260,9 @@ public static partial class Primitive
             }
         }
 
-        // Typing finds the next option whose text starts with what was typed in the last second, from the one shown or focused: a
-        // letter typed again goes on to the next option of that letter (Avalonia's SelectingItemsControl.cs lines 631 to 650).
+        // Typing finds the next option whose text starts with what was typed in the last second (design §13.1): the letters typed
+        // within a second join, and a letter typed after it starts again from the option after the one shown or focused (Avalonia's
+        // SelectingItemsControl.cs lines 631 to 650).
         private void Typed(in TextInputEvent e)
         {
             if (settings.TextOf is not { } textOf || string.IsNullOrEmpty(e.Text) || (!IsOpen && e.TargetNode != _box))

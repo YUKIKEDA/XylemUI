@@ -145,12 +145,13 @@ public sealed class SelectTests
     /// - A select of the five fruits, its value "banana", focused; the focusable 300 × 30 box after it at (0, 20), whose clicks count.
     ///
     /// Steps:
-    /// - Open with Enter, Down, Esc. Open, Down, click at (250, 30) on the box after it, past the list's 150 px. Open, Down, Tab. Read the value, the popups,
-    ///   and the focus after each.
+    /// - Open with Enter, Down, Esc. Open, Down, click at (250, 30) on the box after it, past the list's 150 px. Open, Down, Tab.
+    ///   Open, Down, Shift+Tab. Read the value, the popups, and the focus after each.
     ///
     /// Expected:
     /// - After Esc: "banana", no popup, the select focused. After the click: "banana", no popup, no click counted. After Tab:
-    ///   "banana", no popup, the box after it focused.
+    ///   "banana", no popup, the box after it focused. After Shift+Tab: the same, the focus gone back from the select round the
+    ///   start to the box after it.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -160,7 +161,7 @@ public sealed class SelectTests
         await using Scene scene = await Scene.StartAsync(value);
         var seen = new List<string>();
 
-        for (int way = 0; way < 3; way++)
+        for (int way = 0; way < 4; way++)
         {
             _ = scene.App.Focus(scene.Box);
             _ = scene.App.Keyboard.Press(Key.Enter);
@@ -174,9 +175,13 @@ public sealed class SelectTests
             {
                 scene.App.Pointer.Click(250, 30);
             }
-            else
+            else if (way == 2)
             {
                 _ = scene.App.Keyboard.Press(Key.Tab);
+            }
+            else
+            {
+                _ = scene.App.Keyboard.Press(Key.Tab, KeyModifiers.Shift);
             }
 
             _ = scene.App.PumpAndSettle();
@@ -188,7 +193,7 @@ public sealed class SelectTests
             seen.Add($"{value.Get()} {scene.App.Popups.Count} {at}");
         }
 
-        Assert.Equal(["banana 0 select", "banana 0 select", "banana 0 after"], seen);
+        Assert.Equal(["banana 0 select", "banana 0 select", "banana 0 after", "banana 0 after"], seen);
         Assert.Equal(0, scene.AfterClicks);
     }
 
@@ -202,11 +207,11 @@ public sealed class SelectTests
     ///
     /// Steps:
     /// - Open with Enter; read the list's top left and size, the scroll position, and the value's row's place in the list's view.
-    ///   Home, then PageDown; read the focused row.
+    ///   Home, then PageDown; read the focused row. End, then PageUp; read it.
     ///
     /// Expected:
     /// - The list at (0, 20), 150 × 200 (the box's width, the most height); scrolled down, the row "o15" inside the 200 px view. After
-    ///   PageDown from "o0": row 10.
+    ///   PageDown from "o0": row 10. After PageUp from "o19": row 9.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -227,13 +232,16 @@ public sealed class SelectTests
         _ = scene.App.Keyboard.Press(Key.Home);
         _ = scene.App.Keyboard.Press(Key.PageDown);
         int paged = scene.FocusedRow();
+        _ = scene.App.Keyboard.Press(Key.End);
+        _ = scene.App.Keyboard.Press(Key.PageUp);
+        int pagedUp = scene.FocusedRow();
         _ = scene.App.PumpAndSettle();
 
         Assert.Equal(new Vector2(0, 20), at);
         Assert.Equal((150f, 200f), (box.Width, box.Height));
         Assert.True(scrolled > 0);
         Assert.InRange(rowTop, 0, 180);
-        Assert.Equal(10, paged);
+        Assert.Equal((10, 9), (paged, pagedUp));
     }
 
     /// <summary>
