@@ -48,4 +48,10 @@ internal enum PseudoState : byte
     /// opens, and cleared when it starts to close.
     /// </summary>
     Open = 1 << 6,
+
+    /// <summary>
+    /// A drag of a value the node takes as a drop target is over it (design §7, "Drag and drop"): set when the drag comes over it,
+    /// cleared when the drag leaves it, drops, or ends.
+    /// </summary>
+    DragOver = 1 << 7,
 }

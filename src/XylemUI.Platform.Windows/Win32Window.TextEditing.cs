@@ -34,8 +34,8 @@ public sealed unsafe partial class Win32Window
     internal TextEditingSettings TextEditing { get; private set; }
 
     // The settings from Windows: the caret's blink (GetCaretBlinkTime, INFINITE for none) and width (SPI_GETCARETWIDTH), the
-    // selection's colors (GetSysColor), and whether access keys are always underlined (SPI_GETKEYBOARDCUES). A call that fails keeps
-    // the value before.
+    // selection's colors (GetSysColor), whether access keys are always underlined (SPI_GETKEYBOARDCUES), and how far a press moves
+    // before a drag starts (SM_CXDRAG, SM_CYDRAG, design §7, "Drag and drop"). A call that fails keeps the value before.
     private static TextEditingSettings ReadTextEditing(TextEditingSettings before)
     {
         uint blink = GetCaretBlinkTime();
@@ -47,12 +47,16 @@ public sealed unsafe partial class Win32Window
         float caretWidth = SystemParametersInfoW(SPI.SPI_GETCARETWIDTH, 0, &width, 0) == BOOL.FALSE ? before.CaretWidth : width;
         BOOL cues;
         bool keyboardCues = SystemParametersInfoW(SPI.SPI_GETKEYBOARDCUES, 0, &cues, 0) == BOOL.FALSE ? before.KeyboardCues : cues != BOOL.FALSE;
+        int dragWidth = GetSystemMetrics(SM.SM_CXDRAG);
+        int dragHeight = GetSystemMetrics(SM.SM_CYDRAG);
         return new TextEditingSettings(
             caretBlink,
             caretWidth,
             FromColorRef(GetSysColor(COLOR.COLOR_HIGHLIGHT)),
             FromColorRef(GetSysColor(COLOR.COLOR_HIGHLIGHTTEXT)),
-            keyboardCues
+            keyboardCues,
+            dragWidth > 0 ? dragWidth : before.DragWidth,
+            dragHeight > 0 ? dragHeight : before.DragHeight
         );
     }
 

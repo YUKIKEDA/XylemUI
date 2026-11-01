@@ -168,6 +168,12 @@ internal sealed partial class WindowInput
     /// <param name="active">Whether the window is active.</param>
     public void SetActive(bool active)
     {
+        // A drag ends with the window's activation (design §7, "Drag and drop").
+        if (!active)
+        {
+            CancelDrag(pointerId: -1);
+        }
+
         // A popup that is not modal closes when the window stops being active (design §7.3, "Closing").
         if (!active && _tree.Popups.Count > 0)
         {
@@ -305,6 +311,13 @@ internal sealed partial class WindowInput
     private bool HandleKeyInBatch(in KeyInput input)
     {
         FocusManager focus = _tree.Focus;
+
+        // While a drag runs, Esc cancels it and a change of the modifiers chooses its effect again (design §7, "Drag and drop").
+        if (Dragging && DragKey(input))
+        {
+            return true;
+        }
+
         if (input.Kind == KeyEventKind.Down)
         {
             focus.SetLastInputWasKeyboard(true);
@@ -481,6 +494,11 @@ internal sealed partial class WindowInput
 
     private void Down(PointerState pointer, in PointerInput input)
     {
+        if (_arm.Active && _arm.PointerId == input.PointerId)
+        {
+            Disarm();
+        }
+
         _tree.Focus.SetLastPress(input.PointerType);
         _tree.HideAccessKeyCues();
         _altAlone = false;
@@ -530,6 +548,9 @@ internal sealed partial class WindowInput
     private void Up(PointerState pointer, in PointerInput input)
     {
         Point(pointer, input);
+
+        // The drop goes before the release's route, to the capture's source (design §7, "Drag and drop").
+        DragUp(input);
         Route(PointerEventKind.Up, Target(pointer), input, bubbleOnly: false);
         if (input.Button == PointerButton.Left)
         {
@@ -606,6 +627,7 @@ internal sealed partial class WindowInput
 
     private void CaptureLost(PointerState pointer, in PointerInput input)
     {
+        CancelDrag(input.PointerId);
         if (pointer.Drag is not null)
         {
             EndDrag(pointer, input, fling: false);

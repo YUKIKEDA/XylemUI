@@ -735,12 +735,37 @@ internal sealed class UiTree
     public void SetOpenStyle(NodeHandle node, PaintStyle? style)
     {
         CheckStyle(style, nameof(style));
-        PseudoStyles states = StatesOf(node);
-        if (states.Open?.Style != style)
+        RareStyles states = RareStatesOf(node);
+        if (states.Open != style)
         {
-            states.Open = style is { } look ? new OpenStyle(look) : null;
+            states.Open = style;
             Invalidation.Invalidate(this, node, ChangeKind.Color);
         }
+    }
+
+    /// <summary>
+    /// Sets what the drag-over state lays over a node's open look, or <see langword="null"/> for nothing; equal to the one there,
+    /// nothing changes. Another marks the node to be drawn again, with no layout.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="style">The drag-over look, or <see langword="null"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public void SetDragOverStyle(NodeHandle node, PaintStyle? style)
+    {
+        CheckStyle(style, nameof(style));
+        RareStyles states = RareStatesOf(node);
+        if (states.DragOver != style)
+        {
+            states.DragOver = style;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    // The node's looks of the rare states, made the first time one is set.
+    private RareStyles RareStatesOf(NodeHandle node)
+    {
+        PseudoStyles states = StatesOf(node);
+        return states.Rare ??= new RareStyles();
     }
 
     /// <summary>
@@ -946,6 +971,11 @@ internal sealed class UiTree
     /// given the window's input and the key, and it returns whether the key did something.
     /// </summary>
     internal Func<WindowInput, MenuBarKey, bool>? MenuBarKeys { get; set; }
+
+    /// <summary>
+    /// Gets or sets the drop targets of the tree, by node (design §7, "Drag and drop"); made with the first.
+    /// </summary>
+    internal Dictionary<NodeHandle, DropTargetEntry>? DropTargets { get; set; }
 
     /// <summary>
     /// Gets whether the access keys are underlined now (design §13.1, "Access keys"): always with Windows' setting on, else after

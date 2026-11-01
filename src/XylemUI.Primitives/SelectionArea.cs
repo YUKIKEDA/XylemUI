@@ -72,6 +72,7 @@ public static partial class Primitive
                 .On(PointerEventKind.Down, EventPhase.Bubble, PointerDown)
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
                 .On(PointerEventKind.Up, EventPhase.Bubble, PointerUp)
+                .On(PointerEventKind.Cancel, EventPhase.Bubble, PointerCancel)
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
@@ -150,6 +151,14 @@ public static partial class Primitive
             _pointer = e.Position * _input.Frames.Scale;
             DragTo(_pointer);
             Scrolling();
+        }
+
+        // The press lost its capture: a drag that a drag source inside the area started took it, or the OS (design §7, "Drag and
+        // drop"). The selection stops following the pointer and stays where it is.
+        private void PointerCancel(in PointerEvent e)
+        {
+            _dragging = false;
+            StopScrolling();
         }
 
         private void PointerUp(in PointerEvent e)

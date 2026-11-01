@@ -108,6 +108,14 @@ internal sealed partial class WindowInput
         }
 
         Track(pointer, input, reset: false);
+
+        // A drag armed or running moves first (design §7, "Drag and drop"); the move then goes to the capture, the source's once a
+        // drag starts.
+        if (_arm.Active || Dragging)
+        {
+            DragMove(pointer, input);
+        }
+
         Route(PointerEventKind.Move, Target(pointer), input, bubbleOnly: false);
         if (driving && pointer.Drag is { } drag && drag.Active == input.PointerId)
         {
@@ -215,7 +223,14 @@ internal sealed partial class WindowInput
     private PointerState? DragCandidate(in PointerInput input)
     {
         PointerState pointer = _pointers[input.PointerId];
-        return pointer.Type != PointerType.Mouse && pointer.Pressing && pointer.Drag is null && (input.Buttons & PointerButtons.Left) != 0
+
+        // A touch that drags a value does not scroll (design §7, "Drag and drop").
+        return
+            pointer.Type != PointerType.Mouse
+            && pointer.Pressing
+            && pointer.Drag is null
+            && (input.Buttons & PointerButtons.Left) != 0
+            && _dragSession?.PointerId != input.PointerId
             ? pointer
             : null;
     }

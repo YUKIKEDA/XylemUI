@@ -152,12 +152,13 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         PopupHandle? parent = PopupContaining(anchor);
 
         // A popup that opens closes the ones its parent had open (Flutter's raw_menu_anchor.dart lines 746 to 747), modal ones aside,
-        // and every transient one (a tooltip), whatever its parent. A transient popup closes none (design §7.3, "Nesting").
-        if (!options.IsTransient)
+        // and every transient one (a tooltip), whatever its parent. A transient popup closes none (design §7.3, "Nesting"); a drag's
+        // preview closes none and is closed by none.
+        if (!options.IsTransient && !options.IsDragImage)
         {
             for (int i = _open.Count - 1; i >= 0; i--)
             {
-                if (i < _open.Count && _open[i] is { Closing: false } other)
+                if (i < _open.Count && _open[i] is { Closing: false } other && !other.Options.IsDragImage)
                 {
                     if (other.Options.IsTransient || (other.Parent == parent && !other.Options.IsModal))
                     {
@@ -168,11 +169,21 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         }
 
         var popup = new PopupHandle(anchor, root, frame, options, block, parent, _lists.Count > 0 ? _lists.Pop() : new DisplayList());
-        _open.Add(popup);
+
+        // A drag's preview stays in front: a popup that opens during the drag goes behind it.
+        if (!options.IsDragImage && _open.Count > 0 && _open[^1].Options.IsDragImage)
+        {
+            _open.Insert(_open.Count - 1, popup);
+        }
+        else
+        {
+            _open.Add(popup);
+        }
+
         tree.AttachRoot(root);
         Rect laid = tree.Root.IsNone ? default : tree.Nodes.GetRef(tree.Root).Layout.Rect;
         Resize(popup, _window ?? new Size(laid.Width, laid.Height));
-        if (!options.IsTransient)
+        if (!options.IsTransient && !options.IsDragImage)
         {
             tree.Focus.PushScope(root, options.IsModal);
 
@@ -284,7 +295,7 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         popup.Closing = true;
         tree.SetInert(popup.Root, inert: true);
         tree.Focus.PopScope(popup.Root);
-        if (!popup.Options.IsTransient && tree.Nodes.IsAlive(popup.Anchor) && !OpenAgainst(popup.Anchor))
+        if (!popup.Options.IsTransient && !popup.Options.IsDragImage && tree.Nodes.IsAlive(popup.Anchor) && !OpenAgainst(popup.Anchor))
         {
             tree.SetPseudoState(popup.Anchor, PseudoState.Open, on: false);
         }
@@ -295,7 +306,7 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     {
         foreach (PopupHandle popup in _open)
         {
-            if (popup.Anchor == anchor && !popup.Closing && !popup.Options.IsTransient)
+            if (popup.Anchor == anchor && !popup.Closing && !popup.Options.IsTransient && !popup.Options.IsDragImage)
             {
                 return true;
             }
@@ -405,7 +416,7 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     {
         for (int i = _open.Count - 1; i >= 0; i--)
         {
-            if (!_open[i].Closing)
+            if (!_open[i].Closing && !_open[i].Options.IsDragImage)
             {
                 _open[i].Block.Dismiss();
                 return true;
@@ -422,10 +433,38 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     {
         for (int i = _open.Count - 1; i >= 0; i--)
         {
-            if (i < _open.Count && !_open[i].Options.IsModal && !_open[i].Closing)
+            if (i < _open.Count && !_open[i].Options.IsModal && !_open[i].Options.IsDragImage && !_open[i].Closing)
             {
                 _open[i].Block.Dismiss();
             }
+        }
+    }
+
+    /// <summary>
+    /// Gets where a drag's preview goes: its frame's top left, in the window's logical pixels (design §7.3, "The drag's preview
+    /// root").
+    /// </summary>
+    public Vector2 DragImageAt { get; private set; }
+
+    /// <summary>
+    /// Puts a drag's preview at a point: its frame's top left, in the window's logical pixels. The preview's list is built again in
+    /// the next frame; with no popup open yet, the point waits for it.
+    /// </summary>
+    /// <param name="popup">The preview's popup, or <see langword="null"/> while it opens.</param>
+    /// <param name="topLeft">The point.</param>
+    public void MoveDragImage(PopupHandle? popup, Vector2 topLeft)
+    {
+        DragImageAt = topLeft;
+        if (popup is null || popup.Closing || !tree.Nodes.IsAlive(popup.Frame))
+        {
+            return;
+        }
+
+        ref LayoutState frame = ref tree.Nodes.GetRef(popup.Frame).Layout;
+        if (frame.Rect.X != topLeft.X || frame.Rect.Y != topLeft.Y)
+        {
+            frame.Rect = frame.Rect with { X = topLeft.X, Y = topLeft.Y };
+            Invalidation.Invalidate(tree, popup.Root, ChangeKind.Color);
         }
     }
 
