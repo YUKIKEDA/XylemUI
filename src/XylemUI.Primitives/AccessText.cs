@@ -77,7 +77,7 @@ public static partial class Primitive
     private static bool WindowKey(WindowInput input, char letter, TimeSpan timestamp)
     {
         UiTree tree = input.Tree;
-        if (!AccessKeys.TryGetValue(tree, out AccessKeyRegistry? registry) || registry.Texts.Count == 0)
+        if (!AccessKeys.TryGetValue(tree, out AccessKeyRegistry? registry) || registry.Texts.Count == 0 || InMenu(tree, registry))
         {
             return false;
         }
@@ -109,6 +109,11 @@ public static partial class Primitive
         _ = tree.Focus.Focus(targets[(focused + 1) % targets.Count].FocusNode);
         return true;
     }
+
+    // Whether the focus is in an open menu or a menu bar is selected: a letter their items did not take is not the window's access
+    // key (design §13.1, "The window's access keys"; Win32's WM_MENUCHAR, whose default discards the character).
+    private static bool InMenu(UiTree tree, AccessKeyRegistry registry) =>
+        (tree.Popups.PopupContaining(tree.Focus.Focused) is { } popup && IsMenu(popup)) || registry.Bars.Exists(static bar => bar.Selected);
 
     // The targets of the access texts of a key under a root, once each, in the order of the tree.
     private static void Collect(UiTree tree, AccessKeyRegistry registry, NodeHandle root, char key, List<AccessKeyTarget> targets)

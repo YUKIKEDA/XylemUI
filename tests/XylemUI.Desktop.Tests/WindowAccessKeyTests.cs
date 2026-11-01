@@ -138,6 +138,56 @@ public sealed class WindowAccessKeyTests
     }
 
     /// <summary>
+    /// While a menu is open or a menu bar is selected, Alt and a letter that none of their items takes is not the window's access key:
+    /// the button behind them is not clicked.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A button "_Save" whose clicks count, a focusable anchor with a menu of an item "_Open", and a menu bar of "_File" with a
+    ///   menu of an item "_New".
+    ///
+    /// Steps:
+    /// - Focus the anchor; open its menu; Alt+S, reading whether it was handled; Esc. F10; Alt+S, reading whether it was handled;
+    ///   F10; Alt+S.
+    ///
+    /// Expected:
+    /// - Both Alt+S in the menu and in the selected bar not handled; the button clicked once, by the last Alt+S.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AccessKey_InAMenuOrASelectedBar_DoesNotReachTheWindow()
+    {
+        var menu = Signal.Create(false);
+        int saves = 0;
+        Element anchor = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                MenuBar(MenuBarItem(AccessText("_File"), () => Column(MenuItem(AccessText("_New"), () => { })))),
+                Button(AccessText("_Save"), () => saves++),
+                anchor = Box().Width(100).Height(20).Focusable().Menu(menu, () => Column(MenuItem(AccessText("_Open"), () => { })))
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.Focus(anchor);
+        menu.Set(true);
+        _ = app.PumpAndSettle();
+
+        bool inMenu = app.Keyboard.Press(Key.S, KeyModifiers.Alt);
+        _ = app.Keyboard.Press(Key.Escape);
+        _ = app.PumpAndSettle();
+        _ = app.Keyboard.Press(Key.F10);
+        bool inBar = app.Keyboard.Press(Key.S, KeyModifiers.Alt);
+        int whileIn = saves;
+        _ = app.Keyboard.Press(Key.F10);
+        _ = app.Keyboard.Press(Key.S, KeyModifiers.Alt);
+        _ = app.PumpAndSettle();
+
+        Assert.False(inMenu);
+        Assert.False(inBar);
+        Assert.Equal((0, 1), (whileIn, saves));
+    }
+
+    /// <summary>
     /// The window's access keys need Alt, without Control; several targets of one key take the focus in turn, round the end, and are
     /// not clicked; disabled and hidden ones are passed over; a focused text field leaves Alt and its letter to them.
     /// </summary>
