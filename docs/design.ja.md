@@ -698,7 +698,9 @@ IntrinsicSizeChanged（境界で伝播停止）
     この場合に限り LastAvailableSpace を制約源として使ってよい。
 
 MaterializationChanged
-  → VirtualizedList コンテナを LayoutRequest に載せ、コンテナが持つ AvailableSpace を使う（§3.4）。
+  → 仮想化した箱（`.VirtualFor` を付けた箱）を LayoutRequest に載せ、箱が持つ AvailableSpace を使う（§3.4）。
+    同じフレームで Materialization と layout を繰り返すとき（§3.4「P02e で入れる形」の「フレームの中の段」）も、
+    2 回目以降は同じ箱をこの理由で載せ直すだけで、作った行ごとには載せない。
 ```
 
 ウィンドウリサイズ時、Platform層は`RunLayoutPass`の前に次を行う。
@@ -2138,7 +2140,7 @@ Viewport Reconciliation は §3.4.2 の3段階に従う。`Released` になっ�
 
 **新規materializeノードのLayoutRoots登録先**: §2.10のフレーム実行サイクルは`Invalidation→Materialization→Layout`の順で流れるが、新規ノードはまだ一度もサイズ計測されておらず`LastAvailableSpace`を持たず、かつ自身がLayout Boundaryでもないため、**単独では`LayoutPass`の起点になれない**。
 
-Viewport Reconciliationでノードの追加・破棄が発生した場合、Materialization層は新規ノード個々にではなく、そのコンテナである`VirtualizedList`を保持するノード自体に対して`MarkDirty(listNode, Layout)`を発行し、続けて `OverwriteLayoutRequest(tree, listNode, containerSpace, LayoutReason.MaterializationChanged)` する（§2.4.1）。`EnqueueLayoutRoot` の同一ノード dedup は reason をマージする。`MarkDirty` が先に `IntrinsicSizeChanged` で積んでも `MaterializationChanged` で上書きされる。コンテナが正しい`AvailableSpace`を持って`LayoutRoots`に載り、配下の新規 materialize ノードへは通常の Layout パスの子孫走査で制約が伝わる。
+Viewport Reconciliationでノードの追加・破棄が発生した場合、Materialization層は新規ノード個々にではなく、そのコンテナである仮想化した箱（`.VirtualFor` を付けた箱）に対して`MarkDirty(listNode, Layout)`を発行し、続けて `OverwriteLayoutRequest(tree, listNode, containerSpace, LayoutReason.MaterializationChanged)` する（§2.4.1）。`EnqueueLayoutRoot` の同一ノード dedup は reason をマージする。`MarkDirty` が先に `IntrinsicSizeChanged` で積んでも `MaterializationChanged` で上書きされる。コンテナが正しい`AvailableSpace`を持って`LayoutRoots`に載り、配下の新規 materialize ノードへは通常の Layout パスの子孫走査で制約が伝わる。
 
 Materialization はノードを生成するのでアリーナ配列の再確保が起こりうる。§2.5 の `ref` の寿命規則に従い、Materialization の前後で `ref` を持ち越さない。
 
@@ -2151,7 +2153,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 - **スクロールの基準:** 位置は（最初に見える行のキー, その行の始めからのずれ）で持つ。上の行の大きさが見積もりから実測に変わっても、基準の行は画面の同じ位置に残る。`ScrollState.Offset`（画素）は、基準の行の累積の位置にずれを足した値で、layout の後の batch で書く（§3.4.1「layout が出す値を Signal に書く時」）。基準の行より上に見積もりの行が残っているうちは、この値も見積もりを含む。ホイールと `ScrollTo` が位置を画素で変えたときは、累積の和から基準を引き直す。GPUI は位置を（項目の番号, 項目の中のずれ）で持つ（`list.rs` 1430〜1438 行目）。Avalonia は、配置の後に基準の項目が動いた分だけ `Offset` を足す（`Presenters/ScrollContentPresenter.cs` 467〜525 行目）。Flutter には基準が無く、上の項目の見積もりの誤差は、`scrollOffsetCorrection` で位置を直して吸収する（`rendering/sliver_list.dart` 145〜162 行目）
 - **基準の行が消えたとき:** 項目の変化で基準の行のキーが消えたら、消える前の番号に今ある行を、ずれ 0 で基準にする。番号が末尾を越えたら、最後の行にする。項目を全部入れ替えて、残るキーが 1 つも無いときも同じである。GPUI は、基準が入れ替えた範囲の中なら、範囲の始めにずれ 0 で移す（`list.rs` 537〜548 行目）
 - **作る範囲:** 見える範囲と、その前後の `CacheExtent`（既定 250 論理画素）の中の行を作る。範囲の中で見えない行（Cached）は、layout して測るが、描かず、ヒットさせない。Flutter の既定は 250 画素で（`rendering/viewport.dart` 289 行目）、範囲の中の行を layout し、描かない（`rendering/sliver_multi_box_adaptor.dart` 738〜743 行目）。Avalonia の `CacheLength` は見える長さの倍数で、既定は 0 である（`VirtualizingStackPanel.cs` 58〜60 行目）。GPUI の overdraw は画素で、測るだけで描かない。zed は 1000 画素をよく使う（`list.rs` 1066〜1114 行目、zed の `picker.rs` 668 行目）
-- **フレームの中の段:** Materialization の段（§2.10）は、layout の前に、今の基準と大きさのキャッシュから作る範囲を決め、足りない行を作り、範囲の外の行を外す。作った行は、見積もりの大きさで並べる。layout の pass が大きさを測った後、行が範囲を埋めていなければ（見積もりより小さかった）、同じフレームの中で Materialization と、仮想化した箱から下の layout を繰り返す。繰り返しは、項目の数を上限とする。比べた 3 つは、どれも layout の中で行を作る（Flutter の `RenderSliverList.performLayout`、`rendering/sliver_list.dart` 46 行目。Avalonia の `MeasureOverride`、`VirtualizingStackPanel.cs` 188 行目。GPUI の `layout_items`、`list.rs` 1027 行目）。XylemUI は §2.10 の順と §2.5 の `ref` の寿命規則を守るため、layout の外で作り、繰り返す。位置の変化が作った範囲の中にとどまる間は、Materialization の段は何もしない。スクロールは §3.4.1 のとおり `TransformProp` だけで、作る行が変わらないフレームは割り当て 0 である
+- **フレームの中の段:** Materialization の段（§2.10）は、layout の前に、今の基準と大きさのキャッシュから作る範囲を決め、足りない行を作り、範囲の外の行を外す。作った行は、見積もりの大きさで並べる。layout の pass が大きさを測った後、行が範囲を埋めていなければ（見積もりより小さかった）、同じフレームの中で Materialization と、仮想化した箱から下の layout を繰り返す。繰り返しは、項目の数を上限とする。2 回目以降は、作る範囲を伸ばす長さを前の回の 2 倍にする。見積もりが実測よりずっと大きくても、繰り返しの回数は足りない長さの対数で収まる（PR #607 のレビュー）。比べた 3 つは、どれも layout の中で行を作る（Flutter の `RenderSliverList.performLayout`、`rendering/sliver_list.dart` 46 行目。Avalonia の `MeasureOverride`、`VirtualizingStackPanel.cs` 188 行目。GPUI の `layout_items`、`list.rs` 1027 行目）。XylemUI は §2.10 の順と §2.5 の `ref` の寿命規則を守るため、layout の外で作り、繰り返す。位置の変化が作った範囲の中にとどまる間は、Materialization の段は何もしない。スクロールは §3.4.1 のとおり `TransformProp` だけで、作る行が変わらないフレームは割り当て 0 である
 - **範囲の外へ出た行:** `CacheExtent` の外へ出た行（Released）は、行の Scope ごと捨てる。入れ物は使い回さない。次の 3 つの行は、範囲の外でも捨てずに持ち、layout も描画もヒットもさせない（Flutter の `keepAlive` の行と同じ。`rendering/sliver_multi_box_adaptor.dart` 373〜387 行目・418〜421 行目）。
   - フォーカスを持つノードを含む行。Avalonia はフォーカスのある入れ物を残し（`VirtualizingStackPanel.cs` 1151〜1155 行目）、Flutter の TextField はフォーカスがある間だけ自分を残す（`widgets/editable_text.dart` 2638 行目）。GPUI は `splice_focusable` で渡したフォーカスの項目を描き続ける（`list.rs` 507〜510 行目）
   - ポインタのキャプチャ（§7）か D&D の元（§7「ドラッグ＆ドロップ」）を持つノードを含む行。端の自動スクロールで、ドラッグしている行が範囲の外へ出ることがある
@@ -2173,7 +2175,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 
 スクロールバー・マウスホイールで`ScrollOffset`が変化するたびに、可視アイテムすべての`LayoutState.Rect`を書き換えて`Layout`dirtyを立てると、60/120fpsスクロール時に極めて重くなる。
 
-`VirtualizedList`配下のノードの`LayoutState.Rect`は、コンテンツ全体の仮想座標系（Virtual Canvas Space、スクロールオフセットを差し引く前の絶対座標）で保持する。スクロール位置の変化は Layout の無効化ではなく、リスト容器へ `Invalidate(..., ChangeKind.TransformProp)` し、`PaintCommand.ClipRect` と `PaintCommand.Transform(Matrix3x2.CreateTranslation(0, -scrollOffset))`（§5.0）のパラメータ変更として扱う。同一フレーム内で DisplayList と HitTestList を再構築してから次のポインタイベントのヒットテストに使う（§2.10）。レイアウトの再計算が必要になるのは、Viewport Reconciliation によって新規アイテムが実際に追加された場合、またはアイテムの実測サイズが判明して`MeasuredExtents`が更新された場合のみとする。
+仮想化した箱の行の`LayoutState.Rect`は、コンテンツ全体の仮想座標系（Virtual Canvas Space、スクロールオフセットを差し引く前の絶対座標）で保持する。スクロール位置の変化は Layout の無効化ではなく、リスト容器へ `Invalidate(..., ChangeKind.TransformProp)` し、`PaintCommand.ClipRect` と `PaintCommand.Transform(Matrix3x2.CreateTranslation(0, -scrollOffset))`（§5.0）のパラメータ変更として扱う。同一フレーム内で DisplayList と HitTestList を再構築してから次のポインタイベントのヒットテストに使う（§2.10）。レイアウトの再計算が必要になるのは、Viewport Reconciliation によって新規アイテムが実際に追加された場合、またはアイテムの実測サイズが判明して`MeasuredExtents`が更新された場合のみとする。
 
 **V2（MoonBit 版で到達。C# 版で再到達させる）:** 仮想化なしの ScrollView でこの契約を確認した。offset 変更後も子の仮想座標は動かず、layout は増えない。クリップ外の Button が translate 後に画素として出る。ヒットは `InverseTransform`（translate の逆）とクリップ済み bounds。
 
@@ -2256,7 +2258,7 @@ internal interface IVirtualizedFocusHost
 }
 ```
 
-これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従うが、リスト内の論理次要素がある間は先に `MaterializeAndScrollTo` する。
+これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従う。ただし、走査が作った範囲の端に着き、その先にまだ項目がある間は、先に `MaterializeBeyond` で次の行を作って走査を続ける。作るのは範囲の端から `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab はリストを抜ける。
 
 ---
 

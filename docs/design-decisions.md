@@ -267,7 +267,7 @@ Reason:
 Rejected:
   - 仮想化をペイント層の責務にする
   - `For` の create/reuse/move/remove を viewport 更新に流用する
-  - identity を index で管理する
+  - identity を index で管理する（Flutter・Avalonia・GPUI の形。Flutter は `findChildIndexCallback` が無いと挿入で状態がずれる、`widgets/scroll_delegate.dart` 208〜211 行目）
   - 画面外ノードを即座に dispose する
   - 入れ物を使い回す（Avalonia の recycle pool。項目に結び付いていない状態が別の項目に残る）
   - CacheExtent を見える長さの倍数にする（Avalonia の CacheLength、既定 0。画素で決めた Flutter の既定 250 に合わせた）
