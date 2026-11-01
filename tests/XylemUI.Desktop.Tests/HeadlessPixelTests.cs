@@ -480,6 +480,64 @@ public sealed class HeadlessPixelTests
         await app.MatchesGoldenAsync("select-open.png");
     }
 
+    /// <summary>
+    /// A selected menu bar draws its items in a row with the access keys underlined and the first item highlighted, with no menu open,
+    /// and matches its golden (row P02d3, design §13.1, "The menu bar").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 160 x 60 on WARP: on white, a gray menu bar at (10, 10) of "_File" and "_Edit", each with a padding of 8
+    ///   by 3 and a highlight when focused, and a menu each of "_New" and "E_xit".
+    ///
+    /// Steps:
+    /// - F10; settle; compare the frame with "menu-bar-selected.png".
+    ///
+    /// Expected:
+    /// - No popup; the frame matches the golden, with "F" and "E" underlined and "File" highlighted.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task MenuBar_Selected_MatchesItsGolden()
+    {
+        Color dark = Color.FromRgb(0x2B3245);
+        var focused = new PaintStyle { Background = Color.FromRgb(0x8090B0) };
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Box(
+                        Primitives
+                            .Primitive.MenuBar(
+                                Primitives
+                                    .Primitive.MenuBarItem(Primitives.Primitive.AccessText("_File").Padding(8, 3), () => FilePanel(dark))
+                                    .Focused(focused),
+                                Primitives
+                                    .Primitive.MenuBarItem(Primitives.Primitive.AccessText("_Edit").Padding(8, 3), () => FilePanel(dark))
+                                    .Focused(focused)
+                            )
+                            .Background(Color.FromRgb(0xC0C0C0))
+                    )
+                    .Padding(10)
+                    .Background(White),
+            Options(160, 60)
+        );
+        _ = app.PumpAndSettle();
+
+        _ = app.Keyboard.Press(Key.F10);
+        _ = app.PumpAndSettle();
+
+        Assert.Empty(app.Popups);
+        await app.MatchesGoldenAsync("menu-bar-selected.png");
+    }
+
+    private static Element FilePanel(Color dark) =>
+        Column(
+                Primitives.Primitive.MenuItem(Primitives.Primitive.AccessText("_New").Padding(8, 3), () => { }),
+                Primitives.Primitive.MenuItem(Primitives.Primitive.AccessText("E_xit").Padding(8, 3), () => { })
+            )
+            .Width(100)
+            .Padding(4)
+            .Background(dark)
+            .Foreground(White);
+
     private static HeadlessOptions Options(float width, float height) =>
         new()
         {

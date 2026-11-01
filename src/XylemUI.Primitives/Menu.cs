@@ -229,7 +229,8 @@ public static partial class Primitive
     }
 
     // Closes the menus a chosen item is in: its popup and the menus it was opened from, as one (GPUI's context menu dismisses
-    // before it dispatches, ui/src/components/context_menu.rs lines 717 to 720). The outer one gives the focus back.
+    // before it dispatches, ui/src/components/context_menu.rs lines 717 to 720). The outer one gives the focus back; a menu bar's
+    // menu also leaves the bar, which gives the focus back to where it was before the bar was selected.
     private static void CloseMenus(UiTree tree, NodeHandle item)
     {
         PopupHandle? outer = null;
@@ -238,7 +239,16 @@ public static partial class Primitive
             outer = popup;
         }
 
-        outer?.Block.Dismiss();
+        if (outer is null)
+        {
+            return;
+        }
+
+        outer.Block.Dismiss();
+        if (BarItemOf(tree, outer.Anchor) is { } barItem)
+        {
+            barItem.Bar?.Leave(restore: true);
+        }
     }
 
     // One item of a menu: what choosing it does, and the submenu it opens, if any.
@@ -246,7 +256,7 @@ public static partial class Primitive
     {
         public Element Attach(Element item)
         {
-            RegisterItem(tree, node, this);
+            RegisterItem(tree, node, Activate);
             return item.OnClick(Click).On(KeyEventKind.Down, EventPhase.Bubble, KeyDown).On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
         }
 

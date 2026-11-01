@@ -10,8 +10,8 @@ namespace XylemUI.Primitives;
 /// </content>
 public static partial class Primitive
 {
-    // The access keys of each tree: the key of each AccessText's node, and the state of each menu item, which a letter typed in an
-    // open menu finds.
+    // The access keys of each tree: the key of each AccessText's node, what each menu item and menu bar item does with its key, which
+    // a letter typed in an open menu or a selected menu bar finds, and the menu bars.
     private static readonly ConditionalWeakTable<UiTree, AccessKeyRegistry> AccessKeys = [];
 
     private static readonly SpanStyle Underlined = new(Decoration: new TextDecoration(DecorationLines.Underline));
@@ -43,11 +43,11 @@ public static partial class Primitive
         return element;
     }
 
-    // Registers a menu item, so that a letter typed in its menu finds it.
-    private static void RegisterItem(UiTree tree, NodeHandle node, MenuItemState state)
+    // Registers a menu item or a menu bar item, so that a letter typed in its menu or its selected bar finds it.
+    private static void RegisterItem(UiTree tree, NodeHandle node, Action activate)
     {
         AccessKeyRegistry registry = RegistryOf(tree);
-        registry.Items[node] = state;
+        registry.Items[node] = activate;
         Scope.OnCleanup(() => registry.Items.Remove(node));
     }
 
@@ -77,7 +77,7 @@ public static partial class Primitive
     private static bool WindowKey(WindowInput input, char letter, TimeSpan timestamp)
     {
         UiTree tree = input.Tree;
-        if (!AccessKeys.TryGetValue(tree, out AccessKeyRegistry? registry) || registry.Texts.Count == 0)
+        if (!AccessKeys.TryGetValue(tree, out AccessKeyRegistry? registry) || registry.Texts.Count == 0 || InMenu(tree, registry))
         {
             return false;
         }
@@ -105,10 +105,22 @@ public static partial class Primitive
             return true;
         }
 
+        // The focus goes round the targets that can take it: a menu bar's item takes none while the bar is not selected.
+        _ = targets.RemoveAll(t => !tree.Focus.CanFocus(t.FocusNode));
+        if (targets.Count == 0)
+        {
+            return true;
+        }
+
         int focused = targets.FindIndex(t => t.FocusNode == tree.Focus.Focused);
         _ = tree.Focus.Focus(targets[(focused + 1) % targets.Count].FocusNode);
         return true;
     }
+
+    // Whether the focus is in an open menu or a menu bar is selected: a letter their items did not take is not the window's access
+    // key (design §13.1, "The window's access keys"; Win32's WM_MENUCHAR, whose default discards the character).
+    private static bool InMenu(UiTree tree, AccessKeyRegistry registry) =>
+        (tree.Popups.PopupContaining(tree.Focus.Focused) is { } popup && IsMenu(popup)) || registry.Bars.Exists(static bar => bar.Selected);
 
     // The targets of the access texts of a key under a root, once each, in the order of the tree.
     private static void Collect(UiTree tree, AccessKeyRegistry registry, NodeHandle root, char key, List<AccessKeyTarget> targets)
@@ -162,7 +174,7 @@ public static partial class Primitive
         NodeHandle first = default;
         NodeHandle afterFocused = default;
         bool passed = false;
-        MenuItemState? only = null;
+        Action? only = null;
         for (NodeHandle node = panel; !node.IsNone; node = NextInSubtree(tree, node, panel))
         {
             if (node == focused)
@@ -170,7 +182,7 @@ public static partial class Primitive
                 passed = true;
             }
 
-            if (!registry.Items.TryGetValue(node, out MenuItemState? item) || !tree.Focus.CanFocus(node) || KeyOf(tree, registry, node) != key)
+            if (!registry.Items.TryGetValue(node, out Action? item) || !tree.Focus.CanFocus(node) || KeyOf(tree, registry, node) != key)
             {
                 continue;
             }
@@ -195,7 +207,7 @@ public static partial class Primitive
 
         if (count == 1)
         {
-            only!.Activate();
+            only!();
         }
         else
         {
@@ -246,9 +258,11 @@ public static partial class Primitive
     {
         public Dictionary<NodeHandle, char> Texts { get; } = [];
 
-        public Dictionary<NodeHandle, MenuItemState> Items { get; } = [];
+        public Dictionary<NodeHandle, Action> Items { get; } = [];
 
         public Dictionary<NodeHandle, AccessKeyHost> Hosts { get; } = [];
+
+        public List<MenuBarState> Bars { get; } = [];
     }
 
     // What a host does with an access key: its target, if it takes the key now.

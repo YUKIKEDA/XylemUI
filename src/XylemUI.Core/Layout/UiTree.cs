@@ -924,6 +924,12 @@ internal sealed class UiTree
     internal Func<WindowInput, char, TimeSpan, bool>? AccessKeys { get; set; }
 
     /// <summary>
+    /// Gets or sets what Alt alone and F10 do (design §13.1, "The menu bar"), after no handler stopped them: the primitives set it,
+    /// given the window's input and the key, and it returns whether the key did something.
+    /// </summary>
+    internal Func<WindowInput, MenuBarKey, bool>? MenuBarKeys { get; set; }
+
+    /// <summary>
     /// Gets whether the access keys are underlined now (design §13.1, "Access keys"): always with Windows' setting on, else after
     /// Alt went down or while a menu opened from the keys is open, until a pointer's press.
     /// </summary>
