@@ -5,7 +5,8 @@ namespace XylemUI;
 /// <summary>
 /// The focus of one window's tree (design §7, "Keys and the focus", and §7.2): the focused node, whether the window is active, and
 /// whether the last input was the keyboard. It keeps the focus pseudo-states, routes the focus events, and moves the focus in the
-/// order of Tab (§7.1). Row K1 has the one scope of the root; the scopes of dialogs and popups come with row P02.
+/// order of Tab (§7.1). Each open popup pushes a scope over the window's (§7.2, "The form P02d puts in"): Tab goes round the top
+/// scope, a modal scope keeps the focus in, and a scope popped gives the focus back to the node focused when it was pushed.
 /// </summary>
 /// <remarks>
 /// It belongs to the UI thread, as the tree does, which makes it (<see cref="UiTree.Focus"/>). Each change runs as one batch. The
@@ -15,6 +16,9 @@ internal sealed class FocusManager
 {
     // A handler that keeps moving the focus from the focus events is not followed past a few moves (as the window's rehit).
     private const int PendingMoves = 4;
+
+    // The scopes of the open popups, the first pushed first, over the window's scope.
+    private readonly List<FocusScope> _scopes = [];
 
     // The nodes of the routes being delivered, innermost first; a route delivered from a handler goes after the one around it.
     private NodeHandle[] _route = new NodeHandle[16];
@@ -28,6 +32,9 @@ internal sealed class FocusManager
 
     // The node Tab or Focus moved the focus to, which the next frame scrolls into view.
     private NodeHandle _reveal;
+
+    // The node the window's scope had focused last, for a popup's scope that gives the focus back to it.
+    private NodeHandle _rootFocused;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FocusManager"/> class.
@@ -91,13 +98,98 @@ internal sealed class FocusManager
 
         for (NodeHandle at = node; !at.IsNone; at = Tree.Nodes.GetRef(at).Parent)
         {
-            if (Tree.Nodes.GetRef(at).Layout.Style.Hidden)
+            ref UiNode a = ref Tree.Nodes.GetRef(at);
+            if (a.Layout.Style.Hidden || a.Input is { Inert: true })
             {
                 return false;
             }
         }
 
-        return true;
+        // Inside the top modal scope, or in a popup opened from it (design §7.2, IsModal).
+        return _scopes.Count == 0 || TopModal() is not { } modal || IsInside(node, modal);
+    }
+
+    /// <summary>
+    /// Pushes the scope of a popup that opens (design §7.2): it remembers the focused node to give the focus back to.
+    /// </summary>
+    /// <param name="owner">The popup's root.</param>
+    /// <param name="modal">Whether the focus cannot leave the scope.</param>
+    public void PushScope(NodeHandle owner, bool modal) =>
+        _scopes.Add(
+            new FocusScope
+            {
+                Owner = owner,
+                RestoreTo = Focused,
+                IsModal = modal,
+            }
+        );
+
+    /// <summary>
+    /// Pops the scope of a popup that closes, and, when the focus is in it, gives the focus back (design §7.2): to the node focused
+    /// when it was pushed, if it can take the focus; otherwise to the node the scope below had focused last; otherwise nowhere.
+    /// </summary>
+    /// <param name="owner">The popup's root.</param>
+    public void PopScope(NodeHandle owner)
+    {
+        int index = _scopes.Count - 1;
+        while (index >= 0 && _scopes[index].Owner != owner)
+        {
+            index--;
+        }
+
+        if (index < 0)
+        {
+            return;
+        }
+
+        FocusScope popped = _scopes[index];
+        _scopes.RemoveAt(index);
+        if (Tree.Nodes.IsAlive(Focused) && !IsInside(Focused, owner))
+        {
+            return;
+        }
+
+        NodeHandle below = index > 0 ? _scopes[index - 1].FocusedChild : _rootFocused;
+        NodeHandle target =
+            CanFocus(popped.RestoreTo) ? popped.RestoreTo
+            : CanFocus(below) ? below
+            : default;
+        if (!target.IsNone)
+        {
+            Request(target);
+        }
+        else
+        {
+            Lose(owner);
+        }
+    }
+
+    // The top modal scope's owner, or none.
+    private NodeHandle? TopModal()
+    {
+        for (int i = _scopes.Count - 1; i >= 0; i--)
+        {
+            if (_scopes[i].IsModal)
+            {
+                return _scopes[i].Owner;
+            }
+        }
+
+        return null;
+    }
+
+    // Whether a node is in the subtree of owner, following a popup's root to its anchor.
+    private bool IsInside(NodeHandle node, NodeHandle owner)
+    {
+        for (NodeHandle at = node; !at.IsNone; at = Tree.KeyParent(at))
+        {
+            if (at == owner)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -219,7 +311,8 @@ internal sealed class FocusManager
     /// <returns>Whether a node can take the focus; with none, nothing changes.</returns>
     public bool MoveInTabOrder(bool backward)
     {
-        NodeHandle root = Tree.Root;
+        // Round the top scope only (design §7.2).
+        NodeHandle root = _scopes.Count > 0 ? _scopes[^1].Owner : Tree.Root;
         if (root.IsNone)
         {
             return false;
@@ -505,6 +598,7 @@ internal sealed class FocusManager
         }
 
         Focused = node;
+        Remember(node);
         SyncTextInput();
         if (!IsWindowActive)
         {
@@ -527,6 +621,23 @@ internal sealed class FocusManager
         {
             Send(FocusEventKind.FocusIn, node);
         }
+    }
+
+    // Keeps the node as the last focused one of the top scope it is in, for a scope above it that gives the focus back.
+    private void Remember(NodeHandle node)
+    {
+        for (int i = _scopes.Count - 1; i >= 0; i--)
+        {
+            if (IsInside(node, _scopes[i].Owner))
+            {
+                FocusScope scope = _scopes[i];
+                scope.FocusedChild = node;
+                _scopes[i] = scope;
+                return;
+            }
+        }
+
+        _rootFocused = node;
     }
 
     // Sets or clears the focus states of a node and the focus within of its ancestors, and its IsFocused signal. Clearing keeps the

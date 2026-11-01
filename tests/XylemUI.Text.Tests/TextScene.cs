@@ -6,14 +6,16 @@ namespace XylemUI.Text.Tests;
 internal sealed class TextScene : IDisposable
 {
     private readonly TextContext _text;
-    private readonly GlyphAtlas _atlas = new(new TestRasterizer());
+    private readonly GlyphAtlas _atlas;
     private readonly NodeHandle _root;
     private readonly WindowFrames _frames;
     private ScopeHandle _scope;
     private WindowInput? _input;
 
-    public TextScene(Font font)
+    // The atlas, when given, is the scene's to dispose.
+    public TextScene(Font font, GlyphAtlas? atlas = null)
     {
+        _atlas = atlas ?? new GlyphAtlas(new TestRasterizer());
         _text = new TextContext(new TestFontProvider(font));
         Tree = new UiTree(_text);
         _root = Tree.CreateNode(new LayoutStyle());
@@ -21,6 +23,8 @@ internal sealed class TextScene : IDisposable
     }
 
     public UiTree Tree { get; }
+
+    public WindowFrames Window => _frames;
 
     public Frames Scheduler { get; } = new();
 
@@ -165,6 +169,8 @@ internal sealed class TextScene : IDisposable
             _callback = callback;
         }
 
+        public bool Pending => _callback is not null;
+
         public void CancelFrame() => _callback = null;
 
         public void Run()
@@ -178,7 +184,7 @@ internal sealed class TextScene : IDisposable
 
 internal sealed class NoTarget : IRenderTarget
 {
-    public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+    public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) { }
 
     public void Present() { }
 }

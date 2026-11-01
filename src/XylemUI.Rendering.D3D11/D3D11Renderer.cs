@@ -218,7 +218,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     internal D3D_FEATURE_LEVEL FeatureLevel { get; }
 
     /// <summary>
-    /// Gets the number of draws of the last <see cref="Draw"/>, for the tests of where the frame is split.
+    /// Gets the number of draws of the last <see cref="Draw(ReadOnlySpan{DisplayList}, Color, GlyphAtlas?)"/>, for the tests of where the frame is split.
     /// </summary>
     internal int LastDrawCount { get; private set; }
 
@@ -496,19 +496,8 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         Release((IUnknown*)_device);
     }
 
-    /// <summary>
-    /// Uploads the atlas's changes, writes the instances of the display list, and records the draw into the back buffer, without
-    /// presenting.
-    /// </summary>
-    /// <param name="list">The commands of the frame.</param>
-    /// <param name="clearColor">The color of the area no command covers.</param>
-    /// <param name="atlas">
-    /// The glyph atlas the glyph runs of <paramref name="list"/> were written from; null when it has none. Its dirty regions are
-    /// cleared after the upload, so an atlas is drawn by one renderer only.
-    /// </param>
-    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
-    /// <exception cref="ArgumentException">The list has glyph runs and <paramref name="atlas"/> is null.</exception>
-    void IRenderTarget.Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) => Draw(list, clearColor, atlas);
+    /// <inheritdoc/>
+    void IRenderTarget.Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) => Draw(lists, clearColor, atlas);
 
     /// <summary>
     /// Uploads the atlas's changes, writes the instances of the display list, and records the draw into the back buffer, without
@@ -525,15 +514,36 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     public void Draw(DisplayList list, Color clearColor, GlyphAtlas? atlas = null)
     {
         ArgumentNullException.ThrowIfNull(list);
+        Draw([list], clearColor, atlas);
+    }
+
+    /// <summary>
+    /// Uploads the atlas's changes once, clears the back buffer, and draws each display list over the ones before it, without
+    /// presenting: a window's list and its popups' (design §7.3, "Display lists").
+    /// </summary>
+    /// <param name="lists">The lists, back to front.</param>
+    /// <param name="clearColor">The color of the area no command covers.</param>
+    /// <param name="atlas">
+    /// The glyph atlas the glyph runs of the lists were written from; null when they have none. Its dirty regions are cleared after
+    /// the upload, so an atlas is drawn by one renderer only.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    /// <exception cref="ArgumentException">A list has glyph runs and <paramref name="atlas"/> is null.</exception>
+    public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas? atlas = null)
+    {
         UiThread.VerifyAccess();
         if (_renderTarget is null)
         {
             ThrowNoRenderTarget();
         }
 
-        if (atlas is null && list.GlyphCount > 0)
+        foreach (DisplayList list in lists)
         {
-            throw new ArgumentException("The display list has glyph runs; pass the glyph atlas they were written from.", nameof(atlas));
+            ArgumentNullException.ThrowIfNull(list, nameof(lists));
+            if (atlas is null && list.GlyphCount > 0)
+            {
+                throw new ArgumentException("The display list has glyph runs; pass the glyph atlas they were written from.", nameof(atlas));
+            }
         }
 
         // The GPU time covers all of this frame's GPU work that the renderer records: the atlas upload, the instance upload, the
@@ -547,6 +557,30 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             atlas.ClearDirtyRegions();
         }
 
+        ID3D11RenderTargetView* target = _renderTarget;
+        _context->OMSetRenderTargets(1, &target, null);
+        var viewport = new D3D11_VIEWPORT
+        {
+            Width = Width,
+            Height = Height,
+            MaxDepth = 1,
+        };
+        _context->RSSetViewports(1, &viewport);
+        float* clear = stackalloc float[4] { clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f };
+        _context->ClearRenderTargetView(target, clear);
+        int drawCalls = 0;
+        foreach (DisplayList list in lists)
+        {
+            drawCalls += DrawList(list);
+        }
+
+        LastDrawCount = drawCalls;
+        _gpuTimer?.End();
+    }
+
+    // One list over the back buffer: its instances written, and its draws recorded. Returns the number of draw calls.
+    private int DrawList(DisplayList list)
+    {
         // A glyph run is one command and one instance per glyph, so this bounds the instances.
         int bound = list.CommandCount + list.GlyphCount;
         if (bound > _instanceCapacity)
@@ -561,23 +595,9 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             drawCalls += range.Op == DrawOp.Draw && range.Count > 0 ? 1 : 0;
         }
 
-        LastDrawCount = drawCalls;
-
-        ID3D11RenderTargetView* target = _renderTarget;
-        _context->OMSetRenderTargets(1, &target, null);
-        var viewport = new D3D11_VIEWPORT
-        {
-            Width = Width,
-            Height = Height,
-            MaxDepth = 1,
-        };
-        _context->RSSetViewports(1, &viewport);
-        float* clear = stackalloc float[4] { clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f };
-        _context->ClearRenderTargetView(target, clear);
         if (draws == 0)
         {
-            _gpuTimer?.End();
-            return;
+            return 0;
         }
 
         uint stride = (uint)sizeof(QuadInstance);
@@ -684,7 +704,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             _context->DrawInstanced(4, (uint)draw.Count, 0, (uint)draw.Start);
         }
 
-        _gpuTimer?.End();
+        return drawCalls;
     }
 
     // Makes `target`, whose pixels are those of `bounds` in the frame, the target of the draws that follow (row R4c).
@@ -796,7 +816,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     }
 
     /// <summary>
-    /// Copies the back buffer to the CPU and returns the color of one pixel. Call it between <see cref="Draw"/> and
+    /// Copies the back buffer to the CPU and returns the color of one pixel. Call it between <see cref="Draw(DisplayList, Color, GlyphAtlas?)"/> and
     /// <see cref="Present"/>: after a flip-model present, the back buffer's content is undefined. It creates a staging texture
     /// and waits for the GPU, so it is for tests and checks, not for every frame.
     /// </summary>

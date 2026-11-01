@@ -9,12 +9,13 @@ namespace XylemUI;
 internal interface IRenderTarget
 {
     /// <summary>
-    /// Draws a display list into the back buffer.
+    /// Draws display lists into the back buffer, each over the ones before it: the window's list, then its popups' (design §7.3,
+    /// "Display lists").
     /// </summary>
-    /// <param name="list">The list, its glyphs resolved.</param>
-    /// <param name="clearColor">The color the buffer is cleared to first.</param>
-    /// <param name="atlas">The atlas the list's glyphs are in.</param>
-    void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas);
+    /// <param name="lists">The lists, back to front, their glyphs resolved.</param>
+    /// <param name="clearColor">The color the buffer is cleared to first, before the first list.</param>
+    /// <param name="atlas">The atlas the lists' glyphs are in.</param>
+    void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas);
 
     /// <summary>
     /// Shows the back buffer.

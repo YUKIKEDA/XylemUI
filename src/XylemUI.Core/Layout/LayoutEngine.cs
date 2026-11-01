@@ -96,19 +96,22 @@ internal static partial class LayoutEngine
                     try
                     {
                         LayoutInput input = ResolveInput(tree, request);
-                        if (request.Node == tree.Root)
+
+                        // The window's root and a popup's (design §7.3) are the nodes with no parent a request lays out.
+                        bool root = tree.Nodes.GetRef(request.Node).Parent.IsNone;
+                        if (root)
                         {
                             input = WithRootKeywordLimits(tree, request.Node, in input);
                         }
 
-                        if (request.Node == tree.Root && IsAbsoluteRootIn(tree, request.Node, in input))
+                        if (root && IsAbsoluteRootIn(tree, request.Node, in input))
                         {
                             LayOutAbsoluteRoot(tree, request.Node, ToSize(input.ParentSize));
                         }
                         else
                         {
                             _ = Compute(tree, request.Node, in input, commit: true);
-                            if (request.Node == tree.Root)
+                            if (root)
                             {
                                 PlaceRoot(tree, request.Node, in input);
                             }

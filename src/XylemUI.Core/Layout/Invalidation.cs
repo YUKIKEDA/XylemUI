@@ -209,6 +209,19 @@ internal static class Invalidation
     }
 
     /// <summary>
+    /// Lays out a popup's root at the window's size (design §7.3, "The v0.2 form"): a render root of the tree, with the window's
+    /// constraint.
+    /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="root"/>.</param>
+    /// <param name="root">The popup's root, attached with no parent.</param>
+    /// <param name="size">The window's client size, in logical pixels.</param>
+    public static void NotifyPopupResized(UiTree tree, NodeHandle root, Size size)
+    {
+        MarkDirty(tree, root, DirtyFlags.Layout);
+        OverwriteLayoutRequest(tree, root, LayoutInput.Exact(size), LayoutReason.WindowResize);
+    }
+
+    /// <summary>
     /// Lays out the root in a viewport whose axes may be content constraints, as CSS lays out the root element in the initial
     /// containing block (Taffy's in-flow root). The layout tests that take Chrome's results use it; a window gives an exact
     /// size (<see cref="NotifyWindowResized"/>).

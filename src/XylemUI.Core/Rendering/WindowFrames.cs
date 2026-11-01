@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using XylemUI.Text;
 using XylemUI.Text.LineBreak;
 
@@ -31,6 +32,13 @@ internal sealed partial class WindowFrames
     private static readonly Color RootText = Color.FromRgb(0x000000);
 
     private readonly DisplayList _list = new();
+
+    // The list being built: the window's, or a popup's; and how many nodes that take no pointer the node being drawn is in.
+    private DisplayList _building;
+    private int _noHitDepth;
+
+    // The lists drawn in a frame, the window's first and the popups' back to front (design §7.3, "Display lists").
+    private DisplayList[] _drawn = new DisplayList[4];
     private float _scale = 1;
     private TextRenderingParameters _textRendering;
     private bool _resizing;
@@ -73,6 +81,7 @@ internal sealed partial class WindowFrames
         _time = time ?? TimeProvider.System;
         tree.Time = _time;
         _runFrame = RunFrame;
+        _building = _list;
         tree.FrameNeeded = RequestFrame;
     }
 
@@ -99,7 +108,8 @@ internal sealed partial class WindowFrames
     public int PresentCount { get; private set; }
 
     /// <summary>
-    /// Gets the display list of the last frame that drew, whose hit regions the input tests (design §7, "Pointer input").
+    /// Gets the window's display list of the last frame that drew, whose hit regions the input tests (design §7, "Pointer input");
+    /// each popup has a list of its own (<see cref="PopupHandle.List"/>).
     /// </summary>
     internal DisplayList List => _list;
 
@@ -114,10 +124,52 @@ internal sealed partial class WindowFrames
     internal float Scale => _scale;
 
     /// <summary>
-    /// Gets the number of times the display list was built: a node's hit region index is valid for the build it was written in
-    /// (<see cref="NodeInput.HitBuild"/>).
+    /// Gets the number of times a display list was built, the window's or a popup's: a node's hit region index is valid in the list
+    /// of the build it was written in (<see cref="NodeInput.HitBuild"/>, <see cref="ListOf(int)"/>).
     /// </summary>
     internal int Builds { get; private set; }
+
+    /// <summary>
+    /// Gets the number of times the window's own display list was built: a frame where only a popup changed does not build it
+    /// (design §7.3, "Display lists").
+    /// </summary>
+    internal int MainBuilds { get; private set; }
+
+    /// <summary>
+    /// Returns the display list of a build, if it is still the list's last: the window's, or an open popup's.
+    /// </summary>
+    /// <param name="build">The build (<see cref="NodeInput.HitBuild"/>).</param>
+    /// <returns>The list, or <see langword="null"/> when no list holds that build any more.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal DisplayList? ListOf(int build) => build > 0 && _list.Build == build ? _list : PopupListOf(build);
+
+    // A popup's list of the build, apart from ListOf, which each handler of a pointer's event calls.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private DisplayList? PopupListOf(int build)
+    {
+        if (build <= 0)
+        {
+            return null;
+        }
+
+        IReadOnlyList<PopupHandle> open = _tree.Popups.Opened;
+        for (int i = 0; i < open.Count; i++)
+        {
+            if (open[i].List.Build == build)
+            {
+                return open[i].List;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the display list of the render root a node is in: the window's, or its popup's.
+    /// </summary>
+    /// <param name="node">A live node.</param>
+    /// <returns>The list.</returns>
+    internal DisplayList ListFor(NodeHandle node) => _tree.Popups.PopupContaining(node)?.List ?? _list;
 
     /// <summary>
     /// Gets the time of the frame running, or of the last one: read once from the clock at the start of each frame, so that what
@@ -146,6 +198,8 @@ internal sealed partial class WindowFrames
         // next frame it needs is asked for once a resize's frame no longer holds the requests back.
         bool gestures = Input?.UpdateGestures(FrameTime) == true;
         bool layout = _tree.LayoutRoots.Count > 0;
+        bool popups = _tree.Popups.Count > 0;
+        bool mainLayout = layout && (!popups || NoteLayoutRoots());
         LayoutEngine.RunLayoutPass(_tree);
 
         // Cleared after the pass: the requests a pass puts back after an exception, or leaves at its cycle limit, ask for no frame
@@ -180,26 +234,38 @@ internal sealed partial class WindowFrames
 
         _tree.Focus.RevealPending();
 
-        if (!layout && _tree.PaintUpdates.Count == 0)
+        // After the layout: each popup's frame against its anchor, which may close a popup whose anchor scrolled (design §7.3). A
+        // scroll marks the container for paint alone, so a frame with paint updates places them too.
+        if (popups && (layout || _tree.PaintUpdates.Count > 0))
+        {
+            PlacePopups();
+        }
+
+        bool rootsChanged = _tree.TakePopupsChanged();
+        if (!layout && _tree.PaintUpdates.Count == 0 && !rootsChanged)
         {
             return;
         }
 
         // The marks go before the list is built, so that one made while it is built asks for the next frame.
+        bool main = mainLayout || rootsChanged || _tree.Popups.Count == 0;
         foreach (NodeHandle node in _tree.TakePaintUpdates())
         {
             if (_tree.Nodes.IsAlive(node))
             {
                 _tree.Nodes.GetRef(node).Dirty.SelfDirty &= DirtyFlags.Layout;
+                if (!main)
+                {
+                    main = NoteRootToBuild(node);
+                }
             }
         }
 
-        _atlas.BeginFrame();
-        _list.Reset(_scale);
-        Builds++;
-        DrawNode(_root, 0, 0, RootText, hitsOnly: false);
-        _list.ResolveGlyphs(_atlas);
-        _target.Draw(_list, ClearColor, _atlas);
+        if (!Build(main))
+        {
+            return;
+        }
+
         _target.Present();
         _scheduler.FramePresented();
         PresentCount++;
@@ -221,7 +287,216 @@ internal sealed partial class WindowFrames
         _resizing = true;
         _scale = scale;
         Invalidation.NotifyWindowResized(_tree, _root, size);
+        _tree.Popups.ResizeAll(size);
         RunFrame();
+    }
+
+    // Builds the lists that changed and draws them all, the window's first. With the window's, every popup's is built too, since
+    // their frames were placed again; with a popup's alone, the atlas does not start a frame, so that the glyphs the other lists drew
+    // with stay in it (design §7.3, "Display lists"). Returns whether a list was built and drawn.
+    private bool Build(bool main)
+    {
+        IReadOnlyList<PopupHandle> open = _tree.Popups.Opened;
+        int count = 1 + open.Count;
+        if (_drawn.Length < count)
+        {
+            Array.Resize(ref _drawn, Math.Max(count, _drawn.Length * 2));
+        }
+
+        int refused = _atlas.RefusedCount;
+        bool built = false;
+        if (main)
+        {
+            _atlas.BeginFrame();
+            BuildList(_list, _root);
+            MainBuilds++;
+            built = true;
+        }
+
+        _drawn[0] = _list;
+        for (int i = 0; i < open.Count; i++)
+        {
+            PopupHandle popup = open[i];
+            if (main || popup.NeedsBuild)
+            {
+                popup.NeedsBuild = false;
+                BuildList(popup.List, popup.Root);
+                built = true;
+            }
+
+            _drawn[i + 1] = popup.List;
+        }
+
+        if (!built)
+        {
+            return false;
+        }
+
+        // Without a frame of the atlas, the plots the window's list used cannot be evicted, and an atlas at its page limit refuses
+        // the popup's new glyphs until the next one; the next frame builds the window's list, which starts it, and draws them (PR
+        // #552's review).
+        if (!main && _atlas.RefusedCount != refused)
+        {
+            _tree.MarkRootsToBuild();
+        }
+
+        _target.Draw(_drawn.AsSpan(0, count), ClearColor, _atlas);
+        _drawn.AsSpan(0, count).Clear();
+        return true;
+    }
+
+    private void BuildList(DisplayList list, NodeHandle root)
+    {
+        list.Reset(_scale);
+        list.Build = ++Builds;
+        _building = list;
+        try
+        {
+            DrawNode(root, 0, 0, RootText, hitsOnly: false);
+        }
+        finally
+        {
+            _building = _list;
+            _noHitDepth = 0;
+        }
+
+        list.ResolveGlyphs(_atlas);
+    }
+
+    // Before the layout pass, while popups are open: marks the popups whose roots have a layout request to be built, and returns
+    // whether the window's tree has one.
+    private bool NoteLayoutRoots()
+    {
+        bool main = false;
+        foreach (LayoutRequest request in CollectionsMarshal.AsSpan(_tree.LayoutRoots))
+        {
+            if (_tree.Nodes.IsAlive(request.Node))
+            {
+                main |= NoteRootToBuild(request.Node);
+            }
+        }
+
+        return main;
+    }
+
+    // Marks the popup a node is in to be built; returns whether the node is in the window's tree instead.
+    private bool NoteRootToBuild(NodeHandle node)
+    {
+        if (_tree.Popups.PopupContaining(node) is { } popup)
+        {
+            popup.NeedsBuild = true;
+            return false;
+        }
+
+        return true;
+    }
+
+    // Places each popup's frame against its anchor after a layout (design §7.3, "Placement"): its anchor rectangle in the window, its
+    // size, and the window's client area as the bounds. A popup that is not modal closes when a scroll container its anchor is in has
+    // scrolled since it was first placed, or when its anchor is gone.
+    private void PlacePopups()
+    {
+        Rect window = _tree.Nodes.GetRef(_root).Layout.Rect;
+        var bounds = new Rect(0, 0, window.Width, window.Height);
+        IReadOnlyList<PopupHandle> open = _tree.Popups.Opened;
+        for (int i = 0; i < open.Count; i++)
+        {
+            PopupHandle popup = open[i];
+            if (popup.Closing)
+            {
+                continue;
+            }
+
+            if (!_tree.Nodes.IsAlive(popup.Anchor) || ScrolledAway(popup))
+            {
+                // Its children close with it; the walk starts again, as the list changed.
+                popup.Block.Dismiss();
+                i = -1;
+                continue;
+            }
+
+            PopupPlacement placement = popup.Options.Placement;
+            if (placement.Fills)
+            {
+                continue;
+            }
+
+            ref LayoutState frame = ref _tree.Nodes.GetRef(popup.Frame).Layout;
+            Rect anchor = placement.AnchorRect ?? WindowBox(popup.Anchor);
+            Rect placed = PopupPositioner.Place(placement, anchor, new Size(frame.Rect.Width, frame.Rect.Height), bounds);
+            if (placed.X != frame.Rect.X || placed.Y != frame.Rect.Y)
+            {
+                frame.Rect = frame.Rect with { X = placed.X, Y = placed.Y };
+                popup.NeedsBuild = true;
+            }
+        }
+    }
+
+    // Whether a scroll container above the anchor of a popup that is not modal scrolled since the popup was first placed.
+    private bool ScrolledAway(PopupHandle popup)
+    {
+        Vector2 scroll = ScrollAbove(popup.Anchor);
+        if (!popup.Placed)
+        {
+            popup.Placed = true;
+            popup.AnchorScroll = scroll;
+            return false;
+        }
+
+        return scroll != popup.AnchorScroll && !popup.Options.IsModal;
+    }
+
+    // The sum of the scroll positions of the scroll containers above a node, up to its render root.
+    private Vector2 ScrollAbove(NodeHandle node)
+    {
+        Vector2 sum = Vector2.Zero;
+        for (NodeHandle at = _tree.Nodes.GetRef(node).Parent; !at.IsNone; at = _tree.Nodes.GetRef(at).Parent)
+        {
+            if (_tree.Nodes.GetRef(at).Layout.Style.IsScrollContainer)
+            {
+                sum += _tree.ScrollOffsetOf(at);
+            }
+        }
+
+        return sum;
+    }
+
+    /// <summary>
+    /// Returns a node's border box in the window's logical pixels, as the frame draws it: its position in each parent, the scroll
+    /// positions of the scroll containers above it, and the transforms of its own and its ancestors' looks, up to its render root. A
+    /// transformed box is the rectangle around its corners.
+    /// </summary>
+    /// <param name="node">A live node.</param>
+    /// <returns>The box.</returns>
+    internal Rect WindowBox(NodeHandle node)
+    {
+        Rect rect = _tree.Nodes.GetRef(node).Layout.Rect;
+        Span<Vector2> corners = [new(0, 0), new(rect.Width, 0), new(0, rect.Height), new(rect.Width, rect.Height)];
+        for (NodeHandle at = node; !at.IsNone; at = _tree.Nodes.GetRef(at).Parent)
+        {
+            ref UiNode n = ref _tree.Nodes.GetRef(at);
+            Rect box = n.Layout.Rect;
+            var origin = new Vector2(box.X, box.Y);
+            Matrix3x2? transform = n.Visual?.Transform;
+            var center = new Vector2(box.X + (box.Width * 0.5f), box.Y + (box.Height * 0.5f));
+            NodeHandle parent = n.Parent;
+            Vector2 scroll =
+                !parent.IsNone && _tree.Nodes.GetRef(parent).Layout.Style.IsScrollContainer ? _tree.ScrollOffsetOf(parent) : Vector2.Zero;
+            for (int c = 0; c < corners.Length; c++)
+            {
+                Vector2 p = corners[c] + origin;
+                if (transform is { } matrix)
+                {
+                    p = Vector2.Transform(p - center, matrix) + center;
+                }
+
+                corners[c] = p - scroll;
+            }
+        }
+
+        Vector2 min = Vector2.Min(Vector2.Min(corners[0], corners[1]), Vector2.Min(corners[2], corners[3]));
+        Vector2 max = Vector2.Max(Vector2.Max(corners[0], corners[1]), Vector2.Max(corners[2], corners[3]));
+        return new Rect(min.X, min.Y, max.X - min.X, max.Y - min.Y);
     }
 
     // A new way of drawing text marks the root to be drawn again, so the next frame draws the whole tree with it.
@@ -263,6 +538,15 @@ internal sealed partial class WindowFrames
             return;
         }
 
+        // A subtree marked to take no pointer, or a popup's that leaves, writes no hit region (design §7.3, "Passing the pointer"):
+        // counted in a field, as a parameter of this method made each node's draw about 10 ns longer (the PR for Issue #551).
+        NodeInput? input = node.Input;
+        bool marked = input is { TakesNoPointer: true };
+        if (marked)
+        {
+            _noHitDepth++;
+        }
+
         Rect rect = node.Layout.Rect;
         var box = new Rect(parentX + rect.X, parentY + rect.Y, rect.Width, rect.Height);
         NodeVisual? visual = node.Visual;
@@ -271,7 +555,7 @@ internal sealed partial class WindowFrames
         // the pointer over them (design §4.8), and a text leaf a selection area selects is found by its region (§4.10), looked for
         // only while the tree has an area.
         bool writesHit =
-            node.Input?.WritesHitRegion == true
+            input?.WritesHitRegion == true
             || node.Layout.Style.IsScrollContainer
             || node.Text?.Ranges?.HasLinks == true
             || (_tree.SelectionAreas > 0 && node.Text is not null && _tree.IsSelectableText(handle));
@@ -304,7 +588,7 @@ internal sealed partial class WindowFrames
             }
         }
 
-        if (writesHit)
+        if (writesHit && _noHitDepth == 0)
         {
             WriteHitRegion(handle, box, visual?.Radii ?? default);
         }
@@ -336,7 +620,12 @@ internal sealed partial class WindowFrames
 
         for (; pushed > 0; pushed--)
         {
-            _list.Pop();
+            _building.Pop();
+        }
+
+        if (marked)
+        {
+            _noHitDepth--;
         }
     }
 
@@ -368,7 +657,7 @@ internal sealed partial class WindowFrames
             Math.Max(0, outer.BottomRight - Math.Max(border.Right, border.Bottom)),
             Math.Max(0, outer.BottomLeft - Math.Max(border.Left, border.Bottom))
         );
-        _list.PushClip(x, y, width, height, inner);
+        _building.PushClip(x, y, width, height, inner);
         if (!scrolls)
         {
             return 1;
@@ -380,7 +669,7 @@ internal sealed partial class WindowFrames
             return 1;
         }
 
-        _list.PushTransform(Matrix3x2.CreateTranslation(-offset));
+        _building.PushTransform(Matrix3x2.CreateTranslation(-offset));
         return 2;
     }
 
@@ -454,7 +743,7 @@ internal sealed partial class WindowFrames
         {
             // About the box's center: moved there, transformed, and moved back (System.Numerics applies the left one first).
             var center = new Vector2(box.X + (box.Width * 0.5f), box.Y + (box.Height * 0.5f));
-            _list.PushTransform(Matrix3x2.CreateTranslation(-center) * matrix * Matrix3x2.CreateTranslation(center));
+            _building.PushTransform(Matrix3x2.CreateTranslation(-center) * matrix * Matrix3x2.CreateTranslation(center));
             pushed++;
         }
 
@@ -464,7 +753,7 @@ internal sealed partial class WindowFrames
         }
         else if (opacity < 1 && !hitsOnly)
         {
-            _list.PushOpacity(opacity);
+            _building.PushOpacity(opacity);
             pushed++;
         }
 
@@ -487,17 +776,23 @@ internal sealed partial class WindowFrames
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void CallDraw(DrawFunc draw, NodeHandle handle, Rect box)
     {
-        int depth = _list.ScopeDepth;
+        DisplayList list = _building;
+        int depth = list.ScopeDepth;
+        list.HitsSuppressed = _noHitDepth > 0;
         try
         {
-            draw(new DrawingContext(_list, handle, this), box);
+            draw(new DrawingContext(list, handle, this), box);
         }
         catch (Exception exception) when (exception is not InvariantViolationException)
         {
             ReactiveRuntime.ReportException(exception);
         }
+        finally
+        {
+            list.HitsSuppressed = false;
+        }
 
-        _list.PopTo(depth);
+        list.PopTo(depth);
     }
 
     // A style's set values replace the look's; the unset ones keep it.
@@ -523,24 +818,24 @@ internal sealed partial class WindowFrames
         ref UiNode node = ref _tree.Nodes.GetRef(handle);
         if (node.Input is { } input)
         {
-            input.HitEntry = _list.HitEntries.Length;
-            input.HitBuild = Builds;
+            input.HitEntry = _building.HitEntries.Length;
+            input.HitBuild = _building.Build;
         }
 
         if (node.Text?.Ranges is { } ranges)
         {
-            ranges.HitEntry = _list.HitEntries.Length;
-            ranges.HitBuild = Builds;
+            ranges.HitEntry = _building.HitEntries.Length;
+            ranges.HitBuild = _building.Build;
         }
 
-        _list.HitRegion(handle, box.X, box.Y, box.Width, box.Height, radii);
+        _building.HitRegion(handle, box.X, box.Y, box.Width, box.Height, radii);
     }
 
     private void DrawBox(BoxShadow? shadow, in CornerRadii radii, Paint? background, Paint? borderPaint, Edges border, Rect box)
     {
         if (shadow is { } cast)
         {
-            _list.DrawShadow(box.X, box.Y, box.Width, box.Height, radii, cast);
+            _building.DrawShadow(box.X, box.Y, box.Width, box.Height, radii, cast);
         }
 
         bool hasBorder = borderPaint is not null && (border.Left > 0 || border.Top > 0 || border.Right > 0 || border.Bottom > 0);
@@ -548,7 +843,7 @@ internal sealed partial class WindowFrames
         {
             Paint fill = background ?? new Paint(default(Color));
             Border? edge = hasBorder ? new Border(new BorderWidths(border.Left, border.Top, border.Right, border.Bottom), borderPaint!.Value) : null;
-            _list.FillRect(box.X, box.Y, box.Width, box.Height, fill, radii, edge);
+            _building.FillRect(box.X, box.Y, box.Width, box.Height, fill, radii, edge);
         }
     }
 
@@ -594,7 +889,7 @@ internal sealed partial class WindowFrames
                 continue;
             }
 
-            _list.DrawLine(
+            _building.DrawLine(
                 glyphs.Slice(line.GlyphStart, line.GlyphCount),
                 result.Runs,
                 result.Styles,

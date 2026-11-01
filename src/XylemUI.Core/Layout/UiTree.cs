@@ -38,7 +38,19 @@ internal sealed class UiTree
         Text = text;
         Focus = new FocusManager(this);
         Animations = new AnimationClock(this);
+        Popups = new OverlayPopupHost(this);
     }
+
+    /// <summary>
+    /// Gets the popups open over the tree's window (design §7.3).
+    /// </summary>
+    internal OverlayPopupHost Popups { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether a popup closed since the last frame took it (<see cref="TakePopupsChanged"/>): the window's
+    /// display list is drawn again without the popup's.
+    /// </summary>
+    internal bool PopupsChanged { get; private set; }
 
     /// <summary>
     /// Gets the focus of the tree's window (design §7, "Keys and the focus").
@@ -1589,6 +1601,91 @@ internal sealed class UiTree
 
     // The node's input part, made the first time.
     private NodeInput InputOf(NodeHandle node) => Nodes.GetRef(node).Input ??= new NodeInput();
+
+    /// <summary>
+    /// Makes a node with no parent a render root of the tree: a popup's root (design §7.3). It is attached, as the tree's root is, so
+    /// that its nodes can take the focus and are laid out.
+    /// </summary>
+    /// <param name="node">The node with no parent.</param>
+    internal void AttachRoot(NodeHandle node)
+    {
+        if (!Nodes.GetRef(node).Parent.IsNone)
+        {
+            Invariant.Fail("A popup's root cannot have a parent.");
+        }
+
+        SetDepth(node, 0, attached: true);
+    }
+
+    /// <summary>
+    /// Records that the next frame builds the window's list again: a render root went away, or a popup's list alone was built and
+    /// the glyph atlas refused glyphs (design §7.3, "Display lists").
+    /// </summary>
+    internal void MarkRootsToBuild()
+    {
+        PopupsChanged = true;
+        NoteWork();
+    }
+
+    /// <summary>
+    /// Returns whether a render root went away since the last call, and clears it.
+    /// </summary>
+    /// <returns>Whether one went away.</returns>
+    internal bool TakePopupsChanged()
+    {
+        bool changed = PopupsChanged;
+        PopupsChanged = false;
+        return changed;
+    }
+
+    /// <summary>
+    /// Returns the node a key's route goes on to after <paramref name="node"/>: its parent, or, for a popup's root, the popup's anchor
+    /// (design §7.3, "The route of events").
+    /// </summary>
+    /// <param name="node">A live node.</param>
+    /// <returns>The next node, or none after the window's root.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal NodeHandle KeyParent(NodeHandle node)
+    {
+        NodeHandle parent = Nodes.GetRef(node).Parent;
+        return !parent.IsNone || Popups.Count == 0 ? parent : AnchorOf(node);
+    }
+
+    // A popup root's anchor, apart from KeyParent, which each node of a key's route calls.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private NodeHandle AnchorOf(NodeHandle root) => Popups.PopupOf(root)?.Anchor ?? default;
+
+    /// <summary>
+    /// Sets whether a node and its subtree write hit regions (design §7.3, "Passing the pointer"); equal to the value there, nothing
+    /// changes. Another marks the node to be drawn again.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="visible">Whether the subtree takes the pointer.</param>
+    public void SetHitTestVisible(NodeHandle node, bool visible)
+    {
+        NodeInput input = InputOf(node);
+        if (input.HitTestInvisible == visible)
+        {
+            input.HitTestInvisible = !visible;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
+
+    /// <summary>
+    /// Sets whether a node's subtree takes neither the pointer nor the focus: a popup that leaves (design §7.3, "Motion"). A focused
+    /// node in it loses the focus.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="inert">Whether the subtree is inert.</param>
+    internal void SetInert(NodeHandle node, bool inert)
+    {
+        NodeInput input = InputOf(node);
+        if (input.Inert != inert)
+        {
+            input.Inert = inert;
+            Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+    }
 
     // The checks of DisplayList.PushOpacity and PushTransform, made when the value is given so that the draw stage does not throw.
     private static void CheckOpacity(float opacity, string name)

@@ -31,7 +31,7 @@ internal sealed partial class WindowFrames
         {
             if (Look(ranges, run).Background is { } background && right > left)
             {
-                _list.FillRect(x + left, top, right - left, height, background);
+                _building.FillRect(x + left, top, right - left, height, background);
             }
         }
 
@@ -102,12 +102,12 @@ internal sealed partial class WindowFrames
         {
             if (ranges is not null && Look(ranges, run).Background is { } background && right > left)
             {
-                _list.FillRect(x + left, top, right - left, height, background);
+                _building.FillRect(x + left, top, right - left, height, background);
             }
 
             if (selected && right > left)
             {
-                _list.FillRect(x + left, top, right - left, height, selectedBackground);
+                _building.FillRect(x + left, top, right - left, height, selectedBackground);
             }
         }
 
@@ -224,7 +224,7 @@ internal sealed partial class WindowFrames
     }
 
     private void DrawGlyphs(ShapingResult result, ReadOnlySpan<LaidGlyph> glyphs, float x, float baseline, Color color) =>
-        _list.DrawLine(glyphs, result.Runs, result.Styles, _atlas, x, baseline, color, _textRendering.Coverage, _textRendering.IsAliased);
+        _building.DrawLine(glyphs, result.Runs, result.Styles, _atlas, x, baseline, color, _textRendering.Coverage, _textRendering.IsAliased);
 
     // A range's look: its own fields, under those of its link's hovered style while a pointer is over the link.
     private static SpanStyle Look(TextRanges ranges, in PaintRun run)
@@ -355,7 +355,7 @@ internal sealed partial class WindowFrames
             DecorationStyle.Dashed => new Dash(4 * unit, 2 * unit, from - origin),
             _ => null,
         };
-        _list.DrawLine(from, center, to, center, new Stroke(new Paint(color), thickness, LineCap.Flat, dash));
+        _building.DrawLine(from, center, to, center, new Stroke(new Paint(color), thickness, LineCap.Flat, dash));
     }
 
     // The pieces of a line's glyphs that share a range of the look, and with byFont a font run too: their glyphs, their range,

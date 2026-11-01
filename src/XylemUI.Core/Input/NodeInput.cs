@@ -96,6 +96,39 @@ internal sealed class NodeInput
     internal int HitBuild { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the node and its subtree write no hit region, and draw functions' regions are dropped:
+    /// <see cref="ElementExtensions.HitTestVisible"/> set to false (design §7.3).
+    /// </summary>
+    public bool HitTestInvisible
+    {
+        get;
+        internal set
+        {
+            field = value;
+            TakesNoPointer = value || Inert;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the node's subtree takes neither the pointer nor the focus: the root of a popup that leaves.
+    /// </summary>
+    public bool Inert
+    {
+        get;
+        internal set
+        {
+            field = value;
+            TakesNoPointer = value || HitTestInvisible;
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether the subtree writes no hit region: <see cref="HitTestInvisible"/> or <see cref="Inert"/>, kept in
+    /// one field that the draw stage reads for each node.
+    /// </summary>
+    internal bool TakesNoPointer { get; private set; }
+
+    /// <summary>
     /// Gets a value indicating whether the node writes a hit region for its input: a pointer handler, a cursor, the block, or the
     /// focus, which a press on the node takes.
     /// </summary>

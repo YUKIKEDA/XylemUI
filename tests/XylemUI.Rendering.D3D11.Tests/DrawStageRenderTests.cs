@@ -442,7 +442,7 @@ public sealed unsafe class DrawStageRenderTests(UiThreadFixture ui)
     // The frames here are drawn by the test, which reads the back buffer before any present.
     internal sealed class NoTarget : IRenderTarget
     {
-        public void Draw(DisplayList list, Color clearColor, GlyphAtlas atlas) { }
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) { }
 
         public void Present() { }
     }
