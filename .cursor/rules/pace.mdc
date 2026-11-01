@@ -44,7 +44,7 @@ Within a class, work whose result can change how existing code is built (a spike
 A benchmark, a NativeAOT publish, or a profile keeps the tree busy for minutes.
 
 - Run it in the background, never in the foreground with a wait loop.
-- Run it on a copy of the tree (`git worktree add` for a committed state) with its own `bin/` and `obj/`. Two worktrees never share build output.
+- Run it on a copy of the tree (`git worktree add` for a committed state) with its own `bin/` and `obj/`. Two worktrees never share build output. The state is named by its commit, not by `HEAD`: `git -C <main checkout> worktree add <path> HEAD` takes the main checkout's `HEAD`. In P02e the first run of the mutants went to a worktree of `main` and reported every file missing (PR #611).
 - While it runs, do what does not depend on its result. Name that work before starting the run.
 - Runs that need a quiet machine (compared benchmarks) do not overlap each other.
 
