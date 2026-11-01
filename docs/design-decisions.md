@@ -715,6 +715,11 @@ Rejected:
   - 選んでいない間のメニューバーを Tab で止める（Avalonia はバー全体で 1 つ、zed は項目ごと）。Windows の標準と Flutter は止めない。P02d3 の Q6
   - F10 で最初のメニューを開く（zed、`default-windows.json` 662 行目）。Windows の標準は、Alt と同じく選んだ状態にするだけで開かない。P02d3 の Q2
   - 相手の無い `AccessText` のキーを何もしないままにする（Avalonia、`AccessKeyHandler.cs` 382 行目）。キーが黙って効かない。フォーカスできる祖先にフォーカスを移す。P02d3 の Q7
+  - アプリ内のドラッグも OLE の `DoDragDrop` を通す（Avalonia、`Win32Platform.cs` 132〜133 行目）。`DoDragDrop` は終わるまで戻らず、型付きの値を運ぶにも OLE のデータオブジェクトを包むことになる。アプリ内は XylemUI のポインタの経路で行う（Flutter と GPUI）。DD1 の Q2、Issue #594
+  - D&D で運ぶものを、形式付きのデータだけにする（Avalonia の `IDataTransfer`）。アプリ内は型付きの値で運び、OS のファイルと文字も型付きの値（`DroppedFiles`・`DroppedText`）として同じ API で受ける（Flutter と GPUI）。DD1 の Q3
+  - どこにも落とさなかったドラッグを、ドラッグ元に知らせずに捨てる（GPUI、`window.rs` 5974〜5978 行目）。ドラッグ元が、運んだ値を元に戻すかを決められない。DD1 の Q8
+  - ドラッグ中の像を持たず、カーソルだけにする（Avalonia）。運んでいるものが見えない。アプリ内は `Preview` の像を描き、OS への持ち出しだけカーソルにする。DD1 の Q6・Q14
+  - キーボードだけで行う D&D を入れる。比べた 3 つとも持たない。DD1 の Q12
   - 開いているアンカーの印を、部品ごとの疑似状態にする（Avalonia の `:open`・`:dropdownopen`・`:flyout-open`）。部品ごとに名前と付け外しの場所が違い、新しい部品のたびに足す。Core のポップアップの仕組みがアンカーに `Open` を付ければ、すべての部品に一度で効く（GPUI の形）。P02d4 の Q1、Issue #588
   - 開いているかをアプリが読んで見た目を作る形だけにする（Flutter の `MenuController.isOpen`）。XylemUI のメニューバーの項目とコンテキストメニューは、開閉の Signal を部品の中に持つので、アプリから読めない。P02d4 の Q1
   - `Open` を、出ていく動きの終わりまで残す。閉じたメニューの項目が、しばらく開いたままに見える。P02d4 の Q3

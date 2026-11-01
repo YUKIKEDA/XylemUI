@@ -1586,6 +1586,7 @@ public static class ElementExtensions
     public static Element FocusWithin(this Element e, PaintStyle style);    // K1。自分か子孫がフォーカスしている
     public static Element Disabled(this Element e, PaintStyle style);       // K1。自分か祖先が Disabled
     public static Element Open(this Element e, PaintStyle style);           // P02d4。開いているポップアップのアンカー（§7.3）
+    public static Element DragOver(this Element e, PaintStyle style);       // DD1。受けるドラッグが上にあるドロップ先（§7）
     public static Element Draw(this Element e, DrawFunc draw);
     // 入力
     public static Element Cursor(this Element e, CursorKind cursor);
@@ -1710,7 +1711,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - 根の Scope を破棄すると、ノード・ハンドラ・Effect が残らない（アリーナの生きたノードの数、`ScopeTracker`）
   - Core: `Elements` の関数を今の木の外で呼ぶと投げる。`Bind` の Effect が Signal の変化を 1 回の batch で 1 回書く。`TextBuilder` の比べ（同じ内容なら無効化しない）と、補間文字列の長さ。描く関数の例外（§5.0）。割り当て 0: Signal で背景の色を変えるフレームと、`TextBuilder` で数を書き直すフレーム
 
-**疑似状態（Hover / Pressed / Focused / Disabled / Open）:** 疑似状態はノードの `PseudoState`（`UiNode.Pseudo`、§2.5）に持つビットフラグで表し、状態ごとに Signal を作らない。疑似状態ごとに変えられるのは **Paint 系のプロパティ（背景色・前景色・ボーダー色・不透明度・transform）だけ**で、サイズ・パディング・マージンなどレイアウトに影響する値は変えられない。これは型で強制する。`.Hovered()` 等が受け取る `PaintStyle` は Paint 系のプロパティしか持たない struct である。したがって疑似状態の変化は常に Paint dirty（`ChangeKind.Color` 相当）で済み、ホバーで Layout が走ることは構造的に起こらない。
+**疑似状態（Hover / Pressed / Focused / Disabled / Open / DragOver）:** 疑似状態はノードの `PseudoState`（`UiNode.Pseudo`、§2.5）に持つビットフラグで表し、状態ごとに Signal を作らない。疑似状態ごとに変えられるのは **Paint 系のプロパティ（背景色・前景色・ボーダー色・不透明度・transform）だけ**で、サイズ・パディング・マージンなどレイアウトに影響する値は変えられない。これは型で強制する。`.Hovered()` 等が受け取る `PaintStyle` は Paint 系のプロパティしか持たない struct である。したがって疑似状態の変化は常に Paint dirty（`ChangeKind.Color` 相当）で済み、ホバーで Layout が走ることは構造的に起こらない。
 
 ```csharp
 [Flags]
@@ -1723,6 +1724,7 @@ internal enum PseudoState : byte
     FocusWithin = 1 << 4,    // 自分か子孫が Focused
     Disabled = 1 << 5,       // 自分か祖先が Disabled（受け継いだ値。自分の印は NodeInput.Disabled）
     Open = 1 << 6,           // P02d4。開いているポップアップのアンカー（§7.3「アンカーの Open」）
+    DragOver = 1 << 7,       // DD1。受けるドラッグが上にあるドロップ先（§7「ドラッグ＆ドロップ」）
 }
 
 public readonly record struct PaintStyle  // レイアウトに影響するプロパティは持たない
@@ -1735,7 +1737,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 }
 ```
 
-フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open を重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
+フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open、DD1 の DragOver の順に重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
 **Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。
 
@@ -2172,6 +2174,7 @@ public sealed class ScrollState
 - **Shift で横:** マウスの、Shift を押した縦のホイールは、スクロールする箱の側で横のスクロールにする（Flutter の `scrollable.dart` 933〜951 行目はマウスだけ、Avalonia の `ScrollContentPresenter.cs` 764〜769 行目）。入力の層は来たままの量を渡す。GPUI はバックエンドで変える（`gpui_windows/src/events.rs` 555〜585 行目）
 - **滑らかなスクロール:** しない。ホイールで位置をすぐ変える。3 つともアニメーションさせない（Avalonia の `ScrollContentPresenter.cs` 794 行目、Flutter の `widgets/scroll_position_with_single_context.dart` 210〜236 行目、GPUI の `div.rs` 3378〜3382 行目）
 - **後の行に送るもの:** DirectManipulation で受けるタッチパッドのパンと慣性（Flutter の `flutter_window.cc` 805〜815 行目、GPUI の `gpui_windows/src/direct_manipulation.rs` 97〜106 行目）は行 I1 で入れた（形は §7「タッチとペン」の I1c、Issue #400・#404）。タッチのドラッグでのスクロールと慣性も同じ節の I1b で入れた。キーボードでのスクロールと、フォーカスしたノードを見える所まで動かすことは行 K1 で、§7「キーの入力とフォーカス」に書く。見えるスクロールバーは行 G1
+- **ドラッグ中の自動スクロール（行 DD1）:** D&D の間、像（無ければポインタの点）がスクロールの箱の見える範囲の外へ出たら、箱を動かす。決まりは §7「ドラッグ＆ドロップ」の「端の自動スクロール」に書く。ホイールと違い、端に着いた箱から外側の箱へは渡さない
 - **確かめ方:**
   - layout: 上の Taffy の 54 件のうち、マージンの相殺の 5 件を除く 49 件が通る。`scroll_width`・`scroll_height` を持つノードは、スクロールできる範囲が Chrome と一致する
   - WARP: 箱の外にあって切られていたボタンが、位置を変えた後に画素として出る（MoonBit 版の V2 と同じ到達点）。箱の外は切られる
@@ -3743,6 +3746,8 @@ public interface IPlatform
     IDialogBackend Dialogs { get; }
     IFrameScheduler FrameScheduler { get; }
     ITextInputPlatform TextInput { get; }         // フォーカスのある文字の入力の相手を OS の IME に結び、欄の変更を知らせる（P02c、§4.7）
+    // D&D（DD1、§7「ドラッグ＆ドロップ」）は IPlatform に口を足さない。OS からのドロップは窓ごとの IDropTarget が WindowInput に
+    // ドラッグとして渡し、OS への持ち出しは窓が DoDragDrop を呼ぶ。どちらも IWindowBackend の窓の中で閉じる
     IAccessibilityBridge Accessibility { get; }
     IFontProvider Fonts { get; }
 }
@@ -3865,7 +3870,7 @@ internal NodeHandle HitTest(int x, int y)   // DisplayList のメソッド。Win
     return default;
 }
 ```
-- **ドラッグ&ドロップ**: アプリ内はポインタキャプチャ＋独自視覚フィードバックで自前実装（OS D&D特有のレイテンシを回避、Chromium/Flutterと同方式）。アプリ外連携は各OSのネイティブD&D APIを§6のウィンドウ管理層に接続する形で個別実装（Windows の `IDropTarget` は OS から呼ばれる COM なので、§4.4.1 の UIA と同じく、作り方をその行で測って決める）。
+- **ドラッグ&ドロップ**: アプリ内はポインタキャプチャ＋独自視覚フィードバックで自前実装（Flutter と GPUI と同じ方式）。アプリ外とは、Windows では OLE の `IDropTarget` と `DoDragDrop` でつなぐ。形は下の「ドラッグ＆ドロップ」（行 DD1）に書く。
 - **カーソル形状**: ノードごとに `Cursor: CursorKind?` を持たせ、当たったノードから祖先へたどって最初に値を持つノードの形を、ヒットの結果が変わったときに OS に反映する（下の「ポインタの入力」の「カーソル」、V1c の Grill）。選べる領域（§4.10）に加わる文字の葉は、自分が値を持たなければ I ビームを持つものとして数える。
 - **ジェスチャー認識**: 基本ポインタイベントのみをコア機能とし、マルチタッチジェスチャーはオプション拡張として分離（v1のブロッカーにしない）。
 
@@ -3981,7 +3986,7 @@ internal sealed class WindowInput
   - Avalonia はどのボタンでも押したときに暗黙に取り、Move・Up をキャプチャした要素に送る（`Avalonia.Base/Input/MouseDevice.cs` 144〜148・183・207 行目）。Win32 の `SetCapture` も取る（`Windows/Avalonia.Win32/Input/WindowsMouseDevice.cs` 36〜45 行目）
   - Flutter は Down のヒットテストの結果を Up まで使い回し（`gestures/binding.dart` 363〜376・437〜444 行目）、`SetCapture` は左ボタンだけで取る（`flutter_window.cc` 738〜745 行目）
   - GPUI は経路を持たず、すべてのリスナーにすべてのイベントを送る。`capture_pointer` で取ると、そのヒットボックスは常に hover 扱いになる（`gpui/src/window.rs` 784〜804・3366〜3384 行目）
-  - 明示のキャプチャの API（Avalonia の `Pointer.Capture`、GPUI の `capture_pointer`）は、アプリ内のドラッグ＆ドロップを入れる行で入れる（行 D5 がその行を決める）
+  - 明示のキャプチャの API は、行 DD1 で `PointerEvent.Capture` として入れる（下の「ドラッグ＆ドロップ」の「明示のキャプチャ」）
 - **Click:** 左ボタンの Down を配ったとき、その元のノードを覚える。左ボタンの Up を配った後、離した点のヒットテストが覚えたノードかその子孫に当たれば、覚えたノードを元に Click を bubble で配る。当たらなければ配らない。動いた距離では取り消さない
   - Avalonia の `Button` は、離した点のヒットテストが自分か子孫を含むときだけ Click にする（`Avalonia.Controls/Button.cs` 439〜454 行目）
   - GPUI は、Up のときに押した要素のヒットボックスが hover でなければ取り消す（`gpui/src/elements/div.rs` 3087〜3103 行目）
@@ -4145,6 +4150,69 @@ bool UpdateGestures(TimeSpan frameTime);
 - **確かめ方:**
   - Core: `PointerInput` を直接入れる（§12.4 の注入の入口）。複数のポインタのキャプチャ・ホバー・primary、ペンの値、タッチの Enter と Leave が無いこと、タップの Click と `ClickCount`、ドラッグがスクロールに変わるときの Cancel、慣性のフレーム。I1b は、スクロールに変わる閾値を軸ごとに（横の箱の中の縦の動き）、越えた点から動くこと、中のハンドラが Move を止めたらスクロールしないこと、複数の指、決まった点の列から求めた速さ（Flutter の `velocity_tracker_test.dart` と同じ点の列で同じ値）、流す条件の境、偽の時計で進めたフレームごとの式の位置と終わり、流れている間の押下とホイールを確かめる。途中の点は、`PointerInput.HistoryCount` と、履歴を返す偽の `IPointerPlatform` を入れて、古い順に並ぶこと、最後が自身の点であること、配送の後に呼ぶと投げること、マウスが 1 点だけであることを確かめる。I1c は、PanStart から PanEnd を入れて、閾値を軸ごとに、PanStart で決めた箱へ配ること、中のハンドラが PanUpdate を止めたらスクロールしないこと、流れること、流れている間にマウスのクリックが中に届いて流れが止まらないこと、タッチの押下と新しい PanStart で止まることを確かめる。`UpdateGestures` が true を返す間フレームを頼み続けることは、偽の `IPointerPlatform` で確かめる
   - Platform: ポインタの情報を読む所（`GetPointerType`・`GetPointerInfo`・`GetPointerPenInfo`・`GetPointerTouchInfo`・履歴）を差し替えられる形にし、テストは偽の情報を入れて `WM_POINTER*` を `SendMessage` で送る。Flutter の `MockWindowsProcTable` と同じ形である（`flutter_window_unittests.cc` 86・291〜333 行目）。3 つとも `InjectSyntheticPointerInput` は使わない。DirectManipulation は、viewport と中身の呼び出しを差し替えられる形にし、偽物で確かめる。Flutter の `direct_manipulation_unittests.cc` と `window_unittests.cc` と同じ場面を持つ: `DM_POINTERHITTEST` で `PT_TOUCHPAD` なら 1 回 `SetContact` し、ほかの種類と `GetPointerType` の失敗ではしない。`SetContact` だけではフレームを頼まず、`INTERACTION_BEGIN` で頼み、`INTERACTION_END` の後（元に戻し終えた後）は `UpdateGestures` が false を返す。状態と変換の列から PanStart・PanUpdate・PanEnd が出て、量が `ScaleFactor` で割られる。INERTIA の間の変換は捨て、INERTIA から READY で `ZoomToRect` を 1 回呼び、それが起こす状態の変化を捨てる。始まりの変換が 0 でないときは差だけを渡す。作るのに失敗したウィンドウは、ホイールでスクロールする。本物の DirectManipulation の物は、STA のテストのスレッドで作れて、壊せることだけを確かめる。`XylemApp.Run` は MTA のスレッドで `InvalidOperationException` を投げる。スケジューラは、Present しなかったフレームの次がタイマーを待ち、Present したフレームの次がスワップチェーンの待機オブジェクトを待つことを確かめる。Present しなかったフレームが次を頼まずに終わり、その後にコールバックの外から頼んだフレームも、タイマーを待つことを確かめる
+
+**ドラッグ＆ドロップ（DD1 の Grill でオーナーが決定、Issue #594）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じである。Win32 は Microsoft の文書（`RegisterDragDrop`・`IDropTarget`・`DoDragDrop`・`IDropSource`・`SHCreateDataObject`・`GetSystemMetrics` の頁）を読んだ。実装は 2 つの PR に分ける。1 つ目は明示のキャプチャ、アプリ内の D&D、端の自動スクロール、2 つ目は OS からのドロップと OS への持ち出しである。
+
+```csharp
+// XylemUI（Core）。ElementExtensions に足す
+public static Element DragSource<T>(this Element source, Func<T> value, DragSourceOptions? options = null) where T : notnull;
+public static Element DropTarget<T>(this Element target, DropTargetOptions<T> options) where T : notnull;
+public static Element DragOver(this Element e, PaintStyle style);   // §2.13。型の合うドラッグが上にあり、受ける判定が true の間
+
+[Flags] public enum DragEffects : byte { None = 0, Copy = 1, Move = 2, Link = 4 }
+
+public sealed record DragSourceOptions
+{
+    public Func<Element>? Preview { get; init; }            // ドラッグ中の像。null ならカーソルだけ
+    public DragEffects Allowed { get; init; } = DragEffects.Move;
+    public Func<ExternalDragData?>? External { get; init; } // OS 向けの中身。null なら窓の外へ出てもアプリ内のまま
+    public Action<DragEffects>? Ended { get; init; }        // 落とした効果。取り消しと、どこにも落とさなかったときは None
+}
+
+public sealed record DropTargetOptions<T>
+{
+    public Func<T, bool>? CanDrop { get; init; }            // null なら型が合えば受ける
+    public DragEffects Accepts { get; init; } = DragEffects.Copy | DragEffects.Move | DragEffects.Link;
+    public DragHandler<T>? Enter { get; init; }
+    public DragHandler<T>? Over { get; init; }
+    public DragHandler<T>? Leave { get; init; }
+    public required DragHandler<T> Drop { get; init; }
+}
+
+public delegate void DragHandler<T>(in DragEvent<T> e);
+public readonly struct DragEvent<T>  // Value、Position（ドロップ先の箱の左上からの論理座標）、Effect、Modifiers
+
+public sealed record DroppedFiles(IReadOnlyList<string> Paths);  // OS から来たファイル
+public sealed record DroppedText(string Text);                   // OS から来た文字
+public sealed record ExternalDragData(IReadOnlyList<string>? Files, string? Text);
+```
+
+- **アプリ内は自前（Q2）:** アプリ内のドラッグは OLE を通さず、XylemUI のポインタの経路で行う（Flutter と GPUI の形）。Avalonia は、OLE が使えるときはアプリ内のドラッグも OLE の `DoDragDrop` を通す（`Windows/Avalonia.Win32/Win32Platform.cs` 132〜133 行目、`DragSource.cs` 28 行目）。`DoDragDrop` は、終わるまで戻らない呼び出しである
+- **運ぶもの（Q3）:** 型付きの値 `T` を運び、ドロップ先は型で受ける。ドロップ先の `T` に、運ぶ値が代入できれば型が合う。Flutter の `Draggable<T>` は `T? data` を運び（`widgets/drag_target.dart` 174・202 行目）、GPUI の `on_drag` は値を、`on_drop::<T>` は型で受ける（`gpui/src/elements/div.rs` 568〜575・615〜635 行目）。Avalonia は形式付きの `IDataTransfer` を運び（`Avalonia.Base/Input/DragDrop.cs` 129〜133 行目）、型付きの値はアプリ内だけの形式で運ぶ（`DataFormat.cs` 149〜151 行目）。OS から来たファイルと文字は `DroppedFiles` と `DroppedText` の値として、同じ API で受ける（GPUI の `ExternalPaths` の形、`gpui/src/window.rs` 5658〜5672 行目）
+- **始まる距離（Q5）:** マウスは、左ボタンを押した点から、横に `SM_CXDRAG`、縦に `SM_CYDRAG`（OS の設定、物理画素）より動いたら始める（`GetSystemMetrics` の頁: ドラッグが始まる前にポインタが動ける幅）。値は `TextEditingSettings` と同じく窓が読み、`HeadlessApp` は Windows の既定の 4 を使う。Flutter はマウスで 1 px（`gestures/multidrag.dart` 344 行目、`gestures/constants.dart` 103 行目）、GPUI は 2 px（`div.rs` 52・2980〜2986 行目）、Avalonia は距離を持たず、アプリが押した時に始める。タッチとペンは、押してから 18 論理画素の中で 500 ms 動かなければ始める（Flutter の `LongPressDraggable`、`drag_target.dart` 426 行目と `constants.dart` 29 行目。§13.1 の Tooltip の長押しと同じ値）。タッチのドラッグはスクロールの箱を動かす（行 I1b）ので、長押しより前に 18 px 動いたら D&D は始めない
+- **始まったとき:** ドラッグ元のノードにポインタをキャプチャし（下の「明示のキャプチャ」）、そのボタンの Click は配らない（GPUI は押した状態を消す、`div.rs` 2986 行目）。窓ごとに、同時に 1 つのドラッグだけを持つ（GPUI の `App.active_drag` は 1 つ、Q12）。ドラッグ中は、ほかのポインタの押下で新しいドラッグを始めない
+- **像（Q6）:** `Preview` の要素を、ポップアップのどれよりも前の独立した描画ルート（§7.3）に描く。像の根はヒット領域を書かない。置き場所は、ポインタの位置から、押した点とドラッグ元の箱の左上の差を引いた所で、ポインタについていく（GPUI の `cursor_offset`、`window.rs` 3730〜3735 行目。Flutter の `childDragAnchorStrategy`）。像は中身の大きさで置く（GPUI の `AvailableSpace::min_size`）。`Preview` が無ければ像を描かない。Avalonia は像を持たず、カーソルだけである
+- **ドロップ先（Q7）:** ポインタが動くたびに、像を除くヒットテストをし、当たったノードから根へたどって、`DropTarget<T>` を持ち、型が合い、Disabled でなく、`CanDrop` が true の最初のノードをドロップ先にする。3 つとも動くたびにヒットテストし（Flutter の `drag_target.dart` 903 行目、GPUI はふつうのヒットテスト）、Flutter は内側から順に聞いて最初に受けたものにする（932〜947 行目）。ドロップ先が変わったら、前のものに Leave、新しいものに Enter を配り、変わらなければ Over を配る。ドロップ先のノードには、その間、疑似状態 `DragOver` を付ける
+- **効果（Q9）:** 効果は、ドラッグ元の `Allowed` とドロップ先の `Accepts` の両方にあるものから選ぶ。修飾キーで、Alt なら Link、Ctrl なら Copy、どちらも無ければ Move を選び、それが両方に無ければ Move・Copy・Link の順で両方にある最初のものにする（Avalonia のアプリ内のドラッグ、`Avalonia.Controls/Platform/InProcessDragSource.cs` 83〜96 行目）。どれも無ければ、そのノードはドロップ先にしない
+- **落とす:** ボタンを離したとき、ドロップ先があれば、その `Drop` を呼び、ドラッグ元の `Ended` に選んだ効果を渡す。無ければ `Ended(None)` を呼ぶ。GPUI は、どこにも落とさなかったドラッグを黙って捨てる（`window.rs` 5974〜5978 行目）。Flutter は `onDraggableCanceled` を呼ぶ（`drag_target.dart` 544〜545 行目）
+- **取り消し（Q8）:** Esc の Down、窓が非アクティブになったとき、キャプチャを失ったとき（CaptureLost）に取り消し、ドロップ先に Leave を、ドラッグ元に `Ended(None)` を配る。Esc はドラッグが受け、経路には配らない。Avalonia は Esc で取り消す（OLE は `Windows/Avalonia.Win32/OleDragSource.cs` 23〜24 行目、アプリ内は `InProcessDragSource.cs` 140〜146 行目）。Flutter と GPUI は Esc で取り消さない。キーボードだけで行う D&D は持たない（3 つとも持たない、Q12）
+- **ドラッグに入る道と出る道（`.cursor/rules/design-docs.mdc` の、モードを持つ部品の決まり）:**
+  - 入る: マウスの左ボタンの、始まる距離を超えた移動。タッチとペンの長押し。OS の `DragEnter`
+  - 出る: ボタンを離す（落とす）。Esc。窓の非アクティブ化。キャプチャを失う（モーダルが開いて後ろのキャプチャを外したときを含む、§7.3「閉じ方」）。窓の外へ出て OS のドラッグに渡す（持ち出し）。OS の `DragLeave` と `Drop`
+  - 出るときは、どの道でも、ドロップ先に Leave か Drop を、ドラッグ元に `Ended` を 1 回だけ配り、像の根を外し、`DragOver` を消す
+  - ドラッグ元のノードが木から外れても、ドラッグは続け、出るときに `Ended` を呼ぶ。ドロップ先のノードが外れたら、次の移動でドロップ先を探し直す
+- **ドラッグの間のほかの入力（`.cursor/rules/design-docs.mdc` の、キーボードを握る状態の決まり）:** Esc の Down はドラッグが受ける。ほかのキーは、フォーカスのあるノードへふつうに配る。修飾キーが変わったら、効果を選び直して Over を配る（OLE も `DragOver` で `grfKeyState` を渡す）。ホイールは当たったノードへふつうに配る。ドラッグを始めるときに、出ている Tooltip は §13.1 のとおり押下で隠れている。開いているメニューの中からのドラッグは、ほかの押下と同じく、メニューの外を押したときの閉じ方には当たらない（押したのはメニューの中）
+- **端の自動スクロール（Q10）:** ドラッグ中、像の矩形（像が無ければポインタの点）が、最後に当たったノードの祖先のスクロールの箱の見える範囲の外へ出たら、その軸で箱を動かす。速さは、はみ出した距離（20 論理画素で頭打ち）に 50 を掛けた論理画素毎秒で、フレームごとに進める（Flutter の `EdgeDraggingAutoScroller`、`widgets/scrollable_helpers.dart` 153〜155・256・313〜314 行目、並べ替えのリストの既定 `velocityScalar` 50 は `reorderable_list.dart` 611 行目）。端に着いたら止め、外側の箱へは渡さない。3 つとも、部品の仕組みとしては持たない（Flutter は並べ替えのリストで、zed はプロジェクトのパネルで、それぞれ自前で持つ）
+- **明示のキャプチャ（Q11）:** `PointerEvent.Capture(Element? element)` で、そのポインタのキャプチャを別のノードへ移し、null で外す（Avalonia の `Pointer.Capture(element)`、`Avalonia.Base/Input/Pointer.cs` 65〜68 行目）。キャプチャを失ったノードの経路に CaptureLost を配る（Avalonia は `Pointer.cs` 130〜136 行目）。暗黙のキャプチャと同じく、ボタンがすべて上がると外れる（Avalonia はボタンを離すたびに外す、`MouseDevice.cs` 223 行目）。GPUI の `capture_pointer` は、キャプチャしたヒットボックスを常にホバー扱いにするだけで、経路は変えない（`window.rs` 3372〜3379・786〜788 行目）
+- **OS からのドロップ（Q3・Q14・Q15）:** 窓を作ったら `RegisterDragDrop` で `IDropTarget` を登録し、窓を壊すときに `RevokeDragDrop` する（GPUI の `gpui_windows/src/window.rs` 1516〜1527 行目、Avalonia の `OleContext.cs` 50 行目）。`IDropTarget` は OS から呼ばれる COM なので、TSF と同じく手書きの vtable で書く（§4.7）。`DragEnter` で、`CF_HDROP` があれば `DragQueryFileW` でパスを読んで `DroppedFiles`、無くて `CF_UNICODETEXT` があれば `DroppedText` を値とする、アプリ内のドラッグを始める。どちらも無ければ受けない（`DROPEFFECT_NONE`）。`DragOver` は動く、`DragLeave` は取り消し、`Drop` は落とすとして、アプリ内のドラッグと同じ道で配る（GPUI の形）。効果は、OS が許す効果（`*pdwEffect`）を `Allowed` とし、`grfKeyState` の修飾キーで上と同じに選ぶ。4 つのメソッドは、シェルの `IDropTargetHelper` にもそのまま渡し、エクスプローラーの像を窓の上に出す（GPUI、`gpui_windows/src/window.rs` 1210 行目）
+- **OS への持ち出し（Q13・Q14・Q15）:** アプリ内のドラッグで、左ボタンを押したポインタが窓のクライアント領域の外へ出たとき、ドラッグ元の `External` が中身を返せば、OS のドラッグに渡す（GPUI の `promote_external_drag_to_platform`、`gpui/src/window.rs` 5763〜5791 行目。Windows では `can_start_external_drag` が false で、使われない、`gpui/src/platform.rs` 1326〜1331 行目）。データオブジェクトは `SHCreateDataObject` で作り、`IDataObject::SetData` でファイル（`CF_HDROP`）と文字（`CF_UNICODETEXT`）を入れる（`SHCreateDataObject` の頁: 任意の形式を `SetData` で入れられる）。`IDropSource` は手書きの vtable で書き、Esc で取り消し、ボタンが上がったら落とす（Avalonia の `OleDragSource.cs` 23〜31 行目と同じ）。像は付けず、OS の既定のカーソルにする（Avalonia、`OleDragSource.cs` 36〜38 行目）。`DoDragDrop` は終わるまで戻らないが、中でメッセージを回すので、窓の描画は続く。アプリ内の像は渡したときに消す。終わったら、OS が選んだ効果をドラッグ元の `Ended` に渡す。画像の形式は、画像の経路を決める行 D13 の後に足す
+- **費用:** ドラッグ中にポインタが動くフレーム（ヒットテスト、ドロップ先の判定、像の根の置き直し）は、定常状態で割り当てない。ドラッグの無い経路の時間は main と変わらないこと
+- **確かめ方:**
+  - Core: `PointerInput` を直接入れる。始まる距離（マウス）と長押し（タッチ）、長押しより前に動いたタッチはスクロールすること、Click を配らないこと、ドロップ先の決め方（内側から、型、`CanDrop`、Disabled）、Enter・Over・Leave・Drop の順、`DragOver`、効果の選び方、取り消しの 4 つ、どこにも落とさなかったとき、端の自動スクロール、明示のキャプチャと CaptureLost
+  - Platform: `IDropTarget` に、`CF_HDROP` と `CF_UNICODETEXT` を持つデータオブジェクトを渡し、アプリ内のドラッグと同じ道で届くこと。持ち出しの `IDropSource` の Esc とボタン
+  - golden: ドラッグ中の像と、`DragOver` のドロップ先の 1 枚
+  - サンプル: Todo の項目を、ドラッグで並べ替えられるようにする
+  - 計測: E2E にドラッグ中に動くフレームの場面を足し、割り当て 0 と、ドラッグの無い経路を main と比べる
 
 **キーの入力とフォーカス（K1 の Grill でオーナーが決定、Issue #351）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。パスの書き方は上の「ポインタの入力」と同じで、Flutter の `fm` は `widgets/focus_manager.dart`、zed の Button は `crates/ui/src/components/button/` から書く。Win32 のメッセージは Microsoft の文書（`WM_KEYDOWN`・`WM_SYSKEYDOWN`・`WM_ACTIVATE`・`WM_SYSCOMMAND`・`WM_MENUCHAR`・`ToUnicodeEx` の頁）を読んだ。実装は 2 つに分ける。K1a はキーのイベントと配送、Win32 のキーのメッセージ、フォーカス・Tab・押したときのフォーカス・Focused の 3 つの擬似状態・ウィンドウの活性化。K1b は Disabled、ボタンの Enter と Space、キーボードでのスクロール、フォーカスしたノードを見える所まで動かすこと。
 
@@ -4362,6 +4430,7 @@ XylemUI の規則:
   - Flutter の `translucent`（自分も受け、後ろも試す、`rendering/proxy_box.dart` 183〜195 行目）は採らない。`HitTest` は最前面の 1 項目だけを返し、押したときの暗黙のキャプチャ（§7）も 1 つのノードに付く。1 回の押下に当たり先が 2 つあると、どちらがキャプチャするかが決まらない
 - **入れ子（Q10）:** サブメニューは、親のポップアップの中のノードを開いた側とする、子のポップアップである。ポップアップは開いた側のポップアップを覚えておき、親を閉じると子も閉じる。兄弟を開くと、前の兄弟は閉じる（Flutter の `widgets/raw_menu_anchor.dart` 746〜747 行目）。ただし、一時のポップアップ（`PopupOptions.IsTransient`、下の `PopupOptions`。Tooltip のもの）は、開くときに兄弟を閉じない。逆に、ほかのポップアップが開くと、親によらず、出ている一時のポップアップはすべて閉じる（行 P02d2、PR #560 のレビュー）。「外を押した」かは、親子の組のどれかの中なら内側として判定する（Flutter の `TapRegion` の groupId、`widgets/tap_region.dart` 319〜400 行目）。GPUI も、フォーカスがサブメニューにある間は親を閉じない（`ui/src/components/context_menu.rs` 307〜328 行目）
 - **動き（Q11）:** `PopupOptions.Motion` は `Show` と同じ `ShowMotion`（§2.14）で、既定は動きなしである。閉じる動きの間は、根に `HitTestVisible(false)` を付け、部分木をフォーカスできなくする（Flutter の `material/menu_anchor.dart` 693〜704 行目の `IgnorePointer` と `ExcludeFocus`）。動きが終わったら根を外す
+- **ドラッグの像の根（行 DD1）:** ドラッグ中の像（§7「ドラッグ＆ドロップ」）は、ポップアップのどれよりも前に置く、もう 1 つの描画ルートに描く。根はヒット領域を書かず、ポップアップのリストと同じく、自分の部分木に印のあるときだけリストを作り直す
 - **アンカーの Open（行 P02d4、P02d4 の Grill、Issue #588）:** ポップアップが開いている間、Core のポップアップの仕組みが、そのアンカーのノードに疑似状態 `Open`（§2.13）を付ける。見た目は `.Open(PaintStyle)` で付ける。メニューが開くとフォーカスはメニューの中へ移るので、アンカーには `Focused` も `FocusWithin` も付かない。`Open` が無いと、開いているメニューバーの項目や Select の箱を、アプリが見た目で示せない
   - 付けるのは、一時のポップアップ（`PopupOptions.IsTransient`、Tooltip のもの）を除く、すべてのポップアップのアンカーである。メニュー・サブメニュー・メニューバーの項目・コンテキストメニューの相手・Select の箱に、部品が何もしなくても効く。Tooltip は、ホバーで出るだけで「開いた」ものではない
   - 閉じ始めたとき（`Closing`）に外し、出ていく動き（上の「動き」）の終わりは待たない。動きの終わりまで残すと、閉じたメニューの項目が、しばらく開いたままに見える
@@ -4526,7 +4595,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 全要件を維持する方針（既存）は変更しない。以下はあくまで実装に着手する順序であり、後段のフェーズにある項目も設計（型・フック）には最初から含める。
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
-2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d。Tooltip・Select・メニューのアクセスキーは行 P02d2、窓全体のアクセスキーとメニューバーは行 P02d3）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → P02d2 → P02d3 → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
+2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d。Tooltip・Select・メニューのアクセスキーは行 P02d2、窓全体のアクセスキーとメニューバーは行 P02d3）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → P02d2 → P02d3 → P02d4 → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
 3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
 4. **v0.3**: RTL（レイアウトの向き、行 P03b）、BiDi と複雑スクリプト（行 P03a）、縦書き（行 P03c）、カラー絵文字（COLRv0 は済み、COLRv1 と SVG は行 T11 で v1.x）（D5 の Grill、Issue #163）
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
