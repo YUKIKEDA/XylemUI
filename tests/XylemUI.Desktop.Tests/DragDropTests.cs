@@ -9,6 +9,60 @@ namespace XylemUI.Desktop.Tests;
 public sealed class DragDropTests
 {
     /// <summary>
+    /// The drag's preview, drawn under the pointer, is hit by nothing: a move over a target after the preview's frame keeps the target,
+    /// and the drop reaches it (PR #599's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A source 100 x 30 dragging "a" with a preview 80 x 30; a target 200 x 60 below it that takes strings and logs its drops.
+    ///
+    /// Steps:
+    /// - Press the source 5 px from its top left, so that the preview lies under the pointer; move 10 px; move into the target and
+    ///   settle, which draws the preview there; move 1 px within the target; read its drag-over state; release.
+    ///
+    /// Expected:
+    /// - The target keeps the drag-over state, and its log holds "drop a".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Drag_PreviewUnderThePointer_IsHitByNothing()
+    {
+        var drops = new List<string>();
+        Element source = default;
+        Element target = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                source = Box()
+                    .Width(100)
+                    .Height(30)
+                    .DragSource(() => "a", new DragSourceOptions { Preview = () => Box().Width(80).Height(30).Background(Color.FromRgb(0x3366CC)) });
+                target = Box()
+                    .Width(200)
+                    .Height(60)
+                    .DropTarget(new DropTargetOptions<string> { Drop = (in DragEvent<string> e) => drops.Add($"drop {e.Value}") });
+                return Column(source, target);
+            },
+            new HeadlessOptions { Width = 300, Height = 200 }
+        );
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Move(5, 5);
+        app.Pointer.Down();
+        app.Pointer.Move(15, 5);
+        app.Pointer.Move(50, 60);
+        _ = app.PumpAndSettle();
+        app.Pointer.Move(51, 60);
+        _ = app.PumpAndSettle();
+        bool over = Has(app, target, PseudoState.DragOver);
+        app.Pointer.Up();
+        _ = app.PumpAndSettle();
+
+        Assert.True(over);
+        Assert.Equal(["drop a"], drops);
+    }
+
+    /// <summary>
     /// A mouse's press on a drag source starts a drag once it moves past the drag size (4 physical pixels here, Windows' default), not
     /// before; the target gets the enter, the moves, and the drop with the value and the effect; the source's end runs with the
     /// effect; the press gives no click.

@@ -92,8 +92,8 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A new window reads the caret's blink and width, the selection's colors, and whether access keys are always underlined from
-    /// Windows.
+    /// A new window reads the caret's blink and width, the selection's colors, whether access keys are always underlined, and how far
+    /// a press moves before a drag starts from Windows.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -101,11 +101,12 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Read the window's settings, and <c>GetCaretBlinkTime</c>, <c>SPI_GETCARETWIDTH</c>, <c>GetSysColor</c> of
-    ///   <c>COLOR_HIGHLIGHT</c> and <c>COLOR_HIGHLIGHTTEXT</c>, and <c>SPI_GETKEYBOARDCUES</c> straight from Windows.
+    ///   <c>COLOR_HIGHLIGHT</c> and <c>COLOR_HIGHLIGHTTEXT</c>, <c>SPI_GETKEYBOARDCUES</c>, and <c>SM_CXDRAG</c> and <c>SM_CYDRAG</c>
+    ///   straight from Windows.
     ///
     /// Expected:
     /// - The blink is the blink time (none for <c>INFINITE</c>), the width is the caret width, the colors are the system colors,
-    ///   read as 0x00BBGGRR, and the keyboard cues are the setting.
+    ///   read as 0x00BBGGRR, the keyboard cues are the setting, and the drag size is the two metrics.
     /// </remarks>
     [Fact]
     public void TextEditing_NewWindow_IsWindowsSettings() =>
@@ -119,6 +120,8 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             uint highlightText = GetSysColor(COLOR.COLOR_HIGHLIGHTTEXT);
             BOOL cues;
             Assert.NotEqual(BOOL.FALSE, SystemParametersInfoW(SPI.SPI_GETKEYBOARDCUES, 0, &cues, 0));
+            int dragWidth = GetSystemMetrics(SM.SM_CXDRAG);
+            int dragHeight = GetSystemMetrics(SM.SM_CYDRAG);
 
             TextEditingSettings read = window.TextEditing;
 
@@ -127,6 +130,7 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             Assert.Equal(new Color((byte)highlight, (byte)(highlight >> 8), (byte)(highlight >> 16)), read.SelectionBackground);
             Assert.Equal(new Color((byte)highlightText, (byte)(highlightText >> 8), (byte)(highlightText >> 16)), read.SelectionForeground);
             Assert.Equal(cues != BOOL.FALSE, read.KeyboardCues);
+            Assert.Equal((dragWidth, dragHeight), (read.DragWidth, read.DragHeight));
         });
 
     /// <summary>

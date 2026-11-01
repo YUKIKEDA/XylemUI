@@ -4372,7 +4372,7 @@ internal sealed class FocusManager
 
 Dialog/Menu/Popupが開くと新しい`FocusScope`を積み、閉じるとその下のスコープへ戻す。`IsModal`なスコープが積まれている間は、そのスコープ外へのフォーカス移動を断り、外のノードへのポインタを遮る（フォーカストラップの実装。キーの経路は遮らない。下の「P02d で入れる形」）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7 の文字の入力の相手、`ITextInputClient`）は、フォーカスしたノードがテキスト入力可能な場合にのみ有効化される。
 
-**P02d で入れる形（P02d の Grill の Q6、Issue #547）:** スコープは、ポップアップ（§7.3）を開くたびに 1 つ積む。ただし、一時のポップアップ（Tooltip、§7.3 の `PopupOptions.IsTransient`）は積まない。積むと、Tooltip が出ている間、Tab が空のスコープで回る（行 P02d2）。持ち主はポップアップの根のノードで、親は開いた側のノードが入っているスコープである。比べた 3 つは次のとおり。
+**P02d で入れる形（P02d の Grill の Q6、Issue #547）:** スコープは、ポップアップ（§7.3）を開くたびに 1 つ積む。ただし、一時のポップアップ（Tooltip、§7.3 の `PopupOptions.IsTransient`）は積まない。積むと、Tooltip が出ている間、Tab が空のスコープで回る（行 P02d2）。ドラッグの像（§7.3 の `PopupOptions.IsDragImage`）も積まない。像はフォーカスを取らない（行 DD1）。持ち主はポップアップの根のノードで、親は開いた側のノードが入っているスコープである。比べた 3 つは次のとおり。
 - Flutter は、ルートごとに `FocusScopeNode` を持ち（`widgets/routes.dart` 1095・1201 行目）、閉じたら、スコープが覚えたフォーカスの履歴をさかのぼって戻す（`widgets/focus_manager.dart` 1503〜1523 行目）
 - GPUI は、開く前にフォーカスしていた要素を覚えて戻す（`ui/src/components/popover_menu.rs` 281〜293 行目、`workspace/src/modal_layer.rs` 160・254〜258 行目）
 - Avalonia は、ウィンドウ内のポップアップの Tab を `Cycle` にする（`Avalonia.Controls/Primitives/OverlayPopupHost.cs` 32〜33 行目）
@@ -4427,13 +4427,15 @@ XylemUI の規則:
   - **モーダル:** 根が窓全体のヒット領域を書き（`BlocksPointer`、§7「遮る印」）、後ろへの押下・ホバー・ホイールをすべて遮る。Flutter の `ModalBarrier`（`HitTestBehavior.opaque`、`widgets/modal_barrier.dart` 441 行目）、GPUI の `ModalLayer` の背景（`occlude`、`workspace/src/modal_layer.rs` 288〜330 行目）と同じである。背景を押して閉じるかは `DialogOptions.DismissOnBackdropPress` で選び、既定は閉じない。`Popup` を `IsModal` で直接使うときは `PopupOptions.DismissOnOutsidePress` で選び、既定（null）はモーダルなら閉じず、モーダルでなければ閉じる。Avalonia の `ShowDialog` は持ち主の窓を OS の側で使えなくし（`Avalonia.Controls/Window.cs` 1195〜1207 行目）、外を押しても閉じない
   - **ほかの閉じる時機:** メニューは、Esc、窓が非アクティブになったとき（Avalonia の `Popup.cs` 994〜1033 行目）、アンカーの祖先のスクロールの箱がスクロールしたとき（Flutter の `widgets/raw_menu_anchor.dart` 512〜570 行目）に閉じる。モーダルは Esc だけで閉じ、窓が非アクティブになっても閉じない。Avalonia のダイアログも別の窓で、持ち主が非アクティブになっても閉じない（Q4 の推奨は「どちらも」と書いたが、設計を書くときに、ダイアログを Alt+Tab で閉じる誤りと分かって直した）。モーダルの後ろはスクロールできないので、スクロールでも閉じない
   - ポップアップが自分で閉じたら、開閉の signal に false を書く。開いた側のノードが木から外れたら、ポップアップも閉じる（開いた側の Scope が持つため）
+  - ドラッグの像（`PopupOptions.IsDragImage`）は、外の押下・Esc・窓の非アクティブ化・アンカーの祖先のスクロールのどれでも閉じない。閉じるのは、そのドラッグが終わったときだけである（§7「ドラッグ＆ドロップ」、行 DD1）
   - モーダルを開いたとき、後ろのノードがポインタをキャプチャしていれば外す（CaptureLost）。モーダルの中のノードのキャプチャは、§7「ポインタキャプチャとモーダル境界の優先順位」のとおり、外へ出ても続く
 - **後ろへ通す印（Q5）:** `.HitTestVisible(false)` を付けたノードの部分木は、どのノードもヒット領域を書かない（描く関数が書く `DrawingContext.HitRegion` も捨てる）。ポインタは後ろのノードに当たる。Avalonia の `IsHitTestVisible`（`Avalonia.Base/Input/InputExtensions.cs` 82 行目。部分木ごと外す、`Rendering/Composition/CompositionTarget.cs` 118〜126 行目）、Flutter の `IgnorePointer`（`rendering/proxy_box.dart` 3797 行目）と同じである
   - 使う場面は、ハンドラを持つノードの部分木を、一時的に当たらなくするときである（閉じる動きの間のポップアップ、操作させない間のカード）。飾りのノードは、もともとヒット領域を書かない（§5.0「ヒット領域と `DrawingContext`」）
   - Flutter の `translucent`（自分も受け、後ろも試す、`rendering/proxy_box.dart` 183〜195 行目）は採らない。`HitTest` は最前面の 1 項目だけを返し、押したときの暗黙のキャプチャ（§7）も 1 つのノードに付く。1 回の押下に当たり先が 2 つあると、どちらがキャプチャするかが決まらない
 - **入れ子（Q10）:** サブメニューは、親のポップアップの中のノードを開いた側とする、子のポップアップである。ポップアップは開いた側のポップアップを覚えておき、親を閉じると子も閉じる。兄弟を開くと、前の兄弟は閉じる（Flutter の `widgets/raw_menu_anchor.dart` 746〜747 行目）。ただし、一時のポップアップ（`PopupOptions.IsTransient`、下の `PopupOptions`。Tooltip のもの）は、開くときに兄弟を閉じない。逆に、ほかのポップアップが開くと、親によらず、出ている一時のポップアップはすべて閉じる（行 P02d2、PR #560 のレビュー）。「外を押した」かは、親子の組のどれかの中なら内側として判定する（Flutter の `TapRegion` の groupId、`widgets/tap_region.dart` 319〜400 行目）。GPUI も、フォーカスがサブメニューにある間は親を閉じない（`ui/src/components/context_menu.rs` 307〜328 行目）
+  - ドラッグの像（`PopupOptions.IsDragImage`、行 DD1）は、開くときに兄弟を閉じず、ほかのポップアップが開いても閉じない。ほかのポップアップがドラッグの間に開いたら、像の後ろに入れ、像をいつも一番手前に保つ
 - **動き（Q11）:** `PopupOptions.Motion` は `Show` と同じ `ShowMotion`（§2.14）で、既定は動きなしである。閉じる動きの間は、根に `HitTestVisible(false)` を付け、部分木をフォーカスできなくする（Flutter の `material/menu_anchor.dart` 693〜704 行目の `IgnorePointer` と `ExcludeFocus`）。動きが終わったら根を外す
-- **ドラッグの像の根（行 DD1）:** ドラッグ中の像（§7「ドラッグ＆ドロップ」）は、ポップアップのどれよりも前に置く、もう 1 つの描画ルートに描く。根はヒット領域を書かず、ポップアップのリストと同じく、自分の部分木に印のあるときだけリストを作り直す
+- **ドラッグの像の根（行 DD1）:** ドラッグ中の像（§7「ドラッグ＆ドロップ」）は、`PopupOptions.IsDragImage` を持つポップアップで描く。ポップアップの仕組みの例外は 6 つである。(1) フォーカスのスコープを積まない（§7.2）。(2) 開くときに兄弟を閉じず、ほかのポップアップが開いても閉じない（上の「入れ子」）。(3) 外の押下・Esc・窓の非アクティブ化で閉じない（「閉じ方」）。(4) いつも一番手前に置く。(5) アンカーに対してではなく、ドラッグが置いた所（`OverlayPopupHost.DragImageAt`）に置く。(6) アンカーの祖先のスクロールで閉じない（自動スクロールで、ドラッグ元の箱が動くため）。枠も中身もヒット領域を書かない。枠がポインタを遮ると、像の下のドロップ先が見つからない（PR #599 のレビュー）。リストは、ポップアップのリストと同じく、自分の部分木に印のあるときだけ作り直す
 - **アンカーの Open（行 P02d4、P02d4 の Grill、Issue #588）:** ポップアップが開いている間、Core のポップアップの仕組みが、そのアンカーのノードに疑似状態 `Open`（§2.13）を付ける。見た目は `.Open(PaintStyle)` で付ける。メニューが開くとフォーカスはメニューの中へ移るので、アンカーには `Focused` も `FocusWithin` も付かない。`Open` が無いと、開いているメニューバーの項目や Select の箱を、アプリが見た目で示せない
   - 付けるのは、一時のポップアップ（`PopupOptions.IsTransient`、Tooltip のもの）を除く、すべてのポップアップのアンカーである。メニュー・サブメニュー・メニューバーの項目・コンテキストメニューの相手・Select の箱に、部品が何もしなくても効く。Tooltip は、ホバーで出るだけで「開いた」ものではない
   - 閉じ始めたとき（`Closing`）に外し、出ていく動き（上の「動き」）の終わりは待たない。動きの終わりまで残すと、閉じたメニューの項目が、しばらく開いたままに見える
@@ -4459,6 +4461,7 @@ public sealed record PopupOptions
     public bool? DismissOnOutsidePress { get; init; }   // null は !IsModal（メニューは閉じ、モーダルは閉じない）。モーダルでは背景の押下
     public ShowMotion? Motion { get; init; }
     internal bool IsTransient { get; init; }         // P02d2。一時のポップアップ（Tooltip）。フォーカスのスコープを積まず（§7.2）、兄弟を閉じない
+    internal bool IsDragImage { get; init; }         // DD1。ドラッグの像（§7「ドラッグ＆ドロップ」）。下の「ドラッグの像の根」の 6 つの例外を持つ
 }
 
 public readonly record struct PopupPlacement(
