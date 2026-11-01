@@ -425,8 +425,9 @@ public sealed class VirtualListTests
     /// - A list of 10,000 rows in a box 300 high, each fifth 60 high and the others 20, with an estimated extent of 20.
     ///
     /// Steps:
-    /// - For Top, Center, and Bottom: scroll to 0, so that row 5,000 (60 high) is not made; move to it; settle; read where the row
-    ///   shows. Scroll to 0; move to it with Nearest; read; move with Nearest again; read.
+    /// - Move to rows 5,000, 6,000, and 7,000 (60 high each) with Top, Center, and Bottom, from 0, so that neither the row nor the
+    ///   rows around it were measured, settling after each, and read where the row shows. From 0, move to row 8,000 with Nearest;
+    ///   read; move to it with Nearest again; read.
     ///
     /// Expected:
     /// - At 0, 120, and 240 (300 - 60); with Nearest from the top at 240, and again at 240.
@@ -440,23 +441,23 @@ public sealed class VirtualListTests
         await using HeadlessApp app = await HeadlessApp.StartAsync(() => MixedList(items, state, focusable: false));
         _ = app.PumpAndSettle();
         var shown = new List<float>();
-        foreach (ScrollAlign align in new[] { ScrollAlign.Top, ScrollAlign.Center, ScrollAlign.Bottom })
+        foreach ((int index, ScrollAlign align) in new[] { (5_000, ScrollAlign.Top), (6_000, ScrollAlign.Center), (7_000, ScrollAlign.Bottom) })
         {
             state.Scroll.ScrollTo(Vector2.Zero);
             _ = app.PumpAndSettle();
-            state.ScrollToIndex(5_000, align);
+            state.ScrollToIndex(index, align);
             _ = app.PumpAndSettle();
-            shown.Add(ShownAt(app, state, "row5000"));
+            shown.Add(ShownAt(app, state, $"row{index}"));
         }
 
         state.Scroll.ScrollTo(Vector2.Zero);
         _ = app.PumpAndSettle();
-        state.ScrollToIndex(5_000);
+        state.ScrollToIndex(8_000);
         _ = app.PumpAndSettle();
-        shown.Add(ShownAt(app, state, "row5000"));
-        state.ScrollToIndex(5_000);
+        shown.Add(ShownAt(app, state, "row8000"));
+        state.ScrollToIndex(8_000);
         _ = app.PumpAndSettle();
-        shown.Add(ShownAt(app, state, "row5000"));
+        shown.Add(ShownAt(app, state, "row8000"));
 
         Assert.Equal([0, 120, 240, 240, 240], shown);
     }
