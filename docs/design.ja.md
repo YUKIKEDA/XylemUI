@@ -5069,7 +5069,7 @@ public static Element Label(Element content, Element target);              // co
 - **同じキーと、使えないもの:** 同じキーの相手が複数あるときは、何もせず、今のフォーカスの次の相手へフォーカスを回す。ボタンも押さない（Avalonia の 342〜346・357 行目）。Disabled と、見えていないものは飛ばす（401〜402 行目）
 - **処理する時:** フォーカスのあるノードの経路を流し終えた後の、既定の動作として処理する（§7「キーの入力とフォーカス」の 4 つ目）。Alt+文字を自分で使う部品があれば、そちらが先に受ける。文字の欄は Alt+文字を命令にしないので、欄にフォーカスがあってもアクセスキーが効く
 - **メニューバーの形:** `MenuBar` は `MenuBarItem` を横に並べる。項目は見た目を付けず、パネルは §13.1 のメニューと同じもの（`panel` がメニューの見た目）である。Avalonia は `Menu` と上の段の `MenuItem`、Flutter は `MenuBar` と `SubmenuButton` の形である
-- **選んだ状態:** Alt だけを押して離すか F10 で、メニューバーを選んだ状態にし、最初の項目を強調して、メニューは開かない。Windows の標準のメニューバーと Avalonia（`AccessKeyHandler.cs` 256〜263 行目）の形である。zed の F10 は、最初のメニューを開く（`assets/keymaps/default-windows.json` 662 行目）。Alt が Down の間にほかのキーを押したら、Alt の Up では選ばない
+- **選んだ状態:** Alt だけを押して離すか F10 で、メニューバーを選んだ状態にし、最初の項目を強調して、メニューは開かない。Windows の標準のメニューバーと Avalonia（`AccessKeyHandler.cs` 256〜263 行目）の形である。zed の F10 は、最初のメニューを開く（`assets/keymaps/default-windows.json` 662 行目）。Alt が Down の間にほかのキーを押したら、Alt の Up では選ばない（Avalonia の `_ignoreAltUp`、`AccessKeyHandler.cs` 216〜218・256〜258 行目）
 - **抜けるとき:** Alt・F10・メニューの開いていないときの Esc で選んだ状態を抜け、選ぶ前にフォーカスしていたノードへフォーカスを戻す。メニューの開いているときの Esc は、メニューだけを閉じ、選んだ状態は残す。Avalonia は Esc でフォーカスを戻さない（`Platform/DefaultMenuInteractionHandler.cs` 496〜506 行目）。zed は閉じるときに前のフォーカスへ戻す（`ui/src/components/popover_menu.rs` 281〜292 行目）
 - **選んだ状態のキー:**
   - 左右キーで上の段を移り、端で回る（Avalonia、zed、Windows の標準）
