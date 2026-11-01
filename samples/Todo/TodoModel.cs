@@ -118,6 +118,28 @@ public sealed class TodoModel
     public void Remove(int id) => _items.Set(_items.Get().Where(item => item.Id != id).ToList());
 
     /// <summary>
+    /// Moves an item to where another one is, among every item: the others between them shift by one (design §7, "Drag and drop").
+    /// An unknown number, or the same one twice, changes nothing.
+    /// </summary>
+    /// <param name="id">The number of the item to move.</param>
+    /// <param name="to">The number of the item whose place it takes.</param>
+    public void Move(int id, int to)
+    {
+        List<TodoItem> items = [.. _items.Get()];
+        int from = items.FindIndex(item => item.Id == id);
+        int at = items.FindIndex(item => item.Id == to);
+        if (from < 0 || at < 0 || from == at)
+        {
+            return;
+        }
+
+        TodoItem moved = items[from];
+        items.RemoveAt(from);
+        items.Insert(at, moved);
+        _items.Set(items);
+    }
+
+    /// <summary>
     /// Gets a value indicating whether the dialog that asks before an item is removed is open; the dialog writes false when Esc closes
     /// it.
     /// </summary>
