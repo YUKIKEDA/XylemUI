@@ -87,6 +87,27 @@ public sealed class VirtualListState
     public IReadOnlySignal<IndexRange> VisibleRange => _visibleRange;
 
     /// <summary>
+    /// Scrolls the list so that the row of an item shows (design §3.4, "Moving by index"): its position is found from the lengths of
+    /// the rows before it, measured or estimated, the rows around it are made in the next frame, and once the row is measured the
+    /// position is set again with its length. The same four alignments as GPUI's <c>ScrollStrategy</c>.
+    /// </summary>
+    /// <param name="index">The item's index.</param>
+    /// <param name="align">Where the row goes in the viewport; <see cref="ScrollAlign.Nearest"/> moves the least, and not at all
+    /// when the row shows whole.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not an index of the items.</exception>
+    /// <exception cref="InvalidOperationException">The state is not the state of a list.</exception>
+    public void ScrollToIndex(int index, ScrollAlign align = ScrollAlign.Nearest)
+    {
+        IVirtualHost host = Host ?? throw new InvalidOperationException("The state is not the state of a virtualized list.");
+        host.ScrollToIndex(index, align);
+    }
+
+    /// <summary>
+    /// Gets or sets the list the state belongs to.
+    /// </summary>
+    internal IVirtualHost? Host { get; set; }
+
+    /// <summary>
     /// Writes the rows that show, when they changed.
     /// </summary>
     /// <param name="range">The rows.</param>
@@ -97,4 +118,31 @@ public sealed class VirtualListState
             _visibleRange.Set(range);
         }
     }
+}
+
+/// <summary>
+/// Where <see cref="VirtualListState.ScrollToIndex"/> puts a row in the viewport.
+/// </summary>
+public enum ScrollAlign : byte
+{
+    /// <summary>
+    /// The least move that shows the row: none when it shows whole, its start at the viewport's start when it is before, its end at
+    /// the viewport's end when it is after.
+    /// </summary>
+    Nearest,
+
+    /// <summary>
+    /// The row's start at the viewport's start.
+    /// </summary>
+    Top,
+
+    /// <summary>
+    /// The row's middle at the viewport's middle.
+    /// </summary>
+    Center,
+
+    /// <summary>
+    /// The row's end at the viewport's end.
+    /// </summary>
+    Bottom,
 }

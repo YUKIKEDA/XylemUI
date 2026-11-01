@@ -2160,7 +2160,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
   - `.KeepAlive(keep)` の Signal が true の行。Flutter の `AutomaticKeepAlive` に当たる。比べた中で、アプリが行を残せるのは Flutter だけである。`KeepAlive` は `render` が返した行の根に付ける。行の中のノードに付けても行は残らない。範囲の外の行ごとに部分木をたどらず、表を 1 回引くだけで済むからである（#610 の実装）
   - 持った行に `Focus` か Tab の移動が見える所まで動かすことを求めたら（§7「Bring into view」）、その行の番号へ `ScrollToIndex(Nearest)` してから動かす。持った行には今の位置が無いからである
   - 使い回すのは比べた中で Avalonia だけで（`VirtualizingStackPanel.cs` 1158〜1161 行目）、使い回すと、項目に結び付いていない状態が別の項目に残る。Flutter と GPUI は作り直す
-- **番号で動かす API:** `VirtualListState.ScrollToIndex(index, align)` は、その行の位置を累積の和から求めて基準を置き、次のフレームの Materialization で行を作る。`ScrollAlign` は Nearest（見えていれば動かさない）・Top・Center・Bottom である。GPUI の `ScrollStrategy`（`uniform_list.rs` 84〜99 行目）と同じ 4 つにした。Avalonia は `ScrollIntoView(int)` を持つ（`VirtualizingStackPanel.cs` 635〜720 行目）。Flutter には番号で動かす API が無い。`VisibleRange` は、見えている行の番号の範囲で、layout の後の batch で書く。GPUI の `ListScrollEvent` の `visible_range` に当たる（`list.rs` 172〜184 行目）。矢印キーで動く部品（ListBox など）は、この 2 つを使う
+- **番号で動かす API:** `VirtualListState.ScrollToIndex(index, align)` は、その行の位置を累積の和から求めて基準を置き、次のフレームの Materialization で行を作る。その行を layout した後の batch で、測った長さで揃え直す。見積もりと違う長さの行でも、揃え方のとおりに置かれる（#614 の実装）。`ScrollAlign` は Nearest（見えていれば動かさない）・Top・Center・Bottom である。GPUI の `ScrollStrategy`（`uniform_list.rs` 84〜99 行目）と同じ 4 つにした。Avalonia は `ScrollIntoView(int)` を持つ（`VirtualizingStackPanel.cs` 635〜720 行目）。Flutter には番号で動かす API が無い。`VisibleRange` は、見えている行の番号の範囲で、layout の後の batch で書く。GPUI の `ListScrollEvent` の `visible_range` に当たる（`list.rs` 172〜184 行目）。矢印キーで動く部品（ListBox など）は、この 2 つを使う
 - **キーボードでの移動:** Tab は、作った行（Cached を含む）の中のフォーカスできるノードを、§7.1 の順でたどる。フォーカスしたノードを見える所まで動かすと、範囲がついて動くので、1 つずつなら並びの全部をたどれる。Flutter の Tab も作ったノードだけをたどり（`widgets/focus_traversal.dart` 590〜612 行目）、250 画素のキャッシュで 1 つずつ進む。たどる途中で、作った範囲の端の先にまだ項目があるときは、`IVirtualizedFocusHost`（§3.4.2）で、その場で次の行を作って続ける。作るのは、範囲の端から `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab は並びを出る。上限が無いと、フォーカスできるノードの無い 1 万行に Tab が当たったとき、1 回のキーで全部を作る
 - **a11y:** 行ごとに Active・Cached・持った行のどれかを持つ。a11y の木に Active の行だけを載せることと、項目の数と位置の報告、a11y へのフォーカスの知らせは、a11y の木を作る行 P02g で入れる（§3.4.2「v1 a11y との契約」）
 - **確かめ方:**
@@ -2253,13 +2253,13 @@ Released （CacheExtentの外まで離れた場合）: §2.3のScope機構でDis
 ```csharp
 internal interface IVirtualizedFocusHost
 {
-    // 作った範囲の端から CacheExtent 1 つ分の長さまで、次（前）の行をその場で作る。
-    // 作った行の中にフォーカスできるノードが無ければ false を返し、Tab は並びを出る。
-    bool MaterializeBeyond(bool backward);
+    // フォーカスのある行の次（Shift+Tab は前）から、まだ作っていない行を、次に作ってある行か、CacheExtent 1 つ分の長さまで、
+    // その場で作る。next は走査がリストの中に見つけた次の行（無ければ none）。行を作ったら true を返し、走査をやり直す。
+    bool MaterializeBeyond(NodeHandle row, NodeHandle next, bool backward);
 }
 ```
 
-これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従う。ただし、走査が作った範囲の端に着き、その先にまだ項目がある間は、先に `MaterializeBeyond` で次の行を作って走査を続ける。作るのは範囲の端から `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab はリストを抜ける。
+これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従う。ただし、走査が作った範囲の端に着き、その先にまだ項目がある間は、先に `MaterializeBeyond` で次の行を作って走査を続ける。走査がリストの中で、まだ作っていない項目を飛び越して次の行（範囲の外に持った行）へ進むときも同じである。作るのは `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab はリストを抜ける（#614 の実装）。
 
 ---
 

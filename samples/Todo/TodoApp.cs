@@ -115,7 +115,10 @@ public static class TodoApp
                             Styled(Text((ref text) => text.Write(model.NewestFirst.Get() ? "Newest first" : "Oldest first")), model.Reverse)
                         )
                         .Gap(6),
-                    ScrollView(Column().Gap(4).For(model.Shown, item => item.Id, item => ItemRow(model, item)))
+                    Box()
+                        .Overflow(Overflow.Visible, Overflow.Scroll)
+                        .VirtualFor(model.Shown, item => item.Id, item => ItemRow(model, item))
+                        .Gap(4)
                         .Height(ListHeight)
                         .DropTarget(new DropTargetOptions<DroppedText> { Drop = (in DragEvent<DroppedText> e) => model.Add(e.Value.Text) })
                         .DragOver(new PaintStyle { Background = ItemHighlight }),

@@ -87,7 +87,6 @@ public sealed class HeadlessPixelTests
         NodeHandle button = tree.Nodes.GetRef(hidden).FirstChild;
         Color clipped = Pixel(app, InButton(app, button));
         NodeHandle list = tree.Nodes.GetRef(rows[0]).Parent;
-        list = tree.Nodes.GetRef(list).Parent;
         tree.ScrollStateOf(list)!.ScrollTo(new Vector2(0, 64));
         _ = app.PumpAndSettle();
 

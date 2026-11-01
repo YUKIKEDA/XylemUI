@@ -34,6 +34,7 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     // The items, their keys by index, and the index of each key.
     private IReadOnlyList<T> _items = [];
     private TKey[] _keys = [];
+    private TKey[] _nextKeys = [];
     private int _count;
     private Dictionary<TKey, int> _indexOf = [];
     private Dictionary<TKey, int> _nextIndexOf = [];
@@ -61,6 +62,10 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     private bool _hasAnchorKey;
     private float _shift;
     private float _lastOffset;
+
+    // A move by index waiting for its row to be measured: the index, or -1, and the alignment.
+    private int _pendingIndex = -1;
+    private ScrollAlign _pendingAlign;
 
     private VirtualBlock(
         UiTree tree,
@@ -118,6 +123,7 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     {
         var block = new VirtualBlock<T, TKey>(tree, box, key, render, state, options, horizontal);
         tree.SetVirtualHost(box, block);
+        state.Host = block;
         _ = Scope.Create(
             () =>
             {
@@ -260,6 +266,13 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
             return;
         }
 
+        // A move by index whose row is laid out now: the position again, with the row's measured length.
+        if (_pendingIndex >= 0 && _pendingIndex < _count && _rows.TryGetValue(_keys[_pendingIndex], out Row? target) && target.Live)
+        {
+            PlaceIndex(_pendingIndex, _pendingAlign);
+            _pendingIndex = -1;
+        }
+
         float offset = Math.Max(0, AnchorOffset());
         Vector2 now = _state.Scroll.OffsetValue;
         Vector2 next = _horizontal ? now with { X = offset } : now with { Y = offset };
@@ -291,6 +304,109 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
         return start < offset + ViewportLength() && start + LengthOf(r.Index) > offset;
     }
 
+    /// <inheritdoc/>
+    public void ScrollToIndex(int index, ScrollAlign align)
+    {
+        if ((uint)index >= (uint)_count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index, "The index is an index of the list's items.");
+        }
+
+        SyncAnchor();
+        bool measured = _rows.TryGetValue(_keys[index], out Row? row) && row.Live;
+        PlaceIndex(index, align);
+        _pendingIndex = measured ? -1 : index;
+        _pendingAlign = align;
+        float offset = AnchorOffset();
+        Vector2 now = _state.Scroll.OffsetValue;
+        _ = _state.Scroll.SetOffset(_horizontal ? now with { X = offset } : now with { Y = offset });
+        _lastOffset = offset;
+        _tree.NoteWork();
+    }
+
+    /// <inheritdoc/>
+    public bool RevealKeptRow(NodeHandle row)
+    {
+        if (!_rowOf.TryGetValue(row, out Row? r) || r.Live)
+        {
+            return false;
+        }
+
+        ScrollToIndex(r.Index, ScrollAlign.Nearest);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool MaterializeBeyond(NodeHandle row, NodeHandle next, bool backward)
+    {
+        if (!_rowOf.TryGetValue(row, out Row? from) || !Scope.IsAlive(_rowsOwner))
+        {
+            return false;
+        }
+
+        int step = backward ? -1 : 1;
+        int stop = next.IsNone || !_rowOf.TryGetValue(next, out Row? to) ? (backward ? -1 : _count) : to.Index;
+        float length = 0;
+        bool made = false;
+        for (int index = from.Index + step; index != stop && index >= 0 && index < _count; index += step)
+        {
+            if (_rows.ContainsKey(_keys[index]))
+            {
+                if (made)
+                {
+                    break;
+                }
+
+                continue;
+            }
+
+            Make(index);
+            made = true;
+            length += LengthOf(index) + _gap;
+            if (length >= _options.CacheExtent)
+            {
+                break;
+            }
+        }
+
+        if (made)
+        {
+            Relink();
+            Invalidation.MarkMaterialized(_tree, _box);
+        }
+
+        return made;
+    }
+
+    // Puts the anchor where an alignment puts a row: the row at the position the alignment gives, and how far into it.
+    private void PlaceIndex(int index, ScrollAlign align)
+    {
+        float start = PositionOf(index);
+        float length = LengthOf(index);
+        float view = ViewportLength();
+        float offset = AnchorOffset();
+        if (align == ScrollAlign.Nearest)
+        {
+            if (start >= offset && start + length <= offset + view)
+            {
+                return;
+            }
+
+            align = start < offset || length > view ? ScrollAlign.Top : ScrollAlign.Bottom;
+        }
+
+        float target = align switch
+        {
+            ScrollAlign.Top => start,
+            ScrollAlign.Center => start - ((view - length) / 2),
+            _ => start + length - view,
+        };
+        target = Math.Max(0, target);
+        _anchor = IndexAt(target);
+        _shift = target - PositionOf(_anchor);
+        SetAnchorKey();
+    }
+
     // One update of the items, with no computation reading what the rows read: their own effects follow their signals.
     private void Update(IReadOnlyList<T> items)
     {
@@ -311,8 +427,14 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     // or takes the row at its index (design §3.4, "When the anchor row goes").
     private void Reconcile(IReadOnlyList<T> items)
     {
+        // The keys go to the array of the next order, which changes places with this one, as For's do: an update allocates nothing.
         int count = items.Count;
-        var keys = new TKey[count];
+        if (_nextKeys.Length < count)
+        {
+            _nextKeys = new TKey[Math.Max(count, _nextKeys.Length * 2)];
+        }
+
+        TKey[] keys = _nextKeys;
         _nextIndexOf.Clear();
         for (int j = 0; j < count; j++)
         {
@@ -327,8 +449,10 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
         }
 
         (_indexOf, _nextIndexOf) = (_nextIndexOf, _indexOf);
+        int oldCount = _count;
+        (_keys, _nextKeys) = (keys, _keys);
+        Array.Clear(_nextKeys, 0, Math.Min(oldCount, _nextKeys.Length));
         _items = items;
-        _keys = keys;
         _count = count;
 
         for (int i = _order.Count - 1; i >= 0; i--)

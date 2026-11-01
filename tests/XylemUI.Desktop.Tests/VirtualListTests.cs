@@ -416,6 +416,211 @@ public sealed class VirtualListTests
         PerformanceAssert.DoesNotAllocate(1_000, Step);
     }
 
+    /// <summary>
+    /// A move by index puts the row where its alignment says, with the row's own length once it is measured, also when it is longer
+    /// than its estimate; Nearest moves the least, and not at all when the row shows whole.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A list of 10,000 rows in a box 300 high, each fifth 60 high and the others 20, with an estimated extent of 20.
+    ///
+    /// Steps:
+    /// - Move to row 5,000 (60 high) with Top, Center, and Bottom, settling after each, and read where the row shows; scroll to 0,
+    ///   move to it with Nearest, read; move with Nearest again, read.
+    ///
+    /// Expected:
+    /// - At 0, 120, and 240 (300 - 60); with Nearest from the top at 240, and again at 240.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ScrollToIndex_PutsTheRowWhereItsAlignmentSays()
+    {
+        Signal<IReadOnlyList<int>> items = Items(0, 10_000);
+        var state = new VirtualListState();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => MixedList(items, state, focusable: false));
+        _ = app.PumpAndSettle();
+        var shown = new List<float>();
+        foreach (ScrollAlign align in new[] { ScrollAlign.Top, ScrollAlign.Center, ScrollAlign.Bottom })
+        {
+            state.ScrollToIndex(5_000, align);
+            _ = app.PumpAndSettle();
+            shown.Add(ShownAt(app, state, "row5000"));
+        }
+
+        state.Scroll.ScrollTo(Vector2.Zero);
+        _ = app.PumpAndSettle();
+        state.ScrollToIndex(5_000);
+        _ = app.PumpAndSettle();
+        shown.Add(ShownAt(app, state, "row5000"));
+        state.ScrollToIndex(5_000);
+        _ = app.PumpAndSettle();
+        shown.Add(ShownAt(app, state, "row5000"));
+
+        Assert.Equal([0, 120, 240, 240, 240], shown);
+    }
+
+    /// <summary>
+    /// Tab walks every row of a list, one after the other, though most of them are not made when it starts; Shift+Tab walks back.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A list of 1,000 focusable rows 20 high; row 0 focused.
+    ///
+    /// Steps:
+    /// - Press Tab 999 times, settling after each, and record the focused row; press Shift+Tab 3 times the same way.
+    ///
+    /// Expected:
+    /// - Rows 1 to 999 in order, then 998, 997, 996; row 999 shows in the viewport when it has the focus.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Tab_WalksEveryRow_AndShiftTabWalksBack()
+    {
+        Signal<IReadOnlyList<int>> items = Items(0, 1_000);
+        var state = new VirtualListState();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => List(items, state, focusable: true));
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(app.Find("row0")));
+        _ = app.PumpAndSettle();
+        var focused = new List<string?>();
+        float lastShown = float.NaN;
+        for (int i = 0; i < 999; i++)
+        {
+            _ = app.Keyboard.Press(Key.Tab);
+            _ = app.PumpAndSettle();
+            focused.Add(app.Tree.TestIdOf(app.Tree.Focus.Focused));
+        }
+
+        lastShown = ShownAt(app, state, "row999");
+        for (int i = 0; i < 3; i++)
+        {
+            _ = app.Keyboard.Press(Key.Tab, KeyModifiers.Shift);
+            _ = app.PumpAndSettle();
+            focused.Add(app.Tree.TestIdOf(app.Tree.Focus.Focused));
+        }
+
+        Assert.Equal([.. Enumerable.Range(1, 999).Select(i => $"row{i}"), "row998", "row997", "row996"], focused);
+        Assert.InRange(lastShown, 0, 280);
+    }
+
+    /// <summary>
+    /// Tab makes the rows past the made ones up to one cache extent's length, and leaves the list when none of them takes the focus;
+    /// a row with a focusable node within that length takes it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focusable box after a list of 1,000 rows 20 high in which only rows 0, 30, and 500 are focusable; row 0 focused. Rows 0 to
+    ///   27 are made.
+    ///
+    /// Steps:
+    /// - Press Tab, settle; read the focus. Press Tab, settle; read the focus and whether row 500 was made.
+    ///
+    /// Expected:
+    /// - Row 30 (past the rows made, within 250 px of them); then the box after the list, with row 500 never made.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Tab_PastRowsWithNoFocus_LeavesTheListAtTheBound()
+    {
+        Signal<IReadOnlyList<int>> items = Items(0, 1_000);
+        var state = new VirtualListState();
+        var made = new HashSet<int>();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                Box()
+                    .Width(200)
+                    .Height(300)
+                    .Overflow(Overflow.Visible, Overflow.Scroll)
+                    .VirtualFor(
+                        items,
+                        static i => i,
+                        item =>
+                        {
+                            int i = item.Get();
+                            _ = made.Add(i);
+                            Element row = Box().Height(20).TestId($"row{i}");
+                            return i is 0 or 30 or 500 ? row.Focusable() : row;
+                        },
+                        state
+                    ),
+                Box().Height(20).Focusable().TestId("after")
+            )
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(app.Find("row0")));
+        _ = app.PumpAndSettle();
+
+        _ = app.Keyboard.Press(Key.Tab);
+        _ = app.PumpAndSettle();
+        string? first = app.Tree.TestIdOf(app.Tree.Focus.Focused);
+        _ = app.Keyboard.Press(Key.Tab);
+        _ = app.PumpAndSettle();
+        string? second = app.Tree.TestIdOf(app.Tree.Focus.Focused);
+
+        Assert.Equal(("row30", "after"), (first, second));
+        Assert.DoesNotContain(500, made);
+    }
+
+    /// <summary>
+    /// A focus asked for in a row the list keeps outside its range scrolls the list to the row, and the row then shows, laid out.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A list of 1,000 focusable rows 20 high; row 3 focused; scrolled to 10,000, so that row 3 is kept outside the range.
+    ///
+    /// Steps:
+    /// - Focus row 3 again; settle; read whether it is laid out and where it shows. Press Tab; settle; read the focus.
+    ///
+    /// Expected:
+    /// - Row 3 laid out, within the viewport (0 to 280); then row 4 focused.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task FocusInAKeptRow_ScrollsTheRowIntoView()
+    {
+        Signal<IReadOnlyList<int>> items = Items(0, 1_000);
+        var state = new VirtualListState();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => List(items, state, focusable: true));
+        _ = app.PumpAndSettle();
+        Element row = app.Find("row3");
+        Assert.True(app.Focus(row));
+        _ = app.PumpAndSettle();
+        state.Scroll.ScrollTo(new Vector2(0, 10_000));
+        _ = app.PumpAndSettle();
+        IVirtualHost host = app.Tree.VirtualHostOf(app.Tree.Nodes.GetRef(row.Node).Parent)!;
+        Assert.False(host.LaysOut(row.Node, out _));
+
+        Assert.True(app.Focus(row));
+        _ = app.PumpAndSettle();
+        bool laidOut = host.LaysOut(row.Node, out _);
+        float shown = ShownAt(app, state, "row3");
+        _ = app.Keyboard.Press(Key.Tab);
+        _ = app.PumpAndSettle();
+
+        Assert.True(laidOut);
+        Assert.InRange(shown, 0, 280);
+        Assert.Equal("row4", app.Tree.TestIdOf(app.Tree.Focus.Focused));
+    }
+
+    // A box 200 x 300 that scrolls vertically, with a row for each item, each fifth 60 high and the others 20, with an estimated
+    // extent of 20.
+    private static Element MixedList(Signal<IReadOnlyList<int>> items, VirtualListState state, bool focusable) =>
+        Box()
+            .Width(200)
+            .Height(300)
+            .Overflow(Overflow.Visible, Overflow.Scroll)
+            .VirtualFor(
+                items,
+                static i => i,
+                item =>
+                {
+                    Element row = Box().Height(item.Get() % 5 == 0 ? 60 : 20).TestId($"row{item.Get()}");
+                    return focusable ? row.Focusable() : row;
+                },
+                state,
+                new VirtualOptions { EstimatedExtent = 20 }
+            );
+
     private static Signal<IReadOnlyList<int>> Items(int start, int count) => Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(start, count)]);
 
     // A box 200 x 300 that scrolls vertically, with a row 20 high for each item, whose test ID is "row" and the item.

@@ -374,11 +374,13 @@ public sealed class TodoTests
 
     /// <summary>
     /// The frames that draw a change of an item's mark, and a reversal of the list, allocate nothing; the changes themselves are the
-    /// app's, which builds a new list.
+    /// app's, which builds a new list. The items all fit in the range the virtualized list makes, so that a reversal makes no row: a
+    /// row made runs its render, which allocates (design §3.4).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The todo app, headless, with 100 items added by the model, settled. Warmed up with the same iterations.
+    /// - The todo app, headless, with 10 items added by the model, all of them in the list's viewport and cache extent, settled.
+    ///   Warmed up with the same iterations.
     ///
     /// Steps:
     /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: unmeasured, toggle the first item on even
@@ -393,12 +395,13 @@ public sealed class TodoTests
     {
         var model = new TodoModel();
         await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < 10; i++)
         {
             _ = model.Add($"Item {i + 1}");
         }
 
         _ = headless.PumpAndSettle();
+        Assert.Equal(10, App.Of(headless, model).Rows().Count);
 
         void Change(int index)
         {
@@ -512,7 +515,7 @@ public sealed class TodoTests
         public List<NodeHandle> Rows()
         {
             var rows = new List<NodeHandle>();
-            for (NodeHandle row = Tree.Nodes.GetRef(Child(List, 0)).FirstChild; !row.IsNone; row = Tree.Nodes.GetRef(row).NextSibling)
+            for (NodeHandle row = Tree.Nodes.GetRef(List).FirstChild; !row.IsNone; row = Tree.Nodes.GetRef(row).NextSibling)
             {
                 rows.Add(row);
             }

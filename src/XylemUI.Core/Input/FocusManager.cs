@@ -226,6 +226,14 @@ internal sealed class FocusManager
             return;
         }
 
+        // A node in a row a virtualized list keeps outside its range has no position: the list scrolls to the row, and the node is
+        // brought into view in the frame that lays the row out (design §3.4, "The rows that leave the range").
+        if (FindListRow(node, out NodeHandle box, out NodeHandle row) && Tree.VirtualHostOf(box)!.RevealKeptRow(row))
+        {
+            AskToReveal(node);
+            return;
+        }
+
         Rect rect = Tree.Nodes.GetRef(node).Layout.Rect;
         var start = new Vector2(rect.X, rect.Y);
         var size = new Vector2(rect.Width, rect.Height);
@@ -329,6 +337,63 @@ internal sealed class FocusManager
             return false;
         }
 
+        NodeHandle next = Next(root, backward, current);
+
+        // A move that would leave a virtualized list, or pass over items it has not made, makes them first and walks again (design
+        // §3.4.2, "Keyboard moves at a virtualized boundary").
+        if (!current.IsNone && FindListRow(current, out NodeHandle box, out NodeHandle row))
+        {
+            NodeHandle nextRow = RowIn(next, box);
+            if (Tree.VirtualHostOf(box)!.MaterializeBeyond(row, nextRow, backward))
+            {
+                next = Next(root, backward, current);
+            }
+        }
+
+        if (next.IsNone)
+        {
+            return false;
+        }
+
+        Request(next);
+        AskToReveal(next);
+        return true;
+    }
+
+    // The innermost virtualized list's box a node is in, and the row of it the node is in; with no list in the tree, none.
+    private bool FindListRow(NodeHandle node, out NodeHandle box, out NodeHandle row)
+    {
+        for (NodeHandle child = node; !child.IsNone; child = Tree.Nodes.GetRef(child).Parent)
+        {
+            NodeHandle parent = Tree.Nodes.GetRef(child).Parent;
+            if (!parent.IsNone && Tree.VirtualHostOf(parent) is not null)
+            {
+                (box, row) = (parent, child);
+                return true;
+            }
+        }
+
+        (box, row) = (default, default);
+        return false;
+    }
+
+    // The row of a list's box a node is in, or none when it is not in the box.
+    private NodeHandle RowIn(NodeHandle node, NodeHandle box)
+    {
+        for (NodeHandle child = node; !child.IsNone; child = Tree.Nodes.GetRef(child).Parent)
+        {
+            if (Tree.Nodes.GetRef(child).Parent == box)
+            {
+                return child;
+            }
+        }
+
+        return default;
+    }
+
+    // The node a move in the order of Tab goes to from a node, or none: one walk of the scope's subtree.
+    private NodeHandle Next(NodeHandle root, bool backward, NodeHandle current)
+    {
         int currentIndex = current.IsNone ? 0 : Tree.Nodes.GetRef(current).Input!.TabIndex;
         bool passed = false;
         NodeHandle best = default;
@@ -386,15 +451,7 @@ internal sealed class FocusManager
             node = NextAfterSubtree(node, root);
         }
 
-        NodeHandle next = current.IsNone || best.IsNone ? end : best;
-        if (next.IsNone)
-        {
-            return false;
-        }
-
-        Request(next);
-        AskToReveal(next);
-        return true;
+        return current.IsNone || best.IsNone ? end : best;
     }
 
     /// <summary>
