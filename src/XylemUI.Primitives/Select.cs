@@ -27,6 +27,12 @@ public sealed record SelectOptions<T>
     public float MaxDropDownHeight { get; init; } = 200;
 
     /// <summary>
+    /// Gets the look of the open list: given the list, it returns a node that holds it, or the list itself with a look (a background,
+    /// a border, a padding); <see langword="null"/>, the default, shows the list with no look.
+    /// </summary>
+    public Func<Element, Element>? Panel { get; init; }
+
+    /// <summary>
     /// Gets how the list comes in and leaves; <see langword="null"/> for at once.
     /// </summary>
     public ShowMotion? Motion { get; init; }
@@ -49,7 +55,9 @@ public static partial class Primitive
     /// <typeparam name="T">The type of an option.</typeparam>
     /// <param name="value">The value chosen, written both ways.</param>
     /// <param name="options">The options, in the order of the list.</param>
-    /// <param name="item">Makes the look of an option: in the box for the value, and in the list for each option.</param>
+    /// <param name="item">Makes the look of an option: in the box for the value, and each row of the list. A row takes the focus and
+    /// is disabled when its option cannot be chosen, so that the look's <c>.Focused</c>, <c>.Hovered</c>, and <c>.Disabled</c> show
+    /// there.</param>
     /// <param name="selectOptions">Which options can be chosen, how they are found by typing, and how high the list is; the defaults
     /// when <see langword="null"/>.</param>
     /// <returns>The box.</returns>
@@ -105,7 +113,8 @@ public static partial class Primitive
             return box.Focusable().OnClick(Toggle).On(KeyEventKind.Down, EventPhase.Bubble, BoxKeys).OnTextInput(EventPhase.Bubble, Typed);
         }
 
-        // The list: a row for each option in a column that scrolls past the most height, at least as wide as the box.
+        // The list: a row for each option, the option's own look, in a column that scrolls past the most height, at least as wide as
+        // the box, in the app's panel.
         private Element List()
         {
             _rows = new NodeHandle[options.Count];
@@ -113,7 +122,7 @@ public static partial class Primitive
             for (int i = 0; i < rows.Length; i++)
             {
                 int index = i;
-                Element row = Box(item(options[i])).Focusable().Disabled(!Enabled(i));
+                Element row = item(options[i]).Focusable().Disabled(!Enabled(i));
                 row = row.OnClick(() => Choose(index)).On(PointerEventKind.Enter, EventPhase.Bubble, RowEnter);
                 _rows[i] = row.Node;
                 rows[i] = row;
@@ -129,7 +138,8 @@ public static partial class Primitive
                     MaxHeight = Length.Px(settings.MaxDropDownHeight),
                 }
             );
-            return list.On(KeyEventKind.Down, EventPhase.Bubble, ListKeys).OnTextInput(EventPhase.Bubble, Typed);
+            _ = list.On(KeyEventKind.Down, EventPhase.Bubble, ListKeys).OnTextInput(EventPhase.Bubble, Typed);
+            return settings.Panel?.Invoke(list) ?? list;
         }
 
         private bool IsOpen => _block.Popup is { Closing: false };

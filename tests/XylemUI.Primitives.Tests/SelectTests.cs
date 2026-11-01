@@ -324,6 +324,46 @@ public sealed class SelectTests
     }
 
     /// <summary>
+    /// The panel given wraps the open list: the popup shows the panel, which holds the list, and the list's keys still work.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A select of the five fruits whose panel puts the list in a box with a padding of 4 and a background; its value "apple",
+    ///   focused.
+    ///
+    /// Steps:
+    /// - Open with Enter; read the popup's content and its child; press Down; read the focused row and the value.
+    ///
+    /// Expected:
+    /// - The content is the panel's box, and its child is the list; row 1 focused, the value "apple".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Panel_WrapsTheList_AndItsKeysWork()
+    {
+        var value = Signal.Create("apple");
+        Element panel = default;
+        await using Scene scene = await Scene.StartAsync(
+            value,
+            new SelectOptions<string> { Panel = list => panel = Box(list).Padding(4).Background(new Paint(Color.FromRgb(0x2B3245))) }
+        );
+        _ = scene.App.Keyboard.Press(Key.Enter);
+        _ = scene.App.PumpAndSettle();
+
+        UiTree tree = scene.App.Tree;
+        NodeHandle content = tree.Nodes.GetRef(tree.Nodes.GetRef(scene.App.Popups[0].Node).FirstChild).FirstChild;
+        NodeHandle child = tree.Nodes.GetRef(content).FirstChild;
+        NodeHandle firstRow = tree.Nodes.GetRef(tree.Nodes.GetRef(child).FirstChild).FirstChild;
+        _ = scene.App.Keyboard.Press(Key.Down);
+        NodeHandle focused = tree.Focus.Focused;
+        _ = scene.App.PumpAndSettle();
+
+        Assert.Equal(panel.Node, content);
+        Assert.Equal(tree.Nodes.GetRef(firstRow).NextSibling, focused);
+        Assert.Equal("apple", value.Get());
+    }
+
+    /// <summary>
     /// With the list open, the frames of the keys and of a hover that move the focus between its rows allocate nothing (design §13.1,
     /// "Checks").
     /// </summary>

@@ -12,7 +12,8 @@ namespace XylemUI.E2E;
 // The costs of a tooltip (row P02d2, design §13.1, "Tooltip"): a tooltip of a line of text on a 100 x 30 box over the todo sample
 // with 200 items, in a window of 420 x 360 with text and no GPU. Its delays are 0, so that the pointer's move onto the box shows it
 // in the same frame with no timer, and the move away hides it. The frame that shows it is timed whole, input and frame; the move away
-// after it is not. With it shown, a frame of the pointer moved inside the box is timed, with the bytes 1,000 such frames allocate.
+// after it is not. With it shown, a frame of the pointer moved inside the box is timed, with the bytes 1,000 such frames allocate;
+// and, to compare, the same frame inside a box of the same size beside it with no tooltip (PR #564's review).
 internal static class TooltipCost
 {
     private const int Samples = 31;
@@ -39,6 +40,7 @@ internal static class TooltipCost
         (double moveUs, long moveBytes) = scene.TimeMoves();
         report.Number("move_frame_us_p50", moveUs);
         report.Number("move_bytes_per_frame", (double)moveBytes / Frames);
+        report.Number("bare_move_frame_us_p50", scene.TimeBareMoves());
         return 0;
     }
 
@@ -76,7 +78,7 @@ internal static class TooltipCost
                     }
 
                     Element anchor = Box().Width(100).Height(30).Tooltip(() => Elements.Text("Saves the file").Padding(6, 3), options);
-                    _tree.AppendChild(root, Column(anchor, TodoApp.Todo(model)).Node);
+                    _tree.AppendChild(root, Column(Row(anchor, Box().Width(100).Height(30)), TodoApp.Todo(model)).Node);
                 });
             }
             finally
@@ -145,11 +147,42 @@ internal static class TooltipCost
             return (median, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 
+        // The median microseconds of a frame of a move inside the box with no tooltip, beside the anchor.
+        public double TimeBareMoves()
+        {
+            Away();
+            for (int i = 0; i < 100; i++)
+            {
+                BareFrame(i);
+            }
+
+            var times = new double[Samples];
+            for (int i = 0; i < Samples; i++)
+            {
+                long start = Stopwatch.GetTimestamp();
+                BareFrame(i);
+                times[i] = Stopwatch.GetElapsedTime(start).TotalMicroseconds;
+            }
+
+            if (_tree.Popups.Count != 0)
+            {
+                throw new InvalidOperationException("A tooltip showed over the box with none.");
+            }
+
+            return Median(times);
+        }
+
         public void Dispose()
         {
             Scope.Dispose(_scope);
             _atlas.Dispose();
             _fonts.Dispose();
+        }
+
+        private void BareFrame(int i)
+        {
+            Move(140 + (i & 7), 15);
+            _frames.RunFrame();
         }
 
         private void Frame(int i)
