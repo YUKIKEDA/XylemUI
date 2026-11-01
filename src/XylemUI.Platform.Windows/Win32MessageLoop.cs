@@ -42,6 +42,18 @@ public static unsafe class Win32MessageLoop
     public static IFrameScheduler FrameScheduler => GetFrameScheduler();
 
     /// <summary>
+    /// Runs the frame waiting, if any: a window's timer calls it while an OS loop that is not the message loop runs (OLE's
+    /// <c>DoDragDrop</c>, design §2.11.1).
+    /// </summary>
+    internal static void RunPendingFrame()
+    {
+        if (_frameScheduler is { HasPendingFrame: true } frames)
+        {
+            frames.RunFrame();
+        }
+    }
+
+    /// <summary>
     /// Uses a swap chain's frame latency waitable object as the frame clock (design §2.11), or goes back to the built-in timer.
     /// </summary>
     /// <param name="waitableObject">

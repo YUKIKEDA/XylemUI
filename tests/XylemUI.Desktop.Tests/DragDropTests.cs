@@ -648,6 +648,199 @@ public sealed class DragDropTests
         Assert.Equal(["drop a", "ended Move"], log);
     }
 
+    /// <summary>
+    /// A drag from the OS comes in as a drag of the app (design §7, "Drag and drop", "From the OS"): files reach a target of
+    /// <see cref="DroppedFiles"/>, text a target of <see cref="DroppedText"/>, with the enter, the moves, the leave, and the drop; the
+    /// effect comes back to the OS: Copy with no key or Control, Move with Shift, Link with Control and Shift, so that a plain drop
+    /// never tells the OS's source to remove its data (PR #603's review); while a drag of the app runs, a drag from the OS takes
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A target of files and a target of text, side by side, 100 x 30, each logging its calls; a source dragging "a".
+    ///
+    /// Steps:
+    /// - Enter with files over the files' target with all three effects allowed; move within it with Shift, then with Control and
+    ///   Shift, then with Control; drop with Control. Enter with text over the files' target, move over the text's target, leave.
+    ///   Start a drag of the app, and enter with files over the files' target; end it.
+    ///
+    /// Expected:
+    /// - The effects: Copy, Move, Link, Copy, Copy; None, then Copy over the text's target; None while the app's drag runs. The log:
+    ///   the files' enter, three overs, and drop with the path; the text's enter and leave with the text.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task External_DragFromTheOs_ReachesTheTargets()
+    {
+        var log = new List<string>();
+        Element filesTarget = default;
+        Element textTarget = default;
+        Element source = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            filesTarget = Box()
+                .Width(100)
+                .Height(30)
+                .DropTarget(
+                    new DropTargetOptions<DroppedFiles>
+                    {
+                        Enter = (in DragEvent<DroppedFiles> e) => log.Add($"files enter {e.Value.Paths[0]}"),
+                        Over = (in DragEvent<DroppedFiles> e) => log.Add($"files over {e.Value.Paths[0]}"),
+                        Drop = (in DragEvent<DroppedFiles> e) => log.Add($"files drop {e.Value.Paths[0]}"),
+                    }
+                );
+            textTarget = Box()
+                .Width(100)
+                .Height(30)
+                .DropTarget(
+                    new DropTargetOptions<DroppedText>
+                    {
+                        Enter = (in DragEvent<DroppedText> e) => log.Add($"text enter {e.Value.Text}"),
+                        Leave = (in DragEvent<DroppedText> e) => log.Add($"text leave {e.Value.Text}"),
+                        Drop = (in DragEvent<DroppedText> _) => { },
+                    }
+                );
+            source = Box().Width(100).Height(30).DragSource(() => "a");
+            return Column(Row(filesTarget, textTarget), source);
+        });
+        _ = app.PumpAndSettle();
+        (int fx, int fy) = app.CenterOf(filesTarget);
+        (int tx, int ty) = app.CenterOf(textTarget);
+        DragEffects both = DragEffects.Copy | DragEffects.Move | DragEffects.Link;
+
+        var effects = new List<DragEffects>
+        {
+            app.Input.DropEnter(new DroppedFiles([@"C:\x"]), fx, fy, both, KeyModifiers.None),
+            app.Input.DropOver(fx + 1, fy, KeyModifiers.Shift),
+            app.Input.DropOver(fx + 2, fy, KeyModifiers.Control | KeyModifiers.Shift),
+            app.Input.DropOver(fx + 3, fy, KeyModifiers.Control),
+            app.Input.Drop(fx + 3, fy, KeyModifiers.Control),
+            app.Input.DropEnter(new DroppedText("t"), fx, fy, both, KeyModifiers.None),
+            app.Input.DropOver(tx, ty, KeyModifiers.None),
+        };
+        app.Input.DropLeave();
+        Start(app, source);
+        effects.Add(app.Input.DropEnter(new DroppedFiles([@"C:\x"]), fx, fy, both, KeyModifiers.None));
+        app.Pointer.Up();
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(
+            [
+                DragEffects.Copy,
+                DragEffects.Move,
+                DragEffects.Link,
+                DragEffects.Copy,
+                DragEffects.Copy,
+                DragEffects.None,
+                DragEffects.Copy,
+                DragEffects.None,
+            ],
+            effects
+        );
+        Assert.Equal(
+            [@"files enter C:\x", @"files over C:\x", @"files over C:\x", @"files over C:\x", @"files drop C:\x", "text enter t", "text leave t"],
+            log
+        );
+    }
+
+    /// <summary>
+    /// A drag that leaves the window is handed to the OS when its source gives what the value is outside the app: the target gets a
+    /// leave, the preview closes, and the source's end runs with the effect the OS's drop chose. A source with nothing for the OS
+    /// keeps the drag in the app, and is asked once.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A source dragging "a" with a preview, whose External gives one file and logs each call, logging its end; a second source
+    ///   whose External gives nothing and counts its calls; a target of strings that logs its calls. The OS's drop chooses Copy.
+    ///
+    /// Steps:
+    /// - Drag the first source over the target, then 10 px left of the window. Drag the second source left of the window, twice;
+    ///   read whether its drag runs; release.
+    ///
+    /// Expected:
+    /// - One drag handed to the OS, with the file and Move allowed; the log: "enter", "leave" (nothing is hit outside the window),
+    ///   "external", "ended Copy"; no popup and no drag after it. The second drag runs on, and its External was asked once.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task External_DragLeavingTheWindow_IsHandedToTheOs()
+    {
+        var log = new List<string>();
+        int asked = 0;
+        Element first = default;
+        Element second = default;
+        Element target = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            first = Box()
+                .Width(100)
+                .Height(30)
+                .DragSource(
+                    () => "a",
+                    new DragSourceOptions
+                    {
+                        Preview = () => Box().Width(20).Height(10),
+                        External = () =>
+                        {
+                            log.Add("external");
+                            return new ExternalDragData([@"C:\a.txt"], null);
+                        },
+                        Ended = e => log.Add($"ended {e}"),
+                    }
+                );
+            second = Box()
+                .Width(100)
+                .Height(30)
+                .DragSource(
+                    () => "b",
+                    new DragSourceOptions
+                    {
+                        External = () =>
+                        {
+                            asked++;
+                            return null;
+                        },
+                    }
+                );
+            target = Box()
+                .Width(100)
+                .Height(30)
+                .DropTarget(
+                    new DropTargetOptions<string>
+                    {
+                        Enter = (in DragEvent<string> _) => log.Add("enter"),
+                        Leave = (in DragEvent<string> _) => log.Add("leave"),
+                        Drop = (in DragEvent<string> _) => log.Add("drop"),
+                    }
+                );
+            return Column(first, second, target);
+        });
+        _ = app.PumpAndSettle();
+        app.Platform.ExternalEffect = DragEffects.Copy;
+
+        Start(app, first);
+        (int tx, int ty) = app.CenterOf(target);
+        app.Pointer.Move(tx, ty);
+        app.Pointer.Move(-10, ty);
+        _ = app.PumpAndSettle();
+        var afterFirst = (app.Popups.Count, app.Input.Dragging);
+
+        Start(app, second);
+        app.Pointer.Move(-10, 40);
+        app.Pointer.Move(-20, 40);
+        bool secondRuns = app.Input.Dragging;
+        app.Pointer.Up();
+        _ = app.PumpAndSettle();
+
+        (ExternalDragData data, DragEffects allowed) = Assert.Single(app.Platform.ExternalDrags);
+        Assert.Equal([@"C:\a.txt"], data.Files);
+        Assert.Equal(DragEffects.Move, allowed);
+        Assert.Equal(["enter", "leave", "external", "ended Copy"], log);
+        Assert.Equal((0, false), afterFirst);
+        Assert.True(secondRuns);
+        Assert.Equal(1, asked);
+    }
+
     private static DropTargetOptions<string> Logging(List<string> log) =>
         new()
         {

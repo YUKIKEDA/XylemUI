@@ -40,6 +40,15 @@ internal interface IPointerPlatform
     /// <param name="frameTime">The frame's time (<see cref="WindowFrames.FrameTime"/>), which the inputs carry as their time.</param>
     /// <returns>Whether a gesture goes on and asks for the next frame; <see langword="false"/> for a platform without gestures.</returns>
     bool UpdateGestures(TimeSpan frameTime) => false;
+
+    /// <summary>
+    /// Hands a drag that left the window to the OS (design §7, "Drag and drop", "Out to the OS"), and returns when the OS's drag ends:
+    /// the window's input is the OS's meanwhile. A platform with no such drag drops nothing.
+    /// </summary>
+    /// <param name="data">What the value is outside the app.</param>
+    /// <param name="allowed">The effects the source allows.</param>
+    /// <returns>The effect the drop chose, or <see cref="DragEffects.None"/> when it was cancelled or dropped where nothing took it.</returns>
+    DragEffects StartExternalDrag(ExternalDragData data, DragEffects allowed) => DragEffects.None;
 }
 
 /// <summary>

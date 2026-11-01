@@ -327,6 +327,52 @@ public sealed class TodoTests
     }
 
     /// <summary>
+    /// Text dropped from the OS on the list becomes an item, and so does each file dropped on the app, by its name; an item dragged
+    /// out of the window goes to the OS as its name (row DD1, design §7, "Drag and drop").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo app, headless, with three items added by the model.
+    ///
+    /// Steps:
+    /// - Drop the text "Milk" from the OS on the list's center; drop two files, "C:\a\Report.txt" and "D:\b.png", on the list's
+    ///   center. Drag the first row's button 10 px, then left of the window.
+    ///
+    /// Expected:
+    /// - The rows: Items 1, 2, 3, "Milk", "Report.txt", "b.png". One drag handed to the OS, with the text "Item 1" and Move and Copy
+    ///   allowed.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DropsFromTheOs_AddItems_AndAnItemDragsOutAsItsName()
+    {
+        var model = new TodoModel();
+        await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
+        var app = App.Of(headless, model);
+        AddThree(app);
+        (int x, int y) = headless.CenterOf(new Element(app.Tree, app.List));
+
+        DragEffects both = DragEffects.Copy | DragEffects.Move;
+        _ = headless.Input.DropEnter(new DroppedText("Milk"), x, y, both, KeyModifiers.None);
+        _ = headless.Input.Drop(x, y, KeyModifiers.None);
+        _ = headless.Input.DropEnter(new DroppedFiles([@"C:\a\Report.txt", @"D:\b.png"]), x, y, both, KeyModifiers.None);
+        _ = headless.Input.Drop(x, y, KeyModifiers.None);
+        _ = headless.PumpAndSettle();
+        List<string> labels = app.Labels();
+        (int bx, int by) = headless.CenterOf(new Element(app.Tree, app.ItemButton(0)));
+        headless.Pointer.Move(bx, by);
+        headless.Pointer.Down();
+        headless.Pointer.Move(bx + 10, by);
+        headless.Pointer.Move(-10, by);
+        _ = headless.PumpAndSettle();
+
+        Assert.Equal(["[ ] Item 1", "[ ] Item 2", "[ ] Item 3", "[ ] Milk", "[ ] Report.txt", "[ ] b.png"], labels);
+        (ExternalDragData data, DragEffects allowed) = Assert.Single(headless.Platform.ExternalDrags);
+        Assert.Equal("Item 1", data.Text);
+        Assert.Equal(both, allowed);
+    }
+
+    /// <summary>
     /// The frames that draw a change of an item's mark, and a reversal of the list, allocate nothing; the changes themselves are the
     /// app's, which builds a new list.
     /// </summary>
