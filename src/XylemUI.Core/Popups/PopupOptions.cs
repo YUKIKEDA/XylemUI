@@ -34,6 +34,12 @@ public sealed record PopupOptions
     public ShowMotion? Motion { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the popup is transient, a tooltip's (design §7.3, "Nesting"): it pushes no focus scope, so that
+    /// Tab does not go round it; it closes no sibling when it opens; and any other popup that opens closes it.
+    /// </summary>
+    internal bool IsTransient { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether a press outside the popup closes it, after the default is applied.
     /// </summary>
     internal bool DismissesOnOutsidePress => DismissOnOutsidePress ?? !IsModal;
