@@ -687,6 +687,7 @@ Decision:
   v0.2 / G1 はオーバーレイのみで、ダイアログもウィンドウ内のモーダルにする。v1.0 までに 3 つの OS の別ウィンドウ実装を足し、デスクトップの既定にする（D3 の Grill、Issue #441）。macOS は行 P06、Linux は行 P04 と P05 で入れる。
   ポップアップは独立した描画ルート（レイアウトの根・DisplayList・FocusScope）。Reactive graph・ScopeArena・木のアリーナは共有（P02d の Grill、Issue #547、設計書 §7.3）。
   開閉は `Show` と同じ宣言の形（`Popup(isOpen, render)`）。キーはポップアップの根から開いた側へ伝え、ポインタは根で止める。後ろへ通す印は `HitTestVisible(false)`。
+  Tooltip はポインタの位置に 400 ms で出し、Select は Avalonia の `ComboBox` のキーで動き、メニューのアクセスキーは `_` の印と Windows のキーボードの合図の設定に従う（P02d2 の Grill、Issue #559、設計書 §13.1）。
 
 Reason:
   Flutter / GPUI はウィンドウ内に留まるが、WPF / Avalonia / WinUI 3 / Qt は最終的に別ウィンドウに行き着いている。
@@ -705,6 +706,12 @@ Rejected:
   - モーダルの背景を押したら既定で閉じる（GPUI の `ModalLayer`、`workspace/src/modal_layer.rs` 288〜330 行目。Avalonia の `ShowDialog` は持ち主の窓を OS の側で使えなくし、外を押しても閉じない。`DismissOnBackdropPress` で選べる。P02d の Q4）
   - 右クリックのメニューで、使えない項目を出さない（Flutter。Avalonia は灰色で出す。項目の位置が開くたびに変わる。P02d の Q7）
   - 部品に既定の見た目を付ける（§13.1 の見た目を持たない部品の方針に反する。見た目は Theme.Fluent で付ける。P02d の Q7）
+  - Tooltip を待たずに出す（Flutter の既定、`material/tooltip.dart` 394 行目）。ポインタが通り過ぎるだけで出る。Avalonia は 400 ms、GPUI は 500 ms 待つ。P02d2 の Q2
+  - Tooltip をアンカーの下に出す（Flutter、`material/tooltip.dart` 389 行目）。Avalonia と GPUI はポインタの位置に出す。P02d2 の Q4
+  - Tooltip を Esc で消さない（比べた 3 つ）。WCAG 1.4.13 は、ポインタを動かさずに消せることを求める。P02d2 の Q3
+  - Select を開くとき、選ばれている項目を箱に重ねる（Flutter の `DropdownButton`、`material/dropdown.dart` 597〜598 行目）。Avalonia と Flutter の `DropdownMenu` は箱の下に開く。P02d2 の Q9
+  - 開いた Select の上下キーを端で回す（zed のメニューと Flutter の `DropdownMenu`）。Avalonia と Flutter の `DropdownButton` と Windows のリストは端で止まる。P02d2 の Q8
+  - アクセスキーの下線を Alt を押している間だけ見せ、開いたメニューでも Alt+文字を求める（Flutter、`material/menu_anchor.dart` 3134〜3139・3171〜3173 行目）。Windows の標準のメニューは、Alt を離しても合図を残し、開いたメニューでは文字だけで選ぶ。P02d2 の Q12・Q13
 
 ---
 

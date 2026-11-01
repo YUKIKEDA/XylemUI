@@ -4515,7 +4515,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 全要件を維持する方針（既存）は変更しない。以下はあくまで実装に着手する順序であり、後段のフェーズにある項目も設計（型・フック）には最初から含める。
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
-2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d。Tooltip・Select・メニューのアクセスキーは行 P02d2）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → P02d2 → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
+2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d。Tooltip・Select・メニューのアクセスキーは行 P02d2、窓全体のアクセスキーとメニューバーは行 P02d3）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → P02d2 → P02d3 → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
 3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
 4. **v0.3**: RTL（レイアウトの向き、行 P03b）、BiDi と複雑スクリプト（行 P03a）、縦書き（行 P03c）、カラー絵文字（COLRv0 は済み、COLRv1 と SVG は行 T11 で v1.x）（D5 の Grill、Issue #163）
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
@@ -4943,7 +4943,7 @@ Web の Radix UI / shadcn/ui と同じ考え方で、**振る舞いだけを持�
 
 v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）が必要とする範囲とする: Button / ToggleButton / Checkbox / RadioGroup / Slider / TextField / Select（ComboBox）/ Menu / Tooltip / Dialog / Tabs / ListBox（仮想化対応）/ NavigationView。
 
-**Menu と Dialog（行 P02d、P02d の Grill、Issue #547）:** ポップアップ（§7.3 の `Popup`）の上に作る。Tooltip・Select とメニューのアクセスキーは行 P02d2 で入れる。
+**Menu と Dialog（行 P02d、P02d の Grill、Issue #547）:** ポップアップ（§7.3 の `Popup`）の上に作る。Tooltip・Select とメニューのアクセスキーは行 P02d2 で入れる（下の「Tooltip・Select・メニューのアクセスキー」）。
 
 ```csharp
 // XylemUI.Primitives の Primitive に足す
@@ -4982,6 +4982,67 @@ public sealed record DialogOptions
   - `ContextMenu` は、開いている間に次の要求が来たら、閉じてから新しい位置に開き直す
   - `Dialog` のアンカーは絶対配置で大きさ 0 のノードで、親の並びに場所も flex の隙間も取らない。`content` にフォーカスできるノードが無ければ、フォーカスを空にして、後ろのノードにキーが届かないようにする
 - **確かめ方:** `XylemUI.Primitives.Tests` に、キーの表の各行、使えない項目を飛ばすこと、選んだ後の閉じる順とフォーカス、サブメニューの開閉、`Dialog` のフォーカスの閉じ込めと戻す先。Todo のサンプルに、欄の右クリックのメニューと、項目を消す前に確かめるダイアログを足す
+
+**Tooltip・Select・メニューのアクセスキー（行 P02d2、P02d2 の Grill、Issue #559）:** どれも §7.3 の `Popup` の上に作る。比べた版は Flutter 3.47.8、Avalonia 12.1.4、zed v1.25.3。窓全体の Alt+文字（ラベルから欄へフォーカスを移す）とメニューバー（Alt を押して離すと開く、F10）は、行 P02d3 で入れる。
+
+```csharp
+// XylemUI.Primitives の Primitive に足す
+public static Element Tooltip(this Element anchor, Func<Element> content, TooltipOptions? options = null);
+public static Element Select<T>(Signal<T> value, IReadOnlyList<T> options, Func<T, Element> item, SelectOptions<T>? selectOptions = null);
+public static Element AccessText(string text);   // "_File"。"__" は "_" そのもの
+
+public sealed record TooltipOptions
+{
+    public TimeSpan ShowDelay { get; init; } = TimeSpan.FromMilliseconds(400);
+    public TimeSpan BetweenShowDelay { get; init; } = TimeSpan.FromMilliseconds(100);   // 閉じてからこの間に別の Tooltip に移ったら待たない
+    public TimeSpan HideDelay { get; init; } = TimeSpan.FromMilliseconds(100);          // アンカーからも Tooltip からも離れてから隠すまで
+    public PopupPlacement? Placement { get; init; }                                       // null はポインタの位置の 20 px 下
+    public ShowMotion? Motion { get; init; }
+}
+
+public sealed record SelectOptions<T>
+{
+    public Func<T, bool>? Enabled { get; init; }       // null はすべて使える
+    public Func<T, string>? TextOf { get; init; }      // 文字で探すときの文字。null は探さない
+    public float MaxDropDownHeight { get; init; } = 200;
+    public ShowMotion? Motion { get; init; }
+}
+```
+
+- **Tooltip の中身:** `content` は、出すたびに開いた側の子の Scope で作り、隠れたら Scope ごと捨てる（GPUI の `.tooltip` は出すときに作る、`gpui/src/elements/div.rs` 696〜736 行目）。出ていない間は、アンカーに付けたハンドラとタイマーのほかに何も持たない。窓ごとに同時に 1 つだけ出し、新しい Tooltip が出るときに前のものを隠す（3 つとも同じ。Flutter の `raw_tooltip.dart` 738〜757 行目、Avalonia の `ToolTipService.cs` 219〜222 行目、GPUI の `window.rs` 3802 行目）
+- **出るまで:** ポインタがアンカーに入ってから 400 ms。前の Tooltip が閉じてから 100 ms 以内なら待たずに出す（Avalonia の `ToolTip.cs` 64・70 行目、`ToolTipService.cs` 231〜238 行目。Windows のホバーの時間 `SPI_GETMOUSEHOVERTIME` の既定も 400 ms）。Flutter は 0 ms（`material/tooltip.dart` 394 行目）、GPUI は 500 ms で待ちを省かない（`div.rs` 53 行目）。タイマーは窓のフレームの時計で数え、ヘッドレスでは `TestTime` で進む
+- **隠れるとき:**
+  - アンカーからも Tooltip からも離れてから 100 ms 後に隠す（Flutter の `dismissDelay`、`raw_tooltip.dart` 248 行目）。その間にポインタがどちらかに戻れば隠さない。ポインタは Tooltip の中に入れる。Tooltip の根の中身の箱はポインタを受ける（Flutter の既定、Avalonia の `ToolTipService.cs` 118〜121 行目）
+  - どのボタンの押下でも隠す（3 つとも同じ）。外の押下は §7.3 の「閉じ方」のまま隠れ、Tooltip の中の押下は Tooltip が自分で隠す
+  - アンカーか Tooltip の上のホイールで隠す（GPUI の `div.rs` 3793〜3800 行目）。アンカーの祖先のスクロールの箱がスクロールしたときは、§7.3 の「閉じ方」のまま隠れる
+  - Esc で隠す（§7.3 の、一番手前のポップアップを閉じる既定の動作）。3 つとも Esc では隠さないが、WCAG 1.4.13 は、ポインタを動かさずに消せることを求める
+  - 時間切れでは隠さない（Avalonia と GPUI。Flutter はタッチのときだけ 1.5 秒）
+- **置き場所:** 既定は、出すときのポインタの位置の 20 px 下（`PopupPlacement.AtPoint`）。Avalonia は既定がポインタの位置で、縦に 20 px ずらす（`ToolTip.cs` 42・54 行目）。GPUI もポインタの位置から (1, 1) に出す（`window.rs` 3816〜3817 行目）。Flutter は、アンカーの中心の 24 px 下に出す（`material/tooltip.dart` 389 行目）。はみ出したときの反転とスライドは §7.3 の「置き場所」のまま
+- **ポップアップの形:** Tooltip のポップアップは、フォーカスのスコープを積まず、開くときに兄弟のポップアップを閉じない（`PopupOptions` の internal の印）。積むと、Tooltip が出ている間 Tab が空のスコープで回る。兄弟を閉じると、メニューの項目の Tooltip が、その項目のサブメニューを閉じる。Avalonia の Tooltip も、フォーカスを取らない（`ToolTip.cs` 435〜438 行目、`TakesFocusFromNativeControl = false`）
+- **フォーカスとタッチ:** キーボードのフォーカスでは出さない（3 つとも出さない）。タッチとペンの長押しで、待たずに出し、離したら隠す（GPUI の `div.rs` 3759〜3790 行目。Flutter も長押しで出す）。長押しは、タッチかペンの押下が、押した所から §7 の「タッチとペンのドラッグ」の閾値（18 論理画素）を超えて動かずに 500 ms 続くことで、Tooltip が自分で判定する（Flutter の `kLongPressTimeout` は 500 ms、`gestures/constants.dart` 29 行目。GPUI の `long_press_duration` も 500 ms、`gpui/src/gestures.rs` 138 行目）。Core にはまだ長押しの判定が無く、ほかの部品が使うまでは Tooltip の中に置く。Disabled のアンカーには出さない（Avalonia の `ShowOnDisabled` の既定は false、`ToolTip.cs` 76 行目）
+- **Select の箱:** 箱はフォーカスでき、選ばれている値を `item(value)` で作って中に見せる。値が変わったら作り直す。値が `options` に無いときも、その値を `item` で見せる。箱は見た目を付けない（§13.1）
+- **閉じているときのキー**（Avalonia の `ComboBox.cs` 258〜292 行目。Windows の標準のコンボボックスも同じ）:
+  - 上下キーで、開かずに値を次と前の使える選択肢に変える。端で止まる。値が `options` に無いときは、下キーで最初の、上キーで最後の使える選択肢にする
+  - Alt+上下キーと F4 で開閉する。Enter と Space で開く
+  - Flutter の `DropdownButton` は Enter と Space で開くだけで、GPUI には標準の Select が無い（チェック付きの項目を並べたメニュー、`ui/src/components/dropdown_menu.rs`）
+- **開いているとき:**
+  - 選ばれている選択肢にフォーカスを置き、見える所までスクロールする（Avalonia の `ComboBox.cs` 525〜537 行目、Flutter の `DropdownButton`）。値が無いときは、最初の使える選択肢に置く
+  - 上下キーで次と前の使える選択肢へフォーカスを移し、端で止まる（Avalonia は `WrapFocus` が false）。Home・End で最初と最後、PageUp・PageDown で一覧の高さ分だけ移る。§13.1 のメニューは端で回るが、Select は Windows のリストと同じく止める
+  - フォーカスを動かしても値は変えない。Enter・Space・押下で値を決めて閉じ、フォーカスを箱に戻す
+  - Esc と外の押下は、値を変えずに閉じる。Tab は、閉じてから箱からフォーカスを次へ進める（Avalonia は Tab を処理済みにしない、`ComboBox.cs` 277〜280 行目）
+  - ポインタが入った選択肢はフォーカスを取る（§13.1 の `MenuItem` と同じ）
+- **開く場所と幅:** 箱の下に開き（`PopupPlacement.Below`）、一覧の幅は箱の幅以上にする（Avalonia の `ComboBox.xaml` 163・165 行目、Flutter の `DropdownMenu`）。高さが `MaxDropDownHeight`（既定 200 px、Avalonia の `ComboBox.cs` 54 行目）を超えたら、一覧の中でスクロールする。Flutter の `DropdownButton` の、選ばれている項目を箱に重ねる置き方は採らない
+- **文字で探す:** `TextOf` があるとき、打った文字で始まる使える選択肢を探す。続けて打った文字は、前の文字から 1 秒以内ならつなげて探す。閉じていれば値を変え、開いていればフォーカスを移す（Avalonia の `SelectingItemsControl.cs` 631〜650 行目。Windows のリストも同じ）。大文字と小文字は区別しない
+- **アクセスキーの書き方:** `AccessText("_File")` は、`_` の次の文字をアクセスキーにし、`_` を取り除いた文字を描く。`__` は `_` そのものを描く（Avalonia の `AccessText.cs` 140・143 行目、WPF も同じ。Flutter は `&`、`material/menu_anchor.dart` 2986 行目。GPUI には無い）。キーの文字は大文字と小文字を区別しない。`MenuItem` と `SubmenuItem` は、中身の部分木の最初の `AccessText` からキーを読む
+- **下線を見せるとき:**
+  - Windows の「キーボードの合図を常に表示する」（`SPI_GETKEYBOARDCUES`）が on なら、常に見せる。off なら、Alt の Down と、キーで開いたメニュー（Shift+F10、アプリケーションキー、メニューの Enter と右キー）で見せ始め、ポインタの押下で隠す。メニューで見せ始めたものは、そのメニューが閉じたら隠す
+  - 比べた 3 つは、この設定を読まない。Avalonia は Alt を押してから押下かメニューが閉じるまで見せ（`AccessKeyHandler.cs` 199〜201 行目、`AccessText.cs` 70 行目）、Flutter は Alt を押している間だけ見せる（`menu_anchor.dart` 3134〜3139 行目）。Windows の標準のメニューは、この設定に従う
+  - 見せるかどうかは窓ごとの状態で、`AccessText` はそれを読んで、キーの文字に下線の範囲（§4.8 の装飾、`DecorationLines.Underline`）を付ける。ヘッドレスでは `HeadlessOptions` で設定を選ぶ
+- **開いたメニューの中の文字:** 開いたメニューでは、Alt の有無によらず、打った文字で項目を選ぶ（Avalonia の `MenuItemAccessKeyHandler.cs` 22〜34 行目。Windows の標準のメニューも同じ。Flutter は Alt+文字が要る）。そのパネルの使える項目のうち、キーが合うものが 1 つなら、選ぶかサブメニューを開いて最初の項目にフォーカスする。複数あれば、選ばずに今のフォーカスの次のものへフォーカスを移し、端では最初に戻る（Avalonia の `DefaultMenuInteractionHandler.cs` 86〜90 行目）。合うものが無ければ何もしない
+- **確かめ方:**
+  - `XylemUI.Primitives.Tests`: Tooltip の出るまでの時間・続けて移ったとき・隠れる 6 つの場合・置き場所・同時に 1 つ・スコープを積まないこと・長押し。Select の閉じているときと開いているときのキーの表の各行・使えない選択肢・値が無いとき・決めると取り消し・文字で探す。アクセスキーの `_` と `__`・下線を見せる 3 つの場合・1 つと複数の文字
+  - golden: Tooltip と、開いた Select の 2 枚（`HeadlessPixelTests`）
+  - 費用（`XylemUI.E2E`）: Tooltip を出すフレームと、開いた Select の中でキーとポインタで移るフレーム。後の 2 つは割り当て 0
 
 ### 13.2 XylemUI.Theme.Fluent
 
