@@ -333,6 +333,50 @@ public sealed class HeadlessPixelTests
         await app.MatchesGoldenAsync("todo-dialog.png");
     }
 
+    /// <summary>
+    /// A tooltip is drawn over the window 20 px below the pointer, with its content's background, and matches its golden (row
+    /// P02d2, design §13.1, "Tooltip").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 240 x 120 on WARP: on white, a 100 x 30 gray box at (10, 10) with a tooltip of the text "Saves the
+    ///   file" on a dark background with a padding of 6 by 3.
+    ///
+    /// Steps:
+    /// - Move the pointer to (40, 25); pump 400 ms; read the pixel at (42, 47), inside the tooltip's padding; compare the frame with
+    ///   "tooltip.png".
+    ///
+    /// Expected:
+    /// - One popup; the pixel is the tooltip's background; the frame matches the golden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Tooltip_BelowThePointer_MatchesItsGolden()
+    {
+        Color dark = Color.FromRgb(0x2B3245);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Box(
+                        Primitives.Primitive.Tooltip(
+                            Box().Width(100).Height(30).Background(Color.FromRgb(0xC0C0C0)),
+                            () => Elements.Text("Saves the file").Padding(6, 3).Background(dark).Foreground(White)
+                        )
+                    )
+                    .Padding(10)
+                    .Background(White),
+            Options(240, 120)
+        );
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Move(40, 25);
+        app.Pump(TimeSpan.FromMilliseconds(400));
+        app.Pump(TimeSpan.Zero);
+
+        _ = Assert.Single(app.Popups);
+        Assert.Equal(dark, Pixel(app, (42, 47)));
+        await app.MatchesGoldenAsync("tooltip.png");
+    }
+
     private static HeadlessOptions Options(float width, float height) =>
         new()
         {

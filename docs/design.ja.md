@@ -4296,7 +4296,7 @@ internal sealed class FocusManager
 
 Dialog/Menu/Popupが開くと新しい`FocusScope`を積み、閉じるとその下のスコープへ戻す。`IsModal`なスコープが積まれている間は、そのスコープ外へのフォーカス移動を断り、外のノードへのポインタを遮る（フォーカストラップの実装。キーの経路は遮らない。下の「P02d で入れる形」）。`Tab`/`Shift+Tab`によるフォーカス移動は現在の`FocusScope`内でのみ§7.1のツリー順（明示的上書き込み）に従い、スコープの境界を越えない。仮想化リスト内では §3.4.2 の `IVirtualizedFocusHost` を先に適用する。矢印キーによるナビゲーション（メニュー・リスト内移動等）はコンポーネント側が独自に処理する。IME（§4.7 の文字の入力の相手、`ITextInputClient`）は、フォーカスしたノードがテキスト入力可能な場合にのみ有効化される。
 
-**P02d で入れる形（P02d の Grill の Q6、Issue #547）:** スコープは、ポップアップ（§7.3）を開くたびに 1 つ積む。持ち主はポップアップの根のノードで、親は開いた側のノードが入っているスコープである。比べた 3 つは次のとおり。
+**P02d で入れる形（P02d の Grill の Q6、Issue #547）:** スコープは、ポップアップ（§7.3）を開くたびに 1 つ積む。ただし、一時のポップアップ（Tooltip、§7.3 の `PopupOptions.IsTransient`）は積まない。積むと、Tooltip が出ている間、Tab が空のスコープで回る（行 P02d2）。持ち主はポップアップの根のノードで、親は開いた側のノードが入っているスコープである。比べた 3 つは次のとおり。
 - Flutter は、ルートごとに `FocusScopeNode` を持ち（`widgets/routes.dart` 1095・1201 行目）、閉じたら、スコープが覚えたフォーカスの履歴をさかのぼって戻す（`widgets/focus_manager.dart` 1503〜1523 行目）
 - GPUI は、開く前にフォーカスしていた要素を覚えて戻す（`ui/src/components/popover_menu.rs` 281〜293 行目、`workspace/src/modal_layer.rs` 160・254〜258 行目）
 - Avalonia は、ウィンドウ内のポップアップの Tab を `Cycle` にする（`Avalonia.Controls/Primitives/OverlayPopupHost.cs` 32〜33 行目）
@@ -4376,7 +4376,7 @@ public sealed record PopupOptions
     public bool ConsumeOutsidePress { get; init; }   // モーダルでないとき、外の押下を下に届けない
     public bool? DismissOnOutsidePress { get; init; }   // null は !IsModal（メニューは閉じ、モーダルは閉じない）。モーダルでは背景の押下
     public ShowMotion? Motion { get; init; }
-    internal bool IsTransient { get; init; }         // P02d2。一時のポップアップ（Tooltip）
+    internal bool IsTransient { get; init; }         // P02d2。一時のポップアップ（Tooltip）。フォーカスのスコープを積まず（§7.2）、兄弟を閉じない
 }
 
 public readonly record struct PopupPlacement(
@@ -5011,7 +5011,7 @@ public sealed record SelectOptions<T>
 ```
 
 - **Tooltip の中身:** `content` は、出すたびに開いた側の子の Scope で作り、隠れたら Scope ごと捨てる（GPUI の `.tooltip` は出すときに作る、`gpui/src/elements/div.rs` 696〜736 行目）。出ていない間は、アンカーに付けたハンドラとタイマーのほかに何も持たない。窓ごとに同時に 1 つだけ出し、新しい Tooltip が出るときに前のものを隠す（3 つとも同じ。Flutter の `raw_tooltip.dart` 738〜757 行目、Avalonia の `ToolTipService.cs` 219〜222 行目、GPUI の `window.rs` 3802 行目）
-- **出るまで:** ポインタがアンカーに入ってから 400 ms。前の Tooltip が閉じてから 100 ms 以内なら待たずに出す（Avalonia の `ToolTip.cs` 64・70 行目、`ToolTipService.cs` 231〜238 行目。Windows のホバーの時間 `SPI_GETMOUSEHOVERTIME` の既定も 400 ms）。Flutter は 0 ms（`material/tooltip.dart` 394 行目）、GPUI は 500 ms で待ちを省かない（`div.rs` 53 行目）。タイマーは窓のフレームの時計で数え、ヘッドレスでは `TestTime` で進む
+- **出るまで:** ポインタがアンカーに入ってから 400 ms。前の Tooltip が閉じてから 100 ms 以内なら待たずに出す（Avalonia の `ToolTip.cs` 64・70 行目、`ToolTipService.cs` 231〜238 行目。Windows のホバーの時間 `SPI_GETMOUSEHOVERTIME` の既定も 400 ms）。Flutter は 0 ms（`material/tooltip.dart` 394 行目）、GPUI は 500 ms で待ちを省かない（`div.rs` 53 行目）。タイマーは窓の時計（`TimeProvider`）の 1 つのタイマーで数え、UI スレッドへ送る。欄のキャレットの点滅（§4.9）と同じ形で、待つ間はフレームを回さない。ヘッドレスでは `TestTime` で進む（P02d2 の 1 つ目の PR で決めた。設計の最初の版は「窓のフレームの時計で数える」と書いたが、それでは 400 ms の間、毎フレームを回すことになる）
 - **隠れるとき:**
   - アンカーからも Tooltip からも離れてから 100 ms 後に隠す（Flutter の `dismissDelay`、`raw_tooltip.dart` 248 行目）。その間にポインタがどちらかに戻れば隠さない。ポインタは Tooltip の中に入れる。Tooltip の根の中身の箱はポインタを受ける（Flutter の既定、Avalonia の `ToolTipService.cs` 118〜121 行目）
   - どのボタンの押下でも隠す（3 つとも同じ）。外の押下は §7.3 の「閉じ方」のまま隠れ、Tooltip の中の押下は Tooltip が自分で隠す

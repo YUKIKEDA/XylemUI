@@ -151,12 +151,19 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     {
         PopupHandle? parent = PopupContaining(anchor);
 
-        // A popup that opens closes the ones its parent had open (Flutter's raw_menu_anchor.dart lines 746 to 747), modal ones aside.
-        for (int i = _open.Count - 1; i >= 0; i--)
+        // A popup that opens closes the ones its parent had open (Flutter's raw_menu_anchor.dart lines 746 to 747), modal ones aside,
+        // and every transient one (a tooltip), whatever its parent. A transient popup closes none (design §7.3, "Nesting").
+        if (!options.IsTransient)
         {
-            if (i < _open.Count && _open[i].Parent == parent && !_open[i].Options.IsModal && !_open[i].Closing)
+            for (int i = _open.Count - 1; i >= 0; i--)
             {
-                _open[i].Block.Dismiss();
+                if (i < _open.Count && _open[i] is { Closing: false } other)
+                {
+                    if (other.Options.IsTransient || (other.Parent == parent && !other.Options.IsModal))
+                    {
+                        other.Block.Dismiss();
+                    }
+                }
             }
         }
 
@@ -165,7 +172,11 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         tree.AttachRoot(root);
         Rect laid = tree.Root.IsNone ? default : tree.Nodes.GetRef(tree.Root).Layout.Rect;
         Resize(popup, _window ?? new Size(laid.Width, laid.Height));
-        tree.Focus.PushScope(root, options.IsModal);
+        if (!options.IsTransient)
+        {
+            tree.Focus.PushScope(root, options.IsModal);
+        }
+
         if (options.IsModal)
         {
             ModalOpened?.Invoke(root);
