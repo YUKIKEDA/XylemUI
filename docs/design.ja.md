@@ -5006,6 +5006,7 @@ public sealed record SelectOptions<T>
     public Func<T, bool>? Enabled { get; init; }       // null はすべて使える
     public Func<T, string>? TextOf { get; init; }      // 文字で探すときの文字。null は探さない
     public float MaxDropDownHeight { get; init; } = 200;
+    public Func<Element, Element>? Panel { get; init; }   // 一覧の見た目。一覧を受け取り、それを含む要素を返す。null は見た目なし
     public ShowMotion? Motion { get; init; }
 }
 ```
@@ -5022,6 +5023,7 @@ public sealed record SelectOptions<T>
 - **ポップアップの形:** Tooltip のポップアップは一時のポップアップ（`PopupOptions.IsTransient`、§7.3「入れ子」）である。フォーカスのスコープを積まず、開くときに兄弟のポップアップを閉じない。ほかのポップアップ（メニュー、Select、ダイアログ）が開くと閉じる。Tooltip はそれらの前置きの案内なので、開いたものの上に残さない。積むと、Tooltip が出ている間 Tab が空のスコープで回る。兄弟を閉じると、メニューの項目の Tooltip が、その項目のサブメニューを閉じる。Avalonia の Tooltip も、フォーカスを取らない（`ToolTip.cs` 435〜438 行目、`TakesFocusFromNativeControl = false`）
 - **フォーカスとタッチ:** キーボードのフォーカスでは出さない（3 つとも出さない）。タッチとペンの長押しで、待たずに出し、離したら隠す（GPUI の `div.rs` 3759〜3790 行目。Flutter も長押しで出す）。長押しは、タッチかペンの押下が、押した所から §7 の「タッチとペンのドラッグ」の閾値（18 論理画素）を超えて動かずに 500 ms 続くことで、Tooltip が自分で判定する（Flutter の `kLongPressTimeout` は 500 ms、`gestures/constants.dart` 29 行目。GPUI の `long_press_duration` も 500 ms、`gpui/src/gestures.rs` 138 行目）。Core にはまだ長押しの判定が無く、ほかの部品が使うまでは Tooltip の中に置く。Disabled のアンカーには出さない（Avalonia の `ShowOnDisabled` の既定は false、`ToolTip.cs` 76 行目）
 - **Select の箱:** 箱はフォーカスでき、選ばれている値を `item(value)` で作って中に見せる。値が変わったら作り直す。値が `options` に無いときも、その値を `item` で見せる。箱は見た目を付けない（§13.1）
+- **一覧の見た目（P02d2 の 2 つ目の PR で決めた）:** 一覧の行は、`item(option)` が作る要素そのもので、部品が包まない。行はフォーカスでき、使えない選択肢の行は Disabled なので、行の見た目はアプリが `item` の `.Hovered`・`.Focused`・`.Disabled` で付ける。箱の中の要素はフォーカスできないので、`.Focused` の見た目は出ない。一覧全体の見た目（背景・枠・余白）は `SelectOptions.Panel` で付ける。設計の最初の版の API では、アプリが一覧の背景も行の強調も付けられなかった。§13.1 のメニューは `panel` が見た目で、同じ考え方である
 - **閉じているときのキー**（Avalonia の `ComboBox.cs` 258〜292 行目。Windows の標準のコンボボックスも同じ）:
   - 上下キーで、開かずに値を次と前の使える選択肢に変える。端で止まる。値が `options` に無いときは、下キーで最初の、上キーで最後の使える選択肢にする
   - Alt+上下キーと F4 で開閉する。Enter と Space で開く
@@ -5030,7 +5032,7 @@ public sealed record SelectOptions<T>
   - 選ばれている選択肢にフォーカスを置き、見える所までスクロールする（Avalonia の `ComboBox.cs` 525〜537 行目、Flutter の `DropdownButton`）。値が無いときは、最初の使える選択肢に置く
   - 上下キーで次と前の使える選択肢へフォーカスを移し、端で止まる（Avalonia は `WrapFocus` が false）。Home・End で最初と最後、PageUp・PageDown で一覧の高さ分だけ移る。§13.1 のメニューは端で回るが、Select は Windows のリストと同じく止める
   - フォーカスを動かしても値は変えない。Enter・Space・押下で値を決めて閉じ、フォーカスを箱に戻す
-  - Esc と外の押下は、値を変えずに閉じる。Tab は、閉じてから箱からフォーカスを次へ進める（Avalonia は Tab を処理済みにしない、`ComboBox.cs` 277〜280 行目）
+  - Esc と外の押下は、値を変えずに閉じる。外の押下は消費し、下のノードに届けない（`PopupOptions.ConsumeOutsidePress`）。Avalonia の `ComboBox` も、一覧の外の押下を後ろへ届けない。届けると、一覧が開いている間に箱を押したとき、閉じた直後の押下が箱を開き直す（P02d2 の 2 つ目の PR で決めた）。Tab は、閉じてから箱からフォーカスを次へ進める（Avalonia は Tab を処理済みにしない、`ComboBox.cs` 277〜280 行目）
   - ポインタが入った選択肢はフォーカスを取る（§13.1 の `MenuItem` と同じ）
 - **開く場所と幅:** 箱の下に開き（`PopupPlacement.Below`）、一覧の幅は箱の幅以上にする（Avalonia の `ComboBox.xaml` 163 行目、Flutter の `DropdownMenu`）。高さが `MaxDropDownHeight`（既定 200 px、Avalonia の `ComboBox.cs` 54 行目）を超えたら、一覧の中でスクロールする。Flutter の `DropdownButton` の、選ばれている項目を箱に重ねる置き方は採らない
 - **文字で探す:** `TextOf` があるとき、打った文字で始まる使える選択肢を探す。続けて打った文字は、前の文字から 1 秒以内ならつなげて探す。閉じていれば値を変え、開いていればフォーカスを移す（Avalonia の `SelectingItemsControl.cs` 631〜650 行目。Windows のリストも同じ）。大文字と小文字は区別しない
