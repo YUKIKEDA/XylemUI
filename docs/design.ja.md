@@ -1585,6 +1585,7 @@ public static class ElementExtensions
     public static Element FocusVisible(this Element e, PaintStyle style);   // K1。フォーカスしていて、最後の入力がキーボード
     public static Element FocusWithin(this Element e, PaintStyle style);    // K1。自分か子孫がフォーカスしている
     public static Element Disabled(this Element e, PaintStyle style);       // K1。自分か祖先が Disabled
+    public static Element Open(this Element e, PaintStyle style);           // P02d4。開いているポップアップのアンカー（§7.3）
     public static Element Draw(this Element e, DrawFunc draw);
     // 入力
     public static Element Cursor(this Element e, CursorKind cursor);
@@ -1709,7 +1710,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - 根の Scope を破棄すると、ノード・ハンドラ・Effect が残らない（アリーナの生きたノードの数、`ScopeTracker`）
   - Core: `Elements` の関数を今の木の外で呼ぶと投げる。`Bind` の Effect が Signal の変化を 1 回の batch で 1 回書く。`TextBuilder` の比べ（同じ内容なら無効化しない）と、補間文字列の長さ。描く関数の例外（§5.0）。割り当て 0: Signal で背景の色を変えるフレームと、`TextBuilder` で数を書き直すフレーム
 
-**疑似状態（Hover / Pressed / Focused / Disabled）:** 疑似状態はノードの `PseudoState`（`UiNode.Pseudo`、§2.5）に持つビットフラグで表し、状態ごとに Signal を作らない。疑似状態ごとに変えられるのは **Paint 系のプロパティ（背景色・前景色・ボーダー色・不透明度・transform）だけ**で、サイズ・パディング・マージンなどレイアウトに影響する値は変えられない。これは型で強制する。`.Hovered()` 等が受け取る `PaintStyle` は Paint 系のプロパティしか持たない struct である。したがって疑似状態の変化は常に Paint dirty（`ChangeKind.Color` 相当）で済み、ホバーで Layout が走ることは構造的に起こらない。
+**疑似状態（Hover / Pressed / Focused / Disabled / Open）:** 疑似状態はノードの `PseudoState`（`UiNode.Pseudo`、§2.5）に持つビットフラグで表し、状態ごとに Signal を作らない。疑似状態ごとに変えられるのは **Paint 系のプロパティ（背景色・前景色・ボーダー色・不透明度・transform）だけ**で、サイズ・パディング・マージンなどレイアウトに影響する値は変えられない。これは型で強制する。`.Hovered()` 等が受け取る `PaintStyle` は Paint 系のプロパティしか持たない struct である。したがって疑似状態の変化は常に Paint dirty（`ChangeKind.Color` 相当）で済み、ホバーで Layout が走ることは構造的に起こらない。
 
 ```csharp
 [Flags]
@@ -1721,6 +1722,7 @@ internal enum PseudoState : byte
     FocusVisible = 1 << 3,   // Focused で、最後の入力がキーボード（輪を見せる）
     FocusWithin = 1 << 4,    // 自分か子孫が Focused
     Disabled = 1 << 5,       // 自分か祖先が Disabled（受け継いだ値。自分の印は NodeInput.Disabled）
+    Open = 1 << 6,           // P02d4。開いているポップアップのアンカー（§7.3「アンカーの Open」）
 }
 
 public readonly record struct PaintStyle  // レイアウトに影響するプロパティは持たない
@@ -1733,7 +1735,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 }
 ```
 
-フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。K1 の 4 つは、その上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
+フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open を重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
 **Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。
 
@@ -2409,6 +2411,8 @@ public sealed class AccessibilityInfo
 ```
 
 **v1 の契約:** `SemanticsState.A11y` を UiNode に 1:1 で埋め込む。対応する基本 control は Button / Text / TextField / Checkbox / Slider / List（Active のみ、§3.4.2）/ Dialog。merged semantics・decorative node・virtualized item semantics は、ノードの上の情報から作る別の a11y の木が扱う（§11.4）。テキストのノードのリンクの範囲（§4.8）は例外で、行 P02g の UIA の provider が、テキストのノードの子の部分（fragment、役は Hyperlink）として出す。範囲ごとの子は、1 つの UiNode の provider が返す（D9 の Grill）。
+
+**開閉の状態（P02d4 の Grill、Issue #588）:** 行 P02g は、開閉の状態（`SemanticsStateFlags` の Expanded、UIA の ExpandCollapse）を、ノードの疑似状態 `Open`（§7.3「アンカーの Open」）から読む。a11y の作業そのものは、行 P02d4 では行わない。
 
 **a11y の木の形（D3 の Grill、Issue #441）:** 書くのはノードの上（`AccessibilityInfo`）のまま、そこから別の木を作る。役と id の無いノードは落とす。GPUI は、役と id を持つ要素ごとに 1 つの節を作り、毎フレームの prepaint で木を作る（`crates/gpui/src/window/a11y.rs` 55〜56・61・71 行目、1 つの要素が足す合成の子は 67〜80・304〜346 行目）。まとめる印で名前をたたみ、仮想化した並びは数を報告する。これは Flutter の形である（`isMergingSemanticsOfDescendants`、`packages/flutter/lib/src/semantics/semantics.dart` 5916 行目、`scrollChildCount` は 5838 行目）。比べた 3 つは、どれも木とは別の a11y の木を持つ（Flutter の `SemanticsOwner`、`semantics.dart` 4872 行目。Avalonia の `AutomationPeer`、`src/Avalonia.Controls/Control.cs` 442〜457 行目）。作るのは支援技術がつながっている間だけで、つながっていなければ費用は 0 である（Flutter の `ensureSemantics`、`rendering/object.dart` 1390 行目、Avalonia の遅く作る peer）。公開の `AccessibilityInfo` を v1.0 で API を固めた後に変えると破壊的な変更になるので、v1.1 に送らない。行 P02g で UIA の provider と一緒に入れる。
 
@@ -4358,6 +4362,11 @@ XylemUI の規則:
   - Flutter の `translucent`（自分も受け、後ろも試す、`rendering/proxy_box.dart` 183〜195 行目）は採らない。`HitTest` は最前面の 1 項目だけを返し、押したときの暗黙のキャプチャ（§7）も 1 つのノードに付く。1 回の押下に当たり先が 2 つあると、どちらがキャプチャするかが決まらない
 - **入れ子（Q10）:** サブメニューは、親のポップアップの中のノードを開いた側とする、子のポップアップである。ポップアップは開いた側のポップアップを覚えておき、親を閉じると子も閉じる。兄弟を開くと、前の兄弟は閉じる（Flutter の `widgets/raw_menu_anchor.dart` 746〜747 行目）。ただし、一時のポップアップ（`PopupOptions.IsTransient`、下の `PopupOptions`。Tooltip のもの）は、開くときに兄弟を閉じない。逆に、ほかのポップアップが開くと、親によらず、出ている一時のポップアップはすべて閉じる（行 P02d2、PR #560 のレビュー）。「外を押した」かは、親子の組のどれかの中なら内側として判定する（Flutter の `TapRegion` の groupId、`widgets/tap_region.dart` 319〜400 行目）。GPUI も、フォーカスがサブメニューにある間は親を閉じない（`ui/src/components/context_menu.rs` 307〜328 行目）
 - **動き（Q11）:** `PopupOptions.Motion` は `Show` と同じ `ShowMotion`（§2.14）で、既定は動きなしである。閉じる動きの間は、根に `HitTestVisible(false)` を付け、部分木をフォーカスできなくする（Flutter の `material/menu_anchor.dart` 693〜704 行目の `IgnorePointer` と `ExcludeFocus`）。動きが終わったら根を外す
+- **アンカーの Open（行 P02d4、P02d4 の Grill、Issue #588）:** ポップアップが開いている間、Core のポップアップの仕組みが、そのアンカーのノードに疑似状態 `Open`（§2.13）を付ける。見た目は `.Open(PaintStyle)` で付ける。メニューが開くとフォーカスはメニューの中へ移るので、アンカーには `Focused` も `FocusWithin` も付かない。`Open` が無いと、開いているメニューバーの項目や Select の箱を、アプリが見た目で示せない
+  - 付けるのは、一時のポップアップ（`PopupOptions.IsTransient`、Tooltip のもの）を除く、すべてのポップアップのアンカーである。メニュー・サブメニュー・メニューバーの項目・コンテキストメニューの相手・Select の箱に、部品が何もしなくても効く。Tooltip は、ホバーで出るだけで「開いた」ものではない
+  - 閉じ始めたとき（`Closing`）に外し、出ていく動き（上の「動き」）の終わりは待たない。動きの終わりまで残すと、閉じたメニューの項目が、しばらく開いたままに見える
+  - 開く・閉じるときに描き直すのは、`Open` の見た目を持つアンカーだけである（Paint dirty。Hovered と同じ、§2.13）。見た目を持たないアンカーには何もしない
+  - GPUI は、ポップオーバーが開いている間、きっかけの部品に `toggle_state(open)` を付ける（`ui/src/components/popover_menu.rs` 182〜186 行目）。同じく仕組みが付ける形である。Avalonia は部品ごとに疑似クラスを持つ（`MenuItem` の `:open` は `MenuItem.cs` 880・886 行目、`ComboBox` の `:dropdownopen` は `ComboBox.cs` 29・422 行目、`Button` の `:flyout-open` は `Button.cs` 39・727 行目）。Flutter の `SubmenuButton` の状態は disabled・hovered・focused だけで（`material/menu_anchor.dart` 2123〜2127 行目）、アプリは builder に渡る `MenuController` の `isOpen`（`widgets/raw_menu_anchor.dart` 1029 行目）を読んで見た目を作る
 - **IME:** ウィンドウ内のポップアップの中の欄は、主の木の欄と同じく、フォーカスを取ったときに文字の入力の相手を登録する（§4.7）。ComboBox の検索欄のようにポップアップ内でテキスト入力する場合、別ウィンドウ実装（P10）では IME の対象ウィンドウを切り替える
 - **DPI:** 別ウィンドウ実装（P10）では、ポップアップが表示されるモニタの `ScaleFactor`（§6.1.1）で描く
 
@@ -5023,7 +5032,7 @@ public sealed record SelectOptions<T>
 - **置き場所:** 既定は、出すときのポインタの位置の 20 px 下（`PopupPlacement.AtPoint`）。Avalonia は既定がポインタの位置で、縦に 20 px ずらす（`ToolTip.cs` 42・54 行目）。GPUI もポインタの位置から (1, 1) に出す（`window.rs` 3816〜3817 行目）。Flutter は、アンカーの中心の 24 px 下に出す（`material/tooltip.dart` 389 行目）。はみ出したときの反転とスライドは §7.3 の「置き場所」のまま。`TooltipOptions.Placement` を渡したときは、ポインタでなくアンカーに対して置き、ポインタでもタッチとペンの長押しでも同じ場所に出す
 - **ポップアップの形:** Tooltip のポップアップは一時のポップアップ（`PopupOptions.IsTransient`、§7.3「入れ子」）である。フォーカスのスコープを積まず、開くときに兄弟のポップアップを閉じない。ほかのポップアップ（メニュー、Select、ダイアログ）が開くと閉じる。Tooltip はそれらの前置きの案内なので、開いたものの上に残さない。積むと、Tooltip が出ている間 Tab が空のスコープで回る。兄弟を閉じると、メニューの項目の Tooltip が、その項目のサブメニューを閉じる。Avalonia の Tooltip も、フォーカスを取らない（`ToolTip.cs` 435〜438 行目、`TakesFocusFromNativeControl = false`）
 - **フォーカスとタッチ:** キーボードのフォーカスでは出さない（3 つとも出さない）。タッチとペンの長押しで、待たずに出し、離したら隠す（GPUI の `div.rs` 3759〜3790 行目。Flutter も長押しで出す）。長押しは、タッチかペンの押下が、押した所から §7 の「タッチとペンのドラッグ」の閾値（18 論理画素）を超えて動かずに 500 ms 続くことで、Tooltip が自分で判定する（Flutter の `kLongPressTimeout` は 500 ms、`gestures/constants.dart` 29 行目。GPUI の `long_press_duration` も 500 ms、`gpui/src/gestures.rs` 138 行目）。Core にはまだ長押しの判定が無く、ほかの部品が使うまでは Tooltip の中に置く。Disabled のアンカーには出さない（Avalonia の `ShowOnDisabled` の既定は false、`ToolTip.cs` 76 行目）
-- **Select の箱:** 箱はフォーカスでき、選ばれている値を `item(value)` で作って中に見せる。値が変わったら作り直す。値が `options` に無いときも、その値を `item` で見せる。箱は見た目を付けない（§13.1）
+- **Select の箱:** 箱はフォーカスでき、選ばれている値を `item(value)` で作って中に見せる。値が変わったら作り直す。値が `options` に無いときも、その値を `item` で見せる。箱は見た目を付けない（§13.1）。一覧が開いている間、フォーカスは一覧の行へ移るので、箱の `Focused` の見た目は消える。開いている箱は `.Open(PaintStyle)` で示す（§7.3「アンカーの Open」、行 P02d4）
 - **一覧の見た目（P02d2 の 2 つ目の PR で決めた）:** 一覧の行は、`item(option)` が作る要素そのもので、部品が包まない。行はフォーカスでき、使えない選択肢の行は Disabled なので、行の見た目はアプリが `item` の `.Hovered`・`.Focused`・`.Disabled` で付ける。箱の中の要素はフォーカスできないので、`.Focused` の見た目は出ない。一覧全体の見た目（背景・枠・余白）は `SelectOptions.Panel` で付ける。設計の最初の版の API では、アプリが一覧の背景も行の強調も付けられなかった。§13.1 のメニューは `panel` が見た目で、同じ考え方である
 - **閉じているときのキー**（Avalonia の `ComboBox.cs` 258〜292 行目。Windows の標準のコンボボックスも同じ）:
   - 上下キーで、開かずに値を次と前の使える選択肢に変える。端で止まる。値が `options` に無いときは、下キーで最初の、上キーで最後の使える選択肢にする
@@ -5069,7 +5078,7 @@ public static Element Label(Element content, Element target);              // co
 - **Alt:** メニューの外では Alt+文字が要る。Ctrl+Alt（AltGr）は除く（Avalonia の `AccessKeyHandler.cs` 235〜238 行目）。文字だけでよいのは、開いたメニューと、選んだ状態のメニューバーの中だけである
 - **同じキーと、使えないもの:** 同じキーの相手が複数あるときは、何もせず、今のフォーカスの次の相手へフォーカスを回す。ボタンも押さない（Avalonia の 342〜346・357 行目）。Disabled と、見えていないものは飛ばす（401〜402 行目）。フォーカスを回す先には、フォーカスを取れる相手だけを入れる。選んでいないメニューバーの項目はフォーカスを取らないので入らない（PR #584 のレビュー）
 - **処理する時:** フォーカスのあるノードの経路を流し終えた後の、既定の動作として処理する（§7「キーの入力とフォーカス」の 4 つ目）。Alt+文字を自分で使う部品があれば、そちらが先に受ける。文字の欄は Alt+文字を命令にしないので、欄にフォーカスがあってもアクセスキーが効く
-- **メニューバーの形:** `MenuBar` は `MenuBarItem` を横に並べる。項目は見た目を付けず、パネルは §13.1 のメニューと同じもの（`panel` がメニューの見た目）である。Avalonia は `Menu` と上の段の `MenuItem`、Flutter は `MenuBar` と `SubmenuButton` の形である
+- **メニューバーの形:** `MenuBar` は `MenuBarItem` を横に並べる。項目は見た目を付けず、パネルは §13.1 のメニューと同じもの（`panel` がメニューの見た目）である。開いている項目は、`.Open(PaintStyle)` で強調できる（§7.3「アンカーの Open」、行 P02d4）。Avalonia は `Menu` と上の段の `MenuItem`、Flutter は `MenuBar` と `SubmenuButton` の形である
 - **選んだ状態:** Alt だけを押して離すか F10 で、メニューバーを選んだ状態にし、最初の項目を強調して、メニューは開かない。Windows の標準のメニューバーと Avalonia（`AccessKeyHandler.cs` 256〜263 行目）の形である。zed の F10 は、最初のメニューを開く（`assets/keymaps/default-windows.json` 662 行目）。Alt が Down の間にほかのキーを押したら、Alt の Up では選ばない（Avalonia の `_ignoreAltUp`、`AccessKeyHandler.cs` 216〜218・256〜258 行目）
 - **抜けるとき:** Alt・F10・メニューの開いていないときの Esc で選んだ状態を抜け、選ぶ前にフォーカスしていたノードへフォーカスを戻す。メニューの開いているときの Esc は、メニューだけを閉じ、選んだ状態は残す。Avalonia は Esc でフォーカスを戻さない（`Platform/DefaultMenuInteractionHandler.cs` 496〜506 行目）。zed は閉じるときに前のフォーカスへ戻す（`ui/src/components/popover_menu.rs` 281〜292 行目）
 - **選んだ状態のキー:**
@@ -5088,7 +5097,7 @@ public static Element Label(Element content, Element target);              // co
   - メニューバーのメニューの外の押下は、メニューを閉じ、その先のノードへは届かない（`PopupOptions.ConsumeOutsidePress`）。開いている項目を押すと、メニューを閉じるだけで、同じ押下のクリックで開き直さない
 - **確かめ方:**
   - `XylemUI.Desktop.Tests`（文字を使うので Windows）: 相手の 4 つの種類、`Label` の押下、モーダルの中だけ、Alt が要ることと Ctrl+Alt、同じキーと使えないもの、欄にフォーカスがあるとき。メニューバーの選んだ状態に入る 2 つと抜ける 3 つ、キーの表の各行、ポインタの開閉と切り替え、Tab で止まらないこと
-  - golden: 選んだ状態のメニューバーの 1 枚
+  - golden: 選んだ状態のメニューバーの 1 枚。開いたメニューバー（開いている項目を `Open` で強調）の 1 枚は、行 P02d4 で撮る
 
 ### 13.2 XylemUI.Theme.Fluent
 
