@@ -528,6 +528,74 @@ public sealed class HeadlessPixelTests
         await app.MatchesGoldenAsync("menu-bar-selected.png");
     }
 
+    /// <summary>
+    /// A menu bar whose item's menu is open draws the item with its open look while the focus is in the menu, and matches its golden
+    /// (row P02d4, design §7.3, "The anchor's Open").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 220 x 120 on WARP: on white, a gray menu bar at (10, 10) of "_File" and "_Edit", each with a padding of 8
+    ///   by 3, a light highlight when focused and a darker one when open; "_File"'s menu of "_New" and "E_xit" in a dark panel 100
+    ///   wide, its items highlighted when focused.
+    ///
+    /// Steps:
+    /// - Alt+F; settle; read the pixel 2 px into "File"; compare the frame with "menu-bar-open.png".
+    ///
+    /// Expected:
+    /// - One popup; the pixel is the open look's color; the frame matches the golden, with "File" in its open look and "New" focused.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task MenuBar_Open_MatchesItsGolden()
+    {
+        Color dark = Color.FromRgb(0x2B3245);
+        Color openColor = Color.FromRgb(0x5A6A90);
+        var focused = new PaintStyle { Background = Color.FromRgb(0x8090B0) };
+        var open = new PaintStyle { Background = openColor };
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Box(
+                        Primitives
+                            .Primitive.MenuBar(
+                                Primitives
+                                    .Primitive.MenuBarItem(Primitives.Primitive.AccessText("_File").Padding(8, 3), () => FocusedPanel(dark))
+                                    .Focused(focused)
+                                    .Open(open),
+                                Primitives
+                                    .Primitive.MenuBarItem(Primitives.Primitive.AccessText("_Edit").Padding(8, 3), () => FocusedPanel(dark))
+                                    .Focused(focused)
+                                    .Open(open)
+                            )
+                            .Background(Color.FromRgb(0xC0C0C0))
+                    )
+                    .Padding(10)
+                    .Background(White),
+            Options(220, 120)
+        );
+        _ = app.PumpAndSettle();
+
+        _ = app.Keyboard.Press(Key.F, KeyModifiers.Alt);
+        _ = app.PumpAndSettle();
+
+        _ = Assert.Single(app.Popups);
+        Assert.Equal(openColor, Pixel(app, (12, 12)));
+        await app.MatchesGoldenAsync("menu-bar-open.png");
+    }
+
+    private static Element FocusedPanel(Color dark) =>
+        Column(
+                Primitives
+                    .Primitive.MenuItem(Primitives.Primitive.AccessText("_New").Padding(8, 3), () => { })
+                    .Focused(new PaintStyle { Background = Color.FromRgb(0x3F4A66) }),
+                Primitives
+                    .Primitive.MenuItem(Primitives.Primitive.AccessText("E_xit").Padding(8, 3), () => { })
+                    .Focused(new PaintStyle { Background = Color.FromRgb(0x3F4A66) })
+            )
+            .Width(100)
+            .Padding(4)
+            .Background(dark)
+            .Foreground(White);
+
     private static Element FilePanel(Color dark) =>
         Column(
                 Primitives.Primitive.MenuItem(Primitives.Primitive.AccessText("_New").Padding(8, 3), () => { }),

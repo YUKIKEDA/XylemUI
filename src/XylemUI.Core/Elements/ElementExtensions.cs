@@ -232,6 +232,21 @@ public static class ElementExtensions
     }
 
     /// <summary>
+    /// Sets what the open state lays over the node's pressed look, under the focus states (design §2.13): while a popup opened against
+    /// the node is open, a tooltip aside, from its opening to the start of its close (design §7.3, "The anchor's Open"). A menu's
+    /// anchor, a menu bar's item, and a select's box show with it that their popup is open, while the focus is in the popup.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="style">The values that replace the node's while a popup is open against it.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The style's opacity or transform is out of its range.</exception>
+    public static Element Open(this Element element, PaintStyle style)
+    {
+        element.TreeOrThrow().SetOpenStyle(element.Node, style);
+        return element;
+    }
+
+    /// <summary>
     /// Sets what the focus-within state lays over the node's pressed look: while the node or one of its descendants has the focus.
     /// </summary>
     /// <param name="element">The node.</param>

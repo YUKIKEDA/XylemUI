@@ -327,6 +327,53 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The open look lays over the pressed one and under the focus looks (design §2.13): a focus ring still shows over an open anchor.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focusable box (10, 10, 50 x 50) that keeps the focus on a press, with a gray background, a pressed look of green, an open
+    ///   look of red, and a focused look of blue. The window is active.
+    ///
+    /// Steps:
+    /// - Draw; press the box and draw; set its open state and draw; release it, give it the focus, and draw; clear the open state and
+    ///   take the focus away, and draw.
+    ///
+    /// Expected:
+    /// - Gray, green (pressed), red (open over pressed), blue (focused over open), gray.
+    /// </remarks>
+    [Fact]
+    public void DisplayList_OpenLook_LaysOverThePressedOne_AndUnderTheFocusLooks() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            NodeHandle box = scene.Focusable(scene.Root, 10, 10, 50, 50);
+            scene.Tree.SetKeepsFocusOnPress(box, true);
+            scene.Tree.SetBackground(box, Gray);
+            scene.Tree.SetPressedStyle(box, new PaintStyle { Background = Green });
+            scene.Tree.SetOpenStyle(box, new PaintStyle { Background = Red });
+            scene.Tree.SetFocusedStyle(box, new PaintStyle { Background = Blue });
+            scene.Start();
+            var colors = new List<Color> { scene.BoxColor() };
+
+            scene.Press(20, 20);
+            scene.Draw();
+            colors.Add(scene.BoxColor());
+            scene.Tree.SetPseudoState(box, PseudoState.Open, on: true);
+            scene.Draw();
+            colors.Add(scene.BoxColor());
+            scene.Release(20, 20);
+            Assert.True(scene.Tree.Focus.Focus(box));
+            scene.Draw();
+            colors.Add(scene.BoxColor());
+            scene.Tree.SetPseudoState(box, PseudoState.Open, on: false);
+            scene.Tree.Focus.Lose(box);
+            scene.Draw();
+            colors.Add(scene.BoxColor());
+
+            Assert.Equal([Gray, Green, Red, Blue, Gray], colors);
+        });
+
+    /// <summary>
     /// When the window stops being active, the focused node gets a focus-out and loses its states but is kept; when it is active
     /// again, it gets them back with a focus-in. A node focused meanwhile takes the focus then; one that cannot any more leaves the
     /// focus empty.

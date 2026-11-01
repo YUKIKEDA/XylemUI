@@ -435,6 +435,78 @@ public sealed class PopupTests
     }
 
     /// <summary>
+    /// A popup that is not transient sets the open state on its anchor while it is open, and clears it as it starts to close, before
+    /// its motion ends; a transient popup sets none; an anchor with two popups open keeps it until the second starts to close.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An anchor with a popup that leaves in 100 ms; a second anchor with a transient popup; a third anchor with a modal popup and a
+    ///   popup that is not modal. All closed.
+    ///
+    /// Steps:
+    /// - Open the first and settle; close it and pump 50 ms; settle. Open the second and settle. Close it; open the third's modal,
+    ///   then its other popup, and settle; close the other popup and settle; close the modal and settle. Read the open state of
+    ///   each anchor after each step.
+    ///
+    /// Expected:
+    /// - The first: open, then not open while its popup is still leaving (one popup), then not open. The second: not open while its
+    ///   popup is out. The third: open with both, still open with the modal alone, not open after it.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Open_IsOnTheAnchorWhileItsPopupIsOpen_AndGoesAsItStartsToClose()
+    {
+        var first = Signal.Create(false);
+        var second = Signal.Create(false);
+        var modal = Signal.Create(false);
+        var other = Signal.Create(false);
+        Element a = default;
+        Element b = default;
+        Element c = default;
+        var leaving = new PopupOptions { Motion = ShowMotion.Fade(TimeSpan.FromMilliseconds(100)) };
+        var transient = new PopupOptions { IsTransient = true };
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            a = Box().Width(100).Height(30).Popup(first, () => Box().Width(50).Height(20), leaving);
+            b = Box().Width(100).Height(30).Popup(second, () => Box().Width(50).Height(20), transient);
+            c = Box().Width(100).Height(30).Popup(modal, () => Box().Width(50).Height(20).Focusable(), new PopupOptions { IsModal = true });
+            _ = c.Popup(other, () => Box().Width(50).Height(20));
+            return Column(a, b, c);
+        });
+        _ = app.PumpAndSettle();
+        bool IsOpen(Element e) => (app.Tree.Nodes.GetRef(e.Node).Pseudo & PseudoState.Open) != 0;
+        var steps = new List<(bool Open, int Popups)>();
+
+        first.Set(true);
+        _ = app.PumpAndSettle();
+        steps.Add((IsOpen(a), app.Popups.Count));
+        first.Set(false);
+        app.Pump(TimeSpan.FromMilliseconds(50));
+        steps.Add((IsOpen(a), app.Popups.Count));
+        _ = app.PumpAndSettle();
+        steps.Add((IsOpen(a), app.Popups.Count));
+
+        second.Set(true);
+        _ = app.PumpAndSettle();
+        steps.Add((IsOpen(b), app.Popups.Count));
+        second.Set(false);
+        _ = app.PumpAndSettle();
+
+        modal.Set(true);
+        other.Set(true);
+        _ = app.PumpAndSettle();
+        steps.Add((IsOpen(c), app.Popups.Count));
+        other.Set(false);
+        _ = app.PumpAndSettle();
+        steps.Add((IsOpen(c), app.Popups.Count));
+        modal.Set(false);
+        _ = app.PumpAndSettle();
+        steps.Add((IsOpen(c), app.Popups.Count));
+
+        Assert.Equal([(true, 1), (false, 1), (false, 0), (false, 1), (true, 2), (true, 1), (false, 0)], steps);
+    }
+
+    /// <summary>
     /// A popup closes when its anchor's part is disposed, when the window stops being active, and when a scroll container its anchor
     /// is in scrolls.
     /// </summary>
