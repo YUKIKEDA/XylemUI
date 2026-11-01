@@ -188,6 +188,48 @@ public sealed class WindowAccessKeyTests
     }
 
     /// <summary>
+    /// When a button and a menu bar's item share a key, the focus goes round the targets that can take it: the item, which takes no
+    /// focus while the bar is not selected, is passed over, and its menu does not open.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A menu bar of "_File" with a menu of an item "_New", a button "_Fetch" whose clicks count, and a focusable box, focused.
+    ///
+    /// Steps:
+    /// - Alt+F twice, reading the focus and the popups after each.
+    ///
+    /// Expected:
+    /// - The button focused, with no popup, after each; no click.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AccessKey_SharedWithAMenuBarItem_GoesRoundTheTargetsThatTakeTheFocus()
+    {
+        int fetches = 0;
+        Element fetch = default;
+        Element start = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                MenuBar(MenuBarItem(AccessText("_File"), () => Column(MenuItem(AccessText("_New"), () => { })))),
+                fetch = Button(AccessText("_Fetch"), () => fetches++),
+                start = Box().Width(50).Height(20).Focusable()
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.Focus(start);
+        var steps = new List<(bool OnButton, int Popups)>();
+        for (int i = 0; i < 2; i++)
+        {
+            _ = app.Keyboard.Press(Key.F, KeyModifiers.Alt);
+            _ = app.PumpAndSettle();
+            steps.Add((app.Tree.Focus.Focused == fetch.Node, app.Popups.Count));
+        }
+
+        Assert.Equal([(true, 0), (true, 0)], steps);
+        Assert.Equal(0, fetches);
+    }
+
+    /// <summary>
     /// The window's access keys need Alt, without Control; several targets of one key take the focus in turn, round the end, and are
     /// not clicked; disabled and hidden ones are passed over; a focused text field leaves Alt and its letter to them.
     /// </summary>

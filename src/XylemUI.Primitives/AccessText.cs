@@ -105,6 +105,13 @@ public static partial class Primitive
             return true;
         }
 
+        // The focus goes round the targets that can take it: a menu bar's item takes none while the bar is not selected.
+        _ = targets.RemoveAll(t => !tree.Focus.CanFocus(t.FocusNode));
+        if (targets.Count == 0)
+        {
+            return true;
+        }
+
         int focused = targets.FindIndex(t => t.FocusNode == tree.Focus.Focused);
         _ = tree.Focus.Focus(targets[(focused + 1) % targets.Count].FocusNode);
         return true;
