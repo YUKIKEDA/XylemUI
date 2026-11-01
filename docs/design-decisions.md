@@ -715,6 +715,9 @@ Rejected:
   - 選んでいない間のメニューバーを Tab で止める（Avalonia はバー全体で 1 つ、zed は項目ごと）。Windows の標準と Flutter は止めない。P02d3 の Q6
   - F10 で最初のメニューを開く（zed、`default-windows.json` 662 行目）。Windows の標準は、Alt と同じく選んだ状態にするだけで開かない。P02d3 の Q2
   - 相手の無い `AccessText` のキーを何もしないままにする（Avalonia、`AccessKeyHandler.cs` 382 行目）。キーが黙って効かない。フォーカスできる祖先にフォーカスを移す。P02d3 の Q7
+  - 開いているアンカーの印を、部品ごとの疑似状態にする（Avalonia の `:open`・`:dropdownopen`・`:flyout-open`）。部品ごとに名前と付け外しの場所が違い、新しい部品のたびに足す。Core のポップアップの仕組みがアンカーに `Open` を付ければ、すべての部品に一度で効く（GPUI の形）。P02d4 の Q1、Issue #588
+  - 開いているかをアプリが読んで見た目を作る形だけにする（Flutter の `MenuController.isOpen`）。XylemUI のメニューバーの項目とコンテキストメニューは、開閉の Signal を部品の中に持つので、アプリから読めない。P02d4 の Q1
+  - `Open` を、出ていく動きの終わりまで残す。閉じたメニューの項目が、しばらく開いたままに見える。P02d4 の Q3
   - 窓全体のアクセスキーをモーダルで絞らない（Avalonia）。ダイアログの外のボタンがキーで押される。P02d3 の Q9
   - アクセスキーの下線を Alt を押している間だけ見せ、開いたメニューでも Alt+文字を求める（Flutter、`material/menu_anchor.dart` 3134〜3139・3171〜3173 行目）。Windows の標準のメニューは、Alt を離しても合図を残し、開いたメニューでは文字だけで選ぶ。P02d2 の Q12・Q13
 
