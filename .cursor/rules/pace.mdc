@@ -48,7 +48,7 @@ A benchmark, a NativeAOT publish, or a profile keeps the tree busy for minutes.
 - While it runs, do what does not depend on its result. Name that work before starting the run.
 - Runs that need a quiet machine (compared benchmarks) do not overlap each other.
 
-A CI run started for an experiment (`gh workflow run`, `gh run rerun`) is a long run too: while it runs, go on with work that does not need its result, on another branch. In Q1 the agent waited on rounds of reruns with the next row's research undone, and the owner pointed it out.
+A CI run started for an experiment (`gh workflow run`, `gh run rerun`) is a long run too: while it runs, go on with work that does not need its result, on another branch. In Q1 the agent waited on rounds of reruns with the next row's research undone, and the owner pointed it out. A PR's own CI is the same: after a push, the reply to the review, the retrospective, and the next Issue and branch go on, and the checks are read when the run ends (a background watcher that notifies, not a wait in the foreground). In P02d2 the agent waited on each push's run, about 15 minutes for the Windows job, before it replied or started the next work, and the owner pointed out the lost time (PR #564).
 
 A CI job that runs past the time its passing runs take is looked at then, not waited on to its limit. The Windows job passes in 14 to 19 minutes; in T12 it stopped twice in the Desktop tests, and the agent waited both times to the 30-minute limit with no other work going, until the owner pointed it out (PR #426). Since PR #428 the Desktop tests end after 5 minutes when they hang.
 
