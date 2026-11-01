@@ -50,4 +50,10 @@ public sealed record HeadlessOptions
     /// Gets the most iterations <see cref="HeadlessApp.PumpAndSettle"/> runs before it throws; 1,000 by default.
     /// </summary>
     public int MaxIterations { get; init; } = 1_000;
+
+    /// <summary>
+    /// Gets a value indicating whether access keys are always underlined, as Windows' "underline access keys" setting
+    /// (<c>SPI_GETKEYBOARDCUES</c>) says (design §13.1, "Access keys"); <see langword="false"/> by default, as Windows' is.
+    /// </summary>
+    public bool KeyboardCues { get; init; }
 }

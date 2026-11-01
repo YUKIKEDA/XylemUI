@@ -11,7 +11,7 @@ namespace XylemUI.E2E;
 
 // The costs of a select (row P02d2, design §13.1, "Select"): a select of 10 options of text, each with a hovered and a focused look,
 // 160 wide at the top left over the todo sample with 200 items, in a window of 420 x 360 with text and no GPU. The frame that opens
-// it is timed whole, the key Enter and the frame; the close after it is not. With it open, a frame of Down (the focus to the next
+// it is timed whole, the key Enter and the frame, with whether a gen-0 collection ran in it; the close after it is not. With it open, a frame of Down (the focus to the next
 // row, Home back at the end) and a frame of the pointer moved over the next row are timed whole, with the bytes 1,000 such frames
 // allocate and the builds of the window's list they make.
 internal static class SelectCost
@@ -26,18 +26,27 @@ internal static class SelectCost
         using var scene = new SelectScene();
         report.Number("options", 10);
 
+        // Each opening's frame is kept with whether a gen-0 collection ran in it, to see what spreads its range (PR #569's review).
         var open = new double[Samples];
+        var withGc = new List<double>();
+        var withoutGc = new List<double>();
         for (int i = -3; i < Samples; i++)
         {
+            int collections = GC.CollectionCount(0);
             double us = scene.TimeOpen();
+            bool collected = GC.CollectionCount(0) != collections;
             scene.Close();
             if (i >= 0)
             {
                 open[i] = us;
+                (collected ? withGc : withoutGc).Add(us);
             }
         }
 
         report.Number("open_frame_us_p50", Median(open));
+        report.Number("open_frames_with_gen0_gc", withGc.Count);
+        report.Number("open_frame_with_gc_us_p50", withGc.Count > 0 ? Median([.. withGc]) : -1);
+        report.Number("open_frame_without_gc_us_p50", withoutGc.Count > 0 ? Median([.. withoutGc]) : -1);
         scene.Open();
         (double keyUs, long keyBytes, int keyBuilds) = scene.TimeFrames(scene.Down);
         report.Number("key_frame_us_p50", keyUs);

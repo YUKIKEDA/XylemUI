@@ -60,7 +60,12 @@ public sealed class HeadlessApp : IAsyncDisposable
             Tree.Clipboard = Clipboard;
             Ime = new HeadlessIme(this);
             Tree.SetTextInput(Ime);
-            Tree.SetTextEditing(options.CaretBlink ? TextEditingSettings.Default : TextEditingSettings.Default with { CaretBlink = null });
+            Tree.SetTextEditing(
+                (options.CaretBlink ? TextEditingSettings.Default : TextEditingSettings.Default with { CaretBlink = null }) with
+                {
+                    KeyboardCues = options.KeyboardCues,
+                }
+            );
             _rootNode = Tree.CreateNode(new LayoutStyle());
             Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
             Input = new WindowInput(Tree, Frames, _platform);
