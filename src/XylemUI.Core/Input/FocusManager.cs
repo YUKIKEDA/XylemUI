@@ -164,6 +164,13 @@ internal sealed class FocusManager
         }
     }
 
+    /// <summary>
+    /// Returns whether a node is where the top modal scope lets the input reach: inside it, or anywhere with none (design §7.2).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>Whether it is.</returns>
+    public bool InsideTopModal(NodeHandle node) => _scopes.Count == 0 || TopModal() is not { } modal || IsInside(node, modal);
+
     // The top modal scope's owner, or none.
     private NodeHandle? TopModal()
     {

@@ -330,6 +330,19 @@ internal sealed partial class WindowInput
             return _tree.Popups.CloseFront();
         }
 
+        // Alt and a letter or a digit is the window's access key, after no handler stopped it (design §13.1, "The window's access
+        // keys"); Control and Alt together (AltGr) are not.
+        if (
+            input.Kind == KeyEventKind.Down
+            && (input.Modifiers & (KeyModifiers.Alt | KeyModifiers.Control)) == KeyModifiers.Alt
+            && _tree.AccessKeys is { } accessKeys
+            && input.KeyChar.IsBmp
+            && System.Text.Rune.IsLetterOrDigit(input.KeyChar)
+        )
+        {
+            return accessKeys(this, (char)input.KeyChar.Value, input.Timestamp);
+        }
+
         return false;
     }
 
