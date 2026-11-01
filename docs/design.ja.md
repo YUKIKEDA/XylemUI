@@ -2102,30 +2102,72 @@ flowchart LR
 **可変長アイテムのスクロールアンカリング:** 可変長テキストでは概算値と実測値のズレによりスクロールバーが跳ね、上スクロール時にコンテンツがジャンプしうる。実測サイズのキャッシュと、現在画面上端に見えている特定アイテムを基準にレイアウトを固定する「スクロールアンカー」を要件とする。
 
 ```csharp
-public sealed class VirtualizedList<T, TKey> where TKey : notnull
-{
-    public required IReadOnlySignal<IReadOnlyList<T>> Items;  // 論理的な全件データ（UiNode化されていない）
-    public float EstimatedItemExtent;                         // 未計測アイテムの概算サイズ（初期スクロール範囲計算用）
+public static Element VirtualFor<T, TKey>(
+    this Element container,                       // スクロールする軸がちょうど 1 つの箱。子は持たない
+    IReadOnlySignal<IReadOnlyList<T>> items,      // 論理的な全件（行にしない）
+    Func<T, TKey> key,                            // 行の同一性（For と同じ）
+    Func<IReadOnlySignal<T>, Element> render,     // 行を作る。For と同じく、行ごとの Scope の中で呼ぶ
+    VirtualListState? state = null,               // 渡さなければ箱が自分で持つ
+    VirtualOptions? options = null)
+    where TKey : notnull;
 
-    internal PrefixSumTree MeasuredExtents = new();           // 計測済みアイテムのextentキャッシュ(index→累積サイズ)
-                                                              // scroll offset→item indexの高速変換に使う(Fenwick tree等)
-    internal (TKey Key, float Offset)? ScrollAnchor;          // (画面上端に見えているアイテムのkey, そのアイテム内での相対オフセット)
-    internal IndexRange VisibleRange;                         // 現在マテリアライズすべきインデックス範囲(viewport計算専用)
-    internal readonly Dictionary<TKey, NodeHandle> Materialized = new();  // identity管理はItemKey基準
+public sealed record VirtualOptions
+{
+    public float CacheExtent { get; init; } = 250;   // 見える範囲の前後に持つ長さ（論理画素）
+    public float? FixedExtent { get; init; }         // 行の大きさが固定なら、その値（測らない）
+    public float? EstimatedExtent { get; init; }     // まだ測っていない行の見積もり。null は測った行の平均
 }
+
+public sealed class VirtualListState
+{
+    public ScrollState Scroll { get; }                       // 箱の ScrollState（§3.4.1）
+    public IReadOnlySignal<IndexRange> VisibleRange { get; } // 見えている行の番号の範囲。layout の後に書く
+    public void ScrollToIndex(int index, ScrollAlign align = ScrollAlign.Nearest);
+}
+
+public enum ScrollAlign : byte { Nearest, Top, Center, Bottom }
+
+public static Element KeepAlive(this Element row, IReadOnlySignal<bool> keep);  // 範囲の外でも行を捨てない
 ```
 
 **identityをindexではなくItemKeyで管理する**: リストの先頭に要素が挿入されると全アイテムのindexがずれるため、`index`はviewport範囲計算（「今何番目から何番目が見えているか」）専用の値として扱い、ノードの同一性（どのUiNodeがどの論理アイテムに対応するか）は常にItemKey（`TKey`）で管理する。これにより`For`（§2.7）のkey reconciliationと`Materialized`の管理方式が一貫する。
 
 アイテムが実際にレイアウトされ実測サイズが確定すると`MeasuredExtents`を更新し、以降の`VisibleRange`計算は概算値ではなく実測値を優先する。スクロール位置の計算は「オフセット→インデックス」ではなく`ScrollAnchor`（現在見えているアイテムとその相対位置）を基準に行うことで、リスト内容や実測サイズの変化があってもアンカーとなるアイテムが画面上の同じ位置に留まり続け、ジャンプを防ぐ。
 
-Viewport Reconciliation は §3.4.2 の3段階に従う。`Released` になったアイテムだけ §2.3 の Scope で Dispose する。`Cached` は materialize を維持し、Layout/Paint 対象から外すだけである。新たに可視範囲（および `CacheExtent`）に入ったインデックスだけ `render` して `UiNode` を生成する。レイアウトエンジン（§3.2）は `Materialized` に存在するノードのうち Active（および計測が必要な Cached の初回 layout）だけを扱う。
+Viewport Reconciliation は §3.4.2 の3段階に従う。`Released` になったアイテムだけ §2.3 の Scope で Dispose する。`Cached` は materialize を維持し、Layout/Paint 対象から外すだけである。新たに可視範囲（および `CacheExtent`）に入ったインデックスだけ `render` して `UiNode` を生成する。レイアウトエンジン（§3.2）は、作った行のうち Active と Cached を layout する。Cached の行は、測るために layout するが、描かず、ヒットさせない（下の「P02e で入れる形」）。
 
 **新規materializeノードのLayoutRoots登録先**: §2.10のフレーム実行サイクルは`Invalidation→Materialization→Layout`の順で流れるが、新規ノードはまだ一度もサイズ計測されておらず`LastAvailableSpace`を持たず、かつ自身がLayout Boundaryでもないため、**単独では`LayoutPass`の起点になれない**。
 
 Viewport Reconciliationでノードの追加・破棄が発生した場合、Materialization層は新規ノード個々にではなく、そのコンテナである`VirtualizedList`を保持するノード自体に対して`MarkDirty(listNode, Layout)`を発行し、続けて `OverwriteLayoutRequest(tree, listNode, containerSpace, LayoutReason.MaterializationChanged)` する（§2.4.1）。`EnqueueLayoutRoot` の同一ノード dedup は reason をマージする。`MarkDirty` が先に `IntrinsicSizeChanged` で積んでも `MaterializationChanged` で上書きされる。コンテナが正しい`AvailableSpace`を持って`LayoutRoots`に載り、配下の新規 materialize ノードへは通常の Layout パスの子孫走査で制約が伝わる。
 
 Materialization はノードを生成するのでアリーナ配列の再確保が起こりうる。§2.5 の `ref` の寿命規則に従い、Materialization の前後で `ref` を持ち越さない。
+
+**P02e で入れる形（P02e の Grill でオーナーが決定、Issue #606）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。Flutter のパスは `packages/flutter/lib/src/` から、Avalonia は `src/Avalonia.Controls/` から、GPUI は `crates/` から書く。
+
+- **API と同一性:** `.VirtualFor(items, key, render, state, options)` は、`For`（§2.7）と同じく、項目の Signal とキーと `render` を受ける。行の同一性はキーで持つので、上に項目が足されても、行の状態とフォーカスが残る。比べた 3 つは、どれも番号で持つ。Flutter は `findChildIndexCallback` を渡さないと番号で行を合わせ、挿入で状態がずれる（`widgets/scroll_delegate.dart` 208〜211 行目）。Avalonia は移動を外して入れることとして扱い、入れ物を使い回す（`VirtualizingStackPanel.cs` 365〜380 行目、`Utils/RealizedStackElements.cs` 14〜17 行目）。GPUI の `ListState::splice` は番号の範囲を入れ替える（`gpui/src/elements/list.rs` 503〜549 行目）
+- **付ける箱:** スクロールする軸（`Overflow.Hidden` か `Scroll`）がちょうど 1 つで、子の無い箱に付ける。縦でも横でもよい。Flutter と Avalonia は同じコードで両方の軸を扱う（`rendering/sliver_multi_box_adaptor.dart` 701〜725 行目、`VirtualizingStackPanel.cs` 213〜215 行目）。GPUI の `list` は縦だけで、ホイールの量の縦だけを使う（`list.rs` 916〜918 行目）。格子の仮想化は入れない。要件（§13 の ListBox）が求めるのは一覧だけである
+- **行の並べ方（`LayoutAlgorithm.Virtual`）:** 箱は Block と Flex のほかの、新しい並べ方を持つ。行の交差軸の大きさは、箱の内容の箱の幅（横の並びなら高さ）に固定する。スクロールの軸の大きさは、行の内容で決まる。行の margin は、その行の大きさに含める。行と行の間は、箱の `.Gap()` のその軸の値、箱の padding は並びの前後の余白である。スクロールできる範囲は、padding と、行の大きさの和と、間の和である。grow・shrink・wrap・justify は使わない。Flutter の `SliverList` は、交差軸を固定した制約で子を layout する（`rendering/sliver_list.dart` 56 行目、`rendering/sliver.dart` 492〜500 行目）。Avalonia は交差軸に伸ばし（`VirtualizingStackPanel.cs` 268〜270 行目）、GPUI は一覧の幅で layout する（`list.rs` 1268〜1270 行目）
+- **大きさのキャッシュ:** 行を layout したら、その大きさをキーごとに覚え、番号の順の累積の和（Fenwick 木）を作り直す。累積の和は、位置から番号を引くのと、番号から位置を引くのに使う。まだ測っていない行は、`EstimatedExtent` か、null なら測った行の大きさの平均で見積もる。Flutter は、作った行の平均に残りの数を掛ける（`widgets/sliver.dart` 1129〜1143 行目）。Avalonia も実測の平均を使い、最初の値は 25 画素である（`VirtualizingStackPanel.cs` 73 行目、806〜833 行目）。`FixedExtent` を渡した箱は、行を測らずに、位置を割り算で求める。Flutter の `itemExtent`（`rendering/sliver_fixed_extent_list.dart` 114〜123 行目）と GPUI の `uniform_list`（`gpui/src/elements/uniform_list.rs` 473〜483 行目）と同じである。項目が変わったときは、残ったキーの大きさを使い、消えたキーの大きさを捨てて、累積の和を作り直す
+- **スクロールの基準:** 位置は（最初に見える行のキー, その行の始めからのずれ）で持つ。上の行の大きさが見積もりから実測に変わっても、基準の行は画面の同じ位置に残る。`ScrollState.Offset`（画素）は、基準の行の累積の位置にずれを足した値で、layout の後の batch で書く（§3.4.1「layout が出す値を Signal に書く時」）。基準の行より上に見積もりの行が残っているうちは、この値も見積もりを含む。ホイールと `ScrollTo` が位置を画素で変えたときは、累積の和から基準を引き直す。GPUI は位置を（項目の番号, 項目の中のずれ）で持つ（`list.rs` 1430〜1438 行目）。Avalonia は、配置の後に基準の項目が動いた分だけ `Offset` を足す（`Presenters/ScrollContentPresenter.cs` 467〜525 行目）。Flutter には基準が無く、上の項目の見積もりの誤差は、`scrollOffsetCorrection` で位置を直して吸収する（`rendering/sliver_list.dart` 145〜162 行目）
+- **基準の行が消えたとき:** 項目の変化で基準の行のキーが消えたら、消える前の番号に今ある行を、ずれ 0 で基準にする。番号が末尾を越えたら、最後の行にする。項目を全部入れ替えて、残るキーが 1 つも無いときも同じである。GPUI は、基準が入れ替えた範囲の中なら、範囲の始めにずれ 0 で移す（`list.rs` 537〜548 行目）
+- **作る範囲:** 見える範囲と、その前後の `CacheExtent`（既定 250 論理画素）の中の行を作る。範囲の中で見えない行（Cached）は、layout して測るが、描かず、ヒットさせない。Flutter の既定は 250 画素で（`rendering/viewport.dart` 289 行目）、範囲の中の行を layout し、描かない（`rendering/sliver_multi_box_adaptor.dart` 738〜743 行目）。Avalonia の `CacheLength` は見える長さの倍数で、既定は 0 である（`VirtualizingStackPanel.cs` 58〜60 行目）。GPUI の overdraw は画素で、測るだけで描かない。zed は 1000 画素をよく使う（`list.rs` 1066〜1114 行目、zed の `picker.rs` 668 行目）
+- **フレームの中の段:** Materialization の段（§2.10）は、layout の前に、今の基準と大きさのキャッシュから作る範囲を決め、足りない行を作り、範囲の外の行を外す。作った行は、見積もりの大きさで並べる。layout の pass が大きさを測った後、行が範囲を埋めていなければ（見積もりより小さかった）、同じフレームの中で Materialization と、仮想化した箱から下の layout を繰り返す。繰り返しは、項目の数を上限とする。比べた 3 つは、どれも layout の中で行を作る（Flutter の `RenderSliverList.performLayout`、`rendering/sliver_list.dart` 46 行目。Avalonia の `MeasureOverride`、`VirtualizingStackPanel.cs` 188 行目。GPUI の `layout_items`、`list.rs` 1027 行目）。XylemUI は §2.10 の順と §2.5 の `ref` の寿命規則を守るため、layout の外で作り、繰り返す。位置の変化が作った範囲の中にとどまる間は、Materialization の段は何もしない。スクロールは §3.4.1 のとおり `TransformProp` だけで、作る行が変わらないフレームは割り当て 0 である
+- **範囲の外へ出た行:** `CacheExtent` の外へ出た行（Released）は、行の Scope ごと捨てる。入れ物は使い回さない。次の 3 つの行は、範囲の外でも捨てずに持ち、layout も描画もヒットもさせない（Flutter の `keepAlive` の行と同じ。`rendering/sliver_multi_box_adaptor.dart` 373〜387 行目・418〜421 行目）。
+  - フォーカスを持つノードを含む行。Avalonia はフォーカスのある入れ物を残し（`VirtualizingStackPanel.cs` 1151〜1155 行目）、Flutter の TextField はフォーカスがある間だけ自分を残す（`widgets/editable_text.dart` 2638 行目）。GPUI は `splice_focusable` で渡したフォーカスの項目を描き続ける（`list.rs` 507〜510 行目）
+  - ポインタのキャプチャ（§7）か D&D の元（§7「ドラッグ＆ドロップ」）を持つノードを含む行。端の自動スクロールで、ドラッグしている行が範囲の外へ出ることがある
+  - `.KeepAlive(keep)` の Signal が true の行。Flutter の `AutomaticKeepAlive` に当たる。比べた中で、アプリが行を残せるのは Flutter だけである
+  - 持った行に `Focus` か Tab の移動が見える所まで動かすことを求めたら（§7「Bring into view」）、その行の番号へ `ScrollToIndex(Nearest)` してから動かす。持った行には今の位置が無いからである
+  - 使い回すのは比べた中で Avalonia だけで（`VirtualizingStackPanel.cs` 1158〜1161 行目）、使い回すと、項目に結び付いていない状態が別の項目に残る。Flutter と GPUI は作り直す
+- **番号で動かす API:** `VirtualListState.ScrollToIndex(index, align)` は、その行の位置を累積の和から求めて基準を置き、次のフレームの Materialization で行を作る。`ScrollAlign` は Nearest（見えていれば動かさない）・Top・Center・Bottom である。GPUI の `ScrollStrategy`（`uniform_list.rs` 84〜99 行目）と同じ 4 つにした。Avalonia は `ScrollIntoView(int)` を持つ（`VirtualizingStackPanel.cs` 635〜720 行目）。Flutter には番号で動かす API が無い。`VisibleRange` は、見えている行の番号の範囲で、layout の後の batch で書く。GPUI の `ListScrollEvent` の `visible_range` に当たる（`list.rs` 172〜184 行目）。矢印キーで動く部品（ListBox など）は、この 2 つを使う
+- **キーボードでの移動:** Tab は、作った行（Cached を含む）の中のフォーカスできるノードを、§7.1 の順でたどる。フォーカスしたノードを見える所まで動かすと、範囲がついて動くので、1 つずつなら並びの全部をたどれる。Flutter の Tab も作ったノードだけをたどり（`widgets/focus_traversal.dart` 590〜612 行目）、250 画素のキャッシュで 1 つずつ進む。たどる途中で、作った範囲の端の先にまだ項目があるときは、`IVirtualizedFocusHost`（§3.4.2）で、その場で次の行を作って続ける。作るのは、範囲の端から `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab は並びを出る。上限が無いと、フォーカスできるノードの無い 1 万行に Tab が当たったとき、1 回のキーで全部を作る
+- **a11y:** 行ごとに Active・Cached・持った行のどれかを持つ。a11y の木に Active の行だけを載せることと、項目の数と位置の報告、a11y へのフォーカスの知らせは、a11y の木を作る行 P02g で入れる（§3.4.2「v1 a11y との契約」）
+- **確かめ方:**
+  - Core: 1 万項目の並びで、作る行の数が見える範囲と `CacheExtent` の分だけになる。項目の数を 1 千・1 万・10 万に変えても、layout の pass で layout するノードの数が変わらない。上に項目を足しても、基準の行が画面の同じ位置に残り、行の状態とフォーカスが残る。見積もりと実測が違っても、上へスクロールしたときに基準の行が跳ばない。基準の行が消えたときの規則。範囲の外のフォーカスの行・キャプチャの行・`KeepAlive` の行が残り、それ以外が捨てられる（Scope の Dispose）。`ScrollToIndex` の 4 つの揃え方。`FixedExtent` の箱が行を測らない。Tab が並びの全部をたどり、フォーカスできるノードの無い行が続くと、上限で並びを出る
+  - WARP: スクロールした後の行の画素。Cached の行が描かれない
+  - 割り当て 0: 作る行が変わらないスクロールのフレーム（配送を含む）
+  - 計測: `frames` に 1 万項目の並びを毎フレームスクロールする場面を足し、`For` で 1 万行を全部作る形と、フレームの段と layout の pass で比べる。行を作るフレームは、`render` の分を除いた割り当てを測る
+  - サンプル: Todo の一覧を `.VirtualFor` に変え、D&D の並べ替えと端の自動スクロールがそのまま動く
+  - PR は、作る範囲・大きさのキャッシュ・基準・Cached と持つ行（1 つ目）と、キーボード・`ScrollToIndex`・Todo（2 つ目）に分ける
 
 ### 3.4.1 スクロール座標系
 
@@ -2193,26 +2235,28 @@ TextField・selection・focus・animation・IME・local state・GPUリソース�
 ```text
 Active   （可視範囲内）          : 通常通りLayout/Paint/入力対象
 Cached   （viewport ± CacheExtentの範囲、可視範囲外だが近傍） : materialize済みのまま維持（Dispose しない）。
-                                  Layout/Paintの対象からは外れるが、Scope・local state・IME状態等は保持される
+                                  大きさを測るために layout するが、描かず、ヒットさせない。Scope・local state・IME状態等は保持される
 Released （CacheExtentの外まで離れた場合）: §2.3のScope機構でDisposeする
 ```
 
-`CacheExtent`（可視範囲の前後にどれだけ余裕を持たせてCachedを維持するか）は実装時にチューニングするパラメータとする。この3段階化により、Reactライブラリ系の仮想化実装（および WPF の `VirtualizingStackPanel` のコンテナ再利用）より一歩進んだ「state preservation」をGUIフレームワークとして明示的に提供できる。
+`CacheExtent`（可視範囲の前後にどれだけ余裕を持たせてCachedを維持するか）は、既定で前後 250 論理画素とし、`VirtualOptions.CacheExtent` で変えられる（§3.4「P02e で入れる形」）。CacheExtent の外でも、フォーカス・ポインタのキャプチャ・D&D の元を含む行と、`.KeepAlive` の行は捨てずに持つ。この3段階化により、Reactライブラリ系の仮想化実装（および WPF の `VirtualizingStackPanel` のコンテナ再利用）より一歩進んだ「state preservation」をGUIフレームワークとして明示的に提供できる。
 
 **v1 a11yとの契約**: a11y の木は、ノードの上の `AccessibilityInfo`（§4.4.1、§11.4）から作る別の木である（D3 の Grill、行 P02g）。仮想化リストでは、**a11yツリーに現れるノードは`Active`なアイテムに対応するmaterialize済みUiNodeだけ**とする。`Cached`と`Released`はノードとして載せず、仮想化した容器は項目の数と位置を報告する（Flutter の `scrollChildCount`、`packages/flutter/lib/src/semantics/semantics.dart` 5838 行目）。
 
-**フォーカスとの契約:** フォーカス中のアイテムは常に `Active` とする。viewport が離れても Released にせず Active に promote し、必要ならスクロール位置を合わせて画面内に戻す。`Cached` にフォーカスが残ったまま a11y から外れる状態は作らない。
+**フォーカスとの契約:** フォーカスを持つ行は、viewport が離れても Released にせず、捨てずに持つ。持った行は layout も描画もヒットもさせず、ホイールで離れた位置を勝手に戻さない（Flutter・Avalonia と同じ。§3.4「P02e で入れる形」の「範囲の外へ出た行」）。フォーカスの移動がその行を見える所まで動かすことを求めたときだけ、その行の番号へスクロールする。持った行のフォーカスを a11y にどう見せるか（画面の外の項目として木に載せる）は、a11y の木を作る行 P02g で決める。フォーカスが a11y の木に無いノードに残る状態は作らない（P02e の Grill、Issue #606）。
 
 **仮想化境界のキーボード移動:** `FocusManager` は仮想化コンテナ境界を検知する。可視末尾（または先頭）のフォーカス可能ノードから次（前）へ進もうとしたとき、UI ツリー走査を打ち切り、コンテナへ「次の論理インデックスを materialize し scroll-into-view せよ」と要求する。
 
 ```csharp
-public interface IVirtualizedFocusHost
+internal interface IVirtualizedFocusHost
 {
-    Element MaterializeAndScrollTo(int logicalIndex);
+    // 作った範囲の端から CacheExtent 1 つ分の長さまで、次（前）の行をその場で作る。
+    // 作った行の中にフォーカスできるノードが無ければ false を返し、Tab は並びを出る。
+    bool MaterializeBeyond(bool backward);
 }
 ```
 
-これによりキーボードだけで仮想化リスト全件を走査できる。矢印キーはコンポーネント側がこのフックを使う。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従うが、リスト内の論理次要素がある間は先に `MaterializeAndScrollTo` する。
+これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従うが、リスト内の論理次要素がある間は先に `MaterializeAndScrollTo` する。
 
 ---
 
@@ -4333,7 +4377,7 @@ internal sealed class FocusManager
 - **後の行に送るもの:**
   - 文字の入力（`TextInputEvent`）、止めた Down の後の `WM_CHAR`、AltGr の扱いは行 P02b で決めた（§4.9）。IME は §4.7（行 P02c）
   - スコープを積むことと `IsModal` のフォーカストラップ（§7.2）、`XylemUI.Testing` の `app.Keyboard` と `app.Focus`（§12.4）は行 P02d（スコープとトラップ。§7.2「P02d で入れる形」）と P02a（`app.Keyboard` と `app.Focus`）
-  - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）と、a11y へのフォーカスの知らせ（§4.4.1 の `NotifyFocusChange`）は、仮想化と a11y を入れる行 P02e と P02g
+  - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）は行 P02e、a11y へのフォーカスの知らせ（§4.4.1 の `NotifyFocusChange`）は行 P02g（P02e の Grill、Issue #606）
   - キーの組み合わせから動作への仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）は行 K2
 
 ### 7.1 フォーカス順序
@@ -4345,7 +4389,7 @@ internal sealed class FocusManager
 - GPUI と同じく、`TabIndex` の値の組と木の順で並べる（`tab_stop.rs` 39〜59・78〜101 行目、既定 0 は `gpui/src/window.rs` 538〜560 行目、端で戻るのは `tab_stop.rs` 112〜132 行目）。Avalonia も、同じ `TabIndex` の中は木の順で、無ければ次に大きい `TabIndex` へ進み、TopLevel の `Cycle` で端に戻る（`Navigation/TabNavigation.cs` 422〜475 行目、`TopLevel.cs` 159 行目）。Avalonia の既定は `int.MaxValue` で、値を付けたノードが付けないノードより先になる（`KeyboardNavigation.cs` 11〜15 行目）。XylemUI は GPUI の 0 にし、先にしたいノードには負の値を付ける
 - Flutter の既定は位置から読む順（`ReadingOrderTraversalPolicy`、`focus_traversal.dart` 2049 行目）で、採らない（上の「UIツリー順」）
 - 求め方は、木を §2.6 の走査器で 1 回たどり、(TabIndex, 前順の番号) が今のノードの組より大きいものの最小（Shift+Tab は小さいものの最大）を覚えるだけにする。並べた一覧を作らず、割り当てない。費用は木のノードの数に比例し、10,101 ノードでの 1 回を `input` で測る（Tab は 1 回のキーで 1 回）
-- 仮想化のコンテナの境界（§3.4.2 の `IVirtualizedFocusHost`）は、仮想化を入れる行 P02e で、この走査に足す
+- 仮想化のコンテナの境界（§3.4.2 の `IVirtualizedFocusHost`）は、仮想化を入れる行 P02e で、この走査に足す。走査が仮想化した箱を出ようとして、作った範囲の先にまだ項目があるときは、箱に次の行を作らせてから走査を続ける（§3.4「P02e で入れる形」の「キーボードでの移動」）
 
 ### 7.2 FocusManager
 
