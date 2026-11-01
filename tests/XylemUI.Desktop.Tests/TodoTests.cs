@@ -134,31 +134,95 @@ public sealed class TodoTests
     }
 
     /// <summary>
-    /// The remove button of an item removes it, and only it.
+    /// The remove button of an item opens a dialog that asks about it (row P02d): Cancel and Esc keep the item, and Remove removes it,
+    /// and only it.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The todo app, headless, with three items added by the model.
     ///
     /// Steps:
-    /// - Click the second item's remove button.
+    /// - Click the second item's remove button; read the popups, the question, and the focus; click Cancel. Click the remove button
+    ///   again and press Esc. Click it again and click Remove.
     ///
     /// Expected:
-    /// - The rows are Item 1 and Item 3, and the heading reads "todos: 2" and "left: 2".
+    /// - The dialog is the one popup, asks "Remove "Item 2"?", and its Remove button has the focus. After Cancel and after Esc: no
+    ///   popup and the three items. After Remove: no popup, the rows are Item 1 and Item 3, and the heading reads "todos: 2" and
+    ///   "left: 2".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
-    public async Task RemoveButton_RemovesItsItem()
+    public async Task RemoveButton_AsksInADialog_ThenRemovesOrKeepsItsItem()
     {
         var model = new TodoModel();
         await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
         var app = App.Of(headless, model);
         AddThree(app);
+        NodeHandle remove = app.Tree.Nodes.GetRef(app.ItemButton(1)).NextSibling;
 
-        app.Click(app.Tree.Nodes.GetRef(app.ItemButton(1)).NextSibling);
+        app.Click(remove);
+        int asked = headless.Popups.Count;
+        NodeHandle question = headless.Find("Remove \"Item 2\"?").Node;
+        NodeHandle confirm = app.Tree.Nodes.GetRef(headless.Find("Remove").Node).Parent;
+        bool confirmFocused = app.Tree.Focus.Focused == confirm;
+        app.Click(headless.Find("Cancel").Node);
+        var kept = new List<(int Popups, int Items)> { (headless.Popups.Count, app.Labels().Count) };
+        app.Click(remove);
+        _ = headless.Keyboard.Press(Key.Escape);
+        app.Settle();
+        kept.Add((headless.Popups.Count, app.Labels().Count));
+        app.Click(remove);
+        app.Click(headless.Find("Remove").Node);
 
+        Assert.Equal(1, asked);
+        Assert.False(question.IsNone);
+        Assert.True(confirmFocused);
+        Assert.Equal([(0, 3), (0, 3)], kept);
+        Assert.Empty(headless.Popups);
         Assert.Equal(["[ ] Item 1", "[ ] Item 3"], app.Labels());
         Assert.Equal(("todos: 2", "left: 2"), app.Heading());
+    }
+
+    /// <summary>
+    /// The field's context menu (row P02d): the right button opens it, the paste is grayed out with an empty clipboard, and its
+    /// select-all selects the field's text, which Control+C then copies.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo app, headless, with "buy" typed in the field, and an empty clipboard.
+    ///
+    /// Steps:
+    /// - Click the right button in the field; read the popups and whether the paste's item can take the focus; click Select all;
+    ///   press Control+C.
+    ///
+    /// Expected:
+    /// - One popup; the paste cannot take the focus. After the select-all, no popup and the field focused; the clipboard holds
+    ///   "buy".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task FieldContextMenu_SelectAllThenCopy()
+    {
+        var model = new TodoModel();
+        await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
+        var app = App.Of(headless, model);
+        app.Click(app.Field);
+        _ = headless.Keyboard.Type("buy");
+        app.Settle();
+
+        headless.Pointer.Click(new Element(app.Tree, app.Field), PointerButton.Right);
+        app.Settle();
+        int popups = headless.Popups.Count;
+        bool pasteTakesFocus = app.Tree.Focus.CanFocus(app.Tree.Nodes.GetRef(headless.Find("Paste").Node).Parent);
+        app.Click(headless.Find("Select all").Node);
+        bool fieldFocused = app.Tree.Focus.Focused == app.Field;
+        _ = headless.Keyboard.Press(Key.C, KeyModifiers.Control);
+
+        Assert.Equal(1, popups);
+        Assert.False(pasteTakesFocus);
+        Assert.Empty(headless.Popups);
+        Assert.True(fieldFocused);
+        Assert.Equal("buy", headless.Clipboard.Text);
     }
 
     /// <summary>

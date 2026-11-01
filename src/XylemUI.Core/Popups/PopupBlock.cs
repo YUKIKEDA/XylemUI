@@ -12,19 +12,29 @@ internal sealed class PopupBlock
     private readonly NodeHandle _anchor;
     private readonly Signal<bool> _isOpen;
     private readonly Func<Element> _render;
-    private readonly PopupOptions _options;
+    private readonly Action<NodeHandle>? _opened;
     private readonly ScopeRef _owner;
     private readonly Presence? _presence;
     private ScopeHandle _part;
     private PopupHandle? _popup;
+    private PopupOptions _options;
 
-    private PopupBlock(UiTree tree, NodeHandle anchor, Signal<bool> isOpen, Func<Element> render, PopupOptions options, ScopeRef owner)
+    private PopupBlock(
+        UiTree tree,
+        NodeHandle anchor,
+        Signal<bool> isOpen,
+        Func<Element> render,
+        PopupOptions options,
+        Action<NodeHandle>? opened,
+        ScopeRef owner
+    )
     {
         _tree = tree;
         _anchor = anchor;
         _isOpen = isOpen;
         _render = render;
         _options = options;
+        _opened = opened;
         _owner = owner;
         _presence = options.Motion is null ? null : new Presence(this);
     }
@@ -35,6 +45,22 @@ internal sealed class PopupBlock
     internal PopupHandle? Popup => _popup;
 
     /// <summary>
+    /// Gets or sets how the popup is placed and closed the next time it opens: a context menu places each opening at its own point
+    /// (design §13.1, <c>ContextMenu</c>). The motion stays the one the block was made with.
+    /// </summary>
+    internal PopupOptions Options
+    {
+        get => _options;
+        set => _options = value with { Motion = _options.Motion };
+    }
+
+    /// <summary>
+    /// Gets or sets what made the block, for a primitive to know its own popups: the menus that a chosen item closes together
+    /// (design §13.1, <c>MenuItem</c>).
+    /// </summary>
+    internal object? Owner { get; set; }
+
+    /// <summary>
     /// Makes a block in a scope of its own under the current one, which opens the popup while the signal is true.
     /// </summary>
     /// <param name="tree">The tree.</param>
@@ -42,14 +68,24 @@ internal sealed class PopupBlock
     /// <param name="isOpen">Whether the popup is open.</param>
     /// <param name="render">What the popup shows.</param>
     /// <param name="options">How it is placed and closed.</param>
+    /// <param name="opened">What runs each time the popup has opened, with its root: a menu focuses its first item there.</param>
+    /// <param name="owner">What made the block (<see cref="Owner"/>), set before the popup first opens.</param>
     /// <returns>The block.</returns>
-    internal static PopupBlock Create(UiTree tree, NodeHandle anchor, Signal<bool> isOpen, Func<Element> render, PopupOptions options)
+    internal static PopupBlock Create(
+        UiTree tree,
+        NodeHandle anchor,
+        Signal<bool> isOpen,
+        Func<Element> render,
+        PopupOptions options,
+        Action<NodeHandle>? opened = null,
+        object? owner = null
+    )
     {
         PopupBlock? block = null;
         _ = Scope.Create(
             () =>
             {
-                block = new PopupBlock(tree, anchor, isOpen, render, options, Scope.CurrentRef);
+                block = new PopupBlock(tree, anchor, isOpen, render, options, opened, Scope.CurrentRef) { Owner = owner };
                 PopupBlock made = block;
                 Scope.OnCleanup(made.CloseNow);
                 _ = Effect.Create(() => made.Change(isOpen.Get()));
@@ -90,17 +126,41 @@ internal sealed class PopupBlock
             return;
         }
 
+        OverlayHost().StopWaiting(this);
         if (_popup is { Closing: false })
         {
             Leave();
         }
     }
 
-    // The part made, put in a frame placed against the anchor, in a root of its own.
+    /// <summary>
+    /// Gets a value indicating whether the anchor is in a root, or gone: a popup that waited can then open, or be dropped.
+    /// </summary>
+    internal bool AnchorInRoot => !_tree.Nodes.IsAlive(_anchor) || _tree.Nodes.GetRef(_anchor).IsAttached;
+
+    /// <summary>
+    /// Opens the popup that waited for its anchor to join a root, when it is still asked for (<see cref="OverlayPopupHost.OpenWaiting"/>).
+    /// </summary>
+    internal void OpenWaiting()
+    {
+        if (_popup is null && _isOpen.Peek())
+        {
+            Open();
+        }
+    }
+
+    // The part made, put in a frame placed against the anchor, in a root of its own. An anchor that is in no root yet (a node of a
+    // part being made, a popup's content among them) waits for the next frame: the popup it is in, if any, is not known before.
     private void Open()
     {
         if (!_tree.Nodes.IsAlive(_anchor))
         {
+            return;
+        }
+
+        if (!_tree.Nodes.GetRef(_anchor).IsAttached)
+        {
+            OverlayHost().Wait(this);
             return;
         }
 
@@ -140,6 +200,8 @@ internal sealed class PopupBlock
             _presence.Start(0);
             _presence.Run(1);
         }
+
+        _opened?.Invoke(root);
     }
 
     // The popup leaves: at once, or with the motion, taking neither the pointer nor the focus meanwhile.
@@ -184,6 +246,7 @@ internal sealed class PopupBlock
     // The block's scope was disposed (its anchor's part went away): the popup goes at once, its signal left as it is.
     private void CloseNow()
     {
+        OverlayHost().StopWaiting(this);
         if (_popup is { Closing: false } popup)
         {
             OverlayHost().BeginClose(popup);

@@ -189,6 +189,8 @@ internal static partial class TextFieldCost
 
         public string? GetText() => Text;
 
+        public bool HasText() => !string.IsNullOrEmpty(Text);
+
         public bool SetText(string text)
         {
             Text = text;

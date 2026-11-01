@@ -8,6 +8,8 @@
     <InternalsVisibleTo Include="XylemUI.Testing.Tests" />
     <!-- The todo tests walk the headless app's tree to its rows (the sample gives them no test IDs); the boundary is row C0's. -->
     <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
+    <!-- The menu tests read the focus and the popups of the headless app's tree (row P02d); the boundary is row C0's. -->
+    <InternalsVisibleTo Include="XylemUI.Primitives.Tests" />
     <!-- The WARP renderer implements HeadlessRenderer's internal members (design §12.3, "The plug-in"); it ships with this version. -->
     <InternalsVisibleTo Include="XylemUI.Testing.D3D11" />
   </ItemGroup>

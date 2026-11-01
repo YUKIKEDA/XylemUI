@@ -357,6 +357,39 @@ public sealed class PopupTests
     }
 
     /// <summary>
+    /// A popup whose signal is true when its anchor is made, in the content of a popup being made, opens once that popup has opened,
+    /// as its child: the parent's opening does not close it as a sibling.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A 100 × 30 anchor with an open popup of a 100 × 30 box, which has an open popup of its own to its right; both signals true
+    ///   from the start.
+    ///
+    /// Steps:
+    /// - Settle; read the popups and the second's parent.
+    ///
+    /// Expected:
+    /// - Two popups; the second's parent is the first; both signals true.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task NestedPopup_OpenWhenMade_OpensAsTheChildOfItsPopup()
+    {
+        var outer = Signal.Create(true);
+        var inner = Signal.Create(true);
+        PopupOptions right = new() { Placement = PopupPlacement.Right };
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Box().Width(100).Height(30).Popup(outer, () => Box().Width(100).Height(30).Popup(inner, () => Box().Width(100).Height(30), right))
+        );
+        _ = app.PumpAndSettle();
+
+        IReadOnlyList<PopupHandle> open = app.Tree.Popups.Opened;
+        Assert.Equal(2, open.Count);
+        Assert.Same(open[0], open[1].Parent);
+        Assert.Equal((true, true), (outer.Get(), inner.Get()));
+    }
+
+    /// <summary>
     /// A popup with a motion stays while it leaves, takes neither the pointer nor the focus meanwhile, and goes when the motion ends.
     /// </summary>
     /// <remarks>

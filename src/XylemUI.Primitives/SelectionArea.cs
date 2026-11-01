@@ -12,11 +12,11 @@ public static partial class Primitive
     /// Makes an area whose text can be selected across its text leaves (design §4.10, Flutter's <c>SelectionArea</c>): a press
     /// starts a selection, a drag extends it, a double click selects a word and a triple click a paragraph, Control+A selects all,
     /// and Control+C or Control+Insert copies it, with a line break between leaves. The area takes the focus when pressed, and the
-    /// selection goes when it loses it inside the window. A text field's text and the text under <c>.Unselectable()</c> are left
-    /// out.
+    /// selection goes when it loses it inside the window, but to its own context menu. A text field's text and the text under
+    /// <c>.Unselectable()</c> are left out.
     /// </summary>
     /// <param name="child">The content.</param>
-    /// <param name="options">The selection's colors; <see langword="null"/> for the OS's.</param>
+    /// <param name="options">The selection's colors and the context menu; <see langword="null"/> for the OS's colors and no menu.</param>
     /// <returns>The area, a box around the content.</returns>
     /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
     public static Element SelectionArea(Element child, SelectionAreaOptions? options = null) =>
@@ -54,6 +54,10 @@ public static partial class Primitive
         private bool _started;
         private Vector2 _pointer;
 
+        // The context menu, and the commands it was last opened with.
+        private ContextMenuHost? _menu;
+        private SelectionMenuCommands? _commands;
+
         // The leaves the leaves' selections were last set on: from _paintedFrom to _paintedTo, none when _paintedTo is -1.
         private int _paintedFrom;
         private int _paintedTo = -1;
@@ -69,13 +73,31 @@ public static partial class Primitive
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
                 .On(PointerEventKind.Up, EventPhase.Bubble, PointerUp)
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
+                .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
+            if (options.ContextMenu is { } menu)
+            {
+                _menu = new ContextMenuHost(_tree, _area, () => menu(_commands!));
+            }
+
             Scope.OnCleanup(StopScrolling);
             return area;
         }
 
         private void PointerDown(in PointerEvent e)
         {
+            // The right button keeps the selection; the area takes the focus itself, as the window gives it on the left button only
+            // (design §4.10).
+            if (e.Button == PointerButton.Right && _menu is not null)
+            {
+                if (_tree.Focus.Focused != _area && !KeepsFocus(e.TargetNode))
+                {
+                    _ = _tree.Focus.Focus(_area);
+                }
+
+                return;
+            }
+
             // A press that a focusable descendant took the focus for (a button, a text field), or that kept it elsewhere
             // (.KeepsFocusOnPress()), starts no selection (design §4.10, "Pressable parts"); a part that keeps the focus does not
             // move it from the area either, so the press is looked up from its node to the area (PR #503's review).
@@ -137,10 +159,22 @@ public static partial class Primitive
                 _dragging = false;
                 StopScrolling();
             }
+            else if (e.Button == PointerButton.Right && _menu is not null)
+            {
+                e.StopPropagation();
+                OpenMenu(e.Position);
+            }
         }
 
         private void KeyDown(in KeyEvent e)
         {
+            if (_menu is not null && IsMenuKey(e))
+            {
+                e.StopPropagation();
+                OpenMenu(at: null);
+                return;
+            }
+
             if (e.PrefersCharacter || e.Modifiers != KeyModifiers.Control)
             {
                 return;
@@ -149,16 +183,7 @@ public static partial class Primitive
             switch (e.Key)
             {
                 case Key.A:
-                    Collect();
-                    if (_leaves.Count > 0)
-                    {
-                        _unit = 1;
-                        _started = true;
-                        _anchor = new TextPoint(0, 0);
-                        _focus = new TextPoint(_leaves.Count - 1, LengthOf(_leaves.Count - 1));
-                        Paint();
-                    }
-
+                    SelectAll();
                     e.StopPropagation();
                     return;
                 case Key.C or Key.Insert:
@@ -168,11 +193,75 @@ public static partial class Primitive
             }
         }
 
-        // Inside the window, the area that loses the focus loses its selection; a window that goes inactive keeps it (design §4.10,
-        // Flutter's SelectableRegion, widgets/selectable_region.dart lines 526 to 542).
+        private void KeyUp(in KeyEvent e)
+        {
+            if (_menu is not null && IsMenuKey(e))
+            {
+                e.StopPropagation();
+                OpenMenu(at: null);
+            }
+        }
+
+        private void SelectAll()
+        {
+            Collect();
+            if (_leaves.Count > 0)
+            {
+                _unit = 1;
+                _started = true;
+                _anchor = new TextPoint(0, 0);
+                _focus = new TextPoint(_leaves.Count - 1, LengthOf(_leaves.Count - 1));
+                Paint();
+            }
+        }
+
+        // Opens the context menu with the commands as they are now (design §4.10): at the pointer, or at the bottom left of the
+        // selection's end, or below the area with no selection.
+        private void OpenMenu(Vector2? at)
+        {
+            Collect();
+            bool text = false;
+            for (int i = 0; i < _leaves.Count && !text; i++)
+            {
+                text = LengthOf(i) > 0;
+            }
+
+            _commands = new SelectionMenuCommands(new MenuCommand(_anchor != _focus, Copy), new MenuCommand(text, SelectAll));
+            if (at is { } point)
+            {
+                _menu!.OpenAt(point);
+            }
+            else if (_anchor != _focus && _focus.Leaf < _leaves.Count)
+            {
+                _menu!.OpenAt(EndCorner());
+            }
+            else
+            {
+                _menu!.OpenBelow();
+            }
+        }
+
+        // The bottom left of the caret's box at the selection's end, in the window's logical pixels.
+        private Vector2 EndCorner()
+        {
+            NodeHandle node = _leaves[_focus.Leaf];
+            TextLeaf leaf = _tree.Nodes.GetRef(node).Text!;
+            Vector2 origin = WindowOrigin(_tree, node) + new Vector2(leaf.PaddingBorder.Left, leaf.PaddingBorder.Top);
+            if (leaf.LineBreaks is not { Committed: >= 0 })
+            {
+                return origin;
+            }
+
+            Rect caret = TextCaret.CaretGeometry(leaf, _focus.Offset, Affinity.Downstream).Rect;
+            return origin + new Vector2(caret.X, caret.Y + caret.Height);
+        }
+
+        // Inside the window, the area that loses the focus loses its selection, but to its own context menu, whose keys go on to the
+        // area; a window that goes inactive keeps it (design §4.10, Flutter's SelectableRegion, widgets/selectable_region.dart lines
+        // 526 to 542).
         private void FocusOut(in FocusEvent e)
         {
-            if (e.TargetNode != _area || !_tree.Focus.IsWindowActive)
+            if (e.TargetNode != _area || !_tree.Focus.IsWindowActive || InOwnPopup(_tree.Focus.Focused))
             {
                 return;
             }
@@ -182,6 +271,25 @@ public static partial class Primitive
             StopScrolling();
             _anchor = _focus = default;
             Paint();
+        }
+
+        // Whether a node is in a popup opened from the area: its context menu, whose keys go on to the area.
+        private bool InOwnPopup(NodeHandle node)
+        {
+            if (!_tree.Nodes.IsAlive(node) || _tree.Popups.PopupContaining(node) is null)
+            {
+                return false;
+            }
+
+            for (NodeHandle at = node; _tree.Nodes.IsAlive(at); at = _tree.KeyParent(at))
+            {
+                if (at == _area)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // The focus moves to the point, by the unit of the press.

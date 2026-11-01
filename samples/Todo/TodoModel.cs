@@ -34,6 +34,7 @@ public sealed class TodoModel
     private readonly Signal<IReadOnlyList<TodoItem>> _items = Signal.Create<IReadOnlyList<TodoItem>>([]);
     private readonly Signal<TodoFilter> _filter = Signal.Create(TodoFilter.All);
     private readonly Signal<bool> _newestFirst = Signal.Create(false);
+    private readonly Signal<TodoItem?> _pending = Signal.Create<TodoItem?>(null);
     private int _next = 1;
 
     /// <summary>
@@ -115,6 +116,45 @@ public sealed class TodoModel
     /// </summary>
     /// <param name="id">The item's number.</param>
     public void Remove(int id) => _items.Set(_items.Get().Where(item => item.Id != id).ToList());
+
+    /// <summary>
+    /// Gets a value indicating whether the dialog that asks before an item is removed is open; the dialog writes false when Esc closes
+    /// it.
+    /// </summary>
+    public Signal<bool> Confirming { get; } = Signal.Create(false);
+
+    /// <summary>
+    /// Gets the item the dialog asks about, or <see langword="null"/> before any was asked about.
+    /// </summary>
+    public IReadOnlySignal<TodoItem?> Pending => _pending;
+
+    /// <summary>
+    /// Asks before an item is removed: opens the dialog about it.
+    /// </summary>
+    /// <param name="id">The item's number.</param>
+    public void AskToRemove(int id)
+    {
+        _pending.Set(_items.Get().FirstOrDefault(item => item.Id == id));
+        Confirming.Set(_pending.Get() is not null);
+    }
+
+    /// <summary>
+    /// Removes the item the dialog asked about, and closes the dialog.
+    /// </summary>
+    public void ConfirmRemove()
+    {
+        if (_pending.Get() is { } item)
+        {
+            Remove(item.Id);
+        }
+
+        Confirming.Set(false);
+    }
+
+    /// <summary>
+    /// Closes the dialog and keeps the item.
+    /// </summary>
+    public void CancelRemove() => Confirming.Set(false);
 
     /// <summary>
     /// Shows the items a filter lets through.

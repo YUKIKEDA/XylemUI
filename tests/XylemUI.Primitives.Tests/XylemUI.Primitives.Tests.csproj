@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Primitives\XylemUI.Primitives.csproj" />
+    <!-- The menus and the dialog are tested in a headless app, as [UiFact] tests (design §13.1, row P02d). -->
+    <ProjectReference Include="..\..\src\XylemUI.Testing.XUnit\XylemUI.Testing.XUnit.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />

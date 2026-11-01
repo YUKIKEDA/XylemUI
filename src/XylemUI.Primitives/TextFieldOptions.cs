@@ -2,7 +2,7 @@ namespace XylemUI.Primitives;
 
 /// <summary>
 /// What a text field does beyond holding text (design §4.9): one line or many, the selection the app shares, Enter, the
-/// placeholder, read-only, hidden text, the most clusters it holds, and the colors of its caret and its selection.
+/// placeholder, read-only, hidden text, the most clusters it holds, the colors of its caret and its selection, and its context menu.
 /// </summary>
 public sealed record TextFieldOptions
 {
@@ -65,4 +65,11 @@ public sealed record TextFieldOptions
     /// Gets the selected text's color; <see langword="null"/> for the OS's (Windows' <c>COLOR_HIGHLIGHTTEXT</c>).
     /// </summary>
     public Color? SelectionForeground { get; init; }
+
+    /// <summary>
+    /// Gets the field's context menu (design §4.9, "The context menu"): the panel of a menu, made from the commands of the field each
+    /// time the menu opens, at the pointer on the up of the right button and at the caret on Shift+F10 or the application key.
+    /// <see langword="null"/> for no menu.
+    /// </summary>
+    public Func<TextMenuCommands, Element>? ContextMenu { get; init; }
 }

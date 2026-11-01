@@ -125,6 +125,11 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
 {
     private readonly List<PopupHandle> _open = [];
     private readonly Stack<DisplayList> _lists = new();
+    private readonly List<PopupBlock> _waiting = [];
+
+    // The window's client size the window gave last (ResizeAll): a popup that opens before the window's tree is laid out, at the start
+    // of a frame, cannot read it from the root's box.
+    private Size? _window;
 
     /// <summary>
     /// Gets the open popups, the first opened first: the order they are drawn in, back to front.
@@ -158,8 +163,8 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         var popup = new PopupHandle(anchor, root, frame, options, block, parent, _lists.Count > 0 ? _lists.Pop() : new DisplayList());
         _open.Add(popup);
         tree.AttachRoot(root);
-        Rect window = tree.Root.IsNone ? default : tree.Nodes.GetRef(tree.Root).Layout.Rect;
-        Resize(popup, new Size(window.Width, window.Height));
+        Rect laid = tree.Root.IsNone ? default : tree.Nodes.GetRef(tree.Root).Layout.Rect;
+        Resize(popup, _window ?? new Size(laid.Width, laid.Height));
         tree.Focus.PushScope(root, options.IsModal);
         if (options.IsModal)
         {
@@ -168,6 +173,60 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
 
         tree.NoteWork();
         return popup;
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether a popup waits for its anchor to join a root.
+    /// </summary>
+    public bool HasWaiting => _waiting.Count > 0;
+
+    /// <summary>
+    /// Keeps a popup asked for while its anchor is in no root, to open at the next frame (<see cref="OpenWaiting"/>).
+    /// </summary>
+    /// <param name="block">The popup's block.</param>
+    public void Wait(PopupBlock block)
+    {
+        if (!_waiting.Contains(block))
+        {
+            _waiting.Add(block);
+        }
+
+        tree.NoteWork();
+    }
+
+    /// <summary>
+    /// Forgets a popup that waited: it closed, or its scope went away.
+    /// </summary>
+    /// <param name="block">The popup's block.</param>
+    public void StopWaiting(PopupBlock block)
+    {
+        if (_waiting.Count > 0)
+        {
+            _ = _waiting.Remove(block);
+        }
+    }
+
+    /// <summary>
+    /// Opens the popups that waited, at the start of a frame, each once its anchor is in a root: a popup opened from a popup's content
+    /// finds its parent popup, which opened before it, in this same call. One whose anchor is still in no root waits on.
+    /// </summary>
+    public void OpenWaiting()
+    {
+        for (int i = 0; i < _waiting.Count; )
+        {
+            PopupBlock block = _waiting[i];
+            if (!block.AnchorInRoot)
+            {
+                i++;
+                continue;
+            }
+
+            _waiting.RemoveAt(i);
+            block.OpenWaiting();
+
+            // A popup that opened may have put the anchors of others in a root: look again from the start.
+            i = 0;
+        }
     }
 
     /// <inheritdoc/>
@@ -216,6 +275,7 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     /// <param name="size">The window's client size, in logical pixels.</param>
     public void ResizeAll(Size size)
     {
+        _window = size;
         foreach (PopupHandle popup in _open)
         {
             Resize(popup, size);

@@ -267,6 +267,72 @@ public sealed class HeadlessPixelTests
         return found;
     }
 
+    /// <summary>
+    /// The todo field's context menu is drawn over the window at the pointer, with its panel's background, and matches its golden
+    /// (row P02d, design §7.3, "Checks").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo list in a headless app of 420 x 360 on WARP, with "Buy milk" typed in the field and an empty clipboard.
+    ///
+    /// Steps:
+    /// - Click the right button at (100, 60), in the field; read the pixel 4 logical pixels into the panel; compare the frame with
+    ///   "todo-menu.png".
+    ///
+    /// Expected:
+    /// - One popup; the pixel is <c>TodoApp.PanelBackground</c>; the frame matches the golden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Todo_FieldContextMenu_MatchesItsGolden()
+    {
+        await using HeadlessApp app = await HeadlessApp.StartAsync(Todo.TodoApp.Todo, Options(420, 360));
+        app.Pointer.Click(app.Find(TodoApp.Placeholder));
+        _ = app.Keyboard.Type("Buy milk");
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Click(100, 60, PointerButton.Right);
+        _ = app.PumpAndSettle();
+
+        _ = Assert.Single(app.Popups);
+        Assert.Equal(TodoApp.PanelBackground, Pixel(app, (104, 62)));
+        await app.MatchesGoldenAsync("todo-menu.png");
+    }
+
+    /// <summary>
+    /// The dialog that asks before an item is removed is drawn over a backdrop that darkens the whole window, and matches its golden
+    /// (row P02d, design §7.3, "Checks").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo list in a headless app of 420 x 360 on WARP, with the item "Buy milk".
+    ///
+    /// Steps:
+    /// - Click the item's remove button; read the pixel at (2, 2); compare the frame with "todo-dialog.png".
+    ///
+    /// Expected:
+    /// - One popup; the pixel is the window's white under the half-black backdrop, 127 or 128 in each channel; the frame matches the
+    ///   golden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Todo_RemoveDialog_MatchesItsGolden()
+    {
+        var model = new TodoModel();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Options(420, 360));
+        _ = model.Add("Buy milk");
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Click(app.Find("×"));
+        _ = app.PumpAndSettle();
+        Color corner = Pixel(app, (2, 2));
+
+        _ = Assert.Single(app.Popups);
+        Assert.InRange(corner.R, 127, 128);
+        Assert.Equal((corner.R, corner.R), (corner.G, corner.B));
+        await app.MatchesGoldenAsync("todo-dialog.png");
+    }
+
     private static HeadlessOptions Options(float width, float height) =>
         new()
         {
