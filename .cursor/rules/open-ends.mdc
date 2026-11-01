@@ -34,3 +34,5 @@ foreach を CollectionsMarshal.AsSpan に変えて 0 になった（ウォーム
 ```
 
 A figure the record explains with an estimate ("推定する（未確認）") is checked by the next PR that runs its scene, and the estimate is replaced by what was found. PR #569's record put the open frame's spread down to collections; PR #570 counted them, found none, and found the spread in the runs where the machine was in its slow state.
+
+A difference on a path that the change does not run is checked before the record explains it with an estimate: the scratch copy of `.cursor/rules/bench.mdc` (only that part put back in main's form) is published and run beside main and the branch. PR #581 recorded Control+Left's 0.8 µs as the binary's placement, unchecked, and left the check to the next PR; the review asked for the copy, one publish and twelve runs, which met main while the other keys through the same method were not slower.
