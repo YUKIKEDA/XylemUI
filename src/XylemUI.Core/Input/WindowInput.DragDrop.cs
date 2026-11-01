@@ -254,6 +254,29 @@ internal sealed partial class WindowInput : IExternalDropTarget
             : DragEffects.None;
     }
 
+    // The effect a drop from the OS chooses (PR #603's review): Copy with no key or Control, Move with Shift, Link with Control and
+    // Shift (Microsoft's IDropTarget::DragOver page, but Copy with no key, as GPUI answers every drop, gpui_windows/src/window.rs lines
+    // 1176, 1224, and 1266). Move tells the OS's source to remove its data (Microsoft's DROPEFFECT page), so a plain drop never asks
+    // it. One both do not allow gives way to the first of Copy, Move, and Link both allow.
+    private static DragEffects ChooseOsEffect(DragEffects both, KeyModifiers modifiers)
+    {
+        bool control = (modifiers & KeyModifiers.Control) != 0;
+        bool shift = (modifiers & KeyModifiers.Shift) != 0;
+        DragEffects wanted =
+            control && shift ? DragEffects.Link
+            : shift ? DragEffects.Move
+            : DragEffects.Copy;
+        if ((both & wanted) != 0)
+        {
+            return wanted;
+        }
+
+        return (both & DragEffects.Copy) != 0 ? DragEffects.Copy
+            : (both & DragEffects.Move) != 0 ? DragEffects.Move
+            : (both & DragEffects.Link) != 0 ? DragEffects.Link
+            : DragEffects.None;
+    }
+
     // A pointer's move while a drag is armed or runs: a mouse past the drag size starts the drag; a touch or a pen past the slop
     // before its long press disarms it; a running drag moves.
     private void DragMove(PointerState pointer, in PointerInput input)
@@ -505,7 +528,8 @@ internal sealed partial class WindowInput : IExternalDropTarget
                 && candidate.Takes(drag.Value)
             )
             {
-                DragEffects chosen = ChooseEffect(drag.Entry.Options.Allowed & candidate.Accepts, drag.Modifiers);
+                DragEffects both = drag.Entry.Options.Allowed & candidate.Accepts;
+                DragEffects chosen = drag.PointerId < 0 ? ChooseOsEffect(both, drag.Modifiers) : ChooseEffect(both, drag.Modifiers);
                 if (chosen != DragEffects.None)
                 {
                     (target, entry, effect) = (node, candidate, chosen);

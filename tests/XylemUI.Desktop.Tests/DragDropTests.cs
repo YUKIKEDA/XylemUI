@@ -651,19 +651,22 @@ public sealed class DragDropTests
     /// <summary>
     /// A drag from the OS comes in as a drag of the app (design §7, "Drag and drop", "From the OS"): files reach a target of
     /// <see cref="DroppedFiles"/>, text a target of <see cref="DroppedText"/>, with the enter, the moves, the leave, and the drop; the
-    /// effect comes back to the OS; while a drag of the app runs, a drag from the OS takes nothing.
+    /// effect comes back to the OS: Copy with no key or Control, Move with Shift, Link with Control and Shift, so that a plain drop
+    /// never tells the OS's source to remove its data (PR #603's review); while a drag of the app runs, a drag from the OS takes
+    /// nothing.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A target of files and a target of text, side by side, 100 x 30, each logging its calls; a source dragging "a".
     ///
     /// Steps:
-    /// - Enter with files over the files' target with Copy and Move allowed; move within it; drop. Enter with text over the files'
-    ///   target, move over the text's target, leave. Start a drag of the app, and enter with files over the files' target; end it.
+    /// - Enter with files over the files' target with all three effects allowed; move within it with Shift, then with Control and
+    ///   Shift, then with Control; drop with Control. Enter with text over the files' target, move over the text's target, leave.
+    ///   Start a drag of the app, and enter with files over the files' target; end it.
     ///
     /// Expected:
-    /// - The effects: Move, Move, Move; None, then Move over the text's target; None while the app's drag runs. The log: the files'
-    ///   enter, over, and drop with the path; the text's enter and leave with the text.
+    /// - The effects: Copy, Move, Link, Copy, Copy; None, then Copy over the text's target; None while the app's drag runs. The log:
+    ///   the files' enter, three overs, and drop with the path; the text's enter and leave with the text.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -703,13 +706,15 @@ public sealed class DragDropTests
         _ = app.PumpAndSettle();
         (int fx, int fy) = app.CenterOf(filesTarget);
         (int tx, int ty) = app.CenterOf(textTarget);
-        DragEffects both = DragEffects.Copy | DragEffects.Move;
+        DragEffects both = DragEffects.Copy | DragEffects.Move | DragEffects.Link;
 
         var effects = new List<DragEffects>
         {
             app.Input.DropEnter(new DroppedFiles([@"C:\x"]), fx, fy, both, KeyModifiers.None),
-            app.Input.DropOver(fx + 1, fy, KeyModifiers.None),
-            app.Input.Drop(fx + 1, fy, KeyModifiers.None),
+            app.Input.DropOver(fx + 1, fy, KeyModifiers.Shift),
+            app.Input.DropOver(fx + 2, fy, KeyModifiers.Control | KeyModifiers.Shift),
+            app.Input.DropOver(fx + 3, fy, KeyModifiers.Control),
+            app.Input.Drop(fx + 3, fy, KeyModifiers.Control),
             app.Input.DropEnter(new DroppedText("t"), fx, fy, both, KeyModifiers.None),
             app.Input.DropOver(tx, ty, KeyModifiers.None),
         };
@@ -719,8 +724,23 @@ public sealed class DragDropTests
         app.Pointer.Up();
         _ = app.PumpAndSettle();
 
-        Assert.Equal([DragEffects.Move, DragEffects.Move, DragEffects.Move, DragEffects.None, DragEffects.Move, DragEffects.None], effects);
-        Assert.Equal([@"files enter C:\x", @"files over C:\x", @"files drop C:\x", "text enter t", "text leave t"], log);
+        Assert.Equal(
+            [
+                DragEffects.Copy,
+                DragEffects.Move,
+                DragEffects.Link,
+                DragEffects.Copy,
+                DragEffects.Copy,
+                DragEffects.None,
+                DragEffects.Copy,
+                DragEffects.None,
+            ],
+            effects
+        );
+        Assert.Equal(
+            [@"files enter C:\x", @"files over C:\x", @"files over C:\x", @"files over C:\x", @"files drop C:\x", "text enter t", "text leave t"],
+            log
+        );
     }
 
     /// <summary>
