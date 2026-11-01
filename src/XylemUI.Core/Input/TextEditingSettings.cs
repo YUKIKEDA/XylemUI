@@ -9,7 +9,15 @@ namespace XylemUI;
 /// <param name="CaretWidth">The caret's width in logical pixels (Windows' <c>SPI_GETCARETWIDTH</c>).</param>
 /// <param name="SelectionBackground">The selection's background (Windows' <c>COLOR_HIGHLIGHT</c>).</param>
 /// <param name="SelectionForeground">The selected text's color (Windows' <c>COLOR_HIGHLIGHTTEXT</c>).</param>
-internal readonly record struct TextEditingSettings(TimeSpan? CaretBlink, float CaretWidth, Color SelectionBackground, Color SelectionForeground)
+/// <param name="KeyboardCues">Whether access keys are always underlined (Windows' <c>SPI_GETKEYBOARDCUES</c>); when not, they are
+/// underlined after Alt and in a menu opened from the keys (design §13.1, "Access keys").</param>
+internal readonly record struct TextEditingSettings(
+    TimeSpan? CaretBlink,
+    float CaretWidth,
+    Color SelectionBackground,
+    Color SelectionForeground,
+    bool KeyboardCues = false
+)
 {
     /// <summary>
     /// Gets the values of a tree no host has set: Windows' defaults (a blink of 530 ms, a caret 1 wide) and the selection's colors of

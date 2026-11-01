@@ -133,7 +133,8 @@ public sealed class HeadlessKeyboard
     internal HeadlessKeyboard(HeadlessApp app) => _app = app;
 
     /// <summary>
-    /// Presses a key and releases it.
+    /// Presses a key and releases it. A letter or a digit carries the character it types on a US layout (upper case with Shift, none
+    /// with Control), as Windows' key messages do; no text input is sent, which <see cref="Type"/> sends.
     /// </summary>
     /// <param name="key">The key.</param>
     /// <param name="modifiers">The modifier keys held.</param>
@@ -187,10 +188,27 @@ public sealed class HeadlessKeyboard
         return handled;
     }
 
+    // The character a letter or a digit key types on a US layout, upper case with Shift; none for the other keys and with Control.
+    private static Rune CharOf(Key key, KeyModifiers modifiers)
+    {
+        if ((modifiers & KeyModifiers.Control) != 0)
+        {
+            return default;
+        }
+
+        if (key is >= Key.A and <= Key.Z)
+        {
+            char letter = (char)('a' + (key - Key.A));
+            return new Rune((modifiers & KeyModifiers.Shift) != 0 ? char.ToUpperInvariant(letter) : letter);
+        }
+
+        return key is >= Key.D0 and <= Key.D9 && (modifiers & KeyModifiers.Shift) == 0 ? new Rune((char)('0' + (key - Key.D0))) : default;
+    }
+
     private bool Send(KeyEventKind kind, Key key, KeyModifiers modifiers, bool isRepeat)
     {
         _app.VerifyRunning();
-        var input = new KeyInput(kind, key, PhysicalKey.None, default(Rune), modifiers, isRepeat, _app.Time.Elapsed);
+        var input = new KeyInput(kind, key, PhysicalKey.None, CharOf(key, modifiers), modifiers, isRepeat, _app.Time.Elapsed);
         bool handled = _app.Input.Handle(input);
         _ = _app.DrainQueue();
         return handled;

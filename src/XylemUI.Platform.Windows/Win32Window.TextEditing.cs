@@ -33,8 +33,9 @@ public sealed unsafe partial class Win32Window
     /// </summary>
     internal TextEditingSettings TextEditing { get; private set; }
 
-    // The settings from Windows: the caret's blink (GetCaretBlinkTime, INFINITE for none) and width (SPI_GETCARETWIDTH), and the
-    // selection's colors (GetSysColor). A call that fails keeps the value before.
+    // The settings from Windows: the caret's blink (GetCaretBlinkTime, INFINITE for none) and width (SPI_GETCARETWIDTH), the
+    // selection's colors (GetSysColor), and whether access keys are always underlined (SPI_GETKEYBOARDCUES). A call that fails keeps
+    // the value before.
     private static TextEditingSettings ReadTextEditing(TextEditingSettings before)
     {
         uint blink = GetCaretBlinkTime();
@@ -44,11 +45,14 @@ public sealed unsafe partial class Win32Window
             : TimeSpan.FromMilliseconds(blink);
         uint width;
         float caretWidth = SystemParametersInfoW(SPI.SPI_GETCARETWIDTH, 0, &width, 0) == BOOL.FALSE ? before.CaretWidth : width;
+        BOOL cues;
+        bool keyboardCues = SystemParametersInfoW(SPI.SPI_GETKEYBOARDCUES, 0, &cues, 0) == BOOL.FALSE ? before.KeyboardCues : cues != BOOL.FALSE;
         return new TextEditingSettings(
             caretBlink,
             caretWidth,
             FromColorRef(GetSysColor(COLOR.COLOR_HIGHLIGHT)),
-            FromColorRef(GetSysColor(COLOR.COLOR_HIGHLIGHTTEXT))
+            FromColorRef(GetSysColor(COLOR.COLOR_HIGHLIGHTTEXT)),
+            keyboardCues
         );
     }
 

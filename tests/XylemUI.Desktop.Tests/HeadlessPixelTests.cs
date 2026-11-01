@@ -377,6 +377,58 @@ public sealed class HeadlessPixelTests
         await app.MatchesGoldenAsync("tooltip.png");
     }
 
+    /// <summary>
+    /// A menu whose items hold access texts underlines their keys while the window shows the access keys, and matches its golden
+    /// (row P02d2, design §13.1, "Access keys").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 200 x 140 on WARP with Windows' "underline access keys" setting on: on white, a 120 x 24 gray box at
+    ///   (10, 10) with an open menu of "_Open", "_Save as", and "E_xit" in a dark panel.
+    ///
+    /// Steps:
+    /// - Settle; compare the frame with "menu-access-keys.png".
+    ///
+    /// Expected:
+    /// - One popup; the frame matches the golden, with "O", "S", and "x" underlined.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Menu_AccessKeys_MatchesItsGolden()
+    {
+        Color dark = Color.FromRgb(0x2B3245);
+        var open = Signal.Create(true);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Box(
+                        Primitives.Primitive.Menu(
+                            Box().Width(120).Height(24).Background(Color.FromRgb(0xC0C0C0)),
+                            open,
+                            () =>
+                                Column(
+                                        Primitives.Primitive.MenuItem(Primitives.Primitive.AccessText("_Open").Padding(8, 3), () => { }),
+                                        Primitives.Primitive.MenuItem(Primitives.Primitive.AccessText("_Save as").Padding(8, 3), () => { }),
+                                        Primitives.Primitive.MenuItem(Primitives.Primitive.AccessText("E_xit").Padding(8, 3), () => { })
+                                    )
+                                    .Width(120)
+                                    .Padding(4)
+                                    .Background(dark)
+                                    .Foreground(White)
+                        )
+                    )
+                    .Padding(10)
+                    .Background(White),
+            Options(200, 140) with
+            {
+                KeyboardCues = true,
+            }
+        );
+        _ = app.PumpAndSettle();
+
+        _ = Assert.Single(app.Popups);
+        await app.MatchesGoldenAsync("menu-access-keys.png");
+    }
+
     private static HeadlessOptions Options(float width, float height) =>
         new()
         {

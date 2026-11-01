@@ -97,9 +97,16 @@ internal sealed class UiTree
     /// </summary>
     internal TextEditingSettings TextEditing { get; private set; } = TextEditingSettings.Default;
 
+    // Whether the access keys are underlined (design §13.1); _altCues and _menuCues below say why.
+    private readonly Signal<bool> _accessKeyCues = Signal.Create(false);
+
     // The signals of IsFocused, made the first time a node's is asked for (design §7, "Element.Focus() and IsFocused()"): few nodes
     // read theirs, so they are kept apart from UiNode, as the scroll states.
     private readonly Dictionary<NodeHandle, Signal<bool>> _focusSignals = [];
+
+    // Why the access keys are underlined: Alt went down, or menus opened from the keys are open.
+    private bool _altCues;
+    private int _menuCues;
 
     /// <summary>
     /// Gets or sets the tree whose root function a window's host runs now, where <see cref="Elements"/> makes nodes (design §2.13);
@@ -904,6 +911,64 @@ internal sealed class UiTree
             {
                 Invalidation.Invalidate(this, Root, ChangeKind.Color);
             }
+
+            UpdateAccessKeyCues();
+        }
+    }
+
+    /// <summary>
+    /// Gets whether the access keys are underlined now (design §13.1, "Access keys"): always with Windows' setting on, else after
+    /// Alt went down or while a menu opened from the keys is open, until a pointer's press.
+    /// </summary>
+    internal IReadOnlySignal<bool> AccessKeyCues => _accessKeyCues;
+
+    /// <summary>
+    /// Shows the access keys after Alt went down, until a pointer's press.
+    /// </summary>
+    internal void ShowAccessKeyCues()
+    {
+        _altCues = true;
+        UpdateAccessKeyCues();
+    }
+
+    /// <summary>
+    /// Shows the access keys while a menu opened from the keys is open: each call is matched by <see cref="ReleaseMenuCues"/> when
+    /// the menu closes.
+    /// </summary>
+    internal void HoldMenuCues()
+    {
+        _menuCues++;
+        UpdateAccessKeyCues();
+    }
+
+    /// <summary>
+    /// Ends what <see cref="HoldMenuCues"/> began, for a menu that closed.
+    /// </summary>
+    internal void ReleaseMenuCues()
+    {
+        _menuCues = Math.Max(0, _menuCues - 1);
+        UpdateAccessKeyCues();
+    }
+
+    /// <summary>
+    /// Hides the access keys a pointer's press hides: those that Alt and the menus showed, not the setting's.
+    /// </summary>
+    internal void HideAccessKeyCues()
+    {
+        if (_altCues || _menuCues > 0)
+        {
+            _altCues = false;
+            _menuCues = 0;
+            UpdateAccessKeyCues();
+        }
+    }
+
+    private void UpdateAccessKeyCues()
+    {
+        bool shown = TextEditing.KeyboardCues || _altCues || _menuCues > 0;
+        if (_accessKeyCues.Peek() != shown)
+        {
+            _accessKeyCues.Set(shown);
         }
     }
 
