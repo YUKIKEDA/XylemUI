@@ -4355,7 +4355,7 @@ XylemUI の規則:
 - **後ろへ通す印（Q5）:** `.HitTestVisible(false)` を付けたノードの部分木は、どのノードもヒット領域を書かない（描く関数が書く `DrawingContext.HitRegion` も捨てる）。ポインタは後ろのノードに当たる。Avalonia の `IsHitTestVisible`（`Avalonia.Base/Input/InputExtensions.cs` 82 行目。部分木ごと外す、`Rendering/Composition/CompositionTarget.cs` 118〜126 行目）、Flutter の `IgnorePointer`（`rendering/proxy_box.dart` 3797 行目）と同じである
   - 使う場面は、ハンドラを持つノードの部分木を、一時的に当たらなくするときである（閉じる動きの間のポップアップ、操作させない間のカード）。飾りのノードは、もともとヒット領域を書かない（§5.0「ヒット領域と `DrawingContext`」）
   - Flutter の `translucent`（自分も受け、後ろも試す、`rendering/proxy_box.dart` 183〜195 行目）は採らない。`HitTest` は最前面の 1 項目だけを返し、押したときの暗黙のキャプチャ（§7）も 1 つのノードに付く。1 回の押下に当たり先が 2 つあると、どちらがキャプチャするかが決まらない
-- **入れ子（Q10）:** サブメニューは、親のポップアップの中のノードを開いた側とする、子のポップアップである。ポップアップは開いた側のポップアップを覚えておき、親を閉じると子も閉じる。兄弟を開くと、前の兄弟は閉じる（Flutter の `widgets/raw_menu_anchor.dart` 746〜747 行目）。「外を押した」かは、親子の組のどれかの中なら内側として判定する（Flutter の `TapRegion` の groupId、`widgets/tap_region.dart` 319〜400 行目）。GPUI も、フォーカスがサブメニューにある間は親を閉じない（`ui/src/components/context_menu.rs` 307〜328 行目）
+- **入れ子（Q10）:** サブメニューは、親のポップアップの中のノードを開いた側とする、子のポップアップである。ポップアップは開いた側のポップアップを覚えておき、親を閉じると子も閉じる。兄弟を開くと、前の兄弟は閉じる（Flutter の `widgets/raw_menu_anchor.dart` 746〜747 行目）。ただし、一時のポップアップ（`PopupOptions.IsTransient`、下の `PopupOptions`。Tooltip のもの）は、開くときに兄弟を閉じない。逆に、ほかのポップアップが開くと、親によらず、出ている一時のポップアップはすべて閉じる（行 P02d2、PR #560 のレビュー）。「外を押した」かは、親子の組のどれかの中なら内側として判定する（Flutter の `TapRegion` の groupId、`widgets/tap_region.dart` 319〜400 行目）。GPUI も、フォーカスがサブメニューにある間は親を閉じない（`ui/src/components/context_menu.rs` 307〜328 行目）
 - **動き（Q11）:** `PopupOptions.Motion` は `Show` と同じ `ShowMotion`（§2.14）で、既定は動きなしである。閉じる動きの間は、根に `HitTestVisible(false)` を付け、部分木をフォーカスできなくする（Flutter の `material/menu_anchor.dart` 693〜704 行目の `IgnorePointer` と `ExcludeFocus`）。動きが終わったら根を外す
 - **IME:** ウィンドウ内のポップアップの中の欄は、主の木の欄と同じく、フォーカスを取ったときに文字の入力の相手を登録する（§4.7）。ComboBox の検索欄のようにポップアップ内でテキスト入力する場合、別ウィンドウ実装（P10）では IME の対象ウィンドウを切り替える
 - **DPI:** 別ウィンドウ実装（P10）では、ポップアップが表示されるモニタの `ScaleFactor`（§6.1.1）で描く
@@ -4376,6 +4376,7 @@ public sealed record PopupOptions
     public bool ConsumeOutsidePress { get; init; }   // モーダルでないとき、外の押下を下に届けない
     public bool? DismissOnOutsidePress { get; init; }   // null は !IsModal（メニューは閉じ、モーダルは閉じない）。モーダルでは背景の押下
     public ShowMotion? Motion { get; init; }
+    internal bool IsTransient { get; init; }         // P02d2。一時のポップアップ（Tooltip）
 }
 
 public readonly record struct PopupPlacement(
@@ -5017,8 +5018,8 @@ public sealed record SelectOptions<T>
   - アンカーか Tooltip の上のホイールで隠す（GPUI の `div.rs` 3793〜3800 行目）。アンカーの祖先のスクロールの箱がスクロールしたときは、§7.3 の「閉じ方」のまま隠れる
   - Esc で隠す（§7.3 の、一番手前のポップアップを閉じる既定の動作）。3 つとも Esc では隠さないが、WCAG 1.4.13 は、ポインタを動かさずに消せることを求める
   - 時間切れでは隠さない（Avalonia と GPUI。Flutter はタッチのときだけ 1.5 秒）
-- **置き場所:** 既定は、出すときのポインタの位置の 20 px 下（`PopupPlacement.AtPoint`）。Avalonia は既定がポインタの位置で、縦に 20 px ずらす（`ToolTip.cs` 42・54 行目）。GPUI もポインタの位置から (1, 1) に出す（`window.rs` 3816〜3817 行目）。Flutter は、アンカーの中心の 24 px 下に出す（`material/tooltip.dart` 389 行目）。はみ出したときの反転とスライドは §7.3 の「置き場所」のまま
-- **ポップアップの形:** Tooltip のポップアップは、フォーカスのスコープを積まず、開くときに兄弟のポップアップを閉じない（`PopupOptions` の internal の印）。積むと、Tooltip が出ている間 Tab が空のスコープで回る。兄弟を閉じると、メニューの項目の Tooltip が、その項目のサブメニューを閉じる。Avalonia の Tooltip も、フォーカスを取らない（`ToolTip.cs` 435〜438 行目、`TakesFocusFromNativeControl = false`）
+- **置き場所:** 既定は、出すときのポインタの位置の 20 px 下（`PopupPlacement.AtPoint`）。Avalonia は既定がポインタの位置で、縦に 20 px ずらす（`ToolTip.cs` 42・54 行目）。GPUI もポインタの位置から (1, 1) に出す（`window.rs` 3816〜3817 行目）。Flutter は、アンカーの中心の 24 px 下に出す（`material/tooltip.dart` 389 行目）。はみ出したときの反転とスライドは §7.3 の「置き場所」のまま。`TooltipOptions.Placement` を渡したときは、ポインタでなくアンカーに対して置き、ポインタでもタッチとペンの長押しでも同じ場所に出す
+- **ポップアップの形:** Tooltip のポップアップは一時のポップアップ（`PopupOptions.IsTransient`、§7.3「入れ子」）である。フォーカスのスコープを積まず、開くときに兄弟のポップアップを閉じない。ほかのポップアップ（メニュー、Select、ダイアログ）が開くと閉じる。Tooltip はそれらの前置きの案内なので、開いたものの上に残さない。積むと、Tooltip が出ている間 Tab が空のスコープで回る。兄弟を閉じると、メニューの項目の Tooltip が、その項目のサブメニューを閉じる。Avalonia の Tooltip も、フォーカスを取らない（`ToolTip.cs` 435〜438 行目、`TakesFocusFromNativeControl = false`）
 - **フォーカスとタッチ:** キーボードのフォーカスでは出さない（3 つとも出さない）。タッチとペンの長押しで、待たずに出し、離したら隠す（GPUI の `div.rs` 3759〜3790 行目。Flutter も長押しで出す）。長押しは、タッチかペンの押下が、押した所から §7 の「タッチとペンのドラッグ」の閾値（18 論理画素）を超えて動かずに 500 ms 続くことで、Tooltip が自分で判定する（Flutter の `kLongPressTimeout` は 500 ms、`gestures/constants.dart` 29 行目。GPUI の `long_press_duration` も 500 ms、`gpui/src/gestures.rs` 138 行目）。Core にはまだ長押しの判定が無く、ほかの部品が使うまでは Tooltip の中に置く。Disabled のアンカーには出さない（Avalonia の `ShowOnDisabled` の既定は false、`ToolTip.cs` 76 行目）
 - **Select の箱:** 箱はフォーカスでき、選ばれている値を `item(value)` で作って中に見せる。値が変わったら作り直す。値が `options` に無いときも、その値を `item` で見せる。箱は見た目を付けない（§13.1）
 - **閉じているときのキー**（Avalonia の `ComboBox.cs` 258〜292 行目。Windows の標準のコンボボックスも同じ）:
@@ -5031,7 +5032,7 @@ public sealed record SelectOptions<T>
   - フォーカスを動かしても値は変えない。Enter・Space・押下で値を決めて閉じ、フォーカスを箱に戻す
   - Esc と外の押下は、値を変えずに閉じる。Tab は、閉じてから箱からフォーカスを次へ進める（Avalonia は Tab を処理済みにしない、`ComboBox.cs` 277〜280 行目）
   - ポインタが入った選択肢はフォーカスを取る（§13.1 の `MenuItem` と同じ）
-- **開く場所と幅:** 箱の下に開き（`PopupPlacement.Below`）、一覧の幅は箱の幅以上にする（Avalonia の `ComboBox.xaml` 163・165 行目、Flutter の `DropdownMenu`）。高さが `MaxDropDownHeight`（既定 200 px、Avalonia の `ComboBox.cs` 54 行目）を超えたら、一覧の中でスクロールする。Flutter の `DropdownButton` の、選ばれている項目を箱に重ねる置き方は採らない
+- **開く場所と幅:** 箱の下に開き（`PopupPlacement.Below`）、一覧の幅は箱の幅以上にする（Avalonia の `ComboBox.xaml` 163 行目、Flutter の `DropdownMenu`）。高さが `MaxDropDownHeight`（既定 200 px、Avalonia の `ComboBox.cs` 54 行目）を超えたら、一覧の中でスクロールする。Flutter の `DropdownButton` の、選ばれている項目を箱に重ねる置き方は採らない
 - **文字で探す:** `TextOf` があるとき、打った文字で始まる使える選択肢を探す。続けて打った文字は、前の文字から 1 秒以内ならつなげて探す。閉じていれば値を変え、開いていればフォーカスを移す（Avalonia の `SelectingItemsControl.cs` 631〜650 行目。Windows のリストも同じ）。大文字と小文字は区別しない
 - **アクセスキーの書き方:** `AccessText("_File")` は、`_` の次の文字をアクセスキーにし、`_` を取り除いた文字を描く。`__` は `_` そのものを描く（Avalonia の `AccessText.cs` 140・143 行目、WPF も同じ。Flutter は `&`、`material/menu_anchor.dart` 2986 行目。GPUI には無い）。キーの文字は大文字と小文字を区別しない。`MenuItem` と `SubmenuItem` は、中身の部分木の最初の `AccessText` からキーを読む
 - **下線を見せるとき:**
