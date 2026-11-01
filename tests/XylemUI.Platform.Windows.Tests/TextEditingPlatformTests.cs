@@ -92,19 +92,20 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A new window reads the caret's blink and width and the selection's colors from Windows.
+    /// A new window reads the caret's blink and width, the selection's colors, and whether access keys are always underlined from
+    /// Windows.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A hidden window.
     ///
     /// Steps:
-    /// - Read the window's settings, and <c>GetCaretBlinkTime</c>, <c>SPI_GETCARETWIDTH</c>, and <c>GetSysColor</c> of
-    ///   <c>COLOR_HIGHLIGHT</c> and <c>COLOR_HIGHLIGHTTEXT</c> straight from Windows.
+    /// - Read the window's settings, and <c>GetCaretBlinkTime</c>, <c>SPI_GETCARETWIDTH</c>, <c>GetSysColor</c> of
+    ///   <c>COLOR_HIGHLIGHT</c> and <c>COLOR_HIGHLIGHTTEXT</c>, and <c>SPI_GETKEYBOARDCUES</c> straight from Windows.
     ///
     /// Expected:
-    /// - The blink is the blink time (none for <c>INFINITE</c>), the width is the caret width, and the colors are the system colors,
-    ///   read as 0x00BBGGRR.
+    /// - The blink is the blink time (none for <c>INFINITE</c>), the width is the caret width, the colors are the system colors,
+    ///   read as 0x00BBGGRR, and the keyboard cues are the setting.
     /// </remarks>
     [Fact]
     public void TextEditing_NewWindow_IsWindowsSettings() =>
@@ -116,6 +117,8 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             Assert.NotEqual(BOOL.FALSE, SystemParametersInfoW(SPI.SPI_GETCARETWIDTH, 0, &width, 0));
             uint highlight = GetSysColor(COLOR.COLOR_HIGHLIGHT);
             uint highlightText = GetSysColor(COLOR.COLOR_HIGHLIGHTTEXT);
+            BOOL cues;
+            Assert.NotEqual(BOOL.FALSE, SystemParametersInfoW(SPI.SPI_GETKEYBOARDCUES, 0, &cues, 0));
 
             TextEditingSettings read = window.TextEditing;
 
@@ -123,6 +126,7 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             Assert.Equal(width, read.CaretWidth);
             Assert.Equal(new Color((byte)highlight, (byte)(highlight >> 8), (byte)(highlight >> 16)), read.SelectionBackground);
             Assert.Equal(new Color((byte)highlightText, (byte)(highlightText >> 8), (byte)(highlightText >> 16)), read.SelectionForeground);
+            Assert.Equal(cues != BOOL.FALSE, read.KeyboardCues);
         });
 
     /// <summary>

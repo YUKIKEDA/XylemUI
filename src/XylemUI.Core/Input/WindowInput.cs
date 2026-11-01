@@ -304,6 +304,12 @@ internal sealed partial class WindowInput
         if (input.Kind == KeyEventKind.Down)
         {
             focus.SetLastInputWasKeyboard(true);
+
+            // Alt shows the access keys (design §13.1, "Access keys"), as Windows' menus do.
+            if (input.Key is Key.LeftAlt or Key.RightAlt)
+            {
+                _tree.ShowAccessKeyCues();
+            }
         }
 
         if (RouteKey(focus.KeyTarget, input))
@@ -422,6 +428,7 @@ internal sealed partial class WindowInput
     private void Down(PointerState pointer, in PointerInput input)
     {
         _tree.Focus.SetLastPress(input.PointerType);
+        _tree.HideAccessKeyCues();
         Point(pointer, input);
 
         // A press outside a popup closes it, and goes on to the node under it unless the popup consumes it (design §7.3, "Closing").

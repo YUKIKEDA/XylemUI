@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using static XylemUI.Elements;
 using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
@@ -132,7 +133,30 @@ public static partial class Primitive
         Func<Element> panel,
         PopupOptions options,
         Action<NodeHandle>? opened
-    ) => PopupBlock.Create(tree, anchor, isOpen, () => panel().On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys), options, opened, MenuMark);
+    )
+    {
+        // A menu opened from the keys shows the access keys while it is open (design §13.1, "Access keys"): its part's scope, which
+        // goes when the menu closes, ends what it began.
+        MenuCues? cues = null;
+        return PopupBlock.Create(
+            tree,
+            anchor,
+            isOpen,
+            () =>
+            {
+                cues = new MenuCues(tree);
+                Scope.OnCleanup(cues.Release);
+                return panel().On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys);
+            },
+            options,
+            root =>
+            {
+                cues?.Hold();
+                opened?.Invoke(root);
+            },
+            MenuMark
+        );
+    }
 
     // A menu that opens focuses its first enabled item (Avalonia's flyout focuses its first tab stop, PopupFlyoutBase.cs lines 315
     // to 326). The popup's scope is the top one there, so the order of Tab is the panel's.
@@ -143,12 +167,25 @@ public static partial class Primitive
     // one moved in.
     private static void PanelKeys(in KeyEvent e)
     {
+        UiTree tree = e.Input.Tree;
+
+        // A letter or a digit, with Alt or Shift or neither (either case), is an access key of the panel's items.
+        if (
+            (e.Modifiers & ~(KeyModifiers.Alt | KeyModifiers.Shift)) == 0
+            && Rune.IsLetterOrDigit(e.KeyChar)
+            && e.KeyChar.IsBmp
+            && ChooseByKey(tree, e.CurrentNode, (char)e.KeyChar.Value)
+        )
+        {
+            e.StopPropagation();
+            return;
+        }
+
         if (e.Modifiers != KeyModifiers.None)
         {
             return;
         }
 
-        UiTree tree = e.Input.Tree;
         PopupHandle? popup = tree.Popups.PopupContaining(e.CurrentNode);
         switch (e.Key)
         {
@@ -207,8 +244,25 @@ public static partial class Primitive
     // One item of a menu: what choosing it does, and the submenu it opens, if any.
     private sealed class MenuItemState(UiTree tree, NodeHandle node, Action? onSelect, Submenu? submenu)
     {
-        public Element Attach(Element item) =>
-            item.OnClick(Click).On(KeyEventKind.Down, EventPhase.Bubble, KeyDown).On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
+        public Element Attach(Element item)
+        {
+            RegisterItem(tree, node, this);
+            return item.OnClick(Click).On(KeyEventKind.Down, EventPhase.Bubble, KeyDown).On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
+        }
+
+        // Its access key typed in its menu: a submenu opens with its first item focused; an item is chosen.
+        public void Activate()
+        {
+            if (submenu is not null)
+            {
+                _ = tree.Focus.Focus(node);
+                submenu.Open(focusFirst: true);
+                return;
+            }
+
+            CloseMenus(tree, node);
+            onSelect!();
+        }
 
         // A press: a submenu opens and keeps the focus where it is; an item is chosen.
         private void Click()
@@ -255,6 +309,30 @@ public static partial class Primitive
             CloseSubmenus(tree, tree.Popups.PopupContaining(node), except: node);
             _ = tree.Focus.Focus(node);
             submenu?.Open(focusFirst: false);
+        }
+    }
+
+    // The access keys a menu opened from the keys shows while it is open.
+    private sealed class MenuCues(UiTree tree)
+    {
+        private bool _held;
+
+        public void Hold()
+        {
+            if (!_held && tree.Focus.LastInputWasKeyboard)
+            {
+                _held = true;
+                tree.HoldMenuCues();
+            }
+        }
+
+        public void Release()
+        {
+            if (_held)
+            {
+                _held = false;
+                tree.ReleaseMenuCues();
+            }
         }
     }
 
