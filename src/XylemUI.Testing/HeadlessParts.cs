@@ -61,6 +61,23 @@ internal sealed class HeadlessPlatform : IPointerPlatform
 
     /// <inheritdoc/>
     public void SetCursor(CursorKind cursor) => Cursor = cursor;
+
+    /// <summary>
+    /// Gets the drags handed to the OS (design §7, "Drag and drop", "Out to the OS"), in order.
+    /// </summary>
+    public List<(ExternalDragData Data, DragEffects Allowed)> ExternalDrags { get; } = [];
+
+    /// <summary>
+    /// Gets or sets the effect the OS's drop chooses for each drag handed to it; <see cref="DragEffects.None"/> by default.
+    /// </summary>
+    public DragEffects ExternalEffect { get; set; }
+
+    /// <inheritdoc/>
+    public DragEffects StartExternalDrag(ExternalDragData data, DragEffects allowed)
+    {
+        ExternalDrags.Add((data, allowed));
+        return ExternalEffect;
+    }
 }
 
 /// <summary>

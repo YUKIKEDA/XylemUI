@@ -181,6 +181,11 @@ public sealed class HeadlessApp : IAsyncDisposable
     internal WindowInput Input { get; }
 
     /// <summary>
+    /// Gets what the window asks of the platform: the capture, the cursor, and the drags handed to the OS.
+    /// </summary>
+    internal HeadlessPlatform Platform => _platform;
+
+    /// <summary>
     /// Gets the node the root function's node is appended to.
     /// </summary>
     internal NodeHandle RootNode => _rootNode;

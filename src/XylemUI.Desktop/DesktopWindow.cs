@@ -79,6 +79,9 @@ internal sealed class DesktopWindow : IDisposable
             Window.TextInputReceived = Input.Handle;
             Window.ActivationChanged = Input.SetActive;
 
+            // Drags from the OS come in as drags of the app (design §7, "Drag and drop").
+            Window.ExternalDrops = Input;
+
             // Text fields copy and paste through Windows' clipboard, and draw their caret and selection with its settings (design §4.9).
             Tree.Clipboard = new Win32Clipboard(Window);
             Tree.SetTextEditing(Window.TextEditing);
@@ -172,6 +175,7 @@ internal sealed class DesktopWindow : IDisposable
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
             Window.KeyInputReceived = null;
+            Window.ExternalDrops = null;
             Window.TextInputReceived = null;
             Window.ActivationChanged = null;
 

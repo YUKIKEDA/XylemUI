@@ -103,6 +103,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             ReducesMotion = ReducesMotionReader(false);
             TextEditing = TextEditingReader(TextEditingSettings.Default);
             CreateTouchpad(hwnd);
+            CreateDropTarget(hwnd);
         }
         catch
         {
@@ -494,6 +495,7 @@ public sealed unsafe partial class Win32Window : IDisposable
 
         if (
             HandleTouchpadMessage(message, wParam)
+            || HandleDragFrameTimer(message, wParam)
             || HandlePointerMessage(hwnd, message, wParam, lParam, ref result)
             || HandleKeyMessage(message, wParam, lParam, ref result)
         )
@@ -527,6 +529,7 @@ public sealed unsafe partial class Win32Window : IDisposable
                 return false;
             case WmDestroy:
                 DestroyTouchpad();
+                DestroyDropTarget(hwnd);
 
                 // An application callback: during a synchronous render it runs after the render returns.
                 SynchronousRenderGuard.RunOrDefer(RaiseClosed);

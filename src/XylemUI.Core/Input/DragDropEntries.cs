@@ -83,6 +83,38 @@ internal abstract class DragSourceEntry(DragSourceOptions options, ScopeRef scop
     }
 
     /// <summary>
+    /// Returns what the value is outside the app, read in the source's scope; <see langword="null"/> with no
+    /// <see cref="DragSourceOptions.External"/>, when it returns none, or when it threw, which was reported.
+    /// </summary>
+    /// <returns>The data, or <see langword="null"/>.</returns>
+    public ExternalDragData? ReadExternal()
+    {
+        if (Options.External is not { } external)
+        {
+            return null;
+        }
+
+        ScopeRef previous = default;
+        bool entered = !scope.IsNone && Scope.TryEnter(scope, out previous);
+        try
+        {
+            return external();
+        }
+        catch (Exception exception) when (exception is not InvariantViolationException)
+        {
+            ReactiveRuntime.ReportException(exception);
+            return null;
+        }
+        finally
+        {
+            if (entered)
+            {
+                Scope.Exit(previous);
+            }
+        }
+    }
+
+    /// <summary>
     /// Runs <see cref="DragSourceOptions.Ended"/> with the effect, in the source's scope when it is still there.
     /// </summary>
     /// <param name="effect">The effect the drop chose, or <see cref="DragEffects.None"/>.</param>
@@ -257,4 +289,16 @@ internal sealed class DropTargetEntry<T>(DropTargetOptions<T> options, ScopeRef 
             handler(in e);
         }
     }
+}
+
+/// <summary>
+/// The source of a drag from outside the app (design §7, "Drag and drop", "From the OS"): its value, and the effects the OS's source
+/// allows; it has no preview and no end of its own.
+/// </summary>
+/// <param name="value">The value.</param>
+/// <param name="allowed">The effects allowed.</param>
+internal sealed class ExternalSourceEntry(object value, DragEffects allowed) : DragSourceEntry(new DragSourceOptions { Allowed = allowed }, default)
+{
+    /// <inheritdoc/>
+    protected override object Read() => value;
 }

@@ -121,6 +121,12 @@ internal sealed partial class WindowInput
             _dispatch = 0;
             ReactiveRuntime.ExitBatch();
         }
+
+        // Out of the batch: the OS's drag pumps messages until it ends (design §7, "Drag and drop", "Out to the OS").
+        if (_promotion is not null)
+        {
+            RunPromotion();
+        }
     }
 
     /// <summary>

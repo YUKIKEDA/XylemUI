@@ -6,7 +6,7 @@ namespace XylemUI;
 // size, or a touch's or a pen's press held still for 500 ms, starts the drag, which takes the capture to the source, opens the
 // preview, and from then on hit tests each move for the drop target, until a release drops it or Esc, the window's deactivation,
 // or a lost capture cancels it. One drag at a time in a window.
-internal sealed partial class WindowInput
+internal sealed partial class WindowInput : IExternalDropTarget
 {
     // Flutter's EdgeDraggingAutoScroller: the overscroll counted at most (scrollable_helpers.dart line 256) and the speed for each
     // logical pixel of it, a reorderable list's default (reorderable_list.dart line 611).
@@ -18,6 +18,104 @@ internal sealed partial class WindowInput
 
     private readonly DragArm _arm = new();
     private DragSession? _dragSession;
+
+    // A drag that left the window with a value the OS can take, to be handed to the OS once the input's delivery ends.
+    private (DragSession Drag, ExternalDragData Data)? _promotion;
+
+    /// <inheritdoc/>
+    public DragEffects DropEnter(object value, int x, int y, DragEffects allowed, KeyModifiers modifiers)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (_dragSession is not null)
+        {
+            return DragEffects.None;
+        }
+
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            var drag = new DragSession(-1, value, new ExternalSourceEntry(value, allowed), default, Vector2.Zero, External(x, y, modifiers));
+            drag.Modifiers = modifiers;
+            _dragSession = drag;
+            Retarget(drag);
+            _tree.NoteWork();
+            return drag.Effect;
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <inheritdoc/>
+    public DragEffects DropOver(int x, int y, KeyModifiers modifiers)
+    {
+        if (_dragSession is not { PointerId: -1 } drag)
+        {
+            return DragEffects.None;
+        }
+
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            drag.Last = External(x, y, modifiers);
+            drag.Modifiers = modifiers;
+            Retarget(drag);
+            return drag.Effect;
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <inheritdoc/>
+    public void DropLeave()
+    {
+        if (_dragSession is not { PointerId: -1 })
+        {
+            return;
+        }
+
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            EndDragSession(drop: false);
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <inheritdoc/>
+    public DragEffects Drop(int x, int y, KeyModifiers modifiers)
+    {
+        if (_dragSession is not { PointerId: -1 } drag)
+        {
+            return DragEffects.None;
+        }
+
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            // OLE drops where the last move was; a drop elsewhere, or with other modifiers, chooses again first.
+            if (drag.Last.X != x || drag.Last.Y != y || drag.Modifiers != modifiers)
+            {
+                drag.Last = External(x, y, modifiers);
+                drag.Modifiers = modifiers;
+                Retarget(drag);
+            }
+
+            DragEffects effect = drag.TargetEntry is null ? DragEffects.None : drag.Effect;
+            EndDragSession(drop: true);
+            return effect;
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether a drag runs in the window.
@@ -167,6 +265,10 @@ internal sealed partial class WindowInput
                 drag.Last = input;
                 drag.Modifiers = input.Modifiers;
                 Retarget(drag);
+                if (pointer.Type == PointerType.Mouse && (input.Buttons & PointerButtons.Left) != 0 && !drag.ExternalRead && OutsideWindow(input))
+                {
+                    Promote(drag);
+                }
             }
 
             return;
@@ -191,6 +293,77 @@ internal sealed partial class WindowInput
             Disarm();
         }
     }
+
+    // The drag left the window's client area: when its source gives what the value is outside the app, the drag is handed to the
+    // OS once this input's delivery ends (GPUI's promote_external_drag_to_platform, gpui/src/window.rs lines 5763 to 5791). A source
+    // with none keeps the drag in the app, and is not asked again.
+    private void Promote(DragSession drag)
+    {
+        drag.ExternalRead = true;
+        if (drag.Entry.ReadExternal() is { } data)
+        {
+            _promotion = (drag, data);
+        }
+    }
+
+    // Hands the drag to the OS: the target gets a leave and the preview closes, the window's capture goes to the OS's drag, and the
+    // source's end runs with the effect the OS's drop chose. The OS took the release, so the press ends here as a lost capture.
+    private void RunPromotion()
+    {
+        (DragSession drag, ExternalDragData data) = _promotion!.Value;
+        _promotion = null;
+        if (_dragSession != drag)
+        {
+            return;
+        }
+
+        PointerState pointer = _pointers[drag.PointerId];
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            _dragSession = null;
+            LeaveTarget(drag);
+            drag.Entry.PreviewOpen?.Set(false);
+            _tree.NoteWork();
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+
+        _platform.ReleaseCapture();
+        DragEffects effect = _platform.StartExternalDrag(data, drag.Entry.Options.Allowed);
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            drag.Entry.End(effect);
+            if (pointer.Live)
+            {
+                CaptureLost(pointer, pointer.Last);
+            }
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    // Whether a position is outside the window's client area.
+    private bool OutsideWindow(in PointerInput input)
+    {
+        if (_tree.Root.IsNone)
+        {
+            return false;
+        }
+
+        Rect window = _tree.Nodes.GetRef(_tree.Root).Layout.Rect;
+        var at = new Vector2(input.X, input.Y) / _frames.Scale;
+        return at.X < 0 || at.Y < 0 || at.X >= window.Width || at.Y >= window.Height;
+    }
+
+    // A position of a drag from outside the app, as the input the drag's hit tests read.
+    private static PointerInput External(int x, int y, KeyModifiers modifiers) =>
+        new(PointerInputKind.Move, x, y, PointerButton.None, PointerButtons.Left, modifiers, 0, TimeSpan.Zero, PointerType.Mouse, PointerId: -1);
 
     // A pointer's release: the running drag drops; an armed one is disarmed.
     private void DragUp(in PointerInput input)
@@ -475,5 +648,7 @@ internal sealed partial class WindowInput
         public NodeHandle Scroll { get; set; }
 
         public TimeSpan? ScrolledAt { get; set; }
+
+        public bool ExternalRead { get; set; }
     }
 }
