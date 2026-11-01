@@ -295,6 +295,38 @@ public sealed class TodoTests
     }
 
     /// <summary>
+    /// An item dragged onto another row takes its place, and the rows between shift by one (row DD1, design §7, "Drag and drop"); the
+    /// press on the item's button gives no click, so the item is not marked.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The todo app, headless, with three items added by the model.
+    ///
+    /// Steps:
+    /// - Press the first row's button, move 10 px right, move to the third row's button, release; then drag the third row (now Item
+    ///   1) onto the first.
+    ///
+    /// Expected:
+    /// - After the first drag the rows are Items 2, 3, 1, none marked; after the second, Items 1, 2, 3.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DragAnItem_MovesItToTheRowItIsDroppedOn()
+    {
+        var model = new TodoModel();
+        await using HeadlessApp headless = await HeadlessApp.StartAsync(() => TodoApp.Todo(model), Headless);
+        var app = App.Of(headless, model);
+        AddThree(app);
+
+        DragRow(headless, app, 0, 2);
+        List<string> first = app.Labels();
+        DragRow(headless, app, 2, 0);
+
+        Assert.Equal(["[ ] Item 2", "[ ] Item 3", "[ ] Item 1"], first);
+        Assert.Equal(["[ ] Item 1", "[ ] Item 2", "[ ] Item 3"], app.Labels());
+    }
+
+    /// <summary>
     /// The frames that draw a change of an item's mark, and a reversal of the list, allocate nothing; the changes themselves are the
     /// app's, which builds a new list.
     /// </summary>
@@ -359,6 +391,19 @@ public sealed class TodoTests
     // the scroll view; and
     // clicks at a node's center with the headless app's pointer, each followed by the frames that lay out and draw what they
     // changed.
+    // Drags a row by its button onto another row's button.
+    private static void DragRow(HeadlessApp headless, App app, int from, int to)
+    {
+        (int x, int y) = headless.CenterOf(new Element(app.Tree, app.ItemButton(from)));
+        headless.Pointer.Move(x, y);
+        headless.Pointer.Down();
+        headless.Pointer.Move(x + 10, y);
+        (int tx, int ty) = headless.CenterOf(new Element(app.Tree, app.ItemButton(to)));
+        headless.Pointer.Move(tx, ty);
+        headless.Pointer.Up();
+        _ = headless.PumpAndSettle();
+    }
+
     private sealed class App
     {
         private readonly Action<NodeHandle> _click;

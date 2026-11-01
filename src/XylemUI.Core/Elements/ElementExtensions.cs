@@ -7,7 +7,7 @@ namespace XylemUI;
 /// Sets the style, the look, and the input of a node (design §2.13, "The component API"). Each writes to the node's tree at once and
 /// returns the same element; lengths are in logical pixels. The overloads that take a signal call <see cref="Bind{T}"/>.
 /// </summary>
-public static class ElementExtensions
+public static partial class ElementExtensions
 {
     /// <summary>
     /// Sets the width of the node's border box.

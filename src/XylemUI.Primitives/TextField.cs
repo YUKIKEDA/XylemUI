@@ -150,6 +150,7 @@ public static partial class Primitive
                 .On(PointerEventKind.Down, EventPhase.Bubble, PointerDown)
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
                 .On(PointerEventKind.Up, EventPhase.Bubble, PointerUp)
+                .On(PointerEventKind.Cancel, EventPhase.Bubble, PointerCancel)
                 .On(FocusEventKind.FocusIn, EventPhase.Bubble, FocusIn)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
 
@@ -903,6 +904,10 @@ public static partial class Primitive
                 return;
             }
 
+            // The field's press is its own: a drag source around it does not start a drag from it (design §4.9, "The pointer", and
+            // §7, "Drag and drop").
+            e.StopPropagation();
+
             // A press commits a composition before it moves the caret (design §4.7, "The focus and the app's writes").
             CommitComposition();
             int offset = OffsetAt(e.LocalPosition);
@@ -953,6 +958,9 @@ public static partial class Primitive
                 Changed(selectionOnly: true);
             }
         }
+
+        // The press lost its capture: a drag that took it, or the OS (design §7, "Drag and drop"). The selection stays where it is.
+        private void PointerCancel(in PointerEvent e) => _dragging = false;
 
         private void PointerUp(in PointerEvent e)
         {

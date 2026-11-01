@@ -40,7 +40,14 @@ public sealed record PopupOptions
     internal bool IsTransient { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the popup holds a drag's preview (design §7.3, "The drag's preview root"): it pushes no focus
+    /// scope, closes nothing and is closed by nothing but its drag, stays in front of every other popup, is placed where the drag puts
+    /// it rather than against its anchor, and outlives its anchor's scroll.
+    /// </summary>
+    internal bool IsDragImage { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether a press outside the popup closes it, after the default is applied.
     /// </summary>
-    internal bool DismissesOnOutsidePress => DismissOnOutsidePress ?? !IsModal;
+    internal bool DismissesOnOutsidePress => !IsDragImage && (DismissOnOutsidePress ?? !IsModal);
 }

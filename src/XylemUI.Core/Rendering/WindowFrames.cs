@@ -238,6 +238,12 @@ internal sealed partial class WindowFrames
             RequestFrame();
         }
 
+        // A drag at the edge of a scroll container scrolls it, one frame at a time (design §7, "Drag and drop").
+        if (Input?.AdvanceDragScroll(FrameTime) == true)
+        {
+            RequestFrame();
+        }
+
         _tree.Focus.RevealPending();
 
         // After the layout: each popup's frame against its anchor, which may close a popup whose anchor scrolled (design §7.3). A
@@ -410,6 +416,20 @@ internal sealed partial class WindowFrames
             PopupHandle popup = open[i];
             if (popup.Closing)
             {
+                continue;
+            }
+
+            // A drag's preview goes where the drag put it, and outlives its anchor and its anchor's scroll (design §7.3).
+            if (popup.Options.IsDragImage)
+            {
+                ref LayoutState image = ref _tree.Nodes.GetRef(popup.Frame).Layout;
+                Vector2 at = _tree.Popups.DragImageAt;
+                if (image.Rect.X != at.X || image.Rect.Y != at.Y)
+                {
+                    image.Rect = image.Rect with { X = at.X, Y = at.Y };
+                    popup.NeedsBuild = true;
+                }
+
                 continue;
             }
 
@@ -701,13 +721,22 @@ internal sealed partial class WindowFrames
                 Over(pressed, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
             }
 
-            // Open over the pressed state and under the focus states, so that a focus ring still shows over it (design §2.13).
-            if ((state & PseudoState.Open) != 0 && styles.Open is { } open)
+            // Open and drag over, in this order, over the pressed state and under the focus states, so that a focus ring still shows
+            // over them (design §2.13).
+            if (styles.Rare is { } rare)
             {
-                Over(open.Style, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+                if ((state & PseudoState.Open) != 0 && rare.Open is { } open)
+                {
+                    Over(open, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+                }
+
+                if ((state & PseudoState.DragOver) != 0 && rare.DragOver is { } over)
+                {
+                    Over(over, ref background, ref borderPaint, ref foreground, ref opacity, ref transform);
+                }
             }
 
-            // The focus states over the open one, the later the stronger (design §2.13).
+            // The focus states over the rare ones, the later the stronger (design §2.13).
             if (styles.Focus is { } focus)
             {
                 if ((state & PseudoState.FocusWithin) != 0 && focus.FocusWithin is { } within)

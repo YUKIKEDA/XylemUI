@@ -11,12 +11,17 @@ namespace XylemUI;
 /// <param name="SelectionForeground">The selected text's color (Windows' <c>COLOR_HIGHLIGHTTEXT</c>).</param>
 /// <param name="KeyboardCues">Whether access keys are always underlined (Windows' <c>SPI_GETKEYBOARDCUES</c>); when not, they are
 /// underlined after Alt and in a menu opened from the keys (design §13.1, "Access keys").</param>
+/// <param name="DragWidth">How far a mouse's press may move across, in physical pixels, before a drag starts (Windows'
+/// <c>SM_CXDRAG</c>, design §7, "Drag and drop").</param>
+/// <param name="DragHeight">How far it may move up or down (Windows' <c>SM_CYDRAG</c>).</param>
 internal readonly record struct TextEditingSettings(
     TimeSpan? CaretBlink,
     float CaretWidth,
     Color SelectionBackground,
     Color SelectionForeground,
-    bool KeyboardCues = false
+    bool KeyboardCues = false,
+    int DragWidth = 4,
+    int DragHeight = 4
 )
 {
     /// <summary>

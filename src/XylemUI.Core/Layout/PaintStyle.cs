@@ -52,10 +52,10 @@ internal sealed class PseudoStyles
     public PaintStyle? Pressed { get; internal set; }
 
     /// <summary>
-    /// Gets or sets what the open state lays over the pressed one, under the focus states (design §2.13); <see langword="null"/> for
-    /// nothing. It lives apart, made when it is set, so that a node with a hovered look alone holds a reference, not a style.
+    /// Gets or sets the looks of the open and the drag-over states, made the first time one is set: they live apart, so that a node
+    /// with a hovered look alone holds a reference, not two styles.
     /// </summary>
-    public OpenStyle? Open { get; internal set; }
+    public RareStyles? Rare { get; internal set; }
 
     /// <summary>
     /// Gets or sets the looks of the focus states, made the first time one is set: a node with a hovered look alone does not hold
@@ -79,7 +79,8 @@ internal sealed class PseudoStyles
         {
             PseudoState.Hovered => Hovered is not null,
             PseudoState.Pressed => Pressed is not null,
-            PseudoState.Open => Open is not null,
+            PseudoState.Open => Rare?.Open is not null,
+            PseudoState.DragOver => Rare?.DragOver is not null,
             PseudoState.Focused => Focus?.Focused is not null,
             PseudoState.FocusVisible => Focus?.FocusVisible is not null,
             PseudoState.FocusWithin => Focus?.FocusWithin is not null,
@@ -89,15 +90,21 @@ internal sealed class PseudoStyles
 }
 
 /// <summary>
-/// The look of a node's open state (design §2.13, §7.3 "The anchor's Open"), apart from <see cref="PseudoStyles"/>.
+/// The looks of the states few nodes have (design §2.13), apart from <see cref="PseudoStyles"/>, laid over the pressed one in this
+/// order: open, drag over.
 /// </summary>
-/// <param name="style">The look.</param>
-internal sealed class OpenStyle(PaintStyle style)
+internal sealed class RareStyles
 {
     /// <summary>
-    /// Gets the look.
+    /// Gets or sets what the open state lays over the pressed one (design §7.3, "The anchor's Open"); <see langword="null"/> for
+    /// nothing.
     /// </summary>
-    public PaintStyle Style { get; } = style;
+    public PaintStyle? Open { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets what the drag-over state lays over the open one (design §7, "Drag and drop"); <see langword="null"/> for nothing.
+    /// </summary>
+    public PaintStyle? DragOver { get; internal set; }
 }
 
 /// <summary>

@@ -115,10 +115,7 @@ public static class TodoApp
                             Styled(Text((ref text) => text.Write(model.NewestFirst.Get() ? "Newest first" : "Oldest first")), model.Reverse)
                         )
                         .Gap(6),
-                    ScrollView(
-                            Column().Gap(4).For(model.Shown, item => item.Id, item => Row(ItemButton(model, item), RemoveButton(model, item)).Gap(4))
-                        )
-                        .Height(ListHeight),
+                    ScrollView(Column().Gap(4).For(model.Shown, item => item.Id, item => ItemRow(model, item))).Height(ListHeight),
                     Dialog(model.Confirming, () => ConfirmPanel(model), new DialogOptions { Backdrop = Backdrop })
                 )
                 .Gap(8)
@@ -158,6 +155,21 @@ public static class TodoApp
             .Background(PanelBackground)
             .Foreground(TextColor)
             .CornerRadius(8);
+
+    // An item's row: dragged by its number onto another row, it moves there (design §7, "Drag and drop"); the row under the drag is
+    // lighter.
+    private static Element ItemRow(TodoModel model, IReadOnlySignal<TodoItem> item) =>
+        Row(ItemButton(model, item), RemoveButton(model, item))
+            .Gap(4)
+            .DragSource(() => item.Get().Id, new DragSourceOptions { Preview = () => DragPreview(item.Get().Name) })
+            .DropTarget(
+                new DropTargetOptions<int> { CanDrop = id => id != item.Get().Id, Drop = (in DragEvent<int> e) => model.Move(e.Value, item.Get().Id) }
+            )
+            .DragOver(new PaintStyle { Background = ItemHighlight });
+
+    // What follows the pointer while an item is dragged: its name on the panel's color.
+    private static Element DragPreview(string name) =>
+        Text(name).Padding(8, 6).Background(PanelBackground).Foreground(TextColor).CornerRadius(4).Opacity(0.9f);
 
     // The button that marks an item done: its name after a mark, gray when done.
     private static Element ItemButton(TodoModel model, IReadOnlySignal<TodoItem> item) =>

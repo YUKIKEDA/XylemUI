@@ -582,6 +582,62 @@ public sealed class HeadlessPixelTests
         await app.MatchesGoldenAsync("menu-bar-open.png");
     }
 
+    /// <summary>
+    /// A drag draws its preview in front, where the pointer is less where the source was pressed, and the target under it with its
+    /// drag-over look, and matches its golden (row DD1, design §7, "Drag and drop").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 220 x 140 on WARP: on white, at (10, 10), a gray source 100 x 30 dragging "a" with a preview of a blue box
+    ///   60 x 20, and a light target 200 x 60 below it that takes strings, green while a drag is over it.
+    ///
+    /// Steps:
+    /// - Press the source 10 px from its top left; move 10 px right; move to (60, 80); settle; read the pixel at (55, 75) and at
+    ///   (150, 90); compare the frame with "drag-preview.png"; release.
+    ///
+    /// Expected:
+    /// - The preview's top left is at (50, 70): (55, 75) is blue; (150, 90) is the target's green.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Drag_Preview_MatchesItsGolden()
+    {
+        Color blue = Color.FromRgb(0x3366CC);
+        Color green = Color.FromRgb(0x66AA66);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Column(
+                        Box()
+                            .Width(100)
+                            .Height(30)
+                            .Background(Color.FromRgb(0xC0C0C0))
+                            .DragSource(() => "a", new DragSourceOptions { Preview = () => Box().Width(60).Height(20).Background(blue) }),
+                        Box()
+                            .Width(200)
+                            .Height(60)
+                            .Background(Color.FromRgb(0xE0E0E0))
+                            .DropTarget(new DropTargetOptions<string> { Drop = (in DragEvent<string> _) => { } })
+                            .DragOver(new PaintStyle { Background = green })
+                    )
+                    .Padding(10)
+                    .Background(White),
+            Options(220, 140)
+        );
+        _ = app.PumpAndSettle();
+
+        app.Pointer.Move(20, 20);
+        app.Pointer.Down();
+        app.Pointer.Move(30, 20);
+        app.Pointer.Move(60, 80);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(blue, Pixel(app, (55, 75)));
+        Assert.Equal(green, Pixel(app, (150, 90)));
+        await app.MatchesGoldenAsync("drag-preview.png");
+        app.Pointer.Up();
+        _ = app.PumpAndSettle();
+    }
+
     private static Element FocusedPanel(Color dark) =>
         Column(
                 Primitives

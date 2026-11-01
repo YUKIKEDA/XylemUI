@@ -207,6 +207,23 @@ public readonly struct PointerEvent
     public void StopPropagation() => _input.StopPropagation();
 
     /// <summary>
+    /// Moves the pointer's capture to a node, or releases it with <see langword="null"/> (design §7, "Drag and drop", "The explicit
+    /// capture", Avalonia's <c>Pointer.Capture</c>): the pointer's moves, presses, and releases then route from that node, whatever
+    /// they hit, and the node that had the capture gets a cancel along its route. The capture ends when every button is up.
+    /// </summary>
+    /// <param name="element">A node of the same tree, or <see langword="null"/>.</param>
+    /// <exception cref="ArgumentException"><paramref name="element"/> is of another tree.</exception>
+    public void Capture(Element? element)
+    {
+        if (element is { } node && !ReferenceEquals(node.Tree, _input.Tree))
+        {
+            throw new ArgumentException("The capture goes to a node of the event's own tree.", nameof(element));
+        }
+
+        _input.CapturePointer(PointerId, element?.Node ?? default);
+    }
+
+    /// <summary>
     /// Returns the points the event's message brought (design §7, "Touch and pen"): a pen or a touch that moved faster than the
     /// messages came gives several, oldest first, the last being the event's own; the mouse gives its own alone. A drawing app reads
     /// them to draw a line through every point. An event no pointer message made (a key's click, the enters and leaves of a frame's

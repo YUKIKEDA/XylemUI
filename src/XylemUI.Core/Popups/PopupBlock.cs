@@ -181,8 +181,9 @@ internal sealed class PopupBlock
         _tree.AppendChild(root, frame);
 
         // The content's box takes the pointer, so that a press on it does not reach the window behind and close it (design §7.3,
-        // "Hit testing"); a modal popup's root takes it everywhere.
-        if (!fills)
+        // "Hit testing"); a modal popup's root takes it everywhere. A drag's preview takes none: the drag's hit tests find the targets
+        // under it (design §7.3, "The drag's preview root", PR #599's review).
+        if (!fills && !_options.IsDragImage)
         {
             _tree.SetBlocksPointer(frame, true);
         }

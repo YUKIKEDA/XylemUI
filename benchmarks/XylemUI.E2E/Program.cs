@@ -29,6 +29,7 @@
 //   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
 //   menu                       a 10-item menu over the todo sample: the frame that opens it, and its key and hover frames (row P02d)
 //   menubar                    a 5-item menu bar over the todo sample: the frames that select it, move in it, open a menu, and switch menus (row P02d3)
+//   dragdrop                   a drag over the todo sample's rows: the frame of each move that changes the drop target (row DD1)
 //   tooltip                    a tooltip over the todo sample: the frame that shows it, and a move with it shown (row P02d2)
 //   select                     a 10-option select over the todo sample: the frame that opens it, and its key and hover frames (row P02d2)
 //   touchpad                   a frame's poll of a hidden window's DirectManipulation viewport with no contact (row I1c)
@@ -90,6 +91,7 @@ return scenario switch
     "todo" => TodoCost.Run(),
     "menu" => MenuCost.Run(),
     "menubar" => MenuBarCost.Run(),
+    "dragdrop" => DragDropCost.Run(),
     "tooltip" => TooltipCost.Run(),
     "select" => SelectCost.Run(),
     "animations" => AnimationCost.Run(),
