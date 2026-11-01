@@ -112,8 +112,8 @@ internal interface IVirtualHost : IVirtualizedFocusHost
 internal interface IVirtualizedFocusHost
 {
     /// <summary>
-    /// Makes, at once, the rows after a row (before it, for Shift+Tab) that are not made yet, up to the next row made or one cache
-    /// extent's length, so that Tab can go on into them. Returns whether it made a row; the focus then walks again, and leaves the
+    /// Makes, at once, the rows after a row (before it, for Shift+Tab) that are not made yet, up to the row the walk found next or one
+    /// cache extent's length of rows made, so that Tab can go on into them. Returns whether it made a row; the focus then walks again, and leaves the
     /// list when the rows made have no node that takes the focus.
     /// </summary>
     /// <param name="row">The row the focus is in: a child of the list's box.</param>

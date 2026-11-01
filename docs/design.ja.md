@@ -2253,8 +2253,9 @@ Released （CacheExtentの外まで離れた場合）: §2.3のScope機構でDis
 ```csharp
 internal interface IVirtualizedFocusHost
 {
-    // フォーカスのある行の次（Shift+Tab は前）から、まだ作っていない行を、次に作ってある行か、CacheExtent 1 つ分の長さまで、
-    // その場で作る。next は走査がリストの中に見つけた次の行（無ければ none）。行を作ったら true を返し、走査をやり直す。
+    // フォーカスのある行の次（Shift+Tab は前）から、まだ作っていない行を、走査が見つけた次の行の手前か、作った行が
+    // CacheExtent 1 つ分の長さになるまで、その場で作る。next は走査がリストの中に見つけた次の行（無ければ none）。
+    // 行を作ったら true を返し、走査をやり直す。
     bool MaterializeBeyond(NodeHandle row, NodeHandle next, bool backward);
 }
 ```

@@ -352,11 +352,6 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
         {
             if (_rows.ContainsKey(_keys[index]))
             {
-                if (made)
-                {
-                    break;
-                }
-
                 continue;
             }
 

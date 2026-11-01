@@ -425,8 +425,8 @@ public sealed class VirtualListTests
     /// - A list of 10,000 rows in a box 300 high, each fifth 60 high and the others 20, with an estimated extent of 20.
     ///
     /// Steps:
-    /// - Move to row 5,000 (60 high) with Top, Center, and Bottom, settling after each, and read where the row shows; scroll to 0,
-    ///   move to it with Nearest, read; move with Nearest again, read.
+    /// - For Top, Center, and Bottom: scroll to 0, so that row 5,000 (60 high) is not made; move to it; settle; read where the row
+    ///   shows. Scroll to 0; move to it with Nearest; read; move with Nearest again; read.
     ///
     /// Expected:
     /// - At 0, 120, and 240 (300 - 60); with Nearest from the top at 240, and again at 240.
@@ -442,6 +442,8 @@ public sealed class VirtualListTests
         var shown = new List<float>();
         foreach (ScrollAlign align in new[] { ScrollAlign.Top, ScrollAlign.Center, ScrollAlign.Bottom })
         {
+            state.Scroll.ScrollTo(Vector2.Zero);
+            _ = app.PumpAndSettle();
             state.ScrollToIndex(5_000, align);
             _ = app.PumpAndSettle();
             shown.Add(ShownAt(app, state, "row5000"));
@@ -562,11 +564,13 @@ public sealed class VirtualListTests
     }
 
     /// <summary>
-    /// A focus asked for in a row the list keeps outside its range scrolls the list to the row, and the row then shows, laid out.
+    /// A focus asked for in a row the list keeps outside its range scrolls the list to the row by its index, whatever the row's last
+    /// box says, and the node then shows, laid out; Tab goes on to the next row.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A list of 1,000 focusable rows 20 high; row 3 focused; scrolled to 10,000, so that row 3 is kept outside the range.
+    /// - A list of 1,000 focusable rows 20 high; row 3 focused; scrolled to 10,000, so that row 3 is kept outside the range; then 50
+    ///   items put before the first, so that row 3 is at index 53 while its last box says index 3.
     ///
     /// Steps:
     /// - Focus row 3 again; settle; read whether it is laid out and where it shows. Press Tab; settle; read the focus.
@@ -587,6 +591,8 @@ public sealed class VirtualListTests
         _ = app.PumpAndSettle();
         state.Scroll.ScrollTo(new Vector2(0, 10_000));
         _ = app.PumpAndSettle();
+        items.Set([.. Enumerable.Range(-50, 50), .. Enumerable.Range(0, 1_000)]);
+        _ = app.PumpAndSettle();
         IVirtualHost host = app.Tree.VirtualHostOf(app.Tree.Nodes.GetRef(row.Node).Parent)!;
         Assert.False(host.LaysOut(row.Node, out _));
 
@@ -600,6 +606,58 @@ public sealed class VirtualListTests
         Assert.True(laidOut);
         Assert.InRange(shown, 0, 280);
         Assert.Equal("row4", app.Tree.TestIdOf(app.Tree.Focus.Focused));
+    }
+
+    /// <summary>
+    /// A node deep in a kept row taller than the viewport is brought into view in the frame after the one that lays the row out.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A list of 1,000 rows 20 high, but row 3, 400 high, with a focusable node 20 high at 350 into it; that node focused; scrolled
+    ///   to 10,000, so that row 3 is kept outside the range.
+    ///
+    /// Steps:
+    /// - Focus the node again; settle; read where it shows in the viewport.
+    ///
+    /// Expected:
+    /// - Within the viewport (0 to 280): the row's start alone at the top would leave it at 350, below.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task FocusDeepInATallKeptRow_BringsTheNodeIntoView()
+    {
+        Signal<IReadOnlyList<int>> items = Items(0, 1_000);
+        var state = new VirtualListState();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Box()
+                .Width(200)
+                .Height(300)
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(
+                    items,
+                    static i => i,
+                    static item =>
+                        item.Get() == 3
+                            ? Column(Box().Height(350), Box().Height(20).Focusable().TestId("inner")).Height(400).TestId("row3")
+                            : Box().Height(20).TestId($"row{item.Get()}"),
+                    state
+                )
+        );
+        _ = app.PumpAndSettle();
+        Element inner = app.Find("inner");
+        Assert.True(app.Focus(inner));
+        _ = app.PumpAndSettle();
+        state.Scroll.ScrollTo(new Vector2(0, 10_000));
+        _ = app.PumpAndSettle();
+
+        Assert.True(app.Focus(inner));
+        _ = app.PumpAndSettle();
+        float shown =
+            app.Tree.Nodes.GetRef(app.Find("row3").Node).Layout.Rect.Y
+            + app.Tree.Nodes.GetRef(inner.Node).Layout.Rect.Y
+            - state.Scroll.Offset.Get().Y;
+
+        Assert.InRange(shown, 0, 280);
     }
 
     // A box 200 x 300 that scrolls vertically, with a row for each item, each fifth 60 high and the others 20, with an estimated
