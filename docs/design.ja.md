@@ -2157,7 +2157,7 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 - **範囲の外へ出た行:** `CacheExtent` の外へ出た行（Released）は、行の Scope ごと捨てる。入れ物は使い回さない。次の 3 つの行は、範囲の外でも捨てずに持ち、layout も描画もヒットもさせない（Flutter の `keepAlive` の行と同じ。`rendering/sliver_multi_box_adaptor.dart` 373〜387 行目・418〜421 行目）。
   - フォーカスを持つノードを含む行。Avalonia はフォーカスのある入れ物を残し（`VirtualizingStackPanel.cs` 1151〜1155 行目）、Flutter の TextField はフォーカスがある間だけ自分を残す（`widgets/editable_text.dart` 2638 行目）。GPUI は `splice_focusable` で渡したフォーカスの項目を描き続ける（`list.rs` 507〜510 行目）
   - ポインタのキャプチャ（§7）か D&D の元（§7「ドラッグ＆ドロップ」）を持つノードを含む行。端の自動スクロールで、ドラッグしている行が範囲の外へ出ることがある
-  - `.KeepAlive(keep)` の Signal が true の行。Flutter の `AutomaticKeepAlive` に当たる。比べた中で、アプリが行を残せるのは Flutter だけである
+  - `.KeepAlive(keep)` の Signal が true の行。Flutter の `AutomaticKeepAlive` に当たる。比べた中で、アプリが行を残せるのは Flutter だけである。`KeepAlive` は `render` が返した行の根に付ける。行の中のノードに付けても行は残らない。範囲の外の行ごとに部分木をたどらず、表を 1 回引くだけで済むからである（#610 の実装）
   - 持った行に `Focus` か Tab の移動が見える所まで動かすことを求めたら（§7「Bring into view」）、その行の番号へ `ScrollToIndex(Nearest)` してから動かす。持った行には今の位置が無いからである
   - 使い回すのは比べた中で Avalonia だけで（`VirtualizingStackPanel.cs` 1158〜1161 行目）、使い回すと、項目に結び付いていない状態が別の項目に残る。Flutter と GPUI は作り直す
 - **番号で動かす API:** `VirtualListState.ScrollToIndex(index, align)` は、その行の位置を累積の和から求めて基準を置き、次のフレームの Materialization で行を作る。`ScrollAlign` は Nearest（見えていれば動かさない）・Top・Center・Bottom である。GPUI の `ScrollStrategy`（`uniform_list.rs` 84〜99 行目）と同じ 4 つにした。Avalonia は `ScrollIntoView(int)` を持つ（`VirtualizingStackPanel.cs` 635〜720 行目）。Flutter には番号で動かす API が無い。`VisibleRange` は、見えている行の番号の範囲で、layout の後の batch で書く。GPUI の `ListScrollEvent` の `visible_range` に当たる（`list.rs` 172〜184 行目）。矢印キーで動く部品（ListBox など）は、この 2 つを使う
@@ -2166,7 +2166,8 @@ Materialization はノードを生成するのでアリーナ配列の再確保�
 - **確かめ方:**
   - Core: 1 万項目の並びで、作る行の数が見える範囲と `CacheExtent` の分だけになる。項目の数を 1 千・1 万・10 万に変えても、layout の pass で layout するノードの数が変わらない。上に項目を足しても、基準の行が画面の同じ位置に残り、行の状態とフォーカスが残る。見積もりと実測が違っても、上へスクロールしたときに基準の行が跳ばない。基準の行が消えたときの規則。範囲の外のフォーカスの行・キャプチャの行・`KeepAlive` の行が残り、それ以外が捨てられる（Scope の Dispose）。`ScrollToIndex` の 4 つの揃え方。`FixedExtent` の箱が行を測らない。Tab が並びの全部をたどり、フォーカスできるノードの無い行が続くと、上限で並びを出る
   - WARP: スクロールした後の行の画素。Cached の行が描かれない
-  - 割り当て 0: 作る行が変わらないスクロールのフレーム（配送を含む）
+  - 割り当て 0: 作る行が変わらないスクロールのフレーム（ホイールの配送を含む）
+  - `VisibleRange` は、layout の後の batch で書く。layout の無いフレーム（範囲の中のスクロール）でも、layout の段の後に書く
   - 計測: `frames` に 1 万項目の並びを毎フレームスクロールする場面を足し、`For` で 1 万行を全部作る形と、フレームの段と layout の pass で比べる。行を作るフレームは、`render` の分を除いた割り当てを測る
   - サンプル: Todo の一覧を `.VirtualFor` に変え、D&D の並べ替えと端の自動スクロールがそのまま動く
   - PR は、作る範囲・大きさのキャッシュ・基準・Cached と持つ行（1 つ目）と、キーボード・`ScrollToIndex`・Todo（2 つ目）に分ける

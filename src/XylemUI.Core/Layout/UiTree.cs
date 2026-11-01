@@ -228,6 +228,31 @@ internal sealed class UiTree
     internal Vector2 ScrollOffsetOf(NodeHandle node) => ScrollStateOf(node)?.OffsetValue ?? Vector2.Zero;
 
     /// <summary>
+    /// Writes, in one batch, the rows that show of each virtualized list after a frame that ran no layout pass, whose scroll may still
+    /// have moved them (design §3.4, §3.4.1); a frame with a layout pass writes them with the ranges.
+    /// </summary>
+    internal void NoteVirtualPositions()
+    {
+        if (_virtualHosts.Count == 0)
+        {
+            return;
+        }
+
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            foreach (KeyValuePair<NodeHandle, IVirtualHost> pair in _virtualHosts)
+            {
+                pair.Value.NotePosition();
+            }
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <summary>
     /// Writes the range the last layout gave each node with a scroll state, in one batch, after the layout pass and before the
     /// draw stage (design §3.4.1): its largest position and its viewport, and its position kept in the range.
     /// </summary>

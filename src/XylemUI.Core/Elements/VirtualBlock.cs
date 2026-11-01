@@ -249,7 +249,6 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
             Invalidation.MarkMaterialized(_tree, _box);
         }
 
-        WriteVisibleRange(OffsetOnAxis(_state.Scroll.OffsetValue));
         return changed;
     }
 

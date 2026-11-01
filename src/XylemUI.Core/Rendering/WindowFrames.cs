@@ -245,6 +245,11 @@ internal sealed partial class WindowFrames
         {
             _tree.PublishScrollRanges();
         }
+        else
+        {
+            // A scroll with no layout still moves the rows that show, written after the layout as the ranges are (design §3.4.1).
+            _tree.NoteVirtualPositions();
+        }
 
         // With the ranges written: a position it changes is a paint update of this frame (design §7, "Bring into view"), and a fling
         // that goes on asks for the next frame (design §7, "Touch and pen").

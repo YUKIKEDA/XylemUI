@@ -359,38 +359,59 @@ public sealed class VirtualListTests
     }
 
     /// <summary>
-    /// A scroll whose rows stay the same, delivered and drawn, allocates nothing (design §3.4, "The frame's stages").
+    /// A wheel's scroll whose rows stay the same, delivered and drawn, allocates nothing, and moves the rows that show (design §3.4,
+    /// "The frame's stages").
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A list of 10,000 rows 20 high, scrolled to 1,000; warmed up with the iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: scroll to 1,000 or 1,004 by the iteration's
-    ///   number, which keep rows 37 to 77, and settle.
+    /// - Wheel 4 px down over the list, settle, and read the rows that show; wheel 4 px up. Then 1,000 iterations in the windows of
+    ///   <c>PerformanceAssert.DoesNotAllocate</c>: wheel 4 px down or up by the iteration's number, which keeps rows 37 to 77, and
+    ///   settle.
     ///
     /// Expected:
-    /// - 0 bytes in every window.
+    /// - Rows 50 to 65 show after the first wheel (from 1,004 to 1,304); 0 bytes in every window.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
-    public async Task SteadyState_ScrollKeepingTheRows_AllocatesNothing()
+    public async Task SteadyState_WheelKeepingTheRows_AllocatesNothing()
     {
         Signal<IReadOnlyList<int>> items = Items(0, 10_000);
         var state = new VirtualListState();
         await using HeadlessApp app = await HeadlessApp.StartAsync(() => List(items, state));
         _ = app.PumpAndSettle();
+        state.Scroll.ScrollTo(new Vector2(0, 1_000));
+        _ = app.PumpAndSettle();
         void Step(int index)
         {
-            state.Scroll.ScrollTo(new Vector2(0, index % 2 == 0 ? 1_000 : 1_004));
+            app.Input.Handle(
+                new PointerInput(
+                    PointerInputKind.Wheel,
+                    100,
+                    150,
+                    PointerButton.None,
+                    PointerButtons.None,
+                    KeyModifiers.None,
+                    0,
+                    TimeSpan.Zero,
+                    PointerType.Mouse,
+                    new Vector2(0, index % 2 == 0 ? 4 : -4)
+                )
+            );
             _ = app.PumpAndSettle();
         }
 
+        Step(0);
+        IndexRange shown = state.VisibleRange.Get();
+        Step(1);
         for (int i = 0; i < 20; i++)
         {
             Step(i);
         }
 
+        Assert.Equal(new IndexRange(50, 66), shown);
         Assert.Equal((37, 77, 41), Rows(app));
         PerformanceAssert.DoesNotAllocate(1_000, Step);
     }
