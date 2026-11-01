@@ -917,6 +917,13 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Gets or sets what the window's access key, Alt and a letter or a digit that no handler stopped, does (design §13.1, "The
+    /// window's access keys"): the primitives set it, given the window's input, the letter, and the key's time, and it returns whether
+    /// the key did something.
+    /// </summary>
+    internal Func<WindowInput, char, TimeSpan, bool>? AccessKeys { get; set; }
+
+    /// <summary>
     /// Gets whether the access keys are underlined now (design §13.1, "Access keys"): always with Windows' setting on, else after
     /// Alt went down or while a menu opened from the keys is open, until a pointer's press.
     /// </summary>

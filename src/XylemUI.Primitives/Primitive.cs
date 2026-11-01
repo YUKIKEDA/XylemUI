@@ -27,6 +27,9 @@ public static partial class Primitive
         ArgumentNullException.ThrowIfNull(onClick);
         Element button = Box(content).Focusable().OnClick(onClick);
         var keys = new ButtonKeys(button.Tree!, button.Node);
+
+        // An access text in the content clicks the button (design §13.1, "The window's access keys").
+        RegisterHost(button.Tree!, button.Node, ButtonHost.Instance);
         return button
             .On(KeyEventKind.Down, EventPhase.Bubble, keys.Down)
             .On(KeyEventKind.Up, EventPhase.Bubble, keys.Up)
