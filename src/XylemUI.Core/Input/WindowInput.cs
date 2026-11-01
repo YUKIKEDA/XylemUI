@@ -52,6 +52,10 @@ internal sealed partial class WindowInput
     private PointerPoint[] _points = new PointerPoint[16];
     private bool _stopped;
 
+    // Whether Alt is down with no other key or press since it went down: its up then selects the menu bar (Avalonia's
+    // _ignoreAltUp, AccessKeyHandler.cs lines 216 to 218 and 256 to 258).
+    private bool _altAlone;
+
     // Whether enters and leaves are being sent, and whether a hover test came meanwhile and waits for them to end (PR #327's review).
     private bool _hovering;
     private bool _hoverPending;
@@ -309,7 +313,22 @@ internal sealed partial class WindowInput
             if (input.Key is Key.LeftAlt or Key.RightAlt)
             {
                 _tree.ShowAccessKeyCues();
+                if (!input.IsRepeat)
+                {
+                    _altAlone = (input.Modifiers & ~KeyModifiers.Alt) == 0;
+                }
             }
+            else
+            {
+                _altAlone = false;
+            }
+        }
+
+        bool altUpAlone = false;
+        if (input.Kind == KeyEventKind.Up && input.Key is Key.LeftAlt or Key.RightAlt)
+        {
+            altUpAlone = _altAlone;
+            _altAlone = false;
         }
 
         if (RouteKey(focus.KeyTarget, input))
@@ -341,6 +360,28 @@ internal sealed partial class WindowInput
         )
         {
             return accessKeys(this, (char)input.KeyChar.Value, input.Timestamp);
+        }
+
+        // Alt alone and F10 select the menu bar or leave it, after no handler stopped them (design §13.1, "The menu bar"). A down of
+        // Alt that leaves it does not select it again on its up (Avalonia's AccessKeyHandler.cs lines 203 to 214).
+        if (_tree.MenuBarKeys is { } menuBar)
+        {
+            if (input.Kind == KeyEventKind.Down && input.Key is Key.LeftAlt or Key.RightAlt)
+            {
+                if (!input.IsRepeat && menuBar(this, MenuBarKey.AltDown))
+                {
+                    _altAlone = false;
+                    return true;
+                }
+            }
+            else if (input.Kind == KeyEventKind.Down && input.Key == Key.F10 && input.Modifiers == KeyModifiers.None)
+            {
+                return menuBar(this, MenuBarKey.F10);
+            }
+            else if (altUpAlone)
+            {
+                return menuBar(this, MenuBarKey.AltUp);
+            }
         }
 
         return false;
@@ -442,6 +483,7 @@ internal sealed partial class WindowInput
     {
         _tree.Focus.SetLastPress(input.PointerType);
         _tree.HideAccessKeyCues();
+        _altAlone = false;
         Point(pointer, input);
 
         // A press outside a popup closes it, and goes on to the node under it unless the popup consumes it (design §7.3, "Closing").
