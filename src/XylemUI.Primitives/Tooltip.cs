@@ -120,8 +120,11 @@ public static partial class Primitive
                     Closed();
                 }
             });
+
+            // A tick the timer posted before it was disposed finds nothing to wait for.
             Scope.OnCleanup(() =>
             {
+                _waiting = Waiting.None;
                 _timer?.Dispose();
                 _timer = null;
                 if (_window.Shown == this)
@@ -232,8 +235,11 @@ public static partial class Primitive
             Box(_content())
                 .On(PointerEventKind.Enter, EventPhase.Bubble, TipEnter)
                 .On(PointerEventKind.Leave, EventPhase.Bubble, TipLeave)
-                .On(PointerEventKind.Down, EventPhase.Bubble, Down)
+                .On(PointerEventKind.Down, EventPhase.Bubble, TipDown)
                 .On(PointerEventKind.Wheel, EventPhase.Bubble, Wheel);
+
+        // A press on the tooltip hides it, and starts no long press (that is the anchor's).
+        private void TipDown(in PointerEvent e) => Hide();
 
         private void TipEnter(in PointerEvent e)
         {

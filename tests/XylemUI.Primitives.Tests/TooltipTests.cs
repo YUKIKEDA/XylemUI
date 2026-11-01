@@ -338,6 +338,38 @@ public sealed class TooltipTests
     }
 
     /// <summary>
+    /// A touch's press on a shown tooltip hides it, and starts no long press that would show it again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A 100 × 30 anchor at (0, 0) with a tooltip, shown with the mouse at (50, 15) (its content at (50, 35) to (130, 55)).
+    ///
+    /// Steps:
+    /// - A touch down at (60, 40), on the tooltip; pump 0 ms; pump 600 ms; release.
+    ///
+    /// Expected:
+    /// - No popup after the down, nor 600 ms later.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Tooltip_TouchPressOnIt_HidesIt_AndShowsItNoMore()
+    {
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => Box().Width(100).Height(30).Tooltip(() => Box().Width(80).Height(20)));
+        await Shown(app, 50, 15);
+        var seen = new List<int>();
+
+        Send(app, PointerInputKind.Down, 60, 40, PointerType.Touch);
+        app.Pump(TimeSpan.Zero);
+        seen.Add(app.Popups.Count);
+        app.Pump(600 * Ms);
+        seen.Add(app.Popups.Count);
+        Send(app, PointerInputKind.Up, 60, 40, PointerType.Touch);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal([0, 0], seen);
+    }
+
+    /// <summary>
     /// A disabled anchor shows no tooltip.
     /// </summary>
     /// <remarks>
