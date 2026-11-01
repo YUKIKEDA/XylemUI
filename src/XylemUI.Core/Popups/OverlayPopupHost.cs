@@ -189,6 +189,9 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         }
 
         _open.RemoveAt(index);
+
+        // A list taken again is not built until the next frame; until then, the pointer tests skip it, not the closed popup's hits.
+        popup.List.Build = 0;
         _lists.Push(popup.List);
 
         // The main list is drawn again without the popup's.

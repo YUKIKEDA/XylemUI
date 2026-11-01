@@ -457,17 +457,20 @@ public sealed class PopupTests
     }
 
     /// <summary>
-    /// A change inside a popup alone draws the popup's list again and not the window's.
+    /// A change inside a popup alone lays out and draws the popup again, and neither lays out the window's tree nor builds its list.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A 100 × 30 anchor with an open popup of a 200 × 100 box whose background follows a signal.
+    /// - A 100 × 30 anchor with an open popup of a box around a text; the box's background and the text follow signals, the text
+    ///   at first "a".
     ///
     /// Steps:
-    /// - Settle; read the window's builds and the presents; change the background and settle.
+    /// - Settle; read the window's builds, the presents, and the box's width; change the background and settle; change the text to
+    ///   "abcdef" and settle.
     ///
     /// Expected:
-    /// - One more present, and the same number of builds of the window's list.
+    /// - After each change, one more present and the same number of builds of the window's list. After the text, the box is wider,
+    ///   and the frame had no layout request in the window's tree: it would have built the window's list.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -475,17 +478,28 @@ public sealed class PopupTests
     {
         var open = Signal.Create(true);
         var paint = Signal.Create(new Paint(Color.FromRgb(0xff0000)));
+        var label = Signal.Create("a");
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Box().Width(100).Height(30).Popup(open, () => Box().Width(200).Height(100).Background(paint))
+            Box().Width(100).Height(30).Popup(open, () => Box(Elements.Text(() => label.Get())).Background(paint))
         );
         _ = app.PumpAndSettle();
         int builds = app.Frames.MainBuilds;
         int presents = app.Frames.PresentCount;
+        UiTree tree = app.Tree;
+        NodeHandle box = tree.Nodes.GetRef(tree.Nodes.GetRef(app.Popups[0].Node).FirstChild).FirstChild;
+        float before = tree.GetRect(box).Width;
 
         paint.Set(new Paint(Color.FromRgb(0x00ff00)));
         _ = app.PumpAndSettle();
 
         Assert.Equal(presents + 1, app.Frames.PresentCount);
+        Assert.Equal(builds, app.Frames.MainBuilds);
+
+        label.Set("abcdef");
+        _ = app.PumpAndSettle();
+
+        Assert.True(tree.GetRect(box).Width > before);
+        Assert.Equal(presents + 2, app.Frames.PresentCount);
         Assert.Equal(builds, app.Frames.MainBuilds);
     }
 

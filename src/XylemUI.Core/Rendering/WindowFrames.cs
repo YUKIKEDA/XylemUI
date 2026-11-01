@@ -303,6 +303,7 @@ internal sealed partial class WindowFrames
             Array.Resize(ref _drawn, Math.Max(count, _drawn.Length * 2));
         }
 
+        int refused = _atlas.RefusedCount;
         bool built = false;
         if (main)
         {
@@ -329,6 +330,14 @@ internal sealed partial class WindowFrames
         if (!built)
         {
             return false;
+        }
+
+        // Without a frame of the atlas, the plots the window's list used cannot be evicted, and an atlas at its page limit refuses
+        // the popup's new glyphs until the next one; the next frame builds the window's list, which starts it, and draws them (PR
+        // #552's review).
+        if (!main && _atlas.RefusedCount != refused)
+        {
+            _tree.MarkRootsToBuild();
         }
 
         _target.Draw(_drawn.AsSpan(0, count), ClearColor, _atlas);

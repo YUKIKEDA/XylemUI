@@ -1618,7 +1618,8 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Records that a render root went away, so that the next frame draws the window's list again (design §7.3, "Display lists").
+    /// Records that the next frame builds the window's list again: a render root went away, or a popup's list alone was built and
+    /// the glyph atlas refused glyphs (design §7.3, "Display lists").
     /// </summary>
     internal void MarkRootsToBuild()
     {

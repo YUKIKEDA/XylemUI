@@ -834,7 +834,8 @@ internal sealed partial class WindowInput
     }
 
     // The popups a press outside them closes, before the press is routed. Returns whether the press stops there; when it goes on, the
-    // node under it is found again without the popups closed, as their roots left the tree.
+    // node under it is found again without the popups closed, as their roots left the tree. A press that stops is not tracked: its up
+    // goes to the node under the pointer as an up with no press, which makes no click, as the press set no click origin.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool PressOutsidePopups(PointerState pointer, in PointerInput input)
     {
