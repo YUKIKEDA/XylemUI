@@ -13,10 +13,12 @@ public static partial class Primitive
     /// Makes a menu bar (design §13.1, "The menu bar"): a row of <see cref="MenuBarItem"/>s with no look of its own. Alt alone (down
     /// and up with no other key between) or F10 selects it: the first item takes the focus, and no menu opens. While it is selected,
     /// Left and Right move between the items, round at the ends; Down, Enter, and Space open the item's menu with its first item
-    /// focused, and Up with its last; a letter is an item's access key without Alt. Alt, F10, and Esc while no menu is open leave it
-    /// and give the focus back to where it was; Esc while a menu is open closes the menu only. Choosing a menu's item leaves it too,
-    /// and so does the focus moving out of the bar and its menus. While a menu is open, Left and Right that the menu does not take
-    /// open the next item's menu. The items take no focus while the bar is not selected, so Tab does not stop at them.
+    /// focused, and Up with its last; a letter is an item's access key without Alt. Alt's down and F10 leave it, closing a menu open,
+    /// and give the focus back to where it was, and so does Esc while no menu is open; Esc while a menu is open closes the menu only.
+    /// Choosing a menu's item leaves it too, before the item's action runs; the focus moving out of the bar and its menus leaves it
+    /// with no focus given back. While a menu is open, Left and Right that the menu does not take open the next item's menu. Alt
+    /// alone and F10 do not select it while another popup is open, a tooltip apart. The items take no focus while the bar is not
+    /// selected, so Tab does not stop at them.
     /// </summary>
     /// <param name="items">The items, each made by <see cref="MenuBarItem"/>.</param>
     /// <returns>The menu bar.</returns>

@@ -21,12 +21,12 @@ public sealed class MenuBarTests
     /// Steps:
     /// - Alt alone, then Alt; F10, then F10; Alt alone, then Esc; reading the focus and the popups after each.
     /// - Alt down, F5 with Alt, Alt up; Alt down, a press on the box, Alt up; reading the focus after each.
-    /// - Open the second box's menu; Alt alone; F10; reading the focus and the popups.
+    /// - Open the second box's menu; Alt alone; F10; reading the focus and the popups after each.
     ///
     /// Expected:
     /// - Each first key focuses "File" with no popup; each second key gives the focus back to the box.
     /// - After both Alt with a key or a press, the box keeps the focus.
-    /// - The menu's "Cut" keeps the focus, in the one popup.
+    /// - The menu's "Cut" keeps the focus, in the one popup, after each.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -62,16 +62,19 @@ public sealed class MenuBarTests
         NodeHandle afterPress = app.Tree.Focus.Focused;
         bar.SecondMenu.Set(true);
         _ = app.PumpAndSettle();
+        var withMenu = new List<(string Focused, int Popups)>();
         PressAlt(app);
+        withMenu.Add((bar.NameOf(app.Tree.Focus.Focused), app.Popups.Count));
         _ = app.Keyboard.Press(Key.F10);
         _ = app.PumpAndSettle();
+        withMenu.Add((bar.NameOf(app.Tree.Focus.Focused), app.Popups.Count));
 
         NodeHandle file = bar.File.Node;
         NodeHandle content = bar.Content.Node;
         Assert.Equal([(file, 0), (content, 0), (file, 0), (content, 0), (file, 0), (content, 0)], steps);
         Assert.Equal(content, afterKey);
         Assert.Equal(content, afterPress);
-        Assert.Equal(("Cut", 1), (bar.NameOf(app.Tree.Focus.Focused), app.Popups.Count));
+        Assert.Equal([("Cut", 1), ("Cut", 1)], withMenu);
     }
 
     /// <summary>
@@ -118,18 +121,19 @@ public sealed class MenuBarTests
 
     /// <summary>
     /// While a menu of the bar is open, Left and Right that the menu does not take open the next item's menu, passing over the
-    /// disabled one: Right on an item with no submenu, Left in the first panel. In a submenu, Right opens it and Left closes it.
+    /// disabled one: Right on an item with no submenu, Left in the first panel. In a submenu, Right opens it and Left closes it. Esc
+    /// in the menu moved to closes it and leaves the focus on its item of the bar.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The bar of <see cref="Start"/>; "File"'s menu: "New", a submenu "Recent" of "One", and "Exit".
     ///
     /// Steps:
-    /// - F10, Down; Right; Left; Down, Right (opens "Recent"); Left; Right; Right (on "One").
+    /// - F10, Down; Right; Left; Down, Right (opens "Recent"); Left; Right; Right (on "One"); Esc.
     ///
     /// Expected:
     /// - Focused after each, with the popups: "View" menu's "Zoom" (1); "New" (1); "Recent" (1) then "One" (2); "Recent" (1);
-    ///   "One" (2); "Zoom" (1).
+    ///   "One" (2); "Zoom" (1); "View" (0).
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -141,14 +145,14 @@ public sealed class MenuBarTests
         _ = app.Keyboard.Press(Key.Down);
         _ = app.PumpAndSettle();
         var steps = new List<(string Focused, int Popups)>();
-        foreach (Key key in (Key[])[Key.Right, Key.Left, Key.Down, Key.Right, Key.Left, Key.Right, Key.Right])
+        foreach (Key key in (Key[])[Key.Right, Key.Left, Key.Down, Key.Right, Key.Left, Key.Right, Key.Right, Key.Escape])
         {
             _ = app.Keyboard.Press(key);
             _ = app.PumpAndSettle();
             steps.Add((bar.NameOf(app.Tree.Focus.Focused), app.Popups.Count));
         }
 
-        Assert.Equal([("Zoom", 1), ("New", 1), ("Recent", 1), ("One", 2), ("Recent", 1), ("One", 2), ("Zoom", 1)], steps);
+        Assert.Equal([("Zoom", 1), ("New", 1), ("Recent", 1), ("One", 2), ("Recent", 1), ("One", 2), ("Zoom", 1), ("View", 0)], steps);
     }
 
     /// <summary>
@@ -163,12 +167,12 @@ public sealed class MenuBarTests
     /// Steps:
     /// - Alt+V; Esc; Esc; reading the focus and the popups after each.
     /// - F10; V; Enter; reading the focus, the popups, and the count.
-    /// - Open the dialog; Alt+V; Alt alone; F10; reading the popups and the focus.
+    /// - Open the dialog; Alt+V, reading whether it was handled; Alt alone; F10; reading the focus and the popups after each.
     ///
     /// Expected:
     /// - "Zoom" (1); "View" (0); the box (0).
     /// - "Zoom" (1); then the box (0) and one choice.
-    /// - One popup, the dialog's, after each, and the focus in the dialog.
+    /// - Alt+V not handled; the focus in the dialog, in the one popup, after each.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -197,15 +201,24 @@ public sealed class MenuBarTests
 
         bar.Dialog.Set(true);
         _ = app.PumpAndSettle();
-        _ = app.Keyboard.Press(Key.V, KeyModifiers.Alt);
+        bool handled = app.Keyboard.Press(Key.V, KeyModifiers.Alt);
+        var inDialog = new List<(string Focused, int Popups)>();
+        void ReadDialog()
+        {
+            _ = app.PumpAndSettle();
+            inDialog.Add((bar.NameOf(app.Tree.Focus.Focused), app.Popups.Count));
+        }
+
+        ReadDialog();
         PressAlt(app);
+        ReadDialog();
         _ = app.Keyboard.Press(Key.F10);
-        _ = app.PumpAndSettle();
+        ReadDialog();
 
         Assert.Equal([("Zoom", 1), ("View", 0), ("content", 0), ("Zoom", 1), ("content", 0)], steps);
         Assert.Equal(1, bar.Zooms);
-        _ = Assert.Single(app.Popups);
-        Assert.Equal("dialog", bar.NameOf(app.Tree.Focus.Focused));
+        Assert.False(handled);
+        Assert.Equal([("dialog", 1), ("dialog", 1), ("dialog", 1)], inDialog);
     }
 
     /// <summary>
