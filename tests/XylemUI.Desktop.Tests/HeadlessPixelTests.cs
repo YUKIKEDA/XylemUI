@@ -427,7 +427,9 @@ public sealed class HeadlessPixelTests
 
         _ = Assert.Single(app.Popups);
         await app.MatchesGoldenAsync("menu-access-keys.png");
+    }
 
+    /// <summary>
     /// An open select draws its list below its box in the panel the app gives, with the focused row's look, and matches its golden
     /// (row P02d2, design §13.1, "Select").
     /// </summary>

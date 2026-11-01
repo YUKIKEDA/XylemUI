@@ -5044,7 +5044,7 @@ public sealed record SelectOptions<T>
   - 実装で決めた形（P02d2 の 3 つ目の PR）: 設定は `TextEditingSettings.KeyboardCues` として、欄の設定と同じく窓が読み、`WM_SETTINGCHANGE` で読み直す。木は、設定・Alt・メニューの 3 つから見せるかどうかを 1 つの signal にまとめ、`AccessText` はその signal を読んで書き直す。「キーで開いたメニュー」は、開いたときに最後の入力がキーボードだったメニューとする（`FocusManager.LastInputWasKeyboard`）。Shift+F10、アプリケーションキー、Enter と右キーで開くサブメニュー、アプリがキーで開く `Menu` のどれも、この 1 つの規則に入る
 - **開いたメニューの中の文字:** 開いたメニューでは、Alt と Shift の有無によらず（Control と Meta が無いとき）、打った文字で項目を選ぶ。文字はキーの `KeyChar`（配列どおりの文字）で比べる（Avalonia の `MenuItemAccessKeyHandler.cs` 22〜34 行目。Windows の標準のメニューも同じ。Flutter は Alt+文字が要る）。そのパネルの使える項目のうち、キーが合うものが 1 つなら、選ぶかサブメニューを開いて最初の項目にフォーカスする。複数あれば、選ばずに今のフォーカスの次のものへフォーカスを移し、端では最初に戻る（Avalonia の `DefaultMenuInteractionHandler.cs` 86〜90 行目）。合うものが無ければ何もしない
 - **確かめ方:**
-  - `XylemUI.Primitives.Tests`: Tooltip の出るまでの時間・続けて移ったとき・隠れる 6 つの場合・置き場所・同時に 1 つ・スコープを積まないこと・長押し。Select の閉じているときと開いているときのキーの表の各行・使えない選択肢・値が無いとき・決めると取り消し・文字で探す。アクセスキーの `_` と `__`・下線を見せる 3 つの場合・1 つと複数の文字
+  - `XylemUI.Primitives.Tests`: Tooltip の出るまでの時間・続けて移ったとき・隠れる 6 つの場合・置き場所・同時に 1 つ・スコープを積まないこと・長押し。Select の閉じているときと開いているときのキーの表の各行・使えない選択肢・値が無いとき・決めると取り消し・文字で探す。アクセスキーの `_` と `__`・下線を見せる 3 つの場合・1 つと複数の文字。アクセスキーのテストは、`AccessText` が文字の葉を作り HarfBuzz が要るので、Windows の `XylemUI.Desktop.Tests` に置く（P02d2 の 3 つ目の PR）
   - golden: Tooltip と、開いた Select の 2 枚（`HeadlessPixelTests`）
   - 費用（`XylemUI.E2E`）: Tooltip を出すフレームと、開いた Select の中でキーとポインタで移るフレーム。後の 2 つは割り当て 0
 
