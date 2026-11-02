@@ -342,8 +342,8 @@ public sealed class AccessibilityTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A column of a box holding a button "inside", hidden by its style before the tree is made, and a Show of a button "shown"
-    ///   whose condition is true.
+    /// - A column of a box holding a button "inside", hidden by its style before the tree is made, and a Show 30 high of a button
+    ///   "shown" 20 high whose condition is true: taking the button out changes no node's box.
     ///
     /// Steps:
     /// - Make the tree; read which buttons it has. Show the box; settle; read. Set the condition false; settle; read. Set it true;
@@ -359,7 +359,7 @@ public sealed class AccessibilityTests
         var when = Signal.Create(true);
         Element box = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Column(box = Box(Button("inside", () => { })), Show(when, () => Button("shown", () => { })))
+            Column(box = Box(Button("inside", () => { })), Show(when, () => Button("shown", () => { }).Height(20)).Height(30))
         );
         app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = true });
         _ = app.PumpAndSettle();
@@ -379,18 +379,19 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
-    /// A node the layout moves takes its new box, and an update records each node once, also a node whose own values and box both
-    /// change.
+    /// A node the layout moves takes its new box, also below a node the update does not make again, and an update records each node
+    /// once, also a node whose own values and box both change.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A column of a button "first" 30 high and a button "second"; a bridge that records what it is handed; the tree made.
+    /// - A column of a button "first" 30 high, a button "second" 30 high, and a box 200 wide with no role holding a group that
+    ///   holds a button "third" as wide as the box; a bridge that records what it is handed; the tree made.
     ///
     /// Steps:
-    /// - Make "first" 60 high; settle; read the record and "second"'s box.
+    /// - Make "first" 60 high and name it "First"; make the box 300 wide; settle; read the record and the boxes.
     ///
     /// Expected:
-    /// - Each node's id once in the record, "first" and "second" among them; "second" at y = 60.
+    /// - Each node's id once in the record, "first" and "second" among them; "second" at y = 60; "third" 300 wide, as it was 200.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -398,16 +399,26 @@ public sealed class AccessibilityTests
     {
         Element first = default;
         Element second = default;
+        Element third = default;
+        Element box = default;
+        var group = new AccessibilityInfo { Role = SemanticsRole.Group };
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Column(first = Button("first", () => { }).Height(30), second = Button("second", () => { }).Height(30))
+            Column(
+                first = Button("first", () => { }).Height(30),
+                second = Button("second", () => { }).Height(30),
+                box = Column(Column(third = Button("third", () => { })).Accessible(group)).Width(200)
+            )
         );
         _ = app.PumpAndSettle();
+        float before = app.AccessibilityOf(third).Bounds.Width;
         var bridge = new Recorder();
         app.Tree.Accessibility.Bridge = bridge;
         _ = app.AccessibilityTree();
         bridge.Changes.Clear();
 
         app.Tree.SetStyle(first.Node, app.Tree.Nodes.GetRef(first.Node).Layout.Style with { Height = Length.Px(60) });
+        app.Tree.SetAccessibility(first.Node, new AccessibilityInfo { Name = "First" });
+        app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Width = Length.Px(300) });
         _ = app.PumpAndSettle();
         AccessibilityNodeId firstId = app.Tree.Accessibility.Find(first.Node)!.Id;
         AccessibilityNodeId secondId = app.Tree.Accessibility.Find(second.Node)!.Id;
@@ -416,6 +427,7 @@ public sealed class AccessibilityTests
         Assert.Contains(bridge.Changes, c => c.Id == firstId);
         Assert.Contains(bridge.Changes, c => c.Id == secondId);
         Assert.Equal(60, app.AccessibilityOf(second).Bounds.Y);
+        Assert.Equal((200f, 300f), (before, app.AccessibilityOf(third).Bounds.Width));
     }
 
     /// <summary>
