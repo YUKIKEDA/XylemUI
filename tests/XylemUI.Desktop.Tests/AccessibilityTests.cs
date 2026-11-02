@@ -284,23 +284,24 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
-    /// A frame of a window whose accessibility tree is made, delivered and drawn, allocates nothing when it changes no name: the
-    /// pointer moving over two buttons changes their hover, which marks them, and their nodes are made again with the same values.
+    /// A frame of a window whose accessibility tree is made, delivered and drawn, allocates nothing when it changes no name: the focus
+    /// moving between two buttons marks them, and their nodes are made again with the same names; the pointer moving over them changes
+    /// their hover, which marks nothing.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - Two buttons with a hovered look; the tree made; warmed up with the iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: move the pointer over the first button or the
-    ///   second by the iteration's number, and settle.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: focus the first button or the second, and move
+    ///   the pointer over it, by the iteration's number; settle.
     ///
     /// Expected:
     /// - 0 bytes in every window.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
-    public async Task SteadyState_HoverWithTheTree_AllocatesNothing()
+    public async Task SteadyState_FocusAndHoverWithTheTree_AllocatesNothing()
     {
         var look = new PaintStyle { Background = new Paint(Color.FromRgb(0x336699)) };
         Element first = default;
@@ -319,10 +320,12 @@ public sealed class AccessibilityTests
         {
             if (index % 2 == 0)
             {
+                _ = app.Focus(first);
                 app.Pointer.Move(x0, y0);
             }
             else
             {
+                _ = app.Focus(other);
                 app.Pointer.Move(x1, y1);
             }
 
@@ -496,18 +499,18 @@ public sealed class AccessibilityTests
 
     /// <summary>
     /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
-    /// nothing.
+    /// nothing, before the tree's object is made and after it is made but not started.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A column of a button "first" 30 high and a button "second"; the accessibility tree not made.
     ///
     /// Steps:
-    /// - Make "first" 60 high, disable "second", and give "second" a name; settle; read whether the tree's object is made; read the
-    ///   marks and the tree's root.
+    /// - Make "first" 60 high, disable "second", and give "second" a name; settle; read whether the tree's object is made. Read the
+    ///   tree's object, which makes it; make "first" 90 high, enable "second", and name it "Two"; settle; read the marks and the root.
     ///
     /// Expected:
-    /// - The frames made no tree object; no marks, and no root.
+    /// - The frames made no tree object; then no marks, and no root.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -525,9 +528,16 @@ public sealed class AccessibilityTests
         app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Second" });
         _ = app.PumpAndSettle();
 
-        Assert.False(app.Tree.HasAccessibilityTree);
-        Assert.Equal(0, app.Tree.Accessibility.MarkedCount);
-        Assert.Null(app.Tree.Accessibility.Root);
+        bool made = app.Tree.HasAccessibilityTree;
+        AccessibilityTree tree = app.Tree.Accessibility;
+        app.Tree.SetStyle(first.Node, app.Tree.Nodes.GetRef(first.Node).Layout.Style with { Height = Length.Px(90) });
+        app.Tree.SetPseudoState(second.Node, PseudoState.Disabled, false);
+        app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Two" });
+        _ = app.PumpAndSettle();
+
+        Assert.False(made);
+        Assert.Equal(0, tree.MarkedCount);
+        Assert.Null(tree.Root);
     }
 
     /// <summary>
