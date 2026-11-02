@@ -2502,8 +2502,14 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
   - Expand と Collapse の操作: ポップアップのアンカー（`.Popup`、Select、子のメニューを持つメニューの項目）。アンカーの開く Signal を書く
   - 選択: Select の選択肢と `Selected` を付けた ListItem は、選ばれたかを節に書き、選ぶ操作は Click を配る
   - スクロールする箱は、スクロールの位置と最大（`accesskit_node_set_scroll_y`・`_max` と x）を書き、スクロールの操作で `ScrollState` を動かす。すべての節は ScrollIntoView の操作を持ち、見える所まで動かす（§7「Bring into view」、仮想化した行は `ScrollToIndex`）
-  - 文字の欄の TextPattern（キャレットと選択）は、AccessKit の形の文字の run（`TextRun` の節と文字の長さ）を欄が渡すことで出る。その形と作り方は行 P02g2 で決める。P02g では、欄の中身を値として出す
-- **部品の既定の役:** ボタン Button、文字の欄 Edit（AccessKit の `TextInput`）、ラベルと文字の葉 Text（ほかの節の名前にたたまれない時だけ節になる）、リンクの範囲 Hyperlink（§4.8、テキストのノードの子の節）、メニュー Menu、メニューバー MenuBar、メニューの項目 MenuItem、Select ComboBox とその選択肢 ListItem、Tooltip ToolTip、ダイアログ Dialog、スクロールする箱 ScrollViewer、仮想化した並び List とその行 ListItem。`SemanticsRole` から AccessKit の役への対応は、実装の 1 つ目の PR で表にする
+  - 文字の欄の TextPattern（キャレットと選択）は、AccessKit の形の文字の run（`TextRun` の節と文字の長さ）を欄が渡すことで出る。その形と作り方は行 P02g2 で決める。P02g では、欄の中身を値として出す。値は、a11y の段が節を直す時に欄の文字の signal から読む。文字が変わると欄の中の文字の葉に印が付き、その節が直る。打鍵ごとに情報を作らない（#627 の実装。打鍵ごとに情報を作る形では、`input` の文字の欄の入力の段が 0.6 µs から 0.7〜0.8 µs になった）
+- **部品の既定の役:** ボタン Button、文字の欄 Edit（AccessKit の `TextInput`）、ラベルと文字の葉 Text（ほかの節の名前にたたまれない時だけ節になる）、リンクの範囲 Hyperlink（§4.8、テキストのノードの子の節）、メニュー Menu、メニューバー MenuBar、メニューの項目 MenuItem、Select ComboBox とその選択肢 ListItem、Tooltip ToolTip、ダイアログ Dialog、スクロールする箱 ScrollViewer、仮想化した並び List とその行 ListItem。`SemanticsRole` から AccessKit の役（accesskit-c 0.23.1 が使う accesskit 0.25.1 の `Role`）への対応は次のとおりで、括弧の中は accesskit_windows 0.35.1 が UIA に出す制御の種類である（`adapters/windows/src/node.rs` 65〜211 行、#627 の実装）
+  - Window → `Window`、Dialog → `Dialog`（Window）、Group → `Group`、ScrollViewer → `ScrollView`（Pane）、Separator → `Splitter`（Separator）
+  - Text → `Label`（Text）、Hyperlink → `Link`、Image → `Image`
+  - Button → `Button`、CheckBox → `CheckBox`、RadioButton → `RadioButton`、ComboBox → `ComboBox`、Slider → `Slider`、ProgressBar → `ProgressIndicator`（ProgressBar）
+  - Edit → `TextInput`（Edit）。複数行の欄は `MultilineTextInput`、パスワードの欄は `PasswordInput` にする。どちらも同じ Edit で出る。欄の種類を節に書くのは、adapter と一緒に 2 つ目の PR で入れる
+  - List → `List`、ListItem → `ListItem`。`ListBox` と `ListBoxOption` も UIA には同じ List と ListItem で出るので、分けない
+  - Menu → `Menu`、MenuBar → `MenuBar`、MenuItem → `MenuItem`、Tab → `TabList`（Tab）、TabItem → `Tab`（TabItem）、ToolTip → `Tooltip`
 - **id:** AccessKit の節の id（64 ビット、`AccessibilityNodeId`）は、節を作るたびに 1 つずつ増える番号で、同じ番号を 2 度使わないので、ノードの場所を使い回しても重ならない（#627 の実装。ノードの番号と世代を詰める形は、世代が 64 ビットで詰めきれない）。Avalonia は `GetHashCode()` から RuntimeId を作る（`AutomationNode.cs` 64 行目）。UIA の AutomationId は `.TestId` を `accesskit_node_set_author_id` に渡し、テストと UIA の自動テストが同じ名前で探せる。ノードが消えたら、その節を親の子から外す `TreeUpdate` を渡す
 - **イベント:** AccessKit は、前の木との違いから UIA のイベント（フォーカス・プロパティ・構造の変化）を出し、変わらない節には出さない。`TreeUpdate` は木が有効な間だけ渡す（`accesskit_windows_adapter_update_if_active`）
 - **仮想化した並び（§3.4.2）:** a11y の木には Active の行だけを載せる。行は ListItem で、番号と項目の数から PositionInSet と SizeOfSet（`accesskit_node_set_position_in_set`・`set_size_of_set`）を書く。行の ScrollIntoView は `ScrollToIndex(Nearest)` で動かす。範囲の外に持ったフォーカスのある行も木に載せ、UIA の IsOffscreen が true になる矩形（箱の見える範囲の外）を書く。AccessKit がそれで IsOffscreen を求めるかは、実装の 2 つ目の PR で確かめる。フォーカスが a11y の木に無いノードに残る状態は作らない
