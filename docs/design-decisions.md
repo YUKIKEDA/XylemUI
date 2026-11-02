@@ -799,6 +799,26 @@ Rejected:
 
 ---
 
+## アクセシビリティ（UIA）
+
+Decision:
+  a11y の情報（`AccessibilityInfo`）は UiTree の表に置き、役を持つノードから別の a11y の木を作る（P02g の Grill、Issue #620）。
+  木は最初の `WM_GETOBJECT` で作り始め、印の付いた節だけを layout の後に直して渡す。
+  UIA は AccessKit（C の bindings の release の静的ライブラリ）に任せ、変わった節だけを `TreeUpdate` で渡す（spike S10、Issue #623）。
+
+Reason:
+  S10 で、静的 CRT の NativeAOT にリンクでき（+253 KB）、本物の UIA のクライアントが読み、TextPattern と変わった節だけの更新を持つことを確かめた。
+  UIA のパターン・イベント・スレッド・TextPattern を自分で書く量が無くなり、GPUI と同じ実装の上に立つ。
+
+Rejected:
+  - 手書きの vtable で UIA を全部書く（値を箱に入れずに返せるが、パターン・イベント・TextPattern を全部書く。Grill の Q1 で一度これに決めたのは、AccessKit に出来合いの Windows のライブラリが無いという誤った前提による。PR #621 のレビュー）
+  - source-generated COM（Avalonia の形。F1 で実行ファイルが 0.43 MB 増え、値を `object` に箱詰めする）
+  - AccessKit をソースから作る（Rust のツールチェーンを vendor のビルドに足す。release の静的ライブラリで足りる）
+  - 毎フレーム木を全部作って渡す（GPUI の形。変化の無いフレームにも木の大きさに比例する費用がかかる）
+  - MSAA の `IAccessible` を返す（Flutter の Windows の既定。UIA のクライアントは代理を通して読む）
+
+---
+
 ## スコープ外
 
 Decision:
