@@ -26,7 +26,7 @@ Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in t
 
 ## Already decided
 
-- Native, by design: HarfBuzz (static); FreeType, wgpu-native, SDL3 (static, Linux only); fontconfig, libdbus-1 (dynamic, Linux only). Windows rasterizes glyphs with DirectWrite and macOS with Core Text, so they do not link FreeType (design §5.0.3, row T4).
+- Native, by design: HarfBuzz (static); AccessKit (static, Windows, from the C bindings' release archive pinned by version and SHA-256, not built from source, design §4.4.1 and §9, row P02g); FreeType, wgpu-native, SDL3 (static, Linux only); fontconfig, libdbus-1 (dynamic, Linux only). Windows rasterizes glyphs with DirectWrite and macOS with Core Text, so they do not link FreeType (design §5.0.3, row T4).
 - Managed: TerraFX.Interop.Windows (declarations only).
 - Not as dependencies of the engine: other UI stacks, Skia, CEF, GPU abstraction libraries (Silk.NET, Vortice).
 
