@@ -59,14 +59,14 @@ public sealed class AccessibilityTests
     /// <remarks>
     /// Preconditions:
     /// - A button whose content is a row of "Save" and "all"; a button "Close" that the app names "Close the window"; a button
-    ///   "Hidden" whose role the app sets to None.
+    ///   "Hidden" whose role the app sets to None; a scroll view of a text "Inside" whose role the app sets to None.
     ///
     /// Steps:
     /// - Find the buttons and read their names.
     ///
     /// Expected:
-    /// - "Save all" and "Close the window"; no third button. Its text "Hidden" is a text node of its own, under the window, as the
-    ///   children of a node with no role go up; "Save" and "all" are not.
+    /// - "Save all" and "Close the window"; no third button, and no scroll viewer. The texts "Hidden" and "Inside" are text nodes
+    ///   of their own, under the window, as the children of a node with no role go up; "Save" and "all" are not.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -76,13 +76,15 @@ public sealed class AccessibilityTests
             Column(
                 Button(Row(Elements.Text("Save"), Elements.Text("all")), () => { }),
                 Button("Close", () => { }).Accessible(new AccessibilityInfo { Name = "Close the window" }),
-                Button("Hidden", () => { }).Accessible(new AccessibilityInfo { Role = SemanticsRole.None })
+                Button("Hidden", () => { }).Accessible(new AccessibilityInfo { Role = SemanticsRole.None }),
+                ScrollView(Elements.Text("Inside")).Height(40).Accessible(new AccessibilityInfo { Role = SemanticsRole.None })
             )
         );
         _ = app.PumpAndSettle();
 
         Assert.Equal(["Save all", "Close the window"], app.FindByRole(SemanticsRole.Button).Select(b => app.AccessibilityOf(b).Name));
-        Assert.Equal(["Hidden"], app.FindByRole(SemanticsRole.Text).Select(t => app.AccessibilityOf(t).Name));
+        Assert.Empty(app.FindByRole(SemanticsRole.ScrollViewer));
+        Assert.Equal(["Hidden", "Inside"], app.FindByRole(SemanticsRole.Text).Select(t => app.AccessibilityOf(t).Name));
     }
 
     /// <summary>
@@ -333,6 +335,121 @@ public sealed class AccessibilityTests
         }
 
         PerformanceAssert.DoesNotAllocate(1_000, Step);
+    }
+
+    /// <summary>
+    /// A hidden subtree is not in the tree, and comes into it when it shows; a part a condition takes out goes away, and comes back.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a box holding a button "inside", hidden by its style before the tree is made, and a Show of a button "shown"
+    ///   whose condition is true.
+    ///
+    /// Steps:
+    /// - Make the tree; read which buttons it has. Show the box; settle; read. Set the condition false; settle; read. Set it true;
+    ///   settle; read.
+    ///
+    /// Expected:
+    /// - "shown"; then "inside" and "shown"; then "inside"; then "inside" and "shown".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task HiddenAndShownParts_LeaveTheTree_AndComeBack()
+    {
+        var when = Signal.Create(true);
+        Element box = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(box = Box(Button("inside", () => { })), Show(when, () => Button("shown", () => { })))
+        );
+        app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = true });
+        _ = app.PumpAndSettle();
+        string Buttons() => string.Join(',', app.FindByRole(SemanticsRole.Button).Select(b => app.AccessibilityOf(b).Name));
+        var seen = new List<string> { Buttons() };
+        app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = false });
+        _ = app.PumpAndSettle();
+        seen.Add(Buttons());
+        when.Set(false);
+        _ = app.PumpAndSettle();
+        seen.Add(Buttons());
+        when.Set(true);
+        _ = app.PumpAndSettle();
+        seen.Add(Buttons());
+
+        Assert.Equal(["shown", "inside,shown", "inside", "inside,shown"], seen);
+    }
+
+    /// <summary>
+    /// A node the layout moves takes its new box, and an update records each node once, also a node whose own values and box both
+    /// change.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a button "first" 30 high and a button "second"; a bridge that records what it is handed; the tree made.
+    ///
+    /// Steps:
+    /// - Make "first" 60 high; settle; read the record and "second"'s box.
+    ///
+    /// Expected:
+    /// - Each node's id once in the record, "first" and "second" among them; "second" at y = 60.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Move_GivesTheNewBox_AndRecordsEachNodeOnce()
+    {
+        Element first = default;
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(first = Button("first", () => { }).Height(30), second = Button("second", () => { }).Height(30))
+        );
+        _ = app.PumpAndSettle();
+        var bridge = new Recorder();
+        app.Tree.Accessibility.Bridge = bridge;
+        _ = app.AccessibilityTree();
+        bridge.Changes.Clear();
+
+        app.Tree.SetStyle(first.Node, app.Tree.Nodes.GetRef(first.Node).Layout.Style with { Height = Length.Px(60) });
+        _ = app.PumpAndSettle();
+        AccessibilityNodeId firstId = app.Tree.Accessibility.Find(first.Node)!.Id;
+        AccessibilityNodeId secondId = app.Tree.Accessibility.Find(second.Node)!.Id;
+
+        Assert.Equal(bridge.Changes.Count, bridge.Changes.Select(c => c.Id).Distinct().Count());
+        Assert.Contains(bridge.Changes, c => c.Id == firstId);
+        Assert.Contains(bridge.Changes, c => c.Id == secondId);
+        Assert.Equal(60, app.AccessibilityOf(second).Bounds.Y);
+    }
+
+    /// <summary>
+    /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a button "first" 30 high and a button "second"; the accessibility tree not made.
+    ///
+    /// Steps:
+    /// - Make "first" 60 high, disable "second", and give "second" a name; settle; read the marks and the tree's root.
+    ///
+    /// Expected:
+    /// - No marks, and no root.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Marks_AreNone_WhileTheTreeIsNotMade()
+    {
+        Element first = default;
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(first = Button("first", () => { }).Height(30), second = Button("second", () => { }))
+        );
+        _ = app.PumpAndSettle();
+
+        app.Tree.SetStyle(first.Node, app.Tree.Nodes.GetRef(first.Node).Layout.Style with { Height = Length.Px(60) });
+        app.Tree.SetPseudoState(second.Node, PseudoState.Disabled, true);
+        app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Second" });
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(0, app.Tree.Accessibility.MarkedCount);
+        Assert.Null(app.Tree.Accessibility.Root);
     }
 
     // Records each change the tree hands it.

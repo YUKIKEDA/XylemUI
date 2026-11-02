@@ -88,12 +88,13 @@ internal sealed class AccessibilityTree(UiTree tree)
     }
 
     /// <summary>
-    /// Marks a node of the UI tree whose change may change the accessibility tree; nothing while the tree is not made.
+    /// Marks a node of the UI tree whose change may change the accessibility tree. Its callers mark only once the tree is made
+    /// (<see cref="UiTree.AccessibilityActive"/>), so that a window nobody reads keeps no marks.
     /// </summary>
     /// <param name="node">The node.</param>
     public void Mark(NodeHandle node)
     {
-        if (IsActive && _marked.Add(node))
+        if (_marked.Add(node))
         {
             tree.NoteWork();
         }
