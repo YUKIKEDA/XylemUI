@@ -799,6 +799,26 @@ Rejected:
 
 ---
 
+## アクセシビリティ（UIA）
+
+Decision:
+  a11y の情報（`AccessibilityInfo`）は UiTree の表に置き、役を持つノードから別の a11y の木を作る（P02g の Grill、Issue #620）。
+  木は最初の `WM_GETOBJECT` で作り始め、印の付いた節だけを layout の後に直す。矩形は問い合わせのたびに求める。
+  UIA の provider は手書きの vtable で、`UseComThreading` で UI スレッドの STA で受ける。TextPattern は行 P02g2。
+
+Reason:
+  手書きの vtable は値を箱に入れずに返せ、source-generated COM のリフレクションの実行時を持ち込まない（F1 で 4.28 → 4.71 MB）。
+  印の付いた節だけを直せば、変化の無いフレームの費用は 0 で、スクロールで木を直さない。
+
+Rejected:
+  - source-generated COM（Avalonia の形。F1 で実行ファイルが 0.43 MB 増え、値を `object` に箱詰めする）
+  - AccessKit の C の bindings（GPUI の形。Rust のツールチェーンを vendor のビルドに足し、出来合いの Windows のライブラリが無い）
+  - 毎フレーム木を全部作って渡す（GPUI の形。変化の無いフレームにも木の大きさに比例する費用がかかる）
+  - MSAA の `IAccessible` を返す（Flutter の Windows の既定。UIA のクライアントは代理を通して読む）
+  - 別のスレッドの UIA の呼び出しを UI スレッドへ回して待つ（Avalonia の `.Wait()`。`UseComThreading` で COM が回す）
+
+---
+
 ## スコープ外
 
 Decision:
