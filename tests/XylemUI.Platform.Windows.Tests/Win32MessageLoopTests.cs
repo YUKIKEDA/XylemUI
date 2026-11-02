@@ -19,6 +19,9 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     private static readonly (int Kind, uint Message, nint Window)[] Handled = new (int, uint, nint)[64];
     private static int _handled;
 
+    // The messages the hooks saw, all of them: the array above keeps only the first ones.
+    private static int _seen;
+
     /// <summary>
     /// While frames are requested, frame callbacks and posted messages both make progress.
     /// </summary>
@@ -82,8 +85,10 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     /// - When the loop wakes, record the CPU time again and the delay since Wake.
     ///
     /// Expected:
-    /// - No iteration happened between the first wait and the Wake call (no polling, no stray wake).
-    /// - The loop iterated exactly twice: one wait, one wake.
+    /// - No iteration without a message happened between the first wait and the Wake call (no polling, no stray wake). An iteration
+    ///   after which the hooks saw a message is a wake the operating system's message caused, which the loop must take, and is not
+    ///   counted (Issue #126: such wakes failed the test now and then on a busy machine).
+    /// - The loop iterated twice, one wait and one wake, and once more for each wake a message caused.
     /// - The UI thread used less than 50 ms of CPU while it waited. GetThreadTimes counts in scheduler ticks (about 15.6 ms), so
     ///   the bound is three ticks: one tick can land on the microseconds before the wait, and 300 ms of polling would still fail.
     /// - The loop woke less than 50 ms after Wake.
@@ -99,6 +104,8 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
         {
             int iterations = 0;
             int unexpectedWakes = 0;
+            int messageWakes = 0;
+            int seenBefore = 0;
             long cpuAtWait = 0;
             long cpuAtWake = 0;
             long wakeCalledAt = 0;
@@ -115,6 +122,7 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
                 if (iterations == 1)
                 {
                     _handled = 0;
+                    _seen = 0;
                     cpuAtWait = CurrentThreadCpuTime100ns();
                     waker = new Thread(() =>
                     {
@@ -126,8 +134,16 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
                 }
                 else if (Volatile.Read(ref wakeCalledAt) == 0)
                 {
-                    // Woken before our Wake: polling, or a wake leaked from another test.
-                    unexpectedWakes++;
+                    // Woken before our Wake. With a message the hooks saw since the last iteration, the operating system sent the
+                    // thread something (Issue #126): a wake the loop must take. With none, the loop polled, or a wake leaked.
+                    if (_seen > seenBefore)
+                    {
+                        messageWakes++;
+                    }
+                    else
+                    {
+                        unexpectedWakes++;
+                    }
                 }
                 else
                 {
@@ -140,6 +156,8 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
                 {
                     Win32MessageLoop.Quit();
                 }
+
+                seenBefore = _seen;
             };
 
             try
@@ -157,12 +175,12 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
             TimeSpan cpuWhileWaiting = TimeSpan.FromTicks(cpuAtWake - cpuAtWait);
             TimeSpan wakeDelay = Stopwatch.GetElapsedTime(Volatile.Read(ref wakeCalledAt), wokeAt);
             output?.WriteLine(
-                $"iterations={iterations} unexpectedWakes={unexpectedWakes} cpuWhileWaiting={cpuWhileWaiting.TotalMilliseconds:F3}ms wakeDelay={wakeDelay.TotalMilliseconds:F3}ms"
+                $"iterations={iterations} unexpectedWakes={unexpectedWakes} messageWakes={messageWakes} cpuWhileWaiting={cpuWhileWaiting.TotalMilliseconds:F3}ms wakeDelay={wakeDelay.TotalMilliseconds:F3}ms"
             );
 
             Assert.False(watchdog.Expired);
             Assert.True(unexpectedWakes == 0, $"The loop woke {unexpectedWakes} time(s) before Wake; handled meanwhile: {HandledMessages()}");
-            Assert.Equal(2, iterations);
+            Assert.Equal(2 + messageWakes, iterations);
             Assert.InRange(cpuWhileWaiting, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
             Assert.InRange(wakeDelay, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
         });
@@ -463,10 +481,14 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     [UnmanagedCallersOnly]
     private static LRESULT OnMessageTaken(int code, WPARAM wParam, LPARAM lParam)
     {
-        if (code >= 0 && _handled < Handled.Length)
+        if (code >= 0)
         {
-            MSG* message = (MSG*)lParam;
-            Handled[_handled++] = (1, message->message, message->hwnd);
+            _seen++;
+            if (_handled < Handled.Length)
+            {
+                MSG* message = (MSG*)lParam;
+                Handled[_handled++] = (1, message->message, message->hwnd);
+            }
         }
 
         return CallNextHookEx(HHOOK.NULL, code, wParam, lParam);
@@ -475,10 +497,14 @@ public sealed unsafe class Win32MessageLoopTests(UiThreadFixture ui)
     [UnmanagedCallersOnly]
     private static LRESULT OnMessageSent(int code, WPARAM wParam, LPARAM lParam)
     {
-        if (code >= 0 && _handled < Handled.Length)
+        if (code >= 0)
         {
-            CWPSTRUCT* message = (CWPSTRUCT*)lParam;
-            Handled[_handled++] = (2, message->message, message->hwnd);
+            _seen++;
+            if (_handled < Handled.Length)
+            {
+                CWPSTRUCT* message = (CWPSTRUCT*)lParam;
+                Handled[_handled++] = (2, message->message, message->hwnd);
+            }
         }
 
         return CallNextHookEx(HHOOK.NULL, code, wParam, lParam);

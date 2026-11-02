@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
 
@@ -5,7 +6,8 @@ namespace XylemUI.Platform.Windows.Tests;
 
 // The clipboard of Windows and the settings a text field draws with (row P02b, design §4.9, "The clipboard", "The caret", and
 // "Drawing the selection"). No test changes a setting of Windows: the reading again uses a reader the test sets. The clipboard test
-// puts the text the clipboard held back after it.
+// puts the text the clipboard held back after it. Another process may hold the clipboard open for a moment (the clipboard history
+// reads what a set wrote); the product tries once (design §4.9), so the tests try each step again for up to two seconds (Issue #585).
 [Collection(UiThreadGroup.Name)]
 public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
 {
@@ -28,19 +30,19 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         {
             using var window = new Win32Window("clipboard", 200, 100);
             var clipboard = new Win32Clipboard(window);
-            string? before = clipboard.GetText();
+            string? before = Before(window, clipboard);
             try
             {
-                Assert.True(clipboard.SetText("日本語 and text"));
-                Assert.Equal("日本語 and text", clipboard.GetText());
-                Assert.True(clipboard.SetText("a\0b"));
-                Assert.Equal("a b", clipboard.GetText());
+                Assert.True(Eventually(() => clipboard.SetText("日本語 and text")));
+                Assert.Equal("日本語 and text", Read(clipboard));
+                Assert.True(Eventually(() => clipboard.SetText("a\0b")));
+                Assert.Equal("a b", Read(clipboard));
             }
             finally
             {
                 if (before is not null)
                 {
-                    _ = clipboard.SetText(before);
+                    _ = Eventually(() => clipboard.SetText(before));
                 }
             }
         });
@@ -64,12 +66,12 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         {
             using var window = new Win32Window("clipboard", 200, 100);
             var clipboard = new Win32Clipboard(window);
-            string? before = clipboard.GetText();
+            string? before = Before(window, clipboard);
             try
             {
-                Assert.True(clipboard.SetText("text"));
+                Assert.True(Eventually(() => clipboard.SetText("text")));
                 bool afterSet = clipboard.HasText();
-                Assert.True(OpenClipboard(window.Hwnd) != BOOL.FALSE);
+                Assert.True(Eventually(() => OpenClipboard(window.Hwnd) != BOOL.FALSE));
                 try
                 {
                     Assert.True(EmptyClipboard() != BOOL.FALSE);
@@ -86,7 +88,7 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             {
                 if (before is not null)
                 {
-                    _ = clipboard.SetText(before);
+                    _ = Eventually(() => clipboard.SetText(before));
                 }
             }
         });
@@ -185,4 +187,45 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
                 Win32Window.TextEditingReader = previous;
             }
         });
+
+    // Tries a step of the clipboard again, every 10 ms for up to two seconds, while another process holds the clipboard open.
+    private static bool Eventually(Func<bool> attempt)
+    {
+        long until = Stopwatch.GetTimestamp() + (2 * Stopwatch.Frequency);
+        while (!attempt())
+        {
+            if (Stopwatch.GetTimestamp() > until)
+            {
+                return false;
+            }
+
+            Thread.Sleep(10);
+        }
+
+        return true;
+    }
+
+    // The text on the clipboard, read again while it cannot be opened (the read then gives none).
+    private static string? Read(Win32Clipboard clipboard)
+    {
+        string? text = null;
+        _ = Eventually(() => (text = clipboard.GetText()) is not null);
+        return text;
+    }
+
+    // The text the clipboard holds before a test, read once the clipboard can be opened: none when it holds no text.
+    private static string? Before(Win32Window window, Win32Clipboard clipboard)
+    {
+        _ = Eventually(() =>
+        {
+            if (OpenClipboard(window.Hwnd) == BOOL.FALSE)
+            {
+                return false;
+            }
+
+            _ = CloseClipboard();
+            return true;
+        });
+        return clipboard.HasText() ? Read(clipboard) : null;
+    }
 }
