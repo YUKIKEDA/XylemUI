@@ -124,8 +124,9 @@ internal sealed class UiTree
     // none costs nothing, and removing a node takes its ID with it.
     private readonly Dictionary<NodeHandle, string> _testIds = [];
 
-    // The accessibility tables and tree, in an object of their own: as five fields of the tree, they moved the tree's other fields,
-    // and the draw stage, which reads them for each node, took 2 to 4 % longer (`input`'s selection area of 1,000 leaves, P02g).
+    // The accessibility tables and tree, in an object of their own: as five fields of the tree, which moved its other fields, the
+    // frames of `input`'s selection area of 1,000 leaves, which make no accessibility tree, took 2 to 4 % longer; in one object, as
+    // long as before (docs/benchmarks/p02g.md).
     private readonly AccessibilityTables _a11y = new();
 
     /// <summary>
