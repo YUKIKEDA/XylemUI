@@ -8,7 +8,7 @@ alwaysApply: true
 When a problem is pointed out, do not fix only the cited spot and stop. Before fixing, check whether the same kind of gap exists elsewhere.
 
 - Look in the same file, in callees with the same contract, and in the paired code: the other platform backend, the other GPU backend, the overlay and windowed popup hosts, the JIT and NativeAOT builds.
-- Examples: a `ref` held across an arena allocation in `LayoutFlex` and the same pattern in `LayoutGrid`; a COM view released before `ResizeBuffers` on one path and not on the synchronous resize path; a `[DoesNotReturn]` throw helper used in one hot method while its sibling throws inline.
+- Examples: a `ref` held across an arena allocation in `LayoutFlex` and the same pattern in `LayoutGrid`; a COM view released before `ResizeBuffers` on one path and not on the synchronous resize path; a `[DoesNotReturn]` throw helper used in one hot method while its sibling throws inline; a virtualized list that keeps its anchor by key and its pending move by index, which a change of the items before the next frame sent to another row (PR #615's review).
 - If you find the same kind of problem, fix it together with the cited spot.
 - If you find none, say what you checked and that nothing remains.
 - A place called right already ("it goes through X, so it does Y") is read to the end of the path before it is called so. In Q2 the PR said `TreeScene` told the scheduler because it drew through `WindowFrames`; that `WindowFrames` had a `NoScheduler` of its own, and the review found it (PR #446).
