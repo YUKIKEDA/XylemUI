@@ -2487,7 +2487,7 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
 **P02g で入れる形（P02g の Grill でオーナーが決定、Issue #620）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）を読んで決めた。Flutter のパスは `engine/src/flutter/` と `packages/flutter/lib/src/` から、Avalonia は `src/` から、GPUI は `crates/` から書く。
 
 - **比べた 3 つの Windows での形:** Flutter は、UIA の provider をコンパイルで外し、既定で MSAA の `IAccessible` を返す（`shell/platform/windows/flutter_window.cc` 907〜932 行目、「UIA is currently disabled by default」）。UIA のクライアントは MSAA の代理を通して読む。Avalonia は、UIA を source-generated COM（`[GeneratedComClass]`）で書く（`Windows/Avalonia.Win32.Automation/AutomationNode.cs` 20〜26 行目）。GPUI は、AccessKit（`accesskit_windows` 0.34、zed の `Cargo.toml` 526〜529 行目）に毎フレーム木を全部渡し、UIA の実装と `WM_GETOBJECT` の答えを AccessKit に任せる（`gpui/src/window/a11y.rs` 578〜584 行目、`gpui_windows/src/events.rs` 836〜851 行目）
-- **provider の作り方:** UIA の provider は、`[UnmanagedCallersOnly]` の関数の vtable を持つネイティブの構造体で書く（F1 の `IDWriteTextAnalysisSource`、DD1 の `IDropTarget` と同じ形）。source-generated COM は、F1 で実行ファイルを 4.28 MB から 4.71 MB にした（上の段落）。Avalonia は、プロパティの値を `object` に箱詰めし、列挙を `GetType().IsEnum` で変える（`AutomationNode.cs` 142〜145 行目）。AccessKit は、Rust のツールチェーンを `vendor/` のビルドに足すことになり、出来合いの Windows のライブラリが無い（`AccessKit/accesskit-c` の README）。実行ファイルの大きさを、実装の 2 つ目の PR で測って記録する
+- **provider の作り方:** UIA の provider は、`[UnmanagedCallersOnly]` の関数の vtable を持つネイティブの構造体で書く（F1 の `IDWriteTextAnalysisSource`、DD1 の `IDropTarget` と同じ形）。source-generated COM は、F1 で実行ファイルを 4.28 MB から 4.71 MB にした（上の段落）。Avalonia は、プロパティの値を `object` に箱詰めし、列挙を `GetType().IsEnum` で変える（`AutomationNode.cs` 142〜145 行目）。AccessKit は Rust で書かれる。C の bindings（`AccessKit/accesskit-c`）の release 0.23.2 には、Windows の MSVC 向けの静的ライブラリがある（x86_64 の `accesskit.lib` は 9.5 MB、リンカへの CRT の指示は持たない）。NativeAOT の実行ファイル（静的 CRT、`engineering.mdc`）にリンクできるかと、実行ファイルがどれだけ増えるかは、まだ確かめていない（PR #621 のレビュー）。実行ファイルの大きさを、実装の 2 つ目の PR で測って記録する
 - **作る時:** 最初に `WM_GETOBJECT` が `UiaRootObjectId` を求めた時に a11y の木を作り始め、窓が閉じるまで持つ。それまでは何も作らず、費用は 0 である。Flutter は MSAA か UIA の問い合わせで semantics を有効にし、止めない（`flutter_window.cc` 898〜904 行目）。Avalonia も最初の `WM_GETOBJECT` で peer を作る（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 931〜937 行目）。窓を壊す時（`WM_DESTROY`）は `UiaReturnRawElementProvider(hwnd, 0, 0, null)` で切り離す
 - **スレッド:** provider は `ProviderOptions_ServerSideProvider | ProviderOptions_UseComThreading` を返す。Microsoft の文書（`ProviderOptions` の頁）は、このとき STA の provider は自分の STA のスレッドで呼ばれ、ほかの同期が要らないとする。XylemUI の UI スレッドは STA なので、provider は UI スレッドで Core の a11y の木を読む。Avalonia は、別のスレッドから来た呼び出しを UI スレッドへ回して `.Wait()` で待つ（`AutomationNode.cs` 199〜205 行目）
 - **a11y の木:** 役を持つノード（部品の既定の役か `.Accessible` の役）ごとに 1 つの節を作る。親は、役を持つ最も近い祖先の節である。役の無いノードは落とし、その子は親の節につく（GPUI の `a11y.rs` 429〜440 行目と同じ）。`Hidden` の部分木は載せない。根は窓（Window、名前は窓の題）で、開いているポップアップの根は、主の木の後に奥から順に根の子にする（§12.5 の `Find` と同じ順）。順は木の前順（§4.4）
@@ -3823,6 +3823,8 @@ public interface IAccessibilityBridge
     void NodesChanged(ReadOnlySpan<AccessibilityChange> changes);   // a11y の段が直した節と、変わったプロパティ
     void NotifyFocusChange(AccessibilityNodeId node);
 }
+
+// AccessibilityChange（節の id と変わったプロパティの組）と AccessibilityNodeId（節の世代付きの id）の形は、行 P02g の実装の 1 つ目の PR で決める
 ```
 
 ### 6.0 共通Platform Contract

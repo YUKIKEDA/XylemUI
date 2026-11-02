@@ -812,7 +812,7 @@ Reason:
 
 Rejected:
   - source-generated COM（Avalonia の形。F1 で実行ファイルが 0.43 MB 増え、値を `object` に箱詰めする）
-  - AccessKit の C の bindings（GPUI の形。Rust のツールチェーンを vendor のビルドに足し、出来合いの Windows のライブラリが無い）
+  - AccessKit の C の bindings（GPUI の形。release に MSVC の静的ライブラリ（x86_64 で 9.5 MB）があるが、NativeAOT の静的 CRT とリンクできるかと大きさは確かめていない）
   - 毎フレーム木を全部作って渡す（GPUI の形。変化の無いフレームにも木の大きさに比例する費用がかかる）
   - MSAA の `IAccessible` を返す（Flutter の Windows の既定。UIA のクライアントは代理を通して読む）
   - 別のスレッドの UIA の呼び出しを UI スレッドへ回して待つ（Avalonia の `.Wait()`。`UseComThreading` で COM が回す）
