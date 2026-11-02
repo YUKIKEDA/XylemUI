@@ -431,6 +431,36 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
+    /// A row a list takes out leaves the tree, though no node's box changes.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column 60 high whose rows, from the items "a" and "b", are buttons 20 high; the tree made.
+    ///
+    /// Steps:
+    /// - Set the items to "a"; settle; read which buttons the tree has.
+    ///
+    /// Expected:
+    /// - "a" alone.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task RowTakenOut_LeavesTheTree_ThoughNoBoxChanges()
+    {
+        var items = Signal.Create<IReadOnlyList<string>>(["a", "b"]);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column().Height(60).For(items, item => item, item => Button(item.Get(), () => { }).Height(20))
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+
+        items.Set(["a"]);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(["a"], app.FindByRole(SemanticsRole.Button).Select(b => app.AccessibilityOf(b).Name));
+    }
+
+    /// <summary>
     /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
     /// nothing.
     /// </summary>
