@@ -63,8 +63,10 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     private float _shift;
     private float _lastOffset;
 
-    // A move by index waiting for its row to be measured: the index, or -1, and the alignment.
-    private int _pendingIndex = -1;
+    // A move by index waiting for its row to be measured: its item's key, kept by key as the anchor is, so that a change of the
+    // items before the row is laid out keeps the same row (PR #615's review); and the alignment.
+    private TKey? _pendingKey;
+    private bool _hasPending;
     private ScrollAlign _pendingAlign;
 
     private VirtualBlock(
@@ -267,10 +269,10 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
         }
 
         // A move by index whose row is laid out now: the position again, with the row's measured length.
-        if (_pendingIndex >= 0 && _pendingIndex < _count && _rows.TryGetValue(_keys[_pendingIndex], out Row? target) && target.Live)
+        if (_hasPending && _rows.TryGetValue(_pendingKey!, out Row? target) && target.Live)
         {
-            PlaceIndex(_pendingIndex, _pendingAlign);
-            _pendingIndex = -1;
+            PlaceIndex(target.Index, _pendingAlign);
+            _hasPending = false;
         }
 
         float offset = Math.Max(0, AnchorOffset());
@@ -315,7 +317,8 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
         SyncAnchor();
         bool measured = _rows.TryGetValue(_keys[index], out Row? row) && row.Live;
         PlaceIndex(index, align);
-        _pendingIndex = measured ? -1 : index;
+        _hasPending = !measured;
+        _pendingKey = _keys[index];
         _pendingAlign = align;
         float offset = AnchorOffset();
         Vector2 now = _state.Scroll.OffsetValue;
@@ -486,6 +489,12 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
 
         _gone.Clear();
         RebuildLengths();
+
+        // A move by index whose item went has no row to place.
+        if (_hasPending && !_indexOf.ContainsKey(_pendingKey!))
+        {
+            _hasPending = false;
+        }
 
         if (_hasAnchorKey && _indexOf.TryGetValue(_anchorKey!, out int anchor))
         {

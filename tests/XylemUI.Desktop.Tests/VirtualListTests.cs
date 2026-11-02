@@ -463,6 +463,36 @@ public sealed class VirtualListTests
     }
 
     /// <summary>
+    /// A move by index waiting for its row follows the row's item when the items change before the row is laid out (PR #615's
+    /// review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A list of 10,000 rows in a box 300 high, each fifth 60 high and the others 20, with an estimated extent of 20.
+    ///
+    /// Steps:
+    /// - Move to row 6,000 with Bottom; before the next frame, put 10 items before the first; settle; read where row 6,000 shows.
+    ///
+    /// Expected:
+    /// - At 240 (300 - 60): the row of item 6,000, now at index 6,010, is the one put at the bottom.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ScrollToIndex_FollowsTheItem_WhenTheItemsChangeBeforeItsRow()
+    {
+        Signal<IReadOnlyList<int>> items = Items(0, 10_000);
+        var state = new VirtualListState();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => MixedList(items, state, focusable: false));
+        _ = app.PumpAndSettle();
+
+        state.ScrollToIndex(6_000, ScrollAlign.Bottom);
+        items.Set([.. Enumerable.Range(-10, 10), .. Enumerable.Range(0, 10_000)]);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(240, ShownAt(app, state, "row6000"));
+    }
+
+    /// <summary>
     /// Tab walks every row of a list, one after the other, though most of them are not made when it starts; Shift+Tab walks back.
     /// </summary>
     /// <remarks>
