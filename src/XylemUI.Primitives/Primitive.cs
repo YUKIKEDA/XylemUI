@@ -135,6 +135,11 @@ public static partial class Primitive
 internal static class Roles
 {
     /// <summary>
+    /// Gets the information of a text field; its value comes from its text's signal.
+    /// </summary>
+    public static AccessibilityInfo Edit { get; } = new() { Role = SemanticsRole.Edit };
+
+    /// <summary>
     /// Gets the information of a button.
     /// </summary>
     public static AccessibilityInfo Button { get; } = new() { Role = SemanticsRole.Button };

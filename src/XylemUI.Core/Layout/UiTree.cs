@@ -125,6 +125,7 @@ internal sealed class UiTree
     private readonly Dictionary<NodeHandle, string> _testIds = [];
     private readonly Dictionary<NodeHandle, AccessibilityInfo> _accessibility = [];
     private readonly Dictionary<NodeHandle, AccessibilityInfo> _partAccessibility = [];
+    private readonly Dictionary<NodeHandle, Signal<string>> _accessibilityValues = [];
     private readonly HashSet<NodeHandle> _popupAnchors = [];
     private AccessibilityTree? _accessibilityTree;
 
@@ -204,6 +205,26 @@ internal sealed class UiTree
         _partAccessibility[node] = info;
         MarkAccessibility(node);
     }
+
+    /// <summary>
+    /// Sets the signal whose value is a node's value to assistive technology when no information gives one: a text field's text. The
+    /// tree reads it when it makes the node again; a change of the text the node shows marks it.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The signal of its value.</param>
+    internal void SetAccessibilityValue(NodeHandle node, Signal<string> value)
+    {
+        _accessibilityValues[node] = value;
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Returns a node's value from its signal (<see cref="SetAccessibilityValue"/>), or <see langword="null"/> for none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value.</returns>
+    internal string? AccessibilityValueOf(NodeHandle node) =>
+        _accessibilityValues.Count > 0 && _accessibilityValues.TryGetValue(node, out Signal<string>? value) ? value.Peek() : null;
 
     /// <summary>
     /// Returns the accessibility information of a node: the app's over its part's, or <see langword="null"/> for neither.
@@ -2169,6 +2190,11 @@ internal sealed class UiTree
         if (_partAccessibility.Count > 0)
         {
             _ = _partAccessibility.Remove(node);
+        }
+
+        if (_accessibilityValues.Count > 0)
+        {
+            _ = _accessibilityValues.Remove(node);
         }
 
         if (_popupAnchors.Count > 0)

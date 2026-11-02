@@ -343,6 +343,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             name ??= tree.Title;
         }
 
+        string? value = info?.Value ?? tree.AccessibilityValueOf(handle);
         AccessibilityStates states = StatesOf(handle, info);
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         Vector2 childOffset = n.Layout.Style.IsScrollContainer ? -tree.ScrollOffsetOf(handle) : Vector2.Zero;
@@ -352,7 +353,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             node.Role != role
             || node.Name != name
             || node.Description != info?.Description
-            || node.Value != info?.Value
+            || node.Value != value
             || node.States != states
             || node.Range != info?.Range
             || node.ChildOffset != childOffset
@@ -361,7 +362,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         node.Role = role;
         node.Name = name;
         node.Description = info?.Description;
-        node.Value = info?.Value;
+        node.Value = value;
         node.States = states;
         node.Range = info?.Range;
         node.ChildOffset = childOffset;

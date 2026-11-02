@@ -461,6 +461,40 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
+    /// A text field's value is its text, also after the text changes; a password field has none.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a text field and a password field, both with the text "one"; the tree made.
+    ///
+    /// Steps:
+    /// - Set both texts to "two"; settle; read the values of both edits.
+    ///
+    /// Expected:
+    /// - "two" for the field, none for the password field.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task EditValue_FollowsTheText_AndAPasswordHasNone()
+    {
+        var text = Signal.Create("one");
+        var secret = Signal.Create("one");
+        Element field = default;
+        Element password = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(field = TextField(text), password = TextField(secret, new TextFieldOptions { Password = true }))
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+
+        text.Set("two");
+        secret.Set("two");
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(("two", (string?)null), (app.AccessibilityOf(field).Value, app.AccessibilityOf(password).Value));
+    }
+
+    /// <summary>
     /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
     /// nothing.
     /// </summary>
