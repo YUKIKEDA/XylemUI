@@ -265,6 +265,91 @@ public sealed class HeadlessApp : IAsyncDisposable
         return found;
     }
 
+    /// <summary>
+    /// Finds the nodes of the accessibility tree that have a role, and a name when one is given, in the tree's preorder (design
+    /// §12.5): the window's tree first, then each open popup's, back to front. The accessibility tree is made at the first call, as
+    /// when assistive technology first asks for it, and brought up to date with the frame drawn last.
+    /// </summary>
+    /// <param name="role">The role.</param>
+    /// <param name="name">The name, or <see langword="null"/> for any.</param>
+    /// <returns>The nodes; empty when none matches.</returns>
+    public IReadOnlyList<Element> FindByRole(SemanticsRole role, string? name = null)
+    {
+        VerifyRunning();
+        AccessibilityTree accessibility = AccessibilityTree();
+        var found = new List<Element>();
+        CollectByRole(accessibility.Root!, role, name, found);
+        return found;
+    }
+
+    /// <summary>
+    /// Returns what assistive technology reads of a node (design §12.5): its role, name, value, and states, and its box in the window.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <returns>What the accessibility tree holds of it.</returns>
+    /// <exception cref="InvalidOperationException">The node is not in the accessibility tree: it has no role, or is in a hidden
+    /// subtree.</exception>
+    public AccessibilityNodeInfo AccessibilityOf(Element element)
+    {
+        VerifyRunning();
+        AccessibilityNode node =
+            AccessibilityTree().Find(element.Node)
+            ?? throw new InvalidOperationException("The node is not in the accessibility tree: it has no role, or is in a hidden subtree.");
+        System.Numerics.Vector2 origin = new(node.Bounds.X, node.Bounds.Y);
+        for (AccessibilityNode? parent = node.Parent; parent is not null; parent = parent.Parent)
+        {
+            origin += new System.Numerics.Vector2(parent.Bounds.X, parent.Bounds.Y) + parent.ChildOffset;
+        }
+
+        AccessibilityStates states = node.States;
+        return new AccessibilityNodeInfo(
+            node.Role,
+            node.Name,
+            node.Description,
+            node.Value,
+            OwnStates(states),
+            (states & AccessibilityStates.Disabled) != 0,
+            (states & AccessibilityStates.Focused) != 0,
+            (states & AccessibilityStates.Focusable) != 0,
+            (states & AccessibilityStates.Expandable) != 0 ? (states & AccessibilityStates.Expanded) != 0 : null,
+            node.Range,
+            new Rect(origin.X, origin.Y, node.Bounds.Width, node.Bounds.Height),
+            node.Children.Count
+        );
+    }
+
+    /// <summary>
+    /// Gets the accessibility tree, made and brought up to date with the frame drawn last.
+    /// </summary>
+    /// <returns>The tree.</returns>
+    internal AccessibilityTree AccessibilityTree()
+    {
+        AccessibilityTree accessibility = Tree.Accessibility;
+        accessibility.Start();
+        accessibility.Update();
+        return accessibility;
+    }
+
+    private static SemanticsStates OwnStates(AccessibilityStates states) =>
+        ((states & AccessibilityStates.Checked) != 0 ? SemanticsStates.Checked : SemanticsStates.None)
+        | ((states & AccessibilityStates.Mixed) != 0 ? SemanticsStates.Mixed : SemanticsStates.None)
+        | ((states & AccessibilityStates.Selected) != 0 ? SemanticsStates.Selected : SemanticsStates.None)
+        | ((states & AccessibilityStates.ReadOnly) != 0 ? SemanticsStates.ReadOnly : SemanticsStates.None)
+        | ((states & AccessibilityStates.Required) != 0 ? SemanticsStates.Required : SemanticsStates.None);
+
+    private void CollectByRole(AccessibilityNode node, SemanticsRole role, string? name, List<Element> found)
+    {
+        if (node.Role == role && (name is null || node.Name == name))
+        {
+            found.Add(new Element(Tree, node.Node));
+        }
+
+        foreach (AccessibilityNode child in node.Children)
+        {
+            CollectByRole(child, role, name, found);
+        }
+    }
+
     // The window's tree, then each open popup's, back to front (Popups).
     private void CollectAll(string key, bool byText, List<Element> found)
     {

@@ -184,6 +184,19 @@ public static partial class Primitive
             }
 
             _tree.SetTextInputClient(_field, this);
+
+            // A field is an edit to assistive technology, with its text as its value; a password field shows none (design §4.4.1).
+            UiTree fieldTree = _tree;
+            NodeHandle fieldNode = _field;
+            bool password = options.Password;
+            _ = Effect.Create(() =>
+            {
+                string value = text.Get();
+                if (fieldTree.Nodes.IsAlive(fieldNode))
+                {
+                    fieldTree.SetPartAccessibility(fieldNode, new AccessibilityInfo { Role = SemanticsRole.Edit, Value = password ? null : value });
+                }
+            });
             Scope.OnCleanup(StopBlink);
             return field;
         }

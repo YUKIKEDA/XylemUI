@@ -26,6 +26,7 @@ public static partial class Primitive
     {
         ArgumentNullException.ThrowIfNull(onClick);
         Element button = Box(content).Focusable().OnClick(onClick);
+        button.Tree!.SetPartAccessibility(button.Node, Roles.Button);
         var keys = new ButtonKeys(button.Tree!, button.Node);
 
         // An access text in the content clicks the button (design §13.1, "The window's access keys").
@@ -125,4 +126,61 @@ public static partial class Primitive
             }
         }
     }
+}
+
+/// <summary>
+/// The accessibility information the parts give their nodes by default (design §13.1, §4.4.1): one object for each role, made
+/// once.
+/// </summary>
+internal static class Roles
+{
+    /// <summary>
+    /// Gets the information of a button.
+    /// </summary>
+    public static AccessibilityInfo Button { get; } = new() { Role = SemanticsRole.Button };
+
+    /// <summary>
+    /// Gets the information of a menu's panel.
+    /// </summary>
+    public static AccessibilityInfo Menu { get; } = new() { Role = SemanticsRole.Menu };
+
+    /// <summary>
+    /// Gets the information of a menu bar.
+    /// </summary>
+    public static AccessibilityInfo MenuBar { get; } = new() { Role = SemanticsRole.MenuBar };
+
+    /// <summary>
+    /// Gets the information of an item of a menu or a menu bar.
+    /// </summary>
+    public static AccessibilityInfo MenuItem { get; } = new() { Role = SemanticsRole.MenuItem };
+
+    /// <summary>
+    /// Gets the information of a select's box.
+    /// </summary>
+    public static AccessibilityInfo ComboBox { get; } = new() { Role = SemanticsRole.ComboBox };
+
+    /// <summary>
+    /// Gets the information of a select's list.
+    /// </summary>
+    public static AccessibilityInfo List { get; } = new() { Role = SemanticsRole.List };
+
+    /// <summary>
+    /// Gets the information of a choice of a select.
+    /// </summary>
+    public static AccessibilityInfo ListItem { get; } = new() { Role = SemanticsRole.ListItem };
+
+    /// <summary>
+    /// Gets the information of the choice a select shows.
+    /// </summary>
+    public static AccessibilityInfo SelectedListItem { get; } = new() { Role = SemanticsRole.ListItem, States = SemanticsStates.Selected };
+
+    /// <summary>
+    /// Gets the information of a tooltip.
+    /// </summary>
+    public static AccessibilityInfo ToolTip { get; } = new() { Role = SemanticsRole.ToolTip };
+
+    /// <summary>
+    /// Gets the information of a dialog's content.
+    /// </summary>
+    public static AccessibilityInfo Dialog { get; } = new() { Role = SemanticsRole.Dialog };
 }
