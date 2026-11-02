@@ -4,7 +4,7 @@ namespace XylemUI;
 /// What the layout, the frame, and the draw stage ask a virtualized list for (design §3.4, "The shape of P02e"), without its item
 /// types.
 /// </summary>
-internal interface IVirtualHost
+internal interface IVirtualHost : IVirtualizedFocusHost
 {
     /// <summary>
     /// Gets the length every row takes along the axis that scrolls, margins included, or <see langword="null"/> when each row is
@@ -87,4 +87,38 @@ internal interface IVirtualHost
     /// <param name="row">A child of the list's box.</param>
     /// <returns>Whether the row is drawn.</returns>
     bool Draws(NodeHandle row);
+
+    /// <summary>
+    /// Scrolls so that a row shows (<see cref="VirtualListState.ScrollToIndex"/>).
+    /// </summary>
+    /// <param name="index">The item's index.</param>
+    /// <param name="align">Where the row goes.</param>
+    void ScrollToIndex(int index, ScrollAlign align);
+
+    /// <summary>
+    /// Scrolls to a row kept outside the range when a node inside it is to be brought into view (design §3.4, "The rows that leave
+    /// the range"): the row has no position of its own then. Returns whether it did; a row laid out is brought into view as any
+    /// node is.
+    /// </summary>
+    /// <param name="row">A child of the list's box.</param>
+    /// <returns>Whether the list scrolled to the row.</returns>
+    bool RevealKeptRow(NodeHandle row);
+}
+
+/// <summary>
+/// What the focus asks a virtualized list when Tab would leave it, or pass over items it has not made (design §3.4.2, "Keyboard
+/// moves at a virtualized boundary").
+/// </summary>
+internal interface IVirtualizedFocusHost
+{
+    /// <summary>
+    /// Makes, at once, the rows after a row (before it, for Shift+Tab) that are not made yet, up to the row the walk found next or one
+    /// cache extent's length of rows made, so that Tab can go on into them. Returns whether it made a row; the focus then walks again, and leaves the
+    /// list when the rows made have no node that takes the focus.
+    /// </summary>
+    /// <param name="row">The row the focus is in: a child of the list's box.</param>
+    /// <param name="next">The row the walk found next in the list, or none when it found none in the list.</param>
+    /// <param name="backward">Whether the move is Shift+Tab.</param>
+    /// <returns>Whether a row was made.</returns>
+    bool MaterializeBeyond(NodeHandle row, NodeHandle next, bool backward);
 }
