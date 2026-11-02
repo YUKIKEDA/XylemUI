@@ -946,7 +946,6 @@ internal struct UiNode
     public NodeVisual? Visual;           // 箱の見た目と描く関数を持つノードだけ（§5.0「描画の段とフレームの駆動」、V1b）
     public NodeInput? Input;             // ハンドラ・カーソル・遮る印・フォーカスの印を持つノードだけ（§7、V1c・K1）
     public PseudoState Pseudo;           // Hovered / Pressed（V1c）、Focused / FocusVisible / FocusWithin / Disabled（K1）。§2.13
-    public SemanticsState Semantics;
     public NodeVersions Versions;        // キャッシュ妥当性判定（§11.5.2）
 }
 
@@ -962,10 +961,7 @@ internal struct DirtyState
 // カーソルは NodeInput に置いた（V1c の Grill）。Focusable・TabIndex・自分の Disabled も NodeInput に置き（K1）、
 // 受け継いだ Disabled は Pseudo のビットに持つ。IME の状態は欄が持ち、ノードには置かない（§4.7、P02c の Grill）
 
-internal struct SemanticsState
-{
-    public AccessibilityInfo? A11y;      // §4.4.1で拡張（役割・状態・アクション等）
-}
+// AccessibilityInfo（§4.4.1）は UiNode に置かず、付けたノードだけを持つ UiTree の表に置く（テスト ID と同じ、P02g の Grill）
 ```
 
 `UiNode` は大きな struct になるため、コピーを避けて `GetRef` / `in` 引数で扱う。サブ構造体ごとに別配列へ分ける SoA 化（Layout 用配列・Paint 用配列の分離）は、§11.3 のベンチマークでキャッシュミスが問題になった場合の最適化候補とする。
@@ -1277,6 +1273,7 @@ sequenceDiagram
     Sig->>Inv: Signal更新 → SelfDirty/SubtreeDirty伝播（Layout boundaryで吸収判定）
     Inv->>Mat: 可視範囲のノードのみ再materialize（§3.4）
     Mat->>Layout: LayoutRoots を深度順に処理し、各根で LayoutPass（§2.4.1）
+    Layout->>Layout: a11y の木があれば、印の付いた節だけを直し UIA のイベントを出す（§4.4.1、P02g）
     Layout->>Paint: rect更新 → DisplayList と HitTestList を同時再構築
     Paint->>Glyph: アトラスに無いグリフをワーカーで並べて描き、空けた場所を埋める（§5.0.3「初めて出るグリフ」）
     Glyph->>Dmg: 変更されたコマンドのold/new rectをunion
@@ -2246,7 +2243,7 @@ Released （CacheExtentの外まで離れた場合）: §2.3のScope機構でDis
 
 **v1 a11yとの契約**: a11y の木は、ノードの上の `AccessibilityInfo`（§4.4.1、§11.4）から作る別の木である（D3 の Grill、行 P02g）。仮想化リストでは、**a11yツリーに現れるノードは`Active`なアイテムに対応するmaterialize済みUiNodeだけ**とする。`Cached`と`Released`はノードとして載せず、仮想化した容器は項目の数と位置を報告する（Flutter の `scrollChildCount`、`packages/flutter/lib/src/semantics/semantics.dart` 5838 行目）。
 
-**フォーカスとの契約:** フォーカスを持つ行は、viewport が離れても Released にせず、捨てずに持つ。持った行は layout も描画もヒットもさせず、ホイールで離れた位置を勝手に戻さない（Flutter・Avalonia と同じ。§3.4「P02e で入れる形」の「範囲の外へ出た行」）。フォーカスの移動がその行を見える所まで動かすことを求めたときだけ、その行の番号へスクロールする。持った行のフォーカスを a11y にどう見せるか（画面の外の項目として木に載せる）は、a11y の木を作る行 P02g で決める。フォーカスが a11y の木に無いノードに残る状態は作らない（P02e の Grill、Issue #606）。
+**フォーカスとの契約:** フォーカスを持つ行は、viewport が離れても Released にせず、捨てずに持つ。持った行は layout も描画もヒットもさせず、ホイールで離れた位置を勝手に戻さない（Flutter・Avalonia と同じ。§3.4「P02e で入れる形」の「範囲の外へ出た行」）。フォーカスの移動がその行を見える所まで動かすことを求めたときだけ、その行の番号へスクロールする。持った行は、IsOffscreen を true にして a11y の木に載せる（P02g の Grill、Issue #620、§4.4.1「P02g で入れる形」）。フォーカスが a11y の木に無いノードに残る状態は作らない（P02e の Grill、Issue #606）。
 
 **仮想化境界のキーボード移動:** `FocusManager` は仮想化コンテナ境界を検知する。可視末尾（または先頭）のフォーカス可能ノードから次（前）へ進もうとしたとき、UI ツリー走査を打ち切り、コンテナへ「次の論理インデックスを materialize し scroll-into-view せよ」と要求する。
 
@@ -2443,29 +2440,43 @@ internal static CaretPosition HitTestText(TextMeasurement measurement, int lineI
 
 アクセシビリティツリーの順序には、視覚順・テキスト論理順・UIツリー順・フォーカスナビゲーション順という複数の異なる概念があり、これらは同一ではない。例えば`ラベル→入力欄→ボタン`というUIコンポーネントの並びは、テキストの言語方向とは無関係にUIツリー構造として決まる順序である。
 
-**a11yの基本順序はUiNodeツリー順（§2.5のアリーナにおける`FirstChild`/`NextSibling`の並び）とする。** BiDi論理順は、個々のテキストノード内部でのみ意味を持つ情報として扱い、`TextMeasurement.LogicalToVisual`（§4.3）をそのテキストノードの`SemanticsState`に紐づける形にする。UIツリー全体の読み上げ順を決める際にBiDiを持ち出すのは誤りで、テキストノードの中身を読み上げる際にのみ論理順が参照される。
+**a11yの基本順序はUiNodeツリー順（§2.5のアリーナにおける`FirstChild`/`NextSibling`の並び）とする。** BiDi論理順は、個々のテキストノード内部でのみ意味を持つ情報として扱い、`TextMeasurement.LogicalToVisual`（§4.3）をそのテキストノードの a11y の節（§4.4.1）に紐づける形にする。UIツリー全体の読み上げ順を決める際にBiDiを持ち出すのは誤りで、テキストノードの中身を読み上げる際にのみ論理順が参照される。
 
 ### 4.4.1 AccessibilityInfoのフィールド
 
 Flutter級のa11y対応には「role/label/value」程度では不足するため、次のフィールドを持たせる。
 
 ```csharp
-public sealed class AccessibilityInfo
+public enum SemanticsRole : byte
 {
-    public SemanticsRole Role;
-    public string? Name;
-    public string? Description;
-    public string? Value;
-    public SemanticsStateFlags States;            // Checked/Expanded/Disabled/Selected等（[Flags] enum）
-    public List<SemanticsAction> Actions = new(); // Click/Expand/Scroll等、OS a11y APIから起動可能な操作
-    public Rect Bounds;
-    public bool Focusable;
+    None, Window, Dialog, Group, Text, Hyperlink, Image, Button, CheckBox, RadioButton, ComboBox, Edit,
+    List, ListItem, Menu, MenuBar, MenuItem, Slider, ProgressBar, ScrollViewer, Tab, TabItem, ToolTip, Separator,
 }
+
+[Flags]
+public enum SemanticsStates : byte { None = 0, Checked = 1, Mixed = 2, Selected = 4, ReadOnly = 8, Required = 16 }
+
+public readonly record struct SemanticsRange(double Minimum, double Maximum, double Value);
+
+public sealed record AccessibilityInfo
+{
+    public SemanticsRole? Role { get; init; }      // null は部品の既定の役のまま
+    public string? Name { get; init; }             // null は既定（部品の名前か、子孫の文字のたたみ）
+    public string? Description { get; init; }
+    public string? Value { get; init; }
+    public SemanticsStates States { get; init; }   // Disabled・Focused・Expanded は疑似状態から読む（下）
+    public SemanticsRange? Range { get; init; }    // Slider・ProgressBar の値
+}
+
+public static Element Accessible(this Element element, AccessibilityInfo info);
+public static Element Accessible(this Element element, IReadOnlySignal<AccessibilityInfo> info);
 ```
 
-**v1 の契約:** `SemanticsState.A11y` を UiNode に 1:1 で埋め込む。対応する基本 control は Button / Text / TextField / Checkbox / Slider / List（Active のみ、§3.4.2）/ Dialog。merged semantics・decorative node・virtualized item semantics は、ノードの上の情報から作る別の a11y の木が扱う（§11.4）。テキストのノードのリンクの範囲（§4.8）は例外で、行 P02g の UIA の provider が、テキストのノードの子の部分（fragment、役は Hyperlink）として出す。範囲ごとの子は、1 つの UiNode の provider が返す（D9 の Grill）。
+`Rect Bounds` と `Focusable` と操作の一覧は持たない。矩形は layout から、フォーカスできるかは `.Focusable()` から、操作はハンドラと部品から求める（下の「P02g で入れる形」）。
 
-**開閉の状態（P02d4 の Grill、Issue #588）:** 行 P02g は、開閉の状態（`SemanticsStateFlags` の Expanded、UIA の ExpandCollapse）を、ノードの疑似状態 `Open`（§7.3「アンカーの Open」）から読む。a11y の作業そのものは、行 P02d4 では行わない。
+**v1 の契約:** `AccessibilityInfo` は、付けたノードだけを持つ `UiTree` の表（`NodeHandle` から `AccessibilityInfo` へ、ノードを消すと消える）に置く。`UiNode` は 576 バイトで上限なので、欄を足さない。部品の既定の役は部品が同じ表に書き、アプリの `.Accessible` がその上に重なる（P02g の Grill、Issue #620）。対応する基本 control は Button / Text / TextField / Checkbox / Slider / List（Active のみ、§3.4.2）/ Dialog。merged semantics・decorative node・virtualized item semantics は、ノードの上の情報から作る別の a11y の木が扱う（§11.4）。テキストのノードのリンクの範囲（§4.8）は例外で、行 P02g の a11y の木が、テキストのノードの節の子の節（役は Hyperlink）として出す。範囲ごとの子の節は、1 つの UiNode から作る（D9 の Grill。UIA は AccessKit が出す、P02g の Grill と S10）。
+
+**開閉の状態（P02d4 の Grill、Issue #588）:** 行 P02g は、開閉の状態（UIA の ExpandCollapse の状態）を、ノードの疑似状態 `Open`（§7.3「アンカーの Open」）から読む。a11y の作業そのものは、行 P02d4 では行わない。
 
 **a11y の木の形（D3 の Grill、Issue #441）:** 書くのはノードの上（`AccessibilityInfo`）のまま、そこから別の木を作る。役と id の無いノードは落とす。GPUI は、役と id を持つ要素ごとに 1 つの節を作り、毎フレームの prepaint で木を作る（`crates/gpui/src/window/a11y.rs` 55〜56・61・71 行目、1 つの要素が足す合成の子は 67〜80・304〜346 行目）。まとめる印で名前をたたみ、仮想化した並びは数を報告する。これは Flutter の形である（`isMergingSemanticsOfDescendants`、`packages/flutter/lib/src/semantics/semantics.dart` 5916 行目、`scrollChildCount` は 5838 行目）。比べた 3 つは、どれも木とは別の a11y の木を持つ（Flutter の `SemanticsOwner`、`semantics.dart` 4872 行目。Avalonia の `AutomationPeer`、`src/Avalonia.Controls/Control.cs` 442〜457 行目）。作るのは支援技術がつながっている間だけで、つながっていなければ費用は 0 である（Flutter の `ensureSemantics`、`rendering/object.dart` 1390 行目、Avalonia の遅く作る peer）。公開の `AccessibilityInfo` を v1.0 で API を固めた後に変えると破壊的な変更になるので、v1.1 に送らない。行 P02g で UIA の provider と一緒に入れる。
 
@@ -2473,7 +2484,39 @@ public sealed class AccessibilityInfo
 v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術がつながっている間に作る a11y の木 → スナップショット → IAccessibilityBridge（§6.2）
 ```
 
-Windows の UIA プロバイダは COM サーバー（`IRawElementProviderSimple` 等）として実装する必要がある。消費側の COM（§2.9）と違い、こちらは OS から呼ばれる側。OS から呼ばれる COM のオブジェクトは、`[UnmanagedCallersOnly]` の関数の vtable を持つネイティブの構造体で書く（行 F1 の DirectWrite の `IDWriteTextAnalysisSource`）。source-generated COM（`[GeneratedComClass]` と `StrategyBasedComWrappers`）は、インターフェースの属性をリフレクションで読むので、NativeAOT のリフレクションの実行時とメタデータがリンクされ、`XylemUI.E2E.exe` が 4.28 MB でなく 4.71 MB になった（F1）。UIA のプロバイダはインターフェースが多いので、行 P02g で、手書きの vtable か、属性を読まない戦略を渡した source-generated COM かを、サイズと書く量で測って決める。
+**P02g で入れる形（P02g の Grill でオーナーが決定、Issue #620。provider の作り方は spike S10 の結果で決め直した、Issue #623）:** Flutter 3.47.8・Avalonia 12.1.4・GPUI（zed v1.25.3）と AccessKit（`AccessKit/accesskit-c` の release 0.23.2、Windows の adapter は `accesskit_windows` 0.35.1）を読んで決めた。Flutter のパスは `engine/src/flutter/` と `packages/flutter/lib/src/` から、Avalonia は `src/` から、GPUI は `crates/` から、AccessKit の C の API は release の `include/accesskit.h` から書く。
+
+- **比べた 3 つの Windows での形:** Flutter は、UIA の provider をコンパイルで外し、既定で MSAA の `IAccessible` を返す（`shell/platform/windows/flutter_window.cc` 907〜932 行目、「UIA is currently disabled by default」）。UIA のクライアントは MSAA の代理を通して読む。Avalonia は、UIA を source-generated COM（`[GeneratedComClass]`）で書く（`Windows/Avalonia.Win32.Automation/AutomationNode.cs` 20〜26 行目）。GPUI は、AccessKit（`accesskit_windows` 0.34、zed の `Cargo.toml` 526〜529 行目）に毎フレーム木を全部渡し、UIA の実装と `WM_GETOBJECT` の答えを AccessKit に任せる（`gpui/src/window/a11y.rs` 578〜584 行目、`gpui_windows/src/events.rs` 836〜851 行目）
+- **UIA は AccessKit に任せる（S10、Issue #623）:** XylemUI は a11y の木を AccessKit の節（役・名前・状態・矩形・操作）に変え、変わった節だけを `TreeUpdate` で渡す。UIA の provider・パターン・イベント・TextPattern は AccessKit の Windows の adapter が持つ。S10 は、release の静的ライブラリ（x86_64 の MSVC の `accesskit.lib`）が静的 CRT の NativeAOT の `XylemUI.E2E.exe` に警告もエラーも無くリンクでき（依存は bcrypt・ntdll・propsys・runtimeobject・uiautomationcore・userenv・ws2_32 の 7 つ、`accesskit-config.cmake` 24 行目）、実行ファイルが +253 KB で、本物の UIA のクライアントが木を読み、adapter が TextPattern（`adapters/windows/src/node.rs` 1432 行目、`text.rs` 320 行目）と変わった節だけの更新（`accesskit/src/lib.rs` 3198〜3206 行目）を持つことを確かめた。比べた 3 つで、Windows で既定で TextPattern を出すものは無い。手書きの vtable は、パターン・イベント・スレッド・TextPattern を全部書くことになり、Grill の Q1 は「出来合いの Windows のライブラリは無い」という誤った前提で決めていた（PR #621 のレビュー）
+- **取り込み方:** release の zip を、版と SHA-256 で `vendor/versions.lock` に固定し、`vendor/build.ps1` が取って確かめ、`vendor/out` に置く。NativeAOT では静的ライブラリを、JIT では同じ zip の共有ライブラリ（`accesskit.dll`）を、同じ `DllImport` の宣言から読む（HarfBuzz と同じ形、§9）。ソースからは作らない（Rust のツールチェーンを足さない）。AccessKit は MIT か Apache-2.0。版は、出てから 2 週間たったものを取る（`dependencies.mdc`）ので、0.23.1（2026-09-26）にし、SHA-256 は取り込む実装の 2 つ目の PR で書く。S10 は 0.23.2（2026-11-01）で測った
+- **作る時:** 窓を作る時に、AccessKit の Windows の adapter（subclassing しない形、`accesskit_windows_adapter_new`）を作る。窓の `WM_GETOBJECT` を `accesskit_windows_adapter_handle_wm_getobject` に渡し、窓のフォーカスの変化（`WM_SETFOCUS`・`WM_KILLFOCUS`、初期値は `accesskit_windows_adapter_new` の引数）を `accesskit_windows_adapter_update_window_focus_state` に渡して、返ったイベントを `accesskit_windows_queued_events_raise` で出す（subclassing する adapter は自分で行う）。AccessKit が最初の問い合わせで活性化の関数を呼んだ時に、a11y の木を作り始めて全部を渡す。窓が閉じるまで持つ。それまでは何も作らず、費用は 0 である。Flutter は MSAA か UIA の問い合わせで semantics を有効にし、止めない（`flutter_window.cc` 898〜904 行目）。Avalonia も最初の `WM_GETOBJECT` で peer を作る（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 931〜937 行目）。GPUI は同じ adapter の関数を呼び、借りを返してから答えを返す（`events.rs` 846〜848 行目。答えの中から `WM_GETOBJECT` がまた来ることがあるため）
+- **スレッド:** 活性化の関数は窓のスレッド（UI スレッド）で呼ばれる。操作の関数（Click など）は別のスレッドから来ることがあるので（`accesskit.h` の `accesskit_windows_subclassing_adapter_new` の説明。subclassing しない adapter には説明が無いが、同じ実装と見て安全な側に倒す）、UI のキューに積んで UI スレッドで配る（§2.12）
+- **a11y の木:** 役を持つノード（部品の既定の役か `.Accessible` の役）ごとに 1 つの節を作る。親は、役を持つ最も近い祖先の節である。役の無いノードは落とし、その子は親の節につく（GPUI の `a11y.rs` 429〜440 行目と同じ）。`Hidden` の部分木は載せない。根は窓（Window、名前は窓の題）で、開いているポップアップの根は、主の木の後に奥から順に根の子にする（§12.5 の `Find` と同じ順）。順は木の前順（§4.4）
+- **名前のたたみ:** 役を持ち、名前の無いノードは、役の無い子孫の文字の葉の文字を、前順に空白 1 つでつないで名前にする。ボタンの中の「OK」がボタンの名前になる。Flutter はボタンの子をまとめ（`isMergingSemanticsOfDescendants`）、Avalonia は Content の文字列を名前にする。GPUI は `aria_label` を明示する
+- **直し方:** ノードの `AccessibilityInfo`・名前になる文字・a11y の状態になる疑似状態（Disabled・Focused・Open）・子の並び・`Hidden`・矩形が変わったら、そのノードに a11y の印（`DirtyFlags.Semantics`、§2.4 の `ChangeKind.A11yLabel`）を付ける（木が無い間は付けない）。フレームの layout の段の後、描画の段の前に、a11y の段が印のある節だけを AccessKit の節に作り直して 1 つの `TreeUpdate` で渡し、AccessKit が積んだイベントを出す（`accesskit_windows_queued_events_raise`、§2.10）。AccessKit の節は、親の節の座標系での矩形と、親から子への変換（`accesskit_node_set_transform`）を持つ。スクロールする箱は自分のスクロールの位置を子への変換に入れるので、スクロールで直すのはその箱の節 1 つである。Flutter も印の付いた節だけを送る（`packages/flutter/lib/src/semantics/semantics.dart` 4975〜5068 行目）。GPUI は毎フレーム全部を送る
+- **状態と操作:** Disabled は `accesskit_node_set_disabled`、Focused は `TreeUpdate` のフォーカス、Open は `accesskit_node_set_expanded`、`.Focusable()` は Focus の操作、`SemanticsStates.Checked`・`Mixed` は `accesskit_node_set_toggled` にする。AccessKit の adapter は、節の役と操作からパターンを決める
+  - Click の操作: Click のハンドラを持つノード（`OnClick`、ボタン）。Click は入力と同じ経路で Click を配る（Invoke と Toggle は AccessKit が Click にする）
+  - SetValue の操作: 文字の欄（Edit）は中身を置き換える。`Value` だけを持つノードは読むだけ
+  - `Range` を持つノードは、値と範囲を節に書く。P02g では値を書く操作を持たない（Slider の部品は G1）
+  - Expand と Collapse の操作: ポップアップのアンカー（`.Popup`、Select、子のメニューを持つメニューの項目）。アンカーの開く Signal を書く
+  - 選択: Select の選択肢と `Selected` を付けた ListItem は、選ばれたかを節に書き、選ぶ操作は Click を配る
+  - スクロールする箱は、スクロールの位置と最大（`accesskit_node_set_scroll_y`・`_max` と x）を書き、スクロールの操作で `ScrollState` を動かす。すべての節は ScrollIntoView の操作を持ち、見える所まで動かす（§7「Bring into view」、仮想化した行は `ScrollToIndex`）
+  - 文字の欄の TextPattern（キャレットと選択）は、AccessKit の形の文字の run（`TextRun` の節と文字の長さ）を欄が渡すことで出る。その形と作り方は行 P02g2 で決める。P02g では、欄の中身を値として出す
+- **部品の既定の役:** ボタン Button、文字の欄 Edit（AccessKit の `TextInput`）、ラベルと文字の葉 Text（ほかの節の名前にたたまれない時だけ節になる）、リンクの範囲 Hyperlink（§4.8、テキストのノードの子の節）、メニュー Menu、メニューバー MenuBar、メニューの項目 MenuItem、Select ComboBox とその選択肢 ListItem、Tooltip ToolTip、ダイアログ Dialog、スクロールする箱 ScrollViewer、仮想化した並び List とその行 ListItem。`SemanticsRole` から AccessKit の役への対応は、実装の 1 つ目の PR で表にする
+- **id:** AccessKit の節の id（64 ビット）は、ノードの番号と世代を詰めて作り、ノードを使い回しても重ならない。Avalonia は `GetHashCode()` から RuntimeId を作る（`AutomationNode.cs` 64 行目）。UIA の AutomationId は `.TestId` を `accesskit_node_set_author_id` に渡し、テストと UIA の自動テストが同じ名前で探せる。ノードが消えたら、その節を親の子から外す `TreeUpdate` を渡す
+- **イベント:** AccessKit は、前の木との違いから UIA のイベント（フォーカス・プロパティ・構造の変化）を出し、変わらない節には出さない。`TreeUpdate` は木が有効な間だけ渡す（`accesskit_windows_adapter_update_if_active`）
+- **仮想化した並び（§3.4.2）:** a11y の木には Active の行だけを載せる。行は ListItem で、番号と項目の数から PositionInSet と SizeOfSet（`accesskit_node_set_position_in_set`・`set_size_of_set`）を書く。行の ScrollIntoView は `ScrollToIndex(Nearest)` で動かす。範囲の外に持ったフォーカスのある行も木に載せ、UIA の IsOffscreen が true になる矩形（箱の見える範囲の外）を書く。AccessKit がそれで IsOffscreen を求めるかは、実装の 2 つ目の PR で確かめる。フォーカスが a11y の木に無いノードに残る状態は作らない
+- **Platform との境:** Core は a11y の木（節は Core の型で、`UiNode` ではない）を持ち、変わった節を `IAccessibilityBridge`（§6）に渡す。Platform.Windows の実装が、それを AccessKit の節に変えて adapter に渡す（Invariant 10: Platform は Core の型を変えない）。操作は、UI のキューから Core の a11y の木の口を通して、入力と同じ経路で配る。macOS と Linux の adapter（AccessKit の `accesskit_macos`・`accesskit_unix`）を使うかは、行 P06 と P04 で決める
+- **確かめ方:**
+  - Core: 木の形（役の無いノードを落とす、子が親の節につく、`Hidden`、ポップアップの順）、名前のたたみ、状態の読み取り、印の付いた節だけを渡すこと（印の無い節は渡さない）、木の無い間は印を付けないこと、仮想化した並びの Active の行と位置
+  - `XylemUI.Testing`: 役と名前で探す口（§12.5）
+  - Platform: 本物の UIA のクライアント（`CUIAutomation`）が窓の木を読み、役・名前・状態・矩形・パターンが合い、Invoke と Toggle と Expand が働き、フォーカスと構造の変化のイベントが届く
+  - 実機: ナレーターで、Todo のサンプルのボタン・欄・一覧・メニュー・ダイアログが読み上げられることを、オーナーが確かめる
+  - 割り当て 0: 木の無い窓のフレームは今と同じ。木がある窓の、変化の無いフレームも割り当て 0（AccessKit の節は AccessKit が持つ）
+  - 大きさ: 実行ファイルの増え方を、実装の 2 つ目の PR で測って記録する（S10 の最小の使い方で +253 KB）
+  - PR は、`AccessibilityInfo` の API・a11y の木・部品の既定の役・Testing の口（1 つ目）と、AccessKit の取り込み・Windows の adapter・操作・仮想化した並び（2 つ目）に分ける
+
+Windows の UIA は、AccessKit の Windows の adapter が COM サーバー（`IRawElementProviderSimple` 等）として出す（上の「P02g で入れる形」、S10）。source-generated COM（`[GeneratedComClass]` と `StrategyBasedComWrappers`）は、インターフェースの属性をリフレクションで読むので、NativeAOT のリフレクションの実行時とメタデータがリンクされ、`XylemUI.E2E.exe` が 4.28 MB でなく 4.71 MB になった（F1）。
 
 ### 4.5 フォント調達：OS API + 最小サブセット同梱のハイブリッド
 
@@ -2736,8 +2779,8 @@ Text((ref NodeTextWriter w) =>
 - **リンク（§7、§4.3）:** リンクを持つ葉は、葉の箱をヒット領域に書く（§7「ポインタの入力」）。その葉の上の Move と Down で、`WindowInput` は、位置から行を選び、`HitTestText` で文字の位置にし、その位置の描画の範囲のリンクを引く。Flutter も、押した位置に最も近いグリフのクラスタから範囲を引き（`rendering/paragraph.dart` 851〜870 行目）、GPUI も、位置から文字の番号を求めて範囲と比べる（`gpui/src/elements/text.rs` 1175〜1222 行目）
   - ホバー: ポインタごとに、ホバー中のリンク（葉と番号）を持つ。変わったら、前のリンクの `onLeave` と、次のリンクの `onEnter` を呼ぶ。ホバー中のリンクの範囲には、`hovered` の描画のスタイルを重ね、葉に描画の印を付ける（レイアウトはし直さない）。リンクの上のカーソルは手の形（`CursorKind.Hand`）で、葉や祖先のカーソルより先に選ぶ。Flutter も、`recognizer` を持つ範囲のカーソルの既定を手の形にする（`painting/text_span.dart` 193〜211 行目）
   - Click: 左ボタンの Down と Up が同じリンクの上なら、Up の後に `onClick` を呼ぶ（GPUI の `InteractiveText.on_click` と同じ、`text.rs` 1056〜1071 行目）。タッチは、タップ（閾値 18 を超えない、§7「タッチとペン」）がリンクの上なら Click にする。ハンドラの `PointerEvent` の `Target` と `CurrentTarget` は葉である。リンクの `onClick` が呼ばれたら、葉と祖先の Click のハンドラには配らない
-  - フォーカス: リンクの範囲は Tab の順に入れず、キーボードのフォーカスを持たない（Issue #423）。Flutter の `recognizer` もポインタの入力だけを受け（`painting/text_span.dart` 114〜122 行目）、GPUI の `InteractiveText` もマウスだけである（`crates/gpui/src/elements/text.rs` 1014〜1040 行目）。キーボードで押すリンクは、T13 のインラインオブジェクトに、フォーカスできるボタンを置いて作る。Avalonia も、文の中のリンクを持たず、`InlineUIContainer` に `HyperlinkButton`（`Button` を継ぎ、`Focusable` が true、`Avalonia.Controls/Button.cs` 109 行目）を置く形である。スクリーンリーダーからは、P02g の UIA の fragment の Invoke で押せる
-  - a11y: 行 P02g の UIA の provider で、テキストのノードは、リンクの範囲を自分の子の部分（fragment）として出す。役は Hyperlink、名前は範囲の文字、Invoke で `onClick` を呼ぶ。UiNode ごとに 1 つの v1 の形（§4.4.1）のまま、範囲ごとの子を返せる。Flutter も、`TapGestureRecognizer` を持つ範囲ごとに、`isLink` の意味のノードを作る（`rendering/paragraph.dart` 1362〜1450 行目）
+  - フォーカス: リンクの範囲は Tab の順に入れず、キーボードのフォーカスを持たない（Issue #423）。Flutter の `recognizer` もポインタの入力だけを受け（`painting/text_span.dart` 114〜122 行目）、GPUI の `InteractiveText` もマウスだけである（`crates/gpui/src/elements/text.rs` 1014〜1040 行目）。キーボードで押すリンクは、T13 のインラインオブジェクトに、フォーカスできるボタンを置いて作る。Avalonia も、文の中のリンクを持たず、`InlineUIContainer` に `HyperlinkButton`（`Button` を継ぎ、`Focusable` が true、`Avalonia.Controls/Button.cs` 109 行目）を置く形である。スクリーンリーダーからは、P02g の a11y の木のリンクの節の Click の操作（UIA の Invoke）で押せる
+  - a11y: 行 P02g の a11y の木で、テキストのノードは、リンクの範囲を自分の節の子の節として出す。役は Hyperlink、名前は範囲の文字、Click の操作で `onClick` を呼ぶ。UiNode ごとに 1 つの節の形（§4.4.1）のまま、範囲ごとの子の節を足せる（UIA は AccessKit が出す、§4.4.1「P02g で入れる形」）。Flutter も、`TapGestureRecognizer` を持つ範囲ごとに、`isLink` の意味のノードを作る（`rendering/paragraph.dart` 1362〜1450 行目）
 - **文字の単位の当たり判定（§4.3）:** `HitTestText` と `CaretGeometry` を、T12 で葉の `LineBreakCache` の確定した結果の上に入れる。リンクの当たり判定と、P02b の選択とキャレットが同じ物を使う
 - **インラインオブジェクト（T13）:** 部品は、テキストのノードの子にする。書き手の `Inline` は、子を指す空き（U+FFFC の 1 文字）を書く。layout は、子を幅だけの制約（行の幅）で測り、その大きさの空きを、改行で分けられない 1 つの塊としてシェーピングの結果に入れる。揃え方は Flutter と同じ 6 つで、`Baseline` のときだけ子の最初のベースラインを使う（`rendering/paragraph.dart` 146〜204 行目、`engine/src/flutter/lib/ui/text.dart` 2816〜2853 行目）。子は、空きの矩形に置く。当たり判定・フォーカス・a11y は、ふつうの子のノードとして動く。Avalonia の `InlineUIContainer` も、子を `TextBlock` の見た目の子として、空きの位置に置く（`Avalonia.Controls/TextBlock.cs` 878〜911 行目）。GPUI はインラインオブジェクトを持たず、zed の Markdown は画像を文章の外に重ねる（`crates/markdown/src/markdown.rs` 4829〜4831 行目）。今のテキストの葉は子を持たないので、テキストのノードが子を持てるようにすることも T13 で入れる
 - **インラインオブジェクトの決まり（T13 の Grill、Issue #431）:**
@@ -3777,10 +3820,12 @@ public readonly record struct PlatformWindowHandle(PlatformKind Kind, nint Handl
 
 public interface IAccessibilityBridge
 {
-    // Core の UiNode は渡さない。Core 側で作ったスナップショットだけを受け取る（§11.6 Invariant 10）
-    void SyncNode(in AccessibilityNodeSnapshot node);
-    void NotifyFocusChange(NodeId nodeId);
+    // Core の UiNode は渡さない。Core が持つ a11y の木の節（§4.4.1「P02g で入れる形」）を読むだけで、変えない（§11.6 Invariant 10）
+    void NodesChanged(ReadOnlySpan<AccessibilityChange> changes);   // a11y の段が直した節と、変わったプロパティ
+    void NotifyFocusChange(AccessibilityNodeId node);
 }
+
+// AccessibilityChange（節の id と変わったプロパティの組）と AccessibilityNodeId（節の世代付きの id）の形は、行 P02g の実装の 1 つ目の PR で決める
 ```
 
 ### 6.0 共通Platform Contract
@@ -4631,7 +4676,7 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | libdbus-1（Linuxのみ）     | AT-SPI/通知連携のD-Bus IPC         | AFL-2.1/GPL-2.0デュアル | **動的**（§6.2、実機のD-Busセッションと同期させるため意図的に動的） |
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
 
-**ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す
+**ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す。AccessKit（§4.4.1、行 P02g）だけは、ソースではなく C の bindings の release の zip を版と SHA-256 で固定して取り、中の静的ライブラリと共有ライブラリを `vendor/out` に置く。ソースから作るには Rust のツールチェーンが要るからである
 
 **S8a（C# 版で検証済み、Issue #44）:** `vendor/build.ps1` は CMake（NMake）と MSVC で、HarfBuzz（subset・raster・vector・gpu・utils は切る）と FreeType（zlib・bzip2・png・harfbuzz・brotli は切る）を作る。**静的ライブラリは静的 CRT（`/MT`）、DLL は動的 CRT（`/MD`）で作る**。NativeAOT のランタイムは静的 CRT なので、`/MD` の静的ライブラリはリンクで `LNK2038`（RuntimeLibrary の不一致）になる。版と SHA-256 と `build.ps1` 自身のハッシュをスタンプに書き、どれかが変われば作り直す。`versions.lock` の 1 行は複数の URL（取得元とミラー）を持て、答えたものを SHA-256 で確かめる。新しい版は出てから 2 週間で取り込むが、セキュリティの修正は待たない（`dependencies.mdc`）。FreeType の FTL は配布物のドキュメントに謝辞を求めるので、第三者ライセンスの一覧を P10（配布）で用意する。`build.ps1`（ゲート）が毎回呼び（最新なら何もしない）、CI はキャッシュする。NativeAOT のアプリは `src/XylemUI.Text/XylemUI.Text.targets` を取り込み、`DirectPInvoke` と `NativeLibrary` で両ライブラリを実行ファイルに入れ、JIT 用の DLL を発行物から外す。`samples/HelloText` の発行物は 2.64 MB の `HelloText.exe` 1 つで、`dumpbin /dependents` に出るのは OS の DLL（`KERNEL32` など、UCRT の `api-ms-win-crt-*`）だけだった
 
@@ -4864,7 +4909,7 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 
 **v1.0の終了条件の明示**: 「v1.0 = Flutter/Avalonia/GPUI級」という定義のままでは事実上終了条件が存在しない。§10.4の段階的実装順序における「v1.0」を、以下の個別条件を満たした状態と定義し直す。
 
-**Accessibility要件とスコープ**: §4.4.1で「UIツリーとSemanticsツリーは本来別であるべきだが、v1では`SemanticsState`をUiNodeに直接埋め込む」と決定している。**v1.0 の終了条件は、ノードの上の情報（`SemanticsState`）から作る a11y の木（複数UiNodeの集約・decorative node・virtualized itemのsemantics等を扱う）による a11y 対応とする（D3 の Grill、Issue #441、行 P02g）。**
+**Accessibility要件とスコープ**: §4.4.1で、a11y の情報（`AccessibilityInfo`）はノードの上（`UiTree` の表）に書き、そこから別の a11y の木を作ると決定している。**v1.0 の終了条件は、ノードの上の情報（`AccessibilityInfo`）から作る a11y の木（複数UiNodeの集約・decorative node・virtualized itemのsemantics等を扱う）による a11y 対応とする（D3 の Grill、Issue #441、行 P02g）。**
 
 ```text
 - Core API freeze（§8で決定した公開APIが破壊的変更なしに安定。公開 API は PublicApiAnalyzers で追跡する）
@@ -5065,7 +5110,7 @@ app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3�
 
 - `HeadlessApp` は起動時に `ScopeTracker.IsEnabled` を有効にし、`AssertNoLeakedScopes()` はウィンドウを閉じて `PumpAndSettle()` した後に、残っている Scope を生成スタックつきで報告する
 - 検索は前順（`FirstChild` / `NextSibling` の順）で、a11y の順序（§4.4）と同じ順に結果を返す
-- **鍵（P02a の Grill、Issue #456）:** `Find(string)` は、テスト ID が一致するノードを探し、無ければ文字が一致する文字の葉（§3.2）を探す。テスト ID は Core のノードの属性 `.TestId(string)` で付け、付けたノードだけを持つ表（`UiTree` の `NodeHandle` から文字列への表、ノードを消すと消える）に入れる。付けないノードの費用は増えない。Flutter の `Key`（`find.byKey`、`flutter_test` 3.47.8 の `lib/src/finders.dart`）、Avalonia 12.1.4 の `Name`（`src/Avalonia.Base/Controls/NameScopeExtensions.cs` 20〜107 行目）、GPUI（zed v1.25.3）の `debug_selector`（`crates/gpui/src/elements/div.rs` 885 行目）に当たる。`FindAll(string)` は `Find` と同じ鍵で探し、0 件以上を前順に返す（例外にしない）。アクセシブル名と役（`SemanticsRole`）での検索（§12.5 の最初の案）は、名前と役を持つ a11y の木ができる行 P02g で足す。型を指定して中身を読む `Find<T>` は作らない。文字は文字で探して確かめる（Flutter の `find.text` と `findsOneWidget`、`flutter_test` 3.47.8 の `lib/src/finders.dart` 124〜623 行目と `lib/src/matchers.dart` 45〜165 行目）
+- **鍵（P02a の Grill、Issue #456）:** `Find(string)` は、テスト ID が一致するノードを探し、無ければ文字が一致する文字の葉（§3.2）を探す。テスト ID は Core のノードの属性 `.TestId(string)` で付け、付けたノードだけを持つ表（`UiTree` の `NodeHandle` から文字列への表、ノードを消すと消える）に入れる。付けないノードの費用は増えない。Flutter の `Key`（`find.byKey`、`flutter_test` 3.47.8 の `lib/src/finders.dart`）、Avalonia 12.1.4 の `Name`（`src/Avalonia.Base/Controls/NameScopeExtensions.cs` 20〜107 行目）、GPUI（zed v1.25.3）の `debug_selector`（`crates/gpui/src/elements/div.rs` 885 行目）に当たる。`FindAll(string)` は `Find` と同じ鍵で探し、0 件以上を前順に返す（例外にしない）。アクセシブル名と役（`SemanticsRole`）での検索は、行 P02g で `app.FindByRole(SemanticsRole role, string? name = null)` として足す。a11y の木を作り（`HeadlessApp` は最初の呼び出しで木を作り始める）、その前順に、役と、指定があれば名前の一致する節のノードを返す。節の役・名前・状態は `app.AccessibilityOf(Element)` で読む（P02g の Grill、Issue #620）。型を指定して中身を読む `Find<T>` は作らない。文字は文字で探して確かめる（Flutter の `find.text` と `findsOneWidget`、`flutter_test` 3.47.8 の `lib/src/finders.dart` 124〜623 行目と `lib/src/matchers.dart` 45〜165 行目）
 - **スレッド:** Core の UI スレッドはプロセスで 1 つなので（§2.12）、`XylemUI.Testing` は UI スレッドを 1 つ持ち、テストの本体をそこで動かす口 `HeadlessSession.Run(Func<Task>)` を出す。xUnit v3 の `[UiFact]` / `[UiTheory]` は、その上の薄い別のアセンブリ `XylemUI.Testing.XUnit` に置く（Avalonia 12.1.4 の `src/Headless/Avalonia.Headless.XUnit/Avalonia.Headless.XUnit.csproj` 8・12 行目と同じ分け方）。テストの本体が UI スレッドで動くので、§12 の例は同期の呼び出しのまま書ける。このスレッドの `SynchronizationContext` は、UI キューの仕事を 1 つずつバッチ（§2.2.1）で包まない。テストの本体はキューの 1 つの仕事なので、包むと本体が終わるまで Effect が流れないためである。テストが `Set` したシグナルの Effect はすぐ流れる。アプリの中では `await` の継続が 1 つのバッチになるが、テストの中ではならない（Issue #460）。ほかのスレッドから渡されたテストの本体は 1 つずつ動く。`await` で待つ本体があっても、次の本体はそれが終わるまで待つ。追跡（`ScopeTracker`）と UI キューはプロセスに 1 つなので、2 つのテストの本体が UI スレッドの上で入り混じると、`AssertNoLeakedScopes` が他のテストの Scope を数えてしまう（PR #461 のレビュー）
 
 ---
@@ -5077,6 +5122,8 @@ app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3�
 Web の Radix UI / shadcn/ui と同じ考え方で、**振る舞いだけを持ち見た目を持たない部品**を `XylemUI.Primitives` に置く。各部品が提供するのは、状態（開閉・選択・押下・値）、キーボード操作、フォーカスの扱い（§7.2）、a11y の役割と状態（§4.4.1）、ポップアップの開閉（§7.3）である。見た目はテーマ（§13.2）またはアプリが被せる。Core には部品を一切置かない（§2.9.1）。
 
 v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）が必要とする範囲とする: Button / ToggleButton / Checkbox / RadioGroup / Slider / TextField / Select（ComboBox）/ Menu / Tooltip / Dialog / Tabs / ListBox（仮想化対応）/ NavigationView。
+
+各部品は、既定の役と状態を a11y の表に書く（ボタン Button、文字の欄 Edit、メニューの項目 MenuItem、Select ComboBox など。一覧と、状態とパターンの決め方は §4.4.1「P02g で入れる形」）。アプリは `.Accessible(...)` でその上に重ねる（P02g の Grill、Issue #620）。
 
 **Menu と Dialog（行 P02d、P02d の Grill、Issue #547）:** ポップアップ（§7.3 の `Popup`）の上に作る。Tooltip・Select とメニューのアクセスキーは行 P02d2 で入れる（下の「Tooltip・Select・メニューのアクセスキー」）。
 
