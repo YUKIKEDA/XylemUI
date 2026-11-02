@@ -90,6 +90,7 @@ return scenario switch
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
+    "a11y" => A11yCost.Run(),
     "menu" => MenuCost.Run(),
     "menubar" => MenuBarCost.Run(),
     "dragdrop" => DragDropCost.Run(),

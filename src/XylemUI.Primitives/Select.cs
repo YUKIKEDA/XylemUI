@@ -110,6 +110,7 @@ public static partial class Primitive
                 },
                 _ => FocusRow(IndexOf(value.Peek()) is int at and >= 0 && Enabled(at) ? at : Next(-1, 1))
             );
+            _tree.SetPartAccessibility(_box, Roles.ComboBox);
             return box.Focusable().OnClick(Toggle).On(KeyEventKind.Down, EventPhase.Bubble, BoxKeys).OnTextInput(EventPhase.Bubble, Typed);
         }
 
@@ -126,9 +127,14 @@ public static partial class Primitive
                 row = row.OnClick(() => Choose(index)).On(PointerEventKind.Enter, EventPhase.Bubble, RowEnter);
                 _rows[i] = row.Node;
                 rows[i] = row;
+                _tree.SetPartAccessibility(
+                    row.Node,
+                    EqualityComparer<T>.Default.Equals(options[i], value.Peek()) ? Roles.SelectedListItem : Roles.ListItem
+                );
             }
 
             Element list = ScrollView(Column(rows));
+            _tree.SetPartAccessibility(list.Node, Roles.List);
             float width = _tree.Nodes.GetRef(_box).Layout.Rect.Width;
             _tree.SetStyle(
                 list.Node,

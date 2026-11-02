@@ -37,6 +37,12 @@ internal static class Invalidation
     {
         DirtyFlags flags = FlagsFor(kind);
 
+        // A text leaf's new content may take the fast path below, which marks no path: the accessibility tree is marked here too.
+        if (tree.AccessibilityActive)
+        {
+            tree.Accessibility.Mark(node);
+        }
+
         // A change the layout reads may make the node measure differently: its next failure is reported again, even while it is
         // still dirty from one. A change of color or the like does not (design §2.4.1).
         if ((flags & DirtyFlags.Layout) != 0)
@@ -129,6 +135,12 @@ internal static class Invalidation
     /// <param name="flags">The stages the change needs.</param>
     public static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
     {
+        // A change of the tree, a style, a text, or a look may change the accessibility tree once it is made (design §4.4.1).
+        if (tree.AccessibilityActive)
+        {
+            tree.Accessibility.Mark(origin);
+        }
+
         ref UiNode node = ref tree.Nodes.GetRef(origin);
         DirtyFlags paint = flags & ~DirtyFlags.Layout;
         if (paint != 0)

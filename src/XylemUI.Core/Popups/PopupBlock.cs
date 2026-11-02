@@ -37,6 +37,12 @@ internal sealed class PopupBlock
         _opened = opened;
         _owner = owner;
         _presence = options.Motion is null ? null : new Presence(this);
+
+        // A popup the anchor opens makes it expandable to assistive technology; a tooltip and a drag's preview do not (§4.4.1).
+        if (!options.IsTransient && !options.IsDragImage)
+        {
+            tree.AddPopupAnchor(anchor);
+        }
     }
 
     /// <summary>

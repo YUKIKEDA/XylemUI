@@ -146,7 +146,9 @@ public static partial class Primitive
             {
                 cues = new MenuCues(tree);
                 Scope.OnCleanup(cues.Release);
-                return panel().On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys);
+                Element menuPanel = panel();
+                tree.SetPartAccessibility(menuPanel.Node, Roles.Menu);
+                return menuPanel.On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys);
             },
             options,
             root =>
@@ -257,6 +259,7 @@ public static partial class Primitive
         public Element Attach(Element item)
         {
             RegisterItem(tree, node, Activate);
+            tree.SetPartAccessibility(item.Node, Roles.MenuItem);
             return item.OnClick(Click).On(KeyEventKind.Down, EventPhase.Bubble, KeyDown).On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
         }
 

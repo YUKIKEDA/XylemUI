@@ -233,6 +233,7 @@ public static partial class Primitive
         // The tooltip's content, in a box that follows the pointer over it.
         private Element Render() =>
             Box(_content())
+                .Accessible(Roles.ToolTip)
                 .On(PointerEventKind.Enter, EventPhase.Bubble, TipEnter)
                 .On(PointerEventKind.Leave, EventPhase.Bubble, TipLeave)
                 .On(PointerEventKind.Down, EventPhase.Bubble, TipDown)

@@ -123,6 +123,11 @@ internal sealed class UiTree
     // The test IDs that XylemUI.Testing finds nodes by (design §12.5, "The keys"): only the nodes given one are in it, so a node with
     // none costs nothing, and removing a node takes its ID with it.
     private readonly Dictionary<NodeHandle, string> _testIds = [];
+    private readonly Dictionary<NodeHandle, AccessibilityInfo> _accessibility = [];
+    private readonly Dictionary<NodeHandle, AccessibilityInfo> _partAccessibility = [];
+    private readonly Dictionary<NodeHandle, Signal<string>> _accessibilityValues = [];
+    private readonly HashSet<NodeHandle> _popupAnchors = [];
+    private AccessibilityTree? _accessibilityTree;
 
     /// <summary>
     /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
@@ -163,6 +168,104 @@ internal sealed class UiTree
     /// <param name="node">The node.</param>
     /// <returns>The ID.</returns>
     internal string? TestIdOf(NodeHandle node) => _testIds.Count > 0 && _testIds.TryGetValue(node, out string? id) ? id : null;
+
+    /// <summary>
+    /// Gets the accessibility tree, made when assistive technology first asks for it (design §4.4.1).
+    /// </summary>
+    internal AccessibilityTree Accessibility => _accessibilityTree ??= new AccessibilityTree(this);
+
+    /// <summary>
+    /// Gets a value indicating whether the accessibility tree was made, so that a change marks its node for it.
+    /// </summary>
+    internal bool AccessibilityActive => _accessibilityTree?.IsActive == true;
+
+    /// <summary>
+    /// Gets or sets the window's title, the name of the accessibility tree's root.
+    /// </summary>
+    internal string? Title { get; set; }
+
+    /// <summary>
+    /// Sets the accessibility information the app gives a node (<c>Accessible</c>), over the one its part gives.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="info">The information.</param>
+    internal void SetAccessibility(NodeHandle node, AccessibilityInfo info)
+    {
+        _accessibility[node] = info;
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Sets the accessibility information a part gives a node: its role and states by default (design §13.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="info">The information.</param>
+    internal void SetPartAccessibility(NodeHandle node, AccessibilityInfo info)
+    {
+        _partAccessibility[node] = info;
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Sets the signal whose value is a node's value to assistive technology when no information gives one: a text field's text. The
+    /// tree reads it when it makes the node again; a change of the text the node shows marks it.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The signal of its value.</param>
+    internal void SetAccessibilityValue(NodeHandle node, Signal<string> value)
+    {
+        _accessibilityValues[node] = value;
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Returns a node's value from its signal (<see cref="SetAccessibilityValue"/>), or <see langword="null"/> for none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value.</returns>
+    internal string? AccessibilityValueOf(NodeHandle node) =>
+        _accessibilityValues.Count > 0 && _accessibilityValues.TryGetValue(node, out Signal<string>? value) ? value.Peek() : null;
+
+    /// <summary>
+    /// Returns the accessibility information of a node: the app's over its part's, or <see langword="null"/> for neither.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The information.</returns>
+    internal AccessibilityInfo? AccessibilityInfoOf(NodeHandle node)
+    {
+        AccessibilityInfo? part = _partAccessibility.Count > 0 ? _partAccessibility.GetValueOrDefault(node) : null;
+        AccessibilityInfo? app = _accessibility.Count > 0 ? _accessibility.GetValueOrDefault(node) : null;
+        return app is null ? part : app.Over(part);
+    }
+
+    /// <summary>
+    /// Records a node as the anchor of a popup it opens, which is expandable to assistive technology.
+    /// </summary>
+    /// <param name="node">The anchor.</param>
+    internal void AddPopupAnchor(NodeHandle node)
+    {
+        _ = _popupAnchors.Add(node);
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Returns whether a node anchors a popup it opens.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>Whether it does.</returns>
+    internal bool IsPopupAnchor(NodeHandle node) => _popupAnchors.Count > 0 && _popupAnchors.Contains(node);
+
+    /// <summary>
+    /// Marks a node for the accessibility tree; nothing while the tree is not made (design §4.4.1, "How it changes").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void MarkAccessibility(NodeHandle node)
+    {
+        if (_accessibilityTree is { IsActive: true } accessibility)
+        {
+            accessibility.Mark(node);
+        }
+    }
 
     /// <summary>
     /// Returns the scroll state attached to a node, attaching a new one when it has none: the wheel scrolls a scroll container
@@ -1280,6 +1383,8 @@ internal sealed class UiTree
                 Focus.Lose(node);
             }
         }
+
+        MarkAccessibility(node);
     }
 
     /// <summary>
@@ -1380,6 +1485,12 @@ internal sealed class UiTree
         if (n.Visual?.States?.Has(state) == true)
         {
             Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+
+        // Disabled, focused, and open are states of the node's accessibility (design §4.4.1).
+        if ((state & (PseudoState.Disabled | PseudoState.Focused | PseudoState.Open)) != 0)
+        {
+            MarkAccessibility(node);
         }
     }
 
@@ -2069,6 +2180,26 @@ internal sealed class UiTree
         if (_testIds.Count > 0)
         {
             _ = _testIds.Remove(node);
+        }
+
+        if (_accessibility.Count > 0)
+        {
+            _ = _accessibility.Remove(node);
+        }
+
+        if (_partAccessibility.Count > 0)
+        {
+            _ = _partAccessibility.Remove(node);
+        }
+
+        if (_accessibilityValues.Count > 0)
+        {
+            _ = _accessibilityValues.Remove(node);
+        }
+
+        if (_popupAnchors.Count > 0)
+        {
+            _ = _popupAnchors.Remove(node);
         }
 
         if (ForContainers.Count > 0)
