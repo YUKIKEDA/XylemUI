@@ -115,6 +115,9 @@ public sealed class ScrollState
         if (Tree is { } tree && tree.Nodes.IsAlive(Node))
         {
             Invalidation.Invalidate(tree, Node, ChangeKind.TransformProp);
+
+            // The position is the offset the container's node of the accessibility tree gives its children (design §4.4.1).
+            tree.MarkAccessibilitySelf(Node);
         }
 
         return true;

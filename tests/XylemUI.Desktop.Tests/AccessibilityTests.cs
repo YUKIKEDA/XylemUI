@@ -503,10 +503,11 @@ public sealed class AccessibilityTests
     /// - A column of a button "first" 30 high and a button "second"; the accessibility tree not made.
     ///
     /// Steps:
-    /// - Make "first" 60 high, disable "second", and give "second" a name; settle; read the marks and the tree's root.
+    /// - Make "first" 60 high, disable "second", and give "second" a name; settle; read whether the tree's object is made; read the
+    ///   marks and the tree's root.
     ///
     /// Expected:
-    /// - No marks, and no root.
+    /// - The frames made no tree object; no marks, and no root.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -524,8 +525,100 @@ public sealed class AccessibilityTests
         app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Second" });
         _ = app.PumpAndSettle();
 
+        Assert.False(app.Tree.HasAccessibilityTree);
         Assert.Equal(0, app.Tree.Accessibility.MarkedCount);
         Assert.Null(app.Tree.Accessibility.Root);
+    }
+
+    /// <summary>
+    /// A change of the look alone, such as a hover's color, marks nothing in a window whose tree is made.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of two buttons; the tree made.
+    ///
+    /// Steps:
+    /// - Invalidate the first button's color, and mark it dirty for the paint alone; read the marks.
+    ///
+    /// Expected:
+    /// - No marks.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task LookAlone_MarksNothing()
+    {
+        Element first = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => Column(first = Button("first", () => { }), Button("second", () => { })));
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+
+        Invalidation.Invalidate(app.Tree, first.Node, ChangeKind.Color);
+        Invalidation.MarkDirty(app.Tree, first.Node, DirtyFlags.Paint);
+        int marks = app.Tree.Accessibility.MarkedCount;
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(0, marks);
+    }
+
+    /// <summary>
+    /// A change of a node's own state makes that node again alone, not its parent's, which looks over all its children.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of three buttons, none focused; the tree made.
+    ///
+    /// Steps:
+    /// - Focus the second; settle; read how many nodes the update made again, and its state.
+    ///
+    /// Expected:
+    /// - One node; the second button focused.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task OwnState_MakesAgainTheNodeAlone()
+    {
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(Button("first", () => { }), second = Button("second", () => { }), Button("third", () => { }))
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+
+        Assert.True(app.Focus(second));
+        _ = app.PumpAndSettle();
+
+        Assert.Equal((1, true), (app.Tree.Accessibility.LastRefreshed, app.AccessibilityOf(second).IsFocused));
+    }
+
+    /// <summary>
+    /// A name a role folds stops at a node that is a node of its own below it, also one whose role is given by its kind: its text is
+    /// that node's.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A list item holding a text "Row" and a scroll view 20 high of a text "Inner".
+    ///
+    /// Steps:
+    /// - Read the list item's name and the texts of the tree.
+    ///
+    /// Expected:
+    /// - "Row"; the text "Inner" alone.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Folding_StopsAtAScrollViewBelow()
+    {
+        Element item = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                item = Column(Elements.Text("Row"), ScrollView(Elements.Text("Inner")).Height(20))
+                    .Accessible(new AccessibilityInfo { Role = SemanticsRole.ListItem })
+            )
+        );
+        _ = app.PumpAndSettle();
+
+        Assert.Equal("Row", app.AccessibilityOf(item).Name);
+        Assert.Equal(["Inner"], app.FindByRole(SemanticsRole.Text).Select(t => app.AccessibilityOf(t).Name));
     }
 
     // Records each change the tree hands it.

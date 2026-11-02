@@ -35,6 +35,7 @@ internal sealed class AccessibilityTree(UiTree tree)
     private readonly Dictionary<NodeHandle, AccessibilityNode> _nodes = [];
     private readonly Dictionary<ulong, AccessibilityNode> _byId = [];
     private readonly HashSet<NodeHandle> _marked = [];
+    private readonly HashSet<NodeHandle> _markedSelf = [];
     private readonly List<AccessibilityNode> _work = [];
     private readonly HashSet<AccessibilityNode> _inWork = [];
     private readonly List<AccessibilityChange> _changes = [];
@@ -68,7 +69,7 @@ internal sealed class AccessibilityTree(UiTree tree)
     /// <summary>
     /// Gets the number of nodes of the UI tree marked since the last update, for the tests.
     /// </summary>
-    internal int MarkedCount => _marked.Count;
+    internal int MarkedCount => _marked.Count + _markedSelf.Count;
 
     /// <summary>
     /// Makes the whole tree, when assistive technology first asks for it, and hands the Platform every node.
@@ -95,6 +96,20 @@ internal sealed class AccessibilityTree(UiTree tree)
     public void Mark(NodeHandle node)
     {
         if (_marked.Add(node))
+        {
+            tree.NoteWork();
+        }
+    }
+
+    /// <summary>
+    /// Marks a node of the UI tree whose change may change its own node of the accessibility tree alone: a state, a value, or a scroll
+    /// position, which neither makes nor takes away a node. The update makes that node again, not its parent's, which looks over all
+    /// its children; a node of the UI tree with no node of its own changes nothing. Its callers mark only once the tree is made.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    public void MarkSelf(NodeHandle node)
+    {
+        if (_markedSelf.Add(node))
         {
             tree.NoteWork();
         }
@@ -131,7 +146,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             _ = _marked.Add(tree.Root);
         }
 
-        if (_marked.Count == 0)
+        if (_marked.Count == 0 && _markedSelf.Count == 0)
         {
             SendFocus();
             return;
@@ -153,7 +168,16 @@ internal sealed class AccessibilityTree(UiTree tree)
             }
         }
 
+        foreach (NodeHandle node in _markedSelf)
+        {
+            if (tree.Nodes.IsAlive(node) && _nodes.TryGetValue(node, out AccessibilityNode? own))
+            {
+                AddWork(own);
+            }
+        }
+
         _marked.Clear();
+        _markedSelf.Clear();
         _work.Sort(static (a, b) => a.Depth.CompareTo(b.Depth));
         LastRefreshed = 0;
         foreach (AccessibilityNode node in _work)
@@ -491,7 +515,9 @@ internal sealed class AccessibilityTree(UiTree tree)
     private void AppendText(NodeHandle handle, bool top)
     {
         ref UiNode n = ref tree.Nodes.GetRef(handle);
-        if (n.Layout.Style.Hidden || (!top && tree.AccessibilityInfoOf(handle)?.Role is { } role && role != SemanticsRole.None))
+
+        // A node that is a node of the tree under the folding one (CollectBelow) gives its text to its own node, not to the name.
+        if (n.Layout.Style.Hidden || (!top && RoleOf(handle, folding: true) != SemanticsRole.None))
         {
             return;
         }

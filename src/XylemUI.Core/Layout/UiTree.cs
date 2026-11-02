@@ -175,6 +175,17 @@ internal sealed class UiTree
     internal AccessibilityTree Accessibility => _accessibilityTree ??= new AccessibilityTree(this);
 
     /// <summary>
+    /// Runs the accessibility stage of a frame (<see cref="AccessibilityTree.Update"/>) when the tree is made; a window nobody reads
+    /// makes nothing.
+    /// </summary>
+    internal void UpdateAccessibility() => _accessibilityTree?.Update();
+
+    /// <summary>
+    /// Gets a value indicating whether the accessibility tree's object is made: <see cref="Accessibility"/> makes it when read.
+    /// </summary>
+    internal bool HasAccessibilityTree => _accessibilityTree is not null;
+
+    /// <summary>
     /// Gets a value indicating whether the accessibility tree was made, so that a change marks its node for it.
     /// </summary>
     internal bool AccessibilityActive => _accessibilityTree?.IsActive == true;
@@ -215,7 +226,7 @@ internal sealed class UiTree
     internal void SetAccessibilityValue(NodeHandle node, Signal<string> value)
     {
         _accessibilityValues[node] = value;
-        MarkAccessibility(node);
+        MarkAccessibilitySelf(node);
     }
 
     /// <summary>
@@ -245,7 +256,7 @@ internal sealed class UiTree
     internal void AddPopupAnchor(NodeHandle node)
     {
         _ = _popupAnchors.Add(node);
-        MarkAccessibility(node);
+        MarkAccessibilitySelf(node);
     }
 
     /// <summary>
@@ -264,6 +275,19 @@ internal sealed class UiTree
         if (_accessibilityTree is { IsActive: true } accessibility)
         {
             accessibility.Mark(node);
+        }
+    }
+
+    /// <summary>
+    /// Marks a node whose change may change its own node of the accessibility tree alone (<see cref="AccessibilityTree.MarkSelf"/>),
+    /// once the tree is made.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void MarkAccessibilitySelf(NodeHandle node)
+    {
+        if (_accessibilityTree is { IsActive: true } accessibility)
+        {
+            accessibility.MarkSelf(node);
         }
     }
 
@@ -1382,9 +1406,9 @@ internal sealed class UiTree
             {
                 Focus.Lose(node);
             }
-        }
 
-        MarkAccessibility(node);
+            MarkAccessibilitySelf(node);
+        }
     }
 
     /// <summary>
@@ -1490,7 +1514,7 @@ internal sealed class UiTree
         // Disabled, focused, and open are states of the node's accessibility (design §4.4.1).
         if ((state & (PseudoState.Disabled | PseudoState.Focused | PseudoState.Open)) != 0)
         {
-            MarkAccessibility(node);
+            MarkAccessibilitySelf(node);
         }
     }
 

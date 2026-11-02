@@ -274,7 +274,7 @@ internal sealed partial class WindowFrames
         }
 
         // The accessibility tree, once made, takes this frame's changes after the layout and the popups' frames (design §2.10).
-        _tree.Accessibility.Update();
+        _tree.UpdateAccessibility();
 
         bool rootsChanged = _tree.TakePopupsChanged();
         if (!layout && _tree.PaintUpdates.Count == 0 && !rootsChanged)
