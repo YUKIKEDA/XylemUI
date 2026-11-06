@@ -148,7 +148,8 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
     /// - A hidden window "UIA first" of 200 x 200 with a button "One".
     ///
     /// Steps:
-    /// - Run a frame; read whether the tree has its accessibility tree. Read the window's name through UIA; read it again.
+    /// - After the window's first frame, which its size runs, read whether the tree has its accessibility tree. Read the window's
+    ///   name through UIA; read it again.
     ///
     /// Expected:
     /// - No accessibility tree before; after, a tree that is active, and the name "UIA first".
@@ -159,7 +160,6 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
         {
             using var window = new DesktopWindow(() => Button("One", () => { }), new WindowOptions("UIA first", 200, 200), useWarp: true);
             HWND hwnd = window.Window.Hwnd;
-            window.Frames.RunFrame();
             bool before = window.Tree.HasAccessibilityTree;
 
             string name = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
@@ -242,7 +242,7 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             );
             HWND hwnd = window.Window.Hwnd;
             Assert.True(window.Tree.Focus.Focus(second.Node));
-            window.Frames.RunFrame();
+            RunAccessibilityStage(window);
             _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
 
             object? focused = ListenByUia(
@@ -270,8 +270,9 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A frame of a window whose accessibility tree AccessKit has, delivered, drawn, and handed to AccessKit, allocates nothing when it
-    /// changes no name: the focus moves between two buttons, which makes their nodes again with the same names.
+    /// The accessibility stage of a window whose tree AccessKit has, which hands AccessKit the nodes that changed, allocates nothing
+    /// when no name changes: the focus moves between two buttons, which makes their nodes again with the same names. The headless
+    /// test of the whole frame is AccessibilityTests.SteadyState_FocusAndHoverWithTheTree_AllocatesNothing.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -279,13 +280,13 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: focus the first button or the second by the
-    ///   iteration's number, and run a frame.
+    ///   iteration's number, and run the layout pass and the accessibility stage.
     ///
     /// Expected:
     /// - 0 bytes in every window.
     /// </remarks>
     [Fact]
-    public void SteadyState_FocusWithAccessKit_AllocatesNothing() =>
+    public void SteadyState_AccessibilityStageWithAccessKit_AllocatesNothing() =>
         ui.Invoke(() =>
         {
             Element first = default;
@@ -304,7 +305,7 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
                 i =>
                 {
                     _ = window.Tree.Focus.Focus(i % 2 == 0 ? first.Node : second.Node);
-                    window.Frames.RunFrame();
+                    RunAccessibilityStage(window);
                 }
             );
         });
@@ -356,7 +357,7 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             };
             uint dpi = (uint)MathF.Round(scale * 96 * 2);
             _ = SendMessageW(hwnd, WM.WM_DPICHANGED, (nuint)((dpi << 16) | dpi), (nint)(&suggested));
-            window.Frames.RunFrame();
+            RunAccessibilityStage(window);
 
             System.Windows.Rect after = Box();
 
@@ -397,10 +398,10 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             Win32Accessibility provider = window.Window.Accessibility!;
 
             label.Set("One");
-            window.Frames.RunFrame();
+            RunAccessibilityStage(window);
             int first = provider.LastUpdateNodes;
             label.Set("Two");
-            window.Frames.RunFrame();
+            RunAccessibilityStage(window);
 
             Assert.Equal((1, 1), (first, provider.LastUpdateNodes));
         });
@@ -433,7 +434,7 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             Win32Accessibility provider = window.Window.Accessibility!;
 
             window.Tree.SetStyle(content.Node, window.Tree.Nodes.GetRef(content.Node).Layout.Style with { Height = Length.Px(300) });
-            window.Frames.RunFrame();
+            RunAccessibilityStage(window);
 
             Assert.Equal(1, provider.LastUpdateNodes);
         });
@@ -484,6 +485,14 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
 
             Assert.Equal((false, true, "ControlType.Button", "XylemUI"), (early, tree.AccessibilityActive, read.Type, read.Framework));
         });
+
+    // The frame's layout pass and accessibility stage, without drawing: a present outside the loop's frame clock can block on a
+    // hidden window of CI's runner (Update_HandsAccessKitTheChangedNodesAlone hung there for 5 minutes on its second present).
+    private static void RunAccessibilityStage(DesktopWindow window)
+    {
+        LayoutEngine.RunLayoutPass(window.Tree);
+        window.Tree.UpdateAccessibility();
+    }
 
     // Starts a UIA client on a thread of its own that listens (listen returns its handler and how to read what it got), then runs
     // the change on the UI thread, and runs the loop until the client got its event or the watchdog ends the wait. Returns what the
