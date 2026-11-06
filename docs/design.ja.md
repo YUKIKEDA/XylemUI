@@ -2521,7 +2521,7 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
   - Platform: 本物の UIA のクライアント（UIAutomationClient、S10 と同じ）が窓の木を読み、役・名前・状態・矩形・パターンが合い、フォーカスとプロパティの変化のイベントが届く（実装の 2 つ目の PR）。Invoke と Toggle と Expand が働く（3 つ目）
   - 実機: ナレーターで、Todo のサンプルのボタン・欄・一覧・メニュー・ダイアログが読み上げられることを、オーナーが確かめる
   - 割り当て 0: 木の無い窓のフレームは今と同じ。木がある窓の、変化の無いフレームも割り当て 0（AccessKit の節は AccessKit が持つ）
-  - 大きさ: 実行ファイルの増え方を、実装の 2 つ目の PR で測って記録する（S10 の最小の使い方で +253 KB）
+  - 大きさ: 実行ファイルの増え方を、実装の 2 つ目の PR で測って記録する（S10 の最小の使い方で +253 KB）。`XylemUI.E2E.exe` は 5,762,560 バイトから 6,032,384 バイト（+263 KB）になった（#633、`docs/benchmarks/p02g.md`）
   - PR は、`AccessibilityInfo` の API・a11y の木・部品の既定の役・Testing の口（1 つ目）、AccessKit の取り込み・Windows の adapter・節への変換（2 つ目）、操作・仮想化した並び・リンクの範囲の節（3 つ目）に分ける。2 つ目と 3 つ目は、読むだけの木と操作を分けてレビューを小さくするために分けた（Issue #633）
 
 Windows の UIA は、AccessKit の Windows の adapter が COM サーバー（`IRawElementProviderSimple` 等）として出す（上の「P02g で入れる形」、S10）。source-generated COM（`[GeneratedComClass]` と `StrategyBasedComWrappers`）は、インターフェースの属性をリフレクションで読むので、NativeAOT のリフレクションの実行時とメタデータがリンクされ、`XylemUI.E2E.exe` が 4.28 MB でなく 4.71 MB になった（F1）。
