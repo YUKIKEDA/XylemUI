@@ -102,14 +102,13 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         Push();
     }
 
-    /// <inheritdoc/>
-    public void NotifyFocusChange(AccessibilityNodeId node)
-    {
-        if (!_activating)
-        {
-            Push();
-        }
-    }
+    /// <summary>
+    /// Does nothing: each update hands AccessKit the node that has the focus with the nodes that changed (<see cref="NodesChanged"/>),
+    /// and a change of the focus also changes the Focused state of the node that had it or of the node that takes it. When neither
+    /// has a node, AccessKit's focus stays the window's.
+    /// </summary>
+    /// <param name="node">The node that has the focus, or none.</param>
+    public void NotifyFocusChange(AccessibilityNodeId node) { }
 
     /// <summary>
     /// Frees the adapter: assistive technology that asks the window again gets no provider.
