@@ -309,6 +309,60 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             );
         });
 
+    /// <summary>
+    /// A change of the window's scale scales the boxes UIA reads, also when the window keeps its size in logical pixels, which
+    /// changes no node of the tree.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA scale" with a button "One" 100 x 30; UIA has read its box.
+    ///
+    /// Steps:
+    /// - Send WM_DPICHANGED for twice the window's DPI, with a suggested rectangle whose client area is twice as large (the frame
+    ///   kept), so that the window keeps its size in logical pixels; run a frame; read the box again.
+    ///
+    /// Expected:
+    /// - The box is 100 × the new scale wide, twice as wide as before.
+    /// </remarks>
+    [Fact]
+    public void ScaleChange_ScalesTheBoxes() =>
+        ui.Invoke(() =>
+        {
+            using var window = new DesktopWindow(
+                () => Column(Button("One", () => { }).Width(100).Height(30)),
+                new WindowOptions("UIA scale", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            System.Windows.Rect Box() =>
+                ReadByUia(() =>
+                    AutomationElement
+                        .FromHandle((nint)hwnd)
+                        .FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "One"))
+                        .Current.BoundingRectangle
+                );
+            System.Windows.Rect before = Box();
+            float scale = window.Window.ScaleFactor;
+            RECT outer;
+            RECT client;
+            _ = GetWindowRect(hwnd, &outer);
+            _ = GetClientRect(hwnd, &client);
+            var suggested = new RECT
+            {
+                left = outer.left,
+                top = outer.top,
+                right = outer.right + (client.right - client.left),
+                bottom = outer.bottom + (client.bottom - client.top),
+            };
+            uint dpi = (uint)MathF.Round(scale * 96 * 2);
+            _ = SendMessageW(hwnd, WM.WM_DPICHANGED, (nuint)((dpi << 16) | dpi), (nint)(&suggested));
+            window.Frames.RunFrame();
+
+            System.Windows.Rect after = Box();
+
+            Assert.Equal((100 * scale, 100 * scale * 2), (before.Width, after.Width));
+        });
+
     // Starts a UIA client on a thread of its own that listens (listen returns its handler and how to read what it got), then runs
     // the change on the UI thread, and runs the loop until the client got its event or the watchdog ends the wait. Returns what the
     // client got.
