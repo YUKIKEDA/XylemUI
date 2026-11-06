@@ -177,7 +177,7 @@ internal static class Roles
     /// <summary>
     /// Gets the information of a select's list.
     /// </summary>
-    public static AccessibilityInfo List { get; } = new() { Role = SemanticsRole.List };
+    public static AccessibilityInfo List { get; } = new() { Role = SemanticsRole.List, PartStates = AccessibilityStates.SelectableList };
 
     /// <summary>
     /// Gets the information of a choice of a select.

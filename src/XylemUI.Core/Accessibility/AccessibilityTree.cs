@@ -238,6 +238,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             node.Children.Add(Make(child, node));
         }
 
+        _ = SyncLinks(node);
         return node;
     }
 
@@ -298,6 +299,11 @@ internal sealed class AccessibilityTree(UiTree tree)
             }
         }
 
+        if (SyncLinks(node))
+        {
+            changed = true;
+        }
+
         if (changed)
         {
             Changed(node);
@@ -319,6 +325,12 @@ internal sealed class AccessibilityTree(UiTree tree)
         foreach (AccessibilityNode child in node.Children)
         {
             RemoveTree(child);
+        }
+
+        foreach (AccessibilityNode link in node.Links)
+        {
+            _ = _byId.Remove(link.Id.Value);
+            _changes.Add(new AccessibilityChange(link.Id, AccessibilityChangeKind.Removed));
         }
 
         if (_nodes.TryGetValue(node.Node, out AccessibilityNode? same) && same == node)
@@ -368,6 +380,8 @@ internal sealed class AccessibilityTree(UiTree tree)
         Size scrollRange = n.Layout.Style.IsScrollContainer ? tree.MaxScrollOffsetOf(handle) : default;
         Rect bounds = node.Parent is null ? n.Layout.Rect : BoundsOf(node);
         string? automationId = tree.TestIdOf(handle);
+        int position = !n.Parent.IsNone && tree.VirtualHostOf(n.Parent) is { } rows && rows.IndexOf(handle, out int index) ? index : -1;
+        int size = tree.VirtualHostOf(handle)?.Count ?? -1;
         bool changed =
             node.Role != role
             || node.Name != name
@@ -378,7 +392,9 @@ internal sealed class AccessibilityTree(UiTree tree)
             || node.ChildOffset != childOffset
             || node.ScrollRange != scrollRange
             || node.Bounds != bounds
-            || node.AutomationId != automationId;
+            || node.AutomationId != automationId
+            || node.PositionInSet != position
+            || node.SizeOfSet != size;
         node.Role = role;
         node.Name = name;
         node.Description = info?.Description;
@@ -389,6 +405,8 @@ internal sealed class AccessibilityTree(UiTree tree)
         node.ScrollRange = scrollRange;
         node.Bounds = bounds;
         node.AutomationId = automationId;
+        node.PositionInSet = position;
+        node.SizeOfSet = size;
         return changed;
     }
 
@@ -444,9 +462,17 @@ internal sealed class AccessibilityTree(UiTree tree)
 
     private void CollectBelow(NodeHandle parent, bool folding)
     {
+        // A virtualized list's rows in the tree are those it lays out, and a row it keeps outside its range while the row holds
+        // the focus; a row kept for the pointer's capture, a drag, or KeepAlive is not (design §4.4.1, "Virtualized lists").
+        IVirtualHost? rows = tree.VirtualHostOf(parent);
         for (NodeHandle child = tree.Nodes.GetRef(parent).FirstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
             if (tree.Nodes.GetRef(child).Layout.Style.Hidden)
+            {
+                continue;
+            }
+
+            if (rows is not null && !rows.LaysOut(child, out _) && !HoldsFocus(child))
             {
                 continue;
             }
@@ -460,6 +486,117 @@ internal sealed class AccessibilityTree(UiTree tree)
                 CollectBelow(child, folding);
             }
         }
+    }
+
+    private bool HoldsFocus(NodeHandle node)
+    {
+        NodeHandle focused = tree.Focus.Focused;
+        return tree.Nodes.IsAlive(focused) && tree.IsInSubtree(focused, node);
+    }
+
+    // Whether a node has a click handler of its own in the bubble phase, which a click routed from the node reaches first.
+    private static bool TakesClick(NodeInput input)
+    {
+        foreach (HandlerEntry entry in input.Handlers)
+        {
+            if (entry.Kind == PointerEventKind.Click && entry.Phase == EventPhase.Bubble)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The nodes of a text leaf's link ranges (design §4.8): one Hyperlink node for each link, after the node's children, named by
+    // the link's text and boxed by its lines. A text leaf whose text a role above folds into its name has no node of its own, and so
+    // none of its links. Returns whether a link node was made or taken away.
+    private bool SyncLinks(AccessibilityNode node)
+    {
+        int count =
+            node.Role == SemanticsRole.Text && tree.Nodes.GetRef(node.Node).Text is { Ranges: { HasLinks: true } ranges } ? ranges.Links.Length : 0;
+        bool changed = false;
+        while (node.Links.Count > count)
+        {
+            AccessibilityNode last = node.Links[^1];
+            node.Links.RemoveAt(node.Links.Count - 1);
+            _ = _byId.Remove(last.Id.Value);
+            _changes.Add(new AccessibilityChange(last.Id, AccessibilityChangeKind.Removed));
+            changed = true;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            if (i == node.Links.Count)
+            {
+                var link = new AccessibilityNode(new AccessibilityNodeId(_nextId++), node.Node)
+                {
+                    Parent = node,
+                    LinkIndex = i,
+                    Role = SemanticsRole.Hyperlink,
+                    States = AccessibilityStates.Clickable,
+                };
+                _ = WriteLink(link);
+                link.Stamp = _stamp;
+                _byId[link.Id.Value] = link;
+                node.Links.Add(link);
+                _changes.Add(new AccessibilityChange(link.Id, AccessibilityChangeKind.Added));
+                changed = true;
+            }
+            else if (WriteLink(node.Links[i]))
+            {
+                Changed(node.Links[i]);
+            }
+        }
+
+        return changed;
+    }
+
+    // A link node's name, the text of the link's ranges joined, and its box in its text leaf's border box: from the caret at the
+    // link's start to the caret at its end on one line, and the lines it spans at the content's width on more.
+    private bool WriteLink(AccessibilityNode link)
+    {
+        TextLeaf leaf = tree.Nodes.GetRef(link.Node).Text!;
+        TextRanges ranges = leaf.Ranges!;
+        _name.Clear();
+        int start = -1;
+        int end = -1;
+        foreach (PaintRun run in ranges.Paint)
+        {
+            if (run.Link == link.LinkIndex)
+            {
+                start = start < 0 ? run.Start : start;
+                end = run.Start + run.Length;
+                _ = _name.Append(leaf.Text.Slice(run.Start, run.Length));
+            }
+        }
+
+        string? name =
+            _name.Length == 0 ? null
+            : link.Name is { } before && _name.Equals(before.AsSpan()) ? before
+            : _name.ToString();
+        Rect bounds = default;
+        if (start >= 0 && TextCaret.HasLines(leaf))
+        {
+            Rect first = TextCaret.CaretGeometry(leaf, start, Affinity.Downstream).Rect;
+            Rect last = TextCaret.CaretGeometry(leaf, end, Affinity.Upstream).Rect;
+            Edges edges = leaf.PaddingBorder;
+            if (first.Y == last.Y)
+            {
+                bounds = new Rect(edges.Left + first.X, edges.Top + first.Y, last.X - first.X, first.Height);
+            }
+            else
+            {
+                Rect box = tree.Nodes.GetRef(link.Node).Layout.Rect;
+                float width = box.Width - edges.Left - edges.Right;
+                bounds = new Rect(edges.Left, edges.Top + first.Y, width, last.Y + last.Height - first.Y);
+            }
+        }
+
+        bool changed = link.Name != name || link.Bounds != bounds;
+        link.Name = name;
+        link.Bounds = bounds;
+        return changed;
     }
 
     // A node's role: the window's; the one its information gives (None leaves it out); a virtualized list's box and its rows; a box
@@ -552,6 +689,16 @@ internal sealed class AccessibilityTree(UiTree tree)
         if (n.Input is { Focusable: true })
         {
             states |= AccessibilityStates.Focusable;
+        }
+
+        if (n.Input is { } input && TakesClick(input))
+        {
+            states |= AccessibilityStates.Clickable;
+        }
+
+        if (n.Layout.Style.IsScrollContainer)
+        {
+            states |= AccessibilityStates.ClipsChildren;
         }
 
         if (tree.IsPopupAnchor(handle))

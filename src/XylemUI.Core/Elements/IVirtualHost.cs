@@ -26,6 +26,19 @@ internal interface IVirtualHost : IVirtualizedFocusHost
     bool LaysOut(NodeHandle row, out int index);
 
     /// <summary>
+    /// Gets the number of items.
+    /// </summary>
+    int Count { get; }
+
+    /// <summary>
+    /// Returns a row's index among the items, laid out or kept outside its range.
+    /// </summary>
+    /// <param name="row">A child of the list's box.</param>
+    /// <param name="index">The row's index, or -1.</param>
+    /// <returns>Whether the node is a row of the list.</returns>
+    bool IndexOf(NodeHandle row, out int index);
+
+    /// <summary>
     /// Records the length a row took along the axis that scrolls, margins included, when it was laid out.
     /// </summary>
     /// <param name="index">The row's index.</param>

@@ -191,7 +191,23 @@ public static partial class Primitive
                 options.Password ? Roles.PasswordEdit
                 : options.Multiline ? Roles.MultilineEdit
                 : Roles.Edit;
+            if (options.ReadOnly)
+            {
+                edit = edit with { PartStates = edit.PartStates | AccessibilityStates.ReadOnly };
+            }
+
             _tree.SetPartAccessibility(_field, edit);
+
+            // Assistive technology's SetValue writes the text as the app does, cut as typing is: to the first line for a field of one
+            // line, and to MaxLength. The provider refuses it for a field that is read-only or disabled (design §4.4.1).
+            _tree.SetAccessibilityValueSetter(
+                _field,
+                value =>
+                {
+                    string line = options.Multiline ? value : TextEditor.FirstLine(value);
+                    text.Set(options.MaxLength is { } max ? TextEditor.Take(line, max) : line);
+                }
+            );
             if (!options.Password)
             {
                 _tree.SetAccessibilityValue(_field, text);

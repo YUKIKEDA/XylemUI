@@ -28,6 +28,9 @@ internal static unsafe partial class AccessKit
     /// <summary><c>ACCESSKIT_ROLE_LIST_ITEM</c>.</summary>
     public const byte RoleListItem = 7;
 
+    /// <summary><c>ACCESSKIT_ROLE_LIST_BOX_OPTION</c>.</summary>
+    public const byte RoleListBoxOption = 10;
+
     /// <summary><c>ACCESSKIT_ROLE_MENU_ITEM</c>.</summary>
     public const byte RoleMenuItem = 11;
 
@@ -64,6 +67,9 @@ internal static unsafe partial class AccessKit
     /// <summary><c>ACCESSKIT_ROLE_GROUP</c>.</summary>
     public const byte RoleGroup = 78;
 
+    /// <summary><c>ACCESSKIT_ROLE_LIST_BOX</c>.</summary>
+    public const byte RoleListBox = 87;
+
     /// <summary><c>ACCESSKIT_ROLE_MENU_BAR</c>.</summary>
     public const byte RoleMenuBar = 93;
 
@@ -90,6 +96,29 @@ internal static unsafe partial class AccessKit
 
     /// <summary><c>ACCESSKIT_ROLE_WINDOW</c>.</summary>
     public const byte RoleWindow = 133;
+
+    // The values of accesskit_action (accesskit.h lines 64 to 149, in order from 0) that the nodes declare (design §4.4.1).
+
+    /// <summary><c>ACCESSKIT_ACTION_CLICK</c>.</summary>
+    public const byte ActionClick = 0;
+
+    /// <summary><c>ACCESSKIT_ACTION_FOCUS</c>.</summary>
+    public const byte ActionFocus = 1;
+
+    /// <summary><c>ACCESSKIT_ACTION_COLLAPSE</c>.</summary>
+    public const byte ActionCollapse = 3;
+
+    /// <summary><c>ACCESSKIT_ACTION_EXPAND</c>.</summary>
+    public const byte ActionExpand = 4;
+
+    /// <summary><c>ACCESSKIT_ACTION_SCROLL_INTO_VIEW</c>.</summary>
+    public const byte ActionScrollIntoView = 15;
+
+    /// <summary><c>ACCESSKIT_ACTION_SET_VALUE</c>.</summary>
+    public const byte ActionSetValue = 20;
+
+    /// <summary><c>ACCESSKIT_ACTION_DATA_VALUE</c> (accesskit.h line 1011): the data is a text.</summary>
+    public const int ActionDataValue = 1;
 
     /// <summary><c>ACCESSKIT_TOGGLED_FALSE</c> (accesskit.h line 593).</summary>
     public const byte ToggledFalse = 0;
@@ -145,6 +174,29 @@ internal static unsafe partial class AccessKit
     /// <param name="length">Its length in bytes.</param>
     [LibraryImport(Library, EntryPoint = "accesskit_node_set_author_id_with_length")]
     public static partial void NodeSetAuthorId(nint node, byte* value, nuint length);
+
+    /// <summary>Declares an action a node takes (<c>accesskit_node_add_action</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="action">The action, such as <see cref="ActionClick"/>.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_add_action")]
+    public static partial void NodeAddAction(nint node, byte action);
+
+    /// <summary>Marks a node that clips its children to its bounds (<c>accesskit_node_set_clips_children</c>).</summary>
+    /// <param name="node">The node.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_clips_children")]
+    public static partial void NodeSetClipsChildren(nint node);
+
+    /// <summary>Sets a node's place in its set, from 0 (<c>accesskit_node_set_position_in_set</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The place.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_position_in_set")]
+    public static partial void NodeSetPositionInSet(nint node, nuint value);
+
+    /// <summary>Sets the size of the set a node's items are in (<c>accesskit_node_set_size_of_set</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The size.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_size_of_set")]
+    public static partial void NodeSetSizeOfSet(nint node, nuint value);
 
     /// <summary>Marks a node disabled (<c>accesskit_node_set_disabled</c>).</summary>
     /// <param name="node">The node.</param>
@@ -400,6 +452,69 @@ internal static unsafe partial class AccessKit
 
         /// <summary>Gets the y translation.</summary>
         public double F { get; } = f;
+    }
+
+    /// <summary>
+    /// A request for an action (<c>accesskit_action_request</c>, accesskit.h lines 1065 to 1070): the action at byte 0, the tree's
+    /// id at 1 to 16, the node's id at 24, and the optional data at 32; 80 bytes on x64.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ActionRequest
+    {
+        /// <summary>The action, such as <see cref="ActionClick"/>.</summary>
+        public byte Action;
+
+        /// <summary>The id of the tree the node is in.</summary>
+        public TreeId TargetTree;
+
+        /// <summary>The id of the node the action is for.</summary>
+        public ulong TargetNode;
+
+        /// <summary>The action's data, if any.</summary>
+        public OptionalActionData Data;
+    }
+
+    /// <summary>The id of a tree (<c>accesskit_tree_id</c>: 16 bytes).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TreeId
+    {
+        /// <summary>The id's bytes.</summary>
+        public fixed byte Bytes[16];
+    }
+
+    /// <summary>The data of an action that may be absent (<c>accesskit_opt_action_data</c>).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OptionalActionData
+    {
+        /// <summary>1 when there is data.</summary>
+        public byte HasValue;
+
+        /// <summary>The data.</summary>
+        public ActionData Value;
+    }
+
+    /// <summary>The data of an action (<c>accesskit_action_data</c>: a C enum's tag, then a union of 32 bytes).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ActionData
+    {
+        /// <summary>Which member of the union holds the data, such as <see cref="ActionDataValue"/>.</summary>
+        public int Tag;
+
+        /// <summary>The data.</summary>
+        public ActionDataUnion Value;
+    }
+
+    /// <summary>The union of an action's data: a text (UTF-8, terminated) or a number, among others not read.</summary>
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    public struct ActionDataUnion
+    {
+        /// <summary>The text, for <see cref="ActionDataValue"/>.</summary>
+        [FieldOffset(0)]
+        public byte* Text;
+
+        /// <summary>The number, for a numeric value.</summary>
+        [FieldOffset(0)]
+        public double Number;
     }
 
     /// <summary>An answer that may be absent (<c>accesskit_opt_lresult</c>: a one-byte bool, then the <c>LRESULT</c>).</summary>

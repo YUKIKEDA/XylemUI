@@ -12,6 +12,12 @@ public sealed unsafe partial class Win32Window
     private const uint WmKillFocus = WM.WM_KILLFOCUS;
 
     /// <summary>
+    /// The message that carries a request for an action of assistive technology to the UI thread, the request in <c>lParam</c>
+    /// (design §4.4.1, "Threads").
+    /// </summary>
+    internal const uint WmAccessKitAction = WM.WM_APP + 1;
+
+    /// <summary>
     /// Gets or sets the window's UIA provider, or <see langword="null"/> for none: the window then answers no <c>WM_GETOBJECT</c>
     /// itself, and Windows gives the default.
     /// </summary>
@@ -22,11 +28,21 @@ public sealed unsafe partial class Win32Window
     {
         if (Accessibility is not { } accessibility)
         {
+            // A request that comes after the provider let go of the window is freed, not carried out.
+            if (message == WmAccessKitAction)
+            {
+                AccessKit.ActionRequestFree(lParam);
+                return true;
+            }
+
             return false;
         }
 
         switch (message)
         {
+            case WmAccessKitAction:
+                accessibility.Perform(lParam);
+                return true;
             case WmGetObject:
                 return accessibility.HandleGetObject(wParam, lParam, out result);
             case WmSetFocus:

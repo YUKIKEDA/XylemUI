@@ -138,6 +138,22 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
     }
 
     /// <inheritdoc/>
+    public int Count => _count;
+
+    /// <inheritdoc/>
+    public bool IndexOf(NodeHandle row, out int index)
+    {
+        if (_rowOf.TryGetValue(row, out Row? r))
+        {
+            index = r.Index;
+            return true;
+        }
+
+        index = -1;
+        return false;
+    }
+
+    /// <inheritdoc/>
     public bool LaysOut(NodeHandle row, out int index)
     {
         if (_rowOf.TryGetValue(row, out Row? r) && r.Live)

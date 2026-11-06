@@ -248,6 +248,34 @@ internal sealed partial class WindowInput
     }
 
     /// <summary>
+    /// Calls the click handler of a link of a text leaf as a click of the pointer on it calls it (design §4.8), with the input of
+    /// <see cref="ClickFromKey"/>: assistive technology's click on a link's node (design §4.4.1).
+    /// </summary>
+    /// <param name="leaf">The text leaf.</param>
+    /// <param name="link">The index of the link in the leaf's ranges.</param>
+    /// <param name="timestamp">When the request was received.</param>
+    internal void ClickLinkFromOutside(NodeHandle leaf, int link, TimeSpan timestamp)
+    {
+        if (RangesOf(leaf) is not { } ranges || (uint)link >= (uint)ranges.Links.Length)
+        {
+            return;
+        }
+
+        var input = new PointerInput(
+            PointerInputKind.Up,
+            0,
+            0,
+            PointerButton.None,
+            PointerButtons.None,
+            KeyModifiers.None,
+            0,
+            timestamp,
+            PointerType.Mouse
+        );
+        CallLink(ranges.Links[link].OnClick, PointerEventKind.Click, leaf, input);
+    }
+
+    /// <summary>
     /// Stops the event being delivered (<see cref="PointerEvent.StopPropagation"/>).
     /// </summary>
     internal void StopPropagation() => _stopped = true;

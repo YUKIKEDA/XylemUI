@@ -194,6 +194,13 @@ internal static class TextCaret
         return -1;
     }
 
+    /// <summary>
+    /// Returns whether a leaf has lines its last layout committed, so that <see cref="CaretGeometry"/> can place a caret in it.
+    /// </summary>
+    /// <param name="leaf">The text leaf.</param>
+    /// <returns>Whether the leaf has lines.</returns>
+    public static bool HasLines(TextLeaf leaf) => Committed(leaf) is { Lines.Length: > 0 };
+
     private static LineLayoutResult? Committed(TextLeaf leaf) =>
         leaf.Shaped?.Result is not null && leaf.LineBreaks is { Committed: >= 0 } cache ? cache[cache.Committed].Layout : null;
 

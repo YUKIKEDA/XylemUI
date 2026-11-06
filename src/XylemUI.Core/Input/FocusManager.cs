@@ -30,8 +30,9 @@ internal sealed class FocusManager
     private bool _hasPending;
     private NodeHandle _pending;
 
-    // The node Tab or Focus moved the focus to, which the next frame scrolls into view.
+    // The node Tab or Focus moved the focus to, which the next frame scrolls into view; or any node, when _revealAny is set.
     private NodeHandle _reveal;
+    private bool _revealAny;
 
     // The node the window's scope had focused last, for a popup's scope that gives the focus back to it.
     private NodeHandle _rootFocused;
@@ -211,6 +212,18 @@ internal sealed class FocusManager
     }
 
     /// <summary>
+    /// Asks the next frame to scroll a node into view, whether it has the focus or not, as <see cref="RevealPending"/> scrolls the
+    /// focused node: assistive technology's ScrollIntoView (design §4.4.1, "States and actions").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void BringIntoView(NodeHandle node)
+    {
+        _reveal = node;
+        _revealAny = true;
+        Tree.NoteWork();
+    }
+
+    /// <summary>
     /// Scrolls the focused node into view when a move from Tab or <see cref="Focus"/> asked for it (design §7, "Bring into view"):
     /// from the node up, each scroll container moves its position on the axes that scroll (<see cref="Overflow.Hidden"/> or
     /// <see cref="Overflow.Scroll"/>) by the least that brings the node's border box into its viewport, or puts the node's start at
@@ -220,8 +233,10 @@ internal sealed class FocusManager
     public void RevealPending()
     {
         NodeHandle node = _reveal;
+        bool any = _revealAny;
         _reveal = default;
-        if (node.IsNone || node != Focused || !Tree.Nodes.IsAlive(node))
+        _revealAny = false;
+        if (node.IsNone || (!any && node != Focused) || !Tree.Nodes.IsAlive(node))
         {
             return;
         }
@@ -231,6 +246,7 @@ internal sealed class FocusManager
         if (FindListRow(node, out NodeHandle box, out NodeHandle row) && Tree.VirtualHostOf(box)!.RevealKeptRow(row))
         {
             AskToReveal(node);
+            _revealAny = any;
             return;
         }
 
