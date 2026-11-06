@@ -26,6 +26,8 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     private nint _adapter;
     private ulong _rootId;
     private bool _activating;
+    private bool _asked;
+    private bool _whole;
     private byte[] _text = new byte[256];
     private ulong[] _children = new ulong[16];
     private bool _disposed;
@@ -73,6 +75,21 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
 
         result = answer.Value;
         return true;
+    }
+
+    /// <summary>
+    /// Makes the trees and hands AccessKit the whole tree when assistive technology asked for it before the tree had a root, which
+    /// AccessKit then answered with a placeholder. The window calls it once its tree has a root.
+    /// </summary>
+    public void StartIfAsked()
+    {
+        if (_asked && _adapter != 0 && !_tree.Root.IsNone)
+        {
+            _asked = false;
+            _ = StartTree();
+            _whole = true;
+            Push();
+        }
     }
 
     /// <summary>
@@ -223,7 +240,21 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         }
     }
 
+    // A window shown before its tree has a root (DesktopWindow shows it, then mounts and sizes it) can be asked already: Windows'
+    // own clients send WM_GETOBJECT for the window's client area too. The answer is then that the tree is not ready, and AccessKit
+    // gives a placeholder; StartIfAsked hands it the whole tree once the root is there.
     private nint Activate()
+    {
+        if (_tree.Root.IsNone)
+        {
+            _asked = true;
+            return 0;
+        }
+
+        return MakeWholeTree(StartTree());
+    }
+
+    private AccessibilityNode StartTree()
     {
         AccessibilityTree accessibility = _tree.Accessibility;
         accessibility.Bridge = this;
@@ -237,11 +268,12 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             _activating = false;
         }
 
-        if (accessibility.Root is not { } root)
-        {
-            return 0;
-        }
+        return accessibility.Root!;
+    }
 
+    private nint MakeWholeTree(AccessibilityNode root)
+    {
+        AccessibilityTree accessibility = _tree.Accessibility;
         _rootId = root.Id.Value;
         nint update = AccessKit.TreeUpdateWithCapacityAndFocus(0, FocusId(accessibility, root));
         nint info = AccessKit.TreeInfoNew(_rootId);
@@ -271,6 +303,13 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
 
     private nint MakeUpdate()
     {
+        // The first update after a placeholder is the whole tree, with the tree's information.
+        if (_whole)
+        {
+            _whole = false;
+            return MakeWholeTree(_tree.Accessibility.Root!);
+        }
+
         AccessibilityTree accessibility = _tree.Accessibility;
         AccessibilityNode? root = accessibility.Root;
         nint update = AccessKit.TreeUpdateWithCapacityAndFocus((nuint)_pending.Count, root is null ? 0 : FocusId(accessibility, root));

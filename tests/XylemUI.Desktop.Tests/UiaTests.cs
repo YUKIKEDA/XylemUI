@@ -438,6 +438,53 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             Assert.Equal(1, provider.LastUpdateNodes);
         });
 
+    /// <summary>
+    /// A question before the tree has a root, as Windows' own clients ask a window that has just shown, gets AccessKit's
+    /// placeholder; once the tree has a root, the window hands AccessKit the whole tree, which UIA then reads.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA early" and a tree with no root, whose provider is the window's.
+    ///
+    /// Steps:
+    /// - Send the window the WM_GETOBJECT that UIA sends first; read whether the tree is made. Give the tree a root holding a button
+    ///   "Late", size it, and start what was asked; read the button's name through UIA.
+    ///
+    /// Expected:
+    /// - No tree after the question, and no failure; then an active tree, and UIA reads "Late" as a button of the framework "XylemUI".
+    /// </remarks>
+    [Fact]
+    public void QuestionBeforeTheRoot_GetsThePlaceholder_ThenTheTree() =>
+        ui.Invoke(() =>
+        {
+            const int UiaRootObjectId = -25;
+            using var window = new Win32Window("UIA early", 200, 200);
+            var tree = new UiTree { Title = "UIA early" };
+            using var provider = new Win32Accessibility(window, tree);
+            window.Accessibility = provider;
+            HWND hwnd = window.Hwnd;
+
+            _ = SendMessageW(hwnd, WM.WM_GETOBJECT, 0, UiaRootObjectId);
+            bool early = tree.HasAccessibilityTree;
+            Handle<UiNode> root = tree.CreateNode(new LayoutStyle());
+            Handle<UiNode> button = tree.CreateNode(new LayoutStyle { Width = Length.Px(50), Height = Length.Px(20) });
+            tree.SetAccessibility(button, new AccessibilityInfo { Role = SemanticsRole.Button, Name = "Late" });
+            tree.AppendChild(root, button);
+            Invalidation.NotifyWindowResized(tree, root, new Size(200, 200));
+            LayoutEngine.RunLayoutPass(tree);
+            provider.StartIfAsked();
+
+            (string Type, string Framework) read = ReadByUia(() =>
+            {
+                AutomationElement element = AutomationElement
+                    .FromHandle((nint)hwnd)
+                    .FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Late"));
+                return (element.Current.ControlType.ProgrammaticName, element.Current.FrameworkId);
+            });
+
+            Assert.Equal((false, true, "ControlType.Button", "XylemUI"), (early, tree.AccessibilityActive, read.Type, read.Framework));
+        });
+
     // Starts a UIA client on a thread of its own that listens (listen returns its handler and how to read what it got), then runs
     // the change on the UI thread, and runs the loop until the client got its event or the watchdog ends the wait. Returns what the
     // client got.

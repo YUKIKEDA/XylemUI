@@ -117,6 +117,9 @@ internal sealed class DesktopWindow : IDisposable
             Win32MessageLoop.FrameScheduler.CancelFrame();
             float scale = Window.ScaleFactor;
             Frames.Resize(new Size(width / scale, height / scale), scale);
+
+            // The tree has its root now: assistive technology that asked while the window showed gets the tree.
+            _accessibility.StartIfAsked();
         }
         catch
         {
