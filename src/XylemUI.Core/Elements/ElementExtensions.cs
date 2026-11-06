@@ -888,6 +888,46 @@ public static partial class ElementExtensions
         return row;
     }
 
+    /// <summary>
+    /// Sets what a node is to assistive technology (design §4.4.1, "The shape of P02g"): each value the information leaves
+    /// <see langword="null"/> keeps the one the node's part gives. A node with a role is a node of the accessibility tree; a node
+    /// with none is left out, and its children go to the nearest node above that has one.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="info">The information.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element Accessible(this Element element, AccessibilityInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        element.TreeOrThrow().SetAccessibility(element.Node, info);
+        return element;
+    }
+
+    /// <summary>
+    /// Sets what a node is to assistive technology from a signal, as <see cref="Accessible(Element, AccessibilityInfo)"/> does, and
+    /// again each time the signal changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="info">The information.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element Accessible(this Element element, IReadOnlySignal<AccessibilityInfo> info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        UiTree tree = element.TreeOrThrow();
+        RequireScope();
+        NodeHandle node = element.Node;
+        _ = Effect.Create(() =>
+        {
+            AccessibilityInfo value = info.Get();
+            if (tree.Nodes.IsAlive(node))
+            {
+                tree.SetAccessibility(node, value);
+            }
+        });
+        return element;
+    }
+
     // The checks of For, and the mark that the box takes no second one.
     private static void StartFor<T, TKey>(Element container, IReadOnlySignal<IReadOnlyList<T>> items, Func<T, TKey> key)
     {

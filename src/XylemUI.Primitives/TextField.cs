@@ -184,6 +184,15 @@ public static partial class Primitive
             }
 
             _tree.SetTextInputClient(_field, this);
+
+            // A field is an edit to assistive technology, with its text as its value; a password field shows none (design §4.4.1). The
+            // tree reads the text when it makes the node again, which a change of the text leaf marks: a keystroke makes no information.
+            _tree.SetPartAccessibility(_field, Roles.Edit);
+            if (!options.Password)
+            {
+                _tree.SetAccessibilityValue(_field, text);
+            }
+
             Scope.OnCleanup(StopBlink);
             return field;
         }

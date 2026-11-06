@@ -230,13 +230,17 @@ public static partial class Primitive
 
         public void Wheel(in PointerEvent e) => Hide();
 
-        // The tooltip's content, in a box that follows the pointer over it.
-        private Element Render() =>
-            Box(_content())
+        // The tooltip's content, in a box that follows the pointer over it; the box is a tooltip by default, under the app's information.
+        private Element Render()
+        {
+            Element box = Box(_content())
                 .On(PointerEventKind.Enter, EventPhase.Bubble, TipEnter)
                 .On(PointerEventKind.Leave, EventPhase.Bubble, TipLeave)
                 .On(PointerEventKind.Down, EventPhase.Bubble, TipDown)
                 .On(PointerEventKind.Wheel, EventPhase.Bubble, Wheel);
+            box.Tree!.SetPartAccessibility(box.Node, Roles.ToolTip);
+            return box;
+        }
 
         // A press on the tooltip hides it, and starts no long press (that is the anchor's).
         private void TipDown(in PointerEvent e) => Hide();

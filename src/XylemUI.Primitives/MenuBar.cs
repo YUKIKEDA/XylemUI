@@ -28,6 +28,7 @@ public static partial class Primitive
     {
         Element bar = Row(items);
         UiTree tree = bar.Tree!;
+        tree.SetPartAccessibility(bar.Node, Roles.MenuBar);
         RequireScope(nameof(MenuBar));
         var state = new MenuBarState(tree, bar.Node);
         foreach (Element item in items)
@@ -64,6 +65,7 @@ public static partial class Primitive
         var state = new MenuBarItemState(tree, item.Node, panel);
         RegisterHost(tree, item.Node, new MenuBarItemHost(state));
         RegisterItem(tree, item.Node, state.OpenFromKey);
+        item.Tree!.SetPartAccessibility(item.Node, Roles.MenuItem);
         return item.OnClick(state.Click)
             .On(KeyEventKind.Down, EventPhase.Bubble, state.KeyDown)
             .On(PointerEventKind.Enter, EventPhase.Bubble, state.Enter);

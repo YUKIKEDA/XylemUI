@@ -672,6 +672,11 @@ internal static partial class LayoutEngine
     // boundary, which stops the change (design §2.4, DescendantLayoutVersion).
     private static void OnRectChanged(UiTree tree, NodeHandle handle)
     {
+        if (tree.AccessibilityActive)
+        {
+            tree.Accessibility.Mark(handle);
+        }
+
         ref UiNode node = ref tree.Nodes.GetRef(handle);
         node.Versions.Layout++;
         NodeHandle ancestor = node.Parent;

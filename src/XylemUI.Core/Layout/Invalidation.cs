@@ -26,6 +26,10 @@ internal static class Invalidation
             _ => throw new UnreachableException(),
         };
 
+    // The stages whose change may change the accessibility tree: the layout (the tree, a style, Hidden, a box), a text, and the
+    // information. The paint stages alone do not.
+    private const DirtyFlags AccessibilityFlags = DirtyFlags.Layout | DirtyFlags.Text | DirtyFlags.Semantics;
+
     /// <summary>
     /// Marks the work a change on <paramref name="node"/> needs. A change of a laid-out leaf's content marks only the leaf
     /// (<see cref="TryMarkContentChange"/>); other changes mark the path to the boundary (<see cref="MarkDirty"/>).
@@ -36,6 +40,12 @@ internal static class Invalidation
     public static void Invalidate(UiTree tree, NodeHandle node, ChangeKind kind)
     {
         DirtyFlags flags = FlagsFor(kind);
+
+        // A text leaf's new content may take the fast path below, which marks no path: the accessibility tree is marked here too.
+        if ((flags & AccessibilityFlags) != 0 && tree.AccessibilityActive)
+        {
+            tree.Accessibility.Mark(node);
+        }
 
         // A change the layout reads may make the node measure differently: its next failure is reported again, even while it is
         // still dirty from one. A change of color or the like does not (design §2.4.1).
@@ -129,6 +139,13 @@ internal static class Invalidation
     /// <param name="flags">The stages the change needs.</param>
     public static void MarkDirty(UiTree tree, NodeHandle origin, DirtyFlags flags)
     {
+        // A change of the tree, a style, or a text may change the accessibility tree once it is made (design §4.4.1). A change of the
+        // look alone (a hover's color) does not: marked, it made the parent's node again, which walks and boxes all its children.
+        if ((flags & AccessibilityFlags) != 0 && tree.AccessibilityActive)
+        {
+            tree.Accessibility.Mark(origin);
+        }
+
         ref UiNode node = ref tree.Nodes.GetRef(origin);
         DirtyFlags paint = flags & ~DirtyFlags.Layout;
         if (paint != 0)

@@ -124,6 +124,11 @@ internal sealed class UiTree
     // none costs nothing, and removing a node takes its ID with it.
     private readonly Dictionary<NodeHandle, string> _testIds = [];
 
+    // The accessibility tables and tree, in an object of their own: as five fields of the tree, which moved its other fields, the
+    // frames of `input`'s selection area of 1,000 leaves, which make no accessibility tree, took 2 to 4 % longer; in one object, as
+    // long as before (docs/benchmarks/p02g.md).
+    private readonly AccessibilityTables _a11y = new();
+
     /// <summary>
     /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
     /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); <see langword="null"/> until it does,
@@ -163,6 +168,128 @@ internal sealed class UiTree
     /// <param name="node">The node.</param>
     /// <returns>The ID.</returns>
     internal string? TestIdOf(NodeHandle node) => _testIds.Count > 0 && _testIds.TryGetValue(node, out string? id) ? id : null;
+
+    /// <summary>
+    /// Gets the accessibility tree, made when assistive technology first asks for it (design §4.4.1).
+    /// </summary>
+    internal AccessibilityTree Accessibility => _a11y.Tree ??= new AccessibilityTree(this);
+
+    /// <summary>
+    /// Runs the accessibility stage of a frame (<see cref="AccessibilityTree.Update"/>) when the tree is made; a window nobody reads
+    /// makes nothing.
+    /// </summary>
+    internal void UpdateAccessibility() => _a11y.Tree?.Update();
+
+    /// <summary>
+    /// Gets a value indicating whether the accessibility tree's object is made: <see cref="Accessibility"/> makes it when read.
+    /// </summary>
+    internal bool HasAccessibilityTree => _a11y.Tree is not null;
+
+    /// <summary>
+    /// Gets a value indicating whether the accessibility tree was made, so that a change marks its node for it.
+    /// </summary>
+    internal bool AccessibilityActive => _a11y.Tree?.IsActive == true;
+
+    /// <summary>
+    /// Gets or sets the window's title, the name of the accessibility tree's root.
+    /// </summary>
+    internal string? Title { get; set; }
+
+    /// <summary>
+    /// Sets the accessibility information the app gives a node (<c>Accessible</c>), over the one its part gives.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="info">The information.</param>
+    internal void SetAccessibility(NodeHandle node, AccessibilityInfo info)
+    {
+        _a11y.Info[node] = info;
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Sets the accessibility information a part gives a node: its role and states by default (design §13.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="info">The information.</param>
+    internal void SetPartAccessibility(NodeHandle node, AccessibilityInfo info)
+    {
+        _a11y.Part[node] = info;
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
+    /// Sets the signal whose value is a node's value to assistive technology when no information gives one: a text field's text. The
+    /// tree reads it when it makes the node again; a change of the text the node shows marks it.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The signal of its value.</param>
+    internal void SetAccessibilityValue(NodeHandle node, Signal<string> value)
+    {
+        _a11y.Values[node] = value;
+        MarkAccessibilitySelf(node);
+    }
+
+    /// <summary>
+    /// Returns a node's value from its signal (<see cref="SetAccessibilityValue"/>), or <see langword="null"/> for none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value.</returns>
+    internal string? AccessibilityValueOf(NodeHandle node) =>
+        _a11y.Values.Count > 0 && _a11y.Values.TryGetValue(node, out Signal<string>? value) ? value.Peek() : null;
+
+    /// <summary>
+    /// Returns the accessibility information of a node: the app's over its part's, or <see langword="null"/> for neither.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The information.</returns>
+    internal AccessibilityInfo? AccessibilityInfoOf(NodeHandle node)
+    {
+        AccessibilityInfo? part = _a11y.Part.Count > 0 ? _a11y.Part.GetValueOrDefault(node) : null;
+        AccessibilityInfo? app = _a11y.Info.Count > 0 ? _a11y.Info.GetValueOrDefault(node) : null;
+        return app is null ? part : app.Over(part);
+    }
+
+    /// <summary>
+    /// Records a node as the anchor of a popup it opens, which is expandable to assistive technology.
+    /// </summary>
+    /// <param name="node">The anchor.</param>
+    internal void AddPopupAnchor(NodeHandle node)
+    {
+        _ = _a11y.Anchors.Add(node);
+        MarkAccessibilitySelf(node);
+    }
+
+    /// <summary>
+    /// Returns whether a node anchors a popup it opens.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>Whether it does.</returns>
+    internal bool IsPopupAnchor(NodeHandle node) => _a11y.Anchors.Count > 0 && _a11y.Anchors.Contains(node);
+
+    /// <summary>
+    /// Marks a node for the accessibility tree; nothing while the tree is not made (design §4.4.1, "How it changes").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void MarkAccessibility(NodeHandle node)
+    {
+        if (_a11y.Tree is { IsActive: true } accessibility)
+        {
+            accessibility.Mark(node);
+        }
+    }
+
+    /// <summary>
+    /// Marks a node whose change may change its own node of the accessibility tree alone (<see cref="AccessibilityTree.MarkSelf"/>),
+    /// once the tree is made.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void MarkAccessibilitySelf(NodeHandle node)
+    {
+        if (_a11y.Tree is { IsActive: true } accessibility)
+        {
+            accessibility.MarkSelf(node);
+        }
+    }
 
     /// <summary>
     /// Returns the scroll state attached to a node, attaching a new one when it has none: the wheel scrolls a scroll container
@@ -1279,6 +1406,8 @@ internal sealed class UiTree
             {
                 Focus.Lose(node);
             }
+
+            MarkAccessibilitySelf(node);
         }
     }
 
@@ -1380,6 +1509,12 @@ internal sealed class UiTree
         if (n.Visual?.States?.Has(state) == true)
         {
             Invalidation.Invalidate(this, node, ChangeKind.Color);
+        }
+
+        // Disabled, focused, and open are states of the node's accessibility (design §4.4.1).
+        if ((state & (PseudoState.Disabled | PseudoState.Focused | PseudoState.Open)) != 0)
+        {
+            MarkAccessibilitySelf(node);
         }
     }
 
@@ -2071,6 +2206,26 @@ internal sealed class UiTree
             _ = _testIds.Remove(node);
         }
 
+        if (_a11y.Info.Count > 0)
+        {
+            _ = _a11y.Info.Remove(node);
+        }
+
+        if (_a11y.Part.Count > 0)
+        {
+            _ = _a11y.Part.Remove(node);
+        }
+
+        if (_a11y.Values.Count > 0)
+        {
+            _ = _a11y.Values.Remove(node);
+        }
+
+        if (_a11y.Anchors.Count > 0)
+        {
+            _ = _a11y.Anchors.Remove(node);
+        }
+
         if (ForContainers.Count > 0)
         {
             _ = ForContainers.Remove(node);
@@ -2135,5 +2290,24 @@ internal sealed class UiTree
             SetDepth(child, depth + 1, attached);
             child = next;
         }
+    }
+
+    // The accessibility information of the tree's nodes and the tree made from it (design §4.4.1).
+    private sealed class AccessibilityTables
+    {
+        // The app's information of the nodes that have one.
+        public Dictionary<NodeHandle, AccessibilityInfo> Info { get; } = [];
+
+        // The parts' information of the nodes that have one.
+        public Dictionary<NodeHandle, AccessibilityInfo> Part { get; } = [];
+
+        // The signals of the nodes' values (a text field's text).
+        public Dictionary<NodeHandle, Signal<string>> Values { get; } = [];
+
+        // The anchors of the popups.
+        public HashSet<NodeHandle> Anchors { get; } = [];
+
+        // The accessibility tree, once read.
+        public AccessibilityTree? Tree { get; set; }
     }
 }

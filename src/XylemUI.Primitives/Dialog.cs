@@ -75,6 +75,7 @@ public static partial class Primitive
     private static Element Backdrop(Element content, Paint? paint)
     {
         Element centered = Box(content).BlocksPointer();
+        centered.Tree!.SetPartAccessibility(centered.Node, Roles.Dialog);
         Element backdrop = Box(centered);
         backdrop.Tree!.SetStyle(
             backdrop.Node,
