@@ -56,7 +56,8 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
                             ),
                         ScrollView(Column(Button("Inner", () => { }).Height(30), Box().Height(200))).Height(60)
                     ),
-                new WindowOptions("UIA tree", 300, 300)
+                new WindowOptions("UIA tree", 300, 300),
+                useWarp: true
             );
             HWND hwnd = window.Window.Hwnd;
 
@@ -106,7 +107,8 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             Element inner = default;
             using var window = new DesktopWindow(
                 () => ScrollView(Column(inner = Button("Inner", () => { }).Height(30), Box().Height(200)), state).Height(60),
-                new WindowOptions("UIA scroll", 300, 300)
+                new WindowOptions("UIA scroll", 300, 300),
+                useWarp: true
             );
             HWND hwnd = window.Window.Hwnd;
             (System.Windows.Rect Inner, System.Windows.Rect Pane) Boxes() =>
@@ -136,6 +138,234 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             AssertBox(ScreenBox(window, inner.Node), after);
             Assert.Equal(paneBefore, paneAfter);
         });
+
+    /// <summary>
+    /// Nothing of the accessibility tree is made before assistive technology asks for it: the window's frames run without it, and
+    /// the first question of UIA makes it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA first" of 200 x 200 with a button "One".
+    ///
+    /// Steps:
+    /// - Run a frame; read whether the tree has its accessibility tree. Read the window's name through UIA; read it again.
+    ///
+    /// Expected:
+    /// - No accessibility tree before; after, a tree that is active, and the name "UIA first".
+    /// </remarks>
+    [Fact]
+    public void Tree_IsMadeAtTheFirstQuestion() =>
+        ui.Invoke(() =>
+        {
+            using var window = new DesktopWindow(() => Button("One", () => { }), new WindowOptions("UIA first", 200, 200), useWarp: true);
+            HWND hwnd = window.Window.Hwnd;
+            window.Frames.RunFrame();
+            bool before = window.Tree.HasAccessibilityTree;
+
+            string name = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+
+            Assert.Equal((false, true, "UIA first"), (before, window.Tree.AccessibilityActive, name));
+        });
+
+    /// <summary>
+    /// A change of a node's name reaches the UIA client as an event of the name's change, from the frame that changed it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA name" of 200 x 200 with a button whose text is a signal "Before"; a UIA client listening for changes
+    ///   of the name on the button's element.
+    ///
+    /// Steps:
+    /// - Set the signal to "After"; run the loop until the client got an event or the watchdog ends it.
+    ///
+    /// Expected:
+    /// - One event, for the name, whose new value is "After".
+    /// </remarks>
+    [Fact]
+    public void NameChange_RaisesAPropertyEvent() =>
+        ui.Invoke(() =>
+        {
+            Signal<string> label = Signal.Create("Before");
+            using var window = new DesktopWindow(
+                () => Button(Elements.Text((ref text) => text.Write(label.Get())), () => { }),
+                new WindowOptions("UIA name", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+
+            object? changed = ListenByUia(
+                done =>
+                {
+                    AutomationElement button = AutomationElement
+                        .FromHandle((nint)hwnd)
+                        .FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Before"));
+                    object? value = null;
+                    var handler = new AutomationPropertyChangedEventHandler(
+                        (_, e) =>
+                        {
+                            value = e.NewValue;
+                            done.Set();
+                        }
+                    );
+                    Automation.AddAutomationPropertyChangedEventHandler(button, TreeScope.Element, handler, AutomationElement.NameProperty);
+                    return (handler, () => value);
+                },
+                () => label.Set("After")
+            );
+
+            Assert.Equal("After", changed);
+        });
+
+    /// <summary>
+    /// The window's keyboard focus reaches the UIA client as an event of the focus, on the node that has the tree's focus.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA focus" of 200 x 200 with two buttons, "First" and "Second", the second focused in the tree; a UIA
+    ///   client listening for changes of the focus.
+    ///
+    /// Steps:
+    /// - Send the window WM_SETFOCUS, as Windows does when it takes the keyboard focus; run the loop until the client got an event.
+    ///
+    /// Expected:
+    /// - An event whose element is "Second".
+    /// </remarks>
+    [Fact]
+    public void WindowFocus_RaisesAFocusEventOnTheFocusedNode() =>
+        ui.Invoke(() =>
+        {
+            Element second = default;
+            using var window = new DesktopWindow(
+                () => Column(Button("First", () => { }), second = Button("Second", () => { })),
+                new WindowOptions("UIA focus", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            Assert.True(window.Tree.Focus.Focus(second.Node));
+            window.Frames.RunFrame();
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+
+            object? focused = ListenByUia(
+                done =>
+                {
+                    string? name = null;
+                    var handler = new AutomationFocusChangedEventHandler(
+                        (sender, _) =>
+                        {
+                            if (sender is AutomationElement element && element.Current.ProcessId == Environment.ProcessId)
+                            {
+                                name = element.Current.Name;
+                                done.Set();
+                            }
+                        }
+                    );
+                    Automation.AddAutomationFocusChangedEventHandler(handler);
+                    return (handler, () => name);
+                },
+                () => _ = SendMessageW(hwnd, WM.WM_SETFOCUS, 0, 0)
+            );
+            _ = SendMessageW(hwnd, WM.WM_KILLFOCUS, 0, 0);
+
+            Assert.Equal("Second", focused);
+        });
+
+    /// <summary>
+    /// A frame of a window whose accessibility tree AccessKit has, delivered, drawn, and handed to AccessKit, allocates nothing when it
+    /// changes no name: the focus moves between two buttons, which makes their nodes again with the same names.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA steady" of 200 x 200 with two buttons; UIA has read the tree, so AccessKit is active.
+    ///
+    /// Steps:
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: focus the first button or the second by the
+    ///   iteration's number, and run a frame.
+    ///
+    /// Expected:
+    /// - 0 bytes in every window.
+    /// </remarks>
+    [Fact]
+    public void SteadyState_FocusWithAccessKit_AllocatesNothing() =>
+        ui.Invoke(() =>
+        {
+            Element first = default;
+            Element second = default;
+            using var window = new DesktopWindow(
+                () => Column(first = Button("First", () => { }), second = Button("Second", () => { })),
+                new WindowOptions("UIA steady", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+            Assert.True(window.Tree.AccessibilityActive);
+
+            _ = Testing.PerformanceAssert.DoesNotAllocate(
+                1_000,
+                i =>
+                {
+                    _ = window.Tree.Focus.Focus(i % 2 == 0 ? first.Node : second.Node);
+                    window.Frames.RunFrame();
+                }
+            );
+        });
+
+    // Starts a UIA client on a thread of its own that listens (listen returns its handler and how to read what it got), then runs
+    // the change on the UI thread, and runs the loop until the client got its event or the watchdog ends the wait. Returns what the
+    // client got.
+    private static object? ListenByUia(Func<ManualResetEventSlim, (Delegate Handler, Func<object?> Got)> listen, Action change)
+    {
+        Func<object?>? got = null;
+        Exception? error = null;
+        using var ready = new ManualResetEventSlim();
+        using var done = new ManualResetEventSlim();
+        using var finished = new ManualResetEventSlim();
+        var thread = new Thread(() =>
+        {
+            Delegate? handler = null;
+            try
+            {
+                (handler, got) = listen(done);
+                ready.Set();
+                Win32MessageLoop.Wake();
+                _ = done.Wait(TimeSpan.FromSeconds(4));
+            }
+            catch (Exception exception)
+            {
+                error = exception;
+            }
+            finally
+            {
+                if (handler is not null)
+                {
+                    Automation.RemoveAllEventHandlers();
+                }
+
+                ready.Set();
+                finished.Set();
+                Win32MessageLoop.Wake();
+            }
+        })
+        {
+            IsBackground = true,
+        };
+        thread.SetApartmentState(ApartmentState.MTA);
+        thread.Start();
+        using (var watchdog = new LoopWatchdog())
+        {
+            LoopTestHelpers.RunLoop(watchdog, () => ready.IsSet, () => { });
+            Assert.False(watchdog.Expired);
+        }
+
+        using (var watchdog = new LoopWatchdog())
+        {
+            LoopTestHelpers.RunLoop(watchdog, () => finished.IsSet, change);
+            Assert.False(watchdog.Expired);
+        }
+
+        thread.Join();
+        Assert.Null(error);
+        return got?.Invoke();
+    }
 
     // Runs the read on a thread of its own while the UI thread runs the loop, which answers the client's messages.
     private static T ReadByUia<T>(Func<T> read)
