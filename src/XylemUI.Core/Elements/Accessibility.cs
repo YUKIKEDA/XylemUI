@@ -170,5 +170,12 @@ public sealed record AccessibilityInfo
                 Value = Value ?? under.Value,
                 States = States != SemanticsStates.None ? States : under.States,
                 Range = Range ?? under.Range,
+                PartStates = PartStates | under.PartStates,
             };
+
+    /// <summary>
+    /// Gets the states that only a part gives, which <see cref="SemanticsStates"/> does not name: a text field of many lines, or a
+    /// password field (design §4.4.1, the table of roles).
+    /// </summary>
+    internal AccessibilityStates PartStates { get; init; }
 }

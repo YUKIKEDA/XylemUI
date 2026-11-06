@@ -69,6 +69,12 @@ internal enum AccessibilityStates : ushort
 
     /// <summary>The node needs a value.</summary>
     Required = 512,
+
+    /// <summary>The node is a text field of many lines (AccessKit's <c>MultilineTextInput</c>).</summary>
+    Multiline = 1024,
+
+    /// <summary>The node is a password field (AccessKit's <c>PasswordInput</c>).</summary>
+    Password = 2048,
 }
 
 /// <summary>
@@ -134,6 +140,11 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     /// Gets or sets how far the node moves its children: minus its scroll position, for a box that scrolls.
     /// </summary>
     public Vector2 ChildOffset { get; set; }
+
+    /// <summary>
+    /// Gets or sets the largest scroll position of a box that scrolls, or zero for a node that does not.
+    /// </summary>
+    public Size ScrollRange { get; set; }
 
     /// <summary>
     /// Gets or sets the test ID of the node, which is its automation ID.

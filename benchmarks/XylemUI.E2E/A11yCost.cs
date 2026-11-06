@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TerraFX.Interop.Windows;
 using XylemUI.Platform.Windows;
 using XylemUI.Primitives;
 using XylemUI.Text;
@@ -6,20 +7,29 @@ using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
 namespace XylemUI.E2E;
 
-// The accessibility tree's costs (row P02g, design §4.4.1): a column of 1,000 buttons, each with its text, in a tree with no GPU.
+// The accessibility tree's costs (row P02g, design §4.4.1): a column of buttons (1,000 unless given), each with its text, in a tree
+// with no GPU.
 // The tree is made once (the first WM_GETOBJECT), then a frame changes one button's text, which marks its leaf, and the stage after
 // the layout pass makes that button's node again: the change, the layout pass, and the accessibility stage are timed apart. A frame
 // with no change times the stage that finds nothing to do, and a frame that changes the first button's color alone (a hover's look)
 // times the stage after it, which has no mark. The leaves are measured with DirectWrite's fonts, as the todo scene's.
+//
+// With --accesskit, the tree is a hidden window's, whose UIA provider is AccessKit's adapter (Win32Accessibility): the window is
+// sent the WM_GETOBJECT that UIA sends first (UiaRootObjectId), which makes the tree and hands AccessKit all of it, and the stage
+// then hands AccessKit the nodes that changed. No UIA client listens, so AccessKit raises no event.
 internal static class A11yCost
 {
-    private const int Buttons = 1_000;
     private const int Samples = 101;
 
-    public static int Run()
+    // UIA's object id of the provider of a window's root (UiaRootObjectId, UIAutomationCoreApi.h).
+    private const int UiaRootObjectId = -25;
+
+    public static int Run(int buttonCount, bool accessKit)
     {
         UiThread.Initialize();
         using var report = new Report("a11y");
+        report.Text("accesskit", accessKit ? "yes" : "no");
+        report.Number("buttons", buttonCount);
         using var fonts = new DirectWriteFontProvider();
         var tree = new UiTree(new TextContext(fonts));
         NodeHandle root = tree.CreateNode(new LayoutStyle());
@@ -31,11 +41,11 @@ internal static class A11yCost
         {
             scope = Scope.Create(() =>
             {
-                var buttons = new Element[Buttons];
-                for (int i = 0; i < Buttons; i++)
+                var buttons = new Element[buttonCount];
+                for (int i = 0; i < buttonCount; i++)
                 {
                     buttons[i] =
-                        i == Buttons / 2
+                        i == buttonCount / 2
                             ? Primitive.Button(Elements.Text((ref text) => text.Write(label.Get())), () => { })
                             : Primitive.Button(Elements.Text($"b{i}"), () => { });
                 }
@@ -51,8 +61,27 @@ internal static class A11yCost
 
         Invalidation.NotifyWindowResized(tree, root, new Size(800, 20_000));
         LayoutEngine.RunLayoutPass(tree);
+        using Win32Window? window = accessKit ? new Win32Window("a11y", 800, 600) : null;
+        using Win32Accessibility? provider = window is null ? null : new Win32Accessibility(window, tree);
+        if (window is not null)
+        {
+            window.Accessibility = provider;
+        }
+
         long started = Stopwatch.GetTimestamp();
-        tree.Accessibility.Start();
+        if (window is not null)
+        {
+            _ = TerraFX.Interop.Windows.Windows.SendMessageW(window.Hwnd, WM.WM_GETOBJECT, 0, UiaRootObjectId);
+            if (!tree.AccessibilityActive)
+            {
+                throw new InvalidOperationException("The window's WM_GETOBJECT did not make the accessibility tree.");
+            }
+        }
+        else
+        {
+            tree.Accessibility.Start();
+        }
+
         report.Number("start_us", Stopwatch.GetElapsedTime(started).TotalMicroseconds);
         report.Number("nodes", CountNodes(tree.Accessibility.Root!));
 

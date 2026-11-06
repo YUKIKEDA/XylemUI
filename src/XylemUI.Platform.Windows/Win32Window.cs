@@ -494,7 +494,8 @@ public sealed unsafe partial class Win32Window : IDisposable
         }
 
         if (
-            HandleTouchpadMessage(message, wParam)
+            HandleAccessibilityMessage(message, wParam, lParam, ref result)
+            || HandleTouchpadMessage(message, wParam)
             || HandleDragFrameTimer(message, wParam)
             || HandlePointerMessage(hwnd, message, wParam, lParam, ref result)
             || HandleKeyMessage(message, wParam, lParam, ref result)

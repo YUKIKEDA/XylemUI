@@ -9,4 +9,5 @@
     <ProjectReference Include="..\..\src\XylemUI.Primitives\XylemUI.Primitives.csproj" />
   </ItemGroup>
   <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
+  <Import Project="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.targets" />
 </Project>
