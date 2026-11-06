@@ -22,8 +22,8 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
     /// <remarks>
     /// Preconditions:
     /// - A hidden window "UIA tree" of 300 x 300: a column of a button "Save" 30 high with the test ID "save", a disabled button
-    ///   "Off" 30 high, a text field holding "hello", a node 20 high with the role CheckBox, the name "Agree", and the state Checked,
-    ///   and a scroll view 60 high holding a button "Inner" 30 high and a box 200 high.
+    ///   "Off" 30 high, a text field holding "hello", a text "Note", a node 20 high with the role CheckBox, the name "Agree", and
+    ///   the state Checked, and a scroll view 60 high holding a button "Inner" 30 high and a box 200 high.
     ///
     /// Steps:
     /// - On a thread of its own, the UIA client takes the window's element and every element below it; the UI thread runs the loop.
@@ -31,7 +31,8 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
     /// Expected:
     /// - The window: ControlType.Window, the name "UIA tree", the framework "XylemUI". "Save": ControlType.Button, the automation
     ///   ID "save", enabled, its box the node's box in client coordinates times the scale, moved to the screen. "Off": disabled.
-    ///   An edit whose value is "hello". "Agree": ControlType.CheckBox, toggled on. A pane for the scroll view, and "Inner" in it.
+    ///   An edit whose value is "hello"; a text named "Note". "Agree": ControlType.CheckBox, toggled on. A pane for the scroll view,
+    ///   and "Inner" in it.
     /// </remarks>
     [Fact]
     public void Tree_IsReadByUia_WithRolesNamesStatesAndBoxes() =>
@@ -44,6 +45,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
                         save = Button("Save", () => { }).TestId("save").Height(30),
                         Button("Off", () => { }).Disabled().Height(30),
                         TextField(Signal.Create("hello")),
+                        Elements.Text("Note"),
                         Box()
                             .Height(20)
                             .Accessible(
@@ -79,6 +81,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
             AssertBox(ScreenBox(window, save.Node), saved.Box);
             Assert.False(read.Elements.Single(e => e.Name == "Off").Enabled);
             Assert.Equal("hello", read.Elements.Single(e => e.Type == ControlType.Edit).Value);
+            Assert.Single(read.Elements, e => e.Type == ControlType.Text && e.Name == "Note");
             Seen agree = read.Elements.Single(e => e.Name == "Agree");
             Assert.Equal((ControlType.CheckBox, (ToggleState?)ToggleState.On), (agree.Type, agree.Toggle));
             Assert.Single(read.Elements, e => e.Type == ControlType.Pane);
@@ -263,6 +266,67 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
                     return (handler, () => name);
                 },
                 () => _ = SendMessageW(hwnd, WM.WM_SETFOCUS, 0, 0)
+            );
+            _ = SendMessageW(hwnd, WM.WM_KILLFOCUS, 0, 0);
+
+            Assert.Equal("Second", focused);
+        });
+
+    /// <summary>
+    /// A move of the tree's focus while the window has the keyboard focus, as Tab moves it, reaches the UIA client as an event of
+    /// the focus on the node that takes it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA focus move" with two buttons, "First" focused in the tree and "Second"; the window told it has the
+    ///   keyboard focus (WM_SETFOCUS); a UIA client listening for changes of the focus.
+    ///
+    /// Steps:
+    /// - Focus "Second" in the tree and run the accessibility stage; run the loop until the client got an event of "Second".
+    ///
+    /// Expected:
+    /// - An event whose element is "Second".
+    /// </remarks>
+    [Fact]
+    public void FocusMove_RaisesAFocusEventOnTheNewNode() =>
+        ui.Invoke(() =>
+        {
+            Element first = default;
+            Element second = default;
+            using var window = new DesktopWindow(
+                () => Column(first = Button("First", () => { }), second = Button("Second", () => { })),
+                new WindowOptions("UIA focus move", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            window.Input.SetActive(true);
+            Assert.True(window.Tree.Focus.Focus(first.Node));
+            RunAccessibilityStage(window);
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+            _ = SendMessageW(hwnd, WM.WM_SETFOCUS, 0, 0);
+
+            object? focused = ListenByUia(
+                done =>
+                {
+                    string? name = null;
+                    var handler = new AutomationFocusChangedEventHandler(
+                        (sender, _) =>
+                        {
+                            if (sender is AutomationElement element && element.Current.Name == "Second")
+                            {
+                                name = element.Current.Name;
+                                done.Set();
+                            }
+                        }
+                    );
+                    Automation.AddAutomationFocusChangedEventHandler(handler);
+                    return (handler, () => name);
+                },
+                () =>
+                {
+                    _ = window.Tree.Focus.Focus(second.Node);
+                    RunAccessibilityStage(window);
+                }
             );
             _ = SendMessageW(hwnd, WM.WM_KILLFOCUS, 0, 0);
 

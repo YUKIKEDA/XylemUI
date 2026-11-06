@@ -417,7 +417,11 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         nint made = AccessKit.NodeNew(RoleOf(node));
         SetText(made, node.Name, TextProperty.Label);
         SetText(made, node.Description, TextProperty.Description);
-        SetText(made, node.Value, TextProperty.Value);
+
+        // AccessKit names a Label (a Text node) by its value, not its label (accesskit_consumer 0.39.1's
+        // `accesskit_consumer/src/node.rs`, lines 744 to 746, and accesskit_windows's `adapters/windows/src/node.rs`, lines 404 to
+        // 413): a text's node gives its name as its value too.
+        SetText(made, node.Role == SemanticsRole.Text ? node.Value ?? node.Name : node.Value, TextProperty.Value);
         SetText(made, node.AutomationId, TextProperty.AuthorId);
         SetStates(made, node);
         if (node.Range is { } range)
