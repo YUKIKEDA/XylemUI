@@ -18,4 +18,5 @@
     <EmbeddedResource Include="..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" LogicalName="XylemUITestSans.ttf" />
   </ItemGroup>
   <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
+  <Import Project="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.targets" />
 </Project>

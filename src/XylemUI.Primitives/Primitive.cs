@@ -140,6 +140,16 @@ internal static class Roles
     public static AccessibilityInfo Edit { get; } = new() { Role = SemanticsRole.Edit };
 
     /// <summary>
+    /// Gets the information of a text field of many lines.
+    /// </summary>
+    public static AccessibilityInfo MultilineEdit { get; } = new() { Role = SemanticsRole.Edit, PartStates = AccessibilityStates.Multiline };
+
+    /// <summary>
+    /// Gets the information of a password field, which has no value.
+    /// </summary>
+    public static AccessibilityInfo PasswordEdit { get; } = new() { Role = SemanticsRole.Edit, PartStates = AccessibilityStates.Password };
+
+    /// <summary>
     /// Gets the information of a button.
     /// </summary>
     public static AccessibilityInfo Button { get; } = new() { Role = SemanticsRole.Button };

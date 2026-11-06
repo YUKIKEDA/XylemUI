@@ -131,6 +131,13 @@ public sealed class ScrollState
     internal void Publish(Vector2 maxOffset, Size viewport)
     {
         _hasRange = true;
+
+        // The largest position is the scroll range the container's node of the accessibility tree gives (design §4.4.1).
+        if (maxOffset != _maxOffset.Peek() && Tree is { } tree && tree.Nodes.IsAlive(Node))
+        {
+            tree.MarkAccessibilitySelf(Node);
+        }
+
         _maxOffset.Set(maxOffset);
         _viewport.Set(viewport);
         _ = SetOffset(Vector2.Clamp(_offset.Peek(), Vector2.Zero, maxOffset));

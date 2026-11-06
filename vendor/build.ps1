@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
-# Builds the native libraries of vendor/versions.lock from source (design §9): a static library for NativeAOT, which links it
-# into the executable, and a DLL for the JIT. Windows x64 only for now; Linux and macOS come with roadmap rows P04 and P06.
+# Builds the native libraries of vendor/versions.lock from source, or takes them from a release archive (design §9): a static
+# library for NativeAOT, which links it into the executable, and a DLL for the JIT. Windows x64 only for now; Linux and macOS come
+# with roadmap rows P04 and P06.
 #
 #   ./vendor/build.ps1          build what is missing or out of date
 #   ./vendor/build.ps1 -Force   build everything again
@@ -24,6 +25,15 @@ if (-not $IsWindows) {
 # The CMake options of each library: no optional dependency, nothing but the library itself.
 $options = @{
     harfbuzz = @('-DHB_BUILD_SUBSET=OFF', '-DHB_BUILD_RASTER=OFF', '-DHB_BUILD_VECTOR=OFF', '-DHB_BUILD_GPU=OFF', '-DHB_BUILD_UTILS=OFF')
+}
+
+# The libraries taken from a release archive, by their paths in it (design §4.4.1): AccessKit's static library is built with the
+# static CRT and names no default library, so it links into a NativeAOT executable as it is (spike S10, Issue #623).
+$prebuilt = @{
+    accesskit = @{
+        static = 'lib/windows/x86_64/msvc/static/accesskit.lib'
+        shared = 'lib/windows/x86_64/msvc/shared/accesskit.dll'
+    }
 }
 
 function Get-Locks {
@@ -54,6 +64,24 @@ function Invoke-InMsvc([string]$vcvars, [string]$command) {
 function Get-Sha256([string]$path) { (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant() }
 
 function Get-Source($lock) {
+    $archive = Get-Archive $lock
+    $source = Join-Path $work "src/$($lock.Name)-$($lock.Version)"
+    if (-not (Test-Path $source)) {
+        Expand-Download $archive (Join-Path $work 'src')
+    }
+
+    return $source
+}
+
+# Windows's own tar (bsdtar), which reads zip archives too: a GNU tar first on PATH (Git's) reads `C:` in a path as a remote host.
+function Expand-Download([string]$archive, [string]$into) {
+    New-Item -ItemType Directory -Force $into | Out-Null
+    & (Join-Path $env:SystemRoot 'System32/tar.exe') -xf $archive -C $into
+    if ($LASTEXITCODE -ne 0) { throw "Could not extract $archive." }
+}
+
+# The archive of a line, downloaded once and checked against its SHA-256.
+function Get-Archive($lock) {
     New-Item -ItemType Directory -Force $cache | Out-Null
     # Named by library and version, not by URL, so that every URL saves to the same file (tar finds the compression itself).
     $archive = Join-Path $cache "$($lock.Name)-$($lock.Version).source"
@@ -87,19 +115,39 @@ function Get-Source($lock) {
         if (-not (Test-Path $archive)) { throw "No URL of $($lock.Name) in vendor/versions.lock gave the file with its SHA-256." }
     }
 
-    $source = Join-Path $work "src/$($lock.Name)-$($lock.Version)"
-    if (-not (Test-Path $source)) {
-        New-Item -ItemType Directory -Force (Join-Path $work 'src') | Out-Null
-        # Windows's own tar (bsdtar): a GNU tar first on PATH (Git's) reads `C:` in a path as a remote host.
-        & (Join-Path $env:SystemRoot 'System32/tar.exe') -xf $archive -C (Join-Path $work 'src')
-        if ($LASTEXITCODE -ne 0) { throw "Could not extract $archive." }
+    return $archive
+}
+
+$script = (Get-FileHash -Algorithm SHA256 $PSCommandPath).Hash.ToLowerInvariant()
+foreach ($lock in Get-Locks | Where-Object { $prebuilt.ContainsKey($_.Name) }) {
+    $stamp = Join-Path $out "$($lock.Name).stamp"
+    $expected = "$($lock.Version) $($lock.Sha256) $script"
+    if (-not $Force -and (Test-Path $stamp) -and (Get-Content $stamp) -eq $expected) {
+        Write-Host "==> $($lock.Name) $($lock.Version) is up to date"
+        continue
     }
 
-    return $source
+    # Extracted into a folder of its own, which then holds the archive's one folder (accesskit-c-0.23.1).
+    $source = Join-Path $work "prebuilt/$($lock.Name)-$($lock.Version)"
+    if (-not (Test-Path $source)) {
+        Expand-Download (Get-Archive $lock) $source
+    }
+
+    $root = Get-ChildItem -Path $source -Directory | Select-Object -First 1
+    if (-not $root) { throw "The archive of $($lock.Name) holds no folder." }
+    foreach ($kind in 'static', 'shared') {
+        $file = Join-Path $root.FullName $prebuilt[$lock.Name][$kind]
+        if (-not (Test-Path $file)) { throw "The archive of $($lock.Name) has no $($prebuilt[$lock.Name][$kind])." }
+        $target = Join-Path $out $kind
+        New-Item -ItemType Directory -Force $target | Out-Null
+        Write-Host "==> Take $($lock.Name) $($lock.Version) ($kind)"
+        Copy-Item $file (Join-Path $target (Split-Path $file -Leaf)) -Force
+    }
+
+    Set-Content -Path $stamp -Value $expected
 }
 
 $vcvars = Get-VcVars
-$script = (Get-FileHash -Algorithm SHA256 $PSCommandPath).Hash.ToLowerInvariant()
 # A line with no CMake options is data for a generator (unicode-ucd, tools/UnicodeTableGen), not a library to build.
 foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
     $stamp = Join-Path $out "$($lock.Name).stamp"

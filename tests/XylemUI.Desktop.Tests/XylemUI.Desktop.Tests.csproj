@@ -16,6 +16,10 @@
     <!-- The pixels and the goldens are drawn headless on WARP (design §12.3, row P02a2). -->
     <ProjectReference Include="..\..\src\XylemUI.Testing.D3D11\XylemUI.Testing.D3D11.csproj" />
   </ItemGroup>
+  <!-- The UIA tests read the window's tree with Windows' UIA client, UIAutomationClient (row P02g), as spike S10 did. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />
     <PackageReference Include="xunit.v3" />

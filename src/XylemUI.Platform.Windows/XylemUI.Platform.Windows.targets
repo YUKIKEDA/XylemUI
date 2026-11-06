@@ -1,0 +1,21 @@
+<Project>
+  <!--
+    Imported by an app that references XylemUI.Platform.Windows. Under NativeAOT, AccessKit (the UIA provider, design §4.4.1) is
+    linked into the executable: the P/Invokes resolve directly to the static library (DirectPInvoke + NativeLibrary, design §9),
+    with the seven system libraries it calls (accesskit-config.cmake of the release archive, spike S10), and the DLL the JIT uses
+    is left out of the published files, so the app ships as one executable. vendor/build.ps1 takes the libraries from the release.
+  -->
+  <PropertyGroup>
+    <XylemUIPlatformNativeDirectory>$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\</XylemUIPlatformNativeDirectory>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <DirectPInvoke Include="accesskit" />
+    <NativeLibrary Include="$(XylemUIPlatformNativeDirectory)static\accesskit.lib" />
+    <NativeLibrary Include="bcrypt.lib;ntdll.lib;propsys.lib;runtimeobject.lib;uiautomationcore.lib;userenv.lib;ws2_32.lib" />
+  </ItemGroup>
+  <Target Name="XylemUILeaveOutPlatformDlls" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishAot)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'accesskit.dll'" />
+    </ItemGroup>
+  </Target>
+</Project>

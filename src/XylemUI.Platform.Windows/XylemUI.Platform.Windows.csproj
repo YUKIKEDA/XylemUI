@@ -12,6 +12,14 @@
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />
   </ItemGroup>
+  <!-- Under the JIT AccessKit loads as a DLL next to the app; a NativeAOT app links it statically (XylemUI.Platform.Windows.targets). -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\accesskit.dll')">
+    <None
+      Include="$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\accesskit.dll"
+      Link="%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
     <!-- The app's host gives the window's pointer input to the tree and reads the UI language (row V1d). -->

@@ -592,7 +592,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             states |= AccessibilityStates.Required;
         }
 
-        return states;
+        return states | (info?.PartStates ?? AccessibilityStates.None);
     }
 
     // The roles that take their name from the text of their content, whose text leaves are not nodes of their own (Flutter merges a

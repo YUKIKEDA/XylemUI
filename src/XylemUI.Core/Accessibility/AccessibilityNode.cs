@@ -69,6 +69,12 @@ internal enum AccessibilityStates : ushort
 
     /// <summary>The node needs a value.</summary>
     Required = 512,
+
+    /// <summary>The node is a text field of many lines (AccessKit's <c>MultilineTextInput</c>).</summary>
+    Multiline = 1024,
+
+    /// <summary>The node is a password field (AccessKit's <c>PasswordInput</c>).</summary>
+    Password = 2048,
 }
 
 /// <summary>

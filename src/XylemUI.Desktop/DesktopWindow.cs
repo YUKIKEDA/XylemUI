@@ -23,6 +23,7 @@ internal sealed class DesktopWindow : IDisposable
     private readonly GlyphAtlas? _atlas;
     private readonly NodeHandle _rootNode;
     private TsfTextInput? _textInput;
+    private Win32Accessibility? _accessibility;
     private ScopeHandle _rootScope;
     private bool _disposed;
 
@@ -63,6 +64,11 @@ internal sealed class DesktopWindow : IDisposable
         try
         {
             Window = new Win32Window(options.Title, (int)MathF.Ceiling(options.Width), (int)MathF.Ceiling(options.Height));
+
+            // The UIA provider (design §4.4.1): AccessKit answers the window's WM_GETOBJECT from before the window shows, and the
+            // first answer makes the tree's accessibility tree; until then nothing is made.
+            _accessibility = new Win32Accessibility(Window, Tree);
+            Window.Accessibility = _accessibility;
             if (show)
             {
                 Window.Show();
@@ -183,6 +189,11 @@ internal sealed class DesktopWindow : IDisposable
             Tree.SetTextInput(null);
             _textInput?.Dispose();
             _textInput = null;
+
+            // The provider goes first: a WM_GETOBJECT while the window is destroyed gets Windows' default.
+            Window.Accessibility = null;
+            _accessibility?.Dispose();
+            _accessibility = null;
             Window.Dispose();
         }
 
