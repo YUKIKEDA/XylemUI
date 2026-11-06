@@ -316,7 +316,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
 
         if (node.Role == SemanticsRole.ScrollViewer)
         {
-            Size max = _tree.MaxScrollOffsetOf(node.Node);
+            Size max = node.ScrollRange;
             AccessKit.NodeSetScrollX(made, -node.ChildOffset.X);
             AccessKit.NodeSetScrollXMin(made, 0);
             AccessKit.NodeSetScrollXMax(made, max.Width);

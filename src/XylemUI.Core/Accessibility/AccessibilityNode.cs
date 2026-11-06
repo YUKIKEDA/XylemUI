@@ -142,6 +142,11 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     public Vector2 ChildOffset { get; set; }
 
     /// <summary>
+    /// Gets or sets the largest scroll position of a box that scrolls, or zero for a node that does not.
+    /// </summary>
+    public Size ScrollRange { get; set; }
+
+    /// <summary>
     /// Gets or sets the test ID of the node, which is its automation ID.
     /// </summary>
     public string? AutomationId { get; set; }

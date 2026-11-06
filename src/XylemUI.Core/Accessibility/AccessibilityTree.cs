@@ -371,6 +371,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         AccessibilityStates states = StatesOf(handle, info);
         ref UiNode n = ref tree.Nodes.GetRef(handle);
         Vector2 childOffset = n.Layout.Style.IsScrollContainer ? -tree.ScrollOffsetOf(handle) : Vector2.Zero;
+        Size scrollRange = n.Layout.Style.IsScrollContainer ? tree.MaxScrollOffsetOf(handle) : default;
         Rect bounds = node.Parent is null ? n.Layout.Rect : BoundsOf(node);
         string? automationId = tree.TestIdOf(handle);
         bool changed =
@@ -381,6 +382,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             || node.States != states
             || node.Range != info?.Range
             || node.ChildOffset != childOffset
+            || node.ScrollRange != scrollRange
             || node.Bounds != bounds
             || node.AutomationId != automationId;
         node.Role = role;
@@ -390,6 +392,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         node.States = states;
         node.Range = info?.Range;
         node.ChildOffset = childOffset;
+        node.ScrollRange = scrollRange;
         node.Bounds = bounds;
         node.AutomationId = automationId;
         return changed;

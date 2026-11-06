@@ -405,6 +405,39 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             Assert.Equal((1, 1), (first, provider.LastUpdateNodes));
         });
 
+    /// <summary>
+    /// A change of a scroll view's range alone hands AccessKit the view's node again, whose largest scroll position changed.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA range" with a scroll view 60 high holding a box 100 high with no role; UIA has read the tree.
+    ///
+    /// Steps:
+    /// - Make the box 300 high; run a frame; read how many nodes the update handed AccessKit.
+    ///
+    /// Expected:
+    /// - 1: the scroll view's node, the only node whose values changed.
+    /// </remarks>
+    [Fact]
+    public void ScrollRange_Change_HandsTheViewAgain() =>
+        ui.Invoke(() =>
+        {
+            Element content = default;
+            using var window = new DesktopWindow(
+                () => ScrollView(content = Box().Height(100)).Height(60),
+                new WindowOptions("UIA range", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+            Win32Accessibility provider = window.Window.Accessibility!;
+
+            window.Tree.SetStyle(content.Node, window.Tree.Nodes.GetRef(content.Node).Layout.Style with { Height = Length.Px(300) });
+            window.Frames.RunFrame();
+
+            Assert.Equal(1, provider.LastUpdateNodes);
+        });
+
     // Starts a UIA client on a thread of its own that listens (listen returns its handler and how to read what it got), then runs
     // the change on the UI thread, and runs the loop until the client got its event or the watchdog ends the wait. Returns what the
     // client got.

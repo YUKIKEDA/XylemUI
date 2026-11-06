@@ -132,8 +132,9 @@ public sealed class ScrollState
     {
         _hasRange = true;
 
-        // The largest position is the scroll range the container's node of the accessibility tree gives (design §4.4.1).
-        if (maxOffset != _maxOffset.Peek() && Tree is { } tree && tree.Nodes.IsAlive(Node))
+        // The largest position is the scroll range the container's node of the accessibility tree gives (design §4.4.1). Only a
+        // window whose tree is made compares it: read first, the comparison made a text field's layout 2 to 3 µs longer in `input`.
+        if (Tree is { AccessibilityActive: true } tree && maxOffset != _maxOffset.Peek() && tree.Nodes.IsAlive(Node))
         {
             tree.MarkAccessibilitySelf(Node);
         }
