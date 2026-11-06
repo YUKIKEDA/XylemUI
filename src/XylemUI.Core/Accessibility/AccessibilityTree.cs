@@ -4,8 +4,10 @@ using System.Text;
 namespace XylemUI;
 
 /// <summary>
-/// What the accessibility tree hands the Platform after an update (design §6): the nodes it made, changed, or took away, and the
-/// node that holds the focus. The Platform reads the nodes from the tree and never changes them (Invariant 10).
+/// What the accessibility tree hands the Platform after an update (design §6): the nodes it made, changed, or took away. The
+/// Platform reads the nodes, and the node that holds the focus, from the tree and never changes them (Invariant 10). A change of
+/// the focus changes the Focused state of the node that had it or of the node that takes it, so it comes with the nodes; when
+/// neither has a node, the window's node has the focus before and after.
 /// </summary>
 internal interface IAccessibilityBridge
 {
@@ -14,12 +16,6 @@ internal interface IAccessibilityBridge
     /// </summary>
     /// <param name="changes">The nodes and what became of each.</param>
     void NodesChanged(ReadOnlySpan<AccessibilityChange> changes);
-
-    /// <summary>
-    /// Takes the node that holds the focus now, or none.
-    /// </summary>
-    /// <param name="node">The node, or the default id for none.</param>
-    void NotifyFocusChange(AccessibilityNodeId node);
 }
 
 /// <summary>
@@ -44,7 +40,6 @@ internal sealed class AccessibilityTree(UiTree tree)
     private readonly StringBuilder _name = new();
     private ulong _nextId = 1;
     private int _stamp;
-    private AccessibilityNodeId _focus;
 
     /// <summary>
     /// Gets a value indicating whether the tree was made: assistive technology asked for it.
@@ -148,7 +143,6 @@ internal sealed class AccessibilityTree(UiTree tree)
 
         if (_marked.Count == 0 && _markedSelf.Count == 0)
         {
-            SendFocus();
             return;
         }
 
@@ -652,18 +646,6 @@ internal sealed class AccessibilityTree(UiTree tree)
         {
             Bridge?.NodesChanged(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_changes));
             _changes.Clear();
-        }
-
-        SendFocus();
-    }
-
-    private void SendFocus()
-    {
-        AccessibilityNodeId focus = Find(tree.Focus.Focused)?.Id ?? default;
-        if (focus != _focus)
-        {
-            _focus = focus;
-            Bridge?.NotifyFocusChange(focus);
         }
     }
 }

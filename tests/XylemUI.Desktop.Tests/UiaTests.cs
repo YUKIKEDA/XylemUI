@@ -441,7 +441,7 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
 
     /// <summary>
     /// A question before the tree has a root, as Windows' own clients ask a window that has just shown, gets AccessKit's
-    /// placeholder; once the tree has a root, the window hands AccessKit the whole tree, which UIA then reads.
+    /// placeholder; once the tree has a root, the next question hands AccessKit the whole tree first, which UIA then reads.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -449,7 +449,7 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Send the window the WM_GETOBJECT that UIA sends first; read whether the tree is made. Give the tree a root holding a button
-    ///   "Late", size it, and start what was asked; read the button's name through UIA.
+    ///   "Late" and size it; read the button through UIA, whose question comes as the next WM_GETOBJECT.
     ///
     /// Expected:
     /// - No tree after the question, and no failure; then an active tree, and UIA reads "Late" as a button of the framework "XylemUI".
@@ -473,7 +473,6 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             tree.AppendChild(root, button);
             Invalidation.NotifyWindowResized(tree, root, new Size(200, 200));
             LayoutEngine.RunLayoutPass(tree);
-            provider.StartIfAsked();
 
             (string Type, string Framework) read = ReadByUia(() =>
             {

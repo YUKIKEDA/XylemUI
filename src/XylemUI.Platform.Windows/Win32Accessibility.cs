@@ -19,6 +19,10 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     // The name of the toolkit the tree comes from, which UIA reads as its framework (UTF-8).
     private static ReadOnlySpan<byte> ToolkitName => "XylemUI"u8;
 
+    // The id of the window's node in an update that failed before the tree had one: no node of the tree has it (they count up
+    // from 1).
+    private const ulong FallbackRootId = ulong.MaxValue;
+
     private readonly Win32Window _window;
     private readonly UiTree _tree;
     private readonly nint _id;
@@ -65,6 +69,14 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         if (_adapter == 0)
         {
             return false;
+        }
+
+        // A tree that AccessKit has only as its placeholder, or that an update that failed left as one node, is given whole first:
+        // outside AccessKit's handling of the message, which must not be entered again from inside it.
+        StartIfAsked();
+        if (_whole)
+        {
+            Push();
         }
 
         AccessKit.OptionalLresult answer = AccessKit.WindowsAdapterHandleWmGetObject(_adapter, (nuint)wParam, (nint)lParam, &OnActivate, _id);
@@ -125,14 +137,6 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     }
 
     /// <summary>
-    /// Does nothing: each update hands AccessKit the node that has the focus with the nodes that changed (<see cref="NodesChanged"/>),
-    /// and a change of the focus also changes the Focused state of the node that had it or of the node that takes it. When neither
-    /// has a node, AccessKit's focus stays the window's.
-    /// </summary>
-    /// <param name="node">The node that has the focus, or none.</param>
-    public void NotifyFocusChange(AccessibilityNodeId node) { }
-
-    /// <summary>
     /// Frees the adapter: assistive technology that asks the window again gets no provider.
     /// </summary>
     public void Dispose()
@@ -159,41 +163,58 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     }
 
     // AccessKit asks for the tree for the first time, on the window's thread, inside WM_GETOBJECT: the tree is made and given whole.
-    // A null update tells AccessKit that the tree is not ready; it asks again on the next WM_GETOBJECT.
+    // A null update tells AccessKit that the tree is not ready: it answers with a placeholder and does not call this again, so a
+    // failure is recorded as a question, which the next WM_GETOBJECT answers with the whole tree (StartIfAsked).
     [UnmanagedCallersOnly]
     private static nint OnActivate(nint userData)
     {
+        if (!NativeHandleTable.TryResolve(userData, out Win32Accessibility? self))
+        {
+            return 0;
+        }
+
         try
         {
-            return NativeHandleTable.TryResolve(userData, out Win32Accessibility? self) ? self.Activate() : 0;
+            return self.Activate();
         }
         catch (Exception exception)
         {
             Win32MessageLoop.ReportCallbackException(exception);
+            self._asked = true;
             return 0;
         }
     }
 
-    // AccessKit asks for the update that NodesChanged or NotifyFocusChange gives it, only once it is active, so after the activation
-    // gave it the window's node. It must not return null: an update that fails gives the focus to the window's node and no node.
+    // AccessKit asks for the update that NodesChanged gives it, only once it is active or has its placeholder. It must not return
+    // null, and an update it cannot take ends the process in its Rust code: an update that fails is the tree's information and the
+    // window's node alone, valid in either state, and the next update gives the whole tree again.
     [UnmanagedCallersOnly]
     private static nint OnUpdate(nint userData)
     {
-        ulong fallback = 0;
+        if (!NativeHandleTable.TryResolve(userData, out Win32Accessibility? self))
+        {
+            return OneNodeTree(FallbackRootId);
+        }
+
         try
         {
-            if (NativeHandleTable.TryResolve(userData, out Win32Accessibility? self))
-            {
-                fallback = self._rootId;
-                return self.MakeUpdate();
-            }
+            return self.MakeUpdate();
         }
         catch (Exception exception)
         {
             Win32MessageLoop.ReportCallbackException(exception);
+            self._whole = true;
+            return OneNodeTree(self._rootId != 0 ? self._rootId : FallbackRootId);
         }
+    }
 
-        return AccessKit.TreeUpdateWithCapacityAndFocus(0, fallback);
+    // A tree of the window's node alone, with its information: an update AccessKit takes whatever it had before.
+    private static nint OneNodeTree(ulong root)
+    {
+        nint update = AccessKit.TreeUpdateWithCapacityAndFocus(1, root);
+        AccessKit.TreeUpdateSetTreeInfo(update, AccessKit.TreeInfoNew(root));
+        AccessKit.TreeUpdatePushNode(update, root, AccessKit.NodeNew(AccessKit.RoleWindow));
+        return update;
     }
 
     // A request for an action, on any thread. The actions come with row P02g's third implementation PR (Issue #633); the nodes

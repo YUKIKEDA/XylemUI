@@ -637,7 +637,5 @@ public sealed class AccessibilityTests
         public List<AccessibilityChange> Changes { get; } = [];
 
         public void NodesChanged(ReadOnlySpan<AccessibilityChange> changes) => Changes.AddRange(changes);
-
-        public void NotifyFocusChange(AccessibilityNodeId node) { }
     }
 }
