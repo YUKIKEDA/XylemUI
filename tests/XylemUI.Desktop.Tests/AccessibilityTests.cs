@@ -910,6 +910,58 @@ public sealed class AccessibilityTests
         static AccessibilityInfo Group(string name) => new() { Role = SemanticsRole.Group, Name = name };
     }
 
+    /// <summary>
+    /// A change of a link's text after the tree is made renames its node, and a link added later makes a node.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text whose link's text is a signal "one", and a second link that a signal shows when true, false at first; the tree made.
+    ///
+    /// Steps:
+    /// - Set the link's text to "two" and show the second link "more"; settle; read the text's link nodes.
+    ///
+    /// Expected:
+    /// - Two link nodes, "two" and "more".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task LinkNodes_FollowTheText()
+    {
+        PointerHandler click = (in PointerEvent e) => { };
+        Signal<string> label = Signal.Create("one");
+        Signal<bool> more = Signal.Create(false);
+        Element text = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            text = Elements.Text(
+                (ref w) =>
+                {
+                    w.Write("See ".AsSpan());
+                    using (w.Link(click))
+                    {
+                        w.Write(label.Get().AsSpan());
+                    }
+
+                    if (more.Get())
+                    {
+                        w.Write(" and ".AsSpan());
+                        using (w.Link(click))
+                        {
+                            w.Write("more".AsSpan());
+                        }
+                    }
+                }
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+
+        label.Set("two");
+        more.Set(true);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(["two", "more"], app.Tree.Accessibility.Find(text.Node)!.Links.Select(l => l.Name));
+    }
+
     // Records each change the tree hands it.
     private sealed class Recorder : IAccessibilityBridge
     {
