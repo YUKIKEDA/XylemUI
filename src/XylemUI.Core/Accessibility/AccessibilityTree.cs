@@ -399,6 +399,9 @@ internal sealed class AccessibilityTree(UiTree tree)
         node.Name = name;
         node.Description = info?.Description;
         node.Value = value;
+
+        // Not compared: a field's placeholder comes from its options when the field is made, and the app cannot set it.
+        node.Placeholder = info?.Placeholder;
         node.States = states;
         node.Range = info?.Range;
         node.ChildOffset = childOffset;
@@ -600,7 +603,8 @@ internal sealed class AccessibilityTree(UiTree tree)
     }
 
     // A node's role: the window's; the one its information gives (None leaves it out); a virtualized list's box and its rows; a box
-    // that scrolls; a text leaf that no node above takes as its name.
+    // that scrolls; a text leaf that no node above takes as its name; a Group for a node that takes the focus, so that the focus is
+    // never on a node outside the tree.
     private SemanticsRole RoleOf(NodeHandle handle, bool folding)
     {
         if (handle == tree.Root)
@@ -629,7 +633,12 @@ internal sealed class AccessibilityTree(UiTree tree)
             return SemanticsRole.ScrollViewer;
         }
 
-        return n.Text is not null && !folding ? SemanticsRole.Text : SemanticsRole.None;
+        if (n.Text is not null && !folding)
+        {
+            return SemanticsRole.Text;
+        }
+
+        return n.Input is { Focusable: true } ? SemanticsRole.Group : SemanticsRole.None;
     }
 
     // The text of the leaves of a node's subtree that have no role, in preorder, joined by one space: the name the node had when it

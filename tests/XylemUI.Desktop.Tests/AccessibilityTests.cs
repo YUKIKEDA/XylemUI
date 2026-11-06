@@ -498,6 +498,86 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
+    /// A text field's node has the field's placeholder, also when the app gives the field information of its own; a field with none
+    /// has none.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a text field with the placeholder "What needs doing?", which the app names "Task", and a text field with none,
+    ///   both empty.
+    ///
+    /// Steps:
+    /// - Read the placeholders of both edits.
+    ///
+    /// Expected:
+    /// - "What needs doing?" for the first, none for the second.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task EditPlaceholder_IsTheFieldsPlaceholder()
+    {
+        Element hinted = default;
+        Element plain = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                hinted = TextField(Signal.Create(string.Empty), new TextFieldOptions { Placeholder = "What needs doing?" })
+                    .Accessible(new AccessibilityInfo { Name = "Task" }),
+                plain = TextField(Signal.Create(string.Empty))
+            )
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+
+        Assert.Equal(("What needs doing?", (string?)null), (tree.Find(hinted.Node)!.Placeholder, tree.Find(plain.Node)!.Placeholder));
+    }
+
+    /// <summary>
+    /// A node that takes the focus and has no role of its own is a group, so that the focus is never on a node outside the tree; it
+    /// leaves the tree when it stops taking the focus, and comes back when it takes it again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a focusable box holding a text "inside", and a box holding a text "plain" that is not focusable; the tree made.
+    ///
+    /// Steps:
+    /// - Focus the focusable box; settle; read the root's children, the group's children, and the group's states. Make the box not
+    ///   focusable; settle; read the root's children. Make it focusable again; settle; read the root's children.
+    ///
+    /// Expected:
+    /// - A group and the text "plain" under the root; the text "inside" under the group, which is focused and focusable. Then the
+    ///   texts "inside" and "plain" under the root. Then a group and "plain" again.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task FocusableNodeWithNoRole_IsAGroup_WhileItTakesTheFocus()
+    {
+        Element area = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(area = Box(Elements.Text("inside")).Focusable(), Box(Elements.Text("plain")))
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityNode root = app.AccessibilityTree().Root!;
+
+        Assert.True(area.Tree!.Focus.Focus(area.Node));
+        _ = app.PumpAndSettle();
+        Assert.Equal([SemanticsRole.Group, SemanticsRole.Text], root.Children.Select(c => c.Role));
+        AccessibilityNode group = root.Children[0];
+        Assert.Equal(["inside"], group.Children.Select(c => c.Name));
+        Assert.Equal(
+            AccessibilityStates.Focused | AccessibilityStates.Focusable,
+            group.States & (AccessibilityStates.Focused | AccessibilityStates.Focusable)
+        );
+
+        area.Tree.SetFocusable(area.Node, false);
+        _ = app.PumpAndSettle();
+        Assert.Equal(["inside", "plain"], root.Children.Select(c => c.Name));
+
+        area.Tree.SetFocusable(area.Node, true);
+        _ = app.PumpAndSettle();
+        Assert.Equal([SemanticsRole.Group, SemanticsRole.Text], root.Children.Select(c => c.Role));
+    }
+
+    /// <summary>
     /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
     /// nothing, before the tree's object is made and after it is made but not started.
     /// </summary>

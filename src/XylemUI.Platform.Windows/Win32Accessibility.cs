@@ -423,6 +423,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         // 413): a text's node gives its name as its value too.
         SetText(made, node.Role == SemanticsRole.Text ? node.Value ?? node.Name : node.Value, TextProperty.Value);
         SetText(made, node.AutomationId, TextProperty.AuthorId);
+        SetText(made, node.Placeholder, TextProperty.Placeholder);
         SetStates(made, node);
         if (node.Range is { } range)
         {
@@ -659,6 +660,9 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
                 case TextProperty.Value:
                     AccessKit.NodeSetValue(made, bytes, (nuint)length);
                     break;
+                case TextProperty.Placeholder:
+                    AccessKit.NodeSetPlaceholder(made, bytes, (nuint)length);
+                    break;
                 default:
                     AccessKit.NodeSetAuthorId(made, bytes, (nuint)length);
                     break;
@@ -682,5 +686,6 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         Description,
         Value,
         AuthorId,
+        Placeholder,
     }
 }

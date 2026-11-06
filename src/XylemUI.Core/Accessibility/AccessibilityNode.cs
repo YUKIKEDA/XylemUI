@@ -130,6 +130,11 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     public string? Value { get; set; }
 
     /// <summary>
+    /// Gets or sets the text a text field shows while it is empty.
+    /// </summary>
+    public string? Placeholder { get; set; }
+
+    /// <summary>
     /// Gets or sets the node's states.
     /// </summary>
     public AccessibilityStates States { get; set; }

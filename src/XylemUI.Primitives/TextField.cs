@@ -196,6 +196,11 @@ public static partial class Primitive
                 edit = edit with { PartStates = edit.PartStates | AccessibilityStates.ReadOnly };
             }
 
+            if (options.Placeholder is { } hint)
+            {
+                edit = edit with { Placeholder = hint };
+            }
+
             _tree.SetPartAccessibility(_field, edit);
 
             // Assistive technology's SetValue writes the text as the app does, cut as typing is: to the first line for a field of one

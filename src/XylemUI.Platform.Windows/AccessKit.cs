@@ -168,6 +168,16 @@ internal static unsafe partial class AccessKit
     [LibraryImport(Library, EntryPoint = "accesskit_node_set_value_with_length")]
     public static partial void NodeSetValue(nint node, byte* value, nuint length);
 
+    /// <summary>
+    /// Sets the text a text input shows while it is empty (<c>accesskit_node_set_placeholder_with_length</c>); the Windows adapter
+    /// gives it as the UIA HelpText while the input is empty.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The UTF-8 text, not terminated.</param>
+    /// <param name="length">Its length in bytes.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_placeholder_with_length")]
+    public static partial void NodeSetPlaceholder(nint node, byte* value, nuint length);
+
     /// <summary>Sets the id an app's author gives a node, UIA's AutomationId (<c>accesskit_node_set_author_id_with_length</c>).</summary>
     /// <param name="node">The node.</param>
     /// <param name="value">The UTF-8 text, not terminated.</param>

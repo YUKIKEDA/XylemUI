@@ -1463,7 +1463,8 @@ internal sealed class UiTree
                 Focus.Lose(node);
             }
 
-            MarkAccessibilitySelf(node);
+            // A node that takes the focus has a node of the accessibility tree, a Group when it has no role of its own.
+            MarkAccessibility(node);
         }
     }
 

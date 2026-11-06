@@ -22,8 +22,9 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
     /// <remarks>
     /// Preconditions:
     /// - A hidden window "UIA tree" of 300 x 300: a column of a button "Save" 30 high with the test ID "save", a disabled button
-    ///   "Off" 30 high, a text field holding "hello", a text "Note", a node 20 high with the role CheckBox, the name "Agree", and
-    ///   the state Checked, and a scroll view 60 high holding a button "Inner" 30 high and a box 200 high.
+    ///   "Off" 30 high, a text field holding "hello", an empty text field with the placeholder "Hint", a text "Note", a focusable
+    ///   box holding a text "Area", a node 20 high with the role CheckBox, the name "Agree", and the state Checked, and a scroll view
+    ///   60 high holding a button "Inner" 30 high and a box 200 high.
     ///
     /// Steps:
     /// - On a thread of its own, the UIA client takes the window's element and every element below it; the UI thread runs the loop.
@@ -31,8 +32,8 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
     /// Expected:
     /// - The window: ControlType.Window, the name "UIA tree", the framework "XylemUI". "Save": ControlType.Button, the automation
     ///   ID "save", enabled, its box the node's box in client coordinates times the scale, moved to the screen. "Off": disabled.
-    ///   An edit whose value is "hello"; a text named "Note". "Agree": ControlType.CheckBox, toggled on. A pane for the scroll view,
-    ///   and "Inner" in it.
+    ///   An edit whose value is "hello", and an edit whose help text is "Hint"; a text named "Note"; a group, keyboard focusable,
+    ///   holding the text "Area". "Agree": ControlType.CheckBox, toggled on. A pane for the scroll view, and "Inner" in it.
     /// </remarks>
     [Fact]
     public void Tree_IsReadByUia_WithRolesNamesStatesAndBoxes() =>
@@ -45,7 +46,9 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
                         save = Button("Save", () => { }).TestId("save").Height(30),
                         Button("Off", () => { }).Disabled().Height(30),
                         TextField(Signal.Create("hello")),
+                        TextField(Signal.Create(string.Empty), new TextFieldOptions { Placeholder = "Hint" }),
                         Elements.Text("Note"),
+                        Box(Elements.Text("Area")).Focusable(),
                         Box()
                             .Height(20)
                             .Accessible(
@@ -80,7 +83,11 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
             Assert.Equal((ControlType.Button, "save", true), (saved.Type, saved.AutomationId, saved.Enabled));
             AssertBox(ScreenBox(window, save.Node), saved.Box);
             Assert.False(read.Elements.Single(e => e.Name == "Off").Enabled);
-            Assert.Equal("hello", read.Elements.Single(e => e.Type == ControlType.Edit).Value);
+            Assert.Equal(["hello", string.Empty], read.Elements.Where(e => e.Type == ControlType.Edit).Select(e => e.Value));
+            Assert.Equal("Hint", read.Elements.Single(e => e.Type == ControlType.Edit && e.Value == string.Empty).HelpText);
+            Seen group = read.Elements.Single(e => e.Type == ControlType.Group);
+            Assert.True(group.Focusable);
+            Assert.Equal("Area", read.Elements.Single(e => e.Parent == group.Id && e.Type == ControlType.Text).Name);
             Assert.Single(read.Elements, e => e.Type == ControlType.Text && e.Name == "Note");
             Seen agree = read.Elements.Single(e => e.Name == "Agree");
             Assert.Equal((ControlType.CheckBox, (ToggleState?)ToggleState.On), (agree.Type, agree.Toggle));
@@ -695,7 +702,11 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         bool Enabled,
         System.Windows.Rect Box,
         string? Value,
-        ToggleState? Toggle
+        ToggleState? Toggle,
+        string HelpText,
+        bool Focusable,
+        string Id,
+        string? Parent
     )
     {
         public static Seen Of(AutomationElement element)
@@ -703,7 +714,20 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
             AutomationElement.AutomationElementInformation current = element.Current;
             string? value = element.TryGetCurrentPattern(ValuePattern.Pattern, out object? v) ? ((ValuePattern)v).Current.Value : null;
             ToggleState? toggle = element.TryGetCurrentPattern(TogglePattern.Pattern, out object? t) ? ((TogglePattern)t).Current.ToggleState : null;
-            return new Seen(current.ControlType, current.Name, current.AutomationId, current.IsEnabled, current.BoundingRectangle, value, toggle);
+            AutomationElement? parent = System.Windows.Automation.TreeWalker.ControlViewWalker.GetParent(element);
+            return new Seen(
+                current.ControlType,
+                current.Name,
+                current.AutomationId,
+                current.IsEnabled,
+                current.BoundingRectangle,
+                value,
+                toggle,
+                current.HelpText,
+                current.IsKeyboardFocusable,
+                string.Join('.', element.GetRuntimeId()),
+                parent is null ? null : string.Join('.', parent.GetRuntimeId())
+            );
         }
     }
 }
