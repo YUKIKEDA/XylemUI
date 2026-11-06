@@ -456,8 +456,10 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     }
 
     // The actions a node takes (design §4.4.1, "States and actions"): Focus for a node that takes the focus, Click for one with
-    // a click handler of its own and for a link, SetValue for a text field, Expand and Collapse for a popup's anchor, and
-    // ScrollIntoView for every node.
+    // a click handler of its own and for a link, and ScrollIntoView for every node. AccessKit's Windows adapter sends SetValue,
+    // Expand, and Collapse without the node declaring them (accesskit_windows 0.35.1's `adapters/windows/src/node.rs`, lines 956
+    // to 978 and 1349 to 1353): they are declared with the adapters of macOS and Linux, which read the declarations (rows P06 and
+    // P04).
     private static void SetActions(nint made, AccessibilityNode node)
     {
         AccessibilityStates states = node.States;
@@ -471,21 +473,14 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeAddAction(made, AccessKit.ActionClick);
         }
 
-        if (node.Role == SemanticsRole.Edit)
-        {
-            AccessKit.NodeAddAction(made, AccessKit.ActionSetValue);
-        }
-
-        if ((states & AccessibilityStates.Expandable) != 0)
-        {
-            AccessKit.NodeAddAction(made, AccessKit.ActionExpand);
-            AccessKit.NodeAddAction(made, AccessKit.ActionCollapse);
-        }
-
         AccessKit.NodeAddAction(made, AccessKit.ActionScrollIntoView);
     }
 
-    private void Perform(AccessKit.ActionRequest* request)
+    /// <summary>
+    /// Carries out a request for an action that the caller owns and frees (<see cref="Perform(nint)"/> frees AccessKit's).
+    /// </summary>
+    /// <param name="request">The request.</param>
+    internal void Perform(AccessKit.ActionRequest* request)
     {
         if (!_tree.HasAccessibilityTree || _tree.Accessibility.Find(new AccessibilityNodeId(request->TargetNode)) is not { } node)
         {

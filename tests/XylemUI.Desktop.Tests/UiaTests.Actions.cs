@@ -135,24 +135,28 @@ public sealed unsafe partial class UiaTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A hidden window "UIA set value" with a field "free" of at most 5 clusters, and a read-only field "fixed", both empty.
+    /// - A hidden window "UIA set value" with a field "free" of at most 5 clusters, a field "line" of one line, and a read-only
+    ///   field "fixed", all empty.
     ///
     /// Steps:
-    /// - On the client's thread, set "free" to "abcdefgh\nmore", and try to set "fixed" to "x"; run the loop until "free" changed.
+    /// - On the client's thread, set "free" to "abcdefgh", "line" to "one\ntwo", and try to set "fixed" to "x"; run the loop
+    ///   until "line" changed.
     ///
     /// Expected:
-    /// - "free" is "abcde"; "fixed" is empty.
+    /// - "free" is "abcde", "line" is "one", "fixed" is empty.
     /// </remarks>
     [Fact]
     public void SetValue_WritesTheField_NotAReadOnlyOne() =>
         ui.Invoke(() =>
         {
             Signal<string> free = Signal.Create(string.Empty);
+            Signal<string> line = Signal.Create(string.Empty);
             Signal<string> fixedText = Signal.Create(string.Empty);
             using var window = new DesktopWindow(
                 () =>
                     Column(
                         TextField(free, new TextFieldOptions { MaxLength = 5 }).TestId("free"),
+                        TextField(line).TestId("line"),
                         TextField(fixedText, new TextFieldOptions { ReadOnly = true }).TestId("fixed")
                     ),
                 new WindowOptions("UIA set value", 200, 200),
@@ -163,7 +167,8 @@ public sealed unsafe partial class UiaTests
                 window,
                 root =>
                 {
-                    ((ValuePattern)ById(root, "free").GetCurrentPattern(ValuePattern.Pattern)).SetValue("abcdefgh\nmore");
+                    ((ValuePattern)ById(root, "free").GetCurrentPattern(ValuePattern.Pattern)).SetValue("abcdefgh");
+                    ((ValuePattern)ById(root, "line").GetCurrentPattern(ValuePattern.Pattern)).SetValue("one\ntwo");
                     try
                     {
                         ((ValuePattern)ById(root, "fixed").GetCurrentPattern(ValuePattern.Pattern)).SetValue("x");
@@ -173,11 +178,11 @@ public sealed unsafe partial class UiaTests
                         // The client may refuse a read-only element itself; either way the text stays.
                     }
                 },
-                () => free.Peek().Length > 0
+                () => line.Peek().Length > 0
             );
             RunAccessibilityStage(window);
 
-            Assert.Equal(("abcde", string.Empty), (free.Peek(), fixedText.Peek()));
+            Assert.Equal(("abcde", "one", string.Empty), (free.Peek(), line.Peek(), fixedText.Peek()));
         });
 
     /// <summary>
@@ -189,11 +194,11 @@ public sealed unsafe partial class UiaTests
     /// - A hidden window "UIA select" with a select of "apple" and "pear", "apple" chosen, its test ID "fruit".
     ///
     /// Steps:
-    /// - Expand the select through UIA; run the loop until it is open. Read whether its list has the Selection pattern, and Select
-    ///   "pear"; run the loop until the value changed. Collapse the select if it is still open; run the loop until it is closed.
+    /// - Expand the select through UIA; run the loop until it is open. Collapse it; run the loop until it is closed. Expand it
+    ///   again. Read whether its list has the Selection pattern, and Select "pear"; run the loop until the value changed.
     ///
     /// Expected:
-    /// - The list has the Selection pattern; the value is "pear"; the select is closed.
+    /// - The select closed on Collapse; the list has the Selection pattern; the value is "pear".
     /// </remarks>
     [Fact]
     public void ExpandSelect_AndChooseAnOption() =>
@@ -210,6 +215,15 @@ public sealed unsafe partial class UiaTests
 
             ActByUia(window, root => ((ExpandCollapsePattern)ById(root, "fruit").GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand(), Open);
             RunAccessibilityStage(window);
+            ActByUia(
+                window,
+                root => ((ExpandCollapsePattern)ById(root, "fruit").GetCurrentPattern(ExpandCollapsePattern.Pattern)).Collapse(),
+                () => !Open()
+            );
+            RunAccessibilityStage(window);
+            bool collapsed = !Open();
+            ActByUia(window, root => ((ExpandCollapsePattern)ById(root, "fruit").GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand(), Open);
+            RunAccessibilityStage(window);
             bool selection = false;
             ActByUia(
                 window,
@@ -224,17 +238,8 @@ public sealed unsafe partial class UiaTests
                 },
                 () => fruit.Peek() == "pear"
             );
-            RunAccessibilityStage(window);
-            if (Open())
-            {
-                ActByUia(
-                    window,
-                    root => ((ExpandCollapsePattern)ById(root, "fruit").GetCurrentPattern(ExpandCollapsePattern.Pattern)).Collapse(),
-                    () => !Open()
-                );
-            }
 
-            Assert.Equal((true, "pear", false), (selection, fruit.Peek(), Open()));
+            Assert.Equal((true, true, "pear"), (collapsed, selection, fruit.Peek()));
         });
 
     /// <summary>
@@ -372,6 +377,55 @@ public sealed unsafe partial class UiaTests
 
             Assert.Equal(1, clicks);
         });
+
+    /// <summary>
+    /// The provider refuses SetValue on a read-only field, also when the request reaches it: UIAutomationClient refuses a read-only
+    /// value itself, and AccessKit sends SetValue whatever the field is (accesskit_windows 0.35.1's `adapters/windows/src/node.rs`,
+    /// lines 1349 to 1353).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA read only" with a read-only field "fixed" and a field "free", both empty; UIA has read the tree.
+    ///
+    /// Steps:
+    /// - Hand the provider a request of SetValue "x" for each field's node, as AccessKit hands it.
+    ///
+    /// Expected:
+    /// - "free" is "x"; "fixed" is empty.
+    /// </remarks>
+    [Fact]
+    public void SetValueRequest_OnAReadOnlyField_IsRefused() =>
+        ui.Invoke(() =>
+        {
+            Signal<string> free = Signal.Create(string.Empty);
+            Signal<string> fixedText = Signal.Create(string.Empty);
+            Element freeField = default;
+            Element fixedField = default;
+            using var window = new DesktopWindow(
+                () => Column(freeField = TextField(free), fixedField = TextField(fixedText, new TextFieldOptions { ReadOnly = true })),
+                new WindowOptions("UIA read only", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+            Win32Accessibility provider = window.Window.Accessibility!;
+
+            SetValue(provider, window.Tree.Accessibility.Find(freeField.Node)!.Id);
+            SetValue(provider, window.Tree.Accessibility.Find(fixedField.Node)!.Id);
+
+            Assert.Equal(("x", string.Empty), (free.Peek(), fixedText.Peek()));
+        });
+
+    // Hands the provider a request of SetValue "x", laid out as AccessKit's, from memory the test owns.
+    private static void SetValue(Win32Accessibility provider, AccessibilityNodeId node)
+    {
+        byte* text = stackalloc byte[] { (byte)'x', 0 };
+        var request = new AccessKit.ActionRequest { Action = AccessKit.ActionSetValue, TargetNode = node.Value };
+        request.Data.HasValue = 1;
+        request.Data.Value.Tag = AccessKit.ActionDataValue;
+        request.Data.Value.Value.Text = text;
+        provider.Perform(&request);
+    }
 
     // Runs an action of the client on a thread of its own, while the UI thread runs the loop until the client is done and the action
     // took effect.

@@ -688,7 +688,8 @@ public sealed class AccessibilityTests
     ///   the tree made; row 3 focused.
     ///
     /// Steps:
-    /// - Scroll to 10,000; settle; read the list's rows. Take the focus from row 3; settle; read them again.
+    /// - Scroll to 1,000, where the list makes row 50; settle. Scroll to 10,000; settle; read the list's rows. Take the focus from
+    ///   row 3; settle; read them again.
     ///
     /// Expected:
     /// - Row 3 is among the rows, row 50 is not; then row 3 is not.
@@ -722,6 +723,9 @@ public sealed class AccessibilityTests
         Assert.True(app.Tree.Focus.Focus(app.Find("row3").Node));
         _ = app.PumpAndSettle();
 
+        state.Scroll.ScrollTo(new Vector2(0, 1_000));
+        _ = app.PumpAndSettle();
+        Assert.True(app.Tree.Accessibility.Find(app.Find("row50").Node) is not null);
         state.Scroll.ScrollTo(new Vector2(0, 10_000));
         _ = app.PumpAndSettle();
         string[] kept = Ids();
@@ -823,6 +827,87 @@ public sealed class AccessibilityTests
         _ = app.PumpAndSettle();
 
         Assert.Equal(220, state.Offset.Get().Y);
+    }
+
+    /// <summary>
+    /// A change of a virtualized list's number of items alone, items past its range, hands the list's node again with the new
+    /// count.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box 200 x 300 that scrolls down, a virtualized list of 1,000 rows 20 high; a bridge that records what it is handed; the
+    ///   tree made.
+    ///
+    /// Steps:
+    /// - Add 10 items at the end; settle; read the record and the list's count.
+    ///
+    /// Expected:
+    /// - The list's node is in the record, and its count is 1,010.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task VirtualList_CountChange_HandsTheListAgain()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        Element list = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            list = Box()
+                .Width(200)
+                .Height(300)
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(items, static i => i, static item => Box().Height(20))
+        );
+        _ = app.PumpAndSettle();
+        var bridge = new Recorder();
+        app.Tree.Accessibility.Bridge = bridge;
+        _ = app.AccessibilityTree();
+        bridge.Changes.Clear();
+
+        items.Set([.. Enumerable.Range(0, 1_010)]);
+        _ = app.PumpAndSettle();
+        AccessibilityNode node = app.Tree.Accessibility.Find(list.Node)!;
+
+        Assert.Contains(bridge.Changes, c => c.Id == node.Id);
+        Assert.Equal(1_010, node.SizeOfSet);
+    }
+
+    /// <summary>
+    /// A node is clickable to assistive technology when it has a click handler of its own in the bubble phase; a handler of another
+    /// kind, or a click handler in the capture phase, does not make it so.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of three nodes of the role Group: "click" with a click handler in the bubble phase, "down" with a down handler in
+    ///   the bubble phase, and "tunnel" with a click handler in the capture phase.
+    ///
+    /// Steps:
+    /// - Make the tree; read whether each node is clickable.
+    ///
+    /// Expected:
+    /// - "click" only.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Clickable_IsABubbleClickHandlerOfItsOwn()
+    {
+        PointerHandler none = (in PointerEvent e) => { };
+        Element click = default;
+        Element down = default;
+        Element tunnel = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                click = Box().Height(10).On(PointerEventKind.Click, EventPhase.Bubble, none).Accessible(Group("click")),
+                down = Box().Height(10).On(PointerEventKind.Down, EventPhase.Bubble, none).Accessible(Group("down")),
+                tunnel = Box().Height(10).On(PointerEventKind.Click, EventPhase.Capture, none).Accessible(Group("tunnel"))
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+        bool Clickable(Element e) => (app.Tree.Accessibility.Find(e.Node)!.States & AccessibilityStates.Clickable) != 0;
+
+        Assert.Equal((true, false, false), (Clickable(click), Clickable(down), Clickable(tunnel)));
+
+        static AccessibilityInfo Group(string name) => new() { Role = SemanticsRole.Group, Name = name };
     }
 
     // Records each change the tree hands it.
