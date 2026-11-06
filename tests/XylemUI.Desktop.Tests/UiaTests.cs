@@ -363,6 +363,48 @@ public sealed unsafe class UiaTests(UiThreadFixture ui)
             Assert.Equal((100 * scale, 100 * scale * 2), (before.Width, after.Width));
         });
 
+    /// <summary>
+    /// Each update hands AccessKit the nodes that changed alone, not again those of the updates before it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA update" with three buttons 100 x 30, the second's text a signal "Zero"; UIA has read the tree.
+    ///
+    /// Steps:
+    /// - Set the signal to "One"; run a frame; read how many nodes the update handed AccessKit. Set it to "Two"; run a frame; read
+    ///   it again.
+    ///
+    /// Expected:
+    /// - 1, then 1: the second button's node each time.
+    /// </remarks>
+    [Fact]
+    public void Update_HandsAccessKitTheChangedNodesAlone() =>
+        ui.Invoke(() =>
+        {
+            Signal<string> label = Signal.Create("Zero");
+            using var window = new DesktopWindow(
+                () =>
+                    Column(
+                        Button("First", () => { }).Width(100).Height(30),
+                        Button(Elements.Text((ref text) => text.Write(label.Get())), () => { }).Width(100).Height(30),
+                        Button("Third", () => { }).Width(100).Height(30)
+                    ),
+                new WindowOptions("UIA update", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+            Win32Accessibility provider = window.Window.Accessibility!;
+
+            label.Set("One");
+            window.Frames.RunFrame();
+            int first = provider.LastUpdateNodes;
+            label.Set("Two");
+            window.Frames.RunFrame();
+
+            Assert.Equal((1, 1), (first, provider.LastUpdateNodes));
+        });
+
     // Starts a UIA client on a thread of its own that listens (listen returns its handler and how to read what it got), then runs
     // the change on the UI thread, and runs the loop until the client got its event or the watchdog ends the wait. Returns what the
     // client got.

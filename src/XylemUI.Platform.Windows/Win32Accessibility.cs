@@ -46,6 +46,11 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     }
 
     /// <summary>
+    /// Gets the number of nodes the last update after the first handed AccessKit: the nodes that changed.
+    /// </summary>
+    internal int LastUpdateNodes { get; private set; }
+
+    /// <summary>
     /// Answers the window's <c>WM_GETOBJECT</c>; the first that asks for the UIA provider makes the trees.
     /// </summary>
     /// <param name="wParam">The message's <c>wParam</c>.</param>
@@ -269,14 +274,17 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         AccessibilityTree accessibility = _tree.Accessibility;
         AccessibilityNode? root = accessibility.Root;
         nint update = AccessKit.TreeUpdateWithCapacityAndFocus((nuint)_pending.Count, root is null ? 0 : FocusId(accessibility, root));
+        int pushed = 0;
         foreach (AccessibilityNodeId id in _pending)
         {
             if (accessibility.Find(id) is { } node)
             {
                 AccessKit.TreeUpdatePushNode(update, id.Value, MakeNode(node));
+                pushed++;
             }
         }
 
+        LastUpdateNodes = pushed;
         return update;
     }
 
