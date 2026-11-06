@@ -13,7 +13,7 @@ namespace XylemUI.Desktop.Tests;
 // window's WM_GETOBJECT. The client is UIAutomationClient (System.Windows.Automation), as spike S10 read it; it runs on a thread of
 // its own, as a screen reader runs in a process of its own, while the UI thread runs the message loop and answers.
 [Collection(UiThreadGroup.Name)]
-public sealed unsafe class UiaTests(UiThreadFixture ui)
+public sealed unsafe partial class UiaTests(UiThreadFixture ui)
 {
     /// <summary>
     /// UIA reads the window's tree: the window, and each node's control type, name, automation ID, state, value, and box on the
