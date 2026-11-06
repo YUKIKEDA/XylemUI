@@ -816,6 +816,10 @@ Rejected:
   - AccessKit をソースから作る（Rust のツールチェーンを vendor のビルドに足す。release の静的ライブラリで足りる）
   - 毎フレーム木を全部作って渡す（GPUI の形。変化の無いフレームにも木の大きさに比例する費用がかかる）
   - MSAA の `IAccessible` を返す（Flutter の Windows の既定。UIA のクライアントは代理を通して読む）
+  - 操作の要求を、鍵つきの共有のキューで UI スレッドへ渡す（窓の HWND への `PostMessage` なら、鍵が要らず、Windows のメッセージの順に乗る。Issue #637）
+  - 範囲の外の行に、UIA の IsOffscreen が true になる矩形を書く（AccessKit は IsOffscreen を出さず、子を切る親の外の節を木から外す。Issue #637）
+  - スクロールの操作（ScrollUp など）を持つ（accesskit_windows 0.35.1 に UIA の Scroll のパターンが無く、届かない。Issue #637）
+  - Select の一覧を `List` のままにする（UIA の Selection が付かない。Issue #637）
 
 ---
 
