@@ -103,27 +103,10 @@ internal static class TaffyFixtureScope
 
         foreach (XElement element in root.DescendantsAndSelf())
         {
-            if (GridExclusion(element) is { } grid)
-            {
-                return grid;
-            }
-
             if (FeatureExclusion(element) is { } feature)
             {
                 return feature;
             }
-        }
-
-        return null;
-    }
-
-    // The parts of CSS Grid that P02f's next implementation PR brings (design §3.3, "The shape of P02f").
-    private static string? GridExclusion(XElement e)
-    {
-        const string Next = "P02f's next implementation PR";
-        if (e.Attribute("display")?.Value == "grid" && e.Elements().Any(child => child.Attribute("position")?.Value == "absolute"))
-        {
-            return $"an absolutely positioned child of a grid ({Next})";
         }
 
         return null;

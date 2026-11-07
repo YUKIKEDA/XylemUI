@@ -186,7 +186,9 @@ internal static partial class LayoutEngine
 
             if (tree.Nodes.GetRef(tree.Nodes.GetRef(firstChild).Parent).Layout.OutOfFlowChildren > 0)
             {
-                LayOutGridOutOfFlowChildren(tree, firstChild, in style, borderBox, in c, input.ParentSize.Width);
+                var columnLines = new GridAxisLines(columns, columnCounts, columnNames);
+                var rowLines = new GridAxisLines(rows, rowCounts, rowNames);
+                LayOutGridOutOfFlowChildren(tree, firstChild, borderBox, in c, in columnLines, in rowLines);
             }
 
             baselineItem = GridBaselineItem(items);
