@@ -219,6 +219,8 @@ internal static class TaffyFixture
             {
                 null or "row" => GridAutoFlow.Row,
                 "column" => GridAutoFlow.Column,
+                "row dense" or "dense" => GridAutoFlow.RowDense,
+                "column dense" => GridAutoFlow.ColumnDense,
                 string value => throw new InvalidOperationException($"The auto-flow {value} is not read by these tests."),
             },
             JustifyItems = ParseAlignItems(e, "justify-items") ?? default,

@@ -384,6 +384,18 @@ public enum GridAutoFlow : byte
     /// Fills each column in turn, adding columns as needed.
     /// </summary>
     Column,
+
+    /// <summary>
+    /// Fills each row in turn, and starts each item's search from the grid's start, so that a later item can fill a hole an
+    /// earlier one left (<c>row dense</c>).
+    /// </summary>
+    RowDense,
+
+    /// <summary>
+    /// Fills each column in turn, and starts each item's search from the grid's start, so that a later item can fill a hole an
+    /// earlier one left (<c>column dense</c>).
+    /// </summary>
+    ColumnDense,
 }
 
 /// <summary>

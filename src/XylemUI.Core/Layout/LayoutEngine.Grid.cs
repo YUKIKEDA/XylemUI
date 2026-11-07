@@ -79,7 +79,12 @@ internal static partial class LayoutEngine
             GridOccupancy occupancy = _gridOccupancy ??= new GridOccupancy();
             (TrackCounts estimatedColumns, TrackCounts estimatedRows) = EstimateGridSize(explicitColumns, explicitRows, items);
             occupancy.Reset(estimatedColumns, estimatedRows);
-            PlaceGridItems(occupancy, items, props.AutoFlow == GridAutoFlow.Column);
+            PlaceGridItems(
+                occupancy,
+                items,
+                props.AutoFlow is GridAutoFlow.Column or GridAutoFlow.ColumnDense,
+                props.AutoFlow is GridAutoFlow.RowDense or GridAutoFlow.ColumnDense
+            );
             TrackCounts columnCounts = occupancy.Columns;
             TrackCounts rowCounts = occupancy.Rows;
 
@@ -449,8 +454,9 @@ internal static partial class LayoutEngine
 
     // CSS Grid §8.5, the grid item placement algorithm (Taffy's place_grid_items, placement.rs): the items placed at definite lines
     // in both axes, then those placed at definite lines in the secondary axis, then the rest in turn from a cursor that moves on.
-    // The primary axis is the one the auto-flow fills along: the columns for `row`.
-    private static void PlaceGridItems(GridOccupancy occupancy, Span<GridItemState> items, bool columnFlow)
+    // The primary axis is the one the auto-flow fills along: the columns for `row`. A dense flow starts each item's search from
+    // the grid's start instead of after the item before it.
+    private static void PlaceGridItems(GridOccupancy occupancy, Span<GridItemState> items, bool columnFlow, bool dense)
     {
         bool primaryIsColumns = !columnFlow;
 
@@ -480,9 +486,10 @@ internal static partial class LayoutEngine
             if (Secondary(ref item, primaryIsColumns).IsDefinite && !Primary(ref item, primaryIsColumns).IsDefinite)
             {
                 Secondary(ref item, primaryIsColumns).ResolveDefinite(out int secondaryStart, out int secondaryEnd);
-                int position = occupancy.AutoPlacementCursor(primaryIsColumns, secondaryStart, out int cursor)
-                    ? cursor
-                    : TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
+                int position =
+                    !dense && occupancy.AutoPlacementCursor(primaryIsColumns, secondaryStart, out int cursor)
+                        ? cursor
+                        : TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
                 int span = Primary(ref item, primaryIsColumns).IndefiniteSpan;
                 while (true)
                 {
@@ -509,8 +516,10 @@ internal static partial class LayoutEngine
 
         // 3. The implicit grid's columns are already counted: the estimate sized the matrix and each placement grew it.
         // 4. The remaining items, in turn from a cursor.
-        int primaryCursor = TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
-        int secondaryCursor = TrackCountsOf(occupancy, !primaryIsColumns).ImplicitStartLine;
+        int primaryStartLine = TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
+        int secondaryStartLine = TrackCountsOf(occupancy, !primaryIsColumns).ImplicitStartLine;
+        int primaryCursor = primaryStartLine;
+        int secondaryCursor = secondaryStartLine;
         foreach (ref GridItemState item in items)
         {
             if (Secondary(ref item, primaryIsColumns).IsDefinite)
@@ -524,7 +533,8 @@ internal static partial class LayoutEngine
                 Secondary(ref item, primaryIsColumns),
                 primaryIsColumns,
                 primaryCursor,
-                secondaryCursor
+                secondaryCursor,
+                dense
             );
             RecordPlacement(
                 occupancy,
@@ -536,8 +546,7 @@ internal static partial class LayoutEngine
                 secondaryEnd,
                 GridOccupancy.CellState.AutoPlaced
             );
-            primaryCursor = primaryEnd;
-            secondaryCursor = secondaryStart;
+            (primaryCursor, secondaryCursor) = dense ? (primaryStartLine, secondaryStartLine) : (primaryEnd, secondaryStart);
         }
     }
 
@@ -548,16 +557,22 @@ internal static partial class LayoutEngine
         OriginZeroPlacement secondary,
         bool primaryIsColumns,
         int primaryIndex,
-        int secondaryIndex
+        int secondaryIndex,
+        bool dense
     )
     {
         TrackCounts primaryCounts = TrackCountsOf(occupancy, primaryIsColumns);
         int secondarySpan = secondary.IndefiniteSpan;
         if (primary.IsDefinite)
         {
-            // A fixed position in the primary axis: move along the secondary one until the item fits.
+            // A fixed position in the primary axis: move along the secondary one until the item fits, from the grid's start for
+            // a dense flow.
             primary.ResolveDefinite(out int primaryStart, out int primaryEnd);
-            if (primaryStart < primaryIndex)
+            if (dense)
+            {
+                secondaryIndex = TrackCountsOf(occupancy, !primaryIsColumns).ImplicitStartLine;
+            }
+            else if (primaryStart < primaryIndex)
             {
                 secondaryIndex = SaturatingIncrement(secondaryIndex);
             }

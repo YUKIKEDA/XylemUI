@@ -136,11 +136,6 @@ internal static class TaffyFixtureScope
                 {
                     return $"named grid lines ({Next})";
                 }
-
-                if (value.Contains("dense", StringComparison.Ordinal))
-                {
-                    return $"dense auto-placement ({Next})";
-                }
             }
 
             if (name is "grid-row-start" or "grid-row-end" or "grid-column-start" or "grid-column-end")
