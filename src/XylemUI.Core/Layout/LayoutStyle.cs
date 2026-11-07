@@ -215,6 +215,22 @@ internal readonly record struct LayoutStyle
     public bool IsStructuralBoundary => Width.IsPx && Height.IsPx && !HasSizingKeywordLimit;
 
     /// <summary>
+    /// Gets a value indicating whether the box is <see cref="IsBare"/> and its style holds nothing else that a grid reads of an
+    /// item (P02f): no grid lines, no alignment of its own, overflow visible, and in the flow. A grid then places the item
+    /// automatically and aligns it as the container aligns its items, without reading its style.
+    /// </summary>
+    public bool IsPlainGridItem =>
+        IsBare
+        && GridColumn == default
+        && GridRow == default
+        && AlignSelf is null
+        && JustifySelf is null
+        && OverflowX == Overflow.Visible
+        && OverflowY == Overflow.Visible
+        && Position == Position.Relative
+        && !Hidden;
+
+    /// <summary>
     /// Gets a value indicating whether the box has no size, limit, aspect ratio, margin, padding, or border of its own: every
     /// size and limit auto, and every margin, padding, and border 0 (P02f). Its parent then lays it out from the space it gives
     /// alone.

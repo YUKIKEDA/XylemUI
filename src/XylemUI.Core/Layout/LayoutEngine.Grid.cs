@@ -430,6 +430,20 @@ internal static partial class LayoutEngine
             item = default;
             item.Node = child;
             item.SourceOrder = order;
+            item.Baseline = float.NaN;
+            item.MinContentCache = OptionalSize.None;
+            item.MaxContentCache = OptionalSize.None;
+            item.MinimumCache = OptionalSize.None;
+
+            // A plain grid item's style holds nothing a grid reads (LayoutState.IsPlainGridItem): placed automatically in both
+            // axes, and aligned as the container's items are.
+            if (tree.Nodes.GetRef(child).Layout.IsPlainGridItem)
+            {
+                item.Bare = true;
+                item.AlignSelf = props.AlignItems;
+                item.JustifySelf = props.JustifyItems;
+                continue;
+            }
 
             // A bare item's margins are 0 and its height auto: their reads are skipped.
             item.Bare = tree.Nodes.GetRef(child).Layout.IsBare;
@@ -442,10 +456,6 @@ internal static partial class LayoutEngine
             item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows, rowNames);
             item.AlignSelf = s.AlignSelf ?? props.AlignItems;
             item.JustifySelf = s.JustifySelf ?? props.JustifyItems;
-            item.Baseline = float.NaN;
-            item.MinContentCache = OptionalSize.None;
-            item.MaxContentCache = OptionalSize.None;
-            item.MinimumCache = OptionalSize.None;
         }
 
         return anyPlaced;

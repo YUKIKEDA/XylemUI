@@ -733,6 +733,7 @@ internal sealed class UiTree
                 HasInset = style.Inset != default,
                 HasKeywordLimits = style.HasSizingKeywordLimit,
                 IsBare = style.IsBare,
+                IsPlainGridItem = style.IsPlainGridItem,
                 Measure = measure,
                 IntrinsicWidths = intrinsicWidths,
                 FirstBaseline = float.NaN,
@@ -1900,6 +1901,7 @@ internal sealed class UiTree
         changed.Layout.HasInset = style.Inset != default;
         changed.Layout.HasKeywordLimits = style.HasSizingKeywordLimit;
         changed.Layout.IsBare = style.IsBare;
+        changed.Layout.IsPlainGridItem = style.IsPlainGridItem;
         changed.Versions.LayoutStyle++;
         NodeHandle parent = changed.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);
