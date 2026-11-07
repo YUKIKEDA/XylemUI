@@ -303,6 +303,27 @@
       </node>
     </expectations>
   </test>
+  <test name="flex_column_max_content_width_stretched_aspect_ratio_child__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute" align-items="flex-start" width="300px">
+        <div direction="ltr" position="relative" flex-direction="column">
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="40">
+        <node x="0" y="0" width="30" height="40">
+          <node x="0" y="0" width="30" height="10" />
+          <node x="0" y="10" width="30" height="30" />
+        </node>
+      </node>
+    </expectations>
+  </test>
   <test name="flex_column_max_height_max_content__border_box_ltr" use-rounding="true">
     <viewport width="max-content" height="max-content" />
     <input>
@@ -929,6 +950,29 @@
         <node x="0" y="0" width="50" height="10" />
         <node x="225" y="0" width="175" height="10" />
         <node x="0" y="10" width="400" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_start_aligned_column_child_aspect_ratio__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="300px" grid-template-columns="100px 100px">
+        <div direction="ltr" position="relative" flex-direction="column" justify-self="start">
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="40" resolved-rows="40px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="30" height="40">
+          <node x="0" y="0" width="30" height="10" />
+          <node x="0" y="10" width="30" height="30" />
+        </node>
+        <node x="100" y="0" width="100" height="10" />
       </node>
     </expectations>
   </test>

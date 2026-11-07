@@ -180,6 +180,13 @@ internal static partial class LayoutEngine
         }
 
         size = WithAspectRatio(size with { Height = height }, ratio).Clamp(min, max);
+
+        // Not stretched, and no height that gives it through the aspect ratio: the fit-content width in the area.
+        if (float.IsNaN(size.Width) && !keywordWidth)
+        {
+            size = size with { Width = Maybe.Clamp(FitContentWidth(tree, item.Node, stretch.Width, parentSize, size.Height), min.Width, max.Width) };
+        }
+
         var input = new LayoutInput(
             size,
             true,
@@ -209,8 +216,12 @@ internal static partial class LayoutEngine
         var stretch = new Size(Math.Max(area.Width, 0), Math.Max(area.Height - item.BaselineShim, 0));
         bool stretchWidth = horizontal == new AlignItems(AlignItemsKeyword.Stretch);
         bool stretchHeight = vertical == new AlignItems(AlignItemsKeyword.Stretch);
+        float knownHeight = stretchHeight ? stretch.Height : float.NaN;
+        float knownWidth = stretchWidth
+            ? stretch.Width
+            : FitContentWidth(tree, item.Node, stretch.Width, new OptionalSize(area.Width, area.Height), knownHeight);
         var input = new LayoutInput(
-            new OptionalSize(stretchWidth ? stretch.Width : float.NaN, stretchHeight ? stretch.Height : float.NaN),
+            new OptionalSize(knownWidth, knownHeight),
             true,
             true,
             new OptionalSize(area.Width, area.Height),
@@ -219,7 +230,7 @@ internal static partial class LayoutEngine
             RequestedAxis.Both
         );
         Size laidOut = LayoutChild(tree, item.Node, in input, commit: true);
-        float width = Math.Max(stretchWidth ? stretch.Width : laidOut.Width, 0);
+        float width = Math.Max(knownWidth, 0);
         float height = Math.Max(stretchHeight ? stretch.Height : laidOut.Height, 0);
         float x = AlignInArea(left, right, horizontal, width, 0, 0, 0);
         float y = AlignInArea(top, bottom, vertical, height, 0, 0, item.BaselineShim);

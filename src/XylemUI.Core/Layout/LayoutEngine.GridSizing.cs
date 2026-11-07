@@ -1409,10 +1409,12 @@ internal static partial class LayoutEngine
         // has one, and that item is not stretched.
         if (item.Bare)
         {
-            return new OptionalSize(
-                IsStretch(item.JustifySelf) ? Maybe.Max(area.Width, 0) : float.NaN,
-                IsStretch(item.AlignSelf) ? Maybe.Max(area.Height, 0) : float.NaN
-            );
+            float bareHeight = IsStretch(item.AlignSelf) ? Maybe.Max(area.Height, 0) : float.NaN;
+            float bareWidth =
+                IsStretch(item.JustifySelf) ? Maybe.Max(area.Width, 0)
+                : float.IsNaN(area.Width) ? float.NaN
+                : FitContentWidth(tree, item.Node, Math.Max(area.Width, 0), area, bareHeight);
+            return new OptionalSize(bareWidth, bareHeight);
         }
 
         ref readonly LayoutStyle s = ref StyleOf(tree, in item);
@@ -1428,6 +1430,10 @@ internal static partial class LayoutEngine
         OptionalSize max = WithAspectRatio(new OptionalSize(s.MaxWidth.Resolve(area.Width), s.MaxHeight.Resolve(area.Height)), ratio);
         OptionalSize stretch = new(Maybe.Max(area.Width - margins.Width, 0), Maybe.Max(area.Height - margins.Height, 0));
 
+        // Read before the width may be measured: no ref into the arena is held across a measurement (design §2.5).
+        Length heightStyle = s.Height;
+        bool widthKeyword = s.Width.IsSizingKeyword;
+        bool stretchHeight = !s.Margin.Top.IsAuto && !s.Margin.Bottom.IsAuto && IsStretch(item.AlignSelf);
         float width = inherent.Width;
         if (float.IsNaN(width))
         {
@@ -1445,19 +1451,51 @@ internal static partial class LayoutEngine
         float height = size.Height;
         if (float.IsNaN(height))
         {
-            if (s.Height.IsSizingKeyword)
+            if (heightStyle.IsSizingKeyword)
             {
-                height = StretchOf(s.Height, stretch.Height);
+                height = StretchOf(heightStyle, stretch.Height);
             }
-            else if (!s.Margin.Top.IsAuto && !s.Margin.Bottom.IsAuto && IsStretch(item.AlignSelf))
+            else if (stretchHeight)
             {
                 height = stretch.Height;
             }
         }
 
         size = WithAspectRatio(size with { Height = height }, ratio);
+
+        // Not stretched, and no height that gives it through the aspect ratio: the fit-content width in the area.
+        if (float.IsNaN(size.Width) && !widthKeyword && !float.IsNaN(stretch.Width))
+        {
+            size = size with
+            {
+                Width = Maybe.Clamp(
+                    FitContentWidth(tree, item.Node, stretch.Width, area, Maybe.Clamp(size.Height, min.Height, max.Height)),
+                    min.Width,
+                    max.Width
+                ),
+            };
+        }
+
         return size.Clamp(min, max);
     }
+
+    // The width of an item that its alignment does not stretch, where its area's width is known: its fit-content width there,
+    // as Chrome sizes it before it lays the item out (CSS Grid §6.1, CSS Box Alignment §6.1). Taffy 0.15.1 lays the item out with
+    // no width, so a child that stretches to the item's width sees none: Chrome 157 gives a child with an aspect ratio in a
+    // start-aligned column its height from the column's width (Fixtures/XylemUI, grid_start_aligned_column_child_aspect_ratio).
+    private static float FitContentWidth(UiTree tree, NodeHandle node, float space, OptionalSize area, float height) =>
+        MeasureChild(
+            tree,
+            node,
+            new OptionalSize(float.NaN, height),
+            area,
+            new AvailableSize(
+                AvailableSpace.Definite(space),
+                float.IsNaN(area.Height) ? AvailableSpace.MaxContent : AvailableSpace.Definite(Math.Max(area.Height, 0))
+            ),
+            SizingMode.InherentSize,
+            horizontal: true
+        );
 
     // Whether an alignment stretches an item for its contributions: `normal` does there, unlike at the final alignment.
     private static bool IsStretch(AlignItems alignment) => alignment.Keyword is AlignItemsKeyword.Stretch or AlignItemsKeyword.Normal;
