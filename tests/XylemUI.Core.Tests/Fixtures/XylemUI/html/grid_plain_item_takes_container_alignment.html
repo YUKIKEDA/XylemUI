@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    An item with no style of its own is aligned as the container's align-items and justify-items say
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 100px; align-items: center; justify-items: end; grid-template-columns: 100px; grid-template-rows: 50px;">
+  <div>
+    <div style="width: 20px; height: 10px;"></div>
+  </div>
+</div>
+
+</body>
+</html>

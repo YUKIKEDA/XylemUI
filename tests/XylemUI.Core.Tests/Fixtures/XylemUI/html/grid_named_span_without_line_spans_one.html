@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A span to a name whose other end is not a line spans one track
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; grid-template-columns: [a] 50px [b] 50px [c] 50px [d]; grid-auto-rows: 10px;">
+  <div style="grid-column-end: span d;"></div>
+</div>
+
+</body>
+</html>

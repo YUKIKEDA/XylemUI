@@ -47,39 +47,64 @@ internal static partial class LayoutEngine
             }
         }
 
-        // 2. The explicit grid. Clamped to the largest number of tracks (CSS Grid §8.4, "overlarge grids").
-        int explicitColumns = Math.Min(TemplateTrackCount(props.Columns), Track.MaxTracks);
-        int explicitRows = Math.Min(TemplateTrackCount(props.Rows), Track.MaxTracks);
+        // 2. The explicit grid, with an automatic repetition filling the container's size, else its maximum size, else its
+        // minimum size: without overflowing the first two, overflowing a minimum alone (CSS Grid §7.2.3.2).
+        OptionalSize fitSize = c.OuterNodeSize.Or(c.Max).Or(c.Min).Clamp(c.Min, c.Max);
+        Size insetSum = c.ContentInset.Sum();
+        fitSize = new OptionalSize(
+            Maybe.Max(fitSize.Width, c.PaddingBorder.Width) - insetSum.Width,
+            Maybe.Max(fitSize.Height, c.PaddingBorder.Height) - insetSum.Height
+        );
+        OptionalSize sizeOrMax = c.OuterNodeSize.Or(c.Max);
+        (int columnRepetitions, int explicitColumns) = ExplicitGridSize(props.Columns, fitSize.Width, !float.IsNaN(sizeOrMax.Width), props.ColumnGap);
+        (int rowRepetitions, int explicitRows) = ExplicitGridSize(props.Rows, fitSize.Height, !float.IsNaN(sizeOrMax.Height), props.RowGap);
 
+        // Where no child is hidden or absolutely positioned, the usual case, every child is an item and no child's style is read
+        // to find them (LayoutState.OutOfFlowChildren).
+        bool anyOutOfFlow = tree.Nodes.GetRef(tree.Nodes.GetRef(firstChild).Parent).Layout.OutOfFlowChildren > 0;
         int count = 0;
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
-            count += tree.Nodes.GetRef(child).Layout.Style.IsInFlow ? 1 : 0;
+            count += !anyOutOfFlow || tree.Nodes.GetRef(child).Layout.Style.IsInFlow ? 1 : 0;
         }
 
         ScratchStack<GridItemState> itemScratch = _gridItemScratch ??= new ScratchStack<GridItemState>();
         ScratchStack<GridTrackState> trackScratch = _gridTrackScratch ??= new ScratchStack<GridTrackState>();
+        ScratchStack<long> nameScratch = _gridNameScratch ??= new ScratchStack<long>();
         int itemTop = itemScratch.Top;
         int trackTop = trackScratch.Top;
+        int nameTop = nameScratch.Top;
         try
         {
+            // The named lines of the explicit grid, for the placements by name.
+            Span<long> columnNames = nameScratch.Push(LineNamePairs(props.Columns, columnRepetitions, []));
+            columnNames = columnNames[..LineNamePairs(props.Columns, columnRepetitions, columnNames)];
+            Span<long> rowNames = nameScratch.Push(LineNamePairs(props.Rows, rowRepetitions, []));
+            rowNames = rowNames[..LineNamePairs(props.Rows, rowRepetitions, rowNames)];
+
             // 3. The grid items, in document order, with their placements in lines from the explicit grid's start.
             Span<GridItemState> items = itemScratch.Push(count);
-            GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, items);
+            bool anyPlaced = GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, columnNames, rowNames, items, anyOutOfFlow);
 
             // 4 and 5. The placement of the items, which grows the implicit grid.
             GridOccupancy occupancy = _gridOccupancy ??= new GridOccupancy();
-            (TrackCounts estimatedColumns, TrackCounts estimatedRows) = EstimateGridSize(explicitColumns, explicitRows, items);
+            (TrackCounts estimatedColumns, TrackCounts estimatedRows) = EstimateGridSize(explicitColumns, explicitRows, items, anyPlaced);
             occupancy.Reset(estimatedColumns, estimatedRows);
-            PlaceGridItems(occupancy, items, props.AutoFlow == GridAutoFlow.Column);
+            PlaceGridItems(
+                occupancy,
+                items,
+                props.AutoFlow is GridAutoFlow.Column or GridAutoFlow.ColumnDense,
+                props.AutoFlow is GridAutoFlow.RowDense or GridAutoFlow.ColumnDense,
+                anyPlaced
+            );
             TrackCounts columnCounts = occupancy.Columns;
             TrackCounts rowCounts = occupancy.Rows;
 
             // The tracks of both axes, with their sizing functions.
             Span<GridTrackState> columns = trackScratch.Push((2 * columnCounts.Length) + 1);
             Span<GridTrackState> rows = trackScratch.Push((2 * rowCounts.Length) + 1);
-            InitializeGridTracks(columns, columnCounts, props.Columns, props.AutoColumns, props.ColumnGap);
-            InitializeGridTracks(rows, rowCounts, props.Rows, props.AutoRows, props.RowGap);
+            InitializeGridTracks(columns, columnCounts, props.Columns, props.AutoColumns, props.ColumnGap, columnRepetitions, occupancy, true);
+            InitializeGridTracks(rows, rowCounts, props.Rows, props.AutoRows, props.RowGap, rowRepetitions, occupancy, false);
 
             // 6. The sizes of the tracks, the columns first.
             foreach (ref GridItemState item in items)
@@ -165,7 +190,9 @@ internal static partial class LayoutEngine
 
             if (tree.Nodes.GetRef(tree.Nodes.GetRef(firstChild).Parent).Layout.OutOfFlowChildren > 0)
             {
-                LayOutGridOutOfFlowChildren(tree, firstChild, in style, borderBox, in c, input.ParentSize.Width);
+                var columnLines = new GridAxisLines(columns, columnCounts, columnNames);
+                var rowLines = new GridAxisLines(rows, rowCounts, rowNames);
+                LayOutGridOutOfFlowChildren(tree, firstChild, borderBox, in c, in columnLines, in rowLines);
             }
 
             baselineItem = GridBaselineItem(items);
@@ -175,6 +202,7 @@ internal static partial class LayoutEngine
         {
             itemScratch.PopTo(itemTop);
             trackScratch.PopTo(trackTop);
+            nameScratch.PopTo(nameTop);
         }
     }
 
@@ -244,40 +272,143 @@ internal static partial class LayoutEngine
     private static AlignContent StretchIfNormal(AlignContent alignment) =>
         alignment.Keyword == AlignContentKeyword.Normal ? new AlignContent(AlignContentKeyword.Stretch) : alignment;
 
-    // The number of tracks a template gives (Taffy's compute_explicit_grid_size_in_axis, without an automatic repetition).
-    private static int TemplateTrackCount(ImmutableArray<GridTrack> template)
+    // The number of times an automatic repetition repeats, and the number of tracks the template gives (Taffy's
+    // compute_explicit_grid_size_in_axis, CSS Grid §7.2.3.2). A template with more than one automatic repetition, or with one
+    // and a track that has neither a length nor a percentage, gives no tracks. The repetition fills the container's size, its
+    // maximum size, or its minimum size (containerSize, NaN when none is known): as many times as fit without overflowing it,
+    // or, with only a minimum, as few as overflow it; once with no size. Every count stays within the largest number of tracks.
+    private static (int AutoRepetitions, int Count) ExplicitGridSize(
+        ImmutableArray<GridTrack> template,
+        float containerSize,
+        bool withoutOverflow,
+        LengthPercentage gap
+    )
     {
         if (template.IsDefaultOrEmpty)
         {
-            return 0;
+            return (0, 0);
         }
 
-        long total = 0;
+        long fixedCount = 0;
+        int autoCount = 0;
+        bool allFixed = true;
+        GridTrack auto = default;
         foreach (GridTrack entry in template)
         {
-            total += entry.IsRepeat ? (long)entry.Count * entry.Repeated.Length : 1;
+            if (entry.IsLine)
+            {
+                continue;
+            }
+
+            if (!entry.IsRepeat)
+            {
+                allFixed &= entry.Single.HasFixedComponent;
+                fixedCount++;
+                continue;
+            }
+
+            foreach (TrackSize track in entry.Repeated)
+            {
+                allFixed &= track.HasFixedComponent;
+            }
+
+            if (entry.IsAutoRepeat)
+            {
+                auto = entry;
+                autoCount++;
+                continue;
+            }
+
+            fixedCount += (long)entry.Count * entry.Repeated.Length;
         }
 
-        return (int)Math.Min(total, Track.MaxTracks);
+        int nonRepeating = (int)Math.Min(fixedCount, Track.MaxTracks);
+        if (autoCount == 0)
+        {
+            return (0, nonRepeating);
+        }
+
+        if (autoCount > 1 || !allFixed)
+        {
+            return (0, 0);
+        }
+
+        int repetitionTracks = auto.Repeated.Length;
+        long repetitions = 1;
+        if (!float.IsNaN(containerSize))
+        {
+            float used = 0;
+            foreach (GridTrack entry in template)
+            {
+                if (entry.IsLine)
+                {
+                    continue;
+                }
+
+                if (!entry.IsRepeat)
+                {
+                    used += entry.Single.RepetitionSize(containerSize);
+                }
+                else if (!entry.IsAutoRepeat)
+                {
+                    float sum = 0;
+                    foreach (TrackSize track in entry.Repeated)
+                    {
+                        sum += track.RepetitionSize(containerSize);
+                    }
+
+                    used += sum * entry.Count;
+                }
+            }
+
+            float gapSize = gap.IsPercent ? gap.Value * containerSize : gap.Value;
+            float perRepetitionTracks = 0;
+            foreach (TrackSize track in auto.Repeated)
+            {
+                perRepetitionTracks += track.RepetitionSize(containerSize);
+            }
+
+            // The first repetition with the other tracks: its gaps depend on how many tracks the template has besides it.
+            float first = used + perRepetitionTracks + (Math.Max(nonRepeating + repetitionTracks - 1, 0) * gapSize);
+            if (first <= containerSize)
+            {
+                float fit = (containerSize - first) / (perRepetitionTracks + (repetitionTracks * gapSize));
+                double more = withoutOverflow ? Math.Floor(fit) : Math.Ceiling(fit);
+
+                // A track of no size fits without end; the count is bounded below.
+                repetitions = (long)Math.Min(double.IsNaN(more) ? 0 : more, Track.MaxTracks) + 1;
+            }
+        }
+
+        // The tracks before the repetition keep their place, and the repetition and the tracks after it are cut to the limit
+        // (CSS Grid §8.4, "overlarge grids"): the count here, and the tracks and the line names where they are made. Taffy also
+        // clamps the number of repetitions, which then changes neither.
+        int count = (int)Math.Min(nonRepeating + (repetitionTracks * repetitions), Track.MaxTracks);
+        return ((int)repetitions, count);
     }
 
     // The items: the children in the flow, in document order, with their styles and their placements in lines from the
-    // explicit grid's start (Taffy's into_origin_zero).
-    private static void GenerateGridItems(
+    // explicit grid's start, names resolved (Taffy's resolve_line_names and into_origin_zero). Returns whether any item has a
+    // line or a span: without one, every item is placed automatically in both axes.
+    private static bool GenerateGridItems(
         UiTree tree,
         NodeHandle firstChild,
         GridProps props,
         int explicitColumns,
         int explicitRows,
-        Span<GridItemState> items
+        ReadOnlySpan<long> columnNames,
+        ReadOnlySpan<long> rowNames,
+        Span<GridItemState> items,
+        bool anyOutOfFlow
     )
     {
         int i = 0;
         int order = 0;
+        bool anyPlaced = false;
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling, order++)
         {
             ref readonly LayoutStyle s = ref tree.Nodes.GetRef(child).Layout.Style;
-            if (!s.IsInFlow)
+            if (anyOutOfFlow && !s.IsInFlow)
             {
                 continue;
             }
@@ -286,32 +417,54 @@ internal static partial class LayoutEngine
             item = default;
             item.Node = child;
             item.SourceOrder = order;
-            item.AutoBlockMargin = s.Margin.Top.IsAuto || s.Margin.Bottom.IsAuto;
-            item.PercentHeight = s.Height.Kind == LengthKind.Percent;
-            item.OverflowX = s.OverflowX;
-            item.OverflowY = s.OverflowY;
-            item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns);
-            item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows);
-            item.AlignSelf = s.AlignSelf ?? props.AlignItems;
-            item.JustifySelf = s.JustifySelf ?? props.JustifyItems;
             item.Baseline = float.NaN;
             item.MinContentCache = OptionalSize.None;
             item.MaxContentCache = OptionalSize.None;
             item.MinimumCache = OptionalSize.None;
+
+            // A plain grid item's style holds nothing a grid reads (LayoutState.IsPlainGridItem): placed automatically in both
+            // axes, and aligned as the container's items are.
+            if (tree.Nodes.GetRef(child).Layout.IsPlainGridItem)
+            {
+                item.Bare = true;
+                item.AlignSelf = props.AlignItems;
+                item.JustifySelf = props.JustifyItems;
+                continue;
+            }
+
+            // A bare item's margins are 0 and its height auto: their reads are skipped.
+            item.Bare = tree.Nodes.GetRef(child).Layout.IsBare;
+            item.AutoBlockMargin = !item.Bare && (s.Margin.Top.IsAuto || s.Margin.Bottom.IsAuto);
+            item.PercentHeight = !item.Bare && s.Height.Kind == LengthKind.Percent;
+            item.OverflowX = s.OverflowX;
+            item.OverflowY = s.OverflowY;
+            anyPlaced |= s.GridColumn != default || s.GridRow != default;
+            item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns, columnNames);
+            item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows, rowNames);
+            item.AlignSelf = s.AlignSelf ?? props.AlignItems;
+            item.JustifySelf = s.JustifySelf ?? props.JustifyItems;
         }
+
+        return anyPlaced;
     }
 
     // An estimate of the numbers of tracks, which sizes the occupancy matrix (Taffy's compute_grid_size_estimate): exact for the
-    // explicit tracks and the implicit ones before them, a lower bound after them, which the placement grows.
-    private static (TrackCounts Columns, TrackCounts Rows) EstimateGridSize(int explicitColumns, int explicitRows, Span<GridItemState> items)
+    // explicit tracks and the implicit ones before them, a lower bound after them, which the placement grows. Items placed
+    // automatically in both axes give no line and a span of one track each, so they are not visited.
+    private static (TrackCounts Columns, TrackCounts Rows) EstimateGridSize(
+        int explicitColumns,
+        int explicitRows,
+        Span<GridItemState> items,
+        bool anyPlaced
+    )
     {
         int columnMin = 0;
         int columnMax = 0;
-        int columnSpan = 0;
+        int columnSpan = items.IsEmpty ? 0 : 1;
         int rowMin = 0;
         int rowMax = 0;
-        int rowSpan = 0;
-        foreach (ref GridItemState item in items)
+        int rowSpan = columnSpan;
+        foreach (ref GridItemState item in anyPlaced ? items : [])
         {
             item.ColumnPlacement.Estimate(out int min, out int max, out int span);
             columnMin = Math.Min(columnMin, min);
@@ -340,13 +493,15 @@ internal static partial class LayoutEngine
 
     // CSS Grid §8.5, the grid item placement algorithm (Taffy's place_grid_items, placement.rs): the items placed at definite lines
     // in both axes, then those placed at definite lines in the secondary axis, then the rest in turn from a cursor that moves on.
-    // The primary axis is the one the auto-flow fills along: the columns for `row`.
-    private static void PlaceGridItems(GridOccupancy occupancy, Span<GridItemState> items, bool columnFlow)
+    // The primary axis is the one the auto-flow fills along: the columns for `row`. A dense flow starts each item's search from
+    // the grid's start instead of after the item before it. Steps 1 and 2 visit no item when no item has a line or a span.
+    private static void PlaceGridItems(GridOccupancy occupancy, Span<GridItemState> items, bool columnFlow, bool dense, bool anyPlaced)
     {
         bool primaryIsColumns = !columnFlow;
+        Span<GridItemState> placed = anyPlaced ? items : [];
 
         // 1. The items with definite positions in both axes.
-        foreach (ref GridItemState item in items)
+        foreach (ref GridItemState item in placed)
         {
             if (item.ColumnPlacement.IsDefinite && item.RowPlacement.IsDefinite)
             {
@@ -366,14 +521,15 @@ internal static partial class LayoutEngine
         }
 
         // 2. The items with a definite position in the secondary axis only.
-        foreach (ref GridItemState item in items)
+        foreach (ref GridItemState item in placed)
         {
             if (Secondary(ref item, primaryIsColumns).IsDefinite && !Primary(ref item, primaryIsColumns).IsDefinite)
             {
                 Secondary(ref item, primaryIsColumns).ResolveDefinite(out int secondaryStart, out int secondaryEnd);
-                int position = occupancy.AutoPlacementCursor(primaryIsColumns, secondaryStart, out int cursor)
-                    ? cursor
-                    : TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
+                int position =
+                    !dense && occupancy.AutoPlacementCursor(primaryIsColumns, secondaryStart, out int cursor)
+                        ? cursor
+                        : TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
                 int span = Primary(ref item, primaryIsColumns).IndefiniteSpan;
                 while (true)
                 {
@@ -400,8 +556,10 @@ internal static partial class LayoutEngine
 
         // 3. The implicit grid's columns are already counted: the estimate sized the matrix and each placement grew it.
         // 4. The remaining items, in turn from a cursor.
-        int primaryCursor = TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
-        int secondaryCursor = TrackCountsOf(occupancy, !primaryIsColumns).ImplicitStartLine;
+        int primaryStartLine = TrackCountsOf(occupancy, primaryIsColumns).ImplicitStartLine;
+        int secondaryStartLine = TrackCountsOf(occupancy, !primaryIsColumns).ImplicitStartLine;
+        int primaryCursor = primaryStartLine;
+        int secondaryCursor = secondaryStartLine;
         foreach (ref GridItemState item in items)
         {
             if (Secondary(ref item, primaryIsColumns).IsDefinite)
@@ -427,8 +585,7 @@ internal static partial class LayoutEngine
                 secondaryEnd,
                 GridOccupancy.CellState.AutoPlaced
             );
-            primaryCursor = primaryEnd;
-            secondaryCursor = secondaryStart;
+            (primaryCursor, secondaryCursor) = dense ? (primaryStartLine, secondaryStartLine) : (primaryEnd, secondaryStart);
         }
     }
 
@@ -446,7 +603,9 @@ internal static partial class LayoutEngine
         int secondarySpan = secondary.IndefiniteSpan;
         if (primary.IsDefinite)
         {
-            // A fixed position in the primary axis: move along the secondary one until the item fits.
+            // A fixed position in the primary axis: move along the secondary one until the item fits. A dense flow's cursor is at
+            // the grid's start already, where CSS Grid §8.5 starts its search (PlaceGridItems), and its primary index is never
+            // past the item's start.
             primary.ResolveDefinite(out int primaryStart, out int primaryEnd);
             if (primaryStart < primaryIndex)
             {
@@ -562,13 +721,18 @@ internal static partial class LayoutEngine
 
     // The tracks of an axis with their sizing functions, and the gutters between them (Taffy's initialize_grid_tracks): the
     // implicit tracks before the explicit grid, the explicit ones, and the implicit ones after. The implicit tracks take the
-    // auto sizes in turn, those before the grid counting back from its start. The first and last lines are collapsed.
+    // auto sizes in turn, those before the grid counting back from its start. An `auto-fit` repetition collapses its tracks that
+    // no item takes, with the gutters after them; at the end of the track list, the gutters before them too. The first and
+    // last lines are collapsed.
     private static void InitializeGridTracks(
         Span<GridTrackState> tracks,
         TrackCounts counts,
         ImmutableArray<GridTrack> template,
         ImmutableArray<TrackSize> autoTracks,
-        LengthPercentage gap
+        LengthPercentage gap,
+        int autoRepetitions,
+        GridOccupancy occupancy,
+        bool columns
     )
     {
         TrackFunction gutter = gap.IsPercent ? new TrackFunction(TrackKind.Percent, gap.Value) : new TrackFunction(TrackKind.Px, gap.Value);
@@ -590,6 +754,11 @@ internal static partial class LayoutEngine
         {
             foreach (GridTrack entry in template)
             {
+                if (entry.IsLine)
+                {
+                    continue;
+                }
+
                 if (!entry.IsRepeat)
                 {
                     if (current < explicitLimit)
@@ -601,11 +770,34 @@ internal static partial class LayoutEngine
                     continue;
                 }
 
-                int repeated = Math.Min(entry.Repeated.Length * entry.Count, explicitLimit - current);
+                int times = entry.IsAutoRepeat ? autoRepetitions : entry.Count;
+                int repeated = (int)Math.Min((long)entry.Repeated.Length * times, explicitLimit - current);
+                bool fit = entry.AutoRepeat == Repeat.AutoFit;
                 for (int i = 0; i < repeated; i++)
                 {
+                    bool empty = fit && !(columns ? occupancy.ColumnIsOccupied(current) : occupancy.RowIsOccupied(current));
                     AddTrack(tracks, ref next, entry.Repeated[i % entry.Repeated.Length], gutter);
+                    if (empty)
+                    {
+                        tracks[next - 2].Collapse();
+                        tracks[next - 1].Collapse();
+                    }
+
                     current++;
+                }
+
+                // At the end of the track list no track follows to keep the gutter after the last one kept: collapse back to it.
+                if (fit && current == counts.Length)
+                {
+                    for (int i = next - 1; i >= 0; i--)
+                    {
+                        if (i % 2 == 1 && !tracks[i].IsCollapsed)
+                        {
+                            break;
+                        }
+
+                        tracks[i].Collapse();
+                    }
                 }
             }
         }
@@ -884,12 +1076,58 @@ internal static partial class LayoutEngine
                 _ => 1,
             };
 
-        public static OriginZeroPlacement Of(GridPlacement placement, int explicitCount)
+        // The placement with its names resolved against the named lines of the axis (Taffy's resolve_line_names): a span to a
+        // name counts from a line at the other end, and is a span of one track otherwise (CSS Grid §8.3.1).
+        public static OriginZeroPlacement Of(GridPlacement placement, int explicitCount, ReadOnlySpan<long> names)
         {
             var result = default(OriginZeroPlacement);
-            (result.StartKind, result.Start) = Resolve(placement.Start, explicitCount);
-            (result.EndKind, result.End) = Resolve(placement.End, explicitCount);
+
+            // Most items are placed automatically in both ends: nothing to resolve.
+            if (placement == default)
+            {
+                return result;
+            }
+
+            (result.StartKind, result.Start) = ResolveNamed(placement.Start, true, explicitCount, names, out GridLineNames.Placement startSpan);
+            (result.EndKind, result.End) = ResolveNamed(placement.End, false, explicitCount, names, out GridLineNames.Placement endSpan);
+            if (endSpan.IsSpan && result.StartKind == GridLineKind.Line)
+            {
+                int end = NthLineForwards(LinesNamed(names, endSpan.Name), result.Start + 1, Math.Max((int)endSpan.Index, 1), explicitCount);
+                (result.EndKind, result.End) = (GridLineKind.Line, end);
+            }
+            else if (startSpan.IsSpan && result.EndKind == GridLineKind.Line)
+            {
+                int start = NthLineBackwards(LinesNamed(names, startSpan.Name), result.End - 1, Math.Max((int)startSpan.Index, 1));
+                (result.StartKind, result.Start) = (GridLineKind.Line, start);
+            }
+
             return result;
+        }
+
+        // One end: a line by name resolves to its line; a span to a name is returned in span, as a span of one track until the
+        // other end is known.
+        private static (GridLineKind Kind, int Value) ResolveNamed(
+            GridLine line,
+            bool start,
+            int explicitCount,
+            ReadOnlySpan<long> names,
+            out GridLineNames.Placement span
+        )
+        {
+            span = default;
+            if (line.Kind != GridLineKind.Named)
+            {
+                return Resolve(line, explicitCount);
+            }
+
+            GridLineNames.Placement placement = GridLineNames.Shared.PlacementOf(line.Value);
+            if (placement.IsSpan)
+            {
+                span = placement;
+                return (GridLineKind.Span, 1);
+            }
+
+            return (GridLineKind.Line, NamedLine(placement, start, names, explicitCount));
         }
 
         // Both ends, when at least one is a line (Taffy's resolve_definite_grid_lines): two equal lines take one track, and two
@@ -1022,6 +1260,11 @@ internal static partial class LayoutEngine
         // What the layout reads of the item's style most often; the rest is read from the tree where it is used (no ref into the
         // arena is held across a measurement, design §2.5). Copying the whole style into each item was 6 % of the grid scene.
         public bool AutoBlockMargin;
+
+        // The item's style has no size, limit, aspect ratio, margin, padding, or border (LayoutStyle.IsBare): its contributions
+        // and its place come from its grid area alone, without reading its style. Reading the style for each contribution was 16
+        // to 17 % of the grid scene (layout-loop grid, P02f's second implementation PR).
+        public bool Bare;
         public bool PercentHeight;
         public Overflow OverflowX;
         public Overflow OverflowY;

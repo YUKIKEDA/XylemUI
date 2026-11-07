@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    An item that scrolls has a minimum contribution of 0, so its auto column fits the container
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 50px; grid-template-columns: auto;">
+  <div style="overflow: hidden;">
+    <div style="width: 100px; height: 10px;"></div>
+  </div>
+</div>
+
+</body>
+</html>

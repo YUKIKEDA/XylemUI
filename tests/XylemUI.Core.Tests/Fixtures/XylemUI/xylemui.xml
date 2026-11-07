@@ -303,6 +303,27 @@
       </node>
     </expectations>
   </test>
+  <test name="flex_column_max_content_width_stretched_aspect_ratio_child__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute" align-items="flex-start" width="300px">
+        <div direction="ltr" position="relative" flex-direction="column">
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="40">
+        <node x="0" y="0" width="30" height="40">
+          <node x="0" y="0" width="30" height="10" />
+          <node x="0" y="10" width="30" height="30" />
+        </node>
+      </node>
+    </expectations>
+  </test>
   <test name="flex_column_max_height_max_content__border_box_ltr" use-rounding="true">
     <viewport width="max-content" height="max-content" />
     <input>
@@ -547,6 +568,49 @@
       </node>
     </expectations>
   </test>
+  <test name="grid_absolute_line_and_span__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="relative" width="300px" height="20px" grid-template-columns="50px 50px 50px">
+        <div direction="ltr" position="absolute" height="10px" top="0px" left="0px" right="0px" grid-column-start="1" grid-column-end="span 2" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="20" resolved-rows="none" resolved-columns="50px 50px 50px">
+        <node x="0" y="0" width="100" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_absolute_line_in_collapsed_tracks__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div
+        display="grid"
+        direction="ltr"
+        position="relative"
+        justify-content="space-between"
+        width="300px"
+        column-gap="10px"
+        grid-template-columns="repeat(auto-fit, 50px) 40px"
+        grid-auto-rows="10px"
+      >
+        <div direction="ltr" position="relative" />
+        <div direction="ltr" position="relative" grid-column-start="-2" />
+        <div direction="ltr" position="absolute" height="10px" top="0px" left="0px" right="0px" grid-column-start="3" />
+        <div direction="ltr" position="absolute" height="10px" top="0px" left="0px" right="0px" grid-column-end="3" />
+        <div direction="ltr" position="absolute" width="10px" height="10px" top="0px" right="0px" grid-column-start="3" grid-column-end="4" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="10" resolved-rows="10px" resolved-columns="50px 0px 0px 0px 40px">
+        <node x="0" y="0" width="50" height="10" />
+        <node x="260" y="0" width="40" height="10" />
+        <node x="260" y="0" width="40" height="10" />
+        <node x="0" y="0" width="50" height="10" />
+        <node x="250" y="0" width="10" height="10" />
+      </node>
+    </expectations>
+  </test>
   <test name="grid_aspect_ratio_item_normal_alignment_starts__border_box_ltr" use-rounding="true">
     <viewport width="max-content" height="max-content" />
     <input>
@@ -557,6 +621,111 @@
     <expectations>
       <node x="0" y="0" width="100" height="100" resolved-rows="100px" resolved-columns="100px">
         <node x="0" y="0" width="200" height="100" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_auto_fill_gaps_with_other_tracks__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="300px" column-gap="20px" grid-template-columns="100px repeat(auto-fill, 50px)">
+        <div direction="ltr" position="relative" height="10px" />
+        <div direction="ltr" position="relative" height="10px" />
+        <div direction="ltr" position="relative" height="10px" />
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="20" resolved-rows="10px 10px" resolved-columns="100px 50px 50px">
+        <node x="0" y="0" width="100" height="10" />
+        <node x="120" y="0" width="50" height="10" />
+        <node x="190" y="0" width="50" height="10" />
+        <node x="0" y="10" width="100" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_auto_fill_max_width_rounds_down__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="flex-start" width="400px">
+        <div display="grid" direction="ltr" position="relative" max-width="230px" grid-template-columns="repeat(auto-fill, 50px)">
+          <div direction="ltr" position="relative" height="10px" />
+          <div direction="ltr" position="relative" height="10px" />
+          <div direction="ltr" position="relative" height="10px" />
+          <div direction="ltr" position="relative" height="10px" />
+          <div direction="ltr" position="relative" height="10px" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="400" height="20">
+        <node x="0" y="0" width="200" height="20" resolved-rows="10px 10px" resolved-columns="50px 50px 50px 50px">
+          <node x="0" y="0" width="50" height="10" />
+          <node x="50" y="0" width="50" height="10" />
+          <node x="100" y="0" width="50" height="10" />
+          <node x="150" y="0" width="50" height="10" />
+          <node x="0" y="10" width="50" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_auto_fill_min_width_rounds_up__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="flex-start" width="400px">
+        <div display="grid" direction="ltr" position="relative" min-width="250px" grid-template-columns="repeat(auto-fill, 100px)">
+          <div direction="ltr" position="relative" height="10px" />
+          <div direction="ltr" position="relative" height="10px" />
+          <div direction="ltr" position="relative" height="10px" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="400" height="10">
+        <node x="0" y="0" width="300" height="10" resolved-rows="10px" resolved-columns="100px 100px 100px">
+          <node x="0" y="0" width="100" height="10" />
+          <node x="100" y="0" width="100" height="10" />
+          <node x="200" y="0" width="100" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_auto_fill_minmax_floors_by_minimum__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="250px" grid-template-columns="repeat(auto-fill, minmax(100px, 50px))">
+        <div direction="ltr" position="relative" height="10px" />
+        <div direction="ltr" position="relative" height="10px" />
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="250" height="20" resolved-rows="10px 10px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="100" height="10" />
+        <node x="100" y="0" width="100" height="10" />
+        <node x="0" y="10" width="100" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_auto_fit_at_end_collapses_last_gap__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div
+        display="grid"
+        direction="ltr"
+        position="absolute"
+        justify-content="end"
+        width="300px"
+        column-gap="10px"
+        grid-template-columns="repeat(auto-fit, 50px)"
+      >
+        <div direction="ltr" position="relative" height="10px" />
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="10" resolved-rows="10px" resolved-columns="50px 50px 0px 0px 0px">
+        <node x="190" y="0" width="50" height="10" />
+        <node x="250" y="0" width="50" height="10" />
       </node>
     </expectations>
   </test>
@@ -613,6 +782,48 @@
       </node>
     </expectations>
   </test>
+  <test name="grid_dense_definite_column_fills_hole__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" grid-auto-flow="row dense" grid-template-columns="50px 50px" grid-auto-rows="10px">
+        <div direction="ltr" position="relative" grid-column-start="2" />
+        <div direction="ltr" position="relative" grid-column-end="span 2" />
+        <div direction="ltr" position="relative" grid-column-start="1" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="100" height="20" resolved-rows="10px 10px" resolved-columns="50px 50px">
+        <node x="50" y="0" width="50" height="10" />
+        <node x="0" y="10" width="100" height="10" />
+        <node x="0" y="0" width="50" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_dense_definite_row_fills_hole__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div
+        display="grid"
+        direction="ltr"
+        position="absolute"
+        grid-auto-flow="row dense"
+        grid-template-columns="50px 50px 50px 50px"
+        grid-auto-rows="10px"
+        grid-auto-columns="20px"
+      >
+        <div direction="ltr" position="relative" grid-row-start="1" grid-column-start="2" />
+        <div direction="ltr" position="relative" grid-row-start="1" grid-column-end="span 2" />
+        <div direction="ltr" position="relative" grid-row-start="1" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="10" resolved-rows="10px" resolved-columns="50px 50px 50px 50px">
+        <node x="50" y="0" width="50" height="10" />
+        <node x="100" y="0" width="100" height="10" />
+        <node x="0" y="0" width="50" height="10" />
+      </node>
+    </expectations>
+  </test>
   <test name="grid_min_content_auto_track_item_min_width_zero__border_box_ltr" use-rounding="true">
     <viewport width="max-content" height="max-content" />
     <input>
@@ -628,6 +839,97 @@
       <node x="0" y="0" width="200" height="10">
         <node x="0" y="0" width="0" height="10" resolved-rows="10px" resolved-columns="0px">
           <node x="0" y="0" width="0" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_named_line_repeated_name_counts_once__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div
+        display="grid"
+        direction="ltr"
+        position="absolute"
+        grid-template-columns="repeat(2, [a] 50px [a])"
+        grid-auto-rows="10px"
+        grid-auto-columns="20px"
+      >
+        <div direction="ltr" position="relative" grid-column-start="3 a" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="120" height="10" resolved-rows="10px" resolved-columns="[a] 50px [a a] 50px [a] 20px">
+        <node x="100" y="0" width="20" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_named_span_back_before_explicit_grid__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" grid-template-columns="50px 50px" grid-auto-rows="10px" grid-auto-columns="20px">
+        <div direction="ltr" position="relative" grid-column-start="span foo" grid-column-end="-5" />
+        <div direction="ltr" position="relative" grid-column-start="1" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="160" height="10" resolved-rows="10px" resolved-columns="20px 20px 20px 50px 50px">
+        <node x="0" y="0" width="20" height="10" />
+        <node x="60" y="0" width="50" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_named_span_without_line_spans_one__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" grid-template-columns="[a] 50px [b] 50px [c] 50px [d]" grid-auto-rows="10px">
+        <div direction="ltr" position="relative" grid-column-end="span d" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="150" height="10" resolved-rows="10px" resolved-columns="[a] 50px [b] 50px [c] 50px [d]">
+        <node x="0" y="0" width="50" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_plain_item_takes_container_alignment__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div
+        display="grid"
+        direction="ltr"
+        position="absolute"
+        align-items="center"
+        justify-items="end"
+        width="100px"
+        grid-template-rows="50px"
+        grid-template-columns="100px"
+      >
+        <div direction="ltr" position="relative">
+          <div direction="ltr" position="relative" width="20px" height="10px" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="100" height="50" resolved-rows="50px" resolved-columns="100px">
+        <node x="80" y="20" width="20" height="10">
+          <node x="0" y="0" width="20" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_scroll_container_item_minimum_zero__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="50px" grid-template-columns="auto">
+        <div direction="ltr" position="relative" overflow-x="hidden" overflow-y="hidden" scrollbar-width="15">
+          <div direction="ltr" position="relative" width="100px" height="10px" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="10" resolved-rows="10px" resolved-columns="50px">
+        <node x="0" y="0" width="50" height="10" scroll_width="0" scroll_height="0">
+          <node x="0" y="0" width="50" height="10" />
         </node>
       </node>
     </expectations>
@@ -648,6 +950,84 @@
         <node x="0" y="0" width="50" height="10" />
         <node x="225" y="0" width="175" height="10" />
         <node x="0" y="10" width="400" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_start_aligned_column_child_aspect_ratio__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="300px" grid-template-columns="100px 100px">
+        <div direction="ltr" position="relative" flex-direction="column" justify-self="start">
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="40" resolved-rows="40px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="30" height="40">
+          <node x="0" y="0" width="30" height="10" />
+          <node x="0" y="10" width="30" height="30" />
+        </node>
+        <node x="100" y="0" width="100" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_start_aligned_item_row_contribution__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="300px" grid-template-columns="100px 100px">
+        <div display="block" direction="ltr" position="relative" justify-self="start">
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="40" resolved-rows="40px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="30" height="40">
+          <node x="0" y="0" width="30" height="10" />
+          <node x="0" y="10" width="30" height="30" />
+        </node>
+        <node x="100" y="0" width="100" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="grid_start_aligned_padded_column_child_aspect_ratio__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="300px" grid-template-columns="100px 100px">
+        <div
+          direction="ltr"
+          position="relative"
+          flex-direction="column"
+          justify-self="start"
+          padding-top="2px"
+          padding-left="2px"
+          padding-bottom="2px"
+          padding-right="2px"
+        >
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="44" resolved-rows="44px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="34" height="44">
+          <node x="2" y="2" width="30" height="10" />
+          <node x="2" y="12" width="30" height="30" />
+        </node>
+        <node x="100" y="0" width="100" height="10" />
       </node>
     </expectations>
   </test>

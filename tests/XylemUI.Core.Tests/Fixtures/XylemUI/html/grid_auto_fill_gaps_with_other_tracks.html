@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    auto-fill counts the gaps between the other tracks and the first repetition
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 300px; column-gap: 20px; grid-template-columns: 100px repeat(auto-fill, 50px);">
+  <div style="height: 10px;"></div>
+  <div style="height: 10px;"></div>
+  <div style="height: 10px;"></div>
+  <div style="height: 10px;"></div>
+</div>
+
+</body>
+</html>

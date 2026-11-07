@@ -51,11 +51,20 @@ internal static partial class LayoutEngine
         float top = rows[item.RowIndexStart + 1].Offset;
         float bottom = rows[item.RowIndexEnd].Offset;
         var area = new Size(right - left, bottom - top);
+        if (item.Bare && !tree.Nodes.GetRef(item.Node).Layout.HasInset)
+        {
+            PositionBareGridItem(tree, in item, left, right, top, bottom, area);
+            return;
+        }
 
-        LayoutStyle s = StyleOf(tree, in item);
+        // What the item's style gives, read before its layout: no ref into the arena is held across a measurement (design §2.5),
+        // and the style is not copied, as it was 6 % of the grid scene in each item's state (PR #650).
+        ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
         float ratio = s.HasAspectRatio ? s.AspectRatio : float.NaN;
-        OptionalSize inherent = WithAspectRatio(new OptionalSize(s.Width.Resolve(area.Width), s.Height.Resolve(area.Height)), ratio);
+        Length widthStyle = s.Width;
+        Length heightStyle = s.Height;
+        OptionalSize inherent = WithAspectRatio(new OptionalSize(widthStyle.Resolve(area.Width), heightStyle.Resolve(area.Height)), ratio);
         OptionalSize min = WithAspectRatio(
             new OptionalSize(
                 Math.Max(Maybe.Or(s.MinWidth.Resolve(area.Width), paddingBorder.Width), paddingBorder.Width),
@@ -64,12 +73,14 @@ internal static partial class LayoutEngine
             ratio
         );
         OptionalSize max = WithAspectRatio(new OptionalSize(s.MaxWidth.Resolve(area.Width), s.MaxHeight.Resolve(area.Height)), ratio);
+        (float dx, float dy) = RelativeOffset(in s, area.Width, area.Height);
+        EdgeInsets<LengthPercentageAuto> margin = s.Margin;
 
         AlignItems horizontal = item.JustifySelf;
         if (horizontal.Keyword == AlignItemsKeyword.Normal)
         {
             horizontal = new AlignItems(
-                !float.IsNaN(inherent.Width) || s.Width.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
+                !float.IsNaN(inherent.Width) || widthStyle.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
 
@@ -77,11 +88,10 @@ internal static partial class LayoutEngine
         if (vertical.Keyword == AlignItemsKeyword.Normal)
         {
             vertical = new AlignItems(
-                !float.IsNaN(inherent.Height) || s.Height.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
+                !float.IsNaN(inherent.Height) || heightStyle.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
 
-        EdgeInsets<LengthPercentageAuto> margin = s.Margin;
         float marginLeft = margin.Left.Resolve(area.Width);
         float marginRight = margin.Right.Resolve(area.Width);
         float marginTop = margin.Top.Resolve(area.Width);
@@ -93,10 +103,10 @@ internal static partial class LayoutEngine
 
         // A size that is a sizing keyword resolves to a size, or measures the item under the keyword's space; one measurement when
         // both axes measure.
-        bool keywordWidth = float.IsNaN(inherent.Width) && s.Width.IsSizingKeyword;
-        bool keywordHeight = float.IsNaN(inherent.Height) && s.Height.IsSizingKeyword;
-        AvailableSpace? measureWidth = keywordWidth ? MeasureSpaceOf(s.Width, stretch.Width) : null;
-        AvailableSpace? measureHeight = keywordHeight ? MeasureSpaceOf(s.Height, stretch.Height) : null;
+        bool keywordWidth = float.IsNaN(inherent.Width) && widthStyle.IsSizingKeyword;
+        bool keywordHeight = float.IsNaN(inherent.Height) && heightStyle.IsSizingKeyword;
+        AvailableSpace? measureWidth = keywordWidth ? MeasureSpaceOf(widthStyle, stretch.Width) : null;
+        AvailableSpace? measureHeight = keywordHeight ? MeasureSpaceOf(heightStyle, stretch.Height) : null;
         Size measuredBoth = new(float.NaN, float.NaN);
         var parentSize = new OptionalSize(area.Width, area.Height);
         if (measureWidth is { } bothWidth && measureHeight is { } bothHeight)
@@ -131,7 +141,7 @@ internal static partial class LayoutEngine
                             horizontal: true
                         )
                     )
-                    : StretchOf(s.Width, stretch.Width);
+                    : StretchOf(widthStyle, stretch.Width);
             }
             else if (!float.IsNaN(marginLeft) && !float.IsNaN(marginRight) && horizontal == new AlignItems(AlignItemsKeyword.Stretch))
             {
@@ -161,7 +171,7 @@ internal static partial class LayoutEngine
                             horizontal: false
                         )
                     )
-                    : StretchOf(s.Height, stretch.Height);
+                    : StretchOf(heightStyle, stretch.Height);
             }
             else if (!float.IsNaN(marginTop) && !float.IsNaN(marginBottom) && vertical == new AlignItems(AlignItemsKeyword.Stretch))
             {
@@ -170,6 +180,13 @@ internal static partial class LayoutEngine
         }
 
         size = WithAspectRatio(size with { Height = height }, ratio).Clamp(min, max);
+
+        // Not stretched, and no height that gives it through the aspect ratio: the fit-content width in the area.
+        if (float.IsNaN(size.Width) && !keywordWidth)
+        {
+            size = size with { Width = Maybe.Clamp(FitContentWidth(tree, item.Node, stretch.Width, parentSize, size.Height), min.Width, max.Width) };
+        }
+
         var input = new LayoutInput(
             size,
             true,
@@ -186,9 +203,39 @@ internal static partial class LayoutEngine
         float y = AlignInArea(top, bottom, vertical, final.Height, marginTop, marginBottom, item.BaselineShim);
 
         // A relative shift moves the item, not the grid's baseline.
-        (float dx, float dy) = RelativeOffset(in s, area.Width, area.Height);
         tree.Nodes.GetRef(item.Node).Layout.RelativeY = dy;
         Place(tree, item.Node, x + dx, y + dy);
+    }
+
+    // PositionGridItem for a bare item without an inset: no size, limit, margin, padding, border, or relative shift of its own,
+    // so `normal` stretches it in both axes and only its area and its alignment place it.
+    private static void PositionBareGridItem(UiTree tree, in GridItemState item, float left, float right, float top, float bottom, Size area)
+    {
+        AlignItems horizontal = item.JustifySelf.Keyword == AlignItemsKeyword.Normal ? new AlignItems(AlignItemsKeyword.Stretch) : item.JustifySelf;
+        AlignItems vertical = item.AlignSelf.Keyword == AlignItemsKeyword.Normal ? new AlignItems(AlignItemsKeyword.Stretch) : item.AlignSelf;
+        var stretch = new Size(Math.Max(area.Width, 0), Math.Max(area.Height - item.BaselineShim, 0));
+        bool stretchWidth = horizontal == new AlignItems(AlignItemsKeyword.Stretch);
+        bool stretchHeight = vertical == new AlignItems(AlignItemsKeyword.Stretch);
+        float knownHeight = stretchHeight ? stretch.Height : float.NaN;
+        float knownWidth = stretchWidth
+            ? stretch.Width
+            : FitContentWidth(tree, item.Node, stretch.Width, new OptionalSize(area.Width, area.Height), knownHeight);
+        var input = new LayoutInput(
+            new OptionalSize(knownWidth, knownHeight),
+            true,
+            true,
+            new OptionalSize(area.Width, area.Height),
+            new AvailableSize(AvailableSpace.Definite(stretch.Width), AvailableSpace.Definite(stretch.Height)),
+            SizingMode.InherentSize,
+            RequestedAxis.Both
+        );
+        Size laidOut = LayoutChild(tree, item.Node, in input, commit: true);
+        float width = Math.Max(knownWidth, 0);
+        float height = Math.Max(stretchHeight ? stretch.Height : laidOut.Height, 0);
+        float x = AlignInArea(left, right, horizontal, width, 0, 0, 0);
+        float y = AlignInArea(top, bottom, vertical, height, 0, 0, item.BaselineShim);
+        tree.Nodes.GetRef(item.Node).Layout.RelativeY = 0;
+        Place(tree, item.Node, x, y);
     }
 
     // An item's start in one axis of its grid area (Taffy's align_item_within_area, left to right): auto margins share the free
@@ -215,21 +262,22 @@ internal static partial class LayoutEngine
     }
 
     // The children out of the grid's flow, after its items: a hidden child gets an empty rectangle, and an absolutely positioned
-    // one is laid out against the container's padding box with the content box as its static position, aligned by its
-    // justify-self and align-self (Taffy's static position when the grid is not the containing block). The grid's lines as the
-    // static position come with P02f's next implementation PR.
+    // one is laid out with its grid area as its containing block (Taffy's resolve_absolute_grid_area): the area between the
+    // lines its placement names, and the padding box's edge for an end without a line or with a line outside the grid. Its
+    // static position is aligned by its justify-self and align-self in the area its lines give (Taffy's
+    // resolve_static_position_grid_area). A placement's names resolve as an item's do.
     private static void LayOutGridOutOfFlowChildren(
         UiTree tree,
         NodeHandle firstChild,
-        in LayoutStyle style,
         Size containerSize,
         in GridConstants c,
-        float parentWidth
+        in GridAxisLines columnLines,
+        in GridAxisLines rowLines
     )
     {
-        Edges border = WithGutter(EdgeInsets.ResolveOrZero(style.Border, parentWidth), in style);
-        var inlineArea = new StaticArea(c.Border.Left + c.Padding.Left, containerSize.Width - c.Border.Right - c.Padding.Right - c.Gutter.Width);
-        var blockArea = new StaticArea(c.Border.Top + c.Padding.Top, containerSize.Height - c.Border.Bottom - c.Padding.Bottom - c.Gutter.Height);
+        // The padding box, which an end without a line takes.
+        var paddingX = new StaticArea(c.Border.Left, containerSize.Width - c.Border.Right - c.Gutter.Width);
+        var paddingY = new StaticArea(c.Border.Top, containerSize.Height - c.Border.Bottom - c.Gutter.Height);
         for (NodeHandle child = firstChild; !child.IsNone; )
         {
             ref UiNode node = ref tree.Nodes.GetRef(child);
@@ -241,18 +289,128 @@ internal static partial class LayoutEngine
             }
             else if (s.Position == Position.Absolute)
             {
+                (int columnStart, int columnEnd) = AbsoluteLines(
+                    OriginZeroPlacement.Of(s.GridColumn, columnLines.Counts.Explicit, columnLines.Names)
+                );
+                (int rowStart, int rowEnd) = AbsoluteLines(OriginZeroPlacement.Of(s.GridRow, rowLines.Counts.Explicit, rowLines.Names));
+                StaticArea areaX = columnLines.ContainingBlock(columnStart, columnEnd, paddingX);
+                StaticArea areaY = rowLines.ContainingBlock(rowStart, rowEnd, paddingY);
+
+                // The containing block, given as the border that leaves it inside the container.
+                var area = new Edges(areaX.Start, areaY.Start, containerSize.Width - areaX.End, containerSize.Height - areaY.End);
                 LayOutAbsoluteChild(
                     tree,
                     child,
                     in s,
                     containerSize,
-                    border,
-                    StaticPosition.Of(s.JustifySelf ?? c.JustifyItems, inlineArea),
-                    StaticPosition.Of(s.AlignSelf ?? c.AlignItems, blockArea)
+                    area,
+                    StaticPosition.Of(s.JustifySelf ?? c.JustifyItems, columnLines.StaticArea(columnStart, columnEnd, paddingX)),
+                    StaticPosition.Of(s.AlignSelf ?? c.AlignItems, rowLines.StaticArea(rowStart, rowEnd, paddingY))
                 );
             }
 
             child = next;
+        }
+    }
+
+    // The lines of an absolutely positioned child's placement, or NoLine for an end without one (Taffy's
+    // resolve_absolutely_positioned_grid_tracks): two lines in order, a line and a span from it, or a line alone.
+    private static (int Start, int End) AbsoluteLines(OriginZeroPlacement placement) =>
+        (placement.StartKind, placement.EndKind) switch
+        {
+            (GridLineKind.Line, GridLineKind.Line) => placement.Start == placement.End
+                ? (placement.Start, placement.Start + 1)
+                : (Math.Min(placement.Start, placement.End), Math.Max(placement.Start, placement.End)),
+            (GridLineKind.Line, GridLineKind.Span) => (placement.Start, placement.Start + placement.End),
+            (GridLineKind.Line, _) => (placement.Start, GridAxisLines.NoLine),
+            (GridLineKind.Span, GridLineKind.Line) => (placement.End - placement.Start, placement.End),
+            (_, GridLineKind.Line) => (GridAxisLines.NoLine, placement.End),
+            _ => (GridAxisLines.NoLine, GridAxisLines.NoLine),
+        };
+
+    // The laid-out tracks of an axis and its named lines, for the absolutely positioned children.
+    private readonly ref struct GridAxisLines(Span<GridTrackState> tracks, TrackCounts counts, ReadOnlySpan<long> names)
+    {
+        // An end without a line.
+        public const int NoLine = int.MinValue;
+
+        public TrackCounts Counts { get; } = counts;
+
+        public ReadOnlySpan<long> Names { get; } = names;
+
+        private Span<GridTrackState> Tracks { get; } = tracks;
+
+        // The containing block in the axis (Taffy's resolve_absolute_grid_axis): a start line is the start of the track after
+        // it, and an end line the end of the track before it. A line in a run of collapsed tracks takes the first track after
+        // the run as a start and the last before it as an end, as the gutters of the run overlap. A line outside the grid is no
+        // line. The area is never negative: it starts at its start.
+        public StaticArea ContainingBlock(int startLine, int endLine, StaticArea padding)
+        {
+            int trackCount = Counts.Length;
+            int start = TrackOf(startLine);
+            int end = TrackOf(endLine);
+            float startPosition =
+                start == NoLine ? padding.Start
+                : start < trackCount ? TrackEdge(start, isStart: true)
+                : trackCount > 0 ? TrackEnd(trackCount - 1)
+                : Tracks[0].Offset;
+            float endPosition =
+                end == NoLine ? padding.End
+                : end >= 1 && end - 1 < trackCount ? TrackEdge(end - 1, isStart: false)
+                : trackCount > 0 ? TrackStart(0)
+                : Tracks[0].Offset;
+            return new StaticArea(startPosition, Math.Max(startPosition, endPosition));
+        }
+
+        // The area of the static position (Taffy's resolve_static_position_grid_area): a start line is the offset of the track
+        // after it, and an end line the offset of its gutter, the end of the track before it.
+        public StaticArea StaticArea(int startLine, int endLine, StaticArea padding)
+        {
+            int start = TrackOf(startLine);
+            int end = TrackOf(endLine);
+            float startPosition = start == NoLine ? padding.Start : Tracks[Math.Min((2 * start) + 1, Tracks.Length - 1)].Offset;
+            float endPosition =
+                end == NoLine ? padding.End
+                : end == 0 ? Tracks[Math.Min(1, Tracks.Length - 1)].Offset
+                : Tracks[2 * end].Offset;
+            return new StaticArea(startPosition, endPosition);
+        }
+
+        // A line's index among the tracks' lines, from 0 at the grid's start, or NoLine outside the grid.
+        private int TrackOf(int line) =>
+            line == NoLine || line < Counts.ImplicitStartLine || line > Counts.ImplicitEndLine ? NoLine : Counts.LineToNextTrack(line);
+
+        private float TrackStart(int track) => Tracks[(2 * track) + 1].Offset;
+
+        private float TrackEnd(int track) => Tracks[(2 * track) + 1].Offset + Tracks[(2 * track) + 1].BaseSize;
+
+        private float TrackEdge(int track, bool isStart)
+        {
+            if (Tracks[(2 * track) + 1].IsCollapsed)
+            {
+                int first = track;
+                while (first > 0 && Tracks[(2 * first) - 1].IsCollapsed)
+                {
+                    first--;
+                }
+
+                int last = track;
+                while (last + 1 < Counts.Length && Tracks[(2 * last) + 3].IsCollapsed)
+                {
+                    last++;
+                }
+
+                if (isStart && last + 1 < Counts.Length)
+                {
+                    track = last + 1;
+                }
+                else if (!isStart && first > 0)
+                {
+                    track = first - 1;
+                }
+            }
+
+            return isStart ? TrackStart(track) : TrackEnd(track);
         }
     }
 }
