@@ -205,6 +205,139 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A grid places its children in its tracks: the explicit columns, the rows the auto-placement adds with the auto row size,
+    /// the gap between, and a child's own lines and span (design §3.3, "The shape of P02f").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of the columns 50 px and 1fr, no rows, auto rows of 30 px, and a gap of 4,
+    ///   with three boxes: one 10 high, one 20 high in column 2, and one 10 high from column 1 across two columns.
+    ///
+    /// Steps:
+    /// - Mount, which lays the window out; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - (0, 0, 50 x 10), (54, 0, 146 x 20), and (0, 34, 200 x 10): the flexible column takes the 146 left after the gap, the
+    ///   third box goes to the second row, 30 and the gap below.
+    /// </remarks>
+    [Fact]
+    public void Grid_PlacesItsChildren_InItsTracks() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+                Grid(
+                        [Track.Px(50), Track.Fr(1)],
+                        [],
+                        first = Box().Height(10),
+                        second = Box().Height(20).GridColumn(2),
+                        third = Box().Height(10).GridColumn(1, span: 2)
+                    )
+                    .Gap(4)
+                    .AutoRows(Track.Px(30))
+            );
+
+            Assert.Equal(
+                (new Rect(0, 0, 50, 10), new Rect(54, 0, 146, 20), new Rect(0, 34, 200, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A child's new lines lay the grid out again: the style change marks the grid, and the child moves.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of two columns of 100 px and the rows 10 px and auto, with a box 10 high in
+    ///   the first cell, laid out.
+    ///
+    /// Steps:
+    /// - Put the box in row 2, column 2; run the layout pass; read its rectangle.
+    ///
+    /// Expected:
+    /// - (100, 10, 100 x 10): the second column of the second row, below the first row of 10.
+    /// </remarks>
+    [Fact]
+    public void GridChild_NewLines_MoveIt() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() => Grid([Track.Px(100), Track.Px(100)], [Track.Px(10), Track.Auto], box = Box().Height(10)));
+            Assert.Equal(new Rect(0, 0, 100, 10), scene.Tree.GetRect(box.Node));
+
+            UiTree.Current = scene.Tree;
+            try
+            {
+                _ = box.GridRow(2).GridColumn(2);
+            }
+            finally
+            {
+                UiTree.Current = null;
+            }
+
+            LayoutEngine.RunLayoutPass(scene.Tree);
+            Assert.Equal(new Rect(100, 10, 100, 10), scene.Tree.GetRect(box.Node));
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// The sizes, lines, and spans of the grid's API refuse values out of their ranges, the minmax() track refuses a flexible
+    /// minimum and a fit-content() bound, and the grid's own properties refuse a node that is not a grid. A percentage is out of
+    /// 100, and line 0 is auto.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene.
+    ///
+    /// Steps:
+    /// - Call each factory with a value out of its range; call minmax() with 1fr as the minimum and fit-content(10) as the maximum;
+    ///   set the auto-flow on a box and the auto rows on a row. Read a 50 % track and line 0.
+    ///
+    /// Expected:
+    /// - <see cref="ArgumentOutOfRangeException"/> for the ranges, <see cref="ArgumentException"/> for minmax() and an empty
+    ///   repetition, <see cref="InvalidOperationException"/> for the properties; the percentage is the fraction 0.5 and line 0 is
+    ///   <see cref="GridLine.Auto"/>; a column flow writes the grid's property.
+    /// </remarks>
+    [Fact]
+    public void GridApi_OutOfRange_Throws() =>
+        ui.Invoke(() =>
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => Track.Px(-1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Track.Fr(float.NaN));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Track.Percent(float.PositiveInfinity));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Track.FitContent(-1));
+            Assert.Throws<ArgumentException>(() => Track.MinMax(Track.Fr(1), Track.Auto));
+            Assert.Throws<ArgumentException>(() => Track.MinMax(Track.Auto, Track.FitContent(10)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Track.Repeat(0, Track.Auto));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Track.Repeat(10_001, Track.Auto));
+            Assert.Throws<ArgumentException>(() => Track.Repeat(1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.At(10_002));
+            Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.At(-10_002));
+            Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Span(0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Span(10_001));
+            Assert.Equal(0.5f, Track.Percent(50).Max.Value);
+            Assert.Equal(GridLine.Auto, GridLine.At(0));
+            Assert.Equal((GridLineKind.Line, 10_001), (GridLine.At(10_001).Kind, GridLine.At(10_001).Value));
+            Assert.Equal((GridLineKind.Span, 10_000), (GridLine.Span(10_000).Kind, GridLine.Span(10_000).Value));
+
+            var scene = new Scene();
+            scene.Mount(() =>
+            {
+                Assert.Throws<InvalidOperationException>(() => Box().AutoFlow(GridAutoFlow.Column));
+                Assert.Throws<InvalidOperationException>(() => Row().AutoRows(Track.Auto));
+                Element grid = Grid([Track.Auto], []).AutoFlow(GridAutoFlow.Column);
+                Assert.Equal(GridAutoFlow.Column, ((LayoutAlgorithm.Grid)scene.Tree.Nodes.GetRef(grid.Node).Layout.Style.Algorithm).Props.AutoFlow);
+                return grid;
+            });
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// <c>Bind</c> writes the signal's value to the node when it is made, and once for each batch that changes the signal, however
     /// many times the batch set it; a value equal to the one written writes again through the property but changes nothing.
     /// </summary>

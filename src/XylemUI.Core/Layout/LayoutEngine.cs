@@ -351,8 +351,8 @@ internal static partial class LayoutEngine
         if (!node.Layout.BaselineFromFirstChildWithOne)
         {
             float inner = ReadBaseline(tree, child);
-            Rect rect = tree.Nodes.GetRef(child).Layout.Rect;
-            return rect.Y + Maybe.Or(inner, rect.Height);
+            ref readonly LayoutState childLayout = ref tree.Nodes.GetRef(child).Layout;
+            return childLayout.Rect.Y - childLayout.RelativeY + Maybe.Or(inner, childLayout.Rect.Height);
         }
 
         for (; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
@@ -366,7 +366,8 @@ internal static partial class LayoutEngine
             float inner = ReadBaseline(tree, child);
             if (!float.IsNaN(inner))
             {
-                return tree.Nodes.GetRef(child).Layout.Rect.Y + inner;
+                ref readonly LayoutState childLayout = ref tree.Nodes.GetRef(child).Layout;
+                return childLayout.Rect.Y - childLayout.RelativeY + inner;
             }
         }
 
@@ -444,6 +445,10 @@ internal static partial class LayoutEngine
         else if (style.Algorithm is LayoutAlgorithm.Flex flex)
         {
             size = ComputeFlex(tree, in style, flex.Props, firstChild, in input, commit, out baselineChild);
+        }
+        else if (style.Algorithm is LayoutAlgorithm.Grid grid)
+        {
+            size = ComputeGrid(tree, in style, grid.Props, firstChild, in input, commit, out baselineChild);
         }
         else
         {

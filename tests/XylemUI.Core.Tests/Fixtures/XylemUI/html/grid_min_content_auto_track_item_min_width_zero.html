@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    Under a min-content constraint an auto track takes its item's min-content contribution over its zero minimum
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: block; width: 200px;">
+  <div style="display: grid; width: min-content; grid-template-columns: auto;">
+    <div style="min-width: 0px;">HHHHH</div>
+  </div>
+</div>
+
+</body>
+</html>

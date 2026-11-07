@@ -139,14 +139,16 @@ internal static class TaffyFixture
     private static LayoutStyle StyleOf(XElement e) =>
         new()
         {
-            Algorithm = e.Attribute("display")?.Value is "block" or "flow-root"
-                ? new LayoutAlgorithm.Block(
-                    new BlockProps
-                    {
-                        JustifyItems = ParseAlignItems(e, "justify-items") ?? default,
-                        AlignContent = ParseAlignContent(e, "align-content"),
-                    }
-                )
+            Algorithm =
+                e.Attribute("display")?.Value == "grid" ? new LayoutAlgorithm.Grid(GridPropsOf(e))
+                : e.Attribute("display")?.Value is "block" or "flow-root"
+                    ? new LayoutAlgorithm.Block(
+                        new BlockProps
+                        {
+                            JustifyItems = ParseAlignItems(e, "justify-items") ?? default,
+                            AlignContent = ParseAlignContent(e, "align-content"),
+                        }
+                    )
                 : new LayoutAlgorithm.Flex(
                     new FlexProps
                     {
@@ -181,6 +183,8 @@ internal static class TaffyFixture
             Hidden = e.Attribute("display")?.Value == "none",
             AlignSelf = ParseAlignItems(e, "align-self"),
             JustifySelf = ParseAlignItems(e, "justify-self"),
+            GridColumn = new GridPlacement(ParseGridLine(e, "grid-column-start"), ParseGridLine(e, "grid-column-end")),
+            GridRow = new GridPlacement(ParseGridLine(e, "grid-row-start"), ParseGridLine(e, "grid-row-end")),
             Width = ParseLength(e, "width"),
             Height = ParseLength(e, "height"),
             MinWidth = ParseLength(e, "min-width"),
@@ -201,6 +205,115 @@ internal static class TaffyFixture
             OverflowX = ParseOverflow(e.Attribute("overflow-x")?.Value),
             OverflowY = ParseOverflow(e.Attribute("overflow-y")?.Value),
             ScrollbarWidth = ParseFloat(e.Attribute("scrollbar-width")?.Value, 0),
+        };
+
+    private static GridProps GridPropsOf(XElement e) =>
+        new()
+        {
+            Columns = [.. ParseTrackList(e.Attribute("grid-template-columns")?.Value)],
+            Rows = [.. ParseTrackList(e.Attribute("grid-template-rows")?.Value)],
+            AutoColumns = [.. ParseTrackList(e.Attribute("grid-auto-columns")?.Value).Select(track => track.Single)],
+            AutoRows = [.. ParseTrackList(e.Attribute("grid-auto-rows")?.Value).Select(track => track.Single)],
+            AutoFlow = e.Attribute("grid-auto-flow")?.Value switch
+            {
+                null or "row" => GridAutoFlow.Row,
+                "column" => GridAutoFlow.Column,
+                string value => throw new InvalidOperationException($"The auto-flow {value} is not read by these tests."),
+            },
+            JustifyItems = ParseAlignItems(e, "justify-items") ?? default,
+            AlignItems = ParseAlignItems(e, "align-items") ?? default,
+            JustifyContent = ParseAlignContent(e, "justify-content"),
+            AlignContent = ParseAlignContent(e, "align-content"),
+            ColumnGap = ParseLengthPercentage(e.Attribute("column-gap")?.Value),
+            RowGap = ParseLengthPercentage(e.Attribute("row-gap")?.Value),
+        };
+
+    // A track list in CSS's syntax: sizes and repeat() with a count, apart at the spaces outside the parentheses.
+    private static IEnumerable<GridTrack> ParseTrackList(string? value)
+    {
+        foreach (string token in SplitTopLevel(value ?? string.Empty, ' '))
+        {
+            if (token.StartsWith("repeat(", StringComparison.Ordinal))
+            {
+                string[] parts = [.. SplitTopLevel(token[7..^1], ',')];
+
+                // The tests repeat past the API's 10,000 times to check the clamp of overlarge grids.
+                yield return GridTrack.Repeat(
+                    int.Parse(parts[0], CultureInfo.InvariantCulture),
+                    [.. SplitTopLevel(string.Join(' ', parts.Skip(1)), ' ').Select(ParseTrackSize)]
+                );
+            }
+            else
+            {
+                yield return ParseTrackSize(token);
+            }
+        }
+    }
+
+    private static TrackSize ParseTrackSize(string token)
+    {
+        if (token.StartsWith("minmax(", StringComparison.Ordinal))
+        {
+            string[] parts = [.. SplitTopLevel(token[7..^1], ',')];
+            return Track.MinMax(ParseTrackSize(parts[0]), ParseTrackSize(parts[1]));
+        }
+
+        if (token.StartsWith("fit-content(", StringComparison.Ordinal))
+        {
+            string argument = token[12..^1];
+            return argument.EndsWith('%')
+                ? TrackSize.Of(new TrackFunction(TrackKind.FitContentPercent, ParseFloat(argument[..^1], 0) / 100))
+                : Track.FitContent(ParsePx(argument));
+        }
+
+        return token switch
+        {
+            "auto" => Track.Auto,
+            "min-content" => Track.MinContent,
+            "max-content" => Track.MaxContent,
+            _ when token.EndsWith("fr", StringComparison.Ordinal) => Track.Fr(ParseFloat(token[..^2], 0)),
+            _ when token.EndsWith('%') => Track.Percent(ParseFloat(token[..^1], 0)),
+            _ => Track.Px(ParsePx(token)),
+        };
+    }
+
+    private static IEnumerable<string> SplitTopLevel(string value, char separator)
+    {
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i <= value.Length; i++)
+        {
+            if (i < value.Length && value[i] == '(')
+            {
+                depth++;
+            }
+            else if (i < value.Length && value[i] == ')')
+            {
+                depth--;
+            }
+            else if (i == value.Length || (value[i] == separator && depth == 0))
+            {
+                string part = value[start..i].Trim();
+                if (part.Length > 0)
+                {
+                    yield return part;
+                }
+
+                start = i + 1;
+            }
+        }
+    }
+
+    // A grid line: auto, a number, or `span` and a number. Numbers past the API's range are written as the tests give them.
+    private static GridLine ParseGridLine(XElement e, string name) =>
+        e.Attribute(name)?.Value switch
+        {
+            null or "auto" => GridLine.Auto,
+            string value when value.StartsWith("span ", StringComparison.Ordinal) => GridLine.Unchecked(
+                GridLineKind.Span,
+                int.Parse(value[5..], CultureInfo.InvariantCulture)
+            ),
+            string value => GridLine.Unchecked(GridLineKind.Line, int.Parse(value, CultureInfo.InvariantCulture)),
         };
 
     private static Overflow ParseOverflow(string? value) =>

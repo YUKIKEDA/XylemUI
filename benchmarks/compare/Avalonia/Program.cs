@@ -115,11 +115,12 @@ internal static class LayoutScene
         (double First, double Change, double Content, double Width) stack = Measure(BuildStacks);
         (double First, double Change, double Content, double Width) wrap = Measure(BuildWrap);
         (double First, double Change) absolute = MeasureAbsolute();
+        (double First, double Change, double Content, double Width) grid = Measure(BuildGrid);
         File.WriteAllText(
             output,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"content_us_p50\":{stack.Content:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_content_us_p50\":{wrap.Content:F1},\"wrap_width_us_p50\":{wrap.Width:F1},\"absolute_first_us_p50\":{absolute.First:F1},\"absolute_change_us_p50\":{absolute.Change:F1}}}{Environment.NewLine}"
+                $"{{\"name\":\"Avalonia\",\"first_us_p50\":{stack.First:F1},\"change_us_p50\":{stack.Change:F1},\"content_us_p50\":{stack.Content:F1},\"width_us_p50\":{stack.Width:F1},\"wrap_first_us_p50\":{wrap.First:F1},\"wrap_change_us_p50\":{wrap.Change:F1},\"wrap_content_us_p50\":{wrap.Content:F1},\"wrap_width_us_p50\":{wrap.Width:F1},\"absolute_first_us_p50\":{absolute.First:F1},\"absolute_change_us_p50\":{absolute.Change:F1},\"grid_first_us_p50\":{grid.First:F1},\"grid_change_us_p50\":{grid.Change:F1},\"grid_width_us_p50\":{grid.Width:F1}}}{Environment.NewLine}"
             )
         );
     }
@@ -265,6 +266,36 @@ internal static class LayoutScene
             }
 
             root.Children.Add(row);
+        }
+
+        return (root, target!);
+    }
+
+    // The grid scene (row P02f): Avalonia's Grid of the columns 120 px, Auto, *, and 2* with a minimum width of 80 (the scene's
+    // minmax(80px, 2fr)), and 250 Auto rows, a leaf in each cell. The change is the width of the leaf in the Auto column of the
+    // middle row.
+    private static (Panel Root, Leaf Target) BuildGrid()
+    {
+        var root = new Grid();
+        root.ColumnDefinitions.Add(new ColumnDefinition(120, GridUnitType.Pixel));
+        root.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        root.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
+        root.ColumnDefinitions.Add(new ColumnDefinition(2, GridUnitType.Star) { MinWidth = 80 });
+        Leaf? target = null;
+        for (int r = 0; r < 250; r++)
+        {
+            root.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            for (int c = 0; c < 4; c++)
+            {
+                var leaf = new Leaf();
+                Grid.SetRow(leaf, r);
+                Grid.SetColumn(leaf, c);
+                root.Children.Add(leaf);
+                if (r == 125 && c == 1)
+                {
+                    target = leaf;
+                }
+            }
         }
 
         return (root, target!);

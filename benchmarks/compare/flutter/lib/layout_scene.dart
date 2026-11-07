@@ -3,7 +3,10 @@
 // RenderFlex of 100 horizontal RenderFlexes of 100 boxes of 10 x 10, and a RenderWrap of 10,000 boxes (the `wrap_` figures).
 // The four times of the comparison: the first layout, a layout after one box's width changes (PipelineOwner.flushLayout), a
 // layout after one box is marked for layout at the same size (markNeedsLayout, as a change of its content that keeps its size;
-// row L5), and a layout at a new width.
+// row L5), and a layout at a new width. The grid scene of row P02f is a RenderTable (Flutter has no CSS grid; the table is the
+// nearest, design §3.3): the columns 120 px, intrinsic, flex 1, and the larger of 80 px and flex 2 (the scene's minmax(80px,
+// 2fr)), and 250 rows of boxes of 10 x 10 (the `grid_` figures); the change is the width of the box in the intrinsic column of the
+// middle row.
 import 'dart:io';
 
 import 'package:flutter/rendering.dart';
@@ -12,10 +15,12 @@ void runLayoutScene(String output) {
   final flex = _measure(_build);
   final wrap = _measure(_buildWrap);
   final absolute = _measureAbsolute();
+  final grid = _measure(_buildTable);
   File(output).writeAsStringSync(
     '{"name":"Flutter","first_us_p50":${flex.$1},"change_us_p50":${flex.$2},"content_us_p50":${flex.$3},"width_us_p50":${flex.$4},'
     '"wrap_first_us_p50":${wrap.$1},"wrap_change_us_p50":${wrap.$2},"wrap_content_us_p50":${wrap.$3},"wrap_width_us_p50":${wrap.$4},'
-    '"absolute_first_us_p50":${absolute.$1},"absolute_change_us_p50":${absolute.$2}}\n',
+    '"absolute_first_us_p50":${absolute.$1},"absolute_change_us_p50":${absolute.$2},'
+    '"grid_first_us_p50":${grid.$1},"grid_change_us_p50":${grid.$2},"grid_width_us_p50":${grid.$4}}\n',
   );
 }
 
@@ -92,6 +97,34 @@ void runLayoutScene(String output) {
   }
   final root = RenderFlex(direction: Axis.vertical, textDirection: TextDirection.ltr, children: rows);
   return (root, target!);
+}
+
+(RenderBox, RenderConstrainedBox) _buildTable() {
+  RenderConstrainedBox? target;
+  final rows = <List<RenderBox>>[];
+  for (var r = 0; r < 250; r++) {
+    final cells = <RenderBox>[];
+    for (var c = 0; c < 4; c++) {
+      final box = RenderConstrainedBox(additionalConstraints: const BoxConstraints.tightFor(width: 10, height: 10));
+      if (r == 125 && c == 1) {
+        target = box;
+      }
+      cells.add(box);
+    }
+    rows.add(cells);
+  }
+  final table = RenderTable(
+    columns: 4,
+    columnWidths: const <int, TableColumnWidth>{
+      0: FixedColumnWidth(120),
+      1: IntrinsicColumnWidth(),
+      2: FlexColumnWidth(1),
+      3: MaxColumnWidth(FixedColumnWidth(80), FlexColumnWidth(2)),
+    },
+    textDirection: TextDirection.ltr,
+    children: rows,
+  );
+  return (table, target!);
 }
 
 (RenderBox, RenderConstrainedBox) _buildWrap() {

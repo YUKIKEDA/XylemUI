@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A spanning item's max-content goes to the track whose growth limit its min-content set
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 400px; grid-template-columns: auto auto;">
+  <div style="width: 50px; height: 10px;"></div>
+  <div style="height: 10px;"></div>
+  <div style="grid-column-start: 1; grid-column-end: span 2; grid-row-start: 2; min-width: 0px;">HHHHHHHHHH&#8203;HHHHHHHHHH&#8203;HHHHHHHHHH</div>
+</div>
+
+</body>
+</html>

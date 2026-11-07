@@ -10,7 +10,7 @@ use gpui::{
     WindowOptions,
 };
 
-const FONT: &[u8] = include_bytes!("../../../../tests/XylemUI.Text.Tests/Fonts/XylemUITestSans.ttf");
+const FONT: &[u8] = include_bytes!("../../../../src/XylemUI.Testing/Fonts/XylemUITestSans.ttf");
 
 struct Scene {
     frame: u32,

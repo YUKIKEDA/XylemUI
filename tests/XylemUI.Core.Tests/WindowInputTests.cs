@@ -715,9 +715,10 @@ public sealed class WindowInputTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A node holds its input and its pseudo-states without growing past 576 bytes, and the state looks live apart from the box's
+    /// A node holds its input and its pseudo-states without growing past 592 bytes, and the state looks live apart from the box's
     /// look, so that a node with a background alone pays for neither (PR #319's review); the focus looks live apart from the hovered
-    /// and pressed ones (row K1a), and the open look apart from the state looks (row P02d4).
+    /// and pressed ones (row K1a), and the open look apart from the state looks (row P02d4). P02f added 16 bytes to 576: a grid
+    /// item's lines in its style (four lines of two bytes each) and the relative shift a baseline leaves out.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -730,13 +731,13 @@ public sealed class WindowInputTests(UiThreadFixture ui)
     ///   object made once, not a steady state that allocates nothing.
     ///
     /// Expected:
-    /// - The node is at most 576 bytes, a style at most 104, a box look at most 192, the state looks at most 344 (with the disabled look, row K1b, and the reference to the open look, row P02d4), and the focus looks
+    /// - The node is at most 592 bytes, a style at most 104, a box look at most 192, the state looks at most 344 (with the disabled look, row K1b, and the reference to the open look, row P02d4), and the focus looks
     ///   at most 328.
     /// </remarks>
     [Fact]
     public void Sizes_NodeAndLooks_StayWithinTheirBounds()
     {
-        Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<UiNode>(), 0, 576);
+        Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<UiNode>(), 0, 592);
         Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<PaintStyle>(), 0, 104);
         Assert.InRange(System.Runtime.CompilerServices.Unsafe.SizeOf<PointerInput>(), 0, 64);
         Assert.InRange(Allocated(static () => new NodeVisual()), 0, 192);

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Numerics;
 using XylemUI.Text;
 
@@ -54,13 +55,13 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
-    /// Sets the gap between the children of a column or a row, in both directions.
+    /// Sets the gap between the children of a column, a row, or a virtualized list, or between the columns and the rows of a grid.
     /// </summary>
-    /// <param name="element">The column or the row.</param>
+    /// <param name="element">The column, the row, the virtualized list, or the grid.</param>
     /// <param name="gap">The gap, finite and at or above 0.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="gap"/> is negative or not a finite number.</exception>
-    /// <exception cref="InvalidOperationException">The node is not a column, a row, or a virtualized list.</exception>
+    /// <exception cref="InvalidOperationException">The node is not a column, a row, a grid, or a virtualized list.</exception>
     public static Element Gap(this Element element, float gap)
     {
         float g = Check(gap, nameof(gap));
@@ -77,9 +78,92 @@ public static partial class ElementExtensions
                     {
                         Algorithm = new LayoutAlgorithm.Virtual(list.Props with { Gap = LengthPercentage.Px(g) }),
                     },
-                    _ => throw new InvalidOperationException("Only a column, a row, or a virtualized list has a gap between its children."),
+                    LayoutAlgorithm.Grid grid => style with
+                    {
+                        Algorithm = new LayoutAlgorithm.Grid(grid.Props with { RowGap = LengthPercentage.Px(g), ColumnGap = LengthPercentage.Px(g) }),
+                    },
+                    _ => throw new InvalidOperationException("Only a column, a row, a grid, or a virtualized list has a gap between its children."),
                 }
         );
+    }
+
+    /// <summary>
+    /// Places the node in its grid's columns: from line <paramref name="start"/> across <paramref name="span"/> columns (CSS's
+    /// <c>grid-column: start / span n</c>, design §3.3). Line 1 is the start of the explicit grid and -1 its end.
+    /// </summary>
+    /// <param name="element">A child of a grid.</param>
+    /// <param name="start">The start line, from -10,001 to 10,001; 0 leaves the column to the auto-placement.</param>
+    /// <param name="span">The number of columns, from 1 to 10,000.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="start"/> or <paramref name="span"/> is out of its range.</exception>
+    public static Element GridColumn(this Element element, int start, int span = 1) => GridColumn(element, GridLine.At(start), GridLine.Span(span));
+
+    /// <summary>
+    /// Places the node in its grid's columns between two lines, or a line and a span (CSS's <c>grid-column</c>, design §3.3).
+    /// </summary>
+    /// <param name="element">A child of a grid.</param>
+    /// <param name="start">The start line, a span, or <see cref="GridLine.Auto"/>.</param>
+    /// <param name="end">The end line, a span, or <see cref="GridLine.Auto"/>.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element GridColumn(this Element element, GridLine start, GridLine end) =>
+        Layout(element, style => style with { GridColumn = new GridPlacement(start, end) });
+
+    /// <summary>
+    /// Places the node in its grid's rows: from line <paramref name="start"/> across <paramref name="span"/> rows (CSS's
+    /// <c>grid-row: start / span n</c>, design §3.3).
+    /// </summary>
+    /// <param name="element">A child of a grid.</param>
+    /// <param name="start">The start line, from -10,001 to 10,001; 0 leaves the row to the auto-placement.</param>
+    /// <param name="span">The number of rows, from 1 to 10,000.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="start"/> or <paramref name="span"/> is out of its range.</exception>
+    public static Element GridRow(this Element element, int start, int span = 1) => GridRow(element, GridLine.At(start), GridLine.Span(span));
+
+    /// <summary>
+    /// Places the node in its grid's rows between two lines, or a line and a span (CSS's <c>grid-row</c>, design §3.3).
+    /// </summary>
+    /// <param name="element">A child of a grid.</param>
+    /// <param name="start">The start line, a span, or <see cref="GridLine.Auto"/>.</param>
+    /// <param name="end">The end line, a span, or <see cref="GridLine.Auto"/>.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element GridRow(this Element element, GridLine start, GridLine end) =>
+        Layout(element, style => style with { GridRow = new GridPlacement(start, end) });
+
+    /// <summary>
+    /// Sets the order in which a grid's auto-placement algorithm fills the cells: row by row (the default) or column by column.
+    /// </summary>
+    /// <param name="element">The grid.</param>
+    /// <param name="flow">The order.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">The node is not a grid.</exception>
+    public static Element AutoFlow(this Element element, GridAutoFlow flow) => GridProperties(element, props => props with { AutoFlow = flow });
+
+    /// <summary>
+    /// Sets the sizes of the columns a grid adds past its explicit columns, in turn (CSS's <c>grid-auto-columns</c>); none sizes
+    /// them as <see cref="Track.Auto"/>.
+    /// </summary>
+    /// <param name="element">The grid.</param>
+    /// <param name="tracks">The sizes.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">The node is not a grid.</exception>
+    public static Element AutoColumns(this Element element, params ReadOnlySpan<TrackSize> tracks)
+    {
+        ImmutableArray<TrackSize> sizes = [.. tracks];
+        return GridProperties(element, props => props with { AutoColumns = sizes });
+    }
+
+    /// <summary>
+    /// Sets the sizes of the rows a grid adds past its explicit rows, in turn (CSS's <c>grid-auto-rows</c>); none sizes them as
+    /// <see cref="Track.Auto"/>.
+    /// </summary>
+    /// <param name="element">The grid.</param>
+    /// <param name="tracks">The sizes.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">The node is not a grid.</exception>
+    public static Element AutoRows(this Element element, params ReadOnlySpan<TrackSize> tracks)
+    {
+        ImmutableArray<TrackSize> sizes = [.. tracks];
+        return GridProperties(element, props => props with { AutoRows = sizes });
     }
 
     /// <summary>
@@ -948,6 +1032,18 @@ public static partial class ElementExtensions
             throw new InvalidOperationException("A handler is added inside a scope, which owns it; there is no current scope.");
         }
     }
+
+    private static Element GridProperties(Element element, Func<GridProps, GridProps> change) =>
+        Layout(
+            element,
+            style =>
+                style.Algorithm is LayoutAlgorithm.Grid grid
+                    ? style with
+                    {
+                        Algorithm = new LayoutAlgorithm.Grid(change(grid.Props)),
+                    }
+                    : throw new InvalidOperationException("Only a grid has the properties of a grid.")
+        );
 
     private static Element Layout(Element element, Func<LayoutStyle, LayoutStyle> change)
     {

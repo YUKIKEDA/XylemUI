@@ -102,9 +102,58 @@ internal static class TaffyFixtureScope
 
         foreach (XElement element in root.DescendantsAndSelf())
         {
+            if (GridExclusion(element) is { } grid)
+            {
+                return grid;
+            }
+
             if (FeatureExclusion(element) is { } feature)
             {
                 return feature;
+            }
+        }
+
+        return null;
+    }
+
+    // The parts of CSS Grid that P02f's next implementation PR brings (design §3.3, "The shape of P02f").
+    private static string? GridExclusion(XElement e)
+    {
+        const string Next = "P02f's next implementation PR";
+        if (e.Attribute("display")?.Value == "grid" && e.Elements().Any(child => child.Attribute("position")?.Value == "absolute"))
+        {
+            return $"an absolutely positioned child of a grid ({Next})";
+        }
+
+        foreach (XAttribute attribute in e.Attributes())
+        {
+            string name = attribute.Name.LocalName;
+            string value = attribute.Value;
+            if (name.StartsWith("grid-template-", StringComparison.Ordinal) || name.StartsWith("grid-auto-", StringComparison.Ordinal))
+            {
+                if (value.Contains("auto-fill", StringComparison.Ordinal) || value.Contains("auto-fit", StringComparison.Ordinal))
+                {
+                    return $"repeat() with auto-fill or auto-fit ({Next})";
+                }
+
+                if (value.Contains('[', StringComparison.Ordinal))
+                {
+                    return $"named grid lines ({Next})";
+                }
+
+                if (value.Contains("dense", StringComparison.Ordinal))
+                {
+                    return $"dense auto-placement ({Next})";
+                }
+            }
+
+            if (name is "grid-row-start" or "grid-row-end" or "grid-column-start" or "grid-column-end")
+            {
+                string line = value.StartsWith("span ", StringComparison.Ordinal) ? value[5..] : value;
+                if (line != "auto" && !int.TryParse(line, out _))
+                {
+                    return $"named grid lines ({Next})";
+                }
             }
         }
 
@@ -118,8 +167,7 @@ internal static class TaffyFixtureScope
             string value = attribute.Value;
             string? reason = attribute.Name.LocalName switch
             {
-                "display" when value is "grid" => "Grid (row P02)",
-                "display" when value is not ("block" or "flow-root" or "flex" or "none") => $"display {value}",
+                "display" when value is not ("block" or "flow-root" or "flex" or "grid" or "none") => $"display {value}",
                 "flex-wrap" when value.Contains("balance", StringComparison.Ordinal) => "flex-wrap: balance (row L6)",
                 "flex-line-count" => "flex-line-count with flex-wrap: balance (row L6)",
                 "align-items" or "align-self" or "justify-items" or "justify-self" when value is "self-start" or "self-end" =>
@@ -152,7 +200,16 @@ internal static class TaffyFixtureScope
                 or "box-sizing"
                 or "overflow-x"
                 or "overflow-y"
-                or "scrollbar-width" => null,
+                or "scrollbar-width"
+                or "grid-template-columns"
+                or "grid-template-rows"
+                or "grid-auto-columns"
+                or "grid-auto-rows"
+                or "grid-auto-flow"
+                or "grid-row-start"
+                or "grid-row-end"
+                or "grid-column-start"
+                or "grid-column-end" => null,
                 "width"
                 or "height"
                 or "min-width"

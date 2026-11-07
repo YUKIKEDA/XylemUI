@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    Space between the columns widens the estimate of a spanning item when the rows are sized
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 200px; grid-template-columns: 50px 50px; justify-content: space-between;">
+  <div style="grid-column-start: 1; grid-column-end: span 2;">HH&#8203;HH&#8203;HH&#8203;HH&#8203;HH&#8203;HH&#8203;HH&#8203;HH</div>
+</div>
+
+</body>
+</html>

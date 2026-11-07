@@ -1,12 +1,16 @@
 # Copies Taffy's XML layout tests (Chrome's results, MIT, see LICENSE) into one file per group, for the layout tests of
 # XylemUI (design §3.2, roadmap rows L1a and L1b). Only the border-box, left-to-right variants are taken: XylemUI's sizes are
-# always border-box, and right-to-left comes with row P03.
-#   ./tests/XylemUI.Core.Tests/Fixtures/Taffy/Import.ps1 -Taffy <a checkout of https://github.com/DioxusLabs/taffy>
-param([Parameter(Mandatory = $true)][string]$Taffy)
+# always border-box, and right-to-left comes with row P03. The grid group comes from the v0.15.1 tag, the version P02f ports
+# (design §3.3, "The shape of P02f"); the other groups from the commit their rows ported.
+#   ./tests/XylemUI.Core.Tests/Fixtures/Taffy/Import.ps1 -Taffy <a checkout of https://github.com/DioxusLabs/taffy> [-Groups grid]
+param(
+    [Parameter(Mandatory = $true)][string]$Taffy,
+    [string[]]$Groups = @('block', 'blockflex', 'flex', 'leaf', 'grid')
+)
 
 $ErrorActionPreference = 'Stop'
 $commit = (git -C $Taffy rev-parse --short HEAD).Trim()
-foreach ($group in 'block', 'blockflex', 'flex', 'leaf') {
+foreach ($group in $Groups) {
     $tests = Get-ChildItem (Join-Path $Taffy "tests/xml/$group") -Filter '*__border_box_ltr.xml' | Sort-Object Name | ForEach-Object {
         (Get-Content $_.FullName -Raw -Encoding utf8).Trim()
     }

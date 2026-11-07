@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A grid takes its baseline from the first item of its first row that aligns by baseline
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: flex; align-items: baseline; width: 200px; height: 100px;">
+  <div style="display: grid; grid-template-columns: 50px 50px; align-items: start;">
+    <div style="height: 30px;"></div>
+    <div style="height: 20px; align-self: baseline;"></div>
+  </div>
+  <div style="width: 10px; height: 10px;"></div>
+</div>
+
+</body>
+</html>

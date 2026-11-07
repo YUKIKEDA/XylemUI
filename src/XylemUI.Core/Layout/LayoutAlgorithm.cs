@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace XylemUI;
 
 /// <summary>
@@ -36,6 +38,12 @@ internal abstract record LayoutAlgorithm
         /// </summary>
         public static Flex Column { get; } = new(new FlexProps { Direction = FlexDirection.Column });
     }
+
+    /// <summary>
+    /// Lays the children out in a grid by CSS Grid (design §3.3, "The shape of P02f", ported from Taffy 0.15.1).
+    /// </summary>
+    /// <param name="Props">The grid container's properties.</param>
+    public sealed record Grid(GridProps Props) : LayoutAlgorithm;
 
     /// <summary>
     /// Places the rows a virtualized list made along the axis that scrolls, each at the position its index has among all the items
@@ -86,6 +94,78 @@ internal readonly record struct FlexProps
     /// </summary>
     public LengthPercentage RowGap { get; init; }
 }
+
+/// <summary>
+/// The properties of a grid container (design §3.2 and §3.3), with CSS's initial values by default. A track list is compared by
+/// reference: the same array given again is no change.
+/// </summary>
+internal readonly record struct GridProps
+{
+    /// <summary>
+    /// Gets the explicit grid's columns (<c>grid-template-columns</c>); empty for none.
+    /// </summary>
+    public ImmutableArray<GridTrack> Columns { get; init; }
+
+    /// <summary>
+    /// Gets the explicit grid's rows (<c>grid-template-rows</c>); empty for none.
+    /// </summary>
+    public ImmutableArray<GridTrack> Rows { get; init; }
+
+    /// <summary>
+    /// Gets the sizes of the columns the implicit grid adds, in turn (<c>grid-auto-columns</c>); empty for <c>auto</c>.
+    /// </summary>
+    public ImmutableArray<TrackSize> AutoColumns { get; init; }
+
+    /// <summary>
+    /// Gets the sizes of the rows the implicit grid adds, in turn (<c>grid-auto-rows</c>); empty for <c>auto</c>.
+    /// </summary>
+    public ImmutableArray<TrackSize> AutoRows { get; init; }
+
+    /// <summary>
+    /// Gets the order in which the auto-placement algorithm fills the cells.
+    /// </summary>
+    public GridAutoFlow AutoFlow { get; init; }
+
+    /// <summary>
+    /// Gets where the items go along the width of their cells, unless an item's <see cref="LayoutStyle.JustifySelf"/> says
+    /// otherwise. <c>normal</c> stretches an item without a width.
+    /// </summary>
+    public AlignItems JustifyItems { get; init; }
+
+    /// <summary>
+    /// Gets where the items go along the height of their cells, unless an item's <see cref="LayoutStyle.AlignSelf"/> says
+    /// otherwise. <c>normal</c> stretches an item without a height or an aspect ratio.
+    /// </summary>
+    public AlignItems AlignItems { get; init; }
+
+    /// <summary>
+    /// Gets where the columns go in the content box; <c>normal</c> behaves as <c>stretch</c>, which grows the <c>auto</c> columns.
+    /// </summary>
+    public AlignContent JustifyContent { get; init; }
+
+    /// <summary>
+    /// Gets where the rows go in the content box; <c>normal</c> behaves as <c>stretch</c>, which grows the <c>auto</c> rows.
+    /// </summary>
+    public AlignContent AlignContent { get; init; }
+
+    /// <summary>
+    /// Gets the space between columns.
+    /// </summary>
+    public LengthPercentage ColumnGap { get; init; }
+
+    /// <summary>
+    /// Gets the space between rows.
+    /// </summary>
+    public LengthPercentage RowGap { get; init; }
+}
+
+/// <summary>
+/// Where a grid item goes in one axis: its start and end lines (CSS's <c>grid-column</c> and <c>grid-row</c>), <c>auto</c> by
+/// default.
+/// </summary>
+/// <param name="Start">The start line.</param>
+/// <param name="End">The end line.</param>
+internal readonly record struct GridPlacement(GridLine Start, GridLine End);
 
 /// <summary>
 /// The properties of a block container (design §3.2, CSS Box Alignment §5 and §6), with CSS's initial values by default.

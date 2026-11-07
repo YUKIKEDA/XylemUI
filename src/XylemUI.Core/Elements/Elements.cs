@@ -70,6 +70,20 @@ public static class Elements
     public static Element Row(params ReadOnlySpan<Element> children) => Container(LayoutAlgorithm.Flex.Row, children);
 
     /// <summary>
+    /// Makes a container that lays its children out in a grid of columns and rows (design §3.3, CSS Grid): each child goes where
+    /// its <see cref="ElementExtensions.GridColumn(Element, int, int)"/> and <see cref="ElementExtensions.GridRow(Element, int, int)"/>
+    /// put it, and the auto-placement algorithm places the others in the next free cells, row by row, adding rows as needed.
+    /// </summary>
+    /// <param name="columns">The explicit grid's columns, such as <c>[Track.Px(120), Track.Fr(1)]</c>; empty for none.</param>
+    /// <param name="rows">The explicit grid's rows; empty for none, which makes a row for each line of items.</param>
+    /// <param name="children">The children: nodes of the same tree with no parent.</param>
+    /// <returns>The grid.</returns>
+    /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    /// <exception cref="ArgumentException">A child is no node, is of another tree, or has a parent.</exception>
+    public static Element Grid(ReadOnlySpan<GridTrack> columns, ReadOnlySpan<GridTrack> rows, params ReadOnlySpan<Element> children) =>
+        Container(new LayoutAlgorithm.Grid(new GridProps { Columns = [.. columns], Rows = [.. rows] }), children);
+
+    /// <summary>
     /// Makes text that does not change, at <see cref="DefaultFontSize"/>, in the OS's UI language (the one the window's host reads), with the color its ancestors give
     /// (design §5.0, "The color of text").
     /// </summary>
