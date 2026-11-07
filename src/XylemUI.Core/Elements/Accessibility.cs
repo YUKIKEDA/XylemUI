@@ -119,7 +119,8 @@ public readonly record struct SemanticsRange(double Minimum, double Maximum, dou
 
 /// <summary>
 /// The information a node gives assistive technology (design §4.4.1, "The shape of P02g"). Each value left
-/// <see langword="null"/> keeps the one the node's part gives; a node of no part with no role is not in the accessibility tree.
+/// <see langword="null"/> keeps the one the node's part gives; a node of no part with no role is not in the accessibility tree,
+/// unless it takes the focus, which makes it a group.
 /// </summary>
 public sealed record AccessibilityInfo
 {
@@ -171,6 +172,7 @@ public sealed record AccessibilityInfo
                 States = States != SemanticsStates.None ? States : under.States,
                 Range = Range ?? under.Range,
                 PartStates = PartStates | under.PartStates,
+                Placeholder = Placeholder ?? under.Placeholder,
             };
 
     /// <summary>
@@ -178,4 +180,9 @@ public sealed record AccessibilityInfo
     /// password field (design §4.4.1, the table of roles).
     /// </summary>
     internal AccessibilityStates PartStates { get; init; }
+
+    /// <summary>
+    /// Gets the text a text field shows while it is empty, which only a part gives (design §4.4.1, "States and actions").
+    /// </summary>
+    internal string? Placeholder { get; init; }
 }

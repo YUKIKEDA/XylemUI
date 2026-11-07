@@ -75,6 +75,15 @@ internal enum AccessibilityStates : ushort
 
     /// <summary>The node is a password field (AccessKit's <c>PasswordInput</c>).</summary>
     Password = 2048,
+
+    /// <summary>The node has a click handler of its own, in the bubble phase: assistive technology can click it.</summary>
+    Clickable = 4096,
+
+    /// <summary>The node scrolls and clips its children: AccessKit leaves out the nodes outside its box.</summary>
+    ClipsChildren = 8192,
+
+    /// <summary>The node is a list whose items are chosen, a Select's list (AccessKit's <c>ListBox</c>).</summary>
+    SelectableList = 16384,
 }
 
 /// <summary>
@@ -121,6 +130,11 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     public string? Value { get; set; }
 
     /// <summary>
+    /// Gets or sets the text a text field shows while it is empty.
+    /// </summary>
+    public string? Placeholder { get; set; }
+
+    /// <summary>
     /// Gets or sets the node's states.
     /// </summary>
     public AccessibilityStates States { get; set; }
@@ -145,6 +159,26 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     /// Gets or sets the largest scroll position of a box that scrolls, or zero for a node that does not.
     /// </summary>
     public Size ScrollRange { get; set; }
+
+    /// <summary>
+    /// Gets or sets the node's place among the items of a virtualized list, from 0, or -1 for a node that is not a row.
+    /// </summary>
+    public int PositionInSet { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the number of items of a virtualized list, for its box's node, or -1 for another node.
+    /// </summary>
+    public int SizeOfSet { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the index of the link in its text leaf's ranges, for the node of a link range, or -1 for another node.
+    /// </summary>
+    public int LinkIndex { get; set; } = -1;
+
+    /// <summary>
+    /// Gets the nodes of a text leaf's link ranges, which come after its children (design §4.8).
+    /// </summary>
+    public List<AccessibilityNode> Links { get; } = [];
 
     /// <summary>
     /// Gets or sets the test ID of the node, which is its automation ID.

@@ -498,6 +498,86 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
+    /// A text field's node has the field's placeholder, also when the app gives the field information of its own; a field with none
+    /// has none.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a text field with the placeholder "What needs doing?", which the app names "Task", and a text field with none,
+    ///   both empty.
+    ///
+    /// Steps:
+    /// - Read the placeholders of both edits.
+    ///
+    /// Expected:
+    /// - "What needs doing?" for the first, none for the second.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task EditPlaceholder_IsTheFieldsPlaceholder()
+    {
+        Element hinted = default;
+        Element plain = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                hinted = TextField(Signal.Create(string.Empty), new TextFieldOptions { Placeholder = "What needs doing?" })
+                    .Accessible(new AccessibilityInfo { Name = "Task" }),
+                plain = TextField(Signal.Create(string.Empty))
+            )
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+
+        Assert.Equal(("What needs doing?", (string?)null), (tree.Find(hinted.Node)!.Placeholder, tree.Find(plain.Node)!.Placeholder));
+    }
+
+    /// <summary>
+    /// A node that takes the focus and has no role of its own is a group, so that the focus is never on a node outside the tree; it
+    /// leaves the tree when it stops taking the focus, and comes back when it takes it again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a focusable box holding a text "inside", and a box holding a text "plain" that is not focusable; the tree made.
+    ///
+    /// Steps:
+    /// - Focus the focusable box; settle; read the root's children, the group's children, and the group's states. Make the box not
+    ///   focusable; settle; read the root's children. Make it focusable again; settle; read the root's children.
+    ///
+    /// Expected:
+    /// - A group and the text "plain" under the root; the text "inside" under the group, which is focused and focusable. Then the
+    ///   texts "inside" and "plain" under the root. Then a group and "plain" again.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task FocusableNodeWithNoRole_IsAGroup_WhileItTakesTheFocus()
+    {
+        Element area = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(area = Box(Elements.Text("inside")).Focusable(), Box(Elements.Text("plain")))
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityNode root = app.AccessibilityTree().Root!;
+
+        Assert.True(area.Tree!.Focus.Focus(area.Node));
+        _ = app.PumpAndSettle();
+        Assert.Equal([SemanticsRole.Group, SemanticsRole.Text], root.Children.Select(c => c.Role));
+        AccessibilityNode group = root.Children[0];
+        Assert.Equal(["inside"], group.Children.Select(c => c.Name));
+        Assert.Equal(
+            AccessibilityStates.Focused | AccessibilityStates.Focusable,
+            group.States & (AccessibilityStates.Focused | AccessibilityStates.Focusable)
+        );
+
+        area.Tree.SetFocusable(area.Node, false);
+        _ = app.PumpAndSettle();
+        Assert.Equal(["inside", "plain"], root.Children.Select(c => c.Name));
+
+        area.Tree.SetFocusable(area.Node, true);
+        _ = app.PumpAndSettle();
+        Assert.Equal([SemanticsRole.Group, SemanticsRole.Text], root.Children.Select(c => c.Role));
+    }
+
+    /// <summary>
     /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
     /// nothing, before the tree's object is made and after it is made but not started.
     /// </summary>
@@ -629,6 +709,341 @@ public sealed class AccessibilityTests
 
         Assert.Equal("Row", app.AccessibilityOf(item).Name);
         Assert.Equal(["Inner"], app.FindByRole(SemanticsRole.Text).Select(t => app.AccessibilityOf(t).Name));
+    }
+
+    /// <summary>
+    /// A virtualized list's node has the number of items, its rows their places from 0, and the tree holds the rows the list lays
+    /// out, not all the items.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box 200 x 300 that scrolls down, a virtualized list of 1,000 items, each row 20 high; the tree made.
+    ///
+    /// Steps:
+    /// - Read the list's node and its rows; scroll to 4,000; settle; read the rows again.
+    ///
+    /// Expected:
+    /// - The list's count is 1,000; it holds fewer than 100 rows, each row's place is its item; after the scroll the first row's
+    ///   place is at least 180, and still each row's place is its item.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task VirtualList_GivesItsCount_AndItsRowsTheirPlaces()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        var state = new VirtualListState();
+        Element list = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            list = Box()
+                .Width(200)
+                .Height(300)
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(items, static i => i, static item => Box().Height(20).TestId($"row{item.Get()}"), state)
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+        AccessibilityNode node = app.Tree.Accessibility.Find(list.Node)!;
+        (int Count, int Rows, bool Placed) before = Read(node);
+
+        state.Scroll.ScrollTo(new Vector2(0, 4_000));
+        _ = app.PumpAndSettle();
+        (int Count, int Rows, bool Placed) after = Read(node);
+
+        Assert.Equal((1_000, true), (before.Count, before.Placed));
+        Assert.InRange(before.Rows, 1, 99);
+        Assert.True(after.Placed);
+        Assert.InRange(node.Children[0].PositionInSet, 180, 1_000);
+
+        (int, int, bool) Read(AccessibilityNode box) =>
+            (box.SizeOfSet, box.Children.Count, box.Children.All(row => app.Tree.TestIdOf(row.Node) == $"row{row.PositionInSet}"));
+    }
+
+    /// <summary>
+    /// A row a virtualized list keeps outside its range stays in the tree while it holds the focus, and leaves it when the focus
+    /// leaves; a row kept alive for another reason is not in the tree.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box 200 x 300 that scrolls down, a virtualized list of 1,000 focusable rows 20 high; row 50 is kept alive by its signal;
+    ///   the tree made; row 3 focused.
+    ///
+    /// Steps:
+    /// - Scroll to 1,000, where the list makes row 50; settle. Scroll to 10,000; settle; read the list's rows. Take the focus from
+    ///   row 3; settle; read them again.
+    ///
+    /// Expected:
+    /// - Row 3 is among the rows, row 50 is not; then row 3 is not.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task KeptRow_StaysWhileItHoldsTheFocus()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        var state = new VirtualListState();
+        Element list = default;
+        IReadOnlySignal<bool> keep = Signal.Create(true);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            list = Box()
+                .Width(200)
+                .Height(300)
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(
+                    items,
+                    static i => i,
+                    item =>
+                    {
+                        Element row = Box().Height(20).Focusable().TestId($"row{item.Get()}");
+                        return item.Get() == 50 ? row.KeepAlive(keep) : row;
+                    },
+                    state
+                )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+        Assert.True(app.Tree.Focus.Focus(app.Find("row3").Node));
+        _ = app.PumpAndSettle();
+
+        state.Scroll.ScrollTo(new Vector2(0, 1_000));
+        _ = app.PumpAndSettle();
+        Assert.True(app.Tree.Accessibility.Find(app.Find("row50").Node) is not null);
+        state.Scroll.ScrollTo(new Vector2(0, 10_000));
+        _ = app.PumpAndSettle();
+        string[] kept = Ids();
+        app.Tree.Focus.Lose(app.Find("row3").Node);
+        _ = app.PumpAndSettle();
+        string[] left = Ids();
+
+        Assert.Contains("row3", kept);
+        Assert.DoesNotContain("row50", kept);
+        Assert.DoesNotContain("row3", left);
+
+        string[] Ids() => [.. app.Tree.Accessibility.Find(list.Node)!.Children.Select(row => app.Tree.TestIdOf(row.Node)!)];
+    }
+
+    /// <summary>
+    /// The link ranges of a text leaf are Hyperlink nodes after its children, named by their text and boxed by their caret
+    /// positions; a link in a button's text, which the button folds into its name, is not a node.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a text "Read the docs now" whose "the docs" is a link, and a button whose text "Go here" has "here" as a link.
+    ///
+    /// Steps:
+    /// - Make the tree; read the text's node and the button's.
+    ///
+    /// Expected:
+    /// - The text's node has one link node, a Hyperlink named "the docs", wider than 0 and to the right of the text's start; the
+    ///   button's node has no link node, and its name is "Go here".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Links_AreNodesOfTheirText_ButNotInAButton()
+    {
+        PointerHandler click = (in PointerEvent e) => { };
+        Element text = default;
+        Element button = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            Element goHere = Elements.Text(
+                (ref w) =>
+                {
+                    w.Write("Go ".AsSpan());
+                    using (w.Link(click))
+                    {
+                        w.Write("here".AsSpan());
+                    }
+                }
+            );
+            text = Elements.Text(
+                (ref w) =>
+                {
+                    w.Write("Read ".AsSpan());
+                    using (w.Link(click))
+                    {
+                        w.Write("the docs".AsSpan());
+                    }
+
+                    w.Write(" now".AsSpan());
+                }
+            );
+            return Column(text, button = Button(goHere, () => { }));
+        });
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+        AccessibilityNode textNode = app.Tree.Accessibility.Find(text.Node)!;
+        AccessibilityNode buttonNode = app.Tree.Accessibility.Find(button.Node)!;
+        AccessibilityNode link = Assert.Single(textNode.Links);
+
+        Assert.Equal((SemanticsRole.Hyperlink, "the docs"), (link.Role, link.Name));
+        Assert.True(link.Bounds.Width > 0 && link.Bounds.X > 0);
+        Assert.Equal((0, "Go here"), (buttonNode.Links.Count + buttonNode.Children.Sum(c => c.Links.Count), buttonNode.Name));
+    }
+
+    /// <summary>
+    /// A node with no focus is scrolled into view when asked, as assistive technology's ScrollIntoView asks.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scroll view 100 high holding a box 300 high and a box "far" 20 high below it; nothing focused.
+    ///
+    /// Steps:
+    /// - Ask to bring "far" into view; settle; read the scroll position.
+    ///
+    /// Expected:
+    /// - The view scrolled down by 220, the least that shows "far".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task BringIntoView_ScrollsANodeWithNoFocus()
+    {
+        var state = new ScrollState();
+        Element far = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            ScrollView(Column(Box().Height(300), far = Box().Height(20)), state).Height(100)
+        );
+        _ = app.PumpAndSettle();
+
+        app.Tree.Focus.BringIntoView(far.Node);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(220, state.Offset.Get().Y);
+    }
+
+    /// <summary>
+    /// A change of a virtualized list's number of items alone, items past its range, hands the list's node again with the new
+    /// count.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box 200 x 300 that scrolls down, a virtualized list of 1,000 rows 20 high; a bridge that records what it is handed; the
+    ///   tree made.
+    ///
+    /// Steps:
+    /// - Add 10 items at the end; settle; read the record and the list's count.
+    ///
+    /// Expected:
+    /// - The list's node is in the record, and its count is 1,010.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task VirtualList_CountChange_HandsTheListAgain()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        Element list = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            list = Box()
+                .Width(200)
+                .Height(300)
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(items, static i => i, static item => Box().Height(20))
+        );
+        _ = app.PumpAndSettle();
+        var bridge = new Recorder();
+        app.Tree.Accessibility.Bridge = bridge;
+        _ = app.AccessibilityTree();
+        bridge.Changes.Clear();
+
+        items.Set([.. Enumerable.Range(0, 1_010)]);
+        _ = app.PumpAndSettle();
+        AccessibilityNode node = app.Tree.Accessibility.Find(list.Node)!;
+
+        Assert.Contains(bridge.Changes, c => c.Id == node.Id);
+        Assert.Equal(1_010, node.SizeOfSet);
+    }
+
+    /// <summary>
+    /// A node is clickable to assistive technology when it has a click handler of its own in the bubble phase; a handler of another
+    /// kind, or a click handler in the capture phase, does not make it so, and a node whose click handler is removed stops being so.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of three nodes of the role Group: "click" with a click handler in the bubble phase, "down" with a down handler in
+    ///   the bubble phase, and "tunnel" with a click handler in the capture phase.
+    ///
+    /// Steps:
+    /// - Make the tree; read whether each node is clickable. Remove the click handler of "click"; settle; read whether it is clickable.
+    ///
+    /// Expected:
+    /// - "click" only; then not "click".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Clickable_IsABubbleClickHandlerOfItsOwn()
+    {
+        PointerHandler none = (in PointerEvent e) => { };
+        Element click = default;
+        Element down = default;
+        Element tunnel = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                click = Box().Height(10).On(PointerEventKind.Click, EventPhase.Bubble, none).Accessible(Group("click")),
+                down = Box().Height(10).On(PointerEventKind.Down, EventPhase.Bubble, none).Accessible(Group("down")),
+                tunnel = Box().Height(10).On(PointerEventKind.Click, EventPhase.Capture, none).Accessible(Group("tunnel"))
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+        bool Clickable(Element e) => (app.Tree.Accessibility.Find(e.Node)!.States & AccessibilityStates.Clickable) != 0;
+
+        Assert.Equal((true, false, false), (Clickable(click), Clickable(down), Clickable(tunnel)));
+
+        Assert.True(app.Tree.RemovePointerHandler(click.Node, PointerEventKind.Click, EventPhase.Bubble, none));
+        _ = app.PumpAndSettle();
+        Assert.False(Clickable(click));
+
+        static AccessibilityInfo Group(string name) => new() { Role = SemanticsRole.Group, Name = name };
+    }
+
+    /// <summary>
+    /// A change of a link's text after the tree is made renames its node, and a link added later makes a node.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A text whose link's text is a signal "one", and a second link that a signal shows when true, false at first; the tree made.
+    ///
+    /// Steps:
+    /// - Set the link's text to "two" and show the second link "more"; settle; read the text's link nodes.
+    ///
+    /// Expected:
+    /// - Two link nodes, "two" and "more".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task LinkNodes_FollowTheText()
+    {
+        PointerHandler click = (in PointerEvent e) => { };
+        Signal<string> label = Signal.Create("one");
+        Signal<bool> more = Signal.Create(false);
+        Element text = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            text = Elements.Text(
+                (ref w) =>
+                {
+                    w.Write("See ".AsSpan());
+                    using (w.Link(click))
+                    {
+                        w.Write(label.Get().AsSpan());
+                    }
+
+                    if (more.Get())
+                    {
+                        w.Write(" and ".AsSpan());
+                        using (w.Link(click))
+                        {
+                            w.Write("more".AsSpan());
+                        }
+                    }
+                }
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.AccessibilityTree();
+
+        label.Set("two");
+        more.Set(true);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(["two", "more"], app.Tree.Accessibility.Find(text.Node)!.Links.Select(l => l.Name));
     }
 
     // Records each change the tree hands it.

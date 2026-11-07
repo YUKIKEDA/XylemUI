@@ -80,6 +80,7 @@ internal sealed class DesktopWindow : IDisposable
             _atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer());
             Frames = new WindowFrames(Tree, _rootNode, Renderer, _atlas, Win32MessageLoop.FrameScheduler, Background, Window.TextRendering);
             Input = new WindowInput(Tree, Frames, Window);
+            _accessibility.Input = Input;
             Window.PointerInputReceived = Input.Handle;
             Window.KeyInputReceived = Input.Handle;
             Window.TextInputReceived = Input.Handle;

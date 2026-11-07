@@ -253,9 +253,10 @@ internal sealed class UiTree
     /// Records a node as the anchor of a popup it opens, which is expandable to assistive technology.
     /// </summary>
     /// <param name="node">The anchor.</param>
-    internal void AddPopupAnchor(NodeHandle node)
+    /// <param name="block">The popup's block, which assistive technology's Expand and Collapse open and close.</param>
+    internal void AddPopupAnchor(NodeHandle node, PopupBlock block)
     {
-        _ = _a11y.Anchors.Add(node);
+        _a11y.Anchors[node] = block;
         MarkAccessibilitySelf(node);
     }
 
@@ -264,7 +265,56 @@ internal sealed class UiTree
     /// </summary>
     /// <param name="node">The node.</param>
     /// <returns>Whether it does.</returns>
-    internal bool IsPopupAnchor(NodeHandle node) => _a11y.Anchors.Count > 0 && _a11y.Anchors.Contains(node);
+    internal bool IsPopupAnchor(NodeHandle node) => _a11y.Anchors.Count > 0 && _a11y.Anchors.ContainsKey(node);
+
+    /// <summary>
+    /// Opens or closes the popup a node anchors, as assistive technology's Expand and Collapse do (design §4.4.1).
+    /// </summary>
+    /// <param name="node">The anchor.</param>
+    /// <param name="open">Whether to open it.</param>
+    /// <returns>Whether the node anchors a popup.</returns>
+    internal bool SetPopupOpen(NodeHandle node, bool open)
+    {
+        if (_a11y.Anchors.Count == 0 || !_a11y.Anchors.TryGetValue(node, out PopupBlock? block))
+        {
+            return false;
+        }
+
+        if (open)
+        {
+            block.Expand();
+        }
+        else
+        {
+            block.Dismiss();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Sets what writes a node's value from outside, as assistive technology's SetValue does (a text field's text, design §4.4.1).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="set">What writes the value.</param>
+    internal void SetAccessibilityValueSetter(NodeHandle node, Action<string> set) => _a11y.Setters[node] = set;
+
+    /// <summary>
+    /// Writes a node's value from outside through its setter (<see cref="SetAccessibilityValueSetter"/>).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The value.</param>
+    /// <returns>Whether the node has a setter.</returns>
+    internal bool SetAccessibilityValueFromOutside(NodeHandle node, string value)
+    {
+        if (_a11y.Setters.Count == 0 || !_a11y.Setters.TryGetValue(node, out Action<string>? set))
+        {
+            return false;
+        }
+
+        set(value);
+        return true;
+    }
 
     /// <summary>
     /// Marks a node for the accessibility tree; nothing while the tree is not made (design §4.4.1, "How it changes").
@@ -1035,6 +1085,12 @@ internal sealed class UiTree
         ArgumentNullException.ThrowIfNull(handler);
         InputOf(node).Add(new HandlerEntry(kind, phase, handler, Scope.CurrentRef));
         Invalidation.Invalidate(this, node, ChangeKind.Color);
+
+        // A click handler makes the node clickable to assistive technology (design §4.4.1).
+        if (kind == PointerEventKind.Click)
+        {
+            MarkAccessibilitySelf(node);
+        }
     }
 
     /// <summary>
@@ -1055,6 +1111,13 @@ internal sealed class UiTree
         }
 
         Invalidation.Invalidate(this, node, ChangeKind.Color);
+
+        // The node may stop being clickable to assistive technology (design §4.4.1).
+        if (kind == PointerEventKind.Click)
+        {
+            MarkAccessibilitySelf(node);
+        }
+
         return true;
     }
 
@@ -1407,7 +1470,8 @@ internal sealed class UiTree
                 Focus.Lose(node);
             }
 
-            MarkAccessibilitySelf(node);
+            // A node that takes the focus has a node of the accessibility tree, a Group when it has no role of its own.
+            MarkAccessibility(node);
         }
     }
 
@@ -2221,6 +2285,11 @@ internal sealed class UiTree
             _ = _a11y.Values.Remove(node);
         }
 
+        if (_a11y.Setters.Count > 0)
+        {
+            _ = _a11y.Setters.Remove(node);
+        }
+
         if (_a11y.Anchors.Count > 0)
         {
             _ = _a11y.Anchors.Remove(node);
@@ -2304,8 +2373,11 @@ internal sealed class UiTree
         // The signals of the nodes' values (a text field's text).
         public Dictionary<NodeHandle, Signal<string>> Values { get; } = [];
 
-        // The anchors of the popups.
-        public HashSet<NodeHandle> Anchors { get; } = [];
+        // The anchors of the popups, with the popup each opens.
+        public Dictionary<NodeHandle, PopupBlock> Anchors { get; } = [];
+
+        // What writes the nodes' values from outside (a text field's text).
+        public Dictionary<NodeHandle, Action<string>> Setters { get; } = [];
 
         // The accessibility tree, once read.
         public AccessibilityTree? Tree { get; set; }

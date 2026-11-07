@@ -41,7 +41,7 @@ internal sealed class PopupBlock
         // A popup the anchor opens makes it expandable to assistive technology; a tooltip and a drag's preview do not (§4.4.1).
         if (!options.IsTransient && !options.IsDragImage)
         {
-            tree.AddPopupAnchor(anchor);
+            tree.AddPopupAnchor(anchor, this);
         }
     }
 
@@ -100,6 +100,11 @@ internal sealed class PopupBlock
         );
         return block!;
     }
+
+    /// <summary>
+    /// Opens the popup as the anchor's app opens it, by writing true to its signal: assistive technology's Expand (design §4.4.1).
+    /// </summary>
+    internal void Expand() => _isOpen.Set(true);
 
     /// <summary>
     /// Closes the popup as it closes itself, and writes false to its signal (design §7.3, "Closing").

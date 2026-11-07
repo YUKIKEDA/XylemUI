@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
+using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
 namespace XylemUI.Platform.Windows;
 
@@ -47,7 +48,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         _tree = tree;
         _id = NativeHandleTable.Register(this);
         byte focused = GetFocus() == window.Hwnd ? (byte)1 : (byte)0;
-        _adapter = AccessKit.WindowsAdapterNew((nint)window.Hwnd, focused, &OnAction, _id);
+        _adapter = AccessKit.WindowsAdapterNew((nint)window.Hwnd, focused, &OnAction, (nint)window.Hwnd);
         window.ScaleChanged += OnScaleChanged;
     }
 
@@ -55,6 +56,11 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
     /// Gets the number of nodes the last update after the first handed AccessKit: the nodes that changed.
     /// </summary>
     internal int LastUpdateNodes { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the window's input, which routes the clicks of assistive technology as a key's click on a button is routed.
+    /// </summary>
+    internal WindowInput? Input { get; set; }
 
     /// <summary>
     /// Answers the window's <c>WM_GETOBJECT</c>; the first that asks for the UIA provider makes the trees.
@@ -159,7 +165,39 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             _adapter = 0;
         }
 
+        // The requests posted and not yet delivered are freed: no action comes once the adapter is freed.
+        FreePostedActions(_window.Hwnd);
         NativeHandleTable.Release(_id);
+    }
+
+    /// <summary>
+    /// Frees the requests for actions posted to a window and not yet delivered (<see cref="Win32Window.WmAccessKitAction"/>).
+    /// </summary>
+    /// <param name="hwnd">The window.</param>
+    internal static void FreePostedActions(HWND hwnd)
+    {
+        MSG message;
+        while (PeekMessageW(&message, hwnd, Win32Window.WmAccessKitAction, Win32Window.WmAccessKitAction, (uint)PM.PM_REMOVE) != BOOL.FALSE)
+        {
+            AccessKit.ActionRequestFree(message.lParam);
+        }
+    }
+
+    /// <summary>
+    /// Carries out a request for an action on the UI thread, posted by <see cref="OnAction"/>, and frees it (design §4.4.1,
+    /// "States and actions"). A request for a node no longer in the tree, or one the node does not take, does nothing.
+    /// </summary>
+    /// <param name="request">The request; it is freed whatever happens.</param>
+    public void Perform(nint request)
+    {
+        try
+        {
+            Perform((AccessKit.ActionRequest*)request);
+        }
+        finally
+        {
+            AccessKit.ActionRequestFree(request);
+        }
     }
 
     // AccessKit asks for the tree for the first time, on the window's thread, inside WM_GETOBJECT: the tree is made and given whole.
@@ -217,10 +255,17 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         return update;
     }
 
-    // A request for an action, on any thread. The actions come with row P02g's third implementation PR (Issue #633); the nodes
-    // declare none, so a request is let go.
+    // A request for an action, on the thread UIA calls on, which may not be the UI thread: the handle table has no lock, so the
+    // request goes to the window's queue as it is (userData is the window), and the window procedure carries it out on the UI
+    // thread. A request the window cannot take is freed here. Nothing here throws a managed exception.
     [UnmanagedCallersOnly]
-    private static void OnAction(nint request, nint userData) => AccessKit.ActionRequestFree(request);
+    private static void OnAction(nint request, nint userData)
+    {
+        if (PostMessageW((HWND)userData, Win32Window.WmAccessKitAction, 0, request) == BOOL.FALSE)
+        {
+            AccessKit.ActionRequestFree(request);
+        }
+    }
 
     private static byte RoleOf(AccessibilityNode node) =>
         node.Role switch
@@ -238,7 +283,10 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             SemanticsRole.Edit when (node.States & AccessibilityStates.Password) != 0 => AccessKit.RolePasswordInput,
             SemanticsRole.Edit when (node.States & AccessibilityStates.Multiline) != 0 => AccessKit.RoleMultilineTextInput,
             SemanticsRole.Edit => AccessKit.RoleTextInput,
+            SemanticsRole.List when (node.States & AccessibilityStates.SelectableList) != 0 => AccessKit.RoleListBox,
             SemanticsRole.List => AccessKit.RoleList,
+            SemanticsRole.ListItem when node.Parent is { } list && (list.States & AccessibilityStates.SelectableList) != 0 =>
+                AccessKit.RoleListBoxOption,
             SemanticsRole.ListItem => AccessKit.RoleListItem,
             SemanticsRole.Menu => AccessKit.RoleMenu,
             SemanticsRole.MenuBar => AccessKit.RoleMenuBar,
@@ -357,6 +405,11 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         {
             PushTree(update, child);
         }
+
+        foreach (AccessibilityNode link in node.Links)
+        {
+            PushTree(update, link);
+        }
     }
 
     private nint MakeNode(AccessibilityNode node)
@@ -364,8 +417,13 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         nint made = AccessKit.NodeNew(RoleOf(node));
         SetText(made, node.Name, TextProperty.Label);
         SetText(made, node.Description, TextProperty.Description);
-        SetText(made, node.Value, TextProperty.Value);
+
+        // AccessKit names a Label (a Text node) by its value, not its label (accesskit_consumer 0.39.1's
+        // `accesskit_consumer/src/node.rs`, lines 744 to 746, and accesskit_windows's `adapters/windows/src/node.rs`, lines 404 to
+        // 413): a text's node gives its name as its value too.
+        SetText(made, node.Role == SemanticsRole.Text ? node.Value ?? node.Name : node.Value, TextProperty.Value);
         SetText(made, node.AutomationId, TextProperty.AuthorId);
+        SetText(made, node.Placeholder, TextProperty.Placeholder);
         SetStates(made, node);
         if (node.Range is { } range)
         {
@@ -374,9 +432,10 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetMaxNumericValue(made, range.Maximum);
         }
 
-        if (node.Role == SemanticsRole.ScrollViewer)
+        if ((node.States & AccessibilityStates.ClipsChildren) != 0)
         {
             Size max = node.ScrollRange;
+            AccessKit.NodeSetClipsChildren(made);
             AccessKit.NodeSetScrollX(made, -node.ChildOffset.X);
             AccessKit.NodeSetScrollXMin(made, 0);
             AccessKit.NodeSetScrollXMax(made, max.Width);
@@ -385,9 +444,95 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetScrollYMax(made, max.Height);
         }
 
+        if (node.PositionInSet >= 0)
+        {
+            AccessKit.NodeSetPositionInSet(made, (nuint)node.PositionInSet);
+        }
+
+        if (node.SizeOfSet >= 0)
+        {
+            AccessKit.NodeSetSizeOfSet(made, (nuint)node.SizeOfSet);
+        }
+
+        SetActions(made, node);
         SetPlace(made, node);
         SetChildren(made, node);
         return made;
+    }
+
+    // The actions a node takes (design §4.4.1, "States and actions"): Focus for a node that takes the focus, Click for one with
+    // a click handler of its own and for a link, and ScrollIntoView for every node. AccessKit's Windows adapter sends SetValue,
+    // Expand, and Collapse without the node declaring them (accesskit_windows 0.35.1's `adapters/windows/src/node.rs`, lines 956
+    // to 978 and 1349 to 1353): they are declared with the adapters of macOS and Linux, which read the declarations (rows P06 and
+    // P04).
+    private static void SetActions(nint made, AccessibilityNode node)
+    {
+        AccessibilityStates states = node.States;
+        if ((states & AccessibilityStates.Focusable) != 0)
+        {
+            AccessKit.NodeAddAction(made, AccessKit.ActionFocus);
+        }
+
+        if ((states & AccessibilityStates.Clickable) != 0)
+        {
+            AccessKit.NodeAddAction(made, AccessKit.ActionClick);
+        }
+
+        AccessKit.NodeAddAction(made, AccessKit.ActionScrollIntoView);
+    }
+
+    /// <summary>
+    /// Carries out a request for an action that the caller owns and frees (<see cref="Perform(nint)"/> frees AccessKit's).
+    /// </summary>
+    /// <param name="request">The request.</param>
+    internal void Perform(AccessKit.ActionRequest* request)
+    {
+        if (!_tree.HasAccessibilityTree || _tree.Accessibility.Find(new AccessibilityNodeId(request->TargetNode)) is not { } node)
+        {
+            return;
+        }
+
+        NodeHandle handle = node.Node;
+        if (!_tree.Nodes.IsAlive(handle))
+        {
+            return;
+        }
+
+        // The window's clock, which the pointer's and the keys' input carries: a click of assistive technology after a pointer's
+        // click measures the interval on one clock.
+        TimeSpan now = _window.Now();
+        switch (request->Action)
+        {
+            case AccessKit.ActionClick when node.LinkIndex >= 0:
+                Input?.ClickLinkFromOutside(handle, node.LinkIndex, now);
+                break;
+            case AccessKit.ActionClick
+                when (node.States & (AccessibilityStates.Clickable | AccessibilityStates.Disabled)) == AccessibilityStates.Clickable:
+                Input?.ClickFromKey(handle, now);
+                break;
+            case AccessKit.ActionFocus:
+                _ = _tree.Focus.Focus(handle);
+                break;
+            case AccessKit.ActionExpand:
+                _ = _tree.SetPopupOpen(handle, open: true);
+                break;
+            case AccessKit.ActionCollapse:
+                _ = _tree.SetPopupOpen(handle, open: false);
+                break;
+            case AccessKit.ActionScrollIntoView:
+                _tree.Focus.BringIntoView(handle);
+                break;
+            case AccessKit.ActionSetValue when request->Data.HasValue != 0 && request->Data.Value.Tag == AccessKit.ActionDataValue:
+                if (node.Role == SemanticsRole.Edit && (node.States & (AccessibilityStates.ReadOnly | AccessibilityStates.Disabled)) == 0)
+                {
+                    string value = Marshal.PtrToStringUTF8((nint)request->Data.Value.Value.Text) ?? string.Empty;
+                    _ = _tree.SetAccessibilityValueFromOutside(handle, value);
+                }
+
+                break;
+            default:
+                break;
+        }
     }
 
     private static void SetStates(nint made, AccessibilityNode node)
@@ -459,7 +604,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
 
     private void SetChildren(nint made, AccessibilityNode node)
     {
-        int count = node.Children.Count;
+        int count = node.Children.Count + node.Links.Count;
         if (count == 0)
         {
             return;
@@ -470,9 +615,14 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             _children = new ulong[Math.Max(count, _children.Length * 2)];
         }
 
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < node.Children.Count; i++)
         {
             _children[i] = node.Children[i].Id.Value;
+        }
+
+        for (int i = 0; i < node.Links.Count; i++)
+        {
+            _children[node.Children.Count + i] = node.Links[i].Id.Value;
         }
 
         // AccessKit copies the ids before it returns; the array is pinned for the call.
@@ -512,6 +662,9 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
                 case TextProperty.Value:
                     AccessKit.NodeSetValue(made, bytes, (nuint)length);
                     break;
+                case TextProperty.Placeholder:
+                    AccessKit.NodeSetPlaceholder(made, bytes, (nuint)length);
+                    break;
                 default:
                     AccessKit.NodeSetAuthorId(made, bytes, (nuint)length);
                     break;
@@ -535,5 +688,6 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         Description,
         Value,
         AuthorId,
+        Placeholder,
     }
 }

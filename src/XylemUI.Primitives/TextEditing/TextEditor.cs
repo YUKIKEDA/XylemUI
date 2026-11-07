@@ -341,8 +341,12 @@ internal sealed class TextEditor(bool multiline)
         return count;
     }
 
-    // The text before its first hard line break (UAX #14's BK, CR, LF, and NL).
-    private static string FirstLine(string text)
+    /// <summary>
+    /// Returns the text before its first hard line break (UAX #14's BK, CR, LF, and NL).
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The first line.</returns>
+    internal static string FirstLine(string text)
     {
         for (int i = 0; i < text.Length; i++)
         {
@@ -361,8 +365,13 @@ internal sealed class TextEditor(bool multiline)
         return text;
     }
 
-    // The text cut to its first clusters, as many as given.
-    private static string Take(string text, int clusters)
+    /// <summary>
+    /// Returns the text cut to its first grapheme clusters, as many as given.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <param name="clusters">The most clusters to keep.</param>
+    /// <returns>The text cut.</returns>
+    internal static string Take(string text, int clusters)
     {
         int end = 0;
         for (int i = 0; i < clusters && end < text.Length; i++)
