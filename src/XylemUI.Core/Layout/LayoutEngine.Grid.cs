@@ -286,7 +286,10 @@ internal static partial class LayoutEngine
             item = default;
             item.Node = child;
             item.SourceOrder = order;
-            item.Style = s;
+            item.AutoBlockMargin = s.Margin.Top.IsAuto || s.Margin.Bottom.IsAuto;
+            item.PercentHeight = s.Height.Kind == LengthKind.Percent;
+            item.OverflowX = s.OverflowX;
+            item.OverflowY = s.OverflowY;
             item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns);
             item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows);
             item.AlignSelf = s.AlignSelf ?? props.AlignItems;
@@ -1015,7 +1018,13 @@ internal static partial class LayoutEngine
     {
         public NodeHandle Node;
         public int SourceOrder;
-        public LayoutStyle Style;
+
+        // What the layout reads of the item's style most often; the rest is read from the tree where it is used (no ref into the
+        // arena is held across a measurement, design §2.5). Copying the whole style into each item was 6 % of the grid scene.
+        public bool AutoBlockMargin;
+        public bool PercentHeight;
+        public Overflow OverflowX;
+        public Overflow OverflowY;
         public OriginZeroPlacement ColumnPlacement;
         public OriginZeroPlacement RowPlacement;
 
@@ -1050,11 +1059,11 @@ internal static partial class LayoutEngine
         public OptionalSize MaxContentCache;
         public OptionalSize MinimumCache;
 
-        public readonly bool HasAutoBlockMargin => Style.Margin.Top.IsAuto || Style.Margin.Bottom.IsAuto;
+        public readonly bool HasAutoBlockMargin => AutoBlockMargin;
 
         // An item whose height is a percentage of rows that are sized by their content depends on itself through the rows
         // (CSS Grid §11.5): it aligns by its fallback alignment.
-        public readonly bool HasCyclicBlockSizeDependency => Style.Height.Kind == LengthKind.Percent && (CrossesIntrinsicRow || CrossesFlexibleRow);
+        public readonly bool HasCyclicBlockSizeDependency => PercentHeight && (CrossesIntrinsicRow || CrossesFlexibleRow);
 
         public readonly bool ParticipatesInBaselineAlignment =>
             AlignSelf.Keyword == AlignItemsKeyword.Baseline && !HasAutoBlockMargin && !HasCyclicBlockSizeDependency;
@@ -1069,6 +1078,6 @@ internal static partial class LayoutEngine
         public readonly (int Start, int End) TrackRange(bool inline) =>
             inline ? (ColumnIndexStart + 1, ColumnIndexEnd) : (RowIndexStart + 1, RowIndexEnd);
 
-        public readonly bool IsScrollContainer(bool inline) => (inline ? Style.OverflowX : Style.OverflowY) >= Overflow.Hidden;
+        public readonly bool IsScrollContainer(bool inline) => (inline ? OverflowX : OverflowY) >= Overflow.Hidden;
     }
 }

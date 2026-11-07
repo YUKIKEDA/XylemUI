@@ -7,7 +7,7 @@ param([Parameter(Mandatory = $true)][string]$Out)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$font = Join-Path $root '..\..\tests\XylemUI.Text.Tests\Fonts\XylemUITestSans.ttf'
+$font = Join-Path $root '..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf'
 New-Item -ItemType Directory -Force $Out | Out-Null
 
 function Invoke-Step([string]$Name, [scriptblock]$Body) {

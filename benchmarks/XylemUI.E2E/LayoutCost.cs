@@ -46,6 +46,11 @@ internal static class LayoutCost
             return LoopAbsolute(count);
         }
 
+        if (scene == "grid")
+        {
+            return LoopGrid(kind, count);
+        }
+
         (UiTree tree, NodeHandle root, NodeHandle target) = Build(scene, fixedRows: kind == "fixed_row");
         Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
         LayoutEngine.RunLayoutPass(tree);
@@ -272,6 +277,49 @@ internal static class LayoutCost
         report.Series("grid_first_us", first);
         report.Series("grid_change_us", change);
         report.Series("grid_width_us", width);
+    }
+
+    // The grid scene's change (`change`: the leaf's content) or width change (`width`) repeated, for a profile.
+    private static int LoopGrid(string kind, int count)
+    {
+        float leafWidth = 10;
+        (UiTree tree, NodeHandle root, NodeHandle target) = BuildGrid(() => leafWidth);
+        Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
+        LayoutEngine.RunLayoutPass(tree);
+        long start = Stopwatch.GetTimestamp();
+        for (int i = 0; i < count; i++)
+        {
+            if (kind == "width")
+            {
+                Invalidation.NotifyWindowResized(tree, root, new Size(i % 2 == 0 ? 1_600 : 2_000, 2_000));
+            }
+            else
+            {
+                leafWidth = i % 2 == 0 ? 20 : 10;
+                Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+            }
+
+            LayoutEngine.RunLayoutPass(tree);
+        }
+
+        Console.WriteLine($"grid {kind}: {Stopwatch.GetElapsedTime(start).TotalMicroseconds / count:F2} us a pass");
+
+        // The layout runs of one more pass (the nodes computed, not taken from a cache).
+        int runs = 0;
+        tree.LayoutRunHook = _ => runs++;
+        if (kind == "width")
+        {
+            Invalidation.NotifyWindowResized(tree, root, new Size(count % 2 == 0 ? 1_600 : 2_000, 2_000));
+        }
+        else
+        {
+            leafWidth = count % 2 == 0 ? 20 : 10;
+            Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+        }
+
+        LayoutEngine.RunLayoutPass(tree);
+        Console.WriteLine($"grid {kind}: {runs} layout runs in a pass");
+        return 0;
     }
 
     private const int GridRows = 250;

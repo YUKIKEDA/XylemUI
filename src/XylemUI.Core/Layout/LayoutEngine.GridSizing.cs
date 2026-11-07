@@ -236,7 +236,7 @@ internal static partial class LayoutEngine
                         );
                         Size size = LayoutChild(tree, item.Node, in input, commit: true);
                         item.Baseline = Maybe.Or(ReadBaseline(tree, item.Node), size.Height);
-                        rowBaseline = Math.Max(rowBaseline, MarginBoxBaseline(in item, innerNodeSize.Width));
+                        rowBaseline = Math.Max(rowBaseline, MarginBoxBaseline(tree, in item, innerNodeSize.Width));
                     }
 
                     for (int i = start; i < end; i++)
@@ -244,7 +244,7 @@ internal static partial class LayoutEngine
                         ref GridItemState item = ref items[order[i]];
                         if (item.ParticipatesInBaselineAlignment)
                         {
-                            item.BaselineShim = rowBaseline - MarginBoxBaseline(in item, innerNodeSize.Width);
+                            item.BaselineShim = rowBaseline - MarginBoxBaseline(tree, in item, innerNodeSize.Width);
                             item.HasKnownDimensions = false;
                         }
                     }
@@ -258,7 +258,8 @@ internal static partial class LayoutEngine
             orderScratch.PopTo(top);
         }
 
-        static float MarginBoxBaseline(in GridItemState item, float width) => Maybe.Or(item.Baseline, 0) + item.Style.Margin.Top.ResolveOrZero(width);
+        static float MarginBoxBaseline(UiTree tree, in GridItemState item, float width) =>
+            Maybe.Or(item.Baseline, 0) + StyleOf(tree, in item).Margin.Top.ResolveOrZero(width);
     }
 
     // 11.5 Resolve the intrinsic track sizes (Taffy's resolve_intrinsic_track_sizes): the items in batches, first those that cross
@@ -1235,7 +1236,7 @@ internal static partial class LayoutEngine
                 item.MinContentCache = With(item.MinContentCache, inline, contribution);
             }
 
-            return contribution + Get(MarginSums(in item, available.Width), inline);
+            return contribution + Get(MarginSums(tree, in item, available.Width), inline);
         }
 
         public float MaxContent(ref GridItemState item, Span<GridTrackState> axisTracks, Span<GridTrackState> otherTracks)
@@ -1249,7 +1250,7 @@ internal static partial class LayoutEngine
                 item.MaxContentCache = With(item.MaxContentCache, inline, contribution);
             }
 
-            return contribution + Get(MarginSums(in item, available.Width), inline);
+            return contribution + Get(MarginSums(tree, in item, available.Width), inline);
         }
 
         public float Minimum(ref GridItemState item, Span<GridTrackState> axisTracks, Span<GridTrackState> otherTracks)
@@ -1263,7 +1264,7 @@ internal static partial class LayoutEngine
                 item.MinimumCache = With(item.MinimumCache, inline, contribution);
             }
 
-            return contribution + Get(MarginSums(in item, available.Width), inline);
+            return contribution + Get(MarginSums(tree, in item, available.Width), inline);
         }
 
         private OptionalSize Area(ref GridItemState item, Span<GridTrackState> axisTracks, Span<GridTrackState> otherTracks)
@@ -1318,9 +1319,9 @@ internal static partial class LayoutEngine
 
     // The item's margins in each axis for its contributions, with the baseline shim (Taffy's
     // margins_axis_sums_with_baseline_shims): a horizontal percentage margin is 0, as the container's width may not be known.
-    private static Size MarginSums(in GridItemState item, float width)
+    private static Size MarginSums(UiTree tree, in GridItemState item, float width)
     {
-        EdgeInsets<LengthPercentageAuto> margin = item.Style.Margin;
+        EdgeInsets<LengthPercentageAuto> margin = StyleOf(tree, in item).Margin;
         return new Size(
             margin.Left.ResolveOrZero(0) + margin.Right.ResolveOrZero(0),
             margin.Top.ResolveOrZero(width) + item.BaselineShim + margin.Bottom.ResolveOrZero(width)
@@ -1344,7 +1345,7 @@ internal static partial class LayoutEngine
         AvailableSpace unknown
     )
     {
-        OptionalSize known = KnownDimensionsCached(ref item, area);
+        OptionalSize known = KnownDimensionsCached(tree, ref item, area);
         float knownSize = Get(known, inline);
         if (!float.IsNaN(knownSize))
         {
@@ -1352,20 +1353,20 @@ internal static partial class LayoutEngine
         }
 
         // The child sees its grid area as its containing block.
-        OptionalSize space = AvailableMinusMargins(in item, area, available);
+        OptionalSize space = AvailableMinusMargins(tree, in item, area, available);
         var measureSpace = new AvailableSize(
             float.IsNaN(space.Width) ? unknown : AvailableSpace.Definite(space.Width),
             float.IsNaN(space.Height) ? unknown : AvailableSpace.Definite(space.Height)
         );
-        measureSpace = KeywordAdjustedSpace(in item, area, measureSpace);
+        measureSpace = KeywordAdjustedSpace(tree, in item, area, measureSpace);
         return MeasureChild(tree, item.Node, known, area, measureSpace, SizingMode.InherentSize, inline);
     }
 
-    private static OptionalSize KnownDimensionsCached(ref GridItemState item, OptionalSize area)
+    private static OptionalSize KnownDimensionsCached(UiTree tree, ref GridItemState item, OptionalSize area)
     {
         if (!item.HasKnownDimensions || item.KnownDimensionsArea != area)
         {
-            item.KnownDimensions = KnownDimensions(in item, area);
+            item.KnownDimensions = KnownDimensions(tree, in item, area);
             item.KnownDimensionsArea = area;
             item.HasKnownDimensions = true;
         }
@@ -1376,10 +1377,10 @@ internal static partial class LayoutEngine
     // The sizes passed to the child when its contributions are measured (Taffy's known_dimensions): its style's, else the area
     // less its margins where its alignment stretches it (`normal` stretches here, unlike at the final alignment), with the
     // aspect ratio and clamped by its limits.
-    private static OptionalSize KnownDimensions(in GridItemState item, OptionalSize area)
+    private static OptionalSize KnownDimensions(UiTree tree, in GridItemState item, OptionalSize area)
     {
-        ref readonly LayoutStyle s = ref item.Style;
-        Size margins = MarginSums(in item, area.Width);
+        ref readonly LayoutStyle s = ref StyleOf(tree, in item);
+        Size margins = MarginSums(tree, in item, area.Width);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
         float ratio = s.HasAspectRatio ? s.AspectRatio : float.NaN;
         OptionalSize inherent = WithAspectRatio(new OptionalSize(s.Width.Resolve(area.Width), s.Height.Resolve(area.Height)), ratio);
@@ -1426,14 +1427,14 @@ internal static partial class LayoutEngine
 
     // The space given to the item, less its margins and its baseline shim, as when it is laid out in its place (Taffy's
     // available_space_minus_margins): margins against the area's width, auto margins as 0.
-    private static OptionalSize AvailableMinusMargins(in GridItemState item, OptionalSize area, OptionalSize available)
+    private static OptionalSize AvailableMinusMargins(UiTree tree, in GridItemState item, OptionalSize area, OptionalSize available)
     {
         if (float.IsNaN(available.Width) && float.IsNaN(available.Height))
         {
             return available;
         }
 
-        Edges margin = EdgeInsets.ResolveOrZero(item.Style.Margin, area.Width);
+        Edges margin = EdgeInsets.ResolveOrZero(StyleOf(tree, in item).Margin, area.Width);
         return new OptionalSize(
             Maybe.Max(available.Width - margin.Horizontal, 0),
             Maybe.Max(available.Height - margin.Vertical - item.BaselineShim, 0)
@@ -1441,15 +1442,15 @@ internal static partial class LayoutEngine
     }
 
     // The space to measure an axis whose size is a content keyword under (Taffy's keyword_adjusted_available_space).
-    private static AvailableSize KeywordAdjustedSpace(in GridItemState item, OptionalSize area, AvailableSize space)
+    private static AvailableSize KeywordAdjustedSpace(UiTree tree, in GridItemState item, OptionalSize area, AvailableSize space)
     {
-        ref readonly LayoutStyle s = ref item.Style;
+        ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         if (!s.Width.IsSizingKeyword && !s.Height.IsSizingKeyword)
         {
             return space;
         }
 
-        Size margins = MarginSums(in item, area.Width);
+        Size margins = MarginSums(tree, in item, area.Width);
         if (MeasureSpaceOf(s.Width, Maybe.Max(area.Width - margins.Width, 0)) is { } width)
         {
             space = space with { Width = width };
@@ -1476,7 +1477,7 @@ internal static partial class LayoutEngine
         OptionalSize innerNodeSize
     )
     {
-        LayoutStyle s = item.Style;
+        ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
         float ratio = s.HasAspectRatio ? s.AspectRatio : float.NaN;
         float preferred = Get(WithAspectRatio(new OptionalSize(s.Width.Resolve(area.Width), s.Height.Resolve(area.Height)), ratio), inline);

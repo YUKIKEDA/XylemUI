@@ -36,9 +36,12 @@ fn build() -> (TaffyTree<f32>, NodeId, NodeId) {
 }
 
 fn layout(tree: &mut TaffyTree<f32>, root: NodeId) {
-    tree.compute_layout_with_measure(root, Size::MAX_CONTENT, |known, _available, _node, ctx, _style| Size {
-        width: known.width.unwrap_or(*ctx.unwrap()),
-        height: known.height.unwrap_or(10.0),
+    // Taffy 0.15's measure function takes the layout input and returns the layout output.
+    tree.compute_layout_with_measure(root, Size::MAX_CONTENT, |input: taffy015::LayoutInput, _node, ctx, _style| {
+        taffy015::LayoutOutput::from_outer_size(Size {
+            width: input.known_dimensions.width.unwrap_or(*ctx.unwrap()),
+            height: input.known_dimensions.height.unwrap_or(10.0),
+        })
     })
     .unwrap();
 }

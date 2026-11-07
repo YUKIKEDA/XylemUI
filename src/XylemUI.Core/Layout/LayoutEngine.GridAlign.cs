@@ -2,6 +2,10 @@ namespace XylemUI;
 
 internal static partial class LayoutEngine
 {
+    // The item's style, read from the tree where it is used: no ref into the arena is held across a measurement (design §2.5).
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static ref readonly LayoutStyle StyleOf(UiTree tree, in GridItemState item) => ref tree.Nodes.GetRef(item.Node).Layout.Style;
+
     // 8. The tracks' offsets in an axis by its content alignment (Taffy's align_tracks, alignment.rs): the free space goes before
     // and between the tracks that are not collapsed; the gaps are tracks already. Left to right only (row P03 adds the other).
     private static void AlignTracks(float contentSize, float origin, Span<GridTrackState> tracks, AlignContent alignment)
@@ -48,7 +52,7 @@ internal static partial class LayoutEngine
         float bottom = rows[item.RowIndexEnd].Offset;
         var area = new Size(right - left, bottom - top);
 
-        ref readonly LayoutStyle s = ref item.Style;
+        LayoutStyle s = StyleOf(tree, in item);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
         float ratio = s.HasAspectRatio ? s.AspectRatio : float.NaN;
         OptionalSize inherent = WithAspectRatio(new OptionalSize(s.Width.Resolve(area.Width), s.Height.Resolve(area.Height)), ratio);
