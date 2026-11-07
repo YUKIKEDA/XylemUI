@@ -84,17 +84,18 @@ internal static partial class LayoutEngine
 
             // 3. The grid items, in document order, with their placements in lines from the explicit grid's start.
             Span<GridItemState> items = itemScratch.Push(count);
-            GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, columnNames, rowNames, items, anyOutOfFlow);
+            bool anyPlaced = GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, columnNames, rowNames, items, anyOutOfFlow);
 
             // 4 and 5. The placement of the items, which grows the implicit grid.
             GridOccupancy occupancy = _gridOccupancy ??= new GridOccupancy();
-            (TrackCounts estimatedColumns, TrackCounts estimatedRows) = EstimateGridSize(explicitColumns, explicitRows, items);
+            (TrackCounts estimatedColumns, TrackCounts estimatedRows) = EstimateGridSize(explicitColumns, explicitRows, items, anyPlaced);
             occupancy.Reset(estimatedColumns, estimatedRows);
             PlaceGridItems(
                 occupancy,
                 items,
                 props.AutoFlow is GridAutoFlow.Column or GridAutoFlow.ColumnDense,
-                props.AutoFlow is GridAutoFlow.RowDense or GridAutoFlow.ColumnDense
+                props.AutoFlow is GridAutoFlow.RowDense or GridAutoFlow.ColumnDense,
+                anyPlaced
             );
             TrackCounts columnCounts = occupancy.Columns;
             TrackCounts rowCounts = occupancy.Rows;
@@ -400,8 +401,9 @@ internal static partial class LayoutEngine
     }
 
     // The items: the children in the flow, in document order, with their styles and their placements in lines from the
-    // explicit grid's start, names resolved (Taffy's resolve_line_names and into_origin_zero).
-    private static void GenerateGridItems(
+    // explicit grid's start, names resolved (Taffy's resolve_line_names and into_origin_zero). Returns whether any item has a
+    // line or a span: without one, every item is placed automatically in both axes.
+    private static bool GenerateGridItems(
         UiTree tree,
         NodeHandle firstChild,
         GridProps props,
@@ -415,6 +417,7 @@ internal static partial class LayoutEngine
     {
         int i = 0;
         int order = 0;
+        bool anyPlaced = false;
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling, order++)
         {
             ref readonly LayoutStyle s = ref tree.Nodes.GetRef(child).Layout.Style;
@@ -434,6 +437,7 @@ internal static partial class LayoutEngine
             item.PercentHeight = !item.Bare && s.Height.Kind == LengthKind.Percent;
             item.OverflowX = s.OverflowX;
             item.OverflowY = s.OverflowY;
+            anyPlaced |= s.GridColumn != default || s.GridRow != default;
             item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns, columnNames);
             item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows, rowNames);
             item.AlignSelf = s.AlignSelf ?? props.AlignItems;
@@ -443,19 +447,27 @@ internal static partial class LayoutEngine
             item.MaxContentCache = OptionalSize.None;
             item.MinimumCache = OptionalSize.None;
         }
+
+        return anyPlaced;
     }
 
     // An estimate of the numbers of tracks, which sizes the occupancy matrix (Taffy's compute_grid_size_estimate): exact for the
-    // explicit tracks and the implicit ones before them, a lower bound after them, which the placement grows.
-    private static (TrackCounts Columns, TrackCounts Rows) EstimateGridSize(int explicitColumns, int explicitRows, Span<GridItemState> items)
+    // explicit tracks and the implicit ones before them, a lower bound after them, which the placement grows. Items placed
+    // automatically in both axes give no line and a span of one track each, so they are not visited.
+    private static (TrackCounts Columns, TrackCounts Rows) EstimateGridSize(
+        int explicitColumns,
+        int explicitRows,
+        Span<GridItemState> items,
+        bool anyPlaced
+    )
     {
         int columnMin = 0;
         int columnMax = 0;
-        int columnSpan = 0;
+        int columnSpan = items.IsEmpty ? 0 : 1;
         int rowMin = 0;
         int rowMax = 0;
-        int rowSpan = 0;
-        foreach (ref GridItemState item in items)
+        int rowSpan = columnSpan;
+        foreach (ref GridItemState item in anyPlaced ? items : [])
         {
             item.ColumnPlacement.Estimate(out int min, out int max, out int span);
             columnMin = Math.Min(columnMin, min);
@@ -485,13 +497,14 @@ internal static partial class LayoutEngine
     // CSS Grid §8.5, the grid item placement algorithm (Taffy's place_grid_items, placement.rs): the items placed at definite lines
     // in both axes, then those placed at definite lines in the secondary axis, then the rest in turn from a cursor that moves on.
     // The primary axis is the one the auto-flow fills along: the columns for `row`. A dense flow starts each item's search from
-    // the grid's start instead of after the item before it.
-    private static void PlaceGridItems(GridOccupancy occupancy, Span<GridItemState> items, bool columnFlow, bool dense)
+    // the grid's start instead of after the item before it. Steps 1 and 2 visit no item when no item has a line or a span.
+    private static void PlaceGridItems(GridOccupancy occupancy, Span<GridItemState> items, bool columnFlow, bool dense, bool anyPlaced)
     {
         bool primaryIsColumns = !columnFlow;
+        Span<GridItemState> placed = anyPlaced ? items : [];
 
         // 1. The items with definite positions in both axes.
-        foreach (ref GridItemState item in items)
+        foreach (ref GridItemState item in placed)
         {
             if (item.ColumnPlacement.IsDefinite && item.RowPlacement.IsDefinite)
             {
@@ -511,7 +524,7 @@ internal static partial class LayoutEngine
         }
 
         // 2. The items with a definite position in the secondary axis only.
-        foreach (ref GridItemState item in items)
+        foreach (ref GridItemState item in placed)
         {
             if (Secondary(ref item, primaryIsColumns).IsDefinite && !Primary(ref item, primaryIsColumns).IsDefinite)
             {
