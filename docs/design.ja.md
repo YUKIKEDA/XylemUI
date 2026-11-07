@@ -2109,8 +2109,8 @@ CSS Gridは、テキストシェーピングやGPUドライバ対応と異なり
 
 **P02f で入れる形（P02f の Grill で決定、Issue #645）**
 
-- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置き、子は `GridLine.Named(name)` で置く（3 つ目の PR）。間隔は `.Gap`、暗黙のトラックの大きさは `.AutoColumns`・`.AutoRows`、自動配置の向きは `.AutoFlow`（`Row`・`Column`。`dense` は 3 つ目の PR）。揃え（`JustifyItems`・`AlignItems`・`JustifySelf`・`AlignSelf`・`JustifyContent`・`AlignContent`）は内部の型（`GridProps`・`LayoutStyle`）にあり、公開の口は持たない。Flex も揃えの公開の口を持たない（設計の PR #646 は「Flex と同じ口」と書いたが、その口は無かった。P02f の実装の 2 つ目の PR で分かった）
-- **線の持ち方:** 子の線（`GridLine`）は 2 バイトで、ノードの style に 4 つ持つ。0 が auto、線はその番号、span は 10,001 と本数の和である。-20,001 より前と 10,001 より後の線は、グリッドが explicit grid の始まりの両側 10,000 本に収めるとどれも同じ線に落ちる（Taffy 0.15.1 の `into_origin_zero_line`）ので、その値に切る。ノードは 576 バイトから 592 バイトになった（線の 8 バイトと、下の相対位置の量。P02f の実装の 2 つ目の PR）
+- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置き、子は `GridLine.Named(name)` で置く（3 つ目の PR）。間隔は `.Gap`、暗黙のトラックの大きさは `.AutoColumns`・`.AutoRows`、自動配置の向きは `.AutoFlow`（`Row`・`Column`。`dense` は 3 つ目の PR）。揃え（`JustifyItems`・`AlignItems`・`JustifySelf`・`AlignSelf`・`JustifyContent`・`AlignContent`）は内部の型（`GridProps`・`LayoutStyle`）にあり、公開の口は持たない。Flex も揃えの公開の口を持たない（設計の PR #646 は「Flex と同じ口」と書いたが、その口は無かった。P02f の実装の 1 つ目の PR で分かった）。Flex・Grid・Block の揃えの公開の口は行 P02h で足す
+- **線の持ち方:** 子の線（`GridLine`）は 2 バイトで、ノードの style に 4 つ持つ。0 が auto、線はその番号、span は 10,001 と本数の和である。-20,001 より前と 10,001 より後の線は、グリッドが explicit grid の始まりの両側 10,000 本に収めるとどれも同じ線に落ちる（Taffy 0.15.1 の `into_origin_zero_line`）ので、その値に切る。ノードは 576 バイトから 592 バイトになった（線の 8 バイトと、下の相対位置の量。P02f の実装の 1 つ目の PR）
 - **baseline と相対位置:** 容器の baseline を子から読むとき、子の相対位置（`position: relative` の inset）の移動は含めない。Chrome は移動の前の baseline で揃える（Taffy の XML テスト `block_container_baseline_ignores_relative_offset` と `grid_container_baseline_ignores_relative_offset`）。親が子に足した縦の移動を `LayoutState.RelativeY` に持ち、`ReadContentBaseline` が引く。Block と Flex も同じに直した（Block の XML テストは Grid の箱を含むので、P02f まで走っていなかった）
 
 ```csharp
