@@ -9,6 +9,8 @@ description = "XylemUI's layout scene in Taffy, the layout of GPUI (XylemUI road
 # The version Zed ships GPUI with: its latest stable release, v1.24.3 (2026-10-19), pins taffy = "=0.13.0" in its Cargo.toml
 # (row L9). The gpui crate on crates.io (0.2.2, benchmarks/compare/gpui) still pins 0.9.0.
 taffy = "=0.13.0"
+# The grid scene of row P02f (src/grid.rs) uses the version XylemUI's grid is ported from (design §3.3).
+taffy015 = { package = "taffy", version = "=0.15.1" }
 
 [profile.release]
 lto = "thin"

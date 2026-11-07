@@ -954,6 +954,9 @@ internal static partial class LayoutEngine
         public bool IsGutter;
         public bool IsCollapsed;
         public bool InfinitelyGrowable;
+
+        // An item of one track gave the growth limit a contribution in this batch, which may be 0.
+        public bool HasPlannedGrowthLimit;
         public float Offset;
         public float BaseSize;
 

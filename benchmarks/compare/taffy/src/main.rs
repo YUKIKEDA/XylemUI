@@ -4,7 +4,10 @@
 // percentages with padding, and one row that wraps 10,000 leaves with its lines packed at the top. Prints one JSON line: the medians of the first layout, a layout after one leaf's width changes, and a layout at a
 // new width, and how many times a leaf was measured in a first layout and in a layout after a change. A fifth scene (row L2):
 // a column of 100 blocks of 2,000 x 20, each holding 100 absolutely positioned leaves at a left inset of 20 each, and a change
-// of one leaf's content (its width 10 or 20 in turn, kept in the node's context, then mark_dirty).
+// of one leaf's content (its width 10 or 20 in turn, kept in the node's context, then mark_dirty). A sixth scene, the grid of
+// row P02f, is in src/grid.rs with Taffy 0.15.1.
+mod grid;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -242,6 +245,7 @@ fn main() {
         ));
     }
     measure_absolute(&mut line);
+    grid::measure(&mut line, median);
     line.pop();
     line.push('}');
     println!("{line}");

@@ -18,6 +18,8 @@ foreach ($tool in 'gentest', 'getchrome') {
 # gentest reads every folder of test_fixtures; only ours is there.
 $pages = Join-Path $Work 'test_fixtures/xylemui'
 New-Item -ItemType Directory -Force $pages | Out-Null
+# gentest writes tests/xml with create_dir, which needs the parent.
+New-Item -ItemType Directory -Force (Join-Path $Work 'tests') | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'html/*.html') $pages
 
 $gentest = Join-Path $Work 'scripts/gentest'

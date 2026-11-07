@@ -406,21 +406,11 @@ internal static partial class LayoutEngine
             }
             else if (track.Min.BehavesAsAuto(axisInner))
             {
-                // A content-sized container uses the items' limited min-content contributions; browsers do so only for an item
-                // that is not a scroll container, whose automatic minimum (zero) wins (Taffy's QUIRK).
-                float space;
-                if (axisAvailable.Kind != AvailableSpaceKind.Definite && !item.IsScrollContainer(inline))
-                {
-                    float minimum = sizer.Minimum(ref item, axisTracks, otherTracks);
-                    float minContent = sizer.MinContent(ref item, axisTracks, otherTracks);
-                    space = Math.Max(Maybe.Min(minContent, track.Max.DefiniteLimit(axisInner)), minimum);
-                }
-                else
-                {
-                    space = sizer.Minimum(ref item, axisTracks, otherTracks);
-                }
-
-                baseSize = Math.Max(track.BaseSize, space);
+                // The item's minimum contribution, also in a content-sized container: Taffy 0.15.1 takes the limited min-content
+                // contribution there, as CSS Grid §11.5 says, but Chrome 157 takes the minimum, so that an item with
+                // `min-width: 0` gives an auto column nothing under a min-content constraint (Fixtures/XylemUI,
+                // grid_min_content_auto_track_item_min_width_zero). With an automatic minimum the two are the same.
+                baseSize = Math.Max(track.BaseSize, sizer.Minimum(ref item, axisTracks, otherTracks));
             }
             else
             {
@@ -458,12 +448,17 @@ internal static partial class LayoutEngine
             {
                 ref GridTrackState t = ref axisTracks[trackIndex];
                 t.GrowthLimitPlannedIncrease = Math.Max(t.GrowthLimitPlannedIncrease, planned);
+                t.HasPlannedGrowthLimit = true;
             }
         }
 
+        // A track whose items contribute takes the largest contribution as its growth limit, also when it is 0 (CSS Grid §11.5
+        // step 2, and Chrome 157: Fixtures/XylemUI, grid_spanning_item_grows_infinitely_growable_track, where an empty item keeps
+        // the second column from taking the spanning item's growth). Taffy 0.15.1 writes it only when it is above 0, which keeps an
+        // infinite growth limit for the spanning items' steps.
         foreach (ref GridTrackState track in axisTracks)
         {
-            if (track.GrowthLimitPlannedIncrease > 0)
+            if (track.HasPlannedGrowthLimit)
             {
                 track.GrowthLimit = float.IsPositiveInfinity(track.GrowthLimit)
                     ? track.GrowthLimitPlannedIncrease
@@ -472,6 +467,7 @@ internal static partial class LayoutEngine
 
             track.InfinitelyGrowable = false;
             track.GrowthLimitPlannedIncrease = 0;
+            track.HasPlannedGrowthLimit = false;
             if (track.GrowthLimit < track.BaseSize)
             {
                 track.GrowthLimit = track.BaseSize;
@@ -843,8 +839,10 @@ internal static partial class LayoutEngine
         extra = DistributeUpToLimits(extra, tracks, in affected, byFlexFactor, growthLimits: false, limit);
 
         // 3. Beyond the limits: to the affected tracks with an intrinsic maximum (for minimum contributions) or a max-content or
-        // fit-content() one (for maximum contributions), or to all affected tracks when there are none; the fit-content()
-        // argument still caps the growth.
+        // fit-content() one (for maximum contributions), or to all affected tracks when there are none. The fit-content()
+        // argument caps the growth for maximum contributions only: Taffy 0.15.1 caps both, but with the growth limits that items
+        // contributing 0 now set (SizeTracksForSingleSpanItems), Chrome 157 spreads a spanning item's minimum over a min-content
+        // and a fit-content(10px) column evenly (Taffy's grid_span_2_min_content_fit_content_10px_indefinite: 20 and 20).
         if (extra > BeyondLimitsThreshold)
         {
             byte beyond = maximum ? (byte)2 : (byte)1;
@@ -854,7 +852,14 @@ internal static partial class LayoutEngine
                 narrowed = affected;
             }
 
-            DistributeUpToLimits(extra, tracks, in narrowed, byFlexFactor, growthLimits: false, TrackLimit.FitContentLimit);
+            DistributeUpToLimits(
+                extra,
+                tracks,
+                in narrowed,
+                byFlexFactor,
+                growthLimits: false,
+                maximum ? TrackLimit.FitContentLimit : TrackLimit.Infinity
+            );
         }
 
         // 4. Each track's planned increase is the largest item-incurred increase.

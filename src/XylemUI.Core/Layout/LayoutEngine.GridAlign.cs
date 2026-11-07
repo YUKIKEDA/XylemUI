@@ -31,7 +31,9 @@ internal static partial class LayoutEngine
 
     // 9. An item's size in its grid area, its alignment there, and its layout (Taffy's align_and_position_item for an item in the
     // flow): percentages and margins resolve against the area (both margins against its width, as CSS Grid asks). `normal`
-    // stretches an item with no size of its own in the axis (and, vertically, no aspect ratio), and starts it otherwise.
+    // stretches an item with no size of its own in the axis, and starts it otherwise. An aspect ratio does not start it
+    // vertically, as Taffy 0.15.1 does: Chrome 157 stretches it (Fixtures/XylemUI, grid_aspect_ratio_item_normal_alignment_starts,
+    // whose name says what Taffy does).
     private static void PositionGridItem(
         UiTree tree,
         ref GridItemState item,
@@ -71,7 +73,7 @@ internal static partial class LayoutEngine
         if (vertical.Keyword == AlignItemsKeyword.Normal)
         {
             vertical = new AlignItems(
-                !float.IsNaN(inherent.Height) || s.Height.IsSizingKeyword || s.HasAspectRatio ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
+                !float.IsNaN(inherent.Height) || s.Height.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
 

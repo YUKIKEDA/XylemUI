@@ -32,6 +32,7 @@ internal static class LayoutCost
 
         MeasureAbsolute(report, samples);
         MeasureScroll(report, samples);
+        MeasureGrid(report, samples);
         return 0;
     }
 
@@ -225,6 +226,89 @@ internal static class LayoutCost
         report.Number("absolute_change_runs", runs);
         report.Series("absolute_first_us", first);
         report.Series("absolute_change_us", change);
+    }
+
+    // The grid scene (row P02f, design §3.3, "The shape of P02f"): a grid of four columns (120 px, auto, 1fr, and
+    // minmax(80px, 2fr)) and 250 auto rows, a leaf of 10 x 10 in each cell, laid out at 2,000 x 2,000. The change is the content
+    // of one leaf in the auto column of the middle row, 10 or 20 wide in turn, which sizes the auto column again; the width
+    // change is the window's, 1,600 or 2,000 in turn.
+    private static void MeasureGrid(Report report, int samples)
+    {
+        var first = new List<double>(samples);
+        var change = new List<double>(samples);
+        var width = new List<double>(samples);
+        for (int s = 0; s < samples + 3; s++)
+        {
+            bool record = s >= 3;
+            float leafWidth = 10;
+            (UiTree tree, NodeHandle root, NodeHandle target) = BuildGrid(() => leafWidth);
+            long start = Stopwatch.GetTimestamp();
+            Invalidation.NotifyWindowResized(tree, root, new Size(2_000, 2_000));
+            LayoutEngine.RunLayoutPass(tree);
+            Add(first, start, record);
+            for (int i = 0; i < 2; i++)
+            {
+                leafWidth = i % 2 == 0 ? 20 : 10;
+                Invalidation.Invalidate(tree, target, ChangeKind.TextContent);
+                start = Stopwatch.GetTimestamp();
+                LayoutEngine.RunLayoutPass(tree);
+                Add(change, start, record && i == 1);
+            }
+
+            for (int i = 0; i < 2; i++)
+            {
+                Invalidation.NotifyWindowResized(tree, root, new Size(i % 2 == 0 ? 1_600 : 2_000, 2_000));
+                start = Stopwatch.GetTimestamp();
+                LayoutEngine.RunLayoutPass(tree);
+                Add(width, start, record && i == 1);
+            }
+
+            if (tree.GetRect(target).Width != 10)
+            {
+                throw new InvalidOperationException("The grid scene did not follow the change.");
+            }
+        }
+
+        report.Series("grid_first_us", first);
+        report.Series("grid_change_us", change);
+        report.Series("grid_width_us", width);
+    }
+
+    private const int GridRows = 250;
+
+    private static (UiTree Tree, NodeHandle Root, NodeHandle Target) BuildGrid(Func<float> targetWidth)
+    {
+        var tree = new UiTree();
+        NodeHandle root = tree.CreateNode(
+            new LayoutStyle
+            {
+                Algorithm = new LayoutAlgorithm.Grid(
+                    new GridProps { Columns = [Track.Px(120), Track.Auto, Track.Fr(1), Track.MinMax(Track.Px(80), Track.Fr(2))] }
+                ),
+            }
+        );
+        NodeHandle target = default;
+        for (int r = 0; r < GridRows; r++)
+        {
+            for (int c = 0; c < 4; c++)
+            {
+                bool isTarget = r == GridRows / 2 && c == 1;
+                NodeHandle leaf = isTarget
+                    ? tree.CreateNode(
+                        new LayoutStyle(),
+                        (_, _) => MeasureResult.Of(targetWidth(), 10),
+                        _ => new IntrinsicWidths(targetWidth(), targetWidth(), DependsOnHeight: false)
+                    )
+                    : tree.CreateNode(new LayoutStyle(), static (_, _) => MeasureResult.Of(10, 10), TenWide);
+                tree.AppendChild(root, leaf);
+                if (isTarget)
+                {
+                    target = leaf;
+                }
+            }
+        }
+
+        return (tree, root, target);
     }
 
     // The S6b scene's tree in one scroll container, its root with a scroll state (row V2): a relayout after one leaf changes, and
