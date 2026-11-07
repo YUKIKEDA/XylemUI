@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
@@ -228,7 +229,8 @@ internal static class TaffyFixture
             RowGap = ParseLengthPercentage(e.Attribute("row-gap")?.Value),
         };
 
-    // A track list in CSS's syntax: sizes and repeat() with a count, apart at the spaces outside the parentheses.
+    // A track list in CSS's syntax: sizes and repeat() with a count, auto-fill, or auto-fit, apart at the spaces outside the
+    // parentheses.
     private static IEnumerable<GridTrack> ParseTrackList(string? value)
     {
         foreach (string token in SplitTopLevel(value ?? string.Empty, ' '))
@@ -236,12 +238,15 @@ internal static class TaffyFixture
             if (token.StartsWith("repeat(", StringComparison.Ordinal))
             {
                 string[] parts = [.. SplitTopLevel(token[7..^1], ',')];
+                ImmutableArray<TrackSize> tracks = [.. SplitTopLevel(string.Join(' ', parts.Skip(1)), ' ').Select(ParseTrackSize)];
 
                 // The tests repeat past the API's 10,000 times to check the clamp of overlarge grids.
-                yield return GridTrack.Repeat(
-                    int.Parse(parts[0], CultureInfo.InvariantCulture),
-                    [.. SplitTopLevel(string.Join(' ', parts.Skip(1)), ' ').Select(ParseTrackSize)]
-                );
+                yield return parts[0] switch
+                {
+                    "auto-fill" => GridTrack.Repeat(Repeat.AutoFill, tracks),
+                    "auto-fit" => GridTrack.Repeat(Repeat.AutoFit, tracks),
+                    string count => GridTrack.Repeat(int.Parse(count, CultureInfo.InvariantCulture), tracks),
+                };
             }
             else
             {

@@ -1,0 +1,303 @@
+<tests source="https://github.com/DioxusLabs/taffy/tree/0064bd54/tests/xml/gridflex">
+  <test name="gridflex_column_integration__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute" flex-direction="column">
+        <div display="grid" direction="ltr" position="relative" grid-template-rows="1fr 1fr" grid-template-columns="1fr 1fr">
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="40" height="20">
+        <node x="0" y="0" width="40" height="20" resolved-rows="10px 10px" resolved-columns="20px 20px">
+          <node x="0" y="0" width="20" height="10" />
+          <node x="20" y="0" width="20" height="10" />
+          <node x="0" y="10" width="20" height="10" />
+          <node x="20" y="10" width="20" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_container_baseline_from_baseline_item_with_margin_top__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="baseline" width="200px" height="100px">
+        <div display="grid" direction="ltr" position="relative" align-items="baseline" grid-template-columns="50px 50px">
+          <div display="grid" direction="ltr" position="relative" height="30px" margin-top="10px">
+            <div direction="ltr" position="relative" width="20px" height="20px" />
+          </div>
+          <div direction="ltr" position="relative" height="40px" />
+        </div>
+        <div direction="ltr" position="relative" width="10px" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="200" height="100">
+        <node x="0" y="0" width="100" height="50" resolved-rows="50px" resolved-columns="50px 50px">
+          <node x="0" y="20" width="50" height="30" resolved-rows="30px" resolved-columns="50px">
+            <node x="0" y="0" width="20" height="20" />
+          </node>
+          <node x="50" y="0" width="50" height="40" />
+        </node>
+        <node x="100" y="30" width="10" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_container_baseline_from_non_baseline_item_center__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="baseline" width="120px" height="100px">
+        <div display="grid" direction="ltr" position="relative" align-items="center" width="100px" height="50px">
+          <div display="grid" direction="ltr" position="relative" width="26px" height="30px">
+            <div direction="ltr" position="relative" width="26px" height="21px" />
+          </div>
+        </div>
+        <div direction="ltr" position="relative" width="10px" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="120" height="100">
+        <node x="0" y="0" width="100" height="50" resolved-rows="50px" resolved-columns="100px">
+          <node x="0" y="10" width="26" height="30" resolved-rows="30px" resolved-columns="26px">
+            <node x="0" y="0" width="26" height="21" />
+          </node>
+        </node>
+        <node x="100" y="21" width="10" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_container_baseline_from_non_baseline_item_end__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="baseline" width="120px" height="100px">
+        <div display="grid" direction="ltr" position="relative" align-items="end" width="100px" height="50px">
+          <div display="grid" direction="ltr" position="relative" width="26px" height="30px">
+            <div direction="ltr" position="relative" width="26px" height="21px" />
+          </div>
+        </div>
+        <div direction="ltr" position="relative" width="10px" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="120" height="100">
+        <node x="0" y="0" width="100" height="50" resolved-rows="50px" resolved-columns="100px">
+          <node x="0" y="20" width="26" height="30" resolved-rows="30px" resolved-columns="26px">
+            <node x="0" y="0" width="26" height="21" />
+          </node>
+        </node>
+        <node x="100" y="31" width="10" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_container_baseline_from_non_baseline_item_start__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" align-items="baseline" width="120px" height="100px">
+        <div display="grid" direction="ltr" position="relative" align-items="start" width="100px" height="50px">
+          <div display="grid" direction="ltr" position="relative" width="26px" height="30px">
+            <div direction="ltr" position="relative" width="26px" height="21px" />
+          </div>
+        </div>
+        <div direction="ltr" position="relative" width="10px" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="120" height="100">
+        <node x="0" y="0" width="100" height="50" resolved-rows="50px" resolved-columns="100px">
+          <node x="0" y="0" width="26" height="30" resolved-rows="30px" resolved-columns="26px">
+            <node x="0" y="0" width="26" height="21" />
+          </node>
+        </node>
+        <node x="100" y="11" width="10" height="10" />
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_kitchen_sink__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute">
+        <div display="grid" direction="ltr" position="relative" grid-template-rows="1fr 1fr" grid-template-columns="1fr 1fr">
+          <div direction="ltr" position="relative">
+            <div direction="ltr" position="relative" width="20px" />
+            <div direction="ltr" position="relative" flex-grow="1" width="50px">
+              <div display="grid" direction="ltr" position="relative" grid-template-rows="30% 10%" grid-template-columns="auto 10%">
+                <div direction="ltr" position="relative" width="20px" />
+                <div direction="ltr" position="relative" />
+                <div direction="ltr" position="relative" />
+                <div direction="ltr" position="relative" />
+              </div>
+            </div>
+          </div>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="140" height="20">
+        <node x="0" y="0" width="140" height="20" resolved-rows="10px 10px" resolved-columns="70px 70px">
+          <node x="0" y="0" width="70" height="10">
+            <node x="0" y="0" width="20" height="10" />
+            <node x="20" y="0" width="50" height="10">
+              <node x="0" y="0" width="20" height="10" resolved-rows="3px 1px" resolved-columns="20px 2px">
+                <node x="0" y="0" width="20" height="3" />
+                <node x="20" y="0" width="2" height="3" />
+                <node x="0" y="3" width="20" height="1" />
+                <node x="20" y="3" width="2" height="1" />
+              </node>
+            </node>
+          </node>
+          <node x="70" y="0" width="70" height="10" />
+          <node x="0" y="10" width="70" height="10" />
+          <node x="70" y="10" width="70" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_kitchen_sink_minimise__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute">
+        <div display="grid" direction="ltr" position="relative" grid-template-rows="20px" grid-template-columns="1fr 1fr">
+          <div direction="ltr" position="relative" width="50px" />
+          <div direction="ltr" position="relative" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="100" height="20">
+        <node x="0" y="0" width="100" height="20" resolved-rows="20px" resolved-columns="50px 50px">
+          <node x="0" y="0" width="50" height="20" />
+          <node x="50" y="0" width="50" height="20" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_kitchen_sink_minimise2__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute" flex-grow="1" width="50px">
+        <div display="grid" direction="ltr" position="relative" grid-template-rows="auto" grid-template-columns="auto">
+          <div direction="ltr" position="relative" width="20px" height="20px" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="20">
+        <node x="0" y="0" width="20" height="20" resolved-rows="20px" resolved-columns="20px">
+          <node x="0" y="0" width="20" height="20" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_kitchen_sink_minimise3__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute" width="50px">
+        <div display="grid" direction="ltr" position="relative" grid-template-rows="30% 10%" grid-template-columns="auto 10%">
+          <div direction="ltr" position="relative" width="20px" height="20px" />
+          <div direction="ltr" position="relative" />
+          <div direction="ltr" position="relative" />
+          <div direction="ltr" position="relative" />
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="50" height="20">
+        <node x="0" y="0" width="20" height="20" resolved-rows="6px 2px" resolved-columns="20px 2px">
+          <node x="0" y="0" width="20" height="20" />
+          <node x="20" y="0" width="2" height="6" />
+          <node x="0" y="6" width="20" height="2" />
+          <node x="20" y="6" width="2" height="2" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_negative_margin_hidden_grid_item_intrinsic_height__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="flex" direction="ltr" position="absolute" flex-direction="column" width="400px">
+        <div display="flex" direction="ltr" position="relative" flex-direction="column">
+          <div display="flex" direction="ltr" position="relative" flex-direction="column" margin-top="-32px">
+            <div display="grid" direction="ltr" position="relative" grid-template-columns="100px">
+              <div
+                display="flex"
+                direction="ltr"
+                position="relative"
+                flex-direction="column"
+                overflow-x="hidden"
+                overflow-y="hidden"
+                scrollbar-width="15"
+              >
+                <div direction="ltr" position="relative" width="100px" height="100px" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="400" height="68">
+        <node x="0" y="0" width="400" height="68">
+          <node x="0" y="-32" width="400" height="100">
+            <node x="0" y="0" width="400" height="100" resolved-rows="100px" resolved-columns="100px">
+              <node x="0" y="0" width="100" height="100" scroll_width="0" scroll_height="0">
+                <node x="0" y="0" width="100" height="100" />
+              </node>
+            </node>
+          </node>
+        </node>
+      </node>
+    </expectations>
+  </test>
+  <test name="gridflex_row_integration__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div direction="ltr" position="absolute">
+        <div display="grid" direction="ltr" position="relative" grid-template-rows="1fr 1fr" grid-template-columns="1fr 1fr">
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+          <text direction="ltr" position="relative">
+          HH
+        </text>
+        </div>
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="40" height="20">
+        <node x="0" y="0" width="40" height="20" resolved-rows="10px 10px" resolved-columns="20px 20px">
+          <node x="0" y="0" width="20" height="10" />
+          <node x="20" y="0" width="20" height="10" />
+          <node x="0" y="10" width="20" height="10" />
+          <node x="20" y="10" width="20" height="10" />
+        </node>
+      </node>
+    </expectations>
+  </test>
+</tests>

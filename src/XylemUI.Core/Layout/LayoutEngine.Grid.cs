@@ -47,9 +47,17 @@ internal static partial class LayoutEngine
             }
         }
 
-        // 2. The explicit grid. Clamped to the largest number of tracks (CSS Grid §8.4, "overlarge grids").
-        int explicitColumns = Math.Min(TemplateTrackCount(props.Columns), Track.MaxTracks);
-        int explicitRows = Math.Min(TemplateTrackCount(props.Rows), Track.MaxTracks);
+        // 2. The explicit grid, with an automatic repetition filling the container's size, else its maximum size, else its
+        // minimum size: without overflowing the first two, overflowing a minimum alone (CSS Grid §7.2.3.2).
+        OptionalSize fitSize = c.OuterNodeSize.Or(c.Max).Or(c.Min).Clamp(c.Min, c.Max);
+        Size insetSum = c.ContentInset.Sum();
+        fitSize = new OptionalSize(
+            Maybe.Max(fitSize.Width, c.PaddingBorder.Width) - insetSum.Width,
+            Maybe.Max(fitSize.Height, c.PaddingBorder.Height) - insetSum.Height
+        );
+        OptionalSize sizeOrMax = c.OuterNodeSize.Or(c.Max);
+        (int columnRepetitions, int explicitColumns) = ExplicitGridSize(props.Columns, fitSize.Width, !float.IsNaN(sizeOrMax.Width), props.ColumnGap);
+        (int rowRepetitions, int explicitRows) = ExplicitGridSize(props.Rows, fitSize.Height, !float.IsNaN(sizeOrMax.Height), props.RowGap);
 
         int count = 0;
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
@@ -78,8 +86,8 @@ internal static partial class LayoutEngine
             // The tracks of both axes, with their sizing functions.
             Span<GridTrackState> columns = trackScratch.Push((2 * columnCounts.Length) + 1);
             Span<GridTrackState> rows = trackScratch.Push((2 * rowCounts.Length) + 1);
-            InitializeGridTracks(columns, columnCounts, props.Columns, props.AutoColumns, props.ColumnGap);
-            InitializeGridTracks(rows, rowCounts, props.Rows, props.AutoRows, props.RowGap);
+            InitializeGridTracks(columns, columnCounts, props.Columns, props.AutoColumns, props.ColumnGap, columnRepetitions, occupancy, true);
+            InitializeGridTracks(rows, rowCounts, props.Rows, props.AutoRows, props.RowGap, rowRepetitions, occupancy, false);
 
             // 6. The sizes of the tracks, the columns first.
             foreach (ref GridItemState item in items)
@@ -244,21 +252,122 @@ internal static partial class LayoutEngine
     private static AlignContent StretchIfNormal(AlignContent alignment) =>
         alignment.Keyword == AlignContentKeyword.Normal ? new AlignContent(AlignContentKeyword.Stretch) : alignment;
 
-    // The number of tracks a template gives (Taffy's compute_explicit_grid_size_in_axis, without an automatic repetition).
-    private static int TemplateTrackCount(ImmutableArray<GridTrack> template)
+    // The number of times an automatic repetition repeats, and the number of tracks the template gives (Taffy's
+    // compute_explicit_grid_size_in_axis, CSS Grid §7.2.3.2). A template with more than one automatic repetition, or with one
+    // and a track that has neither a length nor a percentage, gives no tracks. The repetition fills the container's size, its
+    // maximum size, or its minimum size (containerSize, NaN when none is known): as many times as fit without overflowing it,
+    // or, with only a minimum, as few as overflow it; once with no size. Every count stays within the largest number of tracks.
+    private static (int AutoRepetitions, int Count) ExplicitGridSize(
+        ImmutableArray<GridTrack> template,
+        float containerSize,
+        bool withoutOverflow,
+        LengthPercentage gap
+    )
     {
         if (template.IsDefaultOrEmpty)
         {
-            return 0;
+            return (0, 0);
         }
 
-        long total = 0;
+        long fixedCount = 0;
+        int autoCount = 0;
+        long insertionPoint = 0;
+        bool allFixed = true;
+        GridTrack auto = default;
         foreach (GridTrack entry in template)
         {
-            total += entry.IsRepeat ? (long)entry.Count * entry.Repeated.Length : 1;
+            if (!entry.IsRepeat)
+            {
+                allFixed &= entry.Single.HasFixedComponent;
+                fixedCount++;
+                insertionPoint += autoCount == 0 ? 1 : 0;
+                continue;
+            }
+
+            foreach (TrackSize track in entry.Repeated)
+            {
+                allFixed &= track.HasFixedComponent;
+            }
+
+            if (entry.IsAutoRepeat)
+            {
+                auto = entry;
+                autoCount++;
+                continue;
+            }
+
+            fixedCount += (long)entry.Count * entry.Repeated.Length;
+            insertionPoint += autoCount == 0 ? (long)entry.Count * entry.Repeated.Length : 0;
         }
 
-        return (int)Math.Min(total, Track.MaxTracks);
+        int nonRepeating = (int)Math.Min(fixedCount, Track.MaxTracks);
+        if (autoCount == 0)
+        {
+            return (0, nonRepeating);
+        }
+
+        if (autoCount > 1 || !allFixed)
+        {
+            return (0, 0);
+        }
+
+        int repetitionTracks = auto.Repeated.Length;
+        long repetitions = 1;
+        if (!float.IsNaN(containerSize))
+        {
+            float used = 0;
+            foreach (GridTrack entry in template)
+            {
+                if (!entry.IsRepeat)
+                {
+                    used += entry.Single.RepetitionSize(containerSize);
+                }
+                else if (!entry.IsAutoRepeat)
+                {
+                    float sum = 0;
+                    foreach (TrackSize track in entry.Repeated)
+                    {
+                        sum += track.RepetitionSize(containerSize);
+                    }
+
+                    used += sum * entry.Count;
+                }
+            }
+
+            float gapSize = gap.IsPercent ? gap.Value * containerSize : gap.Value;
+            float perRepetitionTracks = 0;
+            foreach (TrackSize track in auto.Repeated)
+            {
+                perRepetitionTracks += track.RepetitionSize(containerSize);
+            }
+
+            // The first repetition with the other tracks: its gaps depend on how many tracks the template has besides it.
+            float first = used + perRepetitionTracks + (Math.Max(nonRepeating + repetitionTracks - 1, 0) * gapSize);
+            if (first <= containerSize)
+            {
+                float fit = (containerSize - first) / (perRepetitionTracks + (repetitionTracks * gapSize));
+                double more = withoutOverflow ? Math.Floor(fit) : Math.Ceiling(fit);
+
+                // A track of no size fits without end; the count is bounded below.
+                repetitions = (long)Math.Min(double.IsNaN(more) ? 0 : more, Track.MaxTracks) + 1;
+            }
+        }
+
+        // The tracks before the repetition keep their place, and the repetition and the tracks after it are cut to the limit
+        // (CSS Grid §8.4, "overlarge grids").
+        long remaining = Math.Max(Track.MaxTracks - insertionPoint, 0);
+        if (remaining == 0)
+        {
+            repetitions = 0;
+        }
+        else
+        {
+            long maxRepetitions = (remaining + repetitionTracks - 1) / repetitionTracks;
+            repetitions = Math.Clamp(repetitions, 1, maxRepetitions);
+        }
+
+        int count = (int)Math.Min(nonRepeating + (repetitionTracks * repetitions), Track.MaxTracks);
+        return ((int)repetitions, count);
     }
 
     // The items: the children in the flow, in document order, with their styles and their placements in lines from the
@@ -562,13 +671,18 @@ internal static partial class LayoutEngine
 
     // The tracks of an axis with their sizing functions, and the gutters between them (Taffy's initialize_grid_tracks): the
     // implicit tracks before the explicit grid, the explicit ones, and the implicit ones after. The implicit tracks take the
-    // auto sizes in turn, those before the grid counting back from its start. The first and last lines are collapsed.
+    // auto sizes in turn, those before the grid counting back from its start. An `auto-fit` repetition collapses its tracks that
+    // no item takes, with the gutters after them; at the end of the track list, the gutters before them too. The first and
+    // last lines are collapsed.
     private static void InitializeGridTracks(
         Span<GridTrackState> tracks,
         TrackCounts counts,
         ImmutableArray<GridTrack> template,
         ImmutableArray<TrackSize> autoTracks,
-        LengthPercentage gap
+        LengthPercentage gap,
+        int autoRepetitions,
+        GridOccupancy occupancy,
+        bool columns
     )
     {
         TrackFunction gutter = gap.IsPercent ? new TrackFunction(TrackKind.Percent, gap.Value) : new TrackFunction(TrackKind.Px, gap.Value);
@@ -601,11 +715,34 @@ internal static partial class LayoutEngine
                     continue;
                 }
 
-                int repeated = Math.Min(entry.Repeated.Length * entry.Count, explicitLimit - current);
+                int times = entry.IsAutoRepeat ? autoRepetitions : entry.Count;
+                int repeated = (int)Math.Min((long)entry.Repeated.Length * times, explicitLimit - current);
+                bool fit = entry.AutoRepeat == Repeat.AutoFit;
                 for (int i = 0; i < repeated; i++)
                 {
+                    bool empty = fit && !(columns ? occupancy.ColumnIsOccupied(current) : occupancy.RowIsOccupied(current));
                     AddTrack(tracks, ref next, entry.Repeated[i % entry.Repeated.Length], gutter);
+                    if (empty)
+                    {
+                        tracks[next - 2].Collapse();
+                        tracks[next - 1].Collapse();
+                    }
+
                     current++;
+                }
+
+                // At the end of the track list no track follows to keep the gutter after the last one kept: collapse back to it.
+                if (fit && current == counts.Length)
+                {
+                    for (int i = next - 1; i >= 0; i--)
+                    {
+                        if (i % 2 == 1 && !tracks[i].IsCollapsed)
+                        {
+                            break;
+                        }
+
+                        tracks[i].Collapse();
+                    }
                 }
             }
         }

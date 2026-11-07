@@ -67,6 +67,7 @@ internal static class TaffyFixtureScope
         ["block/block_margin_y_total_collapse__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_total_collapse_complex__border_box_ltr"] = MarginCollapsing,
         ["blockflex/blockflex_margin_y_collapse_through_blocked_by_flex__border_box_ltr"] = MarginCollapsing,
+        ["blockgrid/blockgrid_margin_y_collapse_through_blocked_by_grid__border_box_ltr"] = MarginCollapsing,
 
         // A scroll container stops the margins collapsing through it, but the others around it still collapse (row V2).
         ["block/block_margin_y_collapse_through_blocked_by_overflow_x_hidden__border_box_ltr"] = MarginCollapsing,
@@ -131,11 +132,6 @@ internal static class TaffyFixtureScope
             string value = attribute.Value;
             if (name.StartsWith("grid-template-", StringComparison.Ordinal) || name.StartsWith("grid-auto-", StringComparison.Ordinal))
             {
-                if (value.Contains("auto-fill", StringComparison.Ordinal) || value.Contains("auto-fit", StringComparison.Ordinal))
-                {
-                    return $"repeat() with auto-fill or auto-fit ({Next})";
-                }
-
                 if (value.Contains('[', StringComparison.Ordinal))
                 {
                     return $"named grid lines ({Next})";

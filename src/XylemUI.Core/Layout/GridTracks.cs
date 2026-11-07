@@ -40,6 +40,42 @@ public readonly record struct TrackSize
         function.Kind is TrackKind.Fr or TrackKind.FitContentPx or TrackKind.FitContentPercent
             ? new TrackSize(TrackFunction.Auto, function)
             : new TrackSize(function, function);
+
+    /// <summary>
+    /// Gets a value indicating whether either sizing function is a length or a percentage, as every track of a template with an
+    /// automatic repetition must have (CSS Grid §7.2.3.2; Taffy's <c>has_fixed_component</c>).
+    /// </summary>
+    internal bool HasFixedComponent => Min.Kind is TrackKind.Px or TrackKind.Percent || Max.Kind is TrackKind.Px or TrackKind.Percent;
+
+    /// <summary>
+    /// Returns the size an automatic repetition counts the track as: its maximum where that is fixed, floored by a fixed
+    /// minimum, else its minimum (CSS Grid §7.2.3.2; Taffy's <c>track_definite_value</c>).
+    /// </summary>
+    /// <param name="basis">The content box's size in the axis.</param>
+    /// <returns>The pixels.</returns>
+    internal float RepetitionSize(float basis)
+    {
+        float max = Max.DefiniteValue(basis);
+        float min = Min.DefiniteValue(basis);
+        return float.IsNaN(max) ? min : Maybe.Max(max, min);
+    }
+}
+
+/// <summary>
+/// How many times an automatic repetition repeats its tracks (design §3.3, CSS Grid §7.2.3.2): as many as fit in the grid
+/// container.
+/// </summary>
+public enum Repeat : byte
+{
+    /// <summary>
+    /// Repeats as many times as fit, and keeps the tracks that no item takes (<c>auto-fill</c>).
+    /// </summary>
+    AutoFill = 1,
+
+    /// <summary>
+    /// Repeats as many times as fit, and collapses the tracks that no item takes (<c>auto-fit</c>).
+    /// </summary>
+    AutoFit = 2,
 }
 
 /// <summary>
@@ -48,11 +84,12 @@ public readonly record struct TrackSize
 /// </summary>
 public readonly record struct GridTrack
 {
-    private GridTrack(TrackSize single, ImmutableArray<TrackSize> repeated, int count)
+    private GridTrack(TrackSize single, ImmutableArray<TrackSize> repeated, int count, Repeat? auto)
     {
         Single = single;
         Repeated = repeated;
         Count = count;
+        AutoRepeat = auto;
     }
 
     /// <summary>
@@ -66,20 +103,31 @@ public readonly record struct GridTrack
     internal ImmutableArray<TrackSize> Repeated { get; }
 
     /// <summary>
-    /// Gets the number of times a repetition repeats its tracks; 0 for an entry that is not one.
+    /// Gets the number of times a repetition repeats its tracks; 0 for an automatic repetition and for an entry that is not a
+    /// repetition.
     /// </summary>
     internal int Count { get; }
 
     /// <summary>
+    /// Gets how an automatic repetition repeats; <see langword="null"/> for any other entry.
+    /// </summary>
+    internal Repeat? AutoRepeat { get; }
+
+    /// <summary>
     /// Gets a value indicating whether the entry repeats a track list.
     /// </summary>
-    internal bool IsRepeat => Count > 0;
+    internal bool IsRepeat => !Repeated.IsDefault;
+
+    /// <summary>
+    /// Gets a value indicating whether the entry is an automatic repetition.
+    /// </summary>
+    internal bool IsAutoRepeat => AutoRepeat is not null;
 
     /// <summary>
     /// Returns the entry of one track.
     /// </summary>
     /// <param name="track">The track.</param>
-    public static implicit operator GridTrack(TrackSize track) => new(track, default, 0);
+    public static implicit operator GridTrack(TrackSize track) => new(track, default, 0, null);
 
     /// <summary>
     /// Returns the entry of one track.
@@ -94,7 +142,15 @@ public readonly record struct GridTrack
     /// <param name="count">The number of repetitions, at least 1.</param>
     /// <param name="tracks">The tracks, at least one.</param>
     /// <returns>The entry.</returns>
-    internal static GridTrack Repeat(int count, ImmutableArray<TrackSize> tracks) => new(default, tracks, count);
+    internal static GridTrack Repeat(int count, ImmutableArray<TrackSize> tracks) => new(default, tracks, count, null);
+
+    /// <summary>
+    /// Returns an entry that repeats <paramref name="tracks"/> as many times as fit.
+    /// </summary>
+    /// <param name="auto">How it repeats.</param>
+    /// <param name="tracks">The tracks, at least one.</param>
+    /// <returns>The entry.</returns>
+    internal static GridTrack Repeat(Repeat auto, ImmutableArray<TrackSize> tracks) => new(default, tracks, 0, auto);
 }
 
 /// <summary>
@@ -207,6 +263,32 @@ public static class Track
         }
 
         return GridTrack.Repeat(count, [.. tracks]);
+    }
+
+    /// <summary>
+    /// Returns an entry of a track list that repeats <paramref name="tracks"/> as many times as fit in the grid container
+    /// (<c>repeat(auto-fill)</c> and <c>repeat(auto-fit)</c>, CSS Grid §7.2.3.2): its size, else its maximum size, else its
+    /// minimum size. A track list takes one such entry, and each of its tracks then needs a length or a percentage as its
+    /// minimum or its maximum; a track list that breaks either is ignored, as CSS ignores it.
+    /// </summary>
+    /// <param name="repeat">How it repeats.</param>
+    /// <param name="tracks">The tracks to repeat, at least one.</param>
+    /// <returns>The entry.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="repeat"/> is not a value of <see cref="XylemUI.Repeat"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tracks"/> is empty.</exception>
+    public static GridTrack Repeat(Repeat repeat, params ReadOnlySpan<TrackSize> tracks)
+    {
+        if (repeat is not (XylemUI.Repeat.AutoFill or XylemUI.Repeat.AutoFit))
+        {
+            throw new ArgumentOutOfRangeException(nameof(repeat), repeat, "An automatic repetition is AutoFill or AutoFit.");
+        }
+
+        if (tracks.IsEmpty)
+        {
+            throw new ArgumentException("A repetition repeats at least one track.", nameof(tracks));
+        }
+
+        return GridTrack.Repeat(repeat, [.. tracks]);
     }
 
     private static float Check(float value, string name) =>
