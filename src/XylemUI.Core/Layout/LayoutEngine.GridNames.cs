@@ -42,6 +42,12 @@ internal static partial class LayoutEngine
             int tracks = entry.Repeated.Length;
             for (int i = 0; i < times; i++)
             {
+                // A line past the largest number of tracks is never placed on: the explicit grid is cut there.
+                if (line > Track.MaxTracks)
+                {
+                    break;
+                }
+
                 if (!entry.RepeatedNames.IsDefault)
                 {
                     for (int j = 0; j <= tracks; j++)
@@ -54,12 +60,6 @@ internal static partial class LayoutEngine
                 }
 
                 line += tracks;
-
-                // A line past the largest number of tracks is never placed on: the explicit grid is cut there.
-                if (line > Track.MaxTracks)
-                {
-                    break;
-                }
             }
         }
 
@@ -146,7 +146,7 @@ internal static partial class LayoutEngine
         ReadOnlySpan<long> lines = LinesNamed(names, placement.Name);
         return placement.Index >= 0
             ? NthLineForwards(lines, 0, Math.Max((int)placement.Index, 1), explicitCount)
-            : NthLineBackwards(lines, explicitCount, -placement.Index, explicitCount);
+            : NthLineBackwards(lines, explicitCount, -placement.Index);
     }
 
     // The n-th of the lines that is not before firstLine; with too few, the implicit lines after the explicit grid count as
@@ -166,10 +166,10 @@ internal static partial class LayoutEngine
     }
 
     // The n-th of the lines back from lastLine, not after it; with too few, the implicit lines before the explicit grid count
-    // as named (Taffy's nth_line_backwards).
-    private static int NthLineBackwards(ReadOnlySpan<long> lines, int lastLine, int n, int explicitCount)
+    // as named (Taffy's nth_line_backwards). Taffy first limits lastLine to the explicit grid's end, which changes nothing: no
+    // named line is past it, and the implicit lines count from -1 at most.
+    private static int NthLineBackwards(ReadOnlySpan<long> lines, int lastLine, int n)
     {
-        lastLine = Math.Min(lastLine, explicitCount);
         int keep = lines.Length;
         while (keep > 0 && OriginZeroOf(lines[keep - 1]) > lastLine)
         {

@@ -1405,11 +1405,13 @@ internal static partial class LayoutEngine
     // aspect ratio and clamped by its limits.
     private static OptionalSize KnownDimensions(UiTree tree, in GridItemState item, OptionalSize area)
     {
+        // A bare item stretched in an axis has the area there. The baseline shim is 0 for it: only an item aligned by its baseline
+        // has one, and that item is not stretched.
         if (item.Bare)
         {
             return new OptionalSize(
                 IsStretch(item.JustifySelf) ? Maybe.Max(area.Width, 0) : float.NaN,
-                IsStretch(item.AlignSelf) ? Maybe.Max(area.Height - item.BaselineShim, 0) : float.NaN
+                IsStretch(item.AlignSelf) ? Maybe.Max(area.Height, 0) : float.NaN
             );
         }
 

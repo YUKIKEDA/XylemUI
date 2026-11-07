@@ -291,7 +291,6 @@ internal static partial class LayoutEngine
 
         long fixedCount = 0;
         int autoCount = 0;
-        long insertionPoint = 0;
         bool allFixed = true;
         GridTrack auto = default;
         foreach (GridTrack entry in template)
@@ -305,7 +304,6 @@ internal static partial class LayoutEngine
             {
                 allFixed &= entry.Single.HasFixedComponent;
                 fixedCount++;
-                insertionPoint += autoCount == 0 ? 1 : 0;
                 continue;
             }
 
@@ -322,7 +320,6 @@ internal static partial class LayoutEngine
             }
 
             fixedCount += (long)entry.Count * entry.Repeated.Length;
-            insertionPoint += autoCount == 0 ? (long)entry.Count * entry.Repeated.Length : 0;
         }
 
         int nonRepeating = (int)Math.Min(fixedCount, Track.MaxTracks);
@@ -384,18 +381,8 @@ internal static partial class LayoutEngine
         }
 
         // The tracks before the repetition keep their place, and the repetition and the tracks after it are cut to the limit
-        // (CSS Grid §8.4, "overlarge grids").
-        long remaining = Math.Max(Track.MaxTracks - insertionPoint, 0);
-        if (remaining == 0)
-        {
-            repetitions = 0;
-        }
-        else
-        {
-            long maxRepetitions = (remaining + repetitionTracks - 1) / repetitionTracks;
-            repetitions = Math.Clamp(repetitions, 1, maxRepetitions);
-        }
-
+        // (CSS Grid §8.4, "overlarge grids"): the count here, and the tracks and the line names where they are made. Taffy also
+        // clamps the number of repetitions, which then changes neither.
         int count = (int)Math.Min(nonRepeating + (repetitionTracks * repetitions), Track.MaxTracks);
         return ((int)repetitions, count);
     }
@@ -1115,7 +1102,7 @@ internal static partial class LayoutEngine
             }
             else if (startSpan.IsSpan && result.EndKind == GridLineKind.Line)
             {
-                int start = NthLineBackwards(LinesNamed(names, startSpan.Name), result.End - 1, Math.Max((int)startSpan.Index, 1), explicitCount);
+                int start = NthLineBackwards(LinesNamed(names, startSpan.Name), result.End - 1, Math.Max((int)startSpan.Index, 1));
                 (result.StartKind, result.Start) = (GridLineKind.Line, start);
             }
 

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A span to a missing name back from a line before the explicit grid counts the implicit lines from that line
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; grid-template-columns: 50px 50px; grid-auto-columns: 20px; grid-auto-rows: 10px;">
+  <div style="grid-column-start: span foo; grid-column-end: -5;"></div>
+  <div style="grid-column-start: 1;"></div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    An item aligned to the start of its column is not stretched to the column's width for its row's size
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 300px; grid-template-columns: 100px 100px;">
+  <div style="justify-self: start;">
+    <div style="aspect-ratio: 2;"></div>
+  </div>
+  <div style="height: 10px;"></div>
+</div>
+
+</body>
+</html>
