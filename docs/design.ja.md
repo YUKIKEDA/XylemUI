@@ -2109,7 +2109,7 @@ CSS Gridは、テキストシェーピングやGPUドライバ対応と異なり
 
 **P02f で入れる形（P02f の Grill で決定、Issue #645）**
 
-- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置き、子は `GridLine.Named(name)` で置く（3 つ目の PR）。間隔は `.Gap`、暗黙のトラックの大きさは `.AutoColumns`・`.AutoRows`、自動配置の向きは `.AutoFlow`（`Row`・`Column`。`dense` は 3 つ目の PR）。揃え（`JustifyItems`・`AlignItems`・`JustifySelf`・`AlignSelf`・`JustifyContent`・`AlignContent`）は内部の型（`GridProps`・`LayoutStyle`）にあり、公開の口は持たない。Flex も揃えの公開の口を持たない（設計の PR #646 は「Flex と同じ口」と書いたが、その口は無かった。P02f の実装の 1 つ目の PR で分かった）。Flex・Grid・Block の揃えの公開の口は行 P02h で足す
+- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置き、子は `GridLine.Named(name)` で置く（実装の 2 つ目の PR）。間隔は `.Gap`、暗黙のトラックの大きさは `.AutoColumns`・`.AutoRows`、自動配置の向きは `.AutoFlow`（`Row`・`Column`。`dense` は実装の 2 つ目の PR）。揃え（`JustifyItems`・`AlignItems`・`JustifySelf`・`AlignSelf`・`JustifyContent`・`AlignContent`）は内部の型（`GridProps`・`LayoutStyle`）にあり、公開の口は持たない。Flex も揃えの公開の口を持たない（設計の PR #646 は「Flex と同じ口」と書いたが、その口は無かった。P02f の実装の 1 つ目の PR で分かった）。Flex・Grid・Block の揃えの公開の口は行 P02h で足す
 - **線の持ち方:** 子の線（`GridLine`）は 2 バイトで、ノードの style に 4 つ持つ。0 が auto、線はその番号、span は 10,001 と本数の和である。-20,001 より前と 10,001 より後の線は、グリッドが explicit grid の始まりの両側 10,000 本に収めるとどれも同じ線に落ちる（Taffy 0.15.1 の `into_origin_zero_line`）ので、その値に切る。ノードは 576 バイトから 592 バイトになった（線の 8 バイトと、下の相対位置の量。P02f の実装の 1 つ目の PR）
 - **baseline と相対位置:** 容器の baseline を子から読むとき、子の相対位置（`position: relative` の inset）の移動は含めない。Chrome は移動の前の baseline で揃える（Taffy の XML テスト `block_container_baseline_ignores_relative_offset` と `grid_container_baseline_ignores_relative_offset`）。親が子に足した縦の移動を `LayoutState.RelativeY` に持ち、`ReadContentBaseline` が引く。Block と Flex も同じに直した（Block の XML テストは Grid の箱を含むので、P02f まで走っていなかった）
 
@@ -2129,7 +2129,7 @@ Grid(
 - **受け入れ:** Taffy 0.15.1 の XML テスト（border-box・左から右）の `grid` 585 件・`gridflex` 11 件・`blockgrid` 14 件のうち、外す理由を名前で挙げたもの以外がすべて通る。外すのは、右から左の 24 件（行 P03）と、Flex と同じ既存の理由（`calc()` など）だけで、baseline の 24 件は外さない
 - **フレームの経路:** トラックの並び、置き場所の表、トラックの大きさの作業用の値は、layout の作業用の領域を使い回し、定常状態で割り当てない（`.cursor/rules/perf.mdc`）
 - **計測:** `benchmarks/compare` に Grid の場面を足し、Taffy 0.15.1 の Grid、Avalonia の `Grid`、Flutter の `Table`（CSS の Grid が無いので、いちばん近い物。`rendering/table.dart` の `IntrinsicColumnWidth` 94 行目、`FlexColumnWidth` 197 行目）と比べる。場面は、列 4 本（`120px`・`auto`・`1fr`・`minmax(80px, 2fr)`）と auto の行 250 本の各セルに葉を 1 つ置いた容器で、最初の layout、1 つのセルの葉の幅の変更、容器の幅の変更を測る。受け入れは Taffy より遅くないこと。Avalonia と Flutter との差は記録して説明する（`.cursor/rules/open-ends.mdc`）
-- **PR の分け方:** 設計、トラックの大きさの計算・明示と暗黙の配置・`gap`・揃え（2 つ目）、`repeat()` の `auto-fill`/`auto-fit`・名前付きの線・`dense`・グリッドの中の絶対配置・Flex と Block との組み合わせ（`gridflex`・`blockgrid`、3 つ目）。2 つ目と 3 つ目は、自分が入れる機能の XML テストだけを取り込む。2 つ目では、グリッドの中の絶対配置の子は、内容の箱を静的位置の範囲にして置く（Taffy でグリッドが包含ブロックでないときの形）。線に沿った置き方は 3 つ目で入れる
+- **PR の分け方:** 設計の PR と、実装の 2 つの PR に分ける。実装の 1 つ目はトラックの大きさの計算・明示と暗黙の配置・`gap`・揃え、実装の 2 つ目は `repeat()` の `auto-fill`/`auto-fit`・名前付きの線・`dense`・グリッドの中の絶対配置・Flex と Block との組み合わせ（`gridflex`・`blockgrid`）である。実装の PR は、どちらも自分が入れる機能の XML テストだけを取り込む。実装の 1 つ目では、グリッドの中の絶対配置の子は、内容の箱を静的位置の範囲にして置く（Taffy でグリッドが包含ブロックでないときの形）。線に沿った置き方は実装の 2 つ目で入れる
 - **入れないもの:** 列の幅をドラッグで変えるスプリッター（Avalonia の `GridSplitter.cs`）は行 G1 の部品に、タイル状の仮想化した格子（Flutter の `SliverGridDelegateWithFixedCrossAxisCount`・`...WithMaxCrossAxisExtent`、`rendering/sliver_grid.dart` 346・445 行目）は行 P02e2 に置く。どちらもグリッドの layout そのものではない
 
 ### 3.4 Materialization層
