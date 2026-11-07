@@ -59,10 +59,13 @@ internal static partial class LayoutEngine
         (int columnRepetitions, int explicitColumns) = ExplicitGridSize(props.Columns, fitSize.Width, !float.IsNaN(sizeOrMax.Width), props.ColumnGap);
         (int rowRepetitions, int explicitRows) = ExplicitGridSize(props.Rows, fitSize.Height, !float.IsNaN(sizeOrMax.Height), props.RowGap);
 
+        // Where no child is hidden or absolutely positioned, the usual case, every child is an item and no child's style is read
+        // to find them (LayoutState.OutOfFlowChildren).
+        bool anyOutOfFlow = tree.Nodes.GetRef(tree.Nodes.GetRef(firstChild).Parent).Layout.OutOfFlowChildren > 0;
         int count = 0;
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
-            count += tree.Nodes.GetRef(child).Layout.Style.IsInFlow ? 1 : 0;
+            count += !anyOutOfFlow || tree.Nodes.GetRef(child).Layout.Style.IsInFlow ? 1 : 0;
         }
 
         ScratchStack<GridItemState> itemScratch = _gridItemScratch ??= new ScratchStack<GridItemState>();
@@ -81,7 +84,7 @@ internal static partial class LayoutEngine
 
             // 3. The grid items, in document order, with their placements in lines from the explicit grid's start.
             Span<GridItemState> items = itemScratch.Push(count);
-            GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, columnNames, rowNames, items);
+            GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, columnNames, rowNames, items, anyOutOfFlow);
 
             // 4 and 5. The placement of the items, which grows the implicit grid.
             GridOccupancy occupancy = _gridOccupancy ??= new GridOccupancy();
@@ -406,7 +409,8 @@ internal static partial class LayoutEngine
         int explicitRows,
         ReadOnlySpan<long> columnNames,
         ReadOnlySpan<long> rowNames,
-        Span<GridItemState> items
+        Span<GridItemState> items,
+        bool anyOutOfFlow
     )
     {
         int i = 0;
@@ -414,7 +418,7 @@ internal static partial class LayoutEngine
         for (NodeHandle child = firstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling, order++)
         {
             ref readonly LayoutStyle s = ref tree.Nodes.GetRef(child).Layout.Style;
-            if (!s.IsInFlow)
+            if (anyOutOfFlow && !s.IsInFlow)
             {
                 continue;
             }
