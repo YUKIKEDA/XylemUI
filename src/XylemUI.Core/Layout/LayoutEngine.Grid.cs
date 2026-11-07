@@ -573,8 +573,7 @@ internal static partial class LayoutEngine
                 Secondary(ref item, primaryIsColumns),
                 primaryIsColumns,
                 primaryCursor,
-                secondaryCursor,
-                dense
+                secondaryCursor
             );
             RecordPlacement(
                 occupancy,
@@ -597,22 +596,18 @@ internal static partial class LayoutEngine
         OriginZeroPlacement secondary,
         bool primaryIsColumns,
         int primaryIndex,
-        int secondaryIndex,
-        bool dense
+        int secondaryIndex
     )
     {
         TrackCounts primaryCounts = TrackCountsOf(occupancy, primaryIsColumns);
         int secondarySpan = secondary.IndefiniteSpan;
         if (primary.IsDefinite)
         {
-            // A fixed position in the primary axis: move along the secondary one until the item fits, from the grid's start for
-            // a dense flow.
+            // A fixed position in the primary axis: move along the secondary one until the item fits. A dense flow's cursor is at
+            // the grid's start already, where CSS Grid §8.5 starts its search (PlaceGridItems), and its primary index is never
+            // past the item's start.
             primary.ResolveDefinite(out int primaryStart, out int primaryEnd);
-            if (dense)
-            {
-                secondaryIndex = TrackCountsOf(occupancy, !primaryIsColumns).ImplicitStartLine;
-            }
-            else if (primaryStart < primaryIndex)
+            if (primaryStart < primaryIndex)
             {
                 secondaryIndex = SaturatingIncrement(secondaryIndex);
             }

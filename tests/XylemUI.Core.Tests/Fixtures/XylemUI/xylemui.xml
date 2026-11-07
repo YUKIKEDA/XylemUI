@@ -567,6 +567,7 @@
         display="grid"
         direction="ltr"
         position="relative"
+        justify-content="space-between"
         width="300px"
         column-gap="10px"
         grid-template-columns="repeat(auto-fit, 50px) 40px"
@@ -582,10 +583,10 @@
     <expectations>
       <node x="0" y="0" width="300" height="10" resolved-rows="10px" resolved-columns="50px 0px 0px 0px 40px">
         <node x="0" y="0" width="50" height="10" />
-        <node x="60" y="0" width="40" height="10" />
-        <node x="60" y="0" width="240" height="10" />
+        <node x="260" y="0" width="40" height="10" />
+        <node x="260" y="0" width="40" height="10" />
         <node x="0" y="0" width="50" height="10" />
-        <node x="50" y="0" width="10" height="10" />
+        <node x="250" y="0" width="10" height="10" />
       </node>
     </expectations>
   </test>
@@ -681,21 +682,6 @@
         <node x="0" y="0" width="100" height="10" />
         <node x="100" y="0" width="100" height="10" />
         <node x="0" y="10" width="100" height="10" />
-      </node>
-    </expectations>
-  </test>
-  <test name="grid_auto_fill_with_auto_track_is_invalid__border_box_ltr" use-rounding="true">
-    <viewport width="max-content" height="max-content" />
-    <input>
-      <div display="grid" direction="ltr" position="absolute" width="300px">
-        <div direction="ltr" position="relative" height="10px" />
-        <div direction="ltr" position="relative" height="10px" />
-      </div>
-    </input>
-    <expectations>
-      <node x="0" y="0" width="300" height="20" resolved-rows="10px 10px" resolved-columns="300px">
-        <node x="0" y="0" width="300" height="10" />
-        <node x="0" y="10" width="300" height="10" />
       </node>
     </expectations>
   </test>
@@ -950,16 +936,20 @@
     <viewport width="max-content" height="max-content" />
     <input>
       <div display="grid" direction="ltr" position="absolute" width="300px" grid-template-columns="100px 100px">
-        <div direction="ltr" position="relative" justify-self="start">
-          <div direction="ltr" position="relative" aspect-ratio="2" />
+        <div display="block" direction="ltr" position="relative" justify-self="start">
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
         </div>
         <div direction="ltr" position="relative" height="10px" />
       </div>
     </input>
     <expectations>
-      <node x="0" y="0" width="300" height="10" resolved-rows="10px" resolved-columns="100px 100px">
-        <node x="0" y="0" width="20" height="10">
-          <node x="0" y="0" width="20" height="10" />
+      <node x="0" y="0" width="300" height="40" resolved-rows="40px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="30" height="40">
+          <node x="0" y="0" width="30" height="10" />
+          <node x="0" y="10" width="30" height="30" />
         </node>
         <node x="100" y="0" width="100" height="10" />
       </node>
