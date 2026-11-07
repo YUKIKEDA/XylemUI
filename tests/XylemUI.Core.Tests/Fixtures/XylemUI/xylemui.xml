@@ -999,4 +999,36 @@
       </node>
     </expectations>
   </test>
+  <test name="grid_start_aligned_padded_column_child_aspect_ratio__border_box_ltr" use-rounding="true">
+    <viewport width="max-content" height="max-content" />
+    <input>
+      <div display="grid" direction="ltr" position="absolute" width="300px" grid-template-columns="100px 100px">
+        <div
+          direction="ltr"
+          position="relative"
+          flex-direction="column"
+          justify-self="start"
+          padding-top="2px"
+          padding-left="2px"
+          padding-bottom="2px"
+          padding-right="2px"
+        >
+          <text direction="ltr" position="relative">
+          HHH
+        </text>
+          <div direction="ltr" position="relative" aspect-ratio="1" />
+        </div>
+        <div direction="ltr" position="relative" height="10px" />
+      </div>
+    </input>
+    <expectations>
+      <node x="0" y="0" width="300" height="44" resolved-rows="44px" resolved-columns="100px 100px">
+        <node x="0" y="0" width="34" height="44">
+          <node x="2" y="2" width="30" height="10" />
+          <node x="2" y="12" width="30" height="30" />
+        </node>
+        <node x="100" y="0" width="100" height="10" />
+      </node>
+    </expectations>
+  </test>
 </tests>
