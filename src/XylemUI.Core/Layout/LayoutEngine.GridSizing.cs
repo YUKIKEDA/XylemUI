@@ -1357,6 +1357,27 @@ internal static partial class LayoutEngine
             return knownSize;
         }
 
+        // A bare item has no margin and no keyword: the space is the given one, less the baseline shim. One input is built and
+        // passed by reference.
+        if (item.Bare)
+        {
+            float height = available.Height - item.BaselineShim;
+            var input = new LayoutInput(
+                known,
+                true,
+                true,
+                area,
+                new AvailableSize(
+                    float.IsNaN(available.Width) ? unknown : AvailableSpace.Definite(Math.Max(available.Width, 0)),
+                    float.IsNaN(height) ? unknown : AvailableSpace.Definite(Math.Max(height, 0))
+                ),
+                SizingMode.InherentSize,
+                inline ? RequestedAxis.Horizontal : RequestedAxis.Vertical
+            );
+            Size size = LayoutChild(tree, item.Node, in input, commit: false);
+            return inline ? size.Width : size.Height;
+        }
+
         // The child sees its grid area as its containing block.
         OptionalSize space = AvailableMinusMargins(tree, in item, area, available);
         var measureSpace = new AvailableSize(

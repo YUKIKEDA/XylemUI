@@ -423,11 +423,13 @@ internal static partial class LayoutEngine
             item = default;
             item.Node = child;
             item.SourceOrder = order;
-            item.AutoBlockMargin = s.Margin.Top.IsAuto || s.Margin.Bottom.IsAuto;
-            item.PercentHeight = s.Height.Kind == LengthKind.Percent;
+
+            // A bare item's margins are 0 and its height auto: their reads are skipped.
+            item.Bare = tree.Nodes.GetRef(child).Layout.IsBare;
+            item.AutoBlockMargin = !item.Bare && (s.Margin.Top.IsAuto || s.Margin.Bottom.IsAuto);
+            item.PercentHeight = !item.Bare && s.Height.Kind == LengthKind.Percent;
             item.OverflowX = s.OverflowX;
             item.OverflowY = s.OverflowY;
-            item.Bare = tree.Nodes.GetRef(child).Layout.IsBare;
             item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns, columnNames);
             item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows, rowNames);
             item.AlignSelf = s.AlignSelf ?? props.AlignItems;
@@ -1070,6 +1072,13 @@ internal static partial class LayoutEngine
         public static OriginZeroPlacement Of(GridPlacement placement, int explicitCount, ReadOnlySpan<long> names)
         {
             var result = default(OriginZeroPlacement);
+
+            // Most items are placed automatically in both ends: nothing to resolve.
+            if (placement == default)
+            {
+                return result;
+            }
+
             (result.StartKind, result.Start) = ResolveNamed(placement.Start, true, explicitCount, names, out GridLineNames.Placement startSpan);
             (result.EndKind, result.End) = ResolveNamed(placement.End, false, explicitCount, names, out GridLineNames.Placement endSpan);
             if (endSpan.IsSpan && result.StartKind == GridLineKind.Line)

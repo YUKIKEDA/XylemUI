@@ -51,6 +51,11 @@ internal static partial class LayoutEngine
         float top = rows[item.RowIndexStart + 1].Offset;
         float bottom = rows[item.RowIndexEnd].Offset;
         var area = new Size(right - left, bottom - top);
+        if (item.Bare && !tree.Nodes.GetRef(item.Node).Layout.HasInset)
+        {
+            PositionBareGridItem(tree, in item, left, right, top, bottom, area);
+            return;
+        }
 
         // What the item's style gives, read before its layout: no ref into the arena is held across a measurement (design §2.5),
         // and the style is not copied, as it was 6 % of the grid scene in each item's state (PR #650).
@@ -193,6 +198,33 @@ internal static partial class LayoutEngine
         // A relative shift moves the item, not the grid's baseline.
         tree.Nodes.GetRef(item.Node).Layout.RelativeY = dy;
         Place(tree, item.Node, x + dx, y + dy);
+    }
+
+    // PositionGridItem for a bare item without an inset: no size, limit, margin, padding, border, or relative shift of its own,
+    // so `normal` stretches it in both axes and only its area and its alignment place it.
+    private static void PositionBareGridItem(UiTree tree, in GridItemState item, float left, float right, float top, float bottom, Size area)
+    {
+        AlignItems horizontal = item.JustifySelf.Keyword == AlignItemsKeyword.Normal ? new AlignItems(AlignItemsKeyword.Stretch) : item.JustifySelf;
+        AlignItems vertical = item.AlignSelf.Keyword == AlignItemsKeyword.Normal ? new AlignItems(AlignItemsKeyword.Stretch) : item.AlignSelf;
+        var stretch = new Size(Math.Max(area.Width, 0), Math.Max(area.Height - item.BaselineShim, 0));
+        bool stretchWidth = horizontal == new AlignItems(AlignItemsKeyword.Stretch);
+        bool stretchHeight = vertical == new AlignItems(AlignItemsKeyword.Stretch);
+        var input = new LayoutInput(
+            new OptionalSize(stretchWidth ? stretch.Width : float.NaN, stretchHeight ? stretch.Height : float.NaN),
+            true,
+            true,
+            new OptionalSize(area.Width, area.Height),
+            new AvailableSize(AvailableSpace.Definite(stretch.Width), AvailableSpace.Definite(stretch.Height)),
+            SizingMode.InherentSize,
+            RequestedAxis.Both
+        );
+        Size laidOut = LayoutChild(tree, item.Node, in input, commit: true);
+        float width = Math.Max(stretchWidth ? stretch.Width : laidOut.Width, 0);
+        float height = Math.Max(stretchHeight ? stretch.Height : laidOut.Height, 0);
+        float x = AlignInArea(left, right, horizontal, width, 0, 0, 0);
+        float y = AlignInArea(top, bottom, vertical, height, 0, 0, item.BaselineShim);
+        tree.Nodes.GetRef(item.Node).Layout.RelativeY = 0;
+        Place(tree, item.Node, x, y);
     }
 
     // An item's start in one axis of its grid area (Taffy's align_item_within_area, left to right): auto margins share the free
