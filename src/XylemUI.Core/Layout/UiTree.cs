@@ -732,6 +732,7 @@ internal sealed class UiTree
                 HasBox = LayoutEngine.TryResolveBox(in style, out ResolvedBox box),
                 HasInset = style.Inset != default,
                 HasKeywordLimits = style.HasSizingKeywordLimit,
+                IsBare = style.IsBare,
                 Measure = measure,
                 IntrinsicWidths = intrinsicWidths,
                 FirstBaseline = float.NaN,
@@ -1898,6 +1899,7 @@ internal sealed class UiTree
         changed.Layout.HasBox = LayoutEngine.TryResolveBox(in style, out MeasuresOf(node).Box);
         changed.Layout.HasInset = style.Inset != default;
         changed.Layout.HasKeywordLimits = style.HasSizingKeywordLimit;
+        changed.Layout.IsBare = style.IsBare;
         changed.Versions.LayoutStyle++;
         NodeHandle parent = changed.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);

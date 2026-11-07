@@ -1321,6 +1321,11 @@ internal static partial class LayoutEngine
     // margins_axis_sums_with_baseline_shims): a horizontal percentage margin is 0, as the container's width may not be known.
     private static Size MarginSums(UiTree tree, in GridItemState item, float width)
     {
+        if (item.Bare)
+        {
+            return new Size(0, item.BaselineShim);
+        }
+
         EdgeInsets<LengthPercentageAuto> margin = StyleOf(tree, in item).Margin;
         return new Size(
             margin.Left.ResolveOrZero(0) + margin.Right.ResolveOrZero(0),
@@ -1379,6 +1384,14 @@ internal static partial class LayoutEngine
     // aspect ratio and clamped by its limits.
     private static OptionalSize KnownDimensions(UiTree tree, in GridItemState item, OptionalSize area)
     {
+        if (item.Bare)
+        {
+            return new OptionalSize(
+                IsStretch(item.JustifySelf) ? Maybe.Max(area.Width, 0) : float.NaN,
+                IsStretch(item.AlignSelf) ? Maybe.Max(area.Height - item.BaselineShim, 0) : float.NaN
+            );
+        }
+
         ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         Size margins = MarginSums(tree, in item, area.Width);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
@@ -1399,7 +1412,7 @@ internal static partial class LayoutEngine
             {
                 width = StretchOf(s.Width, stretch.Width);
             }
-            else if (!s.Margin.Left.IsAuto && !s.Margin.Right.IsAuto && IsStretchAligned(item.JustifySelf))
+            else if (!s.Margin.Left.IsAuto && !s.Margin.Right.IsAuto && IsStretch(item.JustifySelf))
             {
                 width = stretch.Width;
             }
@@ -1413,7 +1426,7 @@ internal static partial class LayoutEngine
             {
                 height = StretchOf(s.Height, stretch.Height);
             }
-            else if (!s.Margin.Top.IsAuto && !s.Margin.Bottom.IsAuto && IsStretchAligned(item.AlignSelf))
+            else if (!s.Margin.Top.IsAuto && !s.Margin.Bottom.IsAuto && IsStretch(item.AlignSelf))
             {
                 height = stretch.Height;
             }
@@ -1421,9 +1434,10 @@ internal static partial class LayoutEngine
 
         size = WithAspectRatio(size with { Height = height }, ratio);
         return size.Clamp(min, max);
-
-        static bool IsStretchAligned(AlignItems alignment) => alignment.Keyword is AlignItemsKeyword.Stretch or AlignItemsKeyword.Normal;
     }
+
+    // Whether an alignment stretches an item for its contributions: `normal` does there, unlike at the final alignment.
+    private static bool IsStretch(AlignItems alignment) => alignment.Keyword is AlignItemsKeyword.Stretch or AlignItemsKeyword.Normal;
 
     // The space given to the item, less its margins and its baseline shim, as when it is laid out in its place (Taffy's
     // available_space_minus_margins): margins against the area's width, auto margins as 0.
@@ -1432,6 +1446,11 @@ internal static partial class LayoutEngine
         if (float.IsNaN(available.Width) && float.IsNaN(available.Height))
         {
             return available;
+        }
+
+        if (item.Bare)
+        {
+            return new OptionalSize(Maybe.Max(available.Width, 0), Maybe.Max(available.Height - item.BaselineShim, 0));
         }
 
         Edges margin = EdgeInsets.ResolveOrZero(StyleOf(tree, in item).Margin, area.Width);
@@ -1444,6 +1463,11 @@ internal static partial class LayoutEngine
     // The space to measure an axis whose size is a content keyword under (Taffy's keyword_adjusted_available_space).
     private static AvailableSize KeywordAdjustedSpace(UiTree tree, in GridItemState item, OptionalSize area, AvailableSize space)
     {
+        if (item.Bare)
+        {
+            return space;
+        }
+
         ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         if (!s.Width.IsSizingKeyword && !s.Height.IsSizingKeyword)
         {
@@ -1477,6 +1501,12 @@ internal static partial class LayoutEngine
         OptionalSize innerNodeSize
     )
     {
+        // A bare item has no preferred size, no keyword, and no minimum size: its automatic minimum, with no padding or border.
+        if (item.Bare)
+        {
+            return item.IsScrollContainer(inline) ? 0 : AutomaticMinimum(tree, ref item, inline, axisTracks, area, innerNodeSize, default);
+        }
+
         ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
         float ratio = s.HasAspectRatio ? s.AspectRatio : float.NaN;
@@ -1521,7 +1551,20 @@ internal static partial class LayoutEngine
             return 0;
         }
 
-        // The automatic minimum size (CSS Grid §6.6).
+        return AutomaticMinimum(tree, ref item, inline, axisTracks, area, innerNodeSize, paddingBorder);
+    }
+
+    // The automatic minimum size (CSS Grid §6.6).
+    private static float AutomaticMinimum(
+        UiTree tree,
+        ref GridItemState item,
+        bool inline,
+        Span<GridTrackState> axisTracks,
+        OptionalSize area,
+        OptionalSize innerNodeSize,
+        Size paddingBorder
+    )
+    {
         (int start, int end) = item.TrackRange(inline);
         Span<GridTrackState> spanned = axisTracks[start..end];
         float axisInner = Get(innerNodeSize, inline);

@@ -52,10 +52,14 @@ internal static partial class LayoutEngine
         float bottom = rows[item.RowIndexEnd].Offset;
         var area = new Size(right - left, bottom - top);
 
-        LayoutStyle s = StyleOf(tree, in item);
+        // What the item's style gives, read before its layout: no ref into the arena is held across a measurement (design §2.5),
+        // and the style is not copied, as it was 6 % of the grid scene in each item's state (PR #650).
+        ref readonly LayoutStyle s = ref StyleOf(tree, in item);
         Size paddingBorder = PaddingBorder(in s, area.Width).Sum();
         float ratio = s.HasAspectRatio ? s.AspectRatio : float.NaN;
-        OptionalSize inherent = WithAspectRatio(new OptionalSize(s.Width.Resolve(area.Width), s.Height.Resolve(area.Height)), ratio);
+        Length widthStyle = s.Width;
+        Length heightStyle = s.Height;
+        OptionalSize inherent = WithAspectRatio(new OptionalSize(widthStyle.Resolve(area.Width), heightStyle.Resolve(area.Height)), ratio);
         OptionalSize min = WithAspectRatio(
             new OptionalSize(
                 Math.Max(Maybe.Or(s.MinWidth.Resolve(area.Width), paddingBorder.Width), paddingBorder.Width),
@@ -64,12 +68,14 @@ internal static partial class LayoutEngine
             ratio
         );
         OptionalSize max = WithAspectRatio(new OptionalSize(s.MaxWidth.Resolve(area.Width), s.MaxHeight.Resolve(area.Height)), ratio);
+        (float dx, float dy) = RelativeOffset(in s, area.Width, area.Height);
+        EdgeInsets<LengthPercentageAuto> margin = s.Margin;
 
         AlignItems horizontal = item.JustifySelf;
         if (horizontal.Keyword == AlignItemsKeyword.Normal)
         {
             horizontal = new AlignItems(
-                !float.IsNaN(inherent.Width) || s.Width.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
+                !float.IsNaN(inherent.Width) || widthStyle.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
 
@@ -77,11 +83,10 @@ internal static partial class LayoutEngine
         if (vertical.Keyword == AlignItemsKeyword.Normal)
         {
             vertical = new AlignItems(
-                !float.IsNaN(inherent.Height) || s.Height.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
+                !float.IsNaN(inherent.Height) || heightStyle.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
 
-        EdgeInsets<LengthPercentageAuto> margin = s.Margin;
         float marginLeft = margin.Left.Resolve(area.Width);
         float marginRight = margin.Right.Resolve(area.Width);
         float marginTop = margin.Top.Resolve(area.Width);
@@ -93,10 +98,10 @@ internal static partial class LayoutEngine
 
         // A size that is a sizing keyword resolves to a size, or measures the item under the keyword's space; one measurement when
         // both axes measure.
-        bool keywordWidth = float.IsNaN(inherent.Width) && s.Width.IsSizingKeyword;
-        bool keywordHeight = float.IsNaN(inherent.Height) && s.Height.IsSizingKeyword;
-        AvailableSpace? measureWidth = keywordWidth ? MeasureSpaceOf(s.Width, stretch.Width) : null;
-        AvailableSpace? measureHeight = keywordHeight ? MeasureSpaceOf(s.Height, stretch.Height) : null;
+        bool keywordWidth = float.IsNaN(inherent.Width) && widthStyle.IsSizingKeyword;
+        bool keywordHeight = float.IsNaN(inherent.Height) && heightStyle.IsSizingKeyword;
+        AvailableSpace? measureWidth = keywordWidth ? MeasureSpaceOf(widthStyle, stretch.Width) : null;
+        AvailableSpace? measureHeight = keywordHeight ? MeasureSpaceOf(heightStyle, stretch.Height) : null;
         Size measuredBoth = new(float.NaN, float.NaN);
         var parentSize = new OptionalSize(area.Width, area.Height);
         if (measureWidth is { } bothWidth && measureHeight is { } bothHeight)
@@ -131,7 +136,7 @@ internal static partial class LayoutEngine
                             horizontal: true
                         )
                     )
-                    : StretchOf(s.Width, stretch.Width);
+                    : StretchOf(widthStyle, stretch.Width);
             }
             else if (!float.IsNaN(marginLeft) && !float.IsNaN(marginRight) && horizontal == new AlignItems(AlignItemsKeyword.Stretch))
             {
@@ -161,7 +166,7 @@ internal static partial class LayoutEngine
                             horizontal: false
                         )
                     )
-                    : StretchOf(s.Height, stretch.Height);
+                    : StretchOf(heightStyle, stretch.Height);
             }
             else if (!float.IsNaN(marginTop) && !float.IsNaN(marginBottom) && vertical == new AlignItems(AlignItemsKeyword.Stretch))
             {
@@ -186,7 +191,6 @@ internal static partial class LayoutEngine
         float y = AlignInArea(top, bottom, vertical, final.Height, marginTop, marginBottom, item.BaselineShim);
 
         // A relative shift moves the item, not the grid's baseline.
-        (float dx, float dy) = RelativeOffset(in s, area.Width, area.Height);
         tree.Nodes.GetRef(item.Node).Layout.RelativeY = dy;
         Place(tree, item.Node, x + dx, y + dy);
     }

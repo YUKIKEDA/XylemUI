@@ -427,6 +427,7 @@ internal static partial class LayoutEngine
             item.PercentHeight = s.Height.Kind == LengthKind.Percent;
             item.OverflowX = s.OverflowX;
             item.OverflowY = s.OverflowY;
+            item.Bare = tree.Nodes.GetRef(child).Layout.IsBare;
             item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns, columnNames);
             item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows, rowNames);
             item.AlignSelf = s.AlignSelf ?? props.AlignItems;
@@ -1241,6 +1242,11 @@ internal static partial class LayoutEngine
         // What the layout reads of the item's style most often; the rest is read from the tree where it is used (no ref into the
         // arena is held across a measurement, design §2.5). Copying the whole style into each item was 6 % of the grid scene.
         public bool AutoBlockMargin;
+
+        // The item's style has no size, limit, aspect ratio, margin, padding, or border (LayoutStyle.IsBare): its contributions
+        // and its place come from its grid area alone, without reading its style. Reading the style for each contribution was 16
+        // to 17 % of the grid scene (layout-loop grid, P02f's second implementation PR).
+        public bool Bare;
         public bool PercentHeight;
         public Overflow OverflowX;
         public Overflow OverflowY;

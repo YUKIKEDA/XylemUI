@@ -215,6 +215,23 @@ internal readonly record struct LayoutStyle
     public bool IsStructuralBoundary => Width.IsPx && Height.IsPx && !HasSizingKeywordLimit;
 
     /// <summary>
+    /// Gets a value indicating whether the box has no size, limit, aspect ratio, margin, padding, or border of its own: every
+    /// size and limit auto, and every margin, padding, and border 0 (P02f). Its parent then lays it out from the space it gives
+    /// alone.
+    /// </summary>
+    public bool IsBare =>
+        Width.IsAuto
+        && Height.IsAuto
+        && MinWidth.IsAuto
+        && MinHeight.IsAuto
+        && MaxWidth.IsAuto
+        && MaxHeight.IsAuto
+        && !HasAspectRatio
+        && Padding == default
+        && Border == default
+        && Margin == EdgeInsets.Margin(0);
+
+    /// <summary>
     /// Gets a value indicating whether a minimum or a maximum is a sizing keyword (row L3): resolving it measures the node or
     /// reads the space it may stretch into.
     /// </summary>
