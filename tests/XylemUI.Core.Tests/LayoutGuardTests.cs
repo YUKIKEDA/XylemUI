@@ -46,6 +46,28 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
 
     private static readonly LayoutStyle SpanTwo = new() { GridColumn = new GridPlacement(GridLine.Auto, GridLine.Span(2)) };
 
+    // A grid with named lines and an automatic repetition, filled densely (P02f's second implementation PR): `[first] 120px
+    // repeat(auto-fill, [col] 40px) [last]`.
+    private static readonly LayoutStyle GridOfNames = new()
+    {
+        Algorithm = new LayoutAlgorithm.Grid(
+            new GridProps
+            {
+                Columns = [Track.Line("first"), Track.Px(120), Track.Repeat(Repeat.AutoFill, Track.Line("col"), Track.Px(40)), Track.Line("last")],
+                AutoFlow = GridAutoFlow.RowDense,
+            }
+        ),
+    };
+
+    private static readonly LayoutStyle ByName = new() { GridColumn = new GridPlacement(GridLine.Named("col", 2), GridLine.Span("col", 2)) };
+
+    private static readonly LayoutStyle AbsoluteByName = new()
+    {
+        Position = Position.Absolute,
+        GridColumn = new GridPlacement(GridLine.Named("first"), GridLine.Named("last")),
+        GridRow = new GridPlacement(GridLine.At(1), GridLine.Auto),
+    };
+
     private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
     private static readonly IntrinsicWidthsFunc TenWide = static _ => new IntrinsicWidths(10, 10, DependsOnHeight: false);
@@ -130,7 +152,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     /// <summary>
     /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state, with CSS's
     /// defaults (stretch, the automatic minimum size), with percentages, with wrapping rows, with children out of the flow, and
-    /// with minimums and maximums that are sizing keywords, and in grids.
+    /// with minimums and maximums that are sizing keywords, and in grids, one of them with named lines.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -140,8 +162,10 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     ///   absolutely positioned at its row's right and bottom, and every tenth from the fifth is a hidden row holding 10 leaves
     ///   (row L2). With keywords, every tenth leaf has a minimum width of max-content and every tenth from the fifth a maximum
     ///   width of min-content (row L3). With grid, each row is a grid of four columns (120 px, auto, 1fr, and
-    ///   minmax(80px, 2fr)) whose rows the items add, and every seventh leaf spans two columns (row P02f). Warmed up with 20
-    ///   changes.
+    ///   minmax(80px, 2fr)) whose rows the items add, and every seventh leaf spans two columns (row P02f). With grid-named,
+    ///   each row is a grid of `[first] 120px repeat(auto-fill, [col] 40px) [last]` filled densely, every seventh leaf is
+    ///   placed from the second line named col across two of them, and every eleventh is absolutely positioned from the line
+    ///   named first to the line named last (P02f's second implementation PR). Warmed up with 20 changes.
     ///
     /// Steps:
     /// - 1,100 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread in
@@ -157,6 +181,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     [InlineData("positioned")]
     [InlineData("keywords")]
     [InlineData("grid")]
+    [InlineData("grid-named")]
     public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(string scene) =>
         ui.Invoke(() =>
         {
@@ -169,6 +194,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                 {
                     "wrap" => Wrapping,
                     "grid" => GridOfFour,
+                    "grid-named" => GridOfNames,
                     _ => Row(),
                 };
                 NodeHandle row = Box(tree, root, rowStyle);
@@ -183,6 +209,8 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                         "keywords" when c % 10 == 0 => new LayoutStyle { MinWidth = Length.MaxContent },
                         "keywords" when c % 10 == 5 => new LayoutStyle { MaxWidth = Length.MinContent },
                         "grid" when c % 7 == 0 && !(r == 50 && c == 50) => SpanTwo,
+                        "grid-named" when c % 7 == 0 && !(r == 50 && c == 50) => ByName,
+                        "grid-named" when c % 11 == 0 && !(r == 50 && c == 50) => AbsoluteByName,
                         _ => new LayoutStyle(),
                     };
                     NodeHandle leaf = scene == "positioned" && c % 10 == 5 ? tree.CreateNode(style) : tree.CreateNode(style, TenByTen, TenWide);

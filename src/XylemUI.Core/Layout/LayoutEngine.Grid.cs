@@ -1138,7 +1138,7 @@ internal static partial class LayoutEngine
                 return Resolve(line, explicitCount);
             }
 
-            GridLineNames.Placement placement = GridLineNames.PlacementOf(line.Value);
+            GridLineNames.Placement placement = GridLineNames.Shared.PlacementOf(line.Value);
             if (placement.IsSpan)
             {
                 span = placement;

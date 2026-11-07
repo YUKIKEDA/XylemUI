@@ -356,7 +356,7 @@ public static class Track
         var ids = ImmutableArray.CreateBuilder<int>(names.Length);
         foreach (string name in names)
         {
-            ids.Add(GridLineNames.NameId(GridLineNames.Check(name, nameof(names))));
+            ids.Add(GridLineNames.Shared.NameId(GridLineNames.Check(name, nameof(names))));
         }
 
         return GridTrack.Line(ids.MoveToImmutable());
@@ -448,7 +448,7 @@ public readonly record struct GridLine
     /// Each distinct name and line or span takes an entry of a table for the whole process that never shrinks (design §3.3). A
     /// name is an identifier written in the app's code: a name made from data (the id of a list's item) can fill the table.
     /// </remarks>
-    public static GridLine Named(string name) => FromPlacement(GridLineNames.PlacementId(GridLineNames.Check(name, nameof(name)), 0, false));
+    public static GridLine Named(string name) => FromPlacement(GridLineNames.Shared.PlacementId(GridLineNames.Check(name, nameof(name)), 0, false));
 
     /// <summary>
     /// Returns the <paramref name="index"/>th line named <paramref name="name"/> (CSS's <c>grid-column-start: 2 name</c>, CSS
@@ -470,7 +470,7 @@ public readonly record struct GridLine
         string checkedName = GridLineNames.Check(name, nameof(name));
         return index is 0 or < -Track.MaxTracks or > Track.MaxTracks
             ? throw new ArgumentOutOfRangeException(nameof(index), index, "A named line's index is from 1 to 10,000 or from -1 to -10,000.")
-            : FromPlacement(GridLineNames.PlacementId(checkedName, index, false));
+            : FromPlacement(GridLineNames.Shared.PlacementId(checkedName, index, false));
     }
 
     /// <summary>
@@ -493,7 +493,7 @@ public readonly record struct GridLine
         string checkedName = GridLineNames.Check(name, nameof(name));
         return count is < 1 or > Track.MaxTracks
             ? throw new ArgumentOutOfRangeException(nameof(count), count, "A span to a named line counts from 1 to 10,000 lines.")
-            : FromPlacement(GridLineNames.PlacementId(checkedName, count, true));
+            : FromPlacement(GridLineNames.Shared.PlacementId(checkedName, count, true));
     }
 
     /// <summary>
@@ -504,9 +504,14 @@ public readonly record struct GridLine
     /// <param name="span">Whether it spans to the line.</param>
     /// <returns>The line.</returns>
     internal static GridLine UncheckedNamed(string name, int index, bool span) =>
-        FromPlacement(GridLineNames.PlacementId(name, Math.Clamp(index, short.MinValue, short.MaxValue), span));
+        FromPlacement(GridLineNames.Shared.PlacementId(name, Math.Clamp(index, short.MinValue, short.MaxValue), span));
 
-    private static GridLine FromPlacement(int id) =>
+    /// <summary>
+    /// Returns the line that holds the number of a named placement.
+    /// </summary>
+    /// <param name="id">The number, from 0 to <see cref="GridLineNames.Capacity"/> less one.</param>
+    /// <returns>The line.</returns>
+    internal static GridLine FromPlacement(int id) =>
         new((short)(id < PositiveNamedCount ? PositiveNamed + id : NegativeNamed - (id - PositiveNamedCount)));
 
     /// <summary>

@@ -9,7 +9,7 @@ namespace XylemUI;
 /// the same placement give the same number, so the table grows with the distinct names and placements an app writes, which
 /// are identifiers in its code. A placement past <see cref="Capacity"/> throws.
 /// </remarks>
-internal static class GridLineNames
+internal sealed class GridLineNames
 {
     /// <summary>
     /// The largest number of distinct named placements: the values of a <see cref="GridLine"/> that lines and spans do not use.
@@ -26,19 +26,31 @@ internal static class GridLineNames
     /// </summary>
     public const int LastNegative = -((2 * Track.MaxTracks) + 2);
 
-    private static readonly Lock Gate = new();
-    private static readonly Dictionary<string, int> NameIds = new(StringComparer.Ordinal);
-    private static readonly Dictionary<Placement, int> PlacementIds = [];
-    private static Placement[] _placements = new Placement[16];
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, int> _nameIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<Placement, int> _placementIds = [];
+    private readonly int _capacity;
+    private Placement[] _placements = new Placement[16];
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GridLineNames"/> class.
+    /// </summary>
+    /// <param name="capacity">The largest number of distinct named placements it holds.</param>
+    internal GridLineNames(int capacity) => _capacity = capacity;
+
+    /// <summary>
+    /// Gets the table of the process, which <see cref="GridLine"/> and <see cref="Track.Line"/> fill.
+    /// </summary>
+    public static GridLineNames Shared { get; } = new(Capacity);
 
     /// <summary>
     /// Returns the number of a line's name, adding the name when it is new.
     /// </summary>
     /// <param name="name">The name, checked by the caller.</param>
     /// <returns>The number.</returns>
-    public static int NameId(string name)
+    public int NameId(string name)
     {
-        lock (Gate)
+        lock (_gate)
         {
             return NameIdLocked(name);
         }
@@ -50,11 +62,11 @@ internal static class GridLineNames
     /// <param name="name">The name, checked by the caller.</param>
     /// <param name="index">Which line of the name: 0 for the name alone, else from 1, or from -1 back from the end.</param>
     /// <param name="span">Whether it spans to the line rather than naming it.</param>
-    /// <returns>The number, from 0 to <see cref="Capacity"/> less one.</returns>
-    /// <exception cref="InvalidOperationException">The process already holds <see cref="Capacity"/> named placements.</exception>
-    public static int PlacementId(string name, int index, bool span)
+    /// <returns>The number, from 0 to the capacity less one.</returns>
+    /// <exception cref="InvalidOperationException">The table already holds as many named placements as its capacity.</exception>
+    public int PlacementId(string name, int index, bool span)
     {
-        lock (Gate)
+        lock (_gate)
         {
             int nameId = NameIdLocked(name);
 
@@ -67,16 +79,16 @@ internal static class GridLineNames
                 alone ? NameIdLocked(name + "-start") : -1,
                 alone ? NameIdLocked(name + "-end") : -1
             );
-            if (PlacementIds.TryGetValue(placement, out int id))
+            if (_placementIds.TryGetValue(placement, out int id))
             {
                 return id;
             }
 
-            id = PlacementIds.Count;
-            if (id == Capacity)
+            id = _placementIds.Count;
+            if (id == _capacity)
             {
                 throw new InvalidOperationException(
-                    $"The process holds {Capacity} distinct named grid placements, the most it can; grid line names are identifiers written in the app's code, not data."
+                    $"The process holds {_capacity} distinct named grid placements, the most it can; grid line names are identifiers written in the app's code, not data."
                 );
             }
 
@@ -88,7 +100,7 @@ internal static class GridLineNames
 
             placements[id] = placement;
             Volatile.Write(ref _placements, placements);
-            PlacementIds.Add(placement, id);
+            _placementIds.Add(placement, id);
             return id;
         }
     }
@@ -98,7 +110,7 @@ internal static class GridLineNames
     /// </summary>
     /// <param name="id">The number <see cref="PlacementId"/> returned.</param>
     /// <returns>The placement.</returns>
-    public static Placement PlacementOf(int id) => Volatile.Read(ref _placements)[id];
+    public Placement PlacementOf(int id) => Volatile.Read(ref _placements)[id];
 
     /// <summary>
     /// Checks a name of a grid line as CSS does: not empty, and not a word that grid placements read (<c>span</c>,
@@ -107,6 +119,7 @@ internal static class GridLineNames
     /// <param name="name">The line's name to check.</param>
     /// <param name="parameter">The name of the parameter that holds it.</param>
     /// <returns>The same name.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The name is empty, <c>span</c>, or <c>auto</c>.</exception>
     public static string Check(string name, string parameter)
     {
@@ -116,12 +129,12 @@ internal static class GridLineNames
             : name;
     }
 
-    private static int NameIdLocked(string name)
+    private int NameIdLocked(string name)
     {
-        if (!NameIds.TryGetValue(name, out int id))
+        if (!_nameIds.TryGetValue(name, out int id))
         {
-            id = NameIds.Count;
-            NameIds.Add(name, id);
+            id = _nameIds.Count;
+            _nameIds.Add(name, id);
         }
 
         return id;
