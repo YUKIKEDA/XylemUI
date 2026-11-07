@@ -126,28 +126,6 @@ internal static class TaffyFixtureScope
             return $"an absolutely positioned child of a grid ({Next})";
         }
 
-        foreach (XAttribute attribute in e.Attributes())
-        {
-            string name = attribute.Name.LocalName;
-            string value = attribute.Value;
-            if (name.StartsWith("grid-template-", StringComparison.Ordinal) || name.StartsWith("grid-auto-", StringComparison.Ordinal))
-            {
-                if (value.Contains('[', StringComparison.Ordinal))
-                {
-                    return $"named grid lines ({Next})";
-                }
-            }
-
-            if (name is "grid-row-start" or "grid-row-end" or "grid-column-start" or "grid-column-end")
-            {
-                string line = value.StartsWith("span ", StringComparison.Ordinal) ? value[5..] : value;
-                if (line != "auto" && !int.TryParse(line, out _))
-                {
-                    return $"named grid lines ({Next})";
-                }
-            }
-        }
-
         return null;
     }
 

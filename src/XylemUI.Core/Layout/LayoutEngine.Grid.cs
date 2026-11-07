@@ -67,13 +67,21 @@ internal static partial class LayoutEngine
 
         ScratchStack<GridItemState> itemScratch = _gridItemScratch ??= new ScratchStack<GridItemState>();
         ScratchStack<GridTrackState> trackScratch = _gridTrackScratch ??= new ScratchStack<GridTrackState>();
+        ScratchStack<long> nameScratch = _gridNameScratch ??= new ScratchStack<long>();
         int itemTop = itemScratch.Top;
         int trackTop = trackScratch.Top;
+        int nameTop = nameScratch.Top;
         try
         {
+            // The named lines of the explicit grid, for the placements by name.
+            Span<long> columnNames = nameScratch.Push(LineNamePairs(props.Columns, columnRepetitions, []));
+            columnNames = columnNames[..LineNamePairs(props.Columns, columnRepetitions, columnNames)];
+            Span<long> rowNames = nameScratch.Push(LineNamePairs(props.Rows, rowRepetitions, []));
+            rowNames = rowNames[..LineNamePairs(props.Rows, rowRepetitions, rowNames)];
+
             // 3. The grid items, in document order, with their placements in lines from the explicit grid's start.
             Span<GridItemState> items = itemScratch.Push(count);
-            GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, items);
+            GenerateGridItems(tree, firstChild, props, explicitColumns, explicitRows, columnNames, rowNames, items);
 
             // 4 and 5. The placement of the items, which grows the implicit grid.
             GridOccupancy occupancy = _gridOccupancy ??= new GridOccupancy();
@@ -188,6 +196,7 @@ internal static partial class LayoutEngine
         {
             itemScratch.PopTo(itemTop);
             trackScratch.PopTo(trackTop);
+            nameScratch.PopTo(nameTop);
         }
     }
 
@@ -281,6 +290,11 @@ internal static partial class LayoutEngine
         GridTrack auto = default;
         foreach (GridTrack entry in template)
         {
+            if (entry.IsLine)
+            {
+                continue;
+            }
+
             if (!entry.IsRepeat)
             {
                 allFixed &= entry.Single.HasFixedComponent;
@@ -323,6 +337,11 @@ internal static partial class LayoutEngine
             float used = 0;
             foreach (GridTrack entry in template)
             {
+                if (entry.IsLine)
+                {
+                    continue;
+                }
+
                 if (!entry.IsRepeat)
                 {
                     used += entry.Single.RepetitionSize(containerSize);
@@ -376,13 +395,15 @@ internal static partial class LayoutEngine
     }
 
     // The items: the children in the flow, in document order, with their styles and their placements in lines from the
-    // explicit grid's start (Taffy's into_origin_zero).
+    // explicit grid's start, names resolved (Taffy's resolve_line_names and into_origin_zero).
     private static void GenerateGridItems(
         UiTree tree,
         NodeHandle firstChild,
         GridProps props,
         int explicitColumns,
         int explicitRows,
+        ReadOnlySpan<long> columnNames,
+        ReadOnlySpan<long> rowNames,
         Span<GridItemState> items
     )
     {
@@ -404,8 +425,8 @@ internal static partial class LayoutEngine
             item.PercentHeight = s.Height.Kind == LengthKind.Percent;
             item.OverflowX = s.OverflowX;
             item.OverflowY = s.OverflowY;
-            item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns);
-            item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows);
+            item.ColumnPlacement = OriginZeroPlacement.Of(s.GridColumn, explicitColumns, columnNames);
+            item.RowPlacement = OriginZeroPlacement.Of(s.GridRow, explicitRows, rowNames);
             item.AlignSelf = s.AlignSelf ?? props.AlignItems;
             item.JustifySelf = s.JustifySelf ?? props.JustifyItems;
             item.Baseline = float.NaN;
@@ -719,6 +740,11 @@ internal static partial class LayoutEngine
         {
             foreach (GridTrack entry in template)
             {
+                if (entry.IsLine)
+                {
+                    continue;
+                }
+
                 if (!entry.IsRepeat)
                 {
                     if (current < explicitLimit)
@@ -1036,12 +1062,51 @@ internal static partial class LayoutEngine
                 _ => 1,
             };
 
-        public static OriginZeroPlacement Of(GridPlacement placement, int explicitCount)
+        // The placement with its names resolved against the named lines of the axis (Taffy's resolve_line_names): a span to a
+        // name counts from a line at the other end, and is a span of one track otherwise (CSS Grid §8.3.1).
+        public static OriginZeroPlacement Of(GridPlacement placement, int explicitCount, ReadOnlySpan<long> names)
         {
             var result = default(OriginZeroPlacement);
-            (result.StartKind, result.Start) = Resolve(placement.Start, explicitCount);
-            (result.EndKind, result.End) = Resolve(placement.End, explicitCount);
+            (result.StartKind, result.Start) = ResolveNamed(placement.Start, true, explicitCount, names, out GridLineNames.Placement startSpan);
+            (result.EndKind, result.End) = ResolveNamed(placement.End, false, explicitCount, names, out GridLineNames.Placement endSpan);
+            if (endSpan.IsSpan && result.StartKind == GridLineKind.Line)
+            {
+                int end = NthLineForwards(LinesNamed(names, endSpan.Name), result.Start + 1, Math.Max((int)endSpan.Index, 1), explicitCount);
+                (result.EndKind, result.End) = (GridLineKind.Line, end);
+            }
+            else if (startSpan.IsSpan && result.EndKind == GridLineKind.Line)
+            {
+                int start = NthLineBackwards(LinesNamed(names, startSpan.Name), result.End - 1, Math.Max((int)startSpan.Index, 1), explicitCount);
+                (result.StartKind, result.Start) = (GridLineKind.Line, start);
+            }
+
             return result;
+        }
+
+        // One end: a line by name resolves to its line; a span to a name is returned in span, as a span of one track until the
+        // other end is known.
+        private static (GridLineKind Kind, int Value) ResolveNamed(
+            GridLine line,
+            bool start,
+            int explicitCount,
+            ReadOnlySpan<long> names,
+            out GridLineNames.Placement span
+        )
+        {
+            span = default;
+            if (line.Kind != GridLineKind.Named)
+            {
+                return Resolve(line, explicitCount);
+            }
+
+            GridLineNames.Placement placement = GridLineNames.PlacementOf(line.Value);
+            if (placement.IsSpan)
+            {
+                span = placement;
+                return (GridLineKind.Span, 1);
+            }
+
+            return (GridLineKind.Line, NamedLine(placement, start, names, explicitCount));
         }
 
         // Both ends, when at least one is a line (Taffy's resolve_definite_grid_lines): two equal lines take one track, and two
