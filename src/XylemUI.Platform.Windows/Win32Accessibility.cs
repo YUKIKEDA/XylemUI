@@ -498,7 +498,9 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             return;
         }
 
-        var now = TimeSpan.FromMilliseconds(Environment.TickCount64);
+        // The window's clock, which the pointer's and the keys' input carries: a click of assistive technology after a pointer's
+        // click measures the interval on one clock.
+        TimeSpan now = _window.Now();
         switch (request->Action)
         {
             case AccessKit.ActionClick when node.LinkIndex >= 0:

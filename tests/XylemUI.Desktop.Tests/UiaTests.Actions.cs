@@ -72,6 +72,47 @@ public sealed unsafe partial class UiaTests
         });
 
     /// <summary>
+    /// UIA's Invoke delivers a click at the time of the window's clock, which the pointer's and the keys' input carries.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA click time" whose clock is a test clock advanced by 5 seconds, with a node of the role Button and the
+    ///   name "Stamp" that records the time of its click.
+    ///
+    /// Steps:
+    /// - On the client's thread, find "Stamp" and call its InvokePattern's Invoke; run the loop until the click ran.
+    ///
+    /// Expected:
+    /// - The click's time is 5 seconds.
+    /// </remarks>
+    [Fact]
+    public void Invoke_ClicksAtTheTimeOfTheWindowsClock() =>
+        ui.Invoke(() =>
+        {
+            TimeSpan? stamp = null;
+            using var window = new DesktopWindow(
+                () =>
+                    Box()
+                        .Height(20)
+                        .On(PointerEventKind.Click, EventPhase.Bubble, (in PointerEvent e) => stamp = e.Timestamp)
+                        .Accessible(new AccessibilityInfo { Role = SemanticsRole.Button, Name = "Stamp" }),
+                new WindowOptions("UIA click time", 200, 200),
+                useWarp: true
+            );
+            var time = new TestTime();
+            time.Advance(TimeSpan.FromSeconds(5));
+            window.Window.Time = time;
+
+            ActByUia(
+                window,
+                root => ((InvokePattern)Named(root, "Stamp").GetCurrentPattern(InvokePattern.Pattern)).Invoke(),
+                () => stamp is not null
+            );
+
+            Assert.Equal(TimeSpan.FromSeconds(5), stamp);
+        });
+
+    /// <summary>
     /// UIA's SetFocus moves the tree's focus to the node.
     /// </summary>
     /// <remarks>

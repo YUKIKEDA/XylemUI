@@ -1111,6 +1111,13 @@ internal sealed class UiTree
         }
 
         Invalidation.Invalidate(this, node, ChangeKind.Color);
+
+        // The node may stop being clickable to assistive technology (design §4.4.1).
+        if (kind == PointerEventKind.Click)
+        {
+            MarkAccessibilitySelf(node);
+        }
+
         return true;
     }
 

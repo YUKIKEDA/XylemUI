@@ -644,7 +644,11 @@ public sealed unsafe partial class Win32Window : IPointerPlatform
         }
     }
 
-    private TimeSpan Now() => Time.GetElapsedTime(0);
+    /// <summary>
+    /// Returns the time of the window's clock (<see cref="Time"/>), which the input it delivers carries.
+    /// </summary>
+    /// <returns>The time.</returns>
+    internal TimeSpan Now() => Time.GetElapsedTime(0);
 
     private void Deliver(in PointerInput input) => PointerInputReceived?.Invoke(in input);
 }

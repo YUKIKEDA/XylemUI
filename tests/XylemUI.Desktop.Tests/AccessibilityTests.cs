@@ -953,7 +953,7 @@ public sealed class AccessibilityTests
 
     /// <summary>
     /// A node is clickable to assistive technology when it has a click handler of its own in the bubble phase; a handler of another
-    /// kind, or a click handler in the capture phase, does not make it so.
+    /// kind, or a click handler in the capture phase, does not make it so, and a node whose click handler is removed stops being so.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -961,10 +961,10 @@ public sealed class AccessibilityTests
     ///   the bubble phase, and "tunnel" with a click handler in the capture phase.
     ///
     /// Steps:
-    /// - Make the tree; read whether each node is clickable.
+    /// - Make the tree; read whether each node is clickable. Remove the click handler of "click"; settle; read whether it is clickable.
     ///
     /// Expected:
-    /// - "click" only.
+    /// - "click" only; then not "click".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -986,6 +986,10 @@ public sealed class AccessibilityTests
         bool Clickable(Element e) => (app.Tree.Accessibility.Find(e.Node)!.States & AccessibilityStates.Clickable) != 0;
 
         Assert.Equal((true, false, false), (Clickable(click), Clickable(down), Clickable(tunnel)));
+
+        Assert.True(app.Tree.RemovePointerHandler(click.Node, PointerEventKind.Click, EventPhase.Bubble, none));
+        _ = app.PumpAndSettle();
+        Assert.False(Clickable(click));
 
         static AccessibilityInfo Group(string name) => new() { Role = SemanticsRole.Group, Name = name };
     }
