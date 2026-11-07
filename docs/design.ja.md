@@ -1856,6 +1856,26 @@ public readonly record struct BlockProps
     public AlignContent AlignContent { get; init; }      // 子のまとまり全体の縦の揃え。Normal（既定。上から積む）| Start | End | Center
 }
 
+// グリッドの容器の性質（P02f の Grill で決定、Issue #645）。既定値は CSS の初期値。トラックの並びは、作った配列をそのまま持ち、
+// 同じ配列を渡し直したときだけ「変わらない」とする
+public readonly record struct GridProps
+{
+    public ImmutableArray<GridTrack> Columns { get; init; }    // grid-template-columns と、その間の線の名前。空（既定）は明示の列なし
+    public ImmutableArray<GridTrack> Rows { get; init; }       // grid-template-rows と、その間の線の名前
+    public ImmutableArray<TrackSize> AutoColumns { get; init; } // grid-auto-columns。空（既定）は auto
+    public ImmutableArray<TrackSize> AutoRows { get; init; }    // grid-auto-rows。空（既定）は auto
+    public GridAutoFlow AutoFlow { get; init; }                // Row（既定）| Column | RowDense | ColumnDense
+    public AlignItems JustifyItems { get; init; }              // 子のセルの中の横の揃え。Normal（既定。Stretch と同じ）| Start | End | Center | Stretch | Baseline
+    public AlignItems AlignItems { get; init; }                // 子のセルの中の縦の揃え。値は JustifyItems と同じ
+    public JustifyContent JustifyContent { get; init; }        // トラック全体の横の揃え。Normal（既定。Stretch と同じで auto のトラックを伸ばす。Taffy 0.15 の `src/style/grid.rs` 270〜271 行目）| Start | End | Center | Stretch | SpaceBetween | SpaceAround | SpaceEvenly
+    public AlignContent AlignContent { get; init; }            // トラック全体の縦の揃え。値は JustifyContent と同じ
+    public LengthPercentage ColumnGap { get; init; }           // 列と列の間。既定 0
+    public LengthPercentage RowGap { get; init; }              // 行と行の間。既定 0
+}
+
+// トラックの大きさ: Px | Percent | Fr | Auto | MinContent | MaxContent | FitContent(LengthPercentage) | MinMax(min, max)。
+// GridTrack は、トラック 1 本（TrackSize）、繰り返し（Repeat: 回数か AutoFill | AutoFit と、トラックの並び）、線の名前（Line）のどれか
+
 // 揃えの値には、あふれたときの揃え方を付けられる（CSS Box Alignment の safe / unsafe）。Safe は、はみ出すときに start に寄せる
 // （L1b の Grill で決定）。付けないときは unsafe と同じ。self-start / self-end は子自身の書字の向きによるので P03b
 
@@ -1877,6 +1897,7 @@ public struct LayoutStyle
     public Length FlexBasis;                        // Auto: 主軸のサイズ、それも Auto なら内容
     public AlignSelf AlignSelf;                     // Auto（既定。親の AlignItems）| AlignItems の値
     public AlignSelf JustifySelf;                   // ブロックの子の横の揃え。Auto（既定。親の JustifyItems）| Start | End | Center | Stretch
+    public GridSpan GridColumn, GridRow;            // グリッドの子の置き場所（P02f）。始まりと終わりの線: Auto（既定）| 線の番号（1 から、負は末尾から）| Span(n) | 名前の線
     public Direction Direction;                     // Ltr | Rtl（P03b）
     public WritingMode WritingMode;                 // §8.3
 }
@@ -2072,14 +2093,42 @@ CSS Gridは、テキストシェーピングやGPUドライバ対応と異なり
 **採用範囲（v1で実装）**
 - トラックサイズ指定: `px` / `%` / `fr`（伸縮単位） / `auto` / `min-content` / `max-content` / `minmax()`
 - `repeat()`: 整数回指定に加え、`auto-fill` / `auto-fit`（利用可能幅に応じたトラック数の自動決定）
-- 明示グリッド＋暗黙グリッドの自動配置アルゴリズム（行優先/列優先の`auto-flow`切り替え）
+- 明示グリッド＋暗黙グリッドの自動配置アルゴリズム（行優先/列優先の`auto-flow`切り替えと `dense`）
 - `gap`（行間・列間の間隔指定）
+- 名前付きの線（トラックの並びの間に置く `[name]`）。子は名前の線に置ける。Taffy 0.15 の `grid_template_column_names`（`src/style/mod.rs` 860〜863 行目）で、XML テストが 10 件ある（P02f の Grill、Issue #645）
+- subgrid（行 P02f2。下の「subgrid」）
 
-**対象外（v1では実装しない）**
-- `grid-template-areas`（名前付きエリアの文字列DSL）: 用途がページレイアウト寄りでアプリUIでの必要性が低く、パーサーの実装コストに見合わない
-- Subgrid: CSS Grid仕様の中でも比較的新しく複雑な拡張で、実装例も少なく、必要になった時点で改めて追加投資を検討する
+**採らないもの（P02f の Grill で決め直した、Issue #645）**
+- `grid-template-areas`: 領域の並びを `"header header" "side main"` のような文字列で書く形は、§1 の「スタイル文字列を持たない」に当たる。領域に名前を付けて使い回すことは、配置の値（`GridSpan`）を C# の変数や static なフィールドに持てば同じことができる。Taffy 0.15 は持つ（`src/style/mod.rs` 857 行目）が、Chrome の結果の XML テストは 0 件で、GPUI・Avalonia・Flutter はどれも名前付きの領域を持たない。前の版の理由は「パーサーの実装コストに見合わない」で、手間だけだった（#365）
+- 兄弟のグリッドの列をそろえる口を、Avalonia の `SharedSizeGroup`（`DefinitionBase.cs` 24 行目、`Grid.cs` 2796 行目の `IsSharedSizeScope`）の形で持つこと: 同じことは subgrid でできる
+- トラックの並びの文字列の解析（Avalonia の `GridLength.Parse`、`GridLength.cs` 192 行目）: §1 のとおり、型付きの値だけを受ける
 
-この境界線はGPUI/Dioxus/Bevy UIが実際にTaffyを使って到達している実用範囲と一致しており、WPF / Avalonia の `Grid`（`*` 指定・`Auto`・行列の span）が提供する機能も包含する。「.NET の主要デスクトップUIフレームワーク（WPF / Avalonia）と同等以上」という目標水準（MoonBit 版の「MoonBitエコシステム内でのトップ」から読み替え）に照らして過不足のない設定と判断する。
+この境界線はGPUI/Dioxus/Bevy UIが実際にTaffyを使って到達している実用範囲を含み、WPF / Avalonia の `Grid`（`*` 指定・`Auto`・行列の span。`SharedSizeGroup` の用途は subgrid）が提供する機能も包含する。「.NET の主要デスクトップUIフレームワーク（WPF / Avalonia）と同等以上」という目標水準に照らして過不足のない設定と判断する。
+
+**subgrid（行 P02f2）:** 採る。子のグリッドが親のトラックを使うので、兄弟のグリッドの列がそろう（設定のフォーム、一覧の行）。Avalonia は同じ用途を `SharedSizeGroup` で持つ。Taffy 0.15 は subgrid を実装していない（`src/compute/grid/types/named.rs` 212 行目のコメントだけ）ので、移植の元も Chrome の結果の XML テストも無い。P02f の受け入れ（Taffy の XML テスト）と基準を混ぜないよう、P02f の直後の行 P02f2 に置き、期待値は Taffy の `scripts/gentest` で Chrome から作る fixture にする。前の版の理由は「複雑」で、手間だけだった（#365、P02f の Grill で決め直した、Issue #645）
+
+**P02f で入れる形（P02f の Grill で決定、Issue #645）**
+
+- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置き、子は `GridLine.Named(name)` で置く。揃えは Flex と同じ口（`.JustifyItems`・`.AlignItems`・`.JustifySelf`・`.AlignSelf`・`.JustifyContent`・`.AlignContent`）、間隔は `.Gap`
+
+```csharp
+Grid(
+    columns: [Track.Px(120), Track.Fr(1), Track.MinMax(Track.Px(80), Track.Auto)],
+    rows: [Track.Repeat(Repeat.AutoFill, Track.Px(40))],
+    children: [
+        Text("Name").GridColumn(1),
+        TextField(name).GridColumn(2, span: 2),
+    ])
+    .Gap(8)
+    .AutoFlow(GridAutoFlow.RowDense);
+```
+
+- **移植の元:** Taffy 0.15.0（e82f526）の `src/compute/grid`（8,217 行）。XML テストを作った版から移す（`.cursor/rules/testing.mdc`）。GPUI が出すのは列と行の数、開始の線、span だけである（zed の `crates/gpui/src/styled.rs` 752・808・836 行目、Taffy 0.13）
+- **受け入れ:** Taffy 0.15 の XML テスト（border-box・左から右）の `grid` 585 件・`gridflex` 11 件・`blockgrid` 14 件のうち、外す理由を名前で挙げたもの以外がすべて通る。外すのは、右から左の 24 件（行 P03）と、Flex と同じ既存の理由（`calc()` など）だけで、baseline の 24 件は外さない
+- **フレームの経路:** トラックの並び、置き場所の表、トラックの大きさの作業用の値は、layout の作業用の領域を使い回し、定常状態で割り当てない（`.cursor/rules/perf.mdc`）
+- **計測:** `benchmarks/compare` に Grid の場面を足し、Taffy 0.15 の Grid、Avalonia の `Grid`、Flutter の `Table`（CSS の Grid が無いので、いちばん近い物。`rendering/table.dart` の `IntrinsicColumnWidth` 94 行目、`FlexColumnWidth` 197 行目）と比べる。場面は、列 4 本（`120px`・`auto`・`1fr`・`minmax(80px, 2fr)`）と auto の行 250 本の各セルに葉を 1 つ置いた容器で、最初の layout、1 つのセルの葉の幅の変更、容器の幅の変更を測る。受け入れは Taffy より遅くないこと。Avalonia と Flutter との差は記録して説明する（`.cursor/rules/open-ends.mdc`）
+- **PR の分け方:** 設計、トラックの大きさの計算・明示と暗黙の配置・`gap`・揃え（2 つ目）、`repeat()` の `auto-fill`/`auto-fit`・名前付きの線・`dense`・グリッドの中の絶対配置・Flex と Block との組み合わせ（`gridflex`・`blockgrid`、3 つ目）。2 つ目と 3 つ目は、自分が入れる機能の XML テストだけを取り込む
+- **入れないもの:** 列の幅をドラッグで変えるスプリッター（Avalonia の `GridSplitter.cs`）は行 G1 の部品に、タイル状の仮想化した格子（Flutter の `SliverGridDelegateWithFixedCrossAxisCount`・`...WithMaxCrossAxisExtent`、`rendering/sliver_grid.dart` 346・445 行目）は行 P02e2 に置く。どちらもグリッドの layout そのものではない
 
 ### 3.4 Materialization層
 
@@ -4793,7 +4842,7 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 | Windows の TSF のスレッドの管理を作れない | 変換は OS の既定の IME の窓に任せ、確定した文字を `WM_CHAR` で受ける（行 P02b の形）                                 | §4.7    |
 | a11y API利用不可                          | アプリの動作は継続（a11y機能のみ欠落）                                                                             | §6.2    |
 | トレイ作成失敗（Wayland等）               | メインウィンドウ内メニュー項目に代替導線                                                                           | §8.6    |
-| Grid `auto-fill`/`auto-fit`等の高度な指定 | v1範囲外の指定は§3.3の対象外機能として無視                                                                         | §3.3    |
+| Grid の §3.3 の外の指定（`grid-template-areas`） | 型付きの API に口が無いので書けない。縮退は起きない                                                                | §3.3    |
 | Pass2後の行幅再オーバーフロー             | Pass1へ戻らず、最大1回の緊急グラフェムブレーク。それでも溢れる場合は視覚的オーバーフロー（clipまたははみ出し描画） | §4.1    |
 | OS コールバック内のマネージド例外         | `WndProc` 等の入口で捕捉し、診断ログを出して既定処理へ戻す。不変条件違反はクラッシュ・ファスト                     | §2.11.1 |
 | Scope の cleanup が例外を投げた           | 残りの cleanup を最後まで実行し、まとめて `AggregateException` で報告する                                          | §2.3    |

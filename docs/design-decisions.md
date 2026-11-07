@@ -823,6 +823,25 @@ Rejected:
 
 ---
 
+## Grid
+
+Decision:
+  Taffy 0.15 の Grid を移植し、§3.3 の範囲に名前付きの線を足す。API は型付きの C#（`Grid(columns, rows, children)`、`Track`、`.GridColumn`・`.GridRow`）。受け入れは Taffy の XML テスト `grid`・`gridflex`・`blockgrid`（P02f の Grill、Issue #645）。
+  subgrid は行 P02f2 で、Chrome から作った fixture で入れる。
+
+Reason:
+  Taffy は Chrome の結果の XML テストを 610 件持ち、Flex と同じ移植と確かめ方がそのまま使える。
+  兄弟のグリッドの列をそろえる用途（Avalonia の `SharedSizeGroup`）は、CSS の形では subgrid が持つ。
+
+Rejected:
+  - `grid-template-areas`（領域の並びを文字列で書く形で、§1 の「スタイル文字列を持たない」に当たる。名前を付けた置き場所は C# の値でできる。前の版は手間を理由にしていた。Issue #645）
+  - `SharedSizeGroup` の形（Avalonia。同じことは subgrid でできる。Issue #645）
+  - トラックの並びを文字列で受ける（Avalonia の `GridLength.Parse` の `"Auto,*,2*"`。§1 に反する。Issue #645）
+  - subgrid を採らない（前の版の理由は「複雑」で、手間だけだった。Issue #645）
+  - subgrid を P02f の中で入れる（Taffy に移植の元が無く、受け入れの基準が 2 つになる。Issue #645）
+
+---
+
 ## スコープ外
 
 Decision:
