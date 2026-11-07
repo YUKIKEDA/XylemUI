@@ -826,7 +826,7 @@ Rejected:
 ## Grid
 
 Decision:
-  Taffy 0.15 の Grid を移植し、§3.3 の範囲に名前付きの線を足す。API は型付きの C#（`Grid(columns, rows, children)`、`Track`、`.GridColumn`・`.GridRow`）。受け入れは Taffy の XML テスト `grid`・`gridflex`・`blockgrid`（P02f の Grill、Issue #645）。
+  Taffy 0.15.1 の Grid を移植し、§3.3 の範囲に名前付きの線を足す。API は型付きの C#（`Grid(columns, rows, children)`、`Track`、`.GridColumn`・`.GridRow`）。受け入れは Taffy の XML テスト `grid`・`gridflex`・`blockgrid`（P02f の Grill、Issue #645）。
   subgrid は行 P02f2 で、Chrome から作った fixture で入れる。
 
 Reason:
