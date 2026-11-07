@@ -36,6 +36,16 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
         ),
     };
 
+    // The grid of the comparison scene (design §3.3, "The shape of P02f"): a fixed, an auto, a flexible, and a minmax() column.
+    private static readonly LayoutStyle GridOfFour = new()
+    {
+        Algorithm = new LayoutAlgorithm.Grid(
+            new GridProps { Columns = [Track.Px(120), Track.Auto, Track.Fr(1), Track.MinMax(Track.Px(80), Track.Fr(2))] }
+        ),
+    };
+
+    private static readonly LayoutStyle SpanTwo = new() { GridColumn = new GridPlacement(GridLine.Auto, GridLine.Span(2)) };
+
     private static readonly MeasureFunc TenByTen = static (_, _) => MeasureResult.Of(10, 10);
 
     private static readonly IntrinsicWidthsFunc TenWide = static _ => new IntrinsicWidths(10, 10, DependsOnHeight: false);
@@ -120,7 +130,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     /// <summary>
     /// In a tree of about 10,000 nodes, laying out again after one leaf changes allocates nothing in steady state, with CSS's
     /// defaults (stretch, the automatic minimum size), with percentages, with wrapping rows, with children out of the flow, and
-    /// with minimums and maximums that are sizing keywords.
+    /// with minimums and maximums that are sizing keywords, and in grids.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -129,7 +139,9 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     ///   in a row of 2,000: two lines), and the items are centered with a gap of 2. With positioned, every tenth leaf is
     ///   absolutely positioned at its row's right and bottom, and every tenth from the fifth is a hidden row holding 10 leaves
     ///   (row L2). With keywords, every tenth leaf has a minimum width of max-content and every tenth from the fifth a maximum
-    ///   width of min-content (row L3). Warmed up with 20 changes.
+    ///   width of min-content (row L3). With grid, each row is a grid of four columns (120 px, auto, 1fr, and
+    ///   minmax(80px, 2fr)) whose rows the items add, and every seventh leaf spans two columns (row P02f). Warmed up with 20
+    ///   changes.
     ///
     /// Steps:
     /// - 1,100 times: set one leaf's width to 10 or 20 in turn, and run the pass. Measure the bytes allocated on this thread in
@@ -144,6 +156,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
     [InlineData("wrap")]
     [InlineData("positioned")]
     [InlineData("keywords")]
+    [InlineData("grid")]
     public void SteadyState_RelayoutAfterOneChange_AllocatesNothing(string scene) =>
         ui.Invoke(() =>
         {
@@ -152,7 +165,13 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
             NodeHandle target = default;
             for (int r = 0; r < 100; r++)
             {
-                NodeHandle row = Box(tree, root, scene == "wrap" ? Wrapping : Row());
+                LayoutStyle rowStyle = scene switch
+                {
+                    "wrap" => Wrapping,
+                    "grid" => GridOfFour,
+                    _ => Row(),
+                };
+                NodeHandle row = Box(tree, root, rowStyle);
                 for (int c = 0; c < 100; c++)
                 {
                     LayoutStyle style = scene switch
@@ -163,6 +182,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
                         "positioned" when c % 10 == 5 => new LayoutStyle { Hidden = true },
                         "keywords" when c % 10 == 0 => new LayoutStyle { MinWidth = Length.MaxContent },
                         "keywords" when c % 10 == 5 => new LayoutStyle { MaxWidth = Length.MinContent },
+                        "grid" when c % 7 == 0 && !(r == 50 && c == 50) => SpanTwo,
                         _ => new LayoutStyle(),
                     };
                     NodeHandle leaf = scene == "positioned" && c % 10 == 5 ? tree.CreateNode(style) : tree.CreateNode(style, TenByTen, TenWide);

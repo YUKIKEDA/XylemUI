@@ -1370,6 +1370,7 @@ internal static partial class LayoutEngine
                 (float dx, float dy) = item.HasInset
                     ? RelativeOffset(in tree.Nodes.GetRef(item.Node).Layout.Style, constants.NodeInnerSize.Width, constants.NodeInnerSize.Height)
                     : (0, 0);
+                tree.Nodes.GetRef(item.Node).Layout.RelativeY = dy;
                 if (row)
                 {
                     Place(tree, item.Node, main + dx, cross + dy);

@@ -97,6 +97,13 @@ internal struct LayoutState
     public float FirstBaseline;
 
     /// <summary>
+    /// The vertical shift of a relative position that the parent added to the Y of <see cref="Rect"/>. A baseline the parent reads
+    /// through this node leaves it out: Chrome aligns by the baseline before the shift (Taffy's
+    /// <c>block_container_baseline_ignores_relative_offset</c> and <c>grid_container_baseline_ignores_relative_offset</c>).
+    /// </summary>
+    public float RelativeY;
+
+    /// <summary>
     /// The node is a block: it takes the baseline of its first child that has one, from <see cref="UiNode.BaselineChild"/>
     /// on. A flex container takes <see cref="UiNode.BaselineChild"/>'s, synthesized from its border box when it has none.
     /// </summary>

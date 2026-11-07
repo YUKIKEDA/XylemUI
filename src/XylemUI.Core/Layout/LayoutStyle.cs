@@ -123,6 +123,17 @@ internal readonly record struct LayoutStyle
     public AlignItems? JustifySelf { get; init; }
 
     /// <summary>
+    /// Gets the lines between which the node goes in its grid's columns (CSS's <c>grid-column</c>, design §3.3); <c>auto</c> at
+    /// both ends by default, which the auto-placement algorithm places.
+    /// </summary>
+    public GridPlacement GridColumn { get; init; }
+
+    /// <summary>
+    /// Gets the lines between which the node goes in its grid's rows (CSS's <c>grid-row</c>, design §3.3).
+    /// </summary>
+    public GridPlacement GridRow { get; init; }
+
+    /// <summary>
     /// Gets what the node does with content that overflows its width (design §3.4.1, "The scroll container").
     /// </summary>
     public Overflow OverflowX { get; init; }
