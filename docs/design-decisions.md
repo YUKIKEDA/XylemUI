@@ -747,7 +747,7 @@ Decision:
   `ScopeTracker`（既定で無効）で生きている Scope を記録し、`AssertNoLeakedScopes()` でテストの終わりに確かめる。
   テストは5層（Unicode / Core 単体 / DisplayList スナップショット / WARP ゴールデン / Gallery E2E）。
   PR を落とすのは正しさと Zero-Alloc（ウォームアップ後、5シナリオ）だけ。時間系ベンチマークは記録のみ。
-  タイピングレイテンシは CI では「入力注入→Present 発行」の代理指標。Input-to-photon は手動計測。
+  タイピングレイテンシは CI では「入力注入→Present 発行」の代理指標。Input-to-photon は実機で、`SendInput` で注入してから、画素の変わったデスクトップの画像を DWM が Present するまで（Desktop Duplication）を直接測り、4 つのフレームワークを比べる（R3 の Grill、Issue #667）。
   P02a で操作の土台、P02a2 で描画の土台を作る。`XylemUI.Testing` は UI スレッドを 1 つ持ってテストの本体をそこで動かし、xUnit v3 の属性は `XylemUI.Testing.XUnit` に分ける。OS のウィンドウを作らない。`Find` はテスト ID か文字で探す。Core の internal は `InternalsVisibleTo` で使う。`DoesNotAllocate` は背景の GC が重なった区間をやり直す（P02a の Grill、Issue #456）。
 
 Reason:
@@ -773,6 +773,9 @@ Rejected:
   - リポジトリのテストだけ並行 GC を切ったままにする（利用者と条件が違い、やり直しの仕組みを CI で確かめられない）
   - `XylemUI.Testing` を `net10.0` と `net10.0-windows` の 2 つの形にして、Windows の形から D3D11 を参照する（Windows の依存がテスト基盤の中に入り、v0.4 の lavapipe でまた形を足すことになる。GPUI と Avalonia はレンダラを外から差し込む。P02a2 の Grill、Issue #464）
   - ゴールデンを完全一致だけで比べる（設計書 §12.3 が許容差と画素数の 2 つで決めている。Zed は ±2 を許す）
+  - Input-to-photon を CPU frame time・GPU execution time・Present latency の合算で測る（入力が OS のキューで待つ時間と、次のフレームまで待つ時間が入らない。R3 の Grill、Issue #667）
+  - Input-to-photon を「Present から表示まで」で判定する（Present を遅らせるだけで短くなり、入力を読む時刻も遅らせない限り、使う人には何も変わらない。R3 の Grill）
+  - 入力をウィンドウへ `PostMessage` で直に送る（OS の入力のキューを通らず、フレームワークによって受け取る経路が違う。R3 の Grill）
 
 ---
 

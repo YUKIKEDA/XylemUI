@@ -4891,7 +4891,7 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 120Hz環境: CPU frame time p95 < 8.33ms,  missed-frame ratio < 0.1%（p99は補助指標として記録）
 ```
 
-最終 Acceptance は CPU budget・GPU budget・Input-to-photon budget の3段で判定する。CPU だけ 8.33ms 以内でも GPU 5ms + Present 3ms なら 120Hz に間に合わない。GPU / Present / Input-to-photon の数値目標は §10.5 の P0 スパイクの後、ロードマップの M1a で実測して確定し、確定するまで計測対象として必須とする。
+最終 Acceptance は CPU budget・GPU budget・Input-to-photon budget の3段で判定する。CPU だけ 8.33ms 以内でも GPU 5ms + Present 3ms なら 120Hz に間に合わない。GPU / Present の数値目標は §10.5 の P0 スパイクの後、ロードマップの M1a で実測して確定した。Input-to-photon の数値目標は、行 R3 で 4 つのフレームワークを同じ場面で測ってから確定する（R3 の Grill）。確定するまで計測対象として必須とする。
 
 **フレーム予算（120Hz環境の内訳、暫定値）:** コア処理・フレームワークオーバーヘッド・安全マージンを明示的に分離する。
 
@@ -4912,7 +4912,8 @@ Safety margin:         1.33ms（OSスケジューラ、ドライバ、compositor
 別軸（CPU frame timeの外、非同期に進行）:
 GPU execution time     計測対象（目標値は§10.5のP0スパイク後、ロードマップの M1a で設定）
 Present latency        計測対象（同上）
-Input-to-photon latency  CPU frame time + GPU execution time + Present latencyの合算値として計測
+Input-to-photon latency  入力を OS に注入してから、画面の変わったデスクトップの画像を DWM が Present するまでを直接測る（下の「Input-to-photon の測り方」）。
+                         CPU frame time・GPU execution time・Present latency は、その内訳として測る
 ```
 
 開発時の JIT 実行では、初回実行時の JIT コンパイルと Tiered Compilation による再コンパイルがフレーム時間に混入する。性能の受け入れ判定は必ず NativeAOT のリリースビルドで行う。
@@ -4942,7 +4943,18 @@ Input-to-photon latency  CPU frame time + GPU execution time + Present latency�
 
 **サイズ・起動時間の数値は仮説:** 「単一の実行ファイルで約 15MB」「起動 10ms」「コールドスタート 30ms 未満」といった数値は、現時点では実測していない仮説である。D3D11 デバイスの作成だけで数十 ms かかる環境もあるため、目標値は、D3D11 とテキスト（S7・S8）が揃った後のロードマップの M1a で、NativeAOT のバイナリサイズと、D3D11 初期化・フォント読み込みを含む起動時間を実測してから確定する（S1 で測ったのは空ウィンドウの exe サイズ約 1.4 MB だけ）。それまで対外的な説明にも数値は使わない。
 
-**タイピングレイテンシの測り方:** CI では「入力イベントを注入してから、そのフレームの Present を発行するまで」をソフトウェアで測り、代理指標として記録する。本当の Input-to-photon（ハイスピードカメラ等で画面の変化を捉える Dan Luu 式の計測）は CI では測れないため、リリース前に実機で手動計測する。
+**タイピングレイテンシの測り方:** CI では「入力イベントを注入してから、そのフレームの Present を発行するまで」をソフトウェアで測り、代理指標として記録する。
+
+**Input-to-photon の測り方（R3 の Grill でオーナーが決定、Issue #667）:** CI のランナーには画面が無いので、実機で `benchmarks/XylemUI.E2E` が測る。
+
+- **送る:** `SendInput` でスペースのキーを OS に注入する。OS の入力のキューを通るので、4 つのフレームワークが同じ条件になる。`SendInput` は前面のウィンドウに届くため、送る直前に毎回、前面のウィンドウが測るアプリのものかを確かめ、違えば送らずに止める
+- **読む:** アプリは、キーを押されるたびに目印の矩形（起動の測定と同じもの）の色を切り替える。Desktop Duplication で、目印の画素が新しい色になった最初のデスクトップの画像を DWM が Present した時刻（`LastPresentTime`）を読み、`SendInput` を呼ぶ直前の QPC からの時間とする。起動の測定と同じ定義で、パネルが画素を出すのはその次のリフレッシュである
+- **場面:** 何も動いていない画面と、1,000 個の矩形が動いている画面の 2 つ。ほかのウィンドウが一部を覆ったときも測る（覆われたウィンドウは DWM の合成になる。`docs/benchmarks/r3-latency.md`）。押す間隔は 100 ms に 0〜16.7 ms の乱数を足し、リフレッシュの中のどこで押しても均等にする。ウィンドウは選んだモニタの上の最前面に置く
+- **複製する出力:** Desktop Duplication は、測るウィンドウがあるモニタの出力を名前で選んで複製する。アダプタの最初の出力がそのモニタとは限らない（測る機械では、最初の出力が主ディスプレイの仮想モニタで、ウィンドウは 60 Hz のパネルにある）
+- **照らし合わせ:** PresentMon の入力から表示までの列と、表示方式（`PresentMode`）を、同じ回で記録する。画面の複製が測るウィンドウを合成に落とすなら、Desktop Duplication の値はその分だけ長くなる。測る機械では、60 Hz のパネルを 6 秒複製している間も、`frames` は MPO（`Hardware Composed: Independent Flip`）のまま、表示まで 16.4〜16.5 ms だった（2 回、PR #668 のレビューで確かめた）。表示方式が合成に変わる機械では、PresentMon の列を主の値にし、その機械の記録に書く
+- **比べる:** Avalonia・Flutter・GPUI の同じ場面のアプリ（`benchmarks/compare/`）を、同じ方法で測る
+
+パネルの走査と画素の応答の時間は含まないので、ハイスピードカメラ等で画面の変化を捉える Dan Luu 式の計測は、その差を見るためにリリース前に実機で手動で行う。
 
 **M1 の測り方（M1 の Grill でオーナーが決定）:** M1 を、今のコードで測れるもの（M1a）と、部品が要るシナリオ（M1b、V3 の後）に分ける。計測は `benchmarks/XylemUI.E2E`（NativeAOT。シナリオを名前で選び、結果を JSON で出す）に置き、基準値を `docs/benchmarks/m1-baseline.md` にコミットとコマンドと一緒に記録する。GPU execution time は D3D11 のタイムスタンプのクエリ（`TIMESTAMP_DISJOINT` と描画の前後の `TIMESTAMP`、数フレーム後に待たずに読む）で、Present latency は `IDXGISwapChain::GetFrameStatistics` の `SyncQPCTime` で測り、1 回は PresentMon（ETW）で照らし合わせる（M1a で一致した: 中央値 37.48 / 37.477 ms）。アイドルは最初の画面の後の 10 秒の CPU 時間・ワーキングセット・プライベートメモリ。**M1a で変えた測り方:** 他のフレームワークと同じ方法で比べるため、起動・アイドル・フレームはプロセスの外から測る（`XylemUI.E2E external`）。起動は、起動役がプロセスを作る直前から、アプリのウィンドウの合成済みの中身（`PrintWindow`）に場面の目印の矩形が出るまで（10 ラウンド、フレームワークを交互に）。管理者でない PresentMon は、遅れて知ったプロセスの最初の Present を取りこぼすので、起動には使わない。フレームは、ウィンドウを最前面にしたアプリを起動の 2 秒後から PresentMon でプロセス id を指定して 10 秒。Avalonia の既定の合成（Windows.UI.Composition）の Present は PresentMon に記録されないので、フレームだけは合成を変えた変種で測る。目標値は、Avalonia（NativeAOT）・Flutter（Windows のリリース）・GPUI で同じ内容のアプリ（1,000 個の矩形と 1 行の日本語テキスト）を作り、同じ機械で測った表から提案して決める（公開されている数字は機械も測り方も違うので使わない）。
 
