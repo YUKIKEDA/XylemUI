@@ -845,6 +845,26 @@ Rejected:
 
 ---
 
+## 画像とアイコン
+
+Decision:
+  PNG・JPEG・WebP・GIF・BMP・ICO を読み、GIF と WebP のアニメーションを再生する。デコーダは Wuffs に統一する案を行 S11 で確かめ、満たさなければ libpng・libjpeg-turbo・libwebp にする。EXIF の向きを当て、ICC は skcms で sRGB に直す。アイコンは Fluent UI System Icons のフォントの字形として描き、使う字形だけをビルドで残す（D13 の Grill、Issue #165、§5.0.4）。
+
+Reason:
+  Flutter と Avalonia は、どの OS でも同じ組のデコーダで読む。画像は信頼できない入力で、Wuffs はメモリ安全に読む。アイコンをフォントで描けば、今の文字の経路をそのまま使え、新しい依存が要らない（Flutter と同じ）。
+
+Rejected:
+  - OS のデコーダ（WIC・ImageIO）を主に使う（Windows の WIC は WebP を Store の拡張機能で読むので、どの PC でも読めるとは限らない。EXIF の向きと色の変換も呼ぶ側が書く。Issue #165）
+  - HEIF と AVIF を v1 に入れる（Flutter は OS のデコーダでだけ読み、WIC では拡張機能が要る。行 IM2、v1.x）
+  - SVG の画像を v1 に入れる（Flutter と Avalonia は本体で読まない。行 IM3、v1.x）
+  - アニメーションの全フレームを先にデコードする（GPUI の形。長いアニメーションでメモリが一度に膨らむ）
+  - ネットワークから読む（HTTP のクライアントとキャッシュは画像とは別の要件。Avalonia も本体に持たない）
+  - 画像をアトラスに入れる（GPUI の形。大きな写真で空きを無駄にし、1 枚ずつ追い出せない）
+  - アイコンを SVG のマスク（GPUI）や図形のパス（Avalonia）で描く（SVG の描画か、パスの描画の依存が要る。フォントは今の文字の経路で描ける）
+  - 色を直さない（Avalonia・GPUI の形。スマートフォンの写真の Display P3 が違う色で出る）
+
+---
+
 ## スコープ外
 
 Decision:

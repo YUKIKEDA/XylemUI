@@ -37,6 +37,8 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 | Shaping                           |      |        ○ HarfBuzz         | OpenType仕様の継続更新コストが個人の手に負えない                                                                                                                                                     |
 | UIA の provider（§4.4.1）         |      |   ○ AccessKit（Windows）   | provider・パターン・イベント・TextPattern を手書きの vtable で書くと継続保守のコストが個人の手に負えない（S10、Issue #623）。静的リンクで単一バイナリを保ち、NativeAOT に警告無くリンクできる（MIT/Apache-2.0） |
 | Rasterization                     |      | ○ DirectWrite / Core Text / FreeType（Linux） | フォントレンダリングの複雑性、継続更新コスト。Windows と macOS は OS のラスタライザ（§5.0.3、T4 の Grill）                                                                                                                                                         |
+| 画像のデコード（§5.0.4）          |      | ○ Wuffs（行 S11 で確かめる。満たさなければ libpng・libjpeg-turbo・libwebp） | 画像は信頼できない入力で、Wuffs はメモリ安全に読む。どの OS も同じデコーダで読み、静的リンクで単一バイナリを保つ。OS のデコーダは、Windows で WebP を Store の拡張機能に頼るので使わない（D13 の Grill） |
+| 色の変換（§5.0.4）                |      |        ○ skcms           | 埋め込みの ICC を sRGB に直すのに必要な分だけを持つ（Skia、BSD-3。Flutter も Skia を通して使う） |
 | Linux GPU（§5.1）                 |      |       ○ wgpu-native       | ドライバ互換性対応の継続保守コスト                                                                                                                                                                   |
 | Linux Window（§6.1）              |      |          ○ SDL3           | Wayland/X11の差異吸収コスト                                                                                                                                                                          |
 | GPUレンダラ（§5.0/5.2）           |  ○   |                           | 独自設計（DisplayList、SDFシェーダー等）                                                                                                                                                             |
@@ -1434,7 +1436,7 @@ OS側のコールバック（`WndProc`、各種イベントハンドラ等）は
 1. **型の公開範囲**: Core の型は `internal` とし、アプリやワーカーから触れる公開 API は `Signal` / `Element` / `IUiDispatcher` に限る。
 2. **実行時チェック**: 公開 API の入口（`Signal.Set`、`Element` の変更操作等）で `Environment.CurrentManagedThreadId` を UI スレッドの ID と比較し、違えば全ビルドで `InvalidOperationException` を投げる（WPF の `Dispatcher.VerifyAccess` と同じ）。比較は整数1回なので release でも残す。内部のホットパスでは `[Conditional("DEBUG")]` の assert に留める。
 
-画像デコード・ファイル列挙・フォント処理等の重い処理はワーカースレッド（`Task.Run` 等）で実行し、結果はメッセージとしてUIスレッドへ渡す。
+画像デコード・ファイル列挙・フォント処理等の重い処理はワーカースレッド（`Task.Run` 等）で実行し、結果はメッセージとしてUIスレッドへ渡す。画像は、アニメーションの次のフレームもワーカーのスレッドでデコードする（§5.0.4）。
 
 ```csharp
 // ワーカースレッド/非同期I/Oの結果をUIスレッドへ渡すための型付きメッセージ
@@ -3607,7 +3609,7 @@ internal struct QuadInstance
 
 ### 5.0.2 GPUリソースのライフタイム管理
 
-`ImageHandle`の裏にはCPU画像・GPUテクスチャ・サンプラー・アップロード状態・参照カウントがあり、グリフアトラスも「ラスタライズ→アトラス割当→テクスチャアップロード→エビクション」というライフサイクルを持つ。特にグリフアトラスはGUIの性能の中心的なボトルネックになりやすく、この管理を欠いたまま実装するのは危険である。
+`ImageHandle`の裏にはCPU画像・GPUテクスチャ・サンプラー・アップロード状態・参照カウントがあり（画像の形式・キャッシュ・テクスチャは §5.0.4）、グリフアトラスも「ラスタライズ→アトラス割当→テクスチャアップロード→エビクション」というライフサイクルを持つ。特にグリフアトラスはGUIの性能の中心的なボトルネックになりやすく、この管理を欠いたまま実装するのは危険である。
 
 ```csharp
 internal sealed class ResourceManager
@@ -3801,6 +3803,22 @@ public readonly record struct GlyphBox(int Left, int Top, int Width, int Height,
 アトラスの CPU 側メモリは、GC ヒープの断片化を避けるため `NativeMemory.Alloc` で確保するか、`GC.AllocateUninitializedArray<byte>(size, pinned: true)` でピン留めヒープ（POH）に置く。FreeType のラスタライズ結果を直接書き込み、そのまま GPU へ転送する。
 
 **S8（MoonBit 版で検証済み。C# 版で再検証）:** HarfBuzz（LTR Latin / Han）→ FreeType ラスタライズ → CPU アトラス一括アップロード → 頂点 quad → D3D11 Present が通った。英字・日本語は readback のインク画素で確認。欠落文字は glyph 0（`.notdef`）で終端し、後続グリフの id は残った。BiDi・改行2パス・フォントフォールバック連鎖は入れていない。
+
+### 5.0.4 画像とアイコン（D13 の Grill で決定、Issue #165）
+
+画像の形式・デコーダ・キャッシュ・テクスチャと、アイコンの描き方を決める。比べたのは Flutter 3.47.8・Avalonia 12.1.4・GPUI（Zed v1.25.3）である。行は IC1（アイコン）・S11（デコーダの spike）・IM1（画像）で、R3 の後、G1 の前に置く。
+
+- **形式:** PNG・JPEG・WebP・GIF・BMP・ICO を読む。Flutter と Avalonia が共通して読む形式である（Flutter の `engine/src/flutter/lib/ui/painting/image_generator_registry.cc` 34〜40 行目、Avalonia の `src/Skia/Avalonia.Skia/ImmutableBitmap.cs` 28 行目の `SKBitmap.Decode`）。WBMP は読まない。HEIF と AVIF は行 IM2（v1.x）に置く。Flutter は HEIF を OS のデコーダでだけ読み、Windows の WIC で読むには Store の拡張機能が要る
+- **アニメーション:** GIF と WebP のアニメーションを再生する（Flutter と GPUI。Avalonia は最初のフレームだけ）。フレームは行 AN1 のフレームの時計で進め、モーションを減らす設定と、窓が見えないときは止める。次に出すフレームだけを、出す前にワーカーのスレッドでデコードする（Flutter の `getNextFrame`、`multi_frame_codec.cc` 269〜311 行目）。GPUI のように全フレームを先にデコードしないので、長いアニメーションでもメモリが一度に膨らまない
+- **SVG の画像:** 入れない。行 IM3（v1.x、SVG の色のグリフの行 T11 と同じ時期）に置く。Flutter と Avalonia も本体では読まない。GPUI は resvg で読む（`crates/gpui/src/svg_renderer.rs`）
+- **デコーダ:** Wuffs（Google、MIT と Apache-2.0）に統一する案を、行 S11 の spike で確かめる。Wuffs はメモリ安全で（境界と整数のあふれをコンパイルのときに検査する）、PNG・JPEG・WebP・GIF・BMP を 1 つのライブラリで読む。画像はフォントと同じく、信頼できない入力である。S11 の問いは 4 つ。6 つの形式を読めるか、速さが下の組より遅くないか、実行ファイルの増分が下の組以下か、JPEG の EXIF の向きと ICC を自前で読めるか（Wuffs の JPEG のデコーダは、APPn の中身を報告しない。`std/jpeg/decode_jpeg.wuffs`。PNG は ICC と EXIF を報告する、`std/png/decode_png.wuffs` 34〜38 行目）。どれかを満たさなければ、Skia と同じ組（libpng・libjpeg-turbo・libwebp を静的リンク、GIF は Wuffs）にする。Flutter と Avalonia が、どの OS でもこの組で読む。PNG には、行 T9 の自前のデコーダ（色のグリフの sbix・CBDT。PngSuite の 162 枚が WIC と同じ画素）がある。S11 はこれも比べ、PNG のデコーダを 1 つにまとめる。BMP と ICO の入れ物は自前で読む（ICO の中身は PNG か BMP）。OS のデコーダ（WIC・ImageIO）は使わない。WIC は WebP を Store の拡張機能で読むので、6 つの形式をどの PC でも読めるとは限らず、EXIF の向きと色の変換も呼ぶ側が書く
+- **EXIF の向きと色:** EXIF の向きを当てる（Flutter の `image_generator.cc` 155〜188 行目、GPUI の `platform.rs` 3243〜3247 行目）。埋め込みの ICC は sRGB に直す（Flutter の Impeller、`image_decoder_impeller.cc` 119〜154 行目）。変換には Skia の skcms（BSD-3）を使う。Avalonia は向きも色も当てない。GPUI は色を直さない
+- **読み込み元:** ファイルのパス、バイト列（またはストリーム）、アセンブリに埋め込んだリソースの 3 つ。ネットワークからは読まない。アプリが取ってきたバイト列を渡す（Avalonia も本体に持たない）
+- **デコードの大きさ:** アプリが目標の幅か高さを指定できる。指定が無ければ元の大きさでデコードする（Flutter の `cacheWidth`・`ResizeImage`、`image_provider.dart` 1227〜1263 行目。Avalonia の `Bitmap.DecodeToWidth`）。デコードはワーカーのスレッドで行い、結果は §2.12 の `UiMessage.ImageDecoded` で UI スレッドへ渡す
+- **キャッシュ:** デコードした画像を、最近使っていないものから追い出すキャッシュに持つ。枚数とバイト数の上限があり、画面に出ている画像は追い出さない（Flutter の `ImageCache` は既定で 1,000 枚・100 MiB、`packages/flutter/lib/src/painting/image_cache.dart` 18〜19 行目）。既定の上限は行 IM1 で、§11 の 100 枚の画像の場面を測って決める
+- **表示:** 読み込み中と失敗のときに、それぞれ代わりの要素を渡せる（GPUI の `with_loading`・`with_fallback`、`crates/gpui/src/elements/img.rs` 166〜173 行目。Flutter の `loadingBuilder`・`errorBuilder`）。枠への合わせ方は `Fill`・`Contain`・`Cover`・`ScaleDown`・`None` の 5 つで、既定は `Contain`（GPUI の `ObjectFit`、`crates/gpui/src/style.rs` 29 行目）
+- **テクスチャ:** 画像ごとに 1 枚のテクスチャを作り、アップロードで mipmap も作る。縮めて描くときは mipmap を使った線形の補間にする（Flutter の既定の品質）。アトラスには入れない（GPUI はアトラスに入れるが、自動では追い出さない）。テクスチャの解放は §5.0.2 の状態機械を通す
+- **アイコン:** Fluent UI System Icons（MIT）のフォントの字形として描く（Flutter の `Icon` は字形を `RichText` で描く、`packages/flutter/lib/src/widgets/icon.dart` 328〜332 行目）。今の文字の経路（シェーピング、グリフアトラス、文字の色の継承）をそのまま使い、新しい依存は要らない。GPUI は SVG をアルファのマスクにし、Avalonia は図形のパスで描く。フォントは Regular（2,900,836 バイト）と Filled（2,566,016 バイト）で、そのままでは配布物の目標（§11.3）に合わないので、アプリが使う字形だけをビルドで残す（Flutter の `icon_tree_shaker.dart`）。削る仕組みは、リンク済みの HarfBuzz の subset を使う案を、行 IC1 で確かめる。どのフォントにも使える `Icon`（フォントと文字のコード）は Primitives に置き、Fluent のフォントと名前の一覧は Theme.Fluent が持つ（§2.13.1、Core は特定のデザインのアセットを持たない）
 
 ### 5.1 前提の訂正
 
@@ -5343,7 +5361,7 @@ public static Element Label(Element content, Element target);              // co
 - **v1 で入れるもの**: ウィンドウ背景の **Mica**（Mica のウィンドウは背景が不透明でないので、文字は ClearType でなくグレースケールで描く。§5.0.3「ClearType」）。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
 - **v1.x に送るもの**: アプリ内の **Acrylic**（背後の UI をぼかす効果）。v1 の部品の範囲に要らないためである。レンダラは層を持てる形にしたので（§5.0「描く語彙とオフスクリーンの層」、D10 の Grill）、背景のぼかしはその上に乗せる。以前の理由「v1 の 1 パスのレンダラの前提が崩れる」は、D10 で 1 パスにこだわらないと決めたので取り下げた（Issue #54 の見直し）
 
-**フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を指定し、Windows 10 のように Segoe UI Variable が無ければ、エンジンの既定のフォント（§4.5、Windows は `SPI_GETICONTITLELOGFONT` のフォント）に戻る。どのフォントにも無い文字は、OS のフォールバックと同梱フォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。
+**フォントとアイコン:** Segoe UI Variable と Segoe Fluent Icons は再配布できないため同梱しない。テキストは各 OS のシステム UI フォント（Windows: Segoe UI Variable、macOS: SF、Linux: fontconfig の sans）を指定し、Windows 10 のように Segoe UI Variable が無ければ、エンジンの既定のフォント（§4.5、Windows は `SPI_GETICONTITLELOGFONT` のフォント）に戻る。どのフォントにも無い文字は、OS のフォールバックと同梱フォント（§4.5）で描く。アイコンは MIT ライセンスの **Fluent UI System Icons** を同梱する（ライセンスは採用時に再確認する）。フォント（Regular と Filled）の字形として描き、アプリが使う字形だけをビルドで残す。どのフォントにも使える `Icon` は Primitives に、Fluent のフォントと名前の一覧はこのテーマに置く（§5.0.4、行 IC1）。
 
 ### 13.3 XylemUI Gallery（マイルストーン G1）
 
