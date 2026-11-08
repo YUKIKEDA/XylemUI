@@ -39,6 +39,10 @@ Before starting a piece of work, write one line for it: what a user of the frame
 
 Within a class, work whose result can change how existing code is built (a spike, a measurement of a whole subsystem, a review of an interface) comes before work that is put on top of it.
 
+## A speed or quality row has a budget
+
+A row of class 3 or 4 above (speed, memory, a figure to explain) writes on its Issue, before it starts, how many PRs it may take, and what is reported if the budget runs out before the target. When the next PR would pass the budget, ask the owner first, with what the extra work buys. R3 took about 35 Issues and PRs for one latency target; the target was met at PR #695, and the spike and the measurements after it were polish the owner did not choose (Issue #700).
+
 ## Long runs do not hold the working tree
 
 A benchmark, a NativeAOT publish, or a profile keeps the tree busy for minutes.
