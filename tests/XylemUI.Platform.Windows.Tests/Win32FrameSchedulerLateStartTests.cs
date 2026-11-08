@@ -225,20 +225,23 @@ public sealed unsafe class Win32FrameSchedulerLateStartTests(UiThreadFixture ui)
         );
 
     /// <summary>
-    /// A frame run on the synchronous resize path while the late start waits takes that wait's signal, and a cancel ends the
-    /// wait.
+    /// A frame run from outside the loop's wait (a window's timer in an OS loop) or a present from outside any callback (the
+    /// synchronous resize path of a WM_SIZE) while the late start waits takes that wait's signal, and a cancel ends the wait.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A scheduler whose clock is an event, with fresh statistics, and an animation started.
     ///
     /// Steps:
-    /// - Give a signal, so that the next frame waits on the late start, and run the pending frame with no wait (the synchronous
-    ///   resize path).
-    /// - Give a signal again, so that the frame that one asked for waits on the late start, and cancel it.
+    /// - Give a signal, so that the next frame waits on the late start, and run the pending frame with no wait (a window's timer
+    ///   in an OS loop).
+    /// - Give a signal, so that the frame that one asked for waits on the late start; report a present from outside any
+    ///   callback; then give a signal and the late start's timer.
+    /// - Give a signal again, so that the next frame waits on the late start, and cancel it.
     ///
     /// Expected:
-    /// - After the resize path's frame, the frame has run, and the loop waits on the object again.
+    /// - After the frame run with no wait, it has run, and the loop waits on the object again.
+    /// - After the outside present, the loop waits on the object with the frame still pending; the signal and the timer run it.
     /// - After the cancel, nothing is pending and a new request waits on the object.
     /// </remarks>
     [Fact]
@@ -253,14 +256,24 @@ public sealed unsafe class Win32FrameSchedulerLateStartTests(UiThreadFixture ui)
                 Assert.Equal(2, animation.Runs);
                 Assert.Equal(clock, scheduler.WaitHandle);
 
-                // The resize path's present used the signal the late start took, so the next signal starts late again.
+                // The pending frame's present used the signal the late start took, so the next signal starts late again. A present
+                // from outside any callback (a WM_SIZE's synchronous resize path) ends that wait, and the frame stays pending on
+                // the object; its signal runs it.
+                scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
+                Assert.NotEqual(clock, scheduler.WaitHandle);
+                scheduler.FramePresented();
+                Assert.Equal((clock, true, 2), (scheduler.WaitHandle, scheduler.HasPendingFrame, animation.Runs));
+                scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
+                scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
+                Assert.Equal(3, animation.Runs);
+
                 scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
                 Assert.NotEqual(clock, scheduler.WaitHandle);
                 scheduler.CancelFrame();
                 Assert.False(scheduler.HasPendingFrame);
                 animation.Stop();
                 scheduler.RequestFrame(animation.Frame);
-                Assert.Equal((clock, 2), (scheduler.WaitHandle, animation.Runs));
+                Assert.Equal((clock, 3), (scheduler.WaitHandle, animation.Runs));
             }
         );
 

@@ -21,7 +21,8 @@
 //                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b; --no-text leaves
 //                              the line of text out; --hover keeps its boxes still and changes the hover each frame, row V1c;
 //                              --scroll keeps them still in a scroll container and changes its scroll position each frame, row V2;
-//                              --resizes N presents N frames on the synchronous resize path first, as a resize drag does, row R3)
+//                              --resizes N presents N frames on the synchronous resize path first, as a resize drag does, row R3;
+//                              --resizes-late N presents N of them after frame 300 while a frame waits for its late start)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
@@ -96,7 +97,8 @@ return scenario switch
         hover: args.Contains("--hover"),
         scroll: args.Contains("--scroll"),
         list: Array.IndexOf(args, "--list") is int listAt and >= 0 && listAt + 1 < args.Length ? args[listAt + 1] : string.Empty,
-        resizes: Array.IndexOf(args, "--resizes") is int resizesAt and >= 0 ? Number(resizesAt + 1, 0) : 0
+        resizes: Array.IndexOf(args, "--resizes") is int resizesAt and >= 0 ? Number(resizesAt + 1, 0) : 0,
+        resizesLate: Array.IndexOf(args, "--resizes-late") is int lateAt and >= 0 ? Number(lateAt + 1, 0) : 0
     ),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),

@@ -177,6 +177,9 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     /// </summary>
     internal long SignalsOwed { get; private set; }
 
+    /// <summary>Gets a value indicating whether the loop waits on the late start's timer now, for the benchmarks.</summary>
+    internal bool IsLateWaiting => _lateWaiting;
+
     /// <summary>Gets the number of frames that waited for their late start, for the benchmarks.</summary>
     internal long LateStarts { get; private set; }
 
@@ -269,6 +272,14 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     /// </remarks>
     public void FramePresented()
     {
+        // A present outside a callback while the late start waits (the synchronous resize path, which a WM_SIZE runs inside the
+        // OS's modal loop) uses the signal that wait took: the wait ends, and the pending frame waits on the object again
+        // (PR #695's review).
+        if (!_inCallback && _lateWaiting)
+        {
+            StopLateStart();
+        }
+
         _presented = true;
         _lastDidNotPresent = false;
         if (_swapChainClock != HANDLE.NULL && !_presentNotOwed)
@@ -353,7 +364,7 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     /// </summary>
     internal void RunFrame()
     {
-        // A frame run while the late start waits (the synchronous resize path) uses the signal that wait took.
+        // A frame run while the late start waits (a window's timer in an OS loop, RunPendingFrame) uses the signal that wait took.
         StopLateStart();
         Action? callback = _pending;
         _pending = null;

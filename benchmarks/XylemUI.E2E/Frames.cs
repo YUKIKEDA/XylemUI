@@ -36,7 +36,8 @@ internal static class Frames
         bool hover = false,
         bool scroll = false,
         string list = "",
-        int resizes = 0
+        int resizes = 0,
+        int resizesLate = 0
     )
     {
         UiThread.Initialize();
@@ -72,6 +73,25 @@ internal static class Frames
         var interval = new List<double>(frames);
         var gpu = new List<double>(frames);
         var latency = new List<double>(frames);
+
+        // A resize drag that starts while a frame waits for its late start (--resizes-late N, PR #695's review): N presents on the
+        // synchronous resize path at the first loop iteration after frame 300 that finds the late start waiting, as WM_SIZE would
+        // give inside the OS's modal loop.
+        int lateResizes = resizesLate;
+        Win32MessageLoop.IterationHook = () =>
+        {
+            if (lateResizes > 0 && treeScene is not null && Win32MessageLoop.Frames.IsLateWaiting && interval.Count >= 300)
+            {
+                for (int i = 0; i < lateResizes; i++)
+                {
+                    treeScene.PresentOnResizePath();
+                    Win32MessageLoop.FrameScheduler.FramePresented();
+                }
+
+                lateResizes = 0;
+            }
+        };
+
         int frame = 0;
         long last = 0;
         Action? step = null;
@@ -140,6 +160,7 @@ internal static class Frames
         };
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         _ = Win32MessageLoop.Run();
+        Win32MessageLoop.IterationHook = null;
 
         // Read before the clock goes back to the timer, which forgets the period.
         double derivedPeriod = Win32MessageLoop.Frames.DerivedPeriodMilliseconds;
@@ -160,6 +181,7 @@ internal static class Frames
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
         report.Text("tree", tree ? "yes" : "no");
         report.Number("resizes", resizes);
+        report.Number("resizes_late", resizesLate - lateResizes);
         report.Text("text", noText ? "no" : "yes");
         report.Text("hover", hover ? "yes" : "no");
         report.Text("scroll", scroll ? "yes" : "no");
