@@ -9,19 +9,30 @@ namespace XylemUI.E2E;
 
 // Startup to the screen (design §11.3, the startup target; M1a review): the desktop image the compositor presents to the display
 // (Desktop Duplication, IDXGIOutputDuplication), read at the scene's marker in the app's window, with the time the compositor
-// presented that image (DXGI_OUTDUPL_FRAME_INFO.LastPresentTime, the performance counter). The window must be on the primary
+// presented that image (DXGI_OUTDUPL_FRAME_INFO.LastPresentTime, the performance counter). The window must be on the duplicated
 // output and not covered: measure.ps1 minimizes every other window first. The process is made per-monitor DPI aware so that
 // the window's client position and the desktop image use the same pixels.
 internal static unsafe class DisplayWatch
 {
-    // Launches the app and returns the milliseconds from just before the launch to the compositor's present of the first desktop
-    // image that shows the marker, or null after 10 s.
+    // Launches XylemUI.E2E's own scene and returns the milliseconds from just before the launch to the compositor's present of the
+    // first desktop image that shows the marker, or null after 10 s. The scene opens on the chosen monitor (MonitorChoice), whose
+    // output is duplicated: on the measuring machine the adapter's first output was the primary virtual monitor, and the scene's
+    // window was on the 60 Hz panel (Issue #669).
     public static double? LaunchToMarkerOnScreen(string app, string arguments, out Process process) =>
-        LaunchToMarkerOnScreen(app, arguments, out process, out _);
+        LaunchToMarkerOnScreen(app, arguments, out process, out _, output: MonitorChoice.Device);
 
     // The same, also giving the performance counter of that present. The marker is read at (x, y) of the client area, in physical
-    // pixels: (20, 20), inside the scene's marker, unless another app's marker is elsewhere (app-startup).
-    public static double? LaunchToMarkerOnScreen(string app, string arguments, out Process process, out long presentQpc, int x = 20, int y = 20)
+    // pixels: (20, 20), inside the scene's marker, unless another app's marker is elsewhere (app-startup). `output` names the
+    // output to duplicate (\\.\DISPLAYn); null takes the adapter's first output, where Windows opens an app it does not place.
+    public static double? LaunchToMarkerOnScreen(
+        string app,
+        string arguments,
+        out Process process,
+        out long presentQpc,
+        int x = 20,
+        int y = 20,
+        string? output = null
+    )
     {
         presentQpc = 0;
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 15063))
@@ -39,7 +50,7 @@ internal static unsafe class DisplayWatch
             ThrowIfFailed(
                 D3D11CreateDevice(null, D3D_DRIVER_TYPE_HARDWARE, HMODULE.NULL, 0, &level, 1, D3D11.D3D11_SDK_VERSION, &device, null, &context)
             );
-            duplication = Duplicate(device, out RECT output);
+            duplication = Duplicate(device, outputName: output, out RECT duplicated);
             var description = new D3D11_TEXTURE2D_DESC
             {
                 Width = 1,
@@ -91,15 +102,15 @@ internal static unsafe class DisplayWatch
                         _ = ClientToScreen(window, &point);
 
                         // The desktop image is the duplicated output's; a window outside it would never show the marker.
-                        if (point.x < output.left || point.y < output.top || point.x >= output.right || point.y >= output.bottom)
+                        if (point.x < duplicated.left || point.y < duplicated.top || point.x >= duplicated.right || point.y >= duplicated.bottom)
                         {
                             throw new InvalidOperationException(
-                                $"The app's window ({point.x}, {point.y}) is not on the duplicated output ({output.left}, {output.top}, {output.right}, {output.bottom})."
+                                $"The app's window ({point.x}, {point.y}) is not on the duplicated output ({duplicated.left}, {duplicated.top}, {duplicated.right}, {duplicated.bottom})."
                             );
                         }
 
-                        point.x -= output.left;
-                        point.y -= output.top;
+                        point.x -= duplicated.left;
+                        point.y -= duplicated.top;
                         ID3D11Texture2D* image;
                         ThrowIfFailed(resource->QueryInterface(__uuidof<ID3D11Texture2D>(), (void**)&image));
                         var box = new D3D11_BOX(point.x, point.y, 0, point.x + 1, point.y + 1, 1);
@@ -167,17 +178,42 @@ internal static unsafe class DisplayWatch
         }
     }
 
-    // The duplication of the adapter's first output (the primary display), and where that output is on the desktop.
-    private static IDXGIOutputDuplication* Duplicate(ID3D11Device* device, out RECT desktop)
+    // The duplication of the adapter's output named `outputName` (its first output when null), and where that output is on the
+    // desktop.
+    private static IDXGIOutputDuplication* Duplicate(ID3D11Device* device, string? outputName, out RECT desktop)
     {
         IDXGIDevice* dxgiDevice;
         ThrowIfFailed(device->QueryInterface(__uuidof<IDXGIDevice>(), (void**)&dxgiDevice));
         IDXGIAdapter* adapter;
         ThrowIfFailed(dxgiDevice->GetAdapter(&adapter));
-        IDXGIOutput* output;
-        ThrowIfFailed(adapter->EnumOutputs(0, &output));
-        DXGI_OUTPUT_DESC description;
-        ThrowIfFailed(output->GetDesc(&description));
+        IDXGIOutput* output = null;
+        DXGI_OUTPUT_DESC description = default;
+        var names = new List<string>();
+        for (uint i = 0; output is null; i++)
+        {
+            IDXGIOutput* candidate;
+            HRESULT found = adapter->EnumOutputs(i, &candidate);
+            if (found == DXGI.DXGI_ERROR_NOT_FOUND)
+            {
+                _ = adapter->Release();
+                _ = dxgiDevice->Release();
+                throw new InvalidOperationException($"The adapter has no output {outputName}; its outputs are {string.Join(", ", names)}.");
+            }
+
+            ThrowIfFailed(found);
+            ThrowIfFailed(candidate->GetDesc(&description));
+            string name = new((char*)&description.DeviceName);
+            names.Add(name);
+            if (outputName is null || name == outputName)
+            {
+                output = candidate;
+            }
+            else
+            {
+                _ = candidate->Release();
+            }
+        }
+
         desktop = description.DesktopCoordinates;
         IDXGIOutput1* output1;
         ThrowIfFailed(output->QueryInterface(__uuidof<IDXGIOutput1>(), (void**)&output1));
