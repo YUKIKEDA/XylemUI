@@ -15,6 +15,8 @@ internal sealed class Report : IDisposable
         _writer.WriteStartObject();
         _writer.WriteString("scenario", scenario);
         _writer.WriteString("build", JitInfo() ? "jit" : "nativeaot");
+        _writer.WriteString("monitor", MonitorChoice.Device);
+        _writer.WriteNumber("monitor_hz", MonitorChoice.RefreshHz);
     }
 
     public void Number(string name, double value) => _writer.WriteNumber(name, Math.Round(value, 4));
