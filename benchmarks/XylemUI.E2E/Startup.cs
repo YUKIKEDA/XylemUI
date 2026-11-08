@@ -126,7 +126,13 @@ internal static class Startup
         var differences = new List<double>();
         for (int i = 0; i < runs; i++)
         {
-            _ = DisplayWatch.LaunchToMarkerOnScreen(Environment.ProcessPath!, "startup-child --idle", out Process process, out long seen);
+            _ = DisplayWatch.LaunchToMarkerOnScreen(
+                Environment.ProcessPath!,
+                "startup-child --idle",
+                out Process process,
+                out long seen,
+                output: MonitorChoice.Device
+            );
             int id = process.Id;
             using (process)
             {
