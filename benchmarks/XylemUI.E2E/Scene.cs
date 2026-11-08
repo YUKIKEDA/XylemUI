@@ -55,6 +55,15 @@ internal sealed class Scene : IDisposable
 
     public static Color Marker { get; } = Color.FromRgb(0x3366CC);
 
+    // The marker's color after an odd number of key presses: the input measurement watches the marker change (row R3,
+    // InputWatch). The comparison apps in benchmarks/compare use the same two colors.
+    public static Color PressedMarker { get; } = Color.FromRgb(0xCC6633);
+
+    // Whether an odd number of keys went down: the marker is drawn in PressedMarker.
+    public bool Pressed { get; set; }
+
+    private Color MarkerNow => Pressed ? PressedMarker : Marker;
+
     // A linear gradient for the shapes scene, made once (row R4).
     private static readonly GradientBrush ShapeGradient = GradientBrush.Linear(
         135,
@@ -105,7 +114,7 @@ internal sealed class Scene : IDisposable
         List.Reset(scale);
         int width = (int)(Renderer.Width / scale);
         int height = (int)(Renderer.Height / scale);
-        List.FillRect(0, 0, 40, 40, Marker);
+        List.FillRect(0, 0, 40, 40, MarkerNow);
         for (int i = 0; i < Rectangles; i++)
         {
             float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
@@ -186,7 +195,7 @@ internal sealed class Scene : IDisposable
         List.Reset(scale);
         int width = (int)(Renderer.Width / scale);
         int height = (int)(Renderer.Height / scale);
-        List.FillRect(0, 0, 40, 40, Marker);
+        List.FillRect(0, 0, 40, 40, MarkerNow);
         var middle = new System.Numerics.Vector2(width / 2f, height / 2f);
         if (scopes is "nested" or "nested-heavy")
         {
