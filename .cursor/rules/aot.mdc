@@ -17,6 +17,8 @@ Release builds are NativeAOT; development runs on the JIT (design §0.1). Both m
 
 ## The check
 
+Every NativeAOT publish from the agent shell, a benchmark's included, puts Visual Studio's Installer directory on `PATH` first; without it the link step fails with "'vswhere.exe' is not recognized" (the E2E publish of PR #664).
+
 A PR that adds or changes a `src/` project's public surface, a dependency, or interop runs a NativeAOT publish of the sample its Issue names:
 
 ```powershell
