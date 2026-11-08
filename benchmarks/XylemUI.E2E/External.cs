@@ -123,11 +123,20 @@ internal static class External
     // The scene as an app, for the external measurements of XylemUI itself: animated, or drawn once with --static. With
     // `period` > 0 it draws one frame every `period` ms at most (waiting on the UI thread before it draws), to compare at another
     // framework's frame rate (M1a: Flutter drew the scene every 46 ms on the measuring machine, whatever the scene).
-    public static int App(bool isStatic, int period)
+    public static int App(bool isStatic, int period, bool tree = false)
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E app");
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+
+        // With `tree`, the scene is drawn from a UI tree by WindowFrames, the path of an app (row R3, Issue #683). Its first frame
+        // is presented on the synchronous resize path and told to the loop's scheduler, as DesktopWindow does (design §2.11).
+        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText: false) : null;
+        if (treeScene is not null && treeScene.Target.PresentEnd != 0)
+        {
+            Win32MessageLoop.FrameScheduler.FramePresented();
+        }
+
         int frame = 0;
         Action? step = null;
         long last = 0;
@@ -143,12 +152,29 @@ internal static class External
             }
 
             last = Stopwatch.GetTimestamp();
-            scene.Build(frame++);
-            scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
+            if (treeScene is not null)
+            {
+                if (!isStatic)
+                {
+                    _ = treeScene.Update(frame++);
+                }
 
-            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain and the
-            // presents queue up (design §2.11, docs/benchmarks/q2-frames-clock.md).
-            Win32MessageLoop.FrameScheduler.FramePresented();
+                treeScene.RunFrame();
+                if (treeScene.Target.PresentEnd >= last)
+                {
+                    Win32MessageLoop.FrameScheduler.FramePresented();
+                }
+            }
+            else
+            {
+                scene.Build(frame++);
+                scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
+
+                // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain and the
+                // presents queue up (design §2.11, docs/benchmarks/q2-frames-clock.md).
+                Win32MessageLoop.FrameScheduler.FramePresented();
+            }
+
             if (!isStatic)
             {
                 Win32MessageLoop.FrameScheduler.RequestFrame(step!);
@@ -163,6 +189,7 @@ internal static class External
             if (message == WM.WM_KEYDOWN)
             {
                 scene.Pressed = !scene.Pressed;
+                treeScene?.SetPressed(scene.Pressed);
                 if (isStatic)
                 {
                     Win32MessageLoop.FrameScheduler.RequestFrame(step);

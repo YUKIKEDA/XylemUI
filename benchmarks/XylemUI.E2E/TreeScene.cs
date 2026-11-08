@@ -24,6 +24,7 @@ internal sealed class TreeScene : IDisposable
     private readonly NodeHandle _root;
     private readonly NodeHandle[] _boxes = new NodeHandle[Scene.Rectangles];
     private readonly NodeHandle _hidden;
+    private readonly NodeHandle _marker;
     private readonly WindowFrames _frames;
     private readonly TimingTarget _target;
     private readonly WindowInput? _input;
@@ -37,8 +38,8 @@ internal sealed class TreeScene : IDisposable
         _text = new TextContext(new OneFont(font));
         _tree = new UiTree(_text);
         _root = _tree.CreateNode(new LayoutStyle());
-        NodeHandle marker = Absolute(_root, 0, 0, 40, 40);
-        _tree.SetBackground(marker, new Paint(Scene.Marker));
+        _marker = Absolute(_root, 0, 0, 40, 40);
+        _tree.SetBackground(_marker, new Paint(Scene.Marker));
         if (list.Length > 0)
         {
             _list = true;
@@ -111,6 +112,10 @@ internal sealed class TreeScene : IDisposable
     }
 
     public TimingTarget Target => _target;
+
+    // Draws the marker in Scene.PressedMarker after an odd number of key presses (the input measurement, row R3): a paint update
+    // of the node, drawn by the next RunFrame.
+    public void SetPressed(bool pressed) => _tree.SetBackground(_marker, new Paint(pressed ? Scene.PressedMarker : Scene.Marker));
 
     // With hover, the milliseconds the input took to deliver the frame's move.
     public double InputMilliseconds { get; private set; }
