@@ -45,7 +45,7 @@ internal static class Frames
         // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path, and
         // that present is told to the loop's scheduler: an app (DesktopWindow) does both in this order, so the scheduler counts
         // the present that did not wait (design §2.11, "Presents that did not wait"; Issue #679).
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;
         if (treeScene is not null && treeScene.Target.PresentEnd != 0)
         {
@@ -140,6 +140,10 @@ internal static class Frames
         };
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         _ = Win32MessageLoop.Run();
+
+        // Read before the clock goes back to the timer, which forgets the period.
+        double derivedPeriod = Win32MessageLoop.Frames.DerivedPeriodMilliseconds;
+        (long lateWakes, double latestWake) = Win32MessageLoop.Frames.LateWakes;
         Win32MessageLoop.SetFrameClock(0);
 
         // The first frames warm the atlas and the buffers; they are left out.
@@ -193,6 +197,10 @@ internal static class Frames
         // The frames run on the wait's timeout, and the signals taken without a frame for presents that did not wait (Issue #679).
         report.Number("frame_clock_timeouts", Win32MessageLoop.Frames.ClockTimeouts);
         report.Number("signals_owed", Win32MessageLoop.Frames.SignalsOwed);
+        report.Number("late_starts", Win32MessageLoop.Frames.LateStarts);
+        report.Number("derived_period_ms", derivedPeriod);
+        report.Number("late_wakes", lateWakes);
+        report.Number("latest_wake_ms", latestWake);
         report.Number("frames_measured", interval.Count - Warm);
         report.Number("gpu_frames_skipped", scene.Renderer.GpuFramesSkipped);
         return 0;

@@ -4,6 +4,8 @@
 // Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes. `--monitor N` opens
 // the windows on \\.\DISPLAYN, else on the monitor with the highest refresh rate (MonitorChoice); the report names it, and the
 // child processes of XylemUI.E2E (startup-check's, external's when the app is XylemUI.E2E) take the same monitor.
+// `--no-late-start` runs each frame when the swap chain's object signals, without the late start (design §2.11, row R3), to
+// compare with it.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
 //                              (--scopes as frames' draws the first frame in clips and transforms, row R4d)
 //   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
@@ -64,6 +66,7 @@ using XylemUI.E2E;
 
 string scenario = args.Length > 0 ? args[0] : "frames";
 MonitorChoice.Configure(args);
+XylemUI.Platform.Windows.Win32FrameScheduler.LateStartEnabled = !args.Contains("--no-late-start");
 float Scale() => Array.IndexOf(args, "--scale") is int at and >= 0 ? float.Parse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 0;
 
 string Scopes() => Array.IndexOf(args, "--scopes") is int at and >= 0 && at + 1 < args.Length ? args[at + 1] : string.Empty;

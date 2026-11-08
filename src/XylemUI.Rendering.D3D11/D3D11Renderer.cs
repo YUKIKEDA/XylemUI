@@ -161,6 +161,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
                 _swapChain = CreateSwapChain(device, window, width, height);
                 _ = _swapChain->SetMaximumFrameLatency(1);
                 _frameLatencyWaitable = _swapChain->GetFrameLatencyWaitableObject();
+                RefreshRate = ReadRefreshRate(window);
             }
 
             CreateRenderTarget();
@@ -269,6 +270,12 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// platform waits on it before it renders. The renderer owns and closes it.
     /// </summary>
     public nint FrameLatencyWaitableObject => _frameLatencyWaitable;
+
+    /// <summary>
+    /// Gets the refresh rate, in Hz, of the monitor the window was on when the swap chain was made; 60 when it could not be read
+    /// or there is no window. The frame clock uses it until it derives the period from the swap chain's statistics.
+    /// </summary>
+    public double RefreshRate { get; } = 60;
 
     /// <summary>
     /// Gets the swap chain, for the tests of the resize order.
@@ -777,6 +784,49 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     {
         milliseconds = 0;
         return _gpuTimer is not null && _gpuTimer.TryRead(out milliseconds);
+    }
+
+    /// <summary>
+    /// Reads the last refresh that showed a frame of the swap chain (<c>IDXGISwapChain::GetFrameStatistics</c>), for the frame
+    /// clock's late start (design §2.11, "Frames that start late"). It matches the platform's <c>LastRefreshReader</c>.
+    /// </summary>
+    /// <param name="qpcTime">The performance counter at that refresh (<c>SyncQPCTime</c>).</param>
+    /// <param name="refreshCount">The refresh's number (<c>SyncRefreshCount</c>).</param>
+    /// <returns><see langword="false"/> with no swap chain, before the first present reached the display, or on an error.</returns>
+    public bool TryReadLastRefresh(out long qpcTime, out uint refreshCount)
+    {
+        qpcTime = 0;
+        refreshCount = 0;
+        if (_swapChain is null)
+        {
+            return false;
+        }
+
+        DXGI_FRAME_STATISTICS statistics;
+        if (_swapChain->GetFrameStatistics(&statistics) < 0 || statistics.SyncQPCTime.QuadPart == 0)
+        {
+            return false;
+        }
+
+        qpcTime = statistics.SyncQPCTime.QuadPart;
+        refreshCount = statistics.SyncRefreshCount;
+        return true;
+    }
+
+    // The current mode's refresh rate of the window's monitor (EnumDisplaySettingsW), or 60.
+    private static double ReadRefreshRate(HWND window)
+    {
+        const uint enumCurrentSettings = unchecked((uint)-1);
+        HMONITOR monitor = MonitorFromWindow(window, MONITOR.MONITOR_DEFAULTTONEAREST);
+        MONITORINFOEXW info = default;
+        info.Base.cbSize = (uint)sizeof(MONITORINFOEXW);
+        if (monitor == HMONITOR.NULL || !GetMonitorInfoW(monitor, (MONITORINFO*)&info))
+        {
+            return 60;
+        }
+
+        var mode = new DEVMODEW { dmSize = (ushort)sizeof(DEVMODEW) };
+        return EnumDisplaySettingsW((char*)&info.szDevice, enumCurrentSettings, &mode) && mode.dmDisplayFrequency > 1 ? mode.dmDisplayFrequency : 60;
     }
 
     /// <summary>

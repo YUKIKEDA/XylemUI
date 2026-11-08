@@ -45,7 +45,7 @@ internal static class Startup
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E startup", gray: gray);
         scene.Renderer.StartMeasuringFrames();
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         long firstCall = 0;
         long displayed = 0;
         bool timedOut = false;

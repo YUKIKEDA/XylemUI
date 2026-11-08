@@ -10,7 +10,8 @@ namespace XylemUI;
 /// tree, and its element goes into the root box. Closing the window disposes the root scope.
 /// </summary>
 /// <remarks>
-/// It belongs to the UI thread. The frames are paced by the swap chain (<see cref="Win32MessageLoop.SetFrameClock"/>).
+/// It belongs to the UI thread. The frames are paced by the swap chain, and each starts late
+/// (<see cref="Win32MessageLoop.SetFrameClock(nint, LastRefreshReader?, double)"/>).
 /// </remarks>
 internal sealed class DesktopWindow : IDisposable
 {
@@ -110,7 +111,7 @@ internal sealed class DesktopWindow : IDisposable
             Tree.Animations.ReduceMotion = Window.ReducesMotion;
             Window.ReducesMotionChanged += OnReducesMotionChanged;
             Window.Closed += OnClosed;
-            Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject);
+            Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject, Renderer.TryReadLastRefresh, Renderer.RefreshRate);
             Mount(root);
 
             // The frame the root function's nodes asked for is the first one, which the size runs at once: without this, an empty
