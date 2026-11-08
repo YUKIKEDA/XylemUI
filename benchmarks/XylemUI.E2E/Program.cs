@@ -49,7 +49,8 @@
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
 //   startup-child [--idle]     the child of startup and idle
 //   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`;
-//                              the space key switches its marker's color (for `input-latency`)
+//                              the space key switches its marker's color (for `input-latency`); --tree draws it from a UI tree with
+//                              WindowFrames, the path of an app (row R3)
 //   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
 //                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2;
 //                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
@@ -142,7 +143,11 @@ return scenario switch
         scale: Scale()
     ),
     "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
-    "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
+    "app" => External.App(
+        isStatic: args.Contains("--static"),
+        period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0,
+        tree: args.Contains("--tree")
+    ),
     "external" => External.Run(args),
     "app-startup" => AppStartup.Run(args),
     "input-latency" => InputLatency.Run(args),
