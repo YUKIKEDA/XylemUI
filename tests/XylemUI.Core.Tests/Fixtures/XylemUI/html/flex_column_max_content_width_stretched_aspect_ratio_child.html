@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A column sized to its max-content width stretches a child with an aspect ratio to that width, which gives the child's height
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="width: 300px; align-items: flex-start;">
+  <div style="flex-direction: column;">
+    <div>HHH</div>
+    <div style="aspect-ratio: 1;"></div>
+  </div>
+</div>
+
+</body>
+</html>

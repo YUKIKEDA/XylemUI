@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    auto-fit at the end of the track list collapses the gap after the last track it keeps
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 300px; column-gap: 10px; justify-content: end; grid-template-columns: repeat(auto-fit, 50px);">
+  <div style="height: 10px;"></div>
+  <div style="height: 10px;"></div>
+</div>
+
+</body>
+</html>

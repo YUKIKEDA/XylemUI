@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    With only a minimum width, auto-fill repeats as few times as overflow the minimum
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: flex; width: 400px; align-items: flex-start;">
+  <div style="display: grid; min-width: 250px; grid-template-columns: repeat(auto-fill, 100px);">
+    <div style="height: 10px;"></div>
+    <div style="height: 10px;"></div>
+    <div style="height: 10px;"></div>
+  </div>
+</div>
+
+</body>
+</html>

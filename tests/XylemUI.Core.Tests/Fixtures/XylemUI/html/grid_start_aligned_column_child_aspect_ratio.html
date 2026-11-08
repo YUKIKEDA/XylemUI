@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    A start-aligned column is laid out at its fit-content width, which a child with an aspect ratio stretches to
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; width: 300px; grid-template-columns: 100px 100px;">
+  <div style="justify-self: start; flex-direction: column;">
+    <div>HHH</div>
+    <div style="aspect-ratio: 1;"></div>
+  </div>
+  <div style="height: 10px;"></div>
+</div>
+
+</body>
+</html>

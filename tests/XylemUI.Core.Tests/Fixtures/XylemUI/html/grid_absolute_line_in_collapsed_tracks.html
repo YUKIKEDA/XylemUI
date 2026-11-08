@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../../scripts/gentest/test_helper.js"></script>
+  <link rel="stylesheet" type="text/css" href="../../scripts/gentest/test_base_style.css">
+  <title>
+    An absolutely positioned child's line inside collapsed auto-fit tracks takes the edge of the track after them as its start, and of the track before them as its end
+  </title>
+</head>
+<body>
+
+<div id="test-root" style="display: grid; position: relative; width: 300px; column-gap: 10px; justify-content: space-between; grid-template-columns: repeat(auto-fit, 50px) 40px; grid-auto-rows: 10px;">
+  <div></div>
+  <div style="grid-column-start: -2;"></div>
+  <div style="position: absolute; grid-column-start: 3; left: 0px; right: 0px; top: 0px; height: 10px;"></div>
+  <div style="position: absolute; grid-column-end: 3; left: 0px; right: 0px; top: 0px; height: 10px;"></div>
+  <div style="position: absolute; grid-column-start: 3; grid-column-end: 4; right: 0px; width: 10px; top: 0px; height: 10px;"></div>
+</div>
+
+</body>
+</html>

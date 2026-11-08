@@ -67,6 +67,7 @@ internal static class TaffyFixtureScope
         ["block/block_margin_y_total_collapse__border_box_ltr"] = MarginCollapsing,
         ["block/block_margin_y_total_collapse_complex__border_box_ltr"] = MarginCollapsing,
         ["blockflex/blockflex_margin_y_collapse_through_blocked_by_flex__border_box_ltr"] = MarginCollapsing,
+        ["blockgrid/blockgrid_margin_y_collapse_through_blocked_by_grid__border_box_ltr"] = MarginCollapsing,
 
         // A scroll container stops the margins collapsing through it, but the others around it still collapse (row V2).
         ["block/block_margin_y_collapse_through_blocked_by_overflow_x_hidden__border_box_ltr"] = MarginCollapsing,
@@ -102,58 +103,9 @@ internal static class TaffyFixtureScope
 
         foreach (XElement element in root.DescendantsAndSelf())
         {
-            if (GridExclusion(element) is { } grid)
-            {
-                return grid;
-            }
-
             if (FeatureExclusion(element) is { } feature)
             {
                 return feature;
-            }
-        }
-
-        return null;
-    }
-
-    // The parts of CSS Grid that P02f's next implementation PR brings (design §3.3, "The shape of P02f").
-    private static string? GridExclusion(XElement e)
-    {
-        const string Next = "P02f's next implementation PR";
-        if (e.Attribute("display")?.Value == "grid" && e.Elements().Any(child => child.Attribute("position")?.Value == "absolute"))
-        {
-            return $"an absolutely positioned child of a grid ({Next})";
-        }
-
-        foreach (XAttribute attribute in e.Attributes())
-        {
-            string name = attribute.Name.LocalName;
-            string value = attribute.Value;
-            if (name.StartsWith("grid-template-", StringComparison.Ordinal) || name.StartsWith("grid-auto-", StringComparison.Ordinal))
-            {
-                if (value.Contains("auto-fill", StringComparison.Ordinal) || value.Contains("auto-fit", StringComparison.Ordinal))
-                {
-                    return $"repeat() with auto-fill or auto-fit ({Next})";
-                }
-
-                if (value.Contains('[', StringComparison.Ordinal))
-                {
-                    return $"named grid lines ({Next})";
-                }
-
-                if (value.Contains("dense", StringComparison.Ordinal))
-                {
-                    return $"dense auto-placement ({Next})";
-                }
-            }
-
-            if (name is "grid-row-start" or "grid-row-end" or "grid-column-start" or "grid-column-end")
-            {
-                string line = value.StartsWith("span ", StringComparison.Ordinal) ? value[5..] : value;
-                if (line != "auto" && !int.TryParse(line, out _))
-                {
-                    return $"named grid lines ({Next})";
-                }
             }
         }
 

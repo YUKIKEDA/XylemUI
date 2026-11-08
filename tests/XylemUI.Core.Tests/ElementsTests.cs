@@ -205,6 +205,127 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The named lines and the automatic repetitions of the grid's API check their values (design §3.3, "The shape of P02f"),
+    /// and the same placement by name is the same line.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Call each factory with a name or a number out of its range, a repetition with no track, a repetition inside another, and
+    ///   an automatic repetition of no kind; make the same placements by name twice.
+    ///
+    /// Expected:
+    /// - <see cref="ArgumentNullException"/> for a null name, <see cref="ArgumentException"/> for an empty name, <c>span</c>,
+    ///   <c>auto</c>, no name, no track, and a nested repetition, and <see cref="ArgumentOutOfRangeException"/> for the numbers;
+    ///   the same placement gives the same line, and the name alone a line apart from its first line.
+    /// </remarks>
+    [Fact]
+    public void GridNamesApi_OutOfRange_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => GridLine.Named(null!));
+        Assert.Throws<ArgumentException>(() => GridLine.Named(string.Empty));
+        Assert.Throws<ArgumentException>(() => GridLine.Named("span"));
+        Assert.Throws<ArgumentException>(() => GridLine.Named("auto", 1));
+        Assert.Throws<ArgumentException>(() => GridLine.Span("span"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Named("a", 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Named("a", 10_001));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Named("a", -10_001));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Span("a", 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GridLine.Span("a", 10_001));
+        Assert.Throws<ArgumentException>(() => Track.Line());
+        Assert.Throws<ArgumentException>(() => Track.Line("a", string.Empty));
+        Assert.Throws<ArgumentException>(() => Track.Repeat(2, Track.Line("a")));
+        Assert.Throws<ArgumentException>(() => Track.Repeat(2, Track.Repeat(2, Track.Auto)));
+        Assert.Throws<ArgumentException>(() => Track.Repeat(Repeat.AutoFill));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Track.Repeat((Repeat)0, Track.Px(10)));
+
+        Assert.Equal(GridLine.Named("a", 10_000), GridLine.Named("a", 10_000));
+        Assert.Equal(GridLine.Span("a", 2), GridLine.Span("a", 2));
+        Assert.NotEqual(GridLine.Named("a"), GridLine.Named("a", 1));
+        Assert.NotEqual(GridLine.Named("a", 2), GridLine.Span("a", 2));
+        Assert.Equal(GridLineKind.Named, GridLine.Named("a", -10_000).Kind);
+    }
+
+    /// <summary>
+    /// The table of named placements gives each distinct placement a number until it is full, and then throws; each number is a
+    /// two-byte line apart from the lines and the spans (design §3.3, "how lines are held").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A table of its own that holds two placements, apart from the table of the process.
+    ///
+    /// Steps:
+    /// - Add the placements "a" 1 and "b" 1, "a" 1 again, then "c" 1; make the lines of the first and last numbers of each range of
+    ///   values, and read them back.
+    ///
+    /// Expected:
+    /// - The numbers 0, 1, and 0; <see cref="InvalidOperationException"/> for the third placement; each line is named and gives
+    ///   its number back: 0, 12,765 (the last above the spans), 12,766 (the first below the lines), and 25,532.
+    /// </remarks>
+    [Fact]
+    public void GridLineNames_PastCapacity_Throws()
+    {
+        var table = new GridLineNames(2);
+        Assert.Equal((0, 1, 0), (table.PlacementId("a", 1, false), table.PlacementId("b", 1, false), table.PlacementId("a", 1, false)));
+        Assert.Throws<InvalidOperationException>(() => table.PlacementId("c", 1, false));
+
+        foreach (int id in (int[])[0, 12_765, 12_766, GridLineNames.Capacity - 1])
+        {
+            GridLine line = GridLine.FromPlacement(id);
+            Assert.Equal((GridLineKind.Named, id), (line.Kind, line.Value));
+        }
+
+        Assert.Equal(25_533, GridLineNames.Capacity);
+    }
+
+    /// <summary>
+    /// A grid places its children by the names of its lines and fills an automatic repetition with as many tracks as fit, as the
+    /// API writes them (design §3.3, "The shape of P02f").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of the columns `[start] 20px repeat(auto-fill, [col] 40px)`, auto rows of
+    ///   10 px, and a dense flow, with three boxes: one at the second line named col to the line named start back, one spanning
+    ///   from line 1 to the second line named col, and one without lines.
+    ///
+    /// Steps:
+    /// - Mount, which lays the window out; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - Four repeated columns fit in 180 px; (0, 0, 60 x 10) for the first box, columns 1 and 2 by the names; (0, 10, 60 x 10)
+    ///   for the second, from line 1 to the third line, the second named col after it; (60, 0, 40 x 10) for the third, which the
+    ///   dense flow puts beside the first.
+    /// </remarks>
+    [Fact]
+    public void Grid_NamedLinesAndAutoFill_PlaceTheChildren() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+                Grid(
+                        [Track.Line("start"), Track.Px(20), Track.Repeat(Repeat.AutoFill, Track.Line("col"), Track.Px(40))],
+                        [],
+                        first = Box().GridColumn(GridLine.Named("start"), GridLine.Named("col", 2)),
+                        second = Box().GridColumn(GridLine.At(1), GridLine.Span("col", 2)).GridRow(2, span: 1),
+                        third = Box()
+                    )
+                    .AutoRows(Track.Px(10))
+                    .AutoFlow(GridAutoFlow.RowDense)
+            );
+
+            Assert.Equal(
+                (new Rect(0, 0, 60, 10), new Rect(0, 10, 60, 10), new Rect(60, 0, 40, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// A grid places its children in its tracks: the explicit columns, the rows the auto-placement adds with the auto row size,
     /// the gap between, and a child's own lines and span (design §3.3, "The shape of P02f").
     /// </summary>

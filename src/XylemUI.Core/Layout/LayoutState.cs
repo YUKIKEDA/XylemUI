@@ -42,6 +42,19 @@ internal struct LayoutState
     public bool HasKeywordLimits;
 
     /// <summary>
+    /// The style has no size, limit, aspect ratio, margin, padding, or border (<see cref="LayoutStyle.IsBare"/>, P02f), kept when
+    /// the style is set: a grid reads it for each item, and then reads no more of the item's style.
+    /// </summary>
+    public bool IsBare;
+
+    /// <summary>
+    /// The style is bare and holds nothing else a grid reads of an item (<see cref="LayoutStyle.IsPlainGridItem"/>, P02f), kept
+    /// when the style is set: a grid makes such an item from the flag alone. Reading the style of each item there was 5 % of the
+    /// grid scene (<c>layout-loop grid</c>, P02f's second implementation PR).
+    /// </summary>
+    public bool IsPlainGridItem;
+
+    /// <summary>
     /// Whether a leaf's content in its last committed layout is larger than its content box, so that its scrollable overflow
     /// (<see cref="MeasureCache.ContentRight"/>) goes past its box (design §3.4.1). A leaf whose content fits writes nothing there:
     /// writing every leaf's edges made the first layout of row L2's scene about 7 % slower (row V2).

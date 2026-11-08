@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
@@ -218,6 +219,8 @@ internal static class TaffyFixture
             {
                 null or "row" => GridAutoFlow.Row,
                 "column" => GridAutoFlow.Column,
+                "row dense" or "dense" => GridAutoFlow.RowDense,
+                "column dense" => GridAutoFlow.ColumnDense,
                 string value => throw new InvalidOperationException($"The auto-flow {value} is not read by these tests."),
             },
             JustifyItems = ParseAlignItems(e, "justify-items") ?? default,
@@ -228,7 +231,8 @@ internal static class TaffyFixture
             RowGap = ParseLengthPercentage(e.Attribute("row-gap")?.Value),
         };
 
-    // A track list in CSS's syntax: sizes and repeat() with a count, apart at the spaces outside the parentheses.
+    // A track list in CSS's syntax: sizes, line names in brackets, and repeat() with a count, auto-fill, or auto-fit, apart at
+    // the spaces outside the parentheses and brackets.
     private static IEnumerable<GridTrack> ParseTrackList(string? value)
     {
         foreach (string token in SplitTopLevel(value ?? string.Empty, ' '))
@@ -236,19 +240,25 @@ internal static class TaffyFixture
             if (token.StartsWith("repeat(", StringComparison.Ordinal))
             {
                 string[] parts = [.. SplitTopLevel(token[7..^1], ',')];
+                GridTrack[] items = [.. SplitTopLevel(string.Join(' ', parts.Skip(1)), ' ').Select(ParseTrackItem)];
 
                 // The tests repeat past the API's 10,000 times to check the clamp of overlarge grids.
-                yield return GridTrack.Repeat(
-                    int.Parse(parts[0], CultureInfo.InvariantCulture),
-                    [.. SplitTopLevel(string.Join(' ', parts.Skip(1)), ' ').Select(ParseTrackSize)]
-                );
+                yield return parts[0] switch
+                {
+                    "auto-fill" => GridTrack.Repeat(0, Repeat.AutoFill, items, nameof(value)),
+                    "auto-fit" => GridTrack.Repeat(0, Repeat.AutoFit, items, nameof(value)),
+                    string count => GridTrack.Repeat(int.Parse(count, CultureInfo.InvariantCulture), null, items, nameof(value)),
+                };
             }
             else
             {
-                yield return ParseTrackSize(token);
+                yield return ParseTrackItem(token);
             }
         }
     }
+
+    private static GridTrack ParseTrackItem(string token) =>
+        token.StartsWith('[') ? Track.Line(token[1..^1].Split(' ', StringSplitOptions.RemoveEmptyEntries)) : ParseTrackSize(token);
 
     private static TrackSize ParseTrackSize(string token)
     {
@@ -283,11 +293,11 @@ internal static class TaffyFixture
         int start = 0;
         for (int i = 0; i <= value.Length; i++)
         {
-            if (i < value.Length && value[i] == '(')
+            if (i < value.Length && value[i] is '(' or '[')
             {
                 depth++;
             }
-            else if (i < value.Length && value[i] == ')')
+            else if (i < value.Length && value[i] is ')' or ']')
             {
                 depth--;
             }
@@ -304,17 +314,36 @@ internal static class TaffyFixture
         }
     }
 
-    // A grid line: auto, a number, or `span` and a number. Numbers past the API's range are written as the tests give them.
-    private static GridLine ParseGridLine(XElement e, string name) =>
-        e.Attribute(name)?.Value switch
+    // A grid line: auto, a number, a name with a number or without, or `span` and a number, a name, or both. Numbers past the
+    // API's range are written as the tests give them.
+    private static GridLine ParseGridLine(XElement e, string name)
+    {
+        string? value = e.Attribute(name)?.Value;
+        if (value is null or "auto")
         {
-            null or "auto" => GridLine.Auto,
-            string value when value.StartsWith("span ", StringComparison.Ordinal) => GridLine.Unchecked(
-                GridLineKind.Span,
-                int.Parse(value[5..], CultureInfo.InvariantCulture)
-            ),
-            string value => GridLine.Unchecked(GridLineKind.Line, int.Parse(value, CultureInfo.InvariantCulture)),
-        };
+            return GridLine.Auto;
+        }
+
+        string[] tokens = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool span = tokens[0] == "span";
+        int? number = null;
+        string? ident = null;
+        foreach (string token in tokens.Skip(span ? 1 : 0))
+        {
+            if (int.TryParse(token, CultureInfo.InvariantCulture, out int parsed))
+            {
+                number = parsed;
+            }
+            else
+            {
+                ident = token;
+            }
+        }
+
+        return ident is not null ? GridLine.UncheckedNamed(ident, number ?? (span ? 1 : 0), span)
+            : span ? GridLine.Unchecked(GridLineKind.Span, number!.Value)
+            : GridLine.Unchecked(GridLineKind.Line, number!.Value);
+    }
 
     private static Overflow ParseOverflow(string? value) =>
         value switch
