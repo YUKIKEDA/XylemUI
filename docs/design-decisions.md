@@ -369,6 +369,7 @@ Decision:
   定常状態は allocation-free。不足時のみ grow。
   頂点データは、`Map(WRITE_DISCARD)` した頂点バッファを unmanaged struct の `Span` として直接書く（S7。中間の配列もコピーも無い）。
   フレームクロックはスワップチェーンの待機オブジェクト。スワップチェーンの前は waitable timer。最後のフレームが Present しなかったら、次のフレームは、いつ頼まれても、待機オブジェクトの代わりに waitable timer（16 ms）を待つ。Present したフレームで待機オブジェクトに戻す。Core は Present したら `IFrameScheduler.FramePresented` を呼ぶ（I1c の Grill、Issue #400）。待機オブジェクトには 50 ms のタイムアウトを付け、切れたらフレームを回す（Present したのに鳴らない場合も止まらない）。
+  待機オブジェクトを待たずに出した Present（同期のリサイズの経路、タイムアウトで回したフレーム）の分は、スケジューラが Present した数と待った数の差で数え、次に待機オブジェクトを待つ前に、その数だけタイムアウト 0 で待って余分な合図を受け取る（R3 の Grill、Issue #675）。
   Frame-in-flight pool。GPU 完了前のスロット再利用は禁止。
   GPU 描画と Present は画面全体。D3D11.0 は Event Query 必須。
   Fine-grained は UI/Layout に限定。Paint は v1 では coarse。
@@ -385,6 +386,7 @@ Reason:
   単純な A/B ダブルバッファは GPU が 2 フレーム遅延すると未完了バッファを踏む。
   `ID3D11Fence` は 11.3 以降。
   `Dispose` で即座に GPU リソースを破棄すると、GPU が実行中のフレームで use-after-free になる。
+  待たずに出した Present が 1 回あると、待機オブジェクトに合図が 1 つ余り、その後のフレームは毎回 1 つ先に Present されて、表示まで 1 リフレッシュ長くなる。`frames --tree` は作るときの同期のリサイズの経路で 1 回待たずに Present していて 32.6〜32.7 ms、測り始める前に 1 回余計に待つと 16.0〜16.1 ms だった（Issue #675、`docs/benchmarks/r3-latency.md`）。
 
 Rejected:
   - 箱の見た目も利用者の描く関数で書かせる（比べた 3 つはフレームワークが描く。V1b の Grill、Issue #308）
@@ -394,6 +396,8 @@ Rejected:
   - 枠線の幅を、`LayoutStyle.Border` とは別に描画の状態にも持つ（2 か所の幅が食い違うと、枠線の太さと中身の位置がずれる。PR #309 のレビュー）
   - 枠線を子の後に描く（GPUI。Flutter・Avalonia・CSS は子の前に描く。V1b の Grill）
   - フレームを動かす型を Platform の側に置く（layout と描画の段の順は OS によらない。V1b の Grill）
+  - 待たずに出す Present の前に、必ず待機オブジェクトを待つ（同期のリサイズの描画が最大 1 リフレッシュ遅れる。R3 の Grill、Issue #675）
+  - 待機オブジェクトをやめ、GPUI のように `Present(0, 0)` で出す（MPO で Present から表示まで 1 リフレッシュという今の結果を捨て、フレームの時計を作り直すことになる。R3 の Grill）
   - ダーティ領域だけシザー描画して Present
   - CPU 側頂点バッファの差分パッチ
   - `PaintCommand` の record を毎フレーム生成する
