@@ -13,6 +13,9 @@ internal static unsafe class MonitorChoice
     // ENUM_CURRENT_SETTINGS (winuser.h).
     private const uint EnumCurrentSettings = unchecked((uint)-1);
 
+    // What a report names when the session has no monitor.
+    private static readonly Choice NoMonitor = new("none", 0, false, 0, 0);
+
     private static Choice? _choice;
 
     public static string Device => Get().Device;
@@ -44,7 +47,7 @@ internal static unsafe class MonitorChoice
             ) == BOOL.FALSE
         )
         {
-            throw new InvalidOperationException($"SetWindowPos did not move the window (error {GetLastError()}).");
+            throw new InvalidOperationException($"SetWindowPos did not move the window 0x{window:X} (error {GetLastError()}).");
         }
     }
 
@@ -56,7 +59,9 @@ internal static unsafe class MonitorChoice
         BOOL raised = SetWindowPos((HWND)window, HWND.HWND_TOPMOST, 0, 0, 0, 0, SWP.SWP_NOMOVE | SWP.SWP_NOSIZE | SWP.SWP_NOACTIVATE);
         if (raised == BOOL.FALSE || !IsTopmost(window))
         {
-            throw new InvalidOperationException($"SetWindowPos did not make the window topmost (returned {(int)raised}, error {GetLastError()}).");
+            throw new InvalidOperationException(
+                $"SetWindowPos did not make the window 0x{window:X} topmost (returned {(int)raised}, error {GetLastError()})."
+            );
         }
     }
 
@@ -85,7 +90,9 @@ internal static unsafe class MonitorChoice
                 ?? throw new ArgumentException($"No monitor is {device}; the monitors are {string.Join(", ", monitors.Select(m => m.Device))}.");
         }
 
-        return monitors.OrderByDescending(m => m.RefreshHz).ThenByDescending(m => m.Primary).First();
+        // Every scenario's report names the monitor, the headless ones included, and a session with no monitor (a service, a
+        // disconnected remote session) still runs those (PR #664's review).
+        return monitors.OrderByDescending(m => m.RefreshHz).ThenByDescending(m => m.Primary).FirstOrDefault() ?? NoMonitor;
     }
 
     [UnmanagedCallersOnly]
