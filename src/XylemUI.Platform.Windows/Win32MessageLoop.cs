@@ -64,6 +64,11 @@ public static unsafe class Win32MessageLoop
     public static void SetFrameClock(nint waitableObject) => GetFrameScheduler().SetFrameClock((HANDLE)waitableObject);
 
     /// <summary>
+    /// Gets the loop's frame scheduler as its own type, for the benchmarks' counts.
+    /// </summary>
+    internal static Win32FrameScheduler Frames => GetFrameScheduler();
+
+    /// <summary>
     /// Gets the UI thread's queue. Other threads post to it; <see cref="Run"/> drains it when it starts and once per iteration, and
     /// installs its synchronization context so that <c>await</c> continuations resume on the UI thread (design §2.12).
     /// </summary>
@@ -143,10 +148,11 @@ public static unsafe class Win32MessageLoop
                 throw new Win32Exception(Marshal.GetLastSystemError());
             }
 
-            // A timeout runs the frame too: a swap chain's object stays unsignaled after a frame that did not present.
+            // A timeout runs the frame too: a swap chain's object stays unsignaled after a frame that did not present. The result
+            // goes with it, so that the benchmarks can count the frames run on the timeout.
             if (handleCount == 1 && (result == WAIT.WAIT_OBJECT_0 || result == WAIT.WAIT_TIMEOUT))
             {
-                frames.RunFrame();
+                frames.RunFrame(result);
             }
 
             // WAIT_OBJECT_0 + handleCount means input is available; the next iteration handles it.

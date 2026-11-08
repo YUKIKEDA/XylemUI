@@ -184,6 +184,13 @@ internal sealed class TreeScene : IDisposable
 
     public void RunFrame() => _frames.RunFrame();
 
+    // One frame on the synchronous resize path at the window's size, as WM_SIZE gives during a resize drag (design §2.11.1).
+    public void PresentOnResizePath()
+    {
+        float scale = _scene.Window.ScaleFactor;
+        _frames.Resize(new Size(_scene.Renderer.Width / scale, _scene.Renderer.Height / scale), scale);
+    }
+
     public void Dispose()
     {
         if (_list)

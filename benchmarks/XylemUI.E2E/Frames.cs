@@ -35,16 +35,36 @@ internal static class Frames
         bool noText = false,
         bool hover = false,
         bool scroll = false,
-        string list = ""
+        string list = "",
+        int resizes = 0
     )
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
+
+        // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path, and
+        // that present is told to the loop's scheduler: an app (DesktopWindow) does both in this order, so the scheduler counts
+        // the present that did not wait (design §2.11, "Presents that did not wait"; Issue #679).
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;
+        if (treeScene is not null && treeScene.Target.PresentEnd != 0)
+        {
+            Win32MessageLoop.FrameScheduler.FramePresented();
+        }
+
         var layout = new List<double>(frames);
         var input = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+
+        // A resize drag's frames, each presented on the synchronous resize path without waiting on the swap chain's object, and
+        // told to the loop's scheduler as an app's WindowFrames tells it: the object keeps a signal for each, up to 40 on the
+        // measuring machine (PR #680's review), and the frames after them must not fall a refresh behind or stall.
+        for (int i = 0; i < resizes && treeScene is not null; i++)
+        {
+            treeScene.PresentOnResizePath();
+            Win32MessageLoop.FrameScheduler.FramePresented();
+        }
+
         var build = new List<double>(frames);
         var draw = new List<double>(frames);
         var present = new List<double>(frames);
@@ -135,6 +155,7 @@ internal static class Frames
         report.Text("groups", groups ? "yes" : "no");
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
         report.Text("tree", tree ? "yes" : "no");
+        report.Number("resizes", resizes);
         report.Text("text", noText ? "no" : "yes");
         report.Text("hover", hover ? "yes" : "no");
         report.Text("scroll", scroll ? "yes" : "no");
@@ -168,6 +189,10 @@ internal static class Frames
             TerraFX.Interop.Windows.Windows.GetForegroundWindow() == (TerraFX.Interop.Windows.HWND)scene.Window.Handle ? 1 : 0
         );
         report.Number("topmost", MonitorChoice.IsTopmost(scene.Window.Handle) ? 1 : 0);
+
+        // The frames run on the wait's timeout, and the signals taken without a frame for presents that did not wait (Issue #679).
+        report.Number("frame_clock_timeouts", Win32MessageLoop.Frames.ClockTimeouts);
+        report.Number("signals_owed", Win32MessageLoop.Frames.SignalsOwed);
         report.Number("frames_measured", interval.Count - Warm);
         report.Number("gpu_frames_skipped", scene.Renderer.GpuFramesSkipped);
         return 0;
