@@ -180,7 +180,7 @@ internal static unsafe class DisplayWatch
 
     // The duplication of the adapter's output named `outputName` (its first output when null), and where that output is on the
     // desktop.
-    private static IDXGIOutputDuplication* Duplicate(ID3D11Device* device, string? outputName, out RECT desktop)
+    internal static IDXGIOutputDuplication* Duplicate(ID3D11Device* device, string? outputName, out RECT desktop)
     {
         IDXGIDevice* dxgiDevice;
         ThrowIfFailed(device->QueryInterface(__uuidof<IDXGIDevice>(), (void**)&dxgiDevice));

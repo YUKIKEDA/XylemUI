@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using TerraFX.Interop.Windows;
 using XylemUI.Platform.Windows;
 
 namespace XylemUI.E2E;
@@ -154,6 +155,22 @@ internal static class External
             }
         };
         scene.Window.Closed += (_, _) => Win32MessageLoop.Quit();
+
+        // A key down switches the marker's color (the input measurement, row R3): the static app draws one frame for it, and the
+        // animated one shows it in its next frame. The message goes on to the default handling.
+        scene.Window.MessageHook = (_, message) =>
+        {
+            if (message == WM.WM_KEYDOWN)
+            {
+                scene.Pressed = !scene.Pressed;
+                if (isStatic)
+                {
+                    Win32MessageLoop.FrameScheduler.RequestFrame(step);
+                }
+            }
+
+            return false;
+        };
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         return Win32MessageLoop.Run();
     }
@@ -191,7 +208,7 @@ internal static class External
         return (cpu, workingSet, privateBytes);
     }
 
-    private static Process StartPresentMon(string presentMon, string csv, int seconds, int processId)
+    internal static Process StartPresentMon(string presentMon, string csv, int seconds, int processId)
     {
         var info = new ProcessStartInfo(
             presentMon,
@@ -241,7 +258,7 @@ internal static class External
         }
     }
 
-    private static IEnumerable<Dictionary<string, string>> Rows(string csv, int processId)
+    internal static IEnumerable<Dictionary<string, string>> Rows(string csv, int processId)
     {
         // PresentMon writes no file when it records no present.
         if (!File.Exists(csv))
@@ -263,7 +280,7 @@ internal static class External
         }
     }
 
-    private static void Add(List<double> values, string cell)
+    internal static void Add(List<double> values, string cell)
     {
         if (double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
         {
@@ -273,7 +290,7 @@ internal static class External
 
     private static double Median(List<double> values) => values.Count == 0 ? 0 : values.Order().ElementAt(values.Count / 2);
 
-    private static void Kill(Process process)
+    internal static void Kill(Process process)
     {
         if (!process.HasExited)
         {
@@ -282,7 +299,7 @@ internal static class External
         }
     }
 
-    private static string? Option(string[] args, string name)
+    internal static string? Option(string[] args, string name)
     {
         int i = Array.IndexOf(args, name);
         return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;

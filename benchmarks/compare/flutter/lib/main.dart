@@ -1,12 +1,14 @@
 // The comparison scene in Flutter (XylemUI roadmap row M1a; the same as benchmarks/XylemUI.E2E/Scene.cs): an 800 x 600 window
 // cleared to #2A2A2A, the marker #3366CC at (0, 0, 40, 40), 1,000 rectangles that move with the frame, and one line of Japanese
-// text at 24 px at (60, 30) in the test font. Animated by a ticker; with --static it draws once and stays idle. With --layout <file>
+// text at 24 px at (60, 30) in the test font. Animated by a ticker; with --static it draws once and stays idle. The space key
+// switches the marker to #CC6633 and back (the input measurement, row R3). With --layout <file>
 // it shows nothing: it times the layout of XylemUI's layout scene (row L1a, layout_scene.dart), writes one JSON line, and exits.
 // With --text [--dark] it shows the text scene of the rendering comparison instead (row T4, text_scene.dart).
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import 'layout_scene.dart';
 import 'text_scene.dart';
@@ -50,6 +52,7 @@ class Scene extends StatefulWidget {
 class _SceneState extends State<Scene> with SingleTickerProviderStateMixin {
   Ticker? _ticker;
   int _frame = 0;
+  bool _pressed = false;
 
   @override
   void initState() {
@@ -65,24 +68,38 @@ class _SceneState extends State<Scene> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
+  // The space key switches the marker's color (the input measurement, XylemUI roadmap row R3).
   @override
-  Widget build(BuildContext context) => CustomPaint(painter: ScenePainter(_frame), size: Size.infinite);
+  Widget build(BuildContext context) => Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.space) {
+            setState(() => _pressed = !_pressed);
+            return KeyEventResult.handled;
+          }
+
+          return KeyEventResult.ignored;
+        },
+        child: CustomPaint(painter: ScenePainter(_frame, _pressed), size: Size.infinite),
+      );
 }
 
 class ScenePainter extends CustomPainter {
-  ScenePainter(this.frame);
+  ScenePainter(this.frame, this.pressed);
 
   final int frame;
+  final bool pressed;
 
   static final Paint _clear = Paint()..color = const Color(0xFF2A2A2A);
   static final Paint _marker = Paint()..color = const Color(0xFF3366CC);
+  static final Paint _pressedMarker = Paint()..color = const Color(0xFFCC6633);
   static final Paint _red = Paint()..color = const Color(0xFFCC3333);
   static final Paint _green = Paint()..color = const Color(0xFF33AA66);
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, _clear);
-    canvas.drawRect(const Rect.fromLTWH(0, 0, 40, 40), _marker);
+    canvas.drawRect(const Rect.fromLTWH(0, 0, 40, 40), pressed ? _pressedMarker : _marker);
     final double width = size.width;
     final double height = size.height;
     for (int i = 0; i < 1000; i++) {
@@ -103,5 +120,5 @@ class ScenePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(ScenePainter old) => old.frame != frame;
+  bool shouldRepaint(ScenePainter old) => old.frame != frame || old.pressed != pressed;
 }

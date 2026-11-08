@@ -46,13 +46,16 @@
 //   dependency-order [sets]    an effect that alternates the order it reads two computed chains of 1, 10, 100
 //   scope-cost                 ADR 0001: four ways to hold cleanups, and scopes rebuilt each frame
 //   startup-child [--idle]     the child of startup and idle
-//   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`
+//   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`;
+//                              the space key switches its marker's color (for `input-latency`)
 //   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
 //                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2;
 //                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
 //   text-capture out.png app [args]  launch an app, and save its client area from the screen as a PNG (row T4)
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
 //   app-startup <exe> [--at x,y] [--runs N]   an app's launch to its marker color on the display, and its close (row V1d)
+//   input-latency --presentmon <exe> --app <exe> [--app-args a] [--static] [--covered] [--presses N] [--runs N]
+//                              the space key, injected, to the display of the marker it switches (row R3, InputLatency.cs)
 using System.Globalization;
 using XylemUI.E2E;
 
@@ -139,6 +142,7 @@ return scenario switch
     "app" => External.App(isStatic: args.Contains("--static"), period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0),
     "external" => External.Run(args),
     "app-startup" => AppStartup.Run(args),
+    "input-latency" => InputLatency.Run(args),
     _ => Unknown(scenario),
 };
 
