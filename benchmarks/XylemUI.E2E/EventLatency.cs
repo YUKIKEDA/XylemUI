@@ -16,7 +16,7 @@ internal static class EventLatency
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E event latency");
         scene.Renderer.StartMeasuringFrames();
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         var toPresent = new List<double>(samples);
         var toDisplay = new List<double>(samples);
         using var shown = new SemaphoreSlim(0);

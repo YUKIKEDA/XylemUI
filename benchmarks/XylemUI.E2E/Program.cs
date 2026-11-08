@@ -4,6 +4,8 @@
 // Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes. `--monitor N` opens
 // the windows on \\.\DISPLAYN, else on the monitor with the highest refresh rate (MonitorChoice); the report names it, and the
 // child processes of XylemUI.E2E (startup-check's, external's when the app is XylemUI.E2E) take the same monitor.
+// `--no-late-start` runs each frame when the swap chain's object signals, without the late start (design §2.11, row R3), to
+// compare with it.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
 //                              (--scopes as frames' draws the first frame in clips and transforms, row R4d)
 //   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
@@ -19,7 +21,8 @@
 //                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b; --no-text leaves
 //                              the line of text out; --hover keeps its boxes still and changes the hover each frame, row V1c;
 //                              --scroll keeps them still in a scroll container and changes its scroll position each frame, row V2;
-//                              --resizes N presents N frames on the synchronous resize path first, as a resize drag does, row R3)
+//                              --resizes N presents N frames on the synchronous resize path first, as a resize drag does, row R3;
+//                              --resizes-late N presents N of them after frame 300 while a frame waits for its late start)
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
@@ -64,6 +67,7 @@ using XylemUI.E2E;
 
 string scenario = args.Length > 0 ? args[0] : "frames";
 MonitorChoice.Configure(args);
+XylemUI.Platform.Windows.Win32FrameScheduler.LateStartEnabled = !args.Contains("--no-late-start");
 float Scale() => Array.IndexOf(args, "--scale") is int at and >= 0 ? float.Parse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 0;
 
 string Scopes() => Array.IndexOf(args, "--scopes") is int at and >= 0 && at + 1 < args.Length ? args[at + 1] : string.Empty;
@@ -93,7 +97,8 @@ return scenario switch
         hover: args.Contains("--hover"),
         scroll: args.Contains("--scroll"),
         list: Array.IndexOf(args, "--list") is int listAt and >= 0 && listAt + 1 < args.Length ? args[listAt + 1] : string.Empty,
-        resizes: Array.IndexOf(args, "--resizes") is int resizesAt and >= 0 ? Number(resizesAt + 1, 0) : 0
+        resizes: Array.IndexOf(args, "--resizes") is int resizesAt and >= 0 ? Number(resizesAt + 1, 0) : 0,
+        resizesLate: Array.IndexOf(args, "--resizes-late") is int lateAt and >= 0 ? Number(lateAt + 1, 0) : 0
     ),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),

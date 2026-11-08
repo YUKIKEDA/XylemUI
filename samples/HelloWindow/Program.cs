@@ -123,7 +123,7 @@ frame = () =>
     }
 };
 
-Win32MessageLoop.SetFrameClock(renderer.FrameLatencyWaitableObject);
+Win32MessageLoop.SetFrameClock(renderer.FrameLatencyWaitableObject, renderer.TryReadLastRefresh, renderer.RefreshRate);
 Win32MessageLoop.FrameScheduler.RequestFrame(frame);
 
 string offThread = "not checked";

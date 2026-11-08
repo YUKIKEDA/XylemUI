@@ -64,6 +64,21 @@ public static unsafe class Win32MessageLoop
     public static void SetFrameClock(nint waitableObject) => GetFrameScheduler().SetFrameClock((HANDLE)waitableObject);
 
     /// <summary>
+    /// Uses a swap chain's frame latency waitable object as the frame clock, with a reader of the swap chain's last displayed
+    /// refresh: each frame then starts a margin before the next refresh, so that the input that comes meanwhile is in it
+    /// (design §2.11, "Frames that start late").
+    /// </summary>
+    /// <param name="waitableObject">
+    /// The handle a renderer gives (for D3D11, <c>IDXGISwapChain2::GetFrameLatencyWaitableObject</c>); zero for the timer. The
+    /// caller keeps owning it and sets zero before closing it.
+    /// </param>
+    /// <param name="lastRefresh">The reader of the swap chain's last displayed refresh.</param>
+    /// <param name="refreshRate">The refresh rate of the window's monitor in Hz, used until the period is derived.</param>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static void SetFrameClock(nint waitableObject, LastRefreshReader? lastRefresh, double refreshRate) =>
+        GetFrameScheduler().SetFrameClock((HANDLE)waitableObject, lastRefresh, refreshRate);
+
+    /// <summary>
     /// Gets the loop's frame scheduler as its own type, for the benchmarks' counts.
     /// </summary>
     internal static Win32FrameScheduler Frames => GetFrameScheduler();

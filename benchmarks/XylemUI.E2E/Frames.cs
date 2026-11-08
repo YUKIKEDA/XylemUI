@@ -36,7 +36,8 @@ internal static class Frames
         bool hover = false,
         bool scroll = false,
         string list = "",
-        int resizes = 0
+        int resizes = 0,
+        int resizesLate = 0
     )
     {
         UiThread.Initialize();
@@ -45,7 +46,7 @@ internal static class Frames
         // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path, and
         // that present is told to the loop's scheduler: an app (DesktopWindow) does both in this order, so the scheduler counts
         // the present that did not wait (design §2.11, "Presents that did not wait"; Issue #679).
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;
         if (treeScene is not null && treeScene.Target.PresentEnd != 0)
         {
@@ -72,6 +73,25 @@ internal static class Frames
         var interval = new List<double>(frames);
         var gpu = new List<double>(frames);
         var latency = new List<double>(frames);
+
+        // A resize drag that starts while a frame waits for its late start (--resizes-late N, PR #695's review): N presents on the
+        // synchronous resize path at the first loop iteration after frame 300 that finds the late start waiting, as WM_SIZE would
+        // give inside the OS's modal loop.
+        int lateResizes = resizesLate;
+        Win32MessageLoop.IterationHook = () =>
+        {
+            if (lateResizes > 0 && treeScene is not null && Win32MessageLoop.Frames.IsLateWaiting && interval.Count >= 300)
+            {
+                for (int i = 0; i < lateResizes; i++)
+                {
+                    treeScene.PresentOnResizePath();
+                    Win32MessageLoop.FrameScheduler.FramePresented();
+                }
+
+                lateResizes = 0;
+            }
+        };
+
         int frame = 0;
         long last = 0;
         Action? step = null;
@@ -140,6 +160,11 @@ internal static class Frames
         };
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         _ = Win32MessageLoop.Run();
+        Win32MessageLoop.IterationHook = null;
+
+        // Read before the clock goes back to the timer, which forgets the period.
+        double derivedPeriod = Win32MessageLoop.Frames.DerivedPeriodMilliseconds;
+        (long lateWakes, double latestWake) = Win32MessageLoop.Frames.LateWakes;
         Win32MessageLoop.SetFrameClock(0);
 
         // The first frames warm the atlas and the buffers; they are left out.
@@ -156,6 +181,7 @@ internal static class Frames
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
         report.Text("tree", tree ? "yes" : "no");
         report.Number("resizes", resizes);
+        report.Number("resizes_late", resizesLate - lateResizes);
         report.Text("text", noText ? "no" : "yes");
         report.Text("hover", hover ? "yes" : "no");
         report.Text("scroll", scroll ? "yes" : "no");
@@ -193,6 +219,10 @@ internal static class Frames
         // The frames run on the wait's timeout, and the signals taken without a frame for presents that did not wait (Issue #679).
         report.Number("frame_clock_timeouts", Win32MessageLoop.Frames.ClockTimeouts);
         report.Number("signals_owed", Win32MessageLoop.Frames.SignalsOwed);
+        report.Number("late_starts", Win32MessageLoop.Frames.LateStarts);
+        report.Number("derived_period_ms", derivedPeriod);
+        report.Number("late_wakes", lateWakes);
+        report.Number("latest_wake_ms", latestWake);
         report.Number("frames_measured", interval.Count - Warm);
         report.Number("gpu_frames_skipped", scene.Renderer.GpuFramesSkipped);
         return 0;

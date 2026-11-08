@@ -127,7 +127,7 @@ internal static class External
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E app");
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
 
         // With `tree`, the scene is drawn from a UI tree by WindowFrames, the path of an app (row R3, Issue #683). Its first frame
         // is presented on the synchronous resize path and told to the loop's scheduler, as DesktopWindow does (design §2.11).
