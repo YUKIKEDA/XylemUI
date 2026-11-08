@@ -1,6 +1,7 @@
 // The comparison scene in Avalonia (roadmap row M1a; the same as benchmarks/XylemUI.E2E/Scene.cs): an 800 x 600 window cleared
 // to #2A2A2A, the marker #3366CC at (0, 0, 40, 40), 1,000 rectangles that move with the frame, and one line of Japanese text at
-// 24 px at (60, 30) in the test font. Animated through RequestAnimationFrame; with --static it draws once and stays idle.
+// 24 px at (60, 30) in the test font. Animated through RequestAnimationFrame; with --static it draws once and stays idle. The
+// space key switches the marker to #CC6633 and back (the input measurement, row R3).
 // With --redirection it composes through a DXGI swap chain on the window (Win32CompositionMode.RedirectionSurface) instead of the
 // default Windows.UI.Composition, whose updates PresentMon does not record for the app (M1a): only the frame measurements use it.
 // With --layout <file> it shows no window: it times the layout of XylemUI's layout scene (row L1a, LayoutScene below) in a window
@@ -55,13 +56,24 @@ internal sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new Window
+            var scene = new SceneControl();
+            var window = new Window
             {
                 Title = "Avalonia compare",
                 Width = 800,
                 Height = 600,
-                Content = Program.Text ? new TextSceneControl() : new SceneControl(),
+                Content = Program.Text ? new TextSceneControl() : scene,
             };
+
+            // The space key switches the marker's color (the input measurement, XylemUI roadmap row R3).
+            window.KeyDown += (_, e) =>
+            {
+                if (e.Key == Avalonia.Input.Key.Space)
+                {
+                    scene.Toggle();
+                }
+            };
+            desktop.MainWindow = window;
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -72,18 +84,27 @@ internal sealed class SceneControl : Control
 {
     private static readonly IBrush Clear = new ImmutableSolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x2A));
     private static readonly IBrush Marker = new ImmutableSolidColorBrush(Color.FromRgb(0x33, 0x66, 0xCC));
+    private static readonly IBrush PressedMarker = new ImmutableSolidColorBrush(Color.FromRgb(0xCC, 0x66, 0x33));
     private static readonly IBrush Red = new ImmutableSolidColorBrush(Color.FromRgb(0xCC, 0x33, 0x33));
     private static readonly IBrush Green = new ImmutableSolidColorBrush(Color.FromRgb(0x33, 0xAA, 0x66));
     private static readonly IBrush Ink = new ImmutableSolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Typeface Font = new(new FontFamily("avares://CompareAvalonia/Assets#Noto Sans JP Thin"));
     private int _frame;
+    private bool _pressed;
+
+    // Switches the marker between #3366CC and #CC6633 and draws again.
+    public void Toggle()
+    {
+        _pressed = !_pressed;
+        InvalidateVisual();
+    }
 
     public override void Render(DrawingContext context)
     {
         double width = Bounds.Width;
         double height = Bounds.Height;
         context.FillRectangle(Clear, new Rect(0, 0, width, height));
-        context.FillRectangle(Marker, new Rect(0, 0, 40, 40));
+        context.FillRectangle(_pressed ? PressedMarker : Marker, new Rect(0, 0, 40, 40));
         for (int i = 0; i < 1_000; i++)
         {
             double x = ((i * 37) + (_frame * 3)) % Math.Max(1, width - 20);
