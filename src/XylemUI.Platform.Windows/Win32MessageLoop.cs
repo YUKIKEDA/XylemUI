@@ -143,10 +143,11 @@ public static unsafe class Win32MessageLoop
                 throw new Win32Exception(Marshal.GetLastSystemError());
             }
 
-            // A timeout runs the frame too: a swap chain's object stays unsignaled after a frame that did not present.
+            // A timeout runs the frame too: a swap chain's object stays unsignaled after a frame that did not present. The result
+            // goes with it, so that a signal owed to a present that did not wait is taken without a frame (design §2.11).
             if (handleCount == 1 && (result == WAIT.WAIT_OBJECT_0 || result == WAIT.WAIT_TIMEOUT))
             {
-                frames.RunFrame();
+                frames.RunFrame(result);
             }
 
             // WAIT_OBJECT_0 + handleCount means input is available; the next iteration handles it.

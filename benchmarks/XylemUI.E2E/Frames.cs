@@ -40,11 +40,20 @@ internal static class Frames
     {
         UiThread.Initialize();
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
+
+        // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path, and
+        // that present is told to the loop's scheduler: an app (DesktopWindow) does both in this order, so the scheduler counts
+        // the present that did not wait (design §2.11, "Presents that did not wait"; Issue #679).
+        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;
+        if (treeScene is not null && treeScene.Target.PresentEnd != 0)
+        {
+            Win32MessageLoop.FrameScheduler.FramePresented();
+        }
+
         var layout = new List<double>(frames);
         var input = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject);
         var build = new List<double>(frames);
         var draw = new List<double>(frames);
         var present = new List<double>(frames);
@@ -168,6 +177,11 @@ internal static class Frames
             TerraFX.Interop.Windows.Windows.GetForegroundWindow() == (TerraFX.Interop.Windows.HWND)scene.Window.Handle ? 1 : 0
         );
         report.Number("topmost", MonitorChoice.IsTopmost(scene.Window.Handle) ? 1 : 0);
+
+        // The frames run on the wait's timeout, and the signals taken for presents that did not wait (Issue #679).
+        var clock = (Win32FrameScheduler)Win32MessageLoop.FrameScheduler;
+        report.Number("frame_clock_timeouts", clock.ClockTimeouts);
+        report.Number("signals_owed", clock.SignalsOwed);
         report.Number("frames_measured", interval.Count - Warm);
         report.Number("gpu_frames_skipped", scene.Renderer.GpuFramesSkipped);
         return 0;

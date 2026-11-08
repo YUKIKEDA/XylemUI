@@ -24,6 +24,13 @@ namespace XylemUI.Platform.Windows;
 /// and DirectManipulation needs one each frame (design §7, I1c). The wait on the object keeps a timeout of
 /// <see cref="SwapChainWaitTimeoutMilliseconds"/>, so that an object that stays unsignaled after a present stops no frame.
 /// </para>
+/// <para>
+/// A present that did not wait on the object (the synchronous resize path, a frame run on the timeout) gives back one signal more
+/// than was taken, and every frame after it would then present one ahead and show a refresh later. The scheduler counts the
+/// presents less the signals taken; when the object signals while that count is above zero, the frame is not run, and the loop
+/// waits again: the frame the extra present queued is the one the display shows at that refresh (design §2.11, "Presents that
+/// did not wait").
+/// </para>
 /// </remarks>
 internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
 {
@@ -46,6 +53,10 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     // unsignaled until a present, so the clock is the timer.
     private bool _presented;
     private bool _lastDidNotPresent;
+
+    // The presents reported on the swap chain's clock less the signals taken from its object: above zero after a present that
+    // did not wait, below zero after a frame that took a signal and did not present.
+    private int _owed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Win32FrameScheduler"/> class with its high-resolution timer as the clock.
@@ -72,6 +83,15 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     /// <summary>Gets how long the loop waits on <see cref="WaitHandle"/> before it runs the pending frame anyway.</summary>
     public uint WaitTimeoutMilliseconds => UsesTimer ? INFINITE : SwapChainWaitTimeoutMilliseconds;
 
+    /// <summary>Gets the number of frames run because the wait on the swap chain's object timed out, for the benchmarks.</summary>
+    internal long ClockTimeouts { get; private set; }
+
+    /// <summary>
+    /// Gets the number of signals of the swap chain's object taken without running a frame, one for each present that did not
+    /// wait (see the remarks), for the benchmarks.
+    /// </summary>
+    internal long SignalsOwed { get; private set; }
+
     // The timer is the clock without a swap chain, and after a callback that did not present.
     private bool UsesTimer => _swapChainClock == HANDLE.NULL || _lastDidNotPresent;
 
@@ -88,6 +108,7 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
 
         // A new swap chain's object starts signaled: no present is owed to it.
         _lastDidNotPresent = false;
+        _owed = 0;
         if (_pending is not null)
         {
             StartTimer();
@@ -123,6 +144,10 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     {
         _presented = true;
         _lastDidNotPresent = false;
+        if (_swapChainClock != HANDLE.NULL)
+        {
+            _owed++;
+        }
     }
 
     /// <summary>
@@ -135,7 +160,34 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     }
 
     /// <summary>
-    /// Runs the pending callback. Called by the message loop when <see cref="WaitHandle"/> is signaled.
+    /// Takes the result of the loop's wait on <see cref="WaitHandle"/> and runs the pending callback, unless the swap chain's
+    /// object signaled for a present that did not wait: that signal is taken and the frame stays pending.
+    /// </summary>
+    /// <param name="waitResult"><c>WAIT_OBJECT_0</c> when the handle was signaled, <c>WAIT_TIMEOUT</c> when the wait timed out.</param>
+    internal void RunFrame(uint waitResult)
+    {
+        if (!UsesTimer)
+        {
+            if (waitResult == WAIT.WAIT_OBJECT_0)
+            {
+                _owed--;
+                if (_owed >= 0)
+                {
+                    SignalsOwed++;
+                    return;
+                }
+            }
+            else
+            {
+                ClockTimeouts++;
+            }
+        }
+
+        RunFrame();
+    }
+
+    /// <summary>
+    /// Runs the pending callback, with no wait taken for it (a window's timer while an OS loop runs, design §2.11.1).
     /// </summary>
     internal void RunFrame()
     {
