@@ -161,6 +161,13 @@ internal static class Frames
         report.Series("present_latency_ms", [.. latency.Skip(Warm)]);
         report.Series("interval_ms", [.. interval.Skip(Warm)]);
         report.Number("missed_frames", missed);
+
+        // Whether the window had the foreground at the end, one of the window states Issue #184 compares against missed frames.
+        report.Number(
+            "foreground",
+            TerraFX.Interop.Windows.Windows.GetForegroundWindow() == (TerraFX.Interop.Windows.HWND)scene.Window.Handle ? 1 : 0
+        );
+        report.Number("topmost", MonitorChoice.IsTopmost(scene.Window.Handle) ? 1 : 0);
         report.Number("frames_measured", interval.Count - Warm);
         report.Number("gpu_frames_skipped", scene.Renderer.GpuFramesSkipped);
         return 0;

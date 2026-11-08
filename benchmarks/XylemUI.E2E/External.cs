@@ -53,6 +53,11 @@ internal static class External
             // recorded none of the presents of an app this animated started after it (M1a).
             using Process animated = Process.Start(new ProcessStartInfo(app, framesArgs) { UseShellExecute = false })!;
             ScreenWatch.BringToFront(animated);
+
+            // On the chosen monitor and topmost, as XylemUI's own scenes are: another framework opens its window where Windows puts
+            // it, and a covered window is composed by DWM (docs/benchmarks/r3-latency.md).
+            MonitorChoice.Place(animated.MainWindowHandle);
+            MonitorChoice.KeepOnTop(animated.MainWindowHandle);
             Thread.Sleep(2_000);
             using (Process monitor = StartPresentMon(presentMon, framesCsv, seconds: 10, animated.Id))
             {
@@ -139,6 +144,10 @@ internal static class External
             last = Stopwatch.GetTimestamp();
             scene.Build(frame++);
             scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
+
+            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain and the
+            // presents queue up (design §2.11, docs/benchmarks/q2-frames-clock.md).
+            Win32MessageLoop.FrameScheduler.FramePresented();
             if (!isStatic)
             {
                 Win32MessageLoop.FrameScheduler.RequestFrame(step!);

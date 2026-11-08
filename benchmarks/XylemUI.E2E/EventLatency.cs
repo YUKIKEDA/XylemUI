@@ -29,6 +29,10 @@ internal static class EventLatency
         {
             scene.Build(frame++);
             scene.Renderer.Render(scene.List, scene.Clear, scene.Atlas);
+
+            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11,
+            // docs/benchmarks/q2-frames-clock.md).
+            Win32MessageLoop.FrameScheduler.FramePresented();
             toPresent.Add(Stopwatch.GetElapsedTime(posted).TotalMilliseconds);
             waitingForDisplay = true;
         };

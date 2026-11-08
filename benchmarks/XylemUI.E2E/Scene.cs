@@ -23,7 +23,9 @@ internal sealed class Scene : IDisposable
     public Scene(string title, bool useWarp = false, bool gray = false)
     {
         Window = new Win32Window(title, 800, 600);
+        MonitorChoice.Place(Window.Handle);
         Window.Show();
+        MonitorChoice.KeepOnTop(Window.Handle);
         (int width, int height) = Window.ClientSize;
         Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
         Renderer.TextRendering = TextRenderingOf(Window, gray);

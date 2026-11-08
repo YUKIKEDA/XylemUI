@@ -1,7 +1,8 @@
 // The end-to-end measurements of XylemUI (design §11.3; roadmap row M1a; docs/benchmarks/m1-baseline.md). Recorded, not a
 // gate (.cursor/rules/bench.mdc). Judge the numbers on a NativeAOT Release build:
 //   dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>, then <dir>/XylemUI.E2E.exe <scenario>.
-// Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes.
+// Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes. `--monitor N` opens
+// the windows on \\.\DISPLAYN, else on the monitor with the highest refresh rate (MonitorChoice); the report names it.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
 //                              (--scopes as frames' draws the first frame in clips and transforms, row R4d)
 //   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
@@ -56,6 +57,7 @@ using System.Globalization;
 using XylemUI.E2E;
 
 string scenario = args.Length > 0 ? args[0] : "frames";
+MonitorChoice.Configure(args);
 float Scale() => Array.IndexOf(args, "--scale") is int at and >= 0 ? float.Parse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture) : 0;
 
 string Scopes() => Array.IndexOf(args, "--scopes") is int at and >= 0 && at + 1 < args.Length ? args[at + 1] : string.Empty;
