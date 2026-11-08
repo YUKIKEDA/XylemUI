@@ -2,7 +2,8 @@
 // gate (.cursor/rules/bench.mdc). Judge the numbers on a NativeAOT Release build:
 //   dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>, then <dir>/XylemUI.E2E.exe <scenario>.
 // Each scenario prints one JSON object on a line, except scope-cost, which prints the rows ADR 0001 quotes. `--monitor N` opens
-// the windows on \\.\DISPLAYN, else on the monitor with the highest refresh rate (MonitorChoice); the report names it.
+// the windows on \\.\DISPLAYN, else on the monitor with the highest refresh rate (MonitorChoice); the report names it, and the
+// child processes of XylemUI.E2E (startup-check's, external's when the app is XylemUI.E2E) take the same monitor.
 //   startup [runs]             launch to the first frame on the display, launch to Main, and the executable's size
 //                              (--scopes as frames' draws the first frame in clips and transforms, row R4d)
 //   idle [runs] [--gray]       CPU time and memory of 10 idle seconds after the first frame (--gray: grayscale text)
