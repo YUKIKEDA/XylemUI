@@ -45,6 +45,46 @@ public sealed class GridLayoutTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The names of an ignored track list name no line: a child placed by such a name goes to the implicit lines after the
+    /// explicit grid, which has no track, as CSS drops the whole declaration (PR #658's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of 300 x 100 holding a grid whose columns are `[a] auto repeat(auto-fill, 50px)`, with one leaf of 10 x 10
+    ///   placed at the line named a.
+    ///
+    /// Steps:
+    /// - Lay it out; read the leaf's rectangle.
+    ///
+    /// Expected:
+    /// - (145, 0, 155 x 10): no line is named a, so the leaf starts at the first implicit line after the empty explicit grid,
+    ///   in the second of two auto columns; the 290 left after the leaf's 10 is shared between them. With the names of the
+    ///   ignored list, the leaf would take the only column: (0, 0, 300 x 10).
+    /// </remarks>
+    [Fact]
+    public void IgnoredTrackList_NamesNoLine() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(Column());
+            NodeHandle grid = Box(
+                tree,
+                root,
+                new LayoutStyle
+                {
+                    Algorithm = new LayoutAlgorithm.Grid(
+                        new GridProps { Columns = [Track.Line("a"), Track.Auto, Track.Repeat(Repeat.AutoFill, Track.Px(50))] }
+                    ),
+                }
+            );
+            NodeHandle leaf = Leaf(tree, grid, 10, 10, new LayoutStyle { GridColumn = new GridPlacement(GridLine.Named("a"), GridLine.Auto) });
+
+            LayOut(tree, root, 300, 100);
+
+            Assert.Equal(new Rect(145, 0, 155, 10), tree.GetRect(leaf));
+        });
+
+    /// <summary>
     /// An item that scrolls horizontally only has a minimum contribution of 0 to its columns (CSS Grid §6.6). CSS computes a
     /// visible overflow next to a hidden one to auto, so no XML test has a box hidden in one axis and visible in the other.
     /// </summary>

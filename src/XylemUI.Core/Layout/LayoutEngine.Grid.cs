@@ -76,11 +76,14 @@ internal static partial class LayoutEngine
         int nameTop = nameScratch.Top;
         try
         {
-            // The named lines of the explicit grid, for the placements by name.
-            Span<long> columnNames = nameScratch.Push(LineNamePairs(props.Columns, columnRepetitions, []));
-            columnNames = columnNames[..LineNamePairs(props.Columns, columnRepetitions, columnNames)];
-            Span<long> rowNames = nameScratch.Push(LineNamePairs(props.Rows, rowRepetitions, []));
-            rowNames = rowNames[..LineNamePairs(props.Rows, rowRepetitions, rowNames)];
+            // The named lines of the explicit grid, for the placements by name. A track list that gives no track is ignored with
+            // its names, as CSS drops the declaration (PR #658's review).
+            ImmutableArray<GridTrack> columnTemplate = explicitColumns == 0 ? default : props.Columns;
+            ImmutableArray<GridTrack> rowTemplate = explicitRows == 0 ? default : props.Rows;
+            Span<long> columnNames = nameScratch.Push(LineNamePairs(columnTemplate, columnRepetitions, []));
+            columnNames = columnNames[..LineNamePairs(columnTemplate, columnRepetitions, columnNames)];
+            Span<long> rowNames = nameScratch.Push(LineNamePairs(rowTemplate, rowRepetitions, []));
+            rowNames = rowNames[..LineNamePairs(rowTemplate, rowRepetitions, rowNames)];
 
             // 3. The grid items, in document order, with their placements in lines from the explicit grid's start.
             Span<GridItemState> items = itemScratch.Push(count);

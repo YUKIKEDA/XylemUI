@@ -176,7 +176,7 @@ public readonly record struct GridTrack
     /// <param name="items">The tracks and lines, at least one track and no repetition.</param>
     /// <param name="parameter">The name of the parameter that holds the items.</param>
     /// <returns>The entry.</returns>
-    /// <exception cref="ArgumentException"><paramref name="items"/> has no track, or a repetition.</exception>
+    /// <exception cref="ArgumentException"><paramref name="items"/> has no track (nothing, or line entries alone), or a repetition.</exception>
     internal static GridTrack Repeat(int count, Repeat? auto, ReadOnlySpan<GridTrack> items, string parameter)
     {
         var tracks = ImmutableArray.CreateBuilder<TrackSize>();
@@ -310,7 +310,7 @@ public static class Track
     /// <param name="tracks">The tracks to repeat, at least one, and <see cref="Line"/> entries between and around them.</param>
     /// <returns>The entry.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is below 1 or above 10,000.</exception>
-    /// <exception cref="ArgumentException"><paramref name="tracks"/> has no track, or a repetition.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tracks"/> has no track (nothing, or <see cref="Line"/> entries alone), or a repetition.</exception>
     public static GridTrack Repeat(int count, params ReadOnlySpan<GridTrack> tracks) =>
         count is < 1 or > MaxTracks
             ? throw new ArgumentOutOfRangeException(nameof(count), count, "A repetition repeats its tracks from 1 to 10,000 times.")
@@ -327,7 +327,7 @@ public static class Track
     /// <param name="tracks">The tracks to repeat, at least one, and <see cref="Line"/> entries between and around them.</param>
     /// <returns>The entry.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="repeat"/> is not a value of <see cref="XylemUI.Repeat"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="tracks"/> has no track, or a repetition.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tracks"/> has no track (nothing, or <see cref="Line"/> entries alone), or a repetition.</exception>
     public static GridTrack Repeat(Repeat repeat, params ReadOnlySpan<GridTrack> tracks) =>
         repeat is not (XylemUI.Repeat.AutoFill or XylemUI.Repeat.AutoFit)
             ? throw new ArgumentOutOfRangeException(nameof(repeat), repeat, "An automatic repetition is AutoFill or AutoFit.")
