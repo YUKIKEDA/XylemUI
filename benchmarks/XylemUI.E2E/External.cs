@@ -208,32 +208,59 @@ internal static class External
         return (cpu, workingSet, privateBytes);
     }
 
-    internal static Process StartPresentMon(string presentMon, string csv, int seconds, int processId)
+    // `session` names the ETW session, so that StopPresentMon can end this trace alone. It returns without waiting for the
+    // trace: PresentMon says "Started recording." on its output stream, which a pipe gets only in blocks (in 24 runs of
+    // input-latency it never came within 3 s, while the traces recorded), and an unelevated PresentMon says it only once it sees
+    // a DXGI present (never for Avalonia's default composition). The rows a trace recorded show whether it ran.
+    internal static Process StartPresentMon(string presentMon, string csv, int seconds, int processId, string session = "PresentMon")
     {
         var info = new ProcessStartInfo(
             presentMon,
-            $"--process_id {processId} --output_file \"{csv}\" --timed {seconds} --terminate_after_timed --no_console_stats --qpc_time"
+            $"--process_id {processId} --output_file \"{csv}\" --timed {seconds} --terminate_after_timed --no_console_stats --qpc_time --session_name {session}"
         )
         {
             UseShellExecute = false,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
 
-            // PresentMon writes its messages in UTF-16.
+            // PresentMon writes its error stream in UTF-16.
             StandardErrorEncoding = System.Text.Encoding.Unicode,
         };
         Process monitor = Process.Start(info)!;
+
         monitor.OutputDataReceived += (_, _) => { };
         monitor.BeginOutputReadLine();
 
-        // The trace runs once PresentMon says so on its error stream.
-        string? line;
-        while ((line = monitor.StandardError.ReadLine()) is not null && !line.Contains("Started recording", StringComparison.Ordinal)) { }
-
-        // The rest of the error stream is read on a thread, so that PresentMon never blocks on a full pipe.
+        // The error stream is read on a thread, so that PresentMon never blocks on a full pipe.
         var drain = new Thread(() => _ = monitor.StandardError.ReadToEnd()) { IsBackground = true };
         drain.Start();
         return monitor;
+    }
+
+    // Ends a trace before its length passes: its session is stopped by name, which PresentMon's own exit does too. A PresentMon
+    // that is killed instead leaves its ETW session running, and the next one of that name does not start.
+    internal static void StopPresentMon(string presentMon, string session, Process monitor)
+    {
+        if (monitor.HasExited)
+        {
+            return;
+        }
+
+        using Process stop = Process.Start(
+            new ProcessStartInfo(presentMon, $"--session_name {session} --terminate_existing_session")
+            {
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+            }
+        )!;
+        _ = stop.StandardOutput.ReadToEnd();
+        _ = stop.StandardError.ReadToEnd();
+        stop.WaitForExit();
+        if (!monitor.WaitForExit(5_000))
+        {
+            Kill(monitor);
+        }
     }
 
     private static void Frames(

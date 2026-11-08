@@ -116,6 +116,8 @@ internal static unsafe class InputLatency
     {
         using Process process = Process.Start(new ProcessStartInfo(app, appArgs) { UseShellExecute = false })!;
         Process? coverProcess = null;
+        Process? monitor = null;
+        string session = $"XylemUIInput{Environment.ProcessId}x{seed}";
         HWND cover = HWND.NULL;
         ID3D11Device* device = null;
         ID3D11DeviceContext* context = null;
@@ -134,6 +136,10 @@ internal static unsafe class InputLatency
             }
 
             Activate(window, cover);
+            if (coverProcess is not null)
+            {
+                RaiseCover(window, cover);
+            }
 
             D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_0;
             ThrowIfFailed(
@@ -157,9 +163,11 @@ internal static unsafe class InputLatency
             point.x -= output.left;
             point.y -= output.top;
 
-            // The trace covers every key: about 117 ms a key and the start.
-            int seconds = 5 + (int)Math.Ceiling(presses * 0.13);
-            using Process monitor = External.StartPresentMon(presentMon, csv, seconds, process.Id);
+            // The trace covers every key: the wait between keys (at most 117 ms) and the wait for the display (up to about 50 ms
+            // in the slowest scene). 0.13 s a key cut the slow runs short (PR #674's review). PresentMon's --terminate_on_proc_exit
+            // would end it with the app, but then it wrote no file.
+            int seconds = 5 + (int)Math.Ceiling(presses * 0.2);
+            monitor = External.StartPresentMon(presentMon, csv, seconds, process.Id, session);
             uint shown = WaitForMarker(duplication, context, pixel, point, Marker, PressedMarker, out _);
             var random = new Random(seed);
             int lost = 0;
@@ -206,6 +214,15 @@ internal static unsafe class InputLatency
         finally
         {
             External.Kill(process);
+
+            // A run that stopped (the foreground check) ends its trace too, which would otherwise hold its file open until its
+            // length passes, and the work directory could not be removed (PR #674's review).
+            if (monitor is not null)
+            {
+                External.StopPresentMon(presentMon, session, monitor);
+                monitor.Dispose();
+            }
+
             if (coverProcess is not null)
             {
                 External.Kill(coverProcess);
@@ -381,6 +398,33 @@ internal static unsafe class InputLatency
 
         Pump(TimeSpan.FromMilliseconds(500));
         return cover;
+    }
+
+    // Puts the covering window back over the app's: the click that made the app the foreground window also raised it to the top
+    // of the topmost windows, under which the covering window would have stayed (PR #674's review found the scene uncovered).
+    // The window under the covering window's middle is read, so that the scene is known to be covered, and the app must still be
+    // the foreground window.
+    private static void RaiseCover(HWND window, HWND cover)
+    {
+        if (SetWindowPos(cover, HWND.HWND_TOPMOST, 0, 0, 0, 0, SWP.SWP_NOMOVE | SWP.SWP_NOSIZE | SWP.SWP_NOACTIVATE) == BOOL.FALSE)
+        {
+            throw new InvalidOperationException($"The covering window was not raised (error {GetLastError()}).");
+        }
+
+        Pump(TimeSpan.FromMilliseconds(300));
+        RECT bounds;
+        _ = GetWindowRect(cover, &bounds);
+        var middle = new POINT { x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2 };
+        HWND under = GetAncestor(WindowFromPoint(middle), AncestorRoot);
+        if (under != cover)
+        {
+            throw new InvalidOperationException($"The window over the covered corner is 0x{(nint)under:X}, not the covering window.");
+        }
+
+        if (GetForegroundWindow() != window)
+        {
+            throw new InvalidOperationException("Raising the covering window took the foreground from the app.");
+        }
     }
 
     // Waits while handling this thread's messages, so that the covering window paints and answers.
