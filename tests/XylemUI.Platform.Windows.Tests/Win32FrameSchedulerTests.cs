@@ -163,6 +163,64 @@ public sealed unsafe class Win32FrameSchedulerTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// More presents counted than the object holds signals for (a long resize drag): the wait that times out right after a
+    /// signal was taken without a frame sets the count back, and the present of the frame run on that timeout is not counted, so
+    /// the next signal runs a frame (PR #680's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scheduler whose frame clock is an event in place of a swap chain's object.
+    ///
+    /// Steps:
+    /// - Report three presents from outside any callback, then ask for a frame that presents and asks for the next one.
+    /// - Give the scheduler a signaled wait, then a timed-out wait, then two signaled waits.
+    ///
+    /// Expected:
+    /// - The first signal runs no frame.
+    /// - The timed-out wait runs the frame, though two counted presents remain.
+    /// - Each of the next two signals runs a frame: the count went back to zero, and the present on the timeout was not counted.
+    /// </remarks>
+    [Fact]
+    public void TimeoutAfterASignalTakenWithoutAFrame_SetsTheCountBack() =>
+        ui.Invoke(() =>
+        {
+            HANDLE clock = CreateEventW(null, BOOL.TRUE, BOOL.TRUE, null);
+            Assert.NotEqual(HANDLE.NULL, clock);
+            using var scheduler = new Win32FrameScheduler();
+            try
+            {
+                scheduler.SetFrameClock(clock);
+                int runs = 0;
+                Action frame = null!;
+                frame = () =>
+                {
+                    runs++;
+                    scheduler.FramePresented();
+                    scheduler.RequestFrame(frame);
+                };
+
+                scheduler.FramePresented();
+                scheduler.FramePresented();
+                scheduler.FramePresented();
+                scheduler.RequestFrame(frame);
+                scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
+                Assert.Equal(0, runs);
+
+                scheduler.RunFrame(WAIT.WAIT_TIMEOUT);
+                Assert.Equal(1, runs);
+
+                scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
+                scheduler.RunFrame(WAIT.WAIT_OBJECT_0);
+                Assert.Equal((3, 1L, 1L), (runs, scheduler.SignalsOwed, scheduler.ClockTimeouts));
+            }
+            finally
+            {
+                scheduler.CancelFrame();
+                _ = CloseHandle(clock);
+            }
+        });
+
+    /// <summary>
     /// A frame run on the wait's timeout presents without having waited, so the next signal runs no frame; the frames after it
     /// run on every signal.
     /// </summary>

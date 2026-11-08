@@ -31,6 +31,13 @@ namespace XylemUI.Platform.Windows;
 /// waits again: the frame the extra present queued is the one the display shows at that refresh (design §2.11, "Presents that
 /// did not wait").
 /// </para>
+/// <para>
+/// The object keeps a bounded number of signals (40 on the measuring machine after more presents that did not wait, PR #680's
+/// review), so a long resize drag can count more than it holds. A wait that times out right after a signal was taken without a
+/// frame shows that: the count goes back to zero, and the present of the frame run on that timeout is not counted, since it is
+/// the only one in flight and its signal is a frame's own. Without this, each such present's own signal was taken without a
+/// frame, the next wait timed out again, and the frames stayed at about 16 a second.
+/// </para>
 /// </remarks>
 internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
 {
@@ -57,6 +64,11 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     // The presents reported on the swap chain's clock less the signals taken from its object: above zero after a present that
     // did not wait, below zero after a frame that took a signal and did not present.
     private int _owed;
+
+    // Whether the last signal was taken without a frame, and whether the frame running was run on a timeout that came right
+    // after one (its present is then not counted).
+    private bool _lastSignalTaken;
+    private bool _presentNotOwed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Win32FrameScheduler"/> class with its high-resolution timer as the clock.
@@ -109,6 +121,7 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
         // A new swap chain's object starts signaled: no present is owed to it.
         _lastDidNotPresent = false;
         _owed = 0;
+        _lastSignalTaken = false;
         if (_pending is not null)
         {
             StartTimer();
@@ -144,7 +157,7 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
     {
         _presented = true;
         _lastDidNotPresent = false;
-        if (_swapChainClock != HANDLE.NULL)
+        if (_swapChainClock != HANDLE.NULL && !_presentNotOwed)
         {
             _owed++;
         }
@@ -174,16 +187,26 @@ internal sealed unsafe class Win32FrameScheduler : IFrameScheduler, IDisposable
                 if (_owed >= 0)
                 {
                     SignalsOwed++;
+                    _lastSignalTaken = true;
                     return;
                 }
             }
             else
             {
                 ClockTimeouts++;
+
+                // The object held fewer signals than were counted (see the class remarks).
+                if (_lastSignalTaken)
+                {
+                    _owed = 0;
+                    _presentNotOwed = true;
+                }
             }
         }
 
+        _lastSignalTaken = false;
         RunFrame();
+        _presentNotOwed = false;
     }
 
     /// <summary>
