@@ -13,6 +13,11 @@ internal static unsafe class MonitorChoice
     // ENUM_CURRENT_SETTINGS (winuser.h).
     private const uint EnumCurrentSettings = unchecked((uint)-1);
 
+    // Carries `--monitor N` to the child processes, which inherit the environment: `startup-child` and XylemUI.E2E itself as the
+    // app of `external` open their windows on the output the parent duplicates (PR #670's review). Other frameworks' apps do not
+    // read it.
+    private const string MonitorVariable = "XYLEMUI_E2E_MONITOR";
+
     // What a report names when the session has no monitor.
     private static readonly Choice NoMonitor = new("none", 0, false, 0, 0);
 
@@ -22,11 +27,17 @@ internal static unsafe class MonitorChoice
 
     public static int RefreshHz => Get().RefreshHz;
 
-    // Reads `--monitor N` from the process's arguments once.
+    // Reads `--monitor N` from the process's arguments once, or else the number a parent process passed down.
     public static void Configure(string[] args)
     {
         int at = Array.IndexOf(args, "--monitor");
-        int? number = at >= 0 && at + 1 < args.Length ? int.Parse(args[at + 1], CultureInfo.InvariantCulture) : null;
+        string? text = at >= 0 && at + 1 < args.Length ? args[at + 1] : Environment.GetEnvironmentVariable(MonitorVariable);
+        int? number = text is null ? null : int.Parse(text, CultureInfo.InvariantCulture);
+        if (number is int n)
+        {
+            Environment.SetEnvironmentVariable(MonitorVariable, n.ToString(CultureInfo.InvariantCulture));
+        }
+
         _choice = Choose(number);
     }
 
