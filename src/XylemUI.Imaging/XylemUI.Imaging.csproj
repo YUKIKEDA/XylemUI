@@ -6,6 +6,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="XylemUI.Core" />
+    <InternalsVisibleTo Include="XylemUI.Core.Tests" />
+    <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
+    <InternalsVisibleTo Include="XylemUI.E2E" />
     <InternalsVisibleTo Include="XylemUI.Imaging.Tests" />
     <!-- The Windows rasterizer reads the PNG of a bitmap color glyph (design §5.0.3, rows T9 and IM1). -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows" />

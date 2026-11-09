@@ -230,6 +230,43 @@ public static class Elements
     }
 
     /// <summary>
+    /// Makes an image element (design §5.0.4, "API"): the image of <paramref name="source"/>, read and decoded on a worker thread.
+    /// While it is read, the element shows <see cref="ImageOptions.Loading"/>, and when it could not be read,
+    /// <see cref="ImageOptions.Error"/>; each is a box of size 0 when not given. A box not given a size takes the image's pixels as
+    /// logical pixels; given one side, it takes the other from the image's ratio (design §5.0.4, "Size").
+    /// </summary>
+    /// <param name="source">Where the image's bytes come from.</param>
+    /// <param name="options">How the image is read, sized, and shown; the defaults when <see langword="null"/>.</param>
+    /// <returns>The image's node.</returns>
+    /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    public static Element Image(ImageSource source, ImageOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return Image(() => source, options);
+    }
+
+    /// <summary>
+    /// Makes an image element whose source <paramref name="source"/> reads again whenever a signal it read changes. A source equal to
+    /// the one shown changes nothing; another lets the image shown go at once and shows the loading part until the new one is read
+    /// (IM1's Grill, Q20).
+    /// </summary>
+    /// <param name="source">The source, read in an effect of the element's scope.</param>
+    /// <param name="options">How the image is read, sized, and shown; the defaults when <see langword="null"/>.</param>
+    /// <returns>The image's node.</returns>
+    /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    public static Element Image(Func<ImageSource> source, ImageOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        UiTree tree = CurrentTree();
+        if (Scope.CurrentRef.IsNone)
+        {
+            throw new InvalidOperationException("Elements are made inside a scope, which owns them; there is no current scope.");
+        }
+
+        return ImageBlock.Create(tree, source, options ?? new ImageOptions());
+    }
+
+    /// <summary>
     /// Returns the tree whose root function runs now.
     /// </summary>
     /// <returns>The current tree.</returns>

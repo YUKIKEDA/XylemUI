@@ -37,6 +37,11 @@ internal sealed unsafe class ImageDecoder
     public ImageFormat Format { get; private set; }
 
     /// <summary>
+    /// Gets the scale, in eighths, the last <see cref="TryDecodeTo"/> decoded a JPEG at; 8 for the other formats.
+    /// </summary>
+    public int LastEighths { get; private set; } = 8;
+
+    /// <summary>
     /// Reads an image into <see cref="Pixels"/>.
     /// </summary>
     /// <param name="data">The image's bytes.</param>
@@ -80,6 +85,193 @@ internal sealed unsafe class ImageDecoder
         return true;
     }
 
+    /// <summary>
+    /// Reads an image for the image element (design §5.0.4, "Decoding size"): at the size <see cref="TargetSize"/> gives, a JPEG at
+    /// the smallest of libjpeg-turbo's scales (eighths) that is not smaller, then shrunk to the size by the mean over each pixel's
+    /// area (<see cref="BoxResize"/>). An ICO's entry is the one nearest the size's longer side.
+    /// </summary>
+    /// <param name="data">The image's bytes.</param>
+    /// <param name="targetWidth">The width asked for, in pixels; 0 for none.</param>
+    /// <param name="targetHeight">The height asked for, in pixels; 0 for none.</param>
+    /// <param name="maxSide">The longest side of the result: the textures' limit.</param>
+    /// <param name="pixels">The pixels, premultiplied BGRA, in an array of their own that the caller keeps; null when not read.</param>
+    /// <param name="width">The result's width, or 0.</param>
+    /// <param name="height">The result's height, or 0.</param>
+    /// <returns><see langword="true"/> when the image was read.</returns>
+    public bool TryDecodeTo(
+        ReadOnlySpan<byte> data,
+        int targetWidth,
+        int targetHeight,
+        int maxSide,
+        out byte[]? pixels,
+        out int width,
+        out int height
+    )
+    {
+        pixels = null;
+        width = 0;
+        height = 0;
+        Format = ImageFormat.None;
+        _pixelLength = 0;
+        _pixelsInDecoded = true;
+        ShrinkKeptBuffers();
+        int w;
+        int h;
+        if (Ico.Is(data))
+        {
+            int side = Math.Max(targetWidth, targetHeight);
+            if (!TryDecodeIco(data, side > 0 ? side : 256, out w, out h))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            int f;
+            int sourceWidth;
+            int sourceHeight;
+            fixed (byte* bytes = data)
+            {
+                if (data.IsEmpty || ImageShim.Info(bytes, (nuint)data.Length, &f, &sourceWidth, &sourceHeight) != ImageShim.Ok)
+                {
+                    return false;
+                }
+            }
+
+            ImageFormat format = (ImageFormat)f;
+            int orientation = format == ImageFormat.Jpeg ? Exif.Orientation(data) : 1;
+            bool swaps = Exif.SwapsSides(orientation);
+            int eighths = 8;
+            if (format == ImageFormat.Jpeg)
+            {
+                // The target in the stored image's sides, before the orientation turns them.
+                (int shownWidth, int shownHeight) = swaps ? (sourceHeight, sourceWidth) : (sourceWidth, sourceHeight);
+                (int tw, int th) = TargetSize(shownWidth, shownHeight, targetWidth, targetHeight, maxSide);
+                (int storedWidth, int storedHeight) = swaps ? (th, tw) : (tw, th);
+                while (
+                    eighths > 1
+                    && ImageShim.Scaled(sourceWidth, eighths - 1) >= storedWidth
+                    && ImageShim.Scaled(sourceHeight, eighths - 1) >= storedHeight
+                )
+                {
+                    eighths--;
+                }
+            }
+
+            LastEighths = eighths;
+            if (!TryDecodeScaled(data, eighths, out w, out h))
+            {
+                return false;
+            }
+
+            Format = format;
+            if (orientation != 1)
+            {
+                EnsureCapacity(ref _pixels, _pixelLength);
+                Exif.Orient(_decoded, w, h, orientation, _pixels);
+                _pixelsInDecoded = false;
+                if (swaps)
+                {
+                    (w, h) = (h, w);
+                }
+            }
+        }
+
+        (width, height) = TargetSize(w, h, targetWidth, targetHeight, maxSide);
+        pixels = new byte[width * height * 4];
+        if (width == w && height == h)
+        {
+            Pixels.CopyTo(pixels);
+        }
+        else
+        {
+            BoxResize.Shrink(Pixels, w, h, pixels, width, height);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the size an image is read at for the image element (design §5.0.4, "Decoding size", IM1's Grill, Q17 and Q19): with
+    /// one side asked for, the other keeps the image's ratio (Flutter's <c>instantiateCodec</c>: the height the width's floor, the
+    /// width rounded); with both, both; a side asked for larger than the image's is the image's (no enlarging, Flutter's
+    /// <c>ResizeImagePolicy.exact</c> without <c>allowUpscaling</c>). A size longer than <paramref name="maxSide"/> is shrunk, its
+    /// ratio kept, until its longer side is <paramref name="maxSide"/>.
+    /// </summary>
+    /// <param name="width">The image's width.</param>
+    /// <param name="height">The image's height.</param>
+    /// <param name="targetWidth">The width asked for; 0 for none.</param>
+    /// <param name="targetHeight">The height asked for; 0 for none.</param>
+    /// <param name="maxSide">The longest side.</param>
+    /// <returns>The size, each side at least 1.</returns>
+    public static (int Width, int Height) TargetSize(int width, int height, int targetWidth, int targetHeight, int maxSide)
+    {
+        int tw = targetWidth > 0 ? Math.Min(targetWidth, width) : 0;
+        int th = targetHeight > 0 ? Math.Min(targetHeight, height) : 0;
+        if (tw == 0 && th == 0)
+        {
+            (tw, th) = (width, height);
+        }
+        else if (tw == 0)
+        {
+            tw = (int)Math.Round(th * ((double)width / height), MidpointRounding.AwayFromZero);
+        }
+        else if (th == 0)
+        {
+            th = (int)(tw / ((double)width / height));
+        }
+
+        int longer = Math.Max(tw, th);
+        if (longer > maxSide)
+        {
+            double scale = (double)maxSide / longer;
+            tw = (int)Math.Round(tw * scale, MidpointRounding.AwayFromZero);
+            th = (int)Math.Round(th * scale, MidpointRounding.AwayFromZero);
+        }
+
+        return (Math.Max(1, tw), Math.Max(1, th));
+    }
+
+    // The shim's decode of a whole image, a JPEG at `eighths`, into the decoded buffer.
+    private bool TryDecodeScaled(ReadOnlySpan<byte> data, int eighths, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        int f;
+        int w;
+        int h;
+        fixed (byte* bytes = data)
+        {
+            if (ImageShim.Info(bytes, (nuint)data.Length, &f, &w, &h) != ImageShim.Ok || w <= 0 || h <= 0)
+            {
+                return false;
+            }
+
+            w = ImageShim.Scaled(w, eighths);
+            h = ImageShim.Scaled(h, eighths);
+            long length = (long)w * h * 4;
+            if (length > Array.MaxLength)
+            {
+                return false;
+            }
+
+            EnsureCapacity(ref _decoded, (int)length);
+            fixed (byte* pixels = _decoded)
+            {
+                if (ImageShim.Decode(bytes, (nuint)data.Length, pixels, (nuint)(w * 4), w, h, eighths) != ImageShim.Ok)
+                {
+                    return false;
+                }
+            }
+
+            _pixelLength = (int)length;
+        }
+
+        width = w;
+        height = h;
+        return true;
+    }
+
     private bool TryDecodeWithShim(ReadOnlySpan<byte> data, int maxSide, out int width, out int height, out ImageFormat format)
     {
         width = 0;
@@ -109,7 +301,7 @@ internal sealed unsafe class ImageDecoder
             EnsureCapacity(ref _decoded, (int)length);
             fixed (byte* pixels = _decoded)
             {
-                if (ImageShim.Decode(bytes, (nuint)data.Length, pixels, (nuint)(w * 4), w, h) != ImageShim.Ok)
+                if (ImageShim.Decode(bytes, (nuint)data.Length, pixels, (nuint)(w * 4), w, h, 8) != ImageShim.Ok)
                 {
                     return false;
                 }

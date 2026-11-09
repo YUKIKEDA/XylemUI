@@ -4,7 +4,8 @@
 // libwebp sit behind the same two functions so that C# calls the three one way.
 //
 //   xi_info    reads the format and the size of an image, without decoding its pixels
-//   xi_decode  decodes the image (the first frame of a GIF) to premultiplied BGRA, top-down rows of `stride` bytes
+//   xi_decode  decodes the image (the first frame of a GIF) to premultiplied BGRA, top-down rows of `stride` bytes; a JPEG at a
+//              scale of eighths, libjpeg-turbo's DCT scaling (design §5.0.4, "Decoding size", row IM1 1b-2)
 //
 // Every function takes untrusted bytes and returns an XI_ status; nothing is read past `length`. vendor/build.ps1 builds this file
 // with Wuffs into xylemui_image.lib (NativeAOT, static CRT) and xylemui_image.dll (the JIT).
@@ -159,7 +160,12 @@ static void xi_cmyk_to_bgra(uint8_t* row, uint32_t width) {
   }
 }
 
-static int32_t xi_jpeg(const uint8_t* data, size_t length, int32_t* width, int32_t* height, uint8_t* pixels, size_t stride) {
+// A side of a JPEG decoded at `eighths` / 8 of its size, rounded up as libjpeg-turbo rounds it (jdiv_round_up in
+// jpeg_calc_output_dimensions).
+static int32_t xi_scaled(int32_t side, int32_t eighths) { return (int32_t)(((int64_t)side * eighths + 7) / 8); }
+
+static int32_t xi_jpeg(const uint8_t* data, size_t length, int32_t* width, int32_t* height, uint8_t* pixels, size_t stride,
+                       int32_t eighths) {
   struct jpeg_decompress_struct info;
   xi_jpeg_error error;
   info.err = jpeg_std_error(&error.manager);
@@ -197,8 +203,10 @@ static int32_t xi_jpeg(const uint8_t* data, size_t length, int32_t* width, int32
 
   int cmyk = info.jpeg_color_space == JCS_CMYK || info.jpeg_color_space == JCS_YCCK;
   info.out_color_space = cmyk ? JCS_CMYK : JCS_EXT_BGRA;
+  info.scale_num = (unsigned int)eighths;
+  info.scale_denom = 8;
   jpeg_start_decompress(&info);
-  if (info.output_width != info.image_width || info.output_height != info.image_height) {
+  if ((int32_t)info.output_width != xi_scaled(*width, eighths) || (int32_t)info.output_height != xi_scaled(*height, eighths)) {
     jpeg_destroy_decompress(&info);
     return XI_BROKEN;
   }
@@ -274,7 +282,7 @@ static int32_t xi_format(const uint8_t* data, size_t length) {
 }
 
 static int32_t xi_run(const uint8_t* data, size_t length, int32_t* format, int32_t* width, int32_t* height, uint8_t* pixels,
-                      size_t stride) {
+                      size_t stride, int32_t eighths) {
   if (!data || length == 0) {
     return XI_UNSUPPORTED;
   }
@@ -286,7 +294,7 @@ static int32_t xi_run(const uint8_t* data, size_t length, int32_t* format, int32
     case XI_BMP:
       return xi_wuffs(*format, data, length, width, height, pixels, stride);
     case XI_JPEG:
-      return xi_jpeg(data, length, width, height, pixels, stride);
+      return xi_jpeg(data, length, width, height, pixels, stride, eighths);
     case XI_WEBP:
       return xi_webp(data, length, width, height, pixels, stride);
     default:
@@ -298,12 +306,14 @@ XI_EXPORT int32_t xi_info(const uint8_t* data, size_t length, int32_t* format, i
   *format = 0;
   *width = 0;
   *height = 0;
-  return xi_run(data, length, format, width, height, NULL, 0);
+  return xi_run(data, length, format, width, height, NULL, 0, 8);
 }
 
-// `width` and `height` are those xi_info gave for the same bytes; `pixels` holds `height` rows of `stride` bytes, `stride` at least
-// width × 4.
-XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels, size_t stride, int32_t width, int32_t height) {
+// `eighths` is the scale, 1 to 8 eighths, which only a JPEG takes (8 for the others). `width` and `height` are those xi_info gave
+// for the same bytes at that scale, a side times eighths / 8 rounded up; `pixels` holds `height` rows of `stride` bytes, `stride` at
+// least width × 4.
+XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels, size_t stride, int32_t width, int32_t height,
+                            int32_t eighths) {
   int32_t format = 0;
   int32_t w = 0;
   int32_t h = 0;
@@ -312,9 +322,13 @@ XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels,
     return result;
   }
 
-  if (w != width || h != height || !pixels || stride < (size_t)width * 4) {
+  if (eighths < 1 || eighths > 8 || (eighths != 8 && format != XI_JPEG)) {
+    return XI_UNSUPPORTED;
+  }
+
+  if (xi_scaled(w, eighths) != width || xi_scaled(h, eighths) != height || !pixels || stride < (size_t)width * 4) {
     return XI_BROKEN;
   }
 
-  return xi_run(data, length, &format, &w, &h, pixels, stride);
+  return xi_run(data, length, &format, &w, &h, pixels, stride, eighths);
 }

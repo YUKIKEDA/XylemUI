@@ -117,6 +117,10 @@ public readonly ref struct DrawingContext
     /// <inheritdoc cref="DisplayList.FillRect(float, float, float, float, Color)"/>
     public void FillRect(float x, float y, float width, float height, Color color) => _list.FillRect(x, y, width, height, color);
 
+    /// <inheritdoc cref="DisplayList.DrawImage(float, float, float, float, ImageHandle, System.Numerics.Vector4)"/>
+    internal void DrawImage(float x, float y, float width, float height, ImageHandle image, System.Numerics.Vector4 source) =>
+        _list.DrawImage(x, y, width, height, image, source);
+
     /// <inheritdoc cref="DisplayList.FillRect(float, float, float, float, in Paint, in CornerRadii, Border?)"/>
     public void FillRect(float x, float y, float width, float height, in Paint fill, in CornerRadii radii, Border? border = null) =>
         _list.FillRect(x, y, width, height, fill, radii, border);

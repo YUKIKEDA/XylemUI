@@ -1860,6 +1860,14 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         ref readonly ImageTexture texture = ref _images[handle.Index];
         Vector4 rect = Moved<TMode>(new Vector4(command.X, command.Y, command.Width, command.Height), move);
         Vector4 source = command.Source;
+
+        // A part outside the image is a fit computed wrong; the clamp would draw it as the edge stretched (IM1's Grill, Q21). The
+        // hundredth of a pixel is room for the float arithmetic of a part computed from a scaled box.
+        if (source.X < -0.01f || source.Y < -0.01f || source.X + source.Z > texture.Width + 0.01f || source.Y + source.W > texture.Height + 0.01f)
+        {
+            Invariant.Fail("A display list draws a part of an image that is outside the image.");
+        }
+
         rows[row] = rect;
         rows[row + 1] = new Vector4(
             source.X / texture.Width,
