@@ -15,7 +15,11 @@ internal interface IRenderTarget
     /// <param name="lists">The lists, back to front, their glyphs resolved.</param>
     /// <param name="clearColor">The color the buffer is cleared to first, before the first list.</param>
     /// <param name="atlas">The atlas the lists' glyphs are in.</param>
-    void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas);
+    /// <param name="images">
+    /// The window's images, which the lists' images point into: the target uploads the ones queued and lets the released ones go
+    /// before it draws (design §5.0.4, "Passing them to the renderer").
+    /// </param>
+    void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images);
 
     /// <summary>
     /// Shows the back buffer.

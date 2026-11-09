@@ -57,6 +57,46 @@ public sealed class ResolveGlyphsTests
     }
 
     /// <summary>
+    /// The list ResolveGlyphs writes again keeps the images around the text, each with its rectangle, its image, and its part
+    /// (row IM1).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The test font, a shaper, the test rasterizer, an empty atlas, and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Draw image 1 at (0, 0, 10, 10) with the part (0, 0, 4, 4); "H日" at 32 px (new glyphs); image 2 at (40, 0, 20, 10) with the
+    ///   part (1, 2, 3, 4); resolve; read the list.
+    ///
+    /// Expected:
+    /// - The list reads image 1, a run of 2 glyphs, and image 2, with the rectangles, handles, and parts given.
+    /// </remarks>
+    [Fact]
+    public void ResolveGlyphs_KeepsTheImages()
+    {
+        using Font font = TestFont.Open();
+        using var shaper = new TextShaper();
+        var atlas = new GlyphAtlas(new TestRasterizer());
+        var list = new DisplayList();
+        var first = new ImageHandle(0, 1);
+        var second = new ImageHandle(1, 1);
+
+        list.DrawImage(0, 0, 10, 10, first, new System.Numerics.Vector4(0, 0, 4, 4));
+        _ = list.DrawText(shaper.Shape(font, "H日", TestFont.Japanese), font, 32, atlas, 0, 50, Ink);
+        list.DrawImage(40, 0, 20, 10, second, new System.Numerics.Vector4(1, 2, 3, 4));
+        list.ResolveGlyphs(atlas);
+
+        DisplayListReader reader = list.GetReader();
+        Assert.True(reader.TryNext(out CommandTag tag) && tag == CommandTag.Image);
+        Assert.Equal(new ImageCommand(0, 0, 10, 10, Color.FromRgb(0xFFFFFF), first, new(0, 0, 4, 4)), reader.ReadImage());
+        Assert.True(reader.TryNext(out tag) && tag == CommandTag.GlyphRun);
+        Assert.Equal(2, reader.ReadGlyphRun().Glyphs.Length);
+        Assert.True(reader.TryNext(out tag) && tag == CommandTag.Image);
+        Assert.Equal(new ImageCommand(40, 0, 20, 10, Color.FromRgb(0xFFFFFF), second, new(1, 2, 3, 4)), reader.ReadImage());
+        Assert.False(reader.TryNext(out _));
+    }
+
+    /// <summary>
     /// The resolved list is the list written when every glyph is in the atlas: glyphs with no ink or refused leave their run, and a
     /// run splits where a glyph is a color glyph.
     /// </summary>

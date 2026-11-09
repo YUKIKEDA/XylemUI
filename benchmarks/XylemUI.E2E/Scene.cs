@@ -51,6 +51,12 @@ internal sealed class Scene : IDisposable
 
     public DisplayList List { get; } = new();
 
+    // The list as the one list of a frame, for the renderer's Draw with images (row IM1).
+    public DisplayList[] Lists => _lists ??= [List];
+
+    // The images of --images (row IM1), made the first time the scene draws them.
+    public TextureCache? Images { get; private set; }
+
     public Color Clear { get; } = Color.FromRgb(0x2A2A2A);
 
     public static Color Marker { get; } = Color.FromRgb(0x3366CC);
@@ -77,6 +83,8 @@ internal sealed class Scene : IDisposable
     );
 
     private ShapedGlyph[]? _brushedGlyphs;
+    private DisplayList[]? _lists;
+    private ImageHandle[] _imageHandles = [];
 
     // The rectangles move with the frame number, so that every frame draws something new. The scene is in logical pixels, drawn at
     // the window's scale (row W1). With `shapes`, each rectangle is a rounded one with a gradient and a border over a shadow (row
@@ -90,7 +98,8 @@ internal sealed class Scene : IDisposable
     // the window, each turned a thousandth of a radian more than the one around it so that none is taken into another, and
     // "nested-heavy" adds four translucent rectangles of the window inside them; "zoom"
     // draws 10 lines of text in a scale that changes every frame, so that every frame draws its glyphs at a new size, and
-    // "zoom-still" the same in a scale that stays 1.25.
+    // "zoom-still" the same in a scale that stays 1.25. With `images`, each rectangle is an image of 64 x 64 pixels drawn at 16 x 16
+    // (so read from its third mipmap), from 100 images, 10 rectangles after another of each: 100 draws (row IM1).
     public void Build(
         int frame,
         int heavy = 0,
@@ -100,7 +109,8 @@ internal sealed class Scene : IDisposable
         int layers = 50,
         string scopes = "",
         int nested = 0,
-        bool noText = false
+        bool noText = false,
+        bool images = false
     )
     {
         if (scopes.Length > 0)
@@ -115,6 +125,11 @@ internal sealed class Scene : IDisposable
         int width = (int)(Renderer.Width / scale);
         int height = (int)(Renderer.Height / scale);
         List.FillRect(0, 0, 40, 40, MarkerNow);
+        if (images && Images is null)
+        {
+            MakeImages();
+        }
+
         for (int i = 0; i < Rectangles; i++)
         {
             float x = ((i * 37) + (frame * 3)) % Math.Max(1, width - 20);
@@ -142,6 +157,12 @@ internal sealed class Scene : IDisposable
                     List.Pop();
                 }
 
+                continue;
+            }
+
+            if (images)
+            {
+                List.DrawImage(x, y, 16, 16, _imageHandles[i / 10], new System.Numerics.Vector4(0, 0, 64, 64));
                 continue;
             }
 
@@ -272,6 +293,30 @@ internal sealed class Scene : IDisposable
         }
 
         List.ResolveGlyphs(Atlas);
+    }
+
+    // 100 images of 64 x 64, each a gradient of its own hue, opaque.
+    private void MakeImages()
+    {
+        Images = new TextureCache();
+        _imageHandles = new ImageHandle[Rectangles / 10];
+        for (int n = 0; n < _imageHandles.Length; n++)
+        {
+            byte[] pixels = new byte[64 * 64 * 4];
+            for (int y = 0; y < 64; y++)
+            {
+                for (int x = 0; x < 64; x++)
+                {
+                    int i = ((y * 64) + x) * 4;
+                    pixels[i] = (byte)(x * 4);
+                    pixels[i + 1] = (byte)(y * 4);
+                    pixels[i + 2] = (byte)(n * 2);
+                    pixels[i + 3] = 255;
+                }
+            }
+
+            _imageHandles[n] = Images.Add(64, 64, pixels);
+        }
     }
 
     private static TextRenderingParameters TextRenderingOf(Win32Window window, bool gray) =>

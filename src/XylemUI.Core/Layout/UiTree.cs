@@ -52,6 +52,11 @@ internal sealed class UiTree
     internal OverlayPopupHost Popups { get; }
 
     /// <summary>
+    /// Gets the images of the tree's window, which its display lists draw (design §5.0.4, "Owner and lifetime").
+    /// </summary>
+    internal TextureCache Images { get; } = new();
+
+    /// <summary>
     /// Gets a value indicating whether a popup closed since the last frame took it (<see cref="TakePopupsChanged"/>): the window's
     /// display list is drawn again without the popup's.
     /// </summary>

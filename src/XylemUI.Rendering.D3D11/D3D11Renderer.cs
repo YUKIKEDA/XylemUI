@@ -40,6 +40,11 @@ namespace XylemUI.Rendering.D3D11;
 /// The gamma, the contrast, and the order of the subpixels come from <see cref="TextRendering"/>, which the platform reads for
 /// the window's monitor; the kind of coverage of each glyph run comes from the display list.
 /// </para>
+/// <para>
+/// Each image of the window's <see cref="TextureCache"/> has a texture of its own, with its mipmaps (design §5.0.4, "Textures").
+/// Before the instances are written, the textures of the released images are let go and the queued images are uploaded; an image is
+/// drawn with its texture bound, so the draws split at each image, and sampled between its mipmaps (trilinear).
+/// </para>
 /// </remarks>
 public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
 {
@@ -65,7 +70,10 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     private const int StateRows = 3 + (4 * DisplayList.MaxRoundedClips);
 
     // The number of kinds of pixel shader (PixelKind).
-    private const int PixelKinds = 9;
+    private const int PixelKinds = 10;
+
+    // The register of an image's texture, after the state buffer's (QuadShaders' Image).
+    private const uint ImageRegister = 7;
 
     // The bit of a draw's key that tells the stated shaders' draws apart (row R4d), between the pixel shader's and the layer's.
     private const int StatedKey = 1 << 11;
@@ -91,10 +99,12 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
 
     private readonly ID3D11InputLayout* _inputLayout;
 
-    // The shaders of the commands inside a clip or a transform (row R4d, StatedShaders). They are compiled on threads from the
-    // renderer's creation, and waited for by the first draw of a state: compiled with the others, the ten of them made the time from
-    // the launch to the first frame on the display 1,420 ms against 730 ms (row R4d).
+    // The shaders of the commands inside a clip or a transform (row R4d, StatedShaders), and the image's shader outside them (row
+    // IM1). They are compiled on threads from the renderer's creation, and waited for by the first draw of a state or an image:
+    // compiled with the others, the ten of R4d made the time from the launch to the first frame on the display 1,420 ms against
+    // 730 ms (row R4d).
     private readonly StatedShaders? _statedShaders;
+    private readonly ID3D11SamplerState* _trilinear;
     private readonly ID3D11Buffer* _targetConstants;
     private readonly ID3D11BlendState* _blend;
     private readonly ID3D11BlendState* _clearTypeBlend;
@@ -136,6 +146,9 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     private int[] _brushStarts = new int[16];
     private GpuFrameTimer? _gpuTimer;
     private (uint Count, long Qpc)[] _presents = [];
+
+    // The texture of each slot of the window's TextureCache (row IM1).
+    private ImageTexture[] _images = new ImageTexture[16];
     private uint _lastReportedPresent;
     private bool _disposed;
 
@@ -179,6 +192,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             _fadedCurvePixelShader = CreatePixelShader(device, QuadShaders.CurvePixelEntry, faded: true);
             _fadedTextPixelShader = CreatePixelShader(device, QuadShaders.TextPixelEntry, faded: true);
 
+            _trilinear = CreateTrilinearSampler(device);
             _targetConstants = CreateBuffer(device, 48, D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER);
             _blend = CreateBlendState(device);
             _clearTypeBlend = CreateClearTypeBlendState(device);
@@ -323,6 +337,16 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     internal int AtlasRegionUploads => _grayAtlas.RegionUploads + _rgbAtlas.RegionUploads + _colorAtlas.RegionUploads;
 
     /// <summary>
+    /// Gets the number of images' textures the renderer holds (row IM1).
+    /// </summary>
+    internal int ImageTextureCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of images uploaded since the renderer was made (row IM1).
+    /// </summary>
+    internal int ImageUploads { get; private set; }
+
+    /// <summary>
     /// Creates a renderer for the client area of <paramref name="window"/>.
     /// </summary>
     /// <param name="window">The window handle (<c>HWND</c>).</param>
@@ -462,6 +486,12 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         }
 
         _gpuTimer?.Dispose();
+        foreach (ref ImageTexture image in _images.AsSpan())
+        {
+            ReleaseImage(ref image);
+        }
+
+        Release((IUnknown*)_trilinear);
         _grayAtlas.Dispose();
         _rgbAtlas.Dispose();
         _colorAtlas.Dispose();
@@ -504,7 +534,8 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     }
 
     /// <inheritdoc/>
-    void IRenderTarget.Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) => Draw(lists, clearColor, atlas);
+    void IRenderTarget.Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images) =>
+        Draw(lists, clearColor, atlas, images);
 
     /// <summary>
     /// Uploads the atlas's changes, writes the instances of the display list, and records the draw into the back buffer, without
@@ -536,7 +567,25 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// </param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ArgumentException">A list has glyph runs and <paramref name="atlas"/> is null.</exception>
-    public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas? atlas = null)
+    public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas? atlas = null) => Draw(lists, clearColor, atlas, null);
+
+    /// <summary>
+    /// Uploads the atlas's changes and the queued images once, lets the released images' textures go, clears the back buffer, and
+    /// draws each display list over the ones before it, without presenting.
+    /// </summary>
+    /// <param name="lists">The lists, back to front.</param>
+    /// <param name="clearColor">The color of the area no command covers.</param>
+    /// <param name="atlas">The glyph atlas the glyph runs of the lists were written from; null when they have none.</param>
+    /// <param name="images">
+    /// The window's images, which the lists' images point into; null when they have none. Its queues are emptied after the
+    /// uploads, so a cache is drawn by one renderer only.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    /// <exception cref="ArgumentException">
+    /// A list has glyph runs and <paramref name="atlas"/> is null, or images and <paramref name="images"/> is null.
+    /// </exception>
+    /// <exception cref="GpuDeviceLostException">The device was lost while an image's texture was made.</exception>
+    internal void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas? atlas, TextureCache? images)
     {
         UiThread.VerifyAccess();
         if (_renderTarget is null)
@@ -551,6 +600,11 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             {
                 throw new ArgumentException("The display list has glyph runs; pass the glyph atlas they were written from.", nameof(atlas));
             }
+
+            if (images is null && list.Images.Length > 0)
+            {
+                throw new ArgumentException("The display list has images; pass the texture cache they are in.", nameof(images));
+            }
         }
 
         // The GPU time covers all of this frame's GPU work that the renderer records: the atlas upload, the instance upload, the
@@ -562,6 +616,11 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             _rgbAtlas.Upload(_device, _context, atlas);
             _colorAtlas.Upload(_device, _context, atlas);
             atlas.ClearDirtyRegions();
+        }
+
+        if (images is not null)
+        {
+            UpdateImages(images);
         }
 
         ID3D11RenderTargetView* target = _renderTarget;
@@ -626,6 +685,13 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             _brushRows.View,
         };
         _context->PSSetShaderResources(0, 5, atlasViews);
+        bool images = list.Images.Length > 0;
+        if (images)
+        {
+            ID3D11SamplerState* sampler = _trilinear;
+            _context->PSSetSamplers(0, 1, &sampler);
+        }
+
         if (list.StateCount > 0)
         {
             // The states, for both stages, and the state stream beside the instances (row R4d).
@@ -681,8 +747,9 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
                 _context->VSSetShader(statedBound ? stated!.Vertex : _vertexShader, null, 0);
             }
 
-            ID3D11PixelShader* shader = draw.Stated
-                ? _statedShaders!.Pixel(draw.Pixel)
+            ID3D11PixelShader* shader =
+                draw.Pixel == PixelKind.Image ? (draw.Stated ? Stated().Pixel(PixelKind.Image) : Stated().PlainImage)
+                : draw.Stated ? _statedShaders!.Pixel(draw.Pixel)
                 : draw.Pixel switch
                 {
                     PixelKind.ClearType => _clearTypePixelShader,
@@ -708,7 +775,21 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
                 continue;
             }
 
+            if (draw.Pixel == PixelKind.Image)
+            {
+                ID3D11ShaderResourceView* image = _images[draw.Layer].View;
+                _context->PSSetShaderResources(ImageRegister, 1, &image);
+            }
+
             _context->DrawInstanced(4, (uint)draw.Count, 0, (uint)draw.Start);
+        }
+
+        if (images)
+        {
+            // The texture is not left bound: the next upload's GenerateMips draws into a texture, and the debug layer warns of a
+            // resource bound for reading and writing at once.
+            ID3D11ShaderResourceView* none = null;
+            _context->PSSetShaderResources(ImageRegister, 1, &none);
         }
 
         return drawCalls;
@@ -1266,6 +1347,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             PixelKind.Text or PixelKind.TextFaded => QuadShaders.TextPixelEntry,
             PixelKind.ClearTypeText => QuadShaders.ClearTypeTextPixelEntry,
             PixelKind.Layer => QuadShaders.LayerPixelEntry,
+            PixelKind.Image => QuadShaders.ImagePixelEntry,
             _ => QuadShaders.PixelEntry,
         };
 
@@ -1527,11 +1609,11 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
                     );
                     continue;
                 }
-                else if (!TMode.Scoped || tag <= CommandTag.Sector)
+                else if (TMode.Scoped ? tag <= CommandTag.Sector : tag != CommandTag.Image)
                 {
-                    // Without groups every tag left is a curve, so a curve is compared no more times than before groups, and the
-                    // command goes straight to WriteCurve: a local copy of it cost a Memmove per curve (R4c profile of the curves
-                    // scene).
+                    // Without groups every tag left but an image is a curve, so a curve is compared once more than before images,
+                    // and the command goes straight to WriteCurve: a local copy of it cost a Memmove per curve (R4c profile of the
+                    // curves scene).
                     if (TMode.Scoped)
                     {
                         CurveCommand command = Moved(tag, reader.ReadCurve(), at);
@@ -1550,6 +1632,11 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
                         destination[i] = WriteCurve<TMode>(tag, reader.ReadCurve(), shapes, shape, alpha);
                     }
 
+                    shape += ShapeRows;
+                }
+                else if (tag == CommandTag.Image)
+                {
+                    draws = WriteImage<TMode>(ref reader, destination, i, shapes, shape, draws, alpha, at, stream, state);
                     shape += ShapeRows;
                 }
                 else if (TMode.Scoped && tag == CommandTag.PushOpacity)
@@ -1739,6 +1826,55 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             Page = QuadInstance.SolidPage,
             Shape = (uint)row,
         };
+    }
+
+    // An image's instance and its rows, as QuadShaders' PSImage reads them: the rectangle, and the corners of the part drawn in the
+    // texture's coordinates (0 to 1); returns the draws. Drawing an image the renderer has no texture of (a handle released before
+    // the frame) is a bug of the list's writer. Out of WriteInstances' loop: written in it, the image's command made the loop's
+    // other commands slower: the shapes scene's Draw stage took 84.0 us against main's 80.0 (the median of 9 runs each), and 75.3
+    // against 74.0 once out of it (6 runs each; docs/benchmarks/im1-draw.md).
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private int WriteImage<TMode>(
+        ref DisplayListReader reader,
+        Span<QuadInstance> destination,
+        int i,
+        Span<Vector4> rows,
+        int row,
+        int draws,
+        float alpha,
+        Vector4 move,
+        Span<StateRef> stream,
+        int state
+    )
+        where TMode : struct, IListMode
+    {
+        ImageCommand command = reader.ReadImage();
+        draws = AddToDraw(draws, i, PixelKind.Image, command.Image.Index, stated: TMode.States && state >= 0);
+        Stated<TMode>(stream, i, state, 1);
+        ImageHandle handle = command.Image;
+        if ((uint)handle.Index >= (uint)_images.Length || _images[handle.Index].View is null || _images[handle.Index].Generation != handle.Generation)
+        {
+            Invariant.Fail("A display list draws an image the renderer has no texture of.");
+        }
+
+        ref readonly ImageTexture texture = ref _images[handle.Index];
+        Vector4 rect = Moved<TMode>(new Vector4(command.X, command.Y, command.Width, command.Height), move);
+        Vector4 source = command.Source;
+        rows[row] = rect;
+        rows[row + 1] = new Vector4(
+            source.X / texture.Width,
+            source.Y / texture.Height,
+            (source.X + source.Z) / texture.Width,
+            (source.Y + source.W) / texture.Height
+        );
+        destination[i] = new QuadInstance
+        {
+            Rect = rect,
+            Color = Faded<TMode>(command.Color, alpha),
+            Page = QuadInstance.SolidPage,
+            Shape = (uint)row,
+        };
+        return draws;
     }
 
     // The six rows of a shadow: the radii of the blurred rectangle, the shape's rectangle, nothing, the kind with the sigma, the
@@ -1963,6 +2099,9 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             case CommandTag.PushState:
                 _ = reader.ReadState(out _);
                 break;
+            case CommandTag.Image:
+                _ = reader.ReadImage();
+                break;
             default:
                 _ = reader.ReadCurve();
                 break;
@@ -2148,6 +2287,118 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void GrowDraws() => Array.Resize(ref _draws, _draws.Length * 2);
 
+    // The textures of the window's images, before the frame's draws (design §5.0.4, "Passing them to the renderer"): a released
+    // slot's texture is let go unless the slot's image is still the one it was made of, then each queued image is uploaded.
+    private void UpdateImages(TextureCache images)
+    {
+        if (_images.Length < images.SlotCount)
+        {
+            Array.Resize(ref _images, Math.Max(images.SlotCount, _images.Length * 2));
+        }
+
+        foreach (int slot in images.Released)
+        {
+            ref ImageTexture texture = ref _images[slot];
+            if (texture.View is not null && texture.Generation != images.GetSlot(slot, out _, out _, out _))
+            {
+                ReleaseImage(ref texture);
+            }
+        }
+
+        images.TakeReleased();
+        foreach (int slot in images.PendingUploads)
+        {
+            uint generation = images.GetSlot(slot, out int width, out int height, out byte[]? pixels);
+            if (generation == 0 || pixels is null)
+            {
+                // Released before its upload.
+                continue;
+            }
+
+            ref ImageTexture texture = ref _images[slot];
+            ReleaseImage(ref texture);
+            texture = CreateImageTexture(width, height, pixels);
+            texture.Generation = generation;
+            ImageTextureCount++;
+            ImageUploads++;
+        }
+
+        images.TakeUploads();
+    }
+
+    // An image's texture with its mipmaps: the pixels go to the top level, and GenerateMips makes the others, which needs a texture
+    // the GPU can draw into (D3D11_RESOURCE_MISC_GENERATE_MIPS with the render target's binding, every level, MipLevels 0).
+    private ImageTexture CreateImageTexture(int width, int height, byte[] pixels)
+    {
+        var description = new D3D11_TEXTURE2D_DESC
+        {
+            Width = (uint)width,
+            Height = (uint)height,
+            MipLevels = 0,
+            ArraySize = 1,
+            Format = DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc = new DXGI_SAMPLE_DESC(1, 0),
+            Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
+            BindFlags = (uint)(D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_FLAG.D3D11_BIND_RENDER_TARGET),
+            MiscFlags = (uint)D3D11_RESOURCE_MISC_FLAG.D3D11_RESOURCE_MISC_GENERATE_MIPS,
+        };
+        ID3D11Texture2D* texture;
+        HRESULT result = _device->CreateTexture2D(&description, null, &texture);
+        HResults.ThrowIfFailed(result, "ID3D11Device::CreateTexture2D", RemovedReason(result));
+        ID3D11ShaderResourceView* view;
+        result = _device->CreateShaderResourceView((ID3D11Resource*)texture, null, &view);
+        if (result < 0)
+        {
+            _ = texture->Release();
+            HResults.ThrowIfFailed(result, "ID3D11Device::CreateShaderResourceView", RemovedReason(result));
+        }
+
+        fixed (byte* data = pixels)
+        {
+            _context->UpdateSubresource((ID3D11Resource*)texture, 0, null, data, (uint)(width * 4), 0);
+        }
+
+        _context->GenerateMips(view);
+        return new ImageTexture
+        {
+            Texture = texture,
+            View = view,
+            Width = width,
+            Height = height,
+        };
+    }
+
+    private void ReleaseImage(ref ImageTexture texture)
+    {
+        if (texture.View is null)
+        {
+            return;
+        }
+
+        _ = texture.View->Release();
+        _ = texture.Texture->Release();
+        texture = default;
+        ImageTextureCount--;
+    }
+
+    // Linear between the texels and between the two nearest mipmaps (Flutter's default quality, design §5.0.4, "Textures"), with
+    // the edges clamped: a texel past the image's edge is the edge's.
+    private static ID3D11SamplerState* CreateTrilinearSampler(ID3D11Device* device)
+    {
+        var description = new D3D11_SAMPLER_DESC
+        {
+            Filter = D3D11_FILTER.D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+            AddressU = D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressV = D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressW = D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_CLAMP,
+            ComparisonFunc = D3D11_COMPARISON_FUNC.D3D11_COMPARISON_NEVER,
+            MaxLOD = float.MaxValue,
+        };
+        ID3D11SamplerState* sampler;
+        HResults.ThrowIfFailed(device->CreateSamplerState(&description, &sampler), "ID3D11Device::CreateSamplerState");
+        return sampler;
+    }
+
     private static void Release(IUnknown* reference)
     {
         if (reference is not null)
@@ -2181,9 +2432,10 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     }
 
     // The pixel shader of a draw: the rectangles', shapes', and grayscale and color glyphs'; ClearType glyphs'; lines', ellipses',
-    // and arcs'; the two for glyphs with a gradient; a layer's composite; and the variants (Faded) that multiply a gradient by the
-    // opacity a group gave its children (row R4c). Each kind added in row R4b has a shader of its own, so that the main one
-    // does not grow with it (docs/benchmarks/r4b-curves.md): a draw starts where the kind changes.
+    // and arcs'; the two for glyphs with a gradient; a layer's composite; the variants (Faded) that multiply a gradient by the
+    // opacity a group gave its children (row R4c); and an image's (row IM1), made on a thread (StatedShaders). Each kind added in
+    // row R4b has a shader of its own, so that the main one does not grow with it (docs/benchmarks/r4b-curves.md): a draw starts
+    // where the kind changes.
     private enum PixelKind : byte
     {
         Main,
@@ -2195,6 +2447,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
         Faded,
         CurveFaded,
         TextFaded,
+        Image,
     }
 
     // A range of the instance buffer drawn with one pixel shader and one blend state; or the start of a layer, which makes the
@@ -2275,7 +2528,8 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     }
 
     // The shaders of the commands in a state (row R4d): the vertex shader, its input layout with the state stream, and a pixel shader
-    // of each kind compiled with STATED, by PixelKind. Each is compiled on a thread of its own, started when the renderer is made:
+    // of each kind compiled with STATED, by PixelKind; and, after them, the image's pixel shader outside a state (row IM1), which
+    // is made here so that the shader of a kind the first frames seldom draw does not lengthen the start either. Each is compiled on a thread of its own, started when the renderer is made:
     // one after another on one thread, a first frame with a clip waited 240 ms longer than one without (startup --scopes rounded).
     // The threads are the renderer's own, not the .NET thread pool, which an app's work can fill (the reason T5 gave its glyph
     // workers their own threads, docs/design-decisions.md). They hold a reference to the device, so a renderer disposed before they
@@ -2283,11 +2537,11 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     private sealed class StatedShaders
     {
         private readonly object _gate = new();
-        private readonly ID3D11PixelShader*[] _pixels = new ID3D11PixelShader*[PixelKinds];
+        private readonly ID3D11PixelShader*[] _pixels = new ID3D11PixelShader*[PixelKinds + 1];
         private ID3D11Device* _device;
         private ID3D11VertexShader* _vertex;
         private ID3D11InputLayout* _layout;
-        private int _pending = PixelKinds + 1;
+        private int _pending = PixelKinds + 2;
         private bool _abandoned;
         private Exception? _failure;
 
@@ -2297,13 +2551,15 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
 
         public ID3D11PixelShader* Pixel(PixelKind kind) => _pixels[(int)kind];
 
+        public ID3D11PixelShader* PlainImage => _pixels[PixelKinds];
+
         // Starts the threads, each with the device; -1 is the vertex shader. A shader whose thread does not start is made on the
         // calling thread, so every shader is counted and Wait returns (PR #268's review).
         public static StatedShaders Start(ID3D11Device* device)
         {
             var shaders = new StatedShaders { _device = device };
             _ = device->AddRef();
-            for (int kind = -1; kind < PixelKinds; kind++)
+            for (int kind = -1; kind <= PixelKinds; kind++)
             {
                 int which = kind;
                 try
@@ -2359,6 +2615,10 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
                 {
                     vertex = CreateStatedVertexShader(_device, out layout);
                 }
+                else if (kind == PixelKinds)
+                {
+                    pixel = CreatePixelShader(_device, QuadShaders.ImagePixelEntry);
+                }
                 else
                 {
                     pixel = CreatePixelShader(_device, EntryOf((PixelKind)kind), IsFaded((PixelKind)kind), stated: true);
@@ -2405,7 +2665,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
 
         private void ReleaseMade()
         {
-            for (int kind = 0; kind < PixelKinds; kind++)
+            for (int kind = 0; kind <= PixelKinds; kind++)
             {
                 Release((IUnknown*)_pixels[kind]);
                 _pixels[kind] = null;
@@ -2416,6 +2676,16 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             _layout = null;
             _vertex = null;
         }
+    }
+
+    // An image's texture, its view, its size, and the generation of the slot's image it was made of (row IM1).
+    private struct ImageTexture
+    {
+        public ID3D11Texture2D* Texture;
+        public ID3D11ShaderResourceView* View;
+        public int Width;
+        public int Height;
+        public uint Generation;
     }
 
     // A command's state and text scale, in the second vertex buffer beside its instance (row R4d).

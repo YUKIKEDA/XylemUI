@@ -10,7 +10,10 @@ internal static class FrameDoubles
     {
         public int Presents { get; private set; }
 
-        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) { }
+        // The images the last frame was drawn with.
+        public TextureCache? Images { get; private set; }
+
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images) => Images = images;
 
         public void Present() => Presents++;
     }

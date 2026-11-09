@@ -47,6 +47,10 @@ namespace XylemUI.Rendering.D3D11;
 /// the fill. A gradient interpolates premultiplied colors, in sRGB or in Oklab (Björn Ottosson's matrices), and is dithered
 /// with a triangular noise of one step of 8 bits.
 /// </para>
+/// <para>
+/// An image (row IM1) samples its texture, premultiplied, with the sampler in <c>s0</c>: linear between the texels and between
+/// the two nearest mipmaps (design §5.0.4, "Textures").
+/// </para>
 /// </remarks>
 internal static class QuadShaders
 {
@@ -66,6 +70,8 @@ internal static class QuadShaders
             Buffer<float4> Brushes : register(t4);
             Texture2D<float4> Layer : register(t5);
             Buffer<float4> States : register(t6);
+            Texture2D<float4> Image : register(t7);
+            SamplerState Trilinear : register(s0);
             // A shader compiled with FADED (D3D11Renderer's faded variants) takes the opacity of a group that gave it to its children
             // (row R4c): a shape multiplies its color by the opacity in its sixth row, and a gradient on a line or text by the instance
             // color's alpha. Without FADED the source is the shaders' of the lists without groups, compiled to the same code: a bool
@@ -607,6 +613,21 @@ internal static class QuadShaders
                 STATE_BEGIN(input)
                 return Layer.Load(int3(LAYER_TEXEL(input), 0)) * input.color.a CLIPPED;
             }
+            // An image (row IM1): its texture over the rectangle in the first of its shape rows, the corners of the part drawn (0 to 1)
+            // in the second, sampled between the texels and the two nearest mipmaps. The texels are premultiplied; the instance's alpha
+            // is a group's opacity. In a state, the rectangle's edges are antialiased as a solid rectangle's.
+            float4 PSImage(VS_OUT input) : SV_Target
+            {
+                STATE_BEGIN(input)
+                float4 rect = Shapes.Load(input.shape);
+                float4 part = Shapes.Load(input.shape + 1);
+                float2 at = (AT(input) - rect.xy) / rect.zw;
+                float alpha = input.color.a;
+            #ifdef STATED
+                alpha *= Coverage(input.local, input.rect, 0);
+            #endif
+                return Image.Sample(Trilinear, lerp(part.xy, part.zw, at)) * alpha CLIPPED;
+            }
             #ifdef STATED
             // The quad of a command in a state: its corners, grown by a physical pixel for the antialiasing of edges the transform
             // turns, through the state's transform. A layer's composite (texelScale 0) is in physical pixels already.
@@ -673,6 +694,11 @@ internal static class QuadShaders
     /// Gets the entry point of the pixel shader that composites a layer into its parent, NUL-terminated.
     /// </summary>
     public static ReadOnlySpan<byte> LayerPixelEntry => "PSLayer\0"u8;
+
+    /// <summary>
+    /// Gets the entry point of the pixel shader of images (row IM1), NUL-terminated.
+    /// </summary>
+    public static ReadOnlySpan<byte> ImagePixelEntry => "PSImage\0"u8;
 
     /// <summary>
     /// Gets the entry point of the vertex shader of the commands inside a clip or a transform (row R4d), NUL-terminated; it is in

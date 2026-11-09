@@ -17,7 +17,8 @@
 //                              them in 100 groups of opacity 0.8, 50 of them layers or as many as --layers N, row R4c;
 //                              --scopes cards|rect|rounded|rotated|nested|nested-heavy|zoom|zoom-still puts them in clips
 //                              and transforms (cards and zoom-still are the scenes without them to compare with), with
-//                              --nested N rounded clips for nested and nested-heavy, row R4d)
+//                              --nested N rounded clips for nested and nested-heavy, row R4d; --images draws each rectangle as
+//                              one of 100 images of 64 x 64 at 16 x 16, row IM1)
 //                              (--tree draws the plain scene from a UI tree with WindowFrames, row V1b; --no-text leaves
 //                              the line of text out; --hover keeps its boxes still and changes the hover each frame, row V1c;
 //                              --scroll keeps them still in a scroll container and changes its scroll position each frame, row V2;
@@ -33,6 +34,8 @@
 //   glyph-resolve-child N T [--emoji] [--from F]  one sample of it: N new glyphs on T threads, to the workers from F on
 //   hit-region                 writing a hit region, and testing a point against 1,000 that miss it, plain and in a clip (row R4e)
 //   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
+//   image-upload [runs]        an image's upload with its mipmaps, by size: the CPU time of the draw that uploads it and the
+//                              time until the GPU has done its frame (row IM1)
 //   menu                       a 10-item menu over the todo sample: the frame that opens it, and its key and hover frames (row P02d)
 //   menubar                    a 5-item menu bar over the todo sample: the frames that select it, move in it, open a menu, and switch menus (row P02d3)
 //   dragdrop                   a drag over the todo sample's rows: the frame of each move that changes the drop target (row DD1)
@@ -98,8 +101,10 @@ return scenario switch
         scroll: args.Contains("--scroll"),
         list: Array.IndexOf(args, "--list") is int listAt and >= 0 && listAt + 1 < args.Length ? args[listAt + 1] : string.Empty,
         resizes: Array.IndexOf(args, "--resizes") is int resizesAt and >= 0 ? Number(resizesAt + 1, 0) : 0,
-        resizesLate: Array.IndexOf(args, "--resizes-late") is int lateAt and >= 0 ? Number(lateAt + 1, 0) : 0
+        resizesLate: Array.IndexOf(args, "--resizes-late") is int lateAt and >= 0 ? Number(lateAt + 1, 0) : 0,
+        images: args.Contains("--images")
     ),
+    "image-upload" => ImageUpload.Run(Number(1, 20)),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),

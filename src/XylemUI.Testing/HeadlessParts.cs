@@ -93,7 +93,8 @@ internal sealed class HeadlessTarget(IRenderTarget? inner) : IRenderTarget
     public int Presents { get; private set; }
 
     /// <inheritdoc/>
-    public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) => inner?.Draw(lists, clearColor, atlas);
+    public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images) =>
+        inner?.Draw(lists, clearColor, atlas, images);
 
     /// <inheritdoc/>
     public void Present()
