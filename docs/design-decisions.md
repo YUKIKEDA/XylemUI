@@ -873,6 +873,9 @@ Reason:
 Rejected:
   - Wuffs に統一する（実行ファイルは分ける組より 499,712 バイト小さいが、JPEG が 1.25〜1.5 倍、WebP が 1.3〜2 倍遅い。Flutter と Avalonia は JPEG と WebP を libjpeg-turbo と libwebp で読む。S11、Issue #730）
   - Skia と同じ組（libpng・libjpeg-turbo・libwebp、GIF は Wuffs）にする（PNG が Wuffs より 1.3〜1.6 倍遅く、libpng はメモリ安全でない。実行ファイルも分ける組より 75,264 バイト大きい。S11）
+  - 大きさを指定しない画像の箱を、画像が来るまで固定の大きさ（Avalonia の既定の 0 など）にし、来ても変えない（アプリが毎回大きさを指定することになる。Flutter と HTML は画像の大きさで置く。IM1 の Grill の Q12、Issue #745）
+  - 画像のテクスチャを描画の命令の中で作る（フレームの経路のアップロードの位置が散る。グリフのアトラスと同じく、描画の前に 1 か所でアップロードする。Q14）
+  - 1b を 1 つの PR にする（レンダラの変更と Core の非同期の経路で、確かめ方が違う。Q15）
   - デコーダを Text に置く（文字と画像は別の信頼できない入力の経路で、ネイティブのライブラリも別。Text は Core から独立したまま保つ。IM1 の Grill の Q7、Issue #739）
   - 3 つのライブラリを C# から直に P/Invoke する（Wuffs の C の API は形式ごとに呼び方が違い、大きな構造体を持つ。C# の側に形式ごとの手順が増える。Q8）
   - NASM を使わずに libjpeg-turbo を作る（SIMD が外れ、JPEG のデコードが遅くなる。S11 の速さも NASM の SIMD 付きで測った。Q9）
