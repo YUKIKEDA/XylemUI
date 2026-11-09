@@ -244,7 +244,7 @@ info.add(b"cHRM", struct.pack(">8I", *(int(round(v * 100000)) for v in (0.3127, 
 GAMMA = rgb_profile("cHRM and gAMA", [(0.64, 0.33), (0.21, 0.71), (0.15, 0.06)], tag_gamma(100000 / 45455))
 save("chrm-gama.png", rgb, reference=GAMMA, png_chunks=True, pnginfo=info)
 
-json.dump(expected, open(os.path.join(out, "expected-color.json"), "w"), indent=1, sort_keys=True)
+json.dump(expected, open(os.path.join(out, "expected-color.json"), "w", newline="\n"), indent=1, sort_keys=True)
 
 # The images that convert nothing, whose pixels are those of the same image read with no profile: one with sRGB's own profile, one
 # with bytes that are no profile, and an RGB JPEG with the gray profile (of the wrong kind).
