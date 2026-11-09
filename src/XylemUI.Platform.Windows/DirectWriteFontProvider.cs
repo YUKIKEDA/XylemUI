@@ -15,6 +15,12 @@ namespace XylemUI.Platform.Windows;
 /// A font DirectWrite returns is opened once from its file and face index, mapped without a copy (<see cref="Font.FromFile"/>),
 /// and kept until the provider is disposed. A font whose file is not on the disk (a cloud font Windows has not downloaded)
 /// counts as no font, so its characters get the bundled font. Used on one thread, as <see cref="Font"/> is.
+/// <para>
+/// The fonts an app registered (<see cref="AppFontSet"/>, design §4.5, "App fonts") are a collection of their own, made from their
+/// bytes in memory without a copy (<c>IDWriteInMemoryFontFileLoader</c> and a font set, as GPUI's <c>add_fonts</c> makes it). A
+/// request for a family registered there passes that collection to <c>MapCharacters</c> as the base collection, so the registered
+/// font comes before the OS's family of the same name, and the characters it lacks go to the system's fallback.
+/// </para>
 /// </remarks>
 public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
 {
@@ -25,7 +31,15 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
     private readonly List<(byte[] Key, uint Face, Font Font)> _fonts = [];
     private readonly Dictionary<TextLanguage, char[]> _locales = [];
     private readonly char[] _defaultFamily;
-    private IDWriteFactory2* _factory;
+
+    // The app font files given to the in-memory loader (IDWriteFontFile*) and their reference keys, by the index of the file in
+    // AppFontSet.Files. Each file is given once: another reference to the same bytes gets another key.
+    private readonly List<nint> _appFiles = [];
+    private readonly List<byte[]> _appKeys = [];
+    private IDWriteFactory5* _factory;
+    private IDWriteInMemoryFontFileLoader* _loader;
+    private IDWriteFontCollection1* _appCollection;
+    private int _appGeneration;
     private IDWriteFontFallback* _fallback;
     private IDWriteFontCollection* _collection;
     private IDWriteTextAnalysisSource* _sourcePointer;
@@ -33,7 +47,9 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectWriteFontProvider"/> class with the system's font fallback and fonts.
     /// </summary>
-    /// <exception cref="InvalidOperationException">DirectWrite could not create the factory, the fallback, or the collection.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// DirectWrite could not create the factory, the fallback, or the collection (Windows 10 version 1703 and later have them).
+    /// </exception>
     public DirectWriteFontProvider()
     {
         DefaultFamily = SystemUiFontFamily();
@@ -41,8 +57,8 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         DefaultFamily.CopyTo(_defaultFamily);
         try
         {
-            IDWriteFactory2* factory;
-            Guid iid = IID.IID_IDWriteFactory2;
+            IDWriteFactory5* factory;
+            Guid iid = IID.IID_IDWriteFactory5;
             ThrowIfFailed(DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &iid, (IUnknown**)&factory), "DWriteCreateFactory");
             _factory = factory;
             IDWriteFontFallback* fallback;
@@ -77,6 +93,8 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         IDWriteFont* mapped;
         float scale;
         char[] locale = LocaleOf(language);
+        IDWriteFontCollection* collection =
+            AppFontSet.Generation > 0 && AppFontSet.HasFamily(request.Family) ? (IDWriteFontCollection*)AppCollection() : _collection;
         DWRITE_FONT_STYLE style = request.Slant switch
         {
             FontSlant.Italic => DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC,
@@ -102,7 +120,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
                                     _sourcePointer,
                                     (uint)start,
                                     (uint)(text.Length - start),
-                                    _collection,
+                                    collection,
                                     family,
                                     (DWRITE_FONT_WEIGHT)request.Weight.Value,
                                     style,
@@ -139,6 +157,20 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         }
 
         _fonts.Clear();
+        Release(ref _appCollection);
+        foreach (nint file in _appFiles)
+        {
+            _ = ((IDWriteFontFile*)file)->Release();
+        }
+
+        _appFiles.Clear();
+        _appKeys.Clear();
+        if (_loader is not null)
+        {
+            _ = _factory->UnregisterFontFileLoader((IDWriteFontFileLoader*)_loader);
+            Release(ref _loader);
+        }
+
         if (_sourcePointer is not null)
         {
             TextAnalysisSource.Free(_sourcePointer);
@@ -197,6 +229,11 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
             ThrowIfFailed(file->GetReferenceKey(&key, &keySize), "IDWriteFontFile::GetReferenceKey");
             var keyBytes = new ReadOnlySpan<byte>(key, (int)keySize);
             uint index = face->GetIndex();
+            if (AppFontOf(file, keyBytes, index) is { } app)
+            {
+                return app;
+            }
+
             foreach ((byte[] known, uint knownFace, Font font) in _fonts)
             {
                 if (knownFace == index && keyBytes.SequenceEqual(known))
@@ -220,6 +257,118 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
             Release(ref face);
             _ = mapped->Release();
         }
+    }
+
+    // The collection of the app fonts, made again when a file was registered since it was last made.
+    private IDWriteFontCollection1* AppCollection()
+    {
+        if (_appGeneration == AppFontSet.Generation)
+        {
+            return _appCollection;
+        }
+
+        if (_loader is null)
+        {
+            IDWriteInMemoryFontFileLoader* loader;
+            ThrowIfFailed(_factory->CreateInMemoryFontFileLoader(&loader), "IDWriteFactory5::CreateInMemoryFontFileLoader");
+            _loader = loader;
+            ThrowIfFailed(_factory->RegisterFontFileLoader((IDWriteFontFileLoader*)_loader), "IDWriteFactory::RegisterFontFileLoader");
+        }
+
+        IDWriteFontSetBuilder1* builder = null;
+        IDWriteFontSet* set = null;
+        try
+        {
+            ThrowIfFailed(_factory->CreateFontSetBuilder(&builder), "IDWriteFactory5::CreateFontSetBuilder");
+            IReadOnlyList<AppFontFile> files = AppFontSet.Files;
+            for (int i = 0; i < files.Count; i++)
+            {
+                AddAppFile(builder, files[i]);
+            }
+
+            ThrowIfFailed(builder->CreateFontSet(&set), "IDWriteFontSetBuilder::CreateFontSet");
+            IDWriteFontCollection1* collection;
+            ThrowIfFailed(_factory->CreateFontCollectionFromFontSet(set, &collection), "IDWriteFactory5::CreateFontCollectionFromFontSet");
+            Release(ref _appCollection);
+            _appCollection = collection;
+            _appGeneration = files.Count;
+            return _appCollection;
+        }
+        finally
+        {
+            Release(ref set);
+            Release(ref builder);
+        }
+    }
+
+    // Adds one registered file to the builder, giving the loader a reference to its pinned bytes the first time.
+    private void AddAppFile(IDWriteFontSetBuilder1* builder, AppFontFile app)
+    {
+        if (app.Index == _appFiles.Count)
+        {
+            IDWriteFontFile* created;
+            fixed (byte* bytes = app.Data)
+            {
+                // The set pinned the array for the process, so DirectWrite may keep its address.
+                ThrowIfFailed(
+                    _loader->CreateInMemoryFontFileReference(
+                        (IDWriteFactory*)_factory,
+                        bytes,
+                        (uint)app.Data.Length,
+                        FontDataOwner.Instance,
+                        &created
+                    ),
+                    "IDWriteInMemoryFontFileLoader::CreateInMemoryFontFileReference"
+                );
+            }
+
+            _appFiles.Add((nint)created);
+            void* key;
+            uint keySize;
+            ThrowIfFailed(created->GetReferenceKey(&key, &keySize), "IDWriteFontFile::GetReferenceKey");
+            _appKeys.Add(new ReadOnlySpan<byte>(key, (int)keySize).ToArray());
+        }
+
+        ThrowIfFailed(builder->AddFontFile((IDWriteFontFile*)_appFiles[app.Index]), "IDWriteFontSetBuilder1::AddFontFile");
+    }
+
+    // The registered font of a file the in-memory loader holds, or null for a file of another loader.
+    private Font? AppFontOf(IDWriteFontFile* file, ReadOnlySpan<byte> key, uint faceIndex)
+    {
+        if (_loader is null)
+        {
+            return null;
+        }
+
+        IDWriteFontFileLoader* loader = null;
+        try
+        {
+            ThrowIfFailed(file->GetLoader(&loader), "IDWriteFontFile::GetLoader");
+            if (loader != (IDWriteFontFileLoader*)_loader)
+            {
+                return null;
+            }
+        }
+        finally
+        {
+            Release(ref loader);
+        }
+
+        for (int index = 0; index < _appKeys.Count; index++)
+        {
+            if (key.SequenceEqual(_appKeys[index]))
+            {
+                foreach (AppFontFace face in AppFontSet.Faces)
+                {
+                    if (face.File.Index == index && face.Font.FaceIndex == (int)faceIndex)
+                    {
+                        return face.Font;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     // The file's path, or null when its loader is not the local one.

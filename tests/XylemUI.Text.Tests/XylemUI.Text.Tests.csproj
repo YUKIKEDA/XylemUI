@@ -16,7 +16,7 @@
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fonts\*.ttf;Fonts\*.ttc" CopyToOutputDirectory="PreserveNewest" />
     <!-- The test font moved to XylemUI.Testing, which embeds it (design §12.3); the tests that open it from a file read it here. -->
     <None Include="..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Png\PngSuite\*.png" CopyToOutputDirectory="PreserveNewest" />

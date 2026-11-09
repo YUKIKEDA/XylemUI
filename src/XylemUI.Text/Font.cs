@@ -9,7 +9,8 @@ namespace XylemUI.Text;
 /// same bytes (<see cref="Data"/>, design §4.1, §4.5, §5.0.3).
 /// </summary>
 /// <remarks>
-/// Bytes given in memory are copied once into a pinned array; a font file is mapped read-only (<see cref="FromFile"/>). HarfBuzz
+/// Bytes given in memory are copied once into a pinned array; an app font's bytes are pinned where the app gave them, not copied
+/// (design §4.5, "App fonts"); a font file is mapped read-only (<see cref="FromFile"/>). HarfBuzz
 /// and the rasterizer read the bytes in place for the font's lifetime. A font belongs to one thread (the UI thread); its HarfBuzz
 /// objects are not shared across threads here.
 /// </remarks>
@@ -52,6 +53,20 @@ public sealed unsafe class Font : IDisposable
         // The array is pinned for its lifetime, so the pointer the libraries keep stays valid until Dispose.
         Id = Interlocked.Increment(ref _nextId);
         FamilyName = Open((byte*)Unsafe.AsPointer(ref _data[0]), _data.Length, faceIndex);
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Font"/> class over bytes that its caller keeps at the same address for as long
+    /// as the font is used, without copying them: an app font's file, pinned for the process (design §4.5, "App fonts").
+    /// </summary>
+    /// <param name="pointer">The first byte of the font file.</param>
+    /// <param name="length">The length of the font file in bytes.</param>
+    /// <param name="faceIndex">The face to open.</param>
+    /// <exception cref="InvalidOperationException">HarfBuzz could not open the font, or the file has no such face.</exception>
+    internal Font(byte* pointer, int length, int faceIndex)
+    {
+        Id = Interlocked.Increment(ref _nextId);
+        FamilyName = Open(pointer, length, faceIndex);
     }
 
     private Font(string path, MemoryMappedFile mapping, MemoryMappedViewAccessor view, long length, int faceIndex)
@@ -178,6 +193,19 @@ public sealed unsafe class Font : IDisposable
     internal DecorationMetrics Decorations { get; private set; }
 
     /// <summary>
+    /// Gets the HarfBuzz face, whose tables the font reads.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
+    internal nint HarfBuzzFace
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_font == 0, this);
+            return _face;
+        }
+    }
+
+    /// <summary>
     /// Gets the HarfBuzz font, scaled to font units.
     /// </summary>
     /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
@@ -267,6 +295,18 @@ public sealed unsafe class Font : IDisposable
             Metric(HarfBuzz.MetricsXHeight)
         );
         return FontNames.Family(_face);
+    }
+
+    /// <summary>
+    /// Returns a value indicating whether the font's character map gives <paramref name="codePoint"/> a glyph.
+    /// </summary>
+    /// <param name="codePoint">The code point.</param>
+    /// <returns><see langword="true"/> when the font has a glyph for it.</returns>
+    /// <exception cref="ObjectDisposedException">The font was disposed.</exception>
+    internal bool HasGlyph(int codePoint)
+    {
+        uint glyph;
+        return HarfBuzz.FontGetNominalGlyph(HarfBuzzFont, (uint)codePoint, &glyph) != 0;
     }
 
     // A metric of the font's tables in font units (y up), or null when the font has none.

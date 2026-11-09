@@ -184,8 +184,16 @@ internal sealed class TextLeaf
         return true;
     }
 
-    // The caches keep their arrays for the next measurement; only their results are forgotten.
-    private void DropCaches()
+    /// <summary>
+    /// Gets or sets the number of app font files (<see cref="XylemUI.Text.AppFontSet.Generation"/>) when the caches were last
+    /// made: a file registered since may give the leaf's family another font (design §4.5, "App fonts").
+    /// </summary>
+    public int FontGeneration { get; set; }
+
+    /// <summary>
+    /// Forgets the results of both caches; they keep their arrays for the next measurement.
+    /// </summary>
+    public void DropCaches()
     {
         Shaped?.Drop();
         LineBreaks?.Drop();

@@ -116,6 +116,14 @@ internal static unsafe partial class HarfBuzz
     [LibraryImport(Library, EntryPoint = "hb_font_create")]
     public static partial nint FontCreate(nint face);
 
+    /// <summary>Finds the glyph a font's character map gives a code point (<c>hb_font_get_nominal_glyph</c>).</summary>
+    /// <param name="font">The font.</param>
+    /// <param name="codePoint">The code point.</param>
+    /// <param name="glyph">The glyph, when the font has one.</param>
+    /// <returns>Nonzero when the font maps <paramref name="codePoint"/> to a glyph.</returns>
+    [LibraryImport(Library, EntryPoint = "hb_font_get_nominal_glyph")]
+    public static partial int FontGetNominalGlyph(nint font, uint codePoint, uint* glyph);
+
     /// <summary>Releases a reference to a font (<c>hb_font_destroy</c>).</summary>
     /// <param name="font">The font.</param>
     [LibraryImport(Library, EntryPoint = "hb_font_destroy")]

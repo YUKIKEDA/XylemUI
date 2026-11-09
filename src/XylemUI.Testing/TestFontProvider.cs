@@ -4,7 +4,8 @@ namespace XylemUI.Testing;
 
 /// <summary>
 /// Resolves every text to one font, with no fallback (design §12.3, "Fonts"): the test font, a Noto Sans JP subset, unless another
-/// font is given. Text then measures the same on every OS and in every CI image, which the OS's fonts do not.
+/// font is given. Text then measures the same on every OS and in every CI image, which the OS's fonts do not. A family an app
+/// registered (<c>AppFonts.Add</c>, design §4.5) is drawn with the registered font, and the characters it lacks with this one.
 /// </summary>
 /// <remarks>
 /// The test font holds printable ASCII (U+0020 to U+007E), the characters of 日本語のテキスト, and <c>.notdef</c>; it has 1000 units
@@ -40,8 +41,33 @@ public sealed class TestFontProvider : IFontProvider, IDisposable
     public FontMatch ResolveFont(ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request)
     {
         _font ??= new Font(TestFontData.Span);
+
+        // A family an app registered draws with its font (design §4.5, "App fonts"): an app's own font is the same on every OS.
+        // The characters it lacks go to the test font, as the OS's fallback takes them outside the tests.
+        if (
+            AppFontSet.Generation > 0
+            && request.Family is { } family
+            && AppFontSet.Find(family, request.Weight, request.Slant, request.Stretch) is { } face
+        )
+        {
+            bool has = face.Font.HasGlyph(CodePointAt(text, start));
+            int end = start;
+            while (end < text.Length && face.Font.HasGlyph(CodePointAt(text, end)) == has)
+            {
+                end += char.IsHighSurrogate(text[end]) && end + 1 < text.Length && char.IsLowSurrogate(text[end + 1]) ? 2 : 1;
+            }
+
+            return new FontMatch(has ? face.Font : _font, end - start, 1);
+        }
+
         return new FontMatch(_font, text.Length - start, 1);
     }
+
+    // The code point at a position: a surrogate pair's, or a lone surrogate's own value.
+    private static int CodePointAt(ReadOnlySpan<char> text, int index) =>
+        char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
+            ? char.ConvertToUtf32(text[index], text[index + 1])
+            : text[index];
 
     /// <summary>
     /// Disposes the test font if this provider opened it; a font given to the constructor stays its owner's.
