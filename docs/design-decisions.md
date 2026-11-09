@@ -880,6 +880,11 @@ Rejected:
   - 目標の大きさへ GPU で縮める（Flutter の普通の形。元の大きさでアップロードすることになり、一辺 4,096 画素で 8.3 ms。Q18）
   - 縮めるのを bilinear だけにする（Flutter の CPU の形。大きく縮めると模様が出る。Q18）
   - テクスチャの上限を超える画像を描かない（GPUI。Q19）、辺ごとに上限へ抑える（Flutter。比が崩れる。Q19）
+  - premultiply した 8 ビットの画素を skcms で変換し直す（アルファの小さい画素で精度が落ちる。Skia は premultiply していない値で変換する。IM1 の Grill の Q23、Issue #759）
+  - ICC を shim の C で読む（1a で、境界をマネージドで確かめる形に決めた。Q23）
+  - iCCP の無い PNG の cHRM と gAMA を読まず sRGB とする（Blink。Flutter の Skia は読む。Q24）
+  - 広い色域（F16 など）で出す（D3D11 のスワップチェーンが 8 ビットの BGRA。Q27）
+  - skcms を GitHub の `google/skcms` や `skia.googlesource.com/skcms` の archive から取る（前者は 2025-10 で止まって Skia の使う commit が無く、後者は同じバイト列の保証が無い。Q28）
   - デコーダを Text に置く（文字と画像は別の信頼できない入力の経路で、ネイティブのライブラリも別。Text は Core から独立したまま保つ。IM1 の Grill の Q7、Issue #739）
   - 3 つのライブラリを C# から直に P/Invoke する（Wuffs の C の API は形式ごとに呼び方が違い、大きな構造体を持つ。C# の側に形式ごとの手順が増える。Q8）
   - NASM を使わずに libjpeg-turbo を作る（SIMD が外れ、JPEG のデコードが遅くなる。S11 の速さも NASM の SIMD 付きで測った。Q9）
