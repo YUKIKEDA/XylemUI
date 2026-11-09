@@ -27,6 +27,7 @@ Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in t
 ## Already decided
 
 - Native, by design: HarfBuzz (static); AccessKit (static, Windows, from the C bindings' release archive pinned by version and SHA-256, not built from source, design §4.4.1 and §9, row P02g); FreeType, wgpu-native, SDL3 (static, Linux only); fontconfig, libdbus-1 (dynamic, Linux only). Windows rasterizes glyphs with DirectWrite and macOS with Core Text, so they do not link FreeType (design §5.0.3, row T4).
+- Native, for images from row IM1 (static, every OS): Wuffs for PNG, GIF, and BMP; libjpeg-turbo for JPEG; libwebp for WebP. Spike S11 (Issue #730) measured each against the others; the owner chose the fastest per format (design §5.0.4, "Decoders").
 - Managed: TerraFX.Interop.Windows (declarations only).
 - Build tools only: Mono.Cecil, in tools/FluentIconsTool, which writes the kept icon fonts into an app's assembly on the build machine and never ships in an app (design §5.0.4, row IC1).
 - Not as dependencies of the engine: other UI stacks, Skia, CEF, GPU abstraction libraries (Silk.NET, Vortice).
