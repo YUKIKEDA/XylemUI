@@ -126,4 +126,7 @@ make("XylemUI Test Collection", "Bold", 700, True, f"{out}/collection-bold.tmp.t
 collection = TTCollection()
 collection.fonts = [TTFont(f"{out}/collection-regular.tmp.ttf"), TTFont(f"{out}/collection-bold.tmp.ttf")]
 collection.save(f"{out}/XylemUITestCollection.ttc")
+import os
+os.remove(f"{out}/collection-regular.tmp.ttf")
+os.remove(f"{out}/collection-bold.tmp.ttf")
 ```

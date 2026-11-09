@@ -93,8 +93,8 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         IDWriteFont* mapped;
         float scale;
         char[] locale = LocaleOf(language);
-        IDWriteFontCollection* collection =
-            AppFontSet.Generation > 0 && AppFontSet.HasFamily(request.Family) ? (IDWriteFontCollection*)AppCollection() : _collection;
+        bool app = AppFontSet.Generation > 0 && AppFontSet.HasFamily(request.Family);
+        IDWriteFontCollection* collection = app ? (IDWriteFontCollection*)AppCollection() : _collection;
         DWRITE_FONT_STYLE style = request.Slant switch
         {
             FontSlant.Italic => DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC,
@@ -142,7 +142,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
         }
 
         // MapCharacters returns a null font with the number of characters no font renders (Microsoft Learn), at least 1.
-        Font? font = mapped is null ? null : FontOf(mapped);
+        Font? font = mapped is null ? null : FontOf(mapped, app);
         return new FontMatch(font, (int)mappedLength, font is null ? 1 : scale);
     }
 
@@ -214,8 +214,9 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
 
     // Takes the reference MapCharacters returned, and releases it. A font whose file is not on the disk (a cloud font Windows has not downloaded: its loader is not the local one) cannot be
     // mapped, so it counts as no font, and the range goes to the bundled font: the fallback still ends (design §4.5), where
-    // throwing would stop every split of such a text (PR #152's review).
-    private Font? FontOf(IDWriteFont* mapped)
+    // throwing would stop every split of such a text (PR #152's review). When the request's base collection was the app fonts'
+    // (app), a registered file is mapped back to its registered font.
+    private Font? FontOf(IDWriteFont* mapped, bool app)
     {
         IDWriteFontFace* face = null;
         IDWriteFontFile* file = null;
@@ -229,9 +230,12 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
             ThrowIfFailed(file->GetReferenceKey(&key, &keySize), "IDWriteFontFile::GetReferenceKey");
             var keyBytes = new ReadOnlySpan<byte>(key, (int)keySize);
             uint index = face->GetIndex();
-            if (AppFontOf(file, keyBytes, index) is { } app)
+
+            // Only a request with the app fonts as its base collection can get one of them back: the system's fallback maps to
+            // the OS's fonts, so a request of another family asks the file nothing more (PR #713's review).
+            if (app && AppFontOf(file, keyBytes, index) is { } registered)
             {
-                return app;
+                return registered;
             }
 
             foreach ((byte[] known, uint knownFace, Font font) in _fonts)
