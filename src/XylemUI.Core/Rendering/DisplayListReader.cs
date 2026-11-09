@@ -24,6 +24,7 @@ public ref struct DisplayListReader
     private readonly ReadOnlySpan<GroupRecord> _groups;
     private readonly ReadOnlySpan<StateRecord> _states;
     private readonly ReadOnlySpan<ClipCommand> _clips;
+    private readonly ReadOnlySpan<ImageRecord> _images;
     private int _command;
     private int _rect;
     private int _color;
@@ -33,6 +34,7 @@ public ref struct DisplayListReader
     private int _curve;
     private int _group;
     private int _state;
+    private int _image;
     private CommandTag? _current;
 
     /// <summary>
@@ -54,6 +56,7 @@ public ref struct DisplayListReader
         _groups = list.Groups;
         _states = list.States;
         _clips = list.Clips;
+        _images = list.Images;
         Brushes = list.Brushes;
     }
 
@@ -86,6 +89,7 @@ public ref struct DisplayListReader
                 || _curve != _curves.Length
                 || _group != _groups.Length
                 || _state != _states.Length
+                || _image != _images.Length
             )
             {
                 Invariant.Fail("A display list stream has data left after its last command.");
@@ -274,6 +278,25 @@ public ref struct DisplayListReader
         ref readonly StateRecord record = ref _states[index];
         clips = _clips.Slice(record.ClipStart, record.ClipCount);
         return new StateCommand(record.Transform, record.TextScale, record.ClipRect, record.Bounds, index);
+    }
+
+    /// <summary>
+    /// Reads the current command as an image (row IM1).
+    /// </summary>
+    /// <returns>The image.</returns>
+    internal ImageCommand ReadImage()
+    {
+        if (_current != CommandTag.Image)
+        {
+            Invariant.Fail("ReadImage was called for a command that is not an Image.");
+        }
+
+        _current = null;
+        ReadOnlySpan<float> rect = _rects.Slice(_rect, 4);
+        _rect += 4;
+        Color color = Unpack(_colors[_color++]);
+        ref readonly ImageRecord record = ref _images[_image++];
+        return new ImageCommand(rect[0], rect[1], rect[2], rect[3], color, record.Image, record.Source);
     }
 
     /// <summary>

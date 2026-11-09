@@ -375,7 +375,7 @@ internal sealed partial class WindowFrames
             _tree.MarkRootsToBuild();
         }
 
-        _target.Draw(_drawn.AsSpan(0, count), ClearColor, _atlas);
+        _target.Draw(_drawn.AsSpan(0, count), ClearColor, _atlas, _tree.Images);
         _drawn.AsSpan(0, count).Clear();
         return true;
     }

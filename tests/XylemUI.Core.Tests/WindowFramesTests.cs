@@ -62,6 +62,33 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A frame hands the target the tree's images with its lists (design §5.0.4, "Passing them to the renderer").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The tree of the test above; a counting target and scheduler.
+    ///
+    /// Steps:
+    /// - Resize to 200 x 100, which runs a frame.
+    ///
+    /// Expected:
+    /// - The target drew with the tree's texture cache.
+    /// </remarks>
+    [Fact]
+    public void Frame_HandsTheTargetTheTreesImages() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, _) = Boxes();
+            var target = new CountingTarget();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, new CountingScheduler(), Gray);
+
+            frames.Resize(new Size(200, 100), 1);
+
+            Assert.Same(tree.Images, target.Images);
+        });
+
+    /// <summary>
     /// A change made while a frame is drawn asks for the next frame, and that frame draws it: the paint updates are taken before
     /// the display list is built.
     /// </summary>

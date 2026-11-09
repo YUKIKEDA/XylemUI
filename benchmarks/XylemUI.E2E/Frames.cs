@@ -9,7 +9,7 @@ namespace XylemUI.E2E;
 // is more than 1.5 times the median missed a refresh. `heavy` loads the GPU with full-window translucent rectangles. The text is
 // ClearType where the window allows it, or grayscale with --gray (roadmap row T2); the report names it and the draws of a frame.
 // --shapes, --curves, and --groups change the scene's rectangles (rows R4a, R4b, and R4c, Scene.Build); --scopes puts them in clips
-// and transforms (row R4d). --tree draws the plain scene from a UI tree with WindowFrames (row V1b, TreeScene): build_ms is then the
+// and transforms (row R4d); --images draws them as images (row IM1). --tree draws the plain scene from a UI tree with WindowFrames (row V1b, TreeScene): build_ms is then the
 // draw stage (the display list from the tree and its glyphs), layout_ms the layout pass after the boxes moved, and cpu_frame_ms
 // leaves the layout out. --no-text leaves the line of text out of either scene, so that the draw stages compare the boxes alone.
 // --hover (with --tree, row V1c) keeps the boxes still with a hovered background and moves the pointer between two of them each
@@ -37,7 +37,8 @@ internal static class Frames
         bool scroll = false,
         string list = "",
         int resizes = 0,
-        int resizesLate = 0
+        int resizesLate = 0,
+        bool images = false
     )
     {
         UiThread.Initialize();
@@ -119,9 +120,17 @@ internal static class Frames
             }
             else
             {
-                scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested, noText);
+                scene.Build(frame, heavy, shapes, curves, groups, layers, scopes, nested, noText, images);
                 t1 = Stopwatch.GetTimestamp();
-                scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
+                if (images)
+                {
+                    scene.Renderer.Draw(scene.Lists, scene.Clear, scene.Atlas, scene.Images);
+                }
+                else
+                {
+                    scene.Renderer.Draw(scene.List, scene.Clear, scene.Atlas);
+                }
+
                 t2 = Stopwatch.GetTimestamp();
                 scene.Renderer.Present();
                 t3 = Stopwatch.GetTimestamp();
@@ -178,6 +187,7 @@ internal static class Frames
         report.Text("shapes", shapes ? "yes" : "no");
         report.Text("curves", curves ? "yes" : "no");
         report.Text("groups", groups ? "yes" : "no");
+        report.Text("images", images ? "yes" : "no");
         report.Text("scopes", scopes.Length > 0 ? scopes : "none");
         report.Text("tree", tree ? "yes" : "no");
         report.Number("resizes", resizes);

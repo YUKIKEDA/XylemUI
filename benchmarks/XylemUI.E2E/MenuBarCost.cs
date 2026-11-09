@@ -207,7 +207,7 @@ internal static class MenuBarCost
 
     private sealed class NoTarget : IRenderTarget
     {
-        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas) { }
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images) { }
 
         public void Present() { }
     }

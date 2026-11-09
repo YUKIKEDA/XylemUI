@@ -37,6 +37,8 @@ public sealed partial class DisplayList
     private const int Clipped = 8;
 
     // The rectangle of no clip: its edges past every pixel.
+    private static readonly Color Opaque = Color.FromRgb(0xFFFFFF);
+
     private static readonly Vector4 NoClip = new(float.NegativeInfinity, float.NegativeInfinity, float.PositiveInfinity, float.PositiveInfinity);
 
     // Numbers each frame that writes a brush, across every list, so a brush's ListFrame tells which list's frame placed it.
@@ -129,9 +131,10 @@ public sealed partial class DisplayList
 
     /// <summary>
     /// Gets the number of commands written since the last <see cref="Reset"/> that carry values beyond a rectangle and a color
-    /// (row R4): shapes, shadows, lines, ellipses, arcs, sectors, and glyph runs with a gradient. A renderer sizes its buffers by it.
+    /// (row R4): shapes, shadows, lines, ellipses, arcs, sectors, glyph runs with a gradient, and images (row IM1). A renderer sizes
+    /// its buffers by it.
     /// </summary>
-    public int ShapeCount => _usedShapes + _usedCurves + _brushedRuns;
+    public int ShapeCount => _usedShapes + _usedCurves + _brushedRuns + _usedImages;
 
     /// <summary>
     /// Gets the number of opacity groups written since the last <see cref="Reset"/> (row R4c); a renderer writes a list without
@@ -183,6 +186,7 @@ public sealed partial class DisplayList
         _usedShapes = 0;
         _brushCount = 0;
         _usedCurves = 0;
+        _usedImages = 0;
         _textPaintCount = 0;
         _brushedRuns = 0;
         _groupDepth = 0;
@@ -1687,13 +1691,15 @@ public sealed partial class DisplayList
         GrowthCount++;
     }
 
-    // The records of the Shape and Shadow commands, and the gradients they use, in the order of their first use in the frame.
+    // The records of the Shape and Shadow commands, and the gradients they use, in the order of their first use in the frame; the
+    // records of the curves, of the paints of text, and of the images.
     private sealed class ShapeStreams
     {
         public ShapeRecord[] Records = new ShapeRecord[64];
         public GradientBrush[] Brushes = new GradientBrush[16];
         public CurveRecord[] Curves = new CurveRecord[64];
         public TextPaint[] TextPaints = new TextPaint[16];
+        public ImageRecord[] Images = new ImageRecord[16];
     }
 
     // The scopes pushed and not popped, innermost last: the kind of each, and the frames of the groups and of the clips and

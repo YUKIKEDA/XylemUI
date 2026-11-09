@@ -40,4 +40,7 @@ public enum CommandTag : byte
 
     /// <summary>The start of a clip or a transform (<see cref="StateCommand"/>, row R4d).</summary>
     PushState,
+
+    /// <summary>An image drawn over a rectangle (design §5.0.4, row IM1).</summary>
+    Image,
 }
