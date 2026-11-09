@@ -73,7 +73,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 
 | 項目                               | MoonBit 版                                      | C# 版                                                                                                                                   | 参照    |
 | ---------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| ネイティブ連携                     | C / C++ / Obj-C のシム層が必須                  | P/Invoke と unmanaged 関数ポインタで OS API を直接呼ぶ。Windows の宣言は TerraFX.Interop.Windows。中継層（shim）は、P/Invoke で書けない API（C のマクロ、`static inline`、可変長の引数）だけの例外で、どの OS も同じ規則で判断する（D3 の Grill、行 P06 で決める） | §2.9    |
+| ネイティブ連携                     | C / C++ / Obj-C のシム層が必須                  | P/Invoke と unmanaged 関数ポインタで OS API を直接呼ぶ。Windows の宣言は TerraFX.Interop.Windows。中継層（shim）は、P/Invoke で書けない API（C のマクロ、`static inline`、可変長の引数、C++）だけの例外で、どの OS も同じ規則で判断する（D3 の Grill、行 P06 で決める）。画像のデコーダの shim は、この例外に当たる Wuffs（`static inline` と C++ の `wuffs_aux`）を包み、同じ口に、直に呼べる libjpeg-turbo と libwebp もそろえる（3 つのデコーダを C# から 1 つの口で呼ぶ。§5.0.4、IM1 の Grill の Q8） | §2.9    |
 | GC とネイティブ境界                | GC 特性が未検証。GC ルート登録方法から要検証    | .NET GC は移動する（コンパクションあり）前提で設計できる。OS へは世代付き整数IDのみ渡す                                                 | §2.12   |
 | スレッド                           | GC 安全性のため全コードを単一スレッドにピン留め | ランタイム自体はどのスレッドでも安全。Core の型は UI スレッドアフィンとし、実行時チェックで守る                                         | §2.12   |
 | アリーナ                           | struct が参照型のため `get` が生きた参照を返す  | `UiNode` は値型。`ref` 返しで扱い、配列の再確保をまたいで `ref` を保持しない                                                            | §2.5    |
@@ -1162,6 +1162,7 @@ flowchart TD
         Invalid["Invalidation<br/>dirty subtree伝播 / Layout boundary(§2.4)"]
         Layout["レイアウトエンジン<br/>統一ボックスモデル(Flex/Grid/Block)"]
         Materialize["Materialization層<br/>仮想化/viewport(§3.4)"]
+        Imaging["画像のデコード（XylemUI.Imaging）<br/>Wuffs / libjpeg-turbo / libwebp を C の shim で<br/>EXIF / ICC（§5.0.4）"]
         Text["テキストパイプライン（XylemUI.Text）<br/>Unicode正規化→BiDi→スクリプト/フォント分割<br/>→HarfBuzz→改行→ラスタライズ(§4)"]
         Input["入力ディスパッチ<br/>capture/bubble + ヒットテスト"]
     end
@@ -1187,6 +1188,8 @@ flowchart TD
     Materialize --> Layout
     Layout --> Text
     Text --> Font
+    Text -->|色のグリフの PNG| Imaging
+    Layout -->|画像| Imaging
     Reactive --> Input
     Input --> Win
     Layout -->|rect更新| Paint
@@ -3873,7 +3876,7 @@ public readonly record struct GlyphBox(int Left, int Top, int Width, int Height,
 - **アニメーション:** GIF と WebP のアニメーションを再生する（Flutter と GPUI。Avalonia は最初のフレームだけ）。フレームは行 AN1 のフレームの時計で進め、モーションを減らす設定と、窓が見えないときは止める。次に出すフレームだけを、出す前にワーカーのスレッドでデコードする（Flutter の `getNextFrame`、`multi_frame_codec.cc` 269〜311 行目）。GPUI のように全フレームを先にデコードしないので、長いアニメーションでもメモリが一度に膨らまない
 - **SVG の画像:** 入れない。行 IM3（v1.x、SVG の色のグリフの行 T11 と同じ時期）に置く。Flutter と Avalonia も本体では読まない。GPUI は resvg で読む（`crates/gpui/src/svg_renderer.rs`）
 - **デコーダ（S11 の spike、Issue #730、オーナーが決定）:** 形式ごとに分ける。PNG・GIF・BMP は Wuffs（Google、MIT と Apache-2.0）、JPEG は libjpeg-turbo、WebP は libwebp で読み、静的リンクする。行 T9 の自前の PNG のデコーダ（色のグリフの sbix・CBDT）も Wuffs に替え、PNG のデコーダを 1 つにまとめる（行 IM1）。BMP と ICO の入れ物は自前で読む（ICO の中身は PNG か BMP）。OS のデコーダ（WIC・ImageIO）は使わない。WIC は WebP を Store の拡張機能で読むので、6 つの形式をどの PC でも読めるとは限らず、EXIF の向きと色の変換も呼ぶ側が書く。spike は、Wuffs に統一する案を、Skia と同じ組（libpng・libjpeg-turbo・libwebp、GIF は Wuffs）と T9 のデコーダと比べた（MSVC、Wuffs は `WUFFS_CONFIG__ENABLE_MSVC_CPU_ARCH__X86_64_V3` で SIMD を有効にして）。読めるか: 6 つの形式を読んだ（読めないのは算術符号の JPEG と 12 ビットの JPEG。12 ビットは、spike で使った libjpeg-turbo の 8 ビットの API（`jpeg_read_scanlines`）でも読まなかったが、libjpeg-turbo 3 は同じ作りに 12 ビットの API（`jpeg12_read_scanlines`）を持ち、読める）。JPEG と WebP の画素は Skia の組とすべて同じ、PNG は T9 と 1 段以内。速さ（デコード 1 回の中央値）: PNG は Wuffs が libpng より 1.3〜1.6 倍速い（写真の PNG 1920 × 1080 で 17.1〜17.5 ms と 27.2〜27.7 ms）。JPEG は Wuffs が 1.25〜1.5 倍、ロッシーの WebP は 1.3 倍、ロスレスの WebP は 2 倍遅い。T9 は libpng より 2.6〜3.5 倍遅い。大きさ（何も読まない実行ファイルからの増分）: 分ける組 +871,936 バイト、Skia の組 +947,200 バイト、Wuffs だけ +372,224 バイト。大きいのは libjpeg-turbo（+524,288 バイト）。JPEG の EXIF の向き（APP1 の IFD0 のタグ 0x0112）と ICC（APP2 をつなぐ）は、デコーダの外で自前で読める（spike で 100 行ほどの C# が libjpeg-turbo と同じ値を読んだ）。Wuffs は既定で PNG のチェックサムを確かめない（PngSuite の壊れた 2 枚を読んだ）。製品では確かめる（IM1 の Grill の Q4、Issue #737。libpng と T9 と同じく、壊れた PNG を黙って読まない。遅くなる分は行 IM1 で測る）。12 ビットの JPEG は読まず、失敗のときの要素を出す（Q5。Skia の JPEG のデコーダも 8 ビットだけを読む）
-- **置き場所と呼び方（IM1 の Grill の 2 ラウンド目、Issue #739）:** デコーダは新しいプロジェクト `XylemUI.Imaging` に置き（§2.9.1、Q7）、文字の経路（色のグリフの PNG、T9 の自前のデコーダを替える）と Core が参照する。3 つのライブラリは直に P/Invoke せず、`vendor` で作る小さな C の shim を 1 つ通して呼ぶ（Q8）。shim は、画像の大きさと形式を読む、BGRA の premultiplied にデコードする（目標の大きさと EXIF の向きは C# の側）、JPEG の EXIF と ICC の範囲を返す、を C# に見せる。Wuffs の C の API は、デコーダの構造体が大きく形式ごとに呼び方が違うので、その違いを shim の中に閉じる（§2.9.1 の、P/Invoke で書けない部分だけの薄い shim と同じ考え）。shim と 3 つのライブラリは HarfBuzz と同じく、NativeAOT では静的ライブラリを、JIT では DLL を、同じ宣言から読む（§9）。libjpeg-turbo の SIMD は NASM で作るので、NASM の zip を `vendor/versions.lock` に版と SHA-256 で固定し、`vendor/build.ps1` が取って PATH に足す（Q9）。開発の機械にも CI にも何も入れない
+- **置き場所と呼び方（IM1 の Grill の 2 ラウンド目、Issue #739）:** デコーダは新しいプロジェクト `XylemUI.Imaging` に置き（§2.9.1、Q7）、文字の経路（色のグリフの PNG、T9 の自前のデコーダを替える）と Core が参照する。3 つのライブラリは直に P/Invoke せず、`vendor` で作る小さな C の shim を 1 つ通して呼ぶ（Q8）。shim は、画像の大きさと形式を読む、BGRA の premultiplied にデコードする（目標の大きさと EXIF の向きは C# の側）、JPEG の EXIF と ICC の範囲を返す、を C# に見せる。Wuffs の C の API は、多くが `static inline`（`wuffs_base__make_pixel_format` など）で、形式を見分けて読む `wuffs_aux` は C++ なので、P/Invoke で書けない（§0 の表「ネイティブ連携」の例外）。libjpeg-turbo と libwebp は直に呼べるが、同じ shim の口にそろえ、C# は 3 つのデコーダを 1 つの口で呼ぶ（§0 の同じ行に書いた）。shim と 3 つのライブラリは HarfBuzz と同じく、NativeAOT では静的ライブラリを、JIT では DLL を、同じ宣言から読む（§9）。libjpeg-turbo の SIMD は NASM で作るので、NASM の zip を `vendor/versions.lock` に版と SHA-256 で固定し、`vendor/build.ps1` が取って PATH に足す（Q9）。開発の機械にも CI にも何も入れない
 - **EXIF の向きと色:** EXIF の向きを当てる（Flutter の `image_generator.cc` 155〜188 行目、GPUI の `platform.rs` 3243〜3247 行目）。埋め込みの ICC は sRGB に直す（Flutter の Impeller、`image_decoder_impeller.cc` 119〜154 行目）。変換には Skia の skcms（BSD-3）を使う。Avalonia は向きも色も当てない。GPUI は色を直さない
 - **読み込み元:** ファイルのパス、バイト列、アセンブリに埋め込んだリソースの 3 つ。ネットワークからは読まない。アプリが取ってきたバイト列を渡す（Avalonia も本体に持たない）
 - **デコードの大きさ:** アプリが目標の幅か高さを指定できる。指定が無ければ元の大きさでデコードする（Flutter の `cacheWidth`・`ResizeImage`、`image_provider.dart` 1227〜1263 行目。Avalonia の `Bitmap.DecodeToWidth`）。デコードはワーカーのスレッドで行い、結果は §2.12 の `UiMessage.ImageDecoded` で UI スレッドへ渡す
@@ -4829,6 +4832,10 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | wgpu-native（Linuxのみ）   | GPU抽象化                          | MIT/Apache-2.0          | 静的（同上）                                                        |
 | fontconfig（Linuxのみ）    | フォント解決                       | MIT相当                 | **動的**（§8.11、実機の設定と同期させるため意図的に動的）           |
 | libdbus-1（Linuxのみ）     | AT-SPI/通知連携のD-Bus IPC         | AFL-2.1/GPL-2.0デュアル | **動的**（§6.2、実機のD-Busセッションと同期させるため意図的に動的） |
+| Wuffs                      | PNG・GIF・BMP のデコード（§5.0.4） | MIT/Apache-2.0          | 静的（同上。C の shim と一緒に、行 IM1）                            |
+| libjpeg-turbo              | JPEG のデコード（§5.0.4）          | IJG・修正 BSD・zlib     | 静的（同上。SIMD は NASM で作る）                                   |
+| libwebp                    | WebP のデコード（§5.0.4）          | BSD-3-Clause            | 静的（同上）                                                        |
+| skcms                      | ICC から sRGB への変換（§5.0.4）   | BSD-3-Clause            | 静的（同上。行 IM1 の 2 つ目の PR）                                 |
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
 
 **ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。AccessKit だけは作らず、release の zip にある MSVC 用の静的ライブラリと DLL をそのまま取る（§4.4.1、#633 の実装）。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す。AccessKit（§4.4.1、行 P02g）だけは、ソースではなく C の bindings の release の zip を版と SHA-256 で固定して取り、中の静的ライブラリと共有ライブラリを `vendor/out` に置く。ソースから作るには Rust のツールチェーンが要るからである
