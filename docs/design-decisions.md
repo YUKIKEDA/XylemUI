@@ -873,6 +873,10 @@ Reason:
 Rejected:
   - Wuffs に統一する（実行ファイルは分ける組より 499,712 バイト小さいが、JPEG が 1.25〜1.5 倍、WebP が 1.3〜2 倍遅い。Flutter と Avalonia は JPEG と WebP を libjpeg-turbo と libwebp で読む。S11、Issue #730）
   - Skia と同じ組（libpng・libjpeg-turbo・libwebp、GIF は Wuffs）にする（PNG が Wuffs より 1.3〜1.6 倍遅く、libpng はメモリ安全でない。実行ファイルも分ける組より 75,264 バイト大きい。S11）
+  - `Label` の無い画像を、名前の空の画像の節として出す（Flutter の `Image` の既定。UIA では「イメージ」とだけ読まれ、何の画像か伝わらない。IM1 の Grill の Q2、Issue #737）
+  - デコードの数に上限を付けない（大きな写真を同時に開くとメモリが一度に膨らむ。Q3）
+  - Wuffs の PNG のチェックサムを確かめない（速いが、libpng と T9 が断る壊れた PNG を黙って読む。Q4）
+  - 12 ビットの JPEG を読む（Skia の JPEG のデコーダも 8 ビットだけ。医療などの限られた用途。Q5）
   - 行 T9 の自前の PNG のデコーダを画像にも使う（libpng より 2.6〜3.5 倍遅い。S11）
   - OS のデコーダ（WIC・ImageIO）を主に使う（Windows の WIC は WebP を Store の拡張機能で読むので、どの PC でも読めるとは限らない。EXIF の向きと色の変換も呼ぶ側が書く。Issue #165）
   - HEIF と AVIF を v1 に入れる（Flutter は OS のデコーダでだけ読み、WIC では拡張機能が要る。行 IM2、v1.x）
