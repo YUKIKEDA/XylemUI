@@ -11,8 +11,19 @@ if (args.Length == 3 && args[0] == "generate")
 
 if (args.Length == 5 && args[0] == "keep")
 {
+    // The subset needs the build machine's HarfBuzz, which vendor/build.ps1 makes; without it the first call would end in a
+    // DllNotFoundException that names neither (PR #726's review).
+    bool keepAll = bool.Parse(args[4]);
+    if (!keepAll && !File.Exists(Path.Combine(AppContext.BaseDirectory, "harfbuzz-subset.dll")))
+    {
+        Console.Error.WriteLine(
+            "FluentIconsTool: harfbuzz-subset.dll is not next to the tool. Run ./vendor/build.ps1, which makes it in vendor/out/win-x64/tool, and build again."
+        );
+        return 1;
+    }
+
     string[] references = File.ReadAllLines(args[2]).Where(line => line.Length > 0).ToArray();
-    Keeper.Run(args[1], references, args[3], bool.Parse(args[4]));
+    Keeper.Run(args[1], references, args[3], keepAll);
     return 0;
 }
 
