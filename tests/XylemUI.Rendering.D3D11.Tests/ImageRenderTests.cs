@@ -259,18 +259,19 @@ public sealed class ImageRenderTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// Drawing a released image is a bug of the list's writer and fails the invariant, and a list with images drawn without the
-    /// cache they are in is refused.
+    /// Drawing a released image, or a part of an image outside it, is a bug of the list's writer and fails the invariant (IM1's
+    /// Grill, Q21), and a list with images drawn without the cache they are in is refused.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - An offscreen WARP renderer, a texture cache with a 4 x 4 image drawn once, and a display list at scale 1.
     ///
     /// Steps:
-    /// - Release the image; draw a list that draws it. Draw a list with an image and no cache.
+    /// - Release the image; draw a list that draws it. Add another 4 x 4 image; draw a list that draws its part (0, 0, 8, 4). Draw a
+    ///   list with an image and no cache.
     ///
     /// Expected:
-    /// - The first draw throws InvariantViolationException (Debug builds); the second throws ArgumentException.
+    /// - The first two draws throw InvariantViolationException (Debug builds); the third throws ArgumentException.
     /// </remarks>
     [Fact]
     public void Image_Released_FailsTheInvariant() =>
@@ -287,6 +288,10 @@ public sealed class ImageRenderTests(UiThreadFixture ui)
 
 #if DEBUG
             _ = Assert.Throws<InvariantViolationException>(() => renderer.Draw([list], Clear, null, cache));
+            ImageHandle other = cache.Add(4, 4, Pixels(4, 4, (_, _) => Blue));
+            var outside = new DisplayList();
+            outside.DrawImage(10, 10, 4, 4, other, new Vector4(0, 0, 8, 4));
+            _ = Assert.Throws<InvariantViolationException>(() => renderer.Draw([outside], Clear, null, cache));
 #endif
             _ = Assert.Throws<ArgumentException>(() => renderer.Draw([list], Clear, null, null));
         });

@@ -16,6 +16,16 @@
     <!-- The pixels and the goldens are drawn headless on WARP (design §12.3, row P02a2). -->
     <ProjectReference Include="..\..\src\XylemUI.Testing.D3D11\XylemUI.Testing.D3D11.csproj" />
   </ItemGroup>
+  <!-- The image element's tests read the decoders' test images, from files, and one as a resource (row IM1, 1b-2). -->
+  <ItemGroup>
+    <None Include="..\XylemUI.Imaging.Tests\Images\baseline.jpg" Link="Images\baseline.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Images\lossless.webp" Link="Images\lossless.webp" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Images\first-frame.gif" Link="Images\first-frame.gif" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Images\rgb24.bmp" Link="Images\rgb24.bmp" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Images\png.ico" Link="Images\png.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Png\PngSuite\basn2c08.png" Link="Images\basn2c08.png" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\XylemUI.Imaging.Tests\Images\baseline.jpg" LogicalName="image.jpg" />
+  </ItemGroup>
   <!-- The UIA tests read the window's tree with Windows' UIA client, UIAutomationClient (row P02g), as spike S10 did. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App" />

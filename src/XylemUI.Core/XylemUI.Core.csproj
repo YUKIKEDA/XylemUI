@@ -6,6 +6,7 @@
   <ItemGroup>
     <!-- Text runs are shaped and their glyphs put in the atlas while the display list is built (design §4.3, §5.0.3). -->
     <ProjectReference Include="..\XylemUI.Text\XylemUI.Text.csproj" />
+    <ProjectReference Include="..\XylemUI.Imaging\XylemUI.Imaging.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Core.Tests" />

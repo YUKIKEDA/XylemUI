@@ -35,15 +35,25 @@ internal static unsafe partial class ImageShim
 
     /// <summary>
     /// Decodes an image, the first frame of a GIF, to premultiplied blue, green, red, and alpha, top-down rows of
-    /// <paramref name="stride"/> bytes (<c>xi_decode</c>).
+    /// <paramref name="stride"/> bytes (<c>xi_decode</c>); a JPEG at a scale of eighths, with libjpeg-turbo's DCT scaling.
     /// </summary>
     /// <param name="data">The first byte of the image.</param>
     /// <param name="length">The length of the image in bytes.</param>
     /// <param name="pixels">The first byte of <paramref name="height"/> rows of <paramref name="stride"/> bytes.</param>
     /// <param name="stride">The bytes from a row to the next, at least <paramref name="width"/> × 4.</param>
-    /// <param name="width">The width <see cref="Info"/> gave for the same bytes.</param>
-    /// <param name="height">The height <see cref="Info"/> gave for the same bytes.</param>
+    /// <param name="width">The width <see cref="Info"/> gave for the same bytes, at the scale: <see cref="Scaled"/>.</param>
+    /// <param name="height">The height <see cref="Info"/> gave for the same bytes, at the scale.</param>
+    /// <param name="eighths">The scale, from 1 to 8 eighths; 8 for an image that is not a JPEG.</param>
     /// <returns>A status, as <see cref="Info"/> returns.</returns>
     [LibraryImport(Library, EntryPoint = "xi_decode")]
-    public static partial int Decode(byte* data, nuint length, byte* pixels, nuint stride, int width, int height);
+    public static partial int Decode(byte* data, nuint length, byte* pixels, nuint stride, int width, int height, int eighths);
+
+    /// <summary>
+    /// Returns a side of a JPEG decoded at a scale of eighths: the side times <paramref name="eighths"/> / 8, rounded up, as
+    /// libjpeg-turbo rounds it.
+    /// </summary>
+    /// <param name="side">The side, in pixels.</param>
+    /// <param name="eighths">The scale, from 1 to 8 eighths.</param>
+    /// <returns>The side at that scale.</returns>
+    public static int Scaled(int side, int eighths) => (int)((((long)side * eighths) + 7) / 8);
 }

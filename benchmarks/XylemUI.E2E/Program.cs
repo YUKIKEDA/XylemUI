@@ -36,6 +36,8 @@
 //   input                      delivering a pointer move through routes of depth 1 and 50, and one that changes the hover (row V1c)
 //   image-upload [runs]        an image's upload with its mipmaps, by size: the CPU time of the draw that uploads it and the
 //                              time until the GPU has done its frame (row IM1)
+//   image-decode <file> [runs] one image file decoded at its size and at the widths 1,024, 400, and 100 (row IM1, 1b-2)
+//   image-tree [frames]        a frame of 100 image elements against 100 boxes, its CPU time and bytes (row IM1, 1b-2)
 //   menu                       a 10-item menu over the todo sample: the frame that opens it, and its key and hover frames (row P02d)
 //   menubar                    a 5-item menu bar over the todo sample: the frames that select it, move in it, open a menu, and switch menus (row P02d3)
 //   dragdrop                   a drag over the todo sample's rows: the frame of each move that changes the drop target (row DD1)
@@ -105,6 +107,8 @@ return scenario switch
         images: args.Contains("--images")
     ),
     "image-upload" => ImageUpload.Run(Number(1, 20)),
+    "image-decode" => ImageCost.Decode(args[1], Number(2, 20)),
+    "image-tree" => ImageCost.Tree(Number(1, 600)),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
