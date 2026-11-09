@@ -1,0 +1,78 @@
+{
+ "alpha.webp": {
+  "height": 48,
+  "width": 64
+ },
+ "baseline.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "bmp.ico": {
+  "height": 32,
+  "width": 32
+ },
+ "exif-1.jpg": {
+  "height": 8,
+  "width": 16
+ },
+ "exif-2.jpg": {
+  "height": 8,
+  "width": 16
+ },
+ "exif-3.jpg": {
+  "height": 8,
+  "width": 16
+ },
+ "exif-4.jpg": {
+  "height": 8,
+  "width": 16
+ },
+ "exif-5.jpg": {
+  "height": 16,
+  "width": 8
+ },
+ "exif-6.jpg": {
+  "height": 16,
+  "width": 8
+ },
+ "exif-7.jpg": {
+  "height": 16,
+  "width": 8
+ },
+ "exif-8.jpg": {
+  "height": 16,
+  "width": 8
+ },
+ "first-frame.gif": {
+  "height": 48,
+  "width": 64
+ },
+ "gray.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "lossless.webp": {
+  "height": 48,
+  "width": 64
+ },
+ "lossy.webp": {
+  "height": 48,
+  "width": 64
+ },
+ "palette8.bmp": {
+  "height": 48,
+  "width": 64
+ },
+ "png.ico": {
+  "height": 48,
+  "width": 48
+ },
+ "progressive.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "rgb24.bmp": {
+  "height": 48,
+  "width": 64
+ }
+}

@@ -27,6 +27,19 @@ if (-not $IsWindows) {
 # The CMake options of each library: no optional dependency, nothing but the library itself.
 $options = @{
     harfbuzz = @('-DHB_BUILD_SUBSET=OFF', '-DHB_BUILD_RASTER=OFF', '-DHB_BUILD_VECTOR=OFF', '-DHB_BUILD_GPU=OFF', '-DHB_BUILD_UTILS=OFF')
+    'libjpeg-turbo' = @('-DENABLE_SHARED=OFF', '-DWITH_TURBOJPEG=OFF', '-DWITH_SIMD=ON', '-DWITH_TOOLS=OFF', '-DWITH_TESTS=OFF')
+    libwebp = @(
+        '-DWEBP_BUILD_ANIM_UTILS=OFF', '-DWEBP_BUILD_CWEBP=OFF', '-DWEBP_BUILD_DWEBP=OFF', '-DWEBP_BUILD_GIF2WEBP=OFF',
+        '-DWEBP_BUILD_IMG2WEBP=OFF', '-DWEBP_BUILD_VWEBP=OFF', '-DWEBP_BUILD_WEBPINFO=OFF', '-DWEBP_BUILD_WEBPMUX=OFF',
+        '-DWEBP_BUILD_EXTRAS=OFF', '-DWEBP_BUILD_LIBWEBPMUX=OFF'
+    )
+}
+
+# The image decoders link only into the shim (native/imaging), static with the static CRT, for its library and its DLL alike: the
+# static libraries each build installs (design §5.0.4, row IM1).
+$intoShim = @{
+    'libjpeg-turbo' = @('jpeg-static.lib')
+    libwebp = @('libwebp.lib', 'libsharpyuv.lib')
 }
 
 # The files taken as they are, by the name each gets in vendor/out/fluent (design §5.0.4).
@@ -172,6 +185,17 @@ foreach ($lock in Get-Locks | Where-Object { $files.ContainsKey($_.Name) }) {
     Copy-Item (Get-Archive $lock) $file -Force
 }
 
+# NASM, which libjpeg-turbo's SIMD is assembled with: taken onto this process's PATH, never shipped (design §5.0.4).
+foreach ($lock in Get-Locks | Where-Object { $_.Name -eq 'nasm' }) {
+    $tools = Join-Path $work 'tools'
+    $nasm = Join-Path $tools "nasm-$($lock.Version)"
+    if (-not (Test-Path (Join-Path $nasm 'nasm.exe'))) {
+        Expand-Download (Get-Archive $lock) $tools
+    }
+
+    $env:PATH = "$nasm;$env:PATH"
+}
+
 $vcvars = Get-VcVars
 # A line with no CMake options is data for a generator (unicode-ucd, tools/UnicodeTableGen), not a library to build.
 foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
@@ -186,7 +210,7 @@ foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
     $source = Get-Source $lock
     # HarfBuzz also builds a third time for the build machine, with its subset library, which the icon build tool of
     # XylemUI.Theme.Fluent loads; the libraries an app links keep the subset out (design §5.0.4).
-    $kinds = if ($lock.Name -eq 'harfbuzz') { 'static', 'shared', 'tool' } else { 'static', 'shared' }
+    $kinds = if ($lock.Name -eq 'harfbuzz') { 'static', 'shared', 'tool' } elseif ($intoShim.ContainsKey($lock.Name)) { @('static') } else { 'static', 'shared' }
     foreach ($kind in $kinds) {
         Write-Host "==> Build $($lock.Name) $($lock.Version) ($kind)"
         $build = Join-Path $work "$($lock.Name)-$kind"
@@ -204,6 +228,11 @@ foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
         Invoke-InMsvc $vcvars $configure
         Invoke-InMsvc $vcvars "cmake --build `"$build`""
 
+        if ($intoShim.ContainsKey($lock.Name)) {
+            Invoke-InMsvc $vcvars "cmake --install `"$build`" --prefix `"$(Join-Path $work "install/$($lock.Name)")`""
+            continue
+        }
+
         $target = Join-Path $out $kind
         New-Item -ItemType Directory -Force $target | Out-Null
         $patterns = switch ($kind) {
@@ -215,6 +244,45 @@ foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
             $built = Get-ChildItem -Path $build -Recurse -Filter $pattern | Select-Object -First 1
             if (-not $built) { throw "The build of $($lock.Name) ($kind) made no $pattern." }
             Copy-Item $built.FullName (Join-Path $target $pattern) -Force
+        }
+    }
+
+    Set-Content -Path $stamp -Value $expected
+}
+
+# The shim of the image decoders (design §5.0.4): native/imaging/xylemui_image.c with the one C file of Wuffs, compiled with the
+# static CRT into xylemui_image.lib, which NativeAOT links with libjpeg-turbo's and libwebp's static libraries, and into
+# xylemui_image.dll, which links them in, for the JIT. Its stamp covers the source, the libraries' pins, and this script.
+$shimSource = Join-Path $vendor '../native/imaging/xylemui_image.c'
+$locks = @{}
+foreach ($lock in Get-Locks) { $locks[$lock.Name] = $lock }
+$stamp = Join-Path $out 'xylemui_image.stamp'
+$expected = ((@('wuffs', 'libjpeg-turbo', 'libwebp') | ForEach-Object { $locks[$_].Sha256 }) + @((Get-Sha256 $shimSource), $script)) -join ' '
+if (-not $Force -and (Test-Path $stamp) -and (Get-Content $stamp) -eq $expected) {
+    Write-Host '==> xylemui_image is up to date'
+}
+else {
+    Write-Host '==> Build xylemui_image'
+    $build = Join-Path $work 'xylemui_image'
+    if (Test-Path $build) { Remove-Item -Recurse -Force $build }
+    New-Item -ItemType Directory -Force $build | Out-Null
+    Copy-Item (Get-Archive $locks['wuffs']) (Join-Path $build 'wuffs-v0.4.c')
+    $includes = @('libjpeg-turbo', 'libwebp') | ForEach-Object { "/I`"$(Join-Path $work "install/$_/include")`"" }
+    $libraries = foreach ($name in $intoShim.Keys) { foreach ($file in $intoShim[$name]) { "`"$(Join-Path $work "install/$name/lib/$file")`"" } }
+    $obj = Join-Path $build 'xylemui_image.obj'
+    $flags = "/nologo /O2 /Gy /MT /DNDEBUG /W3 /I`"$build`" $($includes -join ' ')"
+    Invoke-InMsvc $vcvars "cl $flags /c `"$shimSource`" /Fo`"$obj`""
+    Invoke-InMsvc $vcvars "lib /nologo /OUT:`"$(Join-Path $build 'xylemui_image.lib')`" `"$obj`""
+    Invoke-InMsvc $vcvars "link /nologo /DLL /OPT:REF /OPT:ICF /OUT:`"$(Join-Path $build 'xylemui_image.dll')`" /IMPLIB:`"$(Join-Path $build 'xylemui_image_dll.lib')`" `"$obj`" $($libraries -join ' ')"
+    foreach ($kind in 'static', 'shared') {
+        New-Item -ItemType Directory -Force (Join-Path $out $kind) | Out-Null
+    }
+
+    Copy-Item (Join-Path $build 'xylemui_image.lib') (Join-Path $out 'static/xylemui_image.lib') -Force
+    Copy-Item (Join-Path $build 'xylemui_image.dll') (Join-Path $out 'shared/xylemui_image.dll') -Force
+    foreach ($name in $intoShim.Keys) {
+        foreach ($file in $intoShim[$name]) {
+            Copy-Item (Join-Path $work "install/$name/lib/$file") (Join-Path $out "static/$file") -Force
         }
     }
 

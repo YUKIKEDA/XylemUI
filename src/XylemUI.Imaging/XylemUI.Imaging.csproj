@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XylemUI.Imaging</RootNamespace>
+    <Description>The XylemUI image decoders: Wuffs for PNG, GIF, and BMP, libjpeg-turbo for JPEG, and libwebp for WebP, behind one C shim; the EXIF orientation and the ICO container.</Description>
+    <!-- The native wrappers of the decoders (.cursor/rules/interop.mdc). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XylemUI.Imaging.Tests" />
+    <!-- The Windows rasterizer reads the PNG of a bitmap color glyph (design §5.0.3, rows T9 and IM1). -->
+    <InternalsVisibleTo Include="XylemUI.Platform.Windows" />
+    <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
+  </ItemGroup>
+  <!-- Under the JIT the shim loads as a DLL next to the app; a NativeAOT app links it statically (XylemUI.Imaging.targets). -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\xylemui_image.dll')">
+    <None
+      Include="$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\shared\xylemui_image.dll"
+      Link="%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+</Project>

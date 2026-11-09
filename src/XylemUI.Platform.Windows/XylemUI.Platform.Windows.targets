@@ -18,4 +18,6 @@
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'accesskit.dll'" />
     </ItemGroup>
   </Target>
+  <!-- The image decoders the rasterizer reads bitmap glyphs with, and the app its images with (design §5.0.4). -->
+  <Import Project="$(MSBuildThisFileDirectory)..\XylemUI.Imaging\XylemUI.Imaging.targets" />
 </Project>

@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 
-namespace XylemUI.Text.Tests;
+namespace XylemUI.Testing.Tests;
 
 // Writes small PNG files for the tests of the PNG decoder: chunks with their check values, and image data compressed with zlib.
 // Each test builds the one malformed piece it needs, so a file is a few hundred bytes at most.

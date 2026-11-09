@@ -1,20 +1,20 @@
 using TerraFX.Interop.Windows;
-using XylemUI.Text;
 using static TerraFX.Interop.Windows.Windows;
 
-namespace XylemUI.Platform.Windows.Tests;
+namespace XylemUI.Imaging.Tests;
 
-// The PNG decoder of bitmap color glyphs (design §5.0.3, "PNG bitmaps", roadmap row T9) against WIC, Windows' own PNG decoder,
-// as an independent reference, on every image of PngSuite (tests/XylemUI.Text.Tests/Png/README.md).
-public sealed class PngDecoderWicTests
+// The image decoder's PNG (Wuffs, design §5.0.4, row IM1) against WIC, Windows' own PNG decoder, as an independent reference, on
+// every image of PngSuite (Png/README.md). It replaced row T9's managed decoder, which this test held to WIC exactly.
+public sealed class ImageDecoderWicTests
 {
     private static readonly string Directory = Path.Combine(AppContext.BaseDirectory, "Png", "PngSuite");
 
     /// <summary>
-    /// Every valid image of PngSuite (every color type, bit depth, transparency, interlacing, and chunk order) reads to the same
-    /// premultiplied blue, green, red, and alpha as WIC gives; every broken image (a name that starts with "x") is broken. WIC
-    /// rounds 16-bit samples to 8 bits its own way (in a first run, 25 of the 16-bit images differed by 1 in some bytes), so a
-    /// 16-bit image is compared with WIC's 16-bit samples rounded as the design says, <c>(v + 128) / 257</c>.
+    /// Every valid image of PngSuite (every color type, bit depth, transparency, interlacing, and chunk order) reads to the
+    /// premultiplied blue, green, red, and alpha WIC gives, within 1 in each byte; every broken image (a name that starts with "x") is
+    /// broken, its checksums included (IM1's Grill, Q4). A 16-bit image is compared with WIC's 16-bit samples rounded as
+    /// <c>(v + 128) / 257</c>; Wuffs takes the high byte, and premultiplies with its own rounding, which spike S11 found 1 apart from
+    /// row T9's decoder at most (Issue #730).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -26,15 +26,15 @@ public sealed class PngDecoderWicTests
     ///   then rounded to 8 bits as <c>(v + 128) / 257</c> and premultiplied, and compare the sizes and every byte.
     ///
     /// Expected:
-    /// - Each of the 162 valid images reads, with WIC's size and bytes. Each of the 14 broken images returns
+    /// - Each of the 162 valid images reads, with WIC's size and every byte within 1. Each of the 14 broken images returns
     ///   <see langword="false"/>, and none throws.
     /// </remarks>
     [Fact]
-    public void TryDecode_PngSuite_IsWhatWicReads()
+    public void TryDecode_PngSuite_IsWhatWicReadsWithinOne()
     {
         string[] files = System.IO.Directory.GetFiles(Directory, "*.png");
         Assert.Equal(176, files.Length);
-        var decoder = new PngDecoder();
+        var decoder = new ImageDecoder();
         var differing = new List<string>();
         int valid = 0;
         int broken = 0;
@@ -52,7 +52,7 @@ public sealed class PngDecoderWicTests
 
             Assert.True(read, $"{name} did not read.");
             (int wicWidth, int wicHeight, byte[] wic) = name.EndsWith("16.png", StringComparison.Ordinal) ? WicSixteen(png) : Wic(png);
-            if ((width, height) != (wicWidth, wicHeight) || !decoder.Pixels.SequenceEqual(wic))
+            if ((width, height) != (wicWidth, wicHeight) || Largest(decoder.Pixels, wic) > 1)
             {
                 differing.Add($"{name}: {width}x{height} against {wicWidth}x{wicHeight}, {Differences(decoder.Pixels, wic)}");
             }
@@ -62,6 +62,22 @@ public sealed class PngDecoderWicTests
 
         Assert.Equal((162, 14), (valid, broken));
         Assert.True(differing.Count == 0, string.Join(Environment.NewLine, differing));
+    }
+
+    private static int Largest(ReadOnlySpan<byte> ours, byte[] wic)
+    {
+        if (ours.Length != wic.Length)
+        {
+            return int.MaxValue;
+        }
+
+        int largest = 0;
+        for (int i = 0; i < wic.Length; i++)
+        {
+            largest = Math.Max(largest, Math.Abs(ours[i] - wic[i]));
+        }
+
+        return largest;
     }
 
     private static string Differences(ReadOnlySpan<byte> ours, byte[] wic)

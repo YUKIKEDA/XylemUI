@@ -1,0 +1,23 @@
+<Project>
+  <!--
+    Imported (through XylemUI.Platform.Windows.targets) by an app that references XylemUI.Imaging. Under NativeAOT the shim of the
+    image decoders is linked into the executable with libjpeg-turbo's and libwebp's static libraries: the P/Invokes resolve directly
+    to it (DirectPInvoke + NativeLibrary, design §9), and the DLL the JIT uses is left out of the published files, so the app ships
+    as one executable. vendor/build.ps1 makes the libraries (design §5.0.4).
+  -->
+  <PropertyGroup>
+    <XylemUIImagingNativeDirectory>$(MSBuildThisFileDirectory)..\..\vendor\out\win-x64\</XylemUIImagingNativeDirectory>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <DirectPInvoke Include="xylemui_image" />
+    <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\xylemui_image.lib" />
+    <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\jpeg-static.lib" />
+    <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\libwebp.lib" />
+    <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\libsharpyuv.lib" />
+  </ItemGroup>
+  <Target Name="XylemUILeaveOutImagingDlls" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishAot)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'xylemui_image.dll'" />
+    </ItemGroup>
+  </Target>
+</Project>

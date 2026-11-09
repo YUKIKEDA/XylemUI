@@ -1,9 +1,9 @@
-namespace XylemUI.Text.Tests;
+namespace XylemUI.Testing.Tests;
 
-// The PNG decoder of bitmap color glyphs (design §5.0.3, "PNG bitmaps", roadmap row T9): what it reads, its rounding, and the
-// limits it keeps on untrusted input. Every form of the format is checked against WIC on PngSuite
-// (tests/XylemUI.Platform.Windows.Tests/PngDecoderWicTests.cs); these tests run on every OS, on small files TestPng writes. They
-// run apart from the other tests (HeavyAllocationGroup, Issue #221).
+// The managed PNG decoder that reads the goldens of the headless tests on every OS (design §12.3; it was row T9's decoder of bitmap
+// color glyphs, which XylemUI.Imaging reads with Wuffs now, row IM1): what it reads, its rounding, and the limits it keeps on
+// untrusted input. These tests run on every OS, on small files TestPng writes. They run apart from the other tests
+// (HeavyAllocationGroup, Issue #221).
 [Collection(HeavyAllocationGroup.Name)]
 public sealed class PngDecoderTests
 {
