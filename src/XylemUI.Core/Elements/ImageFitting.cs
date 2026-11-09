@@ -6,6 +6,10 @@ namespace XylemUI;
 /// Where an image is drawn in its box and which part of it (design §5.0.4, "Display"): CSS's <c>object-fit</c> with
 /// <c>object-position</c> 50 % 50 % (CSS Images 3, §5.5), the image's pixels counted as logical pixels. A fit that cuts the image
 /// (<see cref="ImageFit.Cover"/>, <see cref="ImageFit.None"/>) draws the part inside the box over the box, so that no clip is needed.
+/// The part is kept inside the image: it is found in the box's coordinates and divided by the scale, so the rounding of a float
+/// coordinate far from 0 grows by 1 / scale, and an image much larger than its box put it past the image's edge. The renderer fails
+/// the invariant for a part past the edge (IM1's Grill, Q21); a large image in a small box at (1,041.56, 3,990.03) gave a part
+/// 0.118 pixels past it (PR #756's review).
 /// </summary>
 internal static class ImageFitting
 {
@@ -50,6 +54,10 @@ internal static class ImageFitting
             return new Vector4(0, 0, width, height);
         }
 
-        return new Vector4((cutLeft - left) / scale, (cutTop - top) / scale, destination.Z / scale, destination.W / scale);
+        float partLeft = Math.Clamp((cutLeft - left) / scale, 0, width);
+        float partTop = Math.Clamp((cutTop - top) / scale, 0, height);
+        float partRight = Math.Clamp((right - left) / scale, partLeft, width);
+        float partBottom = Math.Clamp((bottom - top) / scale, partTop, height);
+        return new Vector4(partLeft, partTop, partRight - partLeft, partBottom - partTop);
     }
 }

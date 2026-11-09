@@ -112,7 +112,7 @@ internal sealed class ImageBlock
         if (_context is null)
         {
             // No loop to post to (a tree drawn without one, as a unit test's): the decode runs here.
-            var request = new ImageRequest(source, width, height, SynchronizationContext.Current ?? new SynchronizationContext(), _complete);
+            var request = new ImageRequest(source, width, height, null, _complete);
             _pending = request;
             Complete(request, ImageDecodeQueue.Decode(source, width, height));
             return;

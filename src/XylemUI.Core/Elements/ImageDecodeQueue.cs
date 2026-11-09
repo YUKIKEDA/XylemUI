@@ -78,14 +78,15 @@ internal static class ImageDecodeQueue
             : default;
     }
 
-    // Starts a worker for each waiting decode while fewer than the limit run. A worker that finds the queue empty stops, then
-    // looks again: a decode queued between its last look and its stop would otherwise wait for the next one.
+    // Starts a worker for each waiting decode while fewer than the limit run, and no more workers than decodes wait. A worker that
+    // finds the queue empty stops, then looks again: a decode queued between its last look and its stop would otherwise wait for the
+    // next one.
     private static void TryStart()
     {
         while (!Waiting.IsEmpty)
         {
             int running = Volatile.Read(ref _running);
-            if (running >= Limit)
+            if (running >= Limit || running >= Waiting.Count)
             {
                 return;
             }
@@ -139,9 +140,10 @@ internal readonly record struct ImageResult(byte[]? Pixels, int Width, int Heigh
 /// <param name="source">The source.</param>
 /// <param name="width">The width asked for; 0 for the image's.</param>
 /// <param name="height">The height asked for; 0 for the image's.</param>
-/// <param name="context">The UI thread's context, which the result is posted to.</param>
+/// <param name="context">The UI thread's context, which the result is posted to; null for a request the element decodes itself,
+/// with no loop to post to, which is not queued.</param>
 /// <param name="complete">The element's completion, run on the UI thread.</param>
-internal sealed class ImageRequest(ImageSource source, int width, int height, SynchronizationContext context, Action<ImageRequest> complete)
+internal sealed class ImageRequest(ImageSource source, int width, int height, SynchronizationContext? context, Action<ImageRequest> complete)
 {
     private volatile bool _cancelled;
 
@@ -176,7 +178,9 @@ internal sealed class ImageRequest(ImageSource source, int width, int height, Sy
         }
 
         Result = ImageDecodeQueue.Decode(source, width, height);
-        context.Post(static state => ((ImageRequest)state!).Complete(), this);
+
+        // A queued request has a context: the element queues only when it found one.
+        context!.Post(static state => ((ImageRequest)state!).Complete(), this);
     }
 
     private void Complete()

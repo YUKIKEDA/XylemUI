@@ -63,7 +63,7 @@ public sealed class ImageSource : IEquatable<ImageSource>
     public override bool Equals(object? obj) => Equals(obj as ImageSource);
 
     /// <inheritdoc/>
-    public override int GetHashCode() => HashCode.Combine(_path, _assembly, _bytes.Length);
+    public override int GetHashCode() => HashCode.Combine(_path, _assembly, _bytes);
 
     /// <summary>
     /// Reads the image's bytes, on a worker thread.
