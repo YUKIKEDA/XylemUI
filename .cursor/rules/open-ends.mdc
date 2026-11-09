@@ -21,6 +21,8 @@ A claim about a table is one the table shows as it is laid out. Q2's record said
 
 A record that says two data sets are the same ("the two fonts give the same code points") matches them key by key and counts what differs, and names one example. IC1's spike compared the sets of the two fonts' code points, found them equal, and wrote that each name has the same code point in both; by name, 7,580 of 9,743 differ (PR #717's review). A count in a record is taken from the source data, not from what was made from it: the same spike counted 19,558 names from the lines of the file it generated, where the two JSON files hold 19,683.
 
+A spike that writes that a library cannot do something reads the library's API for it first, and tells a failure of the call the harness made from a thing the library cannot do. S11 wrote that libjpeg-turbo's default build does not read a 12-bit JPEG because the harness called the 8-bit `jpeg_read_scanlines`; libjpeg-turbo 3 reads it with `jpeg12_read_scanlines` (PR #732's review).
+
 A size a record gives for a type is read from the type's definition (its fields' types, or `Unsafe.SizeOf`), not from what the field stands for. V1d's record said the handler entry grew by a reference, 8 bytes; the field is a `Handle<ScopeData>(int, ulong)`, 16 bytes, and the review found it (PR #340).
 
 A comment in the code is held to the same line: it says what was measured, and marks a cause that was not confirmed as not confirmed, with the Issue number.
