@@ -6,7 +6,9 @@
 #   ./vendor/build.ps1          build what is missing or out of date
 #   ./vendor/build.ps1 -Force   build everything again
 #
-# Output: vendor/out/win-x64/static/<name>.lib and vendor/out/win-x64/shared/<name>.dll. Nothing here is committed.
+# Output: vendor/out/win-x64/static/<name>.lib and vendor/out/win-x64/shared/<name>.dll; the build machine's HarfBuzz with its
+# subset library in vendor/out/win-x64/tool (the icon build tool of XylemUI.Theme.Fluent, design §5.0.4); the Fluent icon files
+# in vendor/out/fluent. Nothing here is committed.
 param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +27,14 @@ if (-not $IsWindows) {
 # The CMake options of each library: no optional dependency, nothing but the library itself.
 $options = @{
     harfbuzz = @('-DHB_BUILD_SUBSET=OFF', '-DHB_BUILD_RASTER=OFF', '-DHB_BUILD_VECTOR=OFF', '-DHB_BUILD_GPU=OFF', '-DHB_BUILD_UTILS=OFF')
+}
+
+# The files taken as they are, by the name each gets in vendor/out/fluent (design §5.0.4).
+$files = @{
+    'fluent-regular-ttf'  = 'FluentSystemIcons-Regular.ttf'
+    'fluent-filled-ttf'   = 'FluentSystemIcons-Filled.ttf'
+    'fluent-regular-json' = 'FluentSystemIcons-Regular.json'
+    'fluent-filled-json'  = 'FluentSystemIcons-Filled.json'
 }
 
 # The libraries taken from a release archive, by their paths in it (design §4.4.1): AccessKit's static library is built with the
@@ -147,6 +157,19 @@ foreach ($lock in Get-Locks | Where-Object { $prebuilt.ContainsKey($_.Name) }) {
     Set-Content -Path $stamp -Value $expected
 }
 
+foreach ($lock in Get-Locks | Where-Object { $files.ContainsKey($_.Name) }) {
+    $target = Join-Path $vendor 'out/fluent'
+    $file = Join-Path $target $files[$lock.Name]
+    if (-not $Force -and (Test-Path $file) -and (Get-Sha256 $file) -eq $lock.Sha256) {
+        Write-Host "==> $($lock.Name) $($lock.Version) is up to date"
+        continue
+    }
+
+    New-Item -ItemType Directory -Force $target | Out-Null
+    Write-Host "==> Take $($lock.Name) $($lock.Version)"
+    Copy-Item (Get-Archive $lock) $file -Force
+}
+
 $vcvars = Get-VcVars
 # A line with no CMake options is data for a generator (unicode-ucd, tools/UnicodeTableGen), not a library to build.
 foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
@@ -159,28 +182,38 @@ foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
     }
 
     $source = Get-Source $lock
-    foreach ($kind in 'static', 'shared') {
+    # HarfBuzz also builds a third time for the build machine, with its subset library, which the icon build tool of
+    # XylemUI.Theme.Fluent loads; the libraries an app links keep the subset out (design §5.0.4).
+    $kinds = if ($lock.Name -eq 'harfbuzz') { 'static', 'shared', 'tool' } else { 'static', 'shared' }
+    foreach ($kind in $kinds) {
         Write-Host "==> Build $($lock.Name) $($lock.Version) ($kind)"
         $build = Join-Path $work "$($lock.Name)-$kind"
         if (Test-Path $build) { Remove-Item -Recurse -Force $build }
-        $shared = if ($kind -eq 'shared') { 'ON' } else { 'OFF' }
+        $shared = if ($kind -ne 'static') { 'ON' } else { 'OFF' }
         # The static library links into a NativeAOT executable, whose runtime uses the static CRT (/MT): the CRTs must match, or
         # the link fails with LNK2038. The DLL, for the JIT, uses the dynamic CRT (/MD) like any DLL.
-        $runtime = if ($kind -eq 'shared') { 'MultiThreadedDLL' } else { 'MultiThreaded' }
+        $runtime = if ($kind -ne 'static') { 'MultiThreadedDLL' } else { 'MultiThreaded' }
+        $kindOptions = if ($kind -eq 'tool') { $options[$lock.Name] -replace '^-DHB_BUILD_SUBSET=OFF$', '-DHB_BUILD_SUBSET=ON' } else { $options[$lock.Name] }
         $configure = @(
             "cmake -S `"$source`" -B `"$build`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release",
             "-DBUILD_SHARED_LIBS=$shared -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=$runtime",
-            ($options[$lock.Name] -join ' ')
+            ($kindOptions -join ' ')
         ) -join ' '
         Invoke-InMsvc $vcvars $configure
         Invoke-InMsvc $vcvars "cmake --build `"$build`""
 
         $target = Join-Path $out $kind
         New-Item -ItemType Directory -Force $target | Out-Null
-        $pattern = if ($kind -eq 'shared') { "$($lock.Name).dll" } else { "$($lock.Name).lib" }
-        $built = Get-ChildItem -Path $build -Recurse -Filter $pattern | Select-Object -First 1
-        if (-not $built) { throw "The build of $($lock.Name) ($kind) made no $pattern." }
-        Copy-Item $built.FullName (Join-Path $target $pattern) -Force
+        $patterns = switch ($kind) {
+            'static' { @("$($lock.Name).lib") }
+            'shared' { @("$($lock.Name).dll") }
+            'tool' { @("$($lock.Name).dll", "$($lock.Name)-subset.dll") }
+        }
+        foreach ($pattern in $patterns) {
+            $built = Get-ChildItem -Path $build -Recurse -Filter $pattern | Select-Object -First 1
+            if (-not $built) { throw "The build of $($lock.Name) ($kind) made no $pattern." }
+            Copy-Item $built.FullName (Join-Path $target $pattern) -Force
+        }
     }
 
     Set-Content -Path $stamp -Value $expected

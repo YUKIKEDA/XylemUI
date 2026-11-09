@@ -156,6 +156,13 @@ public sealed record AccessibilityInfo
     public SemanticsRange? Range { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the node and its subtree are left out of the accessibility tree and out of the name an
+    /// ancestor takes from its content: a decorative image, icon, or divider (design §4.4.1, "Excluded nodes"; Flutter's
+    /// <c>ExcludeSemantics</c>, Avalonia's <c>AccessibilityView.Raw</c>). A node that takes the focus does not belong inside one.
+    /// </summary>
+    public bool Excluded { get; init; }
+
+    /// <summary>
     /// Returns this information over another one: each value this one leaves unset is the other's.
     /// </summary>
     /// <param name="under">The information below, a part's.</param>
@@ -171,6 +178,7 @@ public sealed record AccessibilityInfo
                 Value = Value ?? under.Value,
                 States = States != SemanticsStates.None ? States : under.States,
                 Range = Range ?? under.Range,
+                Excluded = Excluded || under.Excluded,
                 PartStates = PartStates | under.PartStates,
                 Placeholder = Placeholder ?? under.Placeholder,
             };

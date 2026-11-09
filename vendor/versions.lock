@@ -6,7 +6,13 @@
 # AccessKit is not built: the release archive of its C bindings holds the libraries for MSVC, which are taken as they are
 # (design §4.4.1, row P02g). A line whose name has neither CMake options nor prebuilt paths in vendor/build.ps1 is data, not a
 # library: unicode-ucd is the Unicode Character Database that tools/UnicodeTableGen generates the text pipeline's tables from
-# (design §8.13).
+# (design §8.13). The fluent-* lines are the files of Fluent UI System Icons (MIT, release 1.1.344, commit a347af9) that
+# vendor/build.ps1 copies to vendor/out/fluent: the two fonts the build tool of XylemUI.Theme.Fluent keeps an app's glyphs of,
+# and the two maps from names to code points that FluentIcons.g.cs is generated from (design §5.0.4).
 accesskit  0.23.1  35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f  https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip
 harfbuzz  14.5.1  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz
 unicode-ucd  18.0.0  7b3e555514060b92290d154f53655c5eb0fa62b16eb04c03434ff72d1a66a0d8  https://www.unicode.org/Public/18.0.0/ucd/UCD.zip
+fluent-regular-ttf  1.1.344  f977ae5bfb46661e7ba94b098e0d7720e27af888e57b9b14e239933ac4c0e6f4  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Regular.ttf
+fluent-filled-ttf  1.1.344  0a5adcf88ab5b243096da72d965bd22cd303200b36ba739a5a2a81086ef847ab  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Filled.ttf
+fluent-regular-json  1.1.344  c6e91d8b156b6d29aff3aeccd8d6b9752c2365c9f9ad02b194d5d791da7abee8  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Regular.json
+fluent-filled-json  1.1.344  0db027f0c130330a2660034b0036d37fa68a206beea38ff59595502f75897546  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Filled.json

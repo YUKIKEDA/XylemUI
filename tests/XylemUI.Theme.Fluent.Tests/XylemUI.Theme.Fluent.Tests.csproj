@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <RootNamespace>XylemUI.Theme.Fluent.Tests</RootNamespace>
+    <!-- A test reads the length of a resource from an assembly file through a pointer. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Theme.Fluent\XylemUI.Theme.Fluent.csproj" />
+    <!-- The icons are drawn headless, as [UiFact] tests, and their pixels on WARP (design §12.3). -->
+    <ProjectReference Include="..\..\src\XylemUI.Testing.XUnit\XylemUI.Testing.XUnit.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Testing.D3D11\XylemUI.Testing.D3D11.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+  <!-- A project that draws icons keeps the glyphs it uses, as an app does (design §12.5). -->
+  <Import Project="..\..\src\XylemUI.Theme.Fluent\XylemUI.Theme.Fluent.targets" />
+</Project>

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The build tool of XylemUI.Theme.Fluent (design §5.0.4, "Icons"). It runs on the build machine, never in an app:
+      keep      after an app's compile, keeps the Fluent glyphs the app's IL uses and writes them into the app's assembly
+      generate  writes src/XylemUI.Theme.Fluent/FluentIcons.g.cs from the two maps of names to code points
+    It loads the build machine's HarfBuzz with its subset library, which vendor/build.ps1 makes in vendor/out/win-x64/tool.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XylemUI.Tools.FluentIcons</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Mono.Cecil" />
+  </ItemGroup>
+  <!-- Copied once vendor/build.ps1 has made them (Windows); the generate mode needs neither. -->
+  <ItemGroup>
+    <None
+      Include="..\..\vendor\out\win-x64\tool\harfbuzz.dll"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('..\..\vendor\out\win-x64\tool\harfbuzz.dll')"
+    />
+    <None
+      Include="..\..\vendor\out\win-x64\tool\harfbuzz-subset.dll"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('..\..\vendor\out\win-x64\tool\harfbuzz-subset.dll')"
+    />
+  </ItemGroup>
+</Project>

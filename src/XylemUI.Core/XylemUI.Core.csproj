@@ -26,6 +26,8 @@
     <InternalsVisibleTo Include="XylemUI.Primitives" />
     <!-- The primitives are tested on a tree with no window (row V1d). -->
     <InternalsVisibleTo Include="XylemUI.Primitives.Tests" />
+    <!-- The icon tests read an icon's node and box (row IC1). -->
+    <InternalsVisibleTo Include="XylemUI.Theme.Fluent.Tests" />
     <!-- Text leaves are measured with HarfBuzz, whose native library the Windows-only text tests load (row V1a). -->
     <InternalsVisibleTo Include="XylemUI.Text.Tests" />
     <!-- The headless harness ships with Core's version and drives the internal input, frames, and tree (design §12, P02a). -->

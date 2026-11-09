@@ -109,6 +109,7 @@ return scenario switch
     "menubar" => MenuBarCost.Run(),
     "dragdrop" => DragDropCost.Run(),
     "tooltip" => TooltipCost.Run(),
+    "icons" => IconCost.Run(),
     "select" => SelectCost.Run(),
     "animations" => AnimationCost.Run(),
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),

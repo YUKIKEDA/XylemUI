@@ -18,8 +18,10 @@
     <Project Path="src/XylemUI.Testing.XUnit/XylemUI.Testing.XUnit.csproj" />
     <Project Path="src/XylemUI.Testing/XylemUI.Testing.csproj" />
     <Project Path="src/XylemUI.Text/XylemUI.Text.csproj" />
+    <Project Path="src/XylemUI.Theme.Fluent/XylemUI.Theme.Fluent.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/FluentIconsTool/FluentIconsTool.csproj" />
     <Project Path="tools/UnicodeTableGen/UnicodeTableGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -30,5 +32,6 @@
     <Project Path="tests/XylemUI.Rendering.D3D11.Tests/XylemUI.Rendering.D3D11.Tests.csproj" />
     <Project Path="tests/XylemUI.Testing.Tests/XylemUI.Testing.Tests.csproj" />
     <Project Path="tests/XylemUI.Text.Tests/XylemUI.Text.Tests.csproj" />
+    <Project Path="tests/XylemUI.Theme.Fluent.Tests/XylemUI.Theme.Fluent.Tests.csproj" />
   </Folder>
 </Solution>
