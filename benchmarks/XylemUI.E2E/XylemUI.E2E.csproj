@@ -12,6 +12,8 @@
     <ProjectReference Include="..\..\src\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
     <!-- The todo scene runs the sample's own TodoApp (row V3c). -->
     <ProjectReference Include="..\..\samples\Todo\Todo.csproj" />
+    <!-- The icons scene draws 100 Fluent icons, the only ones the executable reads (row IC1). -->
+    <ProjectReference Include="..\..\src\XylemUI.Theme.Fluent\XylemUI.Theme.Fluent.csproj" />
   </ItemGroup>
   <!-- The test font, inside the executable, so the measured app needs no file next to it. -->
   <ItemGroup>
@@ -19,4 +21,5 @@
   </ItemGroup>
   <Import Project="..\..\src\XylemUI.Text\XylemUI.Text.targets" />
   <Import Project="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.targets" />
+  <Import Project="..\..\src\XylemUI.Theme.Fluent\XylemUI.Theme.Fluent.targets" />
 </Project>

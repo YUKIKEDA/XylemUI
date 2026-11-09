@@ -1046,6 +1046,80 @@ public sealed class AccessibilityTests
         Assert.Equal(["two", "more"], app.Tree.Accessibility.Find(text.Node)!.Links.Select(l => l.Name));
     }
 
+    /// <summary>
+    /// A node the app excludes is left out of the tree with its subtree, and gives no text to the name of the button it is in
+    /// (design §4.4.1, "Excluded nodes").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a button whose content is a row of an excluded box holding the text "x" and the text "Save", and an excluded
+    ///   box holding the text "y" and a button "z".
+    ///
+    /// Steps:
+    /// - Read the tree.
+    ///
+    /// Expected:
+    /// - One button, named "Save"; no text node; no button "z"; nothing found by the role Text.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Excluded_LeavesTheSubtreeOutOfTheTreeAndOfTheName()
+    {
+        var excluded = new AccessibilityInfo { Excluded = true };
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                Button(Row(Box(Elements.Text("x")).Accessible(excluded), Elements.Text("Save")), () => { }),
+                Box(Column(Elements.Text("y"), Button("z", () => { }))).Accessible(excluded)
+            )
+        );
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(["Save"], app.FindByRole(SemanticsRole.Button).Select(b => app.AccessibilityOf(b).Name));
+        Assert.Empty(app.FindByRole(SemanticsRole.Text));
+        Assert.Equal([SemanticsRole.Button], app.AccessibilityTree().Root!.Children.Select(c => c.Role));
+    }
+
+    /// <summary>
+    /// A focus inside an excluded node is a fault a Debug build reports; a Release build gives the focus to the nearest ancestor that
+    /// has a node, so that it is never on no node (design §4.4.1, "Excluded nodes").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A group (a focusable box) holding an excluded box that holds a focusable box.
+    ///
+    /// Steps:
+    /// - Focus the inner box; ask the tree for the node that holds the focus.
+    ///
+    /// Expected:
+    /// - Debug: an invariant failure. Release: the group's node.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Excluded_FocusInside_IsReportedInDebugAndGoesToTheAncestorInRelease()
+    {
+        Element? group = null;
+        Element? inner = null;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            Element focusable = Box().Width(10).Height(10).Focusable();
+            inner = focusable;
+            Element outer = Box(Box(focusable).Accessible(new AccessibilityInfo { Excluded = true })).Focusable();
+            group = outer;
+            return outer;
+        });
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+        Assert.True(app.Focus(inner!.Value));
+        _ = app.PumpAndSettle();
+
+#if DEBUG
+        Exception failed = Assert.ThrowsAny<Exception>(() => tree.FocusNode());
+        Assert.Equal("InvariantViolationException", failed.GetType().Name);
+#else
+        Assert.Same(tree.Find(group!.Value.Node), tree.FocusNode());
+#endif
+    }
+
     // Records each change the tree hands it.
     private sealed class Recorder : IAccessibilityBridge
     {

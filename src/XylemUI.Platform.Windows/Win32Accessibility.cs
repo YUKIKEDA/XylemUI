@@ -396,7 +396,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         return update;
     }
 
-    private ulong FocusId(AccessibilityTree accessibility, AccessibilityNode root) => (accessibility.Find(_tree.Focus.Focused) ?? root).Id.Value;
+    private static ulong FocusId(AccessibilityTree accessibility, AccessibilityNode root) => (accessibility.FocusNode() ?? root).Id.Value;
 
     private void PushTree(nint update, AccessibilityNode node)
     {

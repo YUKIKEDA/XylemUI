@@ -1,0 +1,51 @@
+<Project>
+  <!--
+    Imported by a project that uses FluentIcons (an app, or a test project that draws icons, design §5.0.4 and §12.5). After the
+    compiler writes the project's assembly, and before anything copies it or ILC reads it, tools/FluentIconsTool finds the
+    FluentIcons getters that its IL and the IL of the assemblies it references call, keeps those glyphs of the two Fluent fonts with
+    HarfBuzz's subset library, and writes them into the assembly as resources; FluentIcons registers them at its first glyph.
+    A second build that does not compile again finds the same fonts there and writes nothing.
+
+    XylemUIKeepAllIcons=true keeps every glyph (Flutter's no-tree-shake-icons), for an app that makes its glyphs in ways the IL
+    does not show. vendor/build.ps1 makes the tool's HarfBuzz and takes the fonts; the build machine is Windows until rows P06
+    and P04.
+  -->
+  <PropertyGroup>
+    <XylemUIKeepAllIcons Condition="'$(XylemUIKeepAllIcons)' == ''">false</XylemUIKeepAllIcons>
+    <XylemUIFluentIconsToolProject>$(MSBuildThisFileDirectory)..\..\tools\FluentIconsTool\FluentIconsTool.csproj</XylemUIFluentIconsToolProject>
+    <XylemUIFluentIconsTool>$(MSBuildThisFileDirectory)..\..\tools\FluentIconsTool\bin\$(Configuration)\net10.0\FluentIconsTool.dll</XylemUIFluentIconsTool>
+    <XylemUIFluentDirectory>$(MSBuildThisFileDirectory)..\..\vendor\out\fluent</XylemUIFluentDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Built first, for the build machine: no runtime of the app is passed down. -->
+    <ProjectReference
+      Include="$(XylemUIFluentIconsToolProject)"
+      ReferenceOutputAssembly="false"
+      Private="false"
+      SkipGetTargetFrameworkProperties="true"
+      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishAot;TargetFramework;_IsPublishing"
+    />
+  </ItemGroup>
+  <Target Name="XylemUIKeepIcons" AfterTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
+    <!-- Set here: the project's intermediate path is not known yet where this file is imported. -->
+    <PropertyGroup>
+      <XylemUIIconReferences>$(IntermediateOutputPath)XylemUI.Icons.references</XylemUIIconReferences>
+    </PropertyGroup>
+    <Message
+      Importance="high"
+      Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
+      Text="XylemUI.Theme.Fluent: the icon fonts are kept on a Windows build machine only (rows P06, P04); FluentIcons throws without them."
+    />
+    <WriteLinesToFile
+      Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+      File="$(XylemUIIconReferences)"
+      Lines="@(ReferencePath->'%(FullPath)')"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+    />
+    <Exec
+      Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+      Command="dotnet exec &quot;$(XylemUIFluentIconsTool)&quot; keep &quot;@(IntermediateAssembly->'%(FullPath)')&quot; &quot;$(XylemUIIconReferences)&quot; &quot;$(XylemUIFluentDirectory)&quot; $(XylemUIKeepAllIcons)"
+    />
+  </Target>
+</Project>

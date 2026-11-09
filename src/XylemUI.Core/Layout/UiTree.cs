@@ -208,6 +208,7 @@ internal sealed class UiTree
     internal void SetAccessibility(NodeHandle node, AccessibilityInfo info)
     {
         _a11y.Info[node] = info;
+        Note(_a11y.ExcludedByApp, node, info.Excluded);
         MarkAccessibility(node);
     }
 
@@ -219,8 +220,19 @@ internal sealed class UiTree
     internal void SetPartAccessibility(NodeHandle node, AccessibilityInfo info)
     {
         _a11y.Part[node] = info;
+        Note(_a11y.ExcludedByPart, node, info.Excluded);
         MarkAccessibility(node);
     }
+
+    /// <summary>
+    /// Returns a value indicating whether a node is left out of the accessibility tree with its subtree (design §4.4.1, "Excluded
+    /// nodes"): read from sets of the excluded nodes, so that a tree with none looks up nothing for each node it walks.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns><see langword="true"/> when the app's or the part's information excludes it.</returns>
+    internal bool IsAccessibilityExcluded(NodeHandle node) =>
+        (_a11y.ExcludedByApp.Count > 0 && _a11y.ExcludedByApp.Contains(node))
+        || (_a11y.ExcludedByPart.Count > 0 && _a11y.ExcludedByPart.Contains(node));
 
     /// <summary>
     /// Sets the signal whose value is a node's value to assistive technology when no information gives one: a text field's text. The
@@ -2309,11 +2321,13 @@ internal sealed class UiTree
         if (_a11y.Info.Count > 0)
         {
             _ = _a11y.Info.Remove(node);
+            _ = _a11y.ExcludedByApp.Remove(node);
         }
 
         if (_a11y.Part.Count > 0)
         {
             _ = _a11y.Part.Remove(node);
+            _ = _a11y.ExcludedByPart.Remove(node);
         }
 
         if (_a11y.Values.Count > 0)
@@ -2398,6 +2412,19 @@ internal sealed class UiTree
     }
 
     // The accessibility information of the tree's nodes and the tree made from it (design §4.4.1).
+    // Adds a node to a set of the excluded nodes, or takes it out.
+    private static void Note(HashSet<NodeHandle> excluded, NodeHandle node, bool isExcluded)
+    {
+        if (isExcluded)
+        {
+            _ = excluded.Add(node);
+        }
+        else if (excluded.Count > 0)
+        {
+            _ = excluded.Remove(node);
+        }
+    }
+
     private sealed class AccessibilityTables
     {
         // The app's information of the nodes that have one.
@@ -2405,6 +2432,11 @@ internal sealed class UiTree
 
         // The parts' information of the nodes that have one.
         public Dictionary<NodeHandle, AccessibilityInfo> Part { get; } = [];
+
+        // The nodes the app's or the part's information leaves out of the tree (AccessibilityInfo.Excluded).
+        public HashSet<NodeHandle> ExcludedByApp { get; } = [];
+
+        public HashSet<NodeHandle> ExcludedByPart { get; } = [];
 
         // The signals of the nodes' values (a text field's text).
         public Dictionary<NodeHandle, Signal<string>> Values { get; } = [];

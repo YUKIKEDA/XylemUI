@@ -118,6 +118,43 @@ internal sealed class AccessibilityTree(UiTree tree)
     public AccessibilityNode? Find(NodeHandle node) => _nodes.GetValueOrDefault(node);
 
     /// <summary>
+    /// Returns the node that holds the focus for assistive technology: the focused node's, else its nearest ancestor's that has one,
+    /// so that the focus is never on no node; <see langword="null"/> when nothing above has one (design §4.4.1, "Excluded nodes"). A
+    /// focus inside an excluded node is a fault of the tree, which a Debug build reports.
+    /// </summary>
+    /// <returns>The node, or <see langword="null"/>.</returns>
+    public AccessibilityNode? FocusNode()
+    {
+        NodeHandle focused = tree.Focus.Focused;
+        if (!tree.Nodes.IsAlive(focused))
+        {
+            return null;
+        }
+
+#if DEBUG
+        for (NodeHandle at = focused; !at.IsNone; at = tree.Nodes.GetRef(at).Parent)
+        {
+            if (IsExcluded(at))
+            {
+                Invariant.Fail(
+                    "The focus is inside a node left out of the accessibility tree (AccessibilityInfo.Excluded); a decorative node holds nothing that takes the focus."
+                );
+            }
+        }
+#endif
+
+        for (NodeHandle at = focused; !at.IsNone; at = tree.Nodes.GetRef(at).Parent)
+        {
+            if (Find(at) is { } node)
+            {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Returns the node of an id, or <see langword="null"/> when it went away.
     /// </summary>
     /// <param name="id">The id.</param>
@@ -448,7 +485,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         {
             foreach (NodeHandle root in _popupRoots)
             {
-                if (tree.Nodes.IsAlive(root) && !tree.Nodes.GetRef(root).Layout.Style.Hidden)
+                if (tree.Nodes.IsAlive(root) && !tree.Nodes.GetRef(root).Layout.Style.Hidden && !IsExcluded(root))
                 {
                     if (RoleOf(root, folding: false) != SemanticsRole.None)
                     {
@@ -470,7 +507,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         IVirtualHost? rows = tree.VirtualHostOf(parent);
         for (NodeHandle child = tree.Nodes.GetRef(parent).FirstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
-            if (tree.Nodes.GetRef(child).Layout.Style.Hidden)
+            if (tree.Nodes.GetRef(child).Layout.Style.Hidden || IsExcluded(child))
             {
                 continue;
             }
@@ -490,6 +527,9 @@ internal sealed class AccessibilityTree(UiTree tree)
             }
         }
     }
+
+    // Whether a node is left out with its subtree (design §4.4.1, "Excluded nodes").
+    private bool IsExcluded(NodeHandle node) => tree.IsAccessibilityExcluded(node);
 
     private bool HoldsFocus(NodeHandle node)
     {
@@ -660,7 +700,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         ref UiNode n = ref tree.Nodes.GetRef(handle);
 
         // A node that is a node of the tree under the folding one (CollectBelow) gives its text to its own node, not to the name.
-        if (n.Layout.Style.Hidden || (!top && RoleOf(handle, folding: true) != SemanticsRole.None))
+        if (n.Layout.Style.Hidden || IsExcluded(handle) || (!top && RoleOf(handle, folding: true) != SemanticsRole.None))
         {
             return;
         }

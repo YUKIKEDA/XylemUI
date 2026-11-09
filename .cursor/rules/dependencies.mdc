@@ -28,6 +28,7 @@ Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in t
 
 - Native, by design: HarfBuzz (static); AccessKit (static, Windows, from the C bindings' release archive pinned by version and SHA-256, not built from source, design §4.4.1 and §9, row P02g); FreeType, wgpu-native, SDL3 (static, Linux only); fontconfig, libdbus-1 (dynamic, Linux only). Windows rasterizes glyphs with DirectWrite and macOS with Core Text, so they do not link FreeType (design §5.0.3, row T4).
 - Managed: TerraFX.Interop.Windows (declarations only).
+- Build tools only: Mono.Cecil, in tools/FluentIconsTool, which writes the kept icon fonts into an app's assembly on the build machine and never ships in an app (design §5.0.4, row IC1).
 - Not as dependencies of the engine: other UI stacks, Skia, CEF, GPU abstraction libraries (Silk.NET, Vortice).
 
 Test, benchmark, and tool projects may use packages that only those projects reference (xUnit, BenchmarkDotNet, `Microsoft.Extensions.TimeProvider.Testing`); point 2 and point 3 do not apply to them.
