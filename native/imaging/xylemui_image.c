@@ -145,7 +145,9 @@ static void xi_jpeg_exit(j_common_ptr info) { longjmp(((xi_jpeg_error*)info->err
 
 static void xi_jpeg_message(j_common_ptr info) { (void)info; }
 
-// A CMYK JPEG is written inverted by Adobe's applications, as libjpeg reads it: red is C × K / 255 (as Skia converts it).
+// A CMYK JPEG is written inverted by Adobe's applications, as libjpeg reads it: red is C × K / 255 (as Skia converts it). Every
+// CMYK JPEG is taken as inverted, whether or not it has Adobe's APP14 marker (libjpeg's saw_Adobe_marker), as Skia's SkJpegCodec
+// takes it; a CMYK JPEG of another writer (rare) would show its colors inverted.
 static void xi_cmyk_to_bgra(uint8_t* row, uint32_t width) {
   for (uint32_t x = 0; x < width; x++) {
     uint8_t* p = row + (size_t)x * 4;
