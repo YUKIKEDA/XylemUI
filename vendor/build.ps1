@@ -42,6 +42,21 @@ $intoShim = @{
     libwebp = @('libwebp.lib', 'libsharpyuv.lib')
 }
 
+# The files of skcms, by their paths under the shim's build folder (design §5.0.4, IM1's Grill, Q28): skcms.cc includes its
+# headers as src/..., and each transform file includes its own folder's headers.
+$skcms = [ordered]@{
+    'skcms-cc'            = 'skcms/skcms.cc'
+    'skcms-h'             = 'skcms/skcms.h'
+    'skcms-transform-inl' = 'skcms/src/Transform_inl.h'
+    'skcms-transform-h'   = 'skcms/src/skcms_Transform.h'
+    'skcms-baseline'      = 'skcms/src/skcms_TransformBaseline.cc'
+    'skcms-hsw'           = 'skcms/src/skcms_TransformHsw.cc'
+    'skcms-skx'           = 'skcms/src/skcms_TransformSkx.cc'
+    'skcms-internals'     = 'skcms/src/skcms_internals.h'
+    'skcms-public'        = 'skcms/src/skcms_public.h'
+    'skia-license'        = 'skcms/LICENSE'
+}
+
 # The files taken as they are, by the name each gets in vendor/out/fluent (design §5.0.4).
 $files = @{
     'fluent-regular-ttf'  = 'FluentSystemIcons-Regular.ttf'
@@ -250,14 +265,16 @@ foreach ($lock in Get-Locks | Where-Object { $options.ContainsKey($_.Name) }) {
     Set-Content -Path $stamp -Value $expected
 }
 
-# The shim of the image decoders (design §5.0.4): native/imaging/xylemui_image.c with the one C file of Wuffs, compiled with the
-# static CRT into xylemui_image.lib, which NativeAOT links with libjpeg-turbo's and libwebp's static libraries, and into
+# The shim of the image decoders (design §5.0.4): native/imaging/xylemui_image.c with the one C file of Wuffs, and skcms as C++
+# compiled with clang-cl (its transforms for AVX2 and AVX-512 built with those instruction sets; skcms picks one at run time; under
+# MSVC skcms has no SIMD, IM1's Grill, Q31), compiled with the static
+# CRT into xylemui_image.lib, which NativeAOT links with libjpeg-turbo's and libwebp's static libraries, and into
 # xylemui_image.dll, which links them in, for the JIT. Its stamp covers the source, the libraries' pins, and this script.
 $shimSource = Join-Path $vendor '../native/imaging/xylemui_image.c'
 $locks = @{}
 foreach ($lock in Get-Locks) { $locks[$lock.Name] = $lock }
 $stamp = Join-Path $out 'xylemui_image.stamp'
-$expected = ((@('wuffs', 'libjpeg-turbo', 'libwebp') | ForEach-Object { $locks[$_].Sha256 }) + @((Get-Sha256 $shimSource), $script)) -join ' '
+$expected = ((@('wuffs', 'libjpeg-turbo', 'libwebp', 'llvm') + @($skcms.Keys) | ForEach-Object { $locks[$_].Sha256 }) + @((Get-Sha256 $shimSource), $script)) -join ' '
 if (-not $Force -and (Test-Path $stamp) -and (Get-Content $stamp) -eq $expected) {
     Write-Host '==> xylemui_image is up to date'
 }
@@ -267,19 +284,44 @@ else {
     if (Test-Path $build) { Remove-Item -Recurse -Force $build }
     New-Item -ItemType Directory -Force $build | Out-Null
     Copy-Item (Get-Archive $locks['wuffs']) (Join-Path $build 'wuffs-v0.4.c')
+    foreach ($name in $skcms.Keys) {
+        $path = Join-Path $build $skcms[$name]
+        New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
+        Copy-Item (Get-Archive $locks[$name]) $path
+    }
+
     $includes = @('libjpeg-turbo', 'libwebp') | ForEach-Object { "/I`"$(Join-Path $work "install/$_/include")`"" }
     $libraries = foreach ($name in $intoShim.Keys) { foreach ($file in $intoShim[$name]) { "`"$(Join-Path $work "install/$name/lib/$file")`"" } }
     $obj = Join-Path $build 'xylemui_image.obj'
     $flags = "/nologo /O2 /Gy /MT /DNDEBUG /W3 /I`"$build`" $($includes -join ' ')"
     Invoke-InMsvc $vcvars "cl $flags /c `"$shimSource`" /Fo`"$obj`""
-    Invoke-InMsvc $vcvars "lib /nologo /OUT:`"$(Join-Path $build 'xylemui_image.lib')`" `"$obj`""
-    Invoke-InMsvc $vcvars "link /nologo /DLL /OPT:REF /OPT:ICF /OUT:`"$(Join-Path $build 'xylemui_image.dll')`" /IMPLIB:`"$(Join-Path $build 'xylemui_image_dll.lib')`" `"$obj`" $($libraries -join ' ')"
+    # clang-cl from LLVM's release, for skcms alone: the archive's clang-cl and the compiler's own headers (the intrinsics), taken
+    # out once into the build folder. Windows's tar reads the xz archive; its zstd one needs more memory than tar allows.
+    $llvm = Join-Path $work "tools/llvm-$($locks['llvm'].Version)"
+    $clang = Join-Path $llvm "clang+llvm-$($locks['llvm'].Version)-x86_64-pc-windows-msvc/bin/clang-cl.exe"
+    if (-not (Test-Path $clang)) {
+        New-Item -ItemType Directory -Force $llvm | Out-Null
+        $root = "clang+llvm-$($locks['llvm'].Version)-x86_64-pc-windows-msvc"
+        & (Join-Path $env:SystemRoot 'System32/tar.exe') -xf (Get-Archive $locks['llvm']) -C $llvm "$root/bin/clang-cl.exe" "$root/lib/clang"
+        if ($LASTEXITCODE -ne 0) { throw 'Could not take clang-cl out of the LLVM archive.' }
+    }
+
+    $objects = @("`"$obj`"")
+    foreach ($unit in @(@('skcms/skcms.cc', ''), @('skcms/src/skcms_TransformBaseline.cc', ''), @('skcms/src/skcms_TransformHsw.cc', '/arch:AVX2'), @('skcms/src/skcms_TransformSkx.cc', '/arch:AVX512'))) {
+        $unitObj = Join-Path $build ([IO.Path]::GetFileNameWithoutExtension($unit[0]) + '.obj')
+        Invoke-InMsvc $vcvars "`"$clang`" /nologo /O2 /Gy /MT /DNDEBUG /std:c++17 /EHsc $($unit[1]) /c `"$(Join-Path $build $unit[0])`" /Fo`"$unitObj`""
+        $objects += "`"$unitObj`""
+    }
+
+    Invoke-InMsvc $vcvars "lib /nologo /OUT:`"$(Join-Path $build 'xylemui_image.lib')`" $($objects -join ' ')"
+    Invoke-InMsvc $vcvars "link /nologo /DLL /OPT:REF /OPT:ICF /OUT:`"$(Join-Path $build 'xylemui_image.dll')`" /IMPLIB:`"$(Join-Path $build 'xylemui_image_dll.lib')`" $($objects -join ' ') $($libraries -join ' ')"
     foreach ($kind in 'static', 'shared') {
         New-Item -ItemType Directory -Force (Join-Path $out $kind) | Out-Null
     }
 
     Copy-Item (Join-Path $build 'xylemui_image.lib') (Join-Path $out 'static/xylemui_image.lib') -Force
     Copy-Item (Join-Path $build 'xylemui_image.dll') (Join-Path $out 'shared/xylemui_image.dll') -Force
+    Copy-Item (Join-Path $build 'skcms/LICENSE') (Join-Path $out 'skcms.LICENSE') -Force
     foreach ($name in $intoShim.Keys) {
         foreach ($file in $intoShim[$name]) {
             Copy-Item (Join-Path $work "install/$name/lib/$file") (Join-Path $out "static/$file") -Force

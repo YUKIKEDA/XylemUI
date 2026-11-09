@@ -127,11 +127,13 @@ public sealed class ImagePixelTests
         _ = app.PumpAndSettle();
     }
 
+    // The pixels the decoder reads for an image element, its colors converted to sRGB: basn2c08.png's gAMA of 1.0 changes them
+    // (IM1's second PR, design §5.0.4, Q24).
     private static (byte[] Pixels, int Width, int Height) Decoded(byte[] bytes)
     {
         var decoder = new ImageDecoder();
-        Assert.True(decoder.TryDecode(bytes, 4096, out int width, out int height));
-        return (decoder.Pixels.ToArray(), width, height);
+        Assert.True(decoder.TryDecodeTo(bytes, 0, 0, 4096, out byte[]? pixels, out int width, out int height));
+        return (pixels!, width, height);
     }
 
     // Each pixel of the box at the top left, against the decoder's premultiplied pixel over white.

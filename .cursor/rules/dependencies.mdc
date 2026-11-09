@@ -15,6 +15,7 @@ Check each point and write the result in the PR's `## Verification`:
 2. **Single binary**: on Windows and macOS it adds no file to distribute. A native library links statically (`DirectPInvoke` + `NativeLibrary`, design §9).
 3. **Hot path**: if it runs on the frame path, its time and allocations are measured in our benchmarks, and its types do not appear in our public API, so it can be replaced without a breaking change.
 4. **License and upkeep**: MIT-compatible, maintained, a version pinned in `Directory.Packages.props` (or `vendor/versions.lock` for native code).
+5. **Every OS**: a native library, or a tool that builds one, says in its Issue how it is built for each OS and CPU the framework ships for (Windows x64, Linux x64 and arm64, macOS arm64 and x64): the build system, the compiler, and whether it links statically there. Each native library is one more build for each of them in `vendor/build.ps1` (Windows only until rows S12 and P04) and the CI. The owner asked, when skcms brought a compiler of its own (IM1's second PR), whether the native libraries undo what C# gives; the answer recorded is that native code stays where a measurement gave a reason, and row S12 checks that each of them links statically on macOS (PR for Issue #761).
 
 Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in the same PR. A dependency that changes what the framework means (a new runtime layer, a UI toolkit) is a `design` Issue first.
 
@@ -29,7 +30,9 @@ Then add a row to the Dependency Decision Matrix in `docs/design.ja.md` §0 in t
 - Native, by design: HarfBuzz (static); AccessKit (static, Windows, from the C bindings' release archive pinned by version and SHA-256, not built from source, design §4.4.1 and §9, row P02g); FreeType, wgpu-native, SDL3 (static, Linux only); fontconfig, libdbus-1 (dynamic, Linux only). Windows rasterizes glyphs with DirectWrite and macOS with Core Text, so they do not link FreeType (design §5.0.3, row T4).
 - Native, for images from row IM1 (static, every OS): Wuffs for PNG, GIF, and BMP; libjpeg-turbo for JPEG; libwebp for WebP. Spike S11 (Issue #730) measured each against the others; the owner chose the fastest per format (design §5.0.4, "Decoders").
 - Managed: TerraFX.Interop.Windows (declarations only).
+- Native, for colors from IM1's second PR (static, every OS): skcms, Skia's color management (BSD-3), files pinned one by one from the Skia commit Flutter 3.47.8 pins, since skcms has no tagged versions (design §5.0.4, IM1's Grill, Q28).
 - Build tools only: NASM, which vendor/build.ps1 takes from `vendor/versions.lock` and puts on the PATH to build libjpeg-turbo's SIMD; it never ships in an app (design §5.0.4, row IM1).
+- Build tools only: LLVM's clang-cl (LLVM's release archive for Windows, pinned by version and SHA-256), which vendor/build.ps1 takes out of the archive to compile skcms alone: skcms writes its SIMD with Clang's and GCC's vector extensions and has none under MSVC, 6.3 to 6.6 ns a pixel against 39.5 to 41.4 ns (IM1's Grill, Q31). On Linux and macOS clang is the system's compiler.
 - Build tools only: Mono.Cecil, in tools/FluentIconsTool, which writes the kept icon fonts into an app's assembly on the build machine and never ships in an app (design §5.0.4, row IC1).
 - Not as dependencies of the engine: other UI stacks, Skia, CEF, GPU abstraction libraries (Silk.NET, Vortice).
 

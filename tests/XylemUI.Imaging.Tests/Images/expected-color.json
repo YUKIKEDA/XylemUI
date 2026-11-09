@@ -1,0 +1,30 @@
+{
+ "adobe.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "chrm-gama.png": {
+  "height": 48,
+  "width": 64
+ },
+ "cmyk-icc.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "gray-icc.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "p3-alpha.png": {
+  "height": 48,
+  "width": 64
+ },
+ "p3.jpg": {
+  "height": 48,
+  "width": 64
+ },
+ "p3.webp": {
+  "height": 48,
+  "width": 64
+ }
+}

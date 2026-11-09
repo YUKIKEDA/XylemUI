@@ -120,7 +120,7 @@ internal sealed unsafe class ImageDecoder
         if (Ico.Is(data))
         {
             int side = Math.Max(targetWidth, targetHeight);
-            if (!TryDecodeIco(data, side > 0 ? side : 256, out w, out h))
+            if (!TryDecodeIco(data, side > 0 ? side : 256, out w, out h, colored: true))
             {
                 return false;
             }
@@ -159,7 +159,7 @@ internal sealed unsafe class ImageDecoder
             }
 
             LastEighths = eighths;
-            if (!TryDecodeScaled(data, eighths, out w, out h))
+            if (!TryDecodeScaled(data, eighths, ColorReader.Read(data, format), out w, out h))
             {
                 return false;
             }
@@ -232,8 +232,8 @@ internal sealed unsafe class ImageDecoder
         return (Math.Max(1, tw), Math.Max(1, th));
     }
 
-    // The shim's decode of a whole image, a JPEG at `eighths`, into the decoded buffer.
-    private bool TryDecodeScaled(ReadOnlySpan<byte> data, int eighths, out int width, out int height)
+    // The shim's decode of a whole image, a JPEG at `eighths`, into the decoded buffer, its colors converted from `color` to sRGB.
+    private bool TryDecodeScaled(ReadOnlySpan<byte> data, int eighths, ColorInfo color, out int width, out int height)
     {
         width = 0;
         height = 0;
@@ -258,7 +258,7 @@ internal sealed unsafe class ImageDecoder
             EnsureCapacity(ref _decoded, (int)length);
             fixed (byte* pixels = _decoded)
             {
-                if (ImageShim.Decode(bytes, (nuint)data.Length, pixels, (nuint)(w * 4), w, h, eighths) != ImageShim.Ok)
+                if (Decode(bytes, data.Length, pixels, w, h, eighths, color) != ImageShim.Ok)
                 {
                     return false;
                 }
@@ -272,7 +272,9 @@ internal sealed unsafe class ImageDecoder
         return true;
     }
 
-    private bool TryDecodeWithShim(ReadOnlySpan<byte> data, int maxSide, out int width, out int height, out ImageFormat format)
+    // The shim's decode of a whole image into the decoded buffer; `colored` converts its colors to sRGB (the image element's, not
+    // a color glyph's).
+    private bool TryDecodeWithShim(ReadOnlySpan<byte> data, int maxSide, out int width, out int height, out ImageFormat format, bool colored = false)
     {
         width = 0;
         height = 0;
@@ -301,7 +303,8 @@ internal sealed unsafe class ImageDecoder
             EnsureCapacity(ref _decoded, (int)length);
             fixed (byte* pixels = _decoded)
             {
-                if (ImageShim.Decode(bytes, (nuint)data.Length, pixels, (nuint)(w * 4), w, h, 8) != ImageShim.Ok)
+                ColorInfo color = colored ? ColorReader.Read(data, (ImageFormat)f) : ColorInfo.None;
+                if (Decode(bytes, data.Length, pixels, w, h, 8, color) != ImageShim.Ok)
                 {
                     return false;
                 }
@@ -316,7 +319,7 @@ internal sealed unsafe class ImageDecoder
         return true;
     }
 
-    private bool TryDecodeIco(ReadOnlySpan<byte> data, int maxSide, out int width, out int height)
+    private bool TryDecodeIco(ReadOnlySpan<byte> data, int maxSide, out int width, out int height, bool colored = false)
     {
         width = 0;
         height = 0;
@@ -328,7 +331,7 @@ internal sealed unsafe class ImageDecoder
         // An entry is a PNG file, or a bitmap without its file header.
         if (entry.Length >= 8 && entry[..8].SequenceEqual((ReadOnlySpan<byte>)[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
         {
-            if (!TryDecodeWithShim(entry, maxSide, out width, out height, out _))
+            if (!TryDecodeWithShim(entry, maxSide, out width, out height, out _, colored))
             {
                 return false;
             }
@@ -353,6 +356,36 @@ internal sealed unsafe class ImageDecoder
 
         Format = ImageFormat.Ico;
         return true;
+    }
+
+    // The shim's decode with the color information pinned for the call.
+    private static int Decode(byte* bytes, int length, byte* pixels, int width, int height, int eighths, ColorInfo color)
+    {
+        if (color.IsNone)
+        {
+            return ImageShim.Decode(bytes, (nuint)length, pixels, (nuint)(width * 4), width, height, eighths, null);
+        }
+
+        fixed (byte* icc = color.Icc)
+        {
+            var native = new ImageShim.Color
+            {
+                Icc = icc,
+                IccLength = (nuint)color.IccLength,
+                HasGamma = color.Gamma > 0 ? 1 : 0,
+                Gamma = color.Gamma,
+            };
+            if (color.Chromaticities is { } chromaticities)
+            {
+                native.HasChromaticities = 1;
+                for (int i = 0; i < 8; i++)
+                {
+                    native.Chromaticities[i] = chromaticities[i];
+                }
+            }
+
+            return ImageShim.Decode(bytes, (nuint)length, pixels, (nuint)(width * 4), width, height, eighths, &native);
+        }
     }
 
     private static void EnsureCapacity(ref byte[] buffer, int length)
