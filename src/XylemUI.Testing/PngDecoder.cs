@@ -1,11 +1,13 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 
-namespace XylemUI.Text;
+namespace XylemUI.Testing;
 
 /// <summary>
-/// Reads a PNG image to premultiplied blue, green, red, and alpha, for the bitmap color glyphs of a font (design §5.0.3, "PNG
-/// bitmaps", roadmap row T9). It reads every form of the format: color types 0, 2, 3, 4, and 6, bit depths 1 to 16, <c>tRNS</c>,
+/// Reads a PNG image to premultiplied blue, green, red, and alpha, for the goldens of the headless tests (design §12.3), on every
+/// OS. It was the decoder of the bitmap color glyphs (row T9); those are read by Wuffs now (design §5.0.4, row IM1), which is built
+/// on Windows only, so the goldens keep this managed reader until rows P04 and P06 build the image decoders on Linux and macOS
+/// (IM1's Grill, Q11). It reads every form of the format: color types 0, 2, 3, 4, and 6, bit depths 1 to 16, <c>tRNS</c>,
 /// and Adam7 interlacing. A 16-bit value is rounded to 8 bits as <c>(v + 128) / 257</c>; the chunks that correct colors
 /// (<c>gAMA</c>, <c>sRGB</c>, <c>iCCP</c>, <c>cHRM</c>) are skipped, so colors are taken as sRGB.
 /// </summary>

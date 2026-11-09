@@ -39,7 +39,7 @@ namespace XylemUI.Platform.Windows;
 /// with the COLRv0 format; each is drawn as grayscale coverage with the analysis GPUI uses for a layer (natural symmetric, default
 /// grid fit, lines 956 to 967) and laid over the ones before in its color, premultiplied, on the CPU. A layer in the text's color
 /// (palette index 0xFFFF, or an outline with no color) takes <see cref="GlyphKey.TextColor"/>. A glyph without COLRv0 layers that
-/// has a PNG bitmap (sbix, CBDT) is that bitmap, read by <c>PngDecoder</c> and scaled to the size by <c>BitmapScaler</c> (design
+/// has a PNG bitmap (sbix, CBDT) is that bitmap, read by the image decoder of <c>XylemUI.Imaging</c> (Wuffs, design §5.0.4) and scaled to the size by <c>BitmapScaler</c> (design
 /// §5.0.3, "PNG bitmaps", roadmap row T9); a broken PNG leaves the glyph to its outline. COLRv1 paint trees and SVG are not drawn:
 /// Direct2D drew a COLRv1 emoji in 4 ms and added 8.5 MB to the process (roadmap row T11).
 /// </para>
@@ -56,7 +56,7 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     private readonly Dictionary<Font, nint> _faces = [];
     private readonly Dictionary<Font, bool> _colorFonts = [];
     private readonly List<Layer> _layers = [];
-    private readonly PngDecoder _png = new();
+    private readonly XylemUI.Imaging.ImageDecoder _png = new();
     private readonly BitmapScaler _scaler = new();
     private IDWriteFactory5* _factory;
     private IDWriteInMemoryFontFileLoader* _loader;

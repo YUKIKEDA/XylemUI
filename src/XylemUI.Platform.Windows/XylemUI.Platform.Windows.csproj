@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
+    <!-- The PNG of a bitmap color glyph is read by the image decoders (design §5.0.4, row IM1). -->
+    <ProjectReference Include="..\XylemUI.Imaging\XylemUI.Imaging.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />

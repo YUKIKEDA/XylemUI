@@ -1,13 +1,12 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
-using XylemUI.Text;
 
 namespace XylemUI.Testing;
 
 /// <summary>
 /// Writes and reads the PNG files of the screenshots and the goldens (design §12.3, "PNG"): RGBA, 8 bits a channel, not interlaced,
-/// deflated with the BCL's <see cref="ZLibStream"/>; no dependency. Reading goes through <c>XylemUI.Text</c>'s decoder, which reads
-/// every form of the format.
+/// deflated with the BCL's <see cref="ZLibStream"/>; no dependency. Reading goes through <see cref="PngDecoder"/>, managed so that
+/// the goldens are read on every OS, which reads every form of the format.
 /// </summary>
 internal static class Png
 {

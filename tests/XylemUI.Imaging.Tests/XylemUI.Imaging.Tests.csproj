@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <RootNamespace>XylemUI.Imaging.Tests</RootNamespace>
+    <!-- The PNG test reads WIC, Windows' own decoder, through TerraFX's pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Imaging\XylemUI.Imaging.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="TerraFX.Interop.Windows" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Png\PngSuite\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Images\*.*" Exclude="Images\make.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
