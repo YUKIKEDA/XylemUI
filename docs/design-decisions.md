@@ -865,12 +865,15 @@ Rejected:
 ## 画像とアイコン
 
 Decision:
-  PNG・JPEG・WebP・GIF・BMP・ICO を読み、GIF と WebP のアニメーションを再生する。デコーダは Wuffs に統一する案を行 S11 で確かめ、満たさなければ libpng・libjpeg-turbo・libwebp にする。EXIF の向きを当て、ICC は skcms で sRGB に直す。アイコンは Fluent UI System Icons のフォントの字形として描き、使う字形だけをビルドで残す（D13 の Grill、Issue #165、§5.0.4）。
+  PNG・JPEG・WebP・GIF・BMP・ICO を読み、GIF と WebP のアニメーションを再生する。デコーダは形式ごとに分け、PNG・GIF・BMP は Wuffs、JPEG は libjpeg-turbo、WebP は libwebp にする（行 S11 の spike、Issue #730）。EXIF の向きを当て、ICC は skcms で sRGB に直す。アイコンは Fluent UI System Icons のフォントの字形として描き、使う字形だけをビルドで残す（D13 の Grill、Issue #165、§5.0.4）。
 
 Reason:
-  Flutter と Avalonia は、どの OS でも同じ組のデコーダで読む。画像は信頼できない入力で、Wuffs はメモリ安全に読む。アイコンをフォントで描けば、文字の経路で描け、新しい依存が要らない（Flutter と同じ）。フォントは、アプリのフォントの口（§4.5、IC1 の Grill の Q6）で登録する。
+  Flutter と Avalonia は、どの OS でも同じ組のデコーダで読む。画像は信頼できない入力で、Wuffs はメモリ安全に読み、PNG では libpng より 1.3〜1.6 倍速い。JPEG と WebP は、libjpeg-turbo と libwebp が Wuffs より 1.25〜2 倍速い（S11）。アイコンをフォントで描けば、文字の経路で描け、新しい依存が要らない（Flutter と同じ）。フォントは、アプリのフォントの口（§4.5、IC1 の Grill の Q6）で登録する。
 
 Rejected:
+  - Wuffs に統一する（実行ファイルは分ける組より 499,712 バイト小さいが、JPEG が 1.25〜1.5 倍、WebP が 1.3〜2 倍遅い。Flutter と Avalonia は JPEG と WebP を libjpeg-turbo と libwebp で読む。S11、Issue #730）
+  - Skia と同じ組（libpng・libjpeg-turbo・libwebp、GIF は Wuffs）にする（PNG が Wuffs より 1.3〜1.6 倍遅く、libpng はメモリ安全でない。実行ファイルも分ける組より 75,264 バイト大きい。S11）
+  - 行 T9 の自前の PNG のデコーダを画像にも使う（libpng より 2.6〜3.5 倍遅い。S11）
   - OS のデコーダ（WIC・ImageIO）を主に使う（Windows の WIC は WebP を Store の拡張機能で読むので、どの PC でも読めるとは限らない。EXIF の向きと色の変換も呼ぶ側が書く。Issue #165）
   - HEIF と AVIF を v1 に入れる（Flutter は OS のデコーダでだけ読み、WIC では拡張機能が要る。行 IM2、v1.x）
   - SVG の画像を v1 に入れる（Flutter と Avalonia は本体で読まない。行 IM3、v1.x）
