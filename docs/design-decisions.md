@@ -873,6 +873,10 @@ Reason:
 Rejected:
   - Wuffs に統一する（実行ファイルは分ける組より 499,712 バイト小さいが、JPEG が 1.25〜1.5 倍、WebP が 1.3〜2 倍遅い。Flutter と Avalonia は JPEG と WebP を libjpeg-turbo と libwebp で読む。S11、Issue #730）
   - Skia と同じ組（libpng・libjpeg-turbo・libwebp、GIF は Wuffs）にする（PNG が Wuffs より 1.3〜1.6 倍遅く、libpng はメモリ安全でない。実行ファイルも分ける組より 75,264 バイト大きい。S11）
+  - デコーダを Text に置く（文字と画像は別の信頼できない入力の経路で、ネイティブのライブラリも別。Text は Core から独立したまま保つ。IM1 の Grill の Q7、Issue #739）
+  - 3 つのライブラリを C# から直に P/Invoke する（Wuffs の C の API は形式ごとに呼び方が違い、大きな構造体を持つ。C# の側に形式ごとの手順が増える。Q8）
+  - NASM を使わずに libjpeg-turbo を作る（SIMD が外れ、JPEG のデコードが遅くなる。S11 の速さも NASM の SIMD 付きで測った。Q9）
+  - IM1 の 1 つ目の PR でデコーダと表示を一緒に入れる（表示はレンダラの大きな変更で、1 つの PR のレビューが重い。Q10）
   - `Label` の無い画像を、名前の空の画像の節として出す（Flutter の `Image` の既定。UIA では「イメージ」とだけ読まれ、何の画像か伝わらない。IM1 の Grill の Q2、Issue #737）
   - デコードの数に上限を付けない（大きな写真を同時に開くとメモリが一度に膨らむ。Q3）
   - Wuffs の PNG のチェックサムを確かめない（速いが、libpng と T9 が断る壊れた PNG を黙って読む。Q4）
