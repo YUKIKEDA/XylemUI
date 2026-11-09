@@ -109,6 +109,20 @@ internal sealed class Arena<T>
         return ref _slots[handle.Index].Value;
     }
 
+    /// <summary>Gets the number of slots used so far, live or freed: the bound of <see cref="TryGetHandleAt"/>.</summary>
+    public int SlotCount => _count;
+
+    /// <summary>Returns the handle of the value in a slot, when the slot holds a live value.</summary>
+    /// <param name="index">The slot, from 0 to <see cref="SlotCount"/>.</param>
+    /// <param name="handle">The live handle; the default when the slot was freed.</param>
+    /// <returns><see langword="true"/> when the slot holds a live value.</returns>
+    public bool TryGetHandleAt(int index, out Handle<T> handle)
+    {
+        ref Slot slot = ref _slots[index];
+        handle = slot.IsAlive ? new Handle<T>(index, slot.Generation) : default;
+        return slot.IsAlive;
+    }
+
     /// <summary>Frees a live value. Every handle to it becomes stale, also after the slot is reused.</summary>
     /// <param name="handle">A live handle. A stale one fails the invariant.</param>
     public void Free(Handle<T> handle)

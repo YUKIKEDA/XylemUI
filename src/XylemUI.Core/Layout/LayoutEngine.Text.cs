@@ -90,6 +90,15 @@ internal static partial class LayoutEngine
     private static ShapedTextCache Shape(TextContext context, TextLeaf leaf)
     {
         ShapedTextCache shaped = leaf.Shaped ??= new ShapedTextCache();
+
+        // A font registered since the caches were made may be the one the leaf's family resolves to now (design §4.5, "App
+        // fonts"): a tree's leaves are marked when it is registered, and a draw function's text is caught here.
+        if (leaf.FontGeneration != AppFontSet.Generation)
+        {
+            leaf.DropCaches();
+            leaf.FontGeneration = AppFontSet.Generation;
+        }
+
         if (shaped.Valid)
         {
             return shaped;

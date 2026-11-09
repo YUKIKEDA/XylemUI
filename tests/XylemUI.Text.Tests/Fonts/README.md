@@ -78,3 +78,55 @@ for ppem, h, o in ((20, (255, 0, 0, 255), (0, 0, 255, 255)), (64, (0, 255, 0, 25
 font["sbix"] = sbix
 font.save("XylemUITestBitmap.ttf")
 ```
+
+## App font test fonts
+
+`XylemUITestApp-Regular.ttf`, `XylemUITestApp-Bold.ttf`, `XylemUITestGabriola.ttf`, and `XylemUITestLate.ttf` are the bundled fallback font
+(`src/XylemUI.Text/Fonts/XylemUIFallback.ttf`, a Noto Sans subset under the SIL Open Font License 1.1 with no Reserved Font Name,
+SHA-256 `2db795c76ed04434a8ce06c12f7f739f0806f22ea7962fd99bfdd6ff515451a7`) with its names and weight changed and its `STAT` table removed, for the tests of
+app fonts (design §4.5, "App fonts", roadmap row IC1). The first two are one family, "XylemUI Test App", at weights 400 and 700;
+the third takes the family name of a font Windows has, "Gabriola", to show that a registered font comes before the OS's family of
+the same name; the fourth, "XylemUI Test Late", is registered by one test alone, so that it measures a text before its family is
+registered. `XylemUITestCollection.ttc` holds two faces of "XylemUI Test Collection", at 400 and 700. Each holds printable ASCII (U+0020–U+007E) and `.notdef` only, so a Japanese character is one they lack. Made with
+fontTools 4.61.1 (`python make.py XylemUIFallback.ttf <out>`):
+
+```python
+import sys
+from fontTools.ttLib import TTFont
+
+src, out = sys.argv[1], sys.argv[2]
+
+def make(family, subfamily, weight, bold, path):
+    font = TTFont(src)
+    name = font["name"]
+    full = family if subfamily == "Regular" else f"{family} {subfamily}"
+    for record in list(name.names):
+        if record.nameID in (16, 17, 21, 22):
+            name.removeNames(nameID=record.nameID)
+    for nid, value in ((1, family), (2, subfamily), (3, f"{full};test"), (4, full), (6, full.replace(" ", "-"))):
+        name.setName(value, nid, 3, 1, 0x409)
+        name.setName(value, nid, 1, 0, 0)
+    os2 = font["OS/2"]
+    os2.usWeightClass = weight
+    os2.fsSelection = (os2.fsSelection & ~0b1100001) | (0b100000 if bold else 0b1000000)
+    font["head"].macStyle = 1 if bold else 0
+    # DirectWrite reads the weight from STAT before OS/2, and the source's STAT says 400.
+    del font["STAT"]
+    font.save(path)
+
+make("XylemUI Test App", "Regular", 400, False, f"{out}/XylemUITestApp-Regular.ttf")
+make("XylemUI Test App", "Bold", 700, True, f"{out}/XylemUITestApp-Bold.ttf")
+make("Gabriola", "Regular", 400, False, f"{out}/XylemUITestGabriola.ttf")
+make("XylemUI Test Late", "Regular", 400, False, f"{out}/XylemUITestLate.ttf")
+
+# A collection of two faces, one family at 400 and 700.
+from fontTools.ttLib import TTCollection
+make("XylemUI Test Collection", "Regular", 400, False, f"{out}/collection-regular.tmp.ttf")
+make("XylemUI Test Collection", "Bold", 700, True, f"{out}/collection-bold.tmp.ttf")
+collection = TTCollection()
+collection.fonts = [TTFont(f"{out}/collection-regular.tmp.ttf"), TTFont(f"{out}/collection-bold.tmp.ttf")]
+collection.save(f"{out}/XylemUITestCollection.ttc")
+import os
+os.remove(f"{out}/collection-regular.tmp.ttf")
+os.remove(f"{out}/collection-bold.tmp.ttf")
+```

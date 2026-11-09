@@ -36,6 +36,11 @@ internal sealed class UiTree
     {
         _shallowestFirst = CompareDepth;
         Text = text;
+        if (text is not null)
+        {
+            AppFonts.Track(this);
+        }
+
         Focus = new FocusManager(this);
         Animations = new AnimationClock(this);
         Popups = new OverlayPopupHost(this);
@@ -809,6 +814,33 @@ internal sealed class UiTree
         if (TextLeafOf(node).SetStyle(style))
         {
             Invalidation.Invalidate(this, node, ChangeKind.Font);
+        }
+    }
+
+    /// <summary>
+    /// Drops the caches of every text leaf and marks it, as a change of font, and marks every node with a draw function to be
+    /// drawn again: a font registered since (design §4.5, "App fonts") may be the one a leaf's family resolves to now. The marks ask
+    /// for a frame.
+    /// </summary>
+    internal void MeasureTextAgain()
+    {
+        for (int index = 0; index < Nodes.SlotCount; index++)
+        {
+            if (!Nodes.TryGetHandleAt(index, out NodeHandle node))
+            {
+                continue;
+            }
+
+            ref UiNode value = ref Nodes.GetRef(node);
+            if (value.Text is { } leaf)
+            {
+                leaf.DropCaches();
+                Invalidation.Invalidate(this, node, ChangeKind.Font);
+            }
+            else if (value.Visual?.Draw is not null)
+            {
+                Invalidation.Invalidate(this, node, ChangeKind.Color);
+            }
         }
     }
 

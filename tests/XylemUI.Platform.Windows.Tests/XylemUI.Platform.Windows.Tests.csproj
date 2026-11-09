@@ -14,6 +14,13 @@
     <None Include="..\..\src\XylemUI.Testing\Fonts\XylemUITestSans.ttf" Link="Fonts\XylemUITestSans.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestColor.ttf" Link="Fonts\XylemUITestColor.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestBitmap.ttf" Link="Fonts\XylemUITestBitmap.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None
+      Include="..\XylemUI.Text.Tests\Fonts\XylemUITestApp-Regular.ttf"
+      Link="Fonts\XylemUITestApp-Regular.ttf"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestApp-Bold.ttf" Link="Fonts\XylemUITestApp-Bold.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Text.Tests\Fonts\XylemUITestGabriola.ttf" Link="Fonts\XylemUITestGabriola.ttf" CopyToOutputDirectory="PreserveNewest" />
     <!-- The PNG decoder is checked against WIC on PngSuite (tests/XylemUI.Text.Tests/Png/README.md, roadmap row T9). -->
     <None Include="..\XylemUI.Text.Tests\Png\PngSuite\*.png" Link="Png\PngSuite\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
