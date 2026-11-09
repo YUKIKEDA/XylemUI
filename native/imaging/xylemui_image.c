@@ -5,7 +5,9 @@
 //
 //   xi_info    reads the format and the size of an image, without decoding its pixels
 //   xi_decode  decodes the image (the first frame of a GIF) to premultiplied BGRA, top-down rows of `stride` bytes; a JPEG at a
-//              scale of eighths, libjpeg-turbo's DCT scaling (design §5.0.4, "Decoding size", row IM1 1b-2)
+//              scale of eighths, libjpeg-turbo's DCT scaling (design §5.0.4, "Decoding size", row IM1 1b-2); and the colors of a
+//              color profile C# read converted to sRGB with skcms (design §5.0.4, "EXIF orientation and color", IM1's Grill,
+//              Q23 to Q29)
 //
 // Every function takes untrusted bytes and returns an XI_ status; nothing is read past `length`. vendor/build.ps1 builds this file
 // with Wuffs into xylemui_image.lib (NativeAOT, static CRT) and xylemui_image.dll (the JIT).
@@ -34,6 +36,8 @@
 #include <jpeglib.h>
 #include <webp/decode.h>
 
+#include "skcms/skcms.h"
+
 #if defined(_WIN32)
 #define XI_EXPORT __declspec(dllexport)
 #else
@@ -50,6 +54,74 @@
 #define XI_WEBP 3
 #define XI_GIF 4
 #define XI_BMP 5
+
+// The color information C# read from the image (design §5.0.4, IM1's Grill, Q23 and Q24): an ICC profile's bytes, with room past
+// its end that skcms's parse reads ahead into; or, for a PNG with no iCCP and no sRGB chunk, its cHRM (white, red, green, and
+// blue x and y) and its gAMA (the encoding gamma, gAMA's value / 100,000).
+typedef struct xi_color {
+  const uint8_t* icc;
+  size_t icc_length;
+  int32_t has_chromaticities;
+  float chromaticities[8];
+  int32_t has_gamma;
+  float gamma;
+} xi_color;
+
+// ---- skcms: color profiles to sRGB ----
+
+// The profile the colors are converted from, or NULL for none: an ICC profile skcms parses, or one made from a PNG's cHRM and gAMA
+// as Skia makes it (SkPngCodec.cpp's read_color_profile; the sRGB primaries or curve where one is missing). A profile skcms does
+// not parse, or one close to sRGB (skcms_ApproximatelyEqualProfiles), converts nothing (Q26 and Q29); a profile of the wrong kind
+// for the image is dropped by the decoder that knows the image's kind.
+static const skcms_ICCProfile* xi_profile(const xi_color* color, skcms_ICCProfile* storage) {
+  if (!color) {
+    return NULL;
+  }
+
+  if (color->icc && color->icc_length > 0) {
+    if (!skcms_Parse(color->icc, color->icc_length, storage)) {
+      return NULL;
+    }
+  } else if (color->has_chromaticities || color->has_gamma) {
+    skcms_Matrix3x3 to_xyz = skcms_sRGB_profile()->toXYZD50;
+    if (color->has_chromaticities) {
+      const float* c = color->chromaticities;
+      skcms_Matrix3x3 primaries;
+      if (skcms_PrimariesToXYZD50(c[2], c[3], c[4], c[5], c[6], c[7], c[0], c[1], &primaries)) {
+        to_xyz = primaries;
+      }
+    }
+
+    skcms_TransferFunction curve = *skcms_sRGB_TransferFunction();
+    if (color->has_gamma && color->gamma > 0) {
+      skcms_TransferFunction power = {1.0f / color->gamma, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+      curve = power;
+    }
+
+    skcms_Init(storage);
+    skcms_SetTransferFunction(storage, &curve);
+    skcms_SetXYZD50(storage, &to_xyz);
+  } else {
+    return NULL;
+  }
+
+  return skcms_ApproximatelyEqualProfiles(storage, skcms_sRGB_profile()) ? NULL : storage;
+}
+
+// Converts rows of `width` pixels of `format` in place to sRGB BGRA, 8 bits a channel, clamped (Q27): premultiplied from
+// unpremultiplied colors for an image with alpha (Skia converts unpremultiplied colors, then premultiplies, SkCodec.cpp's
+// applyColorXform), opaque for one without.
+static int32_t xi_to_srgb(uint8_t* pixels, size_t stride, int32_t width, int32_t height, skcms_PixelFormat format, skcms_AlphaFormat from,
+                          skcms_AlphaFormat to, const skcms_ICCProfile* profile) {
+  for (int32_t y = 0; y < height; y++) {
+    uint8_t* row = pixels + (size_t)y * stride;
+    if (!skcms_Transform(row, format, from, profile, row, skcms_PixelFormat_BGRA_8888, to, skcms_sRGB_profile(), (size_t)width)) {
+      return XI_BROKEN;
+    }
+  }
+
+  return XI_OK;
+}
 
 // ---- Wuffs: PNG, GIF, BMP ----
 
@@ -69,7 +141,7 @@ static wuffs_base__image_decoder* xi_wuffs_decoder(int32_t format) {
 // Reads the size, and decodes when `pixels` is not null. A PNG's checksums are checked: Wuffs's C API checks them unless the
 // quirk to ignore them is set, which its C++ layer sets (IM1's Grill, Q4).
 static int32_t xi_wuffs(int32_t format, const uint8_t* data, size_t length, int32_t* width, int32_t* height, uint8_t* pixels,
-                        size_t stride) {
+                        size_t stride, const skcms_ICCProfile* profile) {
   wuffs_base__image_decoder* decoder = xi_wuffs_decoder(format);
   if (!decoder) {
     return XI_OUT_OF_MEMORY;
@@ -98,7 +170,18 @@ static int32_t xi_wuffs(int32_t format, const uint8_t* data, size_t length, int3
     goto done;
   }
 
-  wuffs_base__pixel_config__set(&config.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, w, h);
+  // Only a PNG has a profile (GIF and BMP have none, as Skia reads none); a CMYK profile, or a gray one on an image in color, is
+  // dropped (SkPngCodecBase.cpp's isCompatibleColorProfileAndType). The colors are decoded unpremultiplied to be converted.
+  if (profile) {
+    uint32_t image_format = wuffs_base__pixel_config__pixel_format(&config.pixcfg).repr;
+    int gray = (image_format & 0xF0000000u) == 0x20000000u;
+    if (format != XI_PNG || profile->data_color_space == skcms_Signature_CMYK || (profile->data_color_space == skcms_Signature_Gray && !gray)) {
+      profile = NULL;
+    }
+  }
+
+  wuffs_base__pixel_config__set(&config.pixcfg, profile ? WUFFS_BASE__PIXEL_FORMAT__BGRA_NONPREMUL : WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL,
+                                WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, w, h);
   for (uint32_t y = 0; y < h; y++) {
     memset(pixels + (size_t)y * stride, 0, (size_t)w * 4);
   }
@@ -127,6 +210,9 @@ static int32_t xi_wuffs(int32_t format, const uint8_t* data, size_t length, int3
                                                    wuffs_base__make_slice_u8(work, (size_t)work_length), NULL);
   if (status.repr) {
     result = XI_BROKEN;
+  } else if (profile) {
+    result = xi_to_srgb(pixels, stride, (int32_t)w, (int32_t)h, skcms_PixelFormat_BGRA_8888, skcms_AlphaFormat_Unpremul,
+                        skcms_AlphaFormat_PremulAsEncoded, profile);
   }
 
 done:
@@ -165,7 +251,7 @@ static void xi_cmyk_to_bgra(uint8_t* row, uint32_t width) {
 static int32_t xi_scaled(int32_t side, int32_t eighths) { return (int32_t)(((int64_t)side * eighths + 7) / 8); }
 
 static int32_t xi_jpeg(const uint8_t* data, size_t length, int32_t* width, int32_t* height, uint8_t* pixels, size_t stride,
-                       int32_t eighths) {
+                       int32_t eighths, const skcms_ICCProfile* profile) {
   struct jpeg_decompress_struct info;
   xi_jpeg_error error;
   info.err = jpeg_std_error(&error.manager);
@@ -202,6 +288,21 @@ static int32_t xi_jpeg(const uint8_t* data, size_t length, int32_t* width, int32
   }
 
   int cmyk = info.jpeg_color_space == JCS_CMYK || info.jpeg_color_space == JCS_YCCK;
+
+  // A profile of the JPEG's kind (SkJpegCodec.cpp's check): CMYK for a CMYK image, gray or RGB for a gray one, RGB for the others
+  // (Q26). A gray image is widened to BGRA first: skcms gives a gray profile's curve to the three channels and the white point to
+  // its matrix, so a gray widened converts as the gray would. A CMYK image with a CMYK profile is converted from its CMYK by skcms,
+  // which takes Photoshop's inverted CMYK (Q25); with none, it is turned to BGRA as before.
+  if (profile) {
+    uint32_t space = profile->data_color_space;
+    int fits = cmyk ? space == skcms_Signature_CMYK
+                    : info.jpeg_color_space == JCS_GRAYSCALE ? (space == skcms_Signature_Gray || space == skcms_Signature_RGB)
+                                                             : space == skcms_Signature_RGB;
+    if (!fits) {
+      profile = NULL;
+    }
+  }
+
   info.out_color_space = cmyk ? JCS_CMYK : JCS_EXT_BGRA;
   info.scale_num = (unsigned int)eighths;
   info.scale_denom = 8;
@@ -218,19 +319,25 @@ static int32_t xi_jpeg(const uint8_t* data, size_t length, int32_t* width, int32
       return XI_BROKEN;
     }
 
-    if (cmyk) {
+    if (cmyk && !profile) {
       xi_cmyk_to_bgra(row, info.output_width);
     }
   }
 
   jpeg_finish_decompress(&info);
   jpeg_destroy_decompress(&info);
+  if (profile) {
+    return xi_to_srgb(pixels, stride, (int32_t)info.output_width, (int32_t)info.output_height,
+                      cmyk ? skcms_PixelFormat_RGBA_8888 : skcms_PixelFormat_BGRA_8888, skcms_AlphaFormat_Opaque, skcms_AlphaFormat_Opaque, profile);
+  }
+
   return XI_OK;
 }
 
 // ---- libwebp: WebP ----
 
-static int32_t xi_webp(const uint8_t* data, size_t length, int32_t* width, int32_t* height, uint8_t* pixels, size_t stride) {
+static int32_t xi_webp(const uint8_t* data, size_t length, int32_t* width, int32_t* height, uint8_t* pixels, size_t stride,
+                       const skcms_ICCProfile* profile) {
   WebPDecoderConfig config;
   if (!WebPInitDecoderConfig(&config) || WebPGetFeatures(data, length, &config.input) != VP8_STATUS_OK) {
     return XI_BROKEN;
@@ -251,13 +358,23 @@ static int32_t xi_webp(const uint8_t* data, size_t length, int32_t* width, int32
     return XI_OK;
   }
 
-  config.output.colorspace = MODE_bgrA;
+  // Only an RGB profile (SkWebpCodec.cpp's check, Q26); with one, the colors are decoded unpremultiplied to be converted.
+  if (profile && profile->data_color_space != skcms_Signature_RGB) {
+    profile = NULL;
+  }
+
+  config.output.colorspace = profile ? MODE_BGRA : MODE_bgrA;
   config.output.is_external_memory = 1;
   config.output.u.RGBA.rgba = pixels;
   config.output.u.RGBA.stride = (int)stride;
   config.output.u.RGBA.size = stride * (size_t)config.input.height;
   int32_t result = WebPDecode(data, length, &config) == VP8_STATUS_OK ? XI_OK : XI_BROKEN;
   WebPFreeDecBuffer(&config.output);
+  if (result == XI_OK && profile) {
+    result = xi_to_srgb(pixels, stride, *width, *height, skcms_PixelFormat_BGRA_8888, skcms_AlphaFormat_Unpremul,
+                        skcms_AlphaFormat_PremulAsEncoded, profile);
+  }
+
   return result;
 }
 
@@ -282,7 +399,7 @@ static int32_t xi_format(const uint8_t* data, size_t length) {
 }
 
 static int32_t xi_run(const uint8_t* data, size_t length, int32_t* format, int32_t* width, int32_t* height, uint8_t* pixels,
-                      size_t stride, int32_t eighths) {
+                      size_t stride, int32_t eighths, const skcms_ICCProfile* profile) {
   if (!data || length == 0) {
     return XI_UNSUPPORTED;
   }
@@ -292,11 +409,11 @@ static int32_t xi_run(const uint8_t* data, size_t length, int32_t* format, int32
     case XI_PNG:
     case XI_GIF:
     case XI_BMP:
-      return xi_wuffs(*format, data, length, width, height, pixels, stride);
+      return xi_wuffs(*format, data, length, width, height, pixels, stride, profile);
     case XI_JPEG:
-      return xi_jpeg(data, length, width, height, pixels, stride, eighths);
+      return xi_jpeg(data, length, width, height, pixels, stride, eighths, profile);
     case XI_WEBP:
-      return xi_webp(data, length, width, height, pixels, stride);
+      return xi_webp(data, length, width, height, pixels, stride, profile);
     default:
       return XI_UNSUPPORTED;
   }
@@ -306,14 +423,15 @@ XI_EXPORT int32_t xi_info(const uint8_t* data, size_t length, int32_t* format, i
   *format = 0;
   *width = 0;
   *height = 0;
-  return xi_run(data, length, format, width, height, NULL, 0, 8);
+  return xi_run(data, length, format, width, height, NULL, 0, 8, NULL);
 }
 
 // `eighths` is the scale, 1 to 8 eighths, which only a JPEG takes (8 for the others). `width` and `height` are those xi_info gave
 // for the same bytes at that scale, a side times eighths / 8 rounded up; `pixels` holds `height` rows of `stride` bytes, `stride` at
-// least width × 4.
+// least width × 4. `color` is the color information C# read, or NULL for none: the colors of a profile that applies are converted to
+// sRGB.
 XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels, size_t stride, int32_t width, int32_t height,
-                            int32_t eighths) {
+                            int32_t eighths, const xi_color* color) {
   int32_t format = 0;
   int32_t w = 0;
   int32_t h = 0;
@@ -330,5 +448,6 @@ XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels,
     return XI_BROKEN;
   }
 
-  return xi_run(data, length, &format, &w, &h, pixels, stride, eighths);
+  skcms_ICCProfile storage;
+  return xi_run(data, length, &format, &w, &h, pixels, stride, eighths, xi_profile(color, &storage));
 }

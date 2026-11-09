@@ -44,9 +44,10 @@ internal static unsafe partial class ImageShim
     /// <param name="width">The width <see cref="Info"/> gave for the same bytes, at the scale: <see cref="Scaled"/>.</param>
     /// <param name="height">The height <see cref="Info"/> gave for the same bytes, at the scale.</param>
     /// <param name="eighths">The scale, from 1 to 8 eighths; 8 for an image that is not a JPEG.</param>
+    /// <param name="color">The image's color information, whose colors the shim converts to sRGB; null for none.</param>
     /// <returns>A status, as <see cref="Info"/> returns.</returns>
     [LibraryImport(Library, EntryPoint = "xi_decode")]
-    public static partial int Decode(byte* data, nuint length, byte* pixels, nuint stride, int width, int height, int eighths);
+    public static partial int Decode(byte* data, nuint length, byte* pixels, nuint stride, int width, int height, int eighths, Color* color);
 
     /// <summary>
     /// Returns a side of a JPEG decoded at a scale of eighths: the side times <paramref name="eighths"/> / 8, rounded up, as
@@ -56,4 +57,29 @@ internal static unsafe partial class ImageShim
     /// <param name="eighths">The scale, from 1 to 8 eighths.</param>
     /// <returns>The side at that scale.</returns>
     public static int Scaled(int side, int eighths) => (int)((((long)side * eighths) + 7) / 8);
+
+    /// <summary>
+    /// The shim's <c>xi_color</c>: an image's color information (design §5.0.4, IM1's Grill, Q23 and Q24).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Color
+    {
+        /// <summary>The ICC profile's first byte, with room past its end; null for none.</summary>
+        public byte* Icc;
+
+        /// <summary>The ICC profile's length.</summary>
+        public nuint IccLength;
+
+        /// <summary>1 when <see cref="Chromaticities"/> holds a PNG's cHRM.</summary>
+        public int HasChromaticities;
+
+        /// <summary>White, red, green, and blue x and y.</summary>
+        public fixed float Chromaticities[8];
+
+        /// <summary>1 when <see cref="Gamma"/> holds a PNG's gAMA.</summary>
+        public int HasGamma;
+
+        /// <summary>The encoding gamma.</summary>
+        public float Gamma;
+    }
 }

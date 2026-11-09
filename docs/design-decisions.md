@@ -885,6 +885,9 @@ Rejected:
   - iCCP の無い PNG の cHRM と gAMA を読まず sRGB とする（Blink。Flutter の Skia は読む。Q24）
   - 広い色域（F16 など）で出す（D3D11 のスワップチェーンが 8 ビットの BGRA。Q27）
   - skcms を GitHub の `google/skcms` や `skia.googlesource.com/skcms` の archive から取る（前者は 2025-10 で止まって Skia の使う commit が無く、後者は同じバイト列の保証が無い。Q28）
+  - skcms を MSVC で作る（skcms は MSVC では SIMD を持たない portable の道になり、1,220 万画素の P3 から sRGB への変換が 1 画素 39.5〜41.4 ns、clang-cl では 6.3〜6.6 ns。IM1 の Grill の Q31、Issue #761）
+  - Visual Studio の「C++ Clang ツール」の部品を開発の機械と CI に入れる（開発の機械にも CI にも何も入れない決まりに反する。Q31）
+  - skcms の変換を C# で書き直す（ネイティブは増えず、ICC をマネージドで読めるが、CMYK などの表の補間まで skcms と同じ結果にする手間が大きく、速さを測っていない。Q31）
   - デコーダを Text に置く（文字と画像は別の信頼できない入力の経路で、ネイティブのライブラリも別。Text は Core から独立したまま保つ。IM1 の Grill の Q7、Issue #739）
   - 3 つのライブラリを C# から直に P/Invoke する（Wuffs の C の API は形式ごとに呼び方が違い、大きな構造体を持つ。C# の側に形式ごとの手順が増える。Q8）
   - NASM を使わずに libjpeg-turbo を作る（SIMD が外れ、JPEG のデコードが遅くなる。S11 の速さも NASM の SIMD 付きで測った。Q9）
