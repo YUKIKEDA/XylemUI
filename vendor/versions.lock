@@ -1,6 +1,8 @@
 # Native libraries that vendor/build.ps1 builds from source, or takes prebuilt from a release archive (design §9). One per line:
 # name  version  sha256  url  [mirror url ...]
-# The URLs are tried in order; every download is checked against the SHA-256. Changing a line rebuilds the library.
+# The URLs are tried in order; every download is checked against the SHA-256. Changing a line rebuilds the library. A GitHub
+# release asset lists its API URL after its download URL: the same file through another host, which answered while the download
+# host gave 504 to every request (Issue #733).
 # A version is taken once it has been out for two weeks, except a security fix, which is taken at once
 # (.cursor/rules/dependencies.mdc).
 # AccessKit is not built: the release archive of its C bindings holds the libraries for MSVC, which are taken as they are
@@ -9,8 +11,8 @@
 # (design §8.13). The fluent-* lines are the files of Fluent UI System Icons (MIT, release 1.1.344, commit a347af9) that
 # vendor/build.ps1 copies to vendor/out/fluent: the two fonts the build tool of XylemUI.Theme.Fluent keeps an app's glyphs of,
 # and the two maps from names to code points that FluentIcons.g.cs is generated from (design §5.0.4).
-accesskit  0.23.1  35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f  https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip
-harfbuzz  14.5.1  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz
+accesskit  0.23.1  35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f  https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip  https://api.github.com/repos/AccessKit/accesskit-c/releases/assets/590896392
+harfbuzz  14.5.1  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz  https://api.github.com/repos/harfbuzz/harfbuzz/releases/assets/602061249
 unicode-ucd  18.0.0  7b3e555514060b92290d154f53655c5eb0fa62b16eb04c03434ff72d1a66a0d8  https://www.unicode.org/Public/18.0.0/ucd/UCD.zip
 fluent-regular-ttf  1.1.344  f977ae5bfb46661e7ba94b098e0d7720e27af888e57b9b14e239933ac4c0e6f4  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Regular.ttf
 fluent-filled-ttf  1.1.344  0a5adcf88ab5b243096da72d965bd22cd303200b36ba739a5a2a81086ef847ab  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Filled.ttf

@@ -105,7 +105,9 @@ function Get-Archive($lock) {
         foreach ($url in $lock.Urls) {
             Write-Host "==> Download $($lock.Name) $($lock.Version) from $url"
             try {
-                Invoke-WebRequest -Uri $url -OutFile "$archive.part"
+                # GitHub's API gives a release asset's bytes only when asked for them; without the header it answers with JSON.
+                $headers = if ($url -like 'https://api.github.com/repos/*/releases/assets/*') { @{ Accept = 'application/octet-stream' } } else { @{} }
+                Invoke-WebRequest -Uri $url -OutFile "$archive.part" -Headers $headers
             }
             catch {
                 Write-Host "    failed: $($_.Exception.Message)"
