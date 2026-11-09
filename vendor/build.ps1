@@ -296,7 +296,8 @@ else {
     $flags = "/nologo /O2 /Gy /MT /DNDEBUG /W3 /I`"$build`" $($includes -join ' ')"
     Invoke-InMsvc $vcvars "cl $flags /c `"$shimSource`" /Fo`"$obj`""
     # clang-cl from LLVM's release, for skcms alone: the archive's clang-cl and the compiler's own headers (the intrinsics), taken
-    # out once into the build folder. Windows's tar reads the xz archive; its zstd one needs more memory than tar allows.
+    # out once into the build folder. Windows's own tar (bsdtar, with liblzma since Windows 10 1803) reads the xz archive; when this
+    # step fails, look at that tar first. LLVM's zstd archive needs more memory than that tar allows, and is not used.
     $llvm = Join-Path $work "tools/llvm-$($locks['llvm'].Version)"
     $clang = Join-Path $llvm "clang+llvm-$($locks['llvm'].Version)-x86_64-pc-windows-msvc/bin/clang-cl.exe"
     if (-not (Test-Path $clang)) {

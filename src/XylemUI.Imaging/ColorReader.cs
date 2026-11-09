@@ -45,7 +45,8 @@ internal static class ColorReader
 
     // The ICC chunks of the APP2 segments before the first scan, joined in the order of their numbers. Chunks that do not agree on
     // their count, a number outside it, a number twice, or a number missing give no profile (Skia's
-    // SkJpegMetadataDecoderImpl.cpp).
+    // SkJpegMetadataDecoderImpl.cpp). Every marker read has a length: the markers without one (RSTn, TEM) come only after the first
+    // scan, where the reading stops, as Exif's does.
     private static ColorInfo FromJpeg(ReadOnlySpan<byte> jpeg)
     {
         if (jpeg.Length < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8)
