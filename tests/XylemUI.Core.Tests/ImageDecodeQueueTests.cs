@@ -90,7 +90,7 @@ public sealed class ImageDecodeQueueTests
     [Fact]
     public void Decode_QueuedWhileOthersRun_StartsAtOnceBelowTheLimit()
     {
-        using var gate = new ImageDoubles.GatedDecode();
+        var gate = new ImageDoubles.GatedDecode();
         ImageDecodeQueue.DecodeForTests = gate.Decode;
         try
         {
@@ -108,6 +108,8 @@ public sealed class ImageDecodeQueueTests
         }
         finally
         {
+            // The gate goes first: it waits for the decodes still queued, which a failed test leaves, to run as the test decode.
+            gate.Dispose();
             ImageDecodeQueue.DecodeForTests = null;
         }
     }
