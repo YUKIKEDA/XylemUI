@@ -43,7 +43,7 @@ internal static class ImageDecodeQueue
     internal static Func<ImageSource, int, int, ImageResult>? DecodeForTests { get; set; }
 
     /// <summary>
-    /// Queues a decode, which runs when fewer than <see cref="Limit"/> run.
+    /// Queues a decode, which starts at once when fewer than <see cref="Limit"/> run, and otherwise when one of those ends.
     /// </summary>
     /// <param name="request">The decode.</param>
     public static void Enqueue(ImageRequest request)
@@ -78,32 +78,35 @@ internal static class ImageDecodeQueue
             : default;
     }
 
-    // Starts a worker for each waiting decode while fewer than the limit run, and no more workers than decodes wait. A worker that
-    // finds the queue empty stops, then looks again: a decode queued between its last look and its stop would otherwise wait for the
-    // next one.
+    // Starts one worker when fewer than the limit run. The count of the workers is not compared with the decodes that wait: a worker
+    // that decodes took its decode out of the queue, so a decode queued behind it would count as one that a worker is coming for,
+    // and would wait for that decode to end. A worker started for a decode that another took finds the queue empty and stops.
     private static void TryStart()
     {
-        while (!Waiting.IsEmpty)
+        int running = Volatile.Read(ref _running);
+        while (true)
         {
-            int running = Volatile.Read(ref _running);
-            if (running >= Limit || running >= Waiting.Count)
+            if (running >= Limit)
             {
                 return;
             }
 
-            if (Interlocked.CompareExchange(ref _running, running + 1, running) != running)
+            int seen = Interlocked.CompareExchange(ref _running, running + 1, running);
+            if (seen == running)
             {
-                continue;
+                break;
             }
 
-            int most = Volatile.Read(ref _mostRunning);
-            while (running + 1 > most && Interlocked.CompareExchange(ref _mostRunning, running + 1, most) != most)
-            {
-                most = Volatile.Read(ref _mostRunning);
-            }
-
-            _ = ThreadPool.UnsafeQueueUserWorkItem(static _ => Work(), null);
+            running = seen;
         }
+
+        int most = Volatile.Read(ref _mostRunning);
+        while (running + 1 > most && Interlocked.CompareExchange(ref _mostRunning, running + 1, most) != most)
+        {
+            most = Volatile.Read(ref _mostRunning);
+        }
+
+        _ = ThreadPool.UnsafeQueueUserWorkItem(static _ => Work(), null);
     }
 
     private static void Work()
@@ -120,8 +123,14 @@ internal static class ImageDecodeQueue
             }
         }
 
+        // The worker stops, then looks again: a decode queued between its last look and its stop found the limit's workers running
+        // and started none. It starts a worker only when a decode waits: one started each time a worker stops would stop and start
+        // the next without end.
         _ = Interlocked.Decrement(ref _running);
-        TryStart();
+        if (!Waiting.IsEmpty)
+        {
+            TryStart();
+        }
     }
 }
 
