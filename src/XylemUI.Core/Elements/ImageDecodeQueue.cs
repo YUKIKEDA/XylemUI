@@ -134,18 +134,23 @@ internal static class ImageDecodeQueue
 internal readonly record struct ImageResult(byte[]? Pixels, int Width, int Height);
 
 /// <summary>
-/// One decode of an image element: what to read, at what size, and where its result goes. It is run on a worker, then completed on
-/// the UI thread; a request the element let go of (its source changed, or it was disposed) is skipped or its result dropped.
+/// One decode of a window's image cache: what to read, at what size, and where its result goes. It is run on a worker, then
+/// completed on the UI thread. A request nobody waits for is skipped while it has not started (<see cref="TryCancel"/>); one that
+/// started always completes, and the cache decides what its result is for.
 /// </summary>
 /// <param name="source">The source.</param>
 /// <param name="width">The width asked for; 0 for the image's.</param>
 /// <param name="height">The height asked for; 0 for the image's.</param>
-/// <param name="context">The UI thread's context, which the result is posted to; null for a request the element decodes itself,
-/// with no loop to post to, which is not queued.</param>
-/// <param name="complete">The element's completion, run on the UI thread.</param>
-internal sealed class ImageRequest(ImageSource source, int width, int height, SynchronizationContext? context, Action<ImageRequest> complete)
+/// <param name="context">The UI thread's context, which the result is posted to.</param>
+/// <param name="complete">The completion, run on the UI thread.</param>
+internal sealed class ImageRequest(ImageSource source, int width, int height, SynchronizationContext context, Action<ImageRequest> complete)
 {
-    private volatile bool _cancelled;
+    private const int Waiting = 0;
+    private const int Running = 1;
+    private const int Cancelled = 2;
+
+    // Waiting, then Running on the worker or Cancelled on the UI thread: whichever comes first wins.
+    private int _state;
 
     /// <summary>
     /// Gets the source the request reads.
@@ -153,41 +158,35 @@ internal sealed class ImageRequest(ImageSource source, int width, int height, Sy
     public ImageSource Source => source;
 
     /// <summary>
+    /// Gets the cache's entry the decode is for; <see langword="null"/> for a request made outside a cache.
+    /// </summary>
+    public ImageEntry? Entry { get; init; }
+
+    /// <summary>
     /// Gets the result, once the decode ran.
     /// </summary>
     public ImageResult Result { get; private set; }
 
     /// <summary>
-    /// Gets a value indicating whether the element let the request go.
+    /// Skips the decode when it has not started.
     /// </summary>
-    public bool IsCancelled => _cancelled;
-
-    /// <summary>
-    /// Lets the request go: a decode not started is skipped, and a result not yet completed is dropped.
-    /// </summary>
-    public void Cancel() => _cancelled = true;
+    /// <returns><see langword="true"/> when the decode will not run; <see langword="false"/> when it runs or ran, and its
+    /// completion follows.</returns>
+    public bool TryCancel() => Interlocked.CompareExchange(ref _state, Cancelled, Waiting) == Waiting;
 
     /// <summary>
     /// Reads and decodes the image on the worker, then posts the completion to the UI thread.
     /// </summary>
     public void Run()
     {
-        if (_cancelled)
+        if (Interlocked.CompareExchange(ref _state, Running, Waiting) != Waiting)
         {
             return;
         }
 
         Result = ImageDecodeQueue.Decode(source, width, height);
-
-        // A queued request has a context: the element queues only when it found one.
-        context!.Post(static state => ((ImageRequest)state!).Complete(), this);
+        context.Post(static state => ((ImageRequest)state!).Complete(), this);
     }
 
-    private void Complete()
-    {
-        if (!_cancelled)
-        {
-            complete(this);
-        }
-    }
+    private void Complete() => complete(this);
 }

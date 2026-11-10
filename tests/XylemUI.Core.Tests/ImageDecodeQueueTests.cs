@@ -51,7 +51,7 @@ public sealed class ImageDecodeQueueTests
                 last = new ImageRequest(ImageSource.FromBytes(new byte[] { (byte)i }), 0, 0, context, completed.Add);
                 if (i == count - 1)
                 {
-                    last.Cancel();
+                    Assert.True(last.TryCancel());
                 }
 
                 ImageDecodeQueue.Enqueue(last);

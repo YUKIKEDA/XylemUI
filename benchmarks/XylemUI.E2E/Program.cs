@@ -38,6 +38,8 @@
 //                              time until the GPU has done its frame (row IM1)
 //   image-decode <file> [runs] one image file decoded at its size and at the widths 1,024, 400, and 100 (row IM1, 1b-2)
 //   image-tree [frames]        a frame of 100 image elements against 100 boxes, its CPU time and bytes (row IM1, 1b-2)
+//   image-scroll [frames]      the 100 images of design §11.3 scrolled under the default limits of the image cache: the frame's
+//                              CPU time, the bytes allocated, and the cache's counts (row IM1, 3a)
 //   menu                       a 10-item menu over the todo sample: the frame that opens it, and its key and hover frames (row P02d)
 //   menubar                    a 5-item menu bar over the todo sample: the frames that select it, move in it, open a menu, and switch menus (row P02d3)
 //   dragdrop                   a drag over the todo sample's rows: the frame of each move that changes the drop target (row DD1)
@@ -109,6 +111,7 @@ return scenario switch
     "image-upload" => ImageUpload.Run(Number(1, 20)),
     "image-decode" => ImageCost.Decode(args[1], Number(2, 20)),
     "image-tree" => ImageCost.Tree(Number(1, 600)),
+    "image-scroll" => ImageCost.Scroll(Number(1, 600)),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),

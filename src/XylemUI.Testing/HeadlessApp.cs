@@ -746,5 +746,8 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
 
         _rootScope = default;
+
+        // The tree is thrown away with its window: the images its cache kept for a later element go too (design §5.0.4, "Cache").
+        Tree.CachedImages.ReleaseAll();
     }
 }

@@ -235,6 +235,12 @@ public static class Elements
     /// <see cref="ImageOptions.Error"/>; each is a box of size 0 when not given. A box not given a size takes the image's pixels as
     /// logical pixels; given one side, it takes the other from the image's ratio (design §5.0.4, "Size").
     /// </summary>
+    /// <remarks>
+    /// The decoded image belongs to the window's cache (design §5.0.4, "Cache"; <see cref="ImageCache"/>): the elements of a window
+    /// that show equal sources at the same <see cref="ImageOptions.DecodeWidth"/> and <see cref="ImageOptions.DecodeHeight"/> share
+    /// one decode and one image, and an image the cache holds is shown at once, with no loading part before it. When the element's
+    /// scope is disposed, the cache keeps the image for a later element within its limits.
+    /// </remarks>
     /// <param name="source">Where the image's bytes come from.</param>
     /// <param name="options">How the image is read, sized, and shown; the defaults when <see langword="null"/>.</param>
     /// <returns>The image's node.</returns>
@@ -248,7 +254,8 @@ public static class Elements
     /// <summary>
     /// Makes an image element whose source <paramref name="source"/> reads again whenever a signal it read changes. A source equal to
     /// the one shown changes nothing; another lets the image shown go at once and shows the loading part until the new one is read
-    /// (IM1's Grill, Q20).
+    /// (IM1's Grill, Q20). A source whose image the window's cache holds is shown at once, with no loading part in between
+    /// (design §5.0.4, "Cache").
     /// </summary>
     /// <param name="source">The source, read in an effect of the element's scope.</param>
     /// <param name="options">How the image is read, sized, and shown; the defaults when <see langword="null"/>.</param>
