@@ -17,6 +17,8 @@ A change a finding suggests is checked on each path it touches before it goes in
 
 A finding that asks to change a decision the owner made is not declined by citing the rule that records the decision. Reply with what the decision was and what the finding shows, and ask the owner (`.cursor/rules/consent.mdc`).
 
+A fix for a finding that settles a point nobody had decided is named as the agent's own decision in three places: the reply, the PR body, and the report to the owner, so that the owner can reverse it before the merge. A choice between shapes that the requirements judge differently is not settled this way: it is asked (`.cursor/rules/design-docs.mdc`, "A design PR writes what the Grill decided"). On PR #766 a finding asked what happens to an animated image's entry when it is released; the fix also wrote that an entry an element shows keeps playing after `Evict` or a limit takes it out of the index, as Flutter's does, and the three places said so.
+
 A review the owner asks for is posted on the pull request, in the same turn, without waiting for an ask to post it. A review shown only in the conversation is not seen by anyone else, and the pull request does not show that it was reviewed (PR #146). A re-review after fixes is posted the same way.
 
 Before calling a PR ready, whenever the owner asks for the next step, and whenever a report gives a PR's state (its checks included), read the reviews and inline comments of every open PR (`gh pr view <n> --json reviews,comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments`). On PR #496 the owner asked whether the checks had ended; the answer read the checks alone and said the PR waited for a review, while the review had been posted before.
