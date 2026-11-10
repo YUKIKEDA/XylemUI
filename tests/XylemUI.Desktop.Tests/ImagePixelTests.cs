@@ -112,6 +112,33 @@ public sealed class ImagePixelTests
         Assert.Equal(0, app.Tree.Images.Count);
     }
 
+    /// <summary>
+    /// Disposing the app throws its tree away: the image its cache kept is released with it (design §5.0.4, "Cache").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 100 x 80 on WARP that shows baseline.jpg from its bytes; settled.
+    ///
+    /// Steps:
+    /// - Dispose the app.
+    ///
+    /// Expected:
+    /// - The window held one image before, and holds none after.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task App_Disposed_ReleasesTheImagesOfItsCache()
+    {
+        byte[] bytes = File.ReadAllBytes(Path.Combine(Folder, "baseline.jpg"));
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => Image(ImageSource.FromBytes(bytes)), Options());
+        Settle(app);
+        Assert.Equal(1, app.Tree.Images.Count);
+
+        await app.DisposeAsync();
+
+        Assert.Equal(0, app.Tree.Images.Count);
+    }
+
     private static HeadlessOptions Options() =>
         new()
         {

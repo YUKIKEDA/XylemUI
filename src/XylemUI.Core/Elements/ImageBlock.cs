@@ -13,8 +13,9 @@ namespace XylemUI;
 /// a scope of its own under the block's, as <see cref="ShowBlock"/> makes its parts.
 /// </para>
 /// <para>
-/// The image is added to the window's <see cref="TextureCache"/> on the UI thread, when the decode's result arrives, and released
-/// when the source changes or the block's scope is disposed. A decode the block let go of is skipped, or its result dropped.
+/// The image belongs to the window's cache (<see cref="WindowImageCache"/>; row IM1, 3a), not to the block: the block asks the
+/// cache for its source at its decode size, shows the entry's image, and leaves the entry when its source changes or its scope is
+/// disposed. The cache decides when the image is released and what becomes of a decode nobody waits for.
 /// </para>
 /// </remarks>
 internal sealed class ImageBlock
@@ -23,9 +24,8 @@ internal sealed class ImageBlock
     private readonly ImageOptions _options;
     private readonly SynchronizationContext? _context;
     private readonly ScopeRef _owner;
-    private readonly Action<ImageRequest> _complete;
     private ImageSource? _source;
-    private ImageRequest? _pending;
+    private ImageEntry? _entry;
     private ImageHandle _image;
     private int _width;
     private int _height;
@@ -40,7 +40,6 @@ internal sealed class ImageBlock
         _options = options;
         _owner = owner;
         _context = SynchronizationContext.Current;
-        _complete = Complete;
     }
 
     /// <summary>
@@ -52,6 +51,12 @@ internal sealed class ImageBlock
     /// Gets the image shown, or <see langword="default"/> while it is read or when it failed.
     /// </summary>
     public ImageHandle Image => _image;
+
+    /// <summary>
+    /// Gets or sets the block that waits after this one for the same decode (<see cref="ImageEntry.FirstWaiting"/>); only
+    /// <see cref="WindowImageCache"/> writes it.
+    /// </summary>
+    internal ImageBlock? NextWaiting { get; set; }
 
     /// <summary>
     /// Makes an image element in a scope of its own under the current one, which reads its first source at once.
@@ -94,8 +99,9 @@ internal sealed class ImageBlock
     // is not a leaf and this is not asked.
     private MeasureResult Measure() => _image.IsNone ? MeasureResult.Of(0, 0) : MeasureResult.Of(_width, _height);
 
-    // A source to show. An equal one changes nothing; another lets the image or the decode in flight go, shows the loading part,
-    // and asks for the decode (IM1's Grill, Q20).
+    // A source to show. An equal one changes nothing; another lets the image or the decode waited for go and asks the window's
+    // cache for the new one (IM1's Grill, Q20): an image the cache holds is shown at once, with no loading part in between, and a
+    // decode in flight is shared.
     private void Load(ImageSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -106,43 +112,53 @@ internal sealed class ImageBlock
 
         _source = source;
         LetGo();
-        ShowPart(_options.Loading);
-        int width = _options.DecodeWidth ?? 0;
-        int height = _options.DecodeHeight ?? 0;
-        if (_context is null)
+        var key = new ImageKey(source, _options.DecodeWidth ?? 0, _options.DecodeHeight ?? 0);
+        ImageEntry entry = _tree.CachedImages.Acquire(key, this, _context);
+        switch (entry.State)
         {
-            // No loop to post to (a tree drawn without one, as a unit test's): the decode runs here.
-            var request = new ImageRequest(source, width, height, null, _complete);
-            _pending = request;
-            Complete(request, ImageDecodeQueue.Decode(source, width, height));
-            return;
+            case ImageEntryState.Ready:
+                _entry = entry;
+                Show(entry);
+                break;
+            case ImageEntryState.Decoding:
+                _entry = entry;
+                ShowPart(_options.Loading);
+                break;
+            default:
+                // Decoded here, with no loop to post to, and it failed: the cache does not keep the entry.
+                ShowPart(_options.Error);
+                break;
         }
-
-        _pending = new ImageRequest(source, width, height, _context, _complete);
-        ImageDecodeQueue.Enqueue(_pending);
     }
 
-    private void Complete(ImageRequest request) => Complete(request, request.Result);
-
-    // A decode's result on the UI thread: the image, or the error part.
-    private void Complete(ImageRequest request, ImageResult result)
+    /// <summary>
+    /// Tells the block that the decode it waits for ended, on the UI thread: it shows the image, or the error part.
+    /// </summary>
+    /// <param name="entry">The entry <see cref="WindowImageCache.Acquire"/> gave the block.</param>
+    internal void Completed(ImageEntry entry)
     {
-        if (request != _pending || !_tree.Nodes.IsAlive(Node))
+        if (!ReferenceEquals(entry, _entry) || !_tree.Nodes.IsAlive(Node))
         {
             return;
         }
 
-        _pending = null;
-        if (result.Pixels is null)
+        if (entry.State == ImageEntryState.Failed)
         {
+            _entry = null;
             ShowPart(_options.Error);
             return;
         }
 
-        ShowPart(null);
-        _image = _tree.Images.Add(result.Width, result.Height, result.Pixels);
-        _width = result.Width;
-        _height = result.Height;
+        Show(entry);
+    }
+
+    // The entry's image in place of the part.
+    private void Show(ImageEntry entry)
+    {
+        RemovePart();
+        _image = entry.Image;
+        _width = entry.Width;
+        _height = entry.Height;
 
         // The image's ratio, so that a box given one side takes the other from it (IM1's Grill, Q12), unless the app set a ratio.
         LayoutStyle style = _tree.Nodes.GetRef(Node).Layout.Style;
@@ -157,14 +173,12 @@ internal sealed class ImageBlock
         }
     }
 
-    // Lets the image or the decode in flight go, and the ratio the image gave the box.
+    // Leaves the entry shown or waited for, and lets go of the ratio the image gave the box. The cache releases the image.
     private void LetGo()
     {
-        _pending?.Cancel();
-        _pending = null;
+        Leave();
         if (!_image.IsNone)
         {
-            _tree.Images.Release(_image);
             _image = default;
             if (_tree.Nodes.IsAlive(Node))
             {
@@ -181,29 +195,41 @@ internal sealed class ImageBlock
 
     private void Dispose()
     {
-        _pending?.Cancel();
-        _pending = null;
-        if (!_image.IsNone && _tree.Images.IsAlive(_image))
+        Leave();
+        _image = default;
+    }
+
+    private void Leave()
+    {
+        if (_entry is { } entry)
         {
-            _tree.Images.Release(_image);
+            _entry = null;
+            _tree.CachedImages.Leave(entry, this);
+        }
+    }
+
+    // Takes the part away, when there is one. It is a method of its own, apart from ShowPart: the function ShowPart gives the scope
+    // captures its parameter, so ShowPart makes an object for it on entry, and an image the cache holds is shown with no
+    // allocation (the Zero-Alloc test of switching between cached sources).
+    private void RemovePart()
+    {
+        if (_partNode.IsNone)
+        {
+            return;
         }
 
-        _image = default;
+        _tree.Focus.Lose(_partNode);
+        ScopeHandle old = _part;
+        _part = default;
+        _partNode = default;
+        _tree.DetachChildren(Node);
+        Scope.Dispose(old);
     }
 
     // Makes `part` the node's child in place of the one there: nothing for null.
     private void ShowPart(Func<Element>? part)
     {
-        if (!_partNode.IsNone)
-        {
-            _tree.Focus.Lose(_partNode);
-            ScopeHandle old = _part;
-            _part = default;
-            _partNode = default;
-            _tree.DetachChildren(Node);
-            Scope.Dispose(old);
-        }
-
+        RemovePart();
         if (part is null)
         {
             return;

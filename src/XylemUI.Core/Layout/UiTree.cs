@@ -44,6 +44,7 @@ internal sealed class UiTree
         Focus = new FocusManager(this);
         Animations = new AnimationClock(this);
         Popups = new OverlayPopupHost(this);
+        CachedImages = new WindowImageCache(Images);
     }
 
     /// <summary>
@@ -55,6 +56,12 @@ internal sealed class UiTree
     /// Gets the images of the tree's window, which its display lists draw (design §5.0.4, "Owner and lifetime").
     /// </summary>
     internal TextureCache Images { get; } = new();
+
+    /// <summary>
+    /// Gets the cache of the images the tree's image elements decoded (design §5.0.4, "Cache"), which adds to and releases from
+    /// <see cref="Images"/>.
+    /// </summary>
+    internal WindowImageCache CachedImages { get; }
 
     /// <summary>
     /// Gets a value indicating whether a popup closed since the last frame took it (<see cref="TakePopupsChanged"/>): the window's
