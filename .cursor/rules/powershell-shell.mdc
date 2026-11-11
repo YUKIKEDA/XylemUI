@@ -46,6 +46,7 @@ body
 - In Bash, `rm -rf "$DIR"/*` is refused by the agent's safety check, because an empty `$DIR` would make it `/*`. Write `"${DIR:?}"/*` or a literal path (S8b).
 - A P/Invoke declared with `Add-Type` receives `$null` for a string parameter as an empty string. Pass `[NullString]::Value` for a null string: `FindWindowW("TsfSpike", $null)` returned 0, and the messages meant for the window went nowhere (PR #511).
 - In PowerShell, a command that holds `C:\Program Files (x86)\...` (the `vswhere` path a NativeAOT publish adds to `PATH`) and calls `Remove-Item` is refused by the same check as a removal of a system path, and none of it runs. Clean up in a command of its own (T5, PR #228). I1c broke this twice: a removal beside the `vswhere` path, and one beside a search whose pattern held `\*\*`, which the check read as a path; both commands ran nothing (PR #410). Give `Remove-Item` a command of its own every time, whatever else the command holds.
+- A PowerShell script that enters a worktree (`Set-Location`) goes back when it ends (`Push-Location` and `Pop-Location`): the agent shell's directory follows it. In IM1 3c a script left the shell in a scratch worktree, and after the worktree was removed its empty folder could not be removed, because the safety check refuses to remove the shell's own directory (`.dev/sz-new`, PR #782's retrospective).
 
 ## Writing files
 
