@@ -232,7 +232,7 @@ public sealed class ActionTableGeneratorTests
     /// <remarks>
     /// Preconditions:
     /// - For each row, a library that names a class: one with no <c>AddDefaults</c>; one whose <c>AddDefaults</c> is not static;
-    ///   one whose <c>AddDefaults</c> takes no keymap; one whose <c>AddDefaults</c> is internal; an internal class. An app that
+    ///   one whose <c>AddDefaults</c> takes no parameter; one whose <c>AddDefaults</c> takes a string; one whose <c>AddDefaults</c> is internal; an internal class. An app that
     ///   references the library.
     ///
     /// Steps:
@@ -248,6 +248,7 @@ public sealed class ActionTableGeneratorTests
     [InlineData("public static class BadKeys { }")]
     [InlineData("public sealed class BadKeys { public void AddDefaults(XylemUI.Keymap keymap) { } }")]
     [InlineData("public static class BadKeys { public static void AddDefaults() { } }")]
+    [InlineData("public static class BadKeys { public static void AddDefaults(string keymap) { } }")]
     [InlineData("public static class BadKeys { internal static void AddDefaults(XylemUI.Keymap keymap) { } }")]
     [InlineData("internal static class BadKeys { public static void AddDefaults(XylemUI.Keymap keymap) { } }")]
     public void DefaultKeyBindings_WithNoMethodTheAppCanCall_IsAnError(string declaration)
