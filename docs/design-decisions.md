@@ -954,6 +954,32 @@ Rejected:
 
 ---
 
+## ローカライズ
+
+Decision（D15 の Grill、Issue #170）:
+  アプリの文言のローカライズを要件にする（設計書 §4.11）。
+  ARB のメッセージ（ICU MessageFormat 1 の範囲と `selectordinal`）から、Source Generator が型付きのメソッドを生成する。
+  ロケールは Signal として Context に置く。数値と日付の書式は、CLDR から作った表で出す。`InvariantGlobalization=true` は保つ。
+  部品は英語の文言を辞書から読み、翻訳は別のパッケージに持つ。
+
+Reason:
+  Flutter は枠組みを本体に持つ。部品の組 B12（Calendar など）は、月と曜日の名前と週の始まりが要る。
+  不変モードのもとでは、.NET の書式は不変カルチャになり、ほかのカルチャは既定で作れない。外すと Linux に `libicu` が要る（§0.1、§6.3）。
+
+Rejected:
+  - .NET の `ResourceManager`（.resx）で辞書を持つ（不変モードのもとではカルチャを作れず、言語を選べない。Avalonia の公式の手順は、実行中にカルチャを変えても `x:Static` の表示が更新されないと書いている。差し込みの型と複数形を書く場所も無い）
+  - 辞書を持たず、ロケールの Signal だけを出す（Flutter の `gen-l10n` に届かない）
+  - 書式を OS の API で出す（Windows の `GetDateFormatEx` など。Linux に相当する API が無く、OS ごとに結果が変わる）
+  - 不変モードを外して BCL と ICU で書式を出す（Linux に `libicu` を要求する）
+  - LDML 第 9 部の新しい MessageFormat（比べた相手は使っていない。ICU MessageFormat 1 の構文と互換でないと仕様が書いていて、既存の ARB を読めない）
+  - 実行時にメッセージの構文を解釈するライブラリ（解釈のたびに確保が起きる。生成したメソッドなら起きない）
+  - 翻訳漏れをいつもビルドのエラーにする（Flutter は基準のロケールの文に落として報告する。警告にして、重さをアプリが選ぶ）
+  - グレゴリオ暦のほかの暦（和暦など）を v1 に入れる（Flutter の `intl` も Avalonia の Calendar もグレゴリオ暦だけで描く。要るなら別の行にする）
+  - Flutter に対応する文が無いメッセージを、エージェントが 82 言語に訳す（訳を確かめられる人がいない。英語と日本語だけを持ち、ほかは英語に落とす）
+  - 部品の文言を C# やテーマに英語で直に書く（Avalonia の `ToggleSwitch` の `"Off"`。アプリが訳せない）
+
+---
+
 ## スコープ外
 
 Decision:

@@ -57,7 +57,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 
 - **ターゲット**: .NET 10（LTS）、C# 14。.NET 11 以降への追従は LTS 単位で行う。
 - **ビルド構成**: リリースは NativeAOT。開発時は JIT で実行し、デバッガと .NET Hot Reload（`MetadataUpdateHandler` によるUI再構築フック、要件8）を使う。両構成で同じ挙動になるよう、フレームワーク本体は **trim / AOT 互換（警告ゼロ）** を必須とする。リフレクションに頼る仕組み（リフレクションベースのシリアライザ、動的コード生成）は使わず、必要な定型コードは Source Generator で生成する。
-- **グローバリゼーション**: フレームワーク本体は .NET のカルチャ依存API（カルチャ依存の文字列比較・`StringInfo` 等）に依存しない。テキスト処理は自前の Unicode 実装（§4）で行い、文字列比較は Ordinal とする。これによりアプリは `InvariantGlobalization=true` で動かせ、Linux で `libicu` を要求しない（§6.3、§9）。
+- **グローバリゼーション**: フレームワーク本体は .NET のカルチャ依存API（カルチャ依存の文字列比較・`StringInfo` 等）に依存しない。テキスト処理は自前の Unicode 実装（§4）で行い、文字列比較は Ordinal とする。これによりアプリは `InvariantGlobalization=true` で動かせ、Linux で `libicu` を要求しない（§6.3、§9）。ローカライズ（辞書、複数形、数値と日付の書式）も、.NET のカルチャを通さずに自前で持つ（§4.11）。
 - **unsafe の範囲**: `unsafe` / 関数ポインタ / `Span<T>` の再解釈は Interop 層と Render 層に限定する。Core（Reactive・Layout・Invalidation）は safe なコードで書く。
 - **Nullable 参照型**: 全プロジェクトで有効化する。
 - **擬似コードの表記**: 本ドキュメントのコードは C# の擬似コードである。MoonBit 版からの読み替えは次のとおり。
@@ -91,7 +91,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 
 1. レンダリング/描画（クリッピング、半透明合成順序、ダメージトラッキング等）
 2. レイアウト（Flexbox/Grid/絶対配置、intrinsic sizing、スクロール、増分再計算、RTL）
-3. テキスト/国際化（シェーピング、複雑スクリプト、BiDi、IME、a11y読み上げ順序、リッチテキスト（範囲のスタイル・装飾・リンク・インラインオブジェクト、§4.8、D9 の Grill））
+3. テキスト/国際化（シェーピング、複雑スクリプト、BiDi、IME、a11y読み上げ順序、リッチテキスト（範囲のスタイル・装飾・リンク・インラインオブジェクト、§4.8、D9 の Grill）、ローカライズ（メッセージの辞書、複数形と選択、ロケールに応じた書式、ロケールの解決、部品の文言、§4.11、D15 の Grill））
 4. 入力/インタラクション（マウス/キーボード/タッチ、フォーカス管理、ヒットテスト、D&D、カーソル、ジェスチャー）
 5. アクセシビリティ（OS a11y API連携、役割/状態/値の公開、高コントラスト対応）
 6. ウィンドウ管理/OS統合（マルチウィンドウ、トレイ、通知、クリップボード、テーマ検知）
@@ -1785,7 +1785,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 - **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
   - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした
-- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
+- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、一覧を全部読んで解決したロケールを使う、§4.11）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
 - **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
 - **確かめ方:**
   - `samples/Counter`: `Column` に `Text`（`clicks: N`）と `Button`（自分で付けた背景・角丸・余白・ホバーと押下の見た目）を載せる
@@ -1824,7 +1824,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open、DD1 の DragOver の順に重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
-**Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。
+**Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。ロケールも同じ形で配る（§4.11）。
 
 **ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
@@ -3230,6 +3230,53 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 - 画素: 2 つの葉にまたがる選択のゴールデン画像
 - Todo: 見出しと一覧を領域で包み、複数の項目にまたがって選んでコピーできることを、オーナーが実機で確かめる
 
+### 4.11 ローカライズ（D15 の Grill でオーナーが決定、Issue #170）
+
+アプリの文言のローカライズを、フレームワークの要件にする（§1 の 3）。持つものは 5 つで、メッセージの辞書、複数形と選択、ロケールに応じた数値と日付の書式、ロケールの解決、部品の文言である。Flutter は枠組みを本体に持つ（`packages/flutter/lib/src/widgets/localizations.dart` 114 行目の `LocalizationsDelegate`、479 行目の `Localizations`）。部品の組 B12（Calendar など、§13.1）は、月と曜日の名前と週の始まりが無いと作れない。実装は行 LC1〜LC3 で、部品の行 B1 より前に入れる。
+
+**前提: `InvariantGlobalization=true` は保つ（§0.1、§6.3）。** このもとでは .NET の書式は使えない。日付と時刻は固定のパターン、数値は不変カルチャの書式になり、不変カルチャのほかのカルチャは既定では作れない（.NET の `docs/design/features/globalization-invariant-mode.md`、Microsoft Learn の「Globalization config settings」の `PredefinedCulturesOnly`）。外すと、Linux では `libicu` が無いプロセスは起動時に終わる（Microsoft Learn の「Globalization and ICU」）。そこで、辞書も書式も .NET のカルチャを通さずに自前で持つ。
+
+**ロケール:**
+
+- **値:** 言語・文字体系・地域の 3 つの欄を持つ値型（BCP 47 のタグから作る）。`CultureInfo` は使わない。
+- **配り方:** ロケールは `IReadOnlySignal<T>` として Reactive Context（§2.13）に置く。ロケールを変えると、それを読んでいる所（メッセージ、書式、書字の向き）だけが再実行される。サブツリーに別の Signal を Provide すれば、そこだけ別のロケールになる（Flutter の `Localizations.override` に当たる）。Avalonia の公式の手順（`.resx` と `x:Static`）は、カルチャを変えても表示が更新されないと自分で書いている。
+- **OS の言語:** ウィンドウの host は、OS の優先言語の一覧を全部読む（Windows は `GetUserPreferredUILanguages`。今は最初の 1 つだけを読んでいる、§2.13「`Text` の既定」）。OS の設定が変わったら、一覧を読み直して解決し直す（Flutter の `didChangeLocales`、`localizations.dart` 872 行目）。
+- **解決:** アプリは対応するロケールの一覧を宣言する。OS の一覧の先頭から順に、次の優先度で対応するロケールを探す。Flutter の `basicLocaleListResolution` と同じ順である（`packages/flutter/lib/src/widgets/app.dart` 972〜981 行目）。
+  1. 言語・文字体系・地域が一致
+  2. 言語・文字体系が一致
+  3. 言語・地域が一致
+  4. 言語が一致
+  5. 地域だけが一致（OS の一覧のどれも 1〜4 で合わなかったとき）
+  6. 対応の一覧の最初
+- **差し替え:** アプリは解決の関数を差し替えられる。ロケールを OS によらず固定することも、同じ Signal に書くだけでできる。
+- **書字の向き:** 書字の向きの既定は、ロケールから出す（Flutter の `WidgetsLocalizations.textDirection`、`localizations.dart` 171 行目）。レイアウトを反転する実装は行 P03b のままで、P03b はこの値を読む。
+
+**メッセージの辞書:**
+
+- **入力:** ARB（JSON）。ロケールごとに 1 ファイルで、メッセージごとに `@キー` の欄へ説明と差し込みの型を書く。Flutter の `gen-l10n` と同じ形式なので、ARB を読む翻訳ツールをそのまま使える。
+- **構文:** ICU MessageFormat 1 の範囲。名前付きの差し込み、`plural`、`select`、`selectordinal`、数値と日付の型付きの差し込みを持つ。Flutter の範囲（`packages/flutter_tools/lib/src/localizations/message_parser.dart` 19〜20 行目の `plural` と `select`）に、序数の `selectordinal` を足した。CLDR が序数の規則も持ち、複数形と同じ表から出せるためである。
+- **生成:** `XylemUI.Generators` の Source Generator が、ビルド時に ARB を読み、メッセージごとに C# のメソッドを生成する。差し込みはメソッドの引数になる。実行時には構文を解釈しない。リフレクションも使わない（§0.1）。
+- **食い違い:** 差し込みの名前か型がロケールの間で食い違うとき、構文が誤っているときは、ビルドのエラーにする。
+- **翻訳漏れ:** あるロケールにメッセージが無いときは、基準のロケール（アプリが宣言する）の文に落とし、ビルドの警告にする。Flutter も基準のロケールの文でメソッドを生成し、漏れを数えて報告する（`packages/flutter_tools/lib/src/localizations/gen_l10n.dart` 1033〜1038 行目）。このリポジトリは警告をエラーにするので（`engineering` の規則）、フレームワーク自身の翻訳では漏れがビルドを止める。
+
+**書式（数値と日付）:**
+
+- **出所:** CLDR から作った表を、ビルド時に生成してバイナリに入れる。入れるのは、アプリが宣言したロケールの分だけである。どの OS でも同じ結果になる。Flutter も `package:intl` のデータをアプリに入れている（`packages/flutter_localizations/pubspec.yaml` 16 行目、`lib/src/material_localizations.dart` 197 行目の `dateSymbols.FIRSTDAYOFWEEK`）。
+- **範囲:**
+  - 複数形と序数の規則（区分は `zero`・`one`・`two`・`few`・`many`・`other`。LDML 第 3 部「Language Plural Rules」）
+  - 数値: 小数、百分率、通貨、短縮（1.2万、1.2K）
+  - 日付と時刻: Flutter の `DateFormat` と同じスケルトンの組、月・曜日・午前と午後の名前、週の始まり
+  - 短い日付の解析（B12 の日付の入力欄が使う）
+- **暦:** グレゴリオ暦だけ。Flutter の `intl` も Avalonia の Calendar（`src/Avalonia.Controls/Calendar/DateTimeHelper.cs` 84〜107 行目）も、グレゴリオ暦だけで描く。
+- **費用:** 表がバイナリをどれだけ増やすかは、行 LC2 で測る（宣言するロケールの数ごとに）。
+
+**部品の文言:**
+
+- **本体:** `XylemUI.Primitives` の部品は、英語の文言だけを持ち、アプリの文言と同じ辞書の仕組みから読む。C# やテーマに英語を直に書かない。Avalonia は 3 通りが混ざっている（リソースのキー: `src/Avalonia.Themes.Fluent/Strings/InvariantResources.xaml` 13〜15 行目、C# の直書き: `src/Avalonia.Controls/ToggleSwitch.cs` 57 行目の `"Off"`、.NET のカルチャ）。
+- **翻訳:** 別のパッケージに、Flutter と同じ 82 言語を持つ（`packages/flutter_localizations/lib/src/l10n/` の `material_*.arb` は 116 ファイル）。Flutter に同じ意味のメッセージがあるもの（切り取り、コピー、貼り付け、OK、キャンセルなど）は、Flutter の ARB の訳を、BSD 3 条項の表示を付けて使う。
+- **Flutter に対応する文が無いメッセージ:** 英語と日本語だけを持ち、ほかの言語は英語に落とす。82 言語の訳を確かめられる人がいないためである。どのメッセージがどの言語で英語に落ちるかの一覧を、Gallery（G1）で見せる。
+- **差し替え:** アプリは、部品の文言を自分の辞書で上書きできる。
+
 ---
 
 ## 5. レンダリングアーキテクチャ：DisplayList + GPUバックエンド
@@ -4188,7 +4235,7 @@ AT-SPIはD-Bus IPCを前提とするプロトコルであり、SDL3はD-Busの�
 
 **採用: 古い世代のglibcをベースラインとしたコンテナ環境でビルドする。** 具体的な最小サポートバージョンは、対象ユーザー層の実際のディストロ分布を見てから確定するが（現時点でRocky Linux 8やUbuntu 20.04相当のglibcを想定。.NET 10 の NativeAOT がサポートする下限とも照合する）、CI（`build-linux.yml`）のビルドコンテナをこのベースラインに固定し、新しいglibc環境でビルドして古い環境で動かないという事故を防ぐ。Microsoft が配布しているクロスビルド用コンテナイメージの利用を第一候補とする。muslベースの完全静的バイナリ化（`linux-musl-x64`）は将来的な選択肢として残すが、glibc動的リンク前提のfontconfig/libdbus-1（§6.2/§8.11）と相性が悪くなるため、v1では採用しない。
 
-**ICU 依存の排除:** .NET は Linux でグローバリゼーションに `libicu` を動的に読み込む。§0.1 のとおりフレームワーク本体はカルチャ依存 API を使わないため、テンプレートの既定で `InvariantGlobalization=true` を設定し、`libicu` を配布先に要求しない。アプリが日付・数値のカルチャ別書式を必要とする場合は、アプリ側の判断で無効化できる。
+**ICU 依存の排除:** .NET は Linux でグローバリゼーションに `libicu` を動的に読み込む。§0.1 のとおりフレームワーク本体はカルチャ依存 API を使わないため、テンプレートの既定で `InvariantGlobalization=true` を設定し、`libicu` を配布先に要求しない。ロケールに応じた日付と数値の書式は、フレームワークが CLDR から作った表で出すので（§4.11）、そのために無効化する必要は無い。
 
 ---
 
@@ -4946,6 +4993,8 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | libwebp                    | WebP のデコード（§5.0.4）。アニメーションは、同じ配布の libwebpdemux（行 IM1 の 3c） | BSD-3-Clause            | 静的（同上）                                                        |
 | skcms                      | ICC から sRGB への変換（§5.0.4）   | BSD-3-Clause            | 静的（同上。行 IM1 の 2 つ目の PR）                                 |
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
+| CLDR のデータ              | 複数形の規則と、数値と日付の書式の表（§4.11） | Unicode のライセンス（`unicode-org/cldr` の `LICENSE`。データに著作権と許諾の表示を付ける） | ライブラリではない。ビルド時に表を生成し、宣言したロケールの分をバイナリに入れる（行 LC2） |
+| Flutter の ARB の訳        | 部品の文言の翻訳（§4.11）          | BSD-3-Clause            | ライブラリではない。同じ意味のメッセージの訳を、翻訳のパッケージに入れる（行 LC3） |
 
 **ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。AccessKit だけは作らず、release の zip にある MSVC 用の静的ライブラリと DLL をそのまま取る（§4.4.1、#633 の実装）。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す。AccessKit（§4.4.1、行 P02g）だけは、ソースではなく C の bindings の release の zip を版と SHA-256 で固定して取り、中の静的ライブラリと共有ライブラリを `vendor/out` に置く。ソースから作るには Rust のツールチェーンが要るからである
 
@@ -5441,7 +5490,7 @@ Web の Radix UI / shadcn/ui と同じ考え方で、**振る舞いだけを持�
 | 文字の入力（B9） | **TextField**、パスワードの欄、数値の欄（NumberBox）、型のある欄（MaskedTextBox）、AutoComplete、検索の欄、トークンの欄、1 文字ずつの欄（OTP）、`@` で候補を出す欄、内容で伸びる複数行の欄、欄の前後の付属物（InputGroup）、その場で編集できるラベル、フォームの枠（ラベル・補助の文・検証の知らせ）、情報ボタン付きのラベル、リッチテキストの欄と表示 |
 | スクロール（B10） | ScrollBar、目盛り付きの ScrollBar |
 | そのほか（B11） | テーマだけ: 人のアイコン（Avatar）、重ねたアバター、人の表示（Persona と在席の印）、区切り線、Card、Chip、キーの表記 |
-| 日付と時刻（B12） | Calendar、CalendarDatePicker、DatePicker、TimePicker、日付の範囲の選択、日付と時刻を 1 つで選ぶ欄とその範囲。月と曜日の名前と週の始まりが要るので、ローカライズ（行 D15）の後に入れる |
+| 日付と時刻（B12） | Calendar、CalendarDatePicker、DatePicker、TimePicker、日付の範囲の選択、日付と時刻を 1 つで選ぶ欄とその範囲。月と曜日の名前と週の始まりが要るので、ローカライズの書式（§4.11、行 LC2）の後に入れる |
 
 読んだ宣言と一覧（部品の名前がそこにあることを確かめた。振る舞いは、それぞれの行の Grill で読む）:
 
