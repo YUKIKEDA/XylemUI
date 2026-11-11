@@ -120,17 +120,19 @@ public sealed class ActionTableGeneratorTests
     }
 
     /// <summary>
-    /// An assembly with no action and no table to call gets no generated source.
+    /// A library with no action gets no generated source. An app with none of its own still gets the module initializer, for the
+    /// actions and the default key bindings of <c>XylemUI.Core</c>, which every app references.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A library with one class that carries no attribute; an app with a <c>Main</c> and no reference to a library with a table.
+    /// - A library with one class that carries no attribute; an app with a <c>Main</c> that references <c>XylemUI.Core</c> alone.
     ///
     /// Steps:
     /// - Run the generator on each.
     ///
     /// Expected:
-    /// - No source and no diagnostic for either.
+    /// - No source and no diagnostic for the library. One source for the app, which compiles: its module initializer calls the
+    ///   table of <c>XylemUI.Core</c> and then registers <c>CoreKeyBindings.AddDefaults</c>.
     /// </remarks>
     [Fact]
     public void Assembly_WithNothingToRegister_GetsNoSource()
@@ -140,8 +142,133 @@ public sealed class ActionTableGeneratorTests
         Assert.Empty(library.GeneratorDiagnostics);
 
         Result app = Run("Demo.App", OutputKind.ConsoleApplication, "public static class Program { public static void Main() { } }");
-        Assert.Empty(app.Sources);
         Assert.Empty(app.GeneratorDiagnostics);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        int table = source.IndexOf("global::XylemUI.Generated.XylemUI_CoreActions.Register();", StringComparison.Ordinal);
+        int defaults = source.IndexOf(
+            "global::XylemUI.Keymap.RegisterDefaults(global::XylemUI.CoreKeyBindings.AddDefaults);",
+            StringComparison.Ordinal
+        );
+        Assert.True(table > 0 && defaults > table, source);
+    }
+
+    /// <summary>
+    /// An app's module initializer registers the default key bindings of the assemblies it references, an assembly after the
+    /// assemblies it references, and its own last (design §7, "The default keys and actions"); a library gets no such code.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library <c>Demo.Zeta</c> that names a class with <c>AddDefaults</c>; a library <c>Demo.Alpha</c> that references it and
+    ///   names its own; a library <c>Demo.Beta</c> that references neither and names its own; an app that references the three,
+    ///   in the order Alpha, Beta, Zeta, and names an internal class of its own.
+    ///
+    /// Steps:
+    /// - Run the generator on <c>Demo.Alpha</c> and on the app.
+    ///
+    /// Expected:
+    /// - The library gets no source. The app's source compiles and registers, in this order: <c>XylemUI.Core</c>'s (every other
+    ///   assembly references it), <c>Demo.Beta</c>'s (it references none of the others, and its name is before Zeta's),
+    ///   <c>Demo.Zeta</c>'s, <c>Demo.Alpha</c>'s (after Zeta, which it references, though its name is first), and the app's own.
+    /// </remarks>
+    [Fact]
+    public void DefaultKeyBindings_OfReferencedAssemblies_AreRegisteredInDependencyOrder()
+    {
+        static string Library(string name, string uses) =>
+            $$"""
+                using XylemUI;
+
+                [assembly: DefaultKeyBindings(typeof({{name}}Keys))]
+
+                public static class {{name}}Keys
+                {
+                    public static void AddDefaults(Keymap keymap) { {{uses}} }
+                }
+                """;
+        MetadataReference zeta = Run("Demo.Zeta", OutputKind.DynamicallyLinkedLibrary, Library("Zeta", string.Empty)).Emit();
+        Result alphaResult = Run("Demo.Alpha", OutputKind.DynamicallyLinkedLibrary, Library("Alpha", "ZetaKeys.AddDefaults(keymap);"), zeta);
+        Assert.Empty(alphaResult.Sources);
+        Assert.Empty(alphaResult.CompilerErrors);
+        MetadataReference alpha = alphaResult.Emit();
+        MetadataReference beta = Run("Demo.Beta", OutputKind.DynamicallyLinkedLibrary, Library("Beta", string.Empty)).Emit();
+        const string App = """
+            using XylemUI;
+
+            [assembly: DefaultKeyBindings(typeof(AppKeys))]
+
+            internal static class AppKeys
+            {
+                internal static void AddDefaults(Keymap keymap) { }
+            }
+
+            public static class Program
+            {
+                public static void Main() { }
+            }
+            """;
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, App, alpha, beta, zeta);
+
+        Assert.Empty(app.GeneratorDiagnostics);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        int At(string type) => source.IndexOf($"global::XylemUI.Keymap.RegisterDefaults({type}.AddDefaults);", StringComparison.Ordinal);
+        int[] at =
+        [
+            At("global::XylemUI.CoreKeyBindings"),
+            At("global::BetaKeys"),
+            At("global::ZetaKeys"),
+            At("global::AlphaKeys"),
+            At("global::AppKeys"),
+        ];
+        Assert.True(at[0] > 0, source);
+        Assert.Equal(at.Order(), at);
+    }
+
+    /// <summary>
+    /// A class named for the default key bindings that has no <c>AddDefaults</c> method the app can call is an error, and is not
+    /// registered.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - For each row, a library that names a class: one with no <c>AddDefaults</c>; one whose <c>AddDefaults</c> is not static;
+    ///   one whose <c>AddDefaults</c> takes no keymap; one whose <c>AddDefaults</c> is internal; an internal class. An app that
+    ///   references the library.
+    ///
+    /// Steps:
+    /// - Run the generator on each app.
+    ///
+    /// Expected:
+    /// - One error XYLEM007 that names the class and the library, at no place in the app's source. The app's source does not
+    ///   register the class, and still registers <c>XylemUI.Core</c>'s.
+    /// </remarks>
+    /// <param name="declaration">The class the library names.</param>
+    [Theory]
+    [InlineData("public static class BadKeys { }")]
+    [InlineData("public sealed class BadKeys { public void AddDefaults(XylemUI.Keymap keymap) { } }")]
+    [InlineData("public static class BadKeys { public static void AddDefaults() { } }")]
+    [InlineData("public static class BadKeys { internal static void AddDefaults(XylemUI.Keymap keymap) { } }")]
+    [InlineData("internal static class BadKeys { public static void AddDefaults(XylemUI.Keymap keymap) { } }")]
+    public void DefaultKeyBindings_WithNoMethodTheAppCanCall_IsAnError(string declaration)
+    {
+        MetadataReference library = Run(
+                "Demo.Lib",
+                OutputKind.DynamicallyLinkedLibrary,
+                "[assembly: XylemUI.DefaultKeyBindings(typeof(BadKeys))]\n" + declaration
+            )
+            .Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, "public static class Program { public static void Main() { } }", library);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM007", diagnostic.Id);
+        Assert.Equal(LocationKind.None, diagnostic.Location.Kind);
+        string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("BadKeys", message, StringComparison.Ordinal);
+        Assert.Contains("Demo.Lib", message, StringComparison.Ordinal);
+        string source = Assert.Single(app.Sources);
+        Assert.DoesNotContain("BadKeys", source, StringComparison.Ordinal);
+        Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
     }
 
     /// <summary>

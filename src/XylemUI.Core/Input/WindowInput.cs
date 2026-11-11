@@ -82,6 +82,7 @@ internal sealed partial class WindowInput
         frames.Input = this;
         tree.Popups.ModalOpened = ReleaseCapturesBehind;
         tree.HoldsPointer = HoldsPointerIn;
+        tree.Actions.Fallback = RunCoreAction;
     }
 
     /// <summary>
@@ -388,26 +389,14 @@ internal sealed partial class WindowInput
         return DeliverKey(input, altUpAlone);
     }
 
-    // The rest of a key's delivery, after the keymap: the key handlers, then the defaults no handler stopped.
+    // The rest of a key's delivery, after the keymap: the key handlers, then the defaults no handler stopped. Tab, Esc, and the
+    // scrolling keys are rows of the keymap (CoreKeyBindings), not defaults here.
     private bool DeliverKey(in KeyInput input, bool altUpAlone)
     {
         FocusManager focus = _tree.Focus;
         if (RouteKey(focus.KeyTarget, input))
         {
             return true;
-        }
-
-        // Tab is the root's default action, after the bubble phase (Avalonia's KeyboardNavigationHandler); a Tab with Control, Alt, or
-        // Meta does not move the focus.
-        if (input.Kind == KeyEventKind.Down && input.Key == Key.Tab && (input.Modifiers & ~KeyModifiers.Shift) == 0)
-        {
-            return focus.MoveInTabOrder(backward: input.Modifiers == KeyModifiers.Shift);
-        }
-
-        // Esc closes the front popup, after no handler stopped it (design §7.3, "Closing").
-        if (input.Kind == KeyEventKind.Down && input.Key == Key.Escape && input.Modifiers == KeyModifiers.None && _tree.Popups.Count > 0)
-        {
-            return _tree.Popups.CloseFront();
         }
 
         // Alt and a letter or a digit is the window's access key, after no handler stopped it (design §13.1, "The window's access
@@ -1123,9 +1112,6 @@ internal sealed partial class WindowInput
             }
 
             int end = _routeCount;
-
-            // Only a down of a scrolling key with no modifier scrolls: decided once, so the other keys pay nothing for it per node.
-            bool scrolls = input.Kind == KeyEventKind.Down && input.Modifiers == KeyModifiers.None && IsScrollKey(input.Key);
             for (int i = end - 1; i >= start && !_stopped; i--)
             {
                 InvokeKey(EventPhase.Capture, target, _route[i], input);
@@ -1134,12 +1120,6 @@ internal sealed partial class WindowInput
             for (int i = start; i < end && !_stopped; i++)
             {
                 InvokeKey(EventPhase.Bubble, target, _route[i], input);
-
-                // After the node's own handlers, as the wheel: a part that takes the arrows stops them first (design §7).
-                if (scrolls && !_stopped && ScrollByKey(_route[i], input))
-                {
-                    _stopped = true;
-                }
             }
 
             return _stopped;
@@ -1394,11 +1374,35 @@ internal sealed partial class WindowInput
         return ScrollBy(node, new Vector2(horizontal ? delta.X : 0, vertical ? delta.Y : 0));
     }
 
-    // A key's scrolling of a scroll container on the route (design §7, "Keyboard scrolling"): with no modifier, the arrows by 50 on
-    // the axes that scroll, Page Up and Page Down by 0.8 of the viewport's height, and Home and End to the vertical ends, or to the
-    // horizontal ones when only the width scrolls. No animation. Returns whether the position changed; otherwise the key goes on to
-    // the containers outside, as the wheel does.
-    private bool ScrollByKey(NodeHandle node, in KeyInput input)
+    /// <summary>
+    /// Scrolls the nearest scroll container on the route from a node that a scrolling action moves (design §7, "Keyboard
+    /// scrolling"): a container that does not scroll on the action's axis, or is at that end, leaves it to the containers outside,
+    /// as the wheel does.
+    /// </summary>
+    /// <param name="target">The node the route starts from.</param>
+    /// <param name="step">What the action moves a container by.</param>
+    /// <returns>Whether a container's position changed.</returns>
+    internal bool ScrollFrom(NodeHandle target, ScrollStep step)
+    {
+        // A popup's actions go on to its anchor and the anchor's ancestors (design §7.3, "The route of events").
+        for (NodeHandle node = target; !node.IsNone && _tree.Nodes.IsAlive(node); node = _tree.KeyParent(node))
+        {
+            if (ScrollByStep(node, step))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The tree's own handling of an action no handler took (design §7, "The default keys and actions").
+    private bool RunCoreAction(NodeHandle target, IAction action) => action is CoreAction core && core.Run(this, target);
+
+    // A scrolling action on one scroll container (design §7, "Keyboard scrolling"): a line is 50 on the axes that scroll, a page
+    // is 0.8 of the viewport's height, and the start and the end are the vertical ends, or the horizontal ones when only the width
+    // scrolls. No animation. Returns whether the position changed.
+    private bool ScrollByStep(NodeHandle node, ScrollStep step)
     {
         const float Line = 50;
         const float Page = 0.8f;
@@ -1425,23 +1429,20 @@ internal sealed partial class WindowInput
         StopFling(node);
 
         float end = float.PositiveInfinity;
-        Vector2 delta = input.Key switch
+        Vector2 delta = step switch
         {
-            Key.Up when vertical => new Vector2(0, -Line),
-            Key.Down when vertical => new Vector2(0, Line),
-            Key.Left when horizontal => new Vector2(-Line, 0),
-            Key.Right when horizontal => new Vector2(Line, 0),
-            Key.PageUp when vertical => new Vector2(0, -Page * _tree.ViewportOf(node).Height),
-            Key.PageDown when vertical => new Vector2(0, Page * _tree.ViewportOf(node).Height),
-            Key.Home => vertical ? new Vector2(0, -end) : new Vector2(-end, 0),
-            Key.End => vertical ? new Vector2(0, end) : new Vector2(end, 0),
+            ScrollStep.LineUp when vertical => new Vector2(0, -Line),
+            ScrollStep.LineDown when vertical => new Vector2(0, Line),
+            ScrollStep.LineLeft when horizontal => new Vector2(-Line, 0),
+            ScrollStep.LineRight when horizontal => new Vector2(Line, 0),
+            ScrollStep.PageUp when vertical => new Vector2(0, -Page * _tree.ViewportOf(node).Height),
+            ScrollStep.PageDown when vertical => new Vector2(0, Page * _tree.ViewportOf(node).Height),
+            ScrollStep.ToStart => vertical ? new Vector2(0, -end) : new Vector2(-end, 0),
+            ScrollStep.ToEnd => vertical ? new Vector2(0, end) : new Vector2(end, 0),
             _ => default,
         };
         return delta != default && ScrollBy(node, delta);
     }
-
-    private static bool IsScrollKey(Key key) =>
-        key is Key.Up or Key.Down or Key.Left or Key.Right or Key.PageUp or Key.PageDown or Key.Home or Key.End;
 
     // Moves a container's position by delta, kept in the range the last layout gave; a container without a state gets one the
     // first time it scrolls. Returns whether the position changed. The state is looked up once: looking it up for the position,

@@ -39,6 +39,22 @@ public sealed class ActionTableAttribute(Type table, string[] names) : Attribute
 }
 
 /// <summary>
+/// Names the class of a package that adds the package's default key bindings (design §7, "The default keys and actions"): a
+/// public static class with a method <c>public static void AddDefaults(Keymap keymap)</c>. The source generator of
+/// <c>XylemUI.Generators</c> reads it from the assemblies an app references and registers the methods in the app's module
+/// initializer, a package after the packages it references.
+/// </summary>
+/// <param name="type">The class with the <c>AddDefaults</c> method.</param>
+[AttributeUsage(AttributeTargets.Assembly)]
+public sealed class DefaultKeyBindingsAttribute(Type type) : Attribute
+{
+    /// <summary>
+    /// Gets the class with the <c>AddDefaults</c> method.
+    /// </summary>
+    public Type Type { get; } = type;
+}
+
+/// <summary>
 /// Gives an action its name (design §7, "Shortcuts and actions"). The source generator of <c>XylemUI.Generators</c> reads it and
 /// adds the type to the table <see cref="ActionRegistry"/> is filled from.
 /// </summary>

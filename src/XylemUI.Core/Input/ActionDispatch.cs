@@ -34,6 +34,12 @@ internal sealed class ActionDispatch
     public UiTree Tree { get; }
 
     /// <summary>
+    /// Gets or sets what the tree does for an action no handler on the route took (design §7, "The default keys and
+    /// actions"); it returns whether the action is handled. The window's input sets it.
+    /// </summary>
+    public Func<NodeHandle, IAction, bool>? Fallback { get; set; }
+
+    /// <summary>
     /// Routes an action from a node.
     /// </summary>
     /// <param name="target">The node the route starts from.</param>
@@ -65,7 +71,7 @@ internal sealed class ActionDispatch
                 Invoke(EventPhase.Bubble, type, action, target, _route[i]);
             }
 
-            return _stopped;
+            return _stopped || (Fallback is { } fallback && fallback(target, action));
         }
         finally
         {
@@ -106,7 +112,8 @@ internal sealed class ActionDispatch
             }
         }
 
-        return false;
+        // The tree takes an action of its own with no handler; whether it changes anything then is not asked here.
+        return Fallback is not null && type.IsSubclassOf(typeof(CoreAction));
     }
 
     /// <summary>

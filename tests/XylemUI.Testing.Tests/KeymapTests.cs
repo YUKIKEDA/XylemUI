@@ -476,19 +476,20 @@ public sealed class KeymapTests
     /// - Bind an empty text, a text of spaces, <c>ctrl-</c>, and <c>ctrl-s</c> with the condition <c>Editor &amp;&amp;</c>.
     ///
     /// Expected:
-    /// - Each throws <see cref="FormatException"/>, and the keymap stays empty.
+    /// - Each throws <see cref="FormatException"/>, and the keymap keeps the rows it started with, the default ones.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
     public async Task Bind_KeysOrConditionNotInTheirTextForm_Throws()
     {
         await using HeadlessApp app = await HeadlessApp.StartAsync(() => Box().Width(10).Height(10));
+        int rows = app.Keymap.Bindings.Count;
 
         _ = Assert.Throws<FormatException>(() => app.Keymap.Bind(string.Empty, new Save()));
         _ = Assert.Throws<FormatException>(() => app.Keymap.Bind("  ", new Save()));
         _ = Assert.Throws<FormatException>(() => app.Keymap.Bind("ctrl-", new Save()));
         _ = Assert.Throws<FormatException>(() => app.Keymap.Bind("ctrl-s", new Save(), "Editor &&"));
-        Assert.Empty(app.Keymap.Bindings);
+        Assert.Equal(rows, app.Keymap.Bindings.Count);
     }
 
     /// <summary>

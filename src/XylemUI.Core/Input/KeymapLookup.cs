@@ -6,8 +6,11 @@ namespace XylemUI;
 /// </summary>
 internal static class KeymapLookup
 {
+    private static readonly KeyContext Window = KeyContext.Parse(CoreKeyBindings.WindowContext);
+
     /// <summary>
-    /// Collects the contexts of the nodes from the root to a node, on the route a key takes.
+    /// Collects the contexts of the nodes from the root to a node, on the route a key takes, after the tree's own context
+    /// (<see cref="CoreKeyBindings.WindowContext"/>), which is the first.
     /// </summary>
     /// <param name="tree">The tree.</param>
     /// <param name="target">The node the route starts from.</param>
@@ -15,6 +18,7 @@ internal static class KeymapLookup
     /// <returns>The number of contexts.</returns>
     public static int CollectContexts(UiTree tree, NodeHandle target, ref KeyContext[] contexts)
     {
+        // Filled from the target up and turned around: the tree's own context is the last here and the first after.
         int count = 0;
         for (NodeHandle node = target; !node.IsNone && tree.Nodes.IsAlive(node); node = tree.KeyParent(node))
         {
@@ -31,6 +35,12 @@ internal static class KeymapLookup
             contexts[count++] = context;
         }
 
+        if (count == contexts.Length)
+        {
+            Array.Resize(ref contexts, count * 2);
+        }
+
+        contexts[count++] = Window;
         contexts.AsSpan(0, count).Reverse();
         return count;
     }

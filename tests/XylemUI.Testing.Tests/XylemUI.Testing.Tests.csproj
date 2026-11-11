@@ -8,8 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Testing\XylemUI.Testing.csproj" />
     <ProjectReference Include="..\..\src\XylemUI.Testing.XUnit\XylemUI.Testing.XUnit.csproj" />
-    <!-- The source generator runs in this project's compiler: it writes the table of the actions the tests declare (row KM1a). -->
-    <ProjectReference Include="..\..\src\XylemUI.Generators\XylemUI.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />

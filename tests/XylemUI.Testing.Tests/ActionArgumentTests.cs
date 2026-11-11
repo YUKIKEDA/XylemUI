@@ -136,6 +136,7 @@ public sealed class ActionArgumentTests
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
             Box().Width(10).Height(10).OnAction((in ActionEvent<GoTo> e) => lines.Add(e.Action.Line))
         );
+        int rows = app.Keymap.Bindings.Count;
         _ = app.Keymap.BindByName("ctrl-g", "test::GoTo", [new("line", "12")]);
         _ = app.Keymap.BindByName("ctrl-h", "test::GoTo");
 
@@ -145,7 +146,7 @@ public sealed class ActionArgumentTests
 
         _ = Assert.Throws<FormatException>(() => app.Keymap.BindByName("ctrl-j", "test::Missing"));
         _ = Assert.Throws<FormatException>(() => app.Keymap.BindByName("ctrl-j", "test::GoTo", [new("line", "x")]));
-        Assert.Equal(2, app.Keymap.Bindings.Count);
+        Assert.Equal(rows + 2, app.Keymap.Bindings.Count);
     }
 
     internal enum Place
