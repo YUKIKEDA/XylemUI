@@ -355,7 +355,8 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - First: the decoder is disposed at once, and the frame clock's list and the clock's timers are empty.
-    /// - Second: the decoder is not disposed while the worker is in it, and is once the result ran.
+    /// - Second: the frame's timer is stopped at once; the decoder is not disposed while the worker is in it, and is once the
+    ///   result ran.
     /// - Third: the result's decoder is disposed, and the window holds no image.
     /// </remarks>
     [Fact]
@@ -396,8 +397,9 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
                     _ = scene.Draw();
                     Assert.True(SpinWait.SpinUntil(() => held.Calls == 1, TimeSpan.FromSeconds(30)));
 
+                    Assert.Equal(1, scene.Time.PendingTimers);
                     scene.Cache.ReleaseAll();
-                    Assert.False(held.Disposed);
+                    Assert.Equal((false, 0), (held.Disposed, scene.Time.PendingTimers));
                     gate.Set();
                     posts.Settle();
                     Assert.True(held.Disposed);

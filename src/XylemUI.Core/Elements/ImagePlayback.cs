@@ -232,11 +232,10 @@ internal sealed class ImagePlayback : Ticking
 
     private void TimerElapsed()
     {
-        if (!_closed && _waiting)
-        {
-            _due = true;
-            TryJoin();
-        }
+        // The timer rings once for each frame asked for, so a frame waits here. A callback that was posted before the playing was
+        // closed finds it closed in TryJoin.
+        _due = true;
+        TryJoin();
     }
 
     // On a worker: the next frame into the buffer.
