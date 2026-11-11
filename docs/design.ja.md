@@ -4086,6 +4086,38 @@ public readonly record struct GlyphBox(int Left, int Top, int Width, int Height,
   - **フォントの置き場所（IC1 の Grill の Q13、Issue #720）:** 2 つの TTF と 2 つの JSON は、リポジトリに入れない。`vendor/versions.lock` に版と SHA-256 で 1 行ずつ固定し、`vendor/build.ps1` が取って確かめ、`vendor/out` に置く（HarfBuzz と同じ形、§9）。JSON から生成した `FluentIcons.g.cs` は、リポジトリに入れる。ビルドの機械の向けの subset を含めた HarfBuzz の DLL も、`vendor/build.ps1` が今の HarfBuzz と同じ source から作る
   - **受け入れの値（同じ Grill）:** アイコンを 100 個使うアプリで、残したフォントの大きさが 150 KB 以下。M1a のアプリの配布物は 5 MB 以下のまま（§11.3）。spike #716 で、Regular 51 個が 15,004 バイト、Filled 50 個が 11,944 バイト、合わせて 26,948 バイト（字形 1 つ約 270 バイト）だったので、値は 150 KB のままにする。IC1 の 2 つ目の PR で、E2E の `icons` の場面（Regular と Filled から 50 個ずつ）は 26,696 バイトで、`XylemUI.E2E.exe` は main より 60,928 バイト増えた（`docs/benchmarks/ic1-icons.md`）。E2E は main ですでに 6.0 MB で、M1a の目安の 5 MB を超えていた。M1a の後に計測の場面が増え続けたためで、M1a の場面のアプリだけの大きさは Issue #725 で測る
 
+### 5.0.5 外部サーフェス（D11 の Grill、Issue #162）
+
+アプリが自分の GPU のコードで描いた絵（3D のビューポート、動画、地図）を、UI の木の中の矩形に出す口を持つ。Windows の実装は v1.0 に入れる（行 XS1、G1 の前）。Core の公開 API を固める前に、実装で契約を確かめるためである。macOS と Linux のハンドルの種類は、契約に名前だけ入れ、実装はその OS の行で行う。
+
+**比べた 3 つ（Windows）:**
+
+- **Flutter 3.47.8:** `Texture` ウィジェットが、登録されたテクスチャを矩形に写す。大きさは親が決め、テクスチャは拡縮される（`packages/flutter/lib/src/widgets/texture.dart` 19〜27 行目）。アプリが渡せるのは、`ID3D11Texture2D`、DXGI の共有ハンドル、CPU の画素バッファ（`engine/src/flutter/shell/platform/common/public/flutter_texture_registrar.h` 35〜40 行目）。アプリが新しいフレームを知らせると、エンジンがフレームを 1 つ予約し（`shell/common/shell.cc` 1343〜1347 行目）、描くときに最新の 1 枚だけを取りに行く（`shell/platform/embedder/embedder_external_texture_gl.cc` 45〜51・203〜204 行目）。同期の仕組みは無い。形式は RGBA のプリマルチプライド（同 114〜115 行目）。大きさを変えるには新しいハンドルを渡す（`shell/platform/windows/external_texture_d3d.cc` 84 行目）。ヒットテストには当たるが、入力は転送しない（`packages/flutter/lib/src/rendering/texture.dart` 95 行目）。アプリに公開するのはアダプタで、デバイスではない（`shell/platform/windows/flutter_windows.cc` 297〜312 行目）。子ウィンドウを埋める形は未対応（`shell/platform/windows/compositor.h` 21 行目）。
+- **Avalonia 12.1.4:** `ICompositionGpuInterop.ImportImage` で共有ハンドルを取り込む（`src/Avalonia.Base/Rendering/Composition/CompositionExternalMemory.cs` 11〜32 行目）。同期は、キー付きミューテックスかセマフォ（同 71〜88 行目）。更新のたびに、ミューテックスを取ってテクスチャを写し取り（`src/Skia/Avalonia.Skia/Gpu/OpenGl/GlSkiaExternalObjectsFeature.cs` 191〜209 行目）、最新の 1 枚だけを持つ（`Server/ServerCompositionDrawingSurface.cs` 56〜59 行目）。`OpenGlControlBase` は普通の `Control` で、コンテキストの消失には通知と作り直しがあり（`src/Avalonia.OpenGL/Controls/OpenGlControlBase.cs` 154〜159 行目）、次のフレームを頼む口を持つ（同 256〜263 行目）。子ウィンドウを置く `NativeControlHost` は、回転を軸に沿った箱に直す（`src/Avalonia.Controls/NativeControlHost.cs` 151〜155 行目）。
+- **GPUI（zed v1.25.3）:** `surface` は macOS だけ（`crates/gpui/src/elements/surface.rs` 13〜17 行目）。Windows のレンダラは空の実装（`crates/gpui_windows/src/directx_renderer.rs` 816〜821 行目）。zed は、macOS のほかでは、動画のフレームを CPU の画像として毎フレーム送り直す（`crates/livekit_client/src/remote_video_track_view.rs` 78〜90 行目）。
+
+**契約（Grill の 1 回目、オーナーが決定）:**
+
+- **アプリが渡せるもの:** 種別つきのハンドルの 1 つの契約にする。種類は 2 つで、アプリが自分のデバイスで描いたテクスチャの共有ハンドル（D3D11 の共有ハンドルと NT ハンドル）と、CPU の画素バッファである。画素バッファは、ヘッドレスのテスト（§12.3）でも使う。
+- **フレームの受け渡し:** 最新の 1 枚だけを出す。アプリの描画が遅くても、UI のフレームは待たない。
+- **リサイズ:** 新しい大きさのフレームが来るまで、古いフレームを矩形に拡縮して出す。同期リサイズ（§2.11.1）の中で、アプリを待たない。
+- **入力:** サーフェスは普通のノードとしてヒット領域に載る。イベントは UI スレッドで、サーフェスの中の座標で渡す。描画のスレッドへの転送は、アプリが書く。上に重ねた UI が先に当たる。
+- **フレームの駆動:** アプリのスレッドが自分の間隔で描き、「新しいフレームがある」と知らせると、UI スレッドがフレームを 1 つ頼む。何も来なければ、UI スレッドは起きない（§11.3「変化の無いウィンドウ」）。
+- **形式とアルファ:** 8 ビットの RGBA と BGRA、プリマルチプライド、sRGB。画像（§5.0.4）と同じ扱いにする。
+- **描く形:** サーフェスは 1 枚の矩形として描く。切り抜き・変形・不透明度・重ね描きは、画像と同じに効く。
+- **子ウィンドウを埋める形:** この契約に入れない。行 D12（WebView などのネイティブ部品）で決める。
+- **描画の API（カメラ、シーン）:** 入れない。比べた 3 つのどれも持たない。アプリは自分のエンジンで描く。
+
+**契約（Grill の 2 回目の案。この節を入れる PR のマージで、オーナーの決定とする）:**
+
+- **XylemUI のデバイスは貸さない。** 代わりに、レンダラのアダプタの識別子（LUID）を公開する。アプリは、同じアダプタの上に自分のデバイスを作る。Flutter の公開 API と同じ形である。デバイスを貸すと、D3D11 のデバイスという GPU の型がレンダラの外の公開 API に出て（§5.0「DisplayListの原則」は、描画の命令が GPU 概念を持たないと定める。同じ線をアプリとの境界にも引く）、デバイスを作り直すたび（行 R1）にアプリの資源もすべて無効になる。共有ハンドルの経路の費用は行 XS1 の spike で測り、§11.3 の予算に収まらなければ、この点を諮り直す。
+- **同期:** 共有ハンドルのテクスチャには、キー付きミューテックスを必須にする（`D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX`）。Windows 8 以降は NT ハンドルとの組み合わせが推奨で、作ったデバイスも開いたデバイスも、描画の命令の前に `AcquireSync` を、後に `ReleaseSync` を呼ぶ（Microsoft Learn の `D3D11_RESOURCE_MISC_FLAG`）。共有できるのは、ミップマップの無い 2D のテクスチャだけである（同）。
+- **写し取るか、直に読むか:** 行 XS1 の最初の spike で測ってから決める。知らせを受けたときにミューテックスを取って XylemUI のテクスチャへ写す形（Avalonia）と、フレームを描く間ミューテックスを持ってアプリのテクスチャを直に読む形である。測るのは、サーフェス 1 枚を 1280 × 720 と 3840 × 2160 で出したときの GPU の時間と、アプリの側が `AcquireSync` で待つ時間。
+- **デバイス消失:** 「取り込んだテクスチャが無効になった」という通知を持つ。通知は UI スレッドで届き、アプリはハンドルを出し直す。それまでサーフェスは何も描かない。行 XS1 では、通知の型と、出し直しで元に戻ることをテストで確かめる。実際の消失の経路は、行 R1 でつなぐ。
+- **UI のフレームに合わせて描く口:** 「次のフレームの始めに UI スレッドで呼ぶ」という登録の口を、公開で足す。登録がある間だけ、フレームの時計が回る。アニメーションの時計（§2.14）の上に置く。サーフェスに限らず、アプリが自分でアニメーションを進める用途にも使う。名前と形は、行 XS1 の Grill で決める。
+
+**行 XS1 で決めること:** 上の spike の結果、要素と持ち主の型の名前、a11y の役（§4.4.1）、取り込んだテクスチャを `TextureCache`（§5.0.4）に載せるか別に持つか、ヘッドレスのレンダラでの共有ハンドルの扱い。
+
 ### 5.1 前提の訂正
 
 GPUドライバの不具合対応は「一度作れば終わり」ではなく「作り続けなければならない」領域であり、テキストシェーピングにおけるUnicode追従と構造的に同種の問題である。GPUI(Zed)の変遷:
