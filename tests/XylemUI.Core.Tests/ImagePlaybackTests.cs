@@ -189,12 +189,13 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
     /// - An animation of 3 frames of 100 ms with no end, shown by one element; a target that takes the uploads.
     ///
     /// Steps:
-    /// - Ask for less motion; draw; advance the clock by 1 s and draw. Take the setting away, draw, and step once.
+    /// - Ask for less motion; draw; advance the clock by 1 s and draw. Take the setting away, run the frame it asks for, and
+    ///   the one the next frame of the animation asks for 100 ms later.
     /// - Let the next decode arrive, ask for less motion, advance by 100 ms, and draw. Take the setting away and draw.
     ///
     /// Expected:
-    /// - With the setting from the start, only frame 0 is uploaded and the frames' decoder is not asked. Without it, the step
-    ///   uploads frame 1. With the setting again, the frame that was due is not uploaded; without it, the next draw uploads it
+    /// - With the setting from the start, only frame 0 is uploaded and the frames' decoder is not asked. Taking it away asks
+    ///   for one frame of the window, after which the decoder is asked once, and the frame 100 ms later uploads frame 1. With the setting again, the frame that was due is not uploaded; without it, the next draw uploads it
     ///   (frame 2).
     /// </remarks>
     [Fact]
@@ -217,9 +218,15 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
                     Assert.Equal([0], scene.Target.Uploads);
                     Assert.Equal(0, frames.Calls);
 
+                    // The setting's going asks for a frame, which draws the image and so asks for the next frame of the animation.
+                    scene.Scheduler.Requests = 0;
                     scene.Tree.Animations.ReduceMotion = false;
-                    _ = scene.Draw();
-                    Step(scene, posts, 100);
+                    Assert.Equal(1, scene.Scheduler.Requests);
+                    scene.Scheduler.Run();
+                    posts.Settle();
+                    Assert.Equal(1, frames.Calls);
+                    scene.Time.Advance(TimeSpan.FromMilliseconds(100));
+                    scene.Scheduler.Run();
                     Assert.Equal([0, 1], scene.Target.Uploads);
 
                     posts.Settle();
@@ -351,13 +358,15 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
     /// - First: draw, let the next decode arrive and its timer ring so that the playing is in the frame clock's list; dispose the
     ///   element and evict the source.
     /// - Second: draw with the next decode held on its worker behind a gate; let every entry go; open the gate and run the result.
-    /// - Third: let every entry go before the image's decode result is run; run it.
+    /// - Third: with a cache that keeps no image no element shows, draw, and dispose the element.
+    /// - Fourth: let every entry go before the image's decode result is run; run it.
     ///
     /// Expected:
     /// - First: the decoder is disposed at once, and the frame clock's list and the clock's timers are empty.
     /// - Second: the frame's timer is stopped at once; the decoder is not disposed while the worker is in it, and is once the
     ///   result ran.
-    /// - Third: the result's decoder is disposed, and the window holds no image.
+    /// - Third: the decoder is disposed with its image when the element leaves, and no timer is left.
+    /// - Fourth: the result's decoder is disposed, and the window holds no image.
     /// </remarks>
     [Fact]
     public void Decoder_GoesWithItsEntry_AfterTheWorkerThatIsInIt() =>
@@ -406,6 +415,25 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
                 },
                 posts,
                 (_, _, _) => held.First()
+            );
+
+            var left = new FakeFrames(0, 100, 100);
+            WithDecode(
+                () =>
+                {
+                    using var scene = new ImageScene();
+                    scene.Cache.Limit(0, long.MaxValue);
+                    Shown shown = scene.Show(Sized(2, 2));
+                    posts.Settle();
+                    _ = scene.Draw();
+                    posts.Settle();
+                    Assert.False(left.Disposed);
+
+                    Scope.Dispose(shown.Scope);
+                    Assert.Equal((true, 0, 0), (left.Disposed, scene.Tree.Images.Count, scene.Time.PendingTimers));
+                },
+                posts,
+                (_, _, _) => left.First()
             );
 
             var late = new FakeFrames(0, 100, 100);

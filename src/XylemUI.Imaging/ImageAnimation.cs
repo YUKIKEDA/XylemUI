@@ -140,8 +140,8 @@ internal sealed unsafe class ImageAnimation : IAnimationFrames
             return null;
         }
 
-        // Only a WebP has a profile to convert from: a GIF's colors are taken as they are, as Skia takes them.
-        ColorInfo color = (ImageFormat)format == ImageFormat.WebP ? ColorReader.Read(data.Span, ImageFormat.WebP) : ColorInfo.None;
+        // A WebP's profile; a GIF has none to read, and its colors are taken as they are (ColorReader).
+        ColorInfo color = ColorReader.Read(data.Span, (ImageFormat)format);
         fixed (byte* icc = color.Icc)
         {
             var nativeColor = new ImageShim.Color { Icc = icc, IccLength = (nuint)color.IccLength };
