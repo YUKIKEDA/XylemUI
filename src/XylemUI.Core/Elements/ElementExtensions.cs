@@ -1057,6 +1057,21 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Sets what the node calls itself for the key bindings (design §7, "Shortcuts and actions"): names, as <c>Editor</c>, and
+    /// values, as <c>mode = full</c>, separated by spaces. A binding's condition (<see cref="Keymap.Bind"/>) is checked against the
+    /// contexts of the focused node and its ancestors.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="context">The context; <see langword="null"/> or empty for none.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="FormatException">The text is not a context.</exception>
+    public static Element KeyContext(this Element element, string? context)
+    {
+        element.TreeOrThrow().SetKeyContext(element.Node, context);
+        return element;
+    }
+
+    /// <summary>
     /// Dispatches an action in the element's window (design §7, "Shortcuts and actions"): it is routed from the focused node, or
     /// from the root when no node has the focus, whichever element this is called on. A button, a menu item, and a command palette
     /// ask for an action with it.

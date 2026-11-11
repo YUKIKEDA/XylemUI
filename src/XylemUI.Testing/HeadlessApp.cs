@@ -59,6 +59,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             Tree.Animations.ReduceMotion = options.ReduceMotion;
             Tree.Clipboard = Clipboard;
             Tree.AnimatesImages = options.ImageAnimation;
+            Tree.Keymap = options.Keymap ?? new Keymap();
             Ime = new HeadlessIme(this);
             Tree.SetTextInput(Ime);
             Tree.SetTextEditing(
@@ -124,6 +125,11 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// Gets the keyboard of the window.
     /// </summary>
     public HeadlessKeyboard Keyboard { get; }
+
+    /// <summary>
+    /// Gets the keymap the app's keys are looked up in: <see cref="HeadlessOptions.Keymap"/>, or the app's own empty one.
+    /// </summary>
+    public Keymap Keymap => Tree.Keymap;
 
     /// <summary>
     /// Gets the clipboard the app's text fields copy to and paste from: one in memory, empty at the start (design §4.9, "The

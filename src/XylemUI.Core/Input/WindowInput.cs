@@ -379,6 +379,19 @@ internal sealed partial class WindowInput
             _altAlone = false;
         }
 
+        // The keymap first (design §7, "Shortcuts and actions"): before the key handlers, the access keys, and the menu bar.
+        if (TryKeymap(input))
+        {
+            return true;
+        }
+
+        return DeliverKey(input, altUpAlone);
+    }
+
+    // The rest of a key's delivery, after the keymap: the key handlers, then the defaults no handler stopped.
+    private bool DeliverKey(in KeyInput input, bool altUpAlone)
+    {
+        FocusManager focus = _tree.Focus;
         if (RouteKey(focus.KeyTarget, input))
         {
             return true;
