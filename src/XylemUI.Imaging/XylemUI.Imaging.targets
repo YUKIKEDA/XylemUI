@@ -13,6 +13,7 @@
     <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\xylemui_image.lib" />
     <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\jpeg-static.lib" />
     <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\libwebp.lib" />
+    <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\libwebpdemux.lib" />
     <NativeLibrary Include="$(XylemUIImagingNativeDirectory)static\libsharpyuv.lib" />
   </ItemGroup>
   <Target Name="XylemUILeaveOutImagingDlls" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishAot)' == 'true'">

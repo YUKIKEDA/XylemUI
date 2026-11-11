@@ -34,7 +34,8 @@ public sealed class ImageSource : IEquatable<ImageSource>
     }
 
     /// <summary>
-    /// Returns the source of an image's bytes. The app does not write them again while an image reads them.
+    /// Returns the source of an image's bytes. The app does not write them again while an image reads them, nor while an
+    /// animation of them plays: its frames are decoded from the same bytes one at a time.
     /// </summary>
     /// <param name="data">The bytes of the image file.</param>
     /// <returns>The source.</returns>
@@ -64,6 +65,12 @@ public sealed class ImageSource : IEquatable<ImageSource>
 
     /// <inheritdoc/>
     public override int GetHashCode() => HashCode.Combine(_path, _assembly, _bytes);
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="Read"/> makes the bytes it returns (a file's, a resource's): bytes the app gave
+    /// are the app's memory (design §5.0.4, "The bytes counted").
+    /// </summary>
+    internal bool OwnsBytes => _path is not null;
 
     /// <summary>
     /// Reads the image's bytes, on a worker thread.

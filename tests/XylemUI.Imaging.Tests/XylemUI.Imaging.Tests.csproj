@@ -15,6 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Png\PngSuite\*.png" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Images\*.*" Exclude="Images\make.py;Images\make_color.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Images\*.*" Exclude="Images\make.py;Images\make_color.py;Images\make_anim.py" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

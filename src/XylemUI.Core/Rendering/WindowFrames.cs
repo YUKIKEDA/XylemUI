@@ -318,6 +318,9 @@ internal sealed partial class WindowFrames
         _scheduler.FramePresented();
         PresentCount++;
 
+        // The animated images this frame drew ask for their next frames (design §5.0.4, "How it advances").
+        _tree.CachedImages.FrameEnded();
+
         // The hit regions changed: a pointer that did not move may be over other nodes now (design §7, "Pointer input").
         Input?.Rehit();
     }

@@ -34,6 +34,8 @@ internal static class ImageUpload
 
             var draw = new List<double>();
             var done = new List<double>();
+            var rewriteDraw = new List<double>();
+            var rewritten = new List<double>();
 
             // Two runs warm the path for the size; they are left out.
             for (int run = -2; run < runs; run++)
@@ -43,17 +45,25 @@ internal static class ImageUpload
                 double emptyDone = Frame(scene, images, out _);
                 ImageHandle image = images.Add(side, side, pixels);
                 double uploadDone = Frame(scene, images, out double drawMs);
+
+                // The same image with new pixels, written into its texture: an animation's next frame (row IM1's 3c).
+                images.Rewrite(image, pixels);
+                double rewriteDone = Frame(scene, images, out double rewriteMs);
                 images.Release(image);
                 if (run >= 0)
                 {
                     empty.Add(emptyDone);
                     draw.Add(drawMs);
                     done.Add(uploadDone);
+                    rewriteDraw.Add(rewriteMs);
+                    rewritten.Add(rewriteDone);
                 }
             }
 
             report.Series($"upload_{side}_draw_ms", draw);
             report.Series($"upload_{side}_done_ms", done);
+            report.Series($"rewrite_{side}_draw_ms", rewriteDraw);
+            report.Series($"rewrite_{side}_done_ms", rewritten);
         }
 
         report.Series("empty_done_ms", empty);

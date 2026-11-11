@@ -13,7 +13,29 @@ internal static class FrameDoubles
         // The images the last frame was drawn with.
         public TextureCache? Images { get; private set; }
 
-        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images) => Images = images;
+        // Whether a draw takes the queued uploads as a renderer does, and the first byte of each image it took, in order.
+        public bool TakesUploads { get; set; }
+
+        public List<byte> Uploads { get; } = [];
+
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images)
+        {
+            Images = images;
+            if (!TakesUploads)
+            {
+                return;
+            }
+
+            foreach (int slot in images.PendingUploads)
+            {
+                if (images.GetSlot(slot, out _, out _, out byte[]? pixels) != 0 && pixels is not null)
+                {
+                    Uploads.Add(pixels[0]);
+                }
+            }
+
+            images.TakeUploads();
+        }
 
         public void Present() => Presents++;
     }

@@ -12,7 +12,7 @@ namespace XylemUI;
 /// </summary>
 internal static class ImageDecodeQueue
 {
-    private static readonly ConcurrentQueue<ImageRequest> Waiting = new();
+    private static readonly ConcurrentQueue<DecodeWork> Waiting = new();
     private static int _running;
     private static int _mostRunning;
     private static int _inFlight;
@@ -45,11 +45,11 @@ internal static class ImageDecodeQueue
     /// <summary>
     /// Queues a decode, which starts at once when fewer than <see cref="Limit"/> run, and otherwise when one of those ends.
     /// </summary>
-    /// <param name="request">The decode.</param>
-    public static void Enqueue(ImageRequest request)
+    /// <param name="work">The decode: an image's (<see cref="ImageRequest"/>), or the next frame of an animation's.</param>
+    public static void Enqueue(DecodeWork work)
     {
         _ = Interlocked.Increment(ref _inFlight);
-        Waiting.Enqueue(request);
+        Waiting.Enqueue(work);
         TryStart();
     }
 
@@ -72,10 +72,49 @@ internal static class ImageDecodeQueue
             return default;
         }
 
+        if (ImageAnimation.IsAnimation(bytes.Span))
+        {
+            return DecodeAnimation(source, bytes, width, height);
+        }
+
         _decoder ??= new ImageDecoder();
         return _decoder.TryDecodeTo(bytes.Span, width, height, TextureCache.MaxSide, out byte[]? pixels, out int w, out int h)
             ? new ImageResult(pixels, w, h)
             : default;
+    }
+
+    // An animation's decoder and its first frame (design §5.0.4, "Animations"): the cache plays the rest, or closes the decoder
+    // where images do not play.
+    private static ImageResult DecodeAnimation(ImageSource source, ReadOnlyMemory<byte> bytes, int width, int height)
+    {
+        // The decoder pins the bytes for as long as the animation plays. Bytes read here go to the pinned object heap first, so
+        // that a small array does not stay pinned among the objects the GC moves; bytes the app gave stay where the app put them.
+        if (source.OwnsBytes)
+        {
+            byte[] pinned = GC.AllocateUninitializedArray<byte>(bytes.Length, pinned: true);
+            bytes.CopyTo(pinned);
+            bytes = pinned;
+        }
+
+        ImageAnimation? animation = ImageAnimation.TryOpen(bytes, width, height, TextureCache.MaxSide);
+        if (animation is null)
+        {
+            return default;
+        }
+
+        byte[] pixels = new byte[animation.Width * animation.Height * 4];
+        if (animation.Next(pixels, out TimeSpan duration) != AnimationStep.Frame)
+        {
+            animation.Dispose();
+            return default;
+        }
+
+        return new ImageResult(pixels, animation.Width, animation.Height)
+        {
+            Frames = animation,
+            Duration = duration,
+            SourceBytes = source.OwnsBytes ? bytes.Length : 0,
+        };
     }
 
     // Starts one worker when fewer than the limit run. The count of the workers is not compared with the decodes that wait: a worker
@@ -106,16 +145,21 @@ internal static class ImageDecodeQueue
             most = Volatile.Read(ref _mostRunning);
         }
 
-        _ = ThreadPool.UnsafeQueueUserWorkItem(static _ => Work(), null);
+        // A work item that is made once: queueing a delegate makes an object each time, on the UI thread, once for each frame of
+        // an animation that plays (design §5.0.4, "Allocation").
+        _ = ThreadPool.UnsafeQueueUserWorkItem(Worker.Instance, preferLocal: false);
     }
 
-    private static void Work()
+    /// <summary>
+    /// Runs the decodes that wait, on a worker of the thread pool, until none waits.
+    /// </summary>
+    internal static void Work()
     {
-        while (Waiting.TryDequeue(out ImageRequest? request))
+        while (Waiting.TryDequeue(out DecodeWork? work))
         {
             try
             {
-                request.Run();
+                work.Run();
             }
             finally
             {
@@ -135,12 +179,56 @@ internal static class ImageDecodeQueue
 }
 
 /// <summary>
+/// The decode queue's worker as the thread pool's work item.
+/// </summary>
+internal sealed class Worker : IThreadPoolWorkItem
+{
+    private Worker() { }
+
+    /// <summary>
+    /// Gets the one worker item.
+    /// </summary>
+    public static Worker Instance { get; } = new();
+
+    /// <inheritdoc/>
+    public void Execute() => ImageDecodeQueue.Work();
+}
+
+/// <summary>
 /// A decoded image: its pixels, premultiplied BGRA in an array of their own, and its size; no pixels when it could not be read.
 /// </summary>
 /// <param name="Pixels">The pixels, or <see langword="null"/>.</param>
 /// <param name="Width">The width, in pixels.</param>
 /// <param name="Height">The height, in pixels.</param>
-internal readonly record struct ImageResult(byte[]? Pixels, int Width, int Height);
+internal readonly record struct ImageResult(byte[]? Pixels, int Width, int Height)
+{
+    /// <summary>
+    /// Gets the frames after the first, when the image is an animation: <see cref="Pixels"/> is its first frame. Whoever takes the
+    /// result plays them or disposes them.
+    /// </summary>
+    public IAnimationFrames? Frames { get; init; }
+
+    /// <summary>
+    /// Gets how long an animation's first frame shows.
+    /// </summary>
+    public TimeSpan Duration { get; init; }
+
+    /// <summary>
+    /// Gets the bytes of an animation's file that the decode read itself and the frames keep; 0 for bytes the app gave.
+    /// </summary>
+    public long SourceBytes { get; init; }
+}
+
+/// <summary>
+/// Work of the decode queue, run on a worker.
+/// </summary>
+internal abstract class DecodeWork
+{
+    /// <summary>
+    /// Runs the work on the worker.
+    /// </summary>
+    public abstract void Run();
+}
 
 /// <summary>
 /// One decode of a window's image cache: what to read, at what size, and where its result goes. It is run on a worker, then
@@ -153,6 +241,7 @@ internal readonly record struct ImageResult(byte[]? Pixels, int Width, int Heigh
 /// <param name="context">The UI thread's context, which the result is posted to.</param>
 /// <param name="complete">The completion, run on the UI thread.</param>
 internal sealed class ImageRequest(ImageSource source, int width, int height, SynchronizationContext context, Action<ImageRequest> complete)
+    : DecodeWork
 {
     private const int Waiting = 0;
     private const int Running = 1;
@@ -165,6 +254,11 @@ internal sealed class ImageRequest(ImageSource source, int width, int height, Sy
     /// Gets the source the request reads.
     /// </summary>
     public ImageSource Source => source;
+
+    /// <summary>
+    /// Gets the UI thread's context the result is posted to.
+    /// </summary>
+    public SynchronizationContext Context => context;
 
     /// <summary>
     /// Gets the cache's entry the decode is for; <see langword="null"/> for a request made outside a cache.
@@ -186,7 +280,7 @@ internal sealed class ImageRequest(ImageSource source, int width, int height, Sy
     /// <summary>
     /// Reads and decodes the image on the worker, then posts the completion to the UI thread.
     /// </summary>
-    public void Run()
+    public override void Run()
     {
         if (Interlocked.CompareExchange(ref _state, Running, Waiting) != Waiting)
         {

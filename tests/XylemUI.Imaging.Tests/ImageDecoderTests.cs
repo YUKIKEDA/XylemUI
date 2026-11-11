@@ -82,7 +82,7 @@ public sealed class ImageDecoderTests
     }
 
     /// <summary>
-    /// What is not read is refused without throwing: a 12-bit JPEG (IM1's Grill, Q5), an animated WebP (the animations' PR), a
+    /// What is not read is refused without throwing: a 12-bit JPEG (IM1's Grill, Q5), an animated WebP (its frames come from ImageAnimation), a
     /// truncated PNG, bytes of no format, no bytes, and an image larger than the caller's limit. A truncated JPEG is read, its
     /// missing rows filled by libjpeg-turbo, as Skia shows the part of an incomplete JPEG it has.
     /// </summary>

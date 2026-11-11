@@ -59,6 +59,12 @@ internal sealed class ImageBlock
     internal ImageBlock? NextWaiting { get; set; }
 
     /// <summary>
+    /// Gets or sets where the block stands among the elements that show an animation (<see cref="ImagePlayback.Add"/>); -1 when it
+    /// shows none. Only <see cref="ImagePlayback"/> and the block write it.
+    /// </summary>
+    internal int ShowingIndex { get; set; } = -1;
+
+    /// <summary>
     /// Makes an image element in a scope of its own under the current one, which reads its first source at once.
     /// </summary>
     /// <param name="tree">The current tree.</param>
@@ -152,6 +158,35 @@ internal sealed class ImageBlock
         Show(entry);
     }
 
+    /// <summary>
+    /// Tells the block that the animation it shows could not go on: it shows the error part in place of the image (design §5.0.4,
+    /// "Untrusted input").
+    /// </summary>
+    /// <param name="entry">The entry the block shows.</param>
+    internal void Failed(ImageEntry entry)
+    {
+        if (!ReferenceEquals(entry, _entry) || !_tree.Nodes.IsAlive(Node))
+        {
+            return;
+        }
+
+        _entry = null;
+        ShowingIndex = -1;
+        LetGo();
+        ShowPart(_options.Error);
+    }
+
+    /// <summary>
+    /// Marks the node for paint: the animation it shows advanced, and the texture has new pixels.
+    /// </summary>
+    internal void Repaint()
+    {
+        if (_tree.Nodes.IsAlive(Node))
+        {
+            Invalidation.Invalidate(_tree, Node, ChangeKind.Color);
+        }
+    }
+
     // The entry's image in place of the part.
     private void Show(ImageEntry entry)
     {
@@ -159,6 +194,7 @@ internal sealed class ImageBlock
         _image = entry.Image;
         _width = entry.Width;
         _height = entry.Height;
+        entry.Playback?.Add(this);
 
         // The image's ratio, so that a box given one side takes the other from it (IM1's Grill, Q12), unless the app set a ratio.
         LayoutStyle style = _tree.Nodes.GetRef(Node).Layout.Style;
@@ -204,6 +240,13 @@ internal sealed class ImageBlock
         if (_entry is { } entry)
         {
             _entry = null;
+            if (ShowingIndex >= 0)
+            {
+                // An animation that played its plays has no playing any more, and counts no elements.
+                entry.Playback?.Remove(this);
+                ShowingIndex = -1;
+            }
+
             _tree.CachedImages.Leave(entry, this);
         }
     }
@@ -294,6 +337,9 @@ internal sealed class ImageBlock
         if (destination.Z > 0 && destination.W > 0)
         {
             context.DrawImage(destination.X, destination.Y, destination.Z, destination.W, _image, part);
+
+            // An animation goes on to its next frame after a frame drew it (design §5.0.4, "When it stops").
+            _entry?.Playback?.NoteDrawn();
         }
     }
 }

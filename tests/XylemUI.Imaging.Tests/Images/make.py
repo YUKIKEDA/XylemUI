@@ -69,7 +69,7 @@ for orientation in range(1, 9):
     exif[0x0112] = orientation
     save(f"exif-{orientation}.jpg", small, quality=100, subsampling=0, exif=exif.tobytes())
 
-# An animation of WebP, which the first decoders' PR does not read (the animations come with IM1's third PR).
+# An animation of WebP, which the still decoder refuses. make_anim.py writes the animations whose frames are checked.
 rgb.save(os.path.join(out, "animated.webp"), save_all=True, append_images=[rgb.rotate(90)], duration=100, quality=80)
 
 # A JPEG whose frame header says 12-bit samples (SOF1, precision 12), made from the baseline JPEG: the decoders read its header and

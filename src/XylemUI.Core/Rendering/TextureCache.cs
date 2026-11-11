@@ -109,6 +109,7 @@ internal sealed class TextureCache
         slot.Width = width;
         slot.Height = height;
         slot.Pixels = pixels;
+        slot.KeepsPixels = false;
         if (!slot.UploadQueued)
         {
             slot.UploadQueued = true;
@@ -117,6 +118,78 @@ internal sealed class TextureCache
 
         Count++;
         return new ImageHandle(index, slot.Generation);
+    }
+
+    /// <summary>
+    /// Gives an image new pixels of the same size and queues it for its upload: the next frame of an animation (design §5.0.4,
+    /// "Textures"). The handle stays, so a display list that draws the image stays as it is. The cache keeps the array past the
+    /// upload, and its owner writes it again only when no upload of it waits (<see cref="Withdraw"/>).
+    /// </summary>
+    /// <param name="image">The image.</param>
+    /// <param name="pixels">The pixels, as <see cref="Add"/> takes them, for the image's width and height.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="pixels"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The length of <paramref name="pixels"/> is not 4 bytes for each pixel.</exception>
+    public void Rewrite(ImageHandle image, byte[] pixels)
+    {
+        ArgumentNullException.ThrowIfNull(pixels);
+        if (!IsAlive(image))
+        {
+            Invariant.Fail("An image was rewritten that the texture cache does not hold.");
+        }
+
+        ref Slot slot = ref _slots[image.Index];
+        if (pixels.Length != slot.Width * slot.Height * 4)
+        {
+            throw new ArgumentException("The pixels are not 4 bytes for each pixel of the image.", nameof(pixels));
+        }
+
+        slot.Pixels = pixels;
+        slot.KeepsPixels = true;
+        if (!slot.UploadQueued)
+        {
+            slot.UploadQueued = true;
+            Append(ref _uploads, ref _uploadCount, image.Index);
+        }
+    }
+
+    /// <summary>
+    /// Lets go of the pixels <see cref="Rewrite"/> made the cache keep: at once, or after the upload that waits. An animation that
+    /// played its plays is a still image from then on.
+    /// </summary>
+    /// <param name="image">The image.</param>
+    public void DropPixels(ImageHandle image)
+    {
+        if (!IsAlive(image))
+        {
+            return;
+        }
+
+        ref Slot slot = ref _slots[image.Index];
+        slot.KeepsPixels = false;
+        if (!slot.UploadQueued)
+        {
+            slot.Pixels = null;
+        }
+    }
+
+    /// <summary>
+    /// Takes an image's upload out of the queue when it waits there: a frame ended with no renderer having taken it (a tree with
+    /// no renderer, a frame that did not draw), and the image's owner is about to write the pixels again. The texture keeps what it
+    /// showed.
+    /// </summary>
+    /// <param name="image">The image.</param>
+    /// <returns><see langword="true"/> when an upload waited.</returns>
+    public bool Withdraw(ImageHandle image)
+    {
+        if (!IsAlive(image) || !_slots[image.Index].UploadQueued)
+        {
+            return false;
+        }
+
+        int at = Array.IndexOf(_uploads, image.Index, 0, _uploadCount);
+        _uploads[at] = _uploads[--_uploadCount];
+        _slots[image.Index].UploadQueued = false;
+        return true;
     }
 
     /// <summary>
@@ -190,7 +263,8 @@ internal sealed class TextureCache
     }
 
     /// <summary>
-    /// Marks the queued images uploaded: their pixels are dropped (design §5.0.4) and the queue is emptied.
+    /// Marks the queued images uploaded: their pixels are dropped (design §5.0.4), but for an image that was rewritten, and the
+    /// queue is emptied.
     /// </summary>
     public void TakeUploads()
     {
@@ -198,7 +272,10 @@ internal sealed class TextureCache
         {
             ref Slot slot = ref _slots[index];
             slot.UploadQueued = false;
-            slot.Pixels = null;
+            if (!slot.KeepsPixels)
+            {
+                slot.Pixels = null;
+            }
         }
 
         _uploadCount = 0;
@@ -234,8 +311,9 @@ internal sealed class TextureCache
         GrowthCount++;
     }
 
-    // A slot of the table: its generation, whether it holds an image, the image's size and its pixels until the upload, and whether
-    // it is in the queue of uploads or of releases.
+    // A slot of the table: its generation, whether it holds an image, the image's size and its pixels until the upload (past it for
+    // an image that was rewritten, whose owner writes the next pixels into the same array), and whether it is in the queue of
+    // uploads or of releases.
     private struct Slot
     {
         public uint Generation;
@@ -243,6 +321,7 @@ internal sealed class TextureCache
         public int Width;
         public int Height;
         public byte[]? Pixels;
+        public bool KeepsPixels;
         public bool UploadQueued;
         public bool ReleaseQueued;
     }

@@ -28,6 +28,7 @@ internal abstract class Ticking
 internal sealed class AnimationClock(UiTree tree)
 {
     private readonly List<Ticking> _running = [];
+    private bool _reduceMotion;
 
     /// <summary>
     /// Gets the number of things running.
@@ -38,7 +39,11 @@ internal sealed class AnimationClock(UiTree tree)
     /// Gets or sets a value indicating whether the OS asks for less motion (design §2.14, "Reduced motion"): animations then jump to
     /// their end values and ask for no frame. The window's host sets it from the platform.
     /// </summary>
-    public bool ReduceMotion { get; set; }
+    public bool ReduceMotion
+    {
+        get => _reduceMotion;
+        set => SetReduceMotion(value);
+    }
 
     /// <summary>
     /// Gets the time of the frame being run, or of the last one: where a thing that starts between frames starts from is the next
@@ -122,6 +127,17 @@ internal sealed class AnimationClock(UiTree tree)
         finally
         {
             Ticking = false;
+        }
+    }
+
+    private void SetReduceMotion(bool value)
+    {
+        if (_reduceMotion != value)
+        {
+            _reduceMotion = value;
+
+            // The animated images stop on the frame they show, or go on from it (design §5.0.4, "When it stops").
+            tree.CachedImages.MotionChanged();
         }
     }
 }

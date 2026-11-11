@@ -1,0 +1,78 @@
+{
+ "anim-background.gif": {
+  "durations": [
+   100,
+   50,
+   200,
+   30
+  ],
+  "height": 32,
+  "plays": 3,
+  "width": 48
+ },
+ "anim-clear-start.gif": {
+  "durations": [
+   100,
+   50,
+   200
+  ],
+  "height": 32,
+  "plays": 0,
+  "width": 48
+ },
+ "anim-keep.gif": {
+  "durations": [
+   100,
+   50,
+   200,
+   30
+  ],
+  "height": 32,
+  "plays": 0,
+  "width": 48
+ },
+ "anim-lossless.webp": {
+  "durations": [
+   100,
+   50,
+   200,
+   30
+  ],
+  "height": 32,
+  "plays": 2,
+  "width": 48
+ },
+ "anim-lossy.webp": {
+  "durations": [
+   100,
+   50,
+   200,
+   30
+  ],
+  "height": 32,
+  "plays": 0,
+  "width": 48
+ },
+ "anim-p3.webp": {
+  "durations": [
+   100,
+   50,
+   200,
+   30
+  ],
+  "height": 32,
+  "plays": 1,
+  "width": 48
+ },
+ "anim-previous.gif": {
+  "durations": [
+   100,
+   50,
+   200,
+   30
+  ],
+  "height": 32,
+  "plays": 1,
+  "width": 48
+ }
+}

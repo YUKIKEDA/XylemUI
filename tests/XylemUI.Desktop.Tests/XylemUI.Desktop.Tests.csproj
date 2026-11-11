@@ -23,6 +23,13 @@
     <None Include="..\XylemUI.Imaging.Tests\Images\first-frame.gif" Link="Images\first-frame.gif" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\XylemUI.Imaging.Tests\Images\rgb24.bmp" Link="Images\rgb24.bmp" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\XylemUI.Imaging.Tests\Images\png.ico" Link="Images\png.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Images\anim-previous.gif*" Link="Images\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\XylemUI.Imaging.Tests\Images\anim-keep.gif*" Link="Images\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None
+      Include="..\XylemUI.Imaging.Tests\Images\anim-lossless.webp*"
+      Link="Images\%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <None Include="..\XylemUI.Imaging.Tests\Png\PngSuite\basn2c08.png" Link="Images\basn2c08.png" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="..\XylemUI.Imaging.Tests\Images\baseline.jpg" LogicalName="image.jpg" />
   </ItemGroup>

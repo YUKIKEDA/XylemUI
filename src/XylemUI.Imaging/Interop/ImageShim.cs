@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace XylemUI.Imaging.Interop;
 
 /// <summary>
-/// The two functions of the image decoders' C shim (<c>native/imaging/xylemui_image.c</c>, design §5.0.4): Wuffs for PNG, GIF, and
+/// The functions of the image decoders' C shim (<c>native/imaging/xylemui_image.c</c>, design §5.0.4): Wuffs for PNG, GIF, and
 /// BMP, libjpeg-turbo for JPEG, and libwebp for WebP. The shim is linked into a NativeAOT executable and loaded as
 /// <c>xylemui_image.dll</c> under the JIT, from these same declarations (design §9).
 /// </summary>
@@ -12,7 +12,8 @@ internal static unsafe partial class ImageShim
     /// <summary>The shim read or decoded the image.</summary>
     public const int Ok = 0;
 
-    /// <summary>The bytes are no format the shim reads, or a form of one it does not read (a 12-bit JPEG, an animated WebP).</summary>
+    /// <summary>The bytes are no format the shim reads, or a form of one it does not read (a 12-bit JPEG; an animated WebP asked for
+    /// as a still image, whose frames <see cref="AnimationNext"/> gives).</summary>
     public const int Unsupported = 1;
 
     /// <summary>The bytes are broken: a decoder refused them.</summary>
@@ -21,17 +22,68 @@ internal static unsafe partial class ImageShim
     /// <summary>A decoder could not allocate its state or its work buffer.</summary>
     public const int OutOfMemory = 3;
 
+    /// <summary>An animation played the plays its file asks for: <see cref="AnimationNext"/> gave no frame.</summary>
+    public const int End = 4;
+
     private const string Library = "xylemui_image";
 
-    /// <summary>Reads the format and the size of an image without decoding its pixels (<c>xi_info</c>).</summary>
+    /// <summary>
+    /// Reads the format and the size of an image, and whether it is an animation, without decoding its pixels (<c>xi_info</c>).
+    /// </summary>
     /// <param name="data">The first byte of the image.</param>
     /// <param name="length">The length of the image in bytes.</param>
     /// <param name="format">The format, an <see cref="ImageFormat"/> value; 0 when none is recognized.</param>
     /// <param name="width">The width in pixels.</param>
     /// <param name="height">The height in pixels.</param>
+    /// <param name="animated">1 for a WebP whose header says it is an animation and for a GIF with a second frame, which
+    /// <see cref="AnimationOpen"/> opens; null when the caller does not ask.</param>
     /// <returns>A status: <see cref="Ok"/>, <see cref="Unsupported"/>, <see cref="Broken"/>, or <see cref="OutOfMemory"/>.</returns>
     [LibraryImport(Library, EntryPoint = "xi_info")]
-    public static partial int Info(byte* data, nuint length, int* format, int* width, int* height);
+    public static partial int Info(byte* data, nuint length, int* format, int* width, int* height, int* animated);
+
+    /// <summary>
+    /// Opens the decoder of an animated GIF or WebP (<c>xi_animation_open</c>). The image's bytes stay in place, unchanged, until
+    /// <see cref="AnimationClose"/>.
+    /// </summary>
+    /// <param name="data">The first byte of the image.</param>
+    /// <param name="length">The length of the image in bytes.</param>
+    /// <param name="color">The image's color information; null for none.</param>
+    /// <param name="maxCanvasBytes">The most bytes a canvas (width × height × 4) may take.</param>
+    /// <param name="animation">The decoder, or 0.</param>
+    /// <param name="width">The canvas's width in pixels.</param>
+    /// <param name="height">The canvas's height in pixels.</param>
+    /// <param name="converts">1 when the frames' colors are converted to sRGB, which <see cref="AnimationNext"/> needs a buffer
+    /// for.</param>
+    /// <returns>A status, as <see cref="Info"/> returns.</returns>
+    [LibraryImport(Library, EntryPoint = "xi_animation_open")]
+    public static partial int AnimationOpen(
+        byte* data,
+        nuint length,
+        Color* color,
+        nuint maxCanvasBytes,
+        nint* animation,
+        int* width,
+        int* height,
+        int* converts
+    );
+
+    /// <summary>
+    /// Composes an animation's next frame (<c>xi_animation_next</c>): the first of the next play after the last of one.
+    /// </summary>
+    /// <param name="animation">The decoder.</param>
+    /// <param name="converted">A buffer as large as the canvas, which the colors are converted into when the decoder converts; null
+    /// when it does not.</param>
+    /// <param name="frame">The whole canvas in premultiplied BGRA, rows of width × 4 bytes, good until the next call: the decoder's
+    /// own, or <paramref name="converted"/>.</param>
+    /// <param name="duration">How long the frame shows, in milliseconds, as the file gives it.</param>
+    /// <returns><see cref="Ok"/>; <see cref="End"/> once the plays the file asks for are done; or <see cref="Broken"/>.</returns>
+    [LibraryImport(Library, EntryPoint = "xi_animation_next")]
+    public static partial int AnimationNext(nint animation, byte* converted, byte** frame, int* duration);
+
+    /// <summary>Closes an animation's decoder and frees its canvases (<c>xi_animation_close</c>); 0 is allowed.</summary>
+    /// <param name="animation">The decoder.</param>
+    [LibraryImport(Library, EntryPoint = "xi_animation_close")]
+    public static partial void AnimationClose(nint animation);
 
     /// <summary>
     /// Decodes an image, the first frame of a GIF, to premultiplied blue, green, red, and alpha, top-down rows of

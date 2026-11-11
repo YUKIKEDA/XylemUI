@@ -342,6 +342,12 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     internal int ImageTextureCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of images' textures the renderer made: an image that is given new pixels keeps its texture (design §5.0.4,
+    /// "Textures").
+    /// </summary>
+    internal int ImageTexturesMade { get; private set; }
+
+    /// <summary>
     /// Gets the number of images uploaded since the renderer was made (row IM1).
     /// </summary>
     internal int ImageUploads { get; private set; }
@@ -2324,10 +2330,25 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             }
 
             ref ImageTexture texture = ref _images[slot];
+            if (texture.View is not null && texture.Generation == generation)
+            {
+                // The same image with new pixels, an animation's next frame: written into its texture, whose mipmaps are made
+                // again (design §5.0.4, "Textures").
+                fixed (byte* data = pixels)
+                {
+                    _context->UpdateSubresource((ID3D11Resource*)texture.Texture, 0, null, data, (uint)(width * 4), 0);
+                }
+
+                _context->GenerateMips(texture.View);
+                ImageUploads++;
+                continue;
+            }
+
             ReleaseImage(ref texture);
             texture = CreateImageTexture(width, height, pixels);
             texture.Generation = generation;
             ImageTextureCount++;
+            ImageTexturesMade++;
             ImageUploads++;
         }
 

@@ -3,11 +3,15 @@
 // its format-sniffing layer is C++, so it cannot be called through P/Invoke (design §0, "Native interop"); libjpeg-turbo and
 // libwebp sit behind the same two functions so that C# calls the three one way.
 //
-//   xi_info    reads the format and the size of an image, without decoding its pixels
+//   xi_info    reads the format and the size of an image, and whether it is an animation, without decoding its pixels
 //   xi_decode  decodes the image (the first frame of a GIF) to premultiplied BGRA, top-down rows of `stride` bytes; a JPEG at a
 //              scale of eighths, libjpeg-turbo's DCT scaling (design §5.0.4, "Decoding size", row IM1 1b-2); and the colors of a
 //              color profile C# read converted to sRGB with skcms (design §5.0.4, "EXIF orientation and color", IM1's Grill,
 //              Q23 to Q29)
+//
+//   xi_animation_open, xi_animation_next, xi_animation_close
+//              open the decoder of an animated GIF or WebP, compose its next frame, and close it (design §5.0.4,
+//              "Animations")
 //
 // Every function takes untrusted bytes and returns an XI_ status; nothing is read past `length`. vendor/build.ps1 builds this file
 // with Wuffs into xylemui_image.lib (NativeAOT, static CRT) and xylemui_image.dll (the JIT).
@@ -35,6 +39,7 @@
 
 #include <jpeglib.h>
 #include <webp/decode.h>
+#include <webp/demux.h>
 
 #include "skcms/skcms.h"
 
@@ -48,6 +53,7 @@
 #define XI_UNSUPPORTED 1
 #define XI_BROKEN 2
 #define XI_OUT_OF_MEMORY 3
+#define XI_END 4
 
 #define XI_PNG 1
 #define XI_JPEG 2
@@ -58,6 +64,8 @@
 // The color information C# read from the image (design §5.0.4, IM1's Grill, Q23 and Q24): an ICC profile's bytes, with room past
 // its end that skcms's parse reads ahead into; or, for a PNG with no iCCP and no sRGB chunk, its cHRM (white, red, green, and
 // blue x and y) and its gAMA (the encoding gamma, gAMA's value / 100,000).
+typedef struct xi_animation xi_animation;
+
 typedef struct xi_color {
   const uint8_t* icc;
   size_t icc_length;
@@ -343,11 +351,6 @@ static int32_t xi_webp(const uint8_t* data, size_t length, int32_t* width, int32
     return XI_BROKEN;
   }
 
-  // An animation needs the demuxer, which the animations' PR brings (row IM1).
-  if (config.input.has_animation) {
-    return XI_UNSUPPORTED;
-  }
-
   if (config.input.width <= 0 || config.input.height <= 0) {
     return XI_BROKEN;
   }
@@ -356,6 +359,11 @@ static int32_t xi_webp(const uint8_t* data, size_t length, int32_t* width, int32
   *height = config.input.height;
   if (!pixels) {
     return XI_OK;
+  }
+
+  // An animation's frames come from xi_animation_next.
+  if (config.input.has_animation) {
+    return XI_UNSUPPORTED;
   }
 
   // Only an RGB profile (SkWebpCodec.cpp's check, Q26); with one, the colors are decoded unpremultiplied to be converted.
@@ -419,11 +427,29 @@ static int32_t xi_run(const uint8_t* data, size_t length, int32_t* format, int32
   }
 }
 
-XI_EXPORT int32_t xi_info(const uint8_t* data, size_t length, int32_t* format, int32_t* width, int32_t* height) {
+static int32_t xi_gif_animated(const uint8_t* data, size_t length);
+
+// `animated` may be NULL. It is 1 for a WebP whose header says it is an animation, and for a GIF with a second frame (design
+// §5.0.4, "Whether it is an animation"): an image xi_animation_open opens. A GIF with one frame and a still WebP are 0.
+XI_EXPORT int32_t xi_info(const uint8_t* data, size_t length, int32_t* format, int32_t* width, int32_t* height, int32_t* animated) {
   *format = 0;
   *width = 0;
   *height = 0;
-  return xi_run(data, length, format, width, height, NULL, 0, 8, NULL);
+  if (animated) {
+    *animated = 0;
+  }
+
+  int32_t result = xi_run(data, length, format, width, height, NULL, 0, 8, NULL);
+  if (result == XI_OK && animated) {
+    if (*format == XI_GIF) {
+      *animated = xi_gif_animated(data, length);
+    } else if (*format == XI_WEBP) {
+      WebPBitstreamFeatures features;
+      *animated = WebPGetFeatures(data, length, &features) == VP8_STATUS_OK && features.has_animation;
+    }
+  }
+
+  return result;
 }
 
 // `eighths` is the scale, 1 to 8 eighths, which only a JPEG takes (8 for the others). `width` and `height` are those xi_info gave
@@ -435,7 +461,7 @@ XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels,
   int32_t format = 0;
   int32_t w = 0;
   int32_t h = 0;
-  int32_t result = xi_info(data, length, &format, &w, &h);
+  int32_t result = xi_info(data, length, &format, &w, &h, NULL);
   if (result != XI_OK) {
     return result;
   }
@@ -450,4 +476,343 @@ XI_EXPORT int32_t xi_decode(const uint8_t* data, size_t length, uint8_t* pixels,
 
   skcms_ICCProfile storage;
   return xi_run(data, length, &format, &w, &h, pixels, stride, eighths, xi_profile(color, &storage));
+}
+
+// ---- Animations: GIF and WebP ----
+
+// An animation's decoder (design §5.0.4, "Animations", "Decoding and composing"): it gives one composed frame at a time, the whole
+// canvas in premultiplied BGRA. A GIF's frames are decoded with Wuffs onto a canvas, with each frame's disposal applied before the
+// next and a second canvas for "restore to previous"; a WebP's with libwebp's WebPAnimDecoder, which composes on two canvases of its
+// own. The image's bytes are not copied: the caller keeps them in place until xi_animation_close.
+struct xi_animation {
+  int32_t format;
+  int32_t width;
+  int32_t height;
+  const uint8_t* data;
+  size_t length;
+
+  // The plays so far, and the frames given in the play going on.
+  uint32_t played;
+  uint32_t frames;
+
+  // WebP: the decoder, the plays the file asks for (0 for no end), the end of the last frame in milliseconds, and the profile the
+  // colors are converted from with its bytes, when one applies.
+  WebPAnimDecoder* webp;
+  uint32_t webp_loops;
+  int32_t webp_previous;
+  int32_t converts;
+  skcms_ICCProfile profile;
+  uint8_t* icc;
+
+  // GIF: the decoder with its work buffer, the canvas with the copy "restore to previous" puts back, where the first frame
+  // starts, and what the frame given last asks to be done before the next.
+  wuffs_base__image_decoder* gif;
+  wuffs_base__io_buffer source;
+  wuffs_base__pixel_buffer buffer;
+  uint8_t* work;
+  size_t work_length;
+  uint8_t* canvas;
+  uint8_t* saved;
+  uint64_t first_frame;
+  uint8_t disposal;
+  wuffs_base__rect_ie_u32 disposal_bounds;
+  uint32_t disposal_color;
+};
+
+static size_t xi_canvas_bytes(const xi_animation* animation) { return (size_t)animation->width * (size_t)animation->height * 4; }
+
+// Whether a GIF has a second frame. Wuffs skips the pixels of a frame whose configuration alone is asked for.
+static int32_t xi_gif_animated(const uint8_t* data, size_t length) {
+  wuffs_base__image_decoder* decoder = xi_wuffs_decoder(XI_GIF);
+  if (!decoder) {
+    return 0;
+  }
+
+  wuffs_base__io_buffer source = wuffs_base__ptr_u8__reader((uint8_t*)data, length, true);
+  wuffs_base__frame_config frame = {0};
+  int32_t animated = wuffs_base__image_decoder__decode_frame_config(decoder, &frame, &source).repr == NULL &&
+                     wuffs_base__image_decoder__decode_frame_config(decoder, &frame, &source).repr == NULL;
+  free(decoder);
+  return animated;
+}
+
+static int32_t xi_gif_open(xi_animation* animation, size_t max_canvas_bytes) {
+  animation->gif = xi_wuffs_decoder(XI_GIF);
+  if (!animation->gif) {
+    return XI_OUT_OF_MEMORY;
+  }
+
+  animation->source = wuffs_base__ptr_u8__reader((uint8_t*)animation->data, animation->length, true);
+  wuffs_base__image_config config = {0};
+  if (wuffs_base__image_decoder__decode_image_config(animation->gif, &config, &animation->source).repr) {
+    return XI_BROKEN;
+  }
+
+  uint32_t w = wuffs_base__pixel_config__width(&config.pixcfg);
+  uint32_t h = wuffs_base__pixel_config__height(&config.pixcfg);
+  if (w == 0 || h == 0 || w > INT32_MAX / 4 || h > INT32_MAX) {
+    return XI_BROKEN;
+  }
+
+  if ((uint64_t)w * h * 4 > max_canvas_bytes) {
+    return XI_UNSUPPORTED;
+  }
+
+  animation->width = (int32_t)w;
+  animation->height = (int32_t)h;
+  uint64_t work_length = wuffs_base__image_decoder__workbuf_len(animation->gif).max_incl;
+  if (work_length > SIZE_MAX) {
+    return XI_OUT_OF_MEMORY;
+  }
+
+  animation->work_length = (size_t)work_length;
+  animation->work = (uint8_t*)malloc(animation->work_length ? animation->work_length : 1);
+  animation->canvas = (uint8_t*)calloc(xi_canvas_bytes(animation), 1);
+  animation->saved = (uint8_t*)malloc(xi_canvas_bytes(animation));
+  if (!animation->work || !animation->canvas || !animation->saved) {
+    return XI_OUT_OF_MEMORY;
+  }
+
+  wuffs_base__pixel_config__set(&config.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, w, h);
+  if (wuffs_base__pixel_buffer__set_interleaved(&animation->buffer, &config.pixcfg,
+                                                wuffs_base__make_table_u8(animation->canvas, (size_t)w * 4, h, (size_t)w * 4),
+                                                wuffs_base__empty_slice_u8())
+          .repr) {
+    return XI_BROKEN;
+  }
+
+  return XI_OK;
+}
+
+// Fills the part of a rectangle that is on the canvas with one premultiplied color.
+static void xi_gif_fill(xi_animation* animation, wuffs_base__rect_ie_u32 bounds, uint32_t color) {
+  uint32_t right = bounds.max_excl_x < (uint32_t)animation->width ? bounds.max_excl_x : (uint32_t)animation->width;
+  uint32_t bottom = bounds.max_excl_y < (uint32_t)animation->height ? bounds.max_excl_y : (uint32_t)animation->height;
+  for (uint32_t y = bounds.min_incl_y; y < bottom; y++) {
+    uint8_t* row = animation->canvas + ((size_t)y * (size_t)animation->width + bounds.min_incl_x) * 4;
+    for (uint32_t x = bounds.min_incl_x; x < right; x++, row += 4) {
+      memcpy(row, &color, 4);
+    }
+  }
+}
+
+static int32_t xi_gif_next(xi_animation* animation, const uint8_t** frame, int32_t* duration) {
+  wuffs_base__frame_config config = {0};
+  wuffs_base__status status = wuffs_base__image_decoder__decode_frame_config(animation->gif, &config, &animation->source);
+  if (status.repr == wuffs_base__note__end_of_data) {
+    // The play ended. The count of plays is known by now (the extension that holds it can come anywhere before the end): 0 is
+    // no end.
+    uint32_t loops = wuffs_base__image_decoder__num_animation_loops(animation->gif);
+    animation->played++;
+    if (animation->frames == 0) {
+      return XI_BROKEN;
+    }
+
+    if (loops != 0 && animation->played >= loops) {
+      return XI_END;
+    }
+
+    if (wuffs_base__image_decoder__restart_frame(animation->gif, 0, animation->first_frame).repr) {
+      return XI_BROKEN;
+    }
+
+    animation->source.meta.ri = (size_t)animation->first_frame;
+    animation->frames = 0;
+    status = wuffs_base__image_decoder__decode_frame_config(animation->gif, &config, &animation->source);
+  }
+
+  if (status.repr) {
+    return XI_BROKEN;
+  }
+
+  if (animation->frames == 0) {
+    // A play starts on an empty canvas.
+    animation->first_frame = wuffs_base__frame_config__io_position(&config);
+    memset(animation->canvas, 0, xi_canvas_bytes(animation));
+  } else if (animation->disposal == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_BACKGROUND) {
+    xi_gif_fill(animation, animation->disposal_bounds, animation->disposal_color);
+  } else if (animation->disposal == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) {
+    memcpy(animation->canvas, animation->saved, xi_canvas_bytes(animation));
+  }
+
+  animation->disposal = wuffs_base__frame_config__disposal(&config);
+  animation->disposal_bounds = wuffs_base__frame_config__bounds(&config);
+  animation->disposal_color = wuffs_base__frame_config__background_color(&config);
+  if (animation->disposal == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) {
+    memcpy(animation->saved, animation->canvas, xi_canvas_bytes(animation));
+  }
+
+  wuffs_base__pixel_blend blend =
+      wuffs_base__frame_config__overwrite_instead_of_blend(&config) ? WUFFS_BASE__PIXEL_BLEND__SRC : WUFFS_BASE__PIXEL_BLEND__SRC_OVER;
+  if (wuffs_base__image_decoder__decode_frame(animation->gif, &animation->buffer, &animation->source, blend,
+                                              wuffs_base__make_slice_u8(animation->work, animation->work_length), NULL)
+          .repr) {
+    return XI_BROKEN;
+  }
+
+  uint64_t milliseconds = wuffs_base__frame_config__duration(&config) / WUFFS_BASE__FLICKS_PER_MILLISECOND;
+  *duration = milliseconds > INT32_MAX ? INT32_MAX : (int32_t)milliseconds;
+  *frame = animation->canvas;
+  animation->frames++;
+  return XI_OK;
+}
+
+static int32_t xi_webp_open(xi_animation* animation, const xi_color* color, size_t max_canvas_bytes) {
+  WebPBitstreamFeatures features;
+  if (WebPGetFeatures(animation->data, animation->length, &features) != VP8_STATUS_OK || features.width <= 0 || features.height <= 0) {
+    return XI_BROKEN;
+  }
+
+  if ((uint64_t)features.width * (uint64_t)features.height * 4 > max_canvas_bytes) {
+    return XI_UNSUPPORTED;
+  }
+
+  // Only an RGB profile, as for a still WebP (Q26). Its bytes are copied, with the room skcms's parse reads ahead into: the
+  // profile points into them for as long as the frames are converted.
+  if (color && color->icc && color->icc_length > 0) {
+    animation->icc = (uint8_t*)calloc(color->icc_length + 4, 1);
+    if (!animation->icc) {
+      return XI_OUT_OF_MEMORY;
+    }
+
+    memcpy(animation->icc, color->icc, color->icc_length);
+    xi_color copy = {animation->icc, color->icc_length, 0, {0}, 0, 0};
+    const skcms_ICCProfile* profile = xi_profile(&copy, &animation->profile);
+    animation->converts = profile && profile->data_color_space == skcms_Signature_RGB;
+  }
+
+  WebPAnimDecoderOptions options;
+  if (!WebPAnimDecoderOptionsInit(&options)) {
+    return XI_BROKEN;
+  }
+
+  // The colors that are converted are composed unpremultiplied, and premultiplied after the conversion (Q47).
+  options.color_mode = animation->converts ? MODE_BGRA : MODE_bgrA;
+  options.use_threads = 0;
+  WebPData data = {animation->data, animation->length};
+  animation->webp = WebPAnimDecoderNew(&data, &options);
+  WebPAnimInfo info;
+  if (!animation->webp || !WebPAnimDecoderGetInfo(animation->webp, &info)) {
+    return XI_BROKEN;
+  }
+
+  animation->width = (int32_t)info.canvas_width;
+  animation->height = (int32_t)info.canvas_height;
+  animation->webp_loops = info.loop_count;
+  return XI_OK;
+}
+
+static int32_t xi_webp_next(xi_animation* animation, uint8_t* converted, const uint8_t** frame, int32_t* duration) {
+  if (!WebPAnimDecoderHasMoreFrames(animation->webp)) {
+    animation->played++;
+    if (animation->frames == 0) {
+      return XI_BROKEN;
+    }
+
+    if (animation->webp_loops != 0 && animation->played >= animation->webp_loops) {
+      return XI_END;
+    }
+
+    WebPAnimDecoderReset(animation->webp);
+    animation->webp_previous = 0;
+    animation->frames = 0;
+  }
+
+  uint8_t* canvas = NULL;
+  int end = 0;
+  if (!WebPAnimDecoderGetNext(animation->webp, &canvas, &end)) {
+    return XI_BROKEN;
+  }
+
+  *duration = end > animation->webp_previous ? end - animation->webp_previous : 0;
+  animation->webp_previous = end;
+  animation->frames++;
+  if (!animation->converts) {
+    *frame = canvas;
+    return XI_OK;
+  }
+
+  // The decoder's canvas is left as it is: the next frame is composed on it.
+  if (!converted) {
+    return XI_BROKEN;
+  }
+
+  size_t stride = (size_t)animation->width * 4;
+  for (int32_t y = 0; y < animation->height; y++) {
+    if (!skcms_Transform(canvas + (size_t)y * stride, skcms_PixelFormat_BGRA_8888, skcms_AlphaFormat_Unpremul, &animation->profile,
+                         converted + (size_t)y * stride, skcms_PixelFormat_BGRA_8888, skcms_AlphaFormat_PremulAsEncoded,
+                         skcms_sRGB_profile(), (size_t)animation->width)) {
+      return XI_BROKEN;
+    }
+  }
+
+  *frame = converted;
+  return XI_OK;
+}
+
+// Closes an animation's decoder and frees its canvases; NULL is allowed.
+XI_EXPORT void xi_animation_close(xi_animation* animation) {
+  if (!animation) {
+    return;
+  }
+
+  if (animation->webp) {
+    WebPAnimDecoderDelete(animation->webp);
+  }
+
+  free(animation->icc);
+  free(animation->gif);
+  free(animation->work);
+  free(animation->canvas);
+  free(animation->saved);
+  free(animation);
+}
+
+// Opens the decoder of an animated GIF or WebP. `data` stays in place, unchanged, until xi_animation_close. `color` is the color
+// information C# read, or NULL: `converts` is 1 when the frames' colors are converted to sRGB, which xi_animation_next then needs
+// a buffer for. A canvas of more than `max_canvas_bytes` (width × height × 4) is not opened. `width` and `height` are the canvas's.
+XI_EXPORT int32_t xi_animation_open(const uint8_t* data, size_t length, const xi_color* color, size_t max_canvas_bytes,
+                                    xi_animation** animation, int32_t* width, int32_t* height, int32_t* converts) {
+  *animation = NULL;
+  *width = 0;
+  *height = 0;
+  *converts = 0;
+  if (!data || length == 0) {
+    return XI_UNSUPPORTED;
+  }
+
+  int32_t format = xi_format(data, length);
+  if (format != XI_GIF && format != XI_WEBP) {
+    return XI_UNSUPPORTED;
+  }
+
+  xi_animation* opened = (xi_animation*)calloc(1, sizeof(xi_animation));
+  if (!opened) {
+    return XI_OUT_OF_MEMORY;
+  }
+
+  opened->format = format;
+  opened->data = data;
+  opened->length = length;
+  int32_t result = format == XI_GIF ? xi_gif_open(opened, max_canvas_bytes) : xi_webp_open(opened, color, max_canvas_bytes);
+  if (result != XI_OK) {
+    xi_animation_close(opened);
+    return result;
+  }
+
+  *animation = opened;
+  *width = opened->width;
+  *height = opened->height;
+  *converts = opened->converts;
+  return XI_OK;
+}
+
+// Composes the next frame: the first of the next play after the last of one, and XI_END once the plays the file asks for are
+// done. `frame` is the whole canvas in premultiplied BGRA, rows of width × 4 bytes, good until the next call: the decoder's own
+// canvas, or `converted` (as large as the canvas), which the colors are converted into when the decoder converts and which may be
+// NULL when it does not. `duration` is how long the frame shows, in milliseconds, as the file gives it.
+XI_EXPORT int32_t xi_animation_next(xi_animation* animation, uint8_t* converted, const uint8_t** frame, int32_t* duration) {
+  *frame = NULL;
+  *duration = 0;
+  return animation->format == XI_GIF ? xi_gif_next(animation, frame, duration) : xi_webp_next(animation, converted, frame, duration);
 }
