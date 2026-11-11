@@ -83,6 +83,7 @@ internal static class ImagePlay
         // The durations of the frames that showed, from a decoder of its own: frame k + 1 followed frame k after frame k's.
         var late = new List<double>();
         var durations = new List<double>();
+        var decode = new List<double>();
         using (ImageAnimation? animation = ImageAnimation.TryOpen(File.ReadAllBytes(path), 0, 0, TextureCache.MaxSide))
         {
             if (animation is null || shownAt.Count < 2)
@@ -99,10 +100,13 @@ internal static class ImagePlay
             _ = animation.Next(pixels, out _);
             for (int i = 0; i + 1 < shownAt.Count; i++)
             {
+                long decodeStart = Stopwatch.GetTimestamp();
                 if (animation.Next(pixels, out TimeSpan duration) != AnimationStep.Frame)
                 {
                     break;
                 }
+
+                decode.Add(Stopwatch.GetElapsedTime(decodeStart).TotalMilliseconds);
 
                 durations.Add(duration.TotalMilliseconds);
                 late.Add(Stopwatch.GetElapsedTime(shownAt[i], shownAt[i + 1]).TotalMilliseconds - duration.TotalMilliseconds);
@@ -113,11 +117,24 @@ internal static class ImagePlay
         report.Number("advances", shownAt.Count);
         report.Series("duration_ms", durations);
         report.Series("late_ms", late);
+
+        // The time of each frame's decode and composing, on this thread after the run.
+        report.Series("decode_ms", decode);
+
+        // Where the latest frame is: the advance after which it showed, counted from 0.
+        report.Number("late_max_at", late.IndexOf(late.Max()));
         report.Number("refresh_hz", scene.Renderer.RefreshRate);
         report.Number("iterations", iterations - firstIteration);
         report.Number("iterations_per_second", (iterations - firstIteration) / played);
         report.Number("iterations_per_advance", (double)(iterations - firstIteration) / (shownAt.Count - 1));
         report.Number("presents", frames.PresentCount);
+        report.Number("frame_clock_timeouts", Win32MessageLoop.Frames.ClockTimeouts);
+        report.Number("late_starts", Win32MessageLoop.Frames.LateStarts);
+        for (int i = 0; i < 6 && i < late.Count; i++)
+        {
+            report.Number($"late_{i}_ms", late[i]);
+        }
+
         report.Number("ui_bytes", bytes);
         cache.ReleaseAll();
         return 0;
