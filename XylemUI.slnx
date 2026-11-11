@@ -11,6 +11,7 @@
   <Folder Name="/src/">
     <Project Path="src/XylemUI.Core/XylemUI.Core.csproj" />
     <Project Path="src/XylemUI.Desktop/XylemUI.Desktop.csproj" />
+    <Project Path="src/XylemUI.Generators/XylemUI.Generators.csproj" />
     <Project Path="src/XylemUI.Imaging/XylemUI.Imaging.csproj" />
     <Project Path="src/XylemUI.Platform.Windows/XylemUI.Platform.Windows.csproj" />
     <Project Path="src/XylemUI.Primitives/XylemUI.Primitives.csproj" />
@@ -28,6 +29,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/XylemUI.Core.Tests/XylemUI.Core.Tests.csproj" />
     <Project Path="tests/XylemUI.Desktop.Tests/XylemUI.Desktop.Tests.csproj" />
+    <Project Path="tests/XylemUI.Generators.Tests/XylemUI.Generators.Tests.csproj" />
     <Project Path="tests/XylemUI.Imaging.Tests/XylemUI.Imaging.Tests.csproj" />
     <Project Path="tests/XylemUI.Platform.Windows.Tests/XylemUI.Platform.Windows.Tests.csproj" />
     <Project Path="tests/XylemUI.Primitives.Tests/XylemUI.Primitives.Tests.csproj" />

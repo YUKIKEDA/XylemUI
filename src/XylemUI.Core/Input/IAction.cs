@@ -17,6 +17,28 @@ namespace XylemUI;
 public interface IAction;
 
 /// <summary>
+/// Names the table of an assembly's actions that the source generator of <c>XylemUI.Generators</c> wrote, and the names in it. An
+/// app's generated module initializer calls the table of each assembly it references, and the generator reads the names to refuse
+/// one that two assemblies give. Code does not write this attribute.
+/// </summary>
+/// <param name="table">The generated class, whose static <c>Register</c> method adds the assembly's actions.</param>
+/// <param name="names">The names of the assembly's actions.</param>
+[AttributeUsage(AttributeTargets.Assembly)]
+[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+public sealed class ActionTableAttribute(Type table, string[] names) : Attribute
+{
+    /// <summary>
+    /// Gets the generated class.
+    /// </summary>
+    public Type Table { get; } = table;
+
+    /// <summary>
+    /// Gets the names of the assembly's actions.
+    /// </summary>
+    public IReadOnlyList<string> Names { get; } = names;
+}
+
+/// <summary>
 /// Gives an action its name (design §7, "Shortcuts and actions"). The source generator of <c>XylemUI.Generators</c> reads it and
 /// adds the type to the table <see cref="ActionRegistry"/> is filled from.
 /// </summary>

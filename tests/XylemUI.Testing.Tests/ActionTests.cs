@@ -443,6 +443,37 @@ public sealed class ActionTests
         _ = Assert.Throws<InvalidOperationException>(() => ActionRegistry.Register("test::Registered", static () => new Unregistered()));
     }
 
+    /// <summary>
+    /// An action with <c>[Action]</c> is in the registry when the app starts, with no call of <c>Register</c> in the app's code: the
+    /// source generator wrote the table and the module initializer that fills it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - <c>GeneratedAction</c>, a nested internal class of this test assembly, carries <c>[Action("test::Generated")]</c> and sets a
+    ///   field in its constructor without parameters. No code registers it.
+    ///
+    /// Steps:
+    /// - Create the action by its name; read the type's name.
+    ///
+    /// Expected:
+    /// - A <c>GeneratedAction</c> whose field has the constructor's value; the type's name is <c>test::Generated</c>.
+    /// </remarks>
+    [Fact]
+    public void ActionRegistry_ATypeWithTheAttribute_IsRegisteredByTheGenerator()
+    {
+        Assert.True(ActionRegistry.TryCreate("test::Generated", out IAction? action));
+        GeneratedAction generated = Assert.IsType<GeneratedAction>(action);
+        Assert.Equal(7, generated.Amount);
+        Assert.True(ActionRegistry.TryGetName(typeof(GeneratedAction), out string? name));
+        Assert.Equal("test::Generated", name);
+    }
+
+    [Action("test::Generated")]
+    internal sealed class GeneratedAction : IAction
+    {
+        public int Amount { get; init; } = 7;
+    }
+
     private class Save : IAction;
 
     private sealed class SaveAs : Save;
