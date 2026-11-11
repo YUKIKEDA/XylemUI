@@ -1,9 +1,23 @@
 name: CI
 
+# build.ps1 reads no document, rule, or skill, so a change to those alone starts no run (.cursor/rules/git.mdc). A check that
+# reads them, when one is added, takes its folder out of these lists.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - ".cursor/**"
+      - ".agents/**"
+      - ".claude/**"
+      - "*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - ".cursor/**"
+      - ".agents/**"
+      - ".claude/**"
+      - "*.md"
   workflow_dispatch:
 
 concurrency:
