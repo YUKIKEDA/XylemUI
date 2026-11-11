@@ -13,6 +13,9 @@
     <PackageVersion Include="TerraFX.Interop.Windows" Version="10.0.26100.6" />
   </ItemGroup>
   <ItemGroup Label="Build tools">
+    <!-- The compiler API the source generators are written against (src/XylemUI.Generators); it runs in the compiler on the build
+         machine and never ships in an app (design §7, "Shortcuts and actions"). -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <!-- Writes the kept icon fonts into an app's assembly on the build machine; never in an app (design §5.0.4, §0). -->
     <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>

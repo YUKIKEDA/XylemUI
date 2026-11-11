@@ -42,6 +42,7 @@ internal sealed class UiTree
         }
 
         Focus = new FocusManager(this);
+        Actions = new ActionDispatch(this);
         Animations = new AnimationClock(this);
         Popups = new OverlayPopupHost(this);
         CachedImages = new WindowImageCache(Images, this);
@@ -79,6 +80,28 @@ internal sealed class UiTree
     /// Gets the focus of the tree's window (design §7, "Keys and the focus").
     /// </summary>
     internal FocusManager Focus { get; }
+
+    /// <summary>
+    /// Gets the dispatch of the tree's actions (design §7, "Shortcuts and actions").
+    /// </summary>
+    internal ActionDispatch Actions { get; }
+
+    /// <summary>
+    /// Gets or sets the node a key and an action are routed from while no node has the focus, when it is alive; the root
+    /// otherwise. A window sets it to the node its root function returned, which is a child of the window's own root: a handler
+    /// the app adds to its root is then on the route with no focus (design §7, "Shortcuts and actions").
+    /// </summary>
+    internal NodeHandle KeyRoot
+    {
+        get;
+        set
+        {
+            field = value;
+
+            // The route with no focus starts from another node now.
+            Actions.AvailabilityChanged();
+        }
+    }
 
     /// <summary>
     /// Gets the animations of the tree's window that are running (design §2.14, "The frame clock").
@@ -1299,6 +1322,42 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Adds a handler of an action to a node (design §7, "Shortcuts and actions"). The node writes no hit region for it.
+    /// </summary>
+    /// <typeparam name="TAction">The type of the action.</typeparam>
+    /// <param name="node">The node.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler)
+        where TAction : class, IAction
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef));
+        Actions.AvailabilityChanged();
+    }
+
+    /// <summary>
+    /// Removes the first handler of an action of a node added with the same type, phase, and delegate.
+    /// </summary>
+    /// <typeparam name="TAction">The type of the action.</typeparam>
+    /// <param name="node">The node.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <param name="handler">The handler.</param>
+    /// <returns>Whether a handler was removed.</returns>
+    public bool RemoveActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler)
+        where TAction : class, IAction
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        if (Nodes.GetRef(node).Input is { } input && input.Remove(typeof(TAction), phase, handler))
+        {
+            Actions.AvailabilityChanged();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Adds a text input handler to a node (design §4.9, "Text input on Windows"). The node writes no hit region for it.
     /// </summary>
     /// <param name="node">The node.</param>
@@ -1866,6 +1925,10 @@ internal sealed class UiTree
             ref UiNode c = ref Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
             c.Parent = default;
+
+            // The route of an action from a focused node of the subtree ends here now. A node that is attached needs no such
+            // mark: the changes that move a live subtree detach it first, in the batch that attaches it again.
+            Actions.AvailabilityChanged();
             c.NextSibling = default;
             child = next;
         }
@@ -2307,6 +2370,7 @@ internal sealed class UiTree
 
         ref UiNode n = ref Nodes.GetRef(node);
         n.Parent = default;
+        Actions.AvailabilityChanged();
         n.NextSibling = default;
     }
 
@@ -2396,6 +2460,11 @@ internal sealed class UiTree
     {
         ref UiNode n = ref Nodes.GetRef(node);
         bool disabled = inherited || n.Input?.Disabled == true;
+        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled && n.Input is { ActionHandlers.Length: > 0 })
+        {
+            Actions.AvailabilityChanged();
+        }
+
         SetPseudoState(node, PseudoState.Disabled, disabled);
 
         // A disabled node is neither hovered nor pressed (design §7): a press a key made, which no pointer's up clears, ends here

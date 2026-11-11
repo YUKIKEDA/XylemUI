@@ -61,6 +61,8 @@
 //   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`;
 //                              the space key switches its marker's color (for `input-latency`); --tree draws it from a UI tree with
 //                              WindowFrames, the path of an app (row R3)
+//   actions                    an action made by its name from the generated table, and the cost of dispatching it through
+//                              chains of boxes 1 and 50 deep (row KM1a, ActionCost.cs)
 //   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
 //                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2;
 //                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
@@ -119,6 +121,7 @@ return scenario switch
     "todo" => TodoCost.Run(),
     "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit")),
     "menu" => MenuCost.Run(),
+    "actions" => ActionCost.Run(),
     "menubar" => MenuBarCost.Run(),
     "dragdrop" => DragDropCost.Run(),
     "tooltip" => TooltipCost.Run(),

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XylemUI.Generators.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The generator is called through the compiler's API on sources the tests write (row KM1a). -->
+    <ProjectReference Include="..\..\src\XylemUI.Generators\XylemUI.Generators.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+</Project>
