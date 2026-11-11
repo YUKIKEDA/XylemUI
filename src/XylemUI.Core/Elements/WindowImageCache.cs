@@ -88,6 +88,11 @@ internal sealed class WindowImageCache
     public int Hits { get; private set; }
 
     /// <summary>
+    /// Gets the number of times an animation showed its next frame.
+    /// </summary>
+    public int Advances { get; private set; }
+
+    /// <summary>
     /// Gets the number of entries a limit took out of the counted set.
     /// </summary>
     public int EvictedCount { get; private set; }
@@ -152,7 +157,11 @@ internal sealed class WindowImageCache
     /// </summary>
     /// <param name="entry">The animation's entry.</param>
     /// <param name="pixels">The frame.</param>
-    public void Advance(ImageEntry entry, byte[] pixels) => _images.Rewrite(entry.Image, pixels);
+    public void Advance(ImageEntry entry, byte[] pixels)
+    {
+        _images.Rewrite(entry.Image, pixels);
+        Advances++;
+    }
 
     /// <summary>
     /// Ends the playing of an animation that played the plays its file asks for: the decoder goes, and the entry is the still

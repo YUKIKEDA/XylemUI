@@ -112,6 +112,7 @@ return scenario switch
     "image-decode" => ImageCost.Decode(args[1], Number(2, 20)),
     "image-tree" => ImageCost.Tree(Number(1, 600)),
     "image-scroll" => ImageCost.Scroll(Number(1, 600)),
+    "image-play" => ImagePlay.Run(args[1], Number(2, 10), args.Contains("--warp")),
     "input" => InputCost.Run(),
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
