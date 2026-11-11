@@ -60,13 +60,14 @@ def record(name, plays, convert=None):
     expected[name] = {"width": read.size[0], "height": read.size[1], "durations": DURATIONS[:count], "plays": plays}
 
 
-def gif(name, plays, disposal, **options):
-    images = [frame.convert("P", palette=Image.ADAPTIVE, colors=255) for frame in frames(alpha=False)]
-    for image, source in zip(images, frames(alpha=False)):
+def gif(name, plays, disposal, first=0, **options):
+    sources = frames(alpha=False)[first:]
+    images = [frame.convert("P", palette=Image.ADAPTIVE, colors=255) for frame in sources]
+    for image, source in zip(images, sources):
         # Index 255 is the clear color: the pixels the frame leaves as they were.
         mask = source.getchannel("A").point(lambda a: 255 if a == 0 else 0)
         image.paste(255, mask=mask)
-    images[0].save(os.path.join(out, name), save_all=True, append_images=images[1:], duration=DURATIONS,
+    images[0].save(os.path.join(out, name), save_all=True, append_images=images[1:], duration=DURATIONS[: len(images)],
                    disposal=disposal, transparency=255, optimize=False, **options)
     record(name, plays)
 
@@ -76,6 +77,10 @@ def gif(name, plays, disposal, **options):
 gif("anim-keep.gif", 0, 1, loop=0)
 gif("anim-background.gif", 3, 2, loop=2)
 gif("anim-previous.gif", 1, [1, 3, 1, 1])
+
+# Only the three frames that draw on a clear frame, each kept: the first frame of the next play is drawn on an empty canvas, not on
+# what the play before left.
+gif("anim-clear-start.gif", 0, 1, first=1, loop=0)
 
 
 # A GIF of one frame: no animation.

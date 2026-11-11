@@ -29,6 +29,8 @@ frame late), and its plays (0 for no end).
 - `anim-keep.gif`: every frame stays (disposal 1); plays without end (a NETSCAPE loop count of 0)
 - `anim-background.gif`: every frame is cleared to the background (disposal 2); 3 plays (a loop count of 2, the times it plays again)
 - `anim-previous.gif`: the second frame is put back to the one before it (disposal 3); one play (no loop extension)
+- `anim-clear-start.gif`: the three frames that draw one rectangle each, every frame kept; plays without end. The first frame of
+  each play is drawn on an empty canvas
 - `anim-lossless.webp`: lossless with alpha; 2 plays
 - `anim-lossy.webp`: lossy, each frame drawn over the ones before with no alpha; plays without end
 - `anim-p3.webp`: lossless with alpha and the Display P3 profile; one play. Its frames are converted to sRGB by Pillow's ImageCms

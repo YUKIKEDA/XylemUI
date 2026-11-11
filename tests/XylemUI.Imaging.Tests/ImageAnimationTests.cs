@@ -12,7 +12,7 @@ public sealed class ImageAnimationTests
     /// <summary>
     /// Each animation gives, play after play, the frames Pillow composes from it, with the durations the file was written with,
     /// and ends after the plays the file asks for: a GIF whose frames stay, one whose frames are cleared to the background, one
-    /// with a frame that is put back to the one before, and WebP animations that are lossless with alpha, lossy, and with a Display
+    /// with a frame that is put back to the one before, one whose first frame does not cover the canvas, and WebP animations that are lossless with alpha, lossy, and with a Display
     /// P3 profile.
     /// </summary>
     /// <remarks>
@@ -34,6 +34,7 @@ public sealed class ImageAnimationTests
     [InlineData("anim-keep.gif", 0)]
     [InlineData("anim-background.gif", 0)]
     [InlineData("anim-previous.gif", 0)]
+    [InlineData("anim-clear-start.gif", 0)]
     [InlineData("anim-lossless.webp", 1)]
     [InlineData("anim-lossy.webp", 0)]
     [InlineData("anim-p3.webp", 2)]
