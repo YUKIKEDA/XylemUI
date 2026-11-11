@@ -374,7 +374,8 @@ public sealed unsafe partial class Win32Window : IDisposable
 
     // The window does not show while it is hidden or minimized. Hidden is read from the flags of the change, not from the window's
     // state now, so that a window that was never shown counts as showing and draws (the tests' and the benchmarks' windows).
-    // Minimized is the window's state inside the message.
+    // Minimized is the window's state inside the message. Destroying a window that shows hides it first, so a window being closed
+    // tells that it stopped showing.
     private void ReadVisibility(HWND hwnd, WINDOWPOS* position)
     {
         if ((position->flags & SWP.SWP_HIDEWINDOW) != 0)

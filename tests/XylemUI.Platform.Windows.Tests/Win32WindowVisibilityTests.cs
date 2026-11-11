@@ -23,11 +23,13 @@ public sealed class Win32WindowVisibilityTests(UiThreadFixture ui)
     /// Steps:
     /// - Read whether it shows. Show it without activating it (<c>SW_SHOWNOACTIVATE</c>), hide it (<c>SW_HIDE</c>), show it,
     ///   minimize it (<c>SW_SHOWMINNOACTIVE</c>), and restore it (<c>SW_SHOWNOACTIVATE</c>); after each, read the records.
+    /// - Destroy the window while it shows.
     ///
     /// Expected:
     /// - It shows before it was ever shown, and the first showing tells nothing. Hiding tells false and showing tells true.
     ///   Minimizing tells false, with <c>IsIconic</c> true inside the message, and the notice before the <c>WM_SIZE</c>.
     ///   Restoring tells true, with <c>IsIconic</c> false inside the message, and the notice before the <c>WM_SIZE</c>.
+    ///   Destroying tells false: Windows hides a window that shows before it destroys it.
     /// </remarks>
     [Fact]
     public void HideShowMinimizeRestore_EachTellWhetherTheWindowShows() =>
@@ -82,6 +84,10 @@ public sealed class Win32WindowVisibilityTests(UiThreadFixture ui)
             Assert.All(iconic, Assert.False);
             Assert.NotEmpty(iconic);
             Assert.True(window.IsShowing);
+
+            events.Clear();
+            window.Dispose();
+            Assert.Equal(["stopped"], events.Where(e => e != Size));
         });
 
     /// <summary>
