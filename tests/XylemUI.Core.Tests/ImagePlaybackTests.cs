@@ -245,6 +245,95 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// An animation in a window that does not show does not advance: the timer that rang puts the playing in the frame clock's
+    /// list once and no other timer is started, and the first frame after the window shows again goes on from its time. A playing
+    /// that is let go while it waits in the list is not advanced by that frame ("When it stops", "The decoder's owner and life").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Animations of 3 frames of 100 ms with no end, one element each; a target that takes the uploads.
+    ///
+    /// Steps:
+    /// - First: draw, let the decode arrive, tell the frames the window does not show, and advance the clock by 100 ms; run a
+    ///   frame; advance by 1 s. Tell the frames the window shows, run the frame asked for, and step once.
+    /// - Second: as far as the list in a window that does not show; then dispose the element, evict the source, tell the frames
+    ///   the window shows, and run the frame asked for, if any.
+    ///
+    /// Expected:
+    /// - First: while the window does not show, the playing is in the list, no frame of the window is asked for, no timer is
+    ///   left, nothing is uploaded, and the decoder is asked once. Showing asks for one frame, which uploads frame 1; frame 2
+    ///   follows 100 ms after that frame.
+    /// - Second: the decoder is disposed and the list is empty; the frame after the window shows uploads nothing.
+    /// </remarks>
+    [Fact]
+    public void AnimationInAWindowThatDoesNotShow_WaitsInTheList_UntilTheWindowShows() =>
+        ui.Invoke(() =>
+        {
+            var posts = new KeepingContext();
+            var frames = new FakeFrames(0, 100, 100, 100);
+            WithDecode(
+                () =>
+                {
+                    using var scene = new ImageScene();
+                    scene.Target.TakesUploads = true;
+                    _ = scene.Show(Sized(2, 2));
+                    posts.Settle();
+                    _ = scene.Draw();
+                    posts.Settle();
+
+                    scene.Frames.SetVisible(false);
+                    scene.Scheduler.Requests = 0;
+                    scene.Time.Advance(TimeSpan.FromMilliseconds(100));
+                    Assert.Equal((1, 0, 0), (scene.Tree.Animations.Count, scene.Scheduler.Requests, scene.Time.PendingTimers));
+                    scene.Frames.RunFrame();
+                    scene.Time.Advance(TimeSpan.FromSeconds(1));
+                    posts.Settle();
+                    Assert.Equal([0], scene.Target.Uploads);
+                    Assert.Equal((1, 1, 0), (frames.Calls, scene.Tree.Animations.Count, scene.Time.PendingTimers));
+
+                    scene.Frames.SetVisible(true);
+                    Assert.Equal(1, scene.Scheduler.Requests);
+                    scene.Scheduler.Run();
+                    Assert.Equal([0, 1], scene.Target.Uploads);
+                    posts.Settle();
+                    scene.Time.Advance(TimeSpan.FromMilliseconds(99));
+                    Assert.Equal(0, scene.Tree.Animations.Count);
+                    scene.Time.Advance(TimeSpan.FromMilliseconds(1));
+                    scene.Scheduler.Run();
+                    Assert.Equal([0, 1, 2], scene.Target.Uploads);
+                },
+                posts,
+                (_, _, _) => frames.First()
+            );
+
+            var gone = new FakeFrames(0, 100, 100, 100);
+            WithDecode(
+                () =>
+                {
+                    using var scene = new ImageScene();
+                    scene.Target.TakesUploads = true;
+                    ImageSource source = Sized(2, 2);
+                    Shown shown = scene.Show(source);
+                    posts.Settle();
+                    _ = scene.Draw();
+                    posts.Settle();
+                    scene.Frames.SetVisible(false);
+                    scene.Time.Advance(TimeSpan.FromMilliseconds(100));
+                    Assert.Equal(1, scene.Tree.Animations.Count);
+
+                    Scope.Dispose(shown.Scope);
+                    scene.Cache.Evict(source);
+                    Assert.Equal((true, 0), (gone.Disposed, scene.Tree.Animations.Count));
+                    scene.Frames.SetVisible(true);
+                    scene.Scheduler.Run();
+                    Assert.Equal([0], scene.Target.Uploads);
+                },
+                posts,
+                (_, _, _) => gone.First()
+            );
+        });
+
+    /// <summary>
     /// An animation that played its plays stops on its last frame, lets its decoder go, and counts as a still image from then on;
     /// until then it counts for what it holds ("The bytes counted", "Animations in the cache").
     /// </summary>
