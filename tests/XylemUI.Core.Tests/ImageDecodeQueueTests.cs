@@ -71,6 +71,49 @@ public sealed class ImageDecodeQueueTests
         }
     }
 
+    /// <summary>
+    /// A decode queued while others run starts at once, as long as fewer than <see cref="ImageDecodeQueue.Limit"/> run: it does not
+    /// wait for a running decode to end.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A test decode behind a gate, which counts a decode as started and holds its worker until the gate opens.
+    ///
+    /// Steps:
+    /// - Queue Limit decodes one at a time, and wait after each until that many decodes started, with the gate closed.
+    /// - Open the gate and wait until none is in flight.
+    ///
+    /// Expected:
+    /// - Each decode starts while the ones before it still run (the wait for its start ends), and each of the Limit sources was
+    ///   decoded. On a machine whose limit is 1 the first step queues one decode, and the test tells nothing apart.
+    /// </remarks>
+    [Fact]
+    public void Decode_QueuedWhileOthersRun_StartsAtOnceBelowTheLimit()
+    {
+        var gate = new ImageDoubles.GatedDecode();
+        ImageDecodeQueue.DecodeForTests = gate.Decode;
+        try
+        {
+            var context = new CountingContext();
+            for (int i = 0; i < ImageDecodeQueue.Limit; i++)
+            {
+                ImageDecodeQueue.Enqueue(new ImageRequest(ImageDoubles.Sized(i + 1, 1), 0, 0, context, static _ => { }));
+                gate.WaitForStarted(i + 1);
+            }
+
+            gate.Open();
+            Assert.True(SpinWait.SpinUntil(() => ImageDecodeQueue.InFlight == 0, TimeSpan.FromSeconds(30)));
+            Assert.Equal(ImageDecodeQueue.Limit, gate.Seen.Count);
+            Assert.Equal(ImageDecodeQueue.Limit, context.Posts);
+        }
+        finally
+        {
+            // The gate goes first: it waits for the decodes still queued, which a failed test leaves, to run as the test decode.
+            gate.Dispose();
+            ImageDecodeQueue.DecodeForTests = null;
+        }
+    }
+
     // Counts the posts, and runs each at once on the posting thread.
     private sealed class CountingContext : SynchronizationContext
     {

@@ -103,7 +103,9 @@ public static class ImageCache
 
     /// <summary>
     /// Keeps a window's cache, so that the limits set later and <see cref="Evict"/> and <see cref="Clear"/> reach it, and gives it
-    /// the limits of the calling thread. A tree made on another thread than the UI thread, as a test's, gets the defaults.
+    /// the limits of the calling thread, which is the thread that makes the tree. The thread is not checked: the one pair of limits
+    /// "for the UI thread" is the pair of the thread that made the window's tree. A tree made on another thread than the UI thread,
+    /// as a test's, gets that thread's own pair, which holds the defaults since only the UI thread can set a limit.
     /// </summary>
     /// <param name="cache">The cache.</param>
     /// <param name="maximumCount">The most images.</param>

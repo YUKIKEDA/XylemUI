@@ -152,7 +152,9 @@ internal sealed class WindowImageCache
     {
         if (entry.State is ImageEntryState.Failed or ImageEntryState.Gone)
         {
-            // The tree let every entry go while the element lived on.
+            // The cache forgot the entry already, and nothing is left to release. Gone: the tree let every entry go while the
+            // element lived on. Failed: an element that is told of the failure does not keep the entry (ImageBlock.Completed), so
+            // this is an element that waited behind another and was disposed by that one's error part before its own turn.
             return;
         }
 
@@ -459,8 +461,19 @@ internal sealed class WindowImageCache
         entry.Counted = false;
         entry.Older = null;
         entry.Newer = null;
+
+        // The elements that wait live on when the tree lets every entry go (ReleaseAll), and can ask for another source. One that
+        // kept its link would bring the elements behind it into that entry's waiting list, and the entry's result would end the
+        // waiting of elements that wait for another decode.
+        ImageBlock? block = entry.FirstWaiting;
         entry.FirstWaiting = null;
         entry.LastWaiting = null;
+        while (block is not null)
+        {
+            ImageBlock? next = block.NextWaiting;
+            block.NextWaiting = null;
+            block = next;
+        }
     }
 
     private static void Wait(ImageEntry entry, ImageBlock block)
