@@ -81,6 +81,55 @@ public sealed class ImageAnimationPixelTests
     }
 
     /// <summary>
+    /// An animation with no end plays frame by frame as the test advances the clock by each frame's duration, and a test that
+    /// takes the image out of the tree before it ends leaves no timer (design §2.14, "Tests").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 100 x 80 on WARP whose images play, showing anim-keep.gif (frames of 100, 50, 200, and 30 ms, no end)
+    ///   while a signal is true.
+    ///
+    /// Steps:
+    /// - Wait for the decode, pump 0 ms, and read the frame (a pump until settled would not end while the image plays). Wait
+    ///   until no decode is in flight and pump 100 ms; read the frame. Wait again and pump 50 ms; read the frame.
+    /// - Set the signal false, wait until no decode is in flight, and pump until settled.
+    ///
+    /// Expected:
+    /// - The frames read are the animation's frames 0, 1, and 2. With the image out of the tree the pump settles: the timer that
+    ///   was running rings once and no other is started, and the app ends with nothing left (its disposal does not throw).
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AnimatedImage_WithNoEnd_PlaysFrameByFrame_UntilItLeavesTheTree()
+    {
+        const string Name = "anim-keep.gif";
+        string path = Path.Combine(Folder, Name);
+        Signal<bool> shown = Signal.Create(true);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () => Show(shown, () => Image(ImageSource.FromFile(path)).Width(48).Height(32)),
+            Options(true)
+        );
+
+        Wait();
+        app.Pump(TimeSpan.Zero);
+        AssertFrame(app, Name, 0);
+
+        Wait();
+        app.Pump(TimeSpan.FromMilliseconds(100));
+        AssertFrame(app, Name, 1);
+
+        Wait();
+        app.Pump(TimeSpan.FromMilliseconds(50));
+        AssertFrame(app, Name, 2);
+
+        shown.Set(false);
+        Wait();
+        _ = app.PumpAndSettle();
+
+        static void Wait() => Assert.True(SpinWait.SpinUntil(() => ImageDecodeQueue.InFlight == 0, TimeSpan.FromSeconds(30)));
+    }
+
+    /// <summary>
     /// An animation that plays counts for what it holds: its texture and the buffer it uploads from, the decoder's two canvases,
     /// and the file's bytes when the decode read them itself, not when the app gave them (design §5.0.4, "The bytes counted").
     /// </summary>
