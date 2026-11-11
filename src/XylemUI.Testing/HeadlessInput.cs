@@ -133,7 +133,7 @@ public sealed class HeadlessKeyboard
     internal HeadlessKeyboard(HeadlessApp app) => _app = app;
 
     /// <summary>
-    /// Presses a key and releases it. A letter or a digit carries the character it types on a US layout (upper case with Shift, none
+    /// Presses a key and releases it. A letter, a digit, or the space bar carries the character it types on a US layout (upper case with Shift, none
     /// with Control), as Windows' key messages do; no text input is sent, which <see cref="Type"/> sends.
     /// </summary>
     /// <param name="key">The key.</param>
@@ -188,7 +188,8 @@ public sealed class HeadlessKeyboard
         return handled;
     }
 
-    // The character a letter or a digit key types on a US layout, upper case with Shift; none for the other keys and with Control.
+    // The character a letter, a digit key, or the space bar types on a US layout, upper case with Shift; none for the other keys and
+    // with Control.
     private static Rune CharOf(Key key, KeyModifiers modifiers)
     {
         if ((modifiers & KeyModifiers.Control) != 0)
@@ -200,6 +201,12 @@ public sealed class HeadlessKeyboard
         {
             char letter = (char)('a' + (key - Key.A));
             return new Rune((modifiers & KeyModifiers.Shift) != 0 ? char.ToUpperInvariant(letter) : letter);
+        }
+
+        // The space bar types a space with or without Shift, as ToUnicodeEx says for it (row KM1b: the keymap reads the character).
+        if (key == Key.Space)
+        {
+            return new Rune(' ');
         }
 
         return key is >= Key.D0 and <= Key.D9 && (modifiers & KeyModifiers.Shift) == 0 ? new Rune((char)('0' + (key - Key.D0))) : default;
