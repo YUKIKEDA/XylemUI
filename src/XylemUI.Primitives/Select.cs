@@ -111,7 +111,11 @@ public static partial class Primitive
                 _ => FocusRow(IndexOf(value.Peek()) is int at and >= 0 && Enabled(at) ? at : Next(-1, 1))
             );
             _tree.SetPartAccessibility(_box, Roles.ComboBox);
-            return box.Focusable().OnClick(Toggle).On(KeyEventKind.Down, EventPhase.Bubble, BoxKeys).OnTextInput(EventPhase.Bubble, Typed);
+            return box.Focusable()
+                .KeyContext(PrimitiveKeyBindings.SelectContext)
+                .OnClick(Toggle)
+                .On(KeyEventKind.Down, EventPhase.Bubble, BoxKeys)
+                .OnTextInput(EventPhase.Bubble, Typed);
         }
 
         // The list: a row for each option, the option's own look, in a column that scrolls past the most height, at least as wide as
@@ -144,7 +148,9 @@ public static partial class Primitive
                     MaxHeight = Length.Px(settings.MaxDropDownHeight),
                 }
             );
-            _ = list.On(KeyEventKind.Down, EventPhase.Bubble, ListKeys).OnTextInput(EventPhase.Bubble, Typed);
+            _ = list.KeyContext(PrimitiveKeyBindings.SelectListContext)
+                .On(KeyEventKind.Down, EventPhase.Bubble, ListKeys)
+                .OnTextInput(EventPhase.Bubble, Typed);
             return settings.Panel?.Invoke(list) ?? list;
         }
 
@@ -205,11 +211,18 @@ public static partial class Primitive
         // The list's keys, from its focused row: the moves stop at the ends; Enter and Space choose; Tab closes and goes on.
         private void ListKeys(in KeyEvent e)
         {
-            // Tab and Shift+Tab close the list and give the focus back to the box; their default action then moves it on from there
-            // (Avalonia's ComboBox.cs lines 277 to 280 close on Tab with or without Shift, and leave it unhandled).
+            // Tab and Shift+Tab close the list and give the focus back to the box, and the focus then moves on from there
+            // (Avalonia's ComboBox.cs lines 277 to 280 close on Tab with or without Shift, and leave it unhandled). The list
+            // takes Tab's row away (PrimitiveKeyBindings), so the move is asked for here.
             if (e.Key == Key.Tab && e.Modifiers is KeyModifiers.None or KeyModifiers.Shift)
             {
                 _block.Dismiss();
+                IAction move = e.Modifiers == KeyModifiers.Shift ? new FocusActions.Previous() : new FocusActions.Next();
+                if (_tree.Actions.Dispatch(_tree.Focus.KeyTarget, move))
+                {
+                    e.StopPropagation();
+                }
+
                 return;
             }
 

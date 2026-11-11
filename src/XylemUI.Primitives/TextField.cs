@@ -144,6 +144,11 @@ public static partial class Primitive
                 .Cursor(CursorKind.IBeam)
                 .Overflow(XylemUI.Overflow.Hidden, XylemUI.Overflow.Hidden)
                 .ScrollState(_scroll)
+                .KeyContext(
+                    options.Multiline
+                        ? PrimitiveKeyBindings.TextFieldContext + " " + PrimitiveKeyBindings.MultilineContext
+                        : PrimitiveKeyBindings.TextFieldContext
+                )
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .OnTextInput(EventPhase.Bubble, TextInput)
