@@ -4967,7 +4967,7 @@ FriBidi・ICUは不採用（§4.2）。.NET の ICU 依存は `InvariantGlobaliz
 
 1. **Core**: Reactive/Scope/UiNode(アリーナ)/Invalidation/Layout(Block+Flex)/DisplayList/GPU 1バックエンド/基本テキスト表示/マウス・キーボード — 実際に動くデスクトップアプリ1個を作れる最小構成
 2. **v0.2**: Grid（行 P02f）、Materialization(仮想化、行 P02e)、アニメーション（設計は行 D7、実装は AN1）、IME（行 P02c）、クリップボード（文字の入力と一緒に行 P02b）、D&D（行 DD1）、a11y（行 P02g）、ポップアップ（オーバーレイ実装、§7.3、行 P02d。Tooltip・Select・メニューのアクセスキーは行 P02d2、窓全体のアクセスキーとメニューバーは行 P02d3）、`XylemUI.Testing`（§12、操作は行 P02a、描画は P02a2）。行の順は P02a → P02a2 → D7 → AN1 → P02b → P02b2 → P02c → P02d → P02d2 → P02d3 → P02d4 → DD1 → P02e → P02f → P02g（D5 の Grill、Issue #163）。リッチテキスト（範囲のスタイル・装飾・リンクは行 T12 で IME の前に、インラインオブジェクトは行 T13、§4.8。文字の影の行 T14 の時期は、その行の Grill で決める）
-3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。NavigationView・基本入力・仮想化リスト・ポップアップ・ダーク/ライト切り替えを1本のアプリで動かす（§13.3）。Gallery の E2E（§12.1 第5層）を CI で回し始める
+3. **G1: XylemUI Gallery（Windowsのみ）**: `XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点。§13.1「出す部品の範囲」の 12 の組の部品をすべて、仮想化リスト・ポップアップ・ダーク/ライト切り替えと一緒に 1 本のアプリで動かす（§13.3、D14 の Grill）。Gallery の E2E（§12.1 第5層）を CI で回し始める
 4. **v0.3**: RTL（レイアウトの向き、行 P03b）、BiDi と複雑スクリプト（行 P03a）、縦書き（行 P03c）、カラー絵文字（COLRv0 は済み、COLRv1 と SVG は行 T11 で v1.x）（D5 の Grill、Issue #163）
 5. **v0.4**: Wayland/X11双方でのwindow/input/clipboard/基本IME/GPU(wgpu)のみ。ヘッドレスの画素テストを Linux（lavapipe 経由の wgpu）でも回す（§12.3）。Linuxが抱える要素（SDL3・wgpu・fontconfig・D-Bus・AT-SPI・xdg-desktop-portal・Wayland/X11・IME・fractional scaling・tray・notification）は実質「Linuxデスクトップ互換性プロジェクト」に相当する規模であり、個人開発で最も危険な領域という認識のもと、必須の基盤部分のみに絞る。
 6. **v0.5（Linux extended）**: xdg-desktop-portal、通知、トレイ、AT-SPI、Fractional Scaling
@@ -5420,7 +5420,47 @@ app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3�
 
 Web の Radix UI / shadcn/ui と同じ考え方で、**振る舞いだけを持ち見た目を持たない部品**を `XylemUI.Primitives` に置く。各部品が提供するのは、状態（開閉・選択・押下・値）、キーボード操作、フォーカスの扱い（§7.2）、a11y の役割と状態（§4.4.1）、ポップアップの開閉（§7.3）である。見た目はテーマ（§13.2）またはアプリが被せる。Core には部品を一切置かない（§2.9.1）。
 
-v1 の対象は、§4.4.1 の a11y 対象 control と G1 の Gallery（§13.3）が必要とする範囲とする: Button / ToggleButton / Checkbox / RadioGroup / Slider / TextField / Select（ComboBox）/ Menu / Tooltip / Dialog / Tabs / ListBox（仮想化対応）/ NavigationView。
+**出す部品の範囲（D14 の Grill でオーナーが決定、Issue #169）:** 出す部品は、デスクトップのアプリでよく使う部品を網羅する。比べた 3 つ（Flutter 3.47.8、Avalonia 12.1.4、GPUI と zed v1.25.3 の `ui`）と WinUI 3 Gallery にあるかどうかで絞らない。部品は機能ごとに 1 つに数え、同じ機能の別名と見た目の違い（Flutter の `ElevatedButton`・`FilledButton`・`OutlinedButton`・`TextButton`、Material と Cupertino の対）は 1 つにする。
+
+- **一覧の元:** Flutter・Avalonia・zed の `ui` の本体（下の表の宣言は、それぞれのタグで読んだ）、WinUI 3 Gallery のページ（`microsoft/WinUI-Gallery` の `WinUIGallery/SampleSupport/Data/ControlInfoData.json`、コミット `6de91fecca`、19 の組で 126 ページ）、デスクトップのツールキット（Qt Widgets と Qt Quick Controls、WPF、Windows Forms、GTK 4、libadwaita）と Web の部品のライブラリ（MUI と MUI X、Ant Design、Radix Primitives、shadcn/ui、Fluent 2 の React、WAI-ARIA APG のパターン）の公式の一覧のページ。Apple の HIG の一覧は読めなかったので、元にしていない
+- **Primitives とテーマ:** 振る舞い（キーの操作、フォーカス、a11y の役と状態）を持つ部品は、`XylemUI.Primitives`（見た目なし）とテーマ（§13.2）の両方に置く。見た目だけの部品（Card、区切り線、InfoBadge、Chip の飾り、人のアイコン、重ねたアバター、在席の印、Skeleton、空の状態、結果の画面、数値の強調、時系列、キーと値の一覧、キーの表記）は、テーマだけに置く。Switch は、Primitive としては ToggleButton と同じ振る舞いなので、テーマが ToggleButton に被せる見た目にする（Avalonia の `ToggleSwitch` も `ToggleButton` の派生、`src/Avalonia.Controls/ToggleSwitch.cs` 19 行目）
+- **時期:** 下の 12 の組の部品は、G1（§13.3）の前に入れる。組ごとにロードマップの 1 行（B1〜B12）とし、行ごとに Grill、設計の PR、実装の PR の順で進める。部品ごとの API とキーの表は、その行の Grill で決めて、この節に足す
+- **別の行にするもの:** 編集できる表（並べ替え、絞り込み、セルの編集、行のグループ、列の固定。行 DG1）、チャート（行 CH1）、予定表（行 SC1）、文書とコードの表示（行 DV1）、チャットの UI（行 CT1）は、部品 1 つでなく機能のまとまりなので、それぞれの行で Grill から始める。時期は G1 の後。ドッキング（パネルをドラッグして分け、タブにまとめる）は、比べた相手の本体にも WinUI 3 Gallery にも無いが、エディタ型のデスクトップのアプリに要るので、行 DK1 として G1 の後に Grill から始める。土台は、行 B3 の SplitView と Tabs、§7 のドラッグ＆ドロップである
+- **入れないもの:** タッチとモバイルが前提の形、Web のページに特有の形、用途の狭いもの、OS が持つ機能を包むもの、レイアウトの道具は入れない。一覧と理由は `docs/design-decisions.md`「デザインシステム / Gallery」
+
+| 組（行） | 部品（**太字**は実装済み） |
+| --- | --- |
+| ボタン（B1） | Button、ToggleButton、RepeatButton、SplitButton、ToggleSplitButton、DropDownButton、HyperlinkButton、まとめたトグル（SegmentedButton）、ボタンの束（ButtonGroup）、副題付きのボタン、長押しで働くボタン |
+| 選ぶ（B2） | Checkbox、RadioGroup、Slider、範囲のスライダー、**Select**、Switch（テーマ）、評価（RatingControl）、色の選択（ColorPicker）、見本から選ぶ（SwatchPicker）、つまみ（Dial）、ツリーから選ぶ Select、多段の Select（Cascader）、2 つの一覧の間で移す（Transfer）、フォントの選択 |
+| 入れ物（B3） | Tabs、Expander、Accordion（Expander の束）、SplitView と区切りのドラッグ、見出し付きの箱（GroupBox）、重ねて 1 つだけ見せる入れ物と切り替え（Stack と Switcher）、Stepper、Viewbox |
+| 一覧とデータ（B4） | ListBox（仮想化対応）、格子の一覧（GridView）、ツリー、表（列と見出し、読むだけ）、列のあるツリー、並べ替えのできる一覧、めくる一覧（FlipView）、チェックや切り替えの付いた行の一覧、列で階層を見せる一覧、プロパティの一覧（PropertyGrid）、設定の行 |
+| ナビゲーション（B5） | NavigationView、BreadcrumbBar、Pivot と SelectorBar（TabStrip）、PipsPager、PagerControl、ステータスバー、タイトルバー（HeaderBar）、タブの一覧（TabOverview） |
+| 状態と知らせ（B6） | **Tooltip**、ProgressBar、ProgressRing、計器（Meter）、InfoBar、通知（Toast）、TeachingTip。テーマだけ: InfoBadge、Skeleton、空の状態、結果の画面、数値の強調、時系列、キーと値の一覧 |
+| ダイアログとフライアウト（B7） | **Dialog**、メッセージと確認のダイアログ、近くに出る小さな確認、値を 1 つ聞くダイアログ、進み具合のダイアログ、ダイアログのボタンの並び、About のダイアログ、Flyout（Popover）、端から出るパネル（Drawer）、ホバーで出るカード |
+| メニューとツールバー（B8） | **Menu**、**MenuBar**、**ContextMenu**、CommandBar（ツールバー）、CommandBarFlyout、収まらない項目をメニューへ逃がす（Overflow）、コマンドパレット、ショートカットの入力と表示、絵文字の選択。コマンドパレットとショートカットの入力は、行 K2 の仕組みの上に作る |
+| 文字の入力（B9） | **TextField**、パスワードの欄、数値の欄（NumberBox）、型のある欄（MaskedTextBox）、AutoComplete、検索の欄、トークンの欄、1 文字ずつの欄（OTP）、`@` で候補を出す欄、内容で伸びる複数行の欄、欄の前後の付属物（InputGroup）、その場で編集できるラベル、フォームの枠（ラベル・補助の文・検証の知らせ）、情報ボタン付きのラベル、リッチテキストの欄と表示 |
+| スクロール（B10） | ScrollBar、目盛り付きの ScrollBar |
+| そのほか（B11） | テーマだけ: 人のアイコン（Avatar）、重ねたアバター、人の表示（Persona と在席の印）、区切り線、Card、Chip、キーの表記 |
+| 日付と時刻（B12） | Calendar、CalendarDatePicker、DatePicker、TimePicker、日付の範囲の選択、日付と時刻を 1 つで選ぶ欄とその範囲。月と曜日の名前と週の始まりが要るので、ローカライズ（行 D15）の後に入れる |
+
+読んだ宣言と一覧（部品の名前がそこにあることを確かめた。振る舞いは、それぞれの行の Grill で読む）:
+
+- Flutter（`packages/flutter/lib/src/`）: `LinearProgressIndicator`・`CircularProgressIndicator`（`material/progress_indicator.dart` 414・863 行目）、`Expansible`（`widgets/expansible.dart` 239 行目）、`TreeSliver`（`widgets/sliver_tree.dart` 398 行目）、`DataTable`（`material/data_table.dart` 446 行目）、`CalendarDatePicker`（`material/calendar_date_picker.dart` 93 行目）、`Switch`（`material/switch.dart` 94 行目）、`SnackBar`（`material/snack_bar.dart` 271 行目）、`RawAutocomplete`（`widgets/autocomplete.dart` 172 行目）、`RangeSlider`（`material/range_slider.dart` 121 行目）、`Badge`（`material/badge.dart` 40 行目）、`Stepper`（`material/stepper.dart` 204 行目）。`TreeView`・`TableView`・`SplitView` は本体に無い
+- Avalonia（`src/Avalonia.Controls/`）: `ProgressBar`（`ProgressBar.cs` 18 行目）、`Expander`（`Expander.cs` 44 行目）、`SplitView`（`SplitView/SplitView.cs` 23 行目）、`GridSplitter`（`GridSplitter.cs` 23 行目）、`TreeView`（`TreeView.cs` 26 行目）、`TableView`（`TableView.cs` 17 行目）、`Calendar`（`Calendar/Calendar.cs` 229 行目）、`DatePicker`（`DateTimePickers/DatePicker.cs` 28 行目）、`NumericUpDown`（`NumericUpDown/NumericUpDown.cs` 24 行目）、`AutoCompleteBox`（`AutoCompleteBox/AutoCompleteBox.cs` 76 行目）、`WindowNotificationManager`（`Notifications/WindowNotificationManager.cs` 17 行目）。`src/` の `Avalonia.Controls.*` は `Avalonia.Controls.ColorPicker` だけで、DataGrid のプロジェクトは無い
+- zed（`crates/ui/src/components/`）: `ProgressBar`（`progress/progress_bar.rs` 11 行目）、`CircularProgress`（`progress/circular_progress.rs` 9 行目）、`Disclosure`（`disclosure.rs` 9 行目）、`Table`（`data_table.rs` 356 行目）、`TreeViewItem`（`tree_view_item.rs` 8 行目）、`Switch`（`toggle.rs` 338 行目）、`Banner`（`banner.rs` 22 行目）、`TabBar`（`tab_bar.rs` 8 行目）。分けて並べるペインと通知は `ui` でなくアプリの側にある（`crates/workspace/src/pane_group.rs` 30 行目の `PaneGroup`、`crates/workspace/src/toast_layer.rs` 98 行目の `ToastLayer`）。数値の欄は `crates/settings_ui/src/components/number_field.rs` 258 行目
+- 公式の一覧のページで名前を確かめたもの:
+  - Qt（`doc.qt.io/qt-6/widget-classes.html`、`qtwidgets-module.html`、`qtquick-controls-qmlmodule.html`）: `QStatusBar`、`QColumnView`、`QToolBox`、`QStackedWidget`、`QDial`、`QDateTimeEdit`、`QFontComboBox`、`QTableView`、`QKeySequenceEdit`、`QMessageBox`、`QInputDialog`、`QProgressDialog`、`QDialogButtonBox`、`QFontDialog`、Qt Quick の `DelayButton`・`Dial`・`CheckDelegate`・`SwitchDelegate`・`StackView`・`Drawer`・`DialogButtonBox`
+  - WPF（`learn.microsoft.com` の「Controls by Category」）: `StatusBar`、`DataGrid`、`Frame`、`GridSplitter`、`DocumentViewer`
+  - Windows Forms（「Controls by Function」と `PropertyGrid` のクラスのページ）: `StatusStrip`、`DataGridView`、`CheckedListBox`、`DateTimePicker`、`FontDialog`、`PropertyGrid`
+  - GTK 4（`docs.gtk.org/gtk4/visual_index.html`）: `GtkStatusbar`、`GtkLevelBar`、`GtkEditableLabel`、`GtkHeaderBar`、`GtkStack`、`GtkStackSwitcher`、`GtkEmojiChooser`、`GtkAboutDialog`、`GtkFontDialogButton`、`GtkShortcutsWindow`
+  - libadwaita（widget gallery）: `AdwViewSwitcher`、`AdwStatusPage`、`AdwTabOverview`、`AdwActionRow`、`AdwSwitchRow`、`AdwComboRow`、`AdwExpanderRow`、`AdwAlertDialog`、`AdwAboutDialog`、`AdwShortcutLabel`、`AdwHeaderBar`
+  - MUI（「All components」）: Accordion、Button Group、Drawer、Skeleton、Transfer List、Textarea Autosize、Timeline。MUI X（「Introduction」）: Data Grid、Charts、Date and Time Pickers、Tree View、Scheduler、Chat
+  - Ant Design（「Components Overview」）: Collapse、Popconfirm、Drawer、Skeleton、Empty、Result、Statistic、Timeline、Descriptions、TreeSelect、Cascader、Transfer、Mentions、Form
+  - Radix Primitives（components の一覧）: Accordion、Alert Dialog、Hover Card、One-Time Password Field、Form。shadcn/ui（components の一覧）: Accordion、Alert Dialog、Hover Card、Drawer、Sheet、Skeleton、Empty、Input OTP、Input Group、Field、Button Group、Command、Kbd、Data Table、Chart
+  - Fluent 2 の React（`fluent2.microsoft.design/components/web/react/` と Storybook の索引）: Accordion、Drawer、Skeleton、Tag picker、Field、Info label、Avatar group、Persona、CompoundButton、Overflow、PresenceBadge、SwatchPicker、DataGrid
+  - WAI-ARIA APG（patterns の一覧）: Accordion、Alert and Message Dialogs、Meter、Grid、Treegrid
+
+**最初の 13 個（V1 から P02d まで）:** この節の下の API は、最初に v1 の対象とした部品のものである: Button / ToggleButton / Checkbox / RadioGroup / Slider / TextField / Select（ComboBox）/ Menu / Tooltip / Dialog / Tabs / ListBox（仮想化対応）/ NavigationView。
 
 各部品は、既定の役と状態を a11y の表に書く（ボタン Button、文字の欄 Edit、メニューの項目 MenuItem、Select ComboBox など。一覧と、状態とパターンの決め方は §4.4.1「P02g で入れる形」）。アプリは `.Accessible(...)` でその上に重ねる（P02g の Grill、Issue #620）。
 
@@ -5583,7 +5623,7 @@ public static Element Label(Element content, Element target);              // co
 
 WinUI 3 Gallery に相当するショーケースアプリ `samples/XylemUI.Gallery` を、v0.2 と v0.3 の間のマイルストーン **G1**（§10.4）とする。G1 は Windows のみで、`XylemUI.Primitives` と `XylemUI.Theme.Fluent` の最初の完成点を兼ねる。
 
-**G1 の範囲:** 左サイドバー（NavigationView）、基本入力（§13.1 の部品）、大量リストの仮想化スクロール（§3.4）、ポップアップ（オーバーレイ実装、§7.3）、ダーク/ライトの切り替え。
+**G1 の範囲:** §13.1「出す部品の範囲」の 12 の組（行 B1〜B12）の部品をすべて、組ごとの一覧と部品ごとのページで見せる（WinUI 3 Gallery と同じ作り）。左サイドバー（NavigationView）、大量リストの仮想化スクロール（§3.4）、ポップアップ（オーバーレイ実装、§7.3）、ダーク/ライトの切り替えを含む。別の行にした機能（編集できる表、チャート、予定表、文書とコードの表示、チャットの UI、ドッキング）のページは、それぞれの行で足す（D14 の Grill、Issue #169。もとは「基本入力（§13.1 の部品）」の 13 個だった）。
 
 **役割:**
 1. **ドッグフーディング**: フレームワークの全機能を1本の実アプリで使い、API の使いにくさを早く見つける
