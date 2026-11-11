@@ -4853,6 +4853,51 @@ internal sealed class FocusManager
 **引数のある動作を名前から作る口（KM1b の Grill でオーナーが決定）:** Source Generator が、動作の型の公開のプロパティ（整数、小数、真偽、文字列、列挙）ごとに、名前と値の文字列から設定するコードを生成する。`ActionRegistry` は、名前と引数から動作を作れる。利用者のキーマップの行に、動作の名前と引数を書ける（GPUI は `["picker::ConfirmInput", { "secondary": false }]` の形で、名前と JSON から作る。`assets/keymaps/default-windows.json` 23 行目）。プロパティの型がその 5 種類のほかなら、ビルドの警告にして、その動作は名前から引数つきでは作れない。コードから動作の実体を渡す割り当ては、どの型の引数でも使える。行 KM1a の表は、引数なしのコンストラクタだけを呼ぶ。
 
 
+**既定のキーと動作（KM2 の Grill でオーナーが決定、Issue #812）:** K1 と部品がコードに直書きしているキーを、既定のキーマップの行と動作に載せ直す。実装は行 KM2a・KM2b・KM2c。
+
+- **ボタンの Enter と Space は載せ直さない。** K2 の決定（Enter と Space も載せ直す）を変えた。動作は「頼まれた 1 つの時点」しか持たない。Space は、押した時に押した見た目になり、離した時にクリックする（上の「キーの入力とフォーカス」、Windows の動き）ので、押下と解放の 2 つの時点が要る。GPUI も、ボタンの Enter と Space だけは要素に組み込み、キーマップを通さない（`crates/gpui/src/elements/div.rs` 3016〜3071 行目）。Flutter の `ActivateIntent` は押した時に動き、離した時の形を持たない。アプリが変えたければ、文脈を付けて `space` や `enter` を別の動作に割り当てる（キーマップが先である）。
+- **順が変わる。** 今は、Tab・Esc・スクロールのキーは「キーのハンドラが止めなかったときの既定」で、キーのハンドラが先である。載せ直すと、キーマップが先になる（上の「順」）。キーのハンドラで Tab や矢印を止めて自分で使っていた部品とアプリは、自分の文脈の行で上書きする形に変える（深い文脈の行が勝つ）。GPUI と同じ順である。Flutter は、既定の `Shortcuts` をアプリの根に置くので、子孫のキーのハンドラが先になる。その形は採らない。キーマップを 2 か所（キーのハンドラの前と後）で引くことになるためである。たとえば、スクロールできる箱の中で、矢印をキーのハンドラで受けて選択を動かしていたアプリは、そのままだと矢印が `scroll::` に取られる。自分のノードに文脈を付け、その文脈の行で矢印を自分の動作に割り当てる。
+- **Core の既定の行は、文脈 `Window` を持つ（PR #813 のレビュー。このマージで決定とする）。** 木は、文脈の並びの先頭に、根の文脈 `Window` を持つ（どのノードにも付けない）。Core の既定の行（下の表の `focus::`・`popup::`・`scroll::` と `menu::OpenContextMenu`）は条件 `Window` を持つので、深さが 1 で最も浅く、部品とアプリのどの文脈の行にも、文脈の無い行にも負ける。文脈の無い行は「最も深い文脈」として数えるので（上の「キーマップ」）、Core の既定を文脈なしにすると、フォーカスが部品の文脈のノードの子孫にあるとき（メニューの項目、Select の一覧の行、ListBox やツリーの行）、部品の行より Core の `scroll::LineDown` が先に試され、経路の上にスクロールの箱があると、選択が動かずにページがスクロールする。足す順（Core が先、部品が後）に頼る形も採らない。zed の既定のキーマップも文脈の無い `up`・`down`・`tab`・`escape` を持つが、割り当て先は `menu::` で、メニューのハンドラが経路に無ければ誰も受けない。ここの `scroll::` は経路の上の箱が受けるので、受け手がいる場面がずっと広い。
+- **動作を受ける所:** Core の動作（下の表の `focus::`・`popup::`・`scroll::`）は、どのノードのハンドラも受けなかったときに、木が受ける。`scroll::` は、経路の上の、その向きにスクロールできる最も近いスクロールの箱が受ける。受ける箱が無いか、端にいて動かなければ、動作は受けられず、キーはキーのハンドラへ進む。部品の動作（`text::`・`menu::` など）は、部品が自分のノードに付けたハンドラが受ける。
+- **既定の行を足す所:** 各パッケージ（Core、Primitives）が、自分の既定の行を足すメソッドを公開する。Source Generator が、アプリのモジュール初期化子に、動作の表（上の「登録」）と同じ仕組みで、参照するパッケージのそのメソッドを呼ぶコードを書く。既定の行は、アプリと利用者の行より前に入るので、後から足した行が勝つ。パッケージの間は、依存の順（Core、Primitives、テーマ）に呼ぶ。名前の順には頼らない。アプリが手で呼ぶ形は、呼び忘れが実行時まで見つからないので採らない。`XylemUI.Desktop` は `XylemUI.Primitives` を参照しないので、起動のコードから直には呼べない。
+- **既定の行の表は OS ごと。** 下は Windows の表である。
+
+| 文脈 | キー | 動作 |
+| --- | --- | --- |
+| `Window` | `tab` / `shift-tab` | `focus::Next` / `focus::Previous` |
+| `Window` | `escape` | `popup::Dismiss`（前面のポップアップを閉じる。開いていなければ受けない） |
+| `Window` | `up` / `down` / `left` / `right` | `scroll::LineUp` / `LineDown` / `LineLeft` / `LineRight` |
+| `Window` | `pageup` / `pagedown` | `scroll::PageUp` / `scroll::PageDown` |
+| `Window` | `home` / `end` | `scroll::ToStart` / `scroll::ToEnd` |
+| `TextField` | `left` / `right`（`shift-` で選択、`ctrl-` で単語） | `text::MoveLeft` / `MoveRight`、`SelectLeft` / `SelectRight`、`MoveWordLeft` / `MoveWordRight`、`SelectWordLeft` / `SelectWordRight` |
+| `TextField` | `home` / `end`（`shift-` で選択、`ctrl-` で文書の端） | `text::MoveToLineStart` / `MoveToLineEnd`、`MoveToStart` / `MoveToEnd` と、それぞれの `Select…` |
+| `TextField && multiline` | `up` / `down` / `pageup` / `pagedown`（`shift-` で選択） | `text::MoveUp` / `MoveDown` / `MovePageUp` / `MovePageDown` と、それぞれの `Select…` |
+| `TextField` | `backspace` / `delete`（`ctrl-` で単語） | `text::DeleteBackward` / `DeleteForward`、`DeleteWordBackward` / `DeleteWordForward` |
+| `TextField` | `ctrl-x`・`shift-delete` / `ctrl-c`・`ctrl-insert` / `ctrl-v`・`shift-insert` | `text::Cut` / `text::Copy` / `text::Paste` |
+| `TextField` | `ctrl-a` / `ctrl-z` / `ctrl-y`・`ctrl-shift-z` | `text::SelectAll` / `text::Undo` / `text::Redo` |
+| `TextField && multiline` | `enter` / `shift-enter` | `text::InsertNewline` |
+| `TextField && !multiline` | `enter` | `text::Submit`（`OnSubmit` が無ければ受けない） |
+| `Menu` | `up` / `down` / `home` / `end` | `menu::SelectPrevious` / `SelectNext` / `SelectFirst` / `SelectLast` |
+| `Menu` | `enter`・`space` / `right` / `left` | `menu::Confirm` / `menu::OpenSubmenu` / `menu::CloseSubmenu` |
+| `Window` | `shift-f10`・`menu` | `menu::OpenContextMenu` |
+| `Select` | `alt-up`・`alt-down`・`f4`・`enter`・`space` | `select::Open` |
+| `Select` | `up` / `down` | `select::Previous` / `select::Next`（閉じたまま値を変える） |
+| `SelectList` | `up` / `down` / `home` / `end` / `pageup` / `pagedown` / `enter`・`space` / `tab`・`shift-tab` | `menu::SelectPrevious` / `SelectNext` / `SelectFirst` / `SelectLast` / `select::PageUp` / `select::PageDown` / `menu::Confirm` / `select::ConfirmAndClose` |
+| `MenuBar` | `left` / `right` / `down`・`up`・`enter`・`space` | `menubar::Previous` / `menubar::Next` / `menubar::Open` |
+
+- 表のキーと動きは、今のコードのもの（§4.9 の欄のキーの表、§13.1 の Menu・Select・MenuBar のキー、上のスクロールのキー）と同じで、変えない。zed と同じ意味のメニューの動作は、同じ綴りにした（`menu::SelectNext`・`SelectPrevious`・`SelectFirst`・`SelectLast`・`Confirm`、`assets/keymaps/default-windows.json` 5〜21 行目）。
+- Alt 単独と F10（メニューバーを選ぶ）、Alt+文字（アクセスキー）は、キーマップの後の既定のまま残す（上の「Alt とメニューのキー」）。Alt 単独は、押下と解放の組で決まるので、動作にしない。
+- 変換していない欄で Esc を「入力を取り消す」に使う部品（検索の欄、その場で編集するラベル。部品の組 B9）は、欄の文脈の行で `escape` を自分の動作に割り当てる。`popup::Dismiss` は `Window` の行なので、欄の行が勝つ。
+- **アクセスキーを隠す割り当て:** `alt-f` のような、ウィンドウのアクセスキーと重なる行を足したら、黙って行が勝つ。GPUI も Avalonia も、知らせる仕組みを持たない。
+
+**メニューの項目が動作を指す形（同じ Grill）:** メニューとメニューバーの項目（§13.1）は、動作を指せる。
+
+- キーの表示は、キーマップから引く（`Keymap.BindingFor`）。行が増減すると、表示が変わる。
+- 有効か無効かは、今のフォーカスからその動作のハンドラが見つかるか（`CanDispatch`）で決める。capture のハンドラも数える（GPUI の `is_action_available` と同じ、`crates/gpui/src/key_dispatch.rs` 382〜394 行目）。メニューの中身は開くたびに作るので、読むのはメニューが開いている間だけである。
+- 選ぶと、その動作を配る（`Dispatch`）。メニューを開く前にフォーカスがあったノードから配る（メニューは閉じるときにフォーカスを戻す、§13.1）。
+
+**受け入れ:** それぞれの PR で、キーの配送の時間を、載せ直す前と同じ回の中で比べる（`input` の `us_per_key_depth_*`・`us_per_tab_*`・`us_per_scroll_key_*`、`keymap`）。既定の行が入った状態での、合わないキーの時間を測る（行 KM1b は 200 行で約 0.62 µs）。KM2b で、IME の変換中に Esc と Enter が変換を壊さないことをテストにする。アプリの起動の時間を、既定の行と動作の表を足す前と比べる。
+
 ### 7.1 フォーカス順序
 
 **フォーカスナビゲーションのデフォルトはUIツリー順（§2.5のアリーナにおける`FirstChild`/`NextSibling`の並び）とし、BiDiはこの順序決定に関与しない。** BiDi論理順はテキストノード内部でのみ意味を持つ。明示的なタブインデックス（`TabIndex`スタイルプロパティ）による上書きを許可するハイブリッド方式とする。視覚的な配置とツリー順が乖離するレイアウト（CSSの`order`相当の視覚並び替えを使った場合等）でのみ、明示的な上書きが必要になる。
