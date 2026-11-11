@@ -136,10 +136,15 @@ internal static class ImageDecodeQueue
             most = Volatile.Read(ref _mostRunning);
         }
 
-        _ = ThreadPool.UnsafeQueueUserWorkItem(static _ => Work(), null);
+        // A work item that is made once: queueing a delegate makes an object each time, on the UI thread, once for each frame of
+        // an animation that plays (design §5.0.4, "Allocation").
+        _ = ThreadPool.UnsafeQueueUserWorkItem(Worker.Instance, preferLocal: false);
     }
 
-    private static void Work()
+    /// <summary>
+    /// Runs the decodes that wait, on a worker of the thread pool, until none waits.
+    /// </summary>
+    internal static void Work()
     {
         while (Waiting.TryDequeue(out DecodeWork? work))
         {
@@ -162,6 +167,22 @@ internal static class ImageDecodeQueue
             TryStart();
         }
     }
+}
+
+/// <summary>
+/// The decode queue's worker as the thread pool's work item.
+/// </summary>
+internal sealed class Worker : IThreadPoolWorkItem
+{
+    private Worker() { }
+
+    /// <summary>
+    /// Gets the one worker item.
+    /// </summary>
+    public static Worker Instance { get; } = new();
+
+    /// <inheritdoc/>
+    public void Execute() => ImageDecodeQueue.Work();
 }
 
 /// <summary>

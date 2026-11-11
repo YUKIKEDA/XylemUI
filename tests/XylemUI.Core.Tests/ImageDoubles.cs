@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Numerics;
 using XylemUI.Imaging;
+using XylemUI.Testing;
 using XylemUI.Text;
 using static XylemUI.Elements;
 using static XylemUI.Tests.FrameDoubles;
@@ -148,6 +149,66 @@ internal static class ImageDoubles
         }
     }
 
+    // The frames of an animation in place of a decoder: frame i fills its pixels with the byte i and shows for durations[i]
+    // milliseconds; after `plays` plays (0 for no end) the frames end. The decode that gives it gives frame 0.
+    internal sealed class FakeFrames(int plays, params int[] durations) : IAnimationFrames
+    {
+        private int _index;
+        private int _played;
+
+        // The calls of Next so far, and the call that gives a broken frame (0 for none).
+        public int Calls { get; private set; }
+
+        public int BreakAt { get; set; }
+
+        public bool Disposed { get; private set; }
+
+        // A gate the next call waits behind on its worker, when set.
+        public ManualResetEventSlim? Gate { get; set; }
+
+        public long HeldBytes => 1000;
+
+        public AnimationStep Next(Span<byte> pixels, out TimeSpan duration)
+        {
+            duration = TimeSpan.Zero;
+            Assert.False(Disposed);
+            Calls++;
+            _ = Gate?.Wait(TimeSpan.FromSeconds(30));
+            if (Calls == BreakAt)
+            {
+                return AnimationStep.Broken;
+            }
+
+            if (++_index == durations.Length)
+            {
+                _index = 0;
+                if (plays != 0 && ++_played >= plays)
+                {
+                    return AnimationStep.End;
+                }
+            }
+
+            pixels.Fill((byte)_index);
+            duration = TimeSpan.FromMilliseconds(durations[_index]);
+            return AnimationStep.Frame;
+        }
+
+        public void Dispose()
+        {
+            Assert.False(Disposed);
+            Disposed = true;
+        }
+
+        // The result of the decode of the animation's image: frame 0, of 2 x 2 pixels, with the frames after it.
+        public ImageResult First(long sourceBytes = 0) =>
+            new(new byte[16], 2, 2)
+            {
+                Frames = this,
+                Duration = TimeSpan.FromMilliseconds(durations[0]),
+                SourceBytes = sourceBytes,
+            };
+    }
+
     // An element a test added to a scene, in a scope of its own: disposing the scope takes the element away.
     internal readonly record struct Shown(ScopeHandle Scope, Element Element);
 
@@ -164,7 +225,7 @@ internal static class ImageDoubles
             _root = Tree.CreateNode(
                 new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Start) }) }
             );
-            Frames = new WindowFrames(Tree, _root, Target, Atlas, Scheduler, Gray);
+            Frames = new WindowFrames(Tree, _root, Target, Atlas, Scheduler, Gray, time: Time);
             Input = new WindowInput(Tree, Frames, new NoPlatform());
         }
 
@@ -175,6 +236,9 @@ internal static class ImageDoubles
         public CountingTarget Target { get; } = new();
 
         public CountingScheduler Scheduler { get; } = new();
+
+        // The clock of the frames and of the tree's timers.
+        public TestTime Time { get; } = new();
 
         public WindowFrames Frames { get; }
 
