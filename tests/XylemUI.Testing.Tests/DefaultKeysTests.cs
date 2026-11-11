@@ -272,6 +272,31 @@ public sealed class DefaultKeysTests
         Assert.Null(shown[^1]);
     }
 
+    /// <summary>
+    /// A method registered for the default rows a second time adds its rows once.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The module initializer registered <c>CoreKeyBindings.AddDefaults</c>.
+    ///
+    /// Steps:
+    /// - Make a keymap; register <c>CoreKeyBindings.AddDefaults</c> again; make another keymap.
+    ///
+    /// Expected:
+    /// - Both keymaps have the same rows, eleven of them.
+    /// </remarks>
+    [UiFact]
+    public void RegisterDefaults_WithAMethodAlreadyRegistered_AddsItsRowsOnce()
+    {
+        var before = new Keymap();
+
+        Keymap.RegisterDefaults(CoreKeyBindings.AddDefaults);
+        var after = new Keymap();
+
+        Assert.Equal(11, before.Bindings.Count);
+        Assert.Equal(before.Bindings.Select(static row => row.ToString()), after.Bindings.Select(static row => row.ToString()));
+    }
+
     private sealed class Other : IAction;
 
     private sealed class Pick(int number) : IAction
