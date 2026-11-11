@@ -72,6 +72,10 @@ jobs:
             vendor/out
           key: ${{ steps.vendor.outputs.cache-primary-key }}
 
+      # Trial step for the review of PR #777: the processors of the runner. Removed before the PR is ready.
+      - name: Processors
+        run: Write-Host "ProcessorCount $([Environment]::ProcessorCount)"
+
       # A gate that hangs is stopped after 30 minutes, with or without the cache.
       - name: Gate
         timeout-minutes: 30
