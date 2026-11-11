@@ -80,6 +80,40 @@ public sealed class ImageAnimationPixelTests
         Assert.True(app.PresentCount - presents >= 4);
     }
 
+    /// <summary>
+    /// An animation that plays counts for what it holds: its texture and the buffer it uploads from, the decoder's two canvases,
+    /// and the file's bytes when the decode read them itself, not when the app gave them (design §5.0.4, "The bytes counted").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two headless apps whose images play and that ask for less motion, so that the animation stays on its first frame with
+    ///   its decoder: one shows anim-previous.gif (48 x 32) from its file, one from the file's bytes.
+    ///
+    /// Steps:
+    /// - Wait for the decode and pump until settled; read the bytes the window's cache counts.
+    ///
+    /// Expected:
+    /// - From the file: 48 x 32 x 4 x 2 for the texture and the buffer, 48 x 32 x 4 x 2 for the canvases, and the file's length.
+    ///   From bytes: the same without the file's length.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AnimatedImage_ThatPlays_CountsWhatItHolds()
+    {
+        string path = Path.Combine(Folder, "anim-previous.gif");
+        byte[] bytes = File.ReadAllBytes(path);
+        HeadlessOptions options = Options(true) with { ReduceMotion = true };
+        await using (HeadlessApp fromFile = await HeadlessApp.StartAsync(() => Image(ImageSource.FromFile(path)), options))
+        {
+            Settle(fromFile);
+            Assert.Equal((48 * 32 * 4 * 4) + bytes.Length, fromFile.Tree.CachedImages.CountedBytes);
+        }
+
+        await using HeadlessApp fromBytes = await HeadlessApp.StartAsync(() => Image(ImageSource.FromBytes(bytes)), options);
+        Settle(fromBytes);
+        Assert.Equal(48 * 32 * 4 * 4, fromBytes.Tree.CachedImages.CountedBytes);
+    }
+
     private static HeadlessOptions Options(bool animate) =>
         new()
         {

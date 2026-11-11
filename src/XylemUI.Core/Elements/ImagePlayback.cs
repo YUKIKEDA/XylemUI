@@ -79,6 +79,11 @@ internal sealed class ImagePlayback : Ticking
     public bool Drawn { get; private set; }
 
     /// <summary>
+    /// Gets the number of elements counted as showing the image.
+    /// </summary>
+    public int ShowingCount => _showing.Count;
+
+    /// <summary>
     /// Gets the bytes the decoder holds besides the texture and the buffer.
     /// </summary>
     public long HeldBytes => _frames.HeldBytes;

@@ -133,7 +133,8 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
     /// - Show the source again and step twice.
     ///
     /// Expected:
-    /// - One decode of the image and one upload a step: frames 0, 1, 2 for two elements. With no element, the frame asked for
+    /// - One decode of the image and one upload a step: frames 0, 1, 2 for two elements, which the playing counts until they are
+    ///   disposed. With no element, the frame asked for
     ///   before (3) is uploaded once and nothing after it, and the decoder is not disposed. Shown again, the steps upload frames
     ///   0 and 1 of the next play: the decoder went on from where it stopped, and the image was not decoded again.
     /// </remarks>
@@ -156,10 +157,11 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
                     Step(scene, posts, 100);
                     Step(scene, posts, 100);
                     Assert.Equal([0, 1, 2], scene.Target.Uploads);
-                    Assert.Equal(1, scene.Cache.Decodes);
+                    Assert.Equal((1, 2), (scene.Cache.Decodes, scene.Cache.ShowingElements));
 
                     Scope.Dispose(first.Scope);
                     Scope.Dispose(second.Scope);
+                    Assert.Equal(0, scene.Cache.ShowingElements);
                     Step(scene, posts, 100);
                     Step(scene, posts, 100);
                     Step(scene, posts, 100);
@@ -249,7 +251,8 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - Playing, the entry counts 2 x 2 x 4 x 2 + 1,000 + 300 = 1,332 bytes. The steps upload frame 1 and then nothing: the
-    ///   second finds the end, disposes the decoder, and the entry counts 16 bytes. Nothing is asked of the clock after it.
+    ///   second finds the end, disposes the decoder, and the entry counts 16 bytes; the window's images let go of the buffer the
+    ///   frames were uploaded from. Nothing is asked of the clock after it.
     /// </remarks>
     [Fact]
     public void AnimationThatPlayedItsPlays_StopsOnItsLastFrame_AndCountsAsAStillImage() =>
@@ -264,13 +267,15 @@ public sealed class ImagePlaybackTests(UiThreadFixture ui)
                     scene.Target.TakesUploads = true;
                     _ = scene.Show(Sized(2, 2));
                     posts.Settle();
-                    _ = scene.Draw();
+                    ImageHandle image = scene.Draw()[0].Image;
                     Assert.Equal((1, 1332L), (scene.Cache.CountedCount, scene.Cache.CountedBytes));
 
                     Step(scene, posts, 100);
                     Assert.False(frames.Disposed);
                     Step(scene, posts, 100);
                     Assert.Equal((true, 16L), (frames.Disposed, scene.Cache.CountedBytes));
+                    _ = scene.Tree.Images.GetSlot(image.Index, out _, out _, out byte[]? kept);
+                    Assert.Null(kept);
                     scene.Time.Advance(TimeSpan.FromSeconds(1));
                     _ = scene.Draw();
                     Assert.Equal([0, 1], scene.Target.Uploads);

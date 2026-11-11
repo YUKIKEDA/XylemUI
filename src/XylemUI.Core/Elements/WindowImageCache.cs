@@ -93,6 +93,28 @@ internal sealed class WindowImageCache
     public int Advances { get; private set; }
 
     /// <summary>
+    /// Gets the number of elements the animations that play count as showing them; for the tests.
+    /// </summary>
+    public int ShowingElements
+    {
+        get
+        {
+            int count = 0;
+            foreach (ImageEntry entry in _index.Values)
+            {
+                count += entry.Playback?.ShowingCount ?? 0;
+            }
+
+            foreach (ImageEntry entry in CollectionsMarshal.AsSpan(_outside))
+            {
+                count += entry.Playback?.ShowingCount ?? 0;
+            }
+
+            return count;
+        }
+    }
+
+    /// <summary>
     /// Gets the number of entries a limit took out of the counted set.
     /// </summary>
     public int EvictedCount { get; private set; }

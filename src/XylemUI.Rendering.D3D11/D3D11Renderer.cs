@@ -342,6 +342,12 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     internal int ImageTextureCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of images' textures the renderer made: an image that is given new pixels keeps its texture (design §5.0.4,
+    /// "Textures").
+    /// </summary>
+    internal int ImageTexturesMade { get; private set; }
+
+    /// <summary>
     /// Gets the number of images uploaded since the renderer was made (row IM1).
     /// </summary>
     internal int ImageUploads { get; private set; }
@@ -2342,6 +2348,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
             texture = CreateImageTexture(width, height, pixels);
             texture.Generation = generation;
             ImageTextureCount++;
+            ImageTexturesMade++;
             ImageUploads++;
         }
 

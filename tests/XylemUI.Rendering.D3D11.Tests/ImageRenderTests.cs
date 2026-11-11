@@ -272,7 +272,7 @@ public sealed class ImageRenderTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - The first frame shows red at both places and the second blue at both, the shrunk one read from the mipmaps made again.
-    ///   The renderer holds one texture throughout and uploaded twice. The withdrawn upload is not taken: the third frame still
+    ///   The renderer holds one texture throughout, made one, and uploaded twice. The withdrawn upload is not taken: the third frame still
     ///   shows blue, with two uploads.
     /// </remarks>
     [Fact]
@@ -297,7 +297,7 @@ public sealed class ImageRenderTests(UiThreadFixture ui)
             frame = Draw(renderer, cache, Write);
             AssertNear(Blue, frame[(18 * Width) + 18], 1, 18, 18);
             AssertNear(Blue, frame[(12 * Width) + 42], 1, 42, 12);
-            Assert.Equal((1, 2), (renderer.ImageTextureCount, renderer.ImageUploads));
+            Assert.Equal((1, 1, 2), (renderer.ImageTextureCount, renderer.ImageTexturesMade, renderer.ImageUploads));
 
             cache.Rewrite(image, Pixels(16, 16, (_, _) => Green));
             Assert.True(cache.Withdraw(image));
