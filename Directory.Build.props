@@ -69,9 +69,7 @@
     of what it references (design §7, "The default keys and actions"). XylemUI.Core references the generator project itself, to
     pack it; the projects XylemUI.Core is built on declare no action.
   -->
-  <ItemGroup
-    Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.StartsWith('XylemUI.Generators')) And '$(MSBuildProjectName)' != 'XylemUI.Core' And '$(MSBuildProjectName)' != 'XylemUI.Text' And '$(MSBuildProjectName)' != 'XylemUI.Imaging'"
-  >
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.StartsWith('XylemUI.Generators')) And '$(MSBuildProjectName)' != 'XylemUI.Core' And '$(MSBuildProjectName)' != 'XylemUI.Text' And '$(MSBuildProjectName)' != 'XylemUI.Imaging'">
     <ProjectReference
       Include="$(MSBuildThisFileDirectory)src/XylemUI.Generators/XylemUI.Generators.csproj"
       OutputItemType="Analyzer"
