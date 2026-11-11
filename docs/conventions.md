@@ -34,6 +34,7 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `src/XylemUI.Theme.Fluent` | Fluent 2 のテーマ（設計書 §13.2）。今はアイコン（§5.0.4）: `FluentIcons`（`tools/FluentIconsTool` が `vendor/out/fluent` の JSON から生成した `FluentIcons.g.cs`）と、最初の字形でフォントを登録する `FluentIconFonts`。使うプロジェクトは `XylemUI.Theme.Fluent.targets` を取り込み、使う字形だけがビルドで残る。Fluent UI System Icons の MIT の表示は `LICENSE-FluentSystemIcons.txt` |
 | `src/XylemUI.Desktop` | アプリの起動（`XylemApp.Run`・`WindowOptions`）。1 つのウィンドウの Core・Platform.Windows・Rendering.D3D11 をつなぐ（`DesktopWindow`）（`net10.0-windows10.0.17763.0`） |
 | `tools/FluentIconsTool` | Theme.Fluent のビルドの道具（設計書 §5.0.4）。`keep` はアプリのコンパイルの後に、IL から `FluentIcons` のゲッターへの参照を集め、その字形だけを HarfBuzz の subset（`vendor/out/win-x64/tool`）で残し、Mono.Cecil でアプリのアセンブリへリソースとして書き足す。`generate` は `FluentIcons.g.cs` を書く。ビルドの機械で動き、アプリには入らない |
+| `src/XylemUI.Generators` | Source Generator（設計書 §7「ショートカットと動作」）。今は `ActionTableGenerator`: `[Action]` を付けた動作の型から、名前の表（`XylemUI.Generated.<アセンブリ>Actions`）と、アプリのモジュール初期化子を書く。コンパイラの中で動き、アプリには入らない（`netstandard2.0`、Roslyn のコンポーネント）。使うプロジェクトは、`OutputItemType="Analyzer"` で参照する |
 | `tools/UnicodeTableGen` | Unicode の表の生成器（設計書 §4.1、§8.13）。`vendor/versions.lock` の `unicode-ucd` のバージョンと SHA-256 で UCD を取り、`src/XylemUI.Text/Unicode/UnicodeData.g.cs` を出力し、適合のテストのファイルを `tests/XylemUI.Text.Tests/Unicode/` に写す。出力はリポジトリに入れ、ゲートは生成器を動かさない |
 | `samples/HelloText` | テキストをシェーピングしてラスタライズするコンソールのサンプル。`--auto` で S8a の検査と計測をして終了する。`--atlas-sizing` はアトラスの大きさを決める測定（S8b）（`PublishAot`。フォントは埋め込みリソース） |
 | `benchmarks/XylemUI.E2E` | End-to-end の計測（M1a、`docs/benchmarks/m1-baseline.md`）。起動・アイドル・フレーム・入力の代理指標・テキスト込みのリサイズ・Scope の cleanup（ADR 0001）など。`external` は他のフレームワークのアプリを、`app-startup` は部品の API のアプリ（`samples/Counter`）の起動を、プロセスの外から測る（`PublishAot`、記録するがゲートにしない） |
@@ -49,6 +50,7 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `tests/XylemUI.Platform.Windows.Tests` | Win32 バックエンドのテスト。UI スレッド（`UiThreadFixture`）で実行する |
 | `tests/XylemUI.Text.Tests` | テキストのテスト。テストのフォント（`src/XylemUI.Testing/Fonts/` と `Fonts/`、OFL のサブセット）の値を fontTools で読んだ独立の基準と比べる。Unicode の適合のテスト（`Unicode/`、生成器が UCD から写す）を 1 行 1 ケースで流す。文字の葉の layout（Core の内部の `UiTree` と `LayoutEngine`、行 V1a）も、HarfBuzz で整形するのでここで確かめる。UI スレッドは `UiThreadFixture` が持つ（ネイティブのビルドが Windows だけなので、P04 / P06 まで Windows のみ） |
 | `tests/XylemUI.Imaging.Tests` | 画像のデコードのテスト（Windows のみ）。PngSuite（`Png/`）を WIC と、各形式の小さな画像（`Images/`、Pillow で作った）を Pillow の読んだ画素と比べる |
+| `tests/XylemUI.Generators.Tests` | Source Generator のテスト。コンパイラの API で、テストが書いたソースに生成器をかけ、生成したソースと診断を確かめる |
 | `tests/XylemUI.Primitives.Tests` | 見た目のない部品のテスト。ウィンドウの無い木で、文字を使わずに確かめる |
 | `tests/XylemUI.Theme.Fluent.Tests` | アイコンのテスト（Windows のみ）。`XylemUI.Theme.Fluent.targets` を取り込み、道具がこのアセンブリに残した字形を、登録・大きさ・画素（WARP）・a11y・道具の全部を残す設定で確かめる |
 | `tests/XylemUI.Desktop.Tests` | アプリのテスト（設計書 §12.1 の第 5 層）。`samples/Counter` と `samples/Todo` の振る舞い・画素・ゴールデン（`Goldens/`）は `HeadlessApp`（画素は `WarpRenderer`）で、起動・メッセージで送った Click・閉じたときの後始末は本物のウィンドウ（WARP）で確かめる（文字を HarfBuzz で整形するので Windows のみ） |

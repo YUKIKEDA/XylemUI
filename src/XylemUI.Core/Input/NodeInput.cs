@@ -32,6 +32,11 @@ internal sealed class NodeInput
     public TextHandlerEntry[] TextHandlers { get; private set; } = [];
 
     /// <summary>
+    /// Gets the action handlers (design §7, "Shortcuts and actions"), in the order they were added.
+    /// </summary>
+    public ActionHandlerEntry[] ActionHandlers { get; private set; } = [];
+
+    /// <summary>
     /// Gets or sets the cursor over the node and its descendants that set none; <see langword="null"/> for none.
     /// </summary>
     public CursorKind? Cursor { get; internal set; }
@@ -214,6 +219,34 @@ internal sealed class NodeInput
             if (FocusHandlers[i].Kind == kind && FocusHandlers[i].Phase == phase && FocusHandlers[i].Handler == handler)
             {
                 FocusHandlers = Removed(FocusHandlers, i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Adds an action handler.
+    /// </summary>
+    /// <param name="entry">The handler, with its action's type, phase, and scope.</param>
+    internal void Add(ActionHandlerEntry entry) => ActionHandlers = Added(ActionHandlers, entry);
+
+    /// <summary>
+    /// Removes the first action handler of the action's type and the phase with the same delegate.
+    /// </summary>
+    /// <param name="actionType">The type of the action the handler is for.</param>
+    /// <param name="phase">The phase the handler runs in.</param>
+    /// <param name="handler">The delegate.</param>
+    /// <returns>Whether there was such a handler.</returns>
+    internal bool Remove(Type actionType, EventPhase phase, Delegate handler)
+    {
+        for (int i = 0; i < ActionHandlers.Length; i++)
+        {
+            ActionHandlerEntry entry = ActionHandlers[i];
+            if (entry.ActionType == actionType && entry.Phase == phase && entry.Handler == handler)
+            {
+                ActionHandlers = Removed(ActionHandlers, i);
                 return true;
             }
         }

@@ -242,6 +242,7 @@ internal sealed class DesktopWindow : IDisposable
                     }
 
                     Tree.AppendChild(_rootNode, content.Node);
+                    Tree.KeyRoot = content.Node;
                 },
                 "XylemApp.Run"
             );

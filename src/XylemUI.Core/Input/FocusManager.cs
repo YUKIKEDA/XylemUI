@@ -75,9 +75,13 @@ internal sealed class FocusManager
     public bool LastInputWasKeyboard { get; private set; }
 
     /// <summary>
-    /// Gets the node the keys are routed from: the focused node while the window is active, the root otherwise.
+    /// Gets the node the keys and the actions are routed from: the focused node while the window is active; otherwise the node the
+    /// window's root function returned (<see cref="UiTree.KeyRoot"/>), or the root when there is none.
     /// </summary>
-    public NodeHandle KeyTarget => IsWindowActive && Tree.Nodes.IsAlive(Focused) ? Focused : Tree.Root;
+    public NodeHandle KeyTarget =>
+        IsWindowActive && Tree.Nodes.IsAlive(Focused) ? Focused
+        : Tree.Nodes.IsAlive(Tree.KeyRoot) ? Tree.KeyRoot
+        : Tree.Root;
 
     /// <summary>
     /// Returns whether a node can take the focus: it is focusable, in the window's tree, and neither it nor an ancestor is hidden.
@@ -487,6 +491,7 @@ internal sealed class FocusManager
         try
         {
             IsWindowActive = active;
+            Tree.Actions.AvailabilityChanged();
             NodeHandle focused = Focused;
             if (!active)
             {
@@ -565,6 +570,7 @@ internal sealed class FocusManager
         try
         {
             Focused = default;
+            Tree.Actions.AvailabilityChanged();
             SyncTextInput();
             if (IsWindowActive)
             {
@@ -681,6 +687,7 @@ internal sealed class FocusManager
         }
 
         Focused = node;
+        Tree.Actions.AvailabilityChanged();
         Remember(node);
         SyncTextInput();
         if (!IsWindowActive)
