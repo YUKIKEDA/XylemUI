@@ -1,3 +1,4 @@
+using XylemUI.Testing;
 using XylemUI.Text;
 using static XylemUI.Tests.FrameDoubles;
 using static XylemUI.Tests.LayoutTestTree;
@@ -459,6 +460,212 @@ public sealed class WindowFramesTests(UiThreadFixture ui)
                 Assert.Equal(n.Layout.Border.Left, child.X);
                 Assert.Equal(n.Layout.Border.Top, child.Y);
             }
+        });
+
+    /// <summary>
+    /// A window that does not show runs no frame: a frame asked for is only remembered, a frame that runs presents nothing and
+    /// does not read the clock, and the window asks for one frame when it shows again (design §2.11, "Frames of hidden and
+    /// minimized windows").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The tree of the first test, laid out and presented once at 200 x 100; a counting target and scheduler; a test clock.
+    ///
+    /// Steps:
+    /// - Tell the frames the window does not show. Set the child's background red and its size to 60 x 30. Advance the clock by
+    ///   1 s and run a frame.
+    /// - Tell the frames the window shows; tell them so again. Run the frame asked for.
+    /// - Tell the frames the window does not show, then that it shows.
+    ///
+    /// Expected:
+    /// - While the window does not show, the scheduler is asked for nothing, nothing is laid out or presented, and the frame's
+    ///   time stays the first frame's. Showing asks for one frame, and the second telling for none; the frame lays out and
+    ///   presents once, at the clock's time, with the child 60 x 30. The last showing asks for no frame: the one remembered was
+    ///   asked for once.
+    /// </remarks>
+    [Fact]
+    public void WindowThatDoesNotShow_RunsNoFrame_AndAsksForOneWhenItShows() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, NodeHandle box) = Boxes();
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            var time = new TestTime();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray, time: time);
+            tree.SetBackground(box, new Paint(Gray));
+            frames.Resize(new Size(200, 100), 1);
+            TimeSpan first = frames.FrameTime;
+
+            // The frame asked for before the first resize ran it: it runs with nothing to do.
+            scheduler.Run();
+            scheduler.Requests = 0;
+            int layouts = 0;
+            tree.LayoutRunHook = _ => layouts++;
+
+            frames.SetVisible(false);
+            tree.SetBackground(box, new Paint(Red));
+            tree.SetStyle(box, Fixed(60, 30));
+            time.Advance(TimeSpan.FromSeconds(1));
+            frames.RunFrame();
+
+            Assert.Equal((0, false), (scheduler.Requests, scheduler.Pending));
+            Assert.Equal((0, 1), (layouts, target.Presents));
+            Assert.Equal(first, frames.FrameTime);
+
+            frames.SetVisible(true);
+            frames.SetVisible(true);
+            Assert.Equal((1, true), (scheduler.Requests, scheduler.Pending));
+            scheduler.Run();
+
+            Assert.True(layouts > 0);
+            Assert.Equal(2, target.Presents);
+            Assert.Equal(first + TimeSpan.FromSeconds(1), frames.FrameTime);
+            Assert.Equal(60, frames.WindowBox(box).Width);
+
+            frames.SetVisible(false);
+            frames.SetVisible(true);
+            Assert.Equal((1, false), (scheduler.Requests, scheduler.Pending));
+        });
+
+    /// <summary>
+    /// A window that shows again with no frame asked for while it did not show asks for none (design §2.11, "When it is back").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - As in the test above, with the system's clock.
+    ///
+    /// Steps:
+    /// - Tell the frames the window does not show, then that it shows.
+    /// - Tell them it does not show, set the child's background red, and tell them it shows.
+    ///
+    /// Expected:
+    /// - The first showing asks the scheduler for no frame. The background asks for none while the window does not show, and the
+    ///   second showing asks for one: a frame that is asked for, with none run, is remembered.
+    /// </remarks>
+    [Fact]
+    public void WindowThatShowsAgain_WithNoFrameAskedFor_AsksForNone() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, NodeHandle box) = Boxes();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, new CountingTarget(), atlas, scheduler, Gray);
+            tree.SetBackground(box, new Paint(Gray));
+            frames.Resize(new Size(200, 100), 1);
+
+            // The frame asked for before the first resize ran it: it runs with nothing to do.
+            scheduler.Run();
+            scheduler.Requests = 0;
+
+            frames.SetVisible(false);
+            frames.SetVisible(true);
+
+            Assert.Equal((0, false), (scheduler.Requests, scheduler.Pending));
+
+            frames.SetVisible(false);
+            tree.SetBackground(box, new Paint(Red));
+            Assert.Equal(0, scheduler.Requests);
+            frames.SetVisible(true);
+            Assert.Equal((1, true), (scheduler.Requests, scheduler.Pending));
+        });
+
+    /// <summary>
+    /// A frame the scheduler held when the window stopped showing runs nothing, and is run when the window shows again (design
+    /// §2.11, "The calls that drive a frame while it is stopped", <c>RunFrame</c>).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - As in the test above.
+    ///
+    /// Steps:
+    /// - Set the child's background red, which asks for a frame. Tell the frames the window does not show; run the frame the
+    ///   scheduler holds. Tell the frames the window shows; run the frame asked for.
+    ///
+    /// Expected:
+    /// - The held frame presents nothing. Showing asks for one more frame, which presents once.
+    /// </remarks>
+    [Fact]
+    public void FrameHeldWhenTheWindowStopsShowing_RunsWhenItShows() =>
+        ui.Invoke(() =>
+        {
+            (UiTree tree, NodeHandle root, NodeHandle box) = Boxes();
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
+            tree.SetBackground(box, new Paint(Gray));
+            frames.Resize(new Size(200, 100), 1);
+
+            // The frame asked for before the first resize ran it: it runs with nothing to do.
+            scheduler.Run();
+            scheduler.Requests = 0;
+
+            tree.SetBackground(box, new Paint(Red));
+            Assert.Equal(1, scheduler.Requests);
+            frames.SetVisible(false);
+            scheduler.Run();
+            Assert.Equal((1, 1), (scheduler.Requests, target.Presents));
+
+            frames.SetVisible(true);
+            Assert.Equal(2, scheduler.Requests);
+            scheduler.Run();
+            Assert.Equal(2, target.Presents);
+        });
+
+    /// <summary>
+    /// A resize of a window that does not show gives the size to the tree and runs no frame; the frame after the window shows
+    /// lays out at that size, and the frames ask for the next ones as usual (design §2.11, <c>Resize</c>; §2.11.1).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A root with one child that grows to the root's width; laid out and presented once at 200 x 100.
+    ///
+    /// Steps:
+    /// - Tell the frames the window does not show. Resize to 300 x 150 at scale 2.
+    /// - Tell the frames the window shows; run the frame asked for. Set the child's background red.
+    ///
+    /// Expected:
+    /// - The resize asks the scheduler for nothing, lays nothing out, and presents nothing; the frames hold the new scale.
+    ///   Showing asks for one frame, which presents once with the child 300 wide. The background asks for one more frame: the
+    ///   resize left no mark that holds the requests back.
+    /// </remarks>
+    [Fact]
+    public void ResizeOfAWindowThatDoesNotShow_IsLaidOutWhenItShows() =>
+        ui.Invoke(() =>
+        {
+            var tree = new UiTree();
+            NodeHandle root = tree.CreateNode(new LayoutStyle());
+            NodeHandle box = Box(tree, root, new LayoutStyle());
+            var target = new CountingTarget();
+            var scheduler = new CountingScheduler();
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var frames = new WindowFrames(tree, root, target, atlas, scheduler, Gray);
+            tree.SetBackground(box, new Paint(Gray));
+            frames.Resize(new Size(200, 100), 1);
+            Assert.Equal(200, frames.WindowBox(box).Width);
+
+            // The frame asked for before the first resize ran it: it runs with nothing to do.
+            scheduler.Run();
+            scheduler.Requests = 0;
+            int layouts = 0;
+            tree.LayoutRunHook = _ => layouts++;
+
+            frames.SetVisible(false);
+            frames.Resize(new Size(300, 150), 2);
+
+            Assert.Equal((0, false), (scheduler.Requests, scheduler.Pending));
+            Assert.Equal((0, 1), (layouts, target.Presents));
+            Assert.Equal(2, frames.Scale);
+
+            frames.SetVisible(true);
+            Assert.Equal(1, scheduler.Requests);
+            scheduler.Run();
+            Assert.Equal(2, target.Presents);
+            Assert.Equal(300, frames.WindowBox(box).Width);
+
+            tree.SetBackground(box, new Paint(Red));
+            Assert.Equal(2, scheduler.Requests);
         });
 
     private static (UiTree Tree, NodeHandle Root, NodeHandle Box) Boxes()

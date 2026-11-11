@@ -35,6 +35,10 @@ public sealed unsafe partial class Win32Window : IDisposable
     private HWND _hwnd;
     private Action? _renderPendingResize;
     private bool _resizePending;
+
+    // Hidden by a change of the window's position, and hidden or minimized (ReadVisibility).
+    private bool _hidden;
+    private bool _stopped;
     private int _pendingWidth;
     private int _pendingHeight;
     private Action? _raiseTextRenderingChanged;
@@ -117,6 +121,21 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// monitor's scale changed (<c>WM_DPICHANGED</c>). The window has its new size by then.
     /// </summary>
     public event EventHandler? ScaleChanged;
+
+    /// <summary>
+    /// Gets or sets what receives whether the window shows, when that changes: <see langword="false"/> when it was hidden or
+    /// minimized, <see langword="true"/> when it is neither again (<c>WM_WINDOWPOSCHANGED</c>, design §2.11, "Frames of hidden and
+    /// minimized windows"); <see langword="null"/> for nothing. It is called inside the message, before the <c>WM_SIZE</c> the
+    /// message sends.
+    /// </summary>
+    internal Action<bool>? VisibilityChanged { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the window shows: <see langword="false"/> while it is hidden or minimized. A window that
+    /// was never shown shows, since hiding is read from the changes; for a host that starts to listen to
+    /// <see cref="VisibilityChanged"/> after the window was shown.
+    /// </summary>
+    internal bool IsShowing => !_stopped;
 
     /// <summary>
     /// Occurs on the UI thread after the window has been destroyed.
@@ -353,6 +372,29 @@ public sealed unsafe partial class Win32Window : IDisposable
         }
     }
 
+    // The window does not show while it is hidden or minimized. Hidden is read from the flags of the change, not from the window's
+    // state now, so that a window that was never shown counts as showing and draws (the tests' and the benchmarks' windows).
+    // Minimized is the window's state inside the message. Destroying a window that shows hides it first, so a window being closed
+    // tells that it stopped showing.
+    private void ReadVisibility(HWND hwnd, WINDOWPOS* position)
+    {
+        if ((position->flags & SWP.SWP_HIDEWINDOW) != 0)
+        {
+            _hidden = true;
+        }
+        else if ((position->flags & SWP.SWP_SHOWWINDOW) != 0)
+        {
+            _hidden = false;
+        }
+
+        bool stopped = _hidden || IsIconic(hwnd) != BOOL.FALSE;
+        if (stopped != _stopped)
+        {
+            _stopped = stopped;
+            VisibilityChanged?.Invoke(!stopped);
+        }
+    }
+
     // A monitor of the same scale sends no WM_DPICHANGED (design §5.0.3, "ClearType"), so a move reads the text rendering again
     // when the monitor changed. The window procedure still calls DefWindowProc, so that WM_SIZE and WM_MOVE come.
     private void MoveMonitor(HWND hwnd)
@@ -526,6 +568,9 @@ public sealed unsafe partial class Win32Window : IDisposable
                 ChangeScale(hwnd, wParam, (RECT*)lParam);
                 return true;
             case WmWindowPosChanged:
+                // Before DefWindowProc, which sends WM_SIZE from inside this message: a window that is restored shows again
+                // before that WM_SIZE renders it (design §2.11, "Frames of hidden and minimized windows").
+                ReadVisibility(hwnd, (WINDOWPOS*)lParam);
                 MoveMonitor(hwnd);
                 return false;
             case WmDestroy:
