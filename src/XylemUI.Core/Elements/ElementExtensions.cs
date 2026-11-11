@@ -1072,6 +1072,27 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Finds the keys that ask for an action in the element's window now (design §7, "Shortcuts and actions"): the row of the
+    /// window's keymap for an action of the type whose condition holds at the focused node and that no other row with the same
+    /// keys wins over, a row that takes the keys' binding away included. A menu item and a tooltip show its
+    /// <see cref="KeyBinding.ToDisplayString"/>, which is then what the keys do. Read in a computation, it is read again when a row
+    /// is added or taken out, the focus moves, or a node's context changes.
+    /// </summary>
+    /// <typeparam name="TAction">The type of the action; a row for a type derived from it is not the type's.</typeparam>
+    /// <param name="element">A node of the window.</param>
+    /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static KeyBinding? KeyBindingFor<TAction>(this Element element)
+        where TAction : class, IAction
+    {
+        UiThread.VerifyAccess();
+        UiTree tree = element.TreeOrThrow();
+        tree.Keymap.TrackChanges();
+        tree.Actions.TrackAvailability();
+        return KeymapLookup.BindingFor(tree, typeof(TAction));
+    }
+
+    /// <summary>
     /// Dispatches an action in the element's window (design §7, "Shortcuts and actions"): it is routed from the focused node, or
     /// from the root when no node has the focus, whichever element this is called on. A button, a menu item, and a command palette
     /// ask for an action with it.

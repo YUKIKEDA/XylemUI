@@ -302,12 +302,12 @@ public sealed class KeymapTests
     }
 
     /// <summary>
-    /// The row a menu shows for an action is the one added last for exactly that type, and a computation that read it runs again
-    /// when a row is added or taken out.
+    /// The keys a menu shows for an action are those of the row a key would find: for exactly that type, and a computation that
+    /// read them runs again when a row is added or taken out.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - An app whose effect records the display text of the row for <c>Save</c>, or "none". <c>SaveAs</c> derives from
+    /// - An app whose effect records the display text of the keys for <c>Save</c>, or "none". <c>SaveAs</c> derives from
     ///   <c>Save</c>.
     ///
     /// Steps:
@@ -315,22 +315,24 @@ public sealed class KeymapTests
     ///   take the last row out.
     ///
     /// Expected:
-    /// - The effect recorded "none", "none" (a row for the derived type is not the type's), "Ctrl+S", "Ctrl+K Ctrl+S", "Ctrl+S".
+    /// - After the start, the effect recorded "none" (a row for the derived type is not the type's), "Ctrl+S", "Ctrl+K Ctrl+S"
+    ///   (the row added later), "Ctrl+S".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
-    public async Task BindingFor_ReadInAnEffect_FollowsTheRows()
+    public async Task KeyBindingFor_ReadInAnEffect_FollowsTheRows()
     {
         var seen = new List<string>();
-        Keymap? keymap = null;
-        await using HeadlessApp app = await HeadlessApp.StartAsync(
-            () =>
-            {
-                _ = Effect.Create(() => seen.Add(keymap!.BindingFor<Save>()?.ToDisplayString() ?? "none"));
-                return Box().Width(10).Height(10);
-            },
-            new HeadlessOptions { Keymap = keymap = new Keymap() }
-        );
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            Element root = Box().Width(10).Height(10);
+            _ = Effect.Create(() => seen.Add(root.KeyBindingFor<Save>()?.ToDisplayString() ?? "none"));
+            return root;
+        });
+
+        // The start ran the effect with no row.
+        Assert.All(seen, static text => Assert.Equal("none", text));
+        seen.Clear();
 
         _ = app.Keymap.Bind("ctrl-shift-s", new SaveAs());
         _ = app.Keymap.Bind("ctrl-s", new Save());
@@ -338,7 +340,126 @@ public sealed class KeymapTests
         Assert.Equal("ctrl-k ctrl-s", last.ToString());
         _ = app.Keymap.Remove(last);
 
-        Assert.Equal(["none", "none", "Ctrl+S", "Ctrl+K Ctrl+S", "Ctrl+S"], seen);
+        Assert.Equal(["none", "Ctrl+S", "Ctrl+K Ctrl+S", "Ctrl+S"], seen);
+    }
+
+    /// <summary>
+    /// The keys shown for an action are not those of a row whose binding was taken away, whose keys another action took, or whose
+    /// condition does not hold at the focus; they follow the focus.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two focusable boxes, the first with the context <c>Editor</c>. An effect records the display text of the keys for
+    ///   <c>Save</c>, or "none". Rows: <c>ctrl-s</c> for <c>Save</c> with no condition; <c>f2</c> for <c>Save</c> in
+    ///   <c>Editor</c>.
+    ///
+    /// Steps:
+    /// - Focus the first box; focus the second. Add a row with no action for <c>ctrl-s</c>. Take it out and add
+    ///   <c>ctrl-s</c> for <c>Close</c> in <c>Editor</c>; focus the first box.
+    ///
+    /// Expected:
+    /// - In the first box "F2" (the later row at the same depth); in the second "Ctrl+S" (the row of <c>Editor</c> does not hold
+    ///   there). With the keys taken away: "none". With the keys given to <c>Close</c> in <c>Editor</c>: "Ctrl+S" in the second
+    ///   box, and "F2" in the first, where <c>ctrl-s</c> asks for <c>Close</c>. The keys shown ask for <c>Save</c> when pressed.
+    ///   When the first box drops its context, an effect that read the keys runs once more and records "Ctrl+S".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task KeyBindingFor_IsTheRowAKeyWouldFindAtTheFocus()
+    {
+        var seen = new List<string>();
+        var asked = new List<string>();
+        var auto = new List<string>();
+        Element first = default;
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            first = Box().Width(10).Height(10).Focusable().KeyContext("Editor");
+            second = Box().Width(10).Height(10).Focusable();
+            Element own = first;
+            _ = Effect.Create(() => auto.Add(own.KeyBindingFor<Save>()?.ToDisplayString() ?? "none"));
+            return Column(first, second)
+                .OnAction((in ActionEvent<Save> e) => asked.Add("save"))
+                .OnAction((in ActionEvent<Close> e) => asked.Add("close"));
+        });
+        _ = app.Keymap.Bind("ctrl-s", new Save());
+        _ = app.Keymap.Bind("f2", new Save(), "Editor");
+        string Shown() => first.KeyBindingFor<Save>()?.ToDisplayString() ?? "none";
+
+        Assert.True(app.Focus(first));
+        seen.Add(Shown());
+        Assert.True(app.Focus(second));
+        seen.Add(Shown());
+        KeyBinding none = app.Keymap.Bind("ctrl-s", null);
+        seen.Add(Shown());
+        Assert.True(app.Keymap.Remove(none));
+        _ = app.Keymap.Bind("ctrl-s", new Close(), "Editor");
+        seen.Add(Shown());
+        Assert.True(app.Focus(first));
+        seen.Add(Shown());
+        Assert.Equal(["F2", "Ctrl+S", "none", "Ctrl+S", "F2"], seen);
+
+        Assert.True(app.Keyboard.Press(Key.F2));
+        Assert.True(app.Keyboard.Press(Key.S, KeyModifiers.Control));
+        Assert.Equal(["save", "close"], asked);
+
+        // The node stops calling itself an editor: the rows of that context hold no more, and a computation that read the keys runs again.
+        auto.Clear();
+        _ = first.KeyContext(null);
+        Assert.Equal(["Ctrl+S"], auto);
+        _ = app.PumpAndSettle();
+    }
+
+    /// <summary>
+    /// Keys kept for one node are not delivered to another: when the focus moves, they are dropped, at the next key and at the
+    /// end of the wait.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two focusable boxes that log their keys and text under a root that handles <c>Save</c>. The keymap has <c>g g</c> for
+    ///   <c>Save</c>. The first box has the focus.
+    ///
+    /// Steps:
+    /// - Press G; focus the second box; press G. Then press G, focus the first box, and advance the clock by one second.
+    ///
+    /// Expected:
+    /// - The second G is kept anew (one key kept), and <c>Save</c> does not run: the first G was dropped. After the second focus
+    ///   move and the second, no key is kept and nothing was delivered to either box.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Keys_KeptWhenTheFocusMoves_AreDropped()
+    {
+        var log = new List<string>();
+        Element first = default;
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            Element Logging(string name) =>
+                Box()
+                    .Width(10)
+                    .Height(10)
+                    .Focusable()
+                    .On(KeyEventKind.Down, EventPhase.Bubble, (in KeyEvent e) => log.Add($"{name} key {e.Key}"))
+                    .OnTextInput(EventPhase.Bubble, (in TextInputEvent e) => log.Add($"{name} text {e.Text}"));
+            first = Logging("first");
+            second = Logging("second");
+            return Column(first, second).OnAction((in ActionEvent<Save> e) => log.Add("save"));
+        });
+        _ = app.Keymap.Bind("g g", new Save());
+        Assert.True(app.Focus(first));
+
+        Assert.True(app.Keyboard.Press(Key.G));
+        Assert.True(app.Focus(second));
+        Assert.True(app.Keyboard.Press(Key.G));
+        Assert.Equal(1, app.Input.PendingKeyCount);
+        Assert.Empty(log);
+
+        Assert.True(app.Focus(first));
+        app.Time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(0, app.Input.PendingKeyCount);
+        Assert.Empty(log);
+        _ = app.PumpAndSettle();
     }
 
     /// <summary>

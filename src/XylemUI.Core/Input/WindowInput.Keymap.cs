@@ -19,6 +19,13 @@ internal sealed partial class WindowInput
     private ITimer? _pendingTimer;
     private SynchronizationContext? _pendingUi;
 
+    // The node the kept keys were routed from. Keys kept for one node are not delivered to another: when the focus moved or the
+    // window stopped being active, they are dropped (GPUI drops its pending input when the focus changes).
+    private NodeHandle _pendingTarget;
+
+    // Counts the matchings, so that a dispatch sees that a handler pressed a key or changed the rows under it.
+    private int _matchGeneration;
+
     // The contexts of the nodes from the root to the key's target, and the rows that match the keys, best first. Kept and used
     // again, so that a key allocates nothing.
     private KeyContext[] _contexts = new KeyContext[8];
@@ -39,6 +46,11 @@ internal sealed partial class WindowInput
         if (input.Kind != KeyEventKind.Down || IsModifierKey(input.Key))
         {
             return false;
+        }
+
+        if (_pendingCount > 0 && _tree.Focus.KeyTarget != _pendingTarget)
+        {
+            ClearPendingKeys();
         }
 
         if (_pendingCount == 0 && (_tree.Keymap.Rows.Length == 0 || TextTakesKey(input)))
@@ -75,8 +87,9 @@ internal sealed partial class WindowInput
     {
         NodeHandle target = _tree.Focus.KeyTarget;
 
-        // A handler may change the keymap or press keys; the rows are copied out of the fields first.
+        // A handler may change the keymap or press keys, which fills the rows again: the rest of these rows is not tried then.
         int count = _matchCount;
+        int generation = _matchGeneration;
         for (int i = 0; i < count; i++)
         {
             if (_matches[i].Action is not { } action)
@@ -89,7 +102,7 @@ internal sealed partial class WindowInput
                 return true;
             }
 
-            if (_matchCount != count)
+            if (_matchGeneration != generation)
             {
                 return false;
             }
@@ -104,6 +117,7 @@ internal sealed partial class WindowInput
     {
         longer = false;
         _matchCount = 0;
+        _matchGeneration++;
         KeyBinding[] rows = _tree.Keymap.Rows;
         if (rows.Length == 0)
         {
@@ -174,27 +188,7 @@ internal sealed partial class WindowInput
         _matchCount++;
     }
 
-    // The contexts of the nodes from the root to target, on the route a key takes.
-    private void CollectContexts(NodeHandle target)
-    {
-        _contextCount = 0;
-        for (NodeHandle node = target; !node.IsNone && _tree.Nodes.IsAlive(node); node = _tree.KeyParent(node))
-        {
-            if (_tree.Nodes.GetRef(node).Input?.KeyContext is not { } context)
-            {
-                continue;
-            }
-
-            if (_contextCount == _contexts.Length)
-            {
-                Array.Resize(ref _contexts, _contextCount * 2);
-            }
-
-            _contexts[_contextCount++] = context;
-        }
-
-        _contexts.AsSpan(0, _contextCount).Reverse();
-    }
+    private void CollectContexts(NodeHandle target) => _contextCount = KeymapLookup.CollectContexts(_tree, target, ref _contexts);
 
     // A key that types a character goes to a field that takes text before the keymap, and so does every key while the input
     // method composes (design §7, "The order of keys and text input"): the keymap is not tried for it.
@@ -229,6 +223,7 @@ internal sealed partial class WindowInput
         }
 
         _pendingKeys[_pendingCount++] = input;
+        _pendingTarget = _tree.Focus.KeyTarget;
         _pendingUi = SynchronizationContext.Current;
         if (_pendingTimer is null)
         {
@@ -267,6 +262,12 @@ internal sealed partial class WindowInput
     {
         if (_pendingCount == 0)
         {
+            return;
+        }
+
+        if (_tree.Focus.KeyTarget != _pendingTarget)
+        {
+            ClearPendingKeys();
             return;
         }
 

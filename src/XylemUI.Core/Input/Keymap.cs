@@ -191,28 +191,9 @@ public sealed class Keymap
     }
 
     /// <summary>
-    /// Finds the row a menu or a tooltip shows for an action: the row added last whose action is of the type. Read in a
-    /// computation, it is read again when a row is added or taken out.
+    /// Reads the count of the keymap's changes, so that the reading computation runs again when a row is added or taken out.
     /// </summary>
-    /// <typeparam name="TAction">The type of the action.</typeparam>
-    /// <returns>The row; <see langword="null"/> when no row asks for the action.</returns>
-    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
-    public KeyBinding? BindingFor<TAction>()
-        where TAction : class, IAction
-    {
-        UiThread.VerifyAccess();
-        _ = (_version ??= Signal.Create(0)).Get();
-        KeyBinding[] rows = _bindings;
-        for (int i = rows.Length - 1; i >= 0; i--)
-        {
-            if (rows[i].Action?.GetType() == typeof(TAction))
-            {
-                return rows[i];
-            }
-        }
-
-        return null;
-    }
+    internal void TrackChanges() => _ = (_version ??= Signal.Create(0)).Get();
 
     private void Changed() => _version?.Set(unchecked(++_versionValue));
 }
