@@ -39,13 +39,14 @@ public static class XylemApp
         // The loop can end with windows open (Win32MessageLoop.Quit from the app); the next run starts with none counted.
         _running = true;
 
-        // The loop's context before the window, whose root function makes elements that keep it: an image's decode runs on a worker
-        // and posts its result to the context the element was made with, and with none it runs here (design §5.0.4, "Decoding
-        // threads"; Issue #785).
         SynchronizationContext? previous = SynchronizationContext.Current;
-        SynchronizationContext.SetSynchronizationContext(Win32MessageLoop.Dispatcher.SynchronizationContext);
         try
         {
+            // The loop's context before the window, whose root function makes elements that keep it: an image's decode runs on a
+            // worker and posts its result to the context the element was made with, and with none it runs here (design §5.0.4,
+            // "Decoding threads"; Issue #785). Inside the try, so that whatever throws from here on leaves the app able to run
+            // again.
+            SynchronizationContext.SetSynchronizationContext(Win32MessageLoop.Dispatcher.SynchronizationContext);
             using var window = new DesktopWindow(root, options ?? new WindowOptions(), show: true);
             Open(window);
             return Win32MessageLoop.Run();
