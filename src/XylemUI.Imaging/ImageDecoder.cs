@@ -132,7 +132,7 @@ internal sealed unsafe class ImageDecoder
             int sourceHeight;
             fixed (byte* bytes = data)
             {
-                if (data.IsEmpty || ImageShim.Info(bytes, (nuint)data.Length, &f, &sourceWidth, &sourceHeight) != ImageShim.Ok)
+                if (data.IsEmpty || ImageShim.Info(bytes, (nuint)data.Length, &f, &sourceWidth, &sourceHeight, null) != ImageShim.Ok)
                 {
                     return false;
                 }
@@ -242,7 +242,7 @@ internal sealed unsafe class ImageDecoder
         int h;
         fixed (byte* bytes = data)
         {
-            if (ImageShim.Info(bytes, (nuint)data.Length, &f, &w, &h) != ImageShim.Ok || w <= 0 || h <= 0)
+            if (ImageShim.Info(bytes, (nuint)data.Length, &f, &w, &h, null) != ImageShim.Ok || w <= 0 || h <= 0)
             {
                 return false;
             }
@@ -289,7 +289,7 @@ internal sealed unsafe class ImageDecoder
         int h;
         fixed (byte* bytes = data)
         {
-            if (ImageShim.Info(bytes, (nuint)data.Length, &f, &w, &h) != ImageShim.Ok || w <= 0 || h <= 0 || w > maxSide || h > maxSide)
+            if (ImageShim.Info(bytes, (nuint)data.Length, &f, &w, &h, null) != ImageShim.Ok || w <= 0 || h <= 0 || w > maxSide || h > maxSide)
             {
                 return false;
             }

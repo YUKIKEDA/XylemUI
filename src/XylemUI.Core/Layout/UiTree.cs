@@ -44,7 +44,7 @@ internal sealed class UiTree
         Focus = new FocusManager(this);
         Animations = new AnimationClock(this);
         Popups = new OverlayPopupHost(this);
-        CachedImages = new WindowImageCache(Images);
+        CachedImages = new WindowImageCache(Images, this);
     }
 
     /// <summary>
@@ -62,6 +62,12 @@ internal sealed class UiTree
     /// <see cref="Images"/>.
     /// </summary>
     internal WindowImageCache CachedImages { get; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether animated images play; <see langword="true"/> unless a test's host turns it off, where
+    /// an animated image shows its first frame and keeps no timer (design §5.0.4, "Headless").
+    /// </summary>
+    internal bool AnimatesImages { get; set; } = true;
 
     /// <summary>
     /// Gets a value indicating whether a popup closed since the last frame took it (<see cref="TakePopupsChanged"/>): the window's

@@ -47,6 +47,13 @@ public sealed record HeadlessOptions
     public bool CaretBlink { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether animated images (GIF and WebP) play, on the virtual clock (design §5.0.4, "Headless");
+    /// <see langword="false"/> by default, where an animated image shows its first frame: an image that plays keeps a timer that
+    /// <see cref="HeadlessApp.PumpAndSettle"/> waits for, and one that plays without end never settles.
+    /// </summary>
+    public bool ImageAnimation { get; init; }
+
+    /// <summary>
     /// Gets the most iterations <see cref="HeadlessApp.PumpAndSettle"/> runs before it throws; 1,000 by default.
     /// </summary>
     public int MaxIterations { get; init; } = 1_000;

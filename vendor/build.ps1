@@ -39,7 +39,7 @@ $options = @{
 # static libraries each build installs (design §5.0.4, row IM1).
 $intoShim = @{
     'libjpeg-turbo' = @('jpeg-static.lib')
-    libwebp = @('libwebp.lib', 'libsharpyuv.lib')
+    libwebp = @('libwebp.lib', 'libwebpdemux.lib', 'libsharpyuv.lib')
 }
 
 # The files of skcms, by their paths under the shim's build folder (design §5.0.4, IM1's Grill, Q28): skcms.cc includes its

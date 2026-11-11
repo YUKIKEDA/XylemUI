@@ -66,6 +66,12 @@ public sealed class ImageSource : IEquatable<ImageSource>
     public override int GetHashCode() => HashCode.Combine(_path, _assembly, _bytes);
 
     /// <summary>
+    /// Gets a value indicating whether <see cref="Read"/> makes the bytes it returns (a file's, a resource's): bytes the app gave
+    /// are the app's memory (design §5.0.4, "The bytes counted").
+    /// </summary>
+    internal bool OwnsBytes => _path is not null;
+
+    /// <summary>
     /// Reads the image's bytes, on a worker thread.
     /// </summary>
     /// <returns>The bytes, or <see langword="null"/> when the file or the resource could not be read.</returns>

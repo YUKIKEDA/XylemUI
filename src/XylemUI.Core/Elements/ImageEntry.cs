@@ -64,6 +64,12 @@ internal sealed class ImageEntry(ImageKey key)
     public ImageEntry? Newer { get; set; }
 
     /// <summary>
+    /// Gets or sets the playing of an animation, while the entry is <see cref="ImageEntryState.Ready"/> and holds the animation's
+    /// decoder; <see langword="null"/> for a still image and for an animation that played its plays.
+    /// </summary>
+    public ImagePlayback? Playback { get; set; }
+
+    /// <summary>
     /// Gets or sets the decode in flight; <see langword="null"/> once its result arrived, or when the cache dropped it.
     /// </summary>
     public ImageRequest? Request { get; set; }

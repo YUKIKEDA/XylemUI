@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using XylemUI.Imaging;
 
 namespace XylemUI;
 
@@ -28,6 +29,10 @@ internal sealed class WindowImageCache
     // The entries Evict and Clear took out of the index that elements still show or wait for: the tree releases them with the rest.
     private readonly List<ImageEntry> _outside = [];
     private readonly Action<ImageRequest> _complete;
+    private readonly UiTree _tree;
+
+    // The animations a frame drew, which ask for their next frames when the frame ends.
+    private readonly List<ImagePlayback> _drawn = [];
     private ImageEntry? _oldest;
     private ImageEntry? _newest;
 
@@ -36,9 +41,11 @@ internal sealed class WindowImageCache
     /// calling thread, which later changes of them reach.
     /// </summary>
     /// <param name="images">The window's images, which the cache adds to and releases from.</param>
-    public WindowImageCache(TextureCache images)
+    /// <param name="tree">The window's tree, whose frame clock and timers the animated images play on.</param>
+    public WindowImageCache(TextureCache images, UiTree tree)
     {
         _images = images;
+        _tree = tree;
         _complete = Complete;
         ImageCache.Track(this, out int count, out long bytes);
         MaximumCount = count;
@@ -92,6 +99,109 @@ internal sealed class WindowImageCache
     public int RefusedCount { get; private set; }
 
     /// <summary>
+    /// Gets the frame clock the animated images join when their next frame is due.
+    /// </summary>
+    public AnimationClock Clock => _tree.Animations;
+
+    /// <summary>
+    /// Notes an animation that the frame running drew.
+    /// </summary>
+    /// <param name="playback">The animation's playing.</param>
+    public void NoteDrawn(ImagePlayback playback) => _drawn.Add(playback);
+
+    /// <summary>
+    /// Ends a frame of the window that drew: each animation it drew asks for its next frame ("How it advances").
+    /// </summary>
+    public void FrameEnded()
+    {
+        if (_drawn.Count == 0)
+        {
+            return;
+        }
+
+        bool reduce = Clock.ReduceMotion;
+        foreach (ImagePlayback playback in CollectionsMarshal.AsSpan(_drawn))
+        {
+            playback.AfterDrawn(_images, _tree.Time, reduce);
+        }
+
+        _drawn.Clear();
+    }
+
+    /// <summary>
+    /// Tells the animations that the window's setting of less motion changed ("When it stops"): with the setting they stay on the
+    /// frame they show, and without it they go on from that frame.
+    /// </summary>
+    public void MotionChanged()
+    {
+        foreach (ImageEntry entry in _index.Values)
+        {
+            entry.Playback?.MotionChanged();
+            entry.Playback?.Repaint();
+        }
+
+        foreach (ImageEntry entry in CollectionsMarshal.AsSpan(_outside))
+        {
+            entry.Playback?.MotionChanged();
+            entry.Playback?.Repaint();
+        }
+    }
+
+    /// <summary>
+    /// Shows an animation's next frame: the pixels its playing decoded go to the image's texture.
+    /// </summary>
+    /// <param name="entry">The animation's entry.</param>
+    /// <param name="pixels">The frame.</param>
+    public void Advance(ImageEntry entry, byte[] pixels) => _images.Rewrite(entry.Image, pixels);
+
+    /// <summary>
+    /// Ends the playing of an animation that played the plays its file asks for: the decoder goes, and the entry is the still
+    /// image of its last frame, counted as one ("Animations in the cache").
+    /// </summary>
+    /// <param name="entry">The animation's entry.</param>
+    public void EndPlaying(ImageEntry entry)
+    {
+        entry.Playback!.Close();
+        entry.Playback = null;
+        _images.DropPixels(entry.Image);
+        long bytes = (long)entry.Width * entry.Height * 4;
+        if (entry.Counted)
+        {
+            CountedBytes += bytes - entry.Bytes;
+        }
+
+        entry.Bytes = bytes;
+    }
+
+    /// <summary>
+    /// Fails an animation whose next frame could not be decoded ("Untrusted input"): the decoder and the image go, the entry is
+    /// forgotten as a decode that failed is, and the elements that showed it show their error parts.
+    /// </summary>
+    /// <param name="entry">The animation's entry.</param>
+    /// <param name="showing">The elements that show it.</param>
+    public void FailPlaying(ImageEntry entry, List<ImageBlock> showing)
+    {
+        entry.Playback!.Close();
+        entry.Playback = null;
+        if (entry.Counted)
+        {
+            Uncount(entry);
+        }
+
+        _images.Release(entry.Image);
+        entry.Image = default;
+        entry.State = ImageEntryState.Failed;
+        Forget(entry);
+
+        // From the end: an element's error part can run the app's code, which can dispose other elements, and those do not touch
+        // the list of a playing that is closed.
+        for (int i = showing.Count - 1; i >= 0; i--)
+        {
+            showing[i].Failed(entry);
+        }
+    }
+
+    /// <summary>
     /// Gives an element the entry of a key and counts the element in it ("An element asks for a key"). An entry that is
     /// <see cref="ImageEntryState.Ready"/> is shown at once; for one that is <see cref="ImageEntryState.Decoding"/> the element
     /// waits, and <see cref="ImageBlock.Completed"/> tells it the result; one that is <see cref="ImageEntryState.Failed"/> is not
@@ -130,7 +240,7 @@ internal sealed class WindowImageCache
         Decodes++;
         if (context is null)
         {
-            Finish(entry, ImageDecodeQueue.Decode(key.Source, key.Width, key.Height));
+            Finish(entry, ImageDecodeQueue.Decode(key.Source, key.Width, key.Height), null);
             return entry;
         }
 
@@ -237,6 +347,7 @@ internal sealed class WindowImageCache
         }
 
         _outside.Clear();
+        _drawn.Clear();
         _oldest = null;
         _newest = null;
         CountedCount = 0;
@@ -249,11 +360,12 @@ internal sealed class WindowImageCache
     {
         if (request.Entry is not { } entry || !ReferenceEquals(entry.Request, request))
         {
+            request.Result.Frames?.Dispose();
             return;
         }
 
         entry.Request = null;
-        Finish(entry, request.Result);
+        Finish(entry, request.Result, request.Context);
         ImageBlock? block = entry.FirstWaiting;
         entry.FirstWaiting = null;
         entry.LastWaiting = null;
@@ -268,7 +380,7 @@ internal sealed class WindowImageCache
     }
 
     // "A decode ends" and "A decode fails".
-    private void Finish(ImageEntry entry, ImageResult result)
+    private void Finish(ImageEntry entry, ImageResult result, SynchronizationContext? context)
     {
         if (result.Pixels is null)
         {
@@ -277,9 +389,26 @@ internal sealed class WindowImageCache
             return;
         }
 
+        // An animation plays where a loop runs and the tree's images play; elsewhere its first frame is a still image.
+        IAnimationFrames? frames = result.Frames;
+        if (frames is not null && (context is null || !_tree.AnimatesImages))
+        {
+            frames.Dispose();
+            frames = null;
+        }
+
+        // An animation counts for what it holds ("The bytes counted"): the texture and the buffer it uploads from, the decoder's
+        // canvases, and the file's bytes when the decode read them.
         long bytes = (long)result.Width * result.Height * 4;
+        if (frames is not null)
+        {
+            bytes = (bytes * 2) + frames.HeldBytes + result.SourceBytes;
+        }
+
         if (entry.Elements == 0 && !(entry.Indexed && Fits(bytes)))
         {
+            frames?.Dispose();
+
             // No element shows it and the counted set does not take it, so it would be released at once: the pixels are dropped.
             if (entry.Indexed)
             {
@@ -296,6 +425,11 @@ internal sealed class WindowImageCache
         entry.Height = result.Height;
         entry.Bytes = bytes;
         entry.State = ImageEntryState.Ready;
+        if (frames is not null)
+        {
+            entry.Playback = new ImagePlayback(this, entry, frames, result.Pixels, result.Duration, context!);
+        }
+
         if (entry.Indexed)
         {
             Check(entry);
@@ -424,6 +558,8 @@ internal sealed class WindowImageCache
     // Releases the image of an entry that is ready, and takes the entry out of the index or the list outside it.
     private void Release(ImageEntry entry)
     {
+        entry.Playback?.Close();
+        entry.Playback = null;
         _images.Release(entry.Image);
         entry.Image = default;
         entry.State = ImageEntryState.Gone;
@@ -453,6 +589,8 @@ internal sealed class WindowImageCache
         }
         else if (entry.State == ImageEntryState.Ready)
         {
+            entry.Playback?.Close();
+            entry.Playback = null;
             _images.Release(entry.Image);
             entry.Image = default;
         }

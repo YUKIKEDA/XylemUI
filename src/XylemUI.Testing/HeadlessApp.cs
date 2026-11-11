@@ -58,6 +58,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             Tree = new UiTree(_text);
             Tree.Animations.ReduceMotion = options.ReduceMotion;
             Tree.Clipboard = Clipboard;
+            Tree.AnimatesImages = options.ImageAnimation;
             Ime = new HeadlessIme(this);
             Tree.SetTextInput(Ime);
             Tree.SetTextEditing(
