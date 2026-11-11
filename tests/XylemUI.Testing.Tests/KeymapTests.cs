@@ -245,8 +245,8 @@ public sealed class KeymapTests
         app.Time.Advance(TimeSpan.FromMilliseconds(999));
         Assert.Empty(log);
         app.Time.Advance(TimeSpan.FromMilliseconds(1));
-        _ = app.PumpAndSettle();
         Assert.Equal(["pick"], log);
+        _ = app.PumpAndSettle();
         Assert.Equal(0, app.Input.PendingKeyCount);
 
         log.Clear();
@@ -256,9 +256,9 @@ public sealed class KeymapTests
 
         log.Clear();
         Assert.True(app.Keyboard.Press(Key.J, KeyModifiers.Control));
-        app.Time.Advance(WindowInput.PendingKeysDelay);
-        _ = app.PumpAndSettle();
+        app.Time.Advance(TimeSpan.FromSeconds(1));
         Assert.Equal(["key J"], log);
+        _ = app.PumpAndSettle();
     }
 
     /// <summary>
