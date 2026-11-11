@@ -5,7 +5,8 @@ namespace XylemUI.Imaging;
 /// <summary>
 /// Reads an image from its bytes to premultiplied blue, green, red, and alpha (design §5.0.4, "Decoders"): PNG, GIF (its first frame),
 /// and BMP with Wuffs, JPEG with libjpeg-turbo, WebP with libwebp, through the C shim, and ICO through <see cref="Ico"/>. A JPEG
-/// is turned by its EXIF orientation (<see cref="Exif"/>). A PNG's checksums are checked, and a 12-bit JPEG is not read (IM1's
+/// is turned by its EXIF orientation (<see cref="Exif"/>). An animated WebP is not read here: <see cref="ImageAnimation"/> gives
+/// the frames of an animated GIF or WebP. A PNG's checksums are checked, and a 12-bit JPEG is not read (IM1's
 /// Grill, Q4 and Q5).
 /// </summary>
 /// <remarks>

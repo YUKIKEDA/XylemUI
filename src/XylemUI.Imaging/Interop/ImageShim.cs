@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace XylemUI.Imaging.Interop;
 
 /// <summary>
-/// The two functions of the image decoders' C shim (<c>native/imaging/xylemui_image.c</c>, design §5.0.4): Wuffs for PNG, GIF, and
+/// The functions of the image decoders' C shim (<c>native/imaging/xylemui_image.c</c>, design §5.0.4): Wuffs for PNG, GIF, and
 /// BMP, libjpeg-turbo for JPEG, and libwebp for WebP. The shim is linked into a NativeAOT executable and loaded as
 /// <c>xylemui_image.dll</c> under the JIT, from these same declarations (design §9).
 /// </summary>
@@ -12,7 +12,8 @@ internal static unsafe partial class ImageShim
     /// <summary>The shim read or decoded the image.</summary>
     public const int Ok = 0;
 
-    /// <summary>The bytes are no format the shim reads, or a form of one it does not read (a 12-bit JPEG, an animated WebP).</summary>
+    /// <summary>The bytes are no format the shim reads, or a form of one it does not read (a 12-bit JPEG; an animated WebP asked for
+    /// as a still image, whose frames <see cref="AnimationNext"/> gives).</summary>
     public const int Unsupported = 1;
 
     /// <summary>The bytes are broken: a decoder refused them.</summary>
