@@ -114,6 +114,69 @@ public sealed class TextureCacheTests
     }
 
     /// <summary>
+    /// An image that is rewritten is queued once for its upload and keeps its pixels past it, for the next frame of an animation
+    /// to be written into; an upload that waits can be withdrawn; and the kept pixels can be dropped, at once or after the upload
+    /// that waits (design §5.0.4, "Owner and lifetime").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A cache with one 2 x 1 image whose upload was taken.
+    ///
+    /// Steps:
+    /// - Rewrite it twice with one array, take the uploads, and withdraw. Rewrite and withdraw twice. Rewrite, drop the pixels,
+    ///   and take the uploads. Rewrite, take the uploads, and drop the pixels. Rewrite with 4 bytes, and with null. Release the
+    ///   image; rewrite, withdraw, and drop.
+    ///
+    /// Expected:
+    /// - The image is queued once, and the slot holds the array after the upload; nothing is there to withdraw. A waiting upload
+    ///   is withdrawn once and the queue is empty. Pixels dropped while an upload waits go with the upload, and at once
+    ///   otherwise. The wrong length throws ArgumentException and null ArgumentNullException. On a released image, rewriting
+    ///   fails the invariant, withdrawing returns false, and dropping does nothing.
+    /// </remarks>
+    [Fact]
+    public void Rewrite_QueuesTheImageAgain_AndKeepsItsPixelsPastTheUpload()
+    {
+        var cache = new TextureCache();
+        ImageHandle image = cache.Add(2, 1, new byte[8]);
+        cache.TakeUploads();
+        byte[] next = new byte[8];
+
+        cache.Rewrite(image, next);
+        cache.Rewrite(image, next);
+        Assert.Equal([image.Index], cache.PendingUploads.ToArray());
+        cache.TakeUploads();
+        _ = cache.GetSlot(image.Index, out _, out _, out byte[]? kept);
+        Assert.Same(next, kept);
+        Assert.False(cache.Withdraw(image));
+
+        cache.Rewrite(image, next);
+        Assert.True(cache.Withdraw(image));
+        Assert.Equal(0, cache.PendingUploads.Length);
+        Assert.False(cache.Withdraw(image));
+
+        cache.Rewrite(image, next);
+        cache.DropPixels(image);
+        _ = cache.GetSlot(image.Index, out _, out _, out byte[]? waiting);
+        Assert.Same(next, waiting);
+        cache.TakeUploads();
+        _ = cache.GetSlot(image.Index, out _, out _, out byte[]? dropped);
+        Assert.Null(dropped);
+
+        cache.Rewrite(image, next);
+        cache.TakeUploads();
+        cache.DropPixels(image);
+        _ = cache.GetSlot(image.Index, out _, out _, out byte[]? droppedAtOnce);
+        Assert.Null(droppedAtOnce);
+
+        _ = Assert.Throws<ArgumentException>(() => cache.Rewrite(image, new byte[4]));
+        _ = Assert.Throws<ArgumentNullException>(() => cache.Rewrite(image, null!));
+        cache.Release(image);
+        _ = Assert.Throws<InvariantViolationException>(() => cache.Rewrite(image, next));
+        Assert.False(cache.Withdraw(image));
+        cache.DropPixels(image);
+    }
+
+    /// <summary>
     /// The arguments of Add are checked: the pixels, a side from 1 to the longest, and 4 bytes a pixel.
     /// </summary>
     /// <remarks>

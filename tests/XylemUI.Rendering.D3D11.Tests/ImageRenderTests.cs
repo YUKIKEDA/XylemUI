@@ -259,6 +259,54 @@ public sealed class ImageRenderTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// An image that is given new pixels keeps its texture: the pixels are written into it and its mipmaps are made again, so the
+    /// same handle draws the new pixels at its own size and shrunk (design §5.0.4, "Textures": an animation's next frame).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An offscreen WARP renderer, a texture cache, and a display list at scale 1.
+    ///
+    /// Steps:
+    /// - Add a 16 x 16 red image and draw it at (10, 10) at its size and at (40, 10) at 4 x 4. Rewrite it with blue pixels and
+    ///   draw the same two; rewrite it with green pixels, withdraw the upload, and draw again.
+    ///
+    /// Expected:
+    /// - The first frame shows red at both places and the second blue at both, the shrunk one read from the mipmaps made again.
+    ///   The renderer holds one texture throughout and uploaded twice. The withdrawn upload is not taken: the third frame still
+    ///   shows blue, with two uploads.
+    /// </remarks>
+    [Fact]
+    public void Image_Rewritten_KeepsItsTexture_AndShowsTheNewPixels() =>
+        ui.Invoke(() =>
+        {
+            using D3D11Renderer renderer = D3D11Renderer.CreateOffscreen(Width, Height);
+            var cache = new TextureCache();
+            var part = new Vector4(0, 0, 16, 16);
+            ImageHandle image = cache.Add(16, 16, Pixels(16, 16, (_, _) => Red));
+            void Write(DisplayList list)
+            {
+                list.DrawImage(10, 10, 16, 16, image, part);
+                list.DrawImage(40, 10, 4, 4, image, part);
+            }
+
+            Color[] frame = Draw(renderer, cache, Write);
+            AssertNear(Red, frame[(18 * Width) + 18], 1, 18, 18);
+            AssertNear(Red, frame[(12 * Width) + 42], 1, 42, 12);
+
+            cache.Rewrite(image, Pixels(16, 16, (_, _) => Blue));
+            frame = Draw(renderer, cache, Write);
+            AssertNear(Blue, frame[(18 * Width) + 18], 1, 18, 18);
+            AssertNear(Blue, frame[(12 * Width) + 42], 1, 42, 12);
+            Assert.Equal((1, 2), (renderer.ImageTextureCount, renderer.ImageUploads));
+
+            cache.Rewrite(image, Pixels(16, 16, (_, _) => Green));
+            Assert.True(cache.Withdraw(image));
+            frame = Draw(renderer, cache, Write);
+            AssertNear(Blue, frame[(18 * Width) + 18], 1, 18, 18);
+            Assert.Equal((1, 2), (renderer.ImageTextureCount, renderer.ImageUploads));
+        });
+
+    /// <summary>
     /// Drawing a released image, or a part of an image outside it, is a bug of the list's writer and fails the invariant (IM1's
     /// Grill, Q21), and a list with images drawn without the cache they are in is refused.
     /// </summary>
