@@ -63,4 +63,11 @@ public sealed record HeadlessOptions
     /// (<c>SPI_GETKEYBOARDCUES</c>) says (design §13.1, "Access keys"); <see langword="false"/> by default, as Windows' is.
     /// </summary>
     public bool KeyboardCues { get; init; }
+
+    /// <summary>
+    /// Gets the keymap of the app's window (design §7, "Shortcuts and actions"); <see langword="null"/>, the default, gives the app
+    /// an empty keymap of its own, so that the rows a test adds do not reach another test. A test of an app's own rows passes
+    /// <see cref="XylemUI.Keymap.Default"/>.
+    /// </summary>
+    public Keymap? Keymap { get; init; }
 }

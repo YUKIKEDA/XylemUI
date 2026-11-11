@@ -37,6 +37,12 @@ internal sealed class NodeInput
     public ActionHandlerEntry[] ActionHandlers { get; private set; } = [];
 
     /// <summary>
+    /// Gets or sets what the node calls itself for the key bindings (design §7, "Shortcuts and actions"); <see langword="null"/>
+    /// for a node with no context.
+    /// </summary>
+    public KeyContext? KeyContext { get; internal set; }
+
+    /// <summary>
     /// Gets or sets the cursor over the node and its descendants that set none; <see langword="null"/> for none.
     /// </summary>
     public CursorKind? Cursor { get; internal set; }

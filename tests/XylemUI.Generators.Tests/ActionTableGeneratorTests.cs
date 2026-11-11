@@ -241,7 +241,8 @@ public sealed class ActionTableGeneratorTests
     /// - Run the generator on each; compile the first.
     ///
     /// Expected:
-    /// - The first: no diagnostic, no compiler error, and the table registers <c>demo::Jump</c> with <c>new global::Jump()</c>. The
+    /// - The first: no diagnostic, no compiler error, and the table registers <c>demo::Jump</c> with <c>new global::Jump()</c> and
+    ///   the setter of its init-only property. The
     ///   second: one XYLEM002 at the record, and no generated source.
     /// </remarks>
     [Fact]
@@ -255,7 +256,7 @@ public sealed class ActionTableGeneratorTests
         Assert.Empty(jump.GeneratorDiagnostics);
         Assert.Empty(jump.CompilerErrors);
         Assert.Contains(
-            "Register<global::Jump>(\"demo::Jump\", static () => new global::Jump());",
+            "Register<global::Jump>(\"demo::Jump\", static () => new global::Jump(), Set0);",
             Assert.Single(jump.Sources),
             StringComparison.Ordinal
         );
@@ -303,6 +304,104 @@ public sealed class ActionTableGeneratorTests
         Assert.Contains("Demo.Second", message, StringComparison.Ordinal);
 
         Assert.Empty(Run("Demo.One", OutputKind.ConsoleApplication, App, first).GeneratorDiagnostics);
+    }
+
+    /// <summary>
+    /// An action whose properties can be set gets a method that sets them from text: a record's init-only properties with a
+    /// <c>with</c> expression, a class's settable ones by assignment; an action with none gets no such method.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library with a record <c>Jump</c> (init-only <c>Line</c>, an int, and <c>Mode</c>, an enum of <c>Fast</c> and
+    ///   <c>Slow</c>), a class <c>Scroll</c> (settable <c>Lines</c>, a double; a read-only <c>Kind</c>; a private-set
+    ///   <c>Hidden</c>), and a class <c>Plain</c> with no property.
+    ///
+    /// Steps:
+    /// - Run the generator; compile the result.
+    ///
+    /// Expected:
+    /// - No diagnostic and no compiler error. <c>Jump</c> and <c>Scroll</c> are registered with a setter and <c>Plain</c>
+    ///   without. The source has <c>action = action with { Line = parsed };</c>, <c>parsed = global::Mode.Fast;</c>,
+    ///   <c>action.Lines = parsed;</c>, and reads the numbers with the invariant culture; it mentions neither <c>Kind</c> nor
+    ///   <c>Hidden</c>.
+    /// </remarks>
+    [Fact]
+    public void Action_WithPropertiesThatCanBeSet_GetsASetterFromText()
+    {
+        const string Source = """
+            using XylemUI;
+
+            public enum Mode { Fast, Slow }
+
+            [Action("demo::Jump")]
+            public sealed record Jump : IAction
+            {
+                public int Line { get; init; }
+                public Mode Mode { get; init; }
+            }
+
+            [Action("demo::Scroll")]
+            public sealed class Scroll : IAction
+            {
+                public double Lines { get; set; }
+                public string Kind => "scroll";
+                public int Hidden { get; private set; }
+            }
+
+            [Action("demo::Plain")]
+            public sealed class Plain : IAction;
+            """;
+
+        Result result = Run("Demo.Lib", OutputKind.DynamicallyLinkedLibrary, Source);
+
+        Assert.Empty(result.GeneratorDiagnostics);
+        Assert.Empty(result.CompilerErrors);
+        string table = Assert.Single(result.Sources);
+        Assert.Contains("Register<global::Jump>(\"demo::Jump\", static () => new global::Jump(), Set0);", table, StringComparison.Ordinal);
+        Assert.Contains("Register<global::Plain>(\"demo::Plain\", static () => new global::Plain());", table, StringComparison.Ordinal);
+        Assert.Contains("Register<global::Scroll>(\"demo::Scroll\", static () => new global::Scroll(), Set2);", table, StringComparison.Ordinal);
+        Assert.Contains("action = action with { Line = parsed };", table, StringComparison.Ordinal);
+        Assert.Contains("parsed = global::Mode.Fast;", table, StringComparison.Ordinal);
+        Assert.Contains("action.Lines = parsed;", table, StringComparison.Ordinal);
+        Assert.Contains("global::System.Globalization.CultureInfo.InvariantCulture", table, StringComparison.Ordinal);
+        Assert.DoesNotContain("Kind", table, StringComparison.Ordinal);
+        Assert.DoesNotContain("Hidden", table, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A property that can be set and that an argument cannot give is a warning at the action, and the action is registered
+    /// without it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library with one action, for each row: a class with a settable property of a type no argument is written in
+    ///   (<c>System.DateTime</c>); a class with an init-only int (only a record's can be set with <c>with</c>).
+    ///
+    /// Steps:
+    /// - Run the generator on each.
+    ///
+    /// Expected:
+    /// - One XYLEM006 of severity Warning that names the property; the action is registered with no setter.
+    /// </remarks>
+    /// <param name="property">The property's declaration.</param>
+    [Theory]
+    [InlineData("public System.DateTime When { get; set; }")]
+    [InlineData("public int When { get; init; }")]
+    public void Property_AnArgumentCannotGive_IsAWarning(string property)
+    {
+        string source = "using XylemUI;\n[Action(\"demo::Zap\")] public sealed class Zap : IAction { " + property + " }";
+
+        Result result = Run("Demo.Lib", OutputKind.DynamicallyLinkedLibrary, source);
+
+        Diagnostic diagnostic = Assert.Single(result.GeneratorDiagnostics);
+        Assert.Equal("XYLEM006", diagnostic.Id);
+        Assert.Equal(DiagnosticSeverity.Warning, diagnostic.Severity);
+        Assert.Contains("Zap.When", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Contains(
+            "Register<global::Zap>(\"demo::Zap\", static () => new global::Zap());",
+            Assert.Single(result.Sources),
+            StringComparison.Ordinal
+        );
     }
 
     /// <summary>

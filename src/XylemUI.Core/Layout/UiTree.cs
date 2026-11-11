@@ -87,6 +87,22 @@ internal sealed class UiTree
     internal ActionDispatch Actions { get; }
 
     /// <summary>
+    /// Gets or sets the keymap the keys of the tree's window are looked up in (design §7, "Shortcuts and actions"): the app's,
+    /// unless a test gives the window its own.
+    /// </summary>
+    internal Keymap Keymap
+    {
+        get;
+        set
+        {
+            field = value;
+
+            // The rows a reader found are another keymap's now.
+            Actions.AvailabilityChanged();
+        }
+    } = Keymap.Default;
+
+    /// <summary>
     /// Gets or sets the node a key and an action are routed from while no node has the focus, when it is alive; the root
     /// otherwise. A window sets it to the node its root function returned, which is a child of the window's own root: a handler
     /// the app adds to its root is then on the route with no focus (design §7, "Shortcuts and actions").
@@ -1319,6 +1335,31 @@ internal sealed class UiTree
     {
         ArgumentNullException.ThrowIfNull(handler);
         return Nodes.GetRef(node).Input is { } input && input.Remove(kind, phase, handler);
+    }
+
+    /// <summary>
+    /// Sets what a node calls itself for the key bindings (design §7, "Shortcuts and actions").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="context">The context, as <c>Editor mode = full</c>; <see langword="null"/> or empty for none.</param>
+    /// <exception cref="FormatException">The text is not a context.</exception>
+    public void SetKeyContext(NodeHandle node, string? context)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+        {
+            if (Nodes.GetRef(node).Input is { KeyContext: not null } input)
+            {
+                input.KeyContext = null;
+                Actions.AvailabilityChanged();
+            }
+
+            return;
+        }
+
+        InputOf(node).KeyContext = KeyContext.Parse(context);
+
+        // The rows whose conditions hold at the focus may be others now (KeyBindingFor).
+        Actions.AvailabilityChanged();
     }
 
     /// <summary>

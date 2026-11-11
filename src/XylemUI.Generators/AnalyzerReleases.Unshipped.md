@@ -10,3 +10,4 @@ XYLEM002 | XylemUI | Error | An action has no constructor without parameters
 XYLEM003 | XylemUI | Error | Two actions have one name
 XYLEM004 | XylemUI | Error | An action's name is empty
 XYLEM005 | XylemUI | Error | An action's type cannot be named from the table
+XYLEM006 | XylemUI | Warning | An action's property cannot be given by name

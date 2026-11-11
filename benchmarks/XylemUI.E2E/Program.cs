@@ -63,6 +63,8 @@
 //                              WindowFrames, the path of an app (row R3)
 //   actions                    an action made by its name from the generated table, and the cost of dispatching it through
 //                              chains of boxes 1 and 50 deep (row KM1a, ActionCost.cs)
+//   keymap                     a key through the chain of 50 boxes with no row in the keymap, with 200 rows it does not match,
+//                              and with a row it matches (row KM1b, KeymapCost.cs)
 //   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
 //                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2;
 //                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
@@ -122,6 +124,7 @@ return scenario switch
     "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit")),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),
+    "keymap" => KeymapCost.Run(),
     "menubar" => MenuBarCost.Run(),
     "dragdrop" => DragDropCost.Run(),
     "tooltip" => TooltipCost.Run(),
