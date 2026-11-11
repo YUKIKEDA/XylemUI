@@ -195,6 +195,68 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The root function runs with the UI thread's synchronization context, the one the message loop runs with: an element it
+    /// makes that keeps the context (an image, whose decode's result is posted to it, design §5.0.4, "Decoding threads") has the
+    /// loop's, as an element made later has (Issue #785).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The thread has no synchronization context, as an app's <c>Main</c> has none. The message loop's iteration hook reads the
+    ///   context at its first iteration, asks the window to close, and quits after 5 s.
+    ///
+    /// Steps:
+    /// - Run the app with a root function that reads the current context.
+    ///
+    /// Expected:
+    /// - The root function's context is the loop's, and not null. After the run the thread has none again.
+    /// </remarks>
+    [Fact]
+    public void Run_RootFunction_HasTheLoopsSynchronizationContext() =>
+        ui.Invoke(() =>
+        {
+            SynchronizationContext? before = SynchronizationContext.Current;
+            SynchronizationContext? inRoot = null;
+            SynchronizationContext? inLoop = null;
+            SynchronizationContext? after;
+            using var watchdog = new LoopWatchdog();
+            Win32MessageLoop.IterationHook = () =>
+            {
+                inLoop ??= SynchronizationContext.Current;
+                if (watchdog.Expired)
+                {
+                    Win32MessageLoop.Quit(1);
+                    return;
+                }
+
+                AskToClose("Run context test");
+            };
+
+            SynchronizationContext.SetSynchronizationContext(null);
+            try
+            {
+                _ = XylemApp.Run(
+                    () =>
+                    {
+                        inRoot = SynchronizationContext.Current;
+                        return Elements.Box();
+                    },
+                    new WindowOptions("Run context test", 100, 80)
+                );
+                after = SynchronizationContext.Current;
+            }
+            finally
+            {
+                Win32MessageLoop.IterationHook = null;
+                SynchronizationContext.SetSynchronizationContext(before);
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.NotNull(inRoot);
+            Assert.Same(inLoop, inRoot);
+            Assert.Null(after);
+        });
+
+    /// <summary>
     /// A loop that the app ended with its window open (<c>Win32MessageLoop.Quit</c>) does not keep the next <c>XylemApp.Run</c> from
     /// running: the run counts no window of the one before (PR #340's review).
     /// </summary>
