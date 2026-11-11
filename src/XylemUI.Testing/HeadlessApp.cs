@@ -730,6 +730,7 @@ public sealed class HeadlessApp : IAsyncDisposable
                     }
 
                     Tree.AppendChild(_rootNode, content.Node);
+                    Tree.KeyRoot = content.Node;
                 },
                 "HeadlessApp.StartAsync"
             );

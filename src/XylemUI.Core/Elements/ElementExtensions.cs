@@ -1025,6 +1025,73 @@ public static partial class ElementExtensions
         }
     }
 
+    /// <summary>
+    /// Adds a handler of an action, in a phase of its route from the focused node (design §7, "Shortcuts and actions"). It runs in
+    /// the current scope; once the scope is disposed it is not called, and the handler is removed (design §2.13).
+    /// </summary>
+    /// <typeparam name="TAction">The type of the action; a handler is called for that type only, not for a type derived from it.</typeparam>
+    /// <param name="element">The node.</param>
+    /// <param name="handler">
+    /// The handler. In the bubble phase a handler that returns has handled the action, and
+    /// <see cref="ActionEvent{TAction}.Propagate"/> passes it on to the node's ancestors.
+    /// </param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    public static Element OnAction<TAction>(this Element element, ActionHandler<TAction> handler, EventPhase phase = EventPhase.Bubble)
+        where TAction : class, IAction
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        UiTree tree = element.TreeOrThrow();
+        NodeHandle node = element.Node;
+        RequireScope();
+        tree.AddActionHandler(node, phase, handler);
+        Scope.OnCleanup(() =>
+        {
+            if (tree.Nodes.IsAlive(node))
+            {
+                _ = tree.RemoveActionHandler(node, phase, handler);
+            }
+        });
+        return element;
+    }
+
+    /// <summary>
+    /// Dispatches an action in the element's window (design §7, "Shortcuts and actions"): it is routed from the focused node, or
+    /// from the root when no node has the focus, whichever element this is called on. A button, a menu item, and a command palette
+    /// ask for an action with it.
+    /// </summary>
+    /// <param name="element">A node of the window.</param>
+    /// <param name="action">The action.</param>
+    /// <returns>Whether a handler handled the action.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static bool Dispatch(this Element element, IAction action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        UiThread.VerifyAccess();
+        UiTree tree = element.TreeOrThrow();
+        return tree.Actions.Dispatch(tree.Focus.KeyTarget, action);
+    }
+
+    /// <summary>
+    /// Returns whether an action of a type would find a handler if it were dispatched now in the element's window (design §7,
+    /// "Shortcuts and actions"): a node on the route from the focused node has a handler for it and is not disabled. Read in a
+    /// computation, it is read again when the focus moves, or a handler, a node's disabled state, or the window's activation
+    /// changes; a menu item reads it to show itself enabled.
+    /// </summary>
+    /// <typeparam name="TAction">The type of the action.</typeparam>
+    /// <param name="element">A node of the window.</param>
+    /// <returns>Whether a handler would be called.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static bool CanDispatch<TAction>(this Element element)
+        where TAction : class, IAction
+    {
+        UiThread.VerifyAccess();
+        UiTree tree = element.TreeOrThrow();
+        tree.Actions.TrackAvailability();
+        return tree.Actions.IsAvailable(tree.Focus.KeyTarget, typeof(TAction));
+    }
+
     private static void RequireScope()
     {
         if (Scope.CurrentRef.IsNone)
