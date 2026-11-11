@@ -68,6 +68,15 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    private static readonly DiagnosticDescriptor UnsupportedArgument = new(
+        "XYLEM006",
+        "The action's property cannot be given by name",
+        "'{0}.{1}' can be set and its type is none an argument can be written in (int, long, float, double, bool, string, or an enum), or it is init-only on a class that is no record; the action made by its name keeps the property's default",
+        "XylemUI",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true
+    );
+
     /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -104,6 +113,55 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 && (ReferenceEquals(t, type) || !t.IsGenericType);
         }
 
+        var arguments = ImmutableArray.CreateBuilder<ArgumentInfo>();
+        var unsupported = ImmutableArray.CreateBuilder<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (INamedTypeSymbol? t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+        {
+            foreach (IPropertySymbol property in t.GetMembers().OfType<IPropertySymbol>())
+            {
+                // The properties code outside the type can set: those are the action's arguments.
+                if (
+                    property.IsStatic
+                    || property.IsIndexer
+                    || property.DeclaredAccessibility != Accessibility.Public
+                    || property.SetMethod is not { DeclaredAccessibility: Accessibility.Public } setter
+                    || !seen.Add(property.Name)
+                )
+                {
+                    continue;
+                }
+
+                // An init-only property is set with a `with` expression, which only a record has.
+                bool useWith = setter.IsInitOnly;
+                string? kind = ArgumentKind(property.Type);
+                if (kind is null || (useWith && !type.IsRecord))
+                {
+                    unsupported.Add(property.Name);
+                    continue;
+                }
+
+                ImmutableArray<string> members =
+                    property.Type.TypeKind == TypeKind.Enum
+                        ? property
+                            .Type.GetMembers()
+                            .OfType<IFieldSymbol>()
+                            .Where(static f => f.HasConstantValue)
+                            .Select(static f => f.Name)
+                            .ToImmutableArray()
+                        : ImmutableArray<string>.Empty;
+                arguments.Add(
+                    new ArgumentInfo(
+                        property.Name,
+                        kind,
+                        property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        new EquatableArray<string>(members),
+                        useWith
+                    )
+                );
+            }
+        }
+
         Location? location = type.Locations.FirstOrDefault();
         return new ActionInfo(
             name,
@@ -112,9 +170,26 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             isAction,
             hasConstructor,
             reachable,
+            new EquatableArray<ArgumentInfo>(arguments.ToImmutable()),
+            new EquatableArray<string>(unsupported.ToImmutable()),
             location is null ? null : LocationInfo.From(location)
         );
     }
+
+    // The kind of a property's type an argument can be written in; null for the others.
+    private static string? ArgumentKind(ITypeSymbol type) =>
+        type.TypeKind == TypeKind.Enum
+            ? "enum"
+            : type.SpecialType switch
+            {
+                SpecialType.System_Int32 => "int",
+                SpecialType.System_Int64 => "long",
+                SpecialType.System_Single => "float",
+                SpecialType.System_Double => "double",
+                SpecialType.System_Boolean => "bool",
+                SpecialType.System_String => "string",
+                _ => null,
+            };
 
     private static AssemblyInfo ReadAssembly(Compilation compilation)
     {
@@ -203,6 +278,11 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 continue;
             }
 
+            foreach (string property in action.Unsupported)
+            {
+                output.ReportDiagnostic(Diagnostic.Create(UnsupportedArgument, location, action.DisplayName, property));
+            }
+
             byName.Add(action.Name, action.DisplayName);
             valid.Add(action);
         }
@@ -241,10 +321,22 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 _ = text.Append(SymbolDisplay.FormatLiteral(action.Name, quote: true))
                     .Append(", static () => new ")
                     .Append(action.TypeName)
-                    .Append("());\n");
+                    .Append(
+                        action.Arguments.Count > 0
+                            ? "(), Set" + valid.IndexOf(action).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");\n"
+                            : "());\n"
+                    );
             }
 
             _ = text.Append("        }\n");
+        }
+
+        for (int i = 0; i < valid.Count; i++)
+        {
+            if (valid[i].Arguments.Count > 0)
+            {
+                WriteSetter(text, valid[i], i);
+            }
         }
 
         if (assembly.IsApp)
@@ -273,6 +365,78 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         output.AddSource("XylemUI.Actions.g.cs", text.ToString());
     }
 
+    // The method that sets an action's property from an argument's name and its text. The name is compared without case; a
+    // value that is not of the property's type, and a name that is no property, give false.
+    private static void WriteSetter(StringBuilder text, ActionInfo action, int index)
+    {
+        const string Span = "global::System.ReadOnlySpan<char>";
+        const string Same = ", global::System.StringComparison.OrdinalIgnoreCase)";
+        const string Culture = "global::System.Globalization.CultureInfo.InvariantCulture";
+        _ = text.Append("\n        private static bool Set").Append(index).Append("(ref ").Append(action.TypeName);
+        _ = text.Append(" action, ").Append(Span).Append(" name, ").Append(Span).Append(" value)\n        {\n");
+        foreach (ArgumentInfo argument in action.Arguments)
+        {
+            _ = text.Append("            if (global::System.MemoryExtensions.Equals(name, ");
+            _ = text.Append(SymbolDisplay.FormatLiteral(argument.Name, quote: true)).Append(Same).Append(")\n            {\n");
+            string parsed = "parsed";
+            switch (argument.Kind)
+            {
+                case "string":
+                    parsed = "value.ToString()";
+                    break;
+                case "bool":
+                    _ = text.Append(
+                        "                if (!bool.TryParse(value, out bool parsed))\n                {\n                    return false;\n                }\n\n"
+                    );
+                    break;
+                case "enum":
+                    _ = text.Append("                ").Append(argument.TypeName).Append(" parsed;\n");
+                    string keyword = "if";
+                    foreach (string member in argument.Members)
+                    {
+                        _ = text.Append("                ").Append(keyword).Append(" (global::System.MemoryExtensions.Equals(value, ");
+                        _ = text.Append(SymbolDisplay.FormatLiteral(member, quote: true)).Append(Same).Append(")\n                {\n");
+                        _ = text.Append("                    parsed = ")
+                            .Append(argument.TypeName)
+                            .Append('.')
+                            .Append(member)
+                            .Append(";\n                }\n");
+                        keyword = "else if";
+                    }
+
+                    _ = text.Append(
+                        argument.Members.Count > 0
+                            ? "                else\n                {\n                    return false;\n                }\n\n"
+                            : "                return false;\n"
+                    );
+                    break;
+                default:
+                    string styles = argument.Kind is "int" or "long" ? "Integer" : "Float";
+                    _ = text.Append("                if (!")
+                        .Append(argument.Kind)
+                        .Append(".TryParse(value, global::System.Globalization.NumberStyles.");
+                    _ = text.Append(styles).Append(", ").Append(Culture).Append(", out ").Append(argument.Kind);
+                    _ = text.Append(" parsed))\n                {\n                    return false;\n                }\n\n");
+                    break;
+            }
+
+            if (argument.Kind == "enum" && argument.Members.Count == 0)
+            {
+                _ = text.Append("            }\n\n");
+                continue;
+            }
+
+            _ = text.Append(
+                argument.UseWith
+                    ? "                action = action with { " + argument.Name + " = " + parsed + " };\n"
+                    : "                action." + argument.Name + " = " + parsed + ";\n"
+            );
+            _ = text.Append("                return true;\n            }\n\n");
+        }
+
+        _ = text.Append("            return false;\n        }\n");
+    }
+
     // The assembly's name as a C# identifier: the table of each assembly has its own type name.
     private static string Identifier(string assemblyName)
     {
@@ -297,8 +461,12 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         bool IsAction,
         bool HasConstructor,
         bool Reachable,
+        EquatableArray<ArgumentInfo> Arguments,
+        EquatableArray<string> Unsupported,
         LocationInfo? Location
     );
+
+    private sealed record ArgumentInfo(string Name, string Kind, string TypeName, EquatableArray<string> Members, bool UseWith);
 
     private sealed record TableInfo(string TypeName, string Assembly, EquatableArray<string> Names);
 

@@ -522,7 +522,7 @@ public sealed class ActionTests
     [Action("test::Generated")]
     internal sealed class GeneratedAction : IAction
     {
-        public int Amount { get; init; } = 7;
+        public int Amount { get; } = 7;
     }
 
     private class Save : IAction;

@@ -143,6 +143,30 @@ public sealed class Keymap
     }
 
     /// <summary>
+    /// Adds a row whose action is made by its name (design §7, "Actions with arguments made by name"), as a row of a user's
+    /// keymap file is.
+    /// </summary>
+    /// <param name="keystrokes">The keys, as <see cref="Bind"/> reads them.</param>
+    /// <param name="actionName">The name of the action, as <c>editor::GoToLine</c>.</param>
+    /// <param name="arguments">The action's arguments: the names of its properties and their values as text.</param>
+    /// <param name="context">The condition; <see langword="null"/> applies everywhere.</param>
+    /// <returns>The row.</returns>
+    /// <exception cref="FormatException">
+    /// The keys or the condition are not written in their text form, no action has the name, or an argument is not one of the
+    /// action's.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public KeyBinding BindByName(
+        string keystrokes,
+        string actionName,
+        ReadOnlySpan<KeyValuePair<string, string>> arguments = default,
+        string? context = null
+    ) =>
+        ActionRegistry.TryCreate(actionName, arguments, out IAction? action, out string? error)
+            ? Bind(keystrokes, action, context)
+            : throw new FormatException(error);
+
+    /// <summary>
     /// Takes a row out.
     /// </summary>
     /// <param name="binding">The row <see cref="Bind"/> returned.</param>
