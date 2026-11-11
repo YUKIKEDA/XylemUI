@@ -1286,7 +1286,7 @@ sequenceDiagram
     Paint->>Glyph: アトラスに無いグリフをワーカーで並べて描き、空けた場所を埋める（§5.0.3「初めて出るグリフ」）
     Glyph->>Dmg: 変更されたコマンドのold/new rectをunion
     Dmg->>GPU: dirtyが存在する場合のみ、DisplayList全体を線形に再構築しGPUへ発行（§5.0.1、部分パッチはしない）
-    GPU->>Win: SwapChain Present（バッファ全体、フリッカー回避のため部分Presentは行わない）
+    GPU->>Win: SwapChain Present（バッファ全体。部分 Present は行 R7 で決める、§5.0.1）
 ```
 
 変更のなかったノードはdirty subtreeフラグが立たないため、Layout/Materialization双方でスキップされる（§2.4）。DamageアキュムレータはGPU側の描画範囲を絞る用途ではなく、「そもそもこのフレームで再描画が必要か（フレームスキップ判定）」の用途に限定する。dirtyが存在する場合、DisplayList・頂点バッファは差分パッチではなく毎フレーム全体を線形に再構築する。入力のヒットテストは常に直近完成の `HitTestList` を使う。スクロール等で Transform だけが変わったフレームでも、次のポインタイベントより前に DisplayList と HitTestList を再構築する（§3.4.1、§7）。
@@ -3544,7 +3544,7 @@ public readonly ref struct DrawingScope : IDisposable { public void Dispose(); }
 - **ヒット領域と `DrawingContext`（R4e の Grill でオーナーが決定、Issue #272）:** GPUI・Flutter・Avalonia を読んで決めた（Issue #272 に行番号）
   - **書き方:** 描く関数は `DrawingContext.HitRegion` で当たりを明示する（GPUI の `insert_hitbox` と同じ形、`crates/gpui/src/window.rs` 5205 行目）。描いた命令から当たりを作らない（Avalonia は命令ごとに判定し、背景を描かない部品は当たらない）。レイアウトの矩形を当たりにもしない（Flutter の `CustomPainter.hitTest` の既定は矩形全体）。フレームワークの部品も、自分の箱（矩形と角の半径）を同じ `HitRegion` で書く
   - **書くノード:** ポインタのハンドラ・ホバー・カーソルを持つノードだけが書く（GPUI の `should_insert_hitbox`、`elements/div.rs` 2407〜2432 行目）。飾りのノードは後ろへのポインタを遮らない（GPUI と、Flutter の既定 `deferToChild`）。ハンドラが無くても遮る印（GPUI の `BlockMouse`、Flutter の `opaque`）は、V1c で `BlocksPointer` にした（§7「ポインタの入力」の「遮る印」）。逆に、ハンドラを持つノードの部分木を当たらなくする印は、P02d で `.HitTestVisible(false)` にした。印のあるノードの部分木では、どのノードも書かない（§7.3「後ろへ通す印」）。ホバーの見た目（`Hovered`・`Pressed` の `PaintStyle`）を持つノードも書く（GPUI の `should_insert_hitbox` も hover のスタイルで入れる）。capture と bubble の経路は、当たったノードから木の親をたどって作る
-  - **呼ぶ時機:** 利用者の描く関数は、表示リストを作るたびに呼ぶ（§5.0.1 の全体線形再構築。GPUI と同じ）。ヒット領域も表示リストと一緒に作り直す。無効にされたときだけ呼んで命令を取っておく形（Avalonia、Flutter の `markNeedsPaint`）は採らない。重い描画を取っておく仕組み（Flutter の `RepaintBoundary`）は、要るという数字が出たら行を立てる。どのノードの関数を呼ぶかの順と段は、§5.0「描画の段とフレームの駆動」で決めた（V1b の Grill、Issue #308）
+  - **呼ぶ時機:** 利用者の描く関数は、表示リストを作るたびに呼ぶ（§5.0.1 の全体線形再構築。GPUI と同じ）。ヒット領域も表示リストと一緒に作り直す。無効にされたときだけ呼んで命令を取っておく形（Avalonia、Flutter の `markNeedsPaint`）は採らない。変わらない部分木の描き直しを省く仕組み（Flutter の `RepaintBoundary`、GPUI の `reuse_paint`）は、行 R6 で測って決める（§5.0.1、D16 の Grill）。どのノードの関数を呼ぶかの順と段は、§5.0「描画の段とフレームの駆動」で決めた（V1b の Grill、Issue #308）
   - **クリップと変換:** 項目は、ノードの矩形と角の半径を命令と同じ座標（物理画素、移動を足し、整数の画素の移動なら辺を画素に置いた値）で持ち、表示リストの状態の番号（R4d の `StateRecord`：変換、まとめた矩形、上限までの角丸）を持つ。クリップの層の中の項目は、層を重ねる状態も、グループの記録を通してたどる。描画と同じ値と同じ距離の式で判定するので、見える画素と当たりが一致する
   - **座標:** `HitRegion` は論理座標で受け取り、表示リストの命令と同じ倍率と丸めで物理画素の項目にする。`HitTest` は、Win32 のクライアント座標（物理画素）をそのまま受け取る。整数の座標は画素の左上の角を指すので、0.5 を足した画素の中心で判定する。描画が画素の覆いを決めるのと同じ点で、角のまま判定すると、右と下の辺の 1 画素外まで当たる（PR #277 のレビュー）。論理座標に割ってから掛け直すと、描画の画素の丸めと当たりが食い違うことがあるためである。§6.1.1 の「ポインター」の倍率で割る変換は、当たったノードのハンドラに渡す座標にだけ掛ける
   - **置き場:** 一覧は `DisplayList` の中に置き、同じ `Reset` とスコープの積み重ねを使う。理由は、描画と同じ状態の記録（切り抜き・変換・層）で当たり判定をし、角丸や回転した切り抜きでも画素と一致させるためである（D3 の Grill、Issue #441）。GPUI は一覧を分けるが、判定は矩形で、角丸と回転を持たない（`crates/gpui/src/window.rs` 1165〜1187 行目）。Avalonia も角丸の切り抜きを矩形で判定する（`src/Avalonia.Base/Rendering/Composition/Drawing/RenderDataStream.HitTest.cs` 85〜91 行目）。分けると、状態の記録を写すことになる（項目ごとに写す形は R4e の Grill で採らなかった）。描画のスレッドを分ける、描画をキャッシュする、同じフレームのホバーが要ると測って分かる、のどれかが来たら、分ける形を考え直す。ヒット領域だけを書いたスコープも「何も描かなかったスコープ」として捨てない
@@ -3651,11 +3651,46 @@ internal sealed class WindowFrames
 
 ### 5.0.1 レンダリング更新方式：全体線形再構築
 
-DXGIスワップチェーン・`CAMetalLayer`・wgpuの`Surface`はいずれもダブル/トリプルバッファリングを行う。フレーム$N$でダーティ領域だけシザー描画してPresentしても、フレーム$N+1$で描画対象になるバックバッファには直前のフレームの描画結果は存在せず、2フレーム以上前の古い内容が残っている。ダーティ領域だけをシザーで描画して全体をPresentすると、更新をスキップした領域で新旧フレームが交互に表示されフリッカーする。
+**決め直し（D16 の Grill でオーナーが決定、Issue #629）:** この節の契約は保つ。理由は、比べた 3 つのソースと、測った数字に書き直した。前の理由のうち、「CPU 側の差分パッチは過剰設計」「コード量が増える」は手間の理由で、「線形書き出しは 0.1〜0.3 ms で差分追跡を下回る」は測っていない仮説だったので、消した。
 
-「GPU描画コマンド・Presentは画面全体、DamageRegionはCPU側の頂点バッファ差分更新に使う」という案も、**「CPU側の差分パッチ」自体が過剰設計である**。ノードの挿入・削除・スクロール等が発生すると、DisplayList内のコマンド順序やオフセットが大きくズレる。頂点バッファ内の部分スライスを差分管理しようとすると、メモリ断片化管理やオフセット調整でコード量が増え、キャッシュ局所性もかえって失われる。GPUI・Dear ImGui・軽量WebGPUレンダラが高速な理由は、**「フレーム毎に頂点バッファをリニアアロケータで先頭から一気に書き出す」**方式を徹底しているためであり、数千〜1万クアッド程度（頂点数数万）であればリニア書き込み＋GPUへの一括アップロードは0.1〜0.3ms程度で、差分追跡のオーバーヘッドを下回る。
+**比べた 3 つ（Windows）:**
 
-**v1の契約:** dirty が存在するフレームでは DisplayList・頂点バッファを全体リニアに生成・アップロードする。DamageRegion はフレームスキップ判定と任意の OS DirtyRect 通知にだけ使う。GPU 描画と Present は画面全体。画面への描画は 1 パスを基本とし、層（§5.0「描く語彙とオフスクリーンの層」）が要るときだけ、中間のテクスチャへの描画を挟む。Fine-grained reactive（§2.1）は UI 状態と Layout の範囲限定であり、Paint は v1 では coarse のままにする。
+| | 変わらない部分の CPU の描き直し | GPU の描画 | Present |
+| --- | --- | --- | --- |
+| Flutter 3.47.8 | 省く | 全画面 | 全画面 |
+| Avalonia 12.1.4 | 省く | dirty rect だけ（保持した層へ） | 全画面 |
+| GPUI（zed v1.25.3） | 一部省く | 全画面 | 全画面 |
+| XylemUI | 省かない | 全画面 | 全画面 |
+
+- **Flutter:** 汚れた `RepaintBoundary` の部分木だけを記録し直し、ほかの層はそのまま渡す（`packages/flutter/lib/src/rendering/object.dart` 275・3358 行目、`layer.dart` 707〜708 行目の `addRetained`）。一覧の子は既定で境界になる（`widgets/scroll_delegate.dart` 369・561 行目）。エンジンの部分描画は既定で切れていて（`engine/src/flutter/flow/surface_frame.h` 41 行目）、Windows の embedder には有効にするコードが無い。部分描画には、大きな resolve テクスチャと最後の転送の費用があると書いている（`flow/compositor_context.cc` 199〜211 行目）。部分木をテクスチャに取っておく raster cache は、Impeller では切られている（`shell/gpu/gpu_surface_metal_impeller.mm` 372〜374 行目）。
+- **Avalonia:** dirty rect で切り抜き、交わらない部分木を飛ばす（`src/Avalonia.Base/Rendering/Composition/Server/ServerCompositionVisual/ServerCompositionVisual.Render.cs` 40・86 行目）。全画面の層を保持し、汚れた所だけそこへ描いてから、層の全体を転送する（`ServerCompositionTarget.cs` 198〜201・259〜270 行目）。Present は全画面（`src/Windows/Avalonia.Win32/DirectX/DxgiRenderTarget.cs` 139 行目）。`Present1` は宣言だけで、呼ぶ所が無い。部分木のテクスチャは、アプリが明示する `BitmapCache`。
+- **GPUI:** 汚れたフレームは Scene を空にして作り直す（`crates/gpui/src/window.rs` 3513〜3514 行目）。汚れていないビューは、前のフレームのプリミティブを複製して入れ直す（`view.rs` 530〜538 行目、`scene.rs` 141〜149 行目）。レンダラは毎フレーム全体を消して描く（`crates/gpui_windows/src/directx_renderer.rs` 224・251 行目）。
+
+**測った形（Issue #629 の spike）:** `frames 600` の `--tree`・`--tree --list for`・`--shapes` で、GPU の時間（Draw を囲む timestamp query、ms、3 巡の中央値）を比べた。dirty は、描き直す矩形が画面に占める割合である。
+
+| 形 | dirty | `--tree` | `--tree --list for` | `--shapes` |
+| --- | --- | --- | --- | --- |
+| 今の形（`FLIP_DISCARD`、全画面を描く） | 100 % | 0.074 | 0.210 | 0.736 |
+| `FLIP_SEQUENTIAL` に替えるだけ | 100 % | 0.073 | 0.209 | 0.736 |
+| 全画面を描き、`Present1` に dirty rect を渡す | 1 % | 0.073 | 0.212 | 0.736 |
+| バックバッファに dirty rect だけを描き、`Present1` に dirty rect を渡す | 1 % | 0.011 | 0.100 | 0.035 |
+| 同上 | 25 % | 0.021 | 0.119 | 0.234 |
+| 保持したテクスチャに dirty rect だけを描き、全体を転送する | 1 % | 0.126 | 0.246 | 0.203 |
+| 同上 | 25 % | 0.135 | 0.268 | 0.374 |
+| 同上 | 100 % | 0.137 | 0.282 | 0.809 |
+
+- **保持したテクスチャの形（Avalonia の形）は採らない。** 全体の転送が毎フレーム約 0.05〜0.07 ms 乗り、軽い場面では dirty が 1 % でも今の形より長い。重い場面で短くなる分も、下の形のほうが大きい。
+- **全画面を描いて `Present1` に dirty rect を渡す形は採らない。** GPU の時間は変わらず、Present の呼び出しが約 0.01 ms 長い。DWM の側の費用は測っていない。
+- **バックバッファに dirty rect だけを描く形は、行 R7 で決める。** GPU の時間は 3 つの場面とも短い。ただし、決め手になる 2 つを測れていない。汚れていない所を DXGI が `Present1` の中で前のフレームから写す処理の GPU の時間（上の表に入っていない）と、`FLIP_SEQUENTIAL` に替えたときの、覆われた窓での表示の遅れ（§11.3、R3）である。`FLIP_DISCARD` は部分 Present に使えない（Microsoft Learn の `DXGI_SWAP_EFFECT`）。
+- 前の版の「ダーティ領域だけシザー描画するとフリッカーする」は、前のフレームを持ち越さない形（`FLIP_DISCARD` のバックバッファに直に描く形）にだけ当たる。`FLIP_SEQUENTIAL` と `Present1` の dirty rect なら、汚れていない所はランタイムが写す（Microsoft Learn「Flip model, dirty rectangles, scrolled areas」）。
+
+**変わらない部分木の CPU の描き直し（行 R6）:** 比べた 3 つは省き、XylemUI だけが全部たどる。今の値は予算の内側である（表示リストの段は、1 万行を `For` で全部描いて 0.47〜0.56 ms、`VirtualFor` で 0.012〜0.013 ms、§11.3 の予算は 1.0 ms 未満。`docs/benchmarks/p02e.md`）。前のフレームの表示リストの範囲を写して、変わらない部分木をたどらない形（Flutter の `RepaintBoundary`、GPUI の `reuse_paint`）を、行 R6 で、写す形と全部書く形を測ってから決める。
+
+**部分木をテクスチャに取っておく仕組み（行 R8、v1.x）:** アプリが明示する形（Avalonia の `BitmapCache`）と自動の形（Flutter の raster cache。Impeller では切られている）を、行 R8 で測って決める。層の土台は §5.0「描く語彙とオフスクリーンの層」にあり、層 1 つの GPU の費用（行 Q4）の後に載せる。
+
+**変化の無いウィンドウ（要件 9 のバッテリー消費の受け入れ）:** 変化の無いウィンドウは、フレームを回さず、描かず、Present しない（§11.3）。ワット数の予算は持たない。比べた 3 つのどれも数字を持たず、基準にできる値が無いためである。Flutter の embedder の API は、部分描画の目的にエネルギー消費を挙げている（`shell/platform/embedder/embedder.h` 790〜802 行目）。
+
+**v1の契約:** dirty が存在するフレームでは DisplayList・頂点バッファを全体リニアに生成・アップロードする。DamageRegion はフレームスキップ判定と任意の OS DirtyRect 通知にだけ使う。GPU 描画と Present は画面全体。画面への描画は 1 パスを基本とし、層（§5.0「描く語彙とオフスクリーンの層」）が要るときだけ、中間のテクスチャへの描画を挟む。Fine-grained reactive（§2.1）は UI 状態と Layout の範囲限定であり、Paint は v1 では coarse のままにする。この契約は、行 R6（CPU の描き直し）と行 R7（dirty rect だけの描画）が決まるまで保つ。
 
 DisplayList は再利用バッファに書く。配列は解放せず使用済み長さだけリセットする。定常状態は allocation-free（Gen0 回収を起こさない）。容量不足のときだけその場で grow（`Array.Resize`）し、以降のフレームは拡張後の容量を再利用する。固定容量で打ち切らない。打ち切ると、黙って誤ったフレームを描き、ヒット領域も落とすためである（D3 の Grill、Issue #441）。比べた相手も、どれも広げる（Flutter の `engine/src/flutter/display_list/dl_storage.cc` 33〜58 行目、Skia の `src/core/SkRecord.cpp` 19〜22 行目、GPUI の `crates/gpui/src/scene.rs` 41〜52 行目、Avalonia の `RenderDataWriter.cs` 21〜26 行目）。GPU のバッファは、GPUI と同じく上限を置き、超えたら診断に知らせる（GPUI は 256 MB、`crates/gpui_windows/src/directx_renderer.rs` 30・1130〜1160 行目）。行 R1 で入れる。
 
@@ -5129,6 +5164,8 @@ Acceptance: 下記11.3のフレーム予算・ベンチマークで定量的に�
 ```
 
 最終 Acceptance は CPU budget・GPU budget・Input-to-photon budget の3段で判定する。CPU だけ 8.33ms 以内でも GPU 5ms + Present 3ms なら 120Hz に間に合わない。GPU / Present の数値目標は §10.5 の P0 スパイクの後、ロードマップの M1a で実測して確定した。Input-to-photon の数値目標は、行 R3 で 4 つのフレームワークを同じ場面で測ってから確定した（下の「Input-to-photon の目標」）。
+
+**変化の無いウィンドウ（D16 の Grill でオーナーが決定、Issue #629）:** layout の要求も、描き直しの印も、ポップアップの根の変化も、動いているアニメーションも無いウィンドウは、フレームのコールバックを頼まず、表示リストを作らず、Draw も Present もしない。要件 9 の「バッテリー消費」の受け入れである。確かめ方は、変わらないフレームの Present の回数が 0 であること（§5.0「描画の段とフレームの駆動」の確かめ方）。ワット数の予算は持たない（§5.0.1）。
 
 **Input-to-photon の目標（R3 の Grill でオーナーが決定、Issue #685）:** 下の「Input-to-photon の測り方」で、M1a の比べる場面のアプリ（800 × 600、1,000 個の矩形と 1 行の日本語）を 60 Hz で測り、Flutter・Avalonia・GPUI と比べた（`docs/benchmarks/r3-input.md`、各 3 回の中央値）。
 
