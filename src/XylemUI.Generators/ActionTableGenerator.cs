@@ -249,7 +249,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         var found = new List<(IAssemblySymbol Assembly, DefaultsInfo Info)>();
         foreach (IAssemblySymbol reference in compilation.SourceModule.ReferencedAssemblySymbols)
         {
-            AddDefaults(found, reference, compilation.Assembly);
+            AddDefaults(found, reference, compilation);
         }
 
         var ordered = ImmutableArray.CreateBuilder<DefaultsInfo>();
@@ -280,12 +280,12 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         }
 
         var own = new List<(IAssemblySymbol Assembly, DefaultsInfo Info)>();
-        AddDefaults(own, compilation.Assembly, compilation.Assembly);
+        AddDefaults(own, compilation.Assembly, compilation);
         ordered.AddRange(own.Select(static o => o.Info));
         return ordered.ToImmutable();
     }
 
-    private static void AddDefaults(List<(IAssemblySymbol Assembly, DefaultsInfo Info)> found, IAssemblySymbol assembly, IAssemblySymbol app)
+    private static void AddDefaults(List<(IAssemblySymbol Assembly, DefaultsInfo Info)> found, IAssemblySymbol assembly, Compilation compilation)
     {
         foreach (AttributeData attribute in assembly.GetAttributes())
         {
@@ -298,21 +298,17 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 continue;
             }
 
-            // The method the module initializer names: static, with one parameter, and one the app can call.
-            bool callable =
-                IsAccessible(type, assembly, app)
-                && type.GetMembers(AddDefaultsName)
-                    .OfType<IMethodSymbol>()
-                    .Any(m =>
-                        m.IsStatic
-                        && m.ReturnsVoid
-                        && m.Parameters.Length == 1
-                        && m.Parameters[0].Type.ToDisplayString() == "XylemUI.Keymap"
-                        && (
-                            m.DeclaredAccessibility == Accessibility.Public
-                            || (SymbolEqualityComparer.Default.Equals(assembly, app) && m.DeclaredAccessibility == Accessibility.Internal)
-                        )
-                    );
+            // The method the module initializer names: static, with a keymap as its one parameter, and one the app's code can
+            // call (public, or internal in the app itself and in an assembly that shows the app its internals).
+            bool callable = type.GetMembers(AddDefaultsName)
+                .OfType<IMethodSymbol>()
+                .Any(m =>
+                    m.IsStatic
+                    && m.ReturnsVoid
+                    && m.Parameters.Length == 1
+                    && m.Parameters[0].Type.ToDisplayString() == "XylemUI.Keymap"
+                    && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
+                );
             found.Add(
                 (
                     assembly,
@@ -320,20 +316,6 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 )
             );
         }
-    }
-
-    private static bool IsAccessible(INamedTypeSymbol type, IAssemblySymbol assembly, IAssemblySymbol app)
-    {
-        bool same = SymbolEqualityComparer.Default.Equals(assembly, app);
-        for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
-        {
-            if (t.IsGenericType || !(t.DeclaredAccessibility == Accessibility.Public || (same && t.DeclaredAccessibility == Accessibility.Internal)))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     // Whether an assembly references another, directly or through the assemblies it references.

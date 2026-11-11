@@ -240,7 +240,8 @@ public sealed class ActionTableGeneratorTests
     ///
     /// Expected:
     /// - One error XYLEM007 that names the class and the library, at no place in the app's source. The app's source does not
-    ///   register the class, and still registers <c>XylemUI.Core</c>'s.
+    ///   register the class, and still registers <c>XylemUI.Core</c>'s. A library that references the library gets no
+    ///   diagnostic and no source: the error is the app's.
     /// </remarks>
     /// <param name="declaration">The class the library names.</param>
     [Theory]
@@ -269,6 +270,10 @@ public sealed class ActionTableGeneratorTests
         string source = Assert.Single(app.Sources);
         Assert.DoesNotContain("BadKeys", source, StringComparison.Ordinal);
         Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
+
+        Result between = Run("Demo.Between", OutputKind.DynamicallyLinkedLibrary, "public sealed class Plain;", library);
+        Assert.Empty(between.GeneratorDiagnostics);
+        Assert.Empty(between.Sources);
     }
 
     /// <summary>

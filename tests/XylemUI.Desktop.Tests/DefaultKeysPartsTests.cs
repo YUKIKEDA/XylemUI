@@ -20,12 +20,12 @@ public sealed class DefaultKeysPartsTests
     ///   line with "abc", and a box 500 high. Each field has a selection signal.
     ///
     /// Steps:
-    /// - With the focus in the field of many lines, whose caret is at the end (index 5): press Up, then Home. With the focus
-    ///   in the field of one line: press Down, then Home, then End.
+    /// - With the focus in the field of many lines, whose caret is at the end (index 5): press Up, then Home, then Down, which
+    ///   the page could scroll for. With the focus in the field of one line: press Down, then Home, then End.
     ///
     /// Expected:
-    /// - In the field of many lines, Up moves the caret to the second line (index 3) and Home to that line's start (index 2);
-    ///   the page stays at 0. In the field of one line, Down is not the field's key and scrolls the page by 50; Home moves the
+    /// - In the field of many lines, Up moves the caret to the second line (index 3), Home to that line's start (index 2), and
+    ///   Down to the third line (index 4); the page stays at 0. In the field of one line, Down is not the field's key and scrolls the page by 50; Home moves the
     ///   caret to 0 and End to 3, and the page stays where Down left it.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
@@ -65,6 +65,7 @@ public sealed class DefaultKeysPartsTests
         Assert.Equal(5, manySelection.Get().Caret);
         Press(Key.Up, manySelection);
         Press(Key.Home, manySelection);
+        Press(Key.Down, manySelection);
         Assert.True(app.Focus(one));
         _ = app.PumpAndSettle();
         float before = page.Offset.Get().Y;
@@ -72,9 +73,9 @@ public sealed class DefaultKeysPartsTests
         Press(Key.Home, oneSelection);
         Press(Key.End, oneSelection);
 
-        Assert.Equal([(3, 0f), (2, 0f)], log[..2]);
-        Assert.Equal(before + 50, log[2].Page);
-        Assert.Equal([(0, before + 50), (3, before + 50)], log[3..]);
+        Assert.Equal([(3, 0f), (2, 0f), (4, 0f)], log[..3]);
+        Assert.Equal(before + 50, log[3].Page);
+        Assert.Equal([(0, before + 50), (3, before + 50)], log[4..]);
     }
 
     /// <summary>
@@ -140,5 +141,110 @@ public sealed class DefaultKeysPartsTests
         Assert.True(app.Keyboard.Press(Key.Escape));
         _ = app.PumpAndSettle();
         Assert.Empty(app.Popups);
+    }
+
+    /// <summary>
+    /// A select inside a page that scrolls keeps its keys: the arrows change the value of the closed box and do not scroll the
+    /// page, and Tab and Shift+Tab in the open list close it and move the focus on from the box, each its own way.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scroll view 100 high over a column 600 high: a focusable box, a select of "a", "b", "c" with the value "a", a
+    ///   focusable box, and a box 500 high. The select has the focus.
+    ///
+    /// Steps:
+    /// - Press Down. Press Enter, which opens the list, then Shift+Tab. Give the select the focus, press Enter, then Tab.
+    ///
+    /// Expected:
+    /// - Down makes the value "b" and the page stays at 0. Shift+Tab closes the list and the box before the select has the
+    ///   focus. Tab closes the list and the box after it has the focus.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Select_InAPageThatScrolls_KeepsItsKeys()
+    {
+        var page = new ScrollState();
+        var value = Signal.Create("a");
+        Element before = default;
+        Element select = default;
+        Element after = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                before = Box().Width(100).Height(20).Focusable();
+                select = Select(value, ["a", "b", "c"], static _ => Box().Width(60).Height(20)).Width(150);
+                after = Box().Width(100).Height(20).Focusable();
+                return ScrollView(Column(before, select, after, Box().Width(100).Height(500)), page).Width(300).Height(100);
+            },
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(select));
+        _ = app.PumpAndSettle();
+
+        _ = app.Keyboard.Press(Key.Down);
+        _ = app.PumpAndSettle();
+        Assert.Equal(("b", 0f), (value.Get(), page.Offset.Get().Y));
+
+        _ = app.Keyboard.Press(Key.Enter);
+        _ = app.PumpAndSettle();
+        Assert.Single(app.Popups);
+        _ = app.Keyboard.Press(Key.Tab, KeyModifiers.Shift);
+        _ = app.PumpAndSettle();
+        Assert.Empty(app.Popups);
+        Assert.Equal(before.Node, app.Tree.Focus.Focused);
+
+        Assert.True(app.Focus(select));
+        _ = app.Keyboard.Press(Key.Enter);
+        _ = app.PumpAndSettle();
+        Assert.Single(app.Popups);
+        _ = app.Keyboard.Press(Key.Tab);
+        _ = app.PumpAndSettle();
+        Assert.Empty(app.Popups);
+        Assert.Equal(after.Node, app.Tree.Focus.Focused);
+    }
+
+    /// <summary>
+    /// A menu bar inside a page that scrolls keeps its arrows: Down on a selected item opens its menu and does not scroll the
+    /// page.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scroll view 100 high over a column 600 high: a menu bar of one item whose menu has one item, a focusable box with
+    ///   the focus, and a box 500 high.
+    ///
+    /// Steps:
+    /// - Press F10, which selects the bar; press Down.
+    ///
+    /// Expected:
+    /// - One popup is open and the page stays at 0.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task MenuBar_InAPageThatScrolls_KeepsItsArrows()
+    {
+        var page = new ScrollState();
+        Element content = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                Element file = MenuBarItem(Box().Width(40).Height(20), static () => Column(MenuItem(Box().Width(80).Height(20), static () => { })));
+                content = Box().Width(100).Height(20).Focusable();
+                return ScrollView(Column(MenuBar(file), content, Box().Width(100).Height(500)), page).Width(300).Height(100);
+            },
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(content));
+        _ = app.PumpAndSettle();
+
+        _ = app.Keyboard.Press(Key.F10);
+        _ = app.PumpAndSettle();
+        Assert.Empty(app.Popups);
+        _ = app.Keyboard.Press(Key.Down);
+        _ = app.PumpAndSettle();
+
+        Assert.Single(app.Popups);
+        Assert.Equal(0f, page.Offset.Get().Y);
     }
 }

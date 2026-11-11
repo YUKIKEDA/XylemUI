@@ -55,11 +55,10 @@ public static class PrimitiveKeyBindings
         Unbind(keymap, MenuContext, "up", "down", "left", "right", "home", "end");
         Unbind(keymap, SelectContext, "up", "down");
         Unbind(keymap, SelectListContext, "up", "down", "home", "end", "pageup", "pagedown", "tab", "shift-tab");
-        Unbind(keymap, MenuBarContext, "left", "right", "up", "down");
 
-        // Esc leaves the bar while one of its items has the focus. In a menu open from the bar, whose keys go on to the item,
-        // Esc keeps its row and closes the menu.
-        Unbind(keymap, MenuBarContext + " && !" + MenuContext, "escape");
+        // Esc keeps its row on the bar: in a menu open from the bar it closes the menu, and with no popup open its action is
+        // not handled, so the key goes on to the bar's item, which leaves the bar.
+        Unbind(keymap, MenuBarContext, "left", "right", "up", "down");
     }
 
     private static void Unbind(Keymap keymap, string context, params ReadOnlySpan<string> keys)
