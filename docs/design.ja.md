@@ -4813,7 +4813,7 @@ internal sealed class FocusManager
 
 比べた 3 つ:
 
-- **Flutter 3.47.8:** キーの組み合わせを `Intent`（型）に結び、フォーカスしたノードから上へたどって `Action` を探す（`packages/flutter/lib/src/widgets/shortcuts.dart` 922〜937 行目、`actions.dart` 959 行目）。Tab、Enter と Space、Esc、スクロールのキーは既定の表にあり、アプリが差し替えられる（`widgets/app.dart` 1263〜1275・1408〜1418 行目）。キーの処理は文字の入力より前（`services/hardware_keyboard.dart` 978〜986 行目）。文字の欄は、Space と Enter を IME に返す指定を自分で持つ（`widgets/default_text_editing_shortcuts.dart` 326〜329 行目）。メニューのショートカットは表示だけ（`material/menu_anchor.dart` 802〜805 行目）。照合は論理キーで、記号は文字で照合できる（`shortcuts.dart` 576〜580・766 行目）。動作に名前は無い。
+- **Flutter 3.47.8:** キーの組み合わせを `Intent`（型）に結び、フォーカスしたノードから上へたどって `Action` を探す（`packages/flutter/lib/src/widgets/shortcuts.dart` 922〜937 行目、`actions.dart` 759〜778 行目の `_visitActionsAncestors` と 959 行目）。Tab、Enter と Space、Esc、スクロールのキーは既定の表にあり、アプリが差し替えられる（`widgets/app.dart` 1263〜1275・1408〜1418 行目）。キーの処理は文字の入力より前（`services/hardware_keyboard.dart` 978〜986 行目）。文字の欄は、Space と Enter を IME に返す指定を自分で持つ（`widgets/default_text_editing_shortcuts.dart` 326〜329 行目）。メニューのショートカットは表示だけ（`material/menu_anchor.dart` 802〜805 行目）。照合は論理キーで、記号は文字で照合できる（`shortcuts.dart` 576〜580・766 行目）。動作に名前は無い。
 - **Avalonia 12.1.4:** `KeyBinding` はキーと `ICommand` の組で、フォーカスした要素から親へたどり、KeyDown のハンドラより前に試す（`src/Avalonia.Base/Input/KeyboardDevice.cs` 262〜292 行目）。名前の付いた動作の仕組みは無い。Tab、ボタンの Enter と Space、スクロールは、各コントロールに直書き（`src/Avalonia.Controls/Button.cs` 303〜312 行目）。`MenuItem.InputGesture` は表示だけ（`MenuItem.cs` 262〜268 行目）。照合は論理キーだけで、記号には使うなと書いている（`src/Avalonia.Base/Input/KeyEventArgs.cs` 18〜34 行目）。
 - **GPUI（zed v1.25.3）:** 動作は名前を持つ型で、名前と JSON から作れる（`crates/gpui/src/action.rs` 351〜358 行目）。キーマップは「キーの並び、動作、文脈の条件」の表で、深い文脈が勝ち、同じ深さでは後から足したものが勝ち、`null` で外せる（`crates/gpui/src/keymap.rs` 150〜164 行目）。複数のキーを続けて押す形を持ち、待つ時間は 1 秒（`crates/gpui/src/window.rs` 1367 行目）。動作のハンドラは、フォーカスから根へたどり、既定でそこで止まる（同 6561 行目）。`secondary` は macOS で Cmd、ほかで Ctrl（`crates/gpui/src/platform/keystroke.rs` 143〜149 行目）。
 
@@ -4835,13 +4835,19 @@ internal sealed class FocusManager
 - **登録:** 動作の型に属性を付ける（`[Action("editor::Save")]`）。Source Generator が「名前から動作を作る関数」の表を生成する。名前の重複はビルドのエラーになる。アプリが起動時に 1 行ずつ登録する形は採らない。書き忘れた動作が、キーマップから実行時まで見つからないためである。GPUI はマクロで自動に登録する（`crates/gpui/src/action.rs` 351〜358 行目が、その表を引く）。
 - **ハンドラ:** `element.OnAction<T>(handler)`。ハンドラは動作の値を受け取り、「受けない」と返すと上へ送る。キーのイベントと同じく、capture と bubble の 2 つの段を持つ（GPUI の `capture_action` と `on_action`、`crates/gpui/src/elements/div.rs` 430〜460 行目）。
 - **コードからの実行:** `Dispatch(action)` を公開する。フォーカスしたノードから届ける。ボタン、メニュー、コマンドパレットが使う。
-- **文脈の条件:** GPUI と同じ文法にする。ノードは `.KeyContext("Editor")` と名乗り、`mode = full` のような値も持てる。条件は `&&`・`||`・`!`・`==`・`!=` と、子孫を表す `>`（`crates/gpui/src/keymap/context.rs` 221〜232 行目）。
+- **文脈の条件:** GPUI と同じ文法にする。ノードは `.KeyContext("Editor")` と名乗り、`mode = full` のような値も持てる。条件は `&&`・`||`・`!`・`==`・`!=` と、子孫を表す `>`（`crates/gpui/src/keymap/context.rs` 221〜248 行目）。
 - **キーの並びの書き方:** GPUI と同じにする。`ctrl-shift-p` の形で、続けて押す形は空白で区切り（`ctrl-k ctrl-s`）、`secondary-` を持つ（`crates/gpui/src/platform/keystroke.rs` 115〜120 行目）。書き損じは、行を足したときに例外にする。
 - **キーの表示:** Windows では `Ctrl+Shift+P` の形にする。区切りは `+`、修飾キーの順は Ctrl、Alt、Shift、Win。WinUI は、修飾キーを `VirtualKeyModifiers` の列挙の順（Control = 1、Menu = 2、Shift = 4、Windows = 8）に並べ、`+` で区切る（Microsoft Learn の「Keyboard accelerators」と `VirtualKeyModifiers`）。Flutter の Apple のほかの順（Alt、Ctrl、Meta、Shift。`packages/flutter/lib/src/material/menu_anchor.dart` 2536〜2562 行目）には合わせない。修飾キーとキーの名前は、ローカライズの辞書（§4.11、行 LC3）から読める形にする。
 - **アクセスキーとの順:** キーマップを、ウィンドウのアクセスキー（Alt+文字）とメニューバーのキー（上の「Alt とメニューのキー」）より先に試す。`alt-f` を割り当てたら、そちらが勝つ。Avalonia も、`KeyBindings` を KeyDown の配送より前に試す。
 - **実行できるかの読み取り:** 「今のフォーカスから、その動作のハンドラが見つかるか」を、リアクティブな読み取りにする。フォーカスが移るか、ハンドラが増減したときにだけ、読んだ所が再実行される。
 - **受け入れ:** 割り当てに合うキーを押して動作が届くまでの割り当てが 0（Zero-Alloc のテスト、§11.3）。キーの配送の時間を、今の値（`docs/benchmarks/k1a-keys-focus.md`）と同じ回の中で比べる。
 - **PR:** 2 つに分ける。KM1a は、`XylemUI.Generators`、動作、ハンドラ、配送、`Dispatch`、実行できるかの読み取り。KM1b は、キーマップ、照合、続けて押す形、キーの並びの文字列。公開の型の名前は、それぞれの PR で出す。
+
+**行 KM1b の Grill で決めること（PR #806 のレビュー）:**
+
+- **文字の欄がフォーカスにあるときの、修飾キーの無いキー:** 順は「キーマップ、キーのハンドラ、文字の入力」で、先に文字へ送るのは `PrefersCharacter` のキーだけである。素の Space は `PrefersCharacter` でないので、欄の祖先が Space の動作のハンドラを持つと（一覧の行の中の欄など）、Space が欄に届く前に取られる。Flutter は、欄が自分で Space と Enter を「何もしないで止める」割り当てを持つ（上の `default_text_editing_shortcuts.dart` 326〜329 行目）。同じ形（欄の文脈に、割り当てを外す行を置く）にするか、順の規則を広げるかを決める。利用者が素の文字のキー（`j` など）を割り当てた場合も同じ問いである。
+- **IME の変換中:** 変換中のキー（Enter で確定、Esc で取り消し、矢印で候補）は、キーマップより先に IME が受ける（§4.7）。「変換中はキーマップを試さない」を順に入れ、既定のキーを載せ直した後（行 KM2）に Esc と Enter の動作が変換を壊さないことをテストにする。
+- **続けて押す形と文字の入力:** 途中まで合ったキーは 1 秒溜めてから流し直すので、その間、欄への文字が遅れる。素の文字で始まる並びを許すかを決める。
 
 
 ### 7.1 フォーカス順序
