@@ -4809,6 +4809,49 @@ internal sealed class FocusManager
   - 仮想化の境界でのキーボードの移動（§3.4.2 の `IVirtualizedFocusHost`）は行 P02e、a11y へのフォーカスの知らせ（§4.4.1。AccessKit への毎回の更新にフォーカスを持つ節を書く。フォーカスの変化は前か次の節の Focused も変えるので、その節と一緒に渡る。別の知らせの口は #633 の実装で外した）は行 P02g（P02e の Grill、Issue #606）
   - キーの組み合わせから動作への仕組み（Flutter の `Shortcuts` と `Actions`、Avalonia の `KeyBindings`、GPUI の keymap と action）は行 K2
 
+**ショートカットと動作（K2 の Grill でオーナーが決定、Issue #805）:** キーの組み合わせから動作を呼ぶ仕組みを持つ。「名前を持つ動作」と「キーの並びから動作への表（キーマップ）」の 2 つに分ける。実装は行 KM1a・KM1b・KM2 で、ローカライズの行 LC1 の前に入れる。
+
+比べた 3 つ:
+
+- **Flutter 3.47.8:** キーの組み合わせを `Intent`（型）に結び、フォーカスしたノードから上へたどって `Action` を探す（`packages/flutter/lib/src/widgets/shortcuts.dart` 922〜937 行目、`actions.dart` 759〜778 行目の `_visitActionsAncestors` と 959 行目）。Tab、Enter と Space、Esc、スクロールのキーは既定の表にあり、アプリが差し替えられる（`widgets/app.dart` 1263〜1275・1408〜1418 行目）。キーの処理は文字の入力より前（`services/hardware_keyboard.dart` 978〜986 行目）。文字の欄は、Space と Enter を IME に返す指定を自分で持つ（`widgets/default_text_editing_shortcuts.dart` 326〜329 行目）。メニューのショートカットは表示だけ（`material/menu_anchor.dart` 802〜805 行目）。照合は論理キーで、記号は文字で照合できる（`shortcuts.dart` 576〜580・766 行目）。動作に名前は無い。
+- **Avalonia 12.1.4:** `KeyBinding` はキーと `ICommand` の組で、フォーカスした要素から親へたどり、KeyDown のハンドラより前に試す（`src/Avalonia.Base/Input/KeyboardDevice.cs` 262〜292 行目）。名前の付いた動作の仕組みは無い。Tab、ボタンの Enter と Space、スクロールは、各コントロールに直書き（`src/Avalonia.Controls/Button.cs` 303〜312 行目）。`MenuItem.InputGesture` は表示だけ（`MenuItem.cs` 262〜268 行目）。照合は論理キーだけで、記号には使うなと書いている（`src/Avalonia.Base/Input/KeyEventArgs.cs` 18〜34 行目）。
+- **GPUI（zed v1.25.3）:** 動作は名前を持つ型で、名前と JSON から作れる（`crates/gpui/src/action.rs` 351〜358 行目）。キーマップは「キーの並び、動作、文脈の条件」の表で、深い文脈が勝ち、同じ深さでは後から足したものが勝ち、`null` で外せる（`crates/gpui/src/keymap.rs` 150〜164 行目）。複数のキーを続けて押す形を持ち、待つ時間は 1 秒（`crates/gpui/src/window.rs` 1367 行目）。動作のハンドラは、フォーカスから根へたどり、既定でそこで止まる（同 6561 行目）。`secondary` は macOS で Cmd、ほかで Ctrl（`crates/gpui/src/platform/keystroke.rs` 143〜149 行目）。
+
+決めたこと:
+
+- **動作:** 動作は型で書く（引数を持てる）。名前は `XylemUI.Generators` の Source Generator が登録する。リフレクションは使わない（§0.1）。`XylemUI.Generators` のプロジェクトは、まだリポジトリに無い（`src/` と `tools/` に `IIncrementalGenerator` の実装が無い）。行 KM1 が最初の Source Generator として作り、ローカライズの行 LC1（§4.11）がそこへ足す。名前から動作を作る口を持つ（利用者のキーマップ、メニュー）。
+- **届け方:** 動作のハンドラはノードに付ける。フォーカスしたノードから根へたどり、最初に受けたハンドラで止まる。ハンドラは「受けない」と返して上へ送れる。Flutter の、最も近い対応が無効なら外側を試さずに終わる動きは採らない。
+- **キーマップ:** 行は「キーの並び、動作、文脈の条件」。文脈は、ノードが名前で名乗る（GPUI の `key_context`）。フォーカスに近い文脈の行が勝ち、同じ深さでは後から足した行が勝つ。動作を `null` にした行は、その割り当てを外す。
+- **順:** キーが押されたら、キーマップ、キーのハンドラ（`KeyEvent`、上）、文字の入力（§4.9）の順に試す。修飾キーを外すと文字が変わるキー（`PrefersCharacter`）は、文字の欄がフォーカスにあれば、先に文字の入力へ送る（GPUI の `prefer_character_input`）。
+- **照合:** 論理キー（`Key`）と修飾キーで照合する。記号のために、文字（`KeyChar`）で照合する指定も持つ。修飾キーに、Windows と Linux で Ctrl、macOS で Cmd になる `secondary` を持つ。
+- **続けて押す形:** 複数のキーを続けて押す割り当てを持つ（Ctrl+K の後に Ctrl+S）。途中まで合った状態で 1 秒待ち、合わなければ、溜めたキーをキーのハンドラと文字の入力へ流し直す。
+- **既定のキー:** K1 が既定のハンドラとして組み込んだ Tab と Shift+Tab、Enter と Space、Esc、スクロールのキー（上の「キーの入力とフォーカス」）と、文字の欄の編集のキー（§4.9）を、既定のキーマップと動作に載せ直す。アプリは差し替えられる。載せ直す前と後で、キーの配送の時間と割り当て（§11.3 の Zero-Alloc の場面）を測り、遅くなれば PR に書いてオーナーに諮る。
+- **OS ごとの既定:** 既定のキーマップは OS ごとの表にする。行 KM2 は Windows の分を書く。
+- **メニュー:** メニューとメニューバーの項目（§13.1）は、動作を指せる。キーの表示はキーマップから引き、有効か無効かは、今のフォーカスからその動作のハンドラが見つかるかで決める（GPUI の `MenuItem::action`）。表示と登録を別に持つ形（Flutter、Avalonia）は採らない。
+- **利用者のキーマップ:** フレームワークは、実行中に行を足す・外す API と、キーの並びの文字列（`ctrl-shift-p`）の解析と表示を持つ。優先は、利用者の行が既定の行より上。設定ファイルの形式と読み込みは、アプリの側に置く（GPUI と zed の分け方）。
+
+**細部（KM1 の Grill でオーナーが決定、Issue #807）:**
+
+- **登録:** 動作の型に属性を付ける（`[Action("editor::Save")]`）。Source Generator が「名前から動作を作る関数」の表を生成する。名前の重複はビルドのエラーになる。アプリが起動時に 1 行ずつ登録する形は採らない。書き忘れた動作が、キーマップから実行時まで見つからないためである。GPUI はマクロで自動に登録する（`crates/gpui/src/action.rs` 351〜358 行目が、その表を引く）。
+- **ハンドラ:** `element.OnAction<T>(handler)`。ハンドラは動作の値を受け取り、「受けない」と返すと上へ送る。キーのイベントと同じく、capture と bubble の 2 つの段を持つ（GPUI の `capture_action` と `on_action`、`crates/gpui/src/elements/div.rs` 430〜460 行目）。
+- **コードからの実行:** `Dispatch(action)` を公開する。フォーカスしたノードから届ける。ボタン、メニュー、コマンドパレットが使う。
+- **文脈の条件:** GPUI と同じ文法にする。ノードは `.KeyContext("Editor")` と名乗り、`mode = full` のような値も持てる。条件は `&&`・`||`・`!`・`==`・`!=` と、子孫を表す `>`（`crates/gpui/src/keymap/context.rs` 221〜248 行目）。
+- **キーの並びの書き方:** GPUI と同じにする。`ctrl-shift-p` の形で、続けて押す形は空白で区切り（`ctrl-k ctrl-s`）、`secondary-` を持つ（`crates/gpui/src/platform/keystroke.rs` 115〜120 行目）。書き損じは、行を足したときに例外にする。
+- **キーの表示:** Windows では `Ctrl+Shift+P` の形にする。区切りは `+`、修飾キーの順は Ctrl、Alt、Shift、Win。WinUI は、修飾キーを `VirtualKeyModifiers` の列挙の順（Control = 1、Menu = 2、Shift = 4、Windows = 8）に並べ、`+` で区切る（Microsoft Learn の「Keyboard accelerators」と `VirtualKeyModifiers`）。Flutter の Apple のほかの順（Alt、Ctrl、Meta、Shift。`packages/flutter/lib/src/material/menu_anchor.dart` 2536〜2562 行目）には合わせない。修飾キーとキーの名前は、ローカライズの辞書（§4.11、行 LC3）から読める形にする。
+- **アクセスキーとの順:** キーマップを、ウィンドウのアクセスキー（Alt+文字）とメニューバーのキー（上の「Alt とメニューのキー」）より先に試す。`alt-f` を割り当てたら、そちらが勝つ。Avalonia も、`KeyBindings` を KeyDown の配送より前に試す。
+- **実行できるかの読み取り:** 「今のフォーカスから、その動作のハンドラが見つかるか」を、リアクティブな読み取りにする。フォーカスが移るか、ハンドラが増減したときにだけ、読んだ所が再実行される。
+- **受け入れ:** 割り当てに合うキーを押して動作が届くまでの割り当てが 0（Zero-Alloc のテスト、§11.3）。キーの配送の時間を、今の値（`docs/benchmarks/k1a-keys-focus.md`）と同じ回の中で比べる。
+- **PR:** 2 つに分ける。KM1a は、`XylemUI.Generators`、動作、ハンドラ、配送、`Dispatch`、実行できるかの読み取り。KM1b は、キーマップ、照合、続けて押す形、キーの並びの文字列。公開の型の名前は、それぞれの PR で出す。
+
+**キーと文字の入力の順（KM1b の Grill でオーナーが決定。PR #806 のレビューの 3 点）:**
+
+- **文字になるキー:** 文字を受ける欄にフォーカスがあり、キーが文字になる（Ctrl・Alt・Win が無く、`KeyChar` を持つ）ときは、先に文字の入力へ送り、欄が受けなかったときだけキーマップを試す。Space と Enter も、欄が受けるなら欄が先である。上の「順」の `PrefersCharacter` の規則を、文字になるキーの全部に広げる。Flutter の形（欄が Space と Enter を止める割り当てを持つ、`packages/flutter/lib/src/widgets/default_text_editing_shortcuts.dart` 326〜329 行目）は採らない。利用者が素の文字のキーを割り当てると、欄ごとに止める行を足さない限り、文字が打てなくなるためである。GPUI は、同じ判定（入力ハンドラが `accepts_text_input` と答えるか）を `prefer_character_input` のキーにだけ使う（`crates/gpui/src/window.rs` 5986〜6008 行目）。エディタのモードで素のキーを割り当てたいアプリは、そのモードの間、欄が文字を受けないと答える。
+- **IME の変換中:** 変換中は、キーマップを試さず、キーを IME に渡す（§4.7）。変換中の Enter・Esc・矢印を、既定のキーの動作が取らない。行 KM2 で既定のキーを載せ直すときに、変換を壊さないことをテストにする。
+- **素の文字で始まる並び:** 許す（`g g` など。GPUI の `assets/keymaps/vim.json` 96 行目）。文字を受ける欄にフォーカスがある間は、上の規則で文字が先なので、並びは始まらず、欄への文字は遅れない。
+
+**引数のある動作を名前から作る口（KM1b の Grill でオーナーが決定）:** Source Generator が、動作の型の公開のプロパティ（整数、小数、真偽、文字列、列挙）ごとに、名前と値の文字列から設定するコードを生成する。`ActionRegistry` は、名前と引数から動作を作れる。利用者のキーマップの行に、動作の名前と引数を書ける（GPUI は `["picker::ConfirmInput", { "secondary": false }]` の形で、名前と JSON から作る。`assets/keymaps/default-windows.json` 23 行目）。プロパティの型がその 5 種類のほかなら、ビルドの警告にして、その動作は名前から引数つきでは作れない。コードから動作の実体を渡す割り当ては、どの型の引数でも使える。行 KM1a の表は、引数なしのコンストラクタだけを呼ぶ。
+
+
 ### 7.1 フォーカス順序
 
 **フォーカスナビゲーションのデフォルトはUIツリー順（§2.5のアリーナにおける`FirstChild`/`NextSibling`の並び）とし、BiDiはこの順序決定に関与しない。** BiDi論理順はテキストノード内部でのみ意味を持つ。明示的なタブインデックス（`TabIndex`スタイルプロパティ）による上書きを許可するハイブリッド方式とする。視覚的な配置とツリー順が乖離するレイアウト（CSSの`order`相当の視覚並び替えを使った場合等）でのみ、明示的な上書きが必要になる。
