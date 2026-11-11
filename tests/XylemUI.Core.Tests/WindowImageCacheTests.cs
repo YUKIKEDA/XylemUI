@@ -728,6 +728,68 @@ public sealed class WindowImageCacheTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The elements that waited for a decode when the tree let every entry go wait for nothing afterwards: when they then ask for
+    /// other sources, each decode's result reaches every element that waits for it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window whose context keeps the posts; the test decode; a loading part for each element. Two image elements whose
+    ///   sources are signals, both of the source X: the second waits behind the first for X's decode. The decode ran, and its
+    ///   result is posted and not run.
+    ///
+    /// Steps:
+    /// - Let every entry go. Set the first element's source to Y of 40 x 20; draw; wait until no decode is in flight, so that Y's
+    ///   result is posted before Z's. Set the second element's source to Z of 20 x 10; draw; show a third image of Z, which waits
+    ///   behind the second. Wait and run the posts. Draw.
+    ///
+    /// Expected:
+    /// - No element has a child. The frame draws three images: the first element's at 40 x 20, and the second's and the third's
+    ///   at 20 x 10 with the same handle.
+    /// - Three decodes ran, and the window holds two images: X's result added none.
+    /// </remarks>
+    [Fact]
+    public void TreeThrownAway_WaitingElementsThatAskAgain_EachGetTheirOwnResult() =>
+        ui.Invoke(() =>
+        {
+            var posts = new KeepingContext();
+            WithDecode(
+                () =>
+                {
+                    using var scene = new ImageScene();
+                    ImageSource x = Sized(10, 10);
+                    ImageSource z = Sized(20, 10);
+                    int loading = 0;
+                    var options = new ImageOptions { Loading = () => Counted(ref loading) };
+                    Signal<ImageSource> firstSource = Signal.Create(x);
+                    Signal<ImageSource> secondSource = Signal.Create(x);
+                    Shown first = scene.Show(() => Image(() => firstSource.Get(), options));
+                    Shown second = scene.Show(() => Image(() => secondSource.Get(), options));
+                    Assert.True(SpinWait.SpinUntil(() => ImageDecodeQueue.InFlight == 0, TimeSpan.FromSeconds(30)));
+
+                    scene.Cache.ReleaseAll();
+                    firstSource.Set(Sized(40, 20));
+                    _ = scene.Draw();
+                    Assert.True(SpinWait.SpinUntil(() => ImageDecodeQueue.InFlight == 0, TimeSpan.FromSeconds(30)));
+                    secondSource.Set(z);
+                    _ = scene.Draw();
+                    Shown third = scene.Show(z, options);
+                    posts.Settle();
+                    List<ImageCommand> images = scene.Draw();
+
+                    Assert.True(scene.Tree.Nodes.GetRef(first.Element.Node).FirstChild.IsNone);
+                    Assert.True(scene.Tree.Nodes.GetRef(second.Element.Node).FirstChild.IsNone);
+                    Assert.True(scene.Tree.Nodes.GetRef(third.Element.Node).FirstChild.IsNone);
+                    Assert.Equal(3, images.Count);
+                    Assert.Equal((40f, 20f), (images[0].Width, images[0].Height));
+                    Assert.Equal((20f, 10f, 20f, 10f), (images[1].Width, images[1].Height, images[2].Width, images[2].Height));
+                    Assert.Equal(images[1].Image, images[2].Image);
+                    Assert.Equal((3, 2), (Decodes, scene.Tree.Images.Count));
+                },
+                posts
+            );
+        });
+
+    /// <summary>
     /// Finding a key, moving its entry to the newest end, and an element leaving an entry allocate nothing.
     /// </summary>
     /// <remarks>
