@@ -87,6 +87,15 @@ internal static class ImageDecodeQueue
     // where images do not play.
     private static ImageResult DecodeAnimation(ImageSource source, ReadOnlyMemory<byte> bytes, int width, int height)
     {
+        // The decoder pins the bytes for as long as the animation plays. Bytes read here go to the pinned object heap first, so
+        // that a small array does not stay pinned among the objects the GC moves; bytes the app gave stay where the app put them.
+        if (source.OwnsBytes)
+        {
+            byte[] pinned = GC.AllocateUninitializedArray<byte>(bytes.Length, pinned: true);
+            bytes.CopyTo(pinned);
+            bytes = pinned;
+        }
+
         ImageAnimation? animation = ImageAnimation.TryOpen(bytes, width, height, TextureCache.MaxSide);
         if (animation is null)
         {

@@ -34,7 +34,8 @@ public sealed class ImageSource : IEquatable<ImageSource>
     }
 
     /// <summary>
-    /// Returns the source of an image's bytes. The app does not write them again while an image reads them.
+    /// Returns the source of an image's bytes. The app does not write them again while an image reads them, nor while an
+    /// animation of them plays: its frames are decoded from the same bytes one at a time.
     /// </summary>
     /// <param name="data">The bytes of the image file.</param>
     /// <returns>The source.</returns>

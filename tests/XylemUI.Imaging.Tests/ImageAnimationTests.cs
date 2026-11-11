@@ -232,6 +232,39 @@ public sealed class ImageAnimationTests
         _ = Assert.Throws<ObjectDisposedException>(() => animation.Next(pixels, out _));
     }
 
+    /// <summary>
+    /// A decoder nobody disposed closes its native decoder and unpins the image's bytes when it is finalized.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The number of open decoders, read before.
+    ///
+    /// Steps:
+    /// - Open a decoder of Images/anim-keep.gif in a method that keeps no reference to it; read the number. Collect the garbage and
+    ///   wait for the finalizers; read the number again. Open and dispose another; read the number.
+    ///
+    /// Expected:
+    /// - One more decoder is open after the first; the number is back after the finalizers, and after the disposal.
+    /// </remarks>
+    [Fact]
+    public void Decoder_ThatIsNotDisposed_IsClosedByItsFinalizer()
+    {
+        int before = ImageAnimation.OpenCount;
+        byte[] data = File.ReadAllBytes(Path.Combine(Folder, "anim-keep.gif"));
+
+        OpenAndForget(data);
+        Assert.Equal(before + 1, ImageAnimation.OpenCount);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Assert.Equal(before, ImageAnimation.OpenCount);
+
+        ImageAnimation.TryOpen(data, 0, 0, 8192)!.Dispose();
+        Assert.Equal(before, ImageAnimation.OpenCount);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static void OpenAndForget(byte[] data) => Assert.NotNull(ImageAnimation.TryOpen(data, 0, 0, 8192));
+    }
+
     private static JsonElement Expected(string name) =>
         JsonDocument.Parse(File.ReadAllText(Path.Combine(Folder, "expected-anim.json"))).RootElement.GetProperty(name);
 

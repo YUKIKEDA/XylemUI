@@ -58,6 +58,7 @@ internal sealed unsafe class ImageAnimation : IAnimationFrames
     // converted and shrunk.
     private readonly byte[]? _converted;
     private readonly bool _converts;
+    private static int _open;
     private MemoryHandle _pin;
     private nint _native;
 
@@ -70,11 +71,24 @@ internal sealed unsafe class ImageAnimation : IAnimationFrames
         Width = width;
         Height = height;
         _converts = converts;
+        _ = Interlocked.Increment(ref _open);
         if (converts && Shrinks)
         {
             _converted = new byte[canvasWidth * canvasHeight * 4];
         }
     }
+
+    /// <summary>
+    /// Finalizes an instance of the <see cref="ImageAnimation"/> class. A decoder nobody disposed (a tree thrown away without its
+    /// cache being released, a result that never reached the UI thread) still closes its native decoder and lets the image's bytes
+    /// go.
+    /// </summary>
+    ~ImageAnimation() => Close();
+
+    /// <summary>
+    /// Gets the number of decoders that are open; for the tests.
+    /// </summary>
+    public static int OpenCount => Volatile.Read(ref _open);
 
     /// <summary>
     /// Gets the width of a frame, in pixels.
@@ -220,11 +234,18 @@ internal sealed unsafe class ImageAnimation : IAnimationFrames
     /// </summary>
     public void Dispose()
     {
-        if (_native != 0)
+        Close();
+        GC.SuppressFinalize(this);
+    }
+
+    private void Close()
+    {
+        nint native = Interlocked.Exchange(ref _native, 0);
+        if (native != 0)
         {
-            ImageShim.AnimationClose(_native);
-            _native = 0;
+            ImageShim.AnimationClose(native);
             _pin.Dispose();
+            _ = Interlocked.Decrement(ref _open);
         }
     }
 }
