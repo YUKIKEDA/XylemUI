@@ -4830,7 +4830,18 @@ internal sealed class FocusManager
 - **メニュー:** メニューとメニューバーの項目（§13.1）は、動作を指せる。キーの表示はキーマップから引き、有効か無効かは、今のフォーカスからその動作のハンドラが見つかるかで決める（GPUI の `MenuItem::action`）。表示と登録を別に持つ形（Flutter、Avalonia）は採らない。
 - **利用者のキーマップ:** フレームワークは、実行中に行を足す・外す API と、キーの並びの文字列（`ctrl-shift-p`）の解析と表示を持つ。優先は、利用者の行が既定の行より上。設定ファイルの形式と読み込みは、アプリの側に置く（GPUI と zed の分け方）。
 
-行 KM1 の Grill で決めること: 公開の型の名前、文脈の条件の文法（GPUI は `&&`・`||`・`!`・`>`・`==` を持つ、`crates/gpui/src/keymap/context.rs` 221〜232 行目）、キーの並びの表示の文字列（OS ごとの修飾キーの順と記号。行 LC3 の部品の文言との関係）、ウィンドウ全体のアクセスキー（上の「Alt とメニューのキー」）との順。
+**細部（KM1 の Grill でオーナーが決定、Issue #807）:**
+
+- **登録:** 動作の型に属性を付ける（`[Action("editor::Save")]`）。Source Generator が「名前から動作を作る関数」の表を生成する。名前の重複はビルドのエラーになる。アプリが起動時に 1 行ずつ登録する形は採らない。書き忘れた動作が、キーマップから実行時まで見つからないためである。GPUI はマクロで自動に登録する（`crates/gpui/src/action.rs` 351〜358 行目が、その表を引く）。
+- **ハンドラ:** `element.OnAction<T>(handler)`。ハンドラは動作の値を受け取り、「受けない」と返すと上へ送る。キーのイベントと同じく、capture と bubble の 2 つの段を持つ（GPUI の `capture_action` と `on_action`、`crates/gpui/src/elements/div.rs` 430〜460 行目）。
+- **コードからの実行:** `Dispatch(action)` を公開する。フォーカスしたノードから届ける。ボタン、メニュー、コマンドパレットが使う。
+- **文脈の条件:** GPUI と同じ文法にする。ノードは `.KeyContext("Editor")` と名乗り、`mode = full` のような値も持てる。条件は `&&`・`||`・`!`・`==`・`!=` と、子孫を表す `>`（`crates/gpui/src/keymap/context.rs` 221〜232 行目）。
+- **キーの並びの書き方:** GPUI と同じにする。`ctrl-shift-p` の形で、続けて押す形は空白で区切り（`ctrl-k ctrl-s`）、`secondary-` を持つ（`crates/gpui/src/platform/keystroke.rs` 115〜120 行目）。書き損じは、行を足したときに例外にする。
+- **キーの表示:** Windows では `Ctrl+Shift+P` の形にする。区切りは `+`、修飾キーの順は Ctrl、Alt、Shift、Win。WinUI は、修飾キーを `VirtualKeyModifiers` の列挙の順（Control = 1、Menu = 2、Shift = 4、Windows = 8）に並べ、`+` で区切る（Microsoft Learn の「Keyboard accelerators」と `VirtualKeyModifiers`）。Flutter の Apple のほかの順（Alt、Ctrl、Meta、Shift。`packages/flutter/lib/src/material/menu_anchor.dart` 2536〜2562 行目）には合わせない。修飾キーとキーの名前は、ローカライズの辞書（§4.11、行 LC3）から読める形にする。
+- **アクセスキーとの順:** キーマップを、ウィンドウのアクセスキー（Alt+文字）とメニューバーのキー（上の「Alt とメニューのキー」）より先に試す。`alt-f` を割り当てたら、そちらが勝つ。Avalonia も、`KeyBindings` を KeyDown の配送より前に試す。
+- **実行できるかの読み取り:** 「今のフォーカスから、その動作のハンドラが見つかるか」を、リアクティブな読み取りにする。フォーカスが移るか、ハンドラが増減したときにだけ、読んだ所が再実行される。
+- **受け入れ:** 割り当てに合うキーを押して動作が届くまでの割り当てが 0（Zero-Alloc のテスト、§11.3）。キーの配送の時間を、今の値（`docs/benchmarks/k1a-keys-focus.md`）と同じ回の中で比べる。
+- **PR:** 2 つに分ける。KM1a は、`XylemUI.Generators`、動作、ハンドラ、配送、`Dispatch`、実行できるかの読み取り。KM1b は、キーマップ、照合、続けて押す形、キーの並びの文字列。公開の型の名前は、それぞれの PR で出す。
 
 
 ### 7.1 フォーカス順序
