@@ -91,7 +91,17 @@ internal sealed class UiTree
     /// otherwise. A window sets it to the node its root function returned, which is a child of the window's own root: a handler
     /// the app adds to its root is then on the route with no focus (design §7, "Shortcuts and actions").
     /// </summary>
-    internal NodeHandle KeyRoot { get; set; }
+    internal NodeHandle KeyRoot
+    {
+        get;
+        set
+        {
+            field = value;
+
+            // The route with no focus starts from another node now.
+            Actions.AvailabilityChanged();
+        }
+    }
 
     /// <summary>
     /// Gets the animations of the tree's window that are running (design §2.14, "The frame clock").

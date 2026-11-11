@@ -243,6 +243,50 @@ public sealed class ActionTests
     }
 
     /// <summary>
+    /// A disabled node on the route is skipped, by a dispatch and by the reading of whether an action can be dispatched, and
+    /// enabling it again is seen by a computation that read it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The node the root function returns has a bubble handler of <c>Save</c> and is disabled by a signal. No node has the focus,
+    ///   so the route is that node and the window's root. An effect records <c>CanDispatch&lt;Save&gt;</c> each time it runs.
+    ///
+    /// Steps:
+    /// - Dispatch a <c>Save</c>. Disable the node and dispatch. Enable it and dispatch.
+    ///
+    /// Expected:
+    /// - The dispatches return true, false, true, and the handler ran twice. The effect recorded false (it first ran inside the
+    ///   root function, before the window knew the node it returns), then true, false, true.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Dispatch_ADisabledNodeOnTheRoute_IsSkippedUntilItIsEnabled()
+    {
+        int calls = 0;
+        var seen = new List<bool>();
+        var disabled = Signal.Create(false);
+        Element root = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            root = Column(Box().Width(10).Height(10)).Disabled(disabled).OnAction((in ActionEvent<Save> e) => calls++);
+            Element own = root;
+            _ = Effect.Create(() => seen.Add(own.CanDispatch<Save>()));
+            return root;
+        });
+
+        Assert.True(root.Dispatch(new Save()));
+        disabled.Set(true);
+        _ = app.PumpAndSettle();
+        Assert.False(root.Dispatch(new Save()));
+        disabled.Set(false);
+        _ = app.PumpAndSettle();
+        Assert.True(root.Dispatch(new Save()));
+
+        Assert.Equal(2, calls);
+        Assert.Equal([false, true, false, true], seen);
+    }
+
+    /// <summary>
     /// A handler stops being called when its scope is disposed.
     /// </summary>
     /// <remarks>
@@ -254,7 +298,8 @@ public sealed class ActionTests
     /// - Dispatch a <c>Save</c>; set the condition to false; dispatch again.
     ///
     /// Expected:
-    /// - The first is handled and calls the handler once; the second is not handled and calls nothing.
+    /// - The first is handled and calls the handler once; the second is not handled and calls nothing, and
+    ///   <c>CanDispatch&lt;Save&gt;</c> is false: the handler is gone from the node, not only skipped.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -291,6 +336,7 @@ public sealed class ActionTests
         _ = app.PumpAndSettle();
         Assert.False(root.Dispatch(new Save()));
         Assert.Equal(1, calls);
+        Assert.False(root.CanDispatch<Save>());
     }
 
     /// <summary>
@@ -342,7 +388,8 @@ public sealed class ActionTests
     ///   no change.
     ///
     /// Expected:
-    /// - The recorded values are false, true, false, true, false: one run for each change and none for the pumps.
+    /// - After the start (two runs, both false): the recorded values are true, false, true, false, one run for each change and none
+    ///   for the pumps.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -361,7 +408,11 @@ public sealed class ActionTests
             _ = Effect.Create(() => seen.Add(root.CanDispatch<Save>()));
             return root;
         });
-        Assert.Equal([false], seen);
+
+        // The start ran the effect in the root function and again when the window learned the node it returns; neither found a
+        // handler on the route.
+        Assert.Equal([false, false], seen);
+        seen.Clear();
 
         Assert.True(app.Focus(first));
         _ = app.PumpAndSettle();
@@ -372,7 +423,7 @@ public sealed class ActionTests
         disabled.Set(true);
         _ = app.PumpAndSettle();
         _ = app.PumpAndSettle();
-        Assert.Equal([false, true, false, true, false], seen);
+        Assert.Equal([true, false, true, false], seen);
     }
 
     /// <summary>
