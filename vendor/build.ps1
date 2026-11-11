@@ -9,6 +9,7 @@
 # Output: vendor/out/win-x64/static/<name>.lib and vendor/out/win-x64/shared/<name>.dll; the build machine's HarfBuzz with its
 # subset library in vendor/out/win-x64/tool (the icon build tool of XylemUI.Theme.Fluent, design §5.0.4); the Fluent icon files
 # in vendor/out/fluent. Nothing here is committed.
+# Trial line for Issue #770: changes the key of the CI cache. Removed before the PR is ready.
 param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'

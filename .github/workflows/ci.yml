@@ -27,7 +27,8 @@ jobs:
         # Windows is the merge gate. Linux and macOS run the same script for the layers that do not need a GPU (design §12.1).
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The sum of the limits of the two long steps below, with 5 minutes for the rest.
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
@@ -46,7 +47,8 @@ jobs:
 
       # The native libraries built by vendor/build.ps1 (Windows only until P04 / P06). The key covers the pinned versions and
       # the script, so a change to either builds them again.
-      - uses: actions/cache@v6
+      - uses: actions/cache/restore@v6
+        id: vendor
         if: runner.os == 'Windows'
         with:
           path: |
@@ -54,7 +56,25 @@ jobs:
             vendor/out
           key: vendor-${{ runner.os }}-${{ hashFiles('vendor/versions.lock', 'vendor/build.ps1') }}
 
+      # A run with no cache builds the libraries in a step of its own and saves them at once, before the gate: the build took
+      # 14 minutes 26 seconds (Issue #770), which the gate's limit has no room for, and a run whose gate fails or is stopped
+      # still leaves the cache for the next one (row Q12).
+      - name: Native libraries
+        if: runner.os == 'Windows' && steps.vendor.outputs.cache-hit != 'true'
+        timeout-minutes: 25
+        run: ./vendor/build.ps1
+
+      - uses: actions/cache/save@v6
+        if: runner.os == 'Windows' && steps.vendor.outputs.cache-hit != 'true'
+        with:
+          path: |
+            vendor/.cache
+            vendor/out
+          key: ${{ steps.vendor.outputs.cache-primary-key }}
+
+      # A gate that hangs is stopped after 30 minutes, with or without the cache.
       - name: Gate
+        timeout-minutes: 30
         run: ./build.ps1
 
       # The dump that build.ps1 writes when the Desktop tests hang (row Q5).
