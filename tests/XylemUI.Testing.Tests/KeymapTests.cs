@@ -361,7 +361,8 @@ public sealed class KeymapTests
     /// - In the first box "F2" (the later row at the same depth); in the second "Ctrl+S" (the row of <c>Editor</c> does not hold
     ///   there). With the keys taken away: "none". With the keys given to <c>Close</c> in <c>Editor</c>: "Ctrl+S" in the second
     ///   box, and "F2" in the first, where <c>ctrl-s</c> asks for <c>Close</c>. The keys shown ask for <c>Save</c> when pressed.
-    ///   When the first box drops its context, an effect that read the keys runs once more and records "Ctrl+S".
+    ///   When the first box drops its context, an effect that read the keys runs once more and records "Ctrl+S"; when it takes
+    ///   the context again, "F2".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -407,6 +408,8 @@ public sealed class KeymapTests
         auto.Clear();
         _ = first.KeyContext(null);
         Assert.Equal(["Ctrl+S"], auto);
+        _ = first.KeyContext("Editor");
+        Assert.Equal(["Ctrl+S", "F2"], auto);
         _ = app.PumpAndSettle();
     }
 
