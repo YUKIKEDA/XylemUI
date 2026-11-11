@@ -48,7 +48,9 @@ internal static class KeymapLookup
     /// <summary>
     /// Finds the row whose keys ask for an action of a type at the node the keys are routed from now: its condition holds there,
     /// and no row with the same keys wins over it, a row with no action or with another action included. Among several, the one
-    /// that wins the others is returned. It is the row a key would find, so what a menu shows is what the keys do.
+    /// that wins the others is returned. It is the row a key would find, so what a menu shows is what the keys do. Whether a
+    /// node handles a row's action is not asked (PR #811's review): a key goes on to the next row when nothing handles the
+    /// winning one's, and that next row is not returned here.
     /// </summary>
     /// <param name="tree">The tree.</param>
     /// <param name="actionType">The type of the action.</param>

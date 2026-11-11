@@ -1076,7 +1076,9 @@ public static partial class ElementExtensions
     /// window's keymap for an action of the type whose condition holds at the focused node and that no other row with the same
     /// keys wins over, a row that takes the keys' binding away included. A menu item and a tooltip show its
     /// <see cref="KeyBinding.ToDisplayString"/>, which is then what the keys do. Read in a computation, it is read again when a row
-    /// is added or taken out, the focus moves, or a node's context changes.
+    /// is added or taken out, the focus moves, or a node's context changes. Whether a node handles the action of a row is not
+    /// asked: a row that another row with the same keys wins over is not shown, also when nothing handles the winning row's action
+    /// and the key would go on to it.
     /// </summary>
     /// <typeparam name="TAction">The type of the action; a row for a type derived from it is not the type's.</typeparam>
     /// <param name="element">A node of the window.</param>
