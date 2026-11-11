@@ -3,14 +3,14 @@ using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 
 namespace XylemUI.E2E;
 
-// The cost of dispatching an action (row KM1a, design §7, "Shortcuts and actions"): a chain of 10 nodes with no window, an action
-// dispatched from the deepest one, a capture handler at the top that lets it go on and a bubble handler at the top that handles
-// it, so that both phases walk the whole route. Before the timing, the action is made by its name from the table the source
+// The cost of dispatching an action (row KM1a, design §7, "Shortcuts and actions"): a chain of boxes with no window, 1 and 50 deep
+// as the key chains of the input scenario are, an action dispatched from the deepest one. Every box has a capture handler, which
+// lets the action go on, and a bubble handler that passes it on, so that both phases call a handler at each box: 2 x depth handlers
+// a dispatch, the count us_per_key_depth_* has. Before the timing, the action is made by its name from the table the source
 // generator wrote: in the NativeAOT executable this is the check that the table is filled with no reflection.
 internal static class ActionCost
 {
-    private const int Depth = 10;
-    private const int Dispatches = 100_000;
+    private const int Dispatches = 10_000;
     private const int Samples = 21;
 
     public static int Run()
@@ -27,54 +27,70 @@ internal static class ActionCost
             throw new InvalidOperationException("The generated table did not name the type of 'e2e::Probe'.");
         }
 
-        var tree = new UiTree();
-        NodeHandle top = tree.CreateNode(new LayoutStyle());
-        NodeHandle leaf = top;
-        for (int i = 1; i < Depth; i++)
+        foreach (int depth in new[] { 1, 50 })
         {
-            NodeHandle child = tree.CreateNode(new LayoutStyle());
-            tree.AppendChild(leaf, child);
-            leaf = child;
-        }
+            var tree = new UiTree();
+            int handlers = 0;
+            NodeHandle leaf = default;
+            for (int i = 0; i < depth; i++)
+            {
+                NodeHandle node = tree.CreateNode(new LayoutStyle());
+                if (!leaf.IsNone)
+                {
+                    tree.AppendChild(leaf, node);
+                }
 
-        int captured = 0;
-        int handled = 0;
-        tree.AddActionHandler(top, EventPhase.Capture, (in ActionEvent<Probe> _) => captured++);
-        tree.AddActionHandler(top, EventPhase.Bubble, (in ActionEvent<Probe> _) => handled++);
+                tree.AddActionHandler(node, EventPhase.Capture, (in ActionEvent<Probe> _) => handlers++);
+                tree.AddActionHandler(
+                    node,
+                    EventPhase.Bubble,
+                    (in ActionEvent<Probe> e) =>
+                    {
+                        handlers++;
+                        e.Propagate();
+                    }
+                );
+                leaf = node;
+            }
 
-        // Unmeasured dispatches first, so that the route's array has its size and the handlers are compiled.
-        for (int i = 0; i < Dispatches; i++)
-        {
-            _ = tree.Actions.Dispatch(leaf, probe);
-        }
-
-        var nanoseconds = new double[Samples];
-        long bytes = 0;
-        for (int sample = 0; sample < Samples; sample++)
-        {
-            long allocated = GC.GetAllocatedBytesForCurrentThread();
-            long start = Stopwatch.GetTimestamp();
+            // Unmeasured dispatches first, so that the route's array has its size and the handlers are compiled.
             for (int i = 0; i < Dispatches; i++)
             {
                 _ = tree.Actions.Dispatch(leaf, probe);
             }
 
-            nanoseconds[sample] = Stopwatch.GetElapsedTime(start).TotalNanoseconds / Dispatches;
-            bytes += GC.GetAllocatedBytesForCurrentThread() - allocated;
+            handlers = 0;
+            var microseconds = new double[Samples];
+            long bytes = 0;
+
+            // The clock's first call in the process allocates 40 bytes (measured: without this call, the first sample of the first
+            // chain counted them and no other sample counted any), so it is made before the samples.
+            _ = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp()).TotalMicroseconds;
+            for (int sample = 0; sample < Samples; sample++)
+            {
+                long allocated = GC.GetAllocatedBytesForCurrentThread();
+                long start = Stopwatch.GetTimestamp();
+                for (int i = 0; i < Dispatches; i++)
+                {
+                    _ = tree.Actions.Dispatch(leaf, probe);
+                }
+
+                microseconds[sample] = Stopwatch.GetElapsedTime(start).TotalMicroseconds / Dispatches;
+                bytes += GC.GetAllocatedBytesForCurrentThread() - allocated;
+            }
+
+            long dispatches = (long)Dispatches * Samples;
+            if (handlers != dispatches * 2 * depth)
+            {
+                throw new InvalidOperationException($"The handlers ran {handlers} times, not {dispatches * 2 * depth}.");
+            }
+
+            Array.Sort(microseconds);
+            report.Number($"us_per_action_depth_{depth}_p50", microseconds[Samples / 2]);
+            report.Number($"action_handlers_per_dispatch_depth_{depth}", (double)handlers / dispatches);
+            report.Number($"bytes_per_action_depth_{depth}", (double)bytes / dispatches);
         }
 
-        int expected = Dispatches * (Samples + 1);
-        if (captured != expected || handled != expected)
-        {
-            throw new InvalidOperationException($"The handlers ran {captured} and {handled} times, not {expected}.");
-        }
-
-        Array.Sort(nanoseconds);
-        report.Number("depth", Depth);
-        report.Number("dispatch_ns_p50", nanoseconds[Samples / 2]);
-        report.Number("dispatch_ns_min", nanoseconds[0]);
-        report.Number("dispatch_ns_max", nanoseconds[^1]);
-        report.Number("bytes_per_dispatch", (double)bytes / ((long)Dispatches * Samples));
         return 0;
     }
 
