@@ -422,6 +422,21 @@ public sealed class HeadlessApp : IAsyncDisposable
     }
 
     /// <summary>
+    /// Hides the window or shows it again, as the OS does when a window is hidden or minimized and when it is back (design §2.11,
+    /// "Frames of hidden and minimized windows"); it shows from the start. A hidden window runs no frame: its transitions do not
+    /// advance and <see cref="PumpAndSettle"/> settles, and the first frame after it shows again advances them to that time.
+    /// </summary>
+    /// <param name="visible"><see langword="false"/> to hide or minimize the window; <see langword="true"/> to bring it
+    /// back.</param>
+    /// <exception cref="InvalidOperationException">The app is not running.</exception>
+    public void SetVisible(bool visible)
+    {
+        VerifyRunning();
+        Frames.SetVisible(visible);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
     /// Runs frames and timers on the virtual clock until nothing is left to run (design §12.2). Each iteration runs the UI queue;
     /// then, if a frame is asked for, advances the clock by <see cref="HeadlessOptions.FrameInterval"/> and runs it; otherwise, if
     /// a timer is due, advances the clock to it and fires it. It returns when the queue is empty and no frame or timer is left.
