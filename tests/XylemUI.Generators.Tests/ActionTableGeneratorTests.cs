@@ -229,6 +229,83 @@ public sealed class ActionTableGeneratorTests
     }
 
     /// <summary>
+    /// A record with <c>[Action]</c> is in the table as a class is, and a record whose only constructor takes parameters is the
+    /// error of a class without a constructor without parameters.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library with <c>[Action("demo::Jump")] public sealed record Jump : IAction { public int Line { get; init; } }</c>; another
+    ///   with <c>[Action("demo::Go")] public sealed record Go(int Line) : IAction;</c>.
+    ///
+    /// Steps:
+    /// - Run the generator on each; compile the first.
+    ///
+    /// Expected:
+    /// - The first: no diagnostic, no compiler error, and the table registers <c>demo::Jump</c> with <c>new global::Jump()</c>. The
+    ///   second: one XYLEM002 at the record, and no generated source.
+    /// </remarks>
+    [Fact]
+    public void Record_WithTheAttribute_IsRegisteredOrRefusedAsAClassIs()
+    {
+        Result jump = Run(
+            "Demo.Lib",
+            OutputKind.DynamicallyLinkedLibrary,
+            "using XylemUI;\n[Action(\"demo::Jump\")] public sealed record Jump : IAction { public int Line { get; init; } }"
+        );
+        Assert.Empty(jump.GeneratorDiagnostics);
+        Assert.Empty(jump.CompilerErrors);
+        Assert.Contains(
+            "Register<global::Jump>(\"demo::Jump\", static () => new global::Jump());",
+            Assert.Single(jump.Sources),
+            StringComparison.Ordinal
+        );
+
+        Result go = Run(
+            "Demo.Lib",
+            OutputKind.DynamicallyLinkedLibrary,
+            "using XylemUI;\n[Action(\"demo::Go\")] public sealed record Go(int Line) : IAction;"
+        );
+        Assert.Equal("XYLEM002", Assert.Single(go.GeneratorDiagnostics).Id);
+        Assert.Empty(go.Sources);
+    }
+
+    /// <summary>
+    /// A name that two referenced libraries give is an error in the assembly that references both, though neither action is its
+    /// own.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two libraries, <c>Demo.First</c> and <c>Demo.Second</c>, each with an action named <c>shared::Open</c>, compiled. An app
+    ///   with no action that references both, and an app that references only the first.
+    ///
+    /// Steps:
+    /// - Run the generator on each app.
+    ///
+    /// Expected:
+    /// - The app with both: one XYLEM003, with no source location, whose message names <c>shared::Open</c>, <c>Demo.First</c>, and
+    ///   <c>Demo.Second</c>. The app with one: no diagnostic.
+    /// </remarks>
+    [Fact]
+    public void Name_OfTwoReferencedLibraries_IsADuplicate()
+    {
+        const string Library = "using XylemUI;\n[Action(\"shared::Open\")] public sealed class Open : IAction;";
+        const string App = "public static class Program { public static void Main() { } }";
+        MetadataReference first = Run("Demo.First", OutputKind.DynamicallyLinkedLibrary, Library).Emit();
+        MetadataReference second = Run("Demo.Second", OutputKind.DynamicallyLinkedLibrary, Library).Emit();
+
+        Result both = Run("Demo.App", OutputKind.ConsoleApplication, App, first, second);
+        Diagnostic diagnostic = Assert.Single(both.GeneratorDiagnostics);
+        Assert.Equal("XYLEM003", diagnostic.Id);
+        Assert.Equal(LocationKind.None, diagnostic.Location.Kind);
+        string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("shared::Open", message, StringComparison.Ordinal);
+        Assert.Contains("Demo.First", message, StringComparison.Ordinal);
+        Assert.Contains("Demo.Second", message, StringComparison.Ordinal);
+
+        Assert.Empty(Run("Demo.One", OutputKind.ConsoleApplication, App, first).GeneratorDiagnostics);
+    }
+
+    /// <summary>
     /// A second run after an edit that does not touch an action gives the same table from the cache.
     /// </summary>
     /// <remarks>

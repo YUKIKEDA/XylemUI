@@ -64,13 +64,14 @@ public readonly struct ActionEvent<TAction>
 
     /// <summary>
     /// Passes the action on to the handlers after this one: the handler did not handle it. It matters in the bubble phase, where
-    /// a handler that returns without it ends the route.
+    /// a handler that returns without it ends the route. It is called inside the handler: after the handler returned, it would
+    /// change the route of whatever action is dispatched then.
     /// </summary>
     public void Propagate() => _dispatch.Propagate();
 
     /// <summary>
     /// Ends the route: no handler after this one is called, and the action is handled. It matters in the capture phase, where
-    /// the action goes on without it.
+    /// the action goes on without it. It is called inside the handler, as <see cref="Propagate"/> is.
     /// </summary>
     public void StopPropagation() => _dispatch.Stop();
 }
