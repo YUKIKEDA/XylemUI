@@ -87,6 +87,11 @@ internal sealed class DesktopWindow : IDisposable
             Window.TextInputReceived = Input.Handle;
             Window.ActivationChanged = Input.SetActive;
 
+            // No frames while the window is hidden or minimized (design §2.11). The value now first: a window shown above, or
+            // minimized since, changed before the frames listened.
+            Frames.SetVisible(Window.IsShowing);
+            Window.VisibilityChanged = Frames.SetVisible;
+
             // Drags from the OS come in as drags of the app (design §7, "Drag and drop").
             Window.ExternalDrops = Input;
 
@@ -189,6 +194,7 @@ internal sealed class DesktopWindow : IDisposable
             Window.ExternalDrops = null;
             Window.TextInputReceived = null;
             Window.ActivationChanged = null;
+            Window.VisibilityChanged = null;
 
             // TSF lets go of the window before it is destroyed: an AssociateFocus on a destroyed window fails (spike #510).
             Tree.SetTextInput(null);

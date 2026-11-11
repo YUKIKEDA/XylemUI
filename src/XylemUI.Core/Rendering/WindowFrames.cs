@@ -47,6 +47,11 @@ internal sealed partial class WindowFrames
     private TextRenderingParameters _textRendering;
     private bool _resizing;
 
+    // Whether the window is neither hidden nor minimized, and whether a frame was asked for while it was (design §2.11, "Frames of
+    // hidden and minimized windows").
+    private bool _visible = true;
+    private bool _frameWanted;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="WindowFrames"/> class, and asks the scheduler for a frame whenever the tree
     /// queues work.
@@ -193,6 +198,14 @@ internal sealed partial class WindowFrames
     /// </summary>
     public void RunFrame()
     {
+        // A callback the scheduler held when the window was hidden, or a frame the window's timer runs during a drag: nothing runs,
+        // not even the clock is read, and the frame is run when the window is back.
+        if (!_visible)
+        {
+            _frameWanted = true;
+            return;
+        }
+
         FrameTime = _time.GetElapsedTime(0);
 
         // The popups asked for while their anchors were in no root open now, and are laid out in this frame (design §7.3).
@@ -319,11 +332,33 @@ internal sealed partial class WindowFrames
     {
         // The new size's layout request would ask for a frame; this one runs it now, so no other is asked for until the frame
         // clears the request (RunFrame), after which a mark asks for the next one as usual.
-        _resizing = true;
+        if (_visible)
+        {
+            _resizing = true;
+        }
+
         _scale = scale;
         Invalidation.NotifyWindowResized(_tree, _root, size);
         _tree.Popups.ResizeAll(size);
         RunFrame();
+    }
+
+    /// <summary>
+    /// Tells the frames whether the window shows: a window that is hidden or minimized runs no frame (design §2.11, "Frames of
+    /// hidden and minimized windows"). While it does not show, a frame that is asked for is only remembered, and
+    /// <see cref="RunFrame"/> and <see cref="Resize"/> lay out, draw, and present nothing; when it shows again, a remembered frame
+    /// is asked for once. A window shows until it is told otherwise, so one that was never shown runs its frames.
+    /// </summary>
+    /// <param name="visible"><see langword="false"/> when the window was hidden or minimized; <see langword="true"/> when it is
+    /// back.</param>
+    public void SetVisible(bool visible)
+    {
+        _visible = visible;
+        if (visible && _frameWanted)
+        {
+            _frameWanted = false;
+            RequestFrame();
+        }
     }
 
     // Builds the lists that changed and draws them all, the window's first. With the window's, every popup's is built too, since
@@ -569,7 +604,11 @@ internal sealed partial class WindowFrames
     /// </summary>
     internal void RequestFrame()
     {
-        if (!_resizing)
+        if (!_visible)
+        {
+            _frameWanted = true;
+        }
+        else if (!_resizing)
         {
             _scheduler.RequestFrame(_runFrame);
         }
