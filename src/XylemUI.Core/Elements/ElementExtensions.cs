@@ -1075,7 +1075,8 @@ public static partial class ElementExtensions
 
     /// <summary>
     /// Returns whether an action of a type would find a handler if it were dispatched now in the element's window (design §7,
-    /// "Shortcuts and actions"): a node on the route from the focused node has a handler for it and is not disabled. Read in a
+    /// "Shortcuts and actions"): a node on the route from the focused node has a handler for it, of either phase, and is not
+    /// disabled. A capture handler counts too, though it handles the action only when it stops it. Read in a
     /// computation, it is read again when the focus moves, or a handler, a node's disabled state, or the window's activation
     /// changes; a menu item reads it to show itself enabled.
     /// </summary>

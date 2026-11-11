@@ -20,6 +20,14 @@
       Visible="false"
     />
   </ItemGroup>
+  <!-- The path above is where the generator project builds to. A setting that moves its output would drop the generator from
+       the package without a word, so a pack with no file there fails (PR #810's review). -->
+  <Target Name="XylemCheckGeneratorsInPackage" BeforeTargets="GenerateNuspec">
+    <Error
+      Condition="!Exists('..\XylemUI.Generators\bin\$(Configuration)\netstandard2.0\XylemUI.Generators.dll')"
+      Text="XylemUI.Generators.dll was not found where XylemUI.Core packs it from (analyzers/dotnet/cs)."
+    />
+  </Target>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Core.Tests" />
     <!-- The benchmarks time the internal layout and reactive paths (roadmap row M1a). -->

@@ -73,7 +73,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     {
         IncrementalValuesProvider<ActionInfo> actions = context.SyntaxProvider.ForAttributeWithMetadataName(
             ActionAttributeName,
-            static (node, _) => node is ClassDeclarationSyntax,
+            static (node, _) => IsClassOrRecord(node),
             static (attribute, _) => Read(attribute)
         );
 
@@ -81,6 +81,9 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
         context.RegisterSourceOutput(actions.Collect().Combine(assembly), static (output, pair) => Write(output, pair.Left, pair.Right));
     }
+
+    // A record is a class too, and is not a ClassDeclarationSyntax; an action with arguments is naturally one.
+    private static bool IsClassOrRecord(SyntaxNode node) => node is ClassDeclarationSyntax or RecordDeclarationSyntax;
 
     private static ActionInfo Read(GeneratorAttributeSyntaxContext context)
     {
@@ -153,9 +156,16 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         {
             foreach (string name in referenced.Names)
             {
-                if (!byName.ContainsKey(name))
+                string owner = "an action of " + referenced.Assembly;
+                if (byName.TryGetValue(name, out string? first))
                 {
-                    byName.Add(name, "an action of " + referenced.Assembly);
+                    // Two of the assemblies this one references give the name: neither is this assembly's, so the error has no
+                    // place in its source. Without it the app would build and throw in its module initializer.
+                    output.ReportDiagnostic(Diagnostic.Create(DuplicateName, Location.None, name, first, owner));
+                }
+                else
+                {
+                    byName.Add(name, owner);
                 }
             }
         }

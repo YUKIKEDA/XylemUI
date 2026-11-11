@@ -28,17 +28,19 @@ dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>
   - 配送の割り当ては 0（`Dispatch_AfterWarmUp_DoesNotAllocate`、1,000 回）
   - 名前の表は、名前と型が 1 対 1。同じ組の登録は受け、食い違う登録は例外
   - `[Action]` を付けた型は、アプリのコードが登録しなくても、起動した時点で表にある（生成したモジュール初期化子）
-- **Source Generator（`ActionTableGeneratorTests`、13 件。`XylemUI.Generators.Tests`）:**
+- **Source Generator（`ActionTableGeneratorTests`、15 件。`XylemUI.Generators.Tests`）:**
   - ライブラリの表は public のクラスで、名前ごとに `ActionRegistry.Register` を呼び、アセンブリの属性に表と名前を持つ。モジュール初期化子は持たない
   - アプリの表は、参照するライブラリの表を呼んでから自分の表を呼ぶモジュール初期化子を持つ。自分の動作が無いアプリも、ライブラリの表を呼ぶ
   - 動作も、呼ぶ表も無いアセンブリには、何も生成しない
   - 誤りは、型の位置のエラーになり、その型は表に入らない（8 通り）: `IAction` でない（XYLEM001）、引数なしのコンストラクタが無いか private（XYLEM002）、名前の重複（XYLEM003）、名前が空（XYLEM004）、private の入れ子・abstract・ジェネリック（XYLEM005）
   - 参照するライブラリの表にある名前を、もう一度付けると XYLEM003
+  - 参照する 2 つのライブラリが同じ名前を持つと、両方を参照するアセンブリで XYLEM003（場所は無く、2 つのアセンブリの名前を出す。PR #810 のレビュー）
+  - `[Action]` を付けた record は、クラスと同じに表に入る。引数のあるコンストラクタだけの record は XYLEM002（PR #810 のレビュー。最初の版は record を見落として、エラーも出さずに表から落としていた）
   - 動作に関係の無い編集の後は、表を書き直さない（インクリメンタルの段がキャッシュから出る）
 - **ミューテーション:** 配送と読み取りの実装に 13 個の変異を入れ、作業用の worktree で `ActionTests` を流した。13 個とも、どれかのテストが落ちた。
   - bubble が最初のハンドラで止まらない／capture が元から上へ進む／capture の段が無い／派生した型も受ける／無効なノードのハンドラを呼ぶ／ポップアップの根で経路が切れる／capture の `StopPropagation` が効かない／読み取りが無効なノードを数える／フォーカスの移動で読み取りが再実行されない／無効の切り替えで再実行されない／ウィンドウが根のノードを知ったときに再実行されない／フォーカスが無いとき木の根から配る／ハンドラを外しても残る
   - 1 回目は 4 個が生き残った。無効なノードが経路に乗る場面と、外したハンドラの読み取りを、テストが通っていなかった。テストを 1 件足し、1 件に確認を足した。その途中で、ウィンドウが根のノードを知ったときに読み取りが再実行されない誤りを見つけて直した（`UiTree.KeyRoot` の設定で印を付ける）。
-- **パッケージ:** `dotnet pack src/XylemUI.Core` の `.nupkg` に、`analyzers/dotnet/cs/XylemUI.Generators.dll` が入る。
+- **パッケージ:** `dotnet pack src/XylemUI.Core` の `.nupkg` に、`analyzers/dotnet/cs/XylemUI.Generators.dll` が入る。拾う場所にファイルが無ければ、pack がエラーで止まる（`XylemCheckGeneratorsInPackage`）。
 
 ## 計測
 
@@ -55,6 +57,7 @@ NativeAOT の Release（`win-x64`）。`actions` と `input` を交互に 3 回�
 - 動作の配送は、同じ回数のハンドラを呼ぶキーの配送より短い。2 つは別の経路で、キーのイベントは 11 個、動作のイベントは 5 個の値を持つ。差の内訳は、プロファイルで分けていない。
 - 計測の途中で、深さ 1 の最初の標本だけが 40 バイトを数えた。標本の前に時計（`Stopwatch.GetElapsedTime`）を 1 回呼ぶと、どの標本も 0 になった。プロセスで最初の時計の呼び出しが割り当てる 40 バイトで、配送の割り当てではない。`ActionCost.cs` は、標本の前に時計を 1 回呼ぶ。
 - 実行ファイル（`XylemUI.E2E.exe`）は 7,466,496 バイト。publish の警告は 0。
+- 実行できるかの読み取りは、木に 1 つの世代の Signal を読む。どの動作についての読み取りも、フォーカスが移るたびに再実行される。今は読み手がいない。メニューの項目の数だけ読み手ができる行 KM2 で、フォーカスの移動の費用を測る（PR #810 のレビュー）。
 
 ## 変えた動き
 
