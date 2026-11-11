@@ -131,7 +131,7 @@ public sealed class TextureCacheTests
     /// - The image is queued once, and the slot holds the array after the upload; nothing is there to withdraw. A waiting upload
     ///   is withdrawn once and the queue is empty. Pixels dropped while an upload waits go with the upload, and at once
     ///   otherwise. The wrong length throws ArgumentException and null ArgumentNullException. On a released image, rewriting
-    ///   fails the invariant, withdrawing returns false, and dropping does nothing.
+    ///   fails the invariant (checked in the Debug configuration), withdrawing returns false, and dropping does nothing.
     /// </remarks>
     [Fact]
     public void Rewrite_QueuesTheImageAgain_AndKeepsItsPixelsPastTheUpload()
@@ -171,7 +171,10 @@ public sealed class TextureCacheTests
         _ = Assert.Throws<ArgumentException>(() => cache.Rewrite(image, new byte[4]));
         _ = Assert.Throws<ArgumentNullException>(() => cache.Rewrite(image, null!));
         cache.Release(image);
+#if DEBUG
+        // Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.
         _ = Assert.Throws<InvariantViolationException>(() => cache.Rewrite(image, next));
+#endif
         Assert.False(cache.Withdraw(image));
         cache.DropPixels(image);
     }
