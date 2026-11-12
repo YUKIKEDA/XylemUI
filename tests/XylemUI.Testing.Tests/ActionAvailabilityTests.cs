@@ -382,6 +382,156 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// A reader reads again for a change on a node of its route, and not for a change on a node its route does not pass
+    /// (design §7, "The notices that make a reader read again").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The root function returns a column of a box with a handler of <c>Shape</c> and a second box. A computation made in the
+    ///   root function reads <c>CanDispatch</c> of a <c>Circle</c> from the first box and counts its runs; an effect reads it. A
+    ///   third box is made and kept, with no parent.
+    ///
+    /// Steps:
+    /// - Settle and read the count. Off the route: append the kept box to the second box; give the second box a context; disable
+    ///   the second box; take the kept box out by disposing nothing and hiding it. Read the count. On the route, each followed by
+    ///   a settle and a read of the count: give the column a context; disable the first box; enable it again.
+    ///
+    /// Expected:
+    /// - The count does not change for the four changes off the route, and goes up by one for each of the three on it.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Reader_ReadsAgainForAChangeOnItsRoute_AndNotForOneOffIt()
+    {
+        int ran = 0;
+        Element side = default;
+        Element other = default;
+        Element kept = default;
+        Element column = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            side = Box().Width(10).Height(10).OnActionsOf((in ActionEvent<Shape> _) => { });
+            other = Box().Width(10).Height(10);
+            kept = Box().Width(5).Height(5);
+            Element own = side;
+            Computed<bool> can = Computed.Create(() =>
+            {
+                ran++;
+                return own.CanDispatch(new Circle(), own);
+            });
+            _ = Effect.Create(() => _ = can.Get());
+            return column = Column(side, other);
+        });
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+        int start = ran;
+
+        tree.AppendChild(other.Node, kept.Node);
+        tree.SetKeyContext(other.Node, "Other");
+        tree.SetDisabled(other.Node, true);
+        tree.SetStyle(kept.Node, tree.Nodes.GetRef(kept.Node).Layout.Style with { Hidden = true });
+        _ = app.PumpAndSettle();
+        int offRoute = ran;
+
+        var onRoute = new List<int>();
+        tree.SetKeyContext(column.Node, "Column");
+        _ = app.PumpAndSettle();
+        onRoute.Add(ran);
+        tree.SetDisabled(side.Node, true);
+        _ = app.PumpAndSettle();
+        onRoute.Add(ran);
+        tree.SetDisabled(side.Node, false);
+        _ = app.PumpAndSettle();
+        onRoute.Add(ran);
+
+        Assert.NotEqual(0, start);
+        Assert.Equal(start, offRoute);
+        Assert.Equal([start + 1, start + 2, start + 3], onRoute);
+    }
+
+    /// <summary>
+    /// A virtualized list that scrolls makes a reader outside it read nothing again. Once a reader reads from inside a row that
+    /// stays, the exchange of rows is one change: that reader reads once more, not once for each row taken out and put back, and
+    /// so does the reader outside, since the notice is one for all readers.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box of 100 x 100 that scrolls, a virtualized list of 1,000 rows 20 high, beside a box with a handler of <c>Shape</c>.
+    ///   After the first frame, a computation that an effect reads counts its runs and reads <c>CanDispatch</c> of a
+    ///   <c>Circle</c> from the box beside the list.
+    ///
+    /// Steps:
+    /// - Settle and read the count. Scroll the list by one row (20), settle, and read the count. Add a second such computation
+    ///   that reads from the row of the item 5, settle, and read both counts. Scroll by one more row, settle, and read both.
+    ///
+    /// Expected:
+    /// - With the reader outside alone, the scroll made it run no more. With the reader in the row, the second scroll made each
+    ///   of the two run once more. The row of the item 5 is still in the tree.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task VirtualListThatScrolls_MakesAReaderOutsideReadNothing_AndOneInsideReadOnce()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        var state = new VirtualListState();
+        var rows = new Dictionary<int, Element>();
+        int outside = 0;
+        int inside = 0;
+        Element side = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            side = Box().Width(10).Height(10).OnActionsOf((in ActionEvent<Shape> _) => { });
+            Element list = Box()
+                .Width(100)
+                .Height(100)
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(items, static i => i, item => rows[item.Get()] = Box().Height(20), state);
+            return Column(side, list);
+        });
+        _ = app.PumpAndSettle();
+        Element own = side;
+        ScopeHandle first = Scope.Create(() =>
+        {
+            Computed<bool> fromSide = Computed.Create(() =>
+            {
+                outside++;
+                return own.CanDispatch(new Circle(), own);
+            });
+            _ = Effect.Create(() => _ = fromSide.Get());
+        });
+        _ = app.PumpAndSettle();
+        int alone = outside;
+        state.Scroll.ScrollTo(new System.Numerics.Vector2(0, 20));
+        _ = app.PumpAndSettle();
+        int aloneAfter = outside;
+
+        Element row = rows[5];
+        ScopeHandle second = Scope.Create(() =>
+        {
+            Computed<bool> fromRow = Computed.Create(() =>
+            {
+                inside++;
+                return own.CanDispatch(new Circle(), row);
+            });
+            _ = Effect.Create(() => _ = fromRow.Get());
+        });
+        _ = app.PumpAndSettle();
+        (int, int) before = (outside, inside);
+        state.Scroll.ScrollTo(new System.Numerics.Vector2(0, 40));
+        _ = app.PumpAndSettle();
+        (int, int) after = (outside, inside);
+        bool alive = app.Tree.Nodes.IsAlive(row.Node);
+        Scope.Dispose(first);
+        Scope.Dispose(second);
+        _ = app.PumpAndSettle();
+
+        Assert.NotEqual(0, alone);
+        Assert.Equal(alone, aloneAfter);
+        Assert.True(alive);
+        Assert.Equal((before.Item1 + 1, before.Item2 + 1), after);
+    }
+
+    /// <summary>
     /// The keys of a named action with arguments are those of a row whose action has the same arguments, compared by the code the
     /// source generator wrote for the type, a record or a class; an action of a type with no name, and a read by the type alone,
     /// find a row of the type.
