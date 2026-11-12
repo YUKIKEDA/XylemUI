@@ -112,9 +112,9 @@ public static partial class Primitive
             );
             _tree.SetPartAccessibility(_box, Roles.ComboBox);
             return box.Focusable()
-                .KeyContext(PrimitiveKeyBindings.SelectContext)
+                .PartKeyContext(PrimitiveKeyBindings.SelectContext)
                 .OnClick(Toggle)
-                .On(KeyEventKind.Down, EventPhase.Bubble, BoxKeys)
+                .OnActionsOf<SelectAction>(BoxAction)
                 .OnTextInput(EventPhase.Bubble, Typed);
         }
 
@@ -148,8 +148,9 @@ public static partial class Primitive
                     MaxHeight = Length.Px(settings.MaxDropDownHeight),
                 }
             );
-            _ = list.KeyContext(PrimitiveKeyBindings.SelectListContext)
-                .On(KeyEventKind.Down, EventPhase.Bubble, ListKeys)
+            _ = list.PartKeyContext(PrimitiveKeyBindings.SelectListContext)
+                .OnActionsOf<MenuAction>(ListMenuAction)
+                .OnActionsOf<SelectAction>(ListAction)
                 .OnTextInput(EventPhase.Bubble, Typed);
             return settings.Panel?.Invoke(list) ?? list;
         }
@@ -168,92 +169,86 @@ public static partial class Primitive
             }
         }
 
-        // The box's keys while the list is closed (Avalonia's ComboBox.cs lines 258 to 292); the list's keys go on to the box, so
-        // that Alt+Up, Alt+Down, and F4 close it from there too.
-        private void BoxKeys(in KeyEvent e)
+        // The box's actions (Avalonia's ComboBox.cs lines 258 to 292). The list's actions go on to the box, so that Alt+Up,
+        // Alt+Down, and F4 close the list from there too.
+        private void BoxAction(in ActionEvent<SelectAction> e)
         {
-            bool alt = e.Modifiers == KeyModifiers.Alt;
-            bool none = e.Modifiers == KeyModifiers.None;
-            if ((alt && e.Key is Key.Up or Key.Down) || (none && e.Key == Key.F4))
+            SelectStep step = e.Action.Step;
+            if (step == SelectStep.Toggle)
             {
-                e.StopPropagation();
                 Toggle();
                 return;
             }
 
-            if (IsOpen || !none || e.TargetNode != _box)
+            // Enter, Space, and the arrows are the closed box's; in the open list they are the list's.
+            if (IsOpen || e.TargetNode != _box || step is not (SelectStep.Open or SelectStep.Previous or SelectStep.Next))
             {
+                e.Propagate();
                 return;
             }
 
-            switch (e.Key)
+            if (step == SelectStep.Open)
             {
-                case Key.Enter or Key.Space:
-                    _open.Set(true);
-                    break;
-                case Key.Down or Key.Up:
-                    bool down = e.Key == Key.Down;
-                    int at = IndexOf(value.Peek());
-                    int next = at < 0 ? (down ? Next(-1, 1) : Next(options.Count, -1)) : Next(at, down ? 1 : -1);
-                    if (next >= 0)
-                    {
-                        value.Set(options[next]);
-                    }
-
-                    break;
-                default:
-                    return;
+                _open.Set(true);
+                return;
             }
 
-            e.StopPropagation();
+            // The arrows make the option before or after the value the value.
+            bool down = step == SelectStep.Next;
+            int at = IndexOf(value.Peek());
+            int next = at < 0 ? (down ? Next(-1, 1) : Next(options.Count, -1)) : Next(at, down ? 1 : -1);
+            if (next >= 0)
+            {
+                value.Set(options[next]);
+            }
         }
 
-        // The list's keys, from its focused row: the moves stop at the ends; Enter and Space choose; Tab closes and goes on.
-        private void ListKeys(in KeyEvent e)
+        // The list's moves and its choice, from its focused row, which are a menu's actions: the moves stop at the ends.
+        private void ListMenuAction(in ActionEvent<MenuAction> e)
         {
-            // Tab and Shift+Tab close the list and give the focus back to the box, and the focus then moves on from there
-            // (Avalonia's ComboBox.cs lines 277 to 280 close on Tab with or without Shift, and leave it unhandled). The list
-            // takes Tab's row away (PrimitiveKeyBindings), so the move is asked for here.
-            if (e.Key == Key.Tab && e.Modifiers is KeyModifiers.None or KeyModifiers.Shift)
-            {
-                _block.Dismiss();
-                IAction move = e.Modifiers == KeyModifiers.Shift ? new FocusActions.Previous() : new FocusActions.Next();
-                if (_tree.Actions.Dispatch(_tree.Focus.KeyTarget, move))
-                {
-                    e.StopPropagation();
-                }
-
-                return;
-            }
-
-            if (e.Modifiers != KeyModifiers.None)
-            {
-                return;
-            }
-
             int at = Array.IndexOf(_rows, _tree.Focus.Focused);
-            switch (e.Key)
+            switch (e.Action.Step)
             {
-                case Key.Down or Key.Up:
-                    FocusRow(Next(at, e.Key == Key.Down ? 1 : -1));
+                case MenuStep.SelectPrevious:
+                    FocusRow(Next(at, -1));
                     break;
-                case Key.Home:
+                case MenuStep.SelectNext:
+                    FocusRow(Next(at, 1));
+                    break;
+                case MenuStep.SelectFirst:
                     FocusRow(Next(-1, 1));
                     break;
-                case Key.End:
+                case MenuStep.SelectLast:
                     FocusRow(Next(options.Count, -1));
                     break;
-                case Key.PageDown or Key.PageUp:
-                    FocusRow(Page(at, e.Key == Key.PageDown ? 1 : -1));
-                    break;
-                case Key.Enter or Key.Space when at >= 0:
+                case MenuStep.Confirm when at >= 0:
                     Choose(at);
                     break;
                 default:
-                    return;
+                    e.Propagate();
+                    break;
             }
+        }
 
-            e.StopPropagation();
+        // The list's own actions: a page of rows, and Tab, which closes the list and gives the focus back to the box, from where
+        // the focus then moves on (Avalonia's ComboBox.cs lines 277 to 280 close on Tab with or without Shift, and leave it
+        // unhandled). The others are the box's.
+        private void ListAction(in ActionEvent<SelectAction> e)
+        {
+            switch (e.Action.Step)
+            {
+                case SelectStep.PageUp or SelectStep.PageDown:
+                    FocusRow(Page(Array.IndexOf(_rows, _tree.Focus.Focused), e.Action.Step == SelectStep.PageDown ? 1 : -1));
+                    break;
+                case SelectStep.CloseAndFocusNext or SelectStep.CloseAndFocusPrevious:
+                    _block.Dismiss();
+                    IAction move = e.Action.Step == SelectStep.CloseAndFocusNext ? new FocusActions.Next() : new FocusActions.Previous();
+                    _ = _tree.Actions.Dispatch(_tree.Focus.KeyTarget, move);
+                    break;
+                default:
+                    e.Propagate();
+                    break;
+            }
         }
 
         private void RowEnter(in PointerEvent e)

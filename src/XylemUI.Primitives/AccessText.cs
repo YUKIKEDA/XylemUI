@@ -51,6 +51,18 @@ public static partial class Primitive
         Scope.OnCleanup(() => registry.Items.Remove(node));
     }
 
+    // Does what a menu item's access key does, for Enter and Space on it. Returns whether the node is a registered item.
+    private static bool ActivateItem(UiTree tree, NodeHandle node)
+    {
+        if (!RegistryOf(tree).Items.TryGetValue(node, out Action? activate))
+        {
+            return false;
+        }
+
+        activate();
+        return true;
+    }
+
     // The access keys of a tree, made the first time: the tree's window then sends it the window's access keys.
     private static AccessKeyRegistry RegistryOf(UiTree tree) =>
         AccessKeys.GetValue(

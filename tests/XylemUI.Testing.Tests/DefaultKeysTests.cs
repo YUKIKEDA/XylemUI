@@ -297,7 +297,165 @@ public sealed class DefaultKeysTests
         Assert.Equal(before.Bindings.Select(static row => row.ToString()), after.Bindings.Select(static row => row.ToString()));
     }
 
+    /// <summary>
+    /// A keymap is made on any thread, with the default rows; its rows are added on the UI thread alone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The module initializer registered <c>CoreKeyBindings.AddDefaults</c>.
+    ///
+    /// Steps:
+    /// - On a thread of the pool, make a keymap, then add a row to it.
+    ///
+    /// Expected:
+    /// - The keymap has the eleven default rows. Adding the row there throws <see cref="InvalidOperationException"/>, and the
+    ///   keymap keeps eleven rows.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Keymap_MadeOffTheUiThread_HasTheDefaultRows()
+    {
+        (Keymap keymap, Exception? thrown) = await Task.Run(static () =>
+        {
+            var made = new Keymap();
+            return (made, Record.Exception(() => made.Bind("ctrl-s", new Other())));
+        });
+
+        _ = Assert.IsType<InvalidOperationException>(thrown);
+        Assert.Equal(11, keymap.Bindings.Count);
+    }
+
+    /// <summary>
+    /// An app with no default rows registered does not start, and the error says what registers them.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - None.
+    ///
+    /// Steps:
+    /// - Ask for the default rows with a count of 0 registered methods, then with 1.
+    ///
+    /// Expected:
+    /// - The first throws <see cref="InvalidOperationException"/> whose message names <c>Keymap.RegisterDefaults</c>; the second
+    ///   does not throw. (An app that starts in these tests passed the check with the methods the module initializer registered.)
+    /// </remarks>
+    [Fact]
+    public void RequireDefaults_WithNoneRegistered_Throws()
+    {
+        InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(() => Keymap.RequireDefaults(0));
+        Assert.Contains("Keymap.RegisterDefaults", thrown.Message, StringComparison.Ordinal);
+
+        Keymap.RequireDefaults(1);
+    }
+
+    /// <summary>
+    /// The context of a part and the context the app gives the same node are one context for the conditions, and each is set
+    /// and taken away by itself.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focused box that handles <c>Pick</c> and records its number. Rows for <c>ctrl-p</c>: <c>Pick(1)</c> in <c>Part</c>,
+    ///   <c>Pick(2)</c> in <c>App</c>, <c>Pick(3)</c> in <c>Part &amp;&amp; App</c>, <c>Pick(4)</c> in <c>kind == mine</c>.
+    ///
+    /// Steps:
+    /// - Give the box the part's context <c>Part kind = parts</c> and press. Give it the app's context <c>App</c> and press.
+    ///   Give it the app's context <c>App kind = mine</c> and press. Take the part's context away and press. Take the app's away
+    ///   and press.
+    ///
+    /// Expected:
+    /// - 1 (the part's alone); 3 (both names; the row added later of those that hold); 4 (the app's value for a key both have);
+    ///   4 (the app's stays); nothing, and the key is not handled.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task KeyContext_OfThePartAndOfTheApp_AreOne()
+    {
+        var picked = new List<int>();
+        Element box = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(box = Box().Width(10).Height(10).Focusable().OnAction((in ActionEvent<Pick> e) => picked.Add(e.Action.Number)))
+        );
+        Assert.True(app.Focus(box));
+        _ = app.Keymap.Bind("ctrl-p", new Pick(1), "Part");
+        _ = app.Keymap.Bind("ctrl-p", new Pick(2), "App");
+        _ = app.Keymap.Bind("ctrl-p", new Pick(3), "Part && App");
+        _ = app.Keymap.Bind("ctrl-p", new Pick(4), "kind == mine");
+
+        _ = box.PartKeyContext("Part kind = parts");
+        Assert.True(app.Keyboard.Press(Key.P, KeyModifiers.Control));
+        _ = box.KeyContext("App");
+        Assert.True(app.Keyboard.Press(Key.P, KeyModifiers.Control));
+        _ = box.KeyContext("App kind = mine");
+        Assert.True(app.Keyboard.Press(Key.P, KeyModifiers.Control));
+        _ = box.PartKeyContext(null);
+        Assert.True(app.Keyboard.Press(Key.P, KeyModifiers.Control));
+        _ = box.KeyContext(null);
+        Assert.False(app.Keyboard.Press(Key.P, KeyModifiers.Control));
+        _ = app.PumpAndSettle();
+
+        Assert.Equal([1, 3, 4, 4], picked);
+    }
+
+    /// <summary>
+    /// A handler a part adds for a base type of its actions is called for the types derived from it, and makes them available;
+    /// a handler added for one type is called for that type alone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focused box with a handler added for <c>Shape</c> and its derived types, which records the action's type, and a handler
+    ///   added for <c>Circle</c> alone on its parent. <c>Circle</c> and <c>Square</c> derive from <c>Shape</c>; <c>Round</c>
+    ///   derives from <c>Circle</c>.
+    ///
+    /// Steps:
+    /// - Dispatch a <c>Circle</c>, a <c>Square</c>, a <c>Round</c>, and an <c>Other</c> from the box. Ask whether a <c>Square</c>
+    ///   and an <c>Other</c> can be dispatched. Dispose the scope of the box's handler and dispatch a <c>Square</c> and a
+    ///   <c>Circle</c>.
+    ///
+    /// Expected:
+    /// - The box's handler records Circle, Square, and Round, and the three are handled; <c>Other</c> is not. A <c>Square</c> can
+    ///   be dispatched and an <c>Other</c> cannot. After the scope is disposed, the <c>Square</c> is not handled, and the
+    ///   <c>Circle</c> reaches the parent's handler, which the <c>Round</c> did not.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task OnActionsOf_ABaseType_TakesTheDerivedTypes()
+    {
+        var log = new List<string>();
+        Element box = default;
+        ScopeHandle scope = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            box = Box().Width(10).Height(10).Focusable();
+            scope = Scope.Create(() => _ = box.OnActionsOf((in ActionEvent<Shape> e) => log.Add(e.Action.GetType().Name)));
+            return Column(box).OnAction((in ActionEvent<Circle> _) => log.Add("parent"));
+        });
+        Assert.True(app.Focus(box));
+
+        Assert.True(box.Dispatch(new Circle()));
+        Assert.True(box.Dispatch(new Square()));
+        Assert.True(box.Dispatch(new Round()));
+        Assert.False(box.Dispatch(new Other()));
+        Assert.True(box.CanDispatch<Square>());
+        Assert.False(box.CanDispatch<Other>());
+        Assert.Equal(["Circle", "Square", "Round"], log);
+
+        Scope.Dispose(scope);
+        Assert.False(box.Dispatch(new Square()));
+        Assert.False(box.Dispatch(new Round()));
+        Assert.True(box.Dispatch(new Circle()));
+        _ = app.PumpAndSettle();
+        Assert.Equal(["Circle", "Square", "Round", "parent"], log);
+    }
+
     private sealed class Other : IAction;
+
+    private class Shape : IAction;
+
+    private class Circle : Shape;
+
+    private sealed class Square : Shape;
+
+    private sealed class Round : Circle;
 
     private sealed class Pick(int number) : IAction
     {

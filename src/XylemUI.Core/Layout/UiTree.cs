@@ -1338,25 +1338,28 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Sets what a node calls itself for the key bindings (design §7, "Shortcuts and actions").
+    /// Sets what a node calls itself for the key bindings (design §7, "Shortcuts and actions"). A node has two contexts, the
+    /// one of the part that made it and the one the app gave it; the conditions see them as one, so that a context the app gives
+    /// a part's node does not take the part's away.
     /// </summary>
     /// <param name="node">The node.</param>
     /// <param name="context">The context, as <c>Editor mode = full</c>; <see langword="null"/> or empty for none.</param>
+    /// <param name="part">Whether it is the context of the part that made the node; otherwise the app's.</param>
     /// <exception cref="FormatException">The text is not a context.</exception>
-    public void SetKeyContext(NodeHandle node, string? context)
+    public void SetKeyContext(NodeHandle node, string? context, bool part = false)
     {
         if (string.IsNullOrWhiteSpace(context))
         {
-            if (Nodes.GetRef(node).Input is { KeyContext: not null } input)
+            if (Nodes.GetRef(node).Input is { } input && (part ? input.PartKeyContext : input.AppKeyContext) is not null)
             {
-                input.KeyContext = null;
+                input.SetKeyContext(null, part);
                 Actions.AvailabilityChanged();
             }
 
             return;
         }
 
-        InputOf(node).KeyContext = KeyContext.Parse(context);
+        InputOf(node).SetKeyContext(KeyContext.Parse(context), part);
 
         // The rows whose conditions hold at the focus may be others now (KeyBindingFor).
         Actions.AvailabilityChanged();
@@ -1369,11 +1372,12 @@ internal sealed class UiTree
     /// <param name="node">The node.</param>
     /// <param name="phase">The phase of the route.</param>
     /// <param name="handler">The handler.</param>
-    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler)
+    /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
+    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler, bool derived = false)
         where TAction : class, IAction
     {
         ArgumentNullException.ThrowIfNull(handler);
-        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef));
+        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived));
         Actions.AvailabilityChanged();
     }
 

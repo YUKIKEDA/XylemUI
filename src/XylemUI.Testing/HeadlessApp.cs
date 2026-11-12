@@ -203,10 +203,14 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <param name="root">The app's root function, which returns a node with no parent.</param>
     /// <param name="options">The window and the clock; the defaults when <see langword="null"/>.</param>
     /// <returns>The app.</returns>
-    /// <exception cref="InvalidOperationException">The caller is not on <see cref="HeadlessSession"/>'s UI thread.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The caller is not on <see cref="HeadlessSession"/>'s UI thread, or no default key bindings are registered (the test project
+    /// is built without the source generator of <c>XylemUI.Core</c> and did not call <see cref="Keymap.RegisterDefaults"/>).
+    /// </exception>
     public static Task<HeadlessApp> StartAsync(Func<Element> root, HeadlessOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(root);
+        Keymap.RequireDefaults();
         options ??= new HeadlessOptions();
         if (!(options.Width > 0 && options.Height > 0 && float.IsFinite(options.Width) && float.IsFinite(options.Height)))
         {

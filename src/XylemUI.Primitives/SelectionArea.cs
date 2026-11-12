@@ -73,7 +73,9 @@ public static partial class Primitive
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
                 .On(PointerEventKind.Up, EventPhase.Bubble, PointerUp)
                 .On(PointerEventKind.Cancel, EventPhase.Bubble, PointerCancel)
-                .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
+                .PartKeyContext(PrimitiveKeyBindings.SelectionAreaContext)
+                .OnAction<MenuActions.OpenContextMenu>(AskMenu)
+                .OnActionsOf<TextAction>(Act)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
             if (options.ContextMenu is { } menu)
@@ -175,36 +177,39 @@ public static partial class Primitive
             }
         }
 
-        private void KeyDown(in KeyEvent e)
+        // Shift+F10 asks for the area's menu, and Control+A and Control+C or Control+Insert for the text's actions, through
+        // their rows of the keymap (PrimitiveKeyBindings).
+        private void AskMenu(in ActionEvent<MenuActions.OpenContextMenu> e)
         {
-            if (_menu is not null && IsMenuKey(e))
+            if (_menu is null)
             {
-                e.StopPropagation();
-                OpenMenu(at: null);
+                e.Propagate();
                 return;
             }
 
-            if (e.PrefersCharacter || e.Modifiers != KeyModifiers.Control)
-            {
-                return;
-            }
+            OpenMenu(at: null);
+        }
 
-            switch (e.Key)
+        // The two actions of a text field that an area has: the others go on.
+        private void Act(in ActionEvent<TextAction> e)
+        {
+            switch (e.Action.Command)
             {
-                case Key.A:
+                case TextCommand.SelectAll:
                     SelectAll();
-                    e.StopPropagation();
-                    return;
-                case Key.C or Key.Insert:
+                    break;
+                case TextCommand.Copy:
                     Copy();
-                    e.StopPropagation();
-                    return;
+                    break;
+                default:
+                    e.Propagate();
+                    break;
             }
         }
 
         private void KeyUp(in KeyEvent e)
         {
-            if (_menu is not null && IsMenuKey(e))
+            if (_menu is not null && IsMenuKeyUp(e))
             {
                 e.StopPropagation();
                 OpenMenu(at: null);
