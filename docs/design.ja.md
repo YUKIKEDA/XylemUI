@@ -40,7 +40,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 | 画像のデコード（§5.0.4）          |      | ○ Wuffs（PNG・GIF・BMP）・libjpeg-turbo（JPEG）・libwebp（WebP。アニメーションは、同じ配布の libwebpdemux） | 画像は信頼できない入力。PNG・GIF・BMP は、メモリ安全な Wuffs が libpng より速い。JPEG と WebP は、手で書いた SIMD を持つ libjpeg-turbo と libwebp が Wuffs より速い（行 S11 の spike、Issue #730）。どの OS も同じデコーダで読み、静的リンクで単一の実行ファイルに入れる |
 | 色の変換（§5.0.4）                |      |        ○ skcms           | 埋め込みの ICC を sRGB に直すのに必要な分だけを持つ（Skia、BSD-3。Flutter も Skia を通して使う） |
 | アイコンのフォントの削り（§5.0.4） |      | ○ HarfBuzz の subset・Mono.Cecil（ビルドの機械だけ） | 使う字形だけを残すのに、HarfBuzz の subset（`harfbuzz-subset`）を使う。実行時にリンクする HarfBuzz は `-DHB_BUILD_SUBSET=OFF` で作るので（`vendor/build.ps1` 27 行目）、subset は、ビルドの機械（Windows・macOS・Linux）の向けに `HB_BUILD_SUBSET=ON` で別に作り、Theme.Fluent のビルドの道具として持つ。実行時にリンクする HarfBuzz は今のまま。残したフォントをアプリのアセンブリへ書き足すのに Mono.Cecil（MIT）を使う。どちらもアプリのビルドの中で動き、実行ファイルには入らない（IC1 の Grill の Q7、Issue #708） |
-| Source Generator（§7「ショートカットと動作」、§4.11） |      | ○ Microsoft.CodeAnalysis.CSharp（ビルドの機械だけ） | `XylemUI.Generators` が、コンパイラの中で動作の名前の表を書く。Roslyn の API（MIT）に対して書き、アプリには入らない。生成したコードはリフレクションを使わない（行 KM1a） |
+| Source Generator（§7「ショートカットと動作」、§4.11） |      | ○ Microsoft.CodeAnalysis.CSharp（ビルドの機械だけ） | `XylemUI.Generators` が、コンパイラの中で動作の名前の表を書く。Roslyn の API（MIT）に対して書き、アプリには入らない。生成したコードはリフレクションを使わない（行 KM1a）。アナライザー（`XylemUI.Analyzers`）も同じ API に対して書き、修正の提案（`XylemUI.Analyzers.CodeFixes`）は Microsoft.CodeAnalysis.CSharp.Workspaces（MIT）も使う。どちらもアプリには入らない（§2.2「アナライザー」、行 A1） |
 | Linux GPU（§5.1）                 |      |       ○ wgpu-native       | ドライバ互換性対応の継続保守コスト                                                                                                                                                                   |
 | Linux Window（§6.1）              |      |          ○ SDL3           | Wayland/X11の差異吸収コスト                                                                                                                                                                          |
 | GPUレンダラ（§5.0/5.2）           |  ○   |                           | 独自設計（DisplayList、SDFシェーダー等）                                                                                                                                                             |
@@ -127,6 +127,46 @@ WPF/Avalonia 方式は .NET で最も実績のある方式だが、`DependencyPr
 ### 2.2 Signal依存関係追跡
 
 **採用: ランタイム追跡（SolidJS/Leptos方式）。** コンパイル時解析（Svelte方式）はコンポーネント本体の書き換えを前提とする。C# には Source Generator があるが、できるのはコードの追加までで、既存メソッド本体の変換はできない（Interceptors も呼び出し箇所の差し替えに限られる）。本体を書き換えるには IL を書き換える形（Fody、ビルド後の Mono.Cecil）が要るが、採らない（D3 の Grill、Issue #441）。.NET の Hot Reload（§0.1 の要件）は元の IL に Roslyn の差分を当てるので、書き換えた本体とずれる。比べた 3 つも、Signal に当たる依存をコンパイル時に解析しない。GPUI は描画中に読んだ entity を記録し（`crates/gpui/src/app.rs` 1347 行目 `detect_accessed_entities`）、Flutter と Avalonia は通知で知らせる。動的な依存は、どの形でも実行時の追跡が要る。コンパイル時に誤りを見つける道具は、Roslyn のアナライザー（`XylemUI.Analyzers`、行 A1）として配る。Avalonia も自前のアナライザーを利用者に配り（`packages/Avalonia/Avalonia.csproj` 16〜27 行目、`src/tools/Avalonia.Analyzers.CSharp/AvaloniaPropertyAnalyzer.cs` 24〜60 行目）、Flutter は自前の lint を CI で回す（`dev/bots/analyze.dart` 2924〜2950 行目）。ランタイム追跡は「実行中の computation」を指す静的フィールドと Signal getter 呼び出し時の自動登録で実現する。Core は UI スレッドでのみ動く（§2.12）ため、このフィールドは `[ThreadStatic]` にせず通常の静的フィールドでよい。動的な依存関係（条件分岐で読むSignalが変わる場合）にも自然に対応する。Source Generator は Binding 層の定型コード生成（§2.4）に限って使う。
+
+**アナライザー（A1 の Grill でオーナーが決定、Issue #824）:** 実行時の追跡では、読み方やスレッドの誤りは、動かすまで分からない。A1 は、誤りやすい書き方をコンパイルの時に知らせる Roslyn のアナライザーを、アプリの開発者に配る。アナライザーは診断を出すだけで、コードを書き換えず、依存も決めない。`docs/design-decisions.md` が退けたコンパイル時の依存の解析（§2.2 の冒頭）は、解析の結果で実行の形を変える案で、これとは別である。
+
+- **規則（5 つ）:** 重さは 5 つとも Warning である。どの規則も、呼び出しを書いたその場の構文と型だけを見る。いったん変数に入れてから渡した値と、別のメソッドを通した呼び出しは見えない。見えない範囲は、規則ごとの文書（下の「文書」）に書く。
+  - **XYLEM100（スレッド）:** `Task.Run`、`ThreadPool.QueueUserWorkItem`・`ThreadPool.UnsafeQueueUserWorkItem`、`new Thread` の引数に直に書いたラムダ（匿名メソッドを含む）の本体で、`[UiThreadOnly]`（下の「UI スレッド専用の属性」）を付けた API を呼ぶ所を知らせる。本体は UI スレッドの外で走るので、その API は実行時に `InvalidOperationException` を投げる（§2.12）。見ないもの: メソッドグループで渡した形（`Task.Run(Work)`）、変数に入れてから渡したデリゲート、本体から呼んだ別のメソッドの中、本体の中のラムダ（UI スレッドへ渡し直すことがある）、ほかの口（`Task.Factory.StartNew`、`Parallel`、`ContinueWith` など）。
+  - **XYLEM110（リアクティブ）:** 反応する書き方がある要素の API の、反応しない方の引数に直に書いた `Get()`（`IReadOnlySignal<T>`・`Signal<T>`・`Computed<T>` のもの）を知らせる。`Text(count.Get().ToString())` は、作った時の値で 1 度だけ書き、後で `count` が変わっても文字は変わらない。`Text(() => count.Get().ToString())` なら、変わるたびに書き直す。反応する書き方がある API は、同じ型にある同じ名前の多重定義のうち、同じ位置の引数が `Func<T>` か `IReadOnlySignal<T>` で、反応しない方が `T` を取るもので見分ける。今の Core では、`Text(string)` と `Text(Func<string>)`、`Image(ImageSource, …)` と `Image(Func<ImageSource>, …)`、`Background(Paint)` と `Background(IReadOnlySignal<Paint>)`、`Foreground(Color)` と `Foreground(IReadOnlySignal<Color>)`、`Disabled(bool)` と `Disabled(IReadOnlySignal<bool>)`、`Accessible(AccessibilityInfo)` と `Accessible(IReadOnlySignal<AccessibilityInfo>)` の 6 組になる（`src/XylemUI.Core/Elements/Elements.cs`、`ElementExtensions.cs`）。Primitives の公開の関数に、この組は無い。引数の式の中のラムダの中は見ない（そこは反応する書き方である）。見ないもの: 変数に入れた値（`string s = count.Get().ToString();` の後の `Text(s)`）、別のメソッドが読んで返した値。
+  - **XYLEM111（リアクティブ）:** `Effect.Create`・`Computed.Create`・`Text(Func<string>)` に渡した async ラムダを知らせる。追跡は関数が同期に走る間に読んだものだけを記録するので（上の静的フィールド）、最初の `await` より後の `Get` は依存にならない。`Effect.Create` には async void のラムダとして渡り、`Computed.Create` では値が `Task` になる。`Text(Func<string>)` への async ラムダは、今の多重定義ではコンパイラが CS4010 で止める（async ラムダは `Func<string>` に変わらない。A1 の設計の PR の前に、`Text(string)`・`Text(Func<string>)`・`Text(TextBuilder)` の 3 つの形で確かめた）。見ないもの: メソッドグループで渡した async メソッド、async メソッドを呼ぶだけの同期のラムダ（`() => LoadAsync()`）。
+  - **XYLEM120（スコープ）:** async メソッド（async のラムダとローカル関数を含む）で、`await` より後に書いた `Effect.Create`・`Scope.OnCleanup`・要素の生成のうち、`Scope.Run` に渡したラムダの外にあるものを知らせる。今のスコープは呼び出しの間だけのもので、`await` から戻った継続には無い。そこで `Scope.OnCleanup` と要素の生成は `InvalidOperationException` を投げ、`Effect.Create` はどのスコープにも属さない Effect を作り、画面が消えても残る（§2.3）。要素の生成は、`Element` を返す静的メソッドのうち拡張メソッドでないもの（`Elements` の関数、Primitives の `Button` など）で見分ける。「`await` より後」は書いた順で決める。見ないもの: ループの中で `await` より前に書いた呼び出し（2 周目からは `await` の後に走る）、別のメソッドの中の呼び出し、スコープが要る拡張メソッド（`For`、`Popup`、`Menu`、`IReadOnlySignal<T>` を取る `Background` など）。
+  - **XYLEM130（要素）:** 子のある箱への `For` と、同じ連鎖の 2 つ目の `For` を知らせる。どちらも実行時に `ArgumentException` を投げる（`src/XylemUI.Core/Elements/ElementExtensions.cs` 843 行目の文書）。子のある箱は、`Elements` の静的メソッドに `Element` の引数を 1 つ以上渡した呼び出し（`Column(header)`、`Box(child)`）で見分け、`For` の受け手から、`Element` を受けて `Element` を返す拡張メソッドの連鎖をたどってそこへ行き着くかを見る。見ないもの: 変数に入れた箱（`var list = Column(header);` の後の `list.For(...)`）、別のメソッドが返した箱、別の文で呼んだ 2 つ目の `For`。
+- **追跡の外の `Get` を全部は知らせない:** 追跡の外で読むこと自体は誤りではない。`ReactiveNode.TrackRead`（`src/XylemUI.Core/Reactive/ReactiveNode.cs` 45〜51 行目）は、実行中の computation が無ければ何も登録しない。クリックのハンドラやモデルのメソッドが今の値を読むのは、正しい使い方である。誤りになるのは、変わってほしい表示に 1 度だけ読んだ値を渡す所で、それを XYLEM110 が知らせる。
+- **UI スレッド専用の属性:** UI スレッドからだけ呼べる API は、Core の公開の属性 `UiThreadOnlyAttribute`（名前空間 `XylemUI`）で見分ける。アナライザーは型やメンバーの一覧を持たず、属性を読む。
+
+  ```csharp
+  [AttributeUsage(
+      AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property,
+      Inherited = false,
+      AllowMultiple = false
+  )]
+  public sealed class UiThreadOnlyAttribute : Attribute;
+  ```
+
+  付ける先は、コンストラクター・メソッド・プロパティである。アナライザーは、呼んだメンバーそのものに付いた属性を読む（総称のメンバーは元の定義。プロパティの accessor は、accessor かプロパティに付いたもの。片方の accessor だけが確かめるプロパティは、その accessor に付ける）。`Inherited = false` で、派生型や上書きしたメンバーには引き継がない。インターフェースを通した呼び出しは、インターフェースのメンバーに付いていれば知らせる。Platform・Rendering・Testing の公開 API も、Core のこの属性を付ける。新しい公開 API が入口で UI スレッドを確かめるなら、この属性も付ける（§2.12）。今ある公開 API で付けるのは、入口で、または private や internal の補助を通して、`UiThread.VerifyAccess` を呼ぶものである。
+  - Core: `Signal.Create`、`Signal<T>.Get`・`Set`、`Computed.Create`、`Computed<T>.Get`・`Dispose`、`IReadOnlySignal<T>.Get`（実装の 2 つが確かめるので、インターフェースを通した読みにも付ける）、`Effect.Create`・`Dispose`、`ReactiveRuntime.Batch`（2 つ）、`Scope.Create`・`Run`・`OnCleanup`・`Dispose`、`ScopeTracker.ForEachActiveScope`、`SynchronousRenderGuard.Enter`・`RunOrDefer`、`UiDispatcher.Drain`、`AppFonts.Add`、`ImageCache.MaximumCount`・`MaximumBytes`・`Evict`・`Clear`、`Keymap.Bind`・`Remove`、`Animation.Forward`・`Reverse`・`AnimateTo`・`Set`・`Fling`・`SpringTo`・`Stop`、`ElementExtensions.KeyBindingFor`・`Dispatch`・`CanDispatch`（それぞれ 2 つ）
+  - Platform.Windows: `Win32MessageLoop.Run`・`Quit`・`FrameScheduler`・`Dispatcher`・`SetFrameClock`（2 つ）、`Win32Window` のコンストラクター・`ClientSize`・`Show`・`RequestClose`・`Dispose`・`StartExternalDrag`
+  - Rendering.D3D11: `D3D11Renderer.Create`・`TextRendering` の `set`・`Render`・`Draw`（2 つ）・`Resize`・`Present`
+  - Testing: `HeadlessApp.Popups`・`Find`・`FindAll`・`FindByRole`・`AccessibilityOf`・`Focus`・`SetActive`・`SetVisible`・`PumpAndSettle`・`Pump`・`AssertNoLeakedScopes`
+- **置き場:** 新しいアセンブリ `XylemUI.Analyzers`（規則）と `XylemUI.Analyzers.CodeFixes`（修正の提案）を作る。どちらも netstandard2.0 で、Microsoft.CodeAnalysis.CSharp 4.14.0（`XylemUI.Generators` と同じ版）に対して書き、修正の提案は Microsoft.CodeAnalysis.CSharp.Workspaces 4.14.0 も使う。2 つは `XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に、`XylemUI.Generators.dll` と並べて入れる。`XylemUI.Core.csproj` の、生成器が無ければパックを止める検査も、2 つに広げる。アナライザーは `XylemUI.Core` を参照せず、型と属性を名前（`XylemUI.UiThreadOnlyAttribute` など）で探す。修正の提案を別のアセンブリにするのは、コマンドラインのコンパイラ（`dotnet build`）が Workspaces を持たないためである。Roslyn の規則 RS1038（Microsoft.CodeAnalysis.Analyzers の文書）は、どのコンパイルの場でも渡されるとは限らないアセンブリを参照するアセンブリに、コンパイラの拡張を置かないよう求める。Avalonia も、規則（`Avalonia.Analyzers.CSharp.csproj` 13 行目は CSharp だけを参照）と修正（`Avalonia.Analyzers.CodeFixes.CSharp.csproj` 12〜13 行目は Workspaces.Common も参照）を分ける。
+- **診断の番号:** 接頭辞は `XYLEM` のままにする。生成器は 001〜099（今は XYLEM001〜007）、アナライザーは 100 からで、スレッドが 10x、リアクティブが 11x、スコープが 12x、要素が 13x である。生成器と同じく、`XylemUI.Analyzers` に `AnalyzerReleases.Shipped.md` と `AnalyzerReleases.Unshipped.md` を置いて記録する（RS2008）。
+- **修正の提案（code fix）:** 2 つ入れる。
+  - XYLEM110 のうち `Text(string)` の分を、`Text(() => 引数の式)` に直す。
+  - `XylemUI.*` の名前空間の中の CS0118 を、`Elements.Text(...)` に直す。その中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかる（§2.13「名前空間 `XylemUI.*` の中から `Text` を呼ぶ」）。提案を出すのは、CS0118 の名前が呼び出しの `Text` で、ファイルの名前空間が `XylemUI` かその下で、`XylemUI.Elements` に `Text` があるときだけである。
+  - コンパイラの診断に提案を付けられるかは、設計の PR の前に確かめた。Microsoft.CodeAnalysis.CSharp.Workspaces 4.14.0 で、`FixableDiagnosticIds` が `CS0118` の `CodeFixProvider` を書き、名前空間 `Demo.Text` と、ファイルの先頭の `using static Demo.Elements;`（`Text(string)` を持つ）と、名前空間 `Demo.Something` の中の `Text("a")` を `AdhocWorkspace` に入れた。コンパイルが出した CS0118 を `RegisterCodeFixesAsync` に渡すと提案が 1 つ登録され、当てると `Elements.Text("a")` になり、エラーは無くなった。Microsoft の API の文書（learn.microsoft.com の `CodeFixProvider.FixableDiagnosticIds`）は「この提供者が修正を出せる診断の ID の一覧」とだけ書き、コンパイラの ID を取れるかには触れていない。Visual Studio と Rider の画面で提案が出るかは、まだ見ていない。
+- **テスト:** `tests/XylemUI.Analyzers.Tests` を作る。`XylemUI.Generators.Tests` と同じく、コンパイラの API で直に掛ける。テストが書いたソースを、Core を参照する `CSharpCompilation` にし、`CompilationWithAnalyzers` で診断を得る。修正の提案は、`AdhocWorkspace` で提案を当てた後の文と、当てた後のコンパイルにエラーが無いことを確かめる。規則ごとに、出る例と出ない例の両方を書く。
+- **このリポジトリへの適用:** `src`・`samples`・`tests`・`benchmarks` のすべてのプロジェクトに掛ける。`Directory.Build.props` が、生成器と同じ形（`OutputItemType="Analyzer"`）で 2 つのプロジェクトを参照する。アナライザーは Core を参照しないので、生成器と違い、Core・Text・Imaging にも掛けられる。外すのはアナライザー自身のプロジェクトだけである。警告はエラーとして扱うので（`TreatWarningsAsErrors`）、診断が出ればビルドが止まる。`samples/HelloWindow/Program.cs` 134 行目は、`Task.Run` の中から `window.Show()` を呼び、UI スレッドの外の呼び出しが断られるのをわざと確かめる（S1）。ここは XYLEM100 を、理由を書いた `#pragma warning disable` で抑える。テストの中で同じように誤りをわざと起こす所（今は `tests/XylemUI.Text.Tests/AppFontsTests.cs` 133 行目の `AppFonts.Add`、`tests/XylemUI.Core.Tests/ShowForTests.cs` 545 行目の `Column(Box()).For(...)`）も、同じく理由を書いて抑える。ビルドの時間がどれだけ増えるかは、実装の PR で測る。
+- **文書:** 規則ごとに `docs/analyzers/XYLEMnnn.md` を置き、何を見るか、何を見ないか、抑え方（`#pragma warning disable`、`[SuppressMessage]`、`.editorconfig` の `dotnet_diagnostic.XYLEMnnn.severity`）を書く。診断の `helpLinkUri` は、この文書（`https://github.com/YUKIKEDA/XylemUI/blob/main/docs/analyzers/XYLEMnnn.md`）を指す。
+- **比べた相手:**
+  - Avalonia 12.1.4: `Avalonia` のパッケージは、生成器・C# の規則・C# の修正・Visual Basic の規則の 4 つのアセンブリを analyzer として入れる（`packages/Avalonia/Avalonia.csproj` 12〜27 行目）。`AvaloniaPropertyAnalyzer` の規則（`src/tools/Avalonia.Analyzers.CSharp/AvaloniaPropertyAnalyzer.cs` 24〜173 行目）は、AVP0001 が Info で既定は off、AVP1000・AVP1001・AVP1002 が Warning で既定は on、残りの 11（AVP1010〜AVP1040）は Warning で既定は off である（off の理由は「TODO: autogenerate property metadata preserved in ref assembly」のコメント）。ほかの 2 つ（`DiagnosticIds.cs` 5〜6 行目の AVA2001・AVA2002）も Warning で既定は on である（`OnPropertyChangedOverrideAnalyzer.cs` 13〜20 行目、`BitmapAnalyzer.cs` 23〜30 行目）。Error の規則は無い。修正は別のアセンブリで、Workspaces を参照する（上の「置き場」）。Avalonia は自分のサンプルにも規則を掛ける。`samples/Directory.Build.props` 14 行目が `build/DevAnalyzers.props` を読み、それが規則と修正のプロジェクトを analyzer として参照する（3〜18 行目）。XylemUI も同じく、自分のプロジェクトに掛ける。読んだ規則の記述子に `helpLinkUri` は無い。
+  - Flutter 3.47.8: アプリのひな形の `analysis_options.yaml` が `package:flutter_lints/flutter.yaml` を読み込み（`packages/flutter_tools/templates/app/analysis_options.yaml.tmpl` 12 行目）、利用者の lint はこの集まりで有効になる。lint の本体は別のリポジトリ（`flutter_lints` のパッケージと Dart の linter）にあり、読んでいない。
+  - GPUI（zed v1.25.3）: 利用者に配る lint は無い（v1.25.3 の `crates` を `declare_lint`・`register_lints`・`dylint` で探して、当たらなかった）。代わりに Rust の型で守る。`ForegroundExecutor` は `not_send: PhantomData<Rc<()>>` を持ち（`crates/gpui/src/executor.rs` 32 行目）、`Send` でないので、ほかのスレッドへ移すとコンパイラが止める。`Subscription` は `#[must_use]` で（`crates/gpui/src/subscription.rs` 149 行目）、捨てると警告になる。C# の型には `Send` に当たるものが無いので、XylemUI は属性と XYLEM100 でそれに代える。
+- **次のラウンドで決めること:** 「1 度だけ読む」意図を、XYLEM110 の抑制ではなく公開の API（`Peek` のような口。今の `Signal<T>.Peek` は internal）で書けるようにするか。行 A1 の次の Grill で決める。
 
 ### 2.2.1 バッチ/トランザクション境界
 
@@ -1234,6 +1274,8 @@ src/
   XylemUI.Platform.MacOS/      # AppKit / CoreText / NSAccessibility（+ P/Invoke で書けない API だけの、native/macos の薄い Obj-C shim）
   XylemUI.Platform.Linux/      # SDL3 / fontconfig / D-Bus / AT-SPI / portal
   XylemUI.Generators/          # Source Generator（Binding 記述子等、§2.4）
+  XylemUI.Analyzers/           # アプリの開発者に配るアナライザー（§2.2「アナライザー」、行 A1）
+  XylemUI.Analyzers.CodeFixes/ # その修正の提案。Workspaces を参照するので別のアセンブリにする
 samples/
   Todo/
   XylemUI.Gallery/             # 全機能のショーケース（§13.3、マイルストーン G1）
@@ -1244,6 +1286,7 @@ tests/
   XylemUI.Desktop.Tests/       # 第5層：アプリの E2E（G1 で XylemUI.Gallery.Tests を足す）
   XylemUI.Platform.Windows.Tests/ # OS の API と本物のウィンドウ
   XylemUI.Primitives.Tests/    # 見た目のない部品
+  XylemUI.Analyzers.Tests/     # アナライザーと修正の提案（コンパイラの API で直に掛ける）
 benchmarks/
   XylemUI.Benchmarks/          # BenchmarkDotNet のマイクロベンチマーク
   E2E/                         # §11.3 のシナリオ（10k Rows、タイピング、Jank、起動時間）
@@ -1256,6 +1299,7 @@ vendor/
 - `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
 - 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
 - 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
+- `XylemUI.Generators`・`XylemUI.Analyzers`・`XylemUI.Analyzers.CodeFixes` は、単独のパッケージにせず、`XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に入れて配る（§2.2「アナライザー」）。
 - Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。K1b で `XylemUI.Primitives` にも見せた。ボタンのキーが、キーから Click を配る `WindowInput.ClickFromKey` と、押下の状態を書く `UiTree.SetPseudoState` を使うためである（オーナーの決定、PR #360）。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
 - アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とし、具体的なパッケージ構成は C0 相当の抽出時に決める。
 
@@ -1519,6 +1563,8 @@ OS側のコールバック（`WndProc`、各種イベントハンドラ等）は
 1. **型の公開範囲**: Core の型は `internal` とし、アプリやワーカーから触れる公開 API は `Signal` / `Element` / `IUiDispatcher` に限る。
 2. **実行時チェック**: 公開 API の入口（`Signal.Set`、`Element` の変更操作等）で `Environment.CurrentManagedThreadId` を UI スレッドの ID と比較し、違えば全ビルドで `InvalidOperationException` を投げる（WPF の `Dispatcher.VerifyAccess` と同じ）。比較は整数1回なので release でも残す。内部のホットパスでは `[Conditional("DEBUG")]` の assert に留める。
 
+入口で `UiThread.VerifyAccess` を呼ぶ公開 API には、属性 `[UiThreadOnly]` も付ける。ワーカーのラムダからその API を呼ぶ所は、コンパイルの時にアナライザーの XYLEM100 が知らせる（§2.2「アナライザー」、行 A1）。
+
 画像デコード・ファイル列挙・フォント処理等の重い処理はワーカースレッド（`Task.Run` 等）で実行し、結果はメッセージとしてUIスレッドへ渡す。画像は、アニメーションの次のフレームもワーカーのスレッドでデコードする（§5.0.4）。アニメーションの画像のネイティブのデコーダは、最初のフレームをデコードするワーカーが作り、その後も一度に 1 つのワーカーだけが使う。UI スレッドは使わない（§5.0.4「デコーダの持ち主と寿命」）。画像のキャッシュと、その上限を変える `ImageCache` は UI スレッドのもので、`ImageCache` はほかのスレッドから呼ぶと上の実行時チェックで `InvalidOperationException` を投げる（§5.0.4「キャッシュ」）。画像のデコードの結果は、フレームワークの中の知らせなので、`UiMessage` でなく UI スレッドの `SynchronizationContext` への `Post` で、内部の作業として渡す（下の「`UiMessage` の分け方」、IM1 の Grill の Q22、Issue #755）。
 
 ```csharp
@@ -1767,7 +1813,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - GPUI: core の要素は `div`・`text`・`canvas` などで（`gpui/src/elements/mod.rs` 1〜27 行目）、ボタンは Zed の `ui` crate にある（`ui/src/components/button/button_like.rs` 751〜900 行目）
   - Avalonia: `StackPanel`・`TextBlock`・`Button` はどれも Avalonia.Controls にある（`Avalonia.Controls/StackPanel.cs` 19 行目、`TextBlock.cs` 19 行目、`Button.cs` 36 行目）。`Button` の見た目はすべてテーマから来て、テーマが無ければ何も描かない（`Avalonia.Controls/Primitives/TemplatedControl.cs` 306〜343 行目、テーマは `Avalonia.Themes.Fluent/Controls/Button.xaml` 13〜95 行目）
   - V1 の `Button` は、押せることと押した状態だけを持つ。Click のハンドラ（`OnClick`）、Pressed の擬似状態（V1c）、ヒット領域を持つ `Box` で、背景も文字の色も付けない。見た目はアプリかテーマ（§13.2）が、メソッドチェーンで付ける。K1 で、フォーカスできることと、キーボードでの Click（Enter と Space）を足す（§7「キーの入力とフォーカス」の「ボタンのキー」）
-- **名前空間 `XylemUI.*` の中から `Text` を呼ぶ:** `XylemUI.Primitives` などの名前空間の中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかり、CS0118 になる。アプリの名前空間（`Counter` など）では起きない。`XylemUI.*` の中のコード（部品・テーマ・テスト）は `Elements.Text(...)` と書く（V1d の実装で、オーナーが決定。`docs/conventions.md`）
+- **名前空間 `XylemUI.*` の中から `Text` を呼ぶ:** `XylemUI.Primitives` などの名前空間の中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかり、CS0118 になる。アプリの名前空間（`Counter` など）では起きない。`XylemUI.*` の中のコード（部品・テーマ・テスト）は `Elements.Text(...)` と書く（V1d の実装で、オーナーが決定。`docs/conventions.md`）。この CS0118 を `Elements.Text(...)` に直す提案は、`XylemUI.Analyzers.CodeFixes` が出す（§2.2「アナライザー」、行 A1）
 - **部品の関数が木を見つける方法:** 部品の関数は引数を取らない（上の `Counter`）。ウィンドウの host（`XylemApp.Run`）が根の関数を呼んでいる間だけ、その木を UI スレッドの「今の木」にする（Scope の「今の Scope」と同じ形、§2.3）。`Elements` の関数は、今の木にノードを作る。今の木が無い所（根の関数の外、ハンドラの中）で作ると `InvalidOperationException` を投げる。後でノードを作る `Show` と `For`（§2.7）は、その時に今の木を立て直す。Flutter は `BuildContext`（`widgets/framework.dart` 2308 行目。中身は `Element` で 3570 行目）を、GPUI は `window` と `cx` を、どの描く関数とハンドラにも引数で渡す（`gpui/src/element.rs` 164〜167 行目）。Avalonia は、木の外で作った部品を、根に付いた親に足したときに付ける（`Avalonia.Base/Visual.cs` 715〜737 行目）。引数で渡す形は §2.13 の書き方を変えるので、採らない
 - **`Element`:** 木とノードの組で、ウィンドウが複数あってもどの木のノードかが分かる。`Foreground` は、文字の葉には自分の色（`SetTextColor`、`TextLeaf.Color`）として、ほかのノードには子孫に渡す色（`SetForeground`、`NodeVisual.Foreground`）として書く。1 万行の文字の葉が `NodeVisual` を持たずに済む（§5.0「文字の色」）。`Border(width, paint)` は、幅を `LayoutStyle.Border`（`ChangeKind.Size`）に、塗りを `SetBorderPaint`（`ChangeKind.Color`）に書く（§2.4 の対応表、§5.0「枠線の幅」）。メソッドチェーンは中間の値を作らず、割り当てない。Signal を受ける多重定義だけが Effect を 1 つ作る
 - **子の渡し方:** `Column` と `Row` は `params ReadOnlySpan<Element>`（C# 13）で受け、配列を作らない。子は並びの順に付く。子を持たない `Column()` は、空の容器になる。別の木の `Element` を子に渡すと `ArgumentException`
@@ -1786,7 +1832,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 - **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
   - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした
-- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、一覧を全部読んで解決したロケールを使う、§4.11）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
+- **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、OS の一覧を全部読んで解決したロケールの言語を使い、ロケールが変わると整形し直す。アプリがロケールを 1 つも宣言しなければ、今と同じく OS の 1 番目の言語を使う。§4.11「ロケール」の「文字の既定の言語」、LC1 の Grill、Issue #825）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
 - **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
 - **確かめ方:**
   - `samples/Counter`: `Column` に `Text`（`clicks: N`）と `Button`（自分で付けた背景・角丸・余白・ホバーと押下の見た目）を載せる
@@ -1825,7 +1871,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open、DD1 の DragOver の順に重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
-**Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。ロケールも同じ形で配る（§4.11）。
+**Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。ロケールも同じ形で配る（§4.11）。この仕組みはまだコードに無く、行 RC1 で、ローカライズの行 LC1 の前に作る（LC1 の Grill、Issue #825）。ここで決めていない点（値が Provide されていない時、同じ型の値を 2 つ置く場合、ポップアップの中身がどの Provide を引くか、引く費用）は、RC1 の Grill で決める。
 
 **ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
@@ -3218,24 +3264,69 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 
 ### 4.11 ローカライズ（D15 の Grill でオーナーが決定、Issue #170）
 
-アプリの文言のローカライズを、フレームワークの要件にする（§1 の 3）。持つものは 5 つで、メッセージの辞書、複数形と選択、ロケールに応じた数値と日付の書式、ロケールの解決、部品の文言である。Flutter は枠組みを本体に持つ（`packages/flutter/lib/src/widgets/localizations.dart` 114 行目の `LocalizationsDelegate`、479 行目の `Localizations`）。部品の組 B12（Calendar など、§13.1）は、月と曜日の名前と週の始まりが無いと作れない。実装は行 LC1〜LC3 で、部品の行 B1 より前に入れる。
+アプリの文言のローカライズを、フレームワークの要件にする（§1 の 3）。持つものは 5 つで、メッセージの辞書、複数形と選択、ロケールに応じた数値と日付の書式、ロケールの解決、部品の文言である。Flutter は枠組みを本体に持つ（`packages/flutter/lib/src/widgets/localizations.dart` 114 行目の `LocalizationsDelegate`、479 行目の `Localizations`）。部品の組 B12（Calendar など、§13.1）は、月と曜日の名前と週の始まりが無いと作れない。実装は行 RC1 と LC1〜LC4 で、部品の行 B1 より前に入れる（行の分け方と順は LC1 の Grill でオーナーが決定、Issue #825）。
+
+- **RC1:** Reactive Context（§2.13）を作る。ロケールの配り方はこれに乗る。テーマや密度も同じ仕組みに乗るので、ローカライズの行の中に埋めず、LC1 の前の行にする。
+- **LC1:** ロケールの型、Reactive Context の中のシグナル、OS の言語の一覧からの解決、OS の変更での読み直し、書字の向きの値（下の「ロケール」）。
+- **LC2:** CLDR の表（複数形と序数の規則、数値、日付）と書式の API（下の「書式」）。
+- **LC3:** ARB から型付きのメソッドを作る生成器（下の「メッセージの辞書」）。
+- **LC4:** 部品の文言と翻訳のパッケージ（下の「部品の文言」）。
+
+生成器を CLDR の表の後にするのは、生成器が表を使うからである。`plural` と `selectordinal` の区分（`one`・`few` など）を選ぶには、CLDR の複数形と序数の規則が要る。`plural` の中の数（`#`）を出すには、ロケールの数値の書式が要る。
 
 **前提: `InvariantGlobalization=true` は保つ（§0.1、§6.3）。** このもとでは .NET の書式は使えない。日付と時刻は固定のパターン、数値は不変カルチャの書式になり、不変カルチャのほかのカルチャは既定では作れない（.NET の `docs/design/features/globalization-invariant-mode.md`、Microsoft Learn の「Globalization config settings」の `PredefinedCulturesOnly`）。外すと、Linux では `libicu` が無いプロセスは起動時に終わる（Microsoft Learn の「Globalization and ICU」）。そこで、辞書も書式も .NET のカルチャを通さずに自前で持つ。
 
-**ロケール:**
+**ロケール（細部は LC1 の Grill でオーナーが決定、Issue #825）:**
 
-- **値:** 言語・文字体系・地域の 3 つの欄を持つ値型（BCP 47 のタグから作る）。`CultureInfo` は使わない。
-- **配り方:** ロケールは `IReadOnlySignal<T>` として Reactive Context（§2.13）に置く。ロケールを変えると、それを読んでいる所（メッセージ、書式、書字の向き）だけが再実行される。サブツリーに別の Signal を Provide すれば、そこだけ別のロケールになる（Flutter の `Localizations.override` に当たる）。Avalonia の公式の手順（`.resx` と `x:Static`）は、カルチャを変えても表示が更新されないと自分で書いている。
-- **OS の言語:** ウィンドウの host は、OS の優先言語の一覧を全部読む（Windows は `GetUserPreferredUILanguages`。今は最初の 1 つだけを読んでいる、§2.13「`Text` の既定」）。OS の設定が変わったら、一覧を読み直して解決し直す（Flutter の `didChangeLocales`、`localizations.dart` 872 行目）。
-- **解決:** アプリは対応するロケールの一覧を宣言する。OS の一覧の先頭から順に、次の優先度で対応するロケールを探す。Flutter の `basicLocaleListResolution` と同じ順である（`packages/flutter/lib/src/widgets/app.dart` 972〜981 行目）。
-  1. 言語・文字体系・地域が一致
-  2. 言語・文字体系が一致
-  3. 言語・地域が一致
-  4. 言語が一致
-  5. 地域だけが一致（OS の一覧のどれも 1〜4 で合わなかったとき）
-  6. 対応の一覧の最初
+- **値:** `XylemUI.Core` に値型 `Locale` を置く。欄は言語・文字体系・地域の 3 つである。BCP 47 のタグから作り、大文字と小文字を正規の形に揃える。言語は小文字、文字体系は先頭だけ大文字、地域は大文字にする（`ZH-hant-tw` は `zh`・`Hant`・`TW`）。変種（`ca-ES-valencia` の `valencia`）と拡張（`-u-` など）は、読めるが捨てる。`-u-` の拡張（数字の種類、12 時間か 24 時間か、暦）をどう持つかは、行 LC2 の Grill で決める。`CultureInfo` は使わない。
+- **`TextLanguage` を使わない理由:** `TextLanguage`（`src/XylemUI.Text/TextLanguage.cs` 13〜47 行目）は HarfBuzz の言語を包む値で、作る時に `hb_language_from_string` を呼ぶ。HarfBuzz が無いと作れないので、HarfBuzz を作らない所（Linux と macOS の Core のテスト）では、文字の無い木もロケールを持てなくなる（`src/XylemUI.Core/Layout/UiTree.cs` 194〜200 行目の `UiLanguage` の説明が、同じ理由で、木の中では作らないと書いている）。そこで Core の型にはせず、文字を整形する時に、`Locale` のタグから `TextLanguage` を作る。
+- **Flutter との違い:** Flutter の `Locale`（Flutter 3.47.8 の `engine/src/flutter/lib/ui/platform_dispatcher.dart` 2860〜3140 行目）は、大文字と小文字を揃えない。正しい形の文字列を渡すことを使う側に求め、検査もしない（2876〜2887 行目）。廃止された言語コードと地域コードは、新しいコードに読み替える（2947・3066 行目）。XylemUI が読み替えるかは、LC1 の Grill の次のラウンドで決める（行 LC1）。
+- **配り方:** ロケールは `IReadOnlySignal<T>` として Reactive Context（§2.13）に置く。Reactive Context は、まだコードに無く（`src/` に `ProvideContext` と `UseContext` は無い）、行 RC1 で作る。ロケールを変えると、それを読んでいる所（メッセージ、書式、書字の向き、既定の言語の文字）だけが再実行される。サブツリーに別の Signal を Provide すれば、そこだけ別のロケールになる（Flutter の `Localizations.override` に当たる）。Avalonia の公式の手順（`.resx` と `x:Static`）は、カルチャを変えても表示が更新されないと自分で書いている。
+- **文字の既定の言語:** 言語を指定しない文字（§2.13「`Text` の既定」）は、解決したロケールの言語で整形する。アプリがロケールを 1 つも宣言しない時は、今と同じく OS の 1 番目の言語を使う（読めなければ `und`）。ロケールが変わると、既定の言語を使っている文字は整形し直される。Flutter の `Text` も、`locale` を指定しなければローカライズのロケールを使う（`packages/flutter/lib/src/widgets/text.dart` 784 行目。既定を入れるのは `widgets/basic.dart` 6651 行目の `Localizations.maybeLocaleOf`）。
+  - **英語だけのアプリを日本語の OS で動かす時:** 今は既定の文字を `ja` で整形している。LC1 からは、英語だけを宣言したアプリでは `en` で整形する。シェーピングの `locl`（§4.1 の S8b）と、漢字のフォントの選び方（§4.5「言語」）が変わる。利用者が入れた日本語の名前のように、英語の画面に出る漢字は、日本語の字形で描かれるとは限らなくなる。日本語の字形にしたい文字には、アプリが `.Language(...)`（§2.13）で言語を付ける。
+- **OS の言語:** ウィンドウの host は、OS の優先言語の一覧を全部読む。Windows は `GetUserPreferredUILanguages` で読む。今は最初の 1 つだけを読み（`src/XylemUI.Platform.Windows/Win32UiLanguage.cs` 20〜39 行目）、ウィンドウを作る時に 1 度だけ、ただのプロパティ `UiTree.UiLanguage` に入れている（`src/XylemUI.Desktop/DesktopWindow.cs` 61 行目、`UiTree.cs` 200 行目。既定の文字の書式が読む、`src/XylemUI.Core/Elements/Elements.cs` 290〜291 行目）。
+- **OS の変更:** Windows のウィンドウは、ほかの設定と同じく、`WM_SETTINGCHANGE` のたびに一覧を読み直し、変わっていたら解決し直す。設定の名前（`lParam`）は見ない。文字の描き方などの設定と同じ扱いである（`src/XylemUI.Platform.Windows/Win32Window.cs` 433〜434 行目のコメントと、558〜563 行目）。Flutter も、OS の一覧が変わると解決し直し、結果が変わった時だけ知らせる（`packages/flutter/lib/src/widgets/localizations.dart` 872〜888 行目の `didChangeLocales` と `_updateResolvedLocale`）。
+  - **Microsoft の文書で確かめたこと:** `WM_SETTINGCHANGE` の文書（learn.microsoft.com の「WM_SETTINGCHANGE message」）は、ロケールの設定（locale settings）が変わった時に `lParam` が文字列 "intl" を指すと書く。表示の言語や優先言語の一覧を変えた時にこのメッセージが届くかは、書いていない。「User Interface Language Management」は、利用者の UI の言語を変えても、効くのはサインアウトしてサインインし直した後だと書く。そこで、一覧を変えた時にメッセージが届くか、その時に `GetUserPreferredUILanguages` が新しい一覧を返すかは、LC1 の実装で実機のテストで確かめ、結果を実装の PR に書く。
+- **解決:** アプリは対応するロケールの一覧を宣言する。解決は、Flutter の `basicLocaleListResolution` の本体（`packages/flutter/lib/src/widgets/app.dart` 146〜239 行目）と同じ動きにする。6 段の優先度の一覧（同じ関数の説明の 133〜140 行目と、`supportedLocales` の説明の 972〜979 行目）は、次の 1 の空の一覧と、2 の 5 の言語だけの一致をすぐ返す条件を書いていない。
+  1. OS の一覧が空なら、対応の一覧の最初を返す（153〜155 行目）。
+  2. OS の一覧を先頭から順に見て、OS の言語ごとに次を試す（180〜233 行目）。
+     1. 言語・文字体系・地域の 3 つが一致すれば、それを返す（183〜187 行目）。
+     2. OS の言語に文字体系があり、言語・文字体系が一致すれば、それを返す（189〜195 行目）。
+     3. OS の言語に地域があり、言語・地域が一致すれば、それを返す（197〜203 行目）。
+     4. 前の OS の言語で言語だけの一致を見つけていれば、それを返す（207〜209 行目）。
+     5. 言語だけが一致すれば、それを覚える。すぐ返すのは、OS の 1 番目の言語で、OS の 2 番目の言語が同じ言語でない時だけである（211〜222 行目）。
+     6. 地域だけが一致すれば、最初に見つけたものを覚える（227〜232 行目）。
+  3. 最後まで返らなければ、言語だけの一致、地域だけの一致、対応の一覧の最初の順に返す（237 行目）。
+  - 対応の一覧の中で同じ条件に合うものが 2 つ以上あれば、一覧の前のものを使う（164〜169 行目）。
+  - 例: OS が `fr-CA`・`fr-FR` の順で、アプリが `fr`・`fr-FR` を宣言すると、`fr-CA` の言語だけの一致 `fr` はすぐ返さず、次の `fr-FR` の 3 つの一致を返す。OS が `de-AT`・`en-US` の順で、アプリが `de-DE`・`en-US` を宣言すると、`de-AT` の言語だけの一致 `de-DE` をすぐ返す。
+  - **返す値:** 対応の一覧の側のロケールを返す。Flutter は 3 つの一致の時だけ OS の側の値を返す（186 行目の `userLocale`）。3 つの一致では 3 つの欄が同じなので、値は変わらない。
+  - **推定は入れない:** 地域から文字体系を補う推定（`zh-TW` を `zh-Hant` に合わせるなど）は入れない。Flutter の本体も入れていない。入れるかは、行 LC2 の Grill で決める。
 - **差し替え:** アプリは解決の関数を差し替えられる。ロケールを OS によらず固定することも、同じ Signal に書くだけでできる。
-- **書字の向き:** 書字の向きの既定は、ロケールから出す（Flutter の `WidgetsLocalizations.textDirection`、`localizations.dart` 171 行目）。レイアウトを反転する実装は行 P03b のままで、P03b はこの値を読む。
+- **書字の向き:** 向きの値（`Direction`、左から右と右から左）を Core に置く。§3.2 の `LayoutStyle.Direction` と同じ型である。既定は、解決したロケールの言語コードから出す。右から左にするのは ar・fa・he・ps・sd・ur の 6 つで、Flutter の `GlobalWidgetsLocalizations` の説明（`packages/flutter_localizations/lib/src/widgets_localizations.dart` 26〜34 行目）と同じである。Flutter の生成したコード（`lib/src/l10n/generated_widgets_localizations.dart`）が右から左にするのは、そのうち sd を除く 5 つである（141・1750・2218・3954・5049 行目）。sd は、Flutter の部品が対応する言語（同じファイルの 5430 行目からの `kWidgetsSupportedLanguages`）に無い。Flutter は向きをロケールの訳の値として持つ（`localizations.dart` 171 行目の `WidgetsLocalizations.textDirection`）。レイアウトを反転する実装は行 P03b のままで、P03b はこの値を読む。言語コードのほかに文字体系も見るか（`sd-Deva` は左から右に書く）は、P03b の Grill で決める。
+
+LC1 の 7 点で決まる公開の形は、次のとおりである。ロケールから既定の向きを出す関数と、解決の関数の名前と置き場所は、LC1 の実装の PR で出す。
+
+```csharp
+namespace XylemUI;
+
+// ロケール（§4.11）。等しいかは 3 つの欄で比べる
+public readonly struct Locale : IEquatable<Locale>
+{
+    public string Language { get; }   // 小文字（"ja"）。既定値（default）では "und"
+    public string? Script { get; }    // 先頭だけ大文字（"Hant"）。無ければ null
+    public string? Region { get; }    // 大文字（"TW"）か 3 桁の数字（"419"）。無ければ null
+
+    public static Locale Parse(string tag);   // BCP 47 のタグ。大文字と小文字を揃え、変種と拡張は読んで捨てる
+    public string ToLanguageTag();           // "zh-Hant-TW"。3 つの欄だけ
+}
+
+// 書字の向き（§4.11）。§3.2 の LayoutStyle.Direction と同じ型
+public enum Direction : byte
+{
+    Ltr,
+    Rtl,
+}
+```
 
 **メッセージの辞書:**
 
@@ -4065,7 +4156,7 @@ public readonly record struct GlyphBox(int Left, int Top, int Width, int Height,
 - **3a の実装（Issue #769、`docs/benchmarks/im1-cache.md`）:** キャッシュは、木（`UiTree`）が 1 つ持つ `WindowImageCache` である。要素は鍵を求め（`Acquire`）、Scope が捨てられたときと読み込み元が変わったときに項目から外れる（`Leave`）。項目は、数える組の前後の参照のほかに、デコードを待つ要素の並びを持つ（要素の中の、次の要素への参照でつなぐ）。`ImageCache` は、UI スレッドごとに、上限の 1 組と、そのスレッドで作った木のキャッシュへの弱い参照の並びを持ち、上限の変更・`Evict`・`Clear` をそれぞれのキャッシュに当てる。弱い参照なので、閉じた窓のキャッシュを生かし続けない。「木を捨てたとき」は、ホストが窓の根の Scope を捨てるところ（`DesktopWindow` とヘッドレスのアプリ）で、キャッシュの `ReleaseAll` を呼ぶ。Scope を捨てて要素が外れても、数える組の画像は残るからである。2 回呼んでも結果は同じで、その後に鍵を求められたら新しくデコードする。待つ要素がいなくなってから済んだデコードは、数える組に入らないなら、`TextureCache.Add` をせずに画素を捨てる（入れても、その場で `Release` することになる）。キャッシュにある画像を出すときは、読み込み中の要素を出す関数を通らない。その関数は入口でクロージャを確保するので、子を外す処理だけを別の関数にした。キャッシュは、計測のために 4 つの数を持つ: デコードを頼んだ回数、求められた鍵が索引にあった回数、上限が数える組から外した項目の数、済んだ画像が数える組に入らなかった回数。§11.3 の 100 枚の画像の場面は 2 つ作った。ゲートのテスト（16 × 16 の画像 100 個を、200 × 150 のスクロールする箱に）と、NativeAOT の場面 `image-scroll`（512 × 512 にデコードした 100 枚で、既定のバイト数の上限と同じ 104,857,600 バイト。32 × 32 に描く）である。どちらも既定の上限のまま、スクロールの定常状態のアロケーションは 0 だった。`image-scroll` のフレームの CPU は p50 で 7.4〜8.0 µs（同じ格子の箱 100 個は 4.4〜4.7 µs）。1b-2 の場面 `image-tree` は、main が 6.9 µs、この実装が 7.0 µs の回が多く、時計の 1 目盛り（0.1 µs）の差である。要素を main の形に戻したビルドも 7.0 µs が多く、フレームの経路の命令は main と同じで、違うのはフィールドの位置（変位が 8 増えた）と機械語の置き場所だった。実行ファイルは 33,280 バイト増えた
 - **アイコン:** Fluent UI System Icons（MIT）のフォントの字形として描く（Flutter の `Icon` は字形を `RichText` で描く、`packages/flutter/lib/src/widgets/icon.dart` 328〜332 行目）。文字の経路（シェーピング、グリフアトラス、文字の色の継承）で描き、新しい依存は要らない。アイコンのフォントは、§4.5 の「アプリのフォント」の口で登録する。それまでの文字の経路は OS のフォントしか探さなかったので、IC1 の Grill の Q6（Issue #708）でこの口を足した。GPUI は SVG をアルファのマスクにし、Avalonia は図形のパスで描く。フォントは、microsoft/fluentui-system-icons のリリース 1.1.344（コミット `a347af9`、2026-10-09）の Regular（2,844,788 バイト）と Filled（2,509,328 バイト）で、そのままでは配布物の目標（§11.3）に合わないので、アプリが使う字形だけをビルドで残す（Flutter の `icon_tree_shaker.dart`）。削る仕組みは HarfBuzz の subset で、IC1 の spike（Issue #716）で確かめた。版は、出てから 2 週間の決まり（`.cursor/rules/dependencies.mdc`）で選び、IC1 の 1 回目の Grill のときの最新（2026-10-30、Regular 2,900,836 バイト）は使わない。どのフォントにも使える `Icon`（フォントと文字のコード）は Primitives に置き、Fluent のフォントと名前の一覧は Theme.Fluent が持つ（§2.9.1、Core は特定のデザインのアセットを持たない）
   - **フォント（IC1 の Grill でオーナーが決定、Issue #704）:** Regular と Filled を使う。どちらも、大きさごとに描き分けた字形を持つ（名前は `ic_fluent_add_16_regular`・`ic_fluent_add_24_regular` など）。Flutter の `fluentui_system_icons` パッケージも、この 2 つを使う。同じリポジトリの Resizable（1,621,748 バイト）は、1 つのアイコンに 20 px の字形を 1 つだけ持ち、どの大きさにも拡大して使う。小さい大きさで線が細る字形になるので使わない。使う字形だけを残すので、元のフォントの大きさは配布物に響かない
-  - **API（同じ Grill）:** Primitives に `IconGlyph`（フォントのファミリー、文字のコード、字形を描いた大きさ、を持つ readonly の値）と、要素 `Icon(IconGlyph glyph, float? size = null, Color? color = null, string? label = null)` を置く。Flutter の `IconData`（`codePoint`・`fontFamily`）と `Icon` の形である。大きさの既定は、`IconGlyph.Size` の字形を描いた大きさ（`add_24` なら 24 論理ピクセル）。Flutter の `IconData` は大きさを持たず、`Icon` の既定は 24 である。Fluent は大きさごとに字形を描き分けるので、`add_16` を 24 で描くと描き分けた意味がなくなる。そこで `IconGlyph` が大きさを持つ（IC1 の Grill の Q11、Issue #720）。色の既定は文字の色（`Foreground`）を受け継ぐ。`label` が無ければ飾りとして `AccessibilityInfo.Excluded` を付け、読み上げの木にも祖先の名前のたたみにも出さず（§4.4.1「外すノード」）、あれば画像の役（`SemanticsRole.Image`、UIA の `Image`、§4.4.1）でその名前を出す（`AccessibilityInfo`）。Flutter の `semanticLabel` は名前だけを出し、役を付けない（`icon.dart` 348〜350 行目の `Semantics(label: semanticLabel, ...)`）。UIA では、役の無い名前は何の要素か伝わらず、ナレーターは画像の役なら「イメージ」と読むので、役を付ける（IC1 の Grill の Q8、Issue #708）。描くのは、文字の経路で 1 つの字形を描くのと同じである。右から左の書字で左右を反転する欄（Flutter の `matchTextDirection`）は、まだ持たない。Core に書字の向きが無く、反転を決める元が無いためで、行 P03b（RTL のレイアウトの向き）で足す（IC1 の Grill の Q10、Issue #720）
+  - **API（同じ Grill）:** Primitives に `IconGlyph`（フォントのファミリー、文字のコード、字形を描いた大きさ、を持つ readonly の値）と、要素 `Icon(IconGlyph glyph, float? size = null, Color? color = null, string? label = null)` を置く。Flutter の `IconData`（`codePoint`・`fontFamily`）と `Icon` の形である。大きさの既定は、`IconGlyph.Size` の字形を描いた大きさ（`add_24` なら 24 論理ピクセル）。Flutter の `IconData` は大きさを持たず、`Icon` の既定は 24 である。Fluent は大きさごとに字形を描き分けるので、`add_16` を 24 で描くと描き分けた意味がなくなる。そこで `IconGlyph` が大きさを持つ（IC1 の Grill の Q11、Issue #720）。色の既定は文字の色（`Foreground`）を受け継ぐ。`label` が無ければ飾りとして `AccessibilityInfo.Excluded` を付け、読み上げの木にも祖先の名前のたたみにも出さず（§4.4.1「外すノード」）、あれば画像の役（`SemanticsRole.Image`、UIA の `Image`、§4.4.1）でその名前を出す（`AccessibilityInfo`）。Flutter の `semanticLabel` は名前だけを出し、役を付けない（`icon.dart` 348〜350 行目の `Semantics(label: semanticLabel, ...)`）。UIA では、役の無い名前は何の要素か伝わらず、ナレーターは画像の役なら「イメージ」と読むので、役を付ける（IC1 の Grill の Q8、Issue #708）。描くのは、文字の経路で 1 つの字形を描くのと同じである。右から左の書字で左右を反転する欄（Flutter の `matchTextDirection`）は、まだ持たない。Core に書字の向きが無く、反転を決める元が無いためで（向きの値は行 LC1 で Core に入る、§4.11「ロケール」の「書字の向き」）、行 P03b（RTL のレイアウトの向き）で足す（IC1 の Grill の Q10、Issue #720）
   - **名前の一覧（同じ Grill）:** Theme.Fluent に、`FluentIcons.Add24Regular` のような静的なプロパティ（`IconGlyph` を返す）を置く。フォントの版（リポジトリのコミット）を固定し、その版の JSON（`FluentSystemIcons-Regular.json` と `-Filled.json`、名前から文字のコードへの表）からスクリプトで生成して、生成したものをリポジトリに置く。文字のコードを `const int` で置かない。`const` の値は、使う側の IL に数として埋め込まれ、どのアイコンを使ったかを下の仕組みが見つけられない。静的なプロパティか `static readonly` のフィールドなら、使う側の IL に、そのプロパティを読む命令（`call`・`ldsfld`）が残る。プロパティは式の本体（`public static IconGlyph AccessTime24Regular => new(Regular, 61697);`）で書く。`{ get; } = new(...)` の初期化子で書くと、静的コンストラクタが 19,683 個（Regular 9,779 個と Filled 9,904 個）をすべて作るので、NativeAOT で使わないものを削れない。式の本体なら、使わないゲッターは削られる（spike #716 で、100 個を使うアプリと 1 個を使うアプリの実行ファイルの差が 26,624 バイトで、残したフォントの差とほぼ同じ）。同じ名前のアイコンでも、Regular と Filled で文字のコードは違うことが多い（両方にある 9,743 個のうち 7,580 個。`ic_fluent_home_24` は Regular が U+F481、Filled が U+F488）。文字のコードはどちらも U+E000〜U+F0DAF の範囲にある。そこで `IconGlyph` はフォントのファミリーと文字のコードの組で持ち、名前の一覧は各フォントの JSON から別々に生成する
   - **使う字形だけを残す（同じ Grill）:** Theme.Fluent が持つ MSBuild のタスクが、アプリのビルドの中で次を行う。アプリと参照するアセンブリの IL から `FluentIcons` のプロパティへの参照を集める。その文字のコードだけを、HarfBuzz の subset（`harfbuzz-subset`）でフォントから抜き出す。subset はビルドする機械で動かし、実行ファイルには入らない。実行時にリンクする HarfBuzz は subset を含まない（`-DHB_BUILD_SUBSET=OFF`、`vendor/build.ps1` 27 行目）ので、subset はビルドの機械の向けに `HB_BUILD_SUBSET=ON` で別に作り、Theme.Fluent のビルドの道具として持つ（§0 の表）。できたフォントをアプリに埋め込み、Theme.Fluent はそれを読む。Flutter の `icon_tree_shaker.dart` と同じく、使うものがビルドで分からない書き方（名前の文字列から探す、`IconGlyph` を実行時に作る）をするアプリのために、全部の字形を残す設定（Flutter の `--no-tree-shake-icons`）を用意する。IL から参照を読めることは、spike #716 で確かめた。`System.Reflection.Metadata` で、アプリと、Theme.Fluent を参照するか Theme.Fluent そのもののアセンブリの全メソッドの IL を読み、`FluentIcons` のゲッターを呼ぶ命令を集める。アプリの 100 個と、ライブラリの中の 1 個を、50〜56 ms ですべて見つけた。subset した字形は、輪郭も送り幅も元と同じで、ファミリー名も元のまま（fontTools で比べた）
   - **埋め込み方（IC1 の Grill の Q7、Issue #708）:** 使うアイコンが分かるのは、アプリをコンパイルした後である。そこで、コンパイルの後、NativeAOT のコンパイル（ILC）の前に、ビルドの道具が、残したフォントをアプリのアセンブリへ埋め込みのリソースとして書き足す。道具には Mono.Cecil（MIT）を使う。Mono.Cecil はビルドの機械で動くだけで、実行ファイルには入らない（§0 の表）。Theme.Fluent は、残したフォントのリソース（`XylemUI.Icons.Regular.ttf` と `XylemUI.Icons.Filled.ttf`）を持つアセンブリを探して読み、§4.5 の `AppFonts.Add` で登録する。探すのは、入口のアセンブリ（`Assembly.GetEntryAssembly()`）、無ければ読み込まれているアセンブリ（`AppDomain.CurrentDomain.GetAssemblies()`、NativeAOT でもコンパイルしたアセンブリが並ぶ）の順で、最初にリソースを持つもの。入口のアセンブリが別のホスト（テストのホスト、アプリを読み込む別のプログラム）でも、`.targets` を取り込んだアセンブリが読み込まれていれば見つかる（PR #721 のレビュー）。登録するのは、`FluentIcons` のゲッターが最初に呼ばれたときで、1 度だけである（IC1 の Grill の Q12、Issue #720）。アプリは何も呼ばずにアイコンを使え、アイコンを使わないアプリは何も登録しない。ゲッターが増やすのは真偽の値の比べ 1 つ。ゲッターは要素を作る UI スレッドで呼ばれる。ほかのスレッドで初めて呼ばれると、`AppFonts.Add` と同じく `InvalidOperationException` を投げる。リソースが無い（アプリが Theme.Fluent の `.targets` を取り込んでいない）ときも `InvalidOperationException` を投げ、取り込み方を言う。ILC は書き足した後のアセンブリを読むので、リソースは実行ファイルに入る。spike #716 で、JIT と NativeAOT の publish の両方で `GetManifestResourceStream` が書き足したリソースを読み、trim と AOT の警告が 0 だった。書き足すのは `AfterTargets="CoreCompile"` のターゲットで、2 回目のビルドでは `CoreCompile` が飛ばされ、道具は同じリソースがあれば書き直さない。publish は RID ごとの `obj` にコンパイルし直すので、そこでもう一度書き足す。道具の 1 回は 150〜230 ms
@@ -4805,7 +4896,7 @@ internal sealed class FocusManager
 
 決めたこと:
 
-- **動作:** 動作は型で書く（引数を持てる）。名前は `XylemUI.Generators` の Source Generator が登録する。リフレクションは使わない（§0.1）。`XylemUI.Generators` のプロジェクトは、まだリポジトリに無い（`src/` と `tools/` に `IIncrementalGenerator` の実装が無い）。行 KM1 が最初の Source Generator として作り、ローカライズの行 LC1（§4.11）がそこへ足す。名前から動作を作る口を持つ（利用者のキーマップ、メニュー）。
+- **動作:** 動作は型で書く（引数を持てる）。名前は `XylemUI.Generators` の Source Generator が登録する。リフレクションは使わない（§0.1）。`XylemUI.Generators` のプロジェクトは、まだリポジトリに無い（`src/` と `tools/` に `IIncrementalGenerator` の実装が無い）。行 KM1 が最初の Source Generator として作り、ローカライズの行 LC3（§4.11 の ARB の生成器）がそこへ足す。名前から動作を作る口を持つ（利用者のキーマップ、メニュー）。
 - **届け方:** 動作のハンドラはノードに付ける。フォーカスしたノードから根へたどり、最初に受けたハンドラで止まる。ハンドラは「受けない」と返して上へ送れる。Flutter の、最も近い対応が無効なら外側を試さずに終わる動きは採らない。
 - **キーマップ:** 行は「キーの並び、動作、文脈の条件」。文脈は、ノードが名前で名乗る（GPUI の `key_context`）。フォーカスに近い文脈の行が勝ち、同じ深さでは後から足した行が勝つ。動作を `null` にした行は、その割り当てを外す。
 - **順:** キーが押されたら、キーマップ、キーのハンドラ（`KeyEvent`、上）、文字の入力（§4.9）の順に試す。修飾キーを外すと文字が変わるキー（`PrefersCharacter`）は、文字の欄がフォーカスにあれば、先に文字の入力へ送る（GPUI の `prefer_character_input`）。
@@ -4823,7 +4914,7 @@ internal sealed class FocusManager
 - **コードからの実行:** `Dispatch(action)` を公開する。フォーカスしたノードから届ける。ボタン、メニュー、コマンドパレットが使う。
 - **文脈の条件:** GPUI と同じ文法にする。ノードは `.KeyContext("Editor")` と名乗り、`mode = full` のような値も持てる。条件は `&&`・`||`・`!`・`==`・`!=` と、子孫を表す `>`（`crates/gpui/src/keymap/context.rs` 221〜248 行目）。
 - **キーの並びの書き方:** GPUI と同じにする。`ctrl-shift-p` の形で、続けて押す形は空白で区切り（`ctrl-k ctrl-s`）、`secondary-` を持つ（`crates/gpui/src/platform/keystroke.rs` 115〜120 行目）。書き損じは、行を足したときに例外にする。
-- **キーの表示:** Windows では `Ctrl+Shift+P` の形にする。区切りは `+`、修飾キーの順は Ctrl、Alt、Shift、Win。WinUI は、修飾キーを `VirtualKeyModifiers` の列挙の順（Control = 1、Menu = 2、Shift = 4、Windows = 8）に並べ、`+` で区切る（Microsoft Learn の「Keyboard accelerators」と `VirtualKeyModifiers`）。Flutter の Apple のほかの順（Alt、Ctrl、Meta、Shift。`packages/flutter/lib/src/material/menu_anchor.dart` 2536〜2562 行目）には合わせない。修飾キーとキーの名前は、ローカライズの辞書（§4.11、行 LC3）から読める形にする。
+- **キーの表示:** Windows では `Ctrl+Shift+P` の形にする。区切りは `+`、修飾キーの順は Ctrl、Alt、Shift、Win。WinUI は、修飾キーを `VirtualKeyModifiers` の列挙の順（Control = 1、Menu = 2、Shift = 4、Windows = 8）に並べ、`+` で区切る（Microsoft Learn の「Keyboard accelerators」と `VirtualKeyModifiers`）。Flutter の Apple のほかの順（Alt、Ctrl、Meta、Shift。`packages/flutter/lib/src/material/menu_anchor.dart` 2536〜2562 行目）には合わせない。修飾キーとキーの名前は、ローカライズの辞書（§4.11、行 LC4 の部品の文言）から読める形にする。
 - **アクセスキーとの順:** キーマップを、ウィンドウのアクセスキー（Alt+文字）とメニューバーのキー（上の「Alt とメニューのキー」）より先に試す。`alt-f` を割り当てたら、そちらが勝つ。Avalonia も、`KeyBindings` を KeyDown の配送より前に試す。
 - **実行できるかの読み取り:** 「今のフォーカスから、その動作のハンドラが見つかるか」を、リアクティブな読み取りにする。フォーカスが移るか、ハンドラが増減したときにだけ、読んだ所が再実行される。
 - **受け入れ:** 割り当てに合うキーを押して動作が届くまでの割り当てが 0（Zero-Alloc のテスト、§11.3）。キーの配送の時間を、今の値（`docs/benchmarks/k1a-keys-focus.md`）と同じ回の中で比べる。
@@ -4938,7 +5029,7 @@ public static bool Dispatch(this Element element, IAction action, Element? from)
   - **フォーカス:** フォーカスの移動と、ウィンドウの活性。フォーカスから読む計算だけが読む。
   - **ポップアップ:** ポップアップが開いた時と、閉じ始めた時。`popup::Dismiss` と、フォーカスの移動（一番上の範囲が替わる）だけが読む。
   - **経路:** 読み手の経路（読み始めのノードから、キーの親をたどって根まで）の上のノードに起きた変化。ハンドラ、文脈、無効、そのノードを付けた時と外した時、スクロールの箱が状態を初めて持った時。フォーカスが無い時の始まりのノードが替わった時も、ここで知らせる。どの計算も読む。
-    - 読み手は、読むたびに、経路の上のノードに「読まれている」の印を付ける。変化の側は、印のあるノードで起きた時だけ知らせる。印は消さない。読み手がいなくなったノードの変化も知らせることになるが、余分に読み直すだけで、答えは誤らない。
+    - 読み手は、読むたびに、経路の上のノードに「読まれている」の印を付ける。変化の側は、印のあるノードで起きた時だけ知らせる。読み手がいなくなっても、印は消さない。読み手がいなくなったノードの変化も知らせることになるが、余分に読み直すだけで、答えは誤らない。印を下ろすのは、ノードの枠を解放する時だけである。ノードの表は枠を使い回すので、下ろさないと、新しいノードが前のノードの印を引き継ぎ、長く動かすうちに印が木の全体に広がる（PR #831 のレビュー）。
     - 印の無いノードを付けても外しても、すでにある経路は変わらない。経路は親をたどるだけなので、変わるのは、付け外しするノードそのものを通る経路だけである。新しく作ったノードは、まだ誰にも読まれていない。
     - 部品が、まだ木に付いていない自分のノードから読む場合（メニューが開いた後に作られた項目）は、そのノードから根まで印を付ける。付いた時に、その部分木の根の印で知らせが出る。
   - **木の形:** フォーカスを取れるノードの増減。フォーカスを取れるか、無効、隠したか、ノードを付けた時と外した時。フォーカスの移動（`focus::Next`・`focus::Previous`）が実行できるかを読む計算だけが読む。この答えは、経路ではなく木の全体で決まるためである。
@@ -5208,7 +5299,7 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | skcms                      | ICC から sRGB への変換（§5.0.4）   | BSD-3-Clause            | 静的（同上。行 IM1 の 2 つ目の PR）                                 |
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
 | CLDR のデータ              | 複数形の規則と、数値と日付の書式の表（§4.11） | Unicode のライセンス（`unicode-org/cldr` の `LICENSE`。データに著作権と許諾の表示を付ける） | ライブラリではない。ビルド時に表を生成し、宣言したロケールの分をバイナリに入れる（行 LC2） |
-| Flutter の ARB の訳        | 部品の文言の翻訳（§4.11）          | BSD-3-Clause            | ライブラリではない。同じ意味のメッセージの訳を、翻訳のパッケージに入れる（行 LC3） |
+| Flutter の ARB の訳        | 部品の文言の翻訳（§4.11）          | BSD-3-Clause            | ライブラリではない。同じ意味のメッセージの訳を、翻訳のパッケージに入れる（行 LC4） |
 
 **ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。AccessKit だけは作らず、release の zip にある MSVC 用の静的ライブラリと DLL をそのまま取る（§4.4.1、#633 の実装）。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す。AccessKit（§4.4.1、行 P02g）だけは、ソースではなく C の bindings の release の zip を版と SHA-256 で固定して取り、中の静的ライブラリと共有ライブラリを `vendor/out` に置く。ソースから作るには Rust のツールチェーンが要るからである
 
