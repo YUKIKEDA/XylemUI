@@ -106,8 +106,12 @@ public static partial class Primitive
             UiTree.Current ?? throw new InvalidOperationException("MenuItem is made while a window's root function runs; no tree is current.");
         RequireScope(nameof(MenuItem));
         var named = new NamedAction(tree, action, _inPanel, _panelContext);
-        Element item = Box(content(Computed.Create(named.Keys))).Focusable().Disabled(Computed.Create(named.Unavailable));
+        Element item = Box(content(Computed.Create(named.Keys))).Focusable();
+
+        // The item's node is known before its first read: an item made while its menu is open marks the node, so that the read
+        // is made again when the node is put in the menu.
         named.Item = item.Node;
+        item = item.Disabled(Computed.Create(named.Unavailable));
         var state = new MenuItemState(tree, item.Node, named.Dispatch, submenu: null);
         return state.Attach(item);
     }
@@ -407,8 +411,12 @@ public static partial class Primitive
         {
             tree.Actions.TrackAvailability(Start, atFocus: !InMenu(out _));
 
-            // An item that is not in a menu yet reads again when the subtree it is in is put in one.
-            tree.Actions.Watch(Item);
+            // An item that was not made in a panel reads again when the subtree it is in is put in a menu. One made in a panel has
+            // its context already, and marking it would make it read a second time when the panel takes it.
+            if (!inPanel)
+            {
+                tree.Actions.Watch(Item);
+            }
         }
 
         // Whether the item is a menu's, and that menu's context node: the one of the panel it was made in, or of the open menu
