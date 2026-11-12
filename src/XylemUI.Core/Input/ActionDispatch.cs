@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 /// <summary>
@@ -252,14 +254,19 @@ internal sealed class ActionDispatch
     /// the readers may run here.
     /// </summary>
     /// <param name="node">The node whose link to its parent changed.</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void LinkChanged(NodeHandle node)
     {
-        // A tree nobody reads has neither count: a row put in or taken out pays for no batch (the Todo scenes, row KM3).
-        if (_epoch is null && _orderEpoch is null)
+        // A tree nobody reads has neither count: a row put in or taken out pays for two loads and no call (the Todo scenes,
+        // row KM3).
+        if (_epoch is not null || _orderEpoch is not null)
         {
-            return;
+            TellLinkChanged(node);
         }
+    }
 
+    private void TellLinkChanged(NodeHandle node)
+    {
         ReactiveRuntime.EnterBatch();
         try
         {
