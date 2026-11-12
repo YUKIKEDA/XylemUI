@@ -4917,7 +4917,11 @@ public static bool Dispatch(this Element element, IAction action, Element? from)
   - 動作を持たない項目のために、`MenuItem(content, onSelect, enabled)` は残す。
   - メニューバーの一番上の項目（`MenuBarItem`）は、メニューを開く項目のままにする。上の「メニューバーの項目」は、バーのメニューの中の項目である。
   - チェックの付く項目（zed の `action_checked`、`context_menu.rs` 692〜699 行目）は、部品の組の行で扱う。
-- **引数を持つ動作のキー:** キーの行は、動作の型が同じで、動作が `IEquatable<IAction>` を実装していれば、それも真のものだけを採る。引数の無い動作は、型だけで比べる。GPUI は値で比べる（`crates/gpui/src/keymap.rs` 108 行目の `partial_eq`）。`menubar::Open`（`Last = true`）を指す項目に、`Last = false` の行のキーを出さないためである。型で読む `KeyBindingFor<T>()` は、今のまま型だけで比べる。
+- **引数を持つ動作のキー:** キーの行は、動作の型が同じで、引数も等しいものだけを採る。`menubar::Open`（`Last = true`）を指す項目に、`Last = false` の行のキーを出さないためである。GPUI は値で比べる（`crates/gpui/src/keymap.rs` 108 行目の `partial_eq`。その実装をマクロが型の等しさから作る所は、読んでいない）。
+  - 比べるコードは、Source Generator が生成する。名前を付けた動作（`[Action]`）の公開のプロパティを、型ごとの既定の比べ方（`EqualityComparer<T>.Default`）で全部比べる。名前から引数を入れるコード（上の「引数のある動作を名前から作る口」）と同じ所に出し、`ActionRegistry` に登録する。動作を書く人は、何も実装しない。
+  - プロパティの無い動作は、型だけで比べる。名前を付けていない動作も、型だけで比べる。
+  - 型で読む `KeyBindingFor<T>()` は、今のまま型だけで比べる。
+  - 最初は「動作が `IEquatable<IAction>` を実装していれば、値も比べる」と決めた（KM2c の Grill の Q3）。record が自動で実装するのは `IEquatable<自分の型>` なので、引数のある動作を record で書いた人は、値で比べられると思っても、型だけで比べられる（PR #819 のレビュー）。`Equals(object)` を使う形は採らない。クラスが上書きしていなければ参照の比較になり、引数の無い動作どうしが等しくならない。上書きしているかを実行時に調べるにはリフレクションが要る（§0.1）。オーナーが、生成する形に決め直した。
 - **Core の動作:** `CanDispatch` は、木が受ける動作（`CoreAction`）に、いつも真を返していた（行 KM2a）。`CoreAction` が「今、実行すると何かが起きるか」を答え、`CanDispatch(IAction)` がそれを聞く（PR #815 のレビュー）。
   - `focus::Next`・`focus::Previous`: 一番上のフォーカスの範囲（§7.2）に、移れるノードがある。フォーカスの位置では変わらない（フォーカスを取れるノードが 1 つなら、そこへ戻る）。
   - `popup::Dismiss`: 閉じるポップアップがある。
