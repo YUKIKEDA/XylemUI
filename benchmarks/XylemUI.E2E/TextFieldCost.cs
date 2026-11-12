@@ -51,6 +51,7 @@ internal static partial class TextFieldCost
             }
 
             RunSelectionArea(report);
+            RunCreate(report);
         }
         finally
         {
