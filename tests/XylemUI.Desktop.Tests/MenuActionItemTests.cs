@@ -199,11 +199,12 @@ public sealed class MenuActionItemTests
     ///   <c>Side</c>; <c>ctrl-o</c> for <c>menubar::Open</c> and <c>ctrl-l</c> for <c>menubar::Open</c> with <c>Last</c> set.
     ///
     /// Steps:
-    /// - Open the menu, settle, and read the keys of both items. Take the <c>ctrl-p</c> row out and read <c>Ping</c>'s keys; bind
+    /// - Open the menu, settle, and read the keys of both items. Take the context off the focused box, read <c>Ping</c>'s keys,
+    ///   and give it back. Take the <c>ctrl-p</c> row out and read <c>Ping</c>'s keys; bind
     ///   <c>ctrl-q</c> to <c>Ping</c> in <c>Menu</c>, the context of the item itself, and read them again.
     ///
     /// Expected:
-    /// - Ctrl+P and Ctrl+L. None after the row is taken out, and none with the row of the menu's context.
+    /// - Ctrl+P and Ctrl+L. None without the context, and Ctrl+P with it again. None after the row is taken out, and none with the row of the menu's context.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -233,6 +234,10 @@ public sealed class MenuActionItemTests
         open.Set(true);
         _ = app.PumpAndSettle();
         (string?, string?) first = (items["ping"].Keys.Get()?.ToDisplayString(), items["open"].Keys.Get()?.ToDisplayString());
+        _ = focused.KeyContext(null);
+        string? withoutContext = items["ping"].Keys.Get()?.ToDisplayString();
+        _ = focused.KeyContext("Side");
+        string? withContext = items["ping"].Keys.Get()?.ToDisplayString();
         Assert.True(app.Keymap.Remove(row));
         string? removed = items["ping"].Keys.Get()?.ToDisplayString();
         _ = app.Keymap.Bind("ctrl-q", new Ping(), "Menu");
@@ -241,6 +246,7 @@ public sealed class MenuActionItemTests
         _ = app.PumpAndSettle();
 
         Assert.Equal(("Ctrl+P", "Ctrl+L"), first);
+        Assert.Equal((null, "Ctrl+P"), (withoutContext, withContext));
         Assert.Null(removed);
         Assert.Null(inMenu);
     }

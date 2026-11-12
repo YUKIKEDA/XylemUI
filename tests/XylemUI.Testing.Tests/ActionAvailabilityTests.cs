@@ -117,12 +117,12 @@ public sealed class ActionAvailabilityTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A scroll view of 100 x 100 with a state, around a column of a focused row of 20 and a box of 380 shown by a signal, not
-    ///   shown at first: the content fits. A computation made in the root function reads <c>CanDispatch</c> of
+    /// - A scroll view of 100 x 100 with a state, around a column of a focused row of 20 and a leaf of text from a signal, one
+    ///   line at first: the content fits. A computation made in the root function reads <c>CanDispatch</c> of
     ///   <c>scroll::LineDown</c>.
     ///
     /// Steps:
-    /// - Read it. Show the box, settle, and read it again.
+    /// - Read it. Set the text to 30 lines, which changes no node and no handler, settle, and read it again.
     ///
     /// Expected:
     /// - No while the content fits; yes when it is higher than the view.
@@ -132,21 +132,21 @@ public sealed class ActionAvailabilityTests
     public async Task CanDispatch_AScrollingAction_IsReadAgainWhenTheRangeChanges()
     {
         var state = new ScrollState();
-        var more = Signal.Create(false);
+        var text = Signal.Create("n");
         Element row = default;
         Computed<bool>? down = null;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
         {
             row = Box().Width(100).Height(20).Focusable();
             down = Computed.Create(() => row.CanDispatch(new ScrollActions.LineDown()));
-            return ScrollView(Column(row, Show(more, static () => Box().Width(100).Height(380))), state).Width(100).Height(100);
+            return ScrollView(Column(row, Elements.Text(() => text.Get())), state).Width(100).Height(100);
         });
         _ = app.PumpAndSettle();
         Assert.True(app.Focus(row));
         _ = app.PumpAndSettle();
 
         bool fits = down!.Get();
-        more.Set(true);
+        text.Set(string.Join(Environment.NewLine, Enumerable.Repeat("n", 30)));
         _ = app.PumpAndSettle();
 
         Assert.False(fits);
@@ -165,12 +165,14 @@ public sealed class ActionAvailabilityTests
     ///   <c>popup::Dismiss</c>.
     ///
     /// Steps:
-    /// - Read the three. Enable the boxes and read the two moves. Open the popup, whose content takes no focus, settle, and read
-    ///   the dismissal and the move forward; close it, settle, and read both again.
+    /// - Read the three. Enable the boxes and read the two moves. Open the popup, whose content takes no focus and which fades
+    ///   out over 100 ms, settle, and read the dismissal and the move forward; close it, read the dismissal after 50 ms, settle,
+    ///   and read both again.
     ///
     /// Expected:
     /// - No, no, no. Yes and yes with the boxes enabled. With the popup open: the dismissal yes, and the move no, since the
-    ///   popup's scope has no node to move to. After it closed: the dismissal no, and the move yes.
+    ///   popup's scope has no node to move to. While the popup leaves, it is still there and the dismissal is no. After it
+    ///   closed: the dismissal no, and the move yes.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -186,7 +188,11 @@ public sealed class ActionAvailabilityTests
         {
             first = Box().Width(20).Height(20).Focusable().Disabled(disabled);
             Element second = Box().Width(20).Height(20).Focusable().Disabled(disabled);
-            _ = first.Popup(open, static () => Box().Width(30).Height(30));
+            _ = first.Popup(
+                open,
+                static () => Box().Width(30).Height(30),
+                new PopupOptions { Motion = ShowMotion.Fade(TimeSpan.FromMilliseconds(100)) }
+            );
             next = Computed.Create(() => first.CanDispatch(new FocusActions.Next()));
             previous = Computed.Create(() => first.CanDispatch(new FocusActions.Previous()));
             dismiss = Computed.Create(() => first.CanDispatch(new PopupActions.Dismiss()));
@@ -202,9 +208,12 @@ public sealed class ActionAvailabilityTests
         _ = app.PumpAndSettle();
         (bool, bool) whileOpen = (dismiss.Get(), next.Get());
         open.Set(false);
+        app.Pump(TimeSpan.FromMilliseconds(50));
+        (int, bool) leaving = (app.Popups.Count, dismiss.Get());
         _ = app.PumpAndSettle();
 
         Assert.Equal((false, false, false), none);
+        Assert.Equal((1, false), leaving);
         Assert.Equal((true, true), enabled);
         Assert.Equal((true, false), whileOpen);
         Assert.Equal((false, true), (dismiss.Get(), next.Get()));
