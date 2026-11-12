@@ -151,6 +151,42 @@ public static partial class Primitive
                 )
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
+                .OnAction<TextActions.MoveLeft>(Act)
+                .OnAction<TextActions.MoveRight>(Act)
+                .OnAction<TextActions.SelectLeft>(Act)
+                .OnAction<TextActions.SelectRight>(Act)
+                .OnAction<TextActions.MoveWordLeft>(Act)
+                .OnAction<TextActions.MoveWordRight>(Act)
+                .OnAction<TextActions.SelectWordLeft>(Act)
+                .OnAction<TextActions.SelectWordRight>(Act)
+                .OnAction<TextActions.MoveToLineStart>(Act)
+                .OnAction<TextActions.MoveToLineEnd>(Act)
+                .OnAction<TextActions.SelectToLineStart>(Act)
+                .OnAction<TextActions.SelectToLineEnd>(Act)
+                .OnAction<TextActions.MoveToStart>(Act)
+                .OnAction<TextActions.MoveToEnd>(Act)
+                .OnAction<TextActions.SelectToStart>(Act)
+                .OnAction<TextActions.SelectToEnd>(Act)
+                .OnAction<TextActions.MoveUp>(Act)
+                .OnAction<TextActions.MoveDown>(Act)
+                .OnAction<TextActions.SelectUp>(Act)
+                .OnAction<TextActions.SelectDown>(Act)
+                .OnAction<TextActions.MovePageUp>(Act)
+                .OnAction<TextActions.MovePageDown>(Act)
+                .OnAction<TextActions.SelectPageUp>(Act)
+                .OnAction<TextActions.SelectPageDown>(Act)
+                .OnAction<TextActions.DeleteBackward>(Act)
+                .OnAction<TextActions.DeleteForward>(Act)
+                .OnAction<TextActions.DeleteWordBackward>(Act)
+                .OnAction<TextActions.DeleteWordForward>(Act)
+                .OnAction<TextActions.Cut>(Act)
+                .OnAction<TextActions.Copy>(Act)
+                .OnAction<TextActions.Paste>(Act)
+                .OnAction<TextActions.SelectAll>(Act)
+                .OnAction<TextActions.Undo>(Act)
+                .OnAction<TextActions.Redo>(Act)
+                .OnAction<TextActions.InsertNewline>(Act)
+                .OnAction<TextActions.Submit>(Act)
                 .OnTextInput(EventPhase.Bubble, TextInput)
                 .On(PointerEventKind.Down, EventPhase.Bubble, PointerDown)
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
@@ -619,10 +655,17 @@ public static partial class Primitive
                 OpenMenu(at: null);
                 return;
             }
+        }
 
-            if (Command(e.Key, e.Modifiers, e.Timestamp))
+        // An action of the field (design §7, "The default keys and actions"), which the keymap asks for from the field's keys.
+        // The field handles it when it has the focus itself and can do it; otherwise the action goes on, to the next row of the
+        // keys. One method for all the actions: each is added by its type, which is what a dispatch looks a handler up by.
+        private void Act<TAction>(in ActionEvent<TAction> e)
+            where TAction : TextAction
+        {
+            if (e.TargetNode != _field || _composition is not null || !Run(e.Action, Now()))
             {
-                e.StopPropagation();
+                e.Propagate();
             }
         }
 
@@ -671,77 +714,52 @@ public static partial class Primitive
             return layer + LeafOrigin() + new Vector2(caret.X, caret.Y + caret.Height);
         }
 
-        // The keys of design §4.9's table. Returns whether the key was a command, which stops it.
-        private bool Command(Key key, KeyModifiers modifiers, TimeSpan now)
+        // The commands of design §4.9's table. Returns whether the field did the action, which handles it.
+        private bool Run(TextAction action, TimeSpan now)
         {
-            bool shift = (modifiers & KeyModifiers.Shift) != 0;
-            KeyModifiers rest = modifiers & ~KeyModifiers.Shift;
-            bool control = rest == KeyModifiers.Control;
-            if (rest is not (KeyModifiers.None or KeyModifiers.Control))
-            {
-                return false;
-            }
-
+            bool forward = action.Forward;
+            bool select = action.Select;
             TextSelection selection = _editor.Selection;
-            switch (key)
+            switch (action.Command)
             {
-                case Key.Left or Key.Right:
-                    bool forward = key == Key.Right;
+                case TextCommand.Character:
                     int to =
-                        !shift && !control && !selection.IsCollapsed ? (forward ? selection.End : selection.Start)
-                        : control ? _editor.Word(selection.Caret, forward)
-                        : _editor.Character(selection.Caret, forward);
-                    return Move(to, shift);
-                case Key.Home or Key.End:
-                    return Move(control ? (key == Key.End ? _editor.Text.Length : 0) : LineEnd(key == Key.End), shift, keepX: false);
-                case Key.Up or Key.Down or Key.PageUp or Key.PageDown when options.Multiline && !control:
-                    return Move(Vertical(key), shift, keepX: true);
-                case Key.Back or Key.Delete when !shift:
-                    return !options.ReadOnly && Edit(_editor.Delete(forward: key == Key.Delete, word: control, now));
-                case Key.Delete when shift && rest == KeyModifiers.None:
+                        !select && !selection.IsCollapsed ? (forward ? selection.End : selection.Start) : _editor.Character(selection.Caret, forward);
+                    return Move(to, select);
+                case TextCommand.Word:
+                    return Move(_editor.Word(selection.Caret, forward), select);
+                case TextCommand.Line:
+                    return Move(LineEnd(forward), select, keepX: false);
+                case TextCommand.Document:
+                    return Move(forward ? _editor.Text.Length : 0, select, keepX: false);
+                case TextCommand.Vertical or TextCommand.Page:
+                    return options.Multiline && Move(Vertical(page: action.Command == TextCommand.Page, forward), select, keepX: true);
+                case TextCommand.Delete or TextCommand.DeleteWord:
+                    return !options.ReadOnly && Edit(_editor.Delete(forward, word: action.Command == TextCommand.DeleteWord, now));
+                case TextCommand.Cut:
                     return Cut(now);
-                case Key.Insert when control && !shift:
+                case TextCommand.Copy:
                     return Copy();
-                case Key.Insert when shift && rest == KeyModifiers.None:
+                case TextCommand.Paste:
                     return Paste(now);
-                case Key.Enter when rest == KeyModifiers.None:
-                    // Shift+Enter breaks a line too, as in Avalonia (TextBox.cs line 1700) and zed (default-windows.json line 131).
-                    if (options.Multiline)
-                    {
-                        return !options.ReadOnly && Edit(_editor.Type("\n", now));
-                    }
-
-                    if (!shift && options.OnSubmit is { } submit)
-                    {
-                        submit(_editor.Text);
-                        return true;
-                    }
-
-                    return false;
-            }
-
-            if (!control)
-            {
-                return false;
-            }
-
-            switch (key)
-            {
-                case Key.A when !shift:
-                    _editor.SelectAll();
-                    Changed(selectionOnly: true);
+                case TextCommand.SelectAll:
+                    SelectAll();
                     return true;
-                case Key.C when !shift:
-                    return Copy();
-                case Key.X when !shift:
-                    return Cut(now);
-                case Key.V when !shift:
-                    return Paste(now);
-                case Key.Z when !shift:
+                case TextCommand.Undo:
                     return !options.ReadOnly && Edit(_editor.Undo());
-                case Key.Y when !shift:
-                case Key.Z when shift:
+                case TextCommand.Redo:
                     return !options.ReadOnly && Edit(_editor.Redo());
+                case TextCommand.Newline:
+                    // Shift+Enter breaks a line too, as in Avalonia (TextBox.cs line 1700) and zed (default-windows.json line 131).
+                    return options.Multiline && !options.ReadOnly && Edit(_editor.Type("\n", now));
+                case TextCommand.Submit:
+                    if (options.Multiline || options.OnSubmit is not { } submit)
+                    {
+                        return false;
+                    }
+
+                    submit(_editor.Text);
+                    return true;
                 default:
                     return false;
             }
@@ -820,7 +838,7 @@ public static partial class Primitive
         }
 
         // The position a line or a page up or down, at the same x as the caret: the x of the first such move stays for the next.
-        private int Vertical(Key key)
+        private int Vertical(bool page, bool forward)
         {
             if (!LaidOut(out TextLeaf leaf))
             {
@@ -829,8 +847,8 @@ public static partial class Primitive
 
             CaretPosition caret = TextCaret.CaretGeometry(leaf, ToShown(_editor.Selection.Caret), Affinity.Downstream);
             float x = _preferredX ??= caret.Rect.X;
-            float step = key is Key.PageUp or Key.PageDown ? Math.Max(caret.Rect.Height, _scroll.ViewportValue.Height) : caret.Rect.Height;
-            float y = caret.Rect.Y + (caret.Rect.Height / 2) + (key is Key.Up or Key.PageUp ? -step : step);
+            float step = page ? Math.Max(caret.Rect.Height, _scroll.ViewportValue.Height) : caret.Rect.Height;
+            float y = caret.Rect.Y + (caret.Rect.Height / 2) + (forward ? step : -step);
             if (y < 0)
             {
                 return 0;
