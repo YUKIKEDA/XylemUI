@@ -1442,7 +1442,7 @@ internal sealed partial class WindowInput
     // it scrolls, which the tree records as a change of what is available.
     private bool CanScrollByStep(NodeHandle node, ScrollStep step)
     {
-        if (!StepOf(node, step, out Vector2 delta) || delta == default)
+        if (!StepOf(node, step, out Vector2 delta))
         {
             return false;
         }

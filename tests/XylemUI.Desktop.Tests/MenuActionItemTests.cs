@@ -257,11 +257,13 @@ public sealed class MenuActionItemTests
     ///
     /// Steps:
     /// - Focus the box with no handler and read the item of the column; focus the handling box and read it again. Open the menu,
-    ///   settle, and read its two items; hide the handling box, settle, and read them again.
+    ///   settle, and read its two items; hide the handling box, settle, and read them again. Close the menu, focus the box that is
+    ///   left, which handles <c>Third</c>, and show an item that names <c>Third</c> in the window's column.
     ///
     /// Expected:
     /// - The item of the column: disabled, then enabled. The menu's items: <c>Ping</c> enabled and <c>Other</c> enabled; after the
-    ///   context node is removed, <c>Ping</c> disabled and <c>Other</c>, which the root handles, enabled.
+    ///   context node is removed, <c>Ping</c> disabled and <c>Other</c>, which the root handles, enabled. The item made after the
+    ///   menu closed is enabled: it is outside a panel again and reads at the focused box.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -270,6 +272,7 @@ public sealed class MenuActionItemTests
         var items = new Dictionary<string, (Element Item, Computed<KeyBinding?> Keys)>();
         var open = Signal.Create(false);
         var shown = Signal.Create(true);
+        var late = Signal.Create(false);
         Element handles = default;
         Element plain = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(
@@ -277,12 +280,13 @@ public sealed class MenuActionItemTests
             {
                 Element anchor = Box().Width(60).Height(20);
                 _ = anchor.Menu(open, () => Column(Named(items, "ping", new Ping()), Named(items, "other", new Other())));
-                plain = Box().Width(60).Height(20).Focusable();
+                plain = Box().Width(60).Height(20).Focusable().OnAction((in ActionEvent<Third> _) => { });
                 return Column(
                         anchor,
                         Named(items, "outside", new Ping()),
                         plain,
-                        Show(shown, () => handles = Box().Width(60).Height(20).Focusable().OnAction((in ActionEvent<Ping> _) => { }))
+                        Show(shown, () => handles = Box().Width(60).Height(20).Focusable().OnAction((in ActionEvent<Ping> _) => { })),
+                        Show(late, () => Named(items, "late", new Third()))
                     )
                     .OnAction((in ActionEvent<Other> _) => { });
             },
@@ -304,11 +308,15 @@ public sealed class MenuActionItemTests
         (bool, bool) removed = (State(app, items["ping"]).Enabled, State(app, items["other"]).Enabled);
         _ = app.Keyboard.Press(Key.Escape);
         _ = app.PumpAndSettle();
+        Assert.True(app.Focus(plain));
+        late.Set(true);
+        _ = app.PumpAndSettle();
 
         Assert.False(withPlain);
         Assert.True(withHandler);
         Assert.Equal((true, true), inMenu);
         Assert.Equal((false, true), removed);
+        Assert.True(State(app, items["late"]).Enabled);
     }
 
     /// <summary>
@@ -446,8 +454,9 @@ public sealed class MenuActionItemTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Four focused fields with "abc", each opened alone, with one edit made where the field takes it: a plain one; a read-only
-    ///   one; one of several lines; one of one line with <c>OnSubmit</c>.
+    /// - Six focused fields with "abc", each opened alone, with one edit made where the field takes it: a plain one; a read-only
+    ///   one; one of several lines; one of one line with <c>OnSubmit</c>; a read-only one of several lines; one of several lines
+    ///   with <c>OnSubmit</c>.
     ///
     /// Steps:
     /// - In each, read <c>CanDispatch</c> of <c>text::DeleteBackward</c>, <c>text::DeleteWordForward</c>, <c>text::MoveUp</c>,
@@ -455,7 +464,8 @@ public sealed class MenuActionItemTests
     ///
     /// Expected:
     /// - Plain: the two deletions, the undo, and the move left. Read-only: the move left only. Several lines: all but the submit.
-    ///   With <c>OnSubmit</c>: the two deletions, the submit, the undo, and the move left.
+    ///   With <c>OnSubmit</c>: the two deletions, the submit, the undo, and the move left. Read-only of several lines: the two
+    ///   moves by lines and the move left. Several lines with <c>OnSubmit</c>: all but the submit.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -467,6 +477,8 @@ public sealed class MenuActionItemTests
             new TextFieldOptions { ReadOnly = true },
             new TextFieldOptions { Multiline = true },
             new TextFieldOptions { OnSubmit = static _ => { } },
+            new TextFieldOptions { Multiline = true, ReadOnly = true },
+            new TextFieldOptions { Multiline = true, OnSubmit = static _ => { } },
         ];
         var seen = new List<bool[]>();
 
@@ -500,6 +512,8 @@ public sealed class MenuActionItemTests
         Assert.Equal([false, false, false, false, false, false, false, true], seen[1]);
         Assert.Equal([true, true, true, true, true, false, true, true], seen[2]);
         Assert.Equal([true, true, false, false, false, true, true, true], seen[3]);
+        Assert.Equal([false, false, true, true, false, false, false, true], seen[4]);
+        Assert.Equal([true, true, true, true, true, false, true, true], seen[5]);
     }
 
     /// <summary>
@@ -508,7 +522,7 @@ public sealed class MenuActionItemTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A focused area around a leaf of "nnnn", and a focused area around an empty box, each opened alone. A computation made
+    /// - A focused area around a leaf of "nnnn", and a focused area around a leaf with no text, each opened alone. A computation made
     ///   in the root function reads <c>CanDispatch</c> of <c>text::Copy</c> at the area.
     ///
     /// Steps:
@@ -551,7 +565,7 @@ public sealed class MenuActionItemTests
         bool selectAllWithNoText;
         await using (
             HeadlessApp app = await HeadlessApp.StartAsync(
-                () => area = SelectionArea(Box().Width(20).Height(20)),
+                () => area = SelectionArea(Elements.Text(string.Empty)),
                 new HeadlessOptions { Width = 400, Height = 300 }
             )
         )
@@ -590,4 +604,6 @@ public sealed class MenuActionItemTests
     private sealed class Ping : IAction;
 
     private sealed class Other : IAction;
+
+    private sealed class Third : IAction;
 }

@@ -113,6 +113,48 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// The computation that asked whether a scrolling action can be dispatched runs again when the container's range changes.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scroll view of 100 x 100 with a state, around a column of a focused row of 20 and a box of 380 shown by a signal, not
+    ///   shown at first: the content fits. A computation made in the root function reads <c>CanDispatch</c> of
+    ///   <c>scroll::LineDown</c>.
+    ///
+    /// Steps:
+    /// - Read it. Show the box, settle, and read it again.
+    ///
+    /// Expected:
+    /// - No while the content fits; yes when it is higher than the view.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task CanDispatch_AScrollingAction_IsReadAgainWhenTheRangeChanges()
+    {
+        var state = new ScrollState();
+        var more = Signal.Create(false);
+        Element row = default;
+        Computed<bool>? down = null;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            row = Box().Width(100).Height(20).Focusable();
+            down = Computed.Create(() => row.CanDispatch(new ScrollActions.LineDown()));
+            return ScrollView(Column(row, Show(more, static () => Box().Width(100).Height(380))), state).Width(100).Height(100);
+        });
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(row));
+        _ = app.PumpAndSettle();
+
+        bool fits = down!.Get();
+        more.Set(true);
+        _ = app.PumpAndSettle();
+
+        Assert.False(fits);
+        Assert.True(down.Get());
+        _ = app.PumpAndSettle();
+    }
+
+    /// <summary>
     /// A move of the focus can be dispatched while a node of the top focus scope can take the focus, and <c>popup::Dismiss</c>
     /// while a popup is open; the computations that asked run again when that changes.
     /// </summary>
@@ -316,15 +358,18 @@ public sealed class ActionAvailabilityTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A box with the context <c>Side</c> and a handler of <c>Pick</c>, a focused box beside it with neither, and a node made
-    ///   in a scope that was disposed. A row: <c>ctrl-p</c> for <c>Pick(1)</c> in <c>Side</c>.
+    /// - A box with the context <c>Side</c> and a handler of <c>Pick</c>, a focused box beside it with a handler of
+    ///   <c>Square</c>, and a node made in a scope that was disposed. A row: <c>ctrl-p</c> for <c>Pick(1)</c> in <c>Side</c>.
     ///
     /// Steps:
     /// - From the focused box, with no node, with the first box, and with the removed node: read <c>KeyBindingFor</c> and
-    ///   <c>CanDispatch</c> of <c>Pick(1)</c>, and dispatch it.
+    ///   <c>CanDispatch</c> of <c>Pick(1)</c>, and dispatch it. With the removed node and with the first box, read
+    ///   <c>CanDispatch</c> of a <c>Square</c>, and dispatch it with the removed node.
     ///
     /// Expected:
-    /// - With no node and with the removed one: no keys, cannot, not handled. With the first box: Ctrl+P, can, handled once.
+    /// - <c>Pick(1)</c>: with no node and with the removed one, no keys, cannot, not handled; with the first box, Ctrl+P, can,
+    ///   handled once. The <c>Square</c>: can and handled with the removed node, which reads at the focused box; cannot with the
+    ///   first box.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -337,7 +382,7 @@ public sealed class ActionAvailabilityTests
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
         {
             side = Box().Width(10).Height(10).KeyContext("Side").OnAction((in ActionEvent<Pick> e) => picked.Add(e.Action.Number));
-            focused = Box().Width(10).Height(10).Focusable();
+            focused = Box().Width(10).Height(10).Focusable().OnAction((in ActionEvent<Square> _) => picked.Add(-1));
             ScopeHandle scope = Scope.Create(() => gone = Box());
             Scope.Dispose(scope);
             return Column(side, focused);
@@ -352,10 +397,13 @@ public sealed class ActionAvailabilityTests
         Assert.Null(focused.KeyBindingFor(pick, gone));
         Assert.False(focused.CanDispatch(pick, gone));
         Assert.False(focused.Dispatch(pick, gone));
+        Assert.True(focused.CanDispatch(new Square(), gone));
+        Assert.True(focused.Dispatch(new Square(), gone));
+        Assert.False(focused.CanDispatch(new Square(), side));
         Assert.Equal("Ctrl+P", focused.KeyBindingFor(pick, side)?.ToDisplayString());
         Assert.True(focused.CanDispatch(pick, side));
         Assert.True(focused.Dispatch(pick, side));
-        Assert.Equal([1], picked);
+        Assert.Equal([-1, 1], picked);
         _ = app.PumpAndSettle();
     }
 

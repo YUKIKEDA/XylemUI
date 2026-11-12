@@ -420,15 +420,7 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         get
         {
             tree.Actions.TrackPopups();
-            foreach (PopupHandle popup in _open)
-            {
-                if (!popup.Closing && !popup.Options.IsDragImage)
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return Front() is not null;
         }
     }
 
@@ -438,16 +430,27 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     /// <returns>Whether a popup was closed.</returns>
     public bool CloseFront()
     {
+        if (Front() is not { } front)
+        {
+            return false;
+        }
+
+        front.Block.Dismiss();
+        return true;
+    }
+
+    // The front popup that is not leaving and is no drag image: the one Esc closes.
+    private PopupHandle? Front()
+    {
         for (int i = _open.Count - 1; i >= 0; i--)
         {
             if (!_open[i].Closing && !_open[i].Options.IsDragImage)
             {
-                _open[i].Block.Dismiss();
-                return true;
+                return _open[i];
             }
         }
 
-        return false;
+        return null;
     }
 
     /// <summary>

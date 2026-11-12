@@ -373,15 +373,18 @@ public static partial class Primitive
         public KeyBinding? Keys()
         {
             tree.Keymap.TrackChanges();
-            tree.Actions.TrackAvailability(atFocus: !inMenu);
+            Track();
             return KeymapLookup.BindingFor(tree, Start, action.GetType(), action);
         }
 
         public bool Unavailable()
         {
-            tree.Actions.TrackAvailability(atFocus: !inMenu);
+            Track();
             return !tree.Actions.IsAvailable(Start, action);
         }
+
+        // An item of a menu reads at a node that a move of the focus does not change, so it does not read again for one.
+        private void Track() => tree.Actions.TrackAvailability(atFocus: !inMenu);
 
         public void Dispatch() => _ = tree.Actions.Dispatch(Start, action);
     }
