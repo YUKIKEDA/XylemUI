@@ -516,6 +516,56 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// The reader of whether the focus can move reads again when a node that takes the focus is put in the tree or taken out,
+    /// also when no reader reads a route through that node.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The root function returns a column of a box. A focusable box is made and kept, with no parent; nothing else takes the
+    ///   focus, and no reader reads from the kept box. One computation made in the root function reads <c>CanDispatch</c> of
+    ///   <c>focus::Next</c> from the focused node, which is none.
+    ///
+    /// Steps:
+    /// - Read it after each of: the start; <c>AppendChild</c> of the kept box to the box; <c>DetachChildren</c> of the box;
+    ///   <c>InsertAfter</c> into it; <c>DetachAfter</c> from it.
+    ///
+    /// Expected:
+    /// - No, yes, no, yes, no.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ReaderOfTheFocusMove_ReadsAgain_ForANodeNoRouteWasReadThrough()
+    {
+        Element holder = default;
+        Element kept = default;
+        Computed<bool>? move = null;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            holder = Box().Width(40).Height(40);
+            kept = Box().Width(10).Height(10).Focusable();
+            Element own = holder;
+            move = Computed.Create(() => own.CanDispatch(new FocusActions.Next()));
+            return Column(holder);
+        });
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+        var seen = new List<bool> { move!.Get() };
+        void Step(Action change)
+        {
+            change();
+            seen.Add(move.Get());
+        }
+
+        Step(() => tree.AppendChild(holder.Node, kept.Node));
+        Step(() => tree.DetachChildren(holder.Node));
+        Step(() => tree.InsertAfter(holder.Node, default, kept.Node));
+        Step(() => tree.DetachAfter(holder.Node, default, kept.Node));
+        _ = app.PumpAndSettle();
+
+        Assert.Equal([false, true, false, true, false], seen);
+    }
+
+    /// <summary>
     /// A virtualized list that scrolls makes a reader outside it read nothing again. Once a reader reads from inside a row that
     /// stays, the exchange of rows is one change: that reader reads once more, not once for each row taken out and put back, and
     /// so does the reader outside, since the notice is one for all readers.
