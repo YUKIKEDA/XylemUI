@@ -78,10 +78,14 @@ internal sealed class FocusManager
     /// Gets the node the keys and the actions are routed from: the focused node while the window is active; otherwise the node the
     /// window's root function returned (<see cref="UiTree.KeyRoot"/>), or the root when there is none.
     /// </summary>
-    public NodeHandle KeyTarget =>
-        IsWindowActive && Tree.Nodes.IsAlive(Focused) ? Focused
-        : Tree.Nodes.IsAlive(Tree.KeyRoot) ? Tree.KeyRoot
-        : Tree.Root;
+    public NodeHandle KeyTarget => IsWindowActive && Tree.Nodes.IsAlive(Focused) ? Focused : NoFocusTarget;
+
+    /// <summary>
+    /// Gets the node a route starts from with no focus: the node the window's root function returned
+    /// (<see cref="UiTree.KeyRoot"/>), or the root when there is none. A route asked to start from a node that is gone starts
+    /// here too, not from the focused node: an action meant for a node that was removed does not reach another one's handler.
+    /// </summary>
+    public NodeHandle NoFocusTarget => Tree.Nodes.IsAlive(Tree.KeyRoot) ? Tree.KeyRoot : Tree.Root;
 
     /// <summary>
     /// Returns whether a node can take the focus: it is focusable, in the window's tree, and neither it nor an ancestor is hidden.

@@ -362,23 +362,25 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
-    /// The keys, whether an action can be dispatched, and the dispatch are read and routed from the node given, and from the
-    /// focused node when none is given or the node given is no longer in the tree.
+    /// The keys, whether an action can be dispatched, and the dispatch are read and routed from the node given; from the
+    /// focused node when none is given; and from where a route starts with no focus when the node given is no longer in the tree.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A box with the context <c>Side</c> and a handler of <c>Pick</c>, a focused box beside it with a handler of
-    ///   <c>Square</c>, and a node made in a scope that was disposed. A row: <c>ctrl-p</c> for <c>Pick(1)</c> in <c>Side</c>.
+    ///   <c>Square</c>, both in the column the root function returns, which has a handler of <c>Circle</c>, and a node made in
+    ///   a scope that was disposed. A row: <c>ctrl-p</c> for <c>Pick(1)</c> in <c>Side</c>.
     ///
     /// Steps:
     /// - From the focused box, with no node, with the first box, and with the removed node: read <c>KeyBindingFor</c> and
-    ///   <c>CanDispatch</c> of <c>Pick(1)</c>, and dispatch it. With the removed node and with the first box, read
-    ///   <c>CanDispatch</c> of a <c>Square</c>, and dispatch it with the removed node.
+    ///   <c>CanDispatch</c> of <c>Pick(1)</c>, and dispatch it. With the removed node, read <c>CanDispatch</c> of a
+    ///   <c>Square</c> and of a <c>Circle</c>, and dispatch each; read the <c>Square</c> with no node and with the first box.
     ///
     /// Expected:
     /// - <c>Pick(1)</c>: with no node and with the removed one, no keys, cannot, not handled; with the first box, Ctrl+P, can,
-    ///   handled once. The <c>Square</c>: can and handled with the removed node, which reads at the focused box; cannot with the
-    ///   first box.
+    ///   handled once. With the removed node, the route starts at the column: the <c>Square</c> of the focused box cannot and
+    ///   is not handled, and the <c>Circle</c> can and is handled by the column. The <c>Square</c>: can with no node; cannot with
+    ///   the first box.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -394,7 +396,7 @@ public sealed class ActionAvailabilityTests
             focused = Box().Width(10).Height(10).Focusable().OnAction((in ActionEvent<Square> _) => picked.Add(-1));
             ScopeHandle scope = Scope.Create(() => gone = Box());
             Scope.Dispose(scope);
-            return Column(side, focused);
+            return Column(side, focused).OnAction((in ActionEvent<Circle> _) => picked.Add(-2));
         });
         Assert.True(app.Focus(focused));
         _ = app.Keymap.Bind("ctrl-p", new Pick(1), "Side");
@@ -406,13 +408,16 @@ public sealed class ActionAvailabilityTests
         Assert.Null(focused.KeyBindingFor(pick, gone));
         Assert.False(focused.CanDispatch(pick, gone));
         Assert.False(focused.Dispatch(pick, gone));
-        Assert.True(focused.CanDispatch(new Square(), gone));
-        Assert.True(focused.Dispatch(new Square(), gone));
+        Assert.False(focused.CanDispatch(new Square(), gone));
+        Assert.False(focused.Dispatch(new Square(), gone));
+        Assert.True(focused.CanDispatch(new Square()));
+        Assert.True(focused.CanDispatch(new Circle(), gone));
+        Assert.True(focused.Dispatch(new Circle(), gone));
         Assert.False(focused.CanDispatch(new Square(), side));
         Assert.Equal("Ctrl+P", focused.KeyBindingFor(pick, side)?.ToDisplayString());
         Assert.True(focused.CanDispatch(pick, side));
         Assert.True(focused.Dispatch(pick, side));
-        Assert.Equal([-1, 1], picked);
+        Assert.Equal([-2, 1], picked);
         _ = app.PumpAndSettle();
     }
 

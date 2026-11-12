@@ -1134,7 +1134,10 @@ public static partial class ElementExtensions
     /// asked: a row that another row with the same keys wins over is not shown, also when nothing handles the winning row's action
     /// and the key would go on to it.
     /// </summary>
-    /// <typeparam name="TAction">The type of the action; a row for a type derived from it is not the type's.</typeparam>
+    /// <typeparam name="TAction">
+    /// The type of the action; a row for a type derived from it is not the type's. The rows are compared by the type alone:
+    /// <see cref="KeyBindingFor(Element, IAction, Element?)"/> compares an action's values too.
+    /// </typeparam>
     /// <param name="element">A node of the window.</param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
@@ -1156,7 +1159,10 @@ public static partial class ElementExtensions
     /// </summary>
     /// <param name="element">A node of the window.</param>
     /// <param name="action">The action.</param>
-    /// <param name="from">The node the conditions are read at; <see langword="null"/> for the focused node.</param>
+    /// <param name="from">
+    /// The node the conditions are read at; <see langword="null"/> for the focused node. A node that is no longer in the tree
+    /// reads where a route starts with no focus, at the node the window's root function returned.
+    /// </param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     public static KeyBinding? KeyBindingFor(this Element element, IAction action, Element? from = null)
@@ -1194,7 +1200,11 @@ public static partial class ElementExtensions
     /// </summary>
     /// <param name="element">A node of the window.</param>
     /// <param name="action">The action.</param>
-    /// <param name="from">The node the route starts from; <see langword="null"/> for the focused node.</param>
+    /// <param name="from">
+    /// The node the route starts from; <see langword="null"/> for the focused node. From a node that is no longer in the tree,
+    /// the route starts where it does with no focus, at the node the window's root function returned: the action does not reach
+    /// the handlers of the node that has the focus now.
+    /// </param>
     /// <returns>Whether a handler handled the action.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     public static bool Dispatch(this Element element, IAction action, Element? from)
@@ -1210,7 +1220,10 @@ public static partial class ElementExtensions
     /// "Shortcuts and actions"): a node on the route from the focused node has a handler for it, of either phase, and is not
     /// disabled. A capture handler counts too, though it handles the action only when it stops it. Read in a
     /// computation, it is read again when the focus moves, or a handler, a node's disabled state, or the window's activation
-    /// changes; a menu item reads it to show itself enabled.
+    /// changes. It has no action to ask with, so it does not look at state: a part's handler of the type counts also while the part
+    /// cannot take the action, and an action of the tree's own always counts.
+    /// <see cref="CanDispatch(Element, IAction, Element?)"/> asks with the action, and a menu item reads that one to show itself
+    /// enabled.
     /// </summary>
     /// <typeparam name="TAction">The type of the action.</typeparam>
     /// <param name="element">A node of the window.</param>
@@ -1234,7 +1247,10 @@ public static partial class ElementExtensions
     /// </summary>
     /// <param name="element">A node of the window.</param>
     /// <param name="action">The action.</param>
-    /// <param name="from">The node the route would start from; <see langword="null"/> for the focused node.</param>
+    /// <param name="from">
+    /// The node the route would start from; <see langword="null"/> for the focused node. A node that is no longer in the tree
+    /// reads where a route starts with no focus.
+    /// </param>
     /// <returns>Whether the action would be handled.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     public static bool CanDispatch(this Element element, IAction action, Element? from = null)
@@ -1247,11 +1263,17 @@ public static partial class ElementExtensions
         return tree.Actions.IsAvailable(start, action);
     }
 
-    // The node a route starts from: the given one while it is in the tree, else the focused node, or the root with no focus.
+    // The node a route starts from: the focused node when none is given; the given one while it is in the tree, and where a
+    // route starts with no focus once it is gone.
     private static NodeHandle RouteStart(UiTree tree, Element? from, out bool atFocus)
     {
-        atFocus = !(from is { } given && tree.Nodes.IsAlive(given.Node));
-        return atFocus ? tree.Focus.KeyTarget : from!.Value.Node;
+        atFocus = from is null;
+        if (from is not { } given)
+        {
+            return tree.Focus.KeyTarget;
+        }
+
+        return tree.Nodes.IsAlive(given.Node) ? given.Node : tree.Focus.NoFocusTarget;
     }
 
     private static void RequireScope()

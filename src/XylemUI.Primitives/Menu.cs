@@ -367,8 +367,7 @@ public static partial class Primitive
         private NodeHandle Start =>
             !inMenu ? tree.Focus.KeyTarget
             : tree.Nodes.IsAlive(context) ? context
-            : tree.Nodes.IsAlive(tree.KeyRoot) ? tree.KeyRoot
-            : tree.Root;
+            : tree.Focus.NoFocusTarget;
 
         public KeyBinding? Keys()
         {
