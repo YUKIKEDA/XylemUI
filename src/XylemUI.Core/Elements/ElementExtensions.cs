@@ -1064,17 +1064,27 @@ public static partial class ElementExtensions
     /// <typeparam name="TAction">The base type of the actions.</typeparam>
     /// <param name="element">The node.</param>
     /// <param name="handler">The handler, as for <see cref="OnAction"/>.</param>
+    /// <param name="can">
+    /// What answers whether the handler can take an action now (design §7, "Menu items that name actions"), for
+    /// <see cref="CanDispatch(Element, IAction, Element?)"/>; <see langword="null"/> when it always can. It runs in the computation
+    /// that asks, so the signals it reads run that computation again.
+    /// </param>
     /// <param name="phase">The phase of the route.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="InvalidOperationException">There is no current scope.</exception>
-    internal static Element OnActionsOf<TAction>(this Element element, ActionHandler<TAction> handler, EventPhase phase = EventPhase.Bubble)
+    internal static Element OnActionsOf<TAction>(
+        this Element element,
+        ActionHandler<TAction> handler,
+        Func<TAction, bool>? can = null,
+        EventPhase phase = EventPhase.Bubble
+    )
         where TAction : class, IAction
     {
         ArgumentNullException.ThrowIfNull(handler);
         UiTree tree = element.TreeOrThrow();
         NodeHandle node = element.Node;
         RequireScope();
-        tree.AddActionHandler(node, phase, handler, derived: true);
+        tree.AddActionHandler(node, phase, handler, derived: true, can);
         Scope.OnCleanup(() =>
         {
             if (tree.Nodes.IsAlive(node))
@@ -1135,7 +1145,29 @@ public static partial class ElementExtensions
         UiTree tree = element.TreeOrThrow();
         tree.Keymap.TrackChanges();
         tree.Actions.TrackAvailability();
-        return KeymapLookup.BindingFor(tree, typeof(TAction));
+        return KeymapLookup.BindingFor(tree, tree.Focus.KeyTarget, typeof(TAction));
+    }
+
+    /// <summary>
+    /// Finds the keys that ask for an action in the element's window, as <see cref="KeyBindingFor{TAction}(Element)"/> does, for
+    /// the action's values and from a node (design §7, "Menu items that name actions"): a row whose action is of the action's type,
+    /// and equal to it when the type is an <see cref="IEquatable{T}"/> of <see cref="IAction"/>; the conditions are those that
+    /// hold at <paramref name="from"/>. A menu item reads the keys at the node the focus was on before its menu opened.
+    /// </summary>
+    /// <param name="element">A node of the window.</param>
+    /// <param name="action">The action.</param>
+    /// <param name="from">The node the conditions are read at; <see langword="null"/> for the focused node.</param>
+    /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static KeyBinding? KeyBindingFor(this Element element, IAction action, Element? from = null)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        UiThread.VerifyAccess();
+        UiTree tree = element.TreeOrThrow();
+        tree.Keymap.TrackChanges();
+        NodeHandle start = RouteStart(tree, from, out bool atFocus);
+        tree.Actions.TrackAvailability(atFocus);
+        return KeymapLookup.BindingFor(tree, start, action.GetType(), action);
     }
 
     /// <summary>
@@ -1156,6 +1188,24 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Dispatches an action in the element's window from a node, as <see cref="Dispatch(Element, IAction)"/> does from the focused
+    /// node (design §7, "Menu items that name actions"). A menu item and a command palette dispatch from the node the focus was on
+    /// before they opened.
+    /// </summary>
+    /// <param name="element">A node of the window.</param>
+    /// <param name="action">The action.</param>
+    /// <param name="from">The node the route starts from; <see langword="null"/> for the focused node.</param>
+    /// <returns>Whether a handler handled the action.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static bool Dispatch(this Element element, IAction action, Element? from)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        UiThread.VerifyAccess();
+        UiTree tree = element.TreeOrThrow();
+        return tree.Actions.Dispatch(RouteStart(tree, from, out _), action);
+    }
+
+    /// <summary>
     /// Returns whether an action of a type would find a handler if it were dispatched now in the element's window (design §7,
     /// "Shortcuts and actions"): a node on the route from the focused node has a handler for it, of either phase, and is not
     /// disabled. A capture handler counts too, though it handles the action only when it stops it. Read in a
@@ -1173,6 +1223,35 @@ public static partial class ElementExtensions
         UiTree tree = element.TreeOrThrow();
         tree.Actions.TrackAvailability();
         return tree.Actions.IsAvailable(tree.Focus.KeyTarget, typeof(TAction));
+    }
+
+    /// <summary>
+    /// Returns whether an action would be handled if it were dispatched now in the element's window from a node (design §7, "Menu
+    /// items that name actions"). It asks more than <see cref="CanDispatch{TAction}(Element)"/>, which has no action to ask with: a
+    /// part's handler answers whether it can take this action now (a text field cannot copy an empty selection), and the tree
+    /// answers whether an action of its own would change something (a scrolling action with nothing to scroll would not). Read
+    /// in a computation, it is read again when what it read changes; a menu item reads it to show itself enabled.
+    /// </summary>
+    /// <param name="element">A node of the window.</param>
+    /// <param name="action">The action.</param>
+    /// <param name="from">The node the route would start from; <see langword="null"/> for the focused node.</param>
+    /// <returns>Whether the action would be handled.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public static bool CanDispatch(this Element element, IAction action, Element? from = null)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        UiThread.VerifyAccess();
+        UiTree tree = element.TreeOrThrow();
+        NodeHandle start = RouteStart(tree, from, out bool atFocus);
+        tree.Actions.TrackAvailability(atFocus);
+        return tree.Actions.IsAvailable(start, action);
+    }
+
+    // The node a route starts from: the given one while it is in the tree, else the focused node, or the root with no focus.
+    private static NodeHandle RouteStart(UiTree tree, Element? from, out bool atFocus)
+    {
+        atFocus = !(from is { } given && tree.Nodes.IsAlive(given.Node));
+        return atFocus ? tree.Focus.KeyTarget : from!.Value.Node;
     }
 
     private static void RequireScope()

@@ -180,6 +180,9 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
             _open.Add(popup);
         }
 
+        // Whether popup::Dismiss can run may be another answer now (HasFront), here and where a popup starts to leave.
+        tree.Actions.PopupsChanged();
+
         tree.AttachRoot(root);
         Rect laid = tree.Root.IsNone ? default : tree.Nodes.GetRef(tree.Root).Layout.Rect;
         Resize(popup, _window ?? new Size(laid.Width, laid.Height));
@@ -293,6 +296,7 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
     public void BeginClose(PopupHandle popup)
     {
         popup.Closing = true;
+        tree.Actions.PopupsChanged();
         tree.SetInert(popup.Root, inert: true);
         tree.Focus.PopScope(popup.Root);
         if (!popup.Options.IsTransient && !popup.Options.IsDragImage && tree.Nodes.IsAlive(popup.Anchor) && !OpenAgainst(popup.Anchor))
@@ -406,6 +410,26 @@ internal sealed class OverlayPopupHost(UiTree tree) : IPopupHost
         }
 
         return consumed;
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="CloseFront"/> would close a popup.
+    /// </summary>
+    public bool HasFront
+    {
+        get
+        {
+            tree.Actions.TrackPopups();
+            foreach (PopupHandle popup in _open)
+            {
+                if (!popup.Closing && !popup.Options.IsDragImage)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     /// <summary>

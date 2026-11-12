@@ -53,9 +53,11 @@ internal static class KeymapLookup
     /// winning one's, and that next row is not returned here.
     /// </summary>
     /// <param name="tree">The tree.</param>
+    /// <param name="from">The node the keys are routed from.</param>
     /// <param name="actionType">The type of the action.</param>
+    /// <param name="value">The action a row's action is to be equal to, when the type compares values; <see langword="null"/> for the type alone.</param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
-    public static KeyBinding? BindingFor(UiTree tree, Type actionType)
+    public static KeyBinding? BindingFor(UiTree tree, NodeHandle from, Type actionType, IAction? value = null)
     {
         KeyBinding[] rows = tree.Keymap.Rows;
         if (rows.Length == 0)
@@ -64,13 +66,13 @@ internal static class KeymapLookup
         }
 
         var contexts = new KeyContext[8];
-        int count = CollectContexts(tree, tree.Focus.KeyTarget, ref contexts);
+        int count = CollectContexts(tree, from, ref contexts);
         ReadOnlySpan<KeyContext> stack = contexts.AsSpan(0, count);
         KeyBinding? best = null;
         int bestDepth = 0;
         foreach (KeyBinding row in rows)
         {
-            if (row.Action?.GetType() != actionType || !Applies(row, stack, out int depth))
+            if (row.Action?.GetType() != actionType || !SameValue(row.Action, value) || !Applies(row, stack, out int depth))
             {
                 continue;
             }
@@ -121,6 +123,10 @@ internal static class KeymapLookup
     // The order of the matching: the deeper condition, then the row added later.
     private static bool Wins(int depth, int order, int otherDepth, int otherOrder) =>
         depth > otherDepth || (depth == otherDepth && order > otherOrder);
+
+    // Whether a row's action is the one asked for: of the type alone when no value was given or the action compares no values.
+    private static bool SameValue(IAction action, IAction? value) =>
+        value is null || action is not IEquatable<IAction> equatable || equatable.Equals(value);
 
     private static bool SameKeys(KeyBinding left, KeyBinding right) => left.Steps.AsSpan().SequenceEqual(right.Steps);
 }

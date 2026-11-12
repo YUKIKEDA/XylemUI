@@ -54,9 +54,12 @@ public static partial class Primitive
         private bool _started;
         private Vector2 _pointer;
 
-        // The context menu, and the commands it was last opened with.
+        // The context menu.
         private ContextMenuHost? _menu;
-        private SelectionMenuCommands? _commands;
+
+        // Counts the changes of the selection, for the computations that asked what the area can take (Can); made when one first
+        // asks.
+        private Signal<int>? _canEpoch;
 
         // The leaves the leaves' selections were last set on: from _paintedFrom to _paintedTo, none when _paintedTo is -1.
         private int _paintedFrom;
@@ -75,12 +78,12 @@ public static partial class Primitive
                 .On(PointerEventKind.Cancel, EventPhase.Bubble, PointerCancel)
                 .PartKeyContext(PrimitiveKeyBindings.SelectionAreaContext)
                 .OnAction<MenuActions.OpenContextMenu>(AskMenu)
-                .OnActionsOf<TextAction>(Act)
+                .OnActionsOf<TextAction>(Act, Can)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
             if (options.ContextMenu is { } menu)
             {
-                _menu = new ContextMenuHost(_tree, _area, () => menu(_commands!));
+                _menu = new ContextMenuHost(_tree, _area, menu);
             }
 
             Scope.OnCleanup(StopScrolling);
@@ -229,18 +232,36 @@ public static partial class Primitive
             }
         }
 
-        // Opens the context menu with the commands as they are now (design §4.10): at the pointer, or at the bottom left of the
-        // selection's end, or below the area with no selection.
+        // Whether the area can take an action now (design §7, "Menu items that name actions"): a copy with a selection, and
+        // selecting all with text in a leaf that takes part. The computation that asks runs again when the selection changes.
+        private bool Can(TextAction action)
+        {
+            _ = (_canEpoch ??= Signal.Create(0)).Get();
+            switch (action.Command)
+            {
+                case TextCommand.Copy:
+                    return _anchor != _focus;
+                case TextCommand.SelectAll:
+                    Collect();
+                    for (int i = 0; i < _leaves.Count; i++)
+                    {
+                        if (LengthOf(i) > 0)
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                default:
+                    return false;
+            }
+        }
+
+        // Opens the context menu (design §4.10): at the pointer, or at the bottom left of the selection's end, or below the area
+        // with no selection.
         private void OpenMenu(Vector2? at)
         {
             Collect();
-            bool text = false;
-            for (int i = 0; i < _leaves.Count && !text; i++)
-            {
-                text = LengthOf(i) > 0;
-            }
-
-            _commands = new SelectionMenuCommands(new MenuCommand(_anchor != _focus, Copy), new MenuCommand(text, SelectAll));
             if (at is { } point)
             {
                 _menu!.OpenAt(point);
@@ -475,6 +496,11 @@ public static partial class Primitive
         // the leaves that leave the selection are cleared.
         private void Paint()
         {
+            if (_canEpoch is { } epoch)
+            {
+                epoch.Set(epoch.Peek() + 1);
+            }
+
             bool empty = _anchor == _focus || _leaves.Count == 0;
             (TextPoint from, TextPoint to) = _anchor.CompareTo(_focus) <= 0 ? (_anchor, _focus) : (_focus, _anchor);
             int first = empty ? 0 : from.Leaf;

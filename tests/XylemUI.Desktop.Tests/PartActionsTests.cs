@@ -451,7 +451,7 @@ public sealed class PartActionsTests
                             new TextFieldOptions
                             {
                                 Selection = selection,
-                                ContextMenu = static _ => Column(MenuItem(Box().Width(80).Height(20), static () => { })),
+                                ContextMenu = static () => Column(MenuItem(Box().Width(80).Height(20), static () => { })),
                             }
                         )
                         .Width(200),

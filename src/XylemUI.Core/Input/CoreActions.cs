@@ -20,6 +20,14 @@ public abstract class CoreAction : IAction
     /// <param name="target">The node the action was routed from.</param>
     /// <returns>Whether something changed; <see langword="false"/> leaves the action not handled.</returns>
     internal abstract bool Run(WindowInput input, NodeHandle target);
+
+    /// <summary>
+    /// Returns whether <see cref="Run"/> would change something now (design §7, "Menu items that name actions").
+    /// </summary>
+    /// <param name="input">The input of the tree's window.</param>
+    /// <param name="target">The node the action would be routed from.</param>
+    /// <returns>Whether something would change.</returns>
+    internal abstract bool CanRun(WindowInput input, NodeHandle target);
 }
 
 /// <summary>
@@ -35,6 +43,9 @@ public static class FocusActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.Tree.Focus.MoveInTabOrder(backward: false);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.Tree.Focus.CanMoveInTabOrder(backward: false);
     }
 
     /// <summary>
@@ -45,6 +56,9 @@ public static class FocusActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.Tree.Focus.MoveInTabOrder(backward: true);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.Tree.Focus.CanMoveInTabOrder(backward: true);
     }
 }
 
@@ -61,6 +75,9 @@ public static class PopupActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.Tree.Popups.Count > 0 && input.Tree.Popups.CloseFront();
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.Tree.Popups.HasFront;
     }
 }
 
@@ -78,6 +95,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.LineUp);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.LineUp);
     }
 
     /// <summary>
@@ -88,6 +108,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.LineDown);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.LineDown);
     }
 
     /// <summary>
@@ -98,6 +121,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.LineLeft);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.LineLeft);
     }
 
     /// <summary>
@@ -108,6 +134,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.LineRight);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.LineRight);
     }
 
     /// <summary>
@@ -118,6 +147,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.PageUp);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.PageUp);
     }
 
     /// <summary>
@@ -128,6 +160,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.PageDown);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.PageDown);
     }
 
     /// <summary>
@@ -138,6 +173,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.ToStart);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.ToStart);
     }
 
     /// <summary>
@@ -148,6 +186,9 @@ public static class ScrollActions
     {
         /// <inheritdoc/>
         internal override bool Run(WindowInput input, NodeHandle target) => input.ScrollFrom(target, ScrollStep.ToEnd);
+
+        /// <inheritdoc/>
+        internal override bool CanRun(WindowInput input, NodeHandle target) => input.CanScrollFrom(target, ScrollStep.ToEnd);
     }
 }
 

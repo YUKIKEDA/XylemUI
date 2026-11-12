@@ -30,6 +30,10 @@ public static partial class Primitive
     // that is not a menu.
     private static readonly object MenuMark = new();
 
+    // The context of the menu whose panel is being made on this thread, for the items made in it; none outside a panel.
+    [ThreadStatic]
+    private static MenuContext? _building;
+
     /// <summary>
     /// Opens a menu against the node while the signal is true (design §13.1, "Menu and Dialog"): a popup that holds the panel and
     /// focuses its first enabled item when it opens. Up and Down move the focus between the panel's items, round at the ends; Home
@@ -38,7 +42,7 @@ public static partial class Primitive
     /// </summary>
     /// <param name="anchor">The node the menu is placed against.</param>
     /// <param name="isOpen">Whether the menu is open.</param>
-    /// <param name="panel">The menu's panel: its look, with its items (<see cref="MenuItem"/>, <see cref="SubmenuItem"/>).</param>
+    /// <param name="panel">The menu's panel: its look, with its items (<see cref="MenuItem(Element, Action, bool)"/>, <see cref="SubmenuItem"/>).</param>
     /// <param name="options">Where the menu goes and how it moves; below the node, at once, when <see langword="null"/>.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="InvalidOperationException">There is no current scope, or <paramref name="panel"/> returns no node of the tree
@@ -70,6 +74,35 @@ public static partial class Primitive
         ArgumentNullException.ThrowIfNull(onSelect);
         Element item = Box(content).Focusable().Disabled(!enabled);
         var state = new MenuItemState(item.Tree!, item.Node, onSelect, submenu: null);
+        return state.Attach(item);
+    }
+
+    /// <summary>
+    /// Makes a menu's item that names an action (design §7, "Menu items that name actions"): choosing it closes the menus it is in
+    /// and dispatches the action from the node the focus was on before the outermost of them opened, its context node; for a
+    /// <see cref="ContextMenu"/> whose node the focus was not in, that is the menu's node. The item is disabled while the action
+    /// would not be handled from there (<see cref="ElementExtensions.CanDispatch(Element, IAction, Element?)"/>), and its content
+    /// is given the keys that ask for the action there (<see cref="ElementExtensions.KeyBindingFor(Element, IAction, Element?)"/>),
+    /// to show: the app draws them, since the item has no look of its own. An item made outside a menu's panel reads and
+    /// dispatches from the focused node.
+    /// </summary>
+    /// <param name="action">The action.</param>
+    /// <param name="content">
+    /// Makes the content, a node of the current tree with no parent, from the row of the keymap whose keys ask for the action; the
+    /// row is <see langword="null"/> when no keys do, and changes when the keymap's rows do.
+    /// </param>
+    /// <returns>The item.</returns>
+    /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    public static Element MenuItem(IAction action, Func<Computed<KeyBinding?>, Element> content)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ArgumentNullException.ThrowIfNull(content);
+        UiTree tree =
+            UiTree.Current ?? throw new InvalidOperationException("MenuItem is made while a window's root function runs; no tree is current.");
+        RequireScope(nameof(MenuItem));
+        var named = new NamedAction(tree, action, _building);
+        Element item = Box(content(Computed.Create(named.Keys))).Focusable().Disabled(Computed.Create(named.Unavailable));
+        var state = new MenuItemState(tree, item.Node, named.Dispatch, submenu: null);
         return state.Attach(item);
     }
 
@@ -132,9 +165,13 @@ public static partial class Primitive
         Signal<bool> isOpen,
         Func<Element> panel,
         PopupOptions options,
-        Action<NodeHandle>? opened
+        Action<NodeHandle>? opened,
+        bool contextMenu = false
     )
     {
+        // A submenu is made in its menu's panel and has that menu's context; a menu made elsewhere finds its own each time it opens.
+        MenuContext? outer = _building;
+
         // A menu opened from the keys shows the access keys while it is open (design §13.1, "Access keys"): its part's scope, which
         // goes when the menu closes, ends what it began.
         MenuCues? cues = null;
@@ -146,7 +183,18 @@ public static partial class Primitive
             {
                 cues = new MenuCues(tree);
                 Scope.OnCleanup(cues.Release);
-                Element menuPanel = panel();
+                MenuContext? previous = _building;
+                _building = outer ?? new MenuContext(ContextNode(tree, anchor, contextMenu));
+                Element menuPanel;
+                try
+                {
+                    menuPanel = panel();
+                }
+                finally
+                {
+                    _building = previous;
+                }
+
                 tree.SetPartAccessibility(menuPanel.Node, Roles.Menu);
                 return menuPanel
                     .PartKeyContext(PrimitiveKeyBindings.MenuContext)
@@ -161,6 +209,28 @@ public static partial class Primitive
             },
             MenuMark
         );
+    }
+
+    // The context node of a menu that opens (design §7, "Menu items that name actions"): the node the focus is on, which the menu
+    // has not taken yet; for a menu of a selected menu bar, whose item has the focus, the node the bar gives the focus back to.
+    // A context menu whose node the focus is not in has that node.
+    private static NodeHandle ContextNode(UiTree tree, NodeHandle anchor, bool contextMenu)
+    {
+        NodeHandle before = BarItemOf(tree, anchor) is { Bar: { Selected: true } bar } ? bar.Restore : tree.Focus.Focused;
+        if (!contextMenu)
+        {
+            return before;
+        }
+
+        for (NodeHandle at = before; !at.IsNone && tree.Nodes.IsAlive(at); at = tree.KeyParent(at))
+        {
+            if (at == anchor)
+            {
+                return before;
+            }
+        }
+
+        return anchor;
     }
 
     // A menu that opens focuses its first enabled item (Avalonia's flyout focuses its first tab stop, PopupFlyoutBase.cs lines 315
@@ -281,6 +351,38 @@ public static partial class Primitive
         {
             barItem.Bar?.Leave(restore: true);
         }
+    }
+
+    // Where the items of a menu read and dispatch their actions: the node, or none for the root.
+    private sealed class MenuContext(NodeHandle node)
+    {
+        public NodeHandle Node { get; } = node;
+    }
+
+    // An item's action, read and dispatched at its menu's context node; with no menu, at the focused node. With a context node that
+    // has gone, or none, the route starts where it does with no focus (FocusManager.KeyTarget).
+    private sealed class NamedAction(UiTree tree, IAction action, MenuContext? context)
+    {
+        private NodeHandle Start =>
+            context is null ? tree.Focus.KeyTarget
+            : tree.Nodes.IsAlive(context.Node) ? context.Node
+            : tree.Nodes.IsAlive(tree.KeyRoot) ? tree.KeyRoot
+            : tree.Root;
+
+        public KeyBinding? Keys()
+        {
+            tree.Keymap.TrackChanges();
+            tree.Actions.TrackAvailability(atFocus: context is null);
+            return KeymapLookup.BindingFor(tree, Start, action.GetType(), action);
+        }
+
+        public bool Unavailable()
+        {
+            tree.Actions.TrackAvailability(atFocus: context is null);
+            return !tree.Actions.IsAvailable(Start, action);
+        }
+
+        public void Dispatch() => _ = tree.Actions.Dispatch(Start, action);
     }
 
     // One item of a menu: what choosing it does, and the submenu it opens, if any.
@@ -447,7 +549,7 @@ public static partial class Primitive
         private readonly PopupBlock _block;
 
         public ContextMenuHost(UiTree tree, NodeHandle target, Func<Element> panel) =>
-            _block = OpenMenu(tree, target, _open, panel, new PopupOptions(), FocusFirst(tree));
+            _block = OpenMenu(tree, target, _open, panel, new PopupOptions(), FocusFirst(tree), contextMenu: true);
 
         // Whether the menu is open or leaving: while it closes, it gives the focus back to its node.
         public bool IsOpen => _block.Popup is not null;

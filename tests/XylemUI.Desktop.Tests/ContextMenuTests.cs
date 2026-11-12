@@ -16,9 +16,9 @@ public sealed class ContextMenuTests
     private const float Line = 20.272f;
 
     /// <summary>
-    /// The field's commands are enabled as Flutter enables them on Windows: the cut with a selection in a field neither read-only
-    /// nor a password, the copy with a selection in a field not a password, the paste with text on the clipboard in a field not
-    /// read-only, and the select-all with text not all selected.
+    /// The items that name the field's actions are enabled as Flutter enables them on Windows: the cut with a selection in a field
+    /// neither read-only nor a password, the copy with a selection in a field not a password, the paste with text on the clipboard
+    /// in a field not read-only, and the select-all with text not all selected.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -26,7 +26,7 @@ public sealed class ContextMenuTests
     ///   an empty clipboard; "nn" with "x" on the clipboard; the same read-only; the same a password; "" with an empty clipboard.
     ///
     /// Steps:
-    /// - Press Shift+F10 in each, settle, and read the commands the menu was made with.
+    /// - Press Shift+F10 in each, settle, and read whether each item of the menu is disabled.
     ///
     /// Expected:
     /// - Cut, copy, paste, select-all: no, no, no, yes; yes, yes, yes, no; no, yes, no, no; no, no, yes, no; no, no, no, no.
@@ -47,8 +47,8 @@ public sealed class ContextMenuTests
 
         foreach ((string text, TextFieldOptions options, string? clipboard, bool end) in cases)
         {
-            TextMenuCommands? seen = null;
-            await using HeadlessApp app = await StartField(Signal.Create(text), options with { ContextMenu = c => Panel(seen = c) });
+            var seen = new Items();
+            await using HeadlessApp app = await StartField(Signal.Create(text), options with { ContextMenu = () => Panel(seen) });
             app.Clipboard.Text = clipboard;
             if (end)
             {
@@ -57,7 +57,7 @@ public sealed class ContextMenuTests
 
             _ = app.Keyboard.Press(Key.F10, KeyModifiers.Shift);
             _ = app.PumpAndSettle();
-            enabled.Add((seen!.Cut.Enabled, seen.Copy.Enabled, seen.Paste.Enabled, seen.SelectAll.Enabled));
+            enabled.Add((Enabled(app, seen.Cut), Enabled(app, seen.Copy), Enabled(app, seen.Paste), Enabled(app, seen.SelectAll)));
             _ = app.Keyboard.Press(Key.Escape);
             _ = app.PumpAndSettle();
         }
@@ -100,7 +100,7 @@ public sealed class ContextMenuTests
         Element other = default;
         await using HeadlessApp app = await StartField(
             Signal.Create("nnnn"),
-            new TextFieldOptions { Selection = selection, ContextMenu = c => first = Panel(c) },
+            new TextFieldOptions { Selection = selection, ContextMenu = () => first = Panel() },
             box => other = box
         );
         var seen = new List<TextSelection>();
@@ -148,7 +148,7 @@ public sealed class ContextMenuTests
     public async Task FieldMenuKeys_OpenAtTheCaret()
     {
         Element first = default;
-        await using HeadlessApp app = await StartField(Signal.Create("nnnn"), new TextFieldOptions { ContextMenu = c => first = Panel(c) });
+        await using HeadlessApp app = await StartField(Signal.Create("nnnn"), new TextFieldOptions { ContextMenu = () => first = Panel() });
         _ = app.Keyboard.Press(Key.Home);
         _ = app.Keyboard.Press(Key.Right);
         _ = app.Keyboard.Press(Key.Right);
@@ -171,7 +171,7 @@ public sealed class ContextMenuTests
     }
 
     /// <summary>
-    /// A chosen command runs after the menu gave the focus back to the field, as its key does: the cut puts the text on the
+    /// A chosen item's action is dispatched after the menu gave the focus back to the field, as its key's is: the cut puts the text on the
     /// clipboard and Control+Z brings it back; the paste writes the clipboard's text.
     /// </summary>
     /// <remarks>
@@ -191,7 +191,7 @@ public sealed class ContextMenuTests
     {
         var text = Signal.Create("nnnn");
         Element field = default;
-        await using HeadlessApp app = await StartField(text, new TextFieldOptions { ContextMenu = c => Panel(c) }, field: f => field = f);
+        await using HeadlessApp app = await StartField(text, new TextFieldOptions { ContextMenu = () => Panel() }, field: f => field = f);
 
         _ = app.Keyboard.Press(Key.F10, KeyModifiers.Shift);
         _ = app.PumpAndSettle();
@@ -230,7 +230,7 @@ public sealed class ContextMenuTests
     public async Task FieldRightButton_CommitsAComposition()
     {
         var text = Signal.Create(string.Empty);
-        await using HeadlessApp app = await StartField(text, new TextFieldOptions { ContextMenu = c => Panel(c) });
+        await using HeadlessApp app = await StartField(text, new TextFieldOptions { ContextMenu = () => Panel() });
         _ = app.Ime.Compose("nn", 2);
         _ = app.PumpAndSettle();
 
@@ -251,32 +251,32 @@ public sealed class ContextMenuTests
     /// - An area around a column of two leaves of "nnnn", with a context menu of the copy and the select-all.
     ///
     /// Steps:
-    /// - Drag from x = 1.4 n on the first leaf to 2.4 n on the second; click the right button at (n, 5) and settle; read the commands,
+    /// - Drag from x = 1.4 n on the first leaf to 2.4 n on the second; click the right button at (n, 5) and settle; read the items,
     ///   the leaves' selections, and the focus; press Enter (the copy is focused) and settle.
     ///
     /// Expected:
-    /// - Both commands enabled; the selections (1, 4) and (0, 2) kept; the focus in the menu. After Enter: "nnn\nnn" on the
+    /// - Both items enabled; the selections (1, 4) and (0, 2) kept; the focus in the menu. After Enter: "nnn\nnn" on the
     ///   clipboard, the area focused, the selections kept.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
     public async Task AreaRightButton_KeepsTheSelection_AndTheCopyCopiesIt()
     {
-        SelectionMenuCommands? seen = null;
+        var seen = new Items();
         Element area = default;
         Element top = default;
         Element bottom = default;
         await using HeadlessApp app = await StartArea(() =>
             area = SelectionArea(
                 Column(top = Elements.Text("nnnn"), bottom = Elements.Text("nnnn")),
-                new SelectionAreaOptions { ContextMenu = c => AreaPanel(seen = c) }
+                new SelectionAreaOptions { ContextMenu = () => AreaPanel(seen) }
             )
         );
         Drag(app, (1.4f * N, Line / 2), (2.4f * N, Line * 1.5f));
 
         app.Pointer.Click((int)MathF.Round(N), 5, PointerButton.Right);
         _ = app.PumpAndSettle();
-        (bool, bool) enabled = (seen!.Copy.Enabled, seen.SelectAll.Enabled);
+        (bool, bool) enabled = (Enabled(app, seen.Copy), Enabled(app, seen.SelectAll));
         ((int, int), (int, int)) kept = (SelectionOf(app, top), SelectionOf(app, bottom));
         bool inMenu = app.Tree.Popups.PopupContaining(app.Tree.Focus.Focused) is not null;
         _ = app.Keyboard.Press(Key.Enter);
@@ -309,13 +309,13 @@ public sealed class ContextMenuTests
     [UiFact]
     public async Task AreaMenuKey_OpensAtTheSelectionsEnd_OrBelowTheArea()
     {
-        SelectionMenuCommands? seen = null;
+        var seen = new Items();
         Element area = default;
         Element first = default;
         await using HeadlessApp app = await StartArea(() =>
             area = SelectionArea(
                 Column(Elements.Text("nnnn"), Elements.Text("nnnn")),
-                new SelectionAreaOptions { ContextMenu = c => first = AreaPanel(seen = c) }
+                new SelectionAreaOptions { ContextMenu = () => first = AreaPanel(seen) }
             )
         );
         _ = app.Focus(area);
@@ -323,7 +323,7 @@ public sealed class ContextMenuTests
         _ = app.Keyboard.Press(Key.F10, KeyModifiers.Shift);
         _ = app.PumpAndSettle();
         Vector2 below = TopLeft(app, first);
-        bool copyWithNone = seen!.Copy.Enabled;
+        bool copyWithNone = Enabled(app, seen.Copy);
         _ = app.Keyboard.Press(Key.Escape);
         Drag(app, (1.4f * N, Line / 2), (2.4f * N, Line * 1.5f));
         _ = app.Keyboard.Press(Key.F10, KeyModifiers.Shift);
@@ -381,13 +381,25 @@ public sealed class ContextMenuTests
         _ = app.PumpAndSettle();
     }
 
-    // The panel of a field's menu: the cut, the copy, the paste, and the select-all, each enabled by its command.
-    private static Element Panel(TextMenuCommands c) => Column(Item(c.Cut), Item(c.Copy), Item(c.Paste), Item(c.SelectAll));
+    // The panel of a field's menu: items that name the cut, the copy, the paste, and the select-all.
+    private static Element Panel(Items? seen = null)
+    {
+        seen ??= new Items();
+        return Column(
+            seen.Cut = Item(new TextActions.Cut()),
+            seen.Copy = Item(new TextActions.Copy()),
+            seen.Paste = Item(new TextActions.Paste()),
+            seen.SelectAll = Item(new TextActions.SelectAll())
+        );
+    }
 
-    // The panel of an area's menu: the copy and the select-all.
-    private static Element AreaPanel(SelectionMenuCommands c) => Column(Item(c.Copy), Item(c.SelectAll));
+    // The panel of an area's menu: items that name the copy and the select-all.
+    private static Element AreaPanel(Items seen) =>
+        Column(seen.Copy = Item(new TextActions.Copy()), seen.SelectAll = Item(new TextActions.SelectAll()));
 
-    private static Element Item(MenuCommand command) => MenuItem(Box().Width(200).Height(30), command.Run, command.Enabled);
+    private static Element Item(IAction action) => MenuItem(action, _ => Box().Width(200).Height(30));
+
+    private static bool Enabled(HeadlessApp app, Element item) => (app.Tree.Nodes.GetRef(item.Node).Pseudo & PseudoState.Disabled) == 0;
 
     private static (int Start, int End) SelectionOf(HeadlessApp app, Element leaf) =>
         app.Tree.Nodes.GetRef(leaf.Node).Text!.Selection is { IsEmpty: false } selection ? (selection.Start, selection.End) : (0, 0);
@@ -405,5 +417,17 @@ public sealed class ContextMenuTests
         }
 
         return point;
+    }
+
+    // The items of the menu last made.
+    private sealed class Items
+    {
+        public Element Cut { get; set; }
+
+        public Element Copy { get; set; }
+
+        public Element Paste { get; set; }
+
+        public Element SelectAll { get; set; }
     }
 }

@@ -126,6 +126,9 @@ public static partial class Primitive
     {
         private NodeHandle _restore;
 
+        // Where the focus was before the bar was selected: the context node of the bar's menus.
+        public NodeHandle Restore => _restore;
+
         public NodeHandle Node => node;
 
         public List<MenuBarItemState> Items { get; } = [];

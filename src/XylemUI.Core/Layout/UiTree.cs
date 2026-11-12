@@ -430,6 +430,9 @@ internal sealed class UiTree
 
         state = new ScrollState();
         SetScrollState(node, state);
+
+        // Whether a scrolling action can run was read from the container's boxes until now (WindowInput.CanScrollByStep).
+        Actions.AvailabilityChanged();
         return state;
     }
 
@@ -1373,11 +1376,18 @@ internal sealed class UiTree
     /// <param name="phase">The phase of the route.</param>
     /// <param name="handler">The handler.</param>
     /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
-    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler, bool derived = false)
+    /// <param name="can">What answers whether the handler can take an action now; <see langword="null"/> when it always can.</param>
+    public void AddActionHandler<TAction>(
+        NodeHandle node,
+        EventPhase phase,
+        ActionHandler<TAction> handler,
+        bool derived = false,
+        Func<TAction, bool>? can = null
+    )
         where TAction : class, IAction
     {
         ArgumentNullException.ThrowIfNull(handler);
-        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived));
+        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived, can));
         Actions.AvailabilityChanged();
     }
 
@@ -1633,6 +1643,9 @@ internal sealed class UiTree
         {
             input.Focusable = focusable;
             Invalidation.Invalidate(this, node, ChangeKind.Color);
+
+            // A move of the focus has one node more or fewer to go to (FocusActions); so with Hidden below.
+            Actions.AvailabilityChanged();
             if (!focusable)
             {
                 Focus.Lose(node);
@@ -2064,6 +2077,11 @@ internal sealed class UiTree
 
         ref UiNode changed = ref Nodes.GetRef(node);
         bool hides = style.Hidden && !changed.Layout.Style.Hidden;
+        if (style.Hidden != changed.Layout.Style.Hidden)
+        {
+            Actions.AvailabilityChanged();
+        }
+
         changed.Layout.Style = style;
         changed.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
         changed.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
@@ -2505,7 +2523,10 @@ internal sealed class UiTree
     {
         ref UiNode n = ref Nodes.GetRef(node);
         bool disabled = inherited || n.Input?.Disabled == true;
-        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled && n.Input is { ActionHandlers.Length: > 0 })
+
+        // Whether an action is available may be another answer now: the node's handlers are passed over while it is disabled, and
+        // a move of the focus has one node more or fewer to go to (FocusActions).
+        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled && n.Input is { } input && (input.ActionHandlers.Length > 0 || input.Focusable))
         {
             Actions.AvailabilityChanged();
         }
