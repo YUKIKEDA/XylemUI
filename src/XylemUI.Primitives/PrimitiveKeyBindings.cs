@@ -139,8 +139,8 @@ public static class PrimitiveKeyBindings
         _ = keymap.Bind("ctrl-z", new TextActions.Undo(), Field);
         _ = keymap.Bind("ctrl-shift-z", new TextActions.Redo(), Field);
         _ = keymap.Bind("ctrl-y", new TextActions.Redo(), Field);
-        _ = keymap.Bind("enter", new TextActions.InsertNewline(), Many);
         _ = keymap.Bind("shift-enter", new TextActions.InsertNewline(), Many);
+        _ = keymap.Bind("enter", new TextActions.InsertNewline(), Many);
         _ = keymap.Bind("enter", new TextActions.Submit(), One);
     }
 }

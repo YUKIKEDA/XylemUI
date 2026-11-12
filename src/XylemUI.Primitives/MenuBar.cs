@@ -69,9 +69,7 @@ public static partial class Primitive
         return item.OnClick(state.Click)
             .PartKeyContext(PrimitiveKeyBindings.MenuBarContext)
             .On(KeyEventKind.Down, EventPhase.Bubble, state.KeyDown)
-            .OnAction<MenuBarActions.Previous>(state.Previous)
-            .OnAction<MenuBarActions.Next>(state.Next)
-            .OnAction<MenuBarActions.Open>(state.Open)
+            .OnActionsOf<MenuBarAction>(state.Act)
             .On(PointerEventKind.Enter, EventPhase.Bubble, state.Enter);
     }
 
@@ -337,22 +335,30 @@ public static partial class Primitive
             }
         }
 
-        // The left and the right arrow on the item while the bar is selected, and those its open menu did not take, which open
-        // the menu before or after.
-        public void Previous(in ActionEvent<MenuBarActions.Previous> e) => Move(e.TargetNode, -1, e);
-
-        public void Next(in ActionEvent<MenuBarActions.Next> e) => Move(e.TargetNode, 1, e);
-
-        // The arrows, Enter, and Space on the item open its menu; the up arrow with the last item focused.
-        public void Open(in ActionEvent<MenuBarActions.Open> e)
+        // The item's actions. The left and the right arrow on the item while the bar is selected move to the item before or
+        // after; those its open menu did not take open the menu before or after. The other arrows, Enter, and Space on the item
+        // open its menu, the up arrow with the last item focused.
+        public void Act(in ActionEvent<MenuBarAction> e)
         {
-            if (Bar is not { } bar || e.TargetNode != Node)
+            bool inMenu = e.TargetNode != Node;
+            if (Bar is not { } bar || (inMenu && (e.Action.Step == MenuBarStep.Open || !IsOpen)))
             {
                 e.Propagate();
                 return;
             }
 
-            bar.Open(this, last: e.Action.Last);
+            switch (e.Action.Step)
+            {
+                case MenuBarStep.Previous:
+                    bar.Move(this, -1, openMenu: inMenu);
+                    break;
+                case MenuBarStep.Next:
+                    bar.Move(this, 1, openMenu: inMenu);
+                    break;
+                default:
+                    bar.Open(this, last: ((MenuBarActions.Open)e.Action).Last);
+                    break;
+            }
         }
 
         // The access keys of the items and Esc, while the bar is selected with the focus on the item. Esc is a key here and no
@@ -381,19 +387,6 @@ public static partial class Primitive
                 bar.Leave(restore: true);
                 e.StopPropagation();
             }
-        }
-
-        private void Move<TAction>(NodeHandle target, int by, in ActionEvent<TAction> e)
-            where TAction : class, IAction
-        {
-            bool inMenu = target != Node;
-            if (Bar is not { } bar || (inMenu && !IsOpen))
-            {
-                e.Propagate();
-                return;
-            }
-
-            bar.Move(this, by, openMenu: inMenu);
         }
 
         // The pointer over the item while another item's menu is open opens this one's in its place.

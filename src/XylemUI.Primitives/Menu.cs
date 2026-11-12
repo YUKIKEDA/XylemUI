@@ -151,12 +151,7 @@ public static partial class Primitive
                 return menuPanel
                     .PartKeyContext(PrimitiveKeyBindings.MenuContext)
                     .On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys)
-                    .OnAction<MenuActions.SelectPrevious>(SelectPrevious)
-                    .OnAction<MenuActions.SelectNext>(SelectNext)
-                    .OnAction<MenuActions.SelectFirst>(SelectFirst)
-                    .OnAction<MenuActions.SelectLast>(SelectLast)
-                    .OnAction<MenuActions.CloseSubmenu>(CloseSubmenu)
-                    .OnAction<MenuActions.OpenSubmenu>(NoSubmenu);
+                    .OnActionsOf<MenuAction>(PanelAction);
             },
             options,
             root =>
@@ -191,47 +186,45 @@ public static partial class Primitive
 
     // The actions of a panel, from its focused item (design §13.1, "Keys"; §7, "The default keys and actions"). The items are the
     // focusable nodes of the panel's popup, in the order of Tab, which passes over the disabled ones; a submenu open beside them
-    // closes first, so that its scope is not the one moved in. A panel handles a move also when the focus does not change: the
-    // keys of a menu do not go on to the page under it.
-    private static void SelectPrevious(in ActionEvent<MenuActions.SelectPrevious> e) => MoveInPanel(e.CurrentTarget, end: false, backward: true);
-
-    private static void SelectNext(in ActionEvent<MenuActions.SelectNext> e) => MoveInPanel(e.CurrentTarget, end: false, backward: false);
-
-    private static void SelectFirst(in ActionEvent<MenuActions.SelectFirst> e) => MoveInPanel(e.CurrentTarget, end: true, backward: true);
-
-    private static void SelectLast(in ActionEvent<MenuActions.SelectLast> e) => MoveInPanel(e.CurrentTarget, end: true, backward: false);
-
-    private static void MoveInPanel(Element panel, bool end, bool backward)
-    {
-        UiTree tree = panel.Tree!;
-        CloseSubmenus(tree, tree.Popups.PopupContaining(panel.Node), except: default);
-        _ = end ? tree.Focus.MoveToTabEnd(last: !backward) : tree.Focus.MoveInTabOrder(backward);
-    }
-
-    // A submenu closes, and its scope gives the focus back to the item that opened it. A menu that is no submenu does nothing,
-    // and leaves the action to the menu bar it was opened from, if any, which opens the menu before.
-    private static void CloseSubmenu(in ActionEvent<MenuActions.CloseSubmenu> e)
+    // closes first, so that its scope is not the one moved in. A panel handles a move also when the focus does not change, and
+    // an arrow it has no use for: the keys of a menu do not go on to the page under it. A menu open from a menu bar leaves such an
+    // arrow to the bar, which opens the menu before or after.
+    private static void PanelAction(in ActionEvent<MenuAction> e)
     {
         UiTree tree = e.CurrentTarget.Tree!;
         PopupHandle? popup = tree.Popups.PopupContaining(e.CurrentNode);
-        if (popup is { Parent: { } parent } && IsMenu(parent))
+        switch (e.Action.Step)
         {
-            popup.Block.Dismiss();
-        }
-        else if (IsOpenFromBar(tree, popup))
-        {
-            e.Propagate();
-        }
-    }
+            case MenuStep.SelectPrevious or MenuStep.SelectNext:
+                CloseSubmenus(tree, popup, except: default);
+                _ = tree.Focus.MoveInTabOrder(backward: e.Action.Step == MenuStep.SelectPrevious);
+                break;
+            case MenuStep.SelectFirst or MenuStep.SelectLast:
+                CloseSubmenus(tree, popup, except: default);
+                _ = tree.Focus.MoveToTabEnd(last: e.Action.Step == MenuStep.SelectLast);
+                break;
+            case MenuStep.Confirm:
+                // Enter and Space on an item do what its access key does: a submenu opens with its first item focused; an item
+                // is chosen.
+                if (!ActivateItem(tree, e.TargetNode))
+                {
+                    e.Propagate();
+                }
 
-    // The focused item has no submenu, or it would have opened it: the panel does nothing, and leaves the action to the menu bar
-    // its menus were opened from, if any, which opens the next menu.
-    private static void NoSubmenu(in ActionEvent<MenuActions.OpenSubmenu> e)
-    {
-        UiTree tree = e.CurrentTarget.Tree!;
-        if (IsOpenFromBar(tree, tree.Popups.PopupContaining(e.CurrentNode)))
-        {
-            e.Propagate();
+                break;
+            case MenuStep.CloseSubmenu when popup is { Parent: { } parent } && IsMenu(parent):
+                // A submenu closes, and its scope gives the focus back to the item that opened it.
+                popup.Block.Dismiss();
+                break;
+            default:
+                // The left arrow in a menu that is no submenu, and the right arrow on an item with no submenu (an item with one
+                // took the action before the panel).
+                if (IsOpenFromBar(tree, popup))
+                {
+                    e.Propagate();
+                }
+
+                break;
         }
     }
 
@@ -297,10 +290,10 @@ public static partial class Primitive
         {
             RegisterItem(tree, node, Activate);
             tree.SetPartAccessibility(item.Node, Roles.MenuItem);
-            return item.OnClick(Click)
-                .OnAction<MenuActions.Confirm>(Confirm)
-                .OnAction<MenuActions.OpenSubmenu>(OpenSubmenu)
-                .On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
+            item = item.OnClick(Click).On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
+
+            // The panel takes the item's other actions; only an item with a submenu has a handler of its own.
+            return submenu is null ? item : item.OnAction<MenuActions.OpenSubmenu>(OpenSubmenu);
         }
 
         // Its access key typed in its menu: a submenu opens with its first item focused; an item is chosen.
@@ -330,8 +323,8 @@ public static partial class Primitive
             onSelect!();
         }
 
-        // Enter and Space on the item: a submenu opens with its first item focused; an item is chosen.
-        private void Confirm(in ActionEvent<MenuActions.Confirm> e)
+        // The right arrow on the item opens its submenu.
+        private void OpenSubmenu(in ActionEvent<MenuActions.OpenSubmenu> e)
         {
             if (e.TargetNode != node)
             {
@@ -339,19 +332,7 @@ public static partial class Primitive
                 return;
             }
 
-            Activate();
-        }
-
-        // The right arrow on the item: its submenu opens; an item with none leaves the action to its panel.
-        private void OpenSubmenu(in ActionEvent<MenuActions.OpenSubmenu> e)
-        {
-            if (e.TargetNode != node || submenu is null)
-            {
-                e.Propagate();
-                return;
-            }
-
-            submenu.Open(focusFirst: true);
+            submenu!.Open(focusFirst: true);
         }
 
         // The pointer over the item gives it the focus, closes the submenu of another item beside it, and opens its own.

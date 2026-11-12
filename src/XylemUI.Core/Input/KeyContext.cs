@@ -73,16 +73,8 @@ internal sealed class KeyContext
             return part ?? app;
         }
 
-        var values = new List<(string Key, string Value)>(app._values);
-        foreach ((string key, string value) in part._values)
-        {
-            if (app.Value(key) is null)
-            {
-                values.Add((key, value));
-            }
-        }
-
-        return new KeyContext([.. part._names, .. app._names], [.. values]);
+        // The app's values first: the value of a key is the first one found (Value).
+        return new KeyContext([.. part._names, .. app._names], [.. app._values, .. part._values]);
     }
 
     /// <summary>
