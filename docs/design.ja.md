@@ -40,7 +40,7 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 | 画像のデコード（§5.0.4）          |      | ○ Wuffs（PNG・GIF・BMP）・libjpeg-turbo（JPEG）・libwebp（WebP。アニメーションは、同じ配布の libwebpdemux） | 画像は信頼できない入力。PNG・GIF・BMP は、メモリ安全な Wuffs が libpng より速い。JPEG と WebP は、手で書いた SIMD を持つ libjpeg-turbo と libwebp が Wuffs より速い（行 S11 の spike、Issue #730）。どの OS も同じデコーダで読み、静的リンクで単一の実行ファイルに入れる |
 | 色の変換（§5.0.4）                |      |        ○ skcms           | 埋め込みの ICC を sRGB に直すのに必要な分だけを持つ（Skia、BSD-3。Flutter も Skia を通して使う） |
 | アイコンのフォントの削り（§5.0.4） |      | ○ HarfBuzz の subset・Mono.Cecil（ビルドの機械だけ） | 使う字形だけを残すのに、HarfBuzz の subset（`harfbuzz-subset`）を使う。実行時にリンクする HarfBuzz は `-DHB_BUILD_SUBSET=OFF` で作るので（`vendor/build.ps1` 27 行目）、subset は、ビルドの機械（Windows・macOS・Linux）の向けに `HB_BUILD_SUBSET=ON` で別に作り、Theme.Fluent のビルドの道具として持つ。実行時にリンクする HarfBuzz は今のまま。残したフォントをアプリのアセンブリへ書き足すのに Mono.Cecil（MIT）を使う。どちらもアプリのビルドの中で動き、実行ファイルには入らない（IC1 の Grill の Q7、Issue #708） |
-| Source Generator（§7「ショートカットと動作」、§4.11） |      | ○ Microsoft.CodeAnalysis.CSharp（ビルドの機械だけ） | `XylemUI.Generators` が、コンパイラの中で動作の名前の表を書く。Roslyn の API（MIT）に対して書き、アプリには入らない。生成したコードはリフレクションを使わない（行 KM1a） |
+| Source Generator（§7「ショートカットと動作」、§4.11） |      | ○ Microsoft.CodeAnalysis.CSharp（ビルドの機械だけ） | `XylemUI.Generators` が、コンパイラの中で動作の名前の表を書く。Roslyn の API（MIT）に対して書き、アプリには入らない。生成したコードはリフレクションを使わない（行 KM1a）。アナライザー（`XylemUI.Analyzers`）も同じ API に対して書き、修正の提案（`XylemUI.Analyzers.CodeFixes`）は Microsoft.CodeAnalysis.CSharp.Workspaces（MIT）も使う。どちらもアプリには入らない（§2.2「アナライザー」、行 A1） |
 | Linux GPU（§5.1）                 |      |       ○ wgpu-native       | ドライバ互換性対応の継続保守コスト                                                                                                                                                                   |
 | Linux Window（§6.1）              |      |          ○ SDL3           | Wayland/X11の差異吸収コスト                                                                                                                                                                          |
 | GPUレンダラ（§5.0/5.2）           |  ○   |                           | 独自設計（DisplayList、SDFシェーダー等）                                                                                                                                                             |
@@ -127,6 +127,46 @@ WPF/Avalonia 方式は .NET で最も実績のある方式だが、`DependencyPr
 ### 2.2 Signal依存関係追跡
 
 **採用: ランタイム追跡（SolidJS/Leptos方式）。** コンパイル時解析（Svelte方式）はコンポーネント本体の書き換えを前提とする。C# には Source Generator があるが、できるのはコードの追加までで、既存メソッド本体の変換はできない（Interceptors も呼び出し箇所の差し替えに限られる）。本体を書き換えるには IL を書き換える形（Fody、ビルド後の Mono.Cecil）が要るが、採らない（D3 の Grill、Issue #441）。.NET の Hot Reload（§0.1 の要件）は元の IL に Roslyn の差分を当てるので、書き換えた本体とずれる。比べた 3 つも、Signal に当たる依存をコンパイル時に解析しない。GPUI は描画中に読んだ entity を記録し（`crates/gpui/src/app.rs` 1347 行目 `detect_accessed_entities`）、Flutter と Avalonia は通知で知らせる。動的な依存は、どの形でも実行時の追跡が要る。コンパイル時に誤りを見つける道具は、Roslyn のアナライザー（`XylemUI.Analyzers`、行 A1）として配る。Avalonia も自前のアナライザーを利用者に配り（`packages/Avalonia/Avalonia.csproj` 16〜27 行目、`src/tools/Avalonia.Analyzers.CSharp/AvaloniaPropertyAnalyzer.cs` 24〜60 行目）、Flutter は自前の lint を CI で回す（`dev/bots/analyze.dart` 2924〜2950 行目）。ランタイム追跡は「実行中の computation」を指す静的フィールドと Signal getter 呼び出し時の自動登録で実現する。Core は UI スレッドでのみ動く（§2.12）ため、このフィールドは `[ThreadStatic]` にせず通常の静的フィールドでよい。動的な依存関係（条件分岐で読むSignalが変わる場合）にも自然に対応する。Source Generator は Binding 層の定型コード生成（§2.4）に限って使う。
+
+**アナライザー（A1 の Grill でオーナーが決定、Issue #824）:** 実行時の追跡では、読み方やスレッドの誤りは、動かすまで分からない。A1 は、誤りやすい書き方をコンパイルの時に知らせる Roslyn のアナライザーを、アプリの開発者に配る。アナライザーは診断を出すだけで、コードを書き換えず、依存も決めない。`docs/design-decisions.md` が退けたコンパイル時の依存の解析（§2.2 の冒頭）は、解析の結果で実行の形を変える案で、これとは別である。
+
+- **規則（5 つ）:** 重さは 5 つとも Warning である。どの規則も、呼び出しを書いたその場の構文と型だけを見る。いったん変数に入れてから渡した値と、別のメソッドを通した呼び出しは見えない。見えない範囲は、規則ごとの文書（下の「文書」）に書く。
+  - **XYLEM100（スレッド）:** `Task.Run`、`ThreadPool.QueueUserWorkItem`・`ThreadPool.UnsafeQueueUserWorkItem`、`new Thread` の引数に直に書いたラムダ（匿名メソッドを含む）の本体で、`[UiThreadOnly]`（下の「UI スレッド専用の属性」）を付けた API を呼ぶ所を知らせる。本体は UI スレッドの外で走るので、その API は実行時に `InvalidOperationException` を投げる（§2.12）。見ないもの: メソッドグループで渡した形（`Task.Run(Work)`）、変数に入れてから渡したデリゲート、本体から呼んだ別のメソッドの中、本体の中のラムダ（UI スレッドへ渡し直すことがある）、ほかの口（`Task.Factory.StartNew`、`Parallel`、`ContinueWith` など）。
+  - **XYLEM110（リアクティブ）:** 反応する書き方がある要素の API の、反応しない方の引数に直に書いた `Get()`（`IReadOnlySignal<T>`・`Signal<T>`・`Computed<T>` のもの）を知らせる。`Text(count.Get().ToString())` は、作った時の値で 1 度だけ書き、後で `count` が変わっても文字は変わらない。`Text(() => count.Get().ToString())` なら、変わるたびに書き直す。反応する書き方がある API は、同じ型にある同じ名前の多重定義のうち、同じ位置の引数が `Func<T>` か `IReadOnlySignal<T>` で、反応しない方が `T` を取るもので見分ける。今の Core では、`Text(string)` と `Text(Func<string>)`、`Image(ImageSource, …)` と `Image(Func<ImageSource>, …)`、`Background(Paint)` と `Background(IReadOnlySignal<Paint>)`、`Foreground(Color)` と `Foreground(IReadOnlySignal<Color>)`、`Disabled(bool)` と `Disabled(IReadOnlySignal<bool>)`、`Accessible(AccessibilityInfo)` と `Accessible(IReadOnlySignal<AccessibilityInfo>)` の 6 組になる（`src/XylemUI.Core/Elements/Elements.cs`、`ElementExtensions.cs`）。Primitives の公開の関数に、この組は無い。引数の式の中のラムダの中は見ない（そこは反応する書き方である）。見ないもの: 変数に入れた値（`string s = count.Get().ToString();` の後の `Text(s)`）、別のメソッドが読んで返した値。
+  - **XYLEM111（リアクティブ）:** `Effect.Create`・`Computed.Create`・`Text(Func<string>)` に渡した async ラムダを知らせる。追跡は関数が同期に走る間に読んだものだけを記録するので（上の静的フィールド）、最初の `await` より後の `Get` は依存にならない。`Effect.Create` には async void のラムダとして渡り、`Computed.Create` では値が `Task` になる。`Text(Func<string>)` への async ラムダは、今の多重定義ではコンパイラが CS4010 で止める（async ラムダは `Func<string>` に変わらない。A1 の設計の PR の前に、`Text(string)`・`Text(Func<string>)`・`Text(TextBuilder)` の 3 つの形で確かめた）。見ないもの: メソッドグループで渡した async メソッド、async メソッドを呼ぶだけの同期のラムダ（`() => LoadAsync()`）。
+  - **XYLEM120（スコープ）:** async メソッド（async のラムダとローカル関数を含む）で、`await` より後に書いた `Effect.Create`・`Scope.OnCleanup`・要素の生成のうち、`Scope.Run` に渡したラムダの外にあるものを知らせる。今のスコープは呼び出しの間だけのもので、`await` から戻った継続には無い。そこで `Scope.OnCleanup` と要素の生成は `InvalidOperationException` を投げ、`Effect.Create` はどのスコープにも属さない Effect を作り、画面が消えても残る（§2.3）。要素の生成は、`Element` を返す静的メソッドのうち拡張メソッドでないもの（`Elements` の関数、Primitives の `Button` など）で見分ける。「`await` より後」は書いた順で決める。見ないもの: ループの中で `await` より前に書いた呼び出し（2 周目からは `await` の後に走る）、別のメソッドの中の呼び出し、スコープが要る拡張メソッド（`For`、`Popup`、`Menu`、`IReadOnlySignal<T>` を取る `Background` など）。
+  - **XYLEM130（要素）:** 子のある箱への `For` と、同じ連鎖の 2 つ目の `For` を知らせる。どちらも実行時に `ArgumentException` を投げる（`src/XylemUI.Core/Elements/ElementExtensions.cs` 843 行目の文書）。子のある箱は、`Elements` の静的メソッドに `Element` の引数を 1 つ以上渡した呼び出し（`Column(header)`、`Box(child)`）で見分け、`For` の受け手から、`Element` を受けて `Element` を返す拡張メソッドの連鎖をたどってそこへ行き着くかを見る。見ないもの: 変数に入れた箱（`var list = Column(header);` の後の `list.For(...)`）、別のメソッドが返した箱、別の文で呼んだ 2 つ目の `For`。
+- **追跡の外の `Get` を全部は知らせない:** 追跡の外で読むこと自体は誤りではない。`ReactiveNode.TrackRead`（`src/XylemUI.Core/Reactive/ReactiveNode.cs` 45〜51 行目）は、実行中の computation が無ければ何も登録しない。クリックのハンドラやモデルのメソッドが今の値を読むのは、正しい使い方である。誤りになるのは、変わってほしい表示に 1 度だけ読んだ値を渡す所で、それを XYLEM110 が知らせる。
+- **UI スレッド専用の属性:** UI スレッドからだけ呼べる API は、Core の公開の属性 `UiThreadOnlyAttribute`（名前空間 `XylemUI`）で見分ける。アナライザーは型やメンバーの一覧を持たず、属性を読む。
+
+  ```csharp
+  [AttributeUsage(
+      AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property,
+      Inherited = false,
+      AllowMultiple = false
+  )]
+  public sealed class UiThreadOnlyAttribute : Attribute;
+  ```
+
+  付ける先は、コンストラクター・メソッド・プロパティである。アナライザーは、呼んだメンバーそのものに付いた属性を読む（総称のメンバーは元の定義。プロパティの accessor は、accessor かプロパティに付いたもの。片方の accessor だけが確かめるプロパティは、その accessor に付ける）。`Inherited = false` で、派生型や上書きしたメンバーには引き継がない。インターフェースを通した呼び出しは、インターフェースのメンバーに付いていれば知らせる。Platform・Rendering・Testing の公開 API も、Core のこの属性を付ける。新しい公開 API が入口で UI スレッドを確かめるなら、この属性も付ける（§2.12）。今ある公開 API で付けるのは、入口で、または private や internal の補助を通して、`UiThread.VerifyAccess` を呼ぶものである。
+  - Core: `Signal.Create`、`Signal<T>.Get`・`Set`、`Computed.Create`、`Computed<T>.Get`・`Dispose`、`IReadOnlySignal<T>.Get`（実装の 2 つが確かめるので、インターフェースを通した読みにも付ける）、`Effect.Create`・`Dispose`、`ReactiveRuntime.Batch`（2 つ）、`Scope.Create`・`Run`・`OnCleanup`・`Dispose`、`ScopeTracker.ForEachActiveScope`、`SynchronousRenderGuard.Enter`・`RunOrDefer`、`UiDispatcher.Drain`、`AppFonts.Add`、`ImageCache.MaximumCount`・`MaximumBytes`・`Evict`・`Clear`、`Keymap.Bind`・`Remove`、`Animation.Forward`・`Reverse`・`AnimateTo`・`Set`・`Fling`・`SpringTo`・`Stop`、`ElementExtensions.KeyBindingFor`・`Dispatch`・`CanDispatch`（それぞれ 2 つ）
+  - Platform.Windows: `Win32MessageLoop.Run`・`Quit`・`FrameScheduler`・`Dispatcher`・`SetFrameClock`（2 つ）、`Win32Window` のコンストラクター・`ClientSize`・`Show`・`RequestClose`・`Dispose`・`StartExternalDrag`
+  - Rendering.D3D11: `D3D11Renderer.Create`・`TextRendering` の `set`・`Render`・`Draw`（2 つ）・`Resize`・`Present`
+  - Testing: `HeadlessApp.Popups`・`Find`・`FindAll`・`FindByRole`・`AccessibilityOf`・`Focus`・`SetActive`・`SetVisible`・`PumpAndSettle`・`Pump`・`AssertNoLeakedScopes`
+- **置き場:** 新しいアセンブリ `XylemUI.Analyzers`（規則）と `XylemUI.Analyzers.CodeFixes`（修正の提案）を作る。どちらも netstandard2.0 で、Microsoft.CodeAnalysis.CSharp 4.14.0（`XylemUI.Generators` と同じ版）に対して書き、修正の提案は Microsoft.CodeAnalysis.CSharp.Workspaces 4.14.0 も使う。2 つは `XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に、`XylemUI.Generators.dll` と並べて入れる。`XylemUI.Core.csproj` の、生成器が無ければパックを止める検査も、2 つに広げる。アナライザーは `XylemUI.Core` を参照せず、型と属性を名前（`XylemUI.UiThreadOnlyAttribute` など）で探す。修正の提案を別のアセンブリにするのは、コマンドラインのコンパイラ（`dotnet build`）が Workspaces を持たないためである。Roslyn の規則 RS1038（Microsoft.CodeAnalysis.Analyzers の文書）は、どのコンパイルの場でも渡されるとは限らないアセンブリを参照するアセンブリに、コンパイラの拡張を置かないよう求める。Avalonia も、規則（`Avalonia.Analyzers.CSharp.csproj` 13 行目は CSharp だけを参照）と修正（`Avalonia.Analyzers.CodeFixes.CSharp.csproj` 12〜13 行目は Workspaces.Common も参照）を分ける。
+- **診断の番号:** 接頭辞は `XYLEM` のままにする。生成器は 001〜099（今は XYLEM001〜007）、アナライザーは 100 からで、スレッドが 10x、リアクティブが 11x、スコープが 12x、要素が 13x である。生成器と同じく、`XylemUI.Analyzers` に `AnalyzerReleases.Shipped.md` と `AnalyzerReleases.Unshipped.md` を置いて記録する（RS2008）。
+- **修正の提案（code fix）:** 2 つ入れる。
+  - XYLEM110 のうち `Text(string)` の分を、`Text(() => 引数の式)` に直す。
+  - `XylemUI.*` の名前空間の中の CS0118 を、`Elements.Text(...)` に直す。その中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかる（§2.13「名前空間 `XylemUI.*` の中から `Text` を呼ぶ」）。提案を出すのは、CS0118 の名前が呼び出しの `Text` で、ファイルの名前空間が `XylemUI` かその下で、`XylemUI.Elements` に `Text` があるときだけである。
+  - コンパイラの診断に提案を付けられるかは、設計の PR の前に確かめた。Microsoft.CodeAnalysis.CSharp.Workspaces 4.14.0 で、`FixableDiagnosticIds` が `CS0118` の `CodeFixProvider` を書き、名前空間 `Demo.Text` と、ファイルの先頭の `using static Demo.Elements;`（`Text(string)` を持つ）と、名前空間 `Demo.Something` の中の `Text("a")` を `AdhocWorkspace` に入れた。コンパイルが出した CS0118 を `RegisterCodeFixesAsync` に渡すと提案が 1 つ登録され、当てると `Elements.Text("a")` になり、エラーは無くなった。Microsoft の API の文書（learn.microsoft.com の `CodeFixProvider.FixableDiagnosticIds`）は「この提供者が修正を出せる診断の ID の一覧」とだけ書き、コンパイラの ID を取れるかには触れていない。Visual Studio と Rider の画面で提案が出るかは、まだ見ていない。
+- **テスト:** `tests/XylemUI.Analyzers.Tests` を作る。`XylemUI.Generators.Tests` と同じく、コンパイラの API で直に掛ける。テストが書いたソースを、Core を参照する `CSharpCompilation` にし、`CompilationWithAnalyzers` で診断を得る。修正の提案は、`AdhocWorkspace` で提案を当てた後の文と、当てた後のコンパイルにエラーが無いことを確かめる。規則ごとに、出る例と出ない例の両方を書く。
+- **このリポジトリへの適用:** `src`・`samples`・`tests`・`benchmarks` のすべてのプロジェクトに掛ける。`Directory.Build.props` が、生成器と同じ形（`OutputItemType="Analyzer"`）で 2 つのプロジェクトを参照する。アナライザーは Core を参照しないので、生成器と違い、Core・Text・Imaging にも掛けられる。外すのはアナライザー自身のプロジェクトだけである。警告はエラーとして扱うので（`TreatWarningsAsErrors`）、診断が出ればビルドが止まる。`samples/HelloWindow/Program.cs` 134 行目は、`Task.Run` の中から `window.Show()` を呼び、UI スレッドの外の呼び出しが断られるのをわざと確かめる（S1）。ここは XYLEM100 を、理由を書いた `#pragma warning disable` で抑える。テストの中で同じように誤りをわざと起こす所（今は `tests/XylemUI.Text.Tests/AppFontsTests.cs` 133 行目の `AppFonts.Add`、`tests/XylemUI.Core.Tests/ShowForTests.cs` 545 行目の `Column(Box()).For(...)`）も、同じく理由を書いて抑える。ビルドの時間がどれだけ増えるかは、実装の PR で測る。
+- **文書:** 規則ごとに `docs/analyzers/XYLEMnnn.md` を置き、何を見るか、何を見ないか、抑え方（`#pragma warning disable`、`[SuppressMessage]`、`.editorconfig` の `dotnet_diagnostic.XYLEMnnn.severity`）を書く。診断の `helpLinkUri` は、この文書（`https://github.com/YUKIKEDA/XylemUI/blob/main/docs/analyzers/XYLEMnnn.md`）を指す。
+- **比べた相手:**
+  - Avalonia 12.1.4: `Avalonia` のパッケージは、生成器・C# の規則・C# の修正・Visual Basic の規則の 4 つのアセンブリを analyzer として入れる（`packages/Avalonia/Avalonia.csproj` 12〜27 行目）。`AvaloniaPropertyAnalyzer` の規則（`src/tools/Avalonia.Analyzers.CSharp/AvaloniaPropertyAnalyzer.cs` 24〜173 行目）は、AVP0001 が Info で既定は off、AVP1000・AVP1001・AVP1002 が Warning で既定は on、残りの 11（AVP1010〜AVP1040）は Warning で既定は off である（off の理由は「TODO: autogenerate property metadata preserved in ref assembly」のコメント）。ほかの 2 つ（`DiagnosticIds.cs` 5〜6 行目の AVA2001・AVA2002）も Warning で既定は on である（`OnPropertyChangedOverrideAnalyzer.cs` 13〜20 行目、`BitmapAnalyzer.cs` 23〜30 行目）。Error の規則は無い。修正は別のアセンブリで、Workspaces を参照する（上の「置き場」）。Avalonia は自分のサンプルにも規則を掛ける。`samples/Directory.Build.props` 14 行目が `build/DevAnalyzers.props` を読み、それが規則と修正のプロジェクトを analyzer として参照する（3〜18 行目）。XylemUI も同じく、自分のプロジェクトに掛ける。読んだ規則の記述子に `helpLinkUri` は無い。
+  - Flutter 3.47.8: アプリのひな形の `analysis_options.yaml` が `package:flutter_lints/flutter.yaml` を読み込み（`packages/flutter_tools/templates/app/analysis_options.yaml.tmpl` 12 行目）、利用者の lint はこの集まりで有効になる。lint の本体は別のリポジトリ（`flutter_lints` のパッケージと Dart の linter）にあり、読んでいない。
+  - GPUI（zed v1.25.3）: 利用者に配る lint は無い（v1.25.3 の `crates` を `declare_lint`・`register_lints`・`dylint` で探して、当たらなかった）。代わりに Rust の型で守る。`ForegroundExecutor` は `not_send: PhantomData<Rc<()>>` を持ち（`crates/gpui/src/executor.rs` 32 行目）、`Send` でないので、ほかのスレッドへ移すとコンパイラが止める。`Subscription` は `#[must_use]` で（`crates/gpui/src/subscription.rs` 149 行目）、捨てると警告になる。C# の型には `Send` に当たるものが無いので、XylemUI は属性と XYLEM100 でそれに代える。
+- **次のラウンドで決めること:** 「1 度だけ読む」意図を、XYLEM110 の抑制ではなく公開の API（`Peek` のような口。今の `Signal<T>.Peek` は internal）で書けるようにするか。行 A1 の次の Grill で決める。
 
 ### 2.2.1 バッチ/トランザクション境界
 
@@ -1234,6 +1274,8 @@ src/
   XylemUI.Platform.MacOS/      # AppKit / CoreText / NSAccessibility（+ P/Invoke で書けない API だけの、native/macos の薄い Obj-C shim）
   XylemUI.Platform.Linux/      # SDL3 / fontconfig / D-Bus / AT-SPI / portal
   XylemUI.Generators/          # Source Generator（Binding 記述子等、§2.4）
+  XylemUI.Analyzers/           # アプリの開発者に配るアナライザー（§2.2「アナライザー」、行 A1）
+  XylemUI.Analyzers.CodeFixes/ # その修正の提案。Workspaces を参照するので別のアセンブリにする
 samples/
   Todo/
   XylemUI.Gallery/             # 全機能のショーケース（§13.3、マイルストーン G1）
@@ -1244,6 +1286,7 @@ tests/
   XylemUI.Desktop.Tests/       # 第5層：アプリの E2E（G1 で XylemUI.Gallery.Tests を足す）
   XylemUI.Platform.Windows.Tests/ # OS の API と本物のウィンドウ
   XylemUI.Primitives.Tests/    # 見た目のない部品
+  XylemUI.Analyzers.Tests/     # アナライザーと修正の提案（コンパイラの API で直に掛ける）
 benchmarks/
   XylemUI.Benchmarks/          # BenchmarkDotNet のマイクロベンチマーク
   E2E/                         # §11.3 のシナリオ（10k Rows、タイピング、Jank、起動時間）
@@ -1256,6 +1299,7 @@ vendor/
 - `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
 - 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
 - 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
+- `XylemUI.Generators`・`XylemUI.Analyzers`・`XylemUI.Analyzers.CodeFixes` は、単独のパッケージにせず、`XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に入れて配る（§2.2「アナライザー」）。
 - Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。K1b で `XylemUI.Primitives` にも見せた。ボタンのキーが、キーから Click を配る `WindowInput.ClickFromKey` と、押下の状態を書く `UiTree.SetPseudoState` を使うためである（オーナーの決定、PR #360）。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
 - アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とし、具体的なパッケージ構成は C0 相当の抽出時に決める。
 
@@ -1519,6 +1563,8 @@ OS側のコールバック（`WndProc`、各種イベントハンドラ等）は
 1. **型の公開範囲**: Core の型は `internal` とし、アプリやワーカーから触れる公開 API は `Signal` / `Element` / `IUiDispatcher` に限る。
 2. **実行時チェック**: 公開 API の入口（`Signal.Set`、`Element` の変更操作等）で `Environment.CurrentManagedThreadId` を UI スレッドの ID と比較し、違えば全ビルドで `InvalidOperationException` を投げる（WPF の `Dispatcher.VerifyAccess` と同じ）。比較は整数1回なので release でも残す。内部のホットパスでは `[Conditional("DEBUG")]` の assert に留める。
 
+入口で `UiThread.VerifyAccess` を呼ぶ公開 API には、属性 `[UiThreadOnly]` も付ける。ワーカーのラムダからその API を呼ぶ所は、コンパイルの時にアナライザーの XYLEM100 が知らせる（§2.2「アナライザー」、行 A1）。
+
 画像デコード・ファイル列挙・フォント処理等の重い処理はワーカースレッド（`Task.Run` 等）で実行し、結果はメッセージとしてUIスレッドへ渡す。画像は、アニメーションの次のフレームもワーカーのスレッドでデコードする（§5.0.4）。アニメーションの画像のネイティブのデコーダは、最初のフレームをデコードするワーカーが作り、その後も一度に 1 つのワーカーだけが使う。UI スレッドは使わない（§5.0.4「デコーダの持ち主と寿命」）。画像のキャッシュと、その上限を変える `ImageCache` は UI スレッドのもので、`ImageCache` はほかのスレッドから呼ぶと上の実行時チェックで `InvalidOperationException` を投げる（§5.0.4「キャッシュ」）。画像のデコードの結果は、フレームワークの中の知らせなので、`UiMessage` でなく UI スレッドの `SynchronizationContext` への `Post` で、内部の作業として渡す（下の「`UiMessage` の分け方」、IM1 の Grill の Q22、Issue #755）。
 
 ```csharp
@@ -1767,7 +1813,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - GPUI: core の要素は `div`・`text`・`canvas` などで（`gpui/src/elements/mod.rs` 1〜27 行目）、ボタンは Zed の `ui` crate にある（`ui/src/components/button/button_like.rs` 751〜900 行目）
   - Avalonia: `StackPanel`・`TextBlock`・`Button` はどれも Avalonia.Controls にある（`Avalonia.Controls/StackPanel.cs` 19 行目、`TextBlock.cs` 19 行目、`Button.cs` 36 行目）。`Button` の見た目はすべてテーマから来て、テーマが無ければ何も描かない（`Avalonia.Controls/Primitives/TemplatedControl.cs` 306〜343 行目、テーマは `Avalonia.Themes.Fluent/Controls/Button.xaml` 13〜95 行目）
   - V1 の `Button` は、押せることと押した状態だけを持つ。Click のハンドラ（`OnClick`）、Pressed の擬似状態（V1c）、ヒット領域を持つ `Box` で、背景も文字の色も付けない。見た目はアプリかテーマ（§13.2）が、メソッドチェーンで付ける。K1 で、フォーカスできることと、キーボードでの Click（Enter と Space）を足す（§7「キーの入力とフォーカス」の「ボタンのキー」）
-- **名前空間 `XylemUI.*` の中から `Text` を呼ぶ:** `XylemUI.Primitives` などの名前空間の中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかり、CS0118 になる。アプリの名前空間（`Counter` など）では起きない。`XylemUI.*` の中のコード（部品・テーマ・テスト）は `Elements.Text(...)` と書く（V1d の実装で、オーナーが決定。`docs/conventions.md`）
+- **名前空間 `XylemUI.*` の中から `Text` を呼ぶ:** `XylemUI.Primitives` などの名前空間の中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかり、CS0118 になる。アプリの名前空間（`Counter` など）では起きない。`XylemUI.*` の中のコード（部品・テーマ・テスト）は `Elements.Text(...)` と書く（V1d の実装で、オーナーが決定。`docs/conventions.md`）。この CS0118 を `Elements.Text(...)` に直す提案は、`XylemUI.Analyzers.CodeFixes` が出す（§2.2「アナライザー」、行 A1）
 - **部品の関数が木を見つける方法:** 部品の関数は引数を取らない（上の `Counter`）。ウィンドウの host（`XylemApp.Run`）が根の関数を呼んでいる間だけ、その木を UI スレッドの「今の木」にする（Scope の「今の Scope」と同じ形、§2.3）。`Elements` の関数は、今の木にノードを作る。今の木が無い所（根の関数の外、ハンドラの中）で作ると `InvalidOperationException` を投げる。後でノードを作る `Show` と `For`（§2.7）は、その時に今の木を立て直す。Flutter は `BuildContext`（`widgets/framework.dart` 2308 行目。中身は `Element` で 3570 行目）を、GPUI は `window` と `cx` を、どの描く関数とハンドラにも引数で渡す（`gpui/src/element.rs` 164〜167 行目）。Avalonia は、木の外で作った部品を、根に付いた親に足したときに付ける（`Avalonia.Base/Visual.cs` 715〜737 行目）。引数で渡す形は §2.13 の書き方を変えるので、採らない
 - **`Element`:** 木とノードの組で、ウィンドウが複数あってもどの木のノードかが分かる。`Foreground` は、文字の葉には自分の色（`SetTextColor`、`TextLeaf.Color`）として、ほかのノードには子孫に渡す色（`SetForeground`、`NodeVisual.Foreground`）として書く。1 万行の文字の葉が `NodeVisual` を持たずに済む（§5.0「文字の色」）。`Border(width, paint)` は、幅を `LayoutStyle.Border`（`ChangeKind.Size`）に、塗りを `SetBorderPaint`（`ChangeKind.Color`）に書く（§2.4 の対応表、§5.0「枠線の幅」）。メソッドチェーンは中間の値を作らず、割り当てない。Signal を受ける多重定義だけが Effect を 1 つ作る
 - **子の渡し方:** `Column` と `Row` は `params ReadOnlySpan<Element>`（C# 13）で受け、配列を作らない。子は並びの順に付く。子を持たない `Column()` は、空の容器になる。別の木の `Element` を子に渡すと `ArgumentException`
