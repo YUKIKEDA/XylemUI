@@ -82,15 +82,52 @@ public sealed class KeyBinding
 /// </remarks>
 public sealed class Keymap
 {
+    private static readonly Lock DefaultsLock = new();
+    private static Action<Keymap>[] _defaults = [];
+    private static Keymap? _default;
+
     private KeyBinding[] _bindings = [];
     private int _nextOrder;
     private Signal<int>? _version;
     private int _versionValue;
 
     /// <summary>
-    /// Gets the keymap of the app's windows.
+    /// Initializes a new instance of the <see cref="Keymap"/> class with the default rows of the packages the app references
+    /// (<see cref="RegisterDefaults"/>), in the order the packages depend on each other. The rows added after them win over them.
     /// </summary>
-    public static Keymap Default { get; } = new();
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    public Keymap()
+    {
+        foreach (Action<Keymap> add in _defaults)
+        {
+            add(this);
+        }
+    }
+
+    /// <summary>
+    /// Gets the keymap of the app's windows. It is made when it is first read, on the UI thread.
+    /// </summary>
+    public static Keymap Default => _default ??= new Keymap();
+
+    /// <summary>
+    /// Registers a method that adds a package's default rows to every keymap made after the call (design §7, "The default keys
+    /// and actions"). The module initializer the source generator writes for an app calls it for each package the app references
+    /// that names such a method with <see cref="DefaultKeyBindingsAttribute"/>; code does not call it. It can be called from any
+    /// thread.
+    /// </summary>
+    /// <param name="add">The method.</param>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static void RegisterDefaults(Action<Keymap> add)
+    {
+        ArgumentNullException.ThrowIfNull(add);
+        lock (DefaultsLock)
+        {
+            if (Array.IndexOf(_defaults, add) < 0)
+            {
+                _defaults = [.. _defaults, add];
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the rows, in the order they were added.

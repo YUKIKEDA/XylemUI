@@ -5,10 +5,12 @@ using NodeHandle = XylemUI.Handle<XylemUI.UiNode>;
 namespace XylemUI.E2E;
 
 // The cost of the keymap on a key's delivery (row KM1b, design §7, "Shortcuts and actions"): the chain of 50 nested boxes of the
-// input scenario (us_per_key_depth_50), each with a key-down handler in both phases, with the focus on its leaf. Three keymaps: no
-// row; 200 rows for other keys, half of them with a condition, so that the key is looked up, matches none, and goes on to the 100
-// key handlers; and the same 200 rows with one more whose key is pressed, whose condition is "Workspace > Editor" and whose action
-// the root handles, so that the key ends at the action's handler and reaches no key handler.
+// input scenario (us_per_key_depth_50), each with a key-down handler in both phases, with the focus on its leaf. Three keymaps: the
+// default rows alone (row KM2a: those of XylemUI.Core and XylemUI.Primitives, which this executable's module initializer
+// registered); 200 more rows for other keys, half of them with a condition, so that the key is looked up, matches none, and goes on
+// to the 100 key handlers; and the same rows with one more whose key is pressed, whose condition is "Workspace > Editor" and whose
+// action the root handles, so that the key ends at the action's handler and reaches no key handler. Before them, the work the
+// default rows add to an app's start: making the first keymap, which reads the text of every default row, and then one more.
 internal static class KeymapCost
 {
     private const int Depth = 50;
@@ -19,14 +21,34 @@ internal static class KeymapCost
     {
         UiThread.Initialize();
         using var report = new Report("keymap");
+
+        // The first keymap of the process, before any tree makes the app's: what an app's start pays for the default rows.
+        long first = Stopwatch.GetTimestamp();
+        var defaults = new Keymap();
+        report.Number("us_first_default_keymap", Stopwatch.GetElapsedTime(first).TotalMicroseconds);
+        report.Number("default_rows", defaults.Bindings.Count);
+        var again = new double[Samples];
+        for (int sample = 0; sample < Samples; sample++)
+        {
+            long start = Stopwatch.GetTimestamp();
+            for (int i = 0; i < 100; i++)
+            {
+                _ = new Keymap();
+            }
+
+            again[sample] = Stopwatch.GetElapsedTime(start).TotalMicroseconds / 100;
+        }
+
+        Array.Sort(again);
+        report.Number("us_per_default_keymap_p50", again[Samples / 2]);
         var plain = new KeyInput(KeyEventKind.Down, Key.A, PhysicalKey.KeyA, default, KeyModifiers.None, false, TimeSpan.Zero);
         var bound = new KeyInput(KeyEventKind.Down, Key.S, PhysicalKey.KeyS, default, KeyModifiers.Control, false, TimeSpan.Zero);
 
         using (var none = new Chain(rows: 0, bind: false))
         {
             (double us, double bytes) = none.Time(plain);
-            report.Number("us_per_key_depth_50_no_rows_p50", us);
-            report.Number("bytes_per_key_no_rows", bytes);
+            report.Number("us_per_key_depth_50_default_rows_p50", us);
+            report.Number("bytes_per_key_default_rows", bytes);
             Check(none, keyHandlers: 2 * Depth, actions: 0);
         }
 

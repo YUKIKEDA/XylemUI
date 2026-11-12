@@ -14,8 +14,6 @@
     <ProjectReference Include="..\..\samples\Todo\Todo.csproj" />
     <!-- The icons scene draws 100 Fluent icons, the only ones the executable reads (row IC1). -->
     <ProjectReference Include="..\..\src\XylemUI.Theme.Fluent\XylemUI.Theme.Fluent.csproj" />
-    <!-- The actions scene makes an action by its name from the table the source generator writes for this executable (row KM1a). -->
-    <ProjectReference Include="..\..\src\XylemUI.Generators\XylemUI.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <!-- The test font, inside the executable, so the measured app needs no file next to it. -->
   <ItemGroup>

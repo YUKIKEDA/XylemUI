@@ -14,7 +14,9 @@ namespace XylemUI.Generators;
 /// <c>XylemUI.ActionAttribute</c>, a call of <c>ActionRegistry.Register</c> with its name and a function that makes it. The table of
 /// a library is a public method the apps that reference it call; an app's table also has a module initializer that calls its own
 /// method and those of the assemblies it references, so that the names are known before the app's first line runs and nothing is
-/// found by reflection.
+/// found by reflection. The module initializer also registers the default key bindings of the assemblies the app references
+/// (<c>XylemUI.DefaultKeyBindingsAttribute</c>, design §7, "The default keys and actions"), an assembly after the assemblies
+/// it references.
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class ActionTableGenerator : IIncrementalGenerator
@@ -22,6 +24,8 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     private const string ActionAttributeName = "XylemUI.ActionAttribute";
     private const string ActionTableAttributeName = "XylemUI.ActionTableAttribute";
     private const string ActionInterfaceName = "XylemUI.IAction";
+    private const string DefaultKeyBindingsAttributeName = "XylemUI.DefaultKeyBindingsAttribute";
+    private const string AddDefaultsName = "AddDefaults";
 
     private static readonly DiagnosticDescriptor NotAnAction = new(
         "XYLEM001",
@@ -74,6 +78,15 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         "'{0}.{1}' can be set and its type is none an argument can be written in (int, long, float, double, bool, string, or an enum), or it is init-only on a class that is no record; the action made by its name keeps the property's default",
         "XylemUI",
         DiagnosticSeverity.Warning,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor NoAddDefaults = new(
+        "XYLEM007",
+        "The class of the default key bindings has no AddDefaults method",
+        "'{0}' is named by [assembly: DefaultKeyBindings] of '{1}' and has no accessible 'public static void AddDefaults(XylemUI.Keymap keymap)'; its default key bindings are not registered",
+        "XylemUI",
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true
     );
 
@@ -220,7 +233,117 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             }
         }
 
-        return new AssemblyInfo(Identifier(compilation.AssemblyName ?? "Assembly"), isApp, new EquatableArray<TableInfo>(tables.ToImmutable()));
+        return new AssemblyInfo(
+            Identifier(compilation.AssemblyName ?? "Assembly"),
+            isApp,
+            new EquatableArray<TableInfo>(tables.ToImmutable()),
+            new EquatableArray<DefaultsInfo>(isApp ? ReadDefaults(compilation) : ImmutableArray<DefaultsInfo>.Empty)
+        );
+    }
+
+    // The classes that add default key bindings, of the assemblies the app references and then of the app itself, an assembly
+    // after the assemblies it references: the rows of a package that builds on another are added later, and win at the same depth.
+    // Among assemblies that do not reference each other, the order is that of their names.
+    private static ImmutableArray<DefaultsInfo> ReadDefaults(Compilation compilation)
+    {
+        var found = new List<(IAssemblySymbol Assembly, DefaultsInfo Info)>();
+        foreach (IAssemblySymbol reference in compilation.SourceModule.ReferencedAssemblySymbols)
+        {
+            AddDefaults(found, reference, compilation);
+        }
+
+        var ordered = ImmutableArray.CreateBuilder<DefaultsInfo>();
+        var remaining = found
+            .OrderBy(static f => f.Assembly.Name, StringComparer.Ordinal)
+            .ThenBy(static f => f.Info.TypeName, StringComparer.Ordinal)
+            .ToList();
+        var reach = new Dictionary<IAssemblySymbol, HashSet<IAssemblySymbol>>(SymbolEqualityComparer.Default);
+        while (remaining.Count > 0)
+        {
+            int next = 0;
+            for (int i = 0; i < remaining.Count; i++)
+            {
+                IAssemblySymbol candidate = remaining[i].Assembly;
+                if (
+                    !remaining.Any(other =>
+                        !SymbolEqualityComparer.Default.Equals(other.Assembly, candidate) && Reaches(candidate, other.Assembly, reach)
+                    )
+                )
+                {
+                    next = i;
+                    break;
+                }
+            }
+
+            ordered.Add(remaining[next].Info);
+            remaining.RemoveAt(next);
+        }
+
+        var own = new List<(IAssemblySymbol Assembly, DefaultsInfo Info)>();
+        AddDefaults(own, compilation.Assembly, compilation);
+        ordered.AddRange(own.Select(static o => o.Info));
+        return ordered.ToImmutable();
+    }
+
+    private static void AddDefaults(List<(IAssemblySymbol Assembly, DefaultsInfo Info)> found, IAssemblySymbol assembly, Compilation compilation)
+    {
+        foreach (AttributeData attribute in assembly.GetAttributes())
+        {
+            if (
+                attribute.AttributeClass?.ToDisplayString() != DefaultKeyBindingsAttributeName
+                || attribute.ConstructorArguments.Length != 1
+                || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol type
+            )
+            {
+                continue;
+            }
+
+            // The method the module initializer names: static, with a keymap as its one parameter, and one the app's code can
+            // call (public, or internal in the app itself and in an assembly that shows the app its internals).
+            bool callable = type.GetMembers(AddDefaultsName)
+                .OfType<IMethodSymbol>()
+                .Any(m =>
+                    m.IsStatic
+                    && m.ReturnsVoid
+                    && m.Parameters.Length == 1
+                    && m.Parameters[0].Type.ToDisplayString() == "XylemUI.Keymap"
+                    && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
+                );
+            found.Add(
+                (
+                    assembly,
+                    new DefaultsInfo(type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), type.ToDisplayString(), assembly.Name, callable)
+                )
+            );
+        }
+    }
+
+    // Whether an assembly references another, directly or through the assemblies it references.
+    private static bool Reaches(IAssemblySymbol from, IAssemblySymbol to, Dictionary<IAssemblySymbol, HashSet<IAssemblySymbol>> reach)
+    {
+        if (!reach.TryGetValue(from, out HashSet<IAssemblySymbol>? seen))
+        {
+            seen = new HashSet<IAssemblySymbol>(SymbolEqualityComparer.Default);
+            var stack = new Stack<IAssemblySymbol>();
+            stack.Push(from);
+            while (stack.Count > 0)
+            {
+                foreach (IModuleSymbol module in stack.Pop().Modules)
+                {
+                    foreach (IAssemblySymbol reference in module.ReferencedAssemblySymbols)
+                    {
+                        if (seen.Add(reference))
+                        {
+                            stack.Push(reference);
+                        }
+                    }
+                }
+            }
+
+            reach.Add(from, seen);
+        }
+
+        return seen.Contains(to);
     }
 
     private static void Write(SourceProductionContext output, ImmutableArray<ActionInfo> actions, AssemblyInfo assembly)
@@ -287,8 +410,17 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             valid.Add(action);
         }
 
-        // A library with no action has no table. An app has one even with none of its own: it calls the tables it references.
-        if (valid.Count == 0 && !(assembly.IsApp && assembly.Tables.Count > 0))
+        foreach (DefaultsInfo defaults in assembly.Defaults)
+        {
+            if (!defaults.Callable)
+            {
+                output.ReportDiagnostic(Diagnostic.Create(NoAddDefaults, Location.None, defaults.DisplayName, defaults.Assembly));
+            }
+        }
+
+        // A library with no action has no table. An app has one even with none of its own: it calls the tables it references and
+        // registers their default key bindings.
+        if (valid.Count == 0 && !(assembly.IsApp && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0)))
         {
             return;
         }
@@ -356,6 +488,15 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             if (valid.Count > 0)
             {
                 _ = text.Append("            Register();\n");
+            }
+
+            // After the actions: a row may name one. In the order ReadDefaults gave, which the rows' precedence follows.
+            foreach (DefaultsInfo defaults in assembly.Defaults)
+            {
+                if (defaults.Callable)
+                {
+                    _ = text.Append("            global::XylemUI.Keymap.RegisterDefaults(").Append(defaults.TypeName).Append(".AddDefaults);\n");
+                }
             }
 
             _ = text.Append("        }\n");
@@ -470,5 +611,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
     private sealed record TableInfo(string TypeName, string Assembly, EquatableArray<string> Names);
 
-    private sealed record AssemblyInfo(string Identifier, bool IsApp, EquatableArray<TableInfo> Tables);
+    private sealed record DefaultsInfo(string TypeName, string DisplayName, string Assembly, bool Callable);
+
+    private sealed record AssemblyInfo(string Identifier, bool IsApp, EquatableArray<TableInfo> Tables, EquatableArray<DefaultsInfo> Defaults);
 }

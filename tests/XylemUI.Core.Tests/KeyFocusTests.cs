@@ -145,19 +145,24 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// Tab does not move with Control, Alt, or a Windows key, nor when a handler stopped it, nor when nothing can take the focus; then
-    /// the key is not handled and goes to the OS.
+    /// Tab does not move with Control, Alt, or a Windows key, nor when its row is taken away, nor when nothing can take the focus;
+    /// then the key goes to the key handlers, and to the OS when none stops it. A key handler does not stop a Tab that has its row:
+    /// the keymap is tried first (design §7, "The default keys and actions").
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Two focusable boxes, the first focused; a root capture handler that stops the keys while a flag is set. A second scene with
-    ///   no focusable node.
+    /// - Two focusable boxes, the first focused; a root capture handler that counts the keys and stops them while a flag is set. A
+    ///   second scene with no focusable node.
     ///
     /// Steps:
-    /// - Send Control+Tab, Alt+Tab, Meta+Tab, Control+Shift+Tab; set the flag and send Tab. In the second scene, send Tab.
+    /// - Send Control+Tab, Alt+Tab, Meta+Tab, Control+Shift+Tab; set the flag and send Tab. Give the tree a keymap with one more
+    ///   row, Tab with no action, and send Tab; clear the flag and send Tab. In the second scene, send Tab.
     ///
     /// Expected:
-    /// - The focus stays on the first box. The four with a modifier and the second scene's Tab are not handled; the stopped Tab is.
+    /// - The four with a modifier are not handled, reach the handler, and leave the focus on the first box. The Tab with the flag
+    ///   set moves the focus to the second box and does not reach the handler. With the row that takes Tab away, the focus stays on
+    ///   the second box: the first Tab reaches the handler, which stops it, and the second is not handled. The second scene's Tab
+    ///   is not handled.
     /// </remarks>
     [Fact]
     public void Tab_WithModifiersStoppedOrNoTarget_DoesNotMove() =>
@@ -165,14 +170,16 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
         {
             var scene = new Scene();
             NodeHandle first = scene.Focusable(scene.Root, 0, 0, 50, 50);
-            _ = scene.Focusable(scene.Root, 60, 0, 50, 50);
+            NodeHandle second = scene.Focusable(scene.Root, 60, 0, 50, 50);
             bool stop = false;
+            int seen = 0;
             scene.Tree.AddKeyHandler(
                 scene.Root,
                 KeyEventKind.Down,
                 EventPhase.Capture,
                 (in KeyEvent e) =>
                 {
+                    seen++;
                     if (stop)
                     {
                         e.StopPropagation();
@@ -186,9 +193,17 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
             Assert.False(scene.Key(Key.Tab, KeyModifiers.Alt));
             Assert.False(scene.Key(Key.Tab, KeyModifiers.Meta));
             Assert.False(scene.Key(Key.Tab, KeyModifiers.Control | KeyModifiers.Shift));
+            Assert.Equal((first, 4), (scene.Tree.Focus.Focused, seen));
             stop = true;
             Assert.True(scene.Tab());
-            Assert.Equal(first, scene.Tree.Focus.Focused);
+            Assert.Equal((second, 4), (scene.Tree.Focus.Focused, seen));
+
+            scene.Tree.Keymap = new Keymap();
+            _ = scene.Tree.Keymap.Bind("tab", null);
+            Assert.True(scene.Tab());
+            stop = false;
+            Assert.False(scene.Tab());
+            Assert.Equal((second, 6), (scene.Tree.Focus.Focused, seen));
 
             var empty = new Scene();
             _ = empty.Place(empty.Root, 0, 0, 50, 50);
@@ -637,8 +652,8 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
     ///   twice (to the first box and the second), and run the frame asked for.
     ///
     /// Expected:
-    /// - 0 bytes in every window; the handlers counted six calls each iteration: the down and the up of A and the first Tab, which
-    ///   starts at the innermost box, in two phases each.
+    /// - 0 bytes in every window; the handlers counted four calls each iteration: the down and the up of A, in two phases each.
+    ///   The keymap takes the Tabs before the key handlers.
     /// </remarks>
     [Fact]
     public void SteadyState_KeysTabAndFocusFrames_AllocateNothing() =>
@@ -688,7 +703,7 @@ public sealed partial class KeyFocusTests(UiThreadFixture ui)
             int runs = PerformanceAssert.DoesNotAllocate(1_000, Iteration);
 
             // The helper runs 100 unmeasured iterations before the 1,000, and a window again when a background GC overlapped it.
-            Assert.Equal(runs * 6, calls);
+            Assert.Equal(runs * 4, calls);
         });
 
     // The focusable a, b, c, d of the order test in a started scene, with nothing focused.

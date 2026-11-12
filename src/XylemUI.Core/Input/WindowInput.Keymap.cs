@@ -124,8 +124,10 @@ internal sealed partial class WindowInput
             return;
         }
 
-        CollectContexts(_tree.Focus.KeyTarget);
-        ReadOnlySpan<KeyContext> contexts = _contexts.AsSpan(0, _contextCount);
+        // The contexts are collected when the first row has the keys: a key no row has, as most are with the default rows
+        // alone, does not walk the route.
+        bool collected = false;
+        ReadOnlySpan<KeyContext> contexts = default;
         foreach (KeyBinding row in rows)
         {
             Keystroke[] steps = row.Steps;
@@ -143,6 +145,13 @@ internal sealed partial class WindowInput
             if (!same)
             {
                 continue;
+            }
+
+            if (!collected)
+            {
+                collected = true;
+                CollectContexts(_tree.Focus.KeyTarget);
+                contexts = _contexts.AsSpan(0, _contextCount);
             }
 
             // A row with no condition counts as the deepest context there is (GPUI), so that among such rows and the rows

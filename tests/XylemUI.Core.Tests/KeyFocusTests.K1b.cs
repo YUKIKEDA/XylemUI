@@ -176,21 +176,23 @@ public sealed partial class KeyFocusTests
         });
 
     /// <summary>
-    /// A scroll container on the key's route takes the keys no handler stopped and that have no modifier: the arrows by 50, the page
-    /// keys by 0.8 of the viewport, Home and End to the ends; a key that does not move it, a key with a modifier, and a key a handler
-    /// stopped go on.
+    /// A scroll container on the key's route takes the scrolling keys with no modifier, through the rows of the default keymap
+    /// (design §7, "The default keys and actions"): the arrows by 50, the page keys by 0.8 of the viewport, Home and End to the
+    /// ends. A key that does not move it and a key with a modifier go on to the key handlers; a key that moves it does not reach
+    /// them; and a row that takes the key away where a context holds leaves the key to the key handlers there.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A container (0, 0, 200 x 100) whose height scrolls holds a content box 1,000 high with a focusable leaf at its top; the leaf
-    ///   has the focus, and a bubble down handler on the container itself, which runs before its scrolling, stops the keys while a flag is set.
+    ///   has the focus, and a bubble down handler on the container counts the keys and stops them while a flag is set.
     ///
     /// Steps:
-    /// - Send Down, a repeated Down, Page Down, End, Home, Up (at 0), Shift+Down, and, with the flag set, Down.
+    /// - Send Down, a repeated Down, Page Down, End, Home, Up (at 0), Shift+Down, and, with the flag set, Down. Then give the tree
+    ///   a keymap with one more row, Down with no action in the context <c>List</c>, give the leaf that context, and send Down.
     ///
     /// Expected:
-    /// - Positions 50, 100, 180, 900, 0, 0, 0, 0; the keys are handled, but for Up at 0 and Shift+Down; the stopped Down is handled and
-    ///   does not move.
+    /// - Positions 50, 100, 180, 900, 0, 0, 0, 50, 50; the keys are handled, but for Up at 0 and Shift+Down. The handler saw Up at
+    ///   0 and Shift+Down, not the Down with the flag set, which scrolled; it saw and stopped the last Down, which did not scroll.
     /// </remarks>
     [Fact]
     public void KeyScroll_ArrowsPagesAndEnds_MoveTheContainer() =>
@@ -200,12 +202,14 @@ public sealed partial class KeyFocusTests
             (NodeHandle container, NodeHandle content) = scene.Scroller(scene.Root, 0, 0, 200, 100, 1_000);
             NodeHandle leaf = scene.Focusable(content, 0, 0, 20, 20);
             bool stop = false;
+            int seen = 0;
             scene.Tree.AddKeyHandler(
                 container,
                 KeyEventKind.Down,
                 EventPhase.Bubble,
                 (in KeyEvent e) =>
                 {
+                    seen++;
                     if (stop)
                     {
                         e.StopPropagation();
@@ -229,10 +233,21 @@ public sealed partial class KeyFocusTests
             Send(Key.Home);
             Send(Key.Up);
             Send(Key.Down, KeyModifiers.Shift);
+            Assert.Equal(2, seen);
             stop = true;
             Send(Key.Down);
+            Assert.Equal(2, seen);
 
-            Assert.Equal([(true, 50f), (true, 100f), (true, 180f), (true, 900f), (true, 0f), (false, 0f), (false, 0f), (true, 0f)], results);
+            scene.Tree.Keymap = new Keymap();
+            _ = scene.Tree.Keymap.Bind("down", null, "List");
+            scene.Tree.SetKeyContext(leaf, "List");
+            Send(Key.Down);
+            Assert.Equal(3, seen);
+
+            Assert.Equal(
+                [(true, 50f), (true, 100f), (true, 180f), (true, 900f), (true, 0f), (false, 0f), (false, 0f), (true, 50f), (true, 50f)],
+                results
+            );
         });
 
     /// <summary>
