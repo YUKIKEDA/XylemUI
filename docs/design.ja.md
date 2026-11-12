@@ -4862,7 +4862,18 @@ internal sealed class FocusManager
 - **既定の行を足す所:** 各パッケージ（Core、Primitives）が、自分の既定の行を足すメソッドを公開する。Source Generator が、アプリのモジュール初期化子に、動作の表（上の「登録」）と同じ仕組みで、参照するパッケージのそのメソッドを呼ぶコードを書く。既定の行は、アプリと利用者の行より前に入るので、後から足した行が勝つ。パッケージの間は、依存の順（Core、Primitives、テーマ）に呼ぶ。名前の順には頼らない。アプリが手で呼ぶ形は、呼び忘れが実行時まで見つからないので採らない。`XylemUI.Desktop` は `XylemUI.Primitives` を参照しないので、起動のコードから直には呼べない。
 - **キーマップが取った Down のキーの Up は、キーのハンドラへ届く（行 KM2a でオーナーが決定、Issue #814）。** 比べた 3 つとも、Up は割り当てと無関係にハンドラへ届く。GPUI は、キーストロークを持たないイベントを、照合を通さずにキーのリスナーへ進める（`crates/gpui/src/window.rs` 6061〜6071 行目）。Avalonia が `KeyBindings` を引くのは `KeyDown` の時だけである（`Avalonia.Base/Input/KeyboardDevice.cs` 262 行目）。Flutter の `SingleActivator.accepts` は `KeyDownEvent` と `KeyRepeatEvent` だけを受ける（`packages/flutter/lib/src/widgets/shortcuts.dart` 576〜581 行目）。
 - **KM2a の形（Issue #814）:** Core の動作は `FocusActions.Next`・`Previous`、`PopupActions.Dismiss`、`ScrollActions.LineUp` などの型で、どれも `CoreAction` を継ぐ。`OnAction<ScrollActions.LineDown>` で受けたノードが先に受け、受けないか `Propagate()` したら木が受ける。木が受ける動作は、`CanDispatch` では常に「実行できる」と答える（動くかどうかは聞かない）。既定の行を足すメソッドは、パッケージが `[assembly: DefaultKeyBindings(typeof(X))]` で名指しするクラスの `public static void AddDefaults(Keymap keymap)` で、Core は `CoreKeyBindings`、Primitives は `PrimitiveKeyBindings` である。Source Generator は、アプリのモジュール初期化子に、動作の表の登録の後、`Keymap.RegisterDefaults(X.AddDefaults)` を依存の順に書く（参照し合わないアセンブリの間は名前の順、アプリ自身のものは最後。メソッドが無いか呼べなければエラー XYLEM007）。登録の後に作るキーマップ（`new Keymap()` と `Keymap.Default`）は、どれも既定の行から始まる。`Keymap.Default` は、最初に読んだ時に作る。
-- **KM2b までの部品（Issue #814）:** 文字の欄・メニュー・Select・メニューバーは、KM2b までキーのハンドラでキーを受ける。キーマップが先になったので、部品は自分の文脈（`TextField`、複数行なら `multiline` も、`Menu`、`Select`、`SelectList`、`MenuBar`）を名乗り、自分が受けるキーについて、Core の既定の行を外す行（動作が `null`）を Primitives の既定として足す。外した行に合ったキーは、キーのハンドラへ進む。メニューバーの `escape` は外さない。バーから開いたメニューの中の Esc は、Core の行がメニューを閉じる。ポップアップが無ければ `popup::Dismiss` は受けられず、キーはバーの項目のハンドラへ進み、バーを抜ける。Select の一覧の Tab は、一覧を閉じた後、`focus::Next`・`focus::Previous` を配って、フォーカスを先へ進める。この間、メニューの中の左右の矢印は、メニューが受けなくても、ページを横にスクロールしない（K1 では、受けなかった矢印が外側のスクロールの箱へ進んだ）。KM2b で動作にすると、受けなかった動作の次に Core の行が試されるので、元に戻る。
+- **部品のキー（行 KM2b、Issue #816）:** 文字の欄・メニュー・Select・メニューバー・選択の領域は、自分のノードに部品の文脈（`TextField`、複数行なら `multiline` も、`Menu`、`Select`、`SelectList`、`MenuBar`、`SelectionArea`）を付け、下の表の行（`PrimitiveKeyBindings`）が頼む動作を、ノードの動作のハンドラで受ける。部品が受けられない動作（読み取り専用の欄の編集、1 行の欄の上下、`OnSubmit` の無い欄の `text::Submit`）は受けず、キーの次の行が試される。最後は Core の行である。動作の型は `TextActions`・`MenuActions`・`SelectActions`・`MenuBarActions` の中にあり、アプリは部品の文脈の行で、キーを別の動作に割り当てるか外す。1 つの動作にキーが 2 つある行（切り取り・コピー・貼り付け・やり直し）は、メニューに出すキー（`ctrl-x`・`ctrl-c`・`ctrl-v`・`ctrl-y`）を後に足す。`KeyBindingFor` は、後から足した行を返すためである。
+- **メニューが使わない矢印は、ページをスクロールしない（KM2b の前にオーナーが決定、Issue #816）。** メニューのパネルは、`menu::SelectPrevious`・`SelectNext`・`SelectFirst`・`SelectLast` を、フォーカスが動かなくても受ける。`menu::OpenSubmenu`（項目にサブメニューが無い）と `menu::CloseSubmenu`（サブメニューでない）も、何もせずに受ける。メニューバーから開いたメニューだけは受けず、次の行（`MenuBar` の `menubar::Next`・`Previous`）が隣のメニューを開く。Avalonia は、メニューが使わない矢印を処理済みにしないが（`Avalonia.Controls/Platform/DefaultMenuInteractionHandler.cs` 445〜475・512〜538 行目）、ポップアップが別の最上位の木（`PopupRoot` は `WindowBase`、`Primitives/PopupRoot.cs` 19 行目）なので、下のページには届かない。XylemUI は、ポップアップのキーと動作をアンカーの祖先へ流す（§7.3）ので、メニューの側で受けて止める。K1 では、メニューが受けなかった矢印は外側のスクロールの箱へ進んでいた。
+- **部品の文脈とアプリの文脈（同じ決定）:** ノードは、部品の文脈（`PartKeyContext`、部品が付ける）と、アプリの文脈（`KeyContext`）を別に持つ。条件には、2 つを合わせた 1 つの文脈として見せる（名前は両方、同じキーの値はアプリのもの）。アプリが欄に `KeyContext("Search")` を付けると、ノードの文脈は `TextField Search` になり、欄の行は効いたままである。アプリがもう一度呼ぶと、アプリの分だけが置き換わる。GPUI は、要素に文脈が 1 つで、設定すると置き換わる（`crates/gpui/src/elements/div.rs` 830〜836 行目）。XylemUI は、部品が返した要素にアプリが続けて呼ぶ形なので、置き換えると、部品の行が黙って効かなくなる（PR #815 のレビュー）。
+- **`new Keymap()` は、どのスレッドでも作れる（同じ決定）。** 既定の行を足す間は、UI スレッドの検査を通さない。作っている途中のキーマップは、まだどの木にも渡っていない。作った後の `Bind`・`Remove` は UI スレッドだけである。
+- **既定の行が 1 つも登録されていないアプリは、起動で止める（同じ決定）。** `XylemApp.Run` と `HeadlessApp.StartAsync` は、`Keymap.RegisterDefaults` が 1 度も呼ばれていなければ、`InvalidOperationException` を投げる。文に、Generator を参照するか `Keymap.RegisterDefaults` を呼ぶ、と書く。黙って動くと、Tab も Esc も部品のキーも効かないアプリが、気づかれずに出荷される。Flutter は既定の `Shortcuts` を `WidgetsApp` が組み込むので、この問題が無い。GPUI は、キーマップが無くても何も知らせない。Core だけが自分の行を組み込む形は、部品の行だけが抜けて、欄の矢印がページをスクロールする半端な状態になるので、採らない。既定の行を使わないアプリは、何も足さないメソッドを登録する。
+- **表から変えた所（行 KM2b）:**
+  - `select::Open` を 2 つに分けた。Alt+上下と F4 は、箱でも一覧でも開閉する（`select::Toggle`）。Enter と Space は、閉じた箱を開くだけである（`select::Open`）。一覧の中の Enter と Space は `menu::Confirm` で、フォーカスした行が無くて受けられなかったとき、次の行の `select::Open` が一覧を閉じてはならない。
+  - 一覧の Tab と Shift+Tab は、値を変えずに一覧を閉じ、箱からフォーカスを先へ進める（今の動き）。名前を `select::CloseAndFocusNext`・`CloseAndFocusPrevious` にした。表の `select::ConfirmAndClose` は、動きと合っていなかった。
+  - メニューバーの上の矢印は、最後の項目にフォーカスしてメニューを開く（今の動き）。`menubar::Open` に引数 `Last` を足し、`up` の行は `Last = true` で頼む。
+  - アプリケーションキー（`menu`）は、行にしない。Windows は、このキーの Up でコンテキストメニューを出す（`WM_CONTEXTMENU`）。キーマップの行は Down のキーなので、行にすると、開く時点が Down に変わる。Up は、部品のキーのハンドラが受けて、同じメニューを開く。Shift+F10 は Down なので、`Window` の行 `shift-f10` → `menu::OpenContextMenu` にした。
+  - 選択の領域（`SelectionArea`）の Ctrl+A と Ctrl+C・Ctrl+Insert も、文脈 `SelectionArea` の行にした。動作は、欄と同じ `text::SelectAll` と `text::Copy` を使う。表には無かったが、部品がキーのハンドラで受けるキーを残さないためである。
+  - メニューとメニューバーのアクセスキー（文字）と、メニューバーの Esc は、キーのハンドラのままである。文字は行にできず、Esc は、ポップアップが無ければ `popup::Dismiss` が受けられずにバーのハンドラへ進む。
 - **既定の行の表は OS ごと。** 下は Windows の表である。
 
 | 文脈 | キー | 動作 |
@@ -4882,11 +4893,12 @@ internal sealed class FocusManager
 | `TextField && !multiline` | `enter` | `text::Submit`（`OnSubmit` が無ければ受けない） |
 | `Menu` | `up` / `down` / `home` / `end` | `menu::SelectPrevious` / `SelectNext` / `SelectFirst` / `SelectLast` |
 | `Menu` | `enter`・`space` / `right` / `left` | `menu::Confirm` / `menu::OpenSubmenu` / `menu::CloseSubmenu` |
-| `Window` | `shift-f10`・`menu` | `menu::OpenContextMenu` |
-| `Select` | `alt-up`・`alt-down`・`f4`・`enter`・`space` | `select::Open` |
+| `Window` | `shift-f10` | `menu::OpenContextMenu`（アプリケーションキーは、Up でキーのハンドラが開く） |
+| `Select` | `alt-up`・`alt-down`・`f4` / `enter`・`space` | `select::Toggle`（一覧の中でも効く） / `select::Open` |
 | `Select` | `up` / `down` | `select::Previous` / `select::Next`（閉じたまま値を変える） |
-| `SelectList` | `up` / `down` / `home` / `end` / `pageup` / `pagedown` / `enter`・`space` / `tab`・`shift-tab` | `menu::SelectPrevious` / `SelectNext` / `SelectFirst` / `SelectLast` / `select::PageUp` / `select::PageDown` / `menu::Confirm` / `select::ConfirmAndClose` |
-| `MenuBar` | `left` / `right` / `down`・`up`・`enter`・`space` | `menubar::Previous` / `menubar::Next` / `menubar::Open` |
+| `SelectList` | `up` / `down` / `home` / `end` / `pageup` / `pagedown` / `enter`・`space` / `tab`・`shift-tab` | `menu::SelectPrevious` / `SelectNext` / `SelectFirst` / `SelectLast` / `select::PageUp` / `select::PageDown` / `menu::Confirm` / `select::CloseAndFocusNext`・`CloseAndFocusPrevious` |
+| `MenuBar` | `left` / `right` / `down`・`enter`・`space` / `up` | `menubar::Previous` / `menubar::Next` / `menubar::Open` / `menubar::Open`（`Last = true`） |
+| `SelectionArea` | `ctrl-a` / `ctrl-c`・`ctrl-insert` | `text::SelectAll` / `text::Copy` |
 
 - 表のキーと動きは、今のコードのもの（§4.9 の欄のキーの表、§13.1 の Menu・Select・MenuBar のキー、上のスクロールのキー）と同じで、変えない。zed と同じ意味のメニューの動作は、同じ綴りにした（`menu::SelectNext`・`SelectPrevious`・`SelectFirst`・`SelectLast`・`Confirm`、`assets/keymaps/default-windows.json` 5〜21 行目）。
 - Alt 単独と F10（メニューバーを選ぶ）、Alt+文字（アクセスキー）は、キーマップの後の既定のまま残す（上の「Alt とメニューのキー」）。Alt 単独は、押下と解放の組で決まるので、動作にしない。

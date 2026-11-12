@@ -66,8 +66,10 @@
   <!--
     The source generators run on every project, as they do in an app that references the XylemUI.Core package (which carries them
     under analyzers/dotnet/cs): an executable gets the module initializer that registers the actions and the default key bindings
-    of what it references (design §7, "The default keys and actions"). XylemUI.Core references the generator project itself, to
-    pack it; the projects XylemUI.Core is built on declare no action.
+    of what it references (design §7, "The default keys and actions"). The condition leaves out the generator's own projects,
+    XylemUI.Core, which references the generator project itself to pack it, and the projects XylemUI.Core references
+    (XylemUI.Text, XylemUI.Imaging): they are built before the generator's consumer and declare no action. A new project that
+    XylemUI.Core references is added to the condition.
   -->
   <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.StartsWith('XylemUI.Generators')) And '$(MSBuildProjectName)' != 'XylemUI.Core' And '$(MSBuildProjectName)' != 'XylemUI.Text' And '$(MSBuildProjectName)' != 'XylemUI.Imaging'">
     <ProjectReference
