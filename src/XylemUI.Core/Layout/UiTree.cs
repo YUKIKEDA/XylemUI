@@ -1833,12 +1833,6 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
-
-        // The subtree is in the order of Tab now, and a route that was read from inside it goes on through the parent: a menu's
-        // item made while its menu is open finds its menu (PR #821's review). A subtree no reader read from changes no route
-        // (row KM3). So in InsertAfter.
-        Actions.RouteChanged(child);
-        Actions.OrderChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (p.LastChild.IsNone)
         {
@@ -1865,6 +1859,12 @@ internal sealed class UiTree
         }
 
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+
+        // The subtree is in the order of Tab now, and a route that was read from inside it goes on through the parent: a menu's
+        // item made while its menu is open finds its menu (PR #821's review). A subtree no reader read from changes no route
+        // (row KM3). The readers are told last, when the links are whole: one that runs in the middle walks a tree whose
+        // parent does not list the child yet. So in InsertAfter, DetachChildren, and Detach.
+        Actions.LinkChanged(child);
     }
 
     /// <summary>
@@ -1887,8 +1887,6 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
-        Actions.RouteChanged(child);
-        Actions.OrderChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (previous.IsNone)
         {
@@ -1929,6 +1927,7 @@ internal sealed class UiTree
         }
 
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        Actions.LinkChanged(child);
     }
 
     /// <summary>
@@ -1986,15 +1985,19 @@ internal sealed class UiTree
     internal void DetachChildren(NodeHandle parent)
     {
         NodeHandle child = Nodes.GetRef(parent).FirstChild;
+
+        // A child that a reader's route passes, or else the first child: the one the readers are told of (LinkChanged).
+        NodeHandle told = default;
         while (!child.IsNone)
         {
             ref UiNode c = ref Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
             c.Parent = default;
+            if (told.IsNone || c.RouteWatched)
+            {
+                told = child;
+            }
 
-            // The route of an action from a focused node of the subtree ends here now, and the order of Tab is without it.
-            Actions.RouteChanged(child);
-            Actions.OrderChanged();
             c.NextSibling = default;
             child = next;
         }
@@ -2005,6 +2008,12 @@ internal sealed class UiTree
         p.Layout.OutOfFlowChildren = 0;
         p.Versions.Children++;
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+
+        // The route of an action from a focused node of a subtree ends at its child now, and the order of Tab is without them.
+        if (!told.IsNone)
+        {
+            Actions.LinkChanged(told);
+        }
     }
 
     /// <summary>
@@ -2441,9 +2450,8 @@ internal sealed class UiTree
 
         ref UiNode n = ref Nodes.GetRef(node);
         n.Parent = default;
-        Actions.RouteChanged(node);
-        Actions.OrderChanged();
         n.NextSibling = default;
+        Actions.LinkChanged(node);
     }
 
     // Frees a node and its subtree, children first. The links are read before each slot is freed (design §2.5).

@@ -247,6 +247,26 @@ internal sealed class ActionDispatch
     }
 
     /// <summary>
+    /// Records that a node was put under a parent or taken out of one: a change on the routes through the node, and a change of
+    /// the nodes that can take the focus. A reader of both runs once. The tree calls it when its links are whole again, since
+    /// the readers may run here.
+    /// </summary>
+    /// <param name="node">The node whose link to its parent changed.</param>
+    public void LinkChanged(NodeHandle node)
+    {
+        ReactiveRuntime.EnterBatch();
+        try
+        {
+            RouteChanged(node);
+            OrderChanged();
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
+        }
+    }
+
+    /// <summary>
     /// Records a change of the nodes that can take the focus: one was put in or taken out, hidden, disabled, or made focusable.
     /// </summary>
     public void OrderChanged()

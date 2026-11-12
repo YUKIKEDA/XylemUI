@@ -30,6 +30,13 @@ namespace XylemUI.E2E;
 //   readers_N_can                   the readers whose action can be dispatched when the frames start; every reader has keys, or
 //                                   the scene throws.
 // The scene throws when a frame did not move the list, and when no frame made a row.
+//
+// Two more pairs of runs have rows that take the focus (PR #831, the review):
+//   rows_N_*   the focus is on a row of the list, and each frame moves it to the row two below the top after the scroll: the
+//              route of the readers passes a row that the list attaches and detaches. The readers find no keys here (the
+//              rows have no context), which the scene does not check.
+//   order_N_*  the focus stays on the field, and the readers (0 and 1) read whether focus::Next can be dispatched, which
+//              depends on the order of the focus and so on every row attached or detached.
 internal static class ReaderCost
 {
     private const int Rows = 10_000;
@@ -43,13 +50,32 @@ internal static class ReaderCost
         using var report = new Report("readers");
         report.Number("rows", Rows);
         report.Number("frames", Frames);
-        foreach (int readers in new[] { 0, 20 })
+        foreach ((string name, int readers, Kind kind) in Runs)
         {
-            using var scene = new ReaderScene(readers);
-            scene.Measure(report, $"readers_{readers}_");
+            using var scene = new ReaderScene(readers, kind);
+            scene.Measure(report, $"{name}_{readers}_");
         }
 
         return 0;
+    }
+
+    private static readonly (string Name, int Readers, Kind Kind)[] Runs =
+    [
+        ("readers", 0, Kind.Field),
+        ("readers", 20, Kind.Field),
+        ("rows", 0, Kind.Rows),
+        ("rows", 20, Kind.Rows),
+        ("order", 0, Kind.Order),
+        ("order", 1, Kind.Order),
+    ];
+
+    // Where the focus is and what the readers read: the field and its actions; a row of the list, moved each frame, and the
+    // same actions; the field, and whether the focus can move to the next node.
+    private enum Kind
+    {
+        Field,
+        Rows,
+        Order,
     }
 
     private sealed class ReaderScene : IDisposable
@@ -84,6 +110,8 @@ internal static class ReaderCost
         private readonly VirtualListState _list = new();
         private readonly List<Computed<bool>> _can = [];
         private readonly List<Computed<KeyBinding?>> _keys = [];
+        private readonly Element[] _rowElements = new Element[Rows];
+        private readonly Kind _kind;
         private readonly UiTree _tree;
         private readonly WindowFrames _frames;
         private readonly ScopeHandle _scope;
@@ -96,8 +124,9 @@ internal static class ReaderCost
         // Counts the answers the readers' effects got that were true or had keys, so that the reads are used.
         private long _answers;
 
-        public ReaderScene(int readers)
+        public ReaderScene(int readers, Kind kind)
         {
+            _kind = kind;
             _tree = new UiTree(new TextContext(_fonts));
             NodeHandle root = _tree.CreateNode(new LayoutStyle());
             _frames = new WindowFrames(_tree, root, new NoTarget(), _atlas, new NoScheduler(), default);
@@ -112,7 +141,7 @@ internal static class ReaderCost
                     var buttons = new Element[readers];
                     for (int i = 0; i < buttons.Length; i++)
                     {
-                        buttons[i] = Reader(Actions[i % Actions.Length]);
+                        buttons[i] = Reader(kind == Kind.Order ? new FocusActions.Next() : Actions[i % Actions.Length]);
                     }
 
                     field = TextField(Signal.Create("Hello world"));
@@ -141,7 +170,7 @@ internal static class ReaderCost
             _frames.RunFrame();
             foreach (Computed<KeyBinding?> keys in _keys)
             {
-                if (keys.Get() is null)
+                if (kind == Kind.Field && keys.Get() is null)
                 {
                     throw new InvalidOperationException("A reader found no keys for its action at the text field.");
                 }
@@ -207,6 +236,10 @@ internal static class ReaderCost
             _offset += RowHeight;
             _ = _list.Scroll.SetOffset(new System.Numerics.Vector2(0, _offset));
             _frames.RunFrame();
+            if (_kind == Kind.Rows && !_rowElements[(int)(_offset / RowHeight) + 2].Focus())
+            {
+                throw new InvalidOperationException("A row of the list did not take the focus.");
+            }
         }
 
         // A box of 16 x 16 that reads, as a toolbar button would, whether its action can be dispatched from the focused node and
@@ -238,7 +271,14 @@ internal static class ReaderCost
         private Element ListRow(IReadOnlySignal<int> item)
         {
             _rowsMade++;
-            return Box().Height(RowHeight).Background(new Paint((item.Get() & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66)));
+            Element row = Box().Height(RowHeight).Background(new Paint((item.Get() & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66)));
+            if (_kind != Kind.Field)
+            {
+                row = row.Focusable();
+                _rowElements[item.Get()] = row;
+            }
+
+            return row;
         }
     }
 

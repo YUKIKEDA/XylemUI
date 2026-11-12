@@ -566,6 +566,190 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// A node made in the slot of a freed node that was on a reader's route is not on that route: the mark of the route goes
+    /// when the slot is freed (design §7, "The notices that make a reader read again").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The root function returns a column of a box. After the start, one scope makes a box with no parent (with the app's
+    ///   tree made current for the call), and another makes a
+    ///   computation that reads <c>CanDispatch</c> of a <c>Circle</c> from that box and counts its runs, and an effect that
+    ///   reads it.
+    ///
+    /// Steps:
+    /// - Give the box a context, settle, and read the count. Dispose the box's scope and settle. Make a box in a new scope,
+    ///   settle, and read the count; give the new box a context, settle, and read the count.
+    ///
+    /// Expected:
+    /// - The first context makes the count go up by one. The new box has the index of the freed one, and its context does not
+    ///   change the count.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task NodeInAFreedSlot_IsNotOnTheRouteOfTheNodeBeforeIt()
+    {
+        int ran = 0;
+        Element side = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => Column(side = Box().Width(10).Height(10)));
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+        Element old = default;
+        UiTree.Current = tree;
+        ScopeHandle first = Scope.Create(() => old = Box());
+        UiTree.Current = null;
+        Element own = side;
+        Element from = old;
+        ScopeHandle reader = Scope.Create(() =>
+        {
+            Computed<bool> can = Computed.Create(() =>
+            {
+                ran++;
+                return own.CanDispatch(new Circle(), from);
+            });
+            _ = Effect.Create(() => _ = can.Get());
+        });
+        _ = app.PumpAndSettle();
+        int start = ran;
+        tree.SetKeyContext(old.Node, "Old");
+        _ = app.PumpAndSettle();
+        int marked = ran;
+
+        Scope.Dispose(first);
+        _ = app.PumpAndSettle();
+        Element fresh = default;
+        UiTree.Current = tree;
+        ScopeHandle second = Scope.Create(() => fresh = Box());
+        UiTree.Current = null;
+        _ = app.PumpAndSettle();
+        int before = ran;
+        tree.SetKeyContext(fresh.Node, "Fresh");
+        _ = app.PumpAndSettle();
+        int after = ran;
+        Scope.Dispose(reader);
+        Scope.Dispose(second);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(start + 1, marked);
+        Assert.Equal(old.Node.Index, fresh.Node.Index);
+        Assert.Equal(before, after);
+    }
+
+    /// <summary>
+    /// A reader that an effect keeps runs when a node is put in the tree or taken out, and finds the tree's links whole: it
+    /// walks the order of the focus through the parent whose children changed.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The root function returns a column of a box. Two focusable boxes are made and kept, with no parent. One computation
+    ///   made in the root function reads <c>CanDispatch</c> of <c>focus::Next</c>, and an effect made there reads it and adds
+    ///   the answer to a list.
+    ///
+    /// Steps:
+    /// - <c>AppendChild</c> of the two kept boxes to the box; <c>DetachChildren</c> of the box; <c>InsertAfter</c> of the first
+    ///   and of the second after it; <c>DetachAfter</c> of the first, then of the second. No frame runs in between.
+    ///
+    /// Expected:
+    /// - The answers the effect got, each change of the answer once: no, yes, no, yes, no.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task StandingReaderOfTheFocusMove_RunsWhenTheLinksAreWhole()
+    {
+        Element holder = default;
+        Element first = default;
+        Element second = default;
+        var seen = new List<bool>();
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            holder = Box().Width(40).Height(40);
+            first = Box().Width(10).Height(10).Focusable();
+            second = Box().Width(10).Height(10).Focusable();
+            Element own = holder;
+            Computed<bool> move = Computed.Create(() => own.CanDispatch(new FocusActions.Next()));
+            _ = Effect.Create(() => seen.Add(move.Get()));
+            return Column(holder);
+        });
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+
+        tree.AppendChild(holder.Node, first.Node);
+        tree.AppendChild(holder.Node, second.Node);
+        tree.DetachChildren(holder.Node);
+        tree.InsertAfter(holder.Node, default, first.Node);
+        tree.InsertAfter(holder.Node, first.Node, second.Node);
+        tree.DetachAfter(holder.Node, default, first.Node);
+        tree.DetachAfter(holder.Node, default, second.Node);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal([false, true, false, true, false], seen);
+    }
+
+    /// <summary>
+    /// A link that changes tells a reader of the route and of the order of the focus once, and the children taken out together
+    /// tell the reader whose route passes any of them.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The root function returns a column of a box. A plain box and a focusable box are made and kept, with no parent. Two
+    ///   computations made in the root function read from the focusable box and count their runs: one reads <c>CanDispatch</c>
+    ///   of <c>focus::Next</c>, the other of a <c>Circle</c>. An effect reads each.
+    ///
+    /// Steps:
+    /// - Settle and read the counts. <c>AppendChild</c> of the plain box, then of the focusable box, to the box; settle and read
+    ///   the counts. <c>DetachChildren</c> of the box; settle and read the counts.
+    ///
+    /// Expected:
+    /// - The reader of <c>focus::Next</c> ran twice more after the two appends (once for each), and once more after the
+    ///   children were taken out. The reader of the <c>Circle</c> ran once more after the appends and once more after the
+    ///   children were taken out, though the first child is not on its route.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task LinkThatChanges_TellsAReaderOfTheRouteAndTheOrderOnce()
+    {
+        int moves = 0;
+        int circles = 0;
+        Element holder = default;
+        Element plain = default;
+        Element kept = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            holder = Box().Width(40).Height(40);
+            plain = Box().Width(10).Height(10);
+            kept = Box().Width(10).Height(10).Focusable();
+            Element own = holder;
+            Element from = kept;
+            Computed<bool> move = Computed.Create(() =>
+            {
+                moves++;
+                return own.CanDispatch(new FocusActions.Next(), from);
+            });
+            Computed<bool> circle = Computed.Create(() =>
+            {
+                circles++;
+                return own.CanDispatch(new Circle(), from);
+            });
+            _ = Effect.Create(() => _ = move.Get());
+            _ = Effect.Create(() => _ = circle.Get());
+            return Column(holder);
+        });
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+        (int, int) start = (moves, circles);
+
+        tree.AppendChild(holder.Node, plain.Node);
+        tree.AppendChild(holder.Node, kept.Node);
+        _ = app.PumpAndSettle();
+        (int, int) appended = (moves, circles);
+        tree.DetachChildren(holder.Node);
+        _ = app.PumpAndSettle();
+        (int, int) detached = (moves, circles);
+
+        Assert.Equal((start.Item1 + 2, start.Item2 + 1), appended);
+        Assert.Equal((appended.Item1 + 1, appended.Item2 + 1), detached);
+    }
+
+    /// <summary>
     /// A virtualized list that scrolls makes a reader outside it read nothing again. Once a reader reads from inside a row that
     /// stays, the exchange of rows is one change: that reader reads once more, not once for each row taken out and put back, and
     /// so does the reader outside, since the notice is one for all readers.
