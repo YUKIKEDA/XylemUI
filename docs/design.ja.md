@@ -1828,7 +1828,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 - **ハンドラを動かす Scope（S9 で送った点）:** イベントのハンドラと Binding の Effect は、それを登録した Scope の中で動かす（`Scope.Run` と同じ意味）。ハンドラの中で作った Effect や後始末は、その Scope に入る。その Scope が破棄されていたとき（`Scope.Run` が `false` を返す場合）は、何もしない。`OnClick` と `On` の XML ドキュメントに、そう書く
   - 入力の配送は frame path にある（`.cursor/rules/perf.mdc`）ので、`Scope.Run(scope, () => handler(in e))` のようにイベントごとにクロージャを作らない（`in` の引数はラムダに捕まえられない）。`Scope` に internal の `TryEnter(ScopeRef scope, out ScopeRef previous)` と `Exit(ScopeRef previous)` を足す（`ScopeRef` は Core の中の `Handle<ScopeData>` の別名で、公開の `ScopeHandle` の中身）。`TryEnter` は `Scope.Run` と同じ検査（UI スレッド、計算中の Computed でない、破棄されていない）をして今の Scope を差し替え、`Scope.Run` もこの 2 つで書く。`WindowInput` は、ハンドラを呼ぶ前に `TryEnter` し、`finally` で `Exit` する（PR #336 のレビュー）
   - 登録した Scope は、ハンドラごとに持つ（`HandlerEntry` に `ScopeRef` を 1 つ）。部分を作り直す `Show` と `For` が入ると、あるノードに、そのノードを作った Scope とは別の Scope からハンドラを足すことがあるので、ノードに 1 つでは足りない。SolidJS の `runWithOwner` も、登録した時の持ち主で呼ぶ
-- **部品ごとの Scope:** 部品の関数はふつうのメソッドで、部品ごとに Scope を作らない（SolidJS と同じ）。V1d で Scope を作るのは、ウィンドウの根だけである。部分を作り直す `Show` と `For` が、その部分の Scope を作る
+- **部品ごとの Scope:** 部品の関数はふつうのメソッドで、部品ごとに Scope を作らない（SolidJS と同じ）。V1d で Scope を作るのは、ウィンドウの根だけである。部分を作り直す `Show` と `For` が、その部分の Scope を作る。Reactive Context の `Provide`（下の「Reactive Context」）も、包んだ本体の Scope を作る
 - **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
   - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした
@@ -1871,7 +1871,42 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open、DD1 の DragOver の順に重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
-**Reactive Context:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に `ProvideContext<T>(value)` / `UseContext<T>()` を持たせる。値の解決は**ノード作成時に1度だけ** Scope の親をたどって行う静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を Provide し、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。ロケールも同じ形で配る（§4.11）。この仕組みはまだコードに無く、行 RC1 で、ローカライズの行 LC1 の前に作る（LC1 の Grill、Issue #825）。ここで決めていない点（値が Provide されていない時、同じ型の値を 2 つ置く場合、ポップアップの中身がどの Provide を引くか、引く費用）は、RC1 の Grill で決める。
+**Reactive Context（形は RC1 の Grill でオーナーが決定、Issue #827）:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に値を置く。値は、引いた時に**1度だけ** Scope の親をたどって探す静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を置き、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。ロケールも同じ形で配る（§4.11）。この仕組みはまだコードに無く、行 RC1 で、ローカライズの行 LC1 の前に作る（LC1 の Grill、Issue #825）。
+
+```csharp
+public sealed class Context<T>
+{
+    public Context();                                        // 既定値なし
+    public Context(T defaultValue);                          // 既定値あり
+    public Element Provide(T value, Func<Element> body);     // body を新しい子の Scope で実行し、その要素を返す
+    public T Use();                                          // 近くに置かれた値、無ければ既定値、それも無ければ InvalidOperationException
+    public bool TryUse([MaybeNullWhen(false)] out T value);  // Use と同じ順に引き、値も既定値も無ければ false
+}
+
+// アプリの例: 設定の画面の見本だけを、別のロケールで出す
+static class AppContexts
+{
+    public static readonly Context<IReadOnlySignal<Locale>> PreviewLocale = new();   // 既定値なし
+}
+
+static Element Settings(IReadOnlySignal<Locale> previewLocale) =>
+    Column(Text("Settings"), AppContexts.PreviewLocale.Provide(previewLocale, () => Column(Preview())));
+
+static Element Preview()
+{
+    IReadOnlySignal<Locale> locale = AppContexts.PreviewLocale.Use();   // 作る時に 1 度だけ引く
+    return Text(() => Greeting(locale.Get()));   // Greeting はアプリの関数。ロケールが変わると、この文字だけが書き直される
+}
+```
+
+- **鍵は文脈のオブジェクト:** 鍵は型ではなく、`Context<T>` の値にする。値を置く側と引く側は、`public static readonly Context<IReadOnlySignal<Locale>> Locale = new(…);` のように作った同じオブジェクトを使う。型を鍵にすると、同じ型の値を 2 つ置けない。たとえば前景の色と強調の色を、どちらも `IReadOnlySignal<Color>` で置くとぶつかる。Flutter は型を鍵にした表を持ち（Flutter 3.47.8 の `packages/flutter/lib/src/widgets/framework.dart` 5055 行目の `PersistentHashMap<Type, InheritedElement>`）、`Theme.of` は非公開の型 `_InheritedTheme` で引いてぶつかるのを避ける（`packages/flutter/lib/src/material/theme.dart` 123〜124 行目）。GPUI は、アプリ全体に型ごとに 1 つの値を持ち（zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目の `globals_by_type`）、zed のテーマの一覧は非公開の型 `GlobalThemeRegistry` で包んで置く（`crates/theme/src/registry.rs` 44・60 行目）。Avalonia は、受け継ぐ値をプロパティのオブジェクトで引く（Avalonia 12.1.4 の `src/Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目の `FontSizeProperty`）。XylemUI の鍵は、Avalonia のプロパティと同じく、オブジェクトそのものである。同じ鍵の値が重なったら、近い方（今の Scope に近い祖先で置いた値）が勝つ。Flutter も、子は親の表を受け継ぎ、`InheritedElement` が自分の型の項目を上書きする（`framework.dart` 5129〜5132・6272〜6277 行目）
+- **値が無い時:** 鍵は既定値を持てる。`Use` は、近くに置かれた値があればそれを、無ければ鍵の既定値を返し、既定値も無ければ `InvalidOperationException` を投げる。例外にしない `TryUse` は、同じ順に引いて、値も既定値も無ければ `false` を返す。テーマとロケールの鍵は既定値を持つ。比べた 3 つでは、Flutter の `dependOnInheritedWidgetOfExactType` は無ければ `null` を返し（`framework.dart` 5094〜5101 行目）、`Theme.of` はそこで既定のテーマを返す（`theme.dart` 122〜138 行目）。GPUI の `global` は無ければ panic し、`try_global` は `None` を返す（`app.rs` 2385〜2399 行目）。Avalonia のプロパティは既定値を持ち（`TextElement.cs` 40 行目の `defaultValue: 12`）、資源は親をたどって無ければ `false` を返す（`src/Avalonia.Base/Controls/ResourceNodeExtensions.cs` 83〜97 行目）
+- **置き方は、本体を包む形だけ:** `Provide(value, body)` は、`body` を今の Scope の子の新しい Scope の中で実行し、その Scope に値を置き、`body` が返した要素を返す（`Locale.Provide(signal, () => Column(…))`）。値は、その Scope の中で作ったものだけに効く。文として書く形（`Locale.Provide(signal);` の後に子を作る）は採らない。同じ Scope で先に作った要素には効かず、書く順で結果が変わるからである。要素の拡張メソッドの形（`Column(…).Provide(Locale, signal)`）も採らない。要素を作った後に呼ぶので、子を作る時には値がまだ無く、子に届かない。`Provide` が作る Scope は、ほかの Scope と同じく、親の Scope と一緒に破棄される
+- **ポップアップの中身は、宣言した場所の値を引く:** メニュー・ツールチップ・ダイアログ・Select の中身は、`.Menu()` などを呼んだ所に置かれた値を引く。ポップアップの層（§7.3）は木の上では別の所にあるが、Scope ツリーでは、呼んだ所の下にある。`PopupBlock.Create` は、呼んだ時の今の Scope の子にポップアップの Scope を作り（`src/XylemUI.Core/Popups/PopupBlock.cs` 89〜95 行目）、中身はその Scope の子の Scope で作る（同 279〜288 行目）。メニュー・サブメニュー・メニューバー・右クリックのメニュー・Select・ツールチップ・ダイアログは、どれも部品を作る時に `PopupBlock.Create` を呼ぶ（`src/XylemUI.Primitives/Menu.cs` 190 行目、`Select.cs` 100 行目、`Tooltip.cs` 113 行目、`Dialog.cs` 69 行目）。そのため、足す仕組みは無く、RC1 の実装はこれをテストで確かめる。Flutter の `OverlayPortal` も、オーバーレイに描く子が、自分を置いた場所と同じ `InheritedWidget`（`Theme` など）に頼れると書く（`packages/flutter/lib/src/widgets/overlay.dart` 1795〜1799 行目）。Avalonia のポップアップの根は、スタイルと資源を `Popup` から引く（`src/Avalonia.Controls/Primitives/PopupRoot.cs` 124 行目の `StylingParent => Parent`）
+- **引ける所:** `Use` は、部品を作る時のほか、作った後でも、今の Scope がある所で引ける。イベントのハンドラは登録した Scope の中で動き（上の「ハンドラを動かす Scope」、`src/XylemUI.Core/Input/WindowInput.cs` 1194 行目、`src/XylemUI.Core/Input/ActionDispatch.cs` 262 行目の `Scope.TryEnter`）、Effect は、作った所の Scope の子である自分の Scope の中で動く（`src/XylemUI.Core/Reactive/Effect.cs` 138〜146 行目、`src/XylemUI.Core/Reactive/Scope.cs` 211 行目の `AllocateForEffect`）。どちらも、宣言した所から上をたどる。今の Scope が無い所（`await` の後の継続など、§2.3「`await` の後」）では、既定値を返さずに `InvalidOperationException` を投げる。既定値を返すと、祖先が別の値を置いていても既定値で動き、誤りに気づけないからである。直し方は、`await` の前に `Scope.Current` を取っておき、`Scope.Run` の中で引くことである。`Provide`・`Use`・`TryUse` は、ほかの公開の API と同じく UI スレッドで呼び、ほかのスレッドからなら `InvalidOperationException` を投げる（§2.12）。鍵のコンストラクタは既定値を持つだけなので、static の初期化子がどのスレッドで走っても呼べる
+- **値の置き場所は、測ってから決める:** 候補は 3 つある。(a) Scope ごとに、そこで置いた値のリストの頭を持つ。引く時は親へ 1 つずつ上がり、各 Scope のリストを見る。(b) Scope には「置いた」の印だけを持ち、値は Scope ごとの別の表に置く。引く時は、印のある Scope でだけ表を見る。(c) Scope ごとに、親から受け継いだ表への参照を持ち、値を置いた Scope だけが新しい表を作る（Flutter の形、上の `framework.dart` 5129〜5132・6272〜6277 行目）。(c) は、親をたどる手間を Scope を作る時に払い、引く時はたどらない。目指すのは、値を置かない Scope が何も払わない（大きさも、作る時間も変わらない）ことで、これは測る前の目標である。RC1 の実装で、3 案それぞれの Scope 1 つの大きさ、深さ 1・10・50・100 で 1 回引く時間、Todo の行を 1 つ作る時間（今は約 3.2 µs、`docs/benchmarks/v3c-todo.md`）を測り、数字を付けてオーナーに諮る
+- **メニューの文脈のノード:** メニューは、文脈のノード（§7「メニューの項目が動作を指す形」の「文脈のノードの持ち方」）を、パネルを作る間はスレッドごとの値（`src/XylemUI.Primitives/Menu.cs` 36〜40 行目の `[ThreadStatic]` の 2 つ）で、開いた後はポップアップの根ごとの表（`src/XylemUI.Primitives/AccessText.cs` 280 行目の `MenuContexts`）で項目に渡している。RC1 の実装で、これを Reactive Context に載せ替える。パネルを `Provide` で包めば、開いた後にパネルの中の `Show` や `For` が作った項目も、Scope の親をたどって同じ値を引く。載せ替える前と後で、メニューバーの場面（`menubar`、`docs/benchmarks/km2c-menu-actions.md`）のフレームの割り当てを測る。増えるなら載せ替えず、その数字を報告する
+- **テストとウィンドウ:** テスト用の入口は足さない。テストは、アプリと同じ書き方で根の関数を包む（`HeadlessApp.StartAsync(() => Theme.Provide(sig, () => …))`）。RC1 のウィンドウは、根で何も置かない。ウィンドウが根で何を置くか（OS から解決したロケールなど）は、行 LC1 で決める
 
 **ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
@@ -3281,7 +3316,7 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 - **値:** `XylemUI.Core` に値型 `Locale` を置く。欄は言語・文字体系・地域の 3 つである。BCP 47 のタグから作り、大文字と小文字を正規の形に揃える。言語は小文字、文字体系は先頭だけ大文字、地域は大文字にする（`ZH-hant-tw` は `zh`・`Hant`・`TW`）。変種（`ca-ES-valencia` の `valencia`）と拡張（`-u-` など）は、読めるが捨てる。`-u-` の拡張（数字の種類、12 時間か 24 時間か、暦）をどう持つかは、行 LC2 の Grill で決める。`CultureInfo` は使わない。
 - **`TextLanguage` を使わない理由:** `TextLanguage`（`src/XylemUI.Text/TextLanguage.cs` 13〜47 行目）は HarfBuzz の言語を包む値で、作る時に `hb_language_from_string` を呼ぶ。HarfBuzz が無いと作れないので、HarfBuzz を作らない所（Linux と macOS の Core のテスト）では、文字の無い木もロケールを持てなくなる（`src/XylemUI.Core/Layout/UiTree.cs` 194〜200 行目の `UiLanguage` の説明が、同じ理由で、木の中では作らないと書いている）。そこで Core の型にはせず、文字を整形する時に、`Locale` のタグから `TextLanguage` を作る。
 - **Flutter との違い:** Flutter の `Locale`（Flutter 3.47.8 の `engine/src/flutter/lib/ui/platform_dispatcher.dart` 2860〜3140 行目）は、大文字と小文字を揃えない。正しい形の文字列を渡すことを使う側に求め、検査もしない（2876〜2887 行目）。廃止された言語コードと地域コードは、新しいコードに読み替える（2947・3066 行目）。XylemUI が読み替えるかは、LC1 の Grill の次のラウンドで決める（行 LC1）。
-- **配り方:** ロケールは `IReadOnlySignal<T>` として Reactive Context（§2.13）に置く。Reactive Context は、まだコードに無く（`src/` に `ProvideContext` と `UseContext` は無い）、行 RC1 で作る。ロケールを変えると、それを読んでいる所（メッセージ、書式、書字の向き、既定の言語の文字）だけが再実行される。サブツリーに別の Signal を Provide すれば、そこだけ別のロケールになる（Flutter の `Localizations.override` に当たる）。Avalonia の公式の手順（`.resx` と `x:Static`）は、カルチャを変えても表示が更新されないと自分で書いている。
+- **配り方:** ロケールは `IReadOnlySignal<T>` として Reactive Context（§2.13）に置く。Reactive Context は、まだコードに無く（`src/` に `Context<T>` は無い）、行 RC1 で作る。ロケールの鍵は既定値を持つ（§2.13「値が無い時」）。ロケールを変えると、それを読んでいる所（メッセージ、書式、書字の向き、既定の言語の文字）だけが再実行される。サブツリーを鍵の `Provide` で包んで別の Signal を置けば、そこだけ別のロケールになる（Flutter の `Localizations.override` に当たる）。Avalonia の公式の手順（`.resx` と `x:Static`）は、カルチャを変えても表示が更新されないと自分で書いている。
 - **文字の既定の言語:** 言語を指定しない文字（§2.13「`Text` の既定」）は、解決したロケールの言語で整形する。アプリがロケールを 1 つも宣言しない時は、今と同じく OS の 1 番目の言語を使う（読めなければ `und`）。ロケールが変わると、既定の言語を使っている文字は整形し直される。Flutter の `Text` も、`locale` を指定しなければローカライズのロケールを使う（`packages/flutter/lib/src/widgets/text.dart` 784 行目。既定を入れるのは `widgets/basic.dart` 6651 行目の `Localizations.maybeLocaleOf`）。
   - **英語だけのアプリを日本語の OS で動かす時:** 今は既定の文字を `ja` で整形している。LC1 からは、英語だけを宣言したアプリでは `en` で整形する。シェーピングの `locl`（§4.1 の S8b）と、漢字のフォントの選び方（§4.5「言語」）が変わる。利用者が入れた日本語の名前のように、英語の画面に出る漢字は、日本語の字形で描かれるとは限らなくなる。日本語の字形にしたい文字には、アプリが `.Language(...)`（§2.13）で言語を付ける。
 - **OS の言語:** ウィンドウの host は、OS の優先言語の一覧を全部読む。Windows は `GetUserPreferredUILanguages` で読む。今は最初の 1 つだけを読み（`src/XylemUI.Platform.Windows/Win32UiLanguage.cs` 20〜39 行目）、ウィンドウを作る時に 1 度だけ、ただのプロパティ `UiTree.UiLanguage` に入れている（`src/XylemUI.Desktop/DesktopWindow.cs` 61 行目、`UiTree.cs` 200 行目。既定の文字の書式が読む、`src/XylemUI.Core/Elements/Elements.cs` 290〜291 行目）。
@@ -5036,6 +5071,7 @@ public static bool Dispatch(this Element element, IAction action, Element? from)
 - **文脈のノードの持ち方（PR #821 のレビュー）:** メニューは、パネルを作っている間、文脈のノードをスレッドの値で項目に渡す。開いた後は、ポップアップの根ごとの表に持つ。メニューが開いている間に、パネルの中の `Show` や `For` が作った項目は、自分が入っているポップアップからこの表を引く。サブメニューのポップアップも、外のメニューと同じ文脈のノードを表に持つ。
   - スレッドの値だけの形は採らない。開いた後に作られた項目が、今のフォーカス（メニューの項目自身）から読み、使えない状態になる。
   - 後から作られた項目は、木に付くまで自分のメニューが分からない。付いた時の知らせ（上の「それ以外」）で読み直す。
+  - 行 RC1 で、この 2 つを Reactive Context（§2.13）に載せ替える。パネルを `Provide` で包み、項目は Scope の親をたどって文脈のノードを引く。載せ替える前と後でメニューバーの場面のフレームの割り当てを測り、増えるなら載せ替えずに数字を報告する（RC1 の Grill、Issue #827）。
 
 **受け入れ:** それぞれの PR で、キーの配送の時間を、載せ直す前と同じ回の中で比べる（`input` の `us_per_key_depth_*`・`us_per_tab_*`・`us_per_scroll_key_*`、`keymap`）。既定の行が入った状態での、合わないキーの時間を測る（行 KM1b は 200 行で約 0.62 µs）。KM2b で、IME の変換中に Esc と Enter が変換を壊さないことをテストにする。アプリの起動の時間を、既定の行と動作の表を足す前と比べる。
 
@@ -5959,7 +5995,7 @@ public static Element Label(Element content, Element target);              // co
 
 ### 13.2 XylemUI.Theme.Fluent
 
-**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。モーションのトークンは、8 つの長さ（`durationUltraFast` 50 ms 〜 `durationUltraSlow` 500 ms）と 9 つの 3 次ベジェのカーブ（`curveAccelerate*`・`curveDecelerate*`・`curveEasyEase*`・`curveLinear`）で、Core の `Curve` と `TimeSpan` の定数として持つ（§2.14「カーブ」）。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は `IReadOnlySignal<Theme>` を Context で Provide して切り替える（§2.13）。
+**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。モーションのトークンは、8 つの長さ（`durationUltraFast` 50 ms 〜 `durationUltraSlow` 500 ms）と 9 つの 3 次ベジェのカーブ（`curveAccelerate*`・`curveDecelerate*`・`curveEasyEase*`・`curveLinear`）で、Core の `Curve` と `TimeSpan` の定数として持つ（§2.14「カーブ」）。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は、テーマの鍵（`Context<IReadOnlySignal<Theme>>`、既定値を持つ）の `Provide` で木を包んで `IReadOnlySignal<Theme>` を置き、その Signal を更新して切り替える（§2.13「Reactive Context」）。
 
 **Mica と Acrylic:**
 - **v1 で入れるもの**: ウィンドウ背景の **Mica**（Mica のウィンドウは背景が不透明でないので、文字は ClearType でなくグレースケールで描く。§5.0.3「ClearType」）。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
