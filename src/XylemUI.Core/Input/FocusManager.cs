@@ -353,6 +353,7 @@ internal sealed class FocusManager
         // The move is in the top scope, which is another when a popup opens or starts to leave. Where the focus is does not change
         // the answer: a move from the only node that takes the focus comes back to it.
         Tree.Actions.TrackPopups();
+        Tree.Actions.TrackOrder();
         NodeHandle root = _scopes.Count > 0 ? _scopes[^1].Owner : Tree.Root;
         NodeHandle current = Tree.Nodes.IsAlive(Focused) && CanFocus(Focused) ? Focused : default;
         return !root.IsNone && !Next(root, backward, current).IsNone;

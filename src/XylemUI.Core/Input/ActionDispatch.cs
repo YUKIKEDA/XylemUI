@@ -33,6 +33,14 @@ internal sealed class ActionDispatch
     private Signal<int>? _popupEpoch;
     private int _popupEpochValue;
 
+    // Counts the changes of the nodes that can take the focus, for the readers of whether the focus can move.
+    private Signal<int>? _orderEpoch;
+    private int _orderEpochValue;
+
+    // The contexts of the route a reader asks the keys at; kept, so that a read of the keys allocates nothing (row KM3: an
+    // array for each read was 88 bytes).
+    private KeyContext[] _readContexts = new KeyContext[8];
+
     /// <summary>
     /// Initializes a new instance of the <see cref="ActionDispatch"/> class.
     /// </summary>
@@ -43,6 +51,11 @@ internal sealed class ActionDispatch
     /// Gets the tree whose actions are routed.
     /// </summary>
     public UiTree Tree { get; }
+
+    /// <summary>
+    /// Gets the buffer the contexts of a reader's route are collected in (<see cref="KeymapLookup.BindingFor"/>).
+    /// </summary>
+    public ref KeyContext[] ReadContexts => ref _readContexts;
 
     /// <summary>
     /// Gets or sets what the tree does for an action no handler on the route took (design §7, "The default keys and
@@ -168,16 +181,35 @@ internal sealed class ActionDispatch
     }
 
     /// <summary>
-    /// Reads the count of the changes that can change whether an action is available, so that the reading computation runs again
-    /// after the next one.
+    /// Reads the count of the changes that can change what an action does on a route, so that the reading computation runs again
+    /// after the next one, and marks the nodes of the route as read (design §7, "The notices that make a reader read again").
+    /// A change on a node no reader's route passes makes no reader read again: a virtualized list that scrolls takes its rows out
+    /// and puts them back on every frame, and with one notice for every link 20 standing readers read 78 times each on such a
+    /// frame (row KM3: 9.3 to 1,161 microseconds a frame and 138 KB).
     /// </summary>
-    /// <param name="atFocus">Whether the route that is read starts from the focused node, so that a move of the focus changes it.</param>
-    public void TrackAvailability(bool atFocus = true)
+    /// <param name="start">The node the route that is read starts from.</param>
+    /// <param name="atFocus">Whether that node is the focused one, so that a move of the focus changes the route.</param>
+    public void TrackAvailability(NodeHandle start, bool atFocus = true)
     {
         _ = (_epoch ??= Signal.Create(0)).Get();
         if (atFocus)
         {
             TrackFocus();
+        }
+
+        Watch(start);
+    }
+
+    /// <summary>
+    /// Marks the nodes from a node up to the root, through a popup's anchor, as read. The whole route is walked each time: a
+    /// marked node that was put under another parent has ancestors that are not marked yet.
+    /// </summary>
+    /// <param name="start">The node the route starts from; it need not be in the tree yet.</param>
+    public void Watch(NodeHandle start)
+    {
+        for (NodeHandle node = start; !node.IsNone && Tree.Nodes.IsAlive(node); node = Tree.KeyParent(node))
+        {
+            Tree.Nodes.GetRef(node).RouteWatched = true;
         }
     }
 
@@ -187,12 +219,39 @@ internal sealed class ActionDispatch
     public void TrackFocus() => _ = (_focusEpoch ??= Signal.Create(0)).Get();
 
     /// <summary>
-    /// Records a change that can change whether an action is available on a route, wherever it starts: a node's handlers, context,
-    /// or disabled state, the links of the tree, or the node a route starts from with no focus.
+    /// Reads the count of the changes of the nodes that can take the focus, so that the reading computation runs again after the
+    /// next one. Whether the focus can move is decided by the whole tree, not by a route.
+    /// </summary>
+    public void TrackOrder() => _ = (_orderEpoch ??= Signal.Create(0)).Get();
+
+    /// <summary>
+    /// Records a change that can change what an action does on every route: another keymap, or another node that a route starts
+    /// from with no focus.
     /// </summary>
     public void AvailabilityChanged()
     {
         _epoch?.Set(unchecked(++_epochValue));
+    }
+
+    /// <summary>
+    /// Records a change on a node that can change what an action does on the routes through it: its handlers, its context, its
+    /// disabled state, its link to its parent, or its scroll state. Nothing is recorded for a node no reader's route passes.
+    /// </summary>
+    /// <param name="node">The node that changed.</param>
+    public void RouteChanged(NodeHandle node)
+    {
+        if (_epoch is not null && Tree.Nodes.GetRef(node).RouteWatched)
+        {
+            AvailabilityChanged();
+        }
+    }
+
+    /// <summary>
+    /// Records a change of the nodes that can take the focus: one was put in or taken out, hidden, disabled, or made focusable.
+    /// </summary>
+    public void OrderChanged()
+    {
+        _orderEpoch?.Set(unchecked(++_orderEpochValue));
     }
 
     /// <summary>

@@ -769,21 +769,32 @@ internal sealed class VirtualBlock<T, TKey> : IVirtualHost
         }
 
         _order.Sort(static (a, b) => a.Index.CompareTo(b.Index));
-        _tree.DetachChildren(_box);
-        foreach (Row row in _dropped)
-        {
-            Scope.Dispose(row.Scope);
-        }
 
-        _dropped.Clear();
-        NodeHandle previous = default;
-        foreach (Row row in _order)
+        // One exchange of rows is one change for the readers of what an action can do: with the focus in a row, each link taken
+        // and made is on a reader's route (design §7, "The notices that make a reader read again").
+        ReactiveRuntime.EnterBatch();
+        try
         {
-            if (_tree.Nodes.IsAlive(row.Node))
+            _tree.DetachChildren(_box);
+            foreach (Row row in _dropped)
             {
-                _tree.InsertAfter(_box, previous, row.Node);
-                previous = row.Node;
+                Scope.Dispose(row.Scope);
             }
+
+            _dropped.Clear();
+            NodeHandle previous = default;
+            foreach (Row row in _order)
+            {
+                if (_tree.Nodes.IsAlive(row.Node))
+                {
+                    _tree.InsertAfter(_box, previous, row.Node);
+                    previous = row.Node;
+                }
+            }
+        }
+        finally
+        {
+            ReactiveRuntime.ExitBatch();
         }
     }
 

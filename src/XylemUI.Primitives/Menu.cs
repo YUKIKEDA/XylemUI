@@ -403,7 +403,13 @@ public static partial class Primitive
         }
 
         // An item of a menu reads at a node that a move of the focus does not change, so it does not read again for one.
-        private void Track() => tree.Actions.TrackAvailability(atFocus: !InMenu(out _));
+        private void Track()
+        {
+            tree.Actions.TrackAvailability(Start, atFocus: !InMenu(out _));
+
+            // An item that is not in a menu yet reads again when the subtree it is in is put in one.
+            tree.Actions.Watch(Item);
+        }
 
         // Whether the item is a menu's, and that menu's context node: the one of the panel it was made in, or of the open menu
         // it is in now.

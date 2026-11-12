@@ -38,6 +38,12 @@ internal struct UiNode
     public bool IsAttached;
 
     /// <summary>
+    /// Whether a reader of what an action can do has read a route through the node (<see cref="ActionDispatch.TrackAvailability"/>):
+    /// a change of the node's links, handlers, context, or disabled state then makes the readers read again. Never cleared.
+    /// </summary>
+    public bool RouteWatched;
+
+    /// <summary>
     /// The pseudo-states the pointer's input set (design §2.13). It sits in the padding after <see cref="IsAttached"/>.
     /// </summary>
     public PseudoState Pseudo;
