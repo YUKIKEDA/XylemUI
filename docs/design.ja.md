@@ -2999,7 +2999,7 @@ public sealed record TextFieldOptions
     public Color? SelectionBackground { get; init; }         // 既定は OS の選択色
     public Color? SelectionForeground { get; init; }         // 既定は OS の選択した文字の色
     public TextInputKind InputKind { get; init; }            // P02c。タッチキーボードの配列（§4.7）。伏せ字はパスワード
-    public Func<TextMenuCommands, Element>? ContextMenu { get; init; }   // P02d。右クリックのメニュー（下の「右クリックのメニュー」）
+    public Func<Element>? ContextMenu { get; init; }         // P02d、KM2c。右クリックのメニュー（下の「右クリックのメニュー」）
 }
 
 // XylemUI（Core）
@@ -3102,33 +3102,18 @@ public interface IClipboardBackend
 - `HeadlessApp` は、メモリに持つクリップボードを使う（§12.4）
 - `HasText` は、Windows では `IsClipboardFormatAvailable(CF_UNICODETEXT)` で確かめる（P02d。下の「右クリックのメニュー」）。Microsoft の文書も、メニューを開くときにこの関数で「貼り付け」を使えるかを決める、と書く（`IsClipboardFormatAvailable` の Remarks）
 
-**右クリックのメニュー（P02d の Grill の Q7、Issue #547）:** 欄は `TextFieldOptions.ContextMenu` があるとき、§13.1 の `ContextMenu` の形でメニューを開く。関数は、開くたびに作る `TextMenuCommands`（切り取り・コピー・貼り付け・すべて選ぶの 4 つの `MenuCommand`）を受け取り、`MenuItem` を並べたメニューの見た目を返す。見た目は部品の外で付け（§13.1）、Todo のサンプルで付ける。null ならメニューを出さない。テーマの既定の見た目は、Theme.Fluent の行（§13.2）で付ける。
+**右クリックのメニュー（P02d の Grill の Q7、Issue #547。KM2c の Grill で形を変えた、Issue #818）:** 欄は `TextFieldOptions.ContextMenu` があるとき、§13.1 の `ContextMenu` の形でメニューを開く。関数は、開くたびに呼ばれ、動作を指す `MenuItem`（§7「メニューの項目が動作を指す形」）を並べたメニューの見た目を返す。項目は `text::Cut`・`text::Copy`・`text::Paste`・`text::SelectAll` を指し、欄が、その動作を今受けられるかを答える。見た目は部品の外で付け（§13.1）、Todo のサンプルで付ける。null ならメニューを出さない。テーマの既定の見た目は、Theme.Fluent の行（§13.2）で付ける。
 
-```csharp
-public sealed class MenuCommand          // XylemUI.Primitives
-{
-    public bool Enabled { get; }         // 開いたときに決める
-    public void Run();                   // Enabled が false なら何もしない
-}
-
-public sealed class TextMenuCommands
-{
-    public MenuCommand Cut { get; }
-    public MenuCommand Copy { get; }
-    public MenuCommand Paste { get; }
-    public MenuCommand SelectAll { get; }
-}
-```
-
-- **項目:** 4 つを常に出し、使えない項目は使えない状態にする（`MenuItem` の `enabled`）。Avalonia も、使えない項目を灰色で出す（`Avalonia.Themes.Fluent/Controls/TextBox.xaml` 24〜33 行目）。Flutter は使えない項目を出さない（`widgets/editable_text.dart` 2147〜2178 行目）
-- **使える条件:** Flutter と同じ（`widgets/editable_text.dart` 2649〜2697 行目）
+- **KM2c より前の形:** 関数は、開くたびに作る `TextMenuCommands`（4 つの `MenuCommand`。`Enabled` と `Run()`）を受け取っていた。欄の動作のハンドラが同じ条件を答えるようになると、条件が 2 か所になるので、`MenuCommand`・`TextMenuCommands`・`SelectionMenuCommands` を消した
+- **項目:** 4 つを常に出し、使えない項目は使えない状態にする（動作を指す `MenuItem` は、受けられない動作の項目を使えない状態にする）。Avalonia も、使えない項目を灰色で出す（`Avalonia.Themes.Fluent/Controls/TextBox.xaml` 24〜33 行目）。Flutter は使えない項目を出さない（`widgets/editable_text.dart` 2147〜2178 行目）
+- **使える条件:** Flutter と同じ（`widgets/editable_text.dart` 2649〜2697 行目）。欄の動作のハンドラが答える（§7「メニューの項目が動作を指す形」の「部品の動作」）
   - 切り取り: 読み取り専用でも伏せ字でもなく、選択が空でない
   - コピー: 伏せ字でなく、選択が空でない
   - 貼り付け: 読み取り専用でなく、クリップボードに文字がある（`HasText`）。Flutter も、メニューを出す前にクリップボードを確かめる（`editable_text.dart` 5201 行目）。Avalonia の `CanPaste` は確かめない（`Avalonia.Controls/TextBox.cs` 1116〜1122 行目）
   - すべて選ぶ: 文字が空でなく、まだ全部は選んでいない（Flutter の Windows と Linux。macOS では使えない）
 - **開く位置:** 右ボタンの Up では、ポインタの位置に開く（比べた 3 つとも同じ。Flutter の `editable_text.dart` 3210〜3226 行目、Avalonia の `PopupFlyoutBase.cs` 544〜547・597〜599 行目、GPUI の `editor/src/element/mouse.rs` 802〜842 行目）。Shift+F10 とアプリケーションキーでは、キャレットの矩形の左下に開く。Microsoft の文書も、キーボードから出たメニューは今の選択の位置に出すとする（`WM_CONTEXTMENU`）。GPUI はキャレットから文字の幅と行の高さだけずらす（`editor/src/editor.rs` 10955〜10966 行目）
 - **選択:** 右ボタンの Down の位置が選択の外なら、先にキャレットをその位置に動かす（GPUI の `editor/src/mouse_context_menu.rs` 193〜199 行目）。中なら選択を保つ。欄にフォーカスが無ければ、フォーカスを取る（Flutter は、フォーカスが無ければ位置を選ぶ、`widgets/text_selection.dart` 2895〜2916 行目）。§7「押したときのフォーカス」は左ボタンだけなので、欄が自分で取る
-- **選んだ後:** メニューを閉じ、フォーカスを欄に戻してから命令を走らせる（§13.1 の `MenuItem`）。命令は、キーの Ctrl+X・Ctrl+C・Ctrl+V・Ctrl+A と同じ処理で、元に戻すのまとまりも同じである
+- **選んだ後:** メニューを閉じ、フォーカスを欄に戻してから動作を配る（§13.1 の `MenuItem`）。動作は、キーの Ctrl+X・Ctrl+C・Ctrl+V・Ctrl+A の行のものと同じで、元に戻すのまとまりも同じである
 - **変換中:** 変換中（§4.7）に右クリックしたら、先に確定する（§4.7 の、変換中に欄を押したときと同じ）
 - **戻ってきたフォーカス（P02d の 2 つ目の PR で決めた）:** 1 行の欄はフォーカスを得ると全体を選ぶが、自分の右クリックのメニューが閉じて戻したフォーカスでは選ばない。選ぶと、メニューの命令（貼り付けなど）が、右クリックで決めた選択でなく全体に効いてしまう。メニューが開いているか閉じる途中の間に得たフォーカスを、戻ってきたフォーカスとみなす
 
@@ -3179,7 +3164,7 @@ public sealed record SelectionAreaOptions
 {
     public Color? SelectionBackground { get; init; }   // null は OS の色（COLOR_HIGHLIGHT、§4.9）
     public Color? SelectionForeground { get; init; }   // null は OS の色（COLOR_HIGHLIGHTTEXT）
-    public Func<SelectionMenuCommands, Element>? ContextMenu { get; init; }   // P02d。右クリックのメニュー
+    public Func<Element>? ContextMenu { get; init; }   // P02d。右クリックのメニュー
 }
 
 // XylemUI.Core の ElementExtensions（§2.6 の一覧）
@@ -3203,7 +3188,7 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 - 2 回で単語（§4.9 の UAX #29 の単語の境界）、3 回で段落（葉の中の、改行から改行まで）を選ぶ。回数は 3 で止める（同じファイルの 641〜648 行目）。zed は 3 回で行、4 回で全体を選び（`markdown.rs` 2369〜2400 行目）、Avalonia は 3 回で全体を選ぶ
 - ドラッグは選択を広げる。2 回と 3 回の後は、単語と段落の単位で広げる。押したときの暗黙のキャプチャ（§7）で、領域の外へ出ても続く
 - カーソルは、加わる文字の葉の上だけ I ビームにする。葉と葉の間は既定の矢印のまま（Flutter、`widgets/text.dart` 752〜756 行目）。§7「カーソル形状」は当たったノードから祖先へたどるので、加わる葉は、自分が `Cursor` を持たなければ I ビームを持つものとして数える。領域のノードには `Cursor` を置かない（置くと葉と葉の間も I ビームになる）。ボタンの中の葉も I ビームで、Flutter も `Text` の `MouseRegion` がいちばん内側で勝つ。リンクの手のカーソル（§4.8）は、これより先に決まる
-- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、`SelectionAreaOptions.ContextMenu`（`Func<SelectionMenuCommands, Element>?`）があるとき、§4.9「右クリックのメニュー」と同じ形で開く（行 P02d、Issue #547）。`SelectionMenuCommands` は `Copy`（選択が空でない）と `SelectAll`（加わる葉に文字がある）の 2 つの `MenuCommand` を持つ。Shift+F10 とアプリケーションキーでは、選択の終点の行の左下に開き、選択が無ければ領域の箱の下に開く。Flutter の `SelectionArea` は `contextMenuBuilder` で（`material/selection_area.dart` 54・92 行目）、Avalonia はテーマの `ContextFlyout` で（`Avalonia.Themes.Fluent/Controls/SelectableTextBlock.xaml` 8〜19 行目）、どちらもメニューを出す。メニューがあるとき、右ボタンの Down で領域がフォーカスを取る（窓が押下でフォーカスを動かすのは左ボタンだけ）。領域はフォーカスを失うと選択を消すが、フォーカスが自分から開いたポップアップ（自分のメニュー）に移ったときは消さない（P02d の 2 つ目の PR で決めた）。消すと、メニューのコピーで写すものが無くなる
+- 右クリックは選択を変えない。右クリックのメニュー（コピー・すべて選ぶ）は、`SelectionAreaOptions.ContextMenu`（`Func<Element>?`）があるとき、§4.9「右クリックのメニュー」と同じ形で開く（行 P02d、Issue #547）。項目は `text::Copy` と `text::SelectAll` を指し、領域が、受けられるか（コピーは選択が空でない、すべて選ぶは加わる葉に文字がある）を答える（行 KM2c、§7「メニューの項目が動作を指す形」）。Shift+F10 とアプリケーションキーでは、選択の終点の行の左下に開き、選択が無ければ領域の箱の下に開く。Flutter の `SelectionArea` は `contextMenuBuilder` で（`material/selection_area.dart` 54・92 行目）、Avalonia はテーマの `ContextFlyout` で（`Avalonia.Themes.Fluent/Controls/SelectableTextBlock.xaml` 8〜19 行目）、どちらもメニューを出す。メニューがあるとき、右ボタンの Down で領域がフォーカスを取る（窓が押下でフォーカスを動かすのは左ボタンだけ）。領域はフォーカスを失うと選択を消すが、フォーカスが自分から開いたポップアップ（自分のメニュー）に移ったときは消さない（P02d の 2 つ目の PR で決めた）。消すと、メニューのコピーで写すものが無くなる
 
 **ドラッグでのスクロール:** ドラッグが、領域の祖先でいちばん近いスクロールの箱の端を越えたら、越えた距離 × 30（論理画素毎秒）の速さで、その箱をスクロールし続ける。Flutter の `EdgeDraggingAutoScroller` と同じ式である（`widgets/scrollable.dart` 1185 行目、`widgets/scrollable_helpers.dart` 150〜156 行目）。ポインタが止まっていても続くので、フレームの時計で動かす（§2.14 のアニメーションの一覧に載せ、端の内側に戻るかドラッグが終わると外す）。スクロールした後は、ポインタの位置で終点を置き直す。zed は、終点の行が見える範囲の端から 3 行の内側に入るまでスクロールする（`markdown.rs` 2510〜2554 行目）。Avalonia の `SelectableTextBlock` はスクロールしない。
 
@@ -4910,6 +4895,45 @@ internal sealed class FocusManager
 - キーの表示は、キーマップから引く（`element.KeyBindingFor<T>()`）。行が増減すると、表示が変わる。
 - 有効か無効かは、今のフォーカスからその動作のハンドラが見つかるか（`CanDispatch`）で決める。capture のハンドラも数える（GPUI の `is_action_available` と同じ、`crates/gpui/src/key_dispatch.rs` 382〜394 行目）。メニューの中身は開くたびに作るので、読むのはメニューが開いている間だけである。
 - 選ぶと、その動作を配る（`Dispatch`）。メニューを開く前にフォーカスがあったノードから配る（メニューは閉じるときにフォーカスを戻す、§13.1）。
+
+**細部（KM2c の Grill でオーナーが決定、Issue #818）:**
+
+```csharp
+// XylemUI.Primitives
+public static Element MenuItem(IAction action, Func<Computed<KeyBinding?>, Element> content);
+
+// XylemUI（Core）。from は、経路の始まりのノード
+public static KeyBinding? KeyBindingFor(this Element element, IAction action, Element? from = null);
+public static bool CanDispatch(this Element element, IAction action, Element? from = null);
+public static bool Dispatch(this Element element, IAction action, Element? from);
+```
+
+- **文脈のノード:** メニューが開いている間、フォーカスはメニューの項目にある。項目は、一番外のメニューが開く前にフォーカスがあったノード（文脈のノード）から、キーの表示、有効・無効、動作を配る先を読む。メニューバーから開いたメニューでは、バーを選ぶ前にフォーカスがあったノードである。
+  - zed は、メニューを作る時に今のフォーカスを渡し（`crates/title_bar/src/application_menu.rs` 132〜133 行目）、キーをそのフォーカスで引き（`crates/ui/src/components/context_menu.rs` 1798〜1803 行目の `for_action_in`）、選ぶとそこへフォーカスを戻してから配る（同 717〜720 行目）。GPUI は、ノードを指定する `is_action_available_in` を持つ（`crates/gpui/src/window.rs` 3354〜3359 行目）。
+  - コンテキストメニューで、フォーカスがメニューを付けたノードの中に無い時は、メニューを付けたノードを文脈にする。右クリックしたノードの「コピー」は、そのノードのコピーだからである。これは要件から決めた。比べた 3 つの行では確かめていない。
+  - 文脈のノードが無い（フォーカスがどこにも無かった）か、メニューが開いている間に消えた時は、根から読む（`Dispatch` と同じ）。
+  - Core の `KeyBindingFor`・`CanDispatch`・`Dispatch` に、経路の始まりのノードを渡す形（`from`）を足す。コマンドパレットも、開く前のフォーカスから読むのに使う。
+- **API:** `MenuItem(action, content)` を足す。`content` は、キーの行を読める値を受け取り、項目の中身を返す。行が増減すると、表示が変わる。有効・無効は部品が付け、選ぶと部品が、メニューを閉じてから動作を配る。
+  - 動作を持たない項目のために、`MenuItem(content, onSelect, enabled)` は残す。
+  - メニューバーの一番上の項目（`MenuBarItem`）は、メニューを開く項目のままにする。上の「メニューバーの項目」は、バーのメニューの中の項目である。
+  - チェックの付く項目（zed の `action_checked`、`context_menu.rs` 692〜699 行目）は、部品の組の行で扱う。
+- **引数を持つ動作のキー:** キーの行は、動作の型が同じで、引数も等しいものだけを採る。`menubar::Open`（`Last = true`）を指す項目に、`Last = false` の行のキーを出さないためである。GPUI は値で比べる（`crates/gpui/src/keymap.rs` 108 行目の `partial_eq`。その実装をマクロが型の等しさから作る所は、読んでいない）。
+  - 比べるコードは、Source Generator が生成する。名前を付けた動作（`[Action]`）の引数、つまり外から書き込める公開のプロパティを、型ごとの既定の比べ方（`EqualityComparer<T>.Default`）で全部比べる。名前を付けた動作は引数なしで作るので、引数はこのプロパティでしか渡せない。読むだけのプロパティと、外から書けないプロパティは比べない。名前から入れられない型のプロパティ（上の 5 種類のほか）も、比べる。名前から引数を入れるコード（上の「引数のある動作を名前から作る口」）と同じ所に出し、`ActionRegistry` に登録する。動作を書く人は、何も実装しない。
+  - 引数の無い動作は、型だけで比べる。名前を付けていない動作も、型だけで比べる。
+  - 型で読む `KeyBindingFor<T>()` は、今のまま型だけで比べる。
+  - 最初は「動作が `IEquatable<IAction>` を実装していれば、値も比べる」と決めた（KM2c の Grill の Q3）。record が自動で実装するのは `IEquatable<自分の型>` なので、引数のある動作を record で書いた人は、値で比べられると思っても、型だけで比べられる（PR #819 のレビュー）。`Equals(object)` を使う形は採らない。クラスが上書きしていなければ参照の比較になり、引数の無い動作どうしが等しくならない。上書きしているかを実行時に調べるにはリフレクションが要る（§0.1）。オーナーが、生成する形に決め直した。
+- **Core の動作:** `CanDispatch` は、木が受ける動作（`CoreAction`）に、いつも真を返していた（行 KM2a）。`CoreAction` が「今、実行すると何かが起きるか」を答え、`CanDispatch(IAction)` がそれを聞く（PR #815 のレビュー）。
+  - `focus::Next`・`focus::Previous`: 移れるノードがある。
+  - `popup::Dismiss`: 閉じるポップアップがある。
+  - `scroll::…`: 経路に、その向きへ動かせるスクロールがある。
+  - 型で読む `CanDispatch<T>()` は、値が無いので、`CoreAction` には今のまま真を返す。
+- **部品の動作:** 部品は、動作の基底の型にハンドラを 1 つ付ける（行 KM2b の `OnActionsOf<T>`）。そのままでは、選択が空のコピーも、履歴が空の取り消しも、読み取り専用の欄の貼り付けも「実行できる」になる（PR #817 のレビュー）。`OnActionsOf<T>` に、動作を今受けられるかを答える関数を渡せるようにし、`CanDispatch(IAction)` がそれを聞く。
+  - 欄: 切り取り・コピー・貼り付け・すべて選ぶは、§4.9「右クリックのメニュー」の「使える条件」。取り消しとやり直しは、履歴がある。ほかの動作は、ハンドラが受ける条件（読み取り専用の欄の編集は受けない、など）と同じ。
+  - 選択の領域: コピーは選択が空でない。すべて選ぶは、加わる葉に文字がある。
+  - Avalonia は `CanCut`・`CanCopy`・`CanPaste`・`CanUndo`・`CanRedo` を持つ（`Avalonia.Controls/TextBox.cs` 261〜305 行目）。Flutter は `cutEnabled`・`copyEnabled`・`pasteEnabled` を持つ（`widgets/editable_text.dart` 2649〜2670 行目）。GPUI は、型のハンドラがあるかだけを見て（`crates/gpui/src/key_dispatch.rs` 382〜394 行目）、zed のアプリのメニューは無効を項目ごとに渡す（`application_menu.rs` 140〜146 行目）。
+  - 答える関数は、読む側の計算の中で走る。選択が変わると、ツールバーのボタンのような、開いたままの読み手も変わる。
+  - 型で読む `CanDispatch<T>()` は、値が無いので、ハンドラがあれば真を返す。
+- **`MenuCommand` を消す:** 欄と選択の領域の `ContextMenu` は、`Func<Element>` にする（§4.9「右クリックのメニュー」、§4.10）。アプリは `MenuItem(new TextActions.Cut(), …)` と書く。公開の API を変える。
 
 **受け入れ:** それぞれの PR で、キーの配送の時間を、載せ直す前と同じ回の中で比べる（`input` の `us_per_key_depth_*`・`us_per_tab_*`・`us_per_scroll_key_*`、`keymap`）。既定の行が入った状態での、合わないキーの時間を測る（行 KM1b は 200 行で約 0.62 µs）。KM2b で、IME の変換中に Esc と Enter が変換を壊さないことをテストにする。アプリの起動の時間を、既定の行と動作の表を足す前と比べる。
 
