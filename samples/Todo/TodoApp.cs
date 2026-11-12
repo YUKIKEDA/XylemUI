@@ -130,12 +130,12 @@ public static class TodoApp
         );
 
     // The field's context menu: the four commands, the ones that cannot run grayed out.
-    private static Element FieldMenu(TextMenuCommands commands) =>
+    private static Element FieldMenu() =>
         Column(
-                MenuEntry("Cut", commands.Cut),
-                MenuEntry("Copy", commands.Copy),
-                MenuEntry("Paste", commands.Paste),
-                MenuEntry("Select all", commands.SelectAll)
+                MenuEntry("Cut", new TextActions.Cut()),
+                MenuEntry("Copy", new TextActions.Copy()),
+                MenuEntry("Paste", new TextActions.Paste()),
+                MenuEntry("Select all", new TextActions.SelectAll())
             )
             .Width(160)
             .Padding(4)
@@ -144,8 +144,15 @@ public static class TodoApp
             .CornerRadius(6)
             .Shadow(new BoxShadow(new Color(0, 0, 0, 0x60), new System.Numerics.Vector2(0, 4), 12));
 
-    private static Element MenuEntry(string label, MenuCommand command) =>
-        MenuItem(Text(label).Padding(8, 4), command.Run, command.Enabled)
+    // An item that names an action of the field: its label, and the action's keys at the right.
+    private static Element MenuEntry(string label, IAction action) =>
+        MenuItem(
+                action,
+                keys =>
+                    Row(Text(label).Width(84), Text(() => keys.Get()?.ToDisplayString() ?? string.Empty).Foreground(DisabledColor))
+                        .Gap(16)
+                        .Padding(8, 4)
+            )
             .CornerRadius(4)
             .Hovered(new PaintStyle { Background = ItemHighlight })
             .Focused(new PaintStyle { Background = ItemHighlight })

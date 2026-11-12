@@ -93,7 +93,9 @@ public static partial class Primitive
 
         // The context menu, and the commands it was last opened with.
         private ContextMenuHost? _menu;
-        private TextMenuCommands? _commands;
+
+        // Counts the edits and the moves, for the computations that asked what the field can take (Can); made when one first asks.
+        private Signal<int>? _canEpoch;
 
         private bool Focused => _tree.Nodes.IsAlive(_field) && (_tree.Nodes.GetRef(_field).Pseudo & PseudoState.Focused) != 0;
 
@@ -152,7 +154,7 @@ public static partial class Primitive
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .OnAction<MenuActions.OpenContextMenu>(AskMenu)
-                .OnActionsOf<TextAction>(Act)
+                .OnActionsOf<TextAction>(Act, Can)
                 .OnTextInput(EventPhase.Bubble, TextInput)
                 .On(PointerEventKind.Down, EventPhase.Bubble, PointerDown)
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
@@ -187,7 +189,7 @@ public static partial class Primitive
 
             if (options.ContextMenu is { } menu)
             {
-                _menu = new ContextMenuHost(_tree, _field, () => menu(_commands!));
+                _menu = new ContextMenuHost(_tree, _field, menu);
             }
 
             _tree.SetTextInputClient(_field, this);
@@ -359,6 +361,11 @@ public static partial class Primitive
         // follows the field's, the signals take the values, and the caret shows and blinks again.
         private void Changed(bool selectionOnly)
         {
+            if (_canEpoch is { } epoch)
+            {
+                epoch.Set(epoch.Peek() + 1);
+            }
+
             if (!selectionOnly)
             {
                 _edits++;
@@ -648,21 +655,9 @@ public static partial class Primitive
             }
         }
 
-        // Opens the context menu with the commands as they are now (design §4.9, "The context menu"): at the pointer, or at the
-        // bottom left of the caret's box (Microsoft's WM_CONTEXTMENU: a menu from the keyboard opens at the selection).
-        private void OpenMenu(Vector2? at)
-        {
-            TextSelection selection = _editor.Selection;
-            bool selected = !selection.IsCollapsed;
-            int length = _editor.Text.Length;
-            _commands = new TextMenuCommands(
-                new MenuCommand(!options.ReadOnly && !options.Password && selected, () => Cut(Now())),
-                new MenuCommand(!options.Password && selected, () => Copy()),
-                new MenuCommand(!options.ReadOnly && _tree.Clipboard?.HasText() == true, () => Paste(Now())),
-                new MenuCommand(length > 0 && (selection.Start > 0 || selection.End < length), SelectAll)
-            );
-            _menu!.OpenAt(at ?? CaretCorner());
-        }
+        // Opens the context menu (design §4.9, "The context menu"): at the pointer, or at the bottom left of the caret's box
+        // (Microsoft's WM_CONTEXTMENU: a menu from the keyboard opens at the selection).
+        private void OpenMenu(Vector2? at) => _menu!.OpenAt(at ?? CaretCorner());
 
         private void SelectAll()
         {
@@ -681,6 +676,30 @@ public static partial class Primitive
 
             Rect caret = TextCaret.CaretGeometry(leaf, ToShown(_editor.Selection.Caret), Affinity.Downstream).Rect;
             return layer + LeafOrigin() + new Vector2(caret.X, caret.Y + caret.Height);
+        }
+
+        // Whether the field can take an action now (design §7, "Menu items that name actions"), for a menu item to show itself
+        // enabled with: the conditions of design §4.9's context menu, as Flutter's on Windows, and of Run for the rest. The
+        // computation that asks runs again after the field's next edit or move; the clipboard is read when it is asked.
+        private bool Can(TextAction action)
+        {
+            _ = (_canEpoch ??= Signal.Create(0)).Get();
+            TextSelection selection = _editor.Selection;
+            int length = _editor.Text.Length;
+            return action.Command switch
+            {
+                TextCommand.Cut => !options.ReadOnly && !options.Password && !selection.IsCollapsed,
+                TextCommand.Copy => !options.Password && !selection.IsCollapsed,
+                TextCommand.Paste => !options.ReadOnly && _tree.Clipboard?.HasText() == true,
+                TextCommand.SelectAll => length > 0 && (selection.Start > 0 || selection.End < length),
+                TextCommand.Undo => !options.ReadOnly && _editor.CanUndo,
+                TextCommand.Redo => !options.ReadOnly && _editor.CanRedo,
+                TextCommand.Delete or TextCommand.DeleteWord => !options.ReadOnly,
+                TextCommand.Vertical or TextCommand.Page => options.Multiline,
+                TextCommand.Newline => options.Multiline && !options.ReadOnly,
+                TextCommand.Submit => !options.Multiline && options.OnSubmit is not null,
+                _ => true,
+            };
         }
 
         // The commands of design §4.9's table. Returns whether the field did the action, which handles it.

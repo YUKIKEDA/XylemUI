@@ -22,6 +22,17 @@ internal sealed class ActionDispatch
     private Signal<int>? _epoch;
     private int _epochValue;
 
+    // Counts the moves of the focus and the changes of the window's activation, apart from the rest: a reader at a node it
+    // names, as a menu's item at its context node, has nothing to read again when the focus moves (row KM2c: 10 items read their
+    // keys again on each frame that moved the focus in their menu, 880 bytes a frame).
+    private Signal<int>? _focusEpoch;
+    private int _focusEpochValue;
+
+    // Counts the popups that open and start to leave, for popup::Dismiss alone: counted with the rest, a menu that opens made
+    // each of its items read a second time.
+    private Signal<int>? _popupEpoch;
+    private int _popupEpochValue;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="ActionDispatch"/> class.
     /// </summary>
@@ -38,6 +49,11 @@ internal sealed class ActionDispatch
     /// actions"); it returns whether the action is handled. The window's input sets it.
     /// </summary>
     public Func<NodeHandle, IAction, bool>? Fallback { get; set; }
+
+    /// <summary>
+    /// Gets or sets what answers whether <see cref="Fallback"/> would handle an action now.
+    /// </summary>
+    public Func<NodeHandle, IAction, bool>? FallbackCan { get; set; }
 
     /// <summary>
     /// Routes an action from a node.
@@ -117,18 +133,87 @@ internal sealed class ActionDispatch
     }
 
     /// <summary>
+    /// Returns whether a dispatch of an action from a node would be handled now (design §7, "Menu items that name actions"): an
+    /// enabled node of the route has a handler for it that can take this action, or the tree's own handling would change
+    /// something.
+    /// </summary>
+    /// <param name="target">The node the route would start from.</param>
+    /// <param name="action">The action.</param>
+    /// <returns>Whether the action would be handled.</returns>
+    public bool IsAvailable(NodeHandle target, IAction action)
+    {
+        if (target.IsNone || !Tree.Nodes.IsAlive(target))
+        {
+            return false;
+        }
+
+        Type type = action.GetType();
+        for (NodeHandle node = target; !node.IsNone; node = Tree.KeyParent(node))
+        {
+            if (EnabledInput(node) is not { } input)
+            {
+                continue;
+            }
+
+            foreach (ActionHandlerEntry entry in input.ActionHandlers)
+            {
+                if (entry.Handles(type) && entry.CanHandle(action))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return FallbackCan is { } can && can(target, action);
+    }
+
+    /// <summary>
     /// Reads the count of the changes that can change whether an action is available, so that the reading computation runs again
     /// after the next one.
     /// </summary>
-    public void TrackAvailability() => _ = (_epoch ??= Signal.Create(0)).Get();
+    /// <param name="atFocus">Whether the route that is read starts from the focused node, so that a move of the focus changes it.</param>
+    public void TrackAvailability(bool atFocus = true)
+    {
+        _ = (_epoch ??= Signal.Create(0)).Get();
+        if (atFocus)
+        {
+            TrackFocus();
+        }
+    }
 
     /// <summary>
-    /// Records a change that can change whether an action is available: the focus, the window's activation, a node's handlers or
-    /// disabled state, or the links of the tree.
+    /// Reads the count of the moves of the focus, so that the reading computation runs again after the next one.
+    /// </summary>
+    public void TrackFocus() => _ = (_focusEpoch ??= Signal.Create(0)).Get();
+
+    /// <summary>
+    /// Records a change that can change whether an action is available on a route, wherever it starts: a node's handlers, context,
+    /// or disabled state, the links of the tree, or the node a route starts from with no focus.
     /// </summary>
     public void AvailabilityChanged()
     {
         _epoch?.Set(unchecked(++_epochValue));
+    }
+
+    /// <summary>
+    /// Reads the count of the popups that opened or started to leave, so that the reading computation runs again after the next.
+    /// </summary>
+    public void TrackPopups() => _ = (_popupEpoch ??= Signal.Create(0)).Get();
+
+    /// <summary>
+    /// Records that a popup opened or started to leave: whether there is one to close is another answer.
+    /// </summary>
+    public void PopupsChanged()
+    {
+        _popupEpoch?.Set(unchecked(++_popupEpochValue));
+    }
+
+    /// <summary>
+    /// Records a move of the focus or a change of the window's activation: the routes that start from the focused node are others.
+    /// </summary>
+    public void FocusChanged()
+    {
+        _focusEpoch?.Set(unchecked(++_focusEpochValue));
     }
 
     /// <summary>
@@ -287,6 +372,13 @@ internal abstract class ActionHandlerEntry
     /// <param name="target">The node the route starts from.</param>
     /// <param name="node">The node of the handler.</param>
     public abstract void Invoke(ActionDispatch dispatch, IAction action, NodeHandle target, NodeHandle node);
+
+    /// <summary>
+    /// Returns whether the handler can take an action of its type now; a handler that was given nothing to answer with can.
+    /// </summary>
+    /// <param name="action">The action.</param>
+    /// <returns>Whether the handler can take it.</returns>
+    public abstract bool CanHandle(IAction action);
 }
 
 /// <summary>
@@ -297,6 +389,7 @@ internal sealed class ActionHandlerEntry<TAction> : ActionHandlerEntry
     where TAction : class, IAction
 {
     private readonly ActionHandler<TAction> _handler;
+    private readonly Func<TAction, bool>? _can;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ActionHandlerEntry{TAction}"/> class.
@@ -305,8 +398,16 @@ internal sealed class ActionHandlerEntry<TAction> : ActionHandlerEntry
     /// <param name="handler">The handler.</param>
     /// <param name="scope">The scope the handler runs in.</param>
     /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
-    public ActionHandlerEntry(EventPhase phase, ActionHandler<TAction> handler, ScopeRef scope, bool derived = false)
-        : base(typeof(TAction), phase, handler, scope, derived) => _handler = handler;
+    /// <param name="can">What answers whether the handler can take an action now; <see langword="null"/> when it always can.</param>
+    public ActionHandlerEntry(EventPhase phase, ActionHandler<TAction> handler, ScopeRef scope, bool derived = false, Func<TAction, bool>? can = null)
+        : base(typeof(TAction), phase, handler, scope, derived)
+    {
+        _handler = handler;
+        _can = can;
+    }
+
+    /// <inheritdoc/>
+    public override bool CanHandle(IAction action) => _can is null || _can((TAction)action);
 
     /// <inheritdoc/>
     public override void Invoke(ActionDispatch dispatch, IAction action, NodeHandle target, NodeHandle node)

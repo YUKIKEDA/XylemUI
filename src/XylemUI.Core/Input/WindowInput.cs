@@ -83,6 +83,7 @@ internal sealed partial class WindowInput
         tree.Popups.ModalOpened = ReleaseCapturesBehind;
         tree.HoldsPointer = HoldsPointerIn;
         tree.Actions.Fallback = RunCoreAction;
+        tree.Actions.FallbackCan = CanRunCoreAction;
     }
 
     /// <summary>
@@ -1396,6 +1397,28 @@ internal sealed partial class WindowInput
         return false;
     }
 
+    /// <summary>
+    /// Returns whether <see cref="ScrollFrom"/> would move a container.
+    /// </summary>
+    /// <param name="target">The node the route starts from.</param>
+    /// <param name="step">What the action moves a container by.</param>
+    /// <returns>Whether a container's position would change.</returns>
+    internal bool CanScrollFrom(NodeHandle target, ScrollStep step)
+    {
+        for (NodeHandle node = target; !node.IsNone && _tree.Nodes.IsAlive(node); node = _tree.KeyParent(node))
+        {
+            if (CanScrollByStep(node, step))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Whether the tree's own handling of an action would change something now.
+    private bool CanRunCoreAction(NodeHandle target, IAction action) => action is CoreAction core && core.CanRun(this, target);
+
     // The tree's own handling of an action no handler took (design §7, "The default keys and actions").
     private bool RunCoreAction(NodeHandle target, IAction action) => action is CoreAction core && core.Run(this, target);
 
@@ -1404,8 +1427,38 @@ internal sealed partial class WindowInput
     // scrolls. No animation. Returns whether the position changed.
     private bool ScrollByStep(NodeHandle node, ScrollStep step)
     {
+        if (!StepOf(node, step, out Vector2 delta))
+        {
+            return false;
+        }
+
+        // A fling of the container stops first, as Flutter's pointerScroll goes idle (row I1b).
+        StopFling(node);
+        return delta != default && ScrollBy(node, delta);
+    }
+
+    // Whether ScrollByStep would move the container. A container with a state is read through the state's signals, so that a
+    // computation that asks runs again when the position or the range changes; one without a state gets its state the first time
+    // it scrolls, which the tree records as a change of what is available.
+    private bool CanScrollByStep(NodeHandle node, ScrollStep step)
+    {
+        if (!StepOf(node, step, out Vector2 delta))
+        {
+            return false;
+        }
+
+        ScrollState? state = _tree.ScrollStateOf(node);
+        Vector2 current = state?.Offset.Get() ?? Vector2.Zero;
+        Vector2 max = state?.MaxOffset.Get() ?? _tree.ScrollRangeOf(node);
+        return Vector2.Clamp(current + delta, Vector2.Zero, max) != current;
+    }
+
+    // What a scrolling action moves one container by; false for a node that is no enabled scroll container.
+    private bool StepOf(NodeHandle node, ScrollStep step, out Vector2 delta)
+    {
         const float Line = 50;
         const float Page = 0.8f;
+        delta = default;
         if (!_tree.Nodes.IsAlive(node))
         {
             return false;
@@ -1425,11 +1478,8 @@ internal sealed partial class WindowInput
             return false;
         }
 
-        // A fling of the container stops first, as Flutter's pointerScroll goes idle (row I1b).
-        StopFling(node);
-
         float end = float.PositiveInfinity;
-        Vector2 delta = step switch
+        delta = step switch
         {
             ScrollStep.LineUp when vertical => new Vector2(0, -Line),
             ScrollStep.LineDown when vertical => new Vector2(0, Line),
@@ -1441,7 +1491,7 @@ internal sealed partial class WindowInput
             ScrollStep.ToEnd => vertical ? new Vector2(0, end) : new Vector2(end, 0),
             _ => default,
         };
-        return delta != default && ScrollBy(node, delta);
+        return true;
     }
 
     // Moves a container's position by delta, kept in the range the last layout gave; a container without a state gets one the

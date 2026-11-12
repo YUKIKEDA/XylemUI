@@ -263,7 +263,8 @@ public sealed class Keymap
             throw new InvalidOperationException(
                 "No default key bindings are registered, so Tab, Esc, and the keys of the parts would do nothing. The source generator "
                     + "of XylemUI.Core registers them in the app's module initializer; an app built without it calls "
-                    + "Keymap.RegisterDefaults(CoreKeyBindings.AddDefaults), and the same for each package of parts it uses, before it starts."
+                    + "Keymap.RegisterDefaults(CoreKeyBindings.AddDefaults), and the same for each package of parts it uses, before it starts. An app or a "
+                    + "test that wants no default keys registers a method that adds none."
             );
         }
     }

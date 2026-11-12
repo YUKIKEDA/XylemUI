@@ -430,6 +430,9 @@ internal sealed class UiTree
 
         state = new ScrollState();
         SetScrollState(node, state);
+
+        // Whether a scrolling action can run was read from the container's boxes until now (WindowInput.CanScrollByStep).
+        Actions.AvailabilityChanged();
         return state;
     }
 
@@ -1373,11 +1376,18 @@ internal sealed class UiTree
     /// <param name="phase">The phase of the route.</param>
     /// <param name="handler">The handler.</param>
     /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
-    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler, bool derived = false)
+    /// <param name="can">What answers whether the handler can take an action now; <see langword="null"/> when it always can.</param>
+    public void AddActionHandler<TAction>(
+        NodeHandle node,
+        EventPhase phase,
+        ActionHandler<TAction> handler,
+        bool derived = false,
+        Func<TAction, bool>? can = null
+    )
         where TAction : class, IAction
     {
         ArgumentNullException.ThrowIfNull(handler);
-        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived));
+        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived, can));
         Actions.AvailabilityChanged();
     }
 
@@ -1633,6 +1643,9 @@ internal sealed class UiTree
         {
             input.Focusable = focusable;
             Invalidation.Invalidate(this, node, ChangeKind.Color);
+
+            // A move of the focus has one node more or fewer to go to (FocusActions); so with Hidden below.
+            Actions.AvailabilityChanged();
             if (!focusable)
             {
                 Focus.Lose(node);
@@ -1820,6 +1833,10 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
+
+        // The subtree is on routes and in the order of Tab now: a move of the focus may have a node to go to, and a menu's item
+        // made while its menu is open finds its menu (PR #821's review). So in InsertAfter.
+        Actions.AvailabilityChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (p.LastChild.IsNone)
         {
@@ -1868,6 +1885,7 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
+        Actions.AvailabilityChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (previous.IsNone)
         {
@@ -1971,8 +1989,7 @@ internal sealed class UiTree
             NodeHandle next = c.NextSibling;
             c.Parent = default;
 
-            // The route of an action from a focused node of the subtree ends here now. A node that is attached needs no such
-            // mark: the changes that move a live subtree detach it first, in the batch that attaches it again.
+            // The route of an action from a focused node of the subtree ends here now.
             Actions.AvailabilityChanged();
             c.NextSibling = default;
             child = next;
@@ -2064,6 +2081,11 @@ internal sealed class UiTree
 
         ref UiNode changed = ref Nodes.GetRef(node);
         bool hides = style.Hidden && !changed.Layout.Style.Hidden;
+        if (style.Hidden != changed.Layout.Style.Hidden)
+        {
+            Actions.AvailabilityChanged();
+        }
+
         changed.Layout.Style = style;
         changed.Layout.UsesPercentOfParentWidth = style.UsesPercentOfParentWidth;
         changed.Layout.UsesPercentOfParentHeight = style.UsesPercentOfParentHeight;
@@ -2505,7 +2527,10 @@ internal sealed class UiTree
     {
         ref UiNode n = ref Nodes.GetRef(node);
         bool disabled = inherited || n.Input?.Disabled == true;
-        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled && n.Input is { ActionHandlers.Length: > 0 })
+
+        // Whether an action is available may be another answer now: the node's handlers are passed over while it is disabled, and
+        // a move of the focus has one node more or fewer to go to (FocusActions).
+        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled && n.Input is { } input && (input.ActionHandlers.Length > 0 || input.Focusable))
         {
             Actions.AvailabilityChanged();
         }

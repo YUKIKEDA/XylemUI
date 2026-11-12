@@ -236,11 +236,12 @@ public sealed class DragDropTests
     /// - A source dragging "a" with a preview, logging its end; a target of strings that logs its calls and has a drag-over look.
     ///
     /// Steps:
-    /// - Drag over the target, read the popups and the drag-over state, press Esc and read whether it was handled, release. Drag over
+    /// - Drag over the target, read the popups, the drag-over state, and <c>CanDispatch</c> of <c>popup::Dismiss</c>, press Esc and
+    ///   read whether it was handled, release. Drag over
     ///   the target and deactivate the window, activate it, release. Drag to empty space and release.
     ///
     /// Expected:
-    /// - One popup and the drag-over state during the drag; Esc handled; after each end: no popup, no drag-over state, no drag. The
+    /// - One popup and the drag-over state during the drag, and no popup to dismiss: the preview is none; Esc handled; after each end: no popup, no drag-over state, no drag. The
     ///   log: "enter a Move", "leave a Move", "ended None" twice, then "ended None".
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
@@ -270,6 +271,7 @@ public sealed class DragDropTests
         _ = app.PumpAndSettle();
         int popups = app.Popups.Count;
         bool over = Has(app, target, PseudoState.DragOver);
+        bool canDismiss = source.CanDispatch(new PopupActions.Dismiss());
         bool escHandled = app.Keyboard.Press(Key.Escape);
         app.Pointer.Up();
         _ = app.PumpAndSettle();
@@ -289,6 +291,7 @@ public sealed class DragDropTests
         _ = app.PumpAndSettle();
 
         Assert.Equal((1, true, true), (popups, over, escHandled));
+        Assert.False(canDismiss);
         Assert.Equal((0, false, false), afterEsc);
         Assert.Equal((0, false, false), afterDeactivation);
         Assert.Equal(["enter a Move", "leave a Move", "ended None", "enter a Move", "leave a Move", "ended None", "ended None"], log);

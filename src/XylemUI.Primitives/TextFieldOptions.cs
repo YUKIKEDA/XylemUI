@@ -67,9 +67,11 @@ public sealed record TextFieldOptions
     public Color? SelectionForeground { get; init; }
 
     /// <summary>
-    /// Gets the field's context menu (design §4.9, "The context menu"): the panel of a menu, made from the commands of the field each
-    /// time the menu opens, at the pointer on the up of the right button and at the caret on Shift+F10 or the application key.
-    /// <see langword="null"/> for no menu.
+    /// Gets the field's context menu (design §4.9, "The context menu"): the panel of a menu, made each time the menu opens, at the
+    /// pointer on the up of the right button and at the caret on Shift+F10 or the application key. Its items name the field's
+    /// actions (<see cref="Primitive.MenuItem(IAction, Func{Computed{KeyBinding}, Element})"/> with <see cref="TextActions.Cut"/>,
+    /// <see cref="TextActions.Copy"/>, <see cref="TextActions.Paste"/>, <see cref="TextActions.SelectAll"/>): the field answers
+    /// whether it can take each now, and the item shows the action's keys. <see langword="null"/> for no menu.
     /// </summary>
-    public Func<TextMenuCommands, Element>? ContextMenu { get; init; }
+    public Func<Element>? ContextMenu { get; init; }
 }

@@ -739,8 +739,13 @@ public sealed class HeadlessApp : IAsyncDisposable
                         throw new InvalidOperationException("The root function returns a node with no parent.");
                     }
 
-                    Tree.AppendChild(_rootNode, content.Node);
-                    Tree.KeyRoot = content.Node;
+                    // One change for the readers of what an action can do: the node is in the tree and is where a route starts
+                    // with no focus.
+                    ReactiveRuntime.Batch(() =>
+                    {
+                        Tree.AppendChild(_rootNode, content.Node);
+                        Tree.KeyRoot = content.Node;
+                    });
                 },
                 "HeadlessApp.StartAsync"
             );

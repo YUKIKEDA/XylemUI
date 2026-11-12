@@ -54,6 +54,9 @@ public sealed class ActionTableGeneratorTests
         Assert.Contains("public static class Demo_LibActions", source, StringComparison.Ordinal);
         Assert.Contains("Register<global::Demo.Open>(\"demo::Open\", static () => new global::Demo.Open());", source, StringComparison.Ordinal);
         Assert.Contains("Register<global::Demo.Close>(\"demo::Close\", static () => new global::Demo.Close());", source, StringComparison.Ordinal);
+
+        // An action with no public property is compared by its type alone: the table gives it no comparison.
+        Assert.DoesNotContain("ActionRegistry.Compare", source, StringComparison.Ordinal);
         Assert.Contains(
             "[assembly: global::XylemUI.ActionTableAttribute(typeof(global::XylemUI.Generated.Demo_LibActions), new string[] { \"demo::Close\", \"demo::Open\" })]",
             source,
@@ -374,8 +377,8 @@ public sealed class ActionTableGeneratorTests
     /// - Run the generator on each; compile the first.
     ///
     /// Expected:
-    /// - The first: no diagnostic, no compiler error, and the table registers <c>demo::Jump</c> with <c>new global::Jump()</c> and
-    ///   the setter of its init-only property. The
+    /// - The first: no diagnostic, no compiler error, and the table registers <c>demo::Jump</c> with <c>new global::Jump()</c>,
+    ///   the setter of its init-only property, and a comparison of that property (design §7, "Menu items that name actions"). The
     ///   second: one XYLEM002 at the record, and no generated source.
     /// </remarks>
     [Fact]
@@ -391,6 +394,13 @@ public sealed class ActionTableGeneratorTests
         Assert.Contains(
             "Register<global::Jump>(\"demo::Jump\", static () => new global::Jump(), Set0);",
             Assert.Single(jump.Sources),
+            StringComparison.Ordinal
+        );
+        Assert.Contains("ActionRegistry.Compare<global::Jump>(Same0);", jump.Sources[0], StringComparison.Ordinal);
+        Assert.Contains("private static bool Same0(global::Jump left, global::Jump right) =>", jump.Sources[0], StringComparison.Ordinal);
+        Assert.Contains(
+            "global::System.Collections.Generic.EqualityComparer<int>.Default.Equals(left.Line, right.Line);",
+            jump.Sources[0],
             StringComparison.Ordinal
         );
 

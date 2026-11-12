@@ -20,7 +20,7 @@ public static partial class Primitive
     /// Makes a text with an access key (design §13.1, "Access keys"): the character after the first single <c>_</c> is the key, and the
     /// text is drawn without the <c>_</c>; <c>__</c> draws one <c>_</c>. The key is underlined while the window shows the access keys:
     /// always with Windows' "underline access keys" setting on, else after Alt goes down and in a menu opened from the keys, until a
-    /// pointer's press. A <see cref="MenuItem"/> or a <see cref="SubmenuItem"/> takes the key of the first access text in its content:
+    /// pointer's press. A <see cref="MenuItem(Element, Action, bool)"/> or a <see cref="SubmenuItem"/> takes the key of the first access text in its content:
     /// in an open menu, typing the key, with Alt or without, chooses the item, or moves the focus between the items that share it.
     /// </summary>
     /// <param name="text">The text, with <c>_</c> before its key.</param>
@@ -275,6 +275,9 @@ public static partial class Primitive
         public Dictionary<NodeHandle, AccessKeyHost> Hosts { get; } = [];
 
         public List<MenuBarState> Bars { get; } = [];
+
+        // The context nodes of the open menus, by their popups' roots (Menu.cs).
+        public Dictionary<NodeHandle, NodeHandle> MenuContexts { get; } = [];
     }
 
     // What a host does with an access key: its target, if it takes the key now.

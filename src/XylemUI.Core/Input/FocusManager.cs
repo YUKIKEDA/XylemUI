@@ -78,10 +78,14 @@ internal sealed class FocusManager
     /// Gets the node the keys and the actions are routed from: the focused node while the window is active; otherwise the node the
     /// window's root function returned (<see cref="UiTree.KeyRoot"/>), or the root when there is none.
     /// </summary>
-    public NodeHandle KeyTarget =>
-        IsWindowActive && Tree.Nodes.IsAlive(Focused) ? Focused
-        : Tree.Nodes.IsAlive(Tree.KeyRoot) ? Tree.KeyRoot
-        : Tree.Root;
+    public NodeHandle KeyTarget => IsWindowActive && Tree.Nodes.IsAlive(Focused) ? Focused : NoFocusTarget;
+
+    /// <summary>
+    /// Gets the node a route starts from with no focus: the node the window's root function returned
+    /// (<see cref="UiTree.KeyRoot"/>), or the root when there is none. A route asked to start from a node that is gone starts
+    /// here too, not from the focused node: an action meant for a node that was removed does not reach another one's handler.
+    /// </summary>
+    public NodeHandle NoFocusTarget => Tree.Nodes.IsAlive(Tree.KeyRoot) ? Tree.KeyRoot : Tree.Root;
 
     /// <summary>
     /// Returns whether a node can take the focus: it is focusable, in the window's tree, and neither it nor an ancestor is hidden.
@@ -340,6 +344,21 @@ internal sealed class FocusManager
     public bool MoveInTabOrder(bool backward) => Move(backward, Tree.Nodes.IsAlive(Focused) && CanFocus(Focused) ? Focused : default);
 
     /// <summary>
+    /// Returns whether <see cref="MoveInTabOrder"/> would find a node to move to, with the rows a virtualized list has made.
+    /// </summary>
+    /// <param name="backward">Whether the move is Shift+Tab's.</param>
+    /// <returns>Whether there is a node to move to.</returns>
+    public bool CanMoveInTabOrder(bool backward)
+    {
+        // The move is in the top scope, which is another when a popup opens or starts to leave. Where the focus is does not change
+        // the answer: a move from the only node that takes the focus comes back to it.
+        Tree.Actions.TrackPopups();
+        NodeHandle root = _scopes.Count > 0 ? _scopes[^1].Owner : Tree.Root;
+        NodeHandle current = Tree.Nodes.IsAlive(Focused) && CanFocus(Focused) ? Focused : default;
+        return !root.IsNone && !Next(root, backward, current).IsNone;
+    }
+
+    /// <summary>
     /// Moves the focus to the first or the last node in the order of Tab in the top scope: a menu's Home and End, and the item a
     /// menu focuses when it opens (design §13.1).
     /// </summary>
@@ -491,7 +510,7 @@ internal sealed class FocusManager
         try
         {
             IsWindowActive = active;
-            Tree.Actions.AvailabilityChanged();
+            Tree.Actions.FocusChanged();
             NodeHandle focused = Focused;
             if (!active)
             {
@@ -570,7 +589,7 @@ internal sealed class FocusManager
         try
         {
             Focused = default;
-            Tree.Actions.AvailabilityChanged();
+            Tree.Actions.FocusChanged();
             SyncTextInput();
             if (IsWindowActive)
             {
@@ -687,7 +706,7 @@ internal sealed class FocusManager
         }
 
         Focused = node;
-        Tree.Actions.AvailabilityChanged();
+        Tree.Actions.FocusChanged();
         Remember(node);
         SyncTextInput();
         if (!IsWindowActive)

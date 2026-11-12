@@ -56,7 +56,10 @@ public sealed class DefaultKeyBindingsAttribute(Type type) : Attribute
 
 /// <summary>
 /// Gives an action its name (design §7, "Shortcuts and actions"). The source generator of <c>XylemUI.Generators</c> reads it and
-/// adds the type to the table <see cref="ActionRegistry"/> is filled from.
+/// adds the type to the table <see cref="ActionRegistry"/> is filled from. The type's public properties that can be set are the
+/// action's arguments: a keymap's row sets them by their names, and the generator writes the comparison of them that finds the
+/// keys of an action with arguments (design §7, "Menu items that name actions"), for a class and for a record alike. A type
+/// without the attribute is compared by its type alone.
 /// </summary>
 /// <param name="name">The name, as <c>editor::Save</c>: unique among the actions of an app.</param>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
