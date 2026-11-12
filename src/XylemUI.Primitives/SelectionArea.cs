@@ -73,7 +73,10 @@ public static partial class Primitive
                 .On(PointerEventKind.Move, EventPhase.Bubble, PointerMove)
                 .On(PointerEventKind.Up, EventPhase.Bubble, PointerUp)
                 .On(PointerEventKind.Cancel, EventPhase.Bubble, PointerCancel)
-                .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
+                .PartKeyContext(PrimitiveKeyBindings.SelectionAreaContext)
+                .OnAction<MenuActions.OpenContextMenu>(AskMenu)
+                .OnAction((in ActionEvent<TextActions.SelectAll> _) => SelectAll())
+                .OnAction((in ActionEvent<TextActions.Copy> _) => Copy())
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
             if (options.ContextMenu is { } menu)
@@ -175,36 +178,22 @@ public static partial class Primitive
             }
         }
 
-        private void KeyDown(in KeyEvent e)
+        // Shift+F10 asks for the area's menu, and Control+A and Control+C or Control+Insert for the text's actions, through
+        // their rows of the keymap (PrimitiveKeyBindings).
+        private void AskMenu(in ActionEvent<MenuActions.OpenContextMenu> e)
         {
-            if (_menu is not null && IsMenuKey(e))
+            if (_menu is null)
             {
-                e.StopPropagation();
-                OpenMenu(at: null);
+                e.Propagate();
                 return;
             }
 
-            if (e.PrefersCharacter || e.Modifiers != KeyModifiers.Control)
-            {
-                return;
-            }
-
-            switch (e.Key)
-            {
-                case Key.A:
-                    SelectAll();
-                    e.StopPropagation();
-                    return;
-                case Key.C or Key.Insert:
-                    Copy();
-                    e.StopPropagation();
-                    return;
-            }
+            OpenMenu(at: null);
         }
 
         private void KeyUp(in KeyEvent e)
         {
-            if (_menu is not null && IsMenuKey(e))
+            if (_menu is not null && IsMenuKeyUp(e))
             {
                 e.StopPropagation();
                 OpenMenu(at: null);

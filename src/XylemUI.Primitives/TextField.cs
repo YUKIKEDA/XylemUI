@@ -151,6 +151,7 @@ public static partial class Primitive
                 )
                 .On(KeyEventKind.Down, EventPhase.Bubble, KeyDown)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
+                .OnAction<MenuActions.OpenContextMenu>(AskMenu)
                 .OnAction<TextActions.MoveLeft>(Act)
                 .OnAction<TextActions.MoveRight>(Act)
                 .OnAction<TextActions.SelectLeft>(Act)
@@ -646,15 +647,19 @@ public static partial class Primitive
             {
                 // The keys while composing are the input method's, not the field's commands (design §4.7).
                 e.StopPropagation();
+            }
+        }
+
+        // Shift+F10 asks for the field's menu, through its row of the keymap.
+        private void AskMenu(in ActionEvent<MenuActions.OpenContextMenu> e)
+        {
+            if (e.TargetNode != _field || _composition is not null || _menu is null)
+            {
+                e.Propagate();
                 return;
             }
 
-            if (_menu is not null && IsMenuKey(e))
-            {
-                e.StopPropagation();
-                OpenMenu(at: null);
-                return;
-            }
+            OpenMenu(at: null);
         }
 
         // An action of the field (design §7, "The default keys and actions"), which the keymap asks for from the field's keys.
@@ -672,7 +677,7 @@ public static partial class Primitive
         // The application key asks for the menu on its up.
         private void KeyUp(in KeyEvent e)
         {
-            if (e.TargetNode == _field && _composition is null && _menu is not null && IsMenuKey(e))
+            if (e.TargetNode == _field && _composition is null && _menu is not null && IsMenuKeyUp(e))
             {
                 e.StopPropagation();
                 OpenMenu(at: null);

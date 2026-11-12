@@ -24,6 +24,11 @@ public static class PrimitiveKeyBindings
     public const string MultilineContext = "multiline";
 
     /// <summary>
+    /// The context of a selection area's node.
+    /// </summary>
+    public const string SelectionAreaContext = "SelectionArea";
+
+    /// <summary>
     /// The context of a menu's panel.
     /// </summary>
     public const string MenuContext = "Menu";
@@ -51,7 +56,18 @@ public static class PrimitiveKeyBindings
     {
         ArgumentNullException.ThrowIfNull(keymap);
         AddTextField(keymap);
-        Unbind(keymap, MenuContext, "up", "down", "left", "right", "home", "end");
+        _ = keymap.Bind("ctrl-a", new TextActions.SelectAll(), SelectionAreaContext);
+        _ = keymap.Bind("ctrl-c", new TextActions.Copy(), SelectionAreaContext);
+        _ = keymap.Bind("ctrl-insert", new TextActions.Copy(), SelectionAreaContext);
+        _ = keymap.Bind("up", new MenuActions.SelectPrevious(), MenuContext);
+        _ = keymap.Bind("down", new MenuActions.SelectNext(), MenuContext);
+        _ = keymap.Bind("home", new MenuActions.SelectFirst(), MenuContext);
+        _ = keymap.Bind("end", new MenuActions.SelectLast(), MenuContext);
+        _ = keymap.Bind("enter", new MenuActions.Confirm(), MenuContext);
+        _ = keymap.Bind("space", new MenuActions.Confirm(), MenuContext);
+        _ = keymap.Bind("right", new MenuActions.OpenSubmenu(), MenuContext);
+        _ = keymap.Bind("left", new MenuActions.CloseSubmenu(), MenuContext);
+        _ = keymap.Bind("shift-f10", new MenuActions.OpenContextMenu(), CoreKeyBindings.WindowContext);
         Unbind(keymap, SelectContext, "up", "down");
         Unbind(keymap, SelectListContext, "up", "down", "home", "end", "pageup", "pagedown", "tab", "shift-tab");
 

@@ -109,13 +109,13 @@ public static partial class Primitive
         var trigger = new ContextTrigger(new ContextMenuHost(tree, target.Node, panel));
         return target
             .On(PointerEventKind.Up, EventPhase.Bubble, trigger.Up)
-            .On(KeyEventKind.Down, EventPhase.Bubble, trigger.KeyDown)
+            .OnAction<MenuActions.OpenContextMenu>(trigger.Ask)
             .On(KeyEventKind.Up, EventPhase.Bubble, trigger.KeyUp);
     }
 
-    // Whether a key asks for the context menu: the down of Shift+F10, or the up of the application key (WM_CONTEXTMENU's keys).
-    private static bool IsMenuKey(in KeyEvent e) =>
-        e.Kind == KeyEventKind.Down ? e.Key == Key.F10 && e.Modifiers == KeyModifiers.Shift : e.Key == Key.Apps && e.Modifiers == KeyModifiers.None;
+    // Whether the up of a key asks for the context menu: the application key's (WM_CONTEXTMENU's keys). The other key, the down of
+    // Shift+F10, is a row of the keymap that asks for MenuActions.OpenContextMenu.
+    private static bool IsMenuKeyUp(in KeyEvent e) => e.Key == Key.Apps && e.Modifiers == KeyModifiers.None;
 
     private static void RequireScope(string name)
     {
@@ -148,7 +148,15 @@ public static partial class Primitive
                 Scope.OnCleanup(cues.Release);
                 Element menuPanel = panel();
                 tree.SetPartAccessibility(menuPanel.Node, Roles.Menu);
-                return menuPanel.PartKeyContext(PrimitiveKeyBindings.MenuContext).On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys);
+                return menuPanel
+                    .PartKeyContext(PrimitiveKeyBindings.MenuContext)
+                    .On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys)
+                    .OnAction<MenuActions.SelectPrevious>(SelectPrevious)
+                    .OnAction<MenuActions.SelectNext>(SelectNext)
+                    .OnAction<MenuActions.SelectFirst>(SelectFirst)
+                    .OnAction<MenuActions.SelectLast>(SelectLast)
+                    .OnAction<MenuActions.CloseSubmenu>(CloseSubmenu)
+                    .OnAction<MenuActions.OpenSubmenu>(NoSubmenu);
             },
             options,
             root =>
@@ -164,9 +172,7 @@ public static partial class Primitive
     // to 326). The popup's scope is the top one there, so the order of Tab is the panel's.
     private static Action<NodeHandle> FocusFirst(UiTree tree) => _ => tree.Focus.MoveToTabEnd(last: false);
 
-    // The keys of a panel, from its focused item (design §13.1, "Keys"). The items are the focusable nodes of the panel's popup, in
-    // the order of Tab, which passes over the disabled ones; a submenu open beside them closes first, so that its scope is not the
-    // one moved in.
+    // The access keys of a panel's items (design §13.1, "Access keys"); the other keys of a panel are rows of the keymap.
     private static void PanelKeys(in KeyEvent e)
     {
         UiTree tree = e.Input.Tree;
@@ -180,34 +186,65 @@ public static partial class Primitive
         )
         {
             e.StopPropagation();
-            return;
         }
+    }
 
-        if (e.Modifiers != KeyModifiers.None)
-        {
-            return;
-        }
+    // The actions of a panel, from its focused item (design §13.1, "Keys"; §7, "The default keys and actions"). The items are the
+    // focusable nodes of the panel's popup, in the order of Tab, which passes over the disabled ones; a submenu open beside them
+    // closes first, so that its scope is not the one moved in. A panel handles a move also when the focus does not change: the
+    // keys of a menu do not go on to the page under it.
+    private static void SelectPrevious(in ActionEvent<MenuActions.SelectPrevious> e) => MoveInPanel(e.CurrentTarget, end: false, backward: true);
 
+    private static void SelectNext(in ActionEvent<MenuActions.SelectNext> e) => MoveInPanel(e.CurrentTarget, end: false, backward: false);
+
+    private static void SelectFirst(in ActionEvent<MenuActions.SelectFirst> e) => MoveInPanel(e.CurrentTarget, end: true, backward: true);
+
+    private static void SelectLast(in ActionEvent<MenuActions.SelectLast> e) => MoveInPanel(e.CurrentTarget, end: true, backward: false);
+
+    private static void MoveInPanel(Element panel, bool end, bool backward)
+    {
+        UiTree tree = panel.Tree!;
+        CloseSubmenus(tree, tree.Popups.PopupContaining(panel.Node), except: default);
+        _ = end ? tree.Focus.MoveToTabEnd(last: !backward) : tree.Focus.MoveInTabOrder(backward);
+    }
+
+    // A submenu closes, and its scope gives the focus back to the item that opened it. A menu that is no submenu does nothing,
+    // and leaves the action to the menu bar it was opened from, if any, which opens the menu before.
+    private static void CloseSubmenu(in ActionEvent<MenuActions.CloseSubmenu> e)
+    {
+        UiTree tree = e.CurrentTarget.Tree!;
         PopupHandle? popup = tree.Popups.PopupContaining(e.CurrentNode);
-        switch (e.Key)
+        if (popup is { Parent: { } parent } && IsMenu(parent))
         {
-            case Key.Up or Key.Down:
-                CloseSubmenus(tree, popup, except: default);
-                _ = tree.Focus.MoveInTabOrder(backward: e.Key == Key.Up);
-                break;
-            case Key.Home or Key.End:
-                CloseSubmenus(tree, popup, except: default);
-                _ = tree.Focus.MoveToTabEnd(last: e.Key == Key.End);
-                break;
-            case Key.Left when popup is { Parent: { } parent } && IsMenu(parent):
-                // A submenu closes, and its scope gives the focus back to the item that opened it.
-                popup.Block.Dismiss();
-                break;
-            default:
-                return;
+            popup.Block.Dismiss();
+        }
+        else if (IsOpenFromBar(tree, popup))
+        {
+            e.Propagate();
+        }
+    }
+
+    // The focused item has no submenu, or it would have opened it: the panel does nothing, and leaves the action to the menu bar
+    // its menus were opened from, if any, which opens the next menu.
+    private static void NoSubmenu(in ActionEvent<MenuActions.OpenSubmenu> e)
+    {
+        UiTree tree = e.CurrentTarget.Tree!;
+        if (IsOpenFromBar(tree, tree.Popups.PopupContaining(e.CurrentNode)))
+        {
+            e.Propagate();
+        }
+    }
+
+    // Whether the outermost menu of a menu's popup was opened from an item of a menu bar.
+    private static bool IsOpenFromBar(UiTree tree, PopupHandle? popup)
+    {
+        PopupHandle? outer = null;
+        for (; popup is not null && IsMenu(popup); popup = popup.Parent)
+        {
+            outer = popup;
         }
 
-        e.StopPropagation();
+        return outer is not null && BarItemOf(tree, outer.Anchor) is not null;
     }
 
     private static bool IsMenu(PopupHandle popup) => ReferenceEquals(popup.Block.Owner, MenuMark);
@@ -260,7 +297,10 @@ public static partial class Primitive
         {
             RegisterItem(tree, node, Activate);
             tree.SetPartAccessibility(item.Node, Roles.MenuItem);
-            return item.OnClick(Click).On(KeyEventKind.Down, EventPhase.Bubble, KeyDown).On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
+            return item.OnClick(Click)
+                .OnAction<MenuActions.Confirm>(Confirm)
+                .OnAction<MenuActions.OpenSubmenu>(OpenSubmenu)
+                .On(PointerEventKind.Enter, EventPhase.Bubble, Enter);
         }
 
         // Its access key typed in its menu: a submenu opens with its first item focused; an item is chosen.
@@ -290,25 +330,28 @@ public static partial class Primitive
             onSelect!();
         }
 
-        private void KeyDown(in KeyEvent e)
+        // Enter and Space on the item: a submenu opens with its first item focused; an item is chosen.
+        private void Confirm(in ActionEvent<MenuActions.Confirm> e)
         {
-            if (e.TargetNode != node || e.Modifiers != KeyModifiers.None)
+            if (e.TargetNode != node)
             {
+                e.Propagate();
                 return;
             }
 
-            if (e.Key is Key.Enter or Key.Space || (e.Key == Key.Right && submenu is not null))
-            {
-                e.StopPropagation();
-                if (submenu is not null)
-                {
-                    submenu.Open(focusFirst: true);
-                    return;
-                }
+            Activate();
+        }
 
-                CloseMenus(tree, node);
-                onSelect!();
+        // The right arrow on the item: its submenu opens; an item with none leaves the action to its panel.
+        private void OpenSubmenu(in ActionEvent<MenuActions.OpenSubmenu> e)
+        {
+            if (e.TargetNode != node || submenu is null)
+            {
+                e.Propagate();
+                return;
             }
+
+            submenu.Open(focusFirst: true);
         }
 
         // The pointer over the item gives it the focus, closes the submenu of another item beside it, and opens its own.
@@ -403,13 +446,11 @@ public static partial class Primitive
             }
         }
 
-        public void KeyDown(in KeyEvent e) => Ask(e);
+        public void Ask(in ActionEvent<MenuActions.OpenContextMenu> e) => host.OpenBelow();
 
-        public void KeyUp(in KeyEvent e) => Ask(e);
-
-        private void Ask(in KeyEvent e)
+        public void KeyUp(in KeyEvent e)
         {
-            if (IsMenuKey(e))
+            if (IsMenuKeyUp(e))
             {
                 e.StopPropagation();
                 host.OpenBelow();
