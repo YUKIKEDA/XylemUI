@@ -30,9 +30,14 @@ public static partial class Primitive
     // that is not a menu.
     private static readonly object MenuMark = new();
 
-    // The context of the menu whose panel is being made on this thread, for the items made in it; none outside a panel.
+    // Whether a menu's panel is being made on this thread, and that menu's context node, for the items made in it. Two values and
+    // no object: a menu bar's menu is made on each frame that moves between its menus (row KM2c: an object here was 24 bytes a
+    // frame).
     [ThreadStatic]
-    private static MenuContext? _building;
+    private static bool _inPanel;
+
+    [ThreadStatic]
+    private static NodeHandle _panelContext;
 
     /// <summary>
     /// Opens a menu against the node while the signal is true (design §13.1, "Menu and Dialog"): a popup that holds the panel and
@@ -100,7 +105,7 @@ public static partial class Primitive
         UiTree tree =
             UiTree.Current ?? throw new InvalidOperationException("MenuItem is made while a window's root function runs; no tree is current.");
         RequireScope(nameof(MenuItem));
-        var named = new NamedAction(tree, action, _building);
+        var named = new NamedAction(tree, action, _inPanel, _panelContext);
         Element item = Box(content(Computed.Create(named.Keys))).Focusable().Disabled(Computed.Create(named.Unavailable));
         var state = new MenuItemState(tree, item.Node, named.Dispatch, submenu: null);
         return state.Attach(item);
@@ -170,7 +175,8 @@ public static partial class Primitive
     )
     {
         // A submenu is made in its menu's panel and has that menu's context; a menu made elsewhere finds its own each time it opens.
-        MenuContext? outer = _building;
+        bool inherits = _inPanel;
+        NodeHandle inherited = _panelContext;
 
         // A menu opened from the keys shows the access keys while it is open (design §13.1, "Access keys"): its part's scope, which
         // goes when the menu closes, ends what it began.
@@ -183,8 +189,9 @@ public static partial class Primitive
             {
                 cues = new MenuCues(tree);
                 Scope.OnCleanup(cues.Release);
-                MenuContext? previous = _building;
-                _building = outer ?? new MenuContext(ContextNode(tree, anchor, contextMenu));
+                (bool wasInPanel, NodeHandle previous) = (_inPanel, _panelContext);
+                _panelContext = inherits ? inherited : ContextNode(tree, anchor, contextMenu);
+                _inPanel = true;
                 Element menuPanel;
                 try
                 {
@@ -192,7 +199,7 @@ public static partial class Primitive
                 }
                 finally
                 {
-                    _building = previous;
+                    (_inPanel, _panelContext) = (wasInPanel, previous);
                 }
 
                 tree.SetPartAccessibility(menuPanel.Node, Roles.Menu);
@@ -353,32 +360,26 @@ public static partial class Primitive
         }
     }
 
-    // Where the items of a menu read and dispatch their actions: the node, or none for the root.
-    private sealed class MenuContext(NodeHandle node)
-    {
-        public NodeHandle Node { get; } = node;
-    }
-
     // An item's action, read and dispatched at its menu's context node; with no menu, at the focused node. With a context node that
     // has gone, or none, the route starts where it does with no focus (FocusManager.KeyTarget).
-    private sealed class NamedAction(UiTree tree, IAction action, MenuContext? context)
+    private sealed class NamedAction(UiTree tree, IAction action, bool inMenu, NodeHandle context)
     {
         private NodeHandle Start =>
-            context is null ? tree.Focus.KeyTarget
-            : tree.Nodes.IsAlive(context.Node) ? context.Node
+            !inMenu ? tree.Focus.KeyTarget
+            : tree.Nodes.IsAlive(context) ? context
             : tree.Nodes.IsAlive(tree.KeyRoot) ? tree.KeyRoot
             : tree.Root;
 
         public KeyBinding? Keys()
         {
             tree.Keymap.TrackChanges();
-            tree.Actions.TrackAvailability(atFocus: context is null);
+            tree.Actions.TrackAvailability(atFocus: !inMenu);
             return KeymapLookup.BindingFor(tree, Start, action.GetType(), action);
         }
 
         public bool Unavailable()
         {
-            tree.Actions.TrackAvailability(atFocus: context is null);
+            tree.Actions.TrackAvailability(atFocus: !inMenu);
             return !tree.Actions.IsAvailable(Start, action);
         }
 
