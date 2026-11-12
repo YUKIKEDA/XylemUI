@@ -57,8 +57,8 @@ public static class PrimitiveKeyBindings
         ArgumentNullException.ThrowIfNull(keymap);
         AddTextField(keymap);
         _ = keymap.Bind("ctrl-a", new TextActions.SelectAll(), SelectionAreaContext);
-        _ = keymap.Bind("ctrl-c", new TextActions.Copy(), SelectionAreaContext);
         _ = keymap.Bind("ctrl-insert", new TextActions.Copy(), SelectionAreaContext);
+        _ = keymap.Bind("ctrl-c", new TextActions.Copy(), SelectionAreaContext);
         _ = keymap.Bind("up", new MenuActions.SelectPrevious(), MenuContext);
         _ = keymap.Bind("down", new MenuActions.SelectNext(), MenuContext);
         _ = keymap.Bind("home", new MenuActions.SelectFirst(), MenuContext);
@@ -127,16 +127,18 @@ public static class PrimitiveKeyBindings
         _ = keymap.Bind("delete", new TextActions.DeleteForward(), Field);
         _ = keymap.Bind("ctrl-backspace", new TextActions.DeleteWordBackward(), Field);
         _ = keymap.Bind("ctrl-delete", new TextActions.DeleteWordForward(), Field);
-        _ = keymap.Bind("ctrl-x", new TextActions.Cut(), Field);
+
+        // Of two keys for one action, the one a menu shows is added last (KeyBindingFor returns the row added later).
         _ = keymap.Bind("shift-delete", new TextActions.Cut(), Field);
-        _ = keymap.Bind("ctrl-c", new TextActions.Copy(), Field);
+        _ = keymap.Bind("ctrl-x", new TextActions.Cut(), Field);
         _ = keymap.Bind("ctrl-insert", new TextActions.Copy(), Field);
-        _ = keymap.Bind("ctrl-v", new TextActions.Paste(), Field);
+        _ = keymap.Bind("ctrl-c", new TextActions.Copy(), Field);
         _ = keymap.Bind("shift-insert", new TextActions.Paste(), Field);
+        _ = keymap.Bind("ctrl-v", new TextActions.Paste(), Field);
         _ = keymap.Bind("ctrl-a", new TextActions.SelectAll(), Field);
         _ = keymap.Bind("ctrl-z", new TextActions.Undo(), Field);
-        _ = keymap.Bind("ctrl-y", new TextActions.Redo(), Field);
         _ = keymap.Bind("ctrl-shift-z", new TextActions.Redo(), Field);
+        _ = keymap.Bind("ctrl-y", new TextActions.Redo(), Field);
         _ = keymap.Bind("enter", new TextActions.InsertNewline(), Many);
         _ = keymap.Bind("shift-enter", new TextActions.InsertNewline(), Many);
         _ = keymap.Bind("enter", new TextActions.Submit(), One);

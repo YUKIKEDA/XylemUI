@@ -249,9 +249,16 @@ public sealed class Keymap
     /// Esc, and no keys in its parts. An app's start calls it.
     /// </summary>
     /// <exception cref="InvalidOperationException">No method was registered with <see cref="RegisterDefaults"/>.</exception>
-    internal static void RequireDefaults()
+    internal static void RequireDefaults() => RequireDefaults(_defaults.Length);
+
+    /// <summary>
+    /// Throws when a count of registered methods is none; <see cref="RequireDefaults()"/> with the count given, for a test.
+    /// </summary>
+    /// <param name="registered">The number of methods registered with <see cref="RegisterDefaults"/>.</param>
+    /// <exception cref="InvalidOperationException">The count is 0.</exception>
+    internal static void RequireDefaults(int registered)
     {
-        if (_defaults.Length == 0)
+        if (registered == 0)
         {
             throw new InvalidOperationException(
                 "No default key bindings are registered, so Tab, Esc, and the keys of the parts would do nothing. The source generator "
