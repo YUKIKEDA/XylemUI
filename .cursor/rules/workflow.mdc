@@ -33,9 +33,18 @@ Labels have the form `<axis>:<value>`. The only axis today is `type`.
 | `design`   | `type:docs`     | `docs`                     |
 | `task`     | `type:chore`    | `chore` / `build` / `ci`   |
 
+## Rows side by side
+
+The owner decided (Issue #822): one row took a day and more while 70 rows wait, so rows run side by side.
+
+- Rows whose files do not overlap run at the same time, each on its own branch in its own worktree (`.dev/<branch>`), each with its own Issue and PR. Rows that change the same files run one after the other.
+- A measurement needs a quiet CPU (`.cursor/rules/bench.mdc`): the rows' measurements run one at a time, and no build, gate, or mutation run of another row runs meanwhile.
+- `docs/roadmap.md` has no paragraph that every PR rewrites. A row's PR changes its own row of the table and nothing else there; the history of a row is on its Issue and in `docs/benchmarks/`. Every PR rewrote the "作業中" paragraph before, which two PRs in flight cannot both do.
+- A design PR still comes before the code (`.cursor/rules/design-docs.mdc`): a design question is lost among the lines of an implementation. The implementation may start while the design PR is in review, but its branch changes neither `docs/design.ja.md` nor `docs/roadmap.md` until the design PR is merged; it takes `main` in then, and adds what the implementation taught in its last commit. PR #821 held PR #819's commits and changed the same paragraphs, and conflicted when #819 was squashed into `main`.
+
 ## Gates
 
-- `./build.ps1`: tool restore, CSharpier check, restore, then Release and Debug builds with warnings as errors, each followed by every `tests/**/*.Tests.csproj`.
+- `./build.ps1`: tool restore, CSharpier check, restore, then Release and Debug builds with warnings as errors, each followed by every `tests/**/*.Tests.csproj`. CI runs it so. Before a push, the agent runs `./build.ps1 -Affected -Parallel`, which runs only the test projects the branch's changes reach, at the same time (`.cursor/rules/engineering.mdc`); the PR is merged after its CI passed.
 - The NativeAOT publish check runs where the Issue names it (`.cursor/rules/aot.mdc`).
 - Benchmarks are not a gate. The Zero-Alloc tests are (`.cursor/rules/bench.mdc`).
 - After each merge, read `main`'s CI. A red `main` gets its own Issue and PR before the next merge.

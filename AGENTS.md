@@ -14,7 +14,7 @@ A cross-platform native desktop GUI framework in C# / .NET 10, shipped as Native
 | Projects, folders, coding conventions | `docs/conventions.md` |
 | Build, format, and test gate | `./build.ps1` |
 
-The current row lives only in `docs/roadmap.md`. `.dev/` is local scratch; nothing there is a decision.
+The rows in progress are the `in-progress` rows of the table in `docs/roadmap.md`; rows whose files do not overlap run side by side, each in its own worktree (`workflow`). `.dev/` is local scratch; nothing there is a decision.
 
 ## Required rules
 
