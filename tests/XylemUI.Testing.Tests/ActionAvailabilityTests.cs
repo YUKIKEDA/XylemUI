@@ -450,6 +450,72 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// A reader reads again when a link or a handler on its route changes, each alone: its start node is put under a parent or
+    /// taken out, by each of the tree's four ways, and a handler is added to or removed from an ancestor. The reader of whether
+    /// the focus can move reads again for the same links.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The root function returns a column of a box with a handler of <c>Circle</c>. A focusable box is made and kept, with no
+    ///   parent; nothing else takes the focus. Three computations made in the root function read <c>CanDispatch</c> from the
+    ///   kept box of a <c>Circle</c> and of a <c>Square</c>, and <c>CanDispatch</c> of <c>focus::Next</c>.
+    ///
+    /// Steps:
+    /// - Read the circle and the move after each of: the start; <c>AppendChild</c> of the kept box to the box with the handler;
+    ///   <c>DetachChildren</c> of that box; <c>InsertAfter</c> into it; <c>DetachAfter</c> from it. Append it again; read the
+    ///   square; add a handler of <c>Square</c> to the column and read it; remove the handler and read it.
+    ///
+    /// Expected:
+    /// - The circle and the move: no at the start, then yes, no, yes, no. The square: no, yes, no.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Reader_ReadsAgain_ForEachLinkAndHandlerOnItsRoute()
+    {
+        Element holder = default;
+        Element kept = default;
+        Element column = default;
+        Computed<bool>? circle = null;
+        Computed<bool>? square = null;
+        Computed<bool>? move = null;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            holder = Box().Width(40).Height(40).OnAction((in ActionEvent<Circle> _) => { });
+            kept = Box().Width(10).Height(10).Focusable();
+            Element own = kept;
+            circle = Computed.Create(() => own.CanDispatch(new Circle(), own));
+            square = Computed.Create(() => own.CanDispatch(new Square(), own));
+            move = Computed.Create(() => own.CanDispatch(new FocusActions.Next()));
+            return column = Column(holder);
+        });
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+        var links = new List<(bool Circle, bool Move)> { (circle!.Get(), move!.Get()) };
+        void Step(Action change)
+        {
+            change();
+            links.Add((circle.Get(), move.Get()));
+        }
+
+        Step(() => tree.AppendChild(holder.Node, kept.Node));
+        Step(() => tree.DetachChildren(holder.Node));
+        Step(() => tree.InsertAfter(holder.Node, default, kept.Node));
+        Step(() => tree.DetachAfter(holder.Node, default, kept.Node));
+
+        tree.AppendChild(holder.Node, kept.Node);
+        ActionHandler<Square> handler = static (in ActionEvent<Square> _) => { };
+        var squares = new List<bool> { square!.Get() };
+        tree.AddActionHandler(column.Node, EventPhase.Bubble, handler);
+        squares.Add(square.Get());
+        Assert.True(tree.RemoveActionHandler(column.Node, EventPhase.Bubble, handler));
+        squares.Add(square.Get());
+        _ = app.PumpAndSettle();
+
+        Assert.Equal([(false, false), (true, true), (false, false), (true, true), (false, false)], links);
+        Assert.Equal([false, true, false], squares);
+    }
+
+    /// <summary>
     /// A virtualized list that scrolls makes a reader outside it read nothing again. Once a reader reads from inside a row that
     /// stays, the exchange of rows is one change: that reader reads once more, not once for each row taken out and put back, and
     /// so does the reader outside, since the notice is one for all readers.
