@@ -198,7 +198,14 @@ public static partial class Primitive
                 (bool wasInPanel, NodeHandle previous) = (_inPanel, _panelContext);
                 _panelContext = inherits ? inherited : ContextNode(tree, anchor, contextMenu);
                 context = _panelContext;
-                Scope.OnCleanup(() => RegistryOf(tree).MenuContexts.Remove(openedRoot));
+                Scope.OnCleanup(() =>
+                {
+                    // Kept once the popup opened; a panel whose scope goes before that kept nothing.
+                    if (!openedRoot.IsNone)
+                    {
+                        _ = RegistryOf(tree).MenuContexts.Remove(openedRoot);
+                    }
+                });
                 _inPanel = true;
                 Element menuPanel;
                 try

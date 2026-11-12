@@ -117,12 +117,13 @@ public sealed class ActionAvailabilityTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A scroll view of 100 x 100 with a state, around a column of a focused row of 20 and a leaf of text from a signal, one
-    ///   line at first: the content fits. A computation made in the root function reads <c>CanDispatch</c> of
-    ///   <c>scroll::LineDown</c>.
+    /// - A scroll view of 100 x 100 with a state, around a column of a focused row of 20 and a box of 60: the content fits. A
+    ///   computation made in the root function reads <c>CanDispatch</c> of <c>scroll::LineDown</c>. No text, so that the test
+    ///   runs where the shaping library is not built.
     ///
     /// Steps:
-    /// - Read it. Set the text to 30 lines, which changes no node and no handler, settle, and read it again.
+    /// - Read it. Give the box the height 380 in its style, which changes no link of the tree and no handler, settle, and read
+    ///   it again.
     ///
     /// Expected:
     /// - No while the content fits; yes when it is higher than the view.
@@ -132,21 +133,23 @@ public sealed class ActionAvailabilityTests
     public async Task CanDispatch_AScrollingAction_IsReadAgainWhenTheRangeChanges()
     {
         var state = new ScrollState();
-        var text = Signal.Create("n");
         Element row = default;
+        Element rest = default;
         Computed<bool>? down = null;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
         {
             row = Box().Width(100).Height(20).Focusable();
             down = Computed.Create(() => row.CanDispatch(new ScrollActions.LineDown()));
-            return ScrollView(Column(row, Elements.Text(() => text.Get())), state).Width(100).Height(100);
+            rest = Box().Width(100).Height(60);
+            return ScrollView(Column(row, rest), state).Width(100).Height(100);
         });
         _ = app.PumpAndSettle();
         Assert.True(app.Focus(row));
         _ = app.PumpAndSettle();
 
         bool fits = down!.Get();
-        text.Set(string.Join(Environment.NewLine, Enumerable.Repeat("n", 30)));
+        UiTree tree = app.Tree;
+        tree.SetStyle(rest.Node, tree.Nodes.GetRef(rest.Node).Layout.Style with { Height = Length.Px(380) });
         _ = app.PumpAndSettle();
 
         Assert.False(fits);

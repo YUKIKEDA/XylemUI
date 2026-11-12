@@ -153,7 +153,8 @@ public static class ActionRegistry
     /// Gives an action type the function that compares the arguments of two of its actions (design §7, "Menu items that name
     /// actions"): the keys shown for an action are those of a row whose action has the same arguments. The source generator of
     /// <c>XylemUI.Generators</c> writes one for each action type with arguments, the public properties that can be set, and it
-    /// compares them all; a type given none
+    /// compares them all, in the table it writes: an app does not call this itself, since a comparison that leaves an argument
+    /// out shows the keys of another row. A type given none
     /// is compared by the type alone.
     /// </summary>
     /// <typeparam name="TAction">The type of the action.</typeparam>
