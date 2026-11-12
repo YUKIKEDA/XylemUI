@@ -396,7 +396,66 @@ public sealed class DefaultKeysTests
         Assert.Equal([1, 3, 4, 4], picked);
     }
 
+    /// <summary>
+    /// A handler a part adds for a base type of its actions is called for the types derived from it, and makes them available;
+    /// a handler added for one type is called for that type alone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focused box with a handler added for <c>Shape</c> and its derived types, which records the action's type, and a handler
+    ///   added for <c>Circle</c> alone on its parent. <c>Circle</c> and <c>Square</c> derive from <c>Shape</c>; <c>Round</c>
+    ///   derives from <c>Circle</c>.
+    ///
+    /// Steps:
+    /// - Dispatch a <c>Circle</c>, a <c>Square</c>, a <c>Round</c>, and an <c>Other</c> from the box. Ask whether a <c>Square</c>
+    ///   and an <c>Other</c> can be dispatched. Dispose the scope of the box's handler and dispatch a <c>Square</c> and a
+    ///   <c>Circle</c>.
+    ///
+    /// Expected:
+    /// - The box's handler records Circle, Square, and Round, and the three are handled; <c>Other</c> is not. A <c>Square</c> can
+    ///   be dispatched and an <c>Other</c> cannot. After the scope is disposed, the <c>Square</c> is not handled, and the
+    ///   <c>Circle</c> reaches the parent's handler, which the <c>Round</c> did not.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task OnActionsOf_ABaseType_TakesTheDerivedTypes()
+    {
+        var log = new List<string>();
+        Element box = default;
+        ScopeHandle scope = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            box = Box().Width(10).Height(10).Focusable();
+            scope = Scope.Create(() => _ = box.OnActionsOf((in ActionEvent<Shape> e) => log.Add(e.Action.GetType().Name)));
+            return Column(box).OnAction((in ActionEvent<Circle> _) => log.Add("parent"));
+        });
+        Assert.True(app.Focus(box));
+
+        Assert.True(box.Dispatch(new Circle()));
+        Assert.True(box.Dispatch(new Square()));
+        Assert.True(box.Dispatch(new Round()));
+        Assert.False(box.Dispatch(new Other()));
+        Assert.True(box.CanDispatch<Square>());
+        Assert.False(box.CanDispatch<Other>());
+        Assert.Equal(["Circle", "Square", "Round"], log);
+
+        Scope.Dispose(scope);
+        Assert.False(box.Dispatch(new Square()));
+        Assert.False(box.Dispatch(new Round()));
+        Assert.True(box.Dispatch(new Circle()));
+        _ = app.PumpAndSettle();
+        Assert.Equal(["Circle", "Square", "Round", "parent"], log);
+    }
+
     private sealed class Other : IAction;
+
+    private class Shape : IAction;
+
+    private class Circle : Shape;
+
+    private sealed class Square : Shape;
+
+    private sealed class Round : Circle;
 
     private sealed class Pick(int number) : IAction
     {

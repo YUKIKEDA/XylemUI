@@ -75,8 +75,7 @@ public static partial class Primitive
                 .On(PointerEventKind.Cancel, EventPhase.Bubble, PointerCancel)
                 .PartKeyContext(PrimitiveKeyBindings.SelectionAreaContext)
                 .OnAction<MenuActions.OpenContextMenu>(AskMenu)
-                .OnAction((in ActionEvent<TextActions.SelectAll> _) => SelectAll())
-                .OnAction((in ActionEvent<TextActions.Copy> _) => Copy())
+                .OnActionsOf<TextAction>(Act)
                 .On(KeyEventKind.Up, EventPhase.Bubble, KeyUp)
                 .On(FocusEventKind.FocusOut, EventPhase.Bubble, FocusOut);
             if (options.ContextMenu is { } menu)
@@ -189,6 +188,23 @@ public static partial class Primitive
             }
 
             OpenMenu(at: null);
+        }
+
+        // The two actions of a text field that an area has: the others go on.
+        private void Act(in ActionEvent<TextAction> e)
+        {
+            switch (e.Action.Command)
+            {
+                case TextCommand.SelectAll:
+                    SelectAll();
+                    break;
+                case TextCommand.Copy:
+                    Copy();
+                    break;
+                default:
+                    e.Propagate();
+                    break;
+            }
         }
 
         private void KeyUp(in KeyEvent e)

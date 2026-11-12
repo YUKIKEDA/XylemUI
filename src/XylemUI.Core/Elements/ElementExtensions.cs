@@ -1057,6 +1057,35 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Adds one handler of the actions of a type and of every type derived from it, as <see cref="OnAction"/> adds a handler of
+    /// one type. A part whose actions have one base type, as a text field's, takes them all with it: a handler for each type
+    /// would be an entry, a delegate, and a cleanup for each, on every node of the part (row KM2b: 14.5 KB more for a text field).
+    /// </summary>
+    /// <typeparam name="TAction">The base type of the actions.</typeparam>
+    /// <param name="element">The node.</param>
+    /// <param name="handler">The handler, as for <see cref="OnAction"/>.</param>
+    /// <param name="phase">The phase of the route.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">There is no current scope.</exception>
+    internal static Element OnActionsOf<TAction>(this Element element, ActionHandler<TAction> handler, EventPhase phase = EventPhase.Bubble)
+        where TAction : class, IAction
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        UiTree tree = element.TreeOrThrow();
+        NodeHandle node = element.Node;
+        RequireScope();
+        tree.AddActionHandler(node, phase, handler, derived: true);
+        Scope.OnCleanup(() =>
+        {
+            if (tree.Nodes.IsAlive(node))
+            {
+                _ = tree.RemoveActionHandler(node, phase, handler);
+            }
+        });
+        return element;
+    }
+
+    /// <summary>
     /// Sets what the node calls itself for the key bindings (design §7, "Shortcuts and actions"): names, as <c>Editor</c>, and
     /// values, as <c>mode = full</c>, separated by spaces. A binding's condition (<see cref="Keymap.Bind"/>) is checked against the
     /// contexts of the focused node and its ancestors.

@@ -1372,11 +1372,12 @@ internal sealed class UiTree
     /// <param name="node">The node.</param>
     /// <param name="phase">The phase of the route.</param>
     /// <param name="handler">The handler.</param>
-    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler)
+    /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
+    public void AddActionHandler<TAction>(NodeHandle node, EventPhase phase, ActionHandler<TAction> handler, bool derived = false)
         where TAction : class, IAction
     {
         ArgumentNullException.ThrowIfNull(handler);
-        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef));
+        InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived));
         Actions.AvailabilityChanged();
     }
 

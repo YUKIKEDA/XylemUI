@@ -105,7 +105,7 @@ internal sealed class ActionDispatch
 
             foreach (ActionHandlerEntry entry in input.ActionHandlers)
             {
-                if (entry.ActionType == type)
+                if (entry.Handles(type))
                 {
                     return true;
                 }
@@ -168,7 +168,7 @@ internal sealed class ActionDispatch
 
         foreach (ActionHandlerEntry entry in input.ActionHandlers)
         {
-            if (entry.ActionType != type || entry.Phase != phase)
+            if (entry.Phase != phase || !entry.Handles(type))
             {
                 continue;
             }
@@ -235,9 +235,11 @@ internal abstract class ActionHandlerEntry
     /// <param name="phase">The phase of the route.</param>
     /// <param name="handler">The handler's delegate.</param>
     /// <param name="scope">The scope the handler runs in.</param>
-    protected ActionHandlerEntry(Type actionType, EventPhase phase, Delegate handler, ScopeRef scope)
+    /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
+    protected ActionHandlerEntry(Type actionType, EventPhase phase, Delegate handler, ScopeRef scope, bool derived)
     {
         ActionType = actionType;
+        Derived = derived;
         Phase = phase;
         Handler = handler;
         Scope = scope;
@@ -247,6 +249,20 @@ internal abstract class ActionHandlerEntry
     /// Gets the type of the action.
     /// </summary>
     public Type ActionType { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the handler is also called for the types derived from <see cref="ActionType"/>: a part
+    /// with many actions of one base type, as a text field, has one handler for them all (design §7, "The default keys and
+    /// actions").
+    /// </summary>
+    public bool Derived { get; }
+
+    /// <summary>
+    /// Returns whether the handler is called for an action of a type.
+    /// </summary>
+    /// <param name="type">The type of the action that is dispatched.</param>
+    /// <returns>Whether the type is the handler's, or derived from it when the handler takes those.</returns>
+    public bool Handles(Type type) => ActionType == type || (Derived && type.IsSubclassOf(ActionType));
 
     /// <summary>
     /// Gets the phase of the route.
@@ -288,8 +304,9 @@ internal sealed class ActionHandlerEntry<TAction> : ActionHandlerEntry
     /// <param name="phase">The phase of the route.</param>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">The scope the handler runs in.</param>
-    public ActionHandlerEntry(EventPhase phase, ActionHandler<TAction> handler, ScopeRef scope)
-        : base(typeof(TAction), phase, handler, scope) => _handler = handler;
+    /// <param name="derived">Whether the handler is also called for the types derived from the action's.</param>
+    public ActionHandlerEntry(EventPhase phase, ActionHandler<TAction> handler, ScopeRef scope, bool derived = false)
+        : base(typeof(TAction), phase, handler, scope, derived) => _handler = handler;
 
     /// <inheritdoc/>
     public override void Invoke(ActionDispatch dispatch, IAction action, NodeHandle target, NodeHandle node)
