@@ -66,11 +66,17 @@ public static class MenuActions
 public static class SelectActions
 {
     /// <summary>
-    /// Opens the list, or closes it when it is open; the default of Alt and the up or the down arrow, F4, Enter, and Space on the
-    /// box, and of Alt and an arrow and F4 in the list.
+    /// Opens the list of the closed box; the default of Enter and Space on the box.
     /// </summary>
     [Action("select::Open")]
     public sealed class Open : IAction;
+
+    /// <summary>
+    /// Opens the list, or closes it when it is open; the default of Alt and the up or the down arrow and of F4, on the box and
+    /// in the list.
+    /// </summary>
+    [Action("select::Toggle")]
+    public sealed class Toggle : IAction;
 
     /// <summary>
     /// Makes the option before the value the value, with the list closed; the default of the up arrow on the box.

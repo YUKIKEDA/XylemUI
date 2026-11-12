@@ -7,9 +7,9 @@ namespace XylemUI.Primitives;
 /// generated module initializer registers <see cref="AddDefaults"/> after <see cref="CoreKeyBindings.AddDefaults"/>.
 /// </summary>
 /// <remarks>
-/// The parts still take their keys in key handlers (roadmap row KM2b moves them to actions). The keymap is tried before the key
-/// handlers, so each part takes away, in its own context, the rows of <see cref="CoreKeyBindings"/> for the keys it handles: a row
-/// with no action leaves the key to the key handlers.
+/// Each part gives its node a context, and the rows here name it: a row of a part is then deeper than the rows of
+/// <see cref="CoreKeyBindings"/>, which have the tree's own context, and wins over them. The part handles the row's action on
+/// its node; when it does not, the next row of the keys is tried, the one of <see cref="CoreKeyBindings"/> last.
 /// </remarks>
 public static class PrimitiveKeyBindings
 {
@@ -68,12 +68,29 @@ public static class PrimitiveKeyBindings
         _ = keymap.Bind("right", new MenuActions.OpenSubmenu(), MenuContext);
         _ = keymap.Bind("left", new MenuActions.CloseSubmenu(), MenuContext);
         _ = keymap.Bind("shift-f10", new MenuActions.OpenContextMenu(), CoreKeyBindings.WindowContext);
-        Unbind(keymap, SelectContext, "up", "down");
-        Unbind(keymap, SelectListContext, "up", "down", "home", "end", "pageup", "pagedown", "tab", "shift-tab");
-
-        // Esc keeps its row on the bar: in a menu open from the bar it closes the menu, and with no popup open its action is
-        // not handled, so the key goes on to the bar's item, which leaves the bar.
-        Unbind(keymap, MenuBarContext, "left", "right", "up", "down");
+        _ = keymap.Bind("alt-up", new SelectActions.Toggle(), SelectContext);
+        _ = keymap.Bind("alt-down", new SelectActions.Toggle(), SelectContext);
+        _ = keymap.Bind("f4", new SelectActions.Toggle(), SelectContext);
+        _ = keymap.Bind("enter", new SelectActions.Open(), SelectContext);
+        _ = keymap.Bind("space", new SelectActions.Open(), SelectContext);
+        _ = keymap.Bind("up", new SelectActions.Previous(), SelectContext);
+        _ = keymap.Bind("down", new SelectActions.Next(), SelectContext);
+        _ = keymap.Bind("up", new MenuActions.SelectPrevious(), SelectListContext);
+        _ = keymap.Bind("down", new MenuActions.SelectNext(), SelectListContext);
+        _ = keymap.Bind("home", new MenuActions.SelectFirst(), SelectListContext);
+        _ = keymap.Bind("end", new MenuActions.SelectLast(), SelectListContext);
+        _ = keymap.Bind("pageup", new SelectActions.PageUp(), SelectListContext);
+        _ = keymap.Bind("pagedown", new SelectActions.PageDown(), SelectListContext);
+        _ = keymap.Bind("enter", new MenuActions.Confirm(), SelectListContext);
+        _ = keymap.Bind("space", new MenuActions.Confirm(), SelectListContext);
+        _ = keymap.Bind("tab", new SelectActions.CloseAndFocusNext(), SelectListContext);
+        _ = keymap.Bind("shift-tab", new SelectActions.CloseAndFocusPrevious(), SelectListContext);
+        _ = keymap.Bind("left", new MenuBarActions.Previous(), MenuBarContext);
+        _ = keymap.Bind("right", new MenuBarActions.Next(), MenuBarContext);
+        _ = keymap.Bind("down", new MenuBarActions.Open(), MenuBarContext);
+        _ = keymap.Bind("enter", new MenuBarActions.Open(), MenuBarContext);
+        _ = keymap.Bind("space", new MenuBarActions.Open(), MenuBarContext);
+        _ = keymap.Bind("up", new MenuBarActions.Open { Last = true }, MenuBarContext);
     }
 
     // The rows of design §7's table for the text field (design §4.9, the table of the field's keys).
@@ -123,13 +140,5 @@ public static class PrimitiveKeyBindings
         _ = keymap.Bind("enter", new TextActions.InsertNewline(), Many);
         _ = keymap.Bind("shift-enter", new TextActions.InsertNewline(), Many);
         _ = keymap.Bind("enter", new TextActions.Submit(), One);
-    }
-
-    private static void Unbind(Keymap keymap, string context, params ReadOnlySpan<string> keys)
-    {
-        foreach (string key in keys)
-        {
-            _ = keymap.Bind(key, null, context);
-        }
     }
 }
