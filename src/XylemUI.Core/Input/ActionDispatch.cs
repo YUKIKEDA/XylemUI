@@ -254,6 +254,12 @@ internal sealed class ActionDispatch
     /// <param name="node">The node whose link to its parent changed.</param>
     public void LinkChanged(NodeHandle node)
     {
+        // A tree nobody reads has neither count: a row put in or taken out pays for no batch (the Todo scenes, row KM3).
+        if (_epoch is null && _orderEpoch is null)
+        {
+            return;
+        }
+
         ReactiveRuntime.EnterBatch();
         try
         {

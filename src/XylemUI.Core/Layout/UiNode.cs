@@ -44,7 +44,7 @@ internal struct UiNode
     public bool RouteWatched;
 
     /// <summary>
-    /// The pseudo-states the pointer's input set (design §2.13). It sits in the padding after <see cref="IsAttached"/>.
+    /// The pseudo-states the pointer's input set (design §2.13). It sits in the padding after <see cref="IsAttached"/> and <see cref="RouteWatched"/>.
     /// </summary>
     public PseudoState Pseudo;
 
