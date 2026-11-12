@@ -148,7 +148,7 @@ public static partial class Primitive
                 Scope.OnCleanup(cues.Release);
                 Element menuPanel = panel();
                 tree.SetPartAccessibility(menuPanel.Node, Roles.Menu);
-                return menuPanel.KeyContext(PrimitiveKeyBindings.MenuContext).On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys);
+                return menuPanel.PartKeyContext(PrimitiveKeyBindings.MenuContext).On(KeyEventKind.Down, EventPhase.Bubble, PanelKeys);
             },
             options,
             root =>

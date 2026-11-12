@@ -1072,6 +1072,21 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Sets the context of the part that makes the node (design §7, "The default keys and actions"), which the default rows of
+    /// the part's package name. It stays when the app gives the node a context of its own with <see cref="KeyContext"/>: the
+    /// conditions see both as one.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="context">The context; <see langword="null"/> or empty for none.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="FormatException">The text is not a context.</exception>
+    public static Element PartKeyContext(this Element element, string? context)
+    {
+        element.TreeOrThrow().SetKeyContext(element.Node, context, part: true);
+        return element;
+    }
+
+    /// <summary>
     /// Finds the keys that ask for an action in the element's window now (design §7, "Shortcuts and actions"): the row of the
     /// window's keymap for an action of the type whose condition holds at the focused node and that no other row with the same
     /// keys wins over, a row that takes the keys' binding away included. A menu item and a tooltip show its

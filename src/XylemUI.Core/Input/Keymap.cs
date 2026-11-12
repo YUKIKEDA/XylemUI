@@ -91,16 +91,29 @@ public sealed class Keymap
     private Signal<int>? _version;
     private int _versionValue;
 
+    // While the constructor adds the default rows: the keymap is not given to a tree yet, so any thread may make it.
+    private bool _building;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="Keymap"/> class with the default rows of the packages the app references
     /// (<see cref="RegisterDefaults"/>), in the order the packages depend on each other. The rows added after them win over them.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    /// <remarks>
+    /// Any thread can make a keymap. Its rows are added and taken out on the UI thread.
+    /// </remarks>
     public Keymap()
     {
-        foreach (Action<Keymap> add in _defaults)
+        _building = true;
+        try
         {
-            add(this);
+            foreach (Action<Keymap> add in _defaults)
+            {
+                add(this);
+            }
+        }
+        finally
+        {
+            _building = false;
         }
     }
 
@@ -152,7 +165,11 @@ public sealed class Keymap
     public KeyBinding Bind(string keystrokes, IAction? action, string? context = null)
     {
         ArgumentNullException.ThrowIfNull(keystrokes);
-        UiThread.VerifyAccess();
+        if (!_building)
+        {
+            UiThread.VerifyAccess();
+        }
+
         var steps = new List<Keystroke>();
         foreach (Range part in keystrokes.AsSpan().Split(' '))
         {
@@ -225,6 +242,23 @@ public sealed class Keymap
         _bindings = removed;
         Changed();
         return true;
+    }
+
+    /// <summary>
+    /// Throws when no default rows are registered (design §7, "The default keys and actions"): an app with none has no Tab, no
+    /// Esc, and no keys in its parts. An app's start calls it.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No method was registered with <see cref="RegisterDefaults"/>.</exception>
+    internal static void RequireDefaults()
+    {
+        if (_defaults.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "No default key bindings are registered, so Tab, Esc, and the keys of the parts would do nothing. The source generator "
+                    + "of XylemUI.Core registers them in the app's module initializer; an app built without it calls "
+                    + "Keymap.RegisterDefaults(CoreKeyBindings.AddDefaults), and the same for each package of parts it uses, before it starts."
+            );
+        }
     }
 
     /// <summary>

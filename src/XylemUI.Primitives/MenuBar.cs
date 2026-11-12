@@ -67,7 +67,7 @@ public static partial class Primitive
         RegisterItem(tree, item.Node, state.OpenFromKey);
         item.Tree!.SetPartAccessibility(item.Node, Roles.MenuItem);
         return item.OnClick(state.Click)
-            .KeyContext(PrimitiveKeyBindings.MenuBarContext)
+            .PartKeyContext(PrimitiveKeyBindings.MenuBarContext)
             .On(KeyEventKind.Down, EventPhase.Bubble, state.KeyDown)
             .On(PointerEventKind.Enter, EventPhase.Bubble, state.Enter);
     }

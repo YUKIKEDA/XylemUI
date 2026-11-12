@@ -60,6 +60,32 @@ internal sealed class KeyContext
     }
 
     /// <summary>
+    /// Makes one context of a part's and the app's on the same node: the names of both, and the values of both, the app's value
+    /// for a key both have.
+    /// </summary>
+    /// <param name="part">The part's context; <see langword="null"/> for none.</param>
+    /// <param name="app">The app's context; <see langword="null"/> for none.</param>
+    /// <returns>The context; <see langword="null"/> when both are.</returns>
+    public static KeyContext? Join(KeyContext? part, KeyContext? app)
+    {
+        if (part is null || app is null)
+        {
+            return part ?? app;
+        }
+
+        var values = new List<(string Key, string Value)>(app._values);
+        foreach ((string key, string value) in part._values)
+        {
+            if (app.Value(key) is null)
+            {
+                values.Add((key, value));
+            }
+        }
+
+        return new KeyContext([.. part._names, .. app._names], [.. values]);
+    }
+
+    /// <summary>
     /// Returns whether the context has a name.
     /// </summary>
     /// <param name="name">The name.</param>

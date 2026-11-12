@@ -112,7 +112,7 @@ public static partial class Primitive
             );
             _tree.SetPartAccessibility(_box, Roles.ComboBox);
             return box.Focusable()
-                .KeyContext(PrimitiveKeyBindings.SelectContext)
+                .PartKeyContext(PrimitiveKeyBindings.SelectContext)
                 .OnClick(Toggle)
                 .On(KeyEventKind.Down, EventPhase.Bubble, BoxKeys)
                 .OnTextInput(EventPhase.Bubble, Typed);
@@ -148,7 +148,7 @@ public static partial class Primitive
                     MaxHeight = Length.Px(settings.MaxDropDownHeight),
                 }
             );
-            _ = list.KeyContext(PrimitiveKeyBindings.SelectListContext)
+            _ = list.PartKeyContext(PrimitiveKeyBindings.SelectListContext)
                 .On(KeyEventKind.Down, EventPhase.Bubble, ListKeys)
                 .OnTextInput(EventPhase.Bubble, Typed);
             return settings.Panel?.Invoke(list) ?? list;

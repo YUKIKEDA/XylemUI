@@ -37,10 +37,39 @@ internal sealed class NodeInput
     public ActionHandlerEntry[] ActionHandlers { get; private set; } = [];
 
     /// <summary>
-    /// Gets or sets what the node calls itself for the key bindings (design §7, "Shortcuts and actions"); <see langword="null"/>
-    /// for a node with no context.
+    /// Gets what the node calls itself for the key bindings (design §7, "Shortcuts and actions"): the context of the part that
+    /// made the node and the context the app gave it, as one; <see langword="null"/> for a node with neither.
     /// </summary>
-    public KeyContext? KeyContext { get; internal set; }
+    public KeyContext? KeyContext { get; private set; }
+
+    /// <summary>
+    /// Gets the context of the part that made the node; <see langword="null"/> for none.
+    /// </summary>
+    public KeyContext? PartKeyContext { get; private set; }
+
+    /// <summary>
+    /// Gets the context the app gave the node; <see langword="null"/> for none.
+    /// </summary>
+    public KeyContext? AppKeyContext { get; private set; }
+
+    /// <summary>
+    /// Sets one of the node's two contexts; the other stays.
+    /// </summary>
+    /// <param name="context">The context; <see langword="null"/> for none.</param>
+    /// <param name="part">Whether it is the part's context; otherwise the app's.</param>
+    internal void SetKeyContext(KeyContext? context, bool part)
+    {
+        if (part)
+        {
+            PartKeyContext = context;
+        }
+        else
+        {
+            AppKeyContext = context;
+        }
+
+        KeyContext = KeyContext.Join(PartKeyContext, AppKeyContext);
+    }
 
     /// <summary>
     /// Gets or sets the cursor over the node and its descendants that set none; <see langword="null"/> for none.

@@ -21,12 +21,15 @@ public static class XylemApp
     /// <returns>The exit code of the message loop: 0 when the last window closed.</returns>
     /// <exception cref="InvalidOperationException">
     /// Another thread is the UI thread, a message loop already runs, the calling thread is in COM's multithreaded apartment (the
-    /// app's <c>Main</c> lacks <c>[STAThread]</c>), or the window, its renderer, or the root function failed.
+    /// app's <c>Main</c> lacks <c>[STAThread]</c>), the window, its renderer, or the root function failed, or no default key
+    /// bindings are registered (the app is built without the source generator of <c>XylemUI.Core</c> and did not call
+    /// <see cref="Keymap.RegisterDefaults"/>).
     /// </exception>
     /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
     public static int Run(Func<Element> root, WindowOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(root);
+        Keymap.RequireDefaults();
         UiThread.Initialize();
         if (_running)
         {
