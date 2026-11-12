@@ -175,6 +175,29 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             }
         }
 
+        // The action's arguments, of any type: the properties code outside the type can set, and can read to compare. Two
+        // actions with the same values in them have the same keys. A named action is made with no parameter, so it gets its
+        // arguments in no other way.
+        var compared = ImmutableArray.CreateBuilder<ComparedInfo>();
+        var read = new HashSet<string>(StringComparer.Ordinal);
+        for (INamedTypeSymbol? t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+        {
+            foreach (IPropertySymbol property in t.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (
+                    !property.IsStatic
+                    && !property.IsIndexer
+                    && property.DeclaredAccessibility == Accessibility.Public
+                    && property.GetMethod is { DeclaredAccessibility: Accessibility.Public }
+                    && property.SetMethod is { DeclaredAccessibility: Accessibility.Public }
+                    && read.Add(property.Name)
+                )
+                {
+                    compared.Add(new ComparedInfo(property.Name, property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                }
+            }
+        }
+
         Location? location = type.Locations.FirstOrDefault();
         return new ActionInfo(
             name,
@@ -185,6 +208,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             reachable,
             new EquatableArray<ArgumentInfo>(arguments.ToImmutable()),
             new EquatableArray<string>(unsupported.ToImmutable()),
+            new EquatableArray<ComparedInfo>(compared.ToImmutable()),
             location is null ? null : LocationInfo.From(location)
         );
     }
@@ -458,6 +482,11 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                             ? "(), Set" + valid.IndexOf(action).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");\n"
                             : "());\n"
                     );
+                if (action.Compared.Count > 0)
+                {
+                    _ = text.Append("            global::XylemUI.ActionRegistry.Compare<").Append(action.TypeName).Append(">(Same");
+                    _ = text.Append(valid.IndexOf(action).ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(");\n");
+                }
             }
 
             _ = text.Append("        }\n");
@@ -468,6 +497,11 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             if (valid[i].Arguments.Count > 0)
             {
                 WriteSetter(text, valid[i], i);
+            }
+
+            if (valid[i].Compared.Count > 0)
+            {
+                WriteComparison(text, valid[i], i);
             }
         }
 
@@ -504,6 +538,22 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
         _ = text.Append("    }\n}\n");
         output.AddSource("XylemUI.Actions.g.cs", text.ToString());
+    }
+
+    // The method that compares the arguments of two actions of a type, each with its type's default comparer: what the
+    // keymap asks to show the keys of an action with arguments (design §7, "Menu items that name actions").
+    private static void WriteComparison(StringBuilder text, ActionInfo action, int index)
+    {
+        _ = text.Append("\n        private static bool Same").Append(index).Append('(').Append(action.TypeName).Append(" left, ");
+        _ = text.Append(action.TypeName).Append(" right) =>\n");
+        int i = 0;
+        foreach (ComparedInfo property in action.Compared)
+        {
+            _ = text.Append("            ").Append(i == 0 ? string.Empty : "&& ");
+            _ = text.Append("global::System.Collections.Generic.EqualityComparer<").Append(property.TypeName).Append(">.Default.Equals(left.");
+            _ = text.Append(property.Name).Append(", right.").Append(property.Name).Append(')');
+            _ = text.Append(++i == action.Compared.Count ? ";\n" : "\n");
+        }
     }
 
     // The method that sets an action's property from an argument's name and its text. The name is compared without case; a
@@ -604,8 +654,11 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         bool Reachable,
         EquatableArray<ArgumentInfo> Arguments,
         EquatableArray<string> Unsupported,
+        EquatableArray<ComparedInfo> Compared,
         LocationInfo? Location
     );
+
+    private sealed record ComparedInfo(string Name, string TypeName);
 
     private sealed record ArgumentInfo(string Name, string Kind, string TypeName, EquatableArray<string> Members, bool UseWith);
 

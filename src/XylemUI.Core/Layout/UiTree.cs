@@ -1833,6 +1833,10 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
+
+        // The subtree is on routes and in the order of Tab now: a move of the focus may have a node to go to, and a menu's item
+        // made while its menu is open finds its menu (PR #821's review). So in InsertAfter.
+        Actions.AvailabilityChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (p.LastChild.IsNone)
         {
@@ -1881,6 +1885,7 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
+        Actions.AvailabilityChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (previous.IsNone)
         {
@@ -1984,8 +1989,7 @@ internal sealed class UiTree
             NodeHandle next = c.NextSibling;
             c.Parent = default;
 
-            // The route of an action from a focused node of the subtree ends here now. A node that is attached needs no such
-            // mark: the changes that move a live subtree detach it first, in the batch that attaches it again.
+            // The route of an action from a focused node of the subtree ends here now.
             Actions.AvailabilityChanged();
             c.NextSibling = default;
             child = next;

@@ -1153,9 +1153,9 @@ public static partial class ElementExtensions
 
     /// <summary>
     /// Finds the keys that ask for an action in the element's window, as <see cref="KeyBindingFor{TAction}(Element)"/> does, for
-    /// the action's values and from a node (design §7, "Menu items that name actions"): a row whose action is of the action's type,
-    /// and equal to it when the type is an <see cref="IEquatable{T}"/> of <see cref="IAction"/>; the conditions are those that
-    /// hold at <paramref name="from"/>. A menu item reads the keys at the node the focus was on before its menu opened.
+    /// the action's values and from a node (design §7, "Menu items that name actions"): a row whose action is of the action's type
+    /// and has the same arguments, the public properties that can be set of a type that carries <see cref="ActionAttribute"/>, which the source
+    /// generator compares (<see cref="ActionRegistry.Compare"/>); the conditions are those that hold at <paramref name="from"/>. A menu item reads the keys at the node the focus was on before its menu opened.
     /// </summary>
     /// <param name="element">A node of the window.</param>
     /// <param name="action">The action.</param>

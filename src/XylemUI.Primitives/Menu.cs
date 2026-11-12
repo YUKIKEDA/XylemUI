@@ -107,6 +107,7 @@ public static partial class Primitive
         RequireScope(nameof(MenuItem));
         var named = new NamedAction(tree, action, _inPanel, _panelContext);
         Element item = Box(content(Computed.Create(named.Keys))).Focusable().Disabled(Computed.Create(named.Unavailable));
+        named.Item = item.Node;
         var state = new MenuItemState(tree, item.Node, named.Dispatch, submenu: null);
         return state.Attach(item);
     }
@@ -181,6 +182,11 @@ public static partial class Primitive
         // A menu opened from the keys shows the access keys while it is open (design §13.1, "Access keys"): its part's scope, which
         // goes when the menu closes, ends what it began.
         MenuCues? cues = null;
+
+        // The context node of the menu that is open, kept by its popup's root: an item made while the menu is open, by a Show or
+        // a For of its panel, finds it there (PR #821's review).
+        NodeHandle context = default;
+        NodeHandle openedRoot = default;
         return PopupBlock.Create(
             tree,
             anchor,
@@ -191,6 +197,8 @@ public static partial class Primitive
                 Scope.OnCleanup(cues.Release);
                 (bool wasInPanel, NodeHandle previous) = (_inPanel, _panelContext);
                 _panelContext = inherits ? inherited : ContextNode(tree, anchor, contextMenu);
+                context = _panelContext;
+                Scope.OnCleanup(() => RegistryOf(tree).MenuContexts.Remove(openedRoot));
                 _inPanel = true;
                 Element menuPanel;
                 try
@@ -212,6 +220,8 @@ public static partial class Primitive
             root =>
             {
                 cues?.Hold();
+                openedRoot = root;
+                RegistryOf(tree).MenuContexts[root] = context;
                 opened?.Invoke(root);
             },
             MenuMark
@@ -362,11 +372,14 @@ public static partial class Primitive
 
     // An item's action, read and dispatched at its menu's context node; with no menu, at the focused node. With a context node that
     // has gone, or none, the route starts where it does with no focus (FocusManager.KeyTarget).
-    private sealed class NamedAction(UiTree tree, IAction action, bool inMenu, NodeHandle context)
+    private sealed class NamedAction(UiTree tree, IAction action, bool inPanel, NodeHandle context)
     {
+        // The item's node: an item that was not made in a panel finds its menu by it.
+        public NodeHandle Item { get; set; }
+
         private NodeHandle Start =>
-            !inMenu ? tree.Focus.KeyTarget
-            : tree.Nodes.IsAlive(context) ? context
+            !InMenu(out NodeHandle node) ? tree.Focus.KeyTarget
+            : tree.Nodes.IsAlive(node) ? node
             : tree.Focus.NoFocusTarget;
 
         public KeyBinding? Keys()
@@ -383,7 +396,20 @@ public static partial class Primitive
         }
 
         // An item of a menu reads at a node that a move of the focus does not change, so it does not read again for one.
-        private void Track() => tree.Actions.TrackAvailability(atFocus: !inMenu);
+        private void Track() => tree.Actions.TrackAvailability(atFocus: !InMenu(out _));
+
+        // Whether the item is a menu's, and that menu's context node: the one of the panel it was made in, or of the open menu
+        // it is in now.
+        private bool InMenu(out NodeHandle node)
+        {
+            node = context;
+            return inPanel
+                || (
+                    tree.Nodes.IsAlive(Item)
+                    && tree.Popups.PopupContaining(Item) is { } popup
+                    && RegistryOf(tree).MenuContexts.TryGetValue(popup.Root, out node)
+                );
+        }
 
         public void Dispatch() => _ = tree.Actions.Dispatch(Start, action);
     }

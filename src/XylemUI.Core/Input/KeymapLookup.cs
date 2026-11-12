@@ -124,9 +124,9 @@ internal static class KeymapLookup
     private static bool Wins(int depth, int order, int otherDepth, int otherOrder) =>
         depth > otherDepth || (depth == otherDepth && order > otherOrder);
 
-    // Whether a row's action is the one asked for: of the type alone when no value was given or the action compares no values.
-    private static bool SameValue(IAction action, IAction? value) =>
-        value is null || action is not IEquatable<IAction> equatable || equatable.Equals(value);
+    // Whether a row's action is the one asked for: of the type alone when no value was given, and with the same arguments
+    // otherwise, as the type's generated comparison says (ActionRegistry.Compare).
+    private static bool SameValue(IAction action, IAction? value) => value is null || ActionRegistry.SameArguments(action, value);
 
     private static bool SameKeys(KeyBinding left, KeyBinding right) => left.Steps.AsSpan().SequenceEqual(right.Steps);
 }

@@ -267,6 +267,58 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// The computation that asked whether the focus can move runs again when a node that takes the focus is put in the tree,
+    /// also one that was made focusable long before.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a box that takes no focus. Two focusable boxes made in the root function and kept, with no parent. A
+    ///   computation made in the root function reads <c>CanDispatch</c> of <c>focus::Next</c>.
+    ///
+    /// Steps:
+    /// - Settle and read it. Append the first kept box to the column, and read. Insert the second kept box after the column's
+    ///   first child, and read: the first kept box was made not focusable before, so only the second can take the focus.
+    ///
+    /// Expected:
+    /// - No with no focusable node in the tree; yes after the first box is appended; yes after the second is inserted, with the
+    ///   first not focusable any more (a read in between says no).
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task CanDispatch_AMoveOfTheFocus_IsReadAgainWhenAFocusableNodeIsPutInTheTree()
+    {
+        Element plain = default;
+        Element column = default;
+        Element appended = default;
+        Element inserted = default;
+        Computed<bool>? next = null;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            plain = Box().Width(20).Height(20);
+            appended = Box().Width(20).Height(20).Focusable();
+            inserted = Box().Width(20).Height(20).Focusable();
+            next = Computed.Create(() => plain.CanDispatch(new FocusActions.Next()));
+            return column = Column(plain);
+        });
+        _ = app.PumpAndSettle();
+        UiTree tree = app.Tree;
+
+        bool none = next!.Get();
+        tree.AppendChild(column.Node, appended.Node);
+        bool afterAppend = next.Get();
+        tree.SetFocusable(appended.Node, false);
+        bool between = next.Get();
+        tree.InsertAfter(column.Node, plain.Node, inserted.Node);
+        bool afterInsert = next.Get();
+        _ = app.PumpAndSettle();
+
+        Assert.False(none);
+        Assert.True(afterAppend);
+        Assert.False(between);
+        Assert.True(afterInsert);
+    }
+
+    /// <summary>
     /// A read at a node that is given is not made again when the focus moves, and a read at the focused node is.
     /// </summary>
     /// <remarks>
@@ -327,37 +379,44 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
-    /// The keys of an action whose type compares values are those of a row with an equal action; an action whose type compares
-    /// none, and a read by the type alone, find a row of the type.
+    /// The keys of a named action with arguments are those of a row whose action has the same arguments, compared by the code the
+    /// source generator wrote for the type, a record or a class; an action of a type with no name, and a read by the type alone,
+    /// find a row of the type.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A focused box. Rows: <c>ctrl-1</c> for <c>Zoom(1)</c> and <c>ctrl-2</c> for <c>Zoom(2)</c>, a type that is an
-    ///   <c>IEquatable&lt;IAction&gt;</c> by its level; <c>ctrl-3</c> for <c>Pick(1)</c>, a type that is not.
+    /// - A focused box. Rows: <c>ctrl-1</c> and <c>ctrl-2</c> for the record <c>test::Zoom</c> with the level 1 and 2;
+    ///   <c>ctrl-4</c> and <c>ctrl-5</c> for the class <c>test::Grow</c> by 1 with the unit "px" and "em"; <c>ctrl-3</c> for
+    ///   <c>Pick(1)</c>, a type with no name.
     ///
     /// Steps:
-    /// - Read <c>KeyBindingFor</c> of <c>Zoom(1)</c>, <c>Zoom(2)</c>, <c>Zoom(3)</c>, and <c>Pick(9)</c>, and
-    ///   <c>KeyBindingFor&lt;Zoom&gt;()</c>.
+    /// - Read <c>KeyBindingFor</c> of the zoom with the level 1, 2, and 3; of the grow by 1 in "em", by 1 in "px", and by 2; of
+    ///   <c>Pick(9)</c>; and <c>KeyBindingFor&lt;AvailabilityZoom&gt;()</c>.
     ///
     /// Expected:
-    /// - Ctrl+1; Ctrl+2; none; Ctrl+3; Ctrl+2, the row added later.
+    /// - Ctrl+1, Ctrl+2, none; Ctrl+5, Ctrl+4, none; Ctrl+3; Ctrl+2, the row added later.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
-    public async Task KeyBindingFor_AnActionWithValues_IsARowWithAnEqualAction()
+    public async Task KeyBindingFor_AnActionWithArguments_IsARowWithTheSameArguments()
     {
         Element box = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() => box = Box().Width(10).Height(10).Focusable());
         Assert.True(app.Focus(box));
-        _ = app.Keymap.Bind("ctrl-1", new Zoom(1));
-        _ = app.Keymap.Bind("ctrl-2", new Zoom(2));
+        _ = app.Keymap.Bind("ctrl-1", new AvailabilityZoom { Level = 1 });
+        _ = app.Keymap.Bind("ctrl-2", new AvailabilityZoom { Level = 2 });
         _ = app.Keymap.Bind("ctrl-3", new Pick(1));
+        _ = app.Keymap.Bind("ctrl-4", new AvailabilityGrow { By = 1 });
+        _ = app.Keymap.Bind("ctrl-5", new AvailabilityGrow { By = 1, Unit = "em" });
 
-        Assert.Equal("Ctrl+1", box.KeyBindingFor(new Zoom(1))?.ToDisplayString());
-        Assert.Equal("Ctrl+2", box.KeyBindingFor(new Zoom(2))?.ToDisplayString());
-        Assert.Null(box.KeyBindingFor(new Zoom(3)));
+        Assert.Equal("Ctrl+1", box.KeyBindingFor(new AvailabilityZoom { Level = 1 })?.ToDisplayString());
+        Assert.Equal("Ctrl+2", box.KeyBindingFor(new AvailabilityZoom { Level = 2 })?.ToDisplayString());
+        Assert.Null(box.KeyBindingFor(new AvailabilityZoom { Level = 3 }));
+        Assert.Equal("Ctrl+5", box.KeyBindingFor(new AvailabilityGrow { By = 1, Unit = "em" })?.ToDisplayString());
+        Assert.Equal("Ctrl+4", box.KeyBindingFor(new AvailabilityGrow { By = 1 })?.ToDisplayString());
+        Assert.Null(box.KeyBindingFor(new AvailabilityGrow { By = 2 }));
         Assert.Equal("Ctrl+3", box.KeyBindingFor(new Pick(9))?.ToDisplayString());
-        Assert.Equal("Ctrl+2", box.KeyBindingFor<Zoom>()?.ToDisplayString());
+        Assert.Equal("Ctrl+2", box.KeyBindingFor<AvailabilityZoom>()?.ToDisplayString());
         _ = app.PumpAndSettle();
     }
 
@@ -480,15 +539,33 @@ public sealed class ActionAvailabilityTests
     {
         public int Number { get; } = number;
     }
+}
 
-    private sealed class Zoom(int level) : IAction, IEquatable<IAction>
-    {
-        public int Level { get; } = level;
+/// <summary>
+/// A named action with an argument, written as a record: the source generator compares its level.
+/// </summary>
+[Action("test::Zoom")]
+internal sealed record AvailabilityZoom : IAction
+{
+    /// <summary>
+    /// Gets the level.
+    /// </summary>
+    public int Level { get; init; }
+}
 
-        public bool Equals(IAction? other) => other is Zoom zoom && zoom.Level == Level;
+/// <summary>
+/// A named action with two arguments, written as a class: the source generator compares both.
+/// </summary>
+[Action("test::Grow")]
+internal sealed class AvailabilityGrow : IAction
+{
+    /// <summary>
+    /// Gets or sets the amount.
+    /// </summary>
+    public int By { get; set; }
 
-        public override bool Equals(object? obj) => obj is IAction action && Equals(action);
-
-        public override int GetHashCode() => Level;
-    }
+    /// <summary>
+    /// Gets or sets the unit of the amount.
+    /// </summary>
+    public string Unit { get; set; } = "px";
 }

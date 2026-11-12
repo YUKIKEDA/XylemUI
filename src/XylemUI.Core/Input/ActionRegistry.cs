@@ -15,6 +15,7 @@ public static class ActionRegistry
     private static readonly Dictionary<string, Func<IAction>> ByName = new(StringComparer.Ordinal);
     private static readonly Dictionary<Type, string> ByType = [];
     private static readonly Dictionary<string, Setter> Setters = new(StringComparer.Ordinal);
+    private static readonly Dictionary<Type, Func<IAction, IAction, bool>> Comparers = [];
 
     private delegate bool Setter(ref IAction action, ReadOnlySpan<char> name, ReadOnlySpan<char> value);
 
@@ -146,6 +147,50 @@ public static class ActionRegistry
         action = made;
         error = null;
         return true;
+    }
+
+    /// <summary>
+    /// Gives an action type the function that compares the arguments of two of its actions (design §7, "Menu items that name
+    /// actions"): the keys shown for an action are those of a row whose action has the same arguments. The source generator of
+    /// <c>XylemUI.Generators</c> writes one for each action type with arguments, the public properties that can be set, and it
+    /// compares them all; a type given none
+    /// is compared by the type alone.
+    /// </summary>
+    /// <typeparam name="TAction">The type of the action.</typeparam>
+    /// <param name="same">Returns whether two actions of the type have the same arguments.</param>
+    public static void Compare<TAction>(Func<TAction, TAction, bool> same)
+        where TAction : class, IAction
+    {
+        ArgumentNullException.ThrowIfNull(same);
+        lock (Gate)
+        {
+            // The same table can be registered twice, as a name can.
+            Comparers[typeof(TAction)] = (left, right) => same((TAction)left, (TAction)right);
+        }
+    }
+
+    /// <summary>
+    /// Returns whether two actions are of one type and have the same arguments; actions of a type that was given no comparison
+    /// have.
+    /// </summary>
+    /// <param name="left">An action.</param>
+    /// <param name="right">Another action.</param>
+    /// <returns>Whether the keys of one are the keys of the other.</returns>
+    internal static bool SameArguments(IAction left, IAction right)
+    {
+        Type type = left.GetType();
+        if (type != right.GetType())
+        {
+            return false;
+        }
+
+        Func<IAction, IAction, bool>? same;
+        lock (Gate)
+        {
+            _ = Comparers.TryGetValue(type, out same);
+        }
+
+        return same is null || same(left, right);
     }
 
     /// <summary>

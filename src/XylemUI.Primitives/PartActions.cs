@@ -329,7 +329,7 @@ public static class MenuBarActions
     /// Opens the menu of the focused item; the default of the down and the up arrow, Enter, and Space on the bar.
     /// </summary>
     [Action("menubar::Open")]
-    public sealed class Open : MenuBarAction, IEquatable<IAction>
+    public sealed class Open : MenuBarAction
     {
         /// <inheritdoc/>
         internal override MenuBarStep Step => MenuBarStep.Open;
@@ -339,19 +339,5 @@ public static class MenuBarActions
         /// its first.
         /// </summary>
         public bool Last { get; set; }
-
-        /// <summary>
-        /// Returns whether another action opens the menu the same way, so that the keys shown for this action are those of a row
-        /// with the same <see cref="Last"/> (design §7, "Menu items that name actions").
-        /// </summary>
-        /// <param name="other">The other action.</param>
-        /// <returns>Whether it is an <see cref="Open"/> with the same <see cref="Last"/>.</returns>
-        public bool Equals(IAction? other) => other is Open open && open.Last == Last;
-
-        /// <inheritdoc/>
-        public override bool Equals(object? obj) => obj is IAction action && Equals(action);
-
-        /// <inheritdoc/>
-        public override int GetHashCode() => Last.GetHashCode();
     }
 }

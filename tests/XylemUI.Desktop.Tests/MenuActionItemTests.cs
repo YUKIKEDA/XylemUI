@@ -375,6 +375,73 @@ public sealed class MenuActionItemTests
     }
 
     /// <summary>
+    /// An item made while its menu is open, by a block of the menu's panel, has the menu's context as the items made with the
+    /// panel have, in a menu and in its submenu.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box that opens a menu by a signal. Its panel has an item that names <c>Ping</c>, a block that shows another such item
+    ///   by a signal, and a submenu item whose submenu's panel has a block that shows a third by the same signal. A focused box
+    ///   beside the first handles <c>Ping</c> and logs it.
+    ///
+    /// Steps:
+    /// - Open the menu, press Down to the submenu item and Right to open the submenu, and settle. Set the signal, settle, and read
+    ///   the three items. Click the item shown in the menu and settle.
+    ///
+    /// Expected:
+    /// - All three are enabled: the two made after the menus opened read at the box that had the focus, not at the menu's item
+    ///   that has it now. After the click: one <c>Ping</c> in the log and no popup.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ItemMadeWhileTheMenuIsOpen_HasTheMenusContext()
+    {
+        var log = new List<string>();
+        var items = new Dictionary<string, (Element Item, Computed<KeyBinding?> Keys)>();
+        var open = Signal.Create(false);
+        var more = Signal.Create(false);
+        Element focused = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                Element anchor = Box().Width(60).Height(20);
+                _ = anchor.Menu(
+                    open,
+                    () =>
+                        Column(
+                            Named(items, "first", new Ping()),
+                            Show(more, () => Named(items, "late", new Ping())),
+                            SubmenuItem(Box().Width(80).Height(20), () => Column(Show(more, () => Named(items, "deep", new Ping()))))
+                        )
+                );
+                focused = Box().Width(60).Height(20).Focusable().OnAction((in ActionEvent<Ping> _) => log.Add("ping"));
+                return Column(anchor, focused);
+            },
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(focused));
+        _ = app.PumpAndSettle();
+
+        open.Set(true);
+        _ = app.PumpAndSettle();
+        _ = app.Keyboard.Press(Key.Down);
+        _ = app.Keyboard.Press(Key.Right);
+        _ = app.PumpAndSettle();
+        int popups = app.Popups.Count;
+        more.Set(true);
+        _ = app.PumpAndSettle();
+        (bool, bool, bool) enabled = (State(app, items["first"]).Enabled, State(app, items["late"]).Enabled, State(app, items["deep"]).Enabled);
+        app.Pointer.Click(items["late"].Item);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(2, popups);
+        Assert.Equal((true, true, true), enabled);
+        Assert.Equal(["ping"], log);
+        Assert.Empty(app.Popups);
+    }
+
+    /// <summary>
     /// The items of a menu do not read again when the focus moves between them: they read at their context node, which a move of
     /// the focus does not change (the menu's frame of a key stays without allocations, row KM2c).
     /// </summary>
