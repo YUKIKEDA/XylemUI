@@ -153,7 +153,7 @@ public sealed class PartActionsTests
     ///
     /// Expected:
     /// - The first Right scrolls the page to 50. In the open menu, Right and Left are handled, the menu stays open, and the page
-    ///   stays at 50.
+    ///   is at 50 after each of them.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -189,6 +189,8 @@ public sealed class PartActionsTests
         open.Set(true);
         _ = app.PumpAndSettle();
         Assert.True(app.Keyboard.Press(Key.Right));
+        _ = app.PumpAndSettle();
+        Assert.Equal(50f, page.Offset.Get().X);
         Assert.True(app.Keyboard.Press(Key.Left));
         _ = app.PumpAndSettle();
 
@@ -290,6 +292,8 @@ public sealed class PartActionsTests
         Assert.Equal((1, 1), Press(Key.Right));
         Assert.Equal((1, 2), Press(Key.Right, Shift));
         Assert.Equal((1, 1), Press(Key.Left, Shift));
+        Assert.Equal((2, 2), Press(Key.Right, Control));
+        Assert.Equal((0, 0), Press(Key.Left, Control));
         Assert.Equal((2, 2), Press(Key.Right, Control));
         Assert.Equal((0, 0), Press(Key.Left, Control));
         Assert.Equal((0, 2), Press(Key.Right, Control | Shift));
@@ -472,6 +476,215 @@ public sealed class PartActionsTests
 
         Assert.True(app.Focus(plain));
         _ = app.PumpAndSettle();
+        Assert.False(app.Keyboard.Press(Key.F10, KeyModifiers.Shift));
+        _ = app.PumpAndSettle();
+        Assert.Empty(app.Popups);
+    }
+
+    /// <summary>
+    /// The keys of a menu beside the arrows: Space chooses the focused item as Enter does, Down closes a submenu that is open
+    /// beside the items, and Enter with the focus on a node of the panel that is no item is not handled.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A menu open from a focusable box: an item that counts its choices, an item with a submenu of one item, and a
+    ///   focusable box that is no item. The first item has the focus.
+    ///
+    /// Steps:
+    /// - Press Space; open the menu again. Move the pointer over the item with the submenu, which opens it with the focus left
+    ///   on the item; press Down. Press Enter on the box that is no item.
+    ///
+    /// Expected:
+    /// - Space chooses the first item once and closes the menu. With the submenu open there are two popups; Down closes the
+    ///   submenu and moves the focus to the box. Enter there is not handled, and the menu stays open.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Menu_SpaceSubmenuAndANodeThatIsNoItem()
+    {
+        static Element SubPanel() => Column(MenuItem(Box().Width(80).Height(20), static () => { }));
+        int chosen = 0;
+        var open = Signal.Create(false);
+        Element withSubmenu = default;
+        Element plain = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Column(
+                    Box()
+                        .Width(100)
+                        .Height(20)
+                        .Focusable()
+                        .Menu(
+                            open,
+                            () =>
+                                Column(
+                                    MenuItem(Box().Width(80).Height(20), () => chosen++),
+                                    withSubmenu = SubmenuItem(Box().Width(80).Height(20), SubPanel),
+                                    plain = Box().Width(80).Height(20).Focusable()
+                                )
+                        )
+                ),
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        open.Set(true);
+        _ = app.PumpAndSettle();
+
+        Assert.True(app.Keyboard.Press(Key.Space));
+        _ = app.PumpAndSettle();
+        Assert.Equal(1, chosen);
+        Assert.Empty(app.Popups);
+
+        open.Set(true);
+        _ = app.PumpAndSettle();
+
+        // The menu opens below its anchor, which is 20 high; its second item is from 40 to 60.
+        app.Pointer.Move(10, 50);
+        _ = app.PumpAndSettle();
+        Assert.Equal(2, app.Popups.Count);
+        Assert.Equal(withSubmenu.Node, app.Tree.Focus.Focused);
+        Assert.True(app.Keyboard.Press(Key.Down));
+        _ = app.PumpAndSettle();
+        Assert.Single(app.Popups);
+        Assert.Equal(plain.Node, app.Tree.Focus.Focused);
+
+        Assert.False(app.Keyboard.Press(Key.Enter));
+        _ = app.PumpAndSettle();
+        Assert.Single(app.Popups);
+        Assert.Equal(1, chosen);
+    }
+
+    /// <summary>
+    /// A menu bar of three items moves left and right each its own way, and the keys of an open menu that the menu does not
+    /// take do not act on the bar: Enter on a node of the menu that is no item, and the access key of another item of the bar.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A menu bar of the items File, Edit, and View (access keys F, E, V); File's menu has one item and a focusable box that
+    ///   is no item. A focusable box below the bar has the focus.
+    ///
+    /// Steps:
+    /// - Press F10, then Left, Left, Right, Right, reading the focus. On File, press Down, which opens its menu; press Down,
+    ///   which moves to the box that is no item; press Enter; press V.
+    ///
+    /// Expected:
+    /// - F10 focuses File; Left goes to View, Left to Edit, Right to View, Right to File. On File's open menu, the focus is on the box after
+    ///   Down; Enter and V are not handled, the focus stays on the box, and File's menu stays the one open.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task MenuBar_OfThreeItems_MovesEachWay_AndAMenusKeysAreNotTheBars()
+    {
+        Element file = default;
+        Element edit = default;
+        Element view = default;
+        Element content = default;
+        Element plain = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                file = MenuBarItem(
+                    AccessText("_File"),
+                    () => Column(MenuItem(Box().Width(80).Height(20), static () => { }), plain = Box().Width(80).Height(20).Focusable())
+                );
+                edit = MenuBarItem(AccessText("_Edit"), static () => Column(MenuItem(Box().Width(80).Height(20), static () => { })));
+                view = MenuBarItem(AccessText("_View"), static () => Column(MenuItem(Box().Width(80).Height(20), static () => { })));
+                content = Box().Width(100).Height(20).Focusable();
+                return Column(MenuBar(file, edit, view), content);
+            },
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(content));
+        _ = app.PumpAndSettle();
+        NodeHandle Press(Key key)
+        {
+            _ = app.Keyboard.Press(key);
+            _ = app.PumpAndSettle();
+            return app.Tree.Focus.Focused;
+        }
+
+        Assert.Equal(file.Node, Press(Key.F10));
+        Assert.Equal(view.Node, Press(Key.Left));
+        Assert.Equal(edit.Node, Press(Key.Left));
+        Assert.Equal(view.Node, Press(Key.Right));
+        Assert.Equal(file.Node, Press(Key.Right));
+
+        _ = Press(Key.Down);
+        Assert.Single(app.Popups);
+        Assert.Equal(plain.Node, Press(Key.Down));
+        Assert.False(app.Keyboard.Press(Key.Enter));
+        Assert.False(app.Keyboard.Press(Key.V));
+        _ = app.PumpAndSettle();
+        Assert.Equal(plain.Node, app.Tree.Focus.Focused);
+        Assert.Equal(file.Node, Assert.Single(app.Tree.Popups.Opened).Anchor);
+    }
+
+    /// <summary>
+    /// A select does not handle an action that is not its own in its state, also when the action is dispatched without its key,
+    /// and Space chooses the focused row of the open list.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focused select of "a", "b", "c" with the value "a".
+    ///
+    /// Steps:
+    /// - Dispatch <c>select::PageDown</c> to the closed box. Press Enter, which opens the list; dispatch <c>select::Next</c> to
+    ///   the box. Press Down, then Space.
+    ///
+    /// Expected:
+    /// - Neither dispatch is handled, and the value stays "a". Space chooses "b" and closes the list.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Select_ActionThatIsNotItsOwn_IsNotHandled_AndSpaceChooses()
+    {
+        var value = Signal.Create("a");
+        Element select = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () => Column(select = Select(value, ["a", "b", "c"], static _ => Box().Width(60).Height(20)).Width(150)),
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(select));
+        _ = app.PumpAndSettle();
+
+        Assert.False(select.Dispatch(new SelectActions.PageDown()));
+        _ = app.Keyboard.Press(Key.Enter);
+        _ = app.PumpAndSettle();
+        Assert.Single(app.Popups);
+        Assert.False(app.Tree.Actions.Dispatch(select.Node, new SelectActions.Next()));
+        Assert.Equal("a", value.Get());
+
+        _ = app.Keyboard.Press(Key.Down);
+        Assert.True(app.Keyboard.Press(Key.Space));
+        _ = app.PumpAndSettle();
+        Assert.Equal("b", value.Get());
+        Assert.Empty(app.Popups);
+    }
+
+    /// <summary>
+    /// Shift+F10 in a selection area with no menu is not handled.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focused selection area over a text, with no context menu.
+    ///
+    /// Steps:
+    /// - Press Shift+F10.
+    ///
+    /// Expected:
+    /// - The key is not handled and no popup opens.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task SelectionArea_WithNoMenu_ShiftF10_IsNotHandled()
+    {
+        Element area = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => Column(area = SelectionArea(Elements.Text("some text"))));
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(area));
+        _ = app.PumpAndSettle();
+
         Assert.False(app.Keyboard.Press(Key.F10, KeyModifiers.Shift));
         _ = app.PumpAndSettle();
         Assert.Empty(app.Popups);
