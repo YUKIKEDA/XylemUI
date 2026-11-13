@@ -27,6 +27,12 @@ public static class Scope
     private static readonly Dictionary<ScopeRef, List<Effect>> Held = [];
     private static readonly Arena<CleanupEntry> Cleanups = new();
 
+    // The provided values of every scope, linked by index; slot 0 is never used, so that 0 is "none". An index needs no
+    // generation: an entry is freed when the scope that provided it is disposed, which is after every scope under it.
+    private static ContextEntry[] _contexts = new ContextEntry[16];
+    private static int _contextCount = 1;
+    private static int _freeContext;
+
     /// <summary>
     /// Gets the number of paused scopes: 0 keeps the effects' run free of the walk up their scopes.
     /// </summary>
@@ -75,15 +81,8 @@ public static class Scope
         catch (Exception bodyError) when (bodyError is not InvariantViolationException)
         {
             CurrentRef = previous;
-            List<Exception>? errors = null;
-            DisposeScope(scope, ref errors);
-            if (errors is null)
-            {
-                throw;
-            }
-
-            errors.Insert(0, bodyError);
-            throw new AggregateException(errors);
+            DisposeAfterBodyThrew(scope, bodyError);
+            throw;
         }
         finally
         {
@@ -333,6 +332,138 @@ public static class Scope
     /// <returns>The copy.</returns>
     internal static ScopeData Get(ScopeRef scope) => Scopes.GetRef(scope);
 
+    /// <summary>
+    /// Makes a scope owned by the current one, without running anything in it.
+    /// </summary>
+    /// <param name="owner">The name <see cref="ScopeTracker"/> shows for the scope.</param>
+    /// <returns>The new scope's handle in the arena.</returns>
+    internal static ScopeRef AllocateOwned(string owner)
+    {
+        UiThread.VerifyAccess();
+        VerifyNotInComputed();
+        return Allocate(CurrentRef, null, owner);
+    }
+
+    /// <summary>
+    /// Puts a value of a context key on a scope, in front of the values it reads from above.
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="key">The key.</param>
+    /// <param name="slot">The slot of the value in the key's store.</param>
+    internal static void PutContext(ScopeRef scope, IContextStore key, int slot)
+    {
+        int index = _freeContext;
+        if (index != 0)
+        {
+            _freeContext = _contexts[index].Older;
+        }
+        else
+        {
+            if (_contextCount == _contexts.Length)
+            {
+                Array.Resize(ref _contexts, _contextCount * 2);
+            }
+
+            index = _contextCount++;
+        }
+
+        ref ScopeData data = ref Scopes.GetRef(scope);
+        _contexts[index] = new ContextEntry
+        {
+            Key = key,
+            Slot = slot,
+            Older = data.Contexts,
+        };
+        data.Contexts = index;
+    }
+
+    /// <summary>
+    /// Finds the nearest value of a context key from the current scope.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="slot">The slot of the value in the key's store.</param>
+    /// <param name="absentMeansOutside">
+    /// Whether no value means "outside" for this key, a key of the framework's own (a menu's context node): then a lookup in what
+    /// belongs to nothing finds no value instead of throwing, since no ancestor's value can be missed.
+    /// </param>
+    /// <returns>Whether a value is provided.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread; a computed value is computing; or there is no current scope, also inside an
+    /// effect that was made with no current scope.
+    /// </exception>
+    internal static bool FindContext(IContextStore key, out int slot, bool absentMeansOutside = false)
+    {
+        UiThread.VerifyAccess();
+        if (ReactiveRuntime.Current is { } running && running is not Effect)
+        {
+            ThrowHelper.ThrowContextInsideComputed();
+        }
+
+        ScopeRef scope = CurrentRef;
+        if (!Scopes.IsAlive(scope))
+        {
+            ThrowHelper.ThrowContextWithNoScope();
+        }
+
+        ref ScopeData data = ref Scopes.GetRef(scope);
+        ContextEntry[] contexts = _contexts;
+        for (int index = data.Contexts; index != 0; index = contexts[index].Older)
+        {
+            if (ReferenceEquals(contexts[index].Key, key))
+            {
+                slot = contexts[index].Slot;
+                return true;
+            }
+        }
+
+        // A value provided inside what belongs to nothing was found above. Without one, a default would hide a value that an
+        // ancestor provided, as it would with no current scope.
+        if (data.Unowned && !absentMeansOutside)
+        {
+            ThrowHelper.ThrowContextWithNoScope();
+        }
+
+        slot = 0;
+        return false;
+    }
+
+    // Frees the values the scope itself provided: the entries in front of the parent's list.
+    private static void ReleaseContexts(in ScopeData data)
+    {
+        int end = Scopes.IsAlive(data.Parent) ? Scopes.GetRef(data.Parent).Contexts : 0;
+        int index = data.Contexts;
+        while (index != end)
+        {
+            if (index == 0)
+            {
+                Invariant.Fail("A scope's provided values do not end at its parent's.");
+            }
+
+            ContextEntry released = _contexts[index];
+            _contexts[index] = new ContextEntry { Older = _freeContext };
+            _freeContext = index;
+            released.Key.Release(released.Slot);
+            index = released.Older;
+        }
+    }
+
+    /// <summary>
+    /// Disposes a scope whose body threw. If its cleanups throw too, an <see cref="AggregateException"/> carries the body's
+    /// exception first, then theirs; otherwise it returns and the caller rethrows.
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="bodyError">The exception of the body.</param>
+    internal static void DisposeAfterBodyThrew(ScopeRef scope, Exception bodyError)
+    {
+        List<Exception>? errors = null;
+        DisposeScope(scope, ref errors);
+        if (errors is not null)
+        {
+            errors.Insert(0, bodyError);
+            throw new AggregateException(errors);
+        }
+    }
+
     private static void VerifyNotInComputed()
     {
         if (ReactiveRuntime.Current is { } running && running is not Effect)
@@ -344,15 +475,29 @@ public static class Scope
     private static ScopeRef Allocate(ScopeRef parent, Effect? effect, string owner)
     {
         // A parent that is gone (an effect that disposed itself while it runs) or being disposed takes no new children: what is
-        // made then belongs to nothing.
-        if (!Scopes.IsAlive(parent) || Scopes.GetRef(parent).Disposing)
+        // made then belongs to nothing. So does an effect made with no current scope. A scope made with no current scope is a
+        // root (a window's), which belongs to itself.
+        bool unowned = parent.IsNone && effect is not null;
+        if (!parent.IsNone && (!Scopes.IsAlive(parent) || Scopes.GetRef(parent).Disposing))
         {
             parent = default;
+            unowned = true;
         }
 
-        ScopeRef scope = Scopes.Allocate(new ScopeData { Parent = parent, Effect = effect });
+        ScopeRef scope = Scopes.Allocate(
+            new ScopeData
+            {
+                Parent = parent,
+                Effect = effect,
+                Unowned = unowned,
+            }
+        );
         if (!parent.IsNone)
         {
+            ref readonly ScopeData above = ref Scopes.GetRef(parent);
+            ref ScopeData made = ref Scopes.GetRef(scope);
+            made.Contexts = above.Contexts;
+            made.Unowned = above.Unowned;
             ScopeRef older = Scopes.GetRef(parent).LastChild;
             Scopes.GetRef(scope).OlderSibling = older;
             if (!older.IsNone)
@@ -395,6 +540,7 @@ public static class Scope
         DisposeContents(scope, ref errors);
         ScopeData final = Scopes.GetRef(scope);
         final.Effect?.StopForDispose();
+        ReleaseContexts(final);
         Unlink(scope, final);
         if (final.Paused)
         {

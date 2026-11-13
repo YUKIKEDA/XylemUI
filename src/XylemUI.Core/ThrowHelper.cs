@@ -62,6 +62,34 @@ internal static class ThrowHelper
         );
 
     /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when a context is looked up while a computed computes.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowContextInsideComputed() =>
+        throw new InvalidOperationException(
+            "A context was looked up while a computed value computes; look it up where the computed value is made and read the result inside."
+        );
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when a context is looked up with no current scope.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowContextWithNoScope() =>
+        throw new InvalidOperationException(
+            "A context was looked up with no current scope; keep Scope.Current before an await and look it up inside Scope.Run."
+        );
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when a context has neither a provided value nor a default.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowContextHasNoValue() =>
+        throw new InvalidOperationException("No value is provided for the context, and the context has no default value.");
+
+    /// <summary>
     /// Throws <see cref="ObjectDisposedException"/> when a disposed computed is used.
     /// </summary>
     [DoesNotReturn]
