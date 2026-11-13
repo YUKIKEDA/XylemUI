@@ -11,7 +11,7 @@ Details: `docs/conventions.md`. C# style: `.cursor/rules/csharp.mdc`. Tests: `.c
 
 - Solution: `XylemUI.slnx` only. Do not commit a `.sln`.
 - Projects follow `docs/design.ja.md` §2.9.1: `src/XylemUI.*`, `tests/*.Tests`, `samples/`, `benchmarks/`, `tools/`, `vendor/`. Do not collapse them into one project, and do not create a project, folder, script, or skill step before the Issue that needs it.
-- `XylemUI.Core` references no `XylemUI.Platform.*` or `XylemUI.Rendering.*` project (Invariants 9, 10). The dependency direction is `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent`.
+- `XylemUI.Core` references no `XylemUI.Platform.*` or `XylemUI.Rendering.*` project (Invariants 9, 10). The dependency direction is `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent`. From row PL1, an OS host references its renderer and not the other way: `XylemUI.Platform.Windows` references `XylemUI.Rendering.D3D11`, since the host pairs the window with the renderer and its frame clock (design §6.0, row PL1, Issue #877).
 - A project's line in `docs/conventions.md` is added in the PR that adds the project.
 
 ## Targets and build

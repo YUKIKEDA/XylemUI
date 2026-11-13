@@ -163,6 +163,14 @@ internal sealed class NodeInput
     }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the node's <see cref="XylemUI.Visibility"/> is <see cref="Visibility.Hidden"/>: the node
+    /// keeps its place in the layout, and the subtree is neither drawn nor hit, takes no focus, and is left out of the accessibility
+    /// tree (design §3.2, "Nodes not shown"). It lives here, beside <see cref="Inert"/>, and not in the layout style, so that a change
+    /// runs no layout.
+    /// </summary>
+    public bool Invisible { get; internal set; }
+
+    /// <summary>
     /// Gets a value indicating whether the subtree writes no hit region: <see cref="HitTestInvisible"/> or <see cref="Inert"/>, kept in
     /// one field that the draw stage reads for each node.
     /// </summary>

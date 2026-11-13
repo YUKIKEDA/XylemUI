@@ -624,14 +624,17 @@ internal sealed partial class WindowFrames
     private void DrawNode(NodeHandle handle, float parentX, float parentY, Color inheritedText, bool hitsOnly)
     {
         ref UiNode node = ref _tree.Nodes.GetRef(handle);
-        if (node.Layout.Style.Hidden)
+
+        // A hidden subtree is neither drawn nor hit, whether it takes no place or keeps it (design §3.2, "Nodes not shown"). The
+        // visibility is read from the input part this draw reads anyway.
+        NodeInput? input = node.Input;
+        if (node.Layout.Style.Hidden || input is { Invisible: true })
         {
             return;
         }
 
         // A subtree marked to take no pointer, or a popup's that leaves, writes no hit region (design §7.3, "Passing the pointer"):
         // counted in a field, as a parameter of this method made each node's draw about 10 ns longer (the PR for Issue #551).
-        NodeInput? input = node.Input;
         bool marked = input is { TakesNoPointer: true };
         if (marked)
         {

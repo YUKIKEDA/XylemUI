@@ -370,7 +370,7 @@ public static partial class Primitive
             while (!node.IsNone)
             {
                 ref UiNode n = ref _tree.Nodes.GetRef(node);
-                bool skips = n.Input is { Unselectable: true } || n.Layout.Style.Hidden;
+                bool skips = n.Input is { Unselectable: true } || n.HidesSubtree;
                 if (!skips && n.Text is not null)
                 {
                     LeafSelection selection = _tree.TextSelectionOf(node);

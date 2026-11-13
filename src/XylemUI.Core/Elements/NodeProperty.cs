@@ -61,6 +61,13 @@ public static class NodeProperties
     public static NodeProperty<bool> Disabled { get; } = new(nameof(Disabled), static (tree, node, value) => tree.SetDisabled(node, value));
 
     /// <summary>
+    /// Gets whether the node and its subtree are shown while the node keeps its place
+    /// (<see cref="ElementExtensions.Visibility(Element, XylemUI.Visibility)"/>).
+    /// </summary>
+    public static NodeProperty<Visibility> Visibility { get; } =
+        new(nameof(Visibility), static (tree, node, value) => tree.SetVisibility(node, value));
+
+    /// <summary>
     /// Gets the opacity of the node and its subtree (<see cref="ElementExtensions.Opacity"/>).
     /// </summary>
     public static NodeProperty<float> Opacity { get; } = new(nameof(Opacity), static (tree, node, value) => tree.SetOpacity(node, value));

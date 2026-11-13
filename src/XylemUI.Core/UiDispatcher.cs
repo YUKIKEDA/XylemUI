@@ -3,8 +3,8 @@ using System.Collections.Concurrent;
 namespace XylemUI;
 
 /// <summary>
-/// The UI thread's queue: messages from <see cref="Post"/> and <c>await</c> continuations from <see cref="SynchronizationContext"/>
-/// go through it, in the order they were queued (design §2.12).
+/// The UI thread's queue: messages from <see cref="Post{T}(T)"/> and <c>await</c> continuations from
+/// <see cref="SynchronizationContext"/> go through it, in the order they were queued (design §2.12).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,8 +17,8 @@ namespace XylemUI;
 /// <see cref="SynchronousRenderGuard.IsActive"/>, and the work waits for the loop.
 /// </para>
 /// <para>
-/// Each message and each continuation runs as one <see cref="ReactiveRuntime.Batch(Action)"/>: the effects of the signals it sets
-/// run once, when it returns.
+/// Each message, with every receiver it goes to, and each continuation runs as one <see cref="ReactiveRuntime.Batch(Action)"/>:
+/// the effects of the signals it sets run once, when it returns.
 /// </para>
 /// </remarks>
 public sealed class UiDispatcher : IUiDispatcher
@@ -39,10 +39,11 @@ public sealed class UiDispatcher : IUiDispatcher
     }
 
     /// <summary>
-    /// Gets or sets the handler that applies a message on the UI thread. A message drained while it is <see langword="null"/>
-    /// fails the invariant (design §0.1): a message with no handler would be lost without notice.
+    /// Gets the number of messages that were dropped because every receiver of their type had been removed before they were
+    /// drained: the result of a worker that arrived after the scope that asked for it was disposed. For diagnostics; read on the
+    /// UI thread.
     /// </summary>
-    public Action<UiMessage>? MessageHandler { get; set; }
+    public long DroppedMessageCount { get; private set; }
 
     /// <summary>
     /// Gets the synchronization context that resumes <c>await</c> continuations on the UI thread through this queue.
@@ -57,16 +58,25 @@ public sealed class UiDispatcher : IUiDispatcher
     internal SynchronizationContext UnbatchedSynchronizationContext { get; }
 
     /// <inheritdoc />
-    public void Post(UiMessage message)
+    public void Post<T>(T message)
+        where T : UiMessage
     {
         ArgumentNullException.ThrowIfNull(message);
-        Enqueue(new WorkItem(message, null, null, Batched: true));
+
+        // The receivers are chosen by T, with no lookup by the message's own type (design §2.12): a message posted as a base type
+        // would reach the base type's receivers, so it is refused here, on the thread that made the mistake.
+        if (message.GetType() != typeof(T))
+        {
+            ThrowHelper.ThrowMessagePostedAsBaseType(nameof(message));
+        }
+
+        Enqueue(new WorkItem(UiMessageReceivers<T>.Deliver, message, null, null, Batched: true));
     }
 
     /// <summary>
     /// Runs the work that was queued before this call, in order. Work queued while it runs waits for the next call.
     /// </summary>
-    /// <param name="reportException">Receives an exception from a message handler or a continuation; the drain goes on.</param>
+    /// <param name="reportException">Receives an exception from a message's receiver or a continuation; the drain goes on.</param>
     /// <returns>The number of items that ran.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     [UiThreadOnly]
@@ -79,17 +89,13 @@ public sealed class UiDispatcher : IUiDispatcher
             return 0;
         }
 
-        // A snapshot of the count: a handler that queues more work (an await that completes at once) cannot keep the drain going.
+        // A snapshot of the count: a receiver that queues more work (an await that completes at once) cannot keep the drain going.
         int count = _queue.Count;
         int ran = 0;
         while (ran < count && _queue.TryDequeue(out WorkItem item))
         {
             ran++;
-            Action<UiMessage>? handler = MessageHandler;
-            if (item.Message is not null && handler is null)
-            {
-                Invariant.Fail("A UiMessage was drained with no MessageHandler set.");
-            }
+            bool lost = false;
 
             // Each item is one batch: however many signals it sets, the effects run once, after it (design §2.2.1). An unbatched
             // item is a headless test's (UnbatchedSynchronizationContext).
@@ -100,9 +106,14 @@ public sealed class UiDispatcher : IUiDispatcher
 
             try
             {
-                if (item.Message is { } message)
+                if (item.Deliver is { } deliver)
                 {
-                    handler!(message);
+                    int reached = deliver(item.Message!, reportException);
+                    lost = reached < 0;
+                    if (reached == 0)
+                    {
+                        DroppedMessageCount++;
+                    }
                 }
                 else
                 {
@@ -120,6 +131,12 @@ public sealed class UiDispatcher : IUiDispatcher
                     ReactiveRuntime.ExitBatch();
                 }
             }
+
+            // A message whose type never had a receiver would be lost without notice (design §0.1).
+            if (lost)
+            {
+                Invariant.Fail("A UiMessage was drained whose type never had a receiver (UiMessage.On).");
+            }
         }
 
         return ran;
@@ -132,7 +149,7 @@ public sealed class UiDispatcher : IUiDispatcher
     /// <param name="state">The object passed to <paramref name="callback"/>.</param>
     /// <param name="batched">Whether it runs in a batch of its own; <see langword="false"/> only for <see cref="UnbatchedSynchronizationContext"/>.</param>
     internal void PostCallback(SendOrPostCallback callback, object? state, bool batched = true) =>
-        Enqueue(new WorkItem(null, callback, state, batched));
+        Enqueue(new WorkItem(null, null, callback, state, batched));
 
     private void Enqueue(WorkItem item)
     {
@@ -140,5 +157,12 @@ public sealed class UiDispatcher : IUiDispatcher
         _wake();
     }
 
-    private readonly record struct WorkItem(UiMessage? Message, SendOrPostCallback? Callback, object? State, bool Batched);
+    // A message carries the delivery of its type's receivers (UiMessageReceivers<T>.Deliver); a continuation, its callback.
+    private readonly record struct WorkItem(
+        Func<UiMessage, Action<Exception>, int>? Deliver,
+        UiMessage? Message,
+        SendOrPostCallback? Callback,
+        object? State,
+        bool Batched
+    );
 }

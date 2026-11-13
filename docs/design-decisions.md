@@ -528,6 +528,56 @@ Rejected:
   - OS から呼ばれる COM を source-generated COM（`[GeneratedComClass]`、`StrategyBasedComWrappers`）で書く（インターフェースの属性をリフレクションで読み、NativeAOT のリフレクションの実行時がリンクされて、実行ファイルが 0.43 MB 増えた。F1、Issue #150）
   - Windows の DPI 認識を、アプリのマニフェストだけで宣言する（GPUI。XylemUI はライブラリなので、アプリの .csproj の設定次第になる。`Win32Window` が最初のウィンドウの前に `SetProcessDpiAwarenessContext` を呼ぶ。W1 の Grill、Issue #231）
   - 表示リストが画素の座標を受け取り、倍率を掛けるのは作る側に任せる（倍率を掛ける場所が呼び出しごとに散る。§6.1.1 の「表示リストで画素に合わせる」と合わない。W1 の Grill）
+
+---
+
+## プラットフォームの契約
+
+Decision（行 PL1 の Grill の 5 巡目でオーナーが決定、Issue #872。設計書 §6.0）:
+  Core に、アプリの段（`IPlatformApp`）とウィンドウの段（`IPlatformWindow`）の 2 段の契約を置く。internal のまま `InternalsVisibleTo` で見せ、公開の境界は行 C0 で決める。
+  レンダラとフレームの時計は OS のホストの中で組にする。ループ（`Run`・`Quit`・`Wake`）はホストが持つ。
+  スケジューラの契約はウィンドウごと、Windows の実装はループごと。OS の設定はアプリの段の 1 つのオブジェクトで、文字の描き方だけウィンドウごと。
+  フォントの提供者は UI スレッドに 1 つ。契約はインターフェースと sealed の実装で、前後を測る。ホストはビルド時に RID で選ぶ。
+  `HeadlessApp` と本物の窓は、1 つの窓の核（`WindowCore`）を共有する。範囲は Windows が今持つ機能だけ。`UiDispatcher.Current` を Core に足す。
+  形（Issue #877 の Grill でオーナーが決定）: Windows のホストは `XylemUI.Platform.Windows` に置き、Rendering.D3D11 を参照する。ホストは属性で名乗り、アプリの Source Generator が登録する。Desktop とホストは `net10.0`。
+  クリップボードはアプリの段、IME と a11y は窓の段。ホストは sealed の `WindowCore` にデリゲートを結ぶ。OS の設定のイベントは 1 つ。2 つ目の `OpenWindow` は例外。
+  `HeadlessApp` は部品を `IPlatformWindow` にまとめる。`UiDispatcher.Current` は `IUiDispatcher` 型で（PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定。Issue #877 の `UiDispatcher` 型を改めた）、前の値に戻す。ホストの登録は `PlatformHostRegistry`、ホストが 2 つと `Register` の無い型は Generator の診断（XYLEM008・XYLEM009）。`Win32MessageLoop` は静的のまま。
+
+Reason:
+  `XylemUI.Desktop` が Windows の型を直に作り、macOS と Linux のホストを差し込む口が無い（行 P04 と P06 の調査）。
+  契約のメンバーの引数と戻り値には Core の internal の型がある。C# は、公開のインターフェースが internal の型を見せることを許さない。
+  フレームの時計は、Windows ではスワップチェーンに、macOS と Wayland では窓にある。組にしたホストの外には、描き先とスケジューラだけを見せられる。
+  Flutter・Avalonia・GPUI は、どれも 2 段で、どれも動的な呼び出しで呼ぶ。契約を通る呼び出しは、フレームか OS の知らせ 1 つに 1 回である。
+  `DesktopWindow` と `HeadlessApp` は `Mount` と根の値を 2 つずつ持ち、行 LC1 と TH1 の根の値をそれぞれに書くことになる。
+
+Rejected:
+  - アプリの段の 1 つの `IPlatform` に窓・クリップボード・ダイアログ・スケジューラ・IME・a11y・フォントを並べる（設計書の旧版 §6.0。IME と a11y の adapter は窓に結び付き、ループ・起床・レンダラ・OS の設定が無かった）
+  - 契約をいま公開にする、または行 C0 を待つ（メンバーの引数と戻り値に Core の internal の型がある。公開の境界は C0 で決める）
+  - 抽象の基底クラスで契約を書く（呼び出しの重さはインターフェースと同じで、単一継承の制約が付く）
+  - 静的抽象メンバーの総称のホスト（`XylemApp.Run<THost>()`。呼び出しは特殊化されるが、アプリのコードが OS のホストの型を名指しし、ホストに触れる型がすべて総称になる。3 つのどれもこの形を採らない）
+  - 描き先を作る契約をホストと別に持つ（Avalonia の `IPlatformRenderInterface`。OS ごとにレンダラは 1 つで（§5.2）、時計の元が 2 つの契約に分かれる）
+  - `IRenderTarget` に `Resize` と時計の取り出しを足して、`XylemUI.Desktop` が組にする（時計の取り出しは、時計が窓にある macOS と Wayland で意味を持たない）
+  - OS によらない共通のループを `XylemUI.Desktop` に置き、OS ごとには待つ関数だけを持つ（macOS では `[NSApp run]` がループを持ち、フレームは `CADisplayLink` から来る。3 つとも、ループはプラットフォームが持つ）
+  - OS の設定を窓ごとに持ち続ける（3 つとも OS の設定はアプリの段に置く。行 LC1・TH1 の値が窓ごとに増える）
+  - ホストを実行時に OS で選ぶ（Avalonia の `AppBuilderDesktopExtensions.cs` 20〜33 行目。すべてのホストのコードがバイナリに入りうる）
+  - アプリが OS のホストを名指しする（`XylemApp.Run(new WindowsPlatform(), …)`。アプリのコードが OS によらなくならない）
+  - `HeadlessApp` を本物の窓と別のまま保つ（Flutter はエンジンの上の binding でテストする。根の値と `Mount` が 2 つのまま残る）
+  - 2 つ目の窓を作る口を行 PL1 で入れる（呼ぶ所が無い。行 MW1 で決める）
+  - ダイアログの契約（`IDialogBackend`）を置く（実装が無い。行 D6）
+  - `PlatformKind` と `PlatformWindowHandle` を残す（使う所が無い。ヘッドレスとテストのホストに OS の種類が無い）
+  - Windows のホストを新しいプロジェクト（`XylemUI.Desktop.Windows`）に置き、Platform は Rendering を参照しない向きを保つ（プロジェクトと `InternalsVisibleTo` の辺が 1 つずつ増える。GPUI の `gpui_windows` も窓とレンダラを 1 つの crate に持つ。Issue #877 の Grill）
+  - ホストのアセンブリ自身の `[ModuleInitializer]` で登録する（参照されないアセンブリでは走らない。同じ Grill）、アプリが登録の 1 行を書く（アプリのコードが OS を名指しする。同じ Grill）
+  - ホストを `net10.0-windows` のまま残す（ホストを参照するアプリも `-windows` になり、アプリのプロジェクトが OS によらなくならない。同じ Grill）
+  - クリップボードを窓ごとに持ち続ける（クリップボードは OS に 1 つ。GPUI と Avalonia はアプリの段。同じ Grill）
+  - OS から窓の核への知らせのインターフェースを Core に置く（Flutter の `WindowBindingHandlerDelegate` の形。偽物は 1 つのクラスで書けるが、知らせごとにインターフェースの呼び出しが 1 段増える。同じ Grill）
+  - OS の設定の値ごとにイベントを持つ（今の `Win32Window` の形。値が増えるたびにイベントと購読が増える。同じ Grill）
+  - ラスタライザの工場を窓（レンダラ）から出す（OS ごとにレンダラは 1 つで、アプリの段で足りる。同じ Grill）
+  - 窓が開いている間の 2 つ目の `OpenWindow` を許す（スケジューラの時計が黙って置き換わる。同じ Grill）
+  - 窓の核に、ヘッドレスの部品を直に受ける別のコンストラクタを置く（窓の核の入口が 2 つになる。同じ Grill）
+  - `UiDispatcher.Current` を具体の型 `UiDispatcher` にする（公開の静的なメンバーから、どのワーカーも `Drain` を呼べてしまう。取り出しと `SynchronizationContext` は、ホストが自分の参照で使う。Issue #877 の Grill で一度採ったのを、PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定 で改めた）、2 度目の差し込みを例外にする（Avalonia の形。`XylemUI.Desktop.Tests` は本物のループをヘッドレスの UI スレッドの上で回す。同じ Grill）
+  - `Win32MessageLoop` をインスタンスにする（UI スレッドはプロセスに 1 つで、テストとベンチマークの呼び出しが変わるだけ。同じ Grill）
+  - E2E の場面を Windows の部品の上に残す（動かしたコードの `WM_SIZE` の経路を測る場面が無いまま残る。同じ Grill）
+
 ---
 
 ## 開発者向け API
@@ -843,6 +893,33 @@ Rejected:
   - レイアウトの道具を部品に数える: 比率を保つ枠、高さが不揃いな格子、重ねる入れ物、幕（Dialog の一部）
   - 部品でない WinUI 3 Gallery のページ（Fundamentals・Design・Accessibility・Motion・Windowing・System・Shell）を部品の範囲に入れる（Gallery のページとしては G1 の設計で扱う）
 
+Decision（テーマの土台、行 TH1。Grill の 4 巡目と 5 巡目でオーナーが決定、Issue #868・#872）:
+  テーマの値は 1 つの不変のオブジェクト（`FluentTheme`）で、丸ごと差し替える。密度とアクセントの色も、その欄。
+  OS の見た目（明暗、ハイコントラスト、アクセントの色）は Core の型と鍵（`SystemAppearance`）で、ウィンドウが根で置く（行 LC1 のロケールと同じ形）。
+  テーマの部品は、部品ごとに Effect を 1 つ持ち、テーマのシグナルを読んで、見た目を木の setter で書く。
+  テーマの鍵は既定値を持たない（§2.13 に合わせ、§13.2 の「既定値を持つ」を直した）。
+  型と鍵は Theme.Fluent。根では、アプリが `[assembly: WindowTheme(typeof(FluentRoot))]` で選んだ時だけ、生成したモジュール初期化子が書いた 1 つの包みが置く。テストは `HeadlessOptions.RootWrapper` で渡す。アプリは `FluentTheme.RequestForWindow` で窓ごとのテーマを求める（PR #882 のレビューの後、Issue #879 の Grill でオーナーが決定）。トークンは microsoft/fluentui の `packages/tokens`（コミット `1f59fc2`）から生成する。ハイコントラストは OS の 8 色から作る。密度は `Standard` と `Compact`。切り替えはその場で変える（Issue #879 の Grill でオーナーが決定）。
+
+Reason:
+  1,000 個のボタンを NativeAOT で測った（`docs/benchmarks/th1-theme-follow.md`。CPU の負荷 77〜100% の下なので、形の間の比と、数・バイトを読む）。部品ごとに Effect 1 つの形は、切り替え 1 回が 1.4 ms、作る時の割り当てがボタン 1 つに 2.6 KB、生きている Scope が 1,002 で、切り替えもホバーも 0 バイトだった。
+  Flutter の `ThemeData` と zed のテーマも、1 つのオブジェクトを丸ごと差し替える。比べた 3 つとも、OS の見た目をデザインシステムより下の層に置く。
+
+Rejected:
+  - 見た目ごとにテーマの `Computed` を `Bind` する（ボタン 1 つに Computed 8 個と Effect 8 個。切り替え 3.5 ms、作る時間 11.0 ms 対 3.6 ms、作る時の割り当て 8.0 KB 対 2.6 KB、生きている Scope 8,002 対 1,002。部品ごとに Effect 1 つの形の 2.6〜3.1 倍。TH1 の Grill の 5 巡目、Issue #872）
+  - 描く時にトークンを引く（ノードの塗りにトークンの番号を持ち、描く段で今のテーマの表から引く。Avalonia の `DynamicResource` に近い。描く段のすべての塗りに確認が入り、テーマを使わない木もその費用を払う。近い形の「木を 1 度歩いて書き直す」は、切り替えが 1.2 ms で、部品ごとに Effect 1 つより 0.18 ms 短いだけだった。同じ Grill）
+  - テーマが変わったら部分木を作り直す（切り替え 12.5 ms、1 回に 3.6 MB を割り当てる。フォーカス、欄の文字、スクロールの位置を失う。同じ Grill）
+  - トークンごとにシグナルを置く（テーマの値を 1 つのオブジェクトにすると決めた。Issue #868）
+  - テーマの鍵に既定値を持たせる（§2.13 の「値がシグナルの鍵は既定値を持たない」と食い違う。遅れて作る既定値のシグナルは、ウィンドウとテストの間で共有される。Issue #838・#868）
+  - アプリが根の関数をテーマで手で包む（包み忘れが実行時まで見つからない。アプリは属性で選び、包むのは生成したコード。Issue #879 の Grill でオーナーが決定）
+  - Theme.Fluent が自分の包みを属性で示し、参照するだけで登録する（Issue #879 の 1 巡目の決定。アイコンだけを使うアプリ、たとえば `benchmarks/XylemUI.E2E` も包まれ、トークンとテーマの型がトリミングで落ちない。PR #882 のレビューの後、同じ Grill でオーナーが改めた）
+  - 登録した包みを依存の順に重ねる（Issue #879 の 1 巡目の決定。包みが 2 つあると、窓の背景と題名の棒の持ち主が 2 つになる。2 つの属性はビルドのエラー XYLEM010 にした。同じ）
+  - 登録をプロセスに 1 つの表に置き、ヘッドレスのテストも読む（テストの間で残り、テストがアプリの登録に依る。テストは `HeadlessOptions.RootWrapper` で渡す。同じ）
+  - 部分木の `FluentTheme.Current.Provide` で窓の背景と題名の棒も変える（部分木の値が窓の持ち物を変え、2 つの部分木が違う値を置くと決まらない。窓のテーマは `RequestForWindow` で求める。同じ）
+  - ハイコントラストを明か暗に写すだけにする（Avalonia の Windows の形。利用者の選んだ色を使えず、要件 5 に届かない。Issue #879 の Grill でオーナーが決定）
+  - テーマの切り替えを動かす（Flutter の `AnimatedTheme`。TH1 ではその場で変える。動かす形は、要るなら別の行で Grill から始める。同じ Grill）
+  - Theme.Fluent の部品の関数を `using static` で `Primitive` と並べて呼ぶ形を勧める（同じ名前の `Button` で、C# は省いた引数の無い `Primitive.Button` を黙って選ぶ。`Fluent.Button` と名前を付けて呼ぶ。同じ Grill）
+  - テーマの型と鍵を Core に置く（Core はデザインを持たない、設計書 §2.9.1。同じ Grill）
+
 ---
 
 ## アクセシビリティ（UIA）
@@ -866,6 +943,39 @@ Rejected:
   - 範囲の外の行に、UIA の IsOffscreen が true になる矩形を書く（AccessKit は IsOffscreen を出さず、子を切る親の外の節を木から外す。Issue #637）
   - スクロールの操作（ScrollUp など）を持つ（accesskit_windows 0.35.1 に UIA の Scroll のパターンが無く、届かない。Issue #637）
   - Select の一覧を `List` のままにする（UIA の Selection が付かない。Issue #637）
+
+Decision（行 AX1、Grill の 5 巡目、Issue #872）:
+  部品の行が使う役・状態・関係・ライブリージョンを 1 回で足す（設計書 §4.4.1「AX1 で足す形」）。同梱の AccessKit が UIA に運べるものと、XylemUI の側の代替までにし、上流の変更が要るものは行 AX2 に送る。
+  役は調査の A と B を足し、`ListBox`・`ListBoxItem`・`SearchBox`・日付の入力は公開の役にする。`SemanticsStates` は `ushort` に広げる。クリックのほかの操作はハンドラで受ける。関係は `Element` で指し、active-descendant は Signal で渡す。ライブリージョンは宣言だけにする。
+
+Reason:
+  部品の行ごとに公開の列挙型を足すと、v1.0 で固める前に形がばらばらになる。accesskit_windows 0.35.1 に無いパターンとプロパティは、XylemUI の側では作れない（provider は AccessKit が持つ）。
+
+Rejected:
+  - 調査の A（部品の行が要る役）だけを足し、B は DV1・CT1・CH1 の設計の PR で足す（行ごとに列挙型を足すことになる。Issue #872）
+  - AccessKit の役の全部（180 余り）を写す（多くは UIA の Group になり、使われない公開の面が増える）
+  - ListBox と日付の入力を、パスワードの欄と同じく部品の内部の状態にする（アプリが選べる一覧や検索の欄を自分で作れない。P02g では内部にしていた。Issue #872）
+  - 開閉を、ポップアップのアンカーのように疑似状態 `Open` の登録から読む（開閉するノードごとに登録の呼び出しが要る。ツリーの項目は開閉をデータで持つ。Issue #872）
+  - 数値の操作を、双方向の Signal で受ける（押し終わりの知らせなど、確定の時に処理したい部品が間に入れない。Issue #872）
+  - 増やす・減らすを、部品のキーの経路（↑↓）に送る（向きと RTL と、アプリが変えられるキーの割り当てに左右される。Issue #872）
+  - ステップを `SemanticsRange` の外の欄にする（範囲と一緒に変わる値で、別にすると片方だけ変える誤りを作れる。Issue #872）
+  - 関係を `AccessibilityInfo` の `Element` の欄にする（欄 1 つで 24 バイトになり、`Over` が作る記録ごとに増える。相手が複数だと配列の割り当てが要る。Issue #872）
+  - 関係を、後で結ぶ鍵の物（`AccessibilityKey`）で指す（公開の型が 1 つ増え、宙に浮いた鍵の扱いが要る。`Element` は両方を作った後に呼べば足りる。Issue #872）
+  - 関係を文字列で指す（Flutter の `identifier`。重なっても黙って誤り、テスト ID に 2 つ目の意味が付く。Issue #872）
+  - active-descendant を選ばれた子の側で宣言する（GPUI の形。ポップアップの中の候補は欄の子孫でないので指せない。Issue #872）
+  - described-by・error-message・invalid を AccessKit に書くだけにする（accesskit 0.25.1 ではどの OS の adapter も読まず、Windows では何も伝わらない。Issue #872）
+  - 命令でその場に読ませる口（announce）を、窓ごとの隠したライブの節の名前を書き換えて作る（AccessKit の通知のイベントが要る形の代わりで、行 AX2 で通知のイベントを入れる。Issue #872）
+  - ライブリージョンの atomic の印を持つ（Windows の adapter は AriaProperties にしか書かない。Status と Alert の名前のたたみで、知らせの全部が読まれる。Issue #872）
+  - 深さと位置を AccessKit と同じく 0 から数える（UIA・ARIA・Avalonia は 1 から数え、アプリが 1 を足し忘れる。Issue #872）
+  - 数を項目に付ける（ARIA の形。AccessKit は入れ物から読み、同じ親の中で組の違う兄弟を表せない。Issue #872）
+  - 表の番号・数・並びを、UIA に出ないまま先に公開の欄にする（行 AX2 で表のパターンと一緒に入れる。Issue #872）
+  - 名前を ARIA の順（labelled-by をアプリの名前より先）や、部品の名前を labelled-by より先にする順で決める（アプリが書いた 2 つは部品の既定より先に来る。アプリの名前を先にするのは Avalonia の `ControlAutomationPeer.GetNameCore` と同じ。PR #881 のレビューの後、Issue #878）
+  - 見出しの深さを、AriaProperties の `level` に合わせて 1 を引かずに渡す（UIA の Level が 1 大きくなる。上流の食い違いは行 AX2 で直す。PR #881 のレビューの後、Issue #878）
+  - SearchBox と日付の入力の文字の SetValue を受けない（UIA が書ける Value を見せたまま捨てる。PR #881 のレビューの後、Issue #878）
+  - 関係を相手の側からも結べるようにする（`label.Labels(field)`。`Element` は両方を作った後に呼べるので、形が 2 つになるだけである。Issue #878）
+  - アンカーでもハンドラも無い `Expandable` のノードの Expand を Click に読み替える（開閉と押す操作は別で、誤った操作を黙って配る。Debug のビルドで不変条件の失敗にする。Issue #878）
+  - error-message の相手の無い `Invalid` を、Windows で名前か説明に部品の文言を足して伝える（名前が変わるとイベントが出て、行 LC4 の文言に頼ることになる。行 AX2 で IsDataValidForForm を出す。Issue #878）
+  - Windows で、増減のハンドラだけを持つノードの数値の SetValue を捨てて読み取り専用にする（UIA の RangeValue には増減が無く、Windows では値を動かせなくなる。Issue #878）
 
 ---
 
@@ -1045,6 +1155,20 @@ Rejected:
   - タグを検査しない（Flutter の `Locale`。壊れた値がそのまま解決に入る。同じ Grill）
   - 拡張言語を読んで捨てる（`zh-yue` を `zh` にする。広東語が中国語の全体に変わる。RFC 5646 §3.1.7 は `yue` と同じタグとして扱うべきだと書く。PR #836）
   - タグのコードが登録簿にあるかを見る（Flutter も見ない。登録簿が新しくなるたびに、読めるタグが変わる。構文だけを見る。同じ Grill）
+  - OS の地域の書式のロケール（Windows の `GetUserDefaultLocaleName`）を、書式の 2 つ目のロケールとして持つ（アプリが宣言していないロケールの表まで要る。OS からは 24 時間表示かどうかだけを取る。LC2 の Grill、Issue #853）
+  - BCP 47 の `-u-` 拡張（数字の種類、12 時間か 24 時間か、暦）で書式を変える（`Locale` は 3 つの欄のまま。LC2 の Grill の 2 巡目、Issue #860）
+  - ロケールに合わせた並べ替えを行 LC2 に入れる（複数形・数値・日付と独立で、照合の表が大きい。行 CL1 に分ける。LC2 の Grill、Issue #853）
+  - 表を作るツールが、アプリの宣言したロケールの分だけ表を出す（spike の形 (a)。全部を入れて参照しない分を NativeAOT に落とさせる形 (b) と、ロケール 1 個でも 10 個でも実行ファイルが 1 バイトも違わなかった（`docs/benchmarks/lc2-cldr-size.md`）。(a) では、アプリのビルドに CLDR のデータとツールが要るようになり、アプリごとに違う表ができる。CLDR のスパイク（PR #870）の後でオーナーが決定）
+  - ロケールの名前から表を引く辞書（`CldrLocales.Find("ja")`）を置く（辞書が全部のロケールを参照し、NativeAOT が 1 つも落とせない。全部が要るアプリは `CldrLocales.All` で、そう書く。同じ決定）
+  - 地域から文字体系を補う推定を入れない（Flutter の本体。OS が `zh-TW` で、アプリが `zh-Hans`・`zh-Hant` の順に宣言すると `zh-Hans` を選ぶ。表は +80,384 バイト。CLDR のスパイク（PR #870）の後でオーナーが決定）
+  - 推定した文字体系を、解決の「OS の言語が文字体系を書いている時」の手順にも使う（OS の `fr-CA` が `fr-Latn-CA` になり、言語と文字体系の一致で `fr` をすぐ返す。LC1 の結果では `fr-FR` だった）
+  - 推定した文字体系の違う対応ロケールを候補から外す（OS が `zh-TW` だけで、アプリが `en`・`zh-Hans` を宣言すると、`zh-Hans` でなく `en` になる）
+  - アプリが何も宣言しない時に、OS の言語の表を黙って入れる（宣言しないアプリにも全部の表が残る。`root` の表で出す）
+  - 複数形の区分を `double` で選ぶ（見える小数の桁が決まらない。英語の `1` と `1.0` は区分が違う。`decimal` の桁を見える桁にする）
+  - 通貨の名前を入れる（出す部品の行が無い。記号の標準と narrow の形だけを入れる。Issue #880 の Grill でオーナーが決定）
+  - 時間帯の名前（metazone）を入れる（出す部品の行が無い。`gmtFormat` で GMT からの差を出す。UTS #35 第 4 部が、名前の無い時に落ちる先と同じ形である。同じ Grill）
+  - 最初の週の最小の日数の値だけを出し、週の番号の関数を出さない（値だけでは週の番号を出せず、部品ごとに数え方が分かれる。`scope.mdc`。同じ Grill）
+  - 書式の `y` が 1 つの時も、2 桁の年を今の前後 100 年の窓に入れる（Flutter が固定する `intl` 0.20.3 は、`yy` の時だけ窓に入れ、`y` では書いたとおりの年にする。同じ `intl` を読んでから決める、と同じ Grill でオーナーが決定）
 
 ---
 
