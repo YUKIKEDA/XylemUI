@@ -26,10 +26,12 @@ public static class Scope
     // The effects held under each paused scope, in the order they were queued (Pause, Resume).
     private static readonly Dictionary<ScopeRef, List<Effect>> Held = [];
     private static readonly Arena<CleanupEntry> Cleanups = new();
-    private static readonly Arena<ContextEntry> Contexts = new();
-#if RC1_STORE_B
-    private static readonly Dictionary<ScopeRef, Handle<ContextEntry>> Provided = [];
-#endif
+
+    // The provided values of every scope, linked by index; slot 0 is never used, so that 0 is "none". An index needs no
+    // generation: an entry is freed when the scope that provided it is disposed, which is after every scope under it.
+    private static ContextEntry[] _contexts = new ContextEntry[16];
+    private static int _contextCount = 1;
+    private static int _freeContext;
 
     /// <summary>
     /// Gets the number of paused scopes: 0 keeps the effects' run free of the walk up their scopes.
@@ -79,15 +81,8 @@ public static class Scope
         catch (Exception bodyError) when (bodyError is not InvariantViolationException)
         {
             CurrentRef = previous;
-            List<Exception>? errors = null;
-            DisposeScope(scope, ref errors);
-            if (errors is null)
-            {
-                throw;
-            }
-
-            errors.Insert(0, bodyError);
-            throw new AggregateException(errors);
+            DisposeAfterBodyThrew(scope, bodyError);
+            throw;
         }
         finally
         {
@@ -350,45 +345,36 @@ public static class Scope
     }
 
     /// <summary>
-    /// Puts a value of a context key on a scope.
+    /// Puts a value of a context key on a scope, in front of the values it reads from above.
     /// </summary>
     /// <param name="scope">The scope.</param>
     /// <param name="key">The key.</param>
     /// <param name="slot">The slot of the value in the key's store.</param>
     internal static void PutContext(ScopeRef scope, IContextStore key, int slot)
     {
-#if RC1_STORE_A
-        Handle<ContextEntry> older = Scopes.GetRef(scope).LastContext;
-        Scopes.GetRef(scope).LastContext = Contexts.Allocate(
-            new ContextEntry
+        int index = _freeContext;
+        if (index != 0)
+        {
+            _freeContext = _contexts[index].Older;
+        }
+        else
+        {
+            if (_contextCount == _contexts.Length)
             {
-                Key = key,
-                Slot = slot,
-                Older = older,
+                Array.Resize(ref _contexts, _contextCount * 2);
             }
-        );
-#elif RC1_STORE_B
-        _ = Provided.TryGetValue(scope, out Handle<ContextEntry> older);
-        Provided[scope] = Contexts.Allocate(
-            new ContextEntry
-            {
-                Key = key,
-                Slot = slot,
-                Older = older,
-            }
-        );
-        Scopes.GetRef(scope).HasContext = true;
-#elif RC1_STORE_C
-        Handle<ContextEntry> older = Scopes.GetRef(scope).Contexts;
-        Scopes.GetRef(scope).Contexts = Contexts.Allocate(
-            new ContextEntry
-            {
-                Key = key,
-                Slot = slot,
-                Older = older,
-            }
-        );
-#endif
+
+            index = _contextCount++;
+        }
+
+        ref ScopeData data = ref Scopes.GetRef(scope);
+        _contexts[index] = new ContextEntry
+        {
+            Key = key,
+            Slot = slot,
+            Older = data.Contexts,
+        };
+        data.Contexts = index;
     }
 
     /// <summary>
@@ -397,100 +383,73 @@ public static class Scope
     /// <param name="key">The key.</param>
     /// <param name="slot">The slot of the value in the key's store.</param>
     /// <returns>Whether a value is provided.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread; a computed value is computing; or there is no current scope, also inside an
+    /// effect that was made with no current scope.
+    /// </exception>
     internal static bool FindContext(IContextStore key, out int slot)
     {
         UiThread.VerifyAccess();
-        VerifyNotInComputed();
-        ScopeRef at = CurrentRef;
-        if (!Scopes.IsAlive(at))
+        if (ReactiveRuntime.Current is { } running && running is not Effect)
         {
-            ThrowHelper.ThrowNoCurrentScope();
+            ThrowHelper.ThrowContextInsideComputed();
         }
 
-#if RC1_STORE_C
-        ref ScopeData data = ref Scopes.GetRef(at);
+        ScopeRef scope = CurrentRef;
+        if (!Scopes.IsAlive(scope))
+        {
+            ThrowHelper.ThrowContextWithNoScope();
+        }
+
+        ref ScopeData data = ref Scopes.GetRef(scope);
         if (data.Unowned)
         {
-            ThrowHelper.ThrowNoCurrentScope();
+            ThrowHelper.ThrowContextWithNoScope();
         }
 
-        for (Handle<ContextEntry> entry = data.Contexts; !entry.IsNone; )
+        ContextEntry[] contexts = _contexts;
+        for (int index = data.Contexts; index != 0; index = contexts[index].Older)
         {
-            ref ContextEntry found = ref Contexts.GetRef(entry);
-            if (ReferenceEquals(found.Key, key))
+            if (ReferenceEquals(contexts[index].Key, key))
             {
-                slot = found.Slot;
+                slot = contexts[index].Slot;
                 return true;
             }
-
-            entry = found.Older;
         }
-#else
-        while (true)
-        {
-            ref ScopeData data = ref Scopes.GetRef(at);
-#if RC1_STORE_A
-            Handle<ContextEntry> entry = data.LastContext;
-#else
-            Handle<ContextEntry> entry = default;
-            if (data.HasContext)
-            {
-                entry = Provided[at];
-            }
-#endif
-            while (!entry.IsNone)
-            {
-                ref ContextEntry found = ref Contexts.GetRef(entry);
-                if (ReferenceEquals(found.Key, key))
-                {
-                    slot = found.Slot;
-                    return true;
-                }
-
-                entry = found.Older;
-            }
-
-            if (data.Parent.IsNone)
-            {
-                if (data.Unowned)
-                {
-                    ThrowHelper.ThrowNoCurrentScope();
-                }
-
-                break;
-            }
-
-            at = data.Parent;
-        }
-#endif
 
         slot = 0;
         return false;
     }
 
-    private static void ReleaseContexts(ScopeRef scope, in ScopeData data)
+    // Frees the values the scope itself provided: the entries in front of the parent's list.
+    private static void ReleaseContexts(in ScopeData data)
     {
-#if RC1_STORE_A
-        Handle<ContextEntry> entry = data.LastContext;
-        Handle<ContextEntry> end = default;
-#elif RC1_STORE_B
-        if (!data.HasContext)
+        int end = Scopes.IsAlive(data.Parent) ? Scopes.GetRef(data.Parent).Contexts : 0;
+        int index = data.Contexts;
+        while (index != end)
         {
-            return;
-        }
-
-        _ = Provided.Remove(scope, out Handle<ContextEntry> entry);
-        Handle<ContextEntry> end = default;
-#else
-        Handle<ContextEntry> entry = data.Contexts;
-        Handle<ContextEntry> end = Scopes.IsAlive(data.Parent) ? Scopes.GetRef(data.Parent).Contexts : default;
-#endif
-        while (entry != end)
-        {
-            ContextEntry released = Contexts.GetRef(entry);
+            ContextEntry released = _contexts[index];
+            _contexts[index] = new ContextEntry { Older = _freeContext };
+            _freeContext = index;
             released.Key.Release(released.Slot);
-            Contexts.Free(entry);
-            entry = released.Older;
+            index = released.Older;
+        }
+    }
+
+    /// <summary>
+    /// Disposes a scope whose body threw. If its cleanups throw too, an <see cref="AggregateException"/> carries the body's
+    /// exception first, then theirs; otherwise it returns and the caller rethrows.
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="bodyError">The exception of the body.</param>
+    internal static void DisposeAfterBodyThrew(ScopeRef scope, Exception bodyError)
+    {
+        List<Exception>? errors = null;
+        DisposeScope(scope, ref errors);
+        if (errors is not null)
+        {
+            errors.Insert(0, bodyError);
+            throw new AggregateException(errors);
         }
     }
 
@@ -521,10 +480,10 @@ public static class Scope
         );
         if (!parent.IsNone)
         {
-#if RC1_STORE_C
-            Scopes.GetRef(scope).Contexts = Scopes.GetRef(parent).Contexts;
-            Scopes.GetRef(scope).Unowned = Scopes.GetRef(parent).Unowned;
-#endif
+            ScopeData above = Scopes.GetRef(parent);
+            ref ScopeData made = ref Scopes.GetRef(scope);
+            made.Contexts = above.Contexts;
+            made.Unowned = above.Unowned;
             ScopeRef older = Scopes.GetRef(parent).LastChild;
             Scopes.GetRef(scope).OlderSibling = older;
             if (!older.IsNone)
@@ -567,7 +526,7 @@ public static class Scope
         DisposeContents(scope, ref errors);
         ScopeData final = Scopes.GetRef(scope);
         final.Effect?.StopForDispose();
-        ReleaseContexts(scope, final);
+        ReleaseContexts(final);
         Unlink(scope, final);
         if (final.Paused)
         {

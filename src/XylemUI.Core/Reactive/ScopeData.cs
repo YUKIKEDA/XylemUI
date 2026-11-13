@@ -31,6 +31,12 @@ internal struct ScopeData
     /// <summary>The id in <see cref="ScopeTracker"/>; 0 when the tracker was off when the scope was made.</summary>
     internal int TrackerId;
 
+    /// <summary>
+    /// The newest value of a context provided on this scope or above it, as an index into the scopes' list of provided values;
+    /// 0 for none. A scope copies its parent's and puts its own values in front (design §2.13).
+    /// </summary>
+    internal int Contexts;
+
     /// <summary>Set while the scope disposes its children and cleanups, so that a nested dispose of it does nothing.</summary>
     internal bool Disposing;
 
@@ -40,17 +46,9 @@ internal struct ScopeData
     /// </summary>
     internal bool Paused;
 
-    /// <summary>Whether the scope hangs under an effect that was made with no current scope: a lookup of a context throws there.</summary>
+    /// <summary>
+    /// Whether the scope is, or hangs under, the scope of an effect that was made with no current scope: a lookup of a context
+    /// throws there (design §2.13).
+    /// </summary>
     internal bool Unowned;
-
-#if RC1_STORE_A
-    /// <summary>The newest value provided on this scope.</summary>
-    internal Handle<ContextEntry> LastContext;
-#elif RC1_STORE_B
-    /// <summary>Whether a value is provided on this scope; the list is in a table beside the arena.</summary>
-    internal bool HasContext;
-#elif RC1_STORE_C
-    /// <summary>The newest value provided on this scope or above it: the parent's list, with this scope's values in front.</summary>
-    internal Handle<ContextEntry> Contexts;
-#endif
 }

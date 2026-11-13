@@ -63,8 +63,4 @@
     <!-- The harness's tests make a renderer of their own to test the goldens on every OS (row P02a2). -->
     <InternalsVisibleTo Include="XylemUI.Testing.Tests" />
   </ItemGroup>
-  <PropertyGroup>
-    <Rc1Store Condition="'$(Rc1Store)' == ''">A</Rc1Store>
-    <DefineConstants>$(DefineConstants);RC1_STORE_$(Rc1Store)</DefineConstants>
-  </PropertyGroup>
 </Project>

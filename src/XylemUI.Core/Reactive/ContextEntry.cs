@@ -23,6 +23,6 @@ internal struct ContextEntry
     /// <summary>The slot of the value in the key's store.</summary>
     internal int Slot;
 
-    /// <summary>The next entry of the list.</summary>
-    internal Handle<ContextEntry> Older;
+    /// <summary>The next entry of the list, or of the free list; 0 for none.</summary>
+    internal int Older;
 }

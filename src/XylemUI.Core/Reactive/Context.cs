@@ -47,24 +47,21 @@ public sealed class Context<T> : IContextStore
         ScopeRef scope = Scope.AllocateOwned(owner);
         int slot = Store(value);
         Scope.PutContext(scope, this, slot);
-        if (!Scope.TryEnter(scope, out ScopeRef previous))
-        {
-            throw new InvalidOperationException("The scope of a provided value was disposed before its body ran.");
-        }
-
+        ScopeRef previous = Scope.CurrentRef;
+        Scope.CurrentRef = scope;
         try
         {
             return body();
         }
-        catch
+        catch (Exception bodyError) when (bodyError is not InvariantViolationException)
         {
-            Scope.Exit(previous);
-            Scope.DisposeRef(scope);
+            Scope.CurrentRef = previous;
+            Scope.DisposeAfterBodyThrew(scope, bodyError);
             throw;
         }
         finally
         {
-            Scope.Exit(previous);
+            Scope.CurrentRef = previous;
         }
     }
 
@@ -80,7 +77,7 @@ public sealed class Context<T> : IContextStore
     {
         if (!TryUse(out T? value))
         {
-            throw new InvalidOperationException("No value is provided for the context and the context has no default value.");
+            ThrowHelper.ThrowContextHasNoValue();
         }
 
         return value;
