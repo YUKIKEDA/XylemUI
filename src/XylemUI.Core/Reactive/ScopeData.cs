@@ -31,6 +31,12 @@ internal struct ScopeData
     /// <summary>The id in <see cref="ScopeTracker"/>; 0 when the tracker was off when the scope was made.</summary>
     internal int TrackerId;
 
+    /// <summary>
+    /// The newest value of a context provided on this scope or above it, as an index into the scopes' list of provided values;
+    /// 0 for none. A scope copies its parent's and puts its own values in front (design §2.13).
+    /// </summary>
+    internal int Contexts;
+
     /// <summary>Set while the scope disposes its children and cleanups, so that a nested dispose of it does nothing.</summary>
     internal bool Disposing;
 
@@ -39,4 +45,10 @@ internal struct ScopeData
     /// exit).
     /// </summary>
     internal bool Paused;
+
+    /// <summary>
+    /// Whether the scope belongs to nothing, or hangs under one that does: an effect made with no current scope, or what was
+    /// made under a disposed parent. A lookup of a context that finds no value throws there (design §2.13).
+    /// </summary>
+    internal bool Unowned;
 }
