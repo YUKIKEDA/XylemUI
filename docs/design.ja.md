@@ -6234,7 +6234,7 @@ public static class Fluent
 
 **確かめ方（行 TH1 の実装）:**
 
-- `XylemUI.Core.Tests`: `SystemAppearance.Current` はウィンドウの外の `Use` で投げる。`WindowAppearance.Update` は、値が変わった時だけシグナルを変える。`HeadlessApp.SetSystemAppearance` で変えると、読んでいる所だけが走り直す。`HeadlessOptions.RootWrapper` の包みが、ロケールと OS の見た目の内側で呼ばれ、null なら包まない。`HeadlessApp` は `WindowRoot.SetWrapper` の値を読まない。`WindowRoot.SetWrapper` の 2 回目は投げる。`BorderPaint` は Color の変更だけを付け、同じ値では何もしない。`WindowSurface` の塗る色と題名の棒の明暗を、ヘッドレスのホストが受けて見せる
+- `XylemUI.Core.Tests`: `SystemAppearance.Current` はウィンドウの外の `Use` で投げる。`WindowAppearance.Update` は、値が変わった時だけシグナルを変える。`HeadlessApp.SetSystemAppearance` で変えると、読んでいる所だけが走り直す。`HeadlessOptions.RootWrapper` の包みが、ロケールと OS の見た目の内側で呼ばれ、null なら包まない。`HeadlessApp` は `WindowRoot.SetWrapper` の値を読まない。`WindowRoot.SetWrapper` の 2 回目は投げる（プロセスの値を戻す口は無いので、「1 回目は通る」と「2 回目は投げる」を 1 つのテストで確かめる。2 つに分けると、走る順に依存する。PR #882 のレビュー）。`BorderPaint` は Color の変更だけを付け、同じ値では何もしない。`WindowSurface` の塗る色と題名の棒の明暗を、ヘッドレスのホストが受けて見せる
 - `XylemUI.Desktop.Tests`（Windows）: 読んだ値から `SystemAppearance` を作る写し（明るさの式、ハイコントラストの時の明暗、8 つの色）。`UISettings` が作れない時は明として読む。テーマの明暗で題名の棒の属性を設定すること
 - 道具: 固定したコミットのトークンから生成した C# が、リポジトリに置いたものと同じであること（アイコンの道具と同じ確かめ方）。明・暗・ハイコントラストの別名の色が 184 個ずつ揃うこと
 - `XylemUI.Generators.Tests`: アプリの `WindowTheme` 1 つでモジュール初期化子が `WindowRoot.SetWrapper` を呼ぶこと。2 つで XYLEM010、`Wrap` の無い型で XYLEM011、実行ファイルでないアセンブリでは何も書かないこと。属性の無いアプリ（Theme.Fluent を参照するだけ）では何も書かないこと
