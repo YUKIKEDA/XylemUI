@@ -630,7 +630,7 @@ Rejected:
   - Reactive Context の鍵を型にする（`UseContext<T>()`。同じ型の値を 2 つ置けない。Flutter と GPUI は型を鍵にし、ぶつからないように非公開の型を作る。RC1 の Grill、Issue #827）
   - Reactive Context の値を、文として置く（`ProvideContext(value);` の後に子を作る。同じ Scope で先に作った要素に効かず、書く順で結果が変わる。同じ Grill）
   - Reactive Context の値を、要素の拡張メソッドで置く（要素を作った後に呼ぶので、その子に届かない。同じ Grill）
-  - Computed に、作られた時の Scope を捕まえさせて、その中の `Use` を宣言した所から引く（SolidJS の形。Scope が Computed を持たない設計を変え、Computed は Scope が破棄された後も生きる。Issue #838 の Grill）
+  - Computed に、作られた時の Scope を捕まえさせて、その中の `Use` を宣言した所から引く（SolidJS の形。Computed は Scope が破棄された後も生きるので、引く先が無くなる場合がある。Computed ごとに欄と Scope の切り替えが増える（測っていない）。Issue #838 の Grill）
   - Computed の中の `Use` をそのまま通す（読んだ側の Scope から引き、結果がキャッシュされるので、最初に読んだ所で値が決まる。同じ Grill）
   - 値がシグナルの鍵に、遅れて作る既定値を持たせる（`Context<T>(Func<T>)`。シグナルがプロセスに 1 つになり、ウィンドウとテストの間で共有される。比べた 3 つに無い。同じ Grill）
   - ボタンを Core に置く（§2.9.1 の「Core は部品を持たない」に反する。比べた 3 つも土台の層にボタンを持たない）
