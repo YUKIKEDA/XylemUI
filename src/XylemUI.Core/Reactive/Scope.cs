@@ -402,11 +402,6 @@ public static class Scope
         }
 
         ref ScopeData data = ref Scopes.GetRef(scope);
-        if (data.Unowned)
-        {
-            ThrowHelper.ThrowContextWithNoScope();
-        }
-
         ContextEntry[] contexts = _contexts;
         for (int index = data.Contexts; index != 0; index = contexts[index].Older)
         {
@@ -415,6 +410,13 @@ public static class Scope
                 slot = contexts[index].Slot;
                 return true;
             }
+        }
+
+        // A value provided inside what belongs to nothing was found above. Without one, a default would hide a value that an
+        // ancestor provided, as it would with no current scope.
+        if (data.Unowned)
+        {
+            ThrowHelper.ThrowContextWithNoScope();
         }
 
         slot = 0;
@@ -464,10 +466,13 @@ public static class Scope
     private static ScopeRef Allocate(ScopeRef parent, Effect? effect, string owner)
     {
         // A parent that is gone (an effect that disposed itself while it runs) or being disposed takes no new children: what is
-        // made then belongs to nothing.
-        if (!Scopes.IsAlive(parent) || Scopes.GetRef(parent).Disposing)
+        // made then belongs to nothing. So does an effect made with no current scope. A scope made with no current scope is a
+        // root (a window's), which belongs to itself.
+        bool unowned = parent.IsNone && effect is not null;
+        if (!parent.IsNone && (!Scopes.IsAlive(parent) || Scopes.GetRef(parent).Disposing))
         {
             parent = default;
+            unowned = true;
         }
 
         ScopeRef scope = Scopes.Allocate(
@@ -475,7 +480,7 @@ public static class Scope
             {
                 Parent = parent,
                 Effect = effect,
-                Unowned = parent.IsNone && effect is not null,
+                Unowned = unowned,
             }
         );
         if (!parent.IsNone)

@@ -47,8 +47,8 @@ internal struct ScopeData
     internal bool Paused;
 
     /// <summary>
-    /// Whether the scope is, or hangs under, the scope of an effect that was made with no current scope: a lookup of a context
-    /// throws there (design §2.13).
+    /// Whether the scope belongs to nothing, or hangs under one that does: an effect made with no current scope, or what was
+    /// made under a disposed parent. A lookup of a context that finds no value throws there (design §2.13).
     /// </summary>
     internal bool Unowned;
 }

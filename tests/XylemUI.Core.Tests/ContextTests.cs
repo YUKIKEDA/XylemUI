@@ -447,6 +447,98 @@ public sealed class ContextTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A value provided inside an effect made with no current scope is found inside it; only a lookup that finds nothing
+    /// throws.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two keys with the defaults "p" and "q". No scope is current.
+    ///
+    /// Steps:
+    /// - Make an effect that provides "a" for the first key around a body that looks up the first key, and records the exception
+    ///   of looking up the second.
+    ///
+    /// Expected:
+    /// - The first lookup gives "a"; the second throws <see cref="InvalidOperationException"/>.
+    /// </remarks>
+    [Fact]
+    public void Use_InsideAnEffectMadeWithNoScope_FindsWhatWasProvidedInside() =>
+        ui.Invoke(() =>
+        {
+            var provided = new Context<string>("p");
+            var other = new Context<string>("q");
+            string? found = null;
+            Exception? missing = null;
+
+            Effect effect = Effect.Create(() =>
+                _ = provided.Provide(
+                    "a",
+                    () =>
+                    {
+                        found = provided.Use();
+                        missing = Record.Exception(() => other.Use());
+                        return default;
+                    }
+                )
+            );
+
+            Assert.Equal("a", found);
+            _ = Assert.IsType<InvalidOperationException>(missing);
+            effect.Dispose();
+        });
+
+    /// <summary>
+    /// A scope made under a parent that is being disposed belongs to nothing: a lookup in it that finds no value throws.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A key with the default 7, provided as 1 around a body that registers a cleanup. The cleanup makes a scope and records
+    ///   the exception of a lookup inside it.
+    ///
+    /// Steps:
+    /// - Dispose the root scope, so that the cleanup runs while its scope is being disposed.
+    ///
+    /// Expected:
+    /// - The lookup threw <see cref="InvalidOperationException"/>: it gave neither 1 nor the default.
+    /// </remarks>
+    [Fact]
+    public void Use_InsideAScopeMadeUnderADisposedParent_Throws() =>
+        ui.Invoke(() =>
+        {
+            var key = new Context<int>(7);
+            Exception? error = null;
+            ScopeHandle kept = default;
+            ScopeHandle root = Scope.Create(() =>
+                _ = key.Provide(
+                    1,
+                    () =>
+                    {
+                        kept = Scope.Current;
+                        Scope.OnCleanup(() =>
+                        {
+                            var previous = Scope.CurrentRef;
+                            Scope.CurrentRef = kept.Value;
+                            try
+                            {
+                                ScopeHandle made = Scope.Create(() => error = Record.Exception(() => key.Use()));
+                                Scope.Dispose(made);
+                            }
+                            finally
+                            {
+                                Scope.CurrentRef = previous;
+                            }
+                        });
+                        return default;
+                    }
+                )
+            );
+
+            Scope.Dispose(root);
+
+            _ = Assert.IsType<InvalidOperationException>(error);
+        });
+
+    /// <summary>
     /// A root scope made with no current scope is not such an effect: a lookup in it gives the key's default.
     /// </summary>
     /// <remarks>
