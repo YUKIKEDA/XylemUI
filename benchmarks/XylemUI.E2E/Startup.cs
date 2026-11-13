@@ -162,14 +162,18 @@ internal static class Startup
         Process self = Process.GetCurrentProcess();
         TimeSpan cpuBefore = self.TotalProcessorTime;
         UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
-        dispatcher.MessageHandler = _ =>
-        {
-            self.Refresh();
-            _idleCpu = self.TotalProcessorTime - cpuBefore;
-            _workingSet = self.WorkingSet64;
-            _privateBytes = self.PrivateMemorySize64;
-            Win32MessageLoop.Quit();
-        };
+
+        // The receiver's scope lives until the child process ends, after the loop.
+        _ = Scope.Create(() =>
+            UiMessage.On<IdleOver>(_ =>
+            {
+                self.Refresh();
+                _idleCpu = self.TotalProcessorTime - cpuBefore;
+                _workingSet = self.WorkingSet64;
+                _privateBytes = self.PrivateMemorySize64;
+                Win32MessageLoop.Quit();
+            })
+        );
         var timer = new Thread(() =>
         {
             Thread.Sleep(TimeSpan.FromSeconds(10));
