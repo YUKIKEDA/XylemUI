@@ -203,16 +203,8 @@ internal sealed class ActionDispatch
             TrackFocus();
         }
 
-        Watch(start);
-    }
-
-    /// <summary>
-    /// Marks the nodes from a node up to the root, through a popup's anchor, as read. The whole route is walked each time: a
-    /// marked node that was put under another parent has ancestors that are not marked yet.
-    /// </summary>
-    /// <param name="start">The node the route starts from; it need not be in the tree yet.</param>
-    public void Watch(NodeHandle start)
-    {
+        // The whole route is walked each time: a marked node that was put under another parent has ancestors that are not
+        // marked yet.
         for (NodeHandle node = start; !node.IsNone && Tree.Nodes.IsAlive(node); node = Tree.KeyParent(node))
         {
             Tree.Nodes.GetRef(node).RouteWatched = true;
