@@ -1147,8 +1147,9 @@ public static partial class ElementExtensions
         UiThread.VerifyAccess();
         UiTree tree = element.TreeOrThrow();
         tree.Keymap.TrackChanges();
-        tree.Actions.TrackAvailability();
-        return KeymapLookup.BindingFor(tree, tree.Focus.KeyTarget, typeof(TAction));
+        NodeHandle start = tree.Focus.KeyTarget;
+        tree.Actions.TrackAvailability(start);
+        return KeymapLookup.BindingFor(tree, start, typeof(TAction));
     }
 
     /// <summary>
@@ -1172,7 +1173,7 @@ public static partial class ElementExtensions
         UiTree tree = element.TreeOrThrow();
         tree.Keymap.TrackChanges();
         NodeHandle start = RouteStart(tree, from, out bool atFocus);
-        tree.Actions.TrackAvailability(atFocus);
+        tree.Actions.TrackAvailability(start, atFocus);
         return KeymapLookup.BindingFor(tree, start, action.GetType(), action);
     }
 
@@ -1234,8 +1235,9 @@ public static partial class ElementExtensions
     {
         UiThread.VerifyAccess();
         UiTree tree = element.TreeOrThrow();
-        tree.Actions.TrackAvailability();
-        return tree.Actions.IsAvailable(tree.Focus.KeyTarget, typeof(TAction));
+        NodeHandle start = tree.Focus.KeyTarget;
+        tree.Actions.TrackAvailability(start);
+        return tree.Actions.IsAvailable(start, typeof(TAction));
     }
 
     /// <summary>
@@ -1259,7 +1261,7 @@ public static partial class ElementExtensions
         UiThread.VerifyAccess();
         UiTree tree = element.TreeOrThrow();
         NodeHandle start = RouteStart(tree, from, out bool atFocus);
-        tree.Actions.TrackAvailability(atFocus);
+        tree.Actions.TrackAvailability(start, atFocus);
         return tree.Actions.IsAvailable(start, action);
     }
 
