@@ -32,7 +32,7 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
         ui.Invoke(() =>
         {
             using var scene = new TextScene(_font);
-            scene.Tree.UiLanguage = TestFont.Japanese;
+            scene.UiLocale = Locale.Parse("ja");
             Element text = default;
             scene.Mount(() => text = Elements.Text("nn"));
             TextLeaf leaf = scene.Leaf(text);
@@ -43,6 +43,40 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
             Assert.True(float.IsNaN(leaf.Style.LineHeight));
             Assert.Equal(FontRequest.Default, leaf.Style.Font);
             Assert.Null(leaf.Color);
+        });
+
+    /// <summary>
+    /// In a tree with no window, text made under a locale after the first such text is gone still follows that locale: the
+    /// effect that follows the locale goes with the scope of the text that made it, and the next text makes it again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with no window. Its root provides a signal of the locale "ja" around a list of one row, whose function makes a
+    ///   text with no language.
+    ///
+    /// Steps:
+    /// - Empty the list, so that the row's scope goes; give it another row; then set the signal to "en".
+    ///
+    /// Expected:
+    /// - The second row's text has the language "ja" when it is made, and "en" after the signal changed.
+    /// </remarks>
+    [Fact]
+    public void Text_UnderALocaleInATreeWithNoWindow_FollowsItAfterTheFirstTextIsGone() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Signal<Locale> locale = Signal.Create(Locale.Parse("ja"));
+            Signal<IReadOnlyList<int>> rows = Signal.Create<IReadOnlyList<int>>([1]);
+            Element text = default;
+            scene.Mount(() => Localization.Locale.Provide(locale, () => Column().For(rows, static row => row, _ => text = Elements.Text("a"))));
+
+            rows.Set([]);
+            rows.Set([2]);
+            TextLanguage made = scene.Leaf(text).Style.Language;
+            locale.Set(Locale.Parse("en"));
+
+            Assert.Equal(TestFont.Japanese, made);
+            Assert.Equal(TextLanguage.FromTag("en"), scene.Leaf(text).Style.Language);
         });
 
     /// <summary>

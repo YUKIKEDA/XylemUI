@@ -191,13 +191,49 @@ internal sealed class UiTree
     // long as before (docs/benchmarks/p02g.md).
     private readonly AccessibilityTables _a11y = new();
 
+    // The language of each locale that text of the default language was made under, and the last one asked for.
+    private Dictionary<IReadOnlySignal<Locale>, TextLanguage>? _localeLanguages;
+    private IReadOnlySignal<Locale>? _lastLocale;
+    private TextLanguage _lastLanguage;
+
     /// <summary>
-    /// Gets or sets the language of the text that <see cref="Elements"/> makes with no language of its own: the OS's UI language,
-    /// which the window's host reads from the platform (design §2.13, "The defaults of Text"); <see langword="null"/> until it does,
-    /// for "und" (undetermined). It is not made here: a language is HarfBuzz's, and a tree with no text runs where HarfBuzz is not
-    /// built (the Core tests on Linux and macOS until rows P04 and P06).
+    /// Gets or sets the scope the effects that shape the text of the default language again are made in: the window's root
+    /// scope (<see cref="WindowLocale.Provide"/>); none for a tree with no window, where they are made in the scope of the text.
     /// </summary>
-    internal TextLanguage? UiLanguage { get; set; }
+    internal ScopeHandle LocaleScope { get; set; }
+
+    /// <summary>
+    /// Returns the language of text that sets none (design §4.11, "The default language of text"): the language of the nearest
+    /// locale provided around where the text is made, or "und" (undetermined) where none is. The text is shaped again when that
+    /// locale changes. A language is HarfBuzz's, so it is made only here, where a text leaf is made: a tree with no text runs
+    /// where HarfBuzz is not built (the Core tests on Linux and macOS until rows P04 and P06).
+    /// </summary>
+    /// <param name="source">The locale the language came from; <see langword="null"/> where none is provided.</param>
+    /// <returns>The language.</returns>
+    internal TextLanguage DefaultTextLanguage(out IReadOnlySignal<Locale>? source)
+    {
+        if (!Localization.Locale.TryUseInside(out source))
+        {
+            source = null;
+            return TextLanguage.FromTag("und");
+        }
+
+        // A window's texts nearly all have the window's locale: the last one asked for is kept beside the table.
+        if (ReferenceEquals(source, _lastLocale))
+        {
+            return _lastLanguage;
+        }
+
+        _localeLanguages ??= [];
+        if (!_localeLanguages.TryGetValue(source, out TextLanguage language))
+        {
+            WatchLocale(source);
+            language = _localeLanguages[source];
+        }
+
+        (_lastLocale, _lastLanguage) = (source, language);
+        return language;
+    }
 
     /// <summary>
     /// Returns the scroll state attached to a node, or <see langword="null"/>.
@@ -895,6 +931,67 @@ internal sealed class UiTree
     /// for a frame.
     /// </summary>
     internal void MeasureTextAgain()
+    {
+        MeasureTextAgainCore();
+    }
+
+    // One effect for each locale that text of the default language was made under: it keeps the locale's language, and gives it
+    // to the leaves made under that locale when it changes. It reads the locale itself, so the effect that makes a text (a row
+    // of a list) does not run again for a change of the locale.
+    private void WatchLocale(IReadOnlySignal<Locale> source)
+    {
+        void Watch()
+        {
+            // The entry goes with the scope that owns the effect: in a tree with no window that is the scope of the text, and
+            // text made later under the same locale then makes the effect again.
+            Scope.OnCleanup(() =>
+            {
+                _ = _localeLanguages!.Remove(source);
+                if (ReferenceEquals(source, _lastLocale))
+                {
+                    _lastLocale = null;
+                }
+            });
+            _ = Effect.Create(() =>
+            {
+                var language = TextLanguage.FromTag(source.Get().ToLanguageTag());
+                bool known = _localeLanguages!.TryGetValue(source, out TextLanguage before);
+                _localeLanguages[source] = language;
+                if (ReferenceEquals(source, _lastLocale))
+                {
+                    _lastLanguage = language;
+                }
+
+                if (known && before != language)
+                {
+                    ShapeDefaultTextAgain(source, language);
+                }
+            });
+        }
+
+        if (!Scope.Run(LocaleScope, Watch))
+        {
+            Watch();
+        }
+    }
+
+    private void ShapeDefaultTextAgain(IReadOnlySignal<Locale> source, TextLanguage language)
+    {
+        for (int index = 0; index < Nodes.SlotCount; index++)
+        {
+            if (
+                Nodes.TryGetHandleAt(index, out NodeHandle node)
+                && Nodes.GetRef(node).Text is { } leaf
+                && ReferenceEquals(leaf.DefaultLanguageOf, source)
+                && leaf.SetStyle(leaf.Style with { Language = language })
+            )
+            {
+                Invalidation.Invalidate(this, node, ChangeKind.Font);
+            }
+        }
+    }
+
+    private void MeasureTextAgainCore()
     {
         for (int index = 0; index < Nodes.SlotCount; index++)
         {
