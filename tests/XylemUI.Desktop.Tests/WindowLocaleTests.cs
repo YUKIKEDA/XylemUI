@@ -188,7 +188,8 @@ public sealed class WindowLocaleTests
     /// Preconditions:
     /// - An app that supports ja and en, with the OS's language "ja-JP". A list of one row, whose function is counted, holds a
     ///   text with no language. Beside it: a text given the language "ko", and a text inside a part wrapped in a signal of
-    ///   another locale, "ar".
+    ///   another locale, "ar". The part's text is made first, so that the last text made before a later row has the window's
+    ///   locale.
     ///
     /// Steps:
     /// - Read the three languages. Change the OS's language to "en-US" and read them; add a second row, whose text is made after
@@ -211,6 +212,7 @@ public sealed class WindowLocaleTests
         await using HeadlessApp app = await HeadlessApp.StartAsync(
             () =>
                 Column(
+                    Localization.Locale.Provide(part, () => inPart = Elements.Text("c")),
                     Column()
                         .For(
                             rows,
@@ -221,8 +223,7 @@ public sealed class WindowLocaleTests
                                 return plain = Elements.Text("a");
                             }
                         ),
-                    fixedLanguage = Elements.Text("b").Language(TextLanguage.FromTag("ko")),
-                    Localization.Locale.Provide(part, () => inPart = Elements.Text("c"))
+                    fixedLanguage = Elements.Text("b").Language(TextLanguage.FromTag("ko"))
                 ),
             new HeadlessOptions { SupportedLocales = [Locale.Parse("ja"), Locale.Parse("en")], SystemLocales = ["ja-JP"] }
         );
