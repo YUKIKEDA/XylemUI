@@ -432,7 +432,7 @@ internal sealed class UiTree
         SetScrollState(node, state);
 
         // Whether a scrolling action can run was read from the container's boxes until now (WindowInput.CanScrollByStep).
-        Actions.AvailabilityChanged();
+        Actions.RouteChanged(node);
         return state;
     }
 
@@ -1356,7 +1356,7 @@ internal sealed class UiTree
             if (Nodes.GetRef(node).Input is { } input && (part ? input.PartKeyContext : input.AppKeyContext) is not null)
             {
                 input.SetKeyContext(null, part);
-                Actions.AvailabilityChanged();
+                Actions.RouteChanged(node);
             }
 
             return;
@@ -1364,8 +1364,8 @@ internal sealed class UiTree
 
         InputOf(node).SetKeyContext(KeyContext.Parse(context), part);
 
-        // The rows whose conditions hold at the focus may be others now (KeyBindingFor).
-        Actions.AvailabilityChanged();
+        // The rows whose conditions hold on the routes through the node may be others now (KeyBindingFor).
+        Actions.RouteChanged(node);
     }
 
     /// <summary>
@@ -1388,7 +1388,7 @@ internal sealed class UiTree
     {
         ArgumentNullException.ThrowIfNull(handler);
         InputOf(node).Add(new ActionHandlerEntry<TAction>(phase, handler, Scope.CurrentRef, derived, can));
-        Actions.AvailabilityChanged();
+        Actions.RouteChanged(node);
     }
 
     /// <summary>
@@ -1405,7 +1405,7 @@ internal sealed class UiTree
         ArgumentNullException.ThrowIfNull(handler);
         if (Nodes.GetRef(node).Input is { } input && input.Remove(typeof(TAction), phase, handler))
         {
-            Actions.AvailabilityChanged();
+            Actions.RouteChanged(node);
             return true;
         }
 
@@ -1645,7 +1645,7 @@ internal sealed class UiTree
             Invalidation.Invalidate(this, node, ChangeKind.Color);
 
             // A move of the focus has one node more or fewer to go to (FocusActions); so with Hidden below.
-            Actions.AvailabilityChanged();
+            Actions.OrderChanged();
             if (!focusable)
             {
                 Focus.Lose(node);
@@ -1833,10 +1833,6 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
-
-        // The subtree is on routes and in the order of Tab now: a move of the focus may have a node to go to, and a menu's item
-        // made while its menu is open finds its menu (PR #821's review). So in InsertAfter.
-        Actions.AvailabilityChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (p.LastChild.IsNone)
         {
@@ -1863,6 +1859,12 @@ internal sealed class UiTree
         }
 
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+
+        // The subtree is in the order of Tab now, and a route that was read from inside it goes on through the parent: a menu's
+        // item made while its menu is open finds its menu (PR #821's review). A subtree no reader read from changes no route
+        // (row KM3). The readers are told last, when the links are whole: one that runs in the middle walks a tree whose
+        // parent does not list the child yet. So in InsertAfter, DetachChildren, and Detach.
+        Actions.LinkChanged(child);
     }
 
     /// <summary>
@@ -1885,7 +1887,6 @@ internal sealed class UiTree
         }
 
         c.Parent = parent;
-        Actions.AvailabilityChanged();
         ref UiNode p = ref Nodes.GetRef(parent);
         if (previous.IsNone)
         {
@@ -1926,6 +1927,7 @@ internal sealed class UiTree
         }
 
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        Actions.LinkChanged(child);
     }
 
     /// <summary>
@@ -1983,14 +1985,19 @@ internal sealed class UiTree
     internal void DetachChildren(NodeHandle parent)
     {
         NodeHandle child = Nodes.GetRef(parent).FirstChild;
+
+        // A child that a reader's route passes, or else the first child: the one the readers are told of (LinkChanged).
+        NodeHandle told = default;
         while (!child.IsNone)
         {
             ref UiNode c = ref Nodes.GetRef(child);
             NodeHandle next = c.NextSibling;
             c.Parent = default;
+            if (told.IsNone || c.RouteWatched)
+            {
+                told = child;
+            }
 
-            // The route of an action from a focused node of the subtree ends here now.
-            Actions.AvailabilityChanged();
             c.NextSibling = default;
             child = next;
         }
@@ -2001,6 +2008,12 @@ internal sealed class UiTree
         p.Layout.OutOfFlowChildren = 0;
         p.Versions.Children++;
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+
+        // The route of an action from a focused node of a subtree ends at its child now, and the order of Tab is without them.
+        if (!told.IsNone)
+        {
+            Actions.LinkChanged(told);
+        }
     }
 
     /// <summary>
@@ -2083,7 +2096,7 @@ internal sealed class UiTree
         bool hides = style.Hidden && !changed.Layout.Style.Hidden;
         if (style.Hidden != changed.Layout.Style.Hidden)
         {
-            Actions.AvailabilityChanged();
+            Actions.OrderChanged();
         }
 
         changed.Layout.Style = style;
@@ -2437,8 +2450,8 @@ internal sealed class UiTree
 
         ref UiNode n = ref Nodes.GetRef(node);
         n.Parent = default;
-        Actions.AvailabilityChanged();
         n.NextSibling = default;
+        Actions.LinkChanged(node);
     }
 
     // Frees a node and its subtree, children first. The links are read before each slot is freed (design §2.5).
@@ -2528,11 +2541,15 @@ internal sealed class UiTree
         ref UiNode n = ref Nodes.GetRef(node);
         bool disabled = inherited || n.Input?.Disabled == true;
 
-        // Whether an action is available may be another answer now: the node's handlers are passed over while it is disabled, and
-        // a move of the focus has one node more or fewer to go to (FocusActions).
-        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled && n.Input is { } input && (input.ActionHandlers.Length > 0 || input.Focusable))
+        // What an action does may be another answer now: the node's handlers and its scrolling are passed over while it is
+        // disabled, and a move of the focus has one node more or fewer to go to (FocusActions).
+        if (((n.Pseudo & PseudoState.Disabled) != 0) != disabled)
         {
-            Actions.AvailabilityChanged();
+            Actions.RouteChanged(node);
+            if (n.Input is { Focusable: true })
+            {
+                Actions.OrderChanged();
+            }
         }
 
         SetPseudoState(node, PseudoState.Disabled, disabled);

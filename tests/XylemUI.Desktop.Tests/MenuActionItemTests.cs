@@ -455,9 +455,9 @@ public sealed class MenuActionItemTests
     ///   box's parent a context and settle; read the count.
     ///
     /// Expected:
-    /// - Six after the menu opened: each item asks when it is made, and again after its panel got its handlers and its context.
-    ///   Still six after the moves of the focus, which went round to the first item; nine after the context changed, which each
-    ///   item reads again for.
+    /// - Three after the menu opened, one for each item: the handlers and the context the panel gets after its items were made
+    ///   are on no reader's route yet. Still three after the moves of the focus, which went round to the first item; six after
+    ///   the context changed, which each item reads again for.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -514,11 +514,11 @@ public sealed class MenuActionItemTests
         _ = app.Keyboard.Press(Key.Escape);
         _ = app.PumpAndSettle();
 
-        Assert.Equal(6, opened);
+        Assert.Equal(3, opened);
         Assert.Equal(items["one"].Item.Node, first);
         Assert.Equal(items["one"].Item.Node, afterMoves);
-        Assert.Equal(6, moved);
-        Assert.Equal(9, changed);
+        Assert.Equal(3, moved);
+        Assert.Equal(6, changed);
     }
 
     /// <summary>
