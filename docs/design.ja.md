@@ -1574,17 +1574,24 @@ public abstract record UiMessage
     public sealed record FileEnumerated(IReadOnlyList<string> Paths) : UiMessage;
     public sealed record FontLoaded(FontHandle Font, FontData Data) : UiMessage;
     // 今後追加される非同期処理の結果はすべてここに派生型として追加する
+
+    // UIスレッドだけが呼べる。型 T として積まれたメッセージの受け手を、今の Scope に足す
+    public static void On<T>(Action<T> receive) where T : UiMessage;
 }
 
 public interface IUiDispatcher
 {
-    void Post(UiMessage message);  // どのスレッドからでも呼べる。キューへ積み、UIスレッドを起床させる
+    // どのスレッドからでも呼べる。キューへ積み、UIスレッドを起床させる。T はメッセージ自身の型
+    void Post<T>(T message) where T : UiMessage;
 }
-
-// UIスレッド側のみが呼ぶ。UiTree/UiNode/Signal等のCore engine型への
-// 直接アクセスはこの経路を経由したコードからのみ許可される（§11.6 Invariant 10と同型の制約）
-internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 ```
+
+**`UiMessage` の受け手（行 U1、Issue #866。Grill の 4 巡目でオーナーが決定、Issue #868）:** 受け手は型ごとに登録する（`UiMessage.On<T>`）。表は総称型の静的なクラス（`UiMessageReceivers<T>`）が型ごとに 1 つ持つ。`Post<T>` は、呼ばれた型 `T` の表の配り方をメッセージと一緒にキューへ積むので、取り出しは型から何も引かず、リフレクションも使わない。
+
+- **型の一致:** 配り先は `T` で決まる。基底の型の変数を通して積むと基底の型の受け手に届いてしまうので、メッセージ自身の型が `T` でない `Post` は `ArgumentException` を投げる。積んだスレッドで、その場で分かる
+- **寿命:** 受け手は、登録した時の Scope のものである。その Scope を捨てると表から外れる。Scope が無い所と Computed の計算の中では登録できない（`InvalidOperationException`）。Effect の中で登録した受け手は、Effect が走り直すたびに入れ替わる
+- **配り方:** 1 つのメッセージは、その型の受け手すべてに、登録した順に渡る。受け手は自分の Scope を今の Scope として走る（入力のハンドラと同じ、§2.13）。メッセージ 1 つと、それを受ける受け手すべてで 1 つの `Batch` になる。配っている間に登録された受け手は、次のメッセージから受ける。受け手が投げた例外は Platform の例外ハンドラに渡し、残りの受け手は受け取る
+- **フレームワークの中の知らせ:** 画像のデコードやタイマーの知らせは `UiMessage` にせず、`SynchronizationContext.Post` で同じキューに積む。アプリの受け手と型を取り合わない
 
 キューは `ConcurrentQueue`（複数ライター・単一リーダー）とする（S5）。読み手は UI スレッドのループだけで、`await` で待つ読み手がいないため、`Channel` の非同期の読み出しは要らない。メッセージと `await` の継続は同じキューに積み、積んだ順に実行する。投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。起床機構はループの開始前（Windows では起床用のメッセージ専用ウィンドウを作る前）には何もしないので、ループは開始時に必ず1回キューを空にしてから最初の待機に入る。開始前に投入されたメッセージを取りこぼさないためである（S3 のレビュー）。
 
@@ -1592,7 +1599,7 @@ internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 
 取り出すのはメインループだけなので、OS のモーダルループ（タイトルバーのドラッグ、リサイズ、システムメニュー、`MessageBox`）の間は、キューのメッセージも `await` の継続も止まり、モーダルループが終わってから実行される。起床のメッセージはメッセージ専用ウィンドウに送るので、モーダルループの間に捨てられることはない。
 
-`MessageHandler` が設定されていないときにメッセージを取り出したら、不変条件違反（§0.1）にする。黙って捨てると取りこぼしに気づけないためである。
+取り出したメッセージの型に、受け手が一度も登録されていなければ、不変条件違反（§0.1）にする。黙って捨てると取りこぼしに気づけないためである。受け手が登録された後ですべて外れた型のメッセージは、捨てて数える（`UiDispatcher.DroppedMessageCount`）。画面を閉じた後にワーカーの結果が届くのは普通のことで、落とす理由にならない（PR の Grill でオーナーが決定、Issue #866）。Flutter は dispose の後の `setState` をデバッグの assert にとどめ（`packages/flutter/lib/src/widgets/framework.dart` 1161〜1164 行目）、GPUI は捨てられた entity への更新を `Err` で返す（`WeakEntity::update`、`crates/gpui/src/app/entity_map.rs` 807〜811 行目）。「一度も登録されていない」は型ごとにプロセスで 1 つの状態である。
 
 `ConcurrentQueue` は使い終わったセグメントを捨てるので、継続が続くと定常状態でもアロケーションが出る。この経路はフレーム経路ではないので Zero-Alloc の対象外とする。
 

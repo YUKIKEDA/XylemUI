@@ -6,8 +6,8 @@ namespace XylemUI.Tests;
 public sealed class ReactiveThreadTests(UiThreadFixture ui)
 {
     /// <summary>
-    /// A continuation or a message drained from the UI thread's queue is one batch: however many signals it sets, an effect
-    /// that reads them runs once, after it.
+    /// A continuation or a message drained from the UI thread's queue is one batch, with every receiver of the message: however
+    /// many signals it sets, an effect that reads them runs once, after it.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -15,12 +15,12 @@ public sealed class ReactiveThreadTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - Post a continuation through the dispatcher's synchronization context that sets both signals and records the runs.
-    /// - Post a message whose handler sets both signals again.
+    /// - Post a message with two receivers, the first setting one signal and the second the other.
     /// - Drain.
     ///
     /// Expected:
     /// - Inside the continuation the effect had not run again.
-    /// - The effect ran once per item: two more runs in all.
+    /// - The effect ran once per item, the message's two receivers together: two more runs in all.
     /// </remarks>
     [Fact]
     public void DrainedWork_SettingSeveralSignals_RunsTheEffectOncePerItem() =>
@@ -35,24 +35,31 @@ public sealed class ReactiveThreadTests(UiThreadFixture ui)
                 runs++;
             });
             var dispatcher = new UiDispatcher(() => { });
-            dispatcher.MessageHandler = _ =>
+            ScopeHandle receivers = Scope.Create(() =>
             {
-                first.Set(10);
-                second.Set(20);
-            };
+                UiMessage.On<Ping>(_ => first.Set(10));
+                UiMessage.On<Ping>(_ => second.Set(20));
+            });
             int runsInsideContinuation = -1;
-
-            dispatcher.SynchronizationContext.Post(
-                _ =>
-                {
-                    first.Set(1);
-                    second.Set(2);
-                    runsInsideContinuation = runs;
-                },
-                null
-            );
-            dispatcher.Post(new Ping());
-            int drained = dispatcher.Drain(exception => throw exception);
+            int drained;
+            try
+            {
+                dispatcher.SynchronizationContext.Post(
+                    _ =>
+                    {
+                        first.Set(1);
+                        second.Set(2);
+                        runsInsideContinuation = runs;
+                    },
+                    null
+                );
+                dispatcher.Post(new Ping());
+                drained = dispatcher.Drain(exception => throw exception);
+            }
+            finally
+            {
+                Scope.Dispose(receivers);
+            }
 
             Assert.Equal(2, drained);
             Assert.Equal(1, runsInsideContinuation);
