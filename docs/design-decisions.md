@@ -892,6 +892,9 @@ Rejected:
   - 深さと位置を AccessKit と同じく 0 から数える（UIA・ARIA・Avalonia は 1 から数え、アプリが 1 を足し忘れる。Issue #872）
   - 数を項目に付ける（ARIA の形。AccessKit は入れ物から読み、同じ親の中で組の違う兄弟を表せない。Issue #872）
   - 表の番号・数・並びを、UIA に出ないまま先に公開の欄にする（行 AX2 で表のパターンと一緒に入れる。Issue #872）
+  - 名前を ARIA の順（labelled-by をアプリの名前より先）や、部品の名前を labelled-by より先にする順で決める（アプリが書いた 2 つは部品の既定より先に来る。アプリの名前を先にするのは Avalonia の `ControlAutomationPeer.GetNameCore` と同じ。PR #881 のレビューの後、Issue #878）
+  - 見出しの深さを、AriaProperties の `level` に合わせて 1 を引かずに渡す（UIA の Level が 1 大きくなる。上流の食い違いは行 AX2 で直す。PR #881 のレビューの後、Issue #878）
+  - SearchBox と日付の入力の文字の SetValue を受けない（UIA が書ける Value を見せたまま捨てる。PR #881 のレビューの後、Issue #878）
   - 関係を相手の側からも結べるようにする（`label.Labels(field)`。`Element` は両方を作った後に呼べるので、形が 2 つになるだけである。Issue #878）
   - アンカーでもハンドラも無い `Expandable` のノードの Expand を Click に読み替える（開閉と押す操作は別で、誤った操作を黙って配る。Debug のビルドで不変条件の失敗にする。Issue #878）
   - error-message の相手の無い `Invalid` を、Windows で名前か説明に部品の文言を足して伝える（名前が変わるとイベントが出て、行 LC4 の文言に頼ることになる。行 AX2 で IsDataValidForForm を出す。Issue #878）
