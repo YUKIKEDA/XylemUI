@@ -655,6 +655,51 @@ public sealed class MenuActionItemTests
     }
 
     // An item that names an action, kept by a name with the keys its content was given.
+    /// <summary>
+    /// An item made outside a menu's panel and put in the panel later reads from the focused node, not from the menu's context:
+    /// the context is found where an item is made (design §7, "Where the context node is kept").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box that opens a menu by a signal. The root function makes an item that names <c>Ping</c>; the panel holds that item
+    ///   and a second such item made in the panel. A focused box beside the first handles <c>Ping</c>.
+    ///
+    /// Steps:
+    /// - Open the menu and settle, so that the focus moves into the menu, and read both items.
+    ///
+    /// Expected:
+    /// - The item made in the panel is enabled: it reads at the box that had the focus. The item made outside is disabled: it
+    ///   reads at the focused menu item, whose route does not pass the box that handles <c>Ping</c>.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ItemMadeOutsideThePanel_ReadsFromTheFocus()
+    {
+        var items = new Dictionary<string, (Element Item, Computed<KeyBinding?> Keys)>();
+        var open = Signal.Create(false);
+        Element focused = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                Element outside = Named(items, "outside", new Ping());
+                Element anchor = Box().Width(60).Height(20);
+                _ = anchor.Menu(open, () => Column(Named(items, "inside", new Ping()), outside));
+                focused = Box().Width(60).Height(20).Focusable().OnAction((in ActionEvent<Ping> _) => { });
+                return Column(anchor, focused);
+            },
+            new HeadlessOptions { Width = 400, Height = 300 }
+        );
+        _ = app.PumpAndSettle();
+        Assert.True(app.Focus(focused));
+        _ = app.PumpAndSettle();
+
+        open.Set(true);
+        _ = app.PumpAndSettle();
+
+        Assert.True(State(app, items["inside"]).Enabled);
+        Assert.False(State(app, items["outside"]).Enabled);
+    }
+
     private static Element Named(Dictionary<string, (Element Item, Computed<KeyBinding?> Keys)> items, string name, IAction action)
     {
         Computed<KeyBinding?>? given = null;

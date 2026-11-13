@@ -490,7 +490,7 @@ public static class Scope
         );
         if (!parent.IsNone)
         {
-            ScopeData above = Scopes.GetRef(parent);
+            ref readonly ScopeData above = ref Scopes.GetRef(parent);
             ref ScopeData made = ref Scopes.GetRef(scope);
             made.Contexts = above.Contexts;
             made.Unowned = above.Unowned;
