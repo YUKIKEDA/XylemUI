@@ -30,6 +30,8 @@ public sealed class OffUiThreadAnalyzerTests
 
             public int Size { get; [UiThreadOnly] set; }
 
+            public int Count { [UiThreadOnly] get; set; }
+
             [UiThreadOnly]
             public virtual void Paint() { }
 
@@ -52,7 +54,8 @@ public sealed class OffUiThreadAnalyzerTests
     /// - Cases: <c>Task.Run</c> with a lambda that sets a signal; <c>Task.Run</c> with an anonymous method; <c>ThreadPool.QueueUserWorkItem</c>;
     ///   <c>ThreadPool.UnsafeQueueUserWorkItem</c>; <c>new Thread</c>; a read of <c>IReadOnlySignal&lt;T&gt;.Get</c> (the attribute on
     ///   the interface's member); <c>Computed&lt;T&gt;.Get</c> (a generic type's member); the setter of <c>ImageCache.MaximumCount</c>
-    ///   (the attribute on the property); a constructor of the app's own; the setter of a property whose setter alone carries it;
+    ///   (the attribute on the property); a constructor of the app's own; the setter of a property whose setter alone carries it; the getter of one whose getter
+    ///   alone carries it;
     ///   an interface method of the app's own; <c>Scope.Create</c> in a block body, whose own lambda argument is not looked into.
     ///
     /// Steps:
@@ -72,6 +75,7 @@ public sealed class OffUiThreadAnalyzerTests
     [InlineData("Task.Run(() => ImageCache.MaximumCount = 5);", "ImageCache.MaximumCount")]
     [InlineData("Task.Run(() => new Widget());", "new Widget()")]
     [InlineData("Task.Run(() => widget.Size = 3);", "widget.Size")]
+    [InlineData("Task.Run(() => widget.Count);", "widget.Count")]
     [InlineData("Task.Run(() => worker.Work());", "worker.Work()")]
     [InlineData("Task.Run(() => { _ = Scope.Create(() => { }); });", "Scope.Create(() => { })")]
     public async Task Call_OfAUiThreadOnlyMemberInALambdaOnAnotherThread_IsReported(string body, string call)
@@ -92,7 +96,7 @@ public sealed class OffUiThreadAnalyzerTests
     /// Preconditions:
     /// - Cases: a method group (<c>Task.Run(Work)</c>); a delegate kept in a variable; a lambda in parentheses; a lambda inside
     ///   the body; a local function inside the body; <c>Task.Factory.StartNew</c>; <c>ContinueWith</c>; a read of the property
-    ///   whose setter alone carries the attribute; a constructor without it; an override of a method that carries it; a call of
+    ///   whose setter alone carries the attribute; the setter of a property whose getter alone carries it; a constructor without it; an override of a method that carries it; a call of
     ///   the class's method that implements an interface method that carries it; a signal set outside any lambda.
     ///
     /// Steps:
@@ -110,6 +114,7 @@ public sealed class OffUiThreadAnalyzerTests
     [InlineData("Task.Factory.StartNew(() => signal.Set(1));")]
     [InlineData("Task.CompletedTask.ContinueWith(_ => signal.Set(1));")]
     [InlineData("Task.Run(() => widget.Size);")]
+    [InlineData("Task.Run(() => widget.Count = 3);")]
     [InlineData("Task.Run(() => new Widget(3));")]
     [InlineData("Task.Run(() => derived.Paint());")]
     [InlineData("Task.Run(() => widget.Work());")]
