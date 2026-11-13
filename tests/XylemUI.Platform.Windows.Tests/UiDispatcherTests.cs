@@ -713,20 +713,20 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A message drained with no receiver of its type fails the invariant instead of being dropped.
+    /// A message whose type never had a receiver fails the invariant when it is drained, instead of being dropped.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Debug build (release ends the process). No receiver of the message's type.
+    /// - Debug build (release ends the process). <c>Unheard</c> is a message type that no test adds a receiver of.
     ///
     /// Steps:
-    /// - Post a message on the UI thread and drain.
+    /// - Post an <c>Unheard</c> on the UI thread and drain.
     ///
     /// Expected:
     /// - <see cref="InvariantViolationException"/>.
     /// </remarks>
     [Fact]
-    public void Drain_MessageWithNoReceiver_FailsTheInvariant()
+    public void Drain_MessageWhoseTypeNeverHadAReceiver_FailsTheInvariant()
     {
 #if !DEBUG
         Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
@@ -734,7 +734,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
-            dispatcher.Post(new Numbered(0, 0));
+            dispatcher.Post(new Unheard());
 
             Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Win32MessageLoop.CallbackExceptionHandler));
         });
@@ -799,4 +799,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
     }
 
     private sealed record Numbered(int Worker, int Sequence) : UiMessage;
+
+    // No test adds a receiver of it.
+    private sealed record Unheard : UiMessage;
 }
