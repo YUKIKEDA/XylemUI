@@ -1604,7 +1604,7 @@ public sealed class UiDispatcher : IUiDispatcher
 - **置く所:** アプリのホスト（`IPlatformApp`、§6.0）は、作った時に自分のディスパッチャを置き、捨てる時に前の値に戻す。ヘッドレス（`HeadlessSession`）は、UI スレッドを始めた時に置く
 - **前の値に戻す理由:** UI スレッドはプロセスに 1 つで（`UiThread`）、`XylemUI.Desktop.Tests` は本物の窓のループを、ヘッドレスの UI スレッドの上の作業の中で回す。戻さないと、本物の窓のテストの後に、ヘッドレスの作業が捨てたディスパッチャに積まれる（Issue #877 の Grill でオーナーが決定）
 - **読む側:** ワーカーが `Post` するので、どのスレッドからでも読める。読んだ時に置かれていたディスパッチャに積む
-- **型:** `IUiDispatcher` でなく `UiDispatcher` を返す（Issue #877 の Grill でオーナーが決定）。`IUiDispatcher` に無い `SynchronizationContext` と、行 U1 が足す `DroppedMessageCount` を読めるためである
+- **型:** `IUiDispatcher` でなく `UiDispatcher` を返す（Issue #877 の Grill でオーナーが決定）。`IUiDispatcher` に無い `SynchronizationContext` と、行 U1 が足す `DroppedMessageCount` を読めるためである（Issue #877 の Grill でオーナーが決定）
 - **比べたもの:** Avalonia も、プラットフォームが UI スレッドのディスパッチャを差し込み（`Dispatcher.InitializeUIThreadDispatcher`、`src/Avalonia.Base/Threading/Dispatcher.ThreadStorage.cs` 82〜88 行目。Windows では `src/Windows/Avalonia.Win32/Win32Platform.cs` 86 行目）、静的な `Dispatcher.UIThread`（同 55〜69 行目）で引く。Avalonia は 2 度目の差し込みで `InvalidOperationException` を投げる（同 85〜86 行目）。ここは上の理由で、前の値に戻す
 
 **取り出し（`UiDispatcher.Drain`、Core）:** UI スレッドだけが呼べる。呼んだ時点でキューにあった件数だけを実行し、実行中に積まれたもの（すぐ完了する `await` の継続など）は次の反復に回す。取り出しが終わらなくなるのを防ぐためである。ハンドラや継続が投げた例外は Platform の例外ハンドラに渡し、残りを続ける。同期描画（§2.11.1）の中では何もしない（`SynchronousRenderGuard.IsActive` なら 0 件）。Platform のループは、OS メッセージを処理した後、待機に入る前に毎回取り出す。
