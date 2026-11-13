@@ -430,6 +430,11 @@ public static class Scope
         int index = data.Contexts;
         while (index != end)
         {
+            if (index == 0)
+            {
+                Invariant.Fail("A scope's provided values do not end at its parent's.");
+            }
+
             ContextEntry released = _contexts[index];
             _contexts[index] = new ContextEntry { Older = _freeContext };
             _freeContext = index;
