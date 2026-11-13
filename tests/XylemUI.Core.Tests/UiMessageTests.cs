@@ -257,7 +257,7 @@ public sealed class UiMessageTests(UiThreadFixture ui)
     /// - Post <c>Ping</c> 0 and drain from the UI thread, outside any scope.
     ///
     /// Expected:
-    /// - The recorded scope is S.
+    /// - The recorded scope is S, and right after the drain there is no current scope again.
     /// </remarks>
     [Fact]
     public void Receiver_WhenItRuns_HasItsOwnScopeAsTheCurrentScope() =>
@@ -265,11 +265,13 @@ public sealed class UiMessageTests(UiThreadFixture ui)
         {
             var dispatcher = new UiDispatcher(static () => { });
             ScopeHandle current = default;
+            ScopeHandle after = default;
             ScopeHandle scope = Scope.Create(() => UiMessage.On<Ping>(_ => current = Scope.Current));
             try
             {
                 dispatcher.Post(new Ping(0));
                 _ = dispatcher.Drain(Rethrow);
+                after = Scope.Current;
             }
             finally
             {
@@ -277,6 +279,77 @@ public sealed class UiMessageTests(UiThreadFixture ui)
             }
 
             Assert.Equal(scope, current);
+            Assert.Equal(default, after);
+        });
+
+    /// <summary>
+    /// A receiver added after the last one of its type was removed joins the receivers that are left.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A dispatcher whose wake does nothing. Receivers "a" and "b" of <c>Ping</c>, each in its own scope, added in that order.
+    ///
+    /// Steps:
+    /// - Dispose the scope of "b"; add a receiver "c" in a third scope; post <c>Ping</c> 0 and drain.
+    ///
+    /// Expected:
+    /// - The log is "a0", "c0".
+    /// </remarks>
+    [Fact]
+    public void On_AfterTheLastReceiverWasRemoved_JoinsTheOnesLeft() =>
+        ui.Invoke(() =>
+        {
+            var dispatcher = new UiDispatcher(static () => { });
+            List<string> log = [];
+            ScopeHandle a = Scope.Create(() => UiMessage.On<Ping>(ping => log.Add($"a{ping.Sequence}")));
+            ScopeHandle b = Scope.Create(() => UiMessage.On<Ping>(ping => log.Add($"b{ping.Sequence}")));
+            Scope.Dispose(b);
+            ScopeHandle c = Scope.Create(() => UiMessage.On<Ping>(ping => log.Add($"c{ping.Sequence}")));
+            try
+            {
+                dispatcher.Post(new Ping(0));
+                _ = dispatcher.Drain(Rethrow);
+            }
+            finally
+            {
+                Scope.Dispose(a);
+                Scope.Dispose(c);
+            }
+
+            Assert.Equal(["a0", "c0"], log);
+        });
+
+    /// <summary>
+    /// Receivers removed one after another from the front of their type's table are all taken out of it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Three receivers of <c>Ping</c>, each in its own scope; the first two each hold an object that the test holds only weakly.
+    ///
+    /// Steps:
+    /// - Dispose the first scope, then the second, and collect garbage while the third receiver is still added.
+    ///
+    /// Expected:
+    /// - Both objects were collected: the table holds neither receiver.
+    /// </remarks>
+    [Fact]
+    public void On_TheFirstTwoScopesDisposedInOrder_TheTableDropsBoth() =>
+        ui.Invoke(() =>
+        {
+            (WeakReference first, WeakReference second, ScopeHandle third) = AddThreeAndDisposeTwo();
+            try
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+
+                Assert.False(first.IsAlive);
+                Assert.False(second.IsAlive);
+            }
+            finally
+            {
+                Scope.Dispose(third);
+            }
         });
 
     /// <summary>
@@ -422,36 +495,37 @@ public sealed class UiMessageTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A message drained with no receiver of its type fails the invariant: with no receiver at all, with a receiver of another type
-    /// only, and after the scope of its only receiver was disposed.
+    /// A message whose type never had a receiver fails the invariant when it is drained: with no receiver at all, and with a
+    /// receiver of another type only.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Debug build (release ends the process). A dispatcher whose wake does nothing.
+    /// - Debug build (release ends the process). A dispatcher whose wake does nothing. <c>Unheard</c> is a message type that no
+    ///   test adds a receiver of.
     ///
     /// Steps:
-    /// - Post <c>Ping</c> 0 with no receiver; drain.
-    /// - Add a receiver of <c>Pong</c>; post <c>Ping</c> 1; drain.
-    /// - Add a receiver of <c>Ping</c> in a scope, dispose the scope; post <c>Ping</c> 2; drain.
+    /// - Post <c>Unheard</c> with no receiver; drain.
+    /// - Add a receiver of <c>Pong</c>; post <c>Unheard</c>; drain.
     ///
     /// Expected:
-    /// - Each drain throws <see cref="InvariantViolationException"/>, and the receiver of <c>Pong</c> got nothing.
+    /// - Each drain throws <see cref="InvariantViolationException"/>, the receiver of <c>Pong</c> got nothing, and
+    ///   <see cref="UiDispatcher.DroppedMessageCount"/> is 0.
     /// </remarks>
     [Fact]
-    public void Drain_MessageWithNoReceiverOfItsType_FailsTheInvariant()
+    public void Drain_MessageWhoseTypeNeverHadAReceiver_FailsTheInvariant()
     {
         RequireDebugBuild();
         ui.Invoke(() =>
         {
             var dispatcher = new UiDispatcher(static () => { });
-            dispatcher.Post(new Ping(0));
+            dispatcher.Post(new Unheard());
             Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Rethrow));
 
             int pongs = 0;
             ScopeHandle other = Scope.Create(() => UiMessage.On<Pong>(_ => pongs++));
             try
             {
-                dispatcher.Post(new Ping(1));
+                dispatcher.Post(new Unheard());
                 Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Rethrow));
             }
             finally
@@ -459,32 +533,72 @@ public sealed class UiMessageTests(UiThreadFixture ui)
                 Scope.Dispose(other);
             }
 
-            ScopeHandle gone = Scope.Create(() => UiMessage.On<Ping>(_ => { }));
-            Scope.Dispose(gone);
-            dispatcher.Post(new Ping(2));
-            Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Rethrow));
             Assert.Equal(0, pongs);
+            Assert.Equal(0, dispatcher.DroppedMessageCount);
         });
     }
 
     /// <summary>
-    /// A receiver whose scope is being disposed gets no message, and a message that it alone would have taken fails the invariant.
+    /// A message drained after every receiver of its type was removed is dropped and counted, and a message that a receiver takes
+    /// is not counted.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Debug build (release ends the process). A dispatcher whose wake does nothing. In scope S, a receiver of <c>Ping</c> and
-    ///   then a cleanup that drains, so that the cleanup runs first, while S is being disposed and the receiver is still added.
+    /// - A dispatcher whose wake does nothing.
+    ///
+    /// Steps:
+    /// - Add a receiver of <c>Ping</c> in a scope and dispose the scope; post <c>Ping</c> 0; drain.
+    /// - Add a receiver of <c>Ping</c> in a second scope; post <c>Ping</c> 1; drain.
+    ///
+    /// Expected:
+    /// - The first drain runs 1 item and throws nothing; <see cref="UiDispatcher.DroppedMessageCount"/> is 1.
+    /// - The second receiver gets 1 only, and the count stays 1.
+    /// </remarks>
+    [Fact]
+    public void Drain_MessageAfterItsReceiversAreGone_IsDroppedAndCounted() =>
+        ui.Invoke(() =>
+        {
+            var dispatcher = new UiDispatcher(static () => { });
+            ScopeHandle gone = Scope.Create(() => UiMessage.On<Ping>(_ => { }));
+            Scope.Dispose(gone);
+            dispatcher.Post(new Ping(0));
+
+            Assert.Equal(1, dispatcher.Drain(Rethrow));
+            Assert.Equal(1, dispatcher.DroppedMessageCount);
+
+            List<int> received = [];
+            ScopeHandle scope = Scope.Create(() => UiMessage.On<Ping>(ping => received.Add(ping.Sequence)));
+            try
+            {
+                dispatcher.Post(new Ping(1));
+                Assert.Equal(1, dispatcher.Drain(Rethrow));
+            }
+            finally
+            {
+                Scope.Dispose(scope);
+            }
+
+            Assert.Equal([1], received);
+            Assert.Equal(1, dispatcher.DroppedMessageCount);
+        });
+
+    /// <summary>
+    /// A receiver whose scope is being disposed gets no message, and a message that it alone would have taken is dropped.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A dispatcher whose wake does nothing. In scope S, a receiver of <c>Ping</c> and then a cleanup that drains, so that the
+    ///   cleanup runs first, while S is being disposed and the receiver is still added.
     ///
     /// Steps:
     /// - Post <c>Ping</c> 0; dispose S.
     ///
     /// Expected:
-    /// - The drain inside the cleanup threw <see cref="InvariantViolationException"/>; the receiver got nothing.
+    /// - The drain inside the cleanup threw nothing; the receiver got nothing, and
+    ///   <see cref="UiDispatcher.DroppedMessageCount"/> is 1.
     /// </remarks>
     [Fact]
-    public void Drain_OnlyReceiverBeingDisposed_GetsNothingAndFailsTheInvariant()
-    {
-        RequireDebugBuild();
+    public void Drain_OnlyReceiverBeingDisposed_GetsNothingAndTheMessageIsDropped() =>
         ui.Invoke(() =>
         {
             var dispatcher = new UiDispatcher(static () => { });
@@ -499,10 +613,10 @@ public sealed class UiMessageTests(UiThreadFixture ui)
 
             Scope.Dispose(scope);
 
-            Assert.IsType<InvariantViolationException>(thrown);
+            Assert.Null(thrown);
             Assert.Equal(0, received);
+            Assert.Equal(1, dispatcher.DroppedMessageCount);
         });
-    }
 
     /// <summary>
     /// A receiver is added on the UI thread only, inside a scope, and not while a computed value computes; a refused receiver is
@@ -515,11 +629,11 @@ public sealed class UiMessageTests(UiThreadFixture ui)
     /// Steps:
     /// - On the test thread, add a receiver of <c>Ping</c>.
     /// - On the UI thread outside any scope, add one.
-    /// - On the UI thread, in a scope, read a computed value whose computation adds one; then post <c>Ping</c> 0 and drain.
+    /// - On the UI thread, in a scope, read a computed value whose computation adds one of <c>Refused</c>; then post <c>Refused</c> and drain.
     ///
     /// Expected:
     /// - Each add throws <see cref="InvalidOperationException"/>.
-    /// - In a Debug build the drain fails the invariant: no receiver was left.
+    /// - In a Debug build the drain fails the invariant: the refused receiver was never added.
     /// </remarks>
     [Fact]
     public void On_OffTheUiThreadOutsideAScopeOrInsideAComputed_Throws()
@@ -534,7 +648,7 @@ public sealed class UiMessageTests(UiThreadFixture ui)
             {
                 using Computed<int> computed = Computed.Create(() =>
                 {
-                    UiMessage.On<Ping>(_ => { });
+                    UiMessage.On<Refused>(_ => { });
                     return 0;
                 });
                 thrown = Record.Exception(() => computed.Get());
@@ -544,7 +658,7 @@ public sealed class UiMessageTests(UiThreadFixture ui)
                 Assert.IsType<InvalidOperationException>(thrown);
 #if DEBUG
                 var dispatcher = new UiDispatcher(static () => { });
-                dispatcher.Post(new Ping(0));
+                dispatcher.Post(new Refused());
                 Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Rethrow));
 #endif
             }
@@ -633,6 +747,18 @@ public sealed class UiMessageTests(UiThreadFixture ui)
         return new WeakReference(held);
     }
 
+    private static (WeakReference First, WeakReference Second, ScopeHandle Third) AddThreeAndDisposeTwo()
+    {
+        object heldByFirst = new();
+        object heldBySecond = new();
+        ScopeHandle first = Scope.Create(() => UiMessage.On<Ping>(_ => GC.KeepAlive(heldByFirst)));
+        ScopeHandle second = Scope.Create(() => UiMessage.On<Ping>(_ => GC.KeepAlive(heldBySecond)));
+        ScopeHandle third = Scope.Create(() => UiMessage.On<Ping>(_ => { }));
+        Scope.Dispose(first);
+        Scope.Dispose(second);
+        return (new WeakReference(heldByFirst), new WeakReference(heldBySecond), third);
+    }
+
     private static void RequireDebugBuild()
     {
 #if !DEBUG
@@ -643,6 +769,12 @@ public sealed class UiMessageTests(UiThreadFixture ui)
     private sealed record Ping(int Sequence) : UiMessage;
 
     private sealed record Pong(int Sequence) : UiMessage;
+
+    // No test adds a receiver of it.
+    private sealed record Unheard : UiMessage;
+
+    // The only receiver of it is the one that a computed value refuses.
+    private sealed record Refused : UiMessage;
 
     private record Base : UiMessage;
 

@@ -39,6 +39,13 @@ public sealed class UiDispatcher : IUiDispatcher
     }
 
     /// <summary>
+    /// Gets the number of messages that were dropped because every receiver of their type had been removed before they were
+    /// drained: the result of a worker that arrived after the scope that asked for it was disposed. For diagnostics; read on the
+    /// UI thread.
+    /// </summary>
+    public long DroppedMessageCount { get; private set; }
+
+    /// <summary>
     /// Gets the synchronization context that resumes <c>await</c> continuations on the UI thread through this queue.
     /// </summary>
     public SynchronizationContext SynchronizationContext { get; }
@@ -100,7 +107,12 @@ public sealed class UiDispatcher : IUiDispatcher
             {
                 if (item.Deliver is { } deliver)
                 {
-                    lost = deliver(item.Message!, reportException) == 0;
+                    int reached = deliver(item.Message!, reportException);
+                    lost = reached < 0;
+                    if (reached == 0)
+                    {
+                        DroppedMessageCount++;
+                    }
                 }
                 else
                 {
@@ -119,10 +131,10 @@ public sealed class UiDispatcher : IUiDispatcher
                 }
             }
 
-            // A message that no receiver took would be lost without notice (design §0.1).
+            // A message whose type never had a receiver would be lost without notice (design §0.1).
             if (lost)
             {
-                Invariant.Fail("A UiMessage was drained with no receiver of its type (UiMessage.On).");
+                Invariant.Fail("A UiMessage was drained whose type never had a receiver (UiMessage.On).");
             }
         }
 

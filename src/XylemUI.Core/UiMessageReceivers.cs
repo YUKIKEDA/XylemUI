@@ -22,7 +22,7 @@ internal static class UiMessageReceivers<T>
 
     /// <summary>
     /// Gets the delivery that a queued message of type <typeparamref name="T"/> carries to the drain: it hands the message to
-    /// each receiver and returns how many it reached.
+    /// each receiver and returns how many it reached, or -1 when no receiver of the type was ever added.
     /// </summary>
     internal static Func<UiMessage, Action<Exception>, int> Deliver { get; } = DeliverToReceivers;
 
@@ -94,7 +94,9 @@ internal static class UiMessageReceivers<T>
             }
         }
 
-        return reached;
+        // With no receiver ever added, the message would be lost without notice (design §0.1). With receivers that are all gone, it
+        // is a worker's result that arrives after the scope that asked for it was disposed, which is ordinary.
+        return added == 0 ? -1 : reached;
     }
 
     private static void Unlink(Receiver receiver)

@@ -16,7 +16,9 @@ public abstract record UiMessage
     /// were added, each in its own scope; a receiver added while a message is handed out gets the messages after it.
     /// </summary>
     /// <remarks>
-    /// A message drained when no receiver of its type is there fails the invariant (design §0.1): it would be lost without notice.
+    /// A message whose type never had a receiver fails the invariant when it is drained (design §0.1): it would be lost without
+    /// notice. A message drained after every receiver of its type was removed is dropped and counted
+    /// (<see cref="UiDispatcher.DroppedMessageCount"/>): a worker's result may arrive after the scope that asked for it is disposed.
     /// </remarks>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="receive">The receiver. It runs on the UI thread, in one batch with the other receivers of the message.</param>
