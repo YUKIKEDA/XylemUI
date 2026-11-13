@@ -1,0 +1,7 @@
+<Project>
+  <!--
+    Empty on purpose: it stops MSBuild from importing the repository's Directory.Build.props, so this spike builds without
+    TreatWarningsAsErrors, AnalysisLevel latest-recommended, EnforceCodeStyleInBuild, Features=strict, StyleCop.Analyzers and the
+    XylemUI.Generators analyzer (.cursor/rules/scratch.mdc). MacProbe.csproj sets what it needs itself.
+  -->
+</Project>

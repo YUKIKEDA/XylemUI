@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The macOS CI probe of spike S12a (README.md). Outside XylemUI.slnx and build.ps1, with no XylemUI project reference. The
+    Directory.Build.props, Directory.Build.targets and Directory.Packages.props beside this file are empty or turn central package
+    management off, so the repository's warnings-as-errors, analyzers, StyleCop and generators do not apply here.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>MacProbe</RootNamespace>
+    <!-- ci/probe.sh builds libprobe.a here with clang, and copies AccessKit's libaccesskit.a here for the AccessKit variant. -->
+    <ProbeNativeDir>$(MSBuildThisFileDirectory)native/out/$(RuntimeIdentifier)/</ProbeNativeDir>
+  </PropertyGroup>
+
+  <!--
+    The AccessKit variant (-p:ProbeAccessKit=true): the same code with PROBE_ACCESSKIT defined and libaccesskit.a linked. It has an
+    intermediate folder of its own so that the two publishes of one RID never share compiled objects; the difference of the two
+    executables is the size AccessKit adds.
+  -->
+  <PropertyGroup Condition="'$(ProbeAccessKit)' == 'true'">
+    <DefineConstants>$(DefineConstants);PROBE_ACCESSKIT</DefineConstants>
+    <IntermediateOutputPath>obj/accesskit/$(Configuration)/</IntermediateOutputPath>
+  </PropertyGroup>
+
+  <!-- Probe 7: a static library built by the runner's clang, linked into the executable and called directly (no dlopen). -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <NativeLibrary Include="$(ProbeNativeDir)libprobe.a" />
+    <DirectPInvoke Include="probe" />
+  </ItemGroup>
+
+  <!--
+    AccessKit's C release ships a Rust staticlib per macOS arch. Its system dependencies are not listed in the archive's CMake files;
+    these are the ones a Rust staticlib using objc2/AppKit usually needs (from memory, unverified). The link log shows any missing one.
+  -->
+  <ItemGroup Condition="'$(ProbeAccessKit)' == 'true' And '$(RuntimeIdentifier)' != ''">
+    <NativeLibrary Include="$(ProbeNativeDir)libaccesskit.a" />
+    <DirectPInvoke Include="accesskit" />
+    <LinkerArg Include="-Wl,-framework,AppKit;-Wl,-framework,Foundation;-Wl,-framework,CoreFoundation;-lobjc;-liconv" />
+  </ItemGroup>
+
+  <Target Name="ProbeCheckNativeLibraries" BeforeTargets="Build" Condition="'$(RuntimeIdentifier)' != ''">
+    <Error
+      Condition="!Exists('$(ProbeNativeDir)libprobe.a')"
+      Text="MacProbe: $(ProbeNativeDir)libprobe.a is missing. Run 'bash spike/MacProbe/ci/probe.sh native' first; it builds the library with clang."
+    />
+    <Error
+      Condition="'$(ProbeAccessKit)' == 'true' And !Exists('$(ProbeNativeDir)libaccesskit.a')"
+      Text="MacProbe: $(ProbeNativeDir)libaccesskit.a is missing. 'bash spike/MacProbe/ci/probe.sh native' downloads it from the URL in vendor/versions.lock."
+    />
+  </Target>
+</Project>

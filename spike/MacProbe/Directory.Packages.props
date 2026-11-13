@@ -1,0 +1,6 @@
+<Project>
+  <!-- The spike references no package; central package management of the repository is turned off for it (.cursor/rules/scratch.mdc). -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

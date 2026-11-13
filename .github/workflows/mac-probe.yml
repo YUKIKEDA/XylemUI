@@ -1,0 +1,82 @@
+name: macOS probe (spike S12a)
+
+# Spike S12a (spike/MacProbe/README.md): what a GitHub-hosted macOS runner can answer before a real Mac is available (NativeAOT
+# osx-arm64/osx-x64, Obj-C interop by plain P/Invoke, Metal offscreen, Core Text, blocks, static linking, display links).
+# Started by hand only, never by a push or a pull request:
+#   gh workflow run mac-probe.yml --ref spike/s12a-macos-ci-probe
+# Every answer is a `PROBE <name>: <value>` line in the step logs, in the job summary, and in summary.txt of the artifact.
+on:
+  push:
+    branches:
+      - spike/s12a-macos-ci-probe
+  workflow_dispatch:
+    inputs:
+      intel_runner:
+        description: Label of an x64 macOS runner to probe as well (optional job); empty to skip it
+        required: false
+        default: macos-15-intel
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  probe:
+    name: probe (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(inputs.intel_runner == '' && '["macos-latest"]' || format('["macos-latest","{0}"]', inputs.intel_runner)) }}
+    runs-on: ${{ matrix.runner }}
+    # The x64 runner is optional: its label may have been retired, and its failure must not hide the arm64 answers.
+    continue-on-error: ${{ matrix.runner != 'macos-latest' }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      PROBE_OUT: ${{ github.workspace }}/probe-out
+      RUNNER_LABEL: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Runner (macOS, Xcode, CPU, GPU, Rosetta)
+        run: bash spike/MacProbe/ci/probe.sh env
+
+      - name: Static libraries (clang) and the AccessKit archive
+        run: bash spike/MacProbe/ci/probe.sh native
+
+      - name: NativeAOT publish (osx-arm64, osx-x64; with and without AccessKit)
+        timeout-minutes: 25
+        run: bash spike/MacProbe/ci/probe.sh publish
+
+      - name: Inspect the executables (ls, file, otool, codesign)
+        run: bash spike/MacProbe/ci/probe.sh inspect
+
+      - name: Run the probe (one process per group)
+        timeout-minutes: 20
+        run: bash spike/MacProbe/ci/probe.sh run
+
+      - name: Offline Metal compiler (xcrun metal)
+        run: bash spike/MacProbe/ci/probe.sh metal-tool
+
+      - name: Summary
+        if: always()
+        run: bash spike/MacProbe/ci/probe.sh summary
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mac-probe-${{ matrix.runner }}-${{ github.run_attempt }}
+          path: probe-out
+          if-no-files-found: warn
+          retention-days: 30

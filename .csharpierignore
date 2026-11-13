@@ -1,0 +1,2 @@
+# The macOS CI probe is a spike outside XylemUI.slnx and build.ps1 (spike/MacProbe/README.md); the gate's format check skips it.
+spike/

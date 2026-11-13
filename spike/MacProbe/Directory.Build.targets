@@ -1,0 +1,3 @@
+<Project>
+  <!-- Empty on purpose: keeps any repository-level Directory.Build.targets out of this spike (.cursor/rules/scratch.mdc). -->
+</Project>
