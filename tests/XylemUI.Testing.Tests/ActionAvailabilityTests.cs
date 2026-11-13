@@ -225,7 +225,7 @@ public sealed class ActionAvailabilityTests
 
     /// <summary>
     /// The computation that asked whether the focus can move runs again when a node stops or starts taking the focus: it is made
-    /// not focusable, or hidden.
+    /// not focusable, hidden, or given the visibility Hidden.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -233,11 +233,11 @@ public sealed class ActionAvailabilityTests
     ///   of <c>focus::Next</c>.
     ///
     /// Steps:
-    /// - Read it. Make the box not focusable, read, and make it focusable again. Hide it, read, and show it again. Read after
-    ///   each undoing too.
+    /// - Read it. Make the box not focusable, read, and make it focusable again. Hide it by its layout style, read, and show it
+    ///   again. Set its visibility to Hidden, read, and set it to Visible. Read after each undoing too.
     ///
     /// Expected:
-    /// - Yes at the start and after each undoing; no while the box is not focusable or hidden.
+    /// - Yes at the start and after each undoing; no while the box is not focusable, hidden, or of the visibility Hidden.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -265,8 +265,10 @@ public sealed class ActionAvailabilityTests
         Step(() => tree.SetFocusable(box.Node, true));
         Step(() => tree.SetStyle(box.Node, tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = true }));
         Step(() => tree.SetStyle(box.Node, tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = false }));
+        Step(() => box.Visibility(Visibility.Hidden));
+        Step(() => box.Visibility(Visibility.Visible));
 
-        Assert.Equal([true, false, true, false, true], seen);
+        Assert.Equal([true, false, true, false, true, false, true], seen);
     }
 
     /// <summary>
