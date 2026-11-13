@@ -23,6 +23,7 @@ internal sealed class DesktopWindow : IDisposable
     private readonly TextContext _text;
     private readonly GlyphAtlas? _atlas;
     private readonly NodeHandle _rootNode;
+    private readonly WindowLocale _locale;
     private TsfTextInput? _textInput;
     private Win32Accessibility? _accessibility;
     private ScopeHandle _rootScope;
@@ -58,7 +59,7 @@ internal sealed class DesktopWindow : IDisposable
         UiThread.VerifyAccess();
         _fonts = new DirectWriteFontProvider();
         _text = new TextContext(_fonts);
-        Tree = new UiTree(_text) { UiLanguage = TextLanguage.FromTag(Win32UiLanguage.Read()) };
+        Tree = new UiTree(_text);
         _rootNode = Tree.CreateNode(new LayoutStyle());
 
         // What was made is disposed when a later step throws, so that no window, swap chain, or scope outlives the constructor.
@@ -115,6 +116,8 @@ internal sealed class DesktopWindow : IDisposable
             // Less motion when Windows asks for it (design §2.14, "Reduced motion").
             Tree.Animations.ReduceMotion = Window.ReducesMotion;
             Window.ReducesMotionChanged += OnReducesMotionChanged;
+            _locale = new WindowLocale(options.SupportedLocales, options.ResolveLocale, Window.UiLanguages);
+            Window.UiLanguagesChanged += OnUiLanguagesChanged;
             Window.Closed += OnClosed;
             Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject, Renderer.TryReadLastRefresh, Renderer.RefreshRate);
             Mount(root);
@@ -187,6 +190,7 @@ internal sealed class DesktopWindow : IDisposable
             Window.Closed -= OnClosed;
             Window.TextRenderingChanged -= OnTextRenderingChanged;
             Window.ReducesMotionChanged -= OnReducesMotionChanged;
+            Window.UiLanguagesChanged -= OnUiLanguagesChanged;
             Window.TextEditingChanged -= OnTextEditingChanged;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
@@ -230,7 +234,7 @@ internal sealed class DesktopWindow : IDisposable
             _rootScope = Scope.Create(
                 () =>
                 {
-                    Element content = root();
+                    Element content = _locale.Provide(Tree, root);
                     if (content.IsNone || !ReferenceEquals(content.Tree, Tree))
                     {
                         throw new InvalidOperationException("The root function returns a node of the window's tree.");
@@ -272,6 +276,8 @@ internal sealed class DesktopWindow : IDisposable
     }
 
     private void OnReducesMotionChanged(object? sender, EventArgs e) => Tree.Animations.ReduceMotion = Window.ReducesMotion;
+
+    private void OnUiLanguagesChanged(object? sender, EventArgs e) => _locale.Update(Window.UiLanguages);
 
     private void OnTextEditingChanged(object? sender, EventArgs e) => Tree.SetTextEditing(Window.TextEditing);
 
