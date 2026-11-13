@@ -450,6 +450,40 @@ public sealed class VisibilityTests
     }
 
     /// <summary>
+    /// Writing Visible to a node that has no input part makes none, by a value and by a signal; writing Hidden makes it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Three boxes of 10 × 10 with no handler, focus, or pseudo-state look, so that none has an input part.
+    ///
+    /// Steps:
+    /// - Set the first to Visible; bind the second to a signal at Visible; set the third to Hidden. Read whether each node has an
+    ///   input part.
+    ///
+    /// Expected:
+    /// - No, no, yes.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Visible_OnANodeWithNoInputPart_MakesNone()
+    {
+        Element byValue = default;
+        Element bySignal = default;
+        Element hidden = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                byValue = Box().Width(10).Height(10).Visibility(Visibility.Visible),
+                bySignal = Box().Width(10).Height(10).Visibility(Signal.Create(Visibility.Visible)),
+                hidden = Box().Width(10).Height(10).Visibility(Visibility.Hidden)
+            )
+        );
+        _ = app.PumpAndSettle();
+
+        bool HasInput(Element element) => app.Tree.Nodes.GetRef(element.Node).Input is not null;
+        Assert.Equal([false, false, true], [HasInput(byValue), HasInput(bySignal), HasInput(hidden)]);
+    }
+
+    /// <summary>
     /// A value that is not a visibility is refused.
     /// </summary>
     /// <remarks>

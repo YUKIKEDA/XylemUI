@@ -2446,12 +2446,15 @@ internal sealed class UiTree
             throw new ArgumentOutOfRangeException(nameof(visibility), visibility, "The visibility is not Visible or Hidden.");
         }
 
-        NodeInput input = InputOf(node);
+        // A node with no input part is visible: writing Visible to it makes no part (a list's rows bound to a signal would make one
+        // each).
         bool invisible = visibility == Visibility.Hidden;
-        if (input.Invisible == invisible)
+        if ((Nodes.GetRef(node).Input?.Invisible ?? false) == invisible)
         {
             return;
         }
+
+        NodeInput input = InputOf(node);
 
         input.Invisible = invisible;
         Invalidation.Invalidate(this, node, ChangeKind.Color);
