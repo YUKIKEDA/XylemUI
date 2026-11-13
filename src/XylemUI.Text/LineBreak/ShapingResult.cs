@@ -137,20 +137,32 @@ internal sealed class ShapingResult
                 // its own, which HarfBuzz marks safe to break before (there is nothing before it to shape with), so Pass2 finds a
                 // safe position at the room or after it.
                 EnsureGlyphs(_glyphCount + 1);
-                AddGlyph(new LaidGlyph(LaidGlyph.Placeholder, run.Start, widths[room], 0, 0, r), unsafeToBreak: false);
+                _unsafe[_glyphCount] = false;
+                AddGlyph(new LaidGlyph(LaidGlyph.Placeholder, run.Start, widths[room], 0, 0, r));
                 room++;
                 continue;
             }
 
             float scale = _scales[r];
             float spacing = styles[r].LetterSpacing;
-            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(run.Font, text, run.Start, run.Length, styles[r].Language, styles[r].Features);
+
+            // The shaper writes each glyph's unsafe-to-break flag straight to its place in `_unsafe`, after the glyphs before it.
+            ReadOnlySpan<ShapedGlyph> shaped = shaper.ShapeRange(
+                run.Font,
+                text,
+                run.Start,
+                run.Length,
+                styles[r].Language,
+                styles[r].Features,
+                ref _unsafe,
+                _glyphCount
+            );
             EnsureGlyphs(_glyphCount + shaped.Length);
             for (int g = 0; g < shaped.Length; g++)
             {
                 ShapedGlyph glyph = shaped[g];
                 float advance = (glyph.XAdvance * scale) + Spacing(shaped, g, spacing);
-                AddGlyph(new LaidGlyph(glyph.GlyphId, glyph.Cluster, advance, glyph.XOffset * scale, glyph.YOffset * scale, r), glyph.UnsafeToBreak);
+                AddGlyph(new LaidGlyph(glyph.GlyphId, glyph.Cluster, advance, glyph.XOffset * scale, glyph.YOffset * scale, r));
             }
         }
 
@@ -247,7 +259,7 @@ internal sealed class ShapingResult
 
     /// <summary>
     /// Lays the lines of a break out for drawing (Pass2): each line takes the glyphs of the text shaped once, except at its ends,
-    /// which are shaped again where the break changes the shaping (a glyph marked <see cref="ShapedGlyph.UnsafeToBreak"/>, or a break
+    /// which are shaped again where the break changes the shaping (a glyph the shaper marks unsafe to break before, or a break
     /// inside a cluster), and a soft hyphen it ends at, shaped as a hyphen. A line that this makes wider than the break's width is cut
     /// once at a grapheme cluster boundary, and the text is not broken again (design §4.1, the contract of monotonicity).
     /// </summary>
@@ -614,7 +626,8 @@ internal sealed class ShapingResult
         _runCount++;
     }
 
-    private void AddGlyph(in LaidGlyph glyph, bool unsafeToBreak)
+    // The glyph's flag in `_unsafe` is written before: by the shaper, or false for the room of an inline object.
+    private void AddGlyph(in LaidGlyph glyph)
     {
         if (_glyphAt[glyph.Cluster] < 0)
         {
@@ -622,18 +635,21 @@ internal sealed class ShapingResult
         }
 
         _glyphs[_glyphCount] = glyph;
-        _unsafe[_glyphCount] = unsafeToBreak;
         _glyphCount++;
     }
 
-    // Makes room for `count` glyphs before a run's glyphs are added, so a text of one run gets arrays of its size.
+    // Makes room for `count` glyphs before a run's glyphs are added, so a text of one run gets arrays of its size. The shaper grows
+    // `_unsafe` itself for the glyphs it writes the flags of, so each array grows on its own.
     private void EnsureGlyphs(int count)
     {
         if (_glyphs.Length < count)
         {
-            int size = Math.Max(count, _glyphs.Length * 2);
-            Array.Resize(ref _glyphs, size);
-            Array.Resize(ref _unsafe, size);
+            Array.Resize(ref _glyphs, Math.Max(count, _glyphs.Length * 2));
+        }
+
+        if (_unsafe.Length < count)
+        {
+            Array.Resize(ref _unsafe, Math.Max(count, _unsafe.Length * 2));
         }
     }
 
