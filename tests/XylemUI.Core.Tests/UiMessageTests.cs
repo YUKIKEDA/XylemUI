@@ -205,6 +205,33 @@ public sealed class UiMessageTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A receiver added by a cleanup of a scope that is being disposed is not left in its type's table.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A root scope with a cleanup that adds a receiver of <c>Ping</c>; the receiver holds an object that the test holds only
+    ///   weakly. Whether the add throws or the disposal removes the receiver at once is not what the test reads.
+    ///
+    /// Steps:
+    /// - Dispose the root scope and collect garbage.
+    ///
+    /// Expected:
+    /// - The object was collected: the table of <c>Ping</c> does not hold the receiver.
+    /// </remarks>
+    [Fact]
+    public void On_InsideACleanupOfTheScopeBeingDisposed_LeavesNoReceiver() =>
+        ui.Invoke(() =>
+        {
+            WeakReference weak = AddInsideACleanupAndDispose();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            Assert.False(weak.IsAlive);
+        });
+
+    /// <summary>
     /// A receiver added inside an effect belongs to the effect's scope: the effect's next run removes it.
     /// </summary>
     /// <remarks>
@@ -743,6 +770,14 @@ public sealed class UiMessageTests(UiThreadFixture ui)
     {
         object held = new();
         ScopeHandle root = Scope.Create(() => UiMessage.On<Ping>(_ => GC.KeepAlive(held)));
+        Scope.Dispose(root);
+        return new WeakReference(held);
+    }
+
+    private static WeakReference AddInsideACleanupAndDispose()
+    {
+        object held = new();
+        ScopeHandle root = Scope.Create(() => Scope.OnCleanup(() => _ = Record.Exception(() => UiMessage.On<Ping>(_ => GC.KeepAlive(held)))));
         Scope.Dispose(root);
         return new WeakReference(held);
     }
