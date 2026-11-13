@@ -294,6 +294,40 @@ public sealed class VisibilityTests
     }
 
     /// <summary>
+    /// The text of a hidden node is left out of the name that a button takes from its content, and comes back when the node shows.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A button whose content is a column of the texts "a" and "b"; the visibility of "b" is a signal at Visible.
+    ///
+    /// Steps:
+    /// - Count the buttons whose name is "a". Set the signal to Hidden; settle; count. Set it to Visible; settle; count.
+    ///
+    /// Expected:
+    /// - 0, 1, 0: the name is "a" alone only while "b" is hidden.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task HiddenText_IsLeftOutOfTheNameOfTheButtonAroundIt()
+    {
+        var visibility = Signal.Create(Visibility.Visible);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            XylemUI.Primitives.Primitive.Button(Column(Elements.Text("a"), Elements.Text("b").Visibility(visibility)), () => { })
+        );
+        _ = app.PumpAndSettle();
+
+        var named = new List<int> { app.FindByRole(SemanticsRole.Button, "a").Count };
+        visibility.Set(Visibility.Hidden);
+        _ = app.PumpAndSettle();
+        named.Add(app.FindByRole(SemanticsRole.Button, "a").Count);
+        visibility.Set(Visibility.Visible);
+        _ = app.PumpAndSettle();
+        named.Add(app.FindByRole(SemanticsRole.Button, "a").Count);
+
+        Assert.Equal([0, 1, 0], named);
+    }
+
+    /// <summary>
     /// A hidden window's root leaves the window's node of the accessibility tree with no children, and they come back when it shows.
     /// </summary>
     /// <remarks>
