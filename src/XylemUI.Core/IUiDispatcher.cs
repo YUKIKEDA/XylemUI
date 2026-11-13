@@ -6,8 +6,14 @@ namespace XylemUI;
 public interface IUiDispatcher
 {
     /// <summary>
-    /// Queues a message for the UI thread and wakes it. Safe to call from any thread.
+    /// Queues a message for the receivers of type <typeparamref name="T"/> (<see cref="UiMessage.On{T}(Action{T})"/>) and wakes the
+    /// UI thread. Safe to call from any thread.
     /// </summary>
-    /// <param name="message">The message to apply on the UI thread.</param>
-    void Post(UiMessage message);
+    /// <typeparam name="T">The message's own type, which chooses its receivers.</typeparam>
+    /// <param name="message">The message to hand to the receivers on the UI thread.</param>
+    /// <exception cref="ArgumentException">
+    /// The message's type is not <typeparamref name="T"/>: it is posted through a variable of a base type.
+    /// </exception>
+    void Post<T>(T message)
+        where T : UiMessage;
 }

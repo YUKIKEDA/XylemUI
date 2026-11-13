@@ -25,6 +25,10 @@ Before calling a PR ready, whenever the owner asks for the next step, and whenev
 
 A reply that says a finding is fixed is written after the fix is read in the head's files or diff, not after the edit reported success. On PR #385 the reply said the intermediate points' layers were written, while the scripted replacement had kept only the first line of each new text (`.cursor/rules/powershell-shell.mdc`), and the re-review found them missing.
 
+A reply to a review is posted in the turn the review is read, and is not held until a measurement, a gate, or a background run ends. When part of the answer is still running, the reply says what is fixed, what is known, and what is still running, and a second reply follows when it ends. On PR #871 the reply waited for a 45-minute measurement, which then stopped half way; on PR #876 the fix was committed and the reply waited behind a gate queued after that measurement. The owner pointed at three reviews with no reply: "むしろこちらが返信待ちなのですが" (Issue #885).
+
+A report that gives the state of open PRs says, for each one, who wrote its last comment. "Waiting for review" is written only when the last comment is the agent's own reply; when it is the reviewer's, the PR waits for the agent. On PR #874 and PR #875 a re-review had come after the reply, and the report called both "waiting for review" without having read them.
+
 Read the pull request's comments again just before posting a reply to a review: a re-review can land while the reply waits for the checks. On PR #309 a re-review of b98a1e3 came while the agent waited for that head's CI, and the agent posted its reply to the review before it without having read the re-review.
 
 ```text
@@ -43,4 +47,14 @@ Agent: writes the findings in the conversation, and asks whether to post them
 # GOOD
 Owner: 146をレビューして下さい
 Agent: posts the findings as a comment on the pull request, and gives the link and a summary in the conversation
+```
+
+```text
+# BAD
+Agent (report): PR #871, #875, #876 are waiting for review.
+(the last comment on each is the reviewer's; the reply to #871 waits for a measurement)
+
+# GOOD
+Agent (on #871): replies with what is measured so far and what is still running
+Agent (report): #871 replied, a measurement still runs and a second reply follows; #875 the reviewer wrote last, replying now
 ```

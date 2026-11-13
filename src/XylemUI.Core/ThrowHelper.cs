@@ -90,6 +90,18 @@ internal static class ThrowHelper
         throw new InvalidOperationException("No value is provided for the context, and the context has no default value.");
 
     /// <summary>
+    /// Throws <see cref="ArgumentException"/> when a <see cref="UiMessage"/> is posted as a type that is not its own.
+    /// </summary>
+    /// <param name="parameterName">The name of the message's parameter.</param>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowMessagePostedAsBaseType(string parameterName) =>
+        throw new ArgumentException(
+            "A message is posted as its own type, which chooses its receivers; this one was posted as a base type.",
+            parameterName
+        );
+
+    /// <summary>
     /// Throws <see cref="ObjectDisposedException"/> when a disposed computed is used.
     /// </summary>
     [DoesNotReturn]
