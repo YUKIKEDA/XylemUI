@@ -211,6 +211,7 @@ public sealed class Keymap
     /// action's.
     /// </exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public KeyBinding BindByName(
         string keystrokes,
         string actionName,
