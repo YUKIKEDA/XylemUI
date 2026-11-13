@@ -18,7 +18,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A message handler that records the worker, the sequence number, and whether it runs on the UI thread.
+    /// - A message receiver that records the worker, the sequence number, and whether it runs on the UI thread.
     ///
     /// Steps:
     /// - Run the loop; four threads each post 1,000 numbered messages at the same time.
@@ -35,11 +35,13 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
             var received = new List<Numbered>();
             bool allOnUiThread = true;
-            dispatcher.MessageHandler = message =>
-            {
-                received.Add((Numbered)message);
-                allOnUiThread &= UiThread.CheckAccess();
-            };
+            ScopeHandle receiver = Scope.Create(() =>
+                UiMessage.On<Numbered>(message =>
+                {
+                    received.Add(message);
+                    allOnUiThread &= UiThread.CheckAccess();
+                })
+            );
 
             var workers = new Thread[Workers];
             using var watchdog = new LoopWatchdog();
@@ -72,7 +74,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
                     worker?.Join();
                 }
 
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             Assert.False(watchdog.Expired);
@@ -105,7 +107,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         {
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
             var received = new List<int>();
-            dispatcher.MessageHandler = message => received.Add(((Numbered)message).Sequence);
+            ScopeHandle receiver = Scope.Create(() => UiMessage.On<Numbered>(message => received.Add(message.Sequence)));
             int handledAtFirstIteration = -1;
             try
             {
@@ -129,7 +131,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             }
             finally
             {
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             Assert.Equal(3, handledAtFirstIteration);
@@ -145,7 +147,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - When the loop first waits, another thread waits 300 ms and posts one message.
-    /// - Record when the handler ran.
+    /// - Record when the receiver ran.
     ///
     /// Expected:
     /// - The message was handled less than 50 ms after the post.
@@ -159,7 +161,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
             long postedAt = 0;
             long handledAt = 0;
-            dispatcher.MessageHandler = _ => handledAt = Stopwatch.GetTimestamp();
+            ScopeHandle receiver = Scope.Create(() => UiMessage.On<Numbered>(_ => handledAt = Stopwatch.GetTimestamp()));
             Thread? poster = null;
             try
             {
@@ -189,7 +191,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             finally
             {
                 poster?.Join();
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             TimeSpan delay = Stopwatch.GetElapsedTime(Volatile.Read(ref postedAt), handledAt);
@@ -331,7 +333,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             int handled = 0;
             int drainedInsideRender = -1;
             int handledInsideRender = -1;
-            dispatcher.MessageHandler = _ => handled++;
+            ScopeHandle receiver = Scope.Create(() => UiMessage.On<Numbered>(_ => handled++));
             window.SynchronousRender = (_, _, _) =>
             {
                 dispatcher.Post(new Numbered(0, 0));
@@ -364,7 +366,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             }
             finally
             {
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             Assert.Equal(0, drainedInsideRender);
@@ -373,21 +375,21 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A handler or continuation that throws is reported, and the messages after it are still handled.
+    /// A message receiver that throws is reported, and the messages after it are still handled.
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - A callback exception handler that records what it receives.
-    /// - A message handler that throws for sequence 1.
+    /// - A message receiver that throws for sequence 1.
     ///
     /// Steps:
     /// - Post sequences 0, 1, 2 and run the loop until 2 was handled.
     ///
     /// Expected:
-    /// - The handler saw 0, 1, 2; one exception was reported.
+    /// - The receiver saw 0, 1, 2; one exception was reported.
     /// </remarks>
     [Fact]
-    public void Handler_Throws_IsReportedAndLaterMessagesRun() =>
+    public void Receiver_Throws_IsReportedAndLaterMessagesRun() =>
         ui.Invoke(() =>
         {
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
@@ -395,15 +397,16 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             var reported = new List<Exception>();
             Win32MessageLoop.CallbackExceptionHandler = reported.Add;
             var seen = new List<int>();
-            dispatcher.MessageHandler = message =>
-            {
-                int sequence = ((Numbered)message).Sequence;
-                seen.Add(sequence);
-                if (sequence == 1)
+            ScopeHandle receiver = Scope.Create(() =>
+                UiMessage.On<Numbered>(message =>
                 {
-                    throw new InvalidOperationException("Thrown from a message handler on purpose.");
-                }
-            };
+                    seen.Add(message.Sequence);
+                    if (message.Sequence == 1)
+                    {
+                        throw new InvalidOperationException("Thrown from a message receiver on purpose.");
+                    }
+                })
+            );
             try
             {
                 using var watchdog = new LoopWatchdog();
@@ -423,7 +426,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             finally
             {
                 Win32MessageLoop.CallbackExceptionHandler = previous;
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             Assert.Equal([0, 1, 2], seen);
@@ -435,7 +438,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A message handler and continuations that append to one list.
+    /// - A message receiver and continuations that append to one list.
     ///
     /// Steps:
     /// - Before Run, queue message 0, continuation A, message 1, continuation B, alternating Post and SynchronizationContext.Post.
@@ -451,7 +454,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
             SynchronizationContext context = dispatcher.SynchronizationContext;
             var order = new List<string>();
-            dispatcher.MessageHandler = message => order.Add("m" + ((Numbered)message).Sequence);
+            ScopeHandle receiver = Scope.Create(() => UiMessage.On<Numbered>(message => order.Add("m" + message.Sequence)));
             try
             {
                 using var watchdog = new LoopWatchdog();
@@ -471,18 +474,18 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             }
             finally
             {
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             Assert.Equal(["m0", "A", "m1", "B"], order);
         });
 
     /// <summary>
-    /// Work queued while the queue drains waits for the next iteration, so a handler that keeps queuing cannot hold the loop.
+    /// Work queued while the queue drains waits for the next iteration, so a receiver that keeps queuing cannot hold the loop.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A message handler that posts the next message each time, 20 messages in all.
+    /// - A message receiver that posts the next message each time, 20 messages in all.
     ///
     /// Steps:
     /// - Post the first message before Run; run the loop and record how many were handled at each iteration.
@@ -498,14 +501,16 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             const int Total = 20;
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
             int handled = 0;
-            dispatcher.MessageHandler = _ =>
-            {
-                handled++;
-                if (handled < Total)
+            ScopeHandle receiver = Scope.Create(() =>
+                UiMessage.On<Numbered>(_ =>
                 {
-                    dispatcher.Post(new Numbered(0, handled));
-                }
-            };
+                    handled++;
+                    if (handled < Total)
+                    {
+                        dispatcher.Post(new Numbered(0, handled));
+                    }
+                })
+            );
             var handledAtIteration = new List<int>();
             try
             {
@@ -524,7 +529,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
             }
             finally
             {
-                dispatcher.MessageHandler = null;
+                Scope.Dispose(receiver);
             }
 
             Assert.Equal(1, handledAtIteration[0]);
@@ -708,11 +713,11 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A message drained with no message handler fails the invariant instead of being dropped.
+    /// A message drained with no receiver of its type fails the invariant instead of being dropped.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Debug build (release ends the process). No message handler.
+    /// - Debug build (release ends the process). No receiver of the message's type.
     ///
     /// Steps:
     /// - Post a message on the UI thread and drain.
@@ -721,7 +726,7 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
     /// - <see cref="InvariantViolationException"/>.
     /// </remarks>
     [Fact]
-    public void Drain_MessageWithNoHandler_FailsTheInvariant()
+    public void Drain_MessageWithNoReceiver_FailsTheInvariant()
     {
 #if !DEBUG
         Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
@@ -729,7 +734,6 @@ public sealed class UiDispatcherTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
-            dispatcher.MessageHandler = null;
             dispatcher.Post(new Numbered(0, 0));
 
             Assert.Throws<InvariantViolationException>(() => dispatcher.Drain(Win32MessageLoop.CallbackExceptionHandler));

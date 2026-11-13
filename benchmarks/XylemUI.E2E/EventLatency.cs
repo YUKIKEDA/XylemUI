@@ -44,20 +44,20 @@ internal static class EventLatency
             }
         });
         UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
-        dispatcher.MessageHandler = message =>
+        ScopeHandle receivers = Scope.Create(() =>
         {
-            if (message is Ping ping)
+            UiMessage.On<Ping>(ping =>
             {
                 posted = ping.Qpc;
                 value.Set(ping.Sequence);
-            }
-            else if (message is Lost)
+            });
+            UiMessage.On<Lost>(_ =>
             {
                 lost++;
                 waitingForDisplay = false;
                 _ = shown.Release();
-            }
-            else if (message is Poll)
+            });
+            UiMessage.On<Poll>(_ =>
             {
                 if (waitingForDisplay && scene.Renderer.TryReadPresentLatency(out _, out long refresh))
                 {
@@ -65,12 +65,9 @@ internal static class EventLatency
                     waitingForDisplay = false;
                     _ = shown.Release();
                 }
-            }
-            else
-            {
-                Win32MessageLoop.Quit();
-            }
-        };
+            });
+            UiMessage.On<Done>(_ => Win32MessageLoop.Quit());
+        });
 
         var worker = new Thread(() =>
         {
@@ -100,6 +97,7 @@ internal static class EventLatency
         };
         worker.Start();
         _ = Win32MessageLoop.Run();
+        Scope.Dispose(receivers);
         Win32MessageLoop.SetFrameClock(0);
 
         using var report = new Report("event-latency");
