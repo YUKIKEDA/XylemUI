@@ -121,7 +121,8 @@ public sealed class UiThreadOnlyAttributeTests
                 missing.Add(Name(method));
             }
 
-            if (carries && !Checks(method) && !of.Callees.Any(callee => Carries(callee, attribute)))
+            // An interface's member has no body to check: it carries the attribute for the calls made through the interface.
+            if (carries && !method.IsAbstract && !Checks(method) && !of.Callees.Any(callee => Carries(callee, attribute)))
             {
                 extra.Add(Name(method));
             }

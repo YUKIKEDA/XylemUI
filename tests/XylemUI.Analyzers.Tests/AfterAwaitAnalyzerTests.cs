@@ -67,7 +67,9 @@ public sealed class AfterAwaitAnalyzerTests
     [InlineData("async Task M() { await Task.Yield(); Func<Element> later = () => Box(); }")]
     [InlineData("async Task M() { for (int i = 0; i < 2; i++) { _ = Box(); await Task.Yield(); } }")]
     [InlineData("void M() { _ = Box(); }")]
-    [InlineData("async Task M(IReadOnlySignal<IReadOnlyList<int>> items) { await Task.Yield(); _ = Column().For(items, i => i, _ => Box()); }")]
+    [InlineData(
+        "async Task M(IReadOnlySignal<IReadOnlyList<int>> items) { Element column = Column(); await Task.Yield(); _ = column.For(items, i => i, _ => Box()); }"
+    )]
     [InlineData("async Task M() { await Task.Yield(); _ = Signal.Create(1); }")]
     public async Task Call_TheRuleDoesNotLookAt_IsNotReported(string member)
     {
