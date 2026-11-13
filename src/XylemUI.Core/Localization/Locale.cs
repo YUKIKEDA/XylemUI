@@ -107,8 +107,24 @@ public readonly struct Locale : IEquatable<Locale>
         // them, sgn-BR-u-nu-latn is still bzs. Variants stay in what is matched: en-GB-oed and zh-min-nan mean what they do by
         // the subtag in a variant's place.
         ReadOnlySpan<char> whole = tag;
-        if (TryReplaceWholeTag(whole, out string? replacement) || TryReplaceWholeTag(whole[..EndOfLanguageRange(whole)], out replacement))
+        if (TryReplaceWholeTag(whole, out string? replacement))
         {
+            return TryParseLangtag(replacement, out locale);
+        }
+
+        // What is cut off is still read: sgn-BR-u is malformed, as en-US-u is.
+        int end = EndOfLanguageRange(whole);
+        if (end < whole.Length && TryReplaceWholeTag(whole[..end], out replacement))
+        {
+            ReadOnlySpan<char> rest = whole[(end + 1)..];
+            int position = 0;
+            ReadOnlySpan<char> first = NextSubtag(rest, ref position);
+            if (!TryReadExtensionsAndPrivateUse(rest, ref position, first))
+            {
+                locale = default;
+                return false;
+            }
+
             return TryParseLangtag(replacement, out locale);
         }
 
@@ -283,7 +299,20 @@ public readonly struct Locale : IEquatable<Locale>
             subtag = NextSubtag(tag, ref position);
         }
 
-        // extension = singleton 1*("-" (2*8alphanum)), read and dropped. Any letter or digit but x is a singleton.
+        if (!TryReadExtensionsAndPrivateUse(tag, ref position, subtag))
+        {
+            return false;
+        }
+
+        locale = Canonicalize(language, extlang, script, region);
+        return true;
+    }
+
+    // Reads the end of a langtag from the subtag after its variants: the extensions and the private use, which are dropped. It
+    // returns false when they are malformed or something else follows.
+    private static bool TryReadExtensionsAndPrivateUse(ReadOnlySpan<char> tag, scoped ref int position, ReadOnlySpan<char> subtag)
+    {
+        // extension = singleton 1*("-" (2*8alphanum)). Any letter or digit but x is a singleton.
         while (subtag.Length == 1 && !IsPrivateUseSingleton(subtag[0]))
         {
             subtag = NextSubtag(tag, ref position);
@@ -298,22 +327,14 @@ public readonly struct Locale : IEquatable<Locale>
             }
         }
 
-        // privateuse = "x" 1*("-" (1*8alphanum)), read and dropped: it runs to the end of the tag, and HasSubtagShape has
-        // checked the shape of each of its subtags.
+        // privateuse = "x" 1*("-" (1*8alphanum)): it runs to the end of the tag, and HasSubtagShape has checked the shape of
+        // each of its subtags.
         if (subtag.Length == 1)
         {
-            if (NextSubtag(tag, ref position).IsEmpty)
-            {
-                return false;
-            }
-        }
-        else if (!subtag.IsEmpty)
-        {
-            return false;
+            return !NextSubtag(tag, ref position).IsEmpty;
         }
 
-        locale = Canonicalize(language, extlang, script, region);
-        return true;
+        return subtag.IsEmpty;
     }
 
     // Puts the fields in their canonical form (RFC 5646 §4.5, step 3, and the case of §2.1.1).

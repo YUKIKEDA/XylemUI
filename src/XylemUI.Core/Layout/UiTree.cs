@@ -940,7 +940,18 @@ internal sealed class UiTree
     // of a list) does not run again for a change of the locale.
     private void WatchLocale(IReadOnlySignal<Locale> source)
     {
-        void Watch() =>
+        void Watch()
+        {
+            // The entry goes with the scope that owns the effect: in a tree with no window that is the scope of the text, and
+            // text made later under the same locale then makes the effect again.
+            Scope.OnCleanup(() =>
+            {
+                _ = _localeLanguages!.Remove(source);
+                if (ReferenceEquals(source, _lastLocale))
+                {
+                    _lastLocale = null;
+                }
+            });
             _ = Effect.Create(() =>
             {
                 var language = TextLanguage.FromTag(source.Get().ToLanguageTag());
@@ -956,6 +967,7 @@ internal sealed class UiTree
                     ShapeDefaultTextAgain(source, language);
                 }
             });
+        }
 
         if (!Scope.Run(LocaleScope, Watch))
         {

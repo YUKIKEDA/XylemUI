@@ -292,6 +292,11 @@ public sealed class LocaleTests
     [InlineData("1a")]
     [InlineData("en-US-Latn")]
     [InlineData("abcd-abc")]
+    [InlineData("sgn-BR-u")]
+    [InlineData("sgn-BR-x")]
+    [InlineData("sgn-BR-u-a")]
+    [InlineData("i-klingon-u")]
+    [InlineData("en-US-u")]
     [InlineData("abcde-abc")]
     public void ParseAndTryParse_MalformedTag_ThrowAndReturnFalse(string tag)
     {
