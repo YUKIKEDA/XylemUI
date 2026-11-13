@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 
 namespace XylemUI.Tests;
@@ -766,6 +767,8 @@ public sealed class UiMessageTests(UiThreadFixture ui)
             }
         });
 
+    // Not inlined: inlined into the test, the held object could stay alive in the caller's frame until after the collection.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference AddAndDispose()
     {
         object held = new();
@@ -774,6 +777,8 @@ public sealed class UiMessageTests(UiThreadFixture ui)
         return new WeakReference(held);
     }
 
+    // Not inlined: inlined into the test, the held object could stay alive in the caller's frame until after the collection.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference AddInsideACleanupAndDispose()
     {
         object held = new();
@@ -782,6 +787,8 @@ public sealed class UiMessageTests(UiThreadFixture ui)
         return new WeakReference(held);
     }
 
+    // Not inlined: inlined into the test, the held object could stay alive in the caller's frame until after the collection.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static (WeakReference First, WeakReference Second, ScopeHandle Third) AddThreeAndDisposeTwo()
     {
         object heldByFirst = new();
