@@ -121,6 +121,7 @@ return scenario switch
     "touchpad" => TouchpadCost.Run(),
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
+    "context" => ContextCost.Run(),
     "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit")),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),

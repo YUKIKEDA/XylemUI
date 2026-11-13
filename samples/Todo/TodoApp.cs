@@ -117,7 +117,11 @@ public static class TodoApp
                         .Gap(6),
                     Box()
                         .Overflow(Overflow.Visible, Overflow.Scroll)
-                        .VirtualFor(model.Shown, item => item.Id, item => ItemRow(model, item))
+                        .VirtualFor(
+                            model.Shown,
+                            item => item.Id,
+                            item => RowContext is { } context ? context.Provide(0, () => ItemRow(model, item)) : ItemRow(model, item)
+                        )
                         .Gap(4)
                         .Height(ListHeight)
                         .DropTarget(new DropTargetOptions<DroppedText> { Drop = (in DragEvent<DroppedText> e) => model.Add(e.Value.Text) })
@@ -181,6 +185,9 @@ public static class TodoApp
 
     // An item's row: dragged by its number onto another row, it moves there; dragged out of the window, it is its name as text for
     // the OS (design §7, "Drag and drop"). The row under the drag is lighter.
+    /// <summary>Gets or sets the key each row is wrapped in, for the measurement of row RC1.</summary>
+    public static Context<int>? RowContext { get; set; }
+
     private static Element ItemRow(TodoModel model, IReadOnlySignal<TodoItem> item) =>
         Row(ItemButton(model, item), RemoveButton(model, item))
             .Gap(4)

@@ -26,6 +26,10 @@ public static class Scope
     // The effects held under each paused scope, in the order they were queued (Pause, Resume).
     private static readonly Dictionary<ScopeRef, List<Effect>> Held = [];
     private static readonly Arena<CleanupEntry> Cleanups = new();
+    private static readonly Arena<ContextEntry> Contexts = new();
+#if RC1_STORE_B
+    private static readonly Dictionary<ScopeRef, Handle<ContextEntry>> Provided = [];
+#endif
 
     /// <summary>
     /// Gets the number of paused scopes: 0 keeps the effects' run free of the walk up their scopes.
@@ -333,6 +337,163 @@ public static class Scope
     /// <returns>The copy.</returns>
     internal static ScopeData Get(ScopeRef scope) => Scopes.GetRef(scope);
 
+    /// <summary>
+    /// Makes a scope owned by the current one, without running anything in it.
+    /// </summary>
+    /// <param name="owner">The name <see cref="ScopeTracker"/> shows for the scope.</param>
+    /// <returns>The new scope's handle in the arena.</returns>
+    internal static ScopeRef AllocateOwned(string owner)
+    {
+        UiThread.VerifyAccess();
+        VerifyNotInComputed();
+        return Allocate(CurrentRef, null, owner);
+    }
+
+    /// <summary>
+    /// Puts a value of a context key on a scope.
+    /// </summary>
+    /// <param name="scope">The scope.</param>
+    /// <param name="key">The key.</param>
+    /// <param name="slot">The slot of the value in the key's store.</param>
+    internal static void PutContext(ScopeRef scope, IContextStore key, int slot)
+    {
+#if RC1_STORE_A
+        Handle<ContextEntry> older = Scopes.GetRef(scope).LastContext;
+        Scopes.GetRef(scope).LastContext = Contexts.Allocate(
+            new ContextEntry
+            {
+                Key = key,
+                Slot = slot,
+                Older = older,
+            }
+        );
+#elif RC1_STORE_B
+        _ = Provided.TryGetValue(scope, out Handle<ContextEntry> older);
+        Provided[scope] = Contexts.Allocate(
+            new ContextEntry
+            {
+                Key = key,
+                Slot = slot,
+                Older = older,
+            }
+        );
+        Scopes.GetRef(scope).HasContext = true;
+#elif RC1_STORE_C
+        Handle<ContextEntry> older = Scopes.GetRef(scope).Contexts;
+        Scopes.GetRef(scope).Contexts = Contexts.Allocate(
+            new ContextEntry
+            {
+                Key = key,
+                Slot = slot,
+                Older = older,
+            }
+        );
+#endif
+    }
+
+    /// <summary>
+    /// Finds the nearest value of a context key from the current scope.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="slot">The slot of the value in the key's store.</param>
+    /// <returns>Whether a value is provided.</returns>
+    internal static bool FindContext(IContextStore key, out int slot)
+    {
+        UiThread.VerifyAccess();
+        VerifyNotInComputed();
+        ScopeRef at = CurrentRef;
+        if (!Scopes.IsAlive(at))
+        {
+            ThrowHelper.ThrowNoCurrentScope();
+        }
+
+#if RC1_STORE_C
+        ref ScopeData data = ref Scopes.GetRef(at);
+        if (data.Unowned)
+        {
+            ThrowHelper.ThrowNoCurrentScope();
+        }
+
+        for (Handle<ContextEntry> entry = data.Contexts; !entry.IsNone; )
+        {
+            ref ContextEntry found = ref Contexts.GetRef(entry);
+            if (ReferenceEquals(found.Key, key))
+            {
+                slot = found.Slot;
+                return true;
+            }
+
+            entry = found.Older;
+        }
+#else
+        while (true)
+        {
+            ref ScopeData data = ref Scopes.GetRef(at);
+#if RC1_STORE_A
+            Handle<ContextEntry> entry = data.LastContext;
+#else
+            Handle<ContextEntry> entry = default;
+            if (data.HasContext)
+            {
+                entry = Provided[at];
+            }
+#endif
+            while (!entry.IsNone)
+            {
+                ref ContextEntry found = ref Contexts.GetRef(entry);
+                if (ReferenceEquals(found.Key, key))
+                {
+                    slot = found.Slot;
+                    return true;
+                }
+
+                entry = found.Older;
+            }
+
+            if (data.Parent.IsNone)
+            {
+                if (data.Unowned)
+                {
+                    ThrowHelper.ThrowNoCurrentScope();
+                }
+
+                break;
+            }
+
+            at = data.Parent;
+        }
+#endif
+
+        slot = 0;
+        return false;
+    }
+
+    private static void ReleaseContexts(ScopeRef scope, in ScopeData data)
+    {
+#if RC1_STORE_A
+        Handle<ContextEntry> entry = data.LastContext;
+        Handle<ContextEntry> end = default;
+#elif RC1_STORE_B
+        if (!data.HasContext)
+        {
+            return;
+        }
+
+        _ = Provided.Remove(scope, out Handle<ContextEntry> entry);
+        Handle<ContextEntry> end = default;
+#else
+        Handle<ContextEntry> entry = data.Contexts;
+        Handle<ContextEntry> end = Scopes.IsAlive(data.Parent) ? Scopes.GetRef(data.Parent).Contexts : default;
+#endif
+        while (entry != end)
+        {
+            ContextEntry released = Contexts.GetRef(entry);
+            released.Key.Release(released.Slot);
+            Contexts.Free(entry);
+            entry = released.Older;
+        }
+    }
+
     private static void VerifyNotInComputed()
     {
         if (ReactiveRuntime.Current is { } running && running is not Effect)
@@ -350,9 +511,20 @@ public static class Scope
             parent = default;
         }
 
-        ScopeRef scope = Scopes.Allocate(new ScopeData { Parent = parent, Effect = effect });
+        ScopeRef scope = Scopes.Allocate(
+            new ScopeData
+            {
+                Parent = parent,
+                Effect = effect,
+                Unowned = parent.IsNone && effect is not null,
+            }
+        );
         if (!parent.IsNone)
         {
+#if RC1_STORE_C
+            Scopes.GetRef(scope).Contexts = Scopes.GetRef(parent).Contexts;
+            Scopes.GetRef(scope).Unowned = Scopes.GetRef(parent).Unowned;
+#endif
             ScopeRef older = Scopes.GetRef(parent).LastChild;
             Scopes.GetRef(scope).OlderSibling = older;
             if (!older.IsNone)
@@ -395,6 +567,7 @@ public static class Scope
         DisposeContents(scope, ref errors);
         ScopeData final = Scopes.GetRef(scope);
         final.Effect?.StopForDispose();
+        ReleaseContexts(scope, final);
         Unlink(scope, final);
         if (final.Paused)
         {

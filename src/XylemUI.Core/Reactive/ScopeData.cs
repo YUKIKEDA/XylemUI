@@ -39,4 +39,18 @@ internal struct ScopeData
     /// exit).
     /// </summary>
     internal bool Paused;
+
+    /// <summary>Whether the scope hangs under an effect that was made with no current scope: a lookup of a context throws there.</summary>
+    internal bool Unowned;
+
+#if RC1_STORE_A
+    /// <summary>The newest value provided on this scope.</summary>
+    internal Handle<ContextEntry> LastContext;
+#elif RC1_STORE_B
+    /// <summary>Whether a value is provided on this scope; the list is in a table beside the arena.</summary>
+    internal bool HasContext;
+#elif RC1_STORE_C
+    /// <summary>The newest value provided on this scope or above it: the parent's list, with this scope's values in front.</summary>
+    internal Handle<ContextEntry> Contexts;
+#endif
 }
