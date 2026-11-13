@@ -57,6 +57,10 @@ internal sealed class ActionDispatch
     /// <summary>
     /// Gets the buffer the contexts of a reader's route are collected in (<see cref="KeymapLookup.BindingFor"/>).
     /// </summary>
+    /// <remarks>
+    /// One read holds the buffer until it returns. A read that starts inside another read of the same tree
+    /// overwrites the contexts of the outer one, so nothing a read calls may read a binding.
+    /// </remarks>
     public ref KeyContext[] ReadContexts => ref _readContexts;
 
     /// <summary>
