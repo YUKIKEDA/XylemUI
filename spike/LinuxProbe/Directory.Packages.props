@@ -1,0 +1,6 @@
+<Project>
+  <!-- The spike references no package; this only turns off the repository's Central Package Management for it. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,4 @@
+<Project>
+  <!-- Cuts the spike off from the repository's Directory.Build.props (warnings as errors, StyleCop, the source generator,
+       banned APIs). The probe is a throwaway measurement, not framework code (README.md). -->
+</Project>

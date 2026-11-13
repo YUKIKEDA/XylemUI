@@ -1,0 +1,77 @@
+name: Linux probe
+
+# A spike, not a gate: started by hand only (spike/LinuxProbe/README.md). It answers question 2 of the P04/P05 Grill
+# preparation on GitHub's Ubuntu runners: NativeAOT on Linux, wgpu-native linked statically, lavapipe, display servers,
+# fontconfig, D-Bus, and the Wayland protocols a headless compositor advertises.
+on:
+  workflow_dispatch:
+  # A workflow that is not on the default branch cannot be started by hand, so a push to the spike's own branch starts it.
+  push:
+    branches:
+      - spike/lx-linux-probe
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  # The pinned wgpu-native release (spike/LinuxProbe/README.md); never "latest".
+  WGPU_NATIVE_TAG: v29.0.1.1
+
+jobs:
+  probe-x64:
+    name: probe (linux-x64, ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      WGPU_NATIVE_SHA256: 95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      # The script records every failure as a PROBE line and ends with 0; the summary says what failed.
+      - name: Probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe-out"
+          bash spike/LinuxProbe/ci/run-probe.sh linux-x64 "$RUNNER_TEMP/probe-out" 2>&1 | tee "$RUNNER_TEMP/probe-out/full-log.txt"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-probe-x64-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/probe-out
+          if-no-files-found: warn
+          retention-days: 30
+
+  # The arm64 runner label may not exist for this repository; the job may fail without failing the run.
+  probe-arm64:
+    name: probe (linux-arm64, ubuntu-24.04-arm)
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    timeout-minutes: 45
+    env:
+      WGPU_NATIVE_SHA256: 015fcdf1dbae82e614a783cc38017e5399ae0927a889fe9b69c9b664bc61b47a
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe-out"
+          bash spike/LinuxProbe/ci/run-probe.sh linux-arm64 "$RUNNER_TEMP/probe-out" 2>&1 | tee "$RUNNER_TEMP/probe-out/full-log.txt"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-probe-arm64-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/probe-out
+          if-no-files-found: warn
+          retention-days: 30

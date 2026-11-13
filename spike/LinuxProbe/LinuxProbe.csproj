@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The Linux probe (README.md). Published twice by ci/run-probe.sh:
+      -p:ProbeLinkWgpu=false   the NativeAOT baseline: no native library of ours is linked
+      -p:ProbeLinkWgpu=true -p:ProbeNativeArchive=<path>/libxylem_probe.a
+                               the same code with wgpu-native's static archive (plus native/wgpu_probe.c) linked in
+    The calls to the archive are resolved at link time (DirectPInvoke); everything else the probe calls (libwayland-client,
+    libX11, libxcb, libfontconfig, libc) is opened with dlopen at run time, so the DT_NEEDED list shows only what NativeAOT
+    and wgpu-native need.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IsPackable>false</IsPackable>
+    <!-- Every trim and AOT warning is printed one by one, so the job's log can count them. -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <ProbeLinkWgpu Condition="'$(ProbeLinkWgpu)' == ''">false</ProbeLinkWgpu>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ProbeLinkWgpu)' == 'true'">
+    <DirectPInvoke Include="wgpu_probe" />
+    <DirectPInvoke Include="wgpu_native" />
+    <NativeLibrary Include="$(ProbeNativeArchive)" />
+    <!-- What a Rust staticlib for linux-gnu needs from the system: libgcc_s for unwinding, libm, and libdl/libpthread (empty
+         stubs in glibc 2.34 and later). A C program linked with the same archive needed libm, libgcc_s, and libc only. -->
+    <LinkerArg Include="-lm;-lgcc_s;-ldl;-lpthread" />
+  </ItemGroup>
+
+  <!-- The second attempt of ci/run-probe.sh, used only when the first link failed on duplicate symbols. -->
+  <ItemGroup Condition="'$(ProbeLinkWgpu)' == 'true' And '$(ProbeAllowMultipleDefinition)' == 'true'">
+    <LinkerArg Include="-Wl,--allow-multiple-definition" />
+  </ItemGroup>
+
+  <Target Name="ProbeCheckArchive" BeforeTargets="Build" Condition="'$(ProbeLinkWgpu)' == 'true'">
+    <Error Condition="'$(ProbeNativeArchive)' == '' Or !Exists('$(ProbeNativeArchive)')" Text="ProbeNativeArchive '$(ProbeNativeArchive)' does not exist." />
+  </Target>
+</Project>
