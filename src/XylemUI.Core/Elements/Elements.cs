@@ -283,12 +283,11 @@ public static class Elements
         ?? throw new InvalidOperationException("Elements are made while a window's root function runs (XylemApp.Run); no tree is current.");
 
     /// <summary>
-    /// Returns the text style of text that sets none, in the tree's UI language, or undetermined when the host gave none.
+    /// Returns the text style of text that sets none, in a language.
     /// </summary>
-    /// <param name="tree">The tree whose UI language the style takes.</param>
+    /// <param name="language">The language.</param>
     /// <returns>The default text style.</returns>
-    internal static TextStyle DefaultTextStyle(UiTree tree) =>
-        new(FontRequest.Default, DefaultFontSize, tree.UiLanguage ?? TextLanguage.FromTag("und"), float.NaN);
+    internal static TextStyle DefaultTextStyle(TextLanguage language) => new(FontRequest.Default, DefaultFontSize, language, float.NaN);
 
     // A node of the current tree, owned by the current scope: disposing the scope takes it out and frees it.
     private static Element Own(LayoutStyle style)
@@ -363,7 +362,9 @@ public static class Elements
             throw new InvalidOperationException("Elements are made inside a scope, which owns them; there is no current scope.");
         }
 
-        NodeHandle node = tree.CreateTextNode(new LayoutStyle(), DefaultTextStyle(tree));
+        TextLanguage language = tree.DefaultTextLanguage(out IReadOnlySignal<Locale>? locale);
+        NodeHandle node = tree.CreateTextNode(new LayoutStyle(), DefaultTextStyle(language));
+        tree.Nodes.GetRef(node).Text!.DefaultLanguageOf = locale;
         Own(tree, node);
         return new Element(tree, node);
     }

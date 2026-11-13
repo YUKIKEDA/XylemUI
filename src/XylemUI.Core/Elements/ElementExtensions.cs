@@ -200,7 +200,14 @@ public static partial class ElementExtensions
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="InvalidOperationException">The node is not a text node.</exception>
     /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
-    public static Element Language(this Element element, TextLanguage language) => TextStyle(element, style => style with { Language = language });
+    public static Element Language(this Element element, TextLanguage language)
+    {
+        element = TextStyle(element, style => style with { Language = language });
+
+        // The leaf has a language of its own now: a change of the locale no longer gives it another.
+        element.Tree!.Nodes.GetRef(element.Node).Text!.DefaultLanguageOf = null;
+        return element;
+    }
 
     /// <summary>
     /// Sets the background.

@@ -70,4 +70,22 @@ public sealed record HeadlessOptions
     /// <see cref="XylemUI.Keymap.Default"/>.
     /// </summary>
     public Keymap? Keymap { get; init; }
+
+    /// <summary>
+    /// Gets the locales the app supports, as <c>WindowOptions.SupportedLocales</c> of a desktop window (design §4.11).
+    /// </summary>
+    public IReadOnlyList<Locale> SupportedLocales { get; init; } = [];
+
+    /// <summary>
+    /// Gets what chooses the app's locale, as <c>WindowOptions.ResolveLocale</c> of a desktop window; <see langword="null"/> for
+    /// <see cref="Localization.Resolve"/>.
+    /// </summary>
+    public Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? ResolveLocale { get; init; }
+
+    /// <summary>
+    /// Gets the tags of the languages the app sees as the OS's, most preferred first; none by default, so that a test does not
+    /// depend on the machine it runs on: the app's locale is then the first of <see cref="SupportedLocales"/>, or undetermined.
+    /// <see cref="HeadlessApp.SetSystemLocales"/> changes them while the app runs.
+    /// </summary>
+    public IReadOnlyList<string> SystemLocales { get; init; } = [];
 }
