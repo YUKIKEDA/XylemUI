@@ -51,13 +51,13 @@ internal static class EventLatency
                 posted = ping.Qpc;
                 value.Set(ping.Sequence);
             });
-            UiMessage.On<Lost>(_ =>
+            UiMessage.On<Lost>(message =>
             {
                 lost++;
                 waitingForDisplay = false;
                 _ = shown.Release();
             });
-            UiMessage.On<Poll>(_ =>
+            UiMessage.On<Poll>(message =>
             {
                 if (waitingForDisplay && scene.Renderer.TryReadPresentLatency(out _, out long refresh))
                 {
