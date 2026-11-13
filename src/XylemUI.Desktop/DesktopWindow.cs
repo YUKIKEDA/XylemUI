@@ -5,9 +5,9 @@ using XylemUI.Text;
 namespace XylemUI;
 
 /// <summary>
-/// One window of an app (design §2.13, "The window"): the Win32 window, its D3D11 renderer, its frames and input, and its tree with
-/// a root box that takes the window's size. The root function runs once in the window's root scope, with the tree as the current
-/// tree, and its element goes into the root box. Closing the window disposes the root scope.
+/// One window of an app (design §2.13, "The window"): the Win32 window, its D3D11 renderer, and its window core (the tree with a
+/// root box that takes the window's size, the frames, and the input). The root function runs once in the window's root scope, with
+/// the tree as the current tree, and its element goes into the root box. Closing the window disposes the root scope.
 /// </summary>
 /// <remarks>
 /// It belongs to the UI thread. The frames are paced by the swap chain, and each starts late
@@ -22,11 +22,9 @@ internal sealed class DesktopWindow : IDisposable
     private readonly DirectWriteFontProvider _fonts;
     private readonly TextContext _text;
     private readonly GlyphAtlas? _atlas;
-    private readonly NodeHandle _rootNode;
-    private readonly WindowLocale _locale;
+    private readonly WindowCore _core;
     private TsfTextInput? _textInput;
     private Win32Accessibility? _accessibility;
-    private ScopeHandle _rootScope;
     private bool _disposed;
 
     /// <summary>
@@ -59,8 +57,7 @@ internal sealed class DesktopWindow : IDisposable
         UiThread.VerifyAccess();
         _fonts = new DirectWriteFontProvider();
         _text = new TextContext(_fonts);
-        Tree = new UiTree(_text);
-        _rootNode = Tree.CreateNode(new LayoutStyle());
+        _core = new WindowCore(_text, options.SupportedLocales, options.ResolveLocale);
 
         // What was made is disposed when a later step throws, so that no window, swap chain, or scope outlives the constructor.
         try
@@ -80,8 +77,7 @@ internal sealed class DesktopWindow : IDisposable
             Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
             Renderer.TextRendering = Window.TextRendering;
             _atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer());
-            Frames = new WindowFrames(Tree, _rootNode, Renderer, _atlas, Win32MessageLoop.FrameScheduler, Background, Window.TextRendering);
-            Input = new WindowInput(Tree, Frames, Window);
+            _core.Connect(Renderer, _atlas, Win32MessageLoop.FrameScheduler, Window, Background, Window.TextRendering);
             _accessibility.Input = Input;
             Window.PointerInputReceived = Input.Handle;
             Window.KeyInputReceived = Input.Handle;
@@ -116,17 +112,13 @@ internal sealed class DesktopWindow : IDisposable
             // Less motion when Windows asks for it (design §2.14, "Reduced motion").
             Tree.Animations.ReduceMotion = Window.ReducesMotion;
             Window.ReducesMotionChanged += OnReducesMotionChanged;
-            _locale = new WindowLocale(options.SupportedLocales, options.ResolveLocale, Window.UiLanguages);
             Window.UiLanguagesChanged += OnUiLanguagesChanged;
             Window.Closed += OnClosed;
             Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject, Renderer.TryReadLastRefresh, Renderer.RefreshRate);
-            Mount(root);
 
-            // The frame the root function's nodes asked for is the first one, which the size runs at once: without this, an empty
-            // frame ran after it (found by the headless app's check at its end, row P02a). A frame that one asks for stays.
-            Win32MessageLoop.FrameScheduler.CancelFrame();
+            // The root function, then the first frame at the window's size in logical pixels.
             float scale = Window.ScaleFactor;
-            Frames.Resize(new Size(width / scale, height / scale), scale);
+            _core.Mount(root, Window.UiLanguages, "XylemApp.Run", new Size(width / scale, height / scale), scale);
 
             // The tree has its root now: assistive technology that asked while the window showed gets the tree.
             _accessibility.StartIfAsked();
@@ -146,7 +138,7 @@ internal sealed class DesktopWindow : IDisposable
     /// <summary>
     /// Gets the window's tree.
     /// </summary>
-    public UiTree Tree { get; }
+    public UiTree Tree => _core.Tree;
 
     /// <summary>
     /// Gets the Win32 window.
@@ -161,17 +153,17 @@ internal sealed class DesktopWindow : IDisposable
     /// <summary>
     /// Gets the window's frames.
     /// </summary>
-    public WindowFrames Frames { get; } = null!;
+    public WindowFrames Frames => _core.Frames;
 
     /// <summary>
     /// Gets the window's input.
     /// </summary>
-    public WindowInput Input { get; } = null!;
+    public WindowInput Input => _core.Input;
 
     /// <summary>
     /// Gets the root scope, which owns what the root function made; disposed when the window closes.
     /// </summary>
-    public ScopeHandle RootScope => _rootScope;
+    public ScopeHandle RootScope => _core.RootScope;
 
     /// <summary>
     /// Disposes the root scope, destroys the window, and releases the renderer and the text tools.
@@ -224,44 +216,6 @@ internal sealed class DesktopWindow : IDisposable
         _fonts.Dispose();
     }
 
-    // The root function, with the tree as the current tree, in a new scope that becomes the root scope.
-    private void Mount(Func<Element> root)
-    {
-        UiTree? previous = UiTree.Current;
-        UiTree.Current = Tree;
-        try
-        {
-            _rootScope = Scope.Create(
-                () =>
-                {
-                    Element content = _locale.Provide(Tree, root);
-                    if (content.IsNone || !ReferenceEquals(content.Tree, Tree))
-                    {
-                        throw new InvalidOperationException("The root function returns a node of the window's tree.");
-                    }
-
-                    if (!Tree.Nodes.GetRef(content.Node).Parent.IsNone)
-                    {
-                        throw new InvalidOperationException("The root function returns a node with no parent.");
-                    }
-
-                    // One change for the readers of what an action can do: the node is in the tree and is where a route starts
-                    // with no focus.
-                    ReactiveRuntime.Batch(() =>
-                    {
-                        Tree.AppendChild(_rootNode, content.Node);
-                        Tree.KeyRoot = content.Node;
-                    });
-                },
-                "XylemApp.Run"
-            );
-        }
-        finally
-        {
-            UiTree.Current = previous;
-        }
-    }
-
     // The synchronous resize path (design §2.11.1): the swap chain takes the new size, then the frame runs at once.
     private void Render(Win32Window window, int width, int height)
     {
@@ -272,12 +226,12 @@ internal sealed class DesktopWindow : IDisposable
 
         Renderer.Resize(width, height);
         float scale = window.ScaleFactor;
-        Frames.Resize(new Size(width / scale, height / scale), scale);
+        _core.Frames.Resize(new Size(width / scale, height / scale), scale);
     }
 
     private void OnReducesMotionChanged(object? sender, EventArgs e) => Tree.Animations.ReduceMotion = Window.ReducesMotion;
 
-    private void OnUiLanguagesChanged(object? sender, EventArgs e) => _locale.Update(Window.UiLanguages);
+    private void OnUiLanguagesChanged(object? sender, EventArgs e) => _core.SetSystemLocales(Window.UiLanguages);
 
     private void OnTextEditingChanged(object? sender, EventArgs e) => Tree.SetTextEditing(Window.TextEditing);
 
@@ -294,18 +248,11 @@ internal sealed class DesktopWindow : IDisposable
         Closed?.Invoke(this, EventArgs.Empty);
     }
 
+    // No frame of the loop's scheduler runs for a window whose root is gone. The frame is cancelled before the root scope is
+    // disposed; the core's first step, which stops the tree from asking for frames, only clears a delegate, so it may come after.
     private void DisposeRoot()
     {
-        Tree.FrameNeeded = null;
         Win32MessageLoop.FrameScheduler.CancelFrame();
-        if (!_rootScope.IsNone && Scope.IsAlive(_rootScope))
-        {
-            Scope.Dispose(_rootScope);
-        }
-
-        _rootScope = default;
-
-        // The tree is thrown away with its window: the images its cache kept for a later element go too (design §5.0.4, "Cache").
-        Tree.CachedImages.ReleaseAll();
+        _core.DisposeRoot();
     }
 }
