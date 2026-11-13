@@ -2334,6 +2334,43 @@ internal sealed class UiTree
     }
 
     /// <summary>
+    /// Sets whether a node and its subtree are shown while the node keeps its place (design §3.2, "Nodes not shown"); equal to the
+    /// value there, nothing changes. Another runs no layout: it marks the node to be drawn again, tells the moves of the focus that
+    /// the nodes they go to changed, and marks the node for the accessibility tree. A focused node in a subtree that becomes hidden
+    /// loses the focus, as when it is removed.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="visibility">The visibility.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="visibility"/> is not a value of <see cref="Visibility"/>.</exception>
+    public void SetVisibility(NodeHandle node, Visibility visibility)
+    {
+        if (visibility is not (Visibility.Visible or Visibility.Hidden))
+        {
+            throw new ArgumentOutOfRangeException(nameof(visibility), visibility, "The visibility is not Visible or Hidden.");
+        }
+
+        NodeInput input = InputOf(node);
+        bool invisible = visibility == Visibility.Hidden;
+        if (input.Invisible == invisible)
+        {
+            return;
+        }
+
+        input.Invisible = invisible;
+        Invalidation.Invalidate(this, node, ChangeKind.Color);
+        Actions.OrderChanged();
+
+        // The focus goes where it goes from a removed node: nowhere, so the keys go to the root and the next Tab starts from the first
+        // node (design §7, "Removed, hidden, or disabled").
+        if (invisible)
+        {
+            Focus.Lose(node);
+        }
+
+        MarkAccessibility(node);
+    }
+
+    /// <summary>
     /// Sets whether a node's subtree takes neither the pointer nor the focus: a popup that leaves (design §7.3, "Motion"). A focused
     /// node in it loses the focus.
     /// </summary>

@@ -352,6 +352,47 @@ public sealed class SelectionAreaTests
     }
 
     /// <summary>
+    /// The text of a subtree whose visibility is Hidden is left out of the selection and of the copy, though it keeps its line.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An area around a column of "n", "nn" of the visibility Hidden, and "nnnn".
+    ///
+    /// Steps:
+    /// - Click on the first leaf; Control+A; Control+C; read.
+    ///
+    /// Expected:
+    /// - The clipboard holds "n\nnnnn"; the hidden leaf has no selection; the last leaf is on the third line.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task HiddenVisibility_IsLeftOut()
+    {
+        Element[] leaves = new Element[2];
+        Element hidden = default;
+        await using Area area = await Area.StartAsync(() =>
+            SelectionArea(
+                Column(
+                    leaves[0] = Elements.Text("n"),
+                    hidden = Elements.Text("nn").Visibility(Visibility.Hidden),
+                    leaves[1] = Elements.Text("nnnn")
+                )
+            )
+        );
+
+        area.Click(0.5f * N, 10);
+        _ = area.App.Keyboard.Press(Key.A, KeyModifiers.Control);
+        _ = area.App.Keyboard.Press(Key.C, KeyModifiers.Control);
+        _ = area.App.PumpAndSettle();
+
+        Assert.Equal("n\nnnnn", area.App.Clipboard.Text);
+        Assert.Equal([(0, 1), (0, 4)], area.Selections(leaves));
+        Assert.Equal((0, 0), area.SelectionOf(hidden.Node));
+        // Two line heights added in floats; 0.01 px is far below the 20 px a missing line would take.
+        Assert.Equal(2 * Line, area.App.Tree.GetRect(leaves[1].Node).Y, 0.01f);
+    }
+
+    /// <summary>
     /// A press that a focusable descendant takes the focus for, or on a part that keeps the focus, starts no selection, also while
     /// the area has the focus.
     /// </summary>

@@ -474,6 +474,56 @@ public sealed class AnimationTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A transition under an ancestor whose visibility becomes hidden ends at its target in the same way: the node keeps its place
+    /// but is no longer drawn (design §3.2, "Nodes not shown").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A 20 x 20 box holding a box of 10 x 10 whose background is a signal at red, with a transition of the background, 100 ms,
+    ///   linear; drawn once.
+    ///
+    /// Steps:
+    /// - Set blue; frames at +0 and +50. Set the outer box's visibility to Hidden; frames at +16 while one is asked for, 10 at most.
+    ///   Set it to Visible; a frame.
+    ///
+    /// Expected:
+    /// - At +50 the fill is halfway. After hiding, a frame or two run, then none is asked for. Shown again, the box is blue at once.
+    /// </remarks>
+    [Fact]
+    public void Transition_UnderAnAncestorMadeInvisibleMidway_EndsAndAsksForNoMoreFrames() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new Scene();
+            var paint = Signal.Create<Paint>(Red);
+            Element outer = default;
+            scene.Mount(() =>
+                outer = Box(
+                        Box().Width(10).Height(10).Background(paint).Transition(NodeProperties.Background, TimeSpan.FromMilliseconds(100))
+                    )
+                    .Width(20)
+                    .Height(20)
+            );
+            paint.Set(Blue);
+            scene.Frame(0);
+            scene.Frame(50);
+            Assert.Equal([new Color(0x80, 0, 0x80)], scene.Fills());
+
+            scene.Tree.SetVisibility(outer.Node, Visibility.Hidden);
+            int frames = 0;
+            while (scene.Scheduler.Pending && frames < 10)
+            {
+                scene.Frame(16);
+                frames++;
+            }
+
+            Assert.False(scene.Scheduler.Pending);
+            Assert.InRange(frames, 1, 2);
+            scene.Tree.SetVisibility(outer.Node, Visibility.Visible);
+            scene.Frame(16);
+            Assert.Equal([Blue], scene.Fills());
+        });
+
+    /// <summary>
     /// The values a transition cannot mix change halfway (row AN1, design §2.14, "Properties that move"): a gradient on either side
     /// of a paint, and shadows when one is missing or one is inset and the other not. A missing paint mixes as the other's color
     /// with no alpha; a missing text color changes halfway.

@@ -88,4 +88,11 @@ internal struct UiNode
     /// The versions that validate cached results.
     /// </summary>
     public NodeVersions Versions;
+
+    /// <summary>
+    /// Gets a value indicating whether the node hides its subtree: its layout style is <see cref="LayoutStyle.Hidden"/>, which takes
+    /// no place, or its visibility is <see cref="Visibility.Hidden"/>, which keeps it (design §3.2, "Nodes not shown"). Either way
+    /// the subtree is neither drawn nor hit, takes no focus, and is left out of the accessibility tree and of a selection area.
+    /// </summary>
+    public readonly bool HidesSubtree => Layout.Style.Hidden || Input is { Invisible: true };
 }
