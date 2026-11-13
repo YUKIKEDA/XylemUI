@@ -479,14 +479,8 @@ internal sealed class AccessibilityTree(UiTree tree)
             return;
         }
 
-        // A node below a hidden one has no node of its own (CollectBelow); the window's root has one, so its own visibility is read
-        // here: hidden, the window holds its popups alone.
         bool folding = TakesNameFromContent(node.Role);
-        if (!tree.Nodes.GetRef(node.Node).HidesSubtree)
-        {
-            CollectBelow(node.Node, folding);
-        }
-
+        CollectBelow(node.Node, folding);
         if (node.Node == tree.Root)
         {
             foreach (NodeHandle root in _popupRoots)
