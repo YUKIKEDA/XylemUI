@@ -91,6 +91,49 @@ public sealed class WindowAccessKeyTests
     }
 
     /// <summary>
+    /// A label whose visibility is Hidden names nothing: its access key does not focus its target, which is shown; shown again, it
+    /// does.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column: a focusable box, focused; a row of a label of "_Name" whose visibility is a signal at Hidden, and the focusable box
+    ///   it is for.
+    ///
+    /// Steps:
+    /// - Alt+N; read the focus. Set the signal to Visible; settle; Alt+N; read the focus.
+    ///
+    /// Expected:
+    /// - The first box keeps the focus while the label is hidden; shown, the labelled box takes it.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AccessKey_OfAHiddenLabel_DoesNothing()
+    {
+        var visibility = Signal.Create(Visibility.Hidden);
+        Element start = default;
+        Element named = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                start = Box().Width(50).Height(20).Focusable(),
+                Row(Label(AccessText("_Name"), named = Box().Width(50).Height(20).Focusable()).Visibility(visibility), named)
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = app.Focus(start);
+
+        _ = app.Keyboard.Press(Key.N, KeyModifiers.Alt);
+        NodeHandle hidden = app.Tree.Focus.Focused;
+        visibility.Set(Visibility.Visible);
+        _ = app.PumpAndSettle();
+        _ = app.Keyboard.Press(Key.N, KeyModifiers.Alt);
+        NodeHandle shown = app.Tree.Focus.Focused;
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(start.Node, hidden);
+        Assert.Equal(named.Node, shown);
+    }
+
+    /// <summary>
     /// While a modal dialog is open, the access keys look inside it alone; an open menu's letters come before the window's.
     /// </summary>
     /// <remarks>

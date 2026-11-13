@@ -108,7 +108,7 @@ internal sealed class FocusManager
         for (NodeHandle at = node; !at.IsNone; at = Tree.Nodes.GetRef(at).Parent)
         {
             ref UiNode a = ref Tree.Nodes.GetRef(at);
-            if (a.Layout.Style.Hidden || a.Input is { Inert: true })
+            if (a.HidesSubtree || a.Input is { Inert: true })
             {
                 return false;
             }
@@ -444,7 +444,7 @@ internal sealed class FocusManager
         while (!node.IsNone)
         {
             ref UiNode n = ref Tree.Nodes.GetRef(node);
-            if (!n.Layout.Style.Hidden && (n.Pseudo & PseudoState.Disabled) == 0)
+            if (!n.HidesSubtree && (n.Pseudo & PseudoState.Disabled) == 0)
             {
                 if (n.Input is { Focusable: true } input)
                 {

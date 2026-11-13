@@ -213,6 +213,39 @@ public sealed class ContextMenuTests
     }
 
     /// <summary>
+    /// A popup whose root is hidden by its visibility leaves its nodes out of the accessibility tree (design §3.2, "Nodes not shown").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of "nnnn", focused, with a menu of the cut, the copy, the paste, and the select-all; the menu opened with Shift+F10.
+    ///
+    /// Steps:
+    /// - Read the role of the cut's item and count the nodes of that role. Set the visibility of the popup's root to Hidden; settle;
+    ///   count again.
+    ///
+    /// Expected:
+    /// - 4, then 0.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task HiddenPopupRoot_LeavesItsItemsOutOfTheAccessibilityTree()
+    {
+        var text = Signal.Create("nnnn");
+        var seen = new Items();
+        await using HeadlessApp app = await StartField(text, new TextFieldOptions { ContextMenu = () => Panel(seen) });
+        _ = app.Keyboard.Press(Key.F10, KeyModifiers.Shift);
+        _ = app.PumpAndSettle();
+        SemanticsRole role = app.AccessibilityOf(seen.Cut).Role;
+        int shown = app.FindByRole(role).Count;
+
+        _ = app.Popups[0].Visibility(Visibility.Hidden);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(4, shown);
+        Assert.Empty(app.FindByRole(role));
+    }
+
+    /// <summary>
     /// The right button's down commits a composition before the menu opens, as a press of the field does (design §4.7).
     /// </summary>
     /// <remarks>
