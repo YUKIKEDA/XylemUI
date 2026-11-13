@@ -37,6 +37,7 @@ public sealed class HeadlessApp : IAsyncDisposable
 
     // Keeps what the work on the UI queue throws in _errors; made once, so that a pump in a Zero-Alloc test allocates nothing.
     private readonly Action<Exception> _report;
+    private readonly WindowLocale _locale;
     private ScopeHandle _rootScope;
     private bool _disposed;
     private List<Exception>? _errors;
@@ -60,6 +61,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             Tree.Clipboard = Clipboard;
             Tree.AnimatesImages = options.ImageAnimation;
             Tree.Keymap = options.Keymap ?? new Keymap();
+            _locale = new WindowLocale(options.SupportedLocales, options.ResolveLocale, options.SystemLocales);
             Ime = new HeadlessIme(this);
             Tree.SetTextInput(Ime);
             Tree.SetTextEditing(
@@ -421,6 +423,19 @@ public sealed class HeadlessApp : IAsyncDisposable
     }
 
     /// <summary>
+    /// Changes the languages the app sees as the OS's, as a change of the OS's settings does while a desktop window is open
+    /// (design §4.11, "A change of the OS"): the app's locale is resolved again, then the work that queued runs.
+    /// </summary>
+    /// <param name="tags">The tags of the languages, most preferred first.</param>
+    public void SetSystemLocales(IReadOnlyList<string> tags)
+    {
+        ArgumentNullException.ThrowIfNull(tags);
+        VerifyRunning();
+        _locale.Update(tags);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
     /// Makes the window active or inactive, as the OS does when another window takes the keyboard (design §7, "Keys and the
     /// focus"); it is active from the start.
     /// </summary>
@@ -728,7 +743,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             _rootScope = Scope.Create(
                 () =>
                 {
-                    Element content = root();
+                    Element content = _locale.Provide(Tree, root);
                     if (content.IsNone || !ReferenceEquals(content.Tree, Tree))
                     {
                         throw new InvalidOperationException("The root function returns a node of the app's tree.");

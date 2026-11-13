@@ -43,6 +43,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     private int _pendingHeight;
     private Action? _raiseTextRenderingChanged;
     private Action? _raiseReducesMotionChanged;
+    private Action? _raiseUiLanguagesChanged;
     private Action? _raiseScaleChanged;
     private HMONITOR _monitor;
 
@@ -105,6 +106,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             _monitor = MonitorFromWindow(hwnd, MONITOR.MONITOR_DEFAULTTONEAREST);
             TextRendering = TextRenderingReader(_monitor);
             ReducesMotion = ReducesMotionReader(false);
+            UiLanguages = UiLanguagesReader();
             TextEditing = TextEditingReader(TextEditingSettings.Default);
             CreateTouchpad(hwnd);
             CreateDropTarget(hwnd);
@@ -155,6 +157,17 @@ public sealed unsafe partial class Win32Window : IDisposable
     public event EventHandler? ReducesMotionChanged;
 
     /// <summary>
+    /// Occurs on the UI thread when <see cref="UiLanguages"/> changed, on a <c>WM_SETTINGCHANGE</c>.
+    /// </summary>
+    public event EventHandler? UiLanguagesChanged;
+
+    /// <summary>
+    /// Gets the tags of the user's preferred UI languages, most preferred first (design §4.11, "The OS's languages"). Read when
+    /// the window is created and on each <c>WM_SETTINGCHANGE</c> it receives.
+    /// </summary>
+    public IReadOnlyList<string> UiLanguages { get; private set; } = [];
+
+    /// <summary>
     /// Gets a value indicating whether Windows asks for less motion: "Animation effects" is off in the settings
     /// (<c>SPI_GETCLIENTAREAANIMATION</c> is false). Animations then jump to their end values (design §2.14, "Reduced motion").
     /// Read when the window is created and on each <c>WM_SETTINGCHANGE</c> it receives.
@@ -180,6 +193,11 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// setting of Windows.
     /// </summary>
     internal static Func<bool, bool> ReducesMotionReader { get; set; } = ReadReducesMotion;
+
+    /// <summary>
+    /// Gets or sets what reads <see cref="UiLanguages"/>, for the tests of the change without changing a setting of Windows.
+    /// </summary>
+    internal static Func<string[]> UiLanguagesReader { get; set; } = Win32UiLanguage.ReadAll;
 
     /// <summary>
     /// Gets the window's scale: its monitor's DPI over 96, not rounded (1.25 at 125 %). The display list multiplies logical pixels
@@ -495,6 +513,18 @@ public sealed unsafe partial class Win32Window : IDisposable
         }
     }
 
+    // The setting the message names is not matched (design §4.11, "A change of the OS"): the documentation does not say which
+    // name a change of the display language or of the list of languages sends.
+    private void ReadUiLanguagesAgain()
+    {
+        string[] read = UiLanguagesReader();
+        if (!read.AsSpan().SequenceEqual(UiLanguages is string[] before ? before : [.. UiLanguages]))
+        {
+            UiLanguages = read;
+            SynchronousRenderGuard.RunOrDefer(_raiseUiLanguagesChanged ??= () => UiLanguagesChanged?.Invoke(this, EventArgs.Empty));
+        }
+    }
+
     // Every message for every XylemUI window enters here. No managed exception may leave this method (Invariant 13).
     [UnmanagedCallersOnly]
     private static LRESULT WindowProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
@@ -560,6 +590,7 @@ public sealed unsafe partial class Win32Window : IDisposable
                 ReadWheelSettings();
                 ReadReducesMotionAgain();
                 ReadTextEditingAgain();
+                ReadUiLanguagesAgain();
                 return false;
             case WmSysColorChange:
                 ReadTextEditingAgain();
