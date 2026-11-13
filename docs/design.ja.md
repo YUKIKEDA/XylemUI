@@ -3280,7 +3280,14 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 
 - **値:** `XylemUI.Core` に値型 `Locale` を置く。欄は言語・文字体系・地域の 3 つである。BCP 47 のタグから作り、大文字と小文字を正規の形に揃える。言語は小文字、文字体系は先頭だけ大文字、地域は大文字にする（`ZH-hant-tw` は `zh`・`Hant`・`TW`）。変種（`ca-ES-valencia` の `valencia`）と拡張（`-u-` など）は、読めるが捨てる。`-u-` の拡張（数字の種類、12 時間か 24 時間か、暦）をどう持つかは、行 LC2 の Grill で決める。`CultureInfo` は使わない。
 - **`TextLanguage` を使わない理由:** `TextLanguage`（`src/XylemUI.Text/TextLanguage.cs` 13〜47 行目）は HarfBuzz の言語を包む値で、作る時に `hb_language_from_string` を呼ぶ。HarfBuzz が無いと作れないので、HarfBuzz を作らない所（Linux と macOS の Core のテスト）では、文字の無い木もロケールを持てなくなる（`src/XylemUI.Core/Layout/UiTree.cs` 194〜200 行目の `UiLanguage` の説明が、同じ理由で、木の中では作らないと書いている）。そこで Core の型にはせず、文字を整形する時に、`Locale` のタグから `TextLanguage` を作る。
-- **Flutter との違い:** Flutter の `Locale`（Flutter 3.47.8 の `engine/src/flutter/lib/ui/platform_dispatcher.dart` 2860〜3140 行目）は、大文字と小文字を揃えない。正しい形の文字列を渡すことを使う側に求め、検査もしない（2876〜2887 行目）。廃止された言語コードと地域コードは、新しいコードに読み替える（2947・3066 行目）。XylemUI が読み替えるかは、LC1 の Grill の次のラウンドで決める（行 LC1）。
+- **Flutter との違い:** Flutter の `Locale`（Flutter 3.47.8 の `engine/src/flutter/lib/ui/platform_dispatcher.dart` 2860〜3140 行目）は、大文字と小文字を揃えない。正しい形の文字列を渡すことを使う側に求め、検査もしない（2876〜2887 行目）。廃止された言語コードと地域コードは、新しいコードに読み替える（2947・3066 行目）。
+- **廃止されたコードの読み替え（LC1 の Grill の 2 ラウンド目でオーナーが決定、Issue #835）:** 廃止された言語コードと地域コードは、`Locale` を作る時に、今のコードに読み替える（`iw` は `he`、`in` は `id`、地域の `BU` は `MM`）。大文字と小文字を揃えるのと同じ所で 1 度だけ行い、元の値は残さない。そのため、`Language` の値、等しさ、`ToLanguageTag` の結果は食い違わない。読み替えないと、設定ファイルに残った `iw` が、アプリの宣言した `he` に一致しない（下の「解決」は欄ごとに比べる）。
+  - Flutter は読み替えを getter で行い、元の値を欄に残す（`platform_dispatcher.dart` 2947・3066 行目。等しさは getter の値で比べるので、`Locale('he')` と `Locale('iw')` は等しい、2849〜2854 行目）。Avalonia は自前の型を持たず、.NET の `CultureInfo` に任せる。GPUI はロケールの型を持たない。XylemUI は `InvariantGlobalization=true` なので（上の前提）、`CultureInfo` には任せられない。
+  - **表:** IANA の登録簿（Language Subtag Registry）で、廃止されていて置き換え先（Preferred-Value）を持つ言語と地域の項目から、ツールで作る（`tools/UnicodeTableGen` と同じく、生成したコードをリポジトリに置く）。表に登録簿の日付（File-Date）を書く。Flutter の表（言語 78 個、地域 6 個）は写さない。2019-02-27 の登録簿から作ったまま更新されていないからである（2950〜2951 行目のコメント）。項目の数は、LC1 の実装の PR が書く。
+- **形の誤ったタグ（同じ Grill）:** `Locale.Parse` は、形の誤ったタグで `FormatException` を投げる。例外にしない `TryParse` も置き、こちらは `false` を返す。黙って `und` を返す形は採らない。壊れた設定と、意図して書いた `und` を見分けられなくなるからである。
+  - **使い分け:** アプリがコードに書いたタグは `Parse` で読み、誤りは開発中に例外で見つかる。設定ファイルなど、信頼できない所から来たタグは `TryParse` で読み、失敗した時の扱いはアプリが決める。ウィンドウの host は、OS の一覧を `TryParse` で読み、読めない項目を一覧から落とす。一覧が空になれば `und` にする（下の「文字の既定の言語」の「読めなければ `und`」と同じ）。
+  - **「形が誤っている」の基準:** BCP 47 の構文（RFC 5646 §2.1 の `langtag`）に合うかだけで決める。登録簿にあるコードかは見ない（`xx-YY` は読める）。Flutter も、登録されているかを確かめない。変種と拡張は、構文に合えば読んで捨てる。区切りは `-` だけで、`ja_JP` は形の誤ったタグである。null は `Parse` では `ArgumentNullException`、`TryParse` では `false` である。
+  - 比べた 3 つでは、Flutter の `Locale` は検査をせず、壊れた値をそのまま持つ（2886〜2887 行目）。Windows の embedder は、OS の文字列を `-` で切って欄に振り分けるだけである（`engine/src/flutter/shell/platform/windows/system_utils.cc` 71〜99 行目）。Avalonia は、XAML の `ConverterCulture` のタグを `CultureInfo.GetCultureInfoByIetfLanguageTag` に渡す（`src/Avalonia.Base/Data/CultureInfoIetfLanguageTagConverter.cs` 13〜21 行目）。自分では検査せず、作れない名前の扱いは .NET に任せる。
 - **配り方:** ロケールは `IReadOnlySignal<T>` として Reactive Context（§2.13）に置く。Reactive Context は、まだコードに無く（`src/` に `ProvideContext` と `UseContext` は無い）、行 RC1 で作る。ロケールを変えると、それを読んでいる所（メッセージ、書式、書字の向き、既定の言語の文字）だけが再実行される。サブツリーに別の Signal を Provide すれば、そこだけ別のロケールになる（Flutter の `Localizations.override` に当たる）。Avalonia の公式の手順（`.resx` と `x:Static`）は、カルチャを変えても表示が更新されないと自分で書いている。
 - **文字の既定の言語:** 言語を指定しない文字（§2.13「`Text` の既定」）は、解決したロケールの言語で整形する。アプリがロケールを 1 つも宣言しない時は、今と同じく OS の 1 番目の言語を使う（読めなければ `und`）。ロケールが変わると、既定の言語を使っている文字は整形し直される。Flutter の `Text` も、`locale` を指定しなければローカライズのロケールを使う（`packages/flutter/lib/src/widgets/text.dart` 784 行目。既定を入れるのは `widgets/basic.dart` 6651 行目の `Localizations.maybeLocaleOf`）。
   - **英語だけのアプリを日本語の OS で動かす時:** 今は既定の文字を `ja` で整形している。LC1 からは、英語だけを宣言したアプリでは `en` で整形する。シェーピングの `locl`（§4.1 の S8b）と、漢字のフォントの選び方（§4.5「言語」）が変わる。利用者が入れた日本語の名前のように、英語の画面に出る漢字は、日本語の字形で描かれるとは限らなくなる。日本語の字形にしたい文字には、アプリが `.Language(...)`（§2.13）で言語を付ける。
@@ -3316,7 +3323,10 @@ public readonly struct Locale : IEquatable<Locale>
     public string? Script { get; }    // 先頭だけ大文字（"Hant"）。無ければ null
     public string? Region { get; }    // 大文字（"TW"）か 3 桁の数字（"419"）。無ければ null
 
-    public static Locale Parse(string tag);   // BCP 47 のタグ。大文字と小文字を揃え、変種と拡張は読んで捨てる
+    // BCP 47 のタグ。大文字と小文字を揃え、廃止されたコードを読み替え、変種と拡張は読んで捨てる。
+    // 形の誤ったタグは FormatException
+    public static Locale Parse(string tag);
+    public static bool TryParse([NotNullWhen(true)] string? tag, out Locale locale);   // 形の誤ったタグと null は false
     public string ToLanguageTag();           // "zh-Hant-TW"。3 つの欄だけ
 }
 
