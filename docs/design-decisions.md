@@ -843,6 +843,29 @@ Rejected:
   - レイアウトの道具を部品に数える: 比率を保つ枠、高さが不揃いな格子、重ねる入れ物、幕（Dialog の一部）
   - 部品でない WinUI 3 Gallery のページ（Fundamentals・Design・Accessibility・Motion・Windowing・System・Shell）を部品の範囲に入れる（Gallery のページとしては G1 の設計で扱う）
 
+Decision（テーマの土台、行 TH1。Grill の 4 巡目と 5 巡目でオーナーが決定、Issue #868・#872）:
+  テーマの値は 1 つの不変のオブジェクト（`FluentTheme`）で、丸ごと差し替える。密度とアクセントの色も、その欄。
+  OS の見た目（明暗、ハイコントラスト、アクセントの色）は Core の型と鍵（`SystemAppearance`）で、ウィンドウが根で置く（行 LC1 のロケールと同じ形）。
+  テーマの部品は、部品ごとに Effect を 1 つ持ち、テーマのシグナルを読んで、見た目を木の setter で書く。
+  テーマの鍵は既定値を持たない（§2.13 に合わせ、§13.2 の「既定値を持つ」を直した）。
+  型と鍵は Theme.Fluent、根では Source Generator が登録した包みが置く。トークンは microsoft/fluentui の `packages/tokens`（コミット `1f59fc2`）から生成する。ハイコントラストは OS の 8 色から作る。密度は `Standard` と `Compact`。切り替えはその場で変える（Issue #879 の Grill でオーナーが決定）。
+
+Reason:
+  1,000 個のボタンを NativeAOT で測った（`docs/benchmarks/th1-theme-follow.md`。CPU の負荷 77〜100% の下なので、形の間の比と、数・バイトを読む）。部品ごとに Effect 1 つの形は、切り替え 1 回が 1.4 ms、作る時の割り当てがボタン 1 つに 2.6 KB、生きている Scope が 1,002 で、切り替えもホバーも 0 バイトだった。
+  Flutter の `ThemeData` と zed のテーマも、1 つのオブジェクトを丸ごと差し替える。比べた 3 つとも、OS の見た目をデザインシステムより下の層に置く。
+
+Rejected:
+  - 見た目ごとにテーマの `Computed` を `Bind` する（ボタン 1 つに Computed 8 個と Effect 8 個。切り替え 3.5 ms、作る時間 11.0 ms 対 3.6 ms、作る時の割り当て 8.0 KB 対 2.6 KB、生きている Scope 8,002 対 1,002。部品ごとに Effect 1 つの形の 2.6〜3.1 倍。TH1 の Grill の 5 巡目、Issue #872）
+  - 描く時にトークンを引く（ノードの塗りにトークンの番号を持ち、描く段で今のテーマの表から引く。Avalonia の `DynamicResource` に近い。描く段のすべての塗りに確認が入り、テーマを使わない木もその費用を払う。近い形の「木を 1 度歩いて書き直す」は、切り替えが 1.2 ms で、部品ごとに Effect 1 つより 0.18 ms 短いだけだった。同じ Grill）
+  - テーマが変わったら部分木を作り直す（切り替え 12.5 ms、1 回に 3.6 MB を割り当てる。フォーカス、欄の文字、スクロールの位置を失う。同じ Grill）
+  - トークンごとにシグナルを置く（テーマの値を 1 つのオブジェクトにすると決めた。Issue #868）
+  - テーマの鍵に既定値を持たせる（§2.13 の「値がシグナルの鍵は既定値を持たない」と食い違う。遅れて作る既定値のシグナルは、ウィンドウとテストの間で共有される。Issue #838・#868）
+  - アプリが根の関数をテーマで手で包む（包み忘れが実行時まで見つからない。既定のキーの行と同じく、Source Generator の登録で置く。Issue #879 の Grill でオーナーが決定）
+  - ハイコントラストを明か暗に写すだけにする（Avalonia の Windows の形。利用者の選んだ色を使えず、要件 5 に届かない。Issue #879 の Grill でオーナーが決定）
+  - テーマの切り替えを動かす（Flutter の `AnimatedTheme`。TH1 ではその場で変える。動かす形は、要るなら別の行で Grill から始める。同じ Grill）
+  - Theme.Fluent の部品の関数を `using static` で `Primitive` と並べて呼ぶ形を勧める（同じ名前の `Button` で、C# は省いた引数の無い `Primitive.Button` を黙って選ぶ。`Fluent.Button` と名前を付けて呼ぶ。同じ Grill）
+  - テーマの型と鍵を Core に置く（Core はデザインを持たない、設計書 §2.9.1。同じ Grill）
+
 ---
 
 ## アクセシビリティ（UIA）

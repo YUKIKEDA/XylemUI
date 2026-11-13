@@ -58,6 +58,7 @@
 | ウィンドウ / フレーム   | [GPUI `window.rs`](https://github.com/zed-industries/zed/blob/main/crates/gpui/src/window.rs)                                               |
 | Leptos の graph         | [leptos `reactive`](https://github.com/leptos-rs/leptos/tree/main/reactive)                                                                 |
 | macOS の Obj-C 呼び出し | [Avalonia `Avalonia.Native`](https://github.com/AvaloniaUI/Avalonia/tree/master/native/Avalonia.Native)（ネイティブ側の境界の切り方の参考） |
+| Fluent 2 のトークン（TH1） | [fluentui `packages/tokens/src`](https://github.com/microsoft/fluentui/tree/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src)（コミット `1f59fc2`、2026-10-30。`global/`・`alias/`・`utils/`。設計書 §13.2「トークンの元」） |
 
 ## ローカル clone（任意）
 
@@ -74,6 +75,11 @@ git -c core.longpaths=true clone --depth 1 https://github.com/Cysharp/ZLinq.git 
 git -c core.longpaths=true clone --depth 1 https://github.com/Cysharp/ZString.git .repos/ZString
 git -c core.longpaths=true clone --depth 1 https://github.com/Cysharp/MemoryPack.git .repos/MemoryPack
 git -c core.longpaths=true clone --depth 1 https://github.com/Cysharp/MagicOnion.git .repos/MagicOnion
+
+# Fluent 2 のトークン（行 TH1。packages/tokens だけ。設計書 §13.2「トークンの元」はコミット 1f59fc2121f828b57713915f6aa035b4e77c7d47 で読む）
+git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/fluentui.git .repos/fluentui
+git -C .repos/fluentui sparse-checkout set packages/tokens
+git -C .repos/fluentui fetch --shallow-since=2026-08-01 origin
 ```
 
 Flutter は大きい。必要になるまで clone しない。

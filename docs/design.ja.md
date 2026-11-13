@@ -1297,7 +1297,7 @@ vendor/
 ```
 
 - `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
-- 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
+- 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。OS の見た目（明暗、ハイコントラストの色、アクセントの色。`SystemAppearance`、§13.2）は OS から読む値で、デザインではないので Core に置く（行 TH1）。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
 - 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
 - `XylemUI.Generators`・`XylemUI.Analyzers`・`XylemUI.Analyzers.CodeFixes` は、単独のパッケージにせず、`XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に入れて配る（§2.2「アナライザー」）。
 - Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。K1b で `XylemUI.Primitives` にも見せた。ボタンのキーが、キーから Click を配る `WindowInput.ClickFromKey` と、押下の状態を書く `UiTree.SetPseudoState` を使うためである（オーナーの決定、PR #360）。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
@@ -1817,7 +1817,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 - **部品の関数が木を見つける方法:** 部品の関数は引数を取らない（上の `Counter`）。ウィンドウの host（`XylemApp.Run`）が根の関数を呼んでいる間だけ、その木を UI スレッドの「今の木」にする（Scope の「今の Scope」と同じ形、§2.3）。`Elements` の関数は、今の木にノードを作る。今の木が無い所（根の関数の外、ハンドラの中）で作ると `InvalidOperationException` を投げる。後でノードを作る `Show` と `For`（§2.7）は、その時に今の木を立て直す。Flutter は `BuildContext`（`widgets/framework.dart` 2308 行目。中身は `Element` で 3570 行目）を、GPUI は `window` と `cx` を、どの描く関数とハンドラにも引数で渡す（`gpui/src/element.rs` 164〜167 行目）。Avalonia は、木の外で作った部品を、根に付いた親に足したときに付ける（`Avalonia.Base/Visual.cs` 715〜737 行目）。引数で渡す形は §2.13 の書き方を変えるので、採らない
 - **`Element`:** 木とノードの組で、ウィンドウが複数あってもどの木のノードかが分かる。`Foreground` は、文字の葉には自分の色（`SetTextColor`、`TextLeaf.Color`）として、ほかのノードには子孫に渡す色（`SetForeground`、`NodeVisual.Foreground`）として書く。1 万行の文字の葉が `NodeVisual` を持たずに済む（§5.0「文字の色」）。`Border(width, paint)` は、幅を `LayoutStyle.Border`（`ChangeKind.Size`）に、塗りを `SetBorderPaint`（`ChangeKind.Color`）に書く（§2.4 の対応表、§5.0「枠線の幅」）。メソッドチェーンは中間の値を作らず、割り当てない。Signal を受ける多重定義だけが Effect を 1 つ作る
 - **子の渡し方:** `Column` と `Row` は `params ReadOnlySpan<Element>`（C# 13）で受け、配列を作らない。子は並びの順に付く。子を持たない `Column()` は、空の容器になる。別の木の `Element` を子に渡すと `ArgumentException`
-- **Signal とノード:** §2.4 の Binding の層の `NodeProperty<T>` を、Signal からノードへ書く唯一の経路にする。`Bind` は、今の Scope が持つ Effect を 1 つ作る。Effect は Signal を読み、`NodeProperty<T>` の setter（`UiTree` の setter と同じ。等しい値なら何もしない）で書く。Effect は、batch を閉じたときに layout の前に流れ終わる（§2.2、§2.4）。Avalonia の `Bind(property, IObservable)` は `IDisposable` を返し、呼んだ人が後始末する（`Avalonia.Base/AvaloniaObject.cs` 446〜573 行目）。ここでは Effect を今の Scope が持つので、Scope の破棄で消える。記述子は手で書き、Source Generator は使わない（§2.4 は「使ってよい」）
+- **Signal とノード:** §2.4 の Binding の層の `NodeProperty<T>` を、Signal からノードへ書く唯一の経路にする。`Bind` は、今の Scope が持つ Effect を 1 つ作る。Effect は Signal を読み、`NodeProperty<T>` の setter（`UiTree` の setter と同じ。等しい値なら何もしない）で書く。Effect は、batch を閉じたときに layout の前に流れ終わる（§2.2、§2.4）。Avalonia の `Bind(property, IObservable)` は `IDisposable` を返し、呼んだ人が後始末する（`Avalonia.Base/AvaloniaObject.cs` 446〜573 行目）。ここでは Effect を今の Scope が持つので、Scope の破棄で消える。記述子は手で書き、Source Generator は使わない（§2.4 は「使ってよい」）。テーマの部品は、見た目ごとに `Bind` せず、部品ごとに 1 つの Effect の中で setter を呼ぶ（行 TH1、§13.2「部品がテーマに付いていく形」）
 - **`TextBuilder` の 2 点（D2 のレビューで送った点）:**
   - 書いた内容が前回と同じかは、予備のバッファに書いてから `SequenceEqual` で比べて決める。違えば、文字の葉のバッファと入れ替え（文字の葉が書いたバッファを持ち、古いバッファを予備に返す）、`ChangeKind.TextContent` で無効化する。同じなら何もしない。予備のバッファは、足りないときだけ伸ばす（`.cursor/rules/perf.mdc`）
   - 予備のバッファは、文字の葉ごとではなく UI スレッドに 1 つ（`TextContext`）持つ（V1d の実装で、オーナーが決定）。文字の葉ごとに持つと、`TextBuilder` を使わない葉も参照 1 つ（8 バイト）大きくなり、V1a の受け入れ（文字の葉 1 つの最初の確保が §3.2「メモリ」の式と頭の和以下）が 1,560 バイト対 1,552 バイトで外れた。§3.2「メモリ」が作業用の配列を葉ごとに持たず `TextShaper` に 1 つ持つのと同じ扱いである。書いている間に別の書き手が始まったとき（根の関数の中で作る Effect はすぐ走る）は、その書き手が自分のバッファを持つ
@@ -1831,7 +1831,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 - **部品ごとの Scope:** 部品の関数はふつうのメソッドで、部品ごとに Scope を作らない（SolidJS と同じ）。V1d で Scope を作るのは、ウィンドウの根だけである。部分を作り直す `Show` と `For` が、その部分の Scope を作る。Reactive Context の `Provide`（下の「Reactive Context」）も、包んだ本体の Scope を作る
 - **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
-  - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした
+  - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした。テーマを使うアプリでは、テーマの根の箱の背景の色を使う（行 TH1、§13.2「テーマの鍵」）
 - **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、OS の一覧を全部読んで解決したロケールの言語を使い、ロケールが変わると整形し直す。アプリがロケールを 1 つも宣言しなければ、今と同じく OS の 1 番目の言語を使う。§4.11「ロケール」の「文字の既定の言語」、LC1 の Grill、Issue #825）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
 - **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
 - **確かめ方:**
@@ -1871,7 +1871,7 @@ public readonly record struct PaintStyle  // レイアウトに影響するプ�
 
 フラグの更新はポインタの入力の処理（§7「ポインタの入力」）が、直近に完成した表示リストのヒット領域を元に行い、その状態の `PaintStyle` を持つノードだけを Paint dirty にする。Hovered は当たったノードとその祖先に、Pressed は左ボタンで押したノードとその祖先に立つ。DisplayList 構築時に、基本のスタイルに Hovered、その上に Pressed の `PaintStyle` を重ねて解決する。その上に P02d4 の Open、DD1 の DragOver の順に重ね、K1 の 4 つは、さらにその上に FocusWithin、Focused、FocusVisible、Disabled の順で重ねる（後ほど強い。Disabled のノードは押せもフォーカスもしないので、Disabled の見た目が最後に勝つ）。Open を Pressed の上、フォーカスの 3 つの下に置くのは、開いている見た目の上に、フォーカスの輪がまだ出るようにするためである（P02d4 の Grill、Issue #588）。フラグの立て方は §7「キーの入力とフォーカス」に書く。値のある欄は下の値を置き換え、`null` の欄は下の値のまま残す（§5.0「不透明度・変換・擬似状態」、V1c の Grill）。V1c の前は `Background` と `BorderColor` が `Color?` だったが、`NodeVisual` の背景と枠線（`Paint?`）にグラデーションも重ねられるように同じ型にした。
 
-**Reactive Context（形は RC1 の Grill でオーナーが決定、Issue #827）:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に値を置く。値は、引いた時に**1度だけ** Scope の親をたどって探す静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を置き、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<Theme>` の更新で実現する。ロケールも同じ形で配る（§4.11）。行 RC1 で作った（`src/XylemUI.Core/Reactive/Context.cs`、Issue #838）。
+**Reactive Context（形は RC1 の Grill でオーナーが決定、Issue #827）:** 親から子孫へ値を暗黙に渡すため、Scope ツリー（§2.3）に値を置く。値は、引いた時に**1度だけ** Scope の親をたどって探す静的な仕組みであり、Context の値自体が変わったときに子孫へ通知する仕組みは持たない。変化させたい値（テーマ、言語、密度等）は `IReadOnlySignal<T>` 自体を置き、子孫はその Signal を読む。テーマ切り替えは `IReadOnlySignal<FluentTheme>` の更新で実現する（密度はテーマの値の欄、§13.2「テーマの土台」）。ロケールも同じ形で配る（§4.11）。行 RC1 で作った（`src/XylemUI.Core/Reactive/Context.cs`、Issue #838）。
 
 ```csharp
 public sealed class Context<T>
@@ -1902,13 +1902,13 @@ static Element Preview()
 ```
 
 - **鍵は文脈のオブジェクト:** 鍵は型ではなく、`Context<T>` の値にする。値を置く側と引く側は、`public static readonly Context<IReadOnlySignal<Locale>> Locale = new(…);` のように作った同じオブジェクトを使う。型を鍵にすると、同じ型の値を 2 つ置けない。たとえば前景の色と強調の色を、どちらも `IReadOnlySignal<Color>` で置くとぶつかる。Flutter は型を鍵にした表を持ち（Flutter 3.47.8 の `packages/flutter/lib/src/widgets/framework.dart` 5055 行目の `PersistentHashMap<Type, InheritedElement>`）、`Theme.of` は非公開の型 `_InheritedTheme` で引いてぶつかるのを避ける（`packages/flutter/lib/src/material/theme.dart` 123〜124 行目）。GPUI は、アプリ全体に型ごとに 1 つの値を持ち（zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目の `globals_by_type`）、zed のテーマの一覧は非公開の型 `GlobalThemeRegistry` で包んで置く（`crates/theme/src/registry.rs` 44・60 行目）。Avalonia は、受け継ぐ値をプロパティのオブジェクトで引く（Avalonia 12.1.4 の `src/Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目の `FontSizeProperty`）。XylemUI の鍵は、Avalonia のプロパティと同じく、オブジェクトそのものである。同じ鍵の値が重なったら、近い方（今の Scope に近い祖先で置いた値）が勝つ。Flutter も、子は親の表を受け継ぎ、`InheritedElement` が自分の型の項目を上書きする（`framework.dart` 5129〜5132・6272〜6277 行目）
-- **値が無い時:** 鍵は既定値を持てる。`Use` は、近くに置かれた値があればそれを、無ければ鍵の既定値を返し、既定値も無ければ `InvalidOperationException` を投げる。例外にしない `TryUse` は、同じ順に引いて、値も既定値も無ければ `false` を返す。値がシグナルの鍵（ロケール、テーマ）は既定値を持たず、ウィンドウが根で必ず置く（Issue #838 の Grill でオーナーが決定。下の「テストとウィンドウ」）。`Signal.Create` は UI スレッドを求めるので（`src/XylemUI.Core/Reactive/Signal.cs` 16〜19 行目）、static の初期化子ではシグナルの既定値を作れない。既定値を遅れて作る口（`Context<T>(Func<T>)`）は足さない。遅れて作ったシグナルはプロセスに 1 つになり、ウィンドウの間でも、同じスレッドで走るヘッドレスのテストの間でも共有されて、あるテストの書き込みが次のテストに残るからである。そのため、ウィンドウの外（素の `Scope.Create` だけのテストなど）でこれらの鍵を `Use` すると、`InvalidOperationException` になる。Flutter のロケールも同じ形である。`Localizations.localeOf` は祖先が無ければ例外を投げ（デバッグでは `assert` の中で、リリースではその後の null の検査で。Flutter 3.47.8 の `packages/flutter/lib/src/widgets/localizations.dart` 561〜570 行目）、根の値は `WidgetsApp` が置く（`packages/flutter/lib/src/widgets/app.dart` 1838〜1846 行目）。GPUI のテーマは、アプリの初期化で置く（zed v1.25.3 の `crates/theme/src/theme.rs` 144 行目の `cx.set_global`）。既定値を持つ Flutter のテーマ（`theme.dart` 62 行目の `_kFallbackTheme`）と下の Avalonia のプロパティは、どちらも変わらないただの値である。比べた 3 つでは、Flutter の `dependOnInheritedWidgetOfExactType` は無ければ `null` を返し（`framework.dart` 5094〜5101 行目）、`Theme.of` はそこで既定のテーマを返す（`theme.dart` 122〜138 行目）。GPUI の `global` は無ければ panic し、`try_global` は `None` を返す（`app.rs` 2385〜2399 行目）。Avalonia のプロパティは既定値を持ち（`TextElement.cs` 40 行目の `defaultValue: 12`）、資源は親をたどって無ければ `false` を返す（`src/Avalonia.Base/Controls/ResourceNodeExtensions.cs` 83〜97 行目）
+- **値が無い時:** 鍵は既定値を持てる。`Use` は、近くに置かれた値があればそれを、無ければ鍵の既定値を返し、既定値も無ければ `InvalidOperationException` を投げる。例外にしない `TryUse` は、同じ順に引いて、値も既定値も無ければ `false` を返す。値がシグナルの鍵（ロケール、OS の見た目、テーマ）は既定値を持たず、ウィンドウが根で必ず置く（Issue #838 の Grill でオーナーが決定。下の「テストとウィンドウ」）。`Signal.Create` は UI スレッドを求めるので（`src/XylemUI.Core/Reactive/Signal.cs` 16〜19 行目）、static の初期化子ではシグナルの既定値を作れない。既定値を遅れて作る口（`Context<T>(Func<T>)`）は足さない。遅れて作ったシグナルはプロセスに 1 つになり、ウィンドウの間でも、同じスレッドで走るヘッドレスのテストの間でも共有されて、あるテストの書き込みが次のテストに残るからである。そのため、ウィンドウの外（素の `Scope.Create` だけのテストなど）でこれらの鍵を `Use` すると、`InvalidOperationException` になる。Flutter のロケールも同じ形である。`Localizations.localeOf` は祖先が無ければ例外を投げ（デバッグでは `assert` の中で、リリースではその後の null の検査で。Flutter 3.47.8 の `packages/flutter/lib/src/widgets/localizations.dart` 561〜570 行目）、根の値は `WidgetsApp` が置く（`packages/flutter/lib/src/widgets/app.dart` 1838〜1846 行目）。GPUI のテーマは、アプリの初期化で置く（zed v1.25.3 の `crates/theme/src/theme.rs` 144 行目の `cx.set_global`）。既定値を持つ Flutter のテーマ（`theme.dart` 62 行目の `_kFallbackTheme`）と下の Avalonia のプロパティは、どちらも変わらないただの値である。比べた 3 つでは、Flutter の `dependOnInheritedWidgetOfExactType` は無ければ `null` を返し（`framework.dart` 5094〜5101 行目）、`Theme.of` はそこで既定のテーマを返す（`theme.dart` 122〜138 行目）。GPUI の `global` は無ければ panic し、`try_global` は `None` を返す（`app.rs` 2385〜2399 行目）。Avalonia のプロパティは既定値を持ち（`TextElement.cs` 40 行目の `defaultValue: 12`）、資源は親をたどって無ければ `false` を返す（`src/Avalonia.Base/Controls/ResourceNodeExtensions.cs` 83〜97 行目）
 - **置き方は、本体を包む形だけ:** `Provide(value, body)` は、`body` を今の Scope の子の新しい Scope の中で実行し、その Scope に値を置き、`body` が返した要素を返す（`Locale.Provide(signal, () => Column(…))`）。値は、その Scope の中で作ったものだけに効く。文として書く形（`Locale.Provide(signal);` の後に子を作る）は採らない。同じ Scope で先に作った要素には効かず、書く順で結果が変わるからである。要素の拡張メソッドの形（`Column(…).Provide(Locale, signal)`）も採らない。要素を作った後に呼ぶので、子を作る時には値がまだ無く、子に届かない。`Provide` が作る Scope は、ほかの Scope と同じく、親の Scope と一緒に破棄される
 - **ポップアップの中身は、宣言した場所の値を引く:** メニュー・ツールチップ・ダイアログ・Select の中身は、`.Menu()` などを呼んだ所に置かれた値を引く。ポップアップの層（§7.3）は木の上では別の所にあるが、Scope ツリーでは、呼んだ所の下にある。`PopupBlock.Create` は、呼んだ時の今の Scope の子にポップアップの Scope を作り（`src/XylemUI.Core/Popups/PopupBlock.cs` 89〜95 行目）、中身はその Scope の子の Scope で作る（同 279〜288 行目）。メニュー・サブメニュー・メニューバー・右クリックのメニュー・Select・ツールチップ・ダイアログは、どれも部品を作る時に `PopupBlock.Create` を呼ぶ（`src/XylemUI.Primitives/Menu.cs` 190 行目、`Select.cs` 100 行目、`Tooltip.cs` 113 行目、`Dialog.cs` 69 行目）。そのため、足す仕組みは無く、RC1 の実装はこれをテストで確かめる。Flutter の `OverlayPortal` も、オーバーレイに描く子が、自分を置いた場所と同じ `InheritedWidget`（`Theme` など）に頼れると書く（`packages/flutter/lib/src/widgets/overlay.dart` 1795〜1799 行目）。Avalonia のポップアップの根は、スタイルと資源を `Popup` から引く（`src/Avalonia.Controls/Primitives/PopupRoot.cs` 124 行目の `StylingParent => Parent`）
 - **引ける所:** `Use` は、部品を作る時のほか、作った後でも、今の Scope がある所で引ける。イベントのハンドラは登録した Scope の中で動き（上の「ハンドラを動かす Scope」、`src/XylemUI.Core/Input/WindowInput.cs` 1194 行目、`src/XylemUI.Core/Input/ActionDispatch.cs` 262 行目の `Scope.TryEnter`）、Effect は、作った所の Scope の子である自分の Scope の中で動く（`src/XylemUI.Core/Reactive/Effect.cs` 138〜146 行目、`src/XylemUI.Core/Reactive/Scope.cs` 211 行目の `AllocateForEffect`）。どちらも、宣言した所から上をたどる。今の Scope が無い所（`await` の後の継続など、§2.3「`await` の後」）では、既定値を返さずに `InvalidOperationException` を投げる。既定値を返すと、祖先が別の値を置いていても既定値で動き、誤りに気づけないからである。`TryUse` も、今の Scope が無い所では `false` を返さずに同じ例外を投げる。`false` は「値も既定値も無い」ことだけを表し、Scope が無いのは呼び方の誤りだからである（PR #832 でオーナーが決定）。直し方は、`await` の前に `Scope.Current` を取っておき、`Scope.Run` の中で引くことである。今の Scope が無い所で作った Effect は、親の無い自分の Scope を持つ（`src/XylemUI.Core/Reactive/Scope.cs` 344〜351 行目）。その中の `Use` と `TryUse` も、同じ理由で同じ例外を投げる（Issue #838 の Grill でオーナーが決定）。その Effect の中で作った Scope と Effect から引く時も同じである。ただし、その Effect の中で `Provide` した値は、その中から引ける。例外にするのは、値が見つからなかった時だけである。中で置いた値は、祖先を見なくても正しく決まるからである。破棄された親の下で作った Scope と Effect（自分を破棄した Effect が、走っている間に作ったもの。同じ `Scope.cs` 344〜351 行目）も、属する所が無いので、同じ扱いにする（PR #839 でオーナーが決定）。ウィンドウの根の Scope も親を持たないが、こちらは正しい使い方なので、鍵の既定値を返す。この 2 つを見分ける印を Scope に持つ。印で Scope の大きさが変わるかは、下の置き場所の 3 案と一緒に測る。**Computed の中では引けない**（同じ決定）。Computed が計算している間の `Use` と `TryUse` は、`Scope.Create` などと同じ検査（`Scope.cs` 336〜342 行目の `VerifyNotInComputed`）で `InvalidOperationException` を投げる。Computed は Scope を持たず（§2.2「Computed の所有」）、関数は読んだ側の Scope の下で走る（`src/XylemUI.Core/Reactive/Computed.cs` 163〜165 行目、`Computation.cs` 146〜152 行目）。Effect の再実行では、Effect が自分の Scope に入る前に Computed が計算し直され（`Effect.cs` 125 行目が 138〜139 行目より先）、結果はキャッシュされるので、引く値は最初に読んだ所で決まってしまう。使う側は、作る時にシグナルを引いて変数に取り、Computed の中ではそれを読む。Flutter は、引く所をいつも宣言した要素（`BuildContext`）に固定し、`initState` の中では例外にする（`framework.dart` 2417〜2420・6066〜6070 行目）。Avalonia の資源の束縛は、作った時のコントロールから引く（`ResourceNodeExtensions.cs` 194〜198 行目）。GPUI の値はアプリ全体に 1 つである。SolidJS は、memo を含む計算が作られた時の文脈を持ち、走る間は自分を所有者にするので、memo の中の `useContext` は宣言した所の値を引く（solid v1.9.16 の `packages/solid/src/reactive/signal.ts` 1457〜1458・1406・1223〜1228 行目）。XylemUI はこの形を採らない。Computed は Scope に持たれず、Scope が破棄された後も生きるので（§2.2「Computed の所有」）、作られた時の Scope を覚えても、引く先が無くなる場合がある。Computed ごとに欄が 1 つ増え、計算のたびに Scope の切り替えが入る（測っていない）。Scope の操作は Computed の中ではすでに例外であり、それと揃える。`Provide`・`Use`・`TryUse` は、ほかの公開の API と同じく UI スレッドで呼び、ほかのスレッドからなら `InvalidOperationException` を投げる（§2.12）。鍵のコンストラクタは既定値を持つだけなので、static の初期化子がどのスレッドで走っても呼べる
 - **値の置き場所（3 案を測って、Issue #838 でオーナーが決定）:** Scope ごとに、親から受け継いだ値のリストの頭を持つ。Scope を作る時に親の頭を写し、値を置いた Scope は、その前に自分の値をつなぐ。引く時は親をたどらず、リストを頭から見て、鍵が同じ最初の項目を返す。Flutter と SolidJS も、親から受け継いだものを各ノードが持ち、引く時に親をたどらない（上の `framework.dart` 5129〜5132・6272〜6277 行目、solid v1.9.16 の `signal.ts` 1457〜1458 行目）。あちらは表を写すが、XylemUI はリストを共有するので、Scope を作る時に写すのは頭 1 つである。リストの頭は、世代のない 4 バイトの番号で持つ。値の項目は、置いた Scope が破棄される時に解放され、その下の Scope はそれより先に破棄されるので、古い番号を引く Scope は残らない。リストが親の頭に着く前に終われば、不変条件の違反である。測った値（NativeAOT、`docs/benchmarks/rc1-context.md`）: 引く時間は、深さ 1・10・50・100 のどれでも約 8.8 ns で、鍵が 10 個置かれた下で最も遠い鍵を引くと約 14 ns になる（上で置かれた鍵の数に比例する）。`Provide` は割り当てない。**目標にしていた「値を置かない Scope は何も払わない」は満たしていない。** Scope 1 つは 96 → 104 バイトになり、値の無い Scope を作って捨てる時間は 58.1 → 63.7 ns になった。採らなかった 2 案は、親を 1 つずつ上がる形で、深さ 100 で 268 ns（Scope ごとにリストを持つ）と 405 ns（Scope には印だけを持ち、リストは別の表）だった。後者だけが Scope の大きさを変えない
 - **メニューの文脈のノード:** メニューは、文脈のノード（§7「メニューの項目が動作を指す形」の「文脈のノードの持ち方」）を、Reactive Context で項目に渡す（行 RC1 で載せ替えた）。パネルを `Provide` で包み、項目とサブメニューは作る時に引く。この鍵では「値が無い」は「メニューの外」という正しい答えなので、属する所の無い Effect の中でも、値が無ければ例外にせず、メニューの外として読む（フレームワークの中だけの引き方 `TryUseInside`。PR #846 のレビューの意見を、オーナーが決定）。開いた後にパネルの中の `Show` や `For` が作った項目も、Scope のリストから同じ値を引く。載せ替える前は、パネルを作る間はスレッドごとの値で、開いた後はポップアップの根ごとの表で渡していた。メニューバーの場面（`menubar`）のフレームの割り当ては、載せ替えの前後で変わらない（メニューの間を動くフレームは 0 バイト、切り替えるフレームは 36,264 バイト。`docs/benchmarks/rc1-context.md`）
-- **テストとウィンドウ:** テスト用の入口は足さない。テストは、アプリと同じ書き方で根の関数を包む（`HeadlessApp.StartAsync(() => Theme.Provide(sig, () => …))`）。ウィンドウは、根でロケールを置く（行 LC1。§4.11「配り方」）。値がシグナルの鍵（上の「値が無い時」）を根で置く所は、デスクトップとヘッドレスの両方の根（`src/XylemUI.Desktop/DesktopWindow.cs` 224〜259 行目と `src/XylemUI.Testing/HeadlessApp.cs` 722〜757 行目の `Mount`）であり、テストはアプリと同じ値を引く。ウィンドウが置くには、鍵と値の型が `XylemUI.Desktop` と `XylemUI.Testing` から見える層に要る。ロケールは Core の型である。テーマの鍵と値の型をどの層に置くかは、テーマの行で決める（PR #839 のレビュー）。テーマは、テーマの行で置く
+- **テストとウィンドウ:** テスト用の入口は足さない。テストは、アプリと同じ書き方で根の関数を包む（`HeadlessApp.StartAsync(() => FluentTheme.Current.Provide(sig, () => …))`）。ウィンドウは、根でロケールと OS の見た目を置く（行 LC1 と TH1。§4.11「配り方」、§13.2「OS の見た目（Core）」）。値がシグナルの鍵（上の「値が無い時」）を根で置く所は、デスクトップとヘッドレスの両方の根（`src/XylemUI.Desktop/DesktopWindow.cs` 224〜259 行目と `src/XylemUI.Testing/HeadlessApp.cs` 722〜757 行目の `Mount`）であり、テストはアプリと同じ値を引く。ウィンドウが置くには、鍵と値の型が `XylemUI.Desktop` と `XylemUI.Testing` から見える層に要る。ロケールと OS の見た目（`SystemAppearance`）は Core の型である。テーマの鍵と値の型（`FluentTheme`）は Theme.Fluent に置き、ウィンドウは、Source Generator がモジュール初期化子で登録した Theme.Fluent の根の包みを通して置く（行 TH1、§13.2「テーマの鍵」。層を決めるのは行 TH1 だと PR #839 のレビューで決め、Issue #879 の Grill でオーナーが決定）
 
 **ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
@@ -6042,7 +6042,185 @@ public static Element Label(Element content, Element target);              // co
 
 ### 13.2 XylemUI.Theme.Fluent
 
-**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。モーションのトークンは、8 つの長さ（`durationUltraFast` 50 ms 〜 `durationUltraSlow` 500 ms）と 9 つの 3 次ベジェのカーブ（`curveAccelerate*`・`curveDecelerate*`・`curveEasyEase*`・`curveLinear`）で、Core の `Curve` と `TimeSpan` の定数として持つ（§2.14「カーブ」）。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持ち、テーマ（ライト/ダーク/ハイコントラスト）は、テーマの鍵（`Context<IReadOnlySignal<Theme>>`、既定値を持つ）の `Provide` で木を包んで `IReadOnlySignal<Theme>` を置き、その Signal を更新して切り替える（§2.13「Reactive Context」）。
+**目標:** Microsoft の **Fluent 2 のデザイントークン**（色・角丸・余白・タイポグラフィ・モーション・エレベーション）に準拠する。モーションのトークンは、8 つの長さ（`durationUltraFast` 50 ms 〜 `durationUltraSlow` 500 ms）と 9 つの 3 次ベジェのカーブ（`curveAccelerate*`・`curveDecelerate*`・`curveEasyEase*`・`curveLinear`）で、Core の `Curve` と `TimeSpan` の定数として持つ（§2.14「カーブ」）。WinUI 3 とピクセル単位で同一の見た目は約束しない。**全OSで同じ見た目**にし、OS ごとにネイティブ風へ切り替えることはしない。トークンは C# の静的な値として持つ。テーマ（ライト・ダーク・ハイコントラスト）の値の形、鍵、切り替え方、部品がテーマに付いていく形は、下の「テーマの土台」に書く。テーマの鍵は既定値を持たない（§2.13「値が無い時」）。この節の前の版は「既定値を持つ」と書き、§2.13 と食い違っていた（行 TH1 で直した。Issue #868）。
+
+**テーマの土台（行 TH1。行は B1・B2 の Grill の 1 巡目で立てた、Issue #860。形は Grill の 4 巡目と 5 巡目、Issue #868・#872 と、設計の Grill、Issue #879 でオーナーが決定）:** 部品の行 B1〜B12 が、同じ形でテーマの見た目を被せるための土台である。決まったことは次のとおりで、下の各項に、どの Issue で決めたかを書く。
+
+- テーマの値は、1 つの不変のオブジェクトを丸ごと差し替える。密度とアクセントの色も、その欄である（Issue #868）
+- OS の見た目（明暗、ハイコントラスト、アクセントの色）は、Core の型と鍵として、ウィンドウが根で置く。行 LC1 のロケールと同じ形である（Issue #868）
+- 部品は、部品ごとに Effect を 1 つ持ってテーマの変更に付いていく（Issue #872）
+- §13.2 の「テーマの鍵は既定値を持つ」を、§2.13 の「値がシグナルの鍵は既定値を持たない」に合わせて直す（Issue #868。上の段落で直した）
+- 型と鍵の置き場所、根で置く方法、Windows の読み方、ハイコントラストとアクセントの色と密度、トークンの元、部品の関数の形、Core に足す API、根の箱と題名の棒、部分木の明暗、切り替えの動き、密度の切り替えの割り当て（Issue #879 の Grill でオーナーが決定。それぞれ下の項）
+
+**行 TH1 の手順:**
+
+1. **スパイク:** `UISettings` を、WinRT の投影を使わずに NativeAOT で作って読めるか（`RoActivateInstance` と手で書いた vtable）、Windows 10 1809（§1 の最も古い Windows）で `GetColorValue` の `Foreground`・`Accent`・`AccentLight1〜3`・`AccentDark1〜3` が返るかを確かめる。あわせて、明暗とハイコントラストを切り替えた時に届くウィンドウのメッセージを実機で確かめる。OS のアクセントの色から Fluent のブランドの 16 段を作る規則（下の「アクセントの色」）も、このスパイクで読んだ 7 つの色で決める。結果を `docs/benchmarks/` に記録し、変わる所があれば設計を直してから実装に入る（Issue #879 の Grill でオーナーが決定）
+2. **実装:** Core（`SystemAppearance`、`WindowAppearance`、根の包みの登録、`BorderPaint`）、Platform.Windows（OS の見た目の読み方、題名の棒）、Generators（根の包みの登録を書く）、Theme.Fluent（トークンの生成、`FluentTheme`、`FluentRoot`、`ProvideVariant`）、計測の場面
+3. **計測:** 下の「採らなかった形」の場面を本物の部品で測り直す
+
+**テーマの値（Issue #868。置き場所と名前は Issue #879 の Grill でオーナーが決定）:**
+
+```csharp
+// XylemUI.Theme.Fluent
+public sealed record FluentTheme
+{
+    public ThemeVariant Variant { get; }                  // Create が決める
+    public Density Density { get; }                       // Create が決める
+    public Color Accent { get; }                          // Create が決める
+    public required FluentColors Colors { get; init; }    // 中立の色、ブランドの色、状態の色、枠線の色（別名のトークン）
+    public required FluentSpacing Spacing { get; init; }  // 余白と隙間。密度で変わる
+    public required FluentSizes Sizes { get; init; }      // 部品の高さと線の太さ。密度で変わる
+    public required FluentRadii Radii { get; init; }      // 角丸
+    public required FluentTypography Typography { get; init; }   // 文字の組（body1・caption1・title1 など）
+    public required FluentShadows Shadows { get; init; }  // エレベーションの影。明暗で変わる
+
+    public static Context<IReadOnlySignal<FluentTheme>> Current { get; }   // テーマの鍵。既定値なし
+    public static FluentTheme Create(ThemeVariant variant, Density density, Color accent, HighContrastColors? contrast = null);
+    public static Element ProvideVariant(ThemeVariant variant, Func<Element> body);   // 下の「一部だけ別のテーマ」
+}
+
+public enum ThemeVariant { Light, Dark, HighContrast }
+public enum Density { Standard, Compact }
+```
+
+- **1 つのオブジェクト:** 切り替えは、新しい `FluentTheme` を鍵のシグナルに入れることである。トークンごとのシグナルは持たない（下の「採らなかった形」の A）。比べた 3 つでは、Flutter の `ThemeData` が 1 つの不変のオブジェクトで、密度と色の組を欄に持つ（Flutter 3.47.8 の `packages/flutter/lib/src/material/theme_data.dart` 1184 行目の `visualDensity`、1201 行目の `colorScheme`）。zed のテーマも 1 つのオブジェクトで、丸ごと差し替える（zed v1.25.3 の `crates/theme/src/theme.rs` 322〜337 行目の `GlobalTheme` と `update_theme`）。Avalonia は、明暗ごとの資源の辞書を名前で引き、部品の設定ごとに `DynamicResource` で結ぶ（Avalonia 12.1.4 の `src/Avalonia.Themes.Fluent/Controls/Button.xaml` 14〜19 行目）。密度は `FluentTheme` の `DensityStyle`（Normal と Compact）で、Compact の辞書を先に引く（`src/Avalonia.Themes.Fluent/FluentTheme.xaml.cs` 10〜13・72〜77 行目）
+- **作り方:** 明暗、密度、アクセントの色は `Create` でしか決めない。この 3 つから、色の段階、余白、部品の高さが決まるので、`with` で 1 つだけを書き換えると、欄の間が食い違う。アプリが色や角丸を変える時は、トークンの組を `with` で差し替える（Flutter の `ThemeData.copyWith` と同じ使い方。`theme_data.dart` 1484 行目）
+- **密度（Issue #879 の Grill でオーナーが決定）:** `Standard` と `Compact` の 2 つで、既定は `Standard` である。Avalonia の Fluent と同じ数である。Flutter はデスクトップで既定を compact にし（`theme_data.dart` 3252〜3256 行目）、zed は 3 つ（`crates/theme/src/ui_density.rs` 21〜32 行目、間隔の比は 0.75・1.0・1.25、37〜42 行目）を持つ。Fluent 2 のトークンのパッケージは密度を持たないので（下の「トークンの元」）、`Compact` の余白と部品の高さは Theme.Fluent が決める
+- **アプリのトークン:** アプリが自分のトークンを足す時は、自分の鍵（`Context<IReadOnlySignal<MyTokens>>`）を作って置く。鍵はオブジェクトなので（§2.13「鍵は文脈のオブジェクト」）、型で引く表は要らない
+- **名前:** 型を `Theme` でなく `FluentTheme` にするのは、`XylemUI.*` の名前空間の中では `Theme` が名前空間 `XylemUI.Theme` に当たるからである（`Text` と同じ CS0118、§2.13「名前空間 `XylemUI.*` の中から `Text` を呼ぶ」）。型と鍵は Theme.Fluent に置く。Core はデザインを持たない（§2.9.1）
+
+**トークンの元（Issue #879 の Grill でオーナーが決定）:** microsoft/fluentui の `packages/tokens`（`@fluentui/tokens` 1.0.0-alpha.24、MIT。リポジトリの `LICENSE`）を、コミット `1f59fc2121f828b57713915f6aa035b4e77c7d47`（2026-10-30。§2.14 のカーブと同じコミット）に固定する。`packages/tokens` は、このコミットの後、2026-11-12 の `f9720c35` まで変わっていない（`git diff` で確かめた）。下の行は、どれも `packages/tokens/src/` からの道のりで、このコミットで読んだ。道具（`tools/FluentTokensTool`、`tools/FluentIconsTool` と同じ扱い、§5.0.4）が TypeScript の値の表を読み、C# の静的な値を生成して、生成したものをリポジトリに置く。
+
+| 入るもの | ファイルと行 | `FluentTheme` のどこへ |
+| --- | --- | --- |
+| 中立の色の段（`grey` の 2〜99） | `global/colors.ts` 6〜57 行目 | 別名のトークンが引く。直には欄にしない |
+| ブランドの色の 16 段（`brandWeb` の 10〜160） | `global/brandColors.ts` 3〜20 行目 | アクセントの色が無い時の既定の段 |
+| ハイコントラストの 8 色（`hcCanvas` など） | `global/colors.ts` 128〜142 行目 | OS の 8 色に置き換える（下の「OS の見た目からテーマを選ぶ」） |
+| 明の別名の色（184 個、`colorNeutralForeground1` など） | `alias/lightColor.ts` 7〜192 行目（`generateColorTokens(brand)`） | `Colors`（`Light`） |
+| 暗の別名の色（184 個） | `alias/darkColor.ts` 7〜192 行目 | `Colors`（`Dark`） |
+| ハイコントラストの別名の色（184 個） | `alias/highContrastColor.ts` 17〜202 行目 | `Colors`（`HighContrast`） |
+| 状態の色（成功・警告・危険）と色の組 | `alias/lightColorPalette.ts`・`darkColorPalette.ts`・`highContrastColorPalette.ts`（状態の対応は `statusColorMapping.ts`） | `Colors` の状態の欄 |
+| 余白（`spacingHorizontal*`・`spacingVertical*`、0〜32 px の 11 段） | `global/spacings.ts` 4〜44 行目 | `Spacing`（`Standard`） |
+| 線の太さ（1〜4 px） | `global/strokeWidths.ts` 3〜8 行目 | `Sizes` |
+| 角丸（0〜40 px と円） | `global/borderRadius.ts` 3〜15 行目 | `Radii` |
+| 文字の大きさ・行の高さ・太さ | `global/fonts.ts` 3〜36 行目 | `Typography` が引く |
+| 文字の組（`body1` から `display` までの 17 個） | `global/typographyStyles.ts` 7〜110 行目 | `Typography` |
+| 影（`shadow2`〜`shadow64` とブランドの影） | `utils/shadows.ts` 6〜15 行目。色は別名の `colorNeutralShadowAmbient`・`colorNeutralShadowKey`（`alias/lightColor.ts` 184〜185 行目など） | `Shadows` |
+| 組み立て方 | `utils/createLightTheme.ts`・`createDarkTheme.ts`・`createHighContrastTheme.ts` 11〜33 行目 | `Create` が同じ順に組む |
+
+- **別名の色の作り方:** 明と暗の別名の色は、ブランドの段（`brand[80]` など）と中立の段を引く関数である（`alias/lightColor.ts` 7 行目の `generateColorTokens(brand)`、たとえば 124 行目の `colorBrandBackground: brand[80]`）。道具は、この関数を「どの段を引くか」の表として C# に写し、`Create` が、アクセントの色から作った 16 段に当てて色を決める。表は道具が作るので、手で写さない
+- **ハイコントラスト:** 別名の色は 8 つの色だけを引く（`alias/highContrastColor.ts` 4〜14 行目の import）。行の末尾のコメントが CSS のシステムの色の名前を持つ（`Canvas`・`CanvasText`・`Highlight`・`HighlightText`・`ButtonFace`・`ButtonText`・`GrayText`・`LinkText`。たとえば 41・43・77・134 行目）。道具はこの名前で、OS の 8 色（Windows の `COLOR_WINDOW`・`COLOR_WINDOWTEXT`・`COLOR_HIGHLIGHT`・`COLOR_HIGHLIGHTTEXT`・`COLOR_3DFACE`・`COLOR_BTNTEXT`・`COLOR_GRAYTEXT`・`COLOR_HOTLIGHT`）に当てる
+- **使わないもの:** 文字の書体（`global/fonts.ts` 38〜44 行目の `fontFamilyBase` は Web の並び）は使わず、§13.2「フォントとアイコン」の OS のフォントにする。モーション（`global/durations.ts`・`curves.ts`）は明暗で変わらないので、テーマの値に入れず静的な値で持つ（§2.14「カーブ」）。Teams と Office の段（`brandTeams` など）と、Teams 用の別名（`alias/teamsDarkColor.ts`）は使わない
+
+**テーマの鍵（Issue #868。根で置く方法は Issue #879 の Grill でオーナーが決定）:** `FluentTheme.Current`（`Context<IReadOnlySignal<FluentTheme>>`）は、既定値を持たない。置かれていない所で `Use` を呼ぶと、`InvalidOperationException` を投げる（§2.13「値が無い時」）。
+
+- **根で置くもの:** `XylemUI.Desktop` と `XylemUI.Testing` は Theme.Fluent を参照しない（§2.9.1 の依存の向き）。そこで、既定のキーの行（§7「既定のキーと動作」の「既定の行を足す所」）と同じく、Source Generator がアプリのモジュール初期化子で、参照するテーマのパッケージの「根の包み」を Core に登録する。Theme.Fluent は `[assembly: WindowRootWrapper(typeof(FluentRoot))]` で自分の包みを示し、生成したコードが `WindowRoot.RegisterWrapper(FluentRoot.Wrap)` を呼ぶ。ウィンドウ（デスクトップとヘッドレスの両方の `Mount`）は、ロケールと OS の見た目を置いた内側で、登録された包みを依存の順に重ねてから、アプリの根の関数を呼ぶ。包みが 2 つあれば、後に依存するパッケージのものが内側になる。アプリが手で包む形は、包み忘れが実行時まで見つからないので採らない（既定のキーの行と同じ理由）。テストはアプリと同じ値を引く（§2.13「テストとウィンドウ」）
+- **`FluentRoot.Wrap` がすること:** ウィンドウの OS の見た目のシグナルを `SystemAppearance.Current.Use()` で引き、それから `FluentTheme` を作る `Computed` を、テーマの鍵に置く（下の「OS の見た目からテーマを選ぶ」）
+- **根の箱（Issue #879 の Grill でオーナーが決定）:** `FluentRoot.Wrap` は、アプリの根の要素を窓いっぱいの箱で包み、その箱の背景と文字の色を、部品と同じ Effect 1 つでテーマに合わせる。ホストが木の前に塗る色（§2.13「木の後ろの色は白」）は、この箱の背景の色を使う。Mica を使う窓（上の「Mica と Acrylic」）では、箱の背景を塗らない
+- **題名の棒（Issue #879 の Grill でオーナーが決定）:** Windows では、テーマが `Dark` の窓に `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE, TRUE)` を、`Light` の窓に `FALSE` を設定する（learn.microsoft.com の「Support Dark and Light themes in Win32 apps」。属性の値は 20）。ハイコントラストでは、`COLOR_WINDOW` が暗ければ `TRUE` にする。`FluentRoot.Wrap` の Effect が、Core の窓の口（ホストが Platform に渡す）に明暗を知らせる
+- **アプリが選ぶ時:** 明暗を OS によらず決める、密度やアクセントの色を変える、自分のトークンを使う、自分のハイコントラストのテーマを使う時は、アプリが自分のシグナルを作り、根の関数を `FluentTheme.Current.Provide(自分のシグナル, …)` で包む。近い方が勝つ（§2.13）。ウィンドウの持つシグナルに書き込む口は足さない。ロケールと同じく、OS の変更とアプリの書き込みのどちらが勝つかを決めることになるからである（§4.11「差し替え」）
+
+**OS の見た目（Core。Issue #868。型と鍵の形は Issue #879 の Grill でオーナーが決定）:**
+
+```csharp
+// XylemUI.Core
+public readonly record struct SystemAppearance(
+    ColorScheme Scheme,              // 明か暗か
+    bool HighContrast,               // ハイコントラストが on か
+    Color? Accent,                   // OS のアクセントの色。読めなければ null
+    HighContrastColors? Contrast)    // ハイコントラストが on の時の OS の色。off なら null
+{
+    public static Context<IReadOnlySignal<SystemAppearance>> Current { get; }   // 既定値なし。ウィンドウが根で置く
+}
+
+public enum ColorScheme { Light, Dark }
+
+// Windows 10 と 11 が対応する 8 つのシステムの色（GetSysColor の文書の「Windows 10/11 system colors」）
+public readonly record struct HighContrastColors(
+    Color Window, Color WindowText, Color Hotlight, Color GrayText,
+    Color Highlight, Color HighlightText, Color ButtonFace, Color ButtonText);
+```
+
+- **置き方:** 行 LC1 の `WindowLocale`（`src/XylemUI.Core/Localization/WindowLocale.cs`）と同じ形の internal の `WindowAppearance` を Core に置く。ホストがウィンドウごとに 1 つ作り、根の関数を `SystemAppearance.Current.Provide` で包み、OS が変わったら `Update` で入れ直す。シグナルは、値が変わった時だけ知らせる
+- **Windows で読むもの（Issue #879 の Grill でオーナーが決定）:** 明暗は、WinRT の `UISettings.GetColorValue(UIColorType.Foreground)` の色が明るければ暗にする。明るさの式は Microsoft の文書のもの（`((5 * G) + (2 * R) + B) > (8 * 128)`。learn.microsoft.com の「Support Dark and Light themes in Win32 apps」）である。アクセントの色は `UIColorType.Accent` で読む（Avalonia も同じ、`src/Windows/Avalonia.Win32/Win32PlatformSettings.cs` 50〜51 行目）。ハイコントラストは `SystemParametersInfo(SPI_GETHIGHCONTRAST)` の `HIGHCONTRAST.dwFlags` の `HCF_HIGHCONTRASTON`（learn.microsoft.com の「HIGHCONTRASTW」）で読み、on の時は 8 つの色を `GetSysColor` で読む（`COLOR_WINDOW`・`COLOR_WINDOWTEXT`・`COLOR_HOTLIGHT`・`COLOR_GRAYTEXT`・`COLOR_HIGHLIGHT`・`COLOR_HIGHLIGHTTEXT`・`COLOR_3DFACE`・`COLOR_BTNTEXT`。learn.microsoft.com の「GetSysColor」は、Windows 10 以降ではほかの番号に対応しないと書く）。ハイコントラストの時の明暗は、`COLOR_WINDOWTEXT` が明るければ暗にする
+- **WinRT の呼び方:** `UISettings` は、WinRT の投影（CsWinRT）を使わずに、`RoActivateInstance` と手で書いた vtable で呼ぶ（`.cursor/rules/interop.mdc`。Avalonia も自前の `NativeWinRTMethods.CreateInstance` で作る、同じファイルの 50 行目）。NativeAOT と Windows 10 1809 で動くかは、上の「行 TH1 の手順」の 1 のスパイクで確かめる。作れない環境では、明、アクセントの色なしとして読む（§11.2）
+- **読み直す時（Issue #879 の Grill でオーナーが決定）:** ほかの設定と同じく、`WM_SETTINGCHANGE` のたびに読み直す。`WM_SYSCOLORCHANGE` でも読み直す。Microsoft の文書の例は `UISettings.ColorValuesChanged` で知るが、明暗とハイコントラストを切り替えた時にどのウィンドウのメッセージが届くかは書いていない。手順の 1 のスパイクで実機で確かめ、届かなければ設計を直す
+- **macOS と Linux:** OS の見た目を読むのは、行 D6（Windows と macOS の OS 統合の Grill）と、その後の OS の行である。行 TH1 は Windows だけを読む（Issue #879 の Grill でオーナーが決定）。読まない OS のホストは、明、ハイコントラストなし、アクセントの色なしを置く
+- **ヘッドレス:** OS を読まず、`HeadlessOptions.SystemAppearance`（既定は明、ハイコントラストなし、アクセントの色なし）を使う。テストは `HeadlessApp.SetSystemAppearance` で変える（`SetSystemLocales` と同じ形）
+- **比べた 3 つ:** どれも、OS の見た目をデザインシステムより下の層に置く。Flutter は `MediaQueryData` の `platformBrightness` と `highContrast`（`packages/flutter/lib/src/widgets/media_query.dart` 481・652 行目）で、`highContrast` は iOS と Android でしか更新しないと書く（650〜651 行目）。zed は `SystemAppearance` をアプリに 1 つ持ち（`crates/theme/src/theme.rs` 159〜161・196〜201 行目）、ウィンドウの見た目が変わると入れ直してテーマを読み直す（`crates/workspace/src/workspace.rs` 2062〜2068 行目）。GPUI の `WindowAppearance` は明暗の 4 つだけで、ハイコントラストを持たない（`crates/gpui/src/platform.rs` 2740〜2761 行目）。Avalonia は `PlatformColorValues`（`src/Avalonia.Base/Platform/PlatformColorValues.cs` 26〜44 行目）で、Windows のハイコントラストを、配色の名前で明か暗に写すだけで、OS の色を持たない（`Win32PlatformSettings.cs` 54〜71 行目）。XylemUI は、要件 5（ハイコントラスト対応、§1）のために、OS の色を値に持つ
+
+**OS の見た目からテーマを選ぶ（Issue #879 の Grill でオーナーが決定）:** `FluentRoot.Wrap` の `Computed` は、OS の見た目から次のように選ぶ。
+
+- `HighContrast` が on なら、`ThemeVariant.HighContrast` にする。色は、トークンのハイコントラストの別名の色を、OS の 8 つの色に当てて作る（上の「トークンの元」の「ハイコントラスト」）。利用者の選んだ色を使うためである。アプリは、自分のハイコントラストのテーマのシグナルで包めば、それを使える
+- そうでなければ、`Scheme` が暗なら `Dark`、明なら `Light` にする
+- **アクセントの色:** OS のアクセントの色を使い、無ければ Fluent の既定のブランドの段（`brandWeb`）を使う。OS の色から 16 段を作る規則は、手順の 1 のスパイクで、`UISettings` の 7 つのアクセントの色（`Accent`・`AccentLight1〜3`・`AccentDark1〜3`）を読んでから決め、この節に書く
+- Flutter の `MaterialApp` も、OS の明暗とハイコントラストからテーマを選ぶ（`packages/flutter/lib/src/material/app.dart` 995〜1011 行目）。Flutter はハイコントラストのテーマをアプリが渡す形で、XylemUI は OS の色から作る
+- **切り替えの動き（Issue #879 の Grill でオーナーが決定）:** テーマの切り替えは、その場で変える。動きを付けない。Flutter は `MaterialApp` がテーマを動かして変える（`AnimatedTheme`）。動かす形が要る時は、別の行を立てて Grill から始める
+
+**部品がテーマに付いていく形（Issue #872。部品の関数の形は Issue #879 の Grill でオーナーが決定）:** テーマの部品は、Theme.Fluent の静的なクラス `Fluent` の関数で、`XylemUI.Primitives` の見た目のない部品を作り、部品ごとの見た目の record を引数で受け、部品ごとに Effect を 1 つ作る。Effect はテーマのシグナルを読み、部品の見た目をすべて木の setter で書く。
+
+```csharp
+// XylemUI.Theme.Fluent（形を示す抜粋。ButtonAppearance・ButtonLooks・ButtonStyle の欄は行 B1 で決める）
+public static class Fluent
+{
+    public static Element Button(Element content, Action onClick, ButtonAppearance appearance = ButtonAppearance.Standard, ButtonStyle? style = null)
+    {
+        Element button = Primitive.Button(content, onClick);
+        IReadOnlySignal<FluentTheme> theme = FluentTheme.Current.Use();   // 作る時に 1 度だけ引く（§2.13「引ける所」）
+        ButtonLooks? applied = null;
+        _ = Effect.Create(() =>
+        {
+            ButtonLooks looks = ButtonLooks.Of(theme.Get(), appearance);   // テーマごとに 1 度作った見た目を返す。割り当てない
+            _ = button
+                .Background(style?.Background ?? looks.Background)        // アプリの record の値のある欄が勝つ
+                .BorderPaint(style?.Border ?? looks.Border)
+                .Foreground(style?.Foreground ?? looks.Foreground)
+                .CornerRadius(style?.Radius ?? looks.Radius)
+                .Hovered(style?.Hovered ?? looks.Hovered)
+                .Pressed(style?.Pressed ?? looks.Pressed)
+                .Disabled(style?.Disabled ?? looks.Disabled);
+            if (applied is null || applied.Padding != looks.Padding)
+            {
+                _ = button.Padding(looks.Padding.Horizontal, looks.Padding.Vertical);   // レイアウトの値は、変わった時だけ書く
+            }
+
+            applied = looks;
+        });
+        return button;
+    }
+}
+```
+
+- **クラスの名前:** `Fluent.Button(...)` と、クラスの名前を付けて呼ぶ。`Primitive` と同じ名前の関数（`Button` など）を `using static` で並べると、C# は、省いた引数の無い方（`Primitive.Button(content, onClick)`）を黙って選ぶ（省略できる引数を埋める候補より、埋めない候補が良いとする規則）。そのため、`using static XylemUI.Theme.Fluent.Fluent;` は勧めず、例とテンプレートは `Fluent.` を付けて書く。`XylemUI.Theme.*` の名前空間の中では `Fluent` が名前空間 `XylemUI.Theme.Fluent` に当たるので、Theme.Fluent の外の `XylemUI.Theme.*` のコードは型の名前を名前空間から書く
+- **Effect は部品に 1 つ:** 見た目の欄がいくつあっても、Effect は 1 つである。Effect は今の Scope が持ち、部品を消すと一緒に消える（§2.3）。最初の実行で見た目を書くので、作る時の書き方と切り替えの書き方は同じコードである
+- **setter:** 塗りの setter（背景、枠の色、文字の色、角丸、疑似状態の見た目）は、同じ値なら何もせず、割り当てない（§2.13「Signal とノード」）。だから、明暗の切り替えは Paint の変更だけで、レイアウトは走らない。レイアウトの値（余白、高さ）は、前のテーマと違う時だけ書く。密度を変えた時だけレイアウトが走る。部品の種類ごとの見た目（`ButtonLooks` など）は、テーマの値ごとに 1 度だけ作って持ち、Effect の中では作らない。切り替えで割り当てないためである（スパイクの場面も同じ形で 0 バイトだった）
+- **密度の切り替えの割り当て（Issue #879 の Grill でオーナーが決定）:** `Padding` はレイアウトのスタイルを書き換える関数を `Layout` に渡すので（`src/XylemUI.Core/Elements/ElementExtensions.cs` 50〜55 行目）、密度を変えると部品ごとに割り当てる。定常のフレームの経路ではないので許し、密度の切り替え 1 回のバイトを計測の記録に書く
+- **足す Core の API（Issue #879 の Grill でオーナーが決定）:** 枠の色だけを書く `BorderPaint(this Element, Paint)`（`ChangeKind.Color`）を足す。今の `Border(width, paint)` は幅もレイアウトに書くので、切り替えのたびに書くとレイアウトの印が付く
+- **`Bind` との関係:** §2.13「Signal とノード」は `NodeProperty<T>` の `Bind` を、シグナルからノードへ書く経路とする。テーマの部品は、`Bind` を見た目ごとに使わず、1 つの Effect の中で setter を呼ぶ。`Bind` を見た目ごとに使う形は、下の A で、測って採らなかった
+- **疑似状態の見た目:** 疑似状態の見た目（`.Hovered()` など）に、シグナルを受ける多重定義は足さない。部品の Effect が `PaintStyle` を書き直すからである（行 G1 にあった「擬似状態の見た目に Signal を受ける多重定義が要るか」（PR #356 のレビュー）に、行 TH1 が答えた。Issue #879 の Grill でオーナーが決定）。Checked などの状態は行 B1、親の状態で子の見た目を変える形（`group_hover`）は行 G1 のまま（同じ決定）
+- **アプリが重ねた見た目:** アプリが部品の見た目を変える時は、部品の関数の引数（部品ごとの見た目の record。値のある欄が、テーマの値より勝つ）で渡す。部品の後にメソッドチェーンで付けた見た目は、次のテーマの切り替えで部品の Effect に上書きされる。Flutter のボタンも、部品の引数、部品の種類のテーマ、既定の順に引く（`packages/flutter/lib/src/material/button_style_button.dart` 382〜387 行目）。部品ごとの record の欄は、部品の行 B1〜B12 で決める
+- **比べた 3 つ:** Flutter は、テーマが変わると `Theme.of` を引いた要素だけを作り直し、`State` は残す（`packages/flutter/lib/src/material/theme.dart` 232 行目の `updateShouldNotify`）。zed の部品は、描くたびにテーマから色を引く（`crates/ui/src/components/button/button_like.rs` 200〜229 行目）。どちらも部品の単位で付いていく。XylemUI の部品の関数は 1 度しか走らないので（§2.1）、その単位を Effect 1 つにした。Avalonia は、設定ごとに資源を結ぶ（上の `Button.xaml` 14〜19・48〜52 行目）。これは A に近い
+
+**一部だけ別のテーマ（Issue #879 の Grill でオーナーが決定）:** `FluentTheme.Current.Provide(別のシグナル, body)` で包んだ所だけが、別のテーマになる（§2.13）。明るい画面の中の暗いカードのように、今のテーマの密度とアクセントの色のまま明暗だけを変える時は、`FluentTheme.ProvideVariant(ThemeVariant.Dark, body)` を使う。この関数は、今のテーマのシグナルを引き、明暗だけを変えた `Computed` を置く。メニューやダイアログの中身は、宣言した所のテーマを引くので（§2.13「ポップアップの中身は、宣言した場所の値を引く」）、足す仕組みは無い。Avalonia の `ThemeVariantScope`（`src/Avalonia.Controls/ThemeVariantScope.cs` 8・15〜28 行目）に当たる。
+
+**採らなかった形（Issue #872。測った値は `docs/benchmarks/th1-theme-follow.md`）:** 1,000 個のボタンを 4 つの形で作り、NativeAOT で測った。測った時の CPU の負荷は 77〜100% で、時間の絶対値は静かな PC より大きい。形の間の比と、数・バイトを読む。採った形（B、部品ごとに Effect 1 つ）は、切り替え 1 回が 1.4 ms、作る時の割り当てがボタン 1 つに 2.6 KB、生きている Scope が 1,002 だった。
+
+- **A、見た目ごとのシグナル:** 見た目ごとに、テーマの `Computed` を `Bind` する（ボタン 1 つに Computed 8 個と Effect 8 個）。切り替え 1 回は 3.5 ms、作る時間は 11.0 ms（B は 3.6 ms）、作る時の割り当てはボタン 1 つに 8.0 KB、生きている Scope は 8,002 だった。作る時間は B の 3.0 倍、作る時の割り当ては 3.1 倍、切り替えは 2.6 倍である
+- **C、描く時にトークンを引く:** ノードの塗りにトークンの番号を持ち、描く段で今のテーマの表から引く（Avalonia の `DynamicResource` や CSS の変数に近い）。描く段（`DrawNode`）のすべての塗りに、トークンかどうかの確認が入り、テーマを使わない木もその費用を払うので採らない（`.cursor/rules/perf.mdc`）。木を 1 度歩いて書き直す近い形（C'）は、切り替え 1 回が 1.2 ms で、B より 0.18 ms 短く、メモリはボタン 1 つに 320 バイト少なかった
+- **D、部分木を作り直す:** 切り替え 1 回は 12.5 ms で、3.6 MB を割り当てた。フォーカス、欄の文字、スクロールの位置などの状態も失う
+- 3 つの形（A・B・C'）の切り替えは 0 バイトで、ホバーのフレームは 4 つとも 0 バイトだった。ホバーのフレームの時間に、形の間の差は見えなかった
+- 計測の記録と場面（`benchmarks/XylemUI.E2E/ThemeFollowCost.cs`、`theme-follow`）は、ブランチ `spike/th1-theme-follow` にある。行 TH1 の実装の PR で main に入れ、本物の Theme.Fluent の部品で測り直して、記録を書き足す（上の「行 TH1 の手順」の 3）
+
+**確かめ方（行 TH1 の実装）:**
+
+- `XylemUI.Core.Tests`: `SystemAppearance.Current` はウィンドウの外の `Use` で投げる。`WindowAppearance.Update` は、値が変わった時だけシグナルを変える。`HeadlessApp.SetSystemAppearance` で変えると、読んでいる所だけが走り直す。登録した根の包みが、ロケールと OS の見た目の内側で、依存の順に重なる。`BorderPaint` は Color の変更だけを付け、同じ値では何もしない
+- `XylemUI.Desktop.Tests`（Windows）: 読んだ値から `SystemAppearance` を作る写し（明るさの式、ハイコントラストの時の明暗、8 つの色）。`UISettings` が作れない時は明として読む。テーマの明暗で題名の棒の属性を設定すること
+- 道具: 固定したコミットのトークンから生成した C# が、リポジトリに置いたものと同じであること（アイコンの道具と同じ確かめ方）。明・暗・ハイコントラストの別名の色が 184 個ずつ揃うこと
+- `XylemUI.Theme.Fluent.Tests`: `Create` の明暗・密度・アクセントの色の組み合わせ。ハイコントラストの色のトークンが OS の 8 つの色から来ること。根の箱の背景と文字の色がテーマに付いていくこと。部品ごとの record の値のある欄がテーマの値より勝ち、切り替えの後も勝つこと。アプリが包まなくても、ヘッドレスのアプリの中でテーマの鍵が引けること（生成した登録による）。近い `Provide` が勝つこと、`ProvideVariant`、ポップアップの中身が宣言した所のテーマを引くこと。OS の見た目を変えると、すべての部品の見た目が新しいテーマのものになること。切り替えの前後で、フォーカス、欄の文字、スクロールの位置が変わらないこと。明暗の切り替えでレイアウトが走らず、密度の切り替えで走ること。部品 1 つにつき Effect が 1 つであること（`Scope.LiveCount`）
+- 割り当て: 1,000 個のボタンの明暗の切り替えは 0 バイト。ホバーのフレームは 0 バイト（§11.3 の Zero-Alloc の場面）
+- golden: ボタンを明・暗・ハイコントラストの 3 枚（WARP）
+- 費用（`XylemUI.E2E`）: 上の `theme-follow` の場面を本物の部品で流し、作る時間と割り当て、生きている Scope、明暗の切り替え、密度の切り替え（時間とバイト）、ホバーのフレームを記録する
+- 実機: 手順の 1 のスパイクの結果（NativeAOT と 1809 の `UISettings`、届いたメッセージ、7 つのアクセントの色）を記録する。実装では、Windows で明暗とハイコントラストを切り替え、読んだ値、題名の棒、画面の変化を実装の PR に書く
 
 **Mica と Acrylic:**
 - **v1 で入れるもの**: ウィンドウ背景の **Mica**（Mica のウィンドウは背景が不透明でないので、文字は ClearType でなくグレースケールで描く。§5.0.3「ClearType」）。DWM のシステムバックドロップ（Windows 11 22H2 以降）を使い、フレームワーク側ではぼかしの描画をしない。対応しない環境（古い Windows・macOS・Linux）ではテーマの単色にフォールバックする（§11.2）
