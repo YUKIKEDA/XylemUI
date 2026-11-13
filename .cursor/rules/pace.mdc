@@ -43,6 +43,17 @@ Within a class, work whose result can change how existing code is built (a spike
 
 A row of class 3 or 4 above (speed, memory, a figure to explain) writes on its Issue, before it starts, how many PRs it may take, and what is reported if the budget runs out before the target. When the next PR would pass the budget, ask the owner first, with what the extra work buys. R3 took about 35 Issues and PRs for one latency target; the target was met at PR #695, and the spike and the measurements after it were polish the owner did not choose (Issue #700).
 
+## No time with nothing running
+
+Work goes on in parallel by default, and no time passes with nothing running.
+
+- Rows whose files do not overlap are worked at the same time, each in its own worktree: the current row's implementation, the research for the next row's Grill, and a row that depends on neither. Drafts and research go to subagents; what they return is verified before it is used.
+- A push is not followed by a wait. CI is not watched: the design and the implementation are reviewed apart, and the tests a change reaches run locally before the push, so a red run is rare, and fixing one costs less than waiting for every green one. The checks are read when a report is written or when a later step needs them.
+- A turn does not end with "next comes X": X is started. The only stops are a decision that is the owner's and a risk that needs an order.
+- The owner's decisions are asked early and together, while the work that does not depend on them goes on. The owner can decide while the agent works; a question held until the work before it is done costs the owner the wait.
+
+In RC1 the agent opened PR #846, wrote that the Issue of LC1 came next, and did nothing for two hours until the owner asked; before that it had worked one row at a time and read each PR's checks before going on. The owner ordered the parallel way of working and that no second passes idle (2026-11-13, after PR #846).
+
 ## Long runs do not hold the working tree
 
 A benchmark, a NativeAOT publish, or a profile keeps the tree busy for minutes.
