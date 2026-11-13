@@ -528,6 +528,56 @@ Rejected:
   - OS から呼ばれる COM を source-generated COM（`[GeneratedComClass]`、`StrategyBasedComWrappers`）で書く（インターフェースの属性をリフレクションで読み、NativeAOT のリフレクションの実行時がリンクされて、実行ファイルが 0.43 MB 増えた。F1、Issue #150）
   - Windows の DPI 認識を、アプリのマニフェストだけで宣言する（GPUI。XylemUI はライブラリなので、アプリの .csproj の設定次第になる。`Win32Window` が最初のウィンドウの前に `SetProcessDpiAwarenessContext` を呼ぶ。W1 の Grill、Issue #231）
   - 表示リストが画素の座標を受け取り、倍率を掛けるのは作る側に任せる（倍率を掛ける場所が呼び出しごとに散る。§6.1.1 の「表示リストで画素に合わせる」と合わない。W1 の Grill）
+
+---
+
+## プラットフォームの契約
+
+Decision（行 PL1 の Grill の 5 巡目でオーナーが決定、Issue #872。設計書 §6.0）:
+  Core に、アプリの段（`IPlatformApp`）とウィンドウの段（`IPlatformWindow`）の 2 段の契約を置く。internal のまま `InternalsVisibleTo` で見せ、公開の境界は行 C0 で決める。
+  レンダラとフレームの時計は OS のホストの中で組にする。ループ（`Run`・`Quit`・`Wake`）はホストが持つ。
+  スケジューラの契約はウィンドウごと、Windows の実装はループごと。OS の設定はアプリの段の 1 つのオブジェクトで、文字の描き方だけウィンドウごと。
+  フォントの提供者は UI スレッドに 1 つ。契約はインターフェースと sealed の実装で、前後を測る。ホストはビルド時に RID で選ぶ。
+  `HeadlessApp` と本物の窓は、1 つの窓の核（`WindowCore`）を共有する。範囲は Windows が今持つ機能だけ。`UiDispatcher.Current` を Core に足す。
+  形（Issue #877 の Grill でオーナーが決定）: Windows のホストは `XylemUI.Platform.Windows` に置き、Rendering.D3D11 を参照する。ホストは属性で名乗り、アプリの Source Generator が登録する。Desktop とホストは `net10.0`。
+  クリップボードはアプリの段、IME と a11y は窓の段。ホストは sealed の `WindowCore` にデリゲートを結ぶ。OS の設定のイベントは 1 つ。2 つ目の `OpenWindow` は例外。
+  `HeadlessApp` は部品を `IPlatformWindow` にまとめる。`UiDispatcher.Current` は `IUiDispatcher` 型で（PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定。Issue #877 の `UiDispatcher` 型を改めた）、前の値に戻す。ホストの登録は `PlatformHostRegistry`、ホストが 2 つと `Register` の無い型は Generator の診断（XYLEM008・XYLEM009）。`Win32MessageLoop` は静的のまま。
+
+Reason:
+  `XylemUI.Desktop` が Windows の型を直に作り、macOS と Linux のホストを差し込む口が無い（行 P04 と P06 の調査）。
+  契約のメンバーの引数と戻り値には Core の internal の型がある。C# は、公開のインターフェースが internal の型を見せることを許さない。
+  フレームの時計は、Windows ではスワップチェーンに、macOS と Wayland では窓にある。組にしたホストの外には、描き先とスケジューラだけを見せられる。
+  Flutter・Avalonia・GPUI は、どれも 2 段で、どれも動的な呼び出しで呼ぶ。契約を通る呼び出しは、フレームか OS の知らせ 1 つに 1 回である。
+  `DesktopWindow` と `HeadlessApp` は `Mount` と根の値を 2 つずつ持ち、行 LC1 と TH1 の根の値をそれぞれに書くことになる。
+
+Rejected:
+  - アプリの段の 1 つの `IPlatform` に窓・クリップボード・ダイアログ・スケジューラ・IME・a11y・フォントを並べる（設計書の旧版 §6.0。IME と a11y の adapter は窓に結び付き、ループ・起床・レンダラ・OS の設定が無かった）
+  - 契約をいま公開にする、または行 C0 を待つ（メンバーの引数と戻り値に Core の internal の型がある。公開の境界は C0 で決める）
+  - 抽象の基底クラスで契約を書く（呼び出しの重さはインターフェースと同じで、単一継承の制約が付く）
+  - 静的抽象メンバーの総称のホスト（`XylemApp.Run<THost>()`。呼び出しは特殊化されるが、アプリのコードが OS のホストの型を名指しし、ホストに触れる型がすべて総称になる。3 つのどれもこの形を採らない）
+  - 描き先を作る契約をホストと別に持つ（Avalonia の `IPlatformRenderInterface`。OS ごとにレンダラは 1 つで（§5.2）、時計の元が 2 つの契約に分かれる）
+  - `IRenderTarget` に `Resize` と時計の取り出しを足して、`XylemUI.Desktop` が組にする（時計の取り出しは、時計が窓にある macOS と Wayland で意味を持たない）
+  - OS によらない共通のループを `XylemUI.Desktop` に置き、OS ごとには待つ関数だけを持つ（macOS では `[NSApp run]` がループを持ち、フレームは `CADisplayLink` から来る。3 つとも、ループはプラットフォームが持つ）
+  - OS の設定を窓ごとに持ち続ける（3 つとも OS の設定はアプリの段に置く。行 LC1・TH1 の値が窓ごとに増える）
+  - ホストを実行時に OS で選ぶ（Avalonia の `AppBuilderDesktopExtensions.cs` 20〜33 行目。すべてのホストのコードがバイナリに入りうる）
+  - アプリが OS のホストを名指しする（`XylemApp.Run(new WindowsPlatform(), …)`。アプリのコードが OS によらなくならない）
+  - `HeadlessApp` を本物の窓と別のまま保つ（Flutter はエンジンの上の binding でテストする。根の値と `Mount` が 2 つのまま残る）
+  - 2 つ目の窓を作る口を行 PL1 で入れる（呼ぶ所が無い。行 MW1 で決める）
+  - ダイアログの契約（`IDialogBackend`）を置く（実装が無い。行 D6）
+  - `PlatformKind` と `PlatformWindowHandle` を残す（使う所が無い。ヘッドレスとテストのホストに OS の種類が無い）
+  - Windows のホストを新しいプロジェクト（`XylemUI.Desktop.Windows`）に置き、Platform は Rendering を参照しない向きを保つ（プロジェクトと `InternalsVisibleTo` の辺が 1 つずつ増える。GPUI の `gpui_windows` も窓とレンダラを 1 つの crate に持つ。Issue #877 の Grill）
+  - ホストのアセンブリ自身の `[ModuleInitializer]` で登録する（参照されないアセンブリでは走らない。同じ Grill）、アプリが登録の 1 行を書く（アプリのコードが OS を名指しする。同じ Grill）
+  - ホストを `net10.0-windows` のまま残す（ホストを参照するアプリも `-windows` になり、アプリのプロジェクトが OS によらなくならない。同じ Grill）
+  - クリップボードを窓ごとに持ち続ける（クリップボードは OS に 1 つ。GPUI と Avalonia はアプリの段。同じ Grill）
+  - OS から窓の核への知らせのインターフェースを Core に置く（Flutter の `WindowBindingHandlerDelegate` の形。偽物は 1 つのクラスで書けるが、知らせごとにインターフェースの呼び出しが 1 段増える。同じ Grill）
+  - OS の設定の値ごとにイベントを持つ（今の `Win32Window` の形。値が増えるたびにイベントと購読が増える。同じ Grill）
+  - ラスタライザの工場を窓（レンダラ）から出す（OS ごとにレンダラは 1 つで、アプリの段で足りる。同じ Grill）
+  - 窓が開いている間の 2 つ目の `OpenWindow` を許す（スケジューラの時計が黙って置き換わる。同じ Grill）
+  - 窓の核に、ヘッドレスの部品を直に受ける別のコンストラクタを置く（窓の核の入口が 2 つになる。同じ Grill）
+  - `UiDispatcher.Current` を具体の型 `UiDispatcher` にする（公開の静的なメンバーから、どのワーカーも `Drain` を呼べてしまう。取り出しと `SynchronizationContext` は、ホストが自分の参照で使う。Issue #877 の Grill で一度採ったのを、PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定 で改めた）、2 度目の差し込みを例外にする（Avalonia の形。`XylemUI.Desktop.Tests` は本物のループをヘッドレスの UI スレッドの上で回す。同じ Grill）
+  - `Win32MessageLoop` をインスタンスにする（UI スレッドはプロセスに 1 つで、テストとベンチマークの呼び出しが変わるだけ。同じ Grill）
+  - E2E の場面を Windows の部品の上に残す（動かしたコードの `WM_SIZE` の経路を測る場面が無いまま残る。同じ Grill）
+
 ---
 
 ## 開発者向け API

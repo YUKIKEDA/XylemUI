@@ -150,7 +150,7 @@ WPF/Avalonia 方式は .NET で最も実績のある方式だが、`DependencyPr
 
   付ける先は、コンストラクター・メソッド・プロパティである。アナライザーは、呼んだメンバーそのものに付いた属性を読む（総称のメンバーは元の定義。プロパティの accessor は、accessor かプロパティに付いたもの。片方の accessor だけが確かめるプロパティは、その accessor に付ける）。`Inherited = false` で、派生型や上書きしたメンバーには引き継がない。インターフェースを通した呼び出しは、インターフェースのメンバーに付いていれば知らせる。Platform・Rendering・Testing の公開 API も、Core のこの属性を付ける。新しい公開 API が入口で UI スレッドを確かめるなら、この属性も付ける（§2.12）。今ある公開 API で付けるのは、入口で、または private や internal の補助を通して、`UiThread.VerifyAccess` を呼ぶものである。**属性の付いた API を呼ぶだけの公開 API にも付けてよい**（A1 の実装の Grill でオーナーが決定、Issue #850）。下の一覧の `Animation.Set` がその形で、自分では確かめず、属性の付いた `Stop` を呼ぶ。付いていれば、アプリの側で早く誤りに気づける。**一覧とコードが揃っていることは、テストで保つ**（同じ決定。ロードマップが実装の PR に残していた点）。テストは、Core・Platform.Windows・Rendering.D3D11・Testing のソースをコンパイラの API で読み、「`VerifyAccess` に、直接か、同じアセンブリの公開でないメンバーを通して届く公開メンバー」が属性を持つこと、属性を持つメンバーが `VerifyAccess` に届くか、属性の付いたメンバーを呼ぶことを確かめる。インターフェースのメンバーは本体が無いので、後者の検査から外す。このテストの「届く」は、呼び出しを名前で結び付ける粗い判定で、候補が 1 つの時だけ採る。届くのにテストが見つけない公開 API が残りうるので、テストが保つのは「見つけた分は揃っている」ことまでである。このテストは、下の一覧に無かった公開 API を見つけた。要素の拡張メソッドのうち `Width`・`Height`・`Padding`・`Gap`・`GridColumn`・`GridRow`・`AutoFlow`・`AutoColumns`・`AutoRows`・`Border`・`Overflow`・`ScrollState`・`Focusable`・`Disabled`・`Focus`・`VirtualFor` と、`PointerEvent.Capture`、`ScrollState.ScrollTo`、Testing の `HeadlessApp.SaveScreenshotAsync`・`MatchesGoldenAsync`、`HeadlessIme` と `HeadlessPointer` と `HeadlessKeyboard` の操作である。どれにも付ける。**付けないもの（同じ決定）:** `XylemApp.Run` は、呼んだスレッドを UI スレッドにする API で、「UI スレッドからだけ呼べる」とは意味が違う。Fluent のアイコンのプロパティ（`FluentIcons.*`）は、最初の読み取りで確かめに届くが、属性を付ける層（Core・Platform・Rendering・Testing）の外にあり、付けるにはアイコンを生成するツールを変える必要があるので、ロードマップの行 A2 に分ける。`Keymap.BindByName` は、属性の付いた `Bind` を呼ぶだけの API で、`Animation.Set` と同じ形なので、同じく付ける（PR #858 のレビュー）。
   - Core: `Signal.Create`、`Signal<T>.Get`・`Set`、`Computed.Create`、`Computed<T>.Get`・`Dispose`、`IReadOnlySignal<T>.Get`（実装の 2 つが確かめるので、インターフェースを通した読みにも付ける）、`Effect.Create`・`Dispose`、`ReactiveRuntime.Batch`（2 つ）、`Scope.Create`・`Run`・`OnCleanup`・`Dispose`、`ScopeTracker.ForEachActiveScope`、`SynchronousRenderGuard.Enter`・`RunOrDefer`、`UiDispatcher.Drain`、`AppFonts.Add`、`ImageCache.MaximumCount`・`MaximumBytes`・`Evict`・`Clear`、`Keymap.Bind`・`Remove`、`Animation.Forward`・`Reverse`・`AnimateTo`・`Set`・`Fling`・`SpringTo`・`Stop`、`ElementExtensions.KeyBindingFor`・`Dispatch`・`CanDispatch`（それぞれ 2 つ）
-  - Platform.Windows: `Win32MessageLoop.Run`・`Quit`・`FrameScheduler`・`Dispatcher`・`SetFrameClock`（2 つ）、`Win32Window` のコンストラクター・`ClientSize`・`Show`・`RequestClose`・`Dispose`・`StartExternalDrag`
+  - Platform.Windows: `Win32MessageLoop.Run`・`Quit`・`FrameScheduler`・`Dispatcher`（行 PL1 で `UiDispatcher.Current` に替えて外す、§2.12）・`SetFrameClock`（2 つ）、`Win32Window` のコンストラクター・`ClientSize`・`Show`・`RequestClose`・`Dispose`・`StartExternalDrag`
   - Rendering.D3D11: `D3D11Renderer.Create`・`TextRendering` の `set`・`Render`・`Draw`（2 つ）・`Resize`・`Present`
   - Testing: `HeadlessApp.Popups`・`Find`・`FindAll`・`FindByRole`・`AccessibilityOf`・`Focus`・`SetActive`・`SetVisible`・`PumpAndSettle`・`Pump`・`AssertNoLeakedScopes`
 - **置き場:** 新しいアセンブリ `XylemUI.Analyzers`（規則）と `XylemUI.Analyzers.CodeFixes`（修正の提案）を作る。どちらも netstandard2.0 で、Microsoft.CodeAnalysis.CSharp 4.14.0（`XylemUI.Generators` と同じ版）に対して書き、修正の提案は Microsoft.CodeAnalysis.CSharp.Workspaces 4.14.0 も使う。2 つは `XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に、`XylemUI.Generators.dll` と並べて入れる。`XylemUI.Core.csproj` の、生成器が無ければパックを止める検査も、2 つに広げる。アナライザーは `XylemUI.Core` を参照せず、型と属性を名前（`XylemUI.UiThreadOnlyAttribute` など）で探す。修正の提案を別のアセンブリにするのは、コマンドラインのコンパイラ（`dotnet build`）が Workspaces を持たないためである。Roslyn の規則 RS1038（Microsoft.CodeAnalysis.Analyzers の文書）は、どのコンパイルの場でも渡されるとは限らないアセンブリを参照するアセンブリに、コンパイラの拡張を置かないよう求める。Avalonia も、規則（`Avalonia.Analyzers.CSharp.csproj` 13 行目は CSharp だけを参照）と修正（`Avalonia.Analyzers.CodeFixes.CSharp.csproj` 12〜13 行目は Workspaces.Common も参照）を分ける。
@@ -1251,7 +1251,7 @@ flowchart TD
 
 **COM の呼び出し方式:** D3D11 / DXGI / DirectWrite は TerraFX.Interop.Windows の宣言を使い、COM の vtable を unmanaged 関数ポインタで直接呼ぶ（P1 スパイクで NativeAOT での動作を確認する）。ランタイムのマーシャリングを経由しないため NativeAOT と相性がよく、参照カウントを自分で管理できる。RCW（`ComImport`）は使わない。RCW の解放はファイナライザ任せになり、§2.11.1 の `ResizeBuffers` の前提（ビューを全て Release 済み）を守れないためである。
 
-**Window/Surface/Swapchain/Renderer/EventLoopの責務分離**: 上図では`GPU`→`Interop`→`Win`という単純な流れに見えるが、実装上は`Window`（OSウィンドウそのもの）・`Surface`（GPU描画対象、§5.2のバックエンド実装が保持）・`Swapchain`（バッファ管理）・`Renderer`（DisplayListからGPUコマンドへの変換、§5.0で明記した原則）・`EventLoop`（§2.11のFrameScheduler）は互いに独立した概念であり、実装時にこれらを1つの巨大なクラスに混在させない。`Application`が`WindowManager`・`Renderer`（`Surface`を内包）・`EventLoop`をそれぞれ独立に保持し、各々が§11.6のInvariant 9/10（GPUバックエンドはUiNodeを直接参照しない、PlatformバックエンドはCore engine型を直接変更しない）に従って疎結合を保つ構成とする。
+**Window/Surface/Swapchain/Renderer/EventLoopの責務分離**: 上図では`GPU`→`Interop`→`Win`という単純な流れに見えるが、実装上は`Window`（OSウィンドウそのもの）・`Surface`（GPU描画対象、§5.2のバックエンド実装が保持）・`Swapchain`（バッファ管理）・`Renderer`（DisplayListからGPUコマンドへの変換、§5.0で明記した原則）・`EventLoop`（§2.11のFrameScheduler）は互いに独立した概念であり、実装時にこれらを1つの巨大なクラスに混在させない。アプリの段のホスト（`IPlatformApp`、§6.0）が `EventLoop` を持ち、ウィンドウの段のホスト（`IPlatformWindow`）が `Window` と `Renderer`（`Surface`を内包）を組にして持つ（行 PL1。フレームの時計が Windows ではスワップチェーンに、macOS と Wayland では窓にあるため）。どれも別のクラスのままにし、各々が§11.6のInvariant 9/10（GPUバックエンドはUiNodeを直接参照しない、PlatformバックエンドはCore engine型を直接変更しない）に従って疎結合を保つ構成とする。
 
 ### 2.9.1 ソリューション構成（C# 版で追加）
 
@@ -1262,7 +1262,7 @@ src/
   XylemUI.Text/                # テキストパイプライン（§4.1）。XylemUI.Core から独立
   XylemUI.Imaging/             # 画像のデコード（§5.0.4）。C の shim は native/imaging/xylemui_image.c。Wuffs・libjpeg-turbo・libwebp を C の shim で呼ぶ。EXIF の読み手、ICC の変換（skcms）。Text と Core が参照する
   XylemUI.Primitives/          # 見た目のない部品（§13.1）。ロジック・a11y・キーボード・フォーカス・開閉状態だけ
-  XylemUI.Desktop/             # アプリの起動（XylemApp.Run）。Core・Platform・Rendering をつなぐ（V1d）
+  XylemUI.Desktop/             # アプリの起動（XylemApp.Run）。OS のホストを §6.0 の契約で使い、OS の型を参照しない（V1d、PL1）
   XylemUI.Theme.Fluent/        # Fluent 2 デザインシステム（§13.2）。Primitives に見た目を被せる
   XylemUI.Testing/             # ヘッドレスホスト・仮想クロック・入力注入・PNG（§12）。製品バイナリには含めない
   XylemUI.Testing.XUnit/       # xUnit v3 の [UiFact] / [UiTheory]（§12.5「スレッド」）
@@ -1270,7 +1270,7 @@ src/
   XylemUI.Rendering.D3D11/     # GPU バックエンド（Windows）
   XylemUI.Rendering.Metal/     # GPU バックエンド（macOS）
   XylemUI.Rendering.Wgpu/      # GPU バックエンド（Linux）
-  XylemUI.Platform.Windows/    # Win32 / TSF / UIA / DirectWrite
+  XylemUI.Platform.Windows/    # Win32 / TSF / UIA / DirectWrite。Windows のホスト（§6.0）で、D3D11 のレンダラと組にする（PL1）
   XylemUI.Platform.MacOS/      # AppKit / CoreText / NSAccessibility（+ P/Invoke で書けない API だけの、native/macos の薄い Obj-C shim）
   XylemUI.Platform.Linux/      # SDL3 / fontconfig / D-Bus / AT-SPI / portal
   XylemUI.Generators/          # Source Generator（Binding 記述子等、§2.4）
@@ -1296,12 +1296,13 @@ vendor/
   versions.lock                # HarfBuzz / FreeType / SDL3 / wgpu-native / Unicode のバージョン固定
 ```
 
-- `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。Platform / Rendering 側が Core の公開インターフェース（`IPlatform`、`IRenderer` 等）を実装する。
+- `XylemUI.Core` は `XylemUI.Platform.*` / `XylemUI.Rendering.*` を参照しない（MoonBit 版 C0 の「Core は win32 を import しない」と同じ規則）。OS のホストが Core の契約（`IPlatformApp`・`IPlatformWindow`、§6.0）を実装し、レンダラは描き先の `IRenderTarget` を実装する。
+- OS のホストは、窓とレンダラを組にするので、その OS のレンダラを参照する。Windows では `XylemUI.Platform.Windows` が `XylemUI.Rendering.D3D11` を参照する（行 PL1、Issue #877 の Grill でオーナーが決定）。逆向き（Rendering が Platform を参照する）は無い。V1d までは、Platform は Rendering を参照せず、つなぐ所を `XylemUI.Desktop` に置いていた（§2.13「ウィンドウ」）。
 - 部品の依存方向は `XylemUI.Core` ← `XylemUI.Primitives` ← `XylemUI.Theme.Fluent` の一方向。Core はボタン等の部品を一切持たず、特定のデザイン（色・フォント・アイコン・アセット）も持たない。アプリは使うテーマだけを参照し、NativeAOT のトリミングで使った部品だけがバイナリに残る。
 - 名前空間はアセンブリ名と同じ `XylemUI.*` とする（`XylemUI.Core` の公開型は名前空間 `XylemUI` に置く）。
 - `XylemUI.Generators`・`XylemUI.Analyzers`・`XylemUI.Analyzers.CodeFixes` は、単独のパッケージにせず、`XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に入れて配る（§2.2「アナライザー」）。
-- Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。K1b で `XylemUI.Primitives` にも見せた。ボタンのキーが、キーから Click を配る `WindowInput.ClickFromKey` と、押下の状態を書く `UiTree.SetPseudoState` を使うためである（オーナーの決定、PR #360）。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。
-- アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とし、具体的なパッケージ構成は C0 相当の抽出時に決める。
+- Core の型（`UiTree`・`UiNode` 等）は `internal` とし、Platform / Rendering には `InternalsVisibleTo` ではなく公開されたメッセージ / スナップショット型だけを渡す（§11.6 Invariant 9/10）。**今の形（V1d の Grill）:** V1b（`IRenderTarget`）と V1c（`IPointerPlatform`、`PointerInput`）は、Core の internal の型を `InternalsVisibleTo` で Rendering.D3D11 と Platform.Windows に見せ、`XylemUI.Desktop` も同じ形でつなぐ。K1b で `XylemUI.Primitives` にも見せた。ボタンのキーが、キーから Click を配る `WindowInput.ClickFromKey` と、押下の状態を書く `UiTree.SetPseudoState` を使うためである（オーナーの決定、PR #360）。公開の境界は、行 C0（Core の抽出）で決め、そこでこの形をやめる。行 PL1 の契約（`IPlatformApp`・`IPlatformWindow`・`IPlatformSettings`、§6.0）も同じ形で、internal のまま見せる（Grill の 5 巡目でオーナーが決定、Issue #872）。
+- アプリがどの Platform 実装を取り込むかは、RID（`win-x64` / `osx-arm64` / `linux-x64` 等）に応じて参照を切り替える方式とする。ビルド時に選ぶ仕組みは行 PL1 で入れ（§6.0「ホストの選び方」）、具体的なパッケージ構成は C0 相当の抽出時に決める。
 
 ### 2.10 フレーム実行サイクル
 
@@ -1353,7 +1354,7 @@ Win32の`GetMessage`やAppKitの`nextEventMatchingMask`はブロッキングす�
 
 - **アニメーション実行中（ウィンドウのアニメーションの一覧が空でない、§2.14「フレームの時計」）、またはディスパッチ待ちの非同期イベントがある場合**: Vsync同期で次フレームまで待機する。待機中もOSメッセージは割り込めること。隠した窓と最小化した窓は例外で、アニメーションの一覧が空でなくてもフレームを回さない（下の「隠した窓と最小化した窓のフレーム」）。Windowsは UI スレッドで `DwmFlush` のような同期ブロックをしない。`IDXGISwapChain2::GetFrameLatencyWaitableObject` のハンドルとメッセージキューを `MsgWaitForMultipleObjectsEx` で多重待機し、メッセージ到着か GPU フレーム準備完了の早い方で起こす。macOSは `CADisplayLink`（下記）。Linuxはwgpu-nativeのSurface present待機に準ずる。
 - **完全アイドル時**: OSイベントキューのブロッキング待機（`GetMessage`/`[NSApp run]`/SDL3のイベント待機API）へ移行する。
-- **外部スレッドからの起床**: .NET の ThreadPool・非同期I/O完了・ワーカースレッドからUIスレッドを起こすため、OS固有の起床機構をプラットフォーム層（§6）の必須要件として定義する。UI スレッドの `SynchronizationContext`（§2.12）の `Post` もこの起床機構を使う。
+- **外部スレッドからの起床**: .NET の ThreadPool・非同期I/O完了・ワーカースレッドからUIスレッドを起こすため、OS固有の起床機構をプラットフォーム層（§6）の必須要件として定義する（契約は `IPlatformApp.Wake`、§6.0）。UI スレッドの `SynchronizationContext`（§2.12）の `Post` もこの起床機構を使う。
 
 | プラットフォーム | 起床機構                                                |
 | ---------------- | ------------------------------------------------------- |
@@ -1373,6 +1374,8 @@ public interface IFrameScheduler
 ```
 
 保留できるコールバックは1つだけで、フレームの前に `RequestFrame` を再度呼ぶと置き換わる。コールバックは1回だけ走り、次のフレームが要るならその中で `RequestFrame` を呼ぶ。要求ごとに確保しないよう、デリゲートは一度だけ作って渡す。コールバックの例外は Platform の例外ハンドラに渡し、ループは続ける（§2.11.1）。フレームクロックは、要求がある間だけ動かす（アイドルの UI スレッドを起こす原因を作らない）。
+
+**スケジューラの単位（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）:** 契約はウィンドウごと（`IPlatformWindow.FrameScheduler`、§6.0）で、Windows の実装はループごとに 1 つ（`Win32FrameScheduler`）である。macOS と Wayland の時計は窓（ビュー）にあるので、窓ごとの契約にそのまま載る。Windows の時計（下の S7 のスワップチェーンの待機オブジェクト）は、ホストがレンダラを作った所で渡し、窓の核と `XylemUI.Desktop` は見ない。2 つ目の窓の予約は行 MW1 で決める。
 
 **フレームの時刻（I1b の Grill でオーナーが決定、Issue #392）:** ウィンドウのフレームは、コールバックの始めに `TimeProvider`（§12.2）から時刻を 1 回読み、そのフレームの時刻として持つ。そのフレームの中で時間で動くもの（I1b のタッチの慣性、§7「タッチとペン」）は、この時刻で位置を決める。同じフレームの中では、どれも同じ時刻を見る。今は Core の内部の値で、公開しない。アニメーションの API（行 D7）は、この時刻を使う
   - Flutter の Ticker は、フレームの時刻（`SchedulerBinding.currentFrameTimeStamp`）から始めの時刻を引いた経過時間で進む（`scheduler/ticker.dart` 205・272〜278 行目）
@@ -1446,16 +1449,16 @@ public interface IFrameScheduler
 - **止まる条件と戻る条件（Windows）:** 次の 2 つのどちらかが成り立つ間、止める。2 つとも成り立たなくなったら戻る
   - 隠した: `WM_WINDOWPOSCHANGED`（0x0047）の `lParam` が指す `WINDOWPOS` の `flags` に、`SWP_HIDEWINDOW`（0x0080）があれば立て、`SWP_SHOWWINDOW`（0x0040）があれば下ろす
   - 最小化している: 同じメッセージの中で読んだ `IsIconic(hwnd)` の値
-  - 最小化したまま表示した窓は、最小化が続くので止まったままである。窓を壊すと、状態は `WindowFrames` と一緒に終わる（`DesktopWindow` は `Closed` で木の `FrameNeeded` を外し、`CancelFrame` を呼ぶ）
+  - 最小化したまま表示した窓は、最小化が続くので止まったままである。窓を壊すと、状態は `WindowFrames` と一緒に終わる（窓の核 `WindowCore` は、窓が閉じたら木の `FrameNeeded` を外し、`CancelFrame` を呼ぶ。§6.0。行 PL1 までは `DesktopWindow` が `Closed` で行う）
 - **一度も表示していない窓:** フレームを回す。隠したことは知らせで読むので、知らせが来るまでは「見えている」である。テストとベンチマークの窓は、表示しないまま描く（表示するのは `XylemApp.Run` だけ）。Flutter の runner も、最初のフレームを描いてから窓を表示する（`packages/flutter_tools/templates/app/windows.tmpl/runner/flutter_window.cpp` 30〜37 行目）
 - **読む時（メッセージの順序）:** `WM_WINDOWPOSCHANGED` を `DefWindowProc` に渡す前に読み、`WindowFrames` に渡す。`DefWindowProc` は、このメッセージの中から `WM_SIZE` を送る。元に戻すときは、先に「見えている」になっているので、`WM_SIZE` の同期の描画（§2.11.1）がそのまま走る。最小化のときは先に止まり、後から来る `WM_SIZE`（`SIZE_MINIMIZED`）は元から描かない。`WM_WINDOWPOSCHANGED` の中で `IsIconic` が新しい状態を返すことは、3b の本物の窓のテストで確かめる
 - **止まっている間の、フレームを動かす呼び出し:** `WindowFrames` の入口は 3 つで、どれもスケジューラに頼まず、Present しない
   - `RequestFrame`（木の `FrameNeeded`、ジェスチャ・慣性・ドラッグのスクロールの続き、タッチパッドの `GestureFrameNeeded`、`WindowInput` のドラッグ）: フレームが要ることだけを覚える
   - `RunFrame`（止まる前にスケジューラに保留されていたコールバック、`DoDragDrop` の間に窓のタイマーが回すフレーム（§2.11.1））: 始めで戻り、フレームが要ることを覚える。フレームの時刻も読まない。Present せずに戻るので、スケジューラから見ると上の「Present しないフレーム」と同じである
   - `Resize`（`WM_SIZE` の同期の描画。隠した窓の大きさを変えたときに来る）: 大きさと倍率を木とポップアップに渡し、フレームが要ることを覚えて戻る。`RunFrame` は呼ばず、リサイズ中の印も立てない。この印は `RunFrame` が下ろすので、立てると残り、戻った後の `RequestFrame` が頼まなくなる
-  - スケジューラの `CancelFrame`（`DesktopWindow` と `HeadlessApp` が、作るときと閉じるときに呼ぶ）は変えない。覚えた「フレームが要る」は消さない
+  - スケジューラの `CancelFrame`（窓の核 `WindowCore` が、作るときと閉じるときに呼ぶ。§6.0。行 PL1 までは `DesktopWindow` と `HeadlessApp` がそれぞれ呼ぶ）は変えない。覚えた「フレームが要る」は消さない
 - **戻ったとき:** フレームが要ると覚えていれば、`RequestFrame` を 1 回呼ぶ。覚えていなければ頼まない。最小化から戻すときは、`WM_SIZE` の同期の描画が先に走る。頼んだフレームは保留のまま残り、後で回って、変わったものが無ければ Present せずに戻る。フレームが保留の間に `WM_SIZE` が来たときの、今の動きと同じである
-- **Platform と Desktop:** `Win32Window` は、活性化（`IsActive` と `ActivationChanged`）と同じ形で、今の値と、変わったときの知らせを持つ。`DesktopWindow` は、`WindowFrames` を作ったら今の値を渡し、知らせをつなぐ。表示する窓は `WindowFrames` を作る前に表示するので、その時の知らせは受け取れないためである
+- **Platform と Desktop:** `Win32Window` は、活性化（`IsActive` と `ActivationChanged`）と同じ形で、今の値と、変わったときの知らせを持つ。窓の核（`WindowCore`、§6.0）は、`WindowFrames` を作ったら今の値（`IPlatformWindow.IsShowing`）を渡し、ホストが知らせをつなぐ（行 PL1 までは `DesktopWindow` が両方を行う）。表示する窓は `WindowFrames` を作る前に表示するので、その時の知らせは受け取れないためである
 - **止まっている間に起きること:**
   - アクセシビリティの木は、最後のフレームのままである（木の更新は `RunFrame` の中で行う）
   - 遷移と、外から動かすアニメーションは進まない。戻った最初のフレームが、今の時刻で一覧を進める。時間の過ぎた遷移は、そのフレームで終わりの値になる（§2.14「フレームの時計」）。慣性のスクロールも時刻で位置を決めるので、過ぎた時間の分だけ進む
@@ -1470,7 +1473,7 @@ public interface IFrameScheduler
   - 状態の使い道: GPUI の今の状態（`IsWindowVisible && !IsIconic`）は知らせに使うだけなので、一度も表示していない窓が `Hidden` でも描ける。ここは、読んだ状態でフレームを止めるので、今の状態で決めると、表示していない窓が描けなくなる（この項の終わりの、却下した案）
 - **テスト（§12.1 の層）:**
   - 層 2（`XylemUI.Core.Tests`）: 偽のスケジューラで、止まっている間の `RequestFrame`・`RunFrame`・`Resize` がスケジューラに頼まず Present しないこと、戻ったときに 1 回だけ頼むこと、覚えていなければ頼まないこと、止まっている間の `Resize` の大きさで戻った後のフレームが layout すること
-  - 層 5（`XylemUI.Desktop.Tests`）: `HeadlessApp.SetVisible(bool)`（§12.4）で、隠した窓の遷移が進まず `PumpAndSettle` が落ち着くこと、戻した最初のフレームで時間の過ぎた遷移が終わりの値になること。`DesktopWindow` のつなぎは、WARP の窓（1 つ開く）を最小化している間 Present の数が増えず、戻すと増えることで確かめる
+  - 層 5（`XylemUI.Desktop.Tests`）: `HeadlessApp.SetVisible(bool)`（§12.4）で、隠した窓の遷移が進まず `PumpAndSettle` が落ち着くこと、戻した最初のフレームで時間の過ぎた遷移が終わりの値になること。本物の窓のつなぎ（行 PL1 の後は Windows のホスト、§6.0）は、WARP の窓（1 つ開く）を最小化している間 Present の数が増えず、戻すと増えることで確かめる
   - 本物の窓（`XylemUI.Platform.Windows.Tests`、窓が 1 つ開く）: 隠す・表示する・最小化する・元に戻すのそれぞれで知らせが来ること、`WM_WINDOWPOSCHANGED` の中の `IsIconic` の値、表示していない窓が「見えている」のままであること
 - **ほかの OS:** 行 P04（Linux）と行 P06（macOS）で、それぞれの OS の知らせを `WindowFrames.SetVisible` につなぐ
 - 却下した案は、今の状態（`IsWindowVisible(hwnd) && !IsIconic(hwnd)`）で決める（GPUI の可視性の知らせの形。GPUI はこの状態を知らせに使うだけで、フレームは止めない。フレームを止める条件にすると、一度も表示していない窓が 1 フレームも描けず、テストとベンチマークの窓が描けなくなる。GPUI と同じに `WM_SHOWWINDOW` と `WM_SIZE` で読み、次の回に反映しても、`WM_SHOWWINDOW` は送られない場合があり、元に戻すときの `WM_SIZE` の同期の描画は反映より先に来る）、`WM_SHOWWINDOW` で読む（Flutter と GPUI の形。上のとおり、送られない場合がある）、見えない窓のアニメーションの画像だけを止める（遷移やキャレットのフレームが残る）である（`docs/design-decisions.md`「画像とアイコン」）
@@ -1490,16 +1493,16 @@ public interface IFrameScheduler
 **D3D11スワップチェーン再作成の順序**: D3D11ではサイズ変更時に`IDXGISwapChain::ResizeBuffers`が必須だが、バックバッファを参照するRTV/DSV/SRVが1つでも残っていると`DXGI_ERROR_INVALID_CALL`で失敗する。同期リサイズ描画の前に次の順序を契約する。C# では COM 参照の `Release` を GC やファイナライザに任せず、この順序の中で明示的に呼ぶ（§2.9 の COM 呼び出し方式）。
 
 ```text
-1. NotifyWindowResized（§2.4.1）で新しい AvailableSpace を渡す
-2. RTV / DSV / バックバッファを参照する全てのビューを Release
-3. IDXGISwapChain::ResizeBuffers
-4. RTV / DSV を再生成
-5. SynchronousResizePaint（materialization → layout → DisplayList → Present）
+1. バックバッファを参照する全てのビューをコンテキストから外し（OMSetRenderTargets(0, null, null)）、Release する
+2. IDXGISwapChain::ResizeBuffers（バッファの数・形式・フラグは変えない）
+3. ビューを作り直し、大きさに依る定数を書き直す
+4. NotifyWindowResized（§2.4.1）で新しい AvailableSpace を渡す
+5. 同期の描画（materialization → layout → DisplayList → Draw → Present）
 ```
 
-2〜4を飛ばして5へ進むことは、Windowsバックエンドでは禁止する。
+1〜3 はレンダラの `D3D11Renderer.Resize`、4〜5 は窓の核の `Resize`（`WindowFrames.Resize`）が行い、ホストが 1〜3 の後に 4〜5 を呼ぶ（§6.0）。1〜3を飛ばして4以降へ進むことは、Windowsバックエンドでは禁止する。今のビューはレンダーターゲットのビュー 1 つで、深度のビュー（DSV）は無い。初めの一覧は大きさを木に渡すことを 1 に置いていたが、コードは今の順で、レイアウトはビューに触れないので、順はどちらでも描画の前に 1〜3 が終わる（Issue #877 の Grill でオーナーが決定、一覧をコードの順に直した）。
 
-**S7（C# 版で検証済み）:** 2 の「解放」には、デバイスコンテキストに結び付いたままのビューを外すこと（`OMSetRenderTargets(0, null, null)`）も含める。`ResizeBuffers` のドキュメントが、ビューがコンテキストに結び付いていないことを求めているためである。WARP と手元のハードウェアでは、描画の後・Present の前に外さずに呼んでも通った（ランタイムが外していると見られる）が、ドライバの実装に頼らずドキュメントの契約に合わせる。ビューそのものを残したまま `ResizeBuffers` を呼ぶと `DXGI_ERROR_INVALID_CALL` になることをテストで確かめた。`WM_SIZE` の同期描画（S4）の中で `Resize` → 描画 → Present が通った
+**S7（C# 版で検証済み）:** 1 の「解放」には、デバイスコンテキストに結び付いたままのビューを外すこと（`OMSetRenderTargets(0, null, null)`）も含める。`ResizeBuffers` のドキュメントが、ビューがコンテキストに結び付いていないことを求めているためである。WARP と手元のハードウェアでは、描画の後・Present の前に外さずに呼んでも通った（ランタイムが外していると見られる）が、ドライバの実装に頼らずドキュメントの契約に合わせる。ビューそのものを残したまま `ResizeBuffers` を呼ぶと `DXGI_ERROR_INVALID_CALL` になることをテストで確かめた。`WM_SIZE` の同期描画（S4）の中で `Resize` → 描画 → Present が通った
 
 **同期パスで許可する処理:** Binding 済みプロパティの読み取り、Computed の pull（layout に入る前）、Materialization、Layout、Paint、Render、Present。**禁止:** アプリケーションイベントコールバック、新規 OS モーダルループ、`MessageBox` 等の再入、Effect 本体のユーザーコード、`SynchronizationContext` に積まれた `await` 継続の実行。OS callback 中に application callback を任意実行しない。「禁止」はその場で実行しないという意味であり、アプリのコールバックは捨てずに同期描画の後まで遅らせる（下記のガード）。
 
@@ -1524,19 +1527,20 @@ public static class SynchronousRenderGuard
     public readonly ref struct Scope { public void Dispose(); }   // 開始時の深さを持ち、順序の食い違いを検出する
 }
 
-static void SynchronousResizePaint(UiTree tree, IRenderer renderer)   // Platform が WM_SIZE から呼ぶ
+// Windows のホストが Win32Window.SynchronousRender に結ぶ関数の中身（行 PL1、§6.0）。レンダラはホストの中で窓と組にする。
+// IsActive を見て保留にすることと、区間に入ること（Enter）は、呼ぶ側の Win32Window が行う
+void OnSynchronousResize(Win32Window window, int width, int height)   // width と height は物理画素
 {
-    if (SynchronousRenderGuard.IsActive) { MarkResizePending(); return; }  // 再入。その場では描かず、区間の後に最新サイズで1回描く
+    if (width <= 0 || height <= 0) { return; }
 
-    using (SynchronousRenderGuard.Enter())
-    {
-        RunMaterializationIfNeeded(tree);  // §2.10 と同順。仮想化 dirty が無ければ no-op
-        RunLayoutPass(tree);
-        var (displayList, _) = BuildDisplayList(tree, tree.Root);
-        renderer.Present(displayList);
-    }
+    _renderer.Resize(width, height);                                  // ビューの解放 → ResizeBuffers → ビューの作り直し
+    float scale = window.ScaleFactor;
+    _core.Resize(new Size(width / scale, height / scale), scale);     // 窓の核: NotifyWindowResized → materialization → layout
+                                                                       // → DisplayList → IRenderTarget.Draw → Present（§2.10 と同順）
 }
 ```
+
+`WM_SIZE` で `IsActive` を見て保留にするのと、`SynchronousRenderGuard.Enter` で区間に入るのは、今どおり `Win32Window` である（`src/XylemUI.Platform.Windows/Win32Window.cs` 307〜322 行目と 341 行目）。ホストの関数は、その区間の中で呼ばれる。
 
 ### 2.12 .NET GCとネイティブ層の境界
 
@@ -1594,6 +1598,32 @@ public interface IUiDispatcher
 - **フレームワークの中の知らせ:** 画像のデコードやタイマーの知らせは `UiMessage` にせず、`SynchronizationContext.Post` で同じキューに積む。アプリの受け手と型を取り合わない
 
 キューは `ConcurrentQueue`（複数ライター・単一リーダー）とする（S5）。読み手は UI スレッドのループだけで、`await` で待つ読み手がいないため、`Channel` の非同期の読み出しは要らない。メッセージと `await` の継続は同じキューに積み、積んだ順に実行する。投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。起床機構はループの開始前（Windows では起床用のメッセージ専用ウィンドウを作る前）には何もしないので、ループは開始時に必ず1回キューを空にしてから最初の待機に入る。開始前に投入されたメッセージを取りこぼさないためである（S3 のレビュー）。
+
+**`UiDispatcher.Current`（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）:** UI スレッドのキュー（`UiDispatcher`）を引く入口を Core に置き、ホストが置く。今は Windows の `Win32MessageLoop.Dispatcher` とヘッドレスの `HeadlessSession.Dispatcher`（internal）が別々に持ち、OS によらないコードからは引けない。ワーカーがメッセージを積む先（`IUiDispatcher.Post`。行 U1 で `Post<T>` になる）は、これで引く。行 U1 の受け手の登録（`UiMessage.On<T>`）は総称型の静的な表で、ディスパッチャを引かない。
+
+```csharp
+public sealed class UiDispatcher : IUiDispatcher
+{
+    public static IUiDispatcher Current { get; }                   // どのスレッドからでも読める。ホストが置く前は InvalidOperationException
+    internal static IUiDispatcher? Exchange(IUiDispatcher? value); // ホストが置き、返った前の値を終わる時に戻す
+}
+
+// 値を持つ小さな型。静的な Current と Exchange は、プロセスに 1 つのこの型の物に任せる
+internal sealed class CurrentDispatcher
+{
+    private IUiDispatcher? _value;
+
+    public IUiDispatcher Value { get; }                      // Volatile.Read(ref _value)。null なら InvalidOperationException
+    public IUiDispatcher? Exchange(IUiDispatcher? value);    // Interlocked.Exchange(ref _value, value) で置き換え、前の値を返す
+}
+```
+
+- **置く所:** アプリのホスト（`IPlatformApp`、§6.0）は、作った時に自分のディスパッチャを置き、捨てる時に前の値に戻す。ヘッドレス（`HeadlessSession`）は、UI スレッドを始めた時に置く
+- **前の値に戻す理由:** UI スレッドはプロセスに 1 つで（`UiThread`）、`XylemUI.Desktop.Tests` は本物の窓のループを、ヘッドレスの UI スレッドの上の作業の中で回す。戻さないと、本物の窓のテストの後に、ヘッドレスの作業が捨てたディスパッチャに積まれる（Issue #877 の Grill でオーナーが決定）
+- **読む側:** ワーカーが `Post` するので、どのスレッドからでも読める。読むのは `Volatile.Read`、置き換えるのは `Interlocked.Exchange` である。読んだ時に置かれていたディスパッチャに積む
+- **値の置き場所:** 値は小さな internal の型（`CurrentDispatcher`）が持ち、静的な `Current` と `Exchange` は、プロセスに 1 つのその物に任せる。テストはその型の物を作って確かめる。`XylemUI.Core.Tests` はプロセスの間ずっと `Current` を置いたままにするので、静的な `Current` で「置く前は投げる」を確かめると、テストの順に左右される
+- **型:** `IUiDispatcher` を返す（PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定）。具体の型 `UiDispatcher` を公開の静的なメンバーで返すと、どのワーカーからも `Drain` を呼べてしまうためである。Issue #877 の Grill で一度 `UiDispatcher` を返すと決めたが、それを改めた。取り出しと `SynchronizationContext` には、ホストが自分の作った `UiDispatcher` への参照を持って使う（`IPlatformApp.Dispatcher`）。`IUiDispatcher` は行 U1（PR #875）の形（`Post<T>`）のままで、この設計はメンバーを足さない。`DroppedMessageCount`（行 U1）は具体の型にあり、ホストとテストが読む
+- **比べたもの:** Avalonia も、プラットフォームが UI スレッドのディスパッチャを差し込み（`Dispatcher.InitializeUIThreadDispatcher`、`src/Avalonia.Base/Threading/Dispatcher.ThreadStorage.cs` 82〜88 行目。Windows では `src/Windows/Avalonia.Win32/Win32Platform.cs` 86 行目）、静的な `Dispatcher.UIThread`（同 55〜69 行目）で引く。Avalonia は 2 度目の差し込みで `InvalidOperationException` を投げる（同 85〜86 行目）。ここは上の理由で、前の値に戻す
 
 **取り出し（`UiDispatcher.Drain`、Core）:** UI スレッドだけが呼べる。呼んだ時点でキューにあった件数だけを実行し、実行中に積まれたもの（すぐ完了する `await` の継続など）は次の反復に回す。取り出しが終わらなくなるのを防ぐためである。ハンドラや継続が投げた例外は Platform の例外ハンドラに渡し、残りを続ける。同期描画（§2.11.1）の中では何もしない（`SynchronousRenderGuard.IsActive` なら 0 件）。Platform のループは、OS メッセージを処理した後、待機に入る前に毎回取り出す。
 
@@ -1806,7 +1836,7 @@ public static class Primitive
     public static Element Dialog(Signal<bool> isOpen, Func<Element> content, DialogOptions? options = null);   // モーダル
 }
 
-// XylemUI.Desktop（Core・Platform.Windows・Rendering.D3D11 をつなぐ）
+// XylemUI.Desktop（OS によらない起動。OS のホストはビルド時に RID で選ぶ、§6.0）
 public static class XylemApp
 {
     public static int Run(Func<Element> root, WindowOptions? options = null);   // 最後のウィンドウを閉じたら戻る
@@ -1836,7 +1866,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - 入力の配送は frame path にある（`.cursor/rules/perf.mdc`）ので、`Scope.Run(scope, () => handler(in e))` のようにイベントごとにクロージャを作らない（`in` の引数はラムダに捕まえられない）。`Scope` に internal の `TryEnter(ScopeRef scope, out ScopeRef previous)` と `Exit(ScopeRef previous)` を足す（`ScopeRef` は Core の中の `Handle<ScopeData>` の別名で、公開の `ScopeHandle` の中身）。`TryEnter` は `Scope.Run` と同じ検査（UI スレッド、計算中の Computed でない、破棄されていない）をして今の Scope を差し替え、`Scope.Run` もこの 2 つで書く。`WindowInput` は、ハンドラを呼ぶ前に `TryEnter` し、`finally` で `Exit` する（PR #336 のレビュー）
   - 登録した Scope は、ハンドラごとに持つ（`HandlerEntry` に `ScopeRef` を 1 つ）。部分を作り直す `Show` と `For` が入ると、あるノードに、そのノードを作った Scope とは別の Scope からハンドラを足すことがあるので、ノードに 1 つでは足りない。SolidJS の `runWithOwner` も、登録した時の持ち主で呼ぶ
 - **部品ごとの Scope:** 部品の関数はふつうのメソッドで、部品ごとに Scope を作らない（SolidJS と同じ）。V1d で Scope を作るのは、ウィンドウの根だけである。部分を作り直す `Show` と `For` が、その部分の Scope を作る。Reactive Context の `Provide`（下の「Reactive Context」）も、包んだ本体の Scope を作る
-- **ウィンドウ:** `XylemApp.Run` は、ウィンドウ（`Win32Window`）、レンダラ（`D3D11Renderer`）、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`、`TextContext` を持つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。Platform は Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置く（Avalonia の Avalonia.Desktop と同じ）。配布のパッケージの形は行 C0 で決める
+- **ウィンドウ:** `XylemApp.Run` は、ビルド時に選ばれた OS のホスト（§6.0）に、ウィンドウ（Windows は `Win32Window`）とレンダラ（`D3D11Renderer`）を組にして作らせる。窓の核（`WindowCore`、§6.0）が、フレーム（`WindowFrames`）、入力（`WindowInput`）、木（`UiTree`。`TextContext` は UI スレッドに 1 つ）、根のノード（`Box`）を作り、根の Scope の中で `root` を呼んで、その要素を根のノードに付ける。作る順は §6.0「作る順」に書く。ウィンドウの大きさと倍率は §6.1.1 のとおり。ウィンドウを閉じると、根の Scope を破棄する。最後のウィンドウを閉じたら、メッセージループを終えて戻る。比べた 3 つの起動の形は、Avalonia の `AppBuilder.Configure<TApp>().UsePlatformDetect().StartWithClassicDesktopLifetime(args)`（`Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 8 行目、`Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 282〜289 行目）、Flutter の `runApp(widget)`（`widgets/binding.dart` 1883〜1886 行目）、GPUI の `Application::run` と `open_window`（`gpui/src/app.rs` 249〜260・1500〜1504 行目）。V1d では、Platform が Rendering を参照しないので、つなぐ所を `XylemUI.Desktop` に置いた（Avalonia の Avalonia.Desktop と同じ）。行 PL1 で、窓とレンダラは OS のホストの中で組にし（Grill の 5 巡目でオーナーが決定、Issue #872）、`XylemUI.Desktop` は OS によらない起動（`XylemApp.Run` と、最後の窓を閉じたら終える数え方）だけを持つ。Windows では Platform.Windows が Rendering.D3D11 を参照する（Issue #877 の Grill でオーナーが決定、§6.0「ホストの選び方」）。配布のパッケージの形は行 C0 で決める
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
   - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした
 - **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、OS の一覧を全部読んで解決したロケールの言語を使い、ロケールが変わると整形し直す。アプリがロケールを 1 つも宣言しなければ、今と同じく OS の 1 番目の言語を使う。§4.11「ロケール」の「文字の既定の言語」、LC1 の Grill、Issue #825）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
@@ -1915,7 +1945,7 @@ static Element Preview()
 - **引ける所:** `Use` は、部品を作る時のほか、作った後でも、今の Scope がある所で引ける。イベントのハンドラは登録した Scope の中で動き（上の「ハンドラを動かす Scope」、`src/XylemUI.Core/Input/WindowInput.cs` 1194 行目、`src/XylemUI.Core/Input/ActionDispatch.cs` 262 行目の `Scope.TryEnter`）、Effect は、作った所の Scope の子である自分の Scope の中で動く（`src/XylemUI.Core/Reactive/Effect.cs` 138〜146 行目、`src/XylemUI.Core/Reactive/Scope.cs` 211 行目の `AllocateForEffect`）。どちらも、宣言した所から上をたどる。今の Scope が無い所（`await` の後の継続など、§2.3「`await` の後」）では、既定値を返さずに `InvalidOperationException` を投げる。既定値を返すと、祖先が別の値を置いていても既定値で動き、誤りに気づけないからである。`TryUse` も、今の Scope が無い所では `false` を返さずに同じ例外を投げる。`false` は「値も既定値も無い」ことだけを表し、Scope が無いのは呼び方の誤りだからである（PR #832 でオーナーが決定）。直し方は、`await` の前に `Scope.Current` を取っておき、`Scope.Run` の中で引くことである。今の Scope が無い所で作った Effect は、親の無い自分の Scope を持つ（`src/XylemUI.Core/Reactive/Scope.cs` 344〜351 行目）。その中の `Use` と `TryUse` も、同じ理由で同じ例外を投げる（Issue #838 の Grill でオーナーが決定）。その Effect の中で作った Scope と Effect から引く時も同じである。ただし、その Effect の中で `Provide` した値は、その中から引ける。例外にするのは、値が見つからなかった時だけである。中で置いた値は、祖先を見なくても正しく決まるからである。破棄された親の下で作った Scope と Effect（自分を破棄した Effect が、走っている間に作ったもの。同じ `Scope.cs` 344〜351 行目）も、属する所が無いので、同じ扱いにする（PR #839 でオーナーが決定）。ウィンドウの根の Scope も親を持たないが、こちらは正しい使い方なので、鍵の既定値を返す。この 2 つを見分ける印を Scope に持つ。印で Scope の大きさが変わるかは、下の置き場所の 3 案と一緒に測る。**Computed の中では引けない**（同じ決定）。Computed が計算している間の `Use` と `TryUse` は、`Scope.Create` などと同じ検査（`Scope.cs` 336〜342 行目の `VerifyNotInComputed`）で `InvalidOperationException` を投げる。Computed は Scope を持たず（§2.2「Computed の所有」）、関数は読んだ側の Scope の下で走る（`src/XylemUI.Core/Reactive/Computed.cs` 163〜165 行目、`Computation.cs` 146〜152 行目）。Effect の再実行では、Effect が自分の Scope に入る前に Computed が計算し直され（`Effect.cs` 125 行目が 138〜139 行目より先）、結果はキャッシュされるので、引く値は最初に読んだ所で決まってしまう。使う側は、作る時にシグナルを引いて変数に取り、Computed の中ではそれを読む。Flutter は、引く所をいつも宣言した要素（`BuildContext`）に固定し、`initState` の中では例外にする（`framework.dart` 2417〜2420・6066〜6070 行目）。Avalonia の資源の束縛は、作った時のコントロールから引く（`ResourceNodeExtensions.cs` 194〜198 行目）。GPUI の値はアプリ全体に 1 つである。SolidJS は、memo を含む計算が作られた時の文脈を持ち、走る間は自分を所有者にするので、memo の中の `useContext` は宣言した所の値を引く（solid v1.9.16 の `packages/solid/src/reactive/signal.ts` 1457〜1458・1406・1223〜1228 行目）。XylemUI はこの形を採らない。Computed は Scope に持たれず、Scope が破棄された後も生きるので（§2.2「Computed の所有」）、作られた時の Scope を覚えても、引く先が無くなる場合がある。Computed ごとに欄が 1 つ増え、計算のたびに Scope の切り替えが入る（測っていない）。Scope の操作は Computed の中ではすでに例外であり、それと揃える。`Provide`・`Use`・`TryUse` は、ほかの公開の API と同じく UI スレッドで呼び、ほかのスレッドからなら `InvalidOperationException` を投げる（§2.12）。鍵のコンストラクタは既定値を持つだけなので、static の初期化子がどのスレッドで走っても呼べる
 - **値の置き場所（3 案を測って、Issue #838 でオーナーが決定）:** Scope ごとに、親から受け継いだ値のリストの頭を持つ。Scope を作る時に親の頭を写し、値を置いた Scope は、その前に自分の値をつなぐ。引く時は親をたどらず、リストを頭から見て、鍵が同じ最初の項目を返す。Flutter と SolidJS も、親から受け継いだものを各ノードが持ち、引く時に親をたどらない（上の `framework.dart` 5129〜5132・6272〜6277 行目、solid v1.9.16 の `signal.ts` 1457〜1458 行目）。あちらは表を写すが、XylemUI はリストを共有するので、Scope を作る時に写すのは頭 1 つである。リストの頭は、世代のない 4 バイトの番号で持つ。値の項目は、置いた Scope が破棄される時に解放され、その下の Scope はそれより先に破棄されるので、古い番号を引く Scope は残らない。リストが親の頭に着く前に終われば、不変条件の違反である。測った値（NativeAOT、`docs/benchmarks/rc1-context.md`）: 引く時間は、深さ 1・10・50・100 のどれでも約 8.8 ns で、鍵が 10 個置かれた下で最も遠い鍵を引くと約 14 ns になる（上で置かれた鍵の数に比例する）。`Provide` は割り当てない。**目標にしていた「値を置かない Scope は何も払わない」は満たしていない。** Scope 1 つは 96 → 104 バイトになり、値の無い Scope を作って捨てる時間は 58.1 → 63.7 ns になった。採らなかった 2 案は、親を 1 つずつ上がる形で、深さ 100 で 268 ns（Scope ごとにリストを持つ）と 405 ns（Scope には印だけを持ち、リストは別の表）だった。後者だけが Scope の大きさを変えない
 - **メニューの文脈のノード:** メニューは、文脈のノード（§7「メニューの項目が動作を指す形」の「文脈のノードの持ち方」）を、Reactive Context で項目に渡す（行 RC1 で載せ替えた）。パネルを `Provide` で包み、項目とサブメニューは作る時に引く。この鍵では「値が無い」は「メニューの外」という正しい答えなので、属する所の無い Effect の中でも、値が無ければ例外にせず、メニューの外として読む（フレームワークの中だけの引き方 `TryUseInside`。PR #846 のレビューの意見を、オーナーが決定）。開いた後にパネルの中の `Show` や `For` が作った項目も、Scope のリストから同じ値を引く。載せ替える前は、パネルを作る間はスレッドごとの値で、開いた後はポップアップの根ごとの表で渡していた。メニューバーの場面（`menubar`）のフレームの割り当ては、載せ替えの前後で変わらない（メニューの間を動くフレームは 0 バイト、切り替えるフレームは 36,264 バイト。`docs/benchmarks/rc1-context.md`）
-- **テストとウィンドウ:** テスト用の入口は足さない。テストは、アプリと同じ書き方で根の関数を包む（`HeadlessApp.StartAsync(() => Theme.Provide(sig, () => …))`）。ウィンドウは、根でロケールを置く（行 LC1。§4.11「配り方」）。値がシグナルの鍵（上の「値が無い時」）を根で置く所は、デスクトップとヘッドレスの両方の根（`src/XylemUI.Desktop/DesktopWindow.cs` 224〜259 行目と `src/XylemUI.Testing/HeadlessApp.cs` 722〜757 行目の `Mount`）であり、テストはアプリと同じ値を引く。ウィンドウが置くには、鍵と値の型が `XylemUI.Desktop` と `XylemUI.Testing` から見える層に要る。ロケールは Core の型である。テーマの鍵と値の型をどの層に置くかは、テーマの行で決める（PR #839 のレビュー）。テーマは、テーマの行で置く
+- **テストとウィンドウ:** テスト用の入口は足さない。テストは、アプリと同じ書き方で根の関数を包む（`HeadlessApp.StartAsync(() => Theme.Provide(sig, () => …))`）。ウィンドウは、根でロケールを置く（行 LC1。§4.11「配り方」）。値がシグナルの鍵（上の「値が無い時」）を根で置く所は、デスクトップとヘッドレスの両方の根であり、テストはアプリと同じ値を引く。今は `DesktopWindow` と `HeadlessApp` がそれぞれ `Mount` を持つ。行 PL1 で、両方が使う窓の核（`WindowCore`、§6.0）の `Mount` 1 つにまとめる（Grill の 5 巡目でオーナーが決定、Issue #872）。窓の核は Core にあるので、鍵と値の型は Core から見える層に要る。ロケールは Core の型である。テーマの鍵と値の型をどの層に置くかは、テーマの行で決める（PR #839 のレビュー）。テーマは、テーマの行で置く
 
 **ホットリロード:** 開発時の JIT 実行で .NET Hot Reload を使う。`[MetadataUpdateHandler]` で更新通知を受け取り、変更された型のメソッドから作られた部分木を作り直す（部分木を特定できない場合はウィンドウのルートから作り直す）。**保持されるのは、コンポーネント関数の外（アプリ側の状態オブジェクト等）で持っている Signal だけ**で、コンポーネント関数内のローカル Signal は作り直しで失われる。関数は1度しか実行されないため、ローカル変数を再実行をまたいで引き継ぐには Compose の位置メモ化のような仕組みが必要になり、v1 の対象外とする。入力中のフォームの内容を保ちたい場合は、その Signal を関数の外に置く。**見直し（Issue #54）:** ローカル状態を残さない理由が仕組みの規模で、要件と比べていない。Flutter のホットリロードは `State` を保ったまま差し替えるので、行 H1 で Flutter を基準に決め直す。
 
@@ -2229,7 +2259,7 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
 - **`TextStyle` の欄（V1a、D3 で改めた）:** フォントの指定・大きさ・言語・行の高さの倍率を持つ。V1a では色を持たせなかった。色は描画の状態で、`TextLeaf.Color` に持ち、持たない文字の葉は祖先の `NodeVisual.Foreground` を受け継ぐ（§5.0「描画の段とフレームの駆動」、V1b・V1c）。比べた 3 つは、色も同じ型に入れる（Flutter 3.47.8 の `TextStyle.color`、`text_style.dart` 544 行目。Avalonia 12.1.4 の `TextRunProperties.ForegroundBrush`、`TextRunProperties.cs` 35 行目。GPUI（zed v1.25.3）の `TextStyle.color`、`style.rs` 438〜440 行目）。**決め直し（D3 の Grill、Issue #441）:** 公開の `TextStyle` に `Color?`（null は受け継ぐ）を足す。比べた 3 つと形を揃え、色を持つ公開の `SpanStyle`（§4.8）とも揃える。中では、layout の鍵（今の欄）と色に分けて持ち、`SetTextStyle` は鍵が変われば layout の印を、色だけが変われば描画の印（`ChangeKind.Color`）を付ける。色だけの変更で layout をし直さないのは、比べた相手より良い。Avalonia の `TextBlock` は前景を変えると整形と測り直しをし（`src/Avalonia.Controls/TextBlock.cs` 948〜950 行目）、Flutter は描画の印だけを付けるが、描くときに段落を同じ幅で組み直す（`painting/text_painter.dart` 1335〜1348 行目）。前に挙げた理由（欄ごとの比べの費用）は測っていなかった。行 T15 で入れ、比べの費用を測る。1 つの文章の中の範囲ごとのスタイルは、行 D9 で決める。`ShapingResult.Shape` は run の並びを受け取るので、範囲ごとのフォントは後から足せる。`Size` と `LineHeight` が範囲の外なら、`CreateTextNode` と `SetTextStyle` が `ArgumentOutOfRangeException` を投げる
 - **計測の呼び方:** layout は、`UiNode.Text` が null でない葉を文字の葉として、`MeasureFunc` と `IntrinsicWidthsFunc` を通さずに文字の計測を直接呼ぶ。葉ごとに closure を作ると、10,101 個の葉が 10,101 個の closure を持ち、呼ぶたびに間接呼び出しと、handle からのノードの引き直しが入る。Taffy の `compute_layout_with_measure` は計測にノードの文脈を渡す （Taffy v0.15.1 の `taffy_tree.rs` 971〜978 行目、`MeasureFunction` は `NodeId` と `Option<&mut NodeContext>` を受け取る）。Flutter の `RenderParagraph` も、自分の `performLayout` の中で `TextPainter` を測る（Flutter 3.47.8 の `paragraph.dart` 900〜904・956〜966 行目）。利用者が書く計測関数は、今のまま `MeasureFunc` と `IntrinsicWidthsFunc` で受ける。文字の葉は内容の幅を返す葉として扱うので、L5 の「親で止める」が効く。Debug のビルドの内容の幅と計測の突き合わせ（L4）も、文字の葉に同じく掛ける
 - **文字の葉の状態は参照 1 つ:** `UiNode` は `TextLeaf?` を 1 つ持つ（8 バイト）。V1a の前の設計の `TextState` の struct（§2.5 にあった）をそのまま埋め込むと、参照 3 つ（24 バイト）、長さと詰め物（8 バイト）、`TextStyle`（約 40 バイト）で、文字の葉でないノードも約 72 バイト大きくなる。Flutter の `RenderParagraph` も、文字を持つ箱だけが文字の状態を持つ
-- **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
+- **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。今のコードは `DesktopWindow` が窓ごとに作っているので、行 PL1 で `XylemApp.Run` が UI スレッドに 1 つ作る形に直す（Grill の 5 巡目でオーナーが決定、Issue #872。§6.0）。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
 - **内容を書く:** `SetText` は `TextLeaf.SetContent` で `Buffer` に写す。前と同じ内容（`SequenceEqual`）なら何もしない。違えば `Shaped` と `LineBreaks` を捨て、ノードを layout の dirty にする。§2.4 のプロパティの記述子の `Setter` は `SetContent` を呼び、dirty の印は記述子の `ChangeKind` が付ける。`SetTextStyle` も、前と等しいなら何もしない。`TextBuilder` の比べ方（ロードマップの V1 の未決の 1 点）は、V1d でこの上に作った（§2.13「部品の API」の「`TextBuilder` の 2 点」）
 - **キャッシュ:** `ShapedTextCache` は `ShapingResult` を 1 つ持つ（フォントの run、整形、改行の候補、内容の幅）。内容かスタイルが変わると捨てる。`LineBreakCache` は幅を鍵に 4 つまで持ち、1 つが `LineBreakResult`（Pass1）・`LineLayoutResult`（Pass2）・行の高さの合計を持つ。Pass2 は緊急ブレークで行を増やすことがあるので（§4.1）、高さは Pass2 の後で決まり、Pass2 の結果まで持つ。高さは文字の葉の結果に効かないので、鍵は幅だけ（`MinContent` と `MaxContent` は最小と最大の内容の幅に置き換えてから引く）。min-content と max-content の幅は `ShapingResult.IntrinsicWidths` を整形の結果と一緒に持ち、高さに依存しない（`DependsOnHeight` は false）。項目は使い回し、配列は足りないときだけ広げる。キャッシュが当たったときも、外れて項目を使い回すときも、定常状態の割り当ては 0
 - **メモリ:** 配列は、葉を初めて測るときに、内容が要る大きさで確保する。T1b の `ShapingResult` は、作った時点で 64 文字・64 グリフなどの配列を確保していた（約 2.5 KB。PR #297 のレビュー）。V1a ではこれをやめる。空の葉と、まだ測っていない葉は配列を持たない。広げるときは、要る大きさと今の 2 倍の大きいほうにする（今の `Ensure`）。そのため、葉が持つ配列は、それまでで最も長い内容の 2 倍に収まる。行の境界の整形のやり直しに使う作業用の配列（T1b の `ShapingResult` の `_scratch`）は葉ごとに持たず、`TextShaper` に 1 つ持つ（`TextContext` の shaper を、UI スレッドのすべての葉が使う）。初めて測った葉 1 つの配列の中身は、次のとおりである。記号は、文字数（UTF-16）を n、グリフ数を g、改行の候補の数を b、フォントの run の数を r、行数を L、幅の項目の数を e とする
@@ -2760,7 +2790,7 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
 - **比べた 3 つの Windows での形:** Flutter は、UIA の provider をコンパイルで外し、既定で MSAA の `IAccessible` を返す（`shell/platform/windows/flutter_window.cc` 907〜932 行目、「UIA is currently disabled by default」）。UIA のクライアントは MSAA の代理を通して読む。Avalonia は、UIA を source-generated COM（`[GeneratedComClass]`）で書く（`Windows/Avalonia.Win32.Automation/AutomationNode.cs` 20〜26 行目）。GPUI は、AccessKit（`accesskit_windows` 0.34、zed の `Cargo.toml` 526〜529 行目）に毎フレーム木を全部渡し、UIA の実装と `WM_GETOBJECT` の答えを AccessKit に任せる（`gpui/src/window/a11y.rs` 578〜584 行目、`gpui_windows/src/events.rs` 836〜851 行目）
 - **UIA は AccessKit に任せる（S10、Issue #623）:** XylemUI は a11y の木を AccessKit の節（役・名前・状態・矩形・操作）に変え、変わった節だけを `TreeUpdate` で渡す。UIA の provider・パターン・イベント・TextPattern は AccessKit の Windows の adapter が持つ。S10 は、release の静的ライブラリ（x86_64 の MSVC の `accesskit.lib`）が静的 CRT の NativeAOT の `XylemUI.E2E.exe` に警告もエラーも無くリンクでき（依存は bcrypt・ntdll・propsys・runtimeobject・uiautomationcore・userenv・ws2_32 の 7 つ、`accesskit-config.cmake` 24 行目）、実行ファイルが +253 KB で、本物の UIA のクライアントが木を読み、adapter が TextPattern（`adapters/windows/src/node.rs` 1432 行目、`text.rs` 320 行目）と変わった節だけの更新（`accesskit/src/lib.rs` 3198〜3206 行目）を持つことを確かめた。比べた 3 つで、Windows で既定で TextPattern を出すものは無い。手書きの vtable は、パターン・イベント・スレッド・TextPattern を全部書くことになり、Grill の Q1 は「出来合いの Windows のライブラリは無い」という誤った前提で決めていた（PR #621 のレビュー）
 - **取り込み方:** release の zip を、版と SHA-256 で `vendor/versions.lock` に固定し、`vendor/build.ps1` が取って確かめ、`vendor/out` に置く。NativeAOT では静的ライブラリを、JIT では同じ zip の共有ライブラリ（`accesskit.dll`）を、同じ `DllImport` の宣言から読む（HarfBuzz と同じ形、§9）。ソースからは作らない（Rust のツールチェーンを足さない）。AccessKit は MIT か Apache-2.0。版は、出てから 2 週間たったものを取る（`dependencies.mdc`）ので、0.23.1（2026-09-26、zip の SHA-256 は `35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f`）にした。S10 は 0.23.2（2026-11-01）で測った。zip の `lib/windows/x86_64/msvc/` の静的ライブラリと DLL をそのまま取る（`vendor/build.ps1` の `$prebuilt`）。NativeAOT のアプリは `XylemUI.Platform.Windows.targets` を読み込み、静的ライブラリと依存の 7 つをリンクに渡す（#633 の実装）
-- **作る時:** 窓を作る時に、AccessKit の Windows の adapter（subclassing しない形、`accesskit_windows_adapter_new`）を作る。窓の `WM_GETOBJECT` を `accesskit_windows_adapter_handle_wm_getobject` に渡し、窓のフォーカスの変化（`WM_SETFOCUS`・`WM_KILLFOCUS`、初期値は `accesskit_windows_adapter_new` の引数）を `accesskit_windows_adapter_update_window_focus_state` に渡して、返ったイベントを `accesskit_windows_queued_events_raise` で出す（subclassing する adapter は自分で行う）。AccessKit が最初の問い合わせで活性化の関数を呼んだ時に、a11y の木を作り始めて全部を渡す。窓が閉じるまで持つ。AccessKit は UIA の問い合わせ（`UiaRootObjectId`）だけでなく、MSAA の窓のクライアント領域の問い合わせ（`OBJID_CLIENT`）でも活性化する（`adapters/windows/src/adapter.rs` の `handle_wm_getobject`）ので、読み上げソフトが無くても、常駐のアプリが表示したばかりの窓に問い合わせれば作る。木の根ができる前（`DesktopWindow` は窓を表示してから中身を載せる）の問い合わせには、用意ができていないと答える（活性化の関数が null を返す）。AccessKit は仮の木を出し、活性化の関数をもう呼ばず、次の `update_if_active` で丸ごとの木を受け取る。窓は根を作った後にそれを渡す。そのあとの `WM_GETOBJECT` も、AccessKit に答えさせる前に、頼まれたままの木を丸ごと渡す。木を作る途中で例外が出た時も、頼まれたものとして覚え、次の `WM_GETOBJECT` で渡す。更新を作る途中で例外が出た時は、AccessKit がどちらの状態でも受け取れる、木の情報と窓の節だけの更新を返し、次の受け渡しで丸ごとの木を渡し直す。AccessKit は受け取れない更新で Rust の側から落ちる（#633 の実装）。それまでは何も作らず、費用は 0 である。Flutter は MSAA か UIA の問い合わせで semantics を有効にし、止めない（`flutter_window.cc` 898〜904 行目）。Avalonia も最初の `WM_GETOBJECT` で peer を作る（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 931〜937 行目）。GPUI は同じ adapter の関数を呼び、借りを返してから答えを返す（`events.rs` 846〜848 行目。答えの中から `WM_GETOBJECT` がまた来ることがあるため）
+- **作る時:** 窓を作る時に、AccessKit の Windows の adapter（subclassing しない形、`accesskit_windows_adapter_new`）を作る。窓の `WM_GETOBJECT` を `accesskit_windows_adapter_handle_wm_getobject` に渡し、窓のフォーカスの変化（`WM_SETFOCUS`・`WM_KILLFOCUS`、初期値は `accesskit_windows_adapter_new` の引数）を `accesskit_windows_adapter_update_window_focus_state` に渡して、返ったイベントを `accesskit_windows_queued_events_raise` で出す（subclassing する adapter は自分で行う）。AccessKit が最初の問い合わせで活性化の関数を呼んだ時に、a11y の木を作り始めて全部を渡す。窓が閉じるまで持つ。AccessKit は UIA の問い合わせ（`UiaRootObjectId`）だけでなく、MSAA の窓のクライアント領域の問い合わせ（`OBJID_CLIENT`）でも活性化する（`adapters/windows/src/adapter.rs` の `handle_wm_getobject`）ので、読み上げソフトが無くても、常駐のアプリが表示したばかりの窓に問い合わせれば作る。木の根ができる前（窓を表示してから中身を載せる。§6.0「作る順」）の問い合わせには、用意ができていないと答える（活性化の関数が null を返す）。AccessKit は仮の木を出し、活性化の関数をもう呼ばず、次の `update_if_active` で丸ごとの木を受け取る。窓は根を作った後にそれを渡す。そのあとの `WM_GETOBJECT` も、AccessKit に答えさせる前に、頼まれたままの木を丸ごと渡す。木を作る途中で例外が出た時も、頼まれたものとして覚え、次の `WM_GETOBJECT` で渡す。更新を作る途中で例外が出た時は、AccessKit がどちらの状態でも受け取れる、木の情報と窓の節だけの更新を返し、次の受け渡しで丸ごとの木を渡し直す。AccessKit は受け取れない更新で Rust の側から落ちる（#633 の実装）。それまでは何も作らず、費用は 0 である。Flutter は MSAA か UIA の問い合わせで semantics を有効にし、止めない（`flutter_window.cc` 898〜904 行目）。Avalonia も最初の `WM_GETOBJECT` で peer を作る（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 931〜937 行目）。GPUI は同じ adapter の関数を呼び、借りを返してから答えを返す（`events.rs` 846〜848 行目。答えの中から `WM_GETOBJECT` がまた来ることがあるため）
 - **スレッド:** 活性化の関数は窓のスレッド（UI スレッド）で呼ばれる。操作の関数（Click など）は、UI スレッドで呼ばれるとは限らない（accesskit_windows 0.35.1 の `adapters/windows/src/adapter.rs` 413〜414 行目。UIA の呼び出しのスレッドで同期に呼ぶ）。`NativeHandleTable` は UI スレッドだけのもので鍵を持たないので、操作の関数は表を引かない。要求のポインタを、窓の HWND への `PostMessage`（`WM_APP` の番号）で UI スレッドへ送り、窓の手続きが配ってから `accesskit_action_request_free` で解放する。adapter に渡す利用者のデータは HWND である。窓を壊す前に、窓のキューに残った自分のメッセージを読み出して解放する（`PeekMessage` の `PM_REMOVE`）（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。鍵つきの共有のキューに積む案は、窓ごとの順を Windows のメッセージの順に任せられず、鍵が要るので採らない
 - **a11y の木:** 役を持つノード（部品の既定の役か `.Accessible` の役）ごとに 1 つの節を作る。親は、役を持つ最も近い祖先の節である。役の無いノードは落とし、その子は親の節につく（GPUI の `a11y.rs` 429〜440 行目と同じ）。ただし、役が無くてもフォーカスを取れるノード（`.Focusable()`）は Group の節にする。フォーカスが a11y の木に無いノードにあると、AccessKit には根のフォーカスとして渡り、窓はもうフォーカスを持つのでイベントが出ず、読み上げソフトは何も言わない（Todo の `SelectionArea` で Narrator が最初の Tab を読まなかった）。Avalonia の `SelectableTextBlock` はフォーカスを取り（`SelectableTextBlock.cs` 52 行目）、自分の peer を持つ。Flutter の `SelectableRegion` は Tab で止まるが、`includeSemantics: false` で semantics を持たない（`widgets/selectable_region.dart` 446・1995〜1996 行目）。`.Accessible` で役を None にしたノードは、フォーカスを取っても落とす（P02g の実装の 3 つ目の PR でオーナーが決定、Issue #641）。`Hidden` の部分木は載せない。根は窓（Window、名前は窓の題）で、開いているポップアップの根は、主の木の後に奥から順に根の子にする（§12.5 の `Find` と同じ順）。順は木の前順（§4.4）
 - **名前のたたみ:** 中身の文字から名前を作る役（Button・CheckBox・RadioButton・ComboBox・Hyperlink・ListItem・MenuItem・TabItem・ToolTip・Text）を持ち、名前の無いノードは、役の無い子孫の文字の葉の文字を、前順に空白 1 つでつないで名前にする。ボタンの中の「OK」がボタンの名前になる。その役の下の文字の葉は、自分の節にならない。入れ物の役（Window・Dialog・Group・List・Menu・MenuBar・ScrollViewer・Tab）は名前を作らず、下の文字の葉はそれぞれ Text の節になる（ダイアログの名前がダイアログの文字の全部にならない）。中身を値として持つ役（Edit・Image・Slider・ProgressBar・Separator）は子の節を持たない（#627 の実装）。Flutter はボタンの子をまとめ（`isMergingSemanticsOfDescendants`）、Avalonia は Content の文字列を名前にする。GPUI は `aria_label` を明示する。行 AX1 で足す役の、名前をたたむか・子の節を持つかは、下の「AX1 で足す形」の役の表に書く。labelled-by の相手がある時は、部品の名前とたたみより先に相手の文字を名前にする（同じ所の「Windows での折り込み」）
@@ -3685,7 +3715,7 @@ UiNodeとGPUバックエンドの間にDisplayListという中間表現を挟む
 1. **UiNodeとGPUバックエンドの結合度低下**: Metal/D3D11/wgpuの3バックエンドに加え、将来的なソフトウェアレンダラ・テストレンダラも同一のDisplayListから描画できる。
 2. **Damageの正確な計算**: 「dirtyなノード」と「実際に再描画すべき画面領域」は別物である。矩形の移動・変形・不透明度変化を考慮すると、`old_rect ∪ new_rect`のunionを取る必要がある。
 
-**DisplayListの原則**: `DisplayList`は「描画命令の列」であり、「GPU APIに近い中間表現」ではない。`PaintCommand`はGPU概念（頂点バッファ、シェーダー、テクスチャユニット等）を一切知らず、`FillRect→quad`、`GlyphRun→glyph instances`、`ClipRect→stencil/scissor`、`Transform→matrix`という変換は`IRenderer`側（§5.2のバックエンド実装）の責務とする。この境界を強く保つことで、将来`SoftwareRenderer`/`TestRenderer`/`PdfRenderer`等を同じDisplayListから構築できる。
+**DisplayListの原則**: `DisplayList`は「描画命令の列」であり、「GPU APIに近い中間表現」ではない。`PaintCommand`はGPU概念（頂点バッファ、シェーダー、テクスチャユニット等）を一切知らず、`FillRect→quad`、`GlyphRun→glyph instances`、`ClipRect→stencil/scissor`、`Transform→matrix`という変換はレンダラ側（`IRenderTarget` を実装する §5.2 のバックエンド）の責務とする。この境界を強く保つことで、将来`SoftwareRenderer`/`TestRenderer`/`PdfRenderer`等を同じDisplayListから構築できる。
 
 ```csharp
 public readonly record struct CornerRadii(float TopLeft, float TopRight, float BottomRight, float BottomLeft);
@@ -4473,7 +4503,7 @@ public readonly record struct GlyphBox(int Left, int Top, int Width, int Height,
 - **テクスチャ:** 画像ごとに 1 枚のテクスチャを作り、アップロードで mipmap も作る。縮めて描くときは mipmap を使った線形の補間にする（Flutter の既定の品質）。アトラスには入れない（GPUI はアトラスに入れるが、自動では追い出さない）。テクスチャの解放は §5.0.2 の状態機械を通す。アニメーションの画像は、フレームごとに同じテクスチャへ画素を書き（`UpdateSubresource`）、mipmap を作り直す（`GenerateMips`）。`ImageHandle` は変わらないので、表示リストは変わらず、描き直すだけである（IM1 の Grill の Q36、Issue #765）。フレームごとに新しいテクスチャを作る形は、フレームのたびにテクスチャの確保と解放が走るので取らない。費用の目安は、1b-1 で測った新しい画像 1 枚のアップロード（テクスチャを作ってから GPU が終わるまで）で、一辺 256 画素で 0.06 ms、1,024 画素で 0.36 ms、2,048 画素で 1.90 ms である（`docs/benchmarks/im1-draw.md`）。大きさに比例するので、アニメーションの画像にも目標の大きさを当てる（上の「アニメーション」の「デコードの大きさ」）。同じテクスチャへ書くフレームごとの費用は、3c で測った（`docs/benchmarks/im1-animation.md`）。描画の呼び出しの始まりから GPU が終わるまでの時間は、新しいテクスチャへのアップロードとほぼ同じで、一辺 256 画素で 0.16〜0.18 ms、1,024 画素で 0.45〜0.47 ms、2,048 画素で 1.55〜1.57 ms である
 - **1b-1 の実装（Issue #749、`docs/benchmarks/im1-draw.md`）:** `TextureCache` は、アップロードを待つ枠と、`Release` された枠の 2 つの待ち行列を持つ。どちらも 1 つの枠を 1 回だけ持つので、レンダラが無い間も枠の数より長くならない。レンダラは描画の前に、`Release` された枠のテクスチャを放し（枠が次の画像を持っていれば、その世代のテクスチャは残す）、それから待っている画像をアップロードする。`Release` の後のハンドルを描くのは、表示リストを書く側の誤りで、不変条件の違反にする。描画の命令の元の範囲が画像の大きさの外に出るのも、1b-2 から不変条件の違反にする（`Fit` の計算の誤りを、端の伸びた絵でなく失敗として見せる。IM1 の Grill の Q21）。表示リストは画像の大きさを知らないので、検査はレンダラが行う。画像の一辺は 8,192 画素まで（D3D11 のレンダラが動く最も低い機能レベル 10.0 のテクスチャの上限）。画像ごとにテクスチャを結ぶので、描画の命令は画像ごとに分かれる（同じ画像が続けば 1 回）。1,000 個の四角を 100 枚の画像で描く場面で、Draw の段は 33.7 µs、GPU は 36.9 µs 延びた。画像の画素のシェーダは、起動の時間を延ばさないよう、変換の中の命令のシェーダと同じくスレッドで作る。アップロードは、一辺 1,024 画素の 1 枚で 0.36 ms、4,096 画素の 1 枚で 8.3 ms（GPU が終わるまで）
 - **1b-2 の実装（Issue #755、`docs/benchmarks/im1-element.md`）:** 要素のノードは、アプリが持ってスタイルを当てるノードのまま変えない。読み込み中と失敗のときは、代わりの要素をそのノードの子にし（子の大きさが箱の大きさになる）、画像が来たら子を外して葉にする。葉の中身の大きさは、測る関数が画像の画素の数を返す。画像の縦横の比は、アプリが比を指定していなければ、箱のスタイルの `AspectRatio` に入れる（CSS の `aspect-ratio` と同じく、片方の辺だけ指定された箱が他方を比で決める）。画像は、箱から枠線とパディングを除いた内側に、`Fit` で描く。CSS の `object-fit` と同じく中央に置き、切り取る合わせ方は、箱の内側にかかる部分だけを描くので、切り抜きは要らない。描く元の範囲は、画像の範囲に収める。範囲は箱の座標から求めて倍率で割るので、0 から遠い座標の float の丸めが 1 / 倍率 倍になり、箱よりずっと大きな画像では画像の外に 0.1 画素ほど出て、レンダラの不変条件（Q21）に当たった（PR #756 のレビュー）。デコードは、待つ列（`ConcurrentQueue`）と、走っている数の数えで上限を守り、スレッドプールで流す。手放したデコード（読み込み元が変わった、要素が捨てられた）は、始まる前なら飛ばし、終わっていたら結果を捨てる。JPEG の DCT の段階は shim の `xi_decode` に引数を足して渡す。面積の平均の縮め方は、元の画素が出力の画素 2 つまでにしか掛からないことを使い、元の行と画素を 1 回ずつ読む。4,032 × 3,024 の JPEG を幅 1,024 にするデコードは 42.5 ms（元の大きさでは 46.7 ms）、幅 400 では 25.8 ms
-- **3a の実装（Issue #769、`docs/benchmarks/im1-cache.md`）:** キャッシュは、木（`UiTree`）が 1 つ持つ `WindowImageCache` である。要素は鍵を求め（`Acquire`）、Scope が捨てられたときと読み込み元が変わったときに項目から外れる（`Leave`）。項目は、数える組の前後の参照のほかに、デコードを待つ要素の並びを持つ（要素の中の、次の要素への参照でつなぐ）。`ImageCache` は、UI スレッドごとに、上限の 1 組と、そのスレッドで作った木のキャッシュへの弱い参照の並びを持ち、上限の変更・`Evict`・`Clear` をそれぞれのキャッシュに当てる。弱い参照なので、閉じた窓のキャッシュを生かし続けない。「木を捨てたとき」は、ホストが窓の根の Scope を捨てるところ（`DesktopWindow` とヘッドレスのアプリ）で、キャッシュの `ReleaseAll` を呼ぶ。Scope を捨てて要素が外れても、数える組の画像は残るからである。2 回呼んでも結果は同じで、その後に鍵を求められたら新しくデコードする。待つ要素がいなくなってから済んだデコードは、数える組に入らないなら、`TextureCache.Add` をせずに画素を捨てる（入れても、その場で `Release` することになる）。キャッシュにある画像を出すときは、読み込み中の要素を出す関数を通らない。その関数は入口でクロージャを確保するので、子を外す処理だけを別の関数にした。キャッシュは、計測のために 4 つの数を持つ: デコードを頼んだ回数、求められた鍵が索引にあった回数、上限が数える組から外した項目の数、済んだ画像が数える組に入らなかった回数。§11.3 の 100 枚の画像の場面は 2 つ作った。ゲートのテスト（16 × 16 の画像 100 個を、200 × 150 のスクロールする箱に）と、NativeAOT の場面 `image-scroll`（512 × 512 にデコードした 100 枚で、既定のバイト数の上限と同じ 104,857,600 バイト。32 × 32 に描く）である。どちらも既定の上限のまま、スクロールの定常状態のアロケーションは 0 だった。`image-scroll` のフレームの CPU は p50 で 7.4〜8.0 µs（同じ格子の箱 100 個は 4.4〜4.7 µs）。1b-2 の場面 `image-tree` は、main が 6.9 µs、この実装が 7.0 µs の回が多く、時計の 1 目盛り（0.1 µs）の差である。要素を main の形に戻したビルドも 7.0 µs が多く、フレームの経路の命令は main と同じで、違うのはフィールドの位置（変位が 8 増えた）と機械語の置き場所だった。実行ファイルは 33,280 バイト増えた
+- **3a の実装（Issue #769、`docs/benchmarks/im1-cache.md`）:** キャッシュは、木（`UiTree`）が 1 つ持つ `WindowImageCache` である。要素は鍵を求め（`Acquire`）、Scope が捨てられたときと読み込み元が変わったときに項目から外れる（`Leave`）。項目は、数える組の前後の参照のほかに、デコードを待つ要素の並びを持つ（要素の中の、次の要素への参照でつなぐ）。`ImageCache` は、UI スレッドごとに、上限の 1 組と、そのスレッドで作った木のキャッシュへの弱い参照の並びを持ち、上限の変更・`Evict`・`Clear` をそれぞれのキャッシュに当てる。弱い参照なので、閉じた窓のキャッシュを生かし続けない。「木を捨てたとき」は、ホストが窓の根の Scope を捨てるところ（デスクトップとヘッドレスのアプリが使う窓の核 `WindowCore`、§6.0。行 PL1 までは `DesktopWindow` と `HeadlessApp`）で、キャッシュの `ReleaseAll` を呼ぶ。Scope を捨てて要素が外れても、数える組の画像は残るからである。2 回呼んでも結果は同じで、その後に鍵を求められたら新しくデコードする。待つ要素がいなくなってから済んだデコードは、数える組に入らないなら、`TextureCache.Add` をせずに画素を捨てる（入れても、その場で `Release` することになる）。キャッシュにある画像を出すときは、読み込み中の要素を出す関数を通らない。その関数は入口でクロージャを確保するので、子を外す処理だけを別の関数にした。キャッシュは、計測のために 4 つの数を持つ: デコードを頼んだ回数、求められた鍵が索引にあった回数、上限が数える組から外した項目の数、済んだ画像が数える組に入らなかった回数。§11.3 の 100 枚の画像の場面は 2 つ作った。ゲートのテスト（16 × 16 の画像 100 個を、200 × 150 のスクロールする箱に）と、NativeAOT の場面 `image-scroll`（512 × 512 にデコードした 100 枚で、既定のバイト数の上限と同じ 104,857,600 バイト。32 × 32 に描く）である。どちらも既定の上限のまま、スクロールの定常状態のアロケーションは 0 だった。`image-scroll` のフレームの CPU は p50 で 7.4〜8.0 µs（同じ格子の箱 100 個は 4.4〜4.7 µs）。1b-2 の場面 `image-tree` は、main が 6.9 µs、この実装が 7.0 µs の回が多く、時計の 1 目盛り（0.1 µs）の差である。要素を main の形に戻したビルドも 7.0 µs が多く、フレームの経路の命令は main と同じで、違うのはフィールドの位置（変位が 8 増えた）と機械語の置き場所だった。実行ファイルは 33,280 バイト増えた
 - **アイコン:** Fluent UI System Icons（MIT）のフォントの字形として描く（Flutter の `Icon` は字形を `RichText` で描く、`packages/flutter/lib/src/widgets/icon.dart` 328〜332 行目）。文字の経路（シェーピング、グリフアトラス、文字の色の継承）で描き、新しい依存は要らない。アイコンのフォントは、§4.5 の「アプリのフォント」の口で登録する。それまでの文字の経路は OS のフォントしか探さなかったので、IC1 の Grill の Q6（Issue #708）でこの口を足した。GPUI は SVG をアルファのマスクにし、Avalonia は図形のパスで描く。フォントは、microsoft/fluentui-system-icons のリリース 1.1.344（コミット `a347af9`、2026-10-09）の Regular（2,844,788 バイト）と Filled（2,509,328 バイト）で、そのままでは配布物の目標（§11.3）に合わないので、アプリが使う字形だけをビルドで残す（Flutter の `icon_tree_shaker.dart`）。削る仕組みは HarfBuzz の subset で、IC1 の spike（Issue #716）で確かめた。版は、出てから 2 週間の決まり（`.cursor/rules/dependencies.mdc`）で選び、IC1 の 1 回目の Grill のときの最新（2026-10-30、Regular 2,900,836 バイト）は使わない。どのフォントにも使える `Icon`（フォントと文字のコード）は Primitives に置き、Fluent のフォントと名前の一覧は Theme.Fluent が持つ（§2.9.1、Core は特定のデザインのアセットを持たない）
   - **フォント（IC1 の Grill でオーナーが決定、Issue #704）:** Regular と Filled を使う。どちらも、大きさごとに描き分けた字形を持つ（名前は `ic_fluent_add_16_regular`・`ic_fluent_add_24_regular` など）。Flutter の `fluentui_system_icons` パッケージも、この 2 つを使う。同じリポジトリの Resizable（1,621,748 バイト）は、1 つのアイコンに 20 px の字形を 1 つだけ持ち、どの大きさにも拡大して使う。小さい大きさで線が細る字形になるので使わない。使う字形だけを残すので、元のフォントの大きさは配布物に響かない
   - **API（同じ Grill）:** Primitives に `IconGlyph`（フォントのファミリー、文字のコード、字形を描いた大きさ、を持つ readonly の値）と、要素 `Icon(IconGlyph glyph, float? size = null, Color? color = null, string? label = null)` を置く。Flutter の `IconData`（`codePoint`・`fontFamily`）と `Icon` の形である。大きさの既定は、`IconGlyph.Size` の字形を描いた大きさ（`add_24` なら 24 論理ピクセル）。Flutter の `IconData` は大きさを持たず、`Icon` の既定は 24 である。Fluent は大きさごとに字形を描き分けるので、`add_16` を 24 で描くと描き分けた意味がなくなる。そこで `IconGlyph` が大きさを持つ（IC1 の Grill の Q11、Issue #720）。色の既定は文字の色（`Foreground`）を受け継ぐ。`label` が無ければ飾りとして `AccessibilityInfo.Excluded` を付け、読み上げの木にも祖先の名前のたたみにも出さず（§4.4.1「外すノード」）、あれば画像の役（`SemanticsRole.Image`、UIA の `Image`、§4.4.1）でその名前を出す（`AccessibilityInfo`）。Flutter の `semanticLabel` は名前だけを出し、役を付けない（`icon.dart` 348〜350 行目の `Semantics(label: semanticLabel, ...)`）。UIA では、役の無い名前は何の要素か伝わらず、ナレーターは画像の役なら「イメージ」と読むので、役を付ける（IC1 の Grill の Q8、Issue #708）。描くのは、文字の経路で 1 つの字形を描くのと同じである。右から左の書字で左右を反転する欄（Flutter の `matchTextDirection`）は、まだ持たない。Core に書字の向きが無く、反転を決める元が無いためで（向きの値は行 LC1 で Core に入る、§4.11「ロケール」の「書字の向き」）、行 P03b（RTL のレイアウトの向き）で足す（IC1 の Grill の Q10、Issue #720）
@@ -4590,12 +4620,7 @@ GPUバックエンドと同型の判断構造。
 ただしa11y API連携（AT-SPI接続）はSDL3の対象外のため、Linuxでもこの部分のみ直接AT-SPIを叩く層を別途持つ。
 
 ```csharp
-public enum PlatformKind : byte { MacOS, Windows, Linux }
-
-// NSWindow* / HWND / SDL_Window* を種別付きで保持する
-public readonly record struct PlatformWindowHandle(PlatformKind Kind, nint Handle);
-
-public interface IAccessibilityBridge
+internal interface IAccessibilityBridge
 {
     // Core の UiNode は渡さない。Core が持つ a11y の木の節（§4.4.1「P02g で入れる形」）を読むだけで、変えない（§11.6 Invariant 10）
     void NodesChanged(ReadOnlySpan<AccessibilityChange> changes);   // a11y の段が直した節。フォーカスを持つ節も Platform が木から読む
@@ -4605,26 +4630,213 @@ public interface IAccessibilityBridge
 // （AccessKit は節を全部書き直す）。AccessibilityNodeId は節を作るたびに増える 64 ビットの番号（#627 の実装）
 ```
 
+`IAccessibilityBridge` はコードと同じく internal である（§6.0「公開の範囲」）。OS の種類の列挙 `PlatformKind` と、種類付きの窓のハンドル `PlatformWindowHandle` は、どのコードも使っていないので設計から外した（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）。ヘッドレスとテストのホストには OS の種類が無い。
+
 ### 6.0 共通Platform Contract
 
-ウィンドウ管理・GPU・IME等を機能ごとに個別方針として決めてきたが、それらを横断する共通の`IPlatform`契約と、機能ごとのサポート状況マトリクスを定める。
+OS ごとの機能（窓、ループ、フレームの時計、描画、文字、IME、クリップボード、a11y、OS の設定）を、Core に置く 2 段の契約にまとめる。`XylemUI.Desktop` は契約だけを通して OS のホストを使い、Win32・D3D11・DirectWrite・TSF・AccessKit の型を直に作らない。行 PL1 で入れ、Windows のホストだけを書く（行 P04・P06 の前）。今の `XylemUI.Desktop` は `net10.0-windows10.0.17763.0` で、`DesktopWindow` が Windows の型をつなぎ、macOS と Linux のホストを差し込む口が無い。
 
-`IPlatform` は巨大な実装 interface ではなく、OS capability の集合を返す provider とする。ウィンドウ・クリップボード・ダイアログは個別バックエンド、`IFrameScheduler` / `ITextInputPlatform` / `IAccessibilityBridge` も別インターフェース。Linux の機能別バックエンド（§6.1）と同じ分割を全 OS に適用する。
+**決まったこと（行 PL1 の Grill の 5 巡目でオーナーが決定、Issue #872）:**
+
+- **公開の範囲:** 契約は internal のまま、`InternalsVisibleTo` でホストに見せる（§2.9.1「今の形」）。公開の境界は行 C0 で決める。契約のメンバーの引数と戻り値には Core の internal の型（`UiTree`・`KeyInput`・`PointerInput`・`TextEditingSettings`）があり、C# は公開のインターフェースが internal の型を見せることを許さない
+- **2 段:** アプリの段（`IPlatformApp`、UI スレッドに 1 つ）と、ウィンドウの段（`IPlatformWindow`、窓ごと）に分ける
+- **レンダラとフレームの時計:** OS のホストの中で組にする。Windows ではフレームの時計がレンダラ（スワップチェーンの待機オブジェクト）にあり、macOS（`CADisplayLink`）と Wayland（`wl_surface` の frame callback）では窓にある（§2.11）。組にしたものの外には、描き先（`IRenderTarget`）とスケジューラ（`IFrameScheduler`）だけを見せる
+- **ループ:** `Run`・`Quit`・`Wake` はホストが持つ。取り出し（`UiDispatcher.Drain`）は今どおり Core の呼び出しで、ループが毎回呼ぶ（§2.12）
+- **スケジューラ:** 契約はウィンドウごと（`IPlatformWindow.FrameScheduler`）、Windows の実装はループごと（今の `Win32FrameScheduler` の 1 つ）にする
+- **OS の設定:** アプリの段の 1 つのオブジェクト（`IPlatformSettings`）にする。文字の描き方（`TextRenderingParameters`）だけはウィンドウごとに持つ。窓のモニタごとに読むためである（§5.0.3「ClearType」の「読む単位と時機」、§6.1.1）
+- **フォントの提供者:** 寿命は UI スレッドと同じ（§3.2「整形の道具は UI スレッドに 1 つ」のとおり）。今のコードは窓ごとに作るので、直す
+- **契約の形:** インターフェースと sealed の実装にする。前後を測る（下の「測ること」）
+- **置き場所と選び方:** 契約は Core に置く。ホストはビルド時に RID で選ぶ（§2.9.1）
+- **窓の核:** `HeadlessApp` と本物の窓は、1 つの窓の核（`WindowCore`）を共有する
+- **範囲:** Windows が今持つ機能だけを契約にする。2 つ目の窓を作る口は行 MW1 で決める。ダイアログ（旧版の `IDialogBackend`）は実装が無いので契約に入れず、行 D6 で決める
+- **外した型:** `PlatformKind` と `PlatformWindowHandle`（§6 の冒頭）
+- **`UiDispatcher.Current`:** UI スレッドのディスパッチャを引く入口を Core に足し、ホストが置く（§2.12）。ワーカーが積む先（行 U1 の `Post<T>`）は、Windows の型である `Win32MessageLoop.Dispatcher` の代わりにこれで引く
+
+**形の決まったこと（Issue #877 の Grill でオーナーが決定）:** 上の決定から直接は決まらない点である。
+
+- **ホストの置き場所:** Windows のホストは `XylemUI.Platform.Windows` に置き、Platform.Windows が `XylemUI.Rendering.D3D11` を参照する。V1d の向き（Platform は Rendering を参照しない）を改める
+- **ホストの登録:** ホストはアセンブリの属性で名乗り、アプリの Source Generator がモジュールの初期化子から登録する
+- **TFM:** `XylemUI.Desktop` と Windows のホスト（Platform.Windows、Rendering.D3D11）は素の `net10.0` にする。CA1416 と NU1201 は実装の PR で確かめる
+- **クリップボード:** アプリの段に置き、持ち主はループのメッセージ専用の窓にする
+- **IME と a11y:** ウィンドウの段に置く
+- **OS からの知らせ:** ホストが sealed の `WindowCore` にデリゲートを 1 回だけ結ぶ。知らせのインターフェースは作らない
+- **OS の設定の知らせ:** イベントは 1 つで、変わった値の印（`PlatformSettingsChanges`）を付ける
+- **ラスタライザの工場:** `IPlatformApp` に置く
+- **2 つ目の窓:** 窓が開いている間の 2 つ目の `OpenWindow` は、行 MW1 を名指しした `InvalidOperationException` を投げる
+- **ヘッドレス:** `HeadlessApp` はヘッドレスの部品を `IPlatformWindow` にまとめて窓の核に渡す。ループはヘッドレスのまま
+- **`UiDispatcher.Current`:** 型は `IUiDispatcher` で（PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定。Issue #877 では `UiDispatcher` と決めていたのを改めた）、ホストを捨てたら前の値に戻す（§2.12）
+- **`Win32MessageLoop`:** 静的のまま残す。公開のメンバーから外すのは `Dispatcher` だけで、ほかは行 C0 まで残す
+- **E2E:** 木の場面と `External.App` はホストを通す。`WM_SIZE` から Present までを測る場面を足す
+- **メンバー:** 窓の核と `IPlatformWindow` のメンバーは、下のコードのとおり
+- **§2.11.1 の順の一覧:** コードの順に直す（この PR）
+- **実装の PR:** 次の 7 つに分け、この順に入れる。どれも Windows の振る舞いを変えない
+  1. 窓の核（`WindowCore`）にコードを移し、`HeadlessApp` をそれに載せる
+  2. `UiDispatcher.Current`
+  3. ループの契約（`IPlatformApp` の `Run`・`Quit`・`Wake`）と、OLE の初期化をホストへ移すこと
+  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、E2E の場面
+  5. OS の設定の 1 つのオブジェクト（`IPlatformSettings`）
+  6. フォントの提供者を UI スレッドに 1 つにすること
+  7. `XylemUI.Desktop` と Windows のホストを `net10.0` にし、ホストを RID で選ぶこと。この PR は次も行う
+     - `XylemUI.Platform.Windows.csproj` から `<InternalsVisibleTo Include="XylemUI.Desktop" />` を外し、`XylemUI.Desktop.csproj` から Platform.Windows と Rendering.D3D11 への `ProjectReference` を外す
+     - Rendering.D3D11 から Platform.Windows への `InternalsVisibleTo` は足さない。ホストが使う `D3D11Renderer` のメンバー（`Create`・`Resize`・`TextRendering`・`FrameLatencyWaitableObject`・`TryReadLastRefresh`・`RefreshRate`・`Dispose`）はどれも public で、`IRenderTarget` は Core の型で、Platform.Windows には Core の `InternalsVisibleTo` がある
+     - Platform.Windows と Rendering.D3D11 に `[assembly: SupportedOSPlatform("windows")]` を付け、CA1416 で、ほかの OS から Windows の API に届く呼び出しが無いことを確かめる。NU1201 も確かめる
 
 ```csharp
-public interface IPlatform
+// XylemUI.Core（src/XylemUI.Core/Platform/、internal。ホストには InternalsVisibleTo で見せる）
+
+// アプリの段: UI スレッドに 1 つ。XylemApp.Run が、ビルド時に選ばれたホストから作る
+internal interface IPlatformApp : IDisposable
 {
-    IWindowBackend Windows { get; }
-    IClipboardBackend Clipboard { get; }          // 同期、プレーンテキストだけ（P02b、§4.9）
-    IDialogBackend Dialogs { get; }
-    IFrameScheduler FrameScheduler { get; }
-    ITextInputPlatform TextInput { get; }         // フォーカスのある文字の入力の相手を OS の IME に結び、欄の変更を知らせる（P02c、§4.7）
-    // D&D（DD1、§7「ドラッグ＆ドロップ」）は IPlatform に口を足さない。OS からのドロップは窓ごとの IDropTarget が WindowInput に
-    // ドラッグとして渡し、OS への持ち出しは窓が DoDragDrop を呼ぶ。どちらも IWindowBackend の窓の中で閉じる
-    IAccessibilityBridge Accessibility { get; }
-    IFontProvider Fonts { get; }
+    UiDispatcher Dispatcher { get; }          // ホストが作った具体の型。作った時に UiDispatcher.Current（IUiDispatcher として）と UI スレッドの
+                                              // SynchronizationContext に置き、Dispose で前の値に戻す。取り出し（Drain）はこれで呼ぶ
+    IFontProvider Fonts { get; }              // UI スレッドに 1 つ（§3.2）。TextContext は XylemApp.Run が 1 つ作る
+    IGlyphRasterizer CreateRasterizer();      // GlyphAtlas に Func<IGlyphRasterizer> として渡す。スレッドごとに 1 つ作られる（§5.0.3）
+    IPlatformSettings Settings { get; }       // OS の設定。文字の描き方を除く
+    IClipboardBackend Clipboard { get; }      // 同期、プレーンテキストだけ（P02b、§4.9）。持ち主はループのメッセージ専用の窓
+
+    // OS の窓・レンダラ・フレームの時計・IME・a11y の adapter を組にして作る。core の木を a11y が読む。
+    // 窓が開いている間にもう 1 つ開くと InvalidOperationException（2 つ目の窓は行 MW1）
+    IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height, bool show);
+
+    int Run();                                // Quit まで、OS のメッセージ・取り出し・フレームを回す。戻り値は Quit の値
+    void Quit(int exitCode);                  // UI スレッドから
+    void Wake();                              // どのスレッドからでも。ループの開始前は何もしない（§2.11、§2.12）
 }
+
+// OS の設定: アプリの段に 1 つ。読み直して値が変わったときだけ、変わった値の印を付けて 1 回知らせる
+internal interface IPlatformSettings
+{
+    bool ReducesMotion { get; }                   // §2.14「動きを減らす設定」
+    TextEditingSettings TextEditing { get; }      // キャレットの点滅と幅、選択の色、キーボードの印、ドラッグの閾値（§4.9）
+    IReadOnlyList<string> UiLanguages { get; }    // OS の優先言語の一覧（§4.11）
+    event Action<PlatformSettingsChanges>? Changed;   // SynchronousRenderGuard.RunOrDefer を通して上げる（§2.11.1）
+}
+
+[Flags]
+internal enum PlatformSettingsChanges : byte { None = 0, ReducesMotion = 1, TextEditing = 2, UiLanguages = 4 }
+
+// ウィンドウの段: 窓ごとに 1 つ。大きさは物理画素（§6.1.1）
+internal interface IPlatformWindow : IDisposable
+{
+    (int Width, int Height) ClientSize { get; }
+    float ScaleFactor { get; }
+    bool IsShowing { get; }                         // 隠していない、最小化していない（§2.11「隠した窓と最小化した窓のフレーム」）
+    bool IsActive { get; }
+    TextRenderingParameters TextRendering { get; }  // 窓のモニタの文字の描き方
+    IRenderTarget Target { get; }                   // ホストが組にしたレンダラ
+    IFrameScheduler FrameScheduler { get; }         // Windows の窓はループの 1 つを返す
+    IPointerPlatform Pointer { get; }               // カーソル、キャプチャ、ポインタの履歴、タッチパッド、OS への持ち出し（§7）
+    ITextInputPlatform? TextInput { get; }          // OS の IME。作れなければ null で、欄は WM_CHAR の文字を受ける（§4.9）
+
+    void Attach();        // 窓の核の Frames と Input ができた後に 1 回。OS の知らせを窓の核へ渡し始める
+    void RootMounted();   // 根の関数が終わり、最初のフレームを描いた。表示中に問い合わせた支援技術に木を出す（§4.4.1）
+    void RequestClose();
+}
+
+// 窓の核: OS によらない窓の半分。本物の窓と HeadlessApp が使う（Core、internal sealed）
+internal sealed class WindowCore : IDisposable
+{
+    public WindowCore(TextContext text, IPlatformSettings settings, IClipboardBackend clipboard,
+        IReadOnlyList<Locale>? supportedLocales, Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? resolveLocale);
+
+    public UiTree Tree { get; }
+    public WindowFrames Frames { get; }      // Connect の後
+    public WindowInput Input { get; }        // Connect の後
+    public ScopeHandle RootScope { get; }
+    public event EventHandler? Closed;       // 窓が閉じ、根の Scope を破棄した後
+
+    public void Connect(IPlatformWindow window, GlyphAtlas atlas, Color background, TimeProvider? time = null);
+    // 根の関数と最初のフレーム（CancelFrame の後に Resize(size, scale)）。size は論理画素で、呼ぶ側が決める:
+    // Windows のホストは ClientSize（物理画素）を ScaleFactor で割り、HeadlessApp は HeadlessOptions の Width・Height と Scale をそのまま渡す
+    public void Mount(Func<Element> root, string scopeName, Size size, float scale);
+
+    // OS からの知らせ。ホストが呼ぶ。HeadlessApp も同じものを呼ぶ
+    public void Resize(Size size, float scale);   // 同期の描画（§2.11.1）。size は論理画素で、WindowFrames.Resize と同じ形。割るのは呼ぶ側
+    public void TextRenderingChanged(TextRenderingParameters value);
+    public void WindowClosed();
+}
+
+// ホストの登録（下の「ホストの選び方」）
+[AttributeUsage(AttributeTargets.Assembly)]
+internal sealed class PlatformHostAttribute(Type host) : Attribute   // ホストに IVT で見せる。host は public static void Register() を持つ公開の静的クラス
+{
+    public Type Host { get; } = host;
+}
+
+internal static class PlatformHostRegistry
+{
+    public static Func<IPlatformApp>? Factory { get; set; }   // ホストの Register が置く。XylemApp.Run が読み、無ければ RID を名指しして投げる
+}
+
+// XylemUI.Platform.Windows
+[assembly: XylemUI.PlatformHost(typeof(XylemUI.Platform.Windows.Win32Host))]
+
+public static class Win32Host
+{
+    public static void Register();   // PlatformHostRegistry.Factory = static () => new Win32PlatformApp();
+}
+
+internal sealed class Win32PlatformApp : IPlatformApp { }        // Win32MessageLoop（静的）を呼ぶ。OLE の初期化と戻し
+internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window・D3D11Renderer・TsfTextInput・Win32Accessibility の組
 ```
+
+**機能ごとの置き場所:** 各項目は、契約と段、Windows での実装、窓の核が持つものの順に書く。
+
+- **窓とその知らせ（ウィンドウの段）:** `IPlatformWindow`。Windows では `Win32PlatformWindow`（sealed）が `Win32Window` を持つ。OS の知らせ（ポインタ、キー、文字、活性化、可視性、タッチパッドの `GestureFrameNeeded`、OS からのドロップ、閉じた）は、`Attach` でホストが窓の核の `Input`・`Frames`・`WindowClosed` にデリゲートを 1 回だけ結んで渡す。今の `DesktopWindow` の結び方を、そのままホストに移す形で、知らせ 1 つの呼び出しは今と同じ 1 回である。知らせの型（`PointerInput`・`KeyInput`・`TextInput`）は Core の internal の型のままである。窓の核は sealed のクラスとして直に呼び、知らせのインターフェースは作らない
+- **ループ、ディスパッチャ、アプリの寿命（アプリの段）:** `IPlatformApp` の `Run`・`Quit`・`Wake`・`Dispatcher`。Windows では `Win32PlatformApp`（sealed）が今の `Win32MessageLoop`（静的。UI スレッドはプロセスに 1 つなので、ループごとの実装になる）を呼ぶ。OLE の初期化（§7「タッチとペン」の「COM の初期化」）は `XylemApp.Run` から `Win32PlatformApp` に移し、作る時に呼び、捨てる時に戻す。コールバックの例外の受け口（`Win32MessageLoop.CallbackExceptionHandler`）は Windows のホストの中に残し、契約に入れない（`XylemUI.Desktop` は使っていない）。最後の窓を閉じたらループを終える数え方は OS によらないので `XylemApp` に残し、`Quit` だけを契約で呼ぶ
+- **フレームの時計とスケジューラ（契約はウィンドウの段、Windows の実装はループごと）:** `IPlatformWindow.FrameScheduler`。Windows の窓は、ループの 1 つの `Win32FrameScheduler` を返す。スワップチェーンの待機オブジェクトを時計にする `Win32MessageLoop.SetFrameClock`（§2.11 の S7 と「遅く描き始めるフレーム」）は、ホストがレンダラを作った所で呼び、窓を捨てる時に、レンダラが待機オブジェクトを閉じる前に 0 に戻す。窓の核と `XylemUI.Desktop` は時計を見ない。今のスケジューラは時計を 1 つしか持たず、2 つ目の窓が開くと前の窓の時計を置き換えるので、窓が開いている間の 2 つ目の `OpenWindow` は投げる（上の「形の決まったこと」）。窓ごとの予約は行 MW1 で決める
+- **レンダラ、Present、同期のリサイズ（ウィンドウの段。ホストの中で組にする）:** 窓の核が見るのは `IRenderTarget`（`Draw`・`Present`）だけである。ホストが `D3D11Renderer` を作り（窓を見せた後、§2.13「ウィンドウ」）、窓のモニタの文字の描き方を渡す。`WM_SIZE` の同期の描画では、ホストがレンダラの大きさを変えてから、物理画素の大きさを倍率で割り、窓の核の `Resize(size, scale)` を呼ぶ（§2.11.1）。割る所は今の `DesktopWindow.Render` と同じでホストにあり、窓の核は `Win32Window.ScaleFactor` を読まない。`HeadlessApp` は今と同じく論理画素の大きさをそのまま渡す。ガード（`SynchronousRenderGuard`）に入るのは今どおり `Win32Window` である
+- **グリフのラスタライザとアトラス（アプリの段）:** `IPlatformApp.CreateRasterizer`。アトラスは OS によらない CPU のページで、レンダラが `DirtyRegions` を読んで送る（§5.0.3）ので、契約は要らない。アトラスは今と同じく窓ごとに 1 つで、窓の核が持つ。複数のレンダラでの共有は行 P10 と行 MW1 で決める
+- **フォントの提供者（アプリの段）:** `IPlatformApp.Fonts`。`XylemApp.Run` が UI スレッドに 1 つの `TextContext` を作って窓の核に渡し、ループを抜けたら捨てる。今は `DesktopWindow` が窓ごとに `DirectWriteFontProvider` を作っている。窓が 1 つの間は、振る舞いは変わらない
+- **文字の入力と IME（ウィンドウの段）:** `IPlatformWindow.TextInput`（旧版の `IPlatform` はアプリの段に置いていた）。Windows の `TsfTextInput` は窓に結び付き（`AssociateFocus`）、窓を壊す前に放す（スパイク #510）。タッチキーボード（`ITouchKeyboard`）もこの中にある
+- **クリップボード（アプリの段）:** `IPlatformApp.Clipboard`。クリップボードは OS に 1 つである。今の `Win32Clipboard` は `OpenClipboard` に渡す持ち主として窓を取る（`Win32Clipboard(Win32Window)`）ので、ループのメッセージ専用の窓に替える。それで読み書きできることは、実装の PR の本物の窓のテストで確かめる
+- **ドラッグ＆ドロップ（ウィンドウの段）:** 契約を足さない。OS への持ち出しは `IPointerPlatform.StartExternalDrag`、OS からのドロップは窓の核の `Input`（`IExternalDropTarget`）が受ける（§7「ドラッグ＆ドロップ」）。`DoDragDrop` の間のフレーム（`Win32MessageLoop.RunPendingFrame`、§2.11.1）は Windows のホストの中に残る
+- **カーソルとキャプチャ（ウィンドウの段）:** `IPlatformWindow.Pointer`（`IPointerPlatform`、今のまま）。キャプチャは窓ごとである。ポインタの履歴、タッチパッド（DirectManipulation）、タッチキーボードの Windows の型（`IPointerReader`・`ITouchpadViewport`・`ITouchKeyboard`）は Platform.Windows の中にとどまる
+- **DPI、倍率、モニタ（ウィンドウの段）:** `IPlatformWindow.ScaleFactor` と、`Resize` が受ける倍率。PerMonitorV2 の宣言は今どおり最初の窓のクラスを登録する所で行う（§6.1.1）。モニタの一覧は、使う機能（行 MW1、行 D6）が来るまで契約に入れない
+- **OS の設定（アプリの段。文字の描き方はウィンドウの段）:** `IPlatformSettings` と `IPlatformWindow.TextRendering`。今はどの値も窓のもの（`Win32Window.ReducesMotion`・`TextEditing`・`UiLanguages`）で、窓ごとに `WM_SETTINGCHANGE` で読み直している。Windows の設定のオブジェクトは、トップレベルの窓が受けた `WM_SETTINGCHANGE` で読み直し、値が変わったときだけ 1 回知らせる。ループのメッセージ専用の窓は受け手にできない。メッセージ専用の窓はブロードキャストのメッセージを受けないためである（Microsoft の Window Features の頁の「Message-Only Windows」）。窓の核は、知らせを受けて `Tree.Animations.ReduceMotion`、`Tree.SetTextEditing`、`WindowLocale.Update`（行 LC1）に渡す。行 TH1 の OS の見た目（明暗、ハイコントラスト、アクセントの色）も、この 1 つのオブジェクトに足す。文字の描き方は窓ごとで、変わるとホストがレンダラに渡し、窓の核の `TextRenderingChanged` を呼ぶ
+- **a11y の adapter（ウィンドウの段）:** Windows のホストの中（`Win32Accessibility`）。契約は今の `IAccessibilityBridge`（`NodesChanged`）だけで、ホストは窓の核の木を読み（§4.4.1。読むだけで変えない、§11.6 Invariant 10）、操作を窓の核の `Input` に渡す。旧版の `IPlatform` はアプリの段に置いていた。AccessKit の adapter は窓の `WM_GETOBJECT` に答え、窓を壊す時は provider を先に外すので、窓の後始末に属する。`RootMounted` で、表示中に問い合わせた支援技術に木を出す（今の `StartIfAsked`）
+- **ポップアップと 2 つ目の窓:** 契約に入れない。ポップアップは窓の中に描く（§7.3）。別ウィンドウのポップアップは行 P04・P06・P10、2 つ目の窓を作る口は行 MW1 である
+- **ヘッドレス:** `HeadlessApp` は同じ窓の核を使う。ウィンドウの段は、ヘッドレスの部品（`HeadlessTarget`・`HeadlessScheduler`・`HeadlessPlatform`・`HeadlessIme`）を `IPlatformWindow` にまとめて渡す（Avalonia と GPUI の形の窓の半分）。`HeadlessOptions` から作る OS の設定（`IPlatformSettings`）とクリップボードは、`IPlatformWindow` でなく、窓の核のコンストラクタに渡す。ループはヘッドレスのままにし、`IPlatformApp` は実装しない。`PumpAndSettle` は仮想の時間を進めるので、待ち続ける本物のループと形が合わない（§12.2）
+
+**窓の核（`WindowCore`）が持つもの:** 木（`UiTree`）、根のノード、`WindowFrames`、`WindowInput`、窓のアトラス、ロケールの根の値（`WindowLocale`、行 LC1）と行 TH1 のテーマの根の値、根の関数を呼ぶ `Mount`、最初のフレーム、閉じた時の `DisposeRoot`（木の `FrameNeeded` を外し、`CancelFrame` を呼び、根の Scope を破棄し、画像のキャッシュを放す、§5.0.4）、OS の設定を木に渡すこと。今は `DesktopWindow` と `HeadlessApp` が、`Mount` をほぼ同じコードで 2 つ持ち、根の値も 2 か所で置いている。窓の核は Core に置くので、`XylemUI.Testing` は `XylemUI.Desktop` を参照しなくてよい（Core の internal は IVT で見えている）。
+
+**ホストが持つもの:** OS の窓、レンダラとその時計、IME、a11y の adapter、クリップボード、OS の設定と、それぞれを作る順と壊す順である。壊す順は今の `DesktopWindow.Dispose` のとおりで、TSF は窓を壊す前に放し、a11y の provider を先に外し、ループはレンダラが待機オブジェクトを閉じる前に時計を待たなくなる。
+
+**作る順（`XylemApp.Run`）:** 今の `XylemApp.Run` と `DesktopWindow` のコンストラクタの順を保つ。§2.13「ウィンドウ」はここを指す。
+
+1. 既定のキーの行を確かめ（§7「既定のキーと動作」）、呼んだスレッドを UI スレッドにする
+2. 登録されたホストから `IPlatformApp` を作る。ホストはディスパッチャを作って `UiDispatcher.Current` と `SynchronizationContext` に置き（窓の根の関数が作る要素の画像のデコードが、その文脈に戻るため、§5.0.4）、Windows では OLE を初期化する
+3. `IPlatformApp.Fonts` から UI スレッドに 1 つの `TextContext` を作る
+4. 窓の核を作る（木と根のノード）
+5. `IPlatformApp.OpenWindow` で窓を作る。Windows のホストは、窓、a11y の provider、表示、レンダラ、時計の順に作る
+6. 窓の核の `Connect` で、窓の描き先とスケジューラから `WindowFrames` を、`IPointerPlatform` から `WindowInput` を作り、今の可視性・活性化・設定の値を渡す。続けて `IPlatformWindow.Attach` で知らせをつなぐ
+7. `Mount` で根の関数を呼び、最初のフレームを窓の大きさで描く。大きさは論理画素で、Windows のホストは `ClientSize` を `ScaleFactor` で割って渡す（今の `DesktopWindow` と同じ）。`HeadlessApp` は `HeadlessOptions` の `Width`・`Height`・`Scale` を今と同じく割らずに渡すので、丸めは入らない。`RootMounted` で a11y に木を出す
+8. `IPlatformApp.Run` でループを回す。窓が閉じたら窓の核の `Closed` で数を減らし、0 になったら `Quit` を呼ぶ。ループを抜けたら、窓の核（窓を含む）、`TextContext`、ホストの順に捨てる
+
+**ホストの選び方:** ビルド時に RID で選ぶ（§2.9.1）。`XylemUI.Desktop` はどのホストも参照せず、`net10.0` になる。アプリは RID（`win-x64` など。RID が無い `dotnet run` ではビルドする OS）に合うホストを参照する。リポジトリの中では、サンプルとテストの `.csproj` が RID を条件にホストを参照する。パッケージでどう参照させるかは決めておらず、行 C0 で決める。`XylemUI.Desktop` の `buildTransitive` の targets が RID ごとの `PackageReference` を足す形は、確かではない。NuGet の restore は、パッケージの中の targets を読む前に走るので、その targets が足す参照は、同じ restore では取り込まれない。restore の依存の図は RID ごとに別になるので、RID を変えたビルドでも同じ形で取り込めるかを、確かめる必要がある。ホストのアセンブリは `[assembly: XylemUI.PlatformHost(typeof(Win32Host))]` で自分を名乗り、アプリの Source Generator が作るモジュールの初期化子が、既定のキーの行（`[assembly: DefaultKeyBindings]`、§7）と同じ形でホストを登録する。属性が名指すのは公開の静的クラスで、`public static void Register()` を持つ。初期化子はそれを呼び、`Register` は Core の internal の `PlatformHostRegistry.Factory` に `Win32PlatformApp` を作る関数を置く（名前は PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定）。`[assembly: DefaultKeyBindings]` の型が `public static void AddDefaults(Keymap)` を持つのと同じ形である（`ActionTableGenerator` の診断 `NoAddDefaults`、XYLEM007）。リフレクションは使わない。Source Generator は、同じ形で 2 つの誤りを診断のエラーにする（PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定）。1 つのアプリが参照するアセンブリに `PlatformHost` が 2 つあるとき（XYLEM008。どのホストも登録しない）と、属性が名指す型に `public static void Register()` が無いとき（XYLEM009。そのホストは登録しない）である。ID は、今の Generator の最後（XYLEM007）の次から取る。ホストが登録されていなければ、`XylemApp.Run` は RID を名指しした `InvalidOperationException` を投げる。Windows のホストは `XylemUI.Platform.Windows` に置き、Platform.Windows が `XylemUI.Rendering.D3D11` を参照する。V1d の「Platform は Rendering を参照しない」（§2.13「ウィンドウ」）を改める。
+
+**比べたもの（Flutter 3.47.8、Avalonia 12.1.4、GPUI（zed v1.25.3））:** 3 つとも、アプリの段の物と窓の段の物の 2 段を持ち、どちらも動的な呼び出し（仮想関数、インターフェース、`Box<dyn …>`）で呼ぶ。
+
+- GPUI: アプリの段は `Platform`（`crates/gpui/src/platform.rs` 363 行目）で、`text_system`（366 行目）、`run`・`quit`（368・369 行目）、窓を返す `open_window`（416〜420 行目）、クリップボード（573・574 行目）、OS の見た目 `window_appearance`（423 行目）を持つ。窓の段は `PlatformWindow`（1193 行目）で、フレームの要求 `on_request_frame`（1257 行目）、入力 `on_input`（1258 行目）、大きさと倍率を一緒に渡す `on_resize`（1265 行目）、IME の `set_input_handler`（1225 行目）、描く `draw`（1276 行目）を持つ。core は窓を `Box<dyn PlatformWindow>` で持つ（`crates/gpui/src/window.rs` 1220 行目）。Windows ではレンダラが窓の状態の欄にあり（`crates/gpui_windows/src/window.rs` 67 行目、作るのは 145 行目）、`draw` はそれに渡す（1036〜1042 行目）。`WM_SIZE` ではレンダラの大きさを変えてから、論理の大きさと倍率で core の resize を呼ぶ（`crates/gpui_windows/src/events.rs` 256〜277 行目）。ここの `Resize` と同じ形である。vsync のスレッドは 1 つで、すべての窓を無効にする（`crates/gpui_windows/src/platform.rs` 479〜493 行目）。契約は窓ごと、Windows の実装は 1 つ、というここの形に当たる。ホストはビルド時に OS で選ぶ（`crates/gpui_platform/Cargo.toml` 50〜51 行目、`crates/gpui_platform/src/gpui_platform.rs` 67〜79 行目）。テストは `Platform` と `PlatformWindow` とディスパッチャを差し替える（`crates/gpui/src/platform/test/platform.rs` 430 行目、`test/window.rs` 308 行目、`test/dispatcher.rs` 114 行目）
+- Avalonia: Windows のプラットフォームが、アプリの段の物を登録する（`src/Windows/Avalonia.Win32/Win32Platform.cs` 93〜113 行目。クリップボードは 93・94 行目、OS の設定 `IPlatformSettings` は 97 行目、窓を作る `IWindowingPlatform` は 100 行目）。描く時計も 1 つである（同 88 行目の `IRenderTimer`）。窓は `IWindowingPlatform.CreateWindow` で作る（`src/Avalonia.Controls/Platform/IWindowingPlatform.cs` 9 行目）。IME は窓ごとの機能で（`src/Windows/Avalonia.Win32/WindowImpl.cs` 340・347 行目）、クリップボードは窓ごとの機能としても引ける（同 362 行目）。OS の設定はアプリの段の 1 つの物で、色が変わると知らせる（`src/Avalonia.Base/Platform/IPlatformSettings.cs` 13〜54 行目）。ループは `IControlledDispatcherImpl.RunLoop`（`src/Avalonia.Base/Threading/IDispatcherImpl.cs` 42 行目）、起床は `Signal`（同 15 行目）で、プラットフォームが差し込む（`Win32Platform.cs` 86 行目）。ヘッドレスは `IWindowingPlatform` の実装を差し替える（`src/Headless/Avalonia.Headless/AvaloniaHeadlessPlatform.cs` 17・55 行目、`HeadlessWindowImpl.cs` 18 行目）
+- Flutter（Windows の embedder）: 窓の段は、窓へ向かう `WindowBindingHandler`（`engine/src/flutter/shell/platform/windows/window_binding_handler.h` 41 行目。`GetWindowHandle` 50 行目、`GetDpiScale` 53 行目、IME の位置の `OnCursorRectUpdated` 59 行目）と、窓から来る `WindowBindingHandlerDelegate`（`window_binding_handler_delegate.h` 18 行目。`OnWindowSizeChanged` 28 行目、`OnPointerMove` 36 行目、`OnKey` 93 行目、`OnComposeChange` 132 行目）の 2 つである。文字の入力、設定、クリップボード、カーソル、a11y は engine に 1 つずつある（`flutter_windows_engine.h` 487・490・477・474・471 行目）。platform のタスクの runner を UI の runner にも使い（`flutter_windows_engine.cc` 352〜373 行目）、vsync の要求は engine に 1 つである（415〜418 行目）。同期のリサイズでは、platform のスレッドは `WM_SIZE` から戻らず、新しい大きさのフレームが出るまで（またはタイムアウトまで）、task runner を `PollOnce` で回しながら待つ（`flutter_windows_view.cc` 238 行目で `kResizeStarted` にし、248〜258 行目の繰り返しで待つ）
+- ここと違う所: IME と a11y を窓の段に置くのは Avalonia（IME）と GPUI（IME）と同じで、engine に 1 つ置く Flutter と違う。TSF と AccessKit の adapter は窓に結び付くためである。文字の描き方を窓の段に置くのはここだけで、モニタごとに読むためである（3 つとも、OS の設定はアプリの段だけに置く）。ホストを実行時に OS で選ぶ形（Avalonia、`src/Avalonia.Desktop/AppBuilderDesktopExtensions.cs` 20〜33 行目）は採らない（`docs/design-decisions.md`「プラットフォームの契約」）
+
+**測ること（実装の PR）:** 契約にする前と後を、`.cursor/rules/bench.mdc` のとおり、同じ機械で NativeAOT Release の 2 つのビルドを交互に、3 回以上ずつ測る。フレームの道で契約を通る呼び出しは、今もインターフェースかデリゲートの呼び出しで、フレームか OS の知らせ 1 つに 1 回である（`RequestFrame`、`Draw`・`Present`、`FramePresented`、`UpdateGestures`、ポインタの知らせ）。新しく増えるのは窓の核への 1 段の呼び出しだけで、それも測る。
+
+- 起動: `XylemUI.E2E app-startup <counter>/Counter.exe --at 20,40` と `app-startup <todo>/Todo.exe --at 24,60 --idle`（起動から中身が画面に出るまで、何もしていない時の CPU・working set・private bytes、`docs/benchmarks/v1d-components.md`、`v3c-todo.md`）
+- フレーム: `frames 600 --tree`（フレームの間隔、Present から表示まで、取りこぼし、タイムアウトで回したフレーム）
+- 入力の遅延: `input-latency --app <dir>/XylemUI.E2E.exe --app-args "app"`（`docs/benchmarks/r3-late-start.md`）と `event-latency`（ワーカーの投函から Present まで。起床の経路）
+- リサイズ: `frames 600 --tree --resizes 100` と `--resizes-late N`（§2.11「待たずに出した Present」）。これらの場面は `Win32Window` と `D3D11Renderer` を直に作り（`benchmarks/XylemUI.E2E/Scene.cs`）、リサイズは `WindowFrames.Resize` を直に呼ぶ（`TreeScene.PresentOnResizePath`）ので、`DesktopWindow` の `WM_SIZE` の経路を通らない。実装の PR は、木の場面と `External.App` をホストに通し、ホストの窓に `SetWindowPos` で大きさを変えて `WM_SIZE` から Present までを測る場面を足す
+- Zero-Alloc のテスト（§11.3）の数が変わらないこと
+- Counter と Todo の NativeAOT の発行で、警告が 0 であることと、実行ファイルの大きさを main と比べること（`.cursor/rules/aot.mdc`）。増えたら map ファイルで理由を書く
+
+**テスト（§12.1 の層）:**
+
+- 層 2（`XylemUI.Core.Tests`）: 偽の `IPlatformWindow` と設定で、窓の核の `Mount`、最初のフレーム、閉じた時の後始末、設定の知らせ 1 回で木の値が変わることを、すべての OS で確かめる。`CurrentDispatcher` の物を作り、置く前は投げること、`Exchange` が前の値を返すことも確かめる（静的な `Current` は使わない。§2.12）
+- 層 5（`XylemUI.Desktop.Tests`）: `HeadlessApp` が窓の核を通ってもゴールデンと振る舞いが変わらないこと。本物の窓（WARP）のテストは Windows のホストを通す
+- `XylemUI.Platform.Windows.Tests`（本物の窓）: 2 つ目の `OpenWindow` が投げること、メッセージ専用の窓を持ち主にしたクリップボードの読み書き、`WM_SETTINGCHANGE` 1 つで設定の知らせが 1 回であること、壊す順
+- `XylemUI.Generators.Tests`: `PlatformHost` を持つアセンブリを 1 つ参照するアプリで、生成した初期化子がその型の `Register()` を呼ぶこと。2 つ参照するアプリで XYLEM008 が出て、初期化子がどのホストも登録しないこと。`Register` の無い型を名指すホストで XYLEM009 が出ること。既定のキーの行の診断（XYLEM007）のテストと同じ形で書く
 
 **機能ごとのサポート状況マトリクス（例、実装時に全項目を埋める）**
 
@@ -4642,19 +4854,16 @@ public interface IPlatform
 SDL3が扱うのはウィンドウ・入力・（部分的な）トレイまでである。通知・xdg-desktop-portal経由の各種ダイアログ・IME・クリップボードの一部・a11yはSDL3の対象外か部分対応にとどまる。Linux Platform層は機能ごとに個別バックエンドを持つ。
 
 ```csharp
-internal sealed class LinuxPlatform : IPlatform
+internal sealed class LinuxPlatform : IPlatformApp   // §6.0。窓ごとの部品（窓、IME、a11y）は、ウィンドウの段（IPlatformWindow）の実装が持つ
 {
-    private readonly SdlWindowBackend _window;                 // §6のSDL3経由
     private readonly SdlClipboardBackend _clipboard;           // SDL3が対応する範囲、必要に応じてWayland/X11直接補完
     private readonly DBusNotificationBackend _notification;    // freedesktop.org通知仕様、D-Bus経由
     private readonly SdlTrayBackend _tray;                     // §8.6、ベストエフォート
-    private readonly SdlImeBackend _ime;                       // §8.7、SDL3のtext-input-area API経由
-    private readonly AtSpiBackend _accessibility;              // AT-SPI直叩き（D-Bus経由、下記6.2）
     private readonly XdgPortalBackend _portal;                 // xdg-desktop-portal（ファイルダイアログ等、§8で詳細検討）
 }
 ```
 
-`Notification`・`Accessibility`・`Portal`はいずれもD-Bus IPCを前提とする。
+`Notification`・`Portal`と、ウィンドウの段の a11y（AT-SPI）は、いずれもD-Bus IPCを前提とする。SDL3 の窓（§6）と IME（§8.7、SDL3 の text-input-area API）も、ウィンドウの段の実装が持つ。
 
 **補足**: 上記`LinuxPlatform`は概念整理のためのクラス表現であり、実装時は`XylemUI.Platform.Linux`配下で機能ごとに独立したファイル・クラスへ分割する。将来的にfile dialog・open URI・theme・scale factor・monitor等の項目が増えても、単一の巨大クラスに追記し続けるのではなく機能単位で追加できるようにする。
 
@@ -4973,10 +5182,10 @@ bool UpdateGestures(TimeSpan frameTime);
 - **タッチパッドのパンと慣性（I1c）:** 精密タッチパッドの 2 本指のパンは DirectManipulation で受け、パンのイベント（PanStart・PanUpdate・PanEnd）として配る。スクロールは I1b のタッチのドラッグと同じ規則で、閾値・箱の選び方・速さ・流す条件・流し方を共有する。OS の慣性の段は捨て、離したときの速さから I1b の式で流す。細部は次のとおりで、I1c の Grill（Issue #400）で決めた。文書は Microsoft の DirectManipulation の各頁と、Windows SDK 10.0.26100 の `directmanipulation.h`・`winuser.h` を読んだ。Chromium は 159.0.8130.1 の `content/browser/renderer_host/` から書く
   - **作る物と寿命:** Platform が、ウィンドウごとに 1 組、ウィンドウを作った直後に作る。順に `CoCreateInstance(CLSID_DirectManipulationManager, CLSCTX_INPROC_SERVER)`、`GetUpdateManager`、`CreateViewport(null, hwnd)`、`ActivateConfiguration(INTERACTION | TRANSLATION_X | TRANSLATION_Y | TRANSLATION_INERTIA)`、`SetViewportOptions(MANUALUPDATE)`、`AddEventHandler(hwnd, ハンドラ)`、`SetViewportRect`（クライアントの大きさ、物理画素。Flutter と同じで、`direct_manipulation.cc` 179〜214 行目、`flutter_window.cc` 455〜460 行目。GPUI は 1000 × 1000 で固定する、`direct_manipulation.rs` 16〜19 行目）、`Activate(hwnd)`、`Enable`、`Update` を 1 回呼ぶ。`WM_SIZE` で `SetViewportRect` を直す。ウィンドウを壊すときは、`Stop`、`RemoveEventHandler`、`Abandon`、`Deactivate(hwnd)` の順に呼び、参照を返す（Chromium の `direct_manipulation_helper_win.cc` 290〜301 行目。292 行目の `UpdateEventHandler(nullptr, nullptr)` が、173 行目で `Stop`、177 行目で `RemoveEventHandler` を呼び、296 行目で `Abandon`、300 行目で `Deactivate` を呼ぶ。GPUI も `Stop`・`Abandon`・`Deactivate` の順、`direct_manipulation.rs` 119〜126 行目）。DirectManipulation は Windows 8 から、`PT_TOUCHPAD` は 8.1 から（`winuser.h` 6306 行目）、`DM_POINTERHITTEST` の頁の最小は Windows 10 である
   - **作れなかったとき:** どれかの呼び出しが失敗したら、作った物を返し、そのウィンドウは DirectManipulation なしで動く。タッチパッドは、OS が送るホイールのメッセージを今の Wheel として受ける。COM を初期化していないスレッド（`CO_E_NOTINITIALIZED`）も同じである。Flutter と同じ形である（`direct_manipulation.cc` 14〜21・210・240・251 行目）。GPUI は、ウィンドウを作るのに失敗する（`gpui_windows/src/window.rs` 158〜159 行目）
-  - **COM の初期化:** `XylemApp.Run` が、ウィンドウを作る前に UI スレッドで `OleInitialize` を呼び、終わるときに `OleUninitialize` を呼ぶ。.NET はスレッドを MTA で始めるので、`Main` に `[STAThread]` が無いと `RPC_E_CHANGED_MODE` が返る（§5.0.3「色のグリフ」の「COM の初期化」）。そのときは、`Main` に `[STAThread]` が要ると書いた `InvalidOperationException` を投げる。サンプルとベンチマークの、`XylemApp.Run` を呼ぶ `Main` に `[STAThread]` を付ける。NativeAOT の実行ファイルで `[STAThread]` が効くことを、実装で確かめる。Microsoft の文書は STA を求めるとは書かず、コールバックはウィンドウを持つスレッドで呼ばれるとだけ書く（`IDirectManipulationViewport::AddEventHandler` の頁）。比べる 3 つは、どれも UI スレッドを STA にする。後の行のクリップボード・ドラッグアンドドロップ・UIA（P02b・DD1・P02g）も STA が要る
+  - **COM の初期化:** `XylemApp.Run` が、ウィンドウを作る前に UI スレッドで `OleInitialize` を呼び、終わるときに `OleUninitialize` を呼ぶ。行 PL1 で、Windows のホスト（`Win32PlatformApp`、§6.0）が作る時に呼び、捨てる時に戻す形に移す。.NET はスレッドを MTA で始めるので、`Main` に `[STAThread]` が無いと `RPC_E_CHANGED_MODE` が返る（§5.0.3「色のグリフ」の「COM の初期化」）。そのときは、`Main` に `[STAThread]` が要ると書いた `InvalidOperationException` を投げる。サンプルとベンチマークの、`XylemApp.Run` を呼ぶ `Main` に `[STAThread]` を付ける。NativeAOT の実行ファイルで `[STAThread]` が効くことを、実装で確かめる。Microsoft の文書は STA を求めるとは書かず、コールバックはウィンドウを持つスレッドで呼ばれるとだけ書く（`IDirectManipulationViewport::AddEventHandler` の頁）。比べる 3 つは、どれも UI スレッドを STA にする。後の行のクリップボード・ドラッグアンドドロップ・UIA（P02b・DD1・P02g）も STA が要る
   - **ハンドラ:** `IDirectManipulationViewportEventHandler` と `IDirectManipulationInteractionEventHandler`（Windows 8.1 から。`QueryInterface` で両方を返す）は、XylemUI が書く 1 つの COM の物である。`TextAnalysisSource` と同じく、最初の欄が `[UnmanagedCallersOnly]` の関数の表を指す native の構造体にする（`.cursor/rules/interop.mdc`）。参照の数は `Interlocked` で数える。ハンドラの各インターフェイスの頁が、スレッド安全な数え方を求めるためである。ウィンドウは `NativeHandleTable` の番号で引き、例外は入口で捕まえる。コールバックは、受けた状態と変換を Platform の待ち行列（使い回す配列）に入れるだけで、Core に配らない。`Update` の後に、待ち行列を古い順に配る（GPUI の `pending_events` と同じ、`direct_manipulation.rs` 137〜146 行目）。文書は、コールバックが `Update` の中で呼ばれるとは書かず、同じメソッドの続いた呼び出しはまとめられうると書く（`AddEventHandler` の頁）。外で呼ばれても、次のフレームで配る
   - **接触:** `DM_POINTERHITTEST`（0x0250、`winuser.h` 2424 行目）の `wParam` の下の語（`GET_POINTERID_WPARAM`、6445 行目）がポインタの番号である。`GetPointerType` が `PT_TOUCHPAD` なら、viewport に `SetContact` する。ほかの種類と、`GetPointerType` の失敗では何もしない。どちらも `DefWindowProc` に渡す。Microsoft の頁は `wParam` を「使わない」と書くが、Flutter（`flutter_window.cc` 805〜815 行目）・GPUI（`events.rs` 163〜171・1315〜1318 行目、`direct_manipulation.rs` 97〜106 行目）・Chromium（`direct_manipulation_helper_win.cc` 235〜264 行目）は、どれもこの形で番号を読む。Chromium は、タッチパッドの入力の列の最初のメッセージになりうるのは `DM_POINTERHITTEST` だけだと書く（256 行目）。`SetContact` では、フレームを頼まない（Chromium と同じ、248〜268 行目。下の「フレームと `Update`」）
-  - **フレームと `Update`:** 操作の始まりの通知（`OnInteraction` の `DIRECTMANIPULATION_INTERACTION_BEGIN`）から、終わりの通知（`INTERACTION_END`）まで、そして中身を元の位置に戻し終えるまで、ウィンドウのフレームを回す。始まりの通知で、`Win32Window` が `GestureFrameNeeded` を呼び、`DesktopWindow` がそれを `WindowFrames.RequestFrame` につなぐ。Chromium と同じ形である（`direct_manipulation_event_handler_win.cc` 291〜305 行目、`direct_manipulation_helper_win.cc` 148〜151 行目）。Chromium は、回していない間も始まりの通知が届く前提で作られている（`Update` を呼ぶのは、ハンドラを登録した直後の 1 回、207 行目と、回している間だけ）。`SetContact` から回すと、2 本指を置いただけで動かさなかったとき（タップなど）に状態が RUNNING にならず、フレームが止まらない（I1c の Q12、Issue #407）。回している間は、ウィンドウのフレームの最初（フレームの時刻を読んだ直後、layout の前）に `WindowFrames` が `Input?.UpdateGestures(FrameTime)` を呼び、`WindowInput` が自分の `IPointerPlatform.UpdateGestures` に渡す（`AdvanceFlings` と同じく、`WindowFrames` は `IPointerPlatform` を持たず、`WindowInput` を通す）。Platform は、回している間だけ `Update` を呼び、待ち行列を配り、まだ続くなら true を返す。回していない間（ほかの理由で回ったフレーム）は `Update` を呼ばず、コールバックが入れた待ち行列だけを配る（I1c の後、CI の Desktop のテストがフレームの中で止まったので、設計どおりに直した、行 Q5、Issue #419）。true なら次のフレームを頼む。同期のリサイズの経路（§2.11.1）のフレームは要求を頼まないので、この要求は、そのフレームが要求を止めている間を抜けた後（layout の pass の後）に頼む（I1c の実装）。指を止めている間は描くものがなく Present しないが、次のフレームは 16 ms のタイマーで来る（§2.11「Present しないフレーム」）。触れていない間は回さない
+  - **フレームと `Update`:** 操作の始まりの通知（`OnInteraction` の `DIRECTMANIPULATION_INTERACTION_BEGIN`）から、終わりの通知（`INTERACTION_END`）まで、そして中身を元の位置に戻し終えるまで、ウィンドウのフレームを回す。始まりの通知で、`Win32Window` が `GestureFrameNeeded` を呼び、Windows のホストがそれを窓の核の `WindowFrames.RequestFrame` につなぐ（§6.0。行 PL1 までは `DesktopWindow` がつなぐ）。Chromium と同じ形である（`direct_manipulation_event_handler_win.cc` 291〜305 行目、`direct_manipulation_helper_win.cc` 148〜151 行目）。Chromium は、回していない間も始まりの通知が届く前提で作られている（`Update` を呼ぶのは、ハンドラを登録した直後の 1 回、207 行目と、回している間だけ）。`SetContact` から回すと、2 本指を置いただけで動かさなかったとき（タップなど）に状態が RUNNING にならず、フレームが止まらない（I1c の Q12、Issue #407）。回している間は、ウィンドウのフレームの最初（フレームの時刻を読んだ直後、layout の前）に `WindowFrames` が `Input?.UpdateGestures(FrameTime)` を呼び、`WindowInput` が自分の `IPointerPlatform.UpdateGestures` に渡す（`AdvanceFlings` と同じく、`WindowFrames` は `IPointerPlatform` を持たず、`WindowInput` を通す）。Platform は、回している間だけ `Update` を呼び、待ち行列を配り、まだ続くなら true を返す。回していない間（ほかの理由で回ったフレーム）は `Update` を呼ばず、コールバックが入れた待ち行列だけを配る（I1c の後、CI の Desktop のテストがフレームの中で止まったので、設計どおりに直した、行 Q5、Issue #419）。true なら次のフレームを頼む。同期のリサイズの経路（§2.11.1）のフレームは要求を頼まないので、この要求は、そのフレームが要求を止めている間を抜けた後（layout の pass の後）に頼む（I1c の実装）。指を止めている間は描くものがなく Present しないが、次のフレームは 16 ms のタイマーで来る（§2.11「Present しないフレーム」）。触れていない間は回さない
     - Flutter は 14 ms のタイマーを、ウィンドウの寿命の間ずっと回す（`flutter_window.cc` 507〜513・799〜803 行目）
     - GPUI は vsync ごとにすべてのウィンドウを描き直させ、描くたびの最初に `Update` を呼ぶ（`gpui_windows/src/platform.rs` 479〜494 行目、`events.rs` 1321〜1347 行目）
     - Chromium は、操作の始まり（`DIRECTMANIPULATION_INTERACTION_BEGIN`）から終わりまで、vsync ごとに `Update` を呼ぶ（`direct_manipulation_helper_win.cc` 148〜151 行目、`direct_manipulation_event_handler_win.cc` 291〜305 行目）
@@ -5164,7 +5373,7 @@ internal sealed class FocusManager
   - メッセージを `KeyInput` に直す関数は、修飾キーの状態と `ToUnicodeEx` の結果を引数で受ける。`SendMessage` ではキーの状態と配列を作れないので、本物のウィンドウのテストではその関数を直接確かめる（上の「ポインタの入力」の Alt と同じ）
 - **OS に返す値:** `Handle` が止めた（`StopPropagation` された）キーには 0 を返し（「処理したら 0」、文書）、止めなかったものは `DefWindowProc` に渡す（Avalonia の `AppWndProc.cs` 987〜993 行目、GPUI の `events.rs` 417〜442 行目）。Flutter は止めなかったキーを送り直して `DefWindowProc` に届け、`WM_SYS*` は答えによらず OS に渡す（`keyboard_manager.cc` 109〜121・218〜220 行目）。P02b から、メッセージループは `WM_KEYDOWN` と `WM_SYSKEYDOWN` を `TranslateMessage` の前に配り、止めたキーは翻訳しないので、止めた Down からは `WM_CHAR` が生まれない（GPUI の形、§4.9）。K1 の間は、すべてのキーを `TranslateMessage` してから配り、`WM_CHAR` と `WM_SYSCHAR` を `DefWindowProc` に渡していた。`WM_CHAR` は `TextInputEvent` になり、`WM_SYSCHAR` は今のまま `DefWindowProc` に渡す
 - **Alt とメニューのキー:** XylemUI のウィンドウにはメニューが無いので、`WM_SYSCOMMAND` の `wParam & 0xFFF0`（下の 4 ビットはシステムが使う、文書）が `SC_KEYMENU`（キーで開くウィンドウメニュー）なら 0 を返し、`DefWindowProc` に渡さない。Alt を押して離したとき、F10（`WM_KEYDOWN` の文書の Remarks）、Alt と文字、Alt+Space のどれも開かない。`SC_KEYMENU` の `lParam` は Alt と押した文字の文字コードである（文書）。Avalonia も上の語が 0 以下の `SC_KEYMENU` に 0 を返す（`AppWndProc.cs` 239〜243 行目）が、文字コードの上の語は常に 0 なので同じになる。`WM_MENUCHAR` には `MNC_CLOSE` を上の語にして返し、警告音を止める（Avalonia の 245〜249 行目、文書）。マウスで開く `SC_MOUSEMENU` は止めない。Alt+F4 は `WM_SYSKEYDOWN` を `DefWindowProc` に渡すと閉じる（アプリが止めれば閉じない。Avalonia と同じ）
-- **配る経路:** 元は、ウィンドウがアクティブでフォーカスしたノードがあればそのノード、なければ根である（Avalonia の `KeyboardDevice.cs` 238 行目、GPUI の `gpui/src/window.rs` 6463〜6471 行目）。ウィンドウ（`DesktopWindow`、`HeadlessApp`）は、根の関数が返したノードを自分の根の子に付けるので、フォーカスが無いときの元は、木の根でなく、根の関数が返したノード（`UiTree.KeyRoot`）にする。アプリが自分の根に付けたキーと動作のハンドラが、フォーカスが無くても経路に入る（行 KM1a で直した。それまでは木の根が元で、アプリのハンドラはフォーカスが無いと呼ばれなかった）。ポインタと同じく、capture のフェーズを根から元へ、bubble のフェーズを元から根へ呼び、`StopPropagation` で止める（Avalonia の Tunnel と Bubble、`InputElement.cs` 109 行目。GPUI の `window.rs` 6260〜6289 行目。Flutter は葉から根の bubble だけ、`fm` 2273〜2303 行目）。届ける時機、`Batch`、ハンドラの例外、ハンドラを動かす Scope は、上の「ポインタの入力」と同じ。止められなかった Down には、次の既定の動作をこの順で行う
+- **配る経路:** 元は、ウィンドウがアクティブでフォーカスしたノードがあればそのノード、なければ根である（Avalonia の `KeyboardDevice.cs` 238 行目、GPUI の `gpui/src/window.rs` 6463〜6471 行目）。ウィンドウ（`DesktopWindow` と `HeadlessApp`。行 PL1 の後は両方が使う窓の核 `WindowCore`、§6.0）は、根の関数が返したノードを自分の根の子に付けるので、フォーカスが無いときの元は、木の根でなく、根の関数が返したノード（`UiTree.KeyRoot`）にする。アプリが自分の根に付けたキーと動作のハンドラが、フォーカスが無くても経路に入る（行 KM1a で直した。それまでは木の根が元で、アプリのハンドラはフォーカスが無いと呼ばれなかった）。ポインタと同じく、capture のフェーズを根から元へ、bubble のフェーズを元から根へ呼び、`StopPropagation` で止める（Avalonia の Tunnel と Bubble、`InputElement.cs` 109 行目。GPUI の `window.rs` 6260〜6289 行目。Flutter は葉から根の bubble だけ、`fm` 2273〜2303 行目）。届ける時機、`Batch`、ハンドラの例外、ハンドラを動かす Scope は、上の「ポインタの入力」と同じ。止められなかった Down には、次の既定の動作をこの順で行う
   1. スクロールする箱のキー（下の「キーボードでのスクロール」）は、bubble の各ノードのハンドラの後に、そのノードで行う（ホイールと同じ場所）
   2. Tab（下の「Tab の順」）は、既定のキーマップの行 `tab`・`shift-tab` が動作 `focus::Next`・`focus::Previous` を頼み、木が受ける（行 KM2a、下の「既定のキーと動作」。キーのハンドラより先になった）。K1 では、bubble の最後、根の後で行っていた（Avalonia の `KeyboardNavigationHandler` は TopLevel の bubble のハンドラ、`KeyboardNavigationHandler.cs` 36・127〜133 行目）
   3. ボタンの Enter と Space は、`Primitive.Button` が自分に付けるふつうのハンドラである（下の「ボタンのキー」）
@@ -5984,7 +6193,7 @@ Invariant 14 疑似状態の変化はレイアウトを無効化しない（Pain
 Invariant 15 フレームワーク内の時刻とタイマーは TimeProvider 経由でのみ得る（§12.2）
 ```
 
-Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core の型は `internal` であり、Platform / Rendering のアセンブリからは参照できない。
+Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core の型は `internal` であり、Platform / Rendering のアセンブリからは参照できない。ただし今は `InternalsVisibleTo` で見せており（§2.9.1「今の形」）、行 PL1 の契約（§6.0）も同じ形である。窓の核（`WindowCore`）は Core にあり、ホストは木を読むだけで、Core の型を変えるのは窓の核である。境界は行 C0 で決める。
 
 これらの不変条件は、実装フェーズで新しいコードを書く際に「どの層に置くべきか」の判断基準として機能する。違反が疑われる設計変更は、変更前にこの一覧との整合性を確認する。
 
@@ -5996,7 +6205,7 @@ Invariant 9 / 10 はアセンブリ構成（§2.9.1）でも担保する。Core 
 
 **作る行:** 操作の土台（`HeadlessApp`、仮想の時計と `PumpAndSettle`、ポインタ・キーボード・フォーカスの注入、`Find` / `FindAll`、`AssertNoLeakedScopes`、`PerformanceAssert.DoesNotAllocate`、テスト用のフォント）は行 P02a、描画の土台（PNG、`SaveScreenshotAsync`、ゴールデン比較は `XylemUI.Testing` に、ウィンドウなしの WARP の描画と読み戻しは別のパッケージ `XylemUI.Testing.D3D11` に置き、`HeadlessOptions.Renderer` で差し込む、§12.3「差し込み」）は行 P02a2 で作る。テスト用のフォントは、`HeadlessApp` がどの OS でも文字を測れるように P02a に入れた。`XylemUI.Testing` は Windows だけの DirectWrite のフォント解決に頼れない（P02a の実装の前のオーナーの決定、Issue #460）。ほかの行の土台が要るものは、その行で足す。`app.Ime` は P02c（`ITextInputClient`、§4.7）、文字の入力の `app.Keyboard.Type` は P02b（`TextInputEvent`）、アクセシブル名での検索は P02g（§4.4）、アニメーションを待つことは AN1 である（P02a の Grill、Issue #456）。
 
-**Core との関係:** `XylemUI.Testing` は Core と同じ版で出し、`InternalsVisibleTo` で Core の internal（`WindowInput`、`PointerInput`、`KeyInput`、`UiTree`、`WindowFrames`）を使う。これらを公開すると、Platform との間の内部の型が公開の API になるためである。テストのための公開の口を Core に置かない（`D3D11Renderer.ReadPixel` は S7 でサンプルの検査のために公開したが、P02a2 で公開の API から外す。ウィンドウなしの読み戻しは `XylemUI.Testing.D3D11` が持ち、レンダラのテストは internal の読み戻しを使う（§12.3「差し込み」）。HelloWindow の自己検査はテストへ移す）。
+**Core との関係:** `XylemUI.Testing` は Core と同じ版で出し、`InternalsVisibleTo` で Core の internal（`WindowInput`、`PointerInput`、`KeyInput`、`UiTree`、`WindowFrames`）を使う。これらを公開すると、Platform との間の内部の型が公開の API になるためである。テストのための公開の口を Core に置かない（`D3D11Renderer.ReadPixel` は S7 でサンプルの検査のために公開したが、P02a2 で公開の API から外す。ウィンドウなしの読み戻しは `XylemUI.Testing.D3D11` が持ち、レンダラのテストは internal の読み戻しを使う（§12.3「差し込み」）。HelloWindow の自己検査はテストへ移す）。`HeadlessApp` は、本物の窓と同じ窓の核（`WindowCore`、Core の internal）を使う（行 PL1、§6.0）。根の値（ロケール、テーマ）、`Mount`、最初のフレーム、閉じた時の後始末は、2 つのホストで同じコードになる。
 
 ### 12.1 テストピラミッド（5層）
 
