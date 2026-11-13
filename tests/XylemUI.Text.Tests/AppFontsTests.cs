@@ -129,9 +129,12 @@ public sealed class AppFontsTests(UiThreadFixture ui)
         ui.Invoke(() => { });
         int before = AppFontSet.Generation;
 
+        // The test calls the font registration off the UI thread on purpose, which is what XYLEM100 reports.
+#pragma warning disable XYLEM100
         _ = Assert.Throws<InvalidOperationException>(() =>
             Task.Run(() => AppFonts.Add(Regular), TestContext.Current.CancellationToken).GetAwaiter().GetResult()
         );
+#pragma warning restore XYLEM100
         Assert.Equal(before, AppFontSet.Generation);
     }
 

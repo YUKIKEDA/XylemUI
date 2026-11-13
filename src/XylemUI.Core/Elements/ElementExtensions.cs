@@ -1141,6 +1141,7 @@ public static partial class ElementExtensions
     /// <param name="element">A node of the window.</param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static KeyBinding? KeyBindingFor<TAction>(this Element element)
         where TAction : class, IAction
     {
@@ -1166,6 +1167,7 @@ public static partial class ElementExtensions
     /// </param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static KeyBinding? KeyBindingFor(this Element element, IAction action, Element? from = null)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -1186,6 +1188,7 @@ public static partial class ElementExtensions
     /// <param name="action">The action.</param>
     /// <returns>Whether a handler handled the action.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool Dispatch(this Element element, IAction action)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -1208,6 +1211,7 @@ public static partial class ElementExtensions
     /// </param>
     /// <returns>Whether a handler handled the action.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool Dispatch(this Element element, IAction action, Element? from)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -1230,6 +1234,7 @@ public static partial class ElementExtensions
     /// <param name="element">A node of the window.</param>
     /// <returns>Whether a handler would be called.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool CanDispatch<TAction>(this Element element)
         where TAction : class, IAction
     {
@@ -1255,6 +1260,7 @@ public static partial class ElementExtensions
     /// </param>
     /// <returns>Whether the action would be handled.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool CanDispatch(this Element element, IAction action, Element? from = null)
     {
         ArgumentNullException.ThrowIfNull(action);

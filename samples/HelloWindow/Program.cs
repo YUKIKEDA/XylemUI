@@ -135,7 +135,10 @@ if (auto)
         {
             try
             {
+                // The sample checks on purpose that a call off the UI thread is refused (S1), which is what XYLEM100 reports.
+#pragma warning disable XYLEM100
                 window.Show();
+#pragma warning restore XYLEM100
                 return "accepted";
             }
             catch (InvalidOperationException)

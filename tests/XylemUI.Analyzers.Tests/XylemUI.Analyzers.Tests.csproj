@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XylemUI.Analyzers.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The analyzers and the code fixes are run through the compiler's API on sources the tests write, as the generator's tests
+         run the generator (design §2.2, "Analyzers", row A1). -->
+    <ProjectReference Include="..\..\src\XylemUI.Analyzers\XylemUI.Analyzers.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Analyzers.CodeFixes\XylemUI.Analyzers.CodeFixes.csproj" />
+    <ProjectReference Include="..\..\src\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The sources of the projects whose public APIs carry [UiThreadOnly], which a test reads to keep the attribute and the
+         UI-thread checks in step. -->
+    <AssemblyMetadata Include="XylemUI.Analyzers.Tests.SourceRoot" Value="$(MSBuildThisFileDirectory)../../src" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+  </ItemGroup>
+</Project>

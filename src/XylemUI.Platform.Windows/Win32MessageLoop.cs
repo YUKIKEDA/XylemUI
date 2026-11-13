@@ -39,6 +39,7 @@ public static unsafe class Win32MessageLoop
     /// Gets the frame scheduler of the UI thread. Its callbacks run inside <see cref="Run"/>.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static IFrameScheduler FrameScheduler => GetFrameScheduler();
 
     /// <summary>
@@ -61,6 +62,7 @@ public static unsafe class Win32MessageLoop
     /// caller keeps owning it and sets zero before closing it.
     /// </param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static void SetFrameClock(nint waitableObject) => GetFrameScheduler().SetFrameClock((HANDLE)waitableObject);
 
     /// <summary>
@@ -75,6 +77,7 @@ public static unsafe class Win32MessageLoop
     /// <param name="lastRefresh">The reader of the swap chain's last displayed refresh.</param>
     /// <param name="refreshRate">The refresh rate of the window's monitor in Hz, used until the period is derived.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static void SetFrameClock(nint waitableObject, LastRefreshReader? lastRefresh, double refreshRate) =>
         GetFrameScheduler().SetFrameClock((HANDLE)waitableObject, lastRefresh, refreshRate);
 
@@ -88,6 +91,7 @@ public static unsafe class Win32MessageLoop
     /// installs its synchronization context so that <c>await</c> continuations resume on the UI thread (design §2.12).
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static UiDispatcher Dispatcher => GetDispatcher();
 
     /// <summary>
@@ -102,6 +106,7 @@ public static unsafe class Win32MessageLoop
     /// <returns>The exit code passed to <see cref="Quit"/>.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="Win32Exception">The system could not wait for messages.</exception>
+    [UiThreadOnly]
     public static int Run()
     {
         UiThread.VerifyAccess();
@@ -179,6 +184,7 @@ public static unsafe class Win32MessageLoop
     /// </summary>
     /// <param name="exitCode">The value <see cref="Run"/> returns.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static void Quit(int exitCode = 0)
     {
         UiThread.VerifyAccess();

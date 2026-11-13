@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The analyzers app developers get with XylemUI.Core (design §2.2, "Analyzers", row A1). They run in the compiler and the
+       editor and never ship in an app; XylemUI.Core's package carries the assembly under analyzers/dotnet/cs. They reference the
+       compiler's API alone, not the editor's (RS1038): the code fixes are XylemUI.Analyzers.CodeFixes. They do not reference
+       XylemUI.Core, and find its types and its attribute by name. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>XylemUI.Analyzers</RootNamespace>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- A compiler component: it is not a library of an app, so it is neither packed by itself nor checked for NativeAOT. -->
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <InvariantGlobalization></InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The list of the diagnostics the analyzers report (analyzer release tracking, RS2008). -->
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The tests reach the type names and the descriptors the analyzers share. -->
+    <InternalsVisibleTo Include="XylemUI.Analyzers.Tests" />
+  </ItemGroup>
+</Project>

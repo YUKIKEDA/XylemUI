@@ -35,6 +35,7 @@ public static class ImageCache
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">The value is negative.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread (design §2.12).</exception>
+    [UiThreadOnly]
     public static int MaximumCount
     {
         get => OnUiThread().MaximumCount;
@@ -48,6 +49,7 @@ public static class ImageCache
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">The value is negative.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread (design §2.12).</exception>
+    [UiThreadOnly]
     public static long MaximumBytes
     {
         get => OnUiThread().MaximumBytes;
@@ -64,6 +66,7 @@ public static class ImageCache
     /// <param name="source">The source.</param>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread (design §2.12).</exception>
+    [UiThreadOnly]
     public static void Evict(ImageSource source)
     {
         List<WeakReference<WindowImageCache>> caches = OnUiThread().Caches;
@@ -85,6 +88,7 @@ public static class ImageCache
     /// Takes every image out of every open window's cache, as <see cref="Evict"/> does for one source.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread (design §2.12).</exception>
+    [UiThreadOnly]
     public static void Clear()
     {
         List<WeakReference<WindowImageCache>> caches = OnUiThread().Caches;

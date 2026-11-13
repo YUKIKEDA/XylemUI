@@ -30,6 +30,7 @@ public static class ScopeTracker
     /// </summary>
     /// <param name="action">Receives each scope.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static void ForEachActiveScope(Action<TrackedScope> action)
     {
         ArgumentNullException.ThrowIfNull(action);

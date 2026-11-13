@@ -223,7 +223,13 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     public TextRenderingParameters TextRendering
     {
-        get => _textRendering;
+        // A block body, as the setter's attribute puts it on two lines: SA1504 wants both accessors of one shape.
+        get
+        {
+            return _textRendering;
+        }
+
+        [UiThreadOnly]
         set => SetTextRendering(value);
     }
 
@@ -362,6 +368,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// <returns>The renderer.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="InvalidOperationException">Direct3D could not create the device, the swap chain, or the shaders.</exception>
+    [UiThreadOnly]
     public static D3D11Renderer Create(nint window, int width, int height, bool useWarp = false) =>
         Create(window, width, height, useWarp, featureLevel10: false);
 
@@ -424,6 +431,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ArgumentException">The list has glyph runs and <paramref name="atlas"/> is null.</exception>
     /// <exception cref="GpuDeviceLostException">The device was lost.</exception>
+    [UiThreadOnly]
     public void Render(DisplayList list, Color clearColor, GlyphAtlas? atlas = null)
     {
         Draw(list, clearColor, atlas);
@@ -438,6 +446,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// <param name="height">The new client height, in physical pixels.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="GpuDeviceLostException">The device was lost.</exception>
+    [UiThreadOnly]
     public void Resize(int width, int height)
     {
         UiThread.VerifyAccess();
@@ -555,6 +564,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// </param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ArgumentException">The list has glyph runs and <paramref name="atlas"/> is null.</exception>
+    [UiThreadOnly]
     public void Draw(DisplayList list, Color clearColor, GlyphAtlas? atlas = null)
     {
         ArgumentNullException.ThrowIfNull(list);
@@ -573,6 +583,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// </param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ArgumentException">A list has glyph runs and <paramref name="atlas"/> is null.</exception>
+    [UiThreadOnly]
     public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas? atlas = null) => Draw(lists, clearColor, atlas, null);
 
     /// <summary>
@@ -820,6 +831,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="GpuDeviceLostException">The device was lost.</exception>
+    [UiThreadOnly]
     public void Present()
     {
         UiThread.VerifyAccess();

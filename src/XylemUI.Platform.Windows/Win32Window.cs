@@ -57,6 +57,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// <exception cref="InvalidOperationException">
     /// DirectWrite could not read how the window's text is drawn (<see cref="TextRendering"/>); the window was destroyed.
     /// </exception>
+    [UiThreadOnly]
     public Win32Window(string title, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(title);
@@ -221,6 +222,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// Gets the size of the client area, in physical pixels.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public (int Width, int Height) ClientSize
     {
         get
@@ -243,6 +245,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="ObjectDisposedException">The window has been destroyed.</exception>
+    [UiThreadOnly]
     public void Show()
     {
         UiThread.VerifyAccess();
@@ -254,6 +257,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// Asks the window to close, as the close button does. The window is destroyed when the message loop handles the request.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public void RequestClose()
     {
         UiThread.VerifyAccess();
@@ -266,6 +270,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// <summary>
     /// Destroys the window at once if it still exists.
     /// </summary>
+    [UiThreadOnly]
     public void Dispose()
     {
         UiThread.VerifyAccess();

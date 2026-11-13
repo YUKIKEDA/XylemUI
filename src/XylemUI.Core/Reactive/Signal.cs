@@ -13,6 +13,7 @@ public static class Signal
     /// <param name="comparer">Decides whether a new value equals the current one; <see langword="null"/> for the default.</param>
     /// <returns>The new signal.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static Signal<T> Create<T>(T value, IEqualityComparer<T>? comparer = null)
     {
         UiThread.VerifyAccess();
@@ -45,6 +46,7 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
     internal override uint Depth => 0;
 
     /// <inheritdoc />
+    [UiThreadOnly]
     public T Get()
     {
         UiThread.VerifyAccess();
@@ -72,6 +74,7 @@ public sealed class Signal<T> : ReactiveNode, IReadOnlySignal<T>
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, or a computed value is computing: a computed value has no side effects.
     /// </exception>
+    [UiThreadOnly]
     public void Set(T value)
     {
         UiThread.VerifyAccess();

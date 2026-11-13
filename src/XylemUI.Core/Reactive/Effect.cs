@@ -33,6 +33,7 @@ public sealed class Effect : Computation, IDisposable
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, or a computed value is computing (a computed value has no side effects).
     /// </exception>
+    [UiThreadOnly]
     public static Effect Create(Action run, [CallerMemberName] string owner = "")
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -68,6 +69,7 @@ public sealed class Effect : Computation, IDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="AggregateException">One or more of its cleanups threw; every cleanup still ran.</exception>
+    [UiThreadOnly]
     public void Dispose()
     {
         UiThread.VerifyAccess();

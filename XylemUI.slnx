@@ -9,6 +9,8 @@
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/XylemUI.Analyzers.CodeFixes/XylemUI.Analyzers.CodeFixes.csproj" />
+    <Project Path="src/XylemUI.Analyzers/XylemUI.Analyzers.csproj" />
     <Project Path="src/XylemUI.Core/XylemUI.Core.csproj" />
     <Project Path="src/XylemUI.Desktop/XylemUI.Desktop.csproj" />
     <Project Path="src/XylemUI.Generators/XylemUI.Generators.csproj" />
@@ -27,6 +29,7 @@
     <Project Path="tools/UnicodeTableGen/UnicodeTableGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/XylemUI.Analyzers.Tests/XylemUI.Analyzers.Tests.csproj" />
     <Project Path="tests/XylemUI.Core.Tests/XylemUI.Core.Tests.csproj" />
     <Project Path="tests/XylemUI.Desktop.Tests/XylemUI.Desktop.Tests.csproj" />
     <Project Path="tests/XylemUI.Generators.Tests/XylemUI.Generators.Tests.csproj" />

@@ -146,6 +146,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// Gets the roots of the popups open over the window, back to front (design §7.3, §12.4): the ones leaving with a motion
     /// included. The nodes in a popup are found with <see cref="Find"/> too.
     /// </summary>
+    [UiThreadOnly]
     public IReadOnlyList<Element> Popups
     {
         get
@@ -238,6 +239,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <param name="key">The test ID or the text.</param>
     /// <returns>The node.</returns>
     /// <exception cref="InvalidOperationException">No node, or more than one node, matches.</exception>
+    [UiThreadOnly]
     public Element Find(string key)
     {
         IReadOnlyList<Element> found = FindAll(key);
@@ -258,6 +260,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// </summary>
     /// <param name="key">The test ID or the text.</param>
     /// <returns>The nodes; empty when none matches.</returns>
+    [UiThreadOnly]
     public IReadOnlyList<Element> FindAll(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -284,6 +287,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <param name="role">The role.</param>
     /// <param name="name">The name, or <see langword="null"/> for any.</param>
     /// <returns>The nodes; empty when none matches.</returns>
+    [UiThreadOnly]
     public IReadOnlyList<Element> FindByRole(SemanticsRole role, string? name = null)
     {
         VerifyRunning();
@@ -300,6 +304,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <returns>What the accessibility tree holds of it.</returns>
     /// <exception cref="InvalidOperationException">The node is not in the accessibility tree: it has no role, or is in a hidden
     /// subtree.</exception>
+    [UiThreadOnly]
     public AccessibilityNodeInfo AccessibilityOf(Element element)
     {
         VerifyRunning();
@@ -378,6 +383,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <param name="path">The file; its folder is made when missing.</param>
     /// <returns>A task that completes when the file is written.</returns>
     /// <exception cref="InvalidOperationException">The app has no renderer (<see cref="HeadlessOptions.Renderer"/>).</exception>
+    [UiThreadOnly]
     public async Task SaveScreenshotAsync(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
@@ -401,6 +407,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <exception cref="InvalidOperationException">The app has no renderer (<see cref="HeadlessOptions.Renderer"/>).</exception>
     /// <exception cref="GoldenMismatchException">The golden is missing, or differs by more than the tolerance; the frame and the
     /// image of the difference are written to the test's output folder's <c>GoldenFailures</c>.</exception>
+    [UiThreadOnly]
     public Task MatchesGoldenAsync(string name, GoldenTolerance? tolerance = null)
     {
         Color[] pixels = Capture(out int width, out int height);
@@ -412,6 +419,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// </summary>
     /// <param name="element">The node.</param>
     /// <returns><see langword="true"/> when the node took the focus; <see langword="false"/> when it cannot take it.</returns>
+    [UiThreadOnly]
     public bool Focus(Element element)
     {
         VerifyRunning();
@@ -425,6 +433,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// focus"); it is active from the start.
     /// </summary>
     /// <param name="active">Whether the window is active.</param>
+    [UiThreadOnly]
     public void SetActive(bool active)
     {
         VerifyRunning();
@@ -440,6 +449,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <param name="visible"><see langword="false"/> to hide or minimize the window; <see langword="true"/> to bring it
     /// back.</param>
     /// <exception cref="InvalidOperationException">The app is not running.</exception>
+    [UiThreadOnly]
     public void SetVisible(bool visible)
     {
         VerifyRunning();
@@ -455,6 +465,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <returns>The number of iterations that ran something.</returns>
     /// <exception cref="InvalidOperationException">Something was left after <see cref="HeadlessOptions.MaxIterations"/>
     /// iterations, as an animation that never ends leaves a frame; the message names what was left.</exception>
+    [UiThreadOnly]
     public int PumpAndSettle()
     {
         VerifyRunning();
@@ -497,6 +508,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// one frame if a frame is asked for (Flutter's <c>pump(duration)</c>).
     /// </summary>
     /// <param name="duration">How far; 0 or more.</param>
+    [UiThreadOnly]
     public void Pump(TimeSpan duration)
     {
         VerifyRunning();
@@ -515,6 +527,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">Scopes are alive; the message lists each with its owner and, when
     /// <see cref="ScopeTracker.CaptureStackTrace"/> is on, the stack that made it.</exception>
+    [UiThreadOnly]
     public void AssertNoLeakedScopes()
     {
         VerifyRunning();

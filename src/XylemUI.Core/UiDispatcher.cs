@@ -69,6 +69,7 @@ public sealed class UiDispatcher : IUiDispatcher
     /// <param name="reportException">Receives an exception from a message handler or a continuation; the drain goes on.</param>
     /// <returns>The number of items that ran.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public int Drain(Action<Exception> reportException)
     {
         ArgumentNullException.ThrowIfNull(reportException);

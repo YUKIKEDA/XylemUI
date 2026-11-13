@@ -90,11 +90,13 @@ public sealed class Animation
     /// <summary>
     /// Moves the value to 1 along the curve, in the part of <see cref="Duration"/> that the distance left takes.
     /// </summary>
+    [UiThreadOnly]
     public void Forward() => MoveTo(1, Scale(1));
 
     /// <summary>
     /// Moves the value to 0 along the curve, in the part of <see cref="Duration"/> that the distance left takes.
     /// </summary>
+    [UiThreadOnly]
     public void Reverse() => MoveTo(0, Scale(0));
 
     /// <summary>
@@ -103,6 +105,7 @@ public sealed class Animation
     /// <param name="target">The target.</param>
     /// <param name="duration">The duration; <see cref="Duration"/> when <see langword="null"/>. Above 0.</param>
     /// <param name="curve">The curve; <see cref="Curve"/> when <see langword="null"/>.</param>
+    [UiThreadOnly]
     public void AnimateTo(float target, TimeSpan? duration = null, Curve? curve = null)
     {
         TimeSpan length = duration ?? Duration;
@@ -114,6 +117,7 @@ public sealed class Animation
     /// Sets the value at once and stops the move: what a gesture does to follow the finger.
     /// </summary>
     /// <param name="value">The value.</param>
+    [UiThreadOnly]
     public void Set(float value)
     {
         Stop();
@@ -126,6 +130,7 @@ public sealed class Animation
     /// </summary>
     /// <param name="velocity">The speed, in units of the value a second, such as a finger's on release.</param>
     /// <param name="spring">The spring; <see cref="Spring.Default"/> when <see langword="null"/>.</param>
+    [UiThreadOnly]
     public void Fling(float velocity, Spring? spring = null)
     {
         _velocity = velocity;
@@ -137,11 +142,13 @@ public sealed class Animation
     /// </summary>
     /// <param name="target">The target.</param>
     /// <param name="spring">The spring; <see cref="Spring.Default"/> when <see langword="null"/>.</param>
+    [UiThreadOnly]
     public void SpringTo(float target, Spring? spring = null) => StartSpring(target, spring ?? Spring.Default);
 
     /// <summary>
     /// Stops the move where the value is.
     /// </summary>
+    [UiThreadOnly]
     public void Stop()
     {
         UiThread.VerifyAccess();

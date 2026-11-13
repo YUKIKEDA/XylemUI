@@ -37,6 +37,7 @@ public sealed unsafe partial class Win32Window
     /// <param name="data">What the value is outside the app.</param>
     /// <param name="allowed">The effects the source allows.</param>
     /// <returns>The effect the drop chose, or <see cref="DragEffects.None"/>.</returns>
+    [UiThreadOnly]
     public DragEffects StartExternalDrag(ExternalDragData data, DragEffects allowed)
     {
         ArgumentNullException.ThrowIfNull(data);

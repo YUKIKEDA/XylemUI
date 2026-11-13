@@ -71,6 +71,7 @@ public sealed class HeadlessIme : ITextInputPlatform
     /// <returns>This input method, for the next call.</returns>
     /// <exception cref="InvalidOperationException">No node that takes text has the focus, or the focused field is read-only or
     /// hides its text, which takes no input method (design §4.7).</exception>
+    [UiThreadOnly]
     public HeadlessIme Compose(string text, int cursor, ReadOnlySpan<ImeAttributeRun> clauses = default)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -94,6 +95,7 @@ public sealed class HeadlessIme : ITextInputPlatform
     /// <returns>This input method, for the next call.</returns>
     /// <exception cref="InvalidOperationException">No node that takes text has the focus, or the focused field takes no input
     /// method.</exception>
+    [UiThreadOnly]
     public HeadlessIme Commit(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -119,6 +121,7 @@ public sealed class HeadlessIme : ITextInputPlatform
     /// <returns>This input method, for the next call.</returns>
     /// <exception cref="InvalidOperationException">No node that takes text has the focus, or the focused field takes no input
     /// method.</exception>
+    [UiThreadOnly]
     public HeadlessIme Cancel()
     {
         ITextInputClient client = Writable();
@@ -140,6 +143,7 @@ public sealed class HeadlessIme : ITextInputPlatform
     /// <param name="end">The end of the range.</param>
     /// <returns>The range's box; <see langword="null"/> when the field is not laid out yet.</returns>
     /// <exception cref="InvalidOperationException">No node that takes text has the focus.</exception>
+    [UiThreadOnly]
     public Rect? BoundsOf(int start, int end)
     {
         _app.VerifyRunning();
