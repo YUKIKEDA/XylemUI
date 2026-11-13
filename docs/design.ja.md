@@ -1902,7 +1902,7 @@ static Element Preview()
 ```
 
 - **鍵は文脈のオブジェクト:** 鍵は型ではなく、`Context<T>` の値にする。値を置く側と引く側は、`public static readonly Context<IReadOnlySignal<Locale>> Locale = new(…);` のように作った同じオブジェクトを使う。型を鍵にすると、同じ型の値を 2 つ置けない。たとえば前景の色と強調の色を、どちらも `IReadOnlySignal<Color>` で置くとぶつかる。Flutter は型を鍵にした表を持ち（Flutter 3.47.8 の `packages/flutter/lib/src/widgets/framework.dart` 5055 行目の `PersistentHashMap<Type, InheritedElement>`）、`Theme.of` は非公開の型 `_InheritedTheme` で引いてぶつかるのを避ける（`packages/flutter/lib/src/material/theme.dart` 123〜124 行目）。GPUI は、アプリ全体に型ごとに 1 つの値を持ち（zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目の `globals_by_type`）、zed のテーマの一覧は非公開の型 `GlobalThemeRegistry` で包んで置く（`crates/theme/src/registry.rs` 44・60 行目）。Avalonia は、受け継ぐ値をプロパティのオブジェクトで引く（Avalonia 12.1.4 の `src/Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目の `FontSizeProperty`）。XylemUI の鍵は、Avalonia のプロパティと同じく、オブジェクトそのものである。同じ鍵の値が重なったら、近い方（今の Scope に近い祖先で置いた値）が勝つ。Flutter も、子は親の表を受け継ぎ、`InheritedElement` が自分の型の項目を上書きする（`framework.dart` 5129〜5132・6272〜6277 行目）
-- **値が無い時:** 鍵は既定値を持てる。`Use` は、近くに置かれた値があればそれを、無ければ鍵の既定値を返し、既定値も無ければ `InvalidOperationException` を投げる。例外にしない `TryUse` は、同じ順に引いて、値も既定値も無ければ `false` を返す。値がシグナルの鍵（ロケール、テーマ）は既定値を持たず、ウィンドウが根で必ず置く（Issue #838 の Grill でオーナーが決定。下の「テストとウィンドウ」）。`Signal.Create` は UI スレッドを求めるので（`src/XylemUI.Core/Reactive/Signal.cs` 16〜19 行目）、static の初期化子ではシグナルの既定値を作れない。既定値を遅れて作る口（`Context<T>(Func<T>)`）は足さない。遅れて作ったシグナルはプロセスに 1 つになり、ウィンドウの間でも、同じスレッドで走るヘッドレスのテストの間でも共有されて、あるテストの書き込みが次のテストに残るからである。そのため、ウィンドウの外（素の `Scope.Create` だけのテストなど）でこれらの鍵を `Use` すると、`InvalidOperationException` になる。Flutter のロケールも同じ形である。`Localizations.localeOf` は祖先が無ければ例外を投げ（デバッグでは `assert` の中で、リリースではその後の null の検査で。Flutter 3.47.8 の `packages/flutter/lib/src/widgets/localizations.dart` 561〜570 行目）、根の値は `WidgetsApp` が置く（`packages/flutter/lib/src/widgets/app.dart` 1838〜1846 行目）。GPUI のテーマは、アプリの初期化で置く（zed v1.25.3 の `crates/theme/src/theme.rs` 144 行目の `cx.set_global`）。既定値を持つ Flutter のテーマ（`theme.dart` 62 行目の `_kFallbackTheme`）と下の Avalonia のプロパティは、どちらも変わらないただの値である。比べた 3 つでは、Flutter の `dependOnInheritedWidgetOfExactType` は無ければ `null` を返し（`framework.dart` 5094〜5101 行目）、`Theme.of` はそこで既定のテーマを返す（`theme.dart` 122〜138 行目）。GPUI の `global` は無ければ panic し、`try_global` は `None` を返す（`app.rs` 2385〜2399 行目）。Avalonia のプロパティは既定値を持ち（`TextElement.cs` 40 行目の `defaultValue: 12`）、資源は親をたどって無ければ `false` を返す（`src/Avalonia.Base/Controls/ResourceNodeExtensions.cs` 83〜97 行目）
+- **値が無い時:** 鍵は既定値を持てる。`Use` は、近くに置かれた値があればそれを、無ければ鍵の既定値を返し、既定値も無ければ `InvalidOperationException` を投げる。例外にしない `TryUse` は、同じ順に引いて、値も既定値も無ければ `false` を返す。値がシグナルの鍵（ロケール、ロケールの表と 24 時間表示（§4.11、行 LC2）、テーマ）は既定値を持たず、ウィンドウが根で必ず置く（Issue #838 の Grill でオーナーが決定。下の「テストとウィンドウ」）。`Signal.Create` は UI スレッドを求めるので（`src/XylemUI.Core/Reactive/Signal.cs` 16〜19 行目）、static の初期化子ではシグナルの既定値を作れない。既定値を遅れて作る口（`Context<T>(Func<T>)`）は足さない。遅れて作ったシグナルはプロセスに 1 つになり、ウィンドウの間でも、同じスレッドで走るヘッドレスのテストの間でも共有されて、あるテストの書き込みが次のテストに残るからである。そのため、ウィンドウの外（素の `Scope.Create` だけのテストなど）でこれらの鍵を `Use` すると、`InvalidOperationException` になる。Flutter のロケールも同じ形である。`Localizations.localeOf` は祖先が無ければ例外を投げ（デバッグでは `assert` の中で、リリースではその後の null の検査で。Flutter 3.47.8 の `packages/flutter/lib/src/widgets/localizations.dart` 561〜570 行目）、根の値は `WidgetsApp` が置く（`packages/flutter/lib/src/widgets/app.dart` 1838〜1846 行目）。GPUI のテーマは、アプリの初期化で置く（zed v1.25.3 の `crates/theme/src/theme.rs` 144 行目の `cx.set_global`）。既定値を持つ Flutter のテーマ（`theme.dart` 62 行目の `_kFallbackTheme`）と下の Avalonia のプロパティは、どちらも変わらないただの値である。比べた 3 つでは、Flutter の `dependOnInheritedWidgetOfExactType` は無ければ `null` を返し（`framework.dart` 5094〜5101 行目）、`Theme.of` はそこで既定のテーマを返す（`theme.dart` 122〜138 行目）。GPUI の `global` は無ければ panic し、`try_global` は `None` を返す（`app.rs` 2385〜2399 行目）。Avalonia のプロパティは既定値を持ち（`TextElement.cs` 40 行目の `defaultValue: 12`）、資源は親をたどって無ければ `false` を返す（`src/Avalonia.Base/Controls/ResourceNodeExtensions.cs` 83〜97 行目）
 - **置き方は、本体を包む形だけ:** `Provide(value, body)` は、`body` を今の Scope の子の新しい Scope の中で実行し、その Scope に値を置き、`body` が返した要素を返す（`Locale.Provide(signal, () => Column(…))`）。値は、その Scope の中で作ったものだけに効く。文として書く形（`Locale.Provide(signal);` の後に子を作る）は採らない。同じ Scope で先に作った要素には効かず、書く順で結果が変わるからである。要素の拡張メソッドの形（`Column(…).Provide(Locale, signal)`）も採らない。要素を作った後に呼ぶので、子を作る時には値がまだ無く、子に届かない。`Provide` が作る Scope は、ほかの Scope と同じく、親の Scope と一緒に破棄される
 - **ポップアップの中身は、宣言した場所の値を引く:** メニュー・ツールチップ・ダイアログ・Select の中身は、`.Menu()` などを呼んだ所に置かれた値を引く。ポップアップの層（§7.3）は木の上では別の所にあるが、Scope ツリーでは、呼んだ所の下にある。`PopupBlock.Create` は、呼んだ時の今の Scope の子にポップアップの Scope を作り（`src/XylemUI.Core/Popups/PopupBlock.cs` 89〜95 行目）、中身はその Scope の子の Scope で作る（同 279〜288 行目）。メニュー・サブメニュー・メニューバー・右クリックのメニュー・Select・ツールチップ・ダイアログは、どれも部品を作る時に `PopupBlock.Create` を呼ぶ（`src/XylemUI.Primitives/Menu.cs` 190 行目、`Select.cs` 100 行目、`Tooltip.cs` 113 行目、`Dialog.cs` 69 行目）。そのため、足す仕組みは無く、RC1 の実装はこれをテストで確かめる。Flutter の `OverlayPortal` も、オーバーレイに描く子が、自分を置いた場所と同じ `InheritedWidget`（`Theme` など）に頼れると書く（`packages/flutter/lib/src/widgets/overlay.dart` 1795〜1799 行目）。Avalonia のポップアップの根は、スタイルと資源を `Popup` から引く（`src/Avalonia.Controls/Primitives/PopupRoot.cs` 124 行目の `StylingParent => Parent`）
 - **引ける所:** `Use` は、部品を作る時のほか、作った後でも、今の Scope がある所で引ける。イベントのハンドラは登録した Scope の中で動き（上の「ハンドラを動かす Scope」、`src/XylemUI.Core/Input/WindowInput.cs` 1194 行目、`src/XylemUI.Core/Input/ActionDispatch.cs` 262 行目の `Scope.TryEnter`）、Effect は、作った所の Scope の子である自分の Scope の中で動く（`src/XylemUI.Core/Reactive/Effect.cs` 138〜146 行目、`src/XylemUI.Core/Reactive/Scope.cs` 211 行目の `AllocateForEffect`）。どちらも、宣言した所から上をたどる。今の Scope が無い所（`await` の後の継続など、§2.3「`await` の後」）では、既定値を返さずに `InvalidOperationException` を投げる。既定値を返すと、祖先が別の値を置いていても既定値で動き、誤りに気づけないからである。`TryUse` も、今の Scope が無い所では `false` を返さずに同じ例外を投げる。`false` は「値も既定値も無い」ことだけを表し、Scope が無いのは呼び方の誤りだからである（PR #832 でオーナーが決定）。直し方は、`await` の前に `Scope.Current` を取っておき、`Scope.Run` の中で引くことである。今の Scope が無い所で作った Effect は、親の無い自分の Scope を持つ（`src/XylemUI.Core/Reactive/Scope.cs` 344〜351 行目）。その中の `Use` と `TryUse` も、同じ理由で同じ例外を投げる（Issue #838 の Grill でオーナーが決定）。その Effect の中で作った Scope と Effect から引く時も同じである。ただし、その Effect の中で `Provide` した値は、その中から引ける。例外にするのは、値が見つからなかった時だけである。中で置いた値は、祖先を見なくても正しく決まるからである。破棄された親の下で作った Scope と Effect（自分を破棄した Effect が、走っている間に作ったもの。同じ `Scope.cs` 344〜351 行目）も、属する所が無いので、同じ扱いにする（PR #839 でオーナーが決定）。ウィンドウの根の Scope も親を持たないが、こちらは正しい使い方なので、鍵の既定値を返す。この 2 つを見分ける印を Scope に持つ。印で Scope の大きさが変わるかは、下の置き場所の 3 案と一緒に測る。**Computed の中では引けない**（同じ決定）。Computed が計算している間の `Use` と `TryUse` は、`Scope.Create` などと同じ検査（`Scope.cs` 336〜342 行目の `VerifyNotInComputed`）で `InvalidOperationException` を投げる。Computed は Scope を持たず（§2.2「Computed の所有」）、関数は読んだ側の Scope の下で走る（`src/XylemUI.Core/Reactive/Computed.cs` 163〜165 行目、`Computation.cs` 146〜152 行目）。Effect の再実行では、Effect が自分の Scope に入る前に Computed が計算し直され（`Effect.cs` 125 行目が 138〜139 行目より先）、結果はキャッシュされるので、引く値は最初に読んだ所で決まってしまう。使う側は、作る時にシグナルを引いて変数に取り、Computed の中ではそれを読む。Flutter は、引く所をいつも宣言した要素（`BuildContext`）に固定し、`initState` の中では例外にする（`framework.dart` 2417〜2420・6066〜6070 行目）。Avalonia の資源の束縛は、作った時のコントロールから引く（`ResourceNodeExtensions.cs` 194〜198 行目）。GPUI の値はアプリ全体に 1 つである。SolidJS は、memo を含む計算が作られた時の文脈を持ち、走る間は自分を所有者にするので、memo の中の `useContext` は宣言した所の値を引く（solid v1.9.16 の `packages/solid/src/reactive/signal.ts` 1457〜1458・1406・1223〜1228 行目）。XylemUI はこの形を採らない。Computed は Scope に持たれず、Scope が破棄された後も生きるので（§2.2「Computed の所有」）、作られた時の Scope を覚えても、引く先が無くなる場合がある。Computed ごとに欄が 1 つ増え、計算のたびに Scope の切り替えが入る（測っていない）。Scope の操作は Computed の中ではすでに例外であり、それと揃える。`Provide`・`Use`・`TryUse` は、ほかの公開の API と同じく UI スレッドで呼び、ほかのスレッドからなら `InvalidOperationException` を投げる（§2.12）。鍵のコンストラクタは既定値を持つだけなので、static の初期化子がどのスレッドで走っても呼べる
@@ -3305,7 +3305,7 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
 
 - **RC1:** Reactive Context（§2.13）を作る。ロケールの配り方はこれに乗る。テーマや密度も同じ仕組みに乗るので、ローカライズの行の中に埋めず、LC1 の前の行にする。
 - **LC1:** ロケールの型、Reactive Context の中のシグナル、OS の言語の一覧からの解決、OS の変更での読み直し、書字の向きの値（下の「ロケール」）。
-- **LC2:** CLDR の表（複数形と序数の規則、数値、日付）と書式の API（下の「書式」）。
+- **LC2:** CLDR の表（複数形と序数の規則、数値、日付、地域から文字体系を補う表）と、書式と解析の API（下の「書式」）。解決に、地域から文字体系を補う推定を足す（下の「解決」）。
 - **LC3:** ARB から型付きのメソッドを作る生成器（下の「メッセージの辞書」）。
 - **LC4:** 部品の文言と翻訳のパッケージ（下の「部品の文言」）。
 
@@ -3354,9 +3354,14 @@ public static Element Unselectable(this Element element);   // 子孫の文字�
   - 対応の一覧の中で同じ条件に合うものが 2 つ以上あれば、一覧の前のものを使う（164〜169 行目）。
   - 例: OS が `fr-CA`・`fr-FR` の順で、アプリが `fr`・`fr-FR` を宣言すると、`fr-CA` の言語だけの一致 `fr` はすぐ返さず、次の `fr-FR` の 3 つの一致を返す。OS が `de-AT`・`en-US` の順で、アプリが `de-DE`・`en-US` を宣言すると、`de-AT` の言語だけの一致 `de-DE` をすぐ返す。
   - **返す値:** 対応の一覧の側のロケールを返す。Flutter は 3 つの一致の時だけ OS の側の値を返す（186 行目の `userLocale`）。3 つの一致では 3 つの欄が同じなので、値は変わらない。
-  - **推定は入れない:** 地域から文字体系を補う推定（`zh-TW` を `zh-Hant` に合わせるなど）は入れない。Flutter の本体も入れていない。入れるかは、CLDR の表（likelySubtags）を NativeAOT のバイナリに入れた時の大きさを行 LC2 で測ってから決める（LC2 の Grill でオーナーが決定、Issue #853）。Flutter は、解決では推定しないが、部品の訳を選ぶ所では `zh` と地域 `TW`・`HK` から繁体字の訳を選び（`packages/flutter_localizations/lib/src/l10n/generated_material_localizations.dart` 46958〜46978 行目）、自分の道具でも `zh` と `sr` だけを決め打ちで補う（`packages/flutter_tools/lib/src/localizations/localizations_utils.dart` 67〜72 行目）。今の解決では、OS が `zh-TW` で、アプリが `zh-Hans`・`zh-Hant` の順に宣言していると、`zh-Hans` が選ばれる。
-- **差し替え:** アプリは解決の関数を差し替えられる（`WindowOptions.ResolveLocale`。ヘッドレスは `HeadlessOptions.ResolveLocale`）。ロケールを OS によらず固定するには、決まったロケールを返す関数を渡す。アプリの中の設定で言語を切り替えるには、アプリが自分のシグナルを作り、根の関数を `Localization.Locale.Provide(自分のシグナル, …)` で包む。ウィンドウの持つシグナルに書き込む口は足さない（LC1 の実装の Grill でオーナーが決定、Issue #849）。OS の変更とアプリの書き込みのどちらが勝つかを決めることになるからである。Flutter も、固定はアプリの部品に `locale` を渡す形で、渡した値は同じ解決を通る（`packages/flutter/lib/src/widgets/localizations.dart` 819〜821 行目。この行は調査の報告によるもので、自分では読んでいない）。
-- **宣言する所:** アプリが対応するロケールの一覧は、`WindowOptions.SupportedLocales`（ヘッドレスは `HeadlessOptions.SupportedLocales`）に渡す（同じ決定）。
+  - **地域から文字体系を補う推定を入れる（CLDR のスパイク（PR #870）の後でオーナーが決定）:** LC1 では入れず、入れるかは CLDR の表（likelySubtags）の大きさを測ってから決めることにしていた（LC2 の Grill でオーナーが決定、Issue #853）。測ると、表は 7,868 件で、実行ファイルを 80,384 バイト増やす。宣言したロケールの数には依らない（`docs/benchmarks/lc2-cldr-size.md`）。推定が無いと、OS が `zh-TW` で、アプリが `zh-Hans`・`zh-Hant` の順に宣言していると `zh-Hans` が選ばれる。Flutter は、解決では推定しないが、部品の訳を選ぶ所では `zh` と地域 `TW`・`HK` から繁体字の訳を選び（`packages/flutter_localizations/lib/src/l10n/generated_material_localizations.dart` 46958〜46978 行目）、自分の道具でも `zh` と `sr` だけを決め打ちで補う（`packages/flutter_tools/lib/src/localizations/localizations_utils.dart` 67〜72 行目）。XylemUI は、決め打ちでなく CLDR の表で、すべての言語について補う。
+    - **推定の手順:** UTS #35 第 1 部（CLDR 49 の版）§4.3「Likely Subtags」の Add Likely Subtags である。表を、言語・文字体系・地域、言語・文字体系、言語・地域、言語の順に引き、最初に当たった値で、空の欄（無い文字体系と地域、言語の `und`）だけを埋める。書いてある欄は変えない。どれにも当たらなければ、元のままにする（同じ節は、誤りを知らせる形の 1 つに「入力をそのまま返す」を挙げる）。`zh-TW` は `zh-Hant-TW`、`sr-ME` は `sr-Latn-ME`、`zh` は `zh-Hans-CN`、`sr` は `sr-Cyrl-RS`、`en-AU` は表に無く `en` の `en-Latn-US` に当たって `en-Latn-AU` になる（値は spike の表で確かめた。CLDR 49.0.0）。
+    - **解決のどこで使うか（Issue #880 の Grill でオーナーが決定）:** 推定した文字体系だけを、言語だけで比べる手順で使う。上の手順の 2 の 3（言語と地域）と 2 の 5（言語だけ）では、OS の言語と、推定した文字体系が同じ対応ロケールを先に探す。無ければ、今のとおり文字体系を見ずに探す。推定した文字体系の違うロケールを候補から外しはしない。OS が `zh-TW` だけで、アプリが `en`・`zh-Hans` を宣言していれば、今のとおり `zh-Hans` を選ぶ（繁体字の利用者には、英語より簡体字のほうが読める）。手順の 2 の 1（3 つの一致）と 2 の 2（OS の言語が文字体系を書いている時）は、書いてある欄だけで比べ、今と変わらない。地域だけの一致（2 の 6）も、OS の言語に書いてある地域だけで比べる。推定した地域は使わない。返す値は、今のとおり対応の一覧の側の値で、推定で埋めた欄は付けない。
+    - **例:** OS が `zh-TW` で、アプリが `zh-Hans`・`zh-Hant` の順に宣言していると、`zh-Hans` の推定は `Hans`、`zh-Hant` は `Hant` なので、2 の 5 で `zh-Hant` を選ぶ。OS が `sr-ME`（推定は `Latn`）で、アプリが `sr`（推定は `Cyrl`）・`sr-Latn` を宣言していると、`sr-Latn` を選ぶ。推定が無いと `sr` のキリル文字になる。OS が `zh-Hant-HK` で、アプリが `zh-CN`・`zh-TW` を宣言していると、2 の 2 は書いてある文字体系で比べて当たらず、2 の 5 で推定が `Hant` の `zh-TW` を選ぶ。
+    - **変わらない例:** 推定した文字体系がどれも同じなら、結果は LC1 と同じである。上の `fr-CA`・`fr-FR` の例は、`fr` も `fr-FR` も `Latn` なので、今のとおり `fr-FR` を返す。推定した文字体系を手順の 2 の 2 にも使う形は採らない。`fr-CA` が `fr-Latn-CA` になって 2 の 2 に入り、言語と文字体系の一致で `fr` をすぐ返してしまう。
+    - **表の置き場所:** likelySubtags の表は 1 つで、`Localization.Resolve` が読む。ウィンドウを持つアプリは、宣言したロケールの数に依らず、いつもこの表を持つ。実行時に使うのは推定した文字体系だけである（地域は、表を作るツールがビルドの前に使う）。そこで実装の PR は、値を文字体系だけに縮めた表を、全部の値の表（80,384 バイト）と同じ方法で測り、小さければ縮めた表を入れる（Issue #880 の Grill でオーナーが決定）。
+- **差し替え:** アプリは解決の関数を差し替えられる（`WindowOptions.ResolveLocale`。ヘッドレスは `HeadlessOptions.ResolveLocale`）。ロケールを OS によらず固定するには、決まったロケールを返す関数を渡す。アプリの中の設定で言語を切り替えるには、アプリが自分のシグナルを作り、根の関数を `Localization.Provide(自分のシグナル, …)` で包む。シグナルの値は、宣言したロケールの表（`LocaleData`、下の「書式」）である。`Localization.Provide` は、ロケールの鍵と表の鍵の 2 つを、同じシグナルから置く（LC2 で足す。鍵の片方だけを置くと、文字の言語と書式のロケールが食い違う）。ウィンドウの持つシグナルに書き込む口は足さない（LC1 の実装の Grill でオーナーが決定、Issue #849）。OS の変更とアプリの書き込みのどちらが勝つかを決めることになるからである。Flutter も、固定はアプリの部品に `locale` を渡す形で、渡した値は同じ解決を通る（`packages/flutter/lib/src/widgets/localizations.dart` 819〜821 行目。この行は調査の報告によるもので、自分では読んでいない）。
+- **宣言する所:** アプリが対応するロケールの一覧は、`WindowOptions.SupportedLocales`（ヘッドレスは `HeadlessOptions.SupportedLocales`）に渡す（同じ決定）。LC2 で、一覧の要素の型を `Locale` から `LocaleData` に変える（`SupportedLocales = [CldrLocales.En, CldrLocales.Ja]`。鍵 `Localization.Data` と `Localization.Use24HourFormat`、`Localization.Provide` と一緒に、Issue #880 の Grill でオーナーが決定）。この参照が、そのロケールの表をバイナリに残す（下の「書式」の「宣言と参照」）。解決は、各要素の `Locale` で行う。
 - **書字の向き:** 向きの値（`Direction`、左から右と右から左）を Core に置く。§3.2 の `LayoutStyle.Direction` と同じ型である。既定は、解決したロケールの言語コードから出す。右から左にするのは ar・fa・he・ps・sd・ur の 6 つで、Flutter の `GlobalWidgetsLocalizations` の説明（`packages/flutter_localizations/lib/src/widgets_localizations.dart` 26〜34 行目）と同じである。Flutter の生成したコード（`lib/src/l10n/generated_widgets_localizations.dart`）が右から左にするのは、そのうち sd を除く 5 つである（141・1750・2218・3954・5049 行目）。sd は、Flutter の部品が対応する言語（同じファイルの 5430 行目からの `kWidgetsSupportedLanguages`）に無い。Flutter は向きをロケールの訳の値として持つ（`localizations.dart` 171 行目の `WidgetsLocalizations.textDirection`）。レイアウトを反転する実装は行 P03b のままで、P03b はこの値を読む。言語コードのほかに文字体系も見るか（`sd-Deva` は左から右に書く）は、P03b の Grill で決める。
 
 LC1 の 7 点で決まる公開の形は、次のとおりである。
@@ -3390,7 +3395,8 @@ public static class Localization
     // ロケールの鍵。ウィンドウが根で置く。既定値は無い
     public static Context<IReadOnlySignal<Locale>> Locale { get; }
 
-    // 解決。preferred は OS の一覧（優先の順）、supported はアプリの対応の一覧
+    // 解決。preferred は OS の一覧（優先の順）、supported はアプリの対応の一覧。
+    // LC2 から、言語だけで比べる手順では、推定した文字体系が同じものを先に探す（上の「解決」）
     public static Locale Resolve(IReadOnlyList<Locale> preferred, IReadOnlyList<Locale> supported);
 
     // ロケールの言語コードから出す、既定の書字の向き
@@ -3408,19 +3414,310 @@ public static class Localization
 
 **書式（数値と日付）:**
 
-- **書式のロケール（LC2 の Grill でオーナーが決定、Issue #853）:** 書式は、メッセージと同じ 1 つのロケール（解決したロケール）で出す。OS の地域の書式のロケール（Windows の `GetUserDefaultLocaleName`）は、2 つ目のロケールとしては持たない。持つと、アプリが宣言していないロケールの表まで要るようになり、下の「入れるのは、アプリが宣言したロケールの分だけ」と合わない。英語の表示で日本の地域設定、という利用者には、日付が英語圏の形で出る。
+- **書式のロケール（LC2 の Grill でオーナーが決定、Issue #853）:** 書式は、メッセージと同じ 1 つのロケール（解決したロケール）で出す。OS の地域の書式のロケール（Windows の `GetUserDefaultLocaleName`）は、2 つ目のロケールとしては持たない。持つと、アプリが宣言していないロケールの表まで要るようになり、宣言したロケールの表だけをバイナリに残す形（下の「表の持ち方」）と合わない。英語の表示で日本の地域設定、という利用者には、日付が英語圏の形で出る。
   - **OS から取るのは、24 時間表示かどうかだけである。** 別の値として持ち、時刻の表示にだけ使う。Flutter と同じ形である。Flutter は、言語は UI の言語の一覧だけを読み、地域設定からは、時刻の書式に `H` があるかだけを取り出し（Flutter 3.47.8 の `engine/src/flutter/shell/platform/windows/system_utils.cc` 101〜115 行目の `GetUserTimeFormat` と `Prefer24HourTime`）、`alwaysUse24HourFormat` として渡して（`engine/src/flutter/lib/ui/platform_dispatcher.dart` 1124〜1128 行目）、時刻の書式にだけ使う（`packages/flutter_localizations/lib/src/material_localizations.dart` 442〜447 行目）。Flutter の `GetUserTimeFormat` は、`GetLocaleInfoEx` が書いた長さを使わず、100 文字のバッファの全部を文字列にするので、終わりの NUL の後ろの中身に `H` があると誤って 24 時間表示と読む。XylemUI は、戻り値の長さまでで切る（PR #854 のレビュー）。24 時間表示かどうかの値はシグナルにし、ほかの設定（文字の描き方、動きを減らす設定、言語の一覧）と同じく、`WM_SETTINGCHANGE` のたびに読み直す（PR #854 でオーナーが決定）。地域の設定を変えると、`lParam` が "intl" の `WM_SETTINGCHANGE` が届く（上の「OS の変更」）。Avalonia は .NET の地域のカルチャで整形するが、XylemUI はカルチャを使わない（§0.1）。
 - **既定の数字（LC2 の Grill の 2 巡目でオーナーが決定、Issue #860）:** 数字は、CLDR がそのロケールの既定とする数字で出す（アラビア語ならアラビア・インド数字）。Flutter の日付のデータも、アラビア語とペルシャ語で固有の数字を持つ（`packages/flutter_localizations/lib/src/l10n/generated_date_localizations.dart` 334・3639 行目の `ZERODIGIT`）。ロケールの `-u-nu-` で上書きする口は持たない（上の「値」）。
-- **表の持ち方は、測ってから決める（同じ Grill）:** 「入れるのは、アプリが宣言したロケールの分だけ」の方法は、まだ決めていない。候補は、生成器が宣言したロケールの分だけコードを出す形と、全部のロケールを入れて、使わない分を NativeAOT に落とさせる形である。複数形・数値・日付の表と、地域から文字体系を補う表（likelySubtags）を、ロケール 1 個・10 個・全部で入れた時のバイナリの増え方を、行 LC2 の spike で測る。Flutter は、日付のデータを 98 ロケールの全部について持つ（同じファイルの 13 行目の `dateSymbols` の表）。
+- **表の持ち方（CLDR のスパイク（PR #870）の後でオーナーが決定）:** パッケージは CLDR の全部のロケールの表を持つ。アプリは宣言したロケールだけを参照し、参照しないロケールの表は NativeAOT が落とす。測り方を決めたのは LC2 の Grill の 2 巡目である（Issue #860）。spike（Issue #862、記録は `docs/benchmarks/lc2-cldr-size.md`）は、宣言したロケールの分だけをソースに入れる形と、420 個の全部を入れて宣言したロケールだけを参照する形を比べた。ロケール 1 個でも 10 個でも、2 つの形の実行ファイルは 1 バイトも違わなかった。ILC のマップファイルで数えたデータの増分も、参照したロケールの生のデータの大きさと一致した。複数形・数値・日付の 3 つの表は、10 個で約 28 KB（108,544 − 80,384 バイト）、420 個の全部で 613,376 バイト（693,760 − 80,384）である。Flutter は、日付のデータを 98 ロケールの全部について持つ（同じファイルの 13 行目の `dateSymbols` の表）。
 - **並べ替え（同じ Grill）:** 文字列の並べ替えと比較は Ordinal のままにする（§0.1）。ロケールに合わせた並べ替え（CLDR の照合の表）は、行 LC2 の範囲（複数形、数値、日付）と独立で、表が大きいので、ロードマップの行 CL1 に分ける。zed は、数字の並びを数として比べ、ほかの文字は大文字と小文字を区別せずに比べる自然順を持つ（zed v1.25.3 の `crates/util/src/paths.rs` 960〜966 行目の `natural_sort` の説明）。Avalonia の `AutoCompleteBox` は、候補の絞り込み（並べ替えではない）で、カルチャで比べる形と Ordinal で比べる形の両方を持ち、使う側が選ぶ（Avalonia 12.1.4 の `src/Avalonia.Controls/AutoCompleteBox/AutoCompleteBox.cs` 1845〜1849・1896〜1899 行目の `StringComparison.CurrentCulture`。PR #854 のレビュー）。Avalonia の並べ替えそのもの（`DataGrid` など）と、Flutter に並べ替えの仕組みが無いことは、まだ読んでいない。行 CL1 の Grill で読む。
-- **出所:** CLDR から作った表を、ビルド時に生成してバイナリに入れる。入れるのは、アプリが宣言したロケールの分だけである。どの OS でも同じ結果になる。Flutter も `package:intl` のデータをアプリに入れている（`packages/flutter_localizations/pubspec.yaml` 16 行目、`lib/src/material_localizations.dart` 197 行目の `dateSymbols.FIRSTDAYOFWEEK`）。
+- **出所:** CLDR から作った表をパッケージに入れ、アプリのバイナリには、アプリが参照したロケールの分だけが残る（上の「表の持ち方」）。どの OS でも同じ結果になる。Flutter も `package:intl` のデータをアプリに入れている（`packages/flutter_localizations/pubspec.yaml` 16 行目、`lib/src/material_localizations.dart` 197 行目の `dateSymbols.FIRSTDAYOFWEEK`）。
 - **範囲:**
   - 複数形と序数の規則（区分は `zero`・`one`・`two`・`few`・`many`・`other`。LDML 第 3 部「Language Plural Rules」）
   - 数値: 小数、百分率、通貨、短縮（1.2万、1.2K）
+  - 数値の解析（行 B9 の数値の欄が使う。LC2 の Grill の 3 巡目でオーナーが決定、Issue #863）
   - 日付と時刻: Flutter の `DateFormat` と同じスケルトンの組、月・曜日・午前と午後の名前、週の始まり
   - 短い日付の解析（B12 の日付の入力欄が使う）
+  - 期間の書式、日付と時刻をつなぐパターン、日時の文字の解析、最初の週の最小の日数と週の番号、週末の曜日、通貨の記号、時間帯のスケルトンの GMT からの差（下の「範囲に足したもの」。Issue #880 の Grill でオーナーが決定）
+  - 地域から文字体系を補う表（上の「解決」）
 - **暦:** グレゴリオ暦だけ。Flutter の `intl` も Avalonia の Calendar（`src/Avalonia.Controls/Calendar/DateTimeHelper.cs` 84〜107 行目）も、グレゴリオ暦だけで描く。
-- **費用:** 表がバイナリをどれだけ増やすかは、行 LC2 で測る（宣言するロケールの数ごとに）。
+- **費用:** spike の計測（`docs/benchmarks/lc2-cldr-size.md`、CLDR 49.0.0、NativeAOT の Release、win-x64）で、実行ファイルの増分は、複数形・数値・日付の 3 つの表がロケール 1 個で 2,560 バイト（82,944 − 80,384）、10 個で約 28 KB、420 個で 613,376 バイトである。likelySubtags は、ロケールの数に依らず 80,384 バイトである。spike が入れなかったもののうち、期間の書式と通貨の記号は実装の前に測り（下の「実装の前に測ること」）、週末の曜日、`gmtFormat`、表を読んで整形するコードは、実装の PR が同じ方法で測って書く。
+
+**表の作り方:**
+
+- **ツール:** `tools/CldrTableGen`（C# のコンソール。LC1 の `tools/LanguageSubtagGen` と同じ扱い）が、cldr-json の json-full の zip を展開せずに読み、表の C# を `src/XylemUI.Core/Localization/Cldr/` に書く。生成したコードはリポジトリに置き、ゲート（`./build.ps1`）はツールを走らせない。
+- **CLDR の版:** 49.0.0 に固定する（`cldr-49.0.0-json-full.zip`、SHA-256 `3B1F5D684D29C541D3ACF91FE834B3FE36AE0F34775E3EE50E93558BF14CA174`、spike と同じ）。版、URL、SHA-256 は、`tools/UnicodeTableGen` の UCD と同じく `vendor/versions.lock` に 1 行で書く。ツールは zip の SHA-256 を確かめ、合わなければ止まる。生成したファイルの先頭に、版、SHA-256、Unicode のライセンスの表示（§9）を書く。版を上げる時は、ツールを走らせ直す PR を出し、ロケールの数と、10 個と全部の時の増分を書く。
+- **ロケールの組（Issue #880 の Grill でオーナーが決定）:** CLDR の `coverageLevels.json` で網羅の水準が modern のロケールのうち、数値と日付の両方のファイルを持つもの（CLDR 49 で 420 個）と、`root`（CLDR の根のロケール）と、行 LC4 の 82 言語（Flutter 3.47.8 の `packages/flutter_localizations/lib/src/l10n/generated_material_localizations.dart` 46518〜46601 行目の `kMaterialSupportedLanguages`）のうち 420 個に無いものである。spike の 420 個の言語と比べると、82 言語のうち `bo`、`gsw`、`nb`、`tl`、`ug` の 5 つが無かった。
+  - `nb` と `tl` は、CLDR では `no` と `fil` の名前で 420 個に入っている。LC1 の `Locale` は IANA の登録簿で読み替えるので、OS の `nb-NO` は `nb` のままで、`no` の表の `Locale` と一致しない。そこでツールは、`CldrLocales.Nb` と `CldrLocales.Tl` を、`no` と `fil` の表に `nb` と `tl` のタグを付けた入口として書く。CLDR が 2 つをどう対応させているか（`supplementalMetadata` の別名の表）は、まだ読んでいない。ツールを書く時に読み、そこにある言語の別名を、同じ形の入口にする。
+  - `bo`、`gsw`、`ug` は modern でないので、数値と日付のファイルを持つかを、ツールを書く時に確かめる。持たなければ、その言語は `root` の表になる（下の「表の無い時」）。
+  - spike の 420 個に `root` と、この 5 つは入っていないので、その大きさは実装の PR が測る。json-full の `availableLocales.json` の modern の一覧は空なので、`coverageLevels.json` を使う（spike で確かめた）。json-full のロケールのファイルは、親から受け継ぐ値を全部持つので、1 つのロケールの表はそれだけで足りる。
+- **ロケールごとの値を決める地域:** 週の始まりと、12 時間か 24 時間かの既定は、CLDR では地域ごとの値（`weekData`、`timeData`）である。ツールは、ロケールのタグに地域が無ければ、上の推定で補った地域で引く（`ja` は `JP`）。実行時には引かない。
+- **スケルトンの書式:** Flutter のスケルトン 41 個（`packages/flutter_tools/lib/src/localizations/gen_l10n_types.dart` 31〜73 行目の `validDateFormats`）の書式をロケールごとに出す。`j` を含む 7 個は、12 時間と 24 時間の 2 つを出す。CLDR の `availableFormats` に無いスケルトン（spike では 20,160 個のうち 5,650 個）は、UTS #35 第 4 部の「Matching Skeletons」の手順で、近いスケルトンから作る。この節のうち読んだのは、日付と時刻の結合の手順（上の「範囲に足したもの」）だけで、近いスケルトンの選び方と足りない欄の足し方（`appendItems`）は、まだ読んでいない。spike は長さの近い書式で埋めただけなので、ツールを書く前に節の全部を読む。
+- **複数形の規則（Issue #880 の Grill でオーナーが決定）:** 規則（`n % 10 = 1 and n % 100 != 11` など）は、ツールが C# のメソッドに変える。実行時に規則の文を解釈しない。同じ規則の組は 1 つのメソッドを共有する（spike で 420 個のロケールに 52 組）。spike は規則の文を入れる形で測った（全部で 5,340 バイト）ので、実装の PR は、メソッドの形の増分を同じ方法で測り、文の形と並べて書く。
+- **置く所（同じ Grill）:** 表は `XylemUI.Core` に置く。`Locale` と `Localization.Resolve` が Core にあり、`Resolve` が likelySubtags の表を読むからである。JIT で動かす開発のビルドでは、`XylemUI.Core.dll` が表の分（重複を除いた生のデータで、likelySubtags を含めて 655,130 バイト）大きくなる。NativeAOT の実行ファイルには、参照した分だけが残る。
+- **一緒に置かない:** ロケールの名前から表を引く辞書は置かない。辞書が参照されると、全部のロケールが残る。全部のロケールを並べた一覧（下の `CldrLocales.All`）は、それだけを持つ別のクラスに置き、`All` を呼んだ時にだけ参照される形にする。同じ理由で、全部のロケールに触れる静的コンストラクターも置かない。
+
+**宣言と参照:**
+
+- **ロケールごとの入口:** ツールは、ロケールごとに `LocaleData` を継承した内部のクラスを 1 つ書く。表は、そのクラスの中の、式の本体で書いた `static ReadOnlySpan<byte>` のプロパティである（spike の形 (b)）。公開の入口は `CldrLocales` の静的なプロパティで、ロケールごとに 1 つ、`public static LocaleData Ja => CldrJa.Instance;` の形で書く。インスタンスは、そのクラス自身の静的な欄に持つ。
+- **宣言が参照になる:** アプリは `WindowOptions.SupportedLocales = [CldrLocales.En, CldrLocales.Ja]` と書く。この 2 つのプロパティを呼ぶコードが、その 2 つのクラスと表を参照する。参照の無いクラスと表は、NativeAOT が落とす。spike は、プロパティを `switch` で参照する形で、落ちることを確かめた。クラスに分けた形で同じに落ちるかは、実装の PR が ILC のマップファイルで確かめる。
+- **全部が要るアプリ:** 利用者が任意の言語を選べるアプリは、`CldrLocales.All`（全部のロケールの一覧）を渡す。全部が残り、増分は 613,376 バイトである（上の「費用」）。
+- **名前:** プロパティの名前は、タグの副タグをつないだもの（`En`、`EnGB`、`ZhHant`、`ZhHantHK`、`SrLatn`、`Es419`）である。`root` は `LocaleData.Root` にする。
+- **CLDR に無いロケール:** 420 個に無いロケール（`tlh`、`en-SE` など）を宣言するアプリは、`CldrLocales.En.WithLocale(Locale.Parse("en-SE"))` のように、別のロケールの表に自分のタグを付けて宣言する。解決と文字の言語はそのタグで、書式は渡した表で出す。
+
+**表の無い時:**
+
+- **アプリが何も宣言しない時:** LC1 のとおり、解決したロケールは OS の 1 番目の言語である（上の「文字の既定の言語」）。参照した表が無いので、書式は `root` の表で出す。`root` は、ウィンドウを持つアプリがいつも参照する。OS の言語の表を黙って入れはしない。入れると、宣言しないアプリにも全部の表が残る。
+- **差し替えの関数が、宣言に無いロケールを返した時:** 表の鍵には、宣言した表のうち、`Locale` が等しいものを置く。無ければ、言語が同じで推定した文字体系が同じもの、それも無ければ `root` を置く。
+- **Flutter との違い:** Flutter は、ロケールの名前、言語コード、`intl` の既定のロケールの順に `DateFormat` と `NumberFormat` のデータを探す（`packages/flutter_localizations/lib/src/material_localizations.dart` 751〜775・779〜788 行目）。`intl` の既定のロケールが何かは、`intl` が `.repos` に無いので読んでいない。
+
+**配り方:**
+
+- **表の鍵:** `Localization.Data`（`Context<IReadOnlySignal<LocaleData>>`）を足す。ウィンドウが根で、解決したロケールの表を置く。ウィンドウと `Localization.Provide`（上の「差し替え」）は、2 つの鍵を同じシグナルから置くので、ロケールの鍵（`Localization.Locale`）の値は、表の鍵の値の `Locale` と食い違わない。アプリが `Localization.Locale.Provide` でロケールの鍵だけを置くと、書式は外側の表のままになる。既定値は無く、ロケールの鍵と同じく、ウィンドウの外で読むと例外になる。
+- **24 時間表示の鍵:** `Localization.Use24HourFormat`（`Context<IReadOnlySignal<bool>>`）を足す。ウィンドウが根で置く。Windows では、上の「書式のロケール」のとおり `GetLocaleInfoEx` の時刻の書式に `H` があるかで決め、`WM_SETTINGCHANGE` のたびに読み直す。ヘッドレスは `HeadlessOptions.Use24HourFormat`（既定は `false`）を使い、走らせる PC に依らない。Linux と macOS で読む口は、その OS の host の行（Linux は P04、macOS は P06）で、OS の言語の一覧と一緒に入れる。
+
+**複数形:**
+
+- **区分:** `PluralCategory`（`Zero`・`One`・`Two`・`Few`・`Many`・`Other`）。複数形（cardinal）と序数（ordinal）の 2 つの規則を、ロケールごとに持つ。規則に無い区分は返さない。
+- **数の渡し方:** 規則は、数の絶対値（`n`）、整数の部分（`i`）、見える小数の桁の数（`v`、`w`）と値（`f`、`t`）、短縮の指数（`c`）で決まる（UTS #35 第 3 部（CLDR 49 の版）の「Plural Operand Meanings」の表）。見える小数の桁で区分が変わる（英語の `1` は `one`、`1.0` は `other`）ので、小数は `decimal` で受け、`decimal` の桁（`1.0m` の 1 桁）を見える桁にする。`double` は受けない。見える桁が決まらないからである。書式で桁を決めた数は、その書式の `Round` を通してから渡す。短縮の指数は、短縮の書式が中で使う。
+- **LC3 との関係:** LC3 の生成器は、`plural` と `selectordinal` の区分を、生成したメソッドの中でこの `PluralRules` で選ぶ。ロケールがどの区分を使うかの一覧をビルド時に知る必要があれば（使われない区分の警告など）、`tools/CldrTableGen` が生成器に一覧を書き出す。一覧が要るかは、行 LC3 の Grill で決める。
+
+**数値:**
+
+- **書式:** 小数、百分率、通貨、短縮（短い形と長い形）の 4 つ。記号（小数点、桁区切り、マイナス、百分率など）と数字は、ロケールの既定の数字の種類のものである（上の「既定の数字」）。桁区切りの位置は、CLDR のパターン（インドの `#,##,##0.###` など）と `minimumGroupingDigits` に従う。
+- **作り方:** 数字の並びは、不変カルチャの `TryFormat`（`InvariantGlobalization=true` でも使える）で作り、記号と数字をロケールのものに置き換え、桁区切りを入れる。丸めは偶数への丸め（`MidpointRounding.ToEven`）である。
+- **通貨:** ISO 4217 のコード（`"JPY"`）で渡す。小数の桁は、CLDR の通貨の補足データ（`currencyData`）の桁による（円は 0 桁）。記号は、ロケールの標準の形を出す。narrow の形（`US$` に対する `$` など）は、`NumberOptions.NarrowCurrencySymbol` で選ぶ。通貨の名前は持たない（下の「範囲に足したもの」）。
+- **解析（行 B9 が使う）:** `Decimal` と `Percent` の書式だけが解析を持つ。受けるのは、ロケールの小数点、桁区切り、マイナス、プラス、百分率の記号と、ロケールの数字と ASCII の数字と全角の数字（U+FF10〜U+FF19）である。全角の数字は ASCII の数字として読む（Issue #880 の Grill でオーナーが決定。B9 の調査が、日本語の IME のかなの入力と貼り付けで来うると書いた）。桁区切りは、整数の部分の数字の間でだけ受けて読み飛ばし、位置は確かめない。無くてもよい。桁区切りが空白の類（U+00A0、U+202F）のロケールでは、U+0020 も桁区切りとして受ける（利用者が打つのは U+0020 である）。前後の空白は読み飛ばす。それ以外の文字があれば `false` を返す。短縮と通貨の解析は持たない。数値の欄はそれを出さないからである。
+- **比べたもの:** Avalonia の `NumericUpDown` は、確定の時に `decimal.TryParse(text, ParsingNumberStyle, NumberFormat, out …)` で読む（Avalonia 12.1.4 の `src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 1176 行目。`ParsingNumberStyle` の既定は 89〜90 行目の `NumberStyles.Any`）。.NET のカルチャのデータを使うので、XylemUI は使えない。zed の数値の欄は、Rust の `parse::<T>()` で読み、読めなければ前の値に戻す（zed v1.25.3 の `crates/settings_ui/src/components/number_field.rs` 449〜450 行目）。ロケールを見ない。
+
+**日付と時刻:**
+
+- **スケルトン:** 書式はスケルトンの文字列（`"yMd"`、`"jm"`）で選ぶ。受けるのは Flutter の 41 個（上の「スケルトンの書式」）だけで、ほかは `ArgumentException` である。ARB のメッセージの日付の差し込み（行 LC3）も、同じ 41 個を使う。Flutter の `gen-l10n` と同じである。
+- **12 時間か 24 時間か:** `j` を含むスケルトンは、`use24HourFormat` が `true` なら 24 時間の書式を、`false` ならロケールの既定（CLDR の `timeData`）の書式を使う。OS の値が `false` でも、ロケールの既定が 24 時間なら（`ja`、`de`）24 時間で出す。`H` と `h` を書いたスケルトンは、OS の値を見ない。部品は `Localization.Use24HourFormat` を読んで渡す。Flutter も、`alwaysUse24HourFormat` が `true` の時だけ 24 時間の形に変え、`false` ならロケールの形のままである（`packages/flutter_localizations/lib/src/material_localizations.dart` 442〜447 行目）。ただし Flutter の時刻の書式は、CLDR のパターンでなく、訳の値の 6 つの形（`TimeOfDayFormat`）の 1 つで組み立てる（同じファイルの 205〜229 行目。206〜213 行目のコメントが理由を書く）。XylemUI は CLDR のパターンで出す。午前と午後を前に置くロケール（`ko`）も、パターンがそう書く。
+- **値の型:** `DateTime`、`DateTimeOffset`、`DateOnly`、`TimeOnly` を受ける。`DateTime` の `Kind` は見ず、欄の値をそのまま出す。`DateTimeOffset` は、欄の値と、時間帯のスケルトンの GMT からの差に使う。時間帯の変換はしない。時刻の欄を持つ書式に `DateOnly` を、日付の欄を持つ書式に `TimeOnly` を渡すと `ArgumentException` である。
+- **名前と週:** 月、曜日、四半期、紀元、午前と午後の名前（幅と、文中か単独かの別）と、週の始まり（`LocaleData.FirstDayOfWeek`）を持つ。名前は、初めて読んだ時に `string` にして `LocaleData` が持ち続ける。
+- **短い日付の解析（B12 が使う）:** `"yMd"` の書式だけが解析を持つ。書式の並び（年・月・日の順と区切り）のとおりの文字だけを受け、Flutter の `parseCompactDate` と同じく厳しく読む（`packages/flutter_localizations/lib/src/material_localizations.dart` 183〜189 行目の `parseStrict`。読めなければ `null`）。数字は、ロケールの数字と ASCII の数字を受ける。存在しない日（2 月 30 日）は `false` である。Avalonia の `CalendarDatePicker` は、.NET の `DateTime.Parse` で緩く読む（`src/Avalonia.Controls/CalendarDatePicker/CalendarDatePicker.cs` 741〜743 行目）。
+  - **年の読み方（Issue #880 の Grill でオーナーが決定。Flutter と同じ `intl` を読んでから決める）:** Flutter 3.47.8 が固定する `intl` は 0.20.3 である（`pubspec.lock` 541〜548 行目、`packages/flutter_tools/pubspec.yaml` 28 行目の `intl: 0.20.3`。`packages/flutter_localizations/pubspec.yaml` 16 行目は `^0.20.3`）。dart-lang/i18n の `intl-v0.20.3` のタグの `pkgs/intl` を読んだ。年の欄は、書式の `y` の数で読み方が変わる。
+    - **`y` が 2 つ（`yy`）の時:** 世紀が無いとみなす（`lib/src/intl/date_format_field.dart` 488〜491 行目の `parseYear` が、幅 2 の時だけ `hasAmbiguousCentury` を立てる）。読んだ 2 桁の年は、今から 80 年前より後、20 年後まで（両端は、20 年後を含み、80 年前を含まない）の中の年にする（`lib/src/intl/date_builder.dart` 219〜264 行目の `_estimatedYear`。窓の幅は 239 行目の `lookBehindYears = 80`、両端の扱いは 246〜253 行目のコメント）。`yy` の欄に 3 桁以上を打った時（`2026`）は、書いたとおりの年である（30 行目の `_hasCentury` は、年が 0 未満か 100 以上なら世紀があるとみなす）。
+    - **`y` が 1 つの時:** 数字をあるだけ読み、書いたとおりの年にする（`date_format_field.dart` 442〜461 行目の `_nextInteger`）。`26` は 26 年である。
+    - XylemUI も同じにする。CLDR の `"yMd"` の書式は、`en` の `M/d/y`、`ja` の `y/M/d` のように `y` が 1 つのものが多い。その時は、`26` と打つと 26 年になり、B12 の欄は、範囲の外の日として扱う。「今」は、`intl` の `clock.now()` に当たるものとして、`TimeProvider`（§12.2 の仮想クロック）から取り、テストが PC の時計に依らないようにする。
+    - Flutter の `parseStrict` は、読んだ後に文字が残るか、欄の値が日付として正しくなければ失敗する（`lib/src/intl/date_format.dart` 445〜446・464〜481 行目）。上の厳しい読み方と同じである。
+- **時間帯:** Flutter の 41 個には、時間帯を出す 4 個（`jmv`、`jmz`、`jv`、`jz`）がある。名前は出さず、GMT からの差を出す（下の「範囲に足したもの」）。
+
+**確保とスレッド:**
+
+- **フレームの経路:** 整形と解析は、`Span<char>` に書く `TryFormat` と、`ReadOnlySpan<char>` を読む `TryParse` で、何も確保しない。書式の値を `NodeTextWriter` の差し込み（§2.13）に渡すには、書式の `Of(value)` が返す struct（`ISpanFormattable`）を使う。`NodeTextWriterHandler.AppendFormatted<T>` は `ISpanFormattable` の制約付きの総称なので（`src/XylemUI.Core/Elements/NodeTextWriter.cs` 252〜253 行目）、箱に入れずに書ける。`string` を返す `Format` は確保するので、フレームの経路では使わない。
+- **確保する所:** 書式のオブジェクト（`NumberFormatter`、`DateFormatter`）は、作る時に表を読んで記号と書式を持つ。作るのは、部品を作る時と、ロケールか 24 時間表示のシグナルが変わった時だけである。よく使う書式（`LocaleData.DecimalFormat`、`PercentFormat`）と名前は、`LocaleData` が初めて読まれた時に作って持ち続ける。LC3 の生成したメソッドの `#` は、これを使う。
+- **スレッド:** 書式のオブジェクトと `PluralRules` は、作った後は変わらないので、どのスレッドからも呼べる。`LocaleData` の、初めて読んだ時に作る値は、`Interlocked.CompareExchange` で 1 つに決める（2 つのスレッドが同時に作っても、残るのは 1 つである）。鍵（`Localization.Data` など）を読むのは、ほかの鍵と同じく UI スレッドである（§2.12）。
+
+**範囲に足したもの（行 B12・CH1・SC1 の調査が挙げたもの。Issue #880 の Grill でオーナーが決定）:**
+
+- **期間の書式（CLDR の `intervalFormats`。「Nov 3 – 9, 2026」）:** 2 つの日付を、同じ欄は 1 度だけ書いてつなぐ書式である。要るのは、B12 の日付の範囲の選択（閉じた欄の表示）、SC1 の週の表示の見出し、CH1 の時間の軸の範囲の目盛りである。書式は UTS #35 第 4 部（CLDR 49 の版）の「Element intervalFormats」のとおりに選ぶ。2 つの日時で違う欄のうち最も大きいもの（greatest difference）で、スケルトンの項目の中の書式を選ぶ。書式は、最初に繰り返す欄で 2 つに分け、前を始まりの日時で、後ろを終わりの日時で出す。スケルトンに項目が無い時と、項目に違う欄の書式が無い時は、`intervalFormatFallback`（`{0} – {1}` など）で 2 つの日時をつなぐ。同じ節は、文中の形と単独の形の欄（`M` と `L`）を、繰り返しを見る時に同じ欄として扱うと書く。spike は入れていないので、大きさは実装の前に測る（下の「実装の前に測ること」）。
+- **日付と時刻をつなぐパターン（CLDR の `dateTimeFormats`）:** 日付のスケルトンと時刻のスケルトンを 1 つの書式にする。要るのは、B12 の日付と時刻を 1 つで選ぶ欄である。4 つの長さのどれを使うかは、UTS #35 第 4 部の「Matching Skeletons」の結合の手順による。日付の欄に幅の広い月（`MMMM`、`LLLL`）と曜日があれば `full`、幅の広い月だけなら `long`、略した月（`MMM`、`LLL`）なら `medium`、ほかは `short` である。日付の欄が曜日だけの時と、時刻の欄が時間帯だけの時は、`appendItem` の `Time-Day-Of-Week` と `Date-Timezone` を使う。spike は日付の表に `dateTimeFormats` を入れて測った（10 個で約 28 KB の中にある）。
+- **日時の文字の解析:** 下の「短い日付の解析」と同じ厳しい読み方で、`"yMd"` と `"jm"` をつないだ書式を読む。`"jm"` が 12 時間か 24 時間かは、上の「12 時間か 24 時間か」と同じ規則で決める。要るのは、B12 の日付と時刻を 1 つで選ぶ欄である。データは上のパターンのほかに要らない。
+- **最初の週の最小の日数（CLDR の `weekData` の `minDays`）と週の番号:** 値（`LocaleData.MinimalDaysInFirstWeek`）と、その値で週の番号を出す関数（`LocaleData.WeekOfYear`）を入れる。値だけを出して関数を出さない形は採らない（`scope.mdc`）。週の番号は、UTS #35 第 4 部の「Week Data」のとおりに数える。`FirstDayOfWeek` から始まる週が、新しい年の日を `minDays` 日以上含めば、その年の第 1 週である。含まなければ前の年の最後の週である。年は 52 週か 53 週になる。同じ節は、`minDays` は月の中の週の番号にも同じに使うと書くが、月の中の週の番号は、要る部品の行が無いので出さない。要るのは、B12 の Calendar の週の番号（B12 の Grill で出すと決めた時）と、SC1 の週の番号である。spike は日付の表に `minDays` を入れて測った（ロケールに 1 バイト）。
+- **週末の曜日（CLDR の `weekData` の `weekendStart`・`weekendEnd`）:** `LocaleData.WeekendStart` と `WeekendEnd` に持つ。要るのは、SC1 の稼働日の表示と、B12 の Calendar で週末を別の見た目にする時（テーマが読む状態）である。同じ節は、週末は週の始まりの前の日とは限らないので、週末の値から決めるべきだと書く。地域ごとに 2 つの曜日で、ロケールの地域は、週の始まりと同じく推定で補った地域である。増分は実装の PR が測って書く。
+- **通貨の記号:** 記号は、標準の形と narrow の形だけを入れ、名前は入れない。名前を出す部品は、今の行に無い。spike は通貨のパターンだけを入れたので、記号の大きさは実装の前に測る（下の「実装の前に測ること」）。
+- **時間帯の 4 個のスケルトン（`jmv`、`jmz`、`jv`、`jz`）:** ロケールの `gmtFormat`（と `hourFormat`、`gmtZeroFormat`）で、短い形の GMT からの差（「GMT+9」）を出す。時間帯の名前（metazone）は入れない。UTS #35 第 4 部は、`z` と `v` の書式が名前を持たない時に、短い形の GMT からの差に落とすと書く（`v` は地域の名前を経て落ちる）。名前を入れない XylemUI の結果は、その落ちた先と同じである。差を出すので、この 4 個は `DateTimeOffset` だけを受け、`DateTime`、`DateOnly`、`TimeOnly` では `ArgumentException` である。
+- **2 桁の年:** 下の「短い日付の解析」の中に書いた。
+
+**実装の前に測ること（行 LC2 の手順。Issue #880 の Grill でオーナーが決定）:**
+
+行 LC2 は、実装の PR の前に、次の 2 つを測って記録する（`docs/benchmarks/lc2-cldr-size.md` に足す）。spike（Issue #862）の生成器に表を足し、同じ方法（NativeAOT の Release、win-x64、ロケール 1 個・10 個・全部、ILC のマップファイル）で測る。
+
+1. **期間の書式:** 41 個のスケルトンのうち CLDR が `intervalFormatItem` を持つものと、`intervalFormatFallback` の表。
+2. **通貨の記号:** ロケールごとの、全部の通貨の標準と narrow の記号。
+
+記録の後に実装の PR を出す。実装の PR はほかに、週末の曜日、`root`、言語の別名の入口、ロケールの組に足す言語（上の「ロケールの組」）、複数形の規則のメソッド、文字体系だけに縮めた likelySubtags の表（上の「解決」の「表の置き場所」）の増分を、同じ方法で測って書く。
+
+LC2 で足す公開の形は、次のとおりである。
+
+```csharp
+namespace XylemUI;
+
+// ロケール 1 つの CLDR の表（§4.11「書式」）。アプリは継承できない（コンストラクターは internal）
+public abstract class LocaleData
+{
+    public Locale Locale { get; }
+    public PluralRules Plurals { get; }            // 初めて読んだ時に作る
+    public NumberFormatter DecimalFormat { get; }  // 同じ
+    public NumberFormatter PercentFormat { get; }  // 同じ
+    public DateNames Names { get; }                // 同じ
+    public DayOfWeek FirstDayOfWeek { get; }
+    public int MinimalDaysInFirstWeek { get; }     // 1〜7（CLDR の minDays）
+    public DayOfWeek WeekendStart { get; }
+    public DayOfWeek WeekendEnd { get; }
+
+    // 年の中の週の番号（UTS #35 第 4 部の Week Data）。year は週が属する年（前の年の最後の週もある）
+    public int WeekOfYear(DateOnly date, out int year);
+
+    // CLDR の root の表。表の無い時に使う
+    public static LocaleData Root { get; }
+
+    // この表に別のタグを付けた表（CLDR に無いロケールの宣言）
+    public LocaleData WithLocale(Locale locale);
+}
+
+// ツールが書く。ロケールの組（modern の 420 個と、LC4 の言語のうち足したもの）ごとに 1 つ。
+// 参照したプロパティのロケールだけがバイナリに残る
+public static partial class CldrLocales
+{
+    public static LocaleData En => CldrEn.Instance;
+    public static LocaleData EnGB => CldrEnGB.Instance;
+    public static LocaleData Ja => CldrJa.Instance;
+    public static LocaleData ZhHans => CldrZhHans.Instance;
+    public static LocaleData ZhHant => CldrZhHant.Instance;
+    public static LocaleData Nb => CldrNb.Instance;   // CLDR の no の表に nb のタグを付けた入口
+    public static LocaleData Tl => CldrTl.Instance;   // CLDR の fil の表に tl のタグを付けた入口
+    // ……
+
+    // 全部のロケール。呼ぶと全部が残る（+613,376 バイト）
+    public static IReadOnlyList<LocaleData> All => CldrAll.Locales;
+}
+
+public static partial class Localization
+{
+    // 解決したロケールの表の鍵。ウィンドウが根で置く。既定値は無い
+    public static Context<IReadOnlySignal<LocaleData>> Data { get; }
+
+    // OS が 24 時間表示を選んでいるか。ウィンドウが根で置く。既定値は無い
+    public static Context<IReadOnlySignal<bool>> Use24HourFormat { get; }
+
+    // ロケールの鍵と表の鍵を、同じシグナルから置く（アプリの中の言語の切り替え）
+    public static Element Provide(IReadOnlySignal<LocaleData> data, Func<Element> content);
+}
+
+public enum PluralCategory : byte
+{
+    Zero,
+    One,
+    Two,
+    Few,
+    Many,
+    Other,
+}
+
+public sealed class PluralRules
+{
+    public PluralCategory Select(long value);
+    public PluralCategory Select(decimal value);   // decimal の桁を見える小数の桁にする（1.0m は v = 1）
+    public PluralCategory SelectOrdinal(long value);
+}
+
+public enum CompactStyle : byte
+{
+    Short,   // 1.2万、1.2K
+    Long,    // 1.2 million
+}
+
+public sealed class NumberOptions
+{
+    public int MinimumIntegerDigits { get; init; } = 1;
+    public int? MinimumFractionDigits { get; init; }   // null はパターンの値
+    public int? MaximumFractionDigits { get; init; }   // 同じ
+    public bool UseGrouping { get; init; } = true;
+    public bool NarrowCurrencySymbol { get; init; }    // 通貨の書式だけが見る。true は narrow の記号
+}
+
+public sealed class NumberFormatter
+{
+    public static NumberFormatter Decimal(LocaleData locale, NumberOptions? options = null);
+    public static NumberFormatter Percent(LocaleData locale, NumberOptions? options = null);
+    public static NumberFormatter Currency(LocaleData locale, string isoCode, NumberOptions? options = null);
+    public static NumberFormatter Compact(LocaleData locale, CompactStyle style);
+
+    // 確保しない。destination が足りなければ false
+    public bool TryFormat(long value, Span<char> destination, out int charsWritten);
+    public bool TryFormat(decimal value, Span<char> destination, out int charsWritten);
+    public bool TryFormat(double value, Span<char> destination, out int charsWritten);
+
+    // NodeTextWriter の差し込みに渡す struct（ISpanFormattable）。確保しない
+    public FormattedNumber Of(long value);
+    public FormattedNumber Of(decimal value);
+    public FormattedNumber Of(double value);
+
+    public string Format(decimal value);           // string を作る。フレームの経路では使わない
+    public decimal Round(decimal value);           // この書式で見える桁に丸めた値（PluralRules.Select に渡す）
+
+    // Decimal と Percent の書式だけ。ほかは InvalidOperationException。確保しない
+    public bool TryParse(ReadOnlySpan<char> text, out decimal value);
+    public bool TryParse(ReadOnlySpan<char> text, out double value);
+}
+
+public sealed class DateFormatter
+{
+    // skeleton は Flutter の 41 個（"yMd"、"jm" など）。ほかは ArgumentException。
+    // use24HourFormat は j のスケルトンだけが見る
+    public static DateFormatter FromSkeleton(LocaleData locale, string skeleton, bool use24HourFormat);
+
+    // 日付のスケルトンと時刻のスケルトンを、ロケールの dateTimeFormats でつないだ書式
+    public static DateFormatter FromSkeletons(
+        LocaleData locale,
+        string dateSkeleton,
+        string timeSkeleton,
+        bool use24HourFormat
+    );
+
+    // 確保しない。destination が足りなければ false。
+    // 時間帯のスケルトン（jmv・jmz・jv・jz）は DateTimeOffset だけを受ける
+    public bool TryFormat(DateTime value, Span<char> destination, out int charsWritten);
+    public bool TryFormat(DateTimeOffset value, Span<char> destination, out int charsWritten);
+    public bool TryFormat(DateOnly value, Span<char> destination, out int charsWritten);
+    public bool TryFormat(TimeOnly value, Span<char> destination, out int charsWritten);
+
+    // 期間の書式（intervalFormats）。start が end より後なら ArgumentException
+    public bool TryFormatRange(DateOnly start, DateOnly end, Span<char> destination, out int charsWritten);
+    public bool TryFormatRange(DateTime start, DateTime end, Span<char> destination, out int charsWritten);
+
+    public FormattedDate Of(DateTime value);        // ISpanFormattable の struct
+    public FormattedDate Of(DateTimeOffset value);
+    public FormattedDate Of(DateOnly value);
+    public FormattedDate Of(TimeOnly value);
+    public FormattedDateRange OfRange(DateOnly start, DateOnly end);
+    public FormattedDateRange OfRange(DateTime start, DateTime end);
+
+    public string Format(DateTime value);          // string を作る。フレームの経路では使わない
+
+    // "yMd" の書式だけ。ほかは InvalidOperationException。確保しない。
+    // 2 桁の年（yy）の窓は timeProvider の今で決める。null は TimeProvider.System
+    public bool TryParse(ReadOnlySpan<char> text, out DateOnly value, TimeProvider? timeProvider = null);
+
+    // "yMd" と "jm" をつないだ書式（FromSkeletons）だけ。ほかは InvalidOperationException
+    public bool TryParse(ReadOnlySpan<char> text, out DateTime value, TimeProvider? timeProvider = null);
+}
+
+// 書式と値の組。TryFormat は書式の TryFormat を呼び、format と provider は見ない。
+// ToString は string を作るので、フレームの経路では使わない
+public readonly struct FormattedNumber : ISpanFormattable { }
+public readonly struct FormattedDate : ISpanFormattable { }
+public readonly struct FormattedDateRange : ISpanFormattable { }
+
+// 名前の幅（CLDR の abbreviated・wide・narrow・short。short は曜日だけ）
+public enum DateNameWidth : byte
+{
+    Abbreviated,
+    Wide,
+    Narrow,
+    Short,
+}
+
+// 名前の表。standAlone は単独で出す形（CLDR の stand-alone）、false は文中の形（format）。
+// 返す string は LocaleData が持ち続けるもので、呼ぶたびには作らない
+public sealed class DateNames
+{
+    public string Month(int month, DateNameWidth width, bool standAlone);       // month は 1〜12
+    public string Weekday(DayOfWeek day, DateNameWidth width, bool standAlone);
+    public string Quarter(int quarter, DateNameWidth width, bool standAlone);   // quarter は 1〜4
+    public string Era(bool commonEra, DateNameWidth width);                     // false は紀元前
+    public string DayPeriod(bool pm, DateNameWidth width, bool standAlone);     // 午前と午後
+}
+```
+
+範囲の外の値（13 月、`Short` の月）は `ArgumentOutOfRangeException` である。`NumberOptions` の負の桁、`MinimumFractionDigits` が `MaximumFractionDigits` より大きい組、`MinimumIntegerDigits` の 0 以下は、書式を作る時に `ArgumentOutOfRangeException` である。`double` の NaN と無限大は、ロケールの記号（CLDR の `nan`、`infinity`）で出す。解析は NaN と無限大を読まない。ISO 4217 の形（英大文字 3 つ）でない通貨のコードは `ArgumentException` である。
+
+**テスト（§12.1 の Core の層。HarfBuzz も GPU も要らないので、どの OS でも走る）:**
+
+- **表のツール:** 同じ zip から 2 回作ると、同じバイト列になる。SHA-256 の違う zip では止まる。ロケールの数（420 と `root`）と、CLDR の json の値の抜き取り（`ja` の小数点、`ar` の数字、`en-GB` の週の始まり）を確かめる。
+- **複数形:** CLDR の `plurals.json` と `ordinals.json` の、規則ごとの例（`@integer`、`@decimal`）を、全部のロケールについて選び、例の書かれた区分になる。例の文は、ツールがテストのための表に書く。テストはすべてのロケールを参照してよい（バイナリの大きさは、下の発行で測る）。
+- **数値の書式:** `en`、`ja`、`de`、`fr`、`ar`、`hi`、`es-419` などで、小数、百分率、通貨、短縮の結果を、CLDR の json から書き写した期待値と比べる。インドの桁区切り、アラビア・インド数字、`minimumGroupingDigits` が 2 のロケール、丸め（`0.125` を 2 桁で `0.12`）を含める。
+- **数値の解析:** 全部のロケールで、書式の出した文字を読むと元の値に戻る。桁区切りの無い文字、ASCII の数字、U+0020 の桁区切り（`fr`）、マイナスの記号、読めない文字（`false`）を確かめる。
+- **日付と時刻:** 41 個のスケルトンを、決めた日時で `en`、`ja`、`ko`、`de`、`ar` について出し、期待値と比べる。`j` のスケルトンは `use24HourFormat` の `true` と `false` の両方で、`en`（既定は 12 時間）と `ja`（既定は 24 時間）を確かめる。短い日付の解析は、全部のロケールで、出した文字を読むと元の日付に戻ること、存在しない日と書式に合わない文字が `false` であることを確かめる。
+- **範囲に足したもの:** 期間の書式は、違う欄が日・月・年の時と、CLDR に項目の無いスケルトンで `intervalFormatFallback` に落ちる時を、`en` と `ja` で確かめる。つないだ書式は、`full`・`long`・`medium`・`short` の 4 つが選ばれる日付のスケルトンで確かめる。日時の解析は、出した文字を読むと元に戻ること。週の番号は、`minDays` が 1 と 4 の地域で、年の初めと終わりの週（前の年の最後の週、53 週の年）を確かめる。週末は、`IN`（UTS #35 の例では、週末の始まりが日曜で、終わりは既定の日曜）と `SA`（始まりが木曜の例に入っている）のような、週末の違う地域を確かめる。通貨は、標準と narrow の記号を確かめる。時間帯の 4 個のスケルトンは、差が 0、正、負、分を含む（`+05:30`）時の GMT の形と、`DateTime` を渡すと `ArgumentException` であることを確かめる。
+- **年の読み方:** `yy` の書式で、窓の両端（20 年後のちょうどの日は含み、80 年前のちょうどの日は含まない）を、仮想の時計（`FakeTimeProvider`）で確かめる。`y` の書式で `26` が 26 年になることも確かめる。
+- **全角の数字と別名:** 数値の解析が全角の数字を ASCII の数字として読む。`CldrLocales.Nb` の `Locale` が `nb` で、OS の `nb-NO` に解決され、書式が `no` の表で出る。
+- **推定と解決:** UTS #35 の節の例（`zh-TW`、`zh`、`zh-HK`、`zh-SG` は `zh-Hans-SG`）と、上の「解決」の例（`zh-TW`、`sr-ME`、`zh-Hant-HK`、推定した文字体系が同じなら LC1 と同じ結果になる `fr-CA`・`de-AT`）。LC1 の解決のテストは、変えずに通る。
+- **表の無い時:** 何も宣言しないヘッドレスのアプリで、`Localization.Data` が `root` の表になる。`WithLocale` で付けたタグが、解決と文字の言語に使われ、書式は元の表で出る。
+- **鍵:** `Localization.Provide` で包んだ部分で、2 つの鍵が同じロケールを返す。シグナルを変えると、書式を読んでいる Effect だけが走り直す。`HeadlessOptions.Use24HourFormat` が鍵に入る。Windows の 24 時間表示の読み取りは、`GetLocaleInfoEx` の戻り値の長さまでで切る（PR #854 のレビュー）。
+- **確保:** 数値と日付の `TryFormat`、`TryParse`、`Of(value)` を `NodeTextWriter` に書く時に、確保が 0 バイトである（`GC.GetAllocatedBytesForCurrentThread`。§11.3 の Zero-Alloc ゲートと同じ確かめ方）。
+- **大きさ（実装の PR の Verification）:** `samples/` のアプリで、`CldrLocales.En` と `Ja` だけを宣言して NativeAOT で発行し、ILC のマップファイルに、ほかのロケールの表とクラスが無いことを確かめる。増分を、宣言 1 個と 10 個と `All` で測り、spike の値と並べて書く。
 
 **部品の文言:**
 
@@ -5373,7 +5670,7 @@ Unicode公式の`BidiCharacterTest.txt`・`BidiTest.txt`をCIテストスイー�
 | libwebp                    | WebP のデコード（§5.0.4）。アニメーションは、同じ配布の libwebpdemux（行 IM1 の 3c） | BSD-3-Clause            | 静的（同上）                                                        |
 | skcms                      | ICC から sRGB への変換（§5.0.4）   | BSD-3-Clause            | 静的（同上。行 IM1 の 2 つ目の PR）                                 |
 | 同梱フォールバックフォント | フォント                           | SIL OFL                 | 可（埋め込みリソースとして同梱）                                    |
-| CLDR のデータ              | 複数形の規則と、数値と日付の書式の表（§4.11） | Unicode のライセンス（`unicode-org/cldr` の `LICENSE`。データに著作権と許諾の表示を付ける） | ライブラリではない。ビルド時に表を生成し、宣言したロケールの分をバイナリに入れる（行 LC2） |
+| CLDR のデータ              | 複数形の規則、数値と日付の書式、地域から文字体系を補う表（§4.11） | Unicode のライセンス（`unicode-org/cldr` の `LICENSE`。データに著作権と許諾の表示を付ける） | ライブラリではない。CLDR 49.0.0 からツールで表を作ってリポジトリに置き、全部のロケールを `XylemUI.Core` に入れる。アプリのバイナリには、アプリが参照したロケールの分だけが残る（行 LC2） |
 | Flutter の ARB の訳        | 部品の文言の翻訳（§4.11）          | BSD-3-Clause            | ライブラリではない。同じ意味のメッセージの訳を、翻訳のパッケージに入れる（行 LC4） |
 
 **ネイティブライブラリの用意（S8 の Grill でオーナーが決定）:** `vendor/build.ps1` が、`vendor/versions.lock` に固定した版のソースを取得し（同じファイルの SHA-256 で確かめる）、CMake と MSVC で静的ライブラリ（`.lib`、NativeAOT のリンク用）と共有ライブラリ（`.dll`、JIT 用）を作る。AccessKit だけは作らず、release の zip にある MSVC 用の静的ライブラリと DLL をそのまま取る（§4.4.1、#633 の実装）。成果物はコミットしない。CI は成果物をキャッシュする。Linux / macOS のビルドは、それぞれの行（P04・P06）で足す。AccessKit（§4.4.1、行 P02g）だけは、ソースではなく C の bindings の release の zip を版と SHA-256 で固定して取り、中の静的ライブラリと共有ライブラリを `vendor/out` に置く。ソースから作るには Rust のツールチェーンが要るからである

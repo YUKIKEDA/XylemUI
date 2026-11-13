@@ -16,7 +16,7 @@ BannedSymbols.txt            エンジン側で禁止する API（実時間・�
 .csharpierrc.json            フォーマッタ（CSharpier）の設定
 .config/dotnet-tools.json    ローカルツール（CSharpier）
 build.ps1                    ローカルのゲート（CI も同じスクリプトを実行する）
-tools/                       リポジトリの生成器（`tools/UnicodeTableGen`）
+tools/                       リポジトリの生成器（`tools/UnicodeTableGen`・`tools/LanguageSubtagGen`・`tools/CldrTableGen`）と道具（`tools/FluentIconsTool`）
 docs/                        設計・判断・ロードマップ・規約（本書）
 .cursor/rules/               エージェント向けの規約
 .agents/skills/              スキル（.claude/skills/ からジャンクションで参照）
@@ -36,6 +36,8 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `tools/FluentIconsTool` | Theme.Fluent のビルドの道具（設計書 §5.0.4）。`keep` はアプリのコンパイルの後に、IL から `FluentIcons` のゲッターへの参照を集め、その字形だけを HarfBuzz の subset（`vendor/out/win-x64/tool`）で残し、Mono.Cecil でアプリのアセンブリへリソースとして書き足す。`generate` は `FluentIcons.g.cs` を書く。ビルドの機械で動き、アプリには入らない |
 | `src/XylemUI.Generators` | Source Generator（設計書 §7「ショートカットと動作」）。今は `ActionTableGenerator`: `[Action]` を付けた動作の型から、名前の表（`XylemUI.Generated.<アセンブリ>Actions`）と、アプリのモジュール初期化子を書く。モジュール初期化子は、参照するアセンブリの動作の表と、既定のキーの行（`[assembly: DefaultKeyBindings]`、設計書 §7「既定のキーと動作」）を登録する。コンパイラの中で動き、アプリには入らない（`netstandard2.0`、Roslyn のコンポーネント）。リポジトリの中では、`Directory.Build.props` が全プロジェクト（Generator 自身、`XylemUI.Core`、Core が載る `XylemUI.Text` と `XylemUI.Imaging` を除く）にアナライザとして足す。実行ファイル（テスト、サンプル、ベンチマーク）は、これが無いと既定のキーが効かない。`XylemUI.Core` は、パッケージに入れるために自分で参照する |
 | `tools/UnicodeTableGen` | Unicode の表の生成器（設計書 §4.1、§8.13）。`vendor/versions.lock` の `unicode-ucd` のバージョンと SHA-256 で UCD を取り、`src/XylemUI.Text/Unicode/UnicodeData.g.cs` を出力し、適合のテストのファイルを `tests/XylemUI.Text.Tests/Unicode/` に写す。出力はリポジトリに入れ、ゲートは生成器を動かさない |
+| `tools/LanguageSubtagGen` | `Locale` の読み替えの表の生成器（設計書 §4.11「ロケール」、行 LC1）。落とした IANA の Language Subtag Registry のパスを受け、廃止された言語と地域、古い形のタグ、冗長なタグの置き換え先と、拡張言語の前置きから `src/XylemUI.Core/Localization/LocaleSubtags.g.cs` を出力する。登録簿の File-Date を出力に書く。出力はリポジトリに入れ、ゲートは生成器を動かさない |
+| `tools/CldrTableGen` | CLDR の表の生成器（設計書 §4.11「書式」、行 LC2）。`vendor/versions.lock` の cldr-json のバージョンと SHA-256 で json-full の zip を取り、ロケールごとの複数形・数値・日付の表と入口（`CldrLocales`）、likelySubtags の表を `src/XylemUI.Core/Localization/Cldr/` に出力する。出力はリポジトリに入れ、ゲートは生成器を動かさない |
 | `samples/HelloText` | テキストをシェーピングしてラスタライズするコンソールのサンプル。`--auto` で S8a の検査と計測をして終了する。`--atlas-sizing` はアトラスの大きさを決める測定（S8b）（`PublishAot`。フォントは埋め込みリソース） |
 | `benchmarks/XylemUI.E2E` | End-to-end の計測（M1a、`docs/benchmarks/m1-baseline.md`）。起動・アイドル・フレーム・入力の代理指標・テキスト込みのリサイズ・Scope の cleanup（ADR 0001）など。`external` は他のフレームワークのアプリを、`app-startup` は部品の API のアプリ（`samples/Counter`）の起動を、プロセスの外から測る（`PublishAot`、記録するがゲートにしない） |
 | `benchmarks/compare` | 比較のための同じ場面のアプリ（Avalonia・Flutter・GPUI）と、`build.ps1`・`measure.ps1`・`summarize.py`。リポジトリのビルドの設定は引き継がない |
