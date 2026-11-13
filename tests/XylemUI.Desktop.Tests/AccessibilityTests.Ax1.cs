@@ -1015,6 +1015,138 @@ public sealed partial class AccessibilityTests
         Assert.Equal(default(AccessibilityNodeId), node.ActiveDescendant);
     }
 
+    /// <summary>
+    /// A relation to a node that was removed throws <see cref="ArgumentException"/>.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of the role Edit, and a text "gone" a Show holds, its condition true.
+    ///
+    /// Steps:
+    /// - Turn the Show off; settle; label the field by "gone".
+    ///
+    /// Expected:
+    /// - An exception.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Relations_ToARemovedNode_Throw()
+    {
+        var shown = Signal.Create(true);
+        Element field = default;
+        Element gone = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            field = Box().Width(50).Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit });
+            return Column(field, Show(shown, () => gone = Elements.Text("gone")));
+        });
+        _ = app.PumpAndSettle();
+        shown.Set(false);
+        _ = app.PumpAndSettle();
+
+        _ = Assert.Throws<ArgumentException>(() => field.LabelledBy(gone));
+    }
+
+    /// <summary>
+    /// A holder and the node it names, made and removed again and again while the tree is made, leave nothing in the tables: no
+    /// relation, no holder kept for the node named, and no watch.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A Show, true, of a column of a text "Name" and a field of the role Edit labelled by it, whose active descendant is a signal at
+    ///   the text; the tree made.
+    ///
+    /// Steps:
+    /// - 20 times: turn the Show off and on, settling after each. Read how many nodes named the tree keeps. Turn it off; settle; read
+    ///   the tables.
+    ///
+    /// Expected:
+    /// - One node named while shown; then no relation in the tree's table, no node named kept, and no watch.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Relations_MadeAndRemovedManyTimes_LeaveNoTables()
+    {
+        var shown = Signal.Create(true);
+        var active = Signal.Create<Element>(default);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                Show(
+                    shown,
+                    () =>
+                    {
+                        Element label = Elements.Text("Name");
+                        Element field = Box()
+                            .Width(50)
+                            .Height(10)
+                            .Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit })
+                            .LabelledBy(label)
+                            .ActiveDescendant(active);
+                        active.Set(label);
+                        return Column(label, field);
+                    }
+                )
+            )
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+        for (int i = 0; i < 20; i++)
+        {
+            shown.Set(false);
+            _ = app.PumpAndSettle();
+            shown.Set(true);
+            _ = app.PumpAndSettle();
+        }
+
+        int whileShown = tree.RelationTargetCount;
+        shown.Set(false);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal((1, 0, 0, 0), (whileShown, tree.RelationTargetCount, tree.WatchCount, app.Tree.AccessibilityRelationHolders.Count));
+    }
+
+    /// <summary>
+    /// The name a field takes from a node with no node of its own follows that node being hidden and shown by a change of an
+    /// ancestor of it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box "outer" holding a box with no role that holds a text "Hello", and a field of the role Edit labelled by the inner box.
+    ///
+    /// Steps:
+    /// - Read the field's name; hide "outer"; settle; read it; show "outer"; settle; read it.
+    ///
+    /// Expected:
+    /// - "Hello", none, "Hello".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Name_FromATargetWithNoNode_FollowsAnAncestorHidingIt()
+    {
+        Element outer = default;
+        Element field = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            Element target = Box(Elements.Text("Hello"));
+            outer = Box(target);
+            field = Box().Width(50).Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit }).LabelledBy(target);
+            return Column(outer, field);
+        });
+        _ = app.PumpAndSettle();
+        var names = new List<string?> { app.AccessibilityOf(field).Name };
+        SetHidden(true);
+        SetHidden(false);
+
+        Assert.Equal(new string?[] { "Hello", null, "Hello" }, names);
+
+        void SetHidden(bool value)
+        {
+            app.Tree.SetStyle(outer.Node, app.Tree.Nodes.GetRef(outer.Node).Layout.Style with { Hidden = value });
+            _ = app.PumpAndSettle();
+            names.Add(app.AccessibilityOf(field).Name);
+        }
+    }
+
     // A spin button with a range and no handler: read-only until one is added.
     private static Element Spin(string name, double minimum = 0, double maximum = 10, double value = 5) =>
         Box()

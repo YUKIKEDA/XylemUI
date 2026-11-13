@@ -145,6 +145,32 @@ internal sealed class AccessibilityTree(UiTree tree)
     }
 
     /// <summary>
+    /// Forgets a node that is removed as a node relations name, once the tree is made: the nodes that name it are marked, so that the
+    /// next update hands it on no more, and nothing is kept for it.
+    /// </summary>
+    /// <param name="target">The node.</param>
+    public void ForgetTarget(NodeHandle target)
+    {
+        if (_holders.Remove(target, out List<NodeHandle>? holders))
+        {
+            foreach (NodeHandle holder in holders)
+            {
+                MarkSelf(holder);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of nodes relations name that the tree keeps the holders of, for the tests.
+    /// </summary>
+    internal int RelationTargetCount => _holders.Count;
+
+    /// <summary>
+    /// Gets the number of watches of active descendants and of draw functions the tree keeps, for the tests.
+    /// </summary>
+    internal int WatchCount => _descendantWatches.Count + _childWatches.Count;
+
+    /// <summary>
     /// Carries out assistive technology's Increment on a node (design §4.4.1, "Actions other than a click"): its handler, unless it is
     /// disabled.
     /// </summary>
@@ -319,13 +345,11 @@ internal sealed class AccessibilityTree(UiTree tree)
                 AddWork(Owner(parent));
             }
 
-            // A node a relation names may have no node of its own, and give its leaves' text: a change below it renames the holder.
+            // A node a relation names may have no node of its own, and give its leaves' text: a change below it, or a change above it
+            // that hides or shows it, renames the holder. Only a tree with relations looks.
             if (_holders.Count > 0)
             {
-                for (NodeHandle at = node; !at.IsNone; at = tree.Nodes.GetRef(at).Parent)
-                {
-                    QueueHolders(at);
-                }
+                QueueHoldersAround(node);
             }
         }
 
@@ -532,6 +556,19 @@ internal sealed class AccessibilityTree(UiTree tree)
                 {
                     _relationWork.Add(holder);
                 }
+            }
+        }
+    }
+
+    // Queues the holders of the targets at, above, or below a marked node of the UI tree.
+    private void QueueHoldersAround(NodeHandle node)
+    {
+        foreach (KeyValuePair<NodeHandle, List<NodeHandle>> held in _holders)
+        {
+            NodeHandle target = held.Key;
+            if (tree.Nodes.IsAlive(target) && (tree.IsInSubtree(target, node) || tree.IsInSubtree(node, target)))
+            {
+                QueueHolders(target);
             }
         }
     }
@@ -853,7 +890,7 @@ internal sealed class AccessibilityTree(UiTree tree)
     }
 
     private AccessibilityNodeId IdOf(NodeHandle target) =>
-        !target.IsNone && _nodes.TryGetValue(target, out AccessibilityNode? node) ? node.Id : default;
+        !target.IsNone && tree.Nodes.IsAlive(target) && _nodes.TryGetValue(target, out AccessibilityNode? node) ? node.Id : default;
 
     // The node's active descendant (design §4.4.1, "Relations"): read from its signal, which a watch reads only while the tree is
     // made; an element's node, or the node of a key among the nodes the node's draw function adds. Returns whether it changed.
@@ -1117,9 +1154,10 @@ internal sealed class AccessibilityTree(UiTree tree)
         _changes.Add(new AccessibilityChange(drawn.Id, AccessibilityChangeKind.Removed));
     }
 
-    // The handlers of the actions other than a click a node has, which a disabled node and a drawn node do not take.
+    // The handlers of the actions other than a click a node has, which a disabled node and a drawn node do not take. Disabled is the
+    // node's recorded state, as for a click (Win32Accessibility.Perform): the state assistive technology read, one rule for all actions.
     private AccessibilityHandlers? HandlersOf(AccessibilityNode node) =>
-        node.ChildKey is null && tree.Nodes.IsAlive(node.Node) && (tree.Nodes.GetRef(node.Node).Pseudo & PseudoState.Disabled) == 0
+        node.ChildKey is null && tree.Nodes.IsAlive(node.Node) && (node.States & AccessibilityStates.Disabled) == 0
             ? tree.AccessibilityHandlersOf(node.Node)
             : null;
 

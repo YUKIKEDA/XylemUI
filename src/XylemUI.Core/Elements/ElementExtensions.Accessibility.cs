@@ -74,7 +74,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node that is named, such as a field.</param>
     /// <param name="label">The node whose text names it.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
-    /// <exception cref="ArgumentException"><paramref name="label"/> is the node itself, or not a node of its tree.</exception>
+    /// <exception cref="ArgumentException"><paramref name="label"/> is the node itself, not a node of its tree, or a node removed.</exception>
     public static Element LabelledBy(this Element element, Element label) => Relate(element, AccessibilityRelation.LabelledBy, label, nameof(label));
 
     /// <summary>
@@ -84,7 +84,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node that is described.</param>
     /// <param name="description">The node whose text describes it.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
-    /// <exception cref="ArgumentException"><paramref name="description"/> is the node itself, or not a node of its tree.</exception>
+    /// <exception cref="ArgumentException"><paramref name="description"/> is the node itself, not a node of its tree, or a node removed.</exception>
     public static Element DescribedBy(this Element element, Element description) =>
         Relate(element, AccessibilityRelation.DescribedBy, description, nameof(description));
 
@@ -95,7 +95,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node that is not valid, such as a field.</param>
     /// <param name="message">The node of the message.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
-    /// <exception cref="ArgumentException"><paramref name="message"/> is the node itself, or not a node of its tree.</exception>
+    /// <exception cref="ArgumentException"><paramref name="message"/> is the node itself, not a node of its tree, or a node removed.</exception>
     public static Element ErrorMessage(this Element element, Element message) => Relate(element, null, message, nameof(message));
 
     /// <summary>
@@ -104,7 +104,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node that controls.</param>
     /// <param name="controlled">The node it controls.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
-    /// <exception cref="ArgumentException"><paramref name="controlled"/> is the node itself, or not a node of its tree.</exception>
+    /// <exception cref="ArgumentException"><paramref name="controlled"/> is the node itself, not a node of its tree, or a node removed.</exception>
     public static Element Controls(this Element element, Element controlled) =>
         Relate(element, AccessibilityRelation.Controls, controlled, nameof(controlled));
 

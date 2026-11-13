@@ -2806,6 +2806,12 @@ internal sealed class UiTree
             accessibility.ForgetRelations(node, relations);
         }
 
+        // A node that relations name: its holders are marked, and the tree keeps nothing for it.
+        if (_a11y.Tree is { IsActive: true, RelationTargetCount: > 0 } named)
+        {
+            named.ForgetTarget(node);
+        }
+
         if (_a11y.Children.Count > 0)
         {
             _ = _a11y.Children.Remove(node);
