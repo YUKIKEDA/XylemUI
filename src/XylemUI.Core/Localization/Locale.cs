@@ -103,18 +103,13 @@ public readonly struct Locale : IEquatable<Locale>
 
         // A grandfathered or redundant tag is replaced as a whole before its subtags are read (RFC 5646 §4.5, step 2): i-klingon
         // does not match langtag, and sgn-BR would otherwise read as the language sgn in Brazil.
-        if (tag.Length <= LocaleSubtags.LongestTag)
+        // The whole tag is matched first, then the tag without its extensions and private use, which are read and dropped: with
+        // them, sgn-BR-u-nu-latn is still bzs. Variants stay in what is matched: en-GB-oed and zh-min-nan mean what they do by
+        // the subtag in a variant's place.
+        ReadOnlySpan<char> whole = tag;
+        if (TryReplaceWholeTag(whole, out string? replacement) || TryReplaceWholeTag(whole[..EndOfLanguageRange(whole)], out replacement))
         {
-            Span<char> lower = stackalloc char[LocaleSubtags.LongestTag];
-            for (int i = 0; i < tag.Length; i++)
-            {
-                lower[i] = ToLowerAscii(tag[i]);
-            }
-
-            if (LocaleSubtags.TryGetTagReplacement(lower[..tag.Length], out string? replacement))
-            {
-                return TryParseLangtag(replacement, out locale);
-            }
+            return TryParseLangtag(replacement, out locale);
         }
 
         return TryParseLangtag(tag, out locale);
@@ -169,6 +164,46 @@ public readonly struct Locale : IEquatable<Locale>
     /// </summary>
     /// <returns>The language tag.</returns>
     public override string ToString() => ToLanguageTag();
+
+    private static bool TryReplaceWholeTag(ReadOnlySpan<char> tag, [NotNullWhen(true)] out string? replacement)
+    {
+        replacement = null;
+        if (tag.Length > LocaleSubtags.LongestTag)
+        {
+            return false;
+        }
+
+        Span<char> lower = stackalloc char[LocaleSubtags.LongestTag];
+        for (int i = 0; i < tag.Length; i++)
+        {
+            lower[i] = ToLowerAscii(tag[i]);
+        }
+
+        return LocaleSubtags.TryGetTagReplacement(lower[..tag.Length], out replacement);
+    }
+
+    // The length of a tag up to its first extension or private use: the first subtag of one character after the first subtag
+    // (the i of i-klingon is a first subtag).
+    private static int EndOfLanguageRange(ReadOnlySpan<char> tag)
+    {
+        for (int i = tag.IndexOf('-'); i >= 0 && i + 1 < tag.Length; )
+        {
+            int next = tag[(i + 1)..].IndexOf('-');
+            if (next == 1 || (next < 0 && tag.Length - i - 1 == 1))
+            {
+                return i;
+            }
+
+            if (next < 0)
+            {
+                break;
+            }
+
+            i += next + 1;
+        }
+
+        return tag.Length;
+    }
 
     // Every subtag is 1 to 8 ASCII letters or digits, and subtags are joined by single hyphens (RFC 5646 §2.1). The langtag reader
     // relies on it: an empty subtag means the end of the tag.

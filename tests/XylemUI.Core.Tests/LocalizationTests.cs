@@ -34,7 +34,11 @@ public sealed class LocalizationTests
     [InlineData("fr-CA,fr-BE", "fr,en", "fr")]
     [InlineData("fr-CA,fr-BE,en-US", "fr,en-US", "fr")]
     [InlineData("ko-KR,ja-JP", "en,ja", "ja")]
-    [InlineData("nl-BE,de-CH", "fr-BE,it-CH", "fr-BE")]
+    [InlineData("nl-BE,de-CH", "it-CH,fr-BE", "fr-BE")]
+    [InlineData("zh-Hant-TW", "zh-Hant-HK,zh-Hant-TW", "zh-Hant-TW")]
+    [InlineData("pt-PT", "pt-BR,pt-Latn-PT", "pt-Latn-PT")]
+    [InlineData("ko-KR,fr-CA,de-DE", "fr,de-DE", "de-DE")]
+    [InlineData("ko-CH,fr-FR", "it-CH,fr", "fr")]
     [InlineData("ko-KR", "en,ja", "en")]
     [InlineData("es-MX", "es-ES,es-AR", "es-ES")]
     public void Resolve_FollowsTheSteps(string preferred, string supported, string expected) =>

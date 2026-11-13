@@ -131,6 +131,11 @@ public sealed class LocaleTests
     [InlineData("zh-min-nan", "nan")]
     [InlineData("Zh-Min-NaN", "nan")]
     [InlineData("en-gb-OED", "en-GB")]
+    [InlineData("sgn-BR-u-nu-latn", "bzs")]
+    [InlineData("sgn-BR-x-foo", "bzs")]
+    [InlineData("en-GB-oed-x-a", "en-GB")]
+    [InlineData("i-klingon-x-a", "tlh")]
+    [InlineData("zh-min-nan-u-nu-latn-x-a", "nan")]
     public void Parse_GrandfatheredWithPreferredValue_ReplacesTheWholeTag(string tag, string expected) =>
         Assert.Equal(expected, Locale.Parse(tag).ToLanguageTag());
 
@@ -286,6 +291,8 @@ public sealed class LocaleTests
     [InlineData("zh-aaa-bbb-ccc-ddd")]
     [InlineData("1a")]
     [InlineData("en-US-Latn")]
+    [InlineData("abcd-abc")]
+    [InlineData("abcde-abc")]
     public void ParseAndTryParse_MalformedTag_ThrowAndReturnFalse(string tag)
     {
         bool read = Locale.TryParse(tag, out Locale locale);
