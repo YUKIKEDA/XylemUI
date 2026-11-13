@@ -541,7 +541,7 @@ Decision（行 PL1 の Grill の 5 巡目でオーナーが決定、Issue #872�
   `HeadlessApp` と本物の窓は、1 つの窓の核（`WindowCore`）を共有する。範囲は Windows が今持つ機能だけ。`UiDispatcher.Current` を Core に足す。
   形（Issue #877 の Grill でオーナーが決定）: Windows のホストは `XylemUI.Platform.Windows` に置き、Rendering.D3D11 を参照する。ホストは属性で名乗り、アプリの Source Generator が登録する。Desktop とホストは `net10.0`。
   クリップボードはアプリの段、IME と a11y は窓の段。ホストは sealed の `WindowCore` にデリゲートを結ぶ。OS の設定のイベントは 1 つ。2 つ目の `OpenWindow` は例外。
-  `HeadlessApp` は部品を `IPlatformWindow` にまとめる。`UiDispatcher.Current` は `UiDispatcher` 型で、前の値に戻す。`Win32MessageLoop` は静的のまま。
+  `HeadlessApp` は部品を `IPlatformWindow` にまとめる。`UiDispatcher.Current` は `IUiDispatcher` 型で（PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定。Issue #877 の `UiDispatcher` 型を改めた）、前の値に戻す。ホストの登録は `PlatformHostRegistry`、ホストが 2 つと `Register` の無い型は Generator の診断（XYLEM008・XYLEM009）。`Win32MessageLoop` は静的のまま。
 
 Reason:
   `XylemUI.Desktop` が Windows の型を直に作り、macOS と Linux のホストを差し込む口が無い（行 P04 と P06 の調査）。
@@ -559,7 +559,6 @@ Rejected:
   - `IRenderTarget` に `Resize` と時計の取り出しを足して、`XylemUI.Desktop` が組にする（時計の取り出しは、時計が窓にある macOS と Wayland で意味を持たない）
   - OS によらない共通のループを `XylemUI.Desktop` に置き、OS ごとには待つ関数だけを持つ（macOS では `[NSApp run]` がループを持ち、フレームは `CADisplayLink` から来る。3 つとも、ループはプラットフォームが持つ）
   - OS の設定を窓ごとに持ち続ける（3 つとも OS の設定はアプリの段に置く。行 LC1・TH1 の値が窓ごとに増える）
-  - フォントの提供者を窓ごとに持ち続け、設計書を直す（同じフォントを窓の数だけ開く。3 つともアプリに 1 つ）
   - ホストを実行時に OS で選ぶ（Avalonia の `AppBuilderDesktopExtensions.cs` 20〜33 行目。すべてのホストのコードがバイナリに入りうる）
   - アプリが OS のホストを名指しする（`XylemApp.Run(new WindowsPlatform(), …)`。アプリのコードが OS によらなくならない）
   - `HeadlessApp` を本物の窓と別のまま保つ（Flutter はエンジンの上の binding でテストする。根の値と `Mount` が 2 つのまま残る）
@@ -575,7 +574,7 @@ Rejected:
   - ラスタライザの工場を窓（レンダラ）から出す（OS ごとにレンダラは 1 つで、アプリの段で足りる。同じ Grill）
   - 窓が開いている間の 2 つ目の `OpenWindow` を許す（スケジューラの時計が黙って置き換わる。同じ Grill）
   - 窓の核に、ヘッドレスの部品を直に受ける別のコンストラクタを置く（窓の核の入口が 2 つになる。同じ Grill）
-  - `UiDispatcher.Current` を `IUiDispatcher` にする（`SynchronizationContext` と行 U1 の `DroppedMessageCount` を読めない）、2 度目の差し込みを例外にする（Avalonia の形。`XylemUI.Desktop.Tests` は本物のループをヘッドレスの UI スレッドの上で回す。同じ Grill）
+  - `UiDispatcher.Current` を具体の型 `UiDispatcher` にする（公開の静的なメンバーから、どのワーカーも `Drain` を呼べてしまう。取り出しと `SynchronizationContext` は、ホストが自分の参照で使う。Issue #877 の Grill で一度採ったのを、PR #883 のレビューの後、Issue #877 の Grill でオーナーが決定 で改めた）、2 度目の差し込みを例外にする（Avalonia の形。`XylemUI.Desktop.Tests` は本物のループをヘッドレスの UI スレッドの上で回す。同じ Grill）
   - `Win32MessageLoop` をインスタンスにする（UI スレッドはプロセスに 1 つで、テストとベンチマークの呼び出しが変わるだけ。同じ Grill）
   - E2E の場面を Windows の部品の上に残す（動かしたコードの `WM_SIZE` の経路を測る場面が無いまま残る。同じ Grill）
 
