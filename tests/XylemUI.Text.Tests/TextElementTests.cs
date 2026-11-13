@@ -32,7 +32,7 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
         ui.Invoke(() =>
         {
             using var scene = new TextScene(_font);
-            scene.Tree.UiLanguage = TestFont.Japanese;
+            scene.UiLocale = Locale.Parse("ja");
             Element text = default;
             scene.Mount(() => text = Elements.Text("nn"));
             TextLeaf leaf = scene.Leaf(text);

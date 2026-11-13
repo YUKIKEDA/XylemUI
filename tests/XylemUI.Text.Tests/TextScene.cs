@@ -28,8 +28,20 @@ internal sealed class TextScene : IDisposable
 
     public Frames Scheduler { get; } = new();
 
+    /// <summary>
+    /// Gets or sets the locale provided around the root function, as a window provides its resolved locale; none by default, so
+    /// that text with no language is undetermined.
+    /// </summary>
+    public Locale? UiLocale { get; set; }
+
     public void Mount(Func<Element> root)
     {
+        if (UiLocale is { } locale)
+        {
+            Func<Element> inner = root;
+            root = () => Localization.Locale.Provide(Signal.Create(locale), inner);
+        }
+
         UiTree.Current = Tree;
         try
         {

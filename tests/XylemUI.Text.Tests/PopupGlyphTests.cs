@@ -34,7 +34,7 @@ public sealed class PopupGlyphTests(UiThreadFixture ui) : IDisposable
         {
             var atlas = new GlyphAtlas(new TestRasterizer(), pageSize: 64, plotSize: 32, maxPages: 1);
             using var scene = new TextScene(_font, atlas);
-            scene.Tree.UiLanguage = TestFont.Japanese;
+            scene.UiLocale = Locale.Parse("ja");
             var open = Signal.Create(true);
             var popupText = Signal.Create("ト");
             scene.Mount(() =>
