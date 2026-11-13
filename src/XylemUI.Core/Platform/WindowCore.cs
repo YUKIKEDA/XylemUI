@@ -118,7 +118,7 @@ internal sealed class WindowCore
                 () =>
                 {
                     Element content = locale.Provide(Tree, root);
-                    if (content.IsNone || !ReferenceEquals(content.Tree, Tree))
+                    if (!ReferenceEquals(content.Tree, Tree))
                     {
                         throw new InvalidOperationException("The root function returns a node of the window's tree.");
                     }
