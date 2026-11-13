@@ -688,6 +688,7 @@ public sealed class ShowForTests(UiThreadFixture ui)
             Color red = Color.FromRgb(0xCC3333);
             Color blue = Color.FromRgb(0x3333CC);
             var items = Signal.Create<IReadOnlyList<Color>>([Gray, red, blue]);
+
             // A row's key is its color, so the item of a row never changes and one read is the row's color (XYLEM110).
 #pragma warning disable XYLEM110
             scene.Mount(() => Column().Width(50).For(items, color => color, color => Box().Height(10).Background(color.Get())));

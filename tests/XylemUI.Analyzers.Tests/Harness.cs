@@ -15,6 +15,8 @@ internal static class Harness
     // One language version for every source, the repository's (C# 14).
     internal static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
 
+    private static readonly string[] XylemAssemblies = ["XylemUI.Core.dll", "XylemUI.Text.dll", "XylemUI.Imaging.dll"];
+
     private static readonly CSharpCompilationOptions Options = new(
         OutputKind.DynamicallyLinkedLibrary,
         nullableContextOptions: NullableContextOptions.Enable
@@ -101,7 +103,7 @@ internal static class Harness
             .Split(Path.PathSeparator)
             .Where(path => string.Equals(Path.GetDirectoryName(path), runtime, StringComparison.OrdinalIgnoreCase))
             .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path));
-        IEnumerable<MetadataReference> xylem = new[] { "XylemUI.Core.dll", "XylemUI.Text.dll", "XylemUI.Imaging.dll" }.Select(static name =>
+        IEnumerable<MetadataReference> xylem = XylemAssemblies.Select(static name =>
             (MetadataReference)MetadataReference.CreateFromFile(Path.Combine(AppContext.BaseDirectory, name))
         );
         return [.. platform, .. xylem];

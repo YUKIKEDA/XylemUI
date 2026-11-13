@@ -129,16 +129,15 @@ public sealed class UiThreadOnlyAttributeTests
 
         missing.Sort(StringComparer.Ordinal);
         extra.Sort(StringComparer.Ordinal);
-        Assert.True(
-            missing.Count == 0 && extra.Count == 0,
+        string report =
             "Reach VerifyAccess without [UiThreadOnly]:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, missing)
-                + Environment.NewLine
-                + "Carry [UiThreadOnly] and reach no check:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, extra)
-        );
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, missing)
+            + Environment.NewLine
+            + "Carry [UiThreadOnly] and reach no check:"
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, extra);
+        Assert.True(missing.Count == 0 && extra.Count == 0, report);
     }
 
     /// <summary>

@@ -112,5 +112,10 @@ public sealed class AfterAwaitAnalyzer : DiagnosticAnalyzer
     private static bool NeedsScope(IMethodSymbol method, INamedTypeSymbol element, INamedTypeSymbol effect, INamedTypeSymbol scope) =>
         (method.Name == "Create" && Names.Is(method.ContainingType, effect))
         || (method.Name == "OnCleanup" && Names.Is(method.ContainingType, scope))
-        || (method.IsStatic && !method.IsExtensionMethod && method.MethodKind == MethodKind.Ordinary && Names.Is(method.ReturnType, element));
+        || (
+            method.IsStatic
+            && !method.IsExtensionMethod
+            && method.MethodKind == MethodKind.Ordinary
+            && Names.Is(method.OriginalDefinition.ReturnType, element)
+        );
 }
