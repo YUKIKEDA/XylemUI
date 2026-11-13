@@ -19,6 +19,10 @@ public sealed class ReadOnceAnalyzerTests
             public static Element Label(string text) => Text(text);
 
             public static Element Label(Func<string> text) => Text(text);
+
+            public static Element Count(string text) => Text(text);
+
+            public static Element Count(Func<int> count) => Text(() => count().ToString());
         }
 
         public sealed class Store
@@ -73,7 +77,8 @@ public sealed class ReadOnceAnalyzerTests
     /// Preconditions:
     /// - Cases: <c>Text(() =&gt; ...)</c>; <c>Text</c> with a text builder that reads the signal; a string read into a variable and
     ///   then passed; <c>Width(size.Get())</c> and <c>TestId(name.Get())</c>, which have no reactive overload;
-    ///   <c>Background(color)</c> with the signal itself; <c>Text</c> of another type's <c>Get()</c>; a read outside any call.
+    ///   <c>Background(color)</c> with the signal itself; <c>Text</c> of another type's <c>Get()</c>; a read outside any call;
+    ///   an app's <c>Count(string)</c> whose other overload takes <c>Func&lt;int&gt;</c>, a function of another type.
     ///
     /// Steps:
     /// - Run the analyzer on a method whose body is the case.
@@ -90,6 +95,7 @@ public sealed class ReadOnceAnalyzerTests
     [InlineData("_ = Box().Background(paint);")]
     [InlineData("_ = Text(other.Get().ToString());")]
     [InlineData("int n = count.Get();")]
+    [InlineData("_ = Labels.Count(name.Get());")]
     public async Task Get_TheRuleDoesNotLookAt_IsNotReported(string body)
     {
         Assert.Empty(await Harness.DiagnoseAsync(new ReadOnceAnalyzer(), Code(body)));

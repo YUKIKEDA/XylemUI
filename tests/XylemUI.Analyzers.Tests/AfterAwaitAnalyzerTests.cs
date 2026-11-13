@@ -51,8 +51,9 @@ public sealed class AfterAwaitAnalyzerTests
     /// Preconditions:
     /// - Cases: <c>Box()</c> before the await; <c>Box()</c> in the await's operand; <c>Scope.Run</c> with a lambda that makes a box
     ///   after the await; another lambda that makes one after the await; a loop whose <c>Box()</c> is written before the await
-    ///   in it; a synchronous method; <c>Column().For(...)</c> after the await (an extension method); a static method that returns
-    ///   no element.
+    ///   in it; a synchronous method; <c>For</c> on a column made before the await (an extension method); a static method that
+    ///   returns no element; an extension method called as a static method (<c>ElementExtensions.Width(box, 1)</c>); a generic
+    ///   method whose type argument is <c>Element</c> (<c>Same(box)</c>).
     ///
     /// Steps:
     /// - Run the analyzer on the case.
@@ -71,6 +72,8 @@ public sealed class AfterAwaitAnalyzerTests
         "async Task M(IReadOnlySignal<IReadOnlyList<int>> items) { Element column = Column(); await Task.Yield(); _ = column.For(items, i => i, _ => Box()); }"
     )]
     [InlineData("async Task M() { await Task.Yield(); _ = Signal.Create(1); }")]
+    [InlineData("async Task M() { Element box = Box(); await Task.Yield(); _ = ElementExtensions.Width(box, 1); }")]
+    [InlineData("async Task M() { Element box = Box(); await Task.Yield(); _ = Same(box); }")]
     public async Task Call_TheRuleDoesNotLookAt_IsNotReported(string member)
     {
         Assert.Empty(await Harness.DiagnoseAsync(new AfterAwaitAnalyzer(), Code(member)));
@@ -93,6 +96,8 @@ public sealed class AfterAwaitAnalyzerTests
                 private static {{member}}
 
                 private static Task Wrap(Element element) => Task.CompletedTask;
+
+                private static T Same<T>(T value) => value;
 
                 private static async IAsyncEnumerable<int> Items()
                 {
