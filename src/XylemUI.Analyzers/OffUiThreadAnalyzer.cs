@@ -40,10 +40,7 @@ public sealed class OffUiThreadAnalyzer : DiagnosticAnalyzer
                     IMethodSymbol method = invocation.TargetMethod;
                     bool starts =
                         (Names.Is(method.ContainingType, task) && method.Name == "Run")
-                        || (
-                            Names.Is(method.ContainingType, threadPool)
-                            && method.Name is "QueueUserWorkItem" or "UnsafeQueueUserWorkItem"
-                        );
+                        || (Names.Is(method.ContainingType, threadPool) && method.Name is "QueueUserWorkItem" or "UnsafeQueueUserWorkItem");
                     if (starts)
                     {
                         Check(operation, invocation.Arguments, method.ContainingType.Name + "." + method.Name, attribute);
@@ -65,7 +62,12 @@ public sealed class OffUiThreadAnalyzer : DiagnosticAnalyzer
         });
     }
 
-    private static void Check(OperationAnalysisContext context, ImmutableArray<IArgumentOperation> arguments, string starter, INamedTypeSymbol attribute)
+    private static void Check(
+        OperationAnalysisContext context,
+        ImmutableArray<IArgumentOperation> arguments,
+        string starter,
+        INamedTypeSymbol attribute
+    )
     {
         foreach (IArgumentOperation argument in arguments)
         {
@@ -85,7 +87,12 @@ public sealed class OffUiThreadAnalyzer : DiagnosticAnalyzer
                 if (called is not null)
                 {
                     context.ReportDiagnostic(
-                        Diagnostic.Create(Rules.OffUiThread, operation.Syntax.GetLocation(), called.ToDisplayString(SymbolDisplayFormat.CSharpShortErrorMessageFormat), starter)
+                        Diagnostic.Create(
+                            Rules.OffUiThread,
+                            operation.Syntax.GetLocation(),
+                            called.ToDisplayString(SymbolDisplayFormat.CSharpShortErrorMessageFormat),
+                            starter
+                        )
                     );
                 }
             }

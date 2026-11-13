@@ -33,7 +33,8 @@ internal static class UiThreadOnly
                 }
 
                 (bool gets, bool sets) = Accessors(reference);
-                return (gets && property.GetMethod is { } getter && Carries(getter, attribute))
+                return
+                    (gets && property.GetMethod is { } getter && Carries(getter, attribute))
                     || (sets && property.SetMethod is { } setter && Carries(setter, attribute))
                     ? property
                     : null;

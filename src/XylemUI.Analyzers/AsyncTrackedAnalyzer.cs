@@ -44,10 +44,17 @@ public sealed class AsyncTrackedAnalyzer : DiagnosticAnalyzer
 
                     foreach (IArgumentOperation argument in invocation.Arguments)
                     {
-                        if (argument.Syntax is ArgumentSyntax { Expression: AnonymousFunctionExpressionSyntax function } && function.AsyncKeyword.IsKind(SyntaxKind.AsyncKeyword))
+                        if (
+                            argument.Syntax is ArgumentSyntax { Expression: AnonymousFunctionExpressionSyntax function }
+                            && function.AsyncKeyword.IsKind(SyntaxKind.AsyncKeyword)
+                        )
                         {
                             operation.ReportDiagnostic(
-                                Diagnostic.Create(Rules.AsyncTracked, function.AsyncKeyword.GetLocation(), method.ContainingType.Name + "." + method.Name)
+                                Diagnostic.Create(
+                                    Rules.AsyncTracked,
+                                    function.AsyncKeyword.GetLocation(),
+                                    method.ContainingType.Name + "." + method.Name
+                                )
                             );
                         }
                     }

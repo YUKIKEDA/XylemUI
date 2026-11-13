@@ -40,7 +40,8 @@ public sealed class ElementsTextCodeFixProvider : CodeFixProvider
         {
             // The name the compiler refused is the callee of a call, written as the bare name Text.
             if (
-                root.FindNode(diagnostic.Location.SourceSpan, getInnermostNodeForTie: true) is IdentifierNameSyntax { Identifier.ValueText: "Text" } name
+                root.FindNode(diagnostic.Location.SourceSpan, getInnermostNodeForTie: true)
+                    is IdentifierNameSyntax { Identifier.ValueText: "Text" } name
                 && name.Parent is InvocationExpressionSyntax invocation
                 && invocation.Expression == name
                 && InXylemNamespace(model.GetEnclosingSymbol(name.SpanStart, context.CancellationToken))
@@ -58,7 +59,11 @@ public sealed class ElementsTextCodeFixProvider : CodeFixProvider
     // The namespace XylemUI or one under it: there the name Elements finds XylemUI.Elements.
     private static bool InXylemNamespace(ISymbol? enclosing)
     {
-        for (INamespaceSymbol? space = enclosing as INamespaceSymbol ?? enclosing?.ContainingNamespace; space is not null; space = space.ContainingNamespace)
+        for (
+            INamespaceSymbol? space = enclosing as INamespaceSymbol ?? enclosing?.ContainingNamespace;
+            space is not null;
+            space = space.ContainingNamespace
+        )
         {
             if (space.Name == "XylemUI" && space.ContainingNamespace is { IsGlobalNamespace: true })
             {

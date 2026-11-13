@@ -64,14 +64,19 @@ public sealed class UiThreadOnlyAttributeTests
                 && !path.Contains(separator + "bin" + separator, StringComparison.Ordinal)
             )
             .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), Harness.Parse, path, cancellationToken: cancellation));
-        ImmutableArray<MetadataReference> references = project == "XylemUI.Core"
-            ? [.. Harness.References.Where(static reference => !reference.Display!.EndsWith("XylemUI.Core.dll", StringComparison.Ordinal))]
-            : Harness.References;
+        ImmutableArray<MetadataReference> references =
+            project == "XylemUI.Core"
+                ? [.. Harness.References.Where(static reference => !reference.Display!.EndsWith("XylemUI.Core.dll", StringComparison.Ordinal))]
+                : Harness.References;
         CSharpCompilation compilation = CSharpCompilation.Create(
             project,
             [.. trees, CSharpSyntaxTree.ParseText(ImplicitUsings, Harness.Parse, cancellationToken: cancellation)],
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true, nullableContextOptions: NullableContextOptions.Enable)
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                allowUnsafe: true,
+                nullableContextOptions: NullableContextOptions.Enable
+            )
         );
         INamedTypeSymbol attribute = compilation.GetTypeByMetadataName("XylemUI.UiThreadOnlyAttribute")!;
         Assert.NotNull(attribute);
@@ -163,7 +168,8 @@ public sealed class UiThreadOnlyAttributeTests
     }
 
     private static bool IsBodyOwner(SyntaxNode node) =>
-        node is BaseMethodDeclarationSyntax or AccessorDeclarationSyntax || node is PropertyDeclarationSyntax { ExpressionBody: not null } or IndexerDeclarationSyntax { ExpressionBody: not null };
+        node is BaseMethodDeclarationSyntax or AccessorDeclarationSyntax
+        || node is PropertyDeclarationSyntax { ExpressionBody: not null } or IndexerDeclarationSyntax { ExpressionBody: not null };
 
     // The method a body belongs to: a method, a constructor, an operator, an accessor, or the getter of an expression-bodied
     // property or indexer.

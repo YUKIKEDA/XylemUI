@@ -224,11 +224,7 @@ public sealed unsafe class D3D11Renderer : IDisposable, IRenderTarget
     public TextRenderingParameters TextRendering
     {
         // A block body, as the setter's attribute puts it on two lines: SA1504 wants both accessors of one shape.
-        get
-        {
-            return _textRendering;
-        }
-
+        get { return _textRendering; }
         [UiThreadOnly]
         set => SetTextRendering(value);
     }

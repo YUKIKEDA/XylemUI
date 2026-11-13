@@ -141,7 +141,11 @@ public sealed class ReadOnceAnalyzerTests
     [Fact]
     public async Task Fix_OfAnotherPair_IsNotOffered()
     {
-        (_, int offered, _) = await Harness.FixAsync(new ReactiveTextCodeFixProvider(), Code("_ = Box().Foreground(color.Get());"), new ReadOnceAnalyzer());
+        (_, int offered, _) = await Harness.FixAsync(
+            new ReactiveTextCodeFixProvider(),
+            Code("_ = Box().Foreground(color.Get());"),
+            new ReadOnceAnalyzer()
+        );
 
         Assert.Equal(0, offered);
     }

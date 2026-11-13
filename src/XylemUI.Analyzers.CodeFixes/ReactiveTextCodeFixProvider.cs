@@ -43,10 +43,7 @@ public sealed class ReactiveTextCodeFixProvider : CodeFixProvider
                 && IsTextOfString(model.GetSymbolInfo(invocation, context.CancellationToken).Symbol)
             )
             {
-                context.RegisterCodeFix(
-                    CodeAction.Create(Title, _ => Fix(context.Document, root, argument), equivalenceKey: Title),
-                    diagnostic
-                );
+                context.RegisterCodeFix(CodeAction.Create(Title, _ => Fix(context.Document, root, argument), equivalenceKey: Title), diagnostic);
             }
         }
     }

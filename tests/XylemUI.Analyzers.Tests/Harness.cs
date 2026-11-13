@@ -15,7 +15,10 @@ internal static class Harness
     // One language version for every source, the repository's (C# 14).
     internal static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
 
-    private static readonly CSharpCompilationOptions Options = new(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable);
+    private static readonly CSharpCompilationOptions Options = new(
+        OutputKind.DynamicallyLinkedLibrary,
+        nullableContextOptions: NullableContextOptions.Enable
+    );
 
     // The framework's assemblies and XylemUI.Core with the assemblies it references, from the test's own output.
     internal static ImmutableArray<MetadataReference> References { get; } = MakeReferences();
@@ -98,8 +101,8 @@ internal static class Harness
             .Split(Path.PathSeparator)
             .Where(path => string.Equals(Path.GetDirectoryName(path), runtime, StringComparison.OrdinalIgnoreCase))
             .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path));
-        IEnumerable<MetadataReference> xylem = new[] { "XylemUI.Core.dll", "XylemUI.Text.dll", "XylemUI.Imaging.dll" }.Select(
-            static name => (MetadataReference)MetadataReference.CreateFromFile(Path.Combine(AppContext.BaseDirectory, name))
+        IEnumerable<MetadataReference> xylem = new[] { "XylemUI.Core.dll", "XylemUI.Text.dll", "XylemUI.Imaging.dll" }.Select(static name =>
+            (MetadataReference)MetadataReference.CreateFromFile(Path.Combine(AppContext.BaseDirectory, name))
         );
         return [.. platform, .. xylem];
     }

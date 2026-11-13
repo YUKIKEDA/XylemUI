@@ -45,7 +45,11 @@ public sealed class ReadOnceAnalyzer : DiagnosticAnalyzer
         IMethodSymbol method = invocation.TargetMethod;
         foreach (IArgumentOperation argument in invocation.Arguments)
         {
-            if (argument.ArgumentKind != ArgumentKind.Explicit || argument.Parameter is not { } parameter || !HasReactiveOverload(method, parameter, types))
+            if (
+                argument.ArgumentKind != ArgumentKind.Explicit
+                || argument.Parameter is not { } parameter
+                || !HasReactiveOverload(method, parameter, types)
+            )
             {
                 continue;
             }
@@ -85,7 +89,11 @@ public sealed class ReadOnceAnalyzer : DiagnosticAnalyzer
     private static bool IsGet(IMethodSymbol method, Types types) =>
         method.Name == "Get"
         && method.Parameters.Length == 0
-        && (Names.Is(method.ContainingType, types.ReadOnlySignal) || Names.Is(method.ContainingType, types.Signal) || Names.Is(method.ContainingType, types.Computed));
+        && (
+            Names.Is(method.ContainingType, types.ReadOnlySignal)
+            || Names.Is(method.ContainingType, types.Signal)
+            || Names.Is(method.ContainingType, types.Computed)
+        );
 
     private sealed class Types(INamedTypeSymbol readOnlySignal, INamedTypeSymbol signal, INamedTypeSymbol computed, INamedTypeSymbol func)
     {
