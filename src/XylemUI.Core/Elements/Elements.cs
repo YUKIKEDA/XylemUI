@@ -90,6 +90,7 @@ public static class Elements
     /// <param name="content">The text.</param>
     /// <returns>The text node.</returns>
     /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    [UiThreadOnly]
     public static Element Text(string content)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -105,6 +106,7 @@ public static class Elements
     /// <param name="content">The text, read in an effect of the current scope.</param>
     /// <returns>The text node.</returns>
     /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    [UiThreadOnly]
     public static Element Text(Func<string> content)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -130,6 +132,7 @@ public static class Elements
     /// <param name="content">The text's writer, run in an effect of the current scope.</param>
     /// <returns>The text node.</returns>
     /// <exception cref="InvalidOperationException">No window's root function is running, or there is no current scope.</exception>
+    [UiThreadOnly]
     public static Element Text(TextBuilder content)
     {
         ArgumentNullException.ThrowIfNull(content);
