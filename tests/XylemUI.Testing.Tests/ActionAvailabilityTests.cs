@@ -832,6 +832,63 @@ public sealed class ActionAvailabilityTests
     }
 
     /// <summary>
+    /// A <c>For</c> that takes rows out and puts rows in for one change of its items is one change to a reader that reads from
+    /// inside a row that stays: the reader reads once more, not once for each row.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column with a <c>For</c> over the items 0 to 9, a box 20 high for each, beside a box with a handler of <c>Shape</c>.
+    ///   After the first frame, a computation that an effect reads counts its runs and reads <c>CanDispatch</c> of a
+    ///   <c>Circle</c> from the row of the item 5.
+    ///
+    /// Steps:
+    /// - Settle and read the count. Set the items to 6, 7, 8, 5, 20: six rows leave, one is made, and the row of the item 5 moves
+    ///   behind the three that keep their order. Settle and read the count.
+    ///
+    /// Expected:
+    /// - The computation ran once more. The row of the item 5 is still in the tree.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ForThatChangesItsRows_MakesAReaderInsideReadOnce()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 10)]);
+        var rows = new Dictionary<int, Element>();
+        int inside = 0;
+        Element side = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            side = Box().Width(10).Height(10).OnActionsOf((in ActionEvent<Shape> _) => { });
+            Element list = Column().For(items, static i => i, item => rows[item.Get()] = Box().Height(20));
+            return Column(side, list);
+        });
+        _ = app.PumpAndSettle();
+        Element own = side;
+        Element row = rows[5];
+        ScopeHandle scope = Scope.Create(() =>
+        {
+            Computed<bool> fromRow = Computed.Create(() =>
+            {
+                inside++;
+                return own.CanDispatch(new Circle(), row);
+            });
+            _ = Effect.Create(() => _ = fromRow.Get());
+        });
+        _ = app.PumpAndSettle();
+        int before = inside;
+        items.Set([6, 7, 8, 5, 20]);
+        _ = app.PumpAndSettle();
+        int after = inside;
+        bool alive = app.Tree.Nodes.IsAlive(row.Node);
+        Scope.Dispose(scope);
+        _ = app.PumpAndSettle();
+
+        Assert.NotEqual(0, before);
+        Assert.True(alive);
+        Assert.Equal(before + 1, after);
+    }
+
+    /// <summary>
     /// The keys of a named action with arguments are those of a row whose action has the same arguments, compared by the code the
     /// source generator wrote for the type, a record or a class; an action of a type with no name, and a read by the type alone,
     /// find a row of the type.
