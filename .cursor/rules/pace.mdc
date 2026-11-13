@@ -52,6 +52,18 @@ Work goes on in parallel by default, and no time passes with nothing running.
 - A turn does not end with "next comes X": X is started. The only stops are a decision that is the owner's and a risk that needs an order.
 - The owner's decisions are asked early and together, while the work that does not depend on them goes on. The owner can decide while the agent works; a question held until the work before it is done costs the owner the wait.
 
+### A report does not end the work
+
+A message to the owner is written while work goes on, not in place of it. Before a turn ends, each of these is checked, and the turn ends only when every answer is yes:
+
+1. Is something running in the foreground of every row that can move? A gate, a publish, a set of mutants, or a subagent in the background is not work in the foreground: while one runs, the next piece that does not need its result is written, built, or tested, and when that is done, the one after it.
+2. Is every piece that remains blocked on one of two things only: a decision that is the owner's and has been asked, or an order for a risk? "Waiting for the gate", "waiting for the review", and "waiting for the answer to a question whose recommendation I can already act on" are not blocks.
+3. When the owner has said "go with the recommendations", has every recommended step been started, not announced?
+
+A message that reports progress is followed in the same turn by the next tool call. When the answer to a question is not needed for the next hour of work, the question is written and the work goes on in the same turn. The list of what can move is kept current in the report: what runs in the background with its estimate, and what the agent is doing in the foreground meanwhile; a report whose foreground line would be empty is not sent until it is not.
+
+In LC1 and A1, after the owner had ordered this section's first form (PR #852) the same day, the agent twice ended a turn with a gate and a test run in the background and nothing in the foreground, the second time while a design PR for A1, the measurement of LC1, and the second round of LC2's Grill could all move; the owner asked whether it had forgotten, and ordered the checklist above (2026-11-13).
+
 In RC1 the agent opened PR #846, wrote that the Issue of LC1 came next, and did nothing for two hours until the owner asked; before that it had worked one row at a time and read each PR's checks before going on. The owner ordered the parallel way of working and that no second passes idle (2026-11-13, after PR #846).
 
 ## Long runs do not hold the working tree
