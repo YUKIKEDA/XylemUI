@@ -35,6 +35,13 @@ internal sealed class TextLeaf
     public TextStyle Style { get; private set; }
 
     /// <summary>
+    /// Gets or sets the locale whose language the leaf has because it set none of its own (design §4.11, "The default language
+    /// of text"): the leaf is shaped again when that locale changes. <see langword="null"/> once the leaf was given a language,
+    /// and for a leaf made where no locale is provided.
+    /// </summary>
+    public IReadOnlySignal<Locale>? DefaultLanguageOf { get; set; }
+
+    /// <summary>
     /// Gets or sets the leaf's own color for its text; <see langword="null"/> at first, which takes the color its ancestors resolve
     /// (<see cref="NodeVisual.Foreground"/>, design §5.0, "Opacity, transforms, and pseudo-states"). It is no part of
     /// <see cref="Style"/>: the layout does not read it.
