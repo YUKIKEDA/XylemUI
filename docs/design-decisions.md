@@ -627,6 +627,9 @@ Decision:
 
 Rejected:
   - 文脈を引数で渡す（Flutter の `BuildContext`、GPUI の `window`・`cx`。§2.13 の引数の無い部品の関数の書き方を変える）
+  - Reactive Context の鍵を型にする（`UseContext<T>()`。同じ型の値を 2 つ置けない。Flutter と GPUI は型を鍵にし、ぶつからないように非公開の型を作る。RC1 の Grill、Issue #827）
+  - Reactive Context の値を、文として置く（`ProvideContext(value);` の後に子を作る。同じ Scope で先に作った要素に効かず、書く順で結果が変わる。同じ Grill）
+  - Reactive Context の値を、要素の拡張メソッドで置く（要素を作った後に呼ぶので、その子に届かない。同じ Grill）
   - ボタンを Core に置く（§2.9.1 の「Core は部品を持たない」に反する。比べた 3 つも土台の層にボタンを持たない）
   - 描く関数の例外でアプリを落とす（Avalonia の既定、GPUI。1 つの部品の誤りで画面がすべて止まる）
   - V1d で `group_hover` の相当を入れる（V1 は文字の色の受け継ぎで足りる。テーマの部品が要る行 G1 で決める）
