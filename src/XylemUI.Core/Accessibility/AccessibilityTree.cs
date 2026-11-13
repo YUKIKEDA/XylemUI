@@ -485,7 +485,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         {
             foreach (NodeHandle root in _popupRoots)
             {
-                if (tree.Nodes.IsAlive(root) && !tree.Nodes.GetRef(root).Layout.Style.Hidden && !IsExcluded(root))
+                if (tree.Nodes.IsAlive(root) && !tree.Nodes.GetRef(root).HidesSubtree && !IsExcluded(root))
                 {
                     if (RoleOf(root, folding: false) != SemanticsRole.None)
                     {
@@ -507,7 +507,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         IVirtualHost? rows = tree.VirtualHostOf(parent);
         for (NodeHandle child = tree.Nodes.GetRef(parent).FirstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
         {
-            if (tree.Nodes.GetRef(child).Layout.Style.Hidden || IsExcluded(child))
+            if (tree.Nodes.GetRef(child).HidesSubtree || IsExcluded(child))
             {
                 continue;
             }
@@ -700,7 +700,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         ref UiNode n = ref tree.Nodes.GetRef(handle);
 
         // A node that is a node of the tree under the folding one (CollectBelow) gives its text to its own node, not to the name.
-        if (n.Layout.Style.Hidden || IsExcluded(handle) || (!top && RoleOf(handle, folding: true) != SemanticsRole.None))
+        if (n.HidesSubtree || IsExcluded(handle) || (!top && RoleOf(handle, folding: true) != SemanticsRole.None))
         {
             return;
         }

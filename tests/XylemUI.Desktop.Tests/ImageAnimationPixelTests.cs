@@ -130,6 +130,59 @@ public sealed class ImageAnimationPixelTests
     }
 
     /// <summary>
+    /// An animation whose node's visibility is Hidden is not drawn, so it asks for no next frame and the pump settles; shown again,
+    /// it is drawn and asks for its next frame (design §3.2, "Nodes not shown"; §5.0.4, "How it advances").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A headless app of 100 x 80 on WARP whose images play, showing anim-keep.gif (no end) in a node whose visibility is a signal
+    ///   at Visible.
+    ///
+    /// Steps:
+    /// - Wait for the decode and pump 0 ms; read the frame. Set the signal to Hidden; wait and pump until settled; read whether a
+    ///   timer is left. Set it to Visible; wait and pump 0 ms twice; read whether a timer is left. Set it to Hidden; wait and settle.
+    ///
+    /// Expected:
+    /// - The animation's frame 0 at first. Hidden, the pump settles with no timer left (a playing animation with no end would not
+    ///   let it). Shown, a timer is due again.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AnimatedImage_Hidden_StopsAdvancing_AndGoesOnWhenShown()
+    {
+        const string Name = "anim-keep.gif";
+        string path = Path.Combine(Folder, Name);
+        Signal<Visibility> visibility = Signal.Create(Visibility.Visible);
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () => Image(ImageSource.FromFile(path)).Width(48).Height(32).Visibility(visibility),
+            Options(true)
+        );
+
+        Wait();
+        app.Pump(TimeSpan.Zero);
+        AssertFrame(app, Name, 0);
+
+        visibility.Set(Visibility.Hidden);
+        Settle(app);
+        bool timerWhileHidden = app.Time.UntilNextTimer() is not null;
+
+        visibility.Set(Visibility.Visible);
+        Wait();
+        app.Pump(TimeSpan.Zero);
+        Wait();
+        app.Pump(TimeSpan.Zero);
+        bool timerWhenShown = app.Time.UntilNextTimer() is not null;
+
+        visibility.Set(Visibility.Hidden);
+        Settle(app);
+
+        Assert.False(timerWhileHidden);
+        Assert.True(timerWhenShown);
+
+        static void Wait() => Assert.True(SpinWait.SpinUntil(() => ImageDecodeQueue.InFlight == 0, TimeSpan.FromSeconds(30)));
+    }
+
+    /// <summary>
     /// An animation that plays counts for what it holds: its texture and the buffer it uploads from, the decoder's two canvases,
     /// and the file's bytes when the decode read them itself, not when the app gave them (design §5.0.4, "The bytes counted").
     /// </summary>

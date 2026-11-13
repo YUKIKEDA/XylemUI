@@ -47,7 +47,7 @@ public static partial class Primitive
         for (NodeHandle at = node; !at.IsNone; at = tree.Nodes.GetRef(at).Parent)
         {
             ref UiNode n = ref tree.Nodes.GetRef(at);
-            if (n.Layout.Style.Hidden || (n.Pseudo & PseudoState.Disabled) != 0)
+            if (n.HidesSubtree || (n.Pseudo & PseudoState.Disabled) != 0)
             {
                 return false;
             }
