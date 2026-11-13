@@ -36,15 +36,10 @@ internal static class UiMessageReceivers<T>
     internal static void Add(Action<T> receive)
     {
         UiThread.VerifyAccess();
-        ScopeRef scope = Scope.CurrentRef;
-        if (!Scope.IsAlive(scope))
-        {
-            ThrowHelper.ThrowReceiverWithNoScope();
-        }
+        var receiver = new Receiver(receive, Scope.CurrentRef);
 
-        var receiver = new Receiver(receive, scope);
-
-        // Before the receiver is linked: a cleanup that cannot be registered (inside a computed value) leaves no receiver behind.
+        // Before the receiver is linked: a cleanup that cannot be registered (no current scope, or inside a computed value) throws
+        // and leaves no receiver behind.
         Scope.OnCleanup(receiver.Remove);
         receiver.Id = ++_added;
         receiver.Previous = _last;

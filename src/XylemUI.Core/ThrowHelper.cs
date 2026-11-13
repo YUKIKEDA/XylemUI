@@ -90,16 +90,6 @@ internal static class ThrowHelper
         throw new InvalidOperationException("No value is provided for the context, and the context has no default value.");
 
     /// <summary>
-    /// Throws <see cref="InvalidOperationException"/> when a receiver of a <see cref="UiMessage"/> is added with no current scope.
-    /// </summary>
-    [DoesNotReturn]
-    [StackTraceHidden]
-    internal static void ThrowReceiverWithNoScope() =>
-        throw new InvalidOperationException(
-            "A message receiver was added with no current scope, which would own it; add it inside Scope.Create or an effect."
-        );
-
-    /// <summary>
     /// Throws <see cref="ArgumentException"/> when a <see cref="UiMessage"/> is posted as a type that is not its own.
     /// </summary>
     /// <param name="parameterName">The name of the message's parameter.</param>
