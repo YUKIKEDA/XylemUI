@@ -64,7 +64,13 @@
 //   actions                    an action made by its name from the generated table, and the cost of dispatching it through
 //                              chains of boxes 1 and 50 deep (row KM1a, ActionCost.cs)
 //   keymap                     a key through the chain of 50 boxes with no row in the keymap, with 200 rows it does not match,
-//                              and with a row it matches (row KM1b, KeymapCost.cs)
+//                              and with a row it matches (row KM1b, KeymapCost.cs); a key through chains 1 and 50 deep with
+//                              the keymap grown to 200, 400, and 800 rows shaped like the parts', and the page faults of the
+//                              first keymap (row KM3; --no-faults does not read them)
+//   keymap --first-pieces      in a new process, the pieces a keymap's row is made of, each the first time, and then the first
+//                              keymap (row KM3)
+//   readers                    a scroll frame of a virtualized list of 10,000 rows next to 0 and 20 standing readers of
+//                              CanDispatch and KeyBindingFor: its time, its bytes, and the readers' runs (row KM3, ReaderCost.cs)
 //   text [--dark]              the text scene of the rendering comparison, drawn once (row T4, TextQuality.cs)
 //                              (--gray in grayscale; --frames N draws N frames and reports their costs, row T2;
 //                              --aliased bilevel and --scale S at scale S instead of the window's, row T8)
@@ -124,7 +130,8 @@ return scenario switch
     "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit")),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),
-    "keymap" => KeymapCost.Run(),
+    "keymap" => args.Contains("--first-pieces") ? KeymapCost.FirstPieces() : KeymapCost.Run(countFaults: !args.Contains("--no-faults")),
+    "readers" => ReaderCost.Run(),
     "menubar" => MenuBarCost.Run(),
     "dragdrop" => DragDropCost.Run(),
     "tooltip" => TooltipCost.Run(),

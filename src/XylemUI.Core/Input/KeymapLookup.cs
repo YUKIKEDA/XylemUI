@@ -65,7 +65,7 @@ internal static class KeymapLookup
             return null;
         }
 
-        var contexts = new KeyContext[8];
+        ref KeyContext[] contexts = ref tree.Actions.ReadContexts;
         int count = CollectContexts(tree, from, ref contexts);
         ReadOnlySpan<KeyContext> stack = contexts.AsSpan(0, count);
         KeyBinding? best = null;
