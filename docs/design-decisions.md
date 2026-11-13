@@ -848,7 +848,7 @@ Decision（テーマの土台、行 TH1。Grill の 4 巡目と 5 巡目でオ�
   OS の見た目（明暗、ハイコントラスト、アクセントの色）は Core の型と鍵（`SystemAppearance`）で、ウィンドウが根で置く（行 LC1 のロケールと同じ形）。
   テーマの部品は、部品ごとに Effect を 1 つ持ち、テーマのシグナルを読んで、見た目を木の setter で書く。
   テーマの鍵は既定値を持たない（§2.13 に合わせ、§13.2 の「既定値を持つ」を直した）。
-  型と鍵は Theme.Fluent、根では Source Generator が登録した包みが置く。トークンは microsoft/fluentui の `packages/tokens`（コミット `1f59fc2`）から生成する。ハイコントラストは OS の 8 色から作る。密度は `Standard` と `Compact`。切り替えはその場で変える（Issue #879 の Grill でオーナーが決定）。
+  型と鍵は Theme.Fluent。根では、アプリが `[assembly: WindowTheme(typeof(FluentRoot))]` で選んだ時だけ、生成したモジュール初期化子が書いた 1 つの包みが置く。テストは `HeadlessOptions.RootWrapper` で渡す。アプリは `FluentTheme.RequestForWindow` で窓ごとのテーマを求める（PR #882 のレビューの後、Issue #879 の Grill でオーナーが決定）。トークンは microsoft/fluentui の `packages/tokens`（コミット `1f59fc2`）から生成する。ハイコントラストは OS の 8 色から作る。密度は `Standard` と `Compact`。切り替えはその場で変える（Issue #879 の Grill でオーナーが決定）。
 
 Reason:
   1,000 個のボタンを NativeAOT で測った（`docs/benchmarks/th1-theme-follow.md`。CPU の負荷 77〜100% の下なので、形の間の比と、数・バイトを読む）。部品ごとに Effect 1 つの形は、切り替え 1 回が 1.4 ms、作る時の割り当てがボタン 1 つに 2.6 KB、生きている Scope が 1,002 で、切り替えもホバーも 0 バイトだった。
@@ -860,7 +860,11 @@ Rejected:
   - テーマが変わったら部分木を作り直す（切り替え 12.5 ms、1 回に 3.6 MB を割り当てる。フォーカス、欄の文字、スクロールの位置を失う。同じ Grill）
   - トークンごとにシグナルを置く（テーマの値を 1 つのオブジェクトにすると決めた。Issue #868）
   - テーマの鍵に既定値を持たせる（§2.13 の「値がシグナルの鍵は既定値を持たない」と食い違う。遅れて作る既定値のシグナルは、ウィンドウとテストの間で共有される。Issue #838・#868）
-  - アプリが根の関数をテーマで手で包む（包み忘れが実行時まで見つからない。既定のキーの行と同じく、Source Generator の登録で置く。Issue #879 の Grill でオーナーが決定）
+  - アプリが根の関数をテーマで手で包む（包み忘れが実行時まで見つからない。アプリは属性で選び、包むのは生成したコード。Issue #879 の Grill でオーナーが決定）
+  - Theme.Fluent が自分の包みを属性で示し、参照するだけで登録する（Issue #879 の 1 巡目の決定。アイコンだけを使うアプリ、たとえば `benchmarks/XylemUI.E2E` も包まれ、トークンとテーマの型がトリミングで落ちない。PR #882 のレビューの後、同じ Grill でオーナーが改めた）
+  - 登録した包みを依存の順に重ねる（Issue #879 の 1 巡目の決定。包みが 2 つあると、窓の背景と題名の棒の持ち主が 2 つになる。2 つの属性はビルドのエラー XYLEM010 にした。同じ）
+  - 登録をプロセスに 1 つの表に置き、ヘッドレスのテストも読む（テストの間で残り、テストがアプリの登録に依る。テストは `HeadlessOptions.RootWrapper` で渡す。同じ）
+  - 部分木の `FluentTheme.Current.Provide` で窓の背景と題名の棒も変える（部分木の値が窓の持ち物を変え、2 つの部分木が違う値を置くと決まらない。窓のテーマは `RequestForWindow` で求める。同じ）
   - ハイコントラストを明か暗に写すだけにする（Avalonia の Windows の形。利用者の選んだ色を使えず、要件 5 に届かない。Issue #879 の Grill でオーナーが決定）
   - テーマの切り替えを動かす（Flutter の `AnimatedTheme`。TH1 ではその場で変える。動かす形は、要るなら別の行で Grill から始める。同じ Grill）
   - Theme.Fluent の部品の関数を `using static` で `Primitive` と並べて呼ぶ形を勧める（同じ名前の `Button` で、C# は省いた引数の無い `Primitive.Button` を黙って選ぶ。`Fluent.Button` と名前を付けて呼ぶ。同じ Grill）
