@@ -1574,17 +1574,24 @@ public abstract record UiMessage
     public sealed record FileEnumerated(IReadOnlyList<string> Paths) : UiMessage;
     public sealed record FontLoaded(FontHandle Font, FontData Data) : UiMessage;
     // 今後追加される非同期処理の結果はすべてここに派生型として追加する
+
+    // UIスレッドだけが呼べる。型 T として積まれたメッセージの受け手を、今の Scope に足す
+    public static void On<T>(Action<T> receive) where T : UiMessage;
 }
 
 public interface IUiDispatcher
 {
-    void Post(UiMessage message);  // どのスレッドからでも呼べる。キューへ積み、UIスレッドを起床させる
+    // どのスレッドからでも呼べる。キューへ積み、UIスレッドを起床させる。T はメッセージ自身の型
+    void Post<T>(T message) where T : UiMessage;
 }
-
-// UIスレッド側のみが呼ぶ。UiTree/UiNode/Signal等のCore engine型への
-// 直接アクセスはこの経路を経由したコードからのみ許可される（§11.6 Invariant 10と同型の制約）
-internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 ```
+
+**`UiMessage` の受け手（行 U1、Issue #866。Grill の 4 巡目でオーナーが決定、Issue #868）:** 受け手は型ごとに登録する（`UiMessage.On<T>`）。表は総称型の静的なクラス（`UiMessageReceivers<T>`）が型ごとに 1 つ持つ。`Post<T>` は、呼ばれた型 `T` の表の配り方をメッセージと一緒にキューへ積むので、取り出しは型から何も引かず、リフレクションも使わない。
+
+- **型の一致:** 配り先は `T` で決まる。基底の型の変数を通して積むと基底の型の受け手に届いてしまうので、メッセージ自身の型が `T` でない `Post` は `ArgumentException` を投げる。積んだスレッドで、その場で分かる
+- **寿命:** 受け手は、登録した時の Scope のものである。その Scope を捨てると表から外れる。Scope が無い所と Computed の計算の中では登録できない（`InvalidOperationException`）。Effect の中で登録した受け手は、Effect が走り直すたびに入れ替わる
+- **配り方:** 1 つのメッセージは、その型の受け手すべてに、登録した順に渡る。受け手は自分の Scope を今の Scope として走る（入力のハンドラと同じ、§2.13）。メッセージ 1 つと、それを受ける受け手すべてで 1 つの `Batch` になる。配っている間に登録された受け手は、次のメッセージから受ける。受け手が投げた例外は Platform の例外ハンドラに渡し、残りの受け手は受け取る
+- **フレームワークの中の知らせ:** 画像のデコードやタイマーの知らせは `UiMessage` にせず、`SynchronizationContext.Post` で同じキューに積む。アプリの受け手と型を取り合わない
 
 キューは `ConcurrentQueue`（複数ライター・単一リーダー）とする（S5）。読み手は UI スレッドのループだけで、`await` で待つ読み手がいないため、`Channel` の非同期の読み出しは要らない。メッセージと `await` の継続は同じキューに積み、積んだ順に実行する。投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。起床機構はループの開始前（Windows では起床用のメッセージ専用ウィンドウを作る前）には何もしないので、ループは開始時に必ず1回キューを空にしてから最初の待機に入る。開始前に投入されたメッセージを取りこぼさないためである（S3 のレビュー）。
 
@@ -1592,7 +1599,7 @@ internal static void DispatchUiMessage(UiTree tree, UiMessage message) { ... }
 
 取り出すのはメインループだけなので、OS のモーダルループ（タイトルバーのドラッグ、リサイズ、システムメニュー、`MessageBox`）の間は、キューのメッセージも `await` の継続も止まり、モーダルループが終わってから実行される。起床のメッセージはメッセージ専用ウィンドウに送るので、モーダルループの間に捨てられることはない。
 
-`MessageHandler` が設定されていないときにメッセージを取り出したら、不変条件違反（§0.1）にする。黙って捨てると取りこぼしに気づけないためである。
+取り出したメッセージの型に、受け手が一度も登録されていなければ、不変条件違反（§0.1）にする。黙って捨てると取りこぼしに気づけないためである。受け手が登録された後ですべて外れた型のメッセージは、捨てて数える（`UiDispatcher.DroppedMessageCount`）。画面を閉じた後にワーカーの結果が届くのは普通のことで、落とす理由にならない（PR の Grill でオーナーが決定、Issue #866）。Flutter は dispose の後の `setState` をデバッグの assert にとどめ（`packages/flutter/lib/src/widgets/framework.dart` 1161〜1164 行目）、GPUI は捨てられた entity への更新を `Err` で返す（`WeakEntity::update`、`crates/gpui/src/app/entity_map.rs` 807〜811 行目）。「一度も登録されていない」は型ごとにプロセスで 1 つの状態である。
 
 `ConcurrentQueue` は使い終わったセグメントを捨てるので、継続が続くと定常状態でもアロケーションが出る。この経路はフレーム経路ではないので Zero-Alloc の対象外とする。
 
@@ -2565,7 +2572,7 @@ internal sealed record LineLayoutResult(GlyphRun[][] Lines);          // 行ご�
 - **幅の比べの許容:** 行が幅に収まるかの比べには、1/64 px の許容を入れる。入れるのは、Pass1・Pass2・緊急ブレークの比べと、文字の葉が幅を最大の内容の幅と比べる所（§3.2「文字の葉」）である。Pass1 は行の幅を累積の位置の差で、Pass2 は行の先頭からの和で求めるので、小数の大きさでは最後の桁が違うことがある。T1b のレビューで、自分の最大の幅で折り返すと、いちばん広い行が Pass2 で切られることが分かった（PR #293）。また、余白のある文字の葉に layout から返る幅は、余白を足して引いた値で、行の幅より 1 ulp 小さいことがある。V1a のレビューで、そうした葉が最大の内容の幅で折り返されることが分かった（PR #301）。13 px でカーニングが外れる差は 0.5 px 以上なので、本当に溢れる行は許容の外にある。Pass2 の比べは許容の 2 倍をとる。Pass1 が許容のぎりぎりで受け入れた行を、Pass2 が最後の桁だけ大きく測って切らないためである（PR #301 の再レビュー）
 - **内容の幅:** 最小は、改行の候補の間の並びのうち、行末の空白を除いて最も広いもの（skparagraph の `TextWrapper.cpp` 223〜241 行目と同じ）。最大は、強制改行の間の行のうち、行末の空白を除いて最も広いもの。skparagraph は最大に行末の空白を含めるが、CSS では折り返す空白は行末で幅に入らない
 - **折り返しの API（T1b の Grill でオーナーが決定、Issue #288）:** 下の `ShapingResult`・`LineBreakResult`・`LineLayoutResult` は内部の型のままにし、`XylemUI.Text` から Core に `InternalsVisibleTo` で見せる。比べた 3 つ（Flutter の `Paragraph`・`TextPainter`、Avalonia の `TextLayout`、GPUI の `WrappedLineLayout`）はどれも公開だが、使う側（`Text` の部品）が決まる前に公開の約束を作らない。利用者が自分で描く関数（`DrawingContext`）から折り返した文字を使う公開の API は、V1d で `TextLayout` にした（§3.2「描く関数から折り返した文字を使う」）。3 つとも 1 回整形した結果を持ち、幅ごとに折り返しだけをやり直す（skparagraph の `ParagraphImpl.cpp` 153〜155 行目、Avalonia の `TextRunCache.cs` 8〜17 行目、GPUI の `line_layout.rs` 602〜665 行目）。§3.2 の 2 段のキャッシュと同じ形である
-- **切ると危ない印:** HarfBuzz の `HB_GLYPH_FLAG_UNSAFE_TO_BREAK` を整形の結果に持ち、Pass2 はこの印で整形し直す範囲を決める。T1b では公開の `ShapedGlyph` に `UnsafeToBreak` を足したが、内部の型に移す（D3 の Grill、Issue #441、行 T16）。比べた 3 つは、どれもこの印を公開しない（Flutter の `dart:ui` の `GlyphInfo` は、字の境界と範囲だけ、`engine/src/flutter/lib/ui/text.dart` 1242〜1272 行目）。公開の `ShapedGlyph` は描画の入力（`DrawingContext.DrawText`）でもあり、そこでは印に意味が無い。中では既に `LaidGlyph` と `_unsafe` の並びに分けて持つので、内部の型はそれを使う。T16 で、T1b の折り返しの場面を前後で測る。比べた 3 つは、行の境界で整形し直すことにこの印を使わない（Pass2 が無い）。Avalonia（`GlyphInfo.cs` 8〜34 行目）と GPUI（`line_layout.rs` 45〜57 行目）は印を持たない。Skia の `SkShaper` は、自分の折り返し（`ShaperDrivenWrapper::wrap`）で、印のないクラスタの先頭を、整形の結果を使い回せる切れ目として記録するために読む（`modules/skshaper/src/SkShaper_harfbuzz.cpp` 970・1563 行目、skia fae1d2bd）。skparagraph は文を 1 本の行に整形してから自分で折り返すので（`ParagraphImpl.cpp` 681〜697 行目）、この折り返しを通らない
+- **切ると危ない印:** HarfBuzz の `HB_GLYPH_FLAG_UNSAFE_TO_BREAK` を整形の結果に持ち、Pass2 はこの印で整形し直す範囲を決める。T1b では公開の `ShapedGlyph` に `UnsafeToBreak` を足したが、行 T16 で外した（D3 の Grill、Issue #441。`ShapedGlyph` は 24 → 20 バイト）。内部の `TextShaper.ShapeRange` は、呼び手の印の並びに、前のグリフの続きの位置から印を直接書く（Issue #865 でオーナーが決定）。足りなければ、前の印を残して広げる。`ShapingResult` は各 run の印を `_unsafe` に書かせ、空きのグリフには「切ってよい」を書く。比べた 3 つは、どれもこの印を公開しない（Flutter の `dart:ui` の `GlyphInfo` は、字の境界と範囲だけ、`engine/src/flutter/lib/ui/text.dart` 1242〜1272 行目）。公開の `ShapedGlyph` は描画の入力（`DrawingContext.DrawText`）でもあり、そこでは印に意味が無い。中では既に `LaidGlyph` と `_unsafe` の並びに分けて持つので、内部の型はそれを使う。T16 で、T1b の折り返しの場面を前後で測る。比べた 3 つは、行の境界で整形し直すことにこの印を使わない（Pass2 が無い）。Avalonia（`GlyphInfo.cs` 8〜34 行目）と GPUI（`line_layout.rs` 45〜57 行目）は印を持たない。Skia の `SkShaper` は、自分の折り返し（`ShaperDrivenWrapper::wrap`）で、印のないクラスタの先頭を、整形の結果を使い回せる切れ目として記録するために読む（`modules/skshaper/src/SkShaper_harfbuzz.cpp` 970・1563 行目、skia fae1d2bd）。skparagraph は文を 1 本の行に整形してから自分で折り返すので（`ParagraphImpl.cpp` 681〜697 行目）、この折り返しを通らない
 - **ソフトハイフン:** 改行した行の末尾のソフトハイフン（U+00AD）は、既定で描く。描く文字は U+002D（skparagraph の既定の文字と同じ、`ParagraphStyle.h` 166〜167 行目）で、行の末尾のクラスタと同じフォントで整形し直す。行に収まるかの判定にハイフンの幅を入れる。ハイフンを足すと収まらないソフトハイフンは、収まらない候補として扱い、手前の候補（空白や手前のソフトハイフン）を選ぶ。緊急ブレークに入るのは、行に収まる候補が 1 つも無いとき（語が行より広いとき）だけである。改行しなかったソフトハイフン（行の途中、段落の終わり、空白の前）は描かず、幅は 0 である。U+002D のほかの文字（言語によるハイフンの字形、フォントにハイフンの字が無い場合）は、要る理由が出たら行を立てる。skparagraph は既定で描かず、オンにしても判定にハイフンの幅を入れないので、行の幅を超えることがある（`TextLine.cpp` 672〜705 行目）。Avalonia と GPUI は描かない
 - **確かめ方:** 適合のテストに加えて、端の場合として、LB4・LB5 の強制改行のそれぞれ、行末の空白、ソフトハイフン（改行した行だけでハイフンが出る）、行より広い語、緊急ブレークの後に Pass2 で溢れる場合、絵文字の ZWJ の並びと異体字セレクタを切らないこと、フォールバックの境界の切り直しを入れる。費用は、改行の候補の列挙の 1 文字の ns と、S8b の日本語の画面の折り返しの時間を測る。定常状態の割り当ては 0
 
