@@ -13,11 +13,12 @@
 ## 再現
 
 ```powershell
-dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -p:Rc1Store=A -o <dir>   # B、C も同じ
+dotnet publish benchmarks/XylemUI.E2E -c Release -r win-x64 -o <dir>
 cmd /c start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe context
-cmd /c start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe todo                  # RC1_WRAP=1 で、行を Provide で包む
+cmd /c start "" /affinity 4 /high /wait /b <dir>\XylemUI.E2E.exe todo
 ```
 
+- **3 案の版:** 3 案を切り替えるビルドの定数（`-p:Rc1Store=A`・`B`・`C`）と、Todo の行を `Provide` で包むスイッチ（環境変数 `RC1_WRAP=1`）は、計測のためのコードで、このリポジトリには残していない。ブランチ `feat/838-rc1-context` のコミット `ab15d29` にある
 - **順:** `context` は A・B・C・C・B・A を 2 巡（案ごとに 4 回）。`todo` は main・A・B・C・C・B・A・main を 2 巡、行を包んだ場合は A・B・C・C・B・A を 2 巡
 - **負荷:** ほかのプロジェクトのプロセスが動いていた。各回の直前の CPU の負荷は 0.3〜49.5 %、直後は 1.9〜50.6 % だった。負荷が下がるのを待たずに測った（オーナーの指示）
 - **値:** 4 回の中央値。かっこの中は最小〜最大

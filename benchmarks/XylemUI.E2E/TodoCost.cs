@@ -23,11 +23,6 @@ internal static class TodoCost
     {
         UiThread.Initialize();
         using var report = new Report("todo");
-        if (Environment.GetEnvironmentVariable("RC1_WRAP") == "1")
-        {
-            TodoApp.RowContext = new Context<int>();
-        }
-
         using var scene = new TodoScene();
         report.Number("items", Items);
         TodoModel model = scene.Model;
