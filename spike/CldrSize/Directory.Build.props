@@ -1,0 +1,3 @@
+<Project>
+  <!-- Stops the repository's Directory.Build.props: the spike gets no analyzers and no source generator (README.md). -->
+</Project>

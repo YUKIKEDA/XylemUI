@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The size spike of row LC2 (Issue #862). It references no XylemUI project, so the baseline is a bare NativeAOT console
+    program. The Directory.Build.props, Directory.Build.targets, and Directory.Packages.props beside this file stop the
+    repository's (.cursor/rules/scratch.mdc); the properties below are the ones from the repository's props that bear on
+    the size of the executable.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Deterministic>true</Deterministic>
+    <PublishAot>true</PublishAot>
+    <RootNamespace>CldrSize</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SpikeConfig Condition="'$(SpikeConfig)' == ''">baseline</SpikeConfig>
+  </PropertyGroup>
+  <Import Project="Generated/$(SpikeConfig)/Config.props" Condition="Exists('Generated/$(SpikeConfig)/Config.props')" />
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="@(SpikeAppCompile)" />
+  </ItemGroup>
+  <!-- The tables live in a library, as they would in a XylemUI package: ILC trims a library, whatever it does with the app. -->
+  <ItemGroup>
+    <ProjectReference Include="Data/CldrSize.Data.csproj" />
+  </ItemGroup>
+  <Target Name="CheckSpikeConfig" BeforeTargets="CoreCompile" Condition="!Exists('Generated/$(SpikeConfig)/Config.props')">
+    <Error Text="No configuration '$(SpikeConfig)' in Generated/: run tools/CldrSizeSpike/generate.py first." />
+  </Target>
+</Project>
