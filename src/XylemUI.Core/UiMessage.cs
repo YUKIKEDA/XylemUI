@@ -25,6 +25,7 @@ public abstract record UiMessage
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, there is no current scope, or a computed value is computing.
     /// </exception>
+    [UiThreadOnly]
     public static void On<T>(Action<T> receive)
         where T : UiMessage
     {
