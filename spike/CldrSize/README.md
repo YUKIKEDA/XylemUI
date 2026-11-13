@@ -1,0 +1,270 @@
+# CldrSize: how much CLDR tables grow a NativeAOT executable
+
+The spike of row LC2 (Issue #862). Design §4.11 says the format tables come from CLDR, are generated at build time, and that
+only the locales an app declares go into the binary; it leaves the cost to be measured in LC2. This project measures it.
+Issue #887 adds two tables and the decided locale set; its part is the section "Issue #887" below, and the rest of this
+file is Issue #862's, still true.
+
+The project references no XylemUI project: the baseline is a bare NativeAOT console program, so the growth is the tables and
+the code that reads them, and nothing else. It is not in `XylemUI.slnx`, and `build.ps1` does not build it.
+
+## What is measured
+
+The size of `CldrSize.exe` (NativeAOT, Release, win-x64) for each configuration, minus the size of `baseline`.
+
+| Axis | Values |
+| --- | --- |
+| Family | `plural` (cardinal and ordinal rules), `number` (symbols and patterns), `date` (names, patterns, week and hour data), `likely` (likelySubtags), `all` (the three per-locale families and likelySubtags) |
+| Locales | `1` (ja); `10` (en, ja, zh-Hans, zh-Hant, de, fr, es, ko, ar, ru); `all` (420 locales, below) |
+| Way | `a`: only the declared locales' data is in the source. `b`: every locale's data is in the source, each locale behind its own expression-bodied `static ReadOnlySpan<byte>` property, and the app references only the declared ones through a `switch` on a locale index |
+
+Configurations (22): `baseline`; `likely`; `a-{plural,number,date,all}-{1,10}`; `b-{plural,number,date,all}-{1,10,all}`.
+
+- `a-*-all` is left out: declaring every locale in way (a) compiles the same files as `b-*-all` (every locale emitted and
+  referenced).
+- likelySubtags is one table, not one per locale: locale matching needs the whole table whatever the app declares. It has
+  its own configuration (`likely`) and is part of every `all` configuration, the same table in both ways.
+
+What way (b) answers: if ILC drops the getter of every locale the switch does not name, the RVA data behind it goes too, and
+`b-X-N` is the same size as `a-X-N`. Compare the two rows, and with `-MapFile`, compare the generated data in the map with
+the "Raw referenced bytes" column.
+
+"All locales" is every locale whose effective coverage level in `cldr-core/coverageLevels.json` is `modern` (421 in CLDR
+49), without `und`, and with both `cldr-numbers-full/main/<tag>/numbers.json` and `cldr-dates-full/main/<tag>/ca-gregorian.json`:
+420. The `availableLocales.json` of the json-full release has an empty `modern` list, so the coverage file is the source.
+The full list is in `Generated/manifest.json` (`allLocales`).
+
+## How to run
+
+```powershell
+# Once: the generator (Python 3.10 or later; the hash of the zip is checked).
+python -I tools/CldrSizeSpike/generate.py --zip <path>\cldr-49.0.0-json-full.zip
+
+# Every configuration, with the ILC map (PowerShell 7).
+./spike/CldrSize/measure.ps1 -OutRoot <scratch>\cldr-size -MapFile
+```
+
+`measure.ps1` adds the Visual Studio Installer folder (vswhere) to PATH, then, for each configuration: deletes `obj\` and
+`bin\` of both projects, runs `dotnet publish spike/CldrSize/CldrSize.csproj -c Release -r win-x64 -o <OutRoot>\<config>
+-p:SpikeConfig=<config> --disable-build-servers` with a timeout (`-TimeoutSeconds`, 900 by default), and prints one line with
+the elapsed time, the size, and the status. A failed or timed-out publish is a row with its status, and the script exits 1 at
+the end; the build output is in `<OutRoot>\<config>\publish.log`. It writes `<OutRoot>\results.csv` and `results.md`.
+
+- `-Configs baseline,b-date-10` measures only those (put `baseline` in the list, or the growth columns are empty).
+- `-MapFile` adds `-p:IlcGenerateMapFile=true`, copies `CldrSize.map*` from `obj\` into `<OutRoot>\<config>\`, writes the 40
+  largest nodes to `map-top40.txt`, and sums the length of the nodes whose name matches `-DataSymbolPattern`
+  (`FieldRvaData|PrivateImplementationDetails` by default). "Map data growth" is that sum minus the baseline's.
+- `-CldrZip <zip>` runs the generator first when `Generated\manifest.json` is missing.
+
+A single configuration by hand: `dotnet publish spike/CldrSize/CldrSize.csproj -c Release -r win-x64 -o <dir> -p:SpikeConfig=b-date-10`.
+
+## Project layout
+
+- `Program.cs`: for each family the configuration defines (`CLDR_PLURAL`, `CLDR_NUMBER`, `CLDR_DATE`, `CLDR_LIKELY`), reads
+  the length and three bytes of each referenced locale's blob, and prints a checksum. The loop runs over `Selected.Count`,
+  so every case of the switch is reachable.
+- `Data/CldrSize.Data.csproj`: a class library that compiles the configuration's tables (`SpikeDataCompile`). The tables
+  live in a library, as they would in a XylemUI package, so the result does not depend on how ILC roots the entry assembly.
+- `Generated/<config>/Config.props`: imported by both projects; sets the defines and lists the files: `SpikeAppCompile` for
+  the executable, `SpikeDataCompile` for the library.
+- `Generated/<config>/Select.g.cs` (in the executable): the `Selected` class, one `switch` per family over the declared
+  locales.
+- `Generated/data-1`, `data-10`, `data-all` (in the library): public `PluralData`, `NumberData`, `DateData`, one public
+  property per locale. Way (a) compiles `data-1` or `data-10`; way (b) always compiles `data-all`.
+- `Generated/likely/LikelyData.g.cs` (in the library): the likelySubtags table.
+
+In `baseline` the library has no source file and the executable still references it.
+
+A blob equal to an earlier locale's is written as an alias (`L_en_GB => L_en;`). Roslyn would merge equal RVA data anyway;
+the alias keeps the source small.
+
+### What the spike turns off
+
+`Directory.Build.props`, `Directory.Build.targets`, and `Directory.Packages.props` beside the project stop the repository's
+files (`.cursor/rules/scratch.mdc`). That removes, for this project only:
+
+- `TreatWarningsAsErrors`, `AnalysisLevel=latest-recommended`, `EnforceCodeStyleInBuild`, `Features=strict`, and the
+  StyleCop analyzers: the generated files are one long line per locale and the spike is not product code.
+- The `XylemUI.Generators` analyzer reference, which every project gets: it would build the generator project and could add
+  a module initializer to the executable, which is not part of the table cost.
+- Central package management (`ManagePackageVersionsCentrally=false`): the spike references no package.
+
+Both csproj files set again the repository's properties that bear on the executable: `net10.0`, `LangVersion 14`, `Nullable`,
+`ImplicitUsings`, `InvariantGlobalization=true`, `Deterministic`, and `PublishAot=true` (as in `samples/Counter`). It is an
+`Exe` targeting plain `net10.0`, not `WinExe` on `net10.0-windows`, so the baseline holds no Windows targeting.
+
+## CLDR
+
+CLDR 49.0.0, `cldr-49.0.0-json-full.zip` from
+<https://github.com/unicode-org/cldr-json/releases/download/49.0.0/cldr-49.0.0-json-full.zip>, SHA-256
+`3B1F5D684D29C541D3ACF91FE834B3FE36AE0F34775E3EE50E93558BF14CA174` (`tools/CldrSizeSpike/README.md`). The json-full locale
+files are already resolved (every inherited value is present), so each locale's blob is complete on its own.
+
+## Encoding
+
+Every per-locale blob has the same frame (little-endian):
+
+```text
+u8  tag (1 plural, 2 number, 3 date)
+u8  flags (bit 0: string ids and offsets are u32; never set for these families)
+u8  F, then F fixed bytes
+u16 D, then D dense slots: a string id each (0xFFFF = absent); the slot order is fixed by the family
+u16 S, then S sparse entries: (u16 key id, u16 string id); key ids are global, shared by all locales
+u16 U, then U end offsets into the pool
+pool: the blob's distinct strings, UTF-8, each stored once
+```
+
+Strings are deduplicated within a blob only (a pool shared across locales would tie every locale to every other one and
+defeat the per-locale drop). Equal blobs are shared between locales. Nothing is compressed.
+
+| Family | Fixed bytes | Dense slots | Sparse entries |
+| --- | --- | --- | --- |
+| plural | none | 12: the cardinal and ordinal rule for zero, one, two, few, many, other; the rule text with the `@integer`/`@decimal` samples removed | none |
+| number | minimumGroupingDigits | 27: 13 symbols (decimal, group, list, percentSign, plusSign, minusSign, approximatelySign, exponential, superscriptingExponent, perMille, infinity, nan, timeSeparator), the 10 digits of the default numbering system, decimal, percent, and scientific standard patterns, currency standard, accounting, and their `alphaNextToNumber` forms, the 6 currencySpacing values | decimal long, decimal short, and currency short compact patterns (`1000-count-one` and so on), without `alt` variants |
+| date | first day of week, minimal days, preferred hour cycle (from `weekData` and `timeData`, by the likely region) | 218: months, days, quarters in every width, format and stand-alone; eras (abbr, names, narrow; BC and AD); date, time, and date-time formats (full to short); one pattern per Flutter skeleton (41 skeletons; the 7 `j` skeletons twice, 12-hour and 24-hour) | day periods (format and stand-alone, abbreviated, narrow, wide), without `alt` variants |
+
+likelySubtags (one table, 7,868 entries): a script table (4 ASCII bytes each), a region table (3 bytes each), then the
+entries sorted by key, each a packed key and value of 5 bytes: language as 3 letters base 27 in a u16, script as a u8
+index, region as a u16 index.
+
+The 304 sparse key ids (`Generated/manifest.json`, `sparseKeys`) are global; the strings they name live in the C# of the
+real implementation and are not counted.
+
+## Raw sizes (before compiling)
+
+From `generate.py`. "Bytes (every locale)" counts each locale's blob; "distinct" counts equal blobs once, which is what the
+executable can hold at best.
+
+| Family | Locales | Bytes (every locale) | Distinct blobs | Bytes (distinct blobs) |
+| --- | ---: | ---: | ---: | ---: |
+| plural | 1 | 35 | 1 | 35 |
+| plural | 10 | 874 | 7 | 769 |
+| plural | 420 | 45,242 | 52 | 5,340 |
+| number | 1 | 739 | 1 | 739 |
+| number | 10 | 10,040 | 10 | 10,040 |
+| number | 420 | 416,255 | 160 | 162,936 |
+| date | 1 | 1,420 | 1 | 1,420 |
+| date | 10 | 16,304 | 10 | 16,304 |
+| date | 420 | 704,711 | 237 | 406,739 |
+| likely | one table | 80,115 | 1 | 80,115 |
+
+Raw referenced bytes per configuration (the distinct blobs a configuration reaches, likelySubtags included in `all` and
+`likely`): plural 35 / 769 / 5,340; number 739 / 10,040 / 162,936; date 1,420 / 16,304 / 406,739; likely 80,115;
+all 82,309 / 107,228 / 655,130 (1 / 10 / 420 locales).
+
+## Issue #887: interval formats and currency symbols
+
+Row LC2's step 1 (design §4.11, "実装の前に測ること"): the size of the interval formats and of the currency symbols, measured
+the way Issue #862 measured the other tables. The generator writes Issue #862's files and configurations byte for byte as
+before (their sparse key ids are assigned first), and adds the following.
+
+### The decided locale set
+
+Design §4.11 "ロケールの組", counted by `generate.py` from the zip (it stops if a count or a check does not hold):
+
+| Step | Count |
+| --- | ---: |
+| `effectiveCoverageLevels` equal to `modern` in `cldr-core/coverageLevels.json` | 421 (`und` among them) |
+| without `und`, with `numbers.json` and `ca-gregorian.json` (Issue #862's set) | 420 |
+| minus the tags with a variant subtag (5 to 8 characters, or a digit and 3 characters): `be-tarask`, `ca-ES-valencia`, `el-polyton` | 417 |
+| plus `nb`, `bo`, `gsw`, `ug` (each has `numbers.json`, `ca-gregorian.json`, and `currencies.json`) | 421 tables |
+| plus `root`, built from the `und` files of cldr-json | 422 tables |
+| plus `tl`, an entry that holds `fil`'s blobs (`aliases.json`: `tl` to `fil`, reason `legacy`) | 423 entries |
+
+`root` takes its week and hour data from the region `001`, not from `und`'s likely subtags (`en-Latn-US`). The full list is
+`issue887.decidedLocales` in `Generated/manifest.json`.
+
+### Tables
+
+Both use Issue #862's blob frame (section "Encoding"), as two more families, each a class of its own in
+`Generated/data-decided/` and a define of its own, so either can be compiled in or left out:
+
+| Family | Tag | Define | Fixed | Dense slots | Sparse entries |
+| --- | ---: | --- | --- | --- | --- |
+| interval | 4 | `CLDR_INTERVAL` | none | 1: `intervalFormatFallback` | one per greatest-difference field (`y`, `M`, `d`, `G`, `a`, `B`, `h`, `H`, `m`) of each of the 45 skeletons below that `dateTimeFormats.intervalFormats` of `ca-gregorian.json` has under that exact key; key `interval/<skeleton>/<field>`; the `-alt-variant` fields are left out |
+| currency | 5 | `CLDR_CURRENCY` | none | none | for each currency of the locale's `currencies.json`: `symbol` unless it equals the ISO code (key `currency-symbol/<code>`), and `symbol-alt-narrow` unless it equals the standard symbol, or the code when there is none (key `currency-narrow/<code>`) |
+
+- The 45 interval skeletons are Flutter's 41 with each `j` resolved to `h` and to `H` and the repeats removed (`jm` with `H`
+  is `Hm`): `issue887.intervalSkeletons` in the manifest. No skeleton matching: a skeleton without an item of its own (`E`,
+  `QQQ`, the `z` forms, and others) stores nothing and falls back to `intervalFormatFallback` at run time. 10,349 of the
+  18,990 (422 tables times 45) skeletons have an item.
+- The pruning of currency symbols loses nothing: CLDR's fallback for a missing narrow symbol is the standard symbol, and for
+  a missing symbol the ISO code, which is the key. Of 114,219 currency entries in the 422 tables, 29,386 have a `symbol` and
+  43,352 a `symbol-alt-narrow`; 49,813 sparse entries are stored. The table with every symbol stored (no pruning) is counted
+  as `currency-unpruned` and never emitted.
+- No currency names (`displayName*`), no `symbol-alt-variant`, no `currencyData` (digits), no `intervalFormatRanges`.
+- Strings are deduplicated as in Issue #862: within a blob (a symbol equal to its narrow form, or the same pattern under two
+  fields, is stored once), and a blob equal to an earlier entry's is an alias (`L_tl => L_fil;`). Nothing is shared across
+  blobs. The 345 new sparse key ids (649 in all) name strings the real implementation holds in code; they are not counted.
+
+### Configurations (12)
+
+`c-{base,interval,currency,both}-{1,10,all}`: way (b) over the decided set (`data-decided`, all 423 entries in the source),
+each with likelySubtags. `base` is the three families of Issue #862; `interval`, `currency`, and `both` add the new tables.
+`1` is `ja`, `10` is Issue #862's ten locales, and `all` references all 423 entries. The growth of a new table is
+`c-X-N` minus `c-base-N`.
+
+```powershell
+./spike/CldrSize/measure-887.ps1 -OutRoot <scratch>\cldr-size-887
+```
+
+`measure-887.ps1` runs the generator (the zip in `spike/CldrSize/cldr-zip/` by default, or `-CldrZip`), then `measure.ps1`
+with `-MapFile` for `baseline` and the 12 configurations, and prints one line per configuration: the executable size, the
+growth over `baseline` and over `c-base-N`, and the raw referenced bytes of each table. It writes
+`<OutRoot>\results-887.md` beside `results.csv` and `results.md`.
+
+### Raw sizes (before compiling)
+
+| Family | Entries | Bytes (every entry) | Distinct blobs | Bytes (distinct blobs) |
+| --- | ---: | ---: | ---: | ---: |
+| interval | 1 | 890 | 1 | 890 |
+| interval | 10 | 9,643 | 10 | 9,643 |
+| interval | 423 | 417,699 | 136 | 128,375 |
+| currency | 1 | 803 | 1 | 803 |
+| currency | 10 | 8,625 | 10 | 8,625 |
+| currency | 423 | 359,863 | 245 | 202,509 |
+| currency-unpruned (not emitted) | 1 / 10 / 423 | 866 / 10,643 / 548,340 | 1 / 10 / 248 | 866 / 10,643 / 298,732 |
+| plural, number, date (the base) | 423 | 1,171,172 | 52 + 163 + 240 | 582,296 |
+
+The base of the decided set is larger than Issue #862's 420 locales by 7,281 bytes (number 165,413 against 162,936, date
+411,543 against 406,739; plural unchanged). Number: `bo`, `gsw`, `ug`, and `root` hold blobs that Issue #862's set lacks,
+and `root`'s equals `bo`'s, so 3 more. Date: the same 4 add 4, and removing `el-polyton` drops 1, so 3 more. `nb`'s blobs
+equal blobs that Issue #862's set already has.
+
+### Not verified when written
+
+Issue #887's part was written without running `dotnet`: the `CLDR_INTERVAL` and `CLDR_CURRENCY` blocks of `Program.cs` and
+the `c-*` configurations were not compiled. A script checked the five classes of `data-decided`: 423 properties each, one
+definition per name, every alias naming an earlier property, bytes in 0..255. `measure-887.ps1` was parsed and its summary
+run against a stand-in `measure.ps1` that wrote made-up sizes.
+
+## Simplifications
+
+- Gregorian calendar only (design §4.11) and the default numbering system only; other numbering systems' symbols are not
+  stored.
+- No currency symbols or names (`currencies.json`), no units, no relative times, no plural ranges, no data for parsing short
+  dates. The number family has the currency patterns only.
+- Day periods are stored for every key CLDR has (midnight, morning1, and so on), not only am and pm.
+- 5,650 of the 20,160 skeleton patterns are derived, not read: CLDR's `availableFormats` lacks some of Flutter's skeletons
+  (`EEEE`, `LLL`, `LLLL`, `MMMM`, `QQQ`, `QQQQ`, `m`, `s`, `jmz`, `jz`, often `MMMMEEEEd`, `yMMMMEEEEd`, `yMMMMd`). They are
+  approximated (`EEEE` as `cccc`, `yMMMMEEEEd` as the full date format, `jz` as the `h` or `H` pattern followed by ` z`, `MMMM` from the `MMM` pattern), which
+  gives patterns of about the right length; the real generator needs CLDR's skeleton matching (or Flutter's table).
+- The plural rules are stored as rule text for a runtime parser. A generator that compiles them into code or byte code may
+  be larger or smaller; the text is 35 bytes for ja and 5,340 bytes for the 52 distinct rule sets.
+- The first day of week and the hour cycle come from the region of the likely subtags of the locale (`ja` gives `JP`).
+- The reading code is three bytes and a length per blob: the growth is the data, not a formatter.
+
+## What could not be verified here
+
+The spike was written without running `dotnet`: the project, `Program.cs`, and the generated C# were not compiled, and
+`measure.ps1` was parsed (no errors) and its map parser tested on a made-up XML file, but never run against a publish. The
+generated files were checked by a script for balanced braces, valid identifiers, one definition per property, and bytes in
+0..255.
+
+- The ILC map's format: the script reads any element with `Name` and `Length` (or `Size`) attributes, and counts as data the
+  names matching `FieldRvaData|PrivateImplementationDetails`. If the map names RVA data otherwise, the "Map data growth"
+  column is 0; read `map-top40.txt` and pass `-DataSymbolPattern`.
+- The map file's name and folder: the script takes the first `CldrSize.map*` under `obj\`.
+- Whether `--disable-build-servers` is accepted by `dotnet publish` of the installed SDK (it is since .NET 7).
+- Whether CSharpier 1.3 (`build.ps1`) accepts the formatting of `Program.cs`, the csproj, and the props files as written.
+  `Generated/` is gitignored and its files start with `// <auto-generated>`, so CSharpier skips them.

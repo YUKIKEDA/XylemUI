@@ -1,0 +1,4 @@
+# Written by tools/CldrSizeSpike/generate.py from the pinned CLDR zip (about 3 MB of C#).
+Generated/
+# The pinned CLDR zip (76 MB), downloaded by hand (README.md).
+cldr-zip/
