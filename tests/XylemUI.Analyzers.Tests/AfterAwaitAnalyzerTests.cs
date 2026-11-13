@@ -15,7 +15,8 @@ public sealed class AfterAwaitAnalyzerTests
     /// - Cases, each the body of an async method unless it says otherwise: <c>Effect.Create</c> after an await;
     ///   <c>Scope.OnCleanup</c> after one; <c>Elements.Box()</c> after one; the app's own static function that returns an
     ///   <c>Element</c> after one; <c>Box()</c> in the body of an <c>await foreach</c>; a call after an await inside an async
-    ///   lambda of a synchronous method; one inside an async local function of a synchronous method.
+    ///   lambda of a synchronous method; one inside an async local function of a synchronous method; <c>Text</c> whose argument
+    ///   is an <c>await</c>, and <c>Column</c> whose second argument is one (a call runs after its arguments).
     ///
     /// Steps:
     /// - Run the analyzer on the case.
@@ -28,6 +29,8 @@ public sealed class AfterAwaitAnalyzerTests
     [InlineData("async Task M() { await Task.Yield(); Scope.OnCleanup(() => { }); }", "Scope.OnCleanup(() => { })", "Scope.OnCleanup")]
     [InlineData("async Task M() { await Task.Yield(); _ = Elements.Box(); }", "Elements.Box()", "Elements.Box")]
     [InlineData("async Task M() { await Task.Yield(); _ = Card(); }", "Card()", "Code.Card")]
+    [InlineData("async Task M() { _ = Text(await LoadAsync()); }", "Text(await LoadAsync())", "Elements.Text")]
+    [InlineData("async Task M() { _ = Column(Box(), await MakeAsync()); }", "Column(Box(), await MakeAsync())", "Elements.Column")]
     [InlineData("async Task M() { await foreach (int i in Items()) { _ = Box(); } }", "Box()", "Elements.Box")]
     [InlineData("void M() { Func<Task> f = async () => { await Task.Yield(); _ = Box(); }; }", "Box()", "Elements.Box")]
     [InlineData("void M() { async Task Local() { await Task.Yield(); _ = Box(); } _ = Local(); }", "Box()", "Elements.Box")]
@@ -96,6 +99,10 @@ public sealed class AfterAwaitAnalyzerTests
                 private static {{member}}
 
                 private static Task Wrap(Element element) => Task.CompletedTask;
+
+                private static Task<string> LoadAsync() => Task.FromResult("a");
+
+                private static Task<Element> MakeAsync() => Task.FromResult(Box());
 
                 private static T Same<T>(T value) => value;
 

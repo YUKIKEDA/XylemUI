@@ -35,6 +35,7 @@ current value on purpose. The rule reports only the argument that a reactive ove
 ## What it does not see
 
 - A lambda inside the argument: that is the reactive form.
+- A pair of generic overloads (`M<T>(T value)` and `M<T>(Func<T> value)`): the two type parameters are different symbols, so the pair is not found.
 - A value kept in a variable first (`string s = count.Get().ToString();` and then `Text(s)`).
 - A value another method read and returned.
 

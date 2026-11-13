@@ -90,7 +90,9 @@ public sealed class AfterAwaitAnalyzer : DiagnosticAnalyzer
 
         foreach (SyntaxNode node in nodes)
         {
-            if (node is not InvocationExpressionSyntax invocation || invocation.SpanStart < firstAwait)
+            // A call runs after its arguments: one whose argument holds the await (Text(await LoadAsync())) ends after it and
+            // runs in the continuation; one that is the operand of the await ends with it and runs before.
+            if (node is not InvocationExpressionSyntax invocation || invocation.Span.End <= firstAwait)
             {
                 continue;
             }

@@ -22,6 +22,7 @@ Put the fixed children and the rows in boxes of their own: `Column(header, Colum
 
 - A box kept in a variable (`var list = Column(header);` and then `list.For(...)`).
 - A box another method returned.
+- A box given its children as an array or a span (`Column(rows)`): only children written as arguments (`Column(a, b)`) are seen.
 - A second `For` called in another statement.
 
 ## How to suppress it

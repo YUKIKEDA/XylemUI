@@ -25,8 +25,9 @@ after the view is gone.
 
 Run the code in a lambda given to `Scope.Run` with the scope it belongs to, or set a signal and let the view react to it.
 
-"After the first `await`" is the order in which the code is written: the operand of an `await` comes before it, and the body of an
-`await foreach` comes after it.
+"After the first `await`" is the order in which the code runs as it is written: the operand of an `await` comes before it, the
+body of an `await foreach` comes after it, and a call whose argument holds the `await` comes after it too, since a call runs
+after its arguments (`Text(await LoadTitleAsync())` makes the text in the continuation).
 
 ## What it does not see
 
