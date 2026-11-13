@@ -455,9 +455,12 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             PushTree(update, link);
         }
 
-        foreach (AccessibilityNode drawn in node.Synthetic)
+        if (node.SyntheticCount > 0)
         {
-            PushTree(update, drawn);
+            foreach (AccessibilityNode drawn in node.Synthetic)
+            {
+                PushTree(update, drawn);
+            }
         }
     }
 
@@ -484,36 +487,13 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetNumericValue(made, range.Value);
             AccessKit.NodeSetMinNumericValue(made, range.Minimum);
             AccessKit.NodeSetMaxNumericValue(made, range.Maximum);
-
-            // A step of 0 is none: the adapter gives UIA the small step as the large one when the large one is none.
-            if (range.Step > 0)
-            {
-                AccessKit.NodeSetNumericValueStep(made, range.Step);
-            }
-
-            if (range.LargeStep > 0)
-            {
-                AccessKit.NodeSetNumericValueJump(made, range.LargeStep);
-            }
         }
 
-        // AccessKit counts the level from 0, and the adapter adds 1 for UIA's Level (design §4.4.1, "Level, place, and count").
-        if (node.Level >= 0)
+        // A node with none of the values row AX1 added has no side object and makes no call for them.
+        if (node.More is { } more)
         {
-            AccessKit.NodeSetLevel(made, (nuint)node.Level);
+            SetMore(made, more);
         }
-
-        if (node.Live != SemanticsLive.Inherit)
-        {
-            AccessKit.NodeSetLive(made, (byte)(AccessKit.LiveOff + (node.Live - SemanticsLive.Off)));
-        }
-
-        if (node.Orientation != SemanticsOrientation.None)
-        {
-            AccessKit.NodeSetOrientation(made, (byte)(AccessKit.OrientationHorizontal + (node.Orientation - SemanticsOrientation.Horizontal)));
-        }
-
-        SetRelations(made, node);
 
         if ((node.States & AccessibilityStates.ClipsChildren) != 0)
         {
@@ -564,9 +544,42 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         AccessKit.NodeAddAction(made, AccessKit.ActionScrollIntoView);
     }
 
+    // The values row AX1 added (design §4.4.1, "The shape AX1 adds"), of a node that has its side object.
+    private static void SetMore(nint made, AccessibilityNodeMore more)
+    {
+        // A step of 0 is none: the adapter gives UIA the small step as the large one when the large one is none.
+        if (more.Step > 0)
+        {
+            AccessKit.NodeSetNumericValueStep(made, more.Step);
+        }
+
+        if (more.LargeStep > 0)
+        {
+            AccessKit.NodeSetNumericValueJump(made, more.LargeStep);
+        }
+
+        // AccessKit counts the level from 0, and the adapter adds 1 for UIA's Level (design §4.4.1, "Level, place, and count").
+        if (more.Level >= 0)
+        {
+            AccessKit.NodeSetLevel(made, (nuint)more.Level);
+        }
+
+        if (more.Live != SemanticsLive.Inherit)
+        {
+            AccessKit.NodeSetLive(made, (byte)(AccessKit.LiveOff + (more.Live - SemanticsLive.Off)));
+        }
+
+        if (more.Orientation != SemanticsOrientation.None)
+        {
+            AccessKit.NodeSetOrientation(made, (byte)(AccessKit.OrientationHorizontal + (more.Orientation - SemanticsOrientation.Horizontal)));
+        }
+
+        SetRelations(made, more);
+    }
+
     // The relations, also for macOS and Linux (design §4.4.1, "Folding on Windows"): the Windows adapter reads only the controlled
     // nodes and the active descendant, and the tree folds the others into the name and the description.
-    private static void SetRelations(nint made, AccessibilityNode node)
+    private static void SetRelations(nint made, AccessibilityNodeMore node)
     {
         if (node.LabelledBy is { } labels)
         {
@@ -690,26 +703,12 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetRequired(made);
         }
 
-        // Written for macOS and Linux: no adapter reads it (design §4.4.1, "Values no adapter reads"); on Windows the description
-        // carries the error message.
-        if ((states & AccessibilityStates.Invalid) != 0)
+        // The states row AX1 added: one test for a node with none of them.
+        if (
+            (states & (AccessibilityStates.Invalid | AccessibilityStates.Multiselectable | AccessibilityStates.Busy | AccessibilityStates.Modal)) != 0
+        )
         {
-            AccessKit.NodeSetInvalid(made, AccessKit.InvalidTrue);
-        }
-
-        if ((states & AccessibilityStates.Multiselectable) != 0)
-        {
-            AccessKit.NodeSetMultiselectable(made);
-        }
-
-        if ((states & AccessibilityStates.Busy) != 0)
-        {
-            AccessKit.NodeSetBusy(made);
-        }
-
-        if ((states & AccessibilityStates.Modal) != 0)
-        {
-            AccessKit.NodeSetModal(made);
+            SetAddedStates(made, states);
         }
 
         // The roles that toggle are toggled either way, or the adapter gives them no Toggle (SelectionItem for the radio roles);
@@ -750,6 +749,31 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         }
     }
 
+    private static void SetAddedStates(nint made, AccessibilityStates states)
+    {
+        // Written for macOS and Linux: no adapter reads it (design §4.4.1, "Values no adapter reads"); on Windows the description
+        // carries the error message.
+        if ((states & AccessibilityStates.Invalid) != 0)
+        {
+            AccessKit.NodeSetInvalid(made, AccessKit.InvalidTrue);
+        }
+
+        if ((states & AccessibilityStates.Multiselectable) != 0)
+        {
+            AccessKit.NodeSetMultiselectable(made);
+        }
+
+        if ((states & AccessibilityStates.Busy) != 0)
+        {
+            AccessKit.NodeSetBusy(made);
+        }
+
+        if ((states & AccessibilityStates.Modal) != 0)
+        {
+            AccessKit.NodeSetModal(made);
+        }
+    }
+
     // The roles whose value is text that SetValue replaces (design §4.4.1, "The SetValue action").
     private static bool TakesText(SemanticsRole role) =>
         role is SemanticsRole.Edit or SemanticsRole.SearchBox or SemanticsRole.DateInput or SemanticsRole.TimeInput or SemanticsRole.DateTimeInput;
@@ -774,7 +798,8 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
 
     private void SetChildren(nint made, AccessibilityNode node)
     {
-        int count = node.Children.Count + node.Links.Count + node.Synthetic.Count;
+        int drawn = node.SyntheticCount;
+        int count = node.Children.Count + node.Links.Count + drawn;
         if (count == 0)
         {
             return;
@@ -795,7 +820,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             _children[node.Children.Count + i] = node.Links[i].Id.Value;
         }
 
-        for (int i = 0; i < node.Synthetic.Count; i++)
+        for (int i = 0; i < drawn; i++)
         {
             _children[node.Children.Count + node.Links.Count + i] = node.Synthetic[i].Id.Value;
         }

@@ -519,6 +519,11 @@ internal sealed class AccessibilityTree(UiTree tree)
     // renamed again after its turn is marked for the next update, so that a cycle of names ends.
     private void RefreshHolders()
     {
+        if (_relationWork.Count == 0)
+        {
+            return;
+        }
+
         for (int i = 0; i < _relationWork.Count; i++)
         {
             NodeHandle holder = _relationWork[i];
@@ -645,9 +650,12 @@ internal sealed class AccessibilityTree(UiTree tree)
             _changes.Add(new AccessibilityChange(link.Id, AccessibilityChangeKind.Removed));
         }
 
-        foreach (AccessibilityNode drawn in node.Synthetic)
+        if (node.SyntheticCount > 0)
         {
-            RemoveSynthetic(drawn);
+            foreach (AccessibilityNode drawn in node.Synthetic)
+            {
+                RemoveSynthetic(drawn);
+            }
         }
 
         if (_nodes.TryGetValue(node.Node, out AccessibilityNode? same) && same == node)
@@ -686,15 +694,20 @@ internal sealed class AccessibilityTree(UiTree tree)
         NodeHandle handle = node.Node;
         bool folding = node.Parent is not null && TakesNameFromContent(node.Parent.Role);
         SemanticsRole role = RoleOf(handle, folding);
-        AccessibilityInfo? info = tree.AccessibilityInfoOf(handle);
+
+        // The app's and the part's information are read once each: the name reads them apart (NameOf).
+        AccessibilityInfo? part = tree.PartAccessibilityOf(handle);
+        AccessibilityInfo? app = tree.AppAccessibilityOf(handle);
+        AccessibilityInfo? info = app is null ? part : app.Over(part);
         AccessibilityRelations? relations = tree.AccessibilityRelationsOf(handle);
-        string? name = NameOf(handle, role, relations, node.Name);
+        string? name = NameOf(handle, app, part, role, relations, node.Name);
         if (handle == tree.Root)
         {
             name ??= tree.Title;
         }
 
         string? value = info?.Value ?? tree.AccessibilityValueOf(handle);
+        SemanticsRange? range = info?.Range;
         AccessibilityStates states = StatesOf(handle, info);
         string? description = relations is null ? info?.Description : DescriptionOf(info, relations, states, node.Description);
         ref UiNode n = ref tree.Nodes.GetRef(handle);
@@ -709,9 +722,6 @@ internal sealed class AccessibilityTree(UiTree tree)
             : !n.Parent.IsNone && tree.VirtualHostOf(n.Parent) is { } rows && rows.IndexOf(handle, out int index) ? index
             : -1;
         int size = info is { SizeOfSet: > 0 } ? info.SizeOfSet : tree.VirtualHostOf(handle)?.Count ?? -1;
-        int level = info is { Level: > 0 } ? info.Level - 1 : -1;
-        SemanticsLive live = info is { Live: not SemanticsLive.Inherit } ? info.Live : LiveOf(role);
-        SemanticsOrientation orientation = info?.Orientation ?? SemanticsOrientation.None;
         bool renamed = node.Name != name;
         bool changed =
             node.Role != role
@@ -719,16 +729,13 @@ internal sealed class AccessibilityTree(UiTree tree)
             || node.Description != description
             || node.Value != value
             || node.States != states
-            || node.Range != info?.Range
+            || node.Range != range
             || node.ChildOffset != childOffset
             || node.ScrollRange != scrollRange
             || node.Bounds != bounds
             || node.AutomationId != automationId
             || node.PositionInSet != position
-            || node.SizeOfSet != size
-            || node.Level != level
-            || node.Live != live
-            || node.Orientation != orientation;
+            || node.SizeOfSet != size;
         if (renamed)
         {
             QueueHolders(handle);
@@ -738,15 +745,18 @@ internal sealed class AccessibilityTree(UiTree tree)
         node.Name = name;
         node.Description = description;
         node.Value = value;
-        node.Level = level;
-        node.Live = live;
-        node.Orientation = orientation;
-        changed |= WriteRelations(node, relations);
+
+        // The values row AX1 added (design §4.4.1, "The shape AX1 adds"): a node that has none, and whose information, role, and
+        // relations give none, writes none and makes no side object.
+        if (node.More is not null || relations is not null || info is { GivesMore: true } || LiveOf(role) != SemanticsLive.Inherit)
+        {
+            changed |= WriteMore(node, info, role, relations);
+        }
 
         // Not compared: a field's placeholder comes from its options when the field is made, and the app cannot set it.
         node.Placeholder = info?.Placeholder;
         node.States = states;
-        node.Range = info?.Range;
+        node.Range = range;
         node.ChildOffset = childOffset;
         node.ScrollRange = scrollRange;
         node.Bounds = bounds;
@@ -756,12 +766,39 @@ internal sealed class AccessibilityTree(UiTree tree)
         return changed;
     }
 
+    // The level, the live setting, the orientation, and the relations' ids of a node that has or takes one of them.
+    private bool WriteMore(AccessibilityNode node, AccessibilityInfo? info, SemanticsRole role, AccessibilityRelations? relations)
+    {
+        int level = info is { Level: > 0 } ? info.Level - 1 : -1;
+        SemanticsLive live = info is { Live: not SemanticsLive.Inherit } ? info.Live : LiveOf(role);
+        SemanticsOrientation orientation = info?.Orientation ?? SemanticsOrientation.None;
+        bool changed = node.Level != level || node.Live != live || node.Orientation != orientation;
+        node.Level = level;
+        node.Live = live;
+        node.Orientation = orientation;
+
+        // A node that never had a relation and has none writes no ids.
+        if (relations is not null || node.HadRelations)
+        {
+            changed |= WriteRelations(node, relations);
+        }
+
+        return changed;
+    }
+
     // A node's name (design §4.4.1, "Folding on Windows"): the app's name, the text of the nodes that name it, its part's name, and
     // the text of its content for a role that takes its name from it, the first there is. The name the node had is kept when it is
     // the same, so that a frame that changes no name makes no string.
-    private string? NameOf(NodeHandle handle, SemanticsRole role, AccessibilityRelations? relations, string? before)
+    private string? NameOf(
+        NodeHandle handle,
+        AccessibilityInfo? app,
+        AccessibilityInfo? part,
+        SemanticsRole role,
+        AccessibilityRelations? relations,
+        string? before
+    )
     {
-        if (tree.AppAccessibilityOf(handle)?.Name is { } own)
+        if (app?.Name is { } own)
         {
             return own;
         }
@@ -780,9 +817,9 @@ internal sealed class AccessibilityTree(UiTree tree)
             }
         }
 
-        if (tree.PartAccessibilityOf(handle)?.Name is { } part)
+        if (part?.Name is { } partName)
         {
-            return part;
+            return partName;
         }
 
         return TakesNameFromContent(role) ? FoldName(handle, before) : null;
@@ -896,8 +933,14 @@ internal sealed class AccessibilityTree(UiTree tree)
     // made; an element's node, or the node of a key among the nodes the node's draw function adds. Returns whether it changed.
     private bool SyncActive(AccessibilityNode node)
     {
+        AccessibilityRelations? held = tree.AccessibilityRelationsOf(node.Node);
+        if (held is null && node.More is null)
+        {
+            return false;
+        }
+
         AccessibilityNodeId active = default;
-        if (tree.AccessibilityRelationsOf(node.Node) is { } relations && (relations.ActiveElement is not null || relations.ActiveKey is not null))
+        if (held is { } relations && (relations.ActiveElement is not null || relations.ActiveKey is not null))
         {
             if (!_descendantWatches.TryGetValue(node.Node, out AccessibilityWatch? watch))
             {
@@ -958,11 +1001,21 @@ internal sealed class AccessibilityTree(UiTree tree)
     // signals mark the node. Returns whether the node's own list of them changed.
     private bool SyncSynthetic(AccessibilityNode owner)
     {
-        AccessibleChildrenFunc? build = HasNoChildren(owner.Role) ? null : tree.AccessibleChildrenOf(owner.Node);
+        AccessibleChildrenFunc? build = tree.AccessibleChildrenOf(owner.Node);
+        if (build is null && owner.More is null)
+        {
+            return false;
+        }
+
+        if (HasNoChildren(owner.Role))
+        {
+            build = null;
+        }
+
         if (build is null)
         {
             StopWatch(_childWatches, owner.Node);
-            if (owner.Synthetic.Count == 0)
+            if (owner.SyntheticCount == 0)
             {
                 return false;
             }
@@ -1511,6 +1564,12 @@ internal sealed class AccessibilityTree(UiTree tree)
     // The states only the app knows, but the open state, as the tree's.
     private static AccessibilityStates AppStates(SemanticsStates own)
     {
+        // Most nodes have none: one test, not nine.
+        if (own == SemanticsStates.None)
+        {
+            return AccessibilityStates.None;
+        }
+
         var states = AccessibilityStates.None;
         if ((own & SemanticsStates.Checked) != 0)
         {

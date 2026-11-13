@@ -118,6 +118,10 @@ internal enum AccessibilityStates : uint
 /// <param name="node">The node of the UI tree it stands for.</param>
 internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
 {
+    // The node's value in a range, but the steps, which are in the side object: a node with a range and no step holds what it held
+    // before row AX1.
+    private RangeValues? _range;
+
     /// <summary>
     /// Gets the node's id.
     /// </summary>
@@ -166,7 +170,11 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     /// <summary>
     /// Gets or sets the node's value in a range.
     /// </summary>
-    public SemanticsRange? Range { get; set; }
+    public SemanticsRange? Range
+    {
+        get => RangeOf();
+        set => SetRange(value);
+    }
 
     /// <summary>
     /// Gets or sets the node's border box in its parent's coordinates: from the parent's border box, before the parent moves its
@@ -197,70 +205,6 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     public int SizeOfSet { get; set; } = -1;
 
     /// <summary>
-    /// Gets or sets the node's level, from 0 as AccessKit counts it: the app's <see cref="AccessibilityInfo.Level"/> less 1; -1 for
-    /// none.
-    /// </summary>
-    public int Level { get; set; } = -1;
-
-    /// <summary>
-    /// Gets or sets how a change of the node's name is read out: the app's or its part's, else its role's own;
-    /// <see cref="SemanticsLive.Inherit"/> when none, which AccessKit takes from the node above.
-    /// </summary>
-    public SemanticsLive Live { get; set; }
-
-    /// <summary>
-    /// Gets or sets which way the node's items run; <see cref="SemanticsOrientation.None"/> for none given.
-    /// </summary>
-    public SemanticsOrientation Orientation { get; set; }
-
-    /// <summary>
-    /// Gets the nodes that name this one (<see cref="ElementExtensions.LabelledBy"/>), those in the tree, in the order given;
-    /// <see langword="null"/> for a node that never had one.
-    /// </summary>
-    public List<AccessibilityNodeId>? LabelledBy { get; private set; }
-
-    /// <summary>
-    /// Gets the nodes that describe this one (<see cref="ElementExtensions.DescribedBy"/>), those in the tree, in the order given;
-    /// <see langword="null"/> for a node that never had one.
-    /// </summary>
-    public List<AccessibilityNodeId>? DescribedBy { get; private set; }
-
-    /// <summary>
-    /// Gets the nodes this one controls (<see cref="ElementExtensions.Controls"/>), those in the tree, in the order given;
-    /// <see langword="null"/> for a node that never had one.
-    /// </summary>
-    public List<AccessibilityNodeId>? Controls { get; private set; }
-
-    /// <summary>
-    /// Gets or sets the node that holds this one's error message (<see cref="ElementExtensions.ErrorMessage"/>), while it is in the
-    /// tree; <c>default</c> for none.
-    /// </summary>
-    public AccessibilityNodeId ErrorMessage { get; set; }
-
-    /// <summary>
-    /// Gets or sets the node that is active inside this one, which holds the focus (<c>ActiveDescendant</c>), while it is in the
-    /// tree; <c>default</c> for none.
-    /// </summary>
-    public AccessibilityNodeId ActiveDescendant { get; set; }
-
-    /// <summary>
-    /// Gets the nodes a draw function adds to this node (<see cref="ElementExtensions.AccessibleChildren"/>), which come after its
-    /// children and its link nodes.
-    /// </summary>
-    public List<AccessibilityNode> Synthetic { get; } = [];
-
-    /// <summary>
-    /// Gets or sets the key a draw function gave the node, for a node it added (<see cref="AccessibleChildren"/>);
-    /// <see langword="null"/> for another node.
-    /// </summary>
-    public int? ChildKey { get; set; }
-
-    /// <summary>
-    /// Gets or sets the place of a node a draw function added in its parent's list of them, which tells when the list changed.
-    /// </summary>
-    internal int SyntheticIndex { get; set; }
-
-    /// <summary>
     /// Gets or sets the index of the link in its text leaf's ranges, for the node of a link range, or -1 for another node.
     /// </summary>
     public int LinkIndex { get; set; } = -1;
@@ -281,6 +225,100 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     public List<AccessibilityNode> Children { get; } = [];
 
     /// <summary>
+    /// Gets the values row AX1 added to a node (design §4.4.1, "The shape AX1 adds"), made when the node first takes one of them and
+    /// kept after; <see langword="null"/> for a node that never took one, which pays one reference for them.
+    /// </summary>
+    internal AccessibilityNodeMore? More { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the node's level, from 0 as AccessKit counts it: the app's <see cref="AccessibilityInfo.Level"/> less 1; -1 for
+    /// none.
+    /// </summary>
+    public int Level
+    {
+        get => More?.Level ?? -1;
+        set => SetLevel(value);
+    }
+
+    /// <summary>
+    /// Gets or sets how a change of the node's name is read out: the app's or its part's, else its role's own;
+    /// <see cref="SemanticsLive.Inherit"/> when none, which AccessKit takes from the node above.
+    /// </summary>
+    public SemanticsLive Live
+    {
+        get => More?.Live ?? SemanticsLive.Inherit;
+        set => SetLive(value);
+    }
+
+    /// <summary>
+    /// Gets or sets which way the node's items run; <see cref="SemanticsOrientation.None"/> for none given.
+    /// </summary>
+    public SemanticsOrientation Orientation
+    {
+        get => More?.Orientation ?? SemanticsOrientation.None;
+        set => SetOrientation(value);
+    }
+
+    /// <summary>
+    /// Gets the nodes that name this one (<see cref="ElementExtensions.LabelledBy"/>), those in the tree, in the order given;
+    /// <see langword="null"/> for a node that never had one.
+    /// </summary>
+    public List<AccessibilityNodeId>? LabelledBy => More?.LabelledBy;
+
+    /// <summary>
+    /// Gets the nodes that describe this one (<see cref="ElementExtensions.DescribedBy"/>), those in the tree, in the order given;
+    /// <see langword="null"/> for a node that never had one.
+    /// </summary>
+    public List<AccessibilityNodeId>? DescribedBy => More?.DescribedBy;
+
+    /// <summary>
+    /// Gets the nodes this one controls (<see cref="ElementExtensions.Controls"/>), those in the tree, in the order given;
+    /// <see langword="null"/> for a node that never had one.
+    /// </summary>
+    public List<AccessibilityNodeId>? Controls => More?.Controls;
+
+    /// <summary>
+    /// Gets or sets the node that holds this one's error message (<see cref="ElementExtensions.ErrorMessage"/>), while it is in the
+    /// tree; <c>default</c> for none.
+    /// </summary>
+    public AccessibilityNodeId ErrorMessage
+    {
+        get => More?.ErrorMessage ?? default;
+        set => SetErrorMessage(value);
+    }
+
+    /// <summary>
+    /// Gets or sets the node that is active inside this one, which holds the focus (<c>ActiveDescendant</c>), while it is in the
+    /// tree; <c>default</c> for none.
+    /// </summary>
+    public AccessibilityNodeId ActiveDescendant
+    {
+        get => More?.ActiveDescendant ?? default;
+        set => SetActiveDescendant(value);
+    }
+
+    /// <summary>
+    /// Gets the nodes a draw function adds to this node (<see cref="ElementExtensions.AccessibleChildren"/>), which come after its
+    /// children and its link nodes. Reading it makes the list: a reader that may find none reads <see cref="SyntheticCount"/>.
+    /// </summary>
+    public List<AccessibilityNode> Synthetic => MoreOf().Synthetic ??= [];
+
+    /// <summary>
+    /// Gets the number of the nodes a draw function added to this node, without making their list.
+    /// </summary>
+    public int SyntheticCount => More?.Synthetic?.Count ?? 0;
+
+    /// <summary>
+    /// Gets or sets the key a draw function gave the node, for a node it added (<see cref="AccessibleChildren"/>);
+    /// <see langword="null"/> for another node.
+    /// </summary>
+    public int? ChildKey
+    {
+        get => More?.ChildKey;
+        set => SetChildKey(value);
+    }
+
+    /// <summary>
     /// Gets or sets the number of the update that last recorded the node, so that an update records it once.
     /// </summary>
     internal int Stamp { get; set; }
@@ -289,6 +327,22 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
     /// Gets or sets the node's depth in the tree, found when an update orders its work from the top down.
     /// </summary>
     internal int Depth { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the node ever held the ids of a relation, so that a node that never did skips writing them.
+    /// </summary>
+    internal bool HadRelations =>
+        More is { } more
+        && (more.LabelledBy is not null || more.DescribedBy is not null || more.Controls is not null || more.ErrorMessage.Value != 0);
+
+    /// <summary>
+    /// Gets or sets the place of a node a draw function added in its parent's list of them, which tells when the list changed.
+    /// </summary>
+    internal int SyntheticIndex
+    {
+        get => More?.SyntheticIndex ?? 0;
+        set => SetSyntheticIndex(value);
+    }
 
     /// <summary>
     /// Writes the ids of the nodes of a relation; returns whether they changed.
@@ -312,16 +366,17 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
         if (list is null)
         {
             list = [];
+            AccessibilityNodeMore more = MoreOf();
             switch (kind)
             {
                 case AccessibilityRelation.LabelledBy:
-                    LabelledBy = list;
+                    more.LabelledBy = list;
                     break;
                 case AccessibilityRelation.DescribedBy:
-                    DescribedBy = list;
+                    more.DescribedBy = list;
                     break;
                 default:
-                    Controls = list;
+                    more.Controls = list;
                     break;
             }
         }
@@ -330,6 +385,158 @@ internal sealed class AccessibilityNode(AccessibilityNodeId id, NodeHandle node)
         list.AddRange(ids);
         return true;
     }
+
+    // The side object, made the first time a value of row AX1 other than its default is written.
+    private AccessibilityNodeMore MoreOf() => More ??= new AccessibilityNodeMore();
+
+    // Each setter writes into the side object when there is one, so that a value going back to its default is kept as the default,
+    // and makes it only for a value other than the default.
+    private void SetLevel(int value)
+    {
+        if (More is not null || value != -1)
+        {
+            MoreOf().Level = value;
+        }
+    }
+
+    private void SetLive(SemanticsLive value)
+    {
+        if (More is not null || value != SemanticsLive.Inherit)
+        {
+            MoreOf().Live = value;
+        }
+    }
+
+    private void SetOrientation(SemanticsOrientation value)
+    {
+        if (More is not null || value != SemanticsOrientation.None)
+        {
+            MoreOf().Orientation = value;
+        }
+    }
+
+    private void SetErrorMessage(AccessibilityNodeId value)
+    {
+        if (More is not null || value.Value != 0)
+        {
+            MoreOf().ErrorMessage = value;
+        }
+    }
+
+    private void SetActiveDescendant(AccessibilityNodeId value)
+    {
+        if (More is not null || value.Value != 0)
+        {
+            MoreOf().ActiveDescendant = value;
+        }
+    }
+
+    private void SetChildKey(int? value)
+    {
+        if (More is not null || value is not null)
+        {
+            MoreOf().ChildKey = value;
+        }
+    }
+
+    private void SetSyntheticIndex(int value)
+    {
+        if (More is not null || value != 0)
+        {
+            MoreOf().SyntheticIndex = value;
+        }
+    }
+
+    private SemanticsRange? RangeOf() =>
+        _range is { } range ? new SemanticsRange(range.Minimum, range.Maximum, range.Value, More?.Step ?? 0, More?.LargeStep ?? 0) : null;
+
+    private void SetRange(SemanticsRange? value)
+    {
+        _range = value is { } range ? new RangeValues(range.Minimum, range.Maximum, range.Value) : null;
+        double step = value?.Step ?? 0;
+        double large = value?.LargeStep ?? 0;
+        if (More is not null || step != 0 || large != 0)
+        {
+            AccessibilityNodeMore more = MoreOf();
+            more.Step = step;
+            more.LargeStep = large;
+        }
+    }
+
+    // A range's bounds and value, as a node held them before row AX1 added the steps.
+    private readonly record struct RangeValues(double Minimum, double Maximum, double Value);
+}
+
+/// <summary>
+/// The values row AX1 added to a node of the accessibility tree (design §4.4.1, "The shape AX1 adds"), apart from the node, so that a
+/// node that takes none of them is the size it was before: see <see cref="AccessibilityNode.More"/>. Each value's default is "none".
+/// </summary>
+internal sealed class AccessibilityNodeMore
+{
+    /// <summary>
+    /// Gets or sets the level, from 0; -1 for none.
+    /// </summary>
+    public int Level { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the live setting written; <see cref="SemanticsLive.Inherit"/> for none.
+    /// </summary>
+    public SemanticsLive Live { get; set; }
+
+    /// <summary>
+    /// Gets or sets the orientation; <see cref="SemanticsOrientation.None"/> for none.
+    /// </summary>
+    public SemanticsOrientation Orientation { get; set; }
+
+    /// <summary>
+    /// Gets or sets the small step of the range; 0 for none.
+    /// </summary>
+    public double Step { get; set; }
+
+    /// <summary>
+    /// Gets or sets the large step of the range; 0 for none.
+    /// </summary>
+    public double LargeStep { get; set; }
+
+    /// <summary>
+    /// Gets or sets the ids of the nodes that name the node.
+    /// </summary>
+    public List<AccessibilityNodeId>? LabelledBy { get; set; }
+
+    /// <summary>
+    /// Gets or sets the ids of the nodes that describe the node.
+    /// </summary>
+    public List<AccessibilityNodeId>? DescribedBy { get; set; }
+
+    /// <summary>
+    /// Gets or sets the ids of the nodes the node controls.
+    /// </summary>
+    public List<AccessibilityNodeId>? Controls { get; set; }
+
+    /// <summary>
+    /// Gets or sets the id of the node of the error message; <c>default</c> for none.
+    /// </summary>
+    public AccessibilityNodeId ErrorMessage { get; set; }
+
+    /// <summary>
+    /// Gets or sets the id of the active descendant; <c>default</c> for none.
+    /// </summary>
+    public AccessibilityNodeId ActiveDescendant { get; set; }
+
+    /// <summary>
+    /// Gets or sets the nodes a draw function added; <see langword="null"/> until it adds one.
+    /// </summary>
+    public List<AccessibilityNode>? Synthetic { get; set; }
+
+    /// <summary>
+    /// Gets or sets the key a draw function gave the node; <see langword="null"/> for another node.
+    /// </summary>
+    public int? ChildKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the place of a drawn node in its parent's list of them.
+    /// </summary>
+    public int SyntheticIndex { get; set; }
 }
 
 /// <summary>

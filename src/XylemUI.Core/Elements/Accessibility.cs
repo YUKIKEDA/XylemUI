@@ -451,6 +451,13 @@ public sealed record AccessibilityInfo
     /// </summary>
     internal string? Placeholder { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether the information gives a value the accessibility tree keeps apart from its nodes
+    /// (<see cref="AccessibilityNode.More"/>): a live setting, an orientation, a level, or a range with a step.
+    /// </summary>
+    internal bool GivesMore =>
+        Live != SemanticsLive.Inherit || Orientation != SemanticsOrientation.None || Level != 0 || Range is { Step: > 0 } or { LargeStep: > 0 };
+
     // A with expression sets the members through their init accessors and does not call a constructor: the check is there.
     private static int CheckCount(int value, string name) =>
         value >= 0 ? value : throw new ArgumentOutOfRangeException(name, value, $"The {name} of a node is 0 (none) or a number from 1.");
