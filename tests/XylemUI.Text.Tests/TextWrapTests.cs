@@ -32,28 +32,61 @@ public sealed class TextWrapTests : IDisposable
     }
 
     /// <summary>
-    /// A glyph whose cluster a break would change the shaping before is marked unsafe to break: T after a kerned hyphen; n after n,
-    /// with no kerning, is not.
+    /// A glyph whose cluster a break would change the shaping before is marked unsafe to break, in the flags the shaper writes for
+    /// the line breaking: T after a kerned hyphen; n after n, with no kerning, is not.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The test font.
+    /// - The test font; two empty flag arrays.
     ///
     /// Steps:
-    /// - Shape "-T" and "nn".
+    /// - Shape "-T" and "nn" with the flags written from index 0.
     ///
     /// Expected:
-    /// - The T glyph is marked UnsafeToBreak, the hyphen not; neither n is.
+    /// - The flags of "-T" are [false, true] (the T marked, the hyphen not), and those of "nn" [false, false]; the hyphen keeps its
+    ///   kerning, 347 − 55 units.
     /// </remarks>
     [Fact]
-    public void Shape_KernedPair_MarksTheSecondGlyphUnsafeToBreak()
+    public void ShapeRange_KernedPair_MarksTheSecondGlyphUnsafeToBreak()
     {
-        ShapedGlyph[] kerned = _shaper.Shape(_font, "-T", TestFont.Japanese).ToArray();
-        ShapedGlyph[] plain = _shaper.Shape(_font, "nn", TestFont.Japanese).ToArray();
+        bool[] kerned = [];
+        bool[] plain = [];
 
-        Assert.Equal([false, true], kerned.Select(g => g.UnsafeToBreak));
-        Assert.Equal([false, false], plain.Select(g => g.UnsafeToBreak));
-        Assert.Equal(Hyphen + HyphenBeforeT, kerned[0].XAdvance);
+        ShapedGlyph[] glyphs = _shaper.ShapeRange(_font, "-T", 0, 2, TestFont.Japanese, null, ref kerned, 0).ToArray();
+        _ = _shaper.ShapeRange(_font, "nn", 0, 2, TestFont.Japanese, null, ref plain, 0);
+
+        Assert.Equal([false, true], kerned);
+        Assert.Equal([false, false], plain);
+        Assert.Equal(Hyphen + HyphenBeforeT, glyphs[0].XAdvance);
+    }
+
+    /// <summary>
+    /// The shaper writes the flags of a part's glyphs after the flags at the index it is given: an array too short grows and keeps
+    /// the flags before, and one long enough is written in place, its other flags kept.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The flag arrays [true] and [true, true, true, true].
+    ///
+    /// Steps:
+    /// - Shape "-T" with the flags written from index 1 into each.
+    ///
+    /// Expected:
+    /// - The short array became [true, false, true]; the long one is the same array, [true, false, true, true].
+    /// </remarks>
+    [Fact]
+    public void ShapeRange_FlagsFromAnIndex_KeepTheOtherFlags()
+    {
+        bool[] shortFlags = [true];
+        bool[] longFlags = [true, true, true, true];
+        bool[] longBefore = longFlags;
+
+        _ = _shaper.ShapeRange(_font, "-T", 0, 2, TestFont.Japanese, null, ref shortFlags, 1);
+        _ = _shaper.ShapeRange(_font, "-T", 0, 2, TestFont.Japanese, null, ref longFlags, 1);
+
+        Assert.Equal([true, false, true], shortFlags);
+        Assert.Same(longBefore, longFlags);
+        Assert.Equal([true, false, true, true], longFlags);
     }
 
     /// <summary>
@@ -207,6 +240,69 @@ public sealed class TextWrapTests : IDisposable
         Assert.Equal([(0, 3), (3, 5)], lines.Select(l => (l.Span.Start, l.Span.End)));
         Assert.Equal((2 * N) + Hyphen, lines[0].Width);
         Assert.Equal(2 * T, lines[1].Width);
+    }
+
+    /// <summary>
+    /// The flags of a font run after the first are those of its own glyphs: a break before a kerned glyph of the second run is
+    /// shaped again, as one in a text of one run is.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - "nnnn-TT" shaped at 1,000 px as two font runs of the test font, [0, 2) and [2, 7): the T after the hyphen, kerned by -55,
+    ///   is the sixth glyph and the fourth of the second run.
+    ///
+    /// Steps:
+    /// - Wrap at 2,800 px (Pass1 fits "nnnn-" at 2,732) and lay out.
+    ///
+    /// Expected:
+    /// - Lines [0, 5) and [5, 7). The first is 2,787 px wide (four n and the hyphen without its kerning); the second is 1,198 (two T).
+    /// </remarks>
+    [Fact]
+    public void Lay_KernedPairInTheSecondRun_ShapesTheLineEndAgain()
+    {
+        const string Text = "nnnn-TT";
+        var style = new RunStyle(Size, TestFont.Japanese, 0, null);
+        _shaped.Shape(Text, [new FontRun(_font, 0, 2, 1), new FontRun(_font, 2, 5, 1)], [style, style], _shaper, _breaker);
+        _shaped.Wrap(2800, _shaper, _lines);
+        _shaped.Lay(_lines, _shaper, _laid);
+        LaidLine[] lines = _laid.Lines.ToArray();
+
+        Assert.Equal([(0, 5), (5, 7)], lines.Select(l => (l.Span.Start, l.Span.End)));
+        Assert.Equal((4 * N) + Hyphen, lines[0].Width);
+        Assert.Equal(2 * T, lines[1].Width);
+    }
+
+    /// <summary>
+    /// The room of an inline object is safe to break before, whatever flag its glyph's index held for an earlier text: a line that
+    /// starts at it takes its room, not a glyph shaped again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - "n-T" shaped at 1,000 px, which marks its third glyph, the T, unsafe to break; then, with the same result, "n " + U+FFFC
+    ///   with a room of 500 px at 2, a font run of its own, so the room is the third glyph.
+    ///
+    /// Steps:
+    /// - Wrap the second text at 1,000 px (the whole is 1,334 px) and lay out.
+    ///
+    /// Expected:
+    /// - Lines [0, 2) and [2, 3). The second has one glyph, the room's placeholder, 500 px wide.
+    /// </remarks>
+    [Fact]
+    public void Lay_RoomAtAnIndexAnEarlierTextMarked_IsNotShapedAgain()
+    {
+        const string Text = "n ￼";
+        Shape("n-T");
+        var style = new RunStyle(Size, TestFont.Japanese, 0, null);
+        _shaped.Shape(Text, [new FontRun(_font, 0, 2, 1), new FontRun(_font, 2, 1, 1)], [style, style], _shaper, _breaker, [2], [500]);
+        _shaped.Wrap(1000, _shaper, _lines);
+        _shaped.Lay(_lines, _shaper, _laid);
+        LaidLine[] lines = _laid.Lines.ToArray();
+        LaidGlyph room = _laid.Glyphs[lines[1].GlyphStart];
+
+        Assert.Equal([(0, 2), (2, 3)], lines.Select(l => (l.Span.Start, l.Span.End)));
+        Assert.Equal(1, lines[1].GlyphCount);
+        Assert.True(room.IsPlaceholder);
+        Assert.Equal(500, room.Advance);
     }
 
     /// <summary>

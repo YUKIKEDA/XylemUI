@@ -85,6 +85,83 @@ public sealed unsafe class TextShaper : IDisposable
         FontFeatures? features = null
     )
     {
+        // The count is taken first: shaping can replace the kept array with a longer one.
+        int count = ShapeGlyphs(font, text, start, length, language, features, out _);
+        return _glyphs.AsSpan(0, count);
+    }
+
+    /// <summary>
+    /// Shapes the part of <paramref name="text"/> from <paramref name="start"/> as
+    /// <see cref="ShapeRange(Font, ReadOnlySpan{char}, int, int, TextLanguage, FontFeatures)"/> does, and writes for each glyph
+    /// whether a line break before its cluster changes how the text around it is shaped (HarfBuzz's
+    /// <c>HB_GLYPH_FLAG_UNSAFE_TO_BREAK</c>): a ligature or a kerning pair across it, or the contextual form of a joining script. The
+    /// line breaking shapes the text around such a break again (design §4.1, "Shaping and line breaking"); the flag is not part of
+    /// <see cref="ShapedGlyph"/>, as neither Flutter, Avalonia, nor GPUI exposes it.
+    /// </summary>
+    /// <param name="font">The font.</param>
+    /// <param name="text">The whole text, UTF-16.</param>
+    /// <param name="start">The first code unit to shape.</param>
+    /// <param name="length">The number of code units to shape.</param>
+    /// <param name="language">The language of the text.</param>
+    /// <param name="features">The OpenType features over the whole part (design §4.8); <see langword="null"/> for the font's
+    /// defaults.</param>
+    /// <param name="unsafeToBreak">The caller's flags, one for each glyph; the flag of the glyph at index <c>i</c> of the result goes
+    /// to <c>at + i</c>. The array grows, keeping its flags, to the larger of the need and twice its size when it is too short.</param>
+    /// <param name="at">The index in <paramref name="unsafeToBreak"/> of the flag of the first glyph.</param>
+    /// <returns>The glyphs in visual order. The span is valid until the next call.</returns>
+    /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
+    /// <exception cref="ObjectDisposedException">The shaper or the font was disposed.</exception>
+    internal ReadOnlySpan<ShapedGlyph> ShapeRange(
+        Font font,
+        ReadOnlySpan<char> text,
+        int start,
+        int length,
+        TextLanguage language,
+        FontFeatures? features,
+        ref bool[] unsafeToBreak,
+        int at
+    )
+    {
+        int count = ShapeGlyphs(font, text, start, length, language, features, out HarfBuzz.GlyphInfo* infos);
+        if (at + count > unsafeToBreak.Length)
+        {
+            Array.Resize(ref unsafeToBreak, Math.Max(at + count, unsafeToBreak.Length * 2));
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            unsafeToBreak[at + i] = (infos[i].Mask & HarfBuzz.GlyphFlagUnsafeToBreak) != 0;
+        }
+
+        return _glyphs.AsSpan(0, count);
+    }
+
+    /// <summary>
+    /// Releases the HarfBuzz buffer.
+    /// </summary>
+    public void Dispose()
+    {
+        _disposed = true;
+        if (_buffer != 0)
+        {
+            HarfBuzz.BufferDestroy(_buffer);
+            _buffer = 0;
+        }
+    }
+
+    // Shapes the part into the HarfBuzz buffer and copies its glyphs to the kept array. Returns their count; `infos` is the buffer's
+    // glyph infos, valid until the next call, and null when the part is empty.
+    private int ShapeGlyphs(
+        Font font,
+        ReadOnlySpan<char> text,
+        int start,
+        int length,
+        TextLanguage language,
+        FontFeatures? features,
+        out HarfBuzz.GlyphInfo* infos
+    )
+    {
+        infos = null;
         ArgumentNullException.ThrowIfNull(font);
         if (language.Handle == 0)
         {
@@ -95,7 +172,7 @@ public sealed unsafe class TextShaper : IDisposable
         nint harfBuzzFont = font.HarfBuzzFont;
         if (length == 0)
         {
-            return [];
+            return 0;
         }
 
         if (_buffer == 0)
@@ -121,7 +198,7 @@ public sealed unsafe class TextShaper : IDisposable
         }
 
         uint glyphCount;
-        HarfBuzz.GlyphInfo* infos = HarfBuzz.BufferGetGlyphInfos(_buffer, &glyphCount);
+        infos = HarfBuzz.BufferGetGlyphInfos(_buffer, &glyphCount);
         HarfBuzz.GlyphPosition* positions = HarfBuzz.BufferGetGlyphPositions(_buffer, null);
         int count = (int)glyphCount;
         if (count > _glyphs.Length)
@@ -136,25 +213,11 @@ public sealed unsafe class TextShaper : IDisposable
                 (int)infos[i].Cluster,
                 positions[i].XAdvance,
                 positions[i].XOffset,
-                positions[i].YOffset,
-                (infos[i].Mask & HarfBuzz.GlyphFlagUnsafeToBreak) != 0
+                positions[i].YOffset
             );
         }
 
-        return _glyphs.AsSpan(0, count);
-    }
-
-    /// <summary>
-    /// Releases the HarfBuzz buffer.
-    /// </summary>
-    public void Dispose()
-    {
-        _disposed = true;
-        if (_buffer != 0)
-        {
-            HarfBuzz.BufferDestroy(_buffer);
-            _buffer = 0;
-        }
+        return count;
     }
 
     // The features as HarfBuzz takes them, each over every cluster (HB_FEATURE_GLOBAL_START to HB_FEATURE_GLOBAL_END), in the kept
