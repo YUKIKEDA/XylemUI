@@ -33,11 +33,7 @@ public sealed class VisibilityTests
         Element middle = default;
         Element last = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Column(
-                Box().Width(30).Height(20),
-                middle = Box().Width(40).Height(50).Visibility(visibility),
-                last = Box().Width(30).Height(20)
-            )
+            Column(Box().Width(30).Height(20), middle = Box().Width(40).Height(50).Visibility(visibility), last = Box().Width(30).Height(20))
         );
         _ = app.PumpAndSettle();
         (Rect Middle, float LastY) shown = (app.Tree.GetRect(middle.Node), app.Tree.GetRect(last.Node).Y);
@@ -166,11 +162,7 @@ public sealed class VisibilityTests
         Element b = default;
         Element d = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Column(
-                a = FocusableBox(),
-                Column(b = FocusableBox(), FocusableBox()).Visibility(visibility),
-                d = FocusableBox()
-            )
+            Column(a = FocusableBox(), Column(b = FocusableBox(), FocusableBox()).Visibility(visibility), d = FocusableBox())
         );
         _ = app.PumpAndSettle();
 
@@ -405,15 +397,7 @@ public sealed class VisibilityTests
         Element inner = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
             Column(
-                Box(
-                        inner = Box()
-                            .Width(100)
-                            .Height(100)
-                            .Focusable()
-                            .OnClick(() => clicks++)
-                            .Draw((_, _) => draws++)
-                            .Visibility(Visibility.Visible)
-                    )
+                Box(inner = Box().Width(100).Height(100).Focusable().OnClick(() => clicks++).Draw((_, _) => draws++).Visibility(Visibility.Visible))
                     .Width(200)
                     .Height(200)
                     .Visibility(Visibility.Hidden)

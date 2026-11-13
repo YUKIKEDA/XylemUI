@@ -497,9 +497,7 @@ public sealed class AnimationTests(UiThreadFixture ui)
             var paint = Signal.Create<Paint>(Red);
             Element outer = default;
             scene.Mount(() =>
-                outer = Box(
-                        Box().Width(10).Height(10).Background(paint).Transition(NodeProperties.Background, TimeSpan.FromMilliseconds(100))
-                    )
+                outer = Box(Box().Width(10).Height(10).Background(paint).Transition(NodeProperties.Background, TimeSpan.FromMilliseconds(100)))
                     .Width(20)
                     .Height(20)
             );

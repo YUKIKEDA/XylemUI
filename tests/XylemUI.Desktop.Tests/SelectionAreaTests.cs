@@ -372,11 +372,7 @@ public sealed class SelectionAreaTests
         Element hidden = default;
         await using Area area = await Area.StartAsync(() =>
             SelectionArea(
-                Column(
-                    leaves[0] = Elements.Text("n"),
-                    hidden = Elements.Text("nn").Visibility(Visibility.Hidden),
-                    leaves[1] = Elements.Text("nnnn")
-                )
+                Column(leaves[0] = Elements.Text("n"), hidden = Elements.Text("nn").Visibility(Visibility.Hidden), leaves[1] = Elements.Text("nnnn"))
             )
         );
 
@@ -388,6 +384,7 @@ public sealed class SelectionAreaTests
         Assert.Equal("n\nnnnn", area.App.Clipboard.Text);
         Assert.Equal([(0, 1), (0, 4)], area.Selections(leaves));
         Assert.Equal((0, 0), area.SelectionOf(hidden.Node));
+
         // Two line heights added in floats; 0.01 px is far below the 20 px a missing line would take.
         Assert.Equal(2 * Line, area.App.Tree.GetRect(leaves[1].Node).Y, 0.01f);
     }
