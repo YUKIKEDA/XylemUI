@@ -1895,7 +1895,7 @@ static Element Settings(IReadOnlySignal<Locale> previewLocale) =>
 static Element Preview()
 {
     // 作る時に 1 度だけ引き、シグナルを変数に取っておく（勧める形）。
-    // Text(() => …) の中で Use() を呼んでも動くが、書き直すたびに Scope の親をたどる
+    // Text(() => …) の中で Use() を呼んでも動くが、書き直すたびに引き直す
     IReadOnlySignal<Locale> locale = AppContexts.PreviewLocale.Use();
     return Text(() => Greeting(locale.Get()));   // Greeting はアプリの関数。ロケールが変わると、この文字だけが書き直される
 }
