@@ -243,7 +243,7 @@ public sealed class TextRangeLayoutTests(UiThreadFixture ui) : IDisposable
         ui.Invoke(() =>
         {
             using var scene = new TextScene(_font);
-            scene.Tree.UiLanguage = TestFont.Japanese;
+            scene.UiLocale = Locale.Parse("ja");
             TextLanguage english = TextLanguage.FromTag("en");
             Element text = default;
             scene.Mount(() =>
