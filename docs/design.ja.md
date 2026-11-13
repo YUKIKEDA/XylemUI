@@ -2683,33 +2683,71 @@ public enum SemanticsRole : byte
 {
     None, Window, Dialog, Group, Text, Hyperlink, Image, Button, CheckBox, RadioButton, ComboBox, Edit,
     List, ListItem, Menu, MenuBar, MenuItem, Slider, ProgressBar, ScrollViewer, Tab, TabItem, ToolTip, Separator,
+    // 行 AX1 で足す（下の「AX1 で足す形」）。既にある値は動かさない
+    Navigation, TitleBar, TabPanel, Toolbar, Region, Status, Alert, AlertDialog, Meter, Switch, RadioGroup,
+    SpinButton, SearchBox, ScrollBar, MenuItemCheckBox, MenuItemRadio, ListBox, ListBoxItem, Tree, TreeItem, TreeGrid,
+    Table, Grid, Row, Cell, GridCell, ColumnHeader, RowHeader, Heading, Disclosure, DateInput, TimeInput, DateTimeInput,
+    Log, Feed, Article, Document, Paragraph, Code, Figure, Pane,
 }
 
 [Flags]
-public enum SemanticsStates : byte { None = 0, Checked = 1, Mixed = 2, Selected = 4, ReadOnly = 8, Required = 16 }
+public enum SemanticsStates : ushort
+{
+    None = 0, Checked = 1, Mixed = 2, Selected = 4, ReadOnly = 8, Required = 16,
+    Invalid = 32, Multiselectable = 64, Busy = 128, Modal = 256, Expandable = 512, Expanded = 1024,   // 行 AX1
+}
 
-public readonly record struct SemanticsRange(double Minimum, double Maximum, double Value);
+public enum SemanticsLive : byte { Inherit, Off, Polite, Assertive }              // 行 AX1
+public enum SemanticsOrientation : byte { None, Horizontal, Vertical }            // 行 AX1
+
+// Step と LargeStep は 0 で「無し」。負・NaN・無限大は ArgumentOutOfRangeException（行 AX1）。
+// with の式はコンストラクターを通らないので、検査は init アクセサーで行う（Level・PositionInSet・SizeOfSet も同じ）
+public readonly record struct SemanticsRange(double Minimum, double Maximum, double Value, double Step = 0, double LargeStep = 0);
 
 public sealed record AccessibilityInfo
 {
     public SemanticsRole? Role { get; init; }      // null は部品の既定の役のまま
-    public string? Name { get; init; }             // null は既定（部品の名前か、子孫の文字のたたみ）
+    public string? Name { get; init; }             // 名前はアプリの Name、labelled-by の相手の文字、部品の名前、子孫の文字のたたみの順に決める（下の「Windows での折り込み」）
     public string? Description { get; init; }
     public string? Value { get; init; }
-    public SemanticsStates States { get; init; }   // Disabled・Focused・Expanded は疑似状態から読む（下）。None なら部品の States のまま。部品の States を外す（選択肢の Selected を消す）ことはできない（#627 の実装）
-    public SemanticsRange? Range { get; init; }    // Slider・ProgressBar の値
+    public SemanticsStates States { get; init; }   // Disabled・Focused は疑似状態から読む。ポップアップのアンカーの Expandable・Expanded も疑似状態から読む（下）。部品の States と合わせる（OR）。部品の States を外す（選択肢の Selected を消す）ことはできない（#627 の実装）
+    public SemanticsRange? Range { get; init; }    // Slider・ProgressBar・Meter・SpinButton・ScrollBar の値
     public bool Excluded { get; init; }            // true で自分と子孫を a11y の木と名前のたたみから外す（飾り。IC1、下）
+    public SemanticsLive Live { get; init; }       // 行 AX1。Inherit は役の既定か、親から継ぐ
+    public SemanticsOrientation Orientation { get; init; }  // 行 AX1。None は書かない
+    public int Level { get; init; }                // 行 AX1。1 から数える。0 は無し。負は ArgumentOutOfRangeException
+    public int PositionInSet { get; init; }        // 行 AX1。1 から数える。0 は無し。項目に付ける
+    public int SizeOfSet { get; init; }            // 行 AX1。0 は無し。入れ物に付ける
 }
 
 public static Element Accessible(this Element element, AccessibilityInfo info);
 public static Element Accessible(this Element element, IReadOnlySignal<AccessibilityInfo> info);
+
+// 行 AX1: クリックのほかの操作のハンドラ（下の「AX1 で足す形」の「操作」）
+public static Element OnIncrement(this Element element, Action handler);
+public static Element OnDecrement(this Element element, Action handler);
+public static Element OnSetRangeValue(this Element element, Action<double> handler);
+public static Element OnExpand(this Element element, Action handler);
+public static Element OnCollapse(this Element element, Action handler);
+
+// 行 AX1: 関係（下の「AX1 で足す形」の「関係」）
+public static Element LabelledBy(this Element element, Element label);
+public static Element DescribedBy(this Element element, Element description);
+public static Element ErrorMessage(this Element element, Element message);
+public static Element Controls(this Element element, Element controlled);
+public static Element ActiveDescendant(this Element element, IReadOnlySignal<Element> descendant);   // default（IsNone）は無し
+public static Element ActiveDescendant(this Element element, IReadOnlySignal<int?> childKey);   // 描く関数の子の節（下）
+
+// 行 AX1: 描く関数の子の節（下の「描く関数の節」）
+public delegate void AccessibleChildrenFunc(AccessibleChildren children, Rect bounds);
+public static Element AccessibleChildren(this Element element, AccessibleChildrenFunc build);
 ```
 
-`Rect Bounds` と `Focusable` と操作の一覧は持たない。矩形は layout から、フォーカスできるかは `.Focusable()` から、操作はハンドラと部品から求める（下の「P02g で入れる形」）。
+`Rect Bounds` と `Focusable` と操作の一覧は持たない。矩形は layout から、フォーカスできるかは `.Focusable()` から、操作はハンドラと部品から求める（下の「P02g で入れる形」と「AX1 で足す形」）。
 
 **v1 の契約:** `AccessibilityInfo` は、付けたノードだけを持つ `UiTree` の表（`NodeHandle` から `AccessibilityInfo` へ、ノードを消すと消える）に置く。`UiNode` は 576 バイトで上限なので、欄を足さない。部品の既定の役は部品が同じ表に書き、アプリの `.Accessible` がその上に重なる（P02g の Grill、Issue #620）。対応する基本 control は Button / Text / TextField / Checkbox / Slider / List（Active のみ、§3.4.2）/ Dialog。merged semantics・decorative node・virtualized item semantics は、ノードの上の情報から作る別の a11y の木が扱う（§11.4）。テキストのノードのリンクの範囲（§4.8）は例外で、行 P02g の a11y の木が、テキストのノードの節の子の節（役は Hyperlink）として出す。範囲ごとの子の節は、1 つの UiNode から作る（D9 の Grill。UIA は AccessKit が出す、P02g の Grill と S10）。
 
-**開閉の状態（P02d4 の Grill、Issue #588）:** 行 P02g は、開閉の状態（UIA の ExpandCollapse の状態）を、ノードの疑似状態 `Open`（§7.3「アンカーの Open」）から読む。a11y の作業そのものは、行 P02d4 では行わない。
+**開閉の状態（P02d4 の Grill、Issue #588）:** 行 P02g は、開閉の状態（UIA の ExpandCollapse の状態）を、ノードの疑似状態 `Open`（§7.3「アンカーの Open」）から読む。a11y の作業そのものは、行 P02d4 では行わない。ポップアップのアンカーでないノード（ツリーの項目、Expander の見出し）の開閉は、行 AX1 で `SemanticsStates.Expandable`・`Expanded` から読む（下の「AX1 で足す形」）。
 
 **a11y の木の形（D3 の Grill、Issue #441）:** 書くのはノードの上（`AccessibilityInfo`）のまま、そこから別の木を作る。役と id の無いノードは落とす。GPUI は、役と id を持つ要素ごとに 1 つの節を作り、毎フレームの prepaint で木を作る（`crates/gpui/src/window/a11y.rs` 55〜56・61・71 行目、1 つの要素が足す合成の子は 67〜80・304〜346 行目）。まとめる印で名前をたたみ、仮想化した並びは数を報告する。これは Flutter の形である（`isMergingSemanticsOfDescendants`、`packages/flutter/lib/src/semantics/semantics.dart` 5916 行目、`scrollChildCount` は 5838 行目）。比べた 3 つは、どれも木とは別の a11y の木を持つ（Flutter の `SemanticsOwner`、`semantics.dart` 4872 行目。Avalonia の `AutomationPeer`、`src/Avalonia.Controls/Control.cs` 442〜457 行目）。作るのは支援技術がつながっている間だけで、つながっていなければ費用は 0 である（Flutter の `ensureSemantics`、`rendering/object.dart` 1390 行目、Avalonia の遅く作る peer）。公開の `AccessibilityInfo` を v1.0 で API を固めた後に変えると破壊的な変更になるので、v1.1 に送らない。行 P02g で UIA の provider と一緒に入れる。
 
@@ -2725,28 +2763,29 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
 - **作る時:** 窓を作る時に、AccessKit の Windows の adapter（subclassing しない形、`accesskit_windows_adapter_new`）を作る。窓の `WM_GETOBJECT` を `accesskit_windows_adapter_handle_wm_getobject` に渡し、窓のフォーカスの変化（`WM_SETFOCUS`・`WM_KILLFOCUS`、初期値は `accesskit_windows_adapter_new` の引数）を `accesskit_windows_adapter_update_window_focus_state` に渡して、返ったイベントを `accesskit_windows_queued_events_raise` で出す（subclassing する adapter は自分で行う）。AccessKit が最初の問い合わせで活性化の関数を呼んだ時に、a11y の木を作り始めて全部を渡す。窓が閉じるまで持つ。AccessKit は UIA の問い合わせ（`UiaRootObjectId`）だけでなく、MSAA の窓のクライアント領域の問い合わせ（`OBJID_CLIENT`）でも活性化する（`adapters/windows/src/adapter.rs` の `handle_wm_getobject`）ので、読み上げソフトが無くても、常駐のアプリが表示したばかりの窓に問い合わせれば作る。木の根ができる前（`DesktopWindow` は窓を表示してから中身を載せる）の問い合わせには、用意ができていないと答える（活性化の関数が null を返す）。AccessKit は仮の木を出し、活性化の関数をもう呼ばず、次の `update_if_active` で丸ごとの木を受け取る。窓は根を作った後にそれを渡す。そのあとの `WM_GETOBJECT` も、AccessKit に答えさせる前に、頼まれたままの木を丸ごと渡す。木を作る途中で例外が出た時も、頼まれたものとして覚え、次の `WM_GETOBJECT` で渡す。更新を作る途中で例外が出た時は、AccessKit がどちらの状態でも受け取れる、木の情報と窓の節だけの更新を返し、次の受け渡しで丸ごとの木を渡し直す。AccessKit は受け取れない更新で Rust の側から落ちる（#633 の実装）。それまでは何も作らず、費用は 0 である。Flutter は MSAA か UIA の問い合わせで semantics を有効にし、止めない（`flutter_window.cc` 898〜904 行目）。Avalonia も最初の `WM_GETOBJECT` で peer を作る（`Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs` 931〜937 行目）。GPUI は同じ adapter の関数を呼び、借りを返してから答えを返す（`events.rs` 846〜848 行目。答えの中から `WM_GETOBJECT` がまた来ることがあるため）
 - **スレッド:** 活性化の関数は窓のスレッド（UI スレッド）で呼ばれる。操作の関数（Click など）は、UI スレッドで呼ばれるとは限らない（accesskit_windows 0.35.1 の `adapters/windows/src/adapter.rs` 413〜414 行目。UIA の呼び出しのスレッドで同期に呼ぶ）。`NativeHandleTable` は UI スレッドだけのもので鍵を持たないので、操作の関数は表を引かない。要求のポインタを、窓の HWND への `PostMessage`（`WM_APP` の番号）で UI スレッドへ送り、窓の手続きが配ってから `accesskit_action_request_free` で解放する。adapter に渡す利用者のデータは HWND である。窓を壊す前に、窓のキューに残った自分のメッセージを読み出して解放する（`PeekMessage` の `PM_REMOVE`）（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。鍵つきの共有のキューに積む案は、窓ごとの順を Windows のメッセージの順に任せられず、鍵が要るので採らない
 - **a11y の木:** 役を持つノード（部品の既定の役か `.Accessible` の役）ごとに 1 つの節を作る。親は、役を持つ最も近い祖先の節である。役の無いノードは落とし、その子は親の節につく（GPUI の `a11y.rs` 429〜440 行目と同じ）。ただし、役が無くてもフォーカスを取れるノード（`.Focusable()`）は Group の節にする。フォーカスが a11y の木に無いノードにあると、AccessKit には根のフォーカスとして渡り、窓はもうフォーカスを持つのでイベントが出ず、読み上げソフトは何も言わない（Todo の `SelectionArea` で Narrator が最初の Tab を読まなかった）。Avalonia の `SelectableTextBlock` はフォーカスを取り（`SelectableTextBlock.cs` 52 行目）、自分の peer を持つ。Flutter の `SelectableRegion` は Tab で止まるが、`includeSemantics: false` で semantics を持たない（`widgets/selectable_region.dart` 446・1995〜1996 行目）。`.Accessible` で役を None にしたノードは、フォーカスを取っても落とす（P02g の実装の 3 つ目の PR でオーナーが決定、Issue #641）。`Hidden` の部分木は載せない。根は窓（Window、名前は窓の題）で、開いているポップアップの根は、主の木の後に奥から順に根の子にする（§12.5 の `Find` と同じ順）。順は木の前順（§4.4）
-- **名前のたたみ:** 中身の文字から名前を作る役（Button・CheckBox・RadioButton・ComboBox・Hyperlink・ListItem・MenuItem・TabItem・ToolTip・Text）を持ち、名前の無いノードは、役の無い子孫の文字の葉の文字を、前順に空白 1 つでつないで名前にする。ボタンの中の「OK」がボタンの名前になる。その役の下の文字の葉は、自分の節にならない。入れ物の役（Window・Dialog・Group・List・Menu・MenuBar・ScrollViewer・Tab）は名前を作らず、下の文字の葉はそれぞれ Text の節になる（ダイアログの名前がダイアログの文字の全部にならない）。中身を値として持つ役（Edit・Image・Slider・ProgressBar・Separator）は子の節を持たない（#627 の実装）。Flutter はボタンの子をまとめ（`isMergingSemanticsOfDescendants`）、Avalonia は Content の文字列を名前にする。GPUI は `aria_label` を明示する
+- **名前のたたみ:** 中身の文字から名前を作る役（Button・CheckBox・RadioButton・ComboBox・Hyperlink・ListItem・MenuItem・TabItem・ToolTip・Text）を持ち、名前の無いノードは、役の無い子孫の文字の葉の文字を、前順に空白 1 つでつないで名前にする。ボタンの中の「OK」がボタンの名前になる。その役の下の文字の葉は、自分の節にならない。入れ物の役（Window・Dialog・Group・List・Menu・MenuBar・ScrollViewer・Tab）は名前を作らず、下の文字の葉はそれぞれ Text の節になる（ダイアログの名前がダイアログの文字の全部にならない）。中身を値として持つ役（Edit・Image・Slider・ProgressBar・Separator）は子の節を持たない（#627 の実装）。Flutter はボタンの子をまとめ（`isMergingSemanticsOfDescendants`）、Avalonia は Content の文字列を名前にする。GPUI は `aria_label` を明示する。行 AX1 で足す役の、名前をたたむか・子の節を持つかは、下の「AX1 で足す形」の役の表に書く。labelled-by の相手がある時は、部品の名前とたたみより先に相手の文字を名前にする（同じ所の「Windows での折り込み」）
 - **外すノード（IC1 の Grill の Q9、Issue #720）:** `AccessibilityInfo.Excluded` が true のノードは、自分も子孫も節にならず、祖先の名前のたたみにも文字を出さない。フォーカスを取れる子孫も節にならない。飾りの中にフォーカスを取れるノードを置くのは誤りで、Debug のビルドでは、そこへフォーカスが移ると不変条件の失敗にする。Release のビルドでは、外していない最も近い祖先の節に焦点を伝える（AccessKit に伝える焦点の節が無くならないように）。飾りの画像・アイコン・区切りに付ける。`label` 無しの `Icon`（§5.0.4）が付ける。付けないと、ボタンの中のアイコンの私用領域の文字が、ボタンの名前に入る。Flutter は `Icon` の字形を `ExcludeSemantics` で包み（3.47.8 の `packages/flutter/lib/src/widgets/icon.dart` 347〜350 行目）、Avalonia は `AutomationProperties.AccessibilityView` を `Raw` にして Control と Content の木から外す（12.1.4 の `src/Avalonia.Controls/Automation/AutomationProperties.cs` 10〜31・57 行目）
-- **直し方:** ノードの `AccessibilityInfo`・名前になる文字・a11y の状態になる疑似状態（Disabled・Focused・Open）・子の並び・`Hidden`・矩形が変わったら、そのノードに a11y の印（`DirtyFlags.Semantics`、§2.4 の `ChangeKind.A11yLabel`）を付ける（木が無い間は付けない）。印は 2 種類ある。節があるかどうかが変わりうる変化には、ノードの印を付ける。`Invalidation.Invalidate` と `MarkDirty` の入口で、変化が layout・文字・a11y の段に及ぶ時（木の構造・`Hidden`・大きさ・文字はどれかを通る。文字の葉の中身の変化は、道を印さない速い道を通るので `Invalidate` の側で付ける）、layout の矩形の変化（`OnRectChanged`）、`.Accessible` と部品の情報、`SetFocusable`（役の無いノードの節があるかが変わる）で付け、開いているポップアップの根の並びの変化は a11y の段が窓の根を印す。見た目だけの変化（ホバーの色）は印を付けない。印を付けると親の側の節を直し、その子の全部を歩いて矩形を求め直すからである。自分の節の中だけが変わる変化には、自分だけの印を付ける。疑似状態の Disabled・Focused・Open の変化、Click のハンドラを足すか外すこと、文字の欄の値の signal の登録、ポップアップのアンカーの登録、スクロールの位置の変化がこれに当たる。木が無い間は、どれも bool を 1 つ見るだけで、`AccessibilityTree` の物も作らない。a11y の段は、ノードの印ごとに、役を持つ最も近いノードの節（そのノード自身の節、無ければ祖先の節）と、親の側の最も近い節を直す。自分だけの印は、そのノードの節があればそれだけを直す。直す節は上から順に直し、直した節の子の節の矩形を書き直す（#627 の実装）。フレームの layout の段の後、描画の段の前に、a11y の段が印のある節だけを AccessKit の節に作り直して 1 つの `TreeUpdate` で渡し、AccessKit が積んだイベントを出す（`accesskit_windows_queued_events_raise`、§2.10）。AccessKit の `transform`（`accesskit_node_set_transform`）は、その節の子孫だけでなく自分の `bounds` にも掛かる（accesskit 0.25.1 の `common/src/lib.rs` 2509〜2533 行目）。そこで各節は、親の節の座標での自分の原点への平行移動を `transform` に、自分の座標での矩形を `bounds` に書く。スクロールする箱は、平行移動にスクロールのずれ（`ChildOffset`）を足し、`bounds` からずれを引く。窓の節は DPI の倍率を `transform` に書き、AccessKit が求める物理ピクセルにする。親が動いても子の節は直さず、スクロールで直すのはその箱の節 1 つである（#633 の実装）。Flutter も印の付いた節だけを送る（`packages/flutter/lib/src/semantics/semantics.dart` 4975〜5068 行目）。GPUI は毎フレーム全部を送る
+- **直し方:** ノードの `AccessibilityInfo`・名前になる文字・a11y の状態になる疑似状態（Disabled・Focused・Open）・子の並び・`Hidden`・矩形が変わったら、そのノードに a11y の印（`DirtyFlags.Semantics`、§2.4 の `ChangeKind.A11yLabel`）を付ける（木が無い間は付けない）。印は 2 種類ある。節があるかどうかが変わりうる変化には、ノードの印を付ける。`Invalidation.Invalidate` と `MarkDirty` の入口で、変化が layout・文字・a11y の段に及ぶ時（木の構造・`Hidden`・大きさ・文字はどれかを通る。文字の葉の中身の変化は、道を印さない速い道を通るので `Invalidate` の側で付ける）、layout の矩形の変化（`OnRectChanged`）、`.Accessible` と部品の情報、`SetFocusable`（役の無いノードの節があるかが変わる）で付け、開いているポップアップの根の並びの変化は a11y の段が窓の根を印す。見た目だけの変化（ホバーの色）は印を付けない。印を付けると親の側の節を直し、その子の全部を歩いて矩形を求め直すからである。自分の節の中だけが変わる変化には、自分だけの印を付ける。疑似状態の Disabled・Focused・Open の変化、Click のハンドラを足すか外すこと、文字の欄の値の signal の登録、ポップアップのアンカーの登録、スクロールの位置の変化がこれに当たる。木が無い間は、どれも bool を 1 つ見るだけで、`AccessibilityTree` の物も作らない。a11y の段は、ノードの印ごとに、役を持つ最も近いノードの節（そのノード自身の節、無ければ祖先の節）と、親の側の最も近い節を直す。自分だけの印は、そのノードの節があればそれだけを直す。行 AX1 で、操作のハンドラを足すか外すこと、active-descendant の Signal の変化、関係の相手の節の出入りと名前の変化（関係を持つ側に付ける）を、自分だけの印に足す（下の「AX1 で足す形」）。直す節は上から順に直し、直した節の子の節の矩形を書き直す（#627 の実装）。フレームの layout の段の後、描画の段の前に、a11y の段が印のある節だけを AccessKit の節に作り直して 1 つの `TreeUpdate` で渡し、AccessKit が積んだイベントを出す（`accesskit_windows_queued_events_raise`、§2.10）。AccessKit の `transform`（`accesskit_node_set_transform`）は、その節の子孫だけでなく自分の `bounds` にも掛かる（accesskit 0.25.1 の `accesskit/src/lib.rs` 2509〜2533 行目）。そこで各節は、親の節の座標での自分の原点への平行移動を `transform` に、自分の座標での矩形を `bounds` に書く。スクロールする箱は、平行移動にスクロールのずれ（`ChildOffset`）を足し、`bounds` からずれを引く。窓の節は DPI の倍率を `transform` に書き、AccessKit が求める物理ピクセルにする。親が動いても子の節は直さず、スクロールで直すのはその箱の節 1 つである（#633 の実装）。Flutter も印の付いた節だけを送る（`packages/flutter/lib/src/semantics/semantics.dart` 4975〜5068 行目）。GPUI は毎フレーム全部を送る
 - **開閉できるアンカー:** ポップアップ（`PopupBlock`）を開くアンカーは、ツールチップと D&D の像のポップアップを除き、開閉できる節として木に書く。閉じている間も Expanded が false と読める（#627 の実装）
 - **プレースホルダー:** 文字の欄の `TextFieldOptions.Placeholder` を `accesskit_node_set_placeholder` で渡す。AccessKit は、欄が空の間だけ UIA の HelpText に出す（accesskit_windows 0.35.1 の `adapters/windows/src/node.rs` 1313 行目、accesskit_consumer の `placeholder_should_be_exposed_on_empty_text_input`）。Flutter は `hintText` を semantics の hint に入れる。プレースホルダーは欄を作る時の設定から決まり、アプリは変えられないので、節を直すかどうかの比べには入れない（P02g の実装の 3 つ目の PR でオーナーが決定、Issue #641）
 - **Text の名前:** AccessKit は Label（Text の節）の名前を label ではなく value から読む（accesskit_consumer 0.39.1 の `accesskit_consumer/src/node.rs` 744〜746 行目、accesskit_windows 0.35.1 の `adapters/windows/src/node.rs` 404〜413 行目）。そこで Text の節は名前を value にも書く。label だけでは、Narrator が文字を読まなかった（Issue #641）
 - **状態と操作:** Disabled は `accesskit_node_set_disabled`、Focused は `TreeUpdate` のフォーカス、Open は `accesskit_node_set_expanded`、`.Focusable()` は Focus の操作、`SemanticsStates.Checked`・`Mixed` は `accesskit_node_set_toggled` にする。AccessKit の adapter は、節の役と操作からパターンを決める
   - Focus の操作: フォーカスを取れるノード（`.Focusable()`）。UIA の SetFocus で `FocusManager.Focus` を呼ぶ。AccessKit は Focus の操作を持つ節を IsKeyboardFocusable にする（accesskit_windows 0.35.1 の `adapters/windows/src/node.rs` 538〜540・1129〜1131 行目）（Issue #637）
   - Click の操作: 自分に泡立ちの Click のハンドラを持つノード（`OnClick`、ボタン、メニューの項目、Select の選択肢）。Click は、キーでボタンを押す時と同じ経路（`WindowInput.ClickFromKey`、Click を泡立ちで配る）で配る。時刻は窓の時計（`Win32Window.Time`）から取り、ポインタとキーの入力と同じ時計でクリックの間隔を測る（PR #642 のレビュー）。泡立ちの Click のハンドラを足すか外すと、節を直す。Invoke・Toggle・SelectionItem の選択は、AccessKit が Click にする（`adapters/windows/src/node.rs` 952〜954・980〜1000 行目）（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）
-  - SetValue の操作: 文字の欄（Edit）は中身を置き換える。読み取り専用か Disabled の欄では受けず（adapter が拒むのは Disabled だけ、accesskit_windows 0.35.1 の `adapters/windows/src/node.rs` 939 行目）、1 行の欄は最初の行に、最大の文字数（`MaxLength`）のある欄はその数に切ってから欄の文字の Signal に書く（キャレットは末尾に動き、Undo は忘れる。アプリが書いた時と同じ）。欄の `ReadOnly` は節の状態（`accesskit_node_set_read_only`）にする。パスワードの欄にも効き、値は出さない（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。`Value` だけを持つノードは読むだけ
-  - SetValue・Expand・Collapse は、節の操作として宣言しない。AccessKit の Windows の adapter は、この 3 つを節の宣言を見ずに送り（同 956〜978・1349〜1353 行目）、宣言を外しても変異が落ちなかった。宣言を読む macOS と Linux の adapter の行（P06・P04）で足す（PR #642 のレビュー）
-  - `Range` を持つノードは、値と範囲を節に書く。P02g では値を書く操作を持たない（Slider の部品は G1）
-  - Expand と Collapse の操作: ポップアップのアンカー（`.Popup`、Select、子のメニューを持つメニューの項目）。`PopupBlock` がアンカーの表に自分を登録し、Expand は開く Signal に true を書き、Collapse は `Dismiss` を呼ぶ（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。AccessKit は `is_expanded` を持つ節に ExpandCollapse を出す（accesskit_consumer 0.39.1 の `accesskit_consumer/src/node.rs` 661〜668 行目）
-  - 選択: Select の選択肢と `Selected` を付けた ListItem は、選ばれたかを節に書き、選ぶ操作は Click を配る。UIA の Selection と SelectionItem は、選べる子を持つ入れ物の役（`ListBox`・`ComboBox`・`Menu` など）にしか付かず、`List` には付かない（同 938〜955 行目）。そこで、Select のポップアップの一覧は `ListBox`、選択肢は `ListBoxOption` にする。部品が内部の状態で渡し、公開の `SemanticsRole` は変えない。仮想化した並びは `List` のまま（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）
+  - SetValue の操作: 文字の欄（Edit）は中身を置き換える。読み取り専用か Disabled の欄では受けず（adapter が拒むのは Disabled だけ、accesskit_windows 0.35.1 の `adapters/windows/src/node.rs` 939 行目）、1 行の欄は最初の行に、最大の文字数（`MaxLength`）のある欄はその数に切ってから欄の文字の Signal に書く（キャレットは末尾に動き、Undo は忘れる。アプリが書いた時と同じ）。欄の `ReadOnly` は節の状態（`accesskit_node_set_read_only`）にする。パスワードの欄にも効き、値は出さない（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。行 AX1 で足す SearchBox・DateInput・TimeInput・DateTimeInput も、Edit と同じく文字の SetValue を受け、読み取り専用か Disabled なら受けない（PR #881 のレビューの後、Issue #878 の Grill でオーナーが決定。今の `Win32Accessibility.Perform` は `SemanticsRole.Edit` だけで受ける）。`Value` だけを持つノードは読むだけ
+  - SetValue・Expand・Collapse は、節の操作として宣言しない。AccessKit の Windows の adapter は、この 3 つを節の宣言を見ずに送り（同 956〜978・1349〜1353 行目）、宣言を外しても変異が落ちなかった。宣言を読む macOS と Linux の adapter の行（P06・P04）で足す（PR #642 のレビュー）。行 AX1 で足す Increment と Decrement も同じで、宣言は P06・P04 で足す（下の「AX1 で足す形」の「操作」）
+  - `Range` を持つノードは、値と範囲を節に書く。P02g では値を書く操作を持たなかった。行 AX1 で、値を書く操作をハンドラで受ける（下の「AX1 で足す形」の「操作」）
+  - Expand と Collapse の操作: ポップアップのアンカー（`.Popup`、Select、子のメニューを持つメニューの項目）。`PopupBlock` がアンカーの表に自分を登録し、Expand は開く Signal に true を書き、Collapse は `Dismiss` を呼ぶ（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。AccessKit は `is_expanded` を持つ節に ExpandCollapse を出す（accesskit_consumer 0.39.1 の `accesskit_consumer/src/node.rs` 661〜668 行目）。アンカーでないノードは、行 AX1 の `OnExpand`・`OnCollapse` で受ける
+  - 選択: Select の選択肢と `Selected` を付けた ListItem は、選ばれたかを節に書き、選ぶ操作は Click を配る。UIA の Selection と SelectionItem は、選べる子を持つ入れ物の役（`ListBox`・`ComboBox`・`Menu` など）にしか付かず、`List` には付かない（同 938〜955 行目）。そこで、Select のポップアップの一覧は `ListBox`、選択肢は `ListBoxOption` にする。仮想化した並びは `List` のまま（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。P02g では、部品が内部の状態（`AccessibilityStates.SelectableList`）で渡し、公開の `SemanticsRole` は変えなかった。行 AX1 で `SemanticsRole.ListBox`・`ListBoxItem` を公開の役にし、Select はこの 2 つを既定の役にする。内部の状態 `SelectableList` と、親を見て `ListItem` を `ListBoxOption` に変える対応は消す（Grill の 5 巡目でオーナーが決定、Issue #872）
   - スクロールする箱は、スクロールの位置と最大（`accesskit_node_set_scroll_y`・`_max` と x）を書く。accesskit_windows 0.35.1 には UIA の Scroll のパターンが無く、スクロールの操作は UIA から届かないので、持たない。スクロールする箱は `clips_children` を書き、AccessKit は箱の矩形の外の節を木から外す（隣の 1 つとフォーカスを持つ節は残す、accesskit_consumer 0.39.1 の `accesskit_consumer/src/filters.rs` 17〜19・65〜88 行目）。すべての節は ScrollIntoView の操作（UIA の ScrollItem）を持ち、見える所まで動かす。任意のノードを見える所まで動かす口を Core に置き（§7「Bring into view」、今はフォーカスのあるノードだけ）、仮想化した行は `ScrollToIndex(Nearest)` で動かす（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）
   - 文字の欄の TextPattern（キャレットと選択）は、AccessKit の形の文字の run（`TextRun` の節と文字の長さ）を欄が渡すことで出る。その形と作り方は行 P02g2 で決める。P02g では、欄の中身を値として出す。値は、a11y の段が節を直す時に欄の文字の signal から読む。文字が変わると欄の中の文字の葉に印が付き、その節が直る。打鍵ごとに情報を作らない（#627 の実装。打鍵ごとに情報を作る形では、`input` の文字の欄の入力の段が 0.6 µs から 0.7〜0.8 µs になった）
-- **部品の既定の役:** ボタン Button、文字の欄 Edit（AccessKit の `TextInput`）、ラベルと文字の葉 Text（ほかの節の名前にたたまれない時だけ節になる）、リンクの範囲 Hyperlink（§4.8、テキストのノードの子の節）、メニュー Menu、メニューバー MenuBar、メニューの項目 MenuItem、Select ComboBox とその選択肢 ListItem（AccessKit には、一覧を `ListBox`、選択肢を `ListBoxOption` として渡す）、Tooltip ToolTip、ダイアログ Dialog、スクロールする箱 ScrollViewer、仮想化した並び List とその行 ListItem。`SemanticsRole` から AccessKit の役（accesskit-c 0.23.1 が使う accesskit 0.25.1 の `Role`）への対応は次のとおりで、括弧の中は accesskit_windows 0.35.1 が UIA に出す制御の種類である（`adapters/windows/src/node.rs` 65〜211 行、#627 の実装）
+- **部品の既定の役:** ボタン Button、文字の欄 Edit（AccessKit の `TextInput`）、ラベルと文字の葉 Text（ほかの節の名前にたたまれない時だけ節になる）、リンクの範囲 Hyperlink（§4.8、テキストのノードの子の節）、メニュー Menu、メニューバー MenuBar、メニューの項目 MenuItem、Select ComboBox とその一覧 ListBox と選択肢 ListBoxItem（行 AX1 から。P02g では一覧 List と選択肢 ListItem で、AccessKit には `ListBox`・`ListBoxOption` として渡していた）、Tooltip ToolTip、ダイアログ Dialog、スクロールする箱 ScrollViewer、仮想化した並び List とその行 ListItem。`SemanticsRole` から AccessKit の役（accesskit-c 0.23.1 が使う accesskit 0.25.1 の `Role`）への対応は次のとおりで、括弧の中は accesskit_windows 0.35.1 が UIA に出す制御の種類である（`adapters/windows/src/node.rs` 65〜211 行、#627 の実装）
   - Window → `Window`、Dialog → `Dialog`（Window）、Group → `Group`、ScrollViewer → `ScrollView`（Pane）、Separator → `Splitter`（Separator）
   - Text → `Label`（Text）、Hyperlink → `Link`、Image → `Image`
   - Button → `Button`、CheckBox → `CheckBox`、RadioButton → `RadioButton`、ComboBox → `ComboBox`、Slider → `Slider`、ProgressBar → `ProgressIndicator`（ProgressBar）
   - Edit → `TextInput`（Edit）。複数行の欄は `MultilineTextInput`、パスワードの欄は `PasswordInput` にする。どちらも同じ Edit で出る。欄の種類は、部品が内部の状態（`AccessibilityStates.Multiline`・`Password`）として節に書く（#633 の実装）
-  - List → `List`、ListItem → `ListItem`。Select の一覧と選択肢は、部品が内部の状態で渡して `ListBox`・`ListBoxOption` にする。UIA の制御の種類は同じ List と ListItem だが、UIA の Selection はこちらにしか付かない（「選択」、Issue #637）
+  - List → `List`、ListItem → `ListItem`。Select の一覧と選択肢は、行 AX1 から公開の役 ListBox・ListBoxItem で `ListBox`・`ListBoxOption` にする。UIA の制御の種類は同じ List と ListItem だが、UIA の Selection はこちらにしか付かない（「選択」、Issue #637）
+  - 行 AX1 で足す役の対応は、下の「AX1 で足す形」の役の表に書く
   - Menu → `Menu`、MenuBar → `MenuBar`、MenuItem → `MenuItem`、Tab → `TabList`（Tab）、TabItem → `Tab`（TabItem）、ToolTip → `Tooltip`
 - **id:** AccessKit の節の id（64 ビット、`AccessibilityNodeId`）は、節を作るたびに 1 つずつ増える番号で、同じ番号を 2 度使わないので、ノードの場所を使い回しても重ならない（#627 の実装。ノードの番号と世代を詰める形は、世代が 64 ビットで詰めきれない）。Avalonia は `GetHashCode()` から RuntimeId を作る（`AutomationNode.cs` 64 行目）。UIA の AutomationId は `.TestId` を `accesskit_node_set_author_id` に渡し、テストと UIA の自動テストが同じ名前で探せる。ノードが消えたら、その節を親の子から外す `TreeUpdate` を渡す
 - **イベント:** AccessKit は、前の木との違いから UIA のイベント（フォーカス、プロパティの変化、ダイアログの開閉、選択、文字、ライブリージョン）を出し、変わらない節には出さない。構造の変化のイベント（`UIA_StructureChangedEventId`）は出さず、クライアントが子を読み直す（accesskit_windows 0.35.1 の `adapters/windows/src/adapter.rs`）。フォーカスのイベントは、窓がキーボードのフォーカスを持つ間だけ出る（`update_window_focus_state`）。イベントを出すのは、聞いているクライアントが無くても、変わった節のある受け渡し 1 回で約 25 µs かかる。accesskit-c には、イベントを出さずに捨てる関数が無い（#633 の計測、`docs/benchmarks/p02g.md`）。聞き手が無い時に出さないようにするのは行 Q10 で、upstream に提案する。`TreeUpdate` は木が有効な間だけ渡す（`accesskit_windows_adapter_update_if_active`）
@@ -2760,6 +2799,205 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
   - 割り当て 0: 木の無い窓のフレームは今と同じ。木がある窓の、変化の無いフレームも割り当て 0（AccessKit の節は AccessKit が持つ）
   - 大きさ: 実行ファイルの増え方を、実装の 2 つ目の PR で測って記録する（S10 の最小の使い方で +253 KB）。`XylemUI.E2E.exe` は 5,762,560 バイトから 6,032,384 バイト（+263 KB）になった（#633、`docs/benchmarks/p02g.md`）
   - PR は、`AccessibilityInfo` の API・a11y の木・部品の既定の役・Testing の口（1 つ目）、AccessKit の取り込み・Windows の adapter・節への変換（2 つ目）、操作・仮想化した並び・リンクの範囲の節（3 つ目）に分ける。2 つ目と 3 つ目は、読むだけの木と操作を分けてレビューを小さくするために分けた（Issue #633）
+
+**AX1 で足す形（Grill の 5 巡目でオーナーが決定、Issue #872）:** 部品の行（B1〜B12）が使う役・状態・関係・ライブリージョンを、部品の行より前に 1 回でそろえる。公開の列挙型を行ごとに足さない（Grill の 3 巡目、Issue #863）。範囲は、同梱の AccessKit が UIA に運べるものと、運べないものの XylemUI の側の代替までにする。上流の AccessKit の変更が要るものは行 AX2 に送る（下の「行 AX2 まで待つもの」）。型・列挙の値・拡張メソッドの名前は、上の型のとおりとする（Issue #878 の Grill でオーナーが決定）。同梱の版は、accesskit-c 0.23.1 が使う accesskit 0.25.1・accesskit_consumer 0.39.1・accesskit_windows 0.35.1 で、`.repos/accesskit` の tag `accesskit_windows-v0.35.1`（3 つの crate の tag が同じ commit）で読んだ。以下、`node.rs` は accesskit_windows の `adapters/windows/src/node.rs`、`adapter.rs` は同じ crate の `adapters/windows/src/adapter.rs`、consumer は accesskit_consumer の `accesskit_consumer/src/node.rs`、`lib.rs` は accesskit の `accesskit/src/lib.rs`、ヘッダーは accesskit-c 0.23.1 の release の `include/accesskit.h` を指す。
+
+AccessKit の Windows の adapter がどう決めるか（下の表のもと）:
+
+- **制御の種類:** 役だけから決まる（`node.rs` 58〜265 行目の `control_type`）
+- **パターン:** adapter が持つのは Toggle・Invoke・Value・RangeValue・ScrollItem・SelectionItem・Selection・Text・ExpandCollapse・Window だけである（`node.rs` 790〜804 行目）。Grid・GridItem・Table・TableItem・Scroll は無い
+- **プロパティ:** 答えるのは `node.rs` 1306〜1330 行目の一覧と、FrameworkId・ProviderDescription・ControllerFor（1037〜1055 行目）である。LabeledBy・DescribedBy・IsDataValidForForm・HeadingLevel・LandmarkType・AcceleratorKey・AccessKey は無い
+- **読まれない値:** `described_by`・`error_message`・`invalid` は、accesskit_consumer と Windows・macOS・Linux（atspi-common）の adapter のどこからも読まれない（同じ tag で `git grep` して 0 件）。節に書いても、どの OS にも出ない
+
+**役:** 部品の行が要る役（調査の A）と、それに並ぶ役（調査の B。DV1・CT1・CH1・XS1-D12 の Grill が名前を挙げた）を足す。既にある値は動かさず後ろに足し、基底の型は `byte` のまま（24 と 41 で 65 個）にする。AccessKit の役の全部は写さない。多くは UIA の Group になり、使われない公開の面が増える。`ListBox`・`ListBoxItem`・`SearchBox`・日付の入力は、部品の内部の状態でなく公開の役にする。アプリも、選べる一覧や検索の欄を自分で作るからである。
+
+各役の対応は次の表のとおりである。「たたむ」は中身の文字から名前を作る役（上の「名前のたたみ」）、「子なし」は子の節を持たない役、「既定」は `Live` が `Inherit` の時のライブリージョンの設定である。役の名前と、たたむ役・子なしの役の分け方は、この表のとおりとする（Issue #878 の Grill でオーナーが決定。SpinButton も子を持たない）。括弧の中の数は、AccessKit の役はヘッダーの行、UIA の制御の種類は `node.rs` の行である。
+
+| 役 | AccessKit の役 | UIA の制御の種類 | 名前と子 | UIA のパターンと注意 |
+| --- | --- | --- | --- | --- |
+| Navigation | `Navigation`（389） | Group（167） | — | LandmarkType は行 AX2 |
+| TitleBar | `TitleBar`（417） | Pane（204） | — | — |
+| TabPanel | `TabPanel`（413） | Pane（200） | — | タブとの対応は `Controls`（下の「関係」） |
+| Toolbar | `Toolbar`（418） | ToolBar（205） | — | Selection が付く（consumer 951 行目）。読み取り専用が既定（consumer 897 行目） |
+| Region | `Region`（394） | Group（172） | — | LandmarkType は行 AX2 |
+| Status | `Status`（407） | StatusBar（194） | たたむ。既定 Polite | — |
+| Alert | `Alert`（335） | Text（105） | たたむ。既定 Assertive | — |
+| AlertDialog | `AlertDialog`（336） | Window（106〜111） | — | Window のパターン。`Modal` で IsModal（`node.rs` 735〜741・1496〜1497 行目） |
+| Meter | `Meter`（388） | ProgressBar（166） | 子なし | RangeValue は常に読み取り専用（consumer 861〜879 行目の一覧に無い） |
+| Switch | `Switch`（320） | Button（102） | たたむ | Toggle（`node.rs` 576〜578 行目）。CheckBox と同じく、オフでも `Toggled::False` を書く |
+| RadioGroup | `RadioGroup`（393） | Group（171） | — | Selection（consumer 949 行目）。中の RadioButton は Toggle でなく SelectionItem になる（`node.rs` 576〜578・654〜656 行目） |
+| SpinButton | `SpinButton`（405） | Spinner（192） | 子なし | RangeValue は書ける（consumer 579 行目で文字の入力に数え、861〜863 行目で読み取り専用を持てる） |
+| SearchBox | `SearchInput`（323） | Edit（81） | 子なし | Value。Edit と同じく SetValue を受ける |
+| ScrollBar | `ScrollBar`（398） | ScrollBar（185） | 子なし | RangeValue は常に読み取り専用（consumer 861〜879 行目に無い）。UIA から値を動かせない |
+| MenuItemCheckBox | `MenuItemCheckBox`（385） | CheckBox（163） | たたむ | Toggle。オフでも `Toggled::False` を書く |
+| MenuItemRadio | `MenuItemRadio`（386） | RadioButton（164） | たたむ | SelectionItem（`node.rs` 654〜656 行目）。オフでも `Toggled::False` を書く |
+| ListBox | `ListBox`（378） | List（156） | — | Selection。向きの既定は縦（consumer 587〜597 行目） |
+| ListBoxItem | `ListBoxOption`（296） | ListItem（72） | たたむ | SelectionItem（`node.rs` 659〜663 行目）。ListItem と同じく、選ばれていなくても false を書く |
+| Tree | `Tree`（420） | Tree（207） | — | Selection |
+| TreeItem | `TreeItem`（295） | TreeItem（71） | たたむ | ExpandCollapse が常に付き（consumer 661〜668 行目）、`Expandable` が無ければ LeafNode（`node.rs` 718〜725 行目）。選ばれたかは ListBoxItem と同じに書く |
+| TreeGrid | `TreeGrid`（421） | DataGrid（208） | — | Selection。Grid のパターンは行 AX2 |
+| Table | `Table`（316） | Table（98） | — | Table のパターンは行 AX2 |
+| Grid | `Grid`（367） | DataGrid（146） | — | Selection は付くが、選ばれた項目は常に空（下の「行 AX2 まで待つもの」） |
+| Row | `Row`（289） | DataItem（68） | — | — |
+| Cell | `Cell`（285） | DataItem（64） | たたむ | — |
+| GridCell | `GridCell`（368） | DataItem（64） | たたむ | SelectionItem が常に付く（`node.rs` 664 行目） |
+| ColumnHeader | `ColumnHeader`（313） | DataItem（95） | たたむ | — |
+| RowHeader | `RowHeader`（312） | DataItem（94） | たたむ | — |
+| Heading | `Heading`（371） | Text（149） | たたむ | 深さは `Level` で、UIA の Level に出る（HeadingLevel は行 AX2） |
+| Disclosure | `DisclosureTriangle`（358） | Button（137） | たたむ | ExpandCollapse が常に付く（consumer 666 行目） |
+| DateInput | `DateInput`（324） | Edit（82） | 子なし | Value。Edit と同じく SetValue を受ける |
+| TimeInput | `TimeInput`（328） | Edit（86） | 子なし | Value。Edit と同じく SetValue を受ける |
+| DateTimeInput | `DateTimeInput`（325） | Edit（83） | 子なし | Value。Edit と同じく SetValue を受ける |
+| Log | `Log`（379） | Group（157） | 既定 Polite | — |
+| Feed | `Feed`（362） | Group（141） | — | — |
+| Article | `Article`（338） | Group（113） | — | 読み取り専用が既定（consumer 884 行目） |
+| Document | `Document`（359） | Document（138） | — | — |
+| Paragraph | `Paragraph`（299） | Group（75） | — | — |
+| Code | `Code`（345） | Text（120） | — | — |
+| Figure | `Figure`（364） | Group（143） | — | — |
+| Pane | `Pane`（311） | Pane（93） | — | ほかの UIA の provider は埋め込めない（`node.rs` 1125〜1127 行目、行 AX2） |
+
+- **オフでも書く値:** オフの時に `Toggled::False` を書く役は、CheckBox・RadioButton に Switch・MenuItemCheckBox・MenuItemRadio を足す。書かないと Toggle（SelectionItem）が付かない。選ばれていない時に false を書く役は、ListItem に ListBoxItem・TreeItem を足す
+- **Select の役:** Select の一覧と選択肢は ListBox と ListBoxItem にし、内部の状態 `SelectableList` を消す（上の「選択」）。`FindByRole(SemanticsRole.ListItem)` で選択肢を探していたテストは、`ListBoxItem` で探す
+
+**状態:** `SemanticsStates` を `ushort` に広げ、6 つを足す。内部の `AccessibilityStates`（`ushort`、16 ビットのうち 15 を使う）は `uint` に広げる。足す状態は次のとおりである。
+
+| 状態 | AccessKit（ヘッダーの行） | Windows（UIA） |
+| --- | --- | --- |
+| Invalid | `accesskit_node_set_invalid` に `ACCESSKIT_INVALID_TRUE`（2146・208） | 出ない（上の「読まれない値」）。代わりに、下の「Windows での折り込み」で説明に入れる |
+| Multiselectable | `accesskit_node_set_multiselectable`（1193） | Selection の CanSelectMultiple（`node.rs` 1417 行目）。選択の変化は AddedToSelection と RemovedFromSelection になる（`adapter.rs` 189〜224 行目） |
+| Busy | `accesskit_node_set_busy`（1211） | AriaProperties の `busy=true` だけ（`node.rs` 456〜458 行目） |
+| Modal | `accesskit_node_set_modal`（1223） | Dialog と AlertDialog の Window のパターンの IsModal（`node.rs` 735〜741・1496〜1497 行目、consumer 599〜605 行目）。ほかの役では出ない |
+| Expandable・Expanded | `accesskit_node_set_expanded`（2132） | ExpandCollapse の状態（`node.rs` 718〜725・1485〜1495 行目） |
+
+- **2 つのビットの開閉:** `Expandable` が無ければ開閉の状態を書かない。`Expandable` があれば、`Expanded` の有無で開いているか閉じているかを書く。`Expanded` だけを付けた値は読まない。Flutter も、開閉を持つか（`hasExpandedState`）と開いているか（`isExpanded`）の 2 つの印で表す（3.47.8 の `engine/src/flutter/lib/ui/semantics.dart` 983〜1000 行目）
+- **ポップアップのアンカー:** 開閉は今までどおり疑似状態 `Open` から読み、アプリの `Expandable`・`Expanded` は使わない。開閉の真の値は 1 つにする
+- **部品の値との合わせ方:** アプリの `States` と部品の `States` は OR で合わせる。上の型の説明（部品の States は外せない、#627 の実装）のとおりである。アプリの `Invalid` が部品の `Selected` を消さない。今の `AccessibilityInfo.Over` はアプリの `States` で部品のものを置き換えているので、実装で OR に直す（Issue #878 の Grill でオーナーが決定）
+
+**範囲:** `SemanticsRange` に `Step` と `LargeStep` を足す。0 は書かない。負・NaN・無限大は `ArgumentOutOfRangeException` にする（Issue #878 の Grill でオーナーが決定）。`with` の式はコンストラクターを通らないので、検査は `Step`・`LargeStep` の init アクセサーで行う。`Step` は `accesskit_node_set_numeric_value_step`（ヘッダー 1946 行目）で RangeValue の SmallChange（`node.rs` 630〜632・1361 行目）に、`LargeStep` は `accesskit_node_set_numeric_value_jump`（1954 行目）で LargeChange（`node.rs` 634〜638・1362 行目）になる。`LargeStep` が 0 なら、adapter は LargeChange に `Step` を出す（同 634〜638 行目）。`SemanticsRange` は 24 バイトから 40 バイトになる（`double` が 5 つ）。置き場所は、付けたノードだけの表の `AccessibilityInfo` と a11y の木の節で、`UiNode` は大きくならない。
+
+**操作（クリックのほかの操作）:** 増やす・減らす・数値を書く・開く・閉じるは、Click と同じくハンドラで受ける（上の型の `OnIncrement` など）。状態はデータ、操作はハンドラという、この節の初めの決まりに合わせる。
+
+- **持ち方:** ハンドラは、付けたノードだけを持つ `AccessibilityTables` の表に置く。`UiNode` にも `UiTree` の欄にも足さない。足すか外すと、そのノードに自分だけの印を付ける（上の「直し方」。木が無い間は付けない）
+- **呼ぶスレッド:** 操作の要求は今と同じく窓の HWND への `PostMessage` で UI スレッドに送り（上の「スレッド」）、ハンドラは UI スレッドで呼ぶ。ハンドラを付ける拡張メソッドも、ほかの `Element` のメソッドと同じく UI スレッドで呼ぶ
+- **Disabled:** Disabled のノードには届けない。adapter も Disabled の節への要求を拒む（`node.rs` 934〜950 行目）
+- **数値を書く:** UIA の RangeValue の SetValue は、`ACCESSKIT_ACTION_SET_VALUE` に `ACCESSKIT_ACTION_DATA_NUMERIC_VALUE`（ヘッダー 145・1012 行目）を付けて届く（`node.rs` 1364〜1368 行目）。adapter は節の宣言も読み取り専用も見ずに送る（同 934〜950 行目）。Core は NaN を捨て、`Minimum` から `Maximum` に切ってから `OnSetRangeValue` を呼ぶ。今は Edit の役の文字だけを受け（行 AX1 で SearchBox と日付の入力にも広げる、上の「SetValue の操作」）、数値の要求は落としている（`Win32Accessibility.Perform`）。`Range` を持つ Slider では、UIA が書ける RangeValue を見せたまま値が捨てられる。これを直す
+- **読み取り専用:** `Range` を持つノードに、`OnSetRangeValue`・`OnIncrement`・`OnDecrement` のどれも無ければ、`accesskit_node_set_read_only` を書く。RangeValue の IsReadOnly は節の読み取り専用を先に見る（consumer 469〜476 行目）ので、書けない値を書けると見せない
+- **増やす・減らす:** Windows の adapter は Increment と Decrement を送らない（`adapters/windows/src` に `Increment` が無い。UIA の RangeValue は SetValue だけを持つ）。macOS の adapter は、節が Increment を宣言していれば送る（accesskit_macos の `adapters/macos/src/node.rs` 712〜729 行目）。宣言は P06・P04 で書く（上の「状態と操作」）。Windows では、`OnSetRangeValue` が無く `OnIncrement` か `OnDecrement` があるノードの SetValue を、次の代替で届ける: 今の値より大きければ `OnIncrement` を 1 回、小さければ `OnDecrement` を 1 回呼び、等しければ何もしない。どちらのハンドラも無い向きは捨てる（Issue #878 の Grill でオーナーが決定）
+- **開く・閉じる:** UIA の Expand と Collapse は、ポップアップのアンカーなら今までどおりポップアップを開閉し（上の「Expand と Collapse の操作」）、そうでなければ `OnExpand`・`OnCollapse` を呼ぶ。adapter は、節が開閉の状態を持ち、今の状態と違う時だけ送る（`node.rs` 956〜978 行目）。`Expandable` を付けたのに、アンカーでもなくハンドラも無いノードは、Debug のビルドでは a11y の段で不変条件の失敗にする。Release のビルドでは要求を捨てる（Issue #878 の Grill でオーナーが決定）
+- **比べたもの（GPUI は読んでいない）:** Flutter は `SemanticsProperties` に `onIncrease`・`onDecrease`・`onExpand`・`onCollapse` のハンドラを持つ（3.47.8 の `packages/flutter/lib/src/semantics/semantics.dart` 2413・2426・2587・2596 行目）。Avalonia の `IRangeValueProvider` は `SetValue(double)` と SmallChange・LargeChange を持ち、増やす・減らすは持たない（12.1.4 の `src/Avalonia.Controls/Automation/Provider/IRangeValueProvider.cs` 93・115・135 行目）
+
+**関係:** 関係は相手の `Element` で指す。拡張メソッドは関係を持つ側（名前を受ける欄など）にだけ付け（上の型）、相手の側から結ぶ形（`label.Labels(field)`）は持たない（Issue #878 の Grill でオーナーが決定）。
+
+- **何度も呼ぶ:** `LabelledBy`・`DescribedBy`・`Controls` は、呼ぶたびに相手を足し、呼んだ順に並べる。`ErrorMessage` は相手を 1 つだけ持ち、2 度目は置き換える（AccessKit の error-message も 1 つ、ヘッダー 1416 行目）
+- **誤った相手:** 別の木の `Element` と自分自身は `ArgumentException` にする
+- **作る順:** `Element` はノードを作った時にできるので、相手を後で作る時は、両方を作ってから呼ぶ（`field.LabelledBy(label);` を文として書ける）
+- **持ち方:** 付けたノードだけを持つ `AccessibilityTables` の表（`NodeHandle` から関係へ）に置き、ノードを消すと消える。木が無い間は、宣言は表に 1 つ書くだけで、フレームの経路を通らない。相手から関係を持つ側への逆引きの表は、木がある間だけ作る
+- **解決:** a11y の段が、相手の `NodeHandle` からその節を引く。相手が消えた、`Hidden` の中にある、`Excluded`、仮想化で木に載っていない、節を持たない、のどれかなら、その相手を AccessKit に渡さない。相手の節ができたり消えたり、相手の名前が変わったりすると、逆引きで関係を持つ側に自分だけの印を付ける。相手が戻れば関係も戻る
+- **AccessKit への書き方:** labelled-by は `accesskit_node_push_labelled_by`（ヘッダー 1372 行目）、described-by は `accesskit_node_push_described_by`（1344 行目）、error-message は `accesskit_node_set_error_message`（1416 行目）、controls は `accesskit_node_push_controlled`（1316 行目）、active-descendant は `accesskit_node_set_active_descendant`（1408 行目）で書く
+- **Windows に出るもの:** controls は UIA の ControllerFor になる（`node.rs` 1044〜1053 行目）。active-descendant は、UIA のフォーカスをその節に移す（accesskit_consumer の `accesskit_consumer/src/tree.rs` 538〜541 行目）。相手は同じ AccessKit の木の中に要る（consumer 966〜971 行目）。開いているポップアップは同じ木の根の子なので（上の「a11y の木」）、欄から候補の一覧の選択肢も指せる。labelled-by は、節に名前が無い時だけ、相手の節の名前（`Label` の節は値）を名前にする（consumer 775〜794 行目）。described-by と error-message は出ない
+- **active-descendant:** フォーカスを持つ入れ物の側から、`IReadOnlySignal<Element>` で渡す。`Element` は構造体で、`default`（`Element.IsNone`）がノードの無いことを表すので、null 許容にしない。アプリの `Signal<Element>` をそのまま渡せる。キーで選択肢を移るたびに `AccessibilityInfo` を作り直さず（打鍵ごとに情報を作らない、上の「文字の欄」と同じ理由）、Signal に書くだけにする。木がある間だけ Signal の変化を購読し、入れ物の節に自分だけの印を付ける。`default` の `Element` は「無し」である。GPUI は選ばれた子の側で宣言し、フォーカスを持つ祖先がある時だけ使う（zed v1.25.3 の `crates/gpui/src/elements/div.rs` 1365〜1371 行目）。その形では、ポップアップの中の候補は欄の子孫でないので指せない
+- **比べたもの（Flutter は読んでいない）:** Avalonia の `AutomationProperties.LabeledBy` は `Control` を直に指す（12.1.4 の `src/Avalonia.Controls/Automation/AutomationProperties.cs` 228 行目）。名前が無い時に相手の名前を名前にし（`src/Avalonia.Controls/Automation/Peers/ControlAutomationPeer.cs` 102〜114 行目）、UIA の LabeledBy は「not yet implemented」である（`src/Avalonia.Controls/Automation/Peers/AutomationPeer.cs` 222 行目）
+
+**Windows での折り込み（行 AX2 まで）:** described-by・error-message・invalid は Windows のどこにも出ない（上の「読まれない値」）。labelled-by は、相手の節の名前を 1 段だけ読む（consumer 766〜794 行目）。そこで XylemUI の a11y の木が、名前と説明を自分で作って節に書く。macOS と Linux のために、関係そのものも AccessKit に書く。
+
+- **名前:** アプリの `AccessibilityInfo.Name`、labelled-by の相手の文字、部品の名前、中身のたたみ（上の「名前のたたみ」）の順に、最初にあるものを名前にする（PR #881 のレビューの後、Issue #878 の Grill でオーナーが決定）。アプリが書いた 2 つ（名前と labelled-by）が、部品の既定の名前より先に来る。そのため a11y の木は、アプリの情報と部品の情報の名前を、合わせる前の 2 つの表（`AccessibilityTables` の `Info` と `Part`）から別々に読む。ARIA の名前の求め方（Accessible Name and Description Computation 1.2 の手順 2B）は aria-labelledby を aria-label（手順 2D）より先に使うので、アプリの名前と labelled-by の順が XylemUI と逆である。Avalonia の `ControlAutomationPeer.GetNameCore` は、`AutomationProperties.Name` が空白の時だけ LabeledBy の相手の名前を使い（12.1.4 の `src/Avalonia.Controls/Automation/Peers/ControlAutomationPeer.cs` 108〜118 行目）、この 2 つの順は XylemUI と同じである。相手の文字は、相手の節の名前か、節が無ければ相手の下の文字の葉を前順につないだもので、相手が複数なら呼んだ順に空白 1 つでつなぐ。XylemUI が名前を label に書くので、Windows では AccessKit の labelled-by からの名前は使われない（節の label が先、consumer 776 行目）
+- **説明:** `Invalid` の間は error-message の相手の文字を先頭に、続けて `AccessibilityInfo.Description`、described-by の相手の文字を、空白 1 つでつないで説明にする。説明は UIA の FullDescription になる（`node.rs` 415〜421・1311 行目）
+- **invalid:** error-message の相手が無い時、Windows では `Invalid` は何も伝わらない。名前にも説明にも言葉を足さない。UIA の IsDataValidForForm は行 AX2 で出す（Issue #878 の Grill でオーナーが決定）
+- **割り当て:** 折り込んだ文字列は、文字が変わった時だけ作る（名前のたたみと同じ）
+- **行 AX2 の後:** AccessKit が LabeledBy・DescribedBy・IsDataValidForForm を出すようになったら、説明への折り込みを続けるかを行 AX2 で決める。名前への折り込みは、Avalonia と同じく残す
+
+**ライブリージョン:** `AccessibilityInfo.Live` で宣言する。命令でその場に読ませる口（announce）は持たない。AccessKit の Windows の adapter は UIA の通知のイベントを出さず（`adapters/windows/src` に `Notification` が無い）、それは行 AX2 で入れる。
+
+- **値:** `Off`・`Polite`・`Assertive` は `accesskit_node_set_live`（ヘッダー 2162 行目、値は 240〜242 行目）で書く。`Inherit`（既定）は、Alert なら Assertive、Status と Log なら Polite を書き、ほかの役では書かない。書かない節は、AccessKit が親の節の値を継ぐ（consumer 906〜910 行目）。AccessKit は役から既定の値を作らない（同じ行）ので、役の既定は XylemUI が書く。既定の値は WAI-ARIA 1.2 の alert・status・log の役の「Implicit Value for Role」（aria-live がそれぞれ assertive・polite・polite）に合わせた
+- **UIA:** 値は LiveSetting に出る（`node.rs` 546〜553・1319 行目）。LiveRegionChanged のイベントは、名前を持ちライブの設定がオフでない節が足された時（`adapter.rs` 256〜263 行目）と、そういう節の名前かライブの設定が変わった時（同 313〜324 行目）に出る。名前の変化だけが引き金である
+- **名前をたたむ理由:** Status と Alert は中身の文字をたたんで名前にする（上の役の表）。知らせの文字が変わると名前が変わり、イベントが出て、知らせの全部が読まれる。Log はたたまず、足された行の Text の節が親から Polite を継ぎ、足された時にイベントが出る。WAI-ARIA 1.2 で alert と status の aria-atomic の既定が true なのと同じ読まれ方になる
+- **atomic:** 持たない。Windows の adapter は AriaProperties の `atomic` にしか書かない（`node.rs` 441〜444 行目）
+- **費用:** 木がある間だけで、文字が変わった時だけ節を 1 つ直す（変わった節のある受け渡し 1 回で約 25 µs、上の「イベント」）
+- **比べたもの（GPUI は読んでいない）:** Flutter は `liveRegion` を bool で持つ（3.47.8 の `packages/flutter/lib/src/semantics/semantics.dart` 1960 行目）。Avalonia の `AutomationLiveSetting` は Off・Polite・Assertive の 3 つである（12.1.4 の `src/Avalonia.Controls/Automation/AutomationLiveSetting.cs` 6〜26 行目）。XylemUI は、役の既定と親から継ぐことを残すために `Inherit` を足す
+
+**深さ・位置・数:** `Level`・`PositionInSet`・`SizeOfSet` は 1 から数える整数で、0 は「無し」、負は `ArgumentOutOfRangeException` にする。検査は init アクセサーで行い、`with` の式でも効く。UIA と ARIA は 1 から数え、Avalonia の `PositionInSet`・`SizeOfSet` も `int` である（`AutomationProperties.cs` 266・282 行目）。
+
+- **AccessKit への書き方:** AccessKit の level と position-in-set は 0 から数える（`lib.rs` 2291〜2292・2308〜2309 行目）。ブリッジが 1 を引いて `accesskit_node_set_level`・`accesskit_node_set_position_in_set`（ヘッダー 2018・2032 行目）で書き、adapter が 1 を足して UIA の Level と PositionInSet に出す（`node.rs` 682〜687・695〜700 行目）
+- **数は入れ物に:** AccessKit の size-of-set は項目でなく入れ物に書く（`lib.rs` 2299〜2300 行目）。adapter は、項目から上へ最も近い、数を持つ祖先の値を読む（`node.rs` 689〜693 行目、consumer 629〜641 行目）。そこで `SizeOfSet` は入れ物に付ける。項目に付けた `SizeOfSet` は、その項目の子の数として読まれる
+- **仮想化した並び:** 並びの節の数と行の位置は今までどおり `IVirtualHost` から書く（上の「仮想化した並び」）。アプリが値を付けた時は、ほかの欄と同じくアプリの値を使う（Issue #878 の Grill でオーナーが決定）
+- **見出し:** Heading の深さは `Level` で書く。ブリッジはほかの節と同じく 1 を引いて渡すので、UIA の Level は正しい（`node.rs` 695〜700 行目が 1 を足す）。AriaProperties の `level` は、adapter が AccessKit の値をそのまま書く（`node.rs` 500〜502 行目）ので、1 小さくなる。これは上流の食い違いで、直すのは行 AX2 である（PR #881 のレビューの後、Issue #878 の Grill でオーナーが決定）。UIA の HeadingLevel も行 AX2 で出す
+- **平らに並べたツリー:** 兄弟の組ごとに数を持たせるには、a11y の木の中で TreeItem を深さごとに入れ子にする必要がある。それを行うかは行 B4 で決める。この行が決めるのは値を置く場所（入れ物）までである
+
+**向き:** `Orientation` は `None`・`Horizontal`・`Vertical` の列挙で、`None` は書かない。ほかは `accesskit_node_set_orientation`（ヘッダー 2177 行目、値は 256・260 行目）で書き、UIA の Orientation に出る（`node.rs` 568〜574・1322 行目）。書かない時、AccessKit は ListBox を縦、TabList を横とする（consumer 587〜597 行目）。
+
+**描く関数の節（行 CH1 から送られた口、Grill の 4 巡目でオーナーが決定、Issue #868）:** 描く関数（`DrawFunc`）で描くノード（チャートの描画域）が、自分の子の a11y の節を足す口を、この行で入れる。今の a11y の木は、1 つの `UiNode` から子の節を作るのを、テキストのリンクの範囲だけで行う（上の「v1 の契約」）。形は次のとおりにする（Issue #878 の Grill でオーナーが決定）。
+
+```csharp
+public delegate void AccessibleChildrenFunc(AccessibleChildren children, Rect bounds);   // bounds はノードの箱（ノードの座標）
+public static Element AccessibleChildren(this Element element, AccessibleChildrenFunc build);
+
+public sealed class AccessibleChildren
+{
+    public void Add(int key, Rect bounds, AccessibilityInfo info);     // 葉の節（点、棒）
+    public void Begin(int key, Rect bounds, AccessibilityInfo info);   // 子を持つ節（系列）。End で閉じる
+    public void End();
+}
+
+public static Element ActiveDescendant(this Element element, IReadOnlySignal<int?> childKey);   // 自分の子の節を key で指す。null は無し
+```
+
+- **呼ぶ時:** a11y の段が、木がある間だけ、ノードの節を直す時に呼ぶ。木が無ければ呼ばない。関数が読んだ Signal が変わると、ノードに印を付ける（木がある間だけ購読する）
+- **節の id:** 同じノードの中で同じ `key` の節は、作り直しても同じ AccessKit の id を使う。`key` が重なれば Debug のビルドで不変条件の失敗にする
+- **操作:** 子の節は操作を持たない。ScrollIntoView はノード自身を見える所まで動かす。キーで点を移る描画域は、フォーカスをノードに持ち、`ActiveDescendant` の key を取る形で子の節を指す。key の節がその時に無ければ「無し」とする（Issue #878 の Grill でオーナーが決定）
+- **比べたもの（Avalonia は読んでいない）:** GPUI は、要素が prepaint の後に合成の子の節を足す（zed v1.25.3 の `crates/gpui/src/window/a11y.rs` 67〜82 行目、`crates/gpui/src/element.rs` 123〜137 行目の `a11y_synthetic_children`）。Flutter の `CustomPainter` は `semanticsBuilder` で、箱と `SemanticsProperties` と key を持つ節の一覧を返す（3.47.8 の `packages/flutter/lib/src/rendering/custom_paint.dart` 26・222・307〜354 行目）
+
+**行 AX2 まで待つもの:** 次は、AccessKit の Windows の adapter に無く、上流の変更と同梱する版の更新が要る（行 AX2、Grill の 5 巡目でオーナーが決定、Issue #872）。
+
+- 表とグリッドのパターン（Grid・GridItem・Table・TableItem。`node.rs` 790〜804 行目に無く、650 行目に `TODO: tables (#29)`）。表の行と列の番号・数・広がり・並び（`RowIndex`・`ColumnIndex`・`RowCount`・`ColumnCount`・`RowSpan`・`ColumnSpan`・`SortDirection`）の公開の欄も、行 AX2 で一緒に入れる。今の adapter は、並びを AriaProperties の `sort` にしか書かず（`node.rs` 514〜525 行目）、番号と数はどこにも出さない
+- Grid と TreeGrid の選ばれた項目。Selection の `GetSelection` は項目らしい子だけを数え（`node.rs` 1420〜1430 行目、consumer 1064〜1073 行目）、Row・Cell・GridCell は項目らしい役に入らない（consumer 920〜936 行目）ので、常に空である
+- UIA の LabeledBy・DescribedBy・IsDataValidForForm（上の「Windows での折り込み」の終わり）
+- UIA の通知のイベント（命令でその場に読ませる口）
+- Scroll のパターン（上の「スクロールする箱」）
+- 見出しの深さ（HeadingLevel）と、ランドマークの種類（LandmarkType。Navigation・Region など）
+- AriaProperties の `level` が UIA の Level より 1 小さいこと（上の「見出し」。`node.rs` 500〜502 行目が 0 から数える値をそのまま書く）
+- AcceleratorKey と AccessKey
+- 独自の操作（並べ替えなど）
+- 埋め込みの fragment root（`node.rs` 1125〜1127 行目の `GetEmbeddedFragmentRoots` は null を返す。WebView などの他の provider を Pane の下に置く口）
+
+**確かめ方（行 AX1）:** 上の文ごとにテストを 1 つ以上置く。
+
+- Core（`IAccessibilityBridge` の記録で読む、`AccessibilityTests`）
+  - 新しい役の名前のたたみと子の節が、役の表のとおりになる
+  - `Live` が `Inherit` の Alert は Assertive、Status と Log は Polite になり、ほかの役は書かれない。`Off` を付けた Alert は Off になる
+  - 部品の `Selected` とアプリの `Invalid` が両方残る（OR で合わせる）
+  - アンカーでないノードの開閉は `Expandable`・`Expanded` から読み、`Expanded` だけの値は読まない。ポップアップのアンカーは、アプリの値でなく疑似状態 `Open` から読む
+  - `SemanticsRange` の `Step`・`LargeStep` の負・NaN・無限大と、`Level`・`PositionInSet`・`SizeOfSet` の負は、コンストラクターでも `with` の式でも `ArgumentOutOfRangeException` になる
+  - `Level` と `PositionInSet` は 1 を引いて節に書かれ、0 は書かれない
+  - 関係は、相手を後で作っても結ばれる。相手が消える、`Hidden` になる、`Excluded` になる、仮想化した並びの範囲から出ると落ち、戻ると戻る。別の木の相手と自分自身は `ArgumentException`、`ErrorMessage` の 2 度目は置き換える
+  - 名前はアプリの `Name`、labelled-by の相手の文字、部品の名前、たたみの順に決まり、相手の文字が変わると名前が変わる。部品の名前と labelled-by の両方があるノードでは、labelled-by の相手の文字が名前になる
+  - 説明は、`Invalid` の間だけ error-message の文字を先頭に持つ
+  - active-descendant の Signal を書くと、入れ物の節だけが直る。相手はポップアップの中の節でもよい
+  - ハンドラを足すか外すと自分だけの印が付く。Disabled のノードには届かない。数値の要求の NaN は捨て、範囲の外は切ってから届く。`OnSetRangeValue` が無い時は、大きい値で `OnIncrement`、小さい値で `OnDecrement` が 1 回呼ばれる
+  - `Range` を持ちハンドラの無いノードは、読み取り専用として節に書かれる
+  - アンカーでもハンドラも無い `Expandable` のノードは、Debug のビルドで不変条件の失敗になる
+  - 描く関数の節: 関数は木がある間だけ呼ばれ、同じ `key` の節は id を保ち、読んだ Signal の変化で作り直される
+  - 木の無い間は、関係・ハンドラ・ライブ・描く関数の節を足しても、印も節も作らない（`Marks_AreNone_WhileTheTreeIsNotMade` を広げる）
+  - 関係・ライブ・ハンドラ・描く関数の節を持つ木の、変化の無いフレームは割り当て 0（`SteadyState_FocusAndHoverWithTheTree_AllocatesNothing` を広げる）
+- Platform（AccessKit の節の値を、AccessKit の読む関数で読み戻す。UIA を通さない）
+  - すべての `SemanticsRole` が役の表の AccessKit の役になる。対応の無い役を足すと落ちる
+  - 状態・範囲のステップ・関係・ライブ・深さ・位置・数・向きが、上の関数で節に書かれる。読む関数は試験のためだけに `AccessKit.cs` に宣言する
+- Platform（本物の UIA のクライアント、`UiaTests`）
+  - 役の表の全部の役の制御の種類を、1 回の木の読みで確かめる（`Tree_IsReadByUia_WithRolesNamesStatesAndBoxes` と同じ形）
+  - Switch と MenuItemCheckBox に Toggle が付き、オフで Off になる。RadioGroup の中の RadioButton と MenuItemRadio に SelectionItem が付く
+  - ListBox・Tree・RadioGroup に Selection が付き、CanSelectMultiple は `Multiselectable`、IsSelectionRequired は `Required` に従う。複数選択の入れ物では AddedToSelection のイベントが出る
+  - TreeItem の Expand が `OnExpand` を呼ぶ。`Expandable` の無い TreeItem は LeafNode
+  - RangeValue の SmallChange と LargeChange がステップに従い、`LargeStep` が 0 なら LargeChange はステップになる。SetValue(42) が `OnSetRangeValue` に 42 で届き、Disabled では拒まれる。ハンドラの無いノード、Meter、ScrollBar は IsReadOnly が true
+  - LiveSetting を id で読む（`VirtualListRows_GiveTheirPlaceAndCount` と同じ読み方）。Status の文字を変えると LiveRegionChanged のイベントが届く
+  - Level・PositionInSet・SizeOfSet・Orientation を id で読む。`Level` 2 の Heading は UIA の Level が 2 で、AriaProperties の `level` は 1 である（上流の食い違いを固定し、行 AX2 で書き直す）
+  - SearchBox・DateInput・TimeInput・DateTimeInput の Value の SetValue が欄の文字を置き換え、`ReadOnly` か Disabled の欄では置き換えない（`SetValue_WritesTheField_NotAReadOnlyOne` と同じ形）
+  - Controls が ControllerFor に、error-message の文字が FullDescription に、labelled-by の相手の文字が Name に出る
+  - active-descendant を移すと、相手の節にフォーカスのイベントが届く
+  - `Modal` の AlertDialog の IsModal が true になる
+  - 上流の穴を固定する試験: Grid に Grid のパターンが無く、Selection の GetSelection が空で、LabeledBy が空である。行 AX2 で AccessKit を上げた時に落ち、行 AX2 がそれを書き直す
+- `XylemUI.Testing`: `AccessibilityOf` が新しい値を返す（§12.5）
+- macOS と Linux: Increment・Decrement・SetValue・Expand・Collapse の宣言は、行 P06・P04 で書いて確かめる
+- 実機: ナレーターで、Status の知らせ、TreeItem の開閉、`OnSetRangeValue` を持つ Slider の値の変更が読み上げられ、操作できることを、実装の PR の CI が通った後にオーナーが確かめる
 
 Windows の UIA は、AccessKit の Windows の adapter が COM サーバー（`IRawElementProviderSimple` 等）として出す（上の「P02g で入れる形」、S10）。source-generated COM（`[GeneratedComClass]` と `StrategyBasedComWrappers`）は、インターフェースの属性をリフレクションで読むので、NativeAOT のリフレクションの実行時とメタデータがリンクされ、`XylemUI.E2E.exe` が 4.28 MB でなく 4.71 MB になった（F1）。
 
@@ -5847,7 +6085,7 @@ app.AssertNoLeakedScopes();                            // ScopeTracker（§2.3�
 
 - `HeadlessApp` は起動時に `ScopeTracker.IsEnabled` を有効にし、`AssertNoLeakedScopes()` はウィンドウを閉じて `PumpAndSettle()` した後に、残っている Scope を生成スタックつきで報告する
 - 検索は前順（`FirstChild` / `NextSibling` の順）で、a11y の順序（§4.4）と同じ順に結果を返す
-- **鍵（P02a の Grill、Issue #456）:** `Find(string)` は、テスト ID が一致するノードを探し、無ければ文字が一致する文字の葉（§3.2）を探す。テスト ID は Core のノードの属性 `.TestId(string)` で付け、付けたノードだけを持つ表（`UiTree` の `NodeHandle` から文字列への表、ノードを消すと消える）に入れる。付けないノードの費用は増えない。Flutter の `Key`（`find.byKey`、`flutter_test` 3.47.8 の `lib/src/finders.dart`）、Avalonia 12.1.4 の `Name`（`src/Avalonia.Base/Controls/NameScopeExtensions.cs` 20〜107 行目）、GPUI（zed v1.25.3）の `debug_selector`（`crates/gpui/src/elements/div.rs` 885 行目）に当たる。`FindAll(string)` は `Find` と同じ鍵で探し、0 件以上を前順に返す（例外にしない）。アクセシブル名と役（`SemanticsRole`）での検索は、行 P02g で `app.FindByRole(SemanticsRole role, string? name = null)` として足す。a11y の木を作り（`HeadlessApp` は最初の呼び出しで木を作り始める）、その前順に、役と、指定があれば名前の一致する節のノードを返す。節の役・名前・状態は `app.AccessibilityOf(Element)` で読む（P02g の Grill、Issue #620）。`AccessibilityInfo.Excluded` のノードとその子孫（`label` 無しの `Icon` など、§4.4.1「外すノード」）は a11y の木に出ないので、`FindByRole` では見つからない。テスト ID で探す。アイコンを描くテストのプロジェクトは、アプリと同じく Theme.Fluent の `.targets` を取り込み、道具がテストのアセンブリに残したフォントを書き足す（IC1、§5.0.4「埋め込み方」）。型を指定して中身を読む `Find<T>` は作らない。文字は文字で探して確かめる（Flutter の `find.text` と `findsOneWidget`、`flutter_test` 3.47.8 の `lib/src/finders.dart` 124〜623 行目と `lib/src/matchers.dart` 45〜165 行目）
+- **鍵（P02a の Grill、Issue #456）:** `Find(string)` は、テスト ID が一致するノードを探し、無ければ文字が一致する文字の葉（§3.2）を探す。テスト ID は Core のノードの属性 `.TestId(string)` で付け、付けたノードだけを持つ表（`UiTree` の `NodeHandle` から文字列への表、ノードを消すと消える）に入れる。付けないノードの費用は増えない。Flutter の `Key`（`find.byKey`、`flutter_test` 3.47.8 の `lib/src/finders.dart`）、Avalonia 12.1.4 の `Name`（`src/Avalonia.Base/Controls/NameScopeExtensions.cs` 20〜107 行目）、GPUI（zed v1.25.3）の `debug_selector`（`crates/gpui/src/elements/div.rs` 885 行目）に当たる。`FindAll(string)` は `Find` と同じ鍵で探し、0 件以上を前順に返す（例外にしない）。アクセシブル名と役（`SemanticsRole`）での検索は、行 P02g で `app.FindByRole(SemanticsRole role, string? name = null)` として足す。a11y の木を作り（`HeadlessApp` は最初の呼び出しで木を作り始める）、その前順に、役と、指定があれば名前の一致する節のノードを返す。節の役・名前・状態は `app.AccessibilityOf(Element)` で読む（P02g の Grill、Issue #620）。行 AX1 で、返す `AccessibilityNodeInfo` に、ライブの設定（`Inherit` を解いた後の値）・向き・深さ・位置・数（どれも 1 から数える）と、関係の相手（`LabelledBy`・`DescribedBy`・`Controls` は `IReadOnlyList<Element>`、`ErrorMessage` と `ActiveDescendant` は `Element` で、無ければ `default`。木に載らず落ちた相手は入れない）を足す。`IsExpanded` は、アンカーの疑似状態か `Expandable` の値で、開閉を持たないノードでは null である（§4.4.1「AX1 で足す形」）。`AccessibilityInfo.Excluded` のノードとその子孫（`label` 無しの `Icon` など、§4.4.1「外すノード」）は a11y の木に出ないので、`FindByRole` では見つからない。テスト ID で探す。アイコンを描くテストのプロジェクトは、アプリと同じく Theme.Fluent の `.targets` を取り込み、道具がテストのアセンブリに残したフォントを書き足す（IC1、§5.0.4「埋め込み方」）。型を指定して中身を読む `Find<T>` は作らない。文字は文字で探して確かめる（Flutter の `find.text` と `findsOneWidget`、`flutter_test` 3.47.8 の `lib/src/finders.dart` 124〜623 行目と `lib/src/matchers.dart` 45〜165 行目）
 - **スレッド:** Core の UI スレッドはプロセスで 1 つなので（§2.12）、`XylemUI.Testing` は UI スレッドを 1 つ持ち、テストの本体をそこで動かす口 `HeadlessSession.Run(Func<Task>)` を出す。xUnit v3 の `[UiFact]` / `[UiTheory]` は、その上の薄い別のアセンブリ `XylemUI.Testing.XUnit` に置く（Avalonia 12.1.4 の `src/Headless/Avalonia.Headless.XUnit/Avalonia.Headless.XUnit.csproj` 8・12 行目と同じ分け方）。テストの本体が UI スレッドで動くので、§12 の例は同期の呼び出しのまま書ける。このスレッドの `SynchronizationContext` は、UI キューの仕事を 1 つずつバッチ（§2.2.1）で包まない。テストの本体はキューの 1 つの仕事なので、包むと本体が終わるまで Effect が流れないためである。テストが `Set` したシグナルの Effect はすぐ流れる。アプリの中では `await` の継続が 1 つのバッチになるが、テストの中ではならない（Issue #460）。ほかのスレッドから渡されたテストの本体は 1 つずつ動く。`await` で待つ本体があっても、次の本体はそれが終わるまで待つ。追跡（`ScopeTracker`）と UI キューはプロセスに 1 つなので、2 つのテストの本体が UI スレッドの上で入り混じると、`AssertNoLeakedScopes` が他のテストの Scope を数えてしまう（PR #461 のレビュー）
 
 ---
