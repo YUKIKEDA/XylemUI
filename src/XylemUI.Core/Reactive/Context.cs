@@ -41,6 +41,7 @@ public sealed class Context<T> : IContextStore
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, or a computed value is computing.
     /// </exception>
+    [UiThreadOnly]
     public Element Provide(T value, Func<Element> body, [CallerMemberName] string owner = "")
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -73,6 +74,7 @@ public sealed class Context<T> : IContextStore
     /// No value is provided and the key has no default; or there is no current scope; or a computed value is computing; or the
     /// calling thread is not the UI thread.
     /// </exception>
+    [UiThreadOnly]
     public T Use()
     {
         if (!TryUse(out T? value))
@@ -91,6 +93,7 @@ public sealed class Context<T> : IContextStore
     /// <exception cref="InvalidOperationException">
     /// There is no current scope; or a computed value is computing; or the calling thread is not the UI thread.
     /// </exception>
+    [UiThreadOnly]
     public bool TryUse([MaybeNullWhen(false)] out T value) => TryFind(false, out value);
 
     /// <summary>
