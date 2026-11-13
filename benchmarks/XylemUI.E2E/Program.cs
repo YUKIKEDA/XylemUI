@@ -128,6 +128,7 @@ return scenario switch
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
     "context" => ContextCost.Run(),
+    "theme-follow" => ThemeFollowCost.Run(args.Length > 1 ? args[1] : "A"),
     "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit")),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),
