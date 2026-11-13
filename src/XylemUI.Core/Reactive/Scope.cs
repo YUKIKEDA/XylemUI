@@ -382,12 +382,16 @@ public static class Scope
     /// </summary>
     /// <param name="key">The key.</param>
     /// <param name="slot">The slot of the value in the key's store.</param>
+    /// <param name="absentMeansOutside">
+    /// Whether no value means "outside" for this key, a key of the framework's own (a menu's context node): then a lookup in what
+    /// belongs to nothing finds no value instead of throwing, since no ancestor's value can be missed.
+    /// </param>
     /// <returns>Whether a value is provided.</returns>
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread; a computed value is computing; or there is no current scope, also inside an
     /// effect that was made with no current scope.
     /// </exception>
-    internal static bool FindContext(IContextStore key, out int slot)
+    internal static bool FindContext(IContextStore key, out int slot, bool absentMeansOutside = false)
     {
         UiThread.VerifyAccess();
         if (ReactiveRuntime.Current is { } running && running is not Effect)
@@ -414,7 +418,7 @@ public static class Scope
 
         // A value provided inside what belongs to nothing was found above. Without one, a default would hide a value that an
         // ancestor provided, as it would with no current scope.
-        if (data.Unowned)
+        if (data.Unowned && !absentMeansOutside)
         {
             ThrowHelper.ThrowContextWithNoScope();
         }

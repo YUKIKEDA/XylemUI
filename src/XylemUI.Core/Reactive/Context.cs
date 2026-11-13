@@ -91,9 +91,22 @@ public sealed class Context<T> : IContextStore
     /// <exception cref="InvalidOperationException">
     /// There is no current scope; or a computed value is computing; or the calling thread is not the UI thread.
     /// </exception>
-    public bool TryUse([MaybeNullWhen(false)] out T value)
+    public bool TryUse([MaybeNullWhen(false)] out T value) => TryFind(false, out value);
+
+    /// <summary>
+    /// Finds the nearest provided value, for a key of the framework's own whose absence means "outside" (a menu's context node):
+    /// in an effect that was made with no current scope, it finds no value instead of throwing (design §2.13).
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns><see langword="false"/> when no value is provided and the key has no default.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// There is no current scope; or a computed value is computing; or the calling thread is not the UI thread.
+    /// </exception>
+    internal bool TryUseInside([MaybeNullWhen(false)] out T value) => TryFind(true, out value);
+
+    private bool TryFind(bool absentMeansOutside, [MaybeNullWhen(false)] out T value)
     {
-        if (Scope.FindContext(this, out int slot))
+        if (Scope.FindContext(this, out int slot, absentMeansOutside))
         {
             value = _values[slot];
             return true;

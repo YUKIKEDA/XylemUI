@@ -101,7 +101,7 @@ public static partial class Primitive
         UiTree tree =
             UiTree.Current ?? throw new InvalidOperationException("MenuItem is made while a window's root function runs; no tree is current.");
         RequireScope(nameof(MenuItem));
-        bool inMenu = MenuContext.TryUse(out NodeHandle context);
+        bool inMenu = MenuContext.TryUseInside(out NodeHandle context);
         var named = new NamedAction(tree, action, inMenu, context);
         Element item = Box(content(Computed.Create(named.Keys))).Focusable().Disabled(Computed.Create(named.Unavailable));
         var state = new MenuItemState(tree, item.Node, named.Dispatch, submenu: null);
@@ -172,7 +172,7 @@ public static partial class Primitive
     )
     {
         // A submenu is made in its menu's panel and has that menu's context; a menu made elsewhere finds its own each time it opens.
-        bool inherits = MenuContext.TryUse(out NodeHandle inherited);
+        bool inherits = MenuContext.TryUseInside(out NodeHandle inherited);
 
         // A menu opened from the keys shows the access keys while it is open (design §13.1, "Access keys"): its part's scope, which
         // goes when the menu closes, ends what it began.

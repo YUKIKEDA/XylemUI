@@ -488,6 +488,46 @@ public sealed class ContextTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A key of the framework's own, whose absence means "outside" (a menu's context node), finds no value in an effect made with
+    /// no current scope instead of throwing; a value provided inside that effect is still found.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A key with no default. No scope is current.
+    ///
+    /// Steps:
+    /// - Make an effect that looks the key up with the lookup for such keys, then provides 1 around a body that looks it up again.
+    ///
+    /// Expected:
+    /// - The first lookup returns <see langword="false"/> and does not throw; the second finds 1.
+    /// </remarks>
+    [Fact]
+    public void TryUseInside_InsideAnEffectMadeWithNoScope_FindsNothingWithoutThrowing() =>
+        ui.Invoke(() =>
+        {
+            var key = new Context<int>();
+            bool? outside = null;
+            int inside = 0;
+
+            Effect effect = Effect.Create(() =>
+            {
+                outside = key.TryUseInside(out _);
+                _ = key.Provide(
+                    1,
+                    () =>
+                    {
+                        _ = key.TryUseInside(out inside);
+                        return default;
+                    }
+                );
+            });
+
+            Assert.False(outside);
+            Assert.Equal(1, inside);
+            effect.Dispose();
+        });
+
+    /// <summary>
     /// A scope made under a parent that is being disposed belongs to nothing: a lookup in it that finds no value throws.
     /// </summary>
     /// <remarks>
