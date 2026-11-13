@@ -275,9 +275,6 @@ public static partial class Primitive
         public Dictionary<NodeHandle, AccessKeyHost> Hosts { get; } = [];
 
         public List<MenuBarState> Bars { get; } = [];
-
-        // The context nodes of the open menus, by their popups' roots (Menu.cs).
-        public Dictionary<NodeHandle, NodeHandle> MenuContexts { get; } = [];
     }
 
     // What a host does with an access key: its target, if it takes the key now.
