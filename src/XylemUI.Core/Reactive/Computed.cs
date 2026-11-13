@@ -18,6 +18,7 @@ public static class Computed
     /// </param>
     /// <returns>The new computed value.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static Computed<T> Create<T>(Func<T> compute, IEqualityComparer<T>? comparer = null)
     {
         ArgumentNullException.ThrowIfNull(compute);
@@ -67,6 +68,7 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
     /// <inheritdoc />
     /// <exception cref="ObjectDisposedException">The computed value was disposed.</exception>
     /// <exception cref="InvalidOperationException">The computation reads its own value.</exception>
+    [UiThreadOnly]
     public T Get()
     {
         UiThread.VerifyAccess();
@@ -86,6 +88,7 @@ public sealed class Computed<T> : Computation, IReadOnlySignal<T>, IDisposable
     /// Stops the computed value: it no longer reads its sources, and <see cref="Get"/> throws.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public void Dispose()
     {
         UiThread.VerifyAccess();

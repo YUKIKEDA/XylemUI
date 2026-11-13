@@ -232,8 +232,11 @@ internal sealed class TreeScene : IDisposable
         {
             scope = Scope.Create(() =>
             {
+                // A row's key is its item, so the item of a row never changes and one read is the row's color (XYLEM110).
+#pragma warning disable XYLEM110
                 Element Row(IReadOnlySignal<int> item) =>
                     Elements.Box().Height(20).Background(new Paint((item.Get() & 1) == 0 ? Color.FromRgb(0xCC3333) : Color.FromRgb(0x33AA66)));
+#pragma warning restore XYLEM110
                 box =
                     list == "virtual"
                         ? Elements

@@ -31,6 +31,7 @@ public static class AppFonts
     /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The bytes are empty, or are not a font.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread (design §2.12).</exception>
+    [UiThreadOnly]
     public static void Add(byte[] data)
     {
         UiThread.VerifyAccess();

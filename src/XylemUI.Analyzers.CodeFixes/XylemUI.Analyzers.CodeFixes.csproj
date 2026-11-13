@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The code fixes of the analyzers (design §2.2, "Analyzers", row A1). They reference the editor's API (Workspaces), which the
+       command-line compiler does not carry, so they are an assembly apart from the rules (RS1038), as Avalonia's are. XylemUI.Core's
+       package carries the assembly under analyzers/dotnet/cs beside XylemUI.Analyzers.dll; it never ships in an app. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>XylemUI.Analyzers</RootNamespace>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- A compiler component: it is not a library of an app, so it is neither packed by itself nor checked for NativeAOT. -->
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <InvariantGlobalization></InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

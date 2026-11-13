@@ -11,5 +11,6 @@ public interface IReadOnlySignal<out T>
     /// </summary>
     /// <returns>The current value.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     T Get();
 }

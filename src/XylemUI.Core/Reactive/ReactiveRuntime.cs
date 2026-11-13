@@ -62,6 +62,7 @@ public static class ReactiveRuntime
     /// </summary>
     /// <param name="action">The code that sets signals.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static void Batch(Action action)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -84,6 +85,7 @@ public static class ReactiveRuntime
     /// <param name="func">The code that sets signals.</param>
     /// <returns>The result of <paramref name="func"/>.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static T Batch<T>(Func<T> func)
     {
         ArgumentNullException.ThrowIfNull(func);

@@ -24,13 +24,35 @@
       PackagePath="analyzers/dotnet/cs"
       Visible="false"
     />
+    <!-- The analyzers and their code fixes ship beside the generators (design §2.2, "Analyzers", row A1). This project runs them as
+         every project does (Directory.Build.props), which also builds them before the pack. -->
+    <None
+      Include="..\XylemUI.Analyzers\bin\$(Configuration)\netstandard2.0\XylemUI.Analyzers.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+      Visible="false"
+    />
+    <None
+      Include="..\XylemUI.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\XylemUI.Analyzers.CodeFixes.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+      Visible="false"
+    />
   </ItemGroup>
-  <!-- The path above is where the generator project builds to. A setting that moves its output would drop the generator from
-       the package without a word, so a pack with no file there fails (PR #810's review). -->
+  <!-- The paths above are where the generator and analyzer projects build to. A setting that moves their output would drop them
+       from the package without a word, so a pack with a file missing there fails (PR #810's review). -->
   <Target Name="XylemCheckGeneratorsInPackage" BeforeTargets="GenerateNuspec">
     <Error
       Condition="!Exists('..\XylemUI.Generators\bin\$(Configuration)\netstandard2.0\XylemUI.Generators.dll')"
       Text="XylemUI.Generators.dll was not found where XylemUI.Core packs it from (analyzers/dotnet/cs)."
+    />
+    <Error
+      Condition="!Exists('..\XylemUI.Analyzers\bin\$(Configuration)\netstandard2.0\XylemUI.Analyzers.dll')"
+      Text="XylemUI.Analyzers.dll was not found where XylemUI.Core packs it from (analyzers/dotnet/cs)."
+    />
+    <Error
+      Condition="!Exists('..\XylemUI.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\XylemUI.Analyzers.CodeFixes.dll')"
+      Text="XylemUI.Analyzers.CodeFixes.dll was not found where XylemUI.Core packs it from (analyzers/dotnet/cs)."
     />
   </Target>
   <ItemGroup>

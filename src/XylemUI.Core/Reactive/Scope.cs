@@ -66,6 +66,7 @@ public static class Scope
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, or a computed value is computing (a computed value has no side effects).
     /// </exception>
+    [UiThreadOnly]
     public static ScopeHandle Create(Action body, [CallerMemberName] string owner = "")
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -103,6 +104,7 @@ public static class Scope
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, or a computed value is computing (a computed value has no side effects).
     /// </exception>
+    [UiThreadOnly]
     public static bool Run(ScopeHandle scope, Action body)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -163,6 +165,7 @@ public static class Scope
     /// The calling thread is not the UI thread, there is no current scope (also after the running effect disposed itself), or a
     /// computed value is computing.
     /// </exception>
+    [UiThreadOnly]
     public static void OnCleanup(Action cleanup)
     {
         ArgumentNullException.ThrowIfNull(cleanup);
@@ -186,6 +189,7 @@ public static class Scope
     /// <param name="scope">The scope, from <see cref="Create"/>.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     /// <exception cref="AggregateException">One or more cleanups threw; every cleanup still ran.</exception>
+    [UiThreadOnly]
     public static void Dispose(ScopeHandle scope) => DisposeRef(scope.Value);
 
     /// <summary>

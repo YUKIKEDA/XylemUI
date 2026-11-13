@@ -30,6 +30,7 @@ public sealed class HeadlessPointer
     /// </summary>
     /// <param name="element">The node.</param>
     /// <param name="modifiers">The modifier keys held.</param>
+    [UiThreadOnly]
     public void Click(Element element, KeyModifiers modifiers = KeyModifiers.None) => Click(element, PointerButton.Left, modifiers);
 
     /// <summary>
@@ -39,6 +40,7 @@ public sealed class HeadlessPointer
     /// <param name="element">The node.</param>
     /// <param name="button">The button.</param>
     /// <param name="modifiers">The modifier keys held.</param>
+    [UiThreadOnly]
     public void Click(Element element, PointerButton button, KeyModifiers modifiers = KeyModifiers.None)
     {
         (int x, int y) = _app.CenterOf(element);
@@ -52,6 +54,7 @@ public sealed class HeadlessPointer
     /// <param name="y">The y.</param>
     /// <param name="button">The button.</param>
     /// <param name="modifiers">The modifier keys held.</param>
+    [UiThreadOnly]
     public void Click(int x, int y, PointerButton button = PointerButton.Left, KeyModifiers modifiers = KeyModifiers.None)
     {
         Move(x, y, modifiers);
@@ -65,6 +68,7 @@ public sealed class HeadlessPointer
     /// <param name="x">The x of the window's client area, in physical pixels.</param>
     /// <param name="y">The y.</param>
     /// <param name="modifiers">The modifier keys held.</param>
+    [UiThreadOnly]
     public void Move(int x, int y, KeyModifiers modifiers = KeyModifiers.None)
     {
         _x = x;
@@ -79,6 +83,7 @@ public sealed class HeadlessPointer
     /// <param name="modifiers">The modifier keys held.</param>
     /// <param name="clickCount">The presses of the same button in a row this one is, as the OS counts them within its double-click
     /// time: 2 for a double click, 3 for a triple click (a text field's word and line, design §4.9).</param>
+    [UiThreadOnly]
     public void Down(PointerButton button = PointerButton.Left, KeyModifiers modifiers = KeyModifiers.None, int clickCount = 1)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(clickCount, 1);
@@ -91,6 +96,7 @@ public sealed class HeadlessPointer
     /// </summary>
     /// <param name="button">The button.</param>
     /// <param name="modifiers">The modifier keys held.</param>
+    [UiThreadOnly]
     public void Up(PointerButton button = PointerButton.Left, KeyModifiers modifiers = KeyModifiers.None)
     {
         _buttons &= ~Bit(button);
@@ -139,6 +145,7 @@ public sealed class HeadlessKeyboard
     /// <param name="key">The key.</param>
     /// <param name="modifiers">The modifier keys held.</param>
     /// <returns><see langword="true"/> when a handler handled the press.</returns>
+    [UiThreadOnly]
     public bool Press(Key key, KeyModifiers modifiers = KeyModifiers.None)
     {
         bool handled = Down(key, modifiers);
@@ -153,6 +160,7 @@ public sealed class HeadlessKeyboard
     /// <param name="modifiers">The modifier keys held.</param>
     /// <param name="isRepeat">Whether the press repeats a key that is held.</param>
     /// <returns><see langword="true"/> when a handler handled it.</returns>
+    [UiThreadOnly]
     public bool Down(Key key, KeyModifiers modifiers = KeyModifiers.None, bool isRepeat = false) => Send(KeyEventKind.Down, key, modifiers, isRepeat);
 
     /// <summary>
@@ -161,6 +169,7 @@ public sealed class HeadlessKeyboard
     /// <param name="key">The key.</param>
     /// <param name="modifiers">The modifier keys held.</param>
     /// <returns><see langword="true"/> when a handler handled it.</returns>
+    [UiThreadOnly]
     public bool Up(Key key, KeyModifiers modifiers = KeyModifiers.None) => Send(KeyEventKind.Up, key, modifiers, isRepeat: false);
 
     /// <summary>
@@ -169,6 +178,7 @@ public sealed class HeadlessKeyboard
     /// </summary>
     /// <param name="text">The text.</param>
     /// <returns><see langword="true"/> when a handler stopped every code point sent.</returns>
+    [UiThreadOnly]
     public bool Type(string text)
     {
         ArgumentNullException.ThrowIfNull(text);

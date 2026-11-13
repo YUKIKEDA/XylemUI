@@ -17,6 +17,7 @@ public static partial class ElementExtensions
     /// <param name="width">The width, finite and at or above 0.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
     public static Element Width(this Element element, float width) =>
         Layout(element, style => style with { Width = Length.Px(Check(width, nameof(width))) });
 
@@ -27,6 +28,7 @@ public static partial class ElementExtensions
     /// <param name="height">The height, finite and at or above 0.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="height"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
     public static Element Height(this Element element, float height) =>
         Layout(element, style => style with { Height = Length.Px(Check(height, nameof(height))) });
 
@@ -47,6 +49,7 @@ public static partial class ElementExtensions
     /// <param name="vertical">The top and bottom padding, finite and at or above 0.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException">A padding is negative or not a finite number.</exception>
+    [UiThreadOnly]
     public static Element Padding(this Element element, float horizontal, float vertical)
     {
         float h = Check(horizontal, nameof(horizontal));
@@ -62,6 +65,7 @@ public static partial class ElementExtensions
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="gap"/> is negative or not a finite number.</exception>
     /// <exception cref="InvalidOperationException">The node is not a column, a row, a grid, or a virtualized list.</exception>
+    [UiThreadOnly]
     public static Element Gap(this Element element, float gap)
     {
         float g = Check(gap, nameof(gap));
@@ -105,6 +109,7 @@ public static partial class ElementExtensions
     /// <param name="start">The start line, a span, or <see cref="GridLine.Auto"/>.</param>
     /// <param name="end">The end line, a span, or <see cref="GridLine.Auto"/>.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
+    [UiThreadOnly]
     public static Element GridColumn(this Element element, GridLine start, GridLine end) =>
         Layout(element, style => style with { GridColumn = new GridPlacement(start, end) });
 
@@ -126,6 +131,7 @@ public static partial class ElementExtensions
     /// <param name="start">The start line, a span, or <see cref="GridLine.Auto"/>.</param>
     /// <param name="end">The end line, a span, or <see cref="GridLine.Auto"/>.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
+    [UiThreadOnly]
     public static Element GridRow(this Element element, GridLine start, GridLine end) =>
         Layout(element, style => style with { GridRow = new GridPlacement(start, end) });
 
@@ -136,6 +142,7 @@ public static partial class ElementExtensions
     /// <param name="flow">The order.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="InvalidOperationException">The node is not a grid.</exception>
+    [UiThreadOnly]
     public static Element AutoFlow(this Element element, GridAutoFlow flow) => GridProperties(element, props => props with { AutoFlow = flow });
 
     /// <summary>
@@ -146,6 +153,7 @@ public static partial class ElementExtensions
     /// <param name="tracks">The sizes.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="InvalidOperationException">The node is not a grid.</exception>
+    [UiThreadOnly]
     public static Element AutoColumns(this Element element, params ReadOnlySpan<TrackSize> tracks)
     {
         ImmutableArray<TrackSize> sizes = [.. tracks];
@@ -160,6 +168,7 @@ public static partial class ElementExtensions
     /// <param name="tracks">The sizes.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="InvalidOperationException">The node is not a grid.</exception>
+    [UiThreadOnly]
     public static Element AutoRows(this Element element, params ReadOnlySpan<TrackSize> tracks)
     {
         ImmutableArray<TrackSize> sizes = [.. tracks];
@@ -174,6 +183,7 @@ public static partial class ElementExtensions
     /// <param name="paint">The paint.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
     public static Element Border(this Element element, float width, Paint paint)
     {
         float w = Check(width, nameof(width));
@@ -473,6 +483,7 @@ public static partial class ElementExtensions
     /// Inside this class the method's name is found before the type's, so the values are written as <c>XylemUI.Overflow</c>
     /// (CS0119, design §3.4.1, "The names").
     /// </remarks>
+    [UiThreadOnly]
     public static Element Overflow(this Element element, Overflow x, Overflow y)
     {
         if (!Enum.IsDefined(x) || !Enum.IsDefined(y))
@@ -490,6 +501,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node.</param>
     /// <param name="state">The state.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
+    [UiThreadOnly]
     public static Element ScrollState(this Element element, ScrollState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -558,6 +570,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node.</param>
     /// <param name="focusable">Whether the node takes the focus.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
+    [UiThreadOnly]
     public static Element Focusable(this Element element, bool focusable = true)
     {
         element.TreeOrThrow().SetFocusable(element.Node, focusable);
@@ -600,6 +613,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node.</param>
     /// <param name="disabled">Whether the node is disabled.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
+    [UiThreadOnly]
     public static Element Disabled(this Element element, bool disabled = true)
     {
         element.TreeOrThrow().SetDisabled(element.Node, disabled);
@@ -649,6 +663,7 @@ public static partial class ElementExtensions
     /// <param name="element">The node.</param>
     /// <returns><see langword="true"/> when the node takes the focus; <see langword="false"/>, with nothing changed, when it is not
     /// focusable, not in the window's tree, or hidden with itself or an ancestor.</returns>
+    [UiThreadOnly]
     public static bool Focus(this Element element) => element.TreeOrThrow().Focus.Focus(element.Node);
 
     /// <summary>
@@ -915,6 +930,7 @@ public static partial class ElementExtensions
     /// one axis.</exception>
     /// <exception cref="InvalidOperationException">There is no current scope. A change of the items that gives a key twice is reported
     /// to <see cref="ReactiveRuntime.UnhandledExceptionHandler"/> with this type, and the list keeps the items before it.</exception>
+    [UiThreadOnly]
     public static Element VirtualFor<T, TKey>(
         this Element container,
         IReadOnlySignal<IReadOnlyList<T>> items,
@@ -1148,6 +1164,7 @@ public static partial class ElementExtensions
     /// <param name="element">A node of the window.</param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static KeyBinding? KeyBindingFor<TAction>(this Element element)
         where TAction : class, IAction
     {
@@ -1173,6 +1190,7 @@ public static partial class ElementExtensions
     /// </param>
     /// <returns>The row; <see langword="null"/> when no keys ask for the action there.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static KeyBinding? KeyBindingFor(this Element element, IAction action, Element? from = null)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -1193,6 +1211,7 @@ public static partial class ElementExtensions
     /// <param name="action">The action.</param>
     /// <returns>Whether a handler handled the action.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool Dispatch(this Element element, IAction action)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -1215,6 +1234,7 @@ public static partial class ElementExtensions
     /// </param>
     /// <returns>Whether a handler handled the action.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool Dispatch(this Element element, IAction action, Element? from)
     {
         ArgumentNullException.ThrowIfNull(action);
@@ -1237,6 +1257,7 @@ public static partial class ElementExtensions
     /// <param name="element">A node of the window.</param>
     /// <returns>Whether a handler would be called.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool CanDispatch<TAction>(this Element element)
         where TAction : class, IAction
     {
@@ -1262,6 +1283,7 @@ public static partial class ElementExtensions
     /// </param>
     /// <returns>Whether the action would be handled.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static bool CanDispatch(this Element element, IAction action, Element? from = null)
     {
         ArgumentNullException.ThrowIfNull(action);

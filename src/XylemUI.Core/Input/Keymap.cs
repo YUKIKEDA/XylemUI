@@ -162,6 +162,7 @@ public sealed class Keymap
     /// <returns>The row, which <see cref="Remove"/> takes out again.</returns>
     /// <exception cref="FormatException">The keys or the condition are not written in their text form.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public KeyBinding Bind(string keystrokes, IAction? action, string? context = null)
     {
         ArgumentNullException.ThrowIfNull(keystrokes);
@@ -210,6 +211,7 @@ public sealed class Keymap
     /// action's.
     /// </exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public KeyBinding BindByName(
         string keystrokes,
         string actionName,
@@ -226,6 +228,7 @@ public sealed class Keymap
     /// <param name="binding">The row <see cref="Bind"/> returned.</param>
     /// <returns>Whether the row was in the keymap.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public bool Remove(KeyBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);

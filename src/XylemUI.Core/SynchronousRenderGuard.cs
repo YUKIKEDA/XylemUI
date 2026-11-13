@@ -27,6 +27,7 @@ public static class SynchronousRenderGuard
     /// </summary>
     /// <returns>The scope of the path.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static Scope Enter()
     {
         UiThread.VerifyAccess();
@@ -39,6 +40,7 @@ public static class SynchronousRenderGuard
     /// </summary>
     /// <param name="callback">The application callback.</param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public static void RunOrDefer(Action callback)
     {
         ArgumentNullException.ThrowIfNull(callback);

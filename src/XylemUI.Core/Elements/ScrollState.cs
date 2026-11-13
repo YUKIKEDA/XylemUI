@@ -67,6 +67,7 @@ public sealed class ScrollState
     /// </summary>
     /// <param name="offset">The position, in logical pixels.</param>
     /// <exception cref="ArgumentOutOfRangeException">A coordinate is not a number.</exception>
+    [UiThreadOnly]
     public void ScrollTo(Vector2 offset)
     {
         if (float.IsNaN(offset.X) || float.IsNaN(offset.Y))

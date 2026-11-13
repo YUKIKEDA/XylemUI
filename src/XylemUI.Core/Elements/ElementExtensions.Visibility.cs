@@ -17,6 +17,7 @@ public static partial class ElementExtensions
     /// <param name="visibility">The visibility.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="visibility"/> is not a value of <see cref="XylemUI.Visibility"/>.</exception>
+    [UiThreadOnly]
     public static Element Visibility(this Element element, Visibility visibility)
     {
         element.TreeOrThrow().SetVisibility(element.Node, visibility);

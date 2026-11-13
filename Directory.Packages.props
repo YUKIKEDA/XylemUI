@@ -16,6 +16,10 @@
     <!-- The compiler API the source generators are written against (src/XylemUI.Generators); it runs in the compiler on the build
          machine and never ships in an app (design §7, "Shortcuts and actions"). -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
+    <!-- The editor's API the code fixes of the analyzers are written against (src/XylemUI.Analyzers.CodeFixes), at the version of
+         the compiler's API above; the command-line compiler does not carry it, so the code fixes are an assembly of their own
+         (design §2.2, "Analyzers", row A1). It never ships in an app. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" />
     <!-- Writes the kept icon fonts into an app's assembly on the build machine; never in an app (design §5.0.4, §0). -->
     <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>

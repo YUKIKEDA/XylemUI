@@ -213,6 +213,7 @@ public readonly struct PointerEvent
     /// </summary>
     /// <param name="element">A node of the same tree, or <see langword="null"/>.</param>
     /// <exception cref="ArgumentException"><paramref name="element"/> is of another tree.</exception>
+    [UiThreadOnly]
     public void Capture(Element? element)
     {
         if (element is { } node && !ReferenceEquals(node.Tree, _input.Tree))

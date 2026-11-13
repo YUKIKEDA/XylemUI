@@ -69,11 +69,34 @@
     of what it references (design §7, "The default keys and actions"). The condition leaves out the generator's own projects,
     XylemUI.Core, which references the generator project itself to pack it, and the projects XylemUI.Core references
     (XylemUI.Text, XylemUI.Imaging): they are built before the generator's consumer and declare no action. A new project that
-    XylemUI.Core references is added to the condition.
+    XylemUI.Core references is added to the condition. The analyzers' two projects are left out too: the generator's project
+    runs them (below), and each running the other would be a cycle.
   -->
-  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.StartsWith('XylemUI.Generators')) And '$(MSBuildProjectName)' != 'XylemUI.Core' And '$(MSBuildProjectName)' != 'XylemUI.Text' And '$(MSBuildProjectName)' != 'XylemUI.Imaging'">
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.StartsWith('XylemUI.Generators')) And '$(MSBuildProjectName)' != 'XylemUI.Core' And '$(MSBuildProjectName)' != 'XylemUI.Text' And '$(MSBuildProjectName)' != 'XylemUI.Imaging' And '$(MSBuildProjectName)' != 'XylemUI.Analyzers' And '$(MSBuildProjectName)' != 'XylemUI.Analyzers.CodeFixes'">
     <ProjectReference
       Include="$(MSBuildThisFileDirectory)src/XylemUI.Generators/XylemUI.Generators.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+    />
+  </ItemGroup>
+
+  <!--
+    The analyzers that app developers get with the XylemUI.Core package (design §2.2, "Analyzers", row A1) run on every project
+    here too, as Avalonia runs its own on its samples: their warnings are errors (TreatWarningsAsErrors), so a diagnostic stops the
+    build. They do not reference XylemUI.Core, so, unlike the generator, they also run on XylemUI.Core, XylemUI.Text, and
+    XylemUI.Imaging. Their own projects are left out, and so is their test project, which references them as libraries (as the
+    generator's test project is left out of the generator above).
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.StartsWith('XylemUI.Analyzers'))">
+    <ProjectReference
+      Include="$(MSBuildThisFileDirectory)src/XylemUI.Analyzers/XylemUI.Analyzers.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+    />
+    <ProjectReference
+      Include="$(MSBuildThisFileDirectory)src/XylemUI.Analyzers.CodeFixes/XylemUI.Analyzers.CodeFixes.csproj"
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false"
       PrivateAssets="all"
