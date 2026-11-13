@@ -191,10 +191,12 @@ public sealed class WindowLocaleTests
     ///   another locale, "ar".
     ///
     /// Steps:
-    /// - Read the three languages. Change the OS's language to "en-US" and read them; set the part's signal to "he" and read them.
+    /// - Read the three languages. Change the OS's language to "en-US" and read them; add a second row, whose text is made after
+    ///   the change, and read that text's language in place of the first row's; set the part's signal to "he" and read them.
     ///
     /// Expected:
-    /// - ja, ko, ar; then en, ko, ar; then en, ko, he. The row's function ran once.
+    /// - ja, ko, ar; then en, ko, ar; the same with the new row's text; then en, ko, he. The row's function ran once for each
+    ///   row: the change of the locale did not make the first row again.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -230,12 +232,15 @@ public sealed class WindowLocaleTests
         app.SetSystemLocales(["en-US"]);
         _ = app.PumpAndSettle();
         seen.Add(Languages());
+        rows.Set([1, 2]);
+        _ = app.PumpAndSettle();
+        seen.Add(Languages());
         part.Set(Locale.Parse("he"));
         _ = app.PumpAndSettle();
         seen.Add(Languages());
 
-        Assert.Equal(["ja ko ar", "en ko ar", "en ko he"], seen);
-        Assert.Equal(1, made);
+        Assert.Equal(["ja ko ar", "en ko ar", "en ko ar", "en ko he"], seen);
+        Assert.Equal(2, made);
 
         string Languages() => $"{Language(plain)} {Language(fixedLanguage)} {Language(inPart)}";
         string Language(Element text)
