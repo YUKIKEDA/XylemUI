@@ -133,12 +133,12 @@ public static partial class Primitive
                 rows[i] = row;
                 _tree.SetPartAccessibility(
                     row.Node,
-                    EqualityComparer<T>.Default.Equals(options[i], value.Peek()) ? Roles.SelectedListItem : Roles.ListItem
+                    EqualityComparer<T>.Default.Equals(options[i], value.Peek()) ? Roles.SelectedListBoxItem : Roles.ListBoxItem
                 );
             }
 
             Element list = ScrollView(Column(rows));
-            _tree.SetPartAccessibility(list.Node, Roles.List);
+            _tree.SetPartAccessibility(list.Node, Roles.ListBox);
             float width = _tree.Nodes.GetRef(_box).Layout.Rect.Width;
             _tree.SetStyle(
                 list.Node,
