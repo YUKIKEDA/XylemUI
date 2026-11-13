@@ -867,6 +867,36 @@ Rejected:
   - スクロールの操作（ScrollUp など）を持つ（accesskit_windows 0.35.1 に UIA の Scroll のパターンが無く、届かない。Issue #637）
   - Select の一覧を `List` のままにする（UIA の Selection が付かない。Issue #637）
 
+Decision（行 AX1、Grill の 5 巡目、Issue #872）:
+  部品の行が使う役・状態・関係・ライブリージョンを 1 回で足す（設計書 §4.4.1「AX1 で足す形」）。同梱の AccessKit が UIA に運べるものと、XylemUI の側の代替までにし、上流の変更が要るものは行 AX2 に送る。
+  役は調査の A と B を足し、`ListBox`・`ListBoxItem`・`SearchBox`・日付の入力は公開の役にする。`SemanticsStates` は `ushort` に広げる。クリックのほかの操作はハンドラで受ける。関係は `Element` で指し、active-descendant は Signal で渡す。ライブリージョンは宣言だけにする。
+
+Reason:
+  部品の行ごとに公開の列挙型を足すと、v1.0 で固める前に形がばらばらになる。accesskit_windows 0.35.1 に無いパターンとプロパティは、XylemUI の側では作れない（provider は AccessKit が持つ）。
+
+Rejected:
+  - 調査の A（部品の行が要る役）だけを足し、B は DV1・CT1・CH1 の設計の PR で足す（行ごとに列挙型を足すことになる。Issue #872）
+  - AccessKit の役の全部（180 余り）を写す（多くは UIA の Group になり、使われない公開の面が増える）
+  - ListBox と日付の入力を、パスワードの欄と同じく部品の内部の状態にする（アプリが選べる一覧や検索の欄を自分で作れない。P02g では内部にしていた。Issue #872）
+  - 開閉を、ポップアップのアンカーのように疑似状態 `Open` の登録から読む（開閉するノードごとに登録の呼び出しが要る。ツリーの項目は開閉をデータで持つ。Issue #872）
+  - 数値の操作を、双方向の Signal で受ける（押し終わりの知らせなど、確定の時に処理したい部品が間に入れない。Issue #872）
+  - 増やす・減らすを、部品のキーの経路（↑↓）に送る（向きと RTL と、アプリが変えられるキーの割り当てに左右される。Issue #872）
+  - ステップを `SemanticsRange` の外の欄にする（範囲と一緒に変わる値で、別にすると片方だけ変える誤りを作れる。Issue #872）
+  - 関係を `AccessibilityInfo` の `Element` の欄にする（欄 1 つで 24 バイトになり、`Over` が作る記録ごとに増える。相手が複数だと配列の割り当てが要る。Issue #872）
+  - 関係を、後で結ぶ鍵の物（`AccessibilityKey`）で指す（公開の型が 1 つ増え、宙に浮いた鍵の扱いが要る。`Element` は両方を作った後に呼べば足りる。Issue #872）
+  - 関係を文字列で指す（Flutter の `identifier`。重なっても黙って誤り、テスト ID に 2 つ目の意味が付く。Issue #872）
+  - active-descendant を選ばれた子の側で宣言する（GPUI の形。ポップアップの中の候補は欄の子孫でないので指せない。Issue #872）
+  - described-by・error-message・invalid を AccessKit に書くだけにする（accesskit 0.25.1 ではどの OS の adapter も読まず、Windows では何も伝わらない。Issue #872）
+  - 命令でその場に読ませる口（announce）を、窓ごとの隠したライブの節の名前を書き換えて作る（AccessKit の通知のイベントが要る形の代わりで、行 AX2 で通知のイベントを入れる。Issue #872）
+  - ライブリージョンの atomic の印を持つ（Windows の adapter は AriaProperties にしか書かない。Status と Alert の名前のたたみで、知らせの全部が読まれる。Issue #872）
+  - 深さと位置を AccessKit と同じく 0 から数える（UIA・ARIA・Avalonia は 1 から数え、アプリが 1 を足し忘れる。Issue #872）
+  - 数を項目に付ける（ARIA の形。AccessKit は入れ物から読み、同じ親の中で組の違う兄弟を表せない。Issue #872）
+  - 表の番号・数・並びを、UIA に出ないまま先に公開の欄にする（行 AX2 で表のパターンと一緒に入れる。Issue #872）
+  - 関係を相手の側からも結べるようにする（`label.Labels(field)`。`Element` は両方を作った後に呼べるので、形が 2 つになるだけである。Issue #878）
+  - アンカーでもハンドラも無い `Expandable` のノードの Expand を Click に読み替える（開閉と押す操作は別で、誤った操作を黙って配る。Debug のビルドで不変条件の失敗にする。Issue #878）
+  - error-message の相手の無い `Invalid` を、Windows で名前か説明に部品の文言を足して伝える（名前が変わるとイベントが出て、行 LC4 の文言に頼ることになる。行 AX2 で IsDataValidForForm を出す。Issue #878）
+  - Windows で、増減のハンドラだけを持つノードの数値の SetValue を捨てて読み取り専用にする（UIA の RangeValue には増減が無く、Windows では値を動かせなくなる。Issue #878）
+
 ---
 
 ## Grid
