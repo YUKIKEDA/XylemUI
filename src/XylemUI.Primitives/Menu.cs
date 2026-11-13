@@ -30,14 +30,10 @@ public static partial class Primitive
     // that is not a menu.
     private static readonly object MenuMark = new();
 
-    // Whether a menu's panel is being made on this thread, and that menu's context node, for the items made in it. Two values and
-    // no object: a menu bar's menu is made on each frame that moves between its menus (row KM2c: an object here was 24 bytes a
-    // frame).
-    [ThreadStatic]
-    private static bool _inPanel;
-
-    [ThreadStatic]
-    private static NodeHandle _panelContext;
+    // A menu's context node, provided around its panel (design §2.13): the items made in the panel find it, also those a Show or
+    // a For of the panel makes while the menu is open, and so does a submenu made in it. Providing allocates nothing, which a
+    // menu bar needs: its menu is made on each frame that moves between its menus (row KM2c).
+    private static readonly Context<NodeHandle> MenuContext = new();
 
     /// <summary>
     /// Opens a menu against the node while the signal is true (design §13.1, "Menu and Dialog"): a popup that holds the panel and
@@ -105,13 +101,9 @@ public static partial class Primitive
         UiTree tree =
             UiTree.Current ?? throw new InvalidOperationException("MenuItem is made while a window's root function runs; no tree is current.");
         RequireScope(nameof(MenuItem));
-        var named = new NamedAction(tree, action, _inPanel, _panelContext);
-        Element item = Box(content(Computed.Create(named.Keys))).Focusable();
-
-        // The item's node is known before its first read: an item made while its menu is open marks the node, so that the read
-        // is made again when the node is put in the menu.
-        named.Item = item.Node;
-        item = item.Disabled(Computed.Create(named.Unavailable));
+        bool inMenu = MenuContext.TryUse(out NodeHandle context);
+        var named = new NamedAction(tree, action, inMenu, context);
+        Element item = Box(content(Computed.Create(named.Keys))).Focusable().Disabled(Computed.Create(named.Unavailable));
         var state = new MenuItemState(tree, item.Node, named.Dispatch, submenu: null);
         return state.Attach(item);
     }
@@ -180,17 +172,11 @@ public static partial class Primitive
     )
     {
         // A submenu is made in its menu's panel and has that menu's context; a menu made elsewhere finds its own each time it opens.
-        bool inherits = _inPanel;
-        NodeHandle inherited = _panelContext;
+        bool inherits = MenuContext.TryUse(out NodeHandle inherited);
 
         // A menu opened from the keys shows the access keys while it is open (design §13.1, "Access keys"): its part's scope, which
         // goes when the menu closes, ends what it began.
         MenuCues? cues = null;
-
-        // The context node of the menu that is open, kept by its popup's root: an item made while the menu is open, by a Show or
-        // a For of its panel, finds it there (PR #821's review).
-        NodeHandle context = default;
-        NodeHandle openedRoot = default;
         return PopupBlock.Create(
             tree,
             anchor,
@@ -199,28 +185,7 @@ public static partial class Primitive
             {
                 cues = new MenuCues(tree);
                 Scope.OnCleanup(cues.Release);
-                (bool wasInPanel, NodeHandle previous) = (_inPanel, _panelContext);
-                _panelContext = inherits ? inherited : ContextNode(tree, anchor, contextMenu);
-                context = _panelContext;
-                Scope.OnCleanup(() =>
-                {
-                    // Kept once the popup opened; a panel whose scope goes before that kept nothing.
-                    if (!openedRoot.IsNone)
-                    {
-                        _ = RegistryOf(tree).MenuContexts.Remove(openedRoot);
-                    }
-                });
-                _inPanel = true;
-                Element menuPanel;
-                try
-                {
-                    menuPanel = panel();
-                }
-                finally
-                {
-                    (_inPanel, _panelContext) = (wasInPanel, previous);
-                }
-
+                Element menuPanel = MenuContext.Provide(inherits ? inherited : ContextNode(tree, anchor, contextMenu), panel);
                 tree.SetPartAccessibility(menuPanel.Node, Roles.Menu);
                 return menuPanel
                     .PartKeyContext(PrimitiveKeyBindings.MenuContext)
@@ -231,8 +196,6 @@ public static partial class Primitive
             root =>
             {
                 cues?.Hold();
-                openedRoot = root;
-                RegistryOf(tree).MenuContexts[root] = context;
                 opened?.Invoke(root);
             },
             MenuMark
@@ -383,14 +346,11 @@ public static partial class Primitive
 
     // An item's action, read and dispatched at its menu's context node; with no menu, at the focused node. With a context node that
     // has gone, or none, the route starts where it does with no focus (FocusManager.KeyTarget).
-    private sealed class NamedAction(UiTree tree, IAction action, bool inPanel, NodeHandle context)
+    private sealed class NamedAction(UiTree tree, IAction action, bool inMenu, NodeHandle context)
     {
-        // The item's node: an item that was not made in a panel finds its menu by it.
-        public NodeHandle Item { get; set; }
-
         private NodeHandle Start =>
-            !InMenu(out NodeHandle node) ? tree.Focus.KeyTarget
-            : tree.Nodes.IsAlive(node) ? node
+            !inMenu ? tree.Focus.KeyTarget
+            : tree.Nodes.IsAlive(context) ? context
             : tree.Focus.NoFocusTarget;
 
         public KeyBinding? Keys()
@@ -407,30 +367,7 @@ public static partial class Primitive
         }
 
         // An item of a menu reads at a node that a move of the focus does not change, so it does not read again for one.
-        private void Track()
-        {
-            tree.Actions.TrackAvailability(Start, atFocus: !InMenu(out _));
-
-            // An item that was not made in a panel reads again when the subtree it is in is put in a menu. One made in a panel has
-            // its context already, and marking it would make it read a second time when the panel takes it.
-            if (!inPanel)
-            {
-                tree.Actions.Watch(Item);
-            }
-        }
-
-        // Whether the item is a menu's, and that menu's context node: the one of the panel it was made in, or of the open menu
-        // it is in now.
-        private bool InMenu(out NodeHandle node)
-        {
-            node = context;
-            return inPanel
-                || (
-                    tree.Nodes.IsAlive(Item)
-                    && tree.Popups.PopupContaining(Item) is { } popup
-                    && RegistryOf(tree).MenuContexts.TryGetValue(popup.Root, out node)
-                );
-        }
+        private void Track() => tree.Actions.TrackAvailability(Start, atFocus: !inMenu);
 
         public void Dispatch() => _ = tree.Actions.Dispatch(Start, action);
     }
