@@ -1147,6 +1147,67 @@ public sealed partial class AccessibilityTests
         }
     }
 
+    /// <summary>
+    /// A node whose information stops giving a level, a live setting, an orientation, and steps is written back to the defaults, and
+    /// keeps its side object; a node that never took one has none.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A slider whose information is a signal: the level 3, the live setting Assertive, the orientation Vertical, and the range 0
+    ///   to 10 at 5 with the steps 1 and 2; and a button "plain". The tree made.
+    ///
+    /// Steps:
+    /// - Read the slider's node. Set the signal to information of the role Slider with the range 0 to 10 at 5 and nothing else; settle;
+    ///   read the node again, and the button's.
+    ///
+    /// Expected:
+    /// - First the level 2 (from 0), Assertive, Vertical, the steps 1 and 2. Then -1, Inherit, None, the steps 0 and 0, and a side
+    ///   object still there. The button has no side object.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task AddedValues_GoneFromTheInformation_GoBackToTheDefaults()
+    {
+        var plainInfo = new AccessibilityInfo
+        {
+            Role = SemanticsRole.Slider,
+            Name = "s",
+            Range = new SemanticsRange(0, 10, 5),
+        };
+        var info = Signal.Create(
+            plainInfo with
+            {
+                Level = 3,
+                Live = SemanticsLive.Assertive,
+                Orientation = SemanticsOrientation.Vertical,
+                Range = new SemanticsRange(0, 10, 5, Step: 1, LargeStep: 2),
+            }
+        );
+        Element slider = default;
+        Element plain = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            slider = Box().Width(50).Height(10).Accessible(info);
+            plain = Button("plain", () => { });
+            return Column(slider, plain);
+        });
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+        AccessibilityNode node = tree.Find(slider.Node)!;
+        (int, SemanticsLive, SemanticsOrientation, double, double) before = Read();
+
+        info.Set(plainInfo);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal((2, SemanticsLive.Assertive, SemanticsOrientation.Vertical, 1.0, 2.0), before);
+        Assert.Equal((-1, SemanticsLive.Inherit, SemanticsOrientation.None, 0.0, 0.0), Read());
+        Assert.NotNull(node.More);
+        Assert.Null(tree.Find(plain.Node)!.More);
+
+        (int, SemanticsLive, SemanticsOrientation, double, double) Read() =>
+            (node.Level, node.Live, node.Orientation, node.Range!.Value.Step, node.Range!.Value.LargeStep);
+    }
+
     // A spin button with a range and no handler: read-only until one is added.
     private static Element Spin(string name, double minimum = 0, double maximum = 10, double value = 5) =>
         Box()

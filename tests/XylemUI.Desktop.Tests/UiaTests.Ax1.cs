@@ -250,6 +250,97 @@ public sealed unsafe partial class UiaTests
         });
 
     /// <summary>
+    /// The provider writes none of the values row AX1 added for a node whose information stopped giving them: no level, live setting,
+    /// orientation, or step.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "AccessKit defaults" with a slider whose information is a signal: the level 3, the live setting Assertive,
+    ///   the orientation Vertical, and the range 0 to 10 at 5 with the steps 1 and 2; UIA has read the tree.
+    ///
+    /// Steps:
+    /// - Make the slider's AccessKit node and read it back. Set the signal to the same slider with the range alone; run the
+    ///   accessibility stage; make and read the node again.
+    ///
+    /// Expected:
+    /// - First the level 2, the live setting 2, the orientation 1, and the steps 1 and 2. Then none of them is set.
+    /// </remarks>
+    [Fact]
+    public void MakeNode_AfterTheAddedValuesGo_WritesNoneOfThem() =>
+        ui.Invoke(() =>
+        {
+            var plainInfo = new AccessibilityInfo
+            {
+                Role = SemanticsRole.Slider,
+                Name = "s",
+                Range = new SemanticsRange(0, 10, 5),
+            };
+            var info = Signal.Create(
+                plainInfo with
+                {
+                    Level = 3,
+                    Live = SemanticsLive.Assertive,
+                    Orientation = SemanticsOrientation.Vertical,
+                    Range = new SemanticsRange(0, 10, 5, Step: 1, LargeStep: 2),
+                }
+            );
+            Element slider = default;
+            using var window = new DesktopWindow(
+                () => slider = Box().Width(50).Height(10).Accessible(info),
+                new WindowOptions("AccessKit defaults", 200, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            _ = ReadByUia(() => AutomationElement.FromHandle((nint)hwnd).Current.Name);
+            Win32Accessibility provider = window.Window.Accessibility!;
+            (
+                AccessKit.OptionalIndex Level,
+                AccessKit.OptionalByte Live,
+                AccessKit.OptionalByte Orientation,
+                AccessKit.OptionalDouble Step,
+                AccessKit.OptionalDouble Jump
+            ) given = Read();
+
+            info.Set(plainInfo);
+            RunAccessibilityStage(window);
+            (
+                AccessKit.OptionalIndex Level,
+                AccessKit.OptionalByte Live,
+                AccessKit.OptionalByte Orientation,
+                AccessKit.OptionalDouble Step,
+                AccessKit.OptionalDouble Jump
+            ) gone = Read();
+
+            Assert.Equal(
+                ((nuint)2, (byte)2, (byte)1, 1.0, 2.0),
+                (given.Level.Value, given.Live.Value, given.Orientation.Value, given.Step.Value, given.Jump.Value)
+            );
+            Assert.Equal(
+                (false, false, false, false, false),
+                (gone.Level.HasValue, gone.Live.HasValue, gone.Orientation.HasValue, gone.Step.HasValue, gone.Jump.HasValue)
+            );
+
+            (AccessKit.OptionalIndex, AccessKit.OptionalByte, AccessKit.OptionalByte, AccessKit.OptionalDouble, AccessKit.OptionalDouble) Read()
+            {
+                nint made = provider.MakeNode(window.Tree.Accessibility.Find(slider.Node)!);
+                try
+                {
+                    return (
+                        AccessKit.NodeLevel(made),
+                        AccessKit.NodeLive(made),
+                        AccessKit.NodeOrientation(made),
+                        AccessKit.NodeNumericValueStep(made),
+                        AccessKit.NodeNumericValueJump(made)
+                    );
+                }
+                finally
+                {
+                    AccessKit.NodeFree(made);
+                }
+            }
+        });
+
+    /// <summary>
     /// UIA reads the control type of every role row AX1 adds, in one read of the tree.
     /// </summary>
     /// <remarks>
