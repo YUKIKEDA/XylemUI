@@ -1,0 +1,5 @@
+<Project>
+  <!-- Cuts the spike off from the repository's Directory.Build.props (warnings as errors, StyleCop, the source generator,
+       banned APIs), as spike/LinuxProbe and spike/CldrSize did. The probe is a throwaway check for row TH1 step 1, not
+       framework code. -->
+</Project>

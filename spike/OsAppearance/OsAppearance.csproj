@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The OS appearance probe of row TH1 step 1 (Issue #888, design §13.2). It references no XylemUI project and no package:
+    every Windows call is a LibraryImport or a hand-written vtable, with no CsWinRT and no built-in COM marshalling, so the
+    NativeAOT executable shows whether UISettings can be used the way the design says. Not in XylemUI.slnx, so the gate does
+    not build it; the Directory.*.props and .targets beside this file stop the repository's.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>OsAppearance</RootNamespace>
+    <!-- Every trim and AOT warning is printed one by one, so the publish log can be counted (zero expected). -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+  </PropertyGroup>
+</Project>
