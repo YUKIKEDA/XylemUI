@@ -201,25 +201,6 @@ internal sealed class AccessibilityTree(UiTree tree)
     }
 
     /// <summary>
-    /// Stops every watch, when the tree is thrown away with its window: its signals no longer know of them.
-    /// </summary>
-    public void StopWatches()
-    {
-        foreach (AccessibilityWatch watch in _childWatches.Values)
-        {
-            watch.Stop();
-        }
-
-        foreach (AccessibilityWatch watch in _descendantWatches.Values)
-        {
-            watch.Stop();
-        }
-
-        _childWatches.Clear();
-        _descendantWatches.Clear();
-    }
-
-    /// <summary>
     /// Gets the number of nodes relations name that the tree keeps the holders of, for the tests.
     /// </summary>
     internal int RelationTargetCount => _holders.Count;

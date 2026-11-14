@@ -285,12 +285,6 @@ internal sealed class UiTree
     internal void UpdateAccessibility() => _a11y.Tree?.Update();
 
     /// <summary>
-    /// Stops what the accessibility tree watches, when the tree is thrown away with its window or app: the signals it read no longer
-    /// mark it.
-    /// </summary>
-    internal void StopAccessibility() => _a11y.Tree?.StopWatches();
-
-    /// <summary>
     /// Gets a value indicating whether the accessibility tree's object is made: <see cref="Accessibility"/> makes it when read.
     /// </summary>
     internal bool HasAccessibilityTree => _a11y.Tree is not null;

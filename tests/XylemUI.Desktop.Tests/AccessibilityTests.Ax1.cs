@@ -1210,15 +1210,15 @@ public sealed partial class AccessibilityTests
 
     /// <summary>
     /// An active descendant that is a virtualized list's row leaves the holder's node while the row is out of the list's range, and
-    /// comes back with it.
+    /// comes back with it, also when the holder is not the list: the row's node going and coming makes the holder's node again.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A focusable box 200 x 100 that scrolls down, a virtualized list of 1,000 rows 20 high, row 3 kept alive by a signal; its active
-    ///   descendant is a signal set to row 3; the tree made.
+    /// - A column of a focusable list box "picker" 200 x 20 and, after it, a box 200 x 100 that scrolls down with a virtualized list of
+    ///   1,000 rows 20 high, row 3 kept alive by a signal; the picker's active descendant is a signal set to row 3; the tree made.
     ///
     /// Steps:
-    /// - Read the box's active descendant. Scroll to 4,000; settle; read it. Scroll to 0; settle; read it.
+    /// - Read the picker's active descendant. Scroll to 4,000; settle; read it. Scroll to 0; settle; read it.
     ///
     /// Expected:
     /// - Row 3's node; none; row 3's node again.
@@ -1231,30 +1231,37 @@ public sealed partial class AccessibilityTests
         IReadOnlySignal<bool> keep = Signal.Create(true);
         var state = new VirtualListState();
         var active = Signal.Create<Element>(default);
-        Element list = default;
+        Element picker = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            list = Box()
+        {
+            picker = Box()
+                .Width(200)
+                .Height(20)
+                .Focusable()
+                .Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBox, Name = "picker" })
+                .ActiveDescendant(active);
+            Element list = Box()
                 .Width(200)
                 .Height(100)
-                .Focusable()
                 .Overflow(Overflow.Visible, Overflow.Scroll)
                 .VirtualFor(
                     items,
                     static i => i,
                     item =>
                     {
-                        Element row = Box().Height(20).TestId($"row{item.Get()}");
-                        return item.Get() == 3 ? row.KeepAlive(keep) : row;
+                        int index = item.Get();
+                        Element row = Box().Height(20).TestId($"row{index}");
+                        return index == 3 ? row.KeepAlive(keep) : row;
                     },
                     state
-                )
-                .ActiveDescendant(active)
-        );
+                );
+            return Column(picker, list);
+        });
         _ = app.PumpAndSettle();
         Element row3 = app.Find("row3");
         active.Set(row3);
         AccessibilityTree tree = app.AccessibilityTree();
-        AccessibilityNode node = tree.Find(list.Node)!;
+        AccessibilityNode node = tree.Find(picker.Node)!;
         var seen = new List<AccessibilityNodeId> { node.ActiveDescendant };
         state.Scroll.ScrollTo(new Vector2(0, 4_000));
         _ = app.PumpAndSettle();
@@ -1269,12 +1276,13 @@ public sealed partial class AccessibilityTests
     }
 
     /// <summary>
-    /// An active descendant set while its node has no node in the tree points at the node once it has one.
+    /// An active descendant set while its node has no node in the tree points at the node once it has one, also when the holder is
+    /// not an ancestor of it: the node being made makes the holder's node again.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A focusable list box holding a hidden box that holds an item "One"; its active descendant is a signal set to "One"; the tree
-    ///   made.
+    /// - A column of a focusable list box 50 x 20 with no children and, after it, a hidden box holding an item "One"; the list box's
+    ///   active descendant is a signal set to "One"; the tree made.
     ///
     /// Steps:
     /// - Read the list box's active descendant; show the box; settle; read it.
@@ -1295,7 +1303,8 @@ public sealed partial class AccessibilityTests
             one = Box().Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBoxItem, Name = "One" });
             box = Box(one);
             active.Set(one);
-            return list = Box(box).Focusable().Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBox }).ActiveDescendant(active);
+            list = Box().Width(50).Height(20).Focusable().Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBox }).ActiveDescendant(active);
+            return Column(list, box);
         });
         app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = true });
         _ = app.PumpAndSettle();
@@ -1305,6 +1314,89 @@ public sealed partial class AccessibilityTests
 
         Assert.True(before.IsNone);
         Assert.Equal(one, app.AccessibilityOf(list).ActiveDescendant);
+    }
+
+    /// <summary>
+    /// An active descendant that moves on leaves the reverse table, unless another relation names the node it left.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a focusable list box and the items "One" and "Two"; the list box is labelled by "Two", and its active descendant
+    ///   is a signal set to "One"; the tree made.
+    ///
+    /// Steps:
+    /// - Read how many nodes named the tree keeps. Set the signal to "Two"; settle; read it. Set it to default; settle; read it.
+    ///
+    /// Expected:
+    /// - Two ("One" and "Two"); then one ("Two", which the label still names); then one.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ActiveDescendant_MovingOn_LeavesTheReverseTable()
+    {
+        var active = Signal.Create<Element>(default);
+        Element one = default;
+        Element two = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            one = Box().Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBoxItem, Name = "One" });
+            two = Box().Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBoxItem, Name = "Two" });
+            active.Set(one);
+            Element list = Box()
+                .Width(50)
+                .Height(20)
+                .Focusable()
+                .Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBox })
+                .LabelledBy(two)
+                .ActiveDescendant(active);
+            return Column(list, one, two);
+        });
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+        var counts = new List<int> { tree.RelationTargetCount };
+        active.Set(two);
+        _ = app.PumpAndSettle();
+        counts.Add(tree.RelationTargetCount);
+        active.Set(default);
+        _ = app.PumpAndSettle();
+        counts.Add(tree.RelationTargetCount);
+
+        Assert.Equal([2, 1, 1], counts);
+    }
+
+    /// <summary>
+    /// The name a field takes from a node with no node of its own follows a change of the text inside that node, which marks the
+    /// text's leaf alone: neither the node's box nor the leaf's box changes.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box 100 x 20 with no role holding a text from a signal "Hello" (a leaf 100 x 20), and a field of the role Edit labelled by
+    ///   the box; the tree made.
+    ///
+    /// Steps:
+    /// - Read the field's name; set the signal to "World"; settle; read it.
+    ///
+    /// Expected:
+    /// - "Hello"; then "World".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Name_FromATargetWithNoNode_FollowsTheTextInsideIt()
+    {
+        var text = Signal.Create("Hello");
+        Element field = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            Element target = Box(Elements.Text((ref w) => w.Write(text.Get())).Width(100).Height(20)).Width(100).Height(20);
+            field = Box().Width(50).Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit }).LabelledBy(target);
+            return Column(target, field);
+        });
+        _ = app.PumpAndSettle();
+        string? before = app.AccessibilityOf(field).Name;
+        text.Set("World");
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(("Hello", (string?)"World"), (before, app.AccessibilityOf(field).Name));
     }
 
     /// <summary>
@@ -1669,7 +1761,8 @@ public sealed partial class AccessibilityTests
 
     /// <summary>
     /// The name a field takes from a node with no node of its own follows that node's new ancestor once the node moves: hiding the
-    /// new ancestor takes the text away, and hiding the old one does not.
+    /// new ancestor takes the text away, and hiding the old one does not. The boxes are hidden by their visibility, which keeps every
+    /// box's size: only the box hidden is marked, not the nodes inside it.
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -1677,8 +1770,9 @@ public sealed partial class AccessibilityTests
     ///   inner box; the tree made.
     ///
     /// Steps:
-    /// - Read the field's name. Hide and show "b", settling and reading after each. Take the inner box out of "a" and put it into
-    ///   "b"; settle; read it. Hide "a"; settle; read it. Hide "b"; settle; read it. Show "b"; settle; read it.
+    /// - Read the field's name. Hide and show "b" by its visibility, settling and reading after each. Take the inner box out of "a"
+    ///   and put it into "b"; settle; read it. Hide "a" by its visibility; settle; read it. Hide "b"; settle; read it. Show "b"; settle;
+    ///   read it.
     ///
     /// Expected:
     /// - "Hello" five times, then none, then "Hello".
@@ -1717,7 +1811,7 @@ public sealed partial class AccessibilityTests
 
         void SetHidden(Element box, bool value)
         {
-            app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = value });
+            app.Tree.SetVisibility(box.Node, value ? Visibility.Hidden : Visibility.Visible);
             _ = app.PumpAndSettle();
             names.Add(app.AccessibilityOf(field).Name);
         }
