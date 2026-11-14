@@ -1181,6 +1181,22 @@ Rejected:
   - 時間帯の名前（metazone）を入れる（出す部品の行が無い。`gmtFormat` で GMT からの差を出す。UTS #35 第 4 部が、名前の無い時に落ちる先と同じ形である。同じ Grill）
   - 最初の週の最小の日数の値だけを出し、週の番号の関数を出さない（値だけでは週の番号を出せず、部品ごとに数え方が分かれる。`scope.mdc`。同じ Grill）
   - 書式の `y` が 1 つの時も、2 桁の年を今の前後 100 年の窓に入れる（Flutter が固定する `intl` 0.20.3 は、`yy` の時だけ窓に入れ、`y` では書いたとおりの年にする。同じ `intl` を読んでから決める、と同じ Grill でオーナーが決定）
+  - LC3 の辞書を、アセンブリに 1 つにして MSBuild のプロパティから読む（案 A）か、AdditionalFiles の項目のメタデータで組に分ける（案 B）（名前の誤りが MSBuild の中で黙って通る。値をコンパイラに渡す `buildTransitive` の props をパッケージに足す必要があるが、今の `XylemUI.Core` のパッケージは props を持たない。A は 1 つのアセンブリに辞書を 1 つしか置けない。アセンブリの属性で宣言すれば、C# の型で検査され（§0 の 1「UI の誤りはコンパイルエラー」）、KM1a の生成器（`src/XylemUI.Generators/ActionTableGenerator.cs` 96 行目の `ForAttributeWithMetadataName`）と同じ読み方になる。Grill の 6 巡目でオーナーが決定、Issue #910）
+  - LC3 の辞書を、Flutter の `l10n.yaml` に当たる設定ファイルで宣言する（案 C）（Flutter 3.47.8 は 1 つの `l10n.yaml` から `arb-dir`・`template-arb-file` などを読み、1 つの辞書を作る。`packages/flutter_tools/lib/src/localizations/localizations_utils.dart` 506〜534 行目。設定が C# の型で検査されず、生成器が C# のほかに設定の形式を 1 つ読むことになる。同じ Grill）
+  - ARB のロケールを `@@locale` だけから取る（案 A）（Flutter の部品の訳の 116 個の `material_*.arb` は、どれも `@@locale` を持たず、ロケールをファイル名に書く。`material_en_GB.arb` などをそのまま読めない。同じ Grill）
+  - ARB のロケールの `_` をエラーにする（案 C）（同じ 116 個のファイル名が `_` を使う。Flutter の gen-l10n も、ファイル名から読んだロケールを `_` の形に直してから `@@locale` と比べる。`gen_l10n_types.dart` 647・655・664 行目。同じ Grill）
+  - `plural` の `=0`・`=1`・`=2` を、区分の `zero`・`one`・`two` に読み替える（Flutter 3.47.8 の gen-l10n は、`gen_l10n.dart` 249〜259 行目の表でこう読み替え、ほかの `=N` は 1306〜1320 行目でエラーにする。区分は数そのものではない。CLDR 49 の複数形の規則では、ラトビア語の `zero` は 10・11〜19・20 なども含み、`one` は 21・31 なども含む（`cldr-core/supplemental/plurals.json` の `lv`）。読み替えると、`=0` に書いた文が 10 にも出て、ICU を使う翻訳ツールと結果が変わる。任意の `=N` を、区分より先に完全一致で見る。ICU の細部は LC3 の設計の PR で ICU User Guide を読んで書く。同じ Grill）
+  - メッセージのエスケープを持たない（案 A、Flutter 3.47.8 の既定）（文字の部分は `[^{}]+` で、`{` と `}` を文字として書けない。`message_parser.dart` 186 行目。同じ Grill）
+  - Flutter の `use-escaping` の規則にする（案 C）（`'...'` を引用にし、対になる `'` の無い `'` は「Unmatched single quotes」のエラーになる。`message_parser.dart` 184・249〜275・322 行目。"l'utilisateur" が書けず、`'` を 2 つ含む文では間の文字が引用になって `'` が消える。ICU の標準の apostrophe の規則なら、フランス語の `'` と文字としての括弧の両方を書ける。同じ Grill）
+  - 生成する API を、ロケールを引数で渡す静的メソッドにする（案 B）（呼ぶ所ごとにロケールのシグナルを引いて渡すことになり、呼ぶたびにロケールで分岐する。ロケールごとの不変のオブジェクトなら、ロケールが変わった時に 1 度だけ選ぶ。同じ Grill。決める前に測る数（ロケールを切り替えたフレームと、毎フレーム変わる複数形の文字の割り当て）は、LC3 の設計の PR に書く）
+  - 生成する API を、中で Context を読む静的メソッドにする（案 C）（Computed の中の `Use` は例外を投げる（§2.13「引ける所」）。`Accessible(IReadOnlySignal<AccessibilityInfo>)` に渡す名前を Computed で作れず、`await` の後でも呼べない。呼ぶたびに鍵を引く。同じ Grill）
+  - 翻訳のパッケージを、アプリが起動時に明示で渡す（案 B、Flutter の `localizationsDelegates`）（パッケージの全部の訳を 1 つで渡す口は、全部のロケールを参照し、NativeAOT が落とせない。宣言したロケールの分だけを渡すには、アプリが `SupportedLocales` と同じ一覧をもう 1 度書くことになる。Flutter 3.47.8 の `getMaterialTranslation` は、1 つの switch で全部の言語のクラスを参照する（`packages/flutter_localizations/lib/src/l10n/generated_material_localizations.dart` 46711〜46985 行目）。モジュールの初期化子での登録なら、アプリの生成器が宣言したロケールの分だけを登録する。116 ロケールと宣言したロケールだけの大きさを測って確かめる。同じ Grill）
+  - 翻訳のパッケージが、Primitives の ARB を自分の ARB と一緒に作り直す（案 C）（Primitives の英語の ARB を翻訳のパッケージがもう 1 度コンパイルし、同じ文言の型が 2 つのアセンブリにできる。Primitives はパッケージを参照しないので、パッケージの型を Context の鍵で受け取る口が別に要る。同じ Grill）
+  - わざと英語に落とすメッセージを、英語の文を訳のファイルに写して書く（案 A）（Flutter 3.47.8 の `material_ps.arb` は、パシュトー語に訳の無い文を英語で持つ（16 行目の `"firstPageTooltip": "First page"`、`README.md` 199〜201 行目）。訳の漏れと区別できず、どれが英語に落ちるかの一覧（G1）が消える。同じ Grill）
+  - 英語に落とすことを、テンプレートの `@key` に書く（案 C）（テンプレートは Primitives にあり、翻訳のパッケージの言語の一覧を Primitives が知ることになる。同じ Grill）
+  - 翻訳漏れの警告を、診断の番号ごと消す（案 D）（本当の漏れも消える。同じ Grill）
+  - 部品の文言の上書きを、メッセージごとにする（案 B）（生成器が、アプリの辞書と部品の辞書の 2 つを見て合わせる必要がある。基底を継いだクラスを鍵で渡す形なら、型で検査され、実行時にキーで引かない。Flutter 3.47.8 も、`MaterialApp` がアプリの渡した delegate を英語の既定より前に並べ、型ごとに最初の 1 つを使うことで上書きする（`packages/flutter/lib/src/material/app.dart` 930〜940 行目、`widgets/localizations.dart` 57〜66 行目）。同じ Grill）
+  - 部品の文言を、実行時に文字列のキーで引く（案 C、Avalonia 12.1.4）（Avalonia は `src/Avalonia.Themes.Fluent/Strings/InvariantResources.xaml` の英語の文をキーで持ち、`Controls/TextBox.xaml` 25 行目の `DynamicResource` で引く。キーの誤りがビルドで見つからず、引くたびに文字列のキーで探す。同じ Grill）
 
 ---
 

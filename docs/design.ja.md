@@ -166,7 +166,7 @@ WPF/Avalonia 方式は .NET で最も実績のある方式だが、`DependencyPr
   - Rendering.D3D11: `D3D11Renderer.Create`・`TextRendering` の `set`・`Render`・`Draw`（2 つ）・`Resize`・`Present`
   - Testing: `HeadlessApp.Popups`・`Find`・`FindAll`・`FindByRole`・`AccessibilityOf`・`Focus`・`SetActive`・`SetVisible`・`PumpAndSettle`・`Pump`・`AssertNoLeakedScopes`
 - **置き場:** 新しいアセンブリ `XylemUI.Analyzers`（規則）と `XylemUI.Analyzers.CodeFixes`（修正の提案）を作る。どちらも netstandard2.0 で、Microsoft.CodeAnalysis.CSharp 4.14.0（`XylemUI.Generators` と同じ版）に対して書き、修正の提案は Microsoft.CodeAnalysis.CSharp.Workspaces 4.14.0 も使う。2 つは `XylemUI.Core` のパッケージの `analyzers/dotnet/cs` に、`XylemUI.Generators.dll` と並べて入れる。`XylemUI.Core.csproj` の、生成器が無ければパックを止める検査も、2 つに広げる。アナライザーは `XylemUI.Core` を参照せず、型と属性を名前（`XylemUI.UiThreadOnlyAttribute` など）で探す。修正の提案を別のアセンブリにするのは、コマンドラインのコンパイラ（`dotnet build`）が Workspaces を持たないためである。Roslyn の規則 RS1038（Microsoft.CodeAnalysis.Analyzers の文書）は、どのコンパイルの場でも渡されるとは限らないアセンブリを参照するアセンブリに、コンパイラの拡張を置かないよう求める。Avalonia も、規則（`Avalonia.Analyzers.CSharp.csproj` 13 行目は CSharp だけを参照）と修正（`Avalonia.Analyzers.CodeFixes.CSharp.csproj` 12〜13 行目は Workspaces.Common も参照）を分ける。
-- **診断の番号:** 接頭辞は `XYLEM` のままにする。生成器は 001〜099（今は XYLEM001〜007）、アナライザーは 100 からで、スレッドが 10x、リアクティブが 11x、スコープが 12x、要素が 13x である。生成器と同じく、`XylemUI.Analyzers` に `AnalyzerReleases.Shipped.md` と `AnalyzerReleases.Unshipped.md` を置いて記録する（RS2008）。
+- **診断の番号:** 接頭辞は `XYLEM` のままにする。生成器は 001〜099（今は XYLEM001〜007。XYLEM008・009 は行 PL1、XYLEM010・011 は行 TH1 が設計で使う）、アナライザーは 100 からで、スレッドが 10x、リアクティブが 11x、スコープが 12x、要素が 13x である。生成器と同じく、`XylemUI.Analyzers` に `AnalyzerReleases.Shipped.md` と `AnalyzerReleases.Unshipped.md` を置いて記録する（RS2008）。
 - **修正の提案（code fix）:** 2 つ入れる。
   - XYLEM110 のうち `Text(string)` の分を、`Text(() => 引数の式)` に直す。
   - `XylemUI.*` の名前空間の中の CS0118 を、`Elements.Text(...)` に直す。その中では、`using static XylemUI.Elements;` の `Text(...)` より名前空間 `XylemUI.Text` が先に見つかる（§2.13「名前空間 `XylemUI.*` の中から `Text` を呼ぶ」）。提案を出すのは、CS0118 の名前が呼び出しの `Text` で、ファイルの名前空間が `XylemUI` かその下で、`XylemUI.Elements` に `Text` があるときだけである。
@@ -3696,8 +3696,8 @@ public static partial class Localization
 
 **メッセージの辞書:**
 
-- **入力:** ARB（JSON）。ロケールごとに 1 ファイルで、メッセージごとに `@キー` の欄へ説明と差し込みの型を書く。Flutter の `gen-l10n` と同じ形式なので、ARB を読む翻訳ツールをそのまま使える。
-- **構文:** ICU MessageFormat 1 の範囲。名前付きの差し込み、`plural`、`select`、`selectordinal`、数値と日付の型付きの差し込みを持つ。Flutter の範囲（`packages/flutter_tools/lib/src/localizations/message_parser.dart` 19〜20 行目の `plural` と `select`）に、序数の `selectordinal` を足した。CLDR が序数の規則も持ち、複数形と同じ表から出せるためである。
+- **入力:** ARB（JSON）。ロケールごとに 1 ファイルで、メッセージごとに `@キー` の欄へ説明と差し込みの型を書く。Flutter の `gen-l10n` と同じ形式なので、ARB を読む翻訳ツールをそのまま使える。ただし、メッセージの意味は ICU MessageFormat 1 に合わせるので、`=0`・`=1`・`=2` と、`'` のエスケープでは、同じ ARB が Flutter と違う結果になる場合がある（下の「構文」。Grill の 6 巡目でオーナーが決定、Issue #910）。
+- **構文:** ICU MessageFormat 1 の範囲。名前付きの差し込み、`plural`、`select`、`selectordinal`、数値と日付の型付きの差し込みを持つ。Flutter の範囲（`packages/flutter_tools/lib/src/localizations/message_parser.dart` 19〜20 行目の `plural` と `select`）に、序数の `selectordinal` を足した。CLDR が序数の規則も持ち、複数形と同じ表から出せるためである。構文の意味は ICU MessageFormat 1 に合わせ、Flutter に無い `plural` の中の `#`、`offset:n`、任意の数の `=N`（区分より先に完全一致で見る。Flutter は `=0`・`=1`・`=2` だけを受け、区分の `zero`・`one`・`two` に読み替える。同じフォルダの `gen_l10n.dart` 249〜259 行目）も受け、エスケープは ICU の標準の apostrophe の規則にする（Grill の 6 巡目でオーナーが決定、Issue #910）。細部は行 LC3 の設計で、ICU User Guide を読んでから書く。
 - **生成:** `XylemUI.Generators` の Source Generator が、ビルド時に ARB を読み、メッセージごとに C# のメソッドを生成する。差し込みはメソッドの引数になる。実行時には構文を解釈しない。リフレクションも使わない（§0.1）。
 - **食い違い:** 差し込みの名前か型がロケールの間で食い違うとき、構文が誤っているときは、ビルドのエラーにする。
 - **翻訳漏れ:** あるロケールにメッセージが無いときは、基準のロケール（アプリが宣言する）の文に落とし、ビルドの警告にする。Flutter も基準のロケールの文でメソッドを生成し、漏れを数えて報告する（`packages/flutter_tools/lib/src/localizations/gen_l10n.dart` 1033〜1038 行目）。このリポジトリは警告をエラーにするので（`engineering` の規則）、フレームワーク自身の翻訳では漏れがビルドを止める。
@@ -4027,7 +4027,7 @@ public sealed class DateNames
 - **本体:** `XylemUI.Primitives` の部品は、英語の文言だけを持ち、アプリの文言と同じ辞書の仕組みから読む。C# やテーマに英語を直に書かない。Avalonia は 3 通りが混ざっている（リソースのキー: `src/Avalonia.Themes.Fluent/Strings/InvariantResources.xaml` 13〜15 行目、C# の直書き: `src/Avalonia.Controls/ToggleSwitch.cs` 57 行目の `"Off"`、.NET のカルチャ）。
 - **翻訳:** 別のパッケージに、Flutter と同じ 82 言語を持つ（`packages/flutter_localizations/lib/src/l10n/` の `material_*.arb` は 116 ファイル）。Flutter に同じ意味のメッセージがあるもの（切り取り、コピー、貼り付け、OK、キャンセルなど）は、Flutter の ARB の訳を、BSD 3 条項の表示を付けて使う。
 - **Flutter に対応する文が無いメッセージ:** 英語と日本語だけを持ち、ほかの言語は英語に落とす。82 言語の訳を確かめられる人がいないためである。どのメッセージがどの言語で英語に落ちるかの一覧を、Gallery（G1）で見せる。
-- **差し替え:** アプリは、部品の文言を自分の辞書で上書きできる。
+- **差し替え:** アプリは、部品の文言を上書きできる。生成した部品の文言の基底を継いだクラスを、部品が文言を読む Context の鍵（`PrimitiveStrings`）で渡す形にする（Flutter の形。メッセージごとの上書きと、実行時に文字列のキーで引く形は採らない。Grill の 6 巡目でオーナーが決定、Issue #910）。
 
 ---
 
