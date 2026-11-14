@@ -8,7 +8,7 @@
 - (d) 明暗、アクセントの色、ハイコントラストを切り替えた時に、普通のトップレベルのウィンドウに届くメッセージ（`WM_SETTINGCHANGE` とその lParam の文字列、`WM_SYSCOLORCHANGE`、`WM_THEMECHANGED`、`WM_DWMCOLORIZATIONCOLORCHANGED`）と、`UISettings.ColorValuesChanged` が呼ばれるスレッド
 - (e) `DwmSetWindowAttribute` の属性 20 と 19（`DWMWA_USE_IMMERSIVE_DARK_MODE`）の HRESULT と、題名の棒が実際に暗くなるか
 
-**確かめていないこと: Windows 10 1809。この機械は Windows 11 である。** 設計書 §1 の最も古い Windows（1809）で `UISettings` の 7 つのアクセントの色が返るか、1809 で効く属性の値が 19 か 20 かは、この記録では分からない。
+**確かめていないこと: Windows 10 1809。この機械は Windows 11 である。** 設計書 §1 の最も古い Windows（1809）で `UISettings` の 7 つのアクセントの色が返るか、1809 で効く属性の値が 19 か 20 かは、この記録では分からない。この記録の後、最も古い Windows は Windows 11（ビルド 22000）になり（Issue #897 でオーナーが決定）、1809 は確かめなくてよくなった。
 
 spike のコードは main に入れていない。ブランチ `spike/888-th1-os`の `spike/OsAppearance/` にある。XylemUI を参照せず、パッケージも使わない。Windows の呼び出しは、すべて `LibraryImport` と手で書いた vtable である。
 
@@ -83,12 +83,12 @@ dotnet publish spike/OsAppearance -c Release -r win-x64 -o <dir>
 ## (e): 題名の棒
 
 - **属性 20 と 19 のどちらも受け取られた。** `DwmSetWindowAttribute` は、TRUE でも FALSE でも S_OK を返し、`DwmGetWindowAttribute` で読み戻した値は書いた値だった（Windows 11、ビルド 26300）
-- **実際に暗く見えたかは、記録していない。** 監視のモードのウィンドウは属性 20 を TRUE にして開いたが、見た目は人が確かめる必要がある
+- **実際に暗くなる。** 後から確かめた（2026-11-14）。スパイクのウィンドウを、属性 20 を TRUE にして開いた時と FALSE にして開いた時に、そのウィンドウだけの画像を `PrintWindow`（`PW_RENDERFULLCONTENT`）で取り、題名の棒の高さの 3 行の画素を数えた。TRUE では `#1E2024`（180 個のうち 156 個。残りは `#1E2025`）、FALSE では `#F0F3F9`（180 個すべて）だった。中身の中央は、どちらも `#FFFFFF` である
 
 ## 分かったこと
 
 - **設計の読み方は、NativeAOT で動く。** `UISettings`（`RoActivateInstance` と手の vtable）、`SPI_GETHIGHCONTRAST`、`GetSysColor` の 8 色のどれも、リフレクションなしで読めた
-- **読み直すきっかけは、設計の 2 つで、どの変化も拾える。** 明暗とアクセントの色は `WM_SETTINGCHANGE`（lParam が `"ImmersiveColorSet"`）で、ハイコントラストは `WM_SYSCOLORCHANGE` で、どちらも届いた時点で値が新しい。ただし、アクセントの色は `WM_DWMCOLORIZATIONCOLORCHANGED` の方が約 0.3 秒早く届く。2 つだけで読み直すと、アクセントの色の変化は約 0.3 秒遅れて見える。`WM_DWMCOLORIZATIONCOLORCHANGED` もきっかけに足すかは、行 TH1 の設計で決める
+- **読み直すきっかけは、設計の 2 つで、どの変化も拾える。** 明暗とアクセントの色は `WM_SETTINGCHANGE`（lParam が `"ImmersiveColorSet"`）で、ハイコントラストは `WM_SYSCOLORCHANGE` で、どちらも届いた時点で値が新しい。ただし、アクセントの色は `WM_DWMCOLORIZATIONCOLORCHANGED` の方が約 0.3 秒早く届く。2 つだけで読み直すと、アクセントの色の変化は約 0.3 秒遅れて見える。`WM_DWMCOLORIZATIONCOLORCHANGED` もきっかけに足すかは、行 TH1 の設計で決める（後に、足すと Issue #897 でオーナーが決定した。設計書 §13.2「読み直す時」）
 - **`ColorValuesChanged` は使わなくてよい。** 別のスレッドで呼ばれるので、使うなら UI スレッドへ渡し直す必要がある。ウィンドウのメッセージだけで、同じ変化がすべて分かった
 - **同じ値の知らせをまとめる必要がある。** 1 回の切り替えで最大 10 個のメッセージが届く。読み直して前と同じなら、何もしない形にする
 - **ハイコントラストの間は、`UISettings` のアクセントの段が 1 色になる。** ハイコントラストのテーマは、設計のとおり `GetSysColor` の 8 色から作る
@@ -99,7 +99,6 @@ dotnet publish spike/OsAppearance -c Release -r win-x64 -o <dir>
 ## 確かめていないこと
 
 - Windows 10 1809（上に書いたとおり）
-- 題名の棒が実際に暗く見えるか
 - 明るい配色のコントラスト テーマ
 - 「タイトル バーとウィンドウの境界線にアクセント カラーを表示する」の切り替え
 - `WM_SETTINGCHANGE` の wParam 0x1023 と、lParam `"WindowsThemeElement"` が何の知らせか（コントラスト テーマの切り替えのたびに 1 回ずつ届いた。調べていない）
