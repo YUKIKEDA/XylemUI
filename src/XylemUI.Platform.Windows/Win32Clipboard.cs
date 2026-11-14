@@ -173,6 +173,5 @@ internal sealed unsafe class Win32Clipboard : IClipboardBackend
     }
 
     [UnmanagedCallersOnly]
-    private static LRESULT OwnerProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam) =>
-        DefWindowProcW(hwnd, message, wParam, lParam);
+    private static LRESULT OwnerProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam) => DefWindowProcW(hwnd, message, wParam, lParam);
 }
