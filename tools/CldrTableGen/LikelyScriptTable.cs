@@ -81,7 +81,10 @@ internal sealed class LikelyScriptTable
 
             if (region is null)
             {
-                languages.Add(language, likelyScript);
+                if (!languages.TryAdd(language, likelyScript))
+                {
+                    throw new InvalidDataException("The likely subtags have the key " + property.Name + " twice.");
+                }
             }
             else
             {

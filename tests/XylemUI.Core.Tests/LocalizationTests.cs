@@ -85,6 +85,8 @@ public sealed class LocalizationTests
     [InlineData("und-TW", "und-Hans,und-Hant", "und-Hant")]
     [InlineData("zh-TW,zh-CN", "zh-Hans,zh-Hant", "zh-Hant")]
     [InlineData("zh-Hant", "zh-SG,zh-HK", "zh-HK")]
+    [InlineData("zh-Hant,zh-HK", "zh-TW,zh-HK", "zh-HK")]
+    [InlineData("zh-Hant-TW", "zh-Hant,zh-TW", "zh-Hant")]
     public void Resolve_LikelyScript_IsPreferredInTheLanguageSteps(string preferred, string supported, string expected) =>
         Assert.Equal(Locale.Parse(expected), Localization.Resolve(List(preferred), List(supported)));
 

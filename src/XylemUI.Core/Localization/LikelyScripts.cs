@@ -20,7 +20,8 @@ internal static class LikelyScripts
     /// <remarks>
     /// The script <c>Zzzz</c> and the region <c>ZZ</c> count as empty, as step 1 of Add Likely Subtags removes them. CLDR's
     /// canonicalization (aliases.json) is not applied: the locale is canonical as the IANA registry makes it (design §4.11), so a
-    /// language only CLDR replaces (<c>sh</c>) has no likely script.
+    /// language only CLDR replaces is looked up as it is written. <c>tl</c> has a key of its own and gives <c>Latn</c>; <c>sh</c>
+    /// has none and gives no script.
     /// </remarks>
     /// <param name="locale">The locale.</param>
     /// <returns>The packed script, or 0 when the locale writes none and the table has none for it.</returns>

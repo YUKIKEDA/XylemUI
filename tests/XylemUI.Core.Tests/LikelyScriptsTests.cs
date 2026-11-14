@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace XylemUI.Tests;
 
 // The likely script of a locale (LC2, design §4.11, "Resolution", "Adding the script a region implies"): the script a locale writes,
@@ -51,6 +53,9 @@ public sealed class LikelyScriptsTests
     [InlineData("kk-CN", "Arab")]
     [InlineData("ja", "Jpan")]
     [InlineData("tl", "Latn")]
+    [InlineData("und-FR", "Latn")]
+    [InlineData("und-419", "Latn")]
+    [InlineData("es-419", "Latn")]
     public void Infer_NoScript_LooksUpLanguageAndRegion_ThenLanguage(string tag, string script) =>
         Assert.Equal(LikelyScripts.Pack(script), LikelyScripts.Infer(Locale.Parse(tag)));
 
@@ -135,7 +140,7 @@ public sealed class LikelyScriptsTests
         uint previous = 0;
         for (int i = 0; i < CldrLikelyScripts.EntryCount; i++)
         {
-            uint key = BitConverter.ToUInt32(CldrLikelyScripts.Keys.Slice(i * 4, 4));
+            uint key = BinaryPrimitives.ReadUInt32LittleEndian(CldrLikelyScripts.Keys.Slice(i * 4, 4));
             Assert.True(i == 0 || key > previous, "The key at " + i + " is not above the one before.");
             Assert.True(CldrLikelyScripts.Values[i] < CldrLikelyScripts.ScriptCount);
             previous = key;
