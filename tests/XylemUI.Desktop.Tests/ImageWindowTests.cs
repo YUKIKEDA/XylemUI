@@ -1,3 +1,4 @@
+using XylemUI.Platform.Windows;
 using static XylemUI.Elements;
 
 namespace XylemUI.Desktop.Tests;
@@ -13,9 +14,9 @@ public sealed class ImageWindowTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A window of 200 x 200 on WARP, hidden, counted as an open window of the app, that shows an image whose source is a
-    ///   signal; the window is made with no loop to post to, so each image is decoded where the element asks for it. The message
-    ///   loop runs under a watchdog.
+    /// - The Windows host, made first, as <c>XylemApp.Run</c> makes it. A window of 200 x 200 on WARP, hidden, counted as an open
+    ///   window of the host, that shows an image whose source is a signal; the window is made with no synchronization context, so
+    ///   each image is decoded where the element asks for it. The message loop runs under a watchdog.
     ///
     /// Steps:
     /// - Set the signal to a second image, so that the cache keeps the first for a later element. Ask the window to close; run the
@@ -32,12 +33,15 @@ public sealed class ImageWindowTests(UiThreadFixture ui)
             ImageSource first = ImageSource.FromFile(Path.Combine(folder, "baseline.jpg"));
             ImageSource second = ImageSource.FromFile(Path.Combine(folder, "basn2c08.png"));
             Signal<ImageSource> source = Signal.Create(first);
+
+            // The order of XylemApp.Run: the host before the window, so that the window is disposed before the host.
+            using var app = new Win32PlatformApp();
             using DesktopWindow window = WithNoLoop(() =>
                 new DesktopWindow(() => Image(source.Get), new WindowOptions("Image test", 200, 200), useWarp: true)
             );
             source.Set(second);
             Assert.Equal(2, window.Tree.Images.Count);
-            XylemApp.Open(window);
+            XylemApp.Open(window, app);
 
             using (var watchdog = new LoopWatchdog())
             {

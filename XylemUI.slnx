@@ -25,6 +25,7 @@
     <Project Path="src/XylemUI.Theme.Fluent/XylemUI.Theme.Fluent.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/CldrTableGen/CldrTableGen.csproj" />
     <Project Path="tools/FluentIconsTool/FluentIconsTool.csproj" />
     <Project Path="tools/FluentTokensTool/FluentTokensTool.csproj" />
     <Project Path="tools/LanguageSubtagGen/LanguageSubtagGen.csproj" />

@@ -29,6 +29,24 @@ $solution = "XylemUI.slnx"
 
 Invoke-Step "Restore local tools" { dotnet tool restore }
 Invoke-Step "Check format (CSharpier)" { dotnet csharpier check . }
+
+# A merge that a script resolved once left docs/conventions.md empty, and nothing looked at documents (PR #871, Issue #923).
+# The tracked documents, rules, and skills must not be empty and must hold no conflict marker.
+Write-Host "==> Check documents (not empty, no conflict marker)"
+$documents = git ls-files -- docs .cursor/rules .agents/skills .claude/skills "*.md" | Sort-Object -Unique
+$broken = foreach ($document in $documents) {
+    if ((Get-Item -LiteralPath $document).Length -eq 0) {
+        "$document is empty."
+    }
+    elseif (Select-String -LiteralPath $document -Pattern '^(<<<<<<<|>>>>>>>) ' -CaseSensitive -Quiet) {
+        "$document holds a conflict marker."
+    }
+}
+if ($broken) {
+    $broken | ForEach-Object { Write-Host "    $_" }
+    Write-Error "Check documents failed: $(@($broken).Count) file(s)."
+    exit 1
+}
 # HarfBuzz from source (vendor/versions.lock); a no-op when they are up to date, and on Linux and macOS until
 # P04 / P06. The script throws on a failure, which stops this one.
 Write-Host "==> Native libraries (vendor/build.ps1)"

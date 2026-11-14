@@ -4,7 +4,7 @@ namespace XylemUI.Platform.Windows;
 
 /// <summary>
 /// The AccessKit C API calls the UIA provider makes (design §4.4.1, "The shape of P02g"), as <c>include/accesskit.h</c> of the
-/// release 0.23.1 declares them. The library is linked into a NativeAOT executable and loaded as <c>accesskit.dll</c> under the
+/// release 0.23.2 declares them. The library is linked into a NativeAOT executable and loaded as <c>accesskit.dll</c> under the
 /// JIT, from these same declarations (design §9). A C <c>bool</c> is one byte, passed as <see cref="byte"/>.
 /// </summary>
 internal static unsafe partial class AccessKit

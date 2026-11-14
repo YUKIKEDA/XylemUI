@@ -54,7 +54,17 @@
       Condition="!Exists('..\XylemUI.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\XylemUI.Analyzers.CodeFixes.dll')"
       Text="XylemUI.Analyzers.CodeFixes.dll was not found where XylemUI.Core packs it from (analyzers/dotnet/cs)."
     />
+    <Error
+      Condition="!Exists('LICENSE-CLDR.txt')"
+      Text="LICENSE-CLDR.txt, which tools/CldrTableGen writes, was not found where XylemUI.Core packs it from."
+    />
   </Target>
+  <ItemGroup>
+    <!-- The notice of the CLDR data the locale tables are made from (Unicode License V3, design §9): the license asks that it appear
+         with every copy of the data, and the package is one (the owner's decision on PR #925). The generator writes it from the zip's
+         LICENSE. -->
+    <None Include="LICENSE-CLDR.txt" Pack="true" PackagePath="\" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Core.Tests" />
     <!-- The benchmarks time the internal layout and reactive paths (roadmap row M1a). -->

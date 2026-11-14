@@ -9,6 +9,21 @@ namespace XylemUI.Platform.Windows;
 /// </summary>
 internal static unsafe class Com
 {
+    [ThreadStatic]
+    private static int _uiThreadInitializations;
+
+    /// <summary>
+    /// Gets how many calls of <see cref="InitializeUiThread"/> on the calling thread <see cref="UninitializeUiThread"/> has not yet
+    /// balanced.
+    /// </summary>
+    /// <remarks>
+    /// Only the tests read it, since no OS call tells whether OLE is initialized on a thread: Microsoft's pages "OleInitialize
+    /// function", "OleUninitialize function", "OleGetClipboard function", and "RegisterDragDrop function" document no result that
+    /// tells it, and <c>RegisterDragDrop</c> returned <c>S_OK</c> on a single-threaded thread that never called
+    /// <c>OleInitialize</c> (Windows 11 26300, the first gate of PR #926).
+    /// </remarks>
+    internal static int UiThreadInitializations => _uiThreadInitializations;
+
     /// <summary>
     /// Throws when <paramref name="result"/> is a failure.
     /// </summary>
@@ -61,12 +76,17 @@ internal static unsafe class Com
         }
 
         ThrowIfFailed(result, "OleInitialize");
+        _uiThreadInitializations++;
     }
 
     /// <summary>
     /// Ends what <see cref="InitializeUiThread"/> began on the calling thread.
     /// </summary>
-    public static void UninitializeUiThread() => TerraFX.Interop.Windows.Windows.OleUninitialize();
+    public static void UninitializeUiThread()
+    {
+        TerraFX.Interop.Windows.Windows.OleUninitialize();
+        _uiThreadInitializations--;
+    }
 
     [DoesNotReturn]
     private static void Throw(int result, string operation) =>

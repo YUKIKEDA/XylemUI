@@ -97,7 +97,7 @@ public sealed unsafe partial class UiaTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The table of roles, with AccessKit's values written as numbers from accesskit-c 0.23.1's header for the roles row AX1 adds.
+    /// - The table of roles, with AccessKit's values written as numbers from accesskit-c 0.23.2's header for the roles row AX1 adds.
     ///
     /// Steps:
     /// - For each value of <see cref="SemanticsRole"/> but None, map a node of that role.

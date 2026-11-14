@@ -11,4 +11,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Theme.Fluent.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The MIT notice of Fluent UI System Icons, whose names and glyphs the package carries (the owner's decision on PR #925). -->
+    <None Include="LICENSE-FluentSystemIcons.txt" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>

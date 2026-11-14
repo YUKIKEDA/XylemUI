@@ -1,3 +1,6 @@
+using TerraFX.Interop.Windows;
+using static TerraFX.Interop.Windows.Windows;
+
 namespace XylemUI.Platform.Windows.Tests;
 
 // Helpers for tests that run the real Win32 message loop (S3, S5). They keep a test from hanging the run and from leaking wakes
@@ -58,7 +61,11 @@ public sealed class WakeTicker : IDisposable
     }
 }
 
-// Wakes the loop and marks the test failed if it is still running after the timeout.
+// Wakes the loop and marks the test failed if it is still running after the timeout. It wakes the loop in two ways: a thread
+// message to the UI thread, which does not go through Win32MessageLoop.Wake, so that a test of Wake fails by its assertion when
+// Wake does nothing, instead of hanging (PR #926's review); and Win32MessageLoop.Wake, whose message to a window a modal loop
+// (a resize drag, DoDragDrop) does not drop as it may drop a thread message. A watchdog made off the UI thread has no thread to
+// post to and uses Wake alone.
 public sealed class LoopWatchdog : IDisposable
 {
     private readonly ManualResetEventSlim _finished = new();
@@ -67,11 +74,17 @@ public sealed class LoopWatchdog : IDisposable
 
     public LoopWatchdog()
     {
+        uint uiThread = UiThread.CheckAccess() ? GetCurrentThreadId() : 0;
         _thread = new Thread(() =>
         {
             if (!_finished.Wait(TimeSpan.FromSeconds(5)))
             {
                 _expired = true;
+                if (uiThread != 0)
+                {
+                    _ = PostThreadMessageW(uiThread, WM.WM_NULL, default, default);
+                }
+
                 Win32MessageLoop.Wake();
             }
         })
