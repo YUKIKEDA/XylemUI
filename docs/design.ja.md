@@ -4995,9 +4995,9 @@ OS ごとの機能（窓、ループ、フレームの時計、描画、文字�
   1. 窓の核（`WindowCore`）にコードを移し、`HeadlessApp` をそれに載せる
   2. `UiDispatcher.Current`
   3. ループの契約（`IPlatformApp` の `Dispatcher`・`Run`・`Quit`・`Wake`）と、OLE の初期化と `UiDispatcher.Current`・`SynchronizationContext` を置くことをホストへ移すこと
-  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、E2E の場面
+  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、アプリの段のクリップボード（`IPlatformApp.Clipboard`。持ち主をループのメッセージ専用の窓に替える）、E2E の場面（クリップボードをこの PR に入れるのは PR #926 でオーナーが決定）
   5. OS の設定の 1 つのオブジェクト（`IPlatformSettings`）
-  6. フォントの提供者を UI スレッドに 1 つにすること
+  6. フォントの提供者を UI スレッドに 1 つにすること（`IPlatformApp.Fonts`）と、グリフのラスタライザの工場（`IPlatformApp.CreateRasterizer`）（ラスタライザの工場をこの PR に入れるのは PR #926 でオーナーが決定）
   7. `XylemUI.Desktop` と Windows のホストを `net10.0` にし、ホストを RID で選ぶこと。この PR は次も行う
      - `XylemUI.Platform.Windows.csproj` から `<InternalsVisibleTo Include="XylemUI.Desktop" />` を外し、`XylemUI.Desktop.csproj` から Platform.Windows と Rendering.D3D11 への `ProjectReference` を外す
      - Rendering.D3D11 から Platform.Windows への `InternalsVisibleTo` は足さない。ホストが使う `D3D11Renderer` のメンバー（`Create`・`Resize`・`TextRendering`・`FrameLatencyWaitableObject`・`TryReadLastRefresh`・`RefreshRate`・`Dispose`）はどれも public で、`IRenderTarget` は Core の型で、Platform.Windows には Core の `InternalsVisibleTo` がある
@@ -5023,6 +5023,7 @@ internal interface IPlatformApp : IDisposable
     int Run();                                // Quit まで、OS のメッセージ・取り出し・フレームを回す。戻り値は Quit の値
     void Quit(int exitCode);                  // UI スレッドから
     void Wake();                              // どのスレッドからでも。ループの開始前は何もしない（§2.11、§2.12）
+    // Dispose: 2 回目は何もしない。スレッドは確かめない（XylemApp.Run が UI スレッドで捨てる。PR #926 でオーナーが決定）
 }
 
 // OS の設定: アプリの段に 1 つ。読み直して値が変わったときだけ、変わった値の印を付けて 1 回知らせる
@@ -5157,7 +5158,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 - 層 2（`XylemUI.Core.Tests`）: 偽の `IPlatformWindow` と設定で、窓の核の `Mount`、最初のフレーム、閉じた時の後始末、設定の知らせ 1 回で木の値が変わることを、すべての OS で確かめる。`CurrentDispatcher` の物を作り、置く前は投げること、`Exchange` が前の値を返すことも確かめる（静的な `Current` は使わない。§2.12）
 - 層 5（`XylemUI.Desktop.Tests`）: `HeadlessApp` が窓の核を通ってもゴールデンと振る舞いが変わらないこと。本物の窓（WARP）のテストは Windows のホストを通す
-- `XylemUI.Platform.Windows.Tests`（本物の窓）: 2 つ目の `OpenWindow` が投げること、メッセージ専用の窓を持ち主にしたクリップボードの読み書き、`WM_SETTINGCHANGE` 1 つで設定の知らせが 1 回であること、壊す順
+- `XylemUI.Platform.Windows.Tests`（本物の窓）: ホストを作ると OLE を初期化し、`UiDispatcher.Current` と `SynchronizationContext` を置き、捨てると戻すこと（2 回捨てても 2 回目は何もしないこと）。`Run` が `Quit` の値を返すこと、ワーカーからの `Wake` で待っているループが起きること。「ループの開始前の `Wake` は何もしない」はテストしない。起床の窓は最初に `Run` した時に作られ、テストのプロセスが終わるまで残るので、前のテストがループを回した後では、開始前の状態を作れないためである（PR #926 でオーナーが決定）。新しいプロセスで確かめるなら、E2E がすでに使っている、自分を別のプロセスで起こす形（`External`・`Startup`）か、このテストだけを持つテストのプロジェクト（xUnit v3 はテストのアセンブリごとにプロセスを分ける）を使う。どちらにするかは後で決める。2 つ目の `OpenWindow` が投げること、メッセージ専用の窓を持ち主にしたクリップボードの読み書き、`WM_SETTINGCHANGE` 1 つで設定の知らせが 1 回であること、壊す順
 - `XylemUI.Generators.Tests`: `PlatformHost` を持つアセンブリを 1 つ参照するアプリで、生成した初期化子がその型の `Register()` を呼ぶこと。2 つ参照するアプリで XYLEM008 が出て、初期化子がどのホストも登録しないこと。`Register` の無い型を名指すホストで XYLEM009 が出ること。既定のキーの行の診断（XYLEM007）のテストと同じ形で書く
 
 **機能ごとのサポート状況マトリクス（例、実装時に全項目を埋める）**

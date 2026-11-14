@@ -17,9 +17,10 @@ internal static unsafe class Com
     /// balanced.
     /// </summary>
     /// <remarks>
-    /// The tests read it to see whether the Windows host initialized OLE. No documented call tells whether OLE is initialized on a
-    /// thread. <c>RegisterDragDrop</c>, whose page says that it always fails without <c>OleInitialize</c>, returned <c>S_OK</c> on
-    /// a single-threaded thread that never called it (Windows 11 26300, the first gate of Issue #908).
+    /// Only the tests read it, since no OS call tells whether OLE is initialized on a thread: Microsoft's pages "OleInitialize
+    /// function", "OleUninitialize function", "OleGetClipboard function", and "RegisterDragDrop function" document no result that
+    /// tells it, and <c>RegisterDragDrop</c> returned <c>S_OK</c> on a single-threaded thread that never called
+    /// <c>OleInitialize</c> (Windows 11 26300, the first gate of PR #926).
     /// </remarks>
     internal static int UiThreadInitializations => _uiThreadInitializations;
 

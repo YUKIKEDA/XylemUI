@@ -58,7 +58,8 @@ internal sealed class Win32PlatformApp : IPlatformApp
 
     /// <summary>
     /// Puts back the dispatcher and the synchronization context that the constructor replaced, and uninitializes OLE. A second
-    /// call does nothing.
+    /// call does nothing. It checks no thread: the app disposes the host on the UI thread, and a throw here would hide the
+    /// exception the app's run ends with (design §6.0).
     /// </summary>
     public void Dispose()
     {
