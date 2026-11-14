@@ -2,8 +2,8 @@ namespace XylemUI;
 
 /// <summary>
 /// The locale of one window (design §4.11): the locales the app supports resolved against the languages the OS gives, kept in a
-/// signal that the window provides around its root function. A host makes one for each window and tells it when the OS's
-/// languages change.
+/// signal that the window provides around its root function. The window core makes one for each window
+/// (<see cref="WindowCore.Mount"/>), and the host tells the core when the OS's languages change.
 /// </summary>
 internal sealed class WindowLocale
 {

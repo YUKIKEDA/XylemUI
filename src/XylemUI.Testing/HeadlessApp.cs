@@ -31,14 +31,12 @@ public sealed class HeadlessApp : IAsyncDisposable
     private readonly HeadlessTarget _target;
     private readonly HeadlessRenderer? _renderer;
     private readonly UiDispatcher _dispatcher;
-    private readonly NodeHandle _rootNode;
+    private readonly WindowCore _core;
     private readonly bool _trackerWasEnabled;
     private readonly HashSet<int> _scopesBefore = [];
 
     // Keeps what the work on the UI queue throws in _errors; made once, so that a pump in a Zero-Alloc test allocates nothing.
     private readonly Action<Exception> _report;
-    private readonly WindowLocale _locale;
-    private ScopeHandle _rootScope;
     private bool _disposed;
     private List<Exception>? _errors;
 
@@ -56,12 +54,11 @@ public sealed class HeadlessApp : IAsyncDisposable
             _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
             _target = new HeadlessTarget(_renderer?.Target);
             _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
-            Tree = new UiTree(_text);
+            _core = new WindowCore(_text, options.SupportedLocales, options.ResolveLocale);
             Tree.Animations.ReduceMotion = options.ReduceMotion;
             Tree.Clipboard = Clipboard;
             Tree.AnimatesImages = options.ImageAnimation;
             Tree.Keymap = options.Keymap ?? new Keymap();
-            _locale = new WindowLocale(options.SupportedLocales, options.ResolveLocale, options.SystemLocales);
             Ime = new HeadlessIme(this);
             Tree.SetTextInput(Ime);
             Tree.SetTextEditing(
@@ -70,9 +67,7 @@ public sealed class HeadlessApp : IAsyncDisposable
                     KeyboardCues = options.KeyboardCues,
                 }
             );
-            _rootNode = Tree.CreateNode(new LayoutStyle());
-            Frames = new WindowFrames(Tree, _rootNode, _target, _atlas, _scheduler, Color.FromRgb(0xFFFFFF), time: Time);
-            Input = new WindowInput(Tree, Frames, _platform);
+            _core.Connect(_target, _atlas, _scheduler, _platform, Color.FromRgb(0xFFFFFF), time: Time);
             Pointer = new HeadlessPointer(this);
             Keyboard = new HeadlessKeyboard(this);
         }
@@ -99,12 +94,9 @@ public sealed class HeadlessApp : IAsyncDisposable
         try
         {
             Input.SetActive(true);
-            Mount(root);
 
-            // The frame the root function's nodes asked for is the first one, which the size runs at once; a frame that one asks
-            // for stays.
-            _scheduler.CancelFrame();
-            Frames.Resize(new Size(options.Width, options.Height), options.Scale);
+            // The size is the options' logical size, given as it is: no rounding.
+            _core.Mount(root, options.SystemLocales, "HeadlessApp.StartAsync", new Size(options.Width, options.Height), options.Scale);
         }
         catch
         {
@@ -178,17 +170,17 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <summary>
     /// Gets the tree.
     /// </summary>
-    internal UiTree Tree { get; }
+    internal UiTree Tree => _core.Tree;
 
     /// <summary>
     /// Gets the frames.
     /// </summary>
-    internal WindowFrames Frames { get; }
+    internal WindowFrames Frames => _core.Frames;
 
     /// <summary>
     /// Gets the input.
     /// </summary>
-    internal WindowInput Input { get; }
+    internal WindowInput Input => _core.Input;
 
     /// <summary>
     /// Gets what the window asks of the platform: the capture, the cursor, and the drags handed to the OS.
@@ -198,7 +190,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <summary>
     /// Gets the node the root function's node is appended to.
     /// </summary>
-    internal NodeHandle RootNode => _rootNode;
+    internal NodeHandle RootNode => _core.RootNode;
 
     /// <summary>
     /// Starts an app: runs its root function, lays the tree out, and runs the first frame.
@@ -300,7 +292,8 @@ public sealed class HeadlessApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Returns what assistive technology reads of a node (design §12.5): its role, name, value, and states, and its box in the window.
+    /// Returns what assistive technology reads of a node (design §12.5): its role, name, value, and states, its box in the window, its
+    /// live setting, orientation, level, place and count (each from 1), and the nodes its relations name that are in the tree.
     /// </summary>
     /// <param name="element">The node.</param>
     /// <returns>What the accessibility tree holds of it.</returns>
@@ -320,6 +313,7 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
 
         AccessibilityStates states = node.States;
+        AccessibilityTree accessibility = Tree.Accessibility;
         return new AccessibilityNodeInfo(
             node.Role,
             node.Name,
@@ -332,7 +326,17 @@ public sealed class HeadlessApp : IAsyncDisposable
             (states & AccessibilityStates.Expandable) != 0 ? (states & AccessibilityStates.Expanded) != 0 : null,
             node.Range,
             new Rect(origin.X, origin.Y, node.Bounds.Width, node.Bounds.Height),
-            node.Children.Count
+            node.Children.Count,
+            LiveOf(node),
+            node.Orientation,
+            node.Level + 1,
+            node.PositionInSet + 1,
+            Math.Max(node.SizeOfSet, 0),
+            ElementsOf(accessibility, node.LabelledBy),
+            ElementsOf(accessibility, node.DescribedBy),
+            ElementsOf(accessibility, node.Controls),
+            ElementOf(accessibility, node.ErrorMessage),
+            ElementOf(accessibility, node.ActiveDescendant)
         );
     }
 
@@ -353,7 +357,46 @@ public sealed class HeadlessApp : IAsyncDisposable
         | ((states & AccessibilityStates.Mixed) != 0 ? SemanticsStates.Mixed : SemanticsStates.None)
         | ((states & AccessibilityStates.Selected) != 0 ? SemanticsStates.Selected : SemanticsStates.None)
         | ((states & AccessibilityStates.ReadOnly) != 0 ? SemanticsStates.ReadOnly : SemanticsStates.None)
-        | ((states & AccessibilityStates.Required) != 0 ? SemanticsStates.Required : SemanticsStates.None);
+        | ((states & AccessibilityStates.Required) != 0 ? SemanticsStates.Required : SemanticsStates.None)
+        | ((states & AccessibilityStates.Invalid) != 0 ? SemanticsStates.Invalid : SemanticsStates.None)
+        | ((states & AccessibilityStates.Multiselectable) != 0 ? SemanticsStates.Multiselectable : SemanticsStates.None)
+        | ((states & AccessibilityStates.Busy) != 0 ? SemanticsStates.Busy : SemanticsStates.None)
+        | ((states & AccessibilityStates.Modal) != 0 ? SemanticsStates.Modal : SemanticsStates.None);
+
+    // The setting that reads out a change of the node's name, with Inherit taken from the nodes above: Off when none gives one.
+    private static SemanticsLive LiveOf(AccessibilityNode node)
+    {
+        for (AccessibilityNode? at = node; at is not null; at = at.Parent)
+        {
+            if (at.Live != SemanticsLive.Inherit)
+            {
+                return at.Live;
+            }
+        }
+
+        return SemanticsLive.Off;
+    }
+
+    private List<Element> ElementsOf(AccessibilityTree accessibility, List<AccessibilityNodeId>? ids)
+    {
+        var elements = new List<Element>();
+        if (ids is not null)
+        {
+            foreach (AccessibilityNodeId id in ids)
+            {
+                if (ElementOf(accessibility, id) is { IsNone: false } element)
+                {
+                    elements.Add(element);
+                }
+            }
+        }
+
+        return elements;
+    }
+
+    // The element of a node of the tree; none for no node, and for a node a draw function added, which has no element of its own.
+    private Element ElementOf(AccessibilityTree accessibility, AccessibilityNodeId id) =>
+        id.Value != 0 && accessibility.Find(id) is { ChildKey: null } node ? new Element(Tree, node.Node) : default;
 
     private void CollectByRole(AccessibilityNode node, SemanticsRole role, string? name, List<Element> found)
     {
@@ -371,7 +414,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     // The window's tree, then each open popup's, back to front (Popups).
     private void CollectAll(string key, bool byText, List<Element> found)
     {
-        Collect(_rootNode, key, byText, found);
+        Collect(_core.RootNode, key, byText, found);
         IReadOnlyList<PopupHandle> open = Tree.Popups.Opened;
         for (int i = 0; i < open.Count; i++)
         {
@@ -440,7 +483,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(tags);
         VerifyRunning();
-        _locale.Update(tags);
+        _core.SetSystemLocales(tags);
         _ = DrainQueue();
     }
 
@@ -547,7 +590,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     public void AssertNoLeakedScopes()
     {
         VerifyRunning();
-        DisposeRoot();
+        _core.DisposeRoot();
         _ = PumpAndSettle();
         var leaked = new List<TrackedScope>();
         ScopeTracker.ForEachActiveScope(scope =>
@@ -747,68 +790,18 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
     }
 
-    // The root function, with the tree as the current tree, in a new scope that becomes the root scope (as DesktopWindow does).
-    private void Mount(Func<Element> root)
-    {
-        UiTree? previous = UiTree.Current;
-        UiTree.Current = Tree;
-        try
-        {
-            _rootScope = Scope.Create(
-                () =>
-                {
-                    Element content = _locale.Provide(Tree, root);
-                    if (content.IsNone || !ReferenceEquals(content.Tree, Tree))
-                    {
-                        throw new InvalidOperationException("The root function returns a node of the app's tree.");
-                    }
-
-                    if (!Tree.Nodes.GetRef(content.Node).Parent.IsNone)
-                    {
-                        throw new InvalidOperationException("The root function returns a node with no parent.");
-                    }
-
-                    // One change for the readers of what an action can do: the node is in the tree and is where a route starts
-                    // with no focus.
-                    ReactiveRuntime.Batch(() =>
-                    {
-                        Tree.AppendChild(_rootNode, content.Node);
-                        Tree.KeyRoot = content.Node;
-                    });
-                },
-                "HeadlessApp.StartAsync"
-            );
-        }
-        finally
-        {
-            UiTree.Current = previous;
-        }
-    }
-
     // Frees what the app holds and gives the tracker back the state it had; the app is disposed after it.
     private void Free()
     {
         _disposed = true;
-        DisposeRoot();
+        _core.DisposeRoot();
+
+        // The core's DisposeRoot cancels no frame: AssertNoLeakedScopes disposes the root and then runs the frames that are left.
         _scheduler.CancelFrame();
         ScopeTracker.IsEnabled = _trackerWasEnabled;
         _atlas.Dispose();
         _renderer?.Dispose();
         _text.Dispose();
         _fonts.Dispose();
-    }
-
-    private void DisposeRoot()
-    {
-        Tree.FrameNeeded = null;
-        if (!_rootScope.IsNone && Scope.IsAlive(_rootScope))
-        {
-            Scope.Dispose(_rootScope);
-        }
-
-        _rootScope = default;
-
-        // The tree is thrown away with its window: the images its cache kept for a later element go too (design §5.0.4, "Cache").
-        Tree.CachedImages.ReleaseAll();
     }
 }

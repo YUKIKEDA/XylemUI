@@ -598,4 +598,72 @@ public sealed class HeadlessAppTests
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => HeadlessApp.StartAsync(() => Box()));
         Assert.Contains("HeadlessSession", error.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A worker of an app posts through <see cref="UiDispatcher.Current"/>, which is the session's dispatcher, and the message
+    /// reaches the app's receiver at the next pump. Two apps one after the other use the same dispatcher: disposing the first
+    /// leaves it in place for the second.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Two apps of a box, started one after the other, whose root functions each add a receiver of <c>Ping</c> that records the
+    ///   number and whether it runs on the UI thread.
+    ///
+    /// Steps:
+    /// - Start the first app. A worker thread reads <see cref="UiDispatcher.Current"/> and posts <c>Ping</c> 1 to it; join it and
+    ///   pump until settled. Dispose the app.
+    /// - Start the second app and do the same with <c>Ping</c> 2.
+    ///
+    /// Expected:
+    /// - Both workers read the session's dispatcher (<see cref="HeadlessSession.Dispatcher"/>).
+    /// - The first app's receiver got 1, and the second's got 2, each on the UI thread.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task StartAsync_TwoAppsInTurn_AWorkerPostsThroughCurrentToEach()
+    {
+        (IUiDispatcher first, List<int> firstReceived, bool firstOnUiThread) = await PostThroughCurrentAsync(1);
+        (IUiDispatcher second, List<int> secondReceived, bool secondOnUiThread) = await PostThroughCurrentAsync(2);
+
+        Assert.Same(HeadlessSession.Dispatcher, first);
+        Assert.Same(HeadlessSession.Dispatcher, second);
+        Assert.Equal([1], firstReceived);
+        Assert.Equal([2], secondReceived);
+        Assert.True(firstOnUiThread);
+        Assert.True(secondOnUiThread);
+    }
+
+    // Starts an app whose root adds a receiver of Ping, posts Ping(number) from a worker through UiDispatcher.Current, pumps until
+    // settled, and disposes the app. Returns what the worker read and what the receiver got.
+    private static async Task<(IUiDispatcher Read, List<int> Received, bool OnUiThread)> PostThroughCurrentAsync(int number)
+    {
+        var received = new List<int>();
+        bool onUiThread = false;
+        IUiDispatcher? read = null;
+        await using (
+            HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            {
+                UiMessage.On<Ping>(ping =>
+                {
+                    received.Add(ping.Number);
+                    onUiThread = UiThread.CheckAccess();
+                });
+                return Box();
+            })
+        )
+        {
+            var worker = new Thread(() =>
+            {
+                read = UiDispatcher.Current;
+                read.Post(new Ping(number));
+            });
+            worker.Start();
+            worker.Join();
+            _ = app.PumpAndSettle();
+        }
+
+        return (read!, received, onUiThread);
+    }
+
+    private sealed record Ping(int Number) : UiMessage;
 }

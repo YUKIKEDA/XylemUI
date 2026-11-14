@@ -97,6 +97,125 @@ internal static unsafe partial class AccessKit
     /// <summary><c>ACCESSKIT_ROLE_WINDOW</c>.</summary>
     public const byte RoleWindow = 133;
 
+    // The roles row AX1 adds (design §4.4.1, the table of roles), counted in the same enum.
+
+    /// <summary><c>ACCESSKIT_ROLE_CELL</c>.</summary>
+    public const byte RoleCell = 2;
+
+    /// <summary><c>ACCESSKIT_ROLE_ROW</c>.</summary>
+    public const byte RoleRow = 6;
+
+    /// <summary><c>ACCESSKIT_ROLE_TREE_ITEM</c>.</summary>
+    public const byte RoleTreeItem = 9;
+
+    /// <summary><c>ACCESSKIT_ROLE_PARAGRAPH</c>.</summary>
+    public const byte RoleParagraph = 13;
+
+    /// <summary><c>ACCESSKIT_ROLE_PANE</c>.</summary>
+    public const byte RolePane = 20;
+
+    /// <summary><c>ACCESSKIT_ROLE_ROW_HEADER</c>.</summary>
+    public const byte RoleRowHeader = 21;
+
+    /// <summary><c>ACCESSKIT_ROLE_COLUMN_HEADER</c>.</summary>
+    public const byte RoleColumnHeader = 22;
+
+    /// <summary><c>ACCESSKIT_ROLE_TABLE</c>.</summary>
+    public const byte RoleTable = 25;
+
+    /// <summary><c>ACCESSKIT_ROLE_SWITCH</c>.</summary>
+    public const byte RoleSwitch = 29;
+
+    /// <summary><c>ACCESSKIT_ROLE_SEARCH_INPUT</c>.</summary>
+    public const byte RoleSearchInput = 32;
+
+    /// <summary><c>ACCESSKIT_ROLE_DATE_INPUT</c>.</summary>
+    public const byte RoleDateInput = 33;
+
+    /// <summary><c>ACCESSKIT_ROLE_DATE_TIME_INPUT</c>.</summary>
+    public const byte RoleDateTimeInput = 34;
+
+    /// <summary><c>ACCESSKIT_ROLE_TIME_INPUT</c>.</summary>
+    public const byte RoleTimeInput = 37;
+
+    /// <summary><c>ACCESSKIT_ROLE_ALERT</c>.</summary>
+    public const byte RoleAlert = 44;
+
+    /// <summary><c>ACCESSKIT_ROLE_ALERT_DIALOG</c>.</summary>
+    public const byte RoleAlertDialog = 45;
+
+    /// <summary><c>ACCESSKIT_ROLE_ARTICLE</c>.</summary>
+    public const byte RoleArticle = 47;
+
+    /// <summary><c>ACCESSKIT_ROLE_CODE</c>.</summary>
+    public const byte RoleCode = 54;
+
+    /// <summary><c>ACCESSKIT_ROLE_DISCLOSURE_TRIANGLE</c>.</summary>
+    public const byte RoleDisclosureTriangle = 67;
+
+    /// <summary><c>ACCESSKIT_ROLE_DOCUMENT</c>.</summary>
+    public const byte RoleDocument = 68;
+
+    /// <summary><c>ACCESSKIT_ROLE_FEED</c>.</summary>
+    public const byte RoleFeed = 71;
+
+    /// <summary><c>ACCESSKIT_ROLE_FIGURE</c>.</summary>
+    public const byte RoleFigure = 73;
+
+    /// <summary><c>ACCESSKIT_ROLE_GRID</c>.</summary>
+    public const byte RoleGrid = 76;
+
+    /// <summary><c>ACCESSKIT_ROLE_GRID_CELL</c>.</summary>
+    public const byte RoleGridCell = 77;
+
+    /// <summary><c>ACCESSKIT_ROLE_HEADING</c>.</summary>
+    public const byte RoleHeading = 80;
+
+    /// <summary><c>ACCESSKIT_ROLE_LOG</c>.</summary>
+    public const byte RoleLog = 88;
+
+    /// <summary><c>ACCESSKIT_ROLE_MENU_ITEM_CHECK_BOX</c>.</summary>
+    public const byte RoleMenuItemCheckBox = 94;
+
+    /// <summary><c>ACCESSKIT_ROLE_MENU_ITEM_RADIO</c>.</summary>
+    public const byte RoleMenuItemRadio = 95;
+
+    /// <summary><c>ACCESSKIT_ROLE_METER</c>.</summary>
+    public const byte RoleMeter = 97;
+
+    /// <summary><c>ACCESSKIT_ROLE_NAVIGATION</c>.</summary>
+    public const byte RoleNavigation = 98;
+
+    /// <summary><c>ACCESSKIT_ROLE_RADIO_GROUP</c>.</summary>
+    public const byte RoleRadioGroup = 102;
+
+    /// <summary><c>ACCESSKIT_ROLE_REGION</c>.</summary>
+    public const byte RoleRegion = 103;
+
+    /// <summary><c>ACCESSKIT_ROLE_SCROLL_BAR</c>.</summary>
+    public const byte RoleScrollBar = 107;
+
+    /// <summary><c>ACCESSKIT_ROLE_SPIN_BUTTON</c>.</summary>
+    public const byte RoleSpinButton = 114;
+
+    /// <summary><c>ACCESSKIT_ROLE_STATUS</c>.</summary>
+    public const byte RoleStatus = 116;
+
+    /// <summary><c>ACCESSKIT_ROLE_TAB_PANEL</c>.</summary>
+    public const byte RoleTabPanel = 122;
+
+    /// <summary><c>ACCESSKIT_ROLE_TITLE_BAR</c>.</summary>
+    public const byte RoleTitleBar = 126;
+
+    /// <summary><c>ACCESSKIT_ROLE_TOOLBAR</c>.</summary>
+    public const byte RoleToolbar = 127;
+
+    /// <summary><c>ACCESSKIT_ROLE_TREE</c>.</summary>
+    public const byte RoleTree = 129;
+
+    /// <summary><c>ACCESSKIT_ROLE_TREE_GRID</c>.</summary>
+    public const byte RoleTreeGrid = 130;
+
     // The values of accesskit_action (accesskit.h lines 64 to 149, in order from 0) that the nodes declare (design §4.4.1).
 
     /// <summary><c>ACCESSKIT_ACTION_CLICK</c>.</summary>
@@ -111,6 +230,12 @@ internal static unsafe partial class AccessKit
     /// <summary><c>ACCESSKIT_ACTION_EXPAND</c>.</summary>
     public const byte ActionExpand = 4;
 
+    /// <summary><c>ACCESSKIT_ACTION_DECREMENT</c>.</summary>
+    public const byte ActionDecrement = 6;
+
+    /// <summary><c>ACCESSKIT_ACTION_INCREMENT</c>.</summary>
+    public const byte ActionIncrement = 7;
+
     /// <summary><c>ACCESSKIT_ACTION_SCROLL_INTO_VIEW</c>.</summary>
     public const byte ActionScrollIntoView = 15;
 
@@ -119,6 +244,18 @@ internal static unsafe partial class AccessKit
 
     /// <summary><c>ACCESSKIT_ACTION_DATA_VALUE</c> (accesskit.h line 1011): the data is a text.</summary>
     public const int ActionDataValue = 1;
+
+    /// <summary><c>ACCESSKIT_ACTION_DATA_NUMERIC_VALUE</c> (accesskit.h line 1012): the data is a number, UIA's RangeValue.SetValue.</summary>
+    public const int ActionDataNumericValue = 2;
+
+    /// <summary><c>ACCESSKIT_INVALID_TRUE</c> (accesskit.h line 208).</summary>
+    public const byte InvalidTrue = 0;
+
+    /// <summary><c>ACCESSKIT_LIVE_OFF</c> (accesskit.h line 240); <c>POLITE</c> and <c>ASSERTIVE</c> follow.</summary>
+    public const byte LiveOff = 0;
+
+    /// <summary><c>ACCESSKIT_ORIENTATION_HORIZONTAL</c> (accesskit.h line 256); <c>VERTICAL</c> follows.</summary>
+    public const byte OrientationHorizontal = 0;
 
     /// <summary><c>ACCESSKIT_TOGGLED_FALSE</c> (accesskit.h line 593).</summary>
     public const byte ToggledFalse = 0;
@@ -240,6 +377,87 @@ internal static unsafe partial class AccessKit
     /// <param name="value">1 when selected.</param>
     [LibraryImport(Library, EntryPoint = "accesskit_node_set_selected")]
     public static partial void NodeSetSelected(nint node, byte value);
+
+    /// <summary>Marks a node not valid (<c>accesskit_node_set_invalid</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value"><see cref="InvalidTrue"/>.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_invalid")]
+    public static partial void NodeSetInvalid(nint node, byte value);
+
+    /// <summary>Marks a node whose items can be selected more than one at once (<c>accesskit_node_set_multiselectable</c>).</summary>
+    /// <param name="node">The node.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_multiselectable")]
+    public static partial void NodeSetMultiselectable(nint node);
+
+    /// <summary>Marks a node that is changing (<c>accesskit_node_set_busy</c>).</summary>
+    /// <param name="node">The node.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_busy")]
+    public static partial void NodeSetBusy(nint node);
+
+    /// <summary>Marks a dialog modal (<c>accesskit_node_set_modal</c>).</summary>
+    /// <param name="node">The node.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_modal")]
+    public static partial void NodeSetModal(nint node);
+
+    /// <summary>Sets how a change of a node's name is read out (<c>accesskit_node_set_live</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value"><see cref="LiveOff"/>, polite, or assertive.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_live")]
+    public static partial void NodeSetLive(nint node, byte value);
+
+    /// <summary>Sets which way a node's items run (<c>accesskit_node_set_orientation</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value"><see cref="OrientationHorizontal"/>, or vertical.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_orientation")]
+    public static partial void NodeSetOrientation(nint node, byte value);
+
+    /// <summary>Sets a node's level, from 0 (<c>accesskit_node_set_level</c>); the Windows adapter gives UIA one more.</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The level.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_level")]
+    public static partial void NodeSetLevel(nint node, nuint value);
+
+    /// <summary>Adds a node that names a node (<c>accesskit_node_push_labelled_by</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="item">The id of the node that names it.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_push_labelled_by")]
+    public static partial void NodePushLabelledBy(nint node, ulong item);
+
+    /// <summary>Adds a node that describes a node (<c>accesskit_node_push_described_by</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="item">The id of the node that describes it.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_push_described_by")]
+    public static partial void NodePushDescribedBy(nint node, ulong item);
+
+    /// <summary>Adds a node a node controls (<c>accesskit_node_push_controlled</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="item">The id of the node it controls.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_push_controlled")]
+    public static partial void NodePushControlled(nint node, ulong item);
+
+    /// <summary>Sets the node that holds a node's error message (<c>accesskit_node_set_error_message</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The id of the node of the message.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_error_message")]
+    public static partial void NodeSetErrorMessage(nint node, ulong value);
+
+    /// <summary>Sets the node that is active inside a node (<c>accesskit_node_set_active_descendant</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The id of the active node.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_active_descendant")]
+    public static partial void NodeSetActiveDescendant(nint node, ulong value);
+
+    /// <summary>Sets the change of a small step of a node's number (<c>accesskit_node_set_numeric_value_step</c>), UIA's SmallChange.</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The step.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_numeric_value_step")]
+    public static partial void NodeSetNumericValueStep(nint node, double value);
+
+    /// <summary>Sets the change of a large step of a node's number (<c>accesskit_node_set_numeric_value_jump</c>), UIA's LargeChange.</summary>
+    /// <param name="node">The node.</param>
+    /// <param name="value">The step.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_set_numeric_value_jump")]
+    public static partial void NodeSetNumericValueJump(nint node, double value);
 
     /// <summary>Sets a node's number (<c>accesskit_node_set_numeric_value</c>).</summary>
     /// <param name="node">The node.</param>
@@ -411,6 +629,225 @@ internal static unsafe partial class AccessKit
     /// <param name="events">The events; never 0.</param>
     [LibraryImport(Library, EntryPoint = "accesskit_windows_queued_events_raise")]
     public static partial void WindowsQueuedEventsRaise(nint events);
+
+    // What a node holds, read back: declared for the tests only (design §4.4.1, "How row AX1 is checked"), which read a node the
+    // provider makes before an update takes it.
+
+    /// <summary>Reads a node's role (<c>accesskit_node_role</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The role.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_role")]
+    public static partial byte NodeRole(nint node);
+
+    /// <summary>Reads a node's label (<c>accesskit_node_label</c>), which <see cref="StringFree"/> frees.</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The UTF-8 text, terminated, or null.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_label")]
+    public static partial byte* NodeLabel(nint node);
+
+    /// <summary>Reads a node's description (<c>accesskit_node_description</c>), which <see cref="StringFree"/> frees.</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The UTF-8 text, terminated, or null.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_description")]
+    public static partial byte* NodeDescription(nint node);
+
+    /// <summary>Frees a text AccessKit returned (<c>accesskit_string_free</c>).</summary>
+    /// <param name="text">The text.</param>
+    [LibraryImport(Library, EntryPoint = "accesskit_string_free")]
+    public static partial void StringFree(byte* text);
+
+    /// <summary>Reads whether a node is not valid (<c>accesskit_node_invalid</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_invalid")]
+    public static partial OptionalByte NodeInvalid(nint node);
+
+    /// <summary>Reads whether a node's items can be selected more than one at once (<c>accesskit_node_is_multiselectable</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>1 when they can.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_is_multiselectable")]
+    public static partial byte NodeIsMultiselectable(nint node);
+
+    /// <summary>Reads whether a node is changing (<c>accesskit_node_is_busy</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>1 when it is.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_is_busy")]
+    public static partial byte NodeIsBusy(nint node);
+
+    /// <summary>Reads whether a node is modal (<c>accesskit_node_is_modal</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>1 when it is.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_is_modal")]
+    public static partial byte NodeIsModal(nint node);
+
+    /// <summary>Reads whether a node is read-only (<c>accesskit_node_is_read_only</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>1 when it is.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_is_read_only")]
+    public static partial byte NodeIsReadOnly(nint node);
+
+    /// <summary>Reads whether a node is open (<c>accesskit_node_is_expanded</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_is_expanded")]
+    public static partial OptionalByte NodeIsExpanded(nint node);
+
+    /// <summary>Reads whether a node is checked (<c>accesskit_node_toggled</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_toggled")]
+    public static partial OptionalByte NodeToggled(nint node);
+
+    /// <summary>Reads whether a node is selected (<c>accesskit_node_is_selected</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_is_selected")]
+    public static partial OptionalByte NodeIsSelected(nint node);
+
+    /// <summary>Reads how a change of a node's name is read out (<c>accesskit_node_live</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_live")]
+    public static partial OptionalByte NodeLive(nint node);
+
+    /// <summary>Reads which way a node's items run (<c>accesskit_node_orientation</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_orientation")]
+    public static partial OptionalByte NodeOrientation(nint node);
+
+    /// <summary>Reads a node's small step (<c>accesskit_node_numeric_value_step</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_numeric_value_step")]
+    public static partial OptionalDouble NodeNumericValueStep(nint node);
+
+    /// <summary>Reads a node's large step (<c>accesskit_node_numeric_value_jump</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_numeric_value_jump")]
+    public static partial OptionalDouble NodeNumericValueJump(nint node);
+
+    /// <summary>Reads a node's level (<c>accesskit_node_level</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_level")]
+    public static partial OptionalIndex NodeLevel(nint node);
+
+    /// <summary>Reads a node's place in its set (<c>accesskit_node_position_in_set</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_position_in_set")]
+    public static partial OptionalIndex NodePositionInSet(nint node);
+
+    /// <summary>Reads the size of the set a node holds (<c>accesskit_node_size_of_set</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The value, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_size_of_set")]
+    public static partial OptionalIndex NodeSizeOfSet(nint node);
+
+    /// <summary>Reads the nodes that name a node (<c>accesskit_node_labelled_by</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The ids, which the node owns.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_labelled_by")]
+    public static partial NodeIds NodeLabelledBy(nint node);
+
+    /// <summary>Reads the nodes that describe a node (<c>accesskit_node_described_by</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The ids, which the node owns.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_described_by")]
+    public static partial NodeIds NodeDescribedBy(nint node);
+
+    /// <summary>Reads the nodes a node controls (<c>accesskit_node_controls</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The ids, which the node owns.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_controls")]
+    public static partial NodeIds NodeControls(nint node);
+
+    /// <summary>Reads a node's children (<c>accesskit_node_children</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The ids, which the node owns.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_children")]
+    public static partial NodeIds NodeChildren(nint node);
+
+    /// <summary>Reads the node of a node's error message (<c>accesskit_node_error_message</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The id, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_error_message")]
+    public static partial OptionalNodeId NodeErrorMessage(nint node);
+
+    /// <summary>Reads the node active inside a node (<c>accesskit_node_active_descendant</c>).</summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The id, if set.</returns>
+    [LibraryImport(Library, EntryPoint = "accesskit_node_active_descendant")]
+    public static partial OptionalNodeId NodeActiveDescendant(nint node);
+
+    /// <summary>A one-byte value that may be absent (<c>accesskit_opt_bool</c>, <c>_opt_live</c>, and the others of one byte).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct OptionalByte
+    {
+        private readonly byte _hasValue;
+        private readonly byte _value;
+
+        /// <summary>Gets a value indicating whether there is a value.</summary>
+        public bool HasValue => _hasValue != 0;
+
+        /// <summary>Gets the value.</summary>
+        public byte Value => _value;
+    }
+
+    /// <summary>A number that may be absent (<c>accesskit_opt_double</c>).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct OptionalDouble
+    {
+        private readonly byte _hasValue;
+        private readonly double _value;
+
+        /// <summary>Gets a value indicating whether there is a value.</summary>
+        public bool HasValue => _hasValue != 0;
+
+        /// <summary>Gets the value.</summary>
+        public double Value => _value;
+    }
+
+    /// <summary>An index that may be absent (<c>accesskit_opt_index</c>).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct OptionalIndex
+    {
+        private readonly byte _hasValue;
+        private readonly nuint _value;
+
+        /// <summary>Gets a value indicating whether there is a value.</summary>
+        public bool HasValue => _hasValue != 0;
+
+        /// <summary>Gets the value.</summary>
+        public nuint Value => _value;
+    }
+
+    /// <summary>A node's id that may be absent (<c>accesskit_opt_node_id</c>).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct OptionalNodeId
+    {
+        private readonly byte _hasValue;
+        private readonly ulong _value;
+
+        /// <summary>Gets a value indicating whether there is a value.</summary>
+        public bool HasValue => _hasValue != 0;
+
+        /// <summary>Gets the value.</summary>
+        public ulong Value => _value;
+    }
+
+    /// <summary>The ids of nodes (<c>accesskit_node_ids</c>), which the node read owns.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct NodeIds
+    {
+        private readonly nuint _length;
+        private readonly ulong* _values;
+
+        /// <summary>Gets the ids.</summary>
+        public ReadOnlySpan<ulong> Values => new(_values, (int)_length);
+    }
 
     /// <summary>A rectangle by its edges (<c>accesskit_rect</c>, from kurbo).</summary>
     /// <param name="x0">The left edge.</param>

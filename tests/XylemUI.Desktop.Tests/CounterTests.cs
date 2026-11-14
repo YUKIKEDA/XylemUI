@@ -38,6 +38,39 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Disposing a window cancels the frame its tree asked for: the loop's scheduler holds no frame for a window that is gone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The counter's window on WARP, hidden. The loop is not run, so a frame that is asked for stays pending.
+    ///
+    /// Steps:
+    /// - Send <c>WM_LBUTTONDOWN</c> and <c>WM_LBUTTONUP</c> at the button's center, which changes the text and asks for a frame;
+    ///   read whether the loop's scheduler holds a frame. Dispose the window; read it again.
+    ///
+    /// Expected:
+    /// - A frame is pending before the window is disposed, and none after.
+    /// </remarks>
+    [Fact]
+    public void Dispose_WithAFrameAskedFor_CancelsIt() =>
+        ui.Invoke(() =>
+        {
+            bool before;
+            using (var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true))
+            {
+                (_, NodeHandle button) = Parts(window.Tree);
+                (int x, int y) = Center(window, button);
+                nint point = (y << 16) | (x & 0xFFFF);
+                _ = SendMessageW(window.Window.Hwnd, WM.WM_LBUTTONDOWN, MK.MK_LBUTTON, point);
+                _ = SendMessageW(window.Window.Hwnd, WM.WM_LBUTTONUP, 0, point);
+                before = ((Win32FrameScheduler)Win32MessageLoop.FrameScheduler).HasPendingFrame;
+            }
+
+            Assert.True(before);
+            Assert.False(((Win32FrameScheduler)Win32MessageLoop.FrameScheduler).HasPendingFrame);
+        });
+
+    /// <summary>
     /// A press and a release of the left button at the button's center, sent as the window's messages, make the text "clicks: 1",
     /// and the next frame lays it out and presents it; frames with nothing changed present nothing.
     /// </summary>
@@ -304,6 +337,234 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// <c>XylemApp.Run</c> sets <see cref="UiDispatcher.Current"/> to the loop's dispatcher before the root function runs, and gives
+    /// back the one it replaced when it returns (design §2.12): the headless session's, whose UI thread runs this test.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The UI thread of the headless session, which set <see cref="UiDispatcher.Current"/> to its dispatcher. The message loop's
+    ///   iteration hook reads <see cref="UiDispatcher.Current"/> at its first iteration, asks the window to close, and quits after
+    ///   5 s.
+    ///
+    /// Steps:
+    /// - Read <see cref="UiDispatcher.Current"/>; run the app with a root function that reads it; read it after the run.
+    ///
+    /// Expected:
+    /// - Before the run it is the session's dispatcher (<see cref="HeadlessSession.Dispatcher"/>).
+    /// - In the root function and in the loop it is the loop's (<see cref="Win32MessageLoop.Dispatcher"/>).
+    /// - After the run it is the session's again.
+    /// </remarks>
+    [Fact]
+    public void Run_SetsCurrentToTheLoopsDispatcher_AndGivesThePreviousOneBack() =>
+        ui.Invoke(() =>
+        {
+            IUiDispatcher before = UiDispatcher.Current;
+            IUiDispatcher? inRoot = null;
+            IUiDispatcher? inLoop = null;
+            using var watchdog = new LoopWatchdog();
+            Win32MessageLoop.IterationHook = () =>
+            {
+                inLoop ??= UiDispatcher.Current;
+                if (watchdog.Expired)
+                {
+                    Win32MessageLoop.Quit(1);
+                    return;
+                }
+
+                AskToClose("Run dispatcher test");
+            };
+
+            try
+            {
+                _ = XylemApp.Run(
+                    () =>
+                    {
+                        inRoot = UiDispatcher.Current;
+                        return Elements.Box();
+                    },
+                    new WindowOptions("Run dispatcher test", 100, 80)
+                );
+            }
+            finally
+            {
+                Win32MessageLoop.IterationHook = null;
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.Same(HeadlessSession.Dispatcher, before);
+            Assert.Same(Win32MessageLoop.Dispatcher, inRoot);
+            Assert.Same(Win32MessageLoop.Dispatcher, inLoop);
+            Assert.Same(before, UiDispatcher.Current);
+        });
+
+    /// <summary>
+    /// Called where no dispatcher is set, as from an app's <c>Main</c>, <c>XylemApp.Run</c> sets the loop's, and leaves none set
+    /// when it returns.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - <see cref="UiDispatcher.Current"/> is cleared for the test (exchanged with <see langword="null"/>) and given back after it.
+    ///   The message loop's iteration hook asks the window to close, and quits after 5 s.
+    ///
+    /// Steps:
+    /// - Run the app with a root function that reads <see cref="UiDispatcher.Current"/>; read it after the run.
+    ///
+    /// Expected:
+    /// - In the root function it is the loop's (<see cref="Win32MessageLoop.Dispatcher"/>).
+    /// - After the run, reading it throws <see cref="InvalidOperationException"/>.
+    /// </remarks>
+    [Fact]
+    public void Run_WithNoDispatcherSet_SetsTheLoopsAndLeavesNoneAfter() =>
+        ui.Invoke(() =>
+        {
+            IUiDispatcher? inRoot = null;
+            Exception? after;
+            using var watchdog = new LoopWatchdog();
+            Win32MessageLoop.IterationHook = () =>
+            {
+                if (watchdog.Expired)
+                {
+                    Win32MessageLoop.Quit(1);
+                    return;
+                }
+
+                AskToClose("Run no dispatcher test");
+            };
+
+            IUiDispatcher? session = UiDispatcher.Exchange(null);
+            try
+            {
+                _ = XylemApp.Run(
+                    () =>
+                    {
+                        inRoot = UiDispatcher.Current;
+                        return Elements.Box();
+                    },
+                    new WindowOptions("Run no dispatcher test", 100, 80)
+                );
+                after = Record.Exception(() => UiDispatcher.Current);
+            }
+            finally
+            {
+                Win32MessageLoop.IterationHook = null;
+                _ = UiDispatcher.Exchange(session);
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.Same(Win32MessageLoop.Dispatcher, inRoot);
+            Assert.IsType<InvalidOperationException>(after);
+        });
+
+    /// <summary>
+    /// A worker that posts through <see cref="UiDispatcher.Current"/> while <c>XylemApp.Run</c> runs reaches the receiver on the UI
+    /// thread, through the loop's queue.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A root function that adds a receiver of <c>Ping</c> that records the number and whether it runs on the UI thread. The
+    ///   message loop's iteration hook starts a worker thread at its first iteration, asks the window to close once the receiver
+    ///   ran, and quits after 5 s.
+    ///
+    /// Steps:
+    /// - Run the app. The worker reads <see cref="UiDispatcher.Current"/> and posts <c>Ping</c> 3 to it.
+    ///
+    /// Expected:
+    /// - The worker read the loop's dispatcher (<see cref="Win32MessageLoop.Dispatcher"/>).
+    /// - The receiver got 3, on the UI thread, and the run returned 0 before the watchdog.
+    /// </remarks>
+    [Fact]
+    public void Run_AWorkerPostsThroughCurrent_TheReceiverGetsItOnTheUiThread() =>
+        ui.Invoke(() =>
+        {
+            var received = new List<int>();
+            bool onUiThread = false;
+            IUiDispatcher? read = null;
+            Thread? worker = null;
+            using var watchdog = new LoopWatchdog();
+            Win32MessageLoop.IterationHook = () =>
+            {
+                if (watchdog.Expired)
+                {
+                    Win32MessageLoop.Quit(1);
+                    return;
+                }
+
+                if (worker is null)
+                {
+                    worker = new Thread(() =>
+                    {
+                        IUiDispatcher current = UiDispatcher.Current;
+                        Volatile.Write(ref read, current);
+                        current.Post(new Ping(3));
+                    });
+                    worker.Start();
+                }
+
+                if (received.Count > 0)
+                {
+                    AskToClose("Run post test");
+                }
+            };
+
+            int code;
+            try
+            {
+                code = XylemApp.Run(
+                    () =>
+                    {
+                        UiMessage.On<Ping>(ping =>
+                        {
+                            received.Add(ping.Number);
+                            onUiThread = UiThread.CheckAccess();
+                        });
+                        return Elements.Box();
+                    },
+                    new WindowOptions("Run post test", 100, 80)
+                );
+            }
+            finally
+            {
+                Win32MessageLoop.IterationHook = null;
+                worker?.Join();
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.Equal(0, code);
+            Assert.Same(Win32MessageLoop.Dispatcher, Volatile.Read(ref read));
+            Assert.Equal([3], received);
+            Assert.True(onUiThread);
+        });
+
+    /// <summary>
+    /// A root function that throws leaves <see cref="UiDispatcher.Current"/> as it was before <c>XylemApp.Run</c>.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The UI thread of the headless session, which set <see cref="UiDispatcher.Current"/> to its dispatcher.
+    ///
+    /// Steps:
+    /// - Read <see cref="UiDispatcher.Current"/>; run the app with a root function that throws a <see cref="FormatException"/>;
+    ///   read it again.
+    ///
+    /// Expected:
+    /// - The run throws that exception, and <see cref="UiDispatcher.Current"/> is the one read before.
+    /// </remarks>
+    [Fact]
+    public void Run_RootFunctionThrows_GivesThePreviousDispatcherBack() =>
+        ui.Invoke(() =>
+        {
+            IUiDispatcher before = UiDispatcher.Current;
+            var thrown = new FormatException("Thrown from the root function on purpose.");
+
+            FormatException caught = Assert.Throws<FormatException>(() =>
+                XylemApp.Run(() => throw thrown, new WindowOptions("Run throw test", 100, 80))
+            );
+
+            Assert.Same(thrown, caught);
+            Assert.Same(before, UiDispatcher.Current);
+        });
+
+    /// <summary>
     /// The window's options are checked before a window is made.
     /// </summary>
     /// <remarks>
@@ -349,6 +610,8 @@ public sealed class CounterTests(UiThreadFixture ui)
         NodeHandle text = tree.Nodes.GetRef(column).FirstChild;
         return (text, tree.Nodes.GetRef(text).NextSibling);
     }
+
+    private sealed record Ping(int Number) : UiMessage;
 
     // The center of a node's box in the window's physical pixels; the column is at the root's top left, the button in it.
     private static (int X, int Y) Center(DesktopWindow window, NodeHandle node)

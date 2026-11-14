@@ -920,6 +920,18 @@ Rejected:
   - Theme.Fluent の部品の関数を `using static` で `Primitive` と並べて呼ぶ形を勧める（同じ名前の `Button` で、C# は省いた引数の無い `Primitive.Button` を黙って選ぶ。`Fluent.Button` と名前を付けて呼ぶ。同じ Grill）
   - テーマの型と鍵を Core に置く（Core はデザインを持たない、設計書 §2.9.1。同じ Grill）
 
+Decision（ブランドの 16 段の作り方、行 TH1。Issue #899 の Grill でオーナーが決定）:
+  OS のアクセントの色（`Accent` の 1 色）をキーにして、Fluent の theme designer の曲線（Lab の 2 本の 2 次ベジェ、制御点 2/3 と 1/3、ねじれ 0）で 16 段を作る。各段の明度は、theme designer の色相ごとの表でなく、`brandWeb` の各段の $L^*$ にする（設計書 §13.2「ブランドの 16 段の作り方」）。
+
+Reason:
+  明度を `brandWeb` に揃えると、Fluent の別名の色が組む 4 組の対比が、色相によらず `brandWeb` とほぼ同じになる。4 組は、ブランドの背景とホバーの上の白の文字、白の上の明の `colorBrandForeground1`、`#292929` の上の暗の `colorBrandForeground1` である。4,105 個のキーで最小 4.90 だった（`docs/benchmarks/th1-accent-ramp.md`）。キーが 1 色なので、ハイコントラストで OS の 7 色が 1 色になっても壊れず、1 色しか返さない macOS と Linux でも同じ規則になる。theme designer も 1 色のキーから作り、Avalonia も `Accent` だけを読んで残りを作る。
+
+Rejected:
+  - OS の 7 色を、明度の近い段にそのまま置き（AccentDark3 → 20、Dark2 → 50、Dark1 → 80、Accent → 90、Light1 → 100、Light2 → 130、Light3 → 150）、残りを Lab で補間する。測った青でも、`#292929` の上の暗の `colorBrandForeground1`（段 100 の Light1 `#0091F8`）が 4.44 で、WCAG の 4.5 に届かない。ハイコントラストで 7 色が `#A1BFDE` の 1 色になると、段がほぼ 1 色になり、白の文字とブランドの背景が 1.91 になる。WinUI は暗のテーマで AccentLight2 を塗り、その上の文字を黒にする。Fluent v9 の暗のトークンは白の文字なので、この組も写せない。ほかのアクセントで OS が返す 6 段の対比は、XylemUI が決められない（Issue #899 の Grill）
+  - OS の 7 色を折れ線の点にし、各段の明度だけを `brandWeb` に揃える。対比は守られ、測った青では 4 組とも 0.1 以内で `brandWeb` と同じだった。一方で、`SystemAppearance.Accent` と `FluentTheme.Create` の `accent` を 7 色の値に変える必要がある。1 色しか返さない macOS と Linux では別の規則が要り、同じアクセントの色が OS ごとに違って見える（設計書 §13.2 の「全OSで同じ見た目」）。同じ Grill
+  - theme designer の計算をそのまま使う（明度は `colors/hueMap.ts` の色相ごとの表）。測った青で、明度が L\* 0.9〜86.0 になり、`#292929` の上の暗の `colorBrandForeground1`（`brand[100]`）が 3.75 だった。theme designer 自身はこのトークンを `brand[110]` に替えるが（`utils/getOverridableTokenBrandColors.ts` 70〜75 行目）、それでも 4.48 で、固定したトークンの対応とも違う。段 160 も `brandWeb` の L\* 95.4 より暗い。同じ Grill
+  - 制御点を theme designer の画面の既定（Vibrancy 0、つまり 0 と 0）にする。キーを `brandWeb` の段 80 にすると、キーより明るい段の彩度が早く落ちる。`brandWeb` との色差は最大 ΔE 18.7 で、2/3 と 1/3 の 10.9 より大きい。同じ Grill
+
 ---
 
 ## アクセシビリティ（UIA）
@@ -1192,6 +1204,20 @@ Rejected:
   - Vision を副次目標に格下げする
   - v1.0 終了条件を「Flutter 級」の一言にする
   - a11y を UiNode 1:1 のまま v1.0 を出し、別の木を v1.1 に送る（比べた 3 つはどれも別の a11y の木を持つ。公開の `AccessibilityInfo` を v1.0 で固めた後に変えると破壊的な変更になる。v1.1 に送る理由は、v1.0 の終了条件を作ることだけだった。D3 の Grill、Issue #441）
+
+---
+
+## 対応する Windows の最も古い版
+
+Decision:
+  Windows 11（ビルド 22000）（設計書 §1、Issue #897 でオーナーが決定）。Windows 11 より前の版のためだけの手順と道は設計に置かない。
+
+Reason:
+  古い版には対応しなくてよい。1809 は一般のサポートがもう終わっている（どちらもオーナーの判断）。
+  この決定で、Windows 10 のすべての版と、Windows 10 を元にした LTSC の版（LTSC 2019 を含む）が外れる。比べた実装（.NET 10・Flutter・Zed・Avalonia）はどれも Windows 10 で動くので、XylemUI はそれより狭い。
+
+Rejected:
+  - Windows 10 1809（ビルド 17763）を最も古い版のままにする（T4 の決定。LTSC 2019 の利用者を残すためだった。この版のために、行 TH1 は 1809 での確認と、文書に無い題名の棒の属性 19 を試し直す道を持っていた）
 
 ---
 
