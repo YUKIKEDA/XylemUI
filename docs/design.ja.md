@@ -6701,7 +6701,7 @@ public sealed record DialogOptions
 - **開いたとき:** 最初の使える項目にフォーカスする（Avalonia の flyout は最初のタブストップにフォーカスする、`Avalonia.Controls/Flyouts/PopupFlyoutBase.cs` 315〜326 行目）。ポインタで開いたときは最後の入力がポインタなので、フォーカスの輪（FocusVisible）は出ない
 - **`SubmenuItem`:** ポインタが入るか右キーで、`PopupPlacement.Right` に子のポップアップを開く（Flutter の既定の `hoverOpenDelay` は 0、`material/menu_anchor.dart` 1768 行目）。兄弟の項目にポインタが入ると閉じる（§7.3「入れ子」）
 - **`ContextMenu`:** 付けたノードの上で右ボタンの Up があったら、そのポインタの位置（`PopupPlacement.AtPoint`）に開く。フォーカスがあるときの Shift+F10 の Down とアプリケーションキー（`Key.Apps`）の Up では、ノードの箱の下に開く（Avalonia の `ContextMenu` はポインタ以外の要求で `PlacementMode.Bottom`、`Avalonia.Controls/ContextMenu.cs` 427〜430 行目）。欄と選べる領域は、キャレットか選択の位置に開く（§4.9・§4.10）。Windows も、右ボタンの Up、Shift+F10、アプリケーションキーで `WM_CONTEXTMENU` を出す（`WM_CONTEXTMENU` の文書）
-- **`Dialog`:** 置いた所に大きさ 0 のノードを置き、それをアンカーにしてモーダル（`IsModal`、`PopupPlacement.Fill`）で開く。背景（`Backdrop`）の上の中央に `content` を置く。開いたら、`content` の中で最初のフォーカスできるノードにフォーカスする。Esc で閉じる（§7.3「閉じ方」）
+- **`Dialog`:** 置いた所に大きさ 0 のノードを置き、それをアンカーにしてモーダル（`IsModal`、`PopupPlacement.Fill`）で開く。背景（`Backdrop`）の上の中央に `content` を置く。開いたら、`content` の中で最初のフォーカスできるノードにフォーカスする。ただし、行 B7 の壊す確認のダイアログは、ボタンの並びのうち一番害の少ないボタンに最初のフォーカスを置く（APG。Grill の 11 巡目でオーナーが決定、Issue #918。形は行 B7 の設計で書く）。Esc で閉じる（§7.3「閉じ方」）
 - **実装で決めた形（P02d の 2 つ目の PR）:**
   - 項目は、メニューのポップアップのスコープの中でフォーカスできるノードを、Tab の順に並べたものである。上下キー・Home・End は、そのスコープで Tab の順に動かす（`FocusManager.MoveToTabEnd` を足した）。パネルの中にフォーカスできるノードを項目のほかに置くと、それも項目として数える。項目の一覧は持たないので、`For` で項目を足し引きしても数え直しは要らない
   - 上下キー・Home・End は、パネルから開いているサブメニューを先に閉じる。閉じないと、そのサブメニューのスコープが一番上のままで、移る先がサブメニューの項目になる

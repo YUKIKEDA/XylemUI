@@ -699,7 +699,10 @@ Decision（Grill の 7 巡目、Issue #912）:
   動作の基底の型にハンドラを 1 つ付ける `OnActionsOf<T>(handler, can, phase)` を、`can` を持ったまま Core の公開の API にする。B1 の新しいキーは、一点のキーをキーマップの行と動作に、押して離すキーを部品のハンドラにする。SplitButton は Tab で 1 回だけ止まる。長押しで働くボタンは Qt の `DelayButton` の形にする。HyperlinkButton は行 PL2 の URI を開く口を使う。副題付きのボタンは副題を説明に入れる。
 
 Decision（Grill の 10 巡目、Issue #917）:
-  SplitButton の a11y は、主の操作の Invoke を持つ節と、メニューを開閉する節の 2 つにする。1 つの節が両方を持つ形を上流に頼み、入ったら 1 つの節に戻す。2 つの節の並べ方は、まだ決めていない（行 B1）。
+  SplitButton の a11y は、主の操作の Invoke を持つ節と、メニューを開閉する節の 2 つにする。1 つの節が両方を持つ形を上流に頼み、入ったら 1 つの節に戻す。
+
+Decision（Grill の 11 巡目、Issue #918）:
+  2 つの節は、開閉を持つ親の節の子に、主の操作（Invoke）のボタンを置く形にする。上流が 1 つの節に両方を許したら、親の節に Invoke を付ける。
 
 Reason:
   動作を今受けられるかを、Flutter（`Action.isEnabled`、3.47.8 の `packages/flutter/lib/src/widgets/actions.dart` 267 行目）と Avalonia（`ICommand.CanExecute`、12.1.4 の `src/Avalonia.Controls/Button.cs` 205・371 行目が読む）は、どのパッケージの部品にも公開する。B1 の部品だけが内部の口を使うと、ほかのパッケージの部品は同じ部品を同じ費用で作れない。
@@ -718,6 +721,7 @@ Rejected:
   - 副題付きのボタンを、テーマの 2 行の配置だけにする（案 b）（名前のたたみで、名前に副題まで入る。Fluent 2 の React の `CompoundButton` はこの形で、副題（`secondaryContent`）をボタンの中に置き（fluentui のコミット `f9720c35` の `packages/react-components/react-button/library/src/components/CompoundButton/renderCompoundButton.tsx` 20〜23 行目）、説明の関係を付けない（`useCompoundButton.ts` 24〜35 行目）。XylemUI は名前を操作を見分ける短い名にし、副題は `AccessibilityInfo.Description` に分けるので、Fluent と違う。同じ Grill）
   - SplitButton の a11y を、開閉を持つ 1 つの節にする（7 巡目の形）（`accesskit_consumer` 0.39.1 は開閉を持つ節に Invoke を付けない（`accesskit_consumer/src/node.rs` 661〜668 行目の `supports_expand_collapse`、670〜685 行目の `is_invocable`）。支援技術から主の操作を呼べない。UIA の「SplitButton Control Type」のページは Invoke と ExpandCollapse の両方を Required にしている。Grill の 10 巡目、Issue #917）
   - 上流が 1 つの節に Invoke と ExpandCollapse を許すまで、SplitButton を出さずに待つ（Chromium も同じ規則で（`ui/accessibility/ax_node_data.cc` の `AXNodeData::IsInvocable`、コミット `0272ce59`）、上流がいつ変わるかは決まっていない。2 つの節なら今の AccessKit で両方の操作を出せる。同じ Grill）
+  - SplitButton の 2 つの節を兄弟に並べる（UIA の「SplitButton Control Type」のページ（Microsoft Learn、2025-07-14 の版）の木は、1 つの SplitButton の節が Invoke と ExpandCollapse を持ち、その下に Button を 1 つか 2 つ置く形で、兄弟の 2 つの節は文書の形ではない。親と子なら、上流が両方を許した時に親へ Invoke を付けるだけで文書の形になる。Grill の 11 巡目、Issue #918）
 
 ---
 
@@ -800,6 +804,25 @@ Reason:
 Rejected:
   - 部品ごとに入力の口を上書きする（Avalonia 12.1.4 の形。`MaskedTextBox` は打鍵を `OnTextInput`（`src/Avalonia.Controls/MaskedTextBox.cs` 363 行目）で、貼り付けを別にキーの処理（211 行目）で上書きし、`NumericUpDown` は打鍵を絞らず、確定の時に解析する（`src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 1176 行目）。部品ごとに打鍵・貼り付け・IME の確定・a11y の SetValue の道を作り直すことになり、1 つでも漏れると数値の欄に数字でない文字が入る。アプリが自分の欄（電話番号など）を作れない。Grill の 10 巡目、Issue #917）
   - 欄の飾りの設定にラベル・補助の文・誤りを持たせる（Flutter 3.47.8 の `InputDecoration` の `labelText`・`helperText`・`errorText`、`packages/flutter/lib/src/material/input_decorator.dart` 3018・3110・3237 行目）（文字の欄にしか使えず、Select・Checkbox・Slider・NumberBox が同じ枠を使えない。同じ Grill）
+
+---
+
+## ナビゲーション・知らせ・ダイアログ・メニューの部品（行 B5〜B8）
+
+Decision（Grill の 11 巡目、Issue #918）:
+  NavigationView は表示のモードを持つ 1 つの部品にし、ページの積み重ねは別の行 NS1 にする。窓の中の通知は 1 つずつ出す。ProgressBar と ProgressRing は 1 つの Primitive、Meter は別の Primitive にする。ダイアログのボタンは種類を知って OS ごとの順に並べる。Drawer はモーダルの重ねるパネルだけにする。ホバーで出るカードは Flyout のフォーカスを取らない形にする。Overflow は layout の同じパスで収まらない最初の項目を決める。
+
+Rejected:
+  - NavigationView を、横に細く並べる部品と引き出しの部品の 2 つにする（Flutter 3.47.8 の `NavigationRail`（`packages/flutter/lib/src/material/navigation_rail.dart` 68 行目）と `NavigationDrawer`（`material/navigation_drawer.dart` 54 行目）の形）（窓の幅で表示を切り替えるアプリが、選択と項目を 2 つの部品に渡し直す。1 つの部品の表示のモードにすれば、選択と項目は 1 つのまま。Grill の 11 巡目、Issue #918）
+  - ページの積み重ねを NavigationView に入れる（項目を選ぶナビゲーションと、戻るボタンの履歴という 2 つの機能が 1 つの部品に混ざる。Flutter 3.47.8 の `Navigator`（`packages/flutter/lib/src/widgets/navigator.dart` 1583 行目）と Avalonia 12.1.4 の `NavigationPage`（`src/Avalonia.Controls/Page/NavigationPage.cs` 38 行目）も、ナビゲーションの部品とは別の型である。同じ Grill）
+  - 通知を既定で 5 個まで積む（Avalonia 12.1.4 の `WindowNotificationManager.MaxItems` の既定 5、`src/Avalonia.Controls/Notifications/WindowNotificationManager.cs` 46 行目）（Flutter 3.47.8 の SnackBar は待ち行列で 1 つずつ出し（`packages/flutter/lib/src/material/scaffold.dart` 198〜199 行目）、zed v1.25.3 の `ToastLayer` も 1 つだけを持つ（`crates/workspace/src/toast_layer.rs` 99 行目）。同じ Grill）
+  - ProgressBar と ProgressRing を 2 つの Primitive にする（値と不定の振る舞いと a11y は同じで、違うのは見た目だけである。Flutter 3.47.8 も `LinearProgressIndicator` と `CircularProgressIndicator` に共通の基底 `ProgressIndicator` を持つ（`packages/flutter/lib/src/material/progress_indicator.dart` 49・414・863 行目）。同じ Grill）
+  - 進み具合と Meter を 1 つの Primitive にする（APG は、作業の進み（progressbar）と、範囲の中の測った値（meter）を別の役にする。役が違うので a11y が分かれる。同じ Grill）
+  - ダイアログのボタンの順をアプリに任せる（Flutter 3.47.8 の `AlertDialog` は、ボタンを `OverflowBar` で末尾に寄せるだけで（`packages/flutter/lib/src/material/dialog.dart` 890〜891 行目）、順はアプリが書いた順になる。OS ごとに肯定と取り消しの位置が違うので、アプリごとに OS を見て並べ替えることになる。同じ Grill）
+  - Drawer に、場所を取る横のパネルの形も持たせる（場所を取る横のパネルは、行 B3 の SplitView と行 B5 の NavigationView の細い形がすでに持つ。同じ機能を 2 か所に置かない（§13.1「同じ機能は 1 つに数える」）。Flutter 3.47.8 の `Drawer` は、重ねて出し、後ろの読み上げを止め（`packages/flutter/lib/src/material/drawer.dart` 708 行目の `BlockSemantics`）、フォーカスのスコープを持つ（727 行目）。同じ Grill）
+  - ホバーで出るカードを Tooltip の一種にする（Tooltip はフォーカスでは出さない（§13.1）。カードは中に操作を持てるので、キーボードの利用者も開けて、中へフォーカスを入れられる必要がある（WCAG 2.2 の 1.4.13）。zed v1.25.3 の GPUI の `hoverable_tooltip` は、隠すまで 500 ms 待つ（`crates/gpui/src/elements/div.rs` 54 行目の `HOVERABLE_TOOLTIP_HIDE_DELAY`）。同じ Grill）
+  - Overflow を、項目の幅を固定の値で見積もって決める（Avalonia 12.1.4 の `CommandBar` は、ラベルの位置ごとの固定の幅（既定 70・102・42、`src/Avalonia.Controls/CommandBar/CommandBar.cs` 76〜89 行目）に項目の数を掛けて比べる（683〜699 行目）。訳した文言で幅が変わる項目で誤る。同じ Grill）
+  - Overflow を、layout の後に収まらない位置をシグナルへ書いて決める（案 b）（書いた後に 2 回目の layout が要る。Flutter 3.47.8 の text selection toolbar は、子を順に測りながら収まらない最初の位置を同じ layout で決める（`packages/flutter/lib/src/material/text_selection_toolbar.dart` 430・442・499〜500 行目）。案 a と案 b の差は、20 項目のツールバーで窓の大きさを変えるフレームで測って確かめる。同じ Grill）
 
 ---
 
