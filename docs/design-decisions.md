@@ -737,7 +737,19 @@ Rejected:
   - ホイールを行で渡し、受け手に行の高さを掛けさせる（GPUI。利用者のハンドラが行の高さを知る必要がある）
   - ホバー中のスクロールする箱すべてに量を配る（GPUI。内側と外側が同時に動く）
   - 位置の Signal だけを受ける `.ScrollOffset(signal)`（ホイールが書く先と、最大値を読む口が無い）
-  - V2 で見えるスクロールバーを作る（3 つとも中身に重ねる別の部品。行 G1 で部品として作る）
+  - V2 で見えるスクロールバーを作る（3 つとも中身に重ねる別の部品。行 B10 で部品として作る。D14 の Grill で §13.1 の表が B10 に置いた）
+
+Decision（行 B10、Grill の 12 巡目、Issue #927）:
+  見えるスクロールバーは B10 の Primitives の部品で、箱の `ScrollState` を読み書きする。Core は棒を描かず、中身と一緒に動かない重ねる場所と、「スクロールした」の知らせを足す。棒は既定で OS の設定に従い（Windows の `UISettings.AutoHideScrollBars`）、アプリが棒ごとに選べる。棒は Tab で止まらず、a11y では役 ScrollBar の節を出す。
+
+Reason:
+  比べた 3 つとも、スクロールする箱は棒を描かず、棒は別の部品である（Flutter 3.47.8 の `packages/flutter/lib/src/widgets/scrollbar.dart` 2268〜2271 行目、Avalonia 12.1.4 の `src/Avalonia.Themes.Fluent/Controls/ScrollViewer.xaml` 46・49 行目、zed v1.25.3 の `crates/ui/src/components/scrollbar.rs` 105 行目の `WithScrollbar`）。部品にすれば、テーマが棒の見た目を被せられる（§13.1）。
+
+Rejected:
+  - Core のスクロールする箱が棒を描く（Core に部品を置かない（§13.1）規則に反し、テーマが棒の見た目を変えられない。比べた 3 つも箱では描かない。Grill の 12 巡目、Issue #927）
+  - OS の設定を読まず、いつも重ねて隠す（Flutter 3.47.8 と Avalonia 12.1.4 は読まない。どちらのリポジトリにも `AutoHideScrollBars` の語が無い）（「常にスクロールバーを表示する」は Windows の a11y の設定で、従わないと、それを選んだ利用者にも隠れる棒を出す。zed v1.25.3 は `ShowScrollbar::System` で読む（`crates/ui/src/components/scrollbar.rs` 43〜54・327〜337 行目、`crates/gpui_windows/src/platform.rs` 1652 行目）。同じ Grill）
+  - 棒を Tab で止める（キーでのスクロールは箱が持つので、棒で止まると Tab の止まりが増えるだけになる。Avalonia 12.1.4 の `ScrollBar` は既定で `Focusable` が偽（`src/Avalonia.Controls/Primitives/ScrollBar.cs` 101 行目）、Flutter 3.47.8 の `widgets/scrollbar.dart` と zed v1.25.3 の `scrollbar.rs` にもフォーカスを取る所が無い。同じ Grill）
+  - 棒に a11y の節を出さない（Flutter 3.47.8 は `semanticsBuilder` を null にし（`packages/flutter/lib/src/widgets/scrollbar.dart` 846 行目）、zed v1.25.3 の `scrollbar.rs` に役の語が無い）（Avalonia 12.1.4 は `ScrollBarAutomationPeer` で ScrollBar の種類を出す（`src/Avalonia.Controls/Automation/Peers/ScrollBarAutomationPeer.cs` 18 行目）。役 ScrollBar は行 AX1 が入れた。同じ Grill）
 
 ---
 
@@ -798,12 +810,20 @@ Rejected:
 Decision（Grill の 10 巡目、Issue #917）:
   すべての編集を、Flutter の formatter の形の 1 つの公開の口に通す。変換中の文字には効かせない。フォームの枠は、任意の部品を包む `Field(label, control, help, error)` にする。
 
+Decision（Grill の 12 巡目、Issue #927）:
+  NumberBox の値は `Signal<double?>` にし、Enter とフォーカスが離れた時に確定し、解けない文字は残して Invalid にする。MaskedTextBox のマスクは自前の文法で読み、区切りの字は行 LC2 から取る。パスワードの欄は見せるボタンで切り替え、Caps Lock の警告は持たない。OTP の欄は、1 つの文字の欄に `MaxLength`・数字の formatter・枠の描画を載せる。
+
 Reason:
   数値の欄・型のある欄・1 文字ずつの欄・トークンの欄は、どれも編集が欄に入る前に見る必要がある。前と後の値を受けて新しい値を返す形だけが、マスクの字の差し込みやキャレットの移動まで書ける（Flutter 3.47.8 の `TextInputFormatter.formatEditUpdate`、`packages/flutter/lib/src/services/text_formatter.dart` 108 行目）。
 
 Rejected:
   - 部品ごとに入力の口を上書きする（Avalonia 12.1.4 の形。`MaskedTextBox` は打鍵を `OnTextInput`（`src/Avalonia.Controls/MaskedTextBox.cs` 363 行目）で、貼り付けを別にキーの処理（211 行目）で上書きし、`NumericUpDown` は打鍵を絞らず、確定の時に解析する（`src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 1176 行目）。部品ごとに打鍵・貼り付け・IME の確定・a11y の SetValue の道を作り直すことになり、1 つでも漏れると数値の欄に数字でない文字が入る。アプリが自分の欄（電話番号など）を作れない。Grill の 10 巡目、Issue #917）
   - 欄の飾りの設定にラベル・補助の文・誤りを持たせる（Flutter 3.47.8 の `InputDecoration` の `labelText`・`helperText`・`errorText`、`packages/flutter/lib/src/material/input_decorator.dart` 3018・3110・3237 行目）（文字の欄にしか使えず、Select・Checkbox・Slider・NumberBox が同じ枠を使えない。同じ Grill）
+  - NumberBox の値を `decimal?` にする（Avalonia 12.1.4 の `NumericUpDown`、`src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 108 行目）（行 B2a のスライダーの値は `double` なので、同じ値を 2 つの部品に渡すたびに型を変えることになる。Grill の 12 巡目、Issue #927）
+  - NumberBox の値を数の型の総称にする（zed v1.25.3 の `NumberField<T: NumberFieldType>`、`crates/settings_ui/src/components/number_field.rs` 28・258 行目）（値の型ごとに NativeAOT がコードを作るので、実行ファイルが大きくなる（`aot.mdc`）。この案に戻る時は、その前に NativeAOT のサンプルの大きさを測る。同じ Grill）
+  - MaskedTextBox を、BCL の `MaskedTextProvider` を包んで作る（Avalonia 12.1.4 の形。`src/Avalonia.Controls/MaskedTextBox.cs` 304 行目で、`Culture`（既定は `CultureInfo.CurrentCulture`、18〜19 行目）を渡して作る）（XylemUI のアプリは `InvariantGlobalization` で動かせる（設計書 §0.1）。その下ではカルチャが不変のカルチャになり、ロケールの区切りを出せない。区切りは行 LC2 の CLDR の表から取る。NativeAOT で警告が出ないかも確かめていない。同じ Grill）
+  - パスワードの欄に Caps Lock の警告を持つ（比べた 3 つとも持たない。Avalonia 12.1.4 の `src/Avalonia.Controls` と Fluent のテーマ、zed v1.25.3 の `crates/ui_input` と `crates/ui/src` に Caps Lock の語が無く、Flutter 3.47.8 の `material` と `widgets` にはアイコンの名前しかない）（持つには、Core と Platform にロックキーの状態を読む口が要る。今の `Key.CapsLock` はキーの名前で、状態は読めない。同じ Grill）
+  - OTP の欄を、1 文字の欄を N 個並べて作る（案 ii）（貼り付けた符号を部品が N 個の欄に分ける必要があり、a11y の節も IME のクライアントも N 個になる。同じ Grill）
 
 ---
 
@@ -811,6 +831,9 @@ Rejected:
 
 Decision（Grill の 11 巡目、Issue #918）:
   NavigationView は表示のモードを持つ 1 つの部品にし、ページの積み重ねは別の行 NS1 にする。窓の中の通知は 1 つずつ出す。ProgressBar と ProgressRing は 1 つの Primitive、Meter は別の Primitive にする。ダイアログのボタンは種類を知って OS ごとの順に並べる。Drawer はモーダルの重ねるパネルだけにする。ホバーで出るカードは Flyout のフォーカスを取らない形にする。Overflow は layout の同じパスで収まらない最初の項目を決める。
+
+Decision（Grill の 12 巡目、Issue #927）:
+  CommandBar の項目は、動作とコールバックの両方の形で受け、主と副を分ける。コマンドパレットは、登録された動作を `CanDispatch(action, from)` で絞り、題名は行 LC3 の辞書から読み、あいまい検索は自前で書いて 1 打ごとの割り当てを 0 にする。絵文字の選択は、Unicode と CLDR のデータを同梱する自前の部品にする。
 
 Rejected:
   - NavigationView を、横に細く並べる部品と引き出しの部品の 2 つにする（Flutter 3.47.8 の `NavigationRail`（`packages/flutter/lib/src/material/navigation_rail.dart` 68 行目）と `NavigationDrawer`（`material/navigation_drawer.dart` 54 行目）の形）（窓の幅で表示を切り替えるアプリが、選択と項目を 2 つの部品に渡し直す。1 つの部品の表示のモードにすれば、選択と項目は 1 つのまま。Grill の 11 巡目、Issue #918）
@@ -823,6 +846,10 @@ Rejected:
   - ホバーで出るカードを Tooltip の一種にする（Tooltip はフォーカスでは出さない（§13.1）。カードは中に操作を持てるので、キーボードの利用者も開けて、中へフォーカスを入れられる必要がある（WCAG 2.2 の 1.4.13）。zed v1.25.3 の GPUI の `hoverable_tooltip` は、隠すまで 500 ms 待つ（`crates/gpui/src/elements/div.rs` 54 行目の `HOVERABLE_TOOLTIP_HIDE_DELAY`）。同じ Grill）
   - Overflow を、項目の幅を固定の値で見積もって決める（Avalonia 12.1.4 の `CommandBar` は、ラベルの位置ごとの固定の幅（既定 70・102・42、`src/Avalonia.Controls/CommandBar/CommandBar.cs` 76〜89 行目）に項目の数を掛けて比べる（683〜699 行目）。訳した文言で幅が変わる項目で誤る。同じ Grill）
   - Overflow を、layout の後に収まらない位置をシグナルへ書いて決める（案 b）（書いた後に 2 回目の layout が要る。Flutter 3.47.8 の text selection toolbar は、子を順に測りながら収まらない最初の位置を同じ layout で決める（`packages/flutter/lib/src/material/text_selection_toolbar.dart` 430・442・499〜500 行目）。案 a と案 b の差は、20 項目のツールバーで窓の大きさを変えるフレームで測って確かめる。同じ Grill）
+  - CommandBar に副の項目を持たせず、すべてを主の項目にして、収まらない分だけをメニューへ逃がす（副の項目は窓の幅によらずメニューに入る。分けないと、アプリはあまり使わない操作を常にメニューに置けない。Avalonia 12.1.4 の `CommandBar` も `PrimaryCommands` と `SecondaryCommands` を分けて持つ（`src/Avalonia.Controls/CommandBar/CommandBar.cs` 28〜35 行目）。Grill の 12 巡目、Issue #927）
+  - コマンドパレットのあいまい検索に、外のライブラリを使う（zed v1.25.3 は、外の crate `nucleo` を包む自分の crate の `fuzzy_nucleo::match_strings_async` を使う（`crates/command_palette/src/command_palette.rs` 618〜620 行目、`crates/fuzzy_nucleo/Cargo.toml` 17 行目））（パレットへの打鍵はフレームの経路なので、照合の時間と割り当てを XylemUI が制御できる必要がある（`dependencies.mdc` の 3、`perf.mdc`）。500 個の動作で 1 打の時間と割り当てを測る。同じ Grill）
+  - 1 打ごとに照合の候補の一覧を作り直す（zed v1.25.3 は、打つたびに候補の `Vec` を作る（`command_palette.rs` 612〜615 行目））（フレームの経路で割り当てる。候補は開いた時に 1 回だけ作り、1 打では割り当てない。同じ Grill）
+  - 絵文字の選択を、OS の絵文字のパネルを開くだけにする（zed v1.25.3 の GPUI は OS の文字の一覧を開く口 `show_character_palette` を持ち、既定は何もしない（`crates/gpui/src/platform.rs` 1299 行目）。実装は macOS にだけある（`crates/gpui_macos/src/window.rs` 1935 行目））（開けるかが OS ごとに変わり、検索の名前を行 LC4 の言語でそろえられない。同じ Grill）
 
 ---
 
@@ -1049,6 +1076,15 @@ Rejected:
   - theme designer の計算をそのまま使う（明度は `colors/hueMap.ts` の色相ごとの表）。測った青で、明度が L\* 0.9〜86.0 になり、`#292929` の上の暗の `colorBrandForeground1`（`brand[100]`）が 3.75 だった。theme designer 自身はこのトークンを `brand[110]` に替えるが（`utils/getOverridableTokenBrandColors.ts` 70〜75 行目）、それでも 4.48 で、固定したトークンの対応とも違う。段 160 も `brandWeb` の L\* 95.4 より暗い。同じ Grill
   - 制御点を theme designer の画面の既定（Vibrancy 0、つまり 0 と 0）にする。キーを `brandWeb` の段 80 にすると、キーより明るい段の彩度が早く落ちる。`brandWeb` との色差は最大 ΔE 18.7 で、2/3 と 1/3 の 10.9 より大きい。同じ Grill
 
+Decision（テーマが使える見た目の API、行 B11。Grill の 12 巡目、Issue #927）:
+  余白（margin）、絶対の位置と inset、並びの逆順、揃え、最小と最大の大きさを、公開の要素のメソッドにする（案 a）。
+
+Reason:
+  重ねたアバターと在席の印は、テーマだけに置く見た目の部品で（§13.1）、これらの API が要る。zed v1.25.3 は、重ねたアバターを並びの逆順と負の余白で重ね（`crates/ui/src/components/facepile.rs` 70・78 行目）、在席の印を角に絶対の位置で置く（`crates/ui/src/components/avatar.rs` 232〜234 行目）。今の公開の要素のメソッドには、どれも無い。
+
+Rejected:
+  - Theme.Fluent にだけ Core の内部を見せる（案 b）（ほかのテーマが同じ部品を作れない。見た目はテーマかアプリが被せる（§13.1）。今、Core が内部を見せているのは `XylemUI.Primitives` と `XylemUI.Theme.Fluent.Tests` で、`XylemUI.Theme.Fluent` には見せていない（`src/XylemUI.Core/XylemUI.Core.csproj` 74・78 行目）。Grill の 12 巡目、Issue #927）
+
 ---
 
 ## アクセシビリティ（UIA）
@@ -1220,6 +1256,9 @@ Decision（K2 の Grill、Issue #805）:
   動作のハンドラはフォーカスから根へたどる。順はキーマップ、キーのハンドラ、文字の入力。
   K1 の既定のキー（Tab・Enter と Space・Esc・スクロール・欄の編集）を、既定のキーマップと動作に載せ直す。
 
+Decision（行 K3、Grill の 12 巡目、Issue #927）:
+  ショートカットの入力のために、フォーカスしたノードがキーを生で受ける「捕まえる」モードを Core に足す。モードの間は、キーマップ、アクセスキー、Alt のメニューバーを飛ばす。
+
 Reason:
   名前があると、利用者が書き換えられるキーマップと、メニューやツールチップへのキーの表示を、同じ表から出せる（GPUI）。
   既定のキーを表に置くと、アプリが差し替えられる（Flutter）。
@@ -1238,6 +1277,7 @@ Rejected:
   - メニューのキーの表示と有効・無効を、アプリが項目ごとに渡す（表示と割り当てが食い違う。項目は動作を指す。KM2 の Grill）
   - 文字の欄が、Space と Enter を止める割り当てを自分で持つ（Flutter。利用者が素の文字のキーを割り当てると、欄ごとに止める行が要る。文字を受ける欄では文字になるキーを先に文字の入力へ送る規則にした。KM1b の Grill）
   - 引数のある動作を、アプリが起動時に 1 つずつ登録する関数で作る（書き忘れが実行時まで見つからない。Source Generator がプロパティごとの設定を生成する。KM1b の Grill）
+  - ショートカットの入力の部品が、自分の文脈の行で全部のキーを記録の動作に割り当てる（Alt だけの押下とアクセスキーを記録できない。Grill の問いはこれを zed の形としたが、zed v1.25.3 の `KeystrokeInput` は、動作を配る前に呼ばれる横取りの口 `intercept_keystrokes`（`crates/gpui/src/app.rs` 2579〜2583 行目）を中の要素にフォーカスがある間だけ付けて記録し（`crates/keymap_editor/src/ui_components/keystroke_input.rs` 343〜350 行目）、文脈の行（`assets/keymaps/default-windows.json` 1456〜1461 行目）は記録を始める・止める・消す動作にだけ使う。捕まえるモードは、この横取りの口と同じ役をする。Grill の 12 巡目、Issue #927）
 
 ---
 
