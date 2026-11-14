@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The token tool of XylemUI.Theme.Fluent (design §13.2, "トークンの元"). It runs on the build machine, never in an app:
+      generate  writes src/XylemUI.Theme.Fluent/FluentTokens.g.cs from the TypeScript files of @fluentui/tokens that
+                vendor/build.ps1 takes into vendor/out/fluent/tokens (microsoft/fluentui at the commit vendor/versions.lock pins)
+    The lightness targets of the brand steps come from the conversion the theme itself uses, compiled from its source.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XylemUI.Tools.FluentTokens</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\XylemUI.Theme.Fluent\CieLab.cs" Link="CieLab.cs" />
+    <Compile Include="..\..\src\XylemUI.Theme.Fluent\Lab.cs" Link="Lab.cs" />
+  </ItemGroup>
+</Project>
