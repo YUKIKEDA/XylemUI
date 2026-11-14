@@ -20,7 +20,7 @@
 # extensions, and under MSVC it falls back to scalar code (SKCMS_PORTABLE) without its AVX2 and AVX-512 transforms. Skia builds
 # with clang on Windows too. Converting 12.2 million pixels from Display P3 to sRGB took 6.3 to 6.6 ns a pixel with clang-cl, and
 # 39.5 to 41.4 ns with MSVC (IM1's Grill, Q31).
-accesskit  0.23.1  35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f  https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip  https://api.github.com/repos/AccessKit/accesskit-c/releases/assets/590896392
+accesskit  0.23.2  c7fa84f8f34fca909f662375737a54f98b17cf9eae51fffd94ab3d9f662e3681  https://github.com/AccessKit/accesskit-c/releases/download/0.23.2/accesskit-c-0.23.2.zip  https://api.github.com/repos/AccessKit/accesskit-c/releases/assets/699025653
 harfbuzz  14.5.1  7e2fa4e8c7c98e8d8140671f5772542afaaa6acccfbd746506886b6d85f7f8d6  https://github.com/harfbuzz/harfbuzz/releases/download/14.5.1/harfbuzz-14.5.1.tar.xz  https://api.github.com/repos/harfbuzz/harfbuzz/releases/assets/602061249
 unicode-ucd  18.0.0  7b3e555514060b92290d154f53655c5eb0fa62b16eb04c03434ff72d1a66a0d8  https://www.unicode.org/Public/18.0.0/ucd/UCD.zip
 fluent-regular-ttf  1.1.344  f977ae5bfb46661e7ba94b098e0d7720e27af888e57b9b14e239933ac4c0e6f4  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Regular.ttf
