@@ -732,6 +732,54 @@ Rejected:
 
 ---
 
+## タブの中身とキー（行 B3）
+
+Decision（Grill の 9 巡目、Issue #916）:
+  タブの中身は、初めて選ばれた時に作り、以後は `Hidden` で隠して保ち、隠している間は中身の Scope を止める（`Scope.Pause`）。タブの帯の中は、矢印でフォーカスと選択が一緒に動く。タブは、閉じる要求、ドラッグとキーでの並べ替え、あふれた時のスクロールを持つ。
+
+Reason:
+  XylemUI の部品の状態は Scope とノードにあるので、出さないタブを捨てると、スクロールの位置や欄の文字も消える。隠したタブの Scope を止めないと、そのタブが読むシグナルが変わるたびに Effect が走る。APG は、中身がすぐ出るなら自動の選択を勧める。中身は初めて選んだ後は保つので、2 回目からはすぐ出る。行 DK1 のドックは閉じる・並べ替え・あふれを使うので、B3 が持たなければ DK1 が同じものを作る。
+
+Rejected:
+  - 選んだタブの中身だけを出し、切り替えるたびに作り直す（Avalonia 12.1.4 の TabControl は、選ばれたタブの中身だけを 1 つの presenter に出し、切り替えの後で前の presenter の中身を外す（`src/Avalonia.Controls/TabControl.cs` 484〜485 行目）。スクロールの位置・欄の文字・取り消しの履歴を失う。Grill の 9 巡目、Issue #916）
+  - zed の形を写す（zed v1.25.3 の `Pane` は、選んだ項目だけを木に出す（`crates/workspace/src/pane.rs` 4611〜4617 行目）。GPUI では状態がエンティティにあるので、出さない項目も状態を保つ。XylemUI の状態は Scope とノードにあるので、同じ形は上の作り直す形になる。同じ Grill）
+  - 初めから全部のタブを作って隠す（Flutter 3.47.8 の `IndexedStack` の形で、大きさは最も大きい子に合わせる（`packages/flutter/lib/src/widgets/indexed_stack.dart` 23〜24 行目）。一度も開かないタブの分まで、作る時間とメモリを払う。同じ Grill）
+  - 作った後に隠すが、Scope は止めない（隠したタブの Effect が、時計の文字や流れるログのように読むシグナルが変わるたびに走る。止める形との差は、2,000 ノードのタブを 20 個保って、行 B3 の設計の PR で測る。同じ Grill）
+  - WinUI の手動の選択（矢印はフォーカスだけを動かし、Space か Enter で選ぶ。矢印は端で回らない。Microsoft Learn の「Tab view」の Keyboard navigation、2026-11-14 に読んだ）（タブを 1 つ見るのにキーが 2 つ要る。APG は中身がすぐ出るなら自動を勧め、Avalonia 12.1.4 の TabControl は方向キーでフォーカスが移った時に選ぶ（`src/Avalonia.Controls/TabControl.cs` 240〜242 行目、`src/Avalonia.Controls/Primitives/TabStrip.cs` 33〜41 行目も同じ）。同じ Grill）
+  - 閉じる要求・並べ替え・あふれた時のスクロールを B3 に入れない（Avalonia 12.1.4 の形。`TabControl.cs`・`TabItem.cs`・`Primitives/TabStrip.cs` とテーマに閉じる・並べ替えの口が無く、あふれたタブは `WrapPanel` で次の段へ折り返す（`TabControl.cs` 87〜88・96 行目、`src/Avalonia.Themes.Fluent/Controls/TabStrip.xaml` 27〜30 行目）。WinUI は `IsClosable` と `TabCloseRequested`、`CanReorderTabs`、あふれた時のスクロールのボタンを持つ（Microsoft Learn の「Tab view」）。zed v1.25.3 は、キーでの並べ替え（`assets/keymaps/default-windows.json` 505〜506 行目の `pane::SwapItemLeft`・`SwapItemRight`）と、帯のスクロール（`crates/ui/src/components/tab_bar.rs` 133 行目）と、選んだタブを見える所へ動かすこと（`crates/workspace/src/pane.rs` 1510〜1514 行目）を持つ。B3 が持たないと、行 DK1 と文書のタブを使うアプリが、それぞれ同じものを作る。同じ Grill）
+
+---
+
+## 部分木のつなぎ替え（行 RP1）
+
+Decision（Grill の 9 巡目、Issue #916）:
+  生きた部分木を Scope ごと別の親へ移す Core の操作を、行 RP1 として行 DK1 の実装の前に作る。移した後も、フォーカス、ポインタのキャプチャ、IME の変換、a11y の節の ID を保つ。
+
+Reason:
+  行 DK1 のパネル（端末やエディタ）は、グループや窓の間を動く。Flutter 3.47.8 は `GlobalKey` を持つ widget の部分木をつなぎ替え（`packages/flutter/lib/src/widgets/framework.dart` 122〜124 行目）、Avalonia 12.1.4 は親から外したコントロールを別の親に入れ直す（`src/Avalonia.Base/Visual.cs` 677〜681 行目）。どちらも、移した部分の状態を保つ。
+
+Rejected:
+  - パネルを動かすたびに作り直す（案 a）（端末やエディタのパネルが動くたびに、スクロールの位置と取り消しの履歴を失う。作り直す形とつなぎ替える形の時間と割り当ては、1,000 ノードと 10,000 ノードのパネルで行 RP1 が測る。Grill の 9 巡目、Issue #916）
+
+---
+
+## 一覧と表（行 B4）
+
+Decision（Grill の 9 巡目、Issue #916）:
+  読むだけの表（行 B4）と編集できる表（行 DG1）を、1 つの列と行の形にする。格子の一覧（GridView）は、行 P02e2 のタイルの仮想化の上に作る。B4 の表は列の幅の変更と行の選択を持ち、見出しを押しての並べ替えは DG1 に置く。選択は Single・Multiple・Extended・None のモードと、アプリが持つキーの `SelectionModel<TKey>` で持つ。
+
+Reason:
+  表を 2 つに分けると、列の定義・選択・a11y の形が 2 つずつになる。仮想化した一覧は行をキーで見分けるので、選択と範囲の起点もキーで持つ。Win32 のリストボックスは、1 つを選ぶ（既定）、押すたびに切り替える（`LBS_MULTIPLESEL`）、Shift と組み合わせて選ぶ（`LBS_EXTENDEDSEL`）、選ばない（`LBS_NOSEL`）の 4 つを持つ（Microsoft Learn の「List Box Styles」、2026-11-14 に読んだ）。
+
+Rejected:
+  - 読むだけの表と編集できる表を、別の部品にする（DG1 の調査の案 b）（Avalonia 12.1.4 は、読むだけの表を `TableView : ListBox` にし（`src/Avalonia.Controls/TableView.cs` 15〜17 行目）、DataGrid は本体のリポジトリの外にある（12.1.4 のリポジトリに `DataGrid` の名のファイルは無い）。列・選択・a11y の形が 2 つずつになり、読むだけの表から編集できる表へ移るアプリは書き直す。Grill の 9 巡目、Issue #916）
+  - 仮想化しない GridView を B4 で出す（仮想化した ListBox と食い違う半端な部品になる（`scope.mdc`）。Flutter 3.47.8 の `RenderSliverGrid` は、見える範囲の最初の番号から子を作り、外へ出た子を捨てる（`packages/flutter/lib/src/rendering/sliver_grid.dart` 561・607・616 行目）。同じ Grill）
+  - 見出しを押しての並べ替えを B4 の表に入れる（Avalonia 12.1.4 の TableView は、見出しのドラッグでの幅の変更を持ち（`src/Avalonia.Controls/TableViewColumnHeader.cs` 55〜67 行目）、並べ替えを持たない（`TableView*.cs` と `Presenters/TableView*.cs` に sort の語が無い）。zed v1.25.3 の `Table` も幅の変更だけを持つ（`crates/ui/src/components/data_table.rs` に sort の語が無い）。Flutter 3.47.8 の `DataTable` は並べ替えの印と知らせを持ち、並べ替えるのはアプリである（`packages/flutter/lib/src/material/data_table.dart` 32 行目の `DataColumnSortCallback`）。並べ替えの順を誰が持つかは絞り込みと同じ問いで、行 DG1 の Grill で決める。B4 は見出しに印の場所を残す。同じ Grill）
+  - 選択を番号で持つ（Avalonia 12.1.4 の `SelectionModel` は番号の範囲で選ぶ（`src/Avalonia.Controls/Selection/SelectionModel.cs` 248 行目の `SelectRange(int start, int end)`）。項目を足したり並べ替えたりすると、選んだ行がずれる。同じ Grill）
+  - モードを Avalonia の印の組み合わせにする（Avalonia 12.1.4 の `SelectionMode` は Single・Multiple・Toggle・AlwaysSelected の印を組み合わせる `[Flags]` の列挙である（`src/Avalonia.Controls/SelectionMode.cs` 8〜29 行目）。Multiple だけなら Ctrl で切り替え Shift で範囲、Toggle を足すと押すたびに切り替える（`src/Avalonia.Controls/Primitives/SelectingItemsControl.cs` 814〜816 行目）。選ばない形を持たないので、Win32 の `LBS_NOSEL` に当たる、見せるだけで選ばない一覧を表せない。同じ Grill）
+
+---
+
 ## タッチとペン
 
 Decision:
