@@ -76,7 +76,8 @@ dotnet publish spike/OsAppearance -c Release -r win-x64 -o <dir>
 | コントラスト テーマ（オン、オフ） | `WM_SYSCOLORCHANGE` | ハイコントラストの flags、8 つの色、`UISettings` の 9 色 | `ColorValuesChanged` が 3 回、`SPI_SETHIGHCONTRAST`、`WM_THEMECHANGED`、`"WindowsThemeElement"`、wParam 0x1023 |
 
 - **どの切り替えでも、最初のメッセージが届いた時には、読み直した値がもう新しかった。** メッセージが続けて届いた後の 1 秒後の読み直し（14 回）でも、変わっていた値は無かった
-- **1 回の切り替えで、メッセージが何個も届く。** アクセントの色は 1 回で 10 個である。読み直した値が変わっていたのは、そのうち最初の 1 個だけだった
+- **1 回の切り替えで、メッセージが何個も届く。** アクセントの色は 1 回で 9〜10 個である。読み直した値が変わっていたのは、そのうち最初の 1 個だけだった
+- **アクセントの色では、`"ImmersiveColorSet"` は最初の知らせの約 0.3 秒後に届く。** 前後のメッセージと離れて始まった 3 回の切り替えで、最初の `WM_DWMCOLORIZATIONCOLORCHANGED` から最初の `"ImmersiveColorSet"` までは 307・308・290 ms、最初の `ColorValuesChanged` までは 227・206・235 ms、最後のメッセージまでは 559・662・508 ms だった。値は、最初の `WM_DWMCOLORIZATIONCOLORCHANGED` の時点でもう新しい
 - **`ColorValuesChanged` は UI スレッドで呼ばれない。** 31 回とも、UI スレッドと違うスレッド（2 つのスレッド、MTA）で呼ばれた。ハンドラーは、`IAgileObject` に答えると登録できた（`add` が S_OK）。OS が求めたインターフェイスは、ハンドラーの IID `{2dbdba9d-20da-519d-9078-09f835bc5bc7}` と `IAgileObject` のほかに 3 つあり、どれも `E_NOINTERFACE` で済んだ
 
 ## (e): 題名の棒
@@ -87,10 +88,11 @@ dotnet publish spike/OsAppearance -c Release -r win-x64 -o <dir>
 ## 分かったこと
 
 - **設計の読み方は、NativeAOT で動く。** `UISettings`（`RoActivateInstance` と手の vtable）、`SPI_GETHIGHCONTRAST`、`GetSysColor` の 8 色のどれも、リフレクションなしで読めた
-- **読み直すきっかけは、設計の 2 つで足りる。** 明暗とアクセントの色は `WM_SETTINGCHANGE`（lParam が `"ImmersiveColorSet"`）で、ハイコントラストは `WM_SYSCOLORCHANGE` で、どちらも届いた時点で値が新しい。アクセントの色だけは `WM_DWMCOLORIZATIONCOLORCHANGED` の方が先に届くが、その後に `"ImmersiveColorSet"` も届く
+- **読み直すきっかけは、設計の 2 つで、どの変化も拾える。** 明暗とアクセントの色は `WM_SETTINGCHANGE`（lParam が `"ImmersiveColorSet"`）で、ハイコントラストは `WM_SYSCOLORCHANGE` で、どちらも届いた時点で値が新しい。ただし、アクセントの色は `WM_DWMCOLORIZATIONCOLORCHANGED` の方が約 0.3 秒早く届く。2 つだけで読み直すと、アクセントの色の変化は約 0.3 秒遅れて見える。`WM_DWMCOLORIZATIONCOLORCHANGED` もきっかけに足すかは、行 TH1 の設計で決める
 - **`ColorValuesChanged` は使わなくてよい。** 別のスレッドで呼ばれるので、使うなら UI スレッドへ渡し直す必要がある。ウィンドウのメッセージだけで、同じ変化がすべて分かった
 - **同じ値の知らせをまとめる必要がある。** 1 回の切り替えで最大 10 個のメッセージが届く。読み直して前と同じなら、何もしない形にする
 - **ハイコントラストの間は、`UISettings` のアクセントの段が 1 色になる。** ハイコントラストのテーマは、設計のとおり `GetSysColor` の 8 色から作る
+- **ハイコントラストの間は、`UISettings` の Foreground が `COLOR_WINDOWTEXT` と違う値になる。** この記録では、Foreground は `#B6F6F0`（`COLOR_BTNTEXT` と同じ値）で、`COLOR_WINDOWTEXT` は `#FFFFFF` だった。設計（§13.2）が、ハイコントラストの時の明暗を `UISettings` ではなく `COLOR_WINDOWTEXT` で決めると分けていることには、理由がある
 - **ハイコントラストの明暗は、テーマの色から決める。** この記録のテーマ（暗い配色）では、`COLOR_WINDOWTEXT` が `#FFFFFF` で、式の結果は Dark だった。明るい配色のコントラスト テーマは試していない
 - **題名の棒の属性は、Windows 11 では 20 でも 19 でも通る。** 1809〜1909 でどちらが効くかは、この記録では分からない
 
