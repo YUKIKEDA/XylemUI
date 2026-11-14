@@ -1208,6 +1208,465 @@ public sealed partial class AccessibilityTests
             (node.Level, node.Live, node.Orientation, node.Range!.Value.Step, node.Range!.Value.LargeStep);
     }
 
+    /// <summary>
+    /// An active descendant that is a virtualized list's row leaves the holder's node while the row is out of the list's range, and
+    /// comes back with it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focusable box 200 x 100 that scrolls down, a virtualized list of 1,000 rows 20 high, row 3 kept alive by a signal; its active
+    ///   descendant is a signal set to row 3; the tree made.
+    ///
+    /// Steps:
+    /// - Read the box's active descendant. Scroll to 4,000; settle; read it. Scroll to 0; settle; read it.
+    ///
+    /// Expected:
+    /// - Row 3's node; none; row 3's node again.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ActiveDescendant_ARowOutOfTheRange_IsNone_AndComesBack()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        IReadOnlySignal<bool> keep = Signal.Create(true);
+        var state = new VirtualListState();
+        var active = Signal.Create<Element>(default);
+        Element list = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            list = Box()
+                .Width(200)
+                .Height(100)
+                .Focusable()
+                .Overflow(Overflow.Visible, Overflow.Scroll)
+                .VirtualFor(
+                    items,
+                    static i => i,
+                    item =>
+                    {
+                        Element row = Box().Height(20).TestId($"row{item.Get()}");
+                        return item.Get() == 3 ? row.KeepAlive(keep) : row;
+                    },
+                    state
+                )
+                .ActiveDescendant(active)
+        );
+        _ = app.PumpAndSettle();
+        Element row3 = app.Find("row3");
+        active.Set(row3);
+        AccessibilityTree tree = app.AccessibilityTree();
+        AccessibilityNode node = tree.Find(list.Node)!;
+        var seen = new List<AccessibilityNodeId> { node.ActiveDescendant };
+        state.Scroll.ScrollTo(new Vector2(0, 4_000));
+        _ = app.PumpAndSettle();
+        seen.Add(node.ActiveDescendant);
+        state.Scroll.ScrollTo(Vector2.Zero);
+        _ = app.PumpAndSettle();
+        seen.Add(node.ActiveDescendant);
+
+        AccessibilityNodeId id = tree.Find(row3.Node)!.Id;
+        Assert.NotEqual(default(AccessibilityNodeId), seen[0]);
+        Assert.Equal(new AccessibilityNodeId[] { seen[0], default, id }, seen);
+    }
+
+    /// <summary>
+    /// An active descendant set while its node has no node in the tree points at the node once it has one.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A focusable list box holding a hidden box that holds an item "One"; its active descendant is a signal set to "One"; the tree
+    ///   made.
+    ///
+    /// Steps:
+    /// - Read the list box's active descendant; show the box; settle; read it.
+    ///
+    /// Expected:
+    /// - None; then "One".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ActiveDescendant_SetBeforeItsNodeIsMade_FollowsIt()
+    {
+        var active = Signal.Create<Element>(default);
+        Element list = default;
+        Element box = default;
+        Element one = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            one = Box().Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBoxItem, Name = "One" });
+            box = Box(one);
+            active.Set(one);
+            return list = Box(box).Focusable().Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBox }).ActiveDescendant(active);
+        });
+        app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = true });
+        _ = app.PumpAndSettle();
+        Element before = app.AccessibilityOf(list).ActiveDescendant;
+        app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = false });
+        _ = app.PumpAndSettle();
+
+        Assert.True(before.IsNone);
+        Assert.Equal(one, app.AccessibilityOf(list).ActiveDescendant);
+    }
+
+    /// <summary>
+    /// A number, Increment, and Decrement do not reach a node that is read-only by its state, or by its role (a meter, a scroll bar),
+    /// though it has handlers; a slider takes them.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Nodes with the range 0 to 10 at 5 and handlers of a number, Increment, and Decrement that count: a slider ReadOnly, a meter, a
+    ///   scroll bar, and a slider; the tree made.
+    ///
+    /// Steps:
+    /// - On each, set the number 7, and ask for Increment and Decrement.
+    ///
+    /// Expected:
+    /// - No call on the first three; three on the last.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ValueActions_OfAReadOnlyNode_AreRefused()
+    {
+        int[] calls = new int[4];
+        Element[] nodes = [];
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            nodes =
+            [
+                Counted(SemanticsRole.Slider, SemanticsStates.ReadOnly, 0),
+                Counted(SemanticsRole.Meter, SemanticsStates.None, 1),
+                Counted(SemanticsRole.ScrollBar, SemanticsStates.None, 2),
+                Counted(SemanticsRole.Slider, SemanticsStates.None, 3),
+            ];
+            return Column(nodes);
+        });
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+
+        foreach (Element element in nodes)
+        {
+            AccessibilityNode node = tree.Find(element.Node)!;
+            tree.SetRangeValue(node, 7);
+            tree.Increment(node);
+            tree.Decrement(node);
+        }
+
+        Assert.Equal([0, 0, 0, 3], calls);
+
+        Element Counted(SemanticsRole role, SemanticsStates states, int index) =>
+            Box()
+                .Width(40)
+                .Height(10)
+                .Accessible(
+                    new AccessibilityInfo
+                    {
+                        Role = role,
+                        Name = role.ToString(),
+                        States = states,
+                        Range = new SemanticsRange(0, 10, 5),
+                    }
+                )
+                .OnSetRangeValue(_ => calls[index]++)
+                .OnIncrement(() => calls[index]++)
+                .OnDecrement(() => calls[index]++);
+    }
+
+    /// <summary>
+    /// An error message that replaces another leaves only the new node in the reverse table.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of the role Edit, and texts "first" and "second"; "first" its error message; the tree made.
+    ///
+    /// Steps:
+    /// - Make "second" its error message; settle; read how many nodes named the tree keeps.
+    ///
+    /// Expected:
+    /// - One.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task ErrorMessage_Replaced_LeavesTheReverseTable()
+    {
+        Element field = default;
+        Element first = default;
+        Element second = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            first = Elements.Text("first");
+            second = Elements.Text("second");
+            field = Box().Width(50).Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit }).ErrorMessage(first);
+            return Column(field, first, second);
+        });
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+
+        _ = field.ErrorMessage(second);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal(1, tree.RelationTargetCount);
+    }
+
+    /// <summary>
+    /// Two drawn nodes of one key are a fault a Debug build reports; a Release build keeps the first and drops the second, also when
+    /// the function runs again.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A figure whose draw function adds "first" and then "second", both of key 1, and reads a signal.
+    ///
+    /// Steps:
+    /// - Make the tree. In Release, read the drawn nodes; change the signal; settle; read them again.
+    ///
+    /// Expected:
+    /// - Debug: an invariant failure. Release: one node "first", the same id after the function ran again.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DrawnNodes_OfOneKey_AreReportedInDebug_AndTheFirstIsKeptInRelease()
+    {
+        var round = Signal.Create(0);
+        Element figure = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            figure = Box()
+                .Width(100)
+                .Height(40)
+                .Accessible(new AccessibilityInfo { Role = SemanticsRole.Figure })
+                .AccessibleChildren(
+                    (children, bounds) =>
+                    {
+                        _ = round.Get();
+                        children.Add(1, new Rect(0, 0, 5, 5), new AccessibilityInfo { Role = SemanticsRole.Image, Name = "first" });
+                        children.Add(1, new Rect(5, 0, 5, 5), new AccessibilityInfo { Role = SemanticsRole.Image, Name = "second" });
+                    }
+                )
+        );
+        _ = app.PumpAndSettle();
+
+#if DEBUG
+        Exception failed = Assert.ThrowsAny<Exception>(() => app.AccessibilityTree());
+        Assert.Equal("InvariantViolationException", failed.GetType().Name);
+#else
+        AccessibilityNode node = app.AccessibilityTree().Find(figure.Node)!;
+        (int, string?, AccessibilityNodeId) before = (node.Synthetic.Count, node.Synthetic[0].Name, node.Synthetic[0].Id);
+        round.Set(1);
+        _ = app.PumpAndSettle();
+
+        Assert.Equal((1, (string?)"first"), (before.Item1, before.Item2));
+        Assert.Equal((1, before.Item3), (node.Synthetic.Count, node.Synthetic[0].Id));
+#endif
+    }
+
+    /// <summary>
+    /// The name taken from a node in a virtualized list's row goes while the row is out of the list's range, and comes back with it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A field of the role Edit labelled by the text "row 3" in row 3, kept alive by a signal, of a virtualized list of 1,000 rows 20
+    ///   high in a box 100 high that scrolls; the tree made.
+    ///
+    /// Steps:
+    /// - Read the field's name; scroll to 4,000; settle; read it; scroll to 0; settle; read it.
+    ///
+    /// Expected:
+    /// - "row 3", none, "row 3".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Name_FromARowOutOfTheRange_IsNone_AndComesBack()
+    {
+        Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+        IReadOnlySignal<bool> keep = Signal.Create(true);
+        var state = new VirtualListState();
+        Element field = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                field = Box().Width(50).Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit }),
+                Box()
+                    .Width(200)
+                    .Height(100)
+                    .Overflow(Overflow.Visible, Overflow.Scroll)
+                    .VirtualFor(
+                        items,
+                        static i => i,
+                        item =>
+                        {
+                            // A row's item never changes, so it is read once.
+                            int value = item.Get();
+                            Element row = Box(Elements.Text($"row {value}").TestId($"text{value}")).Height(20);
+                            return value == 3 ? row.KeepAlive(keep) : row;
+                        },
+                        state
+                    )
+            )
+        );
+        _ = app.PumpAndSettle();
+        _ = field.LabelledBy(app.Find("text3"));
+        _ = app.PumpAndSettle();
+        var names = new List<string?> { app.AccessibilityOf(field).Name };
+        state.Scroll.ScrollTo(new Vector2(0, 4_000));
+        _ = app.PumpAndSettle();
+        names.Add(app.AccessibilityOf(field).Name);
+        state.Scroll.ScrollTo(Vector2.Zero);
+        _ = app.PumpAndSettle();
+        names.Add(app.AccessibilityOf(field).Name);
+
+        Assert.Equal(new string?[] { "row 3", null, "row 3" }, names);
+    }
+
+    /// <summary>
+    /// The nodes of a draw function stay where the function put them in the box when the box scrolls: their place takes back the
+    /// box's scroll offset, which AccessKit applies to the box's children.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scroll view 50 high of the role Figure holding a box 300 high, whose draw function adds a point at (0, 10); the tree made.
+    ///
+    /// Steps:
+    /// - Read the point's place plus the view's offset for its children; scroll to 30; settle; read it again.
+    ///
+    /// Expected:
+    /// - 10, then 10.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DrawnNodes_OfABoxThatScrolls_KeepTheirPlaceInTheBox()
+    {
+        var state = new ScrollState();
+        Element view = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            view = ScrollView(Box().Height(300), state)
+                .Height(50)
+                .Accessible(new AccessibilityInfo { Role = SemanticsRole.Figure })
+                .AccessibleChildren(
+                    (children, bounds) => children.Add(1, new Rect(0, 10, 5, 5), new AccessibilityInfo { Role = SemanticsRole.Image, Name = "p" })
+                )
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityNode node = app.AccessibilityTree().Find(view.Node)!;
+        float before = node.Synthetic[0].Bounds.Y + node.ChildOffset.Y;
+        state.ScrollTo(new Vector2(0, 30));
+        _ = app.PumpAndSettle();
+
+        Assert.Equal((10f, 10f, -30f), (before, node.Synthetic[0].Bounds.Y + node.ChildOffset.Y, node.ChildOffset.Y));
+    }
+
+    /// <summary>
+    /// The watches of draw functions and active descendants stop when the app is disposed, with no update after.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A figure whose draw function reads a signal, and a list box whose active descendant is a signal; the tree made.
+    ///
+    /// Steps:
+    /// - Read the watches; dispose the app; read them again.
+    ///
+    /// Expected:
+    /// - Two; then none.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Watches_StopWhenTheAppIsDisposed()
+    {
+        var name = Signal.Create("a");
+        var active = Signal.Create<Element>(default);
+        HeadlessApp app = await HeadlessApp.StartAsync(() =>
+            Column(
+                Box()
+                    .Height(20)
+                    .Accessible(new AccessibilityInfo { Role = SemanticsRole.Figure })
+                    .AccessibleChildren(
+                        (children, bounds) => children.Add(1, bounds, new AccessibilityInfo { Role = SemanticsRole.Image, Name = name.Get() })
+                    ),
+                Box().Height(20).Focusable().Accessible(new AccessibilityInfo { Role = SemanticsRole.ListBox }).ActiveDescendant(active)
+            )
+        );
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+        int before = tree.WatchCount;
+
+        await app.DisposeAsync();
+
+        Assert.Equal((2, 0), (before, tree.WatchCount));
+    }
+
+    /// <summary>
+    /// A second handler of Increment on a node replaces the first, and the first's scope ending leaves the second.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A spin button; a handler of Increment "a" added in one scope, then "b" in another; the tree made.
+    ///
+    /// Steps:
+    /// - Ask for Increment; dispose the first scope; settle; ask again.
+    ///
+    /// Expected:
+    /// - "b" called once, then twice; "a" never.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task SecondHandler_ReplacesTheFirst()
+    {
+        int a = 0;
+        int b = 0;
+        Element spin = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => spin = Spin("spin"));
+        _ = app.PumpAndSettle();
+        ScopeHandle first = Scope.Create(() => spin.OnIncrement(() => a++));
+        ScopeHandle second = Scope.Create(() => spin.OnIncrement(() => b++));
+        AccessibilityTree tree = app.AccessibilityTree();
+        tree.Increment(tree.Find(spin.Node)!);
+        Scope.Dispose(first);
+        _ = app.PumpAndSettle();
+        tree.Increment(tree.Find(spin.Node)!);
+
+        Assert.Equal((0, 2), (a, b));
+        Scope.Dispose(second);
+        _ = app.PumpAndSettle();
+    }
+
+    /// <summary>
+    /// A node with a draw function of nodes and no role is a group holding them; one with a role that holds no children is a fault a
+    /// Debug build reports, and holds none in Release.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box with no role whose draw function adds a point; an image whose draw function adds a point.
+    ///
+    /// Steps:
+    /// - Make the tree; read the box's node.
+    ///
+    /// Expected:
+    /// - Debug: an invariant failure. Release: the box is a Group holding the point; the image holds none.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DrawnNodes_OfANodeWithNoRole_AreInAGroup_AndAChildlessRoleFails()
+    {
+        Element box = default;
+        Element image = default;
+        var point = new AccessibilityInfo { Role = SemanticsRole.Image, Name = "p" };
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            box = Box().Height(20).AccessibleChildren((children, bounds) => children.Add(1, bounds, point));
+            image = Box()
+                .Height(20)
+                .Accessible(new AccessibilityInfo { Role = SemanticsRole.Image, Name = "i" })
+                .AccessibleChildren((children, bounds) => children.Add(1, bounds, point));
+            return Column(box, image);
+        });
+        _ = app.PumpAndSettle();
+
+#if DEBUG
+        Exception failed = Assert.ThrowsAny<Exception>(() => app.AccessibilityTree());
+        Assert.Equal("InvariantViolationException", failed.GetType().Name);
+#else
+        AccessibilityTree tree = app.AccessibilityTree();
+        AccessibilityNode node = tree.Find(box.Node)!;
+        Assert.Equal((SemanticsRole.Group, 1, (string?)"p"), (node.Role, node.SyntheticCount, node.Synthetic[0].Name));
+        Assert.Equal(0, tree.Find(image.Node)!.SyntheticCount);
+#endif
+    }
+
     // A spin button with a range and no handler: read-only until one is added.
     private static Element Spin(string name, double minimum = 0, double maximum = 10, double value = 5) =>
         Box()

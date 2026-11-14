@@ -279,6 +279,12 @@ internal sealed class UiTree
     internal void UpdateAccessibility() => _a11y.Tree?.Update();
 
     /// <summary>
+    /// Stops what the accessibility tree watches, when the tree is thrown away with its window or app: the signals it read no longer
+    /// mark it.
+    /// </summary>
+    internal void StopAccessibility() => _a11y.Tree?.StopWatches();
+
+    /// <summary>
     /// Gets a value indicating whether the accessibility tree's object is made: <see cref="Accessibility"/> makes it when read.
     /// </summary>
     internal bool HasAccessibilityTree => _a11y.Tree is not null;
@@ -439,18 +445,26 @@ internal sealed class UiTree
     internal void AddAccessibilityRelation(NodeHandle holder, AccessibilityRelation? kind, NodeHandle target)
     {
         AccessibilityRelations relations = RelationsFor(holder);
+        NodeHandle replaced = default;
         if (kind is { } several)
         {
             relations.Add(several, target);
         }
         else
         {
+            replaced = relations.ErrorMessage;
             relations.ErrorMessage = target;
         }
 
         if (_a11y.Tree is { IsActive: true } accessibility)
         {
             accessibility.NoteRelation(holder, target);
+
+            // The error message replaced leaves the reverse table, unless another relation names it.
+            if (!replaced.IsNone && replaced != target)
+            {
+                accessibility.ForgetRelation(holder, relations, replaced);
+            }
         }
 
         MarkAccessibilitySelf(holder);
@@ -2810,6 +2824,12 @@ internal sealed class UiTree
         if (_a11y.Tree is { IsActive: true, RelationTargetCount: > 0 } named)
         {
             named.ForgetTarget(node);
+        }
+
+        // Its watches stop now: a freed node gets no later update that would take its node away.
+        if (_a11y.Tree is { IsActive: true, WatchCount: > 0 } watched)
+        {
+            watched.ForgetWatches(node);
         }
 
         if (_a11y.Children.Count > 0)

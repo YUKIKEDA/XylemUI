@@ -17,6 +17,10 @@ namespace XylemUI.E2E;
 // With --accesskit, the tree is a hidden window's, whose UIA provider is AccessKit's adapter (Win32Accessibility): the window is
 // sent the WM_GETOBJECT that UIA sends first (UiaRootObjectId), which makes the tree and hands AccessKit all of it, and the stage
 // then hands AccessKit the nodes that changed. No UIA client listens, so AccessKit raises no event.
+//
+// With --relations N, the first N buttons are each labelled by a text of their own in a column after the buttons (row AX1, design
+// §4.4.1, "Relations"), and a frame that changes the window's width, which moves every node's box and so marks every node, times the
+// stage after it ("resize_stage_us"). Without the option, the scene and its output are as before.
 internal static class A11yCost
 {
     private const int Samples = 101;
@@ -24,12 +28,17 @@ internal static class A11yCost
     // UIA's object id of the provider of a window's root (UiaRootObjectId, UIAutomationCoreApi.h).
     private const int UiaRootObjectId = -25;
 
-    public static int Run(int buttonCount, bool accessKit)
+    public static int Run(int buttonCount, bool accessKit, int relations = 0)
     {
         UiThread.Initialize();
         using var report = new Report("a11y");
         report.Text("accesskit", accessKit ? "yes" : "no");
         report.Number("buttons", buttonCount);
+        if (relations > 0)
+        {
+            report.Number("relations", relations);
+        }
+
         using var fonts = new DirectWriteFontProvider();
         var tree = new UiTree(new TextContext(fonts));
         NodeHandle root = tree.CreateNode(new LayoutStyle());
@@ -51,7 +60,15 @@ internal static class A11yCost
                 }
 
                 first = buttons[0].Node;
-                tree.AppendChild(root, Elements.Column(buttons).Node);
+                var labels = new Element[Math.Min(relations, buttonCount)];
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    labels[i] = Elements.Text($"label {i}");
+                    _ = buttons[i].LabelledBy(labels[i]);
+                }
+
+                Element column = Elements.Column(buttons);
+                tree.AppendChild(root, labels.Length == 0 ? column.Node : Elements.Column(column, Elements.Column(labels)).Node);
             });
         }
         finally
@@ -116,6 +133,26 @@ internal static class A11yCost
         }
 
         report.Number("refreshed", tree.Accessibility.LastRefreshed);
+        if (relations > 0)
+        {
+            // A change of the window's width moves every node's box, which marks every node.
+            var resize = new double[Samples];
+            for (int i = -10; i < Samples; i++)
+            {
+                Invalidation.NotifyWindowResized(tree, root, new Size((i & 1) == 0 ? 799 : 800, 20_000));
+                LayoutEngine.RunLayoutPass(tree);
+                long t0 = Stopwatch.GetTimestamp();
+                tree.Accessibility.Update();
+                long t1 = Stopwatch.GetTimestamp();
+                if (i >= 0)
+                {
+                    resize[i] = Stopwatch.GetElapsedTime(t0, t1).TotalMicroseconds;
+                }
+            }
+
+            report.Series("resize_stage_us", [.. resize]);
+        }
+
         report.Series("change_us", [.. change]);
         report.Series("layout_us", [.. layout]);
         report.Series("stage_us", [.. stage]);

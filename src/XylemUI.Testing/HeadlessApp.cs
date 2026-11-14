@@ -861,5 +861,8 @@ public sealed class HeadlessApp : IAsyncDisposable
 
         // The tree is thrown away with its window: the images its cache kept for a later element go too (design §5.0.4, "Cache").
         Tree.CachedImages.ReleaseAll();
+
+        // The accessibility tree's watches stop with it: the app's signals no longer mark it.
+        Tree.StopAccessibility();
     }
 }

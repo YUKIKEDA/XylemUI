@@ -49,6 +49,24 @@ internal sealed class AccessibilityRelations
     public int? ReadKey { get; set; }
 
     /// <summary>
+    /// Gets or sets the active descendant the accessibility tree keeps in its reverse table for this node; <c>default</c> for none.
+    /// </summary>
+    public NodeHandle NotedActive { get; set; }
+
+    /// <summary>
+    /// Returns whether a relation of the node names another node now: the error message, a node of a relation that holds several, or
+    /// the active descendant the tree keeps.
+    /// </summary>
+    /// <param name="target">The node.</param>
+    /// <returns>Whether one names it.</returns>
+    public bool Names(NodeHandle target) =>
+        ErrorMessage == target
+        || NotedActive == target
+        || (LabelledBy?.Contains(target) ?? false)
+        || (DescribedBy?.Contains(target) ?? false)
+        || (Controls?.Contains(target) ?? false);
+
+    /// <summary>
     /// Adds a node to a relation that holds several, after those it holds.
     /// </summary>
     /// <param name="kind">The relation.</param>

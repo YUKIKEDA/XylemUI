@@ -125,8 +125,8 @@ public sealed unsafe partial class UiaTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A window "AccessKit node" and its provider; a node of the role Slider with the states Invalid, Multiselectable, Busy, Modal,
-    ///   Expandable, and Expanded, the range 0 to 10 at 4 with the steps 1 and 5, the live setting Assertive, the orientation Vertical,
+    /// - A window "AccessKit node" and its provider; a node of the role Slider named "Volume", described "Loudness", holding a child
+    ///   of id 15, with the states ReadOnly, Invalid, Multiselectable, Busy, Modal, Expandable, and Expanded, the range 0 to 10 at 4 with the steps 1 and 5, the live setting Assertive, the orientation Vertical,
     ///   the level 1 and the place 2 (from 0), the count 7, labelled by 3 and 4, described by 5, controlling 6 and 7, the error message
     ///   9, and the active descendant 10; a node of the role Switch, off, with none of them; a ListBoxItem and a TreeItem not selected;
     ///   a node of the role Status with no live setting of its own.
@@ -135,7 +135,8 @@ public sealed unsafe partial class UiaTests
     /// - Make each node's AccessKit node; read it back; free it.
     ///
     /// Expected:
-    /// - The first node's values as given, its live setting 2 and orientation 1; the second's toggled false and nothing else set; the
+    /// - The first node's role, name, description, read-only state, children, and values as given, its live setting 2 and orientation
+    ///   1; the second's role Switch, toggled false, not read-only, with no name and no children, and nothing else set; the
     ///   items selected false; the status's live setting 1 (polite).
     /// </remarks>
     [Fact]
@@ -149,8 +150,11 @@ public sealed unsafe partial class UiaTests
             {
                 Parent = parent,
                 Role = SemanticsRole.Slider,
+                Name = "Volume",
+                Description = "Loudness",
                 States =
-                    AccessibilityStates.Invalid
+                    AccessibilityStates.ReadOnly
+                    | AccessibilityStates.Invalid
                     | AccessibilityStates.Multiselectable
                     | AccessibilityStates.Busy
                     | AccessibilityStates.Modal
@@ -168,6 +172,7 @@ public sealed unsafe partial class UiaTests
             _ = full.SetRelation(AccessibilityRelation.LabelledBy, [new AccessibilityNodeId(3), new AccessibilityNodeId(4)]);
             _ = full.SetRelation(AccessibilityRelation.DescribedBy, [new AccessibilityNodeId(5)]);
             _ = full.SetRelation(AccessibilityRelation.Controls, [new AccessibilityNodeId(6), new AccessibilityNodeId(7)]);
+            full.Children.Add(new AccessibilityNode(new AccessibilityNodeId(15), default) { Parent = full, Role = SemanticsRole.Text });
             var bare = new AccessibilityNode(new AccessibilityNodeId(11), default) { Parent = parent, Role = SemanticsRole.Switch };
             var option = new AccessibilityNode(new AccessibilityNodeId(12), default) { Parent = parent, Role = SemanticsRole.ListBoxItem };
             var item = new AccessibilityNode(new AccessibilityNodeId(13), default) { Parent = parent, Role = SemanticsRole.TreeItem };
@@ -181,6 +186,10 @@ public sealed unsafe partial class UiaTests
             nint made = provider.MakeNode(full);
             try
             {
+                Assert.Equal(AccessKit.RoleSlider, AccessKit.NodeRole(made));
+                Assert.Equal(("Volume", "Loudness"), (TakeText(AccessKit.NodeLabel(made)), TakeText(AccessKit.NodeDescription(made))));
+                Assert.Equal((byte)1, AccessKit.NodeIsReadOnly(made));
+                Assert.Equal([15UL], AccessKit.NodeChildren(made).Values.ToArray());
                 Assert.Equal((true, (byte)0), (AccessKit.NodeInvalid(made).HasValue, AccessKit.NodeInvalid(made).Value));
                 Assert.Equal(
                     ((byte)1, (byte)1, (byte)1),
@@ -206,6 +215,11 @@ public sealed unsafe partial class UiaTests
             made = provider.MakeNode(bare);
             try
             {
+                Assert.Equal(
+                    (AccessKit.RoleSwitch, (string?)null, (byte)0),
+                    (AccessKit.NodeRole(made), TakeText(AccessKit.NodeLabel(made)), AccessKit.NodeIsReadOnly(made))
+                );
+                Assert.Empty(AccessKit.NodeChildren(made).Values.ToArray());
                 Assert.Equal((true, AccessKit.ToggledFalse), (AccessKit.NodeToggled(made).HasValue, AccessKit.NodeToggled(made).Value));
                 Assert.False(AccessKit.NodeInvalid(made).HasValue);
                 Assert.Equal(
@@ -1194,6 +1208,24 @@ public sealed unsafe partial class UiaTests
             Assert.Equal(0, read.Selected);
             Assert.Null(read.LabeledBy as AutomationElement);
         });
+
+    // A text AccessKit returned, which this frees with accesskit_string_free; null for none.
+    private static string? TakeText(byte* text)
+    {
+        if (text == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Runtime.InteropServices.Marshal.PtrToStringUTF8((nint)text);
+        }
+        finally
+        {
+            AccessKit.StringFree(text);
+        }
+    }
 
     // A box 10 high of a role and a name.
     private static Element Named(SemanticsRole role, string name) =>

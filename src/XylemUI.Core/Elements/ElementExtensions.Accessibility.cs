@@ -21,7 +21,8 @@ public static partial class ElementExtensions
 
     /// <summary>
     /// Adds the handler of assistive technology's Decrement, as <see cref="OnIncrement"/> adds that of Increment: on Windows, a number
-    /// set on a node with a range and no <see cref="OnSetRangeValue"/> that is smaller than its value calls it once.
+    /// set on a node with a range and no <see cref="OnSetRangeValue"/> that is smaller than its value calls it once. It replaces the
+    /// node's handler of Decrement, and is removed when the current scope is disposed.
     /// </summary>
     /// <param name="element">The node.</param>
     /// <param name="handler">The handler.</param>
@@ -56,7 +57,8 @@ public static partial class ElementExtensions
         AddAccessibilityHandler(element, handler, static (handlers, h) => handlers.Expand = h, static handlers => handlers.Expand);
 
     /// <summary>
-    /// Adds the handler of assistive technology's Collapse, as <see cref="OnExpand"/> adds that of Expand.
+    /// Adds the handler of assistive technology's Collapse, as <see cref="OnExpand"/> adds that of Expand. It replaces the node's handler
+    /// of Collapse, and is removed when the current scope is disposed.
     /// </summary>
     /// <param name="element">The node.</param>
     /// <param name="handler">The handler.</param>
@@ -140,8 +142,9 @@ public static partial class ElementExtensions
 
     /// <summary>
     /// Sets the function that adds the nodes of the accessibility tree a node drawn by a draw function holds (design §4.4.1, "The
-    /// nodes of a draw function"), after its children. It is called only while assistive technology reads the window. The node needs a
-    /// role whose node holds children (not one whose content is its value, such as <see cref="SemanticsRole.Image"/>).
+    /// nodes of a draw function"), after its children. It is called only while assistive technology reads the window. A node with no
+    /// role is a <see cref="SemanticsRole.Group"/>; a role whose node holds no children (one whose content is its value, such as
+    /// <see cref="SemanticsRole.Image"/>) takes no nodes, which a Debug build reports.
     /// </summary>
     /// <param name="element">The node.</param>
     /// <param name="build">The function.</param>
