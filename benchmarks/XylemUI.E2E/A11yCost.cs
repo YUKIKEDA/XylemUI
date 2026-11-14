@@ -25,9 +25,10 @@ namespace XylemUI.E2E;
 //
 // With --scroll (alone, or with --relations N), a virtualized list of 10,000 rows 20 high in a box 200 high comes after the buttons,
 // and a frame scrolls it by one row, so that the list takes one row out and makes one: it times the stage after it
-// ("scroll_stage_us"), and counts the frames in which the tree's links changed ("scroll_link_frames"). There is no counter of the
-// rebuilds of the map of the targets' ancestors; with relations, a frame whose links changed and that marks a node rebuilds it once,
-// so the second count bounds the rebuilds. The rows' making and the new row's node allocate, as in an app; the loop itself does not.
+// ("scroll_stage_us"), counts the frames in which the list's last row is another node ("scroll_link_frames"), the nodes the last
+// such stage made again ("scroll_refreshed"), and the times the measured frames made the map of the targets' ancestors again
+// ("scroll_map_builds", row AX3: 0 when the rows hold no target). The rows' making and the new row's node allocate, as in an app;
+// the loop itself does not.
 internal static class A11yCost
 {
     private const int Samples = 101;
@@ -55,6 +56,7 @@ internal static class A11yCost
         UiTree.Current = tree;
         ScopeHandle scope;
         NodeHandle first = default;
+        NodeHandle listBox = default;
         try
         {
             scope = Scope.Create(() =>
@@ -90,6 +92,7 @@ internal static class A11yCost
                     // The buttons overflow the root, and a box that scrolls has no least height of its content: without this, the
                     // column would shrink the list to nothing.
                     tree.SetStyle(list.Node, tree.Nodes.GetRef(list.Node).Layout.Style with { MinHeight = Length.Px(200) });
+                    listBox = list.Node;
                     content = Elements.Column(content, list);
                 }
 
@@ -192,10 +195,16 @@ internal static class A11yCost
             // Each frame scrolls the list by one row: one row leaves the range, one comes in, and the list links its rows again.
             var scrolled = new double[Samples];
             int linkFrames = 0;
+            int mapsBefore = 0;
             float y = 0;
             for (int i = -10; i < Samples; i++)
             {
-                ulong links = tree.LinkVersion;
+                NodeHandle lastRow = tree.Nodes.GetRef(listBox).LastChild;
+                if (i == 0)
+                {
+                    mapsBefore = tree.Accessibility.TargetMapsMade;
+                }
+
                 y += 20;
                 listState.Scroll.ScrollTo(new Vector2(0, y));
                 LayOutWithRows(tree);
@@ -205,13 +214,14 @@ internal static class A11yCost
                 if (i >= 0)
                 {
                     scrolled[i] = Stopwatch.GetElapsedTime(t0, t1).TotalMicroseconds;
-                    linkFrames += tree.LinkVersion != links ? 1 : 0;
+                    linkFrames += tree.Nodes.GetRef(listBox).LastChild != lastRow ? 1 : 0;
                 }
             }
 
             report.Series("scroll_stage_us", [.. scrolled]);
             report.Number("scroll_link_frames", linkFrames);
             report.Number("scroll_refreshed", tree.Accessibility.LastRefreshed);
+            report.Number("scroll_map_builds", tree.Accessibility.TargetMapsMade - mapsBefore);
 
             // A scroll that swapped no row measured nothing of what the scene is for: it is not reported as a result.
             if (linkFrames != Samples)

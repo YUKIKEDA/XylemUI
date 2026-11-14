@@ -273,12 +273,6 @@ internal sealed class UiTree
     internal AccessibilityTree Accessibility => _a11y.Tree ??= new AccessibilityTree(this);
 
     /// <summary>
-    /// Gets the number of the changes of the tree's links so far: a node put under a parent or taken out of one. The accessibility
-    /// tree compares it to know when the ancestors of the nodes relations name may have changed.
-    /// </summary>
-    internal ulong LinkVersion { get; private set; }
-
-    /// <summary>
     /// Runs the accessibility stage of a frame (<see cref="AccessibilityTree.Update"/>) when the tree is made; a window nobody reads
     /// makes nothing.
     /// </summary>
@@ -596,6 +590,15 @@ internal sealed class UiTree
         if (_a11y.Tree is { IsActive: true } accessibility)
         {
             accessibility.MarkSelf(node);
+        }
+    }
+
+    // A node put under a parent may put a node relations name below new ancestors (AccessibilityTree.Attached), once the tree is made.
+    private void NoteAttached(NodeHandle child)
+    {
+        if (_a11y.Tree is { IsActive: true } accessibility)
+        {
+            accessibility.Attached(child);
         }
     }
 
@@ -2117,14 +2120,14 @@ internal sealed class UiTree
             SetDisabledStates(child, inherited: true);
         }
 
-        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        Invalidation.MarkChildrenChanged(this, parent);
 
         // The subtree is in the order of Tab now, and a route that was read from inside it goes on through the parent: a menu's
         // item made while its menu is open finds its menu (PR #821's review). A subtree no reader read from changes no route
         // (row KM3). The readers are told last, when the links are whole: one that runs in the middle walks a tree whose
         // parent does not list the child yet. So in InsertAfter, DetachChildren, and Detach.
         Actions.LinkChanged(child);
-        LinkVersion++;
+        NoteAttached(child);
     }
 
     /// <summary>
@@ -2186,9 +2189,9 @@ internal sealed class UiTree
             SetDisabledStates(child, inherited: true);
         }
 
-        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        Invalidation.MarkChildrenChanged(this, parent);
         Actions.LinkChanged(child);
-        LinkVersion++;
+        NoteAttached(child);
     }
 
     /// <summary>
@@ -2214,7 +2217,7 @@ internal sealed class UiTree
         }
 
         Detach(parent, previous, node, n.Layout.Style.IsInFlow);
-        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        Invalidation.MarkChildrenChanged(this, parent);
     }
 
     /// <summary>
@@ -2268,13 +2271,12 @@ internal sealed class UiTree
         p.LastChild = default;
         p.Layout.OutOfFlowChildren = 0;
         p.Versions.Children++;
-        Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+        Invalidation.MarkChildrenChanged(this, parent);
 
         // The route of an action from a focused node of a subtree ends at its child now, and the order of Tab is without them.
         if (!told.IsNone)
         {
             Actions.LinkChanged(told);
-            LinkVersion++;
         }
     }
 
@@ -2313,7 +2315,7 @@ internal sealed class UiTree
         if (!parent.IsNone)
         {
             Unlink(parent, node, inFlow);
-            Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+            Invalidation.MarkChildrenChanged(this, parent);
         }
 
         if (Root == node)
@@ -2372,9 +2374,13 @@ internal sealed class UiTree
         changed.Versions.LayoutStyle++;
         NodeHandle parent = changed.Parent;
         Invalidation.Invalidate(this, node, ChangeKind.Size);
+
+        // The parent's layout reads the style. The node's own mark (Invalidate) already makes again the node above it, whose children
+        // the style may change (Hidden); the parent's own node does not depend on a child's style, so the parent takes no mark of the
+        // accessibility tree, which would make again the node above the parent's too.
         if (!parent.IsNone)
         {
-            Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
+            Invalidation.MarkStages(this, parent, DirtyFlags.Layout);
         }
 
         // A hidden subtree takes no focus (design §7, "Removed, hidden, or disabled").
@@ -2754,7 +2760,6 @@ internal sealed class UiTree
         n.Parent = default;
         n.NextSibling = default;
         Actions.LinkChanged(node);
-        LinkVersion++;
     }
 
     // Frees a node and its subtree, children first. The links are read before each slot is freed (design §2.5).
