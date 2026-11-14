@@ -146,6 +146,35 @@ internal static class Invalidation
             tree.Accessibility.Mark(origin);
         }
 
+        MarkStages(tree, origin, flags);
+    }
+
+    /// <summary>
+    /// Marks a node whose list of children changed (design §2.7, "The tree's moves"): its layout is dirty up to the nearest boundary, as
+    /// <see cref="MarkDirty"/> marks it, and the accessibility tree makes again only the node that holds its children's nodes
+    /// (<see cref="AccessibilityTree.MarkChildren"/>), since a change of the list cannot make or take away the node's own node.
+    /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="parent"/>.</param>
+    /// <param name="parent">The live node whose children changed.</param>
+    public static void MarkChildrenChanged(UiTree tree, NodeHandle parent)
+    {
+        if (tree.AccessibilityActive)
+        {
+            tree.Accessibility.MarkChildren(parent);
+        }
+
+        MarkStages(tree, parent, DirtyFlags.Layout);
+    }
+
+    /// <summary>
+    /// Marks what <see cref="MarkDirty"/> marks but the accessibility tree: the flags, the paint updates, and the layout path. For a
+    /// caller whose change marks the accessibility tree on another node already.
+    /// </summary>
+    /// <param name="tree">The tree that holds <paramref name="origin"/>.</param>
+    /// <param name="origin">The live node that changed.</param>
+    /// <param name="flags">The stages the change needs.</param>
+    internal static void MarkStages(UiTree tree, NodeHandle origin, DirtyFlags flags)
+    {
         ref UiNode node = ref tree.Nodes.GetRef(origin);
         DirtyFlags paint = flags & ~DirtyFlags.Layout;
         if (paint != 0)
@@ -167,7 +196,7 @@ internal static class Invalidation
 
     /// <summary>
     /// Marks a virtualized list's box after it made or took out rows (design §2.4.1, §3.4): its layout is dirty up to the nearest
-    /// boundary, as <see cref="MarkDirty"/> marks it, and a request for the box itself takes the reason
+    /// boundary, as <see cref="MarkChildrenChanged"/> marks it, and a request for the box itself takes the reason
     /// <see cref="LayoutReason.MaterializationChanged"/>, laid out from its last constraint. The rows are not requested one by one:
     /// the box's layout reaches them.
     /// </summary>
@@ -175,7 +204,7 @@ internal static class Invalidation
     /// <param name="box">The live box.</param>
     internal static void MarkMaterialized(UiTree tree, NodeHandle box)
     {
-        MarkDirty(tree, box, DirtyFlags.Layout);
+        MarkChildrenChanged(tree, box);
         Span<LayoutRequest> roots = CollectionsMarshal.AsSpan(tree.LayoutRoots);
         for (int i = 0; i < roots.Length; i++)
         {
