@@ -92,6 +92,9 @@ string Scopes() => Array.IndexOf(args, "--scopes") is int at and >= 0 && at + 1 
 int Number(int index, int fallback) =>
     args.Length > index && int.TryParse(args[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
 
+// The number after an option's name, such as "--relations 50".
+int Option(string name, int fallback) => Array.IndexOf(args, name) is int at and >= 0 ? Number(at + 1, fallback) : fallback;
+
 return scenario switch
 {
     "startup" => Startup.Launch(Number(1, 10), Scopes()),
@@ -128,7 +131,12 @@ return scenario switch
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
     "context" => ContextCost.Run(),
-    "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit")),
+    "a11y" => A11yCost.Run(
+        Number(1, 1_000),
+        accessKit: args.Contains("--accesskit"),
+        relations: Option("--relations", 0),
+        scroll: args.Contains("--scroll")
+    ),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),
     "keymap" => args.Contains("--first-pieces") ? KeymapCost.FirstPieces() : KeymapCost.Run(countFaults: !args.Contains("--no-faults")),

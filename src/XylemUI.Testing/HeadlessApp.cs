@@ -292,7 +292,8 @@ public sealed class HeadlessApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// Returns what assistive technology reads of a node (design §12.5): its role, name, value, and states, and its box in the window.
+    /// Returns what assistive technology reads of a node (design §12.5): its role, name, value, and states, its box in the window, its
+    /// live setting, orientation, level, place and count (each from 1), and the nodes its relations name that are in the tree.
     /// </summary>
     /// <param name="element">The node.</param>
     /// <returns>What the accessibility tree holds of it.</returns>
@@ -312,6 +313,7 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
 
         AccessibilityStates states = node.States;
+        AccessibilityTree accessibility = Tree.Accessibility;
         return new AccessibilityNodeInfo(
             node.Role,
             node.Name,
@@ -324,7 +326,17 @@ public sealed class HeadlessApp : IAsyncDisposable
             (states & AccessibilityStates.Expandable) != 0 ? (states & AccessibilityStates.Expanded) != 0 : null,
             node.Range,
             new Rect(origin.X, origin.Y, node.Bounds.Width, node.Bounds.Height),
-            node.Children.Count
+            node.Children.Count,
+            LiveOf(node),
+            node.Orientation,
+            node.Level + 1,
+            node.PositionInSet + 1,
+            Math.Max(node.SizeOfSet, 0),
+            ElementsOf(accessibility, node.LabelledBy),
+            ElementsOf(accessibility, node.DescribedBy),
+            ElementsOf(accessibility, node.Controls),
+            ElementOf(accessibility, node.ErrorMessage),
+            ElementOf(accessibility, node.ActiveDescendant)
         );
     }
 
@@ -345,7 +357,46 @@ public sealed class HeadlessApp : IAsyncDisposable
         | ((states & AccessibilityStates.Mixed) != 0 ? SemanticsStates.Mixed : SemanticsStates.None)
         | ((states & AccessibilityStates.Selected) != 0 ? SemanticsStates.Selected : SemanticsStates.None)
         | ((states & AccessibilityStates.ReadOnly) != 0 ? SemanticsStates.ReadOnly : SemanticsStates.None)
-        | ((states & AccessibilityStates.Required) != 0 ? SemanticsStates.Required : SemanticsStates.None);
+        | ((states & AccessibilityStates.Required) != 0 ? SemanticsStates.Required : SemanticsStates.None)
+        | ((states & AccessibilityStates.Invalid) != 0 ? SemanticsStates.Invalid : SemanticsStates.None)
+        | ((states & AccessibilityStates.Multiselectable) != 0 ? SemanticsStates.Multiselectable : SemanticsStates.None)
+        | ((states & AccessibilityStates.Busy) != 0 ? SemanticsStates.Busy : SemanticsStates.None)
+        | ((states & AccessibilityStates.Modal) != 0 ? SemanticsStates.Modal : SemanticsStates.None);
+
+    // The setting that reads out a change of the node's name, with Inherit taken from the nodes above: Off when none gives one.
+    private static SemanticsLive LiveOf(AccessibilityNode node)
+    {
+        for (AccessibilityNode? at = node; at is not null; at = at.Parent)
+        {
+            if (at.Live != SemanticsLive.Inherit)
+            {
+                return at.Live;
+            }
+        }
+
+        return SemanticsLive.Off;
+    }
+
+    private List<Element> ElementsOf(AccessibilityTree accessibility, List<AccessibilityNodeId>? ids)
+    {
+        var elements = new List<Element>();
+        if (ids is not null)
+        {
+            foreach (AccessibilityNodeId id in ids)
+            {
+                if (ElementOf(accessibility, id) is { IsNone: false } element)
+                {
+                    elements.Add(element);
+                }
+            }
+        }
+
+        return elements;
+    }
+
+    // The element of a node of the tree; none for no node, and for a node a draw function added, which has no element of its own.
+    private Element ElementOf(AccessibilityTree accessibility, AccessibilityNodeId id) =>
+        id.Value != 0 && accessibility.Find(id) is { ChildKey: null } node ? new Element(Tree, node.Node) : default;
 
     private void CollectByRole(AccessibilityNode node, SemanticsRole role, string? name, List<Element> found)
     {

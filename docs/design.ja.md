@@ -2922,6 +2922,7 @@ AccessKit の Windows の adapter がどう決めるか（下の表のもと）:
 
 - **持ち方:** ハンドラは、付けたノードだけを持つ `AccessibilityTables` の表に置く。`UiNode` にも `UiTree` の欄にも足さない。足すか外すと、そのノードに自分だけの印を付ける（上の「直し方」。木が無い間は付けない）
 - **呼ぶスレッド:** 操作の要求は今と同じく窓の HWND への `PostMessage` で UI スレッドに送り（上の「スレッド」）、ハンドラは UI スレッドで呼ぶ。ハンドラを付ける拡張メソッドも、ほかの `Element` のメソッドと同じく UI スレッドで呼ぶ
+- **何度も付ける:** 同じノードに `OnIncrement`・`OnDecrement`・`OnSetRangeValue`・`OnExpand`・`OnCollapse` を 2 度付けると、後のハンドラが前のものに置き換わる。前のハンドラを付けたスコープが終わっても、後のハンドラは外れない（PR #896 の Grill でオーナーが決定）
 - **Disabled:** Disabled のノードには届けない。adapter も Disabled の節への要求を拒む（`node.rs` 934〜950 行目）
 - **数値を書く:** UIA の RangeValue の SetValue は、`ACCESSKIT_ACTION_SET_VALUE` に `ACCESSKIT_ACTION_DATA_NUMERIC_VALUE`（ヘッダー 145・1012 行目）を付けて届く（`node.rs` 1364〜1368 行目）。adapter は節の宣言も読み取り専用も見ずに送る（同 934〜950 行目）。Core は NaN を捨て、`Minimum` から `Maximum` に切ってから `OnSetRangeValue` を呼ぶ。今は Edit の役の文字だけを受け（行 AX1 で SearchBox と日付の入力にも広げる、上の「SetValue の操作」）、数値の要求は落としている（`Win32Accessibility.Perform`）。`Range` を持つ Slider では、UIA が書ける RangeValue を見せたまま値が捨てられる。これを直す
 - **読み取り専用:** `Range` を持つノードに、`OnSetRangeValue`・`OnIncrement`・`OnDecrement` のどれも無ければ、`accesskit_node_set_read_only` を書く。RangeValue の IsReadOnly は節の読み取り専用を先に見る（consumer 469〜476 行目）ので、書けない値を書けると見せない
@@ -2932,10 +2933,10 @@ AccessKit の Windows の adapter がどう決めるか（下の表のもと）:
 **関係:** 関係は相手の `Element` で指す。拡張メソッドは関係を持つ側（名前を受ける欄など）にだけ付け（上の型）、相手の側から結ぶ形（`label.Labels(field)`）は持たない（Issue #878 の Grill でオーナーが決定）。
 
 - **何度も呼ぶ:** `LabelledBy`・`DescribedBy`・`Controls` は、呼ぶたびに相手を足し、呼んだ順に並べる。`ErrorMessage` は相手を 1 つだけ持ち、2 度目は置き換える（AccessKit の error-message も 1 つ、ヘッダー 1416 行目）
-- **誤った相手:** 別の木の `Element` と自分自身は `ArgumentException` にする
+- **誤った相手:** 別の木の `Element`、自分自身、消えたノードは `ArgumentException` にする
 - **作る順:** `Element` はノードを作った時にできるので、相手を後で作る時は、両方を作ってから呼ぶ（`field.LabelledBy(label);` を文として書ける）
 - **持ち方:** 付けたノードだけを持つ `AccessibilityTables` の表（`NodeHandle` から関係へ）に置き、ノードを消すと消える。木が無い間は、宣言は表に 1 つ書くだけで、フレームの経路を通らない。相手から関係を持つ側への逆引きの表は、木がある間だけ作る
-- **解決:** a11y の段が、相手の `NodeHandle` からその節を引く。相手が消えた、`Hidden` の中にある、`Excluded`、仮想化で木に載っていない、節を持たない、のどれかなら、その相手を AccessKit に渡さない。相手の節ができたり消えたり、相手の名前が変わったりすると、逆引きで関係を持つ側に自分だけの印を付ける。相手が戻れば関係も戻る
+- **解決:** a11y の段が、相手の `NodeHandle` からその節を引く。相手が消えた、`Hidden` の中にある、`Excluded`、仮想化で木に載っていない、節を持たない、のどれかなら、その相手を AccessKit に渡さない。相手の節ができたり消えたり、相手の名前が変わったりすると、逆引きで関係を持つ側に自分だけの印を付ける。相手が戻れば関係も戻る。関係はノードとの間にあり、「戻る」は、同じノードが `Hidden` から見えるようになるか、仮想化した並びの範囲に戻ることを言う。相手を作り直すと（`Show` を切って入れ直すと新しいノードになる）、`LabelledBy` などをもう一度呼ぶまで関係は無い
 - **AccessKit への書き方:** labelled-by は `accesskit_node_push_labelled_by`（ヘッダー 1372 行目）、described-by は `accesskit_node_push_described_by`（1344 行目）、error-message は `accesskit_node_set_error_message`（1416 行目）、controls は `accesskit_node_push_controlled`（1316 行目）、active-descendant は `accesskit_node_set_active_descendant`（1408 行目）で書く
 - **Windows に出るもの:** controls は UIA の ControllerFor になる（`node.rs` 1044〜1053 行目）。active-descendant は、UIA のフォーカスをその節に移す（accesskit_consumer の `accesskit_consumer/src/tree.rs` 538〜541 行目）。相手は同じ AccessKit の木の中に要る（consumer 966〜971 行目）。開いているポップアップは同じ木の根の子なので（上の「a11y の木」）、欄から候補の一覧の選択肢も指せる。labelled-by は、節に名前が無い時だけ、相手の節の名前（`Label` の節は値）を名前にする（consumer 775〜794 行目）。described-by と error-message は出ない
 - **active-descendant:** フォーカスを持つ入れ物の側から、`IReadOnlySignal<Element>` で渡す。`Element` は構造体で、`default`（`Element.IsNone`）がノードの無いことを表すので、null 許容にしない。アプリの `Signal<Element>` をそのまま渡せる。キーで選択肢を移るたびに `AccessibilityInfo` を作り直さず（打鍵ごとに情報を作らない、上の「文字の欄」と同じ理由）、Signal に書くだけにする。木がある間だけ Signal の変化を購読し、入れ物の節に自分だけの印を付ける。`default` の `Element` は「無し」である。GPUI は選ばれた子の側で宣言し、フォーカスを持つ祖先がある時だけ使う（zed v1.25.3 の `crates/gpui/src/elements/div.rs` 1365〜1371 行目）。その形では、ポップアップの中の候補は欄の子孫でないので指せない
@@ -2960,10 +2961,10 @@ AccessKit の Windows の adapter がどう決めるか（下の表のもと）:
 
 **深さ・位置・数:** `Level`・`PositionInSet`・`SizeOfSet` は 1 から数える整数で、0 は「無し」、負は `ArgumentOutOfRangeException` にする。検査は init アクセサーで行い、`with` の式でも効く。UIA と ARIA は 1 から数え、Avalonia の `PositionInSet`・`SizeOfSet` も `int` である（`AutomationProperties.cs` 266・282 行目）。
 
-- **AccessKit への書き方:** AccessKit の level と position-in-set は 0 から数える（`lib.rs` 2291〜2292・2308〜2309 行目）。ブリッジが 1 を引いて `accesskit_node_set_level`・`accesskit_node_set_position_in_set`（ヘッダー 2018・2032 行目）で書き、adapter が 1 を足して UIA の Level と PositionInSet に出す（`node.rs` 682〜687・695〜700 行目）
+- **AccessKit への書き方:** AccessKit の level と position-in-set は 0 から数える（`lib.rs` 2291〜2292・2308〜2309 行目）。Core の節が 1 を引いた値を持ち、ブリッジがそれをそのまま `accesskit_node_set_level`・`accesskit_node_set_position_in_set`（ヘッダー 2018・2032 行目）で書き、adapter が 1 を足して UIA の Level と PositionInSet に出す（`node.rs` 682〜687・695〜700 行目）
 - **数は入れ物に:** AccessKit の size-of-set は項目でなく入れ物に書く（`lib.rs` 2299〜2300 行目）。adapter は、項目から上へ最も近い、数を持つ祖先の値を読む（`node.rs` 689〜693 行目、consumer 629〜641 行目）。そこで `SizeOfSet` は入れ物に付ける。項目に付けた `SizeOfSet` は、その項目の子の数として読まれる
 - **仮想化した並び:** 並びの節の数と行の位置は今までどおり `IVirtualHost` から書く（上の「仮想化した並び」）。アプリが値を付けた時は、ほかの欄と同じくアプリの値を使う（Issue #878 の Grill でオーナーが決定）
-- **見出し:** Heading の深さは `Level` で書く。ブリッジはほかの節と同じく 1 を引いて渡すので、UIA の Level は正しい（`node.rs` 695〜700 行目が 1 を足す）。AriaProperties の `level` は、adapter が AccessKit の値をそのまま書く（`node.rs` 500〜502 行目）ので、1 小さくなる。これは上流の食い違いで、直すのは行 AX2 である（PR #881 のレビューの後、Issue #878 の Grill でオーナーが決定）。UIA の HeadingLevel も行 AX2 で出す
+- **見出し:** Heading の深さは `Level` で書く。ほかの節と同じく 1 を引いた値が渡るので、UIA の Level は正しい（`node.rs` 695〜700 行目が 1 を足す）。AriaProperties の `level` は、adapter が AccessKit の値をそのまま書く（`node.rs` 500〜502 行目）ので、1 小さくなる。これは上流の食い違いで、直すのは行 AX2 である（PR #881 のレビューの後、Issue #878 の Grill でオーナーが決定）。UIA の HeadingLevel も行 AX2 で出す
 - **平らに並べたツリー:** 兄弟の組ごとに数を持たせるには、a11y の木の中で TreeItem を深さごとに入れ子にする必要がある。それを行うかは行 B4 で決める。この行が決めるのは値を置く場所（入れ物）までである
 
 **向き:** `Orientation` は `None`・`Horizontal`・`Vertical` の列挙で、`None` は書かない。ほかは `accesskit_node_set_orientation`（ヘッダー 2177 行目、値は 256・260 行目）で書き、UIA の Orientation に出る（`node.rs` 568〜574・1322 行目）。書かない時、AccessKit は ListBox を縦、TabList を横とする（consumer 587〜597 行目）。
@@ -2985,7 +2986,9 @@ public static Element ActiveDescendant(this Element element, IReadOnlySignal<int
 ```
 
 - **呼ぶ時:** a11y の段が、木がある間だけ、ノードの節を直す時に呼ぶ。木が無ければ呼ばない。関数が読んだ Signal が変わると、ノードに印を付ける（木がある間だけ購読する）
-- **節の id:** 同じノードの中で同じ `key` の節は、作り直しても同じ AccessKit の id を使う。`key` が重なれば Debug のビルドで不変条件の失敗にする
+- **節の id:** 同じノードの中で同じ `key` の節は、作り直しても同じ AccessKit の id を使う。`key` が重なれば Debug のビルドで不変条件の失敗にする。Release のビルドでは最初の節を残し、後の節（とその子）を捨てる
+- **役:** 役の無いノードに `AccessibleChildren` を付けると、そのノードは Group の節になる。子の節を持たない役（上の役の表の「子なし」と Image・Slider など）を明示したノードに付けると、Debug のビルドで不変条件の失敗にし、Release のビルドでは子の節を作らない（PR #896 の Grill でオーナーが決定）
+- **スクロール:** 関数の座標はノードの箱で、スクロールでは動かない。ノードがスクロールする箱なら、子の節の位置からスクロールのずれを引き戻して書く（AccessKit は箱の子をずれの分動かす）
 - **操作:** 子の節は操作を持たない。ScrollIntoView はノード自身を見える所まで動かす。キーで点を移る描画域は、フォーカスをノードに持ち、`ActiveDescendant` の key を取る形で子の節を指す。key の節がその時に無ければ「無し」とする（Issue #878 の Grill でオーナーが決定）
 - **比べたもの（Avalonia は読んでいない）:** GPUI は、要素が prepaint の後に合成の子の節を足す（zed v1.25.3 の `crates/gpui/src/window/a11y.rs` 67〜82 行目、`crates/gpui/src/element.rs` 123〜137 行目の `a11y_synthetic_children`）。Flutter の `CustomPainter` は `semanticsBuilder` で、箱と `SemanticsProperties` と key を持つ節の一覧を返す（3.47.8 の `packages/flutter/lib/src/rendering/custom_paint.dart` 26・222・307〜354 行目）
 
