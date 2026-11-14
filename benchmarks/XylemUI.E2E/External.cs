@@ -130,7 +130,7 @@ internal static class External
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
 
         // With `tree`, the scene is drawn from a UI tree by WindowFrames, the path of an app (row R3, Issue #683). Its first frame
-        // is presented on the synchronous resize path and told to the loop's scheduler, as DesktopWindow does (design §2.11).
+        // is presented on the synchronous resize path and told to the loop's scheduler, as an app's window does (design §2.11).
         using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText: false) : null;
         if (treeScene is not null && treeScene.Target.PresentEnd != 0)
         {

@@ -4979,7 +4979,7 @@ OS ごとの機能（窓、ループ、フレームの時計、描画、文字�
 - **ホストの置き場所:** Windows のホストは `XylemUI.Platform.Windows` に置き、Platform.Windows が `XylemUI.Rendering.D3D11` を参照する。V1d の向き（Platform は Rendering を参照しない）を改める
 - **ホストの登録:** ホストはアセンブリの属性で名乗り、アプリの Source Generator がモジュールの初期化子から登録する
 - **TFM:** `XylemUI.Desktop` と Windows のホスト（Platform.Windows、Rendering.D3D11）は素の `net10.0` にする。CA1416 と NU1201 は実装の PR で確かめる
-- **クリップボード:** アプリの段に置き、持ち主はループのメッセージ専用の窓にする
+- **クリップボード:** アプリの段に置き、持ち主はループのメッセージ専用の窓にする（Issue #928 で、起床の窓でなく、クリップボード専用のメッセージ専用の窓と改めた。下の「4a の形」）
 - **IME と a11y:** ウィンドウの段に置く
 - **OS からの知らせ:** ホストが sealed の `WindowCore` にデリゲートを 1 回だけ結ぶ。知らせのインターフェースは作らない
 - **OS の設定の知らせ:** イベントは 1 つで、変わった値の印（`PlatformSettingsChanges`）を付ける
@@ -4995,13 +4995,23 @@ OS ごとの機能（窓、ループ、フレームの時計、描画、文字�
   1. 窓の核（`WindowCore`）にコードを移し、`HeadlessApp` をそれに載せる
   2. `UiDispatcher.Current`
   3. ループの契約（`IPlatformApp` の `Dispatcher`・`Run`・`Quit`・`Wake`）と、OLE の初期化と `UiDispatcher.Current`・`SynchronizationContext` を置くことをホストへ移すこと
-  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、アプリの段のクリップボード（`IPlatformApp.Clipboard`。持ち主をループのメッセージ専用の窓に替える）、E2E の場面（クリップボードをこの PR に入れるのは PR #926 でオーナーが決定）
+  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、アプリの段のクリップボード（`IPlatformApp.Clipboard`。持ち主をクリップボード専用のメッセージ専用の窓に替える）、E2E の場面（クリップボードをこの PR に入れるのは PR #926 でオーナーが決定）。次の 2 つに分ける（Issue #928 でオーナーが決定）
+     - 4a（Issue #928）: `IPlatformWindow`、窓の核の最後の形（`Connect(IPlatformWindow, …)`・`Resize`・`TextRenderingChanged`・`WindowClosed`・`Closed`・`Dispose`）、行 MW1 を名指しして投げる `OpenWindow`、`Clipboard`、窓・レンダラ・時計を組にする `Win32PlatformWindow`、ヘッドレスの窓（`HeadlessWindow`）、契約を通す `XylemApp`、`DesktopWindow` を外すこと
+     - 4b（Issue #933）: E2E の木の場面と `External.App` をホストに通すこと、`WM_SIZE` から Present までの場面、フレームとリサイズの前後の計測。時間は、ホストが窓の核に渡す描き先を包む internal の口で測り、場面は自分のフレームの回し方を保って、前の数と比べられるようにする（Issue #928 でオーナーが決定）。PR 7 は 4b の後に入れる
   5. OS の設定の 1 つのオブジェクト（`IPlatformSettings`）
   6. フォントの提供者を UI スレッドに 1 つにすること（`IPlatformApp.Fonts`）と、グリフのラスタライザの工場（`IPlatformApp.CreateRasterizer`）（ラスタライザの工場をこの PR に入れるのは PR #926 でオーナーが決定）
   7. `XylemUI.Desktop` と Windows のホストを `net10.0` にし、ホストを RID で選ぶこと。この PR は次も行う
      - `XylemUI.Platform.Windows.csproj` から `<InternalsVisibleTo Include="XylemUI.Desktop" />` を外し、`XylemUI.Desktop.csproj` から Platform.Windows と Rendering.D3D11 への `ProjectReference` を外す
      - Rendering.D3D11 から Platform.Windows への `InternalsVisibleTo` は足さない。ホストが使う `D3D11Renderer` のメンバー（`Create`・`Resize`・`TextRendering`・`FrameLatencyWaitableObject`・`TryReadLastRefresh`・`RefreshRate`・`Dispose`）はどれも public で、`IRenderTarget` は Core の型で、Platform.Windows には Core の `InternalsVisibleTo` がある
      - Platform.Windows と Rendering.D3D11 に `[assembly: SupportedOSPlatform("windows10.0.22000")]` を付け（版は §1 の最も古い Windows。Issue #897 でオーナーが決定）、CA1416 で、ほかの OS から Windows の API に届く呼び出しが無いことを確かめる。NU1201 も確かめる
+
+**4a の形（Issue #928 でオーナーが決定）:**
+
+- **クリップボードの持ち主:** ループの起床の窓（`XylemUI.Wake`）でなく、クリップボード専用のメッセージ専用の窓（`XylemUI.Clipboard`）にする。最初にクリップボードを開く時に UI スレッドで作り、起床の窓と同じくプロセスの間残す。起床の窓を使うと、それをループの開始前に作ることになり、「ループの開始前の `Wake` は何もしない」が正しくなくなるためである
+- **PR 5 までの OS の設定:** 設定はまだ窓ごとの値（`Win32Window` の `ReducesMotion`・`TextEditing`・`UiLanguages`）なので、`Win32PlatformWindow.Attach` が今の値を木に渡し、変わった知らせを窓の核につなぐ。最初の `Mount` に渡す OS の言語は、具体のホストの internal のメンバー（`Win32PlatformApp.UiLanguages`。開いている窓が読んだ値）から読む。PR 5 で `IPlatformSettings` に替える
+- **窓の核の寿命:** 窓の核は `Connect` から窓とアトラスを持ち（`Connect` が投げた時も持つ）、自分の `Dispose` で、フレームを取り消し、根を捨て、窓、アトラスの順に捨てる。`WindowClosed` はフレームを取り消し、根を捨て、`Closed` を上げる。`DisposeRoot` はフレームを取り消さない。`HeadlessApp.AssertNoLeakedScopes` は根を捨てた後に、残ったフレームを回すためである
+- **開いている窓の数え方:** 2 つ目の `OpenWindow` を投げる間の「開いている」は、窓を捨てるまでを言う。時計をタイマーに戻すのは窓の `Dispose` だからである（Issue #928 でオーナーが決定）
+- **本物の窓のテスト:** `XylemApp.Run` と同じ作る順（`XylemApp.OpenWindow`）を通す。テストのホスト（`XylemUI.Desktop.Tests` の `TestHost`）は Windows の窓（`Win32PlatformWindow`）を WARP で開き、2 つ目の窓を確かめず、ディスパッチャ、`SynchronizationContext`、OLE を置かない（行 PL1 の前の `DesktopWindow` と同じ。Issue #928 でオーナーが決定）
 
 ```csharp
 // XylemUI.Core（src/XylemUI.Core/Platform/、internal。ホストには InternalsVisibleTo で見せる）
@@ -5014,7 +5024,7 @@ internal interface IPlatformApp : IDisposable
     IFontProvider Fonts { get; }              // UI スレッドに 1 つ（§3.2）。TextContext は XylemApp.Run が 1 つ作る
     IGlyphRasterizer CreateRasterizer();      // GlyphAtlas に Func<IGlyphRasterizer> として渡す。スレッドごとに 1 つ作られる（§5.0.3）
     IPlatformSettings Settings { get; }       // OS の設定。文字の描き方を除く
-    IClipboardBackend Clipboard { get; }      // 同期、プレーンテキストだけ（P02b、§4.9）。持ち主はループのメッセージ専用の窓
+    IClipboardBackend Clipboard { get; }      // 同期、プレーンテキストだけ（P02b、§4.9）。持ち主はクリップボード専用のメッセージ専用の窓
 
     // OS の窓・レンダラ・フレームの時計・IME・a11y の adapter を組にして作る。core の木を a11y が読む。
     // 窓が開いている間にもう 1 つ開くと InvalidOperationException（2 つ目の窓は行 MW1）
@@ -5112,7 +5122,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 - **グリフのラスタライザとアトラス（アプリの段）:** `IPlatformApp.CreateRasterizer`。アトラスは OS によらない CPU のページで、レンダラが `DirtyRegions` を読んで送る（§5.0.3）ので、契約は要らない。アトラスは今と同じく窓ごとに 1 つで、窓の核が持つ。複数のレンダラでの共有は行 P10 と行 MW1 で決める
 - **フォントの提供者（アプリの段）:** `IPlatformApp.Fonts`。`XylemApp.Run` が UI スレッドに 1 つの `TextContext` を作って窓の核に渡し、ループを抜けたら捨てる。今は `DesktopWindow` が窓ごとに `DirectWriteFontProvider` を作っている。窓が 1 つの間は、振る舞いは変わらない
 - **文字の入力と IME（ウィンドウの段）:** `IPlatformWindow.TextInput`（旧版の `IPlatform` はアプリの段に置いていた）。Windows の `TsfTextInput` は窓に結び付き（`AssociateFocus`）、窓を壊す前に放す（スパイク #510）。タッチキーボード（`ITouchKeyboard`）もこの中にある
-- **クリップボード（アプリの段）:** `IPlatformApp.Clipboard`。クリップボードは OS に 1 つである。今の `Win32Clipboard` は `OpenClipboard` に渡す持ち主として窓を取る（`Win32Clipboard(Win32Window)`）ので、ループのメッセージ専用の窓に替える。それで読み書きできることは、実装の PR の本物の窓のテストで確かめる
+- **クリップボード（アプリの段）:** `IPlatformApp.Clipboard`。クリップボードは OS に 1 つである。行 PL1 の前の `Win32Clipboard` は `OpenClipboard` に渡す持ち主として窓を取った（`Win32Clipboard(Win32Window)`）。4a で、クリップボード専用のメッセージ専用の窓（`XylemUI.Clipboard`）に替えた。ループの起床の窓は使わない（Issue #928 でオーナーが決定。上の「4a の形」）。窓を開かずに読み書きできることと、持ち主がその窓であることは、`TextEditingPlatformTests` で確かめる
 - **ドラッグ＆ドロップ（ウィンドウの段）:** 契約を足さない。OS への持ち出しは `IPointerPlatform.StartExternalDrag`、OS からのドロップは窓の核の `Input`（`IExternalDropTarget`）が受ける（§7「ドラッグ＆ドロップ」）。`DoDragDrop` の間のフレーム（`Win32MessageLoop.RunPendingFrame`、§2.11.1）は Windows のホストの中に残る
 - **カーソルとキャプチャ（ウィンドウの段）:** `IPlatformWindow.Pointer`（`IPointerPlatform`、今のまま）。キャプチャは窓ごとである。ポインタの履歴、タッチパッド（DirectManipulation）、タッチキーボードの Windows の型（`IPointerReader`・`ITouchpadViewport`・`ITouchKeyboard`）は Platform.Windows の中にとどまる
 - **DPI、倍率、モニタ（ウィンドウの段）:** `IPlatformWindow.ScaleFactor` と、`Resize` が受ける倍率。PerMonitorV2 の宣言は今どおり最初の窓のクラスを登録する所で行う（§6.1.1）。モニタの一覧は、使う機能（行 MW1、行 D6）が来るまで契約に入れない
@@ -5123,15 +5133,15 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 **窓の核（`WindowCore`）が持つもの:** 木（`UiTree`）、根のノード、`WindowFrames`、`WindowInput`、窓のアトラス、ロケールの根の値（`WindowLocale`、行 LC1）と行 TH1 のテーマの根の値、根の関数を呼ぶ `Mount`、最初のフレーム、閉じた時の `DisposeRoot`（木の `FrameNeeded` を外し、`CancelFrame` を呼び、根の Scope を破棄し、画像のキャッシュを放す、§5.0.4）、OS の設定を木に渡すこと。今は `DesktopWindow` と `HeadlessApp` が、`Mount` をほぼ同じコードで 2 つ持ち、根の値も 2 か所で置いている。窓の核は Core に置くので、`XylemUI.Testing` は `XylemUI.Desktop` を参照しなくてよい（Core の internal は IVT で見えている）。
 
-**ホストが持つもの:** OS の窓、レンダラとその時計、IME、a11y の adapter、クリップボード、OS の設定と、それぞれを作る順と壊す順である。壊す順は今の `DesktopWindow.Dispose` のとおりで、TSF は窓を壊す前に放し、a11y の provider を先に外し、ループはレンダラが待機オブジェクトを閉じる前に時計を待たなくなる。
+**ホストが持つもの:** OS の窓、レンダラとその時計、IME、a11y の adapter、クリップボード、OS の設定と、それぞれを作る順と壊す順である。壊す順は行 PL1 の前の `DesktopWindow.Dispose` のとおり（4a の `Win32PlatformWindow.Dispose`）で、TSF は窓を壊す前に放し、a11y の provider を先に外し、ループはレンダラが待機オブジェクトを閉じる前に時計を待たなくなる。
 
-**作る順（`XylemApp.Run`）:** 今の `XylemApp.Run` と `DesktopWindow` のコンストラクタの順を保つ。§2.13「ウィンドウ」はここを指す。
+**作る順（`XylemApp.Run`）:** 行 PL1 の前の `XylemApp.Run` と `DesktopWindow` のコンストラクタの順を保つ。手順 4〜7 は `XylemApp.OpenWindow` で、本物の窓のテストも通る（4a）。§2.13「ウィンドウ」はここを指す。
 
 1. 既定のキーの行を確かめ（§7「既定のキーと動作」）、呼んだスレッドを UI スレッドにする
 2. 登録されたホストから `IPlatformApp` を作る。ホストはディスパッチャを作って `UiDispatcher.Current` と `SynchronizationContext` に置き（窓の根の関数が作る要素の画像のデコードが、その文脈に戻るため、§5.0.4）、Windows では OLE を初期化する
 3. `IPlatformApp.Fonts` から UI スレッドに 1 つの `TextContext` を作る
 4. 窓の核を作る（木と根のノード）
-5. `IPlatformApp.OpenWindow` で窓を作る。Windows のホストは、窓、a11y の provider、表示、レンダラ、時計の順に作る
+5. `IPlatformApp.OpenWindow` で窓を作る。Windows のホストは、窓、a11y の provider、表示、レンダラ、時計、IME（TSF）の順に作る。IME は `Connect` が `TextInput` を読む前に要るので、ここで作る（4a。行 PL1 の前の `DesktopWindow` は、フレームと入力を作った後に作っていた）
 6. 窓の核の `Connect` で、窓の描き先とスケジューラから `WindowFrames` を、`IPointerPlatform` から `WindowInput` を作り、今の可視性・活性化・設定の値を渡す。続けて `IPlatformWindow.Attach` で知らせをつなぐ
 7. `Mount` で根の関数を呼び、最初のフレームを窓の大きさで描く。大きさは論理画素で、Windows のホストは `ClientSize` を `ScaleFactor` で割って渡す（今の `DesktopWindow` と同じ）。`HeadlessApp` は `HeadlessOptions` の `Width`・`Height`・`Scale` を今と同じく割らずに渡すので、丸めは入らない。`RootMounted` で a11y に木を出す
 8. `IPlatformApp.Run` でループを回す。窓が閉じたら窓の核の `Closed` で数を減らし、0 になったら `Quit` を呼ぶ。ループを抜けたら、窓の核（窓を含む）、`TextContext`、ホストの順に捨てる

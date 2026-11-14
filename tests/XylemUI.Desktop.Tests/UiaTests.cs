@@ -40,7 +40,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             Element save = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         save = Button("Save", () => { }).TestId("save").Height(30),
@@ -115,7 +115,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         {
             var state = new ScrollState();
             Element inner = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => ScrollView(Column(inner = Button("Inner", () => { }).Height(30), Box().Height(200)), state).Height(60),
                 new WindowOptions("UIA scroll", 300, 300),
                 useWarp: true
@@ -168,7 +168,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
     public void Tree_IsMadeAtTheFirstQuestion() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(() => Button("One", () => { }), new WindowOptions("UIA first", 200, 200), useWarp: true);
+            using var window = new TestWindow(() => Button("One", () => { }), new WindowOptions("UIA first", 200, 200), useWarp: true);
             HWND hwnd = window.Window.Hwnd;
             bool before = window.Tree.HasAccessibilityTree;
 
@@ -196,7 +196,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             Signal<string> label = Signal.Create("Before");
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Button(Elements.Text((ref text) => text.Write(label.Get())), () => { }),
                 new WindowOptions("UIA name", 200, 200),
                 useWarp: true
@@ -245,7 +245,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             Element second = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(Button("First", () => { }), second = Button("Second", () => { })),
                 new WindowOptions("UIA focus", 200, 200),
                 useWarp: true
@@ -300,7 +300,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         {
             Element first = default;
             Element second = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(first = Button("First", () => { }), second = Button("Second", () => { })),
                 new WindowOptions("UIA focus move", 200, 200),
                 useWarp: true
@@ -362,7 +362,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         {
             Element first = default;
             Element second = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(first = Button("First", () => { }), second = Button("Second", () => { })),
                 new WindowOptions("UIA steady", 200, 200),
                 useWarp: true
@@ -400,7 +400,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
     public void ScaleChange_ScalesTheBoxes() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(Button("One", () => { }).Width(100).Height(30)),
                 new WindowOptions("UIA scale", 200, 200),
                 useWarp: true
@@ -454,7 +454,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             Signal<string> label = Signal.Create("Zero");
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         Button("First", () => { }).Width(100).Height(30),
@@ -495,7 +495,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             Element content = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => ScrollView(content = Box().Height(100)).Height(60),
                 new WindowOptions("UIA range", 200, 200),
                 useWarp: true
@@ -558,7 +558,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
 
     // The frame's layout pass and accessibility stage, without drawing: a present outside the loop's frame clock can block on a
     // hidden window of CI's runner (Update_HandsAccessKitTheChangedNodesAlone hung there for 5 minutes on its second present).
-    private static void RunAccessibilityStage(DesktopWindow window)
+    private static void RunAccessibilityStage(TestWindow window)
     {
         LayoutEngine.RunLayoutPass(window.Tree);
         window.Tree.UpdateAccessibility();
@@ -662,7 +662,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
 
     // A node's box on the screen in physical pixels: its box in the window's logical coordinates (the boxes of its ancestors, less
     // the scroll positions), times the scale, moved by the client area's origin.
-    private static System.Windows.Rect ScreenBox(DesktopWindow window, NodeHandle node)
+    private static System.Windows.Rect ScreenBox(TestWindow window, NodeHandle node)
     {
         UiTree tree = window.Tree;
         Rect rect = tree.Nodes.GetRef(node).Layout.Rect;

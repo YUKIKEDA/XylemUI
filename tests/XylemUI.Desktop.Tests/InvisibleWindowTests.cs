@@ -108,7 +108,7 @@ public sealed class InvisibleWindowTests(UiThreadFixture ui)
     public void MinimizedWindow_PresentsNothing_UntilItIsRestored() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true);
+            using var window = new TestWindow(CounterApp.Counter, Options, useWarp: true);
             var scheduler = (Win32FrameScheduler)Win32MessageLoop.FrameScheduler;
             NodeHandle column = window.Tree.Nodes.GetRef(window.Tree.Root).FirstChild;
             int presents = window.Frames.PresentCount;

@@ -33,13 +33,13 @@ public sealed class ImageWindowTests(UiThreadFixture ui)
             ImageSource first = ImageSource.FromFile(Path.Combine(folder, "baseline.jpg"));
             ImageSource second = ImageSource.FromFile(Path.Combine(folder, "basn2c08.png"));
             Signal<ImageSource> source = Signal.Create(first);
-            using DesktopWindow window = WithNoLoop(() =>
-                new DesktopWindow(() => Image(source.Get), new WindowOptions("Image test", 200, 200), useWarp: true)
+            using TestWindow window = WithNoLoop(() =>
+                new TestWindow(() => Image(source.Get), new WindowOptions("Image test", 200, 200), useWarp: true)
             );
             source.Set(second);
             Assert.Equal(2, window.Tree.Images.Count);
             using var app = new Win32PlatformApp();
-            XylemApp.Open(window, app);
+            XylemApp.Open(window.Core, app);
 
             using (var watchdog = new LoopWatchdog())
             {
@@ -51,7 +51,7 @@ public sealed class ImageWindowTests(UiThreadFixture ui)
         });
 
     // Makes the window with no SynchronizationContext: an image element made then keeps none, and decodes where it is asked to.
-    private static DesktopWindow WithNoLoop(Func<DesktopWindow> make)
+    private static TestWindow WithNoLoop(Func<TestWindow> make)
     {
         SynchronizationContext? previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(null);
