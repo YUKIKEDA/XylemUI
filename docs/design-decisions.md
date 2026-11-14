@@ -588,6 +588,7 @@ Decision（行 MW1。Grill の 8 巡目でオーナーが決定、Issue #914。�
   一番上の窓は `XylemApp.OpenWindow` が返す `WindowHandle`（`Close`・取り消せる `Closing`・`Closed`）、持ち主のある窓は宣言する要素 `Window(Signal<bool> isOpen, …)`。持ち主を閉じると持ち主のある窓を先に閉じる。UI スレッドだけから呼ぶ。
   終わり方はモード（最後の窓・明示だけ）で、既定は macOS で明示、ほかで最後の窓。
   別の窓に出したポップアップの節は持ち主の窓の AccessKit の木に入れる。DD1 のドラッグはアプリの段に移す。`HeadlessApp` は窓の一覧、開く・閉じる、窓の間のフォーカスを持つ。
+  設計の PR で（PR #921 でオーナーが決定）: 持ち主のある窓はロケールと OS の見た目を受け継ぐ。アプリの根の値は始まりの関数の中の `XylemApp.Provide`。`Run` の外の `OpenWindow` は投げる。時計は窓ごと。`Quit` は全部か無しか。アプリの段の動作は `XylemApp.OnAction`。モーダルの窓は行 B7、OS の終了は行 D6 の問い。開く時の位置と状態を持つ。持ち主のある窓の閉じる問いは `OwnedWindowOptions.Closing`。
 
 Reason:
   別ウィンドウのポップアップは開いた側の Context を引く（設計書 §7.3 の Q1、§2.13「ポップアップの中身は、宣言した場所の値を引く」）。窓を独立させると、この約束が窓のポップアップで破れる。
@@ -603,6 +604,14 @@ Rejected:
   - 一番上の窓も宣言する要素だけで開く（Q27 の案 b。Flutter の実験の `RegularWindow`、`packages/flutter/lib/src/widgets/_window.dart` 1551 行目の形。一番上の窓は開いた側より長く生きることが多く、要素の持ち主の Scope に寿命を縛ると、開いた部分を閉じた時に窓も消える）
   - 持ち主のある窓も命令で開く（Q27 の案 a だけ。Avalonia の `Window.Show(owner)`、`src/Avalonia.Controls/Window.cs` 939 行目の形。開閉を Signal で持つ `Popup` と `Dialog` の形と揃わず、開いた側の Scope が破棄された時に閉じる仕組みをアプリが書くことになる）
   - 別の窓に出したポップアップごとに AccessKit の adapter と木を持つ（Q29 の案 b。Flutter 3.47.8 はビューごとに a11y の橋を持つ（`engine/src/flutter/shell/platform/windows/flutter_windows_view.h` 511 行目）。フォーカスを取らない窓はフォーカスのイベントを出せず、メニューを動いても読み上げない）
+  - 持ち主のある窓の根で、ロケールと OS の見た目を置き直す（MW1-a。PR #921 でオーナーが決定。部分木を `Localization.Provide` で包んだ所から開いたダイアログが、その部分木でなく窓のロケールで出て、同じ所から開いたポップアップ（§2.13「ポップアップの中身は、宣言した場所の値を引く」）と食い違う）
+  - アプリの根に値を置く口を、ほかの形にする（MW1-b。同じ PR）: `Context<T>.Provide(T, Action)` の多重定義で始まりの関数を包む（値はその Provide の Scope に置かれ、後でハンドラから開いた一番上の窓の根はアプリの根の子なので、その値を引けない）、いつでも呼べる文の形の `Provide`（Context の値は Scope を作る時に親のリストの頭を写すので、先に開いた窓に届かず、書く順で結果が変わる。§2.13 が文の形を退けた理由と同じ）、`AppOptions` に値の一覧を持たせる（鍵ごとに型の違う値を 1 つの一覧に入れるには箱に入れる型が要り、`Context<T>` と値の型の一致をコンパイラが確かめない）
+  - `XylemApp.Run` の前の `OpenWindow` を許す（MW1-c。同じ PR。Avalonia はライフタイムを作る前の `Window.Show` を許す。XylemUI では、走る前の窓にはフレームの時計もディスパッチャ（§2.12）も無く、アプリの根の Scope もまだ無い。GPUI も `Application::run` のコールバックの中でだけ窓を開ける）
+  - すべての窓を 1 つの時計で回す（MW1-d。同じ PR。GPUI の `DwmFlush` のスレッド（zed v1.25.3 の `crates/gpui_windows/src/vsync.rs` 30〜59 行目）、Flutter のエンジンの vsync、Avalonia の描く時計（`Win32Platform.cs` 88 行目）の形。設計書 §2.11 の「遅く描き始めるフレーム」は、Present から表示までと入力から表示までを縮めるために、窓のスワップチェーンのフレーム統計（`GetFrameStatistics` の `SyncQPCTime` と `SyncRefreshCount`）から次のリフレッシュの時刻を求め、その 4 ms 前まで待つ。主ディスプレイの時刻を返す `DwmGetCompositionTimingInfo` は、測る機械で 59 Hz の仮想モニタの時刻になり、60 Hz のパネルの上の窓と合わず、取りこぼしが 590 フレームで 87〜276 回に増えたので退けた。1 つの時計では、リフレッシュレートの違うモニタの窓の 1 つでこの測った契約が守れない。`DwmFlush` で待つ GPUI の時計も、主ディスプレイの合成の時計である）
+  - `XylemApp.Quit` で、取り消さなかった窓から閉じる（MW1-e。同じ PR。Avalonia の `TryShutdown`、`ClassicDesktopStyleApplicationLifetime.cs` 201〜211 行目は、取り消さなかった窓を順に閉じ、1 つでも残れば終わりを取り消す。利用者には、終わらないまま一部の窓だけが消えたアプリが残る）、窓に聞かずに終える（GPUI の `quit`、`crates/gpui/src/app.rs` 1231〜1233 行目。保存していない文書の窓が、問いを出せずに消える）
+  - アプリの段の動作のハンドラを持たない（MW1-f。同じ PR。どの窓でも効くショートカットを、アプリが窓ごとの根に同じハンドラで付けることになり、付け忘れた窓、たとえば持ち主のある窓で効かない。GPUI は `cx.on_action` を持つ、`app.rs` 2621〜2635 行目）
+  - 窓の位置と状態を `WindowOptions` に持たない（MW1-h。同じ PR。行 DK1 の浮いた窓を、前の位置と最大化の状態で開き直せない。持ち主のある窓を持ち主の上に出せない。GPUI の `WindowOptions.window_bounds`（`crates/gpui/src/platform.rs` 2491〜2495 行目）と Avalonia の `Window.Position`・`WindowState`（`Window.cs` 533・435 行目）は持つ）
+  - 持ち主のある窓の閉じる問いを、窓のハンドルのイベントで受ける（MW1-i。同じ PR。持ち主のある窓は宣言する要素で開き、アプリは `WindowHandle` を持たないので、イベントを付ける相手が無い。`Window` の要素からハンドルを返すと、宣言の形と命令の形が混ざる）
 
 ---
 

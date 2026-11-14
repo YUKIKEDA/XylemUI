@@ -1387,7 +1387,7 @@ public interface IFrameScheduler
 
 保留できるコールバックは1つだけで、フレームの前に `RequestFrame` を再度呼ぶと置き換わる。コールバックは1回だけ走り、次のフレームが要るならその中で `RequestFrame` を呼ぶ。要求ごとに確保しないよう、デリゲートは一度だけ作って渡す。コールバックの例外は Platform の例外ハンドラに渡し、ループは続ける（§2.11.1）。フレームクロックは、要求がある間だけ動かす（アイドルの UI スレッドを起こす原因を作らない）。
 
-**スケジューラの単位（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）:** 契約はウィンドウごと（`IPlatformWindow.FrameScheduler`、§6.0）で、Windows の実装はループごとに 1 つ（`Win32FrameScheduler`）である。macOS と Wayland の時計は窓（ビュー）にあるので、窓ごとの契約にそのまま載る。Windows の時計（下の S7 のスワップチェーンの待機オブジェクト）は、ホストがレンダラを作った所で渡し、窓の核と `XylemUI.Desktop` は見ない。2 つ目の窓の予約（1 つのループが窓ごとの時計を待つ形）は §6.0.1「フレームの段」に書く（行 MW1。時計を窓ごとにするかは、設計の PR でオーナーに問う案）。
+**スケジューラの単位（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）:** 契約はウィンドウごと（`IPlatformWindow.FrameScheduler`、§6.0）で、Windows の実装はループごとに 1 つ（`Win32FrameScheduler`）である。macOS と Wayland の時計は窓（ビュー）にあるので、窓ごとの契約にそのまま載る。Windows の時計（下の S7 のスワップチェーンの待機オブジェクト）は、ホストがレンダラを作った所で渡し、窓の核と `XylemUI.Desktop` は見ない。2 つ目の窓の予約（1 つのループが窓ごとの時計を待つ形）は §6.0.1「フレームの段」に書く（行 MW1。時計は窓ごとで、PR #921 でオーナーが決定）。
 
 **フレームの時刻（I1b の Grill でオーナーが決定、Issue #392）:** ウィンドウのフレームは、コールバックの始めに `TimeProvider`（§12.2）から時刻を 1 回読み、そのフレームの時刻として持つ。そのフレームの中で時間で動くもの（I1b のタッチの慣性、§7「タッチとペン」）は、この時刻で位置を決める。同じフレームの中では、どれも同じ時刻を見る。今は Core の内部の値で、公開しない。アニメーションの API（行 D7）は、この時刻を使う
   - Flutter の Ticker は、フレームの時刻（`SchedulerBinding.currentFrameTimeStamp`）から始めの時刻を引いた経過時間で進む（`scheduler/ticker.dart` 205・272〜278 行目）
@@ -5115,7 +5115,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 - **クリップボード（アプリの段）:** `IPlatformApp.Clipboard`。クリップボードは OS に 1 つである。今の `Win32Clipboard` は `OpenClipboard` に渡す持ち主として窓を取る（`Win32Clipboard(Win32Window)`）ので、ループのメッセージ専用の窓に替える。それで読み書きできることは、実装の PR の本物の窓のテストで確かめる
 - **ドラッグ＆ドロップ（ウィンドウの段）:** 契約を足さない。OS への持ち出しは `IPointerPlatform.StartExternalDrag`、OS からのドロップは窓の核の `Input`（`IExternalDropTarget`）が受ける（§7「ドラッグ＆ドロップ」）。`DoDragDrop` の間のフレーム（`Win32MessageLoop.RunPendingFrame`、§2.11.1）は Windows のホストの中に残る
 - **カーソルとキャプチャ（ウィンドウの段）:** `IPlatformWindow.Pointer`（`IPointerPlatform`、今のまま）。キャプチャは窓ごとである。ポインタの履歴、タッチパッド（DirectManipulation）、タッチキーボードの Windows の型（`IPointerReader`・`ITouchpadViewport`・`ITouchKeyboard`）は Platform.Windows の中にとどまる
-- **DPI、倍率、モニタ（ウィンドウの段）:** `IPlatformWindow.ScaleFactor` と、`Resize` が受ける倍率。PerMonitorV2 の宣言は今どおり最初の窓のクラスを登録する所で行う（§6.1.1）。モニタの一覧は、使う機能（行 MW1、行 D6）が来るまで契約に入れない。行 MW1 の設計は、窓の位置を API に入れるかをオーナーに問う（§6.0.1 の「決まっていない点」の 8）
+- **DPI、倍率、モニタ（ウィンドウの段）:** `IPlatformWindow.ScaleFactor` と、`Resize` が受ける倍率。PerMonitorV2 の宣言は今どおり最初の窓のクラスを登録する所で行う（§6.1.1）。モニタの一覧は、使う機能（行 MW1、行 D6）が来るまで契約に入れない。行 MW1 で、開く時の窓の位置と状態を `WindowOptions` に足す（PR #921 でオーナーが決定、§6.0.1「窓の位置と状態」）。モニタの一覧は足さない
 - **OS の設定（アプリの段。文字の描き方はウィンドウの段）:** `IPlatformSettings` と `IPlatformWindow.TextRendering`。今はどの値も窓のもの（`Win32Window.ReducesMotion`・`TextEditing`・`UiLanguages`）で、窓ごとに `WM_SETTINGCHANGE` で読み直している。Windows の設定のオブジェクトは、トップレベルの窓が受けた `WM_SETTINGCHANGE` で読み直し、値が変わったときだけ 1 回知らせる。ループのメッセージ専用の窓は受け手にできない。メッセージ専用の窓はブロードキャストのメッセージを受けないためである（Microsoft の Window Features の頁の「Message-Only Windows」）。窓の核は、知らせを受けて `Tree.Animations.ReduceMotion`、`Tree.SetTextEditing`、`WindowLocale.Update`（行 LC1）に渡す。行 TH1 の OS の見た目（明暗、ハイコントラスト、アクセントの色）も、この 1 つのオブジェクトに足す。文字の描き方は窓ごとで、変わるとホストがレンダラに渡し、窓の核の `TextRenderingChanged` を呼ぶ
 - **a11y の adapter（ウィンドウの段）:** Windows のホストの中（`Win32Accessibility`）。契約は今の `IAccessibilityBridge`（`NodesChanged`）だけで、ホストは窓の核の木を読み（§4.4.1。読むだけで変えない、§11.6 Invariant 10）、操作を窓の核の `Input` に渡す。旧版の `IPlatform` はアプリの段に置いていた。AccessKit の adapter は窓の `WM_GETOBJECT` に答え、窓を壊す時は provider を先に外すので、窓の後始末に属する。`RootMounted` で、表示中に問い合わせた支援技術に木を出す（今の `StartIfAsked`）
 - **ポップアップと 2 つ目の窓:** 契約に入れない。ポップアップは窓の中に描く（§7.3）。別ウィンドウのポップアップは行 P04・P06・P10、2 つ目の窓を作る口は行 MW1 である（§6.0.1）
@@ -5176,7 +5176,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 1 つのアプリが、一番上の窓をいくつも開き、窓に持ち主のある窓（浮いたパネルなど）を付けられるようにする。UI スレッドは 1 つで、リアクティブのグラフは全ウィンドウで共有する（Grill の 4 巡目でオーナーが決定、Issue #868）。§6.0 の契約（行 PL1）の上に載せ、Windows のホストだけを書く。今のコードは、窓が開いている間の 2 つ目の `IPlatformApp.OpenWindow` を投げる（§6.0「形の決まったこと」）。この節はその口を開ける形を決める。
 
-この節で「案（オーナーの決定待ち）」と書いた所は、Grill の答えから直接は決まらない点で、設計の PR でオーナーに問う。案は推奨の形で書き、決まったら書き直す。
+Grill の答えから直接は決まらなかった 9 点（下の MW1-a〜MW1-i）は、設計の PR のレビューで、推奨の形をオーナーが選んだ（PR #921 でオーナーが決定）。窓の位置の単位と、開いた後の位置と状態を読む口は、その答えでも決まらなかったので、「案（オーナーの決定待ち）」と書いて問う（下の「窓の位置と状態」）。
 
 **決まったこと（Grill の 8 巡目でオーナーが決定、Issue #914）:**
 
@@ -5210,12 +5210,13 @@ flowchart TD
 - **アプリの根:** `XylemApp.Run` が、最初の窓を開く前に、親の無い Scope を 1 つ作る。ループを抜けた後、窓の核とホストを捨てる前に破棄する。アプリの根の中で作った Effect と後始末は、そこで消える。`HeadlessApp` も、最初の窓の前に同じ形で作り、`DisposeAsync` で破棄する
 - **一番上の窓:** `OpenWindow` を呼んだ所がどこでも（ほかの窓のボタンのハンドラの中でも）、根の Scope はアプリの根の子にする。今の `WindowCore.Mount` は `Scope.Create` で根を作るので、呼んだ時の今の Scope の子になる（`src/XylemUI.Core/Platform/WindowCore.cs` 117〜139 行目）。ハンドラの Scope の子にすると、そのハンドラを登録した部分が `Show` で作り直されたときに、開いた窓まで消える。窓の核は `Mount` の間だけ今の Scope をアプリの根に替える
 - **持ち主のある窓:** `Window` の要素を作った時の今の Scope の子に、窓の Scope を作る。`PopupBlock.Create` がポップアップの Scope を作るのと同じ形である（§2.13「ポップアップの中身は、宣言した場所の値を引く」）。開いた側の Scope が破棄されれば、窓も閉じる
-- **値の引き方:** Reactive Context の値は、Scope を作る時に親のリストの頭を写す（§2.13「値の置き場所」）。アプリの根に置いた値は、その後に作ったすべての窓が引ける。窓を作った後にアプリの根へ値を足しても、その窓の Scope には届かない。そこで、アプリの根に値を置けるのは、最初の窓を開く前だけにする（下の `XylemApp.Provide`、案）
+- **値の引き方:** Reactive Context の値は、Scope を作る時に親のリストの頭を写す（§2.13「値の置き場所」）。アプリの根に置いた値は、その後に作ったすべての窓が引ける。窓を作った後にアプリの根へ値を足しても、その窓の Scope には届かない。そこで、アプリの根に値を置けるのは、最初の窓を開く前だけにする（下の `XylemApp.Provide`）
 - **親の無い Scope の印:** §2.13「引ける所」は、ウィンドウの根の Scope を「親を持たない正しい使い方」として、属する所の無い Effect の Scope と印で見分ける。行 MW1 からは、親を持たない正しい Scope はアプリの根になり、窓の根は親を持つ。印はアプリの根に付ける
 - **ロケールと OS の見た目:** 一番上の窓は、今どおり根でロケールと OS の見た目を置き、テーマの包み（§13.2「テーマの鍵」）を通す。窓ごとに `WindowOptions.ResolveLocale` で解決し、窓ごとに `FluentTheme.RequestForWindow` でテーマを求められる。アプリの根に置いた値は、窓の根の値より遠いので、同じ鍵なら窓の根の値が勝つ（§2.13「近い方が勝つ」）
-- **持ち主のある窓のロケールとテーマ（案（オーナーの決定待ち））:** 持ち主のある窓の根では、ロケールを置き直さず、開いた側の値を受け継ぐ。部分木を `Localization.Provide` で包んだ所から開いたダイアログは、その部分木のロケールで出る（ポップアップと同じ）。OS の見た目のシグナルも受け継ぐ。テーマの包みは窓の背景と題名の棒を持つので通すが、窓のテーマの既定は、持ち主の窓が `RequestForWindow` で求めたテーマにする。決定の Q25 は「ロケールと OS の見た目は窓の根で置く」と書き、持ち主のある窓を分けていないので問う
+- **持ち主のある窓のロケールとテーマ（MW1-a、PR #921 でオーナーが決定）:** 持ち主のある窓の根では、ロケールを置き直さず、開いた側の値を受け継ぐ。部分木を `Localization.Provide` で包んだ所から開いたダイアログは、その部分木のロケールで出る（ポップアップと同じ）。OS の見た目のシグナルも受け継ぐ。テーマの包みは窓の背景と題名の棒を持つので通すが、窓のテーマの既定は、持ち主の窓が `RequestForWindow` で求めたテーマにする。Q25 の「ロケールと OS の見た目は窓の根で置く」は、一番上の窓のことである。持ち主のある窓が開いた側を受け継ぐのは、ポップアップと同じ理由で、置き直すと、フランス語の部分木から開いたダイアログが窓のロケールで出る
+  - 窓そのものの鍵は受け継がない: 窓の背景と題名の棒をホストに知らせる `WindowSurface.Current`（§13.2「根の箱」）は窓ごとの物なので、持ち主のある窓の根でも必ず置き直す。受け継ぐと、持ち主のある窓のテーマの包みが持ち主の窓の背景を塗り替える。テーマの包みが窓ごとに作る、求めたテーマの Signal（§13.2「窓のテーマ」）も、持ち主のある窓の根で作り直し、その初めの値を持ち主の窓の値にする。ヘッドレスでは `HeadlessOptions.RootWrapper` が持ち主のある窓の根も包む
 
-**アプリの根に値を置く口（案（オーナーの決定待ち））:** `Context<T>.Provide` は本体を包んで要素を返す形だけで（§2.13「置き方は、本体を包む形だけ」）、アプリの根には包む要素が無い。そこで、アプリの始まりの関数（`XylemApp.Run(Action start, …)`）の中でだけ呼べる `XylemApp.Provide(key, value)` を足す。始まりの関数は、アプリの根の Scope の中で、どの窓よりも前に走る。窓を開いた後か、始まりの関数の外で呼ぶと `InvalidOperationException` を投げる。この縛りで、書く順で結果が変わる問題（文として書く形を §2.13 が退けた理由）は起きない。GPUI のアプリ全体の値（`globals_by_type`、zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目）と Avalonia の `Application` の資源に当たる。
+**アプリの根に値を置く口（MW1-b、PR #921 でオーナーが決定）:** `Context<T>.Provide` は本体を包んで要素を返す形だけで（§2.13「置き方は、本体を包む形だけ」）、アプリの根には包む要素が無い。そこで、アプリの始まりの関数（`XylemApp.Run(Action start, …)`）の中でだけ呼べる `XylemApp.Provide(key, value)` を足す。始まりの関数は、アプリの根の Scope の中で、どの窓よりも前に走る。窓を開いた後か、始まりの関数の外で呼ぶと `InvalidOperationException` を投げる。この縛りで、書く順で結果が変わる問題（文として書く形を §2.13 が退けた理由）は起きない。GPUI のアプリ全体の値（`globals_by_type`、zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目）と Avalonia の `Application` の資源に当たる。
 
 #### API
 
@@ -5224,12 +5225,12 @@ flowchart TD
 public static class XylemApp
 {
     [UiThreadOnly] public static int Run(Func<Element> root, WindowOptions? options = null, AppOptions? app = null);  // Run(() => OpenWindow(root, options), app)
-    [UiThreadOnly] public static int Run(Action start, AppOptions? app = null);   // 案。start はアプリの根の Scope の中で、ループの前に走る
+    [UiThreadOnly] public static int Run(Action start, AppOptions? app = null);   // MW1-b。start はアプリの根の Scope の中で、ループの前に走る
     [UiThreadOnly] public static WindowHandle OpenWindow(Func<Element> root, WindowOptions? options = null);
     [UiThreadOnly] public static IReadOnlyList<WindowHandle> Windows { get; }     // 開いている一番上の窓。開いた順
-    [UiThreadOnly] public static bool Quit(int exitCode = 0);                      // 案。下の「アプリが終わる時」
-    [UiThreadOnly] public static void Provide<T>(Context<T> key, T value);         // 案。start の中で、最初の窓の前だけ
-    [UiThreadOnly] public static void OnAction<TAction>(ActionHandler<TAction> handler) where TAction : class, IAction;   // 案。下の「キーとフォーカス」
+    [UiThreadOnly] public static bool Quit(int exitCode = 0);                      // MW1-e。下の「アプリが終わる時」
+    [UiThreadOnly] public static void Provide<T>(Context<T> key, T value);         // MW1-b。start の中で、最初の窓の前だけ
+    [UiThreadOnly] public static void OnAction<TAction>(ActionHandler<TAction> handler) where TAction : class, IAction;   // MW1-f。下の「キーとフォーカス」
 }
 
 // XylemUI（Core）。XylemUI.Testing の HeadlessApp も使うので、XylemUI.Desktop から Core へ移す
@@ -5237,7 +5238,13 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 {
     public IReadOnlyList<Locale> SupportedLocales { get; init; } = [];   // 今のまま。行 LC2 で要素を LocaleData に変える（§4.11「宣言する所」）
     public Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? ResolveLocale { get; init; }
+    public ScreenPoint? Position { get; init; }                        // MW1-h。クライアント領域でなく窓の左上。null は OS の既定（CW_USEDEFAULT）
+    public WindowState State { get; init; } = WindowState.Normal;      // MW1-h
 }
+
+public enum WindowState : byte { Normal, Maximized, Minimized }   // MW1-h
+
+public readonly record struct ScreenPoint(int X, int Y);   // MW1-h の位置の型。単位（仮想画面の物理画素）は案（オーナーの決定待ち、下の「窓の位置と状態」）
 
 public sealed record AppOptions
 {
@@ -5279,18 +5286,27 @@ public enum WindowCloseReason : byte
 
 public sealed record OwnedWindowOptions(string Title = "", float Width = 400, float Height = 300)
 {
-    public Action<WindowClosingEventArgs>? Closing { get; init; }   // 案。User・OwnerClosing・AppQuit で呼ぶ
+    public Action<WindowClosingEventArgs>? Closing { get; init; }   // MW1-i。User・OwnerClosing・AppQuit で呼ぶ
+    public ScreenPoint? Position { get; init; }                     // MW1-h。null は持ち主の中央
+    public WindowState State { get; init; } = WindowState.Normal;   // MW1-h
 }
 ```
 
 - **置き場所:** 窓の一覧、アプリの根、終わり方のモード、アプリの段のドラッグは、Core の internal の `AppCore`（窓の核 `WindowCore` と同じ置き方）が持つ。`XylemApp` は `AppCore.Current`（`XylemApp.Run` と `HeadlessApp.StartAsync` が置く）に渡すだけの薄い入口である。`HeadlessApp` で動かすアプリのコードが `XylemApp.OpenWindow` を呼んでも、ヘッドレスの窓が開く。`Window` の要素も `AppCore.Current` で開く。`WindowOptions` は、Core の `Window` の要素と `HeadlessApp` が使えるように、名前空間 `XylemUI` のまま `XylemUI.Desktop` から Core へ移す
 - **スレッド（§2.12）:** どの入口も `UiThread.VerifyAccess` で UI スレッドを確かめ、`[UiThreadOnly]` を付ける（アナライザー XYLEM100 が、ワーカーのラムダからの呼び出しを知らせる）。ワーカーから窓を開くには、`IUiDispatcher.Post` で UI スレッドへ渡す。`Closing` と `Closed` は UI スレッドで上げる。ハンドラはアプリのコールバックなので、同期の描画の間は `SynchronousRenderGuard.RunOrDefer`（§2.11.1）を通す
 - **`OpenWindow` がすること:** 根の関数を呼び、最初のフレームを描いてから戻る（今の `Mount` と同じ）。GPUI の `open_window` も、返す前に 1 回描く（`crates/gpui/src/app.rs` 1516〜1521 行目）。窓のハンドラ、Effect、ほかの窓の根の関数の中からも呼べる。Computed の計算の中では、ほかの Scope の操作と同じく `InvalidOperationException` を投げる
-- **アプリが走っていない時（案（オーナーの決定待ち））:** `XylemApp.Run` の外（`Main` の中で `Run` より前、`Run` が戻った後）で `OpenWindow`・`Windows`・`Quit`・`Provide` を呼ぶと、`InvalidOperationException` を投げる。最初の窓は `Run` の引数で開くか、`Run(Action start)` の `start` の中で開く。Avalonia はライフタイムを作る前の `Window.Show` を許す。GPUI は `Application::run` のコールバックの中だけで窓を開ける（`App` がそこにしか無い）。XylemUI は GPUI の形にする。走る前に開いた窓には、フレームの時計もディスパッチャも無いためである
+- **アプリが走っていない時（MW1-c、PR #921 でオーナーが決定）:** `XylemApp.Run` の外（`Main` の中で `Run` より前、`Run` が戻った後）で `OpenWindow`・`Windows`・`Quit`・`Provide` を呼ぶと、`InvalidOperationException` を投げる。最初の窓は `Run` の引数で開くか、`Run(Action start)` の `start` の中で開く。Avalonia はライフタイムを作る前の `Window.Show` を許す。GPUI は `Application::run` のコールバックの中だけで窓を開ける（`App` がそこにしか無い）。XylemUI は GPUI の形にする。走る前に開いた窓には、フレームの時計もディスパッチャも無いためである
 - **`Windows`:** 一番上の窓だけを開いた順に返す。持ち主のある窓は入れない（`Window` の要素の持ち主が持つ）。GPUI の `windows()`（`app.rs` 1476 行目）は全部の窓を返す。Avalonia の `ClassicDesktopStyleApplicationLifetime.Windows`（`src/Avalonia.Controls/ApplicationLifetimes/ClassicDesktopStyleApplicationLifetime.cs` 51 行目）も、開いた窓を持ち主によらず入れる（85〜93 行目。終える時に `w.Owner is null` で選び分ける、203 行目）。持ち主のある窓はアプリが `WindowHandle` を持たないので、XylemUI の一覧には入れない
 - **`Window` の要素:** `Dialog`（§13.1）と同じく、大きさ 0 で流れの外のアンカーのノードを返す。開閉の Signal が true の間、窓を開き、開いた側の Scope の子で `render` を呼んで、窓の木の根に付ける。false になるか開いた側の Scope が破棄されたら、窓を閉じる（`Closing` は上げない。アプリが決めたので）。利用者が閉じるボタンで閉じ、取り消されなければ、Signal に false を書く（`Popup` と同じく書き込める Signal、§7.3「開閉の signal は書き込める」）。持ち主は、アンカーのある木の窓である。持ち主のある窓は、自分の `UiTree`・`WindowFrames`・`WindowInput`・a11y の木を持つ（窓の核を 1 つ持つ）。ポップアップ（§7.3）は持ち主の木の中の根であり、持ち主のある窓とは違う
 - **Win32 の持ち主のある窓:** `CreateWindowEx` の親に持ち主の HWND を渡す。Microsoft の「Window Features」の頁の「Owned Windows」は、持ち主のある窓はいつも持ち主より z の順で上にあり、持ち主を壊すと OS が壊し、持ち主を最小化すると隠れる、と書く。XylemUI は、持ち主の HWND を壊す前に、持ち主のある窓を自分で閉じる（下の「閉じる順」）ので、OS が壊すのを当てにしない。持ち主の最小化で隠れたことは、§2.11「隠した窓と最小化した窓のフレーム」の `WM_WINDOWPOSCHANGED` で読めるかを、実装の PR の本物の窓のテストで確かめる
-- **モーダルの持ち主のある窓（案（オーナーの決定待ち））:** 行 MW1 の `Window` の要素は、持ち主を使えなくしない（モードレス）。持ち主を使えなくする窓（Avalonia の `ShowDialog`、`src/Avalonia.Controls/Window.cs` 1153 行目。持ち主を `UpdateEnabled` で使えなくする、1194〜1206 行目）は、ダイアログを窓に出すかと一緒に行 B7 の Grill で決める（`a11y-multiwindow.md` の MW-Q8 を B7 へ渡した、Grill の束の決め方）。今の `Dialog` は窓の中のモーダルのまま（§7.3 Q2）
+- **モーダルの持ち主のある窓（MW1-g、PR #921 でオーナーが決定）:** 行 MW1 の `Window` の要素は、持ち主を使えなくしない（モードレス）。持ち主を使えなくする窓（Avalonia の `ShowDialog`、`src/Avalonia.Controls/Window.cs` 1153 行目。持ち主を `UpdateEnabled` で使えなくする、1194〜1206 行目）を足すかは、ダイアログを窓に出すかと一緒に、行 B7 の Grill の問いにする（行 B7 の文）。今の `Dialog` は窓の中のモーダルのまま（§7.3 Q2）
+
+#### 窓の位置と状態（MW1-h、PR #921 でオーナーが決定）
+
+- **開く時の位置と状態:** `WindowOptions` と `OwnedWindowOptions` に、窓の左上の位置（`Position`）と状態（`State`: 通常・最大化・最小化）を足す。一番上の窓の `Position` が null なら OS の既定の位置（Win32 は `CW_USEDEFAULT`）、持ち主のある窓の `Position` が null なら持ち主の窓の中央に出す。Avalonia の `WindowStartupLocation.CenterOwner`（`src/Avalonia.Controls/Window.cs` 1265・1281・1339 行目）に当たる。`State` が最大化か最小化なら、`Width`・`Height`・`Position` は元に戻した時の大きさと位置である。GPUI の `WindowBounds`（`crates/gpui/src/platform.rs` 2629〜2638 行目）も、最大化と全画面に元に戻す時の矩形を持つ。全画面を状態に入れるかは MW1-h の答えに無いので、下の「残っていること」で問う
+- **位置の単位（案（オーナーの決定待ち））:** 仮想画面の物理画素（`ScreenPoint(int X, int Y)`）にする。倍率の違うモニタが並ぶと、論理画素の画面の座標は 1 つに決まらないためである。Avalonia の `Window.Position` も物理画素の `PixelPoint`（`Window.cs` 533 行目）。GPUI は `Bounds<Pixels>`（論理画素）で、モニタをまたぐ時の換算は読んでいない。MW1-h の答えは「位置と状態を足す」までで、単位は決めていない
+- **開いた後の位置と状態を読む口（案（オーナーの決定待ち））:** 浮いた窓の位置を次の起動で戻す（行 DK1）には、閉じる前の位置と状態を読む口が要る。`WindowHandle` に `[UiThreadOnly] ScreenPoint Position { get; }`・`WindowState State { get; }`・元に戻した時の大きさを足す案を問う。持ち主のある窓は `WindowHandle` を持たないので、`OwnedWindowOptions` に位置の変化を受けるコールバックを足すかも一緒に問う
+- **ほかの OS:** Wayland は窓の位置をアプリに決めさせない。行 P04 で、位置を捨てる（`Position` を読まない）ことを書く
 
 #### 閉じる順と取り消し
 
@@ -5326,21 +5342,21 @@ sequenceDiagram
 - **モード:** `AppOptions.QuitMode`。`Default` は、macOS で `Explicit`、ほかで `LastWindowClosed` である。GPUI の `QuitMode`（`crates/gpui/src/app.rs` 457〜466 行目。`Default` を読む所は 3181〜3183 行目の `cfg!(not(target_os = "macos"))`）と同じ 3 つにする。Avalonia の `ShutdownMode`（`src/Avalonia.Controls/ShutdownMode.cs` 13・18・23 行目）の `OnMainWindowClose` は持たない。どれを主の窓とするかの印を API に足すことになり、決定の Q28 に無い
 - **数え方:** 数えるのは一番上の窓だけである。持ち主のある窓が残っていても、一番上の窓が 0 になれば終える（その時には、持ち主のある窓は持ち主と一緒に閉じている）。GPUI は窓が空になったら `quit` を呼ぶ（`app.rs` 3186〜3188 行目）
 - **最後の窓で終える時:** 最後の窓の `Closed` の後に `IPlatformApp.Quit` を呼ぶ。`Closing` を聞き直すことはしない（その窓は聞き終えて閉じている）
-- **`XylemApp.Quit`（案（オーナーの決定待ち））:** 開いている一番上の窓すべてに、閉じる順の手順で `Closing`（理由 `AppQuit`）を聞く。1 つでも取り消せば、どの窓も閉じず `false` を返す。どれも取り消さなければ、開いた順の逆に窓を閉じ、アプリの根を破棄し、ループを終えて `true` を返す（`Run` は `exitCode` を返す）。聞かずに終える形は持たない。Avalonia は、聞く `TryShutdown` と聞かない `Shutdown` の 2 つを持ち（`ClassicDesktopStyleApplicationLifetime.cs` 67〜75 行目）、`TryShutdown` は取り消さなかった窓から順に閉じてしまう（201〜211 行目）。GPUI の `quit` は窓に聞かずにプラットフォームを終える（`app.rs` 1231〜1233 行目）。ここは、聞いて全部か無しかにする。途中まで閉じたアプリは、利用者から見て半端だからである
-- **OS の終了（案（オーナーの決定待ち））:** サインアウトやシャットダウンの `WM_QUERYENDSESSION` で窓に聞くかは、行 MW1 に入れない。Avalonia は `OSShutdown` の理由で聞く（同 206〜208 行目）。入れるなら行 D6（OS の統合）に足す
+- **`XylemApp.Quit`（MW1-e、PR #921 でオーナーが決定）:** 開いている一番上の窓すべてに、閉じる順の手順で `Closing`（理由 `AppQuit`）を聞く。1 つでも取り消せば、どの窓も閉じず `false` を返す。どれも取り消さなければ、開いた順の逆に窓を閉じ、アプリの根を破棄し、ループを終えて `true` を返す（`Run` は `exitCode` を返す）。聞かずに終える形は持たない。Avalonia は、聞く `TryShutdown` と聞かない `Shutdown` の 2 つを持ち（`ClassicDesktopStyleApplicationLifetime.cs` 67〜75 行目）、`TryShutdown` は取り消さなかった窓から順に閉じてしまう（201〜211 行目）。GPUI の `quit` は窓に聞かずにプラットフォームを終える（`app.rs` 1231〜1233 行目）。ここは、聞いて全部か無しかにする。途中まで閉じたアプリは、利用者から見て半端だからである
+- **OS の終了（MW1-g、PR #921 でオーナーが決定）:** サインアウトやシャットダウンの `WM_QUERYENDSESSION` で窓に聞くかは、行 MW1 に入れず、行 D6（OS の統合）の Grill の問いにする（行 D6 の文）。Avalonia は `OSShutdown` の理由で聞く（同 206〜208 行目）。D6 が聞くと決めたら、`WindowCloseReason` に理由を 1 つ足すことになる
 - **Explicit で窓が無い時:** ループは窓が無くても回る（メッセージ専用の窓、§2.11）。Windows では見える物が無くなるので、Explicit を選んだアプリは、トレイ（行 D6）か自分の `Quit` で終える
 
 #### フレームの段（ループ 1 つで窓がいくつも）
 
 - **契約:** スケジューラの契約は窓ごと（`IPlatformWindow.FrameScheduler`）、Windows の実装はループごと（行 PL1、§2.11「スケジューラの単位」）。行 MW1 は、Windows の 1 つの `Win32FrameScheduler` の中に、窓ごとの項目（保留のコールバック、時計の待機オブジェクト、最後のフレームが Present したか、余った合図の数、遅く描き始めるためのタイマー）を持たせる。今は 1 つずつしか持たないので、2 つ目の窓の `RequestFrame` が前の窓のコールバックを置き換え、片方を閉じると時計が両方で止まる
-- **時計（案（オーナーの決定待ち））:** 窓ごとに自分のスワップチェーンの待機オブジェクトを時計にする。ループは、フレームを頼んでいる窓の待機オブジェクト（遅く描き始める待ちの間はその窓のタイマー、Present しなかった後は S3 のタイマー）を、メッセージと一緒に 1 回の `MsgWaitForMultipleObjectsEx` で待つ。窓 1 つが同時に待つ物は 1 つなので、待つ物の数は頼んでいる窓の数と同じである
+- **時計（MW1-d、PR #921 でオーナーが決定）:** 窓ごとに自分のスワップチェーンの待機オブジェクトを時計にする。ループは、フレームを頼んでいる窓の待機オブジェクト（遅く描き始める待ちの間はその窓のタイマー、Present しなかった後は S3 のタイマー）を、メッセージと一緒に 1 回の `MsgWaitForMultipleObjectsEx` で待つ。窓 1 つが同時に待つ物は 1 つなので、待つ物の数は頼んでいる窓の数と同じである
   - 理由: §2.11 の「遅く描き始めるフレーム」は、窓のスワップチェーンのフレーム統計から次のリフレッシュを求め、主ディスプレイの時刻を返す DWM の `DwmGetCompositionTimingInfo` を、60 Hz のパネルの上の窓と合わないとして退けた。リフレッシュレートの違う 2 つのモニタに窓を置くと、1 つの時計では片方の窓の測った契約（Present から表示まで、取りこぼし、入力から表示まで）が守れない
   - 比べた 3 つは、どれも 1 つの時計ですべての窓を回す。GPUI は vsync のスレッド 1 つが `DwmFlush` で待ち（`crates/gpui_windows/src/vsync.rs` 30〜59 行目）、リフレッシュのたびにすべての窓を無効にする（`crates/gpui_windows/src/platform.rs` 437〜493 行目）。Flutter 3.47.8 の Windows のエンジンは vsync の待ちを 1 つ持ち（`engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc` 415〜418・717〜723 行目）、1 回の `drawFrame` がすべての描画のビューを描く（`packages/flutter/lib/src/rendering/binding.dart` 691〜702 行目）。Avalonia は描く時計を 1 つ持ち（`src/Windows/Avalonia.Win32/Win32Platform.cs` 88 行目）、描くループと Compositor もプロセスに 1 つである（同 99・137〜138 行目）。ここが窓ごとに分けるのは、上の理由で、測った契約がスワップチェーンごとだからである
   - 1 つの時計の形を採ると、1 つの `Batch` で動いた 2 つの木が同じリフレッシュで描かれる利点がある。窓ごとの時計では、2 つの窓に同じ変化が出るのが最大 1 リフレッシュずれることがある（下の「1 つのバッチで 2 つの木」）
 - **待つ物の上限:** `MsgWaitForMultipleObjectsEx` に渡せるハンドルは `MAXIMUM_WAIT_OBJECTS` から 1 を引いた数までである（Microsoft の `MsgWaitForMultipleObjectsEx` の頁の `nCount`）。同時にフレームを頼んでいる窓がそれより多い時は、超えた窓を S3 の高分解能のタイマー（16 ms）1 つで回す。数は、行 MW1 の実装の PR で、頁の値から書く
 - **順と公平さ:** 同じ頁は、いくつかが鳴っていても、配列の最も前の鳴ったものを返すと書く。いつも同じ窓が先に返らないよう、ループは 1 回の待ちから戻ったら、鳴ったものを返した窓のフレームを回した後、残りの頼んでいる窓の待つ物をタイムアウト 0 で順に確かめ、鳴っていればそのフレームも回す。確かめる順は、前の回で最後に回した窓の次から始める
 - **窓のフレームの中身:** 窓 1 つのフレームは §2.10 の段（§5.0「フレームの中身」）のとおりで、変えない。窓の核ごとの `WindowFrames` が自分の木だけを進める。アニメーションの一覧、フレームの時刻、`GlyphAtlas.BeginFrame`、Present の数え方、隠した窓の止め方（§2.11）は、どれも窓ごとである
-- **1 つのバッチで 2 つの木:** 1 つの `Batch`（§2.2.1）が 2 つの窓のシグナルを動かすと、閉じた所で Effect が流れ（窓によらない）、それぞれの木の印が付き、それぞれの木の `FrameNeeded` が自分の窓の `RequestFrame` を呼ぶ。layout と描画は、それぞれの窓のフレームで行う。同じバッチの変化は、各木の次のフレームに必ず入る。2 つの木の印が付く時はバッチの閉じた時で同じなので、片方の木だけが古い値で描かれるフレームは無い。上の時計の案では、描かれるリフレッシュがずれることはある
+- **1 つのバッチで 2 つの木:** 1 つの `Batch`（§2.2.1）が 2 つの窓のシグナルを動かすと、閉じた所で Effect が流れ（窓によらない）、それぞれの木の印が付き、それぞれの木の `FrameNeeded` が自分の窓の `RequestFrame` を呼ぶ。layout と描画は、それぞれの窓のフレームで行う。同じバッチの変化は、各木の次のフレームに必ず入る。2 つの木の印が付く時はバッチの閉じた時で同じなので、片方の木だけが古い値で描かれるフレームは無い。窓ごとの時計（上の MW1-d）なので、描かれるリフレッシュがずれることはある
 - **同期の描画:** `WM_SIZE` の同期の描画（§2.11.1）は、今どおりその窓だけを描く。ほかの窓の保留のフレームは、描画の後のループで回る。GPUI も、ある窓を描いている間のほかの窓の描画の要求を後に回す（`crates/gpui_windows/src/events.rs` 35〜68・1320〜1335 行目の `DrawCoordinator`）。XylemUI では `SynchronousRenderGuard` がこれに当たる
 - **閉じた窓:** 窓を閉じる時、ホストは、レンダラが待機オブジェクトを閉じる前に、その窓の項目を待つ物の一覧から外す（今の `SetFrameClock(0)` に当たる。§6.0「ホストが持つもの」）。同じ頁は、待っている間にハンドルを閉じると振る舞いが決まらないと書く。ほかの窓の項目には触れない
 
@@ -5361,7 +5377,8 @@ sequenceDiagram
 
 - **フォーカス:** フォーカスは木ごと（窓の核ごとの `FocusManager`、§7.2）で、どの窓がキーを受けるかは OS の活性化で決まる（窓の核の `Input.SetActive`、§7「キーの入力とフォーカス」）。同時に活性の窓は 1 つである。非活性の窓のノードに `Focus()` を呼ぶと、その木のフォーカスを移すが、OS の窓は活性化しない。窓を前に出すのは `WindowHandle.Activate`（ホストの `IPlatformWindow.Activate`）である。窓が活性になると、その木が覚えていたフォーカスのノードに戻る（今の一つの窓と同じ）。GPUI もフォーカスを窓ごとに持つ（`crates/gpui/src/window.rs` 1288 行目）
 - **キーの経路:** キーは活性の窓の木の、フォーカスのあるノードから窓の根まで配る（今のとおり）。持ち主のある窓の経路は、自分の根で終わり、持ち主の木へは続かない。ポップアップ（§7.3 Q14）が開いた側へ続くのは、同じ木の中だからである。Avalonia と GPUI の持ち主のある窓のキーの経路は読んでいない
-- **アプリの動作（案（オーナーの決定待ち））:** どの窓でも効くショートカット（Ctrl+N で新しい窓）のために、`XylemApp.OnAction<TAction>` でアプリの根に動作のハンドラを置く。活性の窓の経路の bubble の最後（窓の根の後）に呼ぶ。経路のどのノードも動作を受けなかった時だけ走る。GPUI のアプリ全体の動作のハンドラ（`cx.on_action`、`crates/gpui/src/app.rs` 2621〜2635 行目の説明「bubble の終わりに走る」）と同じ位置である。GPUI はそれを、フォーカスした窓の経路の capture の前にも回す（`crates/gpui/src/window.rs` 6497〜6520 行目）。ここは bubble だけにする（`OnAction` の既定の段と同じ）。持たない形では、アプリが同じハンドラを窓ごとの根に付ける
+- **アプリの動作（MW1-f、PR #921 でオーナーが決定）:** どの窓でも効くショートカット（Ctrl+N で新しい窓）のために、`XylemApp.OnAction<TAction>` でアプリの根に動作のハンドラを置く。活性の窓の経路の bubble の最後（窓の根の後）に呼ぶ。経路のどのノードも動作を受けなかった時だけ走る。GPUI のアプリ全体の動作のハンドラ（`cx.on_action`、`crates/gpui/src/app.rs` 2621〜2635 行目の説明「bubble の終わりに走る」）と同じ位置である。GPUI はそれを、フォーカスした窓の経路の capture の前にも回す（`crates/gpui/src/window.rs` 6497〜6520 行目）。ここは bubble だけにする（`OnAction` の既定の段と同じ）。ハンドラは、呼んだ時の今の Scope に属し、その Scope が破棄されると外れる（ノードの `OnAction` と同じ、§2.13「持ち主と外し方」）。始まりの関数の中で呼べば、アプリの根と一緒に生きる
+  - 残る点（案（オーナーの決定待ち））: 行 B1 の Q13 は、動作を「今受けられるか」（`can`）を `OnActionsOf<T>` で公開にした。メニューとコマンドパレットが動作を受けられるかを問う時に、アプリの段のハンドラにも聞くかは、MW1-f の答えに無い。`XylemApp.OnAction` に `Func<TAction, bool>? can` を足し、問いの経路の最後でもアプリの段に聞く案を問う
 
 #### ポップアップの窓の a11y（行 P10 への約束）
 
@@ -5385,7 +5402,7 @@ sequenceDiagram
 
 行 MW1 の実装の PR が、行 PL1 で入れた契約（§6.0 のコード）を次のように変える。どれも internal で、行 PL1 の 7 つの PR の後に入れる。行 PL1 の PR は変えない（PL1 は Windows の振る舞いを変えない約束で、2 つ目の `OpenWindow` を投げるまま終える）。
 
-- `IPlatformApp.OpenWindow(WindowCore core, WindowSpec spec, IPlatformWindow? owner, bool show)`: 窓が開いている間の 2 つ目を投げるのをやめる。`WindowSpec` は題・論理画素の大きさを持つ internal の値で、`WindowOptions` と `OwnedWindowOptions` から作る。`owner` が null でなければ、持ち主のある窓として作る（Win32 は持ち主の HWND を親に渡す）。行 MW1 の 1 つ目の PR
+- `IPlatformApp.OpenWindow(WindowCore core, WindowSpec spec, IPlatformWindow? owner, bool show)`: 窓が開いている間の 2 つ目を投げるのをやめる。`WindowSpec` は題・論理画素の大きさ・位置（null なら一番上の窓は OS の既定、持ち主のある窓は持ち主の中央）・状態を持つ internal の値で、`WindowOptions` と `OwnedWindowOptions` から作る。`owner` が null でなければ、持ち主のある窓として作る（Win32 は持ち主の HWND を親に渡す）。行 MW1 の 1 つ目の PR
 - `IPlatformApp.WindowAt(Vector2 screenPoint)`（物理画素の画面の座標）: その点の一番上のアプリの窓の核を返し、無ければ null。Win32 は `WindowFromPoint` と `GetAncestor(GA_ROOT)` で引き、自分の窓の表で窓の核に直す。4 つ目の PR
 - `IPlatformWindow` に `Activate()`、`Destroy()`、`ClientToScreen(Vector2)`・`ScreenToClient(Vector2)`（物理画素）を足す。`RequestClose()` は、今どおり利用者の閉じる操作と同じ要求（`WM_CLOSE`）を出す。`Activate` と `Destroy` は 2 つ目の PR、座標の 2 つは 4 つ目の PR
 - `WindowCore` に `CloseRequested()`（ホストが `WM_CLOSE` で呼ぶ）を足し、`AppCore` に窓を登録する入口を足す。2 つ目の PR
@@ -5456,31 +5473,25 @@ public sealed class HeadlessWindow
 - 外部サーフェス: 行 XS1。デバイスがプロセスに 1 つになっても、契約（§5.0.5）は変わらない
 - macOS と Linux のホスト: 行 P06（macOS の `QuitMode.Default` の振る舞いを含む）と行 P04・P05
 - 別ウィンドウのポップアップと、その節の実機の確かめ: 行 P10
-- モーダルの持ち主のある窓とダイアログを窓に出すこと: 行 B7（上の案）
-- トレイ、OS の終了の問い合わせ: 行 D6（上の案）
-- 窓の位置と状態（最大化）の API: 入れるかを問う。下の「決まっていない点」の 8
+- モーダルの持ち主のある窓とダイアログを窓に出すか: 行 B7 の Grill の問い（MW1-g）
+- トレイ、OS の終了の問い合わせ: 行 D6（OS の終了は D6 の Grill の問い、MW1-g）
 
 #### 実装の PR
 
 行 MW1 の実装は次の 5 つに分け、この順に入れる。行 PL1 の 7 つの PR の後で、行 G1 の後に始める（行 MW1 の文）。どの PR も単独で入れられ、公開の機能を半分だけ出さない。
 
 1. **ループの中の窓ごとのフレームと、プロセスに 1 つのデバイス（公開の API は変えない）:** `Win32FrameScheduler` の窓ごとの項目と、ループが待つ物を集めること、`Win32PlatformApp` のデバイスとレンダラが借りること、`AppCore` とアプリの根の Scope、`IPlatformApp.OpenWindow` の 2 つ目を投げるのをやめること。テスト: 本物の窓（`XylemUI.Platform.Windows.Tests`、テストから internal の口で窓を 2 つ開く）で、2 つの窓が両方フレームを受けること、片方を閉じてももう片方の時計が動き続けること、2 つのレンダラが 1 つのデバイスを使うこと。層 2 で、`AppCore` のアプリの根と窓の根の親子。測る: 1 つの窓が main と変わらないこと、2 つ目の窓を開く時間、2 つの窓のフレームの間隔、アトラスの測定（決定はオーナー）
-2. **一番上の窓の公開の API とヘッドレス:** `XylemApp.OpenWindow`・`Windows`・`Run` の 2 つ目の形・`Quit`・`Provide`・`OnAction`（案が決まった形で）、`WindowHandle`、`WindowOptions` の Core への移動、`AppOptions` と `QuitMode`、`WM_CLOSE` から `Closing` への道、`Activate`、`HeadlessApp.Windows`・`OpenWindow`・`ExitCode`・`HeadlessWindow`。テスト: 上の「ヘッドレス」のうち持ち主のある窓とドラッグを除くもの、本物の窓で `WM_CLOSE` の取り消し、2 つの窓の IME の確かめ。サンプル: Todo に「新しい窓」の動作を足す
-3. **持ち主のある窓:** `Window` の要素、`OwnedWindowOptions`、Win32 の持ち主の HWND、聞く順と閉じる順、持ち主のある窓のロケールとテーマ（案が決まった形で）。テスト: 持ち主を閉じると持ち主のある窓が消えること、取り消しの連鎖、Signal で閉じる時に `Closing` を聞かないこと、本物の窓で持ち主の最小化と z の順
+2. **一番上の窓の公開の API とヘッドレス:** `XylemApp.OpenWindow`・`Windows`・`Run` の 2 つ目の形・`Quit`・`Provide`・`OnAction`、`WindowHandle`、`WindowOptions` の Core への移動と位置・状態、`AppOptions` と `QuitMode`、`WM_CLOSE` から `Closing` への道、`Activate`、`HeadlessApp.Windows`・`OpenWindow`・`ExitCode`・`HeadlessWindow`。テスト: 上の「ヘッドレス」のうち持ち主のある窓とドラッグを除くもの、本物の窓で `WM_CLOSE` の取り消し、2 つの窓の IME の確かめ。サンプル: Todo に「新しい窓」の動作を足す
+3. **持ち主のある窓:** `Window` の要素、`OwnedWindowOptions`、Win32 の持ち主の HWND、聞く順と閉じる順、持ち主のある窓のロケールとテーマ、持ち主の中央に出すこと。テスト: 持ち主を閉じると持ち主のある窓が消えること、部分木のロケールから開いた窓がそのロケールで出ること、取り消しの連鎖、Signal で閉じる時に `Closing` を聞かないこと、本物の窓で持ち主の最小化と z の順
 4. **窓をまたぐドラッグ:** ドラッグの状態をアプリの段へ移すこと、`IPlatformApp.WindowAt`、座標の変換、像を窓ごとに作り直すこと。テスト: 窓 A から窓 B へのドロップ、窓を移る時の Leave と Enter、どの窓の上でもない時の OS への持ち出し、ドラッグ元の窓を閉じた時の取り消し。測る: 窓をまたいで動くフレームの割り当て 0
 5. **（アトラスを共有すると決めた時だけ）共有するグリフアトラス:** レンダラごとに送った版を持つアトラス。測る: 1 つ目の PR と同じ場面
 
-#### 決まっていない点（設計の PR でオーナーに問う）
+#### 残っていること
 
-1. 持ち主のある窓のロケールとテーマ（上の「Scope の持ち主とアプリの根」）
-2. アプリの根に値を置く口 `XylemApp.Provide` と、始まりの関数の `Run(Action start)`
-3. アプリが走っていない時の `OpenWindow`（投げる）
-4. 窓ごとの時計（ループ 1 つで窓ごとの待機オブジェクトを待つ）
-5. `XylemApp.Quit` は全部の窓に聞き、全部か無しかにする
-6. アプリの動作のハンドラ `XylemApp.OnAction`
-7. モーダルの持ち主のある窓を行 B7 に、OS の終了の問い合わせを行 D6 に置く
-8. 窓の位置と状態（最大化・最小化）を `WindowOptions` に足すか。GPUI の `WindowOptions` は、画面の座標の矩形と状態を持つ（`crates/gpui/src/platform.rs` 2491〜2495 行目の `window_bounds`）。持ち主のある窓は、持ち主の中央に出すのを既定にする案
-9. 持ち主のある窓の `Closing` を `OwnedWindowOptions.Closing` のコールバックで受ける形
+- **オーナーに問う（PR #921 の答えでも決まらなかった点）:** 窓の位置の単位（上の「窓の位置と状態」の案）、開いた後の位置と状態を読む口、全画面の状態を持つか、アプリの段の動作の `can`（上の「キーとフォーカス」）
+- **測ること:** グリフアトラス（Todo の 2 つと 4 つの窓のメモリ、共有した時の送りの費用）、2 つの窓のフレームの間隔と取りこぼし、2 つ目の窓を開く時間、窓 B のアニメーション中の窓 A の入力から表示、窓をまたぐドラッグの割り当て 0（上の「測ること」と「実装の PR」）
+- **本物の窓で確かめること:** 2 つの窓の TSF、持ち主の最小化で隠れた窓の `WM_WINDOWPOSCHANGED`、待つ物の上限の数（Microsoft の頁の値）
+- **行 P10 で確かめること:** 別ウィンドウのメニューを Narrator が読むこと、ポップアップの上の `ElementFromPoint`（上の「ポップアップの窓の a11y」）
 
 ### 6.1 Linuxプラットフォーム層の構造化
 
