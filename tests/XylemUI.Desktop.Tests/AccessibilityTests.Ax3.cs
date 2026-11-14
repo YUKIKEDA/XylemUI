@@ -395,6 +395,60 @@ public sealed partial class AccessibilityTests
         PerformanceAssert.DoesNotAllocate(1_000, Step);
     }
 
+    /// <summary>
+    /// A draw function of nodes given to a node with no role after the tree is made makes the node a Group holding the drawn nodes,
+    /// as in a tree made from scratch; a second function given to it, now a Group, replaces the drawn nodes (PR #919's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a box "plain" 50 x 20 with no role, and a button "after"; the tree made, in which the box has no node.
+    ///
+    /// Steps:
+    /// - Give the box a draw function that adds a point "first"; settle; read the box's node and compare the tree with one made from
+    ///   scratch. Give it a draw function that adds two points "a" and "b"; settle; read and compare again.
+    ///
+    /// Expected:
+    /// - No node for the box before; then a Group with the drawn node "first", the trees the same; then a Group with "a" and "b", the
+    ///   trees the same. Before the fix, the box's own mark found no node to make again, and the box had no node.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DrawFunction_GivenToANodeWithNoRoleAfterTheTreeIsMade_MakesItAGroup()
+    {
+        Element plain = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() => Column(plain = Box().Width(50).Height(20), Button("after", () => { })));
+        _ = app.PumpAndSettle();
+        AccessibilityTree tree = app.AccessibilityTree();
+        bool before = tree.Find(plain.Node) is null;
+
+        _ = plain.AccessibleChildren(
+            (children, bounds) => children.Add(1, bounds, new AccessibilityInfo { Role = SemanticsRole.Image, Name = "first" })
+        );
+        _ = app.PumpAndSettle();
+        (SemanticsRole?, string) first = Read();
+        AssertSameAsATreeMadeFromScratch(app);
+        _ = plain.AccessibleChildren(
+            (children, bounds) =>
+            {
+                children.Add(1, new Rect(0, 0, 10, 10), new AccessibilityInfo { Role = SemanticsRole.Image, Name = "a" });
+                children.Add(2, new Rect(10, 0, 10, 10), new AccessibilityInfo { Role = SemanticsRole.Image, Name = "b" });
+            }
+        );
+        _ = app.PumpAndSettle();
+        (SemanticsRole?, string) second = Read();
+        AssertSameAsATreeMadeFromScratch(app);
+
+        Assert.True(before);
+        Assert.Equal(((SemanticsRole?)SemanticsRole.Group, "first"), first);
+        Assert.Equal(((SemanticsRole?)SemanticsRole.Group, "a b"), second);
+
+        (SemanticsRole?, string) Read()
+        {
+            AccessibilityNode? node = app.AccessibilityTree().Find(plain.Node);
+            return node is null ? (null, string.Empty) : (node.Role, string.Join(' ', node.Synthetic.Select(d => d.Name)));
+        }
+    }
+
     // Compares the tree the updates kept with a tree made from scratch on the same UI tree, node by node.
     private static void AssertSameAsATreeMadeFromScratch(HeadlessApp app)
     {

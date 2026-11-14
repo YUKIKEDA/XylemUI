@@ -481,7 +481,9 @@ internal sealed class UiTree
 
     /// <summary>
     /// Sets the function that adds the nodes of the accessibility tree a node drawn by a draw function holds (design §4.4.1, "The
-    /// nodes of a draw function").
+    /// nodes of a draw function"). A node with no role becomes a Group with it, so a node that has no node of the accessibility tree
+    /// yet takes the node's mark, which makes the node above it again, as <see cref="SetFocusable"/> does; a node that has one takes
+    /// the mark of its own node alone.
     /// </summary>
     /// <param name="node">The node.</param>
     /// <param name="build">The function.</param>
@@ -490,7 +492,17 @@ internal sealed class UiTree
         // A stale handle throws here, as the other setters' InputOf does.
         _ = Nodes.GetRef(node);
         _a11y.Children[node] = build;
-        MarkAccessibilitySelf(node);
+        if (_a11y.Tree is { IsActive: true } accessibility)
+        {
+            if (accessibility.Find(node) is null)
+            {
+                accessibility.Mark(node);
+            }
+            else
+            {
+                accessibility.MarkSelf(node);
+            }
+        }
     }
 
     /// <summary>

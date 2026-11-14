@@ -29,6 +29,14 @@ namespace XylemUI.E2E;
 // such stage made again ("scroll_refreshed"), and the times the measured frames made the map of the targets' ancestors again
 // ("scroll_map_builds", row AX3: 0 when the rows hold no target). The rows' making and the new row's node allocate, as in an app;
 // the loop itself does not.
+//
+// With --relations N --scroll --targets-in-rows (row AX3, PR #919's review), the targets are in the list's rows instead: row i's text
+// labels button i for i < N, and there is no column of labels. Rows are keyed by their index and the scroll only goes down, so each
+// measured frame makes a row that holds a new target (with N of 200 or more, every row the run makes holds one) and drops one whose
+// target is freed, and Relink puts back every kept row, each holding a target: the map of the targets' ancestors is made again once
+// a swap. The live targets are the rows the list keeps, about 30 ("scroll_targets_in_range"); "scroll_target_frames" counts the
+// measured frames whose new last row holds a target. With --outside-targets M too, buttons N to N + M - 1 are labelled by texts in a
+// column outside the list, so that each rebuild also walks M targets that no swap touches.
 internal static class A11yCost
 {
     private const int Samples = 101;
@@ -36,8 +44,14 @@ internal static class A11yCost
     // UIA's object id of the provider of a window's root (UiaRootObjectId, UIAutomationCoreApi.h).
     private const int UiaRootObjectId = -25;
 
-    public static int Run(int buttonCount, bool accessKit, int relations = 0, bool scroll = false)
+    public static int Run(int buttonCount, bool accessKit, int relations = 0, bool scroll = false, bool targetsInRows = false, int outsideTargets = 0)
     {
+        if (targetsInRows && (!scroll || relations == 0 || relations + outsideTargets > buttonCount))
+        {
+            Console.Error.WriteLine("a11y --targets-in-rows: needs --scroll and --relations N, with N plus --outside-targets at most the buttons.");
+            return 1;
+        }
+
         UiThread.Initialize();
         using var report = new Report("a11y");
         report.Text("accesskit", accessKit ? "yes" : "no");
@@ -45,6 +59,12 @@ internal static class A11yCost
         if (relations > 0)
         {
             report.Number("relations", relations);
+        }
+
+        if (targetsInRows)
+        {
+            report.Text("targets", "rows");
+            report.Number("outside_targets", outsideTargets);
         }
 
         using var fonts = new DirectWriteFontProvider();
@@ -57,6 +77,7 @@ internal static class A11yCost
         ScopeHandle scope;
         NodeHandle first = default;
         NodeHandle listBox = default;
+        var rowTargets = new HashSet<NodeHandle>();
         try
         {
             scope = Scope.Create(() =>
@@ -71,11 +92,33 @@ internal static class A11yCost
                 }
 
                 first = buttons[0].Node;
-                var labels = new Element[Math.Min(relations, buttonCount)];
+
+                // The labels outside the list: those of the first N buttons, or with the targets in the rows, those of the buttons
+                // after the first N.
+                int labelled = targetsInRows ? relations : 0;
+                var labels = new Element[targetsInRows ? outsideTargets : Math.Min(relations, buttonCount)];
                 for (int i = 0; i < labels.Length; i++)
                 {
                     labels[i] = Elements.Text($"label {i}");
-                    _ = buttons[i].LabelledBy(labels[i]);
+                    _ = buttons[labelled + i].LabelledBy(labels[i]);
+                }
+
+                Func<IReadOnlySignal<int>, Element> row = static _ => Elements.Box().Height(20);
+                if (targetsInRows)
+                {
+                    row = item =>
+                    {
+                        // A row's item is its index and never changes.
+                        int index = item.Get();
+                        Element text = Elements.Text(() => $"row {item.Get()}");
+                        if (index < relations)
+                        {
+                            _ = buttons[index].LabelledBy(text);
+                            _ = rowTargets.Add(text.Node);
+                        }
+
+                        return Elements.Box(text).Height(20);
+                    };
                 }
 
                 Element column = Elements.Column(buttons);
@@ -87,7 +130,7 @@ internal static class A11yCost
                         .Width(200)
                         .Height(200)
                         .Overflow(Overflow.Visible, Overflow.Scroll)
-                        .VirtualFor(rowItems, static i => i, static _ => Elements.Box().Height(20), listState);
+                        .VirtualFor(rowItems, static i => i, row, listState);
 
                     // The buttons overflow the root, and a box that scrolls has no least height of its content: without this, the
                     // column would shrink the list to nothing.
@@ -195,6 +238,7 @@ internal static class A11yCost
             // Each frame scrolls the list by one row: one row leaves the range, one comes in, and the list links its rows again.
             var scrolled = new double[Samples];
             int linkFrames = 0;
+            int targetFrames = 0;
             int mapsBefore = 0;
             float y = 0;
             for (int i = -10; i < Samples; i++)
@@ -214,7 +258,9 @@ internal static class A11yCost
                 if (i >= 0)
                 {
                     scrolled[i] = Stopwatch.GetElapsedTime(t0, t1).TotalMicroseconds;
-                    linkFrames += tree.Nodes.GetRef(listBox).LastChild != lastRow ? 1 : 0;
+                    NodeHandle newLast = tree.Nodes.GetRef(listBox).LastChild;
+                    linkFrames += newLast != lastRow ? 1 : 0;
+                    targetFrames += newLast != lastRow && rowTargets.Contains(tree.Nodes.GetRef(newLast).FirstChild) ? 1 : 0;
                 }
             }
 
@@ -222,6 +268,17 @@ internal static class A11yCost
             report.Number("scroll_link_frames", linkFrames);
             report.Number("scroll_refreshed", tree.Accessibility.LastRefreshed);
             report.Number("scroll_map_builds", tree.Accessibility.TargetMapsMade - mapsBefore);
+            if (targetsInRows)
+            {
+                int inRange = 0;
+                for (NodeHandle child = tree.Nodes.GetRef(listBox).FirstChild; !child.IsNone; child = tree.Nodes.GetRef(child).NextSibling)
+                {
+                    inRange += rowTargets.Contains(tree.Nodes.GetRef(child).FirstChild) ? 1 : 0;
+                }
+
+                report.Number("scroll_targets_in_range", inRange);
+                report.Number("scroll_target_frames", targetFrames);
+            }
 
             // A scroll that swapped no row measured nothing of what the scene is for: it is not reported as a result.
             if (linkFrames != Samples)
