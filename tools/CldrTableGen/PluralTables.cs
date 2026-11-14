@@ -93,6 +93,7 @@ internal sealed class PluralTables
         var ordinalSamples = new SortedDictionary<string, List<(string, string)>>(StringComparer.Ordinal);
         var byTag = new Dictionary<string, (PluralRuleSet, string, PluralRuleSet, string)>(StringComparer.Ordinal);
         var pairs = new HashSet<(string, string)>();
+        Dictionary<string, string> parents = PluralParents(cldr);
 
         // Root first, then the entries in the order of their tags: the methods are numbered in the order of first use, so that
         // the output does not depend on the order of the json's keys.
@@ -103,8 +104,8 @@ internal sealed class PluralTables
                 continue;
             }
 
-            string cardinalKey = Find(cardinalData, entry.DataTag);
-            string ordinalKey = Find(ordinalData, entry.DataTag);
+            string cardinalKey = Find(cardinalData, parents, entry.DataTag);
+            string ordinalKey = Find(ordinalData, parents, entry.DataTag);
             PluralRuleSet cardinalSet = SetOf(cardinalData, cardinalKey, "Cardinal", cardinal, cardinalByKey, cardinalSamples);
             PluralRuleSet ordinalSet = SetOf(ordinalData, ordinalKey, "Ordinal", ordinal, ordinalByKey, ordinalSamples);
             byTag.Add(entry.DataTag, (cardinalSet, cardinalKey, ordinalSet, ordinalKey));
@@ -114,14 +115,45 @@ internal sealed class PluralTables
         return new PluralTables(cardinal, ordinal, byTag, pairs.Count, cardinalSamples, ordinalSamples);
     }
 
-    // The key whose rules a tag takes. The parent locales of the plurals component (parentLocales.json, "plurals") stand alone and
-    // are not merged with the main ones (UTS #35 part 1, "Parent Locales"); CLDR 49 lists none, so a tag is truncated subtag by
-    // subtag (pt-AO takes pt's rules, not pt-PT's), down to und, the rules of root.
-    private static string Find(JsonElement data, string tag)
+    // The parent locales of the plurals component (parentLocales.json, "plurals"), child to parent. They stand alone and are not
+    // merged with the main ones (UTS #35 part 1, "Parent Locales"). CLDR 49 lists none; a release without the list has none either.
+    private static Dictionary<string, string> PluralParents(CldrZip cldr)
+    {
+        var parents = new Dictionary<string, string>(StringComparer.Ordinal);
+        JsonElement all = cldr.Supplemental("parentLocales").GetProperty("parentLocales");
+        if (all.TryGetProperty("plurals", out JsonElement plurals))
+        {
+            foreach (JsonProperty parent in plurals.EnumerateObject())
+            {
+                string notString = "The plural parent of " + parent.Name + " is not a string.";
+                string named = parent.Value.GetString() ?? throw new InvalidDataException(notString);
+                parents.Add(parent.Name, named == "root" ? "und" : named);
+            }
+        }
+
+        return parents;
+    }
+
+    // The key whose rules a tag takes: the tag's own, or else its plural parent's when the list names one, or else the tag truncated
+    // by its last subtag, until a key has rules; und, the rules of root, ends every path ("Following the inheritance path, using
+    // parentLocale where available and otherwise truncating the locale, must always lead eventually to the root locale", UTS #35
+    // part 1, "Parent Locales"). With no plural parents, pt-AO takes pt's rules, not those of pt-PT, its main parent.
+    private static string Find(JsonElement data, Dictionary<string, string> parents, string tag)
     {
         string current = tag;
-        while (!data.TryGetProperty(current, out _))
+        for (int steps = 0; !data.TryGetProperty(current, out _); steps++)
         {
+            if (steps > 32)
+            {
+                throw new InvalidDataException("The plural parents of " + tag + " go round in a cycle.");
+            }
+
+            if (parents.TryGetValue(current, out string? parent))
+            {
+                current = parent;
+                continue;
+            }
+
             int hyphen = current.LastIndexOf('-');
             if (hyphen < 0)
             {

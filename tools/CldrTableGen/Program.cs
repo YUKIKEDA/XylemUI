@@ -35,10 +35,17 @@ static async Task<int> Run(string[] args)
     string? zipPath = null;
     string? lockPath = null;
     string? outRoot = null;
-    for (int i = 0; i < args.Length; i++)
+    for (int i = 0; i < args.Length; i += 2)
     {
-        string value = i + 1 < args.Length ? args[i + 1] : throw new InvalidDataException("The option " + args[i] + " has no value.");
-        switch (args[i])
+        // The option is checked before its value is read, so that an unknown last option (--help) prints the usage.
+        string option = args[i];
+        if (option is not ("--zip" or "--lock" or "--out"))
+        {
+            throw new InvalidDataException("Usage: CldrTableGen [--zip <zip>] [--lock <versions.lock>] [--out <directory>]");
+        }
+
+        string value = i + 1 < args.Length ? args[i + 1] : throw new InvalidDataException("The option " + option + " has no value.");
+        switch (option)
         {
             case "--zip":
                 zipPath = value;
@@ -46,14 +53,10 @@ static async Task<int> Run(string[] args)
             case "--lock":
                 lockPath = value;
                 break;
-            case "--out":
+            default:
                 outRoot = value;
                 break;
-            default:
-                throw new InvalidDataException("Usage: CldrTableGen [--zip <zip>] [--lock <versions.lock>] [--out <directory>]");
         }
-
-        i++;
     }
 
     string? root = zipPath is null || lockPath is null || outRoot is null ? FindRoot() : null;
@@ -141,6 +144,14 @@ static async Task<byte[]> Download(string root, PinnedRelease release)
         catch (HttpRequestException exception)
         {
             Console.WriteLine("    failed: " + exception.Message);
+            continue;
+        }
+        catch (TaskCanceledException exception) when (exception.InnerException is TimeoutException)
+        {
+            // HttpClient's timeout (100 seconds by default) ends the request with a TaskCanceledException whose inner exception is a
+            // TimeoutException: that is what the documentation of HttpClient.Timeout says for .NET 5 and later, not seen in a run
+            // here. Nothing else cancels the request, so the next URL is tried.
+            Console.WriteLine("    timed out: " + exception.Message);
             continue;
         }
 

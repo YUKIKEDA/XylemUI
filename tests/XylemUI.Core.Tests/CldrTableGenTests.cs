@@ -6,8 +6,9 @@ using System.Text;
 namespace XylemUI.Tests;
 
 // The generator of the CLDR tables, tools/CldrTableGen (LC2, design §4.11, "How the tables are made" and "Tests"), run on a small
-// zip of the json-full shape that the tests make: two runs write the same bytes, a zip whose SHA-256 is not the lock's stops it, and
-// so does a language of row LC4 with neither data nor an alias. The tables it wrote from the real zip are checked in
+// zip of the json-full shape that the tests make: two runs write the same bytes, a locale takes the plural rules of its plural parent
+// or of its truncated tag, a zip whose SHA-256 is not the lock's stops it, and so does a language of row LC4 with neither data nor
+// an alias. The tables it wrote from the real zip are checked in
 // LocaleDataTests and PluralRulesTests.
 public sealed class CldrTableGenTests
 {
@@ -63,6 +64,50 @@ public sealed class CldrTableGenTests
             Assert.Contains("public static LocaleData Bo => CldrBo.Instance;", locales, StringComparison.Ordinal);
             Assert.Contains("public static LocaleData Tl => CldrTl.Instance;", locales, StringComparison.Ordinal);
             Assert.DoesNotContain("CaESValencia", locales, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A locale takes the plural rules of the parent that the plurals component of parentLocales.json names, and with none it
+    /// truncates its tag; the main parent locales are not read (UTS #35 part 1, "Parent Locales": component parents stand alone).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: pt-AO has no rules of its own, plurals.json has pt and pt-PT, and the main parent of pt-AO is
+    ///   pt-PT. The plurals component's parents are the row's JSON object.
+    ///
+    /// Steps:
+    /// - Run the tool, and read the line of pt-AO in the table of samples it wrote for the tests.
+    ///
+    /// Expected:
+    /// - With no plural parents, pt-AO takes pt's rules (its tag truncated), not pt-PT's; with pt-PT as its plural parent, pt-PT's;
+    ///   with root, und's. Its ordinal rules are und's in every row (ordinals.json has only und).
+    /// </remarks>
+    /// <param name="pluralParents">The plurals component's parent locales, as a JSON object.</param>
+    /// <param name="key">The key of plurals.json whose rules pt-AO takes.</param>
+    [Theory]
+    [InlineData("{}", "pt")]
+    [InlineData("{ \"pt-AO\": \"pt-PT\" }", "pt-PT")]
+    [InlineData("{ \"pt-AO\": \"root\" }", "und")]
+    public void Tool_PluralParents_AreFollowed_AndTruncatedWithout(string pluralParents, string key)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, pluralParents);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            string samples = File.ReadAllText(Path.Combine(output, "tests/XylemUI.Core.Tests/CldrPluralSamples.g.cs"));
+            string line = "        (\"pt-AO\", \"" + key + "\", \"und\"),";
+            Assert.Contains(line, samples, StringComparison.Ordinal);
         }
         finally
         {
@@ -143,15 +188,18 @@ public sealed class CldrTableGenTests
     }
 
     // A zip of the json-full shape, with the files the generator reads and nothing more. The number and date files are empty
-    // objects: the generator reads only that they are there.
-    private static string WriteZip(string directory, bool withBo)
+    // objects: the generator reads only that they are there. pt-AO is a modern locale with no plural rules of its own; plurals.json
+    // has rules for pt and for pt-PT, and the parent locales of the plurals component are the given JSON object.
+    private static string WriteZip(string directory, bool withBo, string pluralParents = "{}")
     {
         string path = Path.Combine(directory, "cldr-test-json-full.zip");
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
         {
             Add(zip, "LICENSE", "Test notice.\n");
             Add(zip, "cldr-core/package.json", "{ \"version\": \"49.0.0\" }");
-            var levels = new StringBuilder("{ \"effectiveCoverageLevels\": { \"und\": \"modern\", \"ca-ES-valencia\": \"modern\"");
+            var levels = new StringBuilder(
+                "{ \"effectiveCoverageLevels\": { \"und\": \"modern\", \"ca-ES-valencia\": \"modern\", \"pt-AO\": \"modern\""
+            );
             foreach (string language in Lc4Languages.Where(language => language is not ("tl" or "bo")))
             {
                 levels.Append(", \"").Append(language).Append("\": \"modern\"");
@@ -160,7 +208,11 @@ public sealed class CldrTableGenTests
             levels.Append(" } }");
             Add(zip, "cldr-core/coverageLevels.json", levels.ToString());
             foreach (
-                string tag in Lc4Languages.Where(language => language != "tl" && (withBo || language != "bo")).Append("und").Append("ca-ES-valencia")
+                string tag in Lc4Languages
+                    .Where(language => language != "tl" && (withBo || language != "bo"))
+                    .Append("und")
+                    .Append("ca-ES-valencia")
+                    .Append("pt-AO")
             )
             {
                 Add(zip, "cldr-numbers-full/main/" + tag + "/numbers.json", "{}");
@@ -179,8 +231,13 @@ public sealed class CldrTableGenTests
             Add(zip, "cldr-core/supplemental/weekData.json", Weeks);
             const string Cardinals =
                 "{ \"supplemental\": { \"plurals-type-cardinal\": { \"und\": { \"pluralRule-count-other\": \" @integer 0~15\" }, "
-                + "\"en\": { \"pluralRule-count-one\": \"i = 1 and v = 0 @integer 1\", \"pluralRule-count-other\": \" @integer 0, 2~16\" } } } }";
+                + "\"en\": { \"pluralRule-count-one\": \"i = 1 and v = 0 @integer 1\", \"pluralRule-count-other\": \" @integer 0, 2~16\" }, "
+                + "\"pt\": { \"pluralRule-count-one\": \"i = 0..1 @integer 0, 1\", \"pluralRule-count-other\": \" @integer 2~17\" }, "
+                + "\"pt-PT\": { \"pluralRule-count-one\": \"i = 1 and v = 0 @integer 1\", \"pluralRule-count-other\": \" @integer 0, 2~16\" } } } }";
             Add(zip, "cldr-core/supplemental/plurals.json", Cardinals);
+            string parents =
+                "{ \"supplemental\": { \"parentLocales\": { \"parentLocale\": { \"pt-AO\": \"pt-PT\" }, \"plurals\": " + pluralParents + " } } }";
+            Add(zip, "cldr-core/supplemental/parentLocales.json", parents);
             Add(
                 zip,
                 "cldr-core/supplemental/ordinals.json",
