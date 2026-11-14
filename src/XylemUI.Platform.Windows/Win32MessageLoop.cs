@@ -106,7 +106,7 @@ public static unsafe class Win32MessageLoop
     /// </summary>
     /// <returns>The exit code passed to <see cref="Quit"/>.</returns>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
-    /// <exception cref="Win32Exception">The system could not wait for messages.</exception>
+    /// <exception cref="Win32Exception">The system could not make the loop's wake window, or could not wait for messages.</exception>
     [UiThreadOnly]
     public static int Run()
     {
@@ -233,7 +233,7 @@ public static unsafe class Win32MessageLoop
     }
 
     // A message-only window receives the wake messages. Unlike PostThreadMessage, a message posted to a window is not discarded
-    // while a modal loop (a resize drag, a message box) runs.
+    // while a modal loop (a resize drag, a message box) runs. A run that could not make it throws, and the next run tries again.
     private static void EnsureWakeWindow()
     {
         if (_wakeWindow != 0)
@@ -241,35 +241,14 @@ public static unsafe class Win32MessageLoop
             return;
         }
 
-        HINSTANCE instance = GetModuleHandleW(null);
-        fixed (char* className = WakeClassName)
+        HWND window = MessageWindow.Create(WakeClassName, out int error);
+        if (window == HWND.NULL)
         {
-            var windowClass = new WNDCLASSEXW
-            {
-                cbSize = (uint)sizeof(WNDCLASSEXW),
-                lpfnWndProc = &WakeWindowProcedure,
-                hInstance = instance,
-                lpszClassName = className,
-            };
-
-            if (RegisterClassExW(&windowClass) == 0)
-            {
-                throw new Win32Exception(Marshal.GetLastSystemError());
-            }
-
-            HWND window = CreateWindowExW(0, className, null, 0, 0, 0, 0, 0, HWND.HWND_MESSAGE, HMENU.NULL, instance, null);
-            if (window == HWND.NULL)
-            {
-                throw new Win32Exception(Marshal.GetLastSystemError());
-            }
-
-            Volatile.Write(ref _wakeWindow, (nint)window);
+            throw new Win32Exception(error);
         }
-    }
 
-    [UnmanagedCallersOnly]
-    private static LRESULT WakeWindowProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam) =>
-        DefWindowProcW(hwnd, message, wParam, lParam);
+        Volatile.Write(ref _wakeWindow, (nint)window);
+    }
 
     private static void DefaultCallbackExceptionHandler(Exception exception) =>
         Trace.TraceError("Unhandled exception in a window procedure or frame callback: {0}", exception);

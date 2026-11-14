@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Runtime.InteropServices;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
 
@@ -13,9 +11,9 @@ namespace XylemUI.Platform.Windows;
 /// <remarks>
 /// What it puts on the clipboard is owned by a message-only window of its own (<see cref="Owner"/>): a clipboard opened with no
 /// window has no owner after <c>EmptyClipboard</c>, and <c>SetClipboardData</c> then fails (<c>OpenClipboard</c>'s documentation).
-/// The clipboard is the OS's one, so it belongs to the app tier and no app window owns it (design §6.0): closing a window does not
-/// take its text away. The loop's wake window is not used, so that <c>Win32MessageLoop.Wake</c> still does nothing before the loop
-/// starts (Issue #928).
+/// The window is the host's, not an app window's: the clipboard is the OS's one and belongs to the app tier, and it reads and
+/// writes with no app window open (design §6.0). The loop's wake window is not used, so that <c>Win32MessageLoop.Wake</c> still
+/// does nothing before the loop starts (Issue #928).
 /// </remarks>
 internal sealed unsafe class Win32Clipboard : IClipboardBackend
 {
@@ -25,24 +23,32 @@ internal sealed unsafe class Win32Clipboard : IClipboardBackend
     private static nint _owner;
 
     /// <summary>
-    /// Gets the message-only window that owns what the clipboard puts on it. It is made on the UI thread at the first call that
-    /// opens the clipboard, and kept for the process, as the loop's wake window is.
+    /// Gets the message-only window that owns what the clipboard puts on it, or <see cref="HWND.NULL"/> when there is none: the
+    /// window is made on the UI thread only, at the first call that opens the clipboard there, and kept for the process, as the
+    /// loop's wake window is (design §6.0; Issue #928). A call off the UI thread before then, or a call whose window could not be
+    /// made, gets none, and a later call on the UI thread tries again.
     /// </summary>
-    /// <exception cref="Win32Exception">The window could not be made.</exception>
     internal static HWND Owner
     {
         get
         {
-            if (_owner == 0)
+            // Made on the UI thread only: a window belongs to the thread that made it and goes when that thread ends, which would
+            // leave the clipboard with an owner that no longer exists.
+            nint owner = Volatile.Read(ref _owner);
+            if (owner == 0 && UiThread.CheckAccess())
             {
-                _owner = CreateOwner();
+                owner = (nint)MessageWindow.Create(OwnerClassName, out _);
+                Volatile.Write(ref _owner, owner);
             }
 
-            return (HWND)_owner;
+            return (HWND)owner;
         }
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// With no owner window (<see cref="Owner"/>), it opens the clipboard with none: reading needs no owner.
+    /// </remarks>
     public string? GetText()
     {
         if (OpenClipboard(Owner) == BOOL.FALSE)
@@ -91,10 +97,15 @@ internal sealed unsafe class Win32Clipboard : IClipboardBackend
     public bool HasText() => IsClipboardFormatAvailable(UnicodeText) != BOOL.FALSE;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// With no owner window (<see cref="Owner"/>), it returns <see langword="false"/>: <c>SetClipboardData</c> fails on a clipboard
+    /// that has no owner.
+    /// </remarks>
     public bool SetText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        if (OpenClipboard(Owner) == BOOL.FALSE)
+        HWND owner = Owner;
+        if (owner == HWND.NULL || OpenClipboard(owner) == BOOL.FALSE)
         {
             return false;
         }
@@ -141,37 +152,4 @@ internal sealed unsafe class Win32Clipboard : IClipboardBackend
             _ = CloseClipboard();
         }
     }
-
-    // A message-only window (HWND_MESSAGE): it is never shown, takes no broadcast, and gets the clipboard's notices to its owner,
-    // which the default procedure handles.
-    private static nint CreateOwner()
-    {
-        HINSTANCE instance = GetModuleHandleW(null);
-        fixed (char* className = OwnerClassName)
-        {
-            var windowClass = new WNDCLASSEXW
-            {
-                cbSize = (uint)sizeof(WNDCLASSEXW),
-                lpfnWndProc = &OwnerProcedure,
-                hInstance = instance,
-                lpszClassName = className,
-            };
-
-            if (RegisterClassExW(&windowClass) == 0)
-            {
-                throw new Win32Exception(Marshal.GetLastSystemError());
-            }
-
-            HWND window = CreateWindowExW(0, className, null, 0, 0, 0, 0, 0, HWND.HWND_MESSAGE, HMENU.NULL, instance, null);
-            if (window == HWND.NULL)
-            {
-                throw new Win32Exception(Marshal.GetLastSystemError());
-            }
-
-            return (nint)window;
-        }
-    }
-
-    [UnmanagedCallersOnly]
-    private static LRESULT OwnerProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam) => DefWindowProcW(hwnd, message, wParam, lParam);
 }

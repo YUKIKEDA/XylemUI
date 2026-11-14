@@ -10,7 +10,7 @@ namespace XylemUI.Platform.Windows;
 /// nothing of the clock.
 /// </summary>
 /// <remarks>
-/// It belongs to the UI thread. It makes its parts in the order the design gives (window, provider, show, renderer, clock), and
+/// It belongs to the UI thread. It makes its parts in the order the design gives (window, provider, show, renderer, clock, TSF), and
 /// disposes them in the order the desktop window had: TSF lets go of the window before it is destroyed, the provider goes before
 /// the window, and the loop stops waiting on the clock before the renderer closes it. Until the OS's settings become one object
 /// of the app tier (row PL1, PR 5), the window passes its own settings to the core in <see cref="Attach"/> (Issue #928).
@@ -162,7 +162,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
 
     /// <summary>
     /// Takes the notices back from the core, lets TSF go of the window, takes the provider out, destroys the window, sets the loop's
-    /// frame clock back to its timer, and releases the renderer. A second call does nothing.
+    /// frame clock back to its timer, and releases the renderer. The callback given to the constructor runs also when a step
+    /// throws. A second call does nothing.
     /// </summary>
     public void Dispose()
     {
@@ -172,6 +173,22 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         }
 
         _disposed = true;
+
+        // The callback runs whatever a step throws: the app counts the window as open until it runs, and would refuse every later
+        // window (Win32PlatformApp.OpenWindow).
+        try
+        {
+            DisposeParts();
+        }
+        finally
+        {
+            _onDisposed?.Invoke();
+        }
+    }
+
+    // The order of the design (§6.0, "What the host owns"), as the desktop window before row PL1 disposed its parts.
+    private void DisposeParts()
+    {
         if (Window is not null)
         {
             Window.Closed -= OnClosed;
@@ -206,8 +223,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
             Win32MessageLoop.SetFrameClock(0);
             Renderer.Dispose();
         }
-
-        _onDisposed?.Invoke();
     }
 
     // The synchronous resize path (design §2.11.1): the swap chain takes the new size, then the core runs the frame at once at the

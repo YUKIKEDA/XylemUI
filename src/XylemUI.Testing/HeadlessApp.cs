@@ -48,6 +48,7 @@ public sealed class HeadlessApp : IAsyncDisposable
         _text = new TextContext(_fonts);
         _renderer = options.Renderer?.Invoke();
         HeadlessWindow window;
+        bool connected = false;
 
         // A renderer that fails to size, or a part made after it that throws, does not leave its device behind (PR #469's review).
         try
@@ -70,6 +71,9 @@ public sealed class HeadlessApp : IAsyncDisposable
             // The headless parts as the window tier (design §6.0, "Headless"): from it the core gives the tree the input method, and
             // takes that the window shows and is active from the start.
             window = new HeadlessWindow(_target, _scheduler, _platform, Ime, options);
+
+            // The core owns the window and the atlas from Connect on, also when Connect throws (design §6.0).
+            connected = true;
             _core.Connect(window, _atlas, Color.FromRgb(0xFFFFFF), Time);
             window.Attach();
             Pointer = new HeadlessPointer(this);
@@ -77,7 +81,16 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
         catch
         {
-            _atlas?.Dispose();
+            // From Connect on, the core disposes the atlas; before, the atlas is still the app's.
+            if (connected)
+            {
+                _core!.Dispose();
+            }
+            else
+            {
+                _atlas?.Dispose();
+            }
+
             _renderer?.Dispose();
             _text.Dispose();
             _fonts.Dispose();

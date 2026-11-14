@@ -102,8 +102,9 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
     /// - The clipboard of the app tier; the text the clipboard holds is kept and put back after the test.
     ///
     /// Steps:
-    /// - Set "owner"; read the clipboard's owner (<c>GetClipboardOwner</c>); look for the message-only window of the class
-    ///   "XylemUI.Clipboard" (<c>FindWindowExW</c> under <c>HWND_MESSAGE</c>).
+    /// - Set "owner"; read the clipboard's owner (<c>GetClipboardOwner</c>); look for this process's message-only window of the
+    ///   class "XylemUI.Clipboard" (<c>FindWindowExW</c> under <c>HWND_MESSAGE</c>, whose matches are walked until one belongs to
+    ///   this process by <c>GetWindowThreadProcessId</c>).
     ///
     /// Expected:
     /// - The set succeeds; the owner and the window found are both the clipboard's owner window.
@@ -118,11 +119,7 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             {
                 Assert.True(Eventually(() => clipboard.SetText("owner")));
                 HWND owner = GetClipboardOwner();
-                HWND found;
-                fixed (char* className = "XylemUI.Clipboard")
-                {
-                    found = FindWindowExW(HWND.HWND_MESSAGE, HWND.NULL, className, null);
-                }
+                HWND found = MessageWindowOfThisProcess("XylemUI.Clipboard");
 
                 Assert.Equal(Win32Clipboard.Owner, owner);
                 Assert.Equal(Win32Clipboard.Owner, found);
@@ -246,6 +243,30 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         }
 
         return true;
+    }
+
+    // This process's message-only window of a class: FindWindowExW under HWND_MESSAGE looks through every process of the session,
+    // where another test process or a running sample has a window of the same class (PR #937's review).
+    private static HWND MessageWindowOfThisProcess(string className)
+    {
+        uint process = (uint)Environment.ProcessId;
+        fixed (char* name = className)
+        {
+            HWND window = FindWindowExW(HWND.HWND_MESSAGE, HWND.NULL, name, null);
+            while (window != HWND.NULL)
+            {
+                uint owner;
+                _ = GetWindowThreadProcessId(window, &owner);
+                if (owner == process)
+                {
+                    return window;
+                }
+
+                window = FindWindowExW(HWND.HWND_MESSAGE, window, name, null);
+            }
+        }
+
+        return HWND.NULL;
     }
 
     // The text on the clipboard, read again while it cannot be opened (the read then gives none).

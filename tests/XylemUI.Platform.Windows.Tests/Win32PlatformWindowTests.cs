@@ -6,8 +6,8 @@ namespace XylemUI.Platform.Windows.Tests;
 
 // The window tier of the Windows host (row PL1, design §6.0): the window paired with its renderer, whose swap chain is the loop's
 // frame clock; the notices it binds to the window core; the synchronous resize; the settings it passes on until PR 5; what its
-// disposal takes back; and the app tier's check for a second window. The windows are hidden, on WARP, and no loop runs: the
-// messages are sent, so they run before SendMessageW returns.
+// disposal takes back; the request to close; and the app tier's check for a second window. The windows are hidden, on WARP, and no
+// loop runs: the messages are sent, so they run before SendMessageW returns, and the test dispatches the one RequestClose posts.
 [Collection(UiThreadGroup.Name)]
 public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
 {
@@ -250,29 +250,93 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// Disposing the core disposes its window in the host's order (design §6.0, "What the host owns"): the notices are taken back,
-    /// the tree loses the input method before the window is destroyed, the provider is taken out, and the window is destroyed.
+    /// <c>RequestClose</c> asks the window to close as its close button does (design §6.0, the window tier): once the request is
+    /// handled, the window is destroyed, and the core disposes the root and raises its <c>Closed</c>.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A core mounted in a hidden window on WARP, with a box.
+    /// - A core mounted in a hidden window on WARP, with a box; a handler that counts the core's <c>Closed</c>. No loop runs.
+    ///
+    /// Steps:
+    /// - Call <c>RequestClose</c>; read whether the window is alive and the count. Dispatch the messages posted to the window.
+    ///
+    /// Expected:
+    /// - Before the messages are dispatched, the window is alive and the core has not closed: the request is posted.
+    /// - After, the window is not alive, the core raised <c>Closed</c> once, and it has no root scope.
+    /// </remarks>
+    [Fact]
+    public void RequestClose_ClosesTheWindowWhenTheRequestIsHandled() =>
+        ui.Invoke(() =>
+        {
+            (WindowCore core, Win32PlatformWindow window) = Open(Elements.Box);
+            using (core)
+            {
+                int closed = 0;
+                core.Closed += (_, _) => closed++;
+
+                window.RequestClose();
+                bool aliveBefore = window.Window.IsAlive;
+                int closedBefore = closed;
+                Pump(window.Window);
+
+                Assert.True(aliveBefore);
+                Assert.Equal(0, closedBefore);
+                Assert.False(window.Window.IsAlive);
+                Assert.Equal(1, closed);
+                Assert.True(core.RootScope.IsNone);
+            }
+        });
+
+    /// <summary>
+    /// Disposing the core disposes its window in the host's order (design §6.0, "What the host owns"): the notices are taken back,
+    /// the tree loses the input method and the provider is taken out before the window is destroyed, and the loop waits on the
+    /// swap chain until the window is destroyed and on its timer after.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A core mounted in a hidden window on WARP, with a box; a handler of the test on the Win32 window's <c>Closed</c>, raised
+    ///   by <c>WM_DESTROY</c> while the window is destroyed, records the tree's input method, the window's provider, and the
+    ///   handle the loop waits on.
     ///
     /// Steps:
     /// - Dispose the core.
     ///
     /// Expected:
-    /// - The window has no synchronous render, no input handlers, no drops, no provider, and is not alive; the tree has no input
-    ///   method.
+    /// - Before the disposal, the tree has the window's input method and the window its provider.
+    /// - The handler ran once; when it ran, the tree had no input method, the window had no provider, and the loop still waited on
+    ///   the renderer's frame latency waitable object.
+    /// - After: the window has no synchronous render, no input handlers, no drops, no provider, and is not alive; the tree has no
+    ///   input method; the loop waits on another handle.
     /// </remarks>
     [Fact]
-    public void Dispose_TakesTheNoticesBack_AndDestroysTheWindow() =>
+    public void Dispose_TakesTheNoticesBack_AndDestroysTheWindowAfterTheInputMethodAndTheProvider() =>
         ui.Invoke(() =>
         {
             (WindowCore core, Win32PlatformWindow window) = Open(Elements.Box);
+            Win32Window native = window.Window;
+            HANDLE clock = (HANDLE)window.Renderer.FrameLatencyWaitableObject;
+            int destroyed = 0;
+            ITextInputPlatform? inputMethodAtDestroy = null;
+            Win32Accessibility? providerAtDestroy = null;
+            HANDLE waitedAtDestroy = default;
+            native.Closed += (_, _) =>
+            {
+                destroyed++;
+                inputMethodAtDestroy = core.Tree.TextInput;
+                providerAtDestroy = native.Accessibility;
+                waitedAtDestroy = Win32MessageLoop.Frames.WaitHandle;
+            };
+
+            bool hadBoth = core.Tree.TextInput is not null && native.Accessibility is not null;
 
             core.Dispose();
 
-            Win32Window native = window.Window;
+            Assert.True(hadBoth);
+            Assert.Equal(1, destroyed);
+            Assert.Null(inputMethodAtDestroy);
+            Assert.Null(providerAtDestroy);
+            Assert.Equal(clock, waitedAtDestroy);
+            Assert.NotEqual(clock, Win32MessageLoop.Frames.WaitHandle);
             Assert.Null(native.SynchronousRender);
             Assert.Null(native.PointerInputReceived);
             Assert.Null(native.KeyInputReceived);
@@ -293,7 +357,18 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         try
         {
             var window = new Win32PlatformWindow(core, "host window", 200, 100, show: false, useWarp: true);
-            var atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer(), threads: 1);
+            GlyphAtlas atlas;
+            try
+            {
+                atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer(), threads: 1);
+            }
+            catch
+            {
+                // Not yet the core's: it owns the window from Connect on, as in XylemApp.OpenWindow.
+                window.Dispose();
+                throw;
+            }
+
             core.Connect(window, atlas, Color.FromRgb(0xFFFFFF));
             window.Attach();
             (int width, int height) = window.ClientSize;
@@ -306,6 +381,16 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         {
             core.Dispose();
             throw;
+        }
+    }
+
+    // Dispatches the messages posted to the window, such as the WM_CLOSE that RequestClose posts: no loop runs in these tests.
+    private static unsafe void Pump(Win32Window window)
+    {
+        MSG message;
+        while (window.IsAlive && PeekMessageW(&message, window.Hwnd, 0, 0, PM.PM_REMOVE) != BOOL.FALSE)
+        {
+            _ = DispatchMessageW(&message);
         }
     }
 }
