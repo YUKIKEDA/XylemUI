@@ -5273,6 +5273,7 @@ public sealed class WindowHandle
     public event EventHandler? Closed;                            // 根の Scope を破棄した後
     [UiThreadOnly] public WindowPlacement Placement { get; }      // 開いた後の位置と状態（PR #921 でオーナーが決定）。閉じた後は閉じる直前の値
     public event EventHandler? PlacementChanged;                  // 動かす・大きさを変える・状態を変える操作の終わりに 1 回。UI スレッドで、今の Scope は無い
+    [UiThreadOnly] public void SetState(WindowState state);       // 開いた後に状態を変える（PR #921 でオーナーが決定）。今の状態と同じなら何もしない。閉じた後は何もしない
 }
 
 public sealed class WindowClosingEventArgs : EventArgs
@@ -5296,7 +5297,7 @@ public sealed record OwnedWindowOptions(string Title = "", float Width = 400, fl
 {
     public Action<WindowClosingEventArgs>? Closing { get; init; }   // MW1-i。User・OwnerClosing・AppQuit で呼ぶ
     public ScreenPoint? Position { get; init; }                     // MW1-h。null は持ち主の中央
-    public WindowState State { get; init; } = WindowState.Normal;   // MW1-h
+    public Signal<WindowState>? State { get; init; }                // 両方向。開く時の値が初めの状態、null は Normal（PR #921 でオーナーが決定）
     public Action<WindowPlacement>? PlacementChanged { get; init; } // PR #921 でオーナーが決定。下の「窓の位置と状態」
 }
 ```
@@ -5315,13 +5316,24 @@ public sealed record OwnedWindowOptions(string Title = "", float Width = 400, fl
 
 #### 窓の位置と状態（MW1-h、PR #921 でオーナーが決定）
 
-- **開く時の位置と状態:** `WindowOptions` と `OwnedWindowOptions` に、窓の左上の位置（`Position`）と状態（`State`: 通常・最大化・最小化・全画面）を足す。一番上の窓の `Position` が null なら OS の既定の位置（Win32 は `CW_USEDEFAULT`）、持ち主のある窓の `Position` が null なら持ち主の窓の中央に出す。Avalonia の `WindowStartupLocation.CenterOwner`（`src/Avalonia.Controls/Window.cs` 1265・1281・1339 行目）に当たる。`State` が通常でなければ、`Width`・`Height`・`Position` は元に戻した時の大きさと位置である。GPUI の `WindowBounds`（`crates/gpui/src/platform.rs` 2629〜2638 行目）も、最大化と全画面に元に戻す時の矩形を持つ
+- **開く時の位置と状態:** `WindowOptions` と `OwnedWindowOptions` に、窓の左上の位置（`Position`）と状態（`State`: 通常・最大化・最小化・全画面）を足す。`WindowOptions.State` は初めの値、`OwnedWindowOptions.State` は両方向の `Signal<WindowState>?` で、開く時の値が初めの状態である（下の「持ち主のある窓の状態の Signal」）。一番上の窓の `Position` が null なら OS の既定の位置（Win32 は `CW_USEDEFAULT`）、持ち主のある窓の `Position` が null なら持ち主の窓の中央に出す。Avalonia の `WindowStartupLocation.CenterOwner`（`src/Avalonia.Controls/Window.cs` 1265・1281・1339 行目）に当たる。`State` が通常でなければ、`Width`・`Height`・`Position` は元に戻した時の大きさと位置である。GPUI の `WindowBounds`（`crates/gpui/src/platform.rs` 2629〜2638 行目）も、最大化と全画面に元に戻す時の矩形を持つ
 - **全画面（PR #921 でオーナーが決定）:** `WindowState.FullScreen` を持つ。窓の枠を外し、窓のあるモニタ全体を覆う。GPUI の `WindowBounds::Fullscreen`（同 2637 行目）と Avalonia の `WindowState.FullScreen`（`src/Avalonia.Controls/WindowState.cs` 26 行目）も持つ。持たないと、動画や発表の画面を作るアプリが Win32 を直に呼ぶことになる。枠を外すのは、行 TB1 の自前のタイトルバーと同じ窓の様式（`WS_OVERLAPPEDWINDOW`）を変える操作なので、TB1 はこの状態を前提に設計する（行 TB1 の文）
-  - **入り方と出方（Win32）:** Windows には全画面の表示の状態が無い（`ShowWindow` の値にも `showCmd` にも無い）。The Old New Thing の「How do I switch a window between normal and fullscreen?」（2010-04-12）の形で、入る時は `GetWindowPlacement` で今の配置を取っておき、様式から `WS_OVERLAPPEDWINDOW` を外し、`MonitorFromWindow` と `GetMonitorInfo` で得た窓のモニタの矩形へ `SetWindowPos`（`SWP_FRAMECHANGED`）で広げる。出る時は様式を戻し、取っておいた配置を `SetWindowPlacement` で戻す。取っておいた配置が最大化なら、最大化に戻る
+  - **入り方と出方（Win32）:** Windows には全画面の表示の状態が無い（`ShowWindow` の値にも `showCmd` にも無い）。The Old New Thing の「How do I switch a window between normal and fullscreen?」（2010-04-12）の形で、入る時は `GetWindowPlacement` で今の配置を取っておき、様式から `WS_OVERLAPPEDWINDOW` を外し、`MonitorFromWindow` と `GetMonitorInfo` で得た窓のモニタの矩形へ `SetWindowPos`（`SWP_FRAMECHANGED`）で広げる。出る時は様式を戻し、取っておいた配置の元に戻した時の矩形を `SetWindowPlacement` で戻す。出た先の状態（通常か最大化）は、出る時に求められた状態で決まる（下の「開いた後に状態を変える」）
   - **全画面の間の `Placement`:** 全画面の間、窓は表示の状態が「通常」のままモニタの矩形に置かれているので、`GetWindowPlacement` の `showCmd` は `SW_SHOWNORMAL`、`rcNormalPosition` は全画面の矩形になる。そのまま返すと、行 DK1 は全画面の矩形を元の位置として保存してしまう。そこでホストは、入る時に取っておいた配置（元に戻した時の矩形と、通常か最大化か）を持ち、全画面の間の `Placement` は、その矩形から作った `Position`・`Width`・`Height` と `State = FullScreen` を返す。出たら、その配置を捨て、また `GetWindowPlacement` から読む。全画面の間に `WM_EXITSIZEMOVE` は来ない（枠が無く、動かせない）が、モニタの倍率か配置が変わって窓が動いても、取っておいた配置は変えない
-  - **全画面に入る前が最大化だった時:** `Placement` は、取っておいた元に戻した時の矩形（最大化の前の通常の矩形）を返し、`State` は `FullScreen` である。全画面を出ると最大化に戻るが、その「戻る先が最大化」であることは `WindowPlacement` に入らない。行 DK1 が全画面の窓を保存して次に全画面で開き直し、そこから出ると、通常の矩形に戻る（最大化には戻らない）。この 1 点だけ、保存して戻すと結果が変わる
-  - **全画面で開く時:** `State = FullScreen` の `WindowOptions` と `OwnedWindowOptions` は、まず `Position`・`Width`・`Height` の通常の窓として配置を作り（`Position` が null なら上の既定の位置）、その窓のモニタで全画面に入る。`Position` は、どのモニタで全画面にするかと、全画面を出た時に戻る矩形を決める
-  - **開いた後に入る・出る口（案（オーナーの決定待ち））:** 今の API は、状態を開く時にだけ渡し、開いた後は読むだけである。全画面は枠を外すので、利用者が枠の操作で出ることもできない。動画や発表の画面は、開いた後に全画面へ入って出る（Avalonia は `Window.WindowState` に書ける、`Window.cs` 435 行目）。`WindowHandle` に `[UiThreadOnly] void SetState(WindowState state)` を足し、持ち主のある窓は `OwnedWindowOptions` に `Signal<WindowState>?` を渡せるようにする案を問う。どちらも、上の入り方と出方で状態を変え、`PlacementChanged` を上げる。全画面の間に OS が送る `WM_SIZE` の `SIZE_MAXIMIZED`・`SIZE_MINIMIZED`（タスクバーからの最小化など）は、全画面から出たこととして扱い、様式を戻し、取っておいた配置を捨てて `PlacementChanged` を上げる
+  - **全画面に入る前が最大化だった時:** `Placement` は、取っておいた元に戻した時の矩形（最大化の前の通常の矩形）を返し、`State` は `FullScreen` である。全画面を出る先は、出る時に求めた状態（`SetState(Normal)` か `SetState(Maximized)`、OS の最大化なら最大化）で決まり、入る前が最大化だったことは使わない。そのため、`WindowPlacement` に「入る前が最大化」を入れなくても、保存して戻した窓と結果は変わらない
+  - **全画面で開く時:** `State = FullScreen` の `WindowOptions` と、開く時の値が `FullScreen` の `OwnedWindowOptions.State` は、まず `Position`・`Width`・`Height` の通常の窓として配置を作り（`Position` が null なら上の既定の位置）、その窓のモニタで全画面に入る。`Position` は、どのモニタで全画面にするかと、全画面を出た時に戻る矩形を決める
+- **開いた後に状態を変える（PR #921 でオーナーが決定）:** 一番上の窓は `WindowHandle.SetState(WindowState)`、持ち主のある窓は `OwnedWindowOptions.State` の Signal で変える。全画面は枠を外すので、利用者が枠の操作で出ることはできず、動画や発表の画面は開いた後に入って出る口が要る（Avalonia も `Window.WindowState` に書ける、`Window.cs` 435 行目）
+  - **スレッド:** `SetState` は UI スレッドだけから呼べる（`UiThread.VerifyAccess`、`[UiThreadOnly]`）。Signal も UI スレッドで書く（§2.12）。窓が閉じた後の `SetState` と Signal への書き込みは何もしない
+  - **今と同じ状態:** 今の状態と同じなら何もしない。OS を呼ばず、`PlacementChanged` も上げない
+  - **通常・最大化・最小化の間（Win32）:** `ShowWindow` で変える。通常は `SW_SHOWNORMAL`（最小化か最大化の窓を元の大きさと位置に戻して活性化する）、最大化は `SW_SHOWMAXIMIZED`、最小化は `SW_MINIMIZE`（最小化して、z の順の次の一番上の窓を活性化する）である（Microsoft の `ShowWindow` の頁の値の表）。最小化に `SW_SHOWMINIMIZED`（最小化した窓を活性にする）を使わないのは、最小化した窓がキーを受け続けないためである。`SW_RESTORE` は、最小化の前が最大化なら最大化に戻すので、通常へ行くのには使わない
+  - **全画面へ（通常・最大化・最小化から）:** 最小化からは、先に `SW_SHOWNORMAL` か `SW_SHOWMAXIMIZED`（最小化の前の状態）で戻してから入る。入り方は上の「入り方と出方」のとおりで、取っておく配置は、入る直前の通常か最大化である
+  - **全画面から（通常・最大化へ）:** 様式を戻し、取っておいた配置の矩形を元に戻した時の矩形として、`SetWindowPlacement` に求められた表示の状態（`SW_SHOWNORMAL` か `SW_SHOWMAXIMIZED`）を付けて渡す。取っておいた配置の通常か最大化かは使わず、求められた状態に行く。取っておいた配置を捨てる
+  - **全画面から最小化へ:** 全画面のまま `SW_MINIMIZE` で最小化し、様式と取っておいた配置は持ったままにする。`Placement.State` は `Minimized`、位置と大きさは取っておいた配置の矩形である。そこから元に戻る（`SetState(FullScreen)`、またはタスクバーで利用者が戻す）と、`WM_SIZE` の `SIZE_RESTORED` で全画面に戻る（OS は窓を全画面の矩形に戻す。`rcNormalPosition` が全画面の矩形のため）。最小化から `SetState(Normal)` か `SetState(Maximized)` なら、上の「全画面から」と同じく様式を戻して配置を戻す
+  - **全画面の間に OS が送る大きさの知らせ:** `WM_SIZE` の `wParam` は、最大化なら `SIZE_MAXIMIZED`、最小化なら `SIZE_MINIMIZED`、どちらでもない大きさの変化なら `SIZE_RESTORED` である（Microsoft の `WM_SIZE` の頁）。頁は全画面に触れないので、ホストの全画面の印で読み分ける。全画面の間の `SIZE_MINIMIZED`（タスクバーのボタンや Win+D での最小化）は、全画面から出たこととして扱わない。上の「全画面から最小化へ」と同じく、全画面の印と取っておいた配置を持ったまま `Minimized` にする（出たこととして扱うと、タスクバーから戻した時に、枠の無い通常の窓が残る）。`SIZE_MAXIMIZED`（Win+Up などで OS が最大化した時）は、全画面から最大化へ出たこととして扱い、様式を戻し、取っておいた配置の矩形を元に戻した時の矩形にして、取っておいた配置を捨てる。全画面の間の `SIZE_RESTORED` は、最小化から戻った時（上）とモニタの矩形が変わった時で、全画面のままにする
+  - **`PlacementChanged`:** 1 回の変化につき 1 回上げる。`SetState` が `ShowWindow` と `SetWindowPos` を何度か呼んでも、その途中の `WM_SIZE` では上げず、`SetState` が戻る前に 1 回上げる。OS からの変化（利用者の最大化、上の `WM_SIZE`）は、その知らせで 1 回上げる
+  - **持ち主のある窓の状態の Signal:** `OwnedWindowOptions.State` は、`Window(Signal<bool> isOpen, …)` の開閉の Signal と同じく両方向にする。アプリが書けば窓がその状態になり、利用者が最大化・最小化・元に戻した時と、OS が全画面から出した時は、窓がその Signal に新しい状態を書く。窓が書いた値と同じ値は、Signal が等しい値として何もしないので、書き戻しが回り続けることはない。初めの値を別の欄（`WindowState State { get; init; }`）で持つ形は採らない。`Window` の要素は、開閉の初めの値を `isOpen` の今の値で決め、別の初めの値を持たない。状態も同じく、開く時の Signal の値を初めの状態にする。初めの値の欄と Signal の 2 つがあると、開く時にどちらが勝つかを決めることになる。Signal を渡さない（null）なら、初めの状態は `Normal` で、アプリは後から変えられない（読むのは `PlacementChanged`）。一番上の窓は命令の形（`OpenWindow` と `WindowHandle`）なので、初めの値は `WindowOptions.State`、変えるのは `SetState` である
+  - **ヘッドレス:** `HeadlessWindow` は、一番上の窓では `Handle.SetState` を、持ち主のある窓では Signal を、本物と同じに使う。利用者の操作の代わりは今の `MoveTo(WindowPlacement)` で、`State` を変えた配置を渡すと、利用者が変えた時と同じく、持ち主のある窓の Signal に書き戻し、`PlacementChanged` を 1 回上げる。ヘッドレスの全画面は、仮の画面の矩形を覆い、取っておいた配置の規則は本物と同じである
+  - **どの PR か:** 2 つ目の PR が `SetState` と全画面の入り方・出方を、3 つ目の PR が持ち主のある窓の Signal を入れる。テストは下の「位置と状態のテスト」に書く
 - **位置の単位（PR #921 でオーナーが決定）:** 仮想画面の物理画素（`ScreenPoint(int X, int Y)`）にする。倍率の違うモニタが並ぶと、論理画素の画面の座標は 1 つに決まらないためである。Avalonia の `Window.Position` も物理画素の `PixelPoint`（`Window.cs` 533 行目）。GPUI は `Bounds<Pixels>`（論理画素）で、モニタをまたぐ時の換算は読んでいない。大きさ（`Width`・`Height`）は今どおり論理画素で、窓の出るモニタの倍率で物理画素にする（§6.1.1）
 - **開いた後の位置と状態（PR #921 でオーナーが決定）:** `WindowHandle.Placement`（`WindowPlacement`: 元に戻した時の左上、元に戻した時のクライアント領域の大きさ、今の状態）で読み、`PlacementChanged` で変わったことを知る。行 DK1 は、閉じる前の `Placement` を保存し、次の起動で `WindowOptions` の `Position`・`Width`・`Height`・`State` に渡して戻す。Win32 では、全画面でない間は `GetWindowPlacement` で読む。`showCmd` は最大化なら `SW_SHOWMAXIMIZED`、最小化なら `SW_SHOWMINIMIZED`、ほかは `SW_SHOWNORMAL` で（Microsoft の `GetWindowPlacement` の頁の Remarks）、`rcNormalPosition` が元に戻した時の矩形である。`WINDOWPLACEMENT` の頁の Remarks は、`WS_EX_TOOLWINDOW` でない一番上の窓ではこの矩形が作業領域の座標（タスクバーなどを除いた領域の左上が (0, 0)）で、画面の座標を受ける関数（`SetWindowPos`）に渡すと位置がずれると書く。そこで、窓のモニタの作業領域の左上を足して画面の座標に直してから返す。開く時は逆に、画面の座標を作業領域の座標に直し、`SetWindowPlacement` で、表示の状態と元に戻した時の矩形を一緒に渡す（最大化して開く窓も、元に戻した時の矩形を持てる）。`SetWindowPlacement` の頁の Remarks は、矩形が画面の外に完全に出る時は OS が見える所へ直すと書くので、行 DK1 が、今は無いモニタの上で保存した位置を渡しても、窓は見える所に出る。全画面の間は、下の「全画面の間の `Placement`」のとおり、`GetWindowPlacement` を読まない。`PlacementChanged` は、`WM_EXITSIZEMOVE`（動かす・大きさを変える操作の終わり）と状態の変化（`WM_SIZE` の `SIZE_MAXIMIZED` など）で 1 回ずつ上げ、ドラッグの途中では上げない
 - **持ち主のある窓の位置を読む口（PR #921 でオーナーが決定）:** 行 DK1 の浮いた窓は持ち主のある窓（`Window` の要素）で、アプリは `WindowHandle` を持たない。そこで、`OwnedWindowOptions.PlacementChanged`（`Action<WindowPlacement>`、`OwnedWindowOptions.Closing` と同じく `Window` の要素を作った時の Scope の中で呼ぶ）で知らせる。上げる時は `WindowHandle.PlacementChanged` と同じである
@@ -5482,7 +5494,8 @@ public sealed class HeadlessWindow
 - **位置と状態のテスト（PR #921 のレビュー）:**
   - 2 つ目の PR（本物の窓、`XylemUI.Platform.Windows.Tests`）: 作業領域の座標から画面の座標への変換。タスクバーの位置によらないよう、作業領域の左上が (0, 0) でないモニタの値を偽の `GetMonitorInfo` で入れ、`Placement.Position` が `rcNormalPosition` に作業領域の左上を足した値になり、その値で開き直すと同じ矩形に出ること
   - 2 つ目の PR（本物の窓）: `PlacementChanged` は、`WM_ENTERSIZEMOVE` から `WM_EXITSIZEMOVE` までの間に送った `WM_MOVE` と `WM_SIZE` では上がらず、`WM_EXITSIZEMOVE` で 1 回だけ上がること。`SIZE_MAXIMIZED` と元に戻す時に 1 回ずつ上がること
-  - 2 つ目の PR（本物の窓とヘッドレス）: 全画面に入って出ること。入る前の `Placement`（通常の矩形と `Normal`）、全画面の間（同じ矩形と `FullScreen`、`GetWindowPlacement` の全画面の矩形でないこと）、出た後（入る前と同じ矩形と `Normal`）。最大化から入った時は、全画面の間の矩形が最大化の前の通常の矩形で、出ると最大化に戻ること。`State = FullScreen` で開いた窓の `Placement` が、渡した `Position`・`Width`・`Height` を返すこと
+  - 2 つ目の PR（本物の窓とヘッドレス）: 全画面に入って出ること。入る前の `Placement`（通常の矩形と `Normal`）、全画面の間（同じ矩形と `FullScreen`、`GetWindowPlacement` の全画面の矩形でないこと）、出た後（入る前と同じ矩形と `Normal`）。入るのも出るのも `SetState` で行う。最大化から入った時は、全画面の間の矩形が最大化の前の通常の矩形で、`SetState(Maximized)` で出ると最大化、`SetState(Normal)` で出るとその通常の矩形に戻ること。全画面から `SetState(Minimized)` で最小化し、`SetState(FullScreen)` で全画面に戻ること。全画面の間の `SIZE_MINIMIZED` の後の `SIZE_RESTORED` で全画面に戻り、`SIZE_MAXIMIZED` で最大化へ出ること（本物の窓）。今と同じ状態の `SetState` で `PlacementChanged` が上がらず、変化 1 回で 1 回だけ上がること。`State = FullScreen` で開いた窓の `Placement` が、渡した `Position`・`Width`・`Height` を返すこと
+  - 3 つ目の PR（ヘッドレスと本物の窓）: 持ち主のある窓の状態の Signal。アプリが `FullScreen` を書くと全画面に入り、`Normal` を書くと出ること。利用者が最大化すると（本物の窓は `SW_SHOWMAXIMIZED` を OS の操作として送る、ヘッドレスは `MoveTo`）Signal に `Maximized` が書き戻され、その書き戻しで窓の操作がもう 1 度走らないこと（`ShowWindow` の回数を数える）。開く時の Signal の値が初めの状態になること。Signal が null の窓は `Normal` で開くこと
   - 3 つ目の PR（ヘッドレス）: `OwnedWindowOptions.PlacementChanged` が、持ち主のある窓の `MoveTo` で 1 回、`Window` の要素を作った時の Scope の中で呼ばれること（中の `Use` が開いた側の値を返す）。`Position` が null の持ち主のある窓が持ち主の中央に置かれること
 
 #### 定常の割り当て
@@ -5521,16 +5534,15 @@ public sealed class HeadlessWindow
 行 MW1 の実装は次の 5 つに分け、この順に入れる。行 PL1 の 7 つの PR の後で、行 G1 の後に始める（行 MW1 の文）。どの PR も単独で入れられ、公開の機能を半分だけ出さない。
 
 1. **ループの中の窓ごとのフレームと、プロセスに 1 つのデバイス（公開の API は変えない）:** `Win32FrameScheduler` の窓ごとの項目と、ループが待つ物を集めること、窓ごとのタイマーと期限、`Win32PlatformApp` のデバイスと `D3D11DeviceResources` をレンダラが借りること、`AppCore` とアプリの根の Scope（`AppCore.Current` の置き換えと戻し）、`IPlatformApp.OpenWindow` の 2 つ目を投げるのをやめること。テスト: 本物の窓（`XylemUI.Platform.Windows.Tests`、テストから internal の口で窓を 2 つ開く）で、2 つの窓が両方フレームを受けること、片方を閉じてももう片方の時計が動き続けること、2 つのレンダラが 1 つのデバイスを使い、2 つ目で `D3DCompile` が 0 回であること、Present しない窓の 50 ms の期限が、ほかの窓が動いていても期限どおりに回ること。スケジューラの層のテストで、64 の窓が頼んでいても 2 回の待ちのうちに全部が回ること。層 2 で、`AppCore` のアプリの根と窓の根の親子。測る: 1 つの窓が main と変わらないこと、2 つ目の窓を開く時間、2 つの窓のフレームの間隔、アトラスの測定（決定はオーナー）
-2. **一番上の窓の公開の API とヘッドレス:** `XylemApp.OpenWindow`・`Windows`・`Run` の 2 つ目の形・`Quit`・`Provide`・`OnAction`、`WindowHandle`、`WindowOptions` の Core への移動と位置・状態（全画面の入り方と出方、`WindowHandle.Placement` と `PlacementChanged`、`HeadlessWindow.Placement` と `MoveTo`、`HeadlessOptions.Screen`）、`AppOptions` と `QuitMode`、`WM_CLOSE` から `Closing` への道、`Activate`、`HeadlessApp.Windows`・`OpenWindow`・`ExitCode`・`HeadlessWindow`。テスト: 上の「ヘッドレス」のうち持ち主のある窓とドラッグを除くもの、本物の窓で `WM_CLOSE` の取り消し、2 つの窓の IME の確かめ。サンプル: Todo に「新しい窓」の動作を足す
-3. **持ち主のある窓:** `Window` の要素、`OwnedWindowOptions`、Win32 の持ち主の HWND、聞く順と閉じる順、持ち主のある窓のロケールとテーマ、持ち主の中央に出すこと、`OwnedWindowOptions.PlacementChanged`。テスト: 持ち主を閉じると持ち主のある窓が消えること、部分木のロケールから開いた窓がそのロケールで出ること、取り消しの連鎖、Signal で閉じる時に `Closing` を聞かないこと、本物の窓で持ち主の最小化と z の順
+2. **一番上の窓の公開の API とヘッドレス:** `XylemApp.OpenWindow`・`Windows`・`Run` の 2 つ目の形・`Quit`・`Provide`・`OnAction`、`WindowHandle`、`WindowOptions` の Core への移動と位置・状態（全画面の入り方と出方、`WindowHandle.Placement` と `PlacementChanged`、`HeadlessWindow.Placement` と `MoveTo`、`HeadlessOptions.Screen`、`WindowHandle.SetState`）、`AppOptions` と `QuitMode`、`WM_CLOSE` から `Closing` への道、`Activate`、`HeadlessApp.Windows`・`OpenWindow`・`ExitCode`・`HeadlessWindow`。テスト: 上の「ヘッドレス」のうち持ち主のある窓とドラッグを除くもの、本物の窓で `WM_CLOSE` の取り消し、2 つの窓の IME の確かめ。サンプル: Todo に「新しい窓」の動作を足す
+3. **持ち主のある窓:** `Window` の要素、`OwnedWindowOptions`、Win32 の持ち主の HWND、聞く順と閉じる順、持ち主のある窓のロケールとテーマ、持ち主の中央に出すこと、`OwnedWindowOptions.PlacementChanged`、両方向の `OwnedWindowOptions.State`。テスト: 持ち主を閉じると持ち主のある窓が消えること、部分木のロケールから開いた窓がそのロケールで出ること、取り消しの連鎖、Signal で閉じる時に `Closing` を聞かないこと、本物の窓で持ち主の最小化と z の順
 4. **窓をまたぐドラッグ:** ドラッグの状態をアプリの段へ移すこと、`IPlatformApp.WindowAt`、座標の変換、像を窓ごとに作り直すこと。テスト: 窓 A から窓 B へのドロップ、窓を移る時の Leave と Enter、どの窓の上でもない時の OS への持ち出し、ドラッグ元の窓を閉じた時の取り消し。測る: 窓をまたいで動くフレームの割り当て 0
 5. **（アトラスを共有すると決めた時だけ）共有するグリフアトラス:** レンダラごとに送った版を持つアトラス。測る: 1 つ目の PR と同じ場面
 
 #### 残っていること
 
-- **オーナーに問う:** 開いた後に状態（全画面を含む）を変える口（上の「窓の位置と状態」の「開いた後に入る・出る口」の案）
 - **測ること:** グリフアトラス（Todo の 2 つと 4 つの窓のメモリ、共有した時の送りの費用）、2 つの窓のフレームの間隔と取りこぼし、2 つ目の窓を開く時間、窓 B のアニメーション中の窓 A の入力から表示、窓をまたぐドラッグの割り当て 0（上の「測ること」と「実装の PR」）
-- **本物の窓で確かめること:** 2 つの窓の TSF、持ち主の最小化で隠れた窓の `WM_WINDOWPOSCHANGED`、全画面の間に OS が送る `WM_SIZE`（上の「開いた後に入る・出る口」）
+- **本物の窓で確かめること:** 2 つの窓の TSF、持ち主の最小化で隠れた窓の `WM_WINDOWPOSCHANGED`、全画面の間に OS が送る `WM_SIZE`（Win+D とタスクバーでの最小化と戻し、Win+Up。上の「開いた後に状態を変える」）
 - **行 P10 で確かめること:** 別ウィンドウのメニューを Narrator が読むこと、ポップアップの上の `ElementFromPoint`（上の「ポップアップの窓の a11y」）
 
 ### 6.1 Linuxプラットフォーム層の構造化
