@@ -135,7 +135,9 @@ return scenario switch
         Number(1, 1_000),
         accessKit: args.Contains("--accesskit"),
         relations: Option("--relations", 0),
-        scroll: args.Contains("--scroll")
+        scroll: args.Contains("--scroll"),
+        targetsInRows: args.Contains("--targets-in-rows"),
+        outsideTargets: Option("--outside-targets", 0)
     ),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),
