@@ -74,8 +74,8 @@ internal sealed class UiTestCase : XunitTestCase, ISelfExecutingXunitTestCase
         ExceptionAggregator aggregator,
         CancellationTokenSource cancellationTokenSource,
         ParallelMode parallelMode,
-        ExecutionScheduler executionScheduler,
-        FixtureMappingManager fixtureMappings
+        ExecutionScheduler scheduler,
+        FixtureMappingManager methodFixtureMappings
     ) =>
         UiTestCaseRunner.Run(
             this,
@@ -85,8 +85,8 @@ internal sealed class UiTestCase : XunitTestCase, ISelfExecutingXunitTestCase
             aggregator,
             cancellationTokenSource,
             parallelMode,
-            executionScheduler,
-            fixtureMappings
+            scheduler,
+            methodFixtureMappings
         );
 }
 
@@ -160,8 +160,8 @@ internal sealed class UiDelayEnumeratedTheoryTestCase : XunitDelayEnumeratedTheo
         ExceptionAggregator aggregator,
         CancellationTokenSource cancellationTokenSource,
         ParallelMode parallelMode,
-        ExecutionScheduler executionScheduler,
-        FixtureMappingManager fixtureMappings
+        ExecutionScheduler scheduler,
+        FixtureMappingManager methodFixtureMappings
     ) =>
         UiTestCaseRunner.Run(
             this,
@@ -171,8 +171,8 @@ internal sealed class UiDelayEnumeratedTheoryTestCase : XunitDelayEnumeratedTheo
             aggregator,
             cancellationTokenSource,
             parallelMode,
-            executionScheduler,
-            fixtureMappings
+            scheduler,
+            methodFixtureMappings
         );
 }
 

@@ -84,6 +84,9 @@ dotnet_diagnostic.SA1111.severity = none
 dotnet_diagnostic.SA1502.severity = none
 # CSharpier puts an empty block on one line (`using (scope) { }`); SA1501 rejects that layout.
 dotnet_diagnostic.SA1501.severity = none
+# CSharpier lays a chain of conditional expressions out with each `:` leading its line, and a condition that spans lines
+# before its `?`; SA1143 (new in StyleCop.Analyzers 1.3.180) rejects both layouts.
+dotnet_diagnostic.SA1143.severity = none
 dotnet_diagnostic.SA1201.severity = none
 dotnet_diagnostic.SA1202.severity = none
 dotnet_diagnostic.SA1204.severity = none
