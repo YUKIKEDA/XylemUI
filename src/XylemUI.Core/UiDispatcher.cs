@@ -23,6 +23,9 @@ namespace XylemUI;
 /// </remarks>
 public sealed class UiDispatcher : IUiDispatcher
 {
+    // The process's one value of Current; the tests make their own CurrentDispatcher.
+    private static readonly CurrentDispatcher CurrentValue = new();
+
     private readonly ConcurrentQueue<WorkItem> _queue = new();
     private readonly Action _wake;
 
@@ -37,6 +40,17 @@ public sealed class UiDispatcher : IUiDispatcher
         SynchronizationContext = new UiSynchronizationContext(this);
         UnbatchedSynchronizationContext = new UiSynchronizationContext(this, batched: false);
     }
+
+    /// <summary>
+    /// Gets the dispatcher of the UI thread, which the app's host set when it started: a worker posts its messages to it
+    /// (<see cref="IUiDispatcher.Post{T}(T)"/>). Any thread may read it, and a worker posts to the one it read.
+    /// </summary>
+    /// <remarks>
+    /// The host sets it when it starts and gives back the one it replaced when it is disposed (design §2.12): on Windows
+    /// <c>XylemApp.Run</c>, and in the headless tests <c>HeadlessSession</c> when its UI thread starts.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">No host has set a dispatcher.</exception>
+    public static IUiDispatcher Current => CurrentValue.Value;
 
     /// <summary>
     /// Gets the number of messages that were dropped because every receiver of their type had been removed before they were
@@ -141,6 +155,14 @@ public sealed class UiDispatcher : IUiDispatcher
 
         return ran;
     }
+
+    /// <summary>
+    /// Replaces the dispatcher that <see cref="Current"/> returns and returns the one it replaced. A host calls it when it starts,
+    /// and again with the returned value when it is disposed. Any thread may call it.
+    /// </summary>
+    /// <param name="value">The host's dispatcher; <see langword="null"/> for none.</param>
+    /// <returns>The dispatcher that was set before, or <see langword="null"/> when none was.</returns>
+    internal static IUiDispatcher? Exchange(IUiDispatcher? value) => CurrentValue.Exchange(value);
 
     /// <summary>
     /// Queues a callback to run on the UI thread, after the work queued before it. Any thread may call it.

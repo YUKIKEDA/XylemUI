@@ -80,6 +80,31 @@ public sealed class HeadlessSessionTests
     }
 
     /// <summary>
+    /// The UI thread sets <see cref="UiDispatcher.Current"/> to its dispatcher when it starts, and any thread reads that one.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A test thread of xUnit's.
+    ///
+    /// Steps:
+    /// - Run a body that reads <see cref="UiDispatcher.Current"/> on the UI thread; then read it on the test thread.
+    ///
+    /// Expected:
+    /// - Both reads return the session's dispatcher (<see cref="HeadlessSession.Dispatcher"/>).
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [Fact]
+    public async Task Run_TheUiThreadStarts_SetsCurrentToItsDispatcher()
+    {
+        IUiDispatcher? onUiThread = null;
+        await HeadlessSession.Run(() => onUiThread = UiDispatcher.Current);
+        IUiDispatcher onTestThread = UiDispatcher.Current;
+
+        Assert.Same(HeadlessSession.Dispatcher, onUiThread);
+        Assert.Same(HeadlessSession.Dispatcher, onTestThread);
+    }
+
+    /// <summary>
     /// A <see cref="UiFactAttribute"/> test's class is made, and its body runs, on the UI thread.
     /// </summary>
     /// <remarks>

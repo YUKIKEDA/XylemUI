@@ -10,7 +10,8 @@ namespace XylemUI.Testing;
 /// <remarks>
 /// The thread starts on the first call and lives as long as the process. It is a single-threaded apartment on Windows, as an app's
 /// <c>Main</c> with <c>[STAThread]</c> is, so a test may also open a real window on it. Its synchronization context is its
-/// dispatcher's: an <see langword="await"/> in a test's body comes back to the UI thread. The items it queues run with no batch
+/// dispatcher's: an <see langword="await"/> in a test's body comes back to the UI thread. When the thread starts, it sets
+/// <see cref="UiDispatcher.Current"/> to its dispatcher, so that a worker of a test posts there. The items it queues run with no batch
 /// around each, so a signal that a test sets runs its effects at once; in an app, a continuation is one batch (design §2.2.1).
 /// </remarks>
 public static class HeadlessSession
@@ -170,6 +171,10 @@ public static class HeadlessSession
             // Not in a batch: the test's body is one item of the queue, and a batch around it would hold every effect back until it
             // ended. Each signal a test sets flushes its effects at once; an app's continuation is not a batch here as it is in an app.
             SynchronizationContext.SetSynchronizationContext(dispatcher.UnbatchedSynchronizationContext);
+
+            // Where workers post (design §2.12), set before any test runs. The thread lives as long as the process, so nothing gives
+            // the previous value back; a host started inside a test (XylemApp.Run) replaces it and gives it back when it ends.
+            _ = UiDispatcher.Exchange(dispatcher);
         }
         catch (Exception exception)
         {
