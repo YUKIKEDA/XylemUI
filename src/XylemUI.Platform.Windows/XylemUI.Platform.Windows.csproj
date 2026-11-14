@@ -10,6 +10,8 @@
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
     <!-- The PNG of a bitmap color glyph is read by the image decoders (design §5.0.4, row IM1). -->
     <ProjectReference Include="..\XylemUI.Imaging\XylemUI.Imaging.csproj" />
+    <!-- The host pairs each window with its renderer, whose swap chain is the frame clock (design §6.0, §2.9.1; row PL1). -->
+    <ProjectReference Include="..\XylemUI.Rendering.D3D11\XylemUI.Rendering.D3D11.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TerraFX.Interop.Windows" />
@@ -24,7 +26,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
-    <!-- The app's host gives the window's pointer input to the tree and reads the UI language (row V1d). -->
+    <!-- XylemApp makes the Windows host and reads its languages for the first mount, until row PL1's PR 5 and PR 7. -->
     <InternalsVisibleTo Include="XylemUI.Desktop" />
     <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
     <!-- The renderer tests drive the real message loop (IterationHook) with a swap chain as the frame clock. -->

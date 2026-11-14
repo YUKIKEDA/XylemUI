@@ -32,9 +32,31 @@ public sealed class CounterTests(UiThreadFixture ui)
     public void Open_RunsTheFirstFrame_AndLeavesNoneAsked() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true);
+            using var window = new TestWindow(CounterApp.Counter, Options, useWarp: true);
             Assert.Equal(1, window.Frames.Builds);
             Assert.False(((Win32FrameScheduler)Win32MessageLoop.FrameScheduler).HasPendingFrame);
+        });
+
+    /// <summary>
+    /// The window's text fields copy and paste through the clipboard of the host's app tier (design §6.0, "The clipboard"), which
+    /// the app gives the window core when it opens the window.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The counter's window on WARP, hidden, opened as <c>XylemApp.Run</c> opens it, by a host of the tests.
+    ///
+    /// Steps:
+    /// - Read the tree's clipboard and the host's.
+    ///
+    /// Expected:
+    /// - They are the same object.
+    /// </remarks>
+    [Fact]
+    public void Open_GivesTheTreeTheHostsClipboard() =>
+        ui.Invoke(() =>
+        {
+            using var window = new TestWindow(CounterApp.Counter, Options, useWarp: true);
+            Assert.Same(window.Host.Clipboard, window.Tree.Clipboard);
         });
 
     /// <summary>
@@ -56,7 +78,7 @@ public sealed class CounterTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             bool before;
-            using (var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true))
+            using (var window = new TestWindow(CounterApp.Counter, Options, useWarp: true))
             {
                 (_, NodeHandle button) = Parts(window.Tree);
                 (int x, int y) = Center(window, button);
@@ -90,7 +112,7 @@ public sealed class CounterTests(UiThreadFixture ui)
     public void Click_SentAsMessages_CountsAndIsDrawnInTheNextFrame() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true);
+            using var window = new TestWindow(CounterApp.Counter, Options, useWarp: true);
             (NodeHandle text, NodeHandle button) = Parts(window.Tree);
             (int x, int y) = Center(window, button);
             int presents = window.Frames.PresentCount;
@@ -156,13 +178,12 @@ public sealed class CounterTests(UiThreadFixture ui)
     public void Close_DisposesTheRootScope_AndEndsTheLoop() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true);
+            using var window = new TestWindow(CounterApp.Counter, Options, useWarp: true);
             ScopeHandle scope = window.RootScope;
             Assert.True(Scope.IsAlive(scope));
             bool closed = false;
             window.Closed += (_, _) => closed = true;
-            var host = new QuitRecorder();
-            XylemApp.Open(window, host);
+            XylemApp.Open(window.Core, window.Host);
 
             using (var watchdog = new LoopWatchdog())
             {
@@ -170,7 +191,7 @@ public sealed class CounterTests(UiThreadFixture ui)
                 Assert.False(watchdog.Expired);
             }
 
-            Assert.Equal([0], host.Quits);
+            Assert.Equal([0], window.Host.Quits);
             Assert.True(closed);
             Assert.Equal(1, window.Tree.Nodes.Count);
             Assert.True(window.Tree.Nodes.GetRef(window.Tree.Root).FirstChild.IsNone);
@@ -647,9 +668,9 @@ public sealed class CounterTests(UiThreadFixture ui)
     public void Options_OutOfRange_Throw() =>
         ui.Invoke(() =>
         {
-            Assert.Throws<ArgumentException>(() => new DesktopWindow(Elements.Box, new WindowOptions(Width: 0), useWarp: true));
-            Assert.Throws<ArgumentException>(() => new DesktopWindow(Elements.Box, new WindowOptions(Height: float.NaN), useWarp: true));
-            Assert.Throws<ArgumentException>(() => new DesktopWindow(Elements.Box, new WindowOptions(Width: float.PositiveInfinity), useWarp: true));
+            Assert.Throws<ArgumentException>(() => new TestWindow(Elements.Box, new WindowOptions(Width: 0), useWarp: true));
+            Assert.Throws<ArgumentException>(() => new TestWindow(Elements.Box, new WindowOptions(Height: float.NaN), useWarp: true));
+            Assert.Throws<ArgumentException>(() => new TestWindow(Elements.Box, new WindowOptions(Width: float.PositiveInfinity), useWarp: true));
         });
 
     // Posts WM_CLOSE to the XylemUI window of the title, if there is one, as its close button does.
@@ -679,28 +700,8 @@ public sealed class CounterTests(UiThreadFixture ui)
 
     private sealed record Ping(int Number) : UiMessage;
 
-    // A host that records the codes it is asked to quit with, and quits the message loop with each, as the Windows host does.
-    private sealed class QuitRecorder : IPlatformApp
-    {
-        public List<int> Quits { get; } = [];
-
-        public UiDispatcher Dispatcher => Win32MessageLoop.Dispatcher;
-
-        public int Run() => Win32MessageLoop.Run();
-
-        public void Quit(int exitCode)
-        {
-            Quits.Add(exitCode);
-            Win32MessageLoop.Quit(exitCode);
-        }
-
-        public void Wake() => Win32MessageLoop.Wake();
-
-        public void Dispose() { }
-    }
-
     // The center of a node's box in the window's physical pixels; the column is at the root's top left, the button in it.
-    private static (int X, int Y) Center(DesktopWindow window, NodeHandle node)
+    private static (int X, int Y) Center(TestWindow window, NodeHandle node)
     {
         NodeHandle column = window.Tree.Nodes.GetRef(node).Parent;
         Rect columnBox = window.Tree.GetRect(column);

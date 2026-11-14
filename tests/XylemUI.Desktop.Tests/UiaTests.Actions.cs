@@ -52,7 +52,7 @@ public sealed unsafe partial class UiaTests
         {
             int clicks = 0;
             int thread = 0;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Button(
                         "Go",
@@ -90,7 +90,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             TimeSpan? stamp = null;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Box()
                         .Height(20)
@@ -130,7 +130,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             Element second = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(Button("First", () => { }), second = Button("Second", () => { })),
                 new WindowOptions("UIA focus action", 200, 200),
                 useWarp: true
@@ -159,7 +159,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             int clicks = 0;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Box().Height(20).OnClick(() => clicks++).Accessible(new AccessibilityInfo { Role = SemanticsRole.CheckBox, Name = "Agree" }),
                 new WindowOptions("UIA toggle", 200, 200),
                 useWarp: true
@@ -193,7 +193,7 @@ public sealed unsafe partial class UiaTests
             Signal<string> free = Signal.Create(string.Empty);
             Signal<string> line = Signal.Create(string.Empty);
             Signal<string> fixedText = Signal.Create(string.Empty);
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         TextField(free, new TextFieldOptions { MaxLength = 5 }).TestId("free"),
@@ -246,7 +246,7 @@ public sealed unsafe partial class UiaTests
         {
             Signal<string> free = Signal.Create(string.Empty);
             Signal<string> line = Signal.Create(string.Empty);
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(TextField(free).TestId("free"), TextField(line).TestId("line")),
                 new WindowOptions("UIA set value in a row", 200, 200),
                 useWarp: true
@@ -292,7 +292,7 @@ public sealed unsafe partial class UiaTests
         {
             Signal<string> fruit = Signal.Create("apple");
             Element select = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => select = Select(fruit, ["apple", "pear"], static s => Elements.Text(s)).TestId("fruit"),
                 new WindowOptions("UIA select", 200, 200),
                 useWarp: true
@@ -348,7 +348,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             var state = new ScrollState();
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => ScrollView(Column([.. Enumerable.Range(1, 10).Select(i => Button($"b{i}", () => { }).Height(30))]), state).Height(60),
                 new WindowOptions("UIA scroll into view", 200, 200),
                 useWarp: true
@@ -387,7 +387,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Box()
                         .Height(200)
@@ -429,7 +429,7 @@ public sealed unsafe partial class UiaTests
         {
             int clicks = 0;
             PointerHandler click = (in PointerEvent e) => clicks++;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Elements.Text(
                         (ref w) =>
@@ -487,7 +487,7 @@ public sealed unsafe partial class UiaTests
             Signal<string> fixedText = Signal.Create(string.Empty);
             Element freeField = default;
             Element fixedField = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column(freeField = TextField(free), fixedField = TextField(fixedText, new TextFieldOptions { ReadOnly = true })),
                 new WindowOptions("UIA read only", 200, 200),
                 useWarp: true
@@ -515,7 +515,7 @@ public sealed unsafe partial class UiaTests
 
     // Runs an action of the client on a thread of its own, while the UI thread runs the loop until the client is done and the action
     // took effect.
-    private static void ActByUia(DesktopWindow window, Action<AutomationElement> act, Func<bool> done)
+    private static void ActByUia(TestWindow window, Action<AutomationElement> act, Func<bool> done)
     {
         HWND hwnd = window.Window.Hwnd;
         Exception? error = null;

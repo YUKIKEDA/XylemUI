@@ -47,6 +47,8 @@ public sealed class HeadlessApp : IAsyncDisposable
         _dispatcher = HeadlessSession.Dispatcher;
         _text = new TextContext(_fonts);
         _renderer = options.Renderer?.Invoke();
+        HeadlessWindow window;
+        bool connected = false;
 
         // A renderer that fails to size, or a part made after it that throws, does not leave its device behind (PR #469's review).
         try
@@ -54,26 +56,41 @@ public sealed class HeadlessApp : IAsyncDisposable
             _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
             _target = new HeadlessTarget(_renderer?.Target);
             _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
-            _core = new WindowCore(_text, options.SupportedLocales, options.ResolveLocale);
+            _core = new WindowCore(_text, Clipboard, options.SupportedLocales, options.ResolveLocale);
             Tree.Animations.ReduceMotion = options.ReduceMotion;
-            Tree.Clipboard = Clipboard;
             Tree.AnimatesImages = options.ImageAnimation;
             Tree.Keymap = options.Keymap ?? new Keymap();
             Ime = new HeadlessIme(this);
-            Tree.SetTextInput(Ime);
             Tree.SetTextEditing(
                 (options.CaretBlink ? TextEditingSettings.Default : TextEditingSettings.Default with { CaretBlink = null }) with
                 {
                     KeyboardCues = options.KeyboardCues,
                 }
             );
-            _core.Connect(_target, _atlas, _scheduler, _platform, Color.FromRgb(0xFFFFFF), time: Time);
+
+            // The headless parts as the window tier (design §6.0, "Headless"): from it the core gives the tree the input method, and
+            // takes that the window shows and is active from the start.
+            window = new HeadlessWindow(_target, _scheduler, _platform, Ime, options);
+
+            // The core owns the window and the atlas from Connect on, also when Connect throws (design §6.0).
+            connected = true;
+            _core.Connect(window, _atlas, Color.FromRgb(0xFFFFFF), Time);
+            window.Attach();
             Pointer = new HeadlessPointer(this);
             Keyboard = new HeadlessKeyboard(this);
         }
         catch
         {
-            _atlas?.Dispose();
+            // From Connect on, the core disposes the atlas; before, the atlas is still the app's.
+            if (connected)
+            {
+                _core!.Dispose();
+            }
+            else
+            {
+                _atlas?.Dispose();
+            }
+
             _renderer?.Dispose();
             _text.Dispose();
             _fonts.Dispose();
@@ -93,10 +110,9 @@ public sealed class HeadlessApp : IAsyncDisposable
         // nothing of the app held.
         try
         {
-            Input.SetActive(true);
-
             // The size is the options' logical size, given as it is: no rounding.
             _core.Mount(root, options.SystemLocales, "HeadlessApp.StartAsync", new Size(options.Width, options.Height), options.Scale);
+            window.RootMounted();
         }
         catch
         {
@@ -794,12 +810,10 @@ public sealed class HeadlessApp : IAsyncDisposable
     private void Free()
     {
         _disposed = true;
-        _core.DisposeRoot();
 
-        // The core's DisposeRoot cancels no frame: AssertNoLeakedScopes disposes the root and then runs the frames that are left.
-        _scheduler.CancelFrame();
+        // The core cancels the frame, disposes the root, then the window and the atlas; the renderer behind the target goes after.
+        _core.Dispose();
         ScopeTracker.IsEnabled = _trackerWasEnabled;
-        _atlas.Dispose();
         _renderer?.Dispose();
         _text.Dispose();
         _fonts.Dispose();

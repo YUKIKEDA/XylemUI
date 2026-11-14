@@ -8,16 +8,50 @@ namespace XylemUI.Platform.Windows;
 /// each call and does not try again: a clipboard another program holds open fails the call (GPUI's <c>clipboard.rs</c> lines 346 to
 /// 355), where waiting to try again would stop the UI thread.
 /// </summary>
-/// <param name="window">The window that owns what it puts on the clipboard: a clipboard opened with no window has no owner after
-/// <c>EmptyClipboard</c>, and <c>SetClipboardData</c> then fails (<c>OpenClipboard</c>'s documentation).</param>
-internal sealed unsafe class Win32Clipboard(Win32Window window) : IClipboardBackend
+/// <remarks>
+/// What it puts on the clipboard is owned by a message-only window of its own (<see cref="Owner"/>): a clipboard opened with no
+/// window has no owner after <c>EmptyClipboard</c>, and <c>SetClipboardData</c> then fails (<c>OpenClipboard</c>'s documentation).
+/// The window is the host's, not an app window's: the clipboard is the OS's one and belongs to the app tier, and it reads and
+/// writes with no app window open (design §6.0). The loop's wake window is not used, so that <c>Win32MessageLoop.Wake</c> still
+/// does nothing before the loop starts (Issue #928).
+/// </remarks>
+internal sealed unsafe class Win32Clipboard : IClipboardBackend
 {
     private const uint UnicodeText = CF.CF_UNICODETEXT;
+    private const string OwnerClassName = "XylemUI.Clipboard";
+
+    private static nint _owner;
+
+    /// <summary>
+    /// Gets the message-only window that owns what the clipboard puts on it, or <see cref="HWND.NULL"/> when there is none: the
+    /// window is made on the UI thread only, at the first call that opens the clipboard there, and kept for the process, as the
+    /// loop's wake window is (design §6.0; Issue #928). A call off the UI thread before then, or a call whose window could not be
+    /// made, gets none, and a later call on the UI thread tries again.
+    /// </summary>
+    internal static HWND Owner
+    {
+        get
+        {
+            // Made on the UI thread only: a window belongs to the thread that made it and goes when that thread ends, which would
+            // leave the clipboard with an owner that no longer exists.
+            nint owner = Volatile.Read(ref _owner);
+            if (owner == 0 && UiThread.CheckAccess())
+            {
+                owner = (nint)MessageWindow.Create(OwnerClassName, out _);
+                Volatile.Write(ref _owner, owner);
+            }
+
+            return (HWND)owner;
+        }
+    }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// With no owner window (<see cref="Owner"/>), it opens the clipboard with none: reading needs no owner.
+    /// </remarks>
     public string? GetText()
     {
-        if (OpenClipboard(window.Hwnd) == BOOL.FALSE)
+        if (OpenClipboard(Owner) == BOOL.FALSE)
         {
             return null;
         }
@@ -63,10 +97,15 @@ internal sealed unsafe class Win32Clipboard(Win32Window window) : IClipboardBack
     public bool HasText() => IsClipboardFormatAvailable(UnicodeText) != BOOL.FALSE;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// With no owner window (<see cref="Owner"/>), it returns <see langword="false"/>: <c>SetClipboardData</c> fails on a clipboard
+    /// that has no owner.
+    /// </remarks>
     public bool SetText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        if (OpenClipboard(window.Hwnd) == BOOL.FALSE)
+        HWND owner = Owner;
+        if (owner == HWND.NULL || OpenClipboard(owner) == BOOL.FALSE)
         {
             return false;
         }
