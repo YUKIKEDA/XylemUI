@@ -7,8 +7,8 @@ namespace XylemUI;
 /// <remarks>
 /// A host sets <see cref="Dispatcher"/> as <see cref="UiDispatcher.Current"/> and as the UI thread's synchronization context when
 /// it is made, and puts back the values it replaced when it is disposed (design §2.12). The app makes it on the UI thread and
-/// disposes it there, after the windows it opened. A second <see cref="IDisposable.Dispose"/> does nothing, and
-/// <see cref="IDisposable.Dispose"/> checks no thread (design §6.0).
+/// disposes it there, after the windows it opened. <see cref="IDisposable.Dispose"/> called off the UI thread throws
+/// <see cref="InvalidOperationException"/> and changes nothing; a second call on the UI thread does nothing (design §6.0).
 /// </remarks>
 internal interface IPlatformApp : IDisposable
 {

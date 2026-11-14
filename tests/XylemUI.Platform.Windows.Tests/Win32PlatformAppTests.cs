@@ -117,6 +117,87 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Disposing the host from a thread that is not the UI thread throws and changes nothing; a later disposal on the UI thread
+    /// still puts everything back (design §6.0, <c>IPlatformApp</c>'s <c>Dispose</c>).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The UI thread of the headless session, which set <see cref="UiDispatcher.Current"/> to its dispatcher. The thread's
+    ///   synchronization context is set to a new <see cref="SynchronizationContext"/> for the test, and the one before is put back
+    ///   after it. A host made on it.
+    /// - A new thread in the single-threaded apartment, with no synchronization context.
+    ///
+    /// Steps:
+    /// - Read <see cref="UiDispatcher.Current"/> and how many OLE initializations of the UI thread are not yet balanced
+    ///   (<c>Com.UiThreadInitializations</c>), then make the host. On the new thread, dispose the host; then read that thread's
+    ///   context and count. On the UI thread, read <see cref="UiDispatcher.Current"/>, the context, and the count; dispose the
+    ///   host; read them again.
+    ///
+    /// Expected:
+    /// - The disposal on the new thread threw <see cref="InvalidOperationException"/>; that thread has no context, and its count
+    ///   is 0.
+    /// - After it, the UI thread still has the host's dispatcher, the host's context, and one more initialization than before.
+    /// - After the disposal on the UI thread, the dispatcher is the one read first, the context is the test's, and the count is the
+    ///   one read first.
+    /// </remarks>
+    [Fact]
+    public void Dispose_OffTheUiThread_ThrowsAndChangesNothing() =>
+        ui.Invoke(() =>
+        {
+            IUiDispatcher before = UiDispatcher.Current;
+            SynchronizationContext? original = SynchronizationContext.Current;
+            var mine = new SynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(mine);
+            int initializationsBefore = Com.UiThreadInitializations;
+            Exception? thrown = null;
+            SynchronizationContext? workerContext = new();
+            int workerInitializations = -1;
+            UiDispatcher dispatcher;
+            IUiDispatcher current;
+            SynchronizationContext? context;
+            int initializations;
+            IUiDispatcher after;
+            SynchronizationContext? contextAfter;
+            int initializationsAfter;
+            try
+            {
+                var app = new Win32PlatformApp();
+                var thread = new Thread(() =>
+                {
+                    thrown = Record(() => DisposeOf(app));
+                    workerContext = SynchronizationContext.Current;
+                    workerInitializations = Com.UiThreadInitializations;
+                });
+                thread.SetApartmentState(ApartmentState.STA);
+                thread.Start();
+                thread.Join();
+
+                dispatcher = app.Dispatcher;
+                current = UiDispatcher.Current;
+                context = SynchronizationContext.Current;
+                initializations = Com.UiThreadInitializations;
+                app.Dispose();
+                after = UiDispatcher.Current;
+                contextAfter = SynchronizationContext.Current;
+                initializationsAfter = Com.UiThreadInitializations;
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(original);
+            }
+
+            Assert.IsType<InvalidOperationException>(thrown);
+            Assert.Null(workerContext);
+            Assert.Equal(0, workerInitializations);
+            Assert.Same(dispatcher, current);
+            Assert.Same(dispatcher.SynchronizationContext, context);
+            Assert.Equal(initializationsBefore + 1, initializations);
+            Assert.Same(before, after);
+            Assert.Same(mine, contextAfter);
+            Assert.Equal(initializationsBefore, initializationsAfter);
+        });
+
+    /// <summary>
     /// Making the host initializes OLE on the UI thread once, and disposing it ends that initialization (design §6.0, "The loop,
     /// the dispatcher, and the app's lifetime"; §7, "COM initialization").
     /// </summary>
@@ -324,6 +405,10 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
     {
         using var app = new Win32PlatformApp();
     }
+
+    // Disposes the host; a helper, so that the thread that disposes it off the UI thread on purpose calls no UI-thread-only member
+    // in its own lambda (XYLEM100).
+    private static void DisposeOf(Win32PlatformApp app) => app.Dispose();
 
     private static Exception? Record(Action action)
     {

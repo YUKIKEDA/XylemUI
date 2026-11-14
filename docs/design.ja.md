@@ -5023,7 +5023,11 @@ internal interface IPlatformApp : IDisposable
     int Run();                                // Quit まで、OS のメッセージ・取り出し・フレームを回す。戻り値は Quit の値
     void Quit(int exitCode);                  // UI スレッドから
     void Wake();                              // どのスレッドからでも。ループの開始前は何もしない（§2.11、§2.12）
-    // Dispose: 2 回目は何もしない。スレッドは確かめない（XylemApp.Run が UI スレッドで捨てる。PR #926 でオーナーが決定）
+    // Dispose: UI スレッドから。ほかのスレッドからは InvalidOperationException を投げ、何も変えない。UI スレッドでの 2 回目は
+    // 何もしない。スレッドは、2 回目かを見る印より先に確かめる。ほかのスレッドで捨てると、そのスレッドの SynchronizationContext を
+    // 書き換え、OLE を初期化していないそのスレッドで OleUninitialize を呼び、印が立つので後で UI スレッドで捨てても何もせず、
+    // UI スレッドの OLE が初期化されたまま残るためである（PR #926 のレビューの後、オーナーが決定。同じ PR で一度「スレッドは
+    // 確かめない」と決めたのを改めた）
 }
 
 // OS の設定: アプリの段に 1 つ。読み直して値が変わったときだけ、変わった値の印を付けて 1 回知らせる
@@ -5158,7 +5162,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 - 層 2（`XylemUI.Core.Tests`）: 偽の `IPlatformWindow` と設定で、窓の核の `Mount`、最初のフレーム、閉じた時の後始末、設定の知らせ 1 回で木の値が変わることを、すべての OS で確かめる。`CurrentDispatcher` の物を作り、置く前は投げること、`Exchange` が前の値を返すことも確かめる（静的な `Current` は使わない。§2.12）
 - 層 5（`XylemUI.Desktop.Tests`）: `HeadlessApp` が窓の核を通ってもゴールデンと振る舞いが変わらないこと。本物の窓（WARP）のテストは Windows のホストを通す
-- `XylemUI.Platform.Windows.Tests`（本物の窓）: ホストを作ると OLE を初期化し、`UiDispatcher.Current` と `SynchronizationContext` を置き、捨てると戻すこと（2 回捨てても 2 回目は何もしないこと）。`Run` が `Quit` の値を返すこと、ワーカーからの `Wake` で待っているループが起きること。「ループの開始前の `Wake` は何もしない」はテストしない。起床の窓は最初に `Run` した時に作られ、テストのプロセスが終わるまで残るので、前のテストがループを回した後では、開始前の状態を作れないためである（PR #926 でオーナーが決定）。新しいプロセスで確かめるなら、E2E がすでに使っている、自分を別のプロセスで起こす形（`External`・`Startup`）か、このテストだけを持つテストのプロジェクト（xUnit v3 はテストのアセンブリごとにプロセスを分ける）を使う。どちらにするかは後で決める。2 つ目の `OpenWindow` が投げること、メッセージ専用の窓を持ち主にしたクリップボードの読み書き、`WM_SETTINGCHANGE` 1 つで設定の知らせが 1 回であること、壊す順
+- `XylemUI.Platform.Windows.Tests`（本物の窓）: ホストを作ると OLE を初期化し、`UiDispatcher.Current` と `SynchronizationContext` を置き、捨てると戻すこと（2 回捨てても 2 回目は何もしないこと、ほかのスレッドから捨てると投げて何も変えないこと）。`Run` が `Quit` の値を返すこと、ワーカーからの `Wake` で待っているループが起きること。「ループの開始前の `Wake` は何もしない」はテストしない。起床の窓は最初に `Run` した時に作られ、テストのプロセスが終わるまで残るので、前のテストがループを回した後では、開始前の状態を作れないためである（PR #926 でオーナーが決定）。新しいプロセスで確かめるなら、E2E がすでに使っている、自分を別のプロセスで起こす形（`External`・`Startup`）か、このテストだけを持つテストのプロジェクト（xUnit v3 はテストのアセンブリごとにプロセスを分ける）を使う。どちらにするかは後で決める。2 つ目の `OpenWindow` が投げること、メッセージ専用の窓を持ち主にしたクリップボードの読み書き、`WM_SETTINGCHANGE` 1 つで設定の知らせが 1 回であること、壊す順
 - `XylemUI.Generators.Tests`: `PlatformHost` を持つアセンブリを 1 つ参照するアプリで、生成した初期化子がその型の `Register()` を呼ぶこと。2 つ参照するアプリで XYLEM008 が出て、初期化子がどのホストも登録しないこと。`Register` の無い型を名指すホストで XYLEM009 が出ること。既定のキーの行の診断（XYLEM007）のテストと同じ形で書く
 
 **機能ごとのサポート状況マトリクス（例、実装時に全項目を埋める）**
