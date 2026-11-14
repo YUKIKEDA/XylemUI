@@ -903,20 +903,22 @@ public sealed unsafe partial class UiaTests
     /// <remarks>
     /// Preconditions:
     /// - A hidden window "UIA text roles" with empty text fields of the roles SearchBox ("search"), DateInput ("date"), TimeInput
-    ///   ("time"), and DateTimeInput ("when"), a read-only SearchBox ("fixed"), and a disabled DateInput ("off").
+    ///   ("time"), and DateTimeInput ("when"), a read-only SearchBox ("fixed"), a disabled DateInput ("off"), and a last SearchBox
+    ///   ("last").
     ///
     /// Steps:
-    /// - In one action of the client, find each of the six fields in turn and set it to "x", counting the calls that returned or
-    ///   that the client refused; run the loop until the client is done and "when" has text.
+    /// - In one action of the client, find each of the seven fields in turn and set it to "x", counting the calls that returned or
+    ///   that the client refused; run the loop until the client is done and "last" has text. The requests are handled in the order
+    ///   they came, so those to "fixed" and "off" are handled by then.
     ///
     /// Expected:
-    /// - Six calls ended before the watchdog; "x" in the four; "fixed" and "off" empty.
+    /// - Seven calls ended before the watchdog; "x" in the four and in "last"; "fixed" and "off" empty.
     /// </remarks>
     [Fact]
     public void SetValue_WritesTheTextRoles_NotAReadOnlyOrDisabledOne() =>
         ui.Invoke(() =>
         {
-            string[] ids = ["search", "date", "time", "when", "fixed", "off"];
+            string[] ids = ["search", "date", "time", "when", "fixed", "off", "last"];
             SemanticsRole[] roles =
             [
                 SemanticsRole.SearchBox,
@@ -925,6 +927,7 @@ public sealed unsafe partial class UiaTests
                 SemanticsRole.DateTimeInput,
                 SemanticsRole.SearchBox,
                 SemanticsRole.DateInput,
+                SemanticsRole.SearchBox,
             ];
             Signal<string>[] texts = [.. ids.Select(_ => Signal.Create(string.Empty))];
             using var window = new DesktopWindow(
@@ -963,13 +966,13 @@ public sealed unsafe partial class UiaTests
                         _ = Interlocked.Increment(ref ended);
                     }
                 },
-                () => texts[3].Peek().Length > 0
+                () => texts[6].Peek().Length > 0
             );
 
             RunAccessibilityStage(window);
 
-            Assert.Equal(6, Volatile.Read(ref ended));
-            Assert.Equal(["x", "x", "x", "x", string.Empty, string.Empty], texts.Select(t => t.Peek()));
+            Assert.Equal(7, Volatile.Read(ref ended));
+            Assert.Equal(["x", "x", "x", "x", string.Empty, string.Empty, "x"], texts.Select(t => t.Peek()));
         });
 
     /// <summary>
