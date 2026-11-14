@@ -36,59 +36,40 @@ public static class XylemApp
             throw new InvalidOperationException("XylemApp.Run runs one message loop; it already runs.");
         }
 
-        // Before the first window, which makes its DirectManipulation viewport with COM (design §7, "Touch and pen", I1c).
-        Platform.Windows.Com.InitializeUiThread();
-
         // The loop can end with windows open (Win32MessageLoop.Quit from the app); the next run starts with none counted.
         _running = true;
-
-        IUiDispatcher? previousDispatcher = null;
-        bool exchanged = false;
-        SynchronizationContext? previous = SynchronizationContext.Current;
         try
         {
-            // The loop's queue is where workers post, from the root function on (design §2.12). The one this replaces comes back
-            // when the run ends: the headless tests run a real window's loop inside work of their own UI thread, whose queue they
-            // post to afterwards. Inside the try, like everything after the run is marked as started.
-            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
-            previousDispatcher = UiDispatcher.Exchange(dispatcher);
-            exchanged = true;
-
-            // The loop's context before the window, whose root function makes elements that keep it: an image's decode runs on a
-            // worker and posts its result to the context the element was made with, and with none it runs here (design §5.0.4,
-            // "Decoding threads"; Issue #785). Inside the try, so that whatever throws from here on leaves the app able to run
-            // again.
-            SynchronizationContext.SetSynchronizationContext(dispatcher.SynchronizationContext);
+            // The host initializes OLE and sets its dispatcher and the loop's synchronization context before the window, whose
+            // root function makes elements that use them (design §6.0, "The order of creation"). Declared first, it is disposed
+            // after the window, and puts back what it replaced when anything from here on throws too, so that the app can run
+            // again. A host that throws while it is made has changed nothing.
+            using var app = new Win32PlatformApp();
             using var window = new DesktopWindow(root, options ?? new WindowOptions(), show: true);
-            Open(window);
-            return Win32MessageLoop.Run();
+            Open(window, app);
+            return app.Run();
         }
         finally
         {
-            SynchronizationContext.SetSynchronizationContext(previous);
-            if (exchanged)
-            {
-                _ = UiDispatcher.Exchange(previousDispatcher);
-            }
-
             _running = false;
             _openWindows = 0;
-            Platform.Windows.Com.UninitializeUiThread();
         }
     }
 
     /// <summary>
-    /// Counts <paramref name="window"/> as open until it closes; the last window to close ends the message loop.
+    /// Counts <paramref name="window"/> as open until it closes; the last window to close quits the loop of <paramref name="app"/>
+    /// with 0.
     /// </summary>
     /// <param name="window">The window that was opened.</param>
-    internal static void Open(DesktopWindow window)
+    /// <param name="app">The host whose loop runs the window.</param>
+    internal static void Open(DesktopWindow window, IPlatformApp app)
     {
         _openWindows++;
-        window.Closed += static (_, _) =>
+        window.Closed += (_, _) =>
         {
             if (--_openWindows == 0)
             {
-                Win32MessageLoop.Quit();
+                app.Quit(0);
             }
         };
     }
