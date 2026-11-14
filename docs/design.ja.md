@@ -1599,7 +1599,7 @@ public interface IUiDispatcher
 
 キューは `ConcurrentQueue`（複数ライター・単一リーダー）とする（S5）。読み手は UI スレッドのループだけで、`await` で待つ読み手がいないため、`Channel` の非同期の読み出しは要らない。メッセージと `await` の継続は同じキューに積み、積んだ順に実行する。投入後に §2.11 の起床機構（Windows なら `PostMessage(WM_NULL)`）を呼ぶ。`PostMessage` の `LPARAM` にマネージド参照を詰めない。起床機構はループの開始前（Windows では起床用のメッセージ専用ウィンドウを作る前）には何もしないので、ループは開始時に必ず1回キューを空にしてから最初の待機に入る。開始前に投入されたメッセージを取りこぼさないためである（S3 のレビュー）。
 
-**`UiDispatcher.Current`（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）:** UI スレッドのキュー（`UiDispatcher`）を引く入口を Core に置き、ホストが置く。行 PL1 の前は、Windows の `Win32MessageLoop.Dispatcher`（公開）とヘッドレスの `HeadlessSession.Dispatcher`（internal）が別々に持ち、OS によらないコードからは引けなかった。2 つは今も、ホストが取り出しと `SynchronizationContext` に使う具体の型として internal で残る。ワーカーがメッセージを積む先（`IUiDispatcher.Post`。行 U1 で `Post<T>` になる）は、これで引く。行 U1 の受け手の登録（`UiMessage.On<T>`）は総称型の静的な表で、ディスパッチャを引かない。
+**`UiDispatcher.Current`（行 PL1、Grill の 5 巡目でオーナーが決定、Issue #872）:** UI スレッドのキュー（`UiDispatcher`）を引く入口を Core に置き、ホストが置く。行 PL1 の前は、Windows の `Win32MessageLoop.Dispatcher`（公開）とヘッドレスの `HeadlessSession.Dispatcher`（internal）が別々に持ち、OS によらないコードからは引けなかった。2 つは今も、ホストが取り出しと `SynchronizationContext` に使う具体の型として internal で残る（PR #903 でオーナーが決定）。ワーカーがメッセージを積む先（`IUiDispatcher.Post`。行 U1 で `Post<T>` になる）は、これで引く。行 U1 の受け手の登録（`UiMessage.On<T>`）は総称型の静的な表で、ディスパッチャを引かない。
 
 ```csharp
 public sealed class UiDispatcher : IUiDispatcher
@@ -1618,7 +1618,7 @@ internal sealed class CurrentDispatcher
 }
 ```
 
-- **置く所:** アプリのホスト（`IPlatformApp`、§6.0）は、作った時に自分のディスパッチャを置き、捨てる時に前の値に戻す。`IPlatformApp` が入るまで（行 PL1 の実装の 3 つ目の PR まで）は、`XylemApp.Run` がループのディスパッチャ（`Win32MessageLoop.Dispatcher`）を、`SynchronizationContext` を置く所で置き、返る時（例外で返る時も）に前の値に戻す。ヘッドレス（`HeadlessSession`）は、UI スレッドを始めた時に置き、戻さない。UI スレッドはプロセスが終わるまで続くためである。`HeadlessApp` は置かず、セッションのものを使うので、続けて作る 2 つの `HeadlessApp` は同じディスパッチャに積む
+- **置く所:** アプリのホスト（`IPlatformApp`、§6.0）は、作った時に自分のディスパッチャを置き、捨てる時に前の値に戻す。`IPlatformApp` が入るまで（行 PL1 の実装の 3 つ目の PR まで）は（PR #903 でオーナーが決定）、`XylemApp.Run` がループのディスパッチャ（`Win32MessageLoop.Dispatcher`）を、`SynchronizationContext` を置く所で置き、返る時（例外で返る時も）に前の値に戻す。ヘッドレス（`HeadlessSession`）は、UI スレッドを始めた時に置き、戻さない。UI スレッドはプロセスが終わるまで続くためである。`HeadlessApp` は置かず、セッションのものを使うので、続けて作る 2 つの `HeadlessApp` は同じディスパッチャに積む
 - **前の値に戻す理由:** UI スレッドはプロセスに 1 つで（`UiThread`）、`XylemUI.Desktop.Tests` は本物の窓のループを、ヘッドレスの UI スレッドの上の作業の中で回す。戻さないと、本物の窓のテストの後に、ヘッドレスの作業が捨てたディスパッチャに積まれる（Issue #877 の Grill でオーナーが決定）
 - **読む側:** ワーカーが `Post` するので、どのスレッドからでも読める。読むのは `Volatile.Read`、置き換えるのは `Interlocked.Exchange` である。読んだ時に置かれていたディスパッチャに積む
 - **値の置き場所:** 値は小さな internal の型（`CurrentDispatcher`）が持ち、静的な `Current` と `Exchange` は、プロセスに 1 つのその物に任せる。テストはその型の物を作って確かめる。`XylemUI.Core.Tests` はプロセスの間ずっと `Current` を置いたままにするので、静的な `Current` で「置く前は投げる」を確かめると、テストの順に左右される
