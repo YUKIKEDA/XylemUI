@@ -5176,7 +5176,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 1 つのアプリが、一番上の窓をいくつも開き、窓に持ち主のある窓（浮いたパネルなど）を付けられるようにする。UI スレッドは 1 つで、リアクティブのグラフは全ウィンドウで共有する（Grill の 4 巡目でオーナーが決定、Issue #868）。§6.0 の契約（行 PL1）の上に載せ、Windows のホストだけを書く。今のコードは、窓が開いている間の 2 つ目の `IPlatformApp.OpenWindow` を投げる（§6.0「形の決まったこと」）。この節はその口を開ける形を決める。
 
-Grill の答えから直接は決まらなかった 9 点（下の MW1-a〜MW1-i）は、設計の PR のレビューで、推奨の形をオーナーが選んだ（PR #921 でオーナーが決定）。その答えでも決まらなかった 3 点（窓の位置の単位、開いた後の位置と状態を読む口と全画面、アプリの段の動作の `can`）も、推奨の形をオーナーが選んだ（PR #921 でオーナーが決定）。持ち主のある窓の位置を読む口だけは、その後に残った問いである（下の「窓の位置と状態」）。
+Grill の答えから直接は決まらなかった 9 点（下の MW1-a〜MW1-i）は、設計の PR のレビューで、推奨の形をオーナーが選んだ（PR #921 でオーナーが決定）。その答えでも決まらなかった 3 点（窓の位置の単位、開いた後の位置と状態を読む口と全画面、アプリの段の動作の `can`）も、推奨の形をオーナーが選んだ（PR #921 でオーナーが決定）。持ち主のある窓の位置を読む口も、その後にオーナーが決めた（下の「窓の位置と状態」）。
 
 **決まったこと（Grill の 8 巡目でオーナーが決定、Issue #914）:**
 
@@ -5297,7 +5297,7 @@ public sealed record OwnedWindowOptions(string Title = "", float Width = 400, fl
     public Action<WindowClosingEventArgs>? Closing { get; init; }   // MW1-i。User・OwnerClosing・AppQuit で呼ぶ
     public ScreenPoint? Position { get; init; }                     // MW1-h。null は持ち主の中央
     public WindowState State { get; init; } = WindowState.Normal;   // MW1-h
-    public Action<WindowPlacement>? PlacementChanged { get; init; } // 案（オーナーの決定待ち）。下の「窓の位置と状態」
+    public Action<WindowPlacement>? PlacementChanged { get; init; } // PR #921 でオーナーが決定。下の「窓の位置と状態」
 }
 ```
 
@@ -5319,7 +5319,7 @@ public sealed record OwnedWindowOptions(string Title = "", float Width = 400, fl
 - **全画面（PR #921 でオーナーが決定）:** `WindowState.FullScreen` を持つ。窓の枠を外し、窓のあるモニタ全体を覆う。GPUI の `WindowBounds::Fullscreen`（同 2637 行目）と Avalonia の `WindowState.FullScreen`（`src/Avalonia.Controls/WindowState.cs` 26 行目）も持つ。持たないと、動画や発表の画面を作るアプリが Win32 を直に呼ぶことになる。枠を外すのは、行 TB1 の自前のタイトルバーと同じ窓の様式（`WS_OVERLAPPEDWINDOW`）を変える操作なので、TB1 はこの状態を前提に設計する
 - **位置の単位（PR #921 でオーナーが決定）:** 仮想画面の物理画素（`ScreenPoint(int X, int Y)`）にする。倍率の違うモニタが並ぶと、論理画素の画面の座標は 1 つに決まらないためである。Avalonia の `Window.Position` も物理画素の `PixelPoint`（`Window.cs` 533 行目）。GPUI は `Bounds<Pixels>`（論理画素）で、モニタをまたぐ時の換算は読んでいない。大きさ（`Width`・`Height`）は今どおり論理画素で、窓の出るモニタの倍率で物理画素にする（§6.1.1）
 - **開いた後の位置と状態（PR #921 でオーナーが決定）:** `WindowHandle.Placement`（`WindowPlacement`: 元に戻した時の左上、元に戻した時のクライアント領域の大きさ、今の状態）で読み、`PlacementChanged` で変わったことを知る。行 DK1 は、閉じる前の `Placement` を保存し、次の起動で `WindowOptions` の `Position`・`Width`・`Height`・`State` に渡して戻す。Win32 では `GetWindowPlacement` の `rcNormalPosition` で元に戻した時の矩形を読む。Microsoft の `WINDOWPLACEMENT` の頁の Remarks は、`WS_EX_TOOLWINDOW` でない一番上の窓ではこの矩形が作業領域の座標（タスクバーを除いた領域の左上が (0, 0)）で、画面の座標を受ける関数に渡すと位置がずれると書く。そこで、窓のモニタの作業領域の左上を足して画面の座標に直してから返し、開く時は画面の座標を `SetWindowPos` に渡す。`PlacementChanged` は、`WM_EXITSIZEMOVE`（動かす・大きさを変える操作の終わり）と状態の変化（`WM_SIZE` の `SIZE_MAXIMIZED` など）で 1 回ずつ上げ、ドラッグの途中では上げない
-- **持ち主のある窓の位置を読む口（案（オーナーの決定待ち））:** 行 DK1 の浮いた窓は持ち主のある窓（`Window` の要素）で、アプリは `WindowHandle` を持たない。そこで、`OwnedWindowOptions.PlacementChanged`（`Action<WindowPlacement>`、`OwnedWindowOptions.Closing` と同じく `Window` の要素を作った時の Scope の中で呼ぶ）で知らせる案を問う。PR #921 の答えは `WindowHandle` のメンバーで、持ち主のある窓を分けていない
+- **持ち主のある窓の位置を読む口（PR #921 でオーナーが決定）:** 行 DK1 の浮いた窓は持ち主のある窓（`Window` の要素）で、アプリは `WindowHandle` を持たない。そこで、`OwnedWindowOptions.PlacementChanged`（`Action<WindowPlacement>`、`OwnedWindowOptions.Closing` と同じく `Window` の要素を作った時の Scope の中で呼ぶ）で知らせる。上げる時は `WindowHandle.PlacementChanged` と同じである
 - **ほかの OS:** Wayland は窓の位置をアプリに決めさせない。位置を読まず、`Placement` の位置は (0, 0) を返す。行 P04 の文にこれを足した
 
 #### 閉じる順と取り消し
@@ -5512,7 +5512,6 @@ public sealed class HeadlessWindow
 
 #### 残っていること
 
-- **オーナーに問う:** 持ち主のある窓の位置を読む口（`OwnedWindowOptions.PlacementChanged`、上の「窓の位置と状態」の案）
 - **測ること:** グリフアトラス（Todo の 2 つと 4 つの窓のメモリ、共有した時の送りの費用）、2 つの窓のフレームの間隔と取りこぼし、2 つ目の窓を開く時間、窓 B のアニメーション中の窓 A の入力から表示、窓をまたぐドラッグの割り当て 0（上の「測ること」と「実装の PR」）
 - **本物の窓で確かめること:** 2 つの窓の TSF、持ち主の最小化で隠れた窓の `WM_WINDOWPOSCHANGED`、待つ物の上限の数（Microsoft の頁の値）
 - **行 P10 で確かめること:** 別ウィンドウのメニューを Narrator が読むこと、ポップアップの上の `ElementFromPoint`（上の「ポップアップの窓の a11y」）
