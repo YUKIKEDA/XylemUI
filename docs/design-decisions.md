@@ -584,6 +584,8 @@ Rejected:
 
 Decision（行 MW1。Grill の 8 巡目でオーナーが決定、Issue #914。設計書 §6.0.1）:
   一番上の窓の根の Scope は 1 つのアプリの根の Scope の子、持ち主のある窓の根は開いた側の Scope の子。アプリの `Provide` はアプリの根、ロケールと OS の見た目は窓の根。
+  Q25 が持ち主のある窓に並べた 3 つは、Scope の親の規則に従うが、作り方が違う。浮いたパネルは `Window` の要素（自分の窓の核と木を持つ）、窓のポップアップは行 P10 で持ち主の木の中の根、ダイアログを窓に出すかは行 B7 の問い（設計書 §6.0.1）。
+  D3D11 のシェーダと状態はデバイスの共有の物に置き、2 つ目の窓でコンパイルしない。窓ごとの時計は、窓ごとのタイマーと 50 ms の期限を持ち、ループは最も早い期限で待つ（PR #921 のレビュー）。
   D3D11 のデバイスはプロセスに 1 つ、スワップチェーンは窓ごと。グリフアトラスの共有は測ってから決める。
   一番上の窓は `XylemApp.OpenWindow` が返す `WindowHandle`（`Close`・取り消せる `Closing`・`Closed`）、持ち主のある窓は宣言する要素 `Window(Signal<bool> isOpen, …)`。持ち主を閉じると持ち主のある窓を先に閉じる。UI スレッドだけから呼ぶ。
   終わり方はモード（最後の窓・明示だけ）で、既定は macOS で明示、ほかで最後の窓。
@@ -594,7 +596,7 @@ Reason:
   別ウィンドウのポップアップは開いた側の Context を引く（設計書 §7.3 の Q1、§2.13「ポップアップの中身は、宣言した場所の値を引く」）。窓を独立させると、この約束が窓のポップアップで破れる。
   ハンドラの中から開いた一番上の窓の根を、そのハンドラの Scope の子にすると、ハンドラを登録した部分が作り直されたときに窓まで消える。アプリの根の子にすれば、どこから開いても同じ寿命になる。
   GPUI（`globals_by_type`、zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目）と Avalonia（`Application` の資源）は、アプリ全体の値の置き場を持つ。
-  GPUI はデバイスをプラットフォームに 1 つ持ち（`crates/gpui_windows/src/platform.rs` 100・319 行目）、窓ごとにデバイスを作ると窓ごとにシェーダをコンパイルする（行 C0 までは約 0.6 秒）。
+  GPUI はデバイスをプラットフォームに 1 つ持つ（`crates/gpui_windows/src/platform.rs` 100・319 行目）。2 つ目の窓を開く時に、もう 1 度シェーダのコンパイル（行 C0 までは実行時に約 0.6 秒）を払わないことが要件である。今の `D3D11Renderer` は、シェーダ・入力の並び・サンプラー・ブレンドの状態をレンダラごとに作る（`src/XylemUI.Rendering.D3D11/D3D11Renderer.cs` 181〜198 行目）ので、デバイスを共有するだけでは足りず、これらをデバイスに 1 つの `D3D11DeviceResources` に移す（PR #921 のレビュー）。共有できるのは、同じデバイスの子だからである。
   macOS のアプリは窓が無くても動き続けるのが習わしで、GPUI の `QuitMode`（`app.rs` 457〜466 行目）と Avalonia の `ShutdownMode` はモードで選ぶ。
   フォーカスを取らないポップアップの窓に adapter を持たせると、その窓はフォーカスのイベントを出せず、メニューを動いても Narrator が黙る。Avalonia はポップアップの根の peer を `Popup` の peer の子にする（12.1.4 の `src/Avalonia.Controls/Automation/Peers/PopupAutomationPeer.cs` 18〜22 行目）。
   ドッキング（行 DK1）でパネルを別の窓へ動かすには、窓をまたぐドラッグが要る。GPUI の `active_drag` はアプリの段にある（`app.rs` 822 行目）。
@@ -611,6 +613,9 @@ Rejected:
   - `XylemApp.Quit` で、取り消さなかった窓から閉じる（MW1-e。同じ PR。Avalonia の `TryShutdown`、`ClassicDesktopStyleApplicationLifetime.cs` 201〜211 行目は、取り消さなかった窓を順に閉じ、1 つでも残れば終わりを取り消す。利用者には、終わらないまま一部の窓だけが消えたアプリが残る）、窓に聞かずに終える（GPUI の `quit`、`crates/gpui/src/app.rs` 1231〜1233 行目。保存していない文書の窓が、問いを出せずに消える）
   - アプリの段の動作のハンドラを持たない（MW1-f。同じ PR。どの窓でも効くショートカットを、アプリが窓ごとの根に同じハンドラで付けることになり、付け忘れた窓、たとえば持ち主のある窓で効かない。GPUI は `cx.on_action` を持つ、`app.rs` 2621〜2635 行目）
   - 窓の位置と状態を `WindowOptions` に持たない（MW1-h。同じ PR。行 DK1 の浮いた窓を、前の位置と最大化の状態で開き直せない。持ち主のある窓を持ち主の上に出せない。GPUI の `WindowOptions.window_bounds`（`crates/gpui/src/platform.rs` 2491〜2495 行目）と Avalonia の `Window.Position`・`WindowState`（`Window.cs` 533・435 行目）は持つ）
+  - 窓の位置を論理画素の画面の座標で持つ（GPUI の `Bounds<Pixels>` の形。倍率の違うモニタが並ぶと、論理画素の画面の座標は 1 つに決まらない。Avalonia の `Window.Position` は物理画素の `PixelPoint`、`Window.cs` 533 行目。PR #921 でオーナーが決定）
+  - 開いた後の位置と状態を読む口を持たない（行 DK1 が浮いた窓の位置を次の起動で戻せない。同じ PR）、全画面を状態に入れない（GPUI の `WindowBounds::Fullscreen` と Avalonia の `WindowState.FullScreen` は持ち、持たないとアプリが Win32 を直に呼ぶ。同じ PR）
+  - `XylemApp.OnAction` に `can` を持たせない（メニューとコマンドパレットが、アプリの段の動作を今受けられるかを問えず、受けられない動作の項目が Enabled に見える。行 B1 の `OnActionsOf<T>` は `can` を持つ。同じ PR）
   - 持ち主のある窓の閉じる問いを、窓のハンドルのイベントで受ける（MW1-i。同じ PR。持ち主のある窓は宣言する要素で開き、アプリは `WindowHandle` を持たないので、イベントを付ける相手が無い。`Window` の要素からハンドルを返すと、宣言の形と命令の形が混ざる）
 
 ---
