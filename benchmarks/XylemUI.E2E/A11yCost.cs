@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using TerraFX.Interop.Windows;
 using XylemUI.Platform.Windows;
 using XylemUI.Primitives;
@@ -21,6 +22,12 @@ namespace XylemUI.E2E;
 // With --relations N, the first N buttons are each labelled by a text of their own in a column after the buttons (row AX1, design
 // §4.4.1, "Relations"), and a frame that changes the window's width, which moves every node's box and so marks every node, times the
 // stage after it ("resize_stage_us"). Without the option, the scene and its output are as before.
+//
+// With --scroll (alone, or with --relations N), a virtualized list of 10,000 rows 20 high in a box 200 high comes after the buttons,
+// and a frame scrolls it by one row, so that the list takes one row out and makes one: it times the stage after it
+// ("scroll_stage_us"), and counts the frames in which the tree's links changed ("scroll_link_frames"). There is no counter of the
+// rebuilds of the map of the targets' ancestors; with relations, a frame whose links changed and that marks a node rebuilds it once,
+// so the second count bounds the rebuilds. The rows' making and the new row's node allocate, as in an app; the loop itself does not.
 internal static class A11yCost
 {
     private const int Samples = 101;
@@ -28,7 +35,7 @@ internal static class A11yCost
     // UIA's object id of the provider of a window's root (UiaRootObjectId, UIAutomationCoreApi.h).
     private const int UiaRootObjectId = -25;
 
-    public static int Run(int buttonCount, bool accessKit, int relations = 0)
+    public static int Run(int buttonCount, bool accessKit, int relations = 0, bool scroll = false)
     {
         UiThread.Initialize();
         using var report = new Report("a11y");
@@ -43,6 +50,8 @@ internal static class A11yCost
         var tree = new UiTree(new TextContext(fonts));
         NodeHandle root = tree.CreateNode(new LayoutStyle());
         Signal<string> label = Signal.Create("first");
+        Signal<IReadOnlyList<int>>? rowItems = scroll ? Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 10_000)]) : null;
+        VirtualListState? listState = scroll ? new VirtualListState() : null;
         UiTree.Current = tree;
         ScopeHandle scope;
         NodeHandle first = default;
@@ -68,7 +77,23 @@ internal static class A11yCost
                 }
 
                 Element column = Elements.Column(buttons);
-                tree.AppendChild(root, labels.Length == 0 ? column.Node : Elements.Column(column, Elements.Column(labels)).Node);
+                Element content = labels.Length == 0 ? column : Elements.Column(column, Elements.Column(labels));
+                if (rowItems is not null)
+                {
+                    Element list = Elements
+                        .Box()
+                        .Width(200)
+                        .Height(200)
+                        .Overflow(Overflow.Visible, Overflow.Scroll)
+                        .VirtualFor(rowItems, static i => i, static _ => Elements.Box().Height(20), listState);
+
+                    // The buttons overflow the root, and a box that scrolls has no least height of its content: without this, the
+                    // column would shrink the list to nothing.
+                    tree.SetStyle(list.Node, tree.Nodes.GetRef(list.Node).Layout.Style with { MinHeight = Length.Px(200) });
+                    content = Elements.Column(content, list);
+                }
+
+                tree.AppendChild(root, content.Node);
             });
         }
         finally
@@ -77,7 +102,16 @@ internal static class A11yCost
         }
 
         Invalidation.NotifyWindowResized(tree, root, new Size(800, 20_000));
-        LayoutEngine.RunLayoutPass(tree);
+        if (listState is not null)
+        {
+            // The list makes its rows in the materialization stage of a frame, which the layout pass alone does not run.
+            LayOutWithRows(tree);
+        }
+        else
+        {
+            LayoutEngine.RunLayoutPass(tree);
+        }
+
         using Win32Window? window = accessKit ? new Win32Window("a11y", 800, 600) : null;
         using Win32Accessibility? provider = window is null ? null : new Win32Accessibility(window, tree);
         if (window is not null)
@@ -153,6 +187,41 @@ internal static class A11yCost
             report.Series("resize_stage_us", [.. resize]);
         }
 
+        if (listState is not null)
+        {
+            // Each frame scrolls the list by one row: one row leaves the range, one comes in, and the list links its rows again.
+            var scrolled = new double[Samples];
+            int linkFrames = 0;
+            float y = 0;
+            for (int i = -10; i < Samples; i++)
+            {
+                ulong links = tree.LinkVersion;
+                y += 20;
+                listState.Scroll.ScrollTo(new Vector2(0, y));
+                LayOutWithRows(tree);
+                long t0 = Stopwatch.GetTimestamp();
+                tree.Accessibility.Update();
+                long t1 = Stopwatch.GetTimestamp();
+                if (i >= 0)
+                {
+                    scrolled[i] = Stopwatch.GetElapsedTime(t0, t1).TotalMicroseconds;
+                    linkFrames += tree.LinkVersion != links ? 1 : 0;
+                }
+            }
+
+            report.Series("scroll_stage_us", [.. scrolled]);
+            report.Number("scroll_link_frames", linkFrames);
+            report.Number("scroll_refreshed", tree.Accessibility.LastRefreshed);
+
+            // A scroll that swapped no row measured nothing of what the scene is for: it is not reported as a result.
+            if (linkFrames != Samples)
+            {
+                Console.Error.WriteLine($"a11y --scroll: only {linkFrames} of {Samples} frames swapped a row; the scene measured nothing.");
+                Scope.Dispose(scope);
+                return 1;
+            }
+        }
+
         report.Series("change_us", [.. change]);
         report.Series("layout_us", [.. layout]);
         report.Series("stage_us", [.. stage]);
@@ -160,6 +229,18 @@ internal static class A11yCost
         report.Series("color_stage_us", [.. color]);
         Scope.Dispose(scope);
         return 0;
+    }
+
+    // A frame's stages that lay out a virtualized list (WindowFrames.RunFrame): the materialization stage makes the rows the range
+    // needs, the layout pass lays them out, and rounds after it make the rows a range left unfilled.
+    private static void LayOutWithRows(UiTree tree)
+    {
+        _ = tree.Materialize(0);
+        LayoutEngine.RunLayoutPass(tree);
+        for (int round = 1; round <= 8 && tree.Materialize(round); round++)
+        {
+            LayoutEngine.RunLayoutPass(tree);
+        }
     }
 
     private static int CountNodes(AccessibilityNode node)

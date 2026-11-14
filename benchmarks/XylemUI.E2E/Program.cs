@@ -131,7 +131,12 @@ return scenario switch
     "lists" => ListCost.Run(testIds: args.Contains("--test-ids")),
     "todo" => TodoCost.Run(),
     "context" => ContextCost.Run(),
-    "a11y" => A11yCost.Run(Number(1, 1_000), accessKit: args.Contains("--accesskit"), relations: Option("--relations", 0)),
+    "a11y" => A11yCost.Run(
+        Number(1, 1_000),
+        accessKit: args.Contains("--accesskit"),
+        relations: Option("--relations", 0),
+        scroll: args.Contains("--scroll")
+    ),
     "menu" => MenuCost.Run(),
     "actions" => ActionCost.Run(),
     "keymap" => args.Contains("--first-pieces") ? KeymapCost.FirstPieces() : KeymapCost.Run(countFaults: !args.Contains("--no-faults")),
