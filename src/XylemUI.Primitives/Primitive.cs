@@ -175,19 +175,19 @@ internal static class Roles
     public static AccessibilityInfo ComboBox { get; } = new() { Role = SemanticsRole.ComboBox };
 
     /// <summary>
-    /// Gets the information of a select's list.
+    /// Gets the information of a select's list, whose items are chosen.
     /// </summary>
-    public static AccessibilityInfo List { get; } = new() { Role = SemanticsRole.List, PartStates = AccessibilityStates.SelectableList };
+    public static AccessibilityInfo ListBox { get; } = new() { Role = SemanticsRole.ListBox };
 
     /// <summary>
     /// Gets the information of a choice of a select.
     /// </summary>
-    public static AccessibilityInfo ListItem { get; } = new() { Role = SemanticsRole.ListItem };
+    public static AccessibilityInfo ListBoxItem { get; } = new() { Role = SemanticsRole.ListBoxItem };
 
     /// <summary>
     /// Gets the information of the choice a select shows.
     /// </summary>
-    public static AccessibilityInfo SelectedListItem { get; } = new() { Role = SemanticsRole.ListItem, States = SemanticsStates.Selected };
+    public static AccessibilityInfo SelectedListBoxItem { get; } = new() { Role = SemanticsRole.ListBoxItem, States = SemanticsStates.Selected };
 
     /// <summary>
     /// Gets the information of a tooltip.

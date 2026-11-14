@@ -267,7 +267,13 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         }
     }
 
-    private static byte RoleOf(AccessibilityNode node) =>
+    /// <summary>
+    /// Returns AccessKit's role of a node (design §4.4.1, the table of roles); <see cref="AccessKit.RoleUnknown"/> for a role with no
+    /// mapping, which only <see cref="SemanticsRole.None"/> is.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The role.</returns>
+    internal static byte RoleOf(AccessibilityNode node) =>
         node.Role switch
         {
             SemanticsRole.Window => AccessKit.RoleWindow,
@@ -283,10 +289,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             SemanticsRole.Edit when (node.States & AccessibilityStates.Password) != 0 => AccessKit.RolePasswordInput,
             SemanticsRole.Edit when (node.States & AccessibilityStates.Multiline) != 0 => AccessKit.RoleMultilineTextInput,
             SemanticsRole.Edit => AccessKit.RoleTextInput,
-            SemanticsRole.List when (node.States & AccessibilityStates.SelectableList) != 0 => AccessKit.RoleListBox,
             SemanticsRole.List => AccessKit.RoleList,
-            SemanticsRole.ListItem when node.Parent is { } list && (list.States & AccessibilityStates.SelectableList) != 0 =>
-                AccessKit.RoleListBoxOption,
             SemanticsRole.ListItem => AccessKit.RoleListItem,
             SemanticsRole.Menu => AccessKit.RoleMenu,
             SemanticsRole.MenuBar => AccessKit.RoleMenuBar,
@@ -298,6 +301,47 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             SemanticsRole.TabItem => AccessKit.RoleTab,
             SemanticsRole.ToolTip => AccessKit.RoleTooltip,
             SemanticsRole.Separator => AccessKit.RoleSplitter,
+            SemanticsRole.Navigation => AccessKit.RoleNavigation,
+            SemanticsRole.TitleBar => AccessKit.RoleTitleBar,
+            SemanticsRole.TabPanel => AccessKit.RoleTabPanel,
+            SemanticsRole.Toolbar => AccessKit.RoleToolbar,
+            SemanticsRole.Region => AccessKit.RoleRegion,
+            SemanticsRole.Status => AccessKit.RoleStatus,
+            SemanticsRole.Alert => AccessKit.RoleAlert,
+            SemanticsRole.AlertDialog => AccessKit.RoleAlertDialog,
+            SemanticsRole.Meter => AccessKit.RoleMeter,
+            SemanticsRole.Switch => AccessKit.RoleSwitch,
+            SemanticsRole.RadioGroup => AccessKit.RoleRadioGroup,
+            SemanticsRole.SpinButton => AccessKit.RoleSpinButton,
+            SemanticsRole.SearchBox => AccessKit.RoleSearchInput,
+            SemanticsRole.ScrollBar => AccessKit.RoleScrollBar,
+            SemanticsRole.MenuItemCheckBox => AccessKit.RoleMenuItemCheckBox,
+            SemanticsRole.MenuItemRadio => AccessKit.RoleMenuItemRadio,
+            SemanticsRole.ListBox => AccessKit.RoleListBox,
+            SemanticsRole.ListBoxItem => AccessKit.RoleListBoxOption,
+            SemanticsRole.Tree => AccessKit.RoleTree,
+            SemanticsRole.TreeItem => AccessKit.RoleTreeItem,
+            SemanticsRole.TreeGrid => AccessKit.RoleTreeGrid,
+            SemanticsRole.Table => AccessKit.RoleTable,
+            SemanticsRole.Grid => AccessKit.RoleGrid,
+            SemanticsRole.Row => AccessKit.RoleRow,
+            SemanticsRole.Cell => AccessKit.RoleCell,
+            SemanticsRole.GridCell => AccessKit.RoleGridCell,
+            SemanticsRole.ColumnHeader => AccessKit.RoleColumnHeader,
+            SemanticsRole.RowHeader => AccessKit.RoleRowHeader,
+            SemanticsRole.Heading => AccessKit.RoleHeading,
+            SemanticsRole.Disclosure => AccessKit.RoleDisclosureTriangle,
+            SemanticsRole.DateInput => AccessKit.RoleDateInput,
+            SemanticsRole.TimeInput => AccessKit.RoleTimeInput,
+            SemanticsRole.DateTimeInput => AccessKit.RoleDateTimeInput,
+            SemanticsRole.Log => AccessKit.RoleLog,
+            SemanticsRole.Feed => AccessKit.RoleFeed,
+            SemanticsRole.Article => AccessKit.RoleArticle,
+            SemanticsRole.Document => AccessKit.RoleDocument,
+            SemanticsRole.Paragraph => AccessKit.RoleParagraph,
+            SemanticsRole.Code => AccessKit.RoleCode,
+            SemanticsRole.Figure => AccessKit.RoleFigure,
+            SemanticsRole.Pane => AccessKit.RolePane,
             _ => AccessKit.RoleUnknown,
         };
 
@@ -410,9 +454,22 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         {
             PushTree(update, link);
         }
+
+        if (node.SyntheticCount > 0)
+        {
+            foreach (AccessibilityNode drawn in node.Synthetic)
+            {
+                PushTree(update, drawn);
+            }
+        }
     }
 
-    private nint MakeNode(AccessibilityNode node)
+    /// <summary>
+    /// Makes AccessKit's node of a node of the tree, which a tree update then owns, or the caller frees (the tests read it back).
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>AccessKit's node.</returns>
+    internal nint MakeNode(AccessibilityNode node)
     {
         nint made = AccessKit.NodeNew(RoleOf(node));
         SetText(made, node.Name, TextProperty.Label);
@@ -430,6 +487,12 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetNumericValue(made, range.Value);
             AccessKit.NodeSetMinNumericValue(made, range.Minimum);
             AccessKit.NodeSetMaxNumericValue(made, range.Maximum);
+        }
+
+        // A node with none of the values row AX1 added has no side object and makes no call for them.
+        if (node.More is { } more)
+        {
+            SetMore(made, more);
         }
 
         if ((node.States & AccessibilityStates.ClipsChildren) != 0)
@@ -481,6 +544,78 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         AccessKit.NodeAddAction(made, AccessKit.ActionScrollIntoView);
     }
 
+    // The values row AX1 added (design §4.4.1, "The shape AX1 adds"), of a node that has its side object.
+    private static void SetMore(nint made, AccessibilityNodeMore more)
+    {
+        // A step of 0 is none: the adapter gives UIA the small step as the large one when the large one is none.
+        if (more.Step > 0)
+        {
+            AccessKit.NodeSetNumericValueStep(made, more.Step);
+        }
+
+        if (more.LargeStep > 0)
+        {
+            AccessKit.NodeSetNumericValueJump(made, more.LargeStep);
+        }
+
+        // AccessKit counts the level from 0, and the adapter adds 1 for UIA's Level (design §4.4.1, "Level, place, and count").
+        if (more.Level >= 0)
+        {
+            AccessKit.NodeSetLevel(made, (nuint)more.Level);
+        }
+
+        if (more.Live != SemanticsLive.Inherit)
+        {
+            AccessKit.NodeSetLive(made, (byte)(AccessKit.LiveOff + (more.Live - SemanticsLive.Off)));
+        }
+
+        if (more.Orientation != SemanticsOrientation.None)
+        {
+            AccessKit.NodeSetOrientation(made, (byte)(AccessKit.OrientationHorizontal + (more.Orientation - SemanticsOrientation.Horizontal)));
+        }
+
+        SetRelations(made, more);
+    }
+
+    // The relations, also for macOS and Linux (design §4.4.1, "Folding on Windows"): the Windows adapter reads only the controlled
+    // nodes and the active descendant, and the tree folds the others into the name and the description.
+    private static void SetRelations(nint made, AccessibilityNodeMore node)
+    {
+        if (node.LabelledBy is { } labels)
+        {
+            foreach (AccessibilityNodeId id in labels)
+            {
+                AccessKit.NodePushLabelledBy(made, id.Value);
+            }
+        }
+
+        if (node.DescribedBy is { } descriptions)
+        {
+            foreach (AccessibilityNodeId id in descriptions)
+            {
+                AccessKit.NodePushDescribedBy(made, id.Value);
+            }
+        }
+
+        if (node.Controls is { } controlled)
+        {
+            foreach (AccessibilityNodeId id in controlled)
+            {
+                AccessKit.NodePushControlled(made, id.Value);
+            }
+        }
+
+        if (node.ErrorMessage.Value != 0)
+        {
+            AccessKit.NodeSetErrorMessage(made, node.ErrorMessage.Value);
+        }
+
+        if (node.ActiveDescendant.Value != 0)
+        {
+            AccessKit.NodeSetActiveDescendant(made, node.ActiveDescendant.Value);
+        }
+    }
+
     /// <summary>
     /// Carries out a request for an action that the caller owns and frees (<see cref="Perform(nint)"/> frees AccessKit's).
     /// </summary>
@@ -493,10 +628,14 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         }
 
         NodeHandle handle = node.Node;
-        if (!_tree.Nodes.IsAlive(handle))
+
+        // A node a draw function added takes no action but ScrollIntoView, which shows the node that draws it.
+        if (!_tree.Nodes.IsAlive(handle) || (node.ChildKey is not null && request->Action != AccessKit.ActionScrollIntoView))
         {
             return;
         }
+
+        AccessibilityTree accessibility = _tree.Accessibility;
 
         // The window's clock, which the pointer's and the keys' input carries: a click of assistive technology after a pointer's
         // click measures the interval on one clock.
@@ -514,16 +653,27 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
                 _ = _tree.Focus.Focus(handle);
                 break;
             case AccessKit.ActionExpand:
-                _ = _tree.SetPopupOpen(handle, open: true);
+                accessibility.SetExpanded(node, open: true);
                 break;
             case AccessKit.ActionCollapse:
-                _ = _tree.SetPopupOpen(handle, open: false);
+                accessibility.SetExpanded(node, open: false);
+                break;
+            case AccessKit.ActionIncrement:
+                accessibility.Increment(node);
+                break;
+            case AccessKit.ActionDecrement:
+                accessibility.Decrement(node);
                 break;
             case AccessKit.ActionScrollIntoView:
                 _tree.Focus.BringIntoView(handle);
                 break;
+            case AccessKit.ActionSetValue when request->Data.HasValue != 0 && request->Data.Value.Tag == AccessKit.ActionDataNumericValue:
+                // UIA's RangeValue.SetValue (accesskit_windows 0.35.1's `adapters/windows/src/node.rs`, lines 1364 to 1368), which the
+                // adapter sends whatever the node declares.
+                accessibility.SetRangeValue(node, request->Data.Value.Value.Number);
+                break;
             case AccessKit.ActionSetValue when request->Data.HasValue != 0 && request->Data.Value.Tag == AccessKit.ActionDataValue:
-                if (node.Role == SemanticsRole.Edit && (node.States & (AccessibilityStates.ReadOnly | AccessibilityStates.Disabled)) == 0)
+                if (TakesText(node.Role) && (node.States & (AccessibilityStates.ReadOnly | AccessibilityStates.Disabled)) == 0)
                 {
                     string value = Marshal.PtrToStringUTF8((nint)request->Data.Value.Value.Text) ?? string.Empty;
                     _ = _tree.SetAccessibilityValueFromOutside(handle, value);
@@ -553,8 +703,23 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetRequired(made);
         }
 
-        // A check box and a radio button are toggled either way; another role only when it says it is checked.
-        bool toggles = node.Role is SemanticsRole.CheckBox or SemanticsRole.RadioButton;
+        // The states row AX1 added: one test for a node with none of them.
+        if (
+            (states & (AccessibilityStates.Invalid | AccessibilityStates.Multiselectable | AccessibilityStates.Busy | AccessibilityStates.Modal)) != 0
+        )
+        {
+            SetAddedStates(made, states);
+        }
+
+        // The roles that toggle are toggled either way, or the adapter gives them no Toggle (SelectionItem for the radio roles);
+        // another role only when it says it is checked.
+        bool toggles =
+            node.Role
+            is SemanticsRole.CheckBox
+                or SemanticsRole.RadioButton
+                or SemanticsRole.Switch
+                or SemanticsRole.MenuItemCheckBox
+                or SemanticsRole.MenuItemRadio;
         if ((states & AccessibilityStates.Mixed) != 0)
         {
             AccessKit.NodeSetToggled(made, AccessKit.ToggledMixed);
@@ -573,16 +738,45 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
             AccessKit.NodeSetExpanded(made, (states & AccessibilityStates.Expanded) != 0 ? (byte)1 : (byte)0);
         }
 
-        // An item of a list is selected or not; another role only when it says it is selected.
+        // An item of a list or a tree is selected or not; another role only when it says it is selected.
         if ((states & AccessibilityStates.Selected) != 0)
         {
             AccessKit.NodeSetSelected(made, 1);
         }
-        else if (node.Role == SemanticsRole.ListItem)
+        else if (node.Role is SemanticsRole.ListItem or SemanticsRole.ListBoxItem or SemanticsRole.TreeItem)
         {
             AccessKit.NodeSetSelected(made, 0);
         }
     }
+
+    private static void SetAddedStates(nint made, AccessibilityStates states)
+    {
+        // Written for macOS and Linux: no adapter reads it (design §4.4.1, "Values no adapter reads"); on Windows the description
+        // carries the error message.
+        if ((states & AccessibilityStates.Invalid) != 0)
+        {
+            AccessKit.NodeSetInvalid(made, AccessKit.InvalidTrue);
+        }
+
+        if ((states & AccessibilityStates.Multiselectable) != 0)
+        {
+            AccessKit.NodeSetMultiselectable(made);
+        }
+
+        if ((states & AccessibilityStates.Busy) != 0)
+        {
+            AccessKit.NodeSetBusy(made);
+        }
+
+        if ((states & AccessibilityStates.Modal) != 0)
+        {
+            AccessKit.NodeSetModal(made);
+        }
+    }
+
+    // The roles whose value is text that SetValue replaces (design §4.4.1, "The SetValue action").
+    private static bool TakesText(SemanticsRole role) =>
+        role is SemanticsRole.Edit or SemanticsRole.SearchBox or SemanticsRole.DateInput or SemanticsRole.TimeInput or SemanticsRole.DateTimeInput;
 
     // The node's transform moves to its origin in its parent's coordinates, plus its children's offset (minus its scroll position),
     // which also moves its own bounds: the bounds take the offset back. The window's node scales by the window's DPI.
@@ -604,7 +798,8 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
 
     private void SetChildren(nint made, AccessibilityNode node)
     {
-        int count = node.Children.Count + node.Links.Count;
+        int drawn = node.SyntheticCount;
+        int count = node.Children.Count + node.Links.Count + drawn;
         if (count == 0)
         {
             return;
@@ -623,6 +818,11 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         for (int i = 0; i < node.Links.Count; i++)
         {
             _children[node.Children.Count + i] = node.Links[i].Id.Value;
+        }
+
+        for (int i = 0; i < drawn; i++)
+        {
+            _children[node.Children.Count + node.Links.Count + i] = node.Synthetic[i].Id.Value;
         }
 
         // AccessKit copies the ids before it returns; the array is pinned for the call.

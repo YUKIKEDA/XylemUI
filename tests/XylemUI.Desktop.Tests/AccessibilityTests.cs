@@ -8,7 +8,7 @@ namespace XylemUI.Desktop.Tests;
 
 // The accessibility tree (row P02g, design §4.4.1, "The shape of P02g") in a headless app: its shape, the names and states of its
 // nodes, the parts' roles, and how an update makes again only what changed.
-public sealed class AccessibilityTests
+public sealed partial class AccessibilityTests
 {
     /// <summary>
     /// The tree has a node for each node with a role, under the nearest one above it: the nodes with no role are left out and their
@@ -285,16 +285,21 @@ public sealed class AccessibilityTests
 
     /// <summary>
     /// A frame of a window whose accessibility tree is made, delivered and drawn, allocates nothing when it changes no name: the focus
-    /// moving between two buttons marks them, and their nodes are made again with the same names; the pointer moving over them changes
-    /// their hover, which marks nothing.
+    /// moving among two buttons, a field that has relations, a handler of a number, and a live setting, and a figure whose draw
+    /// function adds nodes, marks them, and their nodes are made again with the same names, relations, and drawn nodes; the pointer
+    /// moving over the buttons changes their hover, which marks nothing.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Two buttons with a hovered look; the tree made; warmed up with the iterations.
+    /// - Two buttons with a hovered look; a focusable field of the role SpinButton with the range 0 to 10 at 5, the live setting
+    ///   Polite, a handler of a number, a text "Count" that names it, a text "Help" that describes it, a text "Wrong" as its error
+    ///   message, and its active descendant's signal at "Help"; a focusable box of the role Figure whose draw function adds a series
+    ///   of two points from information made once; the tree made; warmed up with the iterations.
     ///
     /// Steps:
-    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: focus the first button or the second, and move
-    ///   the pointer over it, by the iteration's number; settle.
+    /// - 1,000 iterations in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: by the iteration's number, focus the first
+    ///   button and move the pointer over it, focus the second and move the pointer over it, focus the field, or focus the figure;
+    ///   settle.
     ///
     /// Expected:
     /// - 0 bytes in every window.
@@ -304,35 +309,89 @@ public sealed class AccessibilityTests
     public async Task SteadyState_FocusAndHoverWithTheTree_AllocatesNothing()
     {
         var look = new PaintStyle { Background = new Paint(Color.FromRgb(0x336699)) };
+        var series = new AccessibilityInfo { Role = SemanticsRole.Group, Name = "series" };
+        var point = new AccessibilityInfo { Role = SemanticsRole.Image, Name = "point" };
         Element first = default;
         Element other = default;
+        Element field = default;
+        Element figure = default;
+        var active = Signal.Create<Element>(default);
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Column(
+        {
+            Element count = Elements.Text("Count");
+            Element help = Elements.Text("Help");
+            Element wrong = Elements.Text("Wrong");
+            field = Box()
+                .Width(100)
+                .Height(20)
+                .Focusable()
+                .Accessible(
+                    new AccessibilityInfo
+                    {
+                        Role = SemanticsRole.SpinButton,
+                        Range = new SemanticsRange(0, 10, 5, Step: 1),
+                        Live = SemanticsLive.Polite,
+                        States = SemanticsStates.Invalid,
+                    }
+                )
+                .OnSetRangeValue(_ => { })
+                .LabelledBy(count)
+                .DescribedBy(help)
+                .ErrorMessage(wrong)
+                .ActiveDescendant(active);
+            active.Set(help);
+            figure = Box()
+                .Width(100)
+                .Height(40)
+                .Focusable()
+                .Accessible(new AccessibilityInfo { Role = SemanticsRole.Figure })
+                .AccessibleChildren(
+                    (children, bounds) =>
+                    {
+                        children.Begin(1, bounds, series);
+                        children.Add(2, new Rect(0, 0, 10, 10), point);
+                        children.Add(3, new Rect(10, 0, 10, 10), point);
+                        children.End();
+                    }
+                );
+            return Column(
                 first = Button("first", () => { }).Width(100).Height(30).Hovered(look),
-                other = Button("second", () => { }).Width(100).Height(30).Hovered(look)
-            )
-        );
+                other = Button("second", () => { }).Width(100).Height(30).Hovered(look),
+                count,
+                help,
+                wrong,
+                field,
+                figure
+            );
+        });
         _ = app.PumpAndSettle();
         _ = app.AccessibilityTree();
         (int x0, int y0) = app.CenterOf(first);
         (int x1, int y1) = app.CenterOf(other);
         void Step(int index)
         {
-            if (index % 2 == 0)
+            switch (((index % 4) + 4) % 4)
             {
-                _ = app.Focus(first);
-                app.Pointer.Move(x0, y0);
-            }
-            else
-            {
-                _ = app.Focus(other);
-                app.Pointer.Move(x1, y1);
+                case 0:
+                    _ = app.Focus(first);
+                    app.Pointer.Move(x0, y0);
+                    break;
+                case 1:
+                    _ = app.Focus(other);
+                    app.Pointer.Move(x1, y1);
+                    break;
+                case 2:
+                    _ = app.Focus(field);
+                    break;
+                default:
+                    _ = app.Focus(figure);
+                    break;
             }
 
             _ = app.PumpAndSettle();
         }
 
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 40; i++)
         {
             Step(i);
         }
@@ -578,19 +637,25 @@ public sealed class AccessibilityTests
     }
 
     /// <summary>
-    /// A window whose tree nobody made keeps no marks: a style change, a layout move, a pseudo-state, and an app's information mark
-    /// nothing, before the tree's object is made and after it is made but not started.
+    /// A window whose tree nobody made keeps no marks and makes no node: a style change, a layout move, a pseudo-state, an app's
+    /// information, a live setting, a relation, an active descendant, a handler of an action, and a draw function of nodes mark
+    /// nothing, before the tree's object is made and after it is made but not started, and the draw function is not called.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A column of a button "first" 30 high and a button "second"; the accessibility tree not made.
+    /// - A column of a button "first" 30 high, a button "second", a text "label", and a box of the role Figure; the accessibility tree
+    ///   not made.
     ///
     /// Steps:
-    /// - Make "first" 60 high, disable "second", and give "second" a name; settle; read whether the tree's object is made. Read the
-    ///   tree's object, which makes it; make "first" 90 high, enable "second", and name it "Two"; settle; read the marks and the root.
+    /// - Make "first" 60 high, disable "second", give "second" a name, make "second" a Status with the live setting Assertive, make
+    ///   "label" name it and describe it, set its active descendant's signal to "label" and then to "first", add a handler of Increment
+    ///   to it in a scope, and give the figure a draw function that adds a node and counts its calls; settle; read whether the tree's
+    ///   object is made. Read the tree's object, which makes it; make "first" 90 high, enable "second", name it "Two" with the live
+    ///   setting Off, make "label" its error message, set the signal to "label", dispose the scope of the handler, add a handler of
+    ///   Expand in another, and give the figure the function again; settle; read the marks, the root, and the function's calls.
     ///
     /// Expected:
-    /// - The frames made no tree object; then no marks, and no root.
+    /// - The frames made no tree object; then no marks, no root, and no call of the draw function.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -598,26 +663,60 @@ public sealed class AccessibilityTests
     {
         Element first = default;
         Element second = default;
+        Element label = default;
+        Element figure = default;
+        int drawn = 0;
+        var active = Signal.Create<Element>(default);
         await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
-            Column(first = Button("first", () => { }).Height(30), second = Button("second", () => { }))
+            Column(
+                first = Button("first", () => { }).Height(30),
+                second = Button("second", () => { }),
+                label = Elements.Text("label"),
+                figure = Box().Height(20).Accessible(new AccessibilityInfo { Role = SemanticsRole.Figure })
+            )
         );
         _ = app.PumpAndSettle();
+        void Draw(AccessibleChildren children, Rect bounds)
+        {
+            drawn++;
+            children.Add(1, bounds, new AccessibilityInfo { Role = SemanticsRole.Image, Name = "point" });
+        }
 
         app.Tree.SetStyle(first.Node, app.Tree.Nodes.GetRef(first.Node).Layout.Style with { Height = Length.Px(60) });
         app.Tree.SetPseudoState(second.Node, PseudoState.Disabled, true);
-        app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Second" });
+        app.Tree.SetAccessibility(
+            second.Node,
+            new AccessibilityInfo
+            {
+                Name = "Second",
+                Role = SemanticsRole.Status,
+                Live = SemanticsLive.Assertive,
+            }
+        );
+        _ = second.LabelledBy(label).DescribedBy(label).ActiveDescendant(active);
+        active.Set(label);
+        active.Set(first);
+        ScopeHandle handlers = Scope.Create(() => second.OnIncrement(() => { }));
+        _ = figure.AccessibleChildren(Draw);
         _ = app.PumpAndSettle();
 
         bool made = app.Tree.HasAccessibilityTree;
         AccessibilityTree tree = app.Tree.Accessibility;
         app.Tree.SetStyle(first.Node, app.Tree.Nodes.GetRef(first.Node).Layout.Style with { Height = Length.Px(90) });
         app.Tree.SetPseudoState(second.Node, PseudoState.Disabled, false);
-        app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Two" });
+        app.Tree.SetAccessibility(second.Node, new AccessibilityInfo { Name = "Two", Live = SemanticsLive.Off });
+        _ = second.ErrorMessage(label);
+        active.Set(label);
+        Scope.Dispose(handlers);
+        ScopeHandle others = Scope.Create(() => second.OnExpand(() => { }));
+        _ = figure.AccessibleChildren(Draw);
         _ = app.PumpAndSettle();
 
         Assert.False(made);
         Assert.Equal(0, tree.MarkedCount);
         Assert.Null(tree.Root);
+        Assert.Equal(0, drawn);
+        Scope.Dispose(others);
     }
 
     /// <summary>

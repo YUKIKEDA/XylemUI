@@ -273,6 +273,12 @@ internal sealed class UiTree
     internal AccessibilityTree Accessibility => _a11y.Tree ??= new AccessibilityTree(this);
 
     /// <summary>
+    /// Gets the number of the changes of the tree's links so far: a node put under a parent or taken out of one. The accessibility
+    /// tree compares it to know when the ancestors of the nodes relations name may have changed.
+    /// </summary>
+    internal ulong LinkVersion { get; private set; }
+
+    /// <summary>
     /// Runs the accessibility stage of a frame (<see cref="AccessibilityTree.Update"/>) when the tree is made; a window nobody reads
     /// makes nothing.
     /// </summary>
@@ -354,10 +360,152 @@ internal sealed class UiTree
     /// <returns>The information.</returns>
     internal AccessibilityInfo? AccessibilityInfoOf(NodeHandle node)
     {
-        AccessibilityInfo? part = _a11y.Part.Count > 0 ? _a11y.Part.GetValueOrDefault(node) : null;
-        AccessibilityInfo? app = _a11y.Info.Count > 0 ? _a11y.Info.GetValueOrDefault(node) : null;
+        AccessibilityInfo? part = PartAccessibilityOf(node);
+        AccessibilityInfo? app = AppAccessibilityOf(node);
         return app is null ? part : app.Over(part);
     }
+
+    /// <summary>
+    /// Returns the accessibility information the app gave a node (<c>Accessible</c>), apart from its part's: the name the app gives
+    /// comes before a relation's, and a relation's before the part's (design §4.4.1, "Folding on Windows").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The information, or <see langword="null"/> for none.</returns>
+    internal AccessibilityInfo? AppAccessibilityOf(NodeHandle node) => _a11y.Info.Count > 0 ? _a11y.Info.GetValueOrDefault(node) : null;
+
+    /// <summary>
+    /// Returns the accessibility information a node's part gave it, apart from the app's.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The information, or <see langword="null"/> for none.</returns>
+    internal AccessibilityInfo? PartAccessibilityOf(NodeHandle node) => _a11y.Part.Count > 0 ? _a11y.Part.GetValueOrDefault(node) : null;
+
+    /// <summary>
+    /// Returns the handlers of the actions other than a click that a node has, made the first time (design §4.4.1, "Actions other
+    /// than a click"); <see cref="AccessibilityHandlersChanged"/> follows a change of them.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The node's handlers.</returns>
+    internal AccessibilityHandlers AccessibilityHandlersFor(NodeHandle node)
+    {
+        // A stale handle throws here, as the other setters' InputOf does.
+        _ = Nodes.GetRef(node);
+        if (!_a11y.Handlers.TryGetValue(node, out AccessibilityHandlers? handlers))
+        {
+            handlers = new AccessibilityHandlers();
+            _a11y.Handlers[node] = handlers;
+        }
+
+        return handlers;
+    }
+
+    /// <summary>
+    /// Returns the handlers of the actions other than a click that a node has, or <see langword="null"/> for none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The handlers.</returns>
+    internal AccessibilityHandlers? AccessibilityHandlersOf(NodeHandle node) =>
+        _a11y.Handlers.Count > 0 && _a11y.Handlers.TryGetValue(node, out AccessibilityHandlers? handlers) ? handlers : null;
+
+    /// <summary>
+    /// Follows a change of a node's handlers: forgets them when none is left, and marks the node's own node (design §4.4.1, "How it
+    /// changes").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    internal void AccessibilityHandlersChanged(NodeHandle node)
+    {
+        if (_a11y.Handlers.TryGetValue(node, out AccessibilityHandlers? handlers) && handlers.IsEmpty)
+        {
+            _ = _a11y.Handlers.Remove(node);
+        }
+
+        MarkAccessibilitySelf(node);
+    }
+
+    /// <summary>
+    /// Returns the relations a node holds, or <see langword="null"/> for none (design §4.4.1, "Relations").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The relations.</returns>
+    internal AccessibilityRelations? AccessibilityRelationsOf(NodeHandle node) =>
+        _a11y.Relations.Count > 0 && _a11y.Relations.TryGetValue(node, out AccessibilityRelations? relations) ? relations : null;
+
+    /// <summary>
+    /// Gets the relations of the nodes that hold one, by the node that holds them.
+    /// </summary>
+    internal IReadOnlyDictionary<NodeHandle, AccessibilityRelations> AccessibilityRelationHolders => _a11y.Relations;
+
+    /// <summary>
+    /// Adds a node to a relation a node holds, after those it holds (design §4.4.1, "Relations"); for the error message, the node
+    /// replaces the one there.
+    /// </summary>
+    /// <param name="holder">The node that holds the relation.</param>
+    /// <param name="kind">The relation; <see langword="null"/> for the error message.</param>
+    /// <param name="target">The node it names.</param>
+    internal void AddAccessibilityRelation(NodeHandle holder, AccessibilityRelation? kind, NodeHandle target)
+    {
+        AccessibilityRelations relations = RelationsFor(holder);
+        NodeHandle replaced = default;
+        if (kind is { } several)
+        {
+            relations.Add(several, target);
+        }
+        else
+        {
+            replaced = relations.ErrorMessage;
+            relations.ErrorMessage = target;
+        }
+
+        if (_a11y.Tree is { IsActive: true } accessibility)
+        {
+            accessibility.NoteRelation(holder, target);
+
+            // The error message replaced leaves the reverse table, unless another relation names it.
+            if (!replaced.IsNone && replaced != target)
+            {
+                accessibility.ForgetRelation(holder, relations, replaced);
+            }
+        }
+
+        MarkAccessibilitySelf(holder);
+    }
+
+    /// <summary>
+    /// Sets the signal of a node's active descendant: an element, or a key of the nodes its draw function adds, which replaces the
+    /// other (design §4.4.1, "Relations").
+    /// </summary>
+    /// <param name="holder">The node that holds the focus.</param>
+    /// <param name="element">The signal of the element; <see langword="null"/> when <paramref name="key"/> is given.</param>
+    /// <param name="key">The signal of the key; <see langword="null"/> when <paramref name="element"/> is given.</param>
+    internal void SetActiveDescendant(NodeHandle holder, IReadOnlySignal<Element>? element, IReadOnlySignal<int?>? key)
+    {
+        AccessibilityRelations relations = RelationsFor(holder);
+        relations.ActiveElement = element;
+        relations.ActiveKey = key;
+        MarkAccessibilitySelf(holder);
+    }
+
+    /// <summary>
+    /// Sets the function that adds the nodes of the accessibility tree a node drawn by a draw function holds (design §4.4.1, "The
+    /// nodes of a draw function").
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <param name="build">The function.</param>
+    internal void SetAccessibleChildren(NodeHandle node, AccessibleChildrenFunc build)
+    {
+        // A stale handle throws here, as the other setters' InputOf does.
+        _ = Nodes.GetRef(node);
+        _a11y.Children[node] = build;
+        MarkAccessibilitySelf(node);
+    }
+
+    /// <summary>
+    /// Returns the function that adds the nodes a node's draw function holds, or <see langword="null"/> for none.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    /// <returns>The function.</returns>
+    internal AccessibleChildrenFunc? AccessibleChildrenOf(NodeHandle node) =>
+        _a11y.Children.Count > 0 && _a11y.Children.TryGetValue(node, out AccessibleChildrenFunc? build) ? build : null;
 
     /// <summary>
     /// Records a node as the anchor of a popup it opens, which is expandable to assistive technology.
@@ -449,6 +597,20 @@ internal sealed class UiTree
         {
             accessibility.MarkSelf(node);
         }
+    }
+
+    // The relations a node holds, made the first time.
+    private AccessibilityRelations RelationsFor(NodeHandle holder)
+    {
+        // A stale handle throws here, as the other setters' InputOf does.
+        _ = Nodes.GetRef(holder);
+        if (!_a11y.Relations.TryGetValue(holder, out AccessibilityRelations? relations))
+        {
+            relations = new AccessibilityRelations();
+            _a11y.Relations[holder] = relations;
+        }
+
+        return relations;
     }
 
     /// <summary>
@@ -1962,6 +2124,7 @@ internal sealed class UiTree
         // (row KM3). The readers are told last, when the links are whole: one that runs in the middle walks a tree whose
         // parent does not list the child yet. So in InsertAfter, DetachChildren, and Detach.
         Actions.LinkChanged(child);
+        LinkVersion++;
     }
 
     /// <summary>
@@ -2025,6 +2188,7 @@ internal sealed class UiTree
 
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
         Actions.LinkChanged(child);
+        LinkVersion++;
     }
 
     /// <summary>
@@ -2110,6 +2274,7 @@ internal sealed class UiTree
         if (!told.IsNone)
         {
             Actions.LinkChanged(told);
+            LinkVersion++;
         }
     }
 
@@ -2589,6 +2754,7 @@ internal sealed class UiTree
         n.Parent = default;
         n.NextSibling = default;
         Actions.LinkChanged(node);
+        LinkVersion++;
     }
 
     // Frees a node and its subtree, children first. The links are read before each slot is freed (design §2.5).
@@ -2642,6 +2808,37 @@ internal sealed class UiTree
         if (_a11y.Anchors.Count > 0)
         {
             _ = _a11y.Anchors.Remove(node);
+        }
+
+        if (_a11y.Handlers.Count > 0)
+        {
+            _ = _a11y.Handlers.Remove(node);
+        }
+
+        if (
+            _a11y.Relations.Count > 0
+            && _a11y.Relations.Remove(node, out AccessibilityRelations? relations)
+            && _a11y.Tree is { IsActive: true } accessibility
+        )
+        {
+            accessibility.ForgetRelations(node, relations);
+        }
+
+        // A node that relations name: its holders are marked, and the tree keeps nothing for it.
+        if (_a11y.Tree is { IsActive: true, RelationTargetCount: > 0 } named)
+        {
+            named.ForgetTarget(node);
+        }
+
+        // Its watches stop now: a freed node gets no later update that would take its node away.
+        if (_a11y.Tree is { IsActive: true, WatchCount: > 0 } watched)
+        {
+            watched.ForgetWatches(node);
+        }
+
+        if (_a11y.Children.Count > 0)
+        {
+            _ = _a11y.Children.Remove(node);
         }
 
         if (ForContainers.Count > 0)
@@ -2757,6 +2954,15 @@ internal sealed class UiTree
 
         // What writes the nodes' values from outside (a text field's text).
         public Dictionary<NodeHandle, Action<string>> Setters { get; } = [];
+
+        // The handlers of the actions other than a click (OnIncrement and the others).
+        public Dictionary<NodeHandle, AccessibilityHandlers> Handlers { get; } = [];
+
+        // The relations the nodes hold (LabelledBy and the others).
+        public Dictionary<NodeHandle, AccessibilityRelations> Relations { get; } = [];
+
+        // The functions that add the nodes a node's draw function holds (AccessibleChildren).
+        public Dictionary<NodeHandle, AccessibleChildrenFunc> Children { get; } = [];
 
         // The accessibility tree, once read.
         public AccessibilityTree? Tree { get; set; }
