@@ -700,26 +700,6 @@ public sealed class CounterTests(UiThreadFixture ui)
 
     private sealed record Ping(int Number) : UiMessage;
 
-    // A host that records the codes it is asked to quit with, and quits the message loop with each, as the Windows host does.
-    private sealed class QuitRecorder : IPlatformApp
-    {
-        public List<int> Quits { get; } = [];
-
-        public UiDispatcher Dispatcher => Win32MessageLoop.Dispatcher;
-
-        public int Run() => Win32MessageLoop.Run();
-
-        public void Quit(int exitCode)
-        {
-            Quits.Add(exitCode);
-            Win32MessageLoop.Quit(exitCode);
-        }
-
-        public void Wake() => Win32MessageLoop.Wake();
-
-        public void Dispose() { }
-    }
-
     // The center of a node's box in the window's physical pixels; the column is at the root's top left, the button in it.
     private static (int X, int Y) Center(TestWindow window, NodeHandle node)
     {
