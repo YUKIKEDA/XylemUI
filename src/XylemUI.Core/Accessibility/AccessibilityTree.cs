@@ -62,7 +62,12 @@ internal sealed class AccessibilityTree(UiTree tree)
     private readonly Dictionary<int, AccessibilityNode> _keyed = [];
     private readonly List<AccessibilityNode?> _made = [];
     private readonly HashSet<int> _keys = [];
-    private bool _belowMapped;
+
+    // The map of the targets below each ancestor is valid while neither the set of targets nor the tree's links changed since it was
+    // made: the versions it was made at. A target set version of 0 is never made, so the first use makes the map.
+    private ulong _targetsVersion = 1;
+    private ulong _mappedTargets;
+    private ulong _mappedLinks;
     private Action? _runBuild;
     private AccessibleChildrenFunc? _building;
     private Rect _buildBounds;
@@ -128,6 +133,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         {
             holders = [];
             _holders[target] = holders;
+            _targetsVersion++;
         }
 
         if (!holders.Contains(holder))
@@ -175,6 +181,7 @@ internal sealed class AccessibilityTree(UiTree tree)
     {
         if (_holders.Remove(target, out List<NodeHandle>? holders))
         {
+            _targetsVersion++;
             foreach (NodeHandle holder in holders)
             {
                 MarkSelf(holder);
@@ -405,7 +412,6 @@ internal sealed class AccessibilityTree(UiTree tree)
             }
         }
 
-        ClearTargetsBelow();
         foreach (NodeHandle node in _markedSelf)
         {
             if (tree.Nodes.IsAlive(node) && _nodes.TryGetValue(node, out AccessibilityNode? own))
@@ -618,9 +624,12 @@ internal sealed class AccessibilityTree(UiTree tree)
         }
     }
 
-    // Queues the holders of the targets at, above, or below a marked node of the UI tree. A target at or above it is found by one walk
-    // up from it, probing the reverse table; a target below it by the table of the targets below each of their ancestors, made once
-    // in an update (MapTargetsBelow). An update costs O(marks × depth + targets × depth), not marks × targets × depth.
+    // Queues the holders of the targets at, above, or below a marked node of the UI tree: one walk up from it, probing the reverse table
+    // at each node (a target at or above it, whose text the change may change), then one probe of the map of the targets below each of
+    // their ancestors (targets below it, which the change may hide or show). The map is kept across updates and made again only when
+    // the set of targets or the tree's links changed since it was made (a version stamp): an update with no such change costs
+    // O(marks × depth) probes plus the holders queued, whatever the number of targets; one after such a change adds O(targets × depth)
+    // once.
     private void QueueHoldersAround(NodeHandle node)
     {
         for (NodeHandle at = node; !at.IsNone; at = tree.Nodes.GetRef(at).Parent)
@@ -628,7 +637,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             QueueHolders(at);
         }
 
-        if (!_belowMapped)
+        if (_mappedTargets != _targetsVersion || _mappedLinks != tree.LinkVersion)
         {
             MapTargetsBelow();
         }
@@ -642,10 +651,19 @@ internal sealed class AccessibilityTree(UiTree tree)
         }
     }
 
-    // The targets below each node that is an ancestor of one: a walk up from each target, once in an update.
+    // The targets below each node that is an ancestor of one: a walk up from each target. The lists of the last map go back to a pool,
+    // so that making the map again allocates nothing once warm.
     private void MapTargetsBelow()
     {
-        _belowMapped = true;
+        _mappedTargets = _targetsVersion;
+        _mappedLinks = tree.LinkVersion;
+        foreach (List<NodeHandle> old in _below.Values)
+        {
+            old.Clear();
+            _belowPool.Push(old);
+        }
+
+        _below.Clear();
         foreach (KeyValuePair<NodeHandle, List<NodeHandle>> held in _holders)
         {
             NodeHandle target = held.Key;
@@ -665,24 +683,6 @@ internal sealed class AccessibilityTree(UiTree tree)
                 below.Add(target);
             }
         }
-    }
-
-    // Gives the lists of the table of the targets below back to the pool, at the end of an update.
-    private void ClearTargetsBelow()
-    {
-        if (!_belowMapped)
-        {
-            return;
-        }
-
-        _belowMapped = false;
-        foreach (List<NodeHandle> below in _below.Values)
-        {
-            below.Clear();
-            _belowPool.Push(below);
-        }
-
-        _below.Clear();
     }
 
     private void IndexRelations(NodeHandle holder, AccessibilityRelations relations)
@@ -723,6 +723,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         if (_holders.TryGetValue(target, out List<NodeHandle>? holders) && holders.Remove(holder) && holders.Count == 0)
         {
             _ = _holders.Remove(target);
+            _targetsVersion++;
         }
     }
 

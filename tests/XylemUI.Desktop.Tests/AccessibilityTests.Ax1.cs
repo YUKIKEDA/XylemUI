@@ -1667,6 +1667,62 @@ public sealed partial class AccessibilityTests
 #endif
     }
 
+    /// <summary>
+    /// The name a field takes from a node with no node of its own follows that node's new ancestor once the node moves: hiding the
+    /// new ancestor takes the text away, and hiding the old one does not.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A box "a" holding a box with no role that holds a text "Hello", an empty box "b", and a field of the role Edit labelled by the
+    ///   inner box; the tree made.
+    ///
+    /// Steps:
+    /// - Read the field's name. Hide and show "b", settling and reading after each. Take the inner box out of "a" and put it into
+    ///   "b"; settle; read it. Hide "a"; settle; read it. Hide "b"; settle; read it. Show "b"; settle; read it.
+    ///
+    /// Expected:
+    /// - "Hello" five times, then none, then "Hello".
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Name_FromAMovedTarget_FollowsItsNewAncestor()
+    {
+        Element a = default;
+        Element b = default;
+        Element inner = default;
+        Element field = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            inner = Box(Elements.Text("Hello"));
+            a = Box(inner);
+            b = Box();
+            field = Box().Width(50).Height(10).Accessible(new AccessibilityInfo { Role = SemanticsRole.Edit }).LabelledBy(inner);
+            return Column(a, b, field);
+        });
+        _ = app.PumpAndSettle();
+        var names = new List<string?> { app.AccessibilityOf(field).Name };
+
+        // A change elsewhere first, so that the map of the targets' ancestors is made before the move.
+        SetHidden(b, true);
+        SetHidden(b, false);
+        app.Tree.DetachChildren(a.Node);
+        app.Tree.AppendChild(b.Node, inner.Node);
+        _ = app.PumpAndSettle();
+        names.Add(app.AccessibilityOf(field).Name);
+        SetHidden(a, true);
+        SetHidden(b, true);
+        SetHidden(b, false);
+
+        Assert.Equal(new string?[] { "Hello", "Hello", "Hello", "Hello", "Hello", null, "Hello" }, names);
+
+        void SetHidden(Element box, bool value)
+        {
+            app.Tree.SetStyle(box.Node, app.Tree.Nodes.GetRef(box.Node).Layout.Style with { Hidden = value });
+            _ = app.PumpAndSettle();
+            names.Add(app.AccessibilityOf(field).Name);
+        }
+    }
+
     // A spin button with a range and no handler: read-only until one is added.
     private static Element Spin(string name, double minimum = 0, double maximum = 10, double value = 5) =>
         Box()

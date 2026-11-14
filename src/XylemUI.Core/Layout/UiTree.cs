@@ -273,6 +273,12 @@ internal sealed class UiTree
     internal AccessibilityTree Accessibility => _a11y.Tree ??= new AccessibilityTree(this);
 
     /// <summary>
+    /// Gets the number of the changes of the tree's links so far: a node put under a parent or taken out of one. The accessibility
+    /// tree compares it to know when the ancestors of the nodes relations name may have changed.
+    /// </summary>
+    internal ulong LinkVersion { get; private set; }
+
+    /// <summary>
     /// Runs the accessibility stage of a frame (<see cref="AccessibilityTree.Update"/>) when the tree is made; a window nobody reads
     /// makes nothing.
     /// </summary>
@@ -2124,6 +2130,7 @@ internal sealed class UiTree
         // (row KM3). The readers are told last, when the links are whole: one that runs in the middle walks a tree whose
         // parent does not list the child yet. So in InsertAfter, DetachChildren, and Detach.
         Actions.LinkChanged(child);
+        LinkVersion++;
     }
 
     /// <summary>
@@ -2187,6 +2194,7 @@ internal sealed class UiTree
 
         Invalidation.MarkDirty(this, parent, DirtyFlags.Layout);
         Actions.LinkChanged(child);
+        LinkVersion++;
     }
 
     /// <summary>
@@ -2272,6 +2280,7 @@ internal sealed class UiTree
         if (!told.IsNone)
         {
             Actions.LinkChanged(told);
+            LinkVersion++;
         }
     }
 
@@ -2751,6 +2760,7 @@ internal sealed class UiTree
         n.Parent = default;
         n.NextSibling = default;
         Actions.LinkChanged(node);
+        LinkVersion++;
     }
 
     // Frees a node and its subtree, children first. The links are read before each slot is freed (design §2.5).
