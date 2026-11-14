@@ -693,6 +693,29 @@ Rejected:
 
 ---
 
+## ボタン（行 B1）
+
+Decision（Grill の 7 巡目、Issue #912）:
+  動作の基底の型にハンドラを 1 つ付ける `OnActionsOf<T>(handler, can, phase)` を、`can` を持ったまま Core の公開の API にする。B1 の新しいキーは、一点のキーをキーマップの行と動作に、押して離すキーを部品のハンドラにする。SplitButton は Tab で 1 回だけ止まる。長押しで働くボタンは Qt の `DelayButton` の形にする。HyperlinkButton は行 PL2 の URI を開く口を使う。副題付きのボタンは副題を説明に入れる。
+
+Reason:
+  動作を今受けられるかを、Flutter（`Action.isEnabled`、3.47.8 の `packages/flutter/lib/src/widgets/actions.dart` 267 行目）と Avalonia（`ICommand.CanExecute`、12.1.4 の `src/Avalonia.Controls/Button.cs` 205・371 行目が読む）は、どのパッケージの部品にも公開する。B1 の部品だけが内部の口を使うと、ほかのパッケージの部品は同じ部品を同じ費用で作れない。
+
+Rejected:
+  - `OnActionsOf<T>` を内部のままにする（案 a）（ほかのパッケージの部品は動作の型ごとに `OnAction<T>` を付けるしかなく、KM2b で測った費用を払う。文字の欄 1 個の割り当てが 5.3 KB から 19.9 KB になり、メニューバーのメニューを開くフレームが約 11 µs 延びた（設計書 §7「部品のキー」、`docs/benchmarks/km2b-part-keys.md` 86 行目）。「今受けられるか」も答えられない。Grill の 7 巡目、Issue #912）
+  - `OnActionsOf<T>` を `OnAction<T>` に統合し、派生の型も受けるかを引数で選ぶ（案 c）（既にある公開の `OnAction<T>` の意味が引数 1 つで、型ちょうどの照合と派生の型も受ける照合に分かれる。2 つの名前なら、どちらの照合かを名前で読める。同じ Grill）
+  - `OnActionsOf<T>` を内部のままにし、`OnAction<T>` に `can` だけを足す（案 d）（ほかのパッケージの部品は「今受けられるか」を答えられるが、基底の型に 1 つのハンドラを付ける形は使えず、上の KM2b の費用を払い続ける。同じ Grill）
+  - B1 の新しいキーを全部キーマップの行と動作にする（RepeatButton と長押しで働くボタンの Space は、押した時と離した時の 2 つの時点が要り、動作は 1 つの時点しか持たない。上の「ショートカットと動作」で、ボタンの Enter と Space を行にしなかったのと同じ理由。同じ Grill）
+  - B1 の新しいキーを全部部品のハンドラにする（利用者がキーを替えられず、`KeyBindingFor` がメニューやツールチップに出せない。同じ Grill）
+  - SplitButton の F4 と Alt+Down を、Avalonia と同じく離した時に働かせる（Avalonia 12.1.4 の `src/Avalonia.Controls/SplitButton/SplitButton.cs` 367〜392 行目は `OnKeyUp` で開く。キーマップの行は押した時に働き、XylemUI の Select の `f4` と `alt-down` の行も押した時に開く（`src/XylemUI.Primitives/PrimitiveKeyBindings.cs` 72・73 行目）。同じ Grill）
+  - SplitButton を、主の操作とメニューを開く部分の 2 つの要素にし、それぞれを Tab の止まりにする（zed v1.25.3 の `crates/ui/src/components/button/split_button.rs` は 50〜54 行目で `left` と `right` を持ち、87〜95 行目で別々の子に置く。左のボタンは、アプリが `tab_index` を付けた時だけ Tab で止まる（`crates/ui/src/components/button/button_like.rs` 494・547 行目で既定は `None`、789〜792 行目で値がある時だけ `tab_stop`）。右は任意の要素で、ふつうはメニューを開くボタンを置く（`split_button.rs` 45〜46 行目）。1 つの部品を Tab で 2 回通り、a11y の木に Button が 2 つ並ぶ。Avalonia 12.1.4 の Fluent は全体を `Focusable="True"`（`src/Avalonia.Themes.Fluent/Controls/SplitButton.xaml` 131 行目）、中の 2 つのボタンを `Focusable="False"`（161・185 行目）にして 1 回だけ止まる。同じ Grill）
+  - 長押しを、Button の長押しのコールバックにする（案 b、Flutter 3.47.8 の `onLongPress`、`packages/flutter/lib/src/material/button_style_button.dart` 116 行目）（押している間の進み具合をテーマが描けない。支援技術は押し続けられないので、長押しの操作を UIA の Invoke から呼べない。同じ Grill）
+  - 長押しのコールバックと `DelayButton` の形の両方を持つ（案 c）（同じことに 2 つの形ができ、コールバックの側には上の支援技術の問題が残る。同じ Grill）
+  - URI を開く口の行を作らず、HyperlinkButton は `onClick` だけを持ち、開くのはアプリに任せる（「開く」を持たない半端な部品になる。`scope.mdc`。Avalonia 12.1.4 の `HyperlinkButton` はクリックの後に自分で開き（`src/Avalonia.Controls/HyperlinkButton.cs` 77〜94 行目、86 行目の `Launcher.LaunchUriAsync`）、zed v1.25.3 の `ButtonLink` も自分で開く（`crates/ui/src/components/button/button_link.rs` 74 行目の `cx.open_url`）。同じ Grill）
+  - 副題付きのボタンを、テーマの 2 行の配置だけにする（案 b）（名前のたたみで、名前に副題まで入る。Fluent 2 の React の `CompoundButton` はこの形で、副題（`secondaryContent`）をボタンの中に置き（fluentui のコミット `f9720c35` の `packages/react-components/react-button/library/src/components/CompoundButton/renderCompoundButton.tsx` 20〜23 行目）、説明の関係を付けない（`useCompoundButton.ts` 24〜35 行目）。XylemUI は名前を操作を見分ける短い名にし、副題は `AccessibilityInfo.Description` に分けるので、Fluent と違う。同じ Grill）
+
+---
+
 ## スクロール
 
 Decision:
@@ -953,7 +976,7 @@ Rejected:
   - MSAA の `IAccessible` を返す（Flutter の Windows の既定。UIA のクライアントは代理を通して読む）
   - 操作の要求を、鍵つきの共有のキューで UI スレッドへ渡す（窓の HWND への `PostMessage` なら、鍵が要らず、Windows のメッセージの順に乗る。Issue #637）
   - 範囲の外の行に、UIA の IsOffscreen が true になる矩形を書く（AccessKit は IsOffscreen を出さず、子を切る親の外の節を木から外す。Issue #637）
-  - スクロールの操作（ScrollUp など）を持つ（accesskit_windows 0.35.1 に UIA の Scroll のパターンが無く、届かない。Issue #637）
+  - スクロールの操作（ScrollUp など）を持つ（accesskit_windows 0.35.1 に UIA の Scroll のパターンが無く、届かない。Issue #637。Grill の 7 巡目で覆した: macOS と Linux の adapter が読み、Windows も上流に Scroll のパターンが入れば読むので、行 AX4 で上流を待たずに書く。Issue #912）
   - Select の一覧を `List` のままにする（UIA の Selection が付かない。Issue #637）
 
 Decision（行 AX1、Grill の 5 巡目、Issue #872）:
@@ -976,11 +999,11 @@ Rejected:
   - 関係を文字列で指す（Flutter の `identifier`。重なっても黙って誤り、テスト ID に 2 つ目の意味が付く。Issue #872）
   - active-descendant を選ばれた子の側で宣言する（GPUI の形。ポップアップの中の候補は欄の子孫でないので指せない。Issue #872）
   - described-by・error-message・invalid を AccessKit に書くだけにする（accesskit 0.25.1 ではどの OS の adapter も読まず、Windows では何も伝わらない。Issue #872）
-  - 命令でその場に読ませる口（announce）を、窓ごとの隠したライブの節の名前を書き換えて作る（AccessKit の通知のイベントが要る形の代わりで、行 AX2 で通知のイベントを入れる。Issue #872）
+  - 命令でその場に読ませる口（announce）を、窓ごとの隠したライブの節の名前を書き換えて作る（AccessKit の通知のイベントが要る形の代わりで、通知のイベントは行 AX5 で決める。Issue #872。行 AX5 は Grill の 7 巡目で行 AX2 から分けた、Issue #912）
   - ライブリージョンの atomic の印を持つ（Windows の adapter は AriaProperties にしか書かない。Status と Alert の名前のたたみで、知らせの全部が読まれる。Issue #872）
   - 深さと位置を AccessKit と同じく 0 から数える（UIA・ARIA・Avalonia は 1 から数え、アプリが 1 を足し忘れる。Issue #872）
   - 数を項目に付ける（ARIA の形。AccessKit は入れ物から読み、同じ親の中で組の違う兄弟を表せない。Issue #872）
-  - 表の番号・数・並びを、UIA に出ないまま先に公開の欄にする（行 AX2 で表のパターンと一緒に入れる。Issue #872）
+  - 表の番号・数・並びを、UIA に出ないまま先に公開の欄にする（行 AX2 で表のパターンと一緒に入れる。Issue #872。Grill の 7 巡目で覆した: 上流の表の変更を待つ日が決まらないので、上流を待たない欄は行 AX4 で先に入れ、macOS と Linux の adapter が読む。Issue #912）
   - 名前を ARIA の順（labelled-by をアプリの名前より先）や、部品の名前を labelled-by より先にする順で決める（アプリが書いた 2 つは部品の既定より先に来る。アプリの名前を先にするのは Avalonia の `ControlAutomationPeer.GetNameCore` と同じ。PR #881 のレビューの後、Issue #878）
   - 見出しの深さを、AriaProperties の `level` に合わせて 1 を引かずに渡す（UIA の Level が 1 大きくなる。上流の食い違いは行 AX2 で直す。PR #881 のレビューの後、Issue #878）
   - SearchBox と日付の入力の文字の SetValue を受けない（UIA が書ける Value を見せたまま捨てる。PR #881 のレビューの後、Issue #878）
@@ -988,6 +1011,16 @@ Rejected:
   - アンカーでもハンドラも無い `Expandable` のノードの Expand を Click に読み替える（開閉と押す操作は別で、誤った操作を黙って配る。Debug のビルドで不変条件の失敗にする。Issue #878）
   - error-message の相手の無い `Invalid` を、Windows で名前か説明に部品の文言を足して伝える（名前が変わるとイベントが出て、行 LC4 の文言に頼ることになる。行 AX2 で IsDataValidForForm を出す。Issue #878）
   - Windows で、増減のハンドラだけを持つノードの数値の SetValue を捨てて読み取り専用にする（UIA の RangeValue には増減が無く、Windows では値を動かせなくなる。Issue #878）
+
+Decision（行 AX2、Grill の 7 巡目、Issue #912）:
+  上流の AccessKit への変更は、オーナーが書いて出す issue とコメントで、見出し、ランドマーク、フォームと関係のプロパティ、表、スクロールの順に進める。今はフォークしない。上流を待たずに書けるものは行 AX4、通知のイベントは行 AX5 に分ける。
+
+Reason:
+  AccessKit は外の人のプルリクエストを受けず、issue で計画を出した人に repository の membership を与える（上流の main の `CONTRIBUTING.md` の「Making a Pull Request」、2026-11-14 に `gh api` で読んだ）。上流の版を待つ日は XylemUI が決められないので、待たない部分を待つ部分から分ける。
+
+Rejected:
+  - AccessKit を今フォークし、足りないパターンとプロパティを自分で足す（`vendor/build.ps1` が accesskit-c をソースから作ることになり、Rust のツールチェーンと cargo と CMake を、Windows のほかに Linux の x64 と arm64、macOS の arm64 と x64 のビルドに足す。`dependencies.mdc` の 5。上の「AccessKit をソースから作る」を退けた理由もそのまま残る。accesskit-c は ABI を保たないので、上流の版ごとのリベースで `AccessKit.cs` の役と操作の番号と `ActionRequest` の配置を見直す。見出しと表の issue に上流が答えない時に決め直す日はオーナーが決めるが、まだ決めていない。Issue #912）
+  - 表のパターンの自分のパッチを上流に出す（上流は外の人のプルリクエストを受けない。表は上流の #10（consumer の表の情報）と #29（UIA の表のパターン）に既に計画があり、競う案を出すと、上流が受ける計画が 2 つに分かれる。#10 と #29 の計画を支え、#10 のコメントが問う点には、先頭の列の見出しの行を行の数に入れない（同じコメントが、UIA・AppKit・AT-SPI は列の見出しをデータの行でなく見出しの項目として出すと書く）と答える。同じ Grill）
 
 ---
 
@@ -1181,6 +1214,22 @@ Rejected:
   - 時間帯の名前（metazone）を入れる（出す部品の行が無い。`gmtFormat` で GMT からの差を出す。UTS #35 第 4 部が、名前の無い時に落ちる先と同じ形である。同じ Grill）
   - 最初の週の最小の日数の値だけを出し、週の番号の関数を出さない（値だけでは週の番号を出せず、部品ごとに数え方が分かれる。`scope.mdc`。同じ Grill）
   - 書式の `y` が 1 つの時も、2 桁の年を今の前後 100 年の窓に入れる（Flutter が固定する `intl` 0.20.3 は、`yy` の時だけ窓に入れ、`y` では書いたとおりの年にする。同じ `intl` を読んでから決める、と同じ Grill でオーナーが決定）
+  - LC3 の辞書を、アセンブリに 1 つにして MSBuild のプロパティから読む（案 A）か、AdditionalFiles の項目のメタデータで組に分ける（案 B）（名前の誤りが MSBuild の中で黙って通る。値をコンパイラに渡す `buildTransitive` の props をパッケージに足す必要があるが、今の `XylemUI.Core` のパッケージは props を持たない。A は 1 つのアセンブリに辞書を 1 つしか置けない。アセンブリの属性で宣言すれば、C# の型で検査され（§0 の 1「UI の誤りはコンパイルエラー」）、KM1a の生成器（`src/XylemUI.Generators/ActionTableGenerator.cs` 96 行目の `ForAttributeWithMetadataName`）と同じ読み方になる。Grill の 6 巡目でオーナーが決定、Issue #910）
+  - LC3 の辞書を、Flutter の `l10n.yaml` に当たる設定ファイルで宣言する（案 C）（Flutter 3.47.8 は 1 つの `l10n.yaml` から `arb-dir`・`template-arb-file` などを読み、1 つの辞書を作る。`packages/flutter_tools/lib/src/localizations/localizations_utils.dart` 506〜534 行目。設定が C# の型で検査されず、生成器が C# のほかに設定の形式を 1 つ読むことになる。同じ Grill）
+  - ARB のロケールを `@@locale` だけから取る（案 A）（Flutter の部品の訳の 116 個の `material_*.arb` は、どれも `@@locale` を持たず、ロケールをファイル名に書く。`material_en_GB.arb` などをそのまま読めない。同じ Grill）
+  - ARB のロケールの `_` をエラーにする（案 C）（同じ 116 個のファイル名が `_` を使う。Flutter の gen-l10n も、ファイル名から読んだロケールを `_` の形に直してから `@@locale` と比べる。`gen_l10n_types.dart` 647・655・664 行目。同じ Grill）
+  - `plural` の `=0`・`=1`・`=2` を、区分の `zero`・`one`・`two` に読み替える（Flutter 3.47.8 の gen-l10n は、`gen_l10n.dart` 249〜259 行目の表でこう読み替え、ほかの `=N` は 1306〜1320 行目でエラーにする。区分は数そのものではない。CLDR 49 の複数形の規則では、ラトビア語の `zero` は 10・11〜19・20 なども含み、`one` は 21・31 なども含む（`cldr-core/supplemental/plurals.json` の `lv`）。読み替えると、`=0` に書いた文が 10 にも出て、ICU を使う翻訳ツールと結果が変わる。任意の `=N` を、区分より先に完全一致で見る。ICU の細部は LC3 の設計の PR で ICU User Guide を読んで書く。同じ Grill）
+  - メッセージのエスケープを持たない（案 A、Flutter 3.47.8 の既定）（文字の部分は `[^{}]+` で、`{` と `}` を文字として書けない。`message_parser.dart` 186 行目。同じ Grill）
+  - Flutter の `use-escaping` の規則にする（案 C）（`'...'` を引用にし、対になる `'` の無い `'` は「Unmatched single quotes」のエラーになる。`message_parser.dart` 184・249〜275・322 行目。"l'utilisateur" が書けず、`'` を 2 つ含む文では間の文字が引用になって `'` が消える。ICU の標準の apostrophe の規則なら、フランス語の `'` と文字としての括弧の両方を書ける。同じ Grill）
+  - 生成する API を、ロケールを引数で渡す静的メソッドにする（案 B）（呼ぶ所ごとにロケールのシグナルを引いて渡すことになり、呼ぶたびにロケールで分岐する。ロケールごとの不変のオブジェクトなら、ロケールが変わった時に 1 度だけ選ぶ。同じ Grill。決める前に測る数（ロケールを切り替えたフレームと、毎フレーム変わる複数形の文字の割り当て）は、LC3 の設計の PR に書く）
+  - 生成する API を、中で Context を読む静的メソッドにする（案 C）（Computed の中の `Use` は例外を投げる（§2.13「引ける所」）。`Accessible(IReadOnlySignal<AccessibilityInfo>)` に渡す名前を Computed で作れず、`await` の後でも呼べない。呼ぶたびに鍵を引く。同じ Grill）
+  - 翻訳のパッケージを、アプリが起動時に明示で渡す（案 B、Flutter の `localizationsDelegates`）（パッケージの全部の訳を 1 つで渡す口は、全部のロケールを参照し、NativeAOT が落とせない。宣言したロケールの分だけを渡すには、アプリが `SupportedLocales` と同じ一覧をもう 1 度書くことになる。Flutter 3.47.8 の `getMaterialTranslation` は、1 つの switch で全部の言語のクラスを参照する（`packages/flutter_localizations/lib/src/l10n/generated_material_localizations.dart` 46711〜46985 行目）。モジュールの初期化子での登録なら、アプリの生成器が宣言したロケールの分だけを登録する。116 ロケールと宣言したロケールだけの大きさを測って確かめる。同じ Grill）
+  - 翻訳のパッケージが、Primitives の ARB を自分の ARB と一緒に作り直す（案 C）（Primitives の英語の ARB を翻訳のパッケージがもう 1 度コンパイルし、同じ文言の型が 2 つのアセンブリにできる。Primitives はパッケージを参照しないので、パッケージの型を Context の鍵で受け取る口が別に要る。同じ Grill）
+  - わざと英語に落とすメッセージを、英語の文を訳のファイルに写して書く（案 A）（Flutter 3.47.8 の `material_ps.arb` は、パシュトー語に訳の無い文を英語で持つ（16 行目の `"firstPageTooltip": "First page"`、`README.md` 199〜201 行目）。訳の漏れと区別できず、どれが英語に落ちるかの一覧（G1）が消える。同じ Grill）
+  - 英語に落とすことを、テンプレートの `@key` に書く（案 C）（テンプレートは Primitives にあり、翻訳のパッケージの言語の一覧を Primitives が知ることになる。同じ Grill）
+  - 翻訳漏れの警告を、診断の番号ごと消す（案 D）（本当の漏れも消える。同じ Grill）
+  - 部品の文言の上書きを、メッセージごとにする（案 B）（生成器が、アプリの辞書と部品の辞書の 2 つを見て合わせる必要がある。基底を継いだクラスを鍵で渡す形なら、型で検査され、実行時にキーで引かない。Flutter 3.47.8 も、`MaterialApp` がアプリの渡した delegate を英語の既定より前に並べ、型ごとに最初の 1 つを使うことで上書きする（`packages/flutter/lib/src/material/app.dart` 930〜940 行目、`widgets/localizations.dart` 57〜66 行目）。同じ Grill）
+  - 部品の文言を、実行時に文字列のキーで引く（案 C、Avalonia 12.1.4）（Avalonia は `src/Avalonia.Themes.Fluent/Strings/InvariantResources.xaml` の英語の文をキーで持ち、`Controls/TextBox.xaml` 25 行目の `DynamicResource` で引く。キーの誤りがビルドで見つからず、引くたびに文字列のキーで探す。同じ Grill）
 
 ---
 

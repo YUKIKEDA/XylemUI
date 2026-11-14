@@ -87,12 +87,13 @@ public static unsafe class Win32MessageLoop
     internal static Win32FrameScheduler Frames => GetFrameScheduler();
 
     /// <summary>
-    /// Gets the UI thread's queue. Other threads post to it; <see cref="Run"/> drains it when it starts and once per iteration, and
-    /// installs its synchronization context so that <c>await</c> continuations resume on the UI thread (design §2.12).
+    /// Gets the UI thread's queue as its own type, for the host: <see cref="Run"/> drains it when it starts and once per iteration,
+    /// and installs its synchronization context so that <c>await</c> continuations resume on the UI thread (design §2.12). Workers
+    /// post through <see cref="UiDispatcher.Current"/>, which the host sets to this queue.
     /// </summary>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     [UiThreadOnly]
-    public static UiDispatcher Dispatcher => GetDispatcher();
+    internal static UiDispatcher Dispatcher => GetDispatcher();
 
     /// <summary>
     /// Gets or sets a hook that runs on the UI thread once per loop iteration, after the queued messages are handled and before the
