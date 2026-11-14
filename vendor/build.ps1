@@ -8,7 +8,7 @@
 #
 # Output: vendor/out/win-x64/static/<name>.lib and vendor/out/win-x64/shared/<name>.dll; the build machine's HarfBuzz with its
 # subset library in vendor/out/win-x64/tool (the icon build tool of XylemUI.Theme.Fluent, design §5.0.4); the Fluent icon files
-# in vendor/out/fluent. Nothing here is committed.
+# in vendor/out/fluent, and Fluent's token files in vendor/out/fluent/tokens (design §13.2). Nothing here is committed.
 param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'
@@ -57,12 +57,30 @@ $skcms = [ordered]@{
     'skia-license'        = 'skcms/LICENSE'
 }
 
-# The files taken as they are, by the name each gets in vendor/out/fluent (design §5.0.4).
+# The files taken as they are, by the path each gets under vendor/out/fluent: the icons (design §5.0.4), and the token files of
+# @fluentui/tokens at their paths under packages/tokens/src, which tools/FluentTokensTool reads (design §13.2).
 $files = @{
     'fluent-regular-ttf'  = 'FluentSystemIcons-Regular.ttf'
     'fluent-filled-ttf'   = 'FluentSystemIcons-Filled.ttf'
     'fluent-regular-json' = 'FluentSystemIcons-Regular.json'
     'fluent-filled-json'  = 'FluentSystemIcons-Filled.json'
+    'fluent-tokens-global-colors'                = 'tokens/global/colors.ts'
+    'fluent-tokens-global-brandColors'           = 'tokens/global/brandColors.ts'
+    'fluent-tokens-global-colorPalette'          = 'tokens/global/colorPalette.ts'
+    'fluent-tokens-global-spacings'              = 'tokens/global/spacings.ts'
+    'fluent-tokens-global-strokeWidths'          = 'tokens/global/strokeWidths.ts'
+    'fluent-tokens-global-borderRadius'          = 'tokens/global/borderRadius.ts'
+    'fluent-tokens-global-fonts'                 = 'tokens/global/fonts.ts'
+    'fluent-tokens-global-typographyStyles'      = 'tokens/global/typographyStyles.ts'
+    'fluent-tokens-alias-lightColor'             = 'tokens/alias/lightColor.ts'
+    'fluent-tokens-alias-darkColor'              = 'tokens/alias/darkColor.ts'
+    'fluent-tokens-alias-highContrastColor'      = 'tokens/alias/highContrastColor.ts'
+    'fluent-tokens-alias-lightColorPalette'      = 'tokens/alias/lightColorPalette.ts'
+    'fluent-tokens-alias-darkColorPalette'       = 'tokens/alias/darkColorPalette.ts'
+    'fluent-tokens-alias-highContrastColorPalette' = 'tokens/alias/highContrastColorPalette.ts'
+    'fluent-tokens-sharedColorNames'             = 'tokens/sharedColorNames.ts'
+    'fluent-tokens-statusColorMapping'           = 'tokens/statusColorMapping.ts'
+    'fluent-tokens-utils-shadows'                = 'tokens/utils/shadows.ts'
 }
 
 # The libraries taken from a release archive, by their paths in it (design §4.4.1): AccessKit's static library is built with the
@@ -195,7 +213,7 @@ foreach ($lock in Get-Locks | Where-Object { $files.ContainsKey($_.Name) }) {
         continue
     }
 
-    New-Item -ItemType Directory -Force $target | Out-Null
+    New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
     Write-Host "==> Take $($lock.Name) $($lock.Version)"
     Copy-Item (Get-Archive $lock) $file -Force
 }

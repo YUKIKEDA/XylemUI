@@ -15,6 +15,16 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
+  <!-- The tokens' test runs the token tool and compares its output with FluentTokens.g.cs, so the tool is built first. -->
+  <ItemGroup>
+    <ProjectReference
+      Include="..\..\tools\FluentTokensTool\FluentTokensTool.csproj"
+      ReferenceOutputAssembly="false"
+      Private="false"
+      SkipGetTargetFrameworkProperties="true"
+      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishAot;TargetFramework;_IsPublishing"
+    />
+  </ItemGroup>
   <!-- A project that draws icons keeps the glyphs it uses, as an app does (design §12.5). -->
   <Import Project="..\..\src\XylemUI.Theme.Fluent\XylemUI.Theme.Fluent.targets" />
 </Project>
