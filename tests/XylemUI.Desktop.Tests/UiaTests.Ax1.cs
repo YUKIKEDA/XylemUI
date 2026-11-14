@@ -97,7 +97,7 @@ public sealed unsafe partial class UiaTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The table of roles, with AccessKit's values written as numbers from accesskit-c 0.23.1's header for the roles row AX1 adds.
+    /// - The table of roles, with AccessKit's values written as numbers from accesskit-c 0.23.2's header for the roles row AX1 adds.
     ///
     /// Steps:
     /// - For each value of <see cref="SemanticsRole"/> but None, map a node of that role.
@@ -903,21 +903,22 @@ public sealed unsafe partial class UiaTests
     /// <remarks>
     /// Preconditions:
     /// - A hidden window "UIA text roles" with empty text fields of the roles SearchBox ("search"), DateInput ("date"), TimeInput
-    ///   ("time"), and DateTimeInput ("when"), a read-only SearchBox ("fixed"), and a disabled DateInput ("off").
+    ///   ("time"), and DateTimeInput ("when"), a read-only SearchBox ("fixed"), a disabled DateInput ("off"), and a last SearchBox
+    ///   ("last").
     ///
     /// Steps:
-    /// - On the client's thread, set each field to "x" in an action of its own, and run the loop until its text changed or the client
-    ///   refused it (the read-only and the disabled field: until the action ended). The actions are split because a third UIA SetValue
-    ///   in a row from one client thread does not return (Issue #895).
+    /// - In one action of the client, find each of the seven fields in turn and set it to "x", counting the calls that returned or
+    ///   that the client refused; run the loop until the client is done and "last" has text. The requests are handled in the order
+    ///   they came, so those to "fixed" and "off" are handled by then.
     ///
     /// Expected:
-    /// - "x" in the four; "fixed" and "off" empty.
+    /// - Seven calls ended before the watchdog; "x" in the four and in "last"; "fixed" and "off" empty.
     /// </remarks>
     [Fact]
     public void SetValue_WritesTheTextRoles_NotAReadOnlyOrDisabledOne() =>
         ui.Invoke(() =>
         {
-            string[] ids = ["search", "date", "time", "when", "fixed", "off"];
+            string[] ids = ["search", "date", "time", "when", "fixed", "off", "last"];
             SemanticsRole[] roles =
             [
                 SemanticsRole.SearchBox,
@@ -926,6 +927,7 @@ public sealed unsafe partial class UiaTests
                 SemanticsRole.DateTimeInput,
                 SemanticsRole.SearchBox,
                 SemanticsRole.DateInput,
+                SemanticsRole.SearchBox,
             ];
             Signal<string>[] texts = [.. ids.Select(_ => Signal.Create(string.Empty))];
             using var window = new DesktopWindow(
@@ -945,16 +947,12 @@ public sealed unsafe partial class UiaTests
                 useWarp: true
             );
 
-            // One SetValue for each action of the client: a third in a row from one client thread does not return (Issue #895).
-            for (int i = 0; i < ids.Length; i++)
-            {
-                string id = ids[i];
-                Signal<string> text = texts[i];
-                bool writable = i < 4;
-                bool refused = false;
-                ActByUia(
-                    window,
-                    root =>
+            int ended = 0;
+            ActByUia(
+                window,
+                root =>
+                {
+                    foreach (string id in ids)
                     {
                         try
                         {
@@ -963,16 +961,18 @@ public sealed unsafe partial class UiaTests
                         catch (Exception exception) when (exception is ElementNotEnabledException or InvalidOperationException)
                         {
                             // The client may refuse a read-only or disabled element itself; either way the text stays.
-                            refused = true;
                         }
-                    },
-                    () => !writable || refused || text.Peek().Length > 0
-                );
-            }
+
+                        _ = Interlocked.Increment(ref ended);
+                    }
+                },
+                () => texts[6].Peek().Length > 0
+            );
 
             RunAccessibilityStage(window);
 
-            Assert.Equal(["x", "x", "x", "x", string.Empty, string.Empty], texts.Select(t => t.Peek()));
+            Assert.Equal(7, Volatile.Read(ref ended));
+            Assert.Equal(["x", "x", "x", "x", string.Empty, string.Empty, "x"], texts.Select(t => t.Peek()));
         });
 
     /// <summary>

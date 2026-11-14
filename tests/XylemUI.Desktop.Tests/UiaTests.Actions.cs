@@ -227,6 +227,51 @@ public sealed unsafe partial class UiaTests
         });
 
     /// <summary>
+    /// Four calls of UIA's SetValue in a row from one client thread all return, and each writes its field (Issue #895).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA set value in a row" with two text fields, their test IDs "free" and "line", both empty.
+    ///
+    /// Steps:
+    /// - In one action of the client, find the field and SetValue each time: "one" to "free", "two" to "line", "three" to
+    ///   "line", "four" to "free", counting the calls that returned; run the loop until the client is done and "free" is "four".
+    ///
+    /// Expected:
+    /// - Four calls returned before the watchdog; "free" is "four" and "line" is "three".
+    /// </remarks>
+    [Fact]
+    public void SetValue_FourTimesInARow_EachReturnsAndWrites() =>
+        ui.Invoke(() =>
+        {
+            Signal<string> free = Signal.Create(string.Empty);
+            Signal<string> line = Signal.Create(string.Empty);
+            using var window = new DesktopWindow(
+                () => Column(TextField(free).TestId("free"), TextField(line).TestId("line")),
+                new WindowOptions("UIA set value in a row", 200, 200),
+                useWarp: true
+            );
+            int returned = 0;
+
+            ActByUia(
+                window,
+                root =>
+                {
+                    (string Id, string Text)[] writes = [("free", "one"), ("line", "two"), ("line", "three"), ("free", "four")];
+                    foreach ((string id, string text) in writes)
+                    {
+                        ((ValuePattern)ById(root, id).GetCurrentPattern(ValuePattern.Pattern)).SetValue(text);
+                        _ = Interlocked.Increment(ref returned);
+                    }
+                },
+                () => free.Peek() == "four"
+            );
+            RunAccessibilityStage(window);
+
+            Assert.Equal((4, "four", "three"), (Volatile.Read(ref returned), free.Peek(), line.Peek()));
+        });
+
+    /// <summary>
     /// UIA's Expand and Collapse open and close a select's list, which then has UIA's Selection, and SelectionItem's Select on an
     /// option chooses it.
     /// </summary>

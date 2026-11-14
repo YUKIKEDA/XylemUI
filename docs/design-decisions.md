@@ -698,6 +698,12 @@ Rejected:
 Decision（Grill の 7 巡目、Issue #912）:
   動作の基底の型にハンドラを 1 つ付ける `OnActionsOf<T>(handler, can, phase)` を、`can` を持ったまま Core の公開の API にする。B1 の新しいキーは、一点のキーをキーマップの行と動作に、押して離すキーを部品のハンドラにする。SplitButton は Tab で 1 回だけ止まる。長押しで働くボタンは Qt の `DelayButton` の形にする。HyperlinkButton は行 PL2 の URI を開く口を使う。副題付きのボタンは副題を説明に入れる。
 
+Decision（Grill の 10 巡目、Issue #917）:
+  SplitButton の a11y は、主の操作の Invoke を持つ節と、メニューを開閉する節の 2 つにする。1 つの節が両方を持つ形を上流に頼み、入ったら 1 つの節に戻す。
+
+Decision（Grill の 11 巡目、Issue #918）:
+  2 つの節は、開閉を持つ親の節の子に、主の操作（Invoke）のボタンを置く形にする。上流が 1 つの節に両方を許したら、親の節に Invoke を付ける。
+
 Reason:
   動作を今受けられるかを、Flutter（`Action.isEnabled`、3.47.8 の `packages/flutter/lib/src/widgets/actions.dart` 267 行目）と Avalonia（`ICommand.CanExecute`、12.1.4 の `src/Avalonia.Controls/Button.cs` 205・371 行目が読む）は、どのパッケージの部品にも公開する。B1 の部品だけが内部の口を使うと、ほかのパッケージの部品は同じ部品を同じ費用で作れない。
 
@@ -713,6 +719,9 @@ Rejected:
   - 長押しのコールバックと `DelayButton` の形の両方を持つ（案 c）（同じことに 2 つの形ができ、コールバックの側には上の支援技術の問題が残る。同じ Grill）
   - URI を開く口の行を作らず、HyperlinkButton は `onClick` だけを持ち、開くのはアプリに任せる（「開く」を持たない半端な部品になる。`scope.mdc`。Avalonia 12.1.4 の `HyperlinkButton` はクリックの後に自分で開き（`src/Avalonia.Controls/HyperlinkButton.cs` 77〜94 行目、86 行目の `Launcher.LaunchUriAsync`）、zed v1.25.3 の `ButtonLink` も自分で開く（`crates/ui/src/components/button/button_link.rs` 74 行目の `cx.open_url`）。同じ Grill）
   - 副題付きのボタンを、テーマの 2 行の配置だけにする（案 b）（名前のたたみで、名前に副題まで入る。Fluent 2 の React の `CompoundButton` はこの形で、副題（`secondaryContent`）をボタンの中に置き（fluentui のコミット `f9720c35` の `packages/react-components/react-button/library/src/components/CompoundButton/renderCompoundButton.tsx` 20〜23 行目）、説明の関係を付けない（`useCompoundButton.ts` 24〜35 行目）。XylemUI は名前を操作を見分ける短い名にし、副題は `AccessibilityInfo.Description` に分けるので、Fluent と違う。同じ Grill）
+  - SplitButton の a11y を、開閉を持つ 1 つの節にする（7 巡目の形）（`accesskit_consumer` 0.39.1 は開閉を持つ節に Invoke を付けない（`accesskit_consumer/src/node.rs` 661〜668 行目の `supports_expand_collapse`、670〜685 行目の `is_invocable`）。支援技術から主の操作を呼べない。UIA の「SplitButton Control Type」のページは Invoke と ExpandCollapse の両方を Required にしている。Grill の 10 巡目、Issue #917）
+  - 上流が 1 つの節に Invoke と ExpandCollapse を許すまで、SplitButton を出さずに待つ（Chromium も同じ規則で（`ui/accessibility/ax_node_data.cc` の `AXNodeData::IsInvocable`、コミット `0272ce59`）、上流がいつ変わるかは決まっていない。2 つの節なら今の AccessKit で両方の操作を出せる。同じ Grill）
+  - SplitButton の 2 つの節を兄弟に並べる（UIA の「SplitButton Control Type」のページ（Microsoft Learn、2025-07-14 の版）の木は、1 つの SplitButton の節が Invoke と ExpandCollapse を持ち、その下に Button を 1 つか 2 つ置く形で、兄弟の 2 つの節は文書の形ではない。親と子なら、上流が両方を許した時に親へ Invoke を付けるだけで文書の形になる。Grill の 11 巡目、Issue #918）
 
 ---
 
@@ -728,7 +737,184 @@ Rejected:
   - ホイールを行で渡し、受け手に行の高さを掛けさせる（GPUI。利用者のハンドラが行の高さを知る必要がある）
   - ホバー中のスクロールする箱すべてに量を配る（GPUI。内側と外側が同時に動く）
   - 位置の Signal だけを受ける `.ScrollOffset(signal)`（ホイールが書く先と、最大値を読む口が無い）
-  - V2 で見えるスクロールバーを作る（3 つとも中身に重ねる別の部品。行 G1 で部品として作る）
+  - V2 で見えるスクロールバーを作る（3 つとも中身に重ねる別の部品。行 B10 で部品として作る。D14 の Grill で §13.1 の表が B10 に置いた）
+
+Decision（行 B10、Grill の 12 巡目、Issue #927）:
+  見えるスクロールバーは B10 の Primitives の部品で、箱の `ScrollState` を読み書きする。Core は棒を描かず、中身と一緒に動かない重ねる場所と、「スクロールした」の知らせを足す。棒は既定で OS の設定に従い（Windows の `UISettings.AutoHideScrollBars`）、アプリが棒ごとに選べる。棒は Tab で止まらず、a11y では役 ScrollBar の節を出す。
+
+Reason:
+  比べた 3 つとも、スクロールする箱は棒を描かず、棒は別の部品である（Flutter 3.47.8 の `packages/flutter/lib/src/widgets/scrollbar.dart` 2268〜2271 行目、Avalonia 12.1.4 の `src/Avalonia.Themes.Fluent/Controls/ScrollViewer.xaml` 46・49 行目、zed v1.25.3 の `crates/ui/src/components/scrollbar.rs` 105 行目の `WithScrollbar`）。部品にすれば、テーマが棒の見た目を被せられる（§13.1）。
+
+Rejected:
+  - Core のスクロールする箱が棒を描く（Core に部品を置かない（§13.1）規則に反し、テーマが棒の見た目を変えられない。比べた 3 つも箱では描かない。Grill の 12 巡目、Issue #927）
+  - OS の設定を読まず、いつも重ねて隠す（Flutter 3.47.8 と Avalonia 12.1.4 は読まない。どちらのリポジトリにも `AutoHideScrollBars` の語が無い）（「常にスクロールバーを表示する」は Windows の a11y の設定で、従わないと、それを選んだ利用者にも隠れる棒を出す。zed v1.25.3 は `ShowScrollbar::System` で読む（`crates/ui/src/components/scrollbar.rs` 43〜54・327〜337 行目、`crates/gpui_windows/src/platform.rs` 1652 行目）。同じ Grill）
+  - 棒を Tab で止める（キーでのスクロールは箱が持つので、棒で止まると Tab の止まりが増えるだけになる。Avalonia 12.1.4 の `ScrollBar` は既定で `Focusable` が偽（`src/Avalonia.Controls/Primitives/ScrollBar.cs` 101 行目）、Flutter 3.47.8 の `widgets/scrollbar.dart` と zed v1.25.3 の `scrollbar.rs` にもフォーカスを取る所が無い。同じ Grill）
+  - 棒に a11y の節を出さない（Flutter 3.47.8 は `semanticsBuilder` を null にし（`packages/flutter/lib/src/widgets/scrollbar.dart` 846 行目）、zed v1.25.3 の `scrollbar.rs` に役の語が無い）（Avalonia 12.1.4 は `ScrollBarAutomationPeer` で ScrollBar の種類を出す（`src/Avalonia.Controls/Automation/Peers/ScrollBarAutomationPeer.cs` 18 行目）。役 ScrollBar は行 AX1 が入れた。同じ Grill）
+
+---
+
+## タブの中身とキー（行 B3）
+
+Decision（Grill の 9 巡目、Issue #916）:
+  タブの中身は、初めて選ばれた時に作り、以後は `Hidden` で隠して保ち、隠している間は中身の Scope を止める（`Scope.Pause`）。タブの帯の中は、矢印でフォーカスと選択が一緒に動く。タブは、閉じる要求、ドラッグとキーでの並べ替え、あふれた時のスクロールを持つ。
+
+Reason:
+  XylemUI の部品の状態は Scope とノードにあるので、出さないタブを捨てると、スクロールの位置や欄の文字も消える。隠したタブの Scope を止めないと、そのタブが読むシグナルが変わるたびに Effect が走る。APG は、中身がすぐ出るなら自動の選択を勧める。中身は初めて選んだ後は保つので、2 回目からはすぐ出る。行 DK1 のドックは閉じる・並べ替え・あふれを使うので、B3 が持たなければ DK1 が同じものを作る。
+
+Rejected:
+  - 選んだタブの中身だけを出し、切り替えるたびに作り直す（Avalonia 12.1.4 の TabControl は、選ばれたタブの中身だけを 1 つの presenter に出し、切り替えの後で前の presenter の中身を外す（`src/Avalonia.Controls/TabControl.cs` 484〜485 行目）。スクロールの位置・欄の文字・取り消しの履歴を失う。Grill の 9 巡目、Issue #916）
+  - zed の形を写す（zed v1.25.3 の `Pane` は、選んだ項目だけを木に出す（`crates/workspace/src/pane.rs` 4611〜4617 行目）。GPUI では状態がエンティティにあるので、出さない項目も状態を保つ。XylemUI の状態は Scope とノードにあるので、同じ形は上の作り直す形になる。同じ Grill）
+  - 初めから全部のタブを作って隠す（Flutter 3.47.8 の `IndexedStack` の形で、大きさは最も大きい子に合わせる（`packages/flutter/lib/src/widgets/indexed_stack.dart` 23〜24 行目）。一度も開かないタブの分まで、作る時間とメモリを払う。同じ Grill）
+  - 作った後に隠すが、Scope は止めない（隠したタブの Effect が、時計の文字や流れるログのように読むシグナルが変わるたびに走る。止める形との差は、2,000 ノードのタブを 20 個保って、行 B3 の設計の PR で測る。同じ Grill）
+  - WinUI の手動の選択（矢印はフォーカスだけを動かし、Space か Enter で選ぶ。矢印は端で回らない。Microsoft Learn の「Tab view」の Keyboard navigation、2026-11-14 に読んだ）（タブを 1 つ見るのにキーが 2 つ要る。APG は中身がすぐ出るなら自動を勧め、Avalonia 12.1.4 の TabControl は方向キーでフォーカスが移った時に選ぶ（`src/Avalonia.Controls/TabControl.cs` 240〜242 行目、`src/Avalonia.Controls/Primitives/TabStrip.cs` 33〜41 行目も同じ）。同じ Grill）
+  - 閉じる要求・並べ替え・あふれた時のスクロールを B3 に入れない（Avalonia 12.1.4 の形。`TabControl.cs`・`TabItem.cs`・`Primitives/TabStrip.cs` とテーマに閉じる・並べ替えの口が無く、あふれたタブは `WrapPanel` で次の段へ折り返す（`TabControl.cs` 87〜88・96 行目、`src/Avalonia.Themes.Fluent/Controls/TabStrip.xaml` 27〜30 行目）。WinUI は `IsClosable` と `TabCloseRequested`、`CanReorderTabs`、あふれた時のスクロールのボタンを持つ（Microsoft Learn の「Tab view」）。zed v1.25.3 は、キーでの並べ替え（`assets/keymaps/default-windows.json` 505〜506 行目の `pane::SwapItemLeft`・`SwapItemRight`）と、帯のスクロール（`crates/ui/src/components/tab_bar.rs` 133 行目）と、選んだタブを見える所へ動かすこと（`crates/workspace/src/pane.rs` 1510〜1514 行目）を持つ。B3 が持たないと、行 DK1 と文書のタブを使うアプリが、それぞれ同じものを作る。同じ Grill）
+
+---
+
+## 部分木のつなぎ替え（行 RP1）
+
+Decision（Grill の 9 巡目、Issue #916）:
+  生きた部分木を Scope ごと別の親へ移す Core の操作を、行 RP1 として行 DK1 の実装の前に作る。移した後も、フォーカス、ポインタのキャプチャ、IME の変換、a11y の節の ID を保つ。
+
+Reason:
+  行 DK1 のパネル（端末やエディタ）は、グループや窓の間を動く。Flutter 3.47.8 は `GlobalKey` を持つ widget の部分木をつなぎ替え（`packages/flutter/lib/src/widgets/framework.dart` 122〜124 行目）、Avalonia 12.1.4 は親から外したコントロールを別の親に入れ直す（`src/Avalonia.Base/Visual.cs` 677〜681 行目）。どちらも、移した部分の状態を保つ。
+
+Rejected:
+  - パネルを動かすたびに作り直す（案 a）（端末やエディタのパネルが動くたびに、スクロールの位置と取り消しの履歴を失う。作り直す形とつなぎ替える形の時間と割り当ては、1,000 ノードと 10,000 ノードのパネルで行 RP1 が測る。Grill の 9 巡目、Issue #916）
+
+---
+
+## ドッキング（行 DK1）
+
+Decision（Grill の 13 巡目、Issue #931）:
+  配置は、葉がタブのグループの N 分岐の分割の木で、文書の区画を区別し、子が 1 つの節をたたみ、窓全体の端に置く的を持つ（案 c）。深さ 4 で 20 パネルの layout の費用を測って確かめる。配置は `Signal<DockLayout>`（不変の木）と ID で引くパネルの定義で持ち、保存は配置のデータを返してアプリが書く。浮いたパネルは同じ `UiTree` の別の根を持つ OS の窓にし、浮かせる機能を最初から入れる。実装は行 MW1 の実装と行 RP1 の後。
+
+Reason:
+  zed v1.25.3 は、中央の N 分岐の木（`crates/workspace/src/pane_group.rs` 296〜299・648〜653 行目）と 3 つのドック（`crates/workspace/src/dock.rs` 324〜328 行目）を組み合わせる。道具のパネルを窓の端に置いたまま、文書の区画を自由に分けられるのは、この形である。
+
+Rejected:
+  - 窓全体を 1 つの分割の木にし、文書の区画を区別しない（案 a）（道具のパネルを窓の端に置いたまま文書を並べ替えることができない。zed v1.25.3 も、木は中央だけで、端はドックである。Grill の 13 巡目、Issue #931）
+  - 中央の区画の周りに決まった数のドックの場所を置く（案 b。Qt の `QMainWindow` の 4 つの場所（DK1 の調査が Qt の文書で読んだ）、zed v1.25.3 の `DockPosition` の左・下・右）（入れ子を許さないと、文書の区画を 4 つに分けるような配置を表せない。同じ Grill）
+  - 配置の保存をフレームワークが持ち、ファイルに書く（zed v1.25.3 は配置を自分の SQLite のデータベースに書く（`crates/workspace/src/persistence/model.rs` 9 行目の `sqlez`、179〜232 行目の `Column` と `Bind`））（どこに何の形式で置くかはアプリが決めることで、フレームワークがファイルの入出力を持つことになる。データを返してアプリが書き、読み戻しでは版の違うデータと知らないパネルを落とす。同じ Grill）
+  - 浮かせない DK1 を先に出す（行が名指すドッキングの機能が欠ける。Qt と Dock は浮かせる（DK1 の調査が文書で読んだ）。zed v1.25.3 の `crates/workspace/src` には、パネルを別の窓へ切り離す動作が無い（`MoveToNewWindow`・`move_to_new_window`・`tear_off`・`float` を grep した）。浮いたパネルは行 MW1 の複数ウィンドウと行 RP1 のつなぎ替えの上に作るので、DK1 の実装をその後に置く。同じ Grill）
+
+---
+
+## 一覧と表（行 B4）
+
+Decision（Grill の 9 巡目、Issue #916）:
+  読むだけの表（行 B4）と編集できる表（行 DG1）を、1 つの列と行の形にする。格子の一覧（GridView）は、行 P02e2 のタイルの仮想化の上に作る。B4 の表は列の幅の変更と行の選択を持ち、見出しを押しての並べ替えは DG1 に置く。選択は Single・Multiple・Extended・None のモードと、アプリが持つキーの `SelectionModel<TKey>` で持つ。
+
+Reason:
+  表を 2 つに分けると、列の定義・選択・a11y の形が 2 つずつになる。仮想化した一覧は行をキーで見分けるので、選択と範囲の起点もキーで持つ。Win32 のリストボックスは、1 つを選ぶ（既定）、押すたびに切り替える（`LBS_MULTIPLESEL`）、Shift と組み合わせて選ぶ（`LBS_EXTENDEDSEL`）、選ばない（`LBS_NOSEL`）の 4 つを持つ（Microsoft Learn の「List Box Styles」、2026-11-14 に読んだ）。
+
+Rejected:
+  - 読むだけの表と編集できる表を、別の部品にする（DG1 の調査の案 b）（Avalonia 12.1.4 は、読むだけの表を `TableView : ListBox` にし（`src/Avalonia.Controls/TableView.cs` 15〜17 行目）、DataGrid は本体のリポジトリの外にある（12.1.4 のリポジトリに `DataGrid` の名のファイルは無い）。列・選択・a11y の形が 2 つずつになり、読むだけの表から編集できる表へ移るアプリは書き直す。Grill の 9 巡目、Issue #916）
+  - 仮想化しない GridView を B4 で出す（仮想化した ListBox と食い違う半端な部品になる（`scope.mdc`）。Flutter 3.47.8 の `RenderSliverGrid` は、見える範囲の最初の番号から子を作り、外へ出た子を捨てる（`packages/flutter/lib/src/rendering/sliver_grid.dart` 561・607・616 行目）。同じ Grill）
+  - 見出しを押しての並べ替えを B4 の表に入れる（Avalonia 12.1.4 の TableView は、見出しのドラッグでの幅の変更を持ち（`src/Avalonia.Controls/TableViewColumnHeader.cs` 55〜67 行目）、並べ替えを持たない（`TableView*.cs` と `Presenters/TableView*.cs` に sort の語が無い）。zed v1.25.3 の `Table` も幅の変更だけを持つ（`crates/ui/src/components/data_table.rs` に sort の語が無い）。Flutter 3.47.8 の `DataTable` は並べ替えの印と知らせを持ち、並べ替えるのはアプリである（`packages/flutter/lib/src/material/data_table.dart` 32 行目の `DataColumnSortCallback`）。並べ替えの順を誰が持つかは絞り込みと同じ問いで、行 DG1 の Grill で決める。B4 は見出しに印の場所を残す。同じ Grill）
+  - 選択を番号で持つ（Avalonia 12.1.4 の `SelectionModel` は番号の範囲で選ぶ（`src/Avalonia.Controls/Selection/SelectionModel.cs` 248 行目の `SelectRange(int start, int end)`）。項目を足したり並べ替えたりすると、選んだ行がずれる。同じ Grill）
+  - モードを Avalonia の印の組み合わせにする（Avalonia 12.1.4 の `SelectionMode` は Single・Multiple・Toggle・AlwaysSelected の印を組み合わせる `[Flags]` の列挙である（`src/Avalonia.Controls/SelectionMode.cs` 8〜29 行目）。Multiple だけなら Ctrl で切り替え Shift で範囲、Toggle を足すと押すたびに切り替える（`src/Avalonia.Controls/Primitives/SelectingItemsControl.cs` 814〜816 行目）。選ばない形を持たないので、Win32 の `LBS_NOSEL` に当たる、見せるだけで選ばない一覧を表せない。同じ Grill）
+  - 範囲を広げるかを、動作の中で今の Shift から読む（zed v1.25.3 の project panel は `menu::SelectNext` の中で `window.modifiers().shift` を読む（`crates/project_panel/src/project_panel.rs` 34・3244・3289 行目）。利用者が Shift の付いたキー（`shift-j`）を「次へ」に割り当てると、範囲が広がる。動作は割り当てたキーと切り離されているべきなので、範囲を広げる版を別の動作にする。Grill の 10 巡目、Issue #917）
+  - 作った範囲の外の行へは、次のフレームでフォーカスする（案 B）（キーを押したフレームでは前の行にフォーカスが残り、押下と見た目が 1 フレームずれる。Avalonia 12.1.4 はその場で作って並べる（`src/Avalonia.Controls/VirtualizingStackPanel.cs` 635 行目の `ScrollIntoView` が、673・686・694 行目で layout の pass を回す）。同じ Grill）
+  - ツリーを、節ごとに子の一覧を入れ子にして作る（Avalonia 12.1.4 の TreeView の形で、`TreeViewItem` の子の入れ物は `StackPanel` なので仮想化しない（`src/Avalonia.Controls/TreeViewItem.cs` 59〜60・78 行目））（入れ子の一覧は仮想化できない。見えている節を 1 つの一覧に平らにする形だけが仮想化でき、Flutter 3.47.8 の `TreeSliver` もそうする（`packages/flutter/lib/src/widgets/sliver_tree.dart` 974 行目の `_SliverTree extends SliverVariedExtentList`）。同じ Grill）
+  - PropertyGrid を、型のプロパティをリフレクションで読んで作る（Windows Forms の `PropertyGrid` の形。NativeAOT で使えない（`aot.mdc`）。アプリが記述の一覧を渡す。同じ Grill）
+
+---
+
+## 編集できる表（行 DG1）
+
+Decision（Grill の 13 巡目、Issue #931）:
+  行は `IReadOnlySignal<IReadOnlyList<T>>` とキーの関数で受け、列は型付きの定義にし、描くだけの列も許す。並べ替えと絞り込みは表が持つ見え方で行い、元の一覧は並べ替えずに表示の順の索引だけを作る。アプリが自分で並べ替える上書きの口も持つ（案 c）。並べ替えは安定で、比べ方は列の型で決め、文字は Ordinal で比べる。
+
+Reason:
+  行の同一性はキーで持つ（`VirtualFor` と同じ。設計書 §3.4）。並べ替えと絞り込みはこの行の名前に入っている機能なので、表が持たなければアプリごとに書くことになる。zed v1.25.3 の表も、元のデータを並べ替えず、表示の行から元の行への対応 `DisplayToDataMapping` を作る（`crates/tabular_data_preview/src/table_data_engine.rs` 82 行目）。
+
+Rejected:
+  - 数とインデックスで行を引くデータ源（Flutter 3.47.8 の `DataTableSource` の `getRow(int index)` と `rowCount`、`packages/flutter/lib/src/material/data_table_source.dart` 50・64 行目）（キーを持たないので、行を足すと選択とフォーカスがずれる。P02e が番号で行を見分ける形を退けたのと同じ理由である。要るなら別の行にする。Grill の 13 巡目、Issue #931）
+  - 並べ替えと絞り込みをアプリに任せ、アプリが元の一覧を並べ替えて書き直す（案 a。Flutter 3.47.8 の `DataTable` は並べ替えの印と知らせだけを持つ（`packages/flutter/lib/src/material/data_table.dart` 32 行目の `DataColumnSortCallback`））（どのアプリも並べ替え・絞り込みを書き直すことになる。アプリが持ちたい時（サーバーで並べる時）は、上書きの口で渡す。同じ Grill）
+  - 安定でない並べ替え（.NET の `Array.Sort` と `List<T>.Sort` は安定でない）（同じ値の行が、見出しを押すたびに並びを変える。元の位置で順を決める。同じ Grill）
+  - 表示した文字で比べる（zed v1.25.3 は、セルの表示の文字をバイトの順で比べる（`crates/tabular_data_preview/src/table_data_engine/sorting_by_column.rs` 38〜41 行目））（数の列で「10」が「9」より前に来る。列の型の比べ方で比べる。同じ Grill）
+
+---
+
+## 文書とコードの表示、チャット（行 DV1・CT1）
+
+Decision（Grill の 13 巡目、Issue #931）:
+  DV1 の大きな文字は、固定の大きさの塊の rope で持ち、塊ごとの要約で行と UTF-16 の位置を引く。1 千〜1 千万文字で `string` と比べて測って確かめる。行 B9 の欄の公開の型は `Signal<string>` のまま。文書の表示は、ブロックの木の文書の形を持ち、最初の作り手を Markdown にする（案 b）。行 CT1 のメッセージと行 RT1 の編集も同じ形を使う。CT1 の古いメッセージは、アンカーを保つ前への追加で上に足す（案 a）。この形は行 P02e で `VirtualFor` に入っている。
+
+Reason:
+  zed v1.25.3 の `Rope`（`crates/rope/src/rope.rs` 26 行目）は、塊の大きさの上限を `MAX_BASE` で決め（`crates/rope/src/chunk.rs` 14・32 行目）、要約の `TextSummary` に UTF-16 の長さと行の数を持つ（`rope.rs` 1280〜1291 行目）。文書の形を 1 つにすれば、DV1・CT1・RT1 が同じ描き方と位置の扱いを使える。
+
+Rejected:
+  - 大きな文字も `string` 1 つで持つ（Flutter 3.47.8 の `TextEditingValue.text`（`packages/flutter/lib/src/services/text_input.dart` 1006 行目）と Avalonia 12.1.4 の `TextBox.Text`（`src/Avalonia.Controls/TextBox.cs` 635 行目）は `string`）（1 打ごとに文字全体を作り直し、行の位置も初めから数え直す。費用は 1 千万文字までで測って確かめる。Grill の 13 巡目、Issue #931）
+  - Markdown を、文書の形を通さずに直に要素にする（案 a。zed v1.25.3 は Markdown を、元の文字の範囲を付けた事象の平らな列 `ParsedMarkdown` に解析し（`crates/markdown/src/markdown.rs` 1489〜1491 行目）、そこから GPUI の要素を作る）（形が Markdown に結び付き、CT1 のメッセージや RT1 の編集、ほかの作り手が同じ形を使えない。同じ Grill）
+  - 上に足した時の位置を、アプリが自分で直す（案 c）（足した行の大きさが分かるのは layout の後なので、アプリが直すと 1 フレームずれる。文書の順と、Tab と a11y の順（§7.1）を正しく保つには、`VirtualFor` が基準の行をキーで追う必要がある。GPUI の `ListState::splice` も、基準の項目より上を入れ替えると基準の番号をずらす（zed v1.25.3 の `crates/gpui/src/elements/list.rs` 503・545〜546 行目）。同じ Grill）
+
+---
+
+## 文字の入力の部品（行 B9）
+
+Decision（Grill の 10 巡目、Issue #917）:
+  すべての編集を、Flutter の formatter の形の 1 つの公開の口に通す。変換中の文字には効かせない。フォームの枠は、任意の部品を包む `Field(label, control, help, error)` にする。
+
+Decision（Grill の 12 巡目、Issue #927）:
+  NumberBox の値は `Signal<double?>` にし、Enter とフォーカスが離れた時に確定し、解けない文字は残して Invalid にする。MaskedTextBox のマスクは自前の文法で読み、区切りの字は行 LC2 から取る。パスワードの欄は見せるボタンで切り替え、Caps Lock の警告は持たない。OTP の欄は、1 つの文字の欄に `MaxLength`・数字の formatter・枠の描画を載せる。
+
+Reason:
+  数値の欄・型のある欄・1 文字ずつの欄・トークンの欄は、どれも編集が欄に入る前に見る必要がある。前と後の値を受けて新しい値を返す形だけが、マスクの字の差し込みやキャレットの移動まで書ける（Flutter 3.47.8 の `TextInputFormatter.formatEditUpdate`、`packages/flutter/lib/src/services/text_formatter.dart` 108 行目）。
+
+Rejected:
+  - 部品ごとに入力の口を上書きする（Avalonia 12.1.4 の形。`MaskedTextBox` は打鍵を `OnTextInput`（`src/Avalonia.Controls/MaskedTextBox.cs` 363 行目）で、貼り付けを別にキーの処理（211 行目）で上書きし、`NumericUpDown` は打鍵を絞らず、確定の時に解析する（`src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 1176 行目）。部品ごとに打鍵・貼り付け・IME の確定・a11y の SetValue の道を作り直すことになり、1 つでも漏れると数値の欄に数字でない文字が入る。アプリが自分の欄（電話番号など）を作れない。Grill の 10 巡目、Issue #917）
+  - 欄の飾りの設定にラベル・補助の文・誤りを持たせる（Flutter 3.47.8 の `InputDecoration` の `labelText`・`helperText`・`errorText`、`packages/flutter/lib/src/material/input_decorator.dart` 3018・3110・3237 行目）（文字の欄にしか使えず、Select・Checkbox・Slider・NumberBox が同じ枠を使えない。同じ Grill）
+  - NumberBox の値を `decimal?` にする（Avalonia 12.1.4 の `NumericUpDown`、`src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 108 行目）（行 B2a のスライダーの値は `double` なので、同じ値を 2 つの部品に渡すたびに型を変えることになる。Grill の 12 巡目、Issue #927）
+  - NumberBox の値を数の型の総称にする（zed v1.25.3 の `NumberField<T: NumberFieldType>`、`crates/settings_ui/src/components/number_field.rs` 28・258 行目）（値の型ごとに NativeAOT がコードを作るので、実行ファイルが大きくなる（`aot.mdc`）。この案に戻る時は、その前に NativeAOT のサンプルの大きさを測る。同じ Grill）
+  - MaskedTextBox を、BCL の `MaskedTextProvider` を包んで作る（Avalonia 12.1.4 の形。`src/Avalonia.Controls/MaskedTextBox.cs` 304 行目で、`Culture`（既定は `CultureInfo.CurrentCulture`、18〜19 行目）を渡して作る）（XylemUI のアプリは `InvariantGlobalization` で動かせる（設計書 §0.1）。その下ではカルチャが不変のカルチャになり、ロケールの区切りを出せない。区切りは行 LC2 の CLDR の表から取る。NativeAOT で警告が出ないかも確かめていない。同じ Grill）
+  - パスワードの欄に Caps Lock の警告を持つ（比べた 3 つとも持たない。Avalonia 12.1.4 の `src/Avalonia.Controls` と Fluent のテーマ、zed v1.25.3 の `crates/ui_input` と `crates/ui/src` に Caps Lock の語が無く、Flutter 3.47.8 の `material` と `widgets` にはアイコンの名前しかない）（持つには、Core と Platform にロックキーの状態を読む口が要る。今の `Key.CapsLock` はキーの名前で、状態は読めない。同じ Grill）
+  - OTP の欄を、1 文字の欄を N 個並べて作る（案 ii）（貼り付けた符号を部品が N 個の欄に分ける必要があり、a11y の節も IME のクライアントも N 個になる。同じ Grill）
+
+---
+
+## 日付と時刻の部品（行 B12）
+
+Decision（Grill の 13 巡目、Issue #931）:
+  値の型は、日付が `DateOnly`、時刻が `TimeOnly`、日付と時刻の欄が `Kind` の `Unspecified` な `DateTime`（壁時計の時刻）、範囲が `DateRange`（両端を含む）である。月の格子は常に 6 週を出す。Calendar は月・年・10 年の 3 つの表示と、1 日・範囲・飛び飛びの複数の日・なしの選択のモードを持つ。格子の矢印はフォーカスだけを動かし、a11y は役 Grid・Row・GridCell・ColumnHeader で出す。DatePicker と TimePicker はポップアップの中の回る列にし、書式は行 LC2 のスケルトンで書く。打った日付は Enter とフォーカスが離れた時に解析し、解けない日・範囲の外の日・使えない日を Invalid にする。
+
+Reason:
+  時間帯を持たない型なら、日付の部品に夏時間の曖昧さが入らない。行と列の位置は、格子の役でしか支援技術に伝わらない。XylemUI のアプリは `InvariantGlobalization` で動かせる（設計書 §0.1）。
+
+Rejected:
+  - 部品ごとに値の型を変える（Avalonia 12.1.4 は、`Calendar` が `DateTime?`（`src/Avalonia.Controls/Calendar/Calendar.cs` 531〜532 行目）、`DatePicker` が `DateTimeOffset?`（`DateTimePickers/DatePicker.cs` 96〜97 行目）、`TimePicker` が `TimeSpan?`（`DateTimePickers/TimePicker.cs` 76〜77 行目））（同じ日付を部品から部品へ渡すたびに型を変えることになり、`DateTimeOffset` は時間帯の差を持ち込む。Grill の 13 巡目、Issue #931）
+  - 月の格子の週の数を月ごとに変える（Flutter 3.47.8 は月の日だけを並べ、1 日より前は空の箱にし（`packages/flutter/lib/src/material/calendar_date_picker.dart` 1134〜1137 行目）、高さだけを 6 週分に取る（39 行目の `_maxDayPickerRowCount`））（月の外の日を見せられず、格子の行の数が月ごとに変わる。Avalonia 12.1.4 は、曜日の見出しと 6 週の 7 行を常に持つ（`Calendar.cs` 231〜232 行目）。同じ Grill）
+  - 日と年の 2 つの表示にする（Flutter 3.47.8 の `DatePickerMode` は `day` と `year` だけで（`packages/flutter/lib/src/material/date.dart` 432〜438 行目）、年を選ぶと日の表示に戻る（`calendar_date_picker.dart` 296〜318 行目））（月を選ぶ表示が無く、遠い月へは、年を選んだ後に 1 か月ずつ動くことになる。Avalonia 12.1.4 の `CalendarMode` は月・年・10 年の 3 つである（`Calendar.cs` 23〜42 行目）。同じ Grill）
+  - 格子を、選べるボタンの一覧として a11y に出す（Avalonia 12.1.4 は日のボタンを `ButtonAutomationPeer` にし（`src/Avalonia.Controls/Automation/Peers/CalendarDayButtonAutomationPeer.cs` 9 行目）、Flutter 3.47.8 は日ごとに `button` と `selected` の意味の節を作る（`calendar_date_picker.dart` 1288〜1302 行目））（行と列の位置を伝えないので、読み上げで何曜日の列か、何週目かが分からない。同じ Grill）
+  - 列の書式を .NET の書式の文字列で受ける（Avalonia 12.1.4 の `DayFormat` は既定が `"%d"`（`DatePicker.cs` 33〜34 行目））（`InvariantGlobalization` の下では、書式は不変のカルチャになり、ロケールの月の名前や数字を出せない。行 LC2 のスケルトンで書く。同じ Grill）
+  - 範囲の外の日や使えない日を、打った後に範囲の中へ丸める（打った値と違う日が黙って入り、利用者が誤りに気づかない。Flutter 3.47.8 の `InputDatePickerFormField` も、範囲の外の日を誤りの文で知らせる（`packages/flutter/lib/src/material/input_date_picker_form_field.dart` 219〜234 行目）。同じ Grill）
+
+---
+
+## ナビゲーション・知らせ・ダイアログ・メニューの部品（行 B5〜B8）
+
+Decision（Grill の 11 巡目、Issue #918）:
+  NavigationView は表示のモードを持つ 1 つの部品にし、ページの積み重ねは別の行 NS1 にする。窓の中の通知は 1 つずつ出す。ProgressBar と ProgressRing は 1 つの Primitive、Meter は別の Primitive にする。ダイアログのボタンは種類を知って OS ごとの順に並べる。Drawer はモーダルの重ねるパネルだけにする。ホバーで出るカードは Flyout のフォーカスを取らない形にする。Overflow は layout の同じパスで収まらない最初の項目を決める。
+
+Decision（Grill の 12 巡目、Issue #927）:
+  CommandBar の項目は、動作とコールバックの両方の形で受け、主と副を分ける。コマンドパレットは、登録された動作を `CanDispatch(action, from)` で絞り、題名は行 LC3 の辞書から読み、あいまい検索は自前で書いて 1 打ごとの割り当てを 0 にする。絵文字の選択は、Unicode と CLDR のデータを同梱する自前の部品にする。
+
+Rejected:
+  - NavigationView を、横に細く並べる部品と引き出しの部品の 2 つにする（Flutter 3.47.8 の `NavigationRail`（`packages/flutter/lib/src/material/navigation_rail.dart` 68 行目）と `NavigationDrawer`（`material/navigation_drawer.dart` 54 行目）の形）（窓の幅で表示を切り替えるアプリが、選択と項目を 2 つの部品に渡し直す。1 つの部品の表示のモードにすれば、選択と項目は 1 つのまま。Grill の 11 巡目、Issue #918）
+  - ページの積み重ねを NavigationView に入れる（項目を選ぶナビゲーションと、戻るボタンの履歴という 2 つの機能が 1 つの部品に混ざる。Flutter 3.47.8 の `Navigator`（`packages/flutter/lib/src/widgets/navigator.dart` 1583 行目）と Avalonia 12.1.4 の `NavigationPage`（`src/Avalonia.Controls/Page/NavigationPage.cs` 38 行目）も、ナビゲーションの部品とは別の型である。同じ Grill）
+  - 通知を既定で 5 個まで積む（Avalonia 12.1.4 の `WindowNotificationManager.MaxItems` の既定 5、`src/Avalonia.Controls/Notifications/WindowNotificationManager.cs` 46 行目）（Flutter 3.47.8 の SnackBar は待ち行列で 1 つずつ出し（`packages/flutter/lib/src/material/scaffold.dart` 198〜199 行目）、zed v1.25.3 の `ToastLayer` も 1 つだけを持つ（`crates/workspace/src/toast_layer.rs` 99 行目）。同じ Grill）
+  - ProgressBar と ProgressRing を 2 つの Primitive にする（値と不定の振る舞いと a11y は同じで、違うのは見た目だけである。Flutter 3.47.8 も `LinearProgressIndicator` と `CircularProgressIndicator` に共通の基底 `ProgressIndicator` を持つ（`packages/flutter/lib/src/material/progress_indicator.dart` 49・414・863 行目）。同じ Grill）
+  - 進み具合と Meter を 1 つの Primitive にする（APG は、作業の進み（progressbar）と、範囲の中の測った値（meter）を別の役にする。役が違うので a11y が分かれる。同じ Grill）
+  - ダイアログのボタンの順をアプリに任せる（Flutter 3.47.8 の `AlertDialog` は、ボタンを `OverflowBar` で末尾に寄せるだけで（`packages/flutter/lib/src/material/dialog.dart` 890〜891 行目）、順はアプリが書いた順になる。OS ごとに肯定と取り消しの位置が違うので、アプリごとに OS を見て並べ替えることになる。同じ Grill）
+  - Drawer に、場所を取る横のパネルの形も持たせる（場所を取る横のパネルは、行 B3 の SplitView と行 B5 の NavigationView の細い形がすでに持つ。同じ機能を 2 か所に置かない（§13.1「同じ機能は 1 つに数える」）。Flutter 3.47.8 の `Drawer` は、重ねて出し、後ろの読み上げを止め（`packages/flutter/lib/src/material/drawer.dart` 708 行目の `BlockSemantics`）、フォーカスのスコープを持つ（727 行目）。同じ Grill）
+  - ホバーで出るカードを Tooltip の一種にする（Tooltip はフォーカスでは出さない（§13.1）。カードは中に操作を持てるので、キーボードの利用者も開けて、中へフォーカスを入れられる必要がある（WCAG 2.2 の 1.4.13）。zed v1.25.3 の GPUI の `hoverable_tooltip` は、隠すまで 500 ms 待つ（`crates/gpui/src/elements/div.rs` 54 行目の `HOVERABLE_TOOLTIP_HIDE_DELAY`）。同じ Grill）
+  - Overflow を、項目の幅を固定の値で見積もって決める（Avalonia 12.1.4 の `CommandBar` は、ラベルの位置ごとの固定の幅（既定 70・102・42、`src/Avalonia.Controls/CommandBar/CommandBar.cs` 76〜89 行目）に項目の数を掛けて比べる（683〜699 行目）。訳した文言で幅が変わる項目で誤る。同じ Grill）
+  - Overflow を、layout の後に収まらない位置をシグナルへ書いて決める（案 b）（書いた後に 2 回目の layout が要る。Flutter 3.47.8 の text selection toolbar は、子を順に測りながら収まらない最初の位置を同じ layout で決める（`packages/flutter/lib/src/material/text_selection_toolbar.dart` 430・442・499〜500 行目）。案 a と案 b の差は、20 項目のツールバーで窓の大きさを変えるフレームで測って確かめる。同じ Grill）
+  - CommandBar に副の項目を持たせず、すべてを主の項目にして、収まらない分だけをメニューへ逃がす（副の項目は窓の幅によらずメニューに入る。分けないと、アプリはあまり使わない操作を常にメニューに置けない。Avalonia 12.1.4 の `CommandBar` も `PrimaryCommands` と `SecondaryCommands` を分けて持つ（`src/Avalonia.Controls/CommandBar/CommandBar.cs` 28〜35 行目）。Grill の 12 巡目、Issue #927）
+  - コマンドパレットのあいまい検索に、外のライブラリを使う（zed v1.25.3 は、外の crate `nucleo` を包む自分の crate の `fuzzy_nucleo::match_strings_async` を使う（`crates/command_palette/src/command_palette.rs` 618〜620 行目、`crates/fuzzy_nucleo/Cargo.toml` 17 行目））（パレットへの打鍵はフレームの経路なので、照合の時間と割り当てを XylemUI が制御できる必要がある（`dependencies.mdc` の 3、`perf.mdc`）。500 個の動作で 1 打の時間と割り当てを測る。同じ Grill）
+  - 1 打ごとに照合の候補の一覧を作り直す（zed v1.25.3 は、打つたびに候補の `Vec` を作る（`command_palette.rs` 612〜615 行目））（フレームの経路で割り当てる。候補は開いた時に 1 回だけ作り、1 打では割り当てない。同じ Grill）
+  - 絵文字の選択を、OS の絵文字のパネルを開くだけにする（zed v1.25.3 の GPUI は OS の文字の一覧を開く口 `show_character_palette` を持ち、既定は何もしない（`crates/gpui/src/platform.rs` 1299 行目）。実装は macOS にだけある（`crates/gpui_macos/src/window.rs` 1935 行目））（開けるかが OS ごとに変わり、検索の名前を行 LC4 の言語でそろえられない。同じ Grill）
 
 ---
 
@@ -955,6 +1141,27 @@ Rejected:
   - theme designer の計算をそのまま使う（明度は `colors/hueMap.ts` の色相ごとの表）。測った青で、明度が L\* 0.9〜86.0 になり、`#292929` の上の暗の `colorBrandForeground1`（`brand[100]`）が 3.75 だった。theme designer 自身はこのトークンを `brand[110]` に替えるが（`utils/getOverridableTokenBrandColors.ts` 70〜75 行目）、それでも 4.48 で、固定したトークンの対応とも違う。段 160 も `brandWeb` の L\* 95.4 より暗い。同じ Grill
   - 制御点を theme designer の画面の既定（Vibrancy 0、つまり 0 と 0）にする。キーを `brandWeb` の段 80 にすると、キーより明るい段の彩度が早く落ちる。`brandWeb` との色差は最大 ΔE 18.7 で、2/3 と 1/3 の 10.9 より大きい。同じ Grill
 
+Decision（テーマが使える見た目の API、行 B11。Grill の 12 巡目、Issue #927）:
+  余白（margin）、絶対の位置と inset、並びの逆順、揃え、最小と最大の大きさを、公開の要素のメソッドにする（案 a）。
+
+Reason:
+  重ねたアバターと在席の印は、テーマだけに置く見た目の部品で（§13.1）、これらの API が要る。zed v1.25.3 は、重ねたアバターを並びの逆順と負の余白で重ね（`crates/ui/src/components/facepile.rs` 70・78 行目）、在席の印を角に絶対の位置で置く（`crates/ui/src/components/avatar.rs` 232〜234 行目）。今の公開の要素のメソッドには、どれも無い。
+
+Rejected:
+  - Theme.Fluent にだけ Core の内部を見せる（案 b）（ほかのテーマが同じ部品を作れない。見た目はテーマかアプリが被せる（§13.1）。今、Core が内部を見せているのは `XylemUI.Primitives` と `XylemUI.Theme.Fluent.Tests` で、`XylemUI.Theme.Fluent` には見せていない（`src/XylemUI.Core/XylemUI.Core.csproj` 74・78 行目）。Grill の 12 巡目、Issue #927）
+
+Decision（チップの持ち主、行 B11。Grill の 13 巡目、Issue #931）:
+  B11 のチップは見た目だけにする。絞り込みのチップは行 B1 の ToggleButton と SegmentedButton の見た目、消せるチップは行 B9 のトークンの欄、押せるカードは行 B1 の Button に被せる見た目、重ねたアバターの「+N」で一覧を開く形は行 B7 の Flyout を使う Primitive にする。
+
+Reason:
+  振る舞いを持つ形は、その振る舞いを持つ行に置く（§13.1「同じ機能は 1 つに数える」）。zed v1.25.3 の `Chip` も、押す口を持たない見た目だけの部品である（`crates/ui/src/components/chip.rs` 14〜25 行目）。
+
+Decision（チャートの置き場、行 CH1。Grill の 13 巡目、Issue #931）:
+  チャートは、ほかの部品と同じく Primitives とテーマに置く。ゲージは行 B6 の Meter の見た目、スパークラインは行 B6 の「数値の強調」と同じくテーマだけの部品にする。
+
+Rejected:
+  - チャートを別のアセンブリにする（案 a）（使わないコードは NativeAOT が落とすので、実行ファイルの大きさの理由が弱い。別にするなら、その前に Gallery の実行ファイルで大きさを測る。Grill の 13 巡目、Issue #931）
+
 ---
 
 ## アクセシビリティ（UIA）
@@ -1046,6 +1253,19 @@ Rejected:
 
 ---
 
+## 右から左のレイアウト（行 P03b）
+
+Decision（Grill の 13 巡目、Issue #931）:
+  右から左の向きは layout が解く（案 a）。Flex の主軸、論理の端、揃え、スクロールバーの側を向きで反転させ、文字と画像は映さない。
+
+Reason:
+  Flutter 3.47.8 は、右から左の時に Flex の主軸を反転させ（`packages/flutter/lib/src/rendering/flex.dart` 855〜866 行目の `_flipMainAxis`）、Taffy 0.15.1 も layout で向きを解く（`src/compute/flexbox.rs` 753〜760 行目）。XylemUI の layout は Chrome の結果を基準にしており（設計書 §3.2「Block / Flex の意味」）、Taffy の XML テストの右から左の期待値をそのまま合否に使える。
+
+Rejected:
+  - 描く時に部分木を −1 の変形で映し、文字と画像を外す（案 b。Avalonia 12.1.4 は向きの違う部分木に `new Matrix(-1.0, 0.0, 0.0, 1.0, visual.Bounds.Width, 0)` を積み（`src/Avalonia.Base/Rendering/ImmediateRenderer.cs` 56 行目、`src/Avalonia.Base/Visual.cs` 797〜818 行目）、`TextBlock` と `Image` は `BypassFlowDirectionPolicies` で外れる（`src/Avalonia.Controls/TextBlock.cs` 383 行目、`Image.cs` 90 行目））（layout が左から右のままなので、Chrome の右から左の期待値を合否の基準に使えない。文字・画像・描く関数ごとに外す印が要り、ヒットテストも反転させる必要がある。Grill の 13 巡目、Issue #931）
+
+---
+
 ## 画像とアイコン
 
 Decision:
@@ -1126,6 +1346,9 @@ Decision（K2 の Grill、Issue #805）:
   動作のハンドラはフォーカスから根へたどる。順はキーマップ、キーのハンドラ、文字の入力。
   K1 の既定のキー（Tab・Enter と Space・Esc・スクロール・欄の編集）を、既定のキーマップと動作に載せ直す。
 
+Decision（行 K3、Grill の 12 巡目、Issue #927）:
+  ショートカットの入力のために、フォーカスしたノードがキーを生で受ける「捕まえる」モードを Core に足す。モードの間は、キーマップ、アクセスキー、Alt のメニューバーを飛ばす。
+
 Reason:
   名前があると、利用者が書き換えられるキーマップと、メニューやツールチップへのキーの表示を、同じ表から出せる（GPUI）。
   既定のキーを表に置くと、アプリが差し替えられる（Flutter）。
@@ -1144,6 +1367,7 @@ Rejected:
   - メニューのキーの表示と有効・無効を、アプリが項目ごとに渡す（表示と割り当てが食い違う。項目は動作を指す。KM2 の Grill）
   - 文字の欄が、Space と Enter を止める割り当てを自分で持つ（Flutter。利用者が素の文字のキーを割り当てると、欄ごとに止める行が要る。文字を受ける欄では文字になるキーを先に文字の入力へ送る規則にした。KM1b の Grill）
   - 引数のある動作を、アプリが起動時に 1 つずつ登録する関数で作る（書き忘れが実行時まで見つからない。Source Generator がプロパティごとの設定を生成する。KM1b の Grill）
+  - ショートカットの入力の部品が、自分の文脈の行で全部のキーを記録の動作に割り当てる（Alt だけの押下とアクセスキーを記録できない。Grill の問いはこれを zed の形としたが、zed v1.25.3 の `KeystrokeInput` は、動作を配る前に呼ばれる横取りの口 `intercept_keystrokes`（`crates/gpui/src/app.rs` 2579〜2583 行目）を中の要素にフォーカスがある間だけ付けて記録し（`crates/keymap_editor/src/ui_components/keystroke_input.rs` 343〜350 行目）、文脈の行（`assets/keymaps/default-windows.json` 1456〜1461 行目）は記録を始める・止める・消す動作にだけ使う。捕まえるモードは、この横取りの口と同じ役をする。Grill の 12 巡目、Issue #927）
 
 ---
 
@@ -1167,6 +1391,16 @@ Rejected:
   - XylemUI のデバイスをアプリに貸す（レンダラの外に GPU の型が出て、デバイスの作り直しでアプリの資源が無効になる。Flutter が公開するのもアダプタだけである。費用は測っていないので、行 XS1 の spike が予算に収まらなければ諮り直す）
   - 同期なしで共有テクスチャを読む（Flutter の形。アプリが描いている途中のテクスチャを読むことを防げない）
   - 同期をキー付きミューテックスの 1 種類に固定した契約にする（D3D12 と Vulkan のアプリが、共有のフェンスやセマフォを足せなくなる。種別つきにして、後の行で足す。PR #804 のレビュー）
+
+Decision（行 XS1、Grill の 13 巡目、Issue #931）:
+  アプリは共有ハンドルを 1 回取り込み、フレームごとに「更新」を呼んで、毎フレーム割り当てない完了の知らせを受ける（案 b）。「更新」は、どのスレッドからも呼べる 2 つ目の公開の口になる。外部サーフェスは既定で役 Image、アプリが指定した時だけ役 Pane でフォーカスを取る。フレームに合わせた口は、登録の間ずっと回す形と 1 回だけの形の両方を持つ。窓が隠れたことは、UI スレッドのシグナルと、描くスレッドが読めるスレッド安全な値で伝える。
+
+Reason:
+  Avalonia 12.1.4 は、取り込み（`ICompositionGpuInterop.ImportImage`、`src/Avalonia.Base/Rendering/Composition/CompositionExternalMemory.cs` 32〜33 行目）と、フレームごとの更新（`UpdateWithKeyedMutexAsync`、`CompositionDrawingSurface.cs` 15〜26 行目。返す `Task` は、アプリが画像を捨ててよくなった時に終わる）を分ける。この形なら、UI のフレームはアプリのコードを呼ばない。
+
+Rejected:
+  - 描く時にアプリのコールバックを呼んでテクスチャを受け取る（案 a。Flutter の Windows の GPU サーフェスは、描く時に望む大きさを渡してアプリのコールバックを呼ぶ（`engine/src/flutter/shell/platform/common/public/flutter_texture_registrar.h` 120〜127 行目））（XylemUI では描くのは UI スレッドなので、アプリのコールバックの時間と割り当てが UI のフレームに入り、XylemUI が測れない。コールバックが待つと「UI のフレームはアプリを待たない」（設計書 §5.0.5）と食い違う。Grill の 13 巡目、Issue #931）
+  - 完了の知らせを更新ごとの `Task` で返す（Avalonia の形）（毎フレーム割り当てる（`perf.mdc`）。プールしたコールバックか世代の数にする。同じ Grill）
 
 ---
 
