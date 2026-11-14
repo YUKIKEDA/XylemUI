@@ -22,8 +22,10 @@ public sealed class UiThreadFixture
 /// <summary>
 /// The tests that share the UI thread; they run one after another.
 /// </summary>
+#pragma warning disable xUnit1073 // Every test project links this file, and some have no test on the UI thread yet.
 [CollectionDefinition(Name)]
 public sealed class UiThreadGroup : ICollectionFixture<UiThreadFixture>
+#pragma warning restore xUnit1073
 {
     /// <summary>
     /// The collection's name.

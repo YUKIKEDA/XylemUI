@@ -580,6 +580,46 @@ Rejected:
 
 ---
 
+## 複数ウィンドウ
+
+Decision（行 MW1。Grill の 8 巡目でオーナーが決定、Issue #914。設計書 §6.0.1）:
+  一番上の窓の根の Scope は 1 つのアプリの根の Scope の子、持ち主のある窓の根は開いた側の Scope の子。アプリの `Provide` はアプリの根、ロケールと OS の見た目は窓の根。
+  Q25 が持ち主のある窓に並べた 3 つは、Scope の親の規則に従うが、作り方が違う。浮いたパネルは `Window` の要素（自分の窓の核と木を持つ）、窓のポップアップは行 P10 で持ち主の木の中の根、ダイアログを窓に出すかは行 B7 の問い（設計書 §6.0.1）。
+  D3D11 のシェーダと状態はデバイスの共有の物に置き、2 つ目の窓でコンパイルしない。窓ごとの時計は、窓ごとのタイマーと 50 ms の期限を持ち、ループは最も早い期限で待つ（PR #921 のレビュー）。
+  D3D11 のデバイスはプロセスに 1 つ、スワップチェーンは窓ごと。グリフアトラスの共有は測ってから決める。
+  一番上の窓は `XylemApp.OpenWindow` が返す `WindowHandle`（`Close`・取り消せる `Closing`・`Closed`）、持ち主のある窓は宣言する要素 `Window(Signal<bool> isOpen, …)`。持ち主を閉じると持ち主のある窓を先に閉じる。UI スレッドだけから呼ぶ。
+  終わり方はモード（最後の窓・明示だけ）で、既定は macOS で明示、ほかで最後の窓。
+  別の窓に出したポップアップの節は持ち主の窓の AccessKit の木に入れる。DD1 のドラッグはアプリの段に移す。`HeadlessApp` は窓の一覧、開く・閉じる、窓の間のフォーカスを持つ。
+  設計の PR で（PR #921 でオーナーが決定）: 持ち主のある窓はロケールと OS の見た目を受け継ぐ。アプリの根の値は始まりの関数の中の `XylemApp.Provide`。`Run` の外の `OpenWindow` は投げる。時計は窓ごと。`Quit` は全部か無しか。アプリの段の動作は `XylemApp.OnAction`。モーダルの窓は行 B7、OS の終了は行 D6 の問い。開く時の位置と状態を持つ。持ち主のある窓の閉じる問いは `OwnedWindowOptions.Closing`。
+
+Reason:
+  別ウィンドウのポップアップは開いた側の Context を引く（設計書 §7.3 の Q1、§2.13「ポップアップの中身は、宣言した場所の値を引く」）。窓を独立させると、この約束が窓のポップアップで破れる。
+  ハンドラの中から開いた一番上の窓の根を、そのハンドラの Scope の子にすると、ハンドラを登録した部分が作り直されたときに窓まで消える。アプリの根の子にすれば、どこから開いても同じ寿命になる。
+  GPUI（`globals_by_type`、zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目）と Avalonia（`Application` の資源）は、アプリ全体の値の置き場を持つ。
+  GPUI はデバイスをプラットフォームに 1 つ持つ（`crates/gpui_windows/src/platform.rs` 100・319 行目）。2 つ目の窓を開く時に、もう 1 度シェーダのコンパイル（行 C0 までは実行時に約 0.6 秒）を払わないことが要件である。今の `D3D11Renderer` は、シェーダ・入力の並び・サンプラー・ブレンドの状態をレンダラごとに作る（`src/XylemUI.Rendering.D3D11/D3D11Renderer.cs` 181〜198 行目）ので、デバイスを共有するだけでは足りず、これらをデバイスに 1 つの `D3D11DeviceResources` に移す（PR #921 のレビュー）。共有できるのは、同じデバイスの子だからである。
+  macOS のアプリは窓が無くても動き続けるのが習わしで、GPUI の `QuitMode`（`app.rs` 457〜466 行目）と Avalonia の `ShutdownMode` はモードで選ぶ。
+  フォーカスを取らないポップアップの窓に adapter を持たせると、その窓はフォーカスのイベントを出せず、メニューを動いても Narrator が黙る。Avalonia はポップアップの根の peer を `Popup` の peer の子にする（12.1.4 の `src/Avalonia.Controls/Automation/Peers/PopupAutomationPeer.cs` 18〜22 行目）。
+  ドッキング（行 DK1）でパネルを別の窓へ動かすには、窓をまたぐドラッグが要る。GPUI の `active_drag` はアプリの段にある（`app.rs` 822 行目）。
+
+Rejected:
+  - 一番上の窓も持ち主のある窓も、根の Scope を独立させる（Q25 の案 a。窓のポップアップが開いた側の Context を失い、§7.3 の Q1 と食い違う。アプリ全体の値を置く所が無く、アプリの中の言語の切り替えを窓ごとの根の関数に配ることになる）
+  - 一番上の窓も宣言する要素だけで開く（Q27 の案 b。Flutter の実験の `RegularWindow`、`packages/flutter/lib/src/widgets/_window.dart` 1551 行目の形。一番上の窓は開いた側より長く生きることが多く、要素の持ち主の Scope に寿命を縛ると、開いた部分を閉じた時に窓も消える）
+  - 持ち主のある窓も命令で開く（Q27 の案 a だけ。Avalonia の `Window.Show(owner)`、`src/Avalonia.Controls/Window.cs` 939 行目の形。開閉を Signal で持つ `Popup` と `Dialog` の形と揃わず、開いた側の Scope が破棄された時に閉じる仕組みをアプリが書くことになる）
+  - 別の窓に出したポップアップごとに AccessKit の adapter と木を持つ（Q29 の案 b。Flutter 3.47.8 はビューごとに a11y の橋を持つ（`engine/src/flutter/shell/platform/windows/flutter_windows_view.h` 511 行目）。フォーカスを取らない窓はフォーカスのイベントを出せず、メニューを動いても読み上げない）
+  - 持ち主のある窓の根で、ロケールと OS の見た目を置き直す（MW1-a。PR #921 でオーナーが決定。部分木を `Localization.Provide` で包んだ所から開いたダイアログが、その部分木でなく窓のロケールで出て、同じ所から開いたポップアップ（§2.13「ポップアップの中身は、宣言した場所の値を引く」）と食い違う）
+  - アプリの根に値を置く口を、ほかの形にする（MW1-b。同じ PR）: `Context<T>.Provide(T, Action)` の多重定義で始まりの関数を包む（値はその Provide の Scope に置かれ、後でハンドラから開いた一番上の窓の根はアプリの根の子なので、その値を引けない）、いつでも呼べる文の形の `Provide`（Context の値は Scope を作る時に親のリストの頭を写すので、先に開いた窓に届かず、書く順で結果が変わる。§2.13 が文の形を退けた理由と同じ）、`AppOptions` に値の一覧を持たせる（鍵ごとに型の違う値を 1 つの一覧に入れるには箱に入れる型が要り、`Context<T>` と値の型の一致をコンパイラが確かめない）
+  - `XylemApp.Run` の前の `OpenWindow` を許す（MW1-c。同じ PR。Avalonia はライフタイムを作る前の `Window.Show` を許す。XylemUI では、走る前の窓にはフレームの時計もディスパッチャ（§2.12）も無く、アプリの根の Scope もまだ無い。GPUI も `Application::run` のコールバックの中でだけ窓を開ける）
+  - すべての窓を 1 つの時計で回す（MW1-d。同じ PR。GPUI の `DwmFlush` のスレッド（zed v1.25.3 の `crates/gpui_windows/src/vsync.rs` 30〜59 行目）、Flutter のエンジンの vsync、Avalonia の描く時計（`Win32Platform.cs` 88 行目）の形。設計書 §2.11 の「遅く描き始めるフレーム」は、Present から表示までと入力から表示までを縮めるために、窓のスワップチェーンのフレーム統計（`GetFrameStatistics` の `SyncQPCTime` と `SyncRefreshCount`）から次のリフレッシュの時刻を求め、その 4 ms 前まで待つ。主ディスプレイの時刻を返す `DwmGetCompositionTimingInfo` は、測る機械で 59 Hz の仮想モニタの時刻になり、60 Hz のパネルの上の窓と合わず、取りこぼしが 590 フレームで 87〜276 回に増えたので退けた。1 つの時計では、リフレッシュレートの違うモニタの窓の 1 つでこの測った契約が守れない。`DwmFlush` で待つ GPUI の時計も、主ディスプレイの合成の時計である）
+  - `XylemApp.Quit` で、取り消さなかった窓から閉じる（MW1-e。同じ PR。Avalonia の `TryShutdown`、`ClassicDesktopStyleApplicationLifetime.cs` 201〜211 行目は、取り消さなかった窓を順に閉じ、1 つでも残れば終わりを取り消す。利用者には、終わらないまま一部の窓だけが消えたアプリが残る）、窓に聞かずに終える（GPUI の `quit`、`crates/gpui/src/app.rs` 1231〜1233 行目。保存していない文書の窓が、問いを出せずに消える）
+  - アプリの段の動作のハンドラを持たない（MW1-f。同じ PR。どの窓でも効くショートカットを、アプリが窓ごとの根に同じハンドラで付けることになり、付け忘れた窓、たとえば持ち主のある窓で効かない。GPUI は `cx.on_action` を持つ、`app.rs` 2621〜2635 行目）
+  - 窓の位置と状態を `WindowOptions` に持たない（MW1-h。同じ PR。行 DK1 の浮いた窓を、前の位置と最大化の状態で開き直せない。持ち主のある窓を持ち主の上に出せない。GPUI の `WindowOptions.window_bounds`（`crates/gpui/src/platform.rs` 2491〜2495 行目）と Avalonia の `Window.Position`・`WindowState`（`Window.cs` 533・435 行目）は持つ）
+  - 窓の位置を論理画素の画面の座標で持つ（GPUI の `Bounds<Pixels>` の形。倍率の違うモニタが並ぶと、論理画素の画面の座標は 1 つに決まらない。Avalonia の `Window.Position` は物理画素の `PixelPoint`、`Window.cs` 533 行目。PR #921 でオーナーが決定）
+  - 開いた後の位置と状態を読む口を持たない（行 DK1 が浮いた窓の位置を次の起動で戻せない。同じ PR）、全画面を状態に入れない（GPUI の `WindowBounds::Fullscreen` と Avalonia の `WindowState.FullScreen` は持ち、持たないとアプリが Win32 を直に呼ぶ。同じ PR）
+  - `XylemApp.OnAction` に `can` を持たせない（メニューとコマンドパレットが、アプリの段の動作を今受けられるかを問えず、受けられない動作の項目が Enabled に見える。行 B1 の `OnActionsOf<T>` は `can` を持つ。同じ PR）
+  - 持ち主のある窓の閉じる問いを、窓のハンドルのイベントで受ける（MW1-i。同じ PR。持ち主のある窓は宣言する要素で開き、アプリは `WindowHandle` を持たないので、イベントを付ける相手が無い。`Window` の要素からハンドルを返すと、宣言の形と命令の形が混ざる）
+
+---
+
 ## 開発者向け API
 
 Decision:
@@ -1140,6 +1180,22 @@ Rejected:
   - OS の 7 色を折れ線の点にし、各段の明度だけを `brandWeb` に揃える。対比は守られ、測った青では 4 組とも 0.1 以内で `brandWeb` と同じだった。一方で、`SystemAppearance.Accent` と `FluentTheme.Create` の `accent` を 7 色の値に変える必要がある。1 色しか返さない macOS と Linux では別の規則が要り、同じアクセントの色が OS ごとに違って見える（設計書 §13.2 の「全OSで同じ見た目」）。同じ Grill
   - theme designer の計算をそのまま使う（明度は `colors/hueMap.ts` の色相ごとの表）。測った青で、明度が L\* 0.9〜86.0 になり、`#292929` の上の暗の `colorBrandForeground1`（`brand[100]`）が 3.75 だった。theme designer 自身はこのトークンを `brand[110]` に替えるが（`utils/getOverridableTokenBrandColors.ts` 70〜75 行目）、それでも 4.48 で、固定したトークンの対応とも違う。段 160 も `brandWeb` の L\* 95.4 より暗い。同じ Grill
   - 制御点を theme designer の画面の既定（Vibrancy 0、つまり 0 と 0）にする。キーを `brandWeb` の段 80 にすると、キーより明るい段の彩度が早く落ちる。`brandWeb` との色差は最大 ΔE 18.7 で、2/3 と 1/3 の 10.9 より大きい。同じ Grill
+
+Decision（入れ物の組の前半、行 B3。Grill の 8 巡目でオーナーが決定、Issue #914）:
+  Viewbox は Core の要素（変形と layout のノード）、Stack と Switcher は B3 の Primitives。
+  SplitView の大きさは区画ごとの重みと、区画ごとの「窓の大きさが変わっても画素で保つ」印で持つ。
+  Tabs の選択はキーの付いた一覧と `Signal<TKey>` で持ち、何も選ばない状態を持たない。選ばれたタブを閉じた後は、次、無ければ前のタブを既定にし、閉じる操作は要求として出す。
+
+Reason:
+  D14 は「比率を保つ枠」と「重ねる入れ物」を、レイアウトの道具として部品に数えなかった（上の「出す部品の範囲」の Rejected）。Viewbox は中身を縮める変形で、比率を保つだけの枠とは違う。Stack と Switcher は、どれを見せるかの選択と a11y を持ち、重ねるだけの入れ物と違う。
+  重みだけでは、横の道具の区画が窓の大きさに合わせて伸び縮みする。GtkPaned は `resize-start-child` で、窓に合わせて変わる区画を選ばせる。
+  UIA の Tab の制御の種類は選択が必須で（Microsoft Learn の「Tab Control Type」の Required Control Patterns の表、IsSelectionRequired が TRUE で「Tab controls always require that a selection be made」）、Avalonia の TabControl も `SelectionMode.AlwaysSelected`（12.1.4 の `TabControl.cs` 95 行目）。APG、WinUI、zed の `Neighbour` は、閉じたタブの次を選ぶ。
+
+Rejected:
+  - Viewbox を Primitives の部品にする（Image と ScrollView と同じく layout と変形のノードで、Core の要素が持つ。言葉は `ImageFit` を使う）
+  - SplitView の大きさを重みだけで持つ（zed の `flexes`、Dock の `Proportion` だけの形。横の道具の区画が窓に合わせて伸びる）
+  - Tabs の選択をインデックス（`Signal<int>`）で持つ（Flutter の `TabController.index`、WinUI と Avalonia の `SelectedIndex` の形。前のタブを閉じたり並べ替えたりすると選択がずれ、行 DK1 のグループの間の移動に使えない）
+  - 選ばれたタブを閉じた後、最近使った順で選ぶのを既定にする（zed v1.25.3 の既定、`assets/settings/default.json` 1511 行目の `"activate_on_close": "history"`。部品が選んだ履歴のキーの一覧を持つことになる。行 DK1 の選択肢にする）
 
 Decision（テーマが使える見た目の API、行 B11。Grill の 12 巡目、Issue #927）:
   余白（margin）、絶対の位置と inset、並びの逆順、揃え、最小と最大の大きさを、公開の要素のメソッドにする（案 a）。
