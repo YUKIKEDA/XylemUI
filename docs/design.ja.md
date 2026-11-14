@@ -2819,7 +2819,7 @@ v1: UiTree（§2.5） → ノードの上の AccessibilityInfo → 支援技術�
   - `Range` を持つノードは、値と範囲を節に書く。P02g では値を書く操作を持たなかった。行 AX1 で、値を書く操作をハンドラで受ける（下の「AX1 で足す形」の「操作」）
   - Expand と Collapse の操作: ポップアップのアンカー（`.Popup`、Select、子のメニューを持つメニューの項目）。`PopupBlock` がアンカーの表に自分を登録し、Expand は開く Signal に true を書き、Collapse は `Dismiss` を呼ぶ（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。AccessKit は `is_expanded` を持つ節に ExpandCollapse を出す（accesskit_consumer 0.39.1 の `accesskit_consumer/src/node.rs` 661〜668 行目）。アンカーでないノードは、行 AX1 の `OnExpand`・`OnCollapse` で受ける
   - 選択: Select の選択肢と `Selected` を付けた ListItem は、選ばれたかを節に書き、選ぶ操作は Click を配る。UIA の Selection と SelectionItem は、選べる子を持つ入れ物の役（`ListBox`・`ComboBox`・`Menu` など）にしか付かず、`List` には付かない（同 938〜955 行目）。そこで、Select のポップアップの一覧は `ListBox`、選択肢は `ListBoxOption` にする。仮想化した並びは `List` のまま（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）。P02g では、部品が内部の状態（`AccessibilityStates.SelectableList`）で渡し、公開の `SemanticsRole` は変えなかった。行 AX1 で `SemanticsRole.ListBox`・`ListBoxItem` を公開の役にし、Select はこの 2 つを既定の役にする。内部の状態 `SelectableList` と、親を見て `ListItem` を `ListBoxOption` に変える対応は消す（Grill の 5 巡目でオーナーが決定、Issue #872）
-  - スクロールする箱は、スクロールの位置と最大（`accesskit_node_set_scroll_y`・`_max` と x）を書く。accesskit_windows 0.35.1 には UIA の Scroll のパターンが無く、スクロールの操作は UIA から届かないので、持たない。スクロールする箱は `clips_children` を書き、AccessKit は箱の矩形の外の節を木から外す（隣の 1 つとフォーカスを持つ節は残す、accesskit_consumer 0.39.1 の `accesskit_consumer/src/filters.rs` 17〜19・65〜88 行目）。すべての節は ScrollIntoView の操作（UIA の ScrollItem）を持ち、見える所まで動かす。任意のノードを見える所まで動かす口を Core に置き（§7「Bring into view」、今はフォーカスのあるノードだけ）、仮想化した行は `ScrollToIndex(Nearest)` で動かす（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）
+  - スクロールする箱は、スクロールの位置と最大（`accesskit_node_set_scroll_y`・`_max` と x）を書く。accesskit_windows 0.35.1 には UIA の Scroll のパターンが無く、スクロールの操作は UIA から届かない。スクロールの操作（ScrollUp・ScrollDown・ScrollLeft・ScrollRight・SetScrollOffset）とその受け手は、上流を待たずに行 AX4 で木に書く。Windows で届くのは、行 AX2 で上流に Scroll のパターンが入ってからである（Grill の 7 巡目でオーナーが決定、Issue #912）。スクロールする箱は `clips_children` を書き、AccessKit は箱の矩形の外の節を木から外す（隣の 1 つとフォーカスを持つ節は残す、accesskit_consumer 0.39.1 の `accesskit_consumer/src/filters.rs` 17〜19・65〜88 行目）。すべての節は ScrollIntoView の操作（UIA の ScrollItem）を持ち、見える所まで動かす。任意のノードを見える所まで動かす口を Core に置き（§7「Bring into view」、今はフォーカスのあるノードだけ）、仮想化した行は `ScrollToIndex(Nearest)` で動かす（P02g の実装の 3 つ目の PR の Grill でオーナーが決定、Issue #637）
   - 文字の欄の TextPattern（キャレットと選択）は、AccessKit の形の文字の run（`TextRun` の節と文字の長さ）を欄が渡すことで出る。その形と作り方は行 P02g2 で決める。P02g では、欄の中身を値として出す。値は、a11y の段が節を直す時に欄の文字の signal から読む。文字が変わると欄の中の文字の葉に印が付き、その節が直る。打鍵ごとに情報を作らない（#627 の実装。打鍵ごとに情報を作る形では、`input` の文字の欄の入力の段が 0.6 µs から 0.7〜0.8 µs になった）
 - **部品の既定の役:** ボタン Button、文字の欄 Edit（AccessKit の `TextInput`）、ラベルと文字の葉 Text（ほかの節の名前にたたまれない時だけ節になる）、リンクの範囲 Hyperlink（§4.8、テキストのノードの子の節）、メニュー Menu、メニューバー MenuBar、メニューの項目 MenuItem、Select ComboBox とその一覧 ListBox と選択肢 ListBoxItem（行 AX1 から。P02g では一覧 List と選択肢 ListItem で、AccessKit には `ListBox`・`ListBoxOption` として渡していた）、Tooltip ToolTip、ダイアログ Dialog、スクロールする箱 ScrollViewer、仮想化した並び List とその行 ListItem。`SemanticsRole` から AccessKit の役（accesskit-c 0.23.1 が使う accesskit 0.25.1 の `Role`）への対応は次のとおりで、括弧の中は accesskit_windows 0.35.1 が UIA に出す制御の種類である（`adapters/windows/src/node.rs` 65〜211 行、#627 の実装）
   - Window → `Window`、Dialog → `Dialog`（Window）、Group → `Group`、ScrollViewer → `ScrollView`（Pane）、Separator → `Splitter`（Separator）
@@ -2897,7 +2897,7 @@ AccessKit の Windows の adapter がどう決めるか（下の表のもと）:
 | Paragraph | `Paragraph`（299） | Group（75） | — | — |
 | Code | `Code`（345） | Text（120） | — | — |
 | Figure | `Figure`（364） | Group（143） | — | — |
-| Pane | `Pane`（311） | Pane（93） | — | ほかの UIA の provider は埋め込めない（`node.rs` 1125〜1127 行目、行 AX2） |
+| Pane | `Pane`（311） | Pane（93） | — | ほかの UIA の provider は埋め込めない（`node.rs` 1125〜1127 行目、行 D12） |
 
 - **オフでも書く値:** オフの時に `Toggled::False` を書く役は、CheckBox・RadioButton に Switch・MenuItemCheckBox・MenuItemRadio を足す。書かないと Toggle（SelectionItem）が付かない。選ばれていない時に false を書く役は、ListItem に ListBoxItem・TreeItem を足す
 - **Select の役:** Select の一覧と選択肢は ListBox と ListBoxItem にし、内部の状態 `SelectableList` を消す（上の「選択」）。`FindByRole(SemanticsRole.ListItem)` で選択肢を探していたテストは、`ListBoxItem` で探す
@@ -2950,7 +2950,7 @@ AccessKit の Windows の adapter がどう決めるか（下の表のもと）:
 - **割り当て:** 折り込んだ文字列は、文字が変わった時だけ作る（名前のたたみと同じ）
 - **行 AX2 の後:** AccessKit が LabeledBy・DescribedBy・IsDataValidForForm を出すようになったら、説明への折り込みを続けるかを行 AX2 で決める。名前への折り込みは、Avalonia と同じく残す
 
-**ライブリージョン:** `AccessibilityInfo.Live` で宣言する。命令でその場に読ませる口（announce）は持たない。AccessKit の Windows の adapter は UIA の通知のイベントを出さず（`adapters/windows/src` に `Notification` が無い）、それは行 AX2 で入れる。
+**ライブリージョン:** `AccessibilityInfo.Live` で宣言する。命令でその場に読ませる口（announce）は持たない。AccessKit の Windows の adapter は UIA の通知のイベントを出さず（`adapters/windows/src` に `Notification` が無い）、上流にも命令で読ませる口が無い。XylemUI が通知のイベントを自分で出すかは、Narrator と NVDA で測ってから行 AX5 で決める（行 AX2 から分けた。Grill の 7 巡目でオーナーが決定、Issue #912）。
 
 - **値:** `Off`・`Polite`・`Assertive` は `accesskit_node_set_live`（ヘッダー 2162 行目、値は 240〜242 行目）で書く。`Inherit`（既定）は、Alert なら Assertive、Status と Log なら Polite を書き、ほかの役では書かない。書かない節は、AccessKit が親の節の値を継ぐ（consumer 906〜910 行目）。AccessKit は役から既定の値を作らない（同じ行）ので、役の既定は XylemUI が書く。既定の値は WAI-ARIA 1.2 の alert・status・log の役の「Implicit Value for Role」（aria-live がそれぞれ assertive・polite・polite）に合わせた
 - **UIA:** 値は LiveSetting に出る（`node.rs` 546〜553・1319 行目）。LiveRegionChanged のイベントは、名前を持ちライブの設定がオフでない節が足された時（`adapter.rs` 256〜263 行目）と、そういう節の名前かライブの設定が変わった時（同 313〜324 行目）に出る。名前の変化だけが引き金である
@@ -2992,18 +2992,15 @@ public static Element ActiveDescendant(this Element element, IReadOnlySignal<int
 - **操作:** 子の節は操作を持たない。ScrollIntoView はノード自身を見える所まで動かす。キーで点を移る描画域は、フォーカスをノードに持ち、`ActiveDescendant` の key を取る形で子の節を指す。key の節がその時に無ければ「無し」とする（Issue #878 の Grill でオーナーが決定）
 - **比べたもの（Avalonia は読んでいない）:** GPUI は、要素が prepaint の後に合成の子の節を足す（zed v1.25.3 の `crates/gpui/src/window/a11y.rs` 67〜82 行目、`crates/gpui/src/element.rs` 123〜137 行目の `a11y_synthetic_children`）。Flutter の `CustomPainter` は `semanticsBuilder` で、箱と `SemanticsProperties` と key を持つ節の一覧を返す（3.47.8 の `packages/flutter/lib/src/rendering/custom_paint.dart` 26・222・307〜354 行目）
 
-**行 AX2 まで待つもの:** 次は、AccessKit の Windows の adapter に無く、上流の変更と同梱する版の更新が要る（行 AX2、Grill の 5 巡目でオーナーが決定、Issue #872）。
+**行 AX2 まで待つもの:** 次は、AccessKit の Windows の adapter に無く、上流の変更と同梱する版の更新が要る（行 AX2、Grill の 5 巡目でオーナーが決定、Issue #872）。上流は外の人のプルリクエストを受けないので、オーナーが書く issue とコメントで、見出し、ランドマーク、フォームと関係のプロパティ、表、スクロールの順に進め、今はフォークしない（Grill の 7 巡目でオーナーが決定、Issue #912）。XylemUI が上流を待たずに木に書けるもの（表の番号・数・広がり・並び、ショートカットとアクセスキー、スクロールの操作）は行 AX4 で書き、Windows で読まれるのは下の上流の変更が入ってからである。通知のイベントは行 AX5、独自の操作は行 P06 と P04、埋め込みの fragment root は行 D12 に移した（同じ決定）。
 
-- 表とグリッドのパターン（Grid・GridItem・Table・TableItem。`node.rs` 790〜804 行目に無く、650 行目に `TODO: tables (#29)`）。表の行と列の番号・数・広がり・並び（`RowIndex`・`ColumnIndex`・`RowCount`・`ColumnCount`・`RowSpan`・`ColumnSpan`・`SortDirection`）の公開の欄も、行 AX2 で一緒に入れる。今の adapter は、並びを AriaProperties の `sort` にしか書かず（`node.rs` 514〜525 行目）、番号と数はどこにも出さない
+- 表とグリッドのパターン（Grid・GridItem・Table・TableItem。`node.rs` 790〜804 行目に無く、650 行目に `TODO: tables (#29)`）。表の行と列の番号・数・広がり・並び（`RowIndex`・`ColumnIndex`・`RowCount`・`ColumnCount`・`RowSpan`・`ColumnSpan`・`SortDirection`）の公開の欄は、上流を待たずに行 AX4 で入れる（Grill の 7 巡目でオーナーが決定、Issue #912）。今の adapter は、並びを AriaProperties の `sort` にしか書かず（`node.rs` 514〜525 行目）、番号と数はどこにも出さない。上流には自分のパッチを出さず、上流の #10 と #29 の計画を支える（先頭の列の見出しの行は、#10 のコメントの計画どおり行の数に入れない。同じ決定）
 - Grid と TreeGrid の選ばれた項目。Selection の `GetSelection` は項目らしい子だけを数え（`node.rs` 1420〜1430 行目、consumer 1064〜1073 行目）、Row・Cell・GridCell は項目らしい役に入らない（consumer 920〜936 行目）ので、常に空である
 - UIA の LabeledBy・DescribedBy・IsDataValidForForm（上の「Windows での折り込み」の終わり）
-- UIA の通知のイベント（命令でその場に読ませる口）
 - Scroll のパターン（上の「スクロールする箱」）
 - 見出しの深さ（HeadingLevel）と、ランドマークの種類（LandmarkType。Navigation・Region など）
 - AriaProperties の `level` が UIA の Level より 1 小さいこと（上の「見出し」。`node.rs` 500〜502 行目が 0 から数える値をそのまま書く）
-- AcceleratorKey と AccessKey
-- 独自の操作（並べ替えなど）
-- 埋め込みの fragment root（`node.rs` 1125〜1127 行目の `GetEmbeddedFragmentRoots` は null を返す。WebView などの他の provider を Pane の下に置く口）
+- AcceleratorKey と AccessKey（値は行 AX4 で書く）
 
 **確かめ方（行 AX1）:** 上の文ごとにテストを 1 つ以上置く。
 
@@ -6751,7 +6748,7 @@ public sealed record SelectOptions<T>
   - 時間切れでは隠さない（Avalonia と GPUI。Flutter はタッチのときだけ 1.5 秒）
 - **置き場所:** 既定は、出すときのポインタの位置の 20 px 下（`PopupPlacement.AtPoint`）。Avalonia は既定がポインタの位置で、縦に 20 px ずらす（`ToolTip.cs` 42・54 行目）。GPUI もポインタの位置から (1, 1) に出す（`window.rs` 3816〜3817 行目）。Flutter は、アンカーの中心の 24 px 下に出す（`material/tooltip.dart` 389 行目）。はみ出したときの反転とスライドは §7.3 の「置き場所」のまま。`TooltipOptions.Placement` を渡したときは、ポインタでなくアンカーに対して置き、ポインタでもタッチとペンの長押しでも同じ場所に出す
 - **ポップアップの形:** Tooltip のポップアップは一時のポップアップ（`PopupOptions.IsTransient`、§7.3「入れ子」）である。フォーカスのスコープを積まず、開くときに兄弟のポップアップを閉じない。ほかのポップアップ（メニュー、Select、ダイアログ）が開くと閉じる。Tooltip はそれらの前置きの案内なので、開いたものの上に残さない。積むと、Tooltip が出ている間 Tab が空のスコープで回る。兄弟を閉じると、メニューの項目の Tooltip が、その項目のサブメニューを閉じる。Avalonia の Tooltip も、フォーカスを取らない（`ToolTip.cs` 435〜438 行目、`TakesFocusFromNativeControl = false`）
-- **フォーカスとタッチ:** キーボードのフォーカスでは出さない（3 つとも出さない）。タッチとペンの長押しで、待たずに出し、離したら隠す（GPUI の `div.rs` 3759〜3790 行目。Flutter も長押しで出す）。長押しは、タッチかペンの押下が、押した所から §7 の「タッチとペンのドラッグ」の閾値（18 論理画素）を超えて動かずに 500 ms 続くことで、Tooltip が自分で判定する（Flutter の `kLongPressTimeout` は 500 ms、`gestures/constants.dart` 29 行目。GPUI の `long_press_duration` も 500 ms、`gpui/src/gestures.rs` 138 行目）。Core にはまだ長押しの判定が無く、ほかの部品が使うまでは Tooltip の中に置く。Disabled のアンカーには出さない（Avalonia の `ShowOnDisabled` の既定は false、`ToolTip.cs` 76 行目）
+- **フォーカスとタッチ:** キーボードのフォーカスでは出さない（3 つとも出さない）。タッチとペンの長押しで、待たずに出し、離したら隠す（GPUI の `div.rs` 3759〜3790 行目。Flutter も長押しで出す）。長押しは、タッチかペンの押下が、押した所から §7 の「タッチとペンのドラッグ」の閾値（18 論理画素）を超えて動かずに 500 ms 続くことで、Tooltip が自分で判定する（Flutter の `kLongPressTimeout` は 500 ms、`gestures/constants.dart` 29 行目。GPUI の `long_press_duration` も 500 ms、`gpui/src/gestures.rs` 138 行目）。Core の長押しの判定（`WindowInput.DragDrop.cs` 17 行目の 500 ms）は、ドラッグの元の上のタッチとペンの押下だけに働く DD1 の内部のもので、部品からは使えない。そこで Tooltip は自分の判定を持つ。行 B1 の長押しで働くボタンは Core の判定にそろえるので（Grill の 7 巡目でオーナーが決定、Issue #912）、2 つの部品が判定をどう共有するかは、行 B1 の設計で決める。Disabled のアンカーには出さない（Avalonia の `ShowOnDisabled` の既定は false、`ToolTip.cs` 76 行目）
 - **Select の箱:** 箱はフォーカスでき、選ばれている値を `item(value)` で作って中に見せる。値が変わったら作り直す。値が `options` に無いときも、その値を `item` で見せる。箱は見た目を付けない（§13.1）。一覧が開いている間、フォーカスは一覧の行へ移るので、箱の `Focused` の見た目は消える。開いている箱は `.Open(PaintStyle)` で示す（§7.3「アンカーの Open」、行 P02d4）
 - **一覧の見た目（P02d2 の 2 つ目の PR で決めた）:** 一覧の行は、`item(option)` が作る要素そのもので、部品が包まない。行はフォーカスでき、使えない選択肢の行は Disabled なので、行の見た目はアプリが `item` の `.Hovered`・`.Focused`・`.Disabled` で付ける。箱の中の要素はフォーカスできないので、`.Focused` の見た目は出ない。一覧全体の見た目（背景・枠・余白）は `SelectOptions.Panel` で付ける。設計の最初の版の API では、アプリが一覧の背景も行の強調も付けられなかった。§13.1 のメニューは `panel` が見た目で、同じ考え方である
 - **閉じているときのキー**（Avalonia の `ComboBox.cs` 258〜292 行目。Windows の標準のコンボボックスも同じ）:
