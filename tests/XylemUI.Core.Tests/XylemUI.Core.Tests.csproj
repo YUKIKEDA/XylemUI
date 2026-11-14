@@ -11,6 +11,13 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Core\XylemUI.Core.csproj" />
+    <!-- Built, not referenced: the tests run the CLDR table generator on a zip they make (design §4.11, "Tests"). -->
+    <ProjectReference
+      Include="..\..\tools\CldrTableGen\CldrTableGen.csproj"
+      ReferenceOutputAssembly="false"
+      Private="false"
+      SkipGetTargetFrameworkProperties="true"
+    />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />

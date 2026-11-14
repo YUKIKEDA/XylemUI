@@ -138,18 +138,19 @@ public sealed class CounterTests(UiThreadFixture ui)
 
     /// <summary>
     /// Closing the window disposes its root scope: no node but the root box is left, the scope is not alive, and the last window's
-    /// close ends the message loop.
+    /// close ends the message loop through the host's contract (<see cref="IPlatformApp.Quit"/>, design §6.0), with 0.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The counter's window on WARP, counted as an open window of the app; the message loop runs under a watchdog.
+    /// - The counter's window on WARP, counted as an open window of an app whose host records each <c>Quit</c> and then quits the
+    ///   message loop with its code; the message loop runs under a watchdog.
     ///
     /// Steps:
     /// - Ask the window to close, as its close button does; run the loop until it returns.
     ///
     /// Expected:
-    /// - The loop returned before the watchdog; the window raised <c>Closed</c>; the tree has one node, with no child; the root
-    ///   scope is not alive.
+    /// - The loop returned before the watchdog; the host was asked to quit once, with 0; the window raised <c>Closed</c>; the tree
+    ///   has one node, with no child; the root scope is not alive.
     /// </remarks>
     [Fact]
     public void Close_DisposesTheRootScope_AndEndsTheLoop() =>
@@ -160,7 +161,8 @@ public sealed class CounterTests(UiThreadFixture ui)
             Assert.True(Scope.IsAlive(scope));
             bool closed = false;
             window.Closed += (_, _) => closed = true;
-            XylemApp.Open(window);
+            var host = new QuitRecorder();
+            XylemApp.Open(window, host);
 
             using (var watchdog = new LoopWatchdog())
             {
@@ -168,6 +170,7 @@ public sealed class CounterTests(UiThreadFixture ui)
                 Assert.False(watchdog.Expired);
             }
 
+            Assert.Equal([0], host.Quits);
             Assert.True(closed);
             Assert.Equal(1, window.Tree.Nodes.Count);
             Assert.True(window.Tree.Nodes.GetRef(window.Tree.Root).FirstChild.IsNone);
@@ -565,6 +568,69 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// When the loop ends, <c>XylemApp.Run</c> disposes the window before the host (design §6.0, "The order of creation", step 8):
+    /// the cleanups of the window's root scope still run with the host's dispatcher and synchronization context, which the host puts
+    /// back after them.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The UI thread of the headless session, which set <see cref="UiDispatcher.Current"/> to its dispatcher. The message loop's
+    ///   iteration hook quits with 5 at its first iteration, with the window still open, so that the run's disposal of the window
+    ///   disposes the root scope; after 5 s it quits with 1.
+    ///
+    /// Steps:
+    /// - Run the app with a root function that adds a cleanup to its scope; the cleanup reads <see cref="UiDispatcher.Current"/> and
+    ///   <see cref="SynchronizationContext.Current"/>. Read <see cref="UiDispatcher.Current"/> after the run.
+    ///
+    /// Expected:
+    /// - The run returns 5 before the watchdog, and the cleanup ran once.
+    /// - In the cleanup the dispatcher is the loop's (<see cref="Win32MessageLoop.Dispatcher"/>) and the context is its context.
+    /// - After the run the dispatcher is the session's again.
+    /// </remarks>
+    [Fact]
+    public void Run_LoopEndsWithTheWindowOpen_DisposesTheWindowBeforeTheHost() =>
+        ui.Invoke(() =>
+        {
+            IUiDispatcher before = UiDispatcher.Current;
+            SynchronizationContext? context = SynchronizationContext.Current;
+            int cleanups = 0;
+            IUiDispatcher? inCleanup = null;
+            SynchronizationContext? contextInCleanup = null;
+            using var watchdog = new LoopWatchdog();
+            Win32MessageLoop.IterationHook = () => Win32MessageLoop.Quit(watchdog.Expired ? 1 : 5);
+
+            int code;
+            try
+            {
+                code = XylemApp.Run(
+                    () =>
+                    {
+                        Scope.OnCleanup(() =>
+                        {
+                            cleanups++;
+                            inCleanup = UiDispatcher.Current;
+                            contextInCleanup = SynchronizationContext.Current;
+                        });
+                        return Elements.Box();
+                    },
+                    new WindowOptions("Run order test", 100, 80)
+                );
+            }
+            finally
+            {
+                Win32MessageLoop.IterationHook = null;
+                SynchronizationContext.SetSynchronizationContext(context);
+            }
+
+            Assert.False(watchdog.Expired);
+            Assert.Equal(5, code);
+            Assert.Equal(1, cleanups);
+            Assert.Same(Win32MessageLoop.Dispatcher, inCleanup);
+            Assert.Same(Win32MessageLoop.Dispatcher.SynchronizationContext, contextInCleanup);
+            Assert.Same(before, UiDispatcher.Current);
+        });
+
+    /// <summary>
     /// The window's options are checked before a window is made.
     /// </summary>
     /// <remarks>
@@ -612,6 +678,26 @@ public sealed class CounterTests(UiThreadFixture ui)
     }
 
     private sealed record Ping(int Number) : UiMessage;
+
+    // A host that records the codes it is asked to quit with, and quits the message loop with each, as the Windows host does.
+    private sealed class QuitRecorder : IPlatformApp
+    {
+        public List<int> Quits { get; } = [];
+
+        public UiDispatcher Dispatcher => Win32MessageLoop.Dispatcher;
+
+        public int Run() => Win32MessageLoop.Run();
+
+        public void Quit(int exitCode)
+        {
+            Quits.Add(exitCode);
+            Win32MessageLoop.Quit(exitCode);
+        }
+
+        public void Wake() => Win32MessageLoop.Wake();
+
+        public void Dispose() { }
+    }
 
     // The center of a node's box in the window's physical pixels; the column is at the root's top left, the button in it.
     private static (int X, int Y) Center(DesktopWindow window, NodeHandle node)
