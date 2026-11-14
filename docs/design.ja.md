@@ -4995,7 +4995,7 @@ OS ごとの機能（窓、ループ、フレームの時計、描画、文字�
   1. 窓の核（`WindowCore`）にコードを移し、`HeadlessApp` をそれに載せる
   2. `UiDispatcher.Current`
   3. ループの契約（`IPlatformApp` の `Dispatcher`・`Run`・`Quit`・`Wake`）と、OLE の初期化と `UiDispatcher.Current`・`SynchronizationContext` を置くことをホストへ移すこと
-  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、アプリの段のクリップボード（`IPlatformApp.Clipboard`。持ち主をループのメッセージ専用の窓に替える）、E2E の場面（クリップボードをこの PR に入れるのは PR #926 でオーナーが決定）
+  4. 窓の契約（`IPlatformWindow`）、レンダラと時計の組、アプリの段のクリップボード（`IPlatformApp.Clipboard`。持ち主を、ループを起こす窓とは別の、クリップボードだけのメッセージ専用の窓にする。Issue #928 でオーナーが決定。この節のほかの所の「持ち主はループのメッセージ専用の窓」は今の形で、その PR が書き換える）、E2E の場面（クリップボードをこの PR に入れるのは PR #926 でオーナーが決定）
   5. OS の設定の 1 つのオブジェクト（`IPlatformSettings`）
   6. フォントの提供者を UI スレッドに 1 つにすること（`IPlatformApp.Fonts`）と、グリフのラスタライザの工場（`IPlatformApp.CreateRasterizer`）（ラスタライザの工場をこの PR に入れるのは PR #926 でオーナーが決定）
   7. `XylemUI.Desktop` と Windows のホストを `net10.0` にし、ホストを RID で選ぶこと。この PR は次も行う
