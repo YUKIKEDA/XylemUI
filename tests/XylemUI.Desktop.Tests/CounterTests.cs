@@ -38,6 +38,39 @@ public sealed class CounterTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Disposing a window cancels the frame its tree asked for: the loop's scheduler holds no frame for a window that is gone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The counter's window on WARP, hidden. The loop is not run, so a frame that is asked for stays pending.
+    ///
+    /// Steps:
+    /// - Send <c>WM_LBUTTONDOWN</c> and <c>WM_LBUTTONUP</c> at the button's center, which changes the text and asks for a frame;
+    ///   read whether the loop's scheduler holds a frame. Dispose the window; read it again.
+    ///
+    /// Expected:
+    /// - A frame is pending before the window is disposed, and none after.
+    /// </remarks>
+    [Fact]
+    public void Dispose_WithAFrameAskedFor_CancelsIt() =>
+        ui.Invoke(() =>
+        {
+            bool before;
+            using (var window = new DesktopWindow(CounterApp.Counter, Options, useWarp: true))
+            {
+                (_, NodeHandle button) = Parts(window.Tree);
+                (int x, int y) = Center(window, button);
+                nint point = (y << 16) | (x & 0xFFFF);
+                _ = SendMessageW(window.Window.Hwnd, WM.WM_LBUTTONDOWN, MK.MK_LBUTTON, point);
+                _ = SendMessageW(window.Window.Hwnd, WM.WM_LBUTTONUP, 0, point);
+                before = ((Win32FrameScheduler)Win32MessageLoop.FrameScheduler).HasPendingFrame;
+            }
+
+            Assert.True(before);
+            Assert.False(((Win32FrameScheduler)Win32MessageLoop.FrameScheduler).HasPendingFrame);
+        });
+
+    /// <summary>
     /// A press and a release of the left button at the button's center, sent as the window's messages, make the text "clicks: 1",
     /// and the next frame lays it out and presents it; frames with nothing changed present nothing.
     /// </summary>
