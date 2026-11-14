@@ -42,14 +42,23 @@ public static class XylemApp
         // The loop can end with windows open (Win32MessageLoop.Quit from the app); the next run starts with none counted.
         _running = true;
 
+        IUiDispatcher? previousDispatcher = null;
+        bool exchanged = false;
         SynchronizationContext? previous = SynchronizationContext.Current;
         try
         {
+            // The loop's queue is where workers post, from the root function on (design §2.12). The one this replaces comes back
+            // when the run ends: the headless tests run a real window's loop inside work of their own UI thread, whose queue they
+            // post to afterwards. Inside the try, like everything after the run is marked as started.
+            UiDispatcher dispatcher = Win32MessageLoop.Dispatcher;
+            previousDispatcher = UiDispatcher.Exchange(dispatcher);
+            exchanged = true;
+
             // The loop's context before the window, whose root function makes elements that keep it: an image's decode runs on a
             // worker and posts its result to the context the element was made with, and with none it runs here (design §5.0.4,
             // "Decoding threads"; Issue #785). Inside the try, so that whatever throws from here on leaves the app able to run
             // again.
-            SynchronizationContext.SetSynchronizationContext(Win32MessageLoop.Dispatcher.SynchronizationContext);
+            SynchronizationContext.SetSynchronizationContext(dispatcher.SynchronizationContext);
             using var window = new DesktopWindow(root, options ?? new WindowOptions(), show: true);
             Open(window);
             return Win32MessageLoop.Run();
@@ -57,6 +66,11 @@ public static class XylemApp
         finally
         {
             SynchronizationContext.SetSynchronizationContext(previous);
+            if (exchanged)
+            {
+                _ = UiDispatcher.Exchange(previousDispatcher);
+            }
+
             _running = false;
             _openWindows = 0;
             Platform.Windows.Com.UninitializeUiThread();
