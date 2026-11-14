@@ -118,7 +118,7 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             var password = new TextFieldOptions { Password = true };
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         TextField(Signal.Create("pw"), password).Accessible(new AccessibilityInfo { Name = "Secret", Value = "hunter2" }),
