@@ -65,6 +65,12 @@ public sealed class LocalizationTests
     ///   language is the one of the likely script (zh-TW then zh-CN). A locale of another script is still taken before the first
     ///   supported (zh-Hans for zh-TW, with en first); a region the likely subtags would add is not compared (zh against ko-CN); a
     ///   language with no likely script takes the first that fits, as before.
+    /// - The steps that compare written fields do not read likely scripts: zh-HK for zh-Hant then zh-HK (not zh-TW at the
+    ///   language-and-script step), and zh-Hant for zh-Hant-TW (not zh-TW at the step of all three).
+    /// - A locale of the language in the likely script comes before one of the region in another script: zh-Hant for zh-TW with
+    ///   zh-Hans-TW first; it is kept for the next language as a language-only match is (zh-Hant for zh-TW then zh-HK, and
+    ///   zh-Hant-HK when that is supported). With none of the likely script, the one of the region is taken (zh-Hans-TW, with en),
+    ///   and a language with no likely script takes the one of the region as before (xx-Latn-TW).
     /// </remarks>
     /// <param name="preferred">The user's languages.</param>
     /// <param name="supported">The supported locales.</param>
@@ -87,6 +93,11 @@ public sealed class LocalizationTests
     [InlineData("zh-Hant", "zh-SG,zh-HK", "zh-HK")]
     [InlineData("zh-Hant,zh-HK", "zh-TW,zh-HK", "zh-HK")]
     [InlineData("zh-Hant-TW", "zh-Hant,zh-TW", "zh-Hant")]
+    [InlineData("zh-TW", "zh-Hans-TW,zh-Hant", "zh-Hant")]
+    [InlineData("zh-TW,zh-HK", "zh-Hans-TW,zh-Hant", "zh-Hant")]
+    [InlineData("zh-TW,zh-HK", "zh-Hans-TW,zh-Hant,zh-Hant-HK", "zh-Hant-HK")]
+    [InlineData("zh-TW", "zh-Hans-TW,en", "zh-Hans-TW")]
+    [InlineData("xx-TW", "xx-Latn-TW,xx-Hant", "xx-Latn-TW")]
     public void Resolve_LikelyScript_IsPreferredInTheLanguageSteps(string preferred, string supported, string expected) =>
         Assert.Equal(Locale.Parse(expected), Localization.Resolve(List(preferred), List(supported)));
 
