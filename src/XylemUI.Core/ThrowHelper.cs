@@ -102,6 +102,16 @@ internal static class ThrowHelper
         );
 
     /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when <see cref="UiDispatcher.Current"/> is read before a host set it.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowNoCurrentDispatcher() =>
+        throw new InvalidOperationException(
+            "No UI dispatcher is set: a host sets UiDispatcher.Current when it starts (XylemApp.Run, or HeadlessSession's UI thread)."
+        );
+
+    /// <summary>
     /// Throws <see cref="ObjectDisposedException"/> when a disposed computed is used.
     /// </summary>
     [DoesNotReturn]
