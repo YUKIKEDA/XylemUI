@@ -4,12 +4,16 @@ namespace XylemUI.Theme.Fluent;
 /// Converts between gamma-encoded sRGB (D65) and CIE Lab (D50) with the matrices and constants of the Fluent theme designer's
 /// <c>colors/csswg.ts</c> (microsoft/fluentui commit <c>1f59fc2</c>, lines 69–130, 359–384, 388–449, 736–774), so that the
 /// lightness targets and the brand steps match the record <c>docs/benchmarks/th1-accent-ramp.md</c> (design §13.2,
-/// "ブランドの 16 段の作り方"). Each step runs in the TypeScript's order, so that each result is the same double.
+/// "ブランドの 16 段の作り方"). Each step runs with the TypeScript's operations in the TypeScript's order. The last digit of a result
+/// can still differ by math library: <see cref="Math.Pow(double, double)"/> and <see cref="Math.Cbrt"/> are not correctly rounded,
+/// and under Node v22 seven of the sixteen lightness targets differ from Windows' in their last digit (PR #929's review).
 /// </summary>
 /// <remarks>
 /// tools/FluentTokensTool compiles this file too: the lightness targets it writes into the generated tokens come from this
-/// conversion (design §13.2, step 4). A matrix of seven digits (Lindbloom's table) moves the fourth decimal of a target (PR #900's
-/// review), so the matrices are csswg.ts's, digit for digit.
+/// conversion, rounded to a fixed number of decimals so that the generated file does not depend on the math library (design §13.2,
+/// step 4). A matrix of seven digits (Lindbloom's table) moves the fourth decimal of a target (PR #900's
+/// review), so the matrices are csswg.ts's, digit for digit. csswg.ts comes from the sample code of CSS Color 4 (W3C Software and
+/// Document License) and Lea Verou's css.land (MIT); their notices are in LICENSE-ColorConversions.txt (design §9).
 /// </remarks>
 internal static class CieLab
 {

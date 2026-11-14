@@ -83,7 +83,8 @@ internal static class BrandRamp
         }
     }
 
-    // geometry.ts's QuadraticBezier, in its order of operations.
+    // geometry.ts's QuadraticBezier, in its order of operations. geometry.ts ports it, and the dropping of a repeated point above,
+    // from three.js (MIT); the notice is in LICENSE-ColorConversions.txt (design §9).
     private static double Bezier(double t, double p0, double p1, double p2)
     {
         double k = 1 - t;

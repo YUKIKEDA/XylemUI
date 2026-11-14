@@ -45,8 +45,12 @@ internal sealed record ShadowToken(string Name, ShadowLayer Ambient, ShadowLayer
 
 /// <summary>
 /// Reads the TypeScript files of <c>@fluentui/tokens</c> (<c>packages/tokens/src</c>) that design §13.2 names under "トークンの元".
-/// The files are generated tables, read line by line: a line of a table this tool does not recognise stops it, so that a change of
-/// the files at a new commit is seen rather than read wrong.
+/// Each file is read whole, line by line, and every line must be one of three kinds, or the tool stops: a line it reads (an entry,
+/// an alias color, a template, a patch, a shadow, a name); a line any file may hold (blank, a comment, an import); or a line of the
+/// file's JavaScript scaffolding that the pinned files hold, listed by its reader. An object of an object file that the tool does
+/// not read (fonts.ts's families, the brand ramps of other products, the persona palette) is passed over whole, up to its
+/// <c>};</c>, and the persona template of a palette file is passed over too. So an upstream change that adds a statement, such as
+/// <c>Object.assign(colorStatusTokens, …)</c>, stops the tool rather than being left out of the theme.
 /// </summary>
 internal sealed partial class TokenSources
 {
@@ -71,6 +75,37 @@ internal sealed partial class TokenSources
 
     // The objects of global/fonts.ts that the typography styles name.
     private static readonly string[] FontObjects = ["fontSizes", "lineHeights", "fontWeights"];
+
+    // The scaffolding of the palette files (alias/lightColorPalette.ts, darkColorPalette.ts, highContrastColorPalette.ts at the
+    // pinned commit), trimmed: the reduce calls around the templates, and the export that joins the two palettes.
+    private static readonly HashSet<string> PaletteScaffolding = new(StringComparer.Ordinal)
+    {
+        "const color = sharedColor.slice(0, 1).toUpperCase() + sharedColor.slice(1);",
+        "const color = statusColor.slice(0, 1).toUpperCase() + statusColor.slice(1);",
+        "const sharedColorTokens = {",
+        "const statusColorTokens = {",
+        "return Object.assign(acc, sharedColorTokens);",
+        "return Object.assign(acc, statusColorTokens);",
+        "};",
+        "},",
+        ");",
+        "(acc, [statusColor, sharedColor]) => {",
+        "{} as ColorStatusTokens,",
+        "}, {} as StatusColorPaletteTokens);",
+        "}, {} as PersonaColorPaletteTokens);",
+        "export const colorPaletteTokens: ColorPaletteTokens = { ...statusColorPaletteTokens, ...personaColorPaletteTokens };",
+    };
+
+    // The scaffolding of utils/shadows.ts at the pinned commit, trimmed: the two overloads, the function, and its return.
+    private static readonly HashSet<string> ShadowScaffolding = new(StringComparer.Ordinal)
+    {
+        "export function createShadowTokens(ambientColor: string, keyColor: string, tokenSuffix: 'Brand'): ShadowBrandTokens;",
+        "export function createShadowTokens(ambientColor: string, keyColor: string): ShadowTokens;",
+        "export function createShadowTokens(ambientColor: string, keyColor: string, tokenSuffix: 'Brand' | '' = '') {",
+        "return {",
+        "};",
+        "}",
+    };
 
     private readonly string _directory;
     private readonly Dictionary<string, string> _scalars = new(StringComparer.Ordinal);
@@ -198,6 +233,27 @@ internal sealed partial class TokenSources
     [GeneratedRegex(@"^(\S+) (\S+) (\S+) \$\{(ambientColor|keyColor)\}$")]
     private static partial Regex ShadowPart();
 
+    // A list of names of sharedColorNames.ts: `export const name = [`, one `'name',` a line, up to `] as const;`, or on one line.
+    [GeneratedRegex(@"^export const (\w+) = \[$")]
+    private static partial Regex NameListStart();
+
+    [GeneratedRegex(@"^'\w+',$")]
+    private static partial Regex NameListEntry();
+
+    [GeneratedRegex(@"^export const \w+ = \[[^\]]*\] as const;$")]
+    private static partial Regex NameListOneLine();
+
+    [GeneratedRegex(@"^import (?:type )?\{[^}]*\} from '[^']+';$")]
+    private static partial Regex ImportLine();
+
+    [GeneratedRegex(@"^import (?:type )?\{$")]
+    private static partial Regex ImportStart();
+
+    [GeneratedRegex(@"^\} from '[^']+';$")]
+    private static partial Regex ImportEnd();
+
+    private static InvalidDataException Unknown(string path, string raw) => new($"{path}: the line \"{raw}\" is not one this tool reads.");
+
     private static string Capitalize(string name) => char.ToUpperInvariant(name[0]) + name[1..];
 
     private static string Unquote(string value)
@@ -276,12 +332,14 @@ internal sealed partial class TokenSources
 
     private string[] Lines(string path) => File.ReadAllLines(Path.Combine(_directory, path));
 
-    // The object literals of a file, by name: all of them, or those named in `only` (the others are skipped whole, so that an object
-    // this tool does not read, such as fonts.ts's families over several lines, does not stop it). A shorthand entry (`red,`) is read
-    // as the key and its own name.
+    // The object literals of a file, by name: all of them, or those named in `only` (the others are passed over whole, so that an
+    // object this tool does not read, such as fonts.ts's families over several lines, does not stop it). A shorthand entry (`red,`)
+    // is read as the key and its own name. Outside the objects, a file holds only the lines any file may hold and string constants
+    // (`export const white = '#ffffff';`).
     private Dictionary<string, List<(string Key, string Value)>> Objects(string path, params string[] only)
     {
         var objects = new Dictionary<string, List<(string Key, string Value)>>(StringComparer.Ordinal);
+        var structure = new Structure();
         List<(string Key, string Value)>? current = null;
         bool skipping = false;
         foreach (string raw in Lines(path))
@@ -302,6 +360,10 @@ internal sealed partial class TokenSources
                     current = [];
                     objects.Add(name, current);
                 }
+                else if (!ScalarLine().IsMatch(line) && !structure.Skips(line))
+                {
+                    throw Unknown(path, raw);
+                }
 
                 continue;
             }
@@ -313,7 +375,7 @@ internal sealed partial class TokenSources
                 continue;
             }
 
-            if (skipping || line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal))
+            if (skipping)
             {
                 continue;
             }
@@ -328,9 +390,9 @@ internal sealed partial class TokenSources
             {
                 current!.Add((shorthand.Groups[1].Value, shorthand.Groups[1].Value));
             }
-            else
+            else if (!structure.Skips(line))
             {
-                throw new InvalidDataException($"{path}: the line \"{raw}\" is not an entry this tool reads.");
+                throw Unknown(path, raw);
             }
         }
 
@@ -462,23 +524,36 @@ internal sealed partial class TokenSources
     {
         var tokens = new OrderedTokens();
         string aliasPath = $"alias/{aliasFile}";
-        bool inside = false;
+        var structure = new Structure();
+
+        // Before the function and after it, only the lines any file may hold; inside it, only alias colors.
+        string part = "before";
         foreach (string raw in Lines(aliasPath))
         {
-            if (raw.StartsWith("export const generateColorTokens", StringComparison.Ordinal))
+            if (
+                part == "before"
+                && raw.StartsWith("export const generateColorTokens = (", StringComparison.Ordinal)
+                && raw.EndsWith("): ColorTokens => ({", StringComparison.Ordinal)
+            )
             {
-                inside = true;
+                part = "inside";
                 continue;
             }
 
-            if (!inside)
+            if (part == "inside" && raw == "});")
             {
+                part = "after";
                 continue;
             }
 
-            if (raw == "});")
+            if (part != "inside")
             {
-                break;
+                if (!structure.Skips(raw.Trim()))
+                {
+                    throw Unknown(aliasPath, raw);
+                }
+
+                continue;
             }
 
             Match line = AliasLine().Match(raw);
@@ -490,6 +565,11 @@ internal sealed partial class TokenSources
             // The comment of a high-contrast line starts with the CSS system color its source stands for.
             string? css = highContrast ? line.Groups[3].Value.Split(' ')[0] : null;
             tokens.Set(line.Groups[1].Value, Source(line.Groups[2].Value, css));
+        }
+
+        if (part != "after")
+        {
+            throw new InvalidDataException($"{aliasPath} has no generateColorTokens that ends with \"}});\".");
         }
 
         if (tokens.Names.Count != AliasColorCount)
@@ -515,9 +595,15 @@ internal sealed partial class TokenSources
         var statusTemplate = new List<(string Suffix, string Source)>();
         var patches = new List<(string Target, string Name, string Source)>();
         string block = string.Empty;
+        var structure = new Structure();
         foreach (string raw in Lines(path))
         {
             string line = raw.Trim();
+            if (PaletteScaffolding.Contains(line) || structure.Skips(line))
+            {
+                continue;
+            }
+
             if (line.StartsWith("const statusColorPaletteTokens = statusSharedColorNames.reduce(", StringComparison.Ordinal))
             {
                 block = "palette";
@@ -568,6 +654,10 @@ internal sealed partial class TokenSources
                 {
                     patches.Add((patch.Groups[1].Value, patch.Groups[2].Value, patch.Groups[3].Value));
                 }
+            }
+            else
+            {
+                throw Unknown(path, raw);
             }
         }
 
@@ -663,31 +753,34 @@ internal sealed partial class TokenSources
 
     private List<string> ReadNameList(string path, string name)
     {
-        var names = new List<string>();
-        bool inside = false;
+        // Every list of the file is read, so that a line of any of them that is not a name stops the tool; the one named is kept.
+        var lists = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var structure = new Structure();
+        List<string>? current = null;
         foreach (string raw in Lines(path))
         {
             string line = raw.Trim();
-            if (line == $"export const {name} = [")
+            Match start = NameListStart().Match(line);
+            if (current is null && start.Success)
             {
-                inside = true;
-                continue;
+                current = [];
+                lists.Add(start.Groups[1].Value, current);
             }
-
-            if (!inside)
+            else if (current is not null && line == "] as const;")
             {
-                continue;
+                current = null;
             }
-
-            if (line == "] as const;")
+            else if (current is not null && NameListEntry().IsMatch(line))
             {
-                return names;
+                current.Add(Unquote(line.TrimEnd(',')));
             }
-
-            names.Add(Unquote(line.TrimEnd(',')));
+            else if (current is not null || !(NameListOneLine().IsMatch(line) || structure.Skips(line)))
+            {
+                throw Unknown(path, raw);
+            }
         }
 
-        throw new InvalidDataException($"{path} has no {name}.");
+        return lists.GetValueOrDefault(name) ?? throw new InvalidDataException($"{path} has no {name}.");
     }
 
     private List<(string Status, string Color)> ReadStatusMapping()
@@ -733,24 +826,38 @@ internal sealed partial class TokenSources
         var styles = new List<TextStyleToken>();
         string? style = null;
         var fields = new Dictionary<string, string>(StringComparer.Ordinal);
-        bool inside = false;
+        var structure = new Structure();
+
+        // Before the object and after it, only the lines any file may hold.
+        string part = "before";
         foreach (string raw in Lines(Path))
         {
             string line = raw.Trim();
-            if (line.StartsWith("export const typographyStyles", StringComparison.Ordinal))
+            if (part == "before" && line == "export const typographyStyles: TypographyStyles = {")
             {
-                inside = true;
+                part = "inside";
                 continue;
             }
 
-            if (!inside || line.Length == 0)
+            if (part == "inside" && style is null && line == "};")
             {
+                part = "after";
                 continue;
             }
 
-            if (line == "};")
+            if (part != "inside")
             {
-                break;
+                if (!structure.Skips(line))
+                {
+                    throw Unknown(Path, raw);
+                }
+
+                continue;
+            }
+
+            if (line.Length == 0)
+            {
+                continue;
             }
 
             if (style is null)
@@ -799,6 +906,11 @@ internal sealed partial class TokenSources
             fields.Add(entry.Groups[1].Value, entry.Groups[2].Value);
         }
 
+        if (part != "after")
+        {
+            throw new InvalidDataException($"{Path} has no typographyStyles that ends with \"}};\".");
+        }
+
         return styles;
     }
 
@@ -808,12 +920,18 @@ internal sealed partial class TokenSources
     {
         const string Path = "utils/shadows.ts";
         var shadows = new List<ShadowToken>();
+        var structure = new Structure();
         foreach (string raw in Lines(Path))
         {
             string line = raw.Trim();
-            if (!line.StartsWith("[`shadow", StringComparison.Ordinal))
+            if (ShadowScaffolding.Contains(line) || structure.Skips(line))
             {
                 continue;
+            }
+
+            if (!line.StartsWith("[`shadow", StringComparison.Ordinal))
+            {
+                throw Unknown(Path, raw);
             }
 
             Match shadow = ShadowLine().Match(line);
@@ -847,6 +965,51 @@ internal sealed partial class TokenSources
         }
 
         return shadows.Count > 0 ? shadows : throw new InvalidDataException($"{Path} has no shadow.");
+    }
+
+    /// <summary>
+    /// The lines any file may hold, trimmed: blank lines, comments (<c>// …</c>, and <c>/* … */</c> on one line or over several),
+    /// and imports (<c>import … from '…';</c> on one line, or <c>import {</c> / <c>import type {</c>, one name a line, and
+    /// <c>} from '…';</c>). It keeps whether it is inside a comment or an import, so one instance reads one file.
+    /// </summary>
+    private sealed class Structure
+    {
+        private bool _inComment;
+        private bool _inImport;
+
+        public bool Skips(string line)
+        {
+            if (_inComment)
+            {
+                _inComment = !line.EndsWith("*/", StringComparison.Ordinal);
+                return true;
+            }
+
+            if (_inImport)
+            {
+                if (ImportEnd().IsMatch(line))
+                {
+                    _inImport = false;
+                    return true;
+                }
+
+                return Shorthand().IsMatch(line);
+            }
+
+            if (line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal) || ImportLine().IsMatch(line))
+            {
+                return true;
+            }
+
+            if (line.StartsWith("/*", StringComparison.Ordinal))
+            {
+                _inComment = !line.EndsWith("*/", StringComparison.Ordinal);
+                return true;
+            }
+
+            _inImport = ImportStart().IsMatch(line);
+            return _inImport;
+        }
     }
 
     /// <summary>

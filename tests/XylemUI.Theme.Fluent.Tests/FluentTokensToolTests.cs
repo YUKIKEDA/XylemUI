@@ -96,16 +96,7 @@ public sealed partial class FluentTokensToolTests
         string directory = Directory.CreateTempSubdirectory("xylemui-tokens-").FullName;
         try
         {
-            string tokens = Path.Combine(directory, "vendor", "out", "fluent", "tokens");
-            string source = Path.Combine(root, "vendor", "out", "fluent", "tokens");
-            foreach (string file in Directory.EnumerateFiles(source, "*.ts", SearchOption.AllDirectories))
-            {
-                string copy = Path.Combine(tokens, Path.GetRelativePath(source, file));
-                _ = Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
-                File.Copy(file, copy);
-            }
-
-            File.Copy(Path.Combine(root, "vendor", "versions.lock"), Path.Combine(directory, "vendor", "versions.lock"));
+            string tokens = CopyTokens(root, directory);
             string light = Path.Combine(tokens, "alias", "lightColor.ts");
             File.WriteAllLines(
                 light,
@@ -123,6 +114,78 @@ public sealed partial class FluentTokensToolTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Each reader of the tool stops on a line it does not recognise, rather than pass over a statement that would change a token.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A copy of the token files in a temporary folder, with one line added to one file. The cases cover each reader: outside the
+    ///   objects of an object file (global/colors.ts) and inside a read object (global/spacings.ts, a spread), after the function of an
+    ///   alias file (alias/lightColor.ts), a palette file (alias/highContrastColorPalette.ts, the <c>Object.assign(colorStatusTokens,
+    ///   …)</c> of the review of PR #929), the shadows (utils/shadows.ts, a spread in the returned object), the name lists
+    ///   (sharedColorNames.ts), and after the typography styles (global/typographyStyles.ts).
+    ///
+    /// Steps:
+    /// - Run <c>FluentTokensTool generate</c> on the copy.
+    ///
+    /// Expected:
+    /// - The tool exits with other than 0, its output names the added line as one it does not read, and it writes no file.
+    /// </remarks>
+    /// <param name="file">The file, under packages/tokens/src.</param>
+    /// <param name="after">The line the added line follows; empty to add it at the end of the file.</param>
+    /// <param name="added">The added line.</param>
+    [Theory]
+    [InlineData("global/colors.ts", "export const white = '#ffffff';", "Object.freeze(grey);")]
+    [InlineData("global/spacings.ts", "  m: '12px',", "  ...extraSpacings,")]
+    [InlineData("alias/lightColor.ts", "", "export const extraColor = grey[14];")]
+    [InlineData("alias/highContrastColorPalette.ts", "", "Object.assign(colorStatusTokens, { colorStatusDangerBackground4: hcCanvas });")]
+    [InlineData("utils/shadows.ts", "  return {", "    ...extraShadows,")]
+    [InlineData("sharedColorNames.ts", "", "export const extraNames = statusSharedColorNames.concat(['pink']);")]
+    [InlineData("global/typographyStyles.ts", "", "Object.assign(typographyStyles, {});")]
+    public void Generate_FileWithAnUnknownLine_Stops(string file, string after, string added)
+    {
+        string root = RepositoryRoot();
+        string directory = Directory.CreateTempSubdirectory("xylemui-tokens-").FullName;
+        try
+        {
+            string tokens = CopyTokens(root, directory);
+            string path = Path.Combine(tokens, file);
+            var lines = File.ReadAllLines(path).ToList();
+            int at = after.Length == 0 ? lines.Count : lines.IndexOf(after) + 1;
+            Assert.True(at > 0, $"{file} has no line \"{after}\".");
+            lines.Insert(at, added);
+            File.WriteAllLines(path, lines);
+            string output = Path.Combine(directory, "FluentTokens.g.cs");
+
+            (int exitCode, string log) = RunTool(root, "generate", tokens, output);
+
+            Assert.NotEqual(0, exitCode);
+            Assert.Contains($"the line \"{added}\" is not one this tool reads", log, StringComparison.Ordinal);
+            Assert.False(File.Exists(output));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    // Copies the pinned token files and vendor/versions.lock into a folder laid out as the repository's vendor folder, and returns the
+    // folder of the token files.
+    private static string CopyTokens(string root, string directory)
+    {
+        string tokens = Path.Combine(directory, "vendor", "out", "fluent", "tokens");
+        string source = Path.Combine(root, "vendor", "out", "fluent", "tokens");
+        foreach (string file in Directory.EnumerateFiles(source, "*.ts", SearchOption.AllDirectories))
+        {
+            string copy = Path.Combine(tokens, Path.GetRelativePath(source, file));
+            _ = Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy);
+        }
+
+        File.Copy(Path.Combine(root, "vendor", "versions.lock"), Path.Combine(directory, "vendor", "versions.lock"));
+        return tokens;
     }
 
     private static bool IsAlias(string name) =>

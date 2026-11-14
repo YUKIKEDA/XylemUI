@@ -241,7 +241,7 @@ public sealed class FluentThemeTests
             (0f, 12f, 32f),
             (standard.Spacing.SpacingHorizontalNone, standard.Spacing.SpacingHorizontalM, standard.Spacing.SpacingVerticalXXXL)
         );
-        Assert.Equal(4f, standard.Sizes.StrokeWidthThickest);
+        Assert.Equal(4f, standard.Sizes.StrokeWidths.StrokeWidthThickest);
         Assert.Equal((4f, 10000f), (standard.Radii.BorderRadiusMedium, standard.Radii.BorderRadiusCircular));
         Assert.Equal(new FluentTextStyle(14, 20, new FontWeight(400)), standard.Typography.Body1);
         Assert.Equal(new FluentTextStyle(32, 40, new FontWeight(600)), standard.Typography.Title1);

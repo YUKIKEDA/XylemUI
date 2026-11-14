@@ -130,6 +130,33 @@ public sealed class BrandRampTests
         Assert.Equal(expected, FluentBrand.Lightness.ToArray().Select(target => target.ToString("F4", CultureInfo.InvariantCulture)));
     }
 
+    /// <summary>
+    /// The tool writes each lightness target with 10 decimals, so that the generated file does not depend on the last digit of the
+    /// math library that ran the tool.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - FluentBrand.Lightness, which tools/FluentTokensTool generated.
+    ///
+    /// Steps:
+    /// - Write each of the 16 targets as the shortest text that reads back as the same double.
+    ///
+    /// Expected:
+    /// - No text has more than 10 decimals, and the 10-decimal text of step 80 is 44.1489690082 (Node v22 and Windows give
+    ///   44.14896900820197 and 44.14896900820196 before rounding, PR #929's review).
+    /// </remarks>
+    [Fact]
+    public void Lightness_IsWrittenWithTenDecimals()
+    {
+        double[] targets = FluentBrand.Lightness.ToArray();
+
+        Assert.All(
+            targets,
+            target => Assert.InRange(target.ToString("R", CultureInfo.InvariantCulture).Split('.').ElementAtOrDefault(1)?.Length ?? 0, 0, 10)
+        );
+        Assert.Equal("44.1489690082", targets[7].ToString("F10", CultureInfo.InvariantCulture));
+    }
+
     private static Color Parse(string hex) => Color.FromRgb(uint.Parse(hex.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
 
     private static string Hex(Color color) => string.Create(CultureInfo.InvariantCulture, $"#{color.R:x2}{color.G:x2}{color.B:x2}");

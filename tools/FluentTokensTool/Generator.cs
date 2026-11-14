@@ -10,6 +10,11 @@ namespace XylemUI.Tools.FluentTokens;
 /// </summary>
 internal static class Generator
 {
+    // The lightness targets are written with 10 decimals (design §13.2, step 4): the last digit of Math.Pow and Math.Cbrt differs by
+    // math library (Node v22 and Windows differ in 7 of the 16 targets, PR #929's review), and every target lies at least 191 ulp from
+    // the middle between two 10-decimal values, so each library writes the same text.
+    private const string LightnessFormat = "F10";
+
     private static readonly string[] Variants = ["Light", "Dark", "HighContrast"];
 
     /// <summary>
@@ -39,7 +44,7 @@ internal static class Generator
         );
         WriteColors(code, tokens);
         WritePixels(code, "FluentSpacing", "The spacing tokens (global/spacings.ts), in logical pixels.", tokens.Spacing);
-        WritePixels(code, "FluentSizes", "The stroke widths (global/strokeWidths.ts), in logical pixels.", tokens.StrokeWidths);
+        WritePixels(code, "FluentStrokeWidths", "The stroke widths (global/strokeWidths.ts), in logical pixels.", tokens.StrokeWidths);
         WritePixels(code, "FluentRadii", "The corner radii (global/borderRadius.ts), in logical pixels.", tokens.Radii);
         WriteTypography(code, tokens);
         WriteShadows(code, tokens);
@@ -70,7 +75,7 @@ internal static class Generator
             /// The colors of a <see cref="FluentTheme"/>: Fluent's alias colors (ColorTokens), its status palette (the status colors of
             /// ColorPaletteTokens), and its status colors (ColorStatusTokens), one property for each token.
             /// </summary>
-            public sealed record FluentColors
+            public sealed partial record FluentColors
             {
 
             """
@@ -113,7 +118,7 @@ internal static class Generator
 
     private static void WritePixels(StringBuilder code, string type, string summary, IReadOnlyList<PixelToken> tokens)
     {
-        _ = code.Append($"\n/// <summary>\n/// {summary}\n/// </summary>\npublic sealed record {type}\n{{\n");
+        _ = code.Append($"\n/// <summary>\n/// {summary}\n/// </summary>\npublic sealed partial record {type}\n{{\n");
         foreach (PixelToken token in tokens)
         {
             _ = code.Append(
@@ -134,7 +139,7 @@ internal static class Generator
     private static void WriteTypography(StringBuilder code, TokenSources tokens)
     {
         _ = code.Append(
-            "\n/// <summary>\n/// The text styles (global/typographyStyles.ts): the sizes, line heights, and weights of global/fonts.ts.\n/// </summary>\npublic sealed record FluentTypography\n{\n"
+            "\n/// <summary>\n/// The text styles (global/typographyStyles.ts): the sizes, line heights, and weights of global/fonts.ts.\n/// </summary>\npublic sealed partial record FluentTypography\n{\n"
         );
         foreach (TextStyleToken style in tokens.TextStyles)
         {
@@ -161,7 +166,7 @@ internal static class Generator
     private static void WriteShadows(StringBuilder code, TokenSources tokens)
     {
         _ = code.Append(
-            "\n/// <summary>\n/// The elevation shadows (utils/shadows.ts), each in the neutral colors and, with the suffix Brand, in the brand colors.\n/// </summary>\npublic sealed record FluentShadows\n{\n"
+            "\n/// <summary>\n/// The elevation shadows (utils/shadows.ts), each in the neutral colors and, with the suffix Brand, in the brand colors.\n/// </summary>\npublic sealed partial record FluentShadows\n{\n"
         );
         foreach (string suffix in new[] { string.Empty, "Brand" })
         {
@@ -236,7 +241,7 @@ internal static class Generator
 
                 /// <summary>
                 /// Gets the L* (CIE Lab, D50) of each step of <see cref="Web"/>, step 10 first, through the conversion of
-                /// <see cref="CieLab"/>.
+                /// <see cref="CieLab"/>, rounded to 10 decimals.
                 /// </summary>
                 public static ReadOnlySpan<double> Lightness =>
                     [
@@ -246,7 +251,7 @@ internal static class Generator
         foreach (uint step in tokens.BrandWeb)
         {
             Lab lab = CieLab.FromSrgb(((step >> 16) & 0xFF) / 255.0, ((step >> 8) & 0xFF) / 255.0, (step & 0xFF) / 255.0);
-            _ = code.Append($"        {lab.L.ToString("R", CultureInfo.InvariantCulture)},\n");
+            _ = code.Append($"        {lab.L.ToString(LightnessFormat, CultureInfo.InvariantCulture)},\n");
         }
 
         _ = code.Append("    ];\n}\n");

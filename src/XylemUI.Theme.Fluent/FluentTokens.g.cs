@@ -13,7 +13,7 @@ namespace XylemUI.Theme.Fluent;
 /// The colors of a <see cref="FluentTheme"/>: Fluent's alias colors (ColorTokens), its status palette (the status colors of
 /// ColorPaletteTokens), and its status colors (ColorStatusTokens), one property for each token.
 /// </summary>
-public sealed record FluentColors
+public sealed partial record FluentColors
 {
     /// <summary>Gets <c>colorNeutralForeground1</c>.</summary>
     public required Color ColorNeutralForeground1 { get; init; }
@@ -1741,7 +1741,7 @@ public sealed record FluentColors
 /// <summary>
 /// The spacing tokens (global/spacings.ts), in logical pixels.
 /// </summary>
-public sealed record FluentSpacing
+public sealed partial record FluentSpacing
 {
     /// <summary>Gets <c>spacingHorizontalNone</c>.</summary>
     public required float SpacingHorizontalNone { get; init; }
@@ -1843,7 +1843,7 @@ public sealed record FluentSpacing
 /// <summary>
 /// The stroke widths (global/strokeWidths.ts), in logical pixels.
 /// </summary>
-public sealed record FluentSizes
+public sealed partial record FluentStrokeWidths
 {
     /// <summary>Gets <c>strokeWidthThin</c>.</summary>
     public required float StrokeWidthThin { get; init; }
@@ -1860,7 +1860,7 @@ public sealed record FluentSizes
     /// <summary>
     /// Gets Fluent's values.
     /// </summary>
-    internal static FluentSizes Standard { get; } =
+    internal static FluentStrokeWidths Standard { get; } =
         new()
         {
             StrokeWidthThin = 1f,
@@ -1873,7 +1873,7 @@ public sealed record FluentSizes
 /// <summary>
 /// The corner radii (global/borderRadius.ts), in logical pixels.
 /// </summary>
-public sealed record FluentRadii
+public sealed partial record FluentRadii
 {
     /// <summary>Gets <c>borderRadiusNone</c>.</summary>
     public required float BorderRadiusNone { get; init; }
@@ -1931,7 +1931,7 @@ public sealed record FluentRadii
 /// <summary>
 /// The text styles (global/typographyStyles.ts): the sizes, line heights, and weights of global/fonts.ts.
 /// </summary>
-public sealed record FluentTypography
+public sealed partial record FluentTypography
 {
     /// <summary>Gets <c>body1</c>.</summary>
     public required FluentTextStyle Body1 { get; init; }
@@ -2013,7 +2013,7 @@ public sealed record FluentTypography
 /// <summary>
 /// The elevation shadows (utils/shadows.ts), each in the neutral colors and, with the suffix Brand, in the brand colors.
 /// </summary>
-public sealed record FluentShadows
+public sealed partial record FluentShadows
 {
     /// <summary>Gets <c>shadow2</c>.</summary>
     public required FluentShadow Shadow2 { get; init; }
@@ -2108,25 +2108,25 @@ internal static class FluentBrand
 
     /// <summary>
     /// Gets the L* (CIE Lab, D50) of each step of <see cref="Web"/>, step 10 first, through the conversion of
-    /// <see cref="CieLab"/>.
+    /// <see cref="CieLab"/>, rounded to 10 decimals.
     /// </summary>
     public static ReadOnlySpan<double> Lightness =>
         [
-        6.88043141161743,
-        12.599498021679114,
-        17.650779396482463,
-        23.323386097370125,
-        28.62477254622287,
-        34.09021351437993,
-        38.49709942169669,
-        44.14896900820196,
-        54.016986783474465,
-        62.8844462223324,
-        67.61120635570742,
-        72.02054705309583,
-        77.91293953074728,
-        84.04718806148858,
-        89.53121734880082,
-        95.42870619937173,
+        6.8804314116,
+        12.5994980217,
+        17.6507793965,
+        23.3233860974,
+        28.6247725462,
+        34.0902135144,
+        38.4970994217,
+        44.1489690082,
+        54.0169867835,
+        62.8844462223,
+        67.6112063557,
+        72.0205470531,
+        77.9129395307,
+        84.0471880615,
+        89.5312173488,
+        95.4287061994,
     ];
 }
