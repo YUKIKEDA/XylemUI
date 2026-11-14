@@ -31,6 +31,7 @@ internal sealed class AccessibilityTree(UiTree tree)
     private readonly Dictionary<NodeHandle, AccessibilityNode> _nodes = [];
     private readonly Dictionary<ulong, AccessibilityNode> _byId = [];
     private readonly HashSet<NodeHandle> _marked = [];
+    private readonly HashSet<NodeHandle> _markedChildren = [];
     private readonly HashSet<NodeHandle> _markedSelf = [];
     private readonly List<AccessibilityNode> _work = [];
     private readonly HashSet<AccessibilityNode> _inWork = [];
@@ -63,11 +64,9 @@ internal sealed class AccessibilityTree(UiTree tree)
     private readonly List<AccessibilityNode?> _made = [];
     private readonly HashSet<int> _keys = [];
 
-    // The map of the targets below each ancestor is valid while neither the set of targets nor the tree's links changed since it was
-    // made: the versions it was made at. A target set version of 0 is never made, so the first use makes the map.
-    private ulong _targetsVersion = 1;
-    private ulong _mappedTargets;
-    private ulong _mappedLinks;
+    // Whether the map of the targets below each ancestor holds, for each node, at least the targets below it now: false until it is
+    // made, and from when the set of targets changes or a node that is or holds a target is put under a parent (Attached).
+    private bool _belowValid;
     private Action? _runBuild;
     private AccessibleChildrenFunc? _building;
     private Rect _buildBounds;
@@ -97,7 +96,12 @@ internal sealed class AccessibilityTree(UiTree tree)
     /// <summary>
     /// Gets the number of nodes of the UI tree marked since the last update, for the tests.
     /// </summary>
-    internal int MarkedCount => _marked.Count + _markedSelf.Count;
+    internal int MarkedCount => _marked.Count + _markedChildren.Count + _markedSelf.Count;
+
+    /// <summary>
+    /// Gets the number of times the map of the targets below each ancestor was made, for the tests.
+    /// </summary>
+    internal int TargetMapsMade { get; private set; }
 
     /// <summary>
     /// Makes the whole tree, when assistive technology first asks for it, and hands the Platform every node.
@@ -133,7 +137,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         {
             holders = [];
             _holders[target] = holders;
-            _targetsVersion++;
+            _belowValid = false;
         }
 
         if (!holders.Contains(holder))
@@ -181,7 +185,7 @@ internal sealed class AccessibilityTree(UiTree tree)
     {
         if (_holders.Remove(target, out List<NodeHandle>? holders))
         {
-            _targetsVersion++;
+            _belowValid = false;
             foreach (NodeHandle holder in holders)
             {
                 MarkSelf(holder);
@@ -298,6 +302,36 @@ internal sealed class AccessibilityTree(UiTree tree)
     }
 
     /// <summary>
+    /// Marks a node of the UI tree whose list of children changed: a child put under it or taken out, or a virtualized list's rows
+    /// made, dropped, or laid out. The children's nodes are the children of the nearest node at or above it, which the update makes
+    /// again; whether the node itself has a node does not depend on its children, so the node above that one is not made again (row
+    /// AX3). A change that may also make or take away the node's own node marks it with <see cref="Mark"/>. Its callers mark only
+    /// once the tree is made.
+    /// </summary>
+    /// <param name="node">The node.</param>
+    public void MarkChildren(NodeHandle node)
+    {
+        if (_markedChildren.Add(node))
+        {
+            tree.NoteWork();
+        }
+    }
+
+    /// <summary>
+    /// Notes that a node was put under a parent, once the tree is made: when the node is one that relations name, or holds one below
+    /// it, the map of the targets below each ancestor is made again at its next use. Taking a node out needs nothing: the map then
+    /// holds a target below a node it left, which only queues the target's holders for nothing, until the map is made again.
+    /// </summary>
+    /// <param name="child">The node put under a parent.</param>
+    public void Attached(NodeHandle child)
+    {
+        if (_belowValid && (_holders.ContainsKey(child) || _below.ContainsKey(child)))
+        {
+            _belowValid = false;
+        }
+    }
+
+    /// <summary>
     /// Returns the node of the accessibility tree that stands for a node of the UI tree, or <see langword="null"/>.
     /// </summary>
     /// <param name="node">The node of the UI tree.</param>
@@ -365,7 +399,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             _ = _marked.Add(tree.Root);
         }
 
-        if (_marked.Count == 0 && _markedSelf.Count == 0)
+        if (_marked.Count == 0 && _markedChildren.Count == 0 && _markedSelf.Count == 0)
         {
             return;
         }
@@ -393,6 +427,22 @@ internal sealed class AccessibilityTree(UiTree tree)
             }
         }
 
+        // A change of a list of children makes again the node that holds the children's nodes, not the one above it: the work is the
+        // node's flattened children, whatever the size of the tree around it.
+        foreach (NodeHandle parent in _markedChildren)
+        {
+            if (!tree.Nodes.IsAlive(parent))
+            {
+                continue;
+            }
+
+            AddWork(Owner(parent));
+            if (_holders.Count > 0)
+            {
+                QueueHoldersAround(parent);
+            }
+        }
+
         foreach (NodeHandle node in _markedSelf)
         {
             if (tree.Nodes.IsAlive(node) && _nodes.TryGetValue(node, out AccessibilityNode? own))
@@ -402,6 +452,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         }
 
         _marked.Clear();
+        _markedChildren.Clear();
         _markedSelf.Clear();
         _work.Sort(static (a, b) => a.Depth.CompareTo(b.Depth));
         LastRefreshed = 0;
@@ -608,9 +659,9 @@ internal sealed class AccessibilityTree(UiTree tree)
     // Queues the holders of the targets at, above, or below a marked node of the UI tree: one walk up from it, probing the reverse table
     // at each node (a target at or above it, whose text the change may change), then one probe of the map of the targets below each of
     // their ancestors (targets below it, which the change may hide or show). The map is kept across updates and made again only when
-    // the set of targets or the tree's links changed since it was made (a version stamp): an update with no such change costs
-    // O(marks × depth) probes plus the holders queued, whatever the number of targets; one after such a change adds O(targets × depth)
-    // once.
+    // the set of targets changed, or a node that is or holds a target was put under a parent, since it was made (Attached): an update
+    // with no such change costs O(marks × depth) probes plus the holders queued, whatever the number of targets; one after such a
+    // change adds O(targets × depth) once. A virtualized list's row swap whose rows hold no target keeps the map (row AX3).
     private void QueueHoldersAround(NodeHandle node)
     {
         for (NodeHandle at = node; !at.IsNone; at = tree.Nodes.GetRef(at).Parent)
@@ -618,7 +669,7 @@ internal sealed class AccessibilityTree(UiTree tree)
             QueueHolders(at);
         }
 
-        if (_mappedTargets != _targetsVersion || _mappedLinks != tree.LinkVersion)
+        if (!_belowValid)
         {
             MapTargetsBelow();
         }
@@ -636,8 +687,8 @@ internal sealed class AccessibilityTree(UiTree tree)
     // so that making the map again allocates nothing once warm.
     private void MapTargetsBelow()
     {
-        _mappedTargets = _targetsVersion;
-        _mappedLinks = tree.LinkVersion;
+        _belowValid = true;
+        TargetMapsMade++;
         foreach (List<NodeHandle> old in _below.Values)
         {
             old.Clear();
@@ -704,7 +755,7 @@ internal sealed class AccessibilityTree(UiTree tree)
         if (_holders.TryGetValue(target, out List<NodeHandle>? holders) && holders.Remove(holder) && holders.Count == 0)
         {
             _ = _holders.Remove(target);
-            _targetsVersion++;
+            _belowValid = false;
         }
     }
 
