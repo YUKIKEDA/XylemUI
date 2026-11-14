@@ -11,7 +11,10 @@
 # (design §8.13), and cldr-json is the json-full release of CLDR that tools/CldrTableGen generates XylemUI.Core's locale tables
 # from (design §4.11, row LC2). The fluent-* lines are the files of Fluent UI System Icons (MIT, release 1.1.344, commit a347af9) that
 # vendor/build.ps1 copies to vendor/out/fluent: the two fonts the build tool of XylemUI.Theme.Fluent keeps an app's glyphs of,
-# and the two maps from names to code points that FluentIcons.g.cs is generated from (design §5.0.4). The image decoders (design
+# and the two maps from names to code points that FluentIcons.g.cs is generated from (design §5.0.4). The fluent-tokens-* lines
+# are the files of packages/tokens/src of microsoft/fluentui (MIT, @fluentui/tokens 1.0.0-alpha.24, commit 1f59fc2) that
+# vendor/build.ps1 copies to vendor/out/fluent/tokens at their paths, and that tools/FluentTokensTool generates FluentTokens.g.cs from
+# (design §13.2); each SHA-256 is that of the file at the commit. The image decoders (design
 # §5.0.4, row IM1): wuffs is the one C file of a Wuffs release, which native/imaging/xylemui_image.c includes; libjpeg-turbo and
 # libwebp are the tag archives; nasm is the assembler libjpeg-turbo's SIMD needs, taken onto the PATH and never shipped. The
 # skcms-* lines are the files of skcms (BSD-3), which the shim converts embedded color profiles to sRGB with (design §5.0.4, IM1's
@@ -28,6 +31,23 @@ fluent-regular-ttf  1.1.344  f977ae5bfb46661e7ba94b098e0d7720e27af888e57b9b14e23
 fluent-filled-ttf  1.1.344  0a5adcf88ab5b243096da72d965bd22cd303200b36ba739a5a2a81086ef847ab  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Filled.ttf
 fluent-regular-json  1.1.344  c6e91d8b156b6d29aff3aeccd8d6b9752c2365c9f9ad02b194d5d791da7abee8  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Regular.json
 fluent-filled-json  1.1.344  0db027f0c130330a2660034b0036d37fa68a206beea38ff59595502f75897546  https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/fonts/FluentSystemIcons-Filled.json
+fluent-tokens-global-colors  1f59fc2  9f25bd8412c3506c1e324c3f3bc9a069c0696e7b08cf74c322038777f8d0ea6b  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/colors.ts
+fluent-tokens-global-brandColors  1f59fc2  96cb090622261ef2abfc90422d1297b35eca81beb8f45f2216ae9bccf054774e  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/brandColors.ts
+fluent-tokens-global-colorPalette  1f59fc2  aa6bce4c58269a03050548a6a06f86e1087a33a15f114ff4371718f45938b3cc  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/colorPalette.ts
+fluent-tokens-global-spacings  1f59fc2  63a64eba054236a88c80293f3128f89e988f22da90e7b4637a53ad92a89f9c2d  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/spacings.ts
+fluent-tokens-global-strokeWidths  1f59fc2  3bcb25fbea831bab1c06f0ce8c98ba0f671812d9711add1cbd4a441c9f63f59e  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/strokeWidths.ts
+fluent-tokens-global-borderRadius  1f59fc2  156bf14d20515100a28356daa7c07c9766a1108a0e4efef86ae171ee8c505f34  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/borderRadius.ts
+fluent-tokens-global-fonts  1f59fc2  ba5c662e2ec0e216f98ca28433ab439ecb4036d30d2311aa3f7d9c362ddcb2e9  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/fonts.ts
+fluent-tokens-global-typographyStyles  1f59fc2  2fc6a43bdfd8f4dbec9fef1eb5619cbeaf2c4e2bcc21a0681906e4306236dbfc  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/global/typographyStyles.ts
+fluent-tokens-alias-lightColor  1f59fc2  0882854a85d8433e530bb5e40adff342e321361c64cd295255127c06fea55a48  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/alias/lightColor.ts
+fluent-tokens-alias-darkColor  1f59fc2  ed15b83e605999aa196ba04ac9d03557cf943a3ba7ce3a3979650992505c2bea  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/alias/darkColor.ts
+fluent-tokens-alias-highContrastColor  1f59fc2  c1d962b88037393dea7eebc2095608305a467a41f174c57438a1202b727cb697  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/alias/highContrastColor.ts
+fluent-tokens-alias-lightColorPalette  1f59fc2  2453cecdf44ecda71a2e7cbe30549a074d163ed3c3e393c112f08b3d8a8127c2  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/alias/lightColorPalette.ts
+fluent-tokens-alias-darkColorPalette  1f59fc2  99703b52eeb525462bc042415d93816f174cd8f5c16b044324be9da92e5c6f58  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/alias/darkColorPalette.ts
+fluent-tokens-alias-highContrastColorPalette  1f59fc2  27cb1c81b67b84e64374eccb9f6f083a2f34d05390726a126dd1c712ac749e37  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/alias/highContrastColorPalette.ts
+fluent-tokens-sharedColorNames  1f59fc2  5ce21173e87e1f67c4ea9a40a71df6a9ad976abc8f734de4f4fb9ac9d99328e2  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/sharedColorNames.ts
+fluent-tokens-statusColorMapping  1f59fc2  28d42dfee23c419a87c181e328a98438ac7508630c41cfe98e9b1effe6ac58df  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/statusColorMapping.ts
+fluent-tokens-utils-shadows  1f59fc2  0f76754193af8f255401fe69f0288dd96767f4e35e7663bd0f84bf8af879d61a  https://raw.githubusercontent.com/microsoft/fluentui/1f59fc2121f828b57713915f6aa035b4e77c7d47/packages/tokens/src/utils/shadows.ts
 libjpeg-turbo  3.2.0  980dd81f425082aa6d7c9e47fef27554ce7a9ffc8e2f6e863b97d263c5c50858  https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/3.2.0.tar.gz
 libwebp  1.6.0  93a852c2b3efafee3723efd4636de855b46f9fe1efddd607e1f42f60fc8f2136  https://github.com/webmproject/libwebp/archive/refs/tags/v1.6.0.tar.gz
 nasm  2.16.03  3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6  https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip
