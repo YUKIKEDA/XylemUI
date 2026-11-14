@@ -580,6 +580,32 @@ Rejected:
 
 ---
 
+## 複数ウィンドウ
+
+Decision（行 MW1。Grill の 8 巡目でオーナーが決定、Issue #914。設計書 §6.0.1）:
+  一番上の窓の根の Scope は 1 つのアプリの根の Scope の子、持ち主のある窓の根は開いた側の Scope の子。アプリの `Provide` はアプリの根、ロケールと OS の見た目は窓の根。
+  D3D11 のデバイスはプロセスに 1 つ、スワップチェーンは窓ごと。グリフアトラスの共有は測ってから決める。
+  一番上の窓は `XylemApp.OpenWindow` が返す `WindowHandle`（`Close`・取り消せる `Closing`・`Closed`）、持ち主のある窓は宣言する要素 `Window(Signal<bool> isOpen, …)`。持ち主を閉じると持ち主のある窓を先に閉じる。UI スレッドだけから呼ぶ。
+  終わり方はモード（最後の窓・明示だけ）で、既定は macOS で明示、ほかで最後の窓。
+  別の窓に出したポップアップの節は持ち主の窓の AccessKit の木に入れる。DD1 のドラッグはアプリの段に移す。`HeadlessApp` は窓の一覧、開く・閉じる、窓の間のフォーカスを持つ。
+
+Reason:
+  別ウィンドウのポップアップは開いた側の Context を引く（設計書 §7.3 の Q1、§2.13「ポップアップの中身は、宣言した場所の値を引く」）。窓を独立させると、この約束が窓のポップアップで破れる。
+  ハンドラの中から開いた一番上の窓の根を、そのハンドラの Scope の子にすると、ハンドラを登録した部分が作り直されたときに窓まで消える。アプリの根の子にすれば、どこから開いても同じ寿命になる。
+  GPUI（`globals_by_type`、zed v1.25.3 の `crates/gpui/src/app.rs` 871 行目）と Avalonia（`Application` の資源）は、アプリ全体の値の置き場を持つ。
+  GPUI はデバイスをプラットフォームに 1 つ持ち（`crates/gpui_windows/src/platform.rs` 100・319 行目）、窓ごとにデバイスを作ると窓ごとにシェーダをコンパイルする（行 C0 までは約 0.6 秒）。
+  macOS のアプリは窓が無くても動き続けるのが習わしで、GPUI の `QuitMode`（`app.rs` 457〜466 行目）と Avalonia の `ShutdownMode` はモードで選ぶ。
+  フォーカスを取らないポップアップの窓に adapter を持たせると、その窓はフォーカスのイベントを出せず、メニューを動いても Narrator が黙る。Avalonia はポップアップの根の peer を `Popup` の peer の子にする（12.1.4 の `src/Avalonia.Controls/Automation/Peers/PopupAutomationPeer.cs` 18〜22 行目）。
+  ドッキング（行 DK1）でパネルを別の窓へ動かすには、窓をまたぐドラッグが要る。GPUI の `active_drag` はアプリの段にある（`app.rs` 822 行目）。
+
+Rejected:
+  - 一番上の窓も持ち主のある窓も、根の Scope を独立させる（Q25 の案 a。窓のポップアップが開いた側の Context を失い、§7.3 の Q1 と食い違う。アプリ全体の値を置く所が無く、アプリの中の言語の切り替えを窓ごとの根の関数に配ることになる）
+  - 一番上の窓も宣言する要素だけで開く（Q27 の案 b。Flutter の実験の `RegularWindow`、`packages/flutter/lib/src/widgets/_window.dart` 1551 行目の形。一番上の窓は開いた側より長く生きることが多く、要素の持ち主の Scope に寿命を縛ると、開いた部分を閉じた時に窓も消える）
+  - 持ち主のある窓も命令で開く（Q27 の案 a だけ。Avalonia の `Window.Show(owner)`、`src/Avalonia.Controls/Window.cs` 939 行目の形。開閉を Signal で持つ `Popup` と `Dialog` の形と揃わず、開いた側の Scope が破棄された時に閉じる仕組みをアプリが書くことになる）
+  - 別の窓に出したポップアップごとに AccessKit の adapter と木を持つ（Q29 の案 b。Flutter 3.47.8 はビューごとに a11y の橋を持つ（`engine/src/flutter/shell/platform/windows/flutter_windows_view.h` 511 行目）。フォーカスを取らない窓はフォーカスのイベントを出せず、メニューを動いても読み上げない）
+
+---
+
 ## 開発者向け API
 
 Decision:
@@ -931,6 +957,22 @@ Rejected:
   - OS の 7 色を折れ線の点にし、各段の明度だけを `brandWeb` に揃える。対比は守られ、測った青では 4 組とも 0.1 以内で `brandWeb` と同じだった。一方で、`SystemAppearance.Accent` と `FluentTheme.Create` の `accent` を 7 色の値に変える必要がある。1 色しか返さない macOS と Linux では別の規則が要り、同じアクセントの色が OS ごとに違って見える（設計書 §13.2 の「全OSで同じ見た目」）。同じ Grill
   - theme designer の計算をそのまま使う（明度は `colors/hueMap.ts` の色相ごとの表）。測った青で、明度が L\* 0.9〜86.0 になり、`#292929` の上の暗の `colorBrandForeground1`（`brand[100]`）が 3.75 だった。theme designer 自身はこのトークンを `brand[110]` に替えるが（`utils/getOverridableTokenBrandColors.ts` 70〜75 行目）、それでも 4.48 で、固定したトークンの対応とも違う。段 160 も `brandWeb` の L\* 95.4 より暗い。同じ Grill
   - 制御点を theme designer の画面の既定（Vibrancy 0、つまり 0 と 0）にする。キーを `brandWeb` の段 80 にすると、キーより明るい段の彩度が早く落ちる。`brandWeb` との色差は最大 ΔE 18.7 で、2/3 と 1/3 の 10.9 より大きい。同じ Grill
+
+Decision（入れ物の組の前半、行 B3。Grill の 8 巡目でオーナーが決定、Issue #914）:
+  Viewbox は Core の要素（変形と layout のノード）、Stack と Switcher は B3 の Primitives。
+  SplitView の大きさは区画ごとの重みと、区画ごとの「窓の大きさが変わっても画素で保つ」印で持つ。
+  Tabs の選択はキーの付いた一覧と `Signal<TKey>` で持ち、何も選ばない状態を持たない。選ばれたタブを閉じた後は、次、無ければ前のタブを既定にし、閉じる操作は要求として出す。
+
+Reason:
+  D14 は「比率を保つ枠」と「重ねる入れ物」を、レイアウトの道具として部品に数えなかった（上の「出す部品の範囲」の Rejected）。Viewbox は中身を縮める変形で、比率を保つだけの枠とは違う。Stack と Switcher は、どれを見せるかの選択と a11y を持ち、重ねるだけの入れ物と違う。
+  重みだけでは、横の道具の区画が窓の大きさに合わせて伸び縮みする。GtkPaned は `resize-start-child` で、窓に合わせて変わる区画を選ばせる。
+  UIA の Tab の制御の種類は選択が必須で（Microsoft Learn の「Tab Control Type」の Required Control Patterns の表、IsSelectionRequired が TRUE で「Tab controls always require that a selection be made」）、Avalonia の TabControl も `SelectionMode.AlwaysSelected`（12.1.4 の `TabControl.cs` 95 行目）。APG、WinUI、zed の `Neighbour` は、閉じたタブの次を選ぶ。
+
+Rejected:
+  - Viewbox を Primitives の部品にする（Image と ScrollView と同じく layout と変形のノードで、Core の要素が持つ。言葉は `ImageFit` を使う）
+  - SplitView の大きさを重みだけで持つ（zed の `flexes`、Dock の `Proportion` だけの形。横の道具の区画が窓に合わせて伸びる）
+  - Tabs の選択をインデックス（`Signal<int>`）で持つ（Flutter の `TabController.index`、WinUI と Avalonia の `SelectedIndex` の形。前のタブを閉じたり並べ替えたりすると選択がずれ、行 DK1 のグループの間の移動に使えない）
+  - 選ばれたタブを閉じた後、最近使った順で選ぶのを既定にする（zed v1.25.3 の既定、`assets/settings/default.json` 1511 行目の `"activate_on_close": "history"`。部品が選んだ履歴のキーの一覧を持つことになる。行 DK1 の選択肢にする）
 
 ---
 
