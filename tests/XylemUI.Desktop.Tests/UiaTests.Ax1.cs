@@ -906,12 +906,11 @@ public sealed unsafe partial class UiaTests
     ///   ("time"), and DateTimeInput ("when"), a read-only SearchBox ("fixed"), and a disabled DateInput ("off").
     ///
     /// Steps:
-    /// - On the client's thread, set each field to "x" in an action of its own, and run the loop until its text changed or the client
-    ///   refused it (the read-only and the disabled field: until the action ended). The actions are split because a third UIA SetValue
-    ///   in a row from one client thread does not return (Issue #895).
+    /// - In one action of the client, find each of the six fields in turn and set it to "x", counting the calls that returned or
+    ///   that the client refused; run the loop until the client is done and "when" has text.
     ///
     /// Expected:
-    /// - "x" in the four; "fixed" and "off" empty.
+    /// - Six calls ended before the watchdog; "x" in the four; "fixed" and "off" empty.
     /// </remarks>
     [Fact]
     public void SetValue_WritesTheTextRoles_NotAReadOnlyOrDisabledOne() =>
@@ -945,16 +944,12 @@ public sealed unsafe partial class UiaTests
                 useWarp: true
             );
 
-            // One SetValue for each action of the client: a third in a row from one client thread does not return (Issue #895).
-            for (int i = 0; i < ids.Length; i++)
-            {
-                string id = ids[i];
-                Signal<string> text = texts[i];
-                bool writable = i < 4;
-                bool refused = false;
-                ActByUia(
-                    window,
-                    root =>
+            int ended = 0;
+            ActByUia(
+                window,
+                root =>
+                {
+                    foreach (string id in ids)
                     {
                         try
                         {
@@ -963,15 +958,17 @@ public sealed unsafe partial class UiaTests
                         catch (Exception exception) when (exception is ElementNotEnabledException or InvalidOperationException)
                         {
                             // The client may refuse a read-only or disabled element itself; either way the text stays.
-                            refused = true;
                         }
-                    },
-                    () => !writable || refused || text.Peek().Length > 0
-                );
-            }
+
+                        _ = Interlocked.Increment(ref ended);
+                    }
+                },
+                () => texts[3].Peek().Length > 0
+            );
 
             RunAccessibilityStage(window);
 
+            Assert.Equal(6, Volatile.Read(ref ended));
             Assert.Equal(["x", "x", "x", "x", string.Empty, string.Empty], texts.Select(t => t.Peek()));
         });
 
