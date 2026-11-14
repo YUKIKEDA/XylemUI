@@ -698,6 +698,9 @@ Rejected:
 Decision（Grill の 7 巡目、Issue #912）:
   動作の基底の型にハンドラを 1 つ付ける `OnActionsOf<T>(handler, can, phase)` を、`can` を持ったまま Core の公開の API にする。B1 の新しいキーは、一点のキーをキーマップの行と動作に、押して離すキーを部品のハンドラにする。SplitButton は Tab で 1 回だけ止まる。長押しで働くボタンは Qt の `DelayButton` の形にする。HyperlinkButton は行 PL2 の URI を開く口を使う。副題付きのボタンは副題を説明に入れる。
 
+Decision（Grill の 10 巡目、Issue #917）:
+  SplitButton の a11y は、主の操作の Invoke を持つ節と、メニューを開閉する節の 2 つにする。1 つの節が両方を持つ形を上流に頼み、入ったら 1 つの節に戻す。2 つの節の並べ方は、まだ決めていない（行 B1）。
+
 Reason:
   動作を今受けられるかを、Flutter（`Action.isEnabled`、3.47.8 の `packages/flutter/lib/src/widgets/actions.dart` 267 行目）と Avalonia（`ICommand.CanExecute`、12.1.4 の `src/Avalonia.Controls/Button.cs` 205・371 行目が読む）は、どのパッケージの部品にも公開する。B1 の部品だけが内部の口を使うと、ほかのパッケージの部品は同じ部品を同じ費用で作れない。
 
@@ -713,6 +716,8 @@ Rejected:
   - 長押しのコールバックと `DelayButton` の形の両方を持つ（案 c）（同じことに 2 つの形ができ、コールバックの側には上の支援技術の問題が残る。同じ Grill）
   - URI を開く口の行を作らず、HyperlinkButton は `onClick` だけを持ち、開くのはアプリに任せる（「開く」を持たない半端な部品になる。`scope.mdc`。Avalonia 12.1.4 の `HyperlinkButton` はクリックの後に自分で開き（`src/Avalonia.Controls/HyperlinkButton.cs` 77〜94 行目、86 行目の `Launcher.LaunchUriAsync`）、zed v1.25.3 の `ButtonLink` も自分で開く（`crates/ui/src/components/button/button_link.rs` 74 行目の `cx.open_url`）。同じ Grill）
   - 副題付きのボタンを、テーマの 2 行の配置だけにする（案 b）（名前のたたみで、名前に副題まで入る。Fluent 2 の React の `CompoundButton` はこの形で、副題（`secondaryContent`）をボタンの中に置き（fluentui のコミット `f9720c35` の `packages/react-components/react-button/library/src/components/CompoundButton/renderCompoundButton.tsx` 20〜23 行目）、説明の関係を付けない（`useCompoundButton.ts` 24〜35 行目）。XylemUI は名前を操作を見分ける短い名にし、副題は `AccessibilityInfo.Description` に分けるので、Fluent と違う。同じ Grill）
+  - SplitButton の a11y を、開閉を持つ 1 つの節にする（7 巡目の形）（`accesskit_consumer` 0.39.1 は開閉を持つ節に Invoke を付けない（`accesskit_consumer/src/node.rs` 661〜668 行目の `supports_expand_collapse`、670〜685 行目の `is_invocable`）。支援技術から主の操作を呼べない。UIA の「SplitButton Control Type」のページは Invoke と ExpandCollapse の両方を Required にしている。Grill の 10 巡目、Issue #917）
+  - 上流が 1 つの節に Invoke と ExpandCollapse を許すまで、SplitButton を出さずに待つ（Chromium も同じ規則で（`ui/accessibility/ax_node_data.cc` の `AXNodeData::IsInvocable`、コミット `0272ce59`）、上流がいつ変わるかは決まっていない。2 つの節なら今の AccessKit で両方の操作を出せる。同じ Grill）
 
 ---
 
@@ -777,6 +782,24 @@ Rejected:
   - 見出しを押しての並べ替えを B4 の表に入れる（Avalonia 12.1.4 の TableView は、見出しのドラッグでの幅の変更を持ち（`src/Avalonia.Controls/TableViewColumnHeader.cs` 55〜67 行目）、並べ替えを持たない（`TableView*.cs` と `Presenters/TableView*.cs` に sort の語が無い）。zed v1.25.3 の `Table` も幅の変更だけを持つ（`crates/ui/src/components/data_table.rs` に sort の語が無い）。Flutter 3.47.8 の `DataTable` は並べ替えの印と知らせを持ち、並べ替えるのはアプリである（`packages/flutter/lib/src/material/data_table.dart` 32 行目の `DataColumnSortCallback`）。並べ替えの順を誰が持つかは絞り込みと同じ問いで、行 DG1 の Grill で決める。B4 は見出しに印の場所を残す。同じ Grill）
   - 選択を番号で持つ（Avalonia 12.1.4 の `SelectionModel` は番号の範囲で選ぶ（`src/Avalonia.Controls/Selection/SelectionModel.cs` 248 行目の `SelectRange(int start, int end)`）。項目を足したり並べ替えたりすると、選んだ行がずれる。同じ Grill）
   - モードを Avalonia の印の組み合わせにする（Avalonia 12.1.4 の `SelectionMode` は Single・Multiple・Toggle・AlwaysSelected の印を組み合わせる `[Flags]` の列挙である（`src/Avalonia.Controls/SelectionMode.cs` 8〜29 行目）。Multiple だけなら Ctrl で切り替え Shift で範囲、Toggle を足すと押すたびに切り替える（`src/Avalonia.Controls/Primitives/SelectingItemsControl.cs` 814〜816 行目）。選ばない形を持たないので、Win32 の `LBS_NOSEL` に当たる、見せるだけで選ばない一覧を表せない。同じ Grill）
+  - 範囲を広げるかを、動作の中で今の Shift から読む（zed v1.25.3 の project panel は `menu::SelectNext` の中で `window.modifiers().shift` を読む（`crates/project_panel/src/project_panel.rs` 34・3244・3289 行目）。利用者が Shift の付いたキー（`shift-j`）を「次へ」に割り当てると、範囲が広がる。動作は割り当てたキーと切り離されているべきなので、範囲を広げる版を別の動作にする。Grill の 10 巡目、Issue #917）
+  - 作った範囲の外の行へは、次のフレームでフォーカスする（案 B）（キーを押したフレームでは前の行にフォーカスが残り、押下と見た目が 1 フレームずれる。Avalonia 12.1.4 はその場で作って並べる（`src/Avalonia.Controls/VirtualizingStackPanel.cs` 635 行目の `ScrollIntoView` が、673・686・694 行目で layout の pass を回す）。同じ Grill）
+  - ツリーを、節ごとに子の一覧を入れ子にして作る（Avalonia 12.1.4 の TreeView の形で、`TreeViewItem` の子の入れ物は `StackPanel` なので仮想化しない（`src/Avalonia.Controls/TreeViewItem.cs` 59〜60・78 行目））（入れ子の一覧は仮想化できない。見えている節を 1 つの一覧に平らにする形だけが仮想化でき、Flutter 3.47.8 の `TreeSliver` もそうする（`packages/flutter/lib/src/widgets/sliver_tree.dart` 974 行目の `_SliverTree extends SliverVariedExtentList`）。同じ Grill）
+  - PropertyGrid を、型のプロパティをリフレクションで読んで作る（Windows Forms の `PropertyGrid` の形。NativeAOT で使えない（`aot.mdc`）。アプリが記述の一覧を渡す。同じ Grill）
+
+---
+
+## 文字の入力の部品（行 B9）
+
+Decision（Grill の 10 巡目、Issue #917）:
+  すべての編集を、Flutter の formatter の形の 1 つの公開の口に通す。変換中の文字には効かせない。フォームの枠は、任意の部品を包む `Field(label, control, help, error)` にする。
+
+Reason:
+  数値の欄・型のある欄・1 文字ずつの欄・トークンの欄は、どれも編集が欄に入る前に見る必要がある。前と後の値を受けて新しい値を返す形だけが、マスクの字の差し込みやキャレットの移動まで書ける（Flutter 3.47.8 の `TextInputFormatter.formatEditUpdate`、`packages/flutter/lib/src/services/text_formatter.dart` 108 行目）。
+
+Rejected:
+  - 部品ごとに入力の口を上書きする（Avalonia 12.1.4 の形。`MaskedTextBox` は打鍵を `OnTextInput`（`src/Avalonia.Controls/MaskedTextBox.cs` 363 行目）で、貼り付けを別にキーの処理（211 行目）で上書きし、`NumericUpDown` は打鍵を絞らず、確定の時に解析する（`src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 1176 行目）。部品ごとに打鍵・貼り付け・IME の確定・a11y の SetValue の道を作り直すことになり、1 つでも漏れると数値の欄に数字でない文字が入る。アプリが自分の欄（電話番号など）を作れない。Grill の 10 巡目、Issue #917）
+  - 欄の飾りの設定にラベル・補助の文・誤りを持たせる（Flutter 3.47.8 の `InputDecoration` の `labelText`・`helperText`・`errorText`、`packages/flutter/lib/src/material/input_decorator.dart` 3018・3110・3237 行目）（文字の欄にしか使えず、Select・Checkbox・Slider・NumberBox が同じ枠を使えない。同じ Grill）
 
 ---
 

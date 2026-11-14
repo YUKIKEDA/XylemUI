@@ -2531,7 +2531,7 @@ internal interface IVirtualizedFocusHost
 }
 ```
 
-これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従う。ただし、走査が作った範囲の端に着き、その先にまだ項目がある間は、先に `MaterializeBeyond` で次の行を作って走査を続ける。走査がリストの中で、まだ作っていない項目を飛び越して次の行（範囲の外に持った行）へ進むときも同じである。作るのは `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab はリストを抜ける（#614 の実装）。
+これによりキーボードだけで仮想化リスト全件を走査できる。このフックは内部のもので、矢印キーで動く部品は、公開の `VirtualListState.ScrollToIndex` と `VisibleRange` を使う（§3.4「P02e で入れる形」）。行 B4 は、作った範囲の外の行へ矢印で動くために「インデックスの行をその場で作ってフォーカスする」公開の口を、PageUp・PageDown のために行の位置を引く口（今は内部の `IVirtualHost.PositionOf`）の公開を `VirtualListState` に足す（Grill の 10 巡目でオーナーが決定、Issue #917。形は行 B4 の設計で書く）。`Tab` がリストを抜けてよいかは `TabIndex` と FocusScope の通常規則に従う。ただし、走査が作った範囲の端に着き、その先にまだ項目がある間は、先に `MaterializeBeyond` で次の行を作って走査を続ける。走査がリストの中で、まだ作っていない項目を飛び越して次の行（範囲の外に持った行）へ進むときも同じである。作るのは `CacheExtent` 1 つ分の長さまでで、その中にフォーカスできるノードが無ければ、Tab はリストを抜ける（#614 の実装）。
 
 ---
 
