@@ -43,7 +43,8 @@ public sealed class UiDispatcher : IUiDispatcher
 
     /// <summary>
     /// Gets the dispatcher of the UI thread, which the app's host set when it started: a worker posts its messages to it
-    /// (<see cref="IUiDispatcher.Post{T}(T)"/>). Any thread may read it, and a worker posts to the one it read.
+    /// (<see cref="IUiDispatcher.Post{T}(T)"/>). Any thread may read it, and a worker posts to the one it read:
+    /// what it posts after that host has ended is never run.
     /// </summary>
     /// <remarks>
     /// The host sets it when it starts and gives back the one it replaced when it is disposed (design §2.12): on Windows
