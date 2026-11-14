@@ -190,6 +190,44 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Languages of the OS told before the root is mounted are not kept and throw nothing: the mount takes the ones it is given.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core that supports en and ja, not mounted.
+    ///
+    /// Steps:
+    /// - Set the OS's languages to "en-GB". Mount with the OS's languages "ja-JP" and a root function that reads the locale.
+    ///
+    /// Expected:
+    /// - Nothing is thrown, and the root function read ja.
+    /// </remarks>
+    [Fact]
+    public void SetSystemLocales_BeforeMount_DoesNothing() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _, _) = Connected(atlas, [Locale.Parse("en"), Locale.Parse("ja")]);
+            string? read = null;
+
+            core.SetSystemLocales(["en-GB"]);
+            core.Mount(
+                () =>
+                {
+                    read = Localization.Locale.Use().Get().ToLanguageTag();
+                    return Box();
+                },
+                ["ja-JP"],
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+            core.DisposeRoot();
+
+            Assert.Equal("ja", read);
+        });
+
+    /// <summary>
     /// Other languages of the OS resolve the locale again, and a reader of it runs again only when the resolved locale changes.
     /// </summary>
     /// <remarks>

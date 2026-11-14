@@ -149,11 +149,12 @@ internal sealed class WindowCore
     }
 
     /// <summary>
-    /// Resolves the app's locale again against other languages of the OS (design §4.11, "A change of the OS"). It is called after
-    /// <see cref="Mount"/>.
+    /// Resolves the app's locale again against other languages of the OS (design §4.11, "A change of the OS"). Before
+    /// <see cref="Mount"/> it does nothing: <see cref="Mount"/> takes the languages of the OS at that time, so a change told before it
+    /// is not lost.
     /// </summary>
     /// <param name="tags">The tags of the OS's languages, most preferred first.</param>
-    public void SetSystemLocales(IReadOnlyList<string> tags) => _locale!.Update(tags);
+    public void SetSystemLocales(IReadOnlyList<string> tags) => _locale?.Update(tags);
 
     /// <summary>
     /// Stops the tree from asking for frames, disposes the root scope, and lets go of the images the tree's cache kept. It may be
