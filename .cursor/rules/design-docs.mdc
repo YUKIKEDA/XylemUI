@@ -210,6 +210,8 @@ What the framework does to an input before the handlers receive it (moving the f
 
 A row's design says where its input is injected in tests (design §12.4) and which test layer of §12.1 checks each part. K1's Grill asked nothing about §12 until the owner pointed it out.
 
+A design of a call that is put off (a request the window remembers and carries out later) lists every case as one numbered rule: the call inside and outside the deferring context, the call that asks for the present state, the deferred run with and without a request left, a change from the OS and a close while a request is left, and a call from a handler the deferred work itself runs. After a review finds one case missing, write the whole list before the next push; do not add the one sentence. MW1 put `WindowHandle.SetState` off to the end of a reactive flow, and four reviews in a row each found the next missing case (the last request of a batch, a call outside the flow while a request is left, that call asking for the present state), each answered with one sentence, until the owner asked how many more rounds there would be (PR #921).
+
 ## Citing other frameworks
 
 A design that takes a different form from the framework it cites says that it differs and why. #705 gave `Icon` with a label the image role, while Flutter's `Icon` gives the label alone (`icon.dart` lines 288 and 349), and the design did not say so (PR #705's review).
