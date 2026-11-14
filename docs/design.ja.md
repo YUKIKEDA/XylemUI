@@ -109,6 +109,11 @@ Electron / Tauri（Webエンジン依存、バンドルサイズ大、メモリ�
 - **理由:** 古い版には対応しなくてよい。1809 は一般のサポートがもう終わっている（どちらもオーナーの判断。採らなかった形は `docs/design-decisions.md` の「対応する Windows の最も古い版」）
 - **外れるもの:** Windows 10 のすべての版と、Windows 10 を元にした LTSC の版（1809 を元にした LTSC 2019 も）
 - **比べた実装との違い:** .NET 10 は Windows 10 の 1607（E）・1809（E）・21H2 に対応する（`dotnet/core` の `release-notes/10.0/supported-os.md`）。Flutter 3.47 は Windows 10 と 11（docs.flutter.dev の Supported deployment platforms）、Zed は Windows 10 1903 以降、Avalonia 12 は Windows 10 22H2 を確かめ、それより前はベストエフォート（docs.avaloniaui.net の Supported platforms）。どれも Windows 10 で動く。XylemUI はそれより狭い
+- **比べた実装が Windows 10 に対応している理由の読み方（Issue #897 でオーナーが決定）:** 既に出荷したフレームワークは、その上で動くアプリと利用者がいるので、対応する版を外すと既存の利用者を壊す。対応を続けているのは、そのためである。XylemUI はまだ出荷していないので、この事情が無い。Windows 10 の利用者（延長サポートの続く LTSC の版を含む）を対象にしない、という判断である
+- **Windows 10 で起動した時（Issue #897 でオーナーが決定）:** 起動の時に OS の版を確かめない。止めもしない。TFM の版も `SupportedOSPlatformVersion` も、起動を止めるものではない。Windows 10 では、動く所まで動く（Windows 11 からの API は失敗する）。比べた実装も、起動を版で断らず、版は機能ごとの分岐にだけ使う
+  - zed（GPUI）: 背景の種類を設定する所で、ビルドが 22621 より前なら何もせずに戻る（`crates/gpui_windows/src/window.rs` 1605〜1612 行目）。別の経路は 17763 より前で戻る（同 1629〜1634 行目）
+  - Avalonia: 版を 1 度読んで持ち（`src/Windows/Avalonia.Win32/Win32Platform.cs` 65 行目）、Mica や Acrylic などの機能ごとに比べる（`src/Windows/Avalonia.Win32/WinRT/Composition/WinUiCompositedWindowSurface.cs` 47〜49 行目）
+  - Flutter: Windows の embedder（`engine/src/flutter/shell/platform/windows`）を、版を読む呼び出しの名前で検索して、見つからなかった。全部は読んでいない
 - **使う API:** グリフのラスタライズの `IDWriteFactory5`（§5.0.3）と行 R2 の `ID3D11Fence` は Windows 10 1703 から使えるので、Windows 11 ではいつも使える。題名の棒の `DWMWA_USE_IMMERSIVE_DARK_MODE`（値 20）は、ビルド 22000 から使える（learn.microsoft.com の「DWMWINDOWATTRIBUTE」）。Mica の `DWMWA_SYSTEMBACKDROP_TYPE` はビルド 22621（22H2）からなので（同じ頁）、21H2 では単色で塗る（§13.2、§11.2）
 - **プロジェクトの設定:** Windows の TFM のプロジェクトは `net10.0-windows10.0.22000.0` にする。TFM の版は、どの版の Windows の API を参照してビルドするかを決める。`SupportedOSPlatformVersion` は動く最も古い版で、書かなければ TFM の版になる。プラットフォームの互換のアナライザー（CA1416）がこの値で、新しい API の守られていない呼び出しを警告する。どちらも、古い Windows で起動することは止めない（learn.microsoft.com の「Target frameworks in SDK-style projects」）
 - **行 PL1 との関係:** 行 PL1 は `XylemUI.Desktop` と Windows のホストを `net10.0` にする（§6.0）。TFM が版を持たなくなるプロジェクトは、アセンブリの属性 `[assembly: SupportedOSPlatform("windows10.0.22000")]` で最も古い版を示す
