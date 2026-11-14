@@ -20,6 +20,14 @@ public static class Localization
     /// language alone, which is returned at once only for the first preferred language when the second is not the same language.
     /// After the last: the language-only match, the first locale found equal in region alone, or the first supported locale.
     /// </summary>
+    /// <remarks>
+    /// The steps that compare the language and the region, and the language alone, first look for a supported locale whose likely
+    /// script is the preferred one's, and take one of another script only when there is none (design §4.11, "Adding the script a
+    /// region implies"): with <c>zh-TW</c> preferred, <c>zh-Hant</c> is taken before <c>zh-Hans</c>, and <c>zh-Hans</c> still before
+    /// the first supported locale. A likely script is the one the locale writes, or else the one CLDR's likely subtags give its
+    /// language and region. The steps that compare written fields (all three, the language and the script, the region alone) do not
+    /// read likely scripts, and the locale returned is the supported one, without the fields the likely subtags would add.
+    /// </remarks>
     /// <param name="preferred">The user's languages, most preferred first.</param>
     /// <param name="supported">The locales the app supports; among several that fit equally, the earlier is taken.</param>
     /// <returns>
@@ -45,6 +53,7 @@ public static class Localization
         for (int i = 0; i < preferred.Count; i++)
         {
             Locale user = preferred[i];
+            uint userScript = LikelyScripts.Infer(user);
             if (First(supported, user, Fit.All) is { } all)
             {
                 return all;
@@ -55,7 +64,7 @@ public static class Localization
                 return script;
             }
 
-            if (user.Region is not null && First(supported, user, Fit.LanguageAndRegion) is { } region)
+            if (user.Region is not null && First(supported, user, Fit.LanguageAndRegion, userScript) is { } region)
             {
                 return region;
             }
@@ -65,7 +74,7 @@ public static class Localization
                 return languageMatch.Value;
             }
 
-            if (First(supported, user, Fit.Language) is { } language)
+            if (First(supported, user, Fit.Language, userScript) is { } language)
             {
                 languageMatch = language;
                 if (i == 0 && !(preferred.Count > 1 && preferred[1].Language == user.Language))
@@ -92,22 +101,33 @@ public static class Localization
     public static Direction DirectionOf(Locale locale) =>
         locale.Language is "ar" or "fa" or "he" or "ps" or "sd" or "ur" ? Direction.Rtl : Direction.Ltr;
 
-    // The first supported locale that fits the user's in the given fields. The list is walked each time: an app supports tens
-    // of locales, and the resolution runs when a window opens and when the OS's languages change.
+    // The first supported locale that fits the user's in the given fields and has the user's likely script, or else the first that
+    // fits in the given fields; with no script (0), the first that fits. The list is walked each time: an app supports tens of
+    // locales, and the resolution runs when a window opens and when the OS's languages change.
+    private static Locale? First(IReadOnlyList<Locale> supported, Locale user, Fit fit, uint script)
+    {
+        if (script != 0)
+        {
+            for (int i = 0; i < supported.Count; i++)
+            {
+                Locale candidate = supported[i];
+                if (Fits(candidate, user, fit) && LikelyScripts.Infer(candidate) == script)
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return First(supported, user, fit);
+    }
+
+    // The first supported locale that fits the user's in the given fields.
     private static Locale? First(IReadOnlyList<Locale> supported, Locale user, Fit fit)
     {
         for (int i = 0; i < supported.Count; i++)
         {
             Locale candidate = supported[i];
-            bool fits = fit switch
-            {
-                Fit.All => candidate == user,
-                Fit.LanguageAndScript => candidate.Language == user.Language && candidate.Script == user.Script,
-                Fit.LanguageAndRegion => candidate.Language == user.Language && candidate.Region == user.Region,
-                Fit.Language => candidate.Language == user.Language,
-                _ => candidate.Region == user.Region,
-            };
-            if (fits)
+            if (Fits(candidate, user, fit))
             {
                 return candidate;
             }
@@ -115,6 +135,16 @@ public static class Localization
 
         return null;
     }
+
+    private static bool Fits(Locale candidate, Locale user, Fit fit) =>
+        fit switch
+        {
+            Fit.All => candidate == user,
+            Fit.LanguageAndScript => candidate.Language == user.Language && candidate.Script == user.Script,
+            Fit.LanguageAndRegion => candidate.Language == user.Language && candidate.Region == user.Region,
+            Fit.Language => candidate.Language == user.Language,
+            _ => candidate.Region == user.Region,
+        };
 
     private enum Fit
     {

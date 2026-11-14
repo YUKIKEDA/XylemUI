@@ -1,7 +1,8 @@
 namespace XylemUI.Tests;
 
 // The resolution of the supported locales against the user's languages, and the direction of a locale (LC1, design §4.11,
-// "Resolution" and "The direction of writing"). The resolution is the body of Flutter's basicLocaleListResolution.
+// "Resolution" and "The direction of writing"). The resolution is the body of Flutter's basicLocaleListResolution, and from LC2 its
+// language steps first take a supported locale of the user's likely script.
 public sealed class LocalizationTests
 {
     /// <summary>
@@ -42,6 +43,49 @@ public sealed class LocalizationTests
     [InlineData("ko-KR", "en,ja", "en")]
     [InlineData("es-MX", "es-ES,es-AR", "es-ES")]
     public void Resolve_FollowsTheSteps(string preferred, string supported, string expected) =>
+        Assert.Equal(Locale.Parse(expected), Localization.Resolve(List(preferred), List(supported)));
+
+    /// <summary>
+    /// The steps that compare the language and the region, and the language alone, first take a supported locale whose likely
+    /// script is the user's, and else one of another script (LC2, design §4.11, "Adding the script a region implies").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The user's languages and the supported locales of each row. The likely scripts are CLDR 49's: zh-TW, zh-HK, und-TW Hant;
+    ///   zh, zh-CN, zh-SG Hans; sr Cyrl, sr-ME Latn; pa Guru, pa-PK Arab; az Latn, az-IR Arab; uz-AF Arab; xx none.
+    /// - Without the likely scripts (row LC1) the rows gave, in order: zh-Hans, sr, zh-CN, zh-Hans, pa, az, uz-Latn, zh-CN, sr,
+    ///   zh-Hans-TW, en, xx-Latn, und-Hans, zh-Hans, zh-SG.
+    ///
+    /// Steps:
+    /// - Resolve.
+    ///
+    /// Expected:
+    /// - The row's tag. The language-only step takes the supported locale of the user's likely script, written (zh-Hant) or likely
+    ///   (zh-TW for zh-Hant-HK); the language-and-region step does the same (zh-Hant-TW for zh-TW); a match kept for the next
+    ///   language is the one of the likely script (zh-TW then zh-CN). A locale of another script is still taken before the first
+    ///   supported (zh-Hans for zh-TW, with en first); a region the likely subtags would add is not compared (zh against ko-CN); a
+    ///   language with no likely script takes the first that fits, as before.
+    /// </remarks>
+    /// <param name="preferred">The user's languages.</param>
+    /// <param name="supported">The supported locales.</param>
+    /// <param name="expected">The resolved locale.</param>
+    [Theory]
+    [InlineData("zh-TW", "zh-Hans,zh-Hant", "zh-Hant")]
+    [InlineData("sr-ME", "sr,sr-Latn", "sr-Latn")]
+    [InlineData("zh-Hant-HK", "zh-CN,zh-TW", "zh-TW")]
+    [InlineData("zh-TW", "en,zh-Hans", "zh-Hans")]
+    [InlineData("pa-PK", "pa,pa-Arab", "pa-Arab")]
+    [InlineData("az-IR", "az,az-Arab", "az-Arab")]
+    [InlineData("uz-AF", "uz-Latn,uz-Arab", "uz-Arab")]
+    [InlineData("zh-Hant", "zh-CN,zh-TW", "zh-TW")]
+    [InlineData("sr-Latn", "sr,sr-ME", "sr-ME")]
+    [InlineData("zh-TW", "zh-Hans-TW,zh-Hant-TW", "zh-Hant-TW")]
+    [InlineData("zh", "en,ko-CN", "en")]
+    [InlineData("xx-TW", "xx-Latn,xx-Hant", "xx-Latn")]
+    [InlineData("und-TW", "und-Hans,und-Hant", "und-Hant")]
+    [InlineData("zh-TW,zh-CN", "zh-Hans,zh-Hant", "zh-Hant")]
+    [InlineData("zh-Hant", "zh-SG,zh-HK", "zh-HK")]
+    public void Resolve_LikelyScript_IsPreferredInTheLanguageSteps(string preferred, string supported, string expected) =>
         Assert.Equal(Locale.Parse(expected), Localization.Resolve(List(preferred), List(supported)));
 
     /// <summary>

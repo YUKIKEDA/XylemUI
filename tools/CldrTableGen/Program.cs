@@ -71,7 +71,8 @@ static async Task<int> Run(string[] args)
     LocaleSet locales = LocaleSet.Read(cldr);
     WeekData week = WeekData.Read(cldr);
     PluralTables plurals = PluralTables.Read(cldr, locales);
-    var output = new Output(release, cldr.Text("LICENSE"), locales, week, plurals);
+    LikelyScriptTable likely = LikelyScriptTable.Read(cldr);
+    var output = new Output(release, cldr.Text("LICENSE"), locales, week, plurals, likely);
     output.Write(outRoot);
 
     Console.WriteLine(
@@ -97,6 +98,19 @@ static async Task<int> Run(string[] args)
             + Output.Number(plurals.Pairs)
             + " pairs"
     );
+    string likelyCounts =
+        "likely scripts: "
+        + Output.Number(likely.Entries.Count)
+        + " entries of "
+        + Output.Number(likely.SourceKeys)
+        + " keys ("
+        + Output.Number(likely.KeysWithScript)
+        + " with a script and "
+        + Output.Number(likely.RegionKeysLeftOut)
+        + " with a region and the language's script left out), "
+        + Output.Number(likely.Scripts.Count)
+        + " scripts";
+    Console.WriteLine(likelyCounts);
     Console.WriteLine("wrote " + outRoot);
     return 0;
 }
