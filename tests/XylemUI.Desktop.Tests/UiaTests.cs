@@ -96,6 +96,59 @@ public sealed unsafe partial class UiaTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A value the app gives a password field reaches UIA masked: a value of one repeated character as it is, any other as one
+    /// U+2022 for each character. A text field's value reaches UIA as it is (design §4.4.1, the table of roles; Issue #913).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A hidden window "UIA password" of 300 x 200: a column of a password field holding "pw" that the app names "Secret" and
+    ///   gives the value "hunter2", a password field holding "pw" that the app names "Masked" and gives the value "●●●", and a text
+    ///   field holding "pw" that the app names "Plain" and gives the value "hunter2".
+    ///
+    /// Steps:
+    /// - On a thread of its own, the UIA client reads, for each of "Secret", "Masked", and "Plain", whether it is a password and its
+    ///   value; the UI thread runs the loop.
+    ///
+    /// Expected:
+    /// - "Secret": a password whose value is "•••••••" (seven U+2022). "Masked": a password whose value is "●●●". "Plain": not a
+    ///   password, whose value is "hunter2". accesskit-c 0.23.1 gave "Secret" the value "hunter2".
+    /// </remarks>
+    [Fact]
+    public void PasswordValue_ReachesUiaMasked() =>
+        ui.Invoke(() =>
+        {
+            var password = new TextFieldOptions { Password = true };
+            using var window = new DesktopWindow(
+                () =>
+                    Column(
+                        TextField(Signal.Create("pw"), password).Accessible(new AccessibilityInfo { Name = "Secret", Value = "hunter2" }),
+                        TextField(Signal.Create("pw"), password).Accessible(new AccessibilityInfo { Name = "Masked", Value = "●●●" }),
+                        TextField(Signal.Create("pw")).Accessible(new AccessibilityInfo { Name = "Plain", Value = "hunter2" })
+                    ),
+                new WindowOptions("UIA password", 300, 200),
+                useWarp: true
+            );
+            HWND hwnd = window.Window.Hwnd;
+            string[] names = ["Secret", "Masked", "Plain"];
+
+            List<(bool Password, string? Value)> read = ReadByUia(() =>
+            {
+                AutomationElement root = AutomationElement.FromHandle((nint)hwnd);
+                var seen = new List<(bool Password, string? Value)>();
+                foreach (string name in names)
+                {
+                    AutomationElement element = root.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name));
+                    string? value = element.TryGetCurrentPattern(ValuePattern.Pattern, out object? v) ? ((ValuePattern)v).Current.Value : null;
+                    seen.Add((element.Current.IsPassword, value));
+                }
+
+                return seen;
+            });
+
+            Assert.Equal([(true, "•••••••"), (true, "●●●"), (false, "hunter2")], read);
+        });
+
+    /// <summary>
     /// A scroll moves the boxes UIA reads of the nodes in the scroll view; the view's own box stays.
     /// </summary>
     /// <remarks>

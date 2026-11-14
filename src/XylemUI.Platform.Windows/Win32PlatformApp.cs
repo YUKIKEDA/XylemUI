@@ -92,11 +92,15 @@ internal sealed class Win32PlatformApp : IPlatformApp
 
     /// <summary>
     /// Puts back the dispatcher and the synchronization context that the constructor replaced, and uninitializes OLE. A second
-    /// call does nothing. It checks no thread: the app disposes the host on the UI thread, and a throw here would hide the
-    /// exception the app's run ends with (design §6.0).
+    /// call on the UI thread does nothing. A call off the UI thread throws and changes nothing (design §6.0).
     /// </summary>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public void Dispose()
     {
+        // Before the flag: another thread would put back its own context, uninitialize OLE where it was never initialized, and
+        // leave the UI thread's OLE initialized, since the flag would already be set.
+        UiThread.VerifyAccess();
         if (_disposed)
         {
             return;
