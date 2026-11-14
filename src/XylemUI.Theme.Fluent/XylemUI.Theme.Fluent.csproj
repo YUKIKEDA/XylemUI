@@ -12,7 +12,10 @@
     <InternalsVisibleTo Include="XylemUI.Theme.Fluent.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The MIT notice of Fluent UI System Icons, whose names and glyphs the package carries (the owner's decision on PR #925). -->
+    <!-- The notices of what the package carries (the owner's decision on PR #925): Fluent UI System Icons (names and glyphs), Fluent UI
+         (the token values), and the colour conversions CieLab and BrandRamp follow (W3C, css.land, three.js). -->
     <None Include="LICENSE-FluentSystemIcons.txt" Pack="true" PackagePath="\" />
+    <None Include="LICENSE-FluentUI.txt" Pack="true" PackagePath="\" />
+    <None Include="LICENSE-ColorConversions.txt" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>
