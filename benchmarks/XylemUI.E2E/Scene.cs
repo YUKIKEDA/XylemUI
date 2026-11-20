@@ -40,6 +40,15 @@ internal sealed class Scene : IDisposable
             HostWindow = (Win32PlatformWindow)_app.OpenWindow(Core, title, 800, 600, show: false);
             Window = HostWindow.Window;
             Renderer = HostWindow.Renderer;
+
+            // An experiment of the measurement (PL1-e2e, "計測の後の調べ"): XYLEMUI_E2E_NO_UIA=1 takes the host's UIA provider off the
+            // window before it shows, so that no UIA client makes the tree's accessibility tree; the report's uia_provider and
+            // accessibility_tree read it back.
+            if (Environment.GetEnvironmentVariable("XYLEMUI_E2E_NO_UIA") == "1")
+            {
+                Window.Accessibility = null;
+            }
+
             MonitorChoice.Place(Window.Handle);
             Window.Show();
             MonitorChoice.KeepOnTop(Window.Handle);
@@ -56,6 +65,14 @@ internal sealed class Scene : IDisposable
             Atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
             Core.Connect(HostWindow, Atlas, Clear);
             HostWindow.Attach();
+
+            // The other experiment: XYLEMUI_E2E_NO_OS_POINTER=1 takes the OS's mouse messages away from the core's input, as main's
+            // direct window never gave them to the scene's input; the report's os_pointer reads it back.
+            if (Environment.GetEnvironmentVariable("XYLEMUI_E2E_NO_OS_POINTER") == "1")
+            {
+                Window.PointerInputReceived = null;
+            }
+
             if (gray)
             {
                 // After the host's own handler, which gives the renderer and the core the window's ClearType again.

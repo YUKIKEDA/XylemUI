@@ -5179,7 +5179,7 @@ E2E の場面とホスト（4b、Issue #933 でオーナーが決定）:
 - **木の無い場面:** `frames`（木なし）、`frames-heavy`、`app`（木なし）、`startup`、`idle`、`event-latency` は、M1a で他のフレームワークと比べる場面なので、直の窓（`Win32Window` と `D3D11Renderer`）のまま残す。`image-play`（行 IM1）も直の窓のまま残す
 - **窓を開く順:** ホストの窓は隠して開き、モニタに置いてから見せ、その後に窓の核をつなぐ。見えている窓を動かすと起動が遅れるため（`.cursor/rules/bench.mdc`）である。そのため、レンダラは窓を見せる前にでき、アプリ（見せてからレンダラを作る）と順が違う。`app --tree` の起動は 4b では比べない
 - **スレッド:** ホストは OLE を UI スレッドで初期化し、MTA のスレッドでは投げる。ホストを通す場面だけを、COM の STA の新しいスレッドで回す。E2E の `Main` に `[STAThread]` は付けず、ほかの場面のスレッドの状態を変えない
-- **証拠:** `frames --tree` の出力に `host`・`presents`・`frames_not_presented`・`main_builds`・`text_input`・`accessibility_tree`（`--hover` では `hover_misses`）を足す。`wm-size` は 1 回ごとに、`WM_SIZE` が 1 回来て Present が 1 回あり、レンダラが新しい大きさになったことを確かめ、外れたら投げる
+- **証拠:** `frames --tree` の出力に `host`・`presents`・`frames_not_presented`・`main_builds`・`text_input`・`accessibility_tree`・`a11y_ms`（a11y の段を場面がフレームの前に走らせ、別に測る。`build_ms` は main の直の窓の時と同じ意味のまま）を足す。`--hover` では `hover_misses`（動きの点で窓の当たりの判定が返すノードがホバーされなかった回）と `hover_on_other_box`（その点が狙った箱でなく、上に重なる後ろの箱のものだった回）を足す。`wm-size` は 1 回ごとに、`WM_SIZE` が 1 回来て Present が 1 回あり、レンダラが新しい大きさになったことを確かめ、外れたら投げる
 - **固定:** 論理プロセッサ 2 に固定し優先度を高くするのは、プロセスの中で完結する場面（`frames`、`wm-size`、`event-latency`）だけである。子のアプリと PresentMon を起こす `input-latency` と `app-startup` は、固定が子に受け継がれてコアを取り合うので、固定しない
 - Zero-Alloc のテスト（§11.3）の数が変わらないこと
 - Counter と Todo の NativeAOT の発行で、警告が 0 であることと、実行ファイルの大きさを main と比べること（`.cursor/rules/aot.mdc`）。増えたら map ファイルで理由を書く

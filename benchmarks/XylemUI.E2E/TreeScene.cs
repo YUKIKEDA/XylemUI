@@ -120,9 +120,27 @@ internal sealed class TreeScene : IDisposable
     // With hover, the milliseconds the input took to deliver the frame's move.
     public double InputMilliseconds { get; private set; }
 
-    // With hover, the moves after which the box under the pointer was not hovered: the move did not reach it. The window's input
-    // also takes the OS's pointer, which a hand on the mouse moves (.cursor/rules/bench.mdc, a scene checks each input).
+    // With hover, the moves after which the node the window's hit test gives at the move's point, in the display list the input
+    // tested (WindowInput.HitAt: the frames' list, with no popup), was not hovered: the move did not reach the node under it
+    // (.cursor/rules/bench.mdc, a scene checks each input).
     public int HoverMisses { get; private set; }
+
+    // With hover, the moves whose point the hit test gives to a box other than the target (_boxes[frame & 1]): a later box in the
+    // tree's order lies over the target's middle and is the front-most region there (DisplayList.HitTestAt walks the regions from
+    // the last). The move still changes the hovered box. The index in _boxes of the first such box, or -1.
+    public int HoverOnOtherBox { get; private set; }
+
+    public int HoverOtherBoxIndex { get; private set; } = -1;
+
+    // The accessibility stage (design §2.10), which the scene runs before the frame and times on its own, so that build_ms keeps
+    // what it timed on main's direct window, where the tree has no accessibility tree (PL1-e2e, "計測の後の調べ"; Issue #928). The
+    // stage in the frame after it finds no mark and returns. Returns the milliseconds.
+    public double UpdateAccessibility()
+    {
+        long start = Stopwatch.GetTimestamp();
+        _tree.UpdateAccessibility();
+        return Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+    }
 
     // The number of times the window's own display list was built, the first frame's and the synchronous resizes' included.
     public int MainBuilds => _core.Frames.MainBuilds;
@@ -167,9 +185,15 @@ internal sealed class TreeScene : IDisposable
             long started = Stopwatch.GetTimestamp();
             _input.Handle(move);
             InputMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-            if ((_tree.Nodes.GetRef(target).Pseudo & PseudoState.Hovered) == 0)
+            NodeHandle hit = _core.Frames.List.HitTest(move.X, move.Y);
+            if (hit.IsNone || !Hovered(hit))
             {
                 HoverMisses++;
+            }
+
+            if (hit != target)
+            {
+                NoteOtherBox(hit);
             }
 
             return 0;
@@ -201,6 +225,27 @@ internal sealed class TreeScene : IDisposable
     }
 
     public void RunFrame() => _core.Frames.RunFrame();
+
+    // Counts a move whose point the hit test gave to a node other than the target, and keeps the index of the first such box.
+    private void NoteOtherBox(NodeHandle hit)
+    {
+        HoverOnOtherBox++;
+        if (HoverOtherBoxIndex >= 0)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _boxes.Length; i++)
+        {
+            if (_boxes[i] == hit)
+            {
+                HoverOtherBoxIndex = i;
+                return;
+            }
+        }
+    }
+
+    private bool Hovered(NodeHandle node) => (_tree.Nodes.GetRef(node).Pseudo & PseudoState.Hovered) != 0;
 
     // One frame on the synchronous resize path at the window's size, through the window core's Resize as the host's WM_SIZE calls
     // it, without the message and the swap chain's resize (design §2.11.1; the WM_SIZE path is HostResize's).

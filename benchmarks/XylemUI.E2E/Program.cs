@@ -26,7 +26,16 @@
 //                              --resizes-late N presents N of them after frame 300 while a frame waits for its late start)
 //                              (with --tree the window is the Windows host's and the tree its window core's, on a thread in COM's
 //                              single-threaded apartment, row PL1; the report adds host, presents, frames_not_presented,
-//                              main_builds, text_input, accessibility_tree, and with --hover hover_misses: Frames.cs)
+//                              main_builds, text_input, accessibility_tree, the series a11y_ms (the accessibility stage, timed
+//                              apart from build_ms and cpu_frame_ms), uia_provider and os_pointer (1 when the window has the
+//                              host's UIA provider, and when the OS's mouse messages reach the core's input), and with --hover
+//                              hover_misses (moves after which the node the hit test gives at the move's point was not
+//                              hovered), hover_on_other_box (moves whose point is another box's than the target's),
+//                              hover_other_box_index, layout_width and layout_height: Frames.cs. Two switches of the
+//                              environment, read only by this benchmark (Scene.cs): XYLEMUI_E2E_NO_UIA=1 takes the host's UIA
+//                              provider off the window before it shows, so no accessibility tree is made (uia_provider=0,
+//                              accessibility_tree=0); XYLEMUI_E2E_NO_OS_POINTER=1 takes the OS's mouse messages off the core's
+//                              input after it attaches (os_pointer=0))
 //   wm-size [frames] --resizes N | --resizes-late N
 //                              frames --tree whose resizes change the host's window with SetWindowPos, through WM_SIZE, the
 //                              host's synchronous render, and the window core's Resize (row PL1, HostResize.cs), where

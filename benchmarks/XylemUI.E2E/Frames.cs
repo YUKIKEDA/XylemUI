@@ -22,7 +22,12 @@ namespace XylemUI.E2E;
 // COM's single-threaded apartment (StaThread); the frames stay run by this callback. Its report adds host, presents (the target's
 // presents, the first frame's and the resizes' included), frames_not_presented (frames, the warm ones included, whose RunFrame
 // did not present), main_builds, text_input and accessibility_tree (whether the host made TSF, and whether a UIA client made the
-// tree's accessibility tree), and with --hover hover_misses (moves after which the box under the pointer was not hovered).
+// tree's accessibility tree), a11y_ms (the accessibility stage, which the tree scene runs and times before t0, so that build_ms
+// and cpu_frame_ms keep what they timed on main's direct window), uia_provider and os_pointer (Scene's two experiments, read
+// back), and with --hover hover_misses (moves after which the node the window's hit test gives at the move's point was not
+// hovered), hover_on_other_box (moves whose point that test gives to a box other than the target, _boxes[frame & 1]: a later box
+// over the target's middle), hover_other_box_index (the first such box's index in _boxes, or -1), and layout_width and
+// layout_height (the logical size the boxes' places wrap in).
 // `wmSize` (the `wm-size` scenario) runs the tree scene with its --resizes and --resizes-late through the host's WM_SIZE
 // (HostResize) instead of the window core's Resize, and adds HostResize's fields.
 internal static class Frames
@@ -64,6 +69,7 @@ internal static class Frames
         HostResize? hostResize = wmSize && treeScene is not null ? new HostResize(scene, treeScene.Target, resizes + resizesLate) : null;
         var layout = new List<double>(frames);
         var input = new List<double>(frames);
+        var accessibility = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
 
         // A resize drag's frames, each presented on the synchronous resize path without waiting on the swap chain's object, and
@@ -119,6 +125,10 @@ internal static class Frames
             {
                 layout.Add(treeScene.Update(frame));
                 input.Add(treeScene.InputMilliseconds);
+
+                // The accessibility stage, timed apart and before t0: build_ms and cpu_frame_ms keep what they timed on main's
+                // direct window, whose tree had no accessibility tree (PL1-e2e, "計測の後の調べ").
+                accessibility.Add(treeScene.UpdateAccessibility());
                 t0 = Stopwatch.GetTimestamp();
                 treeScene.RunFrame();
                 t1 = treeScene.Target.DrawStart;
@@ -264,9 +274,20 @@ internal static class Frames
             report.Number("main_builds", treeScene.MainBuilds);
             report.Number("text_input", scene.HostWindow!.TextInput is null ? 0 : 1);
             report.Number("accessibility_tree", scene.Core!.Tree.HasAccessibilityTree ? 1 : 0);
+            report.Series("a11y_ms", [.. accessibility.Skip(Warm)]);
+
+            // The two experiments of the measurement (Scene's XYLEMUI_E2E_NO_UIA and XYLEMUI_E2E_NO_OS_POINTER), read back.
+            report.Number("uia_provider", scene.Window.Accessibility is null ? 0 : 1);
+            report.Number("os_pointer", scene.Window.PointerInputReceived is null ? 0 : 1);
             if (hover)
             {
                 report.Number("hover_misses", treeScene.HoverMisses);
+                report.Number("hover_on_other_box", treeScene.HoverOnOtherBox);
+                report.Number("hover_other_box_index", treeScene.HoverOtherBoxIndex);
+
+                // The size the boxes' places wrap in (TreeScene.Update), which decides which box lies over a target.
+                report.Number("layout_width", (int)(scene.Renderer.Width / scene.Window.ScaleFactor));
+                report.Number("layout_height", (int)(scene.Renderer.Height / scene.Window.ScaleFactor));
             }
         }
 
