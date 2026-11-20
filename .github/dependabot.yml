@@ -8,6 +8,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # The analyzers and the generator must load in the compiler of the SDK that global.json pins: one built against a newer
+    # Roslyn is refused (CS9057; PR #938 tried 5.12.0 under the 5.9.0 of SDK 10.0.403). The version is raised by hand,
+    # with the SDK (.cursor/rules/dependencies.mdc).
+    ignore:
+      - dependency-name: "Microsoft.CodeAnalysis.CSharp"
+      - dependency-name: "Microsoft.CodeAnalysis.CSharp.Workspaces"
     groups:
       analyzers:
         patterns:
