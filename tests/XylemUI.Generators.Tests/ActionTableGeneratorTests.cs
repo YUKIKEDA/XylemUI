@@ -615,7 +615,8 @@ public sealed class ActionTableGeneratorTests
     /// - A library <c>XylemUI.Theme.Fluent</c> with <c>public static class FluentRoot</c> and its
     ///   <c>public static Element Wrap(Func&lt;Element&gt; root)</c>, compiled. An app that references it and carries
     ///   <c>[assembly: XylemUI.WindowTheme(typeof(XylemUI.Theme.Fluent.FluentRoot))]</c>; another app that names its own internal
-    ///   class <c>AppRoot</c> with an internal <c>Wrap</c>.
+    ///   class <c>AppRoot</c> with an internal <c>Wrap</c>; a third whose <c>AppRoot.Wrap</c> takes a <c>Func&lt;Element&gt;?</c>,
+    ///   a nullable annotation that the conversion to <c>Func&lt;Func&lt;Element&gt;, Element&gt;</c> allows.
     ///
     /// Steps:
     /// - Run the generator on each app; compile the results.
@@ -623,7 +624,7 @@ public sealed class ActionTableGeneratorTests
     /// Expected:
     /// - No diagnostic from the generator and none from the compiler. The first app's source has one
     ///   <c>global::XylemUI.WindowRoot.SetWrapper(global::XylemUI.Theme.Fluent.FluentRoot.Wrap);</c>, in the module initializer
-    ///   after the default key bindings of <c>XylemUI.Core</c>; the second app's has
+    ///   after the default key bindings of <c>XylemUI.Core</c>; the second and the third app's have
     ///   <c>global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);</c>.
     /// </remarks>
     [Fact]
@@ -636,6 +637,14 @@ public sealed class ActionTableGeneratorTests
             internal static class AppRoot
             {
                 internal static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+            """;
+        const string AnnotatedRoot = """
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+
+            public static class AppRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element>? root) => root!();
             }
             """;
 
@@ -655,6 +664,11 @@ public sealed class ActionTableGeneratorTests
         Assert.Empty(own.GeneratorDiagnostics);
         Assert.Empty(own.CompilerErrors);
         Assert.Contains("global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);", Assert.Single(own.Sources), StringComparison.Ordinal);
+
+        Result annotated = Run("Demo.Annotated", OutputKind.ConsoleApplication, AnnotatedRoot + AppMain);
+        Assert.Empty(annotated.GeneratorDiagnostics);
+        Assert.Empty(annotated.CompilerErrors);
+        Assert.Contains("global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);", Assert.Single(annotated.Sources), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -710,10 +724,14 @@ public sealed class ActionTableGeneratorTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - For each row, a library <c>Demo.Theme</c> with a public class <c>BadRoot</c>: one with no <c>Wrap</c>; one whose
-    ///   <c>Wrap</c> is not static; one whose <c>Wrap</c> returns nothing; one whose <c>Wrap</c> takes no parameter; one whose
-    ///   <c>Wrap</c> takes an <c>Action</c>; one whose <c>Wrap</c> takes its <c>Func&lt;Element&gt;</c> by <c>ref</c>; one whose
-    ///   <c>Wrap</c> is generic; one whose <c>Wrap</c> is internal. An app that references the library and carries
+    /// - For each row, a library <c>Demo.Theme</c> with a public type <c>BadRoot</c>: a class with no <c>Wrap</c>; one whose
+    ///   <c>Wrap</c> is not static; one whose <c>Wrap</c> returns nothing; one whose <c>Wrap</c> returns <c>object</c>; one whose
+    ///   <c>Wrap</c> takes no parameter; one whose <c>Wrap</c> takes a second parameter; one whose <c>Wrap</c> takes an
+    ///   <c>Action</c>; one whose <c>Wrap</c> takes a <c>Lazy&lt;Element&gt;</c>; one whose <c>Wrap</c> takes a
+    ///   <c>Func&lt;Element?&gt;</c> (a <c>Func</c> of <c>Nullable&lt;Element&gt;</c>, since <c>Element</c> is a struct); one
+    ///   whose <c>Wrap</c> takes its <c>Func&lt;Element&gt;</c> by <c>ref</c>, one by <c>in</c>, and one by <c>out</c>; one whose
+    ///   <c>Wrap</c> is generic; one whose <c>Wrap</c> is internal; an interface whose <c>Wrap</c> is <c>static abstract</c>, and
+    ///   one whose <c>Wrap</c> is <c>static virtual</c>. An app that references the library and carries
     ///   <c>[assembly: XylemUI.WindowTheme(typeof(BadRoot))]</c>.
     ///
     /// Steps:
@@ -729,11 +747,21 @@ public sealed class ActionTableGeneratorTests
     [InlineData("public static class BadRoot { }")]
     [InlineData("public sealed class BadRoot { public XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
     [InlineData("public static class BadRoot { public static void Wrap(System.Func<XylemUI.Element> root) { } }")]
+    [InlineData("public static class BadRoot { public static object Wrap(System.Func<XylemUI.Element> root) => root(); }")]
     [InlineData("public static class BadRoot { public static XylemUI.Element Wrap() => default; }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root, int depth) => root(); }")]
     [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(System.Action root) => default; }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(System.Lazy<XylemUI.Element> root) => root.Value; }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(System.Func<XylemUI.Element?> root) => default; }")]
     [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(ref System.Func<XylemUI.Element> root) => root(); }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(in System.Func<XylemUI.Element> root) => root(); }")]
+    [InlineData(
+        "public static class BadRoot { public static XylemUI.Element Wrap(out System.Func<XylemUI.Element> root) { root = null!; return default; } }"
+    )]
     [InlineData("public static class BadRoot { public static XylemUI.Element Wrap<T>(System.Func<XylemUI.Element> root) => root(); }")]
     [InlineData("public static class BadRoot { internal static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
+    [InlineData("public interface BadRoot { static abstract XylemUI.Element Wrap(System.Func<XylemUI.Element> root); }")]
+    [InlineData("public interface BadRoot { static virtual XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
     public void WindowTheme_WithNoWrapTheAppCanPass_IsAnError(string declaration)
     {
         MetadataReference library = Run("Demo.Theme", OutputKind.DynamicallyLinkedLibrary, declaration).Emit();
@@ -750,6 +778,206 @@ public sealed class ActionTableGeneratorTests
         Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
         Assert.DoesNotContain("SetWrapper", source, StringComparison.Ordinal);
         Assert.DoesNotContain("BadRoot", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An app's <c>[assembly: WindowTheme]</c> whose argument names no class is the error XYLEM011 at the attribute, as a class
+    /// without <c>Wrap</c> is, and is not skipped.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - For each row, an app with a valid class <c>AppRoot</c> and one attribute whose argument is <c>typeof(int[])</c>, an
+    ///   array, or <c>null</c>.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - One diagnostic, XYLEM011, in the app's source, whose message names the argument (<c>int[]</c>, <c>null</c>). No
+    ///   compiler error, and no <c>SetWrapper</c> in the app's source.
+    /// </remarks>
+    /// <param name="argument">The attribute's argument.</param>
+    /// <param name="named">What the message names.</param>
+    [Theory]
+    [InlineData("typeof(int[])", "int[]")]
+    [InlineData("null", "null")]
+    public void WindowTheme_WithAnArgumentThatNamesNoClass_IsAnError(string argument, string named)
+    {
+        string source =
+            "[assembly: XylemUI.WindowTheme("
+            + argument
+            + ")]\npublic static class AppRoot { public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }\n"
+            + AppMain;
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, source);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM011", diagnostic.Id);
+        Assert.True(diagnostic.Location.IsInSource || diagnostic.Location.Kind == LocationKind.ExternalFile);
+        Assert.Contains("'" + named + "'", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        Assert.DoesNotContain("SetWrapper", Assert.Single(app.Sources), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An attribute whose argument names no class counts for XYLEM010: beside a valid one, the app has two, and no wrapper is set.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app with a valid class <c>AppRoot</c>, the attribute that names it on line 0, and
+    ///   <c>[assembly: XylemUI.WindowTheme(null)]</c> on line 1.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - The diagnostics have one XYLEM010, at line 1. No compiler error, and no <c>SetWrapper</c> in the app's source. Which other
+    ///   diagnostics come with it is not checked: the owner has yet to decide it.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_ValidAndNull_IsTwoAndSetsNoWrapper()
+    {
+        const string App = """
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+            [assembly: XylemUI.WindowTheme(null)]
+
+            public static class AppRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+            """;
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, App + AppMain);
+
+        Diagnostic two = Assert.Single(app.GeneratorDiagnostics, static d => d.Id == "XYLEM010");
+        Assert.Equal(1, two.Location.GetLineSpan().StartLinePosition.Line);
+        Assert.Empty(app.CompilerErrors);
+        Assert.DoesNotContain("SetWrapper", Assert.Single(app.Sources), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An app with three <c>[assembly: WindowTheme]</c> gets one XYLEM010, at the second attribute, that names every class.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app with three valid classes, <c>FirstRoot</c>, <c>SecondRoot</c>, and <c>ThirdRoot</c>, and the attributes that name
+    ///   them on lines 0, 1, and 2.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - One diagnostic, XYLEM010, at line 1, not line 2; its message names the three classes. No compiler error, and no
+    ///   <c>SetWrapper</c> in the app's source.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_ThreeTimes_IsOneErrorAtTheSecond()
+    {
+        const string App = """
+            [assembly: XylemUI.WindowTheme(typeof(FirstRoot))]
+            [assembly: XylemUI.WindowTheme(typeof(SecondRoot))]
+            [assembly: XylemUI.WindowTheme(typeof(ThirdRoot))]
+
+            public static class FirstRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+
+            public static class SecondRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+
+            public static class ThirdRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+            """;
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, App + AppMain);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM010", diagnostic.Id);
+        Assert.Equal(1, diagnostic.Location.GetLineSpan().StartLinePosition.Line);
+        string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("FirstRoot", message, StringComparison.Ordinal);
+        Assert.Contains("SecondRoot", message, StringComparison.Ordinal);
+        Assert.Contains("ThirdRoot", message, StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        Assert.DoesNotContain("SetWrapper", Assert.Single(app.Sources), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An app whose module initializer has nothing to do but set its root wrapper still gets one: the wrapper does not lean on
+    /// the default key bindings of <c>XylemUI.Core</c>.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app compiled without <c>XylemUI.Core</c>, so that it references no action table and no default key bindings. Its own
+    ///   source declares stand-ins of <c>XylemUI.WindowThemeAttribute</c>, <c>XylemUI.Element</c>, and
+    ///   <c>XylemUI.WindowRoot.SetWrapper</c>, a valid <c>AppRoot</c>, and the attribute that names it.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - No diagnostic and no compiler error. One source, whose module initializer calls
+    ///   <c>global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);</c> and registers no table and no default key bindings.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_OfAnAppWithNothingElse_InitializerSetsTheWrapper()
+    {
+        const string App = """
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+
+            namespace XylemUI
+            {
+                [System.AttributeUsage(System.AttributeTargets.Assembly, AllowMultiple = true)]
+                public sealed class WindowThemeAttribute(System.Type type) : System.Attribute
+                {
+                    public System.Type Type { get; } = type;
+                }
+
+                public readonly struct Element { }
+
+                public static class WindowRoot
+                {
+                    public static void SetWrapper(System.Func<System.Func<Element>, Element> wrapper) { }
+                }
+            }
+
+            public static class AppRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+
+            public static class Program
+            {
+                public static void Main() { }
+            }
+            """;
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "Demo.Bare",
+            [CSharpSyntaxTree.ParseText(App, Options, cancellationToken: TestContext.Current.CancellationToken)],
+            [.. Platform()],
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication, nullableContextOptions: NullableContextOptions.Enable)
+        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create([new ActionTableGenerator().AsSourceGenerator()], parseOptions: Options);
+
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation,
+            out Compilation updated,
+            out ImmutableArray<Diagnostic> diagnostics,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Empty(diagnostics);
+        ImmutableArray<Diagnostic> compiled = updated.GetDiagnostics(TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(compiled, static d => d.Severity == DiagnosticSeverity.Error);
+        string source = Assert.Single(driver.GetRunResult().GeneratedTrees).GetText(TestContext.Current.CancellationToken).ToString();
+        Assert.Contains("global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Register();", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("RegisterDefaults", source, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -905,20 +1133,25 @@ public sealed class ActionTableGeneratorTests
     private static CSharpCompilation Compile(string assemblyName, OutputKind kind, string source, params MetadataReference[] references)
     {
         // The reference assemblies of the running test: the framework's, and XylemUI.Core with the attribute and the registry.
+        MetadataReference core = MetadataReference.CreateFromFile(typeof(IAction).Assembly.Location);
+        return CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText(source, Options)],
+            [.. Platform(), core, .. references],
+            new CSharpCompilationOptions(kind, nullableContextOptions: NullableContextOptions.Enable)
+        );
+    }
+
+    // The framework's reference assemblies of the running test.
+    private static IEnumerable<MetadataReference> Platform()
+    {
         string trusted = (string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!;
-        IEnumerable<MetadataReference> platform = trusted
+        return trusted
             .Split(Path.PathSeparator)
             .Where(static path =>
                 Path.GetFileName(path) is "System.Runtime.dll" or "System.Private.CoreLib.dll" or "netstandard.dll" or "System.Collections.dll"
             )
             .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path));
-        MetadataReference core = MetadataReference.CreateFromFile(typeof(IAction).Assembly.Location);
-        return CSharpCompilation.Create(
-            assemblyName,
-            [CSharpSyntaxTree.ParseText(source, Options)],
-            [.. platform, core, .. references],
-            new CSharpCompilationOptions(kind, nullableContextOptions: NullableContextOptions.Enable)
-        );
     }
 
     private sealed record Result(

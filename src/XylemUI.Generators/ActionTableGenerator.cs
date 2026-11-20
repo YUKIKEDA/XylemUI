@@ -288,39 +288,27 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     }
 
     // The classes the app's own [assembly: WindowTheme] attributes name. Those of the assemblies it references are not read: a
-    // library's attribute does nothing (design §13.2, "包みは 1 つ").
+    // library's attribute does nothing (design §13.2, "包みは 1 つ"). An attribute of the app whose argument names no class
+    // (typeof(T[]), null) is kept as one with no Wrap: it is the error XYLEM011, and it counts as an attribute for XYLEM010.
     private static ImmutableArray<WindowThemeInfo> ReadWindowThemes(Compilation compilation)
     {
+        INamedTypeSymbol? element = compilation.GetTypeByMetadataName("XylemUI.Element");
         var themes = ImmutableArray.CreateBuilder<WindowThemeInfo>();
         foreach (AttributeData attribute in compilation.Assembly.GetAttributes())
         {
-            if (
-                attribute.AttributeClass?.ToDisplayString() != WindowThemeAttributeName
-                || attribute.ConstructorArguments.Length != 1
-                || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol type
-            )
+            if (attribute.AttributeClass?.ToDisplayString() != WindowThemeAttributeName)
             {
                 continue;
             }
 
-            // The method the module initializer passes to WindowRoot.SetWrapper as a Func<Func<Element>, Element>: static, not
-            // generic, an Element from one Func<Element> taken by value, and one the app's code can call.
-            bool callable = type.GetMembers(WrapName)
-                .OfType<IMethodSymbol>()
-                .Any(m =>
-                    m.IsStatic
-                    && !m.IsGenericMethod
-                    && m.ReturnType.ToDisplayString() == "XylemUI.Element"
-                    && m.Parameters.Length == 1
-                    && m.Parameters[0].RefKind == RefKind.None
-                    && m.Parameters[0].Type.ToDisplayString() == "System.Func<XylemUI.Element>"
-                    && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
-                );
+            ITypeSymbol? argument = attribute.ConstructorArguments.Length == 1 ? attribute.ConstructorArguments[0].Value as ITypeSymbol : null;
+            INamedTypeSymbol? type = argument as INamedTypeSymbol;
+            bool callable = type is not null && element is not null && HasWrap(type, element, compilation);
             SyntaxReference? syntax = attribute.ApplicationSyntaxReference;
             themes.Add(
                 new WindowThemeInfo(
-                    type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    type.ToDisplayString(),
+                    type?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? string.Empty,
+                    argument?.ToDisplayString() ?? "null",
                     callable,
                     syntax is null ? null : LocationInfo.From(Location.Create(syntax.SyntaxTree, syntax.Span))
                 )
@@ -329,6 +317,32 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
         return themes.ToImmutable();
     }
+
+    // Whether a class has the method the module initializer passes to WindowRoot.SetWrapper as a Func<Func<Element>, Element>:
+    // static and neither abstract nor virtual (an interface's static abstract or virtual member cannot be named through the
+    // interface), not generic, an Element from one Func<Element> taken by value, and one the app's code can call. The types are
+    // compared as symbols, so that a nullable annotation (Func<Element>? root) does not count.
+    private static bool HasWrap(INamedTypeSymbol type, INamedTypeSymbol element, Compilation compilation) =>
+        type.GetMembers(WrapName)
+            .OfType<IMethodSymbol>()
+            .Any(m =>
+                m.IsStatic
+                && !m.IsAbstract
+                && !m.IsVirtual
+                && !m.IsGenericMethod
+                && SymbolEqualityComparer.Default.Equals(m.ReturnType, element)
+                && m.Parameters.Length is 1
+                && m.Parameters[0].RefKind == RefKind.None
+                && IsFuncOf(m.Parameters[0].Type, element)
+                && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
+            );
+
+    // Whether a type is System.Func<T> of the given T. The definition is compared by its name: System.Func`1 is defined in one
+    // assembly and forwarded from others, and a lookup by metadata name over several references is not relied on here.
+    private static bool IsFuncOf(ITypeSymbol type, INamedTypeSymbol result) =>
+        type is INamedTypeSymbol { Arity: 1 } named
+        && named.ConstructedFrom.ToDisplayString() == "System.Func<TResult>"
+        && SymbolEqualityComparer.Default.Equals(named.TypeArguments[0], result);
 
     // The classes that add default key bindings, of the assemblies the app references and then of the app itself, an assembly
     // after the assemblies it references: the rows of a package that builds on another are added later, and win at the same depth.
@@ -525,9 +539,9 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
         WindowThemeInfo? wrapper = assembly.WindowThemes.Count == 1 ? assembly.WindowThemes.First() : null;
 
-        // A library with no action has no table. An app has one even with none of its own: it calls the tables it references and
-        // registers their default key bindings.
-        if (valid.Count == 0 && !(assembly.IsApp && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0)))
+        // A library with no action has no table. An app has one even with none of its own when its module initializer has work:
+        // the tables it references, their default key bindings, or the root wrapper of its windows.
+        if (valid.Count == 0 && !(assembly.IsApp && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0 || wrapper is { Callable: true })))
         {
             return;
         }
