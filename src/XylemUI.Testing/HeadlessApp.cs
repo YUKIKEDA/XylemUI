@@ -510,6 +510,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// (design §4.11, "A change of the OS"): the app's locale is resolved again, then the work that queued runs.
     /// </summary>
     /// <param name="tags">The tags of the languages, most preferred first.</param>
+    /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
     [UiThreadOnly]
     public void SetSystemLocales(IReadOnlyList<string> tags)
     {
@@ -527,6 +528,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// <param name="value">The OS's appearance.</param>
     /// <exception cref="ArgumentException">The value has high-contrast colors while its high contrast is off, or none while it is
     /// on.</exception>
+    /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
     [UiThreadOnly]
     public void SetSystemAppearance(SystemAppearance value)
     {
