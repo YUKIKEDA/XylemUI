@@ -67,4 +67,29 @@ public sealed class OpenWindowLocaleTests(UiThreadFixture ui)
                 Win32Window.Use24HourFormatReader = previousTimeFormat;
             }
         });
+
+    /// <summary>
+    /// Opening a window refuses supported locales that hold a <see langword="null"/>, where it refuses the options' size, before
+    /// the window is opened.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Window options whose supported locales are the en tables and a <see langword="null"/>.
+    ///
+    /// Steps:
+    /// - Open a hidden window on WARP with them.
+    ///
+    /// Expected:
+    /// - It throws <see cref="ArgumentException"/> whose parameter is the options.
+    /// </remarks>
+    [Fact]
+    public void OpenWindow_ANullSupportedLocale_Throws() =>
+        ui.Invoke(() =>
+        {
+            var options = new WindowOptions("Null locale", 200, 200) { SupportedLocales = [CldrLocales.En, null!] };
+
+            ArgumentException thrown = Assert.Throws<ArgumentException>(() => new TestWindow(() => Box(), options, useWarp: true));
+
+            Assert.Equal("options", thrown.ParamName);
+        });
 }

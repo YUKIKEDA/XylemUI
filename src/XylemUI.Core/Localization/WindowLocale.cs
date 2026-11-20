@@ -16,9 +16,8 @@ internal sealed class WindowLocale
     private readonly Signal<LocaleData> _data;
     private readonly Signal<bool> _use24HourFormat;
 
-    // The tables the value of _data was chosen from, and that value: the same choice for the same locale keeps the value, so the
-    // signal does not change when tables of another locale are given the resolved one (WithLocale makes a new object).
-    private LocaleData? _chosen;
+    // The value of _data: the same resolved locale keeps it, so the signal does not change when tables of another locale are given
+    // the resolved one (WithLocale makes a new object). The supported tables do not change, so the same locale chooses the same tables.
     private LocaleData? _value;
 
     /// <summary>
@@ -57,6 +56,29 @@ internal sealed class WindowLocale
     /// Gets whether the OS asks for times in 24-hour form.
     /// </summary>
     public IReadOnlySignal<bool> Use24HourFormat => _use24HourFormat;
+
+    /// <summary>
+    /// Refuses a list of supported tables that holds a <see langword="null"/>: the window options and the headless options check it
+    /// where they check their other values, before the window is made.
+    /// </summary>
+    /// <param name="supported">The tables of the locales the app supports; <see langword="null"/> for none.</param>
+    /// <param name="paramName">The name of the options' parameter, for the exception.</param>
+    /// <exception cref="ArgumentException"><paramref name="supported"/> holds a <see langword="null"/>.</exception>
+    public static void VerifySupported(IReadOnlyList<LocaleData>? supported, string paramName)
+    {
+        if (supported is null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < supported.Count; i++)
+        {
+            if (supported[i] is null)
+            {
+                throw new ArgumentException("SupportedLocales holds no null element.", paramName);
+            }
+        }
+    }
 
     /// <summary>
     /// Resolves again against other languages of the OS. The signal changes only when the resolved locale or its tables do.
@@ -103,13 +125,12 @@ internal sealed class WindowLocale
     // of the tables"): tables of another locale, the root's included, are given the resolved one with WithLocale.
     private LocaleData Choose(Locale resolved)
     {
-        LocaleData chosen = TablesFor(resolved);
-        if (ReferenceEquals(chosen, _chosen) && _value is { } kept && kept.Locale == resolved)
+        if (_value is { } kept && kept.Locale == resolved)
         {
             return kept;
         }
 
-        _chosen = chosen;
+        LocaleData chosen = TablesFor(resolved);
         _value = chosen.Locale == resolved ? chosen : chosen.WithLocale(resolved);
         return _value;
     }

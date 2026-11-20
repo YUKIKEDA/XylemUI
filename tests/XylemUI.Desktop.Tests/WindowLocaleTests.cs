@@ -474,6 +474,73 @@ public sealed class WindowLocaleTests
     }
 
     /// <summary>
+    /// The headless start refuses supported locales that hold a <see langword="null"/>, where it refuses its other options, before
+    /// any part of the app is made.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Options whose supported locales are the en tables and a <see langword="null"/>.
+    ///
+    /// Steps:
+    /// - Start an app of a box with them.
+    ///
+    /// Expected:
+    /// - It throws <see cref="ArgumentException"/> whose parameter is the options.
+    /// </remarks>
+    [UiFact]
+    public void StartAsync_ANullSupportedLocale_Throws()
+    {
+        var options = new HeadlessOptions { SupportedLocales = [CldrLocales.En, null!] };
+
+        // StartAsync checks its options before it returns its task.
+        ArgumentException thrown = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = HeadlessApp.StartAsync(() => Box(), options);
+        });
+
+        Assert.Equal("options", thrown.ParamName);
+    }
+
+    /// <summary>
+    /// Setting the 24-hour form runs the work that queued on the UI thread before it returns, as a desktop window's notice is
+    /// followed by the loop (design §4.11, "The key of the 24-hour form").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app with the 24-hour form off, whose root function has an effect that, when it reads the form on, posts to the UI
+    ///   thread's synchronization context a piece of work that counts its runs. Nothing is pumped after the start.
+    ///
+    /// Steps:
+    /// - Set the 24-hour form on; read the count at once.
+    ///
+    /// Expected:
+    /// - The work ran once.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task SetUse24HourFormat_RunsTheWorkThatQueued()
+    {
+        int ran = 0;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(() =>
+        {
+            IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
+            SynchronizationContext context = SynchronizationContext.Current!;
+            _ = Effect.Create(() =>
+            {
+                if (use24HourFormat.Get())
+                {
+                    context.Post(_ => ran++, null);
+                }
+            });
+            return Box();
+        });
+
+        app.SetUse24HourFormat(true);
+
+        Assert.Equal(1, ran);
+    }
+
+    /// <summary>
     /// Setting the 24-hour form checks the app, as <see cref="HeadlessApp.SetSystemLocales"/> does: off the UI thread it throws
     /// <see cref="InvalidOperationException"/>, and after the app is disposed <see cref="ObjectDisposedException"/>.
     /// </summary>

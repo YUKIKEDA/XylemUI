@@ -225,6 +225,10 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// The caller is not on <see cref="HeadlessSession"/>'s UI thread, or no default key bindings are registered (the test project
     /// is built without the source generator of <c>XylemUI.Core</c> and did not call <see cref="Keymap.RegisterDefaults"/>).
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The options' size, scale, frame interval, or iterations are out of range, or their
+    /// <see cref="HeadlessOptions.SupportedLocales"/> hold a <see langword="null"/>.
+    /// </exception>
     public static Task<HeadlessApp> StartAsync(Func<Element> root, HeadlessOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(root);
@@ -239,6 +243,8 @@ public sealed class HeadlessApp : IAsyncDisposable
         {
             throw new ArgumentException("The scale and the frame interval are above 0, and the iterations at least 1.", nameof(options));
         }
+
+        WindowLocale.VerifySupported(options.SupportedLocales, nameof(options));
 
         _ = HeadlessSession.Dispatcher;
         if (!UiThread.CheckAccess())

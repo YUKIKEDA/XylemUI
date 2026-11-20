@@ -264,4 +264,61 @@ public sealed class LocalizationKeysTests(UiThreadFixture ui)
             Assert.IsType<ArgumentNullException>(noContent);
             Scope.Dispose(root);
         });
+
+    /// <summary>
+    /// <see cref="Localization.Provide"/> throws <see cref="InvalidOperationException"/> off the UI thread and while a computed
+    /// value computes, as its documentation says: for a signal of tables provided before and for one never provided.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - On the UI thread: two signals of the ja tables; the second was provided once in a root scope, so its locale signal is kept.
+    ///
+    /// Steps:
+    /// - On the UI thread, provide the second signal from inside a computed value's computation. From a thread of the pool,
+    ///   provide each signal.
+    ///
+    /// Expected:
+    /// - The three calls throw <see cref="InvalidOperationException"/>.
+    /// </remarks>
+    [Fact]
+    public void Provide_OffTheUiThreadOrInAComputation_Throws()
+    {
+        Signal<LocaleData>? fresh = null;
+        Signal<LocaleData>? provided = null;
+        Exception? inComputation = null;
+        ui.Invoke(() =>
+        {
+            fresh = Signal.Create(CldrLocales.Ja);
+            provided = Signal.Create(CldrLocales.Ja);
+            Signal<LocaleData> kept = provided;
+            ScopeHandle root = Scope.Create(() => _ = Localization.Provide(kept, static () => default));
+            Scope.Dispose(root);
+            Computed<int> computed = Computed.Create(() =>
+            {
+                inComputation = Record.Exception(() => Localization.Provide(kept, static () => default));
+                return 0;
+            });
+            _ = computed.Get();
+        });
+
+        // The test calls Provide off the UI thread on purpose, which is what XYLEM100 reports.
+#pragma warning disable XYLEM100
+        Exception? freshOffThread = Task.Run(
+                () => Record.Exception(() => Localization.Provide(fresh!, static () => default)),
+                TestContext.Current.CancellationToken
+            )
+            .GetAwaiter()
+            .GetResult();
+        Exception? providedOffThread = Task.Run(
+                () => Record.Exception(() => Localization.Provide(provided!, static () => default)),
+                TestContext.Current.CancellationToken
+            )
+            .GetAwaiter()
+            .GetResult();
+#pragma warning restore XYLEM100
+
+        Assert.IsType<InvalidOperationException>(inComputation);
+        Assert.IsType<InvalidOperationException>(freshOffThread);
+        Assert.IsType<InvalidOperationException>(providedOffThread);
+    }
 }

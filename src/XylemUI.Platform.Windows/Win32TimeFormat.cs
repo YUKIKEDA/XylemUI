@@ -24,9 +24,23 @@ internal static unsafe partial class Win32TimeFormat
     /// <returns>Whether the hours are in 24-hour form; <paramref name="before"/> when the call fails.</returns>
     public static bool ReadUse24HourFormat(bool before)
     {
-        char* buffer = stackalloc char[BufferLength];
-        int written = GetLocaleInfoEx(null, LocaleTimeFormat, buffer, BufferLength);
-        return written <= 0 ? before : Uses24Hour(new ReadOnlySpan<char>(buffer, BufferLength), written);
+        Span<char> buffer = stackalloc char[BufferLength];
+        int written = ReadTimeFormat(buffer);
+        return Uses24Hour(buffer, written, before);
+    }
+
+    /// <summary>
+    /// Writes the user's time format (<c>GetLocaleInfoEx</c> with <c>LOCALE_NAME_USER_DEFAULT</c> and <c>LOCALE_STIMEFORMAT</c>, the
+    /// user's override included) into <paramref name="buffer"/>.
+    /// </summary>
+    /// <param name="buffer">The buffer; a format longer than it fails the call.</param>
+    /// <returns>What the call returned: the characters written, the terminating null included; 0 when the call failed.</returns>
+    public static int ReadTimeFormat(Span<char> buffer)
+    {
+        fixed (char* data = buffer)
+        {
+            return GetLocaleInfoEx(null, LocaleTimeFormat, data, buffer.Length);
+        }
     }
 
     /// <summary>
@@ -43,10 +57,17 @@ internal static unsafe partial class Win32TimeFormat
     /// describe.
     /// </remarks>
     /// <param name="buffer">The buffer the call wrote into.</param>
-    /// <param name="written">What the call returned: the characters it wrote, the terminating null included; at least 1.</param>
-    /// <returns>Whether the format holds <c>H</c> outside single quotes.</returns>
-    public static bool Uses24Hour(ReadOnlySpan<char> buffer, int written)
+    /// <param name="written">What the call returned: the characters it wrote, the terminating null included; 0 when it failed.</param>
+    /// <param name="before">The value returned when the call failed.</param>
+    /// <returns>Whether the format holds <c>H</c> outside single quotes; <paramref name="before"/> when the call failed.</returns>
+    public static bool Uses24Hour(ReadOnlySpan<char> buffer, int written, bool before)
     {
+        if (written <= 0)
+        {
+            return before;
+        }
+
+
         // Two quotes in a row close and open again: inside quotes they stay inside, and outside they quote nothing, so a toggle
         // reads both as the pages say.
         bool quoted = false;
