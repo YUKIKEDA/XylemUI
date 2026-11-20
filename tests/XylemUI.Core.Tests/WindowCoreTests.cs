@@ -696,6 +696,63 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A wrapper calls the root function exactly once (design §13.2, "根で置くもの"): a second call throws before the root function
+    /// runs again, and a wrapper that returns without calling it makes Mount throw; either way nothing of the mount is left.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, one for each case; a root function that counts its runs and returns a box; the number of live scopes and
+    ///   the current tree before the mount.
+    ///
+    /// Steps:
+    /// - Mount with a wrapper that: calls the root function twice and returns the first box; or returns a box of its own without
+    ///   calling it.
+    ///
+    /// Expected:
+    /// - Mount throws <see cref="InvalidOperationException"/>. The root function ran once in the first case and never in the
+    ///   second. The number of live scopes is the one before, the root scope is none, the current tree is the one before, and the
+    ///   tree holds as many nodes as before: the boxes made are freed.
+    /// </remarks>
+    /// <param name="twice"><see langword="true"/>: the wrapper calls the root function twice; <see langword="false"/>: never.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Mount_WrapperCallsTheRootOtherThanOnce_Throws(bool twice) =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            int runs = 0;
+            Func<Element> root = () =>
+            {
+                runs++;
+                return Box();
+            };
+            Func<Func<Element>, Element> wrapper = given =>
+            {
+                if (!twice)
+                {
+                    return Box();
+                }
+
+                Element first = given();
+                _ = given();
+                return first;
+            };
+            int live = Scope.LiveCount;
+            int nodes = core.Tree.Nodes.Count;
+            UiTree? before = UiTree.Current;
+
+            _ = Assert.Throws<InvalidOperationException>(() => core.Mount(root, wrapper, [], default, "WindowCoreTests", new Size(200, 100), 1));
+
+            Assert.Equal(twice ? 1 : 0, runs);
+            Assert.Equal(live, Scope.LiveCount);
+            Assert.True(core.RootScope.IsNone);
+            Assert.Same(before, UiTree.Current);
+            Assert.Equal(nodes, core.Tree.Nodes.Count);
+        });
+
+    /// <summary>
     /// An appearance whose high contrast and high-contrast colors disagree makes Mount throw before the root function runs, and
     /// SetSystemAppearance throw before and after Mount.
     /// </summary>

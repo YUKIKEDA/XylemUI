@@ -302,32 +302,32 @@ public sealed class HeadlessAppAppearanceTests
 
     /// <summary>
     /// The headless app never takes the process's wrapper (<see cref="WindowRoot.SetWrapper"/>): with no wrapper in the options the
-    /// root function's node is the window's, and with one only the options' runs.
+    /// root function's node is the window's, and with one only the options' runs. Its windows do not mark the wrapper read, so the
+    /// same method set again still does nothing, and another one is refused as a second wrapper (design §13.2, "包みは 1 つ").
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The process's wrapper is set to one that counts its runs; no other test of this project sets it, since it cannot be put
-    ///   back. The test project is an executable, as an app is, so a wrapper the source generator set would stay there too
-    ///   (design §13.2, "ヘッドレスとテスト").
+    /// - The process's wrapper is set to a static method that counts its runs; no other test of this project sets or reads it,
+    ///   since it cannot be put back, so the order of the tests does not matter. The test project is an executable, as an app is,
+    ///   so a wrapper the source generator set would stay there too (design §13.2, "ヘッドレスとテスト").
     ///
     /// Steps:
     /// - Start an app with default options. Start one whose options' wrapper counts its runs and returns a box around the root's.
+    ///   Set a new delegate of the same static method. Set a delegate of another method.
     ///
     /// Expected:
     /// - The process's wrapper never ran. In the first app the root's node is the window's; in the second the options' wrapper ran
-    ///   once.
+    ///   once. The wrapper is not marked read. The same method throws nothing; the other one throws
+    ///   <see cref="InvalidOperationException"/> whose message says a wrapper is set once, not that a window read it.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
     public async Task StartAsync_TheProcessWrapper_IsNotRead()
     {
-        int processWraps = 0;
         int optionWraps = 0;
-        WindowRoot.SetWrapper(root =>
-        {
-            processWraps++;
-            return root();
-        });
+        var first = new Func<Func<Element>, Element>(ProcessWrapper.Wrap);
+        var again = new Func<Func<Element>, Element>(ProcessWrapper.Wrap);
+        WindowRoot.SetWrapper(first);
         Element plain = default;
         await using (HeadlessApp app = await HeadlessApp.StartAsync(() => plain = Box()))
         {
@@ -352,8 +352,16 @@ public sealed class HeadlessAppAppearanceTests
             _ = app.PumpAndSettle();
         }
 
-        Assert.Equal(0, processWraps);
+        bool read = WindowRoot.IsRead;
+        WindowRoot.SetWrapper(again);
+        InvalidOperationException other = Assert.Throws<InvalidOperationException>(() => WindowRoot.SetWrapper(static root => root()));
+
+        Assert.Equal(0, ProcessWrapper.Runs);
         Assert.Equal(1, optionWraps);
+        Assert.False(read);
+        Assert.NotSame(first, again);
+        Assert.Contains("set once in a process", other.Message, StringComparison.Ordinal);
+        Assert.False(WindowRoot.IsRead);
     }
 
     /// <summary>
@@ -409,6 +417,18 @@ public sealed class HeadlessAppAppearanceTests
                 surface.SetBackdrop(dark ? DarkBackdrop : LightBackdrop);
                 surface.SetDarkTitleBar(dark);
             });
+            return root();
+        }
+    }
+
+    // The process's wrapper of StartAsync_TheProcessWrapper_IsNotRead: a static method, so that two delegates of it are equal.
+    private static class ProcessWrapper
+    {
+        public static int Runs { get; private set; }
+
+        public static Element Wrap(Func<Element> root)
+        {
+            Runs++;
             return root();
         }
     }

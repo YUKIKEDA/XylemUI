@@ -123,7 +123,7 @@ public static class XylemApp
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
             var size = new Size(width / scale, height / scale);
-            core.Mount(root, WindowRoot.Wrapper, uiLanguages(), default, "XylemApp.Run", size, scale);
+            core.Mount(root, WindowRoot.ReadWrapper(), uiLanguages(), default, "XylemApp.Run", size, scale);
 
             // The tree has its root now: assistive technology that asked while the window showed gets the tree.
             window.RootMounted();

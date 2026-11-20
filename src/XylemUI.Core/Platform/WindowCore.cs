@@ -123,8 +123,9 @@ internal sealed class WindowCore : IDisposable
     /// </remarks>
     /// <param name="root">The root function.</param>
     /// <param name="wrapper">
-    /// The root wrapper, which is given the root function and returns the window's node; <see langword="null"/> to run the root
-    /// function alone. The desktop host passes <see cref="WindowRoot.Wrapper"/>, and the headless app its options' wrapper.
+    /// The root wrapper, which is given a function that runs the root function, calls it exactly once, and returns the window's
+    /// node; <see langword="null"/> to run the root function alone. The desktop host passes <see cref="WindowRoot.ReadWrapper"/>,
+    /// and the headless app its options' wrapper.
     /// </param>
     /// <param name="systemLocales">The tags of the OS's languages, most preferred first, which the app's locale is resolved against.</param>
     /// <param name="appearance">The OS's appearance now.</param>
@@ -134,7 +135,8 @@ internal sealed class WindowCore : IDisposable
     /// <exception cref="ArgumentException">Only one of <see cref="SystemAppearance.HighContrast"/> and
     /// <see cref="SystemAppearance.Contrast"/> of <paramref name="appearance"/> says high contrast is on.</exception>
     /// <exception cref="InvalidOperationException">The root function, or the wrapper, returned no node of the window's tree, or one
-    /// that has a parent.</exception>
+    /// that has a parent; or the wrapper called the root function a second time (the second call throws, and the root function
+    /// does not run again), or returned without calling it (design §13.2, "根で置くもの").</exception>
     public void Mount(
         Func<Element> root,
         Func<Func<Element>, Element>? wrapper,
@@ -149,7 +151,7 @@ internal sealed class WindowCore : IDisposable
         var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales);
         _locale = locale;
         _appearance = windowAppearance;
-        Func<Element> body = wrapper is null ? root : () => wrapper(root);
+        Func<Element> body = wrapper is null ? root : () => Wrap(wrapper, root);
         UiTree? previous = UiTree.Current;
         UiTree.Current = Tree;
         try
@@ -274,6 +276,30 @@ internal sealed class WindowCore : IDisposable
         // The window's renderer draws glyphs from the atlas: the window goes first, as the desktop window always disposed them.
         _window?.Dispose();
         _atlas?.Dispose();
+    }
+
+    // Runs the wrapper with a function that runs the root function at most once (Issue #907): a second call throws before the root
+    // function makes its nodes again, which would stay in the tree with no parent, and a wrapper that never called it is refused.
+    private static Element Wrap(Func<Func<Element>, Element> wrapper, Func<Element> root)
+    {
+        bool called = false;
+        Element content = wrapper(() =>
+        {
+            if (called)
+            {
+                ThrowHelper.ThrowRootCalledTwice();
+            }
+
+            called = true;
+            return root();
+        });
+
+        if (!called)
+        {
+            ThrowHelper.ThrowRootNotCalled();
+        }
+
+        return content;
     }
 
     // No frame of the window's scheduler runs for a root that is gone. The frame is cancelled before the root scope is disposed;

@@ -100,8 +100,9 @@ public sealed record HeadlessOptions
     /// <summary>
     /// Gets the theme's function that wraps the app's root function, as the one an app's <c>[assembly: WindowTheme]</c> sets for
     /// its desktop windows (design §13.2, "ヘッドレスとテスト"), such as <c>FluentRoot.Wrap</c>: it runs inside the locale and the
-    /// OS's appearance, is given the root function, and returns the window's node. <see langword="null"/>, the default, runs the
-    /// root function alone. The headless app never takes the wrapper of <see cref="WindowRoot"/>.
+    /// OS's appearance, is given a function that runs the root function, calls it exactly once, and returns the window's node; a
+    /// second call, or none, makes the start throw <see cref="InvalidOperationException"/>. <see langword="null"/>, the default,
+    /// runs the root function alone. The headless app never reads the wrapper of <see cref="WindowRoot"/>.
     /// </summary>
     public Func<Func<Element>, Element>? RootWrapper { get; init; }
 }
