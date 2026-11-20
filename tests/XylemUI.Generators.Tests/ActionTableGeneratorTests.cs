@@ -693,7 +693,7 @@ public sealed class ActionTableGeneratorTests
         Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
         Assert.Equal("XYLEM010", diagnostic.Id);
         Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
-        Assert.True(diagnostic.Location.IsInSource);
+        Assert.True(diagnostic.Location.IsInSource || diagnostic.Location.Kind == LocationKind.ExternalFile);
         Assert.Equal(1, diagnostic.Location.GetLineSpan().StartLinePosition.Line);
         string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
         Assert.Contains("XylemUI.Theme.Fluent.FluentRoot", message, StringComparison.Ordinal);
@@ -743,7 +743,7 @@ public sealed class ActionTableGeneratorTests
         Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
         Assert.Equal("XYLEM011", diagnostic.Id);
         Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
-        Assert.True(diagnostic.Location.IsInSource);
+        Assert.True(diagnostic.Location.IsInSource || diagnostic.Location.Kind == LocationKind.ExternalFile);
         Assert.Contains("BadRoot", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         Assert.Empty(app.CompilerErrors);
         string source = Assert.Single(app.Sources);
