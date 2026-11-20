@@ -67,7 +67,6 @@ internal static unsafe partial class Win32TimeFormat
             return before;
         }
 
-
         // Two quotes in a row close and open again: inside quotes they stay inside, and outside they quote nothing, so a toggle
         // reads both as the pages say.
         bool quoted = false;

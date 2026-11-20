@@ -303,18 +303,15 @@ public sealed class LocalizationKeysTests(UiThreadFixture ui)
 
         // The test calls Provide off the UI thread on purpose, which is what XYLEM100 reports.
 #pragma warning disable XYLEM100
-        Exception? freshOffThread = Task.Run(
-                () => Record.Exception(() => Localization.Provide(fresh!, static () => default)),
-                TestContext.Current.CancellationToken
-            )
-            .GetAwaiter()
-            .GetResult();
-        Exception? providedOffThread = Task.Run(
-                () => Record.Exception(() => Localization.Provide(provided!, static () => default)),
-                TestContext.Current.CancellationToken
-            )
-            .GetAwaiter()
-            .GetResult();
+        Exception? freshOffThread = null;
+        Exception? providedOffThread = null;
+        var worker = new Thread(() =>
+        {
+            freshOffThread = Record.Exception(() => Localization.Provide(fresh!, static () => default));
+            providedOffThread = Record.Exception(() => Localization.Provide(provided!, static () => default));
+        });
+        worker.Start();
+        worker.Join();
 #pragma warning restore XYLEM100
 
         Assert.IsType<InvalidOperationException>(inComputation);
