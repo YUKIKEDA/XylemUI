@@ -95,8 +95,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     public IReadOnlyList<string> UiLanguages => Window.UiLanguages;
 
     /// <summary>
-    /// Gets a value indicating whether the user's time format shows the hours in 24-hour form as the window read it, for the first
-    /// mount until the OS's settings become one object of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
+    /// Gets a value indicating whether the user's short time format shows the hours in 24-hour form as the window read it, for the
+    /// first mount until the OS's settings become one object of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
     /// </summary>
     public bool Use24HourFormat => Window.Use24HourFormat;
 

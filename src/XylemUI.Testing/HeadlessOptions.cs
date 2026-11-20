@@ -79,7 +79,7 @@ public sealed record HeadlessOptions
 
     /// <summary>
     /// Gets what chooses the app's locale, as <c>WindowOptions.ResolveLocale</c> of a desktop window; <see langword="null"/> for
-    /// <see cref="Localization.Resolve"/>.
+    /// <see cref="Localization.Resolve"/>. The function does not change the lists it is given: the second is the app's own.
     /// </summary>
     public Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? ResolveLocale { get; init; }
 

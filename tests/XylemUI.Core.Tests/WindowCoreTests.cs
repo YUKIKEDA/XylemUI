@@ -585,14 +585,16 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
     /// Preconditions:
     /// - For each case a new core whose resolving function returns a fixed locale: "ja" with en and ja declared; "zh-TW" with
     ///   zh-Hans and zh-Hant declared, in that order; "sr-ME" (likely script Latn) with sr (Cyrl) declared; "fr-CA" with en and ja
-    ///   declared.
+    ///   declared; "xx-YY" with the en tables declared under the tag "xx" (a language the likely subtags do not have, so neither
+    ///   script can be inferred).
     ///
     /// Steps:
     /// - Mount each core with a root function that reads <see cref="Localization.Data"/> and <see cref="Localization.Locale"/>.
     ///
     /// Expected:
-    /// - "ja": <see cref="CldrLocales.Ja"/> itself. "zh-TW": the plural rules of <see cref="CldrLocales.ZhHant"/>. "sr-ME" and
-    ///   "fr-CA": the plural rules of <see cref="LocaleData.Root"/>. In every case the tables' locale and the locale key are the
+    /// - "ja": <see cref="CldrLocales.Ja"/> itself. "zh-TW": the plural rules of <see cref="CldrLocales.ZhHant"/>. "sr-ME",
+    ///   "fr-CA", and "xx-YY": the plural rules of <see cref="LocaleData.Root"/>; two scripts that cannot be inferred are not the
+    ///   same script (Issue #906). In every case the tables' locale and the locale key are the
     ///   returned locale.
     /// </remarks>
     [Fact]
@@ -605,6 +607,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             Assert.Same(CldrLocales.ZhHant.Plurals, TablesFor("zh-TW", [CldrLocales.ZhHans, CldrLocales.ZhHant]).Plurals);
             Assert.Same(LocaleData.Root.Plurals, TablesFor("sr-ME", [CldrLocales.Sr]).Plurals);
             Assert.Same(LocaleData.Root.Plurals, TablesFor("fr-CA", [CldrLocales.En, CldrLocales.Ja]).Plurals);
+            Assert.Same(LocaleData.Root.Plurals, TablesFor("xx-YY", [CldrLocales.En.WithLocale(Locale.Parse("xx"))]).Plurals);
 
             LocaleData TablesFor(string tag, LocaleData[] supported)
             {

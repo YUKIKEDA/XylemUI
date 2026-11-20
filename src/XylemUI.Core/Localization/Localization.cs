@@ -30,7 +30,7 @@ public static class Localization
 
     /// <summary>
     /// Gets the key of whether the OS asks for times in 24-hour form (design §4.11, "The key of the 24-hour form"): a window provides
-    /// it at its root, from Windows' time format on the desktop and from <c>HeadlessOptions.Use24HourFormat</c> in a headless app,
+    /// it at its root, from Windows' short time format on the desktop and from <c>HeadlessOptions.Use24HourFormat</c> in a headless app,
     /// and the value changes when the OS's setting does. The key has no default, so a lookup outside a window throws.
     /// </summary>
     public static Context<IReadOnlySignal<bool>> Use24HourFormat { get; } = new();

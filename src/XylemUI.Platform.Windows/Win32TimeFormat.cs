@@ -3,21 +3,27 @@ using System.Runtime.InteropServices;
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// Reads whether the user's time format shows the hours in 24-hour form (design §4.11, "The locale of the formats"): the only value
-/// the formats take from Windows' regional settings. The libraries run with invariant globalization, where the cultures do not
+/// Reads whether the user's short time format shows the hours in 24-hour form (design §4.11, "The locale of the formats"): the only
+/// value the formats take from Windows' regional settings. The libraries run with invariant globalization, where the cultures do not
 /// carry the user's settings, so the host asks Windows.
 /// </summary>
+/// <remarks>
+/// The short time format (<c>LOCALE_SSHORTTIME</c>) is read, not the long one (<c>LOCALE_STIMEFORMAT</c>): the key decides the
+/// short time (<c>"jm"</c>), and a user can set the short time to <c>HH:mm</c> and the long time to <c>h:mm:ss tt</c> (Issue #906).
+/// Flutter 3.47.8 reads the long one (<c>engine/src/flutter/shell/platform/windows/system_utils.cc</c>, lines 101 to 115).
+/// </remarks>
 internal static unsafe partial class Win32TimeFormat
 {
-    // LOCALE_STIMEFORMAT (winnls.h): the user's time format, such as "h:mm:ss tt". TerraFX does not declare the winnls functions.
-    private const uint LocaleTimeFormat = 0x1003;
+    // LOCALE_SSHORTTIME (winnls.h, Windows 7 and later): the user's short time format, such as "h:mm tt". TerraFX does not declare
+    // the winnls functions.
+    private const uint LocaleShortTime = 0x79;
 
     // The buffer of Flutter 3.47.8's GetUserTimeFormat (engine/src/flutter/shell/platform/windows/system_utils.cc, line 104). A
     // longer format fails the call, and the value before is kept.
     private const int BufferLength = 100;
 
     /// <summary>
-    /// Returns whether the user's time format (<c>GetLocaleInfoEx</c> with <c>LOCALE_STIMEFORMAT</c>) holds the hour pattern
+    /// Returns whether the user's short time format (<c>GetLocaleInfoEx</c> with <c>LOCALE_SSHORTTIME</c>) holds the hour pattern
     /// <c>H</c> outside single quotes (<see cref="Uses24Hour"/>).
     /// </summary>
     /// <param name="before">The value returned when Windows gives no format.</param>
@@ -25,21 +31,21 @@ internal static unsafe partial class Win32TimeFormat
     public static bool ReadUse24HourFormat(bool before)
     {
         Span<char> buffer = stackalloc char[BufferLength];
-        int written = ReadTimeFormat(buffer);
+        int written = ReadShortTimeFormat(buffer);
         return Uses24Hour(buffer, written, before);
     }
 
     /// <summary>
-    /// Writes the user's time format (<c>GetLocaleInfoEx</c> with <c>LOCALE_NAME_USER_DEFAULT</c> and <c>LOCALE_STIMEFORMAT</c>, the
-    /// user's override included) into <paramref name="buffer"/>.
+    /// Writes the user's short time format (<c>GetLocaleInfoEx</c> with <c>LOCALE_NAME_USER_DEFAULT</c> and
+    /// <c>LOCALE_SSHORTTIME</c>, the user's override included) into <paramref name="buffer"/>.
     /// </summary>
     /// <param name="buffer">The buffer; a format longer than it fails the call.</param>
     /// <returns>What the call returned: the characters written, the terminating null included; 0 when the call failed.</returns>
-    public static int ReadTimeFormat(Span<char> buffer)
+    public static int ReadShortTimeFormat(Span<char> buffer)
     {
         fixed (char* data = buffer)
         {
-            return GetLocaleInfoEx(null, LocaleTimeFormat, data, buffer.Length);
+            return GetLocaleInfoEx(null, LocaleShortTime, data, buffer.Length);
         }
     }
 

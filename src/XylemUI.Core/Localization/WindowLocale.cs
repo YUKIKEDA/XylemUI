@@ -1,5 +1,3 @@
-using System.Collections.ObjectModel;
-
 namespace XylemUI;
 
 /// <summary>
@@ -11,7 +9,10 @@ namespace XylemUI;
 internal sealed class WindowLocale
 {
     private readonly LocaleData[] _supported;
-    private readonly ReadOnlyCollection<Locale> _supportedLocales;
+
+    // Given to the resolving function as it is: with a read-only wrapper, Localization.Resolve compiled to 3,228 bytes against 1,684
+    // and Counter grew 3,584 bytes (docs/benchmarks/lc2-cldr-size.md; Issue #906).
+    private readonly Locale[] _supportedLocales;
     private readonly Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale> _resolve;
     private readonly Signal<LocaleData> _data;
     private readonly Signal<bool> _use24HourFormat;
@@ -35,13 +36,12 @@ internal sealed class WindowLocale
     )
     {
         _supported = supported is null ? [] : [.. supported];
-        var locales = new Locale[_supported.Length];
-        for (int i = 0; i < locales.Length; i++)
+        _supportedLocales = new Locale[_supported.Length];
+        for (int i = 0; i < _supportedLocales.Length; i++)
         {
-            locales[i] = _supported[i].Locale;
+            _supportedLocales[i] = _supported[i].Locale;
         }
 
-        _supportedLocales = Array.AsReadOnly(locales);
         _resolve = resolve ?? Localization.Resolve;
         _data = Signal.Create(Choose(Resolve(systemTags)));
         _use24HourFormat = Signal.Create(use24HourFormat);
@@ -136,7 +136,7 @@ internal sealed class WindowLocale
     }
 
     // Design §4.11, "When the replacing function returns a locale not declared": the supported tables of the locale; else the first
-    // of its language whose likely script is its likely script; else the root's.
+    // of its language whose likely script is its likely script, when that script can be inferred; else the root's.
     private LocaleData TablesFor(Locale resolved)
     {
         foreach (LocaleData tables in _supported)
@@ -147,12 +147,16 @@ internal sealed class WindowLocale
             }
         }
 
+        // A script that cannot be inferred (0) is not the same script as another that cannot, as in Localization.Resolve.
         uint script = LikelyScripts.Infer(resolved);
-        foreach (LocaleData tables in _supported)
+        if (script != 0)
         {
-            if (tables.Locale.Language == resolved.Language && LikelyScripts.Infer(tables.Locale) == script)
+            foreach (LocaleData tables in _supported)
             {
-                return tables;
+                if (tables.Locale.Language == resolved.Language && LikelyScripts.Infer(tables.Locale) == script)
+                {
+                    return tables;
+                }
             }
         }
 

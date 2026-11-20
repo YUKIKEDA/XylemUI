@@ -176,8 +176,8 @@ public sealed unsafe partial class Win32Window : IDisposable
     public IReadOnlyList<string> UiLanguages { get; private set; } = [];
 
     /// <summary>
-    /// Gets a value indicating whether the user's time format shows the hours in 24-hour form: it holds the hour pattern <c>H</c>
-    /// outside single quotes (design §4.11, "The locale of the formats"). Read when the window is created and on each
+    /// Gets a value indicating whether the user's short time format (<c>LOCALE_SSHORTTIME</c>) shows the hours in 24-hour form: it
+    /// holds the hour pattern <c>H</c> outside single quotes (design §4.11, "The locale of the formats"). Read when the window is created and on each
     /// <c>WM_SETTINGCHANGE</c> it receives; a read that fails keeps the value before, <see langword="false"/> at the start.
     /// </summary>
     public bool Use24HourFormat { get; private set; }

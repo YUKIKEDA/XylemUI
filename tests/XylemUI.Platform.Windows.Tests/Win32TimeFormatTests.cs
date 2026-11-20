@@ -5,13 +5,13 @@ using static TerraFX.Interop.Windows.Windows;
 namespace XylemUI.Platform.Windows.Tests;
 
 // Windows' 24-hour form (row LC2, design §4.11, "The locale of the formats" and "The key of the 24-hour form"): whether the user's
-// time format holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the window is created and on each
+// short time format holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the window is created and on each
 // WM_SETTINGCHANGE.
 [Collection(UiThreadGroup.Name)]
 public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
 {
-    // LOCALE_STIMEFORMAT (winnls.h), written here apart from the host's constant.
-    private const uint LocaleStimeFormat = 0x1003;
+    // LOCALE_SSHORTTIME (winnls.h), written here apart from the host's constant.
+    private const uint LocaleShortTime = 0x79;
 
     /// <summary>
     /// A time format is in 24-hour form when it holds <c>H</c> outside single quotes, as Microsoft's "Hour, Minute, and Second Format
@@ -60,9 +60,9 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
     }
 
     /// <summary>
-    /// The format read is the user's long time format (<c>LOCALE_STIMEFORMAT</c>, 0x1003), not another value of
-    /// <c>GetLocaleInfoEx</c> such as the short time format (<c>LOCALE_SSHORTTIME</c>, 0x79) or the short date format
-    /// (<c>LOCALE_SSHORTDATE</c>, 0x1F).
+    /// The format read is the user's short time format (<c>LOCALE_SSHORTTIME</c>, 0x79; design §4.11, "The locale of the formats",
+    /// Issue #906), not another value of <c>GetLocaleInfoEx</c> such as the long time format (<c>LOCALE_STIMEFORMAT</c>, 0x1003,
+    /// which Flutter reads) or the short date format (<c>LOCALE_SSHORTDATE</c>, 0x1F).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -70,21 +70,21 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
     ///   constant written here.
     ///
     /// Steps:
-    /// - Read the format through <see cref="Win32TimeFormat.ReadTimeFormat"/>; read <c>LOCALE_STIMEFORMAT</c> directly.
+    /// - Read the format through <see cref="Win32TimeFormat.ReadShortTimeFormat"/>; read <c>LOCALE_SSHORTTIME</c> directly.
     ///
     /// Expected:
     /// - The two strings are equal and not empty. Another constant in the host shows here only when this machine's format of that
-    ///   value differs from its long time format; Windows' defaults do (the long time format has seconds and the short one not).
+    ///   value differs from its short time format; Windows' defaults do (the long time format has seconds and the short one not).
     /// </remarks>
     [Fact]
-    public void ReadTimeFormat_ReadsTheLongTimeFormat()
+    public void ReadShortTimeFormat_ReadsTheShortTimeFormat()
     {
         _ = ui;
         Span<char> buffer = stackalloc char[100];
-        int written = Win32TimeFormat.ReadTimeFormat(buffer);
+        int written = Win32TimeFormat.ReadShortTimeFormat(buffer);
 
         Assert.True(written > 1);
-        Assert.Equal(ReadDirectly(LocaleStimeFormat), new string(buffer[..(written - 1)]));
+        Assert.Equal(ReadDirectly(LocaleShortTime), new string(buffer[..(written - 1)]));
     }
 
     /// <summary>

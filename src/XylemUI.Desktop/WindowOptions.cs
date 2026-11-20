@@ -21,7 +21,8 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
     /// <see cref="SupportedLocales"/> in their order; <see langword="null"/> for <see cref="Localization.Resolve"/>. A function that
     /// returns one locale whatever it is given fixes the locale. The tables are the supported ones of the locale returned; else the
     /// first supported ones of its language and likely script; else <see cref="LocaleData.Root"/>; any of them under the returned
-    /// locale's tag (design §4.11, "When there is no table").
+    /// locale's tag (design §4.11, "When there is no table"). The function does not change the lists it is given: the second is the
+    /// window's own.
     /// </summary>
     public Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? ResolveLocale { get; init; }
 }
