@@ -56,6 +56,13 @@ internal sealed class Win32PlatformApp : IPlatformApp
     internal bool UseWarp { get; init; }
 
     /// <summary>
+    /// Gets a function that makes, from the renderer of each window the host opens, the target the window gives its core; for the
+    /// end-to-end benchmark, which times the draw and the present through it, on the frames and on the synchronous resize path
+    /// (Issue #933). <see langword="null"/> gives the core the renderer itself.
+    /// </summary>
+    internal Func<IRenderTarget, IRenderTarget>? WrapTarget { get; init; }
+
+    /// <summary>
     /// Gets the tags of the OS's languages, most preferred first, as the open window read them; none while no window is open. The
     /// app mounts its root with them until the OS's settings become one object of the app tier (row PL1, PR 5; Issue #928).
     /// </summary>
@@ -75,7 +82,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
             throw new InvalidOperationException("A window of the app is open: a second window comes with row MW1 (design §6.0).");
         }
 
-        _window = new Win32PlatformWindow(core, title, width, height, show, UseWarp, () => _window = null);
+        _window = new Win32PlatformWindow(core, title, width, height, show, UseWarp, () => _window = null, WrapTarget);
         return _window;
     }
 

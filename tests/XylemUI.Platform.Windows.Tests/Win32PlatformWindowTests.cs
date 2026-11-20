@@ -50,6 +50,57 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A host given a function that wraps the renderer gives the core what the function made from the window's renderer, and the
+    /// core's first frame and the frame of a size change draw and present through it (Issue #933, the seam of the end-to-end
+    /// benchmark).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A Windows host whose windows draw on WARP, given a function that wraps the renderer in a target that counts its draws and
+    ///   presents and passes them on.
+    ///
+    /// Steps:
+    /// - Open a hidden window for a core; connect, attach, and mount a box. Read the counts. Resize the window to 360 x 240 with
+    ///   <c>SetWindowPos</c>; read the counts again.
+    ///
+    /// Expected:
+    /// - The function was called once, with the window's renderer, and the window's target is what it made.
+    /// - After the mount, one draw and one present; after the size change, two of each.
+    /// </remarks>
+    [Fact]
+    public void OpenWindow_WithAWrapper_TheCoreDrawsAndPresentsThroughIt() =>
+        ui.Invoke(() =>
+        {
+            var wrapped = new List<IRenderTarget>();
+            CountingTarget? counting = null;
+            using var app = new Win32PlatformApp
+            {
+                UseWarp = true,
+                WrapTarget = target =>
+                {
+                    wrapped.Add(target);
+                    return counting = new CountingTarget(target);
+                },
+            };
+            using var core = new WindowCore(null, app.Clipboard, null, null);
+            var window = (Win32PlatformWindow)app.OpenWindow(core, "wrapped", 200, 100, show: false);
+            core.Connect(window, new GlyphAtlas(static () => new DirectWriteGlyphRasterizer(), threads: 1), Color.FromRgb(0xFFFFFF));
+            window.Attach();
+            (int width, int height) = window.ClientSize;
+            float scale = window.ScaleFactor;
+            core.Mount(Elements.Box, window.UiLanguages, "Win32PlatformWindowTests", new Size(width / scale, height / scale), scale);
+            (int Draws, int Presents) mounted = (counting!.Draws, counting.Presents);
+
+            Assert.True(SetWindowPos(window.Window.Hwnd, HWND.NULL, 0, 0, 360, 240, ResizeFlags));
+
+            IRenderTarget only = Assert.Single(wrapped);
+            Assert.Same(window.Renderer, only);
+            Assert.Same(counting, window.Target);
+            Assert.Equal((1, 1), mounted);
+            Assert.Equal((2, 2), (counting.Draws, counting.Presents));
+        });
+
+    /// <summary>
     /// While a window of the host is open, a second <c>OpenWindow</c> throws, naming row MW1; once the first is disposed, another
     /// opens. The host reads the OS's languages from the open window, and has none while no window is open (Issue #928).
     /// </summary>
@@ -381,6 +432,26 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         {
             core.Dispose();
             throw;
+        }
+    }
+
+    // Counts the draws and presents it passes on to the renderer.
+    private sealed class CountingTarget(IRenderTarget inner) : IRenderTarget
+    {
+        public int Draws { get; private set; }
+
+        public int Presents { get; private set; }
+
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images)
+        {
+            Draws++;
+            inner.Draw(lists, clearColor, atlas, images);
+        }
+
+        public void Present()
+        {
+            Presents++;
+            inner.Present();
         }
     }
 

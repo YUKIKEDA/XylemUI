@@ -126,17 +126,18 @@ internal static class External
     public static int App(bool isStatic, int period, bool tree = false)
     {
         UiThread.Initialize();
-        using var scene = new Scene("XylemUI E2E app");
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
 
-        // With `tree`, the scene is drawn from a UI tree by WindowFrames, the path of an app (row R3, Issue #683). Its first frame
-        // is presented on the synchronous resize path and told to the loop's scheduler, as an app's window does (design §2.11).
-        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText: false) : null;
-        if (treeScene is not null && treeScene.Target.PresentEnd != 0)
+        // With `tree`, the scene is drawn from a UI tree by WindowFrames, the path of an app (row R3, Issue #683), in a window of
+        // the Windows host through its window core (row PL1, Issue #933), whose WindowFrames tells the loop's scheduler of each
+        // present, the first frame's on the synchronous resize path included (design §2.11). The host sets the swap chain as the
+        // loop's clock when it makes its renderer; the plain scene sets it here.
+        using var scene = new Scene("XylemUI E2E app", hosted: tree);
+        if (!tree)
         {
-            Win32MessageLoop.FrameScheduler.FramePresented();
+            Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         }
 
+        using TreeScene? treeScene = tree ? new TreeScene(scene, noText: false) : null;
         int frame = 0;
         Action? step = null;
         long last = 0;
@@ -160,10 +161,6 @@ internal static class External
                 }
 
                 treeScene.RunFrame();
-                if (treeScene.Target.PresentEnd >= last)
-                {
-                    Win32MessageLoop.FrameScheduler.FramePresented();
-                }
             }
             else
             {

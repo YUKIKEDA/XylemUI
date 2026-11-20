@@ -5168,10 +5168,19 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 **測ること（実装の PR）:** 契約にする前と後を、`.cursor/rules/bench.mdc` のとおり、同じ機械で NativeAOT Release の 2 つのビルドを交互に、3 回以上ずつ測る。フレームの道で契約を通る呼び出しは、今もインターフェースかデリゲートの呼び出しで、フレームか OS の知らせ 1 つに 1 回である（`RequestFrame`、`Draw`・`Present`、`FramePresented`、`UpdateGestures`、ポインタの知らせ）。新しく増えるのは窓の核への 1 段の呼び出しだけで、それも測る。
 
-- 起動: `XylemUI.E2E app-startup <counter>/Counter.exe --at 20,40` と `app-startup <todo>/Todo.exe --at 24,60 --idle`（起動から中身が画面に出るまで、何もしていない時の CPU・working set・private bytes、`docs/benchmarks/v1d-components.md`、`v3c-todo.md`）
+- 起動: `XylemUI.E2E app-startup <counter>/Counter.exe --at 20,40` と `app-startup <todo>/Todo.exe --at 24,60 --idle`（起動から中身が画面に出るまで、何もしていない時の CPU・working set・private bytes、`docs/benchmarks/v1d-components.md`、`v3c-todo.md`）。4b は製品のコードを変えないので、`main` との比べは同じコードの対照になる。契約にする前と後は、PL1 の前（6ad46ae）のビルドとも比べる（Issue #933 でオーナーが決定）
 - フレーム: `frames 600 --tree`（フレームの間隔、Present から表示まで、取りこぼし、タイムアウトで回したフレーム）
-- 入力の遅延: `input-latency --app <dir>/XylemUI.E2E.exe --app-args "app"`（`docs/benchmarks/r3-late-start.md`）と `event-latency`（ワーカーの投函から Present まで。起床の経路）
-- リサイズ: `frames 600 --tree --resizes 100` と `--resizes-late N`（§2.11「待たずに出した Present」）。これらの場面は `Win32Window` と `D3D11Renderer` を直に作り（`benchmarks/XylemUI.E2E/Scene.cs`）、リサイズは `WindowFrames.Resize` を直に呼ぶ（`TreeScene.PresentOnResizePath`）ので、ホストの `WM_SIZE` の経路（`Win32PlatformWindow` の `Render`。行 PL1 の前は `DesktopWindow.Render`）を通らない。実装の PR は、木の場面と `External.App` をホストに通し、ホストの窓に `SetWindowPos` で大きさを変えて `WM_SIZE` から Present までを測る場面を足す
+- 入力の遅延: `input-latency --app <dir>/XylemUI.E2E.exe --app-args "app --tree"`（ホストを通る道）と `--app-args "app"`（`docs/benchmarks/r3-late-start.md`。木の無い対照で、PL1 の前のビルドとも比べる。Issue #933 でオーナーが決定）、`event-latency`（ワーカーの投函から Present まで。起床の経路）
+- リサイズ: `frames 600 --tree --resizes 100` と `--resizes-late N`（§2.11「待たずに出した Present」）は、窓の核の `Resize` を直に呼ぶ（`TreeScene.PresentOnResizePath`）ので、`WM_SIZE` とスワップチェーンの大きさの変更を通らない。前の数と比べるため、この形を残す。ホストの `WM_SIZE` の経路（`Win32PlatformWindow` の `Render`）は、新しい場面 `wm-size [frames] --resizes N`・`--resizes-late N` で測る。ホストの窓に `SetWindowPos` で大きさを変え、`WM_SIZE` から Present の終わりまで（`wm_size_to_present_ms`）と、その内訳を測る（Issue #933 でオーナーが決定）
+
+E2E の場面とホスト（4b、Issue #933 でオーナーが決定）:
+
+- **木の場面:** `frames --tree`（`--hover`・`--scroll`・`--list` を含む）、`wm-size`、`app --tree` は、Windows のホストを通る。`Win32PlatformApp.OpenWindow` で窓を開き、窓の核（`WindowCore`）の `Connect` と `Attach` でつなぐ。木・`WindowFrames`・`WindowInput`・スケジューラは窓の核とループのもので、Present をスケジューラに知らせるのは `WindowFrames` である。フレームを回すのは今までどおり場面のコールバックで、前の数と比べられる。時間は、ホストが窓の核に渡す描き先を包む internal の口（`Win32PlatformApp.WrapTarget`）で測る。場面は根の関数を `Mount` せず、箱を窓の核の根のノードの下に置き、`Mount` の最後と同じく `CancelFrame` の後に同期のリサイズの経路で最初のフレームを描く
+- **木の無い場面:** `frames`（木なし）、`frames-heavy`、`app`（木なし）、`startup`、`idle`、`event-latency` は、M1a で他のフレームワークと比べる場面なので、直の窓（`Win32Window` と `D3D11Renderer`）のまま残す。`image-play`（行 IM1）も直の窓のまま残す
+- **窓を開く順:** ホストの窓は隠して開き、モニタに置いてから見せ、その後に窓の核をつなぐ。見えている窓を動かすと起動が遅れるため（`.cursor/rules/bench.mdc`）である。そのため、レンダラは窓を見せる前にでき、アプリ（見せてからレンダラを作る）と順が違う。`app --tree` の起動は 4b では比べない
+- **スレッド:** ホストは OLE を UI スレッドで初期化し、MTA のスレッドでは投げる。ホストを通す場面だけを、COM の STA の新しいスレッドで回す。E2E の `Main` に `[STAThread]` は付けず、ほかの場面のスレッドの状態を変えない
+- **証拠:** `frames --tree` の出力に `host`・`presents`・`frames_not_presented`・`main_builds`・`text_input`・`accessibility_tree`（`--hover` では `hover_misses`）を足す。`wm-size` は 1 回ごとに、`WM_SIZE` が 1 回来て Present が 1 回あり、レンダラが新しい大きさになったことを確かめ、外れたら投げる
+- **固定:** 論理プロセッサ 2 に固定し優先度を高くするのは、プロセスの中で完結する場面（`frames`、`wm-size`、`event-latency`）だけである。子のアプリと PresentMon を起こす `input-latency` と `app-startup` は、固定が子に受け継がれてコアを取り合うので、固定しない
 - Zero-Alloc のテスト（§11.3）の数が変わらないこと
 - Counter と Todo の NativeAOT の発行で、警告が 0 であることと、実行ファイルの大きさを main と比べること（`.cursor/rules/aot.mdc`）。増えたら map ファイルで理由を書く
 
