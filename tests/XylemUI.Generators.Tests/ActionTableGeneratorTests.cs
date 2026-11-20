@@ -23,6 +23,24 @@ public sealed class ActionTableGeneratorTests
         }
         """;
 
+    // A stand-in for XylemUI.Theme.Fluent, whose FluentRoot comes with row TH1's fourth PR: a library with a root wrapper and no
+    // [assembly: WindowTheme] of its own.
+    private const string ThemeLibrary = """
+        using System;
+        using XylemUI;
+
+        namespace XylemUI.Theme.Fluent;
+
+        public static class FluentRoot
+        {
+            public static Element Wrap(Func<Element> root) => root();
+        }
+        """;
+
+    private const string AppMain = "public static class Program { public static void Main() { } }";
+
+    private const string FluentTheme = "[assembly: XylemUI.WindowTheme(typeof(XylemUI.Theme.Fluent.FluentRoot))]\n";
+
     // One language version for the sources here and the generated ones: a compilation refuses trees of two.
     private static readonly CSharpParseOptions Options = new(LanguageVersion.Preview);
 
@@ -570,6 +588,283 @@ public sealed class ActionTableGeneratorTests
             driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true)
         );
         driver = driver.RunGenerators(compilation, TestContext.Current.CancellationToken);
+        CSharpCompilation edited = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("public sealed class Unrelated;", Options, cancellationToken: TestContext.Current.CancellationToken)
+        );
+
+        driver = driver.RunGenerators(edited, TestContext.Current.CancellationToken);
+
+        GeneratorRunResult run = Assert.Single(driver.GetRunResult().Results);
+        IncrementalStepRunReason[] reasons =
+        [
+            .. run.TrackedOutputSteps.SelectMany(static step => step.Value).SelectMany(static step => step.Outputs).Select(static o => o.Reason),
+        ];
+        Assert.NotEmpty(reasons);
+        Assert.All(
+            reasons,
+            static reason => Assert.True(reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged, reason.ToString())
+        );
+    }
+
+    /// <summary>
+    /// An app's one <c>[assembly: WindowTheme]</c> makes its module initializer pass the named class's <c>Wrap</c> to
+    /// <c>WindowRoot.SetWrapper</c> (design §13.2, "根で置くもの"), for a class of a library and for an internal class of the app.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library <c>XylemUI.Theme.Fluent</c> with <c>public static class FluentRoot</c> and its
+    ///   <c>public static Element Wrap(Func&lt;Element&gt; root)</c>, compiled. An app that references it and carries
+    ///   <c>[assembly: XylemUI.WindowTheme(typeof(XylemUI.Theme.Fluent.FluentRoot))]</c>; another app that names its own internal
+    ///   class <c>AppRoot</c> with an internal <c>Wrap</c>.
+    ///
+    /// Steps:
+    /// - Run the generator on each app; compile the results.
+    ///
+    /// Expected:
+    /// - No diagnostic from the generator and none from the compiler. The first app's source has one
+    ///   <c>global::XylemUI.WindowRoot.SetWrapper(global::XylemUI.Theme.Fluent.FluentRoot.Wrap);</c>, in the module initializer
+    ///   after the default key bindings of <c>XylemUI.Core</c>; the second app's has
+    ///   <c>global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);</c>.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_OfAnApp_InitializerSetsTheWrapper()
+    {
+        MetadataReference theme = Run("XylemUI.Theme.Fluent", OutputKind.DynamicallyLinkedLibrary, ThemeLibrary).Emit();
+        const string OwnRoot = """
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+
+            internal static class AppRoot
+            {
+                internal static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+            """;
+
+        Result fluent = Run("Demo.App", OutputKind.ConsoleApplication, FluentTheme + AppMain, theme);
+
+        Assert.Empty(fluent.GeneratorDiagnostics);
+        Assert.Empty(fluent.CompilerErrors);
+        string source = Assert.Single(fluent.Sources);
+        const string SetWrapper = "            global::XylemUI.WindowRoot.SetWrapper(global::XylemUI.Theme.Fluent.FluentRoot.Wrap);\n";
+        int initializer = source.IndexOf("internal static void RegisterAll()", StringComparison.Ordinal);
+        int defaults = source.IndexOf("global::XylemUI.CoreKeyBindings.AddDefaults", StringComparison.Ordinal);
+        int set = source.IndexOf(SetWrapper, StringComparison.Ordinal);
+        Assert.True(initializer > 0 && defaults > initializer && set > defaults, source);
+        Assert.Equal(set, source.LastIndexOf(SetWrapper, StringComparison.Ordinal));
+
+        Result own = Run("Demo.Own", OutputKind.ConsoleApplication, OwnRoot + AppMain);
+        Assert.Empty(own.GeneratorDiagnostics);
+        Assert.Empty(own.CompilerErrors);
+        Assert.Contains("global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);", Assert.Single(own.Sources), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An app with two <c>[assembly: WindowTheme]</c> is the error XYLEM010, and its module initializer sets no wrapper: one
+    /// wrapper owns a window's backdrop and title bar (design §13.2, "包みは 1 つ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The library <c>XylemUI.Theme.Fluent</c> of the test above, compiled. An app that references it and carries, on its first
+    ///   line, the attribute that names <c>FluentRoot</c> and, on its second, one that names its own <c>AppRoot</c>, which has a
+    ///   valid <c>Wrap</c>.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - One diagnostic, XYLEM010 of severity Error, at the second attribute (line 1 counted from 0), whose message names
+    ///   <c>XylemUI.Theme.Fluent.FluentRoot</c> and <c>AppRoot</c>. No compiler error. The app's source still registers the default
+    ///   key bindings of <c>XylemUI.Core</c> and has no <c>SetWrapper</c>.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_Twice_IsAnErrorAndSetsNoWrapper()
+    {
+        MetadataReference theme = Run("XylemUI.Theme.Fluent", OutputKind.DynamicallyLinkedLibrary, ThemeLibrary).Emit();
+        const string Second = """
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+
+            public static class AppRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+            """;
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, FluentTheme + Second + AppMain, theme);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM010", diagnostic.Id);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.True(diagnostic.Location.IsInSource);
+        Assert.Equal(1, diagnostic.Location.GetLineSpan().StartLinePosition.Line);
+        string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("XylemUI.Theme.Fluent.FluentRoot", message, StringComparison.Ordinal);
+        Assert.Contains("AppRoot", message, StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetWrapper", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A class named by an app's <c>[assembly: WindowTheme]</c> that has no <c>Wrap</c> the module initializer can pass to
+    /// <c>WindowRoot.SetWrapper</c> is the error XYLEM011 at the attribute, and the windows are not wrapped.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - For each row, a library <c>Demo.Theme</c> with a public class <c>BadRoot</c>: one with no <c>Wrap</c>; one whose
+    ///   <c>Wrap</c> is not static; one whose <c>Wrap</c> returns nothing; one whose <c>Wrap</c> takes no parameter; one whose
+    ///   <c>Wrap</c> takes an <c>Action</c>; one whose <c>Wrap</c> takes its <c>Func&lt;Element&gt;</c> by <c>ref</c>; one whose
+    ///   <c>Wrap</c> is generic; one whose <c>Wrap</c> is internal. An app that references the library and carries
+    ///   <c>[assembly: XylemUI.WindowTheme(typeof(BadRoot))]</c>.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - One diagnostic, XYLEM011 of severity Error, in the app's source, whose message names <c>BadRoot</c>. No compiler error.
+    ///   The app's source still registers the default key bindings of <c>XylemUI.Core</c>, and has no <c>SetWrapper</c> and no
+    ///   <c>BadRoot</c>.
+    /// </remarks>
+    /// <param name="declaration">The class the app names.</param>
+    [Theory]
+    [InlineData("public static class BadRoot { }")]
+    [InlineData("public sealed class BadRoot { public XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
+    [InlineData("public static class BadRoot { public static void Wrap(System.Func<XylemUI.Element> root) { } }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap() => default; }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(System.Action root) => default; }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap(ref System.Func<XylemUI.Element> root) => root(); }")]
+    [InlineData("public static class BadRoot { public static XylemUI.Element Wrap<T>(System.Func<XylemUI.Element> root) => root(); }")]
+    [InlineData("public static class BadRoot { internal static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
+    public void WindowTheme_WithNoWrapTheAppCanPass_IsAnError(string declaration)
+    {
+        MetadataReference library = Run("Demo.Theme", OutputKind.DynamicallyLinkedLibrary, declaration).Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, "[assembly: XylemUI.WindowTheme(typeof(BadRoot))]\n" + AppMain, library);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM011", diagnostic.Id);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.True(diagnostic.Location.IsInSource);
+        Assert.Contains("BadRoot", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetWrapper", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("BadRoot", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An <c>[assembly: WindowTheme]</c> in an assembly that is not an executable does nothing: no diagnostic, even for two or for
+    /// a class without <c>Wrap</c>, no source, and no wrapper in an app that references the assembly (design §13.2, "包みは 1 つ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library <c>Demo.Lib</c> that carries two attributes, one that names its own valid <c>LibRoot</c> and one that names its
+    ///   <c>BadRoot</c>, which has no <c>Wrap</c>. An app with no attribute that references it.
+    ///
+    /// Steps:
+    /// - Run the generator on the library and on the app.
+    ///
+    /// Expected:
+    /// - The library: no diagnostic, no compiler error, no source. The app: no diagnostic, and its one source has no
+    ///   <c>SetWrapper</c>.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_InALibrary_DoesNothing()
+    {
+        const string Library = """
+            [assembly: XylemUI.WindowTheme(typeof(LibRoot))]
+            [assembly: XylemUI.WindowTheme(typeof(BadRoot))]
+
+            public static class LibRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+
+            public static class BadRoot { }
+            """;
+
+        Result library = Run("Demo.Lib", OutputKind.DynamicallyLinkedLibrary, Library);
+
+        Assert.Empty(library.GeneratorDiagnostics);
+        Assert.Empty(library.CompilerErrors);
+        Assert.Empty(library.Sources);
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, AppMain, library.Emit());
+        Assert.Empty(app.GeneratorDiagnostics);
+        Assert.DoesNotContain("SetWrapper", Assert.Single(app.Sources), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An app that references a theme and carries no <c>[assembly: WindowTheme]</c> is not wrapped: referencing the theme, as an
+    /// app that uses only its icons does, sets nothing (design §13.2, "根で置くもの").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The library <c>XylemUI.Theme.Fluent</c> of the tests above, compiled; an app with no attribute that references it and
+    ///   calls nothing of it.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - No diagnostic and no compiler error; the app's one source has the module initializer, and no <c>SetWrapper</c> and no
+    ///   <c>FluentRoot</c>.
+    /// </remarks>
+    [Fact]
+    public void App_ReferencingAThemeWithoutTheAttribute_IsNotWrapped()
+    {
+        MetadataReference theme = Run("XylemUI.Theme.Fluent", OutputKind.DynamicallyLinkedLibrary, ThemeLibrary).Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, AppMain, theme);
+
+        Assert.Empty(app.GeneratorDiagnostics);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        Assert.Contains("[global::System.Runtime.CompilerServices.ModuleInitializer]", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetWrapper", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("FluentRoot", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A second run after an edit that touches neither an action nor the attribute gives an app's source with its wrapper from
+    /// the cache.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app with <c>[assembly: XylemUI.WindowTheme(typeof(AppRoot))]</c> and its own valid <c>AppRoot</c>, with the
+    ///   generator's steps tracked.
+    ///
+    /// Steps:
+    /// - Run the generator; add a syntax tree with an unrelated class; run it again.
+    ///
+    /// Expected:
+    /// - The first run's source sets the wrapper. The second run's output steps are <c>Cached</c> or <c>Unchanged</c>, not
+    ///   <c>Modified</c> or <c>New</c>.
+    /// </remarks>
+    [Fact]
+    public void UnrelatedEdit_ToAnAppWithAWindowTheme_DoesNotWriteItAgain()
+    {
+        const string App = """
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+
+            public static class AppRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+
+            public static class Program
+            {
+                public static void Main() { }
+            }
+            """;
+        CSharpCompilation compilation = Compile("Demo.App", OutputKind.ConsoleApplication, App);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            [new ActionTableGenerator().AsSourceGenerator()],
+            parseOptions: Options,
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true)
+        );
+        driver = driver.RunGenerators(compilation, TestContext.Current.CancellationToken);
+        string first = Assert.Single(driver.GetRunResult().GeneratedTrees).GetText(TestContext.Current.CancellationToken).ToString();
+        Assert.Contains("global::XylemUI.WindowRoot.SetWrapper(global::AppRoot.Wrap);", first, StringComparison.Ordinal);
         CSharpCompilation edited = compilation.AddSyntaxTrees(
             CSharpSyntaxTree.ParseText("public sealed class Unrelated;", Options, cancellationToken: TestContext.Current.CancellationToken)
         );
