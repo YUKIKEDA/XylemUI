@@ -5,7 +5,10 @@ namespace XylemUI;
 /// <c>public static Element Wrap(Func&lt;Element&gt; root)</c>, such as <c>FluentRoot</c>. In an assembly whose output is an
 /// executable, the source generator of <c>XylemUI.Generators</c> passes that method to <see cref="WindowRoot.SetWrapper"/> in the
 /// app's module initializer. An app has one; with two, the generator reports the error XYLEM010 and sets neither, and a class
-/// without the method is the error XYLEM011. In an assembly that is not an executable the attribute does nothing.
+/// without the method is the error XYLEM011, also when the other of two is valid. In an assembly that is not an executable the
+/// attribute does nothing. When two executables in one process carry it (a test's executable that references an app's), each
+/// module initializer sets its method: the same method again does nothing, and a different one throws
+/// <see cref="InvalidOperationException"/>, also after the first window has read the wrapper.
 /// </summary>
 /// <param name="type">The class with the <c>Wrap</c> method.</param>
 /// <remarks>

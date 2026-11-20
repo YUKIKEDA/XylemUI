@@ -831,8 +831,8 @@ public sealed class ActionTableGeneratorTests
     /// - Run the generator on the app; compile the result.
     ///
     /// Expected:
-    /// - The diagnostics have one XYLEM010, at line 1. No compiler error, and no <c>SetWrapper</c> in the app's source. Which other
-    ///   diagnostics come with it is not checked: the owner has yet to decide it.
+    /// - Two diagnostics (design §13.2, "包みは 1 つ"): XYLEM010 at line 1, and XYLEM011 at line 1 whose message names
+    ///   <c>null</c>. No compiler error, and no <c>SetWrapper</c> in the app's source.
     /// </remarks>
     [Fact]
     public void WindowTheme_ValidAndNull_IsTwoAndSetsNoWrapper()
@@ -849,8 +849,58 @@ public sealed class ActionTableGeneratorTests
 
         Result app = Run("Demo.App", OutputKind.ConsoleApplication, App + AppMain);
 
+        Assert.Equal(2, app.GeneratorDiagnostics.Length);
         Diagnostic two = Assert.Single(app.GeneratorDiagnostics, static d => d.Id == "XYLEM010");
         Assert.Equal(1, two.Location.GetLineSpan().StartLinePosition.Line);
+        Diagnostic noWrap = Assert.Single(app.GeneratorDiagnostics, static d => d.Id == "XYLEM011");
+        Assert.Equal(1, noWrap.Location.GetLineSpan().StartLinePosition.Line);
+        Assert.Contains("'null'", noWrap.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        Assert.DoesNotContain("SetWrapper", Assert.Single(app.Sources), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// When one of an app's two <c>[assembly: WindowTheme]</c> names a class without <c>Wrap</c>, both errors are reported:
+    /// XYLEM010 at the second attribute, naming both classes, and XYLEM011 at the invalid one (design §13.2, "包みは 1 つ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app with a class <c>BadRoot</c> that has no <c>Wrap</c> and a valid class <c>AppRoot</c>, and the attributes that
+    ///   name <c>BadRoot</c> on line 0 and <c>AppRoot</c> on line 1.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - Two diagnostics: XYLEM010 at line 1, whose message names <c>BadRoot</c> and <c>AppRoot</c>; XYLEM011 at line 0, whose
+    ///   message names <c>BadRoot</c>. No compiler error, and no <c>SetWrapper</c> in the app's source.
+    /// </remarks>
+    [Fact]
+    public void WindowTheme_TwiceWithOneInvalid_ReportsBothErrors()
+    {
+        const string App = """
+            [assembly: XylemUI.WindowTheme(typeof(BadRoot))]
+            [assembly: XylemUI.WindowTheme(typeof(AppRoot))]
+
+            public static class BadRoot { }
+
+            public static class AppRoot
+            {
+                public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root();
+            }
+            """;
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, App + AppMain);
+
+        Assert.Equal(2, app.GeneratorDiagnostics.Length);
+        Diagnostic two = Assert.Single(app.GeneratorDiagnostics, static d => d.Id == "XYLEM010");
+        Assert.Equal(1, two.Location.GetLineSpan().StartLinePosition.Line);
+        string message = two.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("BadRoot", message, StringComparison.Ordinal);
+        Assert.Contains("AppRoot", message, StringComparison.Ordinal);
+        Diagnostic noWrap = Assert.Single(app.GeneratorDiagnostics, static d => d.Id == "XYLEM011");
+        Assert.Equal(0, noWrap.Location.GetLineSpan().StartLinePosition.Line);
+        Assert.Contains("BadRoot", noWrap.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         Assert.Empty(app.CompilerErrors);
         Assert.DoesNotContain("SetWrapper", Assert.Single(app.Sources), StringComparison.Ordinal);
     }
