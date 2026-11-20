@@ -186,6 +186,10 @@ internal static class Frames
                 Win32MessageLoop.Quit();
             }
         };
+
+        // Every frame is the callback's, as on main: a request of the tree between frames (an activation, the OS's pointer) would
+        // replace it and stop the run (TreeScene.SendFrameRequestsTo).
+        treeScene?.SendFrameRequestsTo(step);
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         _ = Win32MessageLoop.Run();
         Win32MessageLoop.IterationHook = null;

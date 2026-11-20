@@ -226,6 +226,18 @@ internal sealed class TreeScene : IDisposable
 
     public void RunFrame() => _core.Frames.RunFrame();
 
+    // Sends the tree's own requests for a frame to the caller's frame callback, which runs RunFrame, in place of the window core's
+    // WindowFrames.RunFrame. The loop's scheduler holds one callback, and a request of the tree made between two frames (a key
+    // that changes the marker, a click, an activation) replaced the callback that animates the scene, which then drew only when
+    // something asked (PR #943's measurement of `app --tree`). On main the tree's frames had a scheduler of their own that did
+    // nothing, so every frame was the callback's; this keeps that. The window core's other requests (a touchpad's gesture, a
+    // window shown again) still go to WindowFrames.
+    public void SendFrameRequestsTo(Action callback)
+    {
+        IFrameScheduler scheduler = _scene.HostWindow!.FrameScheduler;
+        _tree.FrameNeeded = () => scheduler.RequestFrame(callback);
+    }
+
     // Counts a move whose point the hit test gave to a node other than the target, and keeps the index of the first such box.
     private void NoteOtherBox(NodeHandle hit)
     {

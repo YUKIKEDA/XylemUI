@@ -96,7 +96,10 @@
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
 //   app-startup <exe> [--at x,y] [--runs N]   an app's launch to its marker color on the display, and its close (row V1d)
 //   input-latency --presentmon <exe> --app <exe> [--app-args a] [--static] [--covered] [--presses N] [--runs N]
-//                              the space key, injected, to the display of the marker it switches (row R3, InputLatency.cs)
+//                              the space key, injected, to the display of the marker it switches (row R3, InputLatency.cs);
+//                              presents_seen (the app's presents PresentMon traced, all runs) and presents_per_second_min (the
+//                              lowest run's presents over its trace) show whether the app animated: about one a refresh when
+//                              animated; with --static, PresentMon can count fewer presents than the keys shown
 using System.Globalization;
 using XylemUI.E2E;
 

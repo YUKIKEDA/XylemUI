@@ -177,6 +177,14 @@ internal static class External
                 Win32MessageLoop.FrameScheduler.RequestFrame(step!);
             }
         };
+
+        // The animated scene keeps every frame its own: a request of the tree between frames (the key below, the click that makes
+        // the window the foreground one) would replace the callback that asks for the next frame (TreeScene.SendFrameRequestsTo).
+        if (!isStatic)
+        {
+            treeScene?.SendFrameRequestsTo(step);
+        }
+
         scene.Window.Closed += (_, _) => Win32MessageLoop.Quit();
 
         // A key down switches the marker's color (the input measurement, row R3): the static app draws one frame for it, and the
