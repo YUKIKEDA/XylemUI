@@ -25,7 +25,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
     ///
     /// Expected:
     /// - The log is "wrap", "root", "wrapped". The wrapper found a locale, the default appearance (light, high contrast off, no
-    ///   accent color), and the window's surface. The box is the window's node.
+    ///   accent color), and the window's own surface: the same object as its core's. The box is the window's node.
     /// </remarks>
     [Fact]
     public void OpenWindow_TheProcessWrapper_RunsInsideTheRootValues() =>
@@ -33,7 +33,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
         {
             var log = new List<string>();
             SystemAppearance? appearance = null;
-            bool surface = false;
+            WindowSurface? surface = null;
             bool locale = false;
             Element box = default;
             Func<Element> root = () =>
@@ -51,7 +51,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
                 log.Add("wrap");
                 locale = Localization.Locale.TryUse(out _);
                 appearance = SystemAppearance.Current.Use().Get();
-                surface = WindowSurface.Current.TryUse(out _);
+                surface = WindowSurface.Current.Use();
                 Element made = given();
                 log.Add("wrapped");
                 return made;
@@ -63,7 +63,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
             Assert.Equal(expected, log);
             Assert.True(locale);
             Assert.Equal(new SystemAppearance(ColorScheme.Light, false, null, null), appearance);
-            Assert.True(surface);
+            Assert.Same(window.Core.Surface, surface);
             Assert.Equal(window.Core.RootNode, window.Tree.Nodes.GetRef(box.Node).Parent);
         });
 }

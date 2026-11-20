@@ -160,12 +160,12 @@ internal sealed class WindowCore : IDisposable
                     Element content = locale.Provide(Tree, () => windowAppearance.Provide(() => WindowSurface.Current.Provide(Surface, body)));
                     if (!ReferenceEquals(content.Tree, Tree))
                     {
-                        throw new InvalidOperationException("The root function returns a node of the window's tree.");
+                        throw new InvalidOperationException("The root function, or the wrapper, returns a node of the window's tree.");
                     }
 
                     if (!Tree.Nodes.GetRef(content.Node).Parent.IsNone)
                     {
-                        throw new InvalidOperationException("The root function returns a node with no parent.");
+                        throw new InvalidOperationException("The root function, or the wrapper, returns a node with no parent.");
                     }
 
                     // One change for the readers of what an action can do: the node is in the tree and is where a route starts

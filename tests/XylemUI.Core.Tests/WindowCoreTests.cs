@@ -632,6 +632,70 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A wrapper that throws, before or after it calls the root function, makes Mount throw its exception, and leaves nothing of
+    /// the mount: the root scope and the three scopes that provide the locale, the OS's appearance, and the surface are disposed,
+    /// the nodes the root function made are freed, and the current tree is put back.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, one for each case; the number of live scopes and the current tree before the mount.
+    ///
+    /// Steps:
+    /// - Mount a root function that returns a box, with a wrapper that records the current scope and its three ancestors, then:
+    ///   throws a <see cref="FormatException"/> at once; or calls the root function and then throws it.
+    ///
+    /// Expected:
+    /// - Mount throws that exception. The four recorded scopes are not alive, the number of live scopes is the one before, the root
+    ///   scope is none, the current tree is the one before, and, when the root function ran, its box is freed.
+    /// </remarks>
+    /// <param name="afterRoot"><see langword="false"/>: the wrapper throws before it calls the root function; <see langword="true"/>:
+    /// after.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Mount_WrapperThrows_LeavesNothingOfTheMount(bool afterRoot) =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            var error = new FormatException("The wrapper throws.");
+            var recorded = new List<Handle<ScopeData>>();
+            Element box = default;
+            Func<Func<Element>, Element> wrapper = root =>
+            {
+                // The surface's scope, then the appearance's, the locale's, and the root scope.
+                Handle<ScopeData> scope = Scope.CurrentRef;
+                for (int i = 0; i < 4; i++)
+                {
+                    recorded.Add(scope);
+                    scope = Scope.Get(scope).Parent;
+                }
+
+                if (afterRoot)
+                {
+                    box = root();
+                }
+
+                throw error;
+            };
+            int live = Scope.LiveCount;
+            UiTree? before = UiTree.Current;
+
+            FormatException thrown = Assert.Throws<FormatException>(() =>
+                core.Mount(Box, wrapper, [], default, "WindowCoreTests", new Size(200, 100), 1)
+            );
+
+            Assert.Same(error, thrown);
+            Assert.Equal(4, recorded.Count);
+            Assert.All(recorded, scope => Assert.False(Scope.IsAlive(scope)));
+            Assert.Equal(live, Scope.LiveCount);
+            Assert.True(core.RootScope.IsNone);
+            Assert.Same(before, UiTree.Current);
+            Assert.Equal(afterRoot, !box.IsNone);
+            Assert.True(box.IsNone || !core.Tree.Nodes.IsAlive(box.Node));
+        });
+
+    /// <summary>
     /// An appearance whose high contrast and high-contrast colors disagree makes Mount throw before the root function runs, and
     /// SetSystemAppearance throw before and after Mount.
     /// </summary>

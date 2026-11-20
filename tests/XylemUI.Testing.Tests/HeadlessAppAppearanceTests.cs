@@ -241,6 +241,66 @@ public sealed class HeadlessAppAppearanceTests
     }
 
     /// <summary>
+    /// A wrapper of the options that throws, before or after it calls the root function, fails the start with its exception and
+    /// frees what the app made: no scope of it is left, the scope tracker is as it was, and the next app starts and ends with no
+    /// leak.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The scope tracker off; the number of live scopes before.
+    ///
+    /// Steps:
+    /// - Start an app whose wrapper throws a <see cref="FormatException"/> at once, and one whose wrapper calls the root function,
+    ///   which makes a box, and then throws it; read the tracker and the live scopes after each. Then start an app of a box, check
+    ///   it for leaks, and dispose it.
+    ///
+    /// Expected:
+    /// - Each start throws that exception; after each, the tracker is off and the number of live scopes is the one before. The
+    ///   last app's check passes and its disposal throws nothing.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task StartAsync_TheWrapperThrows_FreesTheApp()
+    {
+        bool was = ScopeTracker.IsEnabled;
+        ScopeTracker.IsEnabled = false;
+        try
+        {
+            var error = new FormatException("The wrapper throws.");
+            int live = Scope.LiveCount;
+            foreach (bool afterRoot in (bool[])[false, true])
+            {
+                var options = new HeadlessOptions
+                {
+                    RootWrapper = root =>
+                    {
+                        if (afterRoot)
+                        {
+                            _ = root();
+                        }
+
+                        throw error;
+                    },
+                };
+
+                FormatException thrown = await Assert.ThrowsAsync<FormatException>(() => HeadlessApp.StartAsync(Box, options));
+
+                Assert.Same(error, thrown);
+                Assert.False(ScopeTracker.IsEnabled);
+                Assert.Equal(live, Scope.LiveCount);
+            }
+
+            HeadlessApp app = await HeadlessApp.StartAsync(Box);
+            app.AssertNoLeakedScopes();
+            await app.DisposeAsync();
+        }
+        finally
+        {
+            ScopeTracker.IsEnabled = was;
+        }
+    }
+
+    /// <summary>
     /// The headless app never takes the process's wrapper (<see cref="WindowRoot.SetWrapper"/>): with no wrapper in the options the
     /// root function's node is the window's, and with one only the options' runs.
     /// </summary>
