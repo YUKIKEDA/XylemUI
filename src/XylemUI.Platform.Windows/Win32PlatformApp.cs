@@ -1,9 +1,10 @@
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// The app tier of the Windows host (design §6.0): the UI thread's message loop, its dispatcher, and OLE. Making it initializes
-/// OLE on the UI thread, and sets the loop's dispatcher as <see cref="UiDispatcher.Current"/> and as the thread's synchronization
-/// context; disposing it puts back the dispatcher and the context it replaced, and uninitializes OLE.
+/// The app tier of the Windows host (design §6.0): the UI thread's message loop, its dispatcher, OLE, the clipboard, and the window
+/// it opens (<see cref="Win32PlatformWindow"/>), one at a time until row MW1. Making it initializes OLE on the UI thread, and sets
+/// the loop's dispatcher as <see cref="UiDispatcher.Current"/> and as the thread's synchronization context; disposing it puts back
+/// the dispatcher and the context it replaced, and uninitializes OLE.
 /// </summary>
 /// <remarks>
 /// The loop is <see cref="Win32MessageLoop"/>, which is static: the process has one UI thread. The handler of the exceptions that
@@ -13,6 +14,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
 {
     private readonly IUiDispatcher? _previousDispatcher;
     private readonly SynchronizationContext? _previousContext;
+    private Win32PlatformWindow? _window;
     private bool _disposed;
 
     /// <summary>
@@ -44,6 +46,38 @@ internal sealed class Win32PlatformApp : IPlatformApp
 
     /// <inheritdoc />
     public UiDispatcher Dispatcher { get; }
+
+    /// <inheritdoc />
+    public IClipboardBackend Clipboard { get; } = new Win32Clipboard();
+
+    /// <summary>
+    /// Gets a value indicating whether the windows the host opens draw with the WARP software rasterizer, for the tests.
+    /// </summary>
+    internal bool UseWarp { get; init; }
+
+    /// <summary>
+    /// Gets the tags of the OS's languages, most preferred first, as the open window read them; none while no window is open. The
+    /// app mounts its root with them until the OS's settings become one object of the app tier (row PL1, PR 5; Issue #928).
+    /// </summary>
+    internal IReadOnlyList<string> UiLanguages => _window?.UiLanguages ?? [];
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The loop's scheduler holds one frame clock, which a second window would take from the first (design §6.0, "The frame clock
+    /// and the scheduler"), so a window counts as open until it is disposed, when it gives the clock back.
+    /// </remarks>
+    [UiThreadOnly]
+    public IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height, bool show)
+    {
+        UiThread.VerifyAccess();
+        if (_window is not null)
+        {
+            throw new InvalidOperationException("A window of the app is open: a second window comes with row MW1 (design §6.0).");
+        }
+
+        _window = new Win32PlatformWindow(core, title, width, height, show, UseWarp, () => _window = null);
+        return _window;
+    }
 
     /// <inheritdoc />
     [UiThreadOnly]

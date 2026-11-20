@@ -12,11 +12,13 @@ namespace XylemUI.Platform.Windows.Tests;
 public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
 {
     /// <summary>
-    /// Text put on the clipboard comes back as it was, with a NUL inside it as a space.
+    /// Text put on the clipboard comes back as it was, with a NUL inside it as a space, with no window of the app open: the
+    /// clipboard's owner is a message-only window of its own (design §6.0, "The clipboard").
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A hidden window's clipboard; the text the clipboard holds is kept and put back after the test.
+    /// - The clipboard of the app tier, with no window made by the test; the text the clipboard holds is kept and put back after
+    ///   the test.
     ///
     /// Steps:
     /// - Set "日本語 and text"; get it. Set "a\0b"; get it.
@@ -28,9 +30,8 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
     public void Clipboard_SetThenGet_GivesTheText() =>
         ui.Invoke(() =>
         {
-            using var window = new Win32Window("clipboard", 200, 100);
-            var clipboard = new Win32Clipboard(window);
-            string? before = Before(window, clipboard);
+            var clipboard = new Win32Clipboard();
+            string? before = Before(clipboard);
             try
             {
                 Assert.True(Eventually(() => clipboard.SetText("日本語 and text")));
@@ -52,7 +53,7 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A hidden window's clipboard; the text the clipboard holds is kept and put back after the test.
+    /// - The clipboard of the app tier; the text the clipboard holds is kept and put back after the test.
     ///
     /// Steps:
     /// - Set "text"; ask whether it holds text. Empty the clipboard with <c>EmptyClipboard</c>; ask again.
@@ -64,14 +65,13 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
     public void Clipboard_HasText_AfterASetAndNotAfterEmptying() =>
         ui.Invoke(() =>
         {
-            using var window = new Win32Window("clipboard", 200, 100);
-            var clipboard = new Win32Clipboard(window);
-            string? before = Before(window, clipboard);
+            var clipboard = new Win32Clipboard();
+            string? before = Before(clipboard);
             try
             {
                 Assert.True(Eventually(() => clipboard.SetText("text")));
                 bool afterSet = clipboard.HasText();
-                Assert.True(Eventually(() => OpenClipboard(window.Hwnd) != BOOL.FALSE));
+                Assert.True(Eventually(() => OpenClipboard(Win32Clipboard.Owner) != BOOL.FALSE));
                 try
                 {
                     Assert.True(EmptyClipboard() != BOOL.FALSE);
@@ -83,6 +83,46 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
 
                 Assert.True(afterSet);
                 Assert.False(clipboard.HasText());
+            }
+            finally
+            {
+                if (before is not null)
+                {
+                    _ = Eventually(() => clipboard.SetText(before));
+                }
+            }
+        });
+
+    /// <summary>
+    /// What the clipboard puts on Windows' clipboard is owned by a message-only window of its own (design §6.0, "The clipboard";
+    /// Issue #928): not the loop's wake window, and no window that shows.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The clipboard of the app tier; the text the clipboard holds is kept and put back after the test.
+    ///
+    /// Steps:
+    /// - Set "owner"; read the clipboard's owner (<c>GetClipboardOwner</c>); look for this process's message-only window of the
+    ///   class "XylemUI.Clipboard" (<c>FindWindowExW</c> under <c>HWND_MESSAGE</c>, whose matches are walked until one belongs to
+    ///   this process by <c>GetWindowThreadProcessId</c>).
+    ///
+    /// Expected:
+    /// - The set succeeds; the owner and the window found are both the clipboard's owner window.
+    /// </remarks>
+    [Fact]
+    public void Clipboard_Set_IsOwnedByItsMessageOnlyWindow() =>
+        ui.Invoke(() =>
+        {
+            var clipboard = new Win32Clipboard();
+            string? before = Before(clipboard);
+            try
+            {
+                Assert.True(Eventually(() => clipboard.SetText("owner")));
+                HWND owner = GetClipboardOwner();
+                HWND found = MessageWindowOfThisProcess("XylemUI.Clipboard");
+
+                Assert.Equal(Win32Clipboard.Owner, owner);
+                Assert.Equal(Win32Clipboard.Owner, found);
             }
             finally
             {
@@ -205,6 +245,30 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         return true;
     }
 
+    // This process's message-only window of a class: FindWindowExW under HWND_MESSAGE looks through every process of the session,
+    // where another test process or a running sample has a window of the same class (PR #937's review).
+    private static HWND MessageWindowOfThisProcess(string className)
+    {
+        uint process = (uint)Environment.ProcessId;
+        fixed (char* name = className)
+        {
+            HWND window = FindWindowExW(HWND.HWND_MESSAGE, HWND.NULL, name, null);
+            while (window != HWND.NULL)
+            {
+                uint owner;
+                _ = GetWindowThreadProcessId(window, &owner);
+                if (owner == process)
+                {
+                    return window;
+                }
+
+                window = FindWindowExW(HWND.HWND_MESSAGE, window, name, null);
+            }
+        }
+
+        return HWND.NULL;
+    }
+
     // The text on the clipboard, read again while it cannot be opened (the read then gives none).
     private static string? Read(Win32Clipboard clipboard)
     {
@@ -214,11 +278,11 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
     }
 
     // The text the clipboard holds before a test, read once the clipboard can be opened: none when it holds no text.
-    private static string? Before(Win32Window window, Win32Clipboard clipboard)
+    private static string? Before(Win32Clipboard clipboard)
     {
         _ = Eventually(() =>
         {
-            if (OpenClipboard(window.Hwnd) == BOOL.FALSE)
+            if (OpenClipboard(Win32Clipboard.Owner) == BOOL.FALSE)
             {
                 return false;
             }

@@ -45,7 +45,7 @@ internal static class Frames
         using var scene = new Scene("XylemUI E2E frames", warp, gray);
 
         // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path, and
-        // that present is told to the loop's scheduler: an app (DesktopWindow) does both in this order, so the scheduler counts
+        // that present is told to the loop's scheduler: an app (Win32PlatformWindow) does both in this order, so the scheduler counts
         // the present that did not wait (design §2.11, "Presents that did not wait"; Issue #679).
         Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;

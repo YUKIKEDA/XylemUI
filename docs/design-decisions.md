@@ -548,7 +548,7 @@ Reason:
   契約のメンバーの引数と戻り値には Core の internal の型がある。C# は、公開のインターフェースが internal の型を見せることを許さない。
   フレームの時計は、Windows ではスワップチェーンに、macOS と Wayland では窓にある。組にしたホストの外には、描き先とスケジューラだけを見せられる。
   Flutter・Avalonia・GPUI は、どれも 2 段で、どれも動的な呼び出しで呼ぶ。契約を通る呼び出しは、フレームか OS の知らせ 1 つに 1 回である。
-  `DesktopWindow` と `HeadlessApp` は `Mount` と根の値を 2 つずつ持ち、行 LC1 と TH1 の根の値をそれぞれに書くことになる。
+  行 PL1 の前は、`DesktopWindow` と `HeadlessApp` が `Mount` と根の値を 2 つずつ持ち、行 LC1 と TH1 の根の値をそれぞれに書くことになった。
 
 Rejected:
   - アプリの段の 1 つの `IPlatform` に窓・クリップボード・ダイアログ・スケジューラ・IME・a11y・フォントを並べる（設計書の旧版 §6.0。IME と a11y の adapter は窓に結び付き、ループ・起床・レンダラ・OS の設定が無かった）

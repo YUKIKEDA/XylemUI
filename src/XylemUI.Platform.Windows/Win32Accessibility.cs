@@ -353,7 +353,7 @@ internal sealed unsafe class Win32Accessibility : IAccessibilityBridge, IDisposa
         }
     }
 
-    // A window shown before its tree has a root (DesktopWindow shows it, then mounts and sizes it) can be asked already: Windows'
+    // A window shown before its tree has a root (the Windows host shows it, then the core mounts and sizes it) can be asked: Windows'
     // own clients send WM_GETOBJECT for the window's client area too. The answer is then that the tree is not ready, and AccessKit
     // gives a placeholder; StartIfAsked hands it the whole tree once the root is there.
     private nint Activate()
