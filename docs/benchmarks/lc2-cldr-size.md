@@ -106,3 +106,40 @@ curl.exe -sSL -o spike/CldrSize/cldr-zip/cldr-49.0.0-json-full.zip https://githu
 ```
 
 `measure-887.ps1` は生成器を走らせ、`baseline` と 12 個の構成を順に発行する。全部で 3 分 32 秒かかった。
+
+## 文字体系だけの likelySubtags（PR #936）
+
+行 LC2 の実装の 2 つ目が入れた表の計測（設計書 §4.11「解決」の「表の置き場所」）。2026-11-14、Windows 11（ビルド 26300）、Intel Core i5-13400F、.NET SDK 10.0.403。spike のプログラムではなく、`samples/Counter` を、main（`2b0b481`）と PR #936 のブランチ（main を取り込んだ後、レビューの直しの前）で、NativeAOT の Release、win-x64、`-p:IlcGenerateMapFile=true` で発行し、2 つの ILC のマップファイルの節を名前ごとに比べた。上の 80,384 バイトは、何もしないプログラムに全部の値の表だけを足した実行ファイルの増分で、ここの値とは基準のプログラムが違う。
+
+### 結果（バイト）
+
+| 測ったもの | main | ブランチ | 差 |
+| --- | ---: | ---: | ---: |
+| `Counter.exe` | 5,405,184 | 5,447,680 | +42,496 |
+| ILC のマップの節の長さの合計 | 2,531,217 | 2,570,363 | +39,146 |
+| `XylemUI.Core.dll`（Release、JIT 用） | 1,004,544 | 1,043,968 | +39,424 |
+
+マップの差 39,146 バイトの内訳:
+
+| 節 | 差 |
+| --- | ---: |
+| 表のデータ（`FieldRvaData`）: キー 29,620（7,405 × 4）、文字体系の番号 7,405、文字体系 480（120 × 4） | 37,505 |
+| コード（`MethodCode`）: `LikelyScripts` の 5 つのメソッド 682、`Localization` の `First`・`Fits`・`Resolve` の差 606 | 1,288 |
+| メタデータ | 136 |
+| GC の情報 | 107 |
+| スタックトレースの対応表 | 78 |
+| 凍結したオブジェクト | 32 |
+
+- 表のデータは、生のデータの大きさ（37,505 バイト）と同じである。全部の値の表（80,384 バイト）の 47% で、縮めた表を入れた
+- 実行ファイルの差 42,496 バイトとマップの差 39,146 バイトの間の 3,350 バイトは、マップの節に出ない分（節の間の詰め物、再配置の表など）で、内訳は調べていない
+- `HelloText`（`Localization.Resolve` を呼ばない）は、3,700,736 バイトのまま変わらない。表は、解決を呼ぶアプリ（窓を持つアプリ）だけに入る
+- 入れたキーは 7,405 件である（元は 7,868 件。文字体系を書いたキー 331 件と、言語だけのキーと同じ文字体系になる `und` と地域のキー 132 件を外した）
+
+### 再現
+
+```powershell
+dotnet publish samples/Counter -c Release -r win-x64 -o <scratch>\counter -p:IlcGenerateMapFile=true
+# マップは samples/Counter/obj/Release/<tfm>/win-x64/native/Counter.map.xml
+```
+
+2 つのブランチで発行し、マップの `Name` と `Length` を節ごとに足して比べる。

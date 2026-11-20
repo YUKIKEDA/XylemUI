@@ -36,12 +36,12 @@ public sealed class ImageWindowTests(UiThreadFixture ui)
 
             // The order of XylemApp.Run: the host before the window, so that the window is disposed before the host.
             using var app = new Win32PlatformApp();
-            using DesktopWindow window = WithNoLoop(() =>
-                new DesktopWindow(() => Image(source.Get), new WindowOptions("Image test", 200, 200), useWarp: true)
+            using TestWindow window = WithNoLoop(() =>
+                new TestWindow(() => Image(source.Get), new WindowOptions("Image test", 200, 200), useWarp: true)
             );
             source.Set(second);
             Assert.Equal(2, window.Tree.Images.Count);
-            XylemApp.Open(window, app);
+            XylemApp.Open(window.Core, app);
 
             using (var watchdog = new LoopWatchdog())
             {
@@ -53,7 +53,7 @@ public sealed class ImageWindowTests(UiThreadFixture ui)
         });
 
     // Makes the window with no SynchronizationContext: an image element made then keeps none, and decodes where it is asked to.
-    private static DesktopWindow WithNoLoop(Func<DesktopWindow> make)
+    private static TestWindow WithNoLoop(Func<TestWindow> make)
     {
         SynchronizationContext? previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(null);

@@ -38,7 +38,7 @@ public sealed unsafe class ScrollWindowTests(UiThreadFixture ui)
         {
             var vertical = new ScrollState();
             var across = new ScrollState();
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         ScrollView(Column(Boxes(10)), vertical).Height(100),
@@ -73,7 +73,7 @@ public sealed unsafe class ScrollWindowTests(UiThreadFixture ui)
         });
 
     // Sends a wheel message of the amount at a client point in physical pixels, given as Windows gives it: in screen coordinates.
-    private static void SendWheel(DesktopWindow window, uint message, int amount, float x, float y)
+    private static void SendWheel(TestWindow window, uint message, int amount, float x, float y)
     {
         var point = new POINT { x = (int)x, y = (int)y };
         _ = ClientToScreen(window.Window.Hwnd, &point);

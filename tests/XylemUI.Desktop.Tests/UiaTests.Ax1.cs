@@ -299,7 +299,7 @@ public sealed unsafe partial class UiaTests
                 }
             );
             Element slider = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => slider = Box().Width(50).Height(10).Accessible(info),
                 new WindowOptions("AccessKit defaults", 200, 200),
                 useWarp: true
@@ -415,7 +415,7 @@ public sealed unsafe partial class UiaTests
                 [SemanticsRole.Figure] = ControlType.Group,
                 [SemanticsRole.Pane] = ControlType.Pane,
             };
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Column([.. expected.Keys.Select(r => Box().Height(6).Accessible(new AccessibilityInfo { Role = r, Name = r.ToString() }))]),
                 new WindowOptions("UIA roles", 300, 400),
                 useWarp: true
@@ -461,7 +461,7 @@ public sealed unsafe partial class UiaTests
     public void ToggleRoles_HaveToggle_AndRadioRolesHaveSelectionItem() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         Named(SemanticsRole.Switch, "Wifi"),
@@ -509,7 +509,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             Signal<AccessibilityInfo> pear = Signal.Create(new AccessibilityInfo { Role = SemanticsRole.ListBoxItem, Name = "Pear" });
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         Column(
@@ -591,7 +591,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             int expands = 0;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                             Box()
@@ -650,7 +650,7 @@ public sealed unsafe partial class UiaTests
         {
             var taken = new List<double>();
             var refused = new List<double>();
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         Ranged(SemanticsRole.Slider, "Both", 2, 10).OnSetRangeValue(taken.Add),
@@ -712,7 +712,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             Signal<string> text = Signal.Create("Saving");
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         Box(Elements.Text((ref w) => w.Write(text.Get())))
@@ -774,7 +774,7 @@ public sealed unsafe partial class UiaTests
         ui.Invoke(() =>
         {
             Signal<string> text = Signal.Create("Saving");
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () => Box(Elements.Text((ref w) => w.Write(text.Get()))).Accessible(new AccessibilityInfo { Role = SemanticsRole.Status }),
                 new WindowOptions("UIA live event", 200, 200),
                 useWarp: true
@@ -832,7 +832,7 @@ public sealed unsafe partial class UiaTests
     public void LevelPlaceCountAndOrientation_AreReadByUia() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column(
                         Box()
@@ -930,7 +930,7 @@ public sealed unsafe partial class UiaTests
                 SemanticsRole.SearchBox,
             ];
             Signal<string>[] texts = [.. ids.Select(_ => Signal.Create(string.Empty))];
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Column([
                         .. ids.Select(
@@ -994,7 +994,7 @@ public sealed unsafe partial class UiaTests
     public void Relations_AreReadByUia_AsControllerForFullDescriptionAndName() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                 {
                     Element panel = Named(SemanticsRole.TabPanel, "Panel one");
@@ -1050,7 +1050,7 @@ public sealed unsafe partial class UiaTests
             var active = Signal.Create<Element>(default);
             Element list = default;
             Element two = default;
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                 {
                     Element one = Named(SemanticsRole.ListBoxItem, "One");
@@ -1116,7 +1116,7 @@ public sealed unsafe partial class UiaTests
     public void ModalAlertDialog_IsModal() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                     Box()
                         .Height(40)
@@ -1160,7 +1160,7 @@ public sealed unsafe partial class UiaTests
     public void UpstreamHoles_GridPatternSelectionAndLabeledBy_AreMissing() =>
         ui.Invoke(() =>
         {
-            using var window = new DesktopWindow(
+            using var window = new TestWindow(
                 () =>
                 {
                     Element label = Elements.Text("Email");
