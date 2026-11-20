@@ -29,13 +29,15 @@ internal static class FluentHeadless
     // The measured blue of Windows' accent (docs/benchmarks/th1-accent-ramp.md).
     public static readonly Color Blue = Color.FromRgb(0x0078D4);
 
-    public static HeadlessOptions Options(SystemAppearance appearance) =>
-        new() { RootWrapper = FluentRoot.Wrap, SystemAppearance = appearance };
+    public static HeadlessOptions Options(SystemAppearance appearance) => new() { RootWrapper = FluentRoot.Wrap, SystemAppearance = appearance };
 
     public static NodeVisual Visual(HeadlessApp app, Element element) => app.Tree.Nodes.GetRef(element.Node).Visual!;
 
-    // The window's node: the root box FluentRoot.Wrap made, the one child of the window's root node.
-    public static Element RootBox(HeadlessApp app) => new(app.Tree, app.Tree.Nodes.GetRef(app.RootNode).FirstChild);
+    // The window's node: the root box FluentRoot.Wrap made, the one child of the window's root node. It is read as a handle, not
+    // made into an Element, since the tests read it after an await, where no function that returns an Element is called (XYLEM120).
+    public static Handle<UiNode> RootBoxNode(HeadlessApp app) => app.Tree.Nodes.GetRef(app.RootNode).FirstChild;
+
+    public static NodeVisual RootBoxVisual(HeadlessApp app) => app.Tree.Nodes.GetRef(RootBoxNode(app)).Visual!;
 
     public static Paint Fill(uint rgb) => new(Color.FromRgb(rgb));
 }

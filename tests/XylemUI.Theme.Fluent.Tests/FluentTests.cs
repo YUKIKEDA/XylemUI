@@ -80,12 +80,34 @@ public sealed class FluentTests
         HighContrastColors hc = DarkContrast;
         Color[] expected = (variant, appearance) switch
         {
-            (ThemeVariant.Light, ButtonAppearance.Standard) => Rgb(
-                [0xFFFFFF, 0xD1D1D1, 0x242424, 0xF5F5F5, 0xC7C7C7, 0x242424, 0xE0E0E0, 0xB3B3B3, 0x242424, 0xF0F0F0, 0xE0E0E0, 0xBDBDBD]
-            ),
-            (ThemeVariant.Dark, ButtonAppearance.Standard) => Rgb(
-                [0x292929, 0x666666, 0xFFFFFF, 0x3D3D3D, 0x757575, 0xFFFFFF, 0x1F1F1F, 0x6B6B6B, 0xFFFFFF, 0x141414, 0x424242, 0x5C5C5C]
-            ),
+            (ThemeVariant.Light, ButtonAppearance.Standard) => Rgb([
+                0xFFFFFF,
+                0xD1D1D1,
+                0x242424,
+                0xF5F5F5,
+                0xC7C7C7,
+                0x242424,
+                0xE0E0E0,
+                0xB3B3B3,
+                0x242424,
+                0xF0F0F0,
+                0xE0E0E0,
+                0xBDBDBD,
+            ]),
+            (ThemeVariant.Dark, ButtonAppearance.Standard) => Rgb([
+                0x292929,
+                0x666666,
+                0xFFFFFF,
+                0x3D3D3D,
+                0x757575,
+                0xFFFFFF,
+                0x1F1F1F,
+                0x6B6B6B,
+                0xFFFFFF,
+                0x141414,
+                0x424242,
+                0x5C5C5C,
+            ]),
             (ThemeVariant.HighContrast, ButtonAppearance.Standard) =>
             [
                 hc.Window,
@@ -457,7 +479,11 @@ public sealed class FluentTests
                 });
                 return ThousandButtons(out _);
             },
-            Options(Light) with { Width = 1600, Height = 800 }
+            Options(Light) with
+            {
+                Width = 1600,
+                Height = 800,
+            }
         );
         _ = app.PumpAndSettle();
 
@@ -496,7 +522,11 @@ public sealed class FluentTests
         Element[] firstTwo = [];
         await using HeadlessApp app = await HeadlessApp.StartAsync(
             () => ThousandButtons(out firstTwo),
-            Options(Light) with { Width = 1600, Height = 800 }
+            Options(Light) with
+            {
+                Width = 1600,
+                Height = 800,
+            }
         );
         _ = app.PumpAndSettle();
         (int X, int Y) a = app.CenterOf(firstTwo[0]);
@@ -645,7 +675,11 @@ public sealed class FluentTests
 
     private static Color[] Rgb(uint[] values) => Array.ConvertAll(values, Color.FromRgb);
 
-    private static (Paint?, PaintStyle?, Paint?, Color?) Read(HeadlessApp app, Element styled, Element chained)
+    private static (Paint? Background, PaintStyle? Hovered, Paint? Border, Color? ChainedForeground) Read(
+        HeadlessApp app,
+        Element styled,
+        Element chained
+    )
     {
         NodeVisual visual = Visual(app, styled);
         return (visual.Background, visual.States!.Hovered, visual.BorderPaint, Visual(app, chained).Foreground);

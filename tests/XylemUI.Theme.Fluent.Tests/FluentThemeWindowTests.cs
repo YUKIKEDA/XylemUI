@@ -210,9 +210,7 @@ public sealed class FluentThemeWindowTests
     public async Task Provide_PartOfTheTree_ReachesItsPartsNearestFirst_NotTheWindow()
     {
         Signal<FluentTheme> dark = Signal.Create(FluentTheme.Create(ThemeVariant.Dark, Density.Standard, null));
-        Signal<FluentTheme> contrast = Signal.Create(
-            FluentTheme.Create(ThemeVariant.HighContrast, Density.Standard, null, DarkContrast)
-        );
+        Signal<FluentTheme> contrast = Signal.Create(FluentTheme.Create(ThemeVariant.HighContrast, Density.Standard, null, DarkContrast));
         Element outer = default;
         Element inner = default;
         Element innermost = default;
@@ -238,7 +236,7 @@ public sealed class FluentThemeWindowTests
         Assert.Equal(Fill(0xFFFFFF), Visual(app, outer).Background);
         Assert.Equal(Fill(0x292929), Visual(app, inner).Background);
         Assert.Equal(new Paint(DarkContrast.Window), Visual(app, innermost).Background);
-        Assert.Equal(Fill(0xFFFFFF), Visual(app, RootBox(app)).Background);
+        Assert.Equal(Fill(0xFFFFFF), RootBoxVisual(app).Background);
         Assert.Equal(((Color?)White, (bool?)false), (app.Backdrop, app.DarkTitleBar));
     }
 
@@ -397,9 +395,7 @@ public sealed class FluentThemeWindowTests
                 ArgumentException contrast = Assert.Throws<ArgumentOutOfRangeException>(() =>
                     FluentTheme.ProvideVariant(ThemeVariant.HighContrast, Body)
                 );
-                ArgumentException outOfEnum = Assert.Throws<ArgumentOutOfRangeException>(() =>
-                    FluentTheme.ProvideVariant((ThemeVariant)3, Body)
-                );
+                ArgumentException outOfEnum = Assert.Throws<ArgumentOutOfRangeException>(() => FluentTheme.ProvideVariant((ThemeVariant)3, Body));
                 ArgumentException noBody = Assert.Throws<ArgumentNullException>(() => FluentTheme.ProvideVariant(ThemeVariant.Dark, null!));
                 names.AddRange([contrast.ParamName, outOfEnum.ParamName, noBody.ParamName]);
                 return Box();
@@ -474,6 +470,6 @@ public sealed class FluentThemeWindowTests
         return Box();
     }
 
-    private static (Paint?, Color?, bool?, Paint?) Read(HeadlessApp app, Element button) =>
-        (Visual(app, RootBox(app)).Background, app.Backdrop, app.DarkTitleBar, Visual(app, button).Background);
+    private static (Paint? BoxBackground, Color? Backdrop, bool? DarkTitleBar, Paint? ButtonBackground) Read(HeadlessApp app, Element button) =>
+        (RootBoxVisual(app).Background, app.Backdrop, app.DarkTitleBar, Visual(app, button).Background);
 }

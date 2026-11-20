@@ -25,12 +25,7 @@ public static class Fluent
     /// <exception cref="InvalidOperationException">No theme is provided here, which names the attribute and the option that provide
     /// one; or no window's root function is running, or there is no current scope.</exception>
     [UiThreadOnly]
-    public static Element Button(
-        Element content,
-        Action onClick,
-        ButtonAppearance appearance = ButtonAppearance.Standard,
-        ButtonStyle? style = null
-    )
+    public static Element Button(Element content, Action onClick, ButtonAppearance appearance = ButtonAppearance.Standard, ButtonStyle? style = null)
     {
         ArgumentNullException.ThrowIfNull(onClick);
         if (appearance is not (ButtonAppearance.Standard or ButtonAppearance.Primary))

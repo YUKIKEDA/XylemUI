@@ -101,13 +101,7 @@ public sealed class FluentRootTests
         );
         _ = app.PumpAndSettle();
         List<(Paint?, Color?, Color?, bool?)> seen = [Read(app)];
-        SystemAppearance[] steps =
-        [
-            Dark,
-            HighContrast,
-            new SystemAppearance(ColorScheme.Light, true, null, LightContrast),
-            Light,
-        ];
+        SystemAppearance[] steps = [Dark, HighContrast, new SystemAppearance(ColorScheme.Light, true, null, LightContrast), Light];
         foreach (SystemAppearance step in steps)
         {
             app.SetSystemAppearance(step);
@@ -150,14 +144,18 @@ public sealed class FluentRootTests
         Element content = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(
             () => content = Box().Width(10).Height(10),
-            Options(Light) with { Width = 300, Height = 200 }
+            Options(Light) with
+            {
+                Width = 300,
+                Height = 200,
+            }
         );
         _ = app.PumpAndSettle();
-        Element box = RootBox(app);
+        Handle<UiNode> box = RootBoxNode(app);
 
-        Assert.Equal(new Rect(0, 0, 300, 200), app.Tree.GetRect(box.Node));
-        Assert.True(app.Tree.Nodes.GetRef(box.Node).NextSibling.IsNone);
-        Assert.Equal(box.Node, app.Tree.Nodes.GetRef(content.Node).Parent);
+        Assert.Equal(new Rect(0, 0, 300, 200), app.Tree.GetRect(box));
+        Assert.True(app.Tree.Nodes.GetRef(box).NextSibling.IsNone);
+        Assert.Equal(box, app.Tree.Nodes.GetRef(content.Node).Parent);
     }
 
     /// <summary>
@@ -221,9 +219,9 @@ public sealed class FluentRootTests
         Assert.Equal([true, true, false, false], dark);
     }
 
-    private static (Paint?, Color?, Color?, bool?) Read(HeadlessApp app)
+    private static (Paint? BoxBackground, Color? BoxForeground, Color? Backdrop, bool? DarkTitleBar) Read(HeadlessApp app)
     {
-        NodeVisual box = Visual(app, RootBox(app));
+        NodeVisual box = RootBoxVisual(app);
         return (box.Background, box.Foreground, app.Backdrop, app.DarkTitleBar);
     }
 }
