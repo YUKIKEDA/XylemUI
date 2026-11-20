@@ -110,8 +110,10 @@ public sealed class HeadlessApp : IAsyncDisposable
         // nothing of the app held.
         try
         {
-            // The size is the options' logical size, given as it is: no rounding.
-            _core.Mount(root, options.SystemLocales, "HeadlessApp.StartAsync", new Size(options.Width, options.Height), options.Scale);
+            // The size is the options' logical size, given as it is: no rounding. The wrapper is the options' alone: the one an app's
+            // assembly set for its desktop windows (WindowRoot) stays in the test process and is not read (design §13.2).
+            var size = new Size(options.Width, options.Height);
+            _core.Mount(root, options.RootWrapper, options.SystemLocales, options.SystemAppearance, "HeadlessApp.StartAsync", size, options.Scale);
             window.RootMounted();
         }
         catch
@@ -184,6 +186,18 @@ public sealed class HeadlessApp : IAsyncDisposable
     public CursorKind Cursor => _platform.Cursor;
 
     /// <summary>
+    /// Gets the color the root wrapper told the host to paint behind the tree last (<see cref="WindowSurface.SetBackdrop"/>, design
+    /// §13.2, "根の箱"); <see langword="null"/> before it told any.
+    /// </summary>
+    public Color? Backdrop => _core.Surface.Backdrop;
+
+    /// <summary>
+    /// Gets whether the root wrapper told the host last that the title bar is dark (<see cref="WindowSurface.SetDarkTitleBar"/>,
+    /// design §13.2, "題名の棒"); <see langword="null"/> before it told any.
+    /// </summary>
+    public bool? DarkTitleBar => _core.Surface.DarkTitleBar;
+
+    /// <summary>
     /// Gets the tree.
     /// </summary>
     internal UiTree Tree => _core.Tree;
@@ -232,6 +246,8 @@ public sealed class HeadlessApp : IAsyncDisposable
         {
             throw new ArgumentException("The scale and the frame interval are above 0, and the iterations at least 1.", nameof(options));
         }
+
+        _ = WindowAppearance.Check(options.SystemAppearance, nameof(options));
 
         _ = HeadlessSession.Dispatcher;
         if (!UiThread.CheckAccess())
@@ -500,6 +516,22 @@ public sealed class HeadlessApp : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(tags);
         VerifyRunning();
         _core.SetSystemLocales(tags);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
+    /// Changes the appearance the app sees as the OS's, as a change of the OS's settings does while a desktop window is open
+    /// (design §13.2, "ヘッドレス"): the readers of <see cref="SystemAppearance.Current"/> run again when the value changed, and only
+    /// then; then the work that queued runs.
+    /// </summary>
+    /// <param name="value">The OS's appearance.</param>
+    /// <exception cref="ArgumentException">The value has high-contrast colors while its high contrast is off, or none while it is
+    /// on.</exception>
+    [UiThreadOnly]
+    public void SetSystemAppearance(SystemAppearance value)
+    {
+        VerifyRunning();
+        _core.SetSystemAppearance(value);
         _ = DrainQueue();
     }
 

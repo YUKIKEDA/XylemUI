@@ -117,4 +117,23 @@ internal static class ThrowHelper
     [DoesNotReturn]
     [StackTraceHidden]
     internal static void ThrowComputedDisposed() => throw new ObjectDisposedException(null, "The computed value was disposed.");
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when the process's root wrapper is set a second time.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRootWrapperAlreadySet() =>
+        throw new InvalidOperationException(
+            "The root wrapper of the windows is set once in a process; an app chooses one theme with one [assembly: WindowTheme]."
+        );
+
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> for an appearance of the OS whose high contrast and high-contrast colors disagree.
+    /// </summary>
+    /// <param name="parameterName">The name of the appearance's parameter.</param>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowContrastColorsDisagree(string parameterName) =>
+        throw new ArgumentException("The appearance has high-contrast colors exactly while its high contrast is on.", parameterName);
 }
