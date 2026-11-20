@@ -52,7 +52,15 @@ public static class XylemApp
             using var app = new Win32PlatformApp();
             using var fonts = new DirectWriteFontProvider();
             using var text = new TextContext(fonts);
-            using WindowCore core = OpenWindow(app, text, root, options ?? new WindowOptions(), () => app.UiLanguages, show: true);
+            using WindowCore core = OpenWindow(
+                app,
+                text,
+                root,
+                options ?? new WindowOptions(),
+                () => app.UiLanguages,
+                () => app.Use24HourFormat,
+                show: true
+            );
             Open(core, app);
             return app.Run();
         }
@@ -73,6 +81,8 @@ public static class XylemApp
     /// <param name="root">The root function.</param>
     /// <param name="options">The window.</param>
     /// <param name="uiLanguages">Reads the OS's languages once the window is open, for the first mount (until row PL1's PR 5).</param>
+    /// <param name="use24HourFormat">Reads whether the OS asks for times in 24-hour form once the window is open, for the first
+    /// mount (until row PL1's PR 5).</param>
     /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <returns>The window core, which owns the window; the caller disposes it.</returns>
     /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
@@ -84,6 +94,7 @@ public static class XylemApp
         Func<Element> root,
         WindowOptions options,
         Func<IReadOnlyList<string>> uiLanguages,
+        Func<bool> use24HourFormat,
         bool show
     )
     {
@@ -120,7 +131,7 @@ public static class XylemApp
             // its scale (design §6.0, "The order of creation", step 7).
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
-            core.Mount(root, uiLanguages(), "XylemApp.Run", new Size(width / scale, height / scale), scale);
+            core.Mount(root, uiLanguages(), use24HourFormat(), "XylemApp.Run", new Size(width / scale, height / scale), scale);
 
             // The tree has its root now: assistive technology that asked while the window showed gets the tree.
             window.RootMounted();

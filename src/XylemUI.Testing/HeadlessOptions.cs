@@ -72,9 +72,10 @@ public sealed record HeadlessOptions
     public Keymap? Keymap { get; init; }
 
     /// <summary>
-    /// Gets the locales the app supports, as <c>WindowOptions.SupportedLocales</c> of a desktop window (design §4.11).
+    /// Gets the CLDR tables of the locales the app supports, as <c>WindowOptions.SupportedLocales</c> of a desktop window (design
+    /// §4.11, "Where locales are declared").
     /// </summary>
-    public IReadOnlyList<Locale> SupportedLocales { get; init; } = [];
+    public IReadOnlyList<LocaleData> SupportedLocales { get; init; } = [];
 
     /// <summary>
     /// Gets what chooses the app's locale, as <c>WindowOptions.ResolveLocale</c> of a desktop window; <see langword="null"/> for
@@ -84,8 +85,16 @@ public sealed record HeadlessOptions
 
     /// <summary>
     /// Gets the tags of the languages the app sees as the OS's, most preferred first; none by default, so that a test does not
-    /// depend on the machine it runs on: the app's locale is then the first of <see cref="SupportedLocales"/>, or undetermined.
-    /// <see cref="HeadlessApp.SetSystemLocales"/> changes them while the app runs.
+    /// depend on the machine it runs on: the app's locale is then the locale of the first of <see cref="SupportedLocales"/>, or
+    /// undetermined. <see cref="HeadlessApp.SetSystemLocales"/> changes them while the app runs.
     /// </summary>
     public IReadOnlyList<string> SystemLocales { get; init; } = [];
+
+    /// <summary>
+    /// Gets a value indicating whether the app sees the OS asking for times in 24-hour form when it starts: the first value of
+    /// <see cref="Localization.Use24HourFormat"/> (design §4.11, "The key of the 24-hour form"); <see langword="false"/> by default,
+    /// so that a test does not depend on the machine it runs on. <see cref="HeadlessApp.SetUse24HourFormat"/> changes it while the
+    /// app runs.
+    /// </summary>
+    public bool Use24HourFormat { get; init; }
 }

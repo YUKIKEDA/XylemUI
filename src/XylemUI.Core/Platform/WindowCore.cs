@@ -4,8 +4,8 @@ namespace XylemUI;
 
 /// <summary>
 /// The half of a window that does not depend on the OS (design §6.0, "The window core"): the tree with a root node that takes the
-/// window's size, the frames and the input, the locale provided around the root function, the root scope, the first frame, and what
-/// closing the window does. A desktop window and the headless app each hold one, and give it their window tier
+/// window's size, the frames and the input, the locale keys provided around the root function, the root scope, the first frame, and
+/// what closing the window does. A desktop window and the headless app each hold one, and give it their window tier
 /// (<see cref="IPlatformWindow"/>).
 /// </summary>
 /// <remarks>
@@ -15,7 +15,7 @@ namespace XylemUI;
 /// </remarks>
 internal sealed class WindowCore : IDisposable
 {
-    private readonly IReadOnlyList<Locale>? _supportedLocales;
+    private readonly IReadOnlyList<LocaleData>? _supportedLocales;
     private readonly Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? _resolveLocale;
     private IPlatformWindow? _window;
     private GlyphAtlas? _atlas;
@@ -29,12 +29,12 @@ internal sealed class WindowCore : IDisposable
     /// </summary>
     /// <param name="text">The text tools of the UI thread; <see langword="null"/> for a tree that holds no text.</param>
     /// <param name="clipboard">The clipboard the text fields copy to and paste from; <see langword="null"/> for none.</param>
-    /// <param name="supportedLocales">The locales the app supports; <see langword="null"/> for none.</param>
+    /// <param name="supportedLocales">The tables of the locales the app supports; <see langword="null"/> for none.</param>
     /// <param name="resolveLocale">What resolves the app's locale; <see langword="null"/> for <see cref="Localization.Resolve"/>.</param>
     public WindowCore(
         TextContext? text,
         IClipboardBackend? clipboard,
-        IReadOnlyList<Locale>? supportedLocales,
+        IReadOnlyList<LocaleData>? supportedLocales,
         Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? resolveLocale
     )
     {
@@ -105,9 +105,9 @@ internal sealed class WindowCore : IDisposable
     }
 
     /// <summary>
-    /// Runs the root function once, with the tree as the current tree and the resolved locale provided around it, in a new scope
-    /// that becomes the root scope; appends its node to the root node; then runs the first frame at the window's size. It is
-    /// called after <see cref="Connect"/>.
+    /// Runs the root function once, with the tree as the current tree and the resolved locale, its tables, and the OS's 24-hour
+    /// form provided around it (design §4.11, "Distribution"), in a new scope that becomes the root scope; appends its node to the
+    /// root node; then runs the first frame at the window's size. It is called after <see cref="Connect"/>.
     /// </summary>
     /// <remarks>
     /// The frame the root function's nodes asked for is the first one, which the size runs at once: without the cancel, an empty
@@ -115,14 +115,22 @@ internal sealed class WindowCore : IDisposable
     /// </remarks>
     /// <param name="root">The root function.</param>
     /// <param name="systemLocales">The tags of the OS's languages, most preferred first, which the app's locale is resolved against.</param>
+    /// <param name="use24HourFormat">Whether the OS asks for times in 24-hour form.</param>
     /// <param name="scopeName">The owner the root scope is tracked under (<see cref="ScopeTracker"/>).</param>
     /// <param name="size">The window's client size, in logical pixels.</param>
     /// <param name="scale">The window's scale, from logical to physical pixels.</param>
     /// <exception cref="InvalidOperationException">The root function returned no node of the window's tree, or one that has a
     /// parent.</exception>
-    public void Mount(Func<Element> root, IReadOnlyList<string> systemLocales, string scopeName, Size size, float scale)
+    public void Mount(
+        Func<Element> root,
+        IReadOnlyList<string> systemLocales,
+        bool use24HourFormat,
+        string scopeName,
+        Size size,
+        float scale
+    )
     {
-        var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales);
+        var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales, use24HourFormat);
         _locale = locale;
         UiTree? previous = UiTree.Current;
         UiTree.Current = Tree;
@@ -185,6 +193,14 @@ internal sealed class WindowCore : IDisposable
     /// </summary>
     /// <param name="tags">The tags of the OS's languages, most preferred first.</param>
     public void SetSystemLocales(IReadOnlyList<string> tags) => _locale?.Update(tags);
+
+    /// <summary>
+    /// Sets whether the OS asks for times in 24-hour form (design §4.11, "The key of the 24-hour form"); the readers of
+    /// <see cref="Localization.Use24HourFormat"/> run again only when the value changes. Before <see cref="Mount"/> it does
+    /// nothing, as <see cref="SetSystemLocales"/>: <see cref="Mount"/> takes the value of the OS at that time.
+    /// </summary>
+    /// <param name="use24HourFormat">Whether times are in 24-hour form.</param>
+    public void SetUse24HourFormat(bool use24HourFormat) => _locale?.SetUse24HourFormat(use24HourFormat);
 
     /// <summary>
     /// Tells the core that the OS window closed: the frame asked for is cancelled, the root is disposed (<see cref="DisposeRoot"/>),

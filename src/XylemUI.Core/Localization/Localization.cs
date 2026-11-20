@@ -1,16 +1,61 @@
+using System.Runtime.CompilerServices;
+
 namespace XylemUI;
 
 /// <summary>
-/// The locale of a part of the screen (design §4.11): the key the resolved locale is provided under, the resolution of the
-/// locales an app supports against the languages the user prefers, and the direction a locale is written in.
+/// The locale of a part of the screen (design §4.11): the keys the resolved locale, its CLDR tables, and the OS's 24-hour setting
+/// are provided under, the resolution of the locales an app supports against the languages the user prefers, and the direction a
+/// locale is written in.
 /// </summary>
 public static class Localization
 {
+    // The locale signal made for each signal of tables that Provide was given: providing the same signal again gives the same locale
+    // signal, so the text of the default language keeps one effect for it (design §4.11, "How text is shaped again").
+    private static readonly ConditionalWeakTable<IReadOnlySignal<LocaleData>, IReadOnlySignal<Locale>> LocaleSignals = new();
+
     /// <summary>
-    /// Gets the key of the locale (design §2.13): a window provides the resolved locale at its root, and a part of the screen
-    /// that is wrapped in another value has that one. The key has no default, so a lookup outside a window throws.
+    /// Gets the key of the locale (design §2.13): a window provides the locale of its tables (<see cref="Data"/>) at its root, and a
+    /// part of the screen that is wrapped in another value has that one. The key has no default, so a lookup outside a window
+    /// throws.
     /// </summary>
     public static Context<IReadOnlySignal<Locale>> Locale { get; } = new();
+
+    /// <summary>
+    /// Gets the key of the CLDR tables the formats use (design §4.11, "The key of the tables"): a window provides the tables of its
+    /// resolved locale at its root, and <see cref="Provide"/> provides other tables to a part of the screen. Where the two keys come
+    /// from one signal, the <see cref="LocaleData.Locale"/> of the tables is the value of <see cref="Locale"/>; a part wrapped in
+    /// <see cref="Locale"/> alone keeps the tables from outside it. The key has no default, so a lookup outside a window throws.
+    /// </summary>
+    public static Context<IReadOnlySignal<LocaleData>> Data { get; } = new();
+
+    /// <summary>
+    /// Gets the key of whether the OS asks for times in 24-hour form (design §4.11, "The key of the 24-hour form"): a window provides
+    /// it at its root, from Windows' time format on the desktop and from <c>HeadlessOptions.Use24HourFormat</c> in a headless app,
+    /// and the value changes when the OS's setting does. The key has no default, so a lookup outside a window throws.
+    /// </summary>
+    public static Context<IReadOnlySignal<bool>> Use24HourFormat { get; } = new();
+
+    /// <summary>
+    /// Runs <paramref name="content"/> with <paramref name="data"/> provided under <see cref="Data"/> and the locale of its tables
+    /// under <see cref="Locale"/>, so that the part of the screen it makes has another locale for its text and its formats alike
+    /// (design §4.11, "Replacing"). An app whose user chooses the language wraps its root function in a signal of its own. A reader
+    /// of <see cref="Locale"/> runs again only when the locale of the new tables is another.
+    /// </summary>
+    /// <param name="data">The tables, such as one of the app's supported locales.</param>
+    /// <param name="content">The code that makes the part of the screen.</param>
+    /// <returns>The element <paramref name="content"/> returned.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> or <paramref name="content"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The calling thread is not the UI thread, or a computed value is computing.
+    /// </exception>
+    [UiThreadOnly]
+    public static Element Provide(IReadOnlySignal<LocaleData> data, Func<Element> content)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(content);
+        IReadOnlySignal<Locale> locale = LocaleSignals.GetValue(data, static tables => Computed.Create(() => tables.Get().Locale));
+        return Data.Provide(data, () => Locale.Provide(locale, content, nameof(Provide)), nameof(Provide));
+    }
 
     /// <summary>
     /// Returns the locale to use: the one of <paramref name="supported"/> that fits the user's languages best, as Flutter's

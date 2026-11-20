@@ -111,7 +111,14 @@ public sealed class HeadlessApp : IAsyncDisposable
         try
         {
             // The size is the options' logical size, given as it is: no rounding.
-            _core.Mount(root, options.SystemLocales, "HeadlessApp.StartAsync", new Size(options.Width, options.Height), options.Scale);
+            _core.Mount(
+                root,
+                options.SystemLocales,
+                options.Use24HourFormat,
+                "HeadlessApp.StartAsync",
+                new Size(options.Width, options.Height),
+                options.Scale
+            );
             window.RootMounted();
         }
         catch
@@ -500,6 +507,23 @@ public sealed class HeadlessApp : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(tags);
         VerifyRunning();
         _core.SetSystemLocales(tags);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
+    /// Changes whether the app sees the OS asking for times in 24-hour form, as a change of Windows' time format does while a
+    /// desktop window is open (design §4.11, "The key of the 24-hour form"): the value of
+    /// <see cref="Localization.Use24HourFormat"/> changes, and its readers run again only when the value differs; then the work that
+    /// queued runs.
+    /// </summary>
+    /// <param name="use24HourFormat">Whether times are in 24-hour form.</param>
+    /// <exception cref="ObjectDisposedException">The app was disposed.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public void SetUse24HourFormat(bool use24HourFormat)
+    {
+        VerifyRunning();
+        _core.SetUse24HourFormat(use24HourFormat);
         _ = DrainQueue();
     }
 
