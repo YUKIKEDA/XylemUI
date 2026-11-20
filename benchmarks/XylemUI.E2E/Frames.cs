@@ -194,7 +194,11 @@ internal static class Frames
         const int Warm = 10;
         double median = interval.Skip(Warm).Order().ElementAt(interval.Count / 2);
         int missed = interval.Skip(Warm).Count(ms => ms > 1.5 * median);
-        using var report = new Report(wmSize ? "wm-size" : heavy == 0 ? "frames" : "frames-heavy");
+        using var report = new Report(
+            wmSize ? "wm-size"
+            : heavy == 0 ? "frames"
+            : "frames-heavy"
+        );
         report.Text("gpu", scene.Renderer.IsWarp ? "warp" : "hardware");
         report.Number("heavy", heavy);
         report.Text("coverage", scene.Coverage.ToString());
