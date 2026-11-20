@@ -345,11 +345,7 @@ public sealed class WindowLocaleTests
                 locale = Localization.Locale.Use().Get().ToLanguageTag();
                 return text = Elements.Text("a");
             },
-            new HeadlessOptions
-            {
-                SupportedLocales = [CldrLocales.EnGB, CldrLocales.En.WithLocale(Locale.Parse("en-RU"))],
-                SystemLocales = ["en-RU"],
-            }
+            new HeadlessOptions { SupportedLocales = [CldrLocales.EnGB, CldrLocales.En.WithLocale(Locale.Parse("en-RU"))], SystemLocales = ["en-RU"] }
         );
         _ = app.PumpAndSettle();
 
@@ -499,10 +495,7 @@ public sealed class WindowLocaleTests
 
         // The test calls the change off the UI thread on purpose, which is what XYLEM100 reports.
 #pragma warning disable XYLEM100
-        Exception? offThread = await Task.Run(
-            () => Record.Exception(() => app.SetUse24HourFormat(true)),
-            TestContext.Current.CancellationToken
-        );
+        Exception? offThread = await Task.Run(() => Record.Exception(() => app.SetUse24HourFormat(true)), TestContext.Current.CancellationToken);
 #pragma warning restore XYLEM100
         await app.DisposeAsync();
         Exception? disposed = Record.Exception(() => app.SetUse24HourFormat(true));

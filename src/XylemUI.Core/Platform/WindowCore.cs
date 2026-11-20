@@ -121,14 +121,7 @@ internal sealed class WindowCore : IDisposable
     /// <param name="scale">The window's scale, from logical to physical pixels.</param>
     /// <exception cref="InvalidOperationException">The root function returned no node of the window's tree, or one that has a
     /// parent.</exception>
-    public void Mount(
-        Func<Element> root,
-        IReadOnlyList<string> systemLocales,
-        bool use24HourFormat,
-        string scopeName,
-        Size size,
-        float scale
-    )
+    public void Mount(Func<Element> root, IReadOnlyList<string> systemLocales, bool use24HourFormat, string scopeName, Size size, float scale)
     {
         var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales, use24HourFormat);
         _locale = locale;
