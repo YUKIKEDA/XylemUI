@@ -19,6 +19,19 @@ public sealed class CldrTableGenTests
         + "lo lt lv mk ml mn mr ms my nb ne nl no or pa pl ps pt ro ru si sk sl sq sr sv sw ta te th tl tr ug uk ur uz vi zh zu"
     ).Split(' ');
 
+    // The lines of CldrLikelyScripts.g.cs that the zip of these tests gives (Tool_LikelyScripts_HoldTheKeysWithoutAScript).
+    private static readonly string[] LikelyLines =
+    [
+        "    public const int SourceKeyCount = 6;",
+        "    public const int KeysWithScript = 1;",
+        "    public const int RegionKeysLeftOut = 1;",
+        "    public const int EntryCount = 4;",
+        "    public const int ScriptCount = 3;",
+        "    public static ReadOnlySpan<byte> Scripts => [72, 97, 110, 115, 72, 97, 110, 116, 74, 112, 97, 110];",
+        "    public static ReadOnlySpan<byte> Keys => [0, 0, 149, 28, 5, 2, 75, 61, 0, 0, 226, 74, 5, 2, 226, 74];",
+        "    public static ReadOnlySpan<byte> Values => [2, 1, 0, 1];",
+    ];
+
     /// <summary>
     /// Two runs of the generator from the same zip write the same files, byte for byte.
     /// </summary>
@@ -108,6 +121,49 @@ public sealed class CldrTableGenTests
             string samples = File.ReadAllText(Path.Combine(output, "tests/XylemUI.Core.Tests/CldrPluralSamples.g.cs"));
             string line = "        (\"pt-AO\", \"" + key + "\", \"und\"),";
             Assert.Contains(line, samples, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The likely scripts the generator writes are the scripts of the keys of likelySubtags without a script, less a key of a
+    /// language and a region whose script is the language's own, packed and in ascending order (design §4.11, "Where the table
+    /// lives").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test, whose likelySubtags has 6 keys: ja (Jpan), zh (Hans), zh-TW (Hant), zh-SG (Hans, the script of
+    ///   zh), zh-Hant (a key with a script), und-TW (Hant; und has no key). Packed by hand: ja is 7,317 (10 × 27² + 1 × 27), und
+    ///   15,691, zh 19,170, each shifted 16 bits up; TW is 1 + 19 × 26 + 22 = 517.
+    ///
+    /// Steps:
+    /// - Run the tool, and read CldrLikelyScripts.g.cs.
+    ///
+    /// Expected:
+    /// - 6 keys, 1 with a script, 1 with a region left out, 4 entries, 3 scripts; the scripts Hans, Hant, Jpan; the keys ja, und-TW,
+    ///   zh, zh-TW as little-endian bytes; their scripts 2, 1, 0, 1.
+    /// </remarks>
+    [Fact]
+    public void Tool_LikelyScripts_HoldTheKeysWithoutAScript()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            string table = File.ReadAllText(Path.Combine(output, "src/XylemUI.Core/Localization/Cldr/CldrLikelyScripts.g.cs"));
+            foreach (string line in LikelyLines)
+            {
+                Assert.Contains(line, table, StringComparison.Ordinal);
+            }
         }
         finally
         {
@@ -224,7 +280,10 @@ public sealed class CldrTableGenTests
                 "cldr-core/supplemental/aliases.json",
                 "{ \"supplemental\": { \"metadata\": { \"alias\": { \"languageAlias\": { \"tl\": { \"_reason\": \"legacy\", \"_replacement\": \"fil\" } } } } } }"
             );
-            Add(zip, "cldr-core/supplemental/likelySubtags.json", "{ \"supplemental\": { \"likelySubtags\": { \"ja\": \"ja-Jpan-JP\" } } }");
+            const string Likely =
+                "{ \"supplemental\": { \"likelySubtags\": { \"ja\": \"ja-Jpan-JP\", \"zh\": \"zh-Hans-CN\", \"zh-TW\": \"zh-Hant-TW\", "
+                + "\"zh-SG\": \"zh-Hans-SG\", \"zh-Hant\": \"zh-Hant-TW\", \"und-TW\": \"zh-Hant-TW\" } } }";
+            Add(zip, "cldr-core/supplemental/likelySubtags.json", Likely);
             const string Weeks =
                 "{ \"supplemental\": { \"weekData\": { \"minDays\": { \"001\": \"1\" }, \"firstDay\": { \"001\": \"mon\", \"JP\": \"sun\" }, "
                 + "\"weekendStart\": { \"001\": \"sat\" }, \"weekendEnd\": { \"001\": \"sun\" } } } }";

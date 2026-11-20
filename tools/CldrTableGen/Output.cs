@@ -22,6 +22,7 @@ internal sealed class Output
     private readonly LocaleSet _locales;
     private readonly WeekData _week;
     private readonly PluralTables _plurals;
+    private readonly LikelyScriptTable _likely;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Output"/> class.
@@ -31,13 +32,15 @@ internal sealed class Output
     /// <param name="locales">The set of locales.</param>
     /// <param name="week">The week data.</param>
     /// <param name="plurals">The plural rules.</param>
-    public Output(PinnedRelease release, string license, LocaleSet locales, WeekData week, PluralTables plurals)
+    /// <param name="likely">The likely scripts the resolution reads.</param>
+    public Output(PinnedRelease release, string license, LocaleSet locales, WeekData week, PluralTables plurals, LikelyScriptTable likely)
     {
         _release = release;
         _license = license;
         _locales = locales;
         _week = week;
         _plurals = plurals;
+        _likely = likely;
     }
 
     /// <summary>
@@ -64,6 +67,7 @@ internal sealed class Output
         Save(Path.Combine(folder, "CldrLocales.g.cs"), Locales());
         Save(Path.Combine(folder, "CldrTables.g.cs"), Tables());
         Save(Path.Combine(folder, "CldrPluralRules.g.cs"), PluralRules());
+        Save(Path.Combine(folder, "CldrLikelyScripts.g.cs"), LikelyScripts());
         Save(Path.Combine(root, LicenseFile), _license);
         string samples = Path.Combine(root, SamplesFile);
         Directory.CreateDirectory(Path.GetDirectoryName(samples)!);
@@ -360,5 +364,44 @@ internal sealed class Output
         }
 
         Line(text, "    ];");
+    }
+
+    // Written byte by byte, so that the bytes do not depend on the order of the machine that runs the tool.
+    private static byte[] LittleEndian(uint value) => [(byte)value, (byte)(value >> 8), (byte)(value >> 16), (byte)(value >> 24)];
+
+    private static void Bytes(StringBuilder text, string name, string summary, IEnumerable<byte> bytes)
+    {
+        Line(text, "    /// <summary>");
+        Line(text, "    /// " + summary);
+        Line(text, "    /// </summary>");
+        Line(text, "    public static ReadOnlySpan<byte> " + name + " => [" + string.Join(", ", bytes.Select(value => Number(value))) + "];");
+    }
+
+    private string LikelyScripts()
+    {
+        var text = new StringBuilder();
+        Header(text);
+        Line(text, "namespace XylemUI;");
+        Line(text, string.Empty);
+        Line(text, "/// <summary>");
+        Line(text, "/// The likely scripts of CLDR's likelySubtags, which the resolution reads (design §4.11, \"Resolution\"): the script of a");
+        Line(text, "/// language, and of a language in a region. Read through <see cref=\"LikelyScripts\"/>, which packs the keys.");
+        Line(text, "/// </summary>");
+        Line(text, "internal static class CldrLikelyScripts");
+        Line(text, "{");
+        Constant(text, "int", "SourceKeyCount", Number(_likely.SourceKeys), "Gets the number of keys of likelySubtags.json.");
+        Constant(text, "int", "KeysWithScript", Number(_likely.KeysWithScript), "Gets the number of keys left out because they have a script.");
+        string leftOut = "Gets the number of keys of a language and a region left out because their script is the language's own.";
+        Constant(text, "int", "RegionKeysLeftOut", Number(_likely.RegionKeysLeftOut), leftOut);
+        Constant(text, "int", "EntryCount", Number(_likely.Entries.Count), "Gets the number of entries.");
+        Constant(text, "int", "ScriptCount", Number(_likely.Scripts.Count), "Gets the number of scripts the entries name.");
+        string scripts = "Gets the scripts, 4 ASCII letters each, in ordinal order.";
+        Bytes(text, "Scripts", scripts, _likely.Scripts.SelectMany(script => script.Select(letter => (byte)letter)));
+        string keys = "Gets the packed keys in ascending order, 4 bytes each, little-endian.";
+        Bytes(text, "Keys", keys, _likely.Entries.SelectMany(entry => LittleEndian(entry.Key)));
+        string values = "Gets the index in Scripts of the script of each key, in the order of Keys.";
+        Bytes(text, "Values", values, _likely.Entries.Select(entry => entry.Script));
+        Line(text, "}");
+        return text.ToString();
     }
 }
