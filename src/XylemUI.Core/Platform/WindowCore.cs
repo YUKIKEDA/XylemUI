@@ -4,9 +4,9 @@ namespace XylemUI;
 
 /// <summary>
 /// The half of a window that does not depend on the OS (design §6.0, "The window core"): the tree with a root node that takes the
-/// window's size, the frames and the input, the locale provided around the root function, the root scope, the first frame, and what
-/// closing the window does. A desktop window and the headless app each hold one, and give it their window tier
-/// (<see cref="IPlatformWindow"/>).
+/// window's size, the frames and the input, the locale keys, the OS's appearance, and the window's surface provided around the root
+/// function and its wrapper, the root scope, the first frame, and what closing the window does. A desktop window and the headless
+/// app each hold one, and give it their window tier (<see cref="IPlatformWindow"/>).
 /// </summary>
 /// <remarks>
 /// It belongs to the UI thread. A host makes it, then calls <see cref="Connect"/> once, then <see cref="Mount"/> once; the order
@@ -15,12 +15,13 @@ namespace XylemUI;
 /// </remarks>
 internal sealed class WindowCore : IDisposable
 {
-    private readonly IReadOnlyList<Locale>? _supportedLocales;
+    private readonly IReadOnlyList<LocaleData>? _supportedLocales;
     private readonly Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? _resolveLocale;
     private IPlatformWindow? _window;
     private GlyphAtlas? _atlas;
     private IFrameScheduler? _scheduler;
     private WindowLocale? _locale;
+    private WindowAppearance? _appearance;
     private ScopeHandle _rootScope;
     private bool _disposed;
 
@@ -29,12 +30,12 @@ internal sealed class WindowCore : IDisposable
     /// </summary>
     /// <param name="text">The text tools of the UI thread; <see langword="null"/> for a tree that holds no text.</param>
     /// <param name="clipboard">The clipboard the text fields copy to and paste from; <see langword="null"/> for none.</param>
-    /// <param name="supportedLocales">The locales the app supports; <see langword="null"/> for none.</param>
+    /// <param name="supportedLocales">The tables of the locales the app supports; <see langword="null"/> for none.</param>
     /// <param name="resolveLocale">What resolves the app's locale; <see langword="null"/> for <see cref="Localization.Resolve"/>.</param>
     public WindowCore(
         TextContext? text,
         IClipboardBackend? clipboard,
-        IReadOnlyList<Locale>? supportedLocales,
+        IReadOnlyList<LocaleData>? supportedLocales,
         Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? resolveLocale
     )
     {
@@ -76,6 +77,12 @@ internal sealed class WindowCore : IDisposable
     public ScopeHandle RootScope => _rootScope;
 
     /// <summary>
+    /// Gets the window's surface, which the core provides at the root under <see cref="WindowSurface.Current"/>: what the root
+    /// wrapper set last of the color behind the tree and of the title bar.
+    /// </summary>
+    public WindowSurface Surface { get; } = new();
+
+    /// <summary>
     /// Makes the window's frames and input from the window's target, scheduler, and pointer platform, and gives them the window's
     /// values now: whether it shows, whether it is active, and how its text is drawn; then gives the tree the window's input method.
     /// The frames ask the window's scheduler for a frame whenever the tree queues work. The core owns the window and the atlas from
@@ -105,25 +112,49 @@ internal sealed class WindowCore : IDisposable
     }
 
     /// <summary>
-    /// Runs the root function once, with the tree as the current tree and the resolved locale provided around it, in a new scope
-    /// that becomes the root scope; appends its node to the root node; then runs the first frame at the window's size. It is
-    /// called after <see cref="Connect"/>.
+    /// Runs the root function once, in a new scope that becomes the root scope, with the tree as the current tree and, around it,
+    /// the resolved locale, its tables, the OS's 24-hour form (design §4.11, "Distribution"), the OS's appearance, and the
+    /// window's <see cref="Surface"/> provided, and inside them the root wrapper when there is one (design §13.2, "根で置くもの");
+    /// appends the node it returned to the root node; then runs the first frame at the window's size. It is called after
+    /// <see cref="Connect"/>.
     /// </summary>
     /// <remarks>
     /// The frame the root function's nodes asked for is the first one, which the size runs at once: without the cancel, an empty
     /// frame ran after it (found by the headless app's check at its end, row P02a). A frame that one asks for stays.
     /// </remarks>
     /// <param name="root">The root function.</param>
+    /// <param name="wrapper">
+    /// The root wrapper, which is given a function that runs the root function, calls it exactly once, and returns the window's
+    /// node; <see langword="null"/> to run the root function alone. The desktop host passes <see cref="WindowRoot.ReadWrapper"/>,
+    /// and the headless app its options' wrapper.
+    /// </param>
     /// <param name="systemLocales">The tags of the OS's languages, most preferred first, which the app's locale is resolved against.</param>
+    /// <param name="use24HourFormat">Whether the OS asks for times in 24-hour form.</param>
+    /// <param name="appearance">The OS's appearance now.</param>
     /// <param name="scopeName">The owner the root scope is tracked under (<see cref="ScopeTracker"/>).</param>
     /// <param name="size">The window's client size, in logical pixels.</param>
     /// <param name="scale">The window's scale, from logical to physical pixels.</param>
-    /// <exception cref="InvalidOperationException">The root function returned no node of the window's tree, or one that has a
-    /// parent.</exception>
-    public void Mount(Func<Element> root, IReadOnlyList<string> systemLocales, string scopeName, Size size, float scale)
+    /// <exception cref="ArgumentException">Only one of <see cref="SystemAppearance.HighContrast"/> and
+    /// <see cref="SystemAppearance.Contrast"/> of <paramref name="appearance"/> says high contrast is on.</exception>
+    /// <exception cref="InvalidOperationException">The root function, or the wrapper, returned no node of the window's tree, or one
+    /// that has a parent; or the wrapper called the root function a second time (the second call throws, and the root function
+    /// does not run again), or returned without calling it (design §13.2, "根で置くもの").</exception>
+    public void Mount(
+        Func<Element> root,
+        Func<Func<Element>, Element>? wrapper,
+        IReadOnlyList<string> systemLocales,
+        bool use24HourFormat,
+        SystemAppearance appearance,
+        string scopeName,
+        Size size,
+        float scale
+    )
     {
-        var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales);
+        var windowAppearance = new WindowAppearance(WindowAppearance.Check(appearance, nameof(appearance)));
+        var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales, use24HourFormat);
         _locale = locale;
+        _appearance = windowAppearance;
+        Func<Element> body = wrapper is null ? root : () => Wrap(wrapper, root);
         UiTree? previous = UiTree.Current;
         UiTree.Current = Tree;
         try
@@ -131,15 +162,15 @@ internal sealed class WindowCore : IDisposable
             _rootScope = Scope.Create(
                 () =>
                 {
-                    Element content = locale.Provide(Tree, root);
+                    Element content = locale.Provide(Tree, () => windowAppearance.Provide(() => WindowSurface.Current.Provide(Surface, body)));
                     if (!ReferenceEquals(content.Tree, Tree))
                     {
-                        throw new InvalidOperationException("The root function returns a node of the window's tree.");
+                        throw new InvalidOperationException("The root function, or the wrapper, returns a node of the window's tree.");
                     }
 
                     if (!Tree.Nodes.GetRef(content.Node).Parent.IsNone)
                     {
-                        throw new InvalidOperationException("The root function returns a node with no parent.");
+                        throw new InvalidOperationException("The root function, or the wrapper, returns a node with no parent.");
                     }
 
                     // One change for the readers of what an action can do: the node is in the tree and is where a route starts
@@ -185,6 +216,29 @@ internal sealed class WindowCore : IDisposable
     /// </summary>
     /// <param name="tags">The tags of the OS's languages, most preferred first.</param>
     public void SetSystemLocales(IReadOnlyList<string> tags) => _locale?.Update(tags);
+
+    /// <summary>
+    /// Sets whether the OS asks for times in 24-hour form (design §4.11, "The key of the 24-hour form"); the readers of
+    /// <see cref="Localization.Use24HourFormat"/> run again only when the value changes. Before <see cref="Mount"/> it does
+    /// nothing, as <see cref="SetSystemLocales"/>: <see cref="Mount"/> takes the value of the OS at that time.
+    /// </summary>
+    /// <param name="use24HourFormat">Whether times are in 24-hour form.</param>
+    public void SetUse24HourFormat(bool use24HourFormat) => _locale?.SetUse24HourFormat(use24HourFormat);
+
+    /// <summary>
+    /// Takes another appearance of the OS (design §13.2, "置き方"): the readers of <see cref="SystemAppearance.Current"/> run again
+    /// when the value changed, and only then. Before <see cref="Mount"/> it does nothing, as <see cref="SetSystemLocales"/> does:
+    /// <see cref="Mount"/> takes the appearance of that time.
+    /// </summary>
+    /// <param name="value">The OS's appearance now.</param>
+    /// <exception cref="ArgumentException">Only one of <see cref="SystemAppearance.HighContrast"/> and
+    /// <see cref="SystemAppearance.Contrast"/> says high contrast is on.</exception>
+    public void SetSystemAppearance(SystemAppearance value)
+    {
+        // Checked before Mount too, where nothing else reads it: `_appearance?.Update(...)` would not evaluate its argument.
+        SystemAppearance checkedValue = WindowAppearance.Check(value, nameof(value));
+        _appearance?.Update(checkedValue);
+    }
 
     /// <summary>
     /// Tells the core that the OS window closed: the frame asked for is cancelled, the root is disposed (<see cref="DisposeRoot"/>),
@@ -233,6 +287,30 @@ internal sealed class WindowCore : IDisposable
         // The window's renderer draws glyphs from the atlas: the window goes first, as the desktop window always disposed them.
         _window?.Dispose();
         _atlas?.Dispose();
+    }
+
+    // Runs the wrapper with a function that runs the root function at most once (Issue #907): a second call throws before the root
+    // function makes its nodes again, which would stay in the tree with no parent, and a wrapper that never called it is refused.
+    private static Element Wrap(Func<Func<Element>, Element> wrapper, Func<Element> root)
+    {
+        bool called = false;
+        Element content = wrapper(() =>
+        {
+            if (called)
+            {
+                ThrowHelper.ThrowRootCalledTwice();
+            }
+
+            called = true;
+            return root();
+        });
+
+        if (!called)
+        {
+            ThrowHelper.ThrowRootNotCalled();
+        }
+
+        return content;
     }
 
     // No frame of the window's scheduler runs for a root that is gone. The frame is cancelled before the root scope is disposed;

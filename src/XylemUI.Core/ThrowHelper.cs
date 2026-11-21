@@ -117,4 +117,49 @@ internal static class ThrowHelper
     [DoesNotReturn]
     [StackTraceHidden]
     internal static void ThrowComputedDisposed() => throw new ObjectDisposedException(null, "The computed value was disposed.");
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when the process's root wrapper is set a second time.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRootWrapperAlreadySet() =>
+        throw new InvalidOperationException(
+            "The root wrapper of the windows is set once in a process; an app chooses one theme with one [assembly: WindowTheme]."
+        );
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when the process's root wrapper is set after a window read it.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRootWrapperSetAfterAWindow() =>
+        throw new InvalidOperationException(
+            "The root wrapper of the windows is set before the first window opens, as the module initializer of [assembly: WindowTheme] does."
+        );
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when a wrapper calls the window's root function a second time.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRootCalledTwice() =>
+        throw new InvalidOperationException("The root wrapper calls the window's root function once; this is the second call.");
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when a wrapper returned without calling the window's root function.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRootNotCalled() =>
+        throw new InvalidOperationException("The root wrapper calls the window's root function once; it returned without calling it.");
+
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> for an appearance of the OS whose high contrast and high-contrast colors disagree.
+    /// </summary>
+    /// <param name="parameterName">The name of the appearance's parameter.</param>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowContrastColorsDisagree(string parameterName) =>
+        throw new ArgumentException("The appearance has high-contrast colors exactly while its high contrast is on.", parameterName);
 }

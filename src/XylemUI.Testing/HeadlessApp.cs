@@ -110,8 +110,19 @@ public sealed class HeadlessApp : IAsyncDisposable
         // nothing of the app held.
         try
         {
-            // The size is the options' logical size, given as it is: no rounding.
-            _core.Mount(root, options.SystemLocales, "HeadlessApp.StartAsync", new Size(options.Width, options.Height), options.Scale);
+            // The size is the options' logical size, given as it is: no rounding. The wrapper is the options' alone: the one an app's
+            // assembly set for its desktop windows (WindowRoot) stays in the test process and is not read (design §13.2).
+            var size = new Size(options.Width, options.Height);
+            _core.Mount(
+                root,
+                options.RootWrapper,
+                options.SystemLocales,
+                options.Use24HourFormat,
+                options.SystemAppearance,
+                "HeadlessApp.StartAsync",
+                size,
+                options.Scale
+            );
             window.RootMounted();
         }
         catch
@@ -184,6 +195,18 @@ public sealed class HeadlessApp : IAsyncDisposable
     public CursorKind Cursor => _platform.Cursor;
 
     /// <summary>
+    /// Gets the color the root wrapper told the host to paint behind the tree last (<see cref="WindowSurface.SetBackdrop"/>, design
+    /// §13.2, "根の箱"); <see langword="null"/> before it told any.
+    /// </summary>
+    public Color? Backdrop => _core.Surface.Backdrop;
+
+    /// <summary>
+    /// Gets whether the root wrapper told the host last that the title bar is dark (<see cref="WindowSurface.SetDarkTitleBar"/>,
+    /// design §13.2, "題名の棒"); <see langword="null"/> before it told any.
+    /// </summary>
+    public bool? DarkTitleBar => _core.Surface.DarkTitleBar;
+
+    /// <summary>
     /// Gets the tree.
     /// </summary>
     internal UiTree Tree => _core.Tree;
@@ -218,6 +241,10 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// The caller is not on <see cref="HeadlessSession"/>'s UI thread, or no default key bindings are registered (the test project
     /// is built without the source generator of <c>XylemUI.Core</c> and did not call <see cref="Keymap.RegisterDefaults"/>).
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The options' size, scale, frame interval, or iterations are out of range, or their
+    /// <see cref="HeadlessOptions.SupportedLocales"/> hold a <see langword="null"/>.
+    /// </exception>
     public static Task<HeadlessApp> StartAsync(Func<Element> root, HeadlessOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(root);
@@ -232,6 +259,9 @@ public sealed class HeadlessApp : IAsyncDisposable
         {
             throw new ArgumentException("The scale and the frame interval are above 0, and the iterations at least 1.", nameof(options));
         }
+
+        WindowLocale.VerifySupported(options.SupportedLocales, nameof(options));
+        _ = WindowAppearance.Check(options.SystemAppearance, nameof(options));
 
         _ = HeadlessSession.Dispatcher;
         if (!UiThread.CheckAccess())
@@ -494,12 +524,47 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// (design §4.11, "A change of the OS"): the app's locale is resolved again, then the work that queued runs.
     /// </summary>
     /// <param name="tags">The tags of the languages, most preferred first.</param>
+    /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
     [UiThreadOnly]
     public void SetSystemLocales(IReadOnlyList<string> tags)
     {
         ArgumentNullException.ThrowIfNull(tags);
         VerifyRunning();
         _core.SetSystemLocales(tags);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
+    /// Changes whether the app sees the OS asking for times in 24-hour form, as a change of Windows' time format does while a
+    /// desktop window is open (design §4.11, "The key of the 24-hour form"): the value of
+    /// <see cref="Localization.Use24HourFormat"/> changes, and its readers run again only when the value differs; then the work that
+    /// queued runs.
+    /// </summary>
+    /// <param name="use24HourFormat">Whether times are in 24-hour form.</param>
+    /// <exception cref="ObjectDisposedException">The app was disposed.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public void SetUse24HourFormat(bool use24HourFormat)
+    {
+        VerifyRunning();
+        _core.SetUse24HourFormat(use24HourFormat);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
+    /// Changes the appearance the app sees as the OS's, as a change of the OS's settings does while a desktop window is open
+    /// (design §13.2, "ヘッドレス"): the readers of <see cref="SystemAppearance.Current"/> run again when the value changed, and only
+    /// then; then the work that queued runs.
+    /// </summary>
+    /// <param name="value">The OS's appearance.</param>
+    /// <exception cref="ArgumentException">The value has high-contrast colors while its high contrast is off, or none while it is
+    /// on.</exception>
+    /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
+    [UiThreadOnly]
+    public void SetSystemAppearance(SystemAppearance value)
+    {
+        VerifyRunning();
+        _core.SetSystemAppearance(value);
         _ = DrainQueue();
     }
 

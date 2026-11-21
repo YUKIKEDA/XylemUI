@@ -108,6 +108,12 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     /// </summary>
     public IReadOnlyList<string> UiLanguages => Window.UiLanguages;
 
+    /// <summary>
+    /// Gets a value indicating whether the user's short time format shows the hours in 24-hour form as the window read it, for the
+    /// first mount until the OS's settings become one object of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
+    /// </summary>
+    public bool Use24HourFormat => Window.Use24HourFormat;
+
     /// <inheritdoc/>
     public (int Width, int Height) ClientSize => Window.ClientSize;
 
@@ -168,6 +174,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         tree.Animations.ReduceMotion = Window.ReducesMotion;
         Window.ReducesMotionChanged += OnReducesMotionChanged;
         Window.UiLanguagesChanged += OnUiLanguagesChanged;
+        Window.Use24HourFormatChanged += OnUse24HourFormatChanged;
         Window.Closed += OnClosed;
     }
 
@@ -212,6 +219,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
             Window.TextRenderingChanged -= OnTextRenderingChanged;
             Window.ReducesMotionChanged -= OnReducesMotionChanged;
             Window.UiLanguagesChanged -= OnUiLanguagesChanged;
+            Window.Use24HourFormatChanged -= OnUse24HourFormatChanged;
             Window.TextEditingChanged -= OnTextEditingChanged;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
@@ -267,6 +275,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     private void OnReducesMotionChanged(object? sender, EventArgs e) => _core.Tree.Animations.ReduceMotion = Window.ReducesMotion;
 
     private void OnUiLanguagesChanged(object? sender, EventArgs e) => _core.SetSystemLocales(Window.UiLanguages);
+
+    private void OnUse24HourFormatChanged(object? sender, EventArgs e) => _core.SetUse24HourFormat(Window.Use24HourFormat);
 
     // The window is gone: no frame may draw into its swap chain, and what the root function made goes with it.
     private void OnClosed(object? sender, EventArgs e) => _core.WindowClosed();

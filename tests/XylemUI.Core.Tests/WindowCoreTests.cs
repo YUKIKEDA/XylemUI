@@ -37,7 +37,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, FakeWindow window) = Connected(atlas, [Locale.Parse("en"), Locale.Parse("ja")]);
+            (WindowCore core, FakeWindow window) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
             UiTree? before = UiTree.Current;
             UiTree? seenTree = null;
             string? seenLocale = null;
@@ -50,7 +50,10 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     seenLocale = Localization.Locale.Use().Get().ToLanguageTag();
                     return box = Box();
                 },
+                null,
                 ["ja-JP"],
+                false,
+                default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 2
@@ -107,7 +110,10 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                             1 => new Element(other, other.CreateNode(new LayoutStyle())),
                             _ => Child(),
                         },
+                    null,
                     [],
+                    false,
+                    default,
                     "WindowCoreTests",
                     new Size(200, 100),
                     1
@@ -204,7 +210,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
             (WindowCore core, FakeWindow window) = Connected(atlas);
-            core.Mount(Box, [], "WindowCoreTests", new Size(200, 100), 1);
+            core.Mount(Box, null, [], false, default, "WindowCoreTests", new Size(200, 100), 1);
             int presents = window.Target.Presents;
 
             core.Resize(new Size(150, 50), 2);
@@ -276,7 +282,10 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     Scope.OnCleanup(() => cleanups++);
                     return box = Box();
                 },
+                null,
                 [],
+                false,
+                default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
@@ -327,7 +336,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             int closed = 0;
             core.Closed += (_, _) => closed++;
             Element box = default;
-            core.Mount(() => box = Box(), [], "WindowCoreTests", new Size(200, 100), 1);
+            core.Mount(() => box = Box(), null, [], false, default, "WindowCoreTests", new Size(200, 100), 1);
             core.Tree.SetBackground(box.Node, new Paint(Red));
 
             core.Dispose();
@@ -400,7 +409,10 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     Scope.OnCleanup(() => cleanups++);
                     return box = Box();
                 },
+                null,
                 [],
+                false,
+                default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
@@ -462,7 +474,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [Locale.Parse("en"), Locale.Parse("ja")]);
+            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
             string? read = null;
 
             core.SetSystemLocales(["en-GB"]);
@@ -472,7 +484,10 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     read = Localization.Locale.Use().Get().ToLanguageTag();
                     return Box();
                 },
+                null,
                 ["ja-JP"],
+                false,
+                default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
@@ -501,7 +516,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [Locale.Parse("en"), Locale.Parse("ja")]);
+            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
             var seen = new List<string>();
             core.Mount(
                 () =>
@@ -510,7 +525,10 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     _ = Effect.Create(() => seen.Add(locale.Get().ToLanguageTag()));
                     return Box();
                 },
+                null,
                 ["ja-JP"],
+                false,
+                default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
@@ -524,11 +542,619 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             Assert.Equal(["ja", "en", "ja"], seen);
         });
 
+    /// <summary>
+    /// Mount runs the wrapper inside the locale, the OS's appearance, and the core's surface, gives it the root function, and
+    /// appends the node it returns; the root function runs inside the wrapper and finds the same values (design §13.2, "根で置く
+    /// もの").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core that supports en and ja. A wrapper that records the locale, the scheme, and whether the surface found is
+    ///   the core's, calls the root function, and returns a box that holds the root's node; a root function that records the same
+    ///   and returns a box.
+    ///
+    /// Steps:
+    /// - Mount with the wrapper, the OS's languages "ja-JP", and a dark appearance.
+    ///
+    /// Expected:
+    /// - The log is "wrap ja dark core's surface", "root ja dark core's surface", "wrapped". The wrapper's box is the root node's
+    ///   child and the tree's key root, and the root's box is the wrapper's box's child.
+    /// </remarks>
+    [Fact]
+    public void Mount_RunsTheWrapperInsideTheRootValues_AroundTheRoot() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
+            var log = new List<string>();
+            Element outer = default;
+            Element inner = default;
+            Func<Element> root = () =>
+            {
+                log.Add("root " + Seen());
+                return inner = Box();
+            };
+            Func<Func<Element>, Element> wrapper = given =>
+            {
+                log.Add("wrap " + Seen());
+                outer = Box(given());
+                log.Add("wrapped");
+                return outer;
+            };
+            var dark = new SystemAppearance(ColorScheme.Dark, false, null, null);
+
+            core.Mount(root, wrapper, ["ja-JP"], false, dark, "WindowCoreTests", new Size(200, 100), 1);
+            NodeHandle outerParent = core.Tree.Nodes.GetRef(outer.Node).Parent;
+            NodeHandle innerParent = core.Tree.Nodes.GetRef(inner.Node).Parent;
+            NodeHandle keyRoot = core.Tree.KeyRoot;
+            core.DisposeRoot();
+
+            string[] expected = ["wrap ja dark core's surface", "root ja dark core's surface", "wrapped"];
+            Assert.Equal(expected, log);
+            Assert.Equal(core.RootNode, outerParent);
+            Assert.Equal(outer.Node, keyRoot);
+            Assert.Equal(outer.Node, innerParent);
+
+            string Seen() =>
+                Localization.Locale.Use().Get().ToLanguageTag()
+                + (SystemAppearance.Current.Use().Get().Scheme == ColorScheme.Dark ? " dark" : " light")
+                + (ReferenceEquals(WindowSurface.Current.Use(), core.Surface) ? " core's surface" : " another surface");
+        });
+
+    /// <summary>
+    /// A wrapper that returns a node of another tree, or one with a parent, makes Mount throw as a root function that returns one
+    /// does.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, one for each case.
+    ///
+    /// Steps:
+    /// - Mount a root function that returns a box, with a wrapper that calls it and returns: a node of another tree; a box that a
+    ///   column holds.
+    ///
+    /// Expected:
+    /// - Each Mount throws <see cref="InvalidOperationException"/>, and the root scope is none.
+    /// </remarks>
+    /// <param name="kind">0: a node of another tree; 1: a node with a parent.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Mount_WrapperReturnsANodeItMayNot_Throws(int kind) =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            var other = new UiTree();
+            Func<Func<Element>, Element> wrapper = root =>
+            {
+                _ = root();
+                return kind == 0 ? new Element(other, other.CreateNode(new LayoutStyle())) : Child();
+            };
+
+            _ = Assert.Throws<InvalidOperationException>(() =>
+                core.Mount(Box, wrapper, [], false, default, "WindowCoreTests", new Size(200, 100), 1)
+            );
+
+            Assert.True(core.RootScope.IsNone);
+        });
+
+    /// <summary>
+    /// A wrapper that throws, before or after it calls the root function, makes Mount throw its exception, and leaves nothing of
+    /// the mount: the root scope and the three scopes that provide the locale, the OS's appearance, and the surface are disposed,
+    /// the nodes the root function made are freed, and the current tree is put back.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, one for each case; the number of live scopes and the current tree before the mount.
+    ///
+    /// Steps:
+    /// - Mount a root function that returns a box, with a wrapper that records the current scope and its three ancestors, then:
+    ///   throws a <see cref="FormatException"/> at once; or calls the root function and then throws it.
+    ///
+    /// Expected:
+    /// - Mount throws that exception. The four recorded scopes are not alive, the number of live scopes is the one before, the root
+    ///   scope is none, the current tree is the one before, and, when the root function ran, its box is freed.
+    /// </remarks>
+    /// <param name="afterRoot"><see langword="false"/>: the wrapper throws before it calls the root function; <see langword="true"/>:
+    /// after.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Mount_WrapperThrows_LeavesNothingOfTheMount(bool afterRoot) =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            var error = new FormatException("The wrapper throws.");
+            var recorded = new List<Handle<ScopeData>>();
+            Element box = default;
+            Func<Func<Element>, Element> wrapper = root =>
+            {
+                // The surface's scope, then the appearance's, the locale's, and the root scope.
+                Handle<ScopeData> scope = Scope.CurrentRef;
+                for (int i = 0; i < 4; i++)
+                {
+                    recorded.Add(scope);
+                    scope = Scope.Get(scope).Parent;
+                }
+
+                if (afterRoot)
+                {
+                    box = root();
+                }
+
+                throw error;
+            };
+            int live = Scope.LiveCount;
+            UiTree? before = UiTree.Current;
+
+            FormatException thrown = Assert.Throws<FormatException>(() =>
+                core.Mount(Box, wrapper, [], false, default, "WindowCoreTests", new Size(200, 100), 1)
+            );
+
+            Assert.Same(error, thrown);
+            Assert.Equal(4, recorded.Count);
+            Assert.All(recorded, scope => Assert.False(Scope.IsAlive(scope)));
+            Assert.Equal(live, Scope.LiveCount);
+            Assert.True(core.RootScope.IsNone);
+            Assert.Same(before, UiTree.Current);
+            Assert.Equal(afterRoot, !box.IsNone);
+            Assert.True(box.IsNone || !core.Tree.Nodes.IsAlive(box.Node));
+        });
+
+    /// <summary>
+    /// A wrapper calls the root function exactly once (design §13.2, "根で置くもの"): a second call throws before the root function
+    /// runs again, and a wrapper that returns without calling it makes Mount throw; either way nothing of the mount is left.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, one for each case; a root function that counts its runs and returns a box; the number of live scopes and
+    ///   the current tree before the mount.
+    ///
+    /// Steps:
+    /// - Mount with a wrapper that: calls the root function twice and returns the first box; or returns a box of its own without
+    ///   calling it.
+    ///
+    /// Expected:
+    /// - Mount throws <see cref="InvalidOperationException"/>. The root function ran once in the first case and never in the
+    ///   second. The number of live scopes is the one before, the root scope is none, the current tree is the one before, and the
+    ///   tree holds as many nodes as before: the boxes made are freed.
+    /// </remarks>
+    /// <param name="twice"><see langword="true"/>: the wrapper calls the root function twice; <see langword="false"/>: never.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Mount_WrapperCallsTheRootOtherThanOnce_Throws(bool twice) =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            int runs = 0;
+            Func<Element> root = () =>
+            {
+                runs++;
+                return Box();
+            };
+            Func<Func<Element>, Element> wrapper = given =>
+            {
+                if (!twice)
+                {
+                    return Box();
+                }
+
+                Element first = given();
+                _ = given();
+                return first;
+            };
+            int live = Scope.LiveCount;
+            int nodes = core.Tree.Nodes.Count;
+            UiTree? before = UiTree.Current;
+
+            _ = Assert.Throws<InvalidOperationException>(() =>
+                core.Mount(root, wrapper, [], false, default, "WindowCoreTests", new Size(200, 100), 1)
+            );
+
+            Assert.Equal(twice ? 1 : 0, runs);
+            Assert.Equal(live, Scope.LiveCount);
+            Assert.True(core.RootScope.IsNone);
+            Assert.Same(before, UiTree.Current);
+            Assert.Equal(nodes, core.Tree.Nodes.Count);
+        });
+
+    /// <summary>
+    /// An appearance whose high contrast and high-contrast colors disagree makes Mount throw before the root function runs, and
+    /// SetSystemAppearance throw before and after Mount.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core; high contrast on with no colors.
+    ///
+    /// Steps:
+    /// - Set the value before Mount. Mount with it and a root function that counts its runs. Mount with the default value; set the
+    ///   value after it.
+    ///
+    /// Expected:
+    /// - Each throws <see cref="ArgumentException"/>, naming the parameter of the call: <c>value</c>, <c>appearance</c>, and
+    ///   <c>value</c>. The root function ran once, in the second Mount.
+    /// </remarks>
+    [Fact]
+    public void ContrastColors_DisagreeingWithHighContrast_AreRefused() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            var wrong = new SystemAppearance(ColorScheme.Dark, true, null, null);
+            int runs = 0;
+            Element Root()
+            {
+                runs++;
+                return Box();
+            }
+
+            ArgumentException beforeMount = Assert.Throws<ArgumentException>(() => core.SetSystemAppearance(wrong));
+            ArgumentException mount = Assert.Throws<ArgumentException>(() =>
+                core.Mount(Root, null, [], false, wrong, "WindowCoreTests", new Size(200, 100), 1)
+            );
+            core.Mount(Root, null, [], false, default, "WindowCoreTests", new Size(200, 100), 1);
+            ArgumentException afterMount = Assert.Throws<ArgumentException>(() => core.SetSystemAppearance(wrong));
+            core.DisposeRoot();
+
+            Assert.Equal(("value", "appearance", "value"), (beforeMount.ParamName, mount.ParamName, afterMount.ParamName));
+            Assert.Equal(1, runs);
+        });
+
+    /// <summary>
+    /// An appearance of the OS told before the root is mounted is not kept: the mount takes the one it is given.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, not mounted.
+    ///
+    /// Steps:
+    /// - Set the OS's appearance to dark. Mount with the default appearance and a root function that reads the scheme.
+    ///
+    /// Expected:
+    /// - Nothing is thrown, and the root function read light.
+    /// </remarks>
+    [Fact]
+    public void SetSystemAppearance_BeforeMount_DoesNothing() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            ColorScheme? read = null;
+
+            core.SetSystemAppearance(new SystemAppearance(ColorScheme.Dark, false, null, null));
+            core.Mount(
+                () =>
+                {
+                    read = SystemAppearance.Current.Use().Get().Scheme;
+                    return Box();
+                },
+                null,
+                [],
+                false,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+            core.DisposeRoot();
+
+            Assert.Equal(ColorScheme.Light, read);
+        });
+
+    /// <summary>
+    /// Another appearance of the OS runs a reader of it again, only when the value changed.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, mounted with the default appearance and a root function whose effect records the scheme.
+    ///
+    /// Steps:
+    /// - Set the OS's appearance to dark, dark again, then light.
+    ///
+    /// Expected:
+    /// - The effect recorded light, dark, light.
+    /// </remarks>
+    [Fact]
+    public void SetSystemAppearance_RunsTheReadersAgain_WhenTheValueChanges() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            var dark = new SystemAppearance(ColorScheme.Dark, false, null, null);
+            var seen = new List<ColorScheme>();
+            core.Mount(
+                () =>
+                {
+                    IReadOnlySignal<SystemAppearance> appearance = SystemAppearance.Current.Use();
+                    _ = Effect.Create(() => seen.Add(appearance.Get().Scheme));
+                    return Box();
+                },
+                null,
+                [],
+                false,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+
+            core.SetSystemAppearance(dark);
+            core.SetSystemAppearance(dark);
+            core.SetSystemAppearance(default);
+            core.DisposeRoot();
+
+            ColorScheme[] expected = [ColorScheme.Light, ColorScheme.Dark, ColorScheme.Light];
+            Assert.Equal(expected, seen);
+        });
+
+    /// <summary>
+    /// Mount provides the tables of the resolved locale under <see cref="Localization.Data"/>, their locale under
+    /// <see cref="Localization.Locale"/>, and the OS's 24-hour form under <see cref="Localization.Use24HourFormat"/> (design §4.11,
+    /// "Distribution").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core that supports the tables of en and ja.
+    ///
+    /// Steps:
+    /// - Mount with the OS's languages "ja-JP", the 24-hour form on, and a root function that reads the three keys.
+    ///
+    /// Expected:
+    /// - The tables are <see cref="CldrLocales.Ja"/> itself, the locale is ja, and the 24-hour form is on.
+    /// </remarks>
+    [Fact]
+    public void Mount_ProvidesTheTablesTheirLocaleAndThe24HourForm() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
+            LocaleData? tables = null;
+            string? locale = null;
+            bool? use24HourFormat = null;
+
+            core.Mount(
+                () =>
+                {
+                    tables = Localization.Data.Use().Get();
+                    locale = Localization.Locale.Use().Get().ToLanguageTag();
+                    use24HourFormat = Localization.Use24HourFormat.Use().Get();
+                    return Box();
+                },
+                null,
+                ["ja-JP"],
+                true,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+            core.DisposeRoot();
+
+            Assert.Same(CldrLocales.Ja, tables);
+            Assert.Equal("ja", locale);
+            Assert.True(use24HourFormat);
+        });
+
+    /// <summary>
+    /// When the resolution returns a locale whose tables the app did not declare, the tables are the declared ones of that
+    /// locale, else the first declared ones of its language and likely script, else the root's, under the returned locale's tag
+    /// (design §4.11, "When the replacing function returns a locale not declared").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - For each case a new core whose resolving function returns a fixed locale: "ja" with en and ja declared; "zh-TW" with
+    ///   zh-Hans and zh-Hant declared, in that order; "sr-ME" (likely script Latn) with sr (Cyrl) declared; "fr-CA" with en and ja
+    ///   declared; "xx-YY" with the en tables declared under the tag "xx" (a language the likely subtags do not have, so neither
+    ///   script can be inferred).
+    ///
+    /// Steps:
+    /// - Mount each core with a root function that reads <see cref="Localization.Data"/> and <see cref="Localization.Locale"/>.
+    ///
+    /// Expected:
+    /// - "ja": <see cref="CldrLocales.Ja"/> itself. "zh-TW": the plural rules of <see cref="CldrLocales.ZhHant"/>. "sr-ME",
+    ///   "fr-CA", and "xx-YY": the plural rules of <see cref="LocaleData.Root"/>; two scripts that cannot be inferred are not the
+    ///   same script (Issue #906). In every case the tables' locale and the locale key are the
+    ///   returned locale.
+    /// </remarks>
+    [Fact]
+    public void Mount_ALocaleNotDeclared_TakesTheTablesOfItsLanguageAndScriptOrTheRoot() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+
+            Assert.Same(CldrLocales.Ja, TablesFor("ja", [CldrLocales.En, CldrLocales.Ja]));
+            Assert.Same(CldrLocales.ZhHant.Plurals, TablesFor("zh-TW", [CldrLocales.ZhHans, CldrLocales.ZhHant]).Plurals);
+            Assert.Same(LocaleData.Root.Plurals, TablesFor("sr-ME", [CldrLocales.Sr]).Plurals);
+            Assert.Same(LocaleData.Root.Plurals, TablesFor("fr-CA", [CldrLocales.En, CldrLocales.Ja]).Plurals);
+            Assert.Same(LocaleData.Root.Plurals, TablesFor("xx-YY", [CldrLocales.En.WithLocale(Locale.Parse("xx"))]).Plurals);
+
+            LocaleData TablesFor(string tag, LocaleData[] supported)
+            {
+                Locale returned = Locale.Parse(tag);
+                (WindowCore core, _) = Connected(atlas, supported, (_, _) => returned);
+                LocaleData? tables = null;
+                Locale locale = default;
+                core.Mount(
+                    () =>
+                    {
+                        tables = Localization.Data.Use().Get();
+                        locale = Localization.Locale.Use().Get();
+                        return Box();
+                    },
+                    null,
+                    [],
+                    false,
+                    default,
+                    "WindowCoreTests",
+                    new Size(200, 100),
+                    1
+                );
+                core.DisposeRoot();
+                Assert.Equal(returned, tables!.Locale);
+                Assert.Equal(returned, locale);
+                return tables;
+            }
+        });
+
+    /// <summary>
+    /// Languages of the OS that resolve to the same locale keep the same tables, also when they are the root's under the OS's
+    /// tag: a reader of <see cref="Localization.Data"/> runs again only when the resolved locale changes.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core that supports no locale, mounted with the OS's languages "ja-JP" and a root function whose effect
+    ///   records the locale of <see cref="Localization.Data"/>.
+    ///
+    /// Steps:
+    /// - Set the OS's languages to "ja-JP, en-US", then "fr-FR".
+    ///
+    /// Expected:
+    /// - The effect recorded ja-JP and fr-FR: "ja-JP, en-US" resolves to ja-JP again and does not run it. The last tables have the
+    ///   plural rules of <see cref="LocaleData.Root"/>.
+    /// </remarks>
+    [Fact]
+    public void SetSystemLocales_TheSameResolvedLocale_KeepsTheTables() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            var seen = new List<string>();
+            IReadOnlySignal<LocaleData>? data = null;
+            core.Mount(
+                () =>
+                {
+                    IReadOnlySignal<LocaleData> tables = Localization.Data.Use();
+                    data = tables;
+                    _ = Effect.Create(() => seen.Add(tables.Get().Locale.ToLanguageTag()));
+                    return Box();
+                },
+                null,
+                ["ja-JP"],
+                false,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+
+            core.SetSystemLocales(["ja-JP", "en-US"]);
+            core.SetSystemLocales(["fr-FR"]);
+            LocaleData last = data!.Get();
+            core.DisposeRoot();
+
+            Assert.Equal(["ja-JP", "fr-FR"], seen);
+            Assert.Same(LocaleData.Root.Plurals, last.Plurals);
+        });
+
+    /// <summary>
+    /// Setting the 24-hour form changes <see cref="Localization.Use24HourFormat"/>, and its readers run again only when the value
+    /// changes; the readers of the tables do not run.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core that supports en, mounted with the 24-hour form off and a root function with two effects: one records
+    ///   the 24-hour form, the other counts its reads of <see cref="Localization.Data"/>.
+    ///
+    /// Steps:
+    /// - Set the 24-hour form off, on, on, and off.
+    ///
+    /// Expected:
+    /// - The first effect recorded off, on, off; the second ran once.
+    /// </remarks>
+    [Fact]
+    public void SetUse24HourFormat_RunsItsReadersOnlyWhenTheValueChanges() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas, [CldrLocales.En]);
+            var seen = new List<bool>();
+            int tableReads = 0;
+            core.Mount(
+                () =>
+                {
+                    IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
+                    IReadOnlySignal<LocaleData> data = Localization.Data.Use();
+                    _ = Effect.Create(() => seen.Add(use24HourFormat.Get()));
+                    _ = Effect.Create(() =>
+                    {
+                        _ = data.Get();
+                        tableReads++;
+                    });
+                    return Box();
+                },
+                null,
+                [],
+                false,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+
+            core.SetUse24HourFormat(false);
+            core.SetUse24HourFormat(true);
+            core.SetUse24HourFormat(true);
+            core.SetUse24HourFormat(false);
+            core.DisposeRoot();
+
+            Assert.Equal([false, true, false], seen);
+            Assert.Equal(1, tableReads);
+        });
+
+    /// <summary>
+    /// A 24-hour form set before the root is mounted is not kept and throws nothing: the mount takes the value it is given.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A connected core, not mounted.
+    ///
+    /// Steps:
+    /// - Set the 24-hour form on. Mount with it off and a root function that reads it.
+    ///
+    /// Expected:
+    /// - Nothing is thrown, and the root function read off.
+    /// </remarks>
+    [Fact]
+    public void SetUse24HourFormat_BeforeMount_DoesNothing() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, _) = Connected(atlas);
+            bool? read = null;
+
+            core.SetUse24HourFormat(true);
+            core.Mount(
+                () =>
+                {
+                    read = Localization.Use24HourFormat.Use().Get();
+                    return Box();
+                },
+                null,
+                [],
+                false,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+            core.DisposeRoot();
+
+            Assert.False(read);
+        });
+
     // A core with no text, connected to a window that shows, whose target and scheduler count. The atlas is the test's: the core
     // is not disposed here.
-    private static (WindowCore Core, FakeWindow Window) Connected(GlyphAtlas atlas, IReadOnlyList<Locale>? supported = null)
+    private static (WindowCore Core, FakeWindow Window) Connected(
+        GlyphAtlas atlas,
+        IReadOnlyList<LocaleData>? supported = null,
+        Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? resolve = null
+    )
     {
-        var core = new WindowCore(null, null, supported, null);
+        var core = new WindowCore(null, null, supported, resolve);
         var window = new FakeWindow();
         core.Connect(window, atlas, Gray);
         return (core, window);
