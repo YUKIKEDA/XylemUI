@@ -5,16 +5,20 @@ namespace XylemUI;
 /// <summary>
 /// The half of a window that does not depend on the OS (design §6.0, "The window core"): the tree with a root node that takes the
 /// window's size, the frames and the input, the locale keys, the OS's appearance, and the window's surface provided around the root
-/// function and its wrapper, the root scope, the first frame, and what closing the window does. A desktop window and the headless
-/// app each hold one, and give it their window tier (<see cref="IPlatformWindow"/>).
+/// function and its wrapper, the root scope, the first frame, the OS's settings given to the tree, and what closing the window
+/// does. A desktop window and the headless app each hold one, and give it their window tier (<see cref="IPlatformWindow"/>)
+/// and the app tier's settings (<see cref="IPlatformSettings"/>).
 /// </summary>
 /// <remarks>
 /// It belongs to the UI thread. A host makes it, then calls <see cref="Connect"/> once, then <see cref="Mount"/> once; the order
 /// in which the host makes its own parts around these calls is its own (design §6.0, "The order of creation"). From
-/// <see cref="Connect"/> on it owns the window and the atlas, and disposes them with itself.
+/// <see cref="Connect"/> on it owns the window and the atlas, and disposes them with itself. It follows the settings' changes from
+/// <see cref="Connect"/> until the root is disposed; the settings are the app's, and outlive it.
 /// </remarks>
 internal sealed class WindowCore : IDisposable
 {
+    private readonly IPlatformSettings _settings;
+    private readonly Action<PlatformSettingsChanges> _onSettingsChanged;
     private readonly IReadOnlyList<LocaleData>? _supportedLocales;
     private readonly Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? _resolveLocale;
     private IPlatformWindow? _window;
@@ -29,16 +33,24 @@ internal sealed class WindowCore : IDisposable
     /// Initializes a new instance of the <see cref="WindowCore"/> class: makes the tree and its root node.
     /// </summary>
     /// <param name="text">The text tools of the UI thread; <see langword="null"/> for a tree that holds no text.</param>
+    /// <param name="settings">The OS's settings of the app tier.</param>
     /// <param name="clipboard">The clipboard the text fields copy to and paste from; <see langword="null"/> for none.</param>
     /// <param name="supportedLocales">The tables of the locales the app supports; <see langword="null"/> for none.</param>
     /// <param name="resolveLocale">What resolves the app's locale; <see langword="null"/> for <see cref="Localization.Resolve"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
     public WindowCore(
         TextContext? text,
+        IPlatformSettings settings,
         IClipboardBackend? clipboard,
         IReadOnlyList<LocaleData>? supportedLocales,
         Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? resolveLocale
     )
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings;
+
+        // Made once: the core adds it to the settings' event in Connect and takes it out when the root is disposed.
+        _onSettingsChanged = OnSettingsChanged;
         _supportedLocales = supportedLocales;
         _resolveLocale = resolveLocale;
         Tree = new UiTree(text) { Clipboard = clipboard };
@@ -84,9 +96,10 @@ internal sealed class WindowCore : IDisposable
 
     /// <summary>
     /// Makes the window's frames and input from the window's target, scheduler, and pointer platform, and gives them the window's
-    /// values now: whether it shows, whether it is active, and how its text is drawn; then gives the tree the window's input method.
-    /// The frames ask the window's scheduler for a frame whenever the tree queues work. The core owns the window and the atlas from
-    /// this call on, also when it throws.
+    /// values now: whether it shows, whether it is active, and how its text is drawn; then gives the tree the window's input method
+    /// and the OS's settings now, less motion and the text fields' settings, and follows the settings' changes from here on. The
+    /// frames ask the window's scheduler for a frame whenever the tree queues work. The core owns the window and the atlas from this
+    /// call on, also when it throws.
     /// </summary>
     /// <param name="window">The window tier.</param>
     /// <param name="atlas">The glyph atlas the target draws glyphs from.</param>
@@ -109,6 +122,12 @@ internal sealed class WindowCore : IDisposable
         Frames.SetVisible(window.IsShowing);
         Input.SetActive(window.IsActive);
         Tree.SetTextInput(window.TextInput);
+
+        // The settings now and their changes (design §6.0, "The order of creation", step 6). The languages and the 24-hour form
+        // reach the locale, which Mount makes from the values at that time.
+        Tree.Animations.ReduceMotion = _settings.ReducesMotion;
+        Tree.SetTextEditing(_settings.TextEditing);
+        _settings.Changed += _onSettingsChanged;
     }
 
     /// <summary>
@@ -116,7 +135,8 @@ internal sealed class WindowCore : IDisposable
     /// the resolved locale, its tables, the OS's 24-hour form (design §4.11, "Distribution"), the OS's appearance, and the
     /// window's <see cref="Surface"/> provided, and inside them the root wrapper when there is one (design §13.2, "根で置くもの");
     /// appends the node it returned to the root node; then runs the first frame at the window's size. It is called after
-    /// <see cref="Connect"/>.
+    /// <see cref="Connect"/>. The locale is resolved against the OS's languages of the settings at this time, and the 24-hour
+    /// form is the settings' at this time.
     /// </summary>
     /// <remarks>
     /// The frame the root function's nodes asked for is the first one, which the size runs at once: without the cancel, an empty
@@ -128,8 +148,6 @@ internal sealed class WindowCore : IDisposable
     /// node; <see langword="null"/> to run the root function alone. The desktop host passes <see cref="WindowRoot.ReadWrapper"/>,
     /// and the headless app its options' wrapper.
     /// </param>
-    /// <param name="systemLocales">The tags of the OS's languages, most preferred first, which the app's locale is resolved against.</param>
-    /// <param name="use24HourFormat">Whether the OS asks for times in 24-hour form.</param>
     /// <param name="appearance">The OS's appearance now.</param>
     /// <param name="scopeName">The owner the root scope is tracked under (<see cref="ScopeTracker"/>).</param>
     /// <param name="size">The window's client size, in logical pixels.</param>
@@ -142,8 +160,6 @@ internal sealed class WindowCore : IDisposable
     public void Mount(
         Func<Element> root,
         Func<Func<Element>, Element>? wrapper,
-        IReadOnlyList<string> systemLocales,
-        bool use24HourFormat,
         SystemAppearance appearance,
         string scopeName,
         Size size,
@@ -151,7 +167,7 @@ internal sealed class WindowCore : IDisposable
     )
     {
         var windowAppearance = new WindowAppearance(WindowAppearance.Check(appearance, nameof(appearance)));
-        var locale = new WindowLocale(_supportedLocales, _resolveLocale, systemLocales, use24HourFormat);
+        var locale = new WindowLocale(_supportedLocales, _resolveLocale, _settings.UiLanguages, _settings.Use24HourFormat);
         _locale = locale;
         _appearance = windowAppearance;
         Func<Element> body = wrapper is null ? root : () => Wrap(wrapper, root);
@@ -210,25 +226,9 @@ internal sealed class WindowCore : IDisposable
     public void TextRenderingChanged(TextRenderingParameters value) => Frames.TextRendering = value;
 
     /// <summary>
-    /// Resolves the app's locale again against other languages of the OS (design §4.11, "A change of the OS"). Before
-    /// <see cref="Mount"/> it does nothing: <see cref="Mount"/> takes the languages of the OS at that time, so a change told before it
-    /// is not lost.
-    /// </summary>
-    /// <param name="tags">The tags of the OS's languages, most preferred first.</param>
-    public void SetSystemLocales(IReadOnlyList<string> tags) => _locale?.Update(tags);
-
-    /// <summary>
-    /// Sets whether the OS asks for times in 24-hour form (design §4.11, "The key of the 24-hour form"); the readers of
-    /// <see cref="Localization.Use24HourFormat"/> run again only when the value changes. Before <see cref="Mount"/> it does
-    /// nothing, as <see cref="SetSystemLocales"/>: <see cref="Mount"/> takes the value of the OS at that time.
-    /// </summary>
-    /// <param name="use24HourFormat">Whether times are in 24-hour form.</param>
-    public void SetUse24HourFormat(bool use24HourFormat) => _locale?.SetUse24HourFormat(use24HourFormat);
-
-    /// <summary>
     /// Takes another appearance of the OS (design §13.2, "置き方"): the readers of <see cref="SystemAppearance.Current"/> run again
-    /// when the value changed, and only then. Before <see cref="Mount"/> it does nothing, as <see cref="SetSystemLocales"/> does:
-    /// <see cref="Mount"/> takes the appearance of that time.
+    /// when the value changed, and only then. Before <see cref="Mount"/> it does nothing: <see cref="Mount"/> takes the appearance of
+    /// that time.
     /// </summary>
     /// <param name="value">The OS's appearance now.</param>
     /// <exception cref="ArgumentException">Only one of <see cref="SystemAppearance.HighContrast"/> and
@@ -251,14 +251,17 @@ internal sealed class WindowCore : IDisposable
     }
 
     /// <summary>
-    /// Stops the tree from asking for frames, disposes the root scope, and lets go of the images the tree's cache kept. It may be
-    /// called more than once, and before <see cref="Mount"/>. It does not cancel a frame already asked for, so that the headless
-    /// app can run the frames left after it (<c>AssertNoLeakedScopes</c>); <see cref="WindowClosed"/> and <see cref="Dispose"/>
-    /// cancel it.
+    /// Stops the tree from asking for frames and from following the OS's settings, disposes the root scope, and lets go of the
+    /// images the tree's cache kept. It may be called more than once, and before <see cref="Connect"/>. It does not cancel a frame
+    /// already asked for, so that the headless app can run the frames left after it (<c>AssertNoLeakedScopes</c>);
+    /// <see cref="WindowClosed"/> and <see cref="Dispose"/> cancel it.
     /// </summary>
     public void DisposeRoot()
     {
         Tree.FrameNeeded = null;
+
+        // The settings are the app's and outlive the window: a change after it closed reaches no tree of it.
+        _settings.Changed -= _onSettingsChanged;
         if (!_rootScope.IsNone && Scope.IsAlive(_rootScope))
         {
             Scope.Dispose(_rootScope);
@@ -319,5 +322,30 @@ internal sealed class WindowCore : IDisposable
     {
         _scheduler?.CancelFrame();
         DisposeRoot();
+    }
+
+    // A reading of the OS's settings changed the values it marks (design §6.0, "OS settings"): each goes where the tree reads it, and
+    // the values it does not mark stay. Before Mount there is no locale yet: Mount takes the languages and the 24-hour form then.
+    private void OnSettingsChanged(PlatformSettingsChanges changes)
+    {
+        if ((changes & PlatformSettingsChanges.ReducesMotion) != 0)
+        {
+            Tree.Animations.ReduceMotion = _settings.ReducesMotion;
+        }
+
+        if ((changes & PlatformSettingsChanges.TextEditing) != 0)
+        {
+            Tree.SetTextEditing(_settings.TextEditing);
+        }
+
+        if ((changes & PlatformSettingsChanges.UiLanguages) != 0)
+        {
+            _locale?.Update(_settings.UiLanguages);
+        }
+
+        if ((changes & PlatformSettingsChanges.Use24HourFormat) != 0)
+        {
+            _locale?.SetUse24HourFormat(_settings.Use24HourFormat);
+        }
     }
 }

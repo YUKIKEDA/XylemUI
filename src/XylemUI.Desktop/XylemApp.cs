@@ -53,15 +53,7 @@ public static class XylemApp
             using var app = new Win32PlatformApp();
             using var fonts = new DirectWriteFontProvider();
             using var text = new TextContext(fonts);
-            using WindowCore core = OpenWindow(
-                app,
-                text,
-                root,
-                options ?? new WindowOptions(),
-                () => app.UiLanguages,
-                () => app.Use24HourFormat,
-                show: true
-            );
+            using WindowCore core = OpenWindow(app, text, root, options ?? new WindowOptions(), show: true);
             Open(core, app);
             return app.Run();
         }
@@ -81,24 +73,13 @@ public static class XylemApp
     /// <param name="text">The text tools of the UI thread; the caller disposes them after the core.</param>
     /// <param name="root">The root function.</param>
     /// <param name="options">The window.</param>
-    /// <param name="uiLanguages">Reads the OS's languages once the window is open, for the first mount (until row PL1's PR 5).</param>
-    /// <param name="use24HourFormat">Reads whether the OS asks for times in 24-hour form once the window is open, for the first
-    /// mount (until row PL1's PR 5).</param>
     /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <returns>The window core, which owns the window; the caller disposes it.</returns>
     /// <exception cref="ArgumentException">The options' size is not a positive number, or their supported locales hold a
     /// <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the window, its renderer, or the root
     /// function failed.</exception>
-    internal static WindowCore OpenWindow(
-        IPlatformApp app,
-        TextContext text,
-        Func<Element> root,
-        WindowOptions options,
-        Func<IReadOnlyList<string>> uiLanguages,
-        Func<bool> use24HourFormat,
-        bool show
-    )
+    internal static WindowCore OpenWindow(IPlatformApp app, TextContext text, Func<Element> root, WindowOptions options, bool show)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(root);
@@ -112,7 +93,7 @@ public static class XylemApp
         WindowLocale.VerifySupported(options.SupportedLocales, nameof(options));
 
         UiThread.VerifyAccess();
-        var core = new WindowCore(text, app.Clipboard, options.SupportedLocales, options.ResolveLocale);
+        var core = new WindowCore(text, app.Settings, app.Clipboard, options.SupportedLocales, options.ResolveLocale);
         try
         {
             IPlatformWindow window = app.OpenWindow(core, options.Title, options.Width, options.Height, show);
@@ -137,8 +118,10 @@ public static class XylemApp
             // Windows' (design §13.2, "macOS と Linux").
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
+            // The root function, then the first frame at the window's size in logical pixels: the host's physical size divided by
+            // its scale (design §6.0, "The order of creation", step 7).
             var size = new Size(width / scale, height / scale);
-            core.Mount(root, WindowRoot.ReadWrapper(), uiLanguages(), use24HourFormat(), default, "XylemApp.Run", size, scale);
+            core.Mount(root, WindowRoot.ReadWrapper(), default, "XylemApp.Run", size, scale);
 
             // The tree has its root now: assistive technology that asked while the window showed gets the tree.
             window.RootMounted();

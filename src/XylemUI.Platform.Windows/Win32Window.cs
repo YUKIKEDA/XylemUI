@@ -23,6 +23,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     private const uint WmNcDestroy = WM.WM_NCDESTROY;
     private const uint WmSize = WM.WM_SIZE;
     private const uint WmSettingChange = WM.WM_SETTINGCHANGE;
+    private const uint WmSysColorChange = WM.WM_SYSCOLORCHANGE;
     private const uint WmDpiChanged = WM.WM_DPICHANGED;
     private const uint WmWindowPosChanged = WM.WM_WINDOWPOSCHANGED;
     private const uint Style = WS.WS_OVERLAPPEDWINDOW;
@@ -42,9 +43,6 @@ public sealed unsafe partial class Win32Window : IDisposable
     private int _pendingWidth;
     private int _pendingHeight;
     private Action? _raiseTextRenderingChanged;
-    private Action? _raiseReducesMotionChanged;
-    private Action? _raiseUiLanguagesChanged;
-    private Action? _raiseUse24HourFormatChanged;
     private Action? _raiseScaleChanged;
     private HMONITOR _monitor;
 
@@ -107,10 +105,6 @@ public sealed unsafe partial class Win32Window : IDisposable
             ResizeClient(hwnd, width, height);
             _monitor = MonitorFromWindow(hwnd, MONITOR.MONITOR_DEFAULTTONEAREST);
             TextRendering = TextRenderingReader(_monitor);
-            ReducesMotion = ReducesMotionReader(false);
-            UiLanguages = UiLanguagesReader();
-            Use24HourFormat = Use24HourFormatReader(false);
-            TextEditing = TextEditingReader(TextEditingSettings.Default);
             CreateTouchpad(hwnd);
             CreateDropTarget(hwnd);
         }
@@ -155,39 +149,12 @@ public sealed unsafe partial class Win32Window : IDisposable
     public event EventHandler? TextRenderingChanged;
 
     /// <summary>
-    /// Occurs on the UI thread when <see cref="ReducesMotion"/> changed, on a <c>WM_SETTINGCHANGE</c>.
+    /// Gets or sets what reads the app tier's OS settings again when the window receives <c>WM_SETTINGCHANGE</c> or
+    /// <c>WM_SYSCOLORCHANGE</c> (design §6.0, "OS settings"); <see langword="null"/> for nothing. Windows sends the two messages to
+    /// every top-level window, and none to a message-only window. It is called inside the message, after the window read how its
+    /// text is drawn again.
     /// </summary>
-    public event EventHandler? ReducesMotionChanged;
-
-    /// <summary>
-    /// Occurs on the UI thread when <see cref="UiLanguages"/> changed, on a <c>WM_SETTINGCHANGE</c>.
-    /// </summary>
-    public event EventHandler? UiLanguagesChanged;
-
-    /// <summary>
-    /// Occurs on the UI thread when <see cref="Use24HourFormat"/> changed, on a <c>WM_SETTINGCHANGE</c>.
-    /// </summary>
-    public event EventHandler? Use24HourFormatChanged;
-
-    /// <summary>
-    /// Gets the tags of the user's preferred UI languages, most preferred first (design §4.11, "The OS's languages"). Read when
-    /// the window is created and on each <c>WM_SETTINGCHANGE</c> it receives.
-    /// </summary>
-    public IReadOnlyList<string> UiLanguages { get; private set; } = [];
-
-    /// <summary>
-    /// Gets a value indicating whether the user's short time format (<c>LOCALE_SSHORTTIME</c>) shows the hours in 24-hour form: it
-    /// holds the hour pattern <c>H</c> outside single quotes (design §4.11, "The locale of the formats"). Read when the window is created and on each
-    /// <c>WM_SETTINGCHANGE</c> it receives; a read that fails keeps the value before, <see langword="false"/> at the start.
-    /// </summary>
-    public bool Use24HourFormat { get; private set; }
-
-    /// <summary>
-    /// Gets a value indicating whether Windows asks for less motion: "Animation effects" is off in the settings
-    /// (<c>SPI_GETCLIENTAREAANIMATION</c> is false). Animations then jump to their end values (design §2.14, "Reduced motion").
-    /// Read when the window is created and on each <c>WM_SETTINGCHANGE</c> it receives.
-    /// </summary>
-    public bool ReducesMotion { get; private set; }
+    internal Action? SettingsMessageReceived { get; set; }
 
     /// <summary>
     /// Gets how the window's text is drawn (design §5.0.3, "ClearType"): read for the window's monitor when the window is created,
@@ -202,23 +169,6 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// </summary>
     internal static Func<HMONITOR, TextRenderingParameters> TextRenderingReader { get; set; } =
         static monitor => Win32TextRendering.Read(monitor, isOpaque: true);
-
-    /// <summary>
-    /// Gets or sets what reads <see cref="ReducesMotion"/> from the value before it, for the tests of the change without changing a
-    /// setting of Windows.
-    /// </summary>
-    internal static Func<bool, bool> ReducesMotionReader { get; set; } = ReadReducesMotion;
-
-    /// <summary>
-    /// Gets or sets what reads <see cref="UiLanguages"/>, for the tests of the change without changing a setting of Windows.
-    /// </summary>
-    internal static Func<string[]> UiLanguagesReader { get; set; } = Win32UiLanguage.ReadAll;
-
-    /// <summary>
-    /// Gets or sets what reads <see cref="Use24HourFormat"/> from the value before it, for the tests of the change without changing
-    /// a setting of Windows.
-    /// </summary>
-    internal static Func<bool, bool> Use24HourFormatReader { get; set; } = Win32TimeFormat.ReadUse24HourFormat;
 
     /// <summary>
     /// Gets the window's scale: its monitor's DPI over 96, not rounded (1.25 at 125 %). The display list multiplies logical pixels
@@ -519,50 +469,6 @@ public sealed unsafe partial class Win32Window : IDisposable
         ReadWheelSettings();
     }
 
-    // Whether the client area's animations are off (SPI_GETCLIENTAREAANIMATION); a call that fails keeps the value before.
-    private static bool ReadReducesMotion(bool before)
-    {
-        BOOL animates;
-        return SystemParametersInfoW(SPI.SPI_GETCLIENTAREAANIMATION, 0, &animates, 0) == BOOL.FALSE ? before : animates == BOOL.FALSE;
-    }
-
-    // Each window compares with its own value: Windows sends WM_SETTINGCHANGE to every top-level window, and a value shared by the
-    // windows would be changed by the first one only, so the others would not raise the event.
-    private void ReadReducesMotionAgain()
-    {
-        bool read = ReducesMotionReader(ReducesMotion);
-        if (read != ReducesMotion)
-        {
-            ReducesMotion = read;
-            SynchronousRenderGuard.RunOrDefer(_raiseReducesMotionChanged ??= () => ReducesMotionChanged?.Invoke(this, EventArgs.Empty));
-        }
-    }
-
-    // The setting the message names is not matched (design §4.11, "A change of the OS"): the documentation does not say which
-    // name a change of the display language or of the list of languages sends.
-    private void ReadUiLanguagesAgain()
-    {
-        string[] read = UiLanguagesReader();
-        if (!read.AsSpan().SequenceEqual(UiLanguages is string[] before ? before : [.. UiLanguages]))
-        {
-            UiLanguages = read;
-            SynchronousRenderGuard.RunOrDefer(_raiseUiLanguagesChanged ??= () => UiLanguagesChanged?.Invoke(this, EventArgs.Empty));
-        }
-    }
-
-    // The setting the message names is not matched: a change of the time format in Windows' regional settings sends "intl"
-    // (design §4.11, "A change of the OS"), and the other settings are read again on every message too.
-    private void ReadUse24HourFormatAgain()
-    {
-        bool read = Use24HourFormatReader(Use24HourFormat);
-        if (read != Use24HourFormat)
-        {
-            Use24HourFormat = read;
-            _raiseUse24HourFormatChanged ??= () => Use24HourFormatChanged?.Invoke(this, EventArgs.Empty);
-            SynchronousRenderGuard.RunOrDefer(_raiseUse24HourFormatChanged);
-        }
-    }
-
     // Every message for every XylemUI window enters here. No managed exception may leave this method (Invariant 13).
     [UnmanagedCallersOnly]
     private static LRESULT WindowProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
@@ -626,13 +532,11 @@ public sealed unsafe partial class Win32Window : IDisposable
             case WmSettingChange:
                 ReadTextRendering(_monitor);
                 ReadWheelSettings();
-                ReadReducesMotionAgain();
-                ReadTextEditingAgain();
-                ReadUiLanguagesAgain();
-                ReadUse24HourFormatAgain();
+                SettingsMessageReceived?.Invoke();
                 return false;
             case WmSysColorChange:
-                ReadTextEditingAgain();
+                // The selection's colors are system colors (design §4.9, "Drawing the selection").
+                SettingsMessageReceived?.Invoke();
                 return false;
             case WmDpiChanged:
                 ChangeScale(hwnd, wParam, (RECT*)lParam);

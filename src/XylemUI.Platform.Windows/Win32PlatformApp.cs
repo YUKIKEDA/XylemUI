@@ -1,8 +1,9 @@
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// The app tier of the Windows host (design §6.0): the UI thread's message loop, its dispatcher, OLE, the clipboard, and the window
-/// it opens (<see cref="Win32PlatformWindow"/>), one at a time until row MW1. Making it initializes OLE on the UI thread, and sets
+/// The app tier of the Windows host (design §6.0): the UI thread's message loop, its dispatcher, OLE, the OS's settings, the
+/// clipboard, and the window it opens (<see cref="Win32PlatformWindow"/>), one at a time until row MW1. Making it initializes OLE on
+/// the UI thread, and sets
 /// the loop's dispatcher as <see cref="UiDispatcher.Current"/> and as the thread's synchronization context; disposing it puts back
 /// the dispatcher and the context it replaced, and uninitializes OLE.
 /// </summary>
@@ -14,6 +15,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
 {
     private readonly IUiDispatcher? _previousDispatcher;
     private readonly SynchronizationContext? _previousContext;
+    private readonly Win32PlatformSettings _settings;
     private Win32PlatformWindow? _window;
     private bool _disposed;
 
@@ -30,6 +32,9 @@ internal sealed class Win32PlatformApp : IPlatformApp
     {
         // Checks the thread first, so that a thread that is not the UI thread throws with OLE untouched.
         Dispatcher = Win32MessageLoop.Dispatcher;
+
+        // Reading Windows' settings changes nothing, so it comes before what a failure would have to put back.
+        _settings = new Win32PlatformSettings();
 
         // Before the first window, which makes its DirectManipulation viewport with COM and registers its drop target with OLE
         // (design §7, "Touch and pen", I1c; "Drag and drop"). It throws before the dispatcher and the context change, so a
@@ -48,25 +53,18 @@ internal sealed class Win32PlatformApp : IPlatformApp
     public UiDispatcher Dispatcher { get; }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Read when the host is made, and again on each <c>WM_SETTINGCHANGE</c> and <c>WM_SYSCOLORCHANGE</c> the host's window receives.
+    /// </remarks>
+    public IPlatformSettings Settings => _settings;
+
+    /// <inheritdoc />
     public IClipboardBackend Clipboard { get; } = new Win32Clipboard();
 
     /// <summary>
     /// Gets a value indicating whether the windows the host opens draw with the WARP software rasterizer, for the tests.
     /// </summary>
     internal bool UseWarp { get; init; }
-
-    /// <summary>
-    /// Gets the tags of the OS's languages, most preferred first, as the open window read them; none while no window is open. The
-    /// app mounts its root with them until the OS's settings become one object of the app tier (row PL1, PR 5; Issue #928).
-    /// </summary>
-    internal IReadOnlyList<string> UiLanguages => _window?.UiLanguages ?? [];
-
-    /// <summary>
-    /// Gets a value indicating whether the user's short time format shows the hours in 24-hour form, as the open window read it;
-    /// <see langword="false"/> while no window is open. The app mounts its root with it until the OS's settings become one object
-    /// of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
-    /// </summary>
-    internal bool Use24HourFormat => _window?.Use24HourFormat ?? false;
 
     /// <inheritdoc />
     /// <remarks>
@@ -82,7 +80,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
             throw new InvalidOperationException("A window of the app is open: a second window comes with row MW1 (design §6.0).");
         }
 
-        _window = new Win32PlatformWindow(core, title, width, height, show, UseWarp, () => _window = null);
+        _window = new Win32PlatformWindow(core, _settings, title, width, height, show, UseWarp, () => _window = null);
         return _window;
     }
 

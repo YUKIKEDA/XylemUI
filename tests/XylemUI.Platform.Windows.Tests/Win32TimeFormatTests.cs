@@ -5,8 +5,8 @@ using static TerraFX.Interop.Windows.Windows;
 namespace XylemUI.Platform.Windows.Tests;
 
 // Windows' 24-hour form (row LC2, design §4.11, "The locale of the formats" and "The key of the 24-hour form"): whether the user's
-// short time format holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the window is created and on each
-// WM_SETTINGCHANGE.
+// short time format holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the app tier's settings are
+// made and on each WM_SETTINGCHANGE a window of the host receives.
 [Collection(UiThreadGroup.Name)]
 public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
 {
@@ -108,51 +108,48 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
     }
 
     /// <summary>
-    /// On <c>WM_SETTINGCHANGE</c> each window reads the 24-hour form again and raises its event when the value changed, and only
-    /// then.
+    /// On <c>WM_SETTINGCHANGE</c> to any window of the host, the app tier's settings read the 24-hour form again and tell a change
+    /// once, when the value changed, and only then.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A reader set by the test that returns the 12-hour form; two hidden windows made with it, and a handler on each that counts
-    ///   the event. The reader is put back after the test.
+    /// - A reader set by the test that returns the 12-hour form; settings made with it; two hidden windows whose setting messages
+    ///   read the settings again, and a handler that records the settings' notices. The reader is put back after the test.
     ///
     /// Steps:
     /// - Send <c>WM_SETTINGCHANGE</c> to both windows; make the reader return the 24-hour form and send it to both; send it to
     ///   both once more.
     ///
     /// Expected:
-    /// - Both windows start in the 12-hour form. No event after the first round; one event from each window after the second,
-    ///   and both hold the 24-hour form; no new event after the third.
+    /// - The settings start in the 12-hour form. No notice after the first round; one notice after the second, marked as the
+    ///   24-hour form only, and the settings hold the 24-hour form; no new notice after the third.
     /// </remarks>
     [Fact]
-    public void SettingChange_EachWindowReadsAgainAndRaisesWhenChanged() =>
+    public void SettingChange_TwoWindows_TellsAChangeOnce() =>
         ui.Invoke(() =>
         {
-            Func<bool, bool> previous = Win32Window.Use24HourFormatReader;
+            Func<bool, bool> previous = Win32PlatformSettings.Use24HourFormatReader;
             try
             {
                 bool use24HourForm = false;
-                Win32Window.Use24HourFormatReader = _ => use24HourForm;
-                using var first = new Win32Window("time format 1", 200, 100);
-                using var second = new Win32Window("time format 2", 200, 100);
-                (bool, bool) start = (first.Use24HourFormat, second.Use24HourFormat);
-                int firstRaised = 0;
-                int secondRaised = 0;
-                first.Use24HourFormatChanged += (_, _) => firstRaised++;
-                second.Use24HourFormatChanged += (_, _) => secondRaised++;
+                Win32PlatformSettings.Use24HourFormatReader = _ => use24HourForm;
+                var settings = new Win32PlatformSettings();
+                using var first = new Win32Window("time format 1", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                using var second = new Win32Window("time format 2", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                bool start = settings.Use24HourFormat;
+                var notices = new List<PlatformSettingsChanges>();
+                settings.Changed += notices.Add;
 
                 Send();
-                (int, int) same = (firstRaised, secondRaised);
+                int same = notices.Count;
                 use24HourForm = true;
                 Send();
-                (int, int) changed = (firstRaised, secondRaised);
                 Send();
 
-                Assert.Equal((false, false), start);
-                Assert.Equal((0, 0), same);
-                Assert.Equal((1, 1), changed);
-                Assert.Equal((1, 1), (firstRaised, secondRaised));
-                Assert.Equal((true, true), (first.Use24HourFormat, second.Use24HourFormat));
+                Assert.False(start);
+                Assert.Equal(0, same);
+                Assert.Equal([PlatformSettingsChanges.Use24HourFormat], notices);
+                Assert.True(settings.Use24HourFormat);
 
                 void Send()
                 {
@@ -162,47 +159,48 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
             }
             finally
             {
-                Win32Window.Use24HourFormatReader = previous;
+                Win32PlatformSettings.Use24HourFormatReader = previous;
             }
         });
 
     /// <summary>
-    /// A read that fails on <c>WM_SETTINGCHANGE</c> keeps the window's value before: the window gives the reader its own value,
+    /// A read that fails on <c>WM_SETTINGCHANGE</c> keeps the settings' value before: the settings give the reader their own value,
     /// which a failed read returns.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A reader set by the test that returns the 24-hour form; a hidden window made with it, and a handler that counts the event.
-    ///   The reader is put back after the test.
+    /// - A reader set by the test that returns the 24-hour form; settings made with it; a hidden window whose setting messages read
+    ///   them again, and a handler that counts the settings' notices. The reader is put back after the test.
     ///
     /// Steps:
     /// - Make the reader return the value it is given, as <see cref="Win32TimeFormat.ReadUse24HourFormat"/> does when
     ///   <c>GetLocaleInfoEx</c> fails; send <c>WM_SETTINGCHANGE</c>.
     ///
     /// Expected:
-    /// - The window is still in the 24-hour form, and no event was raised.
+    /// - The settings are still in the 24-hour form, and no notice was raised.
     /// </remarks>
     [Fact]
     public void SettingChange_AReadThatFails_KeepsTheValueBefore() =>
         ui.Invoke(() =>
         {
-            Func<bool, bool> previous = Win32Window.Use24HourFormatReader;
+            Func<bool, bool> previous = Win32PlatformSettings.Use24HourFormatReader;
             try
             {
-                Win32Window.Use24HourFormatReader = static _ => true;
-                using var window = new Win32Window("time format kept", 200, 100);
+                Win32PlatformSettings.Use24HourFormatReader = static _ => true;
+                var settings = new Win32PlatformSettings();
+                using var window = new Win32Window("time format kept", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
                 int raised = 0;
-                window.Use24HourFormatChanged += (_, _) => raised++;
+                settings.Changed += _ => raised++;
 
-                Win32Window.Use24HourFormatReader = static before => before;
+                Win32PlatformSettings.Use24HourFormatReader = static before => before;
                 _ = SendMessageW(window.Hwnd, WM.WM_SETTINGCHANGE, default, default);
 
-                Assert.True(window.Use24HourFormat);
+                Assert.True(settings.Use24HourFormat);
                 Assert.Equal(0, raised);
             }
             finally
             {
-                Win32Window.Use24HourFormatReader = previous;
+                Win32PlatformSettings.Use24HourFormatReader = previous;
             }
         });
 
