@@ -3,83 +3,79 @@ using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Platform.Windows.Tests;
 
-// Whether Windows asks for less motion (design §2.14, "Reduced motion", row AN1): the value a new window reads, and reading it again
-// when a setting of Windows changes. No test changes a setting of Windows: the reading again uses a reader the test sets.
+// Whether Windows asks for less motion (design §2.14, "Reduced motion", row AN1): the value the app tier's settings read, and reading
+// it again when a window of the host receives WM_SETTINGCHANGE (design §6.0, "OS settings"). No test changes a setting of Windows: the
+// reading again uses a reader the test sets.
 [Collection(UiThreadGroup.Name)]
 public sealed class ReducedMotionTests(UiThreadFixture ui)
 {
     /// <summary>
-    /// A new window reads whether the client area's animations are off.
+    /// New settings read whether the client area's animations are off.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A hidden window.
+    /// - None.
     ///
     /// Steps:
-    /// - Read the window's <see cref="Win32Window.ReducesMotion"/>, and <c>SPI_GETCLIENTAREAANIMATION</c> straight from
-    ///   <c>SystemParametersInfoW</c>.
+    /// - Make the settings; read their <see cref="Win32PlatformSettings.ReducesMotion"/>, and <c>SPI_GETCLIENTAREAANIMATION</c>
+    ///   straight from <c>SystemParametersInfoW</c>.
     ///
     /// Expected:
-    /// - The window reduces motion exactly when the setting says the client area does not animate.
+    /// - The settings reduce motion exactly when the setting says the client area does not animate.
     /// </remarks>
     [Fact]
-    public unsafe void ReducesMotion_NewWindow_IsTheSetting() =>
+    public unsafe void ReducesMotion_NewSettings_IsTheSetting() =>
         ui.Invoke(() =>
         {
-            using var window = new Win32Window("reduced motion", 200, 100);
+            var settings = new Win32PlatformSettings();
             BOOL animates;
 
             Assert.NotEqual(BOOL.FALSE, SystemParametersInfoW(SPI.SPI_GETCLIENTAREAANIMATION, 0, &animates, 0));
-            Assert.Equal(animates == BOOL.FALSE, window.ReducesMotion);
+            Assert.Equal(animates == BOOL.FALSE, settings.ReducesMotion);
         });
 
     /// <summary>
-    /// Each window that receives <c>WM_SETTINGCHANGE</c> reads the value again and raises
-    /// <see cref="Win32Window.ReducesMotionChanged"/> when its own value changed, so every window follows the setting, not only
-    /// the first one Windows sends the message to.
+    /// The settings are one object for the windows: Windows sends <c>WM_SETTINGCHANGE</c> to every top-level window, the first
+    /// window to receive it reads the change and the settings tell it once, marked as less motion, and the others read no change.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Two hidden windows, a handler on each that counts the event, and a reader set by the test that returns the opposite of the
-    ///   value the windows read when they were created. The reader is put back after the test.
+    /// - Settings, two hidden windows whose setting messages read them again, a handler that records the settings' notices, and a
+    ///   reader set by the test that returns the opposite of the value the settings read when they were made. The reader is put
+    ///   back after the test.
     ///
     /// Steps:
     /// - Send <c>WM_SETTINGCHANGE</c> to the first window, then to the second; then send it to both again.
     ///
     /// Expected:
-    /// - After the first two messages: both windows hold the reader's value, and each raised the event once. After the second
-    ///   round: no new event.
+    /// - One notice, marked as less motion only, and the settings hold the reader's value.
     /// </remarks>
     [Fact]
-    public void SettingChange_EachWindowReadsAgainAndRaisesWhenChanged() =>
+    public void SettingChange_TwoWindows_TellsTheChangeOnce() =>
         ui.Invoke(() =>
         {
-            Func<bool, bool> previous = Win32Window.ReducesMotionReader;
+            Func<bool, bool> previous = Win32PlatformSettings.ReducesMotionReader;
             try
             {
-                using var first = new Win32Window("reduced motion 1", 200, 100);
-                using var second = new Win32Window("reduced motion 2", 200, 100);
-                bool next = !first.ReducesMotion;
-                int firstRaised = 0;
-                int secondRaised = 0;
-                first.ReducesMotionChanged += (_, _) => firstRaised++;
-                second.ReducesMotionChanged += (_, _) => secondRaised++;
-                Win32Window.ReducesMotionReader = _ => next;
+                var settings = new Win32PlatformSettings();
+                using var first = new Win32Window("reduced motion 1", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                using var second = new Win32Window("reduced motion 2", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                bool next = !settings.ReducesMotion;
+                var notices = new List<PlatformSettingsChanges>();
+                settings.Changed += notices.Add;
+                Win32PlatformSettings.ReducesMotionReader = _ => next;
 
                 _ = SendMessageW(first.Hwnd, WM.WM_SETTINGCHANGE, default, default);
                 _ = SendMessageW(second.Hwnd, WM.WM_SETTINGCHANGE, default, default);
-                (int, int) once = (firstRaised, secondRaised);
                 _ = SendMessageW(first.Hwnd, WM.WM_SETTINGCHANGE, default, default);
                 _ = SendMessageW(second.Hwnd, WM.WM_SETTINGCHANGE, default, default);
 
-                Assert.Equal((1, 1), once);
-                Assert.Equal((1, 1), (firstRaised, secondRaised));
-                Assert.Equal(next, first.ReducesMotion);
-                Assert.Equal(next, second.ReducesMotion);
+                Assert.Equal([PlatformSettingsChanges.ReducesMotion], notices);
+                Assert.Equal(next, settings.ReducesMotion);
             }
             finally
             {
-                Win32Window.ReducesMotionReader = previous;
+                Win32PlatformSettings.ReducesMotionReader = previous;
             }
         });
 }

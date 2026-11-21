@@ -5,27 +5,36 @@ using static XylemUI.Tests.FrameDoubles;
 namespace XylemUI.Tests;
 
 // The window core (row PL1, design §6.0, "The window core"): the half of a window that a desktop window and the headless app
-// share. It connects to a window tier (IPlatformWindow) and takes its values now, the root function runs in the root scope with the
-// tree current and the locale provided, the first frame runs at the size given, the host's resize and text rendering reach the
-// frames, and closing and disposing cancel the frame, dispose the root, and, for disposing, the window and the atlas it owns.
+// share. It connects to a window tier (IPlatformWindow) and takes its values now and the OS's settings now, the root function runs in
+// the root scope with the tree current and the locale provided, the first frame runs at the size given, the host's resize and text
+// rendering reach the frames, a notice of the app tier's settings (IPlatformSettings) reaches the tree once, and closing and disposing
+// cancel the frame, dispose the root, stop following the settings, and, for disposing, dispose the window and the atlas it owns.
 [Collection(UiThreadGroup.Name)]
 public sealed class WindowCoreTests(UiThreadFixture ui)
 {
+    private const PlatformSettingsChanges AllChanges =
+        PlatformSettingsChanges.ReducesMotion
+        | PlatformSettingsChanges.TextEditing
+        | PlatformSettingsChanges.UiLanguages
+        | PlatformSettingsChanges.Use24HourFormat;
+
     private static readonly Color Gray = Color.FromRgb(0x808080);
     private static readonly Color Red = Color.FromRgb(0xCC3333);
 
     /// <summary>
-    /// Mount runs the root function with the core's tree as the current tree and the resolved locale provided, appends its node to
-    /// the root node as the start of a route with no focus, puts the tree back as it was, and runs one first frame at the logical
-    /// size and scale given on the window's target: the frame the root function's nodes asked for is cancelled.
+    /// Mount runs the root function with the core's tree as the current tree and the locale resolved against the settings'
+    /// languages provided, appends its node to the root node as the start of a route with no focus, puts the tree back as it was,
+    /// and runs one first frame at the logical size and scale given on the window's target: the frame the root function's nodes
+    /// asked for is cancelled.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A core that supports en and ja, connected to a window whose target and scheduler count.
+    /// - Settings whose OS languages are "ja-JP"; a core with them that supports en and ja, connected to a window whose target and
+    ///   scheduler count.
     ///
     /// Steps:
-    /// - Mount, with the OS's languages "ja-JP" and a size of 200 x 100 at a scale of 2, a root function that records the current
-    ///   tree and the locale and returns a box.
+    /// - Mount, with a size of 200 x 100 at a scale of 2, a root function that records the current tree and the locale and returns
+    ///   a box.
     ///
     /// Expected:
     /// - The root function saw the core's tree and "ja". The box's parent is the root node, and it is the tree's key root. The
@@ -37,7 +46,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, FakeWindow window) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"] };
+            (WindowCore core, FakeWindow window) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
             UiTree? before = UiTree.Current;
             UiTree? seenTree = null;
             string? seenLocale = null;
@@ -51,8 +61,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return box = Box();
                 },
                 null,
-                ["ja-JP"],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -111,8 +119,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                             _ => Child(),
                         },
                     null,
-                    [],
-                    false,
                     default,
                     "WindowCoreTests",
                     new Size(200, 100),
@@ -126,21 +132,25 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
 
     /// <summary>
     /// Connect takes the window's values now (design §6.0, "The order of creation", step 6): whether it shows, whether it is active,
-    /// and how its text is drawn; and gives the tree the window's input method.
+    /// and how its text is drawn; gives the tree the window's input method; and gives the tree the OS's settings now: less motion and
+    /// the text fields' settings.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A window that does not show, is active, draws text with the defaults but a gamma of 2.2, and has an input method.
+    /// - A window that does not show, is active, draws text with the defaults but a gamma of 2.2, and has an input method. Settings
+    ///   that ask for less motion and a caret 3 wide.
     ///
     /// Steps:
-    /// - Connect a core to it. Give a new node of the tree a background, which asks for a frame.
+    /// - Make a core with the settings and connect it to the window. Give a new node of the tree a background, which asks for a
+    ///   frame.
     ///
     /// Expected:
     /// - The tree's focus sees the window active; the frames draw text as the window does; the tree's input method is the window's.
+    /// - The tree reduces motion, and its text fields' caret is 3 wide.
     /// - The scheduler holds no frame: a window that does not show only remembers the frame asked for.
     /// </remarks>
     [Fact]
-    public void Connect_TakesTheWindowsValuesNow() =>
+    public void Connect_TakesTheWindowsValuesAndTheSettingsNow() =>
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
@@ -152,7 +162,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                 TextRendering = rendering,
                 TextInput = new NoInputMethod(),
             };
-            var core = new WindowCore(null, null, null, null);
+            var settings = new FakeSettings { ReducesMotion = true, TextEditing = TextEditingSettings.Default with { CaretWidth = 3 } };
+            var core = new WindowCore(null, settings, null, null, null);
 
             core.Connect(window, atlas, Gray);
             NodeHandle node = core.Tree.CreateNode(new LayoutStyle());
@@ -162,32 +173,37 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             Assert.True(core.Tree.Focus.IsWindowActive);
             Assert.Equal(rendering, core.Frames.TextRendering);
             Assert.Same(window.TextInput, core.Tree.TextInput);
+            Assert.True(core.Tree.Animations.ReduceMotion);
+            Assert.Equal(3f, core.Tree.TextEditing.CaretWidth);
             Assert.False(window.Scheduler.Pending);
             core.DisposeRoot();
         });
 
     /// <summary>
-    /// The clipboard given to the core is the one its tree's text fields copy to and paste from (design §6.0, "Headless").
+    /// The clipboard given to the core is the one its tree's text fields copy to and paste from (design §6.0, "Headless"); a core
+    /// without the app tier's settings is refused.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A clipboard.
+    /// - A clipboard and settings.
     ///
     /// Steps:
-    /// - Make a core with it.
+    /// - Make a core with them. Make a core with no settings.
     ///
     /// Expected:
-    /// - The tree's clipboard is that clipboard.
+    /// - The first tree's clipboard is that clipboard. The second throws <see cref="ArgumentNullException"/> for the settings.
     /// </remarks>
     [Fact]
-    public void Constructor_GivesTheTreeTheClipboard() =>
+    public void Constructor_GivesTheTreeTheClipboard_AndNeedsTheSettings() =>
         ui.Invoke(() =>
         {
             var clipboard = new NoClipboard();
 
-            var core = new WindowCore(null, clipboard, null, null);
+            var core = new WindowCore(null, new FakeSettings(), clipboard, null, null);
+            ArgumentNullException thrown = Assert.Throws<ArgumentNullException>(() => new WindowCore(null, null!, clipboard, null, null));
 
             Assert.Same(clipboard, core.Tree.Clipboard);
+            Assert.Equal("settings", thrown.ParamName);
         });
 
     /// <summary>
@@ -210,7 +226,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
             (WindowCore core, FakeWindow window) = Connected(atlas);
-            core.Mount(Box, null, [], false, default, "WindowCoreTests", new Size(200, 100), 1);
+            core.Mount(Box, null, default, "WindowCoreTests", new Size(200, 100), 1);
             int presents = window.Target.Presents;
 
             core.Resize(new Size(150, 50), 2);
@@ -283,8 +299,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return box = Box();
                 },
                 null,
-                [],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -331,12 +345,12 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             var order = new List<string>();
             var atlas = new GlyphAtlas(() => new DisposalGlyphs(order), threads: 1);
             var window = new FakeWindow(order);
-            var core = new WindowCore(null, null, null, null);
+            var core = new WindowCore(null, new FakeSettings(), null, null, null);
             core.Connect(window, atlas, Gray);
             int closed = 0;
             core.Closed += (_, _) => closed++;
             Element box = default;
-            core.Mount(() => box = Box(), null, [], false, default, "WindowCoreTests", new Size(200, 100), 1);
+            core.Mount(() => box = Box(), null, default, "WindowCoreTests", new Size(200, 100), 1);
             core.Tree.SetBackground(box.Node, new Paint(Red));
 
             core.Dispose();
@@ -372,7 +386,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             {
                 TextRendering = TextRenderingParameters.Default with { Coverage = GlyphCoverage.Rgb, IsAliased = true },
             };
-            var core = new WindowCore(null, null, null, null);
+            var core = new WindowCore(null, new FakeSettings(), null, null, null);
 
             _ = Assert.Throws<ArgumentException>(() => core.Connect(window, atlas, Gray));
             core.Dispose();
@@ -410,8 +424,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return box = Box();
                 },
                 null,
-                [],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -448,7 +460,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
     public void DisposeRoot_BeforeConnect_DoesNothing() =>
         ui.Invoke(() =>
         {
-            var core = new WindowCore(null, null, null, null);
+            var core = new WindowCore(null, new FakeSettings(), null, null, null);
 
             core.DisposeRoot();
             core.Dispose();
@@ -457,36 +469,228 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// Languages of the OS told before the root is mounted are not kept and throw nothing: the mount takes the ones it is given.
+    /// One notice of the settings changes, once, each value it marks, and no value it does not mark (design §6.0, "OS settings"):
+    /// less motion and the text fields' settings in the tree, the languages through the locale, and the 24-hour form.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A connected core that supports en and ja, not mounted.
+    /// - Settings with no less motion, the default text fields' settings, the languages "ja-JP", and the 12-hour form. A connected
+    ///   core with them that supports en and ja, mounted with a root function whose effects record the locale and the 24-hour form.
     ///
     /// Steps:
-    /// - Set the OS's languages to "en-GB". Mount with the OS's languages "ja-JP" and a root function that reads the locale.
+    /// - Change all four values of the settings: less motion, a caret 3 wide, "en-US", and the 24-hour form. Tell a notice that
+    ///   marks less motion only; read the tree. Tell one that marks the other three.
     ///
     /// Expected:
-    /// - Nothing is thrown, and the root function read ja.
+    /// - After the first notice: the tree reduces motion; its caret is 1 wide; the effects recorded only ja and off.
+    /// - After the second: the caret is 3 wide; the effects recorded ja then en, and off then on, each once more.
     /// </remarks>
     [Fact]
-    public void SetSystemLocales_BeforeMount_DoesNothing() =>
+    public void SettingsChanged_OneNotice_ChangesEachMarkedValueOnce() =>
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
-            string? read = null;
-
-            core.SetSystemLocales(["en-GB"]);
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"] };
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
+            var locales = new List<string>();
+            var forms = new List<bool>();
             core.Mount(
                 () =>
                 {
-                    read = Localization.Locale.Use().Get().ToLanguageTag();
+                    IReadOnlySignal<Locale> locale = Localization.Locale.Use();
+                    IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
+                    _ = Effect.Create(() => locales.Add(locale.Get().ToLanguageTag()));
+                    _ = Effect.Create(() => forms.Add(use24HourFormat.Get()));
                     return Box();
                 },
                 null,
-                ["ja-JP"],
-                false,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+            settings.ReducesMotion = true;
+            settings.TextEditing = TextEditingSettings.Default with { CaretWidth = 3 };
+            settings.UiLanguages = ["en-US"];
+            settings.Use24HourFormat = true;
+
+            settings.Tell(PlatformSettingsChanges.ReducesMotion);
+            bool reducedAfterFirst = core.Tree.Animations.ReduceMotion;
+            float caretAfterFirst = core.Tree.TextEditing.CaretWidth;
+            string[] localesAfterFirst = [.. locales];
+            bool[] formsAfterFirst = [.. forms];
+            settings.Tell(PlatformSettingsChanges.TextEditing | PlatformSettingsChanges.UiLanguages | PlatformSettingsChanges.Use24HourFormat);
+            core.DisposeRoot();
+
+            Assert.True(reducedAfterFirst);
+            Assert.Equal(1f, caretAfterFirst);
+            Assert.Equal(["ja"], localesAfterFirst);
+            Assert.Equal([false], formsAfterFirst);
+            Assert.Equal(3f, core.Tree.TextEditing.CaretWidth);
+            Assert.Equal(["ja", "en"], locales);
+            Assert.Equal([false, true], forms);
+        });
+
+    /// <summary>
+    /// A marked value whose giving throws does not stop the others: every marked value is given, and the notice then throws that
+    /// exception itself.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with no less motion, the languages "ja-JP", and the 12-hour form. A connected core with them that supports en and
+    ///   ja, mounted with a root function whose effects record the locale and the 24-hour form.
+    ///
+    /// Steps:
+    /// - Make the settings ask for less motion, "en-US", and the 24-hour form, and make reading their text fields' settings throw
+    ///   a <see cref="FormatException"/>. Tell one notice that marks all four values.
+    ///
+    /// Expected:
+    /// - The notice throws that exception itself. The tree reduces motion (given before the throw); the effects recorded ja then
+    ///   en, and off then on (given after it).
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_OneValueThrows_GivesTheOthers_ThenThrowsIt() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"] };
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
+            var locales = new List<string>();
+            var forms = new List<bool>();
+            MountRecording(core, locales, forms);
+            var error = new FormatException("The text fields' settings throw.");
+            settings.ReducesMotion = true;
+            settings.UiLanguages = ["en-US"];
+            settings.Use24HourFormat = true;
+            settings.TextEditingError = error;
+
+            FormatException thrown = Assert.Throws<FormatException>(() => settings.Tell(AllChanges));
+            settings.TextEditingError = null;
+            bool reduced = core.Tree.Animations.ReduceMotion;
+            core.DisposeRoot();
+
+            Assert.Same(error, thrown);
+            Assert.True(reduced);
+            Assert.Equal(["ja", "en"], locales);
+            Assert.Equal([false, true], forms);
+        });
+
+    /// <summary>
+    /// Two marked values whose giving throws do not stop the others either, and the notice then throws an
+    /// <see cref="AggregateException"/> with both exceptions, in the order the values are given.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with no less motion and the 12-hour form. A connected core with them that supports en, mounted with a root
+    ///   function whose effect records the 24-hour form.
+    ///
+    /// Steps:
+    /// - Make the settings ask for less motion and the 24-hour form, and make reading their text fields' settings throw a
+    ///   <see cref="FormatException"/> and reading their languages throw an <see cref="ArgumentException"/>. Tell one notice that
+    ///   marks all four values.
+    ///
+    /// Expected:
+    /// - The notice throws an <see cref="AggregateException"/> whose inner exceptions are the format exception, then the argument
+    ///   exception. The tree reduces motion; the effect recorded off then on.
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_TwoValuesThrow_GivesTheOthers_ThenThrowsBoth() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings();
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En]);
+            var locales = new List<string>();
+            var forms = new List<bool>();
+            MountRecording(core, locales, forms);
+            var textEditingError = new FormatException("The text fields' settings throw.");
+            var languagesError = new ArgumentException("The languages throw.");
+            settings.ReducesMotion = true;
+            settings.Use24HourFormat = true;
+            settings.TextEditingError = textEditingError;
+            settings.UiLanguagesError = languagesError;
+
+            AggregateException thrown = Assert.Throws<AggregateException>(() => settings.Tell(AllChanges));
+            settings.TextEditingError = null;
+            settings.UiLanguagesError = null;
+            bool reduced = core.Tree.Animations.ReduceMotion;
+            core.DisposeRoot();
+
+            Assert.Equal<Exception>([textEditingError, languagesError], thrown.InnerExceptions);
+            Assert.True(reduced);
+            Assert.Equal([false, true], forms);
+        });
+
+    /// <summary>
+    /// The settings are the app's and outlive the window: once the window closed, the core no longer follows them, and a notice
+    /// reaches nothing of it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with no less motion; a connected core with them, mounted with a box.
+    ///
+    /// Steps:
+    /// - Read whether the settings have a handler. Tell the core the window closed. Make the settings ask for less motion, and tell
+    ///   a notice that marks it.
+    ///
+    /// Expected:
+    /// - The settings had a handler before the close and have none after; the tree does not reduce motion.
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_AfterTheWindowClosed_ReachesNothing() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings();
+            (WindowCore core, _) = Connected(atlas, settings);
+            core.Mount(Box, null, default, "WindowCoreTests", new Size(200, 100), 1);
+            bool followedBefore = settings.HasHandlers;
+
+            core.WindowClosed();
+            settings.ReducesMotion = true;
+            settings.Tell(PlatformSettingsChanges.ReducesMotion);
+
+            Assert.True(followedBefore);
+            Assert.False(settings.HasHandlers);
+            Assert.False(core.Tree.Animations.ReduceMotion);
+        });
+
+    /// <summary>
+    /// Notices of the languages and the 24-hour form before the root is mounted throw nothing, and Mount takes the settings' values
+    /// at that time.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with the languages "en-GB" and the 24-hour form; a connected core with them that supports en and ja, not mounted.
+    ///
+    /// Steps:
+    /// - Tell a notice that marks the languages and the 24-hour form. Make the settings' languages "ja-JP" and the form 12-hour,
+    ///   with no notice. Mount with a root function that reads the locale and the 24-hour form.
+    ///
+    /// Expected:
+    /// - Nothing is thrown; the root function read ja and the 12-hour form.
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_BeforeMount_MountTakesTheValuesThen() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings { UiLanguages = ["en-GB"], Use24HourFormat = true };
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
+            string? locale = null;
+            bool? use24HourFormat = null;
+
+            settings.Tell(PlatformSettingsChanges.UiLanguages | PlatformSettingsChanges.Use24HourFormat);
+            settings.UiLanguages = ["ja-JP"];
+            settings.Use24HourFormat = false;
+            core.Mount(
+                () =>
+                {
+                    locale = Localization.Locale.Use().Get().ToLanguageTag();
+                    use24HourFormat = Localization.Use24HourFormat.Use().Get();
+                    return Box();
+                },
+                null,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -494,7 +698,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             );
             core.DisposeRoot();
 
-            Assert.Equal("ja", read);
+            Assert.Equal("ja", locale);
+            Assert.False(use24HourFormat);
         });
 
     /// <summary>
@@ -502,21 +707,22 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A connected core that supports en and ja, mounted with the OS's languages "ja-JP" and a root function whose effect records
-    ///   the locale.
+    /// - Settings with the languages "ja-JP"; a connected core with them that supports en and ja, mounted with a root function
+    ///   whose effect records the locale.
     ///
     /// Steps:
-    /// - Set the OS's languages to "en-GB", then "en-US", then "ko-KR, ja-JP".
+    /// - Make the languages "en-GB", then "en-US", then "ko-KR, ja-JP", telling a notice marked with the languages after each.
     ///
     /// Expected:
     /// - The effect recorded ja, en, ja: "en-US" resolves to en again and does not run it.
     /// </remarks>
     [Fact]
-    public void SetSystemLocales_ResolvesTheLocaleAgain() =>
+    public void SettingsChanged_Languages_ResolveTheLocaleAgain() =>
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"] };
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
             var seen = new List<string>();
             core.Mount(
                 () =>
@@ -526,17 +732,15 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return Box();
                 },
                 null,
-                ["ja-JP"],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
             );
 
-            core.SetSystemLocales(["en-GB"]);
-            core.SetSystemLocales(["en-US"]);
-            core.SetSystemLocales(["ko-KR", "ja-JP"]);
+            settings.ChangeLanguages(["en-GB"]);
+            settings.ChangeLanguages(["en-US"]);
+            settings.ChangeLanguages(["ko-KR", "ja-JP"]);
             core.DisposeRoot();
 
             Assert.Equal(["ja", "en", "ja"], seen);
@@ -565,7 +769,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
+            (WindowCore core, _) = Connected(atlas, new FakeSettings { UiLanguages = ["ja-JP"] }, [CldrLocales.En, CldrLocales.Ja]);
             var log = new List<string>();
             Element outer = default;
             Element inner = default;
@@ -583,7 +787,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             };
             var dark = new SystemAppearance(ColorScheme.Dark, false, null, null);
 
-            core.Mount(root, wrapper, ["ja-JP"], false, dark, "WindowCoreTests", new Size(200, 100), 1);
+            core.Mount(root, wrapper, dark, "WindowCoreTests", new Size(200, 100), 1);
             NodeHandle outerParent = core.Tree.Nodes.GetRef(outer.Node).Parent;
             NodeHandle innerParent = core.Tree.Nodes.GetRef(inner.Node).Parent;
             NodeHandle keyRoot = core.Tree.KeyRoot;
@@ -632,9 +836,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                 return kind == 0 ? new Element(other, other.CreateNode(new LayoutStyle())) : Child();
             };
 
-            _ = Assert.Throws<InvalidOperationException>(() =>
-                core.Mount(Box, wrapper, [], false, default, "WindowCoreTests", new Size(200, 100), 1)
-            );
+            _ = Assert.Throws<InvalidOperationException>(() => core.Mount(Box, wrapper, default, "WindowCoreTests", new Size(200, 100), 1));
 
             Assert.True(core.RootScope.IsNone);
         });
@@ -690,7 +892,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             UiTree? before = UiTree.Current;
 
             FormatException thrown = Assert.Throws<FormatException>(() =>
-                core.Mount(Box, wrapper, [], false, default, "WindowCoreTests", new Size(200, 100), 1)
+                core.Mount(Box, wrapper, default, "WindowCoreTests", new Size(200, 100), 1)
             );
 
             Assert.Same(error, thrown);
@@ -751,9 +953,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             int nodes = core.Tree.Nodes.Count;
             UiTree? before = UiTree.Current;
 
-            _ = Assert.Throws<InvalidOperationException>(() =>
-                core.Mount(root, wrapper, [], false, default, "WindowCoreTests", new Size(200, 100), 1)
-            );
+            _ = Assert.Throws<InvalidOperationException>(() => core.Mount(root, wrapper, default, "WindowCoreTests", new Size(200, 100), 1));
 
             Assert.Equal(twice ? 1 : 0, runs);
             Assert.Equal(live, Scope.LiveCount);
@@ -793,10 +993,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             }
 
             ArgumentException beforeMount = Assert.Throws<ArgumentException>(() => core.SetSystemAppearance(wrong));
-            ArgumentException mount = Assert.Throws<ArgumentException>(() =>
-                core.Mount(Root, null, [], false, wrong, "WindowCoreTests", new Size(200, 100), 1)
-            );
-            core.Mount(Root, null, [], false, default, "WindowCoreTests", new Size(200, 100), 1);
+            ArgumentException mount = Assert.Throws<ArgumentException>(() => core.Mount(Root, null, wrong, "WindowCoreTests", new Size(200, 100), 1));
+            core.Mount(Root, null, default, "WindowCoreTests", new Size(200, 100), 1);
             ArgumentException afterMount = Assert.Throws<ArgumentException>(() => core.SetSystemAppearance(wrong));
             core.DisposeRoot();
 
@@ -833,8 +1031,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return Box();
                 },
                 null,
-                [],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -874,8 +1070,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return Box();
                 },
                 null,
-                [],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -893,15 +1087,15 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
 
     /// <summary>
     /// Mount provides the tables of the resolved locale under <see cref="Localization.Data"/>, their locale under
-    /// <see cref="Localization.Locale"/>, and the OS's 24-hour form under <see cref="Localization.Use24HourFormat"/> (design §4.11,
-    /// "Distribution").
+    /// <see cref="Localization.Locale"/>, and the settings' 24-hour form under <see cref="Localization.Use24HourFormat"/> (design
+    /// §4.11, "Distribution").
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A connected core that supports the tables of en and ja.
+    /// - Settings with the languages "ja-JP" and the 24-hour form; a connected core with them that supports the tables of en and ja.
     ///
     /// Steps:
-    /// - Mount with the OS's languages "ja-JP", the 24-hour form on, and a root function that reads the three keys.
+    /// - Mount with a root function that reads the three keys.
     ///
     /// Expected:
     /// - The tables are <see cref="CldrLocales.Ja"/> itself, the locale is ja, and the 24-hour form is on.
@@ -911,7 +1105,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [CldrLocales.En, CldrLocales.Ja]);
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"], Use24HourFormat = true };
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
             LocaleData? tables = null;
             string? locale = null;
             bool? use24HourFormat = null;
@@ -925,8 +1120,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return Box();
                 },
                 null,
-                ["ja-JP"],
-                true,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
@@ -975,7 +1168,7 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             LocaleData TablesFor(string tag, LocaleData[] supported)
             {
                 Locale returned = Locale.Parse(tag);
-                (WindowCore core, _) = Connected(atlas, supported, (_, _) => returned);
+                (WindowCore core, _) = Connected(atlas, null, supported, (_, _) => returned);
                 LocaleData? tables = null;
                 Locale locale = default;
                 core.Mount(
@@ -986,8 +1179,6 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                         return Box();
                     },
                     null,
-                    [],
-                    false,
                     default,
                     "WindowCoreTests",
                     new Size(200, 100),
@@ -1006,22 +1197,23 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A connected core that supports no locale, mounted with the OS's languages "ja-JP" and a root function whose effect
-    ///   records the locale of <see cref="Localization.Data"/>.
+    /// - Settings with the languages "ja-JP"; a connected core with them that supports no locale, mounted with a root function whose
+    ///   effect records the locale of <see cref="Localization.Data"/>.
     ///
     /// Steps:
-    /// - Set the OS's languages to "ja-JP, en-US", then "fr-FR".
+    /// - Make the languages "ja-JP, en-US", then "fr-FR", telling a notice marked with the languages after each.
     ///
     /// Expected:
     /// - The effect recorded ja-JP and fr-FR: "ja-JP, en-US" resolves to ja-JP again and does not run it. The last tables have the
     ///   plural rules of <see cref="LocaleData.Root"/>.
     /// </remarks>
     [Fact]
-    public void SetSystemLocales_TheSameResolvedLocale_KeepsTheTables() =>
+    public void SettingsChanged_TheSameResolvedLocale_KeepsTheTables() =>
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas);
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"] };
+            (WindowCore core, _) = Connected(atlas, settings);
             var seen = new List<string>();
             IReadOnlySignal<LocaleData>? data = null;
             core.Mount(
@@ -1033,16 +1225,14 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return Box();
                 },
                 null,
-                ["ja-JP"],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
             );
 
-            core.SetSystemLocales(["ja-JP", "en-US"]);
-            core.SetSystemLocales(["fr-FR"]);
+            settings.ChangeLanguages(["ja-JP", "en-US"]);
+            settings.ChangeLanguages(["fr-FR"]);
             LocaleData last = data!.Get();
             core.DisposeRoot();
 
@@ -1051,26 +1241,27 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// Setting the 24-hour form changes <see cref="Localization.Use24HourFormat"/>, and its readers run again only when the value
-    /// changes; the readers of the tables do not run.
+    /// A notice of the 24-hour form changes <see cref="Localization.Use24HourFormat"/>, and its readers run again only when the
+    /// value changes; the readers of the tables do not run.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A connected core that supports en, mounted with the 24-hour form off and a root function with two effects: one records
-    ///   the 24-hour form, the other counts its reads of <see cref="Localization.Data"/>.
+    /// - Settings with the 12-hour form; a connected core with them that supports en, mounted with a root function with two
+    ///   effects: one records the 24-hour form, the other counts its reads of <see cref="Localization.Data"/>.
     ///
     /// Steps:
-    /// - Set the 24-hour form off, on, on, and off.
+    /// - Make the settings' form 12-hour, 24-hour, 24-hour, and 12-hour, telling a notice marked with the 24-hour form after each.
     ///
     /// Expected:
     /// - The first effect recorded off, on, off; the second ran once.
     /// </remarks>
     [Fact]
-    public void SetUse24HourFormat_RunsItsReadersOnlyWhenTheValueChanges() =>
+    public void SettingsChanged_24HourForm_RunsItsReadersOnlyWhenTheValueChanges() =>
         ui.Invoke(() =>
         {
             using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas, [CldrLocales.En]);
+            var settings = new FakeSettings();
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En]);
             var seen = new List<bool>();
             int tableReads = 0;
             core.Mount(
@@ -1087,78 +1278,54 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
                     return Box();
                 },
                 null,
-                [],
-                false,
                 default,
                 "WindowCoreTests",
                 new Size(200, 100),
                 1
             );
 
-            core.SetUse24HourFormat(false);
-            core.SetUse24HourFormat(true);
-            core.SetUse24HourFormat(true);
-            core.SetUse24HourFormat(false);
+            settings.Change24HourFormat(false);
+            settings.Change24HourFormat(true);
+            settings.Change24HourFormat(true);
+            settings.Change24HourFormat(false);
             core.DisposeRoot();
 
             Assert.Equal([false, true, false], seen);
             Assert.Equal(1, tableReads);
         });
 
-    /// <summary>
-    /// A 24-hour form set before the root is mounted is not kept and throws nothing: the mount takes the value it is given.
-    /// </summary>
-    /// <remarks>
-    /// Preconditions:
-    /// - A connected core, not mounted.
-    ///
-    /// Steps:
-    /// - Set the 24-hour form on. Mount with it off and a root function that reads it.
-    ///
-    /// Expected:
-    /// - Nothing is thrown, and the root function read off.
-    /// </remarks>
-    [Fact]
-    public void SetUse24HourFormat_BeforeMount_DoesNothing() =>
-        ui.Invoke(() =>
-        {
-            using var atlas = new GlyphAtlas(new NoGlyphs());
-            (WindowCore core, _) = Connected(atlas);
-            bool? read = null;
-
-            core.SetUse24HourFormat(true);
-            core.Mount(
-                () =>
-                {
-                    read = Localization.Use24HourFormat.Use().Get();
-                    return Box();
-                },
-                null,
-                [],
-                false,
-                default,
-                "WindowCoreTests",
-                new Size(200, 100),
-                1
-            );
-            core.DisposeRoot();
-
-            Assert.False(read);
-        });
-
-    // A core with no text, connected to a window that shows, whose target and scheduler count. The atlas is the test's: the core
-    // is not disposed here.
+    // A core with no text, made with the settings given or settings of its own, and connected to a window that shows, whose target
+    // and scheduler count. The atlas is the test's: the core is not disposed here.
     private static (WindowCore Core, FakeWindow Window) Connected(
         GlyphAtlas atlas,
+        FakeSettings? settings = null,
         IReadOnlyList<LocaleData>? supported = null,
         Func<IReadOnlyList<Locale>, IReadOnlyList<Locale>, Locale>? resolve = null
     )
     {
-        var core = new WindowCore(null, null, supported, resolve);
+        var core = new WindowCore(null, settings ?? new FakeSettings(), null, supported, resolve);
         var window = new FakeWindow();
         core.Connect(window, atlas, Gray);
         return (core, window);
     }
+
+    // Mounts a root function whose effects record the locale's tag and the 24-hour form each time they change.
+    private static void MountRecording(WindowCore core, List<string> locales, List<bool> forms) =>
+        core.Mount(
+            () =>
+            {
+                IReadOnlySignal<Locale> locale = Localization.Locale.Use();
+                IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
+                _ = Effect.Create(() => locales.Add(locale.Get().ToLanguageTag()));
+                _ = Effect.Create(() => forms.Add(use24HourFormat.Get()));
+                return Box();
+            },
+            null,
+            default,
+            "WindowCoreTests",
+            new Size(200, 100),
+            1
+        );
 
     // A box that a column holds: a node with a parent.
     private static Element Child()
@@ -1166,6 +1333,53 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         Element child = Box();
         _ = Column(child);
         return child;
+    }
+
+    // The app tier's settings, whose values the test sets and whose notices the test tells, marked as the test says: a host tells a
+    // change only, which Change* do.
+    // A value whose error is set throws it when read, as a setter of the tree that throws would.
+    private sealed class FakeSettings : IPlatformSettings
+    {
+        private TextEditingSettings _textEditing = TextEditingSettings.Default;
+        private IReadOnlyList<string> _uiLanguages = [];
+
+        public event Action<PlatformSettingsChanges>? Changed;
+
+        public bool ReducesMotion { get; set; }
+
+        public TextEditingSettings TextEditing
+        {
+            get => TextEditingError is null ? _textEditing : throw TextEditingError;
+            set => _textEditing = value;
+        }
+
+        public IReadOnlyList<string> UiLanguages
+        {
+            get => UiLanguagesError is null ? _uiLanguages : throw UiLanguagesError;
+            set => _uiLanguages = value;
+        }
+
+        public bool Use24HourFormat { get; set; }
+
+        public Exception? TextEditingError { get; set; }
+
+        public Exception? UiLanguagesError { get; set; }
+
+        public bool HasHandlers => Changed is not null;
+
+        public void Tell(PlatformSettingsChanges changes) => Changed?.Invoke(changes);
+
+        public void ChangeLanguages(IReadOnlyList<string> tags)
+        {
+            UiLanguages = tags;
+            Tell(PlatformSettingsChanges.UiLanguages);
+        }
+
+        public void Change24HourFormat(bool use24HourFormat)
+        {
+            Use24HourFormat = use24HourFormat;
+            Tell(PlatformSettingsChanges.Use24HourFormat);
+        }
     }
 
     // A window tier whose target and scheduler count, whose values the test sets, and that records its disposal.
