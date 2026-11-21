@@ -68,22 +68,5 @@ public readonly struct FormattedNumber : ISpanFormattable
     /// Returns the formatted number as a new string; not for the frame path.
     /// </summary>
     /// <returns>The formatted number; empty for the default value.</returns>
-    public override string ToString()
-    {
-        Span<char> buffer = stackalloc char[64];
-        if (TryFormat(buffer, out int written, default, null))
-        {
-            return new string(buffer[..written]);
-        }
-
-        // The options take at most 999 integer and 999 fraction digits, so the text (with its group separators and affixes) is some
-        // 2,500 characters at most, and the buffer stops growing at 4,096.
-        char[] grown = new char[256];
-        while (!TryFormat(grown, out written, default, null))
-        {
-            grown = new char[grown.Length * 2];
-        }
-
-        return new string(grown, 0, written);
-    }
+    public override string ToString() => FormattedText.Make(this);
 }

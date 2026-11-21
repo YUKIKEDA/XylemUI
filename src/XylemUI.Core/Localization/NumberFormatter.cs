@@ -1049,47 +1049,4 @@ public sealed class NumberFormatter
 
         return at;
     }
-
-    // Writes into a span and remembers whether anything did not fit.
-    private ref struct CharWriter
-    {
-        private readonly Span<char> _destination;
-        private int _length;
-        private bool _full;
-
-        public CharWriter(Span<char> destination)
-        {
-            _destination = destination;
-        }
-
-        public void Append(char value)
-        {
-            if (_length < _destination.Length)
-            {
-                _destination[_length++] = value;
-            }
-            else
-            {
-                _full = true;
-            }
-        }
-
-        public void Append(ReadOnlySpan<char> value)
-        {
-            if (value.TryCopyTo(_destination[_length..]))
-            {
-                _length += value.Length;
-            }
-            else
-            {
-                _full = true;
-            }
-        }
-
-        public readonly bool TryFinish(out int charsWritten)
-        {
-            charsWritten = _full ? 0 : _length;
-            return !_full;
-        }
-    }
 }

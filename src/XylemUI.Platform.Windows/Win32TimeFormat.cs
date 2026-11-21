@@ -52,9 +52,13 @@ internal static unsafe partial class Win32TimeFormat
     /// <summary>
     /// Returns whether a time format that <c>GetLocaleInfoEx</c> wrote holds the hour pattern <c>H</c> outside single quotes (design
     /// §4.11, "The locale of the formats"). Only the characters the call says it wrote are read: what lies past the format's
-    /// terminating null is not the format (PR #854's review).
+    /// terminating null is not the format (PR #854's review). Of a list, only the first format is read.
     /// </summary>
     /// <remarks>
+    /// Microsoft's <c>LOCALE_SSHORTTIME</c> page says: "This constant can specify multiple formats in a semicolon-delimited list.
+    /// However, the preferred short time format should be the first value listed." So the read stops at the first <c>;</c>
+    /// outside single quotes; a <c>;</c> between quotes is text, as any character between quotes is.
+    ///
     /// Microsoft's "Hour, Minute, and Second Format Pictures" shows the characters between single quotes as they are and writes a
     /// quote itself as two in a row (<c>'abc''bar'</c> is <c>abc'bar</c>), so <c>h'H'mm</c> is a 12-hour format. Flutter 3.47.8
     /// (<c>engine/src/flutter/shell/platform/windows/system_utils.cc</c>, lines 113 to 115, <c>time_format.find(L"H")</c>) and
@@ -65,7 +69,10 @@ internal static unsafe partial class Win32TimeFormat
     /// <param name="buffer">The buffer the call wrote into.</param>
     /// <param name="written">What the call returned: the characters it wrote, the terminating null included; 0 when it failed.</param>
     /// <param name="before">The value returned when the call failed.</param>
-    /// <returns>Whether the format holds <c>H</c> outside single quotes; <paramref name="before"/> when the call failed.</returns>
+    /// <returns>
+    /// Whether the format, or the first format of a list, holds <c>H</c> outside single quotes; <paramref name="before"/> when the
+    /// call failed.
+    /// </returns>
     public static bool Uses24Hour(ReadOnlySpan<char> buffer, int written, bool before)
     {
         if (written <= 0)
@@ -81,6 +88,10 @@ internal static unsafe partial class Win32TimeFormat
             if (c == '\'')
             {
                 quoted = !quoted;
+            }
+            else if (c == ';' && !quoted)
+            {
+                break;
             }
             else if (c == 'H' && !quoted)
             {

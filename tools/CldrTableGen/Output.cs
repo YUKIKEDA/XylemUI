@@ -5,7 +5,7 @@ namespace XylemUI.Tools.CldrTableGen;
 
 /// <summary>
 /// Writes the generated files (design §4.11, "How the tables are made" and "Declaration and reference"): one class that derives from
-/// <c>LocaleData</c> for each entry and for root, the plural rules as methods, the number tables, the properties of <c>CldrLocales</c>, the list of
+/// <c>LocaleData</c> for each entry and for root, the plural rules as methods, the number and the date tables, the properties of <c>CldrLocales</c>, the list of
 /// <c>CldrLocales.All</c>, the license of the data, and the samples of the plural rules for the tests. Every line ends with LF and
 /// every file is UTF-8 without a byte order mark, whatever the OS, so that two runs write the same bytes.
 /// </summary>
@@ -24,6 +24,7 @@ internal sealed class Output
     private readonly PluralTables _plurals;
     private readonly LikelyScriptTable _likely;
     private readonly NumberTables _numbers;
+    private readonly DateTables _dates;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Output"/> class.
@@ -35,6 +36,7 @@ internal sealed class Output
     /// <param name="plurals">The plural rules.</param>
     /// <param name="likely">The likely scripts the resolution reads.</param>
     /// <param name="numbers">The number tables.</param>
+    /// <param name="dates">The date tables.</param>
     public Output(
         PinnedRelease release,
         string license,
@@ -42,7 +44,8 @@ internal sealed class Output
         WeekData week,
         PluralTables plurals,
         LikelyScriptTable likely,
-        NumberTables numbers
+        NumberTables numbers,
+        DateTables dates
     )
     {
         _release = release;
@@ -52,6 +55,7 @@ internal sealed class Output
         _plurals = plurals;
         _likely = likely;
         _numbers = numbers;
+        _dates = dates;
     }
 
     /// <summary>
@@ -80,6 +84,7 @@ internal sealed class Output
         Save(Path.Combine(folder, "CldrPluralRules.g.cs"), PluralRules());
         Save(Path.Combine(folder, "CldrLikelyScripts.g.cs"), LikelyScripts());
         Save(Path.Combine(folder, "CldrNumberTables.g.cs"), NumberTableFile());
+        Save(Path.Combine(folder, "CldrDateTables.g.cs"), DateTableFile());
         Save(Path.Combine(root, LicenseFile), _license);
         string samples = Path.Combine(root, SamplesFile);
         Directory.CreateDirectory(Path.GetDirectoryName(samples)!);
@@ -190,6 +195,8 @@ internal sealed class Output
         Constant(text, "int", "NumberTableCount", Number(_numbers.Numbers.Count), "Gets the number of distinct number tables.");
         Constant(text, "int", "CompactTableCount", Number(_numbers.Compact.Count), "Gets the number of distinct compact tables.");
         Constant(text, "int", "CurrencyTableCount", Number(_numbers.Currencies.Count), "Gets the number of distinct currency tables.");
+        Constant(text, "int", "DateNameTableCount", Number(_dates.Names.Count), "Gets the number of distinct date name tables.");
+        Constant(text, "int", "DatePatternTableCount", Number(_dates.Patterns.Count), "Gets the number of distinct date pattern tables.");
         Line(text, "}");
         Line(text, string.Empty);
         Line(text, "/// <summary>");
@@ -275,6 +282,13 @@ internal sealed class Output
         Line(text, string.Empty);
         Line(text, "    /// <inheritdoc/>");
         Line(text, "    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies" + Number(currencies) + ";");
+        Line(text, string.Empty);
+        (int names, int patterns) = _dates.ByTag[entry.DataTag];
+        Line(text, "    /// <inheritdoc/>");
+        Line(text, "    internal override ReadOnlySpan<byte> DateNameTable => CldrDateTables.Names" + Number(names) + ";");
+        Line(text, string.Empty);
+        Line(text, "    /// <inheritdoc/>");
+        Line(text, "    internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns" + Number(patterns) + ";");
         Line(text, string.Empty);
         Line(text, "    /// <inheritdoc/>");
         string rules = "CldrPluralRules." + cardinal.Method + ", CldrPluralRules." + ordinal.Method;
@@ -419,26 +433,54 @@ internal sealed class Output
         Constant(text, "int", "DefaultCurrencyDigits", Number(_numbers.DefaultCurrencyDigits), defaultDigits);
         string digits = "Gets the fraction digits of the currencies whose digits are not the default: a code of 3 ASCII bytes and the digits.";
         Bytes(text, "CurrencyDigits", digits, _numbers.CurrencyDigits);
-        TableList(text, "Numbers", "Gets the number symbols and the standard patterns of ", _numbers.Numbers, tables => tables.Numbers);
-        TableList(text, "Compact", "Gets the compact decimal patterns of ", _numbers.Compact, tables => tables.Compact);
-        TableList(text, "Currencies", "Gets the currency symbols of ", _numbers.Currencies, tables => tables.Currencies);
+        IEnumerable<(string, int)> numbers = _numbers.ByTag.Select(pair => (pair.Key, pair.Value.Numbers));
+        TableList(text, "Numbers", "Gets the number symbols and the standard patterns of ", _numbers.Numbers, numbers);
+        IEnumerable<(string, int)> compact = _numbers.ByTag.Select(pair => (pair.Key, pair.Value.Compact));
+        TableList(text, "Compact", "Gets the compact decimal patterns of ", _numbers.Compact, compact);
+        IEnumerable<(string, int)> currencies = _numbers.ByTag.Select(pair => (pair.Key, pair.Value.Currencies));
+        TableList(text, "Currencies", "Gets the currency symbols of ", _numbers.Currencies, currencies);
+        Line(text, "}");
+        return text.ToString();
+    }
+
+    private string DateTableFile()
+    {
+        var text = new StringBuilder();
+        Header(text);
+        Line(text, "namespace XylemUI;");
+        Line(text, string.Empty);
+        Line(text, "/// <summary>");
+        Line(
+            text,
+            "/// The date tables of CLDR (design §4.11, \"Dates and times\"), one for each distinct content, which the classes of the locales"
+        );
+        Line(text, "/// return: a table that no class made in a NativeAOT binary returns does not stay in it. The layout of each kind is in");
+        Line(text, "/// tools/CldrTableGen/DateTables.cs.");
+        Line(text, "/// </summary>");
+        Line(text, "internal static class CldrDateTables");
+        Line(text, "{");
+        IEnumerable<(string, int)> names = _dates.ByTag.Select(pair => (pair.Key, pair.Value.Names));
+        TableList(text, "Names", "Gets the date names of ", _dates.Names, names);
+        IEnumerable<(string, int)> patterns = _dates.ByTag.Select(pair => (pair.Key, pair.Value.Patterns));
+        TableList(text, "Patterns", "Gets the date patterns of ", _dates.Patterns, patterns);
         Line(text, "}");
         return text.ToString();
     }
 
     // The distinct tables of one kind, each with the data tags that return it.
-    private void TableList(
+    private static void TableList(
         StringBuilder text,
         string name,
         string summary,
         IReadOnlyList<byte[]> tables,
-        Func<(int Numbers, int Compact, int Currencies), int> index
+        IEnumerable<(string Tag, int Index)> byTag
     )
     {
+        List<(string Tag, int Index)> uses = [.. byTag];
         for (int i = 0; i < tables.Count; i++)
         {
             int at = i;
-            List<string> tags = [.. _numbers.ByTag.Where(pair => index(pair.Value) == at).Select(pair => pair.Key).Order(StringComparer.Ordinal)];
+            List<string> tags = [.. uses.Where(use => use.Index == at).Select(use => use.Tag).Order(StringComparer.Ordinal)];
             Bytes(text, name + Number(i), summary + string.Join(", ", tags) + ".", tables[i]);
         }
     }

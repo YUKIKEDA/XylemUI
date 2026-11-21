@@ -1,6 +1,7 @@
 // Generates the CLDR tables of XylemUI.Core from the json-full release of cldr-json (design §4.11, "How the tables are made"): the
-// set of locales, one class for each locale with its week data, its plural rules, and its number tables, the plural rules compiled
-// to methods, the number tables, the entries of CldrLocales, and the samples of the plural rules that the tests select. The version, the SHA-256, and the URL of the
+// set of locales, one class for each locale with its week data, its plural rules, its number tables, and its date tables, the plural
+// rules compiled to methods, the number and the date tables, the entries of CldrLocales, and the samples of the plural rules that the
+// tests select. The version, the SHA-256, and the URL of the
 // zip are the cldr-json line of vendor/versions.lock.
 //
 //   dotnet run --project tools/CldrTableGen -c Release
@@ -73,7 +74,8 @@ static async Task<int> Run(string[] args)
     PluralTables plurals = PluralTables.Read(cldr, locales);
     LikelyScriptTable likely = LikelyScriptTable.Read(cldr);
     NumberTables numbers = NumberTables.Read(cldr, locales);
-    var output = new Output(release, cldr.Text("LICENSE"), locales, week, plurals, likely, numbers);
+    DateTables dates = DateTables.Read(cldr, locales);
+    var output = new Output(release, cldr.Text("LICENSE"), locales, week, plurals, likely, numbers, dates);
     output.Write(outRoot);
 
     Console.WriteLine(
@@ -125,6 +127,7 @@ static async Task<int> Run(string[] args)
             + Output.Number(numbers.DefaultCurrencyDigits)
             + " fraction digits"
     );
+    Console.WriteLine("date tables: " + Output.Number(dates.Names.Count) + " name, " + Output.Number(dates.Patterns.Count) + " pattern");
     Console.WriteLine("wrote " + outRoot);
     return 0;
 }
