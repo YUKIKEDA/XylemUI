@@ -88,4 +88,21 @@ public sealed record HeadlessOptions
     /// <see cref="HeadlessApp.SetSystemLocales"/> changes them while the app runs.
     /// </summary>
     public IReadOnlyList<string> SystemLocales { get; init; } = [];
+
+    /// <summary>
+    /// Gets the appearance the app sees as the OS's (design §13.2, "ヘッドレス"): by default light, with high contrast off and no
+    /// accent color, so that a test does not depend on the machine it runs on. <see cref="HeadlessApp.SetSystemAppearance"/>
+    /// changes it while the app runs. A value whose high-contrast colors are there while its high contrast is off, or missing
+    /// while it is on, makes <see cref="HeadlessApp.StartAsync"/> throw <see cref="ArgumentException"/>.
+    /// </summary>
+    public SystemAppearance SystemAppearance { get; init; }
+
+    /// <summary>
+    /// Gets the theme's function that wraps the app's root function, as the one an app's <c>[assembly: WindowTheme]</c> sets for
+    /// its desktop windows (design §13.2, "ヘッドレスとテスト"), such as <c>FluentRoot.Wrap</c>: it runs inside the locale and the
+    /// OS's appearance, is given a function that runs the root function, calls it exactly once, and returns the window's node; a
+    /// second call, or none, makes the start throw <see cref="InvalidOperationException"/>. <see langword="null"/>, the default,
+    /// runs the root function alone. The headless app never reads the wrapper of <see cref="WindowRoot"/>.
+    /// </summary>
+    public Func<Func<Element>, Element>? RootWrapper { get; init; }
 }

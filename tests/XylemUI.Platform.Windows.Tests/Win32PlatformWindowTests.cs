@@ -373,7 +373,8 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             window.Attach();
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
-            core.Mount(root, window.UiLanguages, "Win32PlatformWindowTests", new Size(width / scale, height / scale), scale);
+            var size = new Size(width / scale, height / scale);
+            core.Mount(root, null, window.UiLanguages, default, "Win32PlatformWindowTests", size, scale);
             window.RootMounted();
             return (core, window);
         }

@@ -205,6 +205,62 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The border's paint alone changes the paint of a node's border and leaves its width: the node is marked to be drawn again
+    /// with no layout, and the same paint again changes nothing (design §13.2).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box with a border 2 wide in red, laid out and drawn by the first frame.
+    ///
+    /// Steps:
+    /// - Set the border's paint to blue; read the box and run the frame asked for. Set it to blue again and read the box.
+    ///
+    /// Expected:
+    /// - After blue: the paint is blue, the border is still 2 wide, the box is marked for paint alone, no layout root is queued, the
+    ///   box is in the paint updates, and a frame is asked for. After blue again: nothing is marked and no frame is asked for.
+    /// </remarks>
+    [Fact]
+    public void BorderPaint_ChangesThePaintAlone_AndTheSamePaintDoesNothing() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() => box = Box().Width(20).Height(20).Border(2, new Paint(Red)));
+            scene.Scheduler.Run();
+            Assert.False(scene.Scheduler.Pending);
+
+            Element same = box.BorderPaint(new Paint(Blue));
+            ref UiNode node = ref scene.Tree.Nodes.GetRef(box.Node);
+            (Paint? Paint, LengthPercentage Width, DirtyFlags Self, DirtyFlags Subtree) changed = (
+                node.Visual!.BorderPaint,
+                node.Layout.Style.Border.Left,
+                node.Dirty.SelfDirty,
+                node.Dirty.SubtreeDirty
+            );
+            bool queuedLayout = scene.Tree.LayoutRoots.Count > 0;
+            bool inPaintUpdates = scene.Tree.PaintUpdates.Contains(box.Node);
+            bool askedFor = scene.Scheduler.Pending;
+            scene.Scheduler.Run();
+
+            _ = box.BorderPaint(new Paint(Blue));
+            DirtyFlags againSelf = scene.Tree.Nodes.GetRef(box.Node).Dirty.SelfDirty;
+            bool askedForAgain = scene.Scheduler.Pending;
+
+            Assert.Equal(box, same);
+            Assert.Equal(new Paint(Blue), changed.Paint);
+            Assert.Equal(
+                (LengthPercentage.Px(2), DirtyFlags.Paint, DirtyFlags.None),
+                (changed.Width, changed.Self, changed.Subtree & DirtyFlags.Layout)
+            );
+            Assert.False(queuedLayout);
+            Assert.True(inPaintUpdates);
+            Assert.True(askedFor);
+            Assert.Equal(DirtyFlags.None, againSelf);
+            Assert.False(askedForAgain);
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// The named lines and the automatic repetitions of the grid's API check their values (design §3.3, "The shape of P02f"),
     /// and the same placement by name is the same line.
     /// </summary>
