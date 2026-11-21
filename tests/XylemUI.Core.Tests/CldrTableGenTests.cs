@@ -67,6 +67,58 @@ public sealed class CldrTableGenTests
     ];
 
     /// <summary>
+    /// Gets the cases of Tool_NumberDataTheFormatsDoNotRead_Stops: the entry of the zip, the text replaced in it, the text put in its
+    /// place, and the message the tool writes.
+    /// </summary>
+    public static TheoryData<string, string, string, string> UnreadNumberData
+    {
+        get
+        {
+            const string Systems = "cldr-core/supplemental/numberingSystems.json";
+            const string Fractions = "cldr-core/supplemental/currencyData.json";
+            const string Numbers = "cldr-numbers-full/main/de/numbers.json";
+            const string Currencies = "cldr-numbers-full/main/de/currencies.json";
+            string letters = new('N', 256);
+            return new()
+            {
+                { Systems, "\"_type\": \"numeric\"", "\"_type\": \"algorithmic\"", "The default numbering system latn of und is not a numeric one." },
+                {
+                    Systems,
+                    "\"_digits\": \"0123456789\"",
+                    "\"_digits\": \"0123456780\"",
+                    "The digits of latn are not ten consecutive UTF-16 code units."
+                },
+                {
+                    Fractions,
+                    "\"BHD\": { \"_rounding\": \"0\"",
+                    "\"BHD\": { \"_rounding\": \"5\"",
+                    "The currency BHD has a rounding increment, which the formats do not apply."
+                },
+                {
+                    Numbers,
+                    "\"currencyMatch\": \"[[:^S:]&[:^Z:]]\"",
+                    "\"currencyMatch\": \"[:^S:]\"",
+                    "The beforeCurrency currency spacing of de is not the one the formats write."
+                },
+                { Currencies, "\"symbol\": \"$\"", "\"symbol\": \"\"", "A symbol of USD in de is empty." },
+                {
+                    Numbers,
+                    "\"1000-count-other\": \"0K\"",
+                    "\"1000-count-one\": \"0K\"",
+                    "The short compact patterns of de have no other pattern for 10^3."
+                },
+                {
+                    Numbers,
+                    "\"1000-count-other\": \"0K\"",
+                    "\"1500-count-other\": \"0K\"",
+                    "The compact pattern key 1500-count-other of de is not a power of ten and a count."
+                },
+                { Numbers, "\"nan\": \"NaN\"", "\"nan\": \"" + letters + "\"", "The string " + letters + " is longer than 255 bytes of UTF-8." },
+            };
+        }
+    }
+
+    /// <summary>
     /// Two runs of the generator from the same zip write the same files, byte for byte.
     /// </summary>
     /// <remarks>
@@ -308,6 +360,49 @@ public sealed class CldrTableGenTests
     }
 
     /// <summary>
+    /// Number data the formats do not read stops the generator with a message that names it (design §4.11, "How the tables are
+    /// made"; PR #944's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with one text of one entry replaced, and a lock with its SHA-256. The cases: latn's type
+    ///   algorithmic, not numeric (und, read first, stops); latn's digits 0123456780, not consecutive; BHD's rounding increment 5;
+    ///   de's currencyMatch [:^S:] on both sides (the before side is checked first); de's USD symbol empty; de's short compact key
+    ///   1000-count-other made 1000-count-one, so 10^3 has no other pattern; that key made 1500-count-other, not a power of ten; de's
+    ///   NaN symbol of 256 ASCII letters, one byte past the 255 a length byte holds.
+    ///
+    /// Steps:
+    /// - Run the tool into an empty directory.
+    ///
+    /// Expected:
+    /// - It ends with 1, and its output holds the message of each case.
+    /// </remarks>
+    /// <param name="entry">The entry of the zip whose text is replaced.</param>
+    /// <param name="from">The text replaced.</param>
+    /// <param name="to">The text put in its place.</param>
+    /// <param name="message">The message the tool writes.</param>
+    [Theory]
+    [MemberData(nameof(UnreadNumberData))]
+    public void Tool_NumberDataTheFormatsDoNotRead_Stops(string entry, string from, string to, string message)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, edit: (entry, from, to));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
+
+            Assert.Equal(1, exit);
+            Assert.Contains(message, text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A zip whose SHA-256 is not the one the lock pins stops the generator before it writes anything.
     /// </summary>
     /// <remarks>
@@ -383,11 +478,17 @@ public sealed class CldrTableGenTests
     // generator reads only that they are there. Every locale has the number data of NumbersJson and the currencies of
     // CurrenciesJson, but de, whose separators are swapped and whose decimal pattern is the given one. pt-AO is a modern locale with
     // no plural rules of its own; plurals.json has rules for pt and for pt-PT, and the parent locales of the plurals component are
-    // the given JSON object.
-    private static string WriteZip(string directory, bool withBo, string pluralParents = "{}", string deDecimalPattern = "#,##0.###")
+    // the given JSON object. An edit replaces a text in one entry, which must hold it.
+    private static string WriteZip(
+        string directory,
+        bool withBo,
+        string pluralParents = "{}",
+        string deDecimalPattern = "#,##0.###",
+        (string Entry, string From, string To)? edit = null
+    )
     {
         string path = Path.Combine(directory, "cldr-test-json-full.zip");
-        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        using (var zip = new EditedZip(ZipFile.Open(path, ZipArchiveMode.Create), edit))
         {
             Add(zip, "LICENSE", "Test notice.\n");
             Add(zip, "cldr-core/package.json", "{ \"version\": \"49.0.0\" }");
@@ -498,9 +599,15 @@ public sealed class CldrTableGenTests
         + YenSign
         + "\" }, \"USD\": { \"displayName\": \"US Dollar\", \"symbol\": \"$\", \"symbol-alt-narrow\": \"$\" } } } } } }";
 
-    private static void Add(ZipArchive zip, string name, string text)
+    private static void Add(EditedZip zip, string name, string text)
     {
-        using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false));
+        if (zip.Edit is { } edit && edit.Entry == name)
+        {
+            Assert.Contains(edit.From, text, StringComparison.Ordinal);
+            text = text.Replace(edit.From, edit.To, StringComparison.Ordinal);
+        }
+
+        using var writer = new StreamWriter(zip.Archive.CreateEntry(name).Open(), new UTF8Encoding(false));
         writer.Write(text);
     }
 
@@ -562,5 +669,15 @@ public sealed class CldrTableGenTests
         }
 
         throw new InvalidOperationException("The tests run outside the repository.");
+    }
+
+    // A zip being written, and the edit of the text of one of its entries.
+    private sealed class EditedZip(ZipArchive archive, (string Entry, string From, string To)? edit) : IDisposable
+    {
+        public ZipArchive Archive { get; } = archive;
+
+        public (string Entry, string From, string To)? Edit { get; } = edit;
+
+        public void Dispose() => Archive.Dispose();
     }
 }

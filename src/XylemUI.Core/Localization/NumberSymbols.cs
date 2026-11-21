@@ -77,7 +77,7 @@ internal sealed class NumberSymbols
     public required string CurrencyPattern { get; init; }
 
     /// <summary>
-    /// Gets the currency pattern for a symbol whose character next to the digits is a letter (CLDR's
+    /// Gets the currency pattern for a symbol whose grapheme cluster next to the digits starts with a letter (CLDR's
     /// <c>standard-alphaNextToNumber</c>, <c>¤_#,##0.00</c>); empty when the locale has none, and then <c>currencySpacing</c> applies.
     /// </summary>
     public required string CurrencyAlphaPattern { get; init; }

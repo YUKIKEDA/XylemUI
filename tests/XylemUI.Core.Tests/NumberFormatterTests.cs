@@ -20,7 +20,8 @@ public sealed class NumberFormatterTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The cases: en, ja, de, fr (U+202F groups), tr; hi and mr (#,##,##0.###, mr in Devanagari digits); es-419 and ar (a minus
+    /// - The cases: en, ja, de, fr (U+202F groups), tr; hi and mr (#,##,##0.###, mr in Devanagari digits; hi with three and four
+    ///   groups, the secondary group of 2 repeated); es-419 and ar (a minus
     ///   with U+200E); ar-EG (Arabic-Indic digits, U+066B and U+066C, a minus with U+061C); es and pl (minimumGroupingDigits 2, pl's
     ///   group U+00A0); de-AT (group U+00A0) and fr-CH (group '); zero, trailing zeros, and decimal.MaxValue.
     ///
@@ -40,6 +41,8 @@ public sealed class NumberFormatterTests
     [InlineData("fr", "1234567.891", "1^234^567,891")]
     [InlineData("tr", "-1234.5", "-1.234,5")]
     [InlineData("hi", "1234567.891", "12,34,567.891")]
+    [InlineData("hi", "12345678", "1,23,45,678")]
+    [InlineData("hi", "123456789", "12,34,56,789")]
     [InlineData("mr", "1234567.5", "१२,३४,५६७.५")]
     [InlineData("es-419", "-1234.5", "-1,234.5")]
     [InlineData("ar", "-1234.5", "|-1,234.5")]
@@ -130,6 +133,65 @@ public sealed class NumberFormatterTests
         decimal rounded = two.Round(0.125m);
         Assert.Equal(0.12m, rounded);
         Assert.Equal(2, rounded.Scale);
+    }
+
+    /// <summary>
+    /// A decimal is rounded at no more than the 28 fraction digits decimal.Round takes, counted before a percent moves the point by 2,
+    /// so that more fraction digits than that write the decimal's own digits and do not throw.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's decimal format with at most 40 fraction digits, and en's percent format with at most 28 (28 + 2 digits before the point
+    ///   moves).
+    ///
+    /// Steps:
+    /// - Write and round 0.1234567890123456789012345678 (28 fraction digits) with each.
+    ///
+    /// Expected:
+    /// - 0.1234567890123456789012345678 and 12.34567890123456789012345678%; Round gives the value and 12.34567890123456789012345678.
+    /// </remarks>
+    [Fact]
+    public void TryFormat_FractionDigitsPastDecimalRound_RoundAtTwentyEight()
+    {
+        LocaleData en = CldrLocales.En;
+        NumberFormatter number = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 40 });
+        NumberFormatter percent = NumberFormatter.Percent(en, new NumberOptions { MaximumFractionDigits = 28 });
+        const decimal Value = 0.1234567890123456789012345678m;
+
+        Assert.Equal("0.1234567890123456789012345678", number.Format(Value));
+        Assert.Equal("12.34567890123456789012345678%", percent.Format(Value));
+        Assert.Equal(Value, number.Round(Value));
+        Assert.Equal(12.34567890123456789012345678m, percent.Round(Value));
+    }
+
+    /// <summary>
+    /// A double is rounded with Math.Round up to 15 fraction digits, the most it takes, and past them on the digits of its shortest
+    /// text, which hold up to 17 significant digits (design §4.11, "How the digits are made").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's decimal format with at most 15, 16, and 17 fraction digits.
+    ///
+    /// Steps:
+    /// - Write 1.0000000000000002 (1 + 2^-52) with 15 and 16 digits, and 0.1 + 0.2 (0.30000000000000004) with 16 and 17.
+    ///
+    /// Expected:
+    /// - 1 and 1.0000000000000002; 0.3 and 0.30000000000000004. None throws (Math.Round throws past 15 digits).
+    /// </remarks>
+    [Fact]
+    public void TryFormat_DoubleAtFifteenAndSixteenDigits_RoundsWithMathRoundThenOnTheShortestDigits()
+    {
+        LocaleData en = CldrLocales.En;
+        NumberFormatter fifteen = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 15 });
+        NumberFormatter sixteen = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 16 });
+        NumberFormatter seventeen = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 17 });
+        double justAboveOne = 1 + Math.Pow(2, -52);
+        double sum = 0.1 + 0.2;
+
+        Assert.Equal("1", Write(fifteen, justAboveOne));
+        Assert.Equal("1.0000000000000002", Write(sixteen, justAboveOne));
+        Assert.Equal("0.3", Write(sixteen, sum));
+        Assert.Equal("0.30000000000000004", Write(seventeen, sum));
     }
 
     /// <summary>
@@ -274,15 +336,16 @@ public sealed class NumberFormatterTests
 
     /// <summary>
     /// A currency format writes the currency's standard or narrow symbol in the locale, the currency's fraction digits, the
-    /// locale's currency separators, and, for a symbol whose character next to the digits is a letter, the locale's
-    /// alphaNextToNumber pattern (Issue #906).
+    /// locale's currency separators, and, for a symbol whose grapheme cluster next to the digits starts with a letter, the locale's
+    /// alphaNextToNumber pattern (Issue #906; PR #944's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The cases: en in USD, JPY (0 digits), CAD (CA$, narrow $), CHF (its code as the symbol), BHD (3 digits), and ZZZ (no symbol,
     ///   the default 2 digits); ja in JPY (￥); de in EUR; fr in USD ($US); es-419 in USD (its code); hi in INR; de-CH in CHF with its
     ///   negative subpattern; de-AT (currencyGroup .); fr-CH (currencyDecimal .); ar-EG in EGP (U+200F around the digits and in the
-    ///   symbol).
+    ///   symbol); kn in RON (ಲೀ, whose last code point is the vowel sign U+0CC0, a mark, and whose last grapheme cluster starts with
+    ///   the letter U+0CB2).
     ///
     /// Steps:
     /// - Write each value with the locale's currency format of the code, with the narrow symbol when the case says so.
@@ -315,6 +378,7 @@ public sealed class NumberFormatterTests
     [InlineData("de-AT", "EUR", false, "1234.5", "€_1.234,50")]
     [InlineData("fr-CH", "CHF", false, "1234.5", "1'234.50_CHF")]
     [InlineData("ar-EG", "EGP", false, "1234.5", "!١٬٢٣٤٫٥٠_ج.م.!")]
+    [InlineData("kn", "RON", true, "1234.5", "ಲೀ_1,234.50")]
     public void Currency_Locales_WriteTheSymbolAndTheCurrencysDigits(string tag, string code, bool narrow, string value, string expected)
     {
         NumberFormatter format = NumberFormatter.Currency(ByTag[tag], code, new NumberOptions { NarrowCurrencySymbol = narrow });
@@ -565,6 +629,42 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
+    /// A compact number that rounds up past decimal.MaxValue still writes, its plural category taken from a stand-in of 28 digits with
+    /// the same last seven, and Round of it throws (design §4.11, "Passing the number").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's short compact format (000T is its largest pattern, at 10^14); pl's and fr's long compact formats, whose patterns at
+    ///   10^14 differ by the plural category.
+    ///
+    /// Steps:
+    /// - Write decimal.MaxValue with en's format, and round it.
+    /// - Write 10^14 as a decimal with pl's and fr's formats, and 1.2345 × 10^30 as a double: the number it stands for has 31 digits,
+    ///   past decimal, and its last seven are zeros. In Polish that is many, as 10^14 is (i % 10 = 0; a stand-in ending in 2 would
+    ///   be few). In French it is many (c = 12), which falls back to other, as 10^14 does (a stand-in of 0 would be one).
+    ///
+    /// Expected:
+    /// - 79,228,162,514,264,338T (the 17 digits of 7.9228162514264337 × 10^16 rounded up); OverflowException.
+    /// - Each double's text ends with the word of the locale's text of 10^14, after a space.
+    /// </remarks>
+    [Fact]
+    public void Compact_NumberPastDecimal_WritesAndRoundThrows()
+    {
+        NumberFormatter en = NumberFormatter.Compact(CldrLocales.En, CompactStyle.Short);
+
+        Assert.Equal("79,228,162,514,264,338T", en.Format(decimal.MaxValue));
+        Assert.Throws<OverflowException>(() => en.Round(decimal.MaxValue));
+        foreach (LocaleData data in new[] { CldrLocales.Pl, CldrLocales.Fr })
+        {
+            NumberFormatter format = NumberFormatter.Compact(data, CompactStyle.Long);
+            string power = format.Format(100_000_000_000_000m);
+            string word = power[power.LastIndexOf(' ')..];
+
+            Assert.EndsWith(word, Write(format, 1.2345e30), StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// A destination too short for the text gives false and no characters; one of the text's length takes it.
     /// </summary>
     /// <remarks>
@@ -663,14 +763,16 @@ public sealed class NumberFormatterTests
 
     /// <summary>
     /// Parsing reads the locale's digits, ASCII digits, and full-width digits, skips group separators between integer digits
-    /// without checking their place (and a space where the separator is U+00A0 or U+202F), reads a sign first (a hyphen-minus too
-    /// where the minus is U+2212), a percent sign before or after the digits or none, and skips white space at the ends and the bidi
-    /// marks anywhere (design §4.11, "Parsing"; Issue #906).
+    /// without checking their place (and, where the separator is U+00A0 or U+202F, a space and the other of the two), reads a sign
+    /// first (a hyphen-minus too where the minus is U+2212), a percent sign before or after the digits or none, and skips white space
+    /// at the ends and the bidi marks anywhere (design §4.11, "Parsing"; Issue #906; PR #944's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The cases: en without groups, with groups out of place, with spaces and a plus sign, with no integer digit; fr with a space
-    ///   and with U+202F; pl with a space (its separator is U+00A0); ja with full-width digits, mixed digits, and a full-width
+    /// - The cases: en without groups, with groups out of place, with spaces and a plus sign, with no integer digit, with no fraction
+    ///   digit after the decimal separator; de's 3.14, whose . is its group separator (314: the place is not checked); hi with four
+    ///   Indian groups; fr (separator U+202F) with a space, with U+202F, and with U+00A0; pl and ru (separator U+00A0) with a space,
+    ///   with U+00A0, and with U+202F; ja with full-width digits, mixed digits, and a full-width
     ///   number with an ASCII group; ar-EG with its own digits and minus, with ASCII digits, and a percent without the U+061C of its
     ///   sign; ar with a minus without its U+200E, and with U+200E between digits; sv, whose minus is U+2212, with a hyphen-minus and
     ///   with its own; en, tr, and de percents.
@@ -690,9 +792,18 @@ public sealed class NumberFormatterTests
     [InlineData("en", false, "1,2,3", "123")]
     [InlineData("en", false, "  +42  ", "42")]
     [InlineData("en", false, "-.5", "-0.5")]
+    [InlineData("en", false, "5.", "5")]
+    [InlineData("de", false, "3.14", "314")]
+    [InlineData("hi", false, "1,23,45,678", "12345678")]
     [InlineData("fr", false, "1 234,5", "1234.5")]
     [InlineData("fr", false, "1^234,5", "1234.5")]
+    [InlineData("fr", false, "1_234_567,5", "1234567.5")]
     [InlineData("pl", false, "1 234,5", "1234.5")]
+    [InlineData("pl", false, "1_234,5", "1234.5")]
+    [InlineData("pl", false, "1^234^567,5", "1234567.5")]
+    [InlineData("ru", false, "1 234,5", "1234.5")]
+    [InlineData("ru", false, "1_234,5", "1234.5")]
+    [InlineData("ru", false, "1^234^567,5", "1234567.5")]
     [InlineData("ja", false, "１２３４.５", "1234.5")]
     [InlineData("ja", false, "1２3４", "1234")]
     [InlineData("ja", false, "１,２３４", "1234")]
@@ -726,13 +837,14 @@ public sealed class NumberFormatterTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The cases: en with a letter, white space alone, a sign alone, two group separators in a row, a separator first or last
-    ///   (after a sign, before a decimal separator), two decimal
-    ///   separators, a percent sign in the decimal format, NaN, ∞, an exponent, a number past decimal.MaxValue, and two percent
-    ///   signs, U+2212 (en's minus is a hyphen-minus); de with a space (its separator is .).
+    /// - The cases: en with a letter, the empty text, white space alone, a sign alone, two group separators in a row, a separator
+    ///   first or last (after a sign, before a decimal separator), two decimal separators, a percent sign in the decimal format, NaN,
+    ///   ∞, an exponent, a number past decimal.MaxValue, two percent signs, U+2212 (en's minus is a hyphen-minus), and U+00A0
+    ///   between digits; tr's percent with the sign after the percent sign (%-25); de with a space, with U+00A0, and with U+202F
+    ///   (its separator is .).
     ///
     /// Steps:
-    /// - Read each text as a decimal.
+    /// - Read each text as a decimal, with the marks of the class comment.
     ///
     /// Expected:
     /// - false and 0 for each.
@@ -742,6 +854,7 @@ public sealed class NumberFormatterTests
     /// <param name="text">The text.</param>
     [Theory]
     [InlineData("en", false, "12a")]
+    [InlineData("en", false, "")]
     [InlineData("en", false, "   ")]
     [InlineData("en", false, "-")]
     [InlineData("en", false, "1,,234")]
@@ -757,13 +870,17 @@ public sealed class NumberFormatterTests
     [InlineData("en", false, "−5")]
     [InlineData("en", false, "79228162514264337593543950336")]
     [InlineData("en", true, "%25%")]
+    [InlineData("en", false, "1_234")]
+    [InlineData("tr", true, "%-25")]
     [InlineData("de", false, "1 234")]
+    [InlineData("de", false, "1_234")]
+    [InlineData("de", false, "1^234")]
     public void TryParse_OtherText_IsFalse(string tag, bool percent, string text)
     {
         LocaleData data = ByTag[tag];
         NumberFormatter format = percent ? data.PercentFormat : data.DecimalFormat;
 
-        Assert.False(format.TryParse(text, out decimal value));
+        Assert.False(format.TryParse(Marked(text), out decimal value));
         Assert.Equal(0m, value);
     }
 
@@ -796,6 +913,34 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
+    /// Digits past the range of double are not read as a double, as the infinities are not (PR #944's review: double.TryParse gives an
+    /// infinity for them); the largest double's digits are.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's decimal and percent formats; a 1 and 400 zeros (past 1.8 × 10^308, read in a rented buffer); a 1 and 308 zeros.
+    ///
+    /// Steps:
+    /// - Read the first as a double with both formats, and with a minus sign; read the second as a double.
+    ///
+    /// Expected:
+    /// - false and 0 for each of the first three; true and 10^308 for the second.
+    /// </remarks>
+    [Fact]
+    public void TryParse_DigitsPastDouble_IsFalse()
+    {
+        LocaleData en = CldrLocales.En;
+        string past = "1" + new string('0', 400);
+
+        Assert.False(en.DecimalFormat.TryParse(past, out double number));
+        Assert.False(en.PercentFormat.TryParse(past, out double percent));
+        Assert.False(en.DecimalFormat.TryParse("-" + past, out double negative));
+        Assert.Equal((0.0, 0.0, 0.0), (number, percent, negative));
+        Assert.True(en.DecimalFormat.TryParse("1" + new string('0', 308), out double largest));
+        Assert.Equal(1e308, largest);
+    }
+
+    /// <summary>
     /// A formatted number in an interpolation of a NodeTextWriter writes the format's text; the default value writes nothing
     /// (design §4.11, "Allocation and threads").
     /// </summary>
@@ -820,6 +965,32 @@ public sealed class NumberFormatterTests
 
         Assert.Equal("1,234.5 / 25% / 1.2K files", new string(writer.Buffer, 0, writer.Length));
         Assert.Equal("1,234.5", en.DecimalFormat.Of(1234.5).ToString());
+    }
+
+    /// <summary>
+    /// ToString of a formatted number longer than its 64 characters on the stack writes it whole, through a buffer of 256 characters
+    /// and through one grown past that.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's decimal format with at least 100 and with at least 300 integer digits, without grouping.
+    ///
+    /// Steps:
+    /// - Call ToString of Of(7m) with each, and Format(7m) with the second.
+    ///
+    /// Expected:
+    /// - 99 zeros and a 7; 299 zeros and a 7, both ways.
+    /// </remarks>
+    [Fact]
+    public void ToString_TextPastSixtyFourCharacters_IsWhole()
+    {
+        LocaleData en = CldrLocales.En;
+        NumberFormatter hundred = NumberFormatter.Decimal(en, new NumberOptions { MinimumIntegerDigits = 100, UseGrouping = false });
+        NumberFormatter threeHundred = NumberFormatter.Decimal(en, new NumberOptions { MinimumIntegerDigits = 300, UseGrouping = false });
+
+        Assert.Equal(new string('0', 99) + "7", hundred.Of(7m).ToString());
+        Assert.Equal(new string('0', 299) + "7", threeHundred.Of(7m).ToString());
+        Assert.Equal(new string('0', 299) + "7", threeHundred.Format(7m));
     }
 
     /// <summary>

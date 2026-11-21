@@ -106,7 +106,7 @@ internal sealed class NumberPattern
 
     /// <summary>
     /// Returns a value indicating whether the currency sign of a pattern's positive part comes before its digits, so that the
-    /// symbol's last character is the one next to the number; otherwise its first character is.
+    /// symbol's end is next to the number; otherwise its start is.
     /// </summary>
     /// <param name="pattern">The pattern, as CLDR writes it.</param>
     /// <returns><see langword="true"/> when an unquoted <c>¤</c> comes before the digits.</returns>
