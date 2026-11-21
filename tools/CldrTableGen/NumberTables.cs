@@ -20,10 +20,20 @@ namespace XylemUI.Tools.CldrTableGen;
 /// exponent byte (3 for 1000), a category byte (0 to 5 for zero to other, 6 for the explicit 1), and the pattern, ordered by exponent
 /// and category. A currency table is, for each currency in ordinal order of its code whose standard or narrow symbol differs from the
 /// code, the code (3 ASCII bytes), the standard symbol (empty when it is the code), and the narrow symbol (empty when it is the
-/// standard one).
+/// standard one). A symbol's length byte holds its UTF-8 length in its 6 low bits (at most 63) and, in its 2 high bits, whether the
+/// grapheme cluster next to the digits starts with a letter: bit 7 for its last cluster (the symbol before the digits) and bit 6 for
+/// its first (the symbol after them). An empty symbol is the byte 0.
 /// </remarks>
 internal sealed class NumberTables
 {
+    // The bits of a currency symbol's length byte: the last grapheme cluster starts with a letter, the first one does, and the
+    // UTF-8 length (Issue #906).
+    private const int LastClusterIsLetter = 0x80;
+
+    private const int FirstClusterIsLetter = 0x40;
+
+    private const int SymbolLengthMask = 0x3F;
+
     private static readonly string[] Categories = ["zero", "one", "two", "few", "many", "other", "1"];
 
     private static readonly char[] NumberCharacters = ['#', '0', ',', '.'];
@@ -278,8 +288,8 @@ internal sealed class NumberTables
             }
 
             table.AddRange(Encoding.ASCII.GetBytes(code));
-            Add(table, standard == code ? string.Empty : standard);
-            Add(table, narrow is null || narrow == standard ? string.Empty : narrow);
+            AddSymbol(table, tag, code, standard == code ? string.Empty : standard);
+            AddSymbol(table, tag, code, narrow is null || narrow == standard ? string.Empty : narrow);
         }
 
         return [.. table];
@@ -428,5 +438,47 @@ internal sealed class NumberTables
 
         table.Add((byte)bytes.Length);
         table.AddRange(bytes);
+    }
+
+    // A currency symbol: its UTF-8 length and the two letter bits in one byte, and its bytes. The tool judges the clusters, so the
+    // runtime carries no grapheme break tables: judging them there pulled about 14 KB of .NET's into every NativeAOT app that
+    // formats a currency (Issue #906).
+    private static void AddSymbol(List<byte> table, string tag, string code, string symbol)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(symbol);
+        if (bytes.Length > SymbolLengthMask)
+        {
+            throw new InvalidDataException("The symbol " + symbol + " of " + code + " in " + tag + " is longer than 63 bytes of UTF-8.");
+        }
+
+        int letters = 0;
+        if (symbol.Length > 0)
+        {
+            letters |= StartsWithLetter(symbol, LastCluster(symbol)) ? LastClusterIsLetter : 0;
+            letters |= StartsWithLetter(symbol, 0) ? FirstClusterIsLetter : 0;
+        }
+
+        table.Add((byte)(bytes.Length | letters));
+        table.AddRange(bytes);
+    }
+
+    // The index of a symbol's last extended grapheme cluster (UAX #29): Kannada's ಲೀ, U+0CB2 and the vowel sign U+0CC0, is one
+    // cluster that starts at 0.
+    private static int LastCluster(string symbol)
+    {
+        int last = 0;
+        for (int at = 0; at < symbol.Length; at += StringInfo.GetNextTextElementLength(symbol, at))
+        {
+            last = at;
+        }
+
+        return last;
+    }
+
+    // Whether the code point at an index has General Category L, which UTS #35 part 3 judges for the alphaNextToNumber pattern.
+    private static bool StartsWithLetter(string symbol, int index)
+    {
+        _ = Rune.DecodeFromUtf16(symbol.AsSpan(index), out Rune rune, out _);
+        return Rune.IsLetter(rune);
     }
 }

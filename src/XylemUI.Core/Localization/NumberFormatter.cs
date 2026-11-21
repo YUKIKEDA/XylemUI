@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Globalization;
 using System.Numerics;
-using System.Text;
 
 namespace XylemUI;
 
@@ -200,12 +199,13 @@ public sealed class NumberFormatter
 
         options ??= DefaultOptions;
         NumberSymbols symbols = locale.Numbers;
-        string symbol = CurrencySymbol(locale.CurrencyTable, isoCode, options.NarrowCurrencySymbol);
+        (string symbol, bool lastIsLetter, bool firstIsLetter) = CurrencySymbol(locale.CurrencyTable, isoCode, options.NarrowCurrencySymbol);
 
         // The pattern for a symbol whose grapheme cluster next to the digits starts with a letter (CHF) is the locale's
-        // alphaNextToNumber one; currencySpacing applies only where the locale has none (Issue #906).
+        // alphaNextToNumber one; currencySpacing applies only where the locale has none (Issue #906). The cluster is the symbol's
+        // last before the digits and its first after them, and the table says whether each starts with a letter.
         bool spacing = symbols.CurrencyAlphaPattern.Length == 0;
-        bool letter = IsLetterNextToNumber(symbol, NumberPattern.CurrencyBeforeNumber(symbols.CurrencyPattern));
+        bool letter = NumberPattern.CurrencyBeforeNumber(symbols.CurrencyPattern) ? lastIsLetter : firstIsLetter;
         string text = !spacing && letter ? symbols.CurrencyAlphaPattern : symbols.CurrencyPattern;
         NumberPattern pattern = NumberPattern.Parse(text, symbols, symbol, spacing);
         int digits = CurrencyDigits(isoCode);
@@ -479,50 +479,33 @@ public sealed class NumberFormatter
             _ => (minimum, maximum),
         };
 
-    // Whether the symbol's grapheme cluster next to the digits (its last before them, its first after them) starts with a letter,
-    // General Category L: UTS #35 part 3 uses the alphaNextToNumber pattern then. It judges the cluster, not the last code point, so
-    // Kannada's ಲೀ (U+0CB2 and the vowel sign U+0CC0) is a letter (PR #944's review). It runs when the format is made.
-    private static bool IsLetterNextToNumber(string symbol, bool before)
-    {
-        int cluster = 0;
-        if (before)
-        {
-            for (int at = 0; at < symbol.Length; at += StringInfo.GetNextTextElementLength(symbol, at))
-            {
-                cluster = at;
-            }
-        }
-
-        _ = Rune.DecodeFromUtf16(symbol.AsSpan(cluster), out Rune rune, out _);
-        return Rune.IsLetter(rune);
-    }
-
     // ISO 4217's form of a code: three upper-case ASCII letters.
     private static bool IsCurrencyCode(string isoCode) =>
         isoCode.Length == 3 && char.IsAsciiLetterUpper(isoCode[0]) && char.IsAsciiLetterUpper(isoCode[1]) && char.IsAsciiLetterUpper(isoCode[2]);
 
-    // The currency's symbol in the locale's table: entries of a code and two strings, the standard symbol (empty when it is the
-    // code) and the narrow one (empty when it is the standard one). A currency the table does not list shows its code.
-    private static string CurrencySymbol(ReadOnlySpan<byte> table, string isoCode, bool narrow)
+    // The currency's symbol in the locale's table, and whether its last and its first grapheme clusters start with a letter:
+    // entries of a code and two symbols, the standard one (empty when it is the code) and the narrow one (empty when it is the
+    // standard one). A currency the table does not list shows its code, whose clusters are ASCII letters.
+    private static (string Symbol, bool LastIsLetter, bool FirstIsLetter) CurrencySymbol(ReadOnlySpan<byte> table, string isoCode, bool narrow)
     {
         var reader = new CldrTableReader(table);
         while (!reader.End)
         {
             if (!reader.ReadCode(isoCode))
             {
-                reader.SkipString();
-                reader.SkipString();
+                reader.SkipCurrencySymbol();
+                reader.SkipCurrencySymbol();
                 continue;
             }
 
-            string symbol = reader.ReadString();
-            string narrowSymbol = reader.ReadString();
-            return narrow && narrowSymbol.Length > 0 ? narrowSymbol
-                : symbol.Length > 0 ? symbol
-                : isoCode;
+            (string Symbol, bool LastIsLetter, bool FirstIsLetter) standard = reader.ReadCurrencySymbol();
+            (string Symbol, bool LastIsLetter, bool FirstIsLetter) narrowSymbol = reader.ReadCurrencySymbol();
+            return narrow && narrowSymbol.Symbol.Length > 0 ? narrowSymbol
+                : standard.Symbol.Length > 0 ? standard
+                : (isoCode, true, true);
         }
 
-        return isoCode;
+        return (isoCode, true, true);
     }
 
     // The currency's fraction digits in CLDR's currencyData: entries of a code and its digits, for the currencies whose digits are
