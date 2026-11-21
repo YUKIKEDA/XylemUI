@@ -61,6 +61,7 @@ internal static unsafe class InputLatency
         var toDisplay = new List<double>();
         var presentMonInput = new List<double>();
         var modes = new Dictionary<string, int>();
+        var presentRates = new List<double>();
         int lost = 0;
 
         // The waits between keys sleep in steps of 1 ms: at the default timer resolution (15.6 ms) the random part of the interval
@@ -71,7 +72,7 @@ internal static unsafe class InputLatency
             for (int run = 0; run < runs; run++)
             {
                 string csv = Path.Combine(work, $"input{run}.csv");
-                lost += MeasureRun(presentMon, app, appArgs, covered, presses, seed: run, csv, toDisplay, presentMonInput, modes);
+                lost += MeasureRun(presentMon, app, appArgs, covered, presses, seed: run, csv, toDisplay, presentMonInput, modes, presentRates);
             }
         }
         catch (InvalidOperationException stopped)
@@ -97,6 +98,13 @@ internal static unsafe class InputLatency
         report.Series("input_to_display_ms", toDisplay);
         report.Series("presentmon_input_to_photon_ms", presentMonInput);
         report.Text("present_modes", string.Join("; ", modes.OrderByDescending(m => m.Value).Select(m => $"{m.Key}={m.Value}")));
+
+        // What shows that the app animated (PR #943's measurement: the hosted `app --tree` drew only on keys): the presents
+        // PresentMon traced over all runs, and the lowest rate of a run, presents over the time from the trace's start to the
+        // app's end. An animated run presents about once a refresh. A run that draws only on keys reads one or two orders lower;
+        // PresentMon can count fewer presents than the keys it showed then, so its figure is not read as a count.
+        report.Number("presents_seen", modes.Values.Sum());
+        report.Number("presents_per_second_min", presentRates.Count == 0 ? 0 : presentRates.Min());
         return 0;
     }
 
@@ -111,7 +119,8 @@ internal static unsafe class InputLatency
         string csv,
         List<double> toDisplay,
         List<double> presentMonInput,
-        Dictionary<string, int> modes
+        Dictionary<string, int> modes,
+        List<double> presentRates
     )
     {
         using Process process = Process.Start(new ProcessStartInfo(app, appArgs) { UseShellExecute = false })!;
@@ -168,6 +177,7 @@ internal static unsafe class InputLatency
             // would end it with the app, but then it wrote no file.
             int seconds = 5 + (int)Math.Ceiling(presses * 0.2);
             monitor = External.StartPresentMon(presentMon, csv, seconds, process.Id, session);
+            long traceStart = Stopwatch.GetTimestamp();
             uint shown = WaitForMarker(duplication, context, pixel, point, Marker, PressedMarker, out _);
             var random = new Random(seed);
             int lost = 0;
@@ -198,10 +208,13 @@ internal static unsafe class InputLatency
                 Pump(TimeSpan.FromMilliseconds(100 + (random.NextDouble() * 16.7)));
             }
 
+            double traced = Stopwatch.GetElapsedTime(traceStart).TotalSeconds;
             External.Kill(process);
             monitor.WaitForExit();
+            int rows = 0;
             foreach (Dictionary<string, string> row in External.Rows(csv, process.Id))
             {
+                rows++;
                 modes[row["PresentMode"]] = modes.GetValueOrDefault(row["PresentMode"]) + 1;
                 if (row.TryGetValue("MsAllInputToPhotonLatency", out string? cell))
                 {
@@ -209,6 +222,7 @@ internal static unsafe class InputLatency
                 }
             }
 
+            presentRates.Add(rows / traced);
             return lost;
         }
         finally

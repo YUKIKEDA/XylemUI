@@ -24,6 +24,24 @@
 //                              --scroll keeps them still in a scroll container and changes its scroll position each frame, row V2;
 //                              --resizes N presents N frames on the synchronous resize path first, as a resize drag does, row R3;
 //                              --resizes-late N presents N of them after frame 300 while a frame waits for its late start)
+//                              (with --tree the window is the Windows host's and the tree its window core's, on a thread in COM's
+//                              single-threaded apartment, row PL1; the report adds host, presents, frames_not_presented,
+//                              main_builds, text_input, accessibility_tree, the series a11y_ms (the accessibility stage, timed
+//                              apart from build_ms and cpu_frame_ms), uia_provider and os_pointer (1 when the window has the
+//                              host's UIA provider, and when the OS's mouse messages reach the core's input), and with --hover
+//                              hover_misses (moves after which the node the hit test gives at the move's point was not
+//                              hovered), hover_on_other_box (moves whose point is another box's than the target's),
+//                              hover_other_box_index, layout_width and layout_height: Frames.cs. Two switches of the
+//                              environment, read only by this benchmark (Scene.cs): XYLEMUI_E2E_NO_UIA=1 takes the host's UIA
+//                              provider off the window before it shows, so no accessibility tree is made (uia_provider=0,
+//                              accessibility_tree=0); XYLEMUI_E2E_NO_OS_POINTER=1 takes the OS's mouse messages off the core's
+//                              input after it attaches (os_pointer=0))
+//   wm-size [frames] --resizes N | --resizes-late N  (N even)
+//                              frames --tree whose resizes change the host's window with SetWindowPos, through WM_SIZE, the
+//                              host's synchronous render, and the window core's Resize (row PL1, HostResize.cs), where
+//                              frames' --resizes call the window core's Resize; takes frames' tree options. Reports frames'
+//                              fields, and wm_resizes, wm_sizes, dropped_nested_resizes, and the series wm_size_to_present_ms,
+//                              set_window_pos_ms, to_wm_size_ms, wm_size_to_draw_ms, resize_draw_ms, resize_present_ms
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
@@ -47,6 +65,11 @@
 //   select                     a 10-option select over the todo sample: the frame that opens it, and its key and hover frames (row P02d2)
 //   touchpad                   a frame's poll of a hidden window's DirectManipulation viewport with no contact (row I1c)
 //   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
+//   number-format [--calls N]  no window: one TryFormat into a span and one Of(value) written through a NodeTextWriter's
+//                              interpolation, for en's and ja's decimal, percent, USD, and short compact formats with a decimal
+//                              and a double; per case the ns of a call (median, min, max of 7 batches of N calls, 200,000 by
+//                              default, after 10,000 unmeasured), bytes per call (0 on NativeAOT), and the methods JIT
+//                              compiled in the window (row LC2, NumberFormatCost.cs)
 //   rich-text                  the layout, draw, restyle, and link hover of text leaves with ranges, next to plain ones (row T12)
 //   inline-objects             the layout, draw, and relayout of text leaves with inline objects, next to plain ones (row T13)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
@@ -60,7 +83,7 @@
 //   startup-child [--idle]     the child of startup and idle
 //   app [--static] [--period ms]  the scene as an app, animated (at most one frame per period) or drawn once, for `external`;
 //                              the space key switches its marker's color (for `input-latency`); --tree draws it from a UI tree with
-//                              WindowFrames, the path of an app (row R3)
+//                              WindowFrames, the path of an app (row R3), in a window of the Windows host (row PL1)
 //   actions                    an action made by its name from the generated table, and the cost of dispatching it through
 //                              chains of boxes 1 and 50 deep (row KM1a, ActionCost.cs)
 //   keymap                     a key through the chain of 50 boxes with no row in the keymap, with 200 rows it does not match,
@@ -78,7 +101,10 @@
 //   external --presentmon <exe> --app <exe> [--name n] [--runs N]   the comparison of frameworks, from outside the process
 //   app-startup <exe> [--at x,y] [--runs N]   an app's launch to its marker color on the display, and its close (row V1d)
 //   input-latency --presentmon <exe> --app <exe> [--app-args a] [--static] [--covered] [--presses N] [--runs N]
-//                              the space key, injected, to the display of the marker it switches (row R3, InputLatency.cs)
+//                              the space key, injected, to the display of the marker it switches (row R3, InputLatency.cs);
+//                              presents_seen (the app's presents PresentMon traced, all runs) and presents_per_second_min (the
+//                              lowest run's presents over its trace) show whether the app animated: about one a refresh when
+//                              animated; with --static, PresentMon can count fewer presents than the keys shown
 using System.Globalization;
 using XylemUI.E2E;
 
@@ -95,32 +121,67 @@ int Number(int index, int fallback) =>
 // The number after an option's name, such as "--relations 50".
 int Option(string name, int fallback) => Array.IndexOf(args, name) is int at and >= 0 ? Number(at + 1, fallback) : fallback;
 
+// frames, or wm-size; with the tree, in the host's window on a thread of its own (StaThread).
+int RunFrames(bool wmSize)
+{
+    bool tree = wmSize || args.Contains("--tree");
+    int resizes = Option("--resizes", 0);
+    int resizesLate = Option("--resizes-late", 0);
+    if (wmSize && resizes == 0 && resizesLate == 0)
+    {
+        throw new ArgumentException("wm-size resizes the window: give --resizes N or --resizes-late N.");
+    }
+
+    // Each resize of wm-size alternates the window between two sizes; an odd count would leave the frames after it at the larger
+    // size, whose layout and pixels differ from frames --tree (PR #943's review).
+    if (wmSize && (resizes % 2 != 0 || resizesLate % 2 != 0))
+    {
+        throw new ArgumentException(
+            $"wm-size alternates the window between two sizes: --resizes ({resizes}) and --resizes-late ({resizesLate}) must be even."
+        );
+    }
+
+    int Run() =>
+        Frames.Run(
+            Number(1, 600),
+            heavy: 0,
+            warp: args.Contains("--warp"),
+            gray: args.Contains("--gray"),
+            shapes: args.Contains("--shapes"),
+            curves: args.Contains("--curves"),
+            groups: args.Contains("--groups"),
+            layers: Option("--layers", 50),
+            scopes: Scopes(),
+            nested: Option("--nested", 0),
+            tree: tree,
+            noText: args.Contains("--no-text"),
+            hover: args.Contains("--hover"),
+            scroll: args.Contains("--scroll"),
+            list: Array.IndexOf(args, "--list") is int listAt and >= 0 && listAt + 1 < args.Length ? args[listAt + 1] : string.Empty,
+            resizes: resizes,
+            resizesLate: resizesLate,
+            images: args.Contains("--images"),
+            wmSize: wmSize
+        );
+
+    return tree ? StaThread.Run(Run) : Run();
+}
+
+int RunApp()
+{
+    int Run() => External.App(isStatic: args.Contains("--static"), period: Option("--period", 0), tree: args.Contains("--tree"));
+
+    return args.Contains("--tree") ? StaThread.Run(Run) : Run();
+}
+
 return scenario switch
 {
     "startup" => Startup.Launch(Number(1, 10), Scopes()),
     "startup-child" => Startup.Child(idle: args.Contains("--idle"), gray: args.Contains("--gray"), scopes: Scopes()),
     "idle" => Startup.Idle(Number(1, 3), gray: args.Contains("--gray")),
     "startup-check" => Startup.Check(Number(1, 5)),
-    "frames" => Frames.Run(
-        Number(1, 600),
-        heavy: 0,
-        warp: args.Contains("--warp"),
-        gray: args.Contains("--gray"),
-        shapes: args.Contains("--shapes"),
-        curves: args.Contains("--curves"),
-        groups: args.Contains("--groups"),
-        layers: Array.IndexOf(args, "--layers") is int layersAt and >= 0 ? Number(layersAt + 1, 50) : 50,
-        scopes: Scopes(),
-        nested: Array.IndexOf(args, "--nested") is int nestedAt and >= 0 ? Number(nestedAt + 1, 0) : 0,
-        tree: args.Contains("--tree"),
-        noText: args.Contains("--no-text"),
-        hover: args.Contains("--hover"),
-        scroll: args.Contains("--scroll"),
-        list: Array.IndexOf(args, "--list") is int listAt and >= 0 && listAt + 1 < args.Length ? args[listAt + 1] : string.Empty,
-        resizes: Array.IndexOf(args, "--resizes") is int resizesAt and >= 0 ? Number(resizesAt + 1, 0) : 0,
-        resizesLate: Array.IndexOf(args, "--resizes-late") is int lateAt and >= 0 ? Number(lateAt + 1, 0) : 0,
-        images: args.Contains("--images")
-    ),
+    "frames" => RunFrames(wmSize: false),
+    "wm-size" => RunFrames(wmSize: true),
     "image-upload" => ImageUpload.Run(Number(1, 20)),
     "image-decode" => ImageCost.Decode(args[1], Number(2, 20)),
     "image-tree" => ImageCost.Tree(Number(1, 600)),
@@ -164,6 +225,7 @@ return scenario switch
     ),
     "hit-region" => HitCost.Run(),
     "segment" => SegmentCost.Run(),
+    "number-format" => NumberFormatCost.Run(Option("--calls", 200_000)),
     "rich-text" => RichTextCost.Run(args.Length > 1 ? args[1] : null),
     "inline-objects" => InlineCost.Run(args.Length > 1 ? args[1] : null),
     "shapes" => ShapeGallery.Run(),
@@ -186,11 +248,7 @@ return scenario switch
         scale: Scale()
     ),
     "text-capture" => TextCapture.Run(args[1], args[2], string.Join(' ', args.Skip(3))),
-    "app" => External.App(
-        isStatic: args.Contains("--static"),
-        period: Array.IndexOf(args, "--period") is int at and >= 0 ? Number(at + 1, 0) : 0,
-        tree: args.Contains("--tree")
-    ),
+    "app" => RunApp(),
     "external" => External.Run(args),
     "app-startup" => AppStartup.Run(args),
     "input-latency" => InputLatency.Run(args),

@@ -20,7 +20,8 @@ public sealed class PluralRulesTests
     /// - Expand each sample list: values, ranges (0~15, 0.0~1.5, stepped by the last digit of their ends), and compact decimals
     ///   (1.1c6, the value 1100000 shown with the exponent 6); the ellipsis is skipped.
     /// - Select each value: a whole @integer value with Select(long), a @decimal value with Select(decimal) at its own scale, a
-    ///   compact decimal with its exponent, and an ordinal value with SelectOrdinal.
+    ///   compact decimal with the cardinal rule method on its operands with the exponent as c (no public member takes c: the
+    ///   compact format selects with c = 0), and an ordinal value with SelectOrdinal.
     ///
     /// Expected:
     /// - Every value selects its sample's category; the run selected 39,458 values (counted from the json with the same expansion).
@@ -40,7 +41,7 @@ public sealed class PluralRulesTests
                 foreach ((decimal value, int exponent, bool isInteger) in Expand(samples))
                 {
                     PluralCategory actual =
-                        exponent != 0 ? rules.Select(value, exponent)
+                        exponent != 0 ? rules.Cardinal(PluralOperands.Of(value, exponent))
                         : isInteger ? rules.Select(decimal.ToInt64(value))
                         : rules.Select(value);
                     selected++;
@@ -234,7 +235,7 @@ public sealed class PluralRulesTests
     ///
     /// Steps:
     /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: select the index as a long, as a decimal with
-    ///   one fraction digit, as a compact decimal, and as an ordinal.
+    ///   one fraction digit, as an ordinal, and 1100000 with the compact exponent 6 through the cardinal rule method.
     ///
     /// Expected:
     /// - No byte is allocated, and every run selected many for the compact decimal.
@@ -252,7 +253,7 @@ public sealed class PluralRulesTests
                 _ = fr.Select(i);
                 _ = fr.Select(i + 0.5m);
                 _ = fr.SelectOrdinal(i);
-                if (fr.Select(1_100_000m, 6) == PluralCategory.Many)
+                if (fr.Cardinal(PluralOperands.Of(1_100_000m, 6)) == PluralCategory.Many)
                 {
                     many++;
                 }

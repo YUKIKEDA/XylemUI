@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace XylemUI.Tests;
 
@@ -710,6 +711,58 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
+    /// A currency format takes the alphaNextToNumber pattern by the bits the generator wrote in the symbol's length byte, not by the
+    /// symbol's text: bit 7 (the last grapheme cluster starts with a letter) when the currency sign comes before the digits, and bit
+    /// 6 (the first one does) when it comes after them; the narrow symbol by its own bits (Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A currency table made by hand, whose symbols are letters and whose bits say otherwise: XAA's X with bit 6 alone, XBB's Y with
+    ///   bit 7 alone, and XCC's C with bit 7 alone and its narrow D with bit 6 alone.
+    /// - en's number table (¤#,##0.00, and ¤_#,##0.00 for a letter), and en's number table with the patterns #,##0.00¤ and
+    ///   #,##0.00_¤, the sign after the digits.
+    ///
+    /// Steps:
+    /// - Write 1234.5 in XAA, XBB, and XCC with each table, and in XCC with the narrow symbol.
+    ///
+    /// Expected:
+    /// - Before the digits: X1,234.50, Y_1,234.50, C_1,234.50, and D1,234.50.
+    /// - After the digits: 1,234.50_X, 1,234.50Y, 1,234.50C, and 1,234.50_D.
+    /// </remarks>
+    [Fact]
+    public void Currency_LetterBits_ChooseThePatternBySide()
+    {
+        var before = new LetterBitsLocaleData(after: false);
+        var after = new LetterBitsLocaleData(after: true);
+        var narrow = new NumberOptions { NarrowCurrencySymbol = true };
+
+        string[] written =
+        [
+            NumberFormatter.Currency(before, "XAA").Format(1234.5m),
+            NumberFormatter.Currency(before, "XBB").Format(1234.5m),
+            NumberFormatter.Currency(before, "XCC").Format(1234.5m),
+            NumberFormatter.Currency(before, "XCC", narrow).Format(1234.5m),
+            NumberFormatter.Currency(after, "XAA").Format(1234.5m),
+            NumberFormatter.Currency(after, "XBB").Format(1234.5m),
+            NumberFormatter.Currency(after, "XCC").Format(1234.5m),
+            NumberFormatter.Currency(after, "XCC", narrow).Format(1234.5m),
+        ];
+
+        string[] expected =
+        [
+            "X1,234.50",
+            Marked("Y_1,234.50"),
+            Marked("C_1,234.50"),
+            "D1,234.50",
+            Marked("1,234.50_X"),
+            "1,234.50Y",
+            "1,234.50C",
+            Marked("1,234.50_D"),
+        ];
+        Assert.Equal(expected, written);
+    }
+
+    /// <summary>
     /// A negative number that rounds to zero keeps the minus sign, and the double -0.0 is written as zero, as a decimal's zero is
     /// (Issue #906; the double, after PR #944's review).
     /// </summary>
@@ -1269,6 +1322,20 @@ public sealed class NumberFormatterTests
         return [.. table[..at], 0];
     }
 
+    // A number table with its last two strings, the currency pattern and the alphaNextToNumber one, replaced.
+    private static byte[] WithCurrencyPatterns(ReadOnlySpan<byte> table, string currency, string alpha)
+    {
+        int at = 3;
+        for (int i = 0; i < 11; i++)
+        {
+            at += 1 + table[at];
+        }
+
+        byte[] standard = Encoding.UTF8.GetBytes(currency);
+        byte[] letter = Encoding.UTF8.GetBytes(alpha);
+        return [.. table[..at], (byte)standard.Length, .. standard, (byte)letter.Length, .. letter];
+    }
+
     // The text with the marks of the class comment replaced by the characters they stand for.
     private static string Marked(string text) =>
         text.Replace('_', (char)0x00A0).Replace('^', (char)0x202F).Replace('|', (char)0x200E).Replace('!', (char)0x200F).Replace('@', (char)0x061C);
@@ -1283,6 +1350,32 @@ public sealed class NumberFormatterTests
         internal override ReadOnlySpan<byte> CompactTable => CldrLocales.En.CompactTable;
 
         internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
+
+        internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.En.DatePatternTable;
+
+        internal override PluralRules CreatePlurals() => CldrLocales.En.Plurals;
+    }
+
+    // en's number tables, or en's with the currency sign after the digits, and a currency table made by hand: a code, then each
+    // symbol's length byte (its UTF-8 length, bit 7 for a last grapheme cluster that starts with a letter, bit 6 for a first one)
+    // and its bytes. XAA is X with bit 6 (0x41), XBB is Y with bit 7 (0x81), and XCC is C with bit 7 and its narrow D with bit 6.
+    private sealed class LetterBitsLocaleData(bool after) : LocaleData(Locale.Parse("en"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday)
+    {
+        private static readonly byte[] Currencies = [88, 65, 65, 0x41, 88, 0, 88, 66, 66, 0x81, 89, 0, 88, 67, 67, 0x81, 67, 0x41, 68];
+
+        private static readonly byte[] AfterTable = WithCurrencyPatterns(
+            CldrLocales.En.NumberTable,
+            "#,##0.00" + (char)0x00A4,
+            "#,##0.00" + (char)0x00A0 + (char)0x00A4
+        );
+
+        internal override ReadOnlySpan<byte> NumberTable => after ? AfterTable : CldrLocales.En.NumberTable;
+
+        internal override ReadOnlySpan<byte> CompactTable => CldrLocales.En.CompactTable;
+
+        internal override ReadOnlySpan<byte> CurrencyTable => Currencies;
 
         internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
 

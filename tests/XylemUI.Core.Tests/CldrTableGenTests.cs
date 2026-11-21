@@ -30,7 +30,8 @@ public sealed class CldrTableGenTests
     // with the bytes counted by hand from the strings of NumbersJson, CurrenciesJson, and CurrencyData: 48, 0 is the digit zero, 1
     // the minimum grouping digits, then each string's UTF-8 length and bytes (infinity is E2 88 9E, the currency sign C2 A4, the
     // yen sign C2 A5, the no-break space C2 A0). The last string is the alphaNextToNumber pattern, empty (0) for de. The long
-    // compact patterns are ordered by category: one (1), other (5), the explicit 1 (6).
+    // compact patterns are ordered by category: one (1), other (5), the explicit 1 (6). The length bytes of the currency symbols ¥
+    // and $ have no letter bit: neither is a letter.
     private static readonly string[] NumberLines =
     [
         "    public const int NumberTableCount = 2;",
@@ -197,6 +198,7 @@ public sealed class CldrTableGenTests
             const string Numbers = "cldr-numbers-full/main/de/numbers.json";
             const string Currencies = "cldr-numbers-full/main/de/currencies.json";
             string letters = new('N', 256);
+            string symbol = new('N', 64);
             return new()
             {
                 { Systems, "\"_type\": \"numeric\"", "\"_type\": \"algorithmic\"", "The default numbering system latn of und is not a numeric one." },
@@ -232,6 +234,12 @@ public sealed class CldrTableGenTests
                     "The compact pattern key 1500-count-other of de is not a power of ten and a count."
                 },
                 { Numbers, "\"nan\": \"NaN\"", "\"nan\": \"" + letters + "\"", "The string " + letters + " is longer than 255 bytes of UTF-8." },
+                {
+                    Currencies,
+                    "\"symbol\": \"$\"",
+                    "\"symbol\": \"" + symbol + "\"",
+                    "The symbol " + symbol + " of USD in de is longer than 63 bytes of UTF-8."
+                },
             };
         }
     }
@@ -692,6 +700,56 @@ public sealed class CldrTableGenTests
     }
 
     /// <summary>
+    /// The length byte of a currency symbol holds, besides its UTF-8 length, whether its last extended grapheme cluster (UAX #29)
+    /// starts with a letter (bit 7, for a symbol before the digits) and whether its first one does (bit 6, for a symbol after them),
+    /// so that the runtime judges no clusters (Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's USD symbol replaced, and a lock with its SHA-256. The cases: Kannada's ಲೀ (U+0CB2, a
+    ///   letter, and the vowel sign U+0CC0, a mark: one cluster, whose last code point is not a letter; UTF-8 E0 B2 B2 E0 B3 80);
+    ///   US$, which starts with a letter and ends with a symbol; $US, which starts with a symbol and ends with a letter.
+    ///
+    /// Steps:
+    /// - Run the tool, and read CldrNumberTables.g.cs and CldrTables.g.cs.
+    ///
+    /// Expected:
+    /// - de's currency table is the second one, and holds JPY as the others do, then USD with the symbol's length byte and bytes and
+    ///   the narrow $ (1, 36): ಲೀ 198 (6, bit 7, bit 6), US$ 67 (3, bit 6), $US 131 (3, bit 7). The class of de returns that table.
+    /// </remarks>
+    /// <param name="symbol">The USD symbol of de.</param>
+    /// <param name="bytes">The symbol's length byte and bytes in the table.</param>
+    [Theory]
+    [InlineData("ಲೀ", "198, 224, 178, 178, 224, 179, 128")]
+    [InlineData("US$", "67, 85, 83, 36")]
+    [InlineData("$US", "131, 36, 85, 83")]
+    public void Tool_CurrencySymbol_HoldsTheLetterBitsOfItsClusters(string symbol, string bytes)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            const string Currencies = "cldr-numbers-full/main/de/currencies.json";
+            string zip = WriteZip(directory, withBo: true, edit: (Currencies, "\"symbol\": \"$\"", "\"symbol\": \"" + symbol + "\""));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            string folder = Path.Combine(output, "src/XylemUI.Core/Localization/Cldr");
+            string numbers = File.ReadAllText(Path.Combine(folder, "CldrNumberTables.g.cs"));
+            string de = ClassOf(File.ReadAllText(Path.Combine(folder, "CldrTables.g.cs")), "CldrDe");
+            string line = "    public static ReadOnlySpan<byte> Currencies1 => [74, 80, 89, 0, 2, 194, 165, 85, 83, 68, " + bytes + ", 1, 36];";
+            Assert.Contains(line, numbers, StringComparison.Ordinal);
+            Assert.Contains("    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies1;", de, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A number pattern of a form the formats do not read stops the generator: an exponent, which the formats do not write.
     /// </summary>
     /// <remarks>
@@ -734,7 +792,8 @@ public sealed class CldrTableGenTests
     ///   algorithmic, not numeric (und, read first, stops); latn's digits 0123456780, not consecutive; BHD's rounding increment 5;
     ///   de's currencyMatch [:^S:] on both sides (the before side is checked first); de's USD symbol empty; de's short compact key
     ///   1000-count-other made 1000-count-one, so 10^3 has no other pattern; that key made 1500-count-other, not a power of ten; de's
-    ///   NaN symbol of 256 ASCII letters, one byte past the 255 a length byte holds.
+    ///   NaN symbol of 256 ASCII letters, one byte past the 255 a length byte holds; de's USD symbol of 64 ASCII letters, one byte past
+    ///   the 63 the 6 low bits of a symbol's length byte hold.
     ///
     /// Steps:
     /// - Run the tool into an empty directory.
