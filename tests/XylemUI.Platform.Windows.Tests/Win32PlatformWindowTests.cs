@@ -88,7 +88,16 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             window.Attach();
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
-            core.Mount(Elements.Box, window.UiLanguages, "Win32PlatformWindowTests", new Size(width / scale, height / scale), scale);
+            core.Mount(
+                Elements.Box,
+                null,
+                window.UiLanguages,
+                window.Use24HourFormat,
+                default,
+                "Win32PlatformWindowTests",
+                new Size(width / scale, height / scale),
+                scale
+            );
             (int Draws, int Presents) mounted = (counting!.Draws, counting.Presents);
 
             Assert.True(SetWindowPos(window.Window.Hwnd, HWND.NULL, 0, 0, 360, 240, ResizeFlags));
