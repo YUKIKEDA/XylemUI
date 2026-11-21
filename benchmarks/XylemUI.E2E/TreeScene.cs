@@ -10,7 +10,8 @@ namespace XylemUI.E2E;
 // moves are layout changes; then WindowFrames builds the display list from the tree. The target records when Draw and Present start
 // and end, so that the draw stage's time is apart from the layout's. With hover (row V1c), the boxes stay where the first frame put
 // them, each with a hovered background, and a frame moves the pointer from one box to another through the window's input instead:
-// the frame is drawn for the hover's change of color alone, with no layout. With scroll (row V2), the boxes are in a scroll container
+// the frame is drawn for the hover's change of color alone, with no layout. Half of the moves land on a box that covers the one
+// aimed at, as on main (hover_on_other_box; row M1c). With scroll (row V2), the boxes are in a scroll container
 // as large as the window, with a box far below that gives it room to scroll, and stay where the first frame put them; a frame
 // changes the scroll position, which draws the boxes moved inside a clip with no layout (design §3.4.1). With a list (row P02e),
 // the tree holds, in place of the boxes, a box as large as the window that scrolls vertically over 10,000 rows 20 high, made with

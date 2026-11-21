@@ -194,6 +194,15 @@ internal static class Frames
         _ = Win32MessageLoop.Run();
         Win32MessageLoop.IterationHook = null;
 
+        // A scene checks that it measured what it says it measures (bench.mdc): the late resizes run only when a frame after frame
+        // 300 waits for its late start, and a run where none did would report no resize and exit 0 (PR #943's review).
+        if (lateResizes > 0)
+        {
+            throw new InvalidOperationException(
+                $"--resizes-late {resizesLate}: no loop iteration after frame 300 found the late start waiting, so no late resize ran."
+            );
+        }
+
         // Read before the clock goes back to the timer, which forgets the period.
         double derivedPeriod = Win32MessageLoop.Frames.DerivedPeriodMilliseconds;
         (long lateWakes, double latestWake) = Win32MessageLoop.Frames.LateWakes;

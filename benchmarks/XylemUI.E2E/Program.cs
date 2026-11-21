@@ -36,7 +36,7 @@
 //                              provider off the window before it shows, so no accessibility tree is made (uia_provider=0,
 //                              accessibility_tree=0); XYLEMUI_E2E_NO_OS_POINTER=1 takes the OS's mouse messages off the core's
 //                              input after it attaches (os_pointer=0))
-//   wm-size [frames] --resizes N | --resizes-late N
+//   wm-size [frames] --resizes N | --resizes-late N  (N even)
 //                              frames --tree whose resizes change the host's window with SetWindowPos, through WM_SIZE, the
 //                              host's synchronous render, and the window core's Resize (row PL1, HostResize.cs), where
 //                              frames' --resizes call the window core's Resize; takes frames' tree options. Reports frames'
@@ -125,6 +125,15 @@ int RunFrames(bool wmSize)
     if (wmSize && resizes == 0 && resizesLate == 0)
     {
         throw new ArgumentException("wm-size resizes the window: give --resizes N or --resizes-late N.");
+    }
+
+    // Each resize of wm-size alternates the window between two sizes; an odd count would leave the frames after it at the larger
+    // size, whose layout and pixels differ from frames --tree (PR #943's review).
+    if (wmSize && (resizes % 2 != 0 || resizesLate % 2 != 0))
+    {
+        throw new ArgumentException(
+            $"wm-size alternates the window between two sizes: --resizes ({resizes}) and --resizes-late ({resizesLate}) must be even."
+        );
     }
 
     int Run() =>
