@@ -70,6 +70,9 @@
 //                              and a double; per case the ns of a call (median, min, max of 7 batches of N calls, 200,000 by
 //                              default, after 10,000 unmeasured), bytes per call (0 on NativeAOT), and the methods JIT
 //                              compiled in the window (row LC2, NumberFormatCost.cs)
+//   date-format [--calls N]    no window: the same two ways and figures for en's and ja's yMd and yMMMMEEEEd with a DateOnly, jm
+//                              12-hour and 24-hour with a TimeOnly, jmz with a DateTimeOffset at +9 h, and yMd joined with jm
+//                              with a DateTime (row LC2, DateFormatCost.cs)
 //   rich-text                  the layout, draw, restyle, and link hover of text leaves with ranges, next to plain ones (row T12)
 //   inline-objects             the layout, draw, and relayout of text leaves with inline objects, next to plain ones (row T13)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
@@ -226,6 +229,7 @@ return scenario switch
     "hit-region" => HitCost.Run(),
     "segment" => SegmentCost.Run(),
     "number-format" => NumberFormatCost.Run(Option("--calls", 200_000)),
+    "date-format" => DateFormatCost.Run(Option("--calls", 200_000)),
     "rich-text" => RichTextCost.Run(args.Length > 1 ? args[1] : null),
     "inline-objects" => InlineCost.Run(args.Length > 1 ? args[1] : null),
     "shapes" => ShapeGallery.Run(),
