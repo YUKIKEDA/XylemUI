@@ -1,7 +1,8 @@
 namespace XylemUI;
 
 /// <summary>
-/// The CLDR tables of one locale (design §4.11, "Formats"): its plural rules, its week, and its number formats. An app takes them from
+/// The CLDR tables of one locale (design §4.11, "Formats"): its plural rules, its week, its number formats, and its date names and
+/// formats. An app takes them from
 /// <see cref="CldrLocales"/>, and only the tables it references stay in a NativeAOT binary.
 /// </summary>
 /// <remarks>
@@ -14,6 +15,7 @@ public abstract class LocaleData
     private NumberSymbols? _numbers;
     private NumberFormatter? _decimalFormat;
     private NumberFormatter? _percentFormat;
+    private DateNames? _names;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LocaleData"/> class.
@@ -57,6 +59,12 @@ public abstract class LocaleData
     /// Gets the locale's percent format with no options (<see cref="NumberFormatter.Percent"/>), made when first read.
     /// </summary>
     public NumberFormatter PercentFormat => Once(ref _percentFormat, static data => NumberFormatter.Percent(data));
+
+    /// <summary>
+    /// Gets the names of the months, the weekdays, the quarters, the eras, and the day periods, read from the tables when first read
+    /// (design §4.11, "Names and the week").
+    /// </summary>
+    public DateNames Names => Once(ref _names, static data => DateNames.Read(data.DateNameTable));
 
     /// <summary>
     /// Gets the first day of the week, CLDR's value for the locale's region, or for its likely region when the tag has none
@@ -147,6 +155,18 @@ public abstract class LocaleData
     internal abstract ReadOnlySpan<byte> CurrencyTable { get; }
 
     /// <summary>
+    /// Gets the table of the date names, which <see cref="DateNames.Read"/> reads. A binary that reads no name and makes no date format
+    /// keeps no such table.
+    /// </summary>
+    internal abstract ReadOnlySpan<byte> DateNameTable { get; }
+
+    /// <summary>
+    /// Gets the table of the date patterns of the 41 skeletons, the patterns that join a date and a time, and the time zone's offset
+    /// formats, which <see cref="DateFormatter"/> reads. A binary that makes no date format keeps no such table.
+    /// </summary>
+    internal abstract ReadOnlySpan<byte> DatePatternTable { get; }
+
+    /// <summary>
     /// Makes the plural rules of the tables, which <see cref="Plurals"/> keeps.
     /// </summary>
     /// <returns>The rules.</returns>
@@ -201,6 +221,10 @@ public abstract class LocaleData
         internal override ReadOnlySpan<byte> CompactTable => _tables.CompactTable;
 
         internal override ReadOnlySpan<byte> CurrencyTable => _tables.CurrencyTable;
+
+        internal override ReadOnlySpan<byte> DateNameTable => _tables.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => _tables.DatePatternTable;
 
         internal override PluralRules CreatePlurals() => _tables.Plurals;
     }

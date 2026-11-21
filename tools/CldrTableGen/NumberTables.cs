@@ -100,10 +100,7 @@ internal sealed class NumberTables
                 continue;
             }
 
-            JsonElement data = cldr.Json("cldr-numbers-full/main/" + tag + "/numbers.json")
-                .GetProperty("main")
-                .GetProperty(tag)
-                .GetProperty("numbers");
+            JsonElement data = NumbersOf(cldr, tag);
             string system = data.GetProperty("defaultNumberingSystem").GetString() ?? string.Empty;
             byte[] numberTable = NumberTable(tag, data, system, systems);
             byte[] compactTable = CompactTable(tag, data, system);
@@ -118,34 +115,45 @@ internal sealed class NumberTables
         return new NumberTables(numbers, compact, currencies, byTag, digits, defaultDigits);
     }
 
-    // The index of a table among the distinct ones, added when it is new.
-    private static int Index(byte[] table, List<byte[]> tables, Dictionary<string, int> index)
+    /// <summary>
+    /// Returns the digit zero of a locale's default numbering system, which the date tables also write their digits from (design
+    /// §4.11, "Default digits").
+    /// </summary>
+    /// <param name="cldr">The zip.</param>
+    /// <param name="tag">The locale's tag, as cldr-json names its folder.</param>
+    /// <returns>The zero; the digits one to nine are the next UTF-16 code units.</returns>
+    public static char Zero(CldrZip cldr, string tag)
     {
-        string key = Convert.ToBase64String(table);
-        if (!index.TryGetValue(key, out int at))
-        {
-            at = tables.Count;
-            tables.Add(table);
-            index.Add(key, at);
-        }
-
-        return at;
+        string system = NumbersOf(cldr, tag).GetProperty("defaultNumberingSystem").GetString() ?? string.Empty;
+        return Digits(tag, system, cldr.Supplemental("numberingSystems").GetProperty("numberingSystems"))[0];
     }
 
-    private static byte[] NumberTable(string tag, JsonElement data, string system, JsonElement systems)
+    private static int Index(byte[] table, List<byte[]> tables, Dictionary<string, int> index) => TableBytes.Index(table, tables, index);
+
+    private static JsonElement NumbersOf(CldrZip cldr, string tag) =>
+        cldr.Json("cldr-numbers-full/main/" + tag + "/numbers.json").GetProperty("main").GetProperty(tag).GetProperty("numbers");
+
+    // The ten digits of a numbering system. The formats write a digit as the zero plus its value, so the ten digits must be
+    // consecutive UTF-16 code units.
+    private static string Digits(string tag, string system, JsonElement systems)
     {
         if (!systems.TryGetProperty(system, out JsonElement numbering) || numbering.GetProperty("_type").GetString() != "numeric")
         {
             throw new InvalidDataException("The default numbering system " + system + " of " + tag + " is not a numeric one.");
         }
 
-        // The formats write a digit as the zero plus its value, so the ten digits are consecutive UTF-16 code units.
         string digits = numbering.GetProperty("_digits").GetString() ?? string.Empty;
         if (digits.Length != 10 || Enumerable.Range(0, 10).Any(i => digits[i] != digits[0] + i))
         {
             throw new InvalidDataException("The digits of " + system + " are not ten consecutive UTF-16 code units.");
         }
 
+        return digits;
+    }
+
+    private static byte[] NumberTable(string tag, JsonElement data, string system, JsonElement systems)
+    {
+        string digits = Digits(tag, system, systems);
         JsonElement symbols = data.GetProperty("symbols-numberSystem-" + system);
         CheckCurrencySpacing(tag, data.GetProperty("currencyFormats-numberSystem-" + system).GetProperty("currencySpacing"));
         var table = new List<byte> { (byte)digits[0], (byte)(digits[0] >> 8), (byte)Integer(tag, data.GetProperty("minimumGroupingDigits")) };
@@ -407,26 +415,12 @@ internal sealed class NumberTables
         return text.ToString();
     }
 
-    private static string Text(string tag, JsonElement element, string name) =>
-        element.TryGetProperty(name, out JsonElement value) && value.GetString() is { Length: > 0 } text
-            ? text
-            : throw new InvalidDataException(tag + " has no " + name + ".");
+    private static string Text(string tag, JsonElement element, string name) => TableBytes.Text(tag, element, name);
 
     private static int Integer(string tag, JsonElement element) =>
         int.TryParse(element.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out int value) && value <= 255
             ? value
             : throw new InvalidDataException("A count of " + tag + " is not a number from 0 to 255.");
 
-    // A string: its UTF-8 length in one byte, and its bytes.
-    private static void Add(List<byte> table, string text)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(text);
-        if (bytes.Length > 255)
-        {
-            throw new InvalidDataException("The string " + text + " is longer than 255 bytes of UTF-8.");
-        }
-
-        table.Add((byte)bytes.Length);
-        table.AddRange(bytes);
-    }
+    private static void Add(List<byte> table, string text) => TableBytes.Add(table, text);
 }

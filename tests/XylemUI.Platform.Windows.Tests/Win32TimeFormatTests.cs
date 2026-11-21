@@ -5,8 +5,8 @@ using static TerraFX.Interop.Windows.Windows;
 namespace XylemUI.Platform.Windows.Tests;
 
 // Windows' 24-hour form (row LC2, design §4.11, "The locale of the formats" and "The key of the 24-hour form"): whether the user's
-// short time format holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the window is created and on each
-// WM_SETTINGCHANGE.
+// short time format (the first of a list) holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the
+// window is created and on each WM_SETTINGCHANGE.
 [Collection(UiThreadGroup.Name)]
 public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
 {
@@ -54,6 +54,40 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
     [InlineData("", 0, true, true)]
     [InlineData("", 0, false, false)]
     public void Uses24Hour_ReadsOnlyTheCharactersWritten(string buffer, int written, bool before, bool expected)
+    {
+        _ = ui;
+        Assert.Equal(expected, Win32TimeFormat.Uses24Hour(buffer, written, before));
+    }
+
+    /// <summary>
+    /// Of a semicolon-delimited list of formats, only the first is read: Microsoft's <c>LOCALE_SSHORTTIME</c> page says that "the
+    /// preferred short time format should be the first value listed" (design §4.11, "The locale of the formats"). A <c>;</c>
+    /// between single quotes is text, not a separator.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Buffers as <c>GetLocaleInfoEx</c> leaves them, each with the count it returns (the terminating null included):
+    ///   <c>h:mm tt;HH:mm</c> (12-hour first); <c>HH:mm;h:mm tt</c> (24-hour first); <c>'a;b'H:mm</c> (a <c>;</c> between quotes
+    ///   before an H outside them); <c>h''mm;HH:mm</c> (a doubled quote outside quotes, which leaves the <c>;</c> outside them).
+    ///   Each row gives the opposite of its expected value as the value before.
+    ///
+    /// Steps:
+    /// - Read each buffer.
+    ///
+    /// Expected:
+    /// - The value of the first format: false, true, true, false. A read of the whole list would give true for the first and
+    ///   the last; a read that splits at the quoted <c>;</c> would give false for the third.
+    /// </remarks>
+    /// <param name="buffer">What the call left in the buffer.</param>
+    /// <param name="written">What the call returned.</param>
+    /// <param name="before">The value before the read.</param>
+    /// <param name="expected">Whether the first format is in 24-hour form.</param>
+    [Theory]
+    [InlineData("h:mm tt;HH:mm\0", 14, true, false)]
+    [InlineData("HH:mm;h:mm tt\0", 14, false, true)]
+    [InlineData("'a;b'H:mm\0", 10, false, true)]
+    [InlineData("h''mm;HH:mm\0", 12, true, false)]
+    public void Uses24Hour_AList_ReadsOnlyTheFirstFormat(string buffer, int written, bool before, bool expected)
     {
         _ = ui;
         Assert.Equal(expected, Win32TimeFormat.Uses24Hour(buffer, written, before));

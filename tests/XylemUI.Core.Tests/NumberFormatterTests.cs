@@ -1284,6 +1284,10 @@ public sealed class NumberFormatterTests
 
         internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
 
+        internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.En.DatePatternTable;
+
         internal override PluralRules CreatePlurals() => CldrLocales.En.Plurals;
     }
 
@@ -1295,6 +1299,10 @@ public sealed class NumberFormatterTests
         internal override ReadOnlySpan<byte> CompactTable => CldrLocales.Pl.CompactTable;
 
         internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.Pl.CurrencyTable;
+
+        internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.Pl.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.Pl.DatePatternTable;
 
         internal override PluralRules CreatePlurals() => new(ManyAtThree, ManyAtThree);
 
