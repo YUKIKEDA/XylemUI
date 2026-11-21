@@ -30,7 +30,8 @@ public static class XylemApp
     /// bindings are registered (the app is built without the source generator of <c>XylemUI.Core</c> and did not call
     /// <see cref="Keymap.RegisterDefaults"/>).
     /// </exception>
-    /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
+    /// <exception cref="ArgumentException">The options' size is not a positive number, or their
+    /// <see cref="WindowOptions.SupportedLocales"/> hold a <see langword="null"/>.</exception>
     public static int Run(Func<Element> root, WindowOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(root);
@@ -52,7 +53,15 @@ public static class XylemApp
             using var app = new Win32PlatformApp();
             using var fonts = new DirectWriteFontProvider();
             using var text = new TextContext(fonts);
-            using WindowCore core = OpenWindow(app, text, root, options ?? new WindowOptions(), () => app.UiLanguages, show: true);
+            using WindowCore core = OpenWindow(
+                app,
+                text,
+                root,
+                options ?? new WindowOptions(),
+                () => app.UiLanguages,
+                () => app.Use24HourFormat,
+                show: true
+            );
             Open(core, app);
             return app.Run();
         }
@@ -73,9 +82,12 @@ public static class XylemApp
     /// <param name="root">The root function.</param>
     /// <param name="options">The window.</param>
     /// <param name="uiLanguages">Reads the OS's languages once the window is open, for the first mount (until row PL1's PR 5).</param>
+    /// <param name="use24HourFormat">Reads whether the OS asks for times in 24-hour form once the window is open, for the first
+    /// mount (until row PL1's PR 5).</param>
     /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <returns>The window core, which owns the window; the caller disposes it.</returns>
-    /// <exception cref="ArgumentException">The options' size is not a positive number.</exception>
+    /// <exception cref="ArgumentException">The options' size is not a positive number, or their supported locales hold a
+    /// <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the window, its renderer, or the root
     /// function failed.</exception>
     internal static WindowCore OpenWindow(
@@ -84,6 +96,7 @@ public static class XylemApp
         Func<Element> root,
         WindowOptions options,
         Func<IReadOnlyList<string>> uiLanguages,
+        Func<bool> use24HourFormat,
         bool show
     )
     {
@@ -95,6 +108,8 @@ public static class XylemApp
         {
             throw new ArgumentException("The window's width and height are finite numbers above 0.", nameof(options));
         }
+
+        WindowLocale.VerifySupported(options.SupportedLocales, nameof(options));
 
         UiThread.VerifyAccess();
         var core = new WindowCore(text, app.Clipboard, options.SupportedLocales, options.ResolveLocale);
@@ -123,7 +138,7 @@ public static class XylemApp
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
             var size = new Size(width / scale, height / scale);
-            core.Mount(root, WindowRoot.ReadWrapper(), uiLanguages(), default, "XylemApp.Run", size, scale);
+            core.Mount(root, WindowRoot.ReadWrapper(), uiLanguages(), use24HourFormat(), default, "XylemApp.Run", size, scale);
 
             // The tree has its root now: assistive technology that asked while the window showed gets the tree.
             window.RootMounted();

@@ -50,43 +50,119 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// While a window of the host is open, a second <c>OpenWindow</c> throws, naming row MW1; once the first is disposed, another
-    /// opens. The host reads the OS's languages from the open window, and has none while no window is open (Issue #928).
+    /// A host given a function that wraps the renderer gives the core what the function made from the window's renderer, and the
+    /// core's first frame and the frame of a size change draw and present through it (Issue #933, the seam of the end-to-end
+    /// benchmark).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A Windows host whose windows draw on WARP, and two window cores.
+    /// - A Windows host whose windows draw on WARP, given a function that wraps the renderer in a target that counts its draws and
+    ///   presents and passes them on.
     ///
     /// Steps:
-    /// - Open a hidden window for the first core; read the host's languages; open one for the second. Dispose the first window; read
-    ///   the host's languages; open a window for the second core again.
+    /// - Open a hidden window for a core; connect, attach, and mount a box. Read the counts. Resize the window to 360 x 240 with
+    ///   <c>SetWindowPos</c>; read the counts again.
+    ///
+    /// Expected:
+    /// - The function was called once, with the window's renderer, and the window's target is what it made.
+    /// - After the mount, one draw and one present; after the size change, two of each.
+    /// </remarks>
+    [Fact]
+    public void OpenWindow_WithAWrapper_TheCoreDrawsAndPresentsThroughIt() =>
+        ui.Invoke(() =>
+        {
+            var wrapped = new List<IRenderTarget>();
+            CountingTarget? counting = null;
+            using var app = new Win32PlatformApp
+            {
+                UseWarp = true,
+                WrapTarget = target =>
+                {
+                    wrapped.Add(target);
+                    return counting = new CountingTarget(target);
+                },
+            };
+            using var core = new WindowCore(null, app.Clipboard, null, null);
+            var window = (Win32PlatformWindow)app.OpenWindow(core, "wrapped", 200, 100, show: false);
+            core.Connect(window, new GlyphAtlas(static () => new DirectWriteGlyphRasterizer(), threads: 1), Color.FromRgb(0xFFFFFF));
+            window.Attach();
+            (int width, int height) = window.ClientSize;
+            float scale = window.ScaleFactor;
+            core.Mount(
+                Elements.Box,
+                null,
+                window.UiLanguages,
+                window.Use24HourFormat,
+                default,
+                "Win32PlatformWindowTests",
+                new Size(width / scale, height / scale),
+                scale
+            );
+            (int Draws, int Presents) mounted = (counting!.Draws, counting.Presents);
+
+            Assert.True(SetWindowPos(window.Window.Hwnd, HWND.NULL, 0, 0, 360, 240, ResizeFlags));
+
+            IRenderTarget only = Assert.Single(wrapped);
+            Assert.Same(window.Renderer, only);
+            Assert.Same(counting, window.Target);
+            Assert.Equal((1, 1), mounted);
+            Assert.Equal((2, 2), (counting.Draws, counting.Presents));
+        });
+
+    /// <summary>
+    /// While a window of the host is open, a second <c>OpenWindow</c> throws, naming row MW1; once the first is disposed, another
+    /// opens. The host reads the OS's languages and 24-hour form from the open window, and has no languages and the 12-hour form
+    /// while no window is open (Issue #928; design §4.11, "The key of the 24-hour form").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A Windows host whose windows draw on WARP, and two window cores. A reader set by the test gives the 24-hour form; it is put
+    ///   back after the test.
+    ///
+    /// Steps:
+    /// - Open a hidden window for the first core; read the host's languages and 24-hour form; open one for the second. Dispose the
+    ///   first window; read them again; open a window for the second core again.
     ///
     /// Expected:
     /// - The second open throws <see cref="InvalidOperationException"/> whose message names MW1.
-    /// - While the first window is open, the host's languages are that window's; after it is disposed, none.
+    /// - While the first window is open, the host's languages are that window's and the 24-hour form is on; after it is disposed,
+    ///   no languages and the form is off.
     /// - The open after the disposal gives a window.
     /// </remarks>
     [Fact]
     public void OpenWindow_WhileOneIsOpen_ThrowsNamingMw1_AndOpensAfterItIsDisposed() =>
         ui.Invoke(() =>
         {
-            using var app = new Win32PlatformApp { UseWarp = true };
-            using var first = new WindowCore(null, app.Clipboard, null, null);
-            using var second = new WindowCore(null, app.Clipboard, null, null);
-            IPlatformWindow opened = app.OpenWindow(first, "first", 200, 100, show: false);
-            IReadOnlyList<string> whileOpen = app.UiLanguages;
-            IReadOnlyList<string> windows = ((Win32PlatformWindow)opened).UiLanguages;
-            Exception? thrown = Record.Exception(() => app.OpenWindow(second, "second", 200, 100, show: false));
-            opened.Dispose();
-            IReadOnlyList<string> afterDisposal = app.UiLanguages;
+            Func<bool, bool> previousTimeFormat = Win32Window.Use24HourFormatReader;
+            try
+            {
+                Win32Window.Use24HourFormatReader = static _ => true;
+                using var app = new Win32PlatformApp { UseWarp = true };
+                using var first = new WindowCore(null, app.Clipboard, null, null);
+                using var second = new WindowCore(null, app.Clipboard, null, null);
+                IPlatformWindow opened = app.OpenWindow(first, "first", 200, 100, show: false);
+                IReadOnlyList<string> whileOpen = app.UiLanguages;
+                IReadOnlyList<string> windows = ((Win32PlatformWindow)opened).UiLanguages;
+                bool formWhileOpen = app.Use24HourFormat;
+                Exception? thrown = Record.Exception(() => app.OpenWindow(second, "second", 200, 100, show: false));
+                opened.Dispose();
+                IReadOnlyList<string> afterDisposal = app.UiLanguages;
+                bool formAfterDisposal = app.Use24HourFormat;
 
-            IPlatformWindow again = app.OpenWindow(second, "second", 200, 100, show: false);
-            again.Dispose();
+                IPlatformWindow again = app.OpenWindow(second, "second", 200, 100, show: false);
+                again.Dispose();
 
-            InvalidOperationException invalid = Assert.IsType<InvalidOperationException>(thrown);
-            Assert.Contains("MW1", invalid.Message, StringComparison.Ordinal);
-            Assert.Same(windows, whileOpen);
-            Assert.Empty(afterDisposal);
+                InvalidOperationException invalid = Assert.IsType<InvalidOperationException>(thrown);
+                Assert.Contains("MW1", invalid.Message, StringComparison.Ordinal);
+                Assert.Same(windows, whileOpen);
+                Assert.Empty(afterDisposal);
+                Assert.True(formWhileOpen);
+                Assert.False(formAfterDisposal);
+            }
+            finally
+            {
+                Win32Window.Use24HourFormatReader = previousTimeFormat;
+            }
         });
 
     /// <summary>
@@ -175,22 +251,22 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
 
     /// <summary>
     /// A <c>WM_SETTINGCHANGE</c> that changes the window's values reaches the renderer and the core: the text rendering, and, until
-    /// the OS's settings become one object (row PL1, PR 5), less motion, the text fields' settings, and the OS's languages. The
-    /// first values are the ones the window read when it was made.
+    /// the OS's settings become one object (row PL1, PR 5), less motion, the text fields' settings, the OS's languages, and the
+    /// 24-hour form (design §4.11, "The key of the 24-hour form"). The first values are the ones the window read when it was made.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Readers set by the test, put back after it: the default text rendering, less motion, a caret 3 wide, and the languages
-    ///   "ja-JP". A core that supports en and ja, mounted in a hidden window on WARP with a root function whose effect records the
-    ///   locale.
+    /// - Readers set by the test, put back after it: the default text rendering, less motion, a caret 3 wide, the languages
+    ///   "ja-JP", and the 24-hour form. A core that supports the tables of en and ja, mounted in a hidden window on WARP with a root
+    ///   function whose effects record the locale and the 24-hour form.
     ///
     /// Steps:
-    /// - Read the tree's motion and text fields' settings. Set the readers to a gamma of 2.2, no less motion, a caret 4 wide, and
-    ///   "en-US"; send <c>WM_SETTINGCHANGE</c>.
+    /// - Read the tree's motion and text fields' settings. Set the readers to a gamma of 2.2, no less motion, a caret 4 wide,
+    ///   "en-US", and the 12-hour form; send <c>WM_SETTINGCHANGE</c>.
     ///
     /// Expected:
     /// - Before: less motion and the caret 3 wide. After: the renderer and the frames draw text with the gamma of 2.2, no less
-    ///   motion, the caret 4 wide, and the effect recorded ja, then en.
+    ///   motion, the caret 4 wide; the locale effect recorded ja, then en; the 24-hour effect recorded on, then off.
     /// </remarks>
     [Fact]
     public void SettingChange_ReachesTheRendererAndTheCore() =>
@@ -200,25 +276,31 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             Func<bool, bool> previousMotion = Win32Window.ReducesMotionReader;
             Func<TextEditingSettings, TextEditingSettings> previousEditing = Win32Window.TextEditingReader;
             Func<string[]> previousLanguages = Win32Window.UiLanguagesReader;
+            Func<bool, bool> previousTimeFormat = Win32Window.Use24HourFormatReader;
             try
             {
                 TextRenderingParameters rendering = TextRenderingParameters.Default;
                 bool reduces = true;
                 TextEditingSettings editing = TextEditingSettings.Default with { CaretWidth = 3 };
                 string[] languages = ["ja-JP"];
+                bool use24HourForm = true;
                 Win32Window.TextRenderingReader = _ => rendering;
                 Win32Window.ReducesMotionReader = _ => reduces;
                 Win32Window.TextEditingReader = _ => editing;
                 Win32Window.UiLanguagesReader = () => languages;
+                Win32Window.Use24HourFormatReader = _ => use24HourForm;
                 var seen = new List<string>();
+                var forms = new List<bool>();
                 (WindowCore core, Win32PlatformWindow window) = Open(
                     () =>
                     {
                         IReadOnlySignal<Locale> locale = Localization.Locale.Use();
+                        IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
                         _ = Effect.Create(() => seen.Add(locale.Get().ToLanguageTag()));
+                        _ = Effect.Create(() => forms.Add(use24HourFormat.Get()));
                         return Elements.Box();
                     },
-                    [Locale.Parse("en"), Locale.Parse("ja")]
+                    [CldrLocales.En, CldrLocales.Ja]
                 );
                 using (core)
                 {
@@ -228,6 +310,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
                     reduces = false;
                     editing = TextEditingSettings.Default with { CaretWidth = 4 };
                     languages = ["en-US"];
+                    use24HourForm = false;
 
                     _ = SendMessageW(window.Window.Hwnd, WM.WM_SETTINGCHANGE, default, default);
 
@@ -238,6 +321,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
                     Assert.False(core.Tree.Animations.ReduceMotion);
                     Assert.Equal(4f, core.Tree.TextEditing.CaretWidth);
                     Assert.Equal(["ja", "en"], seen);
+                    Assert.Equal([true, false], forms);
                 }
             }
             finally
@@ -246,6 +330,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
                 Win32Window.ReducesMotionReader = previousMotion;
                 Win32Window.TextEditingReader = previousEditing;
                 Win32Window.UiLanguagesReader = previousLanguages;
+                Win32Window.Use24HourFormatReader = previousTimeFormat;
             }
         });
 
@@ -351,7 +436,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
 
     // Opens a core's window as XylemApp does (design §6.0, "The order of creation", steps 4 to 7): hidden, on WARP, with a tree that
     // holds no text. The core owns the window and the atlas; the caller disposes it.
-    private static (WindowCore Core, Win32PlatformWindow Window) Open(Func<Element> root, IReadOnlyList<Locale>? supported = null)
+    private static (WindowCore Core, Win32PlatformWindow Window) Open(Func<Element> root, IReadOnlyList<LocaleData>? supported = null)
     {
         var core = new WindowCore(null, null, supported, null);
         try
@@ -374,7 +459,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
             var size = new Size(width / scale, height / scale);
-            core.Mount(root, null, window.UiLanguages, default, "Win32PlatformWindowTests", size, scale);
+            core.Mount(root, null, window.UiLanguages, window.Use24HourFormat, default, "Win32PlatformWindowTests", size, scale);
             window.RootMounted();
             return (core, window);
         }
@@ -382,6 +467,26 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         {
             core.Dispose();
             throw;
+        }
+    }
+
+    // Counts the draws and presents it passes on to the renderer.
+    private sealed class CountingTarget(IRenderTarget inner) : IRenderTarget
+    {
+        public int Draws { get; private set; }
+
+        public int Presents { get; private set; }
+
+        public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images)
+        {
+            Draws++;
+            inner.Draw(lists, clearColor, atlas, images);
+        }
+
+        public void Present()
+        {
+            Presents++;
+            inner.Present();
         }
     }
 

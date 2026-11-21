@@ -42,10 +42,23 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <param name="useWarp"><see langword="true"/> to draw with the WARP software rasterizer, for the tests.</param>
     /// <param name="onDisposed">Called once when the window is disposed; <see langword="null"/> for nothing.</param>
+    /// <param name="wrapTarget">
+    /// Makes the target the core draws on from the renderer, for the end-to-end benchmark, which times the draw and the present
+    /// through it (Issue #933); <see langword="null"/> for the renderer itself.
+    /// </param>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the renderer could not be
     /// made.</exception>
     [UiThreadOnly]
-    public Win32PlatformWindow(WindowCore core, string title, float width, float height, bool show, bool useWarp, Action? onDisposed = null)
+    public Win32PlatformWindow(
+        WindowCore core,
+        string title,
+        float width,
+        float height,
+        bool show,
+        bool useWarp,
+        Action? onDisposed = null,
+        Func<IRenderTarget, IRenderTarget>? wrapTarget = null
+    )
     {
         ArgumentNullException.ThrowIfNull(core);
         ArgumentNullException.ThrowIfNull(title);
@@ -64,6 +77,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
             (int pixelWidth, int pixelHeight) = Window.ClientSize;
             Renderer = D3D11Renderer.Create(Window.Handle, pixelWidth, pixelHeight, useWarp);
             Renderer.TextRendering = Window.TextRendering;
+            Target = wrapTarget is null ? Renderer : wrapTarget(Renderer);
 
             // The frames are paced by the swap chain, and each starts late (design §2.11, "Frames that start late").
             Win32MessageLoop.SetFrameClock(Renderer.FrameLatencyWaitableObject, Renderer.TryReadLastRefresh, Renderer.RefreshRate);
@@ -94,6 +108,12 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     /// </summary>
     public IReadOnlyList<string> UiLanguages => Window.UiLanguages;
 
+    /// <summary>
+    /// Gets a value indicating whether the user's short time format shows the hours in 24-hour form as the window read it, for the
+    /// first mount until the OS's settings become one object of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
+    /// </summary>
+    public bool Use24HourFormat => Window.Use24HourFormat;
+
     /// <inheritdoc/>
     public (int Width, int Height) ClientSize => Window.ClientSize;
 
@@ -110,7 +130,10 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     public TextRenderingParameters TextRendering => Window.TextRendering;
 
     /// <inheritdoc/>
-    public IRenderTarget Target => Renderer;
+    /// <remarks>
+    /// The renderer, unless the constructor was given a function that wraps it.
+    /// </remarks>
+    public IRenderTarget Target { get; } = null!;
 
     /// <inheritdoc/>
     public IFrameScheduler FrameScheduler => Win32MessageLoop.FrameScheduler;
@@ -151,6 +174,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         tree.Animations.ReduceMotion = Window.ReducesMotion;
         Window.ReducesMotionChanged += OnReducesMotionChanged;
         Window.UiLanguagesChanged += OnUiLanguagesChanged;
+        Window.Use24HourFormatChanged += OnUse24HourFormatChanged;
         Window.Closed += OnClosed;
     }
 
@@ -195,6 +219,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
             Window.TextRenderingChanged -= OnTextRenderingChanged;
             Window.ReducesMotionChanged -= OnReducesMotionChanged;
             Window.UiLanguagesChanged -= OnUiLanguagesChanged;
+            Window.Use24HourFormatChanged -= OnUse24HourFormatChanged;
             Window.TextEditingChanged -= OnTextEditingChanged;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
@@ -250,6 +275,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     private void OnReducesMotionChanged(object? sender, EventArgs e) => _core.Tree.Animations.ReduceMotion = Window.ReducesMotion;
 
     private void OnUiLanguagesChanged(object? sender, EventArgs e) => _core.SetSystemLocales(Window.UiLanguages);
+
+    private void OnUse24HourFormatChanged(object? sender, EventArgs e) => _core.SetUse24HourFormat(Window.Use24HourFormat);
 
     // The window is gone: no frame may draw into its swap chain, and what the root function made goes with it.
     private void OnClosed(object? sender, EventArgs e) => _core.WindowClosed();
