@@ -2,7 +2,7 @@ namespace XylemUI;
 
 /// <summary>
 /// The app tier of the platform contract (design §6.0): what an OS host has once per UI thread. It runs the UI thread's loop, owns
-/// the dispatcher that the loop drains and the OS's clipboard, and opens the windows.
+/// the dispatcher that the loop drains, the OS's settings, and the OS's clipboard, and opens the windows.
 /// </summary>
 /// <remarks>
 /// A host sets <see cref="Dispatcher"/> as <see cref="UiDispatcher.Current"/> and as the UI thread's synchronization context when
@@ -16,6 +16,12 @@ internal interface IPlatformApp : IDisposable
     /// Gets the UI thread's queue, as the concrete type the loop drains.
     /// </summary>
     UiDispatcher Dispatcher { get; }
+
+    /// <summary>
+    /// Gets the OS's settings, one object for the UI thread, which every window core reads (design §6.0, "OS settings"). How text is
+    /// drawn is read for each window instead (<see cref="IPlatformWindow.TextRendering"/>).
+    /// </summary>
+    IPlatformSettings Settings { get; }
 
     /// <summary>
     /// Gets the OS's clipboard as plain text (design §4.9, "The clipboard"). The OS has one, so the app tier has it, and a window that

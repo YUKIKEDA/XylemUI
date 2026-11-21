@@ -12,6 +12,41 @@ namespace XylemUI.Tests;
 // LocaleDataTests and PluralRulesTests.
 public sealed class CldrTableGenTests
 {
+    // The characters of the number data that are not ASCII, written by code so that the source shows them.
+    private const char NoBreakSpace = (char)0x00A0;
+    private const char Infinity = (char)0x221E;
+    private const char CurrencySign = (char)0x00A4;
+    private const char YenSign = (char)0x00A5;
+
+    // currencyData.json: BHD has 3 fraction digits, JPY 0, CHF the default 2 with a cash rounding the tool does not read.
+    private const string CurrencyData =
+        "{ \"supplemental\": { \"currencyData\": { \"fractions\": { \"BHD\": { \"_rounding\": \"0\", \"_digits\": \"3\" }, "
+        + "\"CHF\": { \"_rounding\": \"0\", \"_digits\": \"2\", \"_cashRounding\": \"5\" }, "
+        + "\"DEFAULT\": { \"_rounding\": \"0\", \"_digits\": \"2\" }, \"JPY\": { \"_rounding\": \"0\", \"_digits\": \"0\" } } } } }";
+
+    // The lines of CldrNumberTables.g.cs and of CldrData that the zip of these tests gives (Tool_NumberTables_HoldTheBytesOfTheData),
+    // with the bytes counted by hand from the strings of NumbersJson, CurrenciesJson, and CurrencyData: 48, 0 is the digit zero, 1
+    // the minimum grouping digits, then each string's UTF-8 length and bytes (infinity is E2 88 9E, the currency sign C2 A4, the
+    // yen sign C2 A5, the no-break space C2 A0). The last string is the alphaNextToNumber pattern, empty (0) for de. The long
+    // compact patterns are ordered by category: one (1), other (5), the explicit 1 (6). The length bytes of the currency symbols ¥
+    // and $ have no letter bit: neither is a letter.
+    private static readonly string[] NumberLines =
+    [
+        "    public const int NumberTableCount = 2;",
+        "    public const int CompactTableCount = 1;",
+        "    public const int CurrencyTableCount = 1;",
+        "    public const int DefaultCurrencyDigits = 2;",
+        "    public static ReadOnlySpan<byte> CurrencyDigits => [66, 72, 68, 3, 74, 80, 89, 0];",
+        "    public static ReadOnlySpan<byte> Numbers0 => [48, 0, 1, 1, 46, 1, 44, 1, 46, 1, 44, 1, 45, 1, 43, 1, 37, 3, 226, 136, 158, 3, 78, 97, "
+            + "78, 9, 35, 44, 35, 35, 48, 46, 35, 35, 35, 6, 35, 44, 35, 35, 48, 37, 10, 194, 164, 35, 44, 35, 35, 48, 46, 48, 48, 12, 194, 164, "
+            + "194, 160, 35, 44, 35, 35, 48, 46, 48, 48];",
+        "    public static ReadOnlySpan<byte> Numbers1 => [48, 0, 1, 1, 44, 1, 46, 1, 44, 1, 46, 1, 45, 1, 43, 1, 37, 3, 226, 136, 158, 3, 78, 97, "
+            + "78, 9, 35, 44, 35, 35, 48, 46, 35, 35, 35, 6, 35, 44, 35, 35, 48, 37, 10, 194, 164, 35, 44, 35, 35, 48, 46, 48, 48, 0];",
+        "    public static ReadOnlySpan<byte> Compact0 => [1, 3, 5, 2, 48, 75, 3, 3, 1, 10, 48, 32, 116, 104, 111, 117, 115, 97, 110, 100, 3, 5, "
+            + "10, 48, 32, 116, 104, 111, 117, 115, 97, 110, 100, 3, 6, 10, 97, 32, 116, 104, 111, 117, 115, 97, 110, 100];",
+        "    public static ReadOnlySpan<byte> Currencies0 => [74, 80, 89, 0, 2, 194, 165, 85, 83, 68, 1, 36, 0];",
+    ];
+
     // The 82 languages of row LC4: Flutter 3.47.8's kMaterialSupportedLanguages
     // (packages/flutter_localizations/lib/src/l10n/generated_material_localizations.dart, lines 46518 to 46601).
     private static readonly string[] Lc4Languages = (
@@ -31,6 +66,65 @@ public sealed class CldrTableGenTests
         "    public static ReadOnlySpan<byte> Keys => [0, 0, 149, 28, 5, 2, 75, 61, 0, 0, 226, 74, 5, 2, 226, 74];",
         "    public static ReadOnlySpan<byte> Values => [2, 1, 0, 1];",
     ];
+
+    /// <summary>
+    /// Gets the cases of Tool_NumberDataTheFormatsDoNotRead_Stops: the entry of the zip, the text replaced in it, the text put in its
+    /// place, and the message the tool writes.
+    /// </summary>
+    public static TheoryData<string, string, string, string> UnreadNumberData
+    {
+        get
+        {
+            const string Systems = "cldr-core/supplemental/numberingSystems.json";
+            const string Fractions = "cldr-core/supplemental/currencyData.json";
+            const string Numbers = "cldr-numbers-full/main/de/numbers.json";
+            const string Currencies = "cldr-numbers-full/main/de/currencies.json";
+            string letters = new('N', 256);
+            string symbol = new('N', 64);
+            return new()
+            {
+                { Systems, "\"_type\": \"numeric\"", "\"_type\": \"algorithmic\"", "The default numbering system latn of und is not a numeric one." },
+                {
+                    Systems,
+                    "\"_digits\": \"0123456789\"",
+                    "\"_digits\": \"0123456780\"",
+                    "The digits of latn are not ten consecutive UTF-16 code units."
+                },
+                {
+                    Fractions,
+                    "\"BHD\": { \"_rounding\": \"0\"",
+                    "\"BHD\": { \"_rounding\": \"5\"",
+                    "The currency BHD has a rounding increment, which the formats do not apply."
+                },
+                {
+                    Numbers,
+                    "\"currencyMatch\": \"[[:^S:]&[:^Z:]]\"",
+                    "\"currencyMatch\": \"[:^S:]\"",
+                    "The beforeCurrency currency spacing of de is not the one the formats write."
+                },
+                { Currencies, "\"symbol\": \"$\"", "\"symbol\": \"\"", "A symbol of USD in de is empty." },
+                {
+                    Numbers,
+                    "\"1000-count-other\": \"0K\"",
+                    "\"1000-count-one\": \"0K\"",
+                    "The short compact patterns of de have no other pattern for 10^3."
+                },
+                {
+                    Numbers,
+                    "\"1000-count-other\": \"0K\"",
+                    "\"1500-count-other\": \"0K\"",
+                    "The compact pattern key 1500-count-other of de is not a power of ten and a count."
+                },
+                { Numbers, "\"nan\": \"NaN\"", "\"nan\": \"" + letters + "\"", "The string " + letters + " is longer than 255 bytes of UTF-8." },
+                {
+                    Currencies,
+                    "\"symbol\": \"$\"",
+                    "\"symbol\": \"" + symbol + "\"",
+                    "The symbol " + symbol + " of USD in de is longer than 63 bytes of UTF-8."
+                },
+            };
+        }
+    }
 
     /// <summary>
     /// Two runs of the generator from the same zip write the same files, byte for byte.
@@ -68,6 +162,7 @@ public sealed class CldrTableGenTests
             Assert.Equal(firstFiles, Files(second));
             Assert.Contains("src/XylemUI.Core/Localization/Cldr/CldrTables.g.cs", firstFiles);
             Assert.Contains("tests/XylemUI.Core.Tests/CldrPluralSamples.g.cs", firstFiles);
+            Assert.Contains("src/XylemUI.Core/Localization/Cldr/CldrNumberTables.g.cs", firstFiles);
             foreach (string file in firstFiles)
             {
                 Assert.True(File.ReadAllBytes(Path.Combine(first, file)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(second, file))), file);
@@ -172,6 +267,201 @@ public sealed class CldrTableGenTests
     }
 
     /// <summary>
+    /// The number tables the generator writes hold the symbols, the standard patterns, the compact patterns, and the currency symbols
+    /// of the json in the order the formats read them; locales with the same data share one table, and each locale's class returns
+    /// its own (design §4.11, "Numbers" and "Declaration and reference").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: every locale has the same number data but de, whose decimal and group separators are swapped
+    ///   and which has no alphaNextToNumber pattern;
+    ///   every locale has the same currencies; currencyData.json lists BHD (3), CHF (2, with a cash rounding), JPY (0), and DEFAULT
+    ///   (2).
+    ///
+    /// Steps:
+    /// - Run the tool, and read CldrNumberTables.g.cs and CldrTables.g.cs.
+    ///
+    /// Expected:
+    /// - 2 number tables, 1 compact table, 1 currency table, and the default of 2 fraction digits.
+    /// - The bytes of the lines of NumberLines, counted by hand: root's number table (the first used, ending with the
+    ///   alphaNextToNumber pattern), de's (ending with an empty string), the compact table with
+    ///   the long patterns ordered one, other, explicit 1, and the currency table without EUR, whose symbol is its code, with JPY's
+    ///   narrow symbol alone and USD's standard symbol alone. The currency digits list BHD and JPY and not CHF.
+    /// - The class of de returns the number table 1, the class of en the number table 0, and both the compact and currency table 0.
+    /// </remarks>
+    [Fact]
+    public void Tool_NumberTables_HoldTheBytesOfTheData()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            string folder = Path.Combine(output, "src/XylemUI.Core/Localization/Cldr");
+            string tables = File.ReadAllText(Path.Combine(folder, "CldrTables.g.cs"));
+            string numbers = File.ReadAllText(Path.Combine(folder, "CldrNumberTables.g.cs"));
+            foreach (string line in NumberLines)
+            {
+                Assert.Contains(line, tables + numbers, StringComparison.Ordinal);
+            }
+
+            string de = ClassOf(tables, "CldrDe");
+            string en = ClassOf(tables, "CldrEn");
+            Assert.Contains("    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers1;", de, StringComparison.Ordinal);
+            Assert.Contains("    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;", en, StringComparison.Ordinal);
+            foreach (string entry in new[] { de, en })
+            {
+                Assert.Contains(
+                    "    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact0;",
+                    entry,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;",
+                    entry,
+                    StringComparison.Ordinal
+                );
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The length byte of a currency symbol holds, besides its UTF-8 length, whether its last extended grapheme cluster (UAX #29)
+    /// starts with a letter (bit 7, for a symbol before the digits) and whether its first one does (bit 6, for a symbol after them),
+    /// so that the runtime judges no clusters (Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's USD symbol replaced, and a lock with its SHA-256. The cases: Kannada's ಲೀ (U+0CB2, a
+    ///   letter, and the vowel sign U+0CC0, a mark: one cluster, whose last code point is not a letter; UTF-8 E0 B2 B2 E0 B3 80);
+    ///   US$, which starts with a letter and ends with a symbol; $US, which starts with a symbol and ends with a letter.
+    ///
+    /// Steps:
+    /// - Run the tool, and read CldrNumberTables.g.cs and CldrTables.g.cs.
+    ///
+    /// Expected:
+    /// - de's currency table is the second one, and holds JPY as the others do, then USD with the symbol's length byte and bytes and
+    ///   the narrow $ (1, 36): ಲೀ 198 (6, bit 7, bit 6), US$ 67 (3, bit 6), $US 131 (3, bit 7). The class of de returns that table.
+    /// </remarks>
+    /// <param name="symbol">The USD symbol of de.</param>
+    /// <param name="bytes">The symbol's length byte and bytes in the table.</param>
+    [Theory]
+    [InlineData("ಲೀ", "198, 224, 178, 178, 224, 179, 128")]
+    [InlineData("US$", "67, 85, 83, 36")]
+    [InlineData("$US", "131, 36, 85, 83")]
+    public void Tool_CurrencySymbol_HoldsTheLetterBitsOfItsClusters(string symbol, string bytes)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            const string Currencies = "cldr-numbers-full/main/de/currencies.json";
+            string zip = WriteZip(directory, withBo: true, edit: (Currencies, "\"symbol\": \"$\"", "\"symbol\": \"" + symbol + "\""));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            string folder = Path.Combine(output, "src/XylemUI.Core/Localization/Cldr");
+            string numbers = File.ReadAllText(Path.Combine(folder, "CldrNumberTables.g.cs"));
+            string de = ClassOf(File.ReadAllText(Path.Combine(folder, "CldrTables.g.cs")), "CldrDe");
+            string line = "    public static ReadOnlySpan<byte> Currencies1 => [74, 80, 89, 0, 2, 194, 165, 85, 83, 68, " + bytes + ", 1, 36];";
+            Assert.Contains(line, numbers, StringComparison.Ordinal);
+            Assert.Contains("    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies1;", de, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A number pattern of a form the formats do not read stops the generator: an exponent, which the formats do not write.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's decimal pattern #E0, and a lock with its SHA-256.
+    ///
+    /// Steps:
+    /// - Run the tool into an empty directory.
+    ///
+    /// Expected:
+    /// - It ends with 1 and names the pattern and de.
+    /// </remarks>
+    [Fact]
+    public void Tool_PatternWithAnExponent_Stops()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, deDecimalPattern: "#E0");
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
+
+            Assert.Equal(1, exit);
+            Assert.Contains("The pattern #E0 of de", text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Number data the formats do not read stops the generator with a message that names it (design §4.11, "How the tables are
+    /// made"; PR #944's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with one text of one entry replaced, and a lock with its SHA-256. The cases: latn's type
+    ///   algorithmic, not numeric (und, read first, stops); latn's digits 0123456780, not consecutive; BHD's rounding increment 5;
+    ///   de's currencyMatch [:^S:] on both sides (the before side is checked first); de's USD symbol empty; de's short compact key
+    ///   1000-count-other made 1000-count-one, so 10^3 has no other pattern; that key made 1500-count-other, not a power of ten; de's
+    ///   NaN symbol of 256 ASCII letters, one byte past the 255 a length byte holds; de's USD symbol of 64 ASCII letters, one byte past
+    ///   the 63 the 6 low bits of a symbol's length byte hold.
+    ///
+    /// Steps:
+    /// - Run the tool into an empty directory.
+    ///
+    /// Expected:
+    /// - It ends with 1, and its output holds the message of each case.
+    /// </remarks>
+    /// <param name="entry">The entry of the zip whose text is replaced.</param>
+    /// <param name="from">The text replaced.</param>
+    /// <param name="to">The text put in its place.</param>
+    /// <param name="message">The message the tool writes.</param>
+    [Theory]
+    [MemberData(nameof(UnreadNumberData))]
+    public void Tool_NumberDataTheFormatsDoNotRead_Stops(string entry, string from, string to, string message)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, edit: (entry, from, to));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
+
+            Assert.Equal(1, exit);
+            Assert.Contains(message, text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A zip whose SHA-256 is not the one the lock pins stops the generator before it writes anything.
     /// </summary>
     /// <remarks>
@@ -243,13 +533,21 @@ public sealed class CldrTableGenTests
         }
     }
 
-    // A zip of the json-full shape, with the files the generator reads and nothing more. The number and date files are empty
-    // objects: the generator reads only that they are there. pt-AO is a modern locale with no plural rules of its own; plurals.json
-    // has rules for pt and for pt-PT, and the parent locales of the plurals component are the given JSON object.
-    private static string WriteZip(string directory, bool withBo, string pluralParents = "{}")
+    // A zip of the json-full shape, with the files the generator reads and nothing more. The date files are empty objects: the
+    // generator reads only that they are there. Every locale has the number data of NumbersJson and the currencies of
+    // CurrenciesJson, but de, whose separators are swapped and whose decimal pattern is the given one. pt-AO is a modern locale with
+    // no plural rules of its own; plurals.json has rules for pt and for pt-PT, and the parent locales of the plurals component are
+    // the given JSON object. An edit replaces a text in one entry, which must hold it.
+    private static string WriteZip(
+        string directory,
+        bool withBo,
+        string pluralParents = "{}",
+        string deDecimalPattern = "#,##0.###",
+        (string Entry, string From, string To)? edit = null
+    )
     {
         string path = Path.Combine(directory, "cldr-test-json-full.zip");
-        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        using (var zip = new EditedZip(ZipFile.Open(path, ZipArchiveMode.Create), edit))
         {
             Add(zip, "LICENSE", "Test notice.\n");
             Add(zip, "cldr-core/package.json", "{ \"version\": \"49.0.0\" }");
@@ -271,9 +569,18 @@ public sealed class CldrTableGenTests
                     .Append("pt-AO")
             )
             {
-                Add(zip, "cldr-numbers-full/main/" + tag + "/numbers.json", "{}");
+                string numbers = tag == "de" ? NumbersJson(tag, ",", ".", deDecimalPattern, false) : NumbersJson(tag, ".", ",", "#,##0.###", true);
+                Add(zip, "cldr-numbers-full/main/" + tag + "/numbers.json", numbers);
+                Add(zip, "cldr-numbers-full/main/" + tag + "/currencies.json", CurrenciesJson(tag));
                 Add(zip, "cldr-dates-full/main/" + tag + "/ca-gregorian.json", "{}");
             }
+
+            Add(
+                zip,
+                "cldr-core/supplemental/numberingSystems.json",
+                "{ \"supplemental\": { \"numberingSystems\": { \"latn\": { \"_digits\": \"0123456789\", \"_type\": \"numeric\" } } } }"
+            );
+            Add(zip, "cldr-core/supplemental/currencyData.json", CurrencyData);
 
             Add(
                 zip,
@@ -307,9 +614,59 @@ public sealed class CldrTableGenTests
         return path;
     }
 
-    private static void Add(ZipArchive zip, string name, string text)
+    // The number data of a locale: Latin digits, the given separators and decimal pattern, one short compact pattern, and three
+    // long ones (one, other, and the explicit 1). The currency spacing is CLDR's, with its no-break space; with alpha, the locale
+    // also has the alphaNextToNumber pattern, the currency sign and a no-break space before #,##0.00.
+    private static string NumbersJson(string tag, string decimalSeparator, string groupSeparator, string decimalPattern, bool alpha)
     {
-        using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false));
+        string spacing =
+            "{ \"currencyMatch\": \"[[:^S:]&[:^Z:]]\", \"surroundingMatch\": \"[:digit:]\", \"insertBetween\": \"" + NoBreakSpace + "\" }";
+        string alphaPattern = alpha ? ", \"standard-alphaNextToNumber\": \"" + CurrencySign + NoBreakSpace + "#,##0.00\"" : string.Empty;
+        return "{ \"main\": { \""
+            + tag
+            + "\": { \"numbers\": { \"defaultNumberingSystem\": \"latn\", \"minimumGroupingDigits\": \"1\", "
+            + "\"symbols-numberSystem-latn\": { \"decimal\": \""
+            + decimalSeparator
+            + "\", \"group\": \""
+            + groupSeparator
+            + "\", \"minusSign\": \"-\", \"plusSign\": \"+\", \"percentSign\": \"%\", \"infinity\": \""
+            + Infinity
+            + "\", \"nan\": \"NaN\" }, "
+            + "\"decimalFormats-numberSystem-latn\": { \"standard\": \""
+            + decimalPattern
+            + "\", \"short\": { \"decimalFormat\": { \"1000-count-other\": \"0K\" } }, "
+            + "\"long\": { \"decimalFormat\": { \"1000-count-other\": \"0 thousand\", \"1000-count-one\": \"0 thousand\", "
+            + "\"1000-count-1\": \"a thousand\" } } }, "
+            + "\"percentFormats-numberSystem-latn\": { \"standard\": \"#,##0%\" }, "
+            + "\"currencyFormats-numberSystem-latn\": { \"currencySpacing\": { \"beforeCurrency\": "
+            + spacing
+            + ", \"afterCurrency\": "
+            + spacing
+            + " }, \"standard\": \""
+            + CurrencySign
+            + "#,##0.00\""
+            + alphaPattern
+            + " } } } } }";
+    }
+
+    // The currencies of a locale: EUR's symbol is its code, JPY's is its code with a narrow one, and USD's symbol is its narrow one.
+    private static string CurrenciesJson(string tag) =>
+        "{ \"main\": { \""
+        + tag
+        + "\": { \"numbers\": { \"currencies\": { \"EUR\": { \"symbol\": \"EUR\" }, "
+        + "\"JPY\": { \"symbol\": \"JPY\", \"symbol-alt-narrow\": \""
+        + YenSign
+        + "\" }, \"USD\": { \"displayName\": \"US Dollar\", \"symbol\": \"$\", \"symbol-alt-narrow\": \"$\" } } } } } }";
+
+    private static void Add(EditedZip zip, string name, string text)
+    {
+        if (zip.Edit is { } edit && edit.Entry == name)
+        {
+            Assert.Contains(edit.From, text, StringComparison.Ordinal);
+            text = text.Replace(edit.From, edit.To, StringComparison.Ordinal);
+        }
+
+        using var writer = new StreamWriter(zip.Archive.CreateEntry(name).Open(), new UTF8Encoding(false));
         writer.Write(text);
     }
 
@@ -318,6 +675,15 @@ public sealed class CldrTableGenTests
         string path = Path.Combine(directory, "versions.lock");
         File.WriteAllText(path, "# test\ncldr-json  49.0.0  " + sha256 + "  https://example.invalid/cldr-test-json-full.zip\n");
         return path;
+    }
+
+    // The text of one generated class, from its declaration to the brace that closes it.
+    private static string ClassOf(string tables, string name)
+    {
+        int start = tables.IndexOf("internal sealed class " + name + " : LocaleData", StringComparison.Ordinal);
+        Assert.True(start >= 0, name);
+        int end = tables.IndexOf("\n}\n", start, StringComparison.Ordinal);
+        return tables[start..end];
     }
 
     private static string[] Files(string root) =>
@@ -362,5 +728,15 @@ public sealed class CldrTableGenTests
         }
 
         throw new InvalidOperationException("The tests run outside the repository.");
+    }
+
+    // A zip being written, and the edit of the text of one of its entries.
+    private sealed class EditedZip(ZipArchive archive, (string Entry, string From, string To)? edit) : IDisposable
+    {
+        public ZipArchive Archive { get; } = archive;
+
+        public (string Entry, string From, string To)? Edit { get; } = edit;
+
+        public void Dispose() => Archive.Dispose();
     }
 }

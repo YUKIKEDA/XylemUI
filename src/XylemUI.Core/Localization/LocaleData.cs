@@ -1,7 +1,7 @@
 namespace XylemUI;
 
 /// <summary>
-/// The CLDR tables of one locale (design §4.11, "Formats"): its plural rules and its week. An app takes them from
+/// The CLDR tables of one locale (design §4.11, "Formats"): its plural rules, its week, and its number formats. An app takes them from
 /// <see cref="CldrLocales"/>, and only the tables it references stay in a NativeAOT binary.
 /// </summary>
 /// <remarks>
@@ -11,6 +11,9 @@ namespace XylemUI;
 public abstract class LocaleData
 {
     private PluralRules? _plurals;
+    private NumberSymbols? _numbers;
+    private NumberFormatter? _decimalFormat;
+    private NumberFormatter? _percentFormat;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LocaleData"/> class.
@@ -43,21 +46,17 @@ public abstract class LocaleData
     /// <summary>
     /// Gets the plural rules, made when first read.
     /// </summary>
-    public PluralRules Plurals
-    {
-        get
-        {
-            PluralRules? plurals = _plurals;
-            if (plurals is null)
-            {
-                // Two threads that read it first at once may both make one; the first stored is the one both return.
-                plurals = CreatePlurals();
-                plurals = Interlocked.CompareExchange(ref _plurals, plurals, null) ?? plurals;
-            }
+    public PluralRules Plurals => Once(ref _plurals, static data => data.CreatePlurals());
 
-            return plurals;
-        }
-    }
+    /// <summary>
+    /// Gets the locale's decimal format with no options (<see cref="NumberFormatter.Decimal"/>), made when first read.
+    /// </summary>
+    public NumberFormatter DecimalFormat => Once(ref _decimalFormat, static data => NumberFormatter.Decimal(data));
+
+    /// <summary>
+    /// Gets the locale's percent format with no options (<see cref="NumberFormatter.Percent"/>), made when first read.
+    /// </summary>
+    public NumberFormatter PercentFormat => Once(ref _percentFormat, static data => NumberFormatter.Percent(data));
 
     /// <summary>
     /// Gets the first day of the week, CLDR's value for the locale's region, or for its likely region when the tag has none
@@ -125,6 +124,29 @@ public abstract class LocaleData
     public LocaleData WithLocale(Locale locale) => new TaggedLocaleData(locale, this);
 
     /// <summary>
+    /// Gets the number symbols and patterns, read from <see cref="NumberTable"/> when first read.
+    /// </summary>
+    internal NumberSymbols Numbers => Once(ref _numbers, static data => NumberSymbols.Read(data.NumberTable));
+
+    /// <summary>
+    /// Gets the table of the number symbols and the standard patterns, which <see cref="NumberSymbols.Read"/> reads. Locales with the
+    /// same data share one table.
+    /// </summary>
+    internal abstract ReadOnlySpan<byte> NumberTable { get; }
+
+    /// <summary>
+    /// Gets the table of the compact decimal patterns, which <see cref="CompactPattern.Read"/> reads. A binary that makes no compact
+    /// format keeps no such table.
+    /// </summary>
+    internal abstract ReadOnlySpan<byte> CompactTable { get; }
+
+    /// <summary>
+    /// Gets the table of the currency symbols that differ from the currency's code, which <see cref="NumberFormatter.Currency"/>
+    /// reads. A binary that makes no currency format keeps no such table.
+    /// </summary>
+    internal abstract ReadOnlySpan<byte> CurrencyTable { get; }
+
+    /// <summary>
     /// Makes the plural rules of the tables, which <see cref="Plurals"/> keeps.
     /// </summary>
     /// <returns>The rules.</returns>
@@ -144,6 +166,21 @@ public abstract class LocaleData
         return 7 - offset >= MinimalDaysInFirstWeek ? weekStart : weekStart + 7;
     }
 
+    // A value made when first read and kept (design §4.11, "Allocation and threads"): two threads that read it first at once may
+    // both make one; the first stored is the one both return.
+    private T Once<T>(ref T? field, Func<LocaleData, T> make)
+        where T : class
+    {
+        T? value = Volatile.Read(ref field);
+        if (value is null)
+        {
+            value = make(this);
+            value = Interlocked.CompareExchange(ref field, value, null) ?? value;
+        }
+
+        return value;
+    }
+
     private static int FloorDivide(int value, int divisor) => (value >= 0 ? value : value - divisor + 1) / divisor;
 
     private static int Modulo(int value, int divisor) => ((value % divisor) + divisor) % divisor;
@@ -158,6 +195,12 @@ public abstract class LocaleData
         {
             _tables = tables;
         }
+
+        internal override ReadOnlySpan<byte> NumberTable => _tables.NumberTable;
+
+        internal override ReadOnlySpan<byte> CompactTable => _tables.CompactTable;
+
+        internal override ReadOnlySpan<byte> CurrencyTable => _tables.CurrencyTable;
 
         internal override PluralRules CreatePlurals() => _tables.Plurals;
     }

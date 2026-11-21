@@ -162,4 +162,38 @@ internal static class ThrowHelper
     [StackTraceHidden]
     internal static void ThrowContrastColorsDisagree(string parameterName) =>
         throw new ArgumentException("The appearance has high-contrast colors exactly while its high contrast is on.", parameterName);
+
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> for a currency code that is not in the form of ISO 4217.
+    /// </summary>
+    /// <param name="isoCode">The code.</param>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowNotACurrencyCode(string isoCode) =>
+        throw new ArgumentException("The currency code '" + isoCode + "' is not three upper-case ASCII letters (ISO 4217).", nameof(isoCode));
+
+    /// <summary>
+    /// Throws <see cref="ArgumentOutOfRangeException"/> for <see cref="NumberOptions"/> whose digits a format cannot show.
+    /// </summary>
+    /// <param name="parameterName">The name of the options' parameter.</param>
+    /// <param name="message">The condition that failed.</param>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowNumberOptionOutOfRange(string parameterName, string message) =>
+        throw new ArgumentOutOfRangeException(parameterName, message);
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when text is parsed with a format that has no parsing.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowNumberParseNotSupported() =>
+        throw new InvalidOperationException("Only a decimal or a percent format parses text; a currency or a compact format does not.");
+
+    /// <summary>
+    /// Throws <see cref="OverflowException"/> when a rounded number is outside the range of <see cref="decimal"/>.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRoundedNumberOverflow() => throw new OverflowException("The number the format shows is outside the range of decimal.");
 }

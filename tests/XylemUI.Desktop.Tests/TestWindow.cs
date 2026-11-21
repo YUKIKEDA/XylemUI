@@ -18,7 +18,7 @@ internal sealed class TestWindow : IDisposable
         _text = new TextContext(_fonts);
         try
         {
-            Core = XylemApp.OpenWindow(Host, _text, root, options, () => Host.Window!.UiLanguages, () => Host.Window!.Use24HourFormat, show);
+            Core = XylemApp.OpenWindow(Host, _text, root, options, show);
         }
         catch
         {
@@ -66,9 +66,12 @@ internal sealed class TestWindow : IDisposable
 
 // A host for the tests' windows: it opens the Windows host's window (Win32PlatformWindow) on WARP with no check for a second one,
 // and sets no dispatcher, synchronization context, or OLE, as the tests opened windows before row PL1 (design §6.0, "4a の形";
-// Issue #928). It records the codes it is asked to quit with, quitting the message loop with each as the Windows host does.
+// Issue #928). Its settings are the Windows host's, read when it is made: a test that sets their readers sets them before. It
+// records the codes it is asked to quit with, quitting the message loop with each as the Windows host does.
 internal sealed class TestHost(bool useWarp) : IPlatformApp
 {
+    private readonly Win32PlatformSettings _settings = new();
+
     public List<int> Quits { get; } = [];
 
     // The window opened last; kept after it is disposed.
@@ -76,11 +79,13 @@ internal sealed class TestHost(bool useWarp) : IPlatformApp
 
     public UiDispatcher Dispatcher => Win32MessageLoop.Dispatcher;
 
+    public IPlatformSettings Settings => _settings;
+
     public IClipboardBackend Clipboard { get; } = new Win32Clipboard();
 
     public IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height, bool show)
     {
-        Window = new Win32PlatformWindow(core, title, width, height, show, useWarp);
+        Window = new Win32PlatformWindow(core, _settings, title, width, height, show, useWarp);
         return Window;
     }
 

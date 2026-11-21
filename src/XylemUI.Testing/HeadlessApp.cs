@@ -31,6 +31,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     private readonly HeadlessTarget _target;
     private readonly HeadlessRenderer? _renderer;
     private readonly UiDispatcher _dispatcher;
+    private readonly HeadlessSettings _settings;
     private readonly WindowCore _core;
     private readonly bool _trackerWasEnabled;
     private readonly HashSet<int> _scopesBefore = [];
@@ -46,6 +47,7 @@ public sealed class HeadlessApp : IAsyncDisposable
         _report = exception => (_errors ??= []).Add(exception);
         _dispatcher = HeadlessSession.Dispatcher;
         _text = new TextContext(_fonts);
+        _settings = new HeadlessSettings(options);
         _renderer = options.Renderer?.Invoke();
         HeadlessWindow window;
         bool connected = false;
@@ -56,20 +58,13 @@ public sealed class HeadlessApp : IAsyncDisposable
             _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
             _target = new HeadlessTarget(_renderer?.Target);
             _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
-            _core = new WindowCore(_text, Clipboard, options.SupportedLocales, options.ResolveLocale);
-            Tree.Animations.ReduceMotion = options.ReduceMotion;
+            _core = new WindowCore(_text, _settings, Clipboard, options.SupportedLocales, options.ResolveLocale);
             Tree.AnimatesImages = options.ImageAnimation;
             Tree.Keymap = options.Keymap ?? new Keymap();
             Ime = new HeadlessIme(this);
-            Tree.SetTextEditing(
-                (options.CaretBlink ? TextEditingSettings.Default : TextEditingSettings.Default with { CaretBlink = null }) with
-                {
-                    KeyboardCues = options.KeyboardCues,
-                }
-            );
 
             // The headless parts as the window tier (design §6.0, "Headless"): from it the core gives the tree the input method, and
-            // takes that the window shows and is active from the start.
+            // takes that the window shows and is active from the start. The core gives the tree the options' settings in Connect.
             window = new HeadlessWindow(_target, _scheduler, _platform, Ime, options);
 
             // The core owns the window and the atlas from Connect on, also when Connect throws (design §6.0).
@@ -113,16 +108,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             // The size is the options' logical size, given as it is: no rounding. The wrapper is the options' alone: the one an app's
             // assembly set for its desktop windows (WindowRoot) stays in the test process and is not read (design §13.2).
             var size = new Size(options.Width, options.Height);
-            _core.Mount(
-                root,
-                options.RootWrapper,
-                options.SystemLocales,
-                options.Use24HourFormat,
-                options.SystemAppearance,
-                "HeadlessApp.StartAsync",
-                size,
-                options.Scale
-            );
+            _core.Mount(root, options.RootWrapper, options.SystemAppearance, "HeadlessApp.StartAsync", size, options.Scale);
             window.RootMounted();
         }
         catch
@@ -521,8 +507,13 @@ public sealed class HeadlessApp : IAsyncDisposable
 
     /// <summary>
     /// Changes the languages the app sees as the OS's, as a change of the OS's settings does while a desktop window is open
-    /// (design §4.11, "A change of the OS"): the app's locale is resolved again, then the work that queued runs.
+    /// (design §4.11, "A change of the OS"): when the list differs, the app's locale is resolved again; then the work that queued
+    /// runs.
     /// </summary>
+    /// <remarks>
+    /// A list equal to the one before, in its tags and their order, is no change: the app's resolving function
+    /// (<see cref="HeadlessOptions.ResolveLocale"/>) does not run for it. Before row PL1's step 5 it ran for every call.
+    /// </remarks>
     /// <param name="tags">The tags of the languages, most preferred first.</param>
     /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
     [UiThreadOnly]
@@ -530,7 +521,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(tags);
         VerifyRunning();
-        _core.SetSystemLocales(tags);
+        _settings.SetUiLanguages(tags);
         _ = DrainQueue();
     }
 
@@ -547,7 +538,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     public void SetUse24HourFormat(bool use24HourFormat)
     {
         VerifyRunning();
-        _core.SetUse24HourFormat(use24HourFormat);
+        _settings.SetUse24HourFormat(use24HourFormat);
         _ = DrainQueue();
     }
 
