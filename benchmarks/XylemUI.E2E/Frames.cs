@@ -18,6 +18,18 @@ namespace XylemUI.E2E;
 // draws them moved with no layout (layout_ms is the pass that finds nothing to do).
 // --list virtual and --list for (with --tree, row P02e) put a box over 10,000 rows 20 high in place of the boxes, made with
 // VirtualFor or with For, and scroll it 7 px each frame: layout_ms is the materialization stage with its layout passes.
+// With --tree the scene draws in a window of the Windows host, through its window core (row PL1, Scene's `hosted`), on a thread in
+// COM's single-threaded apartment (StaThread); the frames stay run by this callback. Its report adds host, presents (the target's
+// presents, the first frame's and the resizes' included), frames_not_presented (frames, the warm ones included, whose RunFrame
+// did not present), main_builds, text_input and accessibility_tree (whether the host made TSF, and whether a UIA client made the
+// tree's accessibility tree), a11y_ms (the accessibility stage, which the tree scene runs and times before t0, so that build_ms
+// and cpu_frame_ms keep what they timed on main's direct window), uia_provider and os_pointer (Scene's two experiments, read
+// back), and with --hover hover_misses (moves after which the node the window's hit test gives at the move's point was not
+// hovered), hover_on_other_box (moves whose point that test gives to a box other than the target, _boxes[frame & 1]: a later box
+// over the target's middle), hover_other_box_index (the first such box's index in _boxes, or -1), and layout_width and
+// layout_height (the logical size the boxes' places wrap in).
+// `wmSize` (the `wm-size` scenario) runs the tree scene with its --resizes and --resizes-late through the host's WM_SIZE
+// (HostResize) instead of the window core's Resize, and adds HostResize's fields.
 internal static class Frames
 {
     public static int Run(
@@ -38,33 +50,34 @@ internal static class Frames
         string list = "",
         int resizes = 0,
         int resizesLate = 0,
-        bool images = false
+        bool images = false,
+        bool wmSize = false
     )
     {
         UiThread.Initialize();
-        using var scene = new Scene("XylemUI E2E frames", warp, gray);
+        using var scene = new Scene("XylemUI E2E frames", warp, gray, hosted: tree);
 
-        // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path, and
-        // that present is told to the loop's scheduler: an app (Win32PlatformWindow) does both in this order, so the scheduler counts
-        // the present that did not wait (design §2.11, "Presents that did not wait"; Issue #679).
-        Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
-        using TreeScene? treeScene = tree ? new TreeScene(scene, scene.Font, noText, hover, scroll, list) : null;
-        if (treeScene is not null && treeScene.Target.PresentEnd != 0)
+        // The clock is set before the tree scene, whose WindowFrames presents its first frame on the synchronous resize path and
+        // tells the loop's scheduler, so that the scheduler counts the present that did not wait (design §2.11, "Presents that did
+        // not wait"; Issue #679). The host set it when it made its renderer; the plain scene sets it here.
+        if (!tree)
         {
-            Win32MessageLoop.FrameScheduler.FramePresented();
+            Win32MessageLoop.SetFrameClock(scene.Renderer.FrameLatencyWaitableObject, scene.Renderer.TryReadLastRefresh, scene.Renderer.RefreshRate);
         }
 
+        using TreeScene? treeScene = tree ? new TreeScene(scene, noText, hover, scroll, list) : null;
+        HostResize? hostResize = wmSize && treeScene is not null ? new HostResize(scene, treeScene.Target, resizes + resizesLate) : null;
         var layout = new List<double>(frames);
         var input = new List<double>(frames);
+        var accessibility = new List<double>(frames);
         scene.Renderer.StartMeasuringFrames();
 
         // A resize drag's frames, each presented on the synchronous resize path without waiting on the swap chain's object, and
-        // told to the loop's scheduler as an app's WindowFrames tells it: the object keeps a signal for each, up to 40 on the
+        // told to the loop's scheduler by the window core's WindowFrames: the object keeps a signal for each, up to 40 on the
         // measuring machine (PR #680's review), and the frames after them must not fall a refresh behind or stall.
         for (int i = 0; i < resizes && treeScene is not null; i++)
         {
-            treeScene.PresentOnResizePath();
-            Win32MessageLoop.FrameScheduler.FramePresented();
+            Resize(treeScene, hostResize);
         }
 
         var build = new List<double>(frames);
@@ -85,8 +98,7 @@ internal static class Frames
             {
                 for (int i = 0; i < lateResizes; i++)
                 {
-                    treeScene.PresentOnResizePath();
-                    Win32MessageLoop.FrameScheduler.FramePresented();
+                    Resize(treeScene, hostResize);
                 }
 
                 lateResizes = 0;
@@ -94,6 +106,7 @@ internal static class Frames
         };
 
         int frame = 0;
+        int notPresented = 0;
         long last = 0;
         Action? step = null;
         step = () =>
@@ -112,11 +125,21 @@ internal static class Frames
             {
                 layout.Add(treeScene.Update(frame));
                 input.Add(treeScene.InputMilliseconds);
+
+                // The accessibility stage, timed apart and before t0: build_ms and cpu_frame_ms keep what they timed on main's
+                // direct window, whose tree had no accessibility tree (PL1-e2e, "計測の後の調べ").
+                accessibility.Add(treeScene.UpdateAccessibility());
                 t0 = Stopwatch.GetTimestamp();
                 treeScene.RunFrame();
                 t1 = treeScene.Target.DrawStart;
                 t2 = treeScene.Target.DrawEnd;
                 t3 = treeScene.Target.PresentEnd;
+
+                // The window core's WindowFrames told the loop's scheduler of its present itself.
+                if (t3 < t0)
+                {
+                    notPresented++;
+                }
             }
             else
             {
@@ -134,13 +157,9 @@ internal static class Frames
                 t2 = Stopwatch.GetTimestamp();
                 scene.Renderer.Present();
                 t3 = Stopwatch.GetTimestamp();
-            }
 
-            // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design §2.11,
-            // I1c). The tree's frames tell a scheduler of their own (TreeScene's NoScheduler), not this loop's, so they are told here
-            // too, when the frame presented.
-            if (treeScene is null || treeScene.Target.PresentEnd >= t0)
-            {
+                // A callback that presents says so, or the next frame waits on the 16 ms timer in place of the swap chain (design
+                // §2.11, I1c).
                 Win32MessageLoop.FrameScheduler.FramePresented();
             }
 
@@ -167,20 +186,42 @@ internal static class Frames
                 Win32MessageLoop.Quit();
             }
         };
+
+        // Every frame is the callback's, as on main: a request of the tree between frames (an activation, the OS's pointer) would
+        // replace it and stop the run (TreeScene.SendFrameRequestsTo).
+        treeScene?.SendFrameRequestsTo(step);
         Win32MessageLoop.FrameScheduler.RequestFrame(step);
         _ = Win32MessageLoop.Run();
         Win32MessageLoop.IterationHook = null;
 
+        // A scene checks that it measured what it says it measures (bench.mdc): the late resizes run only when a frame after frame
+        // 300 waits for its late start, and a run where none did would report no resize and exit 0 (PR #943's review).
+        if (lateResizes > 0)
+        {
+            throw new InvalidOperationException(
+                $"--resizes-late {resizesLate}: no loop iteration after frame 300 found the late start waiting, so no late resize ran."
+            );
+        }
+
         // Read before the clock goes back to the timer, which forgets the period.
         double derivedPeriod = Win32MessageLoop.Frames.DerivedPeriodMilliseconds;
         (long lateWakes, double latestWake) = Win32MessageLoop.Frames.LateWakes;
-        Win32MessageLoop.SetFrameClock(0);
+
+        // The host's window gives the loop its timer back when the scene disposes it.
+        if (!tree)
+        {
+            Win32MessageLoop.SetFrameClock(0);
+        }
 
         // The first frames warm the atlas and the buffers; they are left out.
         const int Warm = 10;
         double median = interval.Skip(Warm).Order().ElementAt(interval.Count / 2);
         int missed = interval.Skip(Warm).Count(ms => ms > 1.5 * median);
-        using var report = new Report(heavy == 0 ? "frames" : "frames-heavy");
+        using var report = new Report(
+            wmSize ? "wm-size"
+            : heavy == 0 ? "frames"
+            : "frames-heavy"
+        );
         report.Text("gpu", scene.Renderer.IsWarp ? "warp" : "hardware");
         report.Number("heavy", heavy);
         report.Text("coverage", scene.Coverage.ToString());
@@ -235,6 +276,48 @@ internal static class Frames
         report.Number("latest_wake_ms", latestWake);
         report.Number("frames_measured", interval.Count - Warm);
         report.Number("gpu_frames_skipped", scene.Renderer.GpuFramesSkipped);
+
+        // What shows that the tree scene drew through the host, and the host's parts that were made (.cursor/rules/bench.mdc, a
+        // scene's proof).
+        if (treeScene is not null)
+        {
+            report.Text("host", "yes");
+            report.Number("presents", treeScene.Target.Presents);
+            report.Number("frames_not_presented", notPresented);
+            report.Number("main_builds", treeScene.MainBuilds);
+            report.Number("text_input", scene.HostWindow!.TextInput is null ? 0 : 1);
+            report.Number("accessibility_tree", scene.Core!.Tree.HasAccessibilityTree ? 1 : 0);
+            report.Series("a11y_ms", [.. accessibility.Skip(Warm)]);
+
+            // The two experiments of the measurement (Scene's XYLEMUI_E2E_NO_UIA and XYLEMUI_E2E_NO_OS_POINTER), read back.
+            report.Number("uia_provider", scene.Window.Accessibility is null ? 0 : 1);
+            report.Number("os_pointer", scene.Window.PointerInputReceived is null ? 0 : 1);
+            if (hover)
+            {
+                report.Number("hover_misses", treeScene.HoverMisses);
+                report.Number("hover_on_other_box", treeScene.HoverOnOtherBox);
+                report.Number("hover_other_box_index", treeScene.HoverOtherBoxIndex);
+
+                // The size the boxes' places wrap in (TreeScene.Update), which decides which box lies over a target.
+                report.Number("layout_width", (int)(scene.Renderer.Width / scene.Window.ScaleFactor));
+                report.Number("layout_height", (int)(scene.Renderer.Height / scene.Window.ScaleFactor));
+            }
+        }
+
+        hostResize?.Write(report);
         return 0;
+    }
+
+    // One resize on the synchronous resize path: through the host's WM_SIZE for `wm-size`, or the window core's Resize.
+    private static void Resize(TreeScene treeScene, HostResize? hostResize)
+    {
+        if (hostResize is null)
+        {
+            treeScene.PresentOnResizePath();
+        }
+        else
+        {
+            hostResize.Resize();
+        }
     }
 }

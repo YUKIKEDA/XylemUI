@@ -31,7 +31,7 @@ internal static class ImagePlay
         SynchronizationContext.SetSynchronizationContext(ui);
         var tree = new UiTree();
         NodeHandle root = tree.CreateNode(new LayoutStyle());
-        var target = new TreeScene.TimingTarget(scene);
+        var target = new TreeScene.TimingTarget(scene.Renderer);
         var frames = new WindowFrames(tree, root, target, scene.Atlas, Win32MessageLoop.FrameScheduler, scene.Clear, scene.Renderer.TextRendering);
         UiTree.Current = tree;
         try
