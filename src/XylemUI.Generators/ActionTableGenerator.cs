@@ -16,7 +16,8 @@ namespace XylemUI.Generators;
 /// method and those of the assemblies it references, so that the names are known before the app's first line runs and nothing is
 /// found by reflection. The module initializer also registers the default key bindings of the assemblies the app references
 /// (<c>XylemUI.DefaultKeyBindingsAttribute</c>, design §7, "The default keys and actions"), an assembly after the assemblies
-/// it references.
+/// it references, and sets the root wrapper of the windows that the app's own <c>XylemUI.WindowThemeAttribute</c> names (design
+/// §13.2, "根で置くもの").
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class ActionTableGenerator : IIncrementalGenerator
@@ -26,6 +27,8 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     private const string ActionInterfaceName = "XylemUI.IAction";
     private const string DefaultKeyBindingsAttributeName = "XylemUI.DefaultKeyBindingsAttribute";
     private const string AddDefaultsName = "AddDefaults";
+    private const string WindowThemeAttributeName = "XylemUI.WindowThemeAttribute";
+    private const string WrapName = "Wrap";
 
     private static readonly DiagnosticDescriptor NotAnAction = new(
         "XYLEM001",
@@ -85,6 +88,24 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         "XYLEM007",
         "The class of the default key bindings has no AddDefaults method",
         "'{0}' is named by [assembly: DefaultKeyBindings] of '{1}' and has no accessible 'public static void AddDefaults(XylemUI.Keymap keymap)'; its default key bindings are not registered",
+        "XylemUI",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor TwoWindowThemes = new(
+        "XYLEM010",
+        "The app has more than one window theme",
+        "The app carries [assembly: WindowTheme] for '{0}'; one wrapper owns a window's backdrop and title bar, so none is set",
+        "XylemUI",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor NoWrap = new(
+        "XYLEM011",
+        "The class of the window theme has no Wrap method",
+        "'{0}' is named by [assembly: WindowTheme] and has no accessible 'public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root)'; the windows are not wrapped",
         "XylemUI",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -261,9 +282,67 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             Identifier(compilation.AssemblyName ?? "Assembly"),
             isApp,
             new EquatableArray<TableInfo>(tables.ToImmutable()),
-            new EquatableArray<DefaultsInfo>(isApp ? ReadDefaults(compilation) : ImmutableArray<DefaultsInfo>.Empty)
+            new EquatableArray<DefaultsInfo>(isApp ? ReadDefaults(compilation) : ImmutableArray<DefaultsInfo>.Empty),
+            new EquatableArray<WindowThemeInfo>(isApp ? ReadWindowThemes(compilation) : ImmutableArray<WindowThemeInfo>.Empty)
         );
     }
+
+    // The classes the app's own [assembly: WindowTheme] attributes name. Those of the assemblies it references are not read: a
+    // library's attribute does nothing (design §13.2, "包みは 1 つ"). An attribute of the app whose argument names no class
+    // (typeof(T[]), null) is kept as one with no Wrap: it is the error XYLEM011, and it counts as an attribute for XYLEM010.
+    private static ImmutableArray<WindowThemeInfo> ReadWindowThemes(Compilation compilation)
+    {
+        INamedTypeSymbol? element = compilation.GetTypeByMetadataName("XylemUI.Element");
+        var themes = ImmutableArray.CreateBuilder<WindowThemeInfo>();
+        foreach (AttributeData attribute in compilation.Assembly.GetAttributes())
+        {
+            if (attribute.AttributeClass?.ToDisplayString() != WindowThemeAttributeName)
+            {
+                continue;
+            }
+
+            ITypeSymbol? argument = attribute.ConstructorArguments.Length == 1 ? attribute.ConstructorArguments[0].Value as ITypeSymbol : null;
+            INamedTypeSymbol? type = argument as INamedTypeSymbol;
+            bool callable = type is not null && element is not null && HasWrap(type, element, compilation);
+            SyntaxReference? syntax = attribute.ApplicationSyntaxReference;
+            themes.Add(
+                new WindowThemeInfo(
+                    type?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? string.Empty,
+                    argument?.ToDisplayString() ?? "null",
+                    callable,
+                    syntax is null ? null : LocationInfo.From(Location.Create(syntax.SyntaxTree, syntax.Span))
+                )
+            );
+        }
+
+        return themes.ToImmutable();
+    }
+
+    // Whether a class has the method the module initializer passes to WindowRoot.SetWrapper as a Func<Func<Element>, Element>:
+    // static and neither abstract nor virtual (an interface's static abstract or virtual member cannot be named through the
+    // interface), not generic, an Element from one Func<Element> taken by value, and one the app's code can call. The types are
+    // compared as symbols, so that a nullable annotation (Func<Element>? root) does not count.
+    private static bool HasWrap(INamedTypeSymbol type, INamedTypeSymbol element, Compilation compilation) =>
+        type.GetMembers(WrapName)
+            .OfType<IMethodSymbol>()
+            .Any(m =>
+                m.IsStatic
+                && !m.IsAbstract
+                && !m.IsVirtual
+                && !m.IsGenericMethod
+                && SymbolEqualityComparer.Default.Equals(m.ReturnType, element)
+                && m.Parameters.Length is 1
+                && m.Parameters[0].RefKind == RefKind.None
+                && IsFuncOf(m.Parameters[0].Type, element)
+                && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
+            );
+
+    // Whether a type is System.Func<T> of the given T. The definition is compared by its name: System.Func`1 is defined in one
+    // assembly and forwarded from others, and a lookup by metadata name over several references is not relied on here.
+    private static bool IsFuncOf(ITypeSymbol type, INamedTypeSymbol result) =>
+        type is INamedTypeSymbol { Arity: 1 } named
+        && named.ConstructedFrom.ToDisplayString() == "System.Func<TResult>"
+        && SymbolEqualityComparer.Default.Equals(named.TypeArguments[0], result);
 
     // The classes that add default key bindings, of the assemblies the app references and then of the app itself, an assembly
     // after the assemblies it references: the rows of a package that builds on another are added later, and win at the same depth.
@@ -442,9 +521,27 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             }
         }
 
-        // A library with no action has no table. An app has one even with none of its own: it calls the tables it references and
-        // registers their default key bindings.
-        if (valid.Count == 0 && !(assembly.IsApp && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0)))
+        // One wrapper owns a window's backdrop and title bar, and wrappers have no order to be stacked in: with two, none is set.
+        if (assembly.WindowThemes.Count > 1)
+        {
+            Location second = assembly.WindowThemes.ElementAt(1).Location?.ToLocation() ?? Location.None;
+            string named = string.Join("', '", assembly.WindowThemes.Select(static t => t.DisplayName));
+            output.ReportDiagnostic(Diagnostic.Create(TwoWindowThemes, second, named));
+        }
+
+        foreach (WindowThemeInfo theme in assembly.WindowThemes)
+        {
+            if (!theme.Callable)
+            {
+                output.ReportDiagnostic(Diagnostic.Create(NoWrap, theme.Location?.ToLocation() ?? Location.None, theme.DisplayName));
+            }
+        }
+
+        WindowThemeInfo? wrapper = assembly.WindowThemes.Count == 1 ? assembly.WindowThemes.First() : null;
+
+        // A library with no action has no table. An app has one even with none of its own when its module initializer has work:
+        // the tables it references, their default key bindings, or the root wrapper of its windows.
+        if (valid.Count == 0 && !(assembly.IsApp && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0 || wrapper is { Callable: true })))
         {
             return;
         }
@@ -531,6 +628,11 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 {
                     _ = text.Append("            global::XylemUI.Keymap.RegisterDefaults(").Append(defaults.TypeName).Append(".AddDefaults);\n");
                 }
+            }
+
+            if (wrapper is { Callable: true })
+            {
+                _ = text.Append("            global::XylemUI.WindowRoot.SetWrapper(").Append(wrapper.TypeName).Append(".Wrap);\n");
             }
 
             _ = text.Append("        }\n");
@@ -666,5 +768,13 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
     private sealed record DefaultsInfo(string TypeName, string DisplayName, string Assembly, bool Callable);
 
-    private sealed record AssemblyInfo(string Identifier, bool IsApp, EquatableArray<TableInfo> Tables, EquatableArray<DefaultsInfo> Defaults);
+    private sealed record WindowThemeInfo(string TypeName, string DisplayName, bool Callable, LocationInfo? Location);
+
+    private sealed record AssemblyInfo(
+        string Identifier,
+        bool IsApp,
+        EquatableArray<TableInfo> Tables,
+        EquatableArray<DefaultsInfo> Defaults,
+        EquatableArray<WindowThemeInfo> WindowThemes
+    );
 }
