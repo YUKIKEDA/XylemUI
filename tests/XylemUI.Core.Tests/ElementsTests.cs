@@ -205,6 +205,89 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A width and a height given as fractions size the node's border box by the parent's content box, and follow the parent when
+    /// its size changes (design §2.13, "The component API").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box 120 x 60 with a padding of 10, so its content box is 100 x 40, holding a box of width fraction 0.5 and
+    ///   height fraction 0.25, laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the inner box's style and rectangle. Set the outer box's width to 180 and its height to 100 (a content box of
+    ///   160 x 80), run the frame asked for, and read the rectangle again.
+    ///
+    /// Expected:
+    /// - The style holds the percentages 0.5 and 0.25; the inner box is 50 x 10 at (10, 10), and 80 x 20 after the change.
+    /// </remarks>
+    [Fact]
+    public void WidthAndHeightFraction_OfTheParentsContentBox_FollowTheParent() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element outer = default;
+            Element inner = default;
+            scene.Mount(() =>
+            {
+                inner = Box().WidthFraction(0.5f).HeightFraction(0.25f);
+                return outer = Box(inner).Width(120).Height(60).Padding(10);
+            });
+            scene.Scheduler.Run();
+            LayoutStyle style = scene.Tree.Nodes.GetRef(inner.Node).Layout.Style;
+            Rect before = scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect;
+
+            _ = outer.Width(180).Height(100);
+            scene.Scheduler.Run();
+            Rect after = scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect;
+
+            Assert.Equal((Length.Percent(0.5f), Length.Percent(0.25f)), (style.Width, style.Height));
+            Assert.Equal(new Rect(10, 10, 50, 10), before);
+            Assert.Equal((80f, 20f), (after.Width, after.Height));
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width or a height fraction that is negative or not a finite number throws and leaves the node as it was; 0 and a fraction
+    /// above 1 are taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene, and a box of width 30 and height 20 made in its root function.
+    ///
+    /// Steps:
+    /// - Call <c>WidthFraction</c> and <c>HeightFraction</c> with -0.25, NaN, positive infinity, and negative infinity; read the
+    ///   style. Then call <c>WidthFraction(0)</c> and <c>HeightFraction(1.5f)</c>.
+    ///
+    /// Expected:
+    /// - For each value, both calls throw <see cref="ArgumentOutOfRangeException"/> naming <c>fraction</c>, and the style still
+    ///   holds 30 and 20 pixels; then it holds the percentages 0 and 1.5.
+    /// </remarks>
+    [Theory]
+    [InlineData(-0.25f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    public void WidthAndHeightFraction_NegativeOrNotFinite_Throw(float fraction) =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            scene.Mount(() =>
+            {
+                Element box = Box().Width(30).Height(20);
+                Assert.Equal("fraction", Assert.Throws<ArgumentOutOfRangeException>(() => box.WidthFraction(fraction)).ParamName);
+                Assert.Equal("fraction", Assert.Throws<ArgumentOutOfRangeException>(() => box.HeightFraction(fraction)).ParamName);
+                LayoutStyle kept = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Assert.Equal((Length.Px(30), Length.Px(20)), (kept.Width, kept.Height));
+
+                _ = box.WidthFraction(0).HeightFraction(1.5f);
+                LayoutStyle taken = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Assert.Equal((Length.Percent(0), Length.Percent(1.5f)), (taken.Width, taken.Height));
+                return box;
+            });
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// The border's paint alone changes the paint of a node's border and leaves its width: the node is marked to be drawn again
     /// with no layout, and the same paint again changes nothing (design §13.2).
     /// </summary>

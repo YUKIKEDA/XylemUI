@@ -84,9 +84,6 @@
     <InternalsVisibleTo Include="XylemUI.Primitives" />
     <!-- The primitives are tested on a tree with no window (row V1d). -->
     <InternalsVisibleTo Include="XylemUI.Primitives.Tests" />
-    <!-- The theme's root box fills the window with a percentage size, which the public API does not set, as the primitives' dialog
-         does (row TH1). -->
-    <InternalsVisibleTo Include="XylemUI.Theme.Fluent" />
     <!-- The icon tests read an icon's node and box (row IC1). -->
     <InternalsVisibleTo Include="XylemUI.Theme.Fluent.Tests" />
     <!-- Text leaves are measured with HarfBuzz, whose native library the Windows-only text tests load (row V1a). -->

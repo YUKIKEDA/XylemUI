@@ -42,11 +42,13 @@ public static class FluentRoot
     }
 
     /// <summary>
-    /// Returns whether a color reads as dark, by Microsoft's test of a light foreground (design §13.2, "Windows で読むもの"): the
-    /// title bar of a high-contrast theme is dark when its window color is.
+    /// Returns whether a color reads as dark, by the negation of <c>IsColorLight</c> in Microsoft's "Support Dark and Light themes
+    /// in Win32 apps" (https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-windows-themes), which reads a
+    /// color as light when <c>((5 * G) + (2 * R) + B) &gt; (8 * 128)</c> (design §13.2, "題名の棒"): the title bar of a
+    /// high-contrast theme is dark when its window color is.
     /// </summary>
     /// <param name="color">The color.</param>
-    /// <returns><see langword="true"/> when <c>5 G + 2 R + B</c> is at most 8 × 128.</returns>
+    /// <returns><see langword="true"/> when <c>5 G + 2 R + B</c> is at most 8 × 128, 1,024 itself included.</returns>
     internal static bool IsDark(Color color) => (5 * color.G) + (2 * color.R) + color.B <= 8 * 128;
 
     // The theme made from the OS's appearance (design §13.2, "OS の見た目からテーマを選ぶ").
@@ -65,9 +67,7 @@ public static class FluentRoot
     // 棒"). The background and the color of text are those of Fluent's provider (useFluentProviderStyles.styles.ts lines 15 and 16).
     private static Element RootBox(Element content, Computed<FluentTheme> theme, WindowSurface surface)
     {
-        Element box = Elements.Box(content);
-        UiTree tree = box.Tree!;
-        tree.SetStyle(box.Node, tree.Nodes.GetRef(box.Node).Layout.Style with { Width = Length.Percent(1), Height = Length.Percent(1) });
+        Element box = Elements.Box(content).WidthFraction(1).HeightFraction(1);
         _ = Effect.Create(() =>
         {
             FluentTheme value = theme.Get();
