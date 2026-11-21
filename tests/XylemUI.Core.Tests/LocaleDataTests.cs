@@ -383,10 +383,16 @@ public sealed class LocaleDataTests
 
     private static LocaleData Entry(string tag) => CldrLocales.All.Single(data => data.Locale == Locale.Parse(tag));
 
-    // Tables with a week of the test's choosing, and other alone for every value.
+    // Tables with a week of the test's choosing, and other alone for every value; the number tables are en's.
     private sealed class WeekLocaleData(DayOfWeek firstDay, int minimalDays)
         : LocaleData(Locale.Parse("en"), firstDay, minimalDays, DayOfWeek.Saturday, DayOfWeek.Sunday)
     {
+        internal override ReadOnlySpan<byte> NumberTable => CldrLocales.En.NumberTable;
+
+        internal override ReadOnlySpan<byte> CompactTable => CldrLocales.En.CompactTable;
+
+        internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
+
         internal override PluralRules CreatePlurals() => new(Other, Other);
 
         private static PluralCategory Other(in PluralOperands operands) => PluralCategory.Other;
@@ -400,6 +406,12 @@ public sealed class LocaleDataTests
         private int _made;
 
         public int Made => Volatile.Read(ref _made);
+
+        internal override ReadOnlySpan<byte> NumberTable => CldrLocales.En.NumberTable;
+
+        internal override ReadOnlySpan<byte> CompactTable => CldrLocales.En.CompactTable;
+
+        internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
 
         internal override PluralRules CreatePlurals()
         {

@@ -70,6 +70,12 @@ internal static class CldrData
     public const int OrdinalRuleSets = 25;
     /// <summary>Gets the number of distinct pairs of a cardinal and an ordinal set among the entries and root.</summary>
     public const int PluralRuleSetPairs = 52;
+    /// <summary>Gets the number of distinct number tables.</summary>
+    public const int NumberTableCount = 74;
+    /// <summary>Gets the number of distinct compact tables.</summary>
+    public const int CompactTableCount = 110;
+    /// <summary>Gets the number of distinct currency tables.</summary>
+    public const int CurrencyTableCount = 245;
 }
 
 /// <summary>
@@ -521,6 +527,15 @@ internal sealed class CldrRoot : LocaleData
         : base(default, DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -536,6 +551,15 @@ internal sealed class CldrAf : LocaleData
 
     private CldrAf()
         : base(Locale.Parse("af"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers1;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact1;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies1;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal1);
@@ -555,6 +579,15 @@ internal sealed class CldrAfNA : LocaleData
         : base(Locale.Parse("af-NA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers1;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact1;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies2;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal1);
 }
 
@@ -570,6 +603,15 @@ internal sealed class CldrAk : LocaleData
 
     private CldrAk()
         : base(Locale.Parse("ak"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies3;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal2, CldrPluralRules.Ordinal0);
@@ -589,6 +631,15 @@ internal sealed class CldrAm : LocaleData
         : base(Locale.Parse("am"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers3;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact3;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies4;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
 }
 
@@ -604,6 +655,15 @@ internal sealed class CldrAr : LocaleData
 
     private CldrAr()
         : base(Locale.Parse("ar"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -623,6 +683,15 @@ internal sealed class CldrArAE : LocaleData
         : base(Locale.Parse("ar-AE"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies6;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -638,6 +707,15 @@ internal sealed class CldrArBH : LocaleData
 
     private CldrArBH()
         : base(Locale.Parse("ar-BH"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -657,6 +735,15 @@ internal sealed class CldrArDJ : LocaleData
         : base(Locale.Parse("ar-DJ"), DayOfWeek.Saturday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies7;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -672,6 +759,15 @@ internal sealed class CldrArDZ : LocaleData
 
     private CldrArDZ()
         : base(Locale.Parse("ar-DZ"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -691,6 +787,15 @@ internal sealed class CldrArEG : LocaleData
         : base(Locale.Parse("ar-EG"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -706,6 +811,15 @@ internal sealed class CldrArEH : LocaleData
 
     private CldrArEH()
         : base(Locale.Parse("ar-EH"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -725,6 +839,15 @@ internal sealed class CldrArER : LocaleData
         : base(Locale.Parse("ar-ER"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies8;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -740,6 +863,15 @@ internal sealed class CldrArIL : LocaleData
 
     private CldrArIL()
         : base(Locale.Parse("ar-IL"), DayOfWeek.Sunday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -759,6 +891,15 @@ internal sealed class CldrArIQ : LocaleData
         : base(Locale.Parse("ar-IQ"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -774,6 +915,15 @@ internal sealed class CldrArJO : LocaleData
 
     private CldrArJO()
         : base(Locale.Parse("ar-JO"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -793,6 +943,15 @@ internal sealed class CldrArKM : LocaleData
         : base(Locale.Parse("ar-KM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies9;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -808,6 +967,15 @@ internal sealed class CldrArKW : LocaleData
 
     private CldrArKW()
         : base(Locale.Parse("ar-KW"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -827,6 +995,15 @@ internal sealed class CldrArLB : LocaleData
         : base(Locale.Parse("ar-LB"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies10;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -842,6 +1019,15 @@ internal sealed class CldrArLY : LocaleData
 
     private CldrArLY()
         : base(Locale.Parse("ar-LY"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -861,6 +1047,15 @@ internal sealed class CldrArMA : LocaleData
         : base(Locale.Parse("ar-MA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -876,6 +1071,15 @@ internal sealed class CldrArMR : LocaleData
 
     private CldrArMR()
         : base(Locale.Parse("ar-MR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -895,6 +1099,15 @@ internal sealed class CldrArOM : LocaleData
         : base(Locale.Parse("ar-OM"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -910,6 +1123,15 @@ internal sealed class CldrArPS : LocaleData
 
     private CldrArPS()
         : base(Locale.Parse("ar-PS"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -929,6 +1151,15 @@ internal sealed class CldrArQA : LocaleData
         : base(Locale.Parse("ar-QA"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -944,6 +1175,15 @@ internal sealed class CldrArSA : LocaleData
 
     private CldrArSA()
         : base(Locale.Parse("ar-SA"), DayOfWeek.Sunday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -963,6 +1203,15 @@ internal sealed class CldrArSD : LocaleData
         : base(Locale.Parse("ar-SD"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -978,6 +1227,15 @@ internal sealed class CldrArSO : LocaleData
 
     private CldrArSO()
         : base(Locale.Parse("ar-SO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies11;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -997,6 +1255,15 @@ internal sealed class CldrArSS : LocaleData
         : base(Locale.Parse("ar-SS"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies12;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1012,6 +1279,15 @@ internal sealed class CldrArSY : LocaleData
 
     private CldrArSY()
         : base(Locale.Parse("ar-SY"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1031,6 +1307,15 @@ internal sealed class CldrArTD : LocaleData
         : base(Locale.Parse("ar-TD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1046,6 +1331,15 @@ internal sealed class CldrArTN : LocaleData
 
     private CldrArTN()
         : base(Locale.Parse("ar-TN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1065,6 +1359,15 @@ internal sealed class CldrArYE : LocaleData
         : base(Locale.Parse("ar-YE"), DayOfWeek.Sunday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact4;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1080,6 +1383,15 @@ internal sealed class CldrAs : LocaleData
 
     private CldrAs()
         : base(Locale.Parse("as"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers7;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies13;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal2);
@@ -1099,6 +1411,15 @@ internal sealed class CldrAz : LocaleData
         : base(Locale.Parse("az"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies14;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal3);
 }
 
@@ -1114,6 +1435,15 @@ internal sealed class CldrAzLatn : LocaleData
 
     private CldrAzLatn()
         : base(Locale.Parse("az-Latn"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies14;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal3);
@@ -1133,6 +1463,15 @@ internal sealed class CldrBe : LocaleData
         : base(Locale.Parse("be"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers9;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact7;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies15;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal5, CldrPluralRules.Ordinal4);
 }
 
@@ -1148,6 +1487,15 @@ internal sealed class CldrBg : LocaleData
 
     private CldrBg()
         : base(Locale.Parse("bg"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies16;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal5);
@@ -1167,6 +1515,15 @@ internal sealed class CldrBn : LocaleData
         : base(Locale.Parse("bn"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers11;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact9;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies17;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal2);
 }
 
@@ -1182,6 +1539,15 @@ internal sealed class CldrBnIN : LocaleData
 
     private CldrBnIN()
         : base(Locale.Parse("bn-IN"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact9;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies18;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal2);
@@ -1201,6 +1567,15 @@ internal sealed class CldrBo : LocaleData
         : base(Locale.Parse("bo"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies19;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -1216,6 +1591,15 @@ internal sealed class CldrBs : LocaleData
 
     private CldrBs()
         : base(Locale.Parse("bs"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies20;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -1235,6 +1619,15 @@ internal sealed class CldrBsLatn : LocaleData
         : base(Locale.Parse("bs-Latn"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies20;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -1250,6 +1643,15 @@ internal sealed class CldrCa : LocaleData
 
     private CldrCa()
         : base(Locale.Parse("ca"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact11;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies21;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
@@ -1269,6 +1671,15 @@ internal sealed class CldrCaAD : LocaleData
         : base(Locale.Parse("ca-AD"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact11;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies21;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
 }
 
@@ -1284,6 +1695,15 @@ internal sealed class CldrCaFR : LocaleData
 
     private CldrCaFR()
         : base(Locale.Parse("ca-FR"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact11;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies22;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
@@ -1303,6 +1723,15 @@ internal sealed class CldrCaIT : LocaleData
         : base(Locale.Parse("ca-IT"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact11;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies21;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
 }
 
@@ -1318,6 +1747,15 @@ internal sealed class CldrChr : LocaleData
 
     private CldrChr()
         : base(Locale.Parse("chr"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -1337,6 +1775,15 @@ internal sealed class CldrCs : LocaleData
         : base(Locale.Parse("cs"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal8, CldrPluralRules.Ordinal0);
 }
 
@@ -1352,6 +1799,15 @@ internal sealed class CldrCv : LocaleData
 
     private CldrCv()
         : base(Locale.Parse("cv"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers15;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal9, CldrPluralRules.Ordinal0);
@@ -1371,6 +1827,15 @@ internal sealed class CldrCy : LocaleData
         : base(Locale.Parse("cy"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact15;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies26;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal10, CldrPluralRules.Ordinal7);
 }
 
@@ -1386,6 +1851,15 @@ internal sealed class CldrDa : LocaleData
 
     private CldrDa()
         : base(Locale.Parse("da"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact16;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies27;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal11, CldrPluralRules.Ordinal0);
@@ -1405,6 +1879,15 @@ internal sealed class CldrDaGL : LocaleData
         : base(Locale.Parse("da-GL"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact16;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies27;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal11, CldrPluralRules.Ordinal0);
 }
 
@@ -1420,6 +1903,15 @@ internal sealed class CldrDe : LocaleData
 
     private CldrDe()
         : base(Locale.Parse("de"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies28;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -1439,6 +1931,15 @@ internal sealed class CldrDeAT : LocaleData
         : base(Locale.Parse("de-AT"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers16;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies28;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -1454,6 +1955,15 @@ internal sealed class CldrDeBE : LocaleData
 
     private CldrDeBE()
         : base(Locale.Parse("de-BE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies28;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -1473,6 +1983,15 @@ internal sealed class CldrDeCH : LocaleData
         : base(Locale.Parse("de-CH"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies29;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -1488,6 +2007,15 @@ internal sealed class CldrDeIT : LocaleData
 
     private CldrDeIT()
         : base(Locale.Parse("de-IT"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies28;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -1507,6 +2035,15 @@ internal sealed class CldrDeLI : LocaleData
         : base(Locale.Parse("de-LI"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers18;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies30;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -1522,6 +2059,15 @@ internal sealed class CldrDeLU : LocaleData
 
     private CldrDeLU()
         : base(Locale.Parse("de-LU"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies31;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -1541,6 +2087,15 @@ internal sealed class CldrDsb : LocaleData
         : base(Locale.Parse("dsb"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact18;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies32;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal13, CldrPluralRules.Ordinal0);
 }
 
@@ -1556,6 +2111,15 @@ internal sealed class CldrEl : LocaleData
 
     private CldrEl()
         : base(Locale.Parse("el"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact19;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies33;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -1575,6 +2139,15 @@ internal sealed class CldrElCY : LocaleData
         : base(Locale.Parse("el-CY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact19;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies33;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -1590,6 +2163,15 @@ internal sealed class CldrEn : LocaleData
 
     private CldrEn()
         : base(Locale.Parse("en"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1609,6 +2191,15 @@ internal sealed class CldrEn001 : LocaleData
         : base(Locale.Parse("en-001"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1624,6 +2215,15 @@ internal sealed class CldrEn150 : LocaleData
 
     private CldrEn150()
         : base(Locale.Parse("en-150"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers19;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1643,6 +2243,15 @@ internal sealed class CldrEnAE : LocaleData
         : base(Locale.Parse("en-AE"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1658,6 +2267,15 @@ internal sealed class CldrEnAG : LocaleData
 
     private CldrEnAG()
         : base(Locale.Parse("en-AG"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1677,6 +2295,15 @@ internal sealed class CldrEnAI : LocaleData
         : base(Locale.Parse("en-AI"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1692,6 +2319,15 @@ internal sealed class CldrEnAS : LocaleData
 
     private CldrEnAS()
         : base(Locale.Parse("en-AS"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1711,6 +2347,15 @@ internal sealed class CldrEnAT : LocaleData
         : base(Locale.Parse("en-AT"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1726,6 +2371,15 @@ internal sealed class CldrEnAU : LocaleData
 
     private CldrEnAU()
         : base(Locale.Parse("en-AU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies36;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1745,6 +2399,15 @@ internal sealed class CldrEnBB : LocaleData
         : base(Locale.Parse("en-BB"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies37;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1760,6 +2423,15 @@ internal sealed class CldrEnBE : LocaleData
 
     private CldrEnBE()
         : base(Locale.Parse("en-BE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1779,6 +2451,15 @@ internal sealed class CldrEnBI : LocaleData
         : base(Locale.Parse("en-BI"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies38;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1794,6 +2475,15 @@ internal sealed class CldrEnBM : LocaleData
 
     private CldrEnBM()
         : base(Locale.Parse("en-BM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies39;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1813,6 +2503,15 @@ internal sealed class CldrEnBS : LocaleData
         : base(Locale.Parse("en-BS"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies40;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1828,6 +2527,15 @@ internal sealed class CldrEnBW : LocaleData
 
     private CldrEnBW()
         : base(Locale.Parse("en-BW"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies41;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1847,6 +2555,15 @@ internal sealed class CldrEnBZ : LocaleData
         : base(Locale.Parse("en-BZ"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies42;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1862,6 +2579,15 @@ internal sealed class CldrEnCA : LocaleData
 
     private CldrEnCA()
         : base(Locale.Parse("en-CA"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies43;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1881,6 +2607,15 @@ internal sealed class CldrEnCC : LocaleData
         : base(Locale.Parse("en-CC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies44;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1896,6 +2631,15 @@ internal sealed class CldrEnCH : LocaleData
 
     private CldrEnCH()
         : base(Locale.Parse("en-CH"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1915,6 +2659,15 @@ internal sealed class CldrEnCK : LocaleData
         : base(Locale.Parse("en-CK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies45;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1930,6 +2683,15 @@ internal sealed class CldrEnCM : LocaleData
 
     private CldrEnCM()
         : base(Locale.Parse("en-CM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1949,6 +2711,15 @@ internal sealed class CldrEnCX : LocaleData
         : base(Locale.Parse("en-CX"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies44;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1964,6 +2735,15 @@ internal sealed class CldrEnCY : LocaleData
 
     private CldrEnCY()
         : base(Locale.Parse("en-CY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -1983,6 +2763,15 @@ internal sealed class CldrEnCZ : LocaleData
         : base(Locale.Parse("en-CZ"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -1998,6 +2787,15 @@ internal sealed class CldrEnDE : LocaleData
 
     private CldrEnDE()
         : base(Locale.Parse("en-DE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2017,6 +2815,15 @@ internal sealed class CldrEnDG : LocaleData
         : base(Locale.Parse("en-DG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2032,6 +2839,15 @@ internal sealed class CldrEnDK : LocaleData
 
     private CldrEnDK()
         : base(Locale.Parse("en-DK"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies46;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2051,6 +2867,15 @@ internal sealed class CldrEnDM : LocaleData
         : base(Locale.Parse("en-DM"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2066,6 +2891,15 @@ internal sealed class CldrEnEE : LocaleData
 
     private CldrEnEE()
         : base(Locale.Parse("en-EE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2085,6 +2919,15 @@ internal sealed class CldrEnER : LocaleData
         : base(Locale.Parse("en-ER"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies47;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2100,6 +2943,15 @@ internal sealed class CldrEnES : LocaleData
 
     private CldrEnES()
         : base(Locale.Parse("en-ES"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2119,6 +2971,15 @@ internal sealed class CldrEnFI : LocaleData
         : base(Locale.Parse("en-FI"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2134,6 +2995,15 @@ internal sealed class CldrEnFJ : LocaleData
 
     private CldrEnFJ()
         : base(Locale.Parse("en-FJ"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies48;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2153,6 +3023,15 @@ internal sealed class CldrEnFK : LocaleData
         : base(Locale.Parse("en-FK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies49;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2168,6 +3047,15 @@ internal sealed class CldrEnFM : LocaleData
 
     private CldrEnFM()
         : base(Locale.Parse("en-FM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2187,6 +3075,15 @@ internal sealed class CldrEnFR : LocaleData
         : base(Locale.Parse("en-FR"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers22;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2202,6 +3099,15 @@ internal sealed class CldrEnGB : LocaleData
 
     private CldrEnGB()
         : base(Locale.Parse("en-GB"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2221,6 +3127,15 @@ internal sealed class CldrEnGD : LocaleData
         : base(Locale.Parse("en-GD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2236,6 +3151,15 @@ internal sealed class CldrEnGE : LocaleData
 
     private CldrEnGE()
         : base(Locale.Parse("en-GE"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers22;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies50;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2255,6 +3179,15 @@ internal sealed class CldrEnGG : LocaleData
         : base(Locale.Parse("en-GG"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2270,6 +3203,15 @@ internal sealed class CldrEnGH : LocaleData
 
     private CldrEnGH()
         : base(Locale.Parse("en-GH"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies51;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2289,6 +3231,15 @@ internal sealed class CldrEnGI : LocaleData
         : base(Locale.Parse("en-GI"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies52;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2304,6 +3255,15 @@ internal sealed class CldrEnGM : LocaleData
 
     private CldrEnGM()
         : base(Locale.Parse("en-GM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies53;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2323,6 +3283,15 @@ internal sealed class CldrEnGS : LocaleData
         : base(Locale.Parse("en-GS"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2338,6 +3307,15 @@ internal sealed class CldrEnGU : LocaleData
 
     private CldrEnGU()
         : base(Locale.Parse("en-GU"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2357,6 +3335,15 @@ internal sealed class CldrEnGY : LocaleData
         : base(Locale.Parse("en-GY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies54;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2372,6 +3359,15 @@ internal sealed class CldrEnHK : LocaleData
 
     private CldrEnHK()
         : base(Locale.Parse("en-HK"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2391,6 +3387,15 @@ internal sealed class CldrEnHU : LocaleData
         : base(Locale.Parse("en-HU"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2406,6 +3411,15 @@ internal sealed class CldrEnID : LocaleData
 
     private CldrEnID()
         : base(Locale.Parse("en-ID"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies55;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2425,6 +3439,15 @@ internal sealed class CldrEnIE : LocaleData
         : base(Locale.Parse("en-IE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2440,6 +3463,15 @@ internal sealed class CldrEnIL : LocaleData
 
     private CldrEnIL()
         : base(Locale.Parse("en-IL"), DayOfWeek.Sunday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2459,6 +3491,15 @@ internal sealed class CldrEnIM : LocaleData
         : base(Locale.Parse("en-IM"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2474,6 +3515,15 @@ internal sealed class CldrEnIN : LocaleData
 
     private CldrEnIN()
         : base(Locale.Parse("en-IN"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact22;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies56;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2493,6 +3543,15 @@ internal sealed class CldrEnIO : LocaleData
         : base(Locale.Parse("en-IO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2508,6 +3567,15 @@ internal sealed class CldrEnIT : LocaleData
 
     private CldrEnIT()
         : base(Locale.Parse("en-IT"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2527,6 +3595,15 @@ internal sealed class CldrEnJE : LocaleData
         : base(Locale.Parse("en-JE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2542,6 +3619,15 @@ internal sealed class CldrEnJM : LocaleData
 
     private CldrEnJM()
         : base(Locale.Parse("en-JM"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies57;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2561,6 +3647,15 @@ internal sealed class CldrEnJP : LocaleData
         : base(Locale.Parse("en-JP"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2576,6 +3671,15 @@ internal sealed class CldrEnKE : LocaleData
 
     private CldrEnKE()
         : base(Locale.Parse("en-KE"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies58;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2595,6 +3699,15 @@ internal sealed class CldrEnKI : LocaleData
         : base(Locale.Parse("en-KI"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies44;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2610,6 +3723,15 @@ internal sealed class CldrEnKN : LocaleData
 
     private CldrEnKN()
         : base(Locale.Parse("en-KN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2629,6 +3751,15 @@ internal sealed class CldrEnKY : LocaleData
         : base(Locale.Parse("en-KY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies59;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2644,6 +3775,15 @@ internal sealed class CldrEnLC : LocaleData
 
     private CldrEnLC()
         : base(Locale.Parse("en-LC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2663,6 +3803,15 @@ internal sealed class CldrEnLR : LocaleData
         : base(Locale.Parse("en-LR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies60;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2678,6 +3827,15 @@ internal sealed class CldrEnLS : LocaleData
 
     private CldrEnLS()
         : base(Locale.Parse("en-LS"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies61;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2697,6 +3855,15 @@ internal sealed class CldrEnLT : LocaleData
         : base(Locale.Parse("en-LT"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2712,6 +3879,15 @@ internal sealed class CldrEnLV : LocaleData
 
     private CldrEnLV()
         : base(Locale.Parse("en-LV"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2731,6 +3907,15 @@ internal sealed class CldrEnMG : LocaleData
         : base(Locale.Parse("en-MG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies62;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2746,6 +3931,15 @@ internal sealed class CldrEnMH : LocaleData
 
     private CldrEnMH()
         : base(Locale.Parse("en-MH"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2765,6 +3959,15 @@ internal sealed class CldrEnMO : LocaleData
         : base(Locale.Parse("en-MO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies63;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2780,6 +3983,15 @@ internal sealed class CldrEnMP : LocaleData
 
     private CldrEnMP()
         : base(Locale.Parse("en-MP"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2799,6 +4011,15 @@ internal sealed class CldrEnMS : LocaleData
         : base(Locale.Parse("en-MS"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2814,6 +4035,15 @@ internal sealed class CldrEnMT : LocaleData
 
     private CldrEnMT()
         : base(Locale.Parse("en-MT"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies64;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2833,6 +4063,15 @@ internal sealed class CldrEnMU : LocaleData
         : base(Locale.Parse("en-MU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2848,6 +4087,15 @@ internal sealed class CldrEnMV : LocaleData
 
     private CldrEnMV()
         : base(Locale.Parse("en-MV"), DayOfWeek.Friday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies66;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2867,6 +4115,15 @@ internal sealed class CldrEnMW : LocaleData
         : base(Locale.Parse("en-MW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies67;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2882,6 +4139,15 @@ internal sealed class CldrEnMY : LocaleData
 
     private CldrEnMY()
         : base(Locale.Parse("en-MY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies68;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2901,6 +4167,15 @@ internal sealed class CldrEnNA : LocaleData
         : base(Locale.Parse("en-NA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies69;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2916,6 +4191,15 @@ internal sealed class CldrEnNF : LocaleData
 
     private CldrEnNF()
         : base(Locale.Parse("en-NF"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies44;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2935,6 +4219,15 @@ internal sealed class CldrEnNG : LocaleData
         : base(Locale.Parse("en-NG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies70;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2950,6 +4243,15 @@ internal sealed class CldrEnNL : LocaleData
 
     private CldrEnNL()
         : base(Locale.Parse("en-NL"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2969,6 +4271,15 @@ internal sealed class CldrEnNO : LocaleData
         : base(Locale.Parse("en-NO"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies71;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2984,6 +4295,15 @@ internal sealed class CldrEnNR : LocaleData
 
     private CldrEnNR()
         : base(Locale.Parse("en-NR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies44;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3003,6 +4323,15 @@ internal sealed class CldrEnNU : LocaleData
         : base(Locale.Parse("en-NU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies45;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3018,6 +4347,15 @@ internal sealed class CldrEnNZ : LocaleData
 
     private CldrEnNZ()
         : base(Locale.Parse("en-NZ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies45;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3037,6 +4375,15 @@ internal sealed class CldrEnPG : LocaleData
         : base(Locale.Parse("en-PG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies72;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3052,6 +4399,15 @@ internal sealed class CldrEnPH : LocaleData
 
     private CldrEnPH()
         : base(Locale.Parse("en-PH"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3071,6 +4427,15 @@ internal sealed class CldrEnPK : LocaleData
         : base(Locale.Parse("en-PK"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies73;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3086,6 +4451,15 @@ internal sealed class CldrEnPL : LocaleData
 
     private CldrEnPL()
         : base(Locale.Parse("en-PL"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3105,6 +4479,15 @@ internal sealed class CldrEnPN : LocaleData
         : base(Locale.Parse("en-PN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies45;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3120,6 +4503,15 @@ internal sealed class CldrEnPR : LocaleData
 
     private CldrEnPR()
         : base(Locale.Parse("en-PR"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3139,6 +4531,15 @@ internal sealed class CldrEnPT : LocaleData
         : base(Locale.Parse("en-PT"), DayOfWeek.Sunday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3154,6 +4555,15 @@ internal sealed class CldrEnPW : LocaleData
 
     private CldrEnPW()
         : base(Locale.Parse("en-PW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3173,6 +4583,15 @@ internal sealed class CldrEnRO : LocaleData
         : base(Locale.Parse("en-RO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3188,6 +4607,15 @@ internal sealed class CldrEnRW : LocaleData
 
     private CldrEnRW()
         : base(Locale.Parse("en-RW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies74;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3207,6 +4635,15 @@ internal sealed class CldrEnSB : LocaleData
         : base(Locale.Parse("en-SB"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies75;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3222,6 +4659,15 @@ internal sealed class CldrEnSC : LocaleData
 
     private CldrEnSC()
         : base(Locale.Parse("en-SC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies76;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3241,6 +4687,15 @@ internal sealed class CldrEnSD : LocaleData
         : base(Locale.Parse("en-SD"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3256,6 +4711,15 @@ internal sealed class CldrEnSE : LocaleData
 
     private CldrEnSE()
         : base(Locale.Parse("en-SE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies77;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3275,6 +4739,15 @@ internal sealed class CldrEnSG : LocaleData
         : base(Locale.Parse("en-SG"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies78;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3290,6 +4763,15 @@ internal sealed class CldrEnSH : LocaleData
 
     private CldrEnSH()
         : base(Locale.Parse("en-SH"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies79;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3309,6 +4791,15 @@ internal sealed class CldrEnSI : LocaleData
         : base(Locale.Parse("en-SI"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3324,6 +4815,15 @@ internal sealed class CldrEnSK : LocaleData
 
     private CldrEnSK()
         : base(Locale.Parse("en-SK"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3343,6 +4843,15 @@ internal sealed class CldrEnSL : LocaleData
         : base(Locale.Parse("en-SL"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies80;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3358,6 +4867,15 @@ internal sealed class CldrEnSS : LocaleData
 
     private CldrEnSS()
         : base(Locale.Parse("en-SS"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies81;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3377,6 +4895,15 @@ internal sealed class CldrEnSX : LocaleData
         : base(Locale.Parse("en-SX"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies82;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3392,6 +4919,15 @@ internal sealed class CldrEnSZ : LocaleData
 
     private CldrEnSZ()
         : base(Locale.Parse("en-SZ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies83;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3411,6 +4947,15 @@ internal sealed class CldrEnTC : LocaleData
         : base(Locale.Parse("en-TC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3426,6 +4971,15 @@ internal sealed class CldrEnTK : LocaleData
 
     private CldrEnTK()
         : base(Locale.Parse("en-TK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies45;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3445,6 +4999,15 @@ internal sealed class CldrEnTO : LocaleData
         : base(Locale.Parse("en-TO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies84;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3460,6 +5023,15 @@ internal sealed class CldrEnTT : LocaleData
 
     private CldrEnTT()
         : base(Locale.Parse("en-TT"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies85;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3479,6 +5051,15 @@ internal sealed class CldrEnTV : LocaleData
         : base(Locale.Parse("en-TV"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies44;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3494,6 +5075,15 @@ internal sealed class CldrEnTZ : LocaleData
 
     private CldrEnTZ()
         : base(Locale.Parse("en-TZ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies86;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3513,6 +5103,15 @@ internal sealed class CldrEnUA : LocaleData
         : base(Locale.Parse("en-UA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3528,6 +5127,15 @@ internal sealed class CldrEnUG : LocaleData
 
     private CldrEnUG()
         : base(Locale.Parse("en-UG"), DayOfWeek.Monday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies87;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3547,6 +5155,15 @@ internal sealed class CldrEnUM : LocaleData
         : base(Locale.Parse("en-UM"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3562,6 +5179,15 @@ internal sealed class CldrEnVC : LocaleData
 
     private CldrEnVC()
         : base(Locale.Parse("en-VC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies35;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3581,6 +5207,15 @@ internal sealed class CldrEnVG : LocaleData
         : base(Locale.Parse("en-VG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3596,6 +5231,15 @@ internal sealed class CldrEnVI : LocaleData
 
     private CldrEnVI()
         : base(Locale.Parse("en-VI"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3615,6 +5259,15 @@ internal sealed class CldrEnVU : LocaleData
         : base(Locale.Parse("en-VU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies88;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3630,6 +5283,15 @@ internal sealed class CldrEnWS : LocaleData
 
     private CldrEnWS()
         : base(Locale.Parse("en-WS"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies89;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3649,6 +5311,15 @@ internal sealed class CldrEnZA : LocaleData
         : base(Locale.Parse("en-ZA"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies61;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3664,6 +5335,15 @@ internal sealed class CldrEnZM : LocaleData
 
     private CldrEnZM()
         : base(Locale.Parse("en-ZM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies90;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3683,6 +5363,15 @@ internal sealed class CldrEnZW : LocaleData
         : base(Locale.Parse("en-ZW"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3698,6 +5387,15 @@ internal sealed class CldrEs : LocaleData
 
     private CldrEs()
         : base(Locale.Parse("es"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies91;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3717,6 +5415,15 @@ internal sealed class CldrEs419 : LocaleData
         : base(Locale.Parse("es-419"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies92;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3732,6 +5439,15 @@ internal sealed class CldrEsAR : LocaleData
 
     private CldrEsAR()
         : base(Locale.Parse("es-AR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies93;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3751,6 +5467,15 @@ internal sealed class CldrEsBO : LocaleData
         : base(Locale.Parse("es-BO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies94;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3766,6 +5491,15 @@ internal sealed class CldrEsBR : LocaleData
 
     private CldrEsBR()
         : base(Locale.Parse("es-BR"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies95;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3785,6 +5519,15 @@ internal sealed class CldrEsBZ : LocaleData
         : base(Locale.Parse("es-BZ"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies96;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3800,6 +5543,15 @@ internal sealed class CldrEsCL : LocaleData
 
     private CldrEsCL()
         : base(Locale.Parse("es-CL"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers29;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies97;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3819,6 +5571,15 @@ internal sealed class CldrEsCO : LocaleData
         : base(Locale.Parse("es-CO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies98;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3834,6 +5595,15 @@ internal sealed class CldrEsCR : LocaleData
 
     private CldrEsCR()
         : base(Locale.Parse("es-CR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers1;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies99;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3853,6 +5623,15 @@ internal sealed class CldrEsCU : LocaleData
         : base(Locale.Parse("es-CU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies100;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3868,6 +5647,15 @@ internal sealed class CldrEsDO : LocaleData
 
     private CldrEsDO()
         : base(Locale.Parse("es-DO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies101;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3887,6 +5675,15 @@ internal sealed class CldrEsEA : LocaleData
         : base(Locale.Parse("es-EA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies91;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3902,6 +5699,15 @@ internal sealed class CldrEsEC : LocaleData
 
     private CldrEsEC()
         : base(Locale.Parse("es-EC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers29;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies102;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3921,6 +5727,15 @@ internal sealed class CldrEsGQ : LocaleData
         : base(Locale.Parse("es-GQ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers30;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies103;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3936,6 +5751,15 @@ internal sealed class CldrEsGT : LocaleData
 
     private CldrEsGT()
         : base(Locale.Parse("es-GT"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies104;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3955,6 +5779,15 @@ internal sealed class CldrEsHN : LocaleData
         : base(Locale.Parse("es-HN"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies105;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -3970,6 +5803,15 @@ internal sealed class CldrEsIC : LocaleData
 
     private CldrEsIC()
         : base(Locale.Parse("es-IC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies91;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -3989,6 +5831,15 @@ internal sealed class CldrEsMX : LocaleData
         : base(Locale.Parse("es-MX"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies106;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -4004,6 +5855,15 @@ internal sealed class CldrEsNI : LocaleData
 
     private CldrEsNI()
         : base(Locale.Parse("es-NI"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies107;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -4023,6 +5883,15 @@ internal sealed class CldrEsPA : LocaleData
         : base(Locale.Parse("es-PA"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies108;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -4038,6 +5907,15 @@ internal sealed class CldrEsPE : LocaleData
 
     private CldrEsPE()
         : base(Locale.Parse("es-PE"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies109;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -4057,6 +5935,15 @@ internal sealed class CldrEsPH : LocaleData
         : base(Locale.Parse("es-PH"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies110;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -4072,6 +5959,15 @@ internal sealed class CldrEsPR : LocaleData
 
     private CldrEsPR()
         : base(Locale.Parse("es-PR"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies102;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -4091,6 +5987,15 @@ internal sealed class CldrEsPY : LocaleData
         : base(Locale.Parse("es-PY"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies111;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -4106,6 +6011,15 @@ internal sealed class CldrEsSV : LocaleData
 
     private CldrEsSV()
         : base(Locale.Parse("es-SV"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies102;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -4125,6 +6039,15 @@ internal sealed class CldrEsUS : LocaleData
         : base(Locale.Parse("es-US"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies112;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -4140,6 +6063,15 @@ internal sealed class CldrEsUY : LocaleData
 
     private CldrEsUY()
         : base(Locale.Parse("es-UY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies113;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -4159,6 +6091,15 @@ internal sealed class CldrEsVE : LocaleData
         : base(Locale.Parse("es-VE"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers29;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies114;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -4174,6 +6115,15 @@ internal sealed class CldrEt : LocaleData
 
     private CldrEt()
         : base(Locale.Parse("et"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers31;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies115;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -4193,6 +6143,15 @@ internal sealed class CldrEu : LocaleData
         : base(Locale.Parse("eu"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies116;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -4208,6 +6167,15 @@ internal sealed class CldrFa : LocaleData
 
     private CldrFa()
         : base(Locale.Parse("fa"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Friday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers33;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact29;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies117;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
@@ -4227,6 +6195,15 @@ internal sealed class CldrFaAF : LocaleData
         : base(Locale.Parse("fa-AF"), DayOfWeek.Saturday, 1, DayOfWeek.Thursday, DayOfWeek.Friday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers34;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact29;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies117;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
 }
 
@@ -4242,6 +6219,15 @@ internal sealed class CldrFi : LocaleData
 
     private CldrFi()
         : base(Locale.Parse("fi"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers35;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact30;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies118;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -4261,6 +6247,15 @@ internal sealed class CldrFil : LocaleData
         : base(Locale.Parse("fil"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact31;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies119;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal15, CldrPluralRules.Ordinal10);
 }
 
@@ -4276,6 +6271,15 @@ internal sealed class CldrFr : LocaleData
 
     private CldrFr()
         : base(Locale.Parse("fr"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4295,6 +6299,15 @@ internal sealed class CldrFrBE : LocaleData
         : base(Locale.Parse("fr-BE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4310,6 +6323,15 @@ internal sealed class CldrFrBF : LocaleData
 
     private CldrFrBF()
         : base(Locale.Parse("fr-BF"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4329,6 +6351,15 @@ internal sealed class CldrFrBI : LocaleData
         : base(Locale.Parse("fr-BI"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies121;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4344,6 +6375,15 @@ internal sealed class CldrFrBJ : LocaleData
 
     private CldrFrBJ()
         : base(Locale.Parse("fr-BJ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4363,6 +6403,15 @@ internal sealed class CldrFrBL : LocaleData
         : base(Locale.Parse("fr-BL"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4378,6 +6427,15 @@ internal sealed class CldrFrCA : LocaleData
 
     private CldrFrCA()
         : base(Locale.Parse("fr-CA"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact33;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies122;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4397,6 +6455,15 @@ internal sealed class CldrFrCD : LocaleData
         : base(Locale.Parse("fr-CD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies123;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4412,6 +6479,15 @@ internal sealed class CldrFrCF : LocaleData
 
     private CldrFrCF()
         : base(Locale.Parse("fr-CF"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4431,6 +6507,15 @@ internal sealed class CldrFrCG : LocaleData
         : base(Locale.Parse("fr-CG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4446,6 +6531,15 @@ internal sealed class CldrFrCH : LocaleData
 
     private CldrFrCH()
         : base(Locale.Parse("fr-CH"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers37;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4465,6 +6559,15 @@ internal sealed class CldrFrCI : LocaleData
         : base(Locale.Parse("fr-CI"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4480,6 +6583,15 @@ internal sealed class CldrFrCM : LocaleData
 
     private CldrFrCM()
         : base(Locale.Parse("fr-CM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4499,6 +6611,15 @@ internal sealed class CldrFrDJ : LocaleData
         : base(Locale.Parse("fr-DJ"), DayOfWeek.Saturday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies124;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4514,6 +6635,15 @@ internal sealed class CldrFrDZ : LocaleData
 
     private CldrFrDZ()
         : base(Locale.Parse("fr-DZ"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies125;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4533,6 +6663,15 @@ internal sealed class CldrFrGA : LocaleData
         : base(Locale.Parse("fr-GA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4548,6 +6687,15 @@ internal sealed class CldrFrGF : LocaleData
 
     private CldrFrGF()
         : base(Locale.Parse("fr-GF"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4567,6 +6715,15 @@ internal sealed class CldrFrGN : LocaleData
         : base(Locale.Parse("fr-GN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies126;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4582,6 +6739,15 @@ internal sealed class CldrFrGP : LocaleData
 
     private CldrFrGP()
         : base(Locale.Parse("fr-GP"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4601,6 +6767,15 @@ internal sealed class CldrFrGQ : LocaleData
         : base(Locale.Parse("fr-GQ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4616,6 +6791,15 @@ internal sealed class CldrFrHT : LocaleData
 
     private CldrFrHT()
         : base(Locale.Parse("fr-HT"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies127;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4635,6 +6819,15 @@ internal sealed class CldrFrKM : LocaleData
         : base(Locale.Parse("fr-KM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies128;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4650,6 +6843,15 @@ internal sealed class CldrFrLU : LocaleData
 
     private CldrFrLU()
         : base(Locale.Parse("fr-LU"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies129;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4669,6 +6871,15 @@ internal sealed class CldrFrMA : LocaleData
         : base(Locale.Parse("fr-MA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4684,6 +6895,15 @@ internal sealed class CldrFrMC : LocaleData
 
     private CldrFrMC()
         : base(Locale.Parse("fr-MC"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4703,6 +6923,15 @@ internal sealed class CldrFrMF : LocaleData
         : base(Locale.Parse("fr-MF"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4718,6 +6947,15 @@ internal sealed class CldrFrMG : LocaleData
 
     private CldrFrMG()
         : base(Locale.Parse("fr-MG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies130;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4737,6 +6975,15 @@ internal sealed class CldrFrML : LocaleData
         : base(Locale.Parse("fr-ML"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4752,6 +6999,15 @@ internal sealed class CldrFrMQ : LocaleData
 
     private CldrFrMQ()
         : base(Locale.Parse("fr-MQ"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4771,6 +7027,15 @@ internal sealed class CldrFrMR : LocaleData
         : base(Locale.Parse("fr-MR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies131;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4786,6 +7051,15 @@ internal sealed class CldrFrMU : LocaleData
 
     private CldrFrMU()
         : base(Locale.Parse("fr-MU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies132;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4805,6 +7079,15 @@ internal sealed class CldrFrNC : LocaleData
         : base(Locale.Parse("fr-NC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4820,6 +7103,15 @@ internal sealed class CldrFrNE : LocaleData
 
     private CldrFrNE()
         : base(Locale.Parse("fr-NE"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4839,6 +7131,15 @@ internal sealed class CldrFrPF : LocaleData
         : base(Locale.Parse("fr-PF"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4854,6 +7155,15 @@ internal sealed class CldrFrPM : LocaleData
 
     private CldrFrPM()
         : base(Locale.Parse("fr-PM"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4873,6 +7183,15 @@ internal sealed class CldrFrRE : LocaleData
         : base(Locale.Parse("fr-RE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4888,6 +7207,15 @@ internal sealed class CldrFrRW : LocaleData
 
     private CldrFrRW()
         : base(Locale.Parse("fr-RW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers38;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies133;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4907,6 +7235,15 @@ internal sealed class CldrFrSC : LocaleData
         : base(Locale.Parse("fr-SC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies134;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4922,6 +7259,15 @@ internal sealed class CldrFrSN : LocaleData
 
     private CldrFrSN()
         : base(Locale.Parse("fr-SN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4941,6 +7287,15 @@ internal sealed class CldrFrSY : LocaleData
         : base(Locale.Parse("fr-SY"), DayOfWeek.Saturday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies135;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4956,6 +7311,15 @@ internal sealed class CldrFrTD : LocaleData
 
     private CldrFrTD()
         : base(Locale.Parse("fr-TD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -4975,6 +7339,15 @@ internal sealed class CldrFrTG : LocaleData
         : base(Locale.Parse("fr-TG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -4990,6 +7363,15 @@ internal sealed class CldrFrTN : LocaleData
 
     private CldrFrTN()
         : base(Locale.Parse("fr-TN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies136;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -5009,6 +7391,15 @@ internal sealed class CldrFrVU : LocaleData
         : base(Locale.Parse("fr-VU"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies137;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -5024,6 +7415,15 @@ internal sealed class CldrFrWF : LocaleData
 
     private CldrFrWF()
         : base(Locale.Parse("fr-WF"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -5043,6 +7443,15 @@ internal sealed class CldrFrYT : LocaleData
         : base(Locale.Parse("fr-YT"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact32;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -5058,6 +7467,15 @@ internal sealed class CldrGa : LocaleData
 
     private CldrGa()
         : base(Locale.Parse("ga"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers39;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact34;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies138;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal17, CldrPluralRules.Ordinal10);
@@ -5077,6 +7495,15 @@ internal sealed class CldrGaGB : LocaleData
         : base(Locale.Parse("ga-GB"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers39;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact34;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies138;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal17, CldrPluralRules.Ordinal10);
 }
 
@@ -5092,6 +7519,15 @@ internal sealed class CldrGd : LocaleData
 
     private CldrGd()
         : base(Locale.Parse("gd"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact35;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies139;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal18, CldrPluralRules.Ordinal11);
@@ -5111,6 +7547,15 @@ internal sealed class CldrGl : LocaleData
         : base(Locale.Parse("gl"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies140;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal0);
 }
 
@@ -5126,6 +7571,15 @@ internal sealed class CldrGsw : LocaleData
 
     private CldrGsw()
         : base(Locale.Parse("gsw"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers40;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact37;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies141;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -5145,6 +7599,15 @@ internal sealed class CldrGu : LocaleData
         : base(Locale.Parse("gu"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact38;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies142;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal12);
 }
 
@@ -5160,6 +7623,15 @@ internal sealed class CldrHa : LocaleData
 
     private CldrHa()
         : base(Locale.Parse("ha"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact39;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies143;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -5179,6 +7651,15 @@ internal sealed class CldrHaGH : LocaleData
         : base(Locale.Parse("ha-GH"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact39;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies144;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -5194,6 +7675,15 @@ internal sealed class CldrHaNE : LocaleData
 
     private CldrHaNE()
         : base(Locale.Parse("ha-NE"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact39;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies143;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -5213,6 +7703,15 @@ internal sealed class CldrHe : LocaleData
         : base(Locale.Parse("he"), DayOfWeek.Sunday, 1, DayOfWeek.Friday, DayOfWeek.Saturday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers41;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact40;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies145;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal19, CldrPluralRules.Ordinal0);
 }
 
@@ -5228,6 +7727,15 @@ internal sealed class CldrHi : LocaleData
 
     private CldrHi()
         : base(Locale.Parse("hi"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact41;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies146;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal12);
@@ -5247,6 +7755,15 @@ internal sealed class CldrHiLatn : LocaleData
         : base(Locale.Parse("hi-Latn"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers24;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact22;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies56;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal12);
 }
 
@@ -5262,6 +7779,15 @@ internal sealed class CldrHr : LocaleData
 
     private CldrHr()
         : base(Locale.Parse("hr"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers42;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact42;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies147;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -5281,6 +7807,15 @@ internal sealed class CldrHrBA : LocaleData
         : base(Locale.Parse("hr-BA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers42;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact42;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies148;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -5296,6 +7831,15 @@ internal sealed class CldrHsb : LocaleData
 
     private CldrHsb()
         : base(Locale.Parse("hsb"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact43;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies32;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal13, CldrPluralRules.Ordinal0);
@@ -5315,6 +7859,15 @@ internal sealed class CldrHu : LocaleData
         : base(Locale.Parse("hu"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact44;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies149;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal13);
 }
 
@@ -5330,6 +7883,15 @@ internal sealed class CldrHy : LocaleData
 
     private CldrHy()
         : base(Locale.Parse("hy"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers43;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact45;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies150;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal20, CldrPluralRules.Ordinal10);
@@ -5349,6 +7911,15 @@ internal sealed class CldrId : LocaleData
         : base(Locale.Parse("id"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact46;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies151;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -5364,6 +7935,15 @@ internal sealed class CldrIg : LocaleData
 
     private CldrIg()
         : base(Locale.Parse("ig"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact47;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies143;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -5383,6 +7963,15 @@ internal sealed class CldrIs : LocaleData
         : base(Locale.Parse("is"), DayOfWeek.Sunday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact48;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies152;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal21, CldrPluralRules.Ordinal0);
 }
 
@@ -5398,6 +7987,15 @@ internal sealed class CldrIt : LocaleData
 
     private CldrIt()
         : base(Locale.Parse("it"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers44;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact49;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies153;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
@@ -5417,6 +8015,15 @@ internal sealed class CldrItCH : LocaleData
         : base(Locale.Parse("it-CH"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers45;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact49;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies153;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
 }
 
@@ -5432,6 +8039,15 @@ internal sealed class CldrItSM : LocaleData
 
     private CldrItSM()
         : base(Locale.Parse("it-SM"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers44;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact49;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies153;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
@@ -5451,6 +8067,15 @@ internal sealed class CldrItVA : LocaleData
         : base(Locale.Parse("it-VA"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers44;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact49;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies153;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
 }
 
@@ -5466,6 +8091,15 @@ internal sealed class CldrJa : LocaleData
 
     private CldrJa()
         : base(Locale.Parse("ja"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact50;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies154;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -5485,6 +8119,15 @@ internal sealed class CldrJv : LocaleData
         : base(Locale.Parse("jv"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies55;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -5500,6 +8143,15 @@ internal sealed class CldrKa : LocaleData
 
     private CldrKa()
         : base(Locale.Parse("ka"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers46;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact52;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies155;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal15);
@@ -5519,6 +8171,15 @@ internal sealed class CldrKk : LocaleData
         : base(Locale.Parse("kk"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers47;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies156;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
 }
 
@@ -5534,6 +8195,15 @@ internal sealed class CldrKkArab : LocaleData
 
     private CldrKkArab()
         : base(Locale.Parse("kk-Arab"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers48;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact54;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies157;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
@@ -5553,6 +8223,15 @@ internal sealed class CldrKkCyrl : LocaleData
         : base(Locale.Parse("kk-Cyrl"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers47;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies156;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
 }
 
@@ -5568,6 +8247,15 @@ internal sealed class CldrKkKZ : LocaleData
 
     private CldrKkKZ()
         : base(Locale.Parse("kk-KZ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers47;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies156;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
@@ -5587,6 +8275,15 @@ internal sealed class CldrKm : LocaleData
         : base(Locale.Parse("km"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers49;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact55;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies158;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -5602,6 +8299,15 @@ internal sealed class CldrKn : LocaleData
 
     private CldrKn()
         : base(Locale.Parse("kn"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact56;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies159;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
@@ -5621,6 +8327,15 @@ internal sealed class CldrKo : LocaleData
         : base(Locale.Parse("ko"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact57;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies160;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -5636,6 +8351,15 @@ internal sealed class CldrKoCN : LocaleData
 
     private CldrKoCN()
         : base(Locale.Parse("ko-CN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact57;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies160;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -5655,6 +8379,15 @@ internal sealed class CldrKoKP : LocaleData
         : base(Locale.Parse("ko-KP"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact57;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies160;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -5670,6 +8403,15 @@ internal sealed class CldrKok : LocaleData
 
     private CldrKok()
         : base(Locale.Parse("kok"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers50;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact58;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies161;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal17);
@@ -5689,6 +8431,15 @@ internal sealed class CldrKokDeva : LocaleData
         : base(Locale.Parse("kok-Deva"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers50;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact58;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies161;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal17);
 }
 
@@ -5704,6 +8455,15 @@ internal sealed class CldrKy : LocaleData
 
     private CldrKy()
         : base(Locale.Parse("ky"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact59;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies162;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -5723,6 +8483,15 @@ internal sealed class CldrLo : LocaleData
         : base(Locale.Parse("lo"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers52;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact60;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies163;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
 }
 
@@ -5738,6 +8507,15 @@ internal sealed class CldrLt : LocaleData
 
     private CldrLt()
         : base(Locale.Parse("lt"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact61;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies164;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal22, CldrPluralRules.Ordinal0);
@@ -5757,6 +8535,15 @@ internal sealed class CldrLv : LocaleData
         : base(Locale.Parse("lv"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers54;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact62;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies165;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal23, CldrPluralRules.Ordinal0);
 }
 
@@ -5772,6 +8559,15 @@ internal sealed class CldrMk : LocaleData
 
     private CldrMk()
         : base(Locale.Parse("mk"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact63;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies166;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal24, CldrPluralRules.Ordinal18);
@@ -5791,6 +8587,15 @@ internal sealed class CldrMl : LocaleData
         : base(Locale.Parse("ml"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers55;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact64;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies167;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -5806,6 +8611,15 @@ internal sealed class CldrMn : LocaleData
 
     private CldrMn()
         : base(Locale.Parse("mn"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact65;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies168;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -5825,6 +8639,15 @@ internal sealed class CldrMr : LocaleData
         : base(Locale.Parse("mr"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers56;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact66;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies169;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal17);
 }
 
@@ -5840,6 +8663,15 @@ internal sealed class CldrMs : LocaleData
 
     private CldrMs()
         : base(Locale.Parse("ms"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies170;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
@@ -5859,6 +8691,15 @@ internal sealed class CldrMsBN : LocaleData
         : base(Locale.Parse("ms-BN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies171;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
 }
 
@@ -5874,6 +8715,15 @@ internal sealed class CldrMsID : LocaleData
 
     private CldrMsID()
         : base(Locale.Parse("ms-ID"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies172;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
@@ -5893,6 +8743,15 @@ internal sealed class CldrMsSG : LocaleData
         : base(Locale.Parse("ms-SG"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies173;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
 }
 
@@ -5908,6 +8767,15 @@ internal sealed class CldrMy : LocaleData
 
     private CldrMy()
         : base(Locale.Parse("my"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers57;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact68;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies174;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -5927,6 +8795,15 @@ internal sealed class CldrNb : LocaleData
         : base(Locale.Parse("nb"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact69;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies175;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -5942,6 +8819,15 @@ internal sealed class CldrNe : LocaleData
 
     private CldrNe()
         : base(Locale.Parse("ne"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers58;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact70;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies176;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal19);
@@ -5961,6 +8847,15 @@ internal sealed class CldrNeIN : LocaleData
         : base(Locale.Parse("ne-IN"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers58;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact70;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies176;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal19);
 }
 
@@ -5976,6 +8871,15 @@ internal sealed class CldrNl : LocaleData
 
     private CldrNl()
         : base(Locale.Parse("nl"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies177;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -5995,6 +8899,15 @@ internal sealed class CldrNlAW : LocaleData
         : base(Locale.Parse("nl-AW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies178;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -6010,6 +8923,15 @@ internal sealed class CldrNlBE : LocaleData
 
     private CldrNlBE()
         : base(Locale.Parse("nl-BE"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies177;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -6029,6 +8951,15 @@ internal sealed class CldrNlBQ : LocaleData
         : base(Locale.Parse("nl-BQ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies179;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -6044,6 +8975,15 @@ internal sealed class CldrNlCW : LocaleData
 
     private CldrNlCW()
         : base(Locale.Parse("nl-CW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies180;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -6063,6 +9003,15 @@ internal sealed class CldrNlSR : LocaleData
         : base(Locale.Parse("nl-SR"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies181;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -6078,6 +9027,15 @@ internal sealed class CldrNlSX : LocaleData
 
     private CldrNlSX()
         : base(Locale.Parse("nl-SX"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies180;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -6097,6 +9055,15 @@ internal sealed class CldrNn : LocaleData
         : base(Locale.Parse("nn"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies182;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -6112,6 +9079,15 @@ internal sealed class CldrNo : LocaleData
 
     private CldrNo()
         : base(Locale.Parse("no"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact69;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies175;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -6131,6 +9107,15 @@ internal sealed class CldrOr : LocaleData
         : base(Locale.Parse("or"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers55;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact73;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies183;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal20);
 }
 
@@ -6146,6 +9131,15 @@ internal sealed class CldrPa : LocaleData
 
     private CldrPa()
         : base(Locale.Parse("pa"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact74;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies184;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal2, CldrPluralRules.Ordinal0);
@@ -6165,6 +9159,15 @@ internal sealed class CldrPaGuru : LocaleData
         : base(Locale.Parse("pa-Guru"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact74;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies184;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal2, CldrPluralRules.Ordinal0);
 }
 
@@ -6180,6 +9183,15 @@ internal sealed class CldrPcm : LocaleData
 
     private CldrPcm()
         : base(Locale.Parse("pcm"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact75;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies185;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
@@ -6199,6 +9211,15 @@ internal sealed class CldrPl : LocaleData
         : base(Locale.Parse("pl"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact76;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies186;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal25, CldrPluralRules.Ordinal0);
 }
 
@@ -6214,6 +9235,15 @@ internal sealed class CldrPs : LocaleData
 
     private CldrPs()
         : base(Locale.Parse("ps"), DayOfWeek.Saturday, 1, DayOfWeek.Thursday, DayOfWeek.Friday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers59;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact77;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies187;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -6233,6 +9263,15 @@ internal sealed class CldrPsPK : LocaleData
         : base(Locale.Parse("ps-PK"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers59;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact77;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies188;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -6248,6 +9287,15 @@ internal sealed class CldrPt : LocaleData
 
     private CldrPt()
         : base(Locale.Parse("pt"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact78;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies189;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -6267,6 +9315,15 @@ internal sealed class CldrPtAO : LocaleData
         : base(Locale.Parse("pt-AO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies190;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -6282,6 +9339,15 @@ internal sealed class CldrPtCH : LocaleData
 
     private CldrPtCH()
         : base(Locale.Parse("pt-CH"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies191;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -6301,6 +9367,15 @@ internal sealed class CldrPtCV : LocaleData
         : base(Locale.Parse("pt-CV"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies192;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -6316,6 +9391,15 @@ internal sealed class CldrPtGQ : LocaleData
 
     private CldrPtGQ()
         : base(Locale.Parse("pt-GQ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies191;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -6335,6 +9419,15 @@ internal sealed class CldrPtGW : LocaleData
         : base(Locale.Parse("pt-GW"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies191;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -6350,6 +9443,15 @@ internal sealed class CldrPtLU : LocaleData
 
     private CldrPtLU()
         : base(Locale.Parse("pt-LU"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies193;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -6369,6 +9471,15 @@ internal sealed class CldrPtMO : LocaleData
         : base(Locale.Parse("pt-MO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies194;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -6384,6 +9495,15 @@ internal sealed class CldrPtMZ : LocaleData
 
     private CldrPtMZ()
         : base(Locale.Parse("pt-MZ"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies195;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -6403,6 +9523,15 @@ internal sealed class CldrPtPT : LocaleData
         : base(Locale.Parse("pt-PT"), DayOfWeek.Sunday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies191;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal0);
 }
 
@@ -6418,6 +9547,15 @@ internal sealed class CldrPtST : LocaleData
 
     private CldrPtST()
         : base(Locale.Parse("pt-ST"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies196;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -6437,6 +9575,15 @@ internal sealed class CldrPtTL : LocaleData
         : base(Locale.Parse("pt-TL"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact79;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies191;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -6452,6 +9599,15 @@ internal sealed class CldrQu : LocaleData
 
     private CldrQu()
         : base(Locale.Parse("qu"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers60;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies197;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -6471,6 +9627,15 @@ internal sealed class CldrQuBO : LocaleData
         : base(Locale.Parse("qu-BO"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies198;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -6486,6 +9651,15 @@ internal sealed class CldrQuEC : LocaleData
 
     private CldrQuEC()
         : base(Locale.Parse("qu-EC"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers60;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies199;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -6505,6 +9679,15 @@ internal sealed class CldrRo : LocaleData
         : base(Locale.Parse("ro"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact80;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies200;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal26, CldrPluralRules.Ordinal10);
 }
 
@@ -6520,6 +9703,15 @@ internal sealed class CldrRoMD : LocaleData
 
     private CldrRoMD()
         : base(Locale.Parse("ro-MD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers13;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact80;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies201;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal26, CldrPluralRules.Ordinal10);
@@ -6539,6 +9731,15 @@ internal sealed class CldrRu : LocaleData
         : base(Locale.Parse("ru"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers61;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact81;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies202;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
 }
 
@@ -6554,6 +9755,15 @@ internal sealed class CldrRuBY : LocaleData
 
     private CldrRuBY()
         : base(Locale.Parse("ru-BY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers61;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact81;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies203;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
@@ -6573,6 +9783,15 @@ internal sealed class CldrRuKG : LocaleData
         : base(Locale.Parse("ru-KG"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers61;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact81;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies204;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
 }
 
@@ -6588,6 +9807,15 @@ internal sealed class CldrRuKZ : LocaleData
 
     private CldrRuKZ()
         : base(Locale.Parse("ru-KZ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers61;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact81;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies205;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
@@ -6607,6 +9835,15 @@ internal sealed class CldrRuMD : LocaleData
         : base(Locale.Parse("ru-MD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers61;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact81;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies206;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
 }
 
@@ -6622,6 +9859,15 @@ internal sealed class CldrRuUA : LocaleData
 
     private CldrRuUA()
         : base(Locale.Parse("ru-UA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers62;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact81;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies202;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
@@ -6641,6 +9887,15 @@ internal sealed class CldrSd : LocaleData
         : base(Locale.Parse("sd"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers63;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact82;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies207;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -6656,6 +9911,15 @@ internal sealed class CldrSdArab : LocaleData
 
     private CldrSdArab()
         : base(Locale.Parse("sd-Arab"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers63;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact82;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies207;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -6675,6 +9939,15 @@ internal sealed class CldrSi : LocaleData
         : base(Locale.Parse("si"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact83;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies208;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal28, CldrPluralRules.Ordinal0);
 }
 
@@ -6690,6 +9963,15 @@ internal sealed class CldrSk : LocaleData
 
     private CldrSk()
         : base(Locale.Parse("sk"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact84;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies209;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal8, CldrPluralRules.Ordinal0);
@@ -6709,6 +9991,15 @@ internal sealed class CldrSl : LocaleData
         : base(Locale.Parse("sl"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers64;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact85;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies210;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal29, CldrPluralRules.Ordinal0);
 }
 
@@ -6724,6 +10015,15 @@ internal sealed class CldrSo : LocaleData
 
     private CldrSo()
         : base(Locale.Parse("so"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers65;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact86;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies211;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -6743,6 +10043,15 @@ internal sealed class CldrSoDJ : LocaleData
         : base(Locale.Parse("so-DJ"), DayOfWeek.Saturday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers65;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact86;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies212;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -6758,6 +10067,15 @@ internal sealed class CldrSoET : LocaleData
 
     private CldrSoET()
         : base(Locale.Parse("so-ET"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers65;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact86;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies213;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -6777,6 +10095,15 @@ internal sealed class CldrSoKE : LocaleData
         : base(Locale.Parse("so-KE"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers65;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact86;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies214;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -6792,6 +10119,15 @@ internal sealed class CldrSq : LocaleData
 
     private CldrSq()
         : base(Locale.Parse("sq"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact87;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies215;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal21);
@@ -6811,6 +10147,15 @@ internal sealed class CldrSqMK : LocaleData
         : base(Locale.Parse("sq-MK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact87;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies216;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal21);
 }
 
@@ -6826,6 +10171,15 @@ internal sealed class CldrSqXK : LocaleData
 
     private CldrSqXK()
         : base(Locale.Parse("sq-XK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact87;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies215;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal21);
@@ -6845,6 +10199,15 @@ internal sealed class CldrSr : LocaleData
         : base(Locale.Parse("sr"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact88;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies217;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -6860,6 +10223,15 @@ internal sealed class CldrSrCyrl : LocaleData
 
     private CldrSrCyrl()
         : base(Locale.Parse("sr-Cyrl"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact88;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies217;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -6879,6 +10251,15 @@ internal sealed class CldrSrCyrlBA : LocaleData
         : base(Locale.Parse("sr-Cyrl-BA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact88;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies217;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -6894,6 +10275,15 @@ internal sealed class CldrSrCyrlME : LocaleData
 
     private CldrSrCyrlME()
         : base(Locale.Parse("sr-Cyrl-ME"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact88;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies217;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -6913,6 +10303,15 @@ internal sealed class CldrSrCyrlXK : LocaleData
         : base(Locale.Parse("sr-Cyrl-XK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact88;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies217;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -6928,6 +10327,15 @@ internal sealed class CldrSrLatn : LocaleData
 
     private CldrSrLatn()
         : base(Locale.Parse("sr-Latn"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies218;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -6947,6 +10355,15 @@ internal sealed class CldrSrLatnBA : LocaleData
         : base(Locale.Parse("sr-Latn-BA"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies218;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -6962,6 +10379,15 @@ internal sealed class CldrSrLatnME : LocaleData
 
     private CldrSrLatnME()
         : base(Locale.Parse("sr-Latn-ME"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies218;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -6981,6 +10407,15 @@ internal sealed class CldrSrLatnXK : LocaleData
         : base(Locale.Parse("sr-Latn-XK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies218;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -6996,6 +10431,15 @@ internal sealed class CldrSv : LocaleData
 
     private CldrSv()
         : base(Locale.Parse("sv"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact89;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies219;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal22);
@@ -7015,6 +10459,15 @@ internal sealed class CldrSvAX : LocaleData
         : base(Locale.Parse("sv-AX"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact89;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies219;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal22);
 }
 
@@ -7030,6 +10483,15 @@ internal sealed class CldrSvFI : LocaleData
 
     private CldrSvFI()
         : base(Locale.Parse("sv-FI"), DayOfWeek.Monday, 4, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact89;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies219;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal22);
@@ -7049,6 +10511,15 @@ internal sealed class CldrSw : LocaleData
         : base(Locale.Parse("sw"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact90;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies220;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -7064,6 +10535,15 @@ internal sealed class CldrSwCD : LocaleData
 
     private CldrSwCD()
         : base(Locale.Parse("sw-CD"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact90;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies221;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -7083,6 +10563,15 @@ internal sealed class CldrSwKE : LocaleData
         : base(Locale.Parse("sw-KE"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact91;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies222;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -7098,6 +10587,15 @@ internal sealed class CldrSwUG : LocaleData
 
     private CldrSwUG()
         : base(Locale.Parse("sw-UG"), DayOfWeek.Monday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact90;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies223;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -7117,6 +10615,15 @@ internal sealed class CldrTa : LocaleData
         : base(Locale.Parse("ta"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers66;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact92;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies167;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7132,6 +10639,15 @@ internal sealed class CldrTaLK : LocaleData
 
     private CldrTaLK()
         : base(Locale.Parse("ta-LK"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers66;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact92;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies224;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -7151,6 +10667,15 @@ internal sealed class CldrTaMY : LocaleData
         : base(Locale.Parse("ta-MY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact92;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies225;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7166,6 +10691,15 @@ internal sealed class CldrTaSG : LocaleData
 
     private CldrTaSG()
         : base(Locale.Parse("ta-SG"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers0;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact92;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies226;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -7185,6 +10719,15 @@ internal sealed class CldrTe : LocaleData
         : base(Locale.Parse("te"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers50;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact93;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies227;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7200,6 +10743,15 @@ internal sealed class CldrTh : LocaleData
 
     private CldrTh()
         : base(Locale.Parse("th"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact94;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies228;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7219,6 +10771,15 @@ internal sealed class CldrTk : LocaleData
         : base(Locale.Parse("tk"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact95;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies229;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal23);
 }
 
@@ -7234,6 +10795,15 @@ internal sealed class CldrTl : LocaleData
 
     private CldrTl()
         : base(Locale.Parse("tl"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact31;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies119;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal15, CldrPluralRules.Ordinal10);
@@ -7253,6 +10823,15 @@ internal sealed class CldrTr : LocaleData
         : base(Locale.Parse("tr"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers68;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact96;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies230;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7268,6 +10847,15 @@ internal sealed class CldrTrCY : LocaleData
 
     private CldrTrCY()
         : base(Locale.Parse("tr-CY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers68;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact96;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies230;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -7287,6 +10875,15 @@ internal sealed class CldrUg : LocaleData
         : base(Locale.Parse("ug"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact97;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies231;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7302,6 +10899,15 @@ internal sealed class CldrUk : LocaleData
 
     private CldrUk()
         : base(Locale.Parse("uk"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers21;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact98;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies232;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal24);
@@ -7321,6 +10927,15 @@ internal sealed class CldrUr : LocaleData
         : base(Locale.Parse("ur"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers69;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact99;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies233;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -7336,6 +10951,15 @@ internal sealed class CldrUrIN : LocaleData
 
     private CldrUrIN()
         : base(Locale.Parse("ur-IN"), DayOfWeek.Sunday, 1, DayOfWeek.Sunday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers70;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact99;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies227;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -7355,6 +10979,15 @@ internal sealed class CldrUz : LocaleData
         : base(Locale.Parse("uz"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact100;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies234;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7370,6 +11003,15 @@ internal sealed class CldrUzLatn : LocaleData
 
     private CldrUzLatn()
         : base(Locale.Parse("uz-Latn"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers71;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact100;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies234;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -7389,6 +11031,15 @@ internal sealed class CldrVi : LocaleData
         : base(Locale.Parse("vi"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers8;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact101;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies228;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal10);
 }
 
@@ -7404,6 +11055,15 @@ internal sealed class CldrYo : LocaleData
 
     private CldrYo()
         : base(Locale.Parse("yo"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact102;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies235;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7423,6 +11083,15 @@ internal sealed class CldrYoBJ : LocaleData
         : base(Locale.Parse("yo-BJ"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact103;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies235;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7438,6 +11107,15 @@ internal sealed class CldrYue : LocaleData
 
     private CldrYue()
         : base(Locale.Parse("yue"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact104;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies236;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7457,6 +11135,15 @@ internal sealed class CldrYueHans : LocaleData
         : base(Locale.Parse("yue-Hans"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers73;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact105;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies236;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7472,6 +11159,15 @@ internal sealed class CldrYueHant : LocaleData
 
     private CldrYueHant()
         : base(Locale.Parse("yue-Hant"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact104;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies236;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7491,6 +11187,15 @@ internal sealed class CldrYueHantCN : LocaleData
         : base(Locale.Parse("yue-Hant-CN"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact104;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies236;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7506,6 +11211,15 @@ internal sealed class CldrYueHantMO : LocaleData
 
     private CldrYueHantMO()
         : base(Locale.Parse("yue-Hant-MO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact104;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies236;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7525,6 +11239,15 @@ internal sealed class CldrZh : LocaleData
         : base(Locale.Parse("zh"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact106;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies237;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7540,6 +11263,15 @@ internal sealed class CldrZhHans : LocaleData
 
     private CldrZhHans()
         : base(Locale.Parse("zh-Hans"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact106;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies237;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7559,6 +11291,15 @@ internal sealed class CldrZhHansHK : LocaleData
         : base(Locale.Parse("zh-Hans-HK"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact106;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies238;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7574,6 +11315,15 @@ internal sealed class CldrZhHansMO : LocaleData
 
     private CldrZhHansMO()
         : base(Locale.Parse("zh-Hans-MO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact106;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies239;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7593,6 +11343,15 @@ internal sealed class CldrZhHansMY : LocaleData
         : base(Locale.Parse("zh-Hans-MY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact106;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies237;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7608,6 +11367,15 @@ internal sealed class CldrZhHansSG : LocaleData
 
     private CldrZhHansSG()
         : base(Locale.Parse("zh-Hans-SG"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact106;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies240;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7627,6 +11395,15 @@ internal sealed class CldrZhHant : LocaleData
         : base(Locale.Parse("zh-Hant"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact107;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies241;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7642,6 +11419,15 @@ internal sealed class CldrZhHantHK : LocaleData
 
     private CldrZhHantHK()
         : base(Locale.Parse("zh-Hant-HK"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact108;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies242;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -7661,6 +11447,15 @@ internal sealed class CldrZhHantMO : LocaleData
         : base(Locale.Parse("zh-Hant-MO"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact108;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies243;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7678,6 +11473,15 @@ internal sealed class CldrZhHantMY : LocaleData
         : base(Locale.Parse("zh-Hant-MY"), DayOfWeek.Monday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact107;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies241;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -7693,6 +11497,15 @@ internal sealed class CldrZu : LocaleData
 
     private CldrZu()
         : base(Locale.Parse("zu"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday) { }
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> NumberTable => CldrNumberTables.Numbers2;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CompactTable => CldrNumberTables.Compact109;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies244;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);

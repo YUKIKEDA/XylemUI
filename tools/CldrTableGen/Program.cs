@@ -1,6 +1,6 @@
 // Generates the CLDR tables of XylemUI.Core from the json-full release of cldr-json (design §4.11, "How the tables are made"): the
-// set of locales, one class for each locale with its week data and its plural rules, the plural rules compiled to methods, the
-// entries of CldrLocales, and the samples of the plural rules that the tests select. The version, the SHA-256, and the URL of the
+// set of locales, one class for each locale with its week data, its plural rules, and its number tables, the plural rules compiled
+// to methods, the number tables, the entries of CldrLocales, and the samples of the plural rules that the tests select. The version, the SHA-256, and the URL of the
 // zip are the cldr-json line of vendor/versions.lock.
 //
 //   dotnet run --project tools/CldrTableGen -c Release
@@ -72,7 +72,8 @@ static async Task<int> Run(string[] args)
     WeekData week = WeekData.Read(cldr);
     PluralTables plurals = PluralTables.Read(cldr, locales);
     LikelyScriptTable likely = LikelyScriptTable.Read(cldr);
-    var output = new Output(release, cldr.Text("LICENSE"), locales, week, plurals, likely);
+    NumberTables numbers = NumberTables.Read(cldr, locales);
+    var output = new Output(release, cldr.Text("LICENSE"), locales, week, plurals, likely, numbers);
     output.Write(outRoot);
 
     Console.WriteLine(
@@ -111,6 +112,19 @@ static async Task<int> Run(string[] args)
         + Output.Number(likely.Scripts.Count)
         + " scripts";
     Console.WriteLine(likelyCounts);
+    Console.WriteLine(
+        "number tables: "
+            + Output.Number(numbers.Numbers.Count)
+            + " number, "
+            + Output.Number(numbers.Compact.Count)
+            + " compact, "
+            + Output.Number(numbers.Currencies.Count)
+            + " currency; "
+            + Output.Number(numbers.CurrencyDigits.Count / 4)
+            + " currencies with other than "
+            + Output.Number(numbers.DefaultCurrencyDigits)
+            + " fraction digits"
+    );
     Console.WriteLine("wrote " + outRoot);
     return 0;
 }
