@@ -224,7 +224,7 @@ public sealed unsafe partial class Win32Window : IDisposable
 
     /// <summary>
     /// Gets or sets a hook that sees every message before the window handles it. Returning <see langword="true"/> marks the
-    /// message as handled. Used by tests to run code inside the window procedure.
+    /// message as handled. Used by tests, and by the E2E scenes that time a WM_SIZE, to run code inside the window procedure.
     /// </summary>
     internal Func<Win32Window, uint, bool>? MessageHook { get; set; }
 

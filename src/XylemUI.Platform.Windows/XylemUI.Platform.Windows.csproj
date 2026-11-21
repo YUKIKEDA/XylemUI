@@ -31,7 +31,8 @@
     <InternalsVisibleTo Include="XylemUI.Desktop.Tests" />
     <!-- The renderer tests drive the real message loop (IterationHook) with a swap chain as the frame clock. -->
     <InternalsVisibleTo Include="XylemUI.Rendering.D3D11.Tests" />
-    <!-- The touchpad scene checks that its window has DirectManipulation's viewport (row I1c). -->
+    <!-- The touchpad scene checks that its window has DirectManipulation's viewport (row I1c); the scenes through the host wrap its
+         render target (Win32PlatformApp.WrapTarget) and time WM_SIZE with the window's message hook (row PL1). -->
     <InternalsVisibleTo Include="XylemUI.E2E" />
   </ItemGroup>
 </Project>

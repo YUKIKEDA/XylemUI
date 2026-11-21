@@ -66,6 +66,13 @@ internal sealed class Win32PlatformApp : IPlatformApp
     /// </summary>
     internal bool UseWarp { get; init; }
 
+    /// <summary>
+    /// Gets a function that makes, from the renderer of each window the host opens, the target the window gives its core; for the
+    /// end-to-end benchmark, which times the draw and the present through it, on the frames and on the synchronous resize path
+    /// (Issue #933). <see langword="null"/> gives the core the renderer itself.
+    /// </summary>
+    internal Func<IRenderTarget, IRenderTarget>? WrapTarget { get; init; }
+
     /// <inheritdoc />
     /// <remarks>
     /// The loop's scheduler holds one frame clock, which a second window would take from the first (design §6.0, "The frame clock
@@ -80,7 +87,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
             throw new InvalidOperationException("A window of the app is open: a second window comes with row MW1 (design §6.0).");
         }
 
-        _window = new Win32PlatformWindow(core, _settings, title, width, height, show, UseWarp, () => _window = null);
+        _window = new Win32PlatformWindow(core, _settings, title, width, height, show, UseWarp, () => _window = null, WrapTarget);
         return _window;
     }
 

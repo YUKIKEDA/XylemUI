@@ -11,6 +11,13 @@ namespace XylemUI.E2E;
 // screen for it), 1,000 rectangles in a grid that move with the frame, and one line of Japanese text at 24 px at (60, 30).
 // `heavy` adds full-window translucent rectangles to load the GPU. The text is drawn as the window's TextRendering says (roadmap
 // row T2), so it is ClearType where Windows and the monitor allow it.
+//
+// `hosted` opens the window through the Windows host (row PL1, design §6.0), for the tree scenes (TreeScene): the host's app tier
+// (Win32PlatformApp) opens its window tier (Win32PlatformWindow: the window, its UIA provider, the renderer, the swap chain as the
+// loop's clock, and TSF), and a window core (WindowCore) connects to it, as XylemApp.OpenWindow does. The core draws on the target
+// the host gives it, which the host makes from its renderer through WrapTarget: a TimingTarget that records when Draw and Present
+// start and end (Issue #928). The window is made hidden, placed, and shown before the core connects; the host made its renderer
+// before it showed, where an app's window shows first. The plain scene (Build) stays on its own window and renderer.
 internal sealed class Scene : IDisposable
 {
     public const string Line = "Hello, World! 日本語のテキスト";
@@ -19,9 +26,67 @@ internal sealed class Scene : IDisposable
     private readonly Font _font;
     private readonly TextShaper _shaper = new();
     private readonly TextLanguage _japanese = TextLanguage.FromTag("ja");
+    private readonly TextContext? _text;
+    private readonly Win32PlatformApp? _app;
 
-    public Scene(string title, bool useWarp = false, bool gray = false)
+    public Scene(string title, bool useWarp = false, bool gray = false, bool hosted = false)
     {
+        if (hosted)
+        {
+            _font = ReadFont();
+            _text = new TextContext(new OneFont(_font));
+            _app = new Win32PlatformApp { UseWarp = useWarp, WrapTarget = target => Timing = new TreeScene.TimingTarget(target) };
+            Core = new WindowCore(_text, _app.Settings, _app.Clipboard, null, null);
+            HostWindow = (Win32PlatformWindow)_app.OpenWindow(Core, title, 800, 600, show: false);
+            Window = HostWindow.Window;
+            Renderer = HostWindow.Renderer;
+
+            // An experiment of the measurement (PL1-e2e, "計測の後の調べ"): XYLEMUI_E2E_NO_UIA=1 takes the host's UIA provider off the
+            // window before it shows, so that no UIA client makes the tree's accessibility tree; the report's uia_provider and
+            // accessibility_tree read it back.
+            if (Environment.GetEnvironmentVariable("XYLEMUI_E2E_NO_UIA") == "1")
+            {
+                Window.Accessibility = null;
+            }
+
+            MonitorChoice.Place(Window.Handle);
+            Window.Show();
+            MonitorChoice.KeepOnTop(Window.Handle);
+
+            // The host made its renderer at the size the window had where Windows opened it. On a monitor of another scale the
+            // window has another size now, which the host's synchronous resize path, not attached yet, did not give the renderer.
+            (int clientWidth, int clientHeight) = Window.ClientSize;
+            if (Renderer.Width != clientWidth || Renderer.Height != clientHeight)
+            {
+                Renderer.Resize(clientWidth, clientHeight);
+            }
+
+            Renderer.TextRendering = TextRenderingOf(Window, gray);
+            Atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
+            Core.Connect(HostWindow, Atlas, Clear);
+            HostWindow.Attach();
+
+            // The other experiment: XYLEMUI_E2E_NO_OS_POINTER=1 takes the OS's mouse messages away from the core's input, as main's
+            // direct window never gave them to the scene's input; the report's os_pointer reads it back.
+            if (Environment.GetEnvironmentVariable("XYLEMUI_E2E_NO_OS_POINTER") == "1")
+            {
+                Window.PointerInputReceived = null;
+            }
+
+            if (gray)
+            {
+                // After the host's own handler, which gives the renderer and the core the window's ClearType again.
+                Core.TextRenderingChanged(Renderer.TextRendering);
+                Window.TextRenderingChanged += (_, _) =>
+                {
+                    Renderer.TextRendering = TextRenderingOf(Window, gray);
+                    Core.TextRenderingChanged(Renderer.TextRendering);
+                };
+            }
+
+            return;
+        }
+
         Window = new Win32Window(title, 800, 600);
         MonitorChoice.Place(Window.Handle);
         Window.Show();
@@ -30,16 +95,19 @@ internal sealed class Scene : IDisposable
         Renderer = D3D11Renderer.Create(Window.Handle, width, height, useWarp);
         Renderer.TextRendering = TextRenderingOf(Window, gray);
         Window.TextRenderingChanged += (_, _) => Renderer.TextRendering = TextRenderingOf(Window, gray);
-        using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
-        byte[] bytes = new byte[stream.Length];
-        stream.ReadExactly(bytes);
-        _font = new Font(bytes);
+        _font = ReadFont();
         Atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
     }
 
     public Win32Window Window { get; }
 
-    public Font Font => _font;
+    // With `hosted`: the window core, connected to the host's window, which it owns with the atlas; the host's window; and the
+    // target the host gave the core. Null for the plain scene.
+    public WindowCore? Core { get; }
+
+    public Win32PlatformWindow? HostWindow { get; }
+
+    public TreeScene.TimingTarget? Timing { get; private set; }
 
     public GlyphCoverage Coverage => Renderer.TextRendering.Coverage;
 
@@ -322,12 +390,40 @@ internal sealed class Scene : IDisposable
     private static TextRenderingParameters TextRenderingOf(Win32Window window, bool gray) =>
         gray ? window.TextRendering with { Coverage = GlyphCoverage.Gray, IsAliased = false } : window.TextRendering;
 
+    // The test font, inside the executable.
+    private static Font ReadFont()
+    {
+        using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("XylemUITestSans.ttf")!;
+        byte[] bytes = new byte[stream.Length];
+        stream.ReadExactly(bytes);
+        return new Font(bytes);
+    }
+
     public void Dispose()
     {
+        if (Core is not null)
+        {
+            // The core disposes the host's window (which releases the renderer and gives the loop its timer back) and then the atlas;
+            // the text tools and the host go after it, in XylemApp.Run's order.
+            Core.Dispose();
+            _text!.Dispose();
+            _shaper.Dispose();
+            _font.Dispose();
+            _app!.Dispose();
+            return;
+        }
+
         Renderer.Dispose();
         _shaper.Dispose();
         Atlas.Dispose();
         _font.Dispose();
         Window.Dispose();
+    }
+
+    // The scene's one font for every text of the tree scenes.
+    private sealed class OneFont(Font font) : IFontProvider
+    {
+        public FontMatch ResolveFont(ReadOnlySpan<char> text, int start, TextLanguage language, in FontRequest request) =>
+            new(font, text.Length - start, 1);
     }
 }
