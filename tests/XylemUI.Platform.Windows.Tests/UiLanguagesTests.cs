@@ -3,8 +3,8 @@ using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Platform.Windows.Tests;
 
-// The OS's languages of a window (row LC1, design §4.11, "The OS's languages" and "A change of the OS"): read when the window is
-// created and on each WM_SETTINGCHANGE, whatever setting the message names.
+// The OS's languages (row LC1, design §4.11, "The OS's languages" and "A change of the OS"): read by the app tier's settings when they
+// are made and on each WM_SETTINGCHANGE a window of the host receives, whatever setting the message names (design §6.0, "OS settings").
 [Collection(UiThreadGroup.Name)]
 public sealed class UiLanguagesTests(UiThreadFixture ui)
 {
@@ -32,50 +32,49 @@ public sealed class UiLanguagesTests(UiThreadFixture ui)
     }
 
     /// <summary>
-    /// On <c>WM_SETTINGCHANGE</c> each window reads the languages again and raises its event when the list changed, and only
-    /// then.
+    /// On <c>WM_SETTINGCHANGE</c> to any window of the host, the app tier's settings read the languages again and tell a change
+    /// once, when the list changed in its tags or their order, and only then.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A reader set by the test that returns "ja-JP, en-US"; two hidden windows made with it, and a handler on each that counts
-    ///   the event. The reader is put back after the test.
+    /// - A reader set by the test that returns "ja-JP, en-US", in a new array at each read; settings made with it; two hidden
+    ///   windows whose setting messages read the settings again, and a handler that records the settings' notices. The reader is
+    ///   put back after the test.
     ///
     /// Steps:
     /// - Send <c>WM_SETTINGCHANGE</c> to both windows; make the reader return "en-US, ja-JP" and send it to both; send it to both
     ///   once more.
     ///
     /// Expected:
-    /// - No event after the first round (the list is the same); one event from each window after the second, and both hold the
-    ///   new list in its order; no new event after the third.
+    /// - No notice after the first round (the list is the same); one notice after the second, marked as the languages only, and the
+    ///   settings hold the new list in its order; no new notice after the third.
     /// </remarks>
     [Fact]
-    public void SettingChange_EachWindowReadsAgainAndRaisesWhenChanged() =>
+    public void SettingChange_TwoWindows_TellsAChangeOnce() =>
         ui.Invoke(() =>
         {
-            Func<string[]> previous = Win32Window.UiLanguagesReader;
+            Func<string[]> previous = Win32PlatformSettings.UiLanguagesReader;
             try
             {
                 string[] languages = ["ja-JP", "en-US"];
-                Win32Window.UiLanguagesReader = () => languages;
-                using var first = new Win32Window("languages 1", 200, 100);
-                using var second = new Win32Window("languages 2", 200, 100);
-                int firstRaised = 0;
-                int secondRaised = 0;
-                first.UiLanguagesChanged += (_, _) => firstRaised++;
-                second.UiLanguagesChanged += (_, _) => secondRaised++;
+
+                // A new array at each read, as Windows' reader gives: a list equal in its tags is the same list.
+                Win32PlatformSettings.UiLanguagesReader = () => [.. languages];
+                var settings = new Win32PlatformSettings();
+                using var first = new Win32Window("languages 1", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                using var second = new Win32Window("languages 2", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                var notices = new List<PlatformSettingsChanges>();
+                settings.Changed += notices.Add;
 
                 Send();
-                (int, int) same = (firstRaised, secondRaised);
+                int same = notices.Count;
                 languages = ["en-US", "ja-JP"];
                 Send();
-                (int, int) changed = (firstRaised, secondRaised);
                 Send();
 
-                Assert.Equal((0, 0), same);
-                Assert.Equal((1, 1), changed);
-                Assert.Equal((1, 1), (firstRaised, secondRaised));
-                Assert.Equal(["en-US", "ja-JP"], first.UiLanguages);
-                Assert.Equal(["en-US", "ja-JP"], second.UiLanguages);
+                Assert.Equal(0, same);
+                Assert.Equal([PlatformSettingsChanges.UiLanguages], notices);
+                Assert.Equal(["en-US", "ja-JP"], settings.UiLanguages);
 
                 void Send()
                 {
@@ -85,7 +84,7 @@ public sealed class UiLanguagesTests(UiThreadFixture ui)
             }
             finally
             {
-                Win32Window.UiLanguagesReader = previous;
+                Win32PlatformSettings.UiLanguagesReader = previous;
             }
         });
 }

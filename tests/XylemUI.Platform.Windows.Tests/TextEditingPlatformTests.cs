@@ -5,7 +5,8 @@ using static TerraFX.Interop.Windows.Windows;
 namespace XylemUI.Platform.Windows.Tests;
 
 // The clipboard of Windows and the settings a text field draws with (row P02b, design §4.9, "The clipboard", "The caret", and
-// "Drawing the selection"). No test changes a setting of Windows: the reading again uses a reader the test sets. The clipboard test
+// "Drawing the selection"), which the app tier's settings read (design §6.0, "OS settings"). No test changes a setting of Windows: the
+// reading again uses a reader the test sets. The clipboard test
 // puts the text the clipboard held back after it. Another process may hold the clipboard open for a moment (the clipboard history
 // reads what a set wrote); the product tries once (design §4.9), so the tests try each step again for up to two seconds (Issue #585).
 [Collection(UiThreadGroup.Name)]
@@ -134,27 +135,27 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// A new window reads the caret's blink and width, the selection's colors, whether access keys are always underlined, and how far
-    /// a press moves before a drag starts from Windows.
+    /// New settings of the app tier read the caret's blink and width, the selection's colors, whether access keys are always
+    /// underlined, and how far a press moves before a drag starts from Windows.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A hidden window.
+    /// - None.
     ///
     /// Steps:
-    /// - Read the window's settings, and <c>GetCaretBlinkTime</c>, <c>SPI_GETCARETWIDTH</c>, <c>GetSysColor</c> of
-    ///   <c>COLOR_HIGHLIGHT</c> and <c>COLOR_HIGHLIGHTTEXT</c>, <c>SPI_GETKEYBOARDCUES</c>, and <c>SM_CXDRAG</c> and <c>SM_CYDRAG</c>
-    ///   straight from Windows.
+    /// - Make the settings. Read their text fields' settings, and <c>GetCaretBlinkTime</c>, <c>SPI_GETCARETWIDTH</c>,
+    ///   <c>GetSysColor</c> of <c>COLOR_HIGHLIGHT</c> and <c>COLOR_HIGHLIGHTTEXT</c>, <c>SPI_GETKEYBOARDCUES</c>, and
+    ///   <c>SM_CXDRAG</c> and <c>SM_CYDRAG</c> straight from Windows.
     ///
     /// Expected:
     /// - The blink is the blink time (none for <c>INFINITE</c>), the width is the caret width, the colors are the system colors,
     ///   read as 0x00BBGGRR, the keyboard cues are the setting, and the drag size is the two metrics.
     /// </remarks>
     [Fact]
-    public void TextEditing_NewWindow_IsWindowsSettings() =>
+    public void TextEditing_NewSettings_IsWindowsSettings() =>
         ui.Invoke(() =>
         {
-            using var window = new Win32Window("settings", 200, 100);
+            var settings = new Win32PlatformSettings();
             uint blink = GetCaretBlinkTime();
             uint width;
             Assert.NotEqual(BOOL.FALSE, SystemParametersInfoW(SPI.SPI_GETCARETWIDTH, 0, &width, 0));
@@ -165,7 +166,7 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
             int dragWidth = GetSystemMetrics(SM.SM_CXDRAG);
             int dragHeight = GetSystemMetrics(SM.SM_CYDRAG);
 
-            TextEditingSettings read = window.TextEditing;
+            TextEditingSettings read = settings.TextEditing;
 
             Assert.Equal(blink == uint.MaxValue ? null : TimeSpan.FromMilliseconds(blink), read.CaretBlink);
             Assert.Equal(width, read.CaretWidth);
@@ -176,55 +177,53 @@ public sealed unsafe class TextEditingPlatformTests(UiThreadFixture ui)
         });
 
     /// <summary>
-    /// Each window that receives <c>WM_SETTINGCHANGE</c> or <c>WM_SYSCOLORCHANGE</c> reads the settings again and raises the change
-    /// when its own value changed.
+    /// Both <c>WM_SETTINGCHANGE</c> and <c>WM_SYSCOLORCHANGE</c> to a window of the host make the app tier's settings read the text
+    /// fields' settings again; a change is told once, marked as the text fields' settings, whichever window received the message.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - Two hidden windows, a handler on each that counts the change, and a reader set by the test that returns a blink of none and
-    ///   a width of 3. The reader is put back after the test.
+    /// - A reader set by the test, put back after it, that returns the value it is given; settings made with it; two hidden windows
+    ///   whose setting messages read the settings again, and a handler that records the settings' notices.
     ///
     /// Steps:
-    /// - Send <c>WM_SETTINGCHANGE</c> to the first window and <c>WM_SYSCOLORCHANGE</c> to the second; then send both messages to
-    ///   both windows again.
+    /// - Make the reader return the settings' value with a blink of none and a width of 3; send <c>WM_SYSCOLORCHANGE</c> to the
+    ///   second window. Make it return a width of 4; send <c>WM_SETTINGCHANGE</c> to the first window. Send both messages to both
+    ///   windows again.
     ///
     /// Expected:
-    /// - After the first two messages, both windows hold the reader's value and each raised the change once; after the others, no
-    ///   new change.
+    /// - Two notices, each marked as the text fields' settings only, and the settings hold the width of 4.
     /// </remarks>
     [Fact]
-    public void SettingChange_EachWindowReadsAgainAndRaisesWhenChanged() =>
+    public void SettingOrColorChange_ReadsAgain_AndTellsEachChangeOnce() =>
         ui.Invoke(() =>
         {
-            Func<TextEditingSettings, TextEditingSettings> previous = Win32Window.TextEditingReader;
+            Func<TextEditingSettings, TextEditingSettings> previous = Win32PlatformSettings.TextEditingReader;
             try
             {
-                using var first = new Win32Window("settings 1", 200, 100);
-                using var second = new Win32Window("settings 2", 200, 100);
-                TextEditingSettings next = first.TextEditing with { CaretBlink = null, CaretWidth = 3 };
-                int firstRaised = 0;
-                int secondRaised = 0;
-                first.TextEditingChanged += (_, _) => firstRaised++;
-                second.TextEditingChanged += (_, _) => secondRaised++;
-                Win32Window.TextEditingReader = _ => next;
+                Win32PlatformSettings.TextEditingReader = static before => before;
+                var settings = new Win32PlatformSettings();
+                using var first = new Win32Window("settings 1", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                using var second = new Win32Window("settings 2", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                var notices = new List<PlatformSettingsChanges>();
+                settings.Changed += notices.Add;
+                TextEditingSettings next = settings.TextEditing with { CaretBlink = null, CaretWidth = 3 };
+                Win32PlatformSettings.TextEditingReader = _ => next;
 
-                _ = SendMessageW(first.Hwnd, WM.WM_SETTINGCHANGE, default, default);
                 _ = SendMessageW(second.Hwnd, WM.WM_SYSCOLORCHANGE, default, default);
-                (int, int) once = (firstRaised, secondRaised);
+                next = next with { CaretWidth = 4 };
+                _ = SendMessageW(first.Hwnd, WM.WM_SETTINGCHANGE, default, default);
                 foreach (Win32Window window in new[] { first, second })
                 {
                     _ = SendMessageW(window.Hwnd, WM.WM_SETTINGCHANGE, default, default);
                     _ = SendMessageW(window.Hwnd, WM.WM_SYSCOLORCHANGE, default, default);
                 }
 
-                Assert.Equal((1, 1), once);
-                Assert.Equal((1, 1), (firstRaised, secondRaised));
-                Assert.Equal(next, first.TextEditing);
-                Assert.Equal(next, second.TextEditing);
+                Assert.Equal([PlatformSettingsChanges.TextEditing, PlatformSettingsChanges.TextEditing], notices);
+                Assert.Equal(4f, settings.TextEditing.CaretWidth);
             }
             finally
             {
-                Win32Window.TextEditingReader = previous;
+                Win32PlatformSettings.TextEditingReader = previous;
             }
         });
 

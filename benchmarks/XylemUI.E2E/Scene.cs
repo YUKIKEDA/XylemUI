@@ -36,7 +36,7 @@ internal sealed class Scene : IDisposable
             _font = ReadFont();
             _text = new TextContext(new OneFont(_font));
             _app = new Win32PlatformApp { UseWarp = useWarp, WrapTarget = target => Timing = new TreeScene.TimingTarget(target) };
-            Core = new WindowCore(_text, _app.Clipboard, null, null);
+            Core = new WindowCore(_text, _app.Settings, _app.Clipboard, null, null);
             HostWindow = (Win32PlatformWindow)_app.OpenWindow(Core, title, 800, 600, show: false);
             Window = HostWindow.Window;
             Renderer = HostWindow.Renderer;

@@ -12,8 +12,9 @@ namespace XylemUI.Platform.Windows;
 /// <remarks>
 /// It belongs to the UI thread. It makes its parts in the order the design gives (window, provider, show, renderer, clock, TSF), and
 /// disposes them in the order the desktop window had: TSF lets go of the window before it is destroyed, the provider goes before
-/// the window, and the loop stops waiting on the clock before the renderer closes it. Until the OS's settings become one object
-/// of the app tier (row PL1, PR 5), the window passes its own settings to the core in <see cref="Attach"/> (Issue #928).
+/// the window, and the loop stops waiting on the clock before the renderer closes it. The window's <c>WM_SETTINGCHANGE</c> and
+/// <c>WM_SYSCOLORCHANGE</c> read the app tier's settings again (<see cref="Win32PlatformSettings"/>, design §6.0, "OS settings"),
+/// which tell the window cores themselves.
 /// </remarks>
 internal sealed class Win32PlatformWindow : IPlatformWindow
 {
@@ -24,7 +25,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="Win32PlatformWindow"/> class: makes the window, its UIA provider, shows it when
+    /// Initializes a new instance of the <see cref="Win32PlatformWindow"/> class: makes the window, binds its setting messages to
+    /// <paramref name="settings"/> and reads them again once, for a change no window received, makes its UIA provider, shows it when
     /// asked to, then makes the renderer at the client size, sets the swap chain as the loop's frame clock, and makes the input
     /// method. What was made is disposed when a later step throws.
     /// </summary>
@@ -36,6 +38,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     /// <c>WM_GETOBJECT</c> from before the window shows, and the first answer makes the tree's accessibility tree (design §4.4.1).
     /// </remarks>
     /// <param name="core">The window core, whose tree the provider reads.</param>
+    /// <param name="settings">The app tier's settings, which the window's setting messages read again.</param>
     /// <param name="title">The title bar's text.</param>
     /// <param name="width">The width of the client area, in logical pixels; rounded up.</param>
     /// <param name="height">The height of the client area, in logical pixels; rounded up.</param>
@@ -51,6 +54,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     [UiThreadOnly]
     public Win32PlatformWindow(
         WindowCore core,
+        Win32PlatformSettings settings,
         string title,
         float width,
         float height,
@@ -61,12 +65,17 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     )
     {
         ArgumentNullException.ThrowIfNull(core);
+        ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(title);
         _core = core;
         _onDisposed = onDisposed;
         try
         {
             Window = new Win32Window(title, (int)MathF.Ceiling(width), (int)MathF.Ceiling(height));
+            Window.SettingsMessageReceived = settings.ReadAgain;
+
+            // The settings were read when the app was made; a message that came before the window existed reached no window.
+            settings.ReadAgain();
             _accessibility = new Win32Accessibility(Window, core.Tree);
             Window.Accessibility = _accessibility;
             if (show)
@@ -101,18 +110,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     /// Gets the renderer.
     /// </summary>
     public D3D11Renderer Renderer { get; } = null!;
-
-    /// <summary>
-    /// Gets the tags of the OS's languages as the window read them, for the first mount until the OS's settings become one object
-    /// of the app tier (row PL1, PR 5).
-    /// </summary>
-    public IReadOnlyList<string> UiLanguages => Window.UiLanguages;
-
-    /// <summary>
-    /// Gets a value indicating whether the user's short time format shows the hours in 24-hour form as the window read it, for the
-    /// first mount until the OS's settings become one object of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
-    /// </summary>
-    public bool Use24HourFormat => Window.Use24HourFormat;
 
     /// <inheritdoc/>
     public (int Width, int Height) ClientSize => Window.ClientSize;
@@ -149,7 +146,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     {
         WindowInput input = _core.Input;
         WindowFrames frames = _core.Frames;
-        UiTree tree = _core.Tree;
         _accessibility!.Input = input;
         Window.PointerInputReceived = input.Handle;
         Window.KeyInputReceived = input.Handle;
@@ -166,15 +162,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         Window.GestureFrameNeeded = frames.RequestFrame;
         Window.SynchronousRender = Render;
         Window.TextRenderingChanged += OnTextRenderingChanged;
-
-        // The window's settings until PR 5 of row PL1: text fields draw their caret and selection with Windows' settings (design
-        // §4.9), and less motion when Windows asks for it (design §2.14, "Reduced motion").
-        tree.SetTextEditing(Window.TextEditing);
-        Window.TextEditingChanged += OnTextEditingChanged;
-        tree.Animations.ReduceMotion = Window.ReducesMotion;
-        Window.ReducesMotionChanged += OnReducesMotionChanged;
-        Window.UiLanguagesChanged += OnUiLanguagesChanged;
-        Window.Use24HourFormatChanged += OnUse24HourFormatChanged;
         Window.Closed += OnClosed;
     }
 
@@ -185,9 +172,9 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     public void RequestClose() => Window.RequestClose();
 
     /// <summary>
-    /// Takes the notices back from the core, lets TSF go of the window, takes the provider out, destroys the window, sets the loop's
-    /// frame clock back to its timer, and releases the renderer. The callback given to the constructor runs also when a step
-    /// throws. A second call does nothing.
+    /// Takes the notices back from the core and the settings, lets TSF go of the window, takes the provider out, destroys the window,
+    /// sets the loop's frame clock back to its timer, and releases the renderer. The callback given to the constructor runs also when
+    /// a step throws. A second call does nothing.
     /// </summary>
     public void Dispose()
     {
@@ -217,10 +204,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         {
             Window.Closed -= OnClosed;
             Window.TextRenderingChanged -= OnTextRenderingChanged;
-            Window.ReducesMotionChanged -= OnReducesMotionChanged;
-            Window.UiLanguagesChanged -= OnUiLanguagesChanged;
-            Window.Use24HourFormatChanged -= OnUse24HourFormatChanged;
-            Window.TextEditingChanged -= OnTextEditingChanged;
+            Window.SettingsMessageReceived = null;
             Window.SynchronousRender = null;
             Window.PointerInputReceived = null;
             Window.KeyInputReceived = null;
@@ -269,14 +253,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         Renderer.TextRendering = Window.TextRendering;
         _core.TextRenderingChanged(Window.TextRendering);
     }
-
-    private void OnTextEditingChanged(object? sender, EventArgs e) => _core.Tree.SetTextEditing(Window.TextEditing);
-
-    private void OnReducesMotionChanged(object? sender, EventArgs e) => _core.Tree.Animations.ReduceMotion = Window.ReducesMotion;
-
-    private void OnUiLanguagesChanged(object? sender, EventArgs e) => _core.SetSystemLocales(Window.UiLanguages);
-
-    private void OnUse24HourFormatChanged(object? sender, EventArgs e) => _core.SetUse24HourFormat(Window.Use24HourFormat);
 
     // The window is gone: no frame may draw into its swap chain, and what the root function made goes with it.
     private void OnClosed(object? sender, EventArgs e) => _core.WindowClosed();

@@ -7,8 +7,9 @@ namespace XylemUI.Desktop.Tests;
 
 // The locale keys of a real window (row LC2, design §4.11, "Distribution" and "The key of the 24-hour form"), opened as XylemApp.Run
 // opens it (XylemApp.OpenWindow, through TestWindow): the tables of the declared locales resolved against Windows' languages, and
-// Windows' 24-hour form, which the first mount takes from the host and a WM_SETTINGCHANGE reads again (design §6.0, "4a の形",
-// "PR 5 までの OS の設定"). The readers of Win32Window stand for Windows' settings, so that the test does not change them.
+// Windows' 24-hour form, which the first mount takes from the host's settings and a WM_SETTINGCHANGE of the window reads again
+// (design §6.0, "OS settings"). The readers of Win32PlatformSettings stand for Windows' settings, so that the test does not change
+// them.
 [Collection(UiThreadGroup.Name)]
 public sealed class OpenWindowLocaleTests(UiThreadFixture ui)
 {
@@ -33,13 +34,13 @@ public sealed class OpenWindowLocaleTests(UiThreadFixture ui)
     public void OpenWindow_ProvidesTheTablesAndWindows24HourForm() =>
         ui.Invoke(() =>
         {
-            Func<string[]> previousLanguages = Win32Window.UiLanguagesReader;
-            Func<bool, bool> previousTimeFormat = Win32Window.Use24HourFormatReader;
+            Func<string[]> previousLanguages = Win32PlatformSettings.UiLanguagesReader;
+            Func<bool, bool> previousTimeFormat = Win32PlatformSettings.Use24HourFormatReader;
             try
             {
                 bool use24HourForm = true;
-                Win32Window.UiLanguagesReader = static () => ["ja-JP"];
-                Win32Window.Use24HourFormatReader = _ => use24HourForm;
+                Win32PlatformSettings.UiLanguagesReader = static () => ["ja-JP"];
+                Win32PlatformSettings.Use24HourFormatReader = _ => use24HourForm;
                 IReadOnlySignal<LocaleData>? data = null;
                 IReadOnlySignal<bool>? use24HourFormat = null;
                 using var window = new TestWindow(
@@ -63,8 +64,8 @@ public sealed class OpenWindowLocaleTests(UiThreadFixture ui)
             }
             finally
             {
-                Win32Window.UiLanguagesReader = previousLanguages;
-                Win32Window.Use24HourFormatReader = previousTimeFormat;
+                Win32PlatformSettings.UiLanguagesReader = previousLanguages;
+                Win32PlatformSettings.Use24HourFormatReader = previousTimeFormat;
             }
         });
 
