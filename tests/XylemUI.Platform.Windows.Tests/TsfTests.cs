@@ -633,18 +633,18 @@ public sealed unsafe class TsfTests(UiThreadFixture ui)
             return Box is not null;
         }
 
-        public void Replace(int start, int end, ReadOnlySpan<char> value)
+        public void Replace(int start, int end, ReadOnlySpan<char> text)
         {
-            Calls.Add($"replace {start} {end} {value.ToString()}");
-            _text = string.Concat(_text.AsSpan(0, start), value, _text.AsSpan(end));
-            Selection = TextSelection.Collapsed(start + value.Length);
+            Calls.Add($"replace {start} {end} {text.ToString()}");
+            _text = string.Concat(_text.AsSpan(0, start), text, _text.AsSpan(end));
+            Selection = TextSelection.Collapsed(start + text.Length);
         }
 
-        public void Compose(int start, int end, ReadOnlySpan<char> value, int cursor, ReadOnlySpan<ImeAttributeRun> clauses)
+        public void Compose(int start, int end, ReadOnlySpan<char> text, int cursor, ReadOnlySpan<ImeAttributeRun> clauses)
         {
-            Calls.Add($"compose {start} {end} {value.ToString()}");
-            _text = string.Concat(_text.AsSpan(0, start), value, _text.AsSpan(end));
-            Composition = (start, start + value.Length);
+            Calls.Add($"compose {start} {end} {text.ToString()}");
+            _text = string.Concat(_text.AsSpan(0, start), text, _text.AsSpan(end));
+            Composition = (start, start + text.Length);
             Selection = TextSelection.Collapsed(start + cursor);
         }
 

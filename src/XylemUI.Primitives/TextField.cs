@@ -1138,7 +1138,7 @@ public static partial class Primitive
             return true;
         }
 
-        void ITextInputClient.Replace(int start, int end, ReadOnlySpan<char> value)
+        void ITextInputClient.Replace(int start, int end, ReadOnlySpan<char> text)
         {
             if (options.ReadOnly)
             {
@@ -1148,7 +1148,7 @@ public static partial class Primitive
             int length = _editor.Text.Length;
             start = Math.Clamp(start, 0, length);
             end = Math.Clamp(end, start, length);
-            string inserted = value.ToString();
+            string inserted = text.ToString();
             if (_composition is { } composition)
             {
                 // Committed text that comes inside a composition is the composition's, recorded when it ends.
@@ -1177,7 +1177,7 @@ public static partial class Primitive
             }
         }
 
-        void ITextInputClient.Compose(int start, int end, ReadOnlySpan<char> value, int cursor, ReadOnlySpan<ImeAttributeRun> clauses)
+        void ITextInputClient.Compose(int start, int end, ReadOnlySpan<char> text, int cursor, ReadOnlySpan<ImeAttributeRun> clauses)
         {
             if (options.ReadOnly)
             {
@@ -1193,8 +1193,8 @@ public static partial class Primitive
             int length = _editor.Text.Length;
             start = Math.Clamp(start, 0, length);
             end = Math.Clamp(end, start, length);
-            _editor.Compose(start, end, value.ToString(), start + Math.Clamp(cursor, 0, value.Length));
-            _composition = (start, start + value.Length);
+            _editor.Compose(start, end, text.ToString(), start + Math.Clamp(cursor, 0, text.Length));
+            _composition = (start, start + text.Length);
             if (_clauses.Length < clauses.Length)
             {
                 _clauses = new ImeAttributeRun[clauses.Length];
