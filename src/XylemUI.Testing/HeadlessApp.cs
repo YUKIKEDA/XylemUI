@@ -548,6 +548,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     {
         VerifyRunning();
         _core.SetUse24HourFormat(use24HourFormat);
+        _ = DrainQueue();
     }
 
     /// <summary>
