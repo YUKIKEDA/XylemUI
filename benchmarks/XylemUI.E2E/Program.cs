@@ -65,6 +65,11 @@
 //   select                     a 10-option select over the todo sample: the frame that opens it, and its key and hover frames (row P02d2)
 //   touchpad                   a frame's poll of a hidden window's DirectManipulation viewport with no contact (row I1c)
 //   segment                    grapheme clusters and line break opportunities of a screen of text, per character (row T1)
+//   number-format [--calls N]  no window: one TryFormat into a span and one Of(value) written through a NodeTextWriter's
+//                              interpolation, for en's and ja's decimal, percent, USD, and short compact formats with a decimal
+//                              and a double; per case the ns of a call (median, min, max of 7 batches of N calls, 200,000 by
+//                              default, after 10,000 unmeasured), bytes per call (0 on NativeAOT), and the methods JIT
+//                              compiled in the window (row LC2, NumberFormatCost.cs)
 //   rich-text                  the layout, draw, restyle, and link hover of text leaves with ranges, next to plain ones (row T12)
 //   inline-objects             the layout, draw, and relayout of text leaves with inline objects, next to plain ones (row T13)
 //   shapes                     the shapes of row R4a, to compare with benchmarks/compare/shapes.html in a browser
@@ -220,6 +225,7 @@ return scenario switch
     ),
     "hit-region" => HitCost.Run(),
     "segment" => SegmentCost.Run(),
+    "number-format" => NumberFormatCost.Run(Option("--calls", 200_000)),
     "rich-text" => RichTextCost.Run(args.Length > 1 ? args[1] : null),
     "inline-objects" => InlineCost.Run(args.Length > 1 ? args[1] : null),
     "shapes" => ShapeGallery.Run(),

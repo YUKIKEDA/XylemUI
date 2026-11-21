@@ -3763,15 +3763,28 @@ public static partial class Localization
 **複数形:**
 
 - **区分:** `PluralCategory`（`Zero`・`One`・`Two`・`Few`・`Many`・`Other`）。複数形（cardinal）と序数（ordinal）の 2 つの規則を、ロケールごとに持つ。規則に無い区分は返さない。
-- **数の渡し方:** 規則は、数の絶対値（`n`）、整数の部分（`i`）、見える小数の桁の数（`v`、`w`）と値（`f`、`t`）、短縮の指数（`c`）で決まる（UTS #35 第 3 部（CLDR 49 の版）の「Plural Operand Meanings」の表）。見える小数の桁で区分が変わる（英語の `1` は `one`、`1.0` は `other`）ので、小数は `decimal` で受け、`decimal` の桁（`1.0m` の 1 桁）を見える桁にする。`double` は受けない。見える桁が決まらないからである。書式で桁を決めた数は、その書式の `Round` を通してから渡す。短縮の指数は、短縮の書式が中で使う。
+- **数の渡し方:** 規則は、数の絶対値（`n`）、整数の部分（`i`）、見える小数の桁の数（`v`、`w`）と値（`f`、`t`）、短縮の指数（`c`）で決まる（UTS #35 第 3 部（CLDR 49 の版）の「Plural Operand Meanings」の表）。見える小数の桁で区分が変わる（英語の `1` は `one`、`1.0` は `other`）ので、小数は `decimal` で受け、`decimal` の桁（`1.0m` の 1 桁）を見える桁にする。`double` は受けない。見える桁が決まらないからである。書式で桁を決めた数は、その書式の `Round` を通してから渡す。短縮の書式は、区分を選ぶ時に短縮の指数を 0 にする（下の「短縮のパターンの選び方」）。
 - **LC3 との関係:** LC3 の生成器は、`plural` と `selectordinal` の区分を、生成したメソッドの中でこの `PluralRules` で選ぶ。ロケールがどの区分を使うかの一覧をビルド時に知る必要があれば（使われない区分の警告など）、`tools/CldrTableGen` が生成器に一覧を書き出す。一覧が要るかは、行 LC3 の Grill で決める。
 
 **数値:**
 
 - **書式:** 小数、百分率、通貨、短縮（短い形と長い形）の 4 つ。記号（小数点、桁区切り、マイナス、百分率など）と数字は、ロケールの既定の数字の種類のものである（上の「既定の数字」）。桁区切りの位置は、CLDR のパターン（インドの `#,##,##0.###` など）と `minimumGroupingDigits` に従う。
-- **作り方:** 数字の並びは、不変カルチャの `TryFormat`（`InvariantGlobalization=true` でも使える）で作り、記号と数字をロケールのものに置き換え、桁区切りを入れる。丸めは偶数への丸め（`MidpointRounding.ToEven`）である。不変カルチャの `TryFormat` の書式文字列（`"F2"` など）は 0 から遠い方へ丸める（`0.125m` の `"F2"` は `0.13`）ので、書式文字列で丸めない。先に `decimal.Round(value, digits, MidpointRounding.ToEven)`（`double` は `Math.Round` の同じ形）で最大の小数の桁に丸め、その値の数字の並びを作る。`0.125` は 2 桁で `0.12` になる。`Round`（下のコード）も同じ丸めを返す。
+- **作り方:** 数字の並びは、不変カルチャの `TryFormat`（`InvariantGlobalization=true` でも使える）で作り、記号と数字をロケールのものに置き換え、桁区切りを入れる。丸めは偶数への丸め（`MidpointRounding.ToEven`）である。不変カルチャの `TryFormat` の書式文字列（`"F2"` など）は 0 から遠い方へ丸める（`0.125m` の `"F2"` は `0.13`）ので、書式文字列で丸めない。先に `decimal.Round(value, digits, MidpointRounding.ToEven)` で最大の小数の桁に丸め、その値の数字の並びを作る。`0.125` は 2 桁で `0.12` になる。`Round`（下のコード）も同じ丸めを返す。
+  - **`double` の丸め（PR #944 のレビューの後、Issue #906 でオーナーが決定）:** `double` は、読み戻すと同じ `double` になる最短の数字の並び（書式文字列なしの不変カルチャの `TryFormat`。.NET Core 3.0 からの既定の書式）を、確保しない `stackalloc` の領域に書いて読み、その 10 進の数字を、`decimal` と同じ偶数への丸めで最大の小数の桁に丸める。`Math.Round` は使わない。`Math.Round` は 2 進の値を丸めるので、`1.015` は `1.01` になり、`1.015m` の `1.02` と食い違う。最短の数字で丸めると、`1.015` は `$1.02`、`4.525` は `$4.52` で、`decimal` と同じになる。前の版にあった 15 桁と 16 桁の境目（`Math.Round` は 15 桁までしか受けない）も無くなる。百分率の 100 倍は、2 進の掛け算でなく、数字の並びの小数点を 2 つ動かして行う（`4.525` は 452.5 になり、偶数への丸めで `452%`）。
+  - **桁の数の上限（同じ決定）:** `MinimumIntegerDigits`・`MinimumFractionDigits`・`MaximumFractionDigits` は 999 までで、超えれば書式を作る時に `ArgumentOutOfRangeException` である。999 は ICU の `kMaxIntFracSig`（icu4c の `number_types.h`）と同じである。上限が無いと、桁を書くループと `FormattedNumber.ToString` が伸ばす領域が、渡された数のとおりに大きくなる。
+  - **`Round` の返す数（Issue #906 でオーナーが決定）:** 書式が見せる数で、見せる小数の桁をスケールにする（2 桁の書式の 1.5 は `1.50m`）。百分率は記号の前の数（0.125 は 12）、短縮は短縮の形が表す数（`1.2K` は 1200）である。短縮の書式は見せる数（`1.2K` なら 1.2）で複数形を選ぶので、この数を `PluralRules.Select` に渡すと、書式が使ったのと違う区分になることがある。`decimal` の範囲を超えれば `OverflowException` である。
+  - **負のゼロ（同じ決定。`double` の -0.0 は、PR #944 のレビューの後、Issue #906 でオーナーが決定）:** 丸めて 0 になる負の数は `-0` と書く。`double` の -0.0 は、`decimal` の 0 と同じく `0` と書く（前の決定では `-0` だった）。
+  - **片方だけの小数の桁（同じ決定）:** `MinimumFractionDigits` だけを渡すと、パターン（通貨は通貨の桁）の最大をそこまで上げ、`MaximumFractionDigits` だけなら、最小をそこまで下げる。
+  - **NaN と無限大:** パターンの前後の文字を付ける（`NaN%`、`-$∞`）。通貨の記号と数字の間の扱いはしない（Issue #906 でオーナーが決定）。
+- **短縮の丸めと桁区切り（Issue #906 でオーナーが決定。ICU の既定に合わせた形。ICU のコードは読んでいない）:** 型（10 の冪）は、数の最上位の桁の冪で決め、パターンのある最大の冪で止める。その型の `other` のパターンが `0` なら、短縮せずに書く。そうでなければ、パターンの 0 の数を z として、数を 10 の（型 − z + 1）乗で割った数を見せる。見せる数は、整数部が 1 桁以下なら有効数字 2 桁、2 桁以上なら小数を持たないように、偶数への丸めで丸める（`1234` は `1.2K`、`12345` は `12K`、`0.0123` は `0.012`）。丸めで最上位の桁が繰り上がれば（`999,999` は `1000K`）、型を 1 つ上げて 1 度だけ選び直す（`1M`）。桁区切りは、整数部が 5 桁以上の時だけ入れる（`minimumGroupingDigits` を 2 以上にする。`ja` の 1234 は `1234`、`en` の 1.23 × 10^15 は最大のパターンで `1235T`）。
+- **短縮のパターンの選び方（PR #944 のレビューの後、Issue #906 でオーナーが決定）:** 見せる数が整数の 1 で、ロケールが `1000-count-1` の形（フランス語の `mille`）を持てば、それを使う。そうでなければ、見せる数（`2M` なら 2、長い形の `1.2 thousand` なら 1.2。見せる小数の桁を `v` にする）と、短縮の指数 c = 0 で複数形の区分を選ぶ。区分のパターンが無ければ `other` を使う。ICU の `CompactHandler::processQuantity` も、割った後の数で区分を選び、指数はその後で設定する（"Change the exponent only after we select appropriate plural form"）。結果は、`pl` の 1000 は `1 tysiąc`、2000 は `2 tysiące`、`ru` の 2,000,000 は `2 миллиона`、1234 は `1,2 тысячи`、`fr` の 1,000,000 は `1 million`、1500 は `1,5 millier` である。前の決定（丸めた元の数と c で選ぶ。`fr` の 1,000,000 は c = 6 の `many` から `other` の `1 millions`、`pl` の 1000〜9000 は i % 10 = 0 で `tysięcy`）は、この決定で替えた。表が持つ数のキーは `1` だけで、生成器はほかの数のキー（`1000-count-0` など）で止まる。
+- **表の持ち方（Issue #906 でオーナーが決定）:** 数値（記号と 4 つのパターン）、短縮のパターン、通貨の記号の 3 つの表を、中身が同じロケールで共有し、ロケールのクラスはそれを返す 3 つの override を持つ。通貨の桁は全ロケールで 1 つの表である。`Currency` を呼ばないアプリに通貨の表は残らず、`Compact` を呼ばないアプリに短縮の表は残らない見込みで、実装の PR が ILC のマップで確かめる。
 - **通貨:** ISO 4217 のコード（`"JPY"`）で渡す。小数の桁は、CLDR の通貨の補足データ（`currencyData`）の桁による（円は 0 桁）。記号は、ロケールの標準の形を出す。narrow の形（`US$` に対する `$` など）は、`NumberOptions.NarrowCurrencySymbol` で選ぶ。通貨の名前は持たない（下の「範囲に足したもの」）。
-- **解析（行 B9 が使う）:** `Decimal` と `Percent` の書式だけが解析を持つ。受けるのは、ロケールの小数点、桁区切り、マイナス、プラス、百分率の記号と、ロケールの数字と ASCII の数字と全角の数字（U+FF10〜U+FF19）である。全角の数字は ASCII の数字として読む（Issue #880 の Grill でオーナーが決定。B9 の調査が、日本語の IME のかなの入力と貼り付けで来うると書いた）。桁区切りは、整数の部分の数字の間でだけ受けて読み飛ばし、位置は確かめない。無くてもよい。桁区切りが空白の類（U+00A0、U+202F）のロケールでは、U+0020 も桁区切りとして受ける（利用者が打つのは U+0020 である）。前後の空白は読み飛ばす。それ以外の文字があれば `false` を返す。短縮と通貨の解析は持たない。数値の欄はそれを出さないからである。
+  - **記号と数字の間（Issue #906 でオーナーが決定）:** 記号の、数字に接する側の書記素クラスタ（記号が前なら最後のクラスタ、後ろなら最初のクラスタ）の最初の文字が文字（General Category L）なら、ロケールの `standard-alphaNextToNumber` のパターンを使う（英語の `CHF` は `CHF` と U+00A0 と `1,234.50`）。符号位置 1 つでなくクラスタで決めるのは、UTS #35 がクラスタで決めるからである（PR #944 のレビュー）。`kn` の RON の記号 `ಲೀ` は、最後の符号位置が結合する母音記号 U+0CC0 だが、クラスタは文字の U+0CB2 で始まるので、`ಲೀ` と U+00A0 と `1,234.50` になる。この判定は実行時にはせず、`tools/CldrTableGen` が表に書く（Issue #906 でオーナーが決定）。生成器は、書き出す記号（標準と narrow）ごとに、最後のクラスタと最初のクラスタがそれぞれ文字で始まるかを UAX #29 の拡張書記素クラスタで決め、記号の長さのバイトの上の 2 ビットに入れる（ビット 7 が最後のクラスタ、ビット 6 が最初のクラスタ。長さは下の 6 ビットで、63 バイトまで。超える記号があれば生成器が止まる）。書式は、パターンの `¤` が数字の前ならビット 7 を、後ろならビット 6 を読む。コードを記号にするとき（記号がコードと同じ通貨と、下の「知らない通貨」）は、英大文字なので両方とも文字である。実行時に `StringInfo` で判定すると、通貨を書式にするアプリすべての NativeAOT の実行ファイルに、.NET の書記素の区切りの表（約 14 KB）が入るからである。生成器は配布しないので `StringInfo` を使ってよい。記号ごとに 1 バイトを足さず長さのバイトに入れるのは、通貨の表が記号の数だけ大きくならないようにするためである。そうでなければ標準のパターンのままで、間を空けない（`Cg.` は `Cg.1,234.50`）。そのパターンを持たないロケールだけが `currencySpacing` を使う。UTS #35 第 3 部（CLDR 49 の版）は、この形を「the preferred way」と書き、`currencySpacing` は「is still present」と書く。CLDR 49 では、778 個の通貨の書式のうち 746 個がこのパターンを持つ（327 個は標準と違う）。421 個の表と `root` では、持たないのは 23 個（`ar-EG` など）で、どれも記号が数字に接しないので、`currencySpacing` が働く所は今の版には無い。
+  - **知らない通貨:** 表に記号の無いコード（`ZZZ`）は、コードを記号にし、桁は `currencyData` の `DEFAULT`（2 桁）にする（Issue #906 でオーナーが決定）。
+- **解析（行 B9 が使う）:** `Decimal` と `Percent` の書式だけが解析を持つ。受けるのは、ロケールの小数点、桁区切り、マイナス、プラス、百分率の記号と、ロケールの数字と ASCII の数字と全角の数字（U+FF10〜U+FF19）である。全角の数字は ASCII の数字として読む（Issue #880 の Grill でオーナーが決定。B9 の調査が、日本語の IME のかなの入力と貼り付けで来うると書いた）。桁区切りは、整数の部分の数字の間でだけ受けて読み飛ばし、位置は確かめない。無くてもよい。位置を確かめないため、桁区切りが `.` のロケール（`de` など）では `3.14` を 314 と読む。小数のつもりで打った数が別の数になるこの危険は、知った上で残している。桁区切りが空白の類（U+00A0、U+202F）のロケールでは、U+0020 と、2 つのうちのもう一方も桁区切りとして受ける。利用者が打つのは U+0020 で、ほかから貼り付けた文字にはどちらの空白も来うる（`fr` は U+202F、`ru` と `pl` は U+00A0 で区切る）。3 つとも、数の中でほかの意味を持たない（PR #944 のレビュー）。前後の空白は読み飛ばす。それ以外の文字があれば `false` を返す。短縮と通貨の解析は持たない。数値の欄はそれを出さないからである。
+  - **足したもの（Issue #906 でオーナーが決定）:** ロケールのマイナスが U+2212 の時（`sv`、`fi` など）は、ASCII の `-` もマイナスとして受ける。双方向の印（U+200E、U+200F、U+061C）は、文字のどこにあっても読み飛ばし、記号もこの印を除いて比べる（`ar` のマイナス U+200E と `-` は、`-` だけでも読む）。UTS #35 第 3 部は、緩い解析では双方向の書式の文字を無視すべきだと書き（"lenient parsing should ignore bidi format characters"）、符号などには「その役をしうる文字の全部の集合」を受けると書く。
+  - **符号と百分率の記号（同じ決定）:** 符号は先頭だけで、百分率の記号の前に置く（`-%25` は読み、`%-25` は読まない）。百分率の書式は、記号が前でも後ろでもよく、無くてもよい。どれでも 100 で割る（`25` も 0.25）。小数の書式は百分率の記号を受けない。小数点の前か後ろに数字が無くてもよい（`-.5`、`5.`）。
 - **比べたもの:** Avalonia の `NumericUpDown` は、確定の時に `decimal.TryParse(text, ParsingNumberStyle, NumberFormat, out …)` で読む（Avalonia 12.1.4 の `src/Avalonia.Controls/NumericUpDown/NumericUpDown.cs` 1176 行目。`ParsingNumberStyle` の既定は 89〜90 行目の `NumberStyles.Any`）。.NET のカルチャのデータを使うので、XylemUI は使えない。zed の数値の欄は、Rust の `parse::<T>()` で読み、読めなければ前の値に戻す（zed v1.25.3 の `crates/settings_ui/src/components/number_field.rs` 449〜450 行目）。ロケールを見ない。
 
 **日付と時刻:**
@@ -3908,8 +3921,8 @@ public enum CompactStyle : byte
 
 public sealed class NumberOptions
 {
-    public int MinimumIntegerDigits { get; init; } = 1;
-    public int? MinimumFractionDigits { get; init; }   // null はパターンの値
+    public int MinimumIntegerDigits { get; init; } = 1; // 1〜999
+    public int? MinimumFractionDigits { get; init; }   // 0〜999。null はパターンの値
     public int? MaximumFractionDigits { get; init; }   // 同じ
     public bool UseGrouping { get; init; } = true;
     public bool NarrowCurrencySymbol { get; init; }    // 通貨の書式だけが見る。true は narrow の記号
@@ -3923,16 +3936,23 @@ public sealed class NumberFormatter
     public static NumberFormatter Compact(LocaleData locale, CompactStyle style);
 
     // 確保しない。destination が足りなければ false
+    // ulong の版は、ulong を渡した時に decimal と double のどちらとも決まらないのを避ける
     public bool TryFormat(long value, Span<char> destination, out int charsWritten);
+    public bool TryFormat(ulong value, Span<char> destination, out int charsWritten);
     public bool TryFormat(decimal value, Span<char> destination, out int charsWritten);
     public bool TryFormat(double value, Span<char> destination, out int charsWritten);
 
     // NodeTextWriter の差し込みに渡す struct（ISpanFormattable）。確保しない
     public FormattedNumber Of(long value);
+    public FormattedNumber Of(ulong value);
     public FormattedNumber Of(decimal value);
     public FormattedNumber Of(double value);
 
-    public string Format(decimal value);           // string を作る。フレームの経路では使わない
+    // string を作る。フレームの経路では使わない。long の版は、int を渡した時に decimal と double のどちらとも決まらないのを避ける
+    public string Format(long value);
+    public string Format(ulong value);
+    public string Format(decimal value);
+    public string Format(double value);
     public decimal Round(decimal value);           // この書式で見える桁に丸めた値（PluralRules.Select に渡す）
 
     // Decimal と Percent の書式だけ。ほかは InvalidOperationException。確保しない
@@ -4009,14 +4029,14 @@ public sealed class DateNames
 }
 ```
 
-範囲の外の値（13 月、`Short` の月）は `ArgumentOutOfRangeException` である。`NumberOptions` の負の桁、`MinimumFractionDigits` が `MaximumFractionDigits` より大きい組、`MinimumIntegerDigits` の 0 以下は、書式を作る時に `ArgumentOutOfRangeException` である。`double` の NaN と無限大は、ロケールの記号（CLDR の `nan`、`infinity`）で出す。解析は NaN と無限大を読まない。ISO 4217 の形（英大文字 3 つ）でない通貨のコードは `ArgumentException` である。
+範囲の外の値（13 月、`Short` の月）は `ArgumentOutOfRangeException` である。`NumberOptions` の負の桁、999 を超える桁、`MinimumFractionDigits` が `MaximumFractionDigits` より大きい組、`MinimumIntegerDigits` の 0 以下は、書式を作る時に `ArgumentOutOfRangeException` である。`double` の NaN と無限大は、ロケールの記号（CLDR の `nan`、`infinity`）で出す。解析は NaN と無限大を読まない。ISO 4217 の形（英大文字 3 つ）でない通貨のコードは `ArgumentException` である。
 
 **テスト（§12.1 の Core の層。HarfBuzz も GPU も要らないので、どの OS でも走る）:**
 
 - **表のツール:** 同じ zip から 2 回作ると、同じバイト列になる。SHA-256 の違う zip では止まる。ロケールの数（表は 421 個と `root`、`CldrLocales` の入口は `tl` を含めて 422 個。変種を持つ 3 つが無いこと）と、複数形の規則の組の数（ツールが数えた数をテストで固定する）と、CLDR の json の値の抜き取り（`ja` の小数点、`ar` の数字、`en-GB` の週の始まり）を確かめる。
 - **複数形:** CLDR の `plurals.json` と `ordinals.json` の、規則ごとの例（`@integer`、`@decimal`）を、全部のロケールについて選び、例の書かれた区分になる。例の文は、ツールがテストのための表に書く。テストはすべてのロケールを参照してよい（バイナリの大きさは、下の発行で測る）。
-- **数値の書式:** `en`、`ja`、`de`、`fr`、`ar`、`hi`、`es-419` などで、小数、百分率、通貨、短縮の結果を、CLDR の json から書き写した期待値と比べる。インドの桁区切り、アラビア・インド数字、`minimumGroupingDigits` が 2 のロケール、偶数への丸め（`0.125` を 2 桁で `0.12`。書式文字列の丸めでは `0.13` になる。`0.135` は `0.14`）を含める。
-- **数値の解析:** 全部のロケールで、書式の出した文字を読むと元の値に戻る。桁区切りの無い文字、ASCII の数字、U+0020 の桁区切り（`fr`）、マイナスの記号、読めない文字（`false`）を確かめる。
+- **数値の書式:** `en`、`ja`、`de`、`fr`、`ar`、`hi`、`es-419` などで、小数、百分率、通貨、短縮の結果を、CLDR の json から書き写した期待値と比べる。インドの桁区切り、アラビア・インド数字、`minimumGroupingDigits` が 2 のロケール、偶数への丸め（`0.125` を 2 桁で `0.12`。書式文字列の丸めでは `0.13` になる。`0.135` は `0.14`）、`double` と同じ数字の `decimal` が同じ文字になること（`1.015`、`4.525`、`2.675`。百分率を含む）、桁の数の上限（999 は書け、1000 は例外）を含める。
+- **数値の解析:** 全部のロケールで、書式の出した文字を読むと元の値に戻る。桁区切りの無い文字、ASCII の数字、U+0020 ともう一方の空白の桁区切り（`fr`、`ru`、`pl`）、マイナスの記号、読めない文字（`false`）を確かめる。
 - **日付と時刻:** 41 個のスケルトンを、決めた日時で `en`、`ja`、`ko`、`de`、`ar` について出し、期待値と比べる。`j` のスケルトンは `use24HourFormat` の `true` と `false` の両方で、`en`（既定は 12 時間）と `ja`（既定は 24 時間）を確かめる。短い日付の解析は、全部のロケールで、出した文字を読むと元の日付に戻ること、存在しない日と書式に合わない文字が `false` であることを確かめる。
 - **範囲に足したもの:** 期間の書式は、違う欄が日・月・年の時と、CLDR に項目の無いスケルトンで `intervalFormatFallback` に落ちる時を、`en` と `ja` で確かめる。つないだ書式は、`full`・`long`・`medium`・`short` の 4 つが選ばれる日付のスケルトンで確かめる。日時の解析は、出した文字を読むと元に戻ること。週の番号は、`minDays` が 1 と 4 の地域で、年の初めと終わりの週（前の年の最後の週、53 週の年）を確かめる。週末は、週末の違う地域を確かめる。固定した版（cldr-json 49.0.0 の `cldr-core/supplemental/weekData.json`）では、`IN` は日曜だけ（`weekendStart` が日曜、`weekendEnd` は `001` の日曜）、`SA` は金曜から土曜、`AF` は木曜から金曜（`ps` の推定した地域）で、木曜から始まるのは `AF` だけである。UTS #35 第 4 部の「Week Data」の例は、`weekendStart` が木曜の地域に `SA` を挙げるが、これは説明の例で、固定した版の値ではない（PR #925 でオーナーが決定）。通貨は、標準と narrow の記号を確かめる。時間帯の 4 個のスケルトンは、差が 0、正、負、分を含む（`+05:30`）時の GMT の形と、`DateTime` を渡すと `ArgumentException` であることを確かめる。
 - **年の読み方:** `yy` の書式で、窓の両端（20 年後のちょうどの日は含み、80 年前のちょうどの日は含まない）を、仮想の時計（`FakeTimeProvider`）で確かめる。`y` の書式で `26` が 26 年になることも確かめる。
@@ -4025,6 +4045,7 @@ public sealed class DateNames
 - **表の無い時:** 何も宣言しないヘッドレスのアプリで、`Localization.Data` が `root` の表になる。`WithLocale` で付けたタグが、解決と文字の言語に使われ、書式は元の表で出る。
 - **鍵:** `Localization.Provide` で包んだ部分で、2 つの鍵が同じロケールを返す。シグナルを変えると、書式を読んでいる Effect だけが走り直す。`HeadlessOptions.Use24HourFormat` が鍵に入る。`HeadlessApp.SetUse24HourFormat(true)` を呼ぶと、`"jm"` で `en` の時刻を出している文字が、12 時間の形（`1:05 PM`）から 24 時間の形（`13:05`）に変わり、同じ値でもう 1 度呼んでも Effect は走り直さない（書式を読んでいない文字の Effect も走らない）。`false` に戻すと 12 時間の形に戻る。破棄した後に呼ぶと `ObjectDisposedException` である。Windows の 24 時間表示の読み取りは、短い時刻の書式（`LOCALE_SSHORTTIME`）を読み、長い時刻の書式でないことを確かめる。`GetLocaleInfoEx` の戻り値の長さまでで切る（PR #854 のレビュー）。単一引用符の中の `H` は数えない（上の「書式のロケール」）。`"jm"` の文字の確かめは、日付と時刻の書式が入る実装の 5 つ目の PR が行い、宣言と鍵の PR（実装の 3 つ目）は、シグナルの値と Effect の走り直しだけを確かめる（Issue #906 でオーナーが決定）。
 - **確保:** 数値と日付の `TryFormat`、`TryParse`、`Of(value)` を `NodeTextWriter` に書く時に、確保が 0 バイトである（`GC.GetAllocatedBytesForCurrentThread`。§11.3 の Zero-Alloc ゲートと同じ確かめ方）。
+- **時間:** `XylemUI.E2E` の `number-format` の場面（窓を開かない）で、`en` と `ja` の小数・百分率・USD・短い compact の書式について、decimal と double の 1 回の `TryFormat` と、`Of(value)` を `NodeTextWriter` の差し込みに書く 1 回の時間（7 回のバッチの中央値・最小・最大）と、1 回あたりの確保を測る。受け入れは NativeAOT の数で見る。
 - **大きさ（実装の PR の Verification）:** `samples/` のアプリで、`CldrLocales.En` と `Ja` だけを宣言して NativeAOT で発行し、ILC のマップファイルに、ほかのロケールの表とクラスが無いことを確かめる。増分を、宣言 1 個と 10 個と `All` で測り、spike の値と並べて書く。
 
 **部品の文言:**
