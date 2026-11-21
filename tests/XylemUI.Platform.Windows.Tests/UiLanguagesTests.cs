@@ -37,8 +37,9 @@ public sealed class UiLanguagesTests(UiThreadFixture ui)
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A reader set by the test that returns "ja-JP, en-US"; settings made with it; two hidden windows whose setting messages read
-    ///   the settings again, and a handler that records the settings' notices. The reader is put back after the test.
+    /// - A reader set by the test that returns "ja-JP, en-US", in a new array at each read; settings made with it; two hidden
+    ///   windows whose setting messages read the settings again, and a handler that records the settings' notices. The reader is
+    ///   put back after the test.
     ///
     /// Steps:
     /// - Send <c>WM_SETTINGCHANGE</c> to both windows; make the reader return "en-US, ja-JP" and send it to both; send it to both
@@ -56,7 +57,9 @@ public sealed class UiLanguagesTests(UiThreadFixture ui)
             try
             {
                 string[] languages = ["ja-JP", "en-US"];
-                Win32PlatformSettings.UiLanguagesReader = () => languages;
+
+                // A new array at each read, as Windows' reader gives: a list equal in its tags is the same list.
+                Win32PlatformSettings.UiLanguagesReader = () => [.. languages];
                 var settings = new Win32PlatformSettings();
                 using var first = new Win32Window("languages 1", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
                 using var second = new Win32Window("languages 2", 200, 100) { SettingsMessageReceived = settings.ReadAgain };

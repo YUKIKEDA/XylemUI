@@ -90,14 +90,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             window.Attach();
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
-            core.Mount(
-                Elements.Box,
-                null,
-                default,
-                "Win32PlatformWindowTests",
-                new Size(width / scale, height / scale),
-                scale
-            );
+            core.Mount(Elements.Box, null, default, "Win32PlatformWindowTests", new Size(width / scale, height / scale), scale);
             (int Draws, int Presents) mounted = (counting!.Draws, counting.Presents);
 
             Assert.True(SetWindowPos(window.Window.Hwnd, HWND.NULL, 0, 0, 360, 240, ResizeFlags));
@@ -311,6 +304,64 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             finally
             {
                 Win32Window.TextRenderingReader = previousRendering;
+                Win32PlatformSettings.ReducesMotionReader = previousMotion;
+                Win32PlatformSettings.TextEditingReader = previousEditing;
+                Win32PlatformSettings.UiLanguagesReader = previousLanguages;
+                Win32PlatformSettings.Use24HourFormatReader = previousTimeFormat;
+            }
+        });
+
+    /// <summary>
+    /// A setting that changes after the host is made and before its window opens is read when the window opens, and told once:
+    /// a <c>WM_SETTINGCHANGE</c> in between reached no window of the host (design §6.0, "OS settings").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Readers set by the test, put back after it: no less motion, the default text fields' settings, the languages "ja-JP", and
+    ///   the 12-hour form. A Windows host whose windows draw on WARP, made with them; a handler that records its settings' notices;
+    ///   a window core, not connected.
+    ///
+    /// Steps:
+    /// - Make the readers return "en-US" and the 24-hour form. Read the notices. Open a hidden window for the core; dispose it.
+    ///
+    /// Expected:
+    /// - No notice before the window opens. After: one notice, marked with the languages and the 24-hour form; the settings hold
+    ///   "en-US" and the 24-hour form.
+    /// </remarks>
+    [Fact]
+    public void OpenWindow_ASettingChangedAfterTheHostWasMade_IsReadAndToldOnce() =>
+        ui.Invoke(() =>
+        {
+            Func<bool, bool> previousMotion = Win32PlatformSettings.ReducesMotionReader;
+            Func<TextEditingSettings, TextEditingSettings> previousEditing = Win32PlatformSettings.TextEditingReader;
+            Func<string[]> previousLanguages = Win32PlatformSettings.UiLanguagesReader;
+            Func<bool, bool> previousTimeFormat = Win32PlatformSettings.Use24HourFormatReader;
+            try
+            {
+                string[] languages = ["ja-JP"];
+                bool use24HourForm = false;
+                Win32PlatformSettings.ReducesMotionReader = static _ => false;
+                Win32PlatformSettings.TextEditingReader = static _ => TextEditingSettings.Default;
+                Win32PlatformSettings.UiLanguagesReader = () => [.. languages];
+                Win32PlatformSettings.Use24HourFormatReader = _ => use24HourForm;
+                using var app = new Win32PlatformApp { UseWarp = true };
+                var notices = new List<PlatformSettingsChanges>();
+                app.Settings.Changed += notices.Add;
+                using var core = new WindowCore(null, app.Settings, app.Clipboard, null, null);
+                languages = ["en-US"];
+                use24HourForm = true;
+                int beforeOpen = notices.Count;
+
+                IPlatformWindow window = app.OpenWindow(core, "late setting", 200, 100, show: false);
+                window.Dispose();
+
+                Assert.Equal(0, beforeOpen);
+                Assert.Equal([PlatformSettingsChanges.UiLanguages | PlatformSettingsChanges.Use24HourFormat], notices);
+                Assert.Equal(["en-US"], app.Settings.UiLanguages);
+                Assert.True(app.Settings.Use24HourFormat);
+            }
+            finally
+            {
                 Win32PlatformSettings.ReducesMotionReader = previousMotion;
                 Win32PlatformSettings.TextEditingReader = previousEditing;
                 Win32PlatformSettings.UiLanguagesReader = previousLanguages;

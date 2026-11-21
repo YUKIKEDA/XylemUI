@@ -510,6 +510,10 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// (design §4.11, "A change of the OS"): when the list differs, the app's locale is resolved again; then the work that queued
     /// runs.
     /// </summary>
+    /// <remarks>
+    /// A list equal to the one before, in its tags and their order, is no change: the app's resolving function
+    /// (<see cref="HeadlessOptions.ResolveLocale"/>) does not run for it. Before row PL1's step 5 it ran for every call.
+    /// </remarks>
     /// <param name="tags">The tags of the languages, most preferred first.</param>
     /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
     [UiThreadOnly]

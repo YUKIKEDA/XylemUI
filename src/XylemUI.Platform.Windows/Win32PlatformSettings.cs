@@ -90,34 +90,38 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
     /// </summary>
     /// <remarks>
     /// The setting the message names is not matched: the values come from several settings, the documentation does not say which
-    /// name a change of the list of languages sends (design §4.11, "A change of the OS"), and the message is rare.
+    /// name a change of the list of languages sends (design §4.11, "A change of the OS"), and the message is rare. Every value is
+    /// read before any is kept, so a read that throws leaves every value as it was and raises nothing.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">A value changed, and the calling thread is not the UI thread.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
     public void ReadAgain()
     {
-        PlatformSettingsChanges changes = PlatformSettingsChanges.None;
+        UiThread.VerifyAccess();
         bool reducesMotion = ReducesMotionReader(ReducesMotion);
+        TextEditingSettings textEditing = TextEditingReader(TextEditing);
+        string[] uiLanguages = UiLanguagesReader();
+        bool use24HourFormat = Use24HourFormatReader(Use24HourFormat);
+
+        PlatformSettingsChanges changes = PlatformSettingsChanges.None;
         if (reducesMotion != ReducesMotion)
         {
             ReducesMotion = reducesMotion;
             changes |= PlatformSettingsChanges.ReducesMotion;
         }
 
-        TextEditingSettings textEditing = TextEditingReader(TextEditing);
         if (textEditing != TextEditing)
         {
             TextEditing = textEditing;
             changes |= PlatformSettingsChanges.TextEditing;
         }
 
-        string[] uiLanguages = UiLanguagesReader();
         if (!uiLanguages.AsSpan().SequenceEqual(_uiLanguages))
         {
             _uiLanguages = uiLanguages;
             changes |= PlatformSettingsChanges.UiLanguages;
         }
 
-        bool use24HourFormat = Use24HourFormatReader(Use24HourFormat);
         if (use24HourFormat != Use24HourFormat)
         {
             Use24HourFormat = use24HourFormat;

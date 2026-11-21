@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using XylemUI.Text;
 
 namespace XylemUI;
@@ -326,26 +327,72 @@ internal sealed class WindowCore : IDisposable
 
     // A reading of the OS's settings changed the values it marks (design §6.0, "OS settings"): each goes where the tree reads it, and
     // the values it does not mark stay. Before Mount there is no locale yet: Mount takes the languages and the 24-hour form then.
+    // Every marked value is given, also after one throws (an effect the locale runs, say); the exceptions are thrown together at
+    // the end, as SynchronousRenderGuard runs its deferred callbacks.
     private void OnSettingsChanged(PlatformSettingsChanges changes)
     {
+        List<Exception>? errors = null;
         if ((changes & PlatformSettingsChanges.ReducesMotion) != 0)
         {
-            Tree.Animations.ReduceMotion = _settings.ReducesMotion;
+            try
+            {
+                Tree.Animations.ReduceMotion = _settings.ReducesMotion;
+            }
+            catch (Exception motionError)
+            {
+                (errors ??= []).Add(motionError);
+            }
         }
 
         if ((changes & PlatformSettingsChanges.TextEditing) != 0)
         {
-            Tree.SetTextEditing(_settings.TextEditing);
+            try
+            {
+                Tree.SetTextEditing(_settings.TextEditing);
+            }
+            catch (Exception textEditingError)
+            {
+                (errors ??= []).Add(textEditingError);
+            }
         }
 
         if ((changes & PlatformSettingsChanges.UiLanguages) != 0)
         {
-            _locale?.Update(_settings.UiLanguages);
+            try
+            {
+                _locale?.Update(_settings.UiLanguages);
+            }
+            catch (Exception languagesError)
+            {
+                (errors ??= []).Add(languagesError);
+            }
         }
 
         if ((changes & PlatformSettingsChanges.Use24HourFormat) != 0)
         {
-            _locale?.SetUse24HourFormat(_settings.Use24HourFormat);
+            try
+            {
+                _locale?.SetUse24HourFormat(_settings.Use24HourFormat);
+            }
+            catch (Exception formError)
+            {
+                (errors ??= []).Add(formError);
+            }
         }
+
+        if (errors is not null)
+        {
+            ThrowSettingsErrors(errors);
+        }
+    }
+
+    private static void ThrowSettingsErrors(List<Exception> errors)
+    {
+        if (errors.Count == 1)
+        {
+            ExceptionDispatchInfo.Throw(errors[0]);
+        }
+
+        throw new AggregateException("Giving the tree the changed OS settings threw.", errors);
     }
 }

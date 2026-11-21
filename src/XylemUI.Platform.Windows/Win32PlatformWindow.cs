@@ -25,7 +25,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="Win32PlatformWindow"/> class: makes the window, its UIA provider, shows it when
+    /// Initializes a new instance of the <see cref="Win32PlatformWindow"/> class: makes the window, binds its setting messages to
+    /// <paramref name="settings"/> and reads them again once, for a change no window received, makes its UIA provider, shows it when
     /// asked to, then makes the renderer at the client size, sets the swap chain as the loop's frame clock, and makes the input
     /// method. What was made is disposed when a later step throws.
     /// </summary>
@@ -72,6 +73,9 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         {
             Window = new Win32Window(title, (int)MathF.Ceiling(width), (int)MathF.Ceiling(height));
             Window.SettingsMessageReceived = settings.ReadAgain;
+
+            // The settings were read when the app was made; a message that came before the window existed reached no window.
+            settings.ReadAgain();
             _accessibility = new Win32Accessibility(Window, core.Tree);
             Window.Accessibility = _accessibility;
             if (show)

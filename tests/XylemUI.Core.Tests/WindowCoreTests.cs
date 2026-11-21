@@ -12,6 +12,12 @@ namespace XylemUI.Tests;
 [Collection(UiThreadGroup.Name)]
 public sealed class WindowCoreTests(UiThreadFixture ui)
 {
+    private const PlatformSettingsChanges AllChanges =
+        PlatformSettingsChanges.ReducesMotion
+        | PlatformSettingsChanges.TextEditing
+        | PlatformSettingsChanges.UiLanguages
+        | PlatformSettingsChanges.Use24HourFormat;
+
     private static readonly Color Gray = Color.FromRgb(0x808080);
     private static readonly Color Red = Color.FromRgb(0xCC3333);
 
@@ -522,6 +528,96 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             Assert.Equal([false], formsAfterFirst);
             Assert.Equal(3f, core.Tree.TextEditing.CaretWidth);
             Assert.Equal(["ja", "en"], locales);
+            Assert.Equal([false, true], forms);
+        });
+
+    /// <summary>
+    /// A marked value whose giving throws does not stop the others: every marked value is given, and the notice then throws that
+    /// exception itself.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with no less motion, the languages "ja-JP", and the 12-hour form. A connected core with them that supports en and
+    ///   ja, mounted with a root function whose effects record the locale and the 24-hour form.
+    ///
+    /// Steps:
+    /// - Make the settings ask for less motion, "en-US", and the 24-hour form, and make reading their text fields' settings throw
+    ///   a <see cref="FormatException"/>. Tell one notice that marks all four values.
+    ///
+    /// Expected:
+    /// - The notice throws that exception itself. The tree reduces motion (given before the throw); the effects recorded ja then
+    ///   en, and off then on (given after it).
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_OneValueThrows_GivesTheOthers_ThenThrowsIt() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings { UiLanguages = ["ja-JP"] };
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En, CldrLocales.Ja]);
+            var locales = new List<string>();
+            var forms = new List<bool>();
+            MountRecording(core, locales, forms);
+            var error = new FormatException("The text fields' settings throw.");
+            settings.ReducesMotion = true;
+            settings.UiLanguages = ["en-US"];
+            settings.Use24HourFormat = true;
+            settings.TextEditingError = error;
+
+            FormatException thrown = Assert.Throws<FormatException>(() => settings.Tell(AllChanges));
+            settings.TextEditingError = null;
+            bool reduced = core.Tree.Animations.ReduceMotion;
+            core.DisposeRoot();
+
+            Assert.Same(error, thrown);
+            Assert.True(reduced);
+            Assert.Equal(["ja", "en"], locales);
+            Assert.Equal([false, true], forms);
+        });
+
+    /// <summary>
+    /// Two marked values whose giving throws do not stop the others either, and the notice then throws an
+    /// <see cref="AggregateException"/> with both exceptions, in the order the values are given.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with no less motion and the 12-hour form. A connected core with them that supports en, mounted with a root
+    ///   function whose effect records the 24-hour form.
+    ///
+    /// Steps:
+    /// - Make the settings ask for less motion and the 24-hour form, and make reading their text fields' settings throw a
+    ///   <see cref="FormatException"/> and reading their languages throw an <see cref="ArgumentException"/>. Tell one notice that
+    ///   marks all four values.
+    ///
+    /// Expected:
+    /// - The notice throws an <see cref="AggregateException"/> whose inner exceptions are the format exception, then the argument
+    ///   exception. The tree reduces motion; the effect recorded off then on.
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_TwoValuesThrow_GivesTheOthers_ThenThrowsBoth() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings();
+            (WindowCore core, _) = Connected(atlas, settings, [CldrLocales.En]);
+            var locales = new List<string>();
+            var forms = new List<bool>();
+            MountRecording(core, locales, forms);
+            var textEditingError = new FormatException("The text fields' settings throw.");
+            var languagesError = new ArgumentException("The languages throw.");
+            settings.ReducesMotion = true;
+            settings.Use24HourFormat = true;
+            settings.TextEditingError = textEditingError;
+            settings.UiLanguagesError = languagesError;
+
+            AggregateException thrown = Assert.Throws<AggregateException>(() => settings.Tell(AllChanges));
+            settings.TextEditingError = null;
+            settings.UiLanguagesError = null;
+            bool reduced = core.Tree.Animations.ReduceMotion;
+            core.DisposeRoot();
+
+            Assert.Equal<Exception>([textEditingError, languagesError], thrown.InnerExceptions);
+            Assert.True(reduced);
             Assert.Equal([false, true], forms);
         });
 
@@ -1213,6 +1309,24 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
         return (core, window);
     }
 
+    // Mounts a root function whose effects record the locale's tag and the 24-hour form each time they change.
+    private static void MountRecording(WindowCore core, List<string> locales, List<bool> forms) =>
+        core.Mount(
+            () =>
+            {
+                IReadOnlySignal<Locale> locale = Localization.Locale.Use();
+                IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
+                _ = Effect.Create(() => locales.Add(locale.Get().ToLanguageTag()));
+                _ = Effect.Create(() => forms.Add(use24HourFormat.Get()));
+                return Box();
+            },
+            null,
+            default,
+            "WindowCoreTests",
+            new Size(200, 100),
+            1
+        );
+
     // A box that a column holds: a node with a parent.
     private static Element Child()
     {
@@ -1223,17 +1337,33 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
 
     // The app tier's settings, whose values the test sets and whose notices the test tells, marked as the test says: a host tells a
     // change only, which Change* do.
+    // A value whose error is set throws it when read, as a setter of the tree that throws would.
     private sealed class FakeSettings : IPlatformSettings
     {
+        private TextEditingSettings _textEditing = TextEditingSettings.Default;
+        private IReadOnlyList<string> _uiLanguages = [];
+
         public event Action<PlatformSettingsChanges>? Changed;
 
         public bool ReducesMotion { get; set; }
 
-        public TextEditingSettings TextEditing { get; set; } = TextEditingSettings.Default;
+        public TextEditingSettings TextEditing
+        {
+            get => TextEditingError is null ? _textEditing : throw TextEditingError;
+            set => _textEditing = value;
+        }
 
-        public IReadOnlyList<string> UiLanguages { get; set; } = [];
+        public IReadOnlyList<string> UiLanguages
+        {
+            get => UiLanguagesError is null ? _uiLanguages : throw UiLanguagesError;
+            set => _uiLanguages = value;
+        }
 
         public bool Use24HourFormat { get; set; }
+
+        public Exception? TextEditingError { get; set; }
+
+        public Exception? UiLanguagesError { get; set; }
 
         public bool HasHandlers => Changed is not null;
 
