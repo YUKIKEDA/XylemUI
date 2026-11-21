@@ -44,6 +44,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     private Action? _raiseTextRenderingChanged;
     private Action? _raiseReducesMotionChanged;
     private Action? _raiseUiLanguagesChanged;
+    private Action? _raiseUse24HourFormatChanged;
     private Action? _raiseScaleChanged;
     private HMONITOR _monitor;
 
@@ -108,6 +109,7 @@ public sealed unsafe partial class Win32Window : IDisposable
             TextRendering = TextRenderingReader(_monitor);
             ReducesMotion = ReducesMotionReader(false);
             UiLanguages = UiLanguagesReader();
+            Use24HourFormat = Use24HourFormatReader(false);
             TextEditing = TextEditingReader(TextEditingSettings.Default);
             CreateTouchpad(hwnd);
             CreateDropTarget(hwnd);
@@ -163,10 +165,22 @@ public sealed unsafe partial class Win32Window : IDisposable
     public event EventHandler? UiLanguagesChanged;
 
     /// <summary>
+    /// Occurs on the UI thread when <see cref="Use24HourFormat"/> changed, on a <c>WM_SETTINGCHANGE</c>.
+    /// </summary>
+    public event EventHandler? Use24HourFormatChanged;
+
+    /// <summary>
     /// Gets the tags of the user's preferred UI languages, most preferred first (design §4.11, "The OS's languages"). Read when
     /// the window is created and on each <c>WM_SETTINGCHANGE</c> it receives.
     /// </summary>
     public IReadOnlyList<string> UiLanguages { get; private set; } = [];
+
+    /// <summary>
+    /// Gets a value indicating whether the user's short time format (<c>LOCALE_SSHORTTIME</c>) shows the hours in 24-hour form: it
+    /// holds the hour pattern <c>H</c> outside single quotes (design §4.11, "The locale of the formats"). Read when the window is created and on each
+    /// <c>WM_SETTINGCHANGE</c> it receives; a read that fails keeps the value before, <see langword="false"/> at the start.
+    /// </summary>
+    public bool Use24HourFormat { get; private set; }
 
     /// <summary>
     /// Gets a value indicating whether Windows asks for less motion: "Animation effects" is off in the settings
@@ -199,6 +213,12 @@ public sealed unsafe partial class Win32Window : IDisposable
     /// Gets or sets what reads <see cref="UiLanguages"/>, for the tests of the change without changing a setting of Windows.
     /// </summary>
     internal static Func<string[]> UiLanguagesReader { get; set; } = Win32UiLanguage.ReadAll;
+
+    /// <summary>
+    /// Gets or sets what reads <see cref="Use24HourFormat"/> from the value before it, for the tests of the change without changing
+    /// a setting of Windows.
+    /// </summary>
+    internal static Func<bool, bool> Use24HourFormatReader { get; set; } = Win32TimeFormat.ReadUse24HourFormat;
 
     /// <summary>
     /// Gets the window's scale: its monitor's DPI over 96, not rounded (1.25 at 125 %). The display list multiplies logical pixels
@@ -530,6 +550,19 @@ public sealed unsafe partial class Win32Window : IDisposable
         }
     }
 
+    // The setting the message names is not matched: a change of the time format in Windows' regional settings sends "intl"
+    // (design §4.11, "A change of the OS"), and the other settings are read again on every message too.
+    private void ReadUse24HourFormatAgain()
+    {
+        bool read = Use24HourFormatReader(Use24HourFormat);
+        if (read != Use24HourFormat)
+        {
+            Use24HourFormat = read;
+            _raiseUse24HourFormatChanged ??= () => Use24HourFormatChanged?.Invoke(this, EventArgs.Empty);
+            SynchronousRenderGuard.RunOrDefer(_raiseUse24HourFormatChanged);
+        }
+    }
+
     // Every message for every XylemUI window enters here. No managed exception may leave this method (Invariant 13).
     [UnmanagedCallersOnly]
     private static LRESULT WindowProcedure(HWND hwnd, uint message, WPARAM wParam, LPARAM lParam)
@@ -596,6 +629,7 @@ public sealed unsafe partial class Win32Window : IDisposable
                 ReadReducesMotionAgain();
                 ReadTextEditingAgain();
                 ReadUiLanguagesAgain();
+                ReadUse24HourFormatAgain();
                 return false;
             case WmSysColorChange:
                 ReadTextEditingAgain();

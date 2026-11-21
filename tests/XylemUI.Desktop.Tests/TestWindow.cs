@@ -18,7 +18,7 @@ internal sealed class TestWindow : IDisposable
         _text = new TextContext(_fonts);
         try
         {
-            Core = XylemApp.OpenWindow(Host, _text, root, options, () => Host.Window!.UiLanguages, show);
+            Core = XylemApp.OpenWindow(Host, _text, root, options, () => Host.Window!.UiLanguages, () => Host.Window!.Use24HourFormat, show);
         }
         catch
         {

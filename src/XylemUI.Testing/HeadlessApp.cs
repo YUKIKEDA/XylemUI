@@ -113,7 +113,16 @@ public sealed class HeadlessApp : IAsyncDisposable
             // The size is the options' logical size, given as it is: no rounding. The wrapper is the options' alone: the one an app's
             // assembly set for its desktop windows (WindowRoot) stays in the test process and is not read (design §13.2).
             var size = new Size(options.Width, options.Height);
-            _core.Mount(root, options.RootWrapper, options.SystemLocales, options.SystemAppearance, "HeadlessApp.StartAsync", size, options.Scale);
+            _core.Mount(
+                root,
+                options.RootWrapper,
+                options.SystemLocales,
+                options.Use24HourFormat,
+                options.SystemAppearance,
+                "HeadlessApp.StartAsync",
+                size,
+                options.Scale
+            );
             window.RootMounted();
         }
         catch
@@ -232,6 +241,10 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// The caller is not on <see cref="HeadlessSession"/>'s UI thread, or no default key bindings are registered (the test project
     /// is built without the source generator of <c>XylemUI.Core</c> and did not call <see cref="Keymap.RegisterDefaults"/>).
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The options' size, scale, frame interval, or iterations are out of range, or their
+    /// <see cref="HeadlessOptions.SupportedLocales"/> hold a <see langword="null"/>.
+    /// </exception>
     public static Task<HeadlessApp> StartAsync(Func<Element> root, HeadlessOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(root);
@@ -247,6 +260,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             throw new ArgumentException("The scale and the frame interval are above 0, and the iterations at least 1.", nameof(options));
         }
 
+        WindowLocale.VerifySupported(options.SupportedLocales, nameof(options));
         _ = WindowAppearance.Check(options.SystemAppearance, nameof(options));
 
         _ = HeadlessSession.Dispatcher;
@@ -517,6 +531,23 @@ public sealed class HeadlessApp : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(tags);
         VerifyRunning();
         _core.SetSystemLocales(tags);
+        _ = DrainQueue();
+    }
+
+    /// <summary>
+    /// Changes whether the app sees the OS asking for times in 24-hour form, as a change of Windows' time format does while a
+    /// desktop window is open (design §4.11, "The key of the 24-hour form"): the value of
+    /// <see cref="Localization.Use24HourFormat"/> changes, and its readers run again only when the value differs; then the work that
+    /// queued runs.
+    /// </summary>
+    /// <param name="use24HourFormat">Whether times are in 24-hour form.</param>
+    /// <exception cref="ObjectDisposedException">The app was disposed.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public void SetUse24HourFormat(bool use24HourFormat)
+    {
+        VerifyRunning();
+        _core.SetUse24HourFormat(use24HourFormat);
         _ = DrainQueue();
     }
 

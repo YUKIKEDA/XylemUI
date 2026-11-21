@@ -61,6 +61,13 @@ internal sealed class Win32PlatformApp : IPlatformApp
     /// </summary>
     internal IReadOnlyList<string> UiLanguages => _window?.UiLanguages ?? [];
 
+    /// <summary>
+    /// Gets a value indicating whether the user's short time format shows the hours in 24-hour form, as the open window read it;
+    /// <see langword="false"/> while no window is open. The app mounts its root with it until the OS's settings become one object
+    /// of the app tier (row PL1, PR 5; design §4.11, "The key of the 24-hour form").
+    /// </summary>
+    internal bool Use24HourFormat => _window?.Use24HourFormat ?? false;
+
     /// <inheritdoc />
     /// <remarks>
     /// The loop's scheduler holds one frame clock, which a second window would take from the first (design §6.0, "The frame clock

@@ -215,7 +215,7 @@ public sealed class HeadlessAppAppearanceTests
             },
             new HeadlessOptions
             {
-                SupportedLocales = [Locale.Parse("en"), Locale.Parse("ja")],
+                SupportedLocales = [CldrLocales.En, CldrLocales.Ja],
                 SystemLocales = ["ja-JP"],
                 SystemAppearance = new SystemAppearance(ColorScheme.Dark, false, null, null),
                 RootWrapper = root =>
