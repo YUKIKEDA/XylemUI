@@ -379,7 +379,9 @@ public sealed class NumberFormatter
     /// Returns the number this format shows for a decimal, for <see cref="PluralRules.Select(decimal)"/>: rounded as the format
     /// rounds it, with a scale of the fraction digits shown (<c>1.50</c> for 1.5 in a format with 2 fraction digits). A percent
     /// format returns the number before the percent sign (25 for 0.25); a compact format, the number the compact form stands for
-    /// (1200 for <c>1.2K</c>). Allocates nothing.
+    /// (1200 for <c>1.2K</c>). A compact format selects its plural form with the number shown (1.2 for <c>1.2K</c>), so passing
+    /// this value to <see cref="PluralRules.Select(decimal)"/> can give a different category than the one the format used.
+    /// Allocates nothing.
     /// </summary>
     /// <param name="value">The number.</param>
     /// <returns>The number shown.</returns>
