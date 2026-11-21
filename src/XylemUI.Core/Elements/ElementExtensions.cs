@@ -193,6 +193,20 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Sets the paint of the border and leaves its width: the node is drawn again with no layout (design §13.2). A theme's effect
+    /// writes the border's color with it at each change of the theme, and the width with <see cref="Border"/> only when the width
+    /// changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="paint">The paint.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    public static Element BorderPaint(this Element element, Paint paint)
+    {
+        element.TreeOrThrow().SetBorderPaint(element.Node, paint);
+        return element;
+    }
+
+    /// <summary>
     /// Sets the size of a text node's text.
     /// </summary>
     /// <param name="element">The text node.</param>

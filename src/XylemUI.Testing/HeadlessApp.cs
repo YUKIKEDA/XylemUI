@@ -110,13 +110,17 @@ public sealed class HeadlessApp : IAsyncDisposable
         // nothing of the app held.
         try
         {
-            // The size is the options' logical size, given as it is: no rounding.
+            // The size is the options' logical size, given as it is: no rounding. The wrapper is the options' alone: the one an app's
+            // assembly set for its desktop windows (WindowRoot) stays in the test process and is not read (design §13.2).
+            var size = new Size(options.Width, options.Height);
             _core.Mount(
                 root,
+                options.RootWrapper,
                 options.SystemLocales,
                 options.Use24HourFormat,
+                options.SystemAppearance,
                 "HeadlessApp.StartAsync",
-                new Size(options.Width, options.Height),
+                size,
                 options.Scale
             );
             window.RootMounted();
@@ -191,6 +195,18 @@ public sealed class HeadlessApp : IAsyncDisposable
     public CursorKind Cursor => _platform.Cursor;
 
     /// <summary>
+    /// Gets the color the root wrapper told the host to paint behind the tree last (<see cref="WindowSurface.SetBackdrop"/>, design
+    /// §13.2, "根の箱"); <see langword="null"/> before it told any.
+    /// </summary>
+    public Color? Backdrop => _core.Surface.Backdrop;
+
+    /// <summary>
+    /// Gets whether the root wrapper told the host last that the title bar is dark (<see cref="WindowSurface.SetDarkTitleBar"/>,
+    /// design §13.2, "題名の棒"); <see langword="null"/> before it told any.
+    /// </summary>
+    public bool? DarkTitleBar => _core.Surface.DarkTitleBar;
+
+    /// <summary>
     /// Gets the tree.
     /// </summary>
     internal UiTree Tree => _core.Tree;
@@ -245,6 +261,7 @@ public sealed class HeadlessApp : IAsyncDisposable
         }
 
         WindowLocale.VerifySupported(options.SupportedLocales, nameof(options));
+        _ = WindowAppearance.Check(options.SystemAppearance, nameof(options));
 
         _ = HeadlessSession.Dispatcher;
         if (!UiThread.CheckAccess())
@@ -507,6 +524,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     /// (design §4.11, "A change of the OS"): the app's locale is resolved again, then the work that queued runs.
     /// </summary>
     /// <param name="tags">The tags of the languages, most preferred first.</param>
+    /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
     [UiThreadOnly]
     public void SetSystemLocales(IReadOnlyList<string> tags)
     {
@@ -530,6 +548,22 @@ public sealed class HeadlessApp : IAsyncDisposable
     {
         VerifyRunning();
         _core.SetUse24HourFormat(use24HourFormat);
+    }
+
+    /// <summary>
+    /// Changes the appearance the app sees as the OS's, as a change of the OS's settings does while a desktop window is open
+    /// (design §13.2, "ヘッドレス"): the readers of <see cref="SystemAppearance.Current"/> run again when the value changed, and only
+    /// then; then the work that queued runs.
+    /// </summary>
+    /// <param name="value">The OS's appearance.</param>
+    /// <exception cref="ArgumentException">The value has high-contrast colors while its high contrast is off, or none while it is
+    /// on.</exception>
+    /// <exception cref="ObjectDisposedException">The app is disposed.</exception>
+    [UiThreadOnly]
+    public void SetSystemAppearance(SystemAppearance value)
+    {
+        VerifyRunning();
+        _core.SetSystemAppearance(value);
         _ = DrainQueue();
     }
 
