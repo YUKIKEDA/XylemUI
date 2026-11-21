@@ -76,6 +76,8 @@ public readonly struct FormattedNumber : ISpanFormattable
             return new string(buffer[..written]);
         }
 
+        // The options take at most 999 integer and 999 fraction digits, so the text (with its group separators and affixes) is some
+        // 2,500 characters at most, and the buffer stops growing at 4,096.
         char[] grown = new char[256];
         while (!TryFormat(grown, out written, default, null))
         {

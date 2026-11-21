@@ -51,11 +51,11 @@ public sealed class PluralRules
     public PluralCategory SelectOrdinal(long value) => Ordinal(PluralOperands.Of(value));
 
     /// <summary>
-    /// Returns the cardinal category of a compact decimal (<c>1.2M</c>), which the compact format selects with (design §4.11,
-    /// "Passing the number").
+    /// Returns the cardinal category of a number with the compact exponent c (design §4.11, "Passing the number"). The compact
+    /// format does not call it: it selects with the shown number and c = 0 (Issue #906, after PR #944's review).
     /// </summary>
-    /// <param name="value">The whole value the compact decimal stands for (1200000 for 1.2M), with the scale of its visible
-    /// fraction digits.</param>
+    /// <param name="value">The whole value a compact decimal stands for (1200000 for 1.2M), with the scale of its visible fraction
+    /// digits.</param>
     /// <param name="exponent">The exponent of the power of 10 the compact decimal shows (6 for 1.2M).</param>
     /// <returns>The category.</returns>
     internal PluralCategory Select(decimal value, int exponent) => Cardinal(PluralOperands.Of(value, exponent));

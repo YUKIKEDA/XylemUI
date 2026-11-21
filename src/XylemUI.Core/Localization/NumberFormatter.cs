@@ -14,22 +14,23 @@ namespace XylemUI;
 /// <remarks>
 /// Making a format reads the tables and allocates; <see cref="TryFormat(decimal, Span{char}, out int)"/>, its overloads,
 /// <see cref="Round"/>, <see cref="Of(decimal)"/>, and <see cref="TryParse(ReadOnlySpan{char}, out decimal)"/> of up to 255 characters
-/// allocate nothing. <see cref="Format"/> makes a string. A locale's decimal and percent formats are <see cref="LocaleData.DecimalFormat"/>
-/// and <see cref="LocaleData.PercentFormat"/>.
+/// allocate nothing. <see cref="Format(decimal)"/> and its overloads make a string. A locale's decimal and percent formats are
+/// <see cref="LocaleData.DecimalFormat"/> and <see cref="LocaleData.PercentFormat"/>.
 /// </remarks>
 public sealed class NumberFormatter
 {
     // The digits of a decimal (29) or of a double's shortest round-trip text (17), each held once.
     private const int DigitCapacity = 32;
 
-    // The invariant text of a decimal (29 digits, a point, and the zeros of a scale of 28) or of a double ("R", with its exponent).
+    // The invariant text of a decimal (29 digits, a point, and the zeros of a scale of 28) or of a double's shortest text, with its
+    // exponent.
     private const int TextCapacity = 40;
 
     // Text this long or longer is parsed in a rented array; shorter text in a buffer on the stack.
     private const int ParseCapacity = 256;
 
-    // Math.Round(double, int) rounds to at most 15 fraction digits; past them the digits of the shortest text are rounded.
-    private const int MaxDoubleRoundDigits = 15;
+    // The most integer or fraction digits the options take: ICU's kMaxIntFracSig in icu4c's number_types.h (Issue #906).
+    private const int MaxDigits = 999;
 
     private const char NoBreakSpace = (char)0x00A0;
 
@@ -122,8 +123,8 @@ public sealed class NumberFormatter
     /// <param name="options">The digits and the grouping; <see langword="null"/> takes the pattern's.</param>
     /// <returns>The format.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="locale"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has a negative number of digits, no integer digit, or
-    /// fewer maximum than minimum fraction digits.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has a negative number of digits, no integer digit,
+    /// more than 999 integer or fraction digits, or fewer maximum than minimum fraction digits.</exception>
     public static NumberFormatter Decimal(LocaleData locale, NumberOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(locale);
@@ -149,8 +150,8 @@ public sealed class NumberFormatter
     /// <param name="options">The digits and the grouping; <see langword="null"/> takes the pattern's.</param>
     /// <returns>The format.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="locale"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has a negative number of digits, no integer digit, or
-    /// fewer maximum than minimum fraction digits.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has a negative number of digits, no integer digit,
+    /// more than 999 integer or fraction digits, or fewer maximum than minimum fraction digits.</exception>
     public static NumberFormatter Percent(LocaleData locale, NumberOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(locale);
@@ -186,8 +187,8 @@ public sealed class NumberFormatter
     /// <exception cref="ArgumentNullException"><paramref name="locale"/> or <paramref name="isoCode"/> is
     /// <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="isoCode"/> is not three upper-case ASCII letters.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has a negative number of digits, no integer digit, or
-    /// fewer maximum than minimum fraction digits.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> has a negative number of digits, no integer digit,
+    /// more than 999 integer or fraction digits, or fewer maximum than minimum fraction digits.</exception>
     public static NumberFormatter Currency(LocaleData locale, string isoCode, NumberOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(locale);
@@ -213,9 +214,9 @@ public sealed class NumberFormatter
 
     /// <summary>
     /// Makes a compact format with the locale's compact decimal patterns (<c>1.2K</c>, <c>1.2万</c>, <c>1.2 thousand</c>). The pattern
-    /// is chosen by the power of ten and by the plural category of the number as it is rounded, with the compact exponent (1500
-    /// with c = 3 for <c>1.5K</c>; design §4.11, "Passing the number"), or is the pattern of 1 alone when the shown number is 1
-    /// (French <c>mille</c>). The shown number keeps two significant digits
+    /// is chosen by the power of ten and by the plural category of the shown number, with a compact exponent of 0 (1.5 for
+    /// <c>1.5K</c>, as ICU selects; design §4.11, "Numbers"), or is the pattern of 1 alone when the shown number is 1 (French
+    /// <c>mille</c>). The shown number keeps two significant digits
     /// when its integer part has one digit, and no fraction digit otherwise (<c>1.2K</c>, <c>12K</c>, <c>123K</c>); a number the
     /// locale does not compact (below 1000, or a pattern of <c>0</c>) is written in full with the same rounding.
     /// </summary>
@@ -244,6 +245,15 @@ public sealed class NumberFormatter
     public bool TryFormat(long value, Span<char> destination, out int charsWritten) => TryFormat((decimal)value, destination, out charsWritten);
 
     /// <summary>
+    /// Writes a whole number that is not negative. Allocates nothing.
+    /// </summary>
+    /// <param name="value">The number.</param>
+    /// <param name="destination">The characters to write to.</param>
+    /// <param name="charsWritten">The characters written; 0 when <paramref name="destination"/> is too short.</param>
+    /// <returns><see langword="false"/> when <paramref name="destination"/> is too short.</returns>
+    public bool TryFormat(ulong value, Span<char> destination, out int charsWritten) => TryFormat((decimal)value, destination, out charsWritten);
+
+    /// <summary>
     /// Writes a decimal, rounded half to even at the format's most fraction digits. Allocates nothing.
     /// </summary>
     /// <param name="value">The number.</param>
@@ -269,8 +279,10 @@ public sealed class NumberFormatter
     }
 
     /// <summary>
-    /// Writes a double, rounded half to even at the format's most fraction digits with <see cref="Math.Round(double, int, MidpointRounding)"/>.
-    /// Not a number and the infinities are written with the locale's symbols. Allocates nothing.
+    /// Writes a double: the shortest decimal digits that read back as it, rounded half to even at the format's most fraction digits,
+    /// so that it writes as the decimal of those digits does (1.015 in a format of 2 fraction digits is <c>1.02</c>, as
+    /// <c>1.015m</c> is). A percent format moves the point of those digits by 2. Negative zero is written as zero; not a number and
+    /// the infinities are written with the locale's symbols. Allocates nothing.
     /// </summary>
     /// <param name="value">The number.</param>
     /// <param name="destination">The characters to write to.</param>
@@ -283,7 +295,8 @@ public sealed class NumberFormatter
             return TryWriteSymbol(_symbols.NaN, _positive, destination, out charsWritten);
         }
 
-        bool negative = double.IsNegative(value);
+        // -0.0 is not less than 0, so it writes as 0, as a decimal's zero does (Issue #906, after PR #944's review).
+        bool negative = value < 0.0;
         double magnitude = Math.Abs(value);
         if (double.IsInfinity(magnitude))
         {
@@ -291,27 +304,16 @@ public sealed class NumberFormatter
         }
 
         Span<char> digits = stackalloc char[DigitCapacity];
+        int length = DigitsOf(magnitude, digits, out int point);
         if (_kind == NumberKind.Compact)
         {
-            int unrounded = DigitsOf(magnitude, digits, out int unroundedPoint);
-            return TryWriteCompact(digits, unrounded, unroundedPoint, negative, destination, out charsWritten);
+            return TryWriteCompact(digits, length, point, negative, destination, out charsWritten);
         }
 
-        int length;
-        int point;
-        double shifted = _shift == 0 ? magnitude : magnitude * 100;
-        if (double.IsInfinity(shifted))
-        {
-            // A percent of a double past 1.8e306: the shortest digits of the value, with the point moved.
-            length = DigitsOf(magnitude, digits, out point);
-            point += _shift;
-            length = RoundHalfEven(digits, length, ref point, _maximumFractionDigits);
-        }
-        else
-        {
-            length = DigitsOf(shifted, _maximumFractionDigits, digits, out point);
-        }
-
+        // The point moves on the digits, not in binary: 4.525 as a percent is 452.5, which rounds to 452 (Issue #906). Zero has no
+        // digit, and its point stays at 0, as on the decimal path.
+        point = length == 0 ? point : point + _shift;
+        length = RoundHalfEven(digits, length, ref point, _maximumFractionDigits);
         return TryWrite(digits[..length], point, negative ? _negative : _positive, _minimumGrouping, destination, out charsWritten);
     }
 
@@ -321,6 +323,14 @@ public sealed class NumberFormatter
     /// <param name="value">The number.</param>
     /// <returns>The number and the format.</returns>
     public FormattedNumber Of(long value) => new(this, (decimal)value);
+
+    /// <summary>
+    /// Returns a whole number that is not negative with this format, for an interpolation of a <see cref="NodeTextWriter"/>.
+    /// Allocates nothing.
+    /// </summary>
+    /// <param name="value">The number.</param>
+    /// <returns>The number and the format.</returns>
+    public FormattedNumber Of(ulong value) => new(this, (decimal)value);
 
     /// <summary>
     /// Returns a decimal with this format, for an interpolation of a <see cref="NodeTextWriter"/>. Allocates nothing.
@@ -337,11 +347,33 @@ public sealed class NumberFormatter
     public FormattedNumber Of(double value) => new(this, value);
 
     /// <summary>
+    /// Returns a whole number formatted as a new string; not for the frame path.
+    /// </summary>
+    /// <param name="value">The number.</param>
+    /// <returns>The formatted number.</returns>
+    public string Format(long value) => Of(value).ToString();
+
+    /// <summary>
+    /// Returns a whole number that is not negative formatted as a new string; not for the frame path.
+    /// </summary>
+    /// <param name="value">The number.</param>
+    /// <returns>The formatted number.</returns>
+    public string Format(ulong value) => Of(value).ToString();
+
+    /// <summary>
     /// Returns a decimal formatted as a new string; not for the frame path.
     /// </summary>
     /// <param name="value">The number.</param>
     /// <returns>The formatted number.</returns>
     public string Format(decimal value) => Of(value).ToString();
+
+    /// <summary>
+    /// Returns a double formatted as a new string, as <see cref="TryFormat(double, Span{char}, out int)"/> writes it; not for the
+    /// frame path.
+    /// </summary>
+    /// <param name="value">The number.</param>
+    /// <returns>The formatted number.</returns>
+    public string Format(double value) => Of(value).ToString();
 
     /// <summary>
     /// Returns the number this format shows for a decimal, for <see cref="PluralRules.Select(decimal)"/>: rounded as the format
@@ -420,6 +452,13 @@ public sealed class NumberFormatter
         if (options.MinimumFractionDigits < 0 || options.MaximumFractionDigits < 0)
         {
             ThrowHelper.ThrowNumberOptionOutOfRange(nameof(options), "A number of fraction digits is negative.");
+        }
+
+        // Without a bound, the digit loops of TryFormat and the buffer FormattedNumber.ToString grows would follow any number.
+        bool tooMany = options.MinimumIntegerDigits > MaxDigits || options.MinimumFractionDigits > MaxDigits;
+        if (tooMany || options.MaximumFractionDigits > MaxDigits)
+        {
+            ThrowHelper.ThrowNumberOptionOutOfRange(nameof(options), "A number of digits is greater than 999.");
         }
 
         if (options.MinimumFractionDigits > options.MaximumFractionDigits)
@@ -509,19 +548,13 @@ public sealed class NumberFormatter
         return Normalize(text[..written], digits, out point);
     }
 
-    // The digits of a double rounded half to even with Math.Round, or, past its 15 digits, on the digits of its shortest text.
-    private static int DigitsOf(double magnitude, int fractionDigits, Span<char> digits, out int point)
-    {
-        double rounded = fractionDigits <= MaxDoubleRoundDigits ? Math.Round(magnitude, fractionDigits, MidpointRounding.ToEven) : magnitude;
-        int length = DigitsOf(rounded, digits, out point);
-        return RoundHalfEven(digits, length, ref point, fractionDigits);
-    }
-
-    // The digits of a double's shortest text that reads back as the double.
+    // The digits of a double's shortest text that reads back as the double: the default format of double, which .NET Core 3.0 and
+    // later make the shortest round-trippable text ("Standard numeric format strings", the "G" and "R" specifiers), written into a
+    // span with no string.
     private static int DigitsOf(double magnitude, Span<char> digits, out int point)
     {
         Span<char> text = stackalloc char[TextCapacity];
-        _ = magnitude.TryFormat(text, out int written, "R", CultureInfo.InvariantCulture);
+        _ = magnitude.TryFormat(text, out int written, default, CultureInfo.InvariantCulture);
         return Normalize(text[..written], digits, out point);
     }
 
@@ -732,11 +765,11 @@ public sealed class NumberFormatter
 
     private bool TryWriteCompact(Span<char> digits, int length, int point, bool negative, Span<char> destination, out int charsWritten)
     {
-        length = RoundCompact(digits, length, ref point, out int type, out int divisor, out bool compacted);
+        length = RoundCompact(digits, length, ref point, out int type, out _, out bool compacted);
         NumberAffixes affixes = negative ? _negative : _positive;
         if (compacted)
         {
-            CompactPattern pattern = Select(type, digits[..length], point, divisor);
+            CompactPattern pattern = Select(type, digits[..length], point);
             if (!pattern.Uncompacted)
             {
                 affixes = negative ? pattern.Pattern.Negative : pattern.Pattern.Positive;
@@ -779,18 +812,18 @@ public sealed class NumberFormatter
         }
     }
 
-    // The pattern for a shown number: the one for 1 alone when the shown number is 1 and the locale has one, else the one of the
-    // plural category of the number, rounded as it is shown, with the compact exponent c (1500 with c = 3 for 1.5K), else the one of
-    // other. UTS #35 part 3 (CLDR 49), "Compact Number Formats", step 8: "Determine the plural category of N, based on the numeric
-    // precision settings"; design §4.11, "Passing the number" (Issue #906).
-    private CompactPattern Select(int type, ReadOnlySpan<char> shown, int point, int divisor)
+    // The pattern for a shown number: the one for 1 alone when the shown number is the whole number 1 and the locale has one, else
+    // the one of the plural category of the shown number with the compact exponent c = 0 (1.5 for 1.5K, 2 for 2M), else the one of
+    // other. ICU's CompactHandler::processQuantity selects with the scaled number and sets the exponent only after (Issue #906, after
+    // PR #944's review).
+    private CompactPattern Select(int type, ReadOnlySpan<char> shown, int point)
     {
         if (shown.Length == 1 && shown[0] == '1' && point == 1 && Find(type, CompactPattern.ExplicitOne) is { } one)
         {
             return one;
         }
 
-        PluralCategory category = _plurals!.Select(PluralValue(shown, point + divisor), divisor);
+        PluralCategory category = _plurals!.Select(PluralValue(shown, point));
         return Find(type, (int)category) ?? Find(type, (int)PluralCategory.Other)!;
     }
 
@@ -807,9 +840,10 @@ public sealed class NumberFormatter
         return null;
     }
 
-    // The number a compact form stands for, rounded as it is shown (1500 for 1.5K). One past the range of decimal (a double over
-    // 7.9e28, or decimal.MaxValue rounded up) is replaced by a number of 28 digits with the same last seven: CLDR's plural
-    // rules read no more of a large whole number than i % 1000000.
+    // The shown number of a compact form (1.5 for 1.5K), with the scale of its fraction digits. One past the range of decimal (a
+    // double whose shown number has more than 29 integer digits at the largest pattern, such as 1.2345e50 in English's 000T) is
+    // replaced by a number of 28 digits with the same last seven: CLDR's plural rules read no more of a large whole number than
+    // i % 1000000.
     private static decimal PluralValue(ReadOnlySpan<char> digits, int point)
     {
         if (TryDecimal(digits, point, 0, false, out decimal value))

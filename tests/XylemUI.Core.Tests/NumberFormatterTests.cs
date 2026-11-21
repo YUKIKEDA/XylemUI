@@ -96,8 +96,38 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
-    /// A value is rounded half to even at the most fraction digits, a decimal with decimal.Round and a double with Math.Round, not
-    /// with a format string (design §4.11, "How the digits are made").
+    /// The ulong overloads of TryFormat, Of, and Format write a ulong as the decimal of the same value, and Format takes a long, a
+    /// ulong, a decimal, and a double, so that a ulong and an int argument each have one overload (Issue #906, after PR #944's
+    /// review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's decimal format.
+    ///
+    /// Steps:
+    /// - Write ulong.MaxValue with TryFormat, with ToString of Of, and with Format; format -1234567 as a long, 7 as an int, and 1234.5
+    ///   as a double.
+    ///
+    /// Expected:
+    /// - 18,446,744,073,709,551,615 three times; -1,234,567, 7, and 1,234.5.
+    /// </remarks>
+    [Fact]
+    public void Overloads_UlongLongAndDouble_WriteAsTheDecimalOfTheValue()
+    {
+        NumberFormatter format = CldrLocales.En.DecimalFormat;
+        const string Largest = "18,446,744,073,709,551,615";
+
+        Assert.Equal(Largest, Write(format, ulong.MaxValue));
+        Assert.Equal(Largest, format.Of(ulong.MaxValue).ToString());
+        Assert.Equal(Largest, format.Format(ulong.MaxValue));
+        Assert.Equal("-1,234,567", format.Format(-1_234_567L));
+        Assert.Equal("7", format.Format(7));
+        Assert.Equal("1,234.5", format.Format(1234.5));
+    }
+
+    /// <summary>
+    /// A value is rounded half to even at the most fraction digits, a decimal with decimal.Round and a double on its shortest
+    /// round-trip digits, not with a format string (design §4.11, "How the digits are made").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -165,23 +195,26 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
-    /// A double is rounded with Math.Round up to 15 fraction digits, the most it takes, and past them on the digits of its shortest
-    /// text, which hold up to 17 significant digits (design §4.11, "How the digits are made").
+    /// A double is rounded on the digits of its shortest round-trip text at any number of fraction digits, with no border at 15 or
+    /// 16 digits (design §4.11, "Rounding a double"; Issue #906, after PR #944's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - en's decimal format with at most 15, 16, and 17 fraction digits.
+    /// - en's decimal format with at most 2, 15, 16, and 17 fraction digits.
     ///
     /// Steps:
-    /// - Write 1.0000000000000002 (1 + 2^-52) with 15 and 16 digits, and 0.1 + 0.2 (0.30000000000000004) with 16 and 17.
+    /// - Write 1.0000000000000002 (1 + 2^-52) with 15 and 16 digits, 0.1 + 0.2 (0.30000000000000004) with 16 and 17, and 1.015 and
+    ///   2.675 with 2 and with 15 digits.
     ///
     /// Expected:
-    /// - 1 and 1.0000000000000002; 0.3 and 0.30000000000000004. None throws (Math.Round throws past 15 digits).
+    /// - 1 and 1.0000000000000002; 0.3 and 0.30000000000000004; 1.02 and 2.68 with 2 digits (the binary values of both lie below
+    ///   the midpoints, which a rounding of the binary value reads as 1.01 and 2.67), and 1.015 and 2.675 with 15.
     /// </remarks>
     [Fact]
-    public void TryFormat_DoubleAtFifteenAndSixteenDigits_RoundsWithMathRoundThenOnTheShortestDigits()
+    public void TryFormat_DoubleAtAnyFractionDigits_RoundsTheShortestDigits()
     {
         LocaleData en = CldrLocales.En;
+        NumberFormatter two = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 2 });
         NumberFormatter fifteen = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 15 });
         NumberFormatter sixteen = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 16 });
         NumberFormatter seventeen = NumberFormatter.Decimal(en, new NumberOptions { MaximumFractionDigits = 17 });
@@ -192,6 +225,51 @@ public sealed class NumberFormatterTests
         Assert.Equal("1.0000000000000002", Write(sixteen, justAboveOne));
         Assert.Equal("0.3", Write(sixteen, sum));
         Assert.Equal("0.30000000000000004", Write(seventeen, sum));
+        Assert.Equal(("1.02", "2.68"), (Write(two, 1.015), Write(two, 2.675)));
+        Assert.Equal(("1.015", "2.675"), (Write(fifteen, 1.015), Write(fifteen, 2.675)));
+    }
+
+    /// <summary>
+    /// A double writes as the decimal of the same literal does, in a decimal, a currency, and a percent format: the shortest digits
+    /// are rounded as decimal digits, and a percent moves their point (Issue #906, after PR #944's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's USD format (2 fraction digits), en's percent format (0 fraction digits), and en's decimal format (3 fraction digits).
+    ///
+    /// Steps:
+    /// - Write each literal as a double and as a decimal.
+    ///
+    /// Expected:
+    /// - Both are the text of the case: USD 1.015 is $1.02, 4.525 is $4.52, 2.675 is $2.68; the percent of 4.525 is 452% (452.5 to
+    ///   even), of 0.125 is 12%, and of 0.135 is 14%; 1.0015 is 1.002 and 1.0005 is 1.
+    /// </remarks>
+    /// <param name="kind">The format: usd, percent, or decimal.</param>
+    /// <param name="literal">The number, in invariant text.</param>
+    /// <param name="expected">The text both write.</param>
+    [Theory]
+    [InlineData("usd", "1.015", "$1.02")]
+    [InlineData("usd", "4.525", "$4.52")]
+    [InlineData("usd", "2.675", "$2.68")]
+    [InlineData("percent", "4.525", "452%")]
+    [InlineData("percent", "0.125", "12%")]
+    [InlineData("percent", "0.135", "14%")]
+    [InlineData("decimal", "1.0015", "1.002")]
+    [InlineData("decimal", "1.0005", "1")]
+    public void TryFormat_DoubleAndDecimalOfOneLiteral_WriteTheSameText(string kind, string literal, string expected)
+    {
+        LocaleData en = CldrLocales.En;
+        NumberFormatter format = kind switch
+        {
+            "usd" => NumberFormatter.Currency(en, "USD"),
+            "percent" => en.PercentFormat,
+            _ => en.DecimalFormat,
+        };
+        double number = double.Parse(literal, CultureInfo.InvariantCulture);
+
+        Assert.Equal(expected, format.Format(Parse(literal)));
+        Assert.Equal(expected, Write(format, number));
+        Assert.Equal(expected, format.Format(number));
     }
 
     /// <summary>
@@ -224,8 +302,9 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
-    /// Options with a negative number of fraction digits, no integer digit, or more minimum than maximum fraction digits throw when a
-    /// format is made (design §4.11, "Numbers").
+    /// Options with a negative number of fraction digits, no integer digit, more than 999 integer or fraction digits, or more
+    /// minimum than maximum fraction digits throw when a format is made (design §4.11, "Numbers"; Issue #906, after PR #944's
+    /// review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -233,7 +312,8 @@ public sealed class NumberFormatterTests
     ///
     /// Steps:
     /// - Make a decimal, a percent, and a currency format with MinimumIntegerDigits 0, MinimumFractionDigits -1,
-    ///   MaximumFractionDigits -1, and 3 and 2 minimum and maximum fraction digits.
+    ///   MaximumFractionDigits -1, 3 and 2 minimum and maximum fraction digits, MinimumIntegerDigits 1000, MinimumFractionDigits
+    ///   1000, and MaximumFractionDigits 1000 (each of the last three alone).
     ///
     /// Expected:
     /// - Each throws ArgumentOutOfRangeException for the parameter options; 2 and 2 do not throw.
@@ -248,6 +328,9 @@ public sealed class NumberFormatterTests
             new() { MinimumFractionDigits = -1 },
             new() { MaximumFractionDigits = -1 },
             new() { MinimumFractionDigits = 3, MaximumFractionDigits = 2 },
+            new() { MinimumIntegerDigits = 1000 },
+            new() { MinimumFractionDigits = 1000 },
+            new() { MaximumFractionDigits = 1000 },
         ];
 
         foreach (NumberOptions options in invalid)
@@ -260,6 +343,51 @@ public sealed class NumberFormatterTests
 
         var same = new NumberOptions { MinimumFractionDigits = 2, MaximumFractionDigits = 2 };
         Assert.Equal("2.00", NumberFormatter.Decimal(en, same).Format(2));
+    }
+
+    /// <summary>
+    /// The options take up to 999 integer and 999 fraction digits, ICU's bound, and a format with them writes every digit through
+    /// TryFormat and ToString, as a decimal and as a double (Issue #906, after PR #944's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's decimal format with 999 minimum integer digits and 999 minimum and maximum fraction digits, without grouping and with
+    ///   it; en's percent format with 999 maximum fraction digits.
+    ///
+    /// Steps:
+    /// - Format 7 as a decimal and as a double; write the double with TryFormat into 1,999 characters and the decimal into 1,998;
+    ///   format 7 with grouping; format 5e-324 (the smallest double) with the percent format.
+    ///
+    /// Expected:
+    /// - 998 zeros, 7, a point, and 999 zeros (1,999 characters) each way; TryFormat is true for 1,999 characters and false with 0
+    ///   written for 1,998; with grouping, 332 more characters (the 999 integer digits in 333 groups); the percent is 0, a point, 321
+    ///   zeros, 5, and the sign (the 324 fraction digits of 5e-324 less the 2 the percent moves).
+    /// </remarks>
+    [Fact]
+    public void Options_NineHundredNinetyNineDigits_WriteEveryDigit()
+    {
+        LocaleData en = CldrLocales.En;
+        var most = new NumberOptions
+        {
+            MinimumIntegerDigits = 999,
+            MinimumFractionDigits = 999,
+            MaximumFractionDigits = 999,
+            UseGrouping = false,
+        };
+        NumberFormatter number = NumberFormatter.Decimal(en, most);
+        NumberFormatter grouped = NumberFormatter.Decimal(en, new NumberOptions { MinimumIntegerDigits = 999, MinimumFractionDigits = 999 });
+        NumberFormatter percent = NumberFormatter.Percent(en, new NumberOptions { MaximumFractionDigits = 999 });
+        string expected = new string('0', 998) + "7." + new string('0', 999);
+        var buffer = new char[1999];
+
+        Assert.Equal(expected, number.Format(7m));
+        Assert.Equal(expected, number.Format(7.0));
+        Assert.True(number.TryFormat(7.0, buffer, out int written));
+        Assert.Equal(1999, written);
+        Assert.False(number.TryFormat(7m, buffer.AsSpan(0, 1998), out int shortWritten));
+        Assert.Equal(0, shortWritten);
+        Assert.Equal(1999 + 332, grouped.Format(7m).Length);
+        Assert.Equal("0." + new string('0', 321) + "5%", percent.Format(5e-324));
     }
 
     /// <summary>
@@ -482,22 +610,25 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
-    /// A long compact format chooses among the patterns of a power of ten by the plural category of the number as it is rounded, with
-    /// the compact exponent c, and takes the pattern of 1 alone when the shown number is 1 (design §4.11, "Passing the number"; UTS
-    /// #35 part 3, "Compact Number Formats", step 8; Issue #906).
+    /// A long compact format chooses among the patterns of a power of ten by the plural category of the shown number, with the
+    /// compact exponent c = 0, and takes the pattern of 1 alone when the shown number is the whole number 1, as ICU's
+    /// CompactHandler::processQuantity does (design §4.11, "Choosing a compact pattern"; Issue #906, after PR #944's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The cases: en; fr (1000-count-1 mille, one 0 millier, other 0 mille; one 0 million, other 0 millions, no many); pl (one
-    ///   0 tysiąc, few 0 tysiące, many 0 tysięcy); the entry tl, which holds fil's tables (one 0 libo, other 0 na libo).
+    /// - The cases: en; fr (1000-count-1 mille, one 0 millier, other 0 mille; one 0 million, other 0 millions); pl (one 0 tysiąc,
+    ///   few 0 tysiące, many 0 tysięcy, other 0 tysiąca); ru (few 0 тысячи and 0 миллиона, other 0 тысячи); the entry tl, which
+    ///   holds fil's tables (one 0 libo, other 0 na libo).
     ///
     /// Steps:
     /// - Write each value with the locale's long compact format.
     ///
     /// Expected:
-    /// - The text of each case: fr's 1000 is mille (the shown 1), 1500 is 1,5 mille (1500 with c = 3 is other, where the shown 1.5
-    ///   would be one), and 1000000 is 1 millions (1000000 with c = 6 is many, which falls back to other); pl's 1000, 2000, 5000, and
-    ///   1500 are many (i % 10 = 0); tl's 1004 is 1 libo (the rounded 1000 is one; 1004 would be other) and 4000 is 4 libo.
+    /// - The text of each case: fr's 1000 is mille (the shown 1 has a pattern of its own), 1500 is 1,5 millier (1.5 is one in
+    ///   French), 1000000 is 1 million (one), and 2000000 is 2 millions; pl's 1000 is 1 tysiąc (one), 2000 is 2 tysiące (few), 5000
+    ///   is 5 tysięcy (many), and 1500 is 1,5 tysiąca (other, a fraction digit); ru's 2000000 is 2 миллиона (few) and 1234 is
+    ///   1,2 тысячи (other); tl's 1004 is 1 libo (shown as 1), 4000 is 4 na libo (4 is other in Filipino), and 5000 is 5 libo
+    ///   (one).
     /// </remarks>
     /// <param name="tag">The locale.</param>
     /// <param name="value">The number, in invariant text.</param>
@@ -506,25 +637,28 @@ public sealed class NumberFormatterTests
     [InlineData("en", "1234", "1.2 thousand")]
     [InlineData("en", "1000000", "1 million")]
     [InlineData("fr", "1000", "mille")]
-    [InlineData("fr", "1500", "1,5 mille")]
+    [InlineData("fr", "1500", "1,5 millier")]
     [InlineData("fr", "2000", "2 mille")]
-    [InlineData("fr", "1000000", "1 millions")]
+    [InlineData("fr", "1000000", "1 million")]
     [InlineData("fr", "2000000", "2 millions")]
-    [InlineData("pl", "1000", "1 tysięcy")]
-    [InlineData("pl", "2000", "2 tysięcy")]
+    [InlineData("pl", "1000", "1 tysiąc")]
+    [InlineData("pl", "2000", "2 tysiące")]
     [InlineData("pl", "5000", "5 tysięcy")]
-    [InlineData("pl", "1500", "1,5 tysięcy")]
+    [InlineData("pl", "1500", "1,5 tysiąca")]
+    [InlineData("ru", "2000000", "2 миллиона")]
+    [InlineData("ru", "1234", "1,2 тысячи")]
     [InlineData("tl", "1000", "1 libo")]
     [InlineData("tl", "1004", "1 libo")]
-    [InlineData("tl", "4000", "4 libo")]
-    public void Compact_Long_ChoosesThePatternByTheRoundedNumberAndItsExponent(string tag, string value, string expected)
+    [InlineData("tl", "4000", "4 na libo")]
+    [InlineData("tl", "5000", "5 libo")]
+    public void Compact_Long_ChoosesThePatternByTheShownNumber(string tag, string value, string expected)
     {
         Assert.Equal(expected, NumberFormatter.Compact(ByTag[tag], CompactStyle.Long).Format(Parse(value)));
     }
 
     /// <summary>
-    /// The compact format passes the compact exponent c to the plural rules with the number (UTS #35 part 3, "Plural Operand
-    /// Meanings": c is the exponent of the power of 10 used in compact decimal formatting; Issue #906).
+    /// The compact format selects the plural category with the compact exponent c = 0, as ICU does, which sets the exponent only
+    /// after it selects (Issue #906, after PR #944's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -535,14 +669,14 @@ public sealed class NumberFormatterTests
     /// - Write 2000 and 2 with the long compact format.
     ///
     /// Expected:
-    /// - 2 tysięcy (c = 3), and 2 written in full.
+    /// - 2 tysiąca (c = 0 is other; c = 3 would be many, 2 tysięcy), and 2 written in full.
     /// </remarks>
     [Fact]
-    public void Compact_PluralRulesReadingC_GetTheCompactExponent()
+    public void Compact_PluralRulesReadingC_GetZero()
     {
         NumberFormatter format = NumberFormatter.Compact(new ExponentLocaleData(), CompactStyle.Long);
 
-        Assert.Equal("2 tysięcy", format.Format(2000));
+        Assert.Equal("2 tysiąca", format.Format(2000));
         Assert.Equal("2", format.Format(2));
     }
 
@@ -576,23 +710,31 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
-    /// A negative number that rounds to zero, and negative zero, keep the minus sign (Issue #906).
+    /// A negative number that rounds to zero keeps the minus sign, and the double -0.0 is written as zero, as a decimal's zero is
+    /// (Issue #906; the double, after PR #944's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - en's decimal format (3 fraction digits).
+    /// - en's decimal format (3 fraction digits), percent format, and short compact format.
     ///
     /// Steps:
-    /// - Write -0.0001 as a decimal, and -0.0 as a double.
+    /// - Write -0.0001 as a decimal and as a double; write -0.0 as a double with each format, and -0.0m as a decimal.
     ///
     /// Expected:
-    /// - -0 both.
+    /// - -0 for both -0.0001; 0, 0%, and 0 for the double -0.0, and 0 for the decimal -0.0m.
     /// </remarks>
     [Fact]
-    public void TryFormat_NegativeZero_KeepsTheMinusSign()
+    public void TryFormat_NegativeZero_IsZeroAndANegativeThatRoundsToZeroKeepsTheMinus()
     {
-        Assert.Equal("-0", CldrLocales.En.DecimalFormat.Format(-0.0001m));
-        Assert.Equal("-0", Write(CldrLocales.En.DecimalFormat, -0.0));
+        LocaleData en = CldrLocales.En;
+        NumberFormatter compact = NumberFormatter.Compact(en, CompactStyle.Short);
+
+        Assert.Equal("-0", en.DecimalFormat.Format(-0.0001m));
+        Assert.Equal("-0", Write(en.DecimalFormat, -0.0001));
+        Assert.Equal("0", Write(en.DecimalFormat, -0.0));
+        Assert.Equal("0%", Write(en.PercentFormat, -0.0));
+        Assert.Equal("0", Write(compact, -0.0));
+        Assert.Equal("0", en.DecimalFormat.Format(-0.0m));
     }
 
     /// <summary>
@@ -629,8 +771,9 @@ public sealed class NumberFormatterTests
     }
 
     /// <summary>
-    /// A compact number that rounds up past decimal.MaxValue still writes, its plural category taken from a stand-in of 28 digits with
-    /// the same last seven, and Round of it throws (design §4.11, "Passing the number").
+    /// A compact number that rounds up past decimal.MaxValue still writes and Round of it throws, and a shown number past the range
+    /// of decimal takes its plural category from a stand-in of 28 digits with the same last seven (design §4.11, "Passing the
+    /// number").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -639,13 +782,14 @@ public sealed class NumberFormatterTests
     ///
     /// Steps:
     /// - Write decimal.MaxValue with en's format, and round it.
-    /// - Write 10^14 as a decimal with pl's and fr's formats, and 1.2345 × 10^30 as a double: the number it stands for has 31 digits,
-    ///   past decimal, and its last seven are zeros. In Polish that is many, as 10^14 is (i % 10 = 0; a stand-in ending in 2 would
-    ///   be few). In French it is many (c = 12), which falls back to other, as 10^14 does (a stand-in of 0 would be one).
+    /// - Write 5 × 10^14 as a decimal with pl's and fr's formats (the shown 500: many in Polish, other in French), and 1.2345 ×
+    ///   10^50 as a double: its shown number has 39 integer digits, past decimal, and its last seven are zeros. In Polish that is many
+    ///   (i % 10 = 0; a stand-in ending in 2 would be few). In French it is many, which falls back to other (a stand-in of 0 would
+    ///   be one).
     ///
     /// Expected:
     /// - 79,228,162,514,264,338T (the 17 digits of 7.9228162514264337 × 10^16 rounded up); OverflowException.
-    /// - Each double's text ends with the word of the locale's text of 10^14, after a space.
+    /// - Each double's text ends with the word of the locale's text of 5 × 10^14, after a space.
     /// </remarks>
     [Fact]
     public void Compact_NumberPastDecimal_WritesAndRoundThrows()
@@ -657,10 +801,10 @@ public sealed class NumberFormatterTests
         foreach (LocaleData data in new[] { CldrLocales.Pl, CldrLocales.Fr })
         {
             NumberFormatter format = NumberFormatter.Compact(data, CompactStyle.Long);
-            string power = format.Format(100_000_000_000_000m);
+            string power = format.Format(500_000_000_000_000m);
             string word = power[power.LastIndexOf(' ')..];
 
-            Assert.EndsWith(word, Write(format, 1.2345e30), StringComparison.Ordinal);
+            Assert.EndsWith(word, format.Format(1.2345e50), StringComparison.Ordinal);
         }
     }
 
@@ -1003,9 +1147,10 @@ public sealed class NumberFormatterTests
     ///   destination buffer, a writer over a buffer, and the texts to parse, all made before the measured runs.
     ///
     /// Steps:
-    /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: write the index plus 0.5 as a long, a decimal, and a
-    ///   double with each format; round it; parse a decimal and a percent text as a decimal and a double; write the three Of values
-    ///   into a new writer over the same buffer.
+    /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: write the index as a long and its magnitude as a
+    ///   ulong, and the index plus 0.5 as a decimal and as a double (the shortest digits, rounded, and moved by a percent), with each
+    ///   format; round it; parse a decimal and a percent text as a decimal and a double; write four Of values (a long, a decimal, a
+    ///   double, and a ulong) into a new writer over the same buffer.
     ///
     /// Expected:
     /// - No byte is allocated, and every run wrote and parsed.
@@ -1039,6 +1184,7 @@ public sealed class NumberFormatterTests
                 foreach (NumberFormatter format in formats)
                 {
                     all &= format.TryFormat(i, destination, out _);
+                    all &= format.TryFormat((ulong)Math.Abs(i), destination, out _);
                     all &= format.TryFormat(i + 0.5m, destination, out _);
                     all &= format.TryFormat(i + 0.5, destination, out _);
                     _ = format.Round(i + 0.5m);
@@ -1048,7 +1194,7 @@ public sealed class NumberFormatterTests
                 all &= number.TryParse(numberText, out double parsedDouble) && parsedDouble == 1234.5;
                 all &= percent.TryParse(percentText, out decimal parsedPercent) && parsedPercent == -0.12m;
                 var writer = new NodeTextWriter(text, ranges);
-                writer.Write($"{number.Of(i)} {percent.Of(i + 0.5m)} {formats[3].Of(i + 0.5)}");
+                writer.Write($"{number.Of(i)} {percent.Of(i + 0.5m)} {formats[3].Of(i + 0.5)} {number.Of((ulong)Math.Abs(i))}");
                 if (all && writer.Length > 0)
                 {
                     done++;
@@ -1090,6 +1236,13 @@ public sealed class NumberFormatterTests
     private static decimal Parse(string value) => decimal.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
 
     private static string Write(NumberFormatter format, long value)
+    {
+        var buffer = new char[64];
+        Assert.True(format.TryFormat(value, buffer, out int written));
+        return new string(buffer, 0, written);
+    }
+
+    private static string Write(NumberFormatter format, ulong value)
     {
         var buffer = new char[64];
         Assert.True(format.TryFormat(value, buffer, out int written));

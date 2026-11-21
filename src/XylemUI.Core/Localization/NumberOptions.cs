@@ -7,18 +7,18 @@ namespace XylemUI;
 public sealed class NumberOptions
 {
     /// <summary>
-    /// Gets the fewest integer digits shown, padded with zeros (<c>007</c> for 3); 1 or more. The default is 1.
+    /// Gets the fewest integer digits shown, padded with zeros (<c>007</c> for 3); 1 to 999. The default is 1.
     /// </summary>
     public int MinimumIntegerDigits { get; init; } = 1;
 
     /// <summary>
-    /// Gets the fewest fraction digits shown, padded with zeros; 0 or more. <see langword="null"/> takes the pattern's, or the
+    /// Gets the fewest fraction digits shown, padded with zeros; 0 to 999. <see langword="null"/> takes the pattern's, or the
     /// currency's for a currency format, raised to <see cref="MaximumFractionDigits"/> when that is given and smaller.
     /// </summary>
     public int? MinimumFractionDigits { get; init; }
 
     /// <summary>
-    /// Gets the most fraction digits shown; the value is rounded half to even at the last one. 0 or more, and not less than
+    /// Gets the most fraction digits shown; the value is rounded half to even at the last one. 0 to 999, and not less than
     /// <see cref="MinimumFractionDigits"/> when both are given. <see langword="null"/> takes the pattern's, or the currency's for a
     /// currency format, raised to <see cref="MinimumFractionDigits"/> when that is given and larger.
     /// </summary>
