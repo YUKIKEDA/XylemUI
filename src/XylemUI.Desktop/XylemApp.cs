@@ -118,8 +118,6 @@ public static class XylemApp
             // Windows' (design §13.2, "macOS と Linux").
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
-            // The root function, then the first frame at the window's size in logical pixels: the host's physical size divided by
-            // its scale (design §6.0, "The order of creation", step 7).
             var size = new Size(width / scale, height / scale);
             core.Mount(root, WindowRoot.ReadWrapper(), default, "XylemApp.Run", size, scale);
 
