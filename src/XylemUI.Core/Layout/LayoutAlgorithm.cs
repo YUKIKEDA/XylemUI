@@ -9,6 +9,26 @@ internal abstract record LayoutAlgorithm
 {
     private LayoutAlgorithm() { }
 
+    // The two writes below are virtual, and each container type answers for itself, so that NativeAOT keeps a container's code
+    // only when the app makes that container: a type test with a constructor in a shared method made every app that sets a gap or
+    // an alignment carry the grid's layout (114,936 bytes in the map of a Counter with Fluent's button; Issue #952).
+
+    /// <summary>
+    /// Returns this layout with a gap between its children, or <see langword="null"/> when it has none (a block).
+    /// </summary>
+    /// <param name="gap">The gap, on both axes.</param>
+    /// <returns>The layout with the gap, or <see langword="null"/>.</returns>
+    internal virtual LayoutAlgorithm? WithGap(LengthPercentage gap) => null;
+
+    /// <summary>
+    /// Returns this layout with the container's alignments replaced where a value is given, this same object when nothing changes,
+    /// or <see langword="null"/> when it has no container alignment (a block or a virtualized list).
+    /// </summary>
+    /// <param name="justify">The new <c>justify-content</c>, or <see langword="null"/> to keep it.</param>
+    /// <param name="align">The new <c>align-items</c>, or <see langword="null"/> to keep it.</param>
+    /// <returns>The layout with the alignments, this object, or <see langword="null"/>.</returns>
+    internal virtual LayoutAlgorithm? WithContainerAlignment(ContentAlignment? justify, ItemAlignment? align) => null;
+
     /// <summary>
     /// Stacks the children along the vertical axis (design §3.2: CSS block layout without margin collapsing, floats, or inline
     /// flow).
@@ -37,13 +57,34 @@ internal abstract record LayoutAlgorithm
         /// Gets a flex column with CSS's initial values.
         /// </summary>
         public static Flex Column { get; } = new(new FlexProps { Direction = FlexDirection.Column });
+
+        /// <inheritdoc/>
+        internal override LayoutAlgorithm WithGap(LengthPercentage gap) => new Flex(Props with { RowGap = gap, ColumnGap = gap });
+
+        /// <inheritdoc/>
+        internal override LayoutAlgorithm WithContainerAlignment(ContentAlignment? justify, ItemAlignment? align)
+        {
+            FlexProps props = Props with { JustifyContent = justify ?? Props.JustifyContent, AlignItems = align ?? Props.AlignItems };
+            return props == Props ? this : new Flex(props);
+        }
     }
 
     /// <summary>
     /// Lays the children out in a grid by CSS Grid (design §3.3, "The shape of P02f", ported from Taffy 0.15.1).
     /// </summary>
     /// <param name="Props">The grid container's properties.</param>
-    public sealed record Grid(GridProps Props) : LayoutAlgorithm;
+    public sealed record Grid(GridProps Props) : LayoutAlgorithm
+    {
+        /// <inheritdoc/>
+        internal override LayoutAlgorithm WithGap(LengthPercentage gap) => new Grid(Props with { RowGap = gap, ColumnGap = gap });
+
+        /// <inheritdoc/>
+        internal override LayoutAlgorithm WithContainerAlignment(ContentAlignment? justify, ItemAlignment? align)
+        {
+            GridProps props = Props with { JustifyContent = justify ?? Props.JustifyContent, AlignItems = align ?? Props.AlignItems };
+            return props == Props ? this : new Grid(props);
+        }
+    }
 
     /// <summary>
     /// Places the rows a virtualized list made along the axis that scrolls, each at the position its index has among all the items
@@ -51,7 +92,11 @@ internal abstract record LayoutAlgorithm
     /// by the gap.
     /// </summary>
     /// <param name="Props">The list's axis and gap.</param>
-    public sealed record Virtual(VirtualProps Props) : LayoutAlgorithm;
+    public sealed record Virtual(VirtualProps Props) : LayoutAlgorithm
+    {
+        /// <inheritdoc/>
+        internal override LayoutAlgorithm WithGap(LengthPercentage gap) => new Virtual(Props with { Gap = gap });
+    }
 }
 
 /// <summary>
