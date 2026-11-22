@@ -1223,6 +1223,42 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// Gap on a virtualized list writes the gap of the list's layout, between its rows (design §3.4, "The shape of P02e"), and the
+    /// container alignment throws on it: the list has a gap and no container alignment.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a box that scrolls vertically and holds a virtualized list of three items.
+    ///
+    /// Steps:
+    /// - Call <c>Gap(5)</c> on the box; then <c>JustifyContent(Center)</c>.
+    ///
+    /// Expected:
+    /// - The box's layout is the virtualized list's with a gap of 5 pixels, and the alignment throws
+    ///   <see cref="InvalidOperationException"/>.
+    /// </remarks>
+    [Fact]
+    public void Gap_OnAVirtualizedList_WritesTheListsGap_AndAlignmentThrows() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element list = default;
+            IReadOnlySignal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([1, 2, 3]);
+            scene.Mount(() =>
+                list = Box().Overflow(Overflow.Visible, Overflow.Scroll).Height(100).VirtualFor(items, static item => item, static _ => Box())
+            );
+
+            _ = list.Gap(5);
+
+            Assert.Equal(
+                LengthPercentage.Px(5),
+                Assert.IsType<LayoutAlgorithm.Virtual>(scene.Tree.Nodes.GetRef(list.Node).Layout.Style.Algorithm).Props.Gap
+            );
+            Assert.Throws<InvalidOperationException>(() => list.JustifyContent(JustifyContent.Center));
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// A value outside the public enum throws, on a row and on a grid, and leaves the property as it was; the last values of
     /// each enum are taken.
     /// </summary>
