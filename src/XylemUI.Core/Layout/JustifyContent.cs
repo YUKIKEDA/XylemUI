@@ -22,14 +22,12 @@ public enum JustifyContent : byte
     End,
 
     /// <summary>
-    /// The items are packed at the start of the main axis, at its end in a reversed row or column; in a grid, as
-    /// <see cref="Start"/>.
+    /// The items are packed at the start of the row's or the column's main axis; in a grid, as <see cref="Start"/>.
     /// </summary>
     FlexStart,
 
     /// <summary>
-    /// The items are packed at the end of the main axis, at its start in a reversed row or column; in a grid, as
-    /// <see cref="End"/>.
+    /// The items are packed at the end of the row's or the column's main axis; in a grid, as <see cref="End"/>.
     /// </summary>
     FlexEnd,
 

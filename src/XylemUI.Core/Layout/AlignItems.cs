@@ -23,14 +23,12 @@ public enum AlignItems : byte
     End,
 
     /// <summary>
-    /// The child goes to the start of its line's cross axis, its end when the lines wrap in reverse; in a grid, as
-    /// <see cref="Start"/>.
+    /// The child goes to the start of its line's cross axis in a row or a column; in a grid, as <see cref="Start"/>.
     /// </summary>
     FlexStart,
 
     /// <summary>
-    /// The child goes to the end of its line's cross axis, its start when the lines wrap in reverse; in a grid, as
-    /// <see cref="End"/>.
+    /// The child goes to the end of its line's cross axis in a row or a column; in a grid, as <see cref="End"/>.
     /// </summary>
     FlexEnd,
 
