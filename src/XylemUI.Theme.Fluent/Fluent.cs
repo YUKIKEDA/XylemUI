@@ -13,7 +13,7 @@ public static class Fluent
     /// Makes a button (<see cref="Primitive.Button(Element, Action)"/>) with the look of the theme provided here: its background,
     /// border, color of text, corners, padding, and hovered, pressed, focus-visible, and disabled looks follow the theme, and a value
     /// set in <paramref name="style"/> wins over the theme's. The button is at least 96 wide, as Fluent's medium button, and holds
-    /// the content in its middle; the content's grid column and row are written for that.
+    /// the content in its middle: the content is the child of a row that centers it on both axes.
     /// </summary>
     /// <param name="content">The content: a node of the current tree with no parent.</param>
     /// <param name="onClick">What a click runs, in the scope current now.</param>

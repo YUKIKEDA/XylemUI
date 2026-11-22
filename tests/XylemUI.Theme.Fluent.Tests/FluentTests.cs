@@ -666,6 +666,56 @@ public sealed class FluentTests
     }
 
     /// <summary>
+    /// A frame that moves the focus with Tab between two of 1,000 buttons allocates nothing: the focus-visible look comes and goes
+    /// (design §11.3, §13.2 "TH1 のボタンの値").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The same 1,000 buttons in a wrapped app of 1,920 x 1,000, light, settled, with the first button focused and pumped.
+    ///
+    /// Steps:
+    /// - Read the right and bottom edges of the last button. Warm up once: press Tab and pump, press Shift+Tab and pump (each
+    ///   button's focus styles are made on the first run of its effect, and the first moves of the focus are not the steady
+    ///   state). Under <c>PerformanceAssert.DoesNotAllocate</c>, 1,000 runs, its unmeasured window and the windows it runs again
+    ///   included: press Tab and pump, then press Shift+Tab and pump. Each run starts and ends with the first button focused,
+    ///   whatever its index.
+    ///
+    /// Expected:
+    /// - The last button ends at 1,920, 1,000. 0 bytes in every window; two frames were presented for each run; at the end the
+    ///   first button has the focus and is focus-visible, and the second is not focus-visible.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Button_TabFocusFrames_AllocateNothing()
+    {
+        Element[] firstTwo = [];
+        Element last = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () => ThousandButtons(out firstTwo, out last),
+            Options(Light) with
+            {
+                Width = 1920,
+                Height = 1000,
+            }
+        );
+        _ = app.PumpAndSettle();
+        Assert.Equal((1920f, 1000f), FarCorner(app, last));
+        Assert.True(app.Focus(firstTwo[0]));
+        _ = app.PumpAndSettle();
+        TabAndBack(app);
+        Assert.Equal(firstTwo[0].Node, app.Tree.Focus.Focused);
+        int presents = app.PresentCount;
+
+        int runs = PerformanceAssert.DoesNotAllocate(1_000, _ => TabAndBack(app));
+        int presented = app.PresentCount - presents;
+
+        Assert.Equal(runs * 2, presented);
+        Assert.Equal(firstTwo[0].Node, app.Tree.Focus.Focused);
+        Assert.True((app.Tree.Nodes.GetRef(firstTwo[0].Node).Pseudo & PseudoState.FocusVisible) != 0);
+        Assert.True((app.Tree.Nodes.GetRef(firstTwo[1].Node).Pseudo & PseudoState.FocusVisible) == 0);
+    }
+
+    /// <summary>
     /// A standard, a primary, and a disabled button match their golden in each variant (design §13.2, "確かめ方").
     /// </summary>
     /// <remarks>
@@ -742,6 +792,16 @@ public sealed class FluentTests
 
         last = cells[^1];
         return Column(rows);
+    }
+
+    // Moves the focus to the next button with Tab and back with Shift+Tab, pumping after each key, so that each frame draws one
+    // move of the focus-visible look.
+    private static void TabAndBack(HeadlessApp app)
+    {
+        _ = app.Keyboard.Press(Key.Tab);
+        _ = app.PumpAndSettle();
+        _ = app.Keyboard.Press(Key.Tab, KeyModifiers.Shift);
+        _ = app.PumpAndSettle();
     }
 
     // The right and bottom edges of the last of the 1,000 buttons in the window: its rectangle is its row's, and the row's is the

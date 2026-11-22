@@ -328,6 +328,44 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A width fraction under a parent whose width comes from its content (a child of a row with no width) counts as an automatic
+    /// width while the parent's width is found, and then resolves against the parent's content box (design §2.13, "割合の幅と高さ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box of width 300 holding a row, which holds a box P with no width. P holds a box of 100 x 10 and a box H of
+    ///   width fraction 0.5, which holds a box of 140 x 10. Laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read P's width and H's rectangle.
+    ///
+    /// Expected:
+    /// - Derived by hand from CSS (Sizing 3, a percentage of an indefinite size): P is a flex item of automatic width, so its width
+    ///   is its content's widest child. H's percentage has no definite basis then, so H counts as automatic, its content's 140;
+    ///   P is max(100, 140) = 140 wide, which fits the row's 300. P's width is then definite, and H is 0.5 x 140 = 70 wide and 10
+    ///   high at (0, 10), under the first box. P is 140 wide, and H is (0, 10, 70, 10).
+    /// </remarks>
+    [Fact]
+    public void WidthFraction_UnderAParentSizedByItsContent_CountsAsAutoAndThenResolves() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element parent = default;
+            Element half = default;
+            scene.Mount(() =>
+            {
+                half = Box(Box().Width(140).Height(10)).WidthFraction(0.5f);
+                parent = Box(Box().Width(100).Height(10), half);
+                return Box(Row(parent)).Width(300);
+            });
+            scene.Scheduler.Run();
+
+            Assert.Equal(140f, scene.Tree.Nodes.GetRef(parent.Node).Layout.Rect.Width);
+            Assert.Equal(new Rect(0, 10, 70, 10), scene.Tree.Nodes.GetRef(half.Node).Layout.Rect);
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// A width fraction and a height fraction set a node's border box: its own padding and border are inside the fraction, not
     /// added to it.
     /// </summary>
