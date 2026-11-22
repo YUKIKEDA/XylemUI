@@ -72,21 +72,11 @@ public static partial class ElementExtensions
         return Layout(
             element,
             style =>
-                style.Algorithm switch
+                style with
                 {
-                    LayoutAlgorithm.Flex flex => style with
-                    {
-                        Algorithm = new LayoutAlgorithm.Flex(flex.Props with { RowGap = LengthPercentage.Px(g), ColumnGap = LengthPercentage.Px(g) }),
-                    },
-                    LayoutAlgorithm.Virtual list => style with
-                    {
-                        Algorithm = new LayoutAlgorithm.Virtual(list.Props with { Gap = LengthPercentage.Px(g) }),
-                    },
-                    LayoutAlgorithm.Grid grid => style with
-                    {
-                        Algorithm = new LayoutAlgorithm.Grid(grid.Props with { RowGap = LengthPercentage.Px(g), ColumnGap = LengthPercentage.Px(g) }),
-                    },
-                    _ => throw new InvalidOperationException("Only a column, a row, a grid, or a virtualized list has a gap between its children."),
+                    Algorithm =
+                        style.Algorithm.WithGap(LengthPercentage.Px(g))
+                        ?? throw new InvalidOperationException("Only a column, a row, a grid, or a virtualized list has a gap between its children."),
                 }
         );
     }
@@ -1395,37 +1385,12 @@ public static partial class ElementExtensions
     {
         UiTree tree = element.TreeOrThrow();
         LayoutStyle style = tree.Nodes.GetRef(element.Node).Layout.Style;
-        LayoutAlgorithm algorithm;
-        switch (style.Algorithm)
+        LayoutAlgorithm algorithm =
+            style.Algorithm.WithContainerAlignment(justify, align)
+            ?? throw new InvalidOperationException("JustifyContent and AlignItems work on a column, a row, or a grid only.");
+        if (ReferenceEquals(algorithm, style.Algorithm))
         {
-            case LayoutAlgorithm.Flex flex:
-                FlexProps flexProps = flex.Props with
-                {
-                    JustifyContent = justify ?? flex.Props.JustifyContent,
-                    AlignItems = align ?? flex.Props.AlignItems,
-                };
-                if (flexProps == flex.Props)
-                {
-                    return element;
-                }
-
-                algorithm = new LayoutAlgorithm.Flex(flexProps);
-                break;
-            case LayoutAlgorithm.Grid grid:
-                GridProps gridProps = grid.Props with
-                {
-                    JustifyContent = justify ?? grid.Props.JustifyContent,
-                    AlignItems = align ?? grid.Props.AlignItems,
-                };
-                if (gridProps == grid.Props)
-                {
-                    return element;
-                }
-
-                algorithm = new LayoutAlgorithm.Grid(gridProps);
-                break;
-            default:
-                throw new InvalidOperationException("JustifyContent and AlignItems work on a column, a row, or a grid only.");
+            return element;
         }
 
         tree.SetStyle(element.Node, style with { Algorithm = algorithm });
