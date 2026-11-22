@@ -1231,11 +1231,12 @@ public sealed class ElementsTests(UiThreadFixture ui)
     /// - A scene with a box that scrolls vertically and holds a virtualized list of three items.
     ///
     /// Steps:
-    /// - Call <c>Gap(5)</c> on the box; then <c>JustifyContent(Center)</c>.
+    /// - Call <c>Gap(5)</c> on the box and read its layout algorithm; then call <c>JustifyContent(Center)</c> and
+    ///   <c>AlignItems(Center)</c>, and read the algorithm again.
     ///
     /// Expected:
-    /// - The box's layout is the virtualized list's with a gap of 5 pixels, and the alignment throws
-    ///   <see cref="InvalidOperationException"/>.
+    /// - The box's layout is the virtualized list's with a gap of 5 pixels; each alignment throws
+    ///   <see cref="InvalidOperationException"/>, and the algorithm after them is the same instance as before.
     /// </remarks>
     [Fact]
     public void Gap_OnAVirtualizedList_WritesTheListsGap_AndAlignmentThrows() =>
@@ -1249,12 +1250,12 @@ public sealed class ElementsTests(UiThreadFixture ui)
             );
 
             _ = list.Gap(5);
+            LayoutAlgorithm withGap = scene.Tree.Nodes.GetRef(list.Node).Layout.Style.Algorithm;
 
-            Assert.Equal(
-                LengthPercentage.Px(5),
-                Assert.IsType<LayoutAlgorithm.Virtual>(scene.Tree.Nodes.GetRef(list.Node).Layout.Style.Algorithm).Props.Gap
-            );
+            Assert.Equal(LengthPercentage.Px(5), Assert.IsType<LayoutAlgorithm.Virtual>(withGap).Props.Gap);
             Assert.Throws<InvalidOperationException>(() => list.JustifyContent(JustifyContent.Center));
+            Assert.Throws<InvalidOperationException>(() => list.AlignItems(AlignItems.Center));
+            Assert.Same(withGap, scene.Tree.Nodes.GetRef(list.Node).Layout.Style.Algorithm);
             scene.Dispose();
         });
 
