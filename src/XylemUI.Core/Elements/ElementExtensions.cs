@@ -132,6 +132,54 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
+    /// Sets how a column, a row, or a grid distributes its free space (CSS's <c>justify-content</c>, design §2.13, "The alignment of
+    /// a container"): a column's or a row's along the main axis of each line, a grid's around and between its columns. The same
+    /// value again changes nothing.
+    /// </summary>
+    /// <param name="element">The column, the row, or the grid.</param>
+    /// <param name="value">The distribution.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is not a value of
+    /// <see cref="XylemUI.JustifyContent"/>.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the node is not a column, a row, or a
+    /// grid.</exception>
+    [UiThreadOnly]
+    public static Element JustifyContent(this Element element, JustifyContent value)
+    {
+        UiThread.VerifyAccess();
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "The distribution is a value of JustifyContent.");
+        }
+
+        return Align(element, new ContentAlignment((AlignContentKeyword)value), null);
+    }
+
+    /// <summary>
+    /// Sets where a column, a row, or a grid puts its children across (CSS's <c>align-items</c>, design §2.13, "The alignment of a
+    /// container"): a column's or a row's across each line, a grid's along the height of each cell. A child's own alignment wins.
+    /// The same value again changes nothing.
+    /// </summary>
+    /// <param name="element">The column, the row, or the grid.</param>
+    /// <param name="value">The alignment.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is not a value of
+    /// <see cref="XylemUI.AlignItems"/>.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the node is not a column, a row, or a
+    /// grid.</exception>
+    [UiThreadOnly]
+    public static Element AlignItems(this Element element, AlignItems value)
+    {
+        UiThread.VerifyAccess();
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "The alignment is a value of AlignItems.");
+        }
+
+        return Align(element, null, new ItemAlignment((AlignItemsKeyword)value));
+    }
+
+    /// <summary>
     /// Places the node in its grid's columns: from line <paramref name="start"/> across <paramref name="span"/> columns (CSS's
     /// <c>grid-column: start / span n</c>, design §3.3). Line 1 is the start of the explicit grid and -1 its end.
     /// </summary>
@@ -1380,6 +1428,49 @@ public static partial class ElementExtensions
                     }
                     : throw new InvalidOperationException("Only a grid has the properties of a grid.")
         );
+
+    // Writes a flex or a grid container's justify-content or align-items, unsafe (design §2.13, "The alignment of a container"); a
+    // value equal to the one there marks nothing.
+    private static Element Align(Element element, ContentAlignment? justify, ItemAlignment? align)
+    {
+        UiTree tree = element.TreeOrThrow();
+        LayoutStyle style = tree.Nodes.GetRef(element.Node).Layout.Style;
+        LayoutAlgorithm algorithm;
+        switch (style.Algorithm)
+        {
+            case LayoutAlgorithm.Flex flex:
+                FlexProps flexProps = flex.Props with
+                {
+                    JustifyContent = justify ?? flex.Props.JustifyContent,
+                    AlignItems = align ?? flex.Props.AlignItems,
+                };
+                if (flexProps == flex.Props)
+                {
+                    return element;
+                }
+
+                algorithm = new LayoutAlgorithm.Flex(flexProps);
+                break;
+            case LayoutAlgorithm.Grid grid:
+                GridProps gridProps = grid.Props with
+                {
+                    JustifyContent = justify ?? grid.Props.JustifyContent,
+                    AlignItems = align ?? grid.Props.AlignItems,
+                };
+                if (gridProps == grid.Props)
+                {
+                    return element;
+                }
+
+                algorithm = new LayoutAlgorithm.Grid(gridProps);
+                break;
+            default:
+                throw new InvalidOperationException("JustifyContent and AlignItems work on a column, a row, or a grid only.");
+        }
+
+        tree.SetStyle(element.Node, style with { Algorithm = algorithm });
+        return element;
+    }
 
     private static Element Layout(Element element, Func<LayoutStyle, LayoutStyle> change)
     {

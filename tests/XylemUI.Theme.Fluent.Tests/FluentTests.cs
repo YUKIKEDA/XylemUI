@@ -556,7 +556,7 @@ public sealed class FluentTests
     /// <remarks>
     /// Preconditions:
     /// - A wrapped app of 1,920 x 1,000 that asks for a theme from a signal: 50 rows of 20 buttons, every fifth primary, around
-    ///   boxes of 8 x 8, each button 96 x 20 with its centering grid; an effect that counts the changes of the theme it reads. The
+    ///   boxes of 8 x 8, each button 96 x 20 with its centering row; an effect that counts the changes of the theme it reads. The
     ///   light and the dark theme are made before.
     ///
     /// Steps:
@@ -616,7 +616,7 @@ public sealed class FluentTests
     /// <remarks>
     /// Preconditions:
     /// - The same 1,000 buttons in a wrapped app of 1,920 x 1,000, light, settled; the centers of the first two buttons, where the
-    ///   pointer lies over each button's content, inside its centering grid.
+    ///   pointer lies over each button's content, inside its centering row.
     ///
     /// Steps:
     /// - Read the right and bottom edges of the last button. Under <c>PerformanceAssert.DoesNotAllocate</c>, 1,000 runs, its
@@ -801,15 +801,15 @@ public sealed class FluentTests
 
     private static Color[] Rgb(uint[] values) => Array.ConvertAll(values, Color.FromRgb);
 
-    // The content's place in its button: the content's rectangle is the centering grid's, and the grid's is the button's (each
-    // rectangle is in its parent's coordinates). It checks that the grid is the content's parent and the button the grid's.
+    // The content's place in its button: the content's rectangle is the centering row's, and the row's is the button's (each
+    // rectangle is in its parent's coordinates). It checks that the row is the content's parent and the button the row's.
     private static (float X, float Y) PlaceInButton(HeadlessApp app, Element button, Element content)
     {
-        Handle<UiNode> grid = app.Tree.Nodes.GetRef(content.Node).Parent;
-        Assert.Equal(button.Node, app.Tree.Nodes.GetRef(grid).Parent);
-        Rect inGrid = app.Tree.GetRect(content.Node);
-        Rect gridInButton = app.Tree.GetRect(grid);
-        return (gridInButton.X + inGrid.X, gridInButton.Y + inGrid.Y);
+        Handle<UiNode> row = app.Tree.Nodes.GetRef(content.Node).Parent;
+        Assert.Equal(button.Node, app.Tree.Nodes.GetRef(row).Parent);
+        Rect inRow = app.Tree.GetRect(content.Node);
+        Rect rowInButton = app.Tree.GetRect(row);
+        return (rowInButton.X + inRow.X, rowInButton.Y + inRow.Y);
     }
 
     private static (Paint? Background, PaintStyle? Hovered, Paint? Border, Color? ChainedForeground) Read(

@@ -496,4 +496,32 @@ public sealed class TextElementTests(UiThreadFixture ui) : IDisposable
                 ReactiveRuntime.UnhandledExceptionHandler = previous;
             }
         });
+
+    /// <summary>
+    /// <c>JustifyContent</c> and <c>AlignItems</c> work on a flex or a grid container only: on a text leaf they throw and leave
+    /// its layout as it was (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a text "nn".
+    ///
+    /// Steps:
+    /// - Call <c>JustifyContent(Center)</c> and <c>AlignItems(Center)</c> on the text.
+    ///
+    /// Expected:
+    /// - Each throws <see cref="InvalidOperationException"/>; the text's layout algorithm is the one it had.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_OnATextLeaf_Throw() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element text = default;
+            scene.Mount(() => text = Elements.Text("nn"));
+            LayoutAlgorithm before = scene.Tree.Nodes.GetRef(text.Node).Layout.Style.Algorithm;
+
+            Assert.Throws<InvalidOperationException>(() => text.JustifyContent(JustifyContent.Center));
+            Assert.Throws<InvalidOperationException>(() => text.AlignItems(AlignItems.Center));
+            Assert.Same(before, scene.Tree.Nodes.GetRef(text.Node).Layout.Style.Algorithm);
+        });
 }

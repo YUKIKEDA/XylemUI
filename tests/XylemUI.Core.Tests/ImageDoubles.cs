@@ -223,7 +223,7 @@ internal static class ImageDoubles
         {
             _height = height;
             _root = Tree.CreateNode(
-                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Start) }) }
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new ItemAlignment(AlignItemsKeyword.Start) }) }
             );
             Frames = new WindowFrames(Tree, _root, Target, Atlas, Scheduler, Gray, time: Time);
             Input = new WindowInput(Tree, Frames, new NoPlatform());

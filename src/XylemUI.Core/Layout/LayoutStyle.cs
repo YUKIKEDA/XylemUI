@@ -114,13 +114,13 @@ internal readonly record struct LayoutStyle
     /// Gets where the node goes across its flex line, or <see langword="null"/> (CSS's <c>auto</c>) to follow the container's
     /// <see cref="FlexProps.AlignItems"/>.
     /// </summary>
-    public AlignItems? AlignSelf { get; init; }
+    public ItemAlignment? AlignSelf { get; init; }
 
     /// <summary>
     /// Gets where the node goes along its block's width, or <see langword="null"/> (CSS's <c>auto</c>) to follow the block's
     /// <see cref="BlockProps.JustifyItems"/>.
     /// </summary>
-    public AlignItems? JustifySelf { get; init; }
+    public ItemAlignment? JustifySelf { get; init; }
 
     /// <summary>
     /// Gets the lines between which the node goes in its grid's columns (CSS's <c>grid-column</c>, design §3.3); <c>auto</c> at

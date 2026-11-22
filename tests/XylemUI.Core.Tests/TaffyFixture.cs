@@ -394,7 +394,7 @@ internal static class TaffyFixture
         };
 
     // "auto" (an item's alignment that follows its container) and an absent alignment are null.
-    private static AlignItems? ParseAlignItems(XElement e, string name)
+    private static ItemAlignment? ParseAlignItems(XElement e, string name)
     {
         string? value = e.Attribute(name)?.Value;
         if (value is null or "auto")
@@ -403,7 +403,7 @@ internal static class TaffyFixture
         }
 
         (bool safe, string keyword) = SplitSafety(value);
-        return new AlignItems(
+        return new ItemAlignment(
             keyword switch
             {
                 "normal" => AlignItemsKeyword.Normal,
@@ -420,7 +420,7 @@ internal static class TaffyFixture
         );
     }
 
-    private static AlignContent ParseAlignContent(XElement e, string name)
+    private static ContentAlignment ParseAlignContent(XElement e, string name)
     {
         string? value = e.Attribute(name)?.Value;
         if (value is null)
@@ -429,7 +429,7 @@ internal static class TaffyFixture
         }
 
         (bool safe, string keyword) = SplitSafety(value);
-        return new AlignContent(
+        return new ContentAlignment(
             keyword switch
             {
                 "normal" => AlignContentKeyword.Normal,

@@ -272,8 +272,8 @@ internal static partial class LayoutEngine
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static AlignContent StretchIfNormal(AlignContent alignment) =>
-        alignment.Keyword == AlignContentKeyword.Normal ? new AlignContent(AlignContentKeyword.Stretch) : alignment;
+    private static ContentAlignment StretchIfNormal(ContentAlignment alignment) =>
+        alignment.Keyword == AlignContentKeyword.Normal ? new ContentAlignment(AlignContentKeyword.Stretch) : alignment;
 
     // The number of times an automatic repetition repeats, and the number of tracks the template gives (Taffy's
     // compute_explicit_grid_size_in_axis, CSS Grid §7.2.3.2). A template with more than one automatic repetition, or with one
@@ -1047,10 +1047,10 @@ internal static partial class LayoutEngine
 
         // The padding, the border, and the scrollbars' room.
         public Edges ContentInset;
-        public AlignContent AlignContent;
-        public AlignContent JustifyContent;
-        public AlignItems AlignItems;
-        public AlignItems JustifyItems;
+        public ContentAlignment AlignContent;
+        public ContentAlignment JustifyContent;
+        public ItemAlignment AlignItems;
+        public ItemAlignment JustifyItems;
         public AvailableSize AvailableGridSpace;
         public OptionalSize OuterNodeSize;
         public OptionalSize InnerMin;
@@ -1285,8 +1285,8 @@ internal static partial class LayoutEngine
         public int ColumnIndexEnd;
         public int RowIndexStart;
         public int RowIndexEnd;
-        public AlignItems AlignSelf;
-        public AlignItems JustifySelf;
+        public ItemAlignment AlignSelf;
+        public ItemAlignment JustifySelf;
 
         // The first baseline from the top of the border box, or NaN; and the room above it that baseline alignment adds as a
         // margin.

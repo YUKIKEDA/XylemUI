@@ -1088,6 +1088,439 @@ public sealed class ElementsTests(UiThreadFixture ui)
             scene.Dispose();
         });
 
+    /// <summary>
+    /// <c>JustifyContent(Center)</c> on a row centers its children along the main axis, and writes the unsafe center to the row's
+    /// flex properties (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a row of 200 x 100 with boxes of 20 x 10 and 30 x 10.
+    ///
+    /// Steps:
+    /// - Set the row's justify-content to <see cref="JustifyContent.Center"/> while it is made; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The free space is 200 - 20 - 30 = 150, so the first box starts at 150 / 2 = 75 and the second at 75 + 20 = 95: (75, 0,
+    ///   20 x 10) and (95, 0, 30 x 10). The row's justify-content is center with <c>Safe</c> false.
+    /// </remarks>
+    [Fact]
+    public void JustifyContent_CenterInARow_CentersTheChildrenAlongTheMainAxis() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element row = default;
+            Element first = default;
+            Element second = default;
+            scene.Mount(() =>
+                row = Row(first = Box().Width(20).Height(10), second = Box().Width(30).Height(10))
+                    .Width(200)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.Center)
+            );
+
+            Assert.Equal((new Rect(75, 0, 20, 10), new Rect(95, 0, 30, 10)), (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node)));
+            Assert.Equal(new ContentAlignment(AlignContentKeyword.Center, Safe: false), FlexOf(scene, row).JustifyContent);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>JustifyContent(SpaceBetween)</c> on a row puts the free space between its children in equal parts and none at the ends.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a row of 200 x 100 with boxes of 20 x 10, 30 x 10, and 50 x 10.
+    ///
+    /// Steps:
+    /// - Set the row's justify-content to <see cref="JustifyContent.SpaceBetween"/>; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The free space is 200 - 100 = 100, in two gaps of 50: the boxes start at 0, 20 + 50 = 70, and 70 + 30 + 50 = 150.
+    /// </remarks>
+    [Fact]
+    public void JustifyContent_SpaceBetweenInARow_PutsTheFreeSpaceBetweenTheChildren() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+                Row(first = Box().Width(20).Height(10), second = Box().Width(30).Height(10), third = Box().Width(50).Height(10))
+                    .Width(200)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.SpaceBetween)
+            );
+
+            Assert.Equal(
+                (new Rect(0, 0, 20, 10), new Rect(70, 0, 30, 10), new Rect(150, 0, 50, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>AlignItems(Center)</c> on a column centers its children across, a child's own alignment wins, and the column's flex
+    /// properties hold the unsafe center (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a column of 200 x 100 with boxes of 40 x 10, 60 x 20, and 20 x 10; the third box's
+    ///   own alignment is end.
+    ///
+    /// Steps:
+    /// - Set the column's align-items to <see cref="AlignItems.Center"/>; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The first box at x = (200 - 40) / 2 = 80, the second at (200 - 60) / 2 = 70, the third at 200 - 20 = 180; down the column
+    ///   at y = 0, 10, and 10 + 20 = 30. The column's align-items is center with <c>Safe</c> false.
+    /// </remarks>
+    [Fact]
+    public void AlignItems_CenterInAColumn_CentersTheChildrenAcross_AndAChildsOwnAlignmentWins() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element column = default;
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+            {
+                third = Box().Width(20).Height(10);
+                OwnAlignment(scene, third, AlignItemsKeyword.End);
+                column = Column(first = Box().Width(40).Height(10), second = Box().Width(60).Height(20), third)
+                    .Width(200)
+                    .Height(100)
+                    .AlignItems(AlignItems.Center);
+                return column;
+            });
+
+            Assert.Equal(
+                (new Rect(80, 0, 40, 10), new Rect(70, 10, 60, 20), new Rect(180, 30, 20, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            Assert.Equal(new ItemAlignment(AlignItemsKeyword.Center, Safe: false), FlexOf(scene, column).AlignItems);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// On a grid, <c>JustifyContent(Center)</c> centers the columns in the content box and <c>AlignItems(Center)</c> centers each
+    /// child along its cell's height; a child's own alignment wins (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of 200 x 100 with three columns of 50 px and one row of 40 px, and boxes of
+    ///   10 x 10, 20 x 20, and 10 x 10 in the three cells; the third box's own alignment is end.
+    ///
+    /// Steps:
+    /// - Set the grid's justify-content and align-items to center; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The columns take 150, so they start at (200 - 150) / 2 = 25: the cells start at 25, 75, and 125, and each box at its
+    ///   cell's start, since it has a width. Down the row of 40: the first box at (40 - 10) / 2 = 15, the second at (40 - 20) / 2 =
+    ///   10, the third at 40 - 10 = 30. The grid's properties hold the two unsafe centers.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_CenterInAGrid_CenterTheTracksAndTheChildrenInTheirCells() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element grid = default;
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+            {
+                third = Box().Width(10).Height(10);
+                OwnAlignment(scene, third, AlignItemsKeyword.End);
+                grid = Grid(
+                        [Track.Px(50), Track.Px(50), Track.Px(50)],
+                        [Track.Px(40)],
+                        first = Box().Width(10).Height(10),
+                        second = Box().Width(20).Height(20),
+                        third
+                    )
+                    .Width(200)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.Center)
+                    .AlignItems(AlignItems.Center);
+                return grid;
+            });
+
+            Assert.Equal(
+                (new Rect(25, 15, 10, 10), new Rect(75, 10, 20, 20), new Rect(125, 30, 10, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            GridProps props = GridOf(scene, grid);
+            Assert.Equal(
+                (new ContentAlignment(AlignContentKeyword.Center, Safe: false), new ItemAlignment(AlignItemsKeyword.Center, Safe: false)),
+                (props.JustifyContent, props.AlignItems)
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// The alignments the methods write are unsafe (CSS's default): content larger than the room is centered past both of its
+    /// edges, not moved to the start (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of 100 x 100 with one column of 160 px and one row of 40 px, and a box of
+    ///   10 x 60 in its cell.
+    ///
+    /// Steps:
+    /// - Set the grid's justify-content and align-items to center; mount; read the box's rectangle.
+    ///
+    /// Expected:
+    /// - The column starts at (100 - 160) / 2 = -30 and the box at (40 - 60) / 2 = -10 in the row: (-30, -10, 10 x 60). A safe
+    ///   center would give (0, 0).
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_ContentLargerThanTheRoom_IsCenteredUnsafe() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() =>
+                Grid([Track.Px(160)], [Track.Px(40)], box = Box().Width(10).Height(60))
+                    .Width(100)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.Center)
+                    .AlignItems(AlignItems.Center)
+            );
+
+            Assert.Equal(new Rect(-30, -10, 10, 60), scene.Tree.GetRect(box.Node));
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// Each public value maps to the keyword of the same name, unsafe, on a row and on a grid: the public enums have the values of
+    /// <see cref="AlignContentKeyword"/> and <see cref="AlignItemsKeyword"/> in the same order.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a row and a grid of one column.
+    ///
+    /// Steps:
+    /// - Count the values of each public enum and of its keyword enum. Set each value of <see cref="JustifyContent"/> and of
+    ///   <see cref="AlignItems"/> in turn on the row and on the grid, and read the property after each.
+    ///
+    /// Expected:
+    /// - The same counts (10 and 8); after each set, the property is the keyword whose name is the value's, with <c>Safe</c> false.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_EachValue_MapsToTheKeywordOfTheSameName() =>
+        ui.Invoke(() =>
+        {
+            Assert.Equal((10, 10), (Enum.GetValues<JustifyContent>().Length, Enum.GetValues<AlignContentKeyword>().Length));
+            Assert.Equal((8, 8), (Enum.GetValues<AlignItems>().Length, Enum.GetValues<AlignItemsKeyword>().Length));
+            var scene = new Scene();
+            Element row = default;
+            Element grid = default;
+            scene.Mount(() => Column(row = Row(), grid = Grid([Track.Px(50)], [])));
+
+            foreach (JustifyContent value in Enum.GetValues<JustifyContent>())
+            {
+                var expected = new ContentAlignment(Enum.Parse<AlignContentKeyword>(value.ToString()), Safe: false);
+                _ = row.JustifyContent(value);
+                _ = grid.JustifyContent(value);
+                Assert.Equal((expected, expected), (FlexOf(scene, row).JustifyContent, GridOf(scene, grid).JustifyContent));
+            }
+
+            foreach (AlignItems value in Enum.GetValues<AlignItems>())
+            {
+                var expected = new ItemAlignment(Enum.Parse<AlignItemsKeyword>(value.ToString()), Safe: false);
+                _ = row.AlignItems(value);
+                _ = grid.AlignItems(value);
+                Assert.Equal((expected, expected), (FlexOf(scene, row).AlignItems, GridOf(scene, grid).AlignItems));
+            }
+
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// The value a row or a grid already has, written again, changes nothing: no new style, no mark, no layout root, and no frame;
+    /// another value marks the container for layout and asks for a frame.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a row with justify-content end and align-items center, and a grid of one column of 50 px with the same two
+    ///   values, laid out and drawn by the first frame.
+    ///
+    /// Steps:
+    /// - Write justify-content end and align-items center again to each; read the styles' versions, the marks, the layout roots,
+    ///   and the frame asked for. Then write justify-content center to the row and align-items start to the grid, and read them
+    ///   again.
+    ///
+    /// Expected:
+    /// - After the same values: both versions as before, neither node marked, no layout root queued, no frame asked for. After
+    ///   the other values: both versions one more, the row and the grid marked for layout, a layout root queued, and a frame asked
+    ///   for.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_TheSameValueAgain_ChangeNothing() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element row = default;
+            Element grid = default;
+            scene.Mount(() =>
+                Column(
+                    row = Row(Box().Width(20).Height(10)).JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center),
+                    grid = Grid([Track.Px(50)], [], Box().Width(10).Height(10)).JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center)
+                )
+            );
+            scene.Scheduler.Run();
+            Assert.False(scene.Scheduler.Pending);
+            ulong rowVersion = scene.Tree.Nodes.GetRef(row.Node).Versions.LayoutStyle;
+            ulong gridVersion = scene.Tree.Nodes.GetRef(grid.Node).Versions.LayoutStyle;
+
+            _ = row.JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center);
+            _ = grid.JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center);
+            (ulong Row, ulong Grid, DirtyFlags RowSelf, DirtyFlags GridSelf, int Roots, bool Pending) same = (
+                scene.Tree.Nodes.GetRef(row.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(grid.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(row.Node).Dirty.SelfDirty,
+                scene.Tree.Nodes.GetRef(grid.Node).Dirty.SelfDirty,
+                scene.Tree.LayoutRoots.Count,
+                scene.Scheduler.Pending
+            );
+
+            _ = row.JustifyContent(JustifyContent.Center);
+            _ = grid.AlignItems(AlignItems.Start);
+            (ulong Row, ulong Grid, DirtyFlags RowSelf, DirtyFlags GridSelf, bool Roots, bool Pending) other = (
+                scene.Tree.Nodes.GetRef(row.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(grid.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(row.Node).Dirty.SelfDirty & DirtyFlags.Layout,
+                scene.Tree.Nodes.GetRef(grid.Node).Dirty.SelfDirty & DirtyFlags.Layout,
+                scene.Tree.LayoutRoots.Count > 0,
+                scene.Scheduler.Pending
+            );
+
+            Assert.Equal((rowVersion, gridVersion, DirtyFlags.None, DirtyFlags.None, 0, false), same);
+            Assert.Equal((rowVersion + 1, gridVersion + 1, DirtyFlags.Layout, DirtyFlags.Layout, true, true), other);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>JustifyContent</c> and <c>AlignItems</c> work on a flex or a grid container only: on a box, a block, they throw and leave
+    /// its style as it was.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a box.
+    ///
+    /// Steps:
+    /// - Call <c>JustifyContent(Center)</c> and <c>AlignItems(Center)</c> on the box.
+    ///
+    /// Expected:
+    /// - Each throws <see cref="InvalidOperationException"/>; the box's layout is still the block with CSS's initial values.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_OnABox_Throw() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() => box = Box());
+
+            Assert.Throws<InvalidOperationException>(() => box.JustifyContent(JustifyContent.Center));
+            Assert.Throws<InvalidOperationException>(() => box.AlignItems(AlignItems.Center));
+            Assert.Equal(LayoutAlgorithm.Block.Instance, scene.Tree.Nodes.GetRef(box.Node).Layout.Style.Algorithm);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A value outside the public enum throws, on a row and on a grid, and leaves the property as it was; the last values of
+    /// each enum are taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a row and a grid of one column.
+    ///
+    /// Steps:
+    /// - Call <c>JustifyContent</c> with 10 and 255 and <c>AlignItems</c> with 8 and 255 on each; then <c>SpaceEvenly</c> (9) and
+    ///   <c>Stretch</c> (7).
+    ///
+    /// Expected:
+    /// - The four calls with a value outside throw <see cref="ArgumentOutOfRangeException"/> on each node, and the properties are
+    ///   still normal; the last two write space-evenly and stretch.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_UndefinedValue_Throws() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element row = default;
+            Element grid = default;
+            scene.Mount(() => Column(row = Row(), grid = Grid([Track.Px(50)], [])));
+
+            Element[] containers = [row, grid];
+            foreach (Element container in containers)
+            {
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.JustifyContent((JustifyContent)10));
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.JustifyContent((JustifyContent)255));
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.AlignItems((AlignItems)8));
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.AlignItems((AlignItems)255));
+            }
+
+            Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (FlexOf(scene, row).JustifyContent, FlexOf(scene, row).AlignItems));
+            Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (GridOf(scene, grid).JustifyContent, GridOf(scene, grid).AlignItems));
+            _ = row.JustifyContent(JustifyContent.SpaceEvenly).AlignItems(AlignItems.Stretch);
+            Assert.Equal(
+                (new ContentAlignment(AlignContentKeyword.SpaceEvenly), new ItemAlignment(AlignItemsKeyword.Stretch)),
+                (FlexOf(scene, row).JustifyContent, FlexOf(scene, row).AlignItems)
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>JustifyContent</c> and <c>AlignItems</c> throw on a thread that is not the UI thread, and write nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A row made and mounted on the UI thread; the test's own thread is another.
+    ///
+    /// Steps:
+    /// - On the test's thread, call <c>JustifyContent(Center)</c> and <c>AlignItems(Center)</c> on the row; then read its flex
+    ///   properties on the UI thread.
+    ///
+    /// Expected:
+    /// - Each call throws <see cref="InvalidOperationException"/>; the row's justify-content and align-items are still normal.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_OffTheUiThread_Throw()
+    {
+        Scene? scene = null;
+        Element row = default;
+        ui.Invoke(() =>
+        {
+            scene = new Scene();
+            scene.Mount(() => row = Row());
+        });
+
+        Assert.Throws<InvalidOperationException>(() => row.JustifyContent(JustifyContent.Center));
+        Assert.Throws<InvalidOperationException>(() => row.AlignItems(AlignItems.Center));
+
+        ui.Invoke(() =>
+        {
+            FlexProps props = FlexOf(scene!, row);
+            Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (props.JustifyContent, props.AlignItems));
+            scene!.Dispose();
+        });
+    }
+
+    // The flex properties of a row or a column.
+    private static FlexProps FlexOf(Scene scene, Element element) =>
+        ((LayoutAlgorithm.Flex)scene.Tree.Nodes.GetRef(element.Node).Layout.Style.Algorithm).Props;
+
+    // The properties of a grid.
+    private static GridProps GridOf(Scene scene, Element element) =>
+        ((LayoutAlgorithm.Grid)scene.Tree.Nodes.GetRef(element.Node).Layout.Style.Algorithm).Props;
+
+    // Gives a child its own alignment across (LayoutStyle.AlignSelf), which has no public method before row P02h.
+    private static void OwnAlignment(Scene scene, Element child, AlignItemsKeyword keyword) =>
+        scene.Tree.SetStyle(child.Node, scene.Tree.Nodes.GetRef(child.Node).Layout.Style with { AlignSelf = new ItemAlignment(keyword) });
+
     private static int LiveScopes()
     {
         int count = 0;

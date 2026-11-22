@@ -467,7 +467,7 @@ internal static class LayoutCost
             new LayoutStyle
             {
                 Algorithm = new LayoutAlgorithm.Flex(
-                    new FlexProps { Wrap = FlexWrap.Wrap, AlignContent = new AlignContent(AlignContentKeyword.FlexStart) }
+                    new FlexProps { Wrap = FlexWrap.Wrap, AlignContent = new ContentAlignment(AlignContentKeyword.FlexStart) }
                 ),
             }
         );

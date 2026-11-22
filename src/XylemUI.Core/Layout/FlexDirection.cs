@@ -35,7 +35,7 @@ internal enum FlexWrap : byte
 
 /// <summary>
 /// Where an item goes in its line or its block (CSS's <c>align-items</c>, <c>align-self</c>, <c>justify-items</c>, and
-/// <c>justify-self</c>, design §3.2).
+/// <c>justify-self</c>, design §3.2). The public <see cref="AlignItems"/> has the same values in the same order.
 /// </summary>
 internal enum AlignItemsKeyword : byte
 {
@@ -66,7 +66,7 @@ internal enum AlignItemsKeyword : byte
 
 /// <summary>
 /// How a container distributes the space between its items or lines (CSS's <c>justify-content</c> and
-/// <c>align-content</c>, design §3.2).
+/// <c>align-content</c>, design §3.2). The public <see cref="JustifyContent"/> has the same values in the same order.
 /// </summary>
 internal enum AlignContentKeyword : byte
 {
@@ -108,11 +108,11 @@ internal enum AlignContentKeyword : byte
 /// </summary>
 /// <param name="Keyword">Where the item goes.</param>
 /// <param name="Safe">Whether the item goes to the start when it overflows (<c>safe</c>); otherwise <c>unsafe</c>.</param>
-internal readonly record struct AlignItems(AlignItemsKeyword Keyword, bool Safe = false);
+internal readonly record struct ItemAlignment(AlignItemsKeyword Keyword, bool Safe = false);
 
 /// <summary>
 /// A distribution of space, with its overflow alignment (CSS Box Alignment §4.4).
 /// </summary>
 /// <param name="Keyword">How the space is distributed.</param>
 /// <param name="Safe">Whether the content goes to the start when it overflows (<c>safe</c>); otherwise <c>unsafe</c>.</param>
-internal readonly record struct AlignContent(AlignContentKeyword Keyword, bool Safe = false);
+internal readonly record struct ContentAlignment(AlignContentKeyword Keyword, bool Safe = false);

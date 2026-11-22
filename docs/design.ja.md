@@ -1750,6 +1750,8 @@ public static class ElementExtensions
     public static Element Padding(this Element e, float all);
     public static Element Padding(this Element e, float horizontal, float vertical);
     public static Element Gap(this Element e, float gap);
+    public static Element JustifyContent(this Element e, JustifyContent value);   // P02h1。Flex と Grid の容器だけ（下の「容器の揃え」）
+    public static Element AlignItems(this Element e, AlignItems value);           // P02h1。Flex と Grid の容器だけ
     public static Element Border(this Element e, float width, Paint paint);
     public static Element FontSize(this Element e, float size);              // 文字の葉だけ（ChangeKind.Font）
     public static Element Language(this Element e, TextLanguage language);   // 文字の葉だけ
@@ -1872,6 +1874,14 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
 - **割合の幅と高さ（行 TH1。Core の内部を Theme.Fluent に見せず、公開の API として足すことは Issue #907 でオーナーが決定）:** `WidthFraction(fraction)` と `HeightFraction(fraction)` は、ノードの枠の箱の幅と高さを、親の内容の箱の幅と高さの割合で決める（CSS の百分率の `width` と `height`。`LayoutStyle.Width`・`Height` に `Length.Percent(fraction)` を書く、`ChangeKind.Size`）。1 で親いっぱい、0.5 で半分で、親の大きさが変わると付いていく。割合で決まるのはノード自身の余白と枠を含む枠の箱で、余白と枠は割合の外に足さない。割合の元は親の内容の箱（親の枠の箱から親の余白と枠を引いたもの）である。高さの割合は、親の高さが定まっている時だけ効く。親の高さが auto なら、高さの割合は効かず、ノードの高さは中身から決まる（CSS と同じ。`src/XylemUI.Core/Layout/LayoutEngine.Block.cs` 44〜46 行目が、子の割合の元を内容の箱にし、高さは定まっている時だけ元にする。Taffy の Chrome の fixture `block_percentage_height_with_min_height_parent`（`tests/XylemUI.Core.Tests/Fixtures/Taffy/block.xml`）も、高さを持たず `min-height` だけを持つ親の下の 50% の子を、中身の 20 にする。PR #950 のレビューでオーナーが決定）。`fraction` は有限で 0 以上で、負、NaN、無限大は、`Width` と同じく `ArgumentOutOfRangeException` を投げる。1 を超える値は通す。CSS の百分率も 100% を超えてよく、zed も値を確かめない（下の `relative`）。Flutter 3.47.8 の `FractionallySizedBox` も、親から来た最大の幅と高さに `widthFactor`・`heightFactor` を掛け、負だけを断って 1 を超える値は通す（`packages/flutter/lib/src/widgets/basic.dart` 3254 行目のクラス、3265〜3266 行目の `assert`、3277 行目の `widthFactor`）。親いっぱいは `SizedBox.expand`（同 2780〜2782 行目）でも書ける。Avalonia 12.1.4 には割合の大きさが無く、親いっぱいは揃えの `Stretch` で書く（`src/Avalonia.Base/Layout/Layoutable.cs` 121〜122 行目の `HorizontalAlignmentProperty`、702〜710 行目で `Stretch` でない時だけ望む大きさに縮める）。テーマの根の箱（§13.2「根の箱」）が窓いっぱいになるために足した。それまで公開の API に割合の大きさが無く、Theme.Fluent が Core の内部（`LayoutStyle` と `Length.Percent`）を使うことになるからである
   - **名前:** zed（GPUI）は、親の大きさの割合を `relative(fraction)` で作り、`DefiniteLength::Fraction` を返す（zed v1.25.3 の `crates/gpui/src/geometry.rs` 3717〜3719 行目）。親いっぱいは `Size::full()` で、幅と高さを `relative(1.)` にする（同じファイルの 677〜682 行目）。要素には `.w(relative(x))` と `.w_full()` で書く（`crates/gpui/examples/animation.rs` 200 行目と 83 行目）。XylemUI は、引数の意味が名前で分かるように `Fraction` を名前に入れる。`Percent` にしないのは、公開の `Track.Percent(percent)` が 50 を半分とする百分率を受けるからで（`src/XylemUI.Core/Layout/GridTracks.cs` 258 行目）、`WidthPercent(0.5f)` は 0.5% と読める。`w_full` に当たる `WidthFull()` は足さない。`WidthFraction(1)` と同じだからである
 - **最小の幅（行 TH1。PR #950 のレビューでオーナーが決めたボタンの最小の幅のため、上の「割合の幅と高さ」と同じ考えで公開の API として足した）:** `MinWidth(width)` は、ノードの枠の箱の最小の幅を論理画素で決める（CSS の `min-width`。`LayoutStyle.MinWidth` に `Length.Px(width)` を書く、`ChangeKind.Size`）。中身や `Width` で決まる幅がこれより狭ければ、この幅になり、広ければそのままである。`width` は有限で 0 以上で、負、NaN、無限大は、`Width` と同じく `ArgumentOutOfRangeException` を投げる。Theme.Fluent のボタンの最小の幅 96（§13.2「TH1 のボタンの値」）のために足した
+- **容器の揃え（行 P02h1、Issue #952 でオーナーが決定）:** `.JustifyContent(value)` は容器の `justify-content` を、`.AlignItems(value)` は容器の `align-items` を書く。書く先は、要素の layout の `FlexProps` か `GridProps` の同じ名前の欄で（§3.2）、`ChangeKind.Size` で無効化する。中央に寄せるには `Row(…).JustifyContent(JustifyContent.Center).AlignItems(AlignItems.Center)` と書く
+  - Flex の容器（`Row`・`Column`）では、`JustifyContent` は行の中の余った空きを主軸に沿って配り、`AlignItems` は子を行の交差軸に置く。Grid の容器では、`JustifyContent` はトラック全体（列の並び）を内容の箱の横に揃え、`AlignItems` は子をセルの中で縦に揃える。どちらの容器でも、子が自分の `AlignSelf` を持てばそちらが勝つ（§3.2 の `LayoutStyle`。`AlignSelf` の公開の口は行 P02h）
+  - 値の型は、新しく足す公開の enum の `JustifyContent` と `AlignItems` である（Issue #952 でオーナーが決定）。欄の型は内部の `ContentAlignment` と `ItemAlignment`（キーワードと `safe` の組）のままで、メソッドは `JustifyContent` を `ContentAlignment` に、`AlignItems` を `ItemAlignment` に、どちらも `Safe = false` で写して書く（§3.2）。今の内部の record struct の名前 `AlignContent` と `AlignItems` は、公開の enum とぶつかるので、実装の PR でこの 2 つの名前に変える。新しい名前は、CSS の性質の名前（公開の enum）と並べた時に、何を揃える値か（子の置き場所か、空きの配り方か）で読み分けられるようにした。`JustifyContent` は `Normal`・`Start`・`End`・`FlexStart`・`FlexEnd`・`Center`・`Stretch`・`SpaceBetween`・`SpaceAround`・`SpaceEvenly`、`AlignItems` は `Normal`・`Start`・`End`・`FlexStart`・`FlexEnd`・`Center`・`Baseline`・`Stretch` を持つ。値と順は、内部の `AlignContentKeyword` と `AlignItemsKeyword` と同じである。メソッドと型は同じ名前のままにする。呼ぶ側は `element.AlignItems(AlignItems.Center)` と書けるが、`ElementExtensions` の中では、修飾しない `AlignItems.Center` がメソッドの名前に結び付いて CS0119 になるので、クラスの中では型を名前空間から書く（scratch のプロジェクトでコンパイルして確かめた。Issue #952 でオーナーが決定）。既定は `Normal` で、各値の意味と容器ごとの既定の動きは §3.2 の `FlexProps`・`GridProps` の欄のとおり（CSS と同じ）である。Flex の `Normal` は、`JustifyContent` では `FlexStart`、`AlignItems` では `Stretch` と同じに動く。Grid の `Normal` は、`JustifyContent` では `auto` のトラックを伸ばし、`AlignItems` では高さを持たない子をセルの高さに伸ばす（§3.2、§3.3「移植の元」）
+  - あふれたときの揃え方（§3.2 の `safe`）は付けず、unsafe（CSS の既定）で書く。`safe` を付ける口は行 P02h が持つ
+  - Flex でも Grid でもない要素（`Box` などの Block の要素、仮想化した並び、文字の葉）に呼ぶと、Flex と Grid の容器にだけ効くと名指す `InvalidOperationException` を投げる。`FontSize` が文字の葉でない要素で投げ、`Gap` が並べる容器でない要素で投げるのと同じ形である
+  - UI スレッドから呼び、ほかのスレッドからなら `InvalidOperationException` を投げる（§2.12）。`Gap` などと同じく `UiThreadOnly` を付ける（§2.2「UI スレッド専用の属性」）
+  - 名前は CSS と §3.2 の欄の名前にした。GPUI（zed v1.25.3）も CSS の名前の要素のメソッドで書く（`crates/gpui/src/styled.rs` 385 行目の `justify_center`、301 行目の `items_center`）。Flutter は `Row` と `Column` の引数 `mainAxisAlignment`・`crossAxisAlignment` で受け、値は `MainAxisAlignment` と `CrossAxisAlignment` である（Flutter 3.47.8 の `packages/flutter/lib/src/rendering/flex.dart` 195・276 行目）。XylemUI の `Row` と `Column` は子だけを受け（上の「子の渡し方」）、見た目と並べ方はメソッドチェーンで付けるので、引数の形は採らない。Avalonia は、子の側の `HorizontalAlignment`・`VerticalAlignment` で揃える（Avalonia 12.1.4 の `src/Avalonia.Base/Layout/Layoutable.cs`）。子の側の揃えは CSS の `justify-self`・`align-self` に当たり、行 P02h で足す
+  - この 2 つを先に分けた理由: 行 TH1 の `Fluent.Button` は、最小の幅 96 の中で中身を中央に置く。中身を 1fr・auto・1fr の Grid で包むと、ボタンを使うアプリが NativeAOT で 114,936 バイト（マップの値。Grid の layout のコード）大きくなった（PR #950）。Flex の layout のコードはどのアプリにもあるので、`Row` で包んで揃えれば、この増分は出ない（Issue #952）。`AlignContent`・`JustifyItems`・`JustifySelf`・`AlignSelf` と Block の揃えは、行 P02h に残す
 - **子の渡し方:** `Column` と `Row` は `params ReadOnlySpan<Element>`（C# 13）で受け、配列を作らない。子は並びの順に付く。子を持たない `Column()` は、空の容器になる。別の木の `Element` を子に渡すと `ArgumentException`
 - **Signal とノード:** §2.4 の Binding の層の `NodeProperty<T>` を、Signal をノードの 1 つのプロパティに結ぶ経路にする。`Bind` は、今の Scope が持つ Effect を 1 つ作る。Effect は Signal を読み、`NodeProperty<T>` の setter（`UiTree` の setter と同じ。等しい値なら何もしない）で書く。Effect は、batch を閉じたときに layout の前に流れ終わる（§2.2、§2.4）。Avalonia の `Bind(property, IObservable)` は `IDisposable` を返し、呼んだ人が後始末する（`Avalonia.Base/AvaloniaObject.cs` 446〜573 行目）。ここでは Effect を今の Scope が持つので、Scope の破棄で消える。記述子は手で書き、Source Generator は使わない（§2.4 は「使ってよい」）。もう 1 つの経路は、Effect の中で Signal を読み、要素の setter（`Background` など。同じく、等しい値なら何もしない）を呼ぶ形である。テーマの部品はこの形で、部品ごとに 1 つの Effect が見た目をまとめて書く（行 TH1、§13.2「部品がテーマに付いていく形」）
 - **`TextBuilder` の 2 点（D2 のレビューで送った点）:**
@@ -1889,7 +1899,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
   - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした。テーマを使うアプリでは、テーマの根の箱の背景の色を使う。根の包みが `WindowSurface.SetBackdrop` でホストに知らせる（行 TH1、§13.2「テーマの鍵」の「根の箱」）
 - **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、OS の一覧を全部読んで解決したロケールの言語を使い、ロケールが変わると整形し直す。アプリがロケールを 1 つも宣言しなければ、今と同じく OS の 1 番目の言語を使う。§4.11「ロケール」の「文字の既定の言語」、LC1 の Grill、Issue #825）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
-- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
+- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。行 P02h1 で、揃えの値の enum `JustifyContent` と `AlignItems` を足して公開する（上の「容器の揃え」）。欄の型の `ContentAlignment`・`ItemAlignment` と、それを持つ `FlexProps`・`GridProps` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
 - **確かめ方:**
   - `samples/Counter`: `Column` に `Text`（`clicks: N`）と `Button`（自分で付けた背景・角丸・余白・ホバーと押下の見た目）を載せる
   - WARP: ボタンの中心の画素が、付けた背景の色になる（MoonBit 版の V1 と同じ到達点、§10.5）
@@ -2070,9 +2080,9 @@ public readonly record struct FlexProps
 {
     public FlexDirection Direction { get; init; }        // Row（既定）| Column | RowReverse | ColumnReverse
     public FlexWrap Wrap { get; init; }                  // NoWrap（既定）| Wrap | WrapReverse。Balance は行 L6
-    public JustifyContent JustifyContent { get; init; }  // FlexStart（既定）| FlexEnd | Start | End | Center | SpaceBetween | SpaceAround | SpaceEvenly
-    public AlignItems AlignItems { get; init; }          // Stretch（既定）| FlexStart | FlexEnd | Start | End | Center | Baseline
-    public AlignContent AlignContent { get; init; }      // Stretch（既定）| FlexStart | FlexEnd | Start | End | Center | SpaceBetween | SpaceAround | SpaceEvenly
+    public ContentAlignment JustifyContent { get; init; } // FlexStart（既定）| FlexEnd | Start | End | Center | SpaceBetween | SpaceAround | SpaceEvenly
+    public ItemAlignment AlignItems { get; init; }       // Stretch（既定）| FlexStart | FlexEnd | Start | End | Center | Baseline
+    public ContentAlignment AlignContent { get; init; }  // Stretch（既定）| FlexStart | FlexEnd | Start | End | Center | SpaceBetween | SpaceAround | SpaceEvenly
     public LengthPercentage ColumnGap { get; init; }     // 列と列の間。既定 0
     public LengthPercentage RowGap { get; init; }        // 行と行の間。既定 0
 }
@@ -2080,8 +2090,8 @@ public readonly record struct FlexProps
 // ブロックの容器の性質（L1b の Grill で決定、Issue #88）。既定値は CSS の初期値
 public readonly record struct BlockProps
 {
-    public AlignItems JustifyItems { get; init; }        // 子の横の揃え。Stretch（既定。normal と同じ）| Start | End | Center
-    public AlignContent AlignContent { get; init; }      // 子のまとまり全体の縦の揃え。Normal（既定。上から積む）| Start | End | Center
+    public ItemAlignment JustifyItems { get; init; }     // 子の横の揃え。Stretch（既定。normal と同じ）| Start | End | Center
+    public ContentAlignment AlignContent { get; init; }  // 子のまとまり全体の縦の揃え。Normal（既定。上から積む）| Start | End | Center
 }
 
 // グリッドの容器の性質（P02f の Grill で決定、Issue #645）。既定値は CSS の初期値。トラックの並びは、作った配列をそのまま持ち、
@@ -2093,10 +2103,10 @@ public readonly record struct GridProps
     public ImmutableArray<TrackSize> AutoColumns { get; init; } // grid-auto-columns。空（既定）は auto
     public ImmutableArray<TrackSize> AutoRows { get; init; }    // grid-auto-rows。空（既定）は auto
     public GridAutoFlow AutoFlow { get; init; }                // Row（既定）| Column | RowDense | ColumnDense
-    public AlignItems JustifyItems { get; init; }              // 子のセルの中の横の揃え。Normal（既定。Stretch と同じ）| Start | End | Center | Stretch | Baseline
-    public AlignItems AlignItems { get; init; }                // 子のセルの中の縦の揃え。値は JustifyItems と同じ
-    public JustifyContent JustifyContent { get; init; }        // トラック全体の横の揃え。Normal（既定。Stretch と同じで auto のトラックを伸ばす。Taffy 0.15.1 の `src/style/grid.rs` 270〜271 行目）| Start | End | Center | Stretch | SpaceBetween | SpaceAround | SpaceEvenly
-    public AlignContent AlignContent { get; init; }            // トラック全体の縦の揃え。値は JustifyContent と同じ
+    public ItemAlignment JustifyItems { get; init; }           // 子のセルの中の横の揃え。Normal（既定。Stretch と同じ）| Start | End | Center | Stretch | Baseline
+    public ItemAlignment AlignItems { get; init; }             // 子のセルの中の縦の揃え。値は JustifyItems と同じ
+    public ContentAlignment JustifyContent { get; init; }      // トラック全体の横の揃え。Normal（既定。Stretch と同じで auto のトラックを伸ばす。Taffy 0.15.1 の `src/style/grid.rs` 270〜271 行目）| Start | End | Center | Stretch | SpaceBetween | SpaceAround | SpaceEvenly
+    public ContentAlignment AlignContent { get; init; }        // トラック全体の縦の揃え。値は JustifyContent と同じ
     public LengthPercentage ColumnGap { get; init; }           // 列と列の間。既定 0
     public LengthPercentage RowGap { get; init; }              // 行と行の間。既定 0
 }
@@ -2106,6 +2116,20 @@ public readonly record struct GridProps
 
 // 揃えの値には、あふれたときの揃え方を付けられる（CSS Box Alignment の safe / unsafe）。Safe は、はみ出すときに start に寄せる
 // （L1b の Grill で決定）。付けないときは unsafe と同じ。self-start / self-end は子自身の書字の向きによるので P03b
+// 欄の型は内部の 2 つで、キーワードとあふれたときの揃え方の組である（行 P02h1 の実装の PR で、AlignItems と AlignContent から名前を
+// 変える。Issue #952 でオーナーが決定）
+internal readonly record struct ItemAlignment(AlignItemsKeyword Keyword, bool Safe = false);       // 子をどこに置くか（*-items、*-self）
+internal readonly record struct ContentAlignment(AlignContentKeyword Keyword, bool Safe = false);   // 空きをどう配るか（*-content）
+internal enum AlignItemsKeyword : byte { Normal, Start, End, FlexStart, FlexEnd, Center, Baseline, Stretch }
+internal enum AlignContentKeyword : byte { Normal, Start, End, FlexStart, FlexEnd, Center, Stretch, SpaceBetween, SpaceAround, SpaceEvenly }
+
+// FlexProps と GridProps の JustifyContent と AlignItems は、公開の要素のメソッド .JustifyContent(value) と .AlignItems(value) で
+// 書く（行 P02h1、§2.13「容器の揃え」）。呼ぶ側が渡すのは公開の enum で、メソッドは Safe = false の内部の値にして欄に書く。
+// 公開の JustifyContent は AlignContentKeyword と、公開の AlignItems は AlignItemsKeyword と、同じ値を同じ順に持つ
+public enum JustifyContent : byte { Normal, Start, End, FlexStart, FlexEnd, Center, Stretch, SpaceBetween, SpaceAround, SpaceEvenly }   // → ContentAlignment
+public enum AlignItems : byte { Normal, Start, End, FlexStart, FlexEnd, Center, Baseline, Stretch }                                   // → ItemAlignment
+// ほかの揃えの欄（AlignContent・JustifyItems、BlockProps の 2 つ、LayoutStyle の AlignSelf・JustifySelf）と safe は、
+// 行 P02h まで部品だけが内部で書く
 
 public struct LayoutStyle
 {
@@ -2123,8 +2147,8 @@ public struct LayoutStyle
     public float FlexGrow;                          // 既定 0
     public float FlexShrink;                        // 既定 1
     public Length FlexBasis;                        // Auto: 主軸のサイズ、それも Auto なら内容
-    public AlignSelf AlignSelf;                     // Auto（既定。親の AlignItems）| AlignItems の値
-    public AlignSelf JustifySelf;                   // ブロックの子の横の揃え。Auto（既定。親の JustifyItems）| Start | End | Center | Stretch
+    public ItemAlignment? AlignSelf;                // null（既定。親の AlignItems）| AlignItems の欄と同じ値
+    public ItemAlignment? JustifySelf;              // ブロックの子の横の揃え。null（既定。親の JustifyItems）| Start | End | Center | Stretch
     public GridSpan GridColumn, GridRow;            // グリッドの子の置き場所（P02f）。始まりと終わりの線: Auto（既定）| 線の番号（1 から、負は末尾から）| Span(n) | 名前の線
     public Direction Direction;                     // Ltr | Rtl（P03b）
     public WritingMode WritingMode;                 // §8.3
@@ -2337,7 +2361,7 @@ CSS Gridは、テキストシェーピングやGPUドライバ対応と異なり
 
 **P02f で入れる形（P02f の Grill で決定、Issue #645）**
 
-- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置く。1 つの線に名前を複数付けるときは `Track.Line("a", "b")` と書き、`Track.Repeat` の中にも置ける（CSS の `repeat(auto-fill, [col] 40px [col-end])`）。子は `GridLine.Named(name, index)` で、その名前の `index` 番目の線に置き（負は末尾から数える。CSS の `foo 2`・`-2 mid`）、`GridLine.Span(name, count = 1)` で、その名前の `count` 番目の線まで広げる（CSS の `span foo`・`span 2 foo`）。どちらも実装の 2 つ目の PR で入れた（P02f の実装の 2 つ目の前の Grill、Issue #653）。Taffy 0.15.1 の XML テスト `grid` は、どちらの形も使う。名前だけの `GridLine.Named(name)` は CSS の `grid-column-start: a` で、`a-start`（終わりの側では `a-end`）という名前の線があればその最初の線、無ければ `a` の 1 本目の線に置く。CSS では `-start`・`-end` の名前の線が名前付きの領域を作るためで、`1 a` とは別の線になる（Taffy 0.15.1 の `find_named_line`、XML テスト `grid_placement_named_area_edge_priority`。実装の 2 つ目の PR でオーナーが決めた）。名前と、名前による置き場所は、アプリ全体で縮まない表に入り（下の「線の持ち方」）、置き場所の組が 25,533 を超えると例外になる。名前はアプリのコードに書く識別子で、一覧の項目の id のようなデータから作る名前を渡すと表を使い切る。このことを API の説明（XML docs）にも書く（PR #654 のレビュー）。名前は空にできず、CSS が名前に使わせない `span` と `auto` は例外にする。`index` は 0 を除く -10,000〜10,000、`count` は 1〜10,000 で、範囲の外は例外にする（番号の線と同じ範囲）。間隔は `.Gap`、暗黙のトラックの大きさは `.AutoColumns`・`.AutoRows`、自動配置の向きは `.AutoFlow`（`Row`・`Column`。`dense` は実装の 2 つ目の PR）。揃え（`JustifyItems`・`AlignItems`・`JustifySelf`・`AlignSelf`・`JustifyContent`・`AlignContent`）は内部の型（`GridProps`・`LayoutStyle`）にあり、公開の口は持たない。Flex も揃えの公開の口を持たない（設計の PR #646 は「Flex と同じ口」と書いたが、その口は無かった。P02f の実装の 1 つ目の PR で分かった）。Flex・Grid・Block の揃えの公開の口は行 P02h で足す
+- **API:** 型付きの C# で書く。線の番号は CSS と同じく 1 から数え、負の数は末尾から数える。名前付きの線は `Track.Line(name)` をトラックの並びの間に置く。1 つの線に名前を複数付けるときは `Track.Line("a", "b")` と書き、`Track.Repeat` の中にも置ける（CSS の `repeat(auto-fill, [col] 40px [col-end])`）。子は `GridLine.Named(name, index)` で、その名前の `index` 番目の線に置き（負は末尾から数える。CSS の `foo 2`・`-2 mid`）、`GridLine.Span(name, count = 1)` で、その名前の `count` 番目の線まで広げる（CSS の `span foo`・`span 2 foo`）。どちらも実装の 2 つ目の PR で入れた（P02f の実装の 2 つ目の前の Grill、Issue #653）。Taffy 0.15.1 の XML テスト `grid` は、どちらの形も使う。名前だけの `GridLine.Named(name)` は CSS の `grid-column-start: a` で、`a-start`（終わりの側では `a-end`）という名前の線があればその最初の線、無ければ `a` の 1 本目の線に置く。CSS では `-start`・`-end` の名前の線が名前付きの領域を作るためで、`1 a` とは別の線になる（Taffy 0.15.1 の `find_named_line`、XML テスト `grid_placement_named_area_edge_priority`。実装の 2 つ目の PR でオーナーが決めた）。名前と、名前による置き場所は、アプリ全体で縮まない表に入り（下の「線の持ち方」）、置き場所の組が 25,533 を超えると例外になる。名前はアプリのコードに書く識別子で、一覧の項目の id のようなデータから作る名前を渡すと表を使い切る。このことを API の説明（XML docs）にも書く（PR #654 のレビュー）。名前は空にできず、CSS が名前に使わせない `span` と `auto` は例外にする。`index` は 0 を除く -10,000〜10,000、`count` は 1〜10,000 で、範囲の外は例外にする（番号の線と同じ範囲）。間隔は `.Gap`、暗黙のトラックの大きさは `.AutoColumns`・`.AutoRows`、自動配置の向きは `.AutoFlow`（`Row`・`Column`。`dense` は実装の 2 つ目の PR）。揃え（`JustifyItems`・`AlignItems`・`JustifySelf`・`AlignSelf`・`JustifyContent`・`AlignContent`）は内部の型（`GridProps`・`LayoutStyle`）にあり、P02f では公開の口を持たなかった。Flex も揃えの公開の口を持たなかった（設計の PR #646 は「Flex と同じ口」と書いたが、その口は無かった。P02f の実装の 1 つ目の PR で分かった）。容器の `JustifyContent` と `AlignItems` は、行 P02h1 で Flex と Grid に共通の `.JustifyContent()`・`.AlignItems()` で書けるようにする（§2.13「容器の揃え」、Issue #952）。残りの `JustifyItems`・`JustifySelf`・`AlignSelf`・`AlignContent` と Block の揃えの公開の口は、行 P02h で足す
 - **線の持ち方:** 子の線（`GridLine`）は 2 バイトで、ノードの style に 4 つ持つ。0 が auto、線はその番号、span は 10,001 と本数の和である。-20,001 より前と 10,001 より後の線は、グリッドが explicit grid の始まりの両側 10,000 本に収めるとどれも同じ線に落ちる（Taffy 0.15.1 の `into_origin_zero_line`）ので、その値に切る。名前付きの線も 2 バイトのまま持つ（Issue #653）。線と span が使わない値（20,002〜32,767 と -32,768〜-20,002 の 25,533 個）を、アプリ全体で 1 つの表の番号にする。表の 1 行は、名前の番号・何本目か・線か span かの組で、同じ組は同じ番号になる。名前は大文字と小文字を区別して比べ（CSS の名前と同じ）、トラックの並びの `Track.Line` の名前も同じ表の名前の番号にする。表に行を足すのは子に線を設定するときだけで、表を書くのはロックの中、読むのはロックの外である。フレームの経路は表を読むだけで、名前から線の番号を引く作業は layout の作業用の領域で行う。番号を使い切ると、線を設定する呼び出しが例外を投げる。ノードは 576 バイトから 592 バイトになった（線の 8 バイトと、下の相対位置の量。P02f の実装の 1 つ目の PR）
 - **baseline と相対位置:** 容器の baseline を子から読むとき、子の相対位置（`position: relative` の inset）の移動は含めない。Chrome は移動の前の baseline で揃える（Taffy の XML テスト `block_container_baseline_ignores_relative_offset` と `grid_container_baseline_ignores_relative_offset`）。親が子に足した縦の移動を `LayoutState.RelativeY` に持ち、`ReadContentBaseline` が引く。Block と Flex も同じに直した（Block の XML テストは Grid の箱を含むので、P02f まで走っていなかった）
 
@@ -7476,7 +7500,7 @@ public static class Fluent
   - **ハイコントラスト:** 明・暗・ハイコントラストのどれでも、見た目は別名のトークンだけで決める。XylemUI のハイコントラストは、OS の 8 色を当てた別名のトークンだからである（上の「トークンの元」の「ハイコントラスト」）。Fluent の Web のボタンが持つ forced-colors の上書き（同じファイルの 83〜100・168〜185・371〜405 行目）は写さない。そのため、ハイコントラストの `Primary` のホバーは、トークンの組のまま `Highlight` の上に `ButtonText` になる。上書きを写すかは、行 B1 の Grill で決める
   - **`Primary` の枠:** Fluent は `'transparent'` と書くが、トークン `colorTransparentStroke` を使う。明と暗では透明で、ハイコントラストでは `WindowText` になる。disabled の枠も同じトークンである。zed の Filled のボタンも、枠は透明である（zed v1.25.3 の `crates/ui/src/components/button/button_like.rs` 217〜219 行目）。`Standard` の disabled の枠は `colorNeutralStrokeDisabled` である
   - **最小の幅（PR #950 のレビューでオーナーが決定）:** medium のボタンの base のクラスの `minWidth: '96px'`（同じファイルの 64 行目）を、Core の公開の `MinWidth(96)`（§2.13「最小の幅」）で書く。トークンではなくボタンのスタイルの定数で、どのテーマでも同じなので、Effect の外で、作る時に 1 度だけ書く（`ButtonLooks.MinWidth`）。中身と余白と枠が 96 より狭いボタンは 96 になり、広いボタンはそのままである
-  - **中身の位置（Issue #907 でオーナーが決定）:** Fluent のボタンは中身を縦と横の真ん中に置く。Core の公開の API には揃えの口が無いので（行 P02h）、`Fluent.Button` は、中身を `Elements.Grid` の 3 列 3 行（どちらも `Track.Fr(1)`・`Track.Auto`・`Track.Fr(1)`）の真ん中のます（`GridColumn(2)`・`GridRow(2)`）に置き、その Grid をボタンの中身にする。Grid は Block の子なのでボタンの内容の箱の幅いっぱいになり、`HeightFraction(1)` で高さもいっぱいになる。高さの割合が効くのは、ボタンの高さが定まっている時（行がボタンを伸ばした時。Taffy の Chrome の fixture `blockflex_percentage_height_in_stretched_flex_item` と同じ）だけで、余白だけで高さが決まる時は Grid の高さは中身の高さになり、縦に動く余地は無い。最小の幅 96 より狭い中身や、親が広げたボタンの中身は、横の真ん中に来る。公開の API だけで書けるのでこの形にした。ボタンごとにノードが 1 つ増え、中身の `GridColumn` と `GridRow` を書き換える。行 P02h が揃えの公開の口を足したら、この Grid を外して揃えで置く（行 P02h に書いた）
+  - **中身の位置（Issue #907 と #952 でオーナーが決定）:** Fluent のボタンは中身を縦と横の真ん中に置く。`Fluent.Button` は、中身を `Elements.Row(content).JustifyContent(JustifyContent.Center).AlignItems(AlignItems.Center)` で包み、その `Row` をボタンの中身にする（行 P02h1、§2.13「容器の揃え」）。`Row` は Block の子なのでボタンの内容の箱の幅いっぱいになり、`HeightFraction(1)` で高さもいっぱいになる。高さの割合が効くのは、ボタンの高さが定まっている時（行がボタンを伸ばした時。Taffy の Chrome の fixture `blockflex_percentage_height_in_stretched_flex_item` と同じ）だけで、余白だけで高さが決まる時は `Row` の高さは中身の高さになり、縦に動く余地は無い。最小の幅 96 より狭い中身や、親が広げたボタンの中身は、横の真ん中に来る。ボタンごとにノードが 1 つ増える。初めは 1fr・auto・1fr の `Grid` で包んだが、Grid のレイアウトのコードが入り、ボタンを使う Counter が NativeAOT で 114,936 バイト（マップ）大きくなったので、Flex のコードで済む `Row` と、そのために先に入れた揃えの公開の口（行 P02h1）にした
   - **文字のスタイル（Issue #907 でオーナーが決定）:** medium のボタンの base のクラスの文字（同じファイルの 67〜69 行目、`fontWeightSemibold`・`fontSizeBase300`・`lineHeightBase300`。`FluentTypography.Body1Strong` の 14 / 20 / 600）は、TH1 では付けない。ボタンの中身は任意の要素で、今の Core の文字のスタイルは葉ごとに持ち、容器から受け継がないからである。行 TS1 が、容器が下の文字の葉に渡す文字のスタイルを Core に足し、`Fluent.Button` はそれでボタンの文字を付ける
   - **focus-visible（PR #950 のレビューでオーナーが決定）:** Fluent の focus-visible の見た目（同じファイルの 105〜114 行目）は、枠の色 `colorStrokeFocus2`、枠の内側の 1 px の影（同じ色の inset の `box-shadow`）、外側の 2 px の透明な `outline` の 3 つである。TH1 は、Core の疑似状態 focus-visible（§7「キーとフォーカス」）に、枠の色 `colorStrokeFocus2` だけを `FocusVisible(PaintStyle)` で置く（明で黒、暗で白、ハイコントラストで OS の `Highlight`）。残りの 2 つは今の Core では描けない。疑似状態の見た目 `PaintStyle` は影を持たず（ノードの影 `BoxShadow` は inset を描けるが、状態ごとには変えられない）、Core には `outline` が無い。この 2 つは行 B1 が足す。`ButtonStyle` には focus-visible の欄を足さず、アプリは変えられない（下の「公開の形」の 7 つの欄のまま）
   - **公開の形:** `ButtonStyle` は public の `sealed record` で、上のコードが使う 7 つの欄（`Background`・`Border`（`Paint?`）、`Foreground`（`Color?`）、`Radius`（`float?`）、`Hovered`・`Pressed`・`Disabled`（`PaintStyle?`））を持つ。これが TH1 の公開の形である。テーマごとの見た目 `ButtonLooks` は internal にし、公開の型を増やさない。ほかの欄は行 B1 が足す

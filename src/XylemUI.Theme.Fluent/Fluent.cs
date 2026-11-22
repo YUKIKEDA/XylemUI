@@ -9,9 +9,6 @@ namespace XylemUI.Theme.Fluent;
 /// </summary>
 public static class Fluent
 {
-    // The tracks of the grid that centers a button's content, in both axes: free space, the content, free space.
-    private static readonly GridTrack[] CenteringTracks = [Track.Fr(1), Track.Auto, Track.Fr(1)];
-
     /// <summary>
     /// Makes a button (<see cref="Primitive.Button(Element, Action)"/>) with the look of the theme provided here: its background,
     /// border, color of text, corners, padding, and hovered, pressed, focus-visible, and disabled looks follow the theme, and a value
@@ -66,14 +63,10 @@ public static class Fluent
         return button;
     }
 
-    // Puts the content in the middle of the button, as Fluent's button centers it (design §13.2, "中身の位置"): a grid of three
-    // columns and three rows, 1fr / auto / 1fr, with the content in the middle cell. The grid fills the button's content box: its
-    // width as a block child, its height as a fraction, which resolves only when the button's height is definite (a button a row
-    // stretches), and is the content's height otherwise. The public API has no alignment until row P02h, which replaces the grid.
-    private static Element Centered(Element content)
-    {
-        Element grid = Elements.Grid(CenteringTracks, CenteringTracks, content).HeightFraction(1);
-        _ = content.GridColumn(2).GridRow(2);
-        return grid;
-    }
+    // Puts the content in the middle of the button, as Fluent's button centers it (design §13.2, "中身の位置"): a row that centers
+    // its child on both axes (row P02h1). The row fills the button's content box: its width as a block child, its height as a
+    // fraction, which resolves only when the button's height is definite (a button a row stretches), and is the content's height
+    // otherwise. A row, not a grid, because the flex layout is in every app and the grid's added 114,936 bytes (Issue #952).
+    private static Element Centered(Element content) =>
+        Elements.Row(content).JustifyContent(JustifyContent.Center).AlignItems(AlignItems.Center).HeightFraction(1);
 }
