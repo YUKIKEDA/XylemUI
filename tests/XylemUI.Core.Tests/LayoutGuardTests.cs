@@ -18,7 +18,7 @@ public sealed class LayoutGuardTests(UiThreadFixture ui)
             new FlexProps
             {
                 Wrap = FlexWrap.Wrap,
-                JustifyContent = new AlignContent(AlignContentKeyword.Center),
+                JustifyContent = new ContentAlignment(AlignContentKeyword.Center),
                 ColumnGap = LengthPercentage.Px(2),
                 RowGap = LengthPercentage.Px(2),
             }

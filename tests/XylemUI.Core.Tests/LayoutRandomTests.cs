@@ -224,7 +224,7 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                     new FlexProps
                     {
                         Direction = FlexDirection.Column,
-                        AlignItems = new AlignItems(Pick(random, AlignItemsKeyword.Normal, AlignItemsKeyword.Start, AlignItemsKeyword.Center)),
+                        AlignItems = new ItemAlignment(Pick(random, AlignItemsKeyword.Normal, AlignItemsKeyword.Start, AlignItemsKeyword.Center)),
                         RowGap = LengthPercentage.Px(random.Next(3) * 2),
                     }
                 ),
@@ -232,17 +232,17 @@ public sealed class LayoutRandomTests(UiThreadFixture ui)
                     new FlexProps
                     {
                         Wrap = FlexWrap.Wrap,
-                        AlignContent = new AlignContent(AlignContentKeyword.FlexStart),
+                        AlignContent = new ContentAlignment(AlignContentKeyword.FlexStart),
                         ColumnGap = LengthPercentage.Px(random.Next(3) * 2),
                     }
                 ),
                 _ => new LayoutAlgorithm.Flex(
                     new FlexProps
                     {
-                        AlignItems = new AlignItems(
+                        AlignItems = new ItemAlignment(
                             Pick(random, AlignItemsKeyword.Normal, AlignItemsKeyword.Start, AlignItemsKeyword.Baseline, AlignItemsKeyword.End)
                         ),
-                        JustifyContent = new AlignContent(
+                        JustifyContent = new ContentAlignment(
                             Pick(random, AlignContentKeyword.Normal, AlignContentKeyword.Center, AlignContentKeyword.SpaceBetween)
                         ),
                     }

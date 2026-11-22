@@ -55,7 +55,7 @@ internal static partial class LayoutEngine
             }
             else if (s.Position == Position.Absolute)
             {
-                AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
+                ItemAlignment alignSelf = s.AlignSelf ?? constants.AlignItems;
                 AlignItemsKeyword keyword = alignSelf.Keyword == AlignItemsKeyword.Normal ? AlignItemsKeyword.Stretch : alignSelf.Keyword;
                 var crossStatic = new StaticPosition(crossArea, FlexCrossEdge(keyword, crossReversed), alignSelf.Safe);
                 LayOutAbsoluteChild(tree, child, in s, containerSize, border, row ? mainStatic : crossStatic, row ? crossStatic : mainStatic);
@@ -124,8 +124,8 @@ internal static partial class LayoutEngine
             }
             else
             {
-                AlignItems justify = s.JustifySelf ?? props.JustifyItems;
-                AlignItems align = s.AlignSelf ?? new AlignItems(AlignItemsKeyword.Normal);
+                ItemAlignment justify = s.JustifySelf ?? props.JustifyItems;
+                ItemAlignment align = s.AlignSelf ?? new ItemAlignment(AlignItemsKeyword.Normal);
                 float y = staticY + alignOffset;
                 LayOutAbsoluteChild(
                     tree,
@@ -383,7 +383,7 @@ internal static partial class LayoutEngine
         return known;
     }
 
-    private static AbsoluteAlignment AlignmentOf(AlignItems? alignment) =>
+    private static AbsoluteAlignment AlignmentOf(ItemAlignment? alignment) =>
         (alignment?.Keyword ?? AlignItemsKeyword.Normal) switch
         {
             AlignItemsKeyword.Normal => AbsoluteAlignment.Normal,
@@ -591,7 +591,7 @@ internal static partial class LayoutEngine
         /// <param name="alignment">The box's alignment.</param>
         /// <param name="area">The area the box is aligned in.</param>
         /// <returns>The static position.</returns>
-        public static StaticPosition Of(AlignItems alignment, StaticArea area)
+        public static StaticPosition Of(ItemAlignment alignment, StaticArea area)
         {
             StaticEdge edge = alignment.Keyword switch
             {

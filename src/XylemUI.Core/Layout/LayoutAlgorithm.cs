@@ -72,17 +72,17 @@ internal readonly record struct FlexProps
     /// <summary>
     /// Gets how the free space of a line is distributed along the main axis.
     /// </summary>
-    public AlignContent JustifyContent { get; init; }
+    public ContentAlignment JustifyContent { get; init; }
 
     /// <summary>
     /// Gets where the items go across their line, unless an item's <see cref="LayoutStyle.AlignSelf"/> says otherwise.
     /// </summary>
-    public AlignItems AlignItems { get; init; }
+    public ItemAlignment AlignItems { get; init; }
 
     /// <summary>
     /// Gets how the lines share the container's cross size.
     /// </summary>
-    public AlignContent AlignContent { get; init; }
+    public ContentAlignment AlignContent { get; init; }
 
     /// <summary>
     /// Gets the space between columns: between the items of a row, between the lines of a column.
@@ -130,23 +130,23 @@ internal readonly record struct GridProps
     /// Gets where the items go along the width of their cells, unless an item's <see cref="LayoutStyle.JustifySelf"/> says
     /// otherwise. <c>normal</c> stretches an item without a width.
     /// </summary>
-    public AlignItems JustifyItems { get; init; }
+    public ItemAlignment JustifyItems { get; init; }
 
     /// <summary>
     /// Gets where the items go along the height of their cells, unless an item's <see cref="LayoutStyle.AlignSelf"/> says
     /// otherwise. <c>normal</c> stretches an item without a height or an aspect ratio.
     /// </summary>
-    public AlignItems AlignItems { get; init; }
+    public ItemAlignment AlignItems { get; init; }
 
     /// <summary>
     /// Gets where the columns go in the content box; <c>normal</c> behaves as <c>stretch</c>, which grows the <c>auto</c> columns.
     /// </summary>
-    public AlignContent JustifyContent { get; init; }
+    public ContentAlignment JustifyContent { get; init; }
 
     /// <summary>
     /// Gets where the rows go in the content box; <c>normal</c> behaves as <c>stretch</c>, which grows the <c>auto</c> rows.
     /// </summary>
-    public AlignContent AlignContent { get; init; }
+    public ContentAlignment AlignContent { get; init; }
 
     /// <summary>
     /// Gets the space between columns.
@@ -175,12 +175,12 @@ internal readonly record struct BlockProps
     /// <summary>
     /// Gets where the children go along the width, unless a child's <see cref="LayoutStyle.JustifySelf"/> says otherwise.
     /// </summary>
-    public AlignItems JustifyItems { get; init; }
+    public ItemAlignment JustifyItems { get; init; }
 
     /// <summary>
     /// Gets where the children, taken as one, go along the height.
     /// </summary>
-    public AlignContent AlignContent { get; init; }
+    public ContentAlignment AlignContent { get; init; }
 }
 
 /// <summary>

@@ -315,7 +315,7 @@ public sealed class LayoutPositionedTests(UiThreadFixture ui)
             Assert.Equal(new Rect(5, 35, 30, 10), tree.GetRect(s));
             Assert.Equal(new Rect(145, 115, 40, 20), tree.GetRect(x));
 
-            var centered = new LayoutAlgorithm.Block(new BlockProps { JustifyItems = new AlignItems(AlignItemsKeyword.Center) });
+            var centered = new LayoutAlgorithm.Block(new BlockProps { JustifyItems = new ItemAlignment(AlignItemsKeyword.Center) });
             tree.SetStyle(block, Fixed(200, 150) with { Border = EdgeInsets.All(5), Algorithm = centered });
             LayoutEngine.RunLayoutPass(tree);
             Assert.Equal(new Rect(85, 35, 30, 10), tree.GetRect(s));

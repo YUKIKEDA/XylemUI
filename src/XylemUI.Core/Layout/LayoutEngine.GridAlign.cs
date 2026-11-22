@@ -8,7 +8,7 @@ internal static partial class LayoutEngine
 
     // 8. The tracks' offsets in an axis by its content alignment (Taffy's align_tracks, alignment.rs): the free space goes before
     // and between the tracks that are not collapsed; the gaps are tracks already. Left to right only (row P03 adds the other).
-    private static void AlignTracks(float contentSize, float origin, Span<GridTrackState> tracks, AlignContent alignment)
+    private static void AlignTracks(float contentSize, float origin, Span<GridTrackState> tracks, ContentAlignment alignment)
     {
         float free = contentSize - SumBaseSizes(tracks);
         int count = 0;
@@ -76,18 +76,18 @@ internal static partial class LayoutEngine
         (float dx, float dy) = RelativeOffset(in s, area.Width, area.Height);
         EdgeInsets<LengthPercentageAuto> margin = s.Margin;
 
-        AlignItems horizontal = item.JustifySelf;
+        ItemAlignment horizontal = item.JustifySelf;
         if (horizontal.Keyword == AlignItemsKeyword.Normal)
         {
-            horizontal = new AlignItems(
+            horizontal = new ItemAlignment(
                 !float.IsNaN(inherent.Width) || widthStyle.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
 
-        AlignItems vertical = item.AlignSelf;
+        ItemAlignment vertical = item.AlignSelf;
         if (vertical.Keyword == AlignItemsKeyword.Normal)
         {
-            vertical = new AlignItems(
+            vertical = new ItemAlignment(
                 !float.IsNaN(inherent.Height) || heightStyle.IsSizingKeyword ? AlignItemsKeyword.Start : AlignItemsKeyword.Stretch
             );
         }
@@ -143,7 +143,7 @@ internal static partial class LayoutEngine
                     )
                     : StretchOf(widthStyle, stretch.Width);
             }
-            else if (!float.IsNaN(marginLeft) && !float.IsNaN(marginRight) && horizontal == new AlignItems(AlignItemsKeyword.Stretch))
+            else if (!float.IsNaN(marginLeft) && !float.IsNaN(marginRight) && horizontal == new ItemAlignment(AlignItemsKeyword.Stretch))
             {
                 width = stretch.Width;
             }
@@ -173,7 +173,7 @@ internal static partial class LayoutEngine
                     )
                     : StretchOf(heightStyle, stretch.Height);
             }
-            else if (!float.IsNaN(marginTop) && !float.IsNaN(marginBottom) && vertical == new AlignItems(AlignItemsKeyword.Stretch))
+            else if (!float.IsNaN(marginTop) && !float.IsNaN(marginBottom) && vertical == new ItemAlignment(AlignItemsKeyword.Stretch))
             {
                 height = stretch.Height;
             }
@@ -211,11 +211,12 @@ internal static partial class LayoutEngine
     // so `normal` stretches it in both axes and only its area and its alignment place it.
     private static void PositionBareGridItem(UiTree tree, in GridItemState item, float left, float right, float top, float bottom, Size area)
     {
-        AlignItems horizontal = item.JustifySelf.Keyword == AlignItemsKeyword.Normal ? new AlignItems(AlignItemsKeyword.Stretch) : item.JustifySelf;
-        AlignItems vertical = item.AlignSelf.Keyword == AlignItemsKeyword.Normal ? new AlignItems(AlignItemsKeyword.Stretch) : item.AlignSelf;
+        ItemAlignment horizontal =
+            item.JustifySelf.Keyword == AlignItemsKeyword.Normal ? new ItemAlignment(AlignItemsKeyword.Stretch) : item.JustifySelf;
+        ItemAlignment vertical = item.AlignSelf.Keyword == AlignItemsKeyword.Normal ? new ItemAlignment(AlignItemsKeyword.Stretch) : item.AlignSelf;
         var stretch = new Size(Math.Max(area.Width, 0), Math.Max(area.Height - item.BaselineShim, 0));
-        bool stretchWidth = horizontal == new AlignItems(AlignItemsKeyword.Stretch);
-        bool stretchHeight = vertical == new AlignItems(AlignItemsKeyword.Stretch);
+        bool stretchWidth = horizontal == new ItemAlignment(AlignItemsKeyword.Stretch);
+        bool stretchHeight = vertical == new ItemAlignment(AlignItemsKeyword.Stretch);
         float knownHeight = stretchHeight ? stretch.Height : float.NaN;
         float knownWidth = stretchWidth
             ? stretch.Width
@@ -240,7 +241,7 @@ internal static partial class LayoutEngine
 
     // An item's start in one axis of its grid area (Taffy's align_item_within_area, left to right): auto margins share the free
     // space; a safe alignment that overflows starts; baseline and stretch start.
-    private static float AlignInArea(float start, float end, AlignItems alignment, float size, float marginStart, float marginEnd, float shim)
+    private static float AlignInArea(float start, float end, ItemAlignment alignment, float size, float marginStart, float marginEnd, float shim)
     {
         float fixedStart = Maybe.Or(marginStart, 0) + shim;
         float fixedEnd = Maybe.Or(marginEnd, 0);

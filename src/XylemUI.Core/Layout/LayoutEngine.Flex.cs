@@ -225,16 +225,16 @@ internal static partial class LayoutEngine
         float rowGap = props.RowGap.ResolveOrZero(Maybe.Or(inner.Height, 0));
 
         // `normal` behaves as `stretch` across the line and for the lines, and as `flex-start` along the main axis.
-        AlignItems alignItems =
+        ItemAlignment alignItems =
             props.AlignItems.Keyword == AlignItemsKeyword.Normal ? props.AlignItems with { Keyword = AlignItemsKeyword.Stretch } : props.AlignItems;
-        AlignContent alignContent =
+        ContentAlignment alignContent =
             props.AlignContent.Keyword == AlignContentKeyword.Normal
                 ? props.AlignContent with
                 {
                     Keyword = AlignContentKeyword.Stretch,
                 }
                 : props.AlignContent;
-        AlignContent justifyContent =
+        ContentAlignment justifyContent =
             props.JustifyContent.Keyword == AlignContentKeyword.Normal
                 ? props.JustifyContent with
                 {
@@ -323,7 +323,7 @@ internal static partial class LayoutEngine
             item.HasKeywordLimits = c.Layout.HasKeywordLimits;
             item.IsScrollContainer = s.OverflowX >= Overflow.Hidden || s.OverflowY >= Overflow.Hidden;
             item.MainScrolls = (row ? s.OverflowX : s.OverflowY) >= Overflow.Hidden;
-            AlignItems alignSelf = s.AlignSelf ?? constants.AlignItems;
+            ItemAlignment alignSelf = s.AlignSelf ?? constants.AlignItems;
             item.AlignSelf = alignSelf.Keyword == AlignItemsKeyword.Normal ? alignSelf with { Keyword = AlignItemsKeyword.Stretch } : alignSelf;
             constants.AnyBaseline |= item.AlignSelf.Keyword == AlignItemsKeyword.Baseline;
             constants.AnyAutoMargin |= item.AutoLeft | item.AutoTop | item.AutoRight | item.AutoBottom;
@@ -1419,7 +1419,7 @@ internal static partial class LayoutEngine
 
     // CSS Box Alignment's fallbacks (Taffy's apply_alignment_fallback): a distribution with one subject or no free space falls
     // back to a start or a center, and a safe alignment with no free space to the start.
-    private static AlignContentKeyword AlignmentFallback(float freeSpace, int count, AlignContent alignment)
+    private static AlignContentKeyword AlignmentFallback(float freeSpace, int count, ContentAlignment alignment)
     {
         AlignContentKeyword keyword = alignment.Keyword == AlignContentKeyword.Normal ? AlignContentKeyword.Stretch : alignment.Keyword;
         bool safe = alignment.Safe;
@@ -1505,9 +1505,9 @@ internal static partial class LayoutEngine
         public bool CrossAvailableSpaceIsDefinite;
         public float GapMain;
         public float GapCross;
-        public AlignItems AlignItems;
-        public AlignContent AlignContent;
-        public AlignContent JustifyContent;
+        public ItemAlignment AlignItems;
+        public ContentAlignment AlignContent;
+        public ContentAlignment JustifyContent;
         public bool AnyBaseline;
         public bool AnyAutoMargin;
         public bool AllStretched;
@@ -1541,7 +1541,7 @@ internal static partial class LayoutEngine
         public Edges PaddingBorder;
         public float FlexGrow;
         public float FlexShrink;
-        public AlignItems AlignSelf;
+        public ItemAlignment AlignSelf;
         public bool FlexBasisIsDefinite;
         public float FlexBasis;
         public float InnerFlexBasis;
