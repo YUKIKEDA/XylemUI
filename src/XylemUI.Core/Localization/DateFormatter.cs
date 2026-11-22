@@ -129,11 +129,10 @@ public sealed class DateFormatter
         _negative = OffsetPattern.Parse(hourFormat[(separator + 1)..]);
     }
 
-    // The types of value a format writes.
+    // The types of value a format writes that can lack a field of the format; a DateTimeOffset has every field.
     private enum ValueKind : byte
     {
         DateTime,
-        DateTimeOffset,
         DateOnly,
         TimeOnly,
     }
@@ -229,11 +228,8 @@ public sealed class DateFormatter
     /// <param name="destination">The characters to write to.</param>
     /// <param name="charsWritten">The characters written; 0 when <paramref name="destination"/> is too short.</param>
     /// <returns><see langword="false"/> when <paramref name="destination"/> is too short.</returns>
-    public bool TryFormat(DateTimeOffset value, Span<char> destination, out int charsWritten)
-    {
-        Check(ValueKind.DateTimeOffset);
-        return TryWrite(value.DateTime, OffsetMinutes(value), destination, out charsWritten);
-    }
+    public bool TryFormat(DateTimeOffset value, Span<char> destination, out int charsWritten) =>
+        TryWrite(value.DateTime, OffsetMinutes(value), destination, out charsWritten);
 
     /// <summary>
     /// Writes a date. Allocates nothing.
@@ -281,11 +277,7 @@ public sealed class DateFormatter
     /// </summary>
     /// <param name="value">The date, the time, and the offset.</param>
     /// <returns>The value and the format.</returns>
-    public FormattedDate Of(DateTimeOffset value)
-    {
-        Check(ValueKind.DateTimeOffset);
-        return new FormattedDate(this, value.DateTime, OffsetMinutes(value));
-    }
+    public FormattedDate Of(DateTimeOffset value) => new(this, value.DateTime, OffsetMinutes(value));
 
     /// <summary>
     /// Returns a date with this format, for an interpolation of a <see cref="NodeTextWriter"/>. Allocates nothing.
@@ -471,7 +463,7 @@ public sealed class DateFormatter
             ThrowHelper.ThrowDateValueNotTaken("A TimeOnly has no date, and the format writes a date field.", "value");
         }
 
-        if (kind != ValueKind.DateTimeOffset && _hasZone)
+        if (_hasZone)
         {
             ThrowHelper.ThrowDateValueNotTaken("The format writes a time zone, which only a DateTimeOffset has.", "value");
         }
@@ -514,15 +506,16 @@ public sealed class DateFormatter
     // Writes an offset from GMT in the locale's gmtFormat (UTS #35 part 4, "Time Zone Format Terminology", the localized GMT
     // format), 0 with the positive pattern (GMT+0, GMT+00:00; Issue #906): the short form with the hours unpadded and, when the
     // minutes are 0, without the hourFormat's text from the separator on, as ICU's TimeZoneFormat::truncateOffsetPattern cuts it
-    // after the hours (he's negative pattern, -HH:mm and U+200E, writes -8 without the mark); the long form as the hourFormat
-    // writes it.
+    // after the hours (he's negative pattern, -HH:mm and U+200E, writes -8 without the mark); the long form with the hours in two
+    // digits and the minutes, whether the hourFormat has H or HH, as TimeZoneFormat::formatOffsetLocalizedGMT writes them (cs's
+    // +H:mm writes GMT+09:00; Issue #906).
     private void WriteOffset(ref CharWriter writer, int offsetMinutes, bool isLong)
     {
         OffsetPattern sign = offsetMinutes >= 0 ? _positive : _negative;
         int magnitude = Math.Abs(offsetMinutes);
         writer.Append(_gmtPrefix);
         writer.Append(sign.Prefix);
-        WriteNumber(ref writer, magnitude / 60, isLong ? sign.HourDigits : 1);
+        WriteNumber(ref writer, magnitude / 60, isLong ? 2 : 1);
         if (isLong || magnitude % 60 != 0)
         {
             writer.Append(sign.Separator);
@@ -534,22 +527,21 @@ public sealed class DateFormatter
     }
 
     /// <summary>
-    /// One side of an <c>hourFormat</c> (<c>+HH:mm</c>): the text before the hours, their digits, the text between the hours and the
-    /// minutes, and the text after the minutes.
+    /// One side of an <c>hourFormat</c> (<c>+HH:mm</c>): the text before the hours, the text between the hours and the minutes, and
+    /// the text after the minutes.
     /// </summary>
     /// <param name="Prefix">The text before the hours, with the sign.</param>
-    /// <param name="HourDigits">The digits of the hours in the long form: 2 for <c>HH</c>, 1 for <c>H</c>.</param>
     /// <param name="Separator">The text between the hours and the minutes.</param>
     /// <param name="Suffix">The text after the minutes.</param>
-    private readonly record struct OffsetPattern(string Prefix, int HourDigits, string Separator, string Suffix)
+    private readonly record struct OffsetPattern(string Prefix, string Separator, string Suffix)
     {
         // tools/CldrTableGen checks the form: text, H or HH, text, mm, text.
         public static OffsetPattern Parse(string pattern)
         {
             int hour = pattern.IndexOf('H', StringComparison.Ordinal);
-            int digits = pattern.LastIndexOf('H') - hour + 1;
+            int hoursEnd = pattern.LastIndexOf('H') + 1;
             int minute = pattern.IndexOf("mm", StringComparison.Ordinal);
-            return new OffsetPattern(pattern[..hour], digits, pattern[(hour + digits)..minute], pattern[(minute + 2)..]);
+            return new OffsetPattern(pattern[..hour], pattern[hoursEnd..minute], pattern[(minute + 2)..]);
         }
     }
 }

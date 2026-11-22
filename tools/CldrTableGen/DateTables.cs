@@ -219,9 +219,11 @@ internal sealed class DateTables
             .GetProperty("availableFormats")
             .EnumerateObject()
             .Select(format => KeyValuePair.Create(format.Name, format.Value.GetString() ?? string.Empty));
+
+        // ICU's DateTimePatterns hold the 4 time patterns before the 4 date patterns, and addICUPatterns adds them in that order.
         IEnumerable<string> standard = Lengths
-            .Select(length => TableBytes.Text(tag, gregorian.GetProperty("dateFormats"), length))
-            .Concat(Lengths.Select(length => TableBytes.Text(tag, gregorian.GetProperty("timeFormats"), length)));
+            .Select(length => TableBytes.Text(tag, gregorian.GetProperty("timeFormats"), length))
+            .Concat(Lengths.Select(length => TableBytes.Text(tag, gregorian.GetProperty("dateFormats"), length)));
         var matcher = new SkeletonMatcher(tag, available, standard);
         var table = new List<byte> { (byte)zero, (byte)(zero >> 8) };
         var written = new List<string>();

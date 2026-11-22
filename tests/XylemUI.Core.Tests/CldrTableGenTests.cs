@@ -130,10 +130,10 @@ public sealed class CldrTableGenTests
         "LLLL",
         "L",
         "M/d",
-        "E, M/d",
+        "EEE, M/d",
         "LLL",
         "MMM d",
-        "E, MMM d",
+        "EEE, MMM d",
         "LLLL",
         "MMMM d",
         "EEEE, MMMM d",
@@ -142,10 +142,10 @@ public sealed class CldrTableGenTests
         "y",
         "M/y",
         "M/d/y",
-        "E, M/d/y",
+        "EEE, M/d/y",
         "MMM y",
         "MMM d, y",
-        "E, MMM d, y",
+        "EEE, MMM d, y",
         "MMMM y",
         "MMMM d, y",
         "EEEE d MMMM y",
@@ -276,6 +276,12 @@ public sealed class CldrTableGenTests
                     "\"Time-Day-Of-Week\": \"{0} ({1})\"",
                     "\"Time-Day-Of-Week\": \"{0} 'a'b ({1})\"",
                     "The joining pattern {0} 'a'b ({1}) of de has letters next to a quote."
+                },
+                {
+                    Gregorian,
+                    "\"Time-Day-Of-Week\": \"{0} ({1})\"",
+                    "\"Time-Day-Of-Week\": \"{0} b'a' ({1})\"",
+                    "The joining pattern {0} b'a' ({1}) of de has letters next to a quote."
                 },
             };
         }
@@ -494,17 +500,22 @@ public sealed class CldrTableGenTests
     /// The date patterns the generator writes are the closest format of each of Flutter's 41 skeletons with its fields made as long
     /// as the skeleton's (UTS #35 part 4, "Matching Skeletons"), the hour of the locale's language and region for j and the 24-hour
     /// form after them, then the joining patterns, the Time-Day-Of-Week append item, gmtFormat, and hourFormat (design §4.11,
-    /// "Skeleton formats"). The formats are availableFormats and the standard date and time patterns whose base skeleton no available
-    /// format has.
+    /// "Skeleton formats"). The formats are those of ICU's DateTimePatternGenerator: the canonical items, the standard time and date
+    /// patterns, and availableFormats, which replace an entry of the same base and forms; at the same distance, the first in ICU's
+    /// order wins (the first letter of the base, then the order added).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The zip of the first test: en's formats are EnFormats, and its region is the world's, whose hour is h; en's full date
     ///   pattern is EEEE d MMMM y and its long one MMMM d 'long' y, whose base yMMMMd EnFormats has. ja's are JaFormats, whose MMM is
     ///   M月; Japan's hour is h and ja-JP's H. ko's region is the world's and ko-001's hour is H; ko's full date pattern is en's,
-    ///   and its formats have yMMMMEEEEdd (EEEE, dd MMMM y), of the same base as the pattern's yMMMMEEEEd. de's are EnFormats with MMMEEEEd,
-    ///   which is as near MMMMEEEEd as MMMMEd is; pt's yMMMEEEEd (EEEE, d/MM/y) is as near yMMMMEEEEd as its yMMMMEd
-    ///   (E, d 'de' MMMM 'de' y) is. The full date pattern of every locale but en is E, MMMM d, y, whose base yMMMMEd they have.
+    ///   and its formats have yMMMMEEEEdd (EEEE, dd MMMM y), of the same base as the pattern's yMMMMEEEEd but another form of d,
+    ///   and yyM (M/yy) in the place of yM.
+    ///   de's are EnFormats with MMMEEEEd added after them, which is as near MMMMEEEEd as MMMMEd is; pt's yMMMEEEEd (EEEE, d/MM/y),
+    ///   added after EnFormats, is as near yMMMMEEEEd as its yMMMMEd (E, d 'de' MMMM 'de' y) is; its formats have, in the place of
+    ///   yM, yyyyyyyyyyyyyyyyyM (M/yyyyyyyyyyyyyyyyy) and then YM (M/Y). de's also have ahm (h:mm 'x' a) after hm. zh's have no
+    ///   Hms, and zh's medium and short time patterns are HH:mm:ss and H:mm:ss. The full date pattern of every locale but en is
+    ///   E, MMMM d, y, whose skeleton yMMMMEd they have.
     ///
     /// Steps:
     /// - Run the tool, and read the pattern tables of en, ja, ko, de, and pt from CldrDateTables.g.cs.
@@ -516,12 +527,16 @@ public sealed class CldrTableGenTests
     ///   times, {1} {0}, {0} ({1}), GMT{0}, +HH:mm;-HH:mm, and the end of the table.
     /// - ja: LLL, LLLL, and MMMM are M月, a number that is not made a name; j is H時 (ja-JP before JP), and the 7 24-hour patterns
     ///   are empty.
-    /// - ko: jm is HH:mm (ko-001 before 001); yMMMMEEEEd is not the full date pattern but yMMMMEEEEdd's with d made as long as the
-    ///   request's, EEEE, d MMMM y (yMMMMEd is as near, and its adjusted pattern as near, but later in ordinal order).
-    /// - de: MMMMEEEEd takes MMMEEEEd, first in ordinal order of the two at the same distance whose adjusted patterns are as near:
-    ///   EEEE, d. MMMM.
-    /// - pt: yMMMMEEEEd takes yMMMMEd, whose adjusted pattern writes the wide month, not yMMMEEEEd, first in ordinal order, which
-    ///   keeps its numeric month: EEEE, d 'de' MMMM 'de' y.
+    /// - ko: jm is HH:mm (ko-001 before 001); yMMMMEEEEd is the full date pattern, EEEE d MMMM y, at distance 0: yMMMMEEEEdd does
+    ///   not replace it, as its d is another form, and is farther. yM is not yyM's M/y, as a request of one y does not take a skeleton
+    ///   of two (ICU's yearLengthIsCompatible), but yMMM's MMM y, whose month is text.
+    /// - de: MMMMEEEEd takes MMMMEd, the first of the two at the same distance in ICU's order: EEEE, MMMM d. jm is hm's h:mm a:
+    ///   ahm is hm's skeleton, since h takes a, and an item of the same given skeleton is not added again.
+    /// - pt: yMMMMEEEEd takes yMMMMEd, the first of the two at the same distance, not yMMMEEEEd: EEEE, d 'de' MMMM 'de' y. yM takes
+    ///   YM's M/Y, whose base begins with Y, before the 17 y of yyyyyyyyyyyyyyyyyM, added first but listed under y: both are 0x10
+    ///   from y.
+    /// - zh: Hms takes the medium time pattern HH:mm:ss, not the short one H:mm:ss, which has the same base and is not added: the
+    ///   hours keep their length.
     /// </remarks>
     [Fact]
     public void Tool_DatePatterns_AreTheClosestFormats()
@@ -544,11 +559,13 @@ public sealed class CldrTableGenTests
             Assert.Equal(["M月", "M月", "M月", "H時"], new[] { ja[3], ja[4], ja[11], ja[31] });
             Assert.All(ja.Skip(41).Take(7), pattern => Assert.True(pattern.Length == 0, pattern));
             (_, List<string> ko) = PatternTable(output, "CldrKo");
-            Assert.Equal(("HH:mm", "EEEE, d MMMM y"), (ko[32], ko[25]));
+            Assert.Equal(("HH:mm", "EEEE d MMMM y", "MMM y"), (ko[32], ko[25], ko[17]));
             (_, List<string> de) = PatternTable(output, "CldrDe");
-            Assert.Equal("EEEE, d. MMMM", de[13]);
+            Assert.Equal(("EEEE, MMMM d", "h:mm a"), (de[13], de[32]));
             (_, List<string> pt) = PatternTable(output, "CldrPt");
-            Assert.Equal("EEEE, d 'de' MMMM 'de' y", pt[25]);
+            Assert.Equal(("EEEE, d 'de' MMMM 'de' y", "M/Y"), (pt[25], pt[17]));
+            (_, List<string> zh) = PatternTable(output, "CldrZh");
+            Assert.Equal("HH:mm:ss", zh[30]);
         }
         finally
         {
@@ -644,8 +661,8 @@ public sealed class CldrTableGenTests
     /// <remarks>
     /// Preconditions:
     /// - The zip of the first test with the row's text of one of de's entries replaced, and a lock with its SHA-256: an hourFormat
-    ///   of one pattern, an hourFormat of HHH, a gmtFormat without {0}, a short joining pattern with {1} twice, and a
-    ///   Time-Day-Of-Week whose letter b follows a quote.
+    ///   of one pattern, an hourFormat of HHH, a gmtFormat without {0}, a short joining pattern with {1} twice, a
+    ///   Time-Day-Of-Week whose letter b follows a quote, and one whose letter b comes before a quote.
     ///
     /// Steps:
     /// - Run the tool into an empty directory.
@@ -769,11 +786,13 @@ public sealed class CldrTableGenTests
     }
 
     /// <summary>
-    /// A date pattern with a field the formats do not write stops the generator: the hours of 1 to 24 (k).
+    /// A date pattern with a field the formats do not write stops the generator: the hours of 1 to 24 (k), and the day periods B and
+    /// b, which no table uses since the day period takes the requested a (Issue #906).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The zip of the first test with de's Hm as kk:mm, and a lock with its SHA-256.
+    /// - The zip of the first test with de's Hm as the row's pattern, and a lock with its SHA-256. Hm asks for no day period, so the
+    ///   pattern's B or b stays.
     ///
     /// Steps:
     /// - Run the tool into an empty directory.
@@ -781,19 +800,23 @@ public sealed class CldrTableGenTests
     /// Expected:
     /// - It ends with 1 and names the pattern and de.
     /// </remarks>
-    [Fact]
-    public void Tool_DatePatternWithAFieldTheFormatsDoNotWrite_Stops()
+    /// <param name="pattern">de's Hm.</param>
+    [Theory]
+    [InlineData("kk:mm")]
+    [InlineData("HH:mm B")]
+    [InlineData("HH:mm b")]
+    public void Tool_DatePatternWithAFieldTheFormatsDoNotWrite_Stops(string pattern)
     {
         string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
         try
         {
-            string zip = WriteZip(directory, withBo: true, deHm: "kk:mm");
+            string zip = WriteZip(directory, withBo: true, deHm: pattern);
             string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
 
             (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
 
             Assert.Equal(1, exit);
-            Assert.Contains("The pattern kk:mm of de has a field the formats do not write", text, StringComparison.Ordinal);
+            Assert.Contains("The pattern " + pattern + " of de has a field the formats do not write", text, StringComparison.Ordinal);
         }
         finally
         {
@@ -1048,15 +1071,22 @@ public sealed class CldrTableGenTests
                 IEnumerable<(string, string)> formats = tag switch
                 {
                     "ja" => JaFormats,
-                    "zh" => ZhFormats,
-                    "ko" => EnFormats.Append(("yMMMMEEEEdd", "EEEE, dd MMMM y")),
+                    "zh" => ZhFormats.Where(format => format.Key != "Hms"),
+                    "ko" => EnFormats
+                        .Where(format => format.Key != "yM")
+                        .Append(("yMMMMEEEEdd", "EEEE, dd MMMM y"))
+                        .Append(("yyM", "M/yy")),
                     "pt" => EnFormats
+                        .Where(format => format.Key != "yM")
                         .Select(format => format.Key == "yMMMMEd" ? (format.Key, "E, d 'de' MMMM 'de' y") : format)
-                        .Append(("yMMMEEEEd", "EEEE, d/MM/y")),
+                        .Append(("yMMMEEEEd", "EEEE, d/MM/y"))
+                        .Append(("yyyyyyyyyyyyyyyyyM", "M/yyyyyyyyyyyyyyyyy"))
+                        .Append(("YM", "M/Y")),
                     "de" => EnFormats
                         .Where(format => deYearQuarters || format.Key is not ("yQQQ" or "yQQQQ"))
                         .Select(format => format.Key == "Hm" ? (format.Key, deHm) : format)
-                        .Append(("MMMEEEEd", "EEEE, d. MMM")),
+                        .Append(("MMMEEEEd", "EEEE, d. MMM"))
+                        .Append(("ahm", "h:mm 'x' a")),
                     _ => EnFormats,
                 };
                 Add(zip, "cldr-dates-full/main/" + tag + "/ca-gregorian.json", GregorianJson(tag, formats));
@@ -1144,7 +1174,8 @@ public sealed class CldrTableGenTests
     // The Gregorian data of a locale: names made of their width's letter, their kind, and their key (aM1 is the abbreviated January,
     // wDtue the wide Tuesday, nQ4 the narrow fourth quarter, aPpm the abbreviated pm), the same in the stand-alone context but the
     // wide January (wM1alone); the eras BC, AD, Before Christ, Anno Domini, B, A; the standard date patterns, whose full one is
-    // EEEE d MMMM y for en and ko and E, MMMM d, y for the others, and the standard time patterns; the joining patterns {1}, {0} but the
+    // EEEE d MMMM y for en and ko and E, MMMM d, y for the others, and the standard time patterns, whose medium and short ones are
+    // HH:mm:ss and H:mm:ss for zh; the joining patterns {1}, {0} but the
     // short one {1} {0}; the Time-Day-Of-Week append item {0} ({1}); and the given formats.
     private static string GregorianJson(string tag, IEnumerable<(string Key, string Pattern)> formats)
     {
@@ -1170,7 +1201,11 @@ public sealed class CldrTableGenTests
             + "\"eraNarrow\": { \"0\": \"B\", \"1\": \"A\" } }, \"dateFormats\": { \"full\": \""
             + fullDate
             + "\", \"long\": \"MMMM d 'long' y\", \"medium\": \"MMM d, y\", \"short\": \"M/d/y\" }, "
-            + "\"timeFormats\": { \"full\": \"h:mm:ss a zzzz\", \"long\": \"h:mm:ss a z\", \"medium\": \"h:mm:ss a\", \"short\": \"h:mm a\" }, "
+            + "\"timeFormats\": { \"full\": \"h:mm:ss a zzzz\", \"long\": \"h:mm:ss a z\", \"medium\": \""
+            + (tag is "zh" ? "HH:mm:ss" : "h:mm:ss a")
+            + "\", \"short\": \""
+            + (tag is "zh" ? "H:mm:ss" : "h:mm a")
+            + "\" }, "
             + "\"dateTimeFormats\": { \"full\": \"{1}, {0}\", \"long\": \"{1}, {0}\", "
             + "\"medium\": \"{1}, {0}\", \"short\": \"{1} {0}\", \"appendItems\": { \"Time-Day-Of-Week\": \"{0} ({1})\" }, "
             + "\"availableFormats\": "

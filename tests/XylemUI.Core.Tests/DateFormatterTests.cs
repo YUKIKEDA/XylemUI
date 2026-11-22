@@ -12,6 +12,10 @@ namespace XylemUI.Tests;
 // hmv and hv). In the expected text, _ is U+00A0, ^ is U+202F, | is U+200E, ! is U+200F, and @ is U+061C.
 public sealed class DateFormatterTests
 {
+    // The places in a date pattern table (PatternAt): jmz among the 41 patterns, and hourFormat after gmtFormat at the end.
+    private const int JmzIndex = 35;
+    private const int HourFormatIndex = 54;
+
     // Tuesday the 3rd of February 2026, 13:05:09, nine hours ahead of GMT.
     private static readonly DateTimeOffset Moment = new(2026, 2, 3, 13, 5, 9, TimeSpan.FromHours(9));
 
@@ -321,6 +325,31 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
+    /// A requested E of one letter counts as EEE when the pattern's field takes the requested length, as ICU's adjustFieldTypes does
+    /// ("1-3 for E are equivalent to 3"; design §4.11, "Nearness and lengths"; Issue #906): a locale whose E is the short name
+    /// cccccc writes the abbreviated one for E, and a pattern of E writes EEE, which is the same text.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - CLDR 49's availableFormats of nb, nn, and no have E as cccccc (the short name, sø.); en's has E as ccc and MEd as E, M/d.
+    ///
+    /// Steps:
+    /// - Read the E patterns of nb, nn, and no and the MEd pattern of en from the tables; write the moment of the class with nb's E.
+    ///
+    /// Expected:
+    /// - ccc for the three, EEE, M/d for en's MEd; tir. (the abbreviated name, as ICU writes it), not ti.
+    /// </remarks>
+    [Fact]
+    public void FromSkeleton_WeekdayOfOneLetter_TakesTheAbbreviatedLength()
+    {
+        Assert.Equal("ccc", PatternAt(ByTag["nb"], 1));
+        Assert.Equal("ccc", PatternAt(ByTag["nn"], 1));
+        Assert.Equal("ccc", PatternAt(ByTag["no"], 1));
+        Assert.Equal("EEE, M/d", PatternAt(CldrLocales.En, 7));
+        Assert.Equal("tir.", Write(DateFormatter.FromSkeleton(ByTag["nb"], "E", false), Moment));
+    }
+
+    /// <summary>
     /// The hour that j stands for is the one timeData gives the locale's language and region, then its region, then the world
     /// (design §4.11, "The region of a locale's values"; ICU's getAllowedHourFormats).
     /// </summary>
@@ -626,6 +655,43 @@ public sealed class DateFormatterTests
         var value = new DateTimeOffset(2026, 2, 3, 13, 5, 9, TimeSpan.FromMinutes(offsetMinutes));
 
         Assert.Equal(Marked(expected), Write(DateFormatter.FromSkeleton(ByTag[tag], skeleton, true), value));
+    }
+
+    /// <summary>
+    /// The long offset (zzzz) writes the hours in two digits whether the hourFormat has H or HH, as ICU's formatOffsetLocalizedGMT
+    /// does (design §4.11, "Time zone skeletons"; Issue #906). No skeleton of the 41 reaches zzzz in cs or fi, so the test puts it in
+    /// their tables.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - cs's hourFormat is +H:mm;-H:mm and fi's +H.mm;-H.mm. Tables that are en's but for the pattern of jmz, the row's pattern
+    ///   with zzzz, and the gmtFormat and hourFormat, the row locale's.
+    ///
+    /// Steps:
+    /// - Write 13:05 at the row's offset with the format of jmz.
+    ///
+    /// Expected:
+    /// - The text of the row: GMT+09:00, GMT-08:00, UTC+09.00, and GMT+00:00, not GMT+9:00.
+    /// </remarks>
+    /// <param name="tag">The locale whose gmtFormat and hourFormat the table takes.</param>
+    /// <param name="pattern">The pattern of jmz.</param>
+    /// <param name="offsetMinutes">The offset from GMT, in minutes.</param>
+    /// <param name="expected">The text.</param>
+    [Theory]
+    [InlineData("cs", "H:mm zzzz", 540, "13:05 GMT+09:00")]
+    [InlineData("cs", "H:mm zzzz", -480, "13:05 GMT-08:00")]
+    [InlineData("cs", "H:mm zzzz", 0, "13:05 GMT+00:00")]
+    [InlineData("fi", "H.mm zzzz", 540, "13.05 UTC+09.00")]
+    public void TimeZone_LongOffsetOfAnHourFormatWithOneH_WritesTwoDigits(string tag, string pattern, int offsetMinutes, string expected)
+    {
+        Assert.Equal("+H:mm;-H:mm", PatternAt(ByTag["cs"], HourFormatIndex));
+        Assert.Equal("+H.mm;-H.mm", PatternAt(ByTag["fi"], HourFormatIndex));
+        byte[] table = WithPattern(CldrLocales.En.DatePatternTable, JmzIndex, pattern);
+        table = WithPattern(table, HourFormatIndex - 1, PatternAt(ByTag[tag], HourFormatIndex - 1));
+        table = WithPattern(table, HourFormatIndex, PatternAt(ByTag[tag], HourFormatIndex));
+        var value = new DateTimeOffset(2026, 2, 3, 13, 5, 9, TimeSpan.FromMinutes(offsetMinutes));
+
+        Assert.Equal(expected, Write(DateFormatter.FromSkeleton(new PatternLocaleData(table), "jmz", false), value));
     }
 
     /// <summary>

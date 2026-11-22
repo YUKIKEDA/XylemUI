@@ -92,47 +92,51 @@ internal sealed class SkeletonMatcher
     ];
 
     private readonly string _tag;
-    private readonly List<Candidate> _candidates = [];
+
+    // ICU's PatternMap (dtptngen.cpp): the entries under the first letter of their base skeleton, A to Z and then a to z, each list
+    // in the order the entries were added. Match keeps the first entry at the best distance in this order, as
+    // DateTimePatternGenerator::getBestRaw does (Issue #906).
+    private readonly List<Candidate>?[] _entries = new List<Candidate>?[52];
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="SkeletonMatcher"/> class with a locale's formats, its standard patterns whose
-    /// base skeleton no format has, and a canonical item for each symbol of <see cref="CanonicalItems"/> whose skeleton has no format.
+    /// Initializes a new instance of the <see cref="SkeletonMatcher"/> class with a locale's formats, in the order and with the
+    /// conflict rules of ICU's <c>DateTimePatternGenerator</c>: a canonical item for each symbol of <see cref="CanonicalItems"/>
+    /// (<c>addCanonicalItems</c>), then the standard patterns (<c>addICUPatterns</c>), then the <c>availableFormats</c>
+    /// (<c>addCLDRData</c>).
     /// </summary>
     /// <param name="tag">The locale, for the messages.</param>
-    /// <param name="availableFormats">The locale's <c>availableFormats</c>: each skeleton and its pattern. A skeleton with an
-    /// alternative or a count (<c>hm-alt-ascii</c>, <c>yw-count-one</c>) and a skeleton with a symbol or a length the table of forms
-    /// does not have (<c>MMMddd</c>) are not candidates.</param>
-    /// <param name="standardPatterns">The locale's <c>dateFormats</c> and <c>timeFormats</c> (full, long, medium, short). Each is a
-    /// candidate under the skeleton of its fields, as ICU's <c>DateTimePatternGenerator::addICUPatterns</c> adds them, unless a
-    /// format or an earlier standard pattern has the same base skeleton (<see cref="Base"/>): ICU's <c>availableFormats</c> override a
-    /// pattern of the same base. A pattern with a field the table of forms does not have, or with two fields of one kind, is not a
-    /// candidate.</param>
+    /// <param name="availableFormats">The locale's <c>availableFormats</c>: each skeleton and its pattern, which replace an entry of the
+    /// same base skeleton and the same forms. A skeleton with an alternative or a count (<c>hm-alt-ascii</c>, <c>yw-count-one</c>) and
+    /// a skeleton with a symbol or a length the table of forms does not have (<c>MMMddd</c>) are not candidates.</param>
+    /// <param name="standardPatterns">The locale's <c>timeFormats</c> and then its <c>dateFormats</c> (full, long, medium, short), the
+    /// order of ICU's <c>DateTimePatterns</c>. Each is an entry under the skeleton of its fields, unless an earlier canonical item or
+    /// standard pattern has the same base skeleton (<see cref="Base"/>). A pattern with a field the table of forms does not have, or
+    /// with two fields of one kind, is not a candidate.</param>
     public SkeletonMatcher(string tag, IEnumerable<KeyValuePair<string, string>> availableFormats, IEnumerable<string> standardPatterns)
     {
         _tag = tag;
+        foreach (char symbol in CanonicalItems)
+        {
+            string item = symbol.ToString();
+            if (Parse(item) is { } fields)
+            {
+                Add(new Candidate(item, item, fields, Base(fields), Specified: false), overrides: false);
+            }
+        }
+
+        foreach (string pattern in standardPatterns)
+        {
+            if (SkeletonOf(pattern) is { } skeleton && Parse(skeleton) is { } fields)
+            {
+                Add(new Candidate(skeleton, pattern, fields, Base(fields), Specified: false), overrides: false);
+            }
+        }
+
         foreach ((string skeleton, string pattern) in availableFormats)
         {
             if (!skeleton.Contains('-', StringComparison.Ordinal) && Parse(skeleton) is { } fields)
             {
-                _candidates.Add(new Candidate(skeleton, pattern, fields));
-            }
-        }
-
-        var bases = new HashSet<string>(_candidates.Select(candidate => Base(candidate.Fields)), StringComparer.Ordinal);
-        foreach (string pattern in standardPatterns)
-        {
-            if (SkeletonOf(pattern) is { } skeleton && Parse(skeleton) is { } fields && bases.Add(Base(fields)))
-            {
-                _candidates.Add(new Candidate(skeleton, pattern, fields));
-            }
-        }
-
-        foreach (char symbol in CanonicalItems)
-        {
-            string item = symbol.ToString();
-            if (Parse(item) is { } own && !_candidates.Any(candidate => Distance(own, candidate.Fields) == 0))
-            {
-                _candidates.Add(new Candidate(item, item, own));
+                Add(new Candidate(skeleton, pattern, fields, Base(fields), Specified: true), overrides: true);
             }
         }
     }
@@ -165,42 +169,32 @@ internal sealed class SkeletonMatcher
     {
         Dictionary<DateField, Field> requested =
             Parse(skeleton) ?? throw new InvalidDataException("The skeleton " + skeleton + " has a field the tool does not know.");
-        Candidate closest = _candidates.MinBy(candidate => Distance(requested, candidate.Fields))!;
-        int bestDistance = Distance(requested, closest.Fields);
-        if (bestDistance >= MissingField)
+
+        // The first entry at the best distance in the order of the map wins (design §4.11, "The same distance"; Issue #906). ICU also
+        // prefers, at the same distance, the larger mask of missing fields; below MissingField no field is missing.
+        Candidate? closest = null;
+        int bestDistance = int.MaxValue;
+        foreach (List<Candidate>? entries in _entries)
+        {
+            foreach (Candidate candidate in entries ?? [])
+            {
+                int distance = Distance(requested, candidate.Fields);
+                if (distance < bestDistance && YearLengthIsCompatible(requested, candidate.Fields))
+                {
+                    closest = candidate;
+                    bestDistance = distance;
+                }
+            }
+        }
+
+        if (closest is null || bestDistance >= MissingField)
         {
             throw new InvalidDataException(
-                "No format of " + _tag + " has the fields of the skeleton " + skeleton + " and no other: the closest is " + closest.Skeleton + "."
+                "No format of " + _tag + " has the fields of the skeleton " + skeleton + " and no other: the closest is " + closest?.Skeleton + "."
             );
         }
 
-        // Among the formats at the best distance, the one whose adjusted pattern is nearest the request wins, then the first in
-        // ordinal order of its skeleton (design §4.11, "The same distance"; Issue #906). The ties are between MMMEEEEd and MMMMEd: a
-        // yMMMEEEEd of EEEE, d/MM/y keeps its numeric month, and a yMMMMEd writes the wide one.
-        string? best = null;
-        string? bestSkeleton = null;
-        int bestPatternDistance = int.MaxValue;
-        foreach (Candidate candidate in _candidates)
-        {
-            if (Distance(requested, candidate.Fields) != bestDistance)
-            {
-                continue;
-            }
-
-            string pattern = Adjust(candidate.Pattern, requested, candidate.Fields);
-            int patternDistance = PatternDistance(requested, pattern);
-            if (
-                patternDistance < bestPatternDistance
-                || (patternDistance == bestPatternDistance && string.CompareOrdinal(candidate.Skeleton, bestSkeleton) < 0)
-            )
-            {
-                best = pattern;
-                bestSkeleton = candidate.Skeleton;
-                bestPatternDistance = patternDistance;
-            }
-        }
-
-        return best!;
+        return Adjust(closest.Pattern, requested, closest.Specified ? closest.Fields : null);
     }
 
     /// <summary>
@@ -238,6 +232,36 @@ internal sealed class SkeletonMatcher
         return fields;
     }
 
+    // Adds an entry as ICU's addPatternWithSkeleton does (dtptngen.cpp). An entry that does not override (a canonical item or a
+    // standard pattern) is dropped when the list has one of its base that was not given a skeleton; an entry is dropped when the list
+    // has its skeleton and it does not override, or both were given their skeletons. Otherwise an entry of the same base and forms is
+    // replaced in place, with the new pattern and the old skeleton, as PatternMap::add does; and any other is added at the end.
+    private void Add(Candidate candidate, bool overrides)
+    {
+        List<Candidate> entries = _entries[BootIndex(candidate.Base[0])] ??= [];
+        Candidate? sameBase = entries.Find(entry => entry.Base == candidate.Base);
+        if (!overrides && sameBase is not null && (!sameBase.Specified || candidate.Specified))
+        {
+            return;
+        }
+
+        Candidate? sameSkeleton = entries.Find(entry => SameSkeleton(entry.Fields, candidate.Fields));
+        if (sameSkeleton is not null && (!overrides || (candidate.Specified && sameSkeleton.Specified)))
+        {
+            return;
+        }
+
+        int duplicate = entries.FindIndex(entry => SameForms(entry, candidate));
+        if (duplicate >= 0)
+        {
+            entries[duplicate] = entries[duplicate] with { Pattern = candidate.Pattern, Specified = candidate.Specified };
+        }
+        else
+        {
+            entries.Add(candidate);
+        }
+    }
+
     // The distance of a format's fields from the requested ones (ICU's DateTimeMatcher::getDistance, dtptngen.cpp): the difference
     // of the values of a field both have, MissingField for a requested field it lacks, and ExtraField for a field it adds.
     private static int Distance(Dictionary<DateField, Field> requested, Dictionary<DateField, Field> candidate)
@@ -259,28 +283,35 @@ internal sealed class SkeletonMatcher
         return distance;
     }
 
-    // The distance of a pattern's fields from the requested ones, by the forms the pattern writes; a field of a kind not requested
-    // (the a of h:mm a) is not counted.
-    private static int PatternDistance(Dictionary<DateField, Field> requested, string pattern)
-    {
-        int distance = 0;
-        foreach ((char symbol, int length) in Fields(pattern))
-        {
-            if (FormOf(symbol, length) is { } form && requested.TryGetValue(form.Kind, out Field wanted))
-            {
-                distance += Math.Abs(wanted.Value - form.Value);
-            }
-        }
+    // A request with a numeric year that is not of two digits does not take a skeleton with a two-digit year, whose pattern can
+    // have text that fits that year only (en's yyMMMd, MMM d, ’yy; ICU's yearLengthIsCompatible, dtptngen.cpp).
+    private static bool YearLengthIsCompatible(Dictionary<DateField, Field> requested, Dictionary<DateField, Field> candidate) =>
+        !requested.TryGetValue(DateField.Year, out Field wanted)
+        || !candidate.TryGetValue(DateField.Year, out Field year)
+        || year.Length != 2
+        || wanted.Length == 2;
 
-        return distance;
-    }
+    // The index of a base skeleton's first letter among A to Z and a to z, as ICU's PatternMap keeps its lists.
+    private static int BootIndex(char letter) => char.IsAsciiLetterUpper(letter) ? letter - 'A' : 26 + (letter - 'a');
 
-    // The pattern with each field of a requested kind made as long as the request's (ICU's adjustFieldTypes, dtptngen.cpp). An
-    // hour, a minute, or a second keeps its length; so does a field whose format already had the requested length, or whose pattern
-    // is numeric where its format's skeleton is text or the other way round (ja's MMM is M月, so LLLL stays M月). A year, a month, a
-    // weekday, and an hour keep the pattern's symbol (gd's Y, L, c, and the locale's hour); the day period and the zone take the
-    // request's (a for zh-Hant's B, z for v). Text in quotes and the other characters are kept as they are.
-    private static string Adjust(string pattern, Dictionary<DateField, Field> requested, Dictionary<DateField, Field> matched)
+    // Two skeletons are one when each kind has the same symbol and length (ICU compares PtnSkeleton's original).
+    private static bool SameSkeleton(Dictionary<DateField, Field> one, Dictionary<DateField, Field> other) =>
+        one.Count == other.Count && one.All(pair => other.TryGetValue(pair.Key, out Field field) && field == pair.Value);
+
+    // Two entries are duplicates when they have the same base and each kind the same form (ICU's PatternMap::getDuplicateElem
+    // compares the type of each field, so E and EEE are one).
+    private static bool SameForms(Candidate one, Candidate other) =>
+        one.Base == other.Base
+        && one.Fields.Count == other.Fields.Count
+        && one.Fields.All(pair => other.Fields.TryGetValue(pair.Key, out Field field) && field.Value == pair.Value.Value);
+
+    // The pattern with each field of a requested kind made as long as the request's (ICU's adjustFieldTypes, dtptngen.cpp); a
+    // requested E of one or two letters counts as EEE. An hour, a minute, or a second keeps its length. When the entry was added
+    // with its skeleton (matched is not null), so does a field whose skeleton already had the requested length, or whose pattern is
+    // numeric where the request is text or the other way round (ja's MMM is M月, so LLLL stays M月). A year, a month, a weekday, and
+    // an hour keep the pattern's symbol (gd's Y, L, c, and the locale's hour); the day period and the zone take the request's (a for
+    // zh-Hant's B, z for v). Text in quotes and the other characters are kept as they are.
+    private static string Adjust(string pattern, Dictionary<DateField, Field> requested, Dictionary<DateField, Field>? matched)
     {
         var text = new StringBuilder();
         bool quoted = false;
@@ -319,9 +350,11 @@ internal sealed class SkeletonMatcher
             bool ownSymbol = form.Kind is DateField.Year or DateField.Month or DateField.Weekday;
             if (requested.TryGetValue(form.Kind, out Field wanted) && form.Kind is not (DateField.Hour or DateField.Minute or DateField.Second))
             {
-                Field own = matched[form.Kind];
-                bool keep = own.Length == wanted.Length || (form.Value > 0) != (own.Value > 0);
-                adjusted = keep ? length : wanted.Length;
+                // ICU: "1-3 for E are equivalent to 3 for c,e". The 41 skeletons ask for no c or e, whose lengths ICU always adjusts.
+                int wantedLength = wanted.Symbol == 'E' && wanted.Length < 3 ? 3 : wanted.Length;
+                bool keep =
+                    matched is not null && (matched[form.Kind].Length == wantedLength || (form.Value > 0) != (wanted.Value > 0));
+                adjusted = keep ? length : wantedLength;
                 symbol = ownSymbol ? character : wanted.Symbol;
             }
 
@@ -416,9 +449,10 @@ internal sealed class SkeletonMatcher
     private readonly record struct Field(char Symbol, int Length, int Value);
 
     /// <summary>
-    /// A format a skeleton may take: its skeleton, its pattern, and the skeleton's fields.
+    /// A format a skeleton may take: its skeleton, its pattern, the skeleton's fields and base, and whether the skeleton was given
+    /// (an <c>availableFormats</c> item) or made from the pattern (a canonical item or a standard pattern).
     /// </summary>
-    private sealed record Candidate(string Skeleton, string Pattern, Dictionary<DateField, Field> Fields);
+    private sealed record Candidate(string Skeleton, string Pattern, Dictionary<DateField, Field> Fields, string Base, bool Specified);
 
     /// <summary>
     /// One form of a symbol: a range of lengths and the value distances are counted from. A numeric form's value adds the length.
