@@ -95,6 +95,10 @@ internal static class DateFormatCost
 
         var nanoseconds = new double[Batches];
         var sums = new long[Batches];
+
+        // Read before the window: the first read runs Stopwatch's static constructor, which put 40 bytes into the first case's
+        // window on NativeAOT.
+        long frequency = Stopwatch.Frequency;
         long compiled = JitInfo.GetCompiledMethodCount(currentThread: true);
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < Batches; i++)
@@ -102,7 +106,7 @@ internal static class DateFormatCost
             long start = Stopwatch.GetTimestamp();
             sums[i] = batch(calls);
             long end = Stopwatch.GetTimestamp();
-            nanoseconds[i] = (end - start) * 1e9 / Stopwatch.Frequency / calls;
+            nanoseconds[i] = (end - start) * 1e9 / frequency / calls;
         }
 
         long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
