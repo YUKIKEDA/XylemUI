@@ -9,12 +9,12 @@ namespace XylemUI;
 /// </summary>
 /// <remarks>
 /// A skeleton with <c>j</c> takes the 24-hour pattern when <c>use24HourFormat</c> is <see langword="true"/>, and the pattern of the
-/// hour of the locale's region (CLDR's <c>timeData</c>) otherwise, which is 24-hour for <c>ja</c> and <c>de</c>; a skeleton with
-/// <c>H</c> ignores it. A time zone field (<c>jmv</c>, <c>jmz</c>, <c>jv</c>, <c>jz</c>) writes the offset from GMT in the
-/// locale's <c>gmtFormat</c> and <c>hourFormat</c>, short (<c>GMT+9</c>, <c>GMT+5:30</c>) for <c>z</c> and <c>v</c> and long
-/// (<c>GMT+09:00</c>) for <c>zzzz</c> and <c>vvvv</c>; time zone names are not in the tables. Making a format reads the tables and
-/// allocates; <see cref="TryFormat(DateTime, Span{char}, out int)"/>, its overloads, and the <c>Of</c> methods allocate nothing.
-/// <see cref="Format"/> makes a string.
+/// hour of the locale's language and region (CLDR's <c>timeData</c>) otherwise, which is 24-hour for <c>ja</c> and <c>de</c>; a
+/// skeleton with <c>H</c> ignores it. A time zone field (<c>jmv</c>, <c>jmz</c>, <c>jv</c>, <c>jz</c>) writes the offset from GMT
+/// in the locale's <c>gmtFormat</c> and <c>hourFormat</c>, short (<c>GMT+9</c>, <c>GMT+5:30</c>, <c>GMT+0</c>) for <c>z</c> and
+/// <c>v</c> and long (<c>GMT+09:00</c>, <c>GMT+00:00</c>) for <c>zzzz</c> and <c>vvvv</c>; time zone names are not in the tables.
+/// Making a format reads the tables and allocates; <see cref="TryFormat(DateTime, Span{char}, out int)"/>, its overloads, and the
+/// <c>Of</c> methods allocate nothing. <see cref="Format"/> makes a string.
 /// </remarks>
 public sealed class DateFormatter
 {
@@ -23,12 +23,11 @@ public sealed class DateFormatter
     private const int HourSkeletons = 7;
 
     // The strings of a pattern table after the 41 patterns and the 7 24-hour ones: the four joining patterns, the Time-Day-Of-Week
-    // append item, gmtFormat, hourFormat, and then the flexible day periods.
+    // append item, gmtFormat, and hourFormat.
     private const int JoiningPatterns = 48;
     private const int TimeAndWeekday = JoiningPatterns + 4;
     private const int GmtFormat = TimeAndWeekday + 1;
     private const int HourFormat = GmtFormat + 1;
-    private const int DayPeriods = HourFormat + 1;
 
     // The skeletons of Flutter's validDateFormats, in the order of the pattern tables (tools/CldrTableGen/DateTables.cs): the first
     // 28 have date fields only, the rest time fields only, and the 7 that start at FirstHourSkeleton have j.
@@ -84,13 +83,10 @@ public sealed class DateFormatter
     private readonly bool _hasDate;
     private readonly bool _hasTime;
     private readonly bool _hasZone;
-    private readonly string _gmtZero;
     private readonly string _gmtPrefix;
     private readonly string _gmtSuffix;
     private readonly OffsetPattern _positive;
     private readonly OffsetPattern _negative;
-    private readonly int[] _periodStarts;
-    private readonly string[] _periodNames;
 
     private DateFormatter(LocaleData locale, string pattern)
     {
@@ -100,9 +96,25 @@ public sealed class DateFormatter
         _items = DatePattern.Compile(pattern);
         foreach (DatePatternItem item in _items)
         {
-            _hasDate |= item.Symbol is 'G' or 'y' or 'Y' or 'Q' or 'M' or 'L' or 'd' or 'E' or 'c';
-            _hasTime |= item.Symbol is 'a' or 'B' or 'h' or 'H' or 'm' or 's' or 'z' or 'v';
-            _hasZone |= item.Symbol is 'z' or 'v';
+            switch (item.Symbol)
+            {
+                case '\0':
+                    break;
+                case 'G' or 'y' or 'Y' or 'Q' or 'M' or 'L' or 'd' or 'E' or 'c':
+                    _hasDate = true;
+                    break;
+                case 'a' or 'h' or 'H' or 'm' or 's':
+                    _hasTime = true;
+                    break;
+                case 'z' or 'v':
+                    _hasTime = true;
+                    _hasZone = true;
+                    break;
+                default:
+                    // tools/CldrTableGen stops on a field TryWrite does not write, and quotes the letters of the joining patterns.
+                    Invariant.Fail("The date pattern " + pattern + " has the field " + item.Symbol + ", which the formats do not write.");
+                    break;
+            }
         }
 
         var reader = new CldrTableReader(table);
@@ -111,15 +123,10 @@ public sealed class DateFormatter
         int placeholder = gmt.IndexOf("{0}", StringComparison.Ordinal);
         _gmtPrefix = gmt[..placeholder];
         _gmtSuffix = gmt[(placeholder + 3)..];
-
-        // CLDR 49 has no gmtFormat for a zero offset (gmtZeroFormat): the format without its offset, without the white space next to
-        // it ("GMT{0}" and "{0} GMT" write GMT).
-        _gmtZero = (_gmtPrefix + _gmtSuffix).Trim();
         string hourFormat = StringAt(table, HourFormat);
         int separator = hourFormat.IndexOf(';', StringComparison.Ordinal);
         _positive = OffsetPattern.Parse(hourFormat[..separator]);
         _negative = OffsetPattern.Parse(hourFormat[(separator + 1)..]);
-        (_periodStarts, _periodNames) = ReadDayPeriods(table);
     }
 
     // The types of value a format writes.
@@ -153,7 +160,7 @@ public sealed class DateFormatter
         int index = Array.IndexOf(Skeletons, skeleton);
         if (index < 0)
         {
-            ThrowHelper.ThrowNotASkeleton(skeleton, "one of the 41 skeletons", nameof(skeleton));
+            ThrowHelper.ThrowNotASkeleton(skeleton, "one of Flutter's 41 date skeletons", nameof(skeleton));
         }
 
         return new DateFormatter(locale, PatternOf(locale.DatePatternTable, index, use24HourFormat));
@@ -184,13 +191,13 @@ public sealed class DateFormatter
         int date = Array.IndexOf(Skeletons, dateSkeleton);
         if (date is < 0 or >= DateSkeletons)
         {
-            ThrowHelper.ThrowNotASkeleton(dateSkeleton, "a date skeleton of the 41", nameof(dateSkeleton));
+            ThrowHelper.ThrowNotASkeleton(dateSkeleton, "one of the 28 date skeletons of Flutter's 41", nameof(dateSkeleton));
         }
 
         int time = Array.IndexOf(Skeletons, timeSkeleton);
         if (time < DateSkeletons)
         {
-            ThrowHelper.ThrowNotASkeleton(timeSkeleton, "a time skeleton of the 41", nameof(timeSkeleton));
+            ThrowHelper.ThrowNotASkeleton(timeSkeleton, "one of the 13 time skeletons of Flutter's 41", nameof(timeSkeleton));
         }
 
         ReadOnlySpan<byte> table = locale.DatePatternTable;
@@ -222,8 +229,11 @@ public sealed class DateFormatter
     /// <param name="destination">The characters to write to.</param>
     /// <param name="charsWritten">The characters written; 0 when <paramref name="destination"/> is too short.</param>
     /// <returns><see langword="false"/> when <paramref name="destination"/> is too short.</returns>
-    public bool TryFormat(DateTimeOffset value, Span<char> destination, out int charsWritten) =>
-        TryWrite(value.DateTime, OffsetMinutes(value), destination, out charsWritten);
+    public bool TryFormat(DateTimeOffset value, Span<char> destination, out int charsWritten)
+    {
+        Check(ValueKind.DateTimeOffset);
+        return TryWrite(value.DateTime, OffsetMinutes(value), destination, out charsWritten);
+    }
 
     /// <summary>
     /// Writes a date. Allocates nothing.
@@ -271,7 +281,11 @@ public sealed class DateFormatter
     /// </summary>
     /// <param name="value">The date, the time, and the offset.</param>
     /// <returns>The value and the format.</returns>
-    public FormattedDate Of(DateTimeOffset value) => new(this, value.DateTime, OffsetMinutes(value));
+    public FormattedDate Of(DateTimeOffset value)
+    {
+        Check(ValueKind.DateTimeOffset);
+        return new FormattedDate(this, value.DateTime, OffsetMinutes(value));
+    }
 
     /// <summary>
     /// Returns a date with this format, for an interpolation of a <see cref="NodeTextWriter"/>. Allocates nothing.
@@ -352,9 +366,6 @@ public sealed class DateFormatter
                 case 'a':
                     writer.Append(_names.DayPeriod(clock.Hour >= 12, Width(length), false));
                     break;
-                case 'B':
-                    writer.Append(_periodNames[(PeriodAt((clock.Hour * 60) + clock.Minute) * 3) + (int)Width(length)]);
-                    break;
                 case 'h':
                     WriteNumber(ref writer, clock.Hour % 12 == 0 ? 12 : clock.Hour % 12, length);
                     break;
@@ -368,7 +379,7 @@ public sealed class DateFormatter
                     WriteNumber(ref writer, clock.Second, length);
                     break;
                 default:
-                    // z and v: tools/CldrTableGen lets no other field into the tables.
+                    // z and v: the constructor lets no other field through.
                     WriteOffset(ref writer, offsetMinutes, length == 4);
                     break;
             }
@@ -446,31 +457,6 @@ public sealed class DateFormatter
         return reader.ReadString();
     }
 
-    // The flexible day periods at the end of a pattern table: the start of each in minutes of the day, and its abbreviated, wide, and
-    // narrow names.
-    private static (int[] Starts, string[] Names) ReadDayPeriods(ReadOnlySpan<byte> table)
-    {
-        var reader = new CldrTableReader(table);
-        _ = reader.ReadChar();
-        for (int i = 0; i < DayPeriods; i++)
-        {
-            reader.SkipString();
-        }
-
-        int count = reader.ReadByte();
-        int[] starts = new int[count];
-        string[] names = new string[count * 3];
-        for (int i = 0; i < count; i++)
-        {
-            starts[i] = reader.ReadByte() | (reader.ReadByte() << 8);
-            names[i * 3] = reader.ReadString();
-            names[(i * 3) + 1] = reader.ReadString();
-            names[(i * 3) + 2] = reader.ReadString();
-        }
-
-        return (starts, names);
-    }
-
     // Throws ArgumentException when the format does not take a value of a type: a date for a format with time fields, a time for a
     // format with date fields, and a value with no offset for a format with a time zone field (design §4.11, "Value types").
     private void Check(ValueKind kind)
@@ -489,22 +475,6 @@ public sealed class DateFormatter
         {
             ThrowHelper.ThrowDateValueNotTaken("The format writes a time zone, which only a DateTimeOffset has.", "value");
         }
-    }
-
-    // The flexible day period of a minute of the day: the last that starts at it or before, or the last of the day for a minute
-    // before the first start (a period that runs past midnight).
-    private int PeriodAt(int minute)
-    {
-        int at = _periodStarts.Length - 1;
-        for (int i = 0; i < _periodStarts.Length; i++)
-        {
-            if (_periodStarts[i] <= minute)
-            {
-                at = i;
-            }
-        }
-
-        return at;
     }
 
     private void WriteNumberOrName(ref CharWriter writer, int value, int length, string? name)
@@ -542,17 +512,13 @@ public sealed class DateFormatter
     }
 
     // Writes an offset from GMT in the locale's gmtFormat (UTS #35 part 4, "Time Zone Format Terminology", the localized GMT
-    // format): the short form without the minutes when they are 0 and with the hours unpadded, the long form with both as the
-    // hourFormat writes them.
+    // format), 0 with the positive pattern (GMT+0, GMT+00:00; Issue #906): the short form with the hours unpadded and, when the
+    // minutes are 0, without the hourFormat's text from the separator on, as ICU's TimeZoneFormat::truncateOffsetPattern cuts it
+    // after the hours (he's negative pattern, -HH:mm and U+200E, writes -8 without the mark); the long form as the hourFormat
+    // writes it.
     private void WriteOffset(ref CharWriter writer, int offsetMinutes, bool isLong)
     {
-        if (offsetMinutes == 0)
-        {
-            writer.Append(_gmtZero);
-            return;
-        }
-
-        OffsetPattern sign = offsetMinutes > 0 ? _positive : _negative;
+        OffsetPattern sign = offsetMinutes >= 0 ? _positive : _negative;
         int magnitude = Math.Abs(offsetMinutes);
         writer.Append(_gmtPrefix);
         writer.Append(sign.Prefix);
@@ -561,9 +527,9 @@ public sealed class DateFormatter
         {
             writer.Append(sign.Separator);
             WriteNumber(ref writer, magnitude % 60, 2);
+            writer.Append(sign.Suffix);
         }
 
-        writer.Append(sign.Suffix);
         writer.Append(_gmtSuffix);
     }
 

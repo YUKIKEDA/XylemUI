@@ -1,13 +1,15 @@
+using System.Text;
+
 namespace XylemUI.Tests;
 
 // The date and time formats of LC2 (design §4.11, "Dates and times", "Added to the scope", and "Allocation and threads"): Flutter's 41
 // skeletons in each locale, the 12-hour and the 24-hour forms of j, a date and a time joined by dateTimeFormats, the offset from GMT
 // of the time zone skeletons, the value types a format takes, the digits of the locale, and no allocation. The expected values were
-// read from the json of cldr-49.0.0-json-full.zip (ca-gregorian.json, timeZoneNames.json, numbers.json, timeData.json,
-// dayPeriods.json), not from the generated code: the pattern of a skeleton that availableFormats has is its pattern there, and the
-// others were worked out from the json with the rules of tools/CldrTableGen/SkeletonMatcher.cs (EEEE from E, LLL, LLLL, and MMMM
-// from MMM, MMMMEEEEd from MMMMEd, QQQ, QQQQ, m, and s alone, jmz and jz from hmv and hv). In the expected text, _ is U+00A0, ^ is
-// U+202F, | is U+200E, ! is U+200F, and @ is U+061C.
+// read from the json of cldr-49.0.0-json-full.zip (ca-gregorian.json, timeZoneNames.json, numbers.json, timeData.json), not from
+// the generated code: the pattern of a skeleton that availableFormats has is its pattern there, and the others were worked out from
+// the json with the rules of tools/CldrTableGen/SkeletonMatcher.cs (EEEE from E, LLL, LLLL, and MMMM from MMM, MMMMEEEEd from
+// MMMMEd, yMMMMEEEEd from the full date pattern when no available format has its base, QQQ, QQQQ, m, and s alone, jmz and jz from
+// hmv and hv). In the expected text, _ is U+00A0, ^ is U+202F, | is U+200E, ! is U+200F, and @ is U+061C.
 public sealed class DateFormatterTests
 {
     // Tuesday the 3rd of February 2026, 13:05:09, nine hours ahead of GMT.
@@ -290,26 +292,54 @@ public sealed class DateFormatterTests
         Assert.Equal(Marked(expected), Write(DateFormatter.FromSkeleton(ByTag[tag], skeleton, use24HourFormat), Moment));
 
     /// <summary>
-    /// Of two formats as near a skeleton, the one whose pattern writes the requested forms is taken: pt-PT's yMMMMEEEEd takes its
-    /// yMMMMEd, with the wide month, and not its yMMMEEEEd, whose pattern has a numeric month (my reading of "Matching Skeletons", not
-    /// the owner's decision; see tools/CldrTableGen/SkeletonMatcher.cs).
+    /// A locale's standard date patterns (dateFormats) are formats of the skeletons of their fields when no available format has the
+    /// same base skeleton, as ICU's addICUPatterns adds them (design §4.11, "Nearness and lengths"; Issue #906): the full date
+    /// pattern is yMMMMEEEEd where availableFormats has none, and the long one yMMMMd.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - pt-PT's yMMMEEEEd is EEEE, d/MM/y and its yMMMMEd E, d' de 'MMMM' de 'y; ja's are y年M月d日EEEE and y年M月d日(E), as
-    ///   near each other, so the first in ordinal order, yMMMEEEEd, is taken.
+    /// - pt-PT and ja, whose availableFormats have no yMMMMEEEEd and whose full date patterns are EEEE, d 'de' MMMM 'de' y and
+    ///   y年M月d日EEEE; ha, ky, and bs, whose availableFormats have no yMMMMEEEEd; gsw, whose availableFormats have no yMMMMd.
     ///
     /// Steps:
-    /// - Write the moment of the class with yMMMMEEEEd in pt-PT and in ja.
+    /// - Write the moment of the class with yMMMMEEEEd in pt-PT and in ja; read the yMMMMEEEEd patterns of ha, ky, and bs and the
+    ///   yMMMMd pattern of gsw from the tables.
     ///
     /// Expected:
-    /// - terça-feira, 3 de fevereiro de 2026; 2026年2月3日火曜日.
+    /// - terça-feira, 3 de fevereiro de 2026; 2026年2月3日火曜日; EEEE d MMMM, y; y-'ж'., d-MMMM, EEEE; EEEE, d. MMMM y.;
+    ///   d. MMMM y. These are ICU's patterns for the skeletons.
     /// </remarks>
     [Fact]
-    public void FromSkeleton_FormatsAsNear_TakeThePatternOfTheRequestedForms()
+    public void FromSkeleton_NoFormatOfTheSkeleton_TakesTheStandardPattern()
     {
         Assert.Equal("terça-feira, 3 de fevereiro de 2026", Write(DateFormatter.FromSkeleton(ByTag["pt-PT"], "yMMMMEEEEd", false), Moment));
         Assert.Equal("2026年2月3日火曜日", Write(DateFormatter.FromSkeleton(CldrLocales.Ja, "yMMMMEEEEd", false), Moment));
+        Assert.Equal("EEEE d MMMM, y", PatternAt(ByTag["ha"], 25));
+        Assert.Equal("y-'ж'., d-MMMM, EEEE", PatternAt(ByTag["ky"], 25));
+        Assert.Equal("EEEE, d. MMMM y.", PatternAt(ByTag["bs"], 25));
+        Assert.Equal("d. MMMM y", PatternAt(ByTag["gsw"], 24));
+    }
+
+    /// <summary>
+    /// The hour that j stands for is the one timeData gives the locale's language and region, then its region, then the world
+    /// (design §4.11, "The region of a locale's values"; ICU's getAllowedHourFormats).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - timeData's en-001 is h, while 001 is H; fr-CA is H, while CA is h. en-001's hm is h:mm^a and fr-CA's Hm is HH 'h' mm.
+    ///
+    /// Steps:
+    /// - Read the jm patterns of en-001 and fr-CA from the tables, and write the moment of the class with fr-CA's jm.
+    ///
+    /// Expected:
+    /// - h:mm^a and HH 'h' mm; 13 h 05.
+    /// </remarks>
+    [Fact]
+    public void FromSkeleton_HourOfTheLanguageAndRegion_IsTakenFirst()
+    {
+        Assert.Equal(Marked("h:mm^a"), PatternAt(ByTag["en-001"], 32));
+        Assert.Equal("HH 'h' mm", PatternAt(ByTag["fr-CA"], 32));
+        Assert.Equal("13 h 05", Write(DateFormatter.FromSkeleton(ByTag["fr-CA"], "jm", false), Moment));
     }
 
     /// <summary>
@@ -381,8 +411,10 @@ public sealed class DateFormatterTests
     /// <remarks>
     /// Preconditions:
     /// - CLDR 49 gives no locale four different joining patterns. nn's are {1} {0} (full), {1} 'kl'. {0} (long), and {1}, {0}
-    ///   (medium and short); fr's are {1}, {0} but the short {1} {0}; ja's Time-Day-Of-Week is {0} ({1}), ko's ({1}) {0}, and en's
-    ///   {1}, {0}. nn's and fr's hour is H.
+    ///   (medium and short); fr's are {1}, {0} but the short {1} {0}; ja's Time-Day-Of-Week is {0} ({1}), ko's ({1}) {0}, en's
+    ///   {1}, {0}, and sl's {1} ob {0}, whose letters the tool quotes. nn's, fr's, and sl's hour is H.
+    /// - The date skeletons: a wide month with a weekday (MMMMEEEEd), a wide month (yMMMMd, LLLL), an abbreviated month (yMMMd,
+    ///   LLL), no month name (yMd, QQQ), and a weekday alone (E, EEEE).
     ///
     /// Steps:
     /// - Join each row's skeletons, without the 24-hour form, and write the moment of the class.
@@ -398,8 +430,12 @@ public sealed class DateFormatterTests
     [InlineData("nn", "MMMMEEEEd", "jm", "tysdag 3 februar 13:05")]
     [InlineData("nn", "yMMMMd", "jm", "3. februar 2026 kl. 13:05")]
     [InlineData("nn", "yMMMd", "jm", "3. feb. 2026, 13:05")]
+    [InlineData("nn", "LLLL", "jm", "februar kl. 13:05")]
     [InlineData("fr", "yMMMd", "jm", "3 févr. 2026, 13:05")]
     [InlineData("fr", "yMd", "jm", "03/02/2026 13:05")]
+    [InlineData("fr", "LLL", "jm", "févr., 13:05")]
+    [InlineData("fr", "QQQ", "jm", "T1 13:05")]
+    [InlineData("sl", "EEEE", "jm", "torek ob 13:05")]
     [InlineData("ja", "EEEE", "jm", "13:05 (火曜日)")]
     [InlineData("ko", "E", "jm", "(화) 오후 1:05")]
     [InlineData("en", "E", "jm", "Tue, 1:05^PM")]
@@ -456,46 +492,140 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
-    /// A time zone skeleton writes the offset from GMT in the locale's gmtFormat and hourFormat: no offset for GMT itself, the hours
-    /// without padding and the minutes only when they are not 0 for z and v, and both padded for zzzz and vvvv (design §4.11,
-    /// "Time zone skeletons").
+    /// In every locale, the text of each joining pattern is written as text: the joined format writes the date's text and the time's
+    /// text in the places of {1} and {0}, and the pattern's other characters as they are, without their quotes (UTS #35 part 4, the
+    /// joining patterns are simple formatters). sl's Time-Day-Of-Week, {1} ob {0}, made ob two fields before the tool quoted it.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - en (GMT{0}, +HH:mm;-HH:mm), sv (GMT{0}, a minus U+2212), fi (UTC{0}, +H.mm;-H.mm), ar (غرينتش{0}), and el, whose Hmv and Hv
-    ///   are HH:mm (vvvv) and HH (vvvv).
+    /// - The 422 entries of CldrLocales and root; a date skeleton for each joining pattern: MMMMEEEEd (full), yMMMMd (long), yMMMd
+    ///   (medium), yMd (short), and EEEE (Time-Day-Of-Week).
+    ///
+    /// Steps:
+    /// - Write the moment of the class with jm, with each date skeleton, and with each date skeleton joined with jm.
+    ///
+    /// Expected:
+    /// - Each joined text is the table's joining pattern with {1} as the date's text, {0} as the time's, a quote dropped, and two
+    ///   quotes as one.
+    /// </remarks>
+    [Fact]
+    public void EveryLocale_JoiningPatterns_WriteTheirTextAsText()
+    {
+        string[] dates = ["MMMMEEEEd", "yMMMMd", "yMMMd", "yMd", "EEEE"];
+        foreach (LocaleData data in CldrLocales.All.Append(LocaleData.Root))
+        {
+            string time = Write(DateFormatter.FromSkeleton(data, "jm", false), Moment);
+            for (int i = 0; i < dates.Length; i++)
+            {
+                string date = Write(DateFormatter.FromSkeleton(data, dates[i], false), Moment);
+                string expected = Joined(PatternAt(data, 48 + i), date, time);
+
+                Assert.Equal(expected, Write(DateFormatter.FromSkeletons(data, dates[i], "jm", false), Moment));
+            }
+        }
+    }
+
+    /// <summary>
+    /// A pattern in the tables with a field the formats do not write fails the invariant when a format is made of it: the tool stops
+    /// on such a pattern, so the tables never hold one.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Debug build (release ends the process). Tables that are en's but for the pattern of yMd, d o b, whose o and b are fields
+    ///   the formats do not write.
+    ///
+    /// Steps:
+    /// - Make a format of yMd, and one of jm, and write the moment of the class with jm.
+    ///
+    /// Expected:
+    /// - <see cref="InvariantViolationException"/> for yMd; jm writes 1:05^PM.
+    /// </remarks>
+    [Fact]
+    public void FromSkeleton_PatternWithAFieldTheFormatsDoNotWrite_FailsTheInvariant()
+    {
+#if !DEBUG
+        Assert.Skip("Invariant.Fail ends the process in release builds; this check runs in the Debug configuration.");
+#endif
+        var data = new PatternLocaleData(WithPattern(CldrLocales.En.DatePatternTable, 18, "d o b"));
+
+        Assert.Throws<InvariantViolationException>(() => DateFormatter.FromSkeleton(data, "yMd", false));
+        Assert.Equal(Marked("1:05^PM"), Write(DateFormatter.FromSkeleton(data, "jm", false), Moment));
+    }
+
+    /// <summary>
+    /// A date pattern's text in quotes is literal and two quotes are one quote character, inside quotes and outside them (UTS #35
+    /// part 4, "Date Format Patterns").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The pattern h''mm 'o''clock' a.
+    ///
+    /// Steps:
+    /// - Compile it.
+    ///
+    /// Expected:
+    /// - The field h, the text ', the field mm, the text  o'clock  (with its spaces), and the field a.
+    /// </remarks>
+    [Fact]
+    public void DatePattern_Quotes_AreLiteralAndTwoAreOne()
+    {
+        DatePatternItem[] expected =
+        [
+            new('h', 1, string.Empty),
+            new('\0', 0, "'"),
+            new('m', 2, string.Empty),
+            new('\0', 0, " o'clock "),
+            new('a', 1, string.Empty),
+        ];
+
+        Assert.Equal(expected, DatePattern.Compile("h''mm 'o''clock' a"));
+    }
+
+    /// <summary>
+    /// A time zone skeleton writes the offset from GMT in the locale's gmtFormat and hourFormat, 0 with the positive pattern: the
+    /// hours without padding and the minutes only when they are not 0 for z and v, and both padded for zzzz and vvvv (design §4.11,
+    /// "Time zone skeletons"; Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en (GMT{0}, +HH:mm;-HH:mm), sv (GMT{0}, a minus U+2212), fi (UTC{0}, +H.mm;-H.mm), ar (غرينتش{0}), el, whose Hmv and Hv
+    ///   are HH:mm (vvvv) and HH (vvvv), and he, whose negative pattern ends with U+200E after the minutes and whose gmtFormat
+    ///   ends with U+200E after {0}.
     ///
     /// Steps:
     /// - Write 13:05 with the row's skeleton in 24 hours at the row's offset.
     ///
     /// Expected:
-    /// - The text of the row. CLDR 49 has no gmtZeroFormat: GMT itself is the gmtFormat without {0} (GMT, UTC, غرينتش).
+    /// - The text of the row: 0 is GMT+0, UTC+0, and غرينتش+0 short and GMT+00:00 long, as ICU's formatOffsetLocalizedGMT writes
+    ///   it; he's short -8 drops the hourFormat's text after the hours, its U+200E, as ICU does, and -5:30 keeps it.
     /// </remarks>
     /// <param name="tag">The locale.</param>
     /// <param name="skeleton">The skeleton.</param>
     /// <param name="offsetMinutes">The offset from GMT, in minutes.</param>
-    /// <param name="expected">The text.</param>
+    /// <param name="expected">The text, with the marks of the class comment.</param>
     [Theory]
-    [InlineData("en", "jmz", 0, "13:05 GMT")]
+    [InlineData("en", "jmz", 0, "13:05 GMT+0")]
     [InlineData("en", "jmz", 540, "13:05 GMT+9")]
     [InlineData("en", "jmz", -480, "13:05 GMT-8")]
     [InlineData("en", "jmz", 330, "13:05 GMT+5:30")]
     [InlineData("en", "jmv", -150, "13:05 GMT-2:30")]
     [InlineData("sv", "jmz", -480, "13:05 GMT−8")]
     [InlineData("sv", "jmv", 330, "13:05 GMT+5:30")]
-    [InlineData("fi", "jmz", 0, "13.05 UTC")]
+    [InlineData("fi", "jmz", 0, "13.05 UTC+0")]
     [InlineData("fi", "jmz", 330, "13.05 UTC+5.30")]
-    [InlineData("ar", "jmz", 0, "13:05 غرينتش")]
+    [InlineData("ar", "jmz", 0, "13:05 غرينتش+0")]
     [InlineData("ar", "jmz", -480, "13:05 غرينتش-8")]
-    [InlineData("el", "jmz", 0, "13:05 (GMT)")]
+    [InlineData("el", "jmz", 0, "13:05 (GMT+00:00)")]
     [InlineData("el", "jmz", 540, "13:05 (GMT+09:00)")]
     [InlineData("el", "jmv", -150, "13:05 (GMT-02:30)")]
     [InlineData("el", "jz", 330, "13 (GMT+05:30)")]
+    [InlineData("he", "jmz", -480, "13:05 GMT-8|")]
+    [InlineData("he", "jmz", -330, "13:05 GMT-5:30||")]
     public void TimeZone_Offsets_WriteTheLocalesGmtFormat(string tag, string skeleton, int offsetMinutes, string expected)
     {
         var value = new DateTimeOffset(2026, 2, 3, 13, 5, 9, TimeSpan.FromMinutes(offsetMinutes));
 
-        Assert.Equal(expected, Write(DateFormatter.FromSkeleton(ByTag[tag], skeleton, true), value));
+        Assert.Equal(Marked(expected), Write(DateFormatter.FromSkeleton(ByTag[tag], skeleton, true), value));
     }
 
     /// <summary>
@@ -615,33 +745,31 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
-    /// A pattern with a flexible day period (zh-Hant's Bh:mm) writes the period of CLDR's rules for zh at the time: the period that
-    /// starts last at or before it (design §4.11, "Names and the week"; my reading, which leaves out the period at midnight).
+    /// The day period of a j skeleton is am or pm, the a that j asks for, also where the locale's format has a flexible day period
+    /// (zh-Hant's Bh:mm), as ICU's adjustFieldTypes writes the requested letter (design §4.11, "The letter of the day period";
+    /// Issue #906).
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - zh-Hant, whose hour is h (TW) and whose hm is Bh:mm; dayPeriods.json's zh: night1 from 00:00, morning1 from 05:00, morning2
-    ///   from 08:00, afternoon1 from 12:00, afternoon2 from 13:00, evening1 from 19:00, and midnight at 00:00.
+    /// - zh-Hant, whose hour is h (TW), whose hm is Bh:mm, and whose abbreviated am and pm are 上午 and 下午.
     ///
     /// Steps:
     /// - Write the time of each row with jm, without and with the 24-hour form.
     ///
     /// Expected:
-    /// - The row's text; in 24 hours, the hours and the minutes alone (HH:mm).
+    /// - The row's text: 上午 before 12:00 and 下午 from it, midnight and noon included; in 24 hours, HH:mm.
     /// </remarks>
     /// <param name="hour">The hour.</param>
     /// <param name="minute">The minute.</param>
     /// <param name="expected">The text.</param>
     /// <param name="expected24">The text in 24 hours.</param>
     [Theory]
-    [InlineData(0, 30, "凌晨12:30", "00:30")]
-    [InlineData(5, 0, "清晨5:00", "05:00")]
-    [InlineData(8, 0, "上午8:00", "08:00")]
-    [InlineData(12, 0, "中午12:00", "12:00")]
-    [InlineData(13, 5, "下午1:05", "13:05")]
-    [InlineData(19, 0, "晚上7:00", "19:00")]
-    [InlineData(23, 59, "晚上11:59", "23:59")]
-    public void FlexibleDayPeriods_ZhHant_FollowTheRulesOfZh(int hour, int minute, string expected, string expected24)
+    [InlineData(0, 30, "上午12:30", "00:30")]
+    [InlineData(7, 3, "上午7:03", "07:03")]
+    [InlineData(11, 59, "上午11:59", "11:59")]
+    [InlineData(12, 0, "下午12:00", "12:00")]
+    [InlineData(19, 0, "下午7:00", "19:00")]
+    public void DayPeriod_ZhHant_IsAmOrPm(int hour, int minute, string expected, string expected24)
     {
         var time = new TimeOnly(hour, minute);
 
@@ -815,7 +943,7 @@ public sealed class DateFormatterTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - en's yMMMMEEEEd, jmz, and yMd joined with jm; zh-Hant's jm (a flexible day period); ar-EG's yMd (Arabic-Indic digits); a
+    /// - en's yMMMMEEEEd, jmz, and yMd joined with jm; zh-Hant's jm (am and pm before the hour); ar-EG's yMd (Arabic-Indic digits); a
     ///   destination buffer and a writer over a buffer, all made before the measured runs.
     ///
     /// Steps:
@@ -880,7 +1008,7 @@ public sealed class DateFormatterTests
     public void CldrData_DateTables_HoldTheJsonsValues()
     {
         Assert.Equal(149, CldrData.DateNameTableCount);
-        Assert.Equal(166, CldrData.DatePatternTableCount);
+        Assert.Equal(168, CldrData.DatePatternTableCount);
         foreach (LocaleData data in CldrLocales.All.Append(LocaleData.Root))
         {
             string day = Write(DateFormatter.FromSkeleton(data, "d", false), Moment);
@@ -895,7 +1023,83 @@ public sealed class DateFormatterTests
         return new string(buffer, 0, written);
     }
 
+    // The string at an index of a locale's date pattern table: the 41 patterns in the order of Skeletons, the 7 24-hour ones, the
+    // four joining patterns, the Time-Day-Of-Week append item, gmtFormat, and hourFormat.
+    private static string PatternAt(LocaleData data, int index)
+    {
+        var reader = new CldrTableReader(data.DatePatternTable);
+        _ = reader.ReadChar();
+        for (int i = 0; i < index; i++)
+        {
+            reader.SkipString();
+        }
+
+        return reader.ReadString();
+    }
+
+    // A joining pattern with {1} replaced by a date's text and {0} by a time's, a single quote dropped, and two quotes as one.
+    private static string Joined(string joining, string date, string time)
+    {
+        var text = new StringBuilder();
+        for (int i = 0; i < joining.Length; i++)
+        {
+            if (joining[i] == '{' && i + 2 < joining.Length && joining[i + 2] == '}')
+            {
+                text.Append(joining[i + 1] == '1' ? date : time);
+                i += 2;
+            }
+            else if (joining[i] != '\'')
+            {
+                text.Append(joining[i]);
+            }
+            else if (i + 1 < joining.Length && joining[i + 1] == '\'')
+            {
+                text.Append('\'');
+                i++;
+            }
+        }
+
+        return text.ToString();
+    }
+
+    // A pattern table with the string at an index replaced by a pattern: the digit zero, then each string as a length byte and its
+    // UTF-8.
+    private static byte[] WithPattern(ReadOnlySpan<byte> table, int index, string pattern)
+    {
+        var reader = new CldrTableReader(table);
+        var bytes = new List<byte>(table[..2].ToArray());
+        _ = reader.ReadChar();
+        for (int i = 0; !reader.End; i++)
+        {
+            string text = reader.ReadString();
+            byte[] utf8 = Encoding.UTF8.GetBytes(i == index ? pattern : text);
+            bytes.Add((byte)utf8.Length);
+            bytes.AddRange(utf8);
+        }
+
+        return [.. bytes];
+    }
+
     // The text with the marks of the class comment replaced by the characters they stand for.
     private static string Marked(string text) =>
         text.Replace('_', (char)0x00A0).Replace('^', (char)0x202F).Replace('|', (char)0x200E).Replace('!', (char)0x200F).Replace('@', (char)0x061C);
+
+    // Tables that are en's but for the date pattern table, which the test gives.
+    private sealed class PatternLocaleData(byte[] patterns)
+        : LocaleData(Locale.Parse("en"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday)
+    {
+        internal override ReadOnlySpan<byte> NumberTable => CldrLocales.En.NumberTable;
+
+        internal override ReadOnlySpan<byte> CompactTable => CldrLocales.En.CompactTable;
+
+        internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
+
+        internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => patterns;
+
+        internal override PluralRules CreatePlurals() => new(Other, Other);
+
+        private static PluralCategory Other(in PluralOperands operands) => PluralCategory.Other;
+    }
 }

@@ -5,8 +5,8 @@ using static TerraFX.Interop.Windows.Windows;
 namespace XylemUI.Platform.Windows.Tests;
 
 // Windows' 24-hour form (row LC2, design §4.11, "The locale of the formats" and "The key of the 24-hour form"): whether the user's
-// short time format (the first of a list) holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the app tier's settings are
-// made and on each WM_SETTINGCHANGE a window of the host receives.
+// short time format (the first of a list) holds H outside single quotes, read up to the length GetLocaleInfoEx returns, when the app
+// tier's settings are made and on each WM_SETTINGCHANGE a window of the host receives.
 [Collection(UiThreadGroup.Name)]
 public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
 {
@@ -68,15 +68,17 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
     /// Preconditions:
     /// - Buffers as <c>GetLocaleInfoEx</c> leaves them, each with the count it returns (the terminating null included):
     ///   <c>h:mm tt;HH:mm</c> (12-hour first); <c>HH:mm;h:mm tt</c> (24-hour first); <c>'a;b'H:mm</c> (a <c>;</c> between quotes
-    ///   before an H outside them); <c>h''mm;HH:mm</c> (a doubled quote outside quotes, which leaves the <c>;</c> outside them).
-    ///   Each row gives the opposite of its expected value as the value before.
+    ///   before an H outside them); <c>h''mm;HH:mm</c> (a doubled quote outside quotes, which leaves the <c>;</c> outside them);
+    ///   <c>;HH:mm</c> (an empty first value); <c>HH:mm;</c> (a <c>;</c> at the end). Each row gives the opposite of its expected
+    ///   value as the value before.
     ///
     /// Steps:
     /// - Read each buffer.
     ///
     /// Expected:
-    /// - The value of the first format: false, true, true, false. A read of the whole list would give true for the first and
-    ///   the last; a read that splits at the quoted <c>;</c> would give false for the third.
+    /// - The value of the first format: false, true, true, false, false, true. A read of the whole list would give true for the
+    ///   first, the fourth, and the fifth; a read that splits at the quoted <c>;</c> would give false for the third. The empty
+    ///   first value is a format without H, not a failed call, so the value before does not count.
     /// </remarks>
     /// <param name="buffer">What the call left in the buffer.</param>
     /// <param name="written">What the call returned.</param>
@@ -87,6 +89,8 @@ public sealed partial class Win32TimeFormatTests(UiThreadFixture ui)
     [InlineData("HH:mm;h:mm tt\0", 14, false, true)]
     [InlineData("'a;b'H:mm\0", 10, false, true)]
     [InlineData("h''mm;HH:mm\0", 12, true, false)]
+    [InlineData(";HH:mm\0", 7, true, false)]
+    [InlineData("HH:mm;\0", 7, false, true)]
     public void Uses24Hour_AList_ReadsOnlyTheFirstFormat(string buffer, int written, bool before, bool expected)
     {
         _ = ui;

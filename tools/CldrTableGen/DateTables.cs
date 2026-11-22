@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace XylemUI.Tools.CldrTableGen;
@@ -14,11 +15,10 @@ namespace XylemUI.Tools.CldrTableGen;
 /// (abbreviated, wide, narrow; am and pm), then the eras (abbreviated, wide, narrow; before and in the common era): 170 strings. A
 /// stand-alone name that is its format name is written empty. A pattern table is the digit zero of the locale's default numbering
 /// system (2 bytes, little-endian); the patterns of the 41 skeletons in the order of <see cref="Skeletons"/>, a <c>j</c> skeleton's
-/// with the hour of the locale's region (CLDR's <c>timeData</c>); the 24-hour patterns of the 7 <c>j</c> skeletons, empty when the
-/// pattern is the one before; the patterns that join a date and a time (<c>dateTimeFormats</c>: full, long, medium, short); the
-/// <c>Time-Day-Of-Week</c> append item; <c>gmtFormat</c> and <c>hourFormat</c>; and the flexible day periods that a <c>B</c> field
-/// writes: a count byte (0 when no pattern has <c>B</c>) and, for each period in the order of its start, its start in minutes of the
-/// day (2 bytes, little-endian) and its abbreviated, wide, and narrow names. A string is a length byte and that many bytes of UTF-8.
+/// with the hour of the locale's language and region (CLDR's <c>timeData</c>); the 24-hour patterns of the 7 <c>j</c> skeletons,
+/// empty when the pattern is the one before; the patterns that join a date and a time (<c>dateTimeFormats</c>: full, long, medium,
+/// short) and the <c>Time-Day-Of-Week</c> append item, with their letters quoted; and <c>gmtFormat</c> and <c>hourFormat</c>. A
+/// string is a length byte and that many bytes of UTF-8.
 /// </remarks>
 internal sealed class DateTables
 {
@@ -110,7 +110,6 @@ internal sealed class DateTables
     public static DateTables Read(CldrZip cldr, LocaleSet locales)
     {
         JsonElement timeData = cldr.Supplemental("timeData").GetProperty("timeData");
-        JsonElement dayPeriods = cldr.Supplemental("dayPeriods").GetProperty("dayPeriodRuleSet");
         var names = new List<byte[]>();
         var patterns = new List<byte[]>();
         var nameIndex = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -136,7 +135,7 @@ internal sealed class DateTables
                 .GetProperty("dates")
                 .GetProperty("timeZoneNames");
             char hour = HourSymbol(tag, entry.Region, timeData);
-            byte[] patternTable = PatternTable(tag, gregorian, zones, hour, NumberTables.Zero(cldr, tag), dayPeriods);
+            byte[] patternTable = PatternTable(tag, gregorian, zones, hour, NumberTables.Zero(cldr, tag));
             int nameAt = TableBytes.Index(NameTable(tag, gregorian), names, nameIndex);
             int patternAt = TableBytes.Index(patternTable, patterns, patternIndex);
             byTag.Add(tag, (nameAt, patternAt));
@@ -145,11 +144,16 @@ internal sealed class DateTables
         return new DateTables(names, patterns, byTag);
     }
 
-    // The hour symbol that j stands for in the region (CLDR's timeData, _preferred), or in the world's (001) for a region timeData
-    // does not list (UTS #35 part 4, "Time Data").
+    // The hour symbol that j stands for (CLDR's timeData, _preferred; UTS #35 part 4, "Time Data"): the entry of the language and
+    // the region (en-001, fr-CA; CLDR 49's JSON writes them with a hyphen) first, then the region's, then the world's (001), in the order of ICU's
+    // DateTimePatternGenerator::getAllowedHourFormats (ICU main, icu4c/source/i18n/dtptngen.cpp).
     private static char HourSymbol(string tag, string region, JsonElement timeData)
     {
-        JsonElement data = timeData.TryGetProperty(region, out JsonElement own) ? own : timeData.GetProperty("001");
+        if (!timeData.TryGetProperty(LocaleSet.Language(tag) + "-" + region, out JsonElement data) && !timeData.TryGetProperty(region, out data))
+        {
+            data = timeData.GetProperty("001");
+        }
+
         return data.GetProperty("_preferred").GetString() switch
         {
             "h" => 'h',
@@ -208,14 +212,17 @@ internal sealed class DateTables
         }
     }
 
-    private static byte[] PatternTable(string tag, JsonElement gregorian, JsonElement zones, char hour, char zero, JsonElement dayPeriods)
+    private static byte[] PatternTable(string tag, JsonElement gregorian, JsonElement zones, char hour, char zero)
     {
         JsonElement dateTimeFormats = gregorian.GetProperty("dateTimeFormats");
         IEnumerable<KeyValuePair<string, string>> available = dateTimeFormats
             .GetProperty("availableFormats")
             .EnumerateObject()
             .Select(format => KeyValuePair.Create(format.Name, format.Value.GetString() ?? string.Empty));
-        var matcher = new SkeletonMatcher(tag, available);
+        IEnumerable<string> standard = Lengths
+            .Select(length => TableBytes.Text(tag, gregorian.GetProperty("dateFormats"), length))
+            .Concat(Lengths.Select(length => TableBytes.Text(tag, gregorian.GetProperty("timeFormats"), length)));
+        var matcher = new SkeletonMatcher(tag, available, standard);
         var table = new List<byte> { (byte)zero, (byte)(zero >> 8) };
         var written = new List<string>();
         foreach (string skeleton in Skeletons)
@@ -241,95 +248,57 @@ internal sealed class DateTables
 
         foreach (string length in Lengths)
         {
-            TableBytes.Add(table, Placeholders(tag, TableBytes.Text(tag, dateTimeFormats, length), "{0}", "{1}"));
+            TableBytes.Add(table, Joining(tag, TableBytes.Text(tag, dateTimeFormats, length)));
         }
 
-        string timeAndWeekday = TableBytes.Text(tag, dateTimeFormats.GetProperty("appendItems"), "Time-Day-Of-Week");
-        TableBytes.Add(table, Placeholders(tag, timeAndWeekday, "{0}", "{1}"));
+        TableBytes.Add(table, Joining(tag, TableBytes.Text(tag, dateTimeFormats.GetProperty("appendItems"), "Time-Day-Of-Week")));
         TableBytes.Add(table, Placeholders(tag, TableBytes.Text(tag, zones, "gmtFormat"), "{0}"));
         string hourFormat = TableBytes.Text(tag, zones, "hourFormat");
         CheckHourFormat(tag, hourFormat);
         TableBytes.Add(table, hourFormat);
-        if (written.Any(pattern => HasField(pattern, 'B')))
-        {
-            AddDayPeriods(table, tag, gregorian.GetProperty("dayPeriods").GetProperty("format"), dayPeriods);
-        }
-        else
-        {
-            table.Add(0);
-        }
-
         return [.. table];
     }
 
-    // The flexible day periods of the locale's rule set (cldr-core/supplemental/dayPeriods.json), found by its tag with its last
-    // subtag dropped until one is there (zh-Hant takes zh's): each period with a start (_from), in the order of the starts, with its
-    // names in the format context. The periods at one time (_at: midnight, noon) are not written.
-    private static void AddDayPeriods(List<byte> table, string tag, JsonElement names, JsonElement dayPeriods)
+    // A pattern that joins two (dateTimeFormats and the Time-Day-Of-Week append item), with {0} and {1} once each and each run of
+    // ASCII letters outside them and outside quotes put in quotes: UTS #35 part 4 makes these simple formatters whose text is
+    // literal, and DateFormatter compiles the joined text as one date pattern, where a letter would be a field (sl's {1} ob {0} is
+    // written {1} 'ob' {0}). A run next to a quote stops the tool: quoting it would make two quotes in a row, a quote character.
+    private static string Joining(string tag, string pattern)
     {
-        string[] subtags = tag.Split('-');
-        JsonElement? rules = null;
-        for (int count = subtags.Length; count > 0 && rules is null; count--)
+        _ = Placeholders(tag, pattern, "{0}", "{1}");
+        var text = new StringBuilder();
+        bool quoted = false;
+        int i = 0;
+        while (i < pattern.Length)
         {
-            if (dayPeriods.TryGetProperty(string.Join('_', subtags[..count]), out JsonElement found))
+            char character = pattern[i];
+            if (character == '\'')
             {
-                rules = found;
+                quoted = !quoted;
             }
-        }
-
-        if (rules is not { } set)
-        {
-            throw new InvalidDataException(tag + " writes flexible day periods (B) and dayPeriods.json has no rules for it.");
-        }
-
-        var periods = new List<(int Start, int End, string Name)>();
-        foreach (JsonProperty period in set.EnumerateObject())
-        {
-            if (period.Value.TryGetProperty("_from", out JsonElement from))
+            else if (!quoted && char.IsAsciiLetter(character))
             {
-                periods.Add((Minutes(tag, from), Minutes(tag, period.Value.GetProperty("_before")), period.Name));
+                int end = i + 1;
+                while (end < pattern.Length && char.IsAsciiLetter(pattern[end]))
+                {
+                    end++;
+                }
+
+                if ((i > 0 && pattern[i - 1] == '\'') || (end < pattern.Length && pattern[end] == '\''))
+                {
+                    throw new InvalidDataException("The joining pattern " + pattern + " of " + tag + " has letters next to a quote.");
+                }
+
+                text.Append('\'').Append(pattern, i, end - i).Append('\'');
+                i = end;
+                continue;
             }
+
+            text.Append(character);
+            i++;
         }
 
-        periods.Sort((left, right) => left.Start.CompareTo(right.Start));
-        for (int i = 0; i < periods.Count; i++)
-        {
-            // The periods cover the day once: each ends where the next starts, and the last where the first starts, past midnight.
-            if (periods[i].End % (24 * 60) != periods[(i + 1) % periods.Count].Start)
-            {
-                throw new InvalidDataException("The day periods of " + tag + " do not cover the day once at " + periods[i].Name + ".");
-            }
-        }
-
-        table.Add((byte)periods.Count);
-        foreach ((int start, _, string name) in periods)
-        {
-            table.Add((byte)start);
-            table.Add((byte)(start >> 8));
-            foreach (string width in Widths)
-            {
-                TableBytes.Add(table, TableBytes.Text(tag, names.GetProperty(width), name));
-            }
-        }
-    }
-
-    // A time of dayPeriods.json, "05:00" or "24:00", in minutes of the day.
-    private static int Minutes(string tag, JsonElement time)
-    {
-        string text = time.GetString() ?? string.Empty;
-        if (
-            text.Length == 5
-            && text[2] == ':'
-            && int.TryParse(text.AsSpan(0, 2), NumberStyles.None, CultureInfo.InvariantCulture, out int hours)
-            && int.TryParse(text.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out int minutes)
-            && hours <= 24
-            && minutes < 60
-        )
-        {
-            return (hours * 60) + minutes;
-        }
-
-        throw new InvalidDataException("The day period time " + text + " of " + tag + " is not HH:mm.");
+        return text.ToString();
     }
 
     // A pattern with each placeholder once: {0} and {1} in a pattern that joins two (dateTimeFormats and the Time-Day-Of-Week append
@@ -349,15 +318,15 @@ internal sealed class DateTables
     }
 
     // The fields DateFormatter writes, with their lengths: the era, the year (not as yy) and the week's year, the quarter, the month
-    // in both contexts, the day, the weekday in the format context and as text in the stand-alone one, the day period, the flexible
-    // day period, the hours of 1 to 12 and of 0 to 23, the minute, the second, and the zone. Anything else stops the tool.
+    // in both contexts, the day, the weekday in the format context and as text in the stand-alone one, am or pm, the hours of 1 to
+    // 12 and of 0 to 23, the minute, the second, and the zone. Anything else stops the tool.
     private static void CheckPattern(string tag, string pattern)
     {
         foreach ((char symbol, int length) in SkeletonMatcher.Fields(pattern))
         {
             bool written = symbol switch
             {
-                'G' or 'Q' or 'M' or 'L' or 'a' or 'B' => length <= 5,
+                'G' or 'Q' or 'M' or 'L' or 'a' => length <= 5,
                 'y' or 'Y' => length != 2,
                 'E' => length <= 6,
                 'c' => length is >= 3 and <= 6,
@@ -395,6 +364,4 @@ internal sealed class DateTables
             }
         }
     }
-
-    private static bool HasField(string pattern, char symbol) => SkeletonMatcher.Fields(pattern).Any(field => field.Symbol == symbol);
 }

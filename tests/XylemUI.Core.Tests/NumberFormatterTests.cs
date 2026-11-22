@@ -1270,8 +1270,8 @@ public sealed class NumberFormatterTests
     /// - Read the counts the tool wrote, and the symbols of ja, ar, ar-EG, and es.
     ///
     /// Expected:
-    /// - 74 number tables (with the alphaNextToNumber pattern), 110 compact tables, and 245 currency tables (counted from the json: locales whose bytes are the same
-    ///   share one); ja's decimal separator is .; ar's zero is 0 (CLDR 49 gives ar the Latin digits; ar-EG keeps the Arabic-Indic
+    /// - 74 number tables (with the alphaNextToNumber pattern), 110 compact tables, and 245 currency tables (counted from the json:
+    ///   locales whose bytes are the same share one); ja's decimal separator is .; ar's zero is 0 (CLDR 49 gives ar the Latin digits; ar-EG keeps the Arabic-Indic
     ///   ones, whose zero is U+0660); es groups from 2 digits.
     /// </remarks>
     [Fact]

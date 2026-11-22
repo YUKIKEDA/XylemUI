@@ -201,13 +201,13 @@ internal static class ThrowHelper
     /// Throws <see cref="ArgumentException"/> for a skeleton that is not one of the date formats a <see cref="DateFormatter"/> takes.
     /// </summary>
     /// <param name="skeleton">The skeleton.</param>
-    /// <param name="kind">What the skeleton had to be: "one of the 41 skeletons", "a date skeleton of the 41", or "a time skeleton
-    /// of the 41".</param>
+    /// <param name="kind">What the skeleton had to be: "one of Flutter's 41 date skeletons", "one of the 28 date skeletons of
+    /// Flutter's 41", or "one of the 13 time skeletons of Flutter's 41".</param>
     /// <param name="parameterName">The name of the skeleton's parameter.</param>
     [DoesNotReturn]
     [StackTraceHidden]
     internal static void ThrowNotASkeleton(string skeleton, string kind, string parameterName) =>
-        throw new ArgumentException("The skeleton '" + skeleton + "' is not " + kind + " of Flutter's date formats.", parameterName);
+        throw new ArgumentException("The skeleton '" + skeleton + "' is not " + kind + ".", parameterName);
 
     /// <summary>
     /// Throws <see cref="ArgumentException"/> for a value whose type a date format does not take: a date for a format with time fields,

@@ -5,7 +5,8 @@ namespace XylemUI;
 /// <summary>
 /// Compiles a date pattern of CLDR into its pieces (design §4.11, "Dates and times"). Text in quotes is literal, two quotes are one
 /// quote character inside or outside quotes, and each run of one ASCII letter outside quotes is a field. tools/CldrTableGen checks
-/// that every field of a generated pattern is one <see cref="DateFormatter"/> writes.
+/// that every field of a generated pattern is one <see cref="DateFormatter"/> writes and quotes the letters of the joining patterns;
+/// <see cref="DateFormatter"/> fails the invariant on any other field.
 /// </summary>
 internal static class DatePattern
 {

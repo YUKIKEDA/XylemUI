@@ -5,9 +5,9 @@ namespace XylemUI.Tools.CldrTableGen;
 
 /// <summary>
 /// Writes the generated files (design §4.11, "How the tables are made" and "Declaration and reference"): one class that derives from
-/// <c>LocaleData</c> for each entry and for root, the plural rules as methods, the number and the date tables, the properties of <c>CldrLocales</c>, the list of
-/// <c>CldrLocales.All</c>, the license of the data, and the samples of the plural rules for the tests. Every line ends with LF and
-/// every file is UTF-8 without a byte order mark, whatever the OS, so that two runs write the same bytes.
+/// <c>LocaleData</c> for each entry and for root, the plural rules as methods, the number and the date tables, the properties of
+/// <c>CldrLocales</c>, the list of <c>CldrLocales.All</c>, the license of the data, and the samples of the plural rules for the tests.
+/// Every line ends with LF and every file is UTF-8 without a byte order mark, whatever the OS, so that two runs write the same bytes.
 /// </summary>
 internal sealed class Output
 {

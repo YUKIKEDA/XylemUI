@@ -3,17 +3,19 @@ using System.Text;
 namespace XylemUI.Tools.CldrTableGen;
 
 /// <summary>
-/// Finds the pattern of a skeleton among a locale's <c>availableFormats</c> (design §4.11, "Skeleton formats"; UTS #35 part 4,
-/// "Matching Skeletons"): the format whose skeleton is closest, with its fields made as long as the requested ones. The distance and
-/// the length rules are those of ICU's <c>DateTimePatternGenerator</c>, which UTS #35 describes in prose: a field of another form of the
-/// same kind (<c>MMM</c> for <c>MMMM</c>, <c>v</c> for <c>z</c>) is near, a missing field is far, and a field the request does not
-/// have is farther. A requested field that the closest format does not have, or a closest format with a field that was not
-/// requested, stops the tool: no skeleton of the 41 needs the <c>appendItems</c> in CLDR 49. An instance holds one locale's formats.
+/// Finds the pattern of a skeleton among a locale's <c>availableFormats</c> and its standard date and time patterns (design §4.11,
+/// "Skeleton formats"; UTS #35 part 4, "Matching Skeletons"): the format whose skeleton is closest, with its fields made as long as
+/// the requested ones. The distance and the length rules are those of ICU's <c>DateTimePatternGenerator</c>, which UTS #35 describes
+/// in prose: a field of another form of the same kind (<c>MMM</c> for <c>MMMM</c>, <c>v</c> for <c>z</c>) is near, a missing field is
+/// far, and a field the request does not have is farther. A requested field that the closest format does not have, or a closest
+/// format with a field that was not requested, stops the tool: no skeleton of the 41 needs the <c>appendItems</c> in CLDR 49. An
+/// instance holds one locale's formats.
 /// </summary>
 internal sealed class SkeletonMatcher
 {
-    // The distances of ICU's DateTimePatternGenerator (dtptngen.cpp, read from memory, not from a checkout): a text form is a
-    // negative constant and a numeric form 0x100 and its length, so that forms of one kind are near and text is far from numbers.
+    // The distances of ICU's DateTimePatternGenerator (ICU main, icu4c/source/i18n/dtptngen_impl.h and dtptngen.cpp, read on
+    // 2026-11-21; design §4.11, "Nearness and lengths"): a text form is a negative constant and a numeric form 0x100 and its length,
+    // so that forms of one kind are near and text is far from numbers.
     private const int Numeric = 0x100;
     private const int Narrow = -0x101;
     private const int Shorter = -0x102;
@@ -24,7 +26,8 @@ internal sealed class SkeletonMatcher
     private const int ExtraField = 0x10000;
 
     // ICU adds one format of each of these symbols, the symbol alone, for a skeleton the locale has no format of
-    // (DateTimePatternGenerator's Canonical_Items, read from memory): QQQ takes Q, and s takes s.
+    // (DateTimePatternGenerator's Canonical_Items, ICU main, icu4c/source/i18n/dtptngen.cpp, lines 140 to 145): QQQ takes Q, and s
+    // takes s.
     private const string CanonicalItems = "GyQMwWEDFdaHmsSv";
 
     // The forms of each symbol: its kind, the lengths, and the distance value (UTS #35 part 4, "Date Field Symbol Table").
@@ -92,19 +95,33 @@ internal sealed class SkeletonMatcher
     private readonly List<Candidate> _candidates = [];
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="SkeletonMatcher"/> class with a locale's formats, and a canonical item for each
-    /// symbol of <see cref="CanonicalItems"/> whose skeleton has no format.
+    /// Initializes a new instance of the <see cref="SkeletonMatcher"/> class with a locale's formats, its standard patterns whose
+    /// base skeleton no format has, and a canonical item for each symbol of <see cref="CanonicalItems"/> whose skeleton has no format.
     /// </summary>
     /// <param name="tag">The locale, for the messages.</param>
     /// <param name="availableFormats">The locale's <c>availableFormats</c>: each skeleton and its pattern. A skeleton with an
     /// alternative or a count (<c>hm-alt-ascii</c>, <c>yw-count-one</c>) and a skeleton with a symbol or a length the table of forms
     /// does not have (<c>MMMddd</c>) are not candidates.</param>
-    public SkeletonMatcher(string tag, IEnumerable<KeyValuePair<string, string>> availableFormats)
+    /// <param name="standardPatterns">The locale's <c>dateFormats</c> and <c>timeFormats</c> (full, long, medium, short). Each is a
+    /// candidate under the skeleton of its fields, as ICU's <c>DateTimePatternGenerator::addICUPatterns</c> adds them, unless a
+    /// format or an earlier standard pattern has the same base skeleton (<see cref="Base"/>): ICU's <c>availableFormats</c> override a
+    /// pattern of the same base. A pattern with a field the table of forms does not have, or with two fields of one kind, is not a
+    /// candidate.</param>
+    public SkeletonMatcher(string tag, IEnumerable<KeyValuePair<string, string>> availableFormats, IEnumerable<string> standardPatterns)
     {
         _tag = tag;
         foreach ((string skeleton, string pattern) in availableFormats)
         {
             if (!skeleton.Contains('-', StringComparison.Ordinal) && Parse(skeleton) is { } fields)
+            {
+                _candidates.Add(new Candidate(skeleton, pattern, fields));
+            }
+        }
+
+        var bases = new HashSet<string>(_candidates.Select(candidate => Base(candidate.Fields)), StringComparer.Ordinal);
+        foreach (string pattern in standardPatterns)
+        {
+            if (SkeletonOf(pattern) is { } skeleton && Parse(skeleton) is { } fields && bases.Add(Base(fields)))
             {
                 _candidates.Add(new Candidate(skeleton, pattern, fields));
             }
@@ -158,9 +175,8 @@ internal sealed class SkeletonMatcher
         }
 
         // Among the formats at the best distance, the one whose adjusted pattern is nearest the request wins, then the first in
-        // ordinal order of its skeleton. CLDR 49 has such ties for yMMMMEEEEd in 15 locales and for MMMMEEEEd in 4, between
-        // MMMEEEEd and MMMMEd: pt-PT's yMMMEEEEd keeps its numeric month (EEEE, d/MM/y), and its yMMMMEd writes the wide one; ja's
-        // and ko's two are as near, and the ordinal order takes MMMEEEEd (2月3日火曜日), as Flutter's intl data has it.
+        // ordinal order of its skeleton (design §4.11, "The same distance"; Issue #906). The ties are between MMMEEEEd and MMMMEd: a
+        // yMMMEEEEd of EEEE, d/MM/y keeps its numeric month, and a yMMMMEd writes the wide one.
         string? best = null;
         string? bestSkeleton = null;
         int bestPatternDistance = int.MaxValue;
@@ -222,7 +238,7 @@ internal sealed class SkeletonMatcher
         return fields;
     }
 
-    // The distance of a format's fields from the requested ones (ICU's DateTimeMatcher::getDistance, from memory): the difference
+    // The distance of a format's fields from the requested ones (ICU's DateTimeMatcher::getDistance, dtptngen.cpp): the difference
     // of the values of a field both have, MissingField for a requested field it lacks, and ExtraField for a field it adds.
     private static int Distance(Dictionary<DateField, Field> requested, Dictionary<DateField, Field> candidate)
     {
@@ -259,11 +275,11 @@ internal sealed class SkeletonMatcher
         return distance;
     }
 
-    // The pattern with each field of a requested kind made as long as the request's (ICU's adjustFieldTypes, from memory). An hour,
-    // a minute, or a second keeps its length; so does a field whose format already had the requested length, or whose pattern is
-    // numeric where its format's skeleton is text or the other way round (ja's MMM is M月, so LLLL stays M月). A year, a month, a
-    // weekday, a day period, and an hour keep the pattern's symbol (gd's Y, L, c, zh-Hant's B, and the locale's hour); the zone
-    // takes the request's (z for v). Text in quotes and the other characters are kept as they are.
+    // The pattern with each field of a requested kind made as long as the request's (ICU's adjustFieldTypes, dtptngen.cpp). An
+    // hour, a minute, or a second keeps its length; so does a field whose format already had the requested length, or whose pattern
+    // is numeric where its format's skeleton is text or the other way round (ja's MMM is M月, so LLLL stays M月). A year, a month, a
+    // weekday, and an hour keep the pattern's symbol (gd's Y, L, c, and the locale's hour); the day period and the zone take the
+    // request's (a for zh-Hant's B, z for v). Text in quotes and the other characters are kept as they are.
     private static string Adjust(string pattern, Dictionary<DateField, Field> requested, Dictionary<DateField, Field> matched)
     {
         var text = new StringBuilder();
@@ -298,9 +314,9 @@ internal sealed class SkeletonMatcher
             char symbol = character;
             int adjusted = length;
 
-            // The pattern's day-period letter (a, b, B) is kept, while ICU's adjustFieldTypes writes the requested one (ICU main,
-            // dtptngen.cpp, read on 2026-11-21). No harm for the 41 skeletons: none asks for a day period itself, only j does.
-            bool ownSymbol = form.Kind is DateField.Year or DateField.Month or DateField.Weekday or DateField.DayPeriod;
+            // The day period takes the requested letter, as ICU's adjustFieldTypes writes it (ICU main, dtptngen.cpp, read on
+            // 2026-11-21; Issue #906): j asks for a, so zh-Hant's Bh:mm is written ah:mm (上午7:03).
+            bool ownSymbol = form.Kind is DateField.Year or DateField.Month or DateField.Weekday;
             if (requested.TryGetValue(form.Kind, out Field wanted) && form.Kind is not (DateField.Hour or DateField.Minute or DateField.Second))
             {
                 Field own = matched[form.Kind];
@@ -317,7 +333,7 @@ internal sealed class SkeletonMatcher
     }
 
     // The fields of a skeleton, or null when it has a symbol or a length the table does not have, or two fields of one kind. A
-    // 12-hour field with no day period gets a, and a 24-hour field drops one (ICU's DateTimeMatcher::set, from memory).
+    // 12-hour field with no day period gets a, and a 24-hour field drops one (ICU's DateTimeMatcher::set, dtptngen.cpp).
     private static Dictionary<DateField, Field>? Parse(string skeleton)
     {
         var fields = new Dictionary<DateField, Field>();
@@ -352,6 +368,34 @@ internal sealed class SkeletonMatcher
 
         return fields;
     }
+
+    // The skeleton of a pattern's fields, in the order of the kinds (EEEE d MMMM, y is yMMMMEEEEd); null when a field is not in
+    // the table of forms or two fields are of one kind.
+    private static string? SkeletonOf(string pattern)
+    {
+        var fields = new SortedDictionary<DateField, string>();
+        foreach ((char symbol, int length) in Fields(pattern))
+        {
+            if (FormOf(symbol, length) is not { } form || !fields.TryAdd(form.Kind, new string(symbol, length)))
+            {
+                return null;
+            }
+        }
+
+        return string.Concat(fields.Values);
+    }
+
+    /// <summary>
+    /// Returns the base skeleton of a skeleton's fields, as ICU's <c>DateTimeMatcher::set</c> makes its <c>baseOriginal</c>: each
+    /// field's symbol as many times as the shortest length of its form, so that lengths of one form are one base (<c>M</c> and
+    /// <c>MM</c> are <c>M</c>, <c>E</c> and <c>EEE</c> are <c>E</c>) and forms are not (<c>MMM</c>, <c>MMMM</c>, <c>LLLL</c>).
+    /// </summary>
+    /// <param name="fields">The fields, a 12-hour field with its <c>a</c>.</param>
+    /// <returns>The base skeleton, in the order of the kinds.</returns>
+    private static string Base(Dictionary<DateField, Field> fields) =>
+        string.Concat(fields.OrderBy(pair => pair.Key).Select(pair => BaseField(pair.Value)));
+
+    private static string BaseField(Field field) => new(field.Symbol, FormOf(field.Symbol, field.Length)!.MinimumLength);
 
     private static Form? FormOf(char symbol, int length)
     {
