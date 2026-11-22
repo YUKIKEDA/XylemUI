@@ -26,8 +26,10 @@ public sealed record FluentTheme
 
     /// <summary>
     /// Gets the key of the theme (design §13.2, "テーマの鍵"): <see cref="FluentRoot.Wrap"/> provides the window's theme at its root,
-    /// and a part of the tree may provide another, which reaches the parts in it and not the window's background or title bar. The
-    /// key has no default, so <see cref="Context{T}.Use"/> throws <see cref="InvalidOperationException"/> where no theme is provided.
+    /// and a part of the tree may provide another, which reaches the parts in it and not the window's background or title bar. A
+    /// desktop window is wrapped when the app has <c>[assembly: WindowTheme(typeof(FluentRoot))]</c>, and a headless app when its
+    /// options have <c>HeadlessOptions.RootWrapper = FluentRoot.Wrap</c>. The key has no default, so <see cref="Context{T}.Use"/>
+    /// throws <see cref="InvalidOperationException"/> where no theme is provided.
     /// </summary>
     public static Context<IReadOnlySignal<FluentTheme>> Current { get; } = new();
 

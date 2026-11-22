@@ -9,10 +9,14 @@ namespace XylemUI.Theme.Fluent;
 /// </summary>
 public static class Fluent
 {
+    // The tracks of the grid that centers a button's content, in both axes: free space, the content, free space.
+    private static readonly GridTrack[] CenteringTracks = [Track.Fr(1), Track.Auto, Track.Fr(1)];
+
     /// <summary>
     /// Makes a button (<see cref="Primitive.Button(Element, Action)"/>) with the look of the theme provided here: its background,
-    /// border, color of text, corners, padding, and hovered, pressed, and disabled looks follow the theme, and a value set in
-    /// <paramref name="style"/> wins over the theme's.
+    /// border, color of text, corners, padding, and hovered, pressed, focus-visible, and disabled looks follow the theme, and a value
+    /// set in <paramref name="style"/> wins over the theme's. The button is at least 96 wide, as Fluent's medium button, and holds
+    /// the content in its middle; the content's grid column and row are written for that.
     /// </summary>
     /// <param name="content">The content: a node of the current tree with no parent.</param>
     /// <param name="onClick">What a click runs, in the scope current now.</param>
@@ -35,7 +39,7 @@ public static class Fluent
 
         // The theme is looked for before the button is made, so that a missing theme leaves no node without a parent in the tree.
         IReadOnlySignal<FluentTheme> theme = FluentTheme.UseForControl();
-        Element button = Primitive.Button(content, onClick);
+        Element button = Primitive.Button(Centered(content), onClick).MinWidth(ButtonLooks.MinWidth);
         ButtonLooks? applied = null;
         _ = Effect.Create(() =>
         {
@@ -47,6 +51,7 @@ public static class Fluent
                 .CornerRadius(style?.Radius ?? looks.Radius)
                 .Hovered(style?.Hovered ?? looks.Hovered)
                 .Pressed(style?.Pressed ?? looks.Pressed)
+                .FocusVisible(looks.FocusVisible)
                 .Disabled(style?.Disabled ?? looks.Disabled);
 
             // The values of the layout are written only when they change, so that a change of the colors lays nothing out again.
@@ -59,5 +64,16 @@ public static class Fluent
             applied = looks;
         });
         return button;
+    }
+
+    // Puts the content in the middle of the button, as Fluent's button centers it (design §13.2, "中身の位置"): a grid of three
+    // columns and three rows, 1fr / auto / 1fr, with the content in the middle cell. The grid fills the button's content box: its
+    // width as a block child, its height as a fraction, which resolves only when the button's height is definite (a button a row
+    // stretches), and is the content's height otherwise. The public API has no alignment until row P02h, which replaces the grid.
+    private static Element Centered(Element content)
+    {
+        Element grid = Elements.Grid(CenteringTracks, CenteringTracks, content).HeightFraction(1);
+        _ = content.GridColumn(2).GridRow(2);
+        return grid;
     }
 }

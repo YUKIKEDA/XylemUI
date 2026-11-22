@@ -5,11 +5,19 @@ namespace XylemUI.Theme.Fluent;
 /// <summary>
 /// The look a <see cref="Fluent.Button"/> takes from a theme, made once for each theme and appearance (design §13.2, "setter"), so
 /// that a button's effect allocates nothing when the theme changes. The values are those of Fluent's medium button
-/// (<c>useButtonStyles.styles.ts</c> at microsoft/fluentui 1f59fc2: the base lines 40 to 75, the primary lines 151 to 166, the
-/// disabled lines 322 to 369 and 420 to 430), read through the theme's tokens.
+/// (<c>useButtonStyles.styles.ts</c> at microsoft/fluentui 1f59fc2: the base lines 40 to 75 without line 64's smallest width, which
+/// is <see cref="MinWidth"/>, and without lines 67 to 69's text, which row TS1 gives; the focus-visible state of lines 105 to 114, of which only the
+/// border's color is drawn; the primary lines 151 to 166; the disabled lines 322 to 369 and 420 to 430), read through the theme's
+/// tokens.
 /// </summary>
 internal sealed class ButtonLooks
 {
+    /// <summary>
+    /// The smallest width of the medium button, a constant of the button's styles, not a token (<c>minWidth: '96px'</c>, line 64).
+    /// It is the same in every theme, so the button writes it once, when it is made.
+    /// </summary>
+    public const float MinWidth = 96;
+
     // The top and bottom padding of the medium button, a constant of the button's styles, not a token (buttonSpacingMedium, line 19).
     private const float VerticalPadding = 5;
 
@@ -41,6 +49,10 @@ internal sealed class ButtonLooks
             BorderPaint = disabledBorder,
             Foreground = colors.ColorNeutralForegroundDisabled,
         };
+
+        // Fluent's focus indicator (lines 105 to 114) also lays a ring of 1 inside the border in the same color and a transparent
+        // outline of 2 outside it; a pseudo-state's look holds no shadow and Core draws no outline (design §13.2, "TH1 のボタンの値").
+        FocusVisible = new PaintStyle { BorderPaint = colors.ColorStrokeFocus2 };
     }
 
     /// <summary>
@@ -77,6 +89,11 @@ internal sealed class ButtonLooks
     /// Gets what the disabled state lays over the look.
     /// </summary>
     public PaintStyle Disabled { get; }
+
+    /// <summary>
+    /// Gets what the focus-visible state lays over the look: the border's color of Fluent's focus indicator.
+    /// </summary>
+    public PaintStyle FocusVisible { get; }
 
     /// <summary>
     /// Gets the padding, which changes the layout.

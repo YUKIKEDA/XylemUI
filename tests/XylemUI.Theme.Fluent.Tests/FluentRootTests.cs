@@ -198,12 +198,14 @@ public sealed class FluentRootTests
     /// <remarks>
     /// Preconditions:
     /// - Colors around the bound 5 G + 2 R + B = 1,024: gray 128 (exactly 1,024), gray 129 (1,032), and black and white.
+    /// - Two colors that tell the green's and the red's weights apart: pure green (5 x 255 = 1,275, and 510 with the weights
+    ///   swapped) and pure red (2 x 255 = 510, and 1,275 with the weights swapped).
     ///
     /// Steps:
     /// - Ask whether each is dark.
     ///
     /// Expected:
-    /// - Black and gray 128 are dark; gray 129 and white are not.
+    /// - Black and gray 128 are dark; gray 129 and white are not. Pure green is not dark; pure red is.
     /// </remarks>
     [Fact]
     public void IsDark_AtTheBound_IsDark()
@@ -214,9 +216,55 @@ public sealed class FluentRootTests
             FluentRoot.IsDark(Color.FromRgb(0x808080)),
             FluentRoot.IsDark(Color.FromRgb(0x818181)),
             FluentRoot.IsDark(Color.FromRgb(0xFFFFFF)),
+            FluentRoot.IsDark(Color.FromRgb(0x00FF00)),
+            FluentRoot.IsDark(Color.FromRgb(0xFF0000)),
         ];
 
-        Assert.Equal([true, true, false, false], dark);
+        Assert.Equal([true, true, false, false, false, true], dark);
+    }
+
+    /// <summary>
+    /// The title bar's darkness follows the theme's variant, not its background: a dark theme whose background is replaced with a
+    /// light color keeps a dark title bar, and a light theme with a dark background keeps a light one.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A wrapped app, light, that asks for a theme from a signal: at the start the dark theme with colorNeutralBackground1
+    ///   replaced by white (with <see langword="with"/>).
+    ///
+    /// Steps:
+    /// - Pump; read the app's backdrop and title bar. Set the light theme with colorNeutralBackground1 replaced by black; pump; read
+    ///   the same.
+    ///
+    /// Expected:
+    /// - White and a dark title bar; black and a light title bar.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Wrap_ReplacedBackground_TheTitleBarFollowsTheVariant()
+    {
+        Color white = Color.FromRgb(0xFFFFFF);
+        Color black = Color.FromRgb(0x000000);
+        FluentTheme dark = FluentTheme.Create(ThemeVariant.Dark, Density.Standard, null);
+        FluentTheme light = FluentTheme.Create(ThemeVariant.Light, Density.Standard, null);
+        Signal<FluentTheme> window = Signal.Create(dark with { Colors = dark.Colors with { ColorNeutralBackground1 = white } });
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                FluentTheme.RequestForWindow(window);
+                return Box();
+            },
+            Options(Light)
+        );
+        _ = app.PumpAndSettle();
+        (Color?, bool?) first = (app.Backdrop, app.DarkTitleBar);
+
+        window.Set(light with { Colors = light.Colors with { ColorNeutralBackground1 = black } });
+        _ = app.PumpAndSettle();
+        (Color?, bool?) second = (app.Backdrop, app.DarkTitleBar);
+
+        Assert.Equal(((Color?)white, (bool?)true), first);
+        Assert.Equal(((Color?)black, (bool?)false), second);
     }
 
     private static (Paint? BoxBackground, Color? BoxForeground, Color? Backdrop, bool? DarkTitleBar) Read(HeadlessApp app)

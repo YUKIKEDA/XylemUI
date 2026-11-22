@@ -10,7 +10,8 @@ namespace XylemUI.Theme.Fluent.Tests;
 // The Fluent button (design §13.2, "部品がテーマに付いていく形" and "TH1 のボタンの見た目の種類"): a primitive button with one effect
 // that writes the theme's look, in headless apps wrapped by FluentRoot. The expected colors are those of the token files at
 // microsoft/fluentui 1f59fc2 (packages/tokens/src/alias/lightColor.ts, darkColor.ts, and highContrastColor.ts), read by hand, for the
-// tokens the button's styles name (react-button's useButtonStyles.styles.ts lines 40 to 75, 151 to 166, 322 to 369, and 420 to 430);
+// tokens the button's styles name (react-button's useButtonStyles.styles.ts lines 40 to 75, 105 to 114, 151 to 166, 322 to 369, and
+// 420 to 430);
 // the brand steps of the measured blue are those of docs/benchmarks/th1-accent-ramp.md.
 public sealed class FluentTests
 {
@@ -145,36 +146,141 @@ public sealed class FluentTests
     }
 
     /// <summary>
-    /// The button's padding, border width, and corners are the theme's: Fluent's medium button.
+    /// The button's padding, border width, and corners are the theme's, and its smallest width is 96: Fluent's medium button.
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A wrapped app, light, of a button around a box of 8 x 8.
+    /// - A wrapped app, light, of a row of two buttons: one around a box of 8 x 8, one around a box of 100 x 8.
     ///
     /// Steps:
-    /// - Pump; read the button's rectangle, the content's place in it, and the button's corner radius.
+    /// - Pump; read each button's rectangle, the content's place in it, and the first button's corner radius.
     ///
     /// Expected:
-    /// - 34 x 20: 12 of padding (spacingHorizontalM) and 1 of border (strokeWidthThin) on the left and right, 5 of padding
-    ///   (buttonSpacingMedium) and 1 of border on the top and bottom; the content at 13, 6 in it; the radius 4 (borderRadiusMedium).
+    /// - The first is 96 x 20: its padding and border would give 34 (12 of padding (spacingHorizontalM) and 1 of border
+    ///   (strokeWidthThin) on the left and right), and the smallest width (minWidth 96) widens it; 20 is 5 of padding
+    ///   (buttonSpacingMedium) and 1 of border on the top and bottom around 8. The content is centered at 44, 6 in it ((96 - 8) / 2
+    ///   across; 6 down, where the content box starts); the radius is 4 (borderRadiusMedium).
+    /// - The second is 126 x 20, wider than the smallest width, its content at 13, 6: no free space to center in.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
-    public async Task Button_PaddingBorderAndCorners_AreTheThemes()
+    public async Task Button_PaddingBorderCornersAndMinWidth_AreTheThemes()
     {
-        Element button = default;
-        Element content = default;
+        Element narrow = default;
+        Element narrowContent = default;
+        Element wide = default;
+        Element wideContent = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(
-            () => Row(button = Fluent.Button(content = Box().Width(8).Height(8), () => { })),
+            () =>
+                Row(
+                    narrow = Fluent.Button(narrowContent = Box().Width(8).Height(8), () => { }),
+                    wide = Fluent.Button(wideContent = Box().Width(100).Height(8), () => { })
+                ),
             Options(Light)
         );
         _ = app.PumpAndSettle();
-        Rect outer = app.Tree.GetRect(button.Node);
-        Rect inner = app.Tree.GetRect(content.Node);
+        Rect narrowOuter = app.Tree.GetRect(narrow.Node);
+        Rect wideOuter = app.Tree.GetRect(wide.Node);
 
-        Assert.Equal((34f, 20f), (outer.Width, outer.Height));
-        Assert.Equal((13f, 6f), (inner.X - outer.X, inner.Y - outer.Y));
-        Assert.Equal(new CornerRadii(4), Visual(app, button).Radii);
+        Assert.Equal((96f, 20f), (narrowOuter.Width, narrowOuter.Height));
+        Assert.Equal((44f, 6f), PlaceInButton(app, narrow, narrowContent));
+        Assert.Equal(new CornerRadii(4), Visual(app, narrow).Radii);
+        Assert.Equal((126f, 20f), (wideOuter.Width, wideOuter.Height));
+        Assert.Equal((13f, 6f), PlaceInButton(app, wide, wideContent));
+    }
+
+    /// <summary>
+    /// A button that its parent makes taller or wider than its content keeps the content in the middle, as Fluent's button does.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A wrapped app, light, of a column 200 wide holding a row and a button around a box of 8 x 8: the row holds a box of
+    ///   10 x 60 and a button around a box of 8 x 8, which the row stretches to 60 high; the column stretches the second button to
+    ///   200 wide.
+    ///
+    /// Steps:
+    /// - Pump; read each button's rectangle and its content's place in it.
+    ///
+    /// Expected:
+    /// - The row's button is 96 x 60, its content at 44, 26: the content box is 48 high after the padding and the border (6 on
+    ///   each side), and (48 - 8) / 2 = 20 lies above the content. A percentage height in a flex item the row stretches resolves
+    ///   against the stretched height, as in Chrome (Taffy's fixture blockflex_percentage_height_in_stretched_flex_item,
+    ///   tests/XylemUI.Core.Tests/Fixtures/Taffy/blockflex.xml).
+    /// - The column's button is 200 x 20, its content at 96, 6 ((200 - 8) / 2 across).
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Button_StretchedByItsParent_KeepsTheContentInTheMiddle()
+    {
+        Element tall = default;
+        Element tallContent = default;
+        Element wide = default;
+        Element wideContent = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+                Column(
+                        Row(Box().Width(10).Height(60), tall = Fluent.Button(tallContent = Box().Width(8).Height(8), () => { })),
+                        wide = Fluent.Button(wideContent = Box().Width(8).Height(8), () => { })
+                    )
+                    .Width(200),
+            Options(Light)
+        );
+        _ = app.PumpAndSettle();
+        Rect tallOuter = app.Tree.GetRect(tall.Node);
+        Rect wideOuter = app.Tree.GetRect(wide.Node);
+
+        Assert.Equal((96f, 60f), (tallOuter.Width, tallOuter.Height));
+        Assert.Equal((44f, 26f), PlaceInButton(app, tall, tallContent));
+        Assert.Equal((200f, 20f), (wideOuter.Width, wideOuter.Height));
+        Assert.Equal((96f, 6f), PlaceInButton(app, wide, wideContent));
+    }
+
+    /// <summary>
+    /// The focus-visible state of each appearance takes Fluent's focus border, colorStrokeFocus2, in each variant.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Light, dark, and high contrast (with eight OS colors that differ from each other); a wrapped app of a standard and a
+    ///   primary button.
+    ///
+    /// Steps:
+    /// - Pump; read the border's paint of each button's focus-visible look, and whether the look sets anything else.
+    ///
+    /// Expected:
+    /// - Black (#000000) in light, white (#ffffff) in dark, and the OS's highlight color in high contrast, for both buttons; the
+    ///   look sets no background, color of text, opacity, or transform.
+    /// </remarks>
+    /// <param name="variant">The variant of the OS's appearance.</param>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiTheory]
+    [InlineData(ThemeVariant.Light)]
+    [InlineData(ThemeVariant.Dark)]
+    [InlineData(ThemeVariant.HighContrast)]
+    public async Task Button_FocusVisible_TakesTheFocusStroke(ThemeVariant variant)
+    {
+        SystemAppearance os = variant switch
+        {
+            ThemeVariant.Light => Light,
+            ThemeVariant.Dark => Dark,
+            _ => HighContrast,
+        };
+        Element standard = default;
+        Element primary = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () => Row(standard = Fluent.Button(Box(), () => { }), primary = Fluent.Button(Box(), () => { }, ButtonAppearance.Primary)),
+            Options(os)
+        );
+        _ = app.PumpAndSettle();
+
+        Color expected = variant switch
+        {
+            ThemeVariant.Light => Color.FromRgb(0x000000),
+            ThemeVariant.Dark => Color.FromRgb(0xFFFFFF),
+            _ => DarkContrast.Highlight,
+        };
+        PaintStyle? focusLook = new PaintStyle { BorderPaint = expected };
+        Assert.Equal(focusLook, Visual(app, standard).States!.Focus!.FocusVisible);
+        Assert.Equal(focusLook, Visual(app, primary).States!.Focus!.FocusVisible);
     }
 
     /// <summary>
@@ -266,7 +372,8 @@ public sealed class FluentTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A wrapped app that asks for the light theme from a signal, of a button around a box of 8 x 8, settled.
+    /// - A wrapped app that asks for the light theme from a signal, of a button around a box of 80 x 8, settled: wider than the
+    ///   smallest width of 96, so that the padding and the border show in the button's width.
     ///
     /// Steps:
     /// - Set the dark theme; read whether a layout is queued and the button's background; pump. Set the dark theme with
@@ -274,7 +381,7 @@ public sealed class FluentTests
     ///   3; read whether a layout is queued; pump; read the size.
     ///
     /// Expected:
-    /// - No layout queued and the background #292929; a layout queued, then 50 x 20; a layout queued, then 54 x 24.
+    /// - No layout queued and the background #292929; a layout queued, then 122 x 20; a layout queued, then 126 x 24.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -289,7 +396,7 @@ public sealed class FluentTests
             () =>
             {
                 FluentTheme.RequestForWindow(window);
-                return Row(button = Fluent.Button(Box().Width(8).Height(8), () => { }));
+                return Row(button = Fluent.Button(Box().Width(80).Height(8), () => { }));
             },
             Options(Light)
         );
@@ -311,9 +418,9 @@ public sealed class FluentTests
         Assert.False(colorLayout);
         Assert.Equal(Fill(0x292929), background);
         Assert.True(paddingLayout);
-        Assert.Equal((50f, 20f), (padded.Width, padded.Height));
+        Assert.Equal((122f, 20f), (padded.Width, padded.Height));
         Assert.True(borderLayout);
-        Assert.Equal((54f, 24f), (bordered.Width, bordered.Height));
+        Assert.Equal((126f, 24f), (bordered.Width, bordered.Height));
     }
 
     /// <summary>
@@ -448,16 +555,18 @@ public sealed class FluentTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A wrapped app of 1,600 x 800 that asks for a theme from a signal: 25 rows of 40 buttons, every fifth primary, around boxes
-    ///   of 8 x 8; an effect that counts the changes of the theme it reads. The light and the dark theme are made before.
+    /// - A wrapped app of 1,920 x 1,000 that asks for a theme from a signal: 50 rows of 20 buttons, every fifth primary, around
+    ///   boxes of 8 x 8, each button 96 x 20 with its centering grid; an effect that counts the changes of the theme it reads. The
+    ///   light and the dark theme are made before.
     ///
     /// Steps:
-    /// - Under <c>PerformanceAssert.DoesNotAllocate</c>, 100 runs, its unmeasured window and the windows it runs again included:
-    ///   set the dark theme on an even index and the light one on an odd index (each run changes the theme, since the indices of
-    ///   the runs alternate), and pump.
+    /// - Pump; read the right and bottom edges of the last button. Under <c>PerformanceAssert.DoesNotAllocate</c>, 100 runs, its
+    ///   unmeasured window and the windows it runs again included: set the dark theme on an even index and the light one on an odd
+    ///   index (each run changes the theme, since the indices of the runs alternate), and pump.
     ///
     /// Expected:
-    /// - 0 bytes in every window; the effect counted one change for each run, after the first value.
+    /// - The last button ends at 1,920, 1,000: every button is inside the window. 0 bytes in every window; the effect counted one
+    ///   change for each run, after the first value.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
@@ -467,6 +576,7 @@ public sealed class FluentTests
         FluentTheme dark = FluentTheme.Create(ThemeVariant.Dark, Density.Standard, null);
         Signal<FluentTheme> window = Signal.Create(light);
         int changes = 0;
+        Element last = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(
             () =>
             {
@@ -477,15 +587,16 @@ public sealed class FluentTests
                     _ = theme.Get();
                     changes++;
                 });
-                return ThousandButtons(out _);
+                return ThousandButtons(out _, out last);
             },
             Options(Light) with
             {
-                Width = 1600,
-                Height = 800,
+                Width = 1920,
+                Height = 1000,
             }
         );
         _ = app.PumpAndSettle();
+        Assert.Equal((1920f, 1000f), FarCorner(app, last));
 
         int runs = PerformanceAssert.DoesNotAllocate(
             100,
@@ -504,31 +615,34 @@ public sealed class FluentTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - The same 1,000 buttons in a wrapped app of 1,600 x 800, light, settled; the centers of the first two buttons.
+    /// - The same 1,000 buttons in a wrapped app of 1,920 x 1,000, light, settled; the centers of the first two buttons, where the
+    ///   pointer lies over each button's content, inside its centering grid.
     ///
     /// Steps:
-    /// - Under <c>PerformanceAssert.DoesNotAllocate</c>, 1,000 runs, its unmeasured window and the windows it runs again included:
-    ///   move the pointer to the first button's center on an even index and to the second's on an odd index, and pump. Then move
-    ///   it to the first button and pump.
+    /// - Read the right and bottom edges of the last button. Under <c>PerformanceAssert.DoesNotAllocate</c>, 1,000 runs, its
+    ///   unmeasured window and the windows it runs again included: move the pointer to the first button's center on an even index
+    ///   and to the second's on an odd index, and pump. Then move it to the first button and pump.
     ///
     /// Expected:
-    /// - 0 bytes in every window; one frame was presented for each run; at the end the first button is hovered and the second is
-    ///   not.
+    /// - The last button ends at 1,920, 1,000. 0 bytes in every window; one frame was presented for each run; at the end the first
+    ///   button is hovered and the second is not.
     /// </remarks>
     /// <returns>A task that completes when the test ends.</returns>
     [UiFact]
     public async Task Button_HoverFrames_AllocateNothing()
     {
         Element[] firstTwo = [];
+        Element last = default;
         await using HeadlessApp app = await HeadlessApp.StartAsync(
-            () => ThousandButtons(out firstTwo),
+            () => ThousandButtons(out firstTwo, out last),
             Options(Light) with
             {
-                Width = 1600,
-                Height = 800,
+                Width = 1920,
+                Height = 1000,
             }
         );
         _ = app.PumpAndSettle();
+        Assert.Equal((1920f, 1000f), FarCorner(app, last));
         (int X, int Y) a = app.CenterOf(firstTwo[0]);
         (int X, int Y) b = app.CenterOf(firstTwo[1]);
         int presents = app.PresentCount;
@@ -556,7 +670,8 @@ public sealed class FluentTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - A wrapped app of 280 x 72 on WARP, of a row with a padding of 16 and a gap of 8: a standard button "Save", a primary button
+    /// - A wrapped app of 336 x 72 on WARP (three buttons of the smallest width 96, the gaps, and the padding), of a row with a
+    ///   padding of 16 and a gap of 8: a standard button "Save", a primary button
     ///   "Send", and a disabled standard button "Off". The OS's appearance is light, dark, or Windows' black high-contrast theme,
     ///   with no accent color.
     ///
@@ -592,7 +707,7 @@ public sealed class FluentTests
                     .Gap(8),
             Options(os) with
             {
-                Width = 280,
+                Width = 336,
                 Height = 72,
                 Renderer = () => new WarpRenderer(),
             }
@@ -602,11 +717,12 @@ public sealed class FluentTests
         await app.MatchesGoldenAsync(golden);
     }
 
-    // 25 rows of 40 buttons around boxes of 8 x 8, every fifth primary, in a column; the first two buttons are handed out.
-    private static Element ThousandButtons(out Element[] firstTwo)
+    // 50 rows of 20 buttons around boxes of 8 x 8, every fifth primary, in a column: each button is 96 x 20 (the smallest width),
+    // so the buttons fill a window of 1,920 x 1,000 exactly. The first two buttons and the last are handed out.
+    private static Element ThousandButtons(out Element[] firstTwo, out Element last)
     {
-        var rows = new Element[25];
-        var cells = new Element[40];
+        var rows = new Element[50];
+        var cells = new Element[20];
         firstTwo = new Element[2];
         for (int row = 0; row < rows.Length; row++)
         {
@@ -624,7 +740,17 @@ public sealed class FluentTests
             }
         }
 
+        last = cells[^1];
         return Column(rows);
+    }
+
+    // The right and bottom edges of the last of the 1,000 buttons in the window: its rectangle is its row's, and the row's is the
+    // column's, which the root box holds at 0, 0.
+    private static (float Right, float Bottom) FarCorner(HeadlessApp app, Element last)
+    {
+        Rect cell = app.Tree.GetRect(last.Node);
+        Rect row = app.Tree.GetRect(app.Tree.Nodes.GetRef(last.Node).Parent);
+        return (row.X + cell.X + cell.Width, row.Y + cell.Y + cell.Height);
     }
 
     // The background, border, and text of a button, then the same of its hovered, pressed, and disabled looks.
@@ -674,6 +800,17 @@ public sealed class FluentTests
     }
 
     private static Color[] Rgb(uint[] values) => Array.ConvertAll(values, Color.FromRgb);
+
+    // The content's place in its button: the content's rectangle is the centering grid's, and the grid's is the button's (each
+    // rectangle is in its parent's coordinates). It checks that the grid is the content's parent and the button the grid's.
+    private static (float X, float Y) PlaceInButton(HeadlessApp app, Element button, Element content)
+    {
+        Handle<UiNode> grid = app.Tree.Nodes.GetRef(content.Node).Parent;
+        Assert.Equal(button.Node, app.Tree.Nodes.GetRef(grid).Parent);
+        Rect inGrid = app.Tree.GetRect(content.Node);
+        Rect gridInButton = app.Tree.GetRect(grid);
+        return (gridInButton.X + inGrid.X, gridInButton.Y + inGrid.Y);
+    }
 
     private static (Paint? Background, PaintStyle? Hovered, Paint? Border, Color? ChainedForeground) Read(
         HeadlessApp app,

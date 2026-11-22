@@ -34,8 +34,9 @@ public static class FluentRoot
         WindowSurface surface = WindowSurface.Current.Use();
         Signal<IReadOnlySignal<FluentTheme>?> request = Signal.Create<IReadOnlySignal<FluentTheme>?>(null);
 
-        // Two computed values, so that going back from the app's theme to the OS's finds the theme made before, and the OS's
-        // changes are not read while the app's theme is shown.
+        // Two computed values, so that the OS's changes are not read while the app's theme is shown, and going back from the app's
+        // theme to the OS's finds the theme made before, when the OS's appearance has not changed meanwhile. That is the only case
+        // that finds one: each change of the OS's appearance makes a new theme.
         Computed<FluentTheme> fromSystem = Computed.Create(() => FromSystem(system.Get()));
         Computed<FluentTheme> theme = Computed.Create(() => request.Get() is { } asked ? asked.Get() : fromSystem.Get());
         return Request.Provide(request, () => FluentTheme.Current.Provide(theme, () => RootBox(root(), theme, surface)));
