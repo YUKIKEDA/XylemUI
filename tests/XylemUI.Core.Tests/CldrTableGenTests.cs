@@ -1072,10 +1072,7 @@ public sealed class CldrTableGenTests
                 {
                     "ja" => JaFormats,
                     "zh" => ZhFormats.Where(format => format.Key != "Hms"),
-                    "ko" => EnFormats
-                        .Where(format => format.Key != "yM")
-                        .Append(("yMMMMEEEEdd", "EEEE, dd MMMM y"))
-                        .Append(("yyM", "M/yy")),
+                    "ko" => EnFormats.Where(format => format.Key != "yM").Append(("yMMMMEEEEdd", "EEEE, dd MMMM y")).Append(("yyM", "M/yy")),
                     "pt" => EnFormats
                         .Where(format => format.Key != "yM")
                         .Select(format => format.Key == "yMMMMEd" ? (format.Key, "E, d 'de' MMMM 'de' y") : format)

@@ -352,8 +352,7 @@ internal sealed class SkeletonMatcher
             {
                 // ICU: "1-3 for E are equivalent to 3 for c,e". The 41 skeletons ask for no c or e, whose lengths ICU always adjusts.
                 int wantedLength = wanted.Symbol == 'E' && wanted.Length < 3 ? 3 : wanted.Length;
-                bool keep =
-                    matched is not null && (matched[form.Kind].Length == wantedLength || (form.Value > 0) != (wanted.Value > 0));
+                bool keep = matched is not null && (matched[form.Kind].Length == wantedLength || (form.Value > 0) != (wanted.Value > 0));
                 adjusted = keep ? length : wantedLength;
                 symbol = ownSymbol ? character : wanted.Symbol;
             }
