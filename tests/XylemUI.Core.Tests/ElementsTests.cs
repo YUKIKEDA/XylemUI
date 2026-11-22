@@ -205,6 +205,251 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A width and a height given as fractions size the node's border box by the parent's content box, and follow the parent when
+    /// its size changes (design §2.13, "The component API").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box 120 x 60 with a padding of 10, so its content box is 100 x 40, holding a box of width fraction 0.5 and
+    ///   height fraction 0.25, laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the inner box's style and rectangle. Set the outer box's width to 180 and its height to 100 (a content box of
+    ///   160 x 80), run the frame asked for, and read the rectangle again.
+    ///
+    /// Expected:
+    /// - The style holds the percentages 0.5 and 0.25; the inner box is 50 x 10 at (10, 10), and 80 x 20 after the change.
+    /// </remarks>
+    [Fact]
+    public void WidthAndHeightFraction_OfTheParentsContentBox_FollowTheParent() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element outer = default;
+            Element inner = default;
+            scene.Mount(() =>
+            {
+                inner = Box().WidthFraction(0.5f).HeightFraction(0.25f);
+                return outer = Box(inner).Width(120).Height(60).Padding(10);
+            });
+            scene.Scheduler.Run();
+            LayoutStyle style = scene.Tree.Nodes.GetRef(inner.Node).Layout.Style;
+            Rect before = scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect;
+
+            _ = outer.Width(180).Height(100);
+            scene.Scheduler.Run();
+            Rect after = scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect;
+
+            Assert.Equal((Length.Percent(0.5f), Length.Percent(0.25f)), (style.Width, style.Height));
+            Assert.Equal(new Rect(10, 10, 50, 10), before);
+            Assert.Equal((80f, 20f), (after.Width, after.Height));
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width or a height fraction that is negative or not a finite number throws and leaves the node as it was; 0 and a fraction
+    /// above 1 are taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene, and a box of width 30 and height 20 made in its root function.
+    ///
+    /// Steps:
+    /// - Call <c>WidthFraction</c> and <c>HeightFraction</c> with -0.25, NaN, positive infinity, and negative infinity; read the
+    ///   style. Then call <c>WidthFraction(0)</c> and <c>HeightFraction(1.5f)</c>.
+    ///
+    /// Expected:
+    /// - For each value, both calls throw <see cref="ArgumentOutOfRangeException"/> naming <c>fraction</c>, and the style still
+    ///   holds 30 and 20 pixels; then it holds the percentages 0 and 1.5.
+    /// </remarks>
+    [Theory]
+    [InlineData(-0.25f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    public void WidthAndHeightFraction_NegativeOrNotFinite_Throw(float fraction) =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            scene.Mount(() =>
+            {
+                Element box = Box().Width(30).Height(20);
+                Assert.Equal("fraction", Assert.Throws<ArgumentOutOfRangeException>(() => box.WidthFraction(fraction)).ParamName);
+                Assert.Equal("fraction", Assert.Throws<ArgumentOutOfRangeException>(() => box.HeightFraction(fraction)).ParamName);
+                LayoutStyle kept = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Assert.Equal((Length.Px(30), Length.Px(20)), (kept.Width, kept.Height));
+
+                _ = box.WidthFraction(0).HeightFraction(1.5f);
+                LayoutStyle taken = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Assert.Equal((Length.Percent(0), Length.Percent(1.5f)), (taken.Width, taken.Height));
+                return box;
+            });
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width fraction and a height fraction under a parent whose height is auto: the width follows the parent's content box, and
+    /// the height has no effect, since a percentage height resolves only against a definite height (design §2.13, "割合の幅と
+    /// 高さ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box of width 120, padding 10, and no height, holding a box of width fraction 0.5 and height fraction 0.5,
+    ///   which holds a box of 20 x 20, laid out by the first frame. The shape is that of Taffy's Chrome fixture
+    ///   block_percentage_height_with_min_height_parent (tests/XylemUI.Core.Tests/Fixtures/Taffy/block.xml), where a child of
+    ///   height 50% under a parent of no height takes its content's 20.
+    ///
+    /// Steps:
+    /// - Read the middle box's rectangle and the outer box's height.
+    ///
+    /// Expected:
+    /// - The middle box is 50 x 20 at (10, 10): half of the content box's 100 in width, and its content's 20 in height. The outer
+    ///   box is 40 high (20 and the padding).
+    /// </remarks>
+    [Fact]
+    public void HeightFraction_UnderAParentOfAutoHeight_HasNoEffect() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element outer = default;
+            Element middle = default;
+            scene.Mount(() =>
+            {
+                middle = Box(Box().Width(20).Height(20)).WidthFraction(0.5f).HeightFraction(0.5f);
+                return outer = Box(middle).Width(120).Padding(10);
+            });
+            scene.Scheduler.Run();
+            Rect rect = scene.Tree.Nodes.GetRef(middle.Node).Layout.Rect;
+            float outerHeight = scene.Tree.Nodes.GetRef(outer.Node).Layout.Rect.Height;
+
+            Assert.Equal(new Rect(10, 10, 50, 20), rect);
+            Assert.Equal(40f, outerHeight);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width fraction under a parent whose width comes from its content (a child of a row with no width) counts as an automatic
+    /// width while the parent's width is found, and then resolves against the parent's content box (design §2.13, "割合の幅と高さ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box of width 300 holding a row, which holds a box P with no width. P holds a box H of width fraction 0.5,
+    ///   which holds a box of 140 x 10. Laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read P's width and H's rectangle.
+    ///
+    /// Expected:
+    /// - Derived by hand from CSS (Sizing 3, a percentage of an indefinite size): P is a flex item of automatic width, so its width
+    ///   is its content's. H's percentage has no definite basis then, so H counts as automatic, its content's 140; P is 140 wide,
+    ///   which fits the row's 300. P's width is then definite, and H is 0.5 x 140 = 70 wide and 10 high at (0, 0). P is 140 wide,
+    ///   and H is (0, 0, 70, 10).
+    /// </remarks>
+    [Fact]
+    public void WidthFraction_UnderAParentSizedByItsContent_CountsAsAutoAndThenResolves() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element parent = default;
+            Element half = default;
+            scene.Mount(() =>
+            {
+                half = Box(Box().Width(140).Height(10)).WidthFraction(0.5f);
+                parent = Box(half);
+                return Box(Row(parent)).Width(300);
+            });
+            scene.Scheduler.Run();
+
+            Assert.Equal(140f, scene.Tree.Nodes.GetRef(parent.Node).Layout.Rect.Width);
+            Assert.Equal(new Rect(0, 0, 70, 10), scene.Tree.Nodes.GetRef(half.Node).Layout.Rect);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width fraction and a height fraction set a node's border box: its own padding and border are inside the fraction, not
+    /// added to it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box 120 x 60 with a padding of 10 (a content box of 100 x 40), holding a box of width fraction 0.5 and height
+    ///   fraction 0.5 with a padding of 4 and a border 2 wide, laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the inner box's rectangle.
+    ///
+    /// Expected:
+    /// - 50 x 20 at (10, 10), not 62 x 32.
+    /// </remarks>
+    [Fact]
+    public void WidthAndHeightFraction_WithOwnPaddingAndBorder_SetTheBorderBox() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element inner = default;
+            scene.Mount(() =>
+            {
+                inner = Box().WidthFraction(0.5f).HeightFraction(0.5f).Padding(4).Border(2, new Paint(Red));
+                return Box(inner).Width(120).Height(60).Padding(10);
+            });
+            scene.Scheduler.Run();
+
+            Assert.Equal(new Rect(10, 10, 50, 20), scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A smallest width widens a node whose content or width is narrower and leaves a wider one; a negative or not finite width
+    /// throws and leaves the style.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a row of three boxes 10 high: one with no width and a smallest width of 60; one of width 30 with a smallest width
+    ///   of 50; one of width 80 with a smallest width of 50; laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the three rectangles and the first box's style. Call <c>MinWidth</c> on the first box with -1, NaN, and positive
+    ///   infinity, and read its style.
+    ///
+    /// Expected:
+    /// - The boxes are 60, 50, and 80 wide, at x 0, 60, and 110; the style holds 60 pixels. Each call throws
+    ///   <see cref="ArgumentOutOfRangeException"/> naming <c>width</c>, and the style still holds 60 pixels.
+    /// </remarks>
+    [Fact]
+    public void MinWidth_NarrowerContentOrWidth_IsWidened() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element[] boxes = new Element[3];
+            scene.Mount(() =>
+            {
+                boxes[0] = Box().MinWidth(60).Height(10);
+                boxes[1] = Box().Width(30).MinWidth(50).Height(10);
+                boxes[2] = Box().Width(80).MinWidth(50).Height(10);
+                return Row(boxes);
+            });
+            scene.Scheduler.Run();
+            (float X, float Width)[] placed = Array.ConvertAll(
+                boxes,
+                box => (scene.Tree.Nodes.GetRef(box.Node).Layout.Rect.X, scene.Tree.Nodes.GetRef(box.Node).Layout.Rect.Width)
+            );
+            Length set = scene.Tree.Nodes.GetRef(boxes[0].Node).Layout.Style.MinWidth;
+
+            string?[] names =
+            [
+                Assert.Throws<ArgumentOutOfRangeException>(() => boxes[0].MinWidth(-1)).ParamName,
+                Assert.Throws<ArgumentOutOfRangeException>(() => boxes[0].MinWidth(float.NaN)).ParamName,
+                Assert.Throws<ArgumentOutOfRangeException>(() => boxes[0].MinWidth(float.PositiveInfinity)).ParamName,
+            ];
+            Length kept = scene.Tree.Nodes.GetRef(boxes[0].Node).Layout.Style.MinWidth;
+
+            Assert.Equal([(0f, 60f), (60f, 50f), (110f, 80f)], placed);
+            Assert.Equal(Length.Px(60), set);
+            Assert.Equal(["width", "width", "width"], names);
+            Assert.Equal(Length.Px(60), kept);
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// The border's paint alone changes the paint of a node's border and leaves its width: the node is marked to be drawn again
     /// with no layout, and the same paint again changes nothing (design §13.2).
     /// </summary>

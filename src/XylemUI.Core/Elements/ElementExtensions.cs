@@ -33,6 +33,46 @@ public static partial class ElementExtensions
         Layout(element, style => style with { Height = Length.Px(Check(height, nameof(height))) });
 
     /// <summary>
+    /// Sets the width of the node's border box as a fraction of the width of its parent's content box, as a CSS percentage
+    /// width does (design §2.13, "The component API"): 1 is the parent's whole width, and the width follows when the parent's
+    /// changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="fraction">The fraction, finite and at or above 0; 0.5 is half the parent's width, and above 1 is wider than
+    /// the parent.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="fraction"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
+    public static Element WidthFraction(this Element element, float fraction) =>
+        Layout(element, style => style with { Width = Length.Percent(Check(fraction, nameof(fraction))) });
+
+    /// <summary>
+    /// Sets the height of the node's border box as a fraction of the height of its parent's content box, as a CSS percentage
+    /// height does (design §2.13, "The component API"): 1 is the parent's whole height, and the height follows when the parent's
+    /// changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="fraction">The fraction, finite and at or above 0; 0.5 is half the parent's height, and above 1 is taller than
+    /// the parent.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="fraction"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
+    public static Element HeightFraction(this Element element, float fraction) =>
+        Layout(element, style => style with { Height = Length.Percent(Check(fraction, nameof(fraction))) });
+
+    /// <summary>
+    /// Sets the smallest width of the node's border box, as CSS's <c>min-width</c> does (design §2.13, "The component API"): the
+    /// layout gives the node at least this width, also when its content or the width it is given is narrower.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="width">The smallest width, finite and at or above 0.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
+    public static Element MinWidth(this Element element, float width) =>
+        Layout(element, style => style with { MinWidth = Length.Px(Check(width, nameof(width))) });
+
+    /// <summary>
     /// Sets the padding on all four sides.
     /// </summary>
     /// <param name="element">The node.</param>
