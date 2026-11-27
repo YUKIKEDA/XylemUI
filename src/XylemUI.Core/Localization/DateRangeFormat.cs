@@ -212,12 +212,34 @@ internal sealed class DateRangeFormat
     }
 
     /// <summary>
-    /// How a range whose dates first differ in one field is written. The default value writes the earlier date alone.
+    /// How a range whose dates first differ in one field is written. The default value writes the earlier date alone. A plain struct,
+    /// not a record: NativeAOT keeps a record's PrintMembers and GetHashCode, about 530 bytes that nothing calls (row TH2).
     /// </summary>
-    /// <param name="Kind">The way.</param>
-    /// <param name="First">For <see cref="SlotKind.Split"/>, the first part; for <see cref="SlotKind.Fallback"/>, the pattern of
+    /// <param name="kind">The way.</param>
+    /// <param name="first">For <see cref="SlotKind.Split"/>, the first part; for <see cref="SlotKind.Fallback"/>, the pattern of
     /// each date, <see langword="null"/> for the format's own.</param>
-    /// <param name="Second">For <see cref="SlotKind.Split"/>, the second part.</param>
-    /// <param name="LaterFirst">For <see cref="SlotKind.Split"/>, whether the first part is written with the later date.</param>
-    public readonly record struct Slot(SlotKind Kind, DatePatternItem[]? First, DatePatternItem[]? Second, bool LaterFirst);
+    /// <param name="second">For <see cref="SlotKind.Split"/>, the second part.</param>
+    /// <param name="laterFirst">For <see cref="SlotKind.Split"/>, whether the first part is written with the later date.</param>
+    public readonly struct Slot(SlotKind kind, DatePatternItem[]? first, DatePatternItem[]? second, bool laterFirst)
+    {
+        /// <summary>
+        /// Gets the way.
+        /// </summary>
+        public SlotKind Kind { get; } = kind;
+
+        /// <summary>
+        /// Gets the first part, or the pattern of each date for <see cref="SlotKind.Fallback"/>.
+        /// </summary>
+        public DatePatternItem[]? First { get; } = first;
+
+        /// <summary>
+        /// Gets the second part.
+        /// </summary>
+        public DatePatternItem[]? Second { get; } = second;
+
+        /// <summary>
+        /// Gets a value indicating whether the first part is written with the later date.
+        /// </summary>
+        public bool LaterFirst { get; } = laterFirst;
+    }
 }
