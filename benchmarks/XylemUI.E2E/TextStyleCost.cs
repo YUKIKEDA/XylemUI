@@ -82,6 +82,7 @@ internal static class TextStyleCost
         long sameResolved = 0;
         for (int pass = 0; pass < passes + Warmup; pass++)
         {
+            Unmark(tree, leaves);
             long resolvedBefore = tree.TextLeavesResolved;
             long start = Stopwatch.GetTimestamp();
             foreach (Element row in rows)
@@ -111,6 +112,7 @@ internal static class TextStyleCost
         for (int pass = 0; pass < passes + Warmup; pass++)
         {
             bool even = pass % 2 == 0;
+            Unmark(tree, leaves);
             long resolvedBefore = tree.TextLeavesResolved;
             long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
             long start = Stopwatch.GetTimestamp();
@@ -174,6 +176,7 @@ internal static class TextStyleCost
         {
             // Each pass changes every leaf: 16 and 14 px, or bold and regular, in turn from the default (14 px, regular).
             bool even = pass % 2 == 0;
+            Unmark(tree, leaves);
             long resolvedBefore = tree.TextLeavesResolved;
             long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
             long start = Stopwatch.GetTimestamp();
@@ -258,7 +261,17 @@ internal static class TextStyleCost
     private static void Typography(Element row, int weight, float size, float lineHeight) =>
         _ = row.FontWeight(new FontWeight(weight)).FontSize(size).LineHeight(lineHeight);
 
-    // The leaves marked for a change of their style since the last layout pass (ChangeKind.Font sets DirtyFlags.Text).
+    // The leaves marked for a change of their style since Unmark (ChangeKind.Font sets DirtyFlags.Text).
+    // Takes the text marks off the leaves, as the frame does after it shapes them (WindowFrames): the layout pass takes off only the
+    // layout marks, so without this a pass would count the marks of the leaves' creation and of the passes before.
+    private static void Unmark(UiTree tree, Element[] leaves)
+    {
+        foreach (Element leaf in leaves)
+        {
+            tree.Nodes.GetRef(leaf.Node).Dirty.SelfDirty &= ~DirtyFlags.Text;
+        }
+    }
+
     private static int Marked(UiTree tree, Element[] leaves)
     {
         int count = 0;
