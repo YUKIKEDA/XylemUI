@@ -1,13 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>XylemUI</RootNamespace>
-    <Description>Starts a XylemUI app: makes the Windows host and opens its window through the platform contract (design §2.13, §6.0).</Description>
+    <Description>Starts a XylemUI app: makes the OS host the app was built with and opens its window through the platform contract (design §2.13, §6.0).</Description>
   </PropertyGroup>
   <ItemGroup>
+    <!-- No host: the app references the one for its runtime identifier, which its module initializer registers (design §6.0,
+         "ホストの選び方"). -->
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
-    <!-- The host pairs the window with the D3D11 renderer, which comes to the app through it (design §6.0, row PL1). -->
-    <ProjectReference Include="..\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- The real window's tests: the click on the sample's button, the frames, and the scope of the window (row V1d). -->

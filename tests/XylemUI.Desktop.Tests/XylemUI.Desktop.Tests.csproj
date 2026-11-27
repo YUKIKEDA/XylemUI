@@ -8,6 +8,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XylemUI.Desktop\XylemUI.Desktop.csproj" />
+    <!-- The real windows open through the Windows host, which the tests also make themselves (TestHost), and which the module
+         initializer registers for XylemApp.Run (design §6.0, "ホストの選び方"). The tests run on Windows only. -->
+    <ProjectReference Include="..\..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
     <!-- The tests run the sample's own root function (row V1d). -->
     <ProjectReference Include="..\..\samples\Counter\Counter.csproj" />
     <ProjectReference Include="..\..\samples\Todo\Todo.csproj" />

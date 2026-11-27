@@ -1,4 +1,4 @@
-using XylemUI.Platform.Windows;
+using System.Runtime.InteropServices;
 using XylemUI.Text;
 
 namespace XylemUI;
@@ -25,10 +25,11 @@ public static class XylemApp
     /// <param name="options">The window; <see langword="null"/> for the defaults of <see cref="WindowOptions"/>.</param>
     /// <returns>The exit code of the message loop: 0 when the last window closed.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Another thread is the UI thread, a message loop already runs, the calling thread is in COM's multithreaded apartment (the
-    /// app's <c>Main</c> lacks <c>[STAThread]</c>), the window, its renderer, or the root function failed, or no default key
-    /// bindings are registered (the app is built without the source generator of <c>XylemUI.Core</c> and did not call
-    /// <see cref="Keymap.RegisterDefaults"/>).
+    /// Another thread is the UI thread, a message loop already runs, no platform host is registered for the runtime identifier
+    /// (the app references no host for it, or is built without the source generator of <c>XylemUI.Core</c>; design §6.0), the
+    /// calling thread is in COM's multithreaded apartment (the Windows host; the app's <c>Main</c> lacks <c>[STAThread]</c>), the
+    /// window, its renderer, or the root function failed, or no default key bindings are registered (the app is built without the
+    /// source generator of <c>XylemUI.Core</c> and did not call <see cref="Keymap.RegisterDefaults"/>).
     /// </exception>
     /// <exception cref="ArgumentException">The options' size is not a positive number, or their
     /// <see cref="WindowOptions.SupportedLocales"/> hold a <see langword="null"/>.</exception>
@@ -42,16 +43,27 @@ public static class XylemApp
             throw new InvalidOperationException("XylemApp.Run runs one message loop; it already runs.");
         }
 
+        // The host the app was built with, which its module initializer registered (design §6.0, "ホストの選び方"). Read before the
+        // loop counts as running, so that a run that throws for want of one changes nothing.
+        Func<IPlatformApp> host =
+            PlatformHostRegistry.Factory
+            ?? throw new InvalidOperationException(
+                "No platform host is registered for the runtime identifier '"
+                    + RuntimeInformation.RuntimeIdentifier
+                    + "': the app references no host for it, or is built without the source generator of XylemUI.Core."
+            );
+
         // The loop can end with windows open (Win32MessageLoop.Quit from the app); the next run starts with none counted.
         _running = true;
         try
         {
-            // The host initializes OLE and sets its dispatcher and the loop's synchronization context before the window, whose
-            // root function makes elements that use them (design §6.0, "The order of creation"). Declared first, it is disposed
-            // after the window core (which disposes the window) and the text tools, and puts back what it replaced when anything
-            // from here on throws too, so that the app can run again. A host that throws while it is made has changed nothing.
-            // The text tools are the UI thread's one set, made from the host's fonts, which the host disposes after them.
-            using var app = new Win32PlatformApp();
+            // The host sets its dispatcher and the loop's synchronization context before the window, whose root function makes
+            // elements that use them, and the Windows host initializes OLE (design §6.0, "The order of creation"). Declared first,
+            // it is disposed after the window core (which disposes the window) and the text tools, and puts back what it replaced
+            // when anything from here on throws too, so that the app can run again. A host that throws while it is made has
+            // changed nothing. The text tools are the UI thread's one set, made from the host's fonts, which the host disposes
+            // after them.
+            using IPlatformApp app = host();
             using var text = new TextContext(app.Fonts);
             using WindowCore core = OpenWindow(app, text, root, options ?? new WindowOptions(), show: true);
             Open(core, app);

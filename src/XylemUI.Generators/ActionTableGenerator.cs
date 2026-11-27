@@ -16,8 +16,9 @@ namespace XylemUI.Generators;
 /// method and those of the assemblies it references, so that the names are known before the app's first line runs and nothing is
 /// found by reflection. The module initializer also registers the default key bindings of the assemblies the app references
 /// (<c>XylemUI.DefaultKeyBindingsAttribute</c>, design §7, "The default keys and actions"), an assembly after the assemblies
-/// it references, and sets the root wrapper of the windows that the app's own <c>XylemUI.WindowThemeAttribute</c> names (design
-/// §13.2, "根で置くもの").
+/// it references, sets the root wrapper of the windows that the app's own <c>XylemUI.WindowThemeAttribute</c> names (design
+/// §13.2, "根で置くもの"), and registers the OS host that an assembly it references names with <c>XylemUI.PlatformHostAttribute</c>
+/// (design §6.0, "ホストの選び方").
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class ActionTableGenerator : IIncrementalGenerator
@@ -29,6 +30,8 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     private const string AddDefaultsName = "AddDefaults";
     private const string WindowThemeAttributeName = "XylemUI.WindowThemeAttribute";
     private const string WrapName = "Wrap";
+    private const string PlatformHostAttributeName = "XylemUI.PlatformHostAttribute";
+    private const string RegisterName = "Register";
 
     private static readonly DiagnosticDescriptor NotAnAction = new(
         "XYLEM001",
@@ -88,6 +91,24 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         "XYLEM007",
         "The class of the default key bindings has no AddDefaults method",
         "'{0}' is named by [assembly: DefaultKeyBindings] of '{1}' and has no accessible 'public static void AddDefaults(XylemUI.Keymap keymap)'; its default key bindings are not registered",
+        "XylemUI",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor TwoPlatformHosts = new(
+        "XYLEM008",
+        "The app references more than one platform host",
+        "The assemblies the app references carry [assembly: PlatformHost] for '{0}'; an app runs on one host, so none is registered",
+        "XylemUI",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor NoRegister = new(
+        "XYLEM009",
+        "The class of the platform host has no Register method",
+        "'{0}' is named by [assembly: PlatformHost] of '{1}' and has no accessible 'public static void Register()'; that host is not registered",
         "XylemUI",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -283,9 +304,62 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             isApp,
             new EquatableArray<TableInfo>(tables.ToImmutable()),
             new EquatableArray<DefaultsInfo>(isApp ? ReadDefaults(compilation) : ImmutableArray<DefaultsInfo>.Empty),
-            new EquatableArray<WindowThemeInfo>(isApp ? ReadWindowThemes(compilation) : ImmutableArray<WindowThemeInfo>.Empty)
+            new EquatableArray<WindowThemeInfo>(isApp ? ReadWindowThemes(compilation) : ImmutableArray<WindowThemeInfo>.Empty),
+            new EquatableArray<HostInfo>(isApp ? ReadHosts(compilation) : ImmutableArray<HostInfo>.Empty)
         );
     }
+
+    // The OS hosts the assemblies the app references name (design §6.0, "ホストの選び方"), in the order of the assemblies' names.
+    // The attribute is internal to XylemUI.Core, which shows it to its hosts, so the app's own assembly cannot carry it and is not
+    // read. An attribute whose argument names no class (typeof(T[]), null) is kept as one with no Register: it is the error
+    // XYLEM009, and it counts as a host for XYLEM008.
+    private static ImmutableArray<HostInfo> ReadHosts(Compilation compilation)
+    {
+        var hosts = ImmutableArray.CreateBuilder<HostInfo>();
+        IEnumerable<IAssemblySymbol> references = compilation.SourceModule.ReferencedAssemblySymbols.OrderBy(
+            static r => r.Name,
+            StringComparer.Ordinal
+        );
+        foreach (IAssemblySymbol reference in references)
+        {
+            foreach (AttributeData attribute in reference.GetAttributes())
+            {
+                if (attribute.AttributeClass?.ToDisplayString() != PlatformHostAttributeName)
+                {
+                    continue;
+                }
+
+                ITypeSymbol? argument = attribute.ConstructorArguments.Length == 1 ? attribute.ConstructorArguments[0].Value as ITypeSymbol : null;
+                INamedTypeSymbol? type = argument as INamedTypeSymbol;
+                hosts.Add(
+                    new HostInfo(
+                        type?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? string.Empty,
+                        argument?.ToDisplayString() ?? "null",
+                        reference.Name,
+                        type is not null && HasRegister(type, compilation)
+                    )
+                );
+            }
+        }
+
+        return hosts.ToImmutable();
+    }
+
+    // Whether a class has the method the module initializer calls: static and neither abstract nor virtual (an interface's static
+    // abstract or virtual member cannot be called through the interface), not generic, with no parameter and no result, and one the
+    // app's code can call.
+    private static bool HasRegister(INamedTypeSymbol type, Compilation compilation) =>
+        type.GetMembers(RegisterName)
+            .OfType<IMethodSymbol>()
+            .Any(m =>
+                m.IsStatic
+                && !m.IsAbstract
+                && !m.IsVirtual
+                && !m.IsGenericMethod
+                && m.ReturnsVoid
+                && m.Parameters.Length == 0
+                && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
+            );
 
     // The classes the app's own [assembly: WindowTheme] attributes name. Those of the assemblies it references are not read: a
     // library's attribute does nothing (design §13.2, "包みは 1 つ"). An attribute of the app whose argument names no class
@@ -539,9 +613,33 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
         WindowThemeInfo? wrapper = assembly.WindowThemes.Count == 1 ? assembly.WindowThemes.First() : null;
 
+        // An app runs on one host, and hosts have no order in which one would win: with two, none is registered, and XylemApp.Run
+        // throws for want of one. The errors have no place in the app's source: the attributes are the referenced assemblies'.
+        if (assembly.Hosts.Count > 1)
+        {
+            string named = string.Join("', '", assembly.Hosts.Select(static h => h.DisplayName));
+            output.ReportDiagnostic(Diagnostic.Create(TwoPlatformHosts, Location.None, named));
+        }
+
+        foreach (HostInfo host in assembly.Hosts)
+        {
+            if (!host.Callable)
+            {
+                output.ReportDiagnostic(Diagnostic.Create(NoRegister, Location.None, host.DisplayName, host.Assembly));
+            }
+        }
+
+        HostInfo? platformHost = assembly.Hosts.Count == 1 ? assembly.Hosts.First() : null;
+
         // A library with no action has no table. An app has one even with none of its own when its module initializer has work:
-        // the tables it references, their default key bindings, or the root wrapper of its windows.
-        if (valid.Count == 0 && !(assembly.IsApp && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0 || wrapper is { Callable: true })))
+        // the tables it references, their default key bindings, the root wrapper of its windows, or its host.
+        if (
+            valid.Count == 0
+            && !(
+                assembly.IsApp
+                && (assembly.Tables.Count > 0 || assembly.Defaults.Count > 0 || wrapper is { Callable: true } || platformHost is { Callable: true })
+            )
+        )
         {
             return;
         }
@@ -633,6 +731,12 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
             if (wrapper is { Callable: true })
             {
                 _ = text.Append("            global::XylemUI.WindowRoot.SetWrapper(").Append(wrapper.TypeName).Append(".Wrap);\n");
+            }
+
+            // Last: nothing above reads the host. XylemApp.Run reads it, after the module initializers of the app have run.
+            if (platformHost is { Callable: true })
+            {
+                _ = text.Append("            ").Append(platformHost.TypeName).Append(".Register();\n");
             }
 
             _ = text.Append("        }\n");
@@ -770,11 +874,14 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
 
     private sealed record WindowThemeInfo(string TypeName, string DisplayName, bool Callable, LocationInfo? Location);
 
+    private sealed record HostInfo(string TypeName, string DisplayName, string Assembly, bool Callable);
+
     private sealed record AssemblyInfo(
         string Identifier,
         bool IsApp,
         EquatableArray<TableInfo> Tables,
         EquatableArray<DefaultsInfo> Defaults,
-        EquatableArray<WindowThemeInfo> WindowThemes
+        EquatableArray<WindowThemeInfo> WindowThemes,
+        EquatableArray<HostInfo> Hosts
     );
 }
