@@ -393,6 +393,10 @@ public sealed class LocaleDataTests
 
         internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
 
+        internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.En.DatePatternTable;
+
         internal override PluralRules CreatePlurals() => new(Other, Other);
 
         private static PluralCategory Other(in PluralOperands operands) => PluralCategory.Other;
@@ -412,6 +416,10 @@ public sealed class LocaleDataTests
         internal override ReadOnlySpan<byte> CompactTable => CldrLocales.En.CompactTable;
 
         internal override ReadOnlySpan<byte> CurrencyTable => CldrLocales.En.CurrencyTable;
+
+        internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
+
+        internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.En.DatePatternTable;
 
         internal override PluralRules CreatePlurals()
         {

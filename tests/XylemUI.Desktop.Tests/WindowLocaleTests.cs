@@ -474,6 +474,75 @@ public sealed class WindowLocaleTests
     }
 
     /// <summary>
+    /// A text that writes a time with the skeleton jm, in the window's tables and 24-hour form, follows
+    /// <see cref="HeadlessApp.SetUse24HourFormat"/>: en's 12-hour time becomes the 24-hour one and comes back, the same value runs
+    /// nothing again, and a text that reads no format does not run (design §4.11, "Tests", the keys: the check that step (3) of row
+    /// LC2 left to step (5)).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An app that supports en, with the OS's languages "en-US" and the 24-hour form off. Its root function makes the format of jm
+    ///   from <see cref="Localization.Data"/> and <see cref="Localization.Use24HourFormat"/> in a computed, a text that writes 13:05
+    ///   with it and counts its runs, and a text that writes a constant and counts its runs.
+    ///
+    /// Steps:
+    /// - Read the first text; set the 24-hour form on, on again, and off, reading the text after each.
+    ///
+    /// Expected:
+    /// - 1:05 PM (with U+202F before PM, as CLDR 49's en hm is h:mm U+202F a), 13:05, 13:05, and 1:05 PM again; the first text ran 3
+    ///   times, the second once.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task SetUse24HourFormat_JmInEn_ChangesTheTimeAndBack()
+    {
+        Element? time = null;
+        int timeRuns = 0;
+        int plainRuns = 0;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                IReadOnlySignal<LocaleData> data = Localization.Data.Use();
+                IReadOnlySignal<bool> use24HourFormat = Localization.Use24HourFormat.Use();
+                Computed<DateFormatter> format = Computed.Create(() => DateFormatter.FromSkeleton(data.Get(), "jm", use24HourFormat.Get()));
+                Element shown = Elements.Text(
+                    (ref NodeTextWriter text) =>
+                    {
+                        timeRuns++;
+                        text.Write($"{format.Get().Of(new TimeOnly(13, 5))}");
+                    }
+                );
+                Element plain = Elements.Text(
+                    (ref NodeTextWriter text) =>
+                    {
+                        plainRuns++;
+                        text.Write("x".AsSpan());
+                    }
+                );
+                time = shown;
+                return Column(shown, plain);
+            },
+            new HeadlessOptions { SupportedLocales = [CldrLocales.En], SystemLocales = ["en-US"] }
+        );
+        _ = app.PumpAndSettle();
+        Element timeText = time ?? throw new InvalidOperationException("The root did not run.");
+        string before = TextOf(app, timeText);
+
+        app.SetUse24HourFormat(true);
+        _ = app.PumpAndSettle();
+        string on = TextOf(app, timeText);
+        app.SetUse24HourFormat(true);
+        _ = app.PumpAndSettle();
+        string again = TextOf(app, timeText);
+        app.SetUse24HourFormat(false);
+        _ = app.PumpAndSettle();
+        string off = TextOf(app, timeText);
+
+        Assert.Equal(("1:05 PM", "13:05", "13:05", "1:05 PM"), (before, on, again, off));
+        Assert.Equal((3, 1), (timeRuns, plainRuns));
+    }
+
+    /// <summary>
     /// The headless start refuses supported locales that hold a <see langword="null"/>, where it refuses its other options, before
     /// any part of the app is made.
     /// </summary>
@@ -570,4 +639,6 @@ public sealed class WindowLocaleTests
         Assert.IsType<InvalidOperationException>(offThread);
         Assert.IsType<ObjectDisposedException>(disposed);
     }
+
+    private static string TextOf(HeadlessApp app, Element text) => app.Tree.Nodes.GetRef(text.Node).Text!.Text.ToString();
 }

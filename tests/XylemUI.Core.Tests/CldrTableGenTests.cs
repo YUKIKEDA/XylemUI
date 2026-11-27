@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -8,8 +9,9 @@ namespace XylemUI.Tests;
 // The generator of the CLDR tables, tools/CldrTableGen (LC2, design §4.11, "How the tables are made" and "Tests"), run on a small
 // zip of the json-full shape that the tests make: two runs write the same bytes, a locale takes the plural rules of its plural parent
 // or of its truncated tag, a zip whose SHA-256 is not the lock's stops it, and so does a language of row LC4 with neither data nor
-// an alias. The tables it wrote from the real zip are checked in
-// LocaleDataTests and PluralRulesTests.
+// an alias; the number tables and the date tables hold the bytes of the json, and a skeleton or a pattern the formats cannot take stops
+// it. The tables it wrote from the real zip are checked in LocaleDataTests, PluralRulesTests, NumberFormatterTests,
+// DateFormatterTests, and DateNamesTests.
 public sealed class CldrTableGenTests
 {
     // The characters of the number data that are not ASCII, written by code so that the source shows them.
@@ -53,6 +55,123 @@ public sealed class CldrTableGenTests
         "af am ar as az be bg bn bo bs ca cs cy da de el en es et eu fa fi fil fr ga gl gsw gu he hi hr hu hy id is it ja ka kk km kn ko ky "
         + "lo lt lv mk ml mn mr ms my nb ne nl no or pa pl ps pt ro ru si sk sl sq sr sv sw ta te th tl tr ug uk ur uz vi zh zu"
     ).Split(' ');
+
+    // The available formats of en in the zip of these tests: enough for each of the 41 skeletons, with an alternative, a count, and a
+    // day the generator does not read (MMMddd), and without E with EEEE, LLL, LLLL, MMMM, QQQ, QQQQ, hmz, hz, m, or s.
+    private static readonly (string Key, string Pattern)[] EnFormats =
+    [
+        ("d", "d"),
+        ("E", "ccc"),
+        ("Ed", "d E"),
+        ("H", "HH"),
+        ("Hm", "HH:mm"),
+        ("Hms", "HH:mm:ss"),
+        ("h", "h a"),
+        ("hm", "h:mm a"),
+        ("hm-alt-ascii", "h:mm a"),
+        ("hms", "h:mm:ss a"),
+        ("hmv", "h:mm a v"),
+        ("Hmv", "HH:mm v"),
+        ("hv", "h a v"),
+        ("Hv", "HH v"),
+        ("M", "L"),
+        ("Md", "M/d"),
+        ("MEd", "E, M/d"),
+        ("MMM", "LLL"),
+        ("MMMd", "MMM d"),
+        ("MMMddd", "MMM ddd"),
+        ("MMMEd", "E, MMM d"),
+        ("MMMMd", "MMMM d"),
+        ("MMMMEd", "E, MMMM d"),
+        ("ms", "mm:ss"),
+        ("y", "y"),
+        ("yM", "M/y"),
+        ("yMd", "M/d/y"),
+        ("yMEd", "E, M/d/y"),
+        ("yMMM", "MMM y"),
+        ("yMMMd", "MMM d, y"),
+        ("yMMMEd", "E, MMM d, y"),
+        ("yMMMM", "MMMM y"),
+        ("yMMMMd", "MMMM d, y"),
+        ("yMMMMEd", "E, MMMM d, y"),
+        ("yQQQ", "QQQ y"),
+        ("yQQQQ", "QQQQ y"),
+        ("yw-count-one", "'week' w 'of' Y"),
+    ];
+
+    // ja's: en's with the hours and the month of Japanese, whose MMM is a number (M月).
+    private static readonly (string Key, string Pattern)[] JaFormats =
+    [
+        .. EnFormats.Where(format => format.Key is not ("H" or "M" or "MMM")),
+        ("H", "H時"),
+        ("M", "M月"),
+        ("MMM", "M月"),
+    ];
+
+    // zh's: en's with the 12-hour formats of a flexible day period, as zh-Hant's (Bh:mm).
+    private static readonly (string Key, string Pattern)[] ZhFormats =
+    [
+        .. EnFormats.Where(format => format.Key is not ("h" or "hm" or "hms" or "hmv")),
+        ("h", "Bh時"),
+        ("hm", "Bh:mm"),
+        ("hms", "Bh:mm:ss"),
+        ("hmv", "Bh:mm [v]"),
+    ];
+
+    // The patterns the generator finds for en's 41 skeletons (in the order of Flutter's validDateFormats), and its 24-hour patterns
+    // of the 7 with j, worked out by hand with the rules of tools/CldrTableGen/SkeletonMatcher.cs. yMMMMEEEEd is en's full date
+    // pattern, which no available format has the base of.
+    private static readonly string[] EnPatterns =
+    [
+        "d",
+        "ccc",
+        "cccc",
+        "LLL",
+        "LLLL",
+        "L",
+        "M/d",
+        "EEE, M/d",
+        "LLL",
+        "MMM d",
+        "EEE, MMM d",
+        "LLLL",
+        "MMMM d",
+        "EEEE, MMMM d",
+        "QQQ",
+        "QQQQ",
+        "y",
+        "M/y",
+        "M/d/y",
+        "EEE, M/d/y",
+        "MMM y",
+        "MMM d, y",
+        "EEE, MMM d, y",
+        "MMMM y",
+        "MMMM d, y",
+        "EEEE d MMMM y",
+        "QQQ y",
+        "QQQQ y",
+        "HH",
+        "HH:mm",
+        "HH:mm:ss",
+        "h a",
+        "h:mm a",
+        "h:mm:ss a",
+        "h:mm a v",
+        "h:mm a z",
+        "h a v",
+        "h a z",
+        "m",
+        "mm:ss",
+        "s",
+        "HH",
+        "HH:mm",
+        "HH:mm:ss",
+        "HH:mm v",
+        "HH:mm z",
+        "HH v",
+        "HH z",
+    ];
 
     // The lines of CldrLikelyScripts.g.cs that the zip of these tests gives (Tool_LikelyScripts_HoldTheKeysWithoutAScript).
     private static readonly string[] LikelyLines =
@@ -127,6 +246,48 @@ public sealed class CldrTableGenTests
     }
 
     /// <summary>
+    /// Gets the cases of Tool_DateDataTheFormatsDoNotRead_Stops: the entry of the zip, the text replaced in it, the text put in its
+    /// place, and the message the tool writes.
+    /// </summary>
+    public static TheoryData<string, string, string, string> UnreadDateData
+    {
+        get
+        {
+            const string Zones = "cldr-dates-full/main/de/timeZoneNames.json";
+            const string Gregorian = "cldr-dates-full/main/de/ca-gregorian.json";
+            return new()
+            {
+                {
+                    Zones,
+                    "\"hourFormat\": \"+HH:mm;-HH:mm\"",
+                    "\"hourFormat\": \"+HH:mm\"",
+                    "The hourFormat +HH:mm of de is not the form the formats write."
+                },
+                {
+                    Zones,
+                    "\"hourFormat\": \"+HH:mm;-HH:mm\"",
+                    "\"hourFormat\": \"+HHH:mm;-HH:mm\"",
+                    "The hourFormat +HHH:mm;-HH:mm of de is not the form the formats write."
+                },
+                { Zones, "\"gmtFormat\": \"GMT{0}\"", "\"gmtFormat\": \"GMT\"", "The pattern GMT of de does not have {0} once." },
+                { Gregorian, "\"short\": \"{1} {0}\"", "\"short\": \"{1} {0} {1}\"", "The pattern {1} {0} {1} of de does not have {1} once." },
+                {
+                    Gregorian,
+                    "\"Time-Day-Of-Week\": \"{0} ({1})\"",
+                    "\"Time-Day-Of-Week\": \"{0} 'a'b ({1})\"",
+                    "The joining pattern {0} 'a'b ({1}) of de has letters next to a quote."
+                },
+                {
+                    Gregorian,
+                    "\"Time-Day-Of-Week\": \"{0} ({1})\"",
+                    "\"Time-Day-Of-Week\": \"{0} b'a' ({1})\"",
+                    "The joining pattern {0} b'a' ({1}) of de has letters next to a quote."
+                },
+            };
+        }
+    }
+
+    /// <summary>
     /// Two runs of the generator from the same zip write the same files, byte for byte.
     /// </summary>
     /// <remarks>
@@ -163,6 +324,7 @@ public sealed class CldrTableGenTests
             Assert.Contains("src/XylemUI.Core/Localization/Cldr/CldrTables.g.cs", firstFiles);
             Assert.Contains("tests/XylemUI.Core.Tests/CldrPluralSamples.g.cs", firstFiles);
             Assert.Contains("src/XylemUI.Core/Localization/Cldr/CldrNumberTables.g.cs", firstFiles);
+            Assert.Contains("src/XylemUI.Core/Localization/Cldr/CldrDateTables.g.cs", firstFiles);
             foreach (string file in firstFiles)
             {
                 Assert.True(File.ReadAllBytes(Path.Combine(first, file)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(second, file))), file);
@@ -327,6 +489,337 @@ public sealed class CldrTableGenTests
                     StringComparison.Ordinal
                 );
             }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The date patterns the generator writes are the closest format of each of Flutter's 41 skeletons with its fields made as long
+    /// as the skeleton's (UTS #35 part 4, "Matching Skeletons"), the hour of the locale's language and region for j and the 24-hour
+    /// form after them, then the joining patterns, the Time-Day-Of-Week append item, gmtFormat, and hourFormat (design §4.11,
+    /// "Skeleton formats"). The formats are those of ICU's DateTimePatternGenerator: the canonical items, the standard time and date
+    /// patterns, and availableFormats, which replace an entry of the same base and forms; at the same distance, the first in ICU's
+    /// order wins (the first letter of the base, then the order added).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: en's formats are EnFormats, and its region is the world's, whose hour is h; en's full date
+    ///   pattern is EEEE d MMMM y and its long one MMMM d 'long' y, whose base yMMMMd EnFormats has. ja's are JaFormats, whose MMM is
+    ///   M月; Japan's hour is h and ja-JP's H. ko's region is the world's and ko-001's hour is H; ko's full date pattern is en's,
+    ///   and its formats have yMMMMEEEEdd (EEEE, dd MMMM y), of the same base as the pattern's yMMMMEEEEd but another form of d,
+    ///   and yyM (M/yy) in the place of yM.
+    ///   de's are EnFormats with MMMEEEEd, which is as near MMMMEEEEd as MMMMEd is; pt's yMMMEEEEd (EEEE, d/MM/y) is as near
+    ///   yMMMMEEEEd as its yMMMMEd (E, d 'de' MMMM 'de' y) is; its formats have, in the place of
+    ///   yM, yyyyyyyyyyyyyyyyyM (M/yyyyyyyyyyyyyyyyy) and YM (M/Y). de's also have ahm (h:mm 'x' a). The generator reads each
+    ///   locale's availableFormats in byte order of the skeletons, as ICU reads its resource table. zh's have no
+    ///   Hms, and zh's medium and short time patterns are HH:mm:ss and H:mm:ss. The full date pattern of every locale but en is
+    ///   E, MMMM d, y, whose skeleton yMMMMEd they have.
+    ///
+    /// Steps:
+    /// - Run the tool, and read the pattern tables of en, ja, ko, de, and pt from CldrDateTables.g.cs.
+    ///
+    /// Expected:
+    /// - en: the digit zero 0; the 48 patterns of EnPatterns (EEEE takes E's ccc as cccc, LLLL and MMMM take MMM's LLL as LLLL,
+    ///   MMMMEEEEd takes MMMMEd's E as EEEE, yMMMMEEEEd is the full date pattern and yMMMMd is not the long one, QQQ, m, and s are
+    ///   the symbol alone, jmz takes hmv's v as z, and the alternative, the count, and MMMddd are not read); then {1}, {0} three
+    ///   times, {1} {0}, {0} ({1}), GMT{0}, +HH:mm;-HH:mm, and the end of the table.
+    /// - ja: LLL, LLLL, and MMMM are M月, a number that is not made a name; j is H時 (ja-JP before JP), and the 7 24-hour patterns
+    ///   are empty.
+    /// - ko: jm is HH:mm (ko-001 before 001); yMMMMEEEEd is the full date pattern, EEEE d MMMM y, at distance 0: yMMMMEEEEdd does
+    ///   not replace it, as its d is another form, and is farther. yM is not yyM's M/y, as a request of one y does not take a skeleton
+    ///   of two (ICU's yearLengthIsCompatible), but yMMM's MMM y, whose month is text.
+    /// - de: MMMMEEEEd takes MMMEEEEd, the first of the two at the same distance in ICU's order (MMMEEEEd comes before MMMMEd in
+    ///   byte order): EEEE, d. MMMM. jm is ahm's h:mm 'x' a: ahm is hm's skeleton, since h takes a, comes first in byte order, and an
+    ///   item of the same given skeleton is not added again.
+    /// - pt: yMMMMEEEEd takes yMMMMEd, the first of the two at the same distance, not yMMMEEEEd: yMMMMEd replaced the full date
+    ///   pattern in its place, added before the availableFormats: EEEE, d 'de' MMMM 'de' y. yM takes
+    ///   YM's M/Y, whose base begins with Y and is listed before the 17 y of yyyyyyyyyyyyyyyyyM, listed under y: both are 0x10 from
+    ///   y.
+    /// - zh: Hms takes the medium time pattern HH:mm:ss, not the short one H:mm:ss, which has the same base and is not added: the
+    ///   hours keep their length.
+    /// </remarks>
+    [Fact]
+    public void Tool_DatePatterns_AreTheClosestFormats()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (char enZero, List<string> en) = PatternTable(output, "CldrEn");
+            Assert.Equal('0', enZero);
+            Assert.Equal(EnPatterns, en.Take(48));
+            Assert.Equal(["{1}, {0}", "{1}, {0}", "{1}, {0}", "{1} {0}", "{0} ({1})", "GMT{0}", "+HH:mm;-HH:mm"], en.Skip(48));
+            (_, List<string> ja) = PatternTable(output, "CldrJa");
+            Assert.Equal(["M月", "M月", "M月", "H時"], new[] { ja[3], ja[4], ja[11], ja[31] });
+            Assert.All(ja.Skip(41).Take(7), pattern => Assert.True(pattern.Length == 0, pattern));
+            (_, List<string> ko) = PatternTable(output, "CldrKo");
+            Assert.Equal(("HH:mm", "EEEE d MMMM y", "MMM y"), (ko[32], ko[25], ko[17]));
+            (_, List<string> de) = PatternTable(output, "CldrDe");
+            Assert.Equal(("EEEE, d. MMMM", "h:mm 'x' a"), (de[13], de[32]));
+            (_, List<string> pt) = PatternTable(output, "CldrPt");
+            Assert.Equal(("EEEE, d 'de' MMMM 'de' y", "M/Y"), (pt[25], pt[17]));
+            (_, List<string> zh) = PatternTable(output, "CldrZh");
+            Assert.Equal("HH:mm:ss", zh[30]);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A day period takes the requested letter, as ICU's adjustFieldTypes writes it: the a that j asks for replaces the B of a
+    /// format (design §4.11, "The letter of the day period"; Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: zh's 12-hour formats have B (ZhFormats: h is Bh時, hm Bh:mm, hmv Bh:mm [v]); zh's region CN is
+    ///   not in timeData, so its hour is the world's h.
+    ///
+    /// Steps:
+    /// - Run the tool, and read zh's pattern table.
+    ///
+    /// Expected:
+    /// - j is ah時, jm ah:mm, and jmz ah:mm [z].
+    /// </remarks>
+    [Fact]
+    public void Tool_DayPeriod_TakesTheRequestedLetter()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (_, List<string> zh) = PatternTable(output, "CldrZh");
+            Assert.Equal(("ah時", "ah:mm", "ah:mm [z]"), (zh[31], zh[32], zh[35]));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The generator puts the letters of a joining pattern in quotes, so that the joined pattern writes them as text and not as fields
+    /// (UTS #35 part 4: the joining patterns are simple formatters; sl's Time-Day-Of-Week is {1} ob {0}); letters already in quotes
+    /// are kept.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's long joining pattern {1} 'kl'. {0}, its medium one {1} at {0}, and its Time-Day-Of-Week
+    ///   {1} ob {0}; a lock with its SHA-256.
+    ///
+    /// Steps:
+    /// - Run the tool, and read de's joining patterns.
+    ///
+    /// Expected:
+    /// - {1}, {0}; {1} 'kl'. {0}; {1} 'at' {0}; {1} {0}; {1} 'ob' {0}.
+    /// </remarks>
+    [Fact]
+    public void Tool_JoiningPatterns_QuoteTheirLetters()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            const string Joining =
+                "\"long\": \"{1}, {0}\", \"medium\": \"{1}, {0}\", \"short\": \"{1} {0}\", "
+                + "\"appendItems\": { \"Time-Day-Of-Week\": \"{0} ({1})\" }";
+            const string Lettered =
+                "\"long\": \"{1} 'kl'. {0}\", \"medium\": \"{1} at {0}\", \"short\": \"{1} {0}\", "
+                + "\"appendItems\": { \"Time-Day-Of-Week\": \"{1} ob {0}\" }";
+            string zip = WriteZip(directory, withBo: true, edit: ("cldr-dates-full/main/de/ca-gregorian.json", Joining, Lettered));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (_, List<string> de) = PatternTable(output, "CldrDe");
+            Assert.Equal(["{1}, {0}", "{1} 'kl'. {0}", "{1} 'at' {0}", "{1} {0}", "{1} 'ob' {0}"], de.Skip(48).Take(5));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Date data the formats cannot write stops the generator: an hourFormat that is not a positive and a negative pattern of H or
+    /// HH and mm, a gmtFormat or a joining pattern without each placeholder once, and a joining pattern with letters next to a quote.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with the row's text of one of de's entries replaced, and a lock with its SHA-256: an hourFormat
+    ///   of one pattern, an hourFormat of HHH, a gmtFormat without {0}, a short joining pattern with {1} twice, a
+    ///   Time-Day-Of-Week whose letter b follows a quote, and one whose letter b comes before a quote.
+    ///
+    /// Steps:
+    /// - Run the tool into an empty directory.
+    ///
+    /// Expected:
+    /// - It ends with 1 and writes the row's message.
+    /// </remarks>
+    /// <param name="entry">The entry of the zip.</param>
+    /// <param name="from">The text replaced.</param>
+    /// <param name="to">The text put in its place.</param>
+    /// <param name="message">The message the tool writes.</param>
+    [Theory]
+    [MemberData(nameof(UnreadDateData))]
+    public void Tool_DateDataTheFormatsDoNotRead_Stops(string entry, string from, string to, string message)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, edit: (entry, from, to));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
+
+            Assert.Equal(1, exit);
+            Assert.Contains(message, text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The name table the generator writes holds the months, the weekdays, the quarters, and am and pm of the format context, then
+    /// of the stand-alone context with each name that is the format one empty, then the eras (design §4.11, "Names and the week").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: en's names are those of GregorianJson, whose stand-alone names are the format ones but the wide
+    ///   January, wM1alone.
+    ///
+    /// Steps:
+    /// - Run the tool, and read en's name table string by string.
+    ///
+    /// Expected:
+    /// - 170 strings: aM1 to aM12, wM1 to wM12, nM1 to nM12; aDsun to aDsat, wD…, nD…, sD…; aQ1 to aQ4, wQ…, nQ…; aPam, aPpm,
+    ///   wPam, wPpm, nPam, nPpm; then the same count of the stand-alone context, all empty but wM1alone in the place of wM1; then BC,
+    ///   AD, Before Christ, Anno Domini, B, A.
+    /// </remarks>
+    [Fact]
+    public void Tool_DateNames_WriteTheStandAloneNamesThatAreTheFormatOnesEmpty()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            var reader = new CldrTableReader(TableBytesOf(output, "CldrEn", "DateNameTable"));
+            var names = new List<string>();
+            while (!reader.End)
+            {
+                names.Add(reader.ReadString());
+            }
+
+            List<string> format =
+            [
+                .. Kind("M", ["a", "w", "n"], Enumerable.Range(1, 12).Select(month => month.ToString(CultureInfo.InvariantCulture))),
+                .. Kind("D", ["a", "w", "n", "s"], ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]),
+                .. Kind("Q", ["a", "w", "n"], ["1", "2", "3", "4"]),
+                .. Kind("P", ["a", "w", "n"], ["am", "pm"]),
+            ];
+            List<string> standAlone = [.. format.Select(name => name == "wM1" ? "wM1alone" : string.Empty)];
+            Assert.Equal([.. format, .. standAlone, "BC", "AD", "Before Christ", "Anno Domini", "B", "A"], names);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        static IEnumerable<string> Kind(string kind, string[] widths, IEnumerable<string> keys) =>
+            widths.SelectMany(width => keys.Select(key => width + kind + key));
+    }
+
+    /// <summary>
+    /// A skeleton that no available format holds without a field missing or added stops the generator: the tool does not append
+    /// fields (appendItems), which no skeleton of the 41 needs in CLDR 49.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's yQQQ and yQQQQ left out, and a lock with its SHA-256.
+    ///
+    /// Steps:
+    /// - Run the tool into an empty directory.
+    ///
+    /// Expected:
+    /// - It ends with 1 and names de and the skeleton yQQQ.
+    /// </remarks>
+    [Fact]
+    public void Tool_SkeletonWithoutAFormat_Stops()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, deYearQuarters: false);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
+
+            Assert.Equal(1, exit);
+            Assert.Contains("No format of de has the fields of the skeleton yQQQ", text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A date pattern with a field the formats do not write stops the generator: the hours of 1 to 24 (k), and the day periods B and
+    /// b, which no table uses since the day period takes the requested a (Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's Hm as the row's pattern, and a lock with its SHA-256. Hm asks for no day period, so the
+    ///   pattern's B or b stays.
+    ///
+    /// Steps:
+    /// - Run the tool into an empty directory.
+    ///
+    /// Expected:
+    /// - It ends with 1 and names the pattern and de.
+    /// </remarks>
+    /// <param name="pattern">de's Hm.</param>
+    [Theory]
+    [InlineData("kk:mm")]
+    [InlineData("HH:mm B")]
+    [InlineData("HH:mm b")]
+    public void Tool_DatePatternWithAFieldTheFormatsDoNotWrite_Stops(string pattern)
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true, deHm: pattern);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", Path.Combine(directory, "out"));
+
+            Assert.Equal(1, exit);
+            Assert.Contains("The pattern " + pattern + " of de has a field the formats do not write", text, StringComparison.Ordinal);
         }
         finally
         {
@@ -533,16 +1026,22 @@ public sealed class CldrTableGenTests
         }
     }
 
-    // A zip of the json-full shape, with the files the generator reads and nothing more. The date files are empty objects: the
-    // generator reads only that they are there. Every locale has the number data of NumbersJson and the currencies of
-    // CurrenciesJson, but de, whose separators are swapped and whose decimal pattern is the given one. pt-AO is a modern locale with
-    // no plural rules of its own; plurals.json has rules for pt and for pt-PT, and the parent locales of the plurals component are
-    // the given JSON object. An edit replaces a text in one entry, which must hold it.
+    // A zip of the json-full shape, with the files the generator reads and nothing more. Every locale has the number data of
+    // NumbersJson and the currencies of CurrenciesJson, but de, whose separators are swapped and whose decimal pattern is the given
+    // one. Every locale has the date data of GregorianJson with the formats of EnFormats, but ja (JaFormats), zh (ZhFormats), ko
+    // (EnFormats with yMMMMEEEEdd as EEEE, dd MMMM y), pt (EnFormats with yMMMMEd as E, d 'de' MMMM 'de' y and yMMMEEEEd as
+    // EEEE, d/MM/y, pt-PT's), and de (EnFormats with MMMEEEEd, the
+    // given Hm, and without yQQQ and yQQQQ when deYearQuarters is false), and the time zone data of TimeZoneJson. timeData gives the
+    // world (001), the region of en, h, Japan h, ja-JP H, and ko-001 H. pt-AO
+    // is a modern locale with no plural rules of its own; plurals.json has rules for pt and for pt-PT, and the parent locales of the
+    // plurals component are the given JSON object. An edit replaces a text in one entry, which must hold it.
     private static string WriteZip(
         string directory,
         bool withBo,
         string pluralParents = "{}",
         string deDecimalPattern = "#,##0.###",
+        string deHm = "HH:mm",
+        bool deYearQuarters = true,
         (string Entry, string From, string To)? edit = null
     )
     {
@@ -572,7 +1071,26 @@ public sealed class CldrTableGenTests
                 string numbers = tag == "de" ? NumbersJson(tag, ",", ".", deDecimalPattern, false) : NumbersJson(tag, ".", ",", "#,##0.###", true);
                 Add(zip, "cldr-numbers-full/main/" + tag + "/numbers.json", numbers);
                 Add(zip, "cldr-numbers-full/main/" + tag + "/currencies.json", CurrenciesJson(tag));
-                Add(zip, "cldr-dates-full/main/" + tag + "/ca-gregorian.json", "{}");
+                IEnumerable<(string, string)> formats = tag switch
+                {
+                    "ja" => JaFormats,
+                    "zh" => ZhFormats.Where(format => format.Key != "Hms"),
+                    "ko" => EnFormats.Where(format => format.Key != "yM").Append(("yMMMMEEEEdd", "EEEE, dd MMMM y")).Append(("yyM", "M/yy")),
+                    "pt" => EnFormats
+                        .Where(format => format.Key != "yM")
+                        .Select(format => format.Key == "yMMMMEd" ? (format.Key, "E, d 'de' MMMM 'de' y") : format)
+                        .Append(("yMMMEEEEd", "EEEE, d/MM/y"))
+                        .Append(("yyyyyyyyyyyyyyyyyM", "M/yyyyyyyyyyyyyyyyy"))
+                        .Append(("YM", "M/Y")),
+                    "de" => EnFormats
+                        .Where(format => deYearQuarters || format.Key is not ("yQQQ" or "yQQQQ"))
+                        .Select(format => format.Key == "Hm" ? (format.Key, deHm) : format)
+                        .Append(("MMMEEEEd", "EEEE, d. MMM"))
+                        .Append(("ahm", "h:mm 'x' a")),
+                    _ => EnFormats,
+                };
+                Add(zip, "cldr-dates-full/main/" + tag + "/ca-gregorian.json", GregorianJson(tag, formats));
+                Add(zip, "cldr-dates-full/main/" + tag + "/timeZoneNames.json", TimeZoneJson(tag));
             }
 
             Add(
@@ -582,11 +1100,10 @@ public sealed class CldrTableGenTests
             );
             Add(zip, "cldr-core/supplemental/currencyData.json", CurrencyData);
 
-            Add(
-                zip,
-                "cldr-core/supplemental/aliases.json",
-                "{ \"supplemental\": { \"metadata\": { \"alias\": { \"languageAlias\": { \"tl\": { \"_reason\": \"legacy\", \"_replacement\": \"fil\" } } } } } }"
-            );
+            const string Aliases =
+                "{ \"supplemental\": { \"metadata\": { \"alias\": { \"languageAlias\": { \"tl\": "
+                + "{ \"_reason\": \"legacy\", \"_replacement\": \"fil\" } } } } } }";
+            Add(zip, "cldr-core/supplemental/aliases.json", Aliases);
             const string Likely =
                 "{ \"supplemental\": { \"likelySubtags\": { \"ja\": \"ja-Jpan-JP\", \"zh\": \"zh-Hans-CN\", \"zh-TW\": \"zh-Hant-TW\", "
                 + "\"zh-SG\": \"zh-Hans-SG\", \"zh-Hant\": \"zh-Hant-TW\", \"und-TW\": \"zh-Hant-TW\" } } }";
@@ -595,6 +1112,11 @@ public sealed class CldrTableGenTests
                 "{ \"supplemental\": { \"weekData\": { \"minDays\": { \"001\": \"1\" }, \"firstDay\": { \"001\": \"mon\", \"JP\": \"sun\" }, "
                 + "\"weekendStart\": { \"001\": \"sat\" }, \"weekendEnd\": { \"001\": \"sun\" } } } }";
             Add(zip, "cldr-core/supplemental/weekData.json", Weeks);
+            const string Hours =
+                "{ \"supplemental\": { \"timeData\": { \"001\": { \"_allowed\": \"h H\", \"_preferred\": \"h\" }, "
+                + "\"JP\": { \"_allowed\": \"h H\", \"_preferred\": \"h\" }, \"ja-JP\": { \"_allowed\": \"H h\", \"_preferred\": \"H\" }, "
+                + "\"ko-001\": { \"_allowed\": \"H h\", \"_preferred\": \"H\" } } } }";
+            Add(zip, "cldr-core/supplemental/timeData.json", Hours);
             const string Cardinals =
                 "{ \"supplemental\": { \"plurals-type-cardinal\": { \"und\": { \"pluralRule-count-other\": \" @integer 0~15\" }, "
                 + "\"en\": { \"pluralRule-count-one\": \"i = 1 and v = 0 @integer 1\", \"pluralRule-count-other\": \" @integer 0, 2~16\" }, "
@@ -649,6 +1171,70 @@ public sealed class CldrTableGenTests
             + " } } } } }";
     }
 
+    // The Gregorian data of a locale: names made of their width's letter, their kind, and their key (aM1 is the abbreviated January,
+    // wDtue the wide Tuesday, nQ4 the narrow fourth quarter, aPpm the abbreviated pm), the same in the stand-alone context but the
+    // wide January (wM1alone); the eras BC, AD, Before Christ, Anno Domini, B, A; the standard date patterns, whose full one is
+    // EEEE d MMMM y for en and ko and E, MMMM d, y for the others, and the standard time patterns, whose medium and short ones are
+    // HH:mm:ss and H:mm:ss for zh; the joining patterns {1}, {0} but the
+    // short one {1} {0}; the Time-Day-Of-Week append item {0} ({1}); and the given formats.
+    private static string GregorianJson(string tag, IEnumerable<(string Key, string Pattern)> formats)
+    {
+        string[] months = [.. Enumerable.Range(1, 12).Select(month => month.ToString(CultureInfo.InvariantCulture))];
+        string[] quarters = ["1", "2", "3", "4"];
+        string[] weekdays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+        string[] periods = ["am", "pm"];
+        string fullDate = tag is "en" or "ko" ? "EEEE d MMMM y" : "E, MMMM d, y";
+        string[] widths = ["abbreviated", "wide", "narrow"];
+        string[] weekdayWidths = ["abbreviated", "wide", "narrow", "short"];
+        string available = JsonObject(formats.Select(format => (format.Key, JsonText(format.Pattern))));
+        return "{ \"main\": { \""
+            + tag
+            + "\": { \"dates\": { \"calendars\": { \"gregorian\": { \"months\": "
+            + Contexts(widths, "M", months, "wM1alone")
+            + ", \"days\": "
+            + Contexts(weekdayWidths, "D", weekdays, null)
+            + ", \"quarters\": "
+            + Contexts(widths, "Q", quarters, null)
+            + ", \"dayPeriods\": "
+            + Contexts(widths, "P", periods, null)
+            + ", \"eras\": { \"eraNames\": { \"0\": \"Before Christ\", \"1\": \"Anno Domini\" }, \"eraAbbr\": { \"0\": \"BC\", \"1\": \"AD\" }, "
+            + "\"eraNarrow\": { \"0\": \"B\", \"1\": \"A\" } }, \"dateFormats\": { \"full\": \""
+            + fullDate
+            + "\", \"long\": \"MMMM d 'long' y\", \"medium\": \"MMM d, y\", \"short\": \"M/d/y\" }, "
+            + "\"timeFormats\": { \"full\": \"h:mm:ss a zzzz\", \"long\": \"h:mm:ss a z\", \"medium\": \""
+            + (tag is "zh" ? "HH:mm:ss" : "h:mm:ss a")
+            + "\", \"short\": \""
+            + (tag is "zh" ? "H:mm:ss" : "h:mm a")
+            + "\" }, "
+            + "\"dateTimeFormats\": { \"full\": \"{1}, {0}\", \"long\": \"{1}, {0}\", "
+            + "\"medium\": \"{1}, {0}\", \"short\": \"{1} {0}\", \"appendItems\": { \"Time-Day-Of-Week\": \"{0} ({1})\" }, "
+            + "\"availableFormats\": "
+            + available
+            + " } } } } } } }";
+    }
+
+    // The format and the stand-alone names of one kind; the stand-alone wide name of the first key is the given one when there is one.
+    private static string Contexts(string[] widths, string kind, string[] keys, string? standAloneFirstWide)
+    {
+        string format = JsonObject(widths.Select(width => (width, Names(width, kind, keys, null))));
+        string standAlone = JsonObject(widths.Select(width => (width, Names(width, kind, keys, width == "wide" ? standAloneFirstWide : null))));
+        return "{ \"format\": " + format + ", \"stand-alone\": " + standAlone + " }";
+    }
+
+    // The names of one width: its letter, the kind, and the key; the first is the given one when there is one.
+    private static string Names(string width, string kind, string[] keys, string? first) =>
+        JsonObject(keys.Select((key, index) => (key, JsonText(index == 0 && first is not null ? first : width[0] + kind + key))));
+
+    // The time zone data of a locale: the offset from GMT as GMT+09:00.
+    private static string TimeZoneJson(string tag) =>
+        "{ \"main\": { \"" + tag + "\": { \"dates\": { \"timeZoneNames\": { \"hourFormat\": \"+HH:mm;-HH:mm\", \"gmtFormat\": \"GMT{0}\" } } } } }";
+
+    private static string JsonObject(IEnumerable<(string Key, string Value)> members) =>
+        "{ " + string.Join(", ", members.Select(member => "\"" + member.Key + "\": " + member.Value)) + " }";
+
+    private static string JsonText(string value) =>
+        "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+
     // The currencies of a locale: EUR's symbol is its code, JPY's is its code with a narrow one, and USD's symbol is its narrow one.
     private static string CurrenciesJson(string tag) =>
         "{ \"main\": { \""
@@ -684,6 +1270,35 @@ public sealed class CldrTableGenTests
         Assert.True(start >= 0, name);
         int end = tables.IndexOf("\n}\n", start, StringComparison.Ordinal);
         return tables[start..end];
+    }
+
+    // The bytes of a date table that a locale's class returns: the class names the table in CldrTables.g.cs, and
+    // CldrDateTables.g.cs holds its bytes.
+    private static byte[] TableBytesOf(string output, string className, string property)
+    {
+        string folder = Path.Combine(output, "src/XylemUI.Core/Localization/Cldr");
+        string entry = ClassOf(File.ReadAllText(Path.Combine(folder, "CldrTables.g.cs")), className);
+        string prefix = "    internal override ReadOnlySpan<byte> " + property + " => CldrDateTables.";
+        string line = entry.Split('\n').Single(text => text.StartsWith(prefix, StringComparison.Ordinal));
+        string declaration = "    public static ReadOnlySpan<byte> " + line[prefix.Length..^1] + " => [";
+        string bytes = File.ReadAllLines(Path.Combine(folder, "CldrDateTables.g.cs"))
+            .Single(text => text.StartsWith(declaration, StringComparison.Ordinal));
+        return [.. bytes[declaration.Length..^2].Split(", ").Select(value => byte.Parse(value, CultureInfo.InvariantCulture))];
+    }
+
+    // A locale's date pattern table: the digit zero and the 55 strings, which end the table.
+    private static (char Zero, List<string> Strings) PatternTable(string output, string className)
+    {
+        var reader = new CldrTableReader(TableBytesOf(output, className, "DatePatternTable"));
+        char zero = reader.ReadChar();
+        var strings = new List<string>();
+        for (int i = 0; i < 55; i++)
+        {
+            strings.Add(reader.ReadString());
+        }
+
+        Assert.True(reader.End, className);
+        return (zero, strings);
     }
 
     private static string[] Files(string root) =>
