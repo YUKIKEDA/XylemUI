@@ -48,6 +48,30 @@ internal struct UiNode
     /// </summary>
     public PseudoState Pseudo;
 
+    // The node's text style bits in one byte beside the other bytes above (Issue #960): the two TextStyleMarks in bits 0 and 1, and a
+    // text leaf's own TextStyleFields in bits 2 to 7. Two bytes made the node 8 bytes larger, past its bound of 592.
+    private byte _textStyleBits;
+
+    /// <summary>
+    /// Gets or sets whether the node holds a text style for the text leaves below it, and whether it or an ancestor does (design
+    /// §3.2, "The text style a container gives"): a node put under a parent without either takes nothing.
+    /// </summary>
+    public TextStyleMarks TextStyleMarks
+    {
+        readonly get => (TextStyleMarks)(_textStyleBits & 0b11);
+        set => _textStyleBits = (byte)((_textStyleBits & ~0b11) | ((int)value & 0b11));
+    }
+
+    /// <summary>
+    /// Gets or sets, for a text leaf, the fields of its style it set itself: they keep the leaf's values whatever its ancestors give.
+    /// Here and not in <see cref="TextLeaf"/>, whose object it would make 8 bytes larger (Issue #960).
+    /// </summary>
+    public TextStyleFields TextOwnFields
+    {
+        readonly get => (TextStyleFields)(_textStyleBits >> 2);
+        set => _textStyleBits = (byte)((_textStyleBits & 0b11) | (((int)value & 0b11_1111) << 2));
+    }
+
     /// <summary>
     /// What the node and its subtree need again.
     /// </summary>

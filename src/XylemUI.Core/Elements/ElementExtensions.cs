@@ -137,7 +137,9 @@ public static partial class ElementExtensions
     public static Element JustifyContent(this Element element, JustifyContent value)
     {
         UiThread.VerifyAccess();
-        if (!Enum.IsDefined(value))
+
+        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        if ((uint)value > (uint)global::XylemUI.JustifyContent.SpaceEvenly)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "The distribution is a value of JustifyContent.");
         }
@@ -161,7 +163,9 @@ public static partial class ElementExtensions
     public static Element AlignItems(this Element element, AlignItems value)
     {
         UiThread.VerifyAccess();
-        if (!Enum.IsDefined(value))
+
+        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        if ((uint)value > (uint)global::XylemUI.AlignItems.Stretch)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "The alignment is a value of AlignItems.");
         }
@@ -285,17 +289,136 @@ public static partial class ElementExtensions
     }
 
     /// <summary>
-    /// Sets the size of a text node's text.
+    /// Sets the size of text (design §2.13, "The text style a container gives"): a text node's own, or, on another node, the size
+    /// the text nodes below it take where neither they nor a nearer node set one. Only the text nodes whose size changes are laid
+    /// out again; the same value again changes nothing.
     /// </summary>
-    /// <param name="element">The text node.</param>
-    /// <param name="size">The size, finite and greater than 0.</param>
+    /// <param name="element">The node.</param>
+    /// <param name="size">The size in logical pixels per em, finite and greater than 0.</param>
     /// <returns>The same node, for the next call of the chain.</returns>
-    /// <exception cref="InvalidOperationException">The node is not a text node.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is out of its range.</exception>
-    public static Element FontSize(this Element element, float size) => TextStyle(element, style => style with { Size = size });
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is not a finite number greater than 0.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public static Element FontSize(this Element element, float size)
+    {
+        UiThread.VerifyAccess();
+        if (!float.IsFinite(size) || size <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(size), size, "The text size is not finite and greater than 0.");
+        }
+
+        return WriteTextStyle(element, new InheritedTextStyle { Fields = TextStyleFields.Size, Size = size });
+    }
 
     /// <summary>
-    /// Sets the language of a text node's text, which chooses the fonts (design §4.5).
+    /// Sets the weight of the font of text (design §2.13, "The text style a container gives"): a text node's own, or, on another
+    /// node, the weight the text nodes below it take where neither they nor a nearer node set one. The same value again changes
+    /// nothing.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="value">The weight.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public static Element FontWeight(this Element element, FontWeight value)
+    {
+        UiThread.VerifyAccess();
+        return WriteTextStyle(element, new InheritedTextStyle { Fields = TextStyleFields.Weight, Weight = value });
+    }
+
+    /// <summary>
+    /// Sets the slant of the font of text (design §2.13, "The text style a container gives"): a text node's own, or, on another
+    /// node, the slant the text nodes below it take where neither they nor a nearer node set one. The same value again changes
+    /// nothing.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="value">The slant.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is not a value of
+    /// <see cref="XylemUI.Text.FontSlant"/>.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public static Element FontSlant(this Element element, FontSlant value)
+    {
+        UiThread.VerifyAccess();
+
+        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        if ((uint)value > (uint)global::XylemUI.Text.FontSlant.Oblique)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "The slant is a value of FontSlant.");
+        }
+
+        return WriteTextStyle(element, new InheritedTextStyle { Fields = TextStyleFields.Slant, Slant = value });
+    }
+
+    /// <summary>
+    /// Sets the stretch of the font of text (design §2.13, "The text style a container gives"): a text node's own, or, on another
+    /// node, the stretch the text nodes below it take where neither they nor a nearer node set one. The same value again changes
+    /// nothing.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="value">The stretch.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is not a value of
+    /// <see cref="XylemUI.Text.FontStretch"/>.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public static Element FontStretch(this Element element, FontStretch value)
+    {
+        UiThread.VerifyAccess();
+
+        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        if (value is < global::XylemUI.Text.FontStretch.UltraCondensed or > global::XylemUI.Text.FontStretch.UltraExpanded)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "The stretch is a value of FontStretch.");
+        }
+
+        return WriteTextStyle(element, new InheritedTextStyle { Fields = TextStyleFields.Stretch, Stretch = value });
+    }
+
+    /// <summary>
+    /// Sets the family of the font of text (design §2.13, "The text style a container gives"): a text node's own, or, on another
+    /// node, the family the text nodes below it take where neither they nor a nearer node set one. <see langword="null"/> is the
+    /// OS's UI font as a value of its own (design §4.5), not "take the ancestors'". The same value again changes nothing.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="family">The family name, registered with <see cref="AppFonts"/> or one of the OS's; <see langword="null"/> for
+    /// the OS's UI font.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public static Element FontFamily(this Element element, string? family)
+    {
+        UiThread.VerifyAccess();
+        return WriteTextStyle(element, new InheritedTextStyle { Fields = TextStyleFields.Family, Family = family });
+    }
+
+    /// <summary>
+    /// Sets the height of a line of text in logical pixels, as Avalonia's <c>TextBlock.LineHeight</c> (design §2.13, "The text
+    /// style a container gives"): a text node's own, or, on another node, the height the text nodes below it take where neither
+    /// they nor a nearer node set one. A text node that takes another size keeps the height in pixels. The same value again
+    /// changes nothing.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="height">The height in logical pixels, finite and greater than 0.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="height"/> is not a finite number greater than 0.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
+    [UiThreadOnly]
+    public static Element LineHeight(this Element element, float height)
+    {
+        UiThread.VerifyAccess();
+        if (!float.IsFinite(height) || height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(height), height, "The line height is not finite and greater than 0.");
+        }
+
+        return WriteTextStyle(element, new InheritedTextStyle { Fields = TextStyleFields.LineHeight, LineHeight = height });
+    }
+
+    /// <summary>
+    /// Sets the language of a text node's text, which chooses the fonts (design §4.5). It works on a text node only: the language
+    /// of the text below a container comes from the locale provided there (design §4.11).
     /// </summary>
     /// <param name="element">The text node.</param>
     /// <param name="language">The language.</param>
@@ -304,10 +427,7 @@ public static partial class ElementExtensions
     /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
     public static Element Language(this Element element, TextLanguage language)
     {
-        element = TextStyle(element, style => style with { Language = language });
-
-        // The leaf has a language of its own now: a change of the locale no longer gives it another.
-        element.Tree!.Nodes.GetRef(element.Node).Text!.DefaultLanguageOf = null;
+        element.TreeOrThrow().SetTextLanguage(element.Node, language);
         return element;
     }
 
@@ -578,9 +698,13 @@ public static partial class ElementExtensions
     [UiThreadOnly]
     public static Element Overflow(this Element element, Overflow x, Overflow y)
     {
-        if (!Enum.IsDefined(x) || !Enum.IsDefined(y))
+        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        if ((uint)x > (uint)global::XylemUI.Overflow.Scroll || (uint)y > (uint)global::XylemUI.Overflow.Scroll)
         {
-            throw new ArgumentOutOfRangeException(!Enum.IsDefined(x) ? nameof(x) : nameof(y), "The overflow is a value of Overflow.");
+            throw new ArgumentOutOfRangeException(
+                (uint)x > (uint)global::XylemUI.Overflow.Scroll ? nameof(x) : nameof(y),
+                "The overflow is a value of Overflow."
+            );
         }
 
         return Layout(element, style => style with { OverflowX = x, OverflowY = y });
@@ -1444,15 +1568,11 @@ public static partial class ElementExtensions
         return element;
     }
 
-    private static Element TextStyle(Element element, Func<TextStyle, TextStyle> change)
+    // Writes fields of a text style through the tree's one setter, which takes a value and no delegate: the chain allocates nothing
+    // (design §2.13, "The text style a container gives").
+    private static Element WriteTextStyle(Element element, in InheritedTextStyle value)
     {
-        UiTree tree = element.TreeOrThrow();
-        if (tree.Nodes.GetRef(element.Node).Text is not { } leaf)
-        {
-            throw new InvalidOperationException("Only a text node has a text style.");
-        }
-
-        tree.SetTextStyle(element.Node, change(leaf.Style));
+        element.TreeOrThrow().SetTextStyleField(element.Node, in value);
         return element;
     }
 

@@ -13,7 +13,8 @@ public static class Fluent
     /// Makes a button (<see cref="Primitive.Button(Element, Action)"/>) with the look of the theme provided here: its background,
     /// border, color of text, corners, padding, and hovered, pressed, focus-visible, and disabled looks follow the theme, and a value
     /// set in <paramref name="style"/> wins over the theme's. The button is at least 96 wide, as Fluent's medium button, and holds
-    /// the content in its middle: the content is the child of a row that centers it on both axes.
+    /// the content in its middle: the content is the child of a row that centers it on both axes. The text of the content takes the
+    /// theme's <see cref="FluentTypography.Body1Strong"/> (its weight, size, and line height) where it sets none of its own.
     /// </summary>
     /// <param name="content">The content: a node of the current tree with no parent.</param>
     /// <param name="onClick">What a click runs, in the scope current now.</param>
@@ -36,11 +37,19 @@ public static class Fluent
 
         // The theme is looked for before the button is made, so that a missing theme leaves no node without a parent in the tree.
         IReadOnlySignal<FluentTheme> theme = FluentTheme.UseForControl();
-        Element button = Primitive.Button(Centered(content), onClick).MinWidth(ButtonLooks.MinWidth);
+        Element centered = Centered(content);
+        Element button = Primitive.Button(centered, onClick).MinWidth(ButtonLooks.MinWidth);
         ButtonLooks? applied = null;
         _ = Effect.Create(() =>
         {
-            ButtonLooks looks = ButtonLooks.Of(theme.Get(), appearance);
+            FluentTheme current = theme.Get();
+            ButtonLooks looks = ButtonLooks.Of(current, appearance);
+
+            // The label's text (fontWeightSemibold, fontSizeBase300, lineHeightBase300, lines 67 to 69), which the text leaves of the
+            // content take from the row (design §13.2, "文字のスタイル"); a leaf that sets a field itself keeps its own. The same
+            // values after a change of the colors change nothing.
+            FluentTextStyle label = current.Typography.Body1Strong;
+            _ = centered.FontWeight(label.Weight).FontSize(label.FontSize).LineHeight(label.LineHeight);
             _ = button
                 .Background(style?.Background ?? looks.Background)
                 .BorderPaint(style?.Border ?? looks.Border)

@@ -146,7 +146,8 @@ public sealed class ElementsTests(UiThreadFixture ui)
 
     /// <summary>
     /// The chain writes each value to the node's style or look through the tree's setters and returns the same element; a gap on a
-    /// node that is not a flex container and a size of text on a node that is not text throw.
+    /// node that is not a flex container and a language on a node that is not text throw, and the text style of a node that is not
+    /// text is the one it gives the text below it (design §2.13, "The text style a container gives").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -154,12 +155,14 @@ public sealed class ElementsTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - On a row: width 40, height 30, padding 4 and 2, gap 6, a border of 1 in red, the blue background, corner radius 3, opacity
-    ///   0.5, the hand cursor, and the pointer blocked. Then call gap and size of text on a box.
+    ///   0.5, the hand cursor, and the pointer blocked. Then call gap and language on a box, and the six text style setters on it:
+    ///   size 12, weight 600, italic, condensed, the family "Serif", and a line height of 18.
     ///
     /// Expected:
     /// - The chain returns the row each time; the style has the sizes, the padding, the gap, and the border; the look has the
-    ///   background, the border's paint, the radii, and the opacity; the input has the cursor and blocks the pointer. The two calls
-    ///   on the box throw <see cref="InvalidOperationException"/>.
+    ///   background, the border's paint, the radii, and the opacity; the input has the cursor and blocks the pointer. Gap and
+    ///   language on the box throw <see cref="InvalidOperationException"/>. The text style setters return the box, and the box
+    ///   holds the six fields with those values (a line height in pixels); its layout style is the one it had.
     /// </remarks>
     [Fact]
     public void Chain_WritesTheNode_AndReturnsTheSameElement() =>
@@ -198,7 +201,23 @@ public sealed class ElementsTests(UiThreadFixture ui)
 
                 Element box = Box();
                 Assert.Throws<InvalidOperationException>(() => box.Gap(1));
-                Assert.Throws<InvalidOperationException>(() => box.FontSize(12));
+                Assert.Throws<InvalidOperationException>(() => box.Language(default));
+
+                LayoutStyle boxStyle = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Element styled = box.FontSize(12)
+                    .FontWeight(new FontWeight(600))
+                    .FontSlant(FontSlant.Italic)
+                    .FontStretch(FontStretch.Condensed)
+                    .FontFamily("Serif")
+                    .LineHeight(18);
+                Assert.Equal(box, styled);
+                InheritedTextStyle held = scene.Tree.HeldTextStyleOf(box.Node);
+                Assert.Equal(TextStyleFields.All, held.Fields);
+                Assert.Equal(
+                    ("Serif", 600, FontSlant.Italic, FontStretch.Condensed, 12f, 18f),
+                    (held.Family, held.Weight.Value, held.Slant, held.Stretch, held.Size, held.LineHeight)
+                );
+                Assert.Equal(boxStyle, scene.Tree.Nodes.GetRef(box.Node).Layout.Style);
                 return Column(row, box);
             });
             scene.Dispose();
