@@ -47,7 +47,7 @@ A row of class 3 or 4 above (speed, memory, a figure to explain) writes on its I
 
 Work goes on in parallel by default, and no time passes with nothing running.
 
-- Rows whose files do not overlap are worked at the same time, each in its own worktree: the current row's implementation, the research for the next row's Grill, and a row that depends on neither. Drafts and research go to subagents; what they return is verified before it is used.
+- Rows whose files do not overlap are worked at the same time, each in its own worktree: the current row's implementation, the research for the next row's Grill, and a row that depends on neither. Drafts and research go to subagents; what they return is verified before it is used. When one row hands its work to a subagent or waits for the owner, another row starts in that turn: after LC2's interval design PR (#958), only the subagent that drafted its implementation ran, and the owner asked whether nothing else could run (PR #957). Before a turn ends, the `in-progress` and next rows are read for one whose files do not overlap.
 - A push is not followed by a wait. CI is not watched: the design and the implementation are reviewed apart, and the tests a change reaches run locally before the push, so a red run is rare, and fixing one costs less than waiting for every green one. The checks are read when a report is written or when a later step needs them.
 - A turn does not end with "next comes X": X is started. The only stops are a decision that is the owner's and a risk that needs an order.
 - The owner's decisions are asked early and together, while the work that does not depend on them goes on. The owner can decide while the agent works; a question held until the work before it is done costs the owner the wait.
