@@ -427,6 +427,206 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
             Assert.Equal((18f, 700, "Other", 22f / 18f), (last.Size, last.Font.Weight.Value, last.Font.Family, last.LineHeight));
         });
 
+    /// <summary>
+    /// A leaf's own setter resolves its other fields from its ancestors, where the nearer of two containers that hold the same field
+    /// wins (the walk up from the leaf).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column (far) of size 20, weight 700, and a line height of 30 px around a row (near) of weight 300 and a line height of
+    ///   24 px around a text of its own size 10 (b); mounted.
+    ///
+    /// Steps:
+    /// - Set b's slant to normal, its own; read b's style.
+    ///
+    /// Expected:
+    /// - b: weight 300 and a line height of 24 / 10 (near's, not far's 700 and 30 / 10), size 10, slant normal.
+    /// </remarks>
+    [Fact]
+    public void LeafSetter_UnderTwoHoldersOfAField_TakesTheNearerValue() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element b = default;
+            scene.Mount(() =>
+            {
+                b = Elements.Text("b").FontSize(10);
+                Element near = Row(b).FontWeight(Light).LineHeight(24);
+                return Column(near).FontSize(20).FontWeight(FontWeight.Bold).LineHeight(30);
+            });
+
+            _ = b.FontSlant(FontSlant.Normal);
+
+            Assert.Equal(((string?)null, 300, FontSlant.Normal, FontStretch.Normal, 10f, 24f / 10f), Fields(scene, b));
+        });
+
+    /// <summary>
+    /// A leaf's own line height in pixels becomes a multiple of the size the leaf takes, whether the size is inherited or its own,
+    /// and follows a container's change of the size; a whole style written to the leaf drops the pixels.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of size 16 around a text of its own line height 30 px (taken) and a text of its own size 10 and line height 30 px
+    ///   (own); mounted and drawn.
+    ///
+    /// Steps:
+    /// - Read both line heights. Set the column's size to 15; read them and the marks. Set taken's size to 12; read its line height.
+    ///   Write taken's whole style with a line height of 2 (a multiple); set its size to 24; read its line height. Set the column's
+    ///   size to 18; read taken's size and line height.
+    ///
+    /// Expected:
+    /// - 30 / 16 and 30 / 10; after the column's 15, 30 / 15 (marked) and 30 / 10 (not marked); after taken's own 12, 30 / 12; after
+    ///   the whole style and the size 24, 2 (not 30 / 24); after the column's 18, still 24 and 2.
+    /// </remarks>
+    [Fact]
+    public void OwnLineHeightInPixels_FollowsTheSizeTheLeafTakes_AndAWholeStyleDropsIt() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element column = default;
+            Element[] leaves = new Element[2];
+            scene.Mount(() =>
+            {
+                leaves[0] = Elements.Text("a").LineHeight(30);
+                leaves[1] = Elements.Text("b").FontSize(10).LineHeight(30);
+                return column = Column(leaves).FontSize(16);
+            });
+            scene.Draw();
+            float[] first = Array.ConvertAll(leaves, leaf => scene.Leaf(leaf).Style.LineHeight);
+
+            _ = column.FontSize(15);
+            float[] followed = Array.ConvertAll(leaves, leaf => scene.Leaf(leaf).Style.LineHeight);
+            bool[] marks = Marks(scene, leaves);
+            _ = leaves[0].FontSize(12);
+            float ownSize = scene.Leaf(leaves[0]).Style.LineHeight;
+
+            scene.Tree.SetTextStyle(leaves[0].Node, scene.Leaf(leaves[0]).Style with { LineHeight = 2 });
+            _ = leaves[0].FontSize(24);
+            float whole = scene.Leaf(leaves[0]).Style.LineHeight;
+            _ = column.FontSize(18);
+            (float, float) afterColumn = SizeAndLine(scene, leaves[0]);
+
+            Assert.Equal([30f / 16f, 30f / 10f], first);
+            Assert.Equal([30f / 15f, 30f / 10f], followed);
+            Assert.Equal([true, false], marks);
+            Assert.Equal(30f / 12f, ownSize);
+            Assert.Equal(2f, whole);
+            Assert.Equal((24f, 2f), afterColumn);
+        });
+
+    /// <summary>
+    /// The rows a virtualized list keeps when it scrolls are taken out of its box and put back with the values they took, and are
+    /// not resolved again; only the rows it makes are, and they take the column's size.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of size 20 around a box 200 x 100 that scrolls down, with a virtualized list of 1,000 texts; mounted and drawn.
+    ///
+    /// Steps:
+    /// - Scroll to 100 and draw; read the leaves resolved, the rows the list made meanwhile, the rows in the box, and the rows'
+    ///   sizes.
+    ///
+    /// Expected:
+    /// - The list made at least one row and kept at least one; the leaves resolved are the rows it made, one each; every row is at
+    ///   size 20.
+    /// </remarks>
+    [Fact]
+    public void VirtualList_RelinkedInAStyledColumn_ResolvesOnlyTheRowsItMakes() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Signal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([.. Enumerable.Range(0, 1_000)]);
+            var state = new VirtualListState();
+            int made = 0;
+            Element box = default;
+            scene.Mount(() =>
+                Column(
+                        box = Box()
+                            .Width(200)
+                            .Height(100)
+                            .Overflow(Overflow.Visible, Overflow.Scroll)
+                            .VirtualFor(
+                                items,
+                                static item => item,
+                                _ =>
+                                {
+                                    made++;
+                                    return Elements.Text("n");
+                                },
+                                state
+                            )
+                    )
+                    .FontSize(20)
+            );
+            scene.Draw();
+
+            int madeBefore = made;
+            long resolved = scene.Tree.TextLeavesResolved;
+            state.Scroll.ScrollTo(new System.Numerics.Vector2(0, 100));
+            scene.Draw();
+            scene.Draw();
+            int madeByScroll = made - madeBefore;
+            long resolvedByScroll = scene.Tree.TextLeavesResolved - resolved;
+            var sizes = new List<float>();
+            for (Handle<UiNode> row = scene.Tree.Nodes.GetRef(box.Node).FirstChild; !row.IsNone; row = scene.Tree.Nodes.GetRef(row).NextSibling)
+            {
+                sizes.Add(scene.Tree.Nodes.GetRef(row).Text!.Style.Size);
+            }
+
+            Assert.InRange(madeByScroll, 1, sizes.Count - 1);
+            Assert.Equal((long)madeByScroll, resolvedByScroll);
+            Assert.All(sizes, size => Assert.Equal(20f, size));
+        });
+
+    /// <summary>
+    /// A size or a line height that is 0, negative, or not finite, and a slant or a stretch that is not a value of its enum, throw
+    /// on a container and on a leaf, and change neither.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of size 16 and a line height of 20 px around a text of its own size 10; mounted.
+    ///
+    /// Steps:
+    /// - On the column and on the text: <c>FontSize</c> and <c>LineHeight</c> with 0, -1, NaN, positive infinity, and negative
+    ///   infinity; <c>FontSlant</c> with 3 and 255; <c>FontStretch</c> with 0 and 10. Read the column's held style and the text's
+    ///   style before and after.
+    ///
+    /// Expected:
+    /// - Each call throws <see cref="ArgumentOutOfRangeException"/>; the held style and the text's style are as before.
+    /// </remarks>
+    [Fact]
+    public void Setters_OutOfRange_ThrowOnAContainerAndALeaf_AndChangeNothing() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element column = default;
+            Element text = default;
+            scene.Mount(() =>
+            {
+                text = Elements.Text("a").FontSize(10);
+                return column = Column(text).FontSize(16).LineHeight(20);
+            });
+            InheritedTextStyle heldBefore = scene.Tree.HeldTextStyleOf(column.Node);
+            TextStyle styleBefore = scene.Leaf(text).Style;
+
+            foreach (Element element in new[] { column, text })
+            {
+                foreach (float bad in new[] { 0f, -1f, float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+                {
+                    Assert.Throws<ArgumentOutOfRangeException>(() => element.FontSize(bad));
+                    Assert.Throws<ArgumentOutOfRangeException>(() => element.LineHeight(bad));
+                }
+
+                Assert.Throws<ArgumentOutOfRangeException>(() => element.FontSlant((FontSlant)3));
+                Assert.Throws<ArgumentOutOfRangeException>(() => element.FontSlant((FontSlant)255));
+                Assert.Throws<ArgumentOutOfRangeException>(() => element.FontStretch((FontStretch)0));
+                Assert.Throws<ArgumentOutOfRangeException>(() => element.FontStretch((FontStretch)10));
+            }
+
+            Assert.True(heldBefore.SameAs(scene.Tree.HeldTextStyleOf(column.Node)));
+            Assert.Equal(styleBefore, scene.Leaf(text).Style);
+        });
+
     // The family, weight, slant, stretch, size, and line height of a text's style.
     private static (string? Family, int Weight, FontSlant Slant, FontStretch Stretch, float Size, float LineHeight) Fields(
         TextScene scene,

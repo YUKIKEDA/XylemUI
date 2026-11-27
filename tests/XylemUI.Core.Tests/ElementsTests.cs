@@ -1568,6 +1568,43 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// An overflow past the last value of <see cref="Overflow"/> throws, on either axis, and leaves the node's overflow as it was; the
+    /// last value is taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a box.
+    ///
+    /// Steps:
+    /// - Call <c>Overflow</c> with (4, Visible), (255, Visible), (Visible, 4), and (Visible, 255); read the overflow. Then call it with
+    ///   (Scroll, Scroll).
+    ///
+    /// Expected:
+    /// - The four calls throw <see cref="ArgumentOutOfRangeException"/>, and the overflow is still visible on both axes; the last call
+    ///   writes scroll on both.
+    /// </remarks>
+    [Fact]
+    public void Overflow_ValuePastTheLast_Throws() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() => box = Box());
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow((Overflow)4, Overflow.Visible));
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow((Overflow)255, Overflow.Visible));
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow(Overflow.Visible, (Overflow)4));
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow(Overflow.Visible, (Overflow)255));
+            LayoutStyle refused = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+            _ = box.Overflow(Overflow.Scroll, Overflow.Scroll);
+            LayoutStyle taken = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+
+            Assert.Equal((Overflow.Visible, Overflow.Visible), (refused.OverflowX, refused.OverflowY));
+            Assert.Equal((Overflow.Scroll, Overflow.Scroll), (taken.OverflowX, taken.OverflowY));
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// <c>JustifyContent</c> and <c>AlignItems</c> throw on a thread that is not the UI thread, and write nothing.
     /// </summary>
     /// <remarks>
