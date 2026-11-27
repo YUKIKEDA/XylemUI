@@ -205,6 +205,251 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A width and a height given as fractions size the node's border box by the parent's content box, and follow the parent when
+    /// its size changes (design §2.13, "The component API").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box 120 x 60 with a padding of 10, so its content box is 100 x 40, holding a box of width fraction 0.5 and
+    ///   height fraction 0.25, laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the inner box's style and rectangle. Set the outer box's width to 180 and its height to 100 (a content box of
+    ///   160 x 80), run the frame asked for, and read the rectangle again.
+    ///
+    /// Expected:
+    /// - The style holds the percentages 0.5 and 0.25; the inner box is 50 x 10 at (10, 10), and 80 x 20 after the change.
+    /// </remarks>
+    [Fact]
+    public void WidthAndHeightFraction_OfTheParentsContentBox_FollowTheParent() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element outer = default;
+            Element inner = default;
+            scene.Mount(() =>
+            {
+                inner = Box().WidthFraction(0.5f).HeightFraction(0.25f);
+                return outer = Box(inner).Width(120).Height(60).Padding(10);
+            });
+            scene.Scheduler.Run();
+            LayoutStyle style = scene.Tree.Nodes.GetRef(inner.Node).Layout.Style;
+            Rect before = scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect;
+
+            _ = outer.Width(180).Height(100);
+            scene.Scheduler.Run();
+            Rect after = scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect;
+
+            Assert.Equal((Length.Percent(0.5f), Length.Percent(0.25f)), (style.Width, style.Height));
+            Assert.Equal(new Rect(10, 10, 50, 10), before);
+            Assert.Equal((80f, 20f), (after.Width, after.Height));
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width or a height fraction that is negative or not a finite number throws and leaves the node as it was; 0 and a fraction
+    /// above 1 are taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene, and a box of width 30 and height 20 made in its root function.
+    ///
+    /// Steps:
+    /// - Call <c>WidthFraction</c> and <c>HeightFraction</c> with -0.25, NaN, positive infinity, and negative infinity; read the
+    ///   style. Then call <c>WidthFraction(0)</c> and <c>HeightFraction(1.5f)</c>.
+    ///
+    /// Expected:
+    /// - For each value, both calls throw <see cref="ArgumentOutOfRangeException"/> naming <c>fraction</c>, and the style still
+    ///   holds 30 and 20 pixels; then it holds the percentages 0 and 1.5.
+    /// </remarks>
+    [Theory]
+    [InlineData(-0.25f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    public void WidthAndHeightFraction_NegativeOrNotFinite_Throw(float fraction) =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            scene.Mount(() =>
+            {
+                Element box = Box().Width(30).Height(20);
+                Assert.Equal("fraction", Assert.Throws<ArgumentOutOfRangeException>(() => box.WidthFraction(fraction)).ParamName);
+                Assert.Equal("fraction", Assert.Throws<ArgumentOutOfRangeException>(() => box.HeightFraction(fraction)).ParamName);
+                LayoutStyle kept = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Assert.Equal((Length.Px(30), Length.Px(20)), (kept.Width, kept.Height));
+
+                _ = box.WidthFraction(0).HeightFraction(1.5f);
+                LayoutStyle taken = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Assert.Equal((Length.Percent(0), Length.Percent(1.5f)), (taken.Width, taken.Height));
+                return box;
+            });
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width fraction and a height fraction under a parent whose height is auto: the width follows the parent's content box, and
+    /// the height has no effect, since a percentage height resolves only against a definite height (design §2.13, "割合の幅と
+    /// 高さ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box of width 120, padding 10, and no height, holding a box of width fraction 0.5 and height fraction 0.5,
+    ///   which holds a box of 20 x 20, laid out by the first frame. The shape is that of Taffy's Chrome fixture
+    ///   block_percentage_height_with_min_height_parent (tests/XylemUI.Core.Tests/Fixtures/Taffy/block.xml), where a child of
+    ///   height 50% under a parent of no height takes its content's 20.
+    ///
+    /// Steps:
+    /// - Read the middle box's rectangle and the outer box's height.
+    ///
+    /// Expected:
+    /// - The middle box is 50 x 20 at (10, 10): half of the content box's 100 in width, and its content's 20 in height. The outer
+    ///   box is 40 high (20 and the padding).
+    /// </remarks>
+    [Fact]
+    public void HeightFraction_UnderAParentOfAutoHeight_HasNoEffect() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element outer = default;
+            Element middle = default;
+            scene.Mount(() =>
+            {
+                middle = Box(Box().Width(20).Height(20)).WidthFraction(0.5f).HeightFraction(0.5f);
+                return outer = Box(middle).Width(120).Padding(10);
+            });
+            scene.Scheduler.Run();
+            Rect rect = scene.Tree.Nodes.GetRef(middle.Node).Layout.Rect;
+            float outerHeight = scene.Tree.Nodes.GetRef(outer.Node).Layout.Rect.Height;
+
+            Assert.Equal(new Rect(10, 10, 50, 20), rect);
+            Assert.Equal(40f, outerHeight);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width fraction under a parent whose width comes from its content (a child of a row with no width) counts as an automatic
+    /// width while the parent's width is found, and then resolves against the parent's content box (design §2.13, "割合の幅と高さ").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box of width 300 holding a row, which holds a box P with no width. P holds a box H of width fraction 0.5,
+    ///   which holds a box of 140 x 10. Laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read P's width and H's rectangle.
+    ///
+    /// Expected:
+    /// - Derived by hand from CSS (Sizing 3, a percentage of an indefinite size): P is a flex item of automatic width, so its width
+    ///   is its content's. H's percentage has no definite basis then, so H counts as automatic, its content's 140; P is 140 wide,
+    ///   which fits the row's 300. P's width is then definite, and H is 0.5 x 140 = 70 wide and 10 high at (0, 0). P is 140 wide,
+    ///   and H is (0, 0, 70, 10).
+    /// </remarks>
+    [Fact]
+    public void WidthFraction_UnderAParentSizedByItsContent_CountsAsAutoAndThenResolves() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element parent = default;
+            Element half = default;
+            scene.Mount(() =>
+            {
+                half = Box(Box().Width(140).Height(10)).WidthFraction(0.5f);
+                parent = Box(half);
+                return Box(Row(parent)).Width(300);
+            });
+            scene.Scheduler.Run();
+
+            Assert.Equal(140f, scene.Tree.Nodes.GetRef(parent.Node).Layout.Rect.Width);
+            Assert.Equal(new Rect(0, 0, 70, 10), scene.Tree.Nodes.GetRef(half.Node).Layout.Rect);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A width fraction and a height fraction set a node's border box: its own padding and border are inside the fraction, not
+    /// added to it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a box 120 x 60 with a padding of 10 (a content box of 100 x 40), holding a box of width fraction 0.5 and height
+    ///   fraction 0.5 with a padding of 4 and a border 2 wide, laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the inner box's rectangle.
+    ///
+    /// Expected:
+    /// - 50 x 20 at (10, 10), not 62 x 32.
+    /// </remarks>
+    [Fact]
+    public void WidthAndHeightFraction_WithOwnPaddingAndBorder_SetTheBorderBox() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element inner = default;
+            scene.Mount(() =>
+            {
+                inner = Box().WidthFraction(0.5f).HeightFraction(0.5f).Padding(4).Border(2, new Paint(Red));
+                return Box(inner).Width(120).Height(60).Padding(10);
+            });
+            scene.Scheduler.Run();
+
+            Assert.Equal(new Rect(10, 10, 50, 20), scene.Tree.Nodes.GetRef(inner.Node).Layout.Rect);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A smallest width widens a node whose content or width is narrower and leaves a wider one; a negative or not finite width
+    /// throws and leaves the style.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene of a row of three boxes 10 high: one with no width and a smallest width of 60; one of width 30 with a smallest width
+    ///   of 50; one of width 80 with a smallest width of 50; laid out by the first frame.
+    ///
+    /// Steps:
+    /// - Read the three rectangles and the first box's style. Call <c>MinWidth</c> on the first box with -1, NaN, and positive
+    ///   infinity, and read its style.
+    ///
+    /// Expected:
+    /// - The boxes are 60, 50, and 80 wide, at x 0, 60, and 110; the style holds 60 pixels. Each call throws
+    ///   <see cref="ArgumentOutOfRangeException"/> naming <c>width</c>, and the style still holds 60 pixels.
+    /// </remarks>
+    [Fact]
+    public void MinWidth_NarrowerContentOrWidth_IsWidened() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element[] boxes = new Element[3];
+            scene.Mount(() =>
+            {
+                boxes[0] = Box().MinWidth(60).Height(10);
+                boxes[1] = Box().Width(30).MinWidth(50).Height(10);
+                boxes[2] = Box().Width(80).MinWidth(50).Height(10);
+                return Row(boxes);
+            });
+            scene.Scheduler.Run();
+            (float X, float Width)[] placed = Array.ConvertAll(
+                boxes,
+                box => (scene.Tree.Nodes.GetRef(box.Node).Layout.Rect.X, scene.Tree.Nodes.GetRef(box.Node).Layout.Rect.Width)
+            );
+            Length set = scene.Tree.Nodes.GetRef(boxes[0].Node).Layout.Style.MinWidth;
+
+            string?[] names =
+            [
+                Assert.Throws<ArgumentOutOfRangeException>(() => boxes[0].MinWidth(-1)).ParamName,
+                Assert.Throws<ArgumentOutOfRangeException>(() => boxes[0].MinWidth(float.NaN)).ParamName,
+                Assert.Throws<ArgumentOutOfRangeException>(() => boxes[0].MinWidth(float.PositiveInfinity)).ParamName,
+            ];
+            Length kept = scene.Tree.Nodes.GetRef(boxes[0].Node).Layout.Style.MinWidth;
+
+            Assert.Equal([(0f, 60f), (60f, 50f), (110f, 80f)], placed);
+            Assert.Equal(Length.Px(60), set);
+            Assert.Equal(["width", "width", "width"], names);
+            Assert.Equal(Length.Px(60), kept);
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// The border's paint alone changes the paint of a node's border and leaves its width: the node is marked to be drawn again
     /// with no layout, and the same paint again changes nothing (design §13.2).
     /// </summary>
@@ -880,6 +1125,476 @@ public sealed class ElementsTests(UiThreadFixture ui)
             });
             scene.Dispose();
         });
+
+    /// <summary>
+    /// <c>JustifyContent(Center)</c> on a row centers its children along the main axis, and writes the unsafe center to the row's
+    /// flex properties (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a row of 200 x 100 with boxes of 20 x 10 and 30 x 10.
+    ///
+    /// Steps:
+    /// - Set the row's justify-content to <see cref="JustifyContent.Center"/> while it is made; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The free space is 200 - 20 - 30 = 150, so the first box starts at 150 / 2 = 75 and the second at 75 + 20 = 95: (75, 0,
+    ///   20 x 10) and (95, 0, 30 x 10). The row's justify-content is center with <c>Safe</c> false.
+    /// </remarks>
+    [Fact]
+    public void JustifyContent_CenterInARow_CentersTheChildrenAlongTheMainAxis() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element row = default;
+            Element first = default;
+            Element second = default;
+            scene.Mount(() =>
+                row = Row(first = Box().Width(20).Height(10), second = Box().Width(30).Height(10))
+                    .Width(200)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.Center)
+            );
+
+            Assert.Equal((new Rect(75, 0, 20, 10), new Rect(95, 0, 30, 10)), (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node)));
+            Assert.Equal(new ContentAlignment(AlignContentKeyword.Center, Safe: false), FlexOf(scene, row).JustifyContent);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>JustifyContent(SpaceBetween)</c> on a row puts the free space between its children in equal parts and none at the ends.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a row of 200 x 100 with boxes of 20 x 10, 30 x 10, and 50 x 10.
+    ///
+    /// Steps:
+    /// - Set the row's justify-content to <see cref="JustifyContent.SpaceBetween"/>; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The free space is 200 - 100 = 100, in two gaps of 50: the boxes start at 0, 20 + 50 = 70, and 70 + 30 + 50 = 150.
+    /// </remarks>
+    [Fact]
+    public void JustifyContent_SpaceBetweenInARow_PutsTheFreeSpaceBetweenTheChildren() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+                Row(first = Box().Width(20).Height(10), second = Box().Width(30).Height(10), third = Box().Width(50).Height(10))
+                    .Width(200)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.SpaceBetween)
+            );
+
+            Assert.Equal(
+                (new Rect(0, 0, 20, 10), new Rect(70, 0, 30, 10), new Rect(150, 0, 50, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>AlignItems(Center)</c> on a column centers its children across, a child's own alignment wins, and the column's flex
+    /// properties hold the unsafe center (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a column of 200 x 100 with boxes of 40 x 10, 60 x 20, and 20 x 10; the third box's
+    ///   own alignment is end.
+    ///
+    /// Steps:
+    /// - Set the column's align-items to <see cref="AlignItems.Center"/>; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The first box at x = (200 - 40) / 2 = 80, the second at (200 - 60) / 2 = 70, the third at 200 - 20 = 180; down the column
+    ///   at y = 0, 10, and 10 + 20 = 30. The column's align-items is center with <c>Safe</c> false.
+    /// </remarks>
+    [Fact]
+    public void AlignItems_CenterInAColumn_CentersTheChildrenAcross_AndAChildsOwnAlignmentWins() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element column = default;
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+            {
+                third = Box().Width(20).Height(10);
+                OwnAlignment(scene, third, AlignItemsKeyword.End);
+                column = Column(first = Box().Width(40).Height(10), second = Box().Width(60).Height(20), third)
+                    .Width(200)
+                    .Height(100)
+                    .AlignItems(AlignItems.Center);
+                return column;
+            });
+
+            Assert.Equal(
+                (new Rect(80, 0, 40, 10), new Rect(70, 10, 60, 20), new Rect(180, 30, 20, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            Assert.Equal(new ItemAlignment(AlignItemsKeyword.Center, Safe: false), FlexOf(scene, column).AlignItems);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// On a grid, <c>JustifyContent(Center)</c> centers the columns in the content box and <c>AlignItems(Center)</c> centers each
+    /// child along its cell's height; a child's own alignment wins (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of 200 x 100 with three columns of 50 px and one row of 40 px, and boxes of
+    ///   10 x 10, 20 x 20, and 10 x 10 in the three cells; the third box's own alignment is end.
+    ///
+    /// Steps:
+    /// - Set the grid's justify-content and align-items to center; mount; read the boxes' rectangles.
+    ///
+    /// Expected:
+    /// - The columns take 150, so they start at (200 - 150) / 2 = 25: the cells start at 25, 75, and 125, and each box at its
+    ///   cell's start, since it has a width. Down the row of 40: the first box at (40 - 10) / 2 = 15, the second at (40 - 20) / 2 =
+    ///   10, the third at 40 - 10 = 30. The grid's properties hold the two unsafe centers.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_CenterInAGrid_CenterTheTracksAndTheChildrenInTheirCells() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element grid = default;
+            Element first = default;
+            Element second = default;
+            Element third = default;
+            scene.Mount(() =>
+            {
+                third = Box().Width(10).Height(10);
+                OwnAlignment(scene, third, AlignItemsKeyword.End);
+                grid = Grid(
+                        [Track.Px(50), Track.Px(50), Track.Px(50)],
+                        [Track.Px(40)],
+                        first = Box().Width(10).Height(10),
+                        second = Box().Width(20).Height(20),
+                        third
+                    )
+                    .Width(200)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.Center)
+                    .AlignItems(AlignItems.Center);
+                return grid;
+            });
+
+            Assert.Equal(
+                (new Rect(25, 15, 10, 10), new Rect(75, 10, 20, 20), new Rect(125, 30, 10, 10)),
+                (scene.Tree.GetRect(first.Node), scene.Tree.GetRect(second.Node), scene.Tree.GetRect(third.Node))
+            );
+            GridProps props = GridOf(scene, grid);
+            Assert.Equal(
+                (new ContentAlignment(AlignContentKeyword.Center, Safe: false), new ItemAlignment(AlignItemsKeyword.Center, Safe: false)),
+                (props.JustifyContent, props.AlignItems)
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// The alignments the methods write are unsafe (CSS's default): content larger than the room is centered past both of its
+    /// edges, not moved to the start (design §2.13, "The alignment of a container").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A window of 200 x 100 whose root holds a grid of 100 x 100 with one column of 160 px and one row of 40 px, and a box of
+    ///   10 x 60 in its cell.
+    ///
+    /// Steps:
+    /// - Set the grid's justify-content and align-items to center; mount; read the box's rectangle.
+    ///
+    /// Expected:
+    /// - The column starts at (100 - 160) / 2 = -30 and the box at (40 - 60) / 2 = -10 in the row: (-30, -10, 10 x 60). A safe
+    ///   center would give (0, 0).
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_ContentLargerThanTheRoom_IsCenteredUnsafe() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() =>
+                Grid([Track.Px(160)], [Track.Px(40)], box = Box().Width(10).Height(60))
+                    .Width(100)
+                    .Height(100)
+                    .JustifyContent(JustifyContent.Center)
+                    .AlignItems(AlignItems.Center)
+            );
+
+            Assert.Equal(new Rect(-30, -10, 10, 60), scene.Tree.GetRect(box.Node));
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// Each public value maps to the keyword of the same name, unsafe, on a row and on a grid: the public enums have the values of
+    /// <see cref="AlignContentKeyword"/> and <see cref="AlignItemsKeyword"/> in the same order.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a row and a grid of one column.
+    ///
+    /// Steps:
+    /// - Count the values of each public enum and of its keyword enum. Set each value of <see cref="JustifyContent"/> and of
+    ///   <see cref="AlignItems"/> in turn on the row and on the grid, and read the property after each.
+    ///
+    /// Expected:
+    /// - The same counts (10 and 8); after each set, the property is the keyword whose name is the value's, with <c>Safe</c> false.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_EachValue_MapsToTheKeywordOfTheSameName() =>
+        ui.Invoke(() =>
+        {
+            Assert.Equal((10, 10), (Enum.GetValues<JustifyContent>().Length, Enum.GetValues<AlignContentKeyword>().Length));
+            Assert.Equal((8, 8), (Enum.GetValues<AlignItems>().Length, Enum.GetValues<AlignItemsKeyword>().Length));
+            var scene = new Scene();
+            Element row = default;
+            Element grid = default;
+            scene.Mount(() => Column(row = Row(), grid = Grid([Track.Px(50)], [])));
+
+            foreach (JustifyContent value in Enum.GetValues<JustifyContent>())
+            {
+                var expected = new ContentAlignment(Enum.Parse<AlignContentKeyword>(value.ToString()), Safe: false);
+                _ = row.JustifyContent(value);
+                _ = grid.JustifyContent(value);
+                Assert.Equal((expected, expected), (FlexOf(scene, row).JustifyContent, GridOf(scene, grid).JustifyContent));
+            }
+
+            foreach (AlignItems value in Enum.GetValues<AlignItems>())
+            {
+                var expected = new ItemAlignment(Enum.Parse<AlignItemsKeyword>(value.ToString()), Safe: false);
+                _ = row.AlignItems(value);
+                _ = grid.AlignItems(value);
+                Assert.Equal((expected, expected), (FlexOf(scene, row).AlignItems, GridOf(scene, grid).AlignItems));
+            }
+
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// The value a row or a grid already has, written again, changes nothing: no new style, no mark, no layout root, and no frame;
+    /// another value marks the container for layout and asks for a frame.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of a row with justify-content end and align-items center, and a grid of one column of 50 px with the same two
+    ///   values, laid out and drawn by the first frame.
+    ///
+    /// Steps:
+    /// - Write justify-content end and align-items center again to each; read the styles' versions, the marks, the layout roots,
+    ///   and the frame asked for. Then write justify-content center to the row and align-items start to the grid, and read them
+    ///   again.
+    ///
+    /// Expected:
+    /// - After the same values: both versions as before, neither node marked, no layout root queued, no frame asked for. After
+    ///   the other values: both versions one more, the row and the grid marked for layout, a layout root queued, and a frame asked
+    ///   for.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_TheSameValueAgain_ChangeNothing() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element row = default;
+            Element grid = default;
+            scene.Mount(() =>
+                Column(
+                    row = Row(Box().Width(20).Height(10)).JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center),
+                    grid = Grid([Track.Px(50)], [], Box().Width(10).Height(10)).JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center)
+                )
+            );
+            scene.Scheduler.Run();
+            Assert.False(scene.Scheduler.Pending);
+            ulong rowVersion = scene.Tree.Nodes.GetRef(row.Node).Versions.LayoutStyle;
+            ulong gridVersion = scene.Tree.Nodes.GetRef(grid.Node).Versions.LayoutStyle;
+
+            _ = row.JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center);
+            _ = grid.JustifyContent(JustifyContent.End).AlignItems(AlignItems.Center);
+            (ulong Row, ulong Grid, DirtyFlags RowSelf, DirtyFlags GridSelf, int Roots, bool Pending) same = (
+                scene.Tree.Nodes.GetRef(row.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(grid.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(row.Node).Dirty.SelfDirty,
+                scene.Tree.Nodes.GetRef(grid.Node).Dirty.SelfDirty,
+                scene.Tree.LayoutRoots.Count,
+                scene.Scheduler.Pending
+            );
+
+            _ = row.JustifyContent(JustifyContent.Center);
+            _ = grid.AlignItems(AlignItems.Start);
+            (ulong Row, ulong Grid, DirtyFlags RowSelf, DirtyFlags GridSelf, bool Roots, bool Pending) other = (
+                scene.Tree.Nodes.GetRef(row.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(grid.Node).Versions.LayoutStyle,
+                scene.Tree.Nodes.GetRef(row.Node).Dirty.SelfDirty & DirtyFlags.Layout,
+                scene.Tree.Nodes.GetRef(grid.Node).Dirty.SelfDirty & DirtyFlags.Layout,
+                scene.Tree.LayoutRoots.Count > 0,
+                scene.Scheduler.Pending
+            );
+
+            Assert.Equal((rowVersion, gridVersion, DirtyFlags.None, DirtyFlags.None, 0, false), same);
+            Assert.Equal((rowVersion + 1, gridVersion + 1, DirtyFlags.Layout, DirtyFlags.Layout, true, true), other);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>JustifyContent</c> and <c>AlignItems</c> work on a flex or a grid container only: on a box, a block, they throw and leave
+    /// its style as it was.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a box.
+    ///
+    /// Steps:
+    /// - Call <c>JustifyContent(Center)</c> and <c>AlignItems(Center)</c> on the box.
+    ///
+    /// Expected:
+    /// - Each throws <see cref="InvalidOperationException"/>; the box's layout is still the block with CSS's initial values.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_OnABox_Throw() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() => box = Box());
+
+            Assert.Throws<InvalidOperationException>(() => box.JustifyContent(JustifyContent.Center));
+            Assert.Throws<InvalidOperationException>(() => box.AlignItems(AlignItems.Center));
+            Assert.Equal(LayoutAlgorithm.Block.Instance, scene.Tree.Nodes.GetRef(box.Node).Layout.Style.Algorithm);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// Gap on a virtualized list writes the gap of the list's layout, between its rows (design §3.4, "The shape of P02e"), and the
+    /// container alignment throws on it: the list has a gap and no container alignment.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a box that scrolls vertically and holds a virtualized list of three items.
+    ///
+    /// Steps:
+    /// - Call <c>Gap(5)</c> on the box and read its layout algorithm; then call <c>JustifyContent(Center)</c> and
+    ///   <c>AlignItems(Center)</c>, and read the algorithm again.
+    ///
+    /// Expected:
+    /// - The box's layout is the virtualized list's with a gap of 5 pixels; each alignment throws
+    ///   <see cref="InvalidOperationException"/>, and the algorithm after them is the same instance as before.
+    /// </remarks>
+    [Fact]
+    public void Gap_OnAVirtualizedList_WritesTheListsGap_AndAlignmentThrows() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element list = default;
+            IReadOnlySignal<IReadOnlyList<int>> items = Signal.Create<IReadOnlyList<int>>([1, 2, 3]);
+            scene.Mount(() =>
+                list = Box().Overflow(Overflow.Visible, Overflow.Scroll).Height(100).VirtualFor(items, static item => item, static _ => Box())
+            );
+
+            _ = list.Gap(5);
+            LayoutAlgorithm withGap = scene.Tree.Nodes.GetRef(list.Node).Layout.Style.Algorithm;
+
+            Assert.Equal(LengthPercentage.Px(5), Assert.IsType<LayoutAlgorithm.Virtual>(withGap).Props.Gap);
+            Assert.Throws<InvalidOperationException>(() => list.JustifyContent(JustifyContent.Center));
+            Assert.Throws<InvalidOperationException>(() => list.AlignItems(AlignItems.Center));
+            Assert.Same(withGap, scene.Tree.Nodes.GetRef(list.Node).Layout.Style.Algorithm);
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// A value outside the public enum throws, on a row and on a grid, and leaves the property as it was; the last values of
+    /// each enum are taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a row and a grid of one column.
+    ///
+    /// Steps:
+    /// - Call <c>JustifyContent</c> with 10 and 255 and <c>AlignItems</c> with 8 and 255 on each; then <c>SpaceEvenly</c> (9) and
+    ///   <c>Stretch</c> (7).
+    ///
+    /// Expected:
+    /// - The four calls with a value outside throw <see cref="ArgumentOutOfRangeException"/> on each node, and the properties are
+    ///   still normal; the last two write space-evenly and stretch.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_UndefinedValue_Throws() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element row = default;
+            Element grid = default;
+            scene.Mount(() => Column(row = Row(), grid = Grid([Track.Px(50)], [])));
+
+            Element[] containers = [row, grid];
+            foreach (Element container in containers)
+            {
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.JustifyContent((JustifyContent)10));
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.JustifyContent((JustifyContent)255));
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.AlignItems((AlignItems)8));
+                Assert.Throws<ArgumentOutOfRangeException>(() => container.AlignItems((AlignItems)255));
+            }
+
+            Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (FlexOf(scene, row).JustifyContent, FlexOf(scene, row).AlignItems));
+            Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (GridOf(scene, grid).JustifyContent, GridOf(scene, grid).AlignItems));
+            _ = row.JustifyContent(JustifyContent.SpaceEvenly).AlignItems(AlignItems.Stretch);
+            Assert.Equal(
+                (new ContentAlignment(AlignContentKeyword.SpaceEvenly), new ItemAlignment(AlignItemsKeyword.Stretch)),
+                (FlexOf(scene, row).JustifyContent, FlexOf(scene, row).AlignItems)
+            );
+            scene.Dispose();
+        });
+
+    /// <summary>
+    /// <c>JustifyContent</c> and <c>AlignItems</c> throw on a thread that is not the UI thread, and write nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A row made and mounted on the UI thread; the test's own thread is another.
+    ///
+    /// Steps:
+    /// - On the test's thread, call <c>JustifyContent(Center)</c> and <c>AlignItems(Center)</c> on the row; then read its flex
+    ///   properties on the UI thread.
+    ///
+    /// Expected:
+    /// - Each call throws <see cref="InvalidOperationException"/>; the row's justify-content and align-items are still normal.
+    /// </remarks>
+    [Fact]
+    public void JustifyContentAndAlignItems_OffTheUiThread_Throw()
+    {
+        Scene? scene = null;
+        Element row = default;
+        ui.Invoke(() =>
+        {
+            scene = new Scene();
+            scene.Mount(() => row = Row());
+        });
+
+        Assert.Throws<InvalidOperationException>(() => row.JustifyContent(JustifyContent.Center));
+        Assert.Throws<InvalidOperationException>(() => row.AlignItems(AlignItems.Center));
+
+        ui.Invoke(() =>
+        {
+            FlexProps props = FlexOf(scene!, row);
+            Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (props.JustifyContent, props.AlignItems));
+            scene!.Dispose();
+        });
+    }
+
+    // The flex properties of a row or a column.
+    private static FlexProps FlexOf(Scene scene, Element element) =>
+        ((LayoutAlgorithm.Flex)scene.Tree.Nodes.GetRef(element.Node).Layout.Style.Algorithm).Props;
+
+    // The properties of a grid.
+    private static GridProps GridOf(Scene scene, Element element) =>
+        ((LayoutAlgorithm.Grid)scene.Tree.Nodes.GetRef(element.Node).Layout.Style.Algorithm).Props;
+
+    // Gives a child its own alignment across (LayoutStyle.AlignSelf), which has no public method before row P02h.
+    private static void OwnAlignment(Scene scene, Element child, AlignItemsKeyword keyword) =>
+        scene.Tree.SetStyle(child.Node, scene.Tree.Nodes.GetRef(child.Node).Layout.Style with { AlignSelf = new ItemAlignment(keyword) });
 
     private static int LiveScopes()
     {

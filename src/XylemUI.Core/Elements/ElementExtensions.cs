@@ -33,6 +33,46 @@ public static partial class ElementExtensions
         Layout(element, style => style with { Height = Length.Px(Check(height, nameof(height))) });
 
     /// <summary>
+    /// Sets the width of the node's border box as a fraction of the width of its parent's content box, as a CSS percentage
+    /// width does (design §2.13, "The component API"): 1 is the parent's whole width, and the width follows when the parent's
+    /// changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="fraction">The fraction, finite and at or above 0; 0.5 is half the parent's width, and above 1 is wider than
+    /// the parent.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="fraction"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
+    public static Element WidthFraction(this Element element, float fraction) =>
+        Layout(element, style => style with { Width = Length.Percent(Check(fraction, nameof(fraction))) });
+
+    /// <summary>
+    /// Sets the height of the node's border box as a fraction of the height of its parent's content box, as a CSS percentage
+    /// height does (design §2.13, "The component API"): 1 is the parent's whole height, and the height follows when the parent's
+    /// changes.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="fraction">The fraction, finite and at or above 0; 0.5 is half the parent's height, and above 1 is taller than
+    /// the parent.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="fraction"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
+    public static Element HeightFraction(this Element element, float fraction) =>
+        Layout(element, style => style with { Height = Length.Percent(Check(fraction, nameof(fraction))) });
+
+    /// <summary>
+    /// Sets the smallest width of the node's border box, as CSS's <c>min-width</c> does (design §2.13, "The component API"): the
+    /// layout gives the node at least this width, also when its content or the width it is given is narrower.
+    /// </summary>
+    /// <param name="element">The node.</param>
+    /// <param name="width">The smallest width, finite and at or above 0.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> is negative or not a finite number.</exception>
+    [UiThreadOnly]
+    public static Element MinWidth(this Element element, float width) =>
+        Layout(element, style => style with { MinWidth = Length.Px(Check(width, nameof(width))) });
+
+    /// <summary>
     /// Sets the padding on all four sides.
     /// </summary>
     /// <param name="element">The node.</param>
@@ -72,23 +112,61 @@ public static partial class ElementExtensions
         return Layout(
             element,
             style =>
-                style.Algorithm switch
+                style with
                 {
-                    LayoutAlgorithm.Flex flex => style with
-                    {
-                        Algorithm = new LayoutAlgorithm.Flex(flex.Props with { RowGap = LengthPercentage.Px(g), ColumnGap = LengthPercentage.Px(g) }),
-                    },
-                    LayoutAlgorithm.Virtual list => style with
-                    {
-                        Algorithm = new LayoutAlgorithm.Virtual(list.Props with { Gap = LengthPercentage.Px(g) }),
-                    },
-                    LayoutAlgorithm.Grid grid => style with
-                    {
-                        Algorithm = new LayoutAlgorithm.Grid(grid.Props with { RowGap = LengthPercentage.Px(g), ColumnGap = LengthPercentage.Px(g) }),
-                    },
-                    _ => throw new InvalidOperationException("Only a column, a row, a grid, or a virtualized list has a gap between its children."),
+                    Algorithm =
+                        style.Algorithm.WithGap(LengthPercentage.Px(g))
+                        ?? throw new InvalidOperationException("Only a column, a row, a grid, or a virtualized list has a gap between its children."),
                 }
         );
+    }
+
+    /// <summary>
+    /// Sets how a column, a row, or a grid distributes its free space (CSS's <c>justify-content</c>, design §2.13, "The alignment of
+    /// a container"): a column's or a row's along the main axis of each line, a grid's around and between its columns. The same
+    /// value again changes nothing.
+    /// </summary>
+    /// <param name="element">The column, the row, or the grid.</param>
+    /// <param name="value">The distribution.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is not a value of
+    /// <see cref="XylemUI.JustifyContent"/>.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the node is not a column, a row, or a
+    /// grid.</exception>
+    [UiThreadOnly]
+    public static Element JustifyContent(this Element element, JustifyContent value)
+    {
+        UiThread.VerifyAccess();
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "The distribution is a value of JustifyContent.");
+        }
+
+        return Align(element, new ContentAlignment((AlignContentKeyword)value), null);
+    }
+
+    /// <summary>
+    /// Sets where a column, a row, or a grid puts its children across (CSS's <c>align-items</c>, design §2.13, "The alignment of a
+    /// container"): a column's or a row's across each line, a grid's along the height of each cell. A child's own alignment wins.
+    /// The same value again changes nothing.
+    /// </summary>
+    /// <param name="element">The column, the row, or the grid.</param>
+    /// <param name="value">The alignment.</param>
+    /// <returns>The same node, for the next call of the chain.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is not a value of
+    /// <see cref="XylemUI.AlignItems"/>.</exception>
+    /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or the node is not a column, a row, or a
+    /// grid.</exception>
+    [UiThreadOnly]
+    public static Element AlignItems(this Element element, AlignItems value)
+    {
+        UiThread.VerifyAccess();
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "The alignment is a value of AlignItems.");
+        }
+
+        return Align(element, null, new ItemAlignment((AlignItemsKeyword)value));
     }
 
     /// <summary>
@@ -1340,6 +1418,24 @@ public static partial class ElementExtensions
                     }
                     : throw new InvalidOperationException("Only a grid has the properties of a grid.")
         );
+
+    // Writes a flex or a grid container's justify-content or align-items, unsafe (design §2.13, "The alignment of a container"); a
+    // value equal to the one there marks nothing.
+    private static Element Align(Element element, ContentAlignment? justify, ItemAlignment? align)
+    {
+        UiTree tree = element.TreeOrThrow();
+        LayoutStyle style = tree.Nodes.GetRef(element.Node).Layout.Style;
+        LayoutAlgorithm algorithm =
+            style.Algorithm.WithContainerAlignment(justify, align)
+            ?? throw new InvalidOperationException("JustifyContent and AlignItems work on a column, a row, or a grid only.");
+        if (ReferenceEquals(algorithm, style.Algorithm))
+        {
+            return element;
+        }
+
+        tree.SetStyle(element.Node, style with { Algorithm = algorithm });
+        return element;
+    }
 
     private static Element Layout(Element element, Func<LayoutStyle, LayoutStyle> change)
     {

@@ -355,7 +355,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
                 new LayoutStyle
                 {
                     Algorithm = new LayoutAlgorithm.Flex(
-                        new FlexProps { Wrap = FlexWrap.Wrap, AlignContent = new AlignContent(AlignContentKeyword.FlexStart) }
+                        new FlexProps { Wrap = FlexWrap.Wrap, AlignContent = new ContentAlignment(AlignContentKeyword.FlexStart) }
                     ),
                 }
             );
@@ -398,7 +398,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(
-                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) }
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new ItemAlignment(AlignItemsKeyword.Baseline) }) }
             );
             float baseline = 10;
             NodeHandle a = tree.CreateNode(new LayoutStyle(), (_, _) => new MeasureResult(new Size(20, 30), baseline));
@@ -723,7 +723,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
 
             tree.SetStyle(
                 root,
-                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Start) }) }
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new ItemAlignment(AlignItemsKeyword.Start) }) }
             );
             LayoutEngine.RunLayoutPass(tree);
 
@@ -756,7 +756,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
                 new LayoutStyle
                 {
                     Algorithm = new LayoutAlgorithm.Flex(
-                        new FlexProps { Direction = FlexDirection.Column, AlignItems = new AlignItems(AlignItemsKeyword.Start) }
+                        new FlexProps { Direction = FlexDirection.Column, AlignItems = new ItemAlignment(AlignItemsKeyword.Start) }
                     ),
                 }
             );
@@ -1110,7 +1110,7 @@ public sealed class LayoutIncrementalTests(UiThreadFixture ui)
         MeasureResult.Of(Maybe.Or(known.Width, float.IsNaN(known.Height) ? 20 : 2 * known.Height), Maybe.Or(known.Height, 10));
 
     private static LayoutStyle BaselineRow() =>
-        new() { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) };
+        new() { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new ItemAlignment(AlignItemsKeyword.Baseline) }) };
 
     // A fixed size, with no automatic minimum and no shrink, so that no measuring run reads the node.
     private static LayoutStyle FixedItem(float width, float height) =>

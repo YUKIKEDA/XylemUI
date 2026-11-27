@@ -243,7 +243,7 @@ internal static partial class LayoutEngine
             }
 
             // `normal` and `stretch` keep the block's default; any other alignment makes an automatic width fit the content.
-            AlignItems justify = childStyle.JustifySelf ?? props.JustifyItems;
+            ItemAlignment justify = childStyle.JustifySelf ?? props.JustifyItems;
             bool aligned = justify.Keyword is not (AlignItemsKeyword.Normal or AlignItemsKeyword.Stretch);
             Length widthStyle = aligned && childStyle.Width.IsAuto ? Length.FitContent : childStyle.Width;
 

@@ -85,8 +85,8 @@ public static partial class Primitive
                     new FlexProps
                     {
                         Direction = FlexDirection.Column,
-                        JustifyContent = new AlignContent(AlignContentKeyword.Center),
-                        AlignItems = new AlignItems(AlignItemsKeyword.Center),
+                        JustifyContent = new ContentAlignment(AlignContentKeyword.Center),
+                        AlignItems = new ItemAlignment(AlignItemsKeyword.Center),
                     }
                 ),
                 Width = Length.Percent(1),

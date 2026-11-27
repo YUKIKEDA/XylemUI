@@ -54,8 +54,8 @@ internal static partial class LayoutEngine
     {
         float axisMin = Get(c.InnerMin, inline);
         float axisMax = Get(c.InnerMax, inline);
-        AlignContent axisAlignment = inline ? c.JustifyContent : c.AlignContent;
-        AlignContent otherAlignment = inline ? c.AlignContent : c.JustifyContent;
+        ContentAlignment axisAlignment = inline ? c.JustifyContent : c.AlignContent;
+        ContentAlignment otherAlignment = inline ? c.AlignContent : c.JustifyContent;
         AvailableSpace axisAvailable = inline ? c.AvailableGridSpace.Width : c.AvailableGridSpace.Height;
 
         // 11.4 Initialize each track's base size and growth limit: a fixed function's size, else 0 and infinity.
@@ -128,7 +128,7 @@ internal static partial class LayoutEngine
         ExpandFlexibleTracks(ref sizer, axisTracks, otherTracks, items, axisMin, axisMax, expansion);
 
         // 11.8 Stretch the `auto` tracks.
-        if (axisAlignment == new AlignContent(AlignContentKeyword.Stretch))
+        if (axisAlignment == new ContentAlignment(AlignContentKeyword.Stretch))
         {
             StretchAutoTracks(axisTracks, axisMin, expansion);
         }
@@ -137,7 +137,7 @@ internal static partial class LayoutEngine
     // The extra size of each inner gutter in the other axis that its content alignment gives, when that axis's size and every
     // track's estimate are definite (Taffy's compute_alignment_gutter_adjustment). Items never cross the outermost gutters, so
     // start and end weigh the same.
-    private static float AlignmentGutterAdjustment(AlignContent alignment, float axisInnerSize, Span<GridTrackState> tracks, bool estimateFromMax)
+    private static float AlignmentGutterAdjustment(ContentAlignment alignment, float axisInnerSize, Span<GridTrackState> tracks, bool estimateFromMax)
     {
         if (tracks.Length <= 1)
         {
@@ -1498,7 +1498,7 @@ internal static partial class LayoutEngine
         );
 
     // Whether an alignment stretches an item for its contributions: `normal` does there, unlike at the final alignment.
-    private static bool IsStretch(AlignItems alignment) => alignment.Keyword is AlignItemsKeyword.Stretch or AlignItemsKeyword.Normal;
+    private static bool IsStretch(ItemAlignment alignment) => alignment.Keyword is AlignItemsKeyword.Stretch or AlignItemsKeyword.Normal;
 
     // The space given to the item, less its margins and its baseline shim, as when it is laid out in its place (Taffy's
     // available_space_minus_margins): margins against the area's width, auto margins as 0.

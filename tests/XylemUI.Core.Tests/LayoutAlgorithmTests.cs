@@ -363,7 +363,7 @@ public sealed class LayoutAlgorithmTests(UiThreadFixture ui)
         {
             var tree = new UiTree();
             NodeHandle root = tree.CreateNode(
-                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new AlignItems(AlignItemsKeyword.Baseline) }) }
+                new LayoutStyle { Algorithm = new LayoutAlgorithm.Flex(new FlexProps { AlignItems = new ItemAlignment(AlignItemsKeyword.Baseline) }) }
             );
             NodeHandle a = Box(tree, root, new LayoutStyle());
             Leaf(tree, a, 50, 10);
