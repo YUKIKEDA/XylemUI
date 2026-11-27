@@ -1899,7 +1899,7 @@ public sealed record WindowOptions(string Title = "XylemUI", float Width = 800, 
   - ウィンドウは、作ってすぐ、レンダラを作る前に見せる（V1d の実装で、オーナーが決定）。M1a の起動の場面（`XylemUI.E2E`）、Avalonia、GPUI も、ウィンドウを開いてから描く。最初のフレームを Present してから見せる形（Flutter の Windows のランナー、空のウィンドウを見せない）は、起動から中身が画面に出るまでが 40〜60 ms 長かった。行 C0 までは、レンダラを作る約 0.6 秒（実行時のシェーダのコンパイル）の間、中身の無いウィンドウが見える（`docs/benchmarks/v1d-components.md`）
   - 木の後ろの色は白にする。色を持たない文字は黒で描くので（`WindowFrames`）、Avalonia の明るいテーマのウィンドウと同じ白にした。テーマを使うアプリでは、テーマの根の箱の背景の色を使う。根の包みが `WindowSurface.SetBackdrop` でホストに知らせる（行 TH1、§13.2「テーマの鍵」の「根の箱」）
 - **`Text` の既定:** 大きさは 14 論理画素で、Flutter の `kDefaultFontSize`（`painting/text_painter.dart` 41 行目）と同じ。Avalonia の既定は 12（`Avalonia.Controls/Documents/TextElement.cs` 37〜41 行目）、GPUI は 1 rem で 16（`gpui/src/style.rs` 493 行目、`gpui/src/window.rs` 2136 行目）。3 つの真ん中を、テーマの無いときの値にした（Grill の Q21 は Avalonia を 14 と誤って書き、オーナーが一次資料を見て 14 を選び直した）。言語は OS の UI の言語（ウィンドウの host が Windows の `GetUserPreferredUILanguages` の最初の言語を読み、`UiTree` に渡す。読めなければ "und"。`InvariantGlobalization` のもとでは `CultureInfo.CurrentUICulture` が OS の言語によらず不変のカルチャになるので、Grill の案の `CurrentUICulture` は使えない。V1d の実装で見つけた。行 LC1 からは、OS の一覧を全部読んで解決したロケールの言語を使い、ロケールが変わると整形し直す。アプリがロケールを 1 つも宣言しなければ、今と同じく OS の 1 番目の言語を使う。§4.11「ロケール」の「文字の既定の言語」、LC1 の Grill、Issue #825）、フォントは `FontRequest.Default`、行の高さはフォントの値（§3.2「行の高さ」）。色は持たず、祖先から受け継ぐ（§5.0「不透明度・変換・擬似状態」の「文字の色」）
-- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。行 P02h1 で、揃えの値の enum `JustifyContent` と `AlignItems` を足して公開する（上の「容器の揃え」）。欄の型の `ContentAlignment`・`ItemAlignment` と、それを持つ `FlexProps`・`GridProps` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
+- **公開する型:** V1d で、`TextStyle`・`Rect`・`Size`・`PaintStyle`・`DrawFunc`・`NodeProperty<T>`・`ScopeHandle`（§2.3）、`NodeTextWriter`・`NodeTextWriterExtensions`・`NodeTextWriterHandler`、§7「ポインタの入力」の `PointerEvent`・`PointerEventKind`・`EventPhase`・`PointerButton`・`PointerButtons`・`KeyModifiers`・`PointerType`・`PointerHandler`・`CursorKind` を公開する。`UiTree`・`UiNode`・`LayoutStyle`・`Length`・`EdgeInsets`・`WindowFrames`・`WindowInput`・`PointerInput`・`IPointerPlatform` は internal のまま。行 P02h1（PR #954）で、揃えの値の enum `JustifyContent` と `AlignItems` を足して公開した（上の「容器の揃え」）。欄の型の `ContentAlignment`・`ItemAlignment` と、それを持つ `FlexProps`・`GridProps` は internal のまま。公開の境界（Platform と Rendering に何を見せるか）は行 C0 で決める（§2.9.1）
 - **確かめ方:**
   - `samples/Counter`: `Column` に `Text`（`clicks: N`）と `Button`（自分で付けた背景・角丸・余白・ホバーと押下の見た目）を載せる
   - WARP: ボタンの中心の画素が、付けた背景の色になる（MoonBit 版の V1 と同じ到達点、§10.5）
@@ -2116,8 +2116,8 @@ public readonly record struct GridProps
 
 // 揃えの値には、あふれたときの揃え方を付けられる（CSS Box Alignment の safe / unsafe）。Safe は、はみ出すときに start に寄せる
 // （L1b の Grill で決定）。付けないときは unsafe と同じ。self-start / self-end は子自身の書字の向きによるので P03b
-// 欄の型は内部の 2 つで、キーワードとあふれたときの揃え方の組である（行 P02h1 の実装の PR で、AlignItems と AlignContent から名前を
-// 変える。Issue #952 でオーナーが決定）
+// 欄の型は内部の 2 つで、キーワードとあふれたときの揃え方の組である（行 P02h1 の実装の PR #954 で、AlignItems と AlignContent から
+// 名前を変えた。Issue #952 でオーナーが決定）
 internal readonly record struct ItemAlignment(AlignItemsKeyword Keyword, bool Safe = false);       // 子をどこに置くか（*-items、*-self）
 internal readonly record struct ContentAlignment(AlignContentKeyword Keyword, bool Safe = false);   // 空きをどう配るか（*-content）
 internal enum AlignItemsKeyword : byte { Normal, Start, End, FlexStart, FlexEnd, Center, Baseline, Stretch }

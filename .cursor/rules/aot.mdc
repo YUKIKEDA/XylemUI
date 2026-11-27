@@ -13,6 +13,7 @@ Release builds are NativeAOT; development runs on the JIT (design §0.1). Both m
 - Serialization, if any, uses source-generated serializers (System.Text.Json source generation or similar), never reflection-based ones.
 - Interop uses `LibraryImport` and unmanaged function pointers, not `DllImport` with runtime marshalling or `ComImport` RCWs (`.cursor/rules/interop.mdc`).
 - Generic virtual methods and generic interfaces instantiated over many value types grow the binary. When one is added on a public type, the PR reports the size of the NativeAOT sample before and after.
+- A method shared by every case does not construct the type of one case. ILC keeps the code of a type that some reachable method can construct, so a helper that switched on the layout type and held `new LayoutAlgorithm.Grid(...)` kept Grid's layout code (about 100 KB) in an app that made no grid, the Fluent button's `Row` included. Write each case's construction in a virtual method of its own type: the override of a type that nothing constructs is dropped (`WithGap` and `WithContainerAlignment`, `docs/benchmarks/p02h1-alignment-size.md`, PR #950).
 - A Source Generator ships inside the package that uses it (`analyzers/dotnet/cs`), not as a separate package (MagicOnion's layout).
 - Localized messages and number and date formats do not go through `CultureInfo` or `ResourceManager`: `InvariantGlobalization=true` stays on. The generator turns ARB files into methods at build time, and the format tables come from CLDR (design §4.11).
 
