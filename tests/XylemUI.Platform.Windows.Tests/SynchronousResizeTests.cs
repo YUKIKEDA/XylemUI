@@ -61,7 +61,9 @@ public sealed unsafe class SynchronousResizeTests(UiThreadFixture ui)
     /// Expected:
     /// - The queued keys ended the loop: the guard thread did not have to send Escape.
     /// - The log starts with the modal loop's enter and ends with its exit.
-    /// - Renders happened between them, and the last one is wider than the client area before the loop (the height stays).
+    /// - Renders happened between them, each at the client size the window had at that moment, and at least one at a size other
+    ///   than the one before the loop. The final size is not checked: on this machine the modal loop puts the cursor back where it
+    ///   was when the loop began, which this process sees as (0,0), and Snap then maximizes the window (Issue #949).
     /// </remarks>
     [Fact]
     public void KeyboardResize_InsideTheOsModalLoop_RendersOnEachSizeChange()
@@ -74,6 +76,7 @@ public sealed unsafe class SynchronousResizeTests(UiThreadFixture ui)
             window.Show();
             var log = new List<string>();
             var sizes = new List<(int Width, int Height)>();
+            var clients = new List<(int Width, int Height)>();
             window.MessageHook = (_, message) =>
             {
                 if (message == WM.WM_ENTERSIZEMOVE)
@@ -91,6 +94,9 @@ public sealed unsafe class SynchronousResizeTests(UiThreadFixture ui)
             {
                 log.Add("render");
                 sizes.Add((width, height));
+                RECT now;
+                Assert.True(GetClientRect(window.Hwnd, &now));
+                clients.Add((now.right - now.left, now.bottom - now.top));
             };
 
             RECT before;
@@ -122,9 +128,9 @@ public sealed unsafe class SynchronousResizeTests(UiThreadFixture ui)
             Assert.Equal("exit", log[^1]);
             Assert.Contains("render", log);
             Assert.All(log[1..^1], entry => Assert.Equal("render", entry));
-            (int lastWidth, int lastHeight) = sizes[^1];
-            Assert.True(lastWidth > before.right - before.left, $"width {lastWidth} after, {before.right - before.left} before");
-            Assert.Equal(before.bottom - before.top, lastHeight);
+            Assert.Equal(clients, sizes);
+            (int Width, int Height) start = (before.right - before.left, before.bottom - before.top);
+            Assert.Contains(sizes, size => size != start);
         });
     }
 
