@@ -62,7 +62,7 @@ internal sealed class Scene : IDisposable
             }
 
             Renderer.TextRendering = TextRenderingOf(Window, gray);
-            Atlas = new GlyphAtlas(() => new DirectWriteGlyphRasterizer());
+            Atlas = new GlyphAtlas(_app.CreateRasterizer);
             Core.Connect(HostWindow, Atlas, Clear);
             HostWindow.Attach();
 

@@ -25,7 +25,8 @@ public abstract class HeadlessRenderer : IDisposable
     internal abstract IRenderTarget Target { get; }
 
     /// <summary>
-    /// Makes the rasterizer of the glyphs the target draws; the app's glyph atlas owns it.
+    /// Makes the rasterizer of the glyphs the target draws. The app owns it: its glyph atlas, given one rasterizer, leaves it to the
+    /// caller, so the app disposes it after the atlas and before the renderer.
     /// </summary>
     /// <returns>The rasterizer.</returns>
     internal abstract IGlyphRasterizer CreateRasterizer();

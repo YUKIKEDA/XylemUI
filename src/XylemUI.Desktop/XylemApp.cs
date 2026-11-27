@@ -50,9 +50,9 @@ public static class XylemApp
             // root function makes elements that use them (design §6.0, "The order of creation"). Declared first, it is disposed
             // after the window core (which disposes the window) and the text tools, and puts back what it replaced when anything
             // from here on throws too, so that the app can run again. A host that throws while it is made has changed nothing.
+            // The text tools are the UI thread's one set, made from the host's fonts, which the host disposes after them.
             using var app = new Win32PlatformApp();
-            using var fonts = new DirectWriteFontProvider();
-            using var text = new TextContext(fonts);
+            using var text = new TextContext(app.Fonts);
             using WindowCore core = OpenWindow(app, text, root, options ?? new WindowOptions(), show: true);
             Open(core, app);
             return app.Run();
@@ -100,7 +100,7 @@ public static class XylemApp
             GlyphAtlas atlas;
             try
             {
-                atlas = new GlyphAtlas(static () => new DirectWriteGlyphRasterizer());
+                atlas = new GlyphAtlas(app.CreateRasterizer);
             }
             catch
             {

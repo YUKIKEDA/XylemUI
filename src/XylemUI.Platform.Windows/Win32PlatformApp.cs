@@ -1,11 +1,13 @@
+using XylemUI.Text;
+
 namespace XylemUI.Platform.Windows;
 
 /// <summary>
-/// The app tier of the Windows host (design §6.0): the UI thread's message loop, its dispatcher, OLE, the OS's settings, the
-/// clipboard, and the window it opens (<see cref="Win32PlatformWindow"/>), one at a time until row MW1. Making it initializes OLE on
-/// the UI thread, and sets
-/// the loop's dispatcher as <see cref="UiDispatcher.Current"/> and as the thread's synchronization context; disposing it puts back
-/// the dispatcher and the context it replaced, and uninitializes OLE.
+/// The app tier of the Windows host (design §6.0): the UI thread's message loop, its dispatcher, OLE, DirectWrite's fonts and glyph
+/// rasterizers, the OS's settings, the clipboard, and the window it opens (<see cref="Win32PlatformWindow"/>), one at a time until
+/// row MW1. Making it initializes OLE on the UI thread, and sets the loop's dispatcher as <see cref="UiDispatcher.Current"/> and as
+/// the thread's synchronization context; disposing it puts back the dispatcher and the context it replaced, uninitializes OLE, and
+/// disposes the fonts.
 /// </summary>
 /// <remarks>
 /// The loop is <see cref="Win32MessageLoop"/>, which is static: the process has one UI thread. The handler of the exceptions that
@@ -16,6 +18,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
     private readonly IUiDispatcher? _previousDispatcher;
     private readonly SynchronizationContext? _previousContext;
     private readonly Win32PlatformSettings _settings;
+    private readonly DirectWriteFontProvider _fonts;
     private Win32PlatformWindow? _window;
     private bool _disposed;
 
@@ -25,21 +28,33 @@ internal sealed class Win32PlatformApp : IPlatformApp
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The calling thread is not the UI thread, the thread is in COM's multithreaded apartment (the app's <c>Main</c> lacks
-    /// <c>[STAThread]</c>), or OLE failed to initialize.
+    /// <c>[STAThread]</c>), OLE failed to initialize, or DirectWrite could not create the fonts' factory, fallback, or collection.
     /// </exception>
     [UiThreadOnly]
     public Win32PlatformApp()
     {
-        // Checks the thread first, so that a thread that is not the UI thread throws with OLE untouched.
+        // Checks the thread first, so that a thread that is not the UI thread throws with OLE untouched and no fonts made.
         Dispatcher = Win32MessageLoop.Dispatcher;
 
         // Reading Windows' settings changes nothing, so it comes before what a failure would have to put back.
         _settings = new Win32PlatformSettings();
 
+        // The UI thread's one font provider (design §3.2). DirectWrite's shared factory needs no COM apartment, and a provider that
+        // throws has released what it made, so it comes before OLE: a failure here leaves nothing to put back.
+        _fonts = new DirectWriteFontProvider();
+
         // Before the first window, which makes its DirectManipulation viewport with COM and registers its drop target with OLE
         // (design §7, "Touch and pen", I1c; "Drag and drop"). It throws before the dispatcher and the context change, so a
-        // failure leaves nothing to put back.
-        Com.InitializeUiThread();
+        // failure leaves only the fonts to dispose.
+        try
+        {
+            Com.InitializeUiThread();
+        }
+        catch
+        {
+            _fonts.Dispose();
+            throw;
+        }
 
         // The loop's queue is where workers post, from the root function on (design §2.12). The loop's context goes in before the
         // window too: the root function makes elements that keep it, as an image does, whose decode posts its result to it
@@ -51,6 +66,12 @@ internal sealed class Win32PlatformApp : IPlatformApp
 
     /// <inheritdoc />
     public UiDispatcher Dispatcher { get; }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// DirectWrite's system font fallback (<see cref="DirectWriteFontProvider"/>), made with the host and disposed with it.
+    /// </remarks>
+    public IFontProvider Fonts => _fonts;
 
     /// <inheritdoc />
     /// <remarks>
@@ -92,6 +113,9 @@ internal sealed class Win32PlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    public IGlyphRasterizer CreateRasterizer() => new DirectWriteGlyphRasterizer();
+
+    /// <inheritdoc />
     [UiThreadOnly]
     public int Run() => Win32MessageLoop.Run();
 
@@ -103,9 +127,13 @@ internal sealed class Win32PlatformApp : IPlatformApp
     public void Wake() => Win32MessageLoop.Wake();
 
     /// <summary>
-    /// Puts back the dispatcher and the synchronization context that the constructor replaced, and uninitializes OLE. A second
-    /// call on the UI thread does nothing. A call off the UI thread throws and changes nothing (design §6.0).
+    /// Puts back the dispatcher and the synchronization context that the constructor replaced, uninitializes OLE, and disposes the
+    /// fonts. A second call on the UI thread does nothing. A call off the UI thread throws and changes nothing (design §6.0).
     /// </summary>
+    /// <remarks>
+    /// The app disposes the host after the window core and the text tools made from <see cref="Fonts"/> (design §6.0, "The order
+    /// of creation", step 8), so nothing reads the fonts after this.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread.</exception>
     [UiThreadOnly]
     public void Dispose()
@@ -124,5 +152,8 @@ internal sealed class Win32PlatformApp : IPlatformApp
         SynchronizationContext.SetSynchronizationContext(_previousContext);
         _ = UiDispatcher.Exchange(_previousDispatcher);
         Com.UninitializeUiThread();
+
+        // In the reverse of the order the constructor made them: the fonts were made before OLE.
+        _fonts.Dispose();
     }
 }

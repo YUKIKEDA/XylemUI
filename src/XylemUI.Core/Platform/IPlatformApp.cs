@@ -1,8 +1,10 @@
+using XylemUI.Text;
+
 namespace XylemUI;
 
 /// <summary>
 /// The app tier of the platform contract (design §6.0): what an OS host has once per UI thread. It runs the UI thread's loop, owns
-/// the dispatcher that the loop drains, the OS's settings, and the OS's clipboard, and opens the windows.
+/// the dispatcher that the loop drains, the OS's fonts, settings, and clipboard, makes the glyph rasterizers, and opens the windows.
 /// </summary>
 /// <remarks>
 /// A host sets <see cref="Dispatcher"/> as <see cref="UiDispatcher.Current"/> and as the UI thread's synchronization context when
@@ -16,6 +18,22 @@ internal interface IPlatformApp : IDisposable
     /// Gets the UI thread's queue, as the concrete type the loop drains.
     /// </summary>
     UiDispatcher Dispatcher { get; }
+
+    /// <summary>
+    /// Gets the OS's fonts, one provider for the UI thread (design §3.2, "One set of text tools per UI thread"), from which the app makes
+    /// the UI thread's one <see cref="TextContext"/>. The host owns the provider and disposes it when it is disposed, after the text
+    /// tools made from it.
+    /// </summary>
+    IFontProvider Fonts { get; }
+
+    /// <summary>
+    /// Makes a rasterizer of the OS's glyphs. A window's glyph atlas is given this method as the function that creates its
+    /// rasterizers, and calls it on the UI thread for itself and for each of its worker threads (design §5.0.3, "Glyphs seen for
+    /// the first time").
+    /// </summary>
+    /// <returns>A new rasterizer on each call; the caller owns it.</returns>
+    /// <exception cref="InvalidOperationException">The OS's rasterizer could not be made.</exception>
+    IGlyphRasterizer CreateRasterizer();
 
     /// <summary>
     /// Gets the OS's settings, one object for the UI thread, which every window core reads (design §6.0, "OS settings"). How text is

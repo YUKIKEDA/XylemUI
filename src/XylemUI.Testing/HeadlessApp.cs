@@ -25,6 +25,9 @@ public sealed class HeadlessApp : IAsyncDisposable
     private readonly HeadlessOptions _options;
     private readonly TestFontProvider _fonts = new();
     private readonly TextContext _text;
+
+    // The atlas's one rasterizer, which the atlas leaves to the app that made it (GlyphAtlas.Dispose).
+    private readonly IGlyphRasterizer _rasterizer;
     private readonly GlyphAtlas _atlas;
     private readonly HeadlessScheduler _scheduler = new();
     private readonly HeadlessPlatform _platform = new();
@@ -57,7 +60,8 @@ public sealed class HeadlessApp : IAsyncDisposable
         {
             _renderer?.Resize((int)MathF.Ceiling(options.Width * options.Scale), (int)MathF.Ceiling(options.Height * options.Scale));
             _target = new HeadlessTarget(_renderer?.Target);
-            _atlas = new GlyphAtlas(_renderer?.CreateRasterizer() ?? new HeadlessGlyphs());
+            _rasterizer = _renderer?.CreateRasterizer() ?? new HeadlessGlyphs();
+            _atlas = new GlyphAtlas(_rasterizer);
             _core = new WindowCore(_text, _settings, Clipboard, options.SupportedLocales, options.ResolveLocale);
             Tree.AnimatesImages = options.ImageAnimation;
             Tree.Keymap = options.Keymap ?? new Keymap();
@@ -86,6 +90,8 @@ public sealed class HeadlessApp : IAsyncDisposable
                 _atlas?.Dispose();
             }
 
+            // After the atlas that draws with it, before the renderer that made it.
+            (_rasterizer as IDisposable)?.Dispose();
             _renderer?.Dispose();
             _text.Dispose();
             _fonts.Dispose();
@@ -867,9 +873,11 @@ public sealed class HeadlessApp : IAsyncDisposable
     {
         _disposed = true;
 
-        // The core cancels the frame, disposes the root, then the window and the atlas; the renderer behind the target goes after.
+        // The core cancels the frame, disposes the root, then the window and the atlas; the atlas's rasterizer, and the renderer
+        // behind the target and that made the rasterizer, go after.
         _core.Dispose();
         ScopeTracker.IsEnabled = _trackerWasEnabled;
+        (_rasterizer as IDisposable)?.Dispose();
         _renderer?.Dispose();
         _text.Dispose();
         _fonts.Dispose();
