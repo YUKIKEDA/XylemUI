@@ -1355,6 +1355,8 @@ public sealed class NumberFormatterTests
 
         internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.En.DatePatternTable;
 
+        internal override ReadOnlySpan<byte> DateIntervalTable => CldrLocales.En.DateIntervalTable;
+
         internal override PluralRules CreatePlurals() => CldrLocales.En.Plurals;
     }
 
@@ -1381,6 +1383,8 @@ public sealed class NumberFormatterTests
 
         internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.En.DatePatternTable;
 
+        internal override ReadOnlySpan<byte> DateIntervalTable => CldrLocales.En.DateIntervalTable;
+
         internal override PluralRules CreatePlurals() => CldrLocales.En.Plurals;
     }
 
@@ -1396,6 +1400,8 @@ public sealed class NumberFormatterTests
         internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.Pl.DateNameTable;
 
         internal override ReadOnlySpan<byte> DatePatternTable => CldrLocales.Pl.DatePatternTable;
+
+        internal override ReadOnlySpan<byte> DateIntervalTable => CldrLocales.Pl.DateIntervalTable;
 
         internal override PluralRules CreatePlurals() => new(ManyAtThree, ManyAtThree);
 

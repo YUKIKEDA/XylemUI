@@ -14,7 +14,8 @@ namespace XylemUI;
 /// in the locale's <c>gmtFormat</c> and <c>hourFormat</c>, short (<c>GMT+9</c>, <c>GMT+5:30</c>, <c>GMT+0</c>) for <c>z</c> and
 /// <c>v</c> and long (<c>GMT+09:00</c>, <c>GMT+00:00</c>) for <c>zzzz</c> and <c>vvvv</c>; time zone names are not in the tables.
 /// Making a format reads the tables and allocates; <see cref="TryFormat(DateTime, Span{char}, out int)"/>, its overloads, and the
-/// <c>Of</c> methods allocate nothing. <see cref="Format"/> makes a string.
+/// <c>Of</c> methods allocate nothing. The first range a format writes or returns reads its interval patterns and allocates;
+/// <c>TryFormatRange</c> and <c>OfRange</c> allocate nothing after that. <see cref="Format"/> makes a string.
 /// </remarks>
 public sealed class DateFormatter
 {
@@ -28,6 +29,12 @@ public sealed class DateFormatter
     private const int TimeAndWeekday = JoiningPatterns + 4;
     private const int GmtFormat = TimeAndWeekday + 1;
     private const int HourFormat = GmtFormat + 1;
+
+    // The entries of an interval table (tools/CldrTableGen/DateTables.cs): the 37 skeletons without the 4 time zone ones that start at
+    // FirstZoneSkeleton, then the 24-hour entries of j, jm, and jms.
+    private const int FirstZoneSkeleton = 34;
+    private const int ZoneSkeletons = 4;
+    private const int FirstHourRangeEntry = 41 - ZoneSkeletons;
 
     // The skeletons of Flutter's validDateFormats, in the order of the pattern tables (tools/CldrTableGen/DateTables.cs): the first
     // 28 have date fields only, the rest time fields only, and the 7 that start at FirstHourSkeleton have j.
@@ -88,10 +95,19 @@ public sealed class DateFormatter
     private readonly OffsetPattern _positive;
     private readonly OffsetPattern _negative;
 
-    private DateFormatter(LocaleData locale, string pattern)
+    // The entry of the interval table that a range reads, -1 for a joined format and a time zone skeleton, and the entry a 24-hour
+    // entry stands for when the table points it there; and the range's patterns, read when a range is first formatted, so that a
+    // binary that formats no range keeps no interval table.
+    private readonly int _rangeEntry;
+    private readonly int _ownRangeEntry;
+    private DateRangeFormat? _ranges;
+
+    private DateFormatter(LocaleData locale, string pattern, int rangeEntry, int ownRangeEntry)
     {
         ReadOnlySpan<byte> table = locale.DatePatternTable;
         _locale = locale;
+        _rangeEntry = rangeEntry;
+        _ownRangeEntry = ownRangeEntry;
         _names = locale.Names;
         _items = DatePattern.Compile(pattern);
         foreach (DatePatternItem item in _items)
@@ -162,7 +178,14 @@ public sealed class DateFormatter
             ThrowHelper.ThrowNotASkeleton(skeleton, "one of Flutter's 41 date skeletons", nameof(skeleton));
         }
 
-        return new DateFormatter(locale, PatternOf(locale.DatePatternTable, index, use24HourFormat));
+        int ownRangeEntry = RangeEntryOf(index);
+        int rangeEntry = ownRangeEntry;
+        if (use24HourFormat && index is >= FirstHourSkeleton and < FirstZoneSkeleton)
+        {
+            rangeEntry = FirstHourRangeEntry + index - FirstHourSkeleton;
+        }
+
+        return new DateFormatter(locale, PatternOf(locale.DatePatternTable, index, use24HourFormat), rangeEntry, ownRangeEntry);
     }
 
     /// <summary>
@@ -202,7 +225,7 @@ public sealed class DateFormatter
         ReadOnlySpan<byte> table = locale.DatePatternTable;
         string joining = StringAt(table, JoiningOf(dateSkeleton));
         string pattern = Join(joining, PatternOf(table, date, use24HourFormat), PatternOf(table, time, use24HourFormat));
-        return new DateFormatter(locale, pattern);
+        return new DateFormatter(locale, pattern, -1, -1);
     }
 
     /// <summary>
@@ -304,6 +327,83 @@ public sealed class DateFormatter
     }
 
     /// <summary>
+    /// Writes a range of two dates (CLDR's <c>intervalFormats</c>, design §4.11, "Interval formats"): a field the two have the same is
+    /// written once where the locale's interval pattern allows (<c>Jan 3 – 9, 2026</c>), two dates that differ only in a field
+    /// smaller than the format's are written as the start alone, and the others are both written whole and joined by the locale's
+    /// <c>intervalFormatFallback</c>. Allocates nothing once the format has written a range.
+    /// </summary>
+    /// <param name="start">The first day of the range.</param>
+    /// <param name="end">The last day of the range.</param>
+    /// <param name="destination">The characters to write to.</param>
+    /// <param name="charsWritten">The characters written; 0 when <paramref name="destination"/> is too short.</param>
+    /// <returns><see langword="false"/> when <paramref name="destination"/> is too short.</returns>
+    /// <exception cref="ArgumentException">The format has a time field, or <paramref name="start"/> is after
+    /// <paramref name="end"/>.</exception>
+    /// <exception cref="InvalidOperationException">The format joins a date skeleton and a time skeleton
+    /// (<see cref="FromSkeletons"/>).</exception>
+    public bool TryFormatRange(DateOnly start, DateOnly end, Span<char> destination, out int charsWritten)
+    {
+        CheckRange(ValueKind.DateOnly, start > end);
+        return TryWriteRange(start.ToDateTime(TimeOnly.MinValue), end.ToDateTime(TimeOnly.MinValue), destination, out charsWritten);
+    }
+
+    /// <summary>
+    /// Writes a range of two dates and times, as <see cref="TryFormatRange(DateOnly, DateOnly, Span{char}, out int)"/> writes two
+    /// dates: the clocks' fields as they are, whatever their <see cref="DateTime.Kind"/>, compared from the year down to the second.
+    /// Allocates nothing once the format has written a range.
+    /// </summary>
+    /// <param name="start">The start of the range.</param>
+    /// <param name="end">The end of the range.</param>
+    /// <param name="destination">The characters to write to.</param>
+    /// <param name="charsWritten">The characters written; 0 when <paramref name="destination"/> is too short.</param>
+    /// <returns><see langword="false"/> when <paramref name="destination"/> is too short.</returns>
+    /// <exception cref="ArgumentException">The format has a time zone field (<c>jmv</c>, <c>jmz</c>, <c>jv</c>, <c>jz</c>), which
+    /// needs an offset, or <paramref name="start"/> is after <paramref name="end"/>.</exception>
+    /// <exception cref="InvalidOperationException">The format joins a date skeleton and a time skeleton
+    /// (<see cref="FromSkeletons"/>).</exception>
+    public bool TryFormatRange(DateTime start, DateTime end, Span<char> destination, out int charsWritten)
+    {
+        CheckRange(ValueKind.DateTime, start > end);
+        return TryWriteRange(start, end, destination, out charsWritten);
+    }
+
+    /// <summary>
+    /// Returns a range of two dates with this format, for an interpolation of a <see cref="NodeTextWriter"/>; it writes what
+    /// <see cref="TryFormatRange(DateOnly, DateOnly, Span{char}, out int)"/> writes. Allocates nothing once the format has written
+    /// or returned a range.
+    /// </summary>
+    /// <param name="start">The first day of the range.</param>
+    /// <param name="end">The last day of the range.</param>
+    /// <returns>The range and the format.</returns>
+    /// <exception cref="ArgumentException">The format has a time field, or <paramref name="start"/> is after
+    /// <paramref name="end"/>.</exception>
+    /// <exception cref="InvalidOperationException">The format joins a date skeleton and a time skeleton
+    /// (<see cref="FromSkeletons"/>).</exception>
+    public FormattedDateRange OfRange(DateOnly start, DateOnly end)
+    {
+        CheckRange(ValueKind.DateOnly, start > end);
+        return new FormattedDateRange(this, start.ToDateTime(TimeOnly.MinValue), end.ToDateTime(TimeOnly.MinValue));
+    }
+
+    /// <summary>
+    /// Returns a range of two dates and times with this format, for an interpolation of a <see cref="NodeTextWriter"/>; it writes
+    /// what <see cref="TryFormatRange(DateTime, DateTime, Span{char}, out int)"/> writes. Allocates nothing once the format has
+    /// written or returned a range.
+    /// </summary>
+    /// <param name="start">The start of the range.</param>
+    /// <param name="end">The end of the range.</param>
+    /// <returns>The range and the format.</returns>
+    /// <exception cref="ArgumentException">The format has a time zone field, or <paramref name="start"/> is after
+    /// <paramref name="end"/>.</exception>
+    /// <exception cref="InvalidOperationException">The format joins a date skeleton and a time skeleton
+    /// (<see cref="FromSkeletons"/>).</exception>
+    public FormattedDateRange OfRange(DateTime start, DateTime end)
+    {
+        CheckRange(ValueKind.DateTime, start > end);
+        return new FormattedDateRange(this, start, end);
+    }
+
+    /// <summary>
     /// Returns a date and a time formatted as a new string; not for the frame path.
     /// </summary>
     /// <param name="value">The date and time.</param>
@@ -322,7 +422,51 @@ public sealed class DateFormatter
     internal bool TryWrite(DateTime clock, int offsetMinutes, Span<char> destination, out int charsWritten)
     {
         var writer = new CharWriter(destination);
-        foreach (DatePatternItem item in _items)
+        Write(ref writer, _items, clock, offsetMinutes);
+        return writer.TryFinish(out charsWritten);
+    }
+
+    /// <summary>
+    /// Writes a range of two clocks with the patterns of the format's interval table entry (design §4.11, "Interval formats"). The
+    /// caller has checked the values' type and order, which also read the patterns.
+    /// </summary>
+    /// <param name="start">The start of the range.</param>
+    /// <param name="end">The end of the range, not before <paramref name="start"/>.</param>
+    /// <param name="destination">The characters to write to.</param>
+    /// <param name="charsWritten">The characters written; 0 when <paramref name="destination"/> is too short.</param>
+    /// <returns><see langword="false"/> when <paramref name="destination"/> is too short.</returns>
+    internal bool TryWriteRange(DateTime start, DateTime end, Span<char> destination, out int charsWritten)
+    {
+        DateRangeFormat ranges = Ranges();
+        var writer = new CharWriter(destination);
+        int field = DateRangeFormat.GreatestDifference(start, end);
+        DateRangeFormat.Slot slot = field < 0 ? default : ranges.SlotOf(field);
+        switch (slot.Kind)
+        {
+            case DateRangeFormat.SlotKind.Single:
+                Write(ref writer, _items, start, 0);
+                break;
+            case DateRangeFormat.SlotKind.Split:
+                Write(ref writer, slot.First!, slot.LaterFirst ? end : start, 0);
+                Write(ref writer, slot.Second!, slot.LaterFirst ? start : end, 0);
+                break;
+            default:
+                DatePatternItem[] items = slot.First ?? _items;
+                writer.Append(ranges.Before);
+                Write(ref writer, items, ranges.LaterFirst ? end : start, 0);
+                writer.Append(ranges.Between);
+                Write(ref writer, items, ranges.LaterFirst ? start : end, 0);
+                writer.Append(ranges.After);
+                break;
+        }
+
+        return writer.TryFinish(out charsWritten);
+    }
+
+    // Writes the fields of a pattern with a clock and an offset.
+    private void Write(ref CharWriter writer, DatePatternItem[] items, DateTime clock, int offsetMinutes)
+    {
+        foreach (DatePatternItem item in items)
         {
             int length = item.Length;
             switch (item.Symbol)
@@ -371,16 +515,26 @@ public sealed class DateFormatter
                     WriteNumber(ref writer, clock.Second, length);
                     break;
                 default:
-                    // z and v: the constructor lets no other field through.
+                    // z and v: the constructor lets no other field through, and tools/CldrTableGen checks the fields of the range
+                    // patterns, which have no zone.
                     WriteOffset(ref writer, offsetMinutes, length == 4);
                     break;
             }
         }
-
-        return writer.TryFinish(out charsWritten);
     }
 
     private static int OffsetMinutes(DateTimeOffset value) => (int)(value.Offset.Ticks / TimeSpan.TicksPerMinute);
+
+    // The entry of a skeleton in the locale's hour in an interval table, which has none for the time zone skeletons (-1).
+    private static int RangeEntryOf(int index)
+    {
+        if (index < FirstZoneSkeleton)
+        {
+            return index;
+        }
+
+        return index >= FirstZoneSkeleton + ZoneSkeletons ? index - ZoneSkeletons : -1;
+    }
 
     // The width of a text field: 1 to 3 letters abbreviated, 4 wide, 5 narrow.
     private static DateNameWidth Width(int length) =>
@@ -467,6 +621,40 @@ public sealed class DateFormatter
         {
             ThrowHelper.ThrowDateValueNotTaken("The format writes a time zone, which only a DateTimeOffset has.", "value");
         }
+    }
+
+    // Throws as Check does for a value's type, InvalidOperationException for a joined format, which has no interval patterns, and
+    // ArgumentException for a range whose start is after its end; then reads the range's patterns when no range has read them.
+    private void CheckRange(ValueKind kind, bool reversed)
+    {
+        Check(kind);
+
+        // A time zone skeleton has no entry either, but Check has thrown for it: a range takes no offset.
+        if (_rangeEntry < 0)
+        {
+            ThrowHelper.ThrowJoinedFormatRange();
+        }
+
+        if (reversed)
+        {
+            ThrowHelper.ThrowRangeStartAfterEnd();
+        }
+
+        _ = Ranges();
+    }
+
+    // The range's patterns, read from the interval table when first asked for. Two threads that ask first at once may both read
+    // them; the first stored is the one both use.
+    private DateRangeFormat Ranges()
+    {
+        DateRangeFormat? ranges = Volatile.Read(ref _ranges);
+        if (ranges is null)
+        {
+            ranges = DateRangeFormat.Read(_locale.DateIntervalTable, _rangeEntry, _ownRangeEntry);
+            ranges = Interlocked.CompareExchange(ref _ranges, ranges, null) ?? ranges;
+        }
+
+        return ranges;
     }
 
     private void WriteNumberOrName(ref CharWriter writer, int value, int length, string? name)

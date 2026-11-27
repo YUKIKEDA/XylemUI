@@ -5,9 +5,10 @@ using System.Text.Json;
 namespace XylemUI.Tools.CldrTableGen;
 
 /// <summary>
-/// The date tables of the entries (design §4.11, "Dates and times"): for each locale, the names of its Gregorian calendar, and the
-/// patterns of Flutter's 41 skeletons with what joins and writes them. Locales whose bytes are the same share one table. The bytes are
-/// read by <c>DateNames</c> and <c>DateFormatter</c> in XylemUI.Core.
+/// The date tables of the entries (design §4.11, "Dates and times"): for each locale, the names of its Gregorian calendar, the
+/// patterns of Flutter's 41 skeletons with what joins and writes them, and how the skeletons write a range of two dates. Locales whose
+/// bytes are the same share one table. The bytes are read by <c>DateNames</c>, <c>DateFormatter</c>, and <c>DateRangeFormat</c> in
+/// XylemUI.Core.
 /// </summary>
 /// <remarks>
 /// A name table is, for the format and then the stand-alone context, the months (abbreviated, wide, narrow; 12 each), the weekdays
@@ -19,9 +20,29 @@ namespace XylemUI.Tools.CldrTableGen;
 /// empty when the pattern is the one before; the patterns that join a date and a time (<c>dateTimeFormats</c>: full, long, medium,
 /// short) and the <c>Time-Day-Of-Week</c> append item, with their letters quoted; and <c>gmtFormat</c> and <c>hourFormat</c>. A
 /// string is a length byte and that many bytes of UTF-8.
+/// <para>
+/// An interval table (design §4.11, "Interval formats") is <c>intervalFormatFallback</c>, then an entry for each of the 37 skeletons
+/// without a time zone in the order of <see cref="Skeletons"/> (a <c>j</c> skeleton's in the hour of the locale), then one for the
+/// 24-hour form of <c>j</c>, <c>jm</c>, and <c>jms</c>. An entry is a count byte, 255 and nothing more for a 24-hour entry that is
+/// the skeleton's entry in the hour of the locale; then a byte for each field the dates can first differ in (the year, the month, the day, am or pm, the hour, the
+/// minute, the second): 0 writes the earlier date alone with the skeleton's pattern, 1 writes both with it and joins them with the
+/// fallback, and 2 + k takes the entry's record k; then the records, as many as the count, each a kind byte and its strings: 0 is a
+/// pattern split into the part of the earlier date and the part of the later, 1 the same with the later date's part first (each a
+/// string; the second may be empty), and 2 a pattern that writes both dates, joined by the fallback (one string). A record that two
+/// fields take is written once.
+/// </para>
 /// </remarks>
 internal sealed class DateTables
 {
+    // The kinds of record of an interval table, and the field bytes that take no record.
+    private const byte SplitEarlierFirst = 0;
+    private const byte SplitLaterFirst = 1;
+    private const byte FallbackRecord = 2;
+    private const byte SingleField = 0;
+    private const byte OwnFallbackField = 1;
+    private const byte FirstRecordField = 2;
+    private const byte SameEntry = 255;
+
     /// <summary>
     /// Flutter's 41 skeletons, in the order of <c>validDateFormats</c> (Flutter 3.47.8,
     /// <c>packages/flutter_tools/lib/src/localizations/gen_l10n_types.dart</c>, lines 31 to 73).
@@ -79,10 +100,16 @@ internal sealed class DateTables
 
     private static readonly string[] Lengths = ["full", "long", "medium", "short"];
 
-    private DateTables(List<byte[]> names, List<byte[]> patterns, Dictionary<string, (int Names, int Patterns)> byTag)
+    private DateTables(
+        List<byte[]> names,
+        List<byte[]> patterns,
+        List<byte[]> intervals,
+        Dictionary<string, (int Names, int Patterns, int Intervals)> byTag
+    )
     {
         Names = names;
         Patterns = patterns;
+        Intervals = intervals;
         ByTag = byTag;
     }
 
@@ -97,9 +124,14 @@ internal sealed class DateTables
     public IReadOnlyList<byte[]> Patterns { get; }
 
     /// <summary>
-    /// Gets, for the data tag of each entry and of root, the index of its name and pattern tables.
+    /// Gets the distinct interval tables, in the same order.
     /// </summary>
-    public IReadOnlyDictionary<string, (int Names, int Patterns)> ByTag { get; }
+    public IReadOnlyList<byte[]> Intervals { get; }
+
+    /// <summary>
+    /// Gets, for the data tag of each entry and of root, the index of its name, pattern, and interval tables.
+    /// </summary>
+    public IReadOnlyDictionary<string, (int Names, int Patterns, int Intervals)> ByTag { get; }
 
     /// <summary>
     /// Reads the tables of every entry and of root.
@@ -112,9 +144,11 @@ internal sealed class DateTables
         JsonElement timeData = cldr.Supplemental("timeData").GetProperty("timeData");
         var names = new List<byte[]>();
         var patterns = new List<byte[]>();
+        var intervals = new List<byte[]>();
         var nameIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         var patternIndex = new Dictionary<string, int>(StringComparer.Ordinal);
-        var byTag = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
+        var intervalIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        var byTag = new Dictionary<string, (int, int, int)>(StringComparer.Ordinal);
         foreach (LocaleEntry entry in locales.Entries.Prepend(locales.Root))
         {
             string tag = entry.DataTag;
@@ -135,13 +169,149 @@ internal sealed class DateTables
                 .GetProperty("dates")
                 .GetProperty("timeZoneNames");
             char hour = HourSymbol(tag, entry.Region, timeData);
-            byte[] patternTable = PatternTable(tag, gregorian, zones, hour, NumberTables.Zero(cldr, tag));
+            SkeletonMatcher matcher = Matcher(tag, gregorian);
+            (byte[] patternTable, List<string> written) = PatternTable(tag, gregorian, zones, matcher, hour, NumberTables.Zero(cldr, tag));
+            byte[] intervalTable = IntervalTable(tag, gregorian, matcher, hour, written);
             int nameAt = TableBytes.Index(NameTable(tag, gregorian), names, nameIndex);
             int patternAt = TableBytes.Index(patternTable, patterns, patternIndex);
-            byTag.Add(tag, (nameAt, patternAt));
+            int intervalAt = TableBytes.Index(intervalTable, intervals, intervalIndex);
+            byTag.Add(tag, (nameAt, patternAt, intervalAt));
         }
 
-        return new DateTables(names, patterns, byTag);
+        return new DateTables(names, patterns, intervals, byTag);
+    }
+
+    /// <summary>
+    /// Returns a pattern with each placeholder once: <c>{0}</c> and <c>{1}</c> in a pattern that joins two (<c>dateTimeFormats</c>,
+    /// the <c>Time-Day-Of-Week</c> append item, and <c>intervalFormatFallback</c>), <c>{0}</c> in <c>gmtFormat</c>.
+    /// </summary>
+    /// <param name="tag">The locale, for the message.</param>
+    /// <param name="pattern">The pattern.</param>
+    /// <param name="placeholders">The placeholders it must have once each.</param>
+    /// <returns>The pattern.</returns>
+    /// <exception cref="InvalidDataException">A placeholder is not there once.</exception>
+    internal static string Placeholders(string tag, string pattern, params ReadOnlySpan<string> placeholders)
+    {
+        foreach (string placeholder in placeholders)
+        {
+            int at = pattern.IndexOf(placeholder, StringComparison.Ordinal);
+            if (at < 0 || pattern.IndexOf(placeholder, at + 1, StringComparison.Ordinal) >= 0)
+            {
+                throw new InvalidDataException("The pattern " + pattern + " of " + tag + " does not have " + placeholder + " once.");
+            }
+        }
+
+        return pattern;
+    }
+
+    // The skeleton formats of a locale: its availableFormats, and its time and date patterns, which ICU's DateTimePatterns hold the
+    // 4 time patterns before the 4 date patterns of, and addICUPatterns adds in that order.
+    private static SkeletonMatcher Matcher(string tag, JsonElement gregorian)
+    {
+        IEnumerable<KeyValuePair<string, string>> available = gregorian
+            .GetProperty("dateTimeFormats")
+            .GetProperty("availableFormats")
+            .EnumerateObject()
+            .Select(format => KeyValuePair.Create(format.Name, format.Value.GetString() ?? string.Empty));
+        IEnumerable<string> standard = Lengths
+            .Select(length => TableBytes.Text(tag, gregorian.GetProperty("timeFormats"), length))
+            .Concat(Lengths.Select(length => TableBytes.Text(tag, gregorian.GetProperty("dateFormats"), length)));
+        return new SkeletonMatcher(tag, available, standard);
+    }
+
+    // The interval table of a locale (the remarks of the class): the entries of the 37 skeletons without a time zone, then the
+    // 24-hour ones of j, jm, and jms; written holds the 41 patterns and the 7 24-hour ones of the pattern table.
+    private static byte[] IntervalTable(string tag, JsonElement gregorian, SkeletonMatcher matcher, char hour, List<string> written)
+    {
+        JsonElement dateTimeFormats = gregorian.GetProperty("dateTimeFormats");
+        string shortJoining = Joining(tag, TableBytes.Text(tag, dateTimeFormats, "short"));
+        var intervals = new IntervalMatcher(tag, dateTimeFormats.GetProperty("intervalFormats"), matcher, shortJoining);
+        var table = new List<byte>();
+        TableBytes.Add(table, intervals.Fallback);
+        var own = new Dictionary<string, IntervalSlot[]>(StringComparer.Ordinal);
+        for (int i = 0; i < Skeletons.Length; i++)
+        {
+            string skeleton = Skeletons[i];
+            if (!HasZone(skeleton))
+            {
+                IntervalSlot[] slots = intervals.Match(skeleton.Replace('j', hour), written[i]);
+                own.Add(skeleton, slots);
+                IntervalEntry(table, tag, slots);
+            }
+        }
+
+        string[] hourSkeletons = [.. Skeletons.Where(skeleton => skeleton.Contains('j', StringComparison.Ordinal))];
+        for (int i = 0; i < hourSkeletons.Length; i++)
+        {
+            string skeleton = hourSkeletons[i];
+            if (!HasZone(skeleton))
+            {
+                IntervalSlot[] slots = intervals.Match(skeleton.Replace('j', 'H'), written[Skeletons.Length + i]);
+                if (slots.SequenceEqual(own[skeleton]))
+                {
+                    table.Add(SameEntry);
+                }
+                else
+                {
+                    IntervalEntry(table, tag, slots);
+                }
+            }
+        }
+
+        return [.. table];
+    }
+
+    // A range takes no offset, so the skeletons with a time zone have no entry (design §4.11, "The table").
+    private static bool HasZone(string skeleton) => skeleton.Contains('v', StringComparison.Ordinal) || skeleton.Contains('z', StringComparison.Ordinal);
+
+    // One entry of an interval table: the count of records, a byte for each field, and the records.
+    private static void IntervalEntry(List<byte> table, string tag, IntervalSlot[] slots)
+    {
+        var records = new List<IntervalSlot>();
+        var fields = new byte[slots.Length];
+        for (int i = 0; i < slots.Length; i++)
+        {
+            IntervalSlot slot = slots[i];
+            if (slot.Kind == IntervalKind.Single)
+            {
+                fields[i] = SingleField;
+            }
+            else if (slot.Kind == IntervalKind.OwnFallback)
+            {
+                fields[i] = OwnFallbackField;
+            }
+            else
+            {
+                int at = records.IndexOf(slot);
+                if (at < 0)
+                {
+                    at = records.Count;
+                    records.Add(slot);
+                }
+
+                fields[i] = (byte)(FirstRecordField + at);
+            }
+        }
+
+        table.Add((byte)records.Count);
+        table.AddRange(fields);
+        foreach (IntervalSlot record in records)
+        {
+            if (record.Kind == IntervalKind.Split)
+            {
+                CheckPattern(tag, record.First);
+                CheckPattern(tag, record.Second);
+                table.Add(record.LaterFirst ? SplitLaterFirst : SplitEarlierFirst);
+                TableBytes.Add(table, record.First);
+                TableBytes.Add(table, record.Second);
+            }
+            else
+            {
+                CheckPattern(tag, record.First);
+                table.Add(FallbackRecord);
+                TableBytes.Add(table, record.First);
+            }
+        }
     }
 
     // The hour symbol that j stands for (CLDR's timeData, _preferred; UTS #35 part 4, "Time Data"): the entry of the language and
@@ -212,19 +382,18 @@ internal sealed class DateTables
         }
     }
 
-    private static byte[] PatternTable(string tag, JsonElement gregorian, JsonElement zones, char hour, char zero)
+    // The pattern table of a locale (the remarks of the class), and the 41 patterns and the 7 24-hour ones it writes, each 24-hour
+    // one also when it is the pattern before.
+    private static (byte[] Table, List<string> Written) PatternTable(
+        string tag,
+        JsonElement gregorian,
+        JsonElement zones,
+        SkeletonMatcher matcher,
+        char hour,
+        char zero
+    )
     {
         JsonElement dateTimeFormats = gregorian.GetProperty("dateTimeFormats");
-        IEnumerable<KeyValuePair<string, string>> available = dateTimeFormats
-            .GetProperty("availableFormats")
-            .EnumerateObject()
-            .Select(format => KeyValuePair.Create(format.Name, format.Value.GetString() ?? string.Empty));
-
-        // ICU's DateTimePatterns hold the 4 time patterns before the 4 date patterns, and addICUPatterns adds them in that order.
-        IEnumerable<string> standard = Lengths
-            .Select(length => TableBytes.Text(tag, gregorian.GetProperty("timeFormats"), length))
-            .Concat(Lengths.Select(length => TableBytes.Text(tag, gregorian.GetProperty("dateFormats"), length)));
-        var matcher = new SkeletonMatcher(tag, available, standard);
         var table = new List<byte> { (byte)zero, (byte)(zero >> 8) };
         var written = new List<string>();
         foreach (string skeleton in Skeletons)
@@ -258,7 +427,7 @@ internal sealed class DateTables
         string hourFormat = TableBytes.Text(tag, zones, "hourFormat");
         CheckHourFormat(tag, hourFormat);
         TableBytes.Add(table, hourFormat);
-        return [.. table];
+        return ([.. table], written);
     }
 
     // A pattern that joins two (dateTimeFormats and the Time-Day-Of-Week append item), with {0} and {1} once each and each run of
@@ -301,22 +470,6 @@ internal sealed class DateTables
         }
 
         return text.ToString();
-    }
-
-    // A pattern with each placeholder once: {0} and {1} in a pattern that joins two (dateTimeFormats and the Time-Day-Of-Week append
-    // item), {0} in gmtFormat.
-    private static string Placeholders(string tag, string pattern, params ReadOnlySpan<string> placeholders)
-    {
-        foreach (string placeholder in placeholders)
-        {
-            int at = pattern.IndexOf(placeholder, StringComparison.Ordinal);
-            if (at < 0 || pattern.IndexOf(placeholder, at + 1, StringComparison.Ordinal) >= 0)
-            {
-                throw new InvalidDataException("The pattern " + pattern + " of " + tag + " does not have " + placeholder + " once.");
-            }
-        }
-
-        return pattern;
     }
 
     // The fields DateFormatter writes, with their lengths: the era, the year (not as yy) and the week's year, the quarter, the month

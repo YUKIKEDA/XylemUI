@@ -1,8 +1,8 @@
 namespace XylemUI;
 
 /// <summary>
-/// Makes the string of a formatted value, for the <c>ToString</c> of <see cref="FormattedNumber"/> and <see cref="FormattedDate"/>;
-/// not for the frame path.
+/// Makes the string of a formatted value, for the <c>ToString</c> of <see cref="FormattedNumber"/>, <see cref="FormattedDate"/>, and
+/// <see cref="FormattedDateRange"/>; not for the frame path.
 /// </summary>
 internal static class FormattedText
 {
