@@ -39,6 +39,7 @@ The owner decided (Issue #822): one row took a day and more while 70 rows wait, 
 
 - Rows whose files do not overlap run at the same time, each on its own branch in its own worktree (`.dev/<branch>`), each with its own Issue and PR. Rows that change the same files run one after the other.
 - A measurement needs a quiet CPU (`.cursor/rules/bench.mdc`): the rows' measurements run one at a time, and no build, gate, or mutation run of another row runs meanwhile.
+- A test that opens windows or sends keys does not run beside a gate of another worktree: windows and keys of one take the focus from the other. LC2's interval gate failed 5 `CounterTests` and 1 `TextInputTests` while Q16's window runs went on in another worktree; run alone, both classes passed (PR #965).
 - `docs/roadmap.md` has no paragraph that every PR rewrites. A row's PR changes its own row of the table and nothing else there; the history of a row is on its Issue and in `docs/benchmarks/`. Every PR rewrote the "作業中" paragraph before, which two PRs in flight cannot both do.
 - A design PR still comes before the code (`.cursor/rules/design-docs.mdc`): a design question is lost among the lines of an implementation. The implementation may start while the design PR is in review, but its branch changes neither `docs/design.ja.md` nor `docs/roadmap.md` until the design PR is merged; it takes `main` in then, and adds what the implementation taught in its last commit. PR #821 held PR #819's commits and changed the same paragraphs, and conflicted when #819 was squashed into `main`.
 
